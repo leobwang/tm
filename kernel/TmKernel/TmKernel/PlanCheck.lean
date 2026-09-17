@@ -709,23 +709,20 @@ statement below is the same conjunction over the same seven checkers and says ou
 day it is about.  P5 (blocks, `remaining_budget`) and the request decoder (gap 346) are what
 discharge them. -/
 
-/-- **Every Block row of the day comes from the log, not from the planner.**  Step P1 places
-walls, the running interruption and the replayed past; a Wall is not a Block and an
-interruption is Lost time, so a `SegKind.block` row on this day is one `Planner.pastRows`
-replayed.  This is finding 1 above, stated positively and proved unconditionally. -/
+/-- **Every Block row of the day comes from the log, not from the planner.**  Steps P1 and P2
+place walls, the running interruption, the replayed past, the routines and the evening; a Wall
+is not a Block, an interruption is Lost time, and no row step 2 places is a Block either
+(`Planner.stepTwoSegs_are_not_blocks`), so a `SegKind.block` row on this day is one
+`Planner.pastRows` replayed.  This is finding 1 above, stated positively and proved
+unconditionally.
+
+**Re-proved at step P2** over `Planner.dayRows`: the row-level statement moved into
+`Planner.a_block_row_is_a_replayed_row`, beside the step that adds the fourth source, and this
+is its specialisation to the produced day. -/
 theorem dayPlan_block_rows_come_from_the_log (r : PlanReq) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
-    ∃ t ∈ pastRows r, s = segOf t := by
-  obtain ⟨t, ht, rfl⟩ := mem_stepOneRows (dayPlan_segments r ▸ hs)
-  have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
-  simp only [List.mem_append] at ht
-  rcases ht with (ht | ht) | ht
-  · exact ⟨t, ht, rfl⟩
-  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
-  · simp only [List.mem_flatMap] at ht
-    obtain ⟨x, _, hx⟩ := ht
-    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
-    cases htk
+    ∃ t ∈ pastRows r, s = segOf t :=
+  a_block_row_is_a_replayed_row r s (dayPlan_segments r ▸ hs) hk
 
 /-- **Every replayed row is a row of the day** — the converse of
 `dayPlan_block_rows_come_from_the_log`, and the half that was missing when the ledger claimed
@@ -734,7 +731,8 @@ theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ p
     segOf t ∈ (dayPlan r).segments := by
   rw [dayPlan_segments]
   refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
-  exact List.mem_append_left _ (List.mem_append_left _ ht)
+  exact List.mem_append_left _
+    (List.mem_append_left _ (List.mem_append_left _ ht))
 
 /-- **A replayed Block *is* assigned**, so `assignedOf (dayPlan r) = []` is **not** a law of
 this `dayPlan` (W-14 repair, gap 393).

@@ -462,6 +462,12 @@ def Core.loc (c : Core) : Option Loc := Field.viewLoc c.line
 /-- §4.1 `buffer:` — intervals only; blocked time before start. -/
 def Core.buffer (c : Core) : Option Dur := Field.viewBuffer c.line
 
+/-- §3.1 `pref:`: the anchor inside a window instance's range (§8.2 step 2, fork
+`Item::pref`).  Added at stage 6 step P2 — the planner is its first reader, and §3.1's rule is
+that one function reads one field, so it is declared **here** beside the other twenty-six
+rather than in `Planner.lean`. -/
+def Core.pref (c : Core) : Option Field.Pref := Field.viewPref c.line
+
 /-- §3.1's `stamps.demoted`: `demoted:W36,W37`, newest last.  A `Stamp` knows
 its grain, so a week close's `W37` and a day close's `D07` are different
 values and not two readings of one number. -/

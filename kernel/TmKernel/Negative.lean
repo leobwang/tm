@@ -2048,4 +2048,52 @@ theorem aBlockLaidAcrossAWallPassesTheWallCheck (r : Planner.PlanReq) :
 theorem aKeptReservationStillLeavesAPrefix (a x : Id) (hne : x ≠ a) :
     ∃ n : Nat, ([a] : List Id) = ([x, a] : List Id).take n := ⟨1, by simp⟩
 
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-15**, track P, step P2 — §8.2 step 2:
+-- the routines and the evening).  Appended at the end (§6.2: append, never
+-- renumber).  Labels 163-165: P1 took 161-162 out of the 161-170 track P
+-- reserved for its own steps, and track G's 171-173 are above.
+-- ===========================================================================
+
+/- CHEAT 163 — a routine placed outside its window.  §8.2 step 2 places a window
+   instance inside ITS OWN window: `place_mandatory_and_pref` searches
+   `[span.0.max(now), span.1]` and nothing else.  The tempting shortcut is "the
+   earliest free position in the day" — it is shorter, it always succeeds, and it
+   silently moves a 14:00-15:00 chore to breakfast, which is the failure that
+   looks like success because the routine IS placed.  `decide` refuses the claim
+   that the two searches agree. -/
+def theEarliestFreePositionInTheWholeDay (durSec : Nat) (ws : List (Nat × Nat)) : Option Nat :=
+  Planner.earliestFree 28800 79200 durSec ws
+
+theorem aRoutinePlacedOutsideItsWindow :
+    theEarliestFreePositionInTheWholeDay 1800 [] = Planner.earliestFree 50400 54000 1800 [] := by
+  decide
+
+/- CHEAT 164 — a routine whose declared window is malformed, planned anyway
+   (README gap 285).  Driven on the audit's own workspace, `- lunch
+   win:25:99-13:30 dur:30m  every:day` makes `tm check` name the line twice and
+   `tm now` and `tm plan` proceed with rc=0, the invalid window simply dropped.
+   `25:99` is not a clock, so `Field.parseWindow` answers `none`, so the item's
+   shape is `Shape.none` and it declares no window at all — while its instance
+   still carries one.  `Planner.mkRoutine?` answers `undeclaredWindow` and the
+   verb refuses.  This block asserts the fork's behaviour instead, with both
+   hypotheses satisfiable by an ordinary plan. -/
+theorem aMalformedWindowIsPlannedAnyway (p : PlanCore) (x : Planner.RoutineIn) (e : Entity)
+    (hget : p.store.get x.id = some e)
+    (hd : Planner.declaresAWindow p x.id = false) :
+    Planner.mkRoutine? p x = .ok x := by
+  simp [Planner.mkRoutine?, hget, hd]
+
+/- CHEAT 165 — the small hours reopened.  `Planner.night()` runs from the
+   wind-down to the end of TOMORROW, not to midnight (fork `Planner::night`):
+   §8.1's wall extension can push the window past midnight and the small hours
+   are not a second working evening.  Ending the night at midnight leaves
+   00:00-06:00 free, and a mandatory routine whose window closes tomorrow morning
+   is then placed at 00:00 — placed, reported, and wrong.  `decide` refuses the
+   claim that the two nights leave the same earliest position. -/
+theorem theSmallHoursReopened :
+    Planner.earliestFree 75600 108000 1800 [(75600, 86400)]
+      = Planner.earliestFree 75600 108000 1800 [(75600, 172800)] := by
+  decide
+
 end Tm

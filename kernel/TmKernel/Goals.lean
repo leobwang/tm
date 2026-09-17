@@ -552,6 +552,18 @@ the break and one-block laws, P5 the remaining six, G2 and G3 the two
 relational ones — **and §6.4's P1 row is wrong about one of the two**
 (README gap 347).
 
+**Step P2 has landed** (`Planner.lean`, §8.2 step 2: today's window instances
+placed mandatory-first inside their own windows or at a free `pref:` anchor, the
+rest deferred to step 6, and the wind-down and sleep rows that close the day).
+It discharges **nothing here**, and design §14.2's P2 row — which gives it
+`plan_places_no_demanding_block_after_wind_down` — is **wrong for the same reason
+§6.4's P1 row was** (README gaps 347 and **430**): that goal quantifies over a
+**Block** row, P2 places the WindDown row it is *about* but no Block, so the
+statement is still vacuous over `dayPlan` and a discharge would be AGENTS §5.2's
+own "a theorem that compiles and means nothing".  It becomes real at **P5**.  What P2
+proved outright instead is `Planner.the_wind_down_row_runs_to_bed` — the evening
+half of the same sentence, over the produced plan.
+
 **Step P1 has landed** (`Planner.lean`, §8.2 step 1: the walls, the running
 interruption, the replayed past, the conflicts and the travel-day zeroing).
 `plan_never_moves_a_wall` is **gone from this file**: it is **false as it was
@@ -649,7 +661,12 @@ theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : WfSeg)
     b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := sorry
 
 /-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
-2: "sleep and wind-down define the hard end of the day". -/
+2: "sleep and wind-down define the hard end of the day".
+
+**P2 landed the WindDown row and did NOT discharge this** (README gap 430): the
+statement is about a **Block** row and no step before P5 places one, so it is
+vacuous over `dayPlan` today exactly as `plan_places_no_block_over_a_wall` is.
+`Planner.the_wind_down_row_runs_to_bed` is the half P2 could prove. -/
 theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
     (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
     (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)

@@ -28897,3 +28897,396 @@ on a scratch tree outside the repo, with `--now` fixing the clock, and was drive
 **through** the fix as well as into the defect.
 
 **Highest on this branch:** gap **396**, cheat **173**, parity **P37**.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-17: stage 6 (the planner), run **W-15**, track P, step
+     **P2** — §8.2 step 2, the routines and the evening.  `[day]` was WIDENED
+     with §16's `wind_down` and `bed` rather than forked; `mkRoutine?` refuses a
+     routine whose declared window is malformed **by name**, which is README gap
+     285's rule (its *verb* half is still owed and says so below); P3 did NOT
+     land.  Track P's gap range is **430-449**; **430-436 taken, 437-449 free**.
+     Cheats **163-165** (P1 took 161-162 of track P's 161-170).  Every figure
+     below was re-measured on the committed tree, each command capped at
+     MemoryMax=40G, MemorySwapMax=0.
+     =========================================================================== -->
+
+## Stage 6, W-15 track P step P2, 2026-09-17: the planner places its routines — and a malformed window is refused by name
+
+### What landed
+
+1. **`Look.DayCfg` gained §16's two evening keys, `wind_down` and `bed`** — and
+   that is a **widening, not a fork** (AGENTS §5.3, and the pattern W-14's P1 set
+   with `Look.wallIxOn`). §8.2 step 2 states "sleep and wind-down define the hard
+   end of the day" over exactly those two `[day]` keys; a `Planner.lean` that read
+   them from a record of its own would have been a second reader of one config
+   section, which is the defect `Today.storedBudget` was widened into `Look.Today`
+   to avoid one step earlier. Three `rfl` projections say the old readers see the
+   old record: `Look.the_evening_keys_do_not_move_the_window`, `…_the_cut`,
+   `…_the_budget`. The wire moved with it — `mkDayCfg?` takes two more clocks,
+   `Boundary.readDay` reads two more keys (`badClock day.windDown`,
+   `badClock day.bed`), and `kernel_capacity.rs` sends them.
+2. **`Core.pref` was declared in `State.lean`**, beside the other twenty-six field
+   views, for the same reason: §3.1's rule is one function per field, and a
+   `Field.viewPref` call inside `Planner.lean` would have been the second reader.
+3. **`Planner.RoutineIn`, `mkRoutine?` and `mkRoutines?`** — §8.2 step 2's input
+   with five named refusals (R10): `unknownItem`, **`undeclaredWindow`**,
+   `emptyWindow`, `pastTheHorizon`, `noMinutes`, plus `tooManyRoutines` on the
+   list. `declaresAWindow` is §4.3's `routines.md` rule read for one id — a
+   `Shape.window`, or an `after-done` recurrence — which is exactly the
+   disjunction `Plan.routine_lines_have_a_window_or_after_done` already proves of
+   every line of that file.
+4. **The placement**: `earliestFree` (fork `earliest_free`) built **on L3's own
+   `Look.freeIntervals`**, `overlapsAny` (fork `overlaps_any`), `PlanReq.night`
+   (fork `Planner::night`, running to the end of *tomorrow*), `dailyWindow` (fork
+   `daily_window`), `routineSpan` (fork `collect_routines`' span, both branches),
+   `splitSleep` (the first sleep-ish instance taken out), `sortRoutines`
+   (mandatory first, then the window's close, then the id), and `placeStep` /
+   `placedRoutines` (fork `place_mandatory_and_pref`: the earliest feasible
+   position before the wind-down, into the evening only when the window leaves no
+   choice, a free `pref:` anchor otherwise, deferral last).
+5. **The rows**: `routineRow`, `windDownSeg`, `sleepSeg`, `eveningRows`,
+   `stepTwoSegs`; `dayPlan` now emits steps 1 **and** 2.
+6. **The law the step exists for**: `a_placed_routine_is_inside_its_window` — a
+   fold invariant over `placeStep`, so every instance the day places starts at or
+   after `now`, ends inside its own span, and takes exactly the minutes it asked
+   for. `Negative.lean`'s cheat 163 is the claim that "the earliest free position
+   in the day" agrees with it, and it does not close.
+
+### Gap 285: the rule landed, the verb did not — and the audit's own observation reproduced
+
+W-13 reproduced the substance of finding 6 and recorded it as gap 285, but could
+**not** reproduce the audit's particular observation ("places `lunch` at 09:00 with
+a ⚠ marker") and said so. **On a scratch tree driven today it reproduces exactly**,
+clock-shifted: with `- lunch      win:25:99-13:30 dur:30m  every:day` appended to
+`routines.md`,
+
+```
+$ tm check
+routines.md:15: error[bad-value]: `win:25:99-13:30`: invalid window: "25:99-13:30"
+routines.md:15: error[routine-shape]: a routine needs a window (`win:` + `dur:`) or `after-done:`
+2 errors, 0 warnings
+$ tm --now 2026-09-17T08:10:00-05:00 plan
+2026-09-17 · window 08:05–16:05 · budget 6 blocks
+08:10  2 p0 ⚠ lunch                             30m
+09:10  ·      rest 1h
+…
+```
+
+`lunch` is placed at 08:10 with the `⚠`, rc 0 — the window dropped, the routine
+planned at breakfast time. So the W-13 block's "the audit's *particular*
+observation did not reproduce" is **true of that session and not of the defect**;
+the placement is clock-dependent, as that block said, and this is the clock where
+it shows.
+
+**What this step paid for it, precisely.** `Planner.mkRoutine?` answers
+`.undeclaredWindow` for exactly this line — `25:99` is not a clock, so
+`Field.parseWindow` is `none`, so `viewShape` falls through to `Shape.none`, so the
+item declares no window while its instance still carries one — and
+`mkRoutine?_refuses_a_window_the_item_does_not_declare` is the theorem.
+`mkRoutines?_refuses_when_one_is_refused` carries it to the list, so the refusal
+reaches the boundary instead of being dropped on the way.
+
+**What it did NOT pay for, said plainly: gap 285 STAYS OPEN.** `PlanReq` has no
+decoder (gap 346) and `dayPlan` has no caller, so nothing in the shipped binary
+calls `mkRoutines?` and `tm plan` still behaves exactly as printed above. The
+remaining half is **gap 431**. Putting the refusal in Rust instead would have given
+the host a second definition of the rule, which is what W-13's repair deliberately
+avoided when it opened 285 in the first place.
+
+### The finding: design §14.2's P2 row is wrong the way §6.4's P1 row was (gap 430)
+
+Design §14.2 gives P2 `plan_places_no_demanding_block_after_wind_down → discharged
+(burn-down 11 → 10)`. **It is not discharged and must not be.** The goal quantifies
+over a `SegKind.block` row, and no step before **P5** places one: P2 places the
+*WindDown* row the law is about, which makes `PlanCheck.noDemandingAfterWindDown`
+non-vacuous on one side only. Discharging it would be AGENTS §5.2's theorem that
+compiles and means nothing — the identical call W-14's P1 made for
+`plan_places_no_block_over_a_wall` (gap 347), and the tripwire that says so,
+`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`, is still
+true and still audited.
+
+What P2 could prove instead **is** proved: `Planner.the_wind_down_row_runs_to_bed`
+— the day has a WindDown row from `[day] wind_down` to `bed` exactly when the
+wind-down is still ahead and inside the day — which is the evening half of the same
+sentence, stated over the produced plan rather than over a Block that does not
+exist yet.
+
+**The burn-down therefore does not move: 12 outstanding, all stage 6.**
+
+### One rename, and the whole-repo grep W-14 taught (gap 393)
+
+The day's rows are no longer step one's alone, so:
+
+| before | after | why |
+|---|---|---|
+| `Planner.stepOneRows` | `Planner.stepOneSegs` (step 1's `List Seg`) **+** `Planner.dayRows` (the sorted day) | `stepOneRows` would have been a false name the moment step 2 placed a row |
+| `Planner.mem_stepOneRows` | `Planner.mem_dayRows` | follows it; **one line of `Check.lean` was EDITED**, not appended, because check 3 otherwise names an unknown constant |
+| `Planner.stepOneDiagnostics` | `Planner.dayDiagnostics` | same |
+
+`grep -rn 'stepOneRows\|stepOneDiagnostics\|mem_stepOneRows' --include=*.lean
+--include=*.rs --include=*.md .` was run over the whole repo, prose included.
+It finds three citations, **all three inside committed README blocks** (W-14's
+repair, `### 5. Gap 394` and `### What this step did NOT do`). Per §6.4 a committed
+block is written history and is not edited; the rename is recorded **here**, which
+is where the correction belongs, exactly as W-13's repair recorded L9's.
+
+### A decision an auditor should check: `Diagnostics.deferred` is NOT the deferred routines
+
+The obvious thing to do with a deferred instance is to list it in
+`Diagnostics.deferred`. **That field means something else**: fork `planner.rs:149`
+says `deferred` lists "the candidates a *posterior downgrade* cost a slot", which is
+§8.2 step 8 / choice 9 and belongs to **P4/P5**. Writing routines into it would give
+one field two meanings — the defect this kernel is named after. A deferred routine
+is carried on its own `Placed` record with `deferred := true` and no position (the
+state fork `place_deferred` receives), it has **no row** until step 6 places it
+(`a_deferred_routine_has_no_row`), and `Note.noPosition` is what will name it if
+step 6 cannot (**P6**, gap 436). `dayDiagnostics` is therefore byte-for-byte
+`stepOneDiagnostics` under a new name.
+
+### AGENTS §5.3: what was CONSUMED, and what was widened rather than forked
+
+**Consumed, not re-implemented** — the step calls these and defines no second copy:
+
+| stage-5 artefact | where P2 consumes it |
+|---|---|
+| `Look.freeIntervals` | `earliestFree` — the whole placement search is `freeIntervals … \|>.find? …` , which is fork `earliest_free` verbatim |
+| `Look.freeIntervals_inside_the_window`, `…_are_the_free_units` | the proofs of `earliestFree_inside` and `earliestFree_is_free` |
+| `Look.covered`, `Look.covered_eq_true` | `overlapsAny_false_covers_nothing` — "this stretch is taken" has one reading |
+| `Look.day0Window`, `Look.budgetOf`, `Look.day0Cut` | untouched; the three `the_evening_keys_do_not_move_…` projections prove the widening did not disturb them |
+| `Look.wakeOn` (step L9) | `anchorOf`'s `pref:wake+<dur>` — the kernel has one wake |
+| `Look.wallIxOn` / `wallsToday` (P1) | `blockedByWalls` |
+| `Plan.shapeOf` | `declaresAWindow` and `dailyWindow` — fork `daily_window` reads `item.shape` and this is the kernel's reader of exactly that |
+| `Plan.effectiveCi` | `routineEnergy` |
+| `Plan.docKindAt` / `DocKind` | `isFurniture` — the fork's `item.horizon` question, asked of the file the live line is in |
+| `Field.Dur.minutes`, `Field.Pref` | `anchorOf` |
+| `Field.viewPref` | through the new `Core.pref`, which is the one place that field is read |
+| `Replay.insSort`, `Replay.insSort_perm` | `sortRoutines` |
+| `Log.charsLe` | `routineLe`'s tie-break |
+| `Cal.instantOf`, `Cal.localDate` | every instant here |
+| `LogStamp.yearEnd` | `mkRoutine?`'s horizon clause — the kernel's one calendar bound (W-14 repair, gap 391) |
+
+**Re-implemented: nothing.** `grep -n 'freeIntervals\|cutSlots\|energize\|windowEnd\|capForLocation\|predictAt' TmKernel/Planner.lean` returns only the `earliestFree` call and the prose that names the rest as P3's.
+
+**Widened rather than forked:** `Look.DayCfg` (two `[day]` keys) and `State.Core`
+(one field view). Both are the record that already owned the concept.
+
+### Non-vacuity, run rather than argued (AGENTS §5.2)
+
+* `the_earliest_free_position_is_run` — a morning blocked 08:00-08:30 and
+  09:00-10:00: a half-hour routine takes 08:30, a forty-five-minute one is pushed
+  to 10:00 (the short stretch is **skipped**, not squeezed), a three-hour one does
+  not fit and defers. `decide`.
+* `the_evening_is_closed_to_a_routine` — with `night()` in the blocked list, 20:00
+  is free and 21:06 is not. `decide`.
+* `isSleepId_accepts_the_written_spellings` — `sleep`, `Sleep`, and not `sleepy`.
+  `decide`.
+* Every one of `mkRoutine?`'s five refusals has its own theorem, and
+  `mkRoutine?_accepts` / `mkRoutine?_ok_is_wf` are the two directions (AGENTS §5.8).
+
+Both new `decide` witnesses were probed at `MemoryMax=8G timeout 120` before they
+were committed, and both hold there. **Two** new `decide` witnesses in all, against
+§14.0's budget of twenty.
+
+### `Negative.lean` cheats 163-165
+
+| # | the claim that does not close |
+|---|---|
+| **163** | a routine placed outside its window — "the earliest free position in the day" agrees with the search inside the span. `decide` refuses. |
+| **164** | a routine whose declared window is malformed, planned anyway (gap 285): `mkRoutine? p x = .ok x` with `p.store.get x.id = some e` and `declaresAWindow p x.id = false`, both satisfiable by an ordinary plan. |
+| **165** | the small hours reopened — `night()` ending at midnight instead of the end of tomorrow leaves 00:00 free for a mandatory routine. `decide` refuses. |
+
+Labels start at 163 because P1 took 161-162 out of the 161-170 that track P holds;
+track G's 171-173 are above and untouched (§6.2: append, never renumber).
+
+### D9-21, the recursion rule
+
+Every function P2 adds that walks a list the wire can make large, with its form:
+
+| function | over | form |
+|---|---|---|
+| `PlanReq.routineInstances` | `r.routines` (`Capped`, ≤ 1,024) | core `List.filterMap` |
+| `splitSleep` | the same | structural, one pass, bounded by `Capped` |
+| `sortRoutines` | the same | `Replay.insSort` — **the specification sort, and it has no compiled twin for the same reason `wallsOfDay`'s has none**: `Log.charsLe` has no transitivity or totality lemma in the tree and `insSort_eq_mergeSort` needs both. That is **gap 394**, already open, and this step adds a second caller to it rather than a second gap. |
+| `PlanReq.placedRoutines` | the same | core `List.foldl` |
+| `stepTwoSegs`, `eveningRows` | `placedRoutines` | core `List.flatMap` / `++` |
+| `earliestFree` | `Look.freeIntervals`' answer | core `List.find?` |
+| `overlapsAny` | the blocked list | core `List.any` |
+
+`dayRows` sorts the whole day with `sortRows`, which **does** have its `@[csimp]`
+twin (W-14 repair).
+
+### Behaviour rows
+
+| # | the rule before | the rule now | why |
+|---|---|---|---|
+| 1 | the capacity request carried six `[day]` keys; `wind_down` and `bed` did not cross | it carries all eight, and a `[day]` whose `wind_down` or `bed` is not a clock is refused as `badClock day.windDown` / `badClock day.bed`, mapped to `day.wind_down` / `day.bed` in `config.toml` | §8.2 step 2 is stated over those two keys and the kernel reads `[day]` in one place (AGENTS §5.3). A capacity verb now sends two keys it does not read — **gap 432** |
+| 2 | *(pending, not shipped)* a routine instance whose item declares no window is planned anyway | `mkRoutines?` refuses it by name (`undeclaredWindow`), and a routine instance with no minutes left is refused as `noMinutes` where the fork silently `continue`s | README gap 285. **This row is not live**: nothing calls `mkRoutines?` yet (gap 431), and `tm plan`'s output is unchanged, as the drive above shows |
+
+No other behaviour row: nothing else in this commit can change an answer, because
+`dayPlan` has no caller.
+
+### Goals, theorems, cheats, parity (AGENTS §3.2, §6.2, §6.3)
+
+* **Goals discharged: none.** Burn-down **12 → 12**, all stage 6. §14.2's P2 row
+  said 11 → 10; it is wrong twice over (the count was already 12, and the goal is
+  not dischargeable) — gap **430**.
+* **New theorems: 33, every one with a `#print axioms` line in `Check.lean`**, in a
+  W-15 `APPENDED` banner. Verified the way check 3 verifies it: the §6.3
+  reconciliation (`comm -23` of declared short names against audited last segments)
+  is **empty**, which is what the `ok` on check 3 now means.
+* **One `Check.lean` line edited** (`mem_stepOneRows` → `mem_dayRows`), named above.
+* **Cheats 163-165**, all three refused by `check.sh` check 4.
+* **Parity: none taken.** `dayPlan` has no caller and no wire, so there is nothing
+  to compare; the one parity that *could* have moved is the `[day]` wire's, and
+  `kernel_lookahead_parity` runs green unchanged (4 passed, 0 failed).
+
+### A rot of exactly the class W-13 found, caught in my own prose
+
+Writing the `Goals.lean` banner above, a paragraph wrapped so that the word
+`theorem` landed at column 0 — and check 7's `grep -c '^theorem '` counted it,
+printing **13 outstanding** for a file with twelve goals. That is W-13 repair
+finding 3 (`Cmd.lean`'s `whose`) reproduced verbatim, one run later, by a different
+agent in a different file. The line is reflowed; the check found it before the
+commit did, which is the instrument working.
+
+### Measured, on the committed tree, every command capped at `MemoryMax=40G`
+
+| measurement | this step | comparand (`d2c0aa6`, this session) | what explains the delta |
+|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 ok | — |
+| axiom audit | **4,184 theorems** | 4,151 | **+33**, this step's, every one audited |
+| corpus | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged — no grammar touched |
+| burn-down | **12 outstanding, all stage 6** | 12, all stage 6 | nothing discharged, nothing admitted; gap 430 says why |
+| `check.sh` wall, built tree | **3.16 / 3.12 / 3.09 s** | 3.317 s | **−5%**; well inside the 10%-per-step rule. `Planner.lean` grew but `check.sh` does not rebuild a built tree |
+| `cargo test --workspace` | **1,316 passed / 0 failed / 9 ignored across 78** result lines, exit 0 | 1,316 / 0 / 9 / 78 — **the brief's baseline at `d2c0aa6`, not re-measured here** | unchanged — the two new wire keys were added to all five fixtures in the same commit |
+| FFI suite (`-p tm-kernel-ffi`) | **8 + 86 + 6 passed, 0 failed** | green (brief) | — |
+| T5 (`kernel_replay_parity`) | **29 passed / 0 failed / 4 ignored** | green (brief) | — |
+| the door (`kernel_log_door`) | **23 passed / 0 failed** | green (brief) | — |
+| `cli_switch_acceptance` | **9 passed / 0 failed** | green (brief) | — |
+| `kernel_call_counts` | **2 passed / 0 failed** | green (brief) | the pairing assertion still passes; the one-call shape has not landed |
+| `kernel_lookahead_parity` | **4 passed / 0 failed** | green (brief) | the `[day]` wire widened and the parity is unmoved |
+| `cli_latency` | **5 passed / 0 failed / 1 ignored** | green (brief) | see the T11 rows below |
+| Lean | **+1,055 / −81** | — | `Planner.lean` +875, `Lookahead.lean` +77, `Check.lean` +57, `Negative.lean` +48, `PlanCheck.lean` +30, `Boundary.lean` +24, `Goals.lean` +19, `State.lean` +6 |
+| Rust | **+15 / −5** | — | two wire keys and two refusal names, in five files |
+
+**T11 rows, this run** (`cli_latency`, one run, on the final tree): later verb
+**146.85 ms** (band 146.66-147.01, the reliable row — inside); a 3-day-old routine
+**136.75 ms** (noisy band 121.6-136.8 — inside); a reseal **212.43 ms** (noisy band
+197.5-212.6 — inside); `review week` **278.64 ms** (band 248.1-253.3, **out of band
+for the known reason**, gap 275: a capacity verb replays the log twice). **The band
+was not re-blessed.**
+
+### Gaps opened
+
+* **430** — *what is not done*: `Goals.plan_places_no_demanding_block_after_wind_down`
+  is not discharged, and design §14.2's P2 row says it should be. *Why*: the goal
+  quantifies over a `SegKind.block` row and no step before P5 places one, so a
+  discharge would be AGENTS §5.2's vacuous theorem; the same call W-14's P1 made
+  for `plan_places_no_block_over_a_wall` (gap 347). *What it costs*: the burn-down
+  reads 12 where the design predicted 10; a reader comparing the two will otherwise
+  look for a discharge that did not happen. *Which step clears it*: **P5**, which
+  places the first Block.
+* **431** — *what is not done*: nothing calls `Planner.mkRoutines?`. *Why*:
+  `PlanReq` has no decoder (gap 346) and `dayPlan` has no boundary op, so gap 285's
+  refusal is a proved kernel rule with no verb behind it, and `tm plan` still
+  schedules a malformed routine. *What it costs*: **gap 285 stays open**, and the
+  audit finding that opened it still reproduces at the CLI. *Which step clears it*:
+  the planner's request decoder, with **P8**'s wire.
+* **432** — *what is not done*: `[day]`'s `wind_down` and `bed` cross on the
+  **capacity** request, which does not read them. *Why*: the planner has no request
+  of its own yet, and `Look.DayCfg` is the kernel's one `[day]` record — splitting
+  it in two would be the second reader the widening exists to prevent. *What it
+  costs*: two keys of wire per capacity call, and a `badClock day.windDown` a
+  capacity verb can now raise for a key its answer does not depend on. *Which step
+  clears it*: **P8**, when the planner request lands and `[day]` crosses once for
+  both.
+* **433** — *what is not done*: **P3** (the slot cut and the energy filter) did not
+  land in this step. *Why*: P2's own scope — the input type, the five refusals, the
+  placement fold and its invariant, the evening rows, and re-proving P1's four laws
+  and `PlanCheck.dayPlan_ok_core` over a day with a fourth source of rows — filled
+  the step, and design §14.6's instruction is to commit the green part rather than
+  half-build the cut. *What it costs*: `plan_places_no_block_over_a_break` and
+  `plan_reserves_one_block_at_a_time` stay in `Goals.lean`; the day still has no
+  slots. *Which step clears it*: **P3**, whose inputs (`Look.cutSlots`,
+  `Look.energize`, `Look.limitSlots`, `Look.day0Cut`) are all built and whose
+  placed-routine *rests* are `placedRoutines` above.
+* **434** — *what is not done*: §8.2 choice 5b's Active reservation is **not** in
+  `blockedByWalls`, so step 2 can place a routine over the running block. *Why*:
+  fork `run()` pushes `active_run` before `place_mandatory_and_pref`, and
+  `active_run` needs the cut and the slots, which are P3's. *What it costs*: on a
+  day with a block running, a mandatory routine may be placed on top of it. *Which
+  step clears it*: **P3**, in the same step that builds `active_run`.
+* **435** — *what is not done*: a Routine row's `hot` mark is always `false`.
+  *Why*: fork `emit_segments` reads `prios[i].p == 0`, which is §7.2's pass and is
+  **P4**'s. *What it costs*: a `p = 0` routine prints without its `⚠`. *Which step
+  clears it*: **P4**.
+* **436** — *what is not done*: `Note.noPosition` is constructed nowhere. *Why*: an
+  instance is only *finally* un-placed once step 6 has tried the lowest-energy
+  position, so the note is **P6**'s; P2's deferred instances carry `deferred :=
+  true` and no row. *What it costs*: a routine P2 defers is invisible in the day
+  and in `diagnostics.notes` until P6. *Which step clears it*: **P6**.
+
+### Gaps left open, by name
+
+**285** (above, half-paid and open), **346** (no `PlanReq` decoder), **347**
+(§6.4's P1 row), **348** (no concrete `PlanReq`, which is why every law here is a
+∀ or a request-free `decide`), **365** (`eligibleAt`), **394** (`Log.charsLe` has
+no transitivity or totality lemma, so neither `wallsOfDay`'s sort nor
+`sortRoutines` has a compiled twin — this step adds a **caller**, not a gap),
+**275** (`review week`'s band), and stage 5's residue **94, 98, 113, 114, 116,
+132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190, 200, 201, 226**,
+the seam's **260**, **262**, the merge's **270**, and the performance levers
+**121, 122, 123, 126, 127**.
+
+### What this step did NOT do, by name
+
+* **It did not land P3.** Gap 433, with the reason and the cost.
+* **It did not discharge a single goal**, and it did not discharge
+  `plan_places_no_demanding_block_after_wind_down` even though the design told it
+  to. Gap 430.
+* **It did not close gap 285.** The rule is proved; the verb is unchanged, and the
+  defect reproduces at the CLI today. Gap 431.
+* **It did not put the routine refusal in Rust**, which would have given the host a
+  second definition of the rule — the thing W-13's repair explicitly avoided.
+* **It did not touch D27**: routine instances still arrive host-collected, because
+  F2's recurrence expansion is track **K3** and is not built. Gaps 113, 114 and 116
+  are untouched and whole.
+* **It did not prove `Log.charsLe` transitive or total**, so gap 394 stays open with
+  a second caller.
+* **It did not weaken a checker or a goal.** All eleven of `PlanCheck`'s are exactly
+  as track G wrote them; `dayPlan_ok_core` was **re-proved** over the new body with
+  its hypotheses unchanged, through the four new "no row step 2 places is a Wall /
+  a Block / work" lemmas.
+* **It did not re-bless anything**: no fixture, no snapshot, nothing under
+  `kernel/corpus/`, no latency band (`review week` is quoted out of band and left
+  there), no frozen comparand.
+* **It did not rebuild the fork oracle** and did not run `TM_ORACLE`: no
+  shipped-path byte changed on either fork-anchored arm, and `kernel_lookahead
+  _parity`, T5 and the door all ran green.
+* **It touched `lean-toolchain` not at all**, added no dependency, no axiom, no
+  `sorry` outside `Goals.lean`, no `partial def`, no `unsafe`, no `opaque`, no
+  `panic!`, no `!`-accessor, no `.toOption`, no Mathlib.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except
+the binary drive and the two `decide` probes, which ran at 16G and **8G with
+`timeout 120`** respectively. No bound was raised and nothing was retried uncapped.
+`check.sh` was run **fourteen** times (once as the `d2c0aa6` baseline, seven while the
+Lean and the audit roster were being completed — two of which it **failed**, once
+naming the renamed constant and once on a misplaced theorem — three timed on a tree
+that differed from the final one only by a prose edit to `Goals.lean`, and **three
+on the final tree, which are the ones quoted**); the `lake build` inside it was run
+many more times as the module was written. `cargo test --workspace` was run **three**
+times, all on this tree: the first was truncated by a `tail` in my harness, the
+second was tallied with a mis-parsed `awk` whose ignored count is **not** quoted,
+and the third is the table's. **The baseline row is the brief's figure at `d2c0aa6`
+and was not re-measured by this step**, which is why it is labelled so. The
+routine drive was performed on a scratch tree **outside the repo**
+(`/tmp/.../drive`), with `--now` fixing the clock, and was driven **into** the
+defect — `tm check`'s two errors and `tm plan`'s placed `lunch` are pasted above as
+they printed.
+
+**Highest on this branch:** gap **436**, cheat **173** (track G's, W-14; this step's own
+are 163-165), parity **P37**.

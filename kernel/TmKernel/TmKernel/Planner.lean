@@ -677,6 +677,23 @@ theorem mkOverrides?_refuses_too_many_drops (est extra : List (Id × Nat)) (drop
     | none => simp
     | some x => simp [Capped.ofList?_refuses_past_the_cap drop h]
 
+/-! ## §8.2 step 2's input, declared here because the request carries it -/
+
+/-- **Fork `priority::Candidate`'s routine half** — the per-instance facts `collect_routines`
+reads and the kernel cannot yet derive: which item, which instance, the occurrence's own window
+in absolute seconds, the minutes it still needs, and §5.2's mandatory flag.
+
+`pref:` and the daily `win:` hours are **not** here: they are the item's, the item is in the
+request, and taking them from the host would be a second reading of the plan (AGENTS §5.3). -/
+structure RoutineIn where
+  id        : Id
+  inst      : Option Id
+  winLo     : Nat
+  winHi     : Nat
+  durMin    : Nat
+  mandatory : Bool
+deriving DecidableEq, Repr
+
 /-! ## `DayPlan` — the whole day, past and future -/
 
 /-- **Fork `planner::DayPlan`.**  `window` is the pair of absolute seconds the plan used;
@@ -767,6 +784,11 @@ structure PlanReq where
   caps      : Lookahead
   /-- §9's five rows `Look.Today` does not carry. -/
   state     : RuntimeIn
+  /-- **§8.2 step 2's window instances, host-collected** (stage 6 P2).  Which occurrences are
+  due today is F2's recurrence expansion — track **K3**, not built — so until the owner's D27
+  lands these arrive with the request, refused one at a time by `mkRoutines?`.  Bounded at the
+  candidate cap (R10). -/
+  routines  : Capped RoutineIn
   /-- §9.1's what-if overrides, on a consequence replan. -/
   overrides : Option PlanOverrides
 
@@ -1278,21 +1300,710 @@ def sortRowsFast (l : List WfSeg) : List WfSeg := l.mergeSort rowLe
 theorem mem_sortRows {l : List WfSeg} {s : WfSeg} : s ∈ sortRows l ↔ s ∈ l :=
   (Replay.insSort_perm rowLe l).mem_iff
 
-/-- **§8.2 step 1's rows, in the fork's order.** -/
-def stepOneRows (r : PlanReq) : List WfSeg :=
-  sortRows
-    ((pastRows r ++ interruptRows r ++
-      (wallsToday r).flatMap (fun x => wallRows (r.isTravelDay x.id) x)).map segOf)
+/-- **§8.2 step 1's rows.**  The day's own order is `dayRows`, once step 2 has added its
+own (this list is step 1's contribution and nothing more). -/
+def stepOneSegs (r : PlanReq) : List Seg :=
+  pastRows r ++ interruptRows r ++
+    (wallsToday r).flatMap (fun x => wallRows (r.isTravelDay x.id) x)
 
-theorem mem_stepOneRows {r : PlanReq} {s : WfSeg} (h : s ∈ stepOneRows r) :
-    ∃ t ∈ pastRows r ++ interruptRows r ++
-      (wallsToday r).flatMap (fun x => wallRows (r.isTravelDay x.id) x), s = segOf t := by
+/-! ############################################################################
+## §8.2 step 2 — the routines (stage 6, step P2)
+
+APPENDED 2026-09-17 (stage 6, run W-15, track P, step P2; design §14.2's P2 row).
+
+**What step 2 is**, from fork `planner.rs`: `collect_routines` (today's window instances, their
+spans, and the one that is sleep), `place_mandatory_and_pref` (the earliest feasible position
+for a mandatory instance, a free `pref:` anchor for the rest, deferral otherwise), `night()`
+(everything from `wind_down` on is closed to the day), and `emit_segments`' routine, wind-down
+and sleep rows.  Choices 2 and 3 of design §2.
+
+**Nothing here computes a free interval.**  `earliestFree` is `Look.freeIntervals` — L3's own —
+with the first stretch wide enough taken off the front, which is exactly what fork
+`earliest_free` does (`planner.rs:2258`: `free_intervals(from, to, walls).find(|(a, b)| b - a >=
+dur).map(|(a, _)| a)`).  A second walk over the blocked list would be AGENTS §5.3's defect with
+the day's placement behind it, and §8.2 step 3 reads the same function through `cutSlots`, so
+the day's slots and the day's routines cannot disagree about what is free.
+
+**`[day]`'s evening keys were WIDENED into `Look.DayCfg`, not forked** (AGENTS §5.3, and the
+pattern W-14's P1 set with `Look.wallIxOn`).  §16's `[day]` has `wind_down` and `bed`; the
+kernel reads `[day]` in one record and now reads all of it.  `Look.the_evening_keys_do_not_move
+_the_window`, `…_the_cut` and `…_the_budget` are the projections that say the old readers are
+unchanged.
+
+**`Core.pref` was declared in `State.lean`**, beside the other twenty-six field views, for the
+same reason: §3.1's rule is one function per field, and a `viewPref` call in `Planner.lean`
+would have been the second reader.
+
+**The `loc:` filter is NOT applied to routines** (design §2 choice 2, fork `collect_routines`,
+which never calls `loc_ok`).  A routine is furniture: it happens where you are.
+
+### What step 2 does NOT do, by name
+
+* **The Active reservation** (choice 5b) is not in `blocked` yet.  Fork `run()` pushes
+  `active_run` before `place_mandatory_and_pref`; `active_run` needs the cut and the slots, so
+  it is **P3**'s.  Until it lands a routine may be placed over the running block (README gap
+  434).
+* **`diagnostics.notes`' un-placed note** (`planner.rs:1055`) is **P6**'s: a deferred routine is
+  only *finally* un-placed once step 6 has tried the lowest-energy position.  `Note.noPosition`
+  exists and nothing constructs it yet.
+* **A routine row's `hot` mark** is §7.2's `p = 0`, which is **P4**'s pass; the rows carry
+  `hot := false` and the flag becomes real there (README gap 435).
+* **The deferred routines themselves** are step 6 and are **P6**'s: they carry `deferred := true`
+  and no position, which is exactly the state `place_deferred` receives.
+-/
+
+/-! ### The evening, from `[day]` -/
+
+/-- **Fork `Planner::new`'s `wind_down`**: `[day] wind_down` on the day being planned. -/
+def PlanReq.windDownSec (r : PlanReq) : Nat :=
+  (Cal.instantOf r.tz r.today r.look.day.windDown).sec
+
+/-- **Fork `Planner::new`'s `bed`**, with the fork's own fixup: a `bed` at or before the
+wind-down is pushed to half an hour after it, never past the day's end
+(`planner.rs:868-871`). -/
+def PlanReq.bedSec (r : PlanReq) : Nat :=
+  if (Cal.instantOf r.tz r.today r.look.day.bed).sec ≤ r.windDownSec
+  then max (min r.dayEnd (r.windDownSec + 1800)) r.windDownSec
+  else (Cal.instantOf r.tz r.today r.look.day.bed).sec
+
+/-- **Bed is never before the wind-down**, whatever `[day]` says — the fixup, stated. -/
+theorem the_night_is_in_order (r : PlanReq) : r.windDownSec ≤ r.bedSec := by
+  unfold PlanReq.bedSec
+  split
+  · exact Nat.le_max_right _ _
+  · omega
+
+/-- **Fork `Planner::night()`**: the evening the day is over — from the wind-down (or the day's
+end, whichever comes first) to the end of *tomorrow*.  It runs past midnight on purpose: §8.1's
+wall extension can push the window past it, and the small hours are not a second evening. -/
+def PlanReq.night (r : PlanReq) : Nat × Nat :=
+  (min r.windDownSec r.dayEnd, r.dayEnd + 86400)
+
+/-! ### `earliest_free` and `overlaps_any`, on L3's own free intervals -/
+
+/-- **Fork `overlaps_any`** (`planner.rs:2253`): a half-open `[lo, hi)` meets one of `ws`. -/
+def overlapsAny (lo hi : Nat) (ws : List (Nat × Nat)) : Bool :=
+  ws.any (fun w => decide (lo < w.2 ∧ w.1 < hi))
+
+/-- **Fork `earliest_free`** (`planner.rs:2258`): the earliest `t ≥ lo` with `[t, t + dur)`
+inside `[lo, hi)` and free of `ws`.
+
+`Look.freeIntervals` **is** the fork's `capacity::free_intervals` and is step L3's; this is its
+first stretch wide enough, and not a second walk (AGENTS §5.3, design §1.2). -/
+def earliestFree (lo hi durSec : Nat) (ws : List (Nat × Nat)) : Option Nat :=
+  ((Look.freeIntervals lo hi ws).find? (fun iv => decide (durSec ≤ iv.2 - iv.1))).map Prod.fst
+
+/-- **What `earliestFree` answers is inside the range it was asked about.** -/
+theorem earliestFree_inside {lo hi d : Nat} {ws : List (Nat × Nat)} {s : Nat}
+    (h : earliestFree lo hi d ws = some s) : lo ≤ s ∧ s + d ≤ hi := by
+  unfold earliestFree at h
+  cases hf : (Look.freeIntervals lo hi ws).find? (fun iv => decide (d ≤ iv.2 - iv.1)) with
+  | none => rw [hf] at h; exact absurd h (by simp)
+  | some iv =>
+    rw [hf] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    subst h
+    have hm : iv ∈ Look.freeIntervals lo hi ws := List.mem_of_find?_eq_some hf
+    have hd : d ≤ iv.2 - iv.1 := by
+      have := List.find?_some hf
+      simpa using this
+    obtain ⟨h1, h2, h3⟩ := Look.freeIntervals_inside_the_window hm
+    exact ⟨h1, by omega⟩
+
+/-- **And every second of it is free.**  This is the half that makes the placement laws mean
+something: a routine placed at `earliestFree` overlaps nothing that was blocked. -/
+theorem earliestFree_is_free {lo hi d : Nat} {ws : List (Nat × Nat)} {s u : Nat}
+    (h : earliestFree lo hi d ws = some s) (h1 : s ≤ u) (h2 : u < s + d) :
+    Look.covered ws u = false := by
+  unfold earliestFree at h
+  cases hf : (Look.freeIntervals lo hi ws).find? (fun iv => decide (d ≤ iv.2 - iv.1)) with
+  | none => rw [hf] at h; exact absurd h (by simp)
+  | some iv =>
+    rw [hf] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    subst h
+    have hm : iv ∈ Look.freeIntervals lo hi ws := List.mem_of_find?_eq_some hf
+    have hd : d ≤ iv.2 - iv.1 := by
+      have := List.find?_some hf
+      simpa using this
+    obtain ⟨hlo, hlt, hhi⟩ := Look.freeIntervals_inside_the_window hm
+    have hin : ∃ w ∈ Look.freeIntervals lo hi ws, w.1 ≤ u ∧ u < w.2 :=
+      ⟨iv, hm, h1, by omega⟩
+    have hfree := (Look.freeIntervals_are_the_free_units lo hi ws u).1 hin
+    cases hc : Look.covered ws u with
+    | false => rfl
+    | true =>
+      obtain ⟨w, hw, hw1, hw2⟩ := Look.covered_eq_true.1 hc
+      exact absurd ⟨hw1, hw2⟩ (hfree.2.2 w hw)
+
+/-- **`overlapsAny` is `covered`, pointwise** — the two readings of "this stretch is taken" are
+one reading (AGENTS §5.3).  `false` means every second of `[lo, hi)` is uncovered, which is what
+the `pref:` branch of the placement needs and what the fork's own `!overlaps_any(...)` test
+means. -/
+theorem overlapsAny_false_covers_nothing {lo hi : Nat} {ws : List (Nat × Nat)}
+    (h : overlapsAny lo hi ws = false) {u : Nat} (h1 : lo ≤ u) (h2 : u < hi) :
+    Look.covered ws u = false := by
+  cases hc : Look.covered ws u with
+  | false => rfl
+  | true =>
+    obtain ⟨w, hw, hw1, hw2⟩ := Look.covered_eq_true.1 hc
+    have hany : overlapsAny lo hi ws = true := by
+      simp only [overlapsAny, List.any_eq_true, decide_eq_true_eq]
+      exact ⟨w, hw, by omega, by omega⟩
+    rw [hany] at h; cases h
+
+/-- **And it refuses a stretch that is taken** (AGENTS §5.2: the test is not vacuous). -/
+theorem overlapsAny_true_of_covered {lo hi : Nat} {ws : List (Nat × Nat)} {w : Nat × Nat}
+    (hw : w ∈ ws) (h1 : lo < w.2) (h2 : w.1 < hi) : overlapsAny lo hi ws = true := by
+  simp only [overlapsAny, List.any_eq_true, decide_eq_true_eq]
+  exact ⟨w, hw, h1, h2⟩
+
+/-! ### `collect_routines` — what the host hands in, and what the kernel refuses
+
+**D27 has not landed** (the owner's decision, W-14's finding), so a routine instance still
+arrives as a host-collected candidate: which occurrences are due today is F2's recurrence
+expansion, which is track **K3**'s and is not built.  What the kernel does *not* take on trust is
+the item behind the instance — the plan is in the request, and `routines.md`'s own rule
+(`routine_lines_have_a_window_or_after_done`, `Plan.lean`) is already proved. -/
+
+/-! `RoutineIn` is declared above `PlanReq` (§8.2 step 2's input); `mkRoutine?` and its
+refusals are here, beside the rule they enforce. -/
+
+/-- Why a routine instance is refused, by name (AGENTS §5.7, R10). -/
+inductive RoutineErr
+  /-- The request names an item its own plan does not hold. -/
+  | unknownItem (id : Id)
+  /-- **README gap 285.**  The instance claims a window and the item declares none. -/
+  | undeclaredWindow (id : Id)
+  /-- The occurrence's window ends at or before it opens. -/
+  | emptyWindow (id : Id)
+  /-- It ends outside the calendar. -/
+  | pastTheHorizon (id : Id)
+  /-- It asks for no minutes at all. -/
+  | noMinutes (id : Id)
+  /-- More instances than the candidate cap (R10). -/
+  | tooManyRoutines
+deriving DecidableEq, Repr
+
+/-- **The item declares a window** — §4.3's `routines.md` rule read at the planner: a
+`Shape.window`, or an `after-done` recurrence whose tolerance is the window (§5.1).  This is
+the disjunction `Plan.routine_lines_have_a_window_or_after_done` already proves of every
+`routines.md` line, evaluated for one id.
+
+**`shapeOf`, not `effectiveShape`** — fork `Planner::daily_window` reads `item.shape`, and
+`shapeOf` is the kernel's reader of exactly that.  `effectiveShape` is built on it and only ever
+*replaces* a `Shape.none` with §3.2's prep `Point`, which is never a window, so the two cannot
+disagree here; both are `Plan.lean`'s and neither is a second copy (AGENTS §5.3). -/
+def declaresAWindow (p : PlanCore) (i : Id) : Bool :=
+  match p.store.get i with
+  | none => false
+  | some e =>
+    (match shapeOf p i with | .window _ _ => true | _ => false) ||
+    (match e.val.recur with | .afterDone _ => true | _ => false)
+
+/-- **A routine the kernel may place** (R10).  Every clause is a refusal with a name. -/
+def RoutineIn.wf (p : PlanCore) (x : RoutineIn) : Bool :=
+  (p.store.get x.id).isSome && declaresAWindow p x.id &&
+    decide (x.winLo < x.winHi) && decide (x.winHi < LogStamp.yearEnd) && decide (0 < x.durMin)
+
+/-- **The smart constructor** (R10), and **README gap 285's rule**: `tm plan` schedules a routine
+whose declared window is malformed rather than refusing it, and here it is refused **by name**.
+
+The reproducing line is §4.1's `- lunch  win:25:99-13:30 dur:30m  every:day`.  `25:99` is not a
+clock, so `Field.parseWindow` answers `none`, so `viewShape` falls through to `Shape.none`
+(`Line.lean`; `shape_win_needs_dur` is the same fall-through for a `win:` with no `dur:`), and
+the item declares **no** window while its instance carries one.  The fork drops the window and
+plans the routine anyway (`collect_routines`' `let Some((ws, we)) = c.window else continue` never
+fires, because the *candidate* still has one); the kernel answers `undeclaredWindow` and the verb
+refuses.  It is a refusal and not a repair: R10 never adjusts a value it will not take. -/
+def mkRoutine? (p : PlanCore) (x : RoutineIn) : Except RoutineErr RoutineIn :=
+  if (p.store.get x.id).isNone then .error (.unknownItem x.id)
+  else if declaresAWindow p x.id = false then .error (.undeclaredWindow x.id)
+  else if x.winHi ≤ x.winLo then .error (.emptyWindow x.id)
+  else if LogStamp.yearEnd ≤ x.winHi then .error (.pastTheHorizon x.id)
+  else if x.durMin = 0 then .error (.noMinutes x.id)
+  else .ok x
+
+theorem mkRoutine?_refuses_an_unknown_item (p : PlanCore) (x : RoutineIn)
+    (h : p.store.get x.id = none) : mkRoutine? p x = .error (.unknownItem x.id) := by
+  unfold mkRoutine?; rw [if_pos (by simp [h])]
+
+/-- **Gap 285, as a theorem.** -/
+theorem mkRoutine?_refuses_a_window_the_item_does_not_declare (p : PlanCore) (x : RoutineIn)
+    (e : Entity) (h : p.store.get x.id = some e) (hd : declaresAWindow p x.id = false) :
+    mkRoutine? p x = .error (.undeclaredWindow x.id) := by
+  unfold mkRoutine?; rw [if_neg (by simp [h]), if_pos hd]
+
+theorem mkRoutine?_refuses_an_empty_window (p : PlanCore) (x : RoutineIn) (e : Entity)
+    (h : p.store.get x.id = some e) (hd : declaresAWindow p x.id = true)
+    (hw : x.winHi ≤ x.winLo) : mkRoutine? p x = .error (.emptyWindow x.id) := by
+  unfold mkRoutine?; rw [if_neg (by simp [h]), if_neg (by simp [hd]), if_pos hw]
+
+theorem mkRoutine?_refuses_past_the_horizon (p : PlanCore) (x : RoutineIn) (e : Entity)
+    (h : p.store.get x.id = some e) (hd : declaresAWindow p x.id = true)
+    (hw : x.winLo < x.winHi) (hh : LogStamp.yearEnd ≤ x.winHi) :
+    mkRoutine? p x = .error (.pastTheHorizon x.id) := by
+  unfold mkRoutine?
+  rw [if_neg (by simp [h]), if_neg (by simp [hd]), if_neg (by omega), if_pos hh]
+
+theorem mkRoutine?_refuses_an_instance_with_no_minutes (p : PlanCore) (x : RoutineIn) (e : Entity)
+    (h : p.store.get x.id = some e) (hd : declaresAWindow p x.id = true)
+    (hw : x.winLo < x.winHi) (hh : x.winHi < LogStamp.yearEnd) (hz : x.durMin = 0) :
+    mkRoutine? p x = .error (.noMinutes x.id) := by
+  unfold mkRoutine?
+  rw [if_neg (by simp [h]), if_neg (by simp [hd]), if_neg (by omega), if_neg (by omega),
+    if_pos hz]
+
+/-- **Both directions**: what it accepts is exactly `RoutineIn.wf`. -/
+theorem mkRoutine?_accepts (p : PlanCore) (x : RoutineIn) (h : RoutineIn.wf p x = true) :
+    mkRoutine? p x = .ok x := by
+  simp only [RoutineIn.wf, Bool.and_eq_true, decide_eq_true_eq] at h
+  obtain ⟨⟨⟨⟨h1, h2⟩, h3⟩, h4⟩, h5⟩ := h
+  unfold mkRoutine?
+  rw [if_neg (by simp [Option.isNone_iff_eq_none]; exact Option.ne_none_iff_isSome.2 h1),
+    if_neg (by simp [h2]), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+
+theorem mkRoutine?_ok_is_wf (p : PlanCore) (x y : RoutineIn) (h : mkRoutine? p x = .ok y) :
+    RoutineIn.wf p x = true ∧ y = x := by
+  unfold mkRoutine? at h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  split at h
+  · cases h
+  · rename_i h1 h2 h3 h4 h5
+    cases h
+    simp only [Option.isNone_iff_eq_none] at h1
+    simp only [Bool.not_eq_false] at h2
+    refine ⟨?_, rfl⟩
+    simp only [RoutineIn.wf, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨⟨⟨⟨Option.ne_none_iff_isSome.1 h1, h2⟩, by omega⟩, by omega⟩, by omega⟩
+
+/-- The whole list off the wire, bounded (R10): the first refusal is returned, with the id it is
+about. -/
+def mkRoutines? (p : PlanCore) (xs : List RoutineIn) : Except RoutineErr (Capped RoutineIn) :=
+  if maxCands < xs.length then .error .tooManyRoutines
+  else match xs.mapM (mkRoutine? p) with
+    | .error e => .error e
+    | .ok l => match Capped.ofList? l with
+      | some c => .ok c
+      | none => .error .tooManyRoutines
+
+theorem mkRoutines?_refuses_too_many (p : PlanCore) (xs : List RoutineIn)
+    (h : maxCands < xs.length) : mkRoutines? p xs = .error .tooManyRoutines := by
+  unfold mkRoutines?; rw [if_pos h]
+
+/-- **A refused instance refuses the list** — gap 285 reaches the boundary and is not dropped
+on the way. -/
+theorem mkRoutines?_refuses_when_one_is_refused (p : PlanCore) (x : RoutineIn) (e : RoutineErr)
+    (h : mkRoutine? p x = .error e) (h2 : ¬ (maxCands < [x].length)) :
+    mkRoutines? p [x] = .error e := by
+  have hm : [x].mapM (mkRoutine? p) = Except.error e := by rw [List.mapM_cons, h]; rfl
+  unfold mkRoutines?
+  rw [if_neg h2, hm]
+
+/-! ### `collect_routines`' span, and the one instance that is sleep -/
+
+/-- **Fork `Planner::daily_window`** (`planner.rs:1259`): the item's `win:` *daily* hours placed
+on the day being planned; an overnight range (`to ≤ from`) runs into the next day.
+
+The fork adds `Duration::days(1)` — 86,400 absolute seconds, not "the same clock time
+tomorrow" — and so does this. -/
+def PlanReq.dailyWindow (r : PlanReq) (i : Id) : Option (Nat × Nat) :=
+  match shapeOf r.plan.val i with
+  | .window (.daily f t) _ =>
+    let a := (Cal.instantOf r.tz r.today f).sec
+    let b := (Cal.instantOf r.tz r.today t).sec
+    some (a, if b ≤ a then b + 86400 else b)
+  | _ => none
+
+/-- **Fork `collect_routines`' span** (`planner.rs:1295-1313`).  A carried instance whose window
+has closed may go anywhere left in the day — but a `win:` with a daily range keeps its hours, and
+so does an occurrence spanning several days, because clipping a weekly `09:00-21:00` chore to
+today alone would leave `00:00-24:00` and let steps 2 and 6 place it outside its stated hours. -/
+def PlanReq.routineSpan (r : PlanReq) (x : RoutineIn) : Nat × Nat :=
+  if x.winHi ≤ r.now.sec then
+    match r.dailyWindow x.id with
+    | some (a, b) => (max (max a r.now.sec) r.dayStart, max b r.now.sec)
+    | none => (max r.dayStart r.now.sec, max r.dayEnd r.now.sec)
+  else
+    match r.dailyWindow x.id with
+    | some (ha, hb) => (max (max x.winLo r.dayStart) ha, min (min x.winHi r.dayEnd) hb)
+    | none => (max x.winLo r.dayStart, min x.winHi r.dayEnd)
+
+/-- ASCII lower case, the fold fork `str::eq_ignore_ascii_case` uses.  **The kernel has no other
+case-folder** (`grep -rn 'toLower\|ofNat (.*+ 32)' TmKernel/*.lean` finds none), so this is the
+first and only one, and it is ASCII on purpose: an item id is §4.1's `[a-z0-9-]` word and a
+Unicode fold would be a different function with the same name. -/
+def asciiLower (c : Char) : Char :=
+  if 'A' ≤ c && c ≤ 'Z' then Char.ofNat (c.toNat + 32) else c
+
+/-- Fork `c.id.as_str().eq_ignore_ascii_case("sleep")`. -/
+def isSleepId (i : Id) : Bool := i.map asciiLower == ['s', 'l', 'e', 'e', 'p']
+
+theorem isSleepId_accepts_the_written_spellings :
+    isSleepId ['s', 'l', 'e', 'e', 'p'] = true ∧ isSleepId ['S', 'l', 'e', 'e', 'p'] = true ∧
+      isSleepId ['s', 'l', 'e', 'e', 'p', 'y'] = false := by decide
+
+/-- Fork `SLEEP_MIN_MINUTES` (`planner.rs:177`). -/
+def sleepMinMinutes : Nat := 360
+
+/-- **Fork `collect_routines`' sleep test**: the instance called `sleep`, or an overnight
+occurrence of at least six hours. -/
+def PlanReq.isSleepInstance (r : PlanReq) (x : RoutineIn) : Bool :=
+  isSleepId x.id ||
+    (decide (Cal.localDate r.tz ⟨x.winLo, 0⟩ < Cal.localDate r.tz ⟨x.winHi, 0⟩) &&
+      decide (sleepMinMinutes ≤ x.durMin))
+
+/-! ### One instance, with its span and where step 2 put it -/
+
+/-- **Fork `planner::RoutineInst`.**  `placedAt` is `Some` exactly when steps 2 placed it;
+`deferred` is the mark step 6 (P6) reads. -/
+structure Placed where
+  inst     : RoutineIn
+  span     : Nat × Nat
+  placedAt : Option (Nat × Nat)
+  deferred : Bool
+deriving DecidableEq, Repr
+
+/-- Fork `collect_routines`' loop body, for one candidate that reached the kernel.  The two
+`continue`s are here: an instance with no minutes left, and — the kernel's own, because
+`dayPlan` is total (D28) and a degenerate row must be unrepresentable rather than merely
+unlikely — one whose window is empty.  `mkRoutine?` refuses both **by name** at the boundary;
+this is what the total function does if one arrives anyway. -/
+def PlanReq.instanceOf? (r : PlanReq) (x : RoutineIn) : Option Placed :=
+  if x.winHi ≤ x.winLo then none
+  else if x.durMin = 0 then none
+  else some ⟨x, r.routineSpan x, none, false⟩
+
+/-- The instances the request carries, spanned.  D9-21: `List.filterMap` over a list the
+`Capped` bound holds at `maxCands`. -/
+def PlanReq.routineInstances (r : PlanReq) : List Placed :=
+  r.routines.val.filterMap r.instanceOf?
+
+/-- **Fork `collect_routines`' `sleep` slot**: the *first* instance that is sleep is taken out of
+the list and the rest stay.  D9-21: structural over `routineInstances`, which `Capped` bounds at
+`maxCands`. -/
+def splitSleep (r : PlanReq) : List Placed → Option Placed × List Placed
+  | [] => (none, [])
+  | q :: t =>
+    if r.isSleepInstance q.inst then (some q, t)
+    else
+      let s := splitSleep r t
+      (s.1, q :: s.2)
+
+theorem splitSleep_keeps_the_rest (r : PlanReq) :
+    ∀ l : List Placed, ∀ q ∈ (splitSleep r l).2, q ∈ l
+  | [], q, hq => by cases hq
+  | a :: t, q, hq => by
+    simp only [splitSleep] at hq
+    split at hq
+    · exact List.mem_cons_of_mem _ hq
+    · simp only [List.mem_cons] at hq
+      rcases hq with rfl | hq
+      · exact List.mem_cons_self ..
+      · exact List.mem_cons_of_mem _ (splitSleep_keeps_the_rest r t q hq)
+
+/-- **Fork `collect_routines`' sort**: mandatory first, then the moment the window closes — the
+tightest window claims its position first — then the id.
+
+`Replay.insSort` is the **specification** sort, as `wallsOfDay`'s is; it has no compiled twin for
+the same reason that one does not (`Log.charsLe` has no transitivity or totality lemma in the
+tree), and it is the same open **gap 394**, not a second one. -/
+def routineLe (a b : Placed) : Bool :=
+  (decide (a.inst.mandatory = true) && decide (b.inst.mandatory = false)) ||
+    (decide (a.inst.mandatory = b.inst.mandatory) &&
+      (decide (a.span.2 < b.span.2) ||
+        (decide (a.span.2 = b.span.2) && Log.charsLe a.inst.id b.inst.id)))
+
+def sortRoutines (l : List Placed) : List Placed := Replay.insSort routineLe l
+
+theorem mem_sortRoutines {l : List Placed} {q : Placed} : q ∈ sortRoutines l ↔ q ∈ l :=
+  (Replay.insSort_perm routineLe l).mem_iff
+
+/-! ### `place_mandatory_and_pref` -/
+
+/-- **Fork `place_mandatory_and_pref`'s anchor**: `pref:wake+<dur>` off the day's own wake
+(`Look.wakeOn`, step L9 — the kernel has one wake and this is it), or `pref:<clock>` on the day.
+`Dur.minutes` takes the block length because `pref:2b` is two blocks. -/
+def PlanReq.anchorOf (r : PlanReq) (i : Id) : Option Nat :=
+  match (r.plan.val.store.get i).bind (fun e => e.val.pref) with
+  | some (.wakePlus d) => some ((Look.wakeOn r.look r.today).sec + 60 * Field.Dur.minutes r.blockMin d)
+  | some (.clock t)    => some (Cal.instantOf r.tz r.today t).sec
+  | none               => none
+
+/-- **Everything step 2 must flow around before it places anything**: the walls' blocked spans
+(the `buffer:` run-up included, which is why this reads `x.lo` and not `x.evLo`) and §9's running
+interruption.
+
+**The Active reservation is NOT here and that is P3's** (design §2 choice 5b; fork `run()` pushes
+`active_run` before `place_mandatory_and_pref`, and `active_run` needs the cut).  README gap
+434. -/
+def blockedByWalls (r : PlanReq) : List (Nat × Nat) :=
+  (wallsToday r).map (fun x => (x.lo, x.hi)) ++
+    (interruptRows r).map (fun s => (s.start, s.stop))
+
+/-- **Fork `place_mandatory_and_pref`'s loop body** (`planner.rs:1362`).  A mandatory instance
+takes the earliest feasible position before the wind-down, and reaches into the evening only when
+its window leaves no other choice; anything else is placed at a free `pref:` anchor or deferred to
+step 6.  Each placement joins the blocked list, so two routines cannot take one stretch.
+
+The deferred branch writes `placedAt := none` rather than leaving the field alone.  The fork
+never *assigns* `r.placed` there and the field starts `None`, so it is the same value on every
+input the fork can build; writing it makes the total function say so instead of relying on the
+caller (AGENTS §5.2). -/
+def placeStep (r : PlanReq) (acc : List Placed × List (Nat × Nat)) (q : Placed) :
+    List Placed × List (Nat × Nat) :=
+  let dur := 60 * q.inst.durMin
+  let lo := max q.span.1 r.now.sec
+  let dayOnly := r.night :: acc.2
+  if q.inst.mandatory then
+    match earliestFree lo q.span.2 dur dayOnly with
+    | some t => ({ q with placedAt := some (t, t + dur) } :: acc.1, (t, t + dur) :: acc.2)
+    | none =>
+      match earliestFree lo q.span.2 dur acc.2 with
+      | some t => ({ q with placedAt := some (t, t + dur) } :: acc.1, (t, t + dur) :: acc.2)
+      | none => ({ q with placedAt := none, deferred := true } :: acc.1, acc.2)
+  else
+    match r.anchorOf q.inst.id with
+    | some a =>
+      if lo ≤ a ∧ a + dur ≤ q.span.2 ∧ overlapsAny a (a + dur) dayOnly = false then
+        ({ q with placedAt := some (a, a + dur) } :: acc.1, (a, a + dur) :: acc.2)
+      else ({ q with placedAt := none, deferred := true } :: acc.1, acc.2)
+    | none => ({ q with placedAt := none, deferred := true } :: acc.1, acc.2)
+
+/-- The instance that is sleep (fork `collect_routines`' second return). -/
+def PlanReq.sleepInstance (r : PlanReq) : Option Placed := (splitSleep r r.routineInstances).1
+
+/-- **§8.2 step 2, run**: today's window instances, sorted, each placed or deferred.  D9-21: a
+`List.foldl` over a list `Capped` bounds at `maxCands`. -/
+def PlanReq.placedRoutines (r : PlanReq) : List Placed :=
+  (((sortRoutines (splitSleep r r.routineInstances).2).foldl (placeStep r)
+    ([], blockedByWalls r)).1).reverse
+
+/-! ### What a placement satisfies
+
+These are the laws the placement rule owes, and they are what makes `Negative.lean`'s "a routine
+placed outside its window" a cheat that does not close. -/
+
+/-- **What a placed routine satisfies**: it sits inside its own span, starts at or after `now`,
+and takes exactly the minutes the instance asked for. -/
+def PlacedOk (r : PlanReq) (p : Placed) : Prop :=
+  ∀ a b, p.placedAt = some (a, b) →
+    max p.span.1 r.now.sec ≤ a ∧ b ≤ p.span.2 ∧ b = a + 60 * p.inst.durMin
+
+/-- One step keeps it. -/
+theorem placeStep_keeps_PlacedOk (r : PlanReq) (acc : List Placed × List (Nat × Nat))
+    (q : Placed) (h : ∀ z ∈ acc.1, PlacedOk r z) :
+    ∀ z ∈ (placeStep r acc q).1, PlacedOk r z := by
+  have hdef : ∀ z : Placed, z.placedAt = none → PlacedOk r z := by
+    intro z hz a b hab; rw [hz] at hab; exact absurd hab (by simp)
+  have hnew : ∀ t : Nat,
+      max q.span.1 r.now.sec ≤ t → t + 60 * q.inst.durMin ≤ q.span.2 →
+      PlacedOk r { q with placedAt := some (t, t + 60 * q.inst.durMin) } := by
+    intro t h1 h2 a b hab
+    simp only [Option.some.injEq, Prod.mk.injEq] at hab
+    obtain ⟨rfl, rfl⟩ := hab
+    exact ⟨h1, h2, rfl⟩
+  unfold placeStep
+  simp only
+  split
+  · split
+    · next t ht =>
+      obtain ⟨g1, g2⟩ := earliestFree_inside ht
+      intro z hz
+      rcases List.mem_cons.1 hz with rfl | hz
+      · exact hnew t g1 g2
+      · exact h z hz
+    · split
+      · next t ht =>
+        obtain ⟨g1, g2⟩ := earliestFree_inside ht
+        intro z hz
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hnew t g1 g2
+        · exact h z hz
+      · intro z hz
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hdef _ rfl
+        · exact h z hz
+  · split
+    · next anc _ =>
+      split
+      · next hok =>
+        intro z hz
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hnew anc hok.1 hok.2.1
+        · exact h z hz
+      · intro z hz
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hdef _ rfl
+        · exact h z hz
+    · intro z hz
+      rcases List.mem_cons.1 hz with rfl | hz
+      · exact hdef _ rfl
+      · exact h z hz
+
+theorem foldl_placeStep_keeps_PlacedOk (r : PlanReq) :
+    ∀ (l : List Placed) (acc : List Placed × List (Nat × Nat)),
+      (∀ z ∈ acc.1, PlacedOk r z) → ∀ z ∈ (l.foldl (placeStep r) acc).1, PlacedOk r z
+  | [], acc, h => by simpa using h
+  | q :: t, acc, h => by
+    simp only [List.foldl_cons]
+    exact foldl_placeStep_keeps_PlacedOk r t _ (placeStep_keeps_PlacedOk r acc q h)
+
+/-- **§8.2 step 2's own law: a placed routine is inside its window.**  This is the sentence the
+step is written to make true, and `Negative.lean`'s "a routine placed outside its window" is the
+claim it refuses. -/
+theorem a_placed_routine_is_inside_its_window (r : PlanReq) (p : Placed)
+    (hp : p ∈ r.placedRoutines) (a b : Nat) (hab : p.placedAt = some (a, b)) :
+    max p.span.1 r.now.sec ≤ a ∧ b ≤ p.span.2 ∧ b = a + 60 * p.inst.durMin := by
+  unfold PlanReq.placedRoutines at hp
+  rw [List.mem_reverse] at hp
+  exact foldl_placeStep_keeps_PlacedOk r _ _ (by simp) p hp a b hab
+
+/-! ### The rows step 2 places -/
+
+/-- Fork `emit_segments`' `scheduled` test (`planner.rs:1811`): a `routines.md` or `optional.md`
+line is the day's furniture and carries no `ci`; a backlog item with a `win:` keeps §7's scale.
+The fork asks `item.horizon`; the kernel asks which file the live line is in, which is the same
+question (`docKindAt`, `Plan.lean`). -/
+def PlanReq.isFurniture (r : PlanReq) (i : Id) : Bool :=
+  match r.plan.val.store.get i with
+  | none => false
+  | some e =>
+    (docKindAt r.plan.val e.val.live.doc == DocKind.routines) ||
+      (docKindAt r.plan.val e.val.live.doc == DocKind.optional)
+
+/-- The energy a routine row carries: none for furniture, the item's `ci` otherwise.
+`effectiveCi` is `Plan.lean`'s §3.2 walk and is not re-derived here (AGENTS §5.3). -/
+def PlanReq.routineEnergy (r : PlanReq) (i : Id) : Option (Fin 6) :=
+  if r.isFurniture i then none else some (effectiveCi r.plan.val i)
+
+/-- **Fork `emit_segments`' routine loop** (`planner.rs:1802-1836`): one Routine row per *placed*
+instance; a deferred one has no row until step 6 places it (P6).
+
+The `hot` mark is §7.2's `p = 0` and is **P4**'s (README gap 435); it is `false` here, and P4 is
+the step that must set it. -/
+def PlanReq.routineRow (r : PlanReq) (q : Placed) : List Seg :=
+  match q.placedAt with
+  | none => []
+  | some (a, b) =>
+    [{ start := a, stop := b, kind := .routine, energy := r.routineEnergy q.inst.id,
+       item := some q.inst.id, inst := q.inst.inst.map (fun k => (q.inst.id, k)),
+       flags := { SegFlags.none with mandatory := q.inst.mandatory, deferred := q.deferred },
+       planned := some q.inst.durMin, mult := none, note := none }]
+
+/-- **Fork `emit_segments`' close of the day** (`planner.rs:1962-1988`): the wind-down runs from
+`[day] wind_down` to `bed`.  §8.2 step 3 will find the evening closed to cutting, because
+`night()` is in the blocked list. -/
+def PlanReq.windDownSeg (r : PlanReq) : Seg :=
+  { start := r.windDownSec, stop := min r.bedSec r.dayEnd, kind := .windDown, energy := none,
+    item := none, inst := none, flags := SegFlags.none, planned := none, mult := none,
+    note := none }
+
+/-- Fork `emit_segments`' Sleep row: from `bed` (never before `now`) to midnight, carrying the
+sleep instance the collection took out. -/
+def PlanReq.sleepSeg (r : PlanReq) : Seg :=
+  { start := min (max r.bedSec r.now.sec) r.dayEnd, stop := r.dayEnd, kind := .sleep,
+    energy := none, item := r.sleepInstance.map (fun q => q.inst.id),
+    inst := r.sleepInstance.bind (fun q => q.inst.inst.map (fun k => (q.inst.id, k))),
+    flags := SegFlags.none, planned := r.sleepInstance.map (fun q => q.inst.durMin),
+    mult := none, note := none }
+
+def PlanReq.eveningRows (r : PlanReq) : List Seg :=
+  (if r.now.sec < r.windDownSec ∧ r.windDownSec < r.dayEnd then [r.windDownSeg] else []) ++
+    (if min (max r.bedSec r.now.sec) r.dayEnd < r.dayEnd then [r.sleepSeg] else [])
+
+/-- **§8.2 step 2's rows.** -/
+def stepTwoSegs (r : PlanReq) : List Seg :=
+  r.placedRoutines.flatMap r.routineRow ++ r.eveningRows
+
+/-- **Step 2 places three kinds of row and no other.** -/
+theorem stepTwoSegs_kinds (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs r) :
+    t.kind = SegKind.routine ∨ t.kind = SegKind.windDown ∨ t.kind = SegKind.sleep := by
+  simp only [stepTwoSegs, List.mem_append] at h
+  rcases h with h | h
+  · simp only [List.mem_flatMap] at h
+    obtain ⟨q, _, hq⟩ := h
+    unfold PlanReq.routineRow at hq
+    split at hq
+    · cases hq
+    · simp only [List.mem_singleton] at hq; subst hq; exact Or.inl rfl
+  · unfold PlanReq.eveningRows at h
+    simp only [List.mem_append] at h
+    rcases h with h | h
+    · split at h
+      · simp only [List.mem_singleton] at h; subst h; exact Or.inr (Or.inl rfl)
+      · cases h
+    · split at h
+      · simp only [List.mem_singleton] at h; subst h; exact Or.inr (Or.inr rfl)
+      · cases h
+
+/-- **No row of step 2 is a Wall**, so the two wall laws are untouched by it. -/
+theorem stepTwoSegs_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs r) :
+    t.kind ≠ SegKind.wall := by
+  rcases stepTwoSegs_kinds r t h with h1 | h1 | h1 <;> rw [h1] <;> intro hc <;> cases hc
+
+/-- **No row of step 2 is a Block**, so every block-side check of the battery is still about the
+replayed past alone (`PlanCheck.dayPlan_block_rows_come_from_the_log`). -/
+theorem stepTwoSegs_are_not_blocks (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs r) :
+    t.kind ≠ SegKind.block := by
+  rcases stepTwoSegs_kinds r t h with h1 | h1 | h1 <;> rw [h1] <;> intro hc <;> cases hc
+
+/-- **And none of them is work**, so §8.3's assigned set is still empty after `now`
+(`SegKind.isWork`: `Block` and `Batch`, and nothing else). -/
+theorem stepTwoSegs_are_not_work (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs r) :
+    t.kind.isWork = false := by
+  rcases stepTwoSegs_kinds r t h with h1 | h1 | h1 <;> rw [h1] <;> rfl
+
+/-- **A Routine row is exactly where the placement put it**, carrying the item and the instance
+key.  With `a_placed_routine_is_inside_its_window` this is §8.2 step 2's promise end to end: the
+row a reader sees is inside the window the instance declared. -/
+theorem a_routine_row_is_where_the_placement_put_it (r : PlanReq) (q : Placed) (t : Seg)
+    (h : t ∈ r.routineRow q) :
+    ∃ a b, q.placedAt = some (a, b) ∧ t.start = a ∧ t.stop = b ∧
+      t.kind = SegKind.routine ∧ t.item = some q.inst.id := by
+  unfold PlanReq.routineRow at h
+  split at h
+  · cases h
+  · next a b hq =>
+    simp only [List.mem_singleton] at h
+    subst h
+    exact ⟨a, b, hq, rfl, rfl, rfl, rfl⟩
+
+/-! ### The day, assembled -/
+
+/-- **A deferred instance has no row until step 6 places it** — fork `emit_segments`' routine
+loop skips an instance with no `placed`, and `place_deferred` (**P6**) is what gives it one. -/
+theorem a_deferred_routine_has_no_row (r : PlanReq) (q : Placed) (h : q.placedAt = none) :
+    r.routineRow q = [] := by
+  unfold PlanReq.routineRow; rw [h]
+
+/-- **The day's rows**, steps 1 and 2, in the fork's order. -/
+def dayRows (r : PlanReq) : List WfSeg :=
+  sortRows ((stepOneSegs r ++ stepTwoSegs r).map segOf)
+
+theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
+    ∃ t ∈ stepOneSegs r ++ stepTwoSegs r, s = segOf t := by
   have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
 
-/-- §8.2 step 8's diagnostics, as far as step 1 fills them: the overlapping walls it refused to
-resolve, and the travel-day note. -/
-def stepOneDiagnostics (r : PlanReq) : Diagnostics :=
+/-- §8.2 step 8's diagnostics, as far as steps 1 and 2 fill them: the overlapping walls step 1
+refused to resolve, and the travel-day note.
+
+**Step 2 adds nothing here, and the empty slot is deliberate.**  `Diagnostics.deferred` is
+§8.2 step 8's *posterior-downgrade* list — fork `planner.rs:149`, "the candidates a *posterior
+downgrade* cost a slot" — and **not** the routines step 2 deferred to step 6.  Writing the
+deferred instances into it would give one field two meanings, which is the defect this kernel
+is named after (AGENTS §5.3).  A deferred routine is carried on its own `Placed` record with
+`deferred := true` and no position, which is exactly the state fork `place_deferred` receives,
+and `Note.noPosition` is what names it if step 6 cannot place it either (**P6**). -/
+def dayDiagnostics (r : PlanReq) : Diagnostics :=
   { Diagnostics.empty with
     conflicts := Capped.ofListTake (wallConflicts (wallsToday r))
     notes := if travelDay r then Capped.ofListTake [Note.travelDay] else Capped.nil }
@@ -1301,14 +2012,17 @@ def stepOneDiagnostics (r : PlanReq) : Diagnostics :=
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
 (G1), not gated behind a refusal.
 
-**What it does today (step P1).**  §8.2 step 1: the day's walls, placed where the plan's own
-index puts them; §9's running interruption as an ad-hoc wall; the past half replayed from this
-call's own run; the overlapping pairs named and unresolved; and a `travel-day` wall's zeroing
-of the remaining budget.  Steps 2 to 7 are P2..P7 and none of them is written here. -/
+**What it does today (steps P1 and P2).**  §8.2 step 1: the day's walls, placed where the plan's
+own index puts them; §9's running interruption as an ad-hoc wall; the past half replayed from
+this call's own run; the overlapping pairs named and unresolved; and a `travel-day` wall's
+zeroing of the remaining budget.  §8.2 step 2: today's window instances placed mandatory-first
+inside their own windows or at a free `pref:` anchor, the rest deferred to step 6, and the
+wind-down and sleep rows that close the day.  Steps 3 to 7 are P3..P7 and none of them is
+written here. -/
 def dayPlan (r : PlanReq) : DayPlan :=
   { DayPlan.empty r.today r.window r.blockMin r.budgetBlocks with
-    segments := stepOneRows r
-    diagnostics := stepOneDiagnostics r }
+    segments := dayRows r
+    diagnostics := dayDiagnostics r }
 
 theorem dayPlan_day (r : PlanReq) : (dayPlan r).day = r.today := rfl
 
@@ -1328,7 +2042,7 @@ already zeroed by a travel day. -/
 theorem dayPlan_remaining_budget_is_the_forks_local (r : PlanReq) :
     remainingBudget r ≤ (dayPlan r).budgetBlocks := remainingBudget_le_budget r
 
-theorem dayPlan_segments (r : PlanReq) : (dayPlan r).segments = stepOneRows r := rfl
+theorem dayPlan_segments (r : PlanReq) : (dayPlan r).segments = dayRows r := rfl
 
 /-- **P8 must delete this.**  The FNV-1a digest is the emitter's; until it lands, the identity
 `state.last_plan_hash` would compare against is a placeholder and says so. -/
@@ -1343,21 +2057,22 @@ that no replan can move. -/
 def assignedFrom (d : DayPlan) (t : Nat) : List Id :=
   (d.segments.filter (fun s => s.val.kind.isWork && decide (t ≤ s.val.start))).flatMap segItems
 
-/-- **P5 must delete this.**  Step 1 places three kinds of row and none of them is a *future*
-assignment: the replayed past ends at `now`, the running interruption ends at `now`, and a
-Wall is not work.  So the set §8.3's laws are about is still empty and no goal that
-quantifies over an assigned Block may be discharged against this body (README gap 347).
+/-- **P5 must delete this.**  Steps 1 and 2 place six kinds of row and none of them is a *future*
+assignment: the replayed past ends at `now`, the running interruption ends at `now`, a Wall is
+not work, and neither is a Routine, a WindDown or a Sleep.  So the set §8.3's laws are about is
+still empty and no goal that quantifies over an assigned Block may be discharged against this
+body (README gap 347).
 
 It is stated over `assignedFrom … now` and **not** over `assignedOf`, because a replayed past
 Block *is* work and *is* in `assignedOf` — the fork counts it too (`DayPlan::assigned`), and a
 tripwire that claimed otherwise would be false the moment the seam had anything to replay. -/
 theorem the_day_assigns_nothing_after_now_until_the_assign_step_lands (r : PlanReq) :
     assignedFrom (dayPlan r) r.now.sec = [] := by
-  have hw : ∀ s ∈ stepOneRows r, (s.val.kind.isWork && decide (r.now.sec ≤ s.val.start)) = false := by
+  have hw : ∀ s ∈ dayRows r, (s.val.kind.isWork && decide (r.now.sec ≤ s.val.start)) = false := by
     intro s hs
-    obtain ⟨t, ht, rfl⟩ := mem_stepOneRows hs
-    simp only [List.mem_append] at ht
-    rcases ht with (ht | ht) | ht
+    obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
+    simp only [stepOneSegs, List.mem_append] at ht
+    rcases ht with ((ht | ht) | ht) | ht
     · obtain ⟨_, h2, h3⟩ := pastRows_end_at_now r t ht
       have : (segOf t).val.start < r.now.sec := by
         show clampSec t.start < r.now.sec
@@ -1372,6 +2087,9 @@ theorem the_day_assigns_nothing_after_now_until_the_assign_step_lands (r : PlanR
       have h2 : (segOf t).val.kind = SegKind.wall := by
         rw [segOf_kind, (wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1]
       simp [SegKind.isWork, h2]
+    · have h2 : (segOf t).val.kind.isWork = false := by
+        rw [segOf_kind]; exact stepTwoSegs_are_not_work r t ht
+      simp [h2]
   have hf : (dayPlan r).segments.filter
       (fun s => s.val.kind.isWork && decide (r.now.sec ≤ s.val.start)) = [] := by
     rw [dayPlan_segments]
@@ -1380,11 +2098,11 @@ theorem the_day_assigns_nothing_after_now_until_the_assign_step_lands (r : PlanR
 
 /-! ### The two wall goals
 
-`plan_places_no_block_over_a_wall` is **not discharged here** and must not be: step 1 places no
-Block of its own, so the statement is about the replayed past alone and says nothing about the
-planner.  The invariant it needs is already stage 5's
-(`Look.day0_slots_avoid_the_walls`), and the goal becomes non-vacuous at **P5**, where Blocks
-are assigned; design §6.4's row gives it to P1, and that row is wrong (README gap 347).
+`plan_places_no_block_over_a_wall` is **not discharged here** and must not be: steps 1 and 2
+place no Block of their own, so the statement is about the replayed past alone and says nothing
+about the planner.  The invariant it needs is already stage 5's
+(`Look.day0_slots_avoid_the_walls`), and the goal becomes non-vacuous at **P5**; design §6.4's
+row gives it to P1, and that row is wrong (README gap 347).
 
 `plan_never_moves_a_wall` **is** non-vacuous here, and is **false as stage 6 wrote it**. -/
 
@@ -1437,9 +2155,9 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
     (hcal : (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     w.val.start = (Cal.instantOf r.tz a.day a.time).sec ∧
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
-  obtain ⟨t, ht, rfl⟩ := mem_stepOneRows (dayPlan_segments r ▸ hw)
-  simp only [List.mem_append] at ht
-  rcases ht with (ht | ht) | ht
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with ((ht | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -1486,6 +2204,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
     · show max (clampSec x.evLo) (clampSec x.hi) = _
       rw [hev, hhi, clampSec_id _ (by omega), clampSec_id _ hcal]
       omega
+  · exact absurd (segOf_kind t ▸ hk) (stepTwoSegs_are_not_walls r t ht)
 
 /-- **Both ends of every wall row come from the index, and neither comes from the planner** —
 the sentence `plan_never_moves_a_wall` was written to protect, true of a buffered wall and of a
@@ -1500,16 +2219,17 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
        (w.val.start = clampSec (clipWall r.dayStart r.dayEnd x).evLo ∧
         w.val.stop = max (clampSec (clipWall r.dayStart r.dayEnd x).evLo)
           (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
-  obtain ⟨t, ht, rfl⟩ := mem_stepOneRows (dayPlan_segments r ▸ hw)
-  simp only [List.mem_append] at ht
-  rcases ht with (ht | ht) | ht
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with ((ht | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
     obtain ⟨c, hc, hrow⟩ := ht
     obtain ⟨x, hx, h1, h2, hxc, _⟩ := mem_wallsToday hc
     refine ⟨x, hx, h1, h2, ?_, ?_⟩
-    · rw [segOf_item, (wallRows_are_walls_of_the_item (r.isTravelDay c.id) c t hrow).2, hxc, clipWall_id]
+    · rw [segOf_item, (wallRows_are_walls_of_the_item (r.isTravelDay c.id) c t hrow).2, hxc,
+        clipWall_id]
     · rw [← hxc]
       simp only [wallRows, List.mem_append] at hrow
       rcases hrow with hr | hr
@@ -1517,6 +2237,85 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
         · simp only [List.mem_singleton] at hr; subst hr; exact Or.inl ⟨rfl, rfl⟩
         · cases hr
       · simp only [List.mem_singleton] at hr; subst hr; exact Or.inr ⟨rfl, rfl⟩
+  · exact absurd (segOf_kind t ▸ hk) (stepTwoSegs_are_not_walls r t ht)
+
+/-- **Every Block row of the day still comes from the log.**  Steps 1 and 2 place walls, the
+running interruption, the replayed past, the routines and the evening; a Wall is not a Block, an
+interruption is Lost time, and `stepTwoSegs_are_not_blocks` covers the rest.  `PlanCheck` states
+the same fact over `dayPlan` and this is the row-level half of it. -/
+theorem a_block_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.block) :
+    ∃ t ∈ pastRows r, s = segOf t := by
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
+  have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with ((ht | ht) | ht) | ht
+  · exact ⟨t, ht, rfl⟩
+  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, _, hx⟩ := ht
+    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
+    cases htk
+  · exact absurd htk (stepTwoSegs_are_not_blocks r t ht)
+
+/-! ### The wind-down goal is NOT discharged here, and the reason is P1's
+
+`Goals.plan_places_no_demanding_block_after_wind_down` quantifies over a **Block** row, and
+design §14.2's P2 row says P2 discharges it.  **That row is wrong for the same reason §6.4's P1
+row was** (README gap 347): step 2 places the WindDown row the law is *about*, but no Block, so
+the statement is still vacuous over `dayPlan` and a discharge would be AGENTS §5.2's theorem
+that compiles and means nothing.  What P2 owes it is the other half of its subject, and that is
+what landed; the goal becomes real at **P5** (README gap 430).
+
+The tripwire is `the_day_assigns_nothing_after_now_until_the_assign_step_lands` above, which P5
+must delete, plus the theorem below — the WindDown row now *exists*, so the half of the law that
+is about the evening can be stated and proved outright. -/
+
+/-- **The day has a wind-down row exactly when the wind-down is still ahead and inside the
+day**, and it runs to bed.  Half of §8.2 step 2's "sleep and wind-down define the hard end of the
+day", stated over the produced plan. -/
+theorem the_wind_down_row_runs_to_bed (r : PlanReq)
+    (h1 : r.now.sec < r.windDownSec) (h2 : r.windDownSec < r.dayEnd)
+    (h3 : r.windDownSec < LogStamp.yearEnd) (h4 : min r.bedSec r.dayEnd < LogStamp.yearEnd) :
+    ∃ w ∈ (dayPlan r).segments, w.val.kind = SegKind.windDown ∧
+      w.val.start = r.windDownSec ∧ w.val.stop = min r.bedSec r.dayEnd := by
+  have hseg : r.windDownSeg ∈ stepTwoSegs r := by
+    simp only [stepTwoSegs, List.mem_append]
+    refine Or.inr ?_
+    unfold PlanReq.eveningRows
+    simp only [List.mem_append]
+    exact Or.inl (by rw [if_pos ⟨h1, h2⟩]; exact List.mem_singleton_self _)
+  refine ⟨segOf r.windDownSeg, ?_, segOf_kind _, ?_, ?_⟩
+  · rw [dayPlan_segments]
+    exact mem_sortRows.2 (List.mem_map.2 ⟨_, List.mem_append_right _ hseg, rfl⟩)
+  · show clampSec r.windDownSec = _
+    exact clampSec_id _ h3
+  · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _
+    rw [clampSec_id _ h3, clampSec_id _ h4]
+    have := the_night_is_in_order r
+    omega
+
+/-! ### The search, run rather than argued (AGENTS §5.2)
+
+Every law above is a ∀ over a request; the witness below is `decide` over the placement's own
+engine, so what step 2 does to a real evening is *run*.  It is stated over `earliestFree`, which
+is where the decision lives — the request contributes only the blocked list. -/
+
+/-- **`earliestFree`, run.**  A morning blocked 08:00-08:30 and 09:00-10:00 leaves 08:30-09:00
+and 10:00-12:00 free: a half-hour routine takes 08:30 (the first stretch that fits), a
+forty-five-minute one has to wait for 10:00 (the short stretch is skipped, not squeezed), and a
+three-hour one does not fit at all and defers to step 6. -/
+theorem the_earliest_free_position_is_run :
+    earliestFree 28800 43200 1800 [(28800, 30600), (32400, 36000)] = some 30600 ∧
+    earliestFree 28800 43200 2700 [(28800, 30600), (32400, 36000)] = some 36000 ∧
+    earliestFree 28800 43200 10800 [(28800, 30600), (32400, 36000)] = none := by decide
+
+/-- **And a stretch the evening closes is not free.**  `night()` is in the blocked list, so a
+routine whose window runs past the wind-down is placed before it — the fork's
+"before the wind-down if at all possible". -/
+theorem the_evening_is_closed_to_a_routine :
+    earliestFree 72000 79200 1800 [(75600, 165600)] = some 72000 ∧
+    earliestFree 76000 79200 1800 [(75600, 165600)] = none := by decide
 
 end Planner
 end Tm

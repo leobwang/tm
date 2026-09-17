@@ -4829,7 +4829,7 @@ open Tm
 #print axioms Tm.Planner.pastRows_are_not_walls
 #print axioms Tm.Planner.sortRows_eq_sortRowsFast
 #print axioms Tm.Planner.mem_sortRows
-#print axioms Tm.Planner.mem_stepOneRows
+#print axioms Tm.Planner.mem_dayRows
 #print axioms Tm.Planner.dayPlan_segments
 #print axioms Tm.Planner.dayPlan_remaining_budget_is_the_forks_local
 #print axioms Tm.Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands
@@ -4931,3 +4931,58 @@ open Tm
 #print axioms Tm.PlanCheck.planOkCore_can_fail
 #print axioms Tm.PlanCheck.planOk_can_fail
 #print axioms Tm.PlanCheck.a_kept_reservation_defeats_the_prefix_but_not_the_erasure
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-15**, track P, step P2 — §8.2 step 2:
+-- the routines, the evening, and gap 285's named refusal).
+--
+-- Thirty-two theorems.  Three are `Lookahead.lean`'s: `[day]` was WIDENED with
+-- §16's `wind_down` and `bed` rather than forked into `Planner.lean`, and the
+-- three `the_evening_keys_do_not_move_…` lines are the projections that say
+-- every reader `DayCfg` had before P2 sees the record it had before P2
+-- (AGENTS §5.3).  The rest are the step's own: the placement engine on L3's
+-- `freeIntervals`, `mkRoutine?`'s five named refusals (the second of which IS
+-- README gap 285), the fold invariant that a placed routine is inside its
+-- window, and the four "no row step 2 places is a Wall / a Block / work"
+-- lemmas that let P1's laws keep their proofs over a day with a fourth source
+-- of rows.
+--
+-- One line above was EDITED rather than appended: `Tm.Planner.mem_stepOneRows`
+-- is `Tm.Planner.mem_dayRows`, because the day's rows are no longer step one's
+-- alone.  §6.3 forbids editing this file in *parallel*; a rename leaves check 3
+-- naming an unknown constant, so it is fixed here and named in the README block.
+-- ===========================================================================
+
+#print axioms Tm.Look.the_evening_keys_do_not_move_the_window
+#print axioms Tm.Look.the_evening_keys_do_not_move_the_cut
+#print axioms Tm.Look.the_evening_keys_do_not_move_the_budget
+#print axioms Tm.Planner.the_night_is_in_order
+#print axioms Tm.Planner.earliestFree_inside
+#print axioms Tm.Planner.earliestFree_is_free
+#print axioms Tm.Planner.overlapsAny_false_covers_nothing
+#print axioms Tm.Planner.overlapsAny_true_of_covered
+#print axioms Tm.Planner.mkRoutine?_refuses_an_unknown_item
+#print axioms Tm.Planner.mkRoutine?_refuses_a_window_the_item_does_not_declare
+#print axioms Tm.Planner.mkRoutine?_refuses_an_empty_window
+#print axioms Tm.Planner.mkRoutine?_refuses_past_the_horizon
+#print axioms Tm.Planner.mkRoutine?_refuses_an_instance_with_no_minutes
+#print axioms Tm.Planner.mkRoutine?_accepts
+#print axioms Tm.Planner.mkRoutine?_ok_is_wf
+#print axioms Tm.Planner.mkRoutines?_refuses_too_many
+#print axioms Tm.Planner.mkRoutines?_refuses_when_one_is_refused
+#print axioms Tm.Planner.isSleepId_accepts_the_written_spellings
+#print axioms Tm.Planner.splitSleep_keeps_the_rest
+#print axioms Tm.Planner.mem_sortRoutines
+#print axioms Tm.Planner.placeStep_keeps_PlacedOk
+#print axioms Tm.Planner.foldl_placeStep_keeps_PlacedOk
+#print axioms Tm.Planner.a_placed_routine_is_inside_its_window
+#print axioms Tm.Planner.stepTwoSegs_kinds
+#print axioms Tm.Planner.stepTwoSegs_are_not_walls
+#print axioms Tm.Planner.stepTwoSegs_are_not_blocks
+#print axioms Tm.Planner.stepTwoSegs_are_not_work
+#print axioms Tm.Planner.a_routine_row_is_where_the_placement_put_it
+#print axioms Tm.Planner.a_block_row_is_a_replayed_row
+#print axioms Tm.Planner.the_wind_down_row_runs_to_bed
+#print axioms Tm.Planner.the_earliest_free_position_is_run
+#print axioms Tm.Planner.the_evening_is_closed_to_a_routine
+#print axioms Tm.Planner.a_deferred_routine_has_no_row

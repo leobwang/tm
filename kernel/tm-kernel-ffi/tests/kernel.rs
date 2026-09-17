@@ -1500,7 +1500,7 @@ const SPEC_CAPACITY: &str = concat!(
     r#""wake":{"sec":21900,"ns":0},"#,
     r#""prior":{"lounge":[{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":4},{"from":{"num":1,"den":1},"to":{"num":5,"den":1},"level":5},{"from":{"num":5,"den":1},"to":{"num":8,"den":1},"level":4},{"from":{"num":8,"den":1},"to":{"num":10,"den":1},"level":3},{"from":{"num":10,"den":1},"to":null,"level":2}],"#,
     r#""home":[{"from":{"num":0,"den":1},"to":{"num":1,"den":1},"level":3},{"from":{"num":1,"den":1},"to":{"num":4,"den":1},"level":4},{"from":{"num":4,"den":1},"to":{"num":8,"den":1},"level":3},{"from":{"num":8,"den":1},"level":2}]},"#,
-    r#""homeMaxCi":3,"day":{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{"num":8,"den":1},"windowCap":"19:00","budgetRatio":{"num":75,"den":100}},"#,
+    r#""homeMaxCi":3,"day":{"breakMin":20,"breakAfterBlocks":2,"minLastBlockMin":30,"windowHours":{"num":8,"den":1},"windowCap":"19:00","budgetRatio":{"num":75,"den":100},"windDown":"21:30","bed":"22:00"},"#,
     r#""priority":{"bins":[{"num":5,"den":10},{"num":25,"den":100},{"num":1,"den":10}],"safety":{"num":13,"den":10},"defaultPriority":3},"#,
     r#""days":7,"at":"2026-09-07T07:00:00-05:00","#,
     r#""state":{"date":null,"window":null,"budget":null,"arrival":null,"loc":"lounge","allowHome":false},"#,

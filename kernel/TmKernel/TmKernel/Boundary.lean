@@ -9075,6 +9075,10 @@ inductive Refusal where
   | weight (e : WErr) (src : Src) (wd : Cal.Weekday)
   | badClock (src : Src) (wd : Cal.Weekday)
   | badWindowCap
+  /-- Stage 6 P2: `[day] wind_down` is not a clock (design §14.2's P2 row). -/
+  | badWindDown
+  /-- Stage 6 P2: `[day] bed` is not a clock. -/
+  | badBed
   | badWake
   | badCurve (loc : Loc)
   | badPrior (key : List Char)
@@ -9159,6 +9163,8 @@ def Refusal.text : Refusal → String
   | .weight e s wd => werrName e ++ " pLounge." ++ s.name ++ "." ++ wdKey wd
   | .badClock s wd => "badClock arrival." ++ s.name ++ "." ++ wdKey wd
   | .badWindowCap => "badClock day.windowCap"
+  | .badWindDown => "badClock day.windDown"
+  | .badBed => "badClock day.bed"
   | .badWake => "badWake"
   | .badCurve l => "badCurve energy." ++ locName l
   | .badPrior k => "badPrior prior." ++ String.ofList k
@@ -9520,7 +9526,9 @@ def readDay (bm : Nat) (sec : JVal) : Except Refusal DayCfg := do
   let wh ← pairAt v "windowHours" (.badDay .windowHours)
   let cap ← clockAt v "windowCap" .badWindowCap
   let rt ← pairAt v "budgetRatio" (.badDay .budgetRatio)
-  (mkDayCfg? bm br ba ml wh.1 wh.2 cap rt.1 rt.2).mapError .badDay
+  let wdn ← clockAt v "windDown" .badWindDown
+  let bd ← clockAt v "bed" .badBed
+  (mkDayCfg? bm br ba ml wh.1 wh.2 cap rt.1 rt.2 wdn bd).mapError .badDay
 
 /-- The most ladder edges, and the widest denominator of a priority pair (`capDen`'s 18 places). -/
 def maxBins : Nat := 16
@@ -10721,8 +10729,9 @@ theorem readHomeMax_ok {sec : JVal} {n : Nat} (h : readHomeMax sec = .ok n) : ho
     · cases h
   · cases h
 
-theorem mkDayCfg?_blockMin {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat} {c : DayCfg}
-    (h : mkDayCfg? bm br ba ml wn wd cap rn rd = .ok c) : c.cut.blockMin = bm := by
+theorem mkDayCfg?_blockMin {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat}
+    {wdn bd : Field.Clock} {c : DayCfg}
+    (h : mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .ok c) : c.cut.blockMin = bm := by
   unfold mkDayCfg? at h
   split at h
   · cases h
@@ -10741,6 +10750,8 @@ theorem mkDayCfg?_blockMin {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd 
 theorem readDay_ok {bm : Nat} {sec : JVal} {c : DayCfg} (h : readDay bm sec = .ok c) :
     c.wf = true ∧ c.cut.blockMin = bm := by
   unfold readDay at h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
+  obtain ⟨_, -, h⟩ := capBind_ok_elim h
   obtain ⟨_, -, h⟩ := capBind_ok_elim h
   obtain ⟨_, -, h⟩ := capBind_ok_elim h
   obtain ⟨_, -, h⟩ := capBind_ok_elim h
@@ -11048,9 +11059,12 @@ def dayJ (br ba ml wh cap rt : JVal) : JVal :=
     (['m', 'i', 'n', 'L', 'a', 's', 't', 'B', 'l', 'o', 'c', 'k', 'M', 'i', 'n'], ml),
     (['w', 'i', 'n', 'd', 'o', 'w', 'H', 'o', 'u', 'r', 's'], wh),
     (['w', 'i', 'n', 'd', 'o', 'w', 'C', 'a', 'p'], cap),
-    (['b', 'u', 'd', 'g', 'e', 't', 'R', 'a', 't', 'i', 'o'], rt)]
+    (['b', 'u', 'd', 'g', 'e', 't', 'R', 'a', 't', 'i', 'o'], rt),
+    (['w', 'i', 'n', 'd', 'D', 'o', 'w', 'n'], .str ['2', '1', ':', '3', '0']),
+    (['b', 'e', 'd'], .str ['2', '2', ':', '0', '0'])]
 
-/-- The shipped `[day]` on the wire: `window_hours = 8`, `window_cap = "19:00"`, `budget_ratio = 0.75`. -/
+/-- The shipped `[day]` on the wire: `window_hours = 8`, `window_cap = "19:00"`, `budget_ratio = 0.75`,
+`wind_down = "21:30"`, `bed = "22:00"` (stage 6 P2). -/
 def shippedDayJ : JVal :=
   dayJ (.num 20) (.num 2) (.num 30) (pairJ (.num 8) (.num 1)) (.str ['1', '9', ':', '0', '0']) (pairJ (.num 75) (.num 100))
 

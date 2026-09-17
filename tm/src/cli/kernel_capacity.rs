@@ -559,6 +559,8 @@ pub fn named_refusal(issue: &super::out::KernelIssue) -> Option<CliError> {
             (MODEL_FILE, format!("expected_arrival.{}", weekday(key)))
         }
         "badClock" if key == "day.windowCap" => (CONFIG_FILE, "day.window_cap".to_string()),
+        "badClock" if key == "day.windDown" => (CONFIG_FILE, "day.wind_down".to_string()),
+        "badClock" if key == "day.bed" => (CONFIG_FILE, "day.bed".to_string()),
         "badClock" => (CONFIG_FILE, format!("expected.arrival.{}", weekday(key))),
         "badCurve" => (MODEL_FILE, key.to_string()),
         "badPrior" | "badStep" | "badLevel" => (CONFIG_FILE, format!("energy.{key}")),
@@ -764,6 +766,12 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
             "windowHours": nat_pair_of(pairs.window_hours.clone()),
             "windowCap": hhmm(cfg.day.window_cap),
             "budgetRatio": nat_pair_of(pairs.budget_ratio.clone()),
+            // Stage 6 step P2: `[day]`'s evening half.  §8.2 step 2 states "sleep and wind-down
+            // define the hard end of the day" over exactly these two keys, and the kernel reads
+            // `[day]` in one place (`Look.DayCfg`), so the whole section crosses -- sending half
+            // of it was what let the planner keep a second copy.
+            "windDown": hhmm(cfg.day.wind_down),
+            "bed": hhmm(cfg.day.bed),
         },
         "priority": {
             "bins": bins,

@@ -3432,13 +3432,26 @@ def Today.arrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
      | none => T.now.sec)
   else T.now.sec
 
-/-- The `[day]` keys the window, the budget and the cut read.  L6 decodes it with §13.6's
-bounds (`badDay <key>`); `CutCfg` is L3's, contained, not copied. -/
+/-- The `[day]` keys the window, the budget, the cut **and the evening** read.  L6 decodes it
+with §13.6's bounds (`badDay <key>`); `CutCfg` is L3's, contained, not copied.
+
+**Widened at stage 6 step P2**, not forked.  §16's `[day]` table has six keys the kernel reads
+and two it did not — `wind_down` and `bed` — and §8.2 step 2's "sleep and wind-down define the
+hard end of the day" is stated over exactly those two.  A `Planner.lean` that read them from a
+record of its own would be a second reader of one config section (AGENTS §5.3), which is the
+defect `Today.storedBudget` was widened here to avoid one step earlier.  Nothing that read a
+`DayCfg` before reads them: `the_evening_keys_do_not_move_the_window`, `…_the_budget` and
+`…_the_cut` are the projections that say so. -/
 structure DayCfg where
   cut         : CutCfg
   windowHours : Pos
   windowCap   : Field.Clock
   budgetRatio : Pos
+  /-- §16 `[day] wind_down` (default `21:30`): the moment the working day is over. -/
+  windDown    : Field.Clock
+  /-- §16 `[day] bed` (default `22:00`): the moment sleep starts.  Fork `Planner::new` pushes
+  it to `wind_down + 30m` when the config puts it at or before the wind-down. -/
+  bed         : Field.Clock
 
 /-- What the host hands the lookahead, raw: both readings of every weekday table (D10-4: the
 kernel picks, AGENTS §5.6), today's logged wake if the day has one, and the plan's walls indexed
@@ -3604,6 +3617,24 @@ theorem day0Cut_eq (I : Input) :
       (if (day0Window I).2 ≤ max (day0Window I).1 I.today0.now.sec then ⟨[], []⟩
        else cutSlots I.day.cut (max (day0Window I).1 I.today0.now.sec) (day0Window I).2
          (wallsOn I.walls I.today) [] 0) := rfl
+
+/-! ### The evening keys are new and nothing that was here reads them
+
+**AGENTS §5.3, stage 6 step P2.**  `DayCfg` was widened rather than forked, and the price of a
+widening is the proof that the old readers see the old record.  Each of the three below is
+`rfl`: `windDown` and `bed` appear in no body that existed before P2, so an `Input` that differs
+only in them has the same window, the same cut and the same budget, and §8.2 steps 1 and 3
+cannot drift from step 2's evening. -/
+
+theorem the_evening_keys_do_not_move_the_window (I : Input) (wdn bd : Field.Clock) :
+    day0Window { I with day := { I.day with windDown := wdn, bed := bd } } = day0Window I := rfl
+
+theorem the_evening_keys_do_not_move_the_cut (I : Input) (wdn bd : Field.Clock) :
+    day0Cut { I with day := { I.day with windDown := wdn, bed := bd } } = day0Cut I := rfl
+
+theorem the_evening_keys_do_not_move_the_budget (c : DayCfg) (wdn bd : Field.Clock) :
+    budgetOf ({ c with windDown := wdn, bed := bd }).windowHours c.cut.blockMin c.budgetRatio
+      = budgetOf c.windowHours c.cut.blockMin c.budgetRatio := rfl
 
 /-- **Fork `EnergyCtx::energy_at` on today**: the prediction at the hours since wake, less the
 sleep-debt shift (site R10), corrected by today's posterior (site R5), then the home cap.  The
@@ -4003,8 +4034,9 @@ theorem wakeInstantOf_on_witnesses :
   decide
 
 /-- The shipped `[day]`: 60-minute blocks, a 20-minute break after 2, a 30-minute last block,
-8 hours, a 19:00 cap, `budget_ratio` 0.75. -/
-def DayCfg.shipped : DayCfg := ⟨CutCfg.shipped, mkPos 8 1 (by decide), 1140, Arith.budgetRatio⟩
+8 hours, a 19:00 cap, `budget_ratio` 0.75, wind-down 21:30, bed 22:00 (§16). -/
+def DayCfg.shipped : DayCfg :=
+  ⟨CutCfg.shipped, mkPos 8 1 (by decide), 1140, Arith.budgetRatio, 1290, 1320⟩
 
 /-- The shipped `[expected] p_lounge`, as exact weights: 0.9 Monday to Thursday, 0.8 Friday,
 0.5 Saturday, 0.4 Sunday. -/
@@ -4291,7 +4323,7 @@ def maxBreakAfter : Nat := 64
 `blockMin`, `breakMin`, `breakAfterBlocks`, `minLastBlockMin`, `windowHours`, `budgetRatio`.
 `window_cap` is a `Field.Clock`, bounded by its type and read by the clock grammar. -/
 def mkDayCfg? (blockMin breakMin breakAfter minLast whNum whDen : Nat) (windowCap : Field.Clock)
-    (brNum brDen : Nat) : Except DayKey DayCfg :=
+    (brNum brDen : Nat) (windDown bed : Field.Clock) : Except DayKey DayCfg :=
   if ¬ (1 ≤ blockMin ∧ blockMin ≤ maxDayMin) then .error .blockMin
   else if ¬ breakMin ≤ maxDayMin then .error .breakMin
   else if ¬ breakAfter ≤ maxBreakAfter then .error .breakAfterBlocks
@@ -4299,7 +4331,7 @@ def mkDayCfg? (blockMin breakMin breakAfter minLast whNum whDen : Nat) (windowCa
   else if hw : 1 ≤ whDen ∧ whDen ≤ maxKeyDen ∧ 0 < whNum ∧ whNum ≤ 24 * whDen then
     if hb : 1 ≤ brDen ∧ brDen ≤ maxKeyDen ∧ brNum ≤ brDen then
       .ok ⟨⟨blockMin, breakMin, breakAfter, minLast⟩, mkPos whNum whDen (by omega), windowCap,
-        mkPos brNum brDen (by omega)⟩
+        mkPos brNum brDen (by omega), windDown, bed⟩
     else .error .budgetRatio
   else .error .windowHours
 
@@ -4312,8 +4344,9 @@ def DayCfg.wf (c : DayCfg) : Bool :=
     c.windowHours.val.num ≤ 24 * c.windowHours.val.den) &&
   decide (c.budgetRatio.val.den ≤ maxKeyDen ∧ c.budgetRatio.val.num ≤ c.budgetRatio.val.den)
 
-theorem mkDayCfg?_wf {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat} {c : DayCfg}
-    (h : mkDayCfg? bm br ba ml wn wd cap rn rd = .ok c) : c.wf = true := by
+theorem mkDayCfg?_wf {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat}
+    {wdn bd : Field.Clock} {c : DayCfg}
+    (h : mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .ok c) : c.wf = true := by
   unfold mkDayCfg? at h
   split at h
   · cases h
@@ -4336,47 +4369,51 @@ theorem mkDayCfg?_wf {bm br ba ml wn wd : Nat} {cap : Field.Clock} {rn rd : Nat}
 theorem mkDayCfg?_of_wf (c : DayCfg) (h : c.wf = true) :
     mkDayCfg? c.cut.blockMin c.cut.breakMin c.cut.breakAfter c.cut.minLastBlockMin
       c.windowHours.val.num c.windowHours.val.den c.windowCap c.budgetRatio.val.num
-      c.budgetRatio.val.den = .ok c := by
+      c.budgetRatio.val.den c.windDown c.bed = .ok c := by
   simp only [DayCfg.wf, Bool.and_eq_true, decide_eq_true_eq] at h
   have hwd := denPos c.windowHours
   have hbd := denPos c.budgetRatio
   unfold mkDayCfg?
   rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
     dif_pos (by omega), dif_pos (by omega)]
-  obtain ⟨⟨a, b, c', d⟩, ⟨⟨wn, wd⟩, hw⟩, cap, ⟨⟨rn, rd⟩, hr⟩⟩ := c
+  obtain ⟨⟨a, b, c', d⟩, ⟨⟨wn, wd⟩, hw⟩, cap, ⟨⟨rn, rd⟩, hr⟩, wdn, bd⟩ := c
   rfl
 
 theorem mkDayCfg?_refuses_blockMin {bm : Nat} (h : bm = 0 ∨ maxDayMin < bm) (br ba ml wn wd : Nat)
-    (cap : Field.Clock) (rn rd : Nat) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .blockMin := by
+    (cap : Field.Clock) (rn rd : Nat) (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .blockMin := by
   unfold mkDayCfg?; rw [if_pos (by omega)]
 
 theorem mkDayCfg?_refuses_breakMin {bm br : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin) (h : maxDayMin < br)
-    (ba ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
-    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakMin := by
+    (ba ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .breakMin := by
   unfold mkDayCfg?; rw [if_neg (by omega), if_pos (by omega)]
 
 theorem mkDayCfg?_refuses_breakAfterBlocks {bm br ba : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
-    (h1 : br ≤ maxDayMin) (h : maxBreakAfter < ba) (ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat) :
-    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .breakAfterBlocks := by
+    (h1 : br ≤ maxDayMin) (h : maxBreakAfter < ba) (ml wn wd : Nat) (cap : Field.Clock) (rn rd : Nat)
+    (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .breakAfterBlocks := by
   unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_pos (by omega)]
 
 theorem mkDayCfg?_refuses_minLastBlockMin {bm br ba ml : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
     (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h : ml = 0 ∨ maxDayMin < ml) (wn wd : Nat)
-    (cap : Field.Clock) (rn rd : Nat) :
-    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .minLastBlockMin := by
+    (cap : Field.Clock) (rn rd : Nat) (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .minLastBlockMin := by
   unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_pos (by omega)]
 
 theorem mkDayCfg?_refuses_windowHours {bm br ba ml wn wd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
     (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
-    (h : ¬ (1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd)) (cap : Field.Clock) (rn rd : Nat) :
-    mkDayCfg? bm br ba ml wn wd cap rn rd = .error .windowHours := by
+    (h : ¬ (1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd)) (cap : Field.Clock) (rn rd : Nat)
+    (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .windowHours := by
   unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
     dif_neg h]
 
 theorem mkDayCfg?_refuses_budgetRatio {bm br ba ml wn wd rn rd : Nat} (h0 : 1 ≤ bm ∧ bm ≤ maxDayMin)
     (h1 : br ≤ maxDayMin) (h2 : ba ≤ maxBreakAfter) (h3 : 1 ≤ ml ∧ ml ≤ maxDayMin)
     (h4 : 1 ≤ wd ∧ wd ≤ maxKeyDen ∧ 0 < wn ∧ wn ≤ 24 * wd) (h : ¬ (1 ≤ rd ∧ rd ≤ maxKeyDen ∧ rn ≤ rd))
-    (cap : Field.Clock) : mkDayCfg? bm br ba ml wn wd cap rn rd = .error .budgetRatio := by
+    (cap : Field.Clock) (wdn bd : Field.Clock) :
+    mkDayCfg? bm br ba ml wn wd cap rn rd wdn bd = .error .budgetRatio := by
   unfold mkDayCfg?; rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega),
     dif_pos h4, dif_neg h]
 
