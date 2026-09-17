@@ -7,10 +7,18 @@
 //! Two counters, both already opt-in in shipped code, both read off stderr:
 //!
 //! * `tm_kernel_ffi::TRACE_CALLS_ENV` (`TM_TRACE_KERNEL_CALLS`) — one
-//!   `kernel call: <kind>` line per call through the FFI. It sits at the FFI
-//!   because that is the **one door**: `kernel_bridge.rs` and `kernel_log.rs`
-//!   each reach the kernel on their own, so a counter in either would miss the
-//!   other.
+//!   `kernel call: <kind>[+<kind>…]` line per call through the FFI, naming
+//!   **every section that call carries**. It sits at the FFI because that is
+//!   the **one door**: `kernel_bridge.rs` and `kernel_log.rs` each reach the
+//!   kernel on their own, so a counter in either would miss the other.
+//!
+//!   **Counting lines counts calls; counting names counts sections**, and since
+//!   L9 those are different numbers (README **gap 278**, closed by W-14). A
+//!   capacity request carries a `log` section too — D24's seam — so it traces
+//!   `kernel call: capacity+log` and it is a **second replay of the log inside
+//!   the verb's own call** (README **gap 275**). Before W-14 the trace tested
+//!   `"capacity":` first and stopped, so that replay was invisible here while
+//!   this file pinned the `log` column *exactly* and said it had not moved.
 //! * `tm::cli::ctx::TRACE_SCOPE_ENV` (`TM_TRACE_REPLAY_SCOPE`) — one
 //!   `replay scope: <scope>` line per `Ctx::replay_with`, which **is**
 //!   `kernel_log::replay_scoped` since S.
@@ -70,20 +78,48 @@ use cli_common::Tm;
 /// the selected lines' bytes (§11.4 step 3). `tm check` carries one more than
 /// its replay: gap 134's read-only sweep, which is how it names **every**
 /// unreadable line rather than the last chunk's.
+///
+/// **And, since L9, the `log` section every capacity request carries** — the
+/// second replay README **gap 275** names. `arrive` and `energy` replan
+/// (`planning.rs`) and `review day` ranks, so each of those three is **one
+/// higher than it was at S2**: 5, 5 and 2 where the table read 4, 4 and 1. The
+/// numbers did not change at W-14 — the *instrument* did (**gap 278**); the
+/// replay was always there and this column could not see it. When gap 275's
+/// one-call shape lands these three go back down by one, and that is the
+/// measurement that proves it landed.
 fn expected_log_calls(verb: &str) -> u32 {
     match verb {
         "wake" => 3,
-        "arrive" => 4,
+        "arrive" => 5,
         "start" => 3,
         "pause" => 3,
         "done" => 3,
-        "energy" => 4,
+        "energy" => 5,
         "break" => 2,
         "drop" => 3,
         "undo" => 2,
-        "review day" => 1,
+        "review day" => 2,
         "log" => 2,
         "check" => 2,
+        other => panic!("`tm {other}` is not in the measured table"),
+    }
+}
+
+/// **The per-verb `capacity`-section count**, pinned exactly beside the `log`
+/// column for the first time at W-14 (**gap 278**).
+///
+/// Three of R14's verbs compute capacity: `arrive` and `energy` because their
+/// replan calls `Ctx::priorities`, and `review day` because it ranks. The other
+/// nine make none — which is why `tm drop`'s T11 row is the *reliable* one
+/// (README gap 240): it is the row that pays no capacity call.
+///
+/// Pinned exactly, and not merely "at least", because the pairing below
+/// (`each capacity section is a second replay`) turns this column into gap
+/// 275's denominator: one extra whole-log replay per capacity call.
+fn expected_capacity_calls(verb: &str) -> u32 {
+    match verb {
+        "arrive" | "energy" | "review day" => 1,
+        "wake" | "start" | "pause" | "done" | "break" | "drop" | "undo" | "log" | "check" => 0,
         other => panic!("`tm {other}` is not in the measured table"),
     }
 }
@@ -130,27 +166,39 @@ fn expected_emit_calls(verb: &str) -> u32 {
 const TRACE_SCOPE_ENV: &str = "TM_TRACE_REPLAY_SCOPE";
 
 /// What one traced run reported.
+///
+/// Every field but [`Counts::calls`] counts **sections**, not calls: one traced
+/// line can name several (`capacity+log`), and since L9 one does. `calls` is
+/// the line count, which is the number of times the binary crossed the FFI.
 #[derive(Debug, Default, Clone)]
 struct Counts {
-    /// `kernel call: log` — the replay op. At least 1 a verb since S.
+    /// `log` sections — the replay op. At least 1 a verb since S.
     log: u32,
-    /// `kernel call: apply` — a command call through `kernel_bridge`.
+    /// `apply` sections — a command call through `kernel_bridge`.
     apply: u32,
-    /// `kernel call: capacity` — D10's lookahead call.
+    /// `capacity` sections — D10's lookahead call.
     capacity: u32,
-    /// `kernel call: emit` — the writer S2 added (**D16**): one per event a verb
+    /// `emit` sections — the writer S2 added (**D16**): one per event a verb
     /// appends, because the kernel now renders every line the binary writes.
     emit: u32,
     /// Any other request shape reaching the FFI.
     other: u32,
+    /// **Calls**, not sections: one per `kernel call:` line.
+    calls: u32,
+    /// Calls that named more than one section — since L9, the capacity calls
+    /// (README gaps 275 and 278).
+    multi: u32,
     /// `replay scope: …` — one per `Ctx::replay_with`.
     replays: u32,
     /// The scopes asked for, in order (§11.1).
     scopes: Vec<String>,
+    /// Every traced line, verbatim, for the failure messages.
+    lines: Vec<String>,
 }
 
 impl Counts {
-    fn kernel_calls(&self) -> u32 {
+    /// Sections of every kind — deliberately **not** the call count any more.
+    fn sections(&self) -> u32 {
         self.log + self.apply + self.capacity + self.emit + self.other
     }
 }
@@ -167,13 +215,26 @@ fn traced(tm: &Tm, now: &str, args: &[&str]) -> (i32, Counts) {
     );
     let mut c = Counts::default();
     for line in out.stderr.lines() {
-        if let Some(kind) = line.strip_prefix("kernel call: ") {
-            match kind.trim() {
-                "log" => c.log += 1,
-                "apply" => c.apply += 1,
-                "capacity" => c.capacity += 1,
-                "emit" => c.emit += 1,
-                _ => c.other += 1,
+        if let Some(kinds) = line.strip_prefix("kernel call: ") {
+            let kinds = kinds.trim();
+            c.calls += 1;
+            c.lines.push(kinds.to_string());
+            let named: Vec<&str> = kinds.split('+').collect();
+            if named.len() > 1 {
+                c.multi += 1;
+            }
+            // **Every name on the line**, because one call can carry several
+            // sections: a capacity request carries a `log` section too (D24's
+            // seam), and counting only the first is what made that second
+            // replay invisible here (gap 278).
+            for kind in named {
+                match kind {
+                    "log" => c.log += 1,
+                    "apply" => c.apply += 1,
+                    "capacity" => c.capacity += 1,
+                    "emit" => c.emit += 1,
+                    _ => c.other += 1,
+                }
             }
         } else if let Some(scope) = line.strip_prefix("replay scope: ") {
             c.replays += 1;
@@ -210,16 +271,18 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
         table.insert(name, c);
     }
 
-    // The table, for the README block and for S to compare against.
-    eprintln!("per-verb kernel calls (switched binary)");
+    // The table, for the README block and for S to compare against. `calls` is
+    // FFI crossings; every other column is **sections** (W-14, gap 278).
+    eprintln!("per-verb kernel sections (switched binary)");
     eprintln!(
-        "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>8}  scopes",
-        "verb", "log", "emit", "apply", "capacity", "other", "replays"
+        "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>6} {:>8}  scopes",
+        "verb", "log", "emit", "apply", "capacity", "other", "calls", "replays"
     );
     for (name, c) in &table {
         eprintln!(
-            "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>8}  {}",
-            name, c.log, c.emit, c.apply, c.capacity, c.other, c.replays, c.scopes.join(",")
+            "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>6} {:>8}  {}",
+            name, c.log, c.emit, c.apply, c.capacity, c.other, c.calls, c.replays,
+            c.scopes.join(",")
         );
     }
 
@@ -259,6 +322,42 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
         );
     }
 
+    // **The capacity column, pinned exactly** — new at W-14. Before it, a
+    // capacity request answered `capacity` and nothing else; now it names every
+    // section it carries, so this column and the `log` column above are read
+    // from the same lines.
+    for (name, c) in &table {
+        let want = expected_capacity_calls(name);
+        assert_eq!(
+            c.capacity, want,
+            "`tm {name}` sent {} kernel `capacity` section(s), expected {want}",
+            c.capacity
+        );
+    }
+
+    // **Gap 275, made countable.** Every capacity section travels in a call
+    // that also carries a `log` section — that is D24's seam, and it is a
+    // second whole-log replay inside the verb's own call. The equality is the
+    // instrument: when the one-call shape lands, a verb's capacity section stops
+    // bringing a replay with it and this assertion fails **by name**, which is
+    // how the fix announces itself instead of being noticed in a latency row.
+    for (name, c) in &table {
+        let paired = c
+            .lines
+            .iter()
+            .filter(|l| l.split('+').any(|k| k == "capacity") && l.split('+').any(|k| k == "log"))
+            .count() as u32;
+        assert_eq!(
+            paired,
+            expected_capacity_calls(name),
+            "`tm {name}` traced {paired} call(s) carrying both a capacity and a log section, \
+             expected {} — gap 275 is that every capacity call replays the log a second time; if \
+             this is now lower, the one-call shape has landed and this table is owed a \
+             re-measurement (and gap 275 a closing line)",
+            expected_capacity_calls(name)
+        );
+    }
+
     // **And the swap is real**, so this column cannot go quietly back to zero:
     // a binary that wrote its own bytes again would pass every count above and
     // fail here.
@@ -271,14 +370,119 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
     // **The harness is not vacuous** (README gap 16's lesson: a check no input
     // can fail is not a check). Both traces must actually be live: the run as a
     // whole reached the kernel, and every verb asked for at least one replay.
-    let calls: u32 = table.values().map(Counts::kernel_calls).sum();
-    assert!(calls > 0, "no kernel call was traced at all — the FFI counter is not live");
+    let sections: u32 = table.values().map(Counts::sections).sum();
+    assert!(sections > 0, "no kernel call was traced at all — the FFI counter is not live");
+    // And the *multi-section* half of the trace is live too: at least one call
+    // must name more than one section, or the `+` join has been lost and every
+    // column silently went back to counting first-literal-wins (gap 278).
+    let multi: u32 = table.values().map(|c| c.multi).sum();
+    assert!(
+        multi > 0,
+        "no traced call named more than one section — the FFI trace is back to naming only the \
+         first literal it finds, and a capacity request's log section is invisible again (gap 278)"
+    );
+    // No call may trace an unnamed section: a stray `+` would count as `other`
+    // and read as a new request shape.
+    for (name, c) in &table {
+        assert!(
+            c.lines.iter().all(|l| l.split('+').all(|k| !k.is_empty())),
+            "`tm {name}` traced an empty section name: {:?}",
+            c.lines
+        );
+    }
     for (name, c) in &table {
         assert!(c.replays >= 1, "`tm {name}` traced no replay at all — the scope counter is not live");
         assert!(
             c.scopes.iter().all(|s| s == "hot" || s == "all" || s.starts_with("dates ")),
             "`tm {name}` named a scope this harness does not know: {:?}",
             c.scopes
+        );
+    }
+}
+
+/// **The four verbs gap 275 names**, counted rather than timed.
+///
+/// `tm plan`, `tm now`, `tm review day` and `tm review week` each compute
+/// capacity, and since L9 a capacity request carries a `log` section — so each
+/// of them replays the log **twice**: once for `Ctx::replay_with` and once
+/// inside the capacity call. That is what moved `tm review week` out of its T11
+/// band (README gap 275); this is the same fact as a count, which is a
+/// measurement a latency row cannot give because it is noisy.
+///
+/// It is read-only on purpose: none of the four appends a line, so the table is
+/// a function of the fixture and the instant alone, and the four runs do not
+/// disturb each other.
+const CAPACITY_VERBS: &[(&str, &[&str])] = &[
+    ("plan", &["plan"]),
+    ("now", &["now"]),
+    ("review day", &["review", "day"]),
+    ("review week", &["review", "week"]),
+];
+
+/// The `log` sections each of the four sends, pinned exactly.
+///
+/// **One of these is the verb's own replay and one is the capacity call's** —
+/// the pairing assertion below is what says which. When gap 275's one-call
+/// shape lands, every entry here drops by one.
+fn expected_capacity_verb_log_sections(verb: &str) -> u32 {
+    match verb {
+        "plan" | "now" | "review day" | "review week" => 2,
+        other => panic!("`tm {other}` is not in the capacity-verb table"),
+    }
+}
+
+#[test]
+fn every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call() {
+    let tm = Tm::new();
+    let mut table: BTreeMap<&str, Counts> = BTreeMap::new();
+    for (name, args) in CAPACITY_VERBS {
+        let (code, c) = traced(&tm, cli_common::NOW, args);
+        assert_eq!(code, 0, "`tm {}` failed under tracing", args.join(" "));
+        table.insert(name, c);
+    }
+
+    eprintln!("capacity verbs: sections per verb (gap 275's denominator)");
+    eprintln!(
+        "{:<12} {:>4} {:>9} {:>6} {:>6}  trace",
+        "verb", "log", "capacity", "calls", "multi"
+    );
+    for (name, c) in &table {
+        eprintln!(
+            "{:<12} {:>4} {:>9} {:>6} {:>6}  {}",
+            name, c.log, c.capacity, c.calls, c.multi, c.lines.join(" ")
+        );
+    }
+
+    for (name, c) in &table {
+        // Each of the four computes capacity exactly once.
+        assert_eq!(
+            c.capacity, 1,
+            "`tm {name}` sent {} capacity section(s), expected 1",
+            c.capacity
+        );
+        // And carries a second replay with it.
+        let want = expected_capacity_verb_log_sections(name);
+        assert_eq!(
+            c.log, want,
+            "`tm {name}` sent {} kernel `log` section(s), expected {want} — one for its own \
+             replay and one inside its capacity call (gap 275). A lower number means the \
+             one-call shape has landed: re-measure this table, close gap 275, and say so in \
+             the README block",
+            c.log
+        );
+        // The second replay is *inside* the capacity call, not beside it: the
+        // capacity section and a log section travel on the same traced line.
+        assert_eq!(
+            c.multi, 1,
+            "`tm {name}` traced {} call(s) carrying more than one section, expected 1 — the \
+             capacity call's log section is what gap 275 costs, and if it is not there the \
+             trace has stopped naming it (gap 278)",
+            c.multi
+        );
+        assert!(
+            c.lines.iter().any(|l| l == "capacity+log"),
+            "`tm {name}` traced no `capacity+log` call: {:?}",
+            c.lines
         );
     }
 }

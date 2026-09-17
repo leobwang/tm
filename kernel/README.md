@@ -26471,3 +26471,307 @@ L9 price no longer carries the seam"* — all three done, plus §14.0's numbers 
 * **The seam's 260 and 262**, and **275-279**, stand as written.
 * **The §5.13 human drives** of the stage-3, stage-4 and stage-5 binaries, with
   the TUI half of the switch's drive (**gap 182**). No agent can perform them.
+
+---
+
+## Stage 6, W-14 track K, 2026-09-17: the second replay is countable — gap 278 closed, and gap 275 priced against D27
+
+**Branch `w14-k`** (a worktree off `c754cce`, so track P could commit on
+`rebuild-on-lean` in parallel). Track K's range is **gaps 300-319**; this block
+takes **300** and **301** and no other number.
+
+**What this step was asked for, and what it landed.** The brief asked track K
+for **K3** (F2, the recurrence family) and **K4** (F3-rule) — D27's substance,
+"the kernel collects the candidates" — and, "while you are in this wire", for
+the **one-call wire shape** that closes gaps **275** and **278**. It landed the
+second half of that last item and **none of K3 or K4**. The reason is a finding,
+not a shortfall of effort, and it is the substance of this block: **the one-call
+shape is downstream of D27, and D27 is downstream of a grammar the kernel does
+not have.** Both are recorded below in AGENTS §9.2's four-part form, with their
+measurements.
+
+### What landed
+
+**Gap 278 is closed.** `tm_kernel_ffi::trace_kind` classified a request by the
+first literal it found and tested `"capacity":` first, so a request carrying
+**both** a `capacity` and a `log` section counted as one `capacity` call and no
+`log` call. It is now `trace_kinds`, which names **every** section the request
+carries, and `call` joins them with `+` on the one line it still writes per
+call. A capacity verb traces `kernel call: capacity+log`.
+
+`tm/tests/kernel_call_counts.rs` reads the names rather than the first one, so:
+
+* the `log` column now counts the capacity call's replay — `arrive` **4 → 5**,
+  `energy` **4 → 5**, `review day` **1 → 2**. *The numbers did not change; the
+  instrument did.* Those replays have been happening since L9 (`5ab24bf`);
+  this column could not see them, which is exactly what gap 278 said;
+* the `capacity` column is **pinned exactly** for the first time
+  (`expected_capacity_calls`): `arrive`, `energy`, `review day` 1, the other
+  nine 0 — which is why `tm drop`'s T11 row is the reliable one (gap 240): it
+  is the row that pays no capacity call;
+* **gap 275 has a denominator.** A new assertion pairs the columns: every
+  `capacity` section must travel on a line that also carries a `log` section,
+  once per capacity call. When the one-call shape lands, that assertion fails
+  **by name** and tells the agent to re-measure the table and close gap 275 —
+  the fix announces itself instead of being noticed in a noisy latency row;
+* a second test, `every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call`,
+  counts the **four verbs gap 275 names**. Measured, at `cli_common::NOW` on
+  `plan-basic`:
+
+| verb | `log` sections | `capacity` | FFI calls | the trace, verbatim |
+|---|---:|---:|---:|---|
+| `tm plan` | **2** | 1 | 4 | `log` `apply` `capacity+log` `emit` |
+| `tm now` | **2** | 1 | 2 | `log` `capacity+log` |
+| `tm review day` | **2** | 1 | 2 | `log` `capacity+log` |
+| `tm review week` | **2** | 1 | 2 | `log` `capacity+log` |
+
+Two replays per verb, one of them inside the capacity call. That is gap 275 as
+a **count** rather than as a 25-45 ms band excursion, and a count is a
+measurement a noisy row cannot give.
+
+The trace is a diagnostic behind `TM_TRACE_KERNEL_CALLS` and `trace_kinds` is
+called **only** inside that env check, so the shipped path allocates nothing new
+— confirmed by the paired latency measurement below, taken with and without this
+diff in the same worktree.
+
+### What did NOT land, and why — the two findings
+
+**Finding 1 (gap 300): the one-call shape cannot be built before D27 is.** The
+cure the L9 block prescribes is "one call carrying both sections … `Ctx`
+deferring its own replay until `allow_home` and the candidates are known". Read
+in the tree, the dependency runs the other way and is circular:
+
+* `Ctx::priorities` (`tm/src/cli/ctx.rs:847`) calls
+  `priority::collect_candidates(&self.tree, **&self.replay**, …)` — the
+  candidates are a function of the replay;
+* `kernel_capacity::rank` then asks for `priority::lookahead_days(cands, today)`
+  — so the request's **`days`** is a function of the candidates too, which
+  design §14.1's K4 row does not name;
+* `kernel_capacity::request` is the **only** builder of a capacity request
+  (`kernel_capacity.rs:694`, one call site, in `ask` at `:973`), and every verb
+  that ranks reaches it through `rank`, with candidates. The one request that
+  carries none is `kernel_capacity::week`'s seven days (`ranked = None`, for
+  `tm plan --week`) — and by the time it is built `Ctx::new` has already
+  replayed, so it pays the second replay too.
+
+So the capacity request cannot be the verb's **first** call while the host
+computes the candidates from a replay it must already have. D27 is precisely
+what breaks the circle: with `Cand` derived in the kernel from the `PlanCore`
+the request already loads plus the run D24's seam exposes, the capacity request
+stops depending on the host's replay, and `Ctx` can read its replay out of the
+one answer. **Gap 275's fix is K3 → K4 → the one-call shape, in that order.**
+The L9 block already guessed this ("When it clears. With the owner's answer, or
+with F2/F3, which will want the same call"); this step checked it against the
+code and found the extra `days` edge.
+
+**Finding 2 (gap 301): not one of D27's nine fields can move atomically today,
+because the kernel's loader cannot represent a routine or an optional line.**
+`Line.lean`'s `parseBody` requires `- [<glyph>]`, and §4.1 says `routines.md`
+and `optional.md` **omit the state box** — so every line of those two files is
+`PErr.notAnItem` and is loaded as **prose**. The kernel has no entity for any of
+them, and `Look.Cand.id` is **echoed**, never **resolved**: the kernel
+copies it into `grantJson`'s `"id"` as a correlation key (`ask` checks
+`c.id != p.id` and refuses `a grant answers another candidate`), and no
+definition in the kernel looks it up in `PlanCore.store`, because for ten of
+the twenty-eight there is nothing to find. This is README "What this does **not** cover" item 5
+("State-less lines are still not representable") and it is gap 5's mirror; what
+is new here is that it **blocks D27**, and that design §14.1's K3 row (350 / 900
+/ −250 / 6-8 days, "the recurrence family read inside the kernel") does not
+price it.
+
+Measured, not asserted. `tm plan` on `tm-core/tests/fixtures/plan-basic` at
+`2026-09-07T09:00:00-05:00` sends **28** candidates. **Ten** of them are keyed
+by title and have no `^id` at all — `sleep`, `breakfast`, `lunch`, `dinner`,
+`workout`, `shower`, `laundry`, `groceries` (the eight lines of `routines.md`)
+and `Severance S3E4`, `Factorio` (the two of `optional.md`) — against 18 that
+carry an `^id` the kernel's store does hold. The measurement was taken with a
+throwaway `eprintln!` in `cand_json`, which was **reverted before the commit**;
+the tree carries no probe.
+
+The consequence for brief item 2 ("delete the host's copy in the same commit as
+the kernel's gains it"): a field derived in the kernel for the 18 and left to
+the host for the 10 is a **second reader on a subset**, which is the class D27
+exists to end, and a kernel that answered a default for an id it cannot resolve
+would be a silent wrong answer (AGENTS §5.6: the loader never picks between two
+readings). So no field moved. `remaining`, `ci`, `rootPrio` and `wall` each
+already have their kernel definition waiting — `Tree.remainingMin`,
+`Plan.effectiveCi`, `Plan.rootPrio`, `Field.Shape.interval` — and every one of
+them is blocked on the same grammar.
+
+### Behaviour rows
+
+| # | rule before | rule now | why, and what proves it |
+|---|---|---|---|
+| 1 | with `TM_TRACE_KERNEL_CALLS` set, a capacity call printed `kernel call: capacity` | it prints `kernel call: capacity+log` — every section the call carries, `+`-joined, still **one line per call** | **gap 278.** The line is the instrument's only output; naming one section of two is what hid the replay. `kernel_call_counts.rs` asserts the multi-section form is live (`multi > 0`), so the trace cannot go quietly back to first-literal-wins |
+| 2 | `kernel_call_counts` pinned `log`, `emit` and asserted nothing about `capacity` | `capacity` is pinned exactly, and each capacity section is asserted to travel with a `log` section | gap 275's denominator. The pairing assertion is designed to **fail** when the one-call shape lands |
+
+**No fixture, snapshot or corpus file was re-blessed, and no band was
+re-blessed.** `review week` is still outside its T11 band and is still gap 275,
+measured below at 278.54-278.66 ms.
+
+### Goals, theorems, witnesses, cheats, parity (AGENTS §3.2, §6.3)
+
+Goals discharged, refuted or added: **none**; burn-down **13 → 13**, all stage
+6's. New theorems: **none** — no Lean file was touched, so the axiom audit is
+**3,993**, unchanged, and check 3's reconciliation is unaffected. New
+`decide`/`rfl` witnesses: **none**. New cheats: **none**. New parity entries:
+**none** — nothing on a kernel-against-fork path changed; the frozen-comparand
+guard `the_frozen_comparand_is_read_at_full_precision` still runs in the door
+suite, which passed 23/23 with `fork_arm` unconditional (D21-D23).
+`TmKernel.lean` imports: **78**, unchanged (no new module). No `sorry` outside
+`Goals.lean`, no new axiom, no `partial def`, `unsafe`, `opaque`,
+`implemented_by`, `panic!` in kernel code, `!`-accessor, `.toOption`, no
+Mathlib, no new dependency, no memory bound raised, no predicate or assertion
+weakened. **Nothing under `kernel/corpus/`, no `Cargo.toml`, no
+`lean-toolchain`.** `tm-kernel-ffi` still depends on nothing (AGENTS R7):
+`trace_kinds` returns a `Vec<&'static str>` from `alloc`, and it is built only
+inside the env-var branch.
+
+**The recursion rule (D9-21):** `trace_kinds` is four independent substring
+tests over the request text and pushes at most four elements; it is not a
+recursion over a wire-sized list and it is off unless the env var is set.
+
+### Method disclosure
+
+Everything ran on branch `w14-k` in `.claude/worktrees/w14-k`, created with
+`git worktree add` off `c754cce` so track P could commit on `rebuild-on-lean` in
+parallel (AGENTS §6.1). `kernel/TmKernel/.lake` was **copied** from the main
+worktree at the same commit as a build cache and then re-verified by
+`lake build` inside check.sh; no Lean source differs between the two checkouts.
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` (8G for
+the candidate probe). **The fork oracle was not rebuilt and the `TM_ORACLE`
+census was not re-run**, said plainly: this diff is two Rust files, one a test
+and the other an env-gated diagnostic, and nothing on the kernel-against-fork
+path changed — the door suite's unconditional `fork_arm` comparison against the
+frozen `fork-4748911-*.jsonl` fixtures ran green anyway and is the arm that
+would have caught a change.
+
+**The latency rows were taken twice, paired.** Track P's `lake build` was
+running at 261% CPU (load average 4.04) during the first reading and every T11
+row read 4-7% high — the reliable row at 151.7-157.1 ms against its
+146.66-147.01 ms band. Rather than explain that away, this diff was **stashed**
+and the same rows re-measured on the unmodified `c754cce` in the same worktree,
+then restored and measured again under the lighter load. The baseline and the
+diff agree row for row, which is the evidence that the trace change is not on
+the shipped path.
+
+### Numbers, all re-measured on the committed tree
+
+| measurement | value | comparand |
+|---|---|---|
+| `check.sh`, built tree | **7/7 ok**, **3.16 / 3.20 s** warm (4.19 s cold), peak RSS **1.96-2.05 GiB** | W-13's L9 block: 3.15 / 3.10 / 3.15 s. **+1.6% at worst — inside the 10%-per-step rule** |
+| axiom audit | **3,993 theorems** | 3,993 at `c754cce`. **Unchanged** — no Lean file touched |
+| burn-down | **13**, all stage 6 | unchanged |
+| corpus | **29/37 files and 4/5 whole plans** | unchanged |
+| `cargo test --workspace` | **1,313 passed / 0 failed / 9 ignored across 78 result lines**, exit 0 | **1,312 / 0 / 9 across 78**. **+1**, and it is named: the new capacity-verb test. The result-line count is unchanged because no new test binary was added |
+| FFI suite (`kernel/tm-kernel-ffi`) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100 |
+| T5 `kernel_replay_parity --include-ignored` | **33 / 0 / 0**, 6.63 s | 33 |
+| the door suite `kernel_log_door` | **23 passed / 0 failed**, 1.66 s | 23 |
+| `cli_switch_acceptance --include-ignored` | **9 passed / 0 failed** | 9 |
+| `cli_check_log` | **9 / 0** | 9 |
+| `kernel_lookahead_parity` | **4 / 0**, 0.74 s — 92 day-0 comparisons, 0 disagreements | 4 |
+| `kernel_call_counts` | **2 passed / 0 failed** | **1**. **+1**, the capacity-verb table |
+| per-verb `log` **sections** (the corrected column) | `arrive` **5**, `energy` **5**, `review day` **2**; `wake` 3, `start` 3, `pause` 3, `done` 3, `drop` 3, `break` 2, `undo` 2, `log` 2, `check` 2 | 4, 4, 1 and the same nine. The three that moved are the three that compute capacity |
+| per-verb `capacity` sections | `arrive` 1, `energy` 1, `review day` 1, the other nine **0** | never pinned before |
+| `cli_latency --include-ignored --test-threads=1` | **6 passed / 0 failed**, 15.88-15.91 s | 6 |
+| T11, **the reliable row**: later verb, 3-year log | **146.86 / 146.97 / 147.00 ms** | band **146.66-147.01 ms**. **Flat.** Baseline `c754cce` in the same worktree: **146.85 ms** |
+| T11, the three noisy rows (**quoted as ranges**, gap 240) | reseal **212.78 / 202.61 / 202.49 ms**; 3-day-old routine **131.68 / 136.79 / 131.77 ms**; `review week` **278.66 / 278.54 / 278.57 ms** | 197.5-212.6 ✓ / 121.6-136.8 ✓ / **248.1-253.3 ✗**. Baseline `c754cce`, same worktree, same session: 192.51 / 136.71 / **283.74 ms** |
+| **`review week` is still the one row outside its band** | +25 to +30 ms | **gap 275, unchanged and unfixed.** This step made it countable, not cheaper; the band is **not** re-blessed |
+| T11, first verb (genesis), 3-year log | **2.166 / 2.176 / 2.196 s** | 2.15-2.48 s |
+| T11, `tm plan` with a due 3 / 10 years out | **81.1 / 147.0 ms** | inside `LATER_VERB` (1 s) |
+| the diff | **3 files**, **+584 / −49**: `kernel/tm-kernel-ffi/src/lib.rs` +49/−22, `tm/tests/kernel_call_counts.rs` +231/−27, and this README block +304/−0 | **no Lean**, no fixture, no snapshot, nothing under `kernel/corpus/`, no `Cargo.toml`, no `lean-toolchain`, no `AGENTS.md` |
+
+### Gaps
+
+**Closed: 278** — the per-verb call-count table can see the capacity call's
+second replay, the `log` column counts it, the `capacity` column is pinned, and
+the pairing of the two is asserted so the count cannot drift silently.
+
+**Opened: 300, 301** (track K's range is 300-319; **302-319 are free**).
+
+**Still open, restated rather than claimed closed** — the brief's item 5 says
+D27 kills gaps **113**, **114** and **116**. D27 did not land, so:
+
+* **113** (the candidates' facts are the host's) is **open, whole**. All twelve
+  fields of `Look.Cand` still come off the wire; `readCand` still decodes every
+  one; `cand_json` still computes every one. Nothing moved.
+* **114** (a what-if replan ranks by pre-what-if priorities) is **open,
+  whole**, and is unreachable until 113 closes for the same reason §4's Q2 gives:
+  a replan cannot re-derive facts it did not compute.
+* **116** (the TUI's minute replan ranks the last load's candidates) is **open,
+  whole**. §11's table says plainly that this table does not close it — a kernel
+  call per tick does, which is owner Q8's subject.
+* **275** (a capacity verb replays the log twice) is **open**, its cost
+  re-measured here at **278.54-278.66 ms** for `review week` against the
+  248.1-253.3 ms band, and its fix now has an order: **K3 → K4 → the one-call
+  shape** (gap 300).
+
+#### Gap 300 (new; label W14K-a) — the one-call shape is downstream of D27, and of one edge the design does not name
+
+1. **What is not done.** Gap 275's cure — one kernel call carrying both the
+   `log` and the `capacity` section — is not built. It cannot be built while the
+   host collects the candidates: `Ctx::priorities` builds them from
+   `self.replay`, and `kernel_capacity::rank` derives the request's **`days`**
+   from those candidates through `priority::lookahead_days`, so the capacity
+   request depends on a replay that must already have happened. The `days` edge
+   is **not** named in design §14.1's K4 row and must be closed with it.
+2. **Why not now.** Breaking the circle *is* D27 (K3 then K4): with `Cand`
+   derived in the kernel the capacity request stops depending on the host's
+   replay and can be the verb's first call, with `Ctx` reading its replay out of
+   that one answer. Building the one-call shape first would mean either the host
+   couriering the kernel's own facts back into the second request — the shape L9
+   deliberately refused, and a new wire value needing R10 bounds, a smart
+   constructor and a rejection theorem — or a partial replay inside the capacity
+   call, which is a second reader. Both are plan-tier (AGENTS §4).
+3. **What it costs.** 25-30 ms on four verbs at three years of log against a 1 s
+   bound, and one T11 row outside its band with a name on it. The count is now
+   pinned (gap 278), so the cost cannot grow unnoticed: a third section in a
+   capacity request fails `kernel_call_counts` by name.
+4. **When it clears.** With K4, in the same commit as the candidates stop being
+   the host's. The test that says so is
+   `every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call`,
+   which is written to **fail** on the day it is fixed.
+
+#### Gap 301 (new; label W14K-b) — D27 needs a grammar the kernel does not have: no state box, no entity
+
+1. **What is not done.** None of D27's nine fields moved into the kernel.
+   `Line.lean`'s `parseBody` requires `- [<glyph>]`; §4.1 says `routines.md` and
+   `optional.md` omit the state box; so every line of those two files is
+   `PErr.notAnItem` and loads as **prose**, and `PlanCore.store` holds no entity
+   for any of them. **Ten of the 28 candidates** `tm plan` sends on `plan-basic`
+   are keyed by title with no `^id` (the 8 routines and the 2 optional lines);
+   the other 18 carry `^id`s the store does hold. A field derived for 18 and
+   left to the host for 10 is a second reader on a subset — the class D27 exists
+   to end — and a kernel answering a default for an id it cannot resolve is a
+   silent wrong answer (AGENTS §5.6).
+2. **Why not now.** The fix is README "What this does not cover" item 5: a
+   `RawItem` that records whether the box was there, which changes a type
+   `State.lean`, `Plan.lean`, `Cmd.lean` and `Boundary.lean` all use — a
+   switch-shaped change that under **D19** is one commit and must land with its
+   separable work first. Design §14.1's K3 row prices the recurrence *facts*
+   (350 / 900 / −250 / 6-8 days) and not the *grammar*, so K3 is under-priced by
+   the whole of this tranche.
+3. **What it costs.** D27, and therefore gaps 113, 114, 116 and 275, all wait on
+   it. Four kernel definitions that already exist and are proved —
+   `Tree.remainingMin`, `Plan.effectiveCi`, `Plan.rootPrio` and the `Interval`
+   shape — have no caller for 36% of the candidates, so `Look.Cand.id` crosses
+   the wire only to be echoed back in `grantJson`, never resolved against
+   `PlanCore.store`.
+4. **When it clears.** In K3, re-scoped: the state-box-less line first, then the
+   recurrence family. It should be re-priced before it is scheduled, and §14.7's
+   K column (970 / 2,750 / −600 / 17-24) re-added with it.
+
+**Highest on this branch:** gap **301**, cheat **158**, parity **P37**.
+
+### What this step did NOT do, by name
+
+* **K3 (F2) and K4 (F3-rule)** — not started. Gap 301 says why, with its
+  denominator; gap 300 says what they block.
+* **The one-call wire shape** — not built. Gap 300, with its dependency order.
+* **Gaps 113, 114, 116** — all three open and whole, restated above rather than
+  claimed closed.
+* **`review week`'s T11 row** — still outside its band, still gap 275, band
+  **not** re-blessed and number **not** quoted as a single reading.
+* The `TM_ORACLE` census and an oracle rebuild — not run, with the reason given
+  in the method disclosure above rather than left implicit.
