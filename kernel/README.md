@@ -244,7 +244,7 @@ Every cheat, one compile error:
 | 30 | relocate to rank 0 rather than `freshRank` | `move_at_freshRank_normalized` is about `freshRank` and nothing else; rank 0 is exactly the collision `Normalized` forbids |
 | 31 | check a rank is free by looking only at the item lines | a document's ranks are its prose ranks **and** its item ranks in one list (`weave` orders them against each other), so `SitesFree` has two clauses |
 | 122 | a tab separates tokens, as §4.1's "whitespace-separated words" says (numbered 27 until the W-1 audit repair) | the Rust splits on any whitespace run, but `decide` proves `(tokenize "a\tb").length = 2` false: the kernel's separator is a space alone (gap 32) |
-| 123 | the same rule at the head of the line: `-  [ ]` with two spaces is an item line (numbered 28 until the W-1 audit repair) | `decide` proves `isItemLine "-  [ ] 2 30m Spaced ^a1" = true` false: `parseBody` matches the literal `- [` (gap 32) |
+| 123 | the same rule at the head of the line: `-  [ ]` with two spaces is an item line (numbered 28 until the W-1 audit repair) | `decide` proves `isItemLine "-  [ ] 2 30m Spaced ^a1" = true` false: `parseBody` matches the literal `- [`, **and since W-15/K3a `Field.tokBare` refuses a bare line carrying a `[`**, so it is not the bare arm either (gap 32) |
 | 124 | a bare `^` is not an id, as the Rust reads it (numbered 29 until the W-1 audit repair) | `decide` proves `isIdWord ['^'] = false` false: every `^`-leading word is an id token (gap 33) |
 | 125 | every loaded line satisfies the calendar shape rule by `rfl` (numbered 30 until the W-1 audit repair) | `Core.shape` is a view of the line's bytes now, so `rfl` fails (gap 30) |
 | 43 | insert an item over a standing one — hand `Store.insertFresh` the proof that the id is *taken* | `insertFresh` demands `(get i).isNone = true`, the dual of `Store.set`'s `isSome`, and there is no third door that takes neither proof; freshness for `add` is L21's theorem, not a runtime retry |
@@ -1079,6 +1079,12 @@ sequence.
    changes a type `State.lean`, `Plan.lean`, `Cmd.lean` and `Boundary.lean` all
    use.
 
+   **CLOSED 2026-09-17 (W-15, K3a, D31, gap 301)**, and by exactly the means
+   this entry names: `RawItem.boxed` records whether the box was there, a
+   box-less line is an entity keyed by `Field.titleKey`, and `plan-basic`'s
+   store went 26 → 40 entities.  The entry is kept, and its diagnosis with it,
+   because it was right about the cost.
+
 6. **`renderItem` writes a legal line, not the conventional one.**  The `^id`
    leads the token run (see above), the title is written with single spaces
    between words, and `Fields.canonicalWf` refuses an unclassifiable word that
@@ -1603,11 +1609,18 @@ cover" near the top of this file.*
     * `parseBody` matches the literal `- [`, so `- <TAB>[ ] …` and `-  [ ] …`
       (two spaces) are **not item lines**. 1,049 lines. This one is silent: the
       line is kept as prose and written back unchanged, so nothing complains and
-      the item is simply invisible to every command, to ranks and to `tm check`;
-    * `- [ ] x<TAB>^a1` is refused as `noId` — 9 lines the Rust reads fine;
+      the item is simply invisible to every command, to ranks and to `tm check`.
+      *(RE-MEASURED 2026-09-17, W-15/K3a: still exactly 1,049. The box became
+      optional, so "not the boxed arm" no longer implies "prose" — `Field.tokBare`
+      refuses a bare line carrying a `[` anywhere, which is what keeps these
+      1,049 prose instead of reading them as items whose title begins `[`.)*;
+    * `- [ ] x<TAB>^a1` is refused as `noId` — 9 lines the Rust reads fine
+      *(unchanged at W-15/K3a: the title key is the **bare** form's, and that
+      line carries a box)*;
     * `- [ ] x ^a1<TAB>` yields the id `"a1\t"` — a store key with a tab in it,
       which the Rust's own `Id::is_valid` would reject. 8 lines got a different
-      id this way;
+      id this way *(RE-MEASURED at W-15/K3a: **14**, because six more of these
+      lines are now items — the tab class is unchanged, the denominator grew)*;
     * and it reaches an operation that ships: on
       `- [>] … @j<TAB>est:48h … ^w4 … est:2h09m`, `tm edit est=45m` writes the
       *first* `est:` in the Rust (documented: "the first occurrence of a repeated
@@ -26776,6 +26789,26 @@ midnight caveat is gone from the goal and from its doc comment.
 **Highest on this branch:** gap **323**, cheat **160**, parity **P37** (P38
 free).  Track P's range is 320–339; **324–339 are free**.  Track K owns 300–319,
 Merge 340–344, the goals track 365–384, Land 385–389, the repair step 390–399.
+
+### Three live register entries corrected in place (§5.12, the ledger-rot class)
+
+Check 3 reconciles declarations against audit lines and **cannot see prose**,
+which is how W-14's audit found a shipped doc comment citing a deleted theorem.
+Three live registers said things this step made false, and each is corrected
+where it stands rather than rewritten away:
+
+* **Known gap 5, "State-less lines are still not representable"** — closed, by
+  exactly the means it named (`RawItem.boxed`). The entry and its cost estimate
+  are kept, because it was right.
+* **Gap 32's three measured bullets** — 1,049 is re-measured and still 1,049,
+  with the second reason (`tokBare`) added, because "`parseBody` matches the
+  literal `- [`" stopped being sufficient the moment the box became optional;
+  the `noId` bullet is unchanged at 9; the different-id bullet is re-measured
+  from **8 to 14** (the tab class is the same, the denominator grew).
+* **The cheat register's row 123** — the reason it still refuses is now two
+  clauses, and it says so.
+
+Nothing was deleted from any of the three.
 
 ### What this step did NOT do, by name
 
