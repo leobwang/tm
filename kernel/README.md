@@ -28904,13 +28904,22 @@ on a scratch tree outside the repo, with `--now` fixing the clock, and was drive
      with §16's `wind_down` and `bed` rather than forked; `mkRoutine?` refuses a
      routine whose declared window is malformed **by name**, which is README gap
      285's rule (its *verb* half is still owed and says so below); P3 did NOT
-     land.  Track P's gap range is **430-449**; **430-436 taken, 437-449 free**.
+     land.  Track P's gap range is **430-449**; **430-437 taken, 438-449 free**.
      Cheats **163-165** (P1 took 161-162 of track P's 161-170).  Every figure
      below was re-measured on the committed tree, each command capped at
      MemoryMax=40G, MemorySwapMax=0.
      =========================================================================== -->
 
 ## Stage 6, W-15 track P step P2, 2026-09-17: the planner places its routines — and a malformed window is refused by name
+
+**CORRECTED at `1f18d04`+1 (a `docs:` commit, this run).** As first committed, gaps
+433 and 434 said the Active reservation waits on P3 because "`active_run` needs the
+cut and the slots". **That is false and I checked it after committing**:
+`planner.rs:1497`'s `active_run` reads the walls, the wind-down, `runtime.active`,
+`overrides.drop`, the replay's open block and `current_block_end`, and fork `run()`
+places it *before* step 2 — no cut, no slots. What actually stops it is **gap 437**,
+which the corrected rows name. The two `Planner.lean` doc comments that repeated the
+wrong reason are corrected with it. The rest of the block stands as written.
 
 ### What landed
 
@@ -29201,21 +29210,31 @@ was not re-blessed.**
   clears it*: **P8**, when the planner request lands and `[day]` crosses once for
   both.
 * **433** — *what is not done*: **P3** (the slot cut and the energy filter) did not
-  land in this step. *Why*: P2's own scope — the input type, the five refusals, the
-  placement fold and its invariant, the evening rows, and re-proving P1's four laws
-  and `PlanCheck.dayPlan_ok_core` over a day with a fourth source of rows — filled
-  the step, and design §14.6's instruction is to commit the green part rather than
-  half-build the cut. *What it costs*: `plan_places_no_block_over_a_break` and
+  land in this step. *Why*: two reasons, and the second is the one that matters.
+  P2's own scope — the input type, the five refusals, the placement fold and its
+  invariant, the evening rows, and re-proving P1's four laws and
+  `PlanCheck.dayPlan_ok_core` over a day with a fourth source of rows — filled the
+  step. **And P3's two choices are not separable**: choice 5b's Active reservation
+  is the day's first `SegKind.block` row, which makes four of `PlanCheck`'s six
+  block-side checks non-vacuous and makes one of them **false** (gap 437), so
+  landing choice 4 alone is §14.6's half-built cut and landing 5b drags in P5's
+  restatement. *What it costs*: `plan_places_no_block_over_a_break` and
   `plan_reserves_one_block_at_a_time` stay in `Goals.lean`; the day still has no
   slots. *Which step clears it*: **P3**, whose inputs (`Look.cutSlots`,
-  `Look.energize`, `Look.limitSlots`, `Look.day0Cut`) are all built and whose
-  placed-routine *rests* are `placedRoutines` above.
+  `Look.energize`, `Look.limitSlots`, `Look.todayEnergy`) are all built, whose
+  placed-routine *rests* are `placedRoutines` above, and whose `blocks_since_last
+  _break` is `DayAcc.starts` and `DayAcc.breaks` through the seam — **taken together
+  with P5's restatement of the block-side checks**.
 * **434** — *what is not done*: §8.2 choice 5b's Active reservation is **not** in
   `blockedByWalls`, so step 2 can place a routine over the running block. *Why*:
-  fork `run()` pushes `active_run` before `place_mandatory_and_pref`, and
-  `active_run` needs the cut and the slots, which are P3's. *What it costs*: on a
-  day with a block running, a mandatory routine may be placed on top of it. *Which
-  step clears it*: **P3**, in the same step that builds `active_run`.
+  **not a missing input.** `active_run` (`planner.rs:1497`) reads the walls, the
+  wind-down this step landed, `runtime.active`, `overrides.drop`,
+  `Replay.OpenBlock`'s worked minutes through the seam, and `current_block_end` —
+  and **no cut and no slots**; fork `run()` places it *before* step 2, not after
+  step 3. What stops it is gap **437**: the reservation is the day's first Block row
+  and `PlanCheck` cannot yet accept one. *What it costs*: on a day with a block
+  running, a mandatory routine may be placed on top of it. *Which step clears it*:
+  **P3**, together with P5's restatement of the block-side checks.
 * **435** — *what is not done*: a Routine row's `hot` mark is always `false`.
   *Why*: fork `emit_segments` reads `prios[i].p == 0`, which is §7.2's pass and is
   **P4**'s. *What it costs*: a `p = 0` routine prints without its `⚠`. *Which step
@@ -29225,6 +29244,20 @@ was not re-blessed.**
   position, so the note is **P6**'s; P2's deferred instances carry `deferred :=
   true` and no row. *What it costs*: a routine P2 defers is invisible in the day
   and in `diagnostics.notes` until P6. *Which step clears it*: **P6**.
+* **437** — *what is not done*: `PlanCheck.noDemandingAfterWindDown` has **no Active
+  exception** and needs one. *Why*: design §6.3 names two of the eleven as needing
+  the §8.2 choice-5b exception — overbooking and the energy filter — and
+  `PlanCheck` gives both one (`withoutActive`, and `energyOk`'s leading
+  `isActive r s ||`). **There is a third.** Fork `active_run`'s `limit` is
+  `if now < wind_down { min(wind_down, day_end) } else { day_end }`, so on a day
+  replanned *after* the wind-down the reservation runs in the evening, and its item
+  may carry `ci ≥ 4`; `windDownOk` has no escape for it and refuses the day.
+  *What it costs*: `PlanCheck.dayPlan_ok_core` becomes **false** the day choice 5b
+  lands, so choice 5b cannot land before the restatement — which is why gaps 433 and
+  434 read as they do. *Which step clears it*: **P5**, which
+  `PlanCheck.dayPlan_ok_core`'s own comment already names as the owner of the
+  block-side restatement; design §6.3's list of "which of the eleven are false as
+  written" gains a row when the owner confirms.
 
 ### Gaps left open, by name
 
@@ -29288,5 +29321,5 @@ routine drive was performed on a scratch tree **outside the repo**
 defect — `tm check`'s two errors and `tm plan`'s placed `lunch` are pasted above as
 they printed.
 
-**Highest on this branch:** gap **436**, cheat **173** (track G's, W-14; this step's own
+**Highest on this branch:** gap **437**, cheat **173** (track G's, W-14; this step's own
 are 163-165), parity **P37**.

@@ -1340,9 +1340,14 @@ which never calls `loc_ok`).  A routine is furniture: it happens where you are.
 ### What step 2 does NOT do, by name
 
 * **The Active reservation** (choice 5b) is not in `blocked` yet.  Fork `run()` pushes
-  `active_run` before `place_mandatory_and_pref`; `active_run` needs the cut and the slots, so
-  it is **P3**'s.  Until it lands a routine may be placed over the running block (README gap
-  434).
+  `active_run` before `place_mandatory_and_pref`, and every input it reads exists today — the
+  walls, the wind-down this step landed, `Replay.OpenBlock`'s worked minutes through the seam,
+  and `current_block_end`.  **What stops it is not a missing input**: the reservation is a
+  `SegKind.block` row, and the day's first Block makes four of `PlanCheck`'s six block-side
+  checks non-vacuous — `noDemandingAfterWindDown` among them, and that one has **no Active
+  exception** and needs one (README gap **437**).  Landing it therefore drags in the
+  restatement `PlanCheck.dayPlan_ok_core`'s own comment assigns to **P5**.  Until it lands a
+  routine may be placed over the running block (README gap 434).
 * **`diagnostics.notes`' un-placed note** (`planner.rs:1055`) is **P6**'s: a deferred routine is
   only *finally* un-placed once step 6 has tried the lowest-energy position.  `Note.noPosition`
   exists and nothing constructs it yet.
@@ -1741,9 +1746,10 @@ def PlanReq.anchorOf (r : PlanReq) (i : Id) : Option Nat :=
 (the `buffer:` run-up included, which is why this reads `x.lo` and not `x.evLo`) and §9's running
 interruption.
 
-**The Active reservation is NOT here and that is P3's** (design §2 choice 5b; fork `run()` pushes
-`active_run` before `place_mandatory_and_pref`, and `active_run` needs the cut).  README gap
-434. -/
+**The Active reservation is NOT here** (design §2 choice 5b; fork `run()` pushes `active_run`
+before `place_mandatory_and_pref`).  It is not a missing input — see this section's header — but
+the first Block row the planner places, which `PlanCheck` cannot yet accept.  README gaps 434
+and 437. -/
 def blockedByWalls (r : PlanReq) : List (Nat × Nat) :=
   (wallsToday r).map (fun x => (x.lo, x.hi)) ++
     (interruptRows r).map (fun s => (s.start, s.stop))
