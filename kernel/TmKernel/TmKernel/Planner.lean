@@ -1603,6 +1603,15 @@ theorem mkRoutines?_refuses_too_many (p : PlanCore) (xs : List RoutineIn)
     (h : maxCands < xs.length) : mkRoutines? p xs = .error .tooManyRoutines := by
   unfold mkRoutines?; rw [if_pos h]
 
+/-- **A host that sends no window instance is accepted, and gets the empty cap.**  The
+positive end of `mkRoutines?`' rejection theorems (AGENTS §5.8: both directions get a
+theorem), and what lets a caller that has no routines to send rewrite the decoder away
+instead of carrying its `match` (W-15's land step, `PlannerWit.witBuilds`). -/
+theorem mkRoutines?_of_none (p : PlanCore) : mkRoutines? p [] = .ok Capped.nil := by
+  unfold mkRoutines?
+  rw [if_neg (by simp [maxCands])]
+  rfl
+
 /-- **A refused instance refuses the list** — gap 285 reaches the boundary and is not dropped
 on the way. -/
 theorem mkRoutines?_refuses_when_one_is_refused (p : PlanCore) (x : RoutineIn) (e : RoutineErr)
@@ -1701,6 +1710,20 @@ def splitSleep (r : PlanReq) : List Placed → Option Placed × List Placed
     else
       let s := splitSleep r t
       (s.1, q :: s.2)
+
+/-- **`splitSleep` reads the request only through `isSleepInstance`.**  It is the ONE step-two
+definition that takes the whole `PlanReq` and recurses, so it is the one place where two
+requests that agree on every field a step-two row can see are still not *definitionally* equal
+— every other link in the chain (`routineInstances`, `bedSec`, `blockedByWalls`, `night`,
+`placeStep`, `routineRow`) reduces on its own.  Found at W-15's land step, which needed
+`PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` re-proved
+over P2's day (D5). -/
+theorem splitSleep_congr {r r' : PlanReq}
+    (h : PlanReq.isSleepInstance r' = PlanReq.isSleepInstance r) :
+    ∀ l : List Placed, splitSleep r' l = splitSleep r l
+  | [] => rfl
+  | q :: t => by
+    simp only [splitSleep, h, splitSleep_congr h t]
 
 theorem splitSleep_keeps_the_rest (r : PlanReq) :
     ∀ l : List Placed, ∀ q ∈ (splitSleep r l).2, q ∈ l

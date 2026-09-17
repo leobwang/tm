@@ -84,14 +84,22 @@ is satisfiable and `Negative.lean`'s cheats 171-173 assert the refusals from the
 
 ## D29 / L24
 
-`plan_tail_drop`'s refutation is **not here**.  It needs a `dayPlan` that *places* something,
-and step P1 places no Block of its own: `Planner.assignedFrom (dayPlan r) r.now.sec = []` for
-every request, and the only ids `assignedOf` can hold are the ones the log already replayed,
-which no replan may move either.  `Goals.lean` says the same in the goal's own doc comment
-("the witness needs a `dayPlan` that places something").  What is here is the list arithmetic
-the refutation and the
-restatement will both apply — `a_kept_reservation_defeats_the_prefix_but_not_the_erasure` —
-which is the whole mathematical content of D29 with the planner factored out.
+`plan_tail_drop`'s refutation is **not here**.  What is here is the list arithmetic the
+refutation and the restatement will both apply —
+`a_kept_reservation_defeats_the_prefix_but_not_the_erasure` — which is the whole mathematical
+content of D29 with the planner factored out.
+
+**Since W-15 there IS a refutation, in `TmKernel/PlannerWit.lean`, and it is not choice 5b's**
+(README gaps 348, 366).  A `PlanReq` can be built now, so the missing witness is no longer the
+blocker; what remains blocked is the *reason* D29 names.  §8.2 choice 5b compares
+`plan(budget)` with `plan(budget − Δ)`, and
+`PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` proves the
+budget cannot reach `assignedOf` at all until **P5** writes the fold.  What the builder did
+expose is a second falsity nobody had recorded: the goal's hypotheses leave `PlanReq.run` free,
+and D24's seam put the day's past half inside it, so two requests satisfying every hypothesis
+disagree about the whole assigned set —
+`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`, with
+`erasing_the_active_item_does_not_repair_a_law_whose_run_is_free` beside it.
 
 ## D9-21, the recursion rule
 
@@ -1107,11 +1115,16 @@ the contrary: a Block today's log holds is work, is a row of the day, and is in 
 `dayPlan_block_rows_come_from_the_log` is unconditional and `dayPlan_ok_core`'s `hnopast`
 hypothesis exists precisely because today's log **can** hold one.
 
-What is actually missing is a **witness**: `PlanReq` carries a `WfPlan`, a `Seal.Run`, a
-`Look.Input` and a `Lookahead`, and there is no decoder and no builder for one yet (gap 346,
-gap 348), so no `r` can be exhibited whose `dayPlan` places two candidates and a reservation.
-A restatement shipped without its refutation is a weakening (AGENTS §3.1 item 3), so
-`plan_tail_drop` is left exactly as it stands and the debt is recorded by name in the README.
+What was missing until W-15 was a **witness**: `PlanReq` carries a `WfPlan`, a `Seal.Run`, a
+`Look.Input` and a `Lookahead`, and there was no decoder and no builder for one (gap 346,
+gap 348).  `TmKernel/PlannerWit.lean` is the builder; gap 348 is closed, and a concrete request
+whose `dayPlan` holds real rows exists (`PlannerWit.theRequest`).  It is still not a request
+whose `dayPlan` **places two candidates and a reservation**, because no step of `dayPlan` does
+that yet, and the theorem that says so is
+`PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` — **P5 must
+delete it**.  So a restatement shipped without choice 5b's refutation would still be a
+weakening (AGENTS §3.1 item 3), `plan_tail_drop` is left exactly as it stands, and the debt is
+recorded by name in the README.
 
 What *is* provable today is the arithmetic D29 turns on, and it is the whole of it: §8.2 choice
 5b reserves the running block **before** the budget is consulted, so a candidate that ranks

@@ -5034,3 +5034,58 @@ open Tm
 #print axioms Tm.two_titles_in_one_file_are_a_dupId
 #print axioms Tm.a_title_colliding_with_an_id_is_refused
 #print axioms Tm.parseLine_serializeItem
+/-! ############################################################################
+## Stage 6, track W (run W-15): the `PlanReq` builder and its witnesses
+`TmKernel/PlannerWit.lean` — README gap 348, and the three gaps it blocked (366's
+refutation half, 393's witness half, 396).  Nothing imports this module; it is the
+end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
+############################################################################ -/
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_plan_the_loader_refuses
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_an_input_the_decoder_refuses
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_wall_index_that_is_not_the_plans
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_run_the_guards_refuse
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_zero_denominator
+#print axioms Tm.PlannerWit.mkPlanReq?_ok_wallsAgree
+#print axioms Tm.PlannerWit.mkPlanReq?_ok_parts
+#print axioms Tm.PlannerWit.witInput_decodes_ok
+#print axioms Tm.PlannerWit.witInput_decodes
+#print axioms Tm.PlannerWit.witInput_fields
+#print axioms Tm.PlannerWit.lookWallPlan_loads
+#print axioms Tm.PlannerWit.witRun_resumes_ok
+#print axioms Tm.PlannerWit.witRun_resumes
+#print axioms Tm.PlannerWit.witCaps_ok
+#print axioms Tm.PlannerWit.witCaps_eq
+#print axioms Tm.PlannerWit.witBuilds
+#print axioms Tm.PlannerWit.theRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening
+#print axioms Tm.PlannerWit.the_witness_day_is_planned_from_two_in_the_afternoon
+#print axioms Tm.PlannerWit.the_witness_assigns_the_two_replayed_blocks
+#print axioms Tm.PlannerWit.the_witness_assigns_nothing_after_now
+#print axioms Tm.PlannerWit.the_battery_passes_at_the_witness
+#print axioms Tm.PlannerWit.the_witness_replays_a_block
+#print axioms Tm.PlannerWit.the_witness_defeats_the_lifts_hypothesis
+#print axioms Tm.PlannerWit.the_battery_bites_at_the_witness
+#print axioms Tm.PlannerWit.witRun0_resumes_ok
+#print axioms Tm.PlannerWit.witRun0_resumes
+#print axioms Tm.PlannerWit.witBuilds0
+#print axioms Tm.PlannerWit.the_quiet_day_assigns_nothing
+#print axioms Tm.PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands
+
+#print axioms Tm.PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin
+#print axioms Tm.PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-15**, the LAND step — the two
+-- theorems the merge of tracks K, P and W had to add, plus one rename).
+--
+-- The rename is `Tm.PlannerWit.the_witness_day_is_two_replayed_blocks_and_the
+-- _written_wall`, whose line above was EDITED rather than appended: P2 put
+-- §16's `wind_down` and `bed` in the day track W wrote that equation against,
+-- so the three-row form is FALSE and the equation is re-proved over five rows
+-- under the name it now deserves (D5, AGENTS §5.2).  Every prose citation was
+-- grepped and moved with it.
+-- ===========================================================================
+#print axioms Tm.Planner.mkRoutines?_of_none
+#print axioms Tm.Planner.splitSleep_congr
+#print axioms Tm.PlannerWit.the_witness_carries_no_routine
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_routine_the_rule_refuses
