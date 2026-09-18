@@ -546,8 +546,19 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
 }
 
 // ---------------------------------------------------------------------------
-// T12 — the replan the TUI would make on a tick (stage 6 W-17, step P4;
+// T17 — the replan the TUI would make on a tick (stage 6 W-17, step P4;
 // design §20 gap 257, owner question Q8 / D30)
+//
+// **It was called T12 for one run, and T12 was taken** (README gap 688, closed
+// at W-18 track A).  The campaign's instrument numbers are ONE sequence, not
+// one per design document: T0-T16 are all claimed, T12 is
+// `model_fit_is_the_fork_points_on_the_corpus` (stage-5 design §14.6,
+// `cli_switch_acceptance.rs`) and T14 is
+// `a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb`
+// (`tm/tests/cli_latency.rs:310`), which is why the gap's own suggestion of
+// T14 could not be taken either.  **T17 was free and is the first number that
+// was.**  A new instrument starts above the highest number in the checkout:
+// `grep -rhoE '\bT[0-9]+\b' kernel/README.md kernel/design | sort -uV | tail -1`.
 // ---------------------------------------------------------------------------
 
 /// §9.1's stop condition: the TUI replans on a **tick** while a replan stays
@@ -588,7 +599,7 @@ fn time_call(req: &str, n: usize) -> (f64, f64, String) {
     (sorted[0], sorted[sorted.len() / 2], last)
 }
 
-/// **T12: what one replan costs through the FFI, at 500 candidates.**
+/// **T17: what one replan costs through the FFI, at 500 candidates.**
 ///
 /// **Why this exists.** `kernel/design/stage6/stage6-planner-design.md` §9.1
 /// gives the TUI a 5 ms stop condition for replanning on a tick, and §20 gap
@@ -655,7 +666,7 @@ fn a_500_candidate_replan_through_the_ffi() {
             "a 500-candidate replan took {all_med:.1} ms (regression bound {REGRESSION_MS} ms)"
         );
         eprintln!(
-            "T12 replan through the FFI, 2 MiB thread, best/median of 7: \
+            "T17 replan through the FFI, 2 MiB thread, best/median of 7: \
              (a) {REPLAN_CANDS} candidates, no tree {pass_best:.2}/{pass_med:.2} ms; \
              (b) 2,000-line tree, no candidates {tree_best:.2}/{tree_med:.2} ms; \
              (c) both {all_best:.2}/{all_med:.2} ms; \

@@ -33718,7 +33718,9 @@ probes that found `Char.ext` and `UInt32.lt_iff_toNat_lt` were run at 8G with a
 **This is the measurement design §20 gap 257 records as missing and D30 makes P4's.**  §9.1 lets
 the TUI replan on a tick while a replan stays under **5 ms**; the 0.8 ms behind that budget was
 taken at the FFI spike, against a kernel that did not exist yet.  `tm-kernel-ffi/tests/stack.rs`'s
-new **T12** measures one through the wire.  Best/median of 7 calls, 2 MiB thread, `MemoryMax=16G`:
+new **T17** measures one through the wire *(this block wrote **T12**; the row was renamed at W-18
+track A because T12 and T14 were both taken — gap 688)*.  Best/median of 7 calls, 2 MiB thread,
+`MemoryMax=16G`:
 
 | row | `opt-level = 0` (cargo's default dev) | `opt-level = 1` (what `logbench` prescribes) |
 |---|---|---|
@@ -33910,7 +33912,7 @@ claim.
 | `check.sh` wall, built tree | **3.70 / 3.48 / 3.38 / 3.44 / 3.47 / 3.41 / 3.37 s**, median **3.44 s** | **3.58 / 3.44 / 3.32 / 3.26 / 3.31 / 3.26 / 3.36 s**, median **3.32 s** | **+3.6%**, inside the 10%-per-step rule.  The last three of each column were taken **alternately**, which is the same-session comparand README gap 470 item 4 asked for: 3.47/3.41/3.37 against 3.31/3.26/3.36, **+3.0%**.  Measured where it goes: `Negative.lean` alone is 2.34-2.40 s against 2.28-2.31 s at the baseline cheats (**+0.06-0.09 s**), so the four new cheats are about a third of the delta and the rest is the 58 extra `#print axioms` and the larger `.olean` |
 | peak RSS, `check.sh` | 1.99-2.05 GiB | 2.05-2.09 GiB | down |
 | `cargo test --workspace` | **1,331 passed / 0 failed / 9 ignored across 78** result lines, exit 0 | 1,331 / 0 / 9 / 78 | unchanged — **no Rust in the tm workspace was touched** |
-| FFI suite (`-p tm-kernel-ffi`) | **101 passed / 0 failed** (kernel 86, corpus 8, stack **7**) | 100/0 (stack 6) | **+1**, T12 |
+| FFI suite (`-p tm-kernel-ffi`) | **101 passed / 0 failed** (kernel 86, corpus 8, stack **7**) | 100/0 (stack 6) | **+1**, T17 |
 | T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | — |
 | the door (`kernel_log_door`) | **23 / 0** | same | — |
 | `cli_switch_acceptance` | **9 / 0** | same | — |
@@ -33919,7 +33921,7 @@ claim.
 | `cli_check_log` / `cli_items` / `cli_lifecycle` | **11 / 53 / 29**, 0 failed | same | — |
 | `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | same | see the T11 rows |
 | Lean | **+965 / −49** (`git diff --numstat`) | — | `Planner.lean` +516/−3, `PlannerWit.lean` +204/−36, `Check.lean` +85/−3, `Negative.lean` +51, `Priority.lean` +51, `Lookahead.lean` +41, `Goals.lean` +17/−7 |
-| Rust | **+133 / −1**, all of it `kernel/tm-kernel-ffi/tests/stack.rs` | — | T12 and `grants_request`'s `docs` parameter |
+| Rust | **+133 / −1**, all of it `kernel/tm-kernel-ffi/tests/stack.rs` | — | T17 and `grants_request`'s `docs` parameter |
 
 ### T11, as readings and never as single numbers
 
@@ -33968,7 +33970,7 @@ at all by this step**, so every row here is the machine's.
   is unchanged, `cand_json` is unchanged, and gaps **113**, **114**, **116** and **301 item 1** are
   open and whole.  What this step derives from the plan — the two line orders — are not among D27's
   nine facts and were never the host's to send.
-* **D18, no memory bound raised.**  40G for builds and suites, 16G for the binary drive and T12, 8G
+* **D18, no memory bound raised.**  40G for builds and suites, 16G for the binary drive and T17, 8G
   for the `decide` probe.  Nothing was retried uncapped.
 * No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no `partial def`, no
   `unsafe`, no `opaque`, no `panic!`, no `!`-accessor (one was written in a witness and **deleted**
@@ -33981,7 +33983,7 @@ at all by this step**, so every row here is the machine's.
 Range **600-629** is track P's for this run.  **Seven taken, 600-606; 607-629 free.**
 
 **Gap 600 — §9.1's 5 ms TUI tick trigger cannot fire, and the fallback is the owner's call.**
-1. *What is not done.*  The trigger is not implemented and this step does not implement it.  T12
+1. *What is not done.*  The trigger is not implemented and this step does not implement it.  T17
    measures the replan at 22-25 ms (`opt-level = 1`) and 47-125 ms (`opt-level = 0`) at 500
    candidates, against a 5 ms budget.
 2. *Why.*  The budget's 0.8 ms was taken at the FFI spike and never against this kernel (design §20
@@ -34139,7 +34141,7 @@ tree is clean.
 ### Method disclosure
 
 Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under `systemd-run --user --scope
--p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except the binary drive and T12 (**16G**) and the
+-p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except the binary drive and T17 (**16G**) and the
 `decide` probe (**8G**).  No bound was raised and nothing was retried uncapped.  `check.sh` was run
 **ten** times in this checkout — once before any edit (the 7/7, 4,373, burn-down 11 this block's
 baseline column quotes), once after the Lean landed, four as timings, and the rest between edits —
@@ -34149,7 +34151,7 @@ first, to separate "does it build" from "does it pass"; it **failed four times**
 rules forbid, and a `rw` under a `match` that needed a `show` first — and each is printed here rather
 than dropped.  `cargo test --workspace --no-fail-fast` was run **once** on the final tree and tallied
 by summing the 78 result lines, not by `tail`.  `cli_latency` was run **three** times in release,
-every noisy row reported as all three readings.  T12 was run **five** times, four at `opt-level = 0`
+every noisy row reported as all three readings.  T17 was run **five** times, four at `opt-level = 0`
 and one at `opt-level = 1`, and all five readings are in the table.  `PlannerWit.lean`'s twelve new
 `decide` witnesses were probed as a module at **8G with a 900 s ceiling** and elaborated in 15.7 s.
 The binary drive used a release binary on a scratch `tm init --example` tree **outside the repo**,
@@ -35373,7 +35375,7 @@ track's own figure is beside it.
 | corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | same | — | same | **not below the floor** |
 | stage goals (check 7) | **10 outstanding, all stage 6** | 11 | 11 | — | 10 | **burn-down 11 → 10**; see below |
 | `cargo test --workspace` | **1,337 passed / 0 failed / 9 ignored across 79 result lines**, 0 compiler warnings | 1,331 / 0 / 9 / 78 | 1,331 / 78 | 1,337 / 79 | 1,331 / 78 | **+6 and one binary**, all of them track A's `tm/tests/cli_write_gate.rs`. Track P and track G touched no Rust in the workspace |
-| FFI suite (whole, not just check 5) | **101 passed / 0 failed** — `corpus` 8, `kernel` 86, `stack` **7** | — | stack 7 (T12 landed) | — | — | `stack.rs` carries P4's T12, the D30(Q8) instrument |
+| FFI suite (whole, not just check 5) | **101 passed / 0 failed** — `corpus` 8, `kernel` 86, `stack` **7** | — | stack 7 (T17 landed) | — | — | `stack.rs` carries P4's T17, the D30(Q8) instrument |
 | **T5** (`kernel_replay_parity`) | **29 passed / 4 ignored** = its 33 arms | 33 | 33 | 33 | 33 | **`the_frozen_comparand_is_read_at_full_precision` ran and passed by name** (D21/D23) |
 | the door (`kernel_log_door`) | **23 / 23** | 23 | 23 | 23 | 23 | — |
 | `kernel_log_grammar` | **16 passed / 2 ignored**, and **18 / 0 with `TM_ORACLE` set** | — | — | — | — | see the oracle row below |
@@ -36063,31 +36065,37 @@ gap 275), 10 stalled days 516.35, a 30-day-old hand undo 1.33 s.
 **Closed: 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685.** Recorded
 below: three that are open, one of them found while reproducing.
 
-#### Gap 686 (new; label W17R-a) — `tm-kernel-ffi/tests/stack.rs` runs in no automated gate, T12 included
+#### Gap 686 (new; label W17R-a) — `tm-kernel-ffi/tests/stack.rs` runs in no automated gate, T17 included
+
+**CLOSED at stage 6 W-18 track A (D36).** Check 5 is now
+`cargo test --quiet --test kernel --test stack`; the +59 % is the owner's
+declared one-time payment and the block re-measures it. *(The instrument this
+paragraph reported as "T12" is **T17** since gap 688's close, and the name is
+swept here so a reader who greps finds the test.)*
 
 1. **What is not done.** `check.sh` check 5 is
    `( cd tm-kernel-ffi && cargo test --quiet --test kernel )` — `--test kernel`
    only. The root `Cargo.toml`'s `members = ["tm-core", "tm"]` excludes
    `tm-kernel-ffi`, so `cargo test --workspace` does not run it either.
    **All seven tests of `stack.rs` are therefore run by nothing automatic** —
-   not only **T12** (`a_500_candidate_replan_through_the_ffi`, the D30(Q8)
+   not only **T17** (`a_500_candidate_replan_through_the_ffi`, the D30(Q8)
    instrument gap 600 depends on), but the four 2 MiB-thread stack probes and
-   the two 3 660-day lookahead rows. *(Reported as T12 alone; it is the whole
+   the two 3 660-day lookahead rows. *(Reported as T17 alone; it is the whole
    file.)*
 2. **Why.** The exclusion is deliberate and documented (AGENTS §7.5: the two
    suites "do not overlap"), and it predates `stack.rs` carrying anything but
-   stack-depth probes. Nobody decided to leave T12 unguarded; the file grew into
+   stack-depth probes. Nobody decided to leave T17 unguarded; the file grew into
    a gate that does not run it.
 3. **What it costs.** A regression in any of the seven is caught only by
    somebody remembering to run them. They **do** run and pass — `cargo test
-   -p tm-kernel-ffi` here is **101 / 0** and T12 reports *"(a) 500 candidates,
+   -p tm-kernel-ffi` here is **101 / 0** and T17 reports *"(a) 500 candidates,
    no tree 10.89/11.01 ms; (b) 2,000-line tree, no candidates 11.12/11.19 ms;
    (c) both 21.28/21.37 ms; (d) 40-line tree, 50 candidates 2.38/2.39 ms"* — but
    that is a procedure, not a gate.
 4. **Which step clears it, and why this step did not.** The fix is one word:
    check 5 becomes `cargo test --quiet --test kernel --test stack`. **Measured,
    it costs 2.23 s** against `check.sh`'s 3.79 s built-tree wall — **+59 %**,
-   and the campaign's rule is at most **+10 % per step**. T12 alone is 0.33 s,
+   and the campaign's rule is at most **+10 % per step**. T17 alone is 0.33 s,
    still **+8.7 %** on its own and leaving the other six unguarded. So this is a
    budget decision and not a repair: either the 10 % rule is spent on it
    deliberately, or `tm-kernel-ffi` joins the workspace (which would double-run
@@ -36115,6 +36123,19 @@ below: three that are open, one of them found while reproducing.
    §13's own text. **R1.**
 
 #### Gap 688 (new; label W17R-c) — two different instruments are called "T12"
+
+**CLOSED at stage 6 W-18 track A — but NOT at the number this entry names.**
+Item 4 below says *"**T14** is free"*. It is not: **T14** is
+`a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb`
+(`tm/tests/cli_latency.rs:310`, stage-5 design §14.8's L8 row), cited 37 times
+in this file. Taking it would have shipped the same collision one number over.
+**T0-T16 are all claimed and the FFI replan row is now `T17`**, which was the
+first free number in the checkout — `grep -rhoE '\bT[0-9]+\b' kernel/README.md
+kernel/design | sort -uV | tail -1` prints it. Item 2's premise is the cause and
+is also wrong: the numbering is **not** design-document-scoped — one sequence is
+what the README's 37 T14 citations and this file's own `T0`-`T16` actually are.
+The paragraph below is left as written, because it is the record of the defect
+report and its subject is the *name*.
 
 1. **What is not done.** Design §14.6's **T12** is *"`model.json` byte-identical
    to the fork point"*, which README blocks from stage 5 discuss at length and
