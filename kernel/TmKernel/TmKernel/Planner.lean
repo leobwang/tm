@@ -3486,6 +3486,14 @@ about the planner.  The invariant it needs is already stage 5's
 (`Look.day0_slots_avoid_the_walls`), and the goal becomes non-vacuous at **P5**; design §6.4's
 row gives it to P1, and that row is wrong (README gap 347).
 
+**DISCHARGED at W-17 (track G, `85305f8`) as `PlanCheck.plan_places_no_block_over_a_wall`, over
+the Block rows that start at or after `now`; still not by this body, which is what the paragraph
+above says.**  The form `Goals.lean` carried is FALSE and
+`PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted` is the compiled
+refutation; five of the eleven checkers still range over nothing on a produced day, which is
+README gap 650 and is P5's, not this sentence's.  (Banner owed by README gap 653, paid at the
+W-17 land step.)
+
 `plan_never_moves_a_wall` **is** non-vacuous here, and is **false as stage 6 wrote it**. -/
 
 /-- **`plan_never_moves_a_wall` as stage 6 wrote it is REFUTED** (AGENTS §3.1 item 3, D5).

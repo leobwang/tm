@@ -34593,3 +34593,1030 @@ scratch `tm init --example` trees **outside the repo**, at `MemoryMax=16G`. No
 `decide` or `rfl` witness was written, so no 8G probe was owed and none was run.
 No bound was raised, nothing was retried uncapped, and no snapshot, fixture,
 latency band or corpus entry was re-blessed.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-17**, **track G** —
+     the goals track, on the isolated worktree `.claude/worktrees/w17-g`
+     (branch `w17-g`, from `24acb5a`).  The main checkout was **never touched**:
+     it was dirty throughout with track P's W-17 work in progress and its
+     `check.sh` fails there for that reason (said plainly below, with what it
+     printed).  Track G's gap range is **650-669**; this step takes **650-653**
+     and leaves **654-669** free.  Cheats **188-190** (written 184-186; renumbered at the land step).  Parity **P38**,
+     unchanged and none owed.  **Burn-down 11 → 10.**
+     =========================================================================== -->
+
+## Stage 6, W-17 track G, 2026-09-18: the lift loses a hypothesis, and the wall law leaves `Goals.lean`
+
+**What landed.** Two Lean modules edited — `PlanCheck.lean` (**+252**) and
+`PlannerWit.lean` (**+280/−1**) — plus `Check.lean` (+60: a new banner, 13
+`#print axioms` lines and one in-place correction), `Negative.lean` (+41: cheats
+**184-186**) and `Goals.lean` (+55/−19: **one goal deleted with its proof
+elsewhere**, and the stage-6 banner corrected twice). **No Rust, no wire value,
+no behaviour row, nothing re-blessed.** `git diff --name-only` names those five
+source files, every one Lean, and this document.
+
+Three things, in the order they matter.
+
+### 1. `plan_places_no_block_over_a_wall` is FALSE as `Goals.lean` wrote it — refuted, restated, discharged
+
+**Burn-down 11 → 10.** It is the second of the thirteen to leave the file and,
+like the first (`plan_reserves_one_block_at_a_time`, step P3), it left as a
+**§3.1-item-3 discharge** and not a plain one: the goal as written is false, the
+refutation ships in the same commit, and the restatement is proved beside it.
+
+The reason is not new; **acting on it is**. `PlanCheck`'s own header has recorded
+it since the W-14 merge as finding 1 (gap 385): the day's Block rows include the
+ones `Planner.pastRows` replays from the log, and *"a Block the log holds can run
+longer than `block_min`, **can sit under a wall**, can overlap a break and can
+exhaust the budget — none of it the planner's doing"*. Step P3 took the first
+clause and refuted E1 with it. **Nobody had taken the second**, and design §6.4's
+table still gives this goal to P5 for a different reason (the eligibility
+restriction), which is true and is not the same defect.
+
+The witness is **one record**, and no new log and no new plan:
+
+```lean
+def theMorningWallRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with walls := [⟨['g','1'], 739867, 739867,
+      (Cal.instantOf Cal.chicago 739867 440).sec, (Cal.instantOf Cal.chicago 739867 440).sec,
+      (Cal.instantOf Cal.chicago 739867 470).sec⟩] } }
+```
+
+— the §4.3 Wednesday with the calendar's meeting moved to **07:20–07:50**, inside
+the hour `witLines` records as worked on `m1` (07:05–08:05). A real calendar sync
+does exactly this. The day `Planner.dayPlan` then produces is
+
+```
+07:05–08:05 block m1 | 07:20–07:50 wall g1 | 09:05–10:05 block m2 | 21:30 windDown | 22:00 sleep
+```
+
+and `PlannerWit.the_morning_wall_day_lays_a_block_across_a_wall` computes both
+halves: the overlapping pair exists, **and** `PlanCheck.noBlockOverAWall` answers
+`false` on it — the battery's own opinion, not a restatement of a `Planner`
+theorem.
+
+**The restatement** is `PlanCheck.plan_places_no_block_over_a_wall`, over the Block
+rows that start **at or after `now`** — `Planner.assignedFrom`'s restriction, the
+fork's own `assigned_set(day, w.now)` (`planner_invariants.rs:470`), and the one
+step P3 used for E1. It carries `hnowcal` (the instant being planned is inside the
+calendar), which is an R10 hypothesis `dayPlan_ok_core` already carried.
+**It is not vacuous**: §8.2 choice 5b's reservation is such a row, and
+`PlannerWit.the_reserved_day_assigns_the_running_block` exhibits one.
+**P5 must re-prove it** when the assign fold puts Blocks of its own in that set.
+
+### 2. §6.1's lift loses `hnopast` — `PlanCheck.dayPlan_ok_core_from_now`
+
+`dayPlan_ok_core` carries six hypotheses and one of them is not about the planner
+at all: `hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block` — *the log holds no
+Block for today*, which is false of every real day after the first block is
+worked. Its own doc comment says where it goes: *"**P5 is where this hypothesis
+goes**: it is discharged by restating the six block-side checks around what the
+planner assigns at or after `now`"*.
+
+That did not need P5. `PlanCheck.withoutPast` **names** the restriction instead of
+assuming it away —
+
+```lean
+def keepFromNow (r : PlanReq) (s : WfSeg) : Bool :=
+  !s.val.kind.isWork || decide (r.now.sec ≤ s.val.start)
+def withoutPast (r : PlanReq) (d : DayPlan) : DayPlan :=
+  { d with segments := d.segments.filter (keepFromNow r) }
+```
+
+— and `dayPlan_ok_core_from_now` is **the same conjunction over the same seven
+checkers**, with five hypotheses, every one an R10 or decoder obligation and none
+about the log's contents:
+
+```lean
+theorem dayPlan_ok_core_from_now (r : PlanReq)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : …) : planOkCore r (withoutPast r (dayPlan r)) = true
+```
+
+**No checker was weakened and no hypothesis was hidden.** All eleven checkers are
+exactly as track G wrote them at W-14; `withoutPast` hands the existing checkers a
+shorter segment list, which is `withoutActive`'s own pattern, and `SegKind.isWork`
+is the kernel's one reader of "is this row work" (`Planner.assignedFrom` uses the
+same one) — no second reading of either (AGENTS §5.3). Walls, breaks, the
+wind-down and the sleep row are **kept**: they are the comparands §8.3's laws put
+Blocks beside, not the subjects of them.
+
+**Both lifts are kept, and that is deliberate.** They are **incomparable** — this
+one drops a hypothesis and shrinks the day, `dayPlan_ok_core` keeps the whole day
+and pays for it with `hnopast` — so keeping both weakens nothing (D5) and each
+says something the other does not. Cheat **189** (written 185) asserts the hypothesis-free lift
+over the *whole* day at a request whose log holds a Block under a wall; `decide`
+refuses.
+
+**What the next step inherits, said precisely.** §6.1's whole-battery lift
+`dayPlan_ok` is **still not stated** — gap **365** stands unchanged, because
+`Planner.eligibleAt` does not exist and `∀ el, …` is the unrestricted claim design
+§6.3 refutes. What P5 inherits is: the eligibility-free half proved twice, once
+over the whole day under `hnopast` and once over the planner's own rows under
+nothing, with the second in the shape §8.3 means; six block-side proofs that each
+discharge **the reservation alone** and must be re-proved the commit the assign
+fold places a Block; and design §6.2's ≈ 4,500 proof lines for the fold induction,
+of which **none is claimed here**. This step wrote 252 lines in `PlanCheck.lean`
+and not one of them is an induction over the assign fold, because there is still
+no fold to induct over.
+
+### 3. Gap 396's other eight: the census, and eleven of eleven biting
+
+W-14 asked whether the battery gives an opinion of its own. W-15 answered it for
+`wallsUnmoved` and `noBlockOverAWall`; W-16 for `oneBlockAtATime` on the row the
+*planner* places. **Three of eleven**, and the brief for this run asked for more
+and for the ratio.
+
+**The two questions are different and this step keeps them apart**, because
+conflating them is how "the battery bites" came to stand for "the battery is
+checking something".
+
+**(a) Non-vacuous — the quantifier has a subject on a day the planner produced.**
+`PlannerWit.the_battery_census_over_a_produced_day` **computes** it, at
+`theStoredRequest` (the §4.3 Wednesday at 14:00, `m1` running, and a store that
+holds the ids the morning's log actually worked). **Six of eleven have a subject;
+five do not**, and each of the five is a fact about the day, not a reading:
+
+| checker | subject? | what the census computes | ends at |
+|---|---|---|---|
+| `noOverbook` | **yes** | 3 Block rows, `withoutActive` leaves `m2`'s hour | — |
+| `oneBlockAtATime` | **yes** | 3 Block rows | — |
+| `noBlockOverAWall` | **yes** | 3 Blocks × 1 Wall | — |
+| `wallsUnmoved` | **yes** (at `theRequest`) | 1 Wall row against the plan's own `at:` | — |
+| `monotoneInRank` | **yes** | `m1`/`m2`: one document, ranks 1 and 2, both `ci:5`, equal `rootPrio`, **both assigned** | — |
+| `hotBeforeQueue` | **yes** | `m1` carries `hot`, `m2` does not, both assigned | — |
+| `energyFilterOk` | **no** | **no row carries a slot energy** | **P5** |
+| `noBlockOverABreak` | **no** | **no Break row** (`Planner.a_break_row_is_a_replayed_row`; `kept_breaks` is P5's, gap 551) | **P5** |
+| `noDemandingAfterWindDown` | **no** | **no Block at or after the wind-down** | **P5/P7** |
+| `impossibleKept` | **no** | `diagnostics.impossible` is **empty** | **P4** (gap 367) |
+| `batchDoesNotReachPast` | **no** | **no Batch row** | **P5** |
+
+**Six of eleven bite non-vacuously; five are still vacuous.** That ratio is the
+honest measure the brief asked for, and it is now a compiled fact rather than a
+sentence.
+
+**What made the other three of the six possible was reuse, not a new witness.**
+`Boundary.lookWallPlan` is a one-line calendar, so `effectiveCi` answered §3.1's
+default of three for the replayed rows and the store held **one** id — which left
+`monotoneInRank`, `hotBeforeQueue` and `noDemandingAfterWindDown` with nothing to
+range over for reasons about the *witness*, not the *planner*.
+`PlannerWit.storedWitness` is `Boundary.undoWitnessRequest` **verbatim but for one
+word**: `m1` and `m2` at `ci:5`, two ranked siblings of one document, and `hot` on
+the first. The ids are the ones `witLines` already records as started and done, so
+the day the planner produces assigns items the store really holds.
+
+**(b) Bites — some mutation of that same produced day is refused.** Eight new
+mutations, each a `List.map`, a `List.filter` or one field of the day
+`Planner.dayPlan` built — **never a hand-written day**, which is what
+`PlanCheck`'s `wDay` witnesses already are and what these deliberately are not:
+
+| checker | the mutation |
+|---|---|
+| `noOverbook` | a budget of **nothing**, against a day that spent an hour on `m2` |
+| `energyFilterOk` | `m2`'s block given slot energy **0** against its `ci:5` (it is `m2`, not `m1`, because `energyOk` excuses the reservation by name — design §6.3 row 2) |
+| `noBlockOverABreak` | the written wall turned into a **break**, `m1`'s block laid across it |
+| `noDemandingAfterWindDown` | `m2`'s `ci:5` block moved **into the wind-down** |
+| `monotoneInRank` | every row naming `m1` dropped — the item that ranks ahead **vanishes** while `m2` keeps its block |
+| `hotBeforeQueue` | the same day; the dropped item is also the `hot` one |
+| `impossibleKept` | the same day, with `m1` named IMPOSSIBLE in the diagnostics it is missing from |
+| `batchDoesNotReachPast` | the same day again, `m2`'s row gathered into a **batch** that reached past `m1` |
+
+`the_battery_bites_over_a_produced_day` proves all eight `false`;
+`the_whole_battery_refuses_each_mutation` proves `planOk` is `false` on every one,
+so a mutation that reaches any single checker reaches the conjunction the lift is
+about. With W-15's three and W-16's one, **every one of the eleven now refuses
+something over a day the planner really produced.** Cheat **190** (written 186) asserts from the
+other side that the produced day carries a Break row; `decide` refuses.
+
+### `PlannerWit.lean`'s importers, measured — the brief's fourth item
+
+The module header said *"**nothing imports it**, so no shipped path grows"*. **The
+first clause is false as written and is corrected in place.**
+`kernel/TmKernel/TmKernel.lean:82` carries `import TmKernel.PlannerWit`, put there
+in the same commit that created the module (`3096320`) because AGENTS §9.2 lists
+*"a new module that is never imported into `TmKernel/TmKernel.lean`"* among the
+disguised gaps — it would look built and check 1 would agree. `Check.lean`,
+`Negative.lean` and `Goals.lean` reach it from there through `import TmKernel`,
+which is what puts its **64** audit lines under check 3 and its `decide` witnesses
+under check 1.
+
+**What is true, and is what the sentence meant, is that no *library* module
+imports it**: `grep -l 'import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean` is
+empty, so it is a leaf, `Boundary.lean` (the only module the FFI enters) cannot
+reach it, and no shipped path grows.
+
+**Should it stay that way? Yes**, and for a reason worth writing down: this module
+exists to *evaluate* the planner on concrete requests, so anything importing it
+would be pulling 40 000-`maxRecDepth` witnesses into its own elaboration.
+AGENTS §5.6's dead-code lesson — *a module nothing imports is weaker evidence than
+a driven verb* — applies, and the honest reading of it here is the uncomfortable
+one: **these witnesses cannot be driven at all**, because `dayPlan` has no shipped
+caller. That is **gap 652** below, and it is the same shape as gap 501.
+
+### `shipped_call_sites`, driven and not asserted
+
+Every rule this step added or changed, with the shipped verbs that reach it, found
+by grepping the host path from `main` down — and then driven.
+
+| rule | shipped callers, by grep | driven |
+|---|---|---|
+| `PlanCheck.withoutPast` / `keepFromNow` / `plan_places_no_block_over_a_wall` / `dayPlan_ok_core_from_now`, and every `PlannerWit` witness | **none.** `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing: there is still no planner op on the wire, so `dayPlan` has no shipped caller and neither does anything stated about it. `grep -rn 'withoutPast\|keepFromNow\|dayPlan_ok_core_from_now\|theStoredRequest\|theMorningWallRequest' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0** | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — the §6.3 auto-close's read, its apply, the emits, the capacity call and D16's writer — and **no planner call**. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` + the day, exit 0; `tm triage` → three rows, exit 0 |
+
+**The honest sentence this table is for:** this step's Lean *is* linked into the
+`tm` binary (`tm` depends on `tm-kernel-ffi` by path, which links the Lean
+archive), so "Lean-only" does not by itself mean "the binary did not move". What
+shows it did not is that the whole workspace suite, the FFI suite, T5, the door,
+`cli_switch_acceptance`, `kernel_call_counts` and the corpus all return the
+**same** numbers as the clean baseline measured in this same session — and those
+suites compare the binary's bytes against frozen fixtures.
+
+### Acceptance, re-measured on this worktree against a baseline measured in the same session
+
+The brief's comparands are `24acb5a`'s. **They were re-measured here rather than
+quoted**, by stashing this step's diff in this worktree and running the identical
+commands — which is the only way to say "unchanged" with evidence when the box is
+shared. Every command under `systemd-run --user --scope -p MemoryMax=40G
+-p MemorySwapMax=0 --quiet`; binary drives at **16G**. No bound was raised and
+nothing was retried uncapped.
+
+| row | this tree | `24acb5a`, re-measured here | brief's | delta, explained |
+|---|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 ok | 7/7 | — |
+| check.sh warm | **3.69 / 3.70 / 3.70 s**, median **3.70**, measured in the **same window** as the baseline beside it; first pass 4.67 s (carries a relink); peak RSS 1.90–1.98 GiB (1,986,748–2,077,416 KiB). *(A later, quieter window read **3.52 / 3.53 / 3.57 / 3.57 s** on the final tree — but with no same-window baseline to compare it to, so the +8.5% below is the figure this step is held to, not the +4% that reading would suggest.)* | **3.41 / 3.38 / 3.44 s**, median **3.41**; the cold pass that preceded them was **231.19 s at 8.15 GiB** and is printed rather than dropped — it is the whole-kernel rebuild the stash forced, and it is **not** a built-tree figure | — | **+8.5%**, inside the 10%-per-step rule and **attributed**: `lean Negative.lean` goes **2.36/2.41 s → 2.59/2.63 s** (+0.22 s), timed directly, which is the three new `decide` cheats evaluating `dayPlan`; `lean Check.lean` is **0.37/0.41 s → 0.36/0.37 s**, i.e. the 13 new audit lines cost nothing; the rest is check 1's relink of a grown `PlannerWit.o`. **The margin is now thin and the next step inherits it** |
+| axiom audit | **4,386 theorems**, §6.3 reconciliation `ok` | **4,373** | 4,373 | **+13, and every one is this step's**: 5 in `PlanCheck`, 8 in `PlannerWit`. 4,386 audit lines, **4,386 distinct** names, 4,384 declared theorems; `comm -23` is **empty** and `comm -13` names exactly the two known non-theorems, `WfPlan` and `effectiveScope` — §6.3's deliberate one-directional slack |
+| burn-down (check 7) | **10 outstanding, all stage 6** | **11** | 11 | **−1**: `plan_places_no_block_over_a_wall`, discharged above. Nothing was added |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged |
+| `Negative.lean` | rejected ok, **171 cheats**, `uniq -d` prints nothing | 168 | 168 | +3 (written 184-186, renumbered 188-190 at the land step); each fails at a **line of its own**, all three `Tactic 'decide' proved that the proposition …`, verified after a rebuild |
+| `cargo test --workspace` | **1,331 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 warnings** | **1,331 / 0 / 9 across 78** | 1,331 / 0 / 9, 78 | **identical — a Lean-only step must not move it, and it did not.** See the correction below |
+| FFI (`kernel/tm-kernel-ffi`) | **100 / 0** (kernel 86, corpus 8, stack 6) | — | 100 | — |
+| **T5** `kernel_replay_parity --include-ignored` | **33 / 0 / 0**, 6.89 s | — | 33 | — |
+| the door `kernel_log_door` | **23 / 0** | — | 23 | — |
+| `cli_switch_acceptance --include-ignored` | **9 / 0** | — | 9 | — |
+| `kernel_call_counts` | **2 / 0** | — | 2 | — |
+| `kernel_lookahead_parity` | **4 / 0** | — | 4 | — |
+| `cli_check_log` / `cli_items` / `cli_lifecycle` | **11 / 53 / 29**, 0 failed | — | 11 / 53 / 29 | — |
+| `the_frozen_comparand_is_read_at_full_precision` | **passes by name** (1 passed, 32 filtered out) | — | — | gap 235's tripwire; `float_roundtrip` still pinned |
+| `cli_latency --include-ignored --test-threads=1`, release | **6 passed / 0 failed** ×3 | — | — | every assertion met in all three passes |
+
+#### A measurement this step got wrong, caught by re-measuring it
+
+The first `cargo test --workspace` tally on this tree read **1,364 passed / 0
+failed / 9 ignored across 79 result lines** — +33 and one extra binary against a
+Lean-only change, which would have been a real finding. It was not. A
+backgrounded `cargo test` of mine had **not** been killed and was still writing
+into the same output file the foreground run truncated, so the file held
+interleaved output from two runs; the fingerprint is
+`Running unittests src/lib.rs (target/debug/deps/tm_core-2edee8e7df96d26f)`
+appearing **twice with the same binary hash**. Re-run with nothing else of mine
+running, the tally is **1,331 / 78**, identical to the baseline. It is written
+down because the last two runs of this campaign each shipped a measurement claim
+that was wrong, and the only difference here is that this one was re-run before it
+reached a table.
+
+### T11, as readings and never as single numbers, with the machine state
+
+Three `cli_latency` passes, release, `--include-ignored --nocapture
+--test-threads=1`, **on a box that was not quiet**: a track-A session was running
+its own `cargo test --workspace` at 40G throughout, and track P was building in
+the main checkout. Every row is given as all three readings.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| **later verb (`tm drop`), 3-year log — the reliable row** | 136.76 / 131.67 / 136.79 | 146.66–147.01 (the brief cites 127–132) | **10–15 ms below the band**, and inside the brief's own 127–132 window at the low end. W-16's repair read 126.71/136.87/126.72 on the same machine; this is that spread |
+| the verb after a windowable hand undo / after that one | 141.56 / 131.77 / 131.80 and 141.79 / 131.73 / 136.79 | — | as before |
+| 3-day-old routine | 121.59 / 106.31 / 106.57 | 121.6–136.8 | **below**, as W-16's repair found; the band is **not** re-blessed |
+| reseal (`--now +1 day`) | 197.56 / 192.48 / 197.48 | 197.5–212.6 | at the bottom edge and once 5 ms under |
+| **`review week` (the `All` scope)** | 263.55 / 268.56 / 258.27 | 248.1–253.3 | **STILL OUTSIDE**, as it has been since L9 — **gap 275**, a capacity verb replaying the log twice. Untouched by this step and **the band is not re-blessed** (gap 570 stands) |
+| first verb (genesis), 226 files | 703.97 / 728.95 / 693.47 | — | as before |
+| `tm plan`, due 3 / 10 years out | 91.20 / 151.95, 86.08 / 151.95, 86.07 / 146.92 | `LATER_VERB` 1 s | inside |
+| 10 stalled days, worst | 572.24 / 526.54 / 521.57, **0** checkpoint generations | — | as before |
+
+**This step adds nothing to any shipped path**, which is what the driven trace
+above shows, so no row should have moved and none did beyond session noise.
+
+### Behaviour rows
+
+**None.** No shipped-path Rust, no wire value, no rendered text and no refusal
+changed. **No fixture, snapshot, corpus file or latency band was re-blessed** —
+`git diff --name-only` names five Lean files and this document, and nothing
+under `kernel/corpus/`, `tm/tests/snapshots/`, `tm-core/tests/fixtures/` or
+`tm/tests/cli_latency.rs`.
+
+### Parity
+
+**No parity entry is taken or owed.** Nothing here is compared against the fork:
+the battery is a statement about the kernel's own output and the fork's planner
+has no corresponding object. Highest parity stays **P38**.
+
+### What was consumed rather than re-implemented (AGENTS §5.3)
+
+**§5.3 is the rule this campaign broke last run** — W-16 defined `charsLe` three
+times under two "re-implemented nothing" claims — so this section says what was
+grepped **before** anything was written, not after.
+
+**Greps run before writing a line**, each over the whole library:
+`grep -rn 'withoutPast\|withoutActive\|isWork\|assignedFrom\|keepFrom' TmKernel/TmKernel/*.lean`
+(found `PlanCheck.withoutActive`, `Planner.SegKind.isWork`, `Planner.assignedFrom`
+— all three are what this step calls); `grep -n 'def blockSeconds\|def assignedOf\|def pastRows\|def reservationSegs\|def segOf'` (all five exist and all five are
+called, none re-derived); `grep -n 'loadPlan sampleRequest\|loadPlan undoWitnessRequest\|…' Boundary.lean`
+**before** writing `storedWitness`, which is why it is `undoWitnessRequest` reused
+rather than a plan invented; `grep -n ' hot\b' Boundary.lean` and
+`grep -n 'inductive Flag' -A 20 Line.lean`, which is how the `hot` word's position
+on the line was taken from `Field.Flag.name` and `demo_line_bytes` rather than
+guessed (the first spelling, with `hot` before `^m1`, parsed as **title text** and
+the `#eval` showed `flags = []` — the census would have been silently wrong).
+
+**CONSUMED, by name, and re-implemented NONE of them.** From `Planner.lean`:
+`dayPlan`, `dayPlan_segments`, `pastRows`, `pastRows_end_at_now`,
+`reservationSegs`, `segOf`, `segOf_kind`, `segOf_item`, `clampSec`,
+`SegKind.isWork`, `assignedOf`, `assignedFrom`, `blockSeconds`, `WfSeg`, `Seg`,
+`SegKind`, `BatchIds`, `Capped.ofListTake`, `a_block_row_is_replayed_or_reserved`,
+`a_wall_row_sits_in_a_blocked_span`, `a_break_row_is_a_replayed_row`,
+`a_wind_down_row_of_the_day`, `plan_never_moves_a_wall`,
+`PlanReq.mem_activeRow`, `PlanReq.activeRun_spec`,
+`PlanReq.the_reservation_is_free_of_every_wall`,
+`PlanReq.the_reservation_is_at_most_one_block`, `PlanReq.blockMin_pos`,
+`the_reservation_row_is_exact`, `the_reservation_row_names_the_running_item`,
+`activeRow_is_an_energyless_block`, `LogStamp.yearEnd`. From `PlanCheck.lean` (its
+own, W-14's): all eleven checkers **unchanged**, all eleven reflection lemmas,
+`planOkCore`, `planOk`, `checksCore`, `withoutActive`, `withoutActive_segments`,
+`isActive`, `dayPlan_block_rows_are_replayed_or_reserved`. From `Boundary.lean`:
+`loadPlan`, `loadsOk`, **`undoWitnessRequest`** (the store witness is it, one word
+changed), `lookWallPlan`. From stage 5 and earlier: `Plan.effectiveCi`,
+`Plan.rootPrio`, `Cal.instantOf`, `Cal.chicago`, `Field.Flag`.
+
+**Nothing new computes a window, a budget, a cut, an energy, an EDF number or a
+placement.** The two new `def`s are `keepFromNow` (one `SegKind.isWork` call and
+one `Nat` comparison) and `withoutPast` (one `List.filter` with it).
+
+### D9-21, the recursion rule
+
+**Nothing new recurses over a wire-sized list.** `withoutPast` is a single
+`List.filter` over `d.segments` (≤ 2 × `Planner.maxCands`) and is on no shipped
+path — nothing evaluates it, because D28 proves the battery rather than gating on
+it. No `foldl` form and no `@[csimp]` twin is owed. The mutation helpers in
+`PlannerWit` are `List.map`/`List.filter` over one concrete six-row day.
+
+### The `decide` budget (AGENTS §5.10a)
+
+**Seven new `decide` witnesses in `PlannerWit.lean` and three in
+`Negative.lean` — ten for this commit**, against §5.10a's budget of 20, counted
+by grepping the diff rather than from memory:
+`git diff 24acb5a..HEAD -- PlannerWit.lean | grep -cE '^\+\s*decide$|:= by decide$'`.
+*(Four further `by decide`s appear **inside literals** — a `Fin 1440` bound and a
+`BatchIds` length — and are not witnesses in §5.10a's sense; they are named here
+so the count reconciles.  This paragraph first read "Eight new `decide`
+witnesses", which was a count from memory; the grep says seven.)*  Each was
+probed at `MemoryMax=8G` with a timeout before it was committed; the whole of
+`PlannerWit.lean` elaborates in **13.6–14.0 s at 8G** and `lake build` reports
+**14 s** for the module. None is `native_decide`; none evaluates a realistic
+input — every one is an equation about the one six-row day the witness request
+produces, with instants written as `Cal.instantOf` of a literal clock. The three
+`Negative.lean` cheats add three more evaluations and **their cost is measured and
+recorded above** (+0.22 s on `lean Negative.lean`), rather than assumed to be
+free.
+
+### What earlier decisions bought, re-measured on this tree and not assumed
+
+* **D28, `dayPlan` stays total.** `grep -n 'dayPlan?\|PlanRefusal' TmKernel/TmKernel/*.lean`
+  returns **two lines and both are the doc comment in `Planner.lean` saying there
+  is no such thing.** No gate was added; the battery is still the object a theorem
+  is **about**.
+* **D5, nothing narrowed.** No existing theorem's statement changed. The eleven
+  checkers are byte-identical to W-14's. `dayPlan_ok_core` is **kept** beside the
+  new lift rather than replaced. The goal that left was **refuted first**.
+* **D9, ONE reader.** §12's post-switch one-reader grep
+  (`fn replay\b|undo_mask|DayIndex|parse_bytes|LogEntry::parse|Log::parse|Log::new|Machine\b|iter_day|effective()|parse_timestamp`)
+  returns **41**, its floor, unchanged. *(An earlier pass here ran §12's
+  **pre-switch** alternation and got 52; the lesson is to take the grep from the
+  newest block, not the oldest. No reader was reintroduced — this step touches no
+  `.rs` file at all.)*
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns the same **two** lines W-16's repair recorded (`horizon.rs:525`,
+  `ctx.rs:713`), both rendering through `kernel_log::render_one`. This step
+  touches neither file.
+* **D21-D23, the instrument is anchored outside the tree.** T5's frozen arms
+  report fork point **4748911**; the door reports the same over its 16 `All`-scope
+  inputs; `fork_arm` ran unconditionally; `the_frozen_comparand_is_read_at_full_precision`
+  passes **by name**.
+* **D18, no memory bound raised.** 40G for builds and suites, 16G for binary
+  drives, 8G for every `decide` probe. Nothing was retried uncapped.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no
+  `partial def`, no `.toOption`. `lean-toolchain`, `Cargo.toml`,
+  `lake-manifest.json` and `kernel/corpus/` untouched.
+
+### Gaps
+
+**Closed: none.** This step closes no gap outright and says so. Gap **396** is
+already recorded closed (W-15); what this step adds is the eight checkers that
+closure did not reach, and the ratio it did not state — recorded as **gap 650**
+below rather than as a second closure of a closed gap.
+
+#### Gap 650 (new; label W17G-a) — five of the eleven checkers still range over nothing on a produced day
+
+1. **What is not done.** `energyFilterOk`, `noBlockOverABreak`,
+   `noDemandingAfterWindDown`, `impossibleKept` and `batchDoesNotReachPast` return
+   `true` on every day `Planner.dayPlan` can produce today because their
+   quantifiers are **empty**, not because the planner satisfies them.
+   `PlannerWit.the_battery_census_over_a_produced_day` computes each population.
+2. **Why.** Each needs a row no step before P4/P5 places: a slot energy, a Break
+   row (`kept_breaks`, gap 551), a Block at or after the wind-down, an entry in
+   `diagnostics.impossible` (gap 367), a Batch row. Writing a witness that
+   *fabricates* one would be a hand-built day, which is what `PlanCheck`'s `wDay`
+   witnesses already are, and it would not be about `dayPlan`.
+3. **What it costs.** `dayPlan_ok_core` and `dayPlan_ok_core_from_now` each
+   discharge **five of their seven** conjuncts by an empty quantifier, so the lift
+   is weaker evidence than its name suggests, and five of §8.3's eleven laws have
+   no compiled example of the planner honouring them. The *bites* are covered —
+   all eleven refuse a mutation — so this is a vacuity gap and not a blindness
+   gap, and the distinction is the point of the two tables above.
+4. **Which step clears it.** **P4** for `impossibleKept`; **P5** for the other
+   four (**P7** would also do for the wind-down one). Each ends the day its step
+   puts the row in the day, and `the_battery_census_over_a_produced_day` is the
+   `decide` that will stop reducing and say so.
+
+#### Gap 651 (new; label W17G-b) — `dayPlan_ok_core_from_now`'s six block-side conjuncts are all about the reservation, and P5 must re-prove every one
+
+1. **What is not done.** The lift holds for every request, but its six block-side
+   proofs each go through `a_block_row_from_now_is_the_reservation`: the only
+   Block row starting at or after `now` is §8.2 choice 5b's. The fold induction
+   design §6.2 prices at ≈ 4,500 proof lines is **not started**, and this step
+   claims none of it.
+2. **Why.** There is no assign fold to induct over. `Planner.the_day_assigns
+   _nothing_after_now_but_the_running_block` is the tripwire that proves it, and
+   P5 must delete it.
+3. **What it costs.** The commit that makes `dayPlan` assign a Block breaks
+   `dayPlan_ok_core`, `dayPlan_ok_core_from_now`,
+   `PlanCheck.plan_places_no_block_over_a_wall` and every `decide` in
+   `PlannerWit` that names a produced day — **by design** (AGENTS §3.1 item 1: a
+   green theorem in a shipped module is a build-time wall). It is priced here so
+   the step that hits it knows it is inheritance and not breakage.
+4. **Which step clears it.** **P5**, then **G1**.
+
+#### Gap 652 (new; label W17G-c) — `PlannerWit`'s witnesses cannot be driven, because `dayPlan` has no shipped caller
+
+1. **What is not done.** Every `decide` in `PlannerWit.lean` is evidence about the
+   kernel's own output and **none of it can be reached from the binary**. There is
+   no planner op on the wire: `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs`
+   and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing, and
+   `TM_TRACE_KERNEL_CALLS=1 tm plan` prints `log`, `apply`, `emit`, `capacity+log`
+   and no planner call.
+2. **Why.** The wire gains `dayPlan` at **P8** (design §10.2's `plan` section).
+   Adding an op now would be a half-landed wire change (D19).
+3. **What it costs.** AGENTS §5.6's standard — *a module nothing imports is
+   weaker evidence than a driven verb* — cannot be met for this module at all
+   yet, so every claim in this block about the planner is a claim about a Lean
+   function, never about `tm`. This is the same shape as gap **501**
+   (`Recur.lean` has no caller) and it should be read beside it.
+4. **Which step clears it.** **P8** puts `dayPlan` on the wire; **R1/R3** make it
+   the only renderer and the only planner. Until then the witnesses are the
+   instrument and they are honest about their reach.
+
+#### Gap 653 (new; label W17G-d) — one prose citation was left stale ON PURPOSE, in a file this track may not edit
+
+1. **What is not done.** `Planner.lean`'s *"### The two wall goals"* section says
+   `plan_places_no_block_over_a_wall` *"is **not discharged here** and must not
+   be"* and that *"the goal becomes non-vacuous at **P5**"*. Both sentences are
+   still true **of step P1's body**, which is what they are about, and both now
+   read as though the goal were still open. It has an in-place banner in
+   `Check.lean` and none in `Planner.lean`.
+2. **Why.** The brief for this track names its files — `PlanCheck.lean`,
+   `PlannerWit.lean`, `Goals.lean`, `Check.lean` — and says not to touch
+   `Planner.lean`, which track P is editing in the main checkout **in this same
+   run**. A two-line doc-comment banner is not a step body, but a textual conflict
+   in a file another track is rewriting costs more than it saves, and AGENTS §5.12
+   says to record what was not done by name.
+3. **What it costs.** A reader of `Planner.lean` alone infers an open goal that is
+   closed. Three runs of this campaign have shipped a stale citation and W-16's
+   repair found four missing banners in one sweep, so this is exactly the class
+   that goes unnoticed.
+4. **Which step clears it.** The **W-17 land step** or the repair step, with one
+   banner: *"DISCHARGED at W-17 as `PlanCheck.plan_places_no_block_over_a_wall`,
+   over the Block rows that start at or after `now`; still not by this body, which
+   is what this sentence says."*
+
+**654-669 are free.**
+
+### Gaps left open, by name
+
+Everything W-16 left open stands. **Gap 365** (`eligibleAt` does not exist, so
+§6.1's whole-battery `dayPlan_ok` is not stated) is unchanged and is still the
+reason the burn-down cannot reach 2 from here. **Gaps 366 and 368** (D29's
+restatement and L25's, both blocked on P5) are untouched — this step attempted
+neither and says so. **Gap 367** (the `impossibleKept` → §7.3 bridge, P4's) is
+now also gap 650's `impossibleKept` row. **Gaps 500, 501, 577, 584, 275, 570,
+551, 346, 347** stand.
+
+### Method disclosure
+
+Everything ran on the isolated worktree `.claude/worktrees/w17-g` (branch
+`w17-g`, from `24acb5a`), created with `git worktree add`. Its `.lake` was seeded
+by copying the main checkout's build directory at the same commit, to avoid a
+cold whole-kernel build; `check.sh` was then run there **before any edit** and
+printed 7/7 with 4,373 theorems and burn-down 11, which is the baseline this block
+compares against.
+
+**The main checkout was never touched, and it is not green.** `git status` there
+shows four modified Lean files (`Lookahead.lean`, `Planner.lean`, `PlannerWit.lean`,
+`Priority.lean`) — track P's W-17 work in progress — and `./kernel/check.sh` there
+fails check 3 with three `unknownIdentifier` errors for `PlannerWit` constants.
+That is track P's tree mid-step and is left alone; it is reported because a reader
+running `check.sh` in the main checkout during this run will see it. **Note for
+the land step: track P has `PlannerWit.lean` open too, which is nominally track
+G's file — the two tracks will collide there.**
+
+`check.sh` was run **eleven** times in this checkout: once before any edit, once
+after the Lean work, once after the `Goals.lean`/`Check.lean`/`Negative.lean`
+edits, four timed passes on this tree, three timed passes on the stashed baseline,
+and once more on the final tree — 7/7 every time except the stashed ones, which
+printed 7/7 with the baseline's numbers. `cargo test --workspace --no-fail-fast`
+was run **three** times: once with a stray background run corrupting the output
+(the correction above), once on the stashed baseline (1,331/78) and once cleanly
+on this tree (1,331/78). `cli_latency` was run **three** times in release with
+every noisy row reported as all three readings and the machine state named.
+Binary drives used this tree's release binary on a scratch `tm init --example`
+tree **outside the repo**, at `MemoryMax=16G`.
+
+**The fork oracle was not rebuilt and the `TM_ORACLE` census was not re-run**,
+said plainly: this step changes no Rust and no wire value, and both fork-anchored
+arms (T5's 33 and the door's 23) ran green against the frozen
+`fork-4748911-*.jsonl`, which are the arms that would have caught a change.
+Provenance is not freshness (§7.3) and this block does not claim otherwise.
+
+`.claude/worktrees/stage5-lookahead` is untouched.
+
+### Numbering
+
+Gaps: this step **650-653**; **654-669** free. Cheats: **188-190** (written 184-186, renumbered at the land step);
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing and
+check 4 still rejects the file. No audit name appears twice (4,386 lines, 4,386
+distinct names). **Highest on this branch after this step: gap 653, cheat 190,
+parity P38** — and track P, track A and the land step hold 600-629, 630-649 and
+670-674, so a higher number may exist on another branch at merge time.
+
+### Second commit: the new lift's five hypotheses, discharged at a request
+
+`dayPlan_ok_core_from_now` drops `hnopast` and keeps five hypotheses, and **AGENTS §7.4
+item 2 asks whether they are jointly satisfiable** — *"a precondition nothing can satisfy,
+so the conclusion never fires"* is on §9.2's disguised-gap list, and it *"stayed invisible
+for a whole stage once"* (`shapeWfFor .calendar`). A lift with five hypotheses and no
+caller would have been exactly that shape, and the first commit shipped without one.
+
+So all five are supplied at `theRunningRequest` and the lift is **applied**, not admired:
+
+| hypothesis | discharged by |
+|---|---|
+| `hagree` | `theRunningRequest_wallsAgree`, from `mkPlanReq?_ok_wallsAgree` at a request the builder accepts |
+| `hactive`, `hday` | `the_running_request_agrees`, already proved for E1 at W-16 |
+| `hnowcal` | `the_running_request_is_inside_the_calendar`, computed |
+| `hplain` | `the_running_request_is_plain` — **the one that needed an argument rather than a `decide`**: it quantifies over every `Id`, and what bounds it is `PlanCheck.mem_dom_of_get` (a `get` that succeeds lands in `dom`), which here is one id |
+
+`the_lift_applies_at_the_running_request` is the application: **it is not a `decide` over the
+day**, it is the general theorem applied to five discharged hypotheses.  (Two of those five are
+themselves `decide`-proved, so the *transitive* proof does contain evaluation; what is not
+evaluated is the lift's own conclusion.  This sentence first read "its proof term mentions no
+`decide` at all", which overstated it.)
+
+And the day it is about is **not empty**.
+`the_restricted_day_keeps_the_reservation_and_the_wall` computes what `withoutPast` removes —
+**the two replayed Blocks of the morning, and nothing else** — leaving the wall the calendar
+wrote (12:50–13:50), §8.2 choice 5b's reservation (14:00–14:40) and §16's two evening rows. So
+`noBlockOverAWall` at that request really does put a Block *the planner placed* beside a Wall
+*the calendar wrote*, and the `true` the lift returns for it was earned.
+
+**Re-measured after this commit**, same worktree, same caps:
+
+| row | after commit 2 | after commit 1 | delta |
+|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | — |
+| axiom audit | **4,392 theorems**, reconciliation `ok` | 4,386 | **+6, every one this commit's** |
+| burn-down | **10, all stage 6** | 10 | unchanged — this commit discharges no goal and adds none |
+| corpus | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged |
+| `Negative.lean` | rejected ok, 171 cheats | 171 | none added |
+| `cargo test --workspace` | **1,331 / 0 / 9 across 78**, 0 warnings | 1,331 / 0 / 9, 78 | identical |
+| FFI / T5 / door / `cli_switch_acceptance` / `kernel_call_counts` / `kernel_lookahead_parity` | **100 / 33 / 23 / 9 / 2 / 4**, 0 failed | same | identical |
+| `lean Negative.lean` | 2.50 / 2.55 s | 2.59 / 2.63 s | inside its own noise; this commit adds no cheat |
+| `lean Check.lean` | 0.33 / 0.39 s | 0.36 / 0.37 s | flat; the six new audit lines cost nothing |
+| check.sh warm | **3.52 / 3.53 / 3.57 / 3.57 s** | 3.69 / 3.70 / 3.70 s | a quieter window, not a speed-up — see the note in the table above |
+
+Three new `decide` witnesses (`the_only_dated_item`, `the_restricted_day_keeps_the_reservation
+_and_the_wall`, `the_running_request_is_inside_the_calendar`), bringing the **step's** total to
+**thirteen** — ten theorem-level in `PlannerWit.lean` and three in `Negative.lean` — against
+§5.10a's budget of 20.  These six theorems elaborate in **1.05 s at 8G**; the module,
+**13.6–14.0 s**.  *(Both commit messages carry the older, remembered figures and are not
+rewritten; this ledger is the authority, AGENTS §6.4.)*
+
+<!-- ===========================================================================
+     Stage 6, W-17 LAND STEP, 2026-09-18 — merging track A (the D35 write gate)
+     and track G (the lift, and §8.3's wall law out of Goals.lean) onto track P's
+     P4 in the main checkout.  Gap range 670-674 (three taken: 670-672).
+     Gap 653 CLOSED here.  No cheat taken; track G's 184-186 RENUMBERED 188-190.
+     Burn-down 11 → 10.
+     =========================================================================== -->
+
+## Stage 6, W-17 land step, 2026-09-18: merge the write gate — no host write lands on a tree the kernel refuses
+
+Two commits, one per branch, because a merge commit has one parent set and the
+two halves are verified differently: `w17-a` is Rust-only and `w17-g` is
+Lean-only. Both branch from `24acb5a`; `rebuild-on-lean` had moved to `d368555`
+(track P's P4 and its ledger half) underneath them.
+
+### The conflicts, and which of them are findings
+
+AGENTS §6.5 says a merge owes four repairs and the brief says a conflict outside
+`kernel/README.md` is worth reporting. **Four files conflicted; three of them are
+outside the README.**
+
+| file | conflict | kind |
+|---|---|---|
+| `kernel/README.md` (×2, once per branch) | both tracks append a dated block at EOF | **expected** — §6.4's convention makes this conflict by construction. Resolved by keeping BOTH blocks whole, each under its own banner, in landing order |
+| `kernel/TmKernel/Check.lean` | both tracks append an `APPENDED …` banner at EOF | **expected** — §6.3 says to append under your own banner, so two branches always collide on the last line. Both banners kept; **77** `APPENDED` banners now |
+| `kernel/TmKernel/Negative.lean` | both tracks append a cheat block at EOF — **and both started at 184** | a **FINDING**, gap 671. Both blocks kept; track G's three RENUMBERED **184-186 → 188-190** (§6.2: *the merge renumbers*) and every citation of them moved with them |
+| `kernel/TmKernel/TmKernel/PlannerWit.lean` | **a LIBRARY module both tracks wrote 200+ lines into** | a **FINDING**, gap 670 — and one this campaign has already recorded once (W-13's merge block: *"`PlannerWit.lean` is the finding, and it is the one conflict outside the four append-only files"*). Track G's own method disclosure predicted it by name |
+
+Nothing else conflicted, so **no track's work had to be reconciled by hand**:
+`Goals.lean` and `PlanCheck.lean` auto-merged (the two tracks deleted different
+goals and edited different regions), and track A touched no Lean at all.
+
+**The `PlannerWit.lean` resolution, said exactly.** Both sides are appended
+sections at the end of one namespace and neither touches the other's text, so
+both were kept in landing order. What had to change is the section NUMBERING:
+track P's P4 section was written `## 8.` while `## 8.` already existed in the
+same file (`plan_reserves_one_block_at_a_time … is REFUTED`, landed at P3), so
+`d368555` shipped **two section 8s** — gap 672. Renumbered here: P4's is **9**,
+and track G's three become **10, 11, 12**. Nothing in `check.sh` can see a
+duplicated markdown heading inside a doc comment, which is why it shipped.
+
+### Gap 653 is CLOSED — the banner track G could not write
+
+Track G left one prose citation stale **on purpose** and named the land step as
+the step that clears it, with the wording to use. `Planner.lean`'s *"### The two
+wall goals"* section now carries it, two lines below the paragraph it qualifies:
+
+```
+**DISCHARGED at W-17 (track G, `85305f8`) as `PlanCheck.plan_places_no_block_over_a_wall`, over
+the Block rows that start at or after `now`; still not by this body, which is what the paragraph
+above says.**
+```
+
+The paragraph above it is **not** edited: it is true of P1's body, which is what
+it is about. The banner names the refutation beside the restatement and points at
+gap 650 for the five checkers that still range over nothing, so a reader of
+`Planner.lean` alone no longer infers an open goal that is closed.
+
+### The full acceptance, re-measured on the merged tree
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`
+(the drives and the oracle at 16G). The brief's comparand is `24acb5a`; each
+track's own figure is beside it.
+
+| instrument | **merged tree** | `24acb5a` (brief) | track P `d368555` | track A `36877f2` | track G `8871c61` | reading |
+|---|---|---|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 | 7/7 | untouched (no Lean) | 7/7 | — |
+| axiom audit | **4,447 theorems** | 4,373 | 4,428 | 4,373 | 4,392 | **+74 = +55 (P) + 19 (G)**, and the arithmetic closes exactly: `Check.lean` holds 4,447 `#print axioms` lines at 4,447 **distinct full names** (`sort \| uniq -d` is empty). *Track G's block says "4,386"; that was its FIRST commit's figure and its second added six more — its own table says so one section down. The branch tip is 4,392, which is what this merge adds.* |
+| check 3's §6.3 reconciliation | **`comm -23` EMPTY** | empty | empty | — | empty | 4,445 declared theorems over **82** modules against 4,447 audit lines; `comm -13` names **`WfPlan` and `effectiveScope`**, the two deliberate non-theorems, and nothing else. **No unaudited theorem to fix here.** 30 short names are declared in more than one namespace, which is why this is a multiset diff and not a count |
+| `Negative.lean` | rejected ok, **175 cheats**, highest **190**, `uniq -d` empty | 168 | 172 | — | 171 | +7 = P's 184-187 and G's 188-190 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | same | — | same | **not below the floor** |
+| stage goals (check 7) | **10 outstanding, all stage 6** | 11 | 11 | — | 10 | **burn-down 11 → 10**; see below |
+| `cargo test --workspace` | **1,337 passed / 0 failed / 9 ignored across 79 result lines**, 0 compiler warnings | 1,331 / 0 / 9 / 78 | 1,331 / 78 | 1,337 / 79 | 1,331 / 78 | **+6 and one binary**, all of them track A's `tm/tests/cli_write_gate.rs`. Track P and track G touched no Rust in the workspace |
+| FFI suite (whole, not just check 5) | **101 passed / 0 failed** — `corpus` 8, `kernel` 86, `stack` **7** | — | stack 7 (T12 landed) | — | — | `stack.rs` carries P4's T12, the D30(Q8) instrument |
+| **T5** (`kernel_replay_parity`) | **29 passed / 4 ignored** = its 33 arms | 33 | 33 | 33 | 33 | **`the_frozen_comparand_is_read_at_full_precision` ran and passed by name** (D21/D23) |
+| the door (`kernel_log_door`) | **23 / 23** | 23 | 23 | 23 | 23 | — |
+| `kernel_log_grammar` | **16 passed / 2 ignored**, and **18 / 0 with `TM_ORACLE` set** | — | — | — | — | see the oracle row below |
+| `cli_switch_acceptance` | **9 / 9** | 9 | 9 | 9 | 9 | — |
+| `kernel_call_counts` | **2 / 2** | 2 | 2 | **2, with `expected_apply_calls` now asserting the column** | 2 | track A's repair of the gap-577 class, carried in |
+| `cli_write_gate` | **6 / 6** | — | — | 6 | — | new file, merged clean |
+| `cli_latency`, release, `--include-ignored` | **6 / 6**, three passes | 6 | 6 | 6 | 6 | rows below |
+| `check.sh` wall, built tree | **3.46 / 3.54 s** warm (first pass 4.37 s, carries a relink); peak RSS **1.99–2.06 GiB** | — | median **3.44 s** | — | **3.52–3.57 s** on its final tree | **+1.7% on track P's median, flat against track G's.** Inside the 10%-per-step rule, and the margin track G warned was thin did not close |
+
+### T11's rows as RANGES, three release passes, and the gate against `tm drop`
+
+The gate's cost is D35's binding condition and the brief asks for it against
+T11's `tm drop` row. Both rows are timed **in the same serial section on the same
+226-file / 2,959-line tree with the same 66,169-line / 6.9 MB log**, one line
+apart, so they are comparable by construction and not by assumption.
+
+| T11 row (3-year log) | pass 1 | pass 2 | pass 3 | **range** |
+|---|---:|---:|---:|---|
+| **`tm drop ^z1`** — the reliable baseline | 131.73 | 126.66 | 126.71 ms | **126.7–131.7 ms** |
+| **gated host-only write (D35)** — `tm edit ^z2 'title=…'` | 131.72 | 126.68 | 131.45 ms | **126.7–131.7 ms** |
+| a 30-day-old hand undo (`reachTooFar`, gap 129) | 1.296 | 1.286 | 1.281 s | **1.28–1.30 s** |
+| the verb after a windowable hand undo | 131.73 | 126.67 | 126.66 ms | 126.7–131.7 ms |
+| a routine for a 3-day-old instance (noisy) | 136.75 | 136.69 | 131.71 ms | **131.7–136.8 ms** |
+| `--now +1 day` (a reseal, noisy) | 187.48 | 187.44 | 187.37 ms | **187.4–187.5 ms** |
+| `review week` (the All scope) | 253.32 | 253.25 | 253.29 ms | **253.3 ms — out of band for gap 275, unchanged, and NOT re-blessed** |
+| 10 stalled days, worst | 516.41 | 516.45 | 516.47 ms | 516.4–516.5 ms |
+
+**The gated write and `tm drop` are the same number to within the run-to-run
+noise of either** — both bands are 126.7–131.7 ms, and the brief's own comparand
+for the drop row is 127–132 ms, which reproduces. D35's condition is met on the
+merged tree, no bound was raised, and no band was re-blessed. (Track A measured
+the same pair at 126.5–126.8 against 131.7–141.6 on its own branch; the merged
+tree's drop row is at the fast end of that, which narrows the gap between the two
+rows rather than widening it.)
+
+### What earlier stages bought, re-measured here and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep —
+  `grep -rn 'fn replay\b\|undo_mask\|DayIndex\|parse_bytes\|LogEntry::parse\|Log::parse\|Log::new\|Machine\b\|iter_day\|effective()\|parse_timestamp' tm-core tm --include=*.rs`
+  — returns **41**, its post-switch floor, unchanged by either track. No in-tree
+  reader was reintroduced. *(Track P's gap 604 records that a differently-spelled
+  command in AGENTS §8.3 returns 52 and that "41" has been quoted from memory for
+  four runs; the command above is the one the number belongs to, and it is the one
+  run here. Gap 604 stays open and is R1's.)*
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns **two** sites — `tm/src/cli/ctx.rs:713` and `tm-core/src/horizon.rs:525`
+  — which is the count W-16's merge recorded; no third appeared.
+* **The comparand is still the fork at full precision.** `git diff --name-only
+  24acb5a..HEAD -- tm/tests/fixtures tm/tests/snapshots kernel/corpus` is **empty**:
+  no fixture, no snapshot and no corpus file was touched by either track or by this
+  merge. `the_frozen_comparand_is_read_at_full_precision` passed **by name**.
+* **The fork oracle was REBUILT**, outside the repo, at `MemoryMax=16G`:
+  `build-oracle.sh` extracted **`4748911555969ace2b48faa8929122aeccbfb415`** (its
+  `.oracle-ref` stamp) and its banner prints the four subcommands. With `TM_ORACLE`
+  set, `kernel_log_grammar` runs **18 / 0**, and the live arm
+  `the_fork_reads_back_every_rendering_the_kernel_writes` reports *"the fork round
+  trip (4748911): 1375 kernel renderings read back to the fork's own entry, 3862
+  lines skipped"*. T1, T3 and S2's frozen figures reproduce digit for digit
+  (636 lines / 553 entries / 533 byte-identical / 20 numeral-only / 66 warnings;
+  4,601 spellings, 822 read, 42 leap seconds, 3,765 refused by both, 14 P23
+  residue; 3,565 lines over 26 kinds). **The re-bless arm stayed `INERT`**, as it
+  must without `TM_FORK_BLESS`. §7.3: this is freshness, not only provenance.
+
+### The burn-down
+
+**10 goals outstanding, and every one of them is stage 6** — `Goals.lean` holds
+no stage-3, -4 or -5 obligation and has not since stage 4 final step 4. They are
+`plan_does_not_overbook`, `plan_respects_the_energy_filter`,
+`plan_places_no_block_over_a_break`, `plan_places_no_demanding_block_after_wind_down`,
+`plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`,
+`plan_never_drops_an_impossible_item`, `plan_never_batches_past_an_equal_ci_candidate`,
+`plan_tail_drop` and `plan_is_stable_across_a_replan`.
+
+**The one this run discharged is `plan_places_no_block_over_a_wall`, at track G's
+`85305f8`** — and it is a §3.1-item-3 discharge, not a plain one: the form
+`Goals.lean` carried is FALSE, `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`
+is the compiled refutation, and `PlanCheck.plan_places_no_block_over_a_wall` is
+the restatement over the Block rows that start at or after `now`. Track P's P4
+removed `Goals.lean`'s last provisional `def` (`edfNumbers`) in the same run and
+the number correctly did **not** move for it — check 7 counts `^theorem `.
+
+### DRIVEN — the merged release binary, on scratch `tm init --example` trees outside the repo
+
+Release binary of the merged tree, `MemoryMax=16G`, `--now` fixing the clock.
+Every command and its output is pasted, because W-16 and W-15 each shipped a
+"measured" table that was not.
+
+**1. A normal day.**
+
+```
+$ tm check
+no problems
+[exit 0]
+
+$ tm --now 2026-09-07T09:00:00-05:00 plan
+2026-09-07 · window 09:00–18:00 · budget 6 blocks
+09:00  1 p0 ⚠ Pick up package                   20m     due today
+09:20  ·      laundry 30m
+09:50  4 p3   Exercises 5.3–5.5            @m1  2b
+10:50  4 p3   Rollback path passes tests   @O2  6b
+11:30  ·      lunch 30m
+12:00  3 p3   Claude Code drafts tests     @m2  1b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  3 p3   Claude Code drafts tests     @m2  1b
+14:50  ·      break 20m
+15:10  2 p5   Pick winter courses          @O3  2b
+16:00  ·      workout 1h
+17:00  2 p5   Pick winter courses          @O3  2b
+17:30  ·      dinner 30m
+18:00  ───    window ends 18:00
+18:00  ·      groceries 45m
+18:45  ·      shower 20m
+19:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· plan honesty 1.67 — planned above a realistic budget
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · d2 · d1 · a1 · c2 · p1 · x2
+[exit 0]
+
+$ tm --now 2026-09-07T09:00:00-05:00 now
+nothing running
+· Pick up package  ci1  p0  20m
+  09:00–09:20 · elapsed 0m · left 20m
+next
+  09:20  · laundry 30m
+  09:50  Exercises 5.3–5.5  @m1  2b
+  10:50  Rollback path passes tests  @O2  6b
+0/6 blocks
+[exit 0]
+```
+
+**2. D33 — boxing a title-keyed line writes its `^id`, and the tree still loads.**
+This is the exact command W-16's false table recorded as boxing nothing.
+
+```
+routines.md:3 before (file md5 4dee0318…):
+- lunch      win:11:30-13:30 dur:30m  every:day
+
+$ tm --now 2026-09-07T09:00:00-05:00 edit lunch 'state=[ ]'
+- [ ] lunch      win:11:30-13:30 dur:30m  every:day ^aqkb
+(a state box makes it a tracked item, so ^aqkb was written on the line)
+[exit 0]
+
+routines.md:3 after (file md5 ea0e9adc…):
+- [ ] lunch      win:11:30-13:30 dur:30m  every:day ^aqkb
+
+$ tm check
+no problems
+[exit 0]
+$ tm --now 2026-09-07T09:00:00-05:00 plan     → the day above, unchanged, [exit 0]
+```
+
+**3. D32 — a duplicated inbox line names BOTH lines, and `tm check` reports it.**
+A fifth `inbox.md` line repeating line 2, on a fresh tree.
+
+```
+$ tm check
+inbox.md:2: error[kernel-load]: kernel refusal: dupId — inbox.md:2 and inbox.md:5 are two lines in one file
+  that resolve to the store key `ask Kun about the dinner place` (a line with no `^id` is keyed by its title,
+  and that key is never written into a file, so the two positions above are where it is); the kernel refuses
+  a tree it cannot load whole
+inbox.md:5: error[kernel-load]: kernel refusal: dupId — inbox.md:2 and inbox.md:5 are … (the same sentence)
+2 errors, 0 warnings
+[exit 2]
+
+$ tm --now 2026-09-07T09:00:00-05:00 plan
+tm: the automatic close (§6.3) was refused, so no period was closed and nothing was written; it runs again
+    on the next command. kernel refusal: dupId — inbox.md:2 and inbox.md:5 …
+tm: the automatic close's refusal above is this command's too, so nothing was written
+[exit 1]
+
+$ tm --now 2026-09-07T09:00:00-05:00 now      → the same two sentences, [exit 1]
+```
+
+**4. D35 — the gate. The SAME edit, on a sound tree and then on a refused one.**
+Two sound `tm plan` runs first, so §6.3's automatic close has already swept and
+holds no refusal of its own — the half W-16 drove and found unsound as a
+substitute for the gate. Then `routines.md` gets a ninth line repeating `- laundry …`.
+
+```
+### A. the sound tree — the gate is NOT a blanket refusal
+week md5 before: 63343dd23d07f0d18f656799ebdebe66
+$ tm --now 2026-09-07T09:00:00-05:00 edit '^d1' 'title=CS 234 pset 2 renamed'
+- [ ] 4 6b CS 234 pset 2 renamed                @O3 due:2026-09-11T23:59 max:2b/d ^d1
+[exit 0]
+week md5 after:  c54a22f8ff413e60e32f54ae25038a2b        ← it wrote, correctly
+
+### B. the same verb, one bad line later
+week md5 before: c54a22f8ff413e60e32f54ae25038a2b
+log  md5 before: 0e248d3137f16f96f2e57f4a57b8b1e5
+$ tm --now 2026-09-07T09:00:00-05:00 edit '^d1' 'title=CS 234 pset 2 renamed twice'
+tm: kernel refusal: dupId — routines.md:7 and routines.md:9 are two lines in one file that resolve to
+    the store key `laundry` (a line with no `^id` is keyed by its title, and that key is never written
+    into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+  nothing was written: `tm edit` needs a tree the kernel can load whole, and every reading verb refuses
+  this one too — fix the line named above, or run `tm undo`
+[exit 1]
+week md5 after:  c54a22f8ff413e60e32f54ae25038a2b        ← UNCHANGED
+log  md5 after:  0e248d3137f16f96f2e57f4a57b8b1e5        ← UNCHANGED
+week/2026-W37.md:12 is still `- [ ] 4 6b CS 234 pset 2 renamed … ^d1`
+```
+
+The two md5s are track A's own, reproduced on the merged binary: the gate refuses,
+and **neither the week file nor the log moved a byte**. The `--json` shape carries
+it keyed, not only in prose:
+
+```
+$ tm --json --now 2026-09-07T09:00:00-05:00 edit '^d1' 'title=x'
+{ "ok": false, "kind": "kernel", "exit_code": 1,
+  "message": "kernel refusal: dupId — routines.md:7 and routines.md:9 …",
+  "detail": { "a": {"line":7,"path":"routines.md"}, "b": {"line":9,"path":"routines.md"},
+              "key": "laundry", "refusal": "dupId", "refusedWrite": "edit" } }
+[exit 1]
+```
+
+And **`undo` is still deliberately ungated** — the way *out* of a tree the kernel
+refuses, on the same refused tree:
+
+```
+$ tm --now 2026-09-07T09:00:00-05:00 undo
+undid edit (edit ^d1) · 1 file(s) restored · 0 left
+[exit 0]
+week/2026-W37.md:12  → `- [ ] 4 6b CS 234 pset 2 … ^d1`   (the title restored)
+routines.md:9        → still the duplicate laundry line   (undo restores the EDIT, not the hand-made damage)
+```
+
+### New gaps, in §9.2's four-part form
+
+#### Gap 670 (land) — a LIBRARY witness module has no owning track, and two tracks wrote 200+ lines into it in one run
+
+1. **What is not done.** `PlannerWit.lean` is not assigned to a track by anything
+   the campaign enforces. The W-17 brief gave it to track G by naming G's four
+   files; track P's P4 appended 204 lines to it in the main checkout in the same
+   run. Both appends landed and the merge kept both, but only because both are
+   end-of-namespace sections that happen not to overlap.
+2. **Why it was not fixed.** The fix is a campaign rule, not a code change: either
+   a per-track witness module (`PlannerWitP.lean`, `PlannerWitG.lean`) or the
+   append-only banner discipline `Check.lean` and `Negative.lean` already have.
+   Both are the owner's call about how the remaining parallel steps are cut, and
+   this step is a merge.
+3. **What it costs.** It is not a conflict cost — it is a CORRECTNESS cost: two
+   tracks editing one module can each `decide` over a `def` the other moved, and
+   only the merge's build finds out. This run got away with it; W-13's merge
+   block recorded the same file as "the one conflict outside the four append-only
+   files", so this is the second time.
+4. **Which step clears it.** The owner, before the next parallel cut (P5/P6/P7 are
+   all designed to touch it) — or R1, which is the last step that could.
+
+#### Gap 671 (land) — the campaign hands out gap ranges per track but not CHEAT ranges, so two tracks started at 184 in one run
+
+1. **What is not done.** Track P took cheats **184-187** and track G took
+   **184-186**, in the same run, on branches from the same commit. AGENTS §6.2
+   says to *"start from a number nobody has used"* and to check
+   `grep … | sort | uniq -d`, but the highest number in the checkout is a
+   PER-BRANCH fact, so two parallel tracks collide by construction. Renumbered
+   here (G's → **188-190**, every citation moved with them) but nothing prevents
+   the next one.
+2. **Why it was not fixed.** Fixing it means the brief allocating cheat ranges the
+   way it already allocates gap ranges (P 600-629, A 630-649, G 650-669, land
+   670-674). That is the brief author's to write, not a merge's to invent.
+3. **What it costs.** A silent collision: `uniq -d` on either branch alone prints
+   nothing, both branches pass check 4, and the duplicate exists only after the
+   merge. §6.2's whole reason for existing is that this happened once before with
+   three branches all appending `CHEAT 9`.
+4. **Which step clears it.** The next brief, by naming cheat ranges per track.
+
+#### Gap 672 (land) — nothing checks a doc-comment section heading, and `d368555` shipped two `## 8.`s in one file
+
+1. **What is not done.** Track P's P4 append to `PlannerWit.lean` is headed
+   `## 8. §8.2 step 4, run rather than argued`, in a file whose P3 append is
+   already `## 8. plan_reserves_one_block_at_a_time … is REFUTED`. Renumbered at
+   this merge — P4's to **9**, and track G's three to **10, 11, 12** — but the
+   duplicate shipped in a green commit and no check saw it.
+2. **Why it was not fixed** beyond the renumber: a guard would be a new check in
+   `check.sh` (a per-file `grep -o '^## [0-9]*\.' | sort | uniq -d` over the
+   library), which is a check-suite change and belongs with the other grep guards
+   design §8.3 gives R1.
+3. **What it costs.** These headings are how every README block cites a witness
+   ("`PlannerWit` §7's request"); two sections with one number makes such a
+   citation ambiguous, which is the stale-citation class three runs of this
+   campaign have shipped.
+4. **Which step clears it.** R1, with the one-renderer grep guard, or the repair
+   step if it wants the check earlier.
+
+**673 and 674 are free.**
+
+### Gaps closed, and gaps deliberately left whole
+
+**Closed: gap 653** (track G's stale-on-purpose citation), by the banner above,
+in the wording gap 653 itself specified.
+
+**Left OPEN and WHOLE, by name, because D34 puts them downstream of the planner:**
+gaps **113, 114, 116 and 301 item 1** (D27 — `Look.Cand` is unchanged, `cand_json`
+is unchanged) and gap **577** (the host still supplies the nine candidate facts
+and only their *copy* is pinned). Nothing in this merge touched the wire.
+
+**Left open, carried in from the tracks:** gap **630** (the gate is a
+PRE-condition — a host-only write whose own bytes break a sound tree still exits
+0), gap **631** (the gate's latency row is bounded at `< LATER_VERB` = 1 s, ~8×
+the measured value), gap **632** (the two halves of the gate refuse in two
+`--json` shapes), gaps **650, 651, 652** (the vacuous checkers, the un-started
+fold induction, the undrivable `PlannerWit` witnesses), gap **604** (the
+one-reader grep's number quoted from memory), gaps **365, 366, 367, 368, 500,
+501, 275, 570, 551, 346, 347** and everything W-16 left standing.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`; the
+oracle build and every binary drive at **16G**. **No `decide` or `rfl` witness was
+written by this step**, so no 8G probe was owed and none was run. `check.sh` was
+run **five** times on the merged tree (once to resolve, once to reconcile, three
+timed) and printed 7/7 every time. `cargo test --workspace --no-fail-fast` was run
+**twice** on the merged tree — once after the track-A half (1,337/79) and once
+after the track-G half (1,337/79) — each total obtained by summing the **79**
+result lines, not by `tail`. `cli_latency` was run **three** times in release with
+`--include-ignored`, and every noisy row is printed as all three readings. The FFI
+suite was run whole rather than through check 5 alone. The fork oracle was rebuilt
+and its `.oracle-ref` stamp read. Binary drives used the merged tree's release
+binary on scratch `tm init --example` trees **outside the repo**. No bound was
+raised, nothing was retried uncapped, and **no snapshot, fixture, latency band or
+corpus entry was re-blessed** — `review week` in particular is still out of band
+for gap 275 and was not touched.
+
+**Worktrees.** `.claude/worktrees/w17-a` and `.claude/worktrees/w17-g` were
+removed after the merge, with their branches kept. **`.claude/worktrees/stage5-lookahead`
+is untouched**, as every brief since W-1 has required.
+
+### Numbering
+
+Gaps: this step **670-672**; **673-674** free. **Highest gap in the tree after
+this merge: 672** (track G's 653, track A's 632, track P's 606 all below it).
+Cheats: **175 banners, highest 190**, `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d`
+prints nothing, and check 4 still rejects the file. `Check.lean`: **77** `APPENDED`
+banners, **4,447** audit lines at **4,447** distinct full names. Parity **P38**,
+unchanged and none owed. New gaps start at **673**.
