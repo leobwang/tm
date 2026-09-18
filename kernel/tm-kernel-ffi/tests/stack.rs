@@ -396,6 +396,12 @@ const CAP_LOG: &str =
 /// The T0 (c) request's capacity section (no calendar), with `candidates` when
 /// `cands` is non-empty.
 fn grants_request(days: u32, cands: &[String]) -> String {
+    grants_request_docs(days, "", cands)
+}
+
+/// The same, over a tree: `docs` is the `docs` array's contents, so a caller can
+/// ask what one call costs on a real plan rather than on no plan at all.
+fn grants_request_docs(days: u32, docs: &str, cands: &[String]) -> String {
     let mut then = Vec::new();
     for y in 1900..2200 {
         then.push(format!(r#"["{y}-03-08T08:00:00Z","-05:00:00"]"#));
@@ -409,7 +415,7 @@ fn grants_request(days: u32, cands: &[String]) -> String {
     };
     format!(
         concat!(
-            r#"{{"docs":[],"now":"2026-09-07","blockMin":60,{tz},{cap_log},"#,
+            r#"{{"docs":[{docs}],"now":"2026-09-07","blockMin":60,{tz},{cap_log},"#,
             r#""capacity":{{"pLounge":{{"config":{{"Mon":{{"num":"9","den":"10"}},"Tue":{{"num":"9","den":"10"}},"Wed":{{"num":"9","den":"10"}},"Thu":{{"num":"9","den":"10"}},"Fri":{{"num":"8","den":"10"}},"Sat":{{"num":"5","den":"10"}},"Sun":{{"num":"4","den":"10"}}}}}},"#,
             r#""arrival":{{"config":{{"Mon":"07:00","Tue":"07:00","Wed":"07:00","Thu":"07:00","Fri":"07:00","Sat":"10:00","Sun":"10:00"}}}},"#,
             r#""wake":{{"sec":21940,"ns":250000000}},"#,
@@ -423,6 +429,7 @@ fn grants_request(days: u32, cands: &[String]) -> String {
             r#""sleep":{{"shiftModel":null,"shiftConfig":{{"neg":false,"num":1,"den":1}},"underHours":{{"num":7,"den":1}}}}{candidates}}}}}"#
         ),
         tz = tz,
+        docs = docs,
         cap_log = CAP_LOG,
         days = days,
         candidates = candidates
@@ -535,5 +542,130 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
         assert_eq!(dated_part(&ga), dated_part(&gb), "a floor reserves nothing");
         assert!(!gb.contains(r#""class":"floor""#));
         eprintln!("floors: 512 deadlines + 512 floors {with_ms} ms; the same without floors {without_ms} ms (3,660 days, 2 MiB thread)");
+    });
+}
+
+// ---------------------------------------------------------------------------
+// T12 — the replan the TUI would make on a tick (stage 6 W-17, step P4;
+// design §20 gap 257, owner question Q8 / D30)
+// ---------------------------------------------------------------------------
+
+/// §9.1's stop condition: the TUI replans on a **tick** while a replan stays
+/// under this, and on **reload** otherwise.  It is a budget to report against,
+/// never a bound to assert: a test that failed here would be a latency band
+/// re-blessed under another name.
+const TUI_TICK_BUDGET_MS: u128 = 5;
+
+/// The candidate count §9.1's figure was never taken at.
+const REPLAN_CANDS: usize = 500;
+
+/// `n` plain backlog items in `f` files — the shape of a busy plan, without
+/// walls or dated lines, so the number below is the *tree* half of a call and
+/// nothing else.
+fn backlog_docs(files: usize, per: usize) -> String {
+    (0..files)
+        .map(|f| {
+            let lines: Vec<String> = (0..per)
+                .map(|j| format!(r#""- [ ] {} Task {f}-{j} ^t{f}x{j}""#, (f + j) % 6))
+                .collect();
+            format!(r#"{{"path":"plan/backlog{f}.md","lines":[{}]}}"#, lines.join(","))
+        })
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+/// Best and median of `n` calls, in milliseconds, with the last answer.
+fn time_call(req: &str, n: usize) -> (f64, f64, String) {
+    let mut ms: Vec<f64> = Vec::with_capacity(n);
+    let mut last = String::new();
+    for _ in 0..n {
+        let t = std::time::Instant::now();
+        last = call(req).unwrap();
+        ms.push(t.elapsed().as_secs_f64() * 1000.0);
+    }
+    let mut sorted = ms.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    (sorted[0], sorted[sorted.len() / 2], last)
+}
+
+/// **T12: what one replan costs through the FFI, at 500 candidates.**
+///
+/// **Why this exists.** `kernel/design/stage6/stage6-planner-design.md` §9.1
+/// gives the TUI a 5 ms stop condition for replanning on a tick, and §20 gap
+/// 257 records that **nothing in the tree measures one**: the 0.8 ms behind
+/// that budget was taken at the FFI spike, against a kernel that did not exist
+/// yet.  Owner decision D30 (Q8) makes the measurement step P4's, so that the
+/// trigger has a number before it can fire.  The rule that comes with it is
+/// D18's: *if the measurement exceeds 5 ms the fallback is to replan on reload,
+/// never to raise the budget.*
+///
+/// **What it measures, and what it does not.** There is still **no planner op
+/// on the wire** — `dayPlan` has no boundary op and no shipped caller (stage 6
+/// W-16's block says so and W-17's repeats the grep) — so the request below is
+/// the one a replan makes *today*: the `capacity` + `log` call, whole tree,
+/// 7-day lookahead, `candidates` with 500 items, which is what
+/// `TM_TRACE_KERNEL_CALLS=1 tm plan` prints (`log`, then `capacity+log`).  Its
+/// §7 half — the EDF pass, the bins, the rows and the hysteresis — is exactly
+/// what §8.2 step 4 runs, because `Planner.PlanReq.candAnswers` **is**
+/// `Look.prioritiesWithFloors` at the same arguments
+/// (`candAnswers_is_the_capacity_ops_own_grants`).  What is **not** in the
+/// number is steps 5–8, which are not written.  So this is a **lower bound** on
+/// a kernel replan, and the block that quotes it says so.
+///
+/// Three rows, so the cost can be attributed rather than guessed:
+/// (a) 500 candidates, no documents — §7's pass alone;
+/// (b) a 2,000-line tree, no candidates — the load alone;
+/// (c) both — the call itself.
+///
+/// The assertion is a **regression** bound, 40x the measured (c), not the
+/// budget.
+#[test]
+fn a_500_candidate_replan_through_the_ffi() {
+    const REGRESSION_MS: u128 = 4_000;
+    on_a_2mib_thread(|| {
+        let cands = spread_deadlines(REPLAN_CANDS, 7);
+        let docs = backlog_docs(100, 20);
+        let big = grants_request_docs(7, &docs, &cands);
+        let (pass_best, pass_med, pass_out) = time_call(&grants_request(7, &cands), 7);
+        let (tree_best, tree_med, tree_out) = time_call(&grants_request_docs(7, &docs, &[]), 7);
+        let (all_best, all_med, all_out) = time_call(&big, 7);
+        // (d) the shape a real user has today: `tm init --example` is five files
+        // of a handful of lines, and a day's queue is tens of candidates, not 500.
+        let small = backlog_docs(5, 8);
+        let few = spread_deadlines(50, 7);
+        let (few_best, few_med, few_out) = time_call(&grants_request_docs(7, &small, &few), 7);
+
+        // Each answer is the real one: 500 grants, and the tree comes back whole.
+        for out in [&pass_out, &all_out] {
+            let grants = &out[out.find(r#""grants":"#).expect("grants")..];
+            assert_eq!(grants.matches(r#"{"id":"#).count(), REPLAN_CANDS, "500 grants");
+        }
+        {
+            let grants = &few_out[few_out.find(r#""grants":"#).expect("grants")..];
+            assert_eq!(grants.matches(r#"{"id":"#).count(), 50, "50 grants");
+        }
+        assert!(!tree_out.contains(r#""grants""#), "no candidates, no grants");
+        for out in [&tree_out, &all_out] {
+            assert_eq!(out.matches(r#""path":"plan/backlog"#).count(), 100, "the tree came back");
+            assert!(out.contains(r#"^t99x19"#), "the last line came back");
+        }
+
+        assert!(
+            (all_med as u128) <= REGRESSION_MS,
+            "a 500-candidate replan took {all_med:.1} ms (regression bound {REGRESSION_MS} ms)"
+        );
+        eprintln!(
+            "T12 replan through the FFI, 2 MiB thread, best/median of 7: \
+             (a) {REPLAN_CANDS} candidates, no tree {pass_best:.2}/{pass_med:.2} ms; \
+             (b) 2,000-line tree, no candidates {tree_best:.2}/{tree_med:.2} ms; \
+             (c) both {all_best:.2}/{all_med:.2} ms; \
+             (d) 40-line tree, 50 candidates {few_best:.2}/{few_med:.2} ms \
+             — §9.1's tick budget is {TUI_TICK_BUDGET_MS} ms, and every row here is a LOWER \
+             bound on a kernel replan: steps 5-8 are not written and there is no planner op \
+             on the wire.  The request of (c) is {} KiB, and the rows MOVE WITH THE CALLER'S \
+             PROFILE — measured 2x between `opt-level = 0` and `opt-level = 1` — so quote them \
+             with the profile beside them or not at all",
+            big.len() / 1024
+        );
     });
 }

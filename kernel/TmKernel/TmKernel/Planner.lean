@@ -132,6 +132,10 @@ theorem Capped.ofList?_refuses_past_the_cap {α : Type} (l : List α) (h : maxCa
   unfold Capped.ofList?
   rw [dif_neg (by omega)]
 
+/-- The empty list is accepted, and is `Capped.nil` — what a request with no candidates and a
+request with no routines both decode to. -/
+theorem Capped.ofList?_nil {α : Type} : Capped.ofList? ([] : List α) = some Capped.nil := rfl
+
 theorem Capped.ofList?_accepts {α : Type} (l : List α) (h : l.length ≤ maxCands) :
     (Capped.ofList? l).map Subtype.val = some l := by
   unfold Capped.ofList?
@@ -779,6 +783,18 @@ theorem assignedOf_empty (day : Day) (w : Nat × Nat) (bm bb : Nat) :
 theorem blockSeconds_empty (day : Day) (w : Nat × Nat) (bm bb : Nat) :
     blockSeconds (DayPlan.empty day w bm bb) = 0 := rfl
 
+/-- **§7's configuration, as one value** — fork `priority::compute`'s `cfg` half: §7.1's bin
+ladder, R1's safety factor, `default_priority`, and §7.4's hysteresis switch.  These are
+`CapReq.bins`, `CapReq.safety`, `CapReq.dflt` and `CandReq.hysteresis`, which the capacity
+section already decodes; each carries its own smart constructor (`binsOf?`, `safetyOf?`,
+`defaultPrioOf?`), so **nothing is re-bounded here** — this record only puts the four in one
+place so a request carries them once. -/
+structure PrioCfg where
+  bins   : Bins
+  safety : Arith.Pos
+  dflt   : Fin 4
+  hyst   : Bool
+
 /-! ## `PlanReq` — what §9 and the seam make necessary
 
 **What is NOT a field, and why.**  `now`, `tz`, the `[day]` configuration, the curves, the
@@ -796,10 +812,18 @@ structure PlanReq where
   /-- Stage 5's decoded lookahead input: tz, `[day]`, curves, home cap, walls, and today's
   runtime facts in `today0`. -/
   look      : Look.Input
-  /-- The EDF pass's lookahead, day 0 included since K2. -/
-  caps      : Lookahead
   /-- §9's five rows `Look.Today` does not carry. -/
   state     : RuntimeIn
+  /-- **§8.2 step 4's candidates, host-collected** (stage 6 P4), each with §7.3's floor —
+  exactly the pair `capacity.candidates.items` already carries (`Boundary.readCandFloor`).
+  Which items are candidates is D27's, and D27 is **not** this step (D34): these arrive on the
+  wire as they do today, and the step ranks them.  Bounded by `Capped` at `maxCands`, which is
+  the wire's own guard (`Boundary.maxCandidates`) — **reused rather than re-bounded** (R10).-/
+  cands     : Capped (Look.Cand × Option Look.Floor)
+  /-- **§7's configuration**, the four values the capacity section already decodes
+  (`CapReq.bins`/`safety`/`dflt` and `CandReq.hysteresis`).  Each is stage 5's own bounded
+  type with its own smart constructor; none is re-bounded here. -/
+  prio      : PrioCfg
   /-- **§8.2 step 2's window instances, host-collected** (stage 6 P2).  Which occurrences are
   due today is F2's recurrence expansion — track **K3**, not built — so until the owner's D27
   lands these arrive with the request, refused one at a time by `mkRoutines?`.  Bounded at the
@@ -855,6 +879,56 @@ theorem PlanReq.budget_is_the_formula_without_a_stored_one (r : PlanReq)
       Look.budgetOf r.look.day.windowHours r.look.day.cut.blockMin r.look.day.budgetRatio := by
   unfold PlanReq.budgetBlocks
   rw [h]
+
+/-- §8.4's lookahead, in the exact units §7.3's pass reserves over — **`Look.lookahead` of this
+request's own input, and never a field** (step P4, AGENTS §5.3).
+
+P0 carried it as `caps : Lookahead`, on design §5.4's row, and nothing read it for four steps.
+The moment step 4 does, a carried lookahead is a **second answer** to a question `Look.Input`
+already settles: a host could send a `caps` that is not `Look.lookahead r.look`, the ranking
+would be computed over it, and `tm plan`'s order would disagree with the `lookahead.grants` of
+the very same call — the class this kernel exists to remove.  The field is gone and this view
+is in its place, which is exactly what the section header above says about `window` and
+`budgetBlocks`.  `Look.lookahead_is_a_lookahead` (stage 5) is what makes the view total: the
+days it produces ascend and `capDen` is positive, so `lookaheadOf?` cannot answer `none`. -/
+def PlanReq.edfDays (r : PlanReq) : List DayCapacity := Look.lookahead r.look
+
+/-- The same list under the EDF pass's own subtype, with the denominator §7.3 reserves over. -/
+def PlanReq.caps (r : PlanReq) : Lookahead :=
+  (lookaheadOf? Look.capDen (Look.lookahead r.look)).get (Look.lookahead_is_a_lookahead r.look)
+
+theorem PlanReq.edfDays_is_the_lookaheads (r : PlanReq) : r.edfDays = Look.lookahead r.look := rfl
+
+/-- What an accepted `lookaheadOf?` carries: the days it was given, over the denominator it was
+given.  Stage 5 states the *refusals* (`lookaheadOf?_refuses_a_zero_denominator`,
+`…_refuses_unsorted_days`) and the length of an acceptance; this is the acceptance's own
+identity, which is what makes `PlanReq.caps` a view rather than a value of its own. -/
+theorem lookaheadOf?_is_what_it_was_given {den : Nat} {days : List DayCapacity} {la : Lookahead}
+    (h : lookaheadOf? den days = some la) : la.val.2 = days ∧ la.val.1.val = den := by
+  unfold lookaheadOf? at h
+  split at h
+  · rename_i d hd
+    split at h
+    · cases h
+      refine ⟨rfl, ?_⟩
+      unfold denOf? at hd
+      split at hd
+      · cases hd; rfl
+      · exact absurd hd (by simp)
+    · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-- The view's days **are** `edfDays`: there is one list, not two. -/
+theorem PlanReq.caps_days (r : PlanReq) : r.caps.val.2 = r.edfDays :=
+  (lookaheadOf?_is_what_it_was_given
+    (Option.some_get (Look.lookahead_is_a_lookahead r.look)).symm).1
+
+/-- And its denominator is `capDen` — the one `Look.prioritiesWithFloors` reserves over.  Without
+this the pass could be handed a lookahead built over a different unit and would silently use
+`capDen` anyway (`Look.passLeft`), which is a wrong *value*, not a missing one. -/
+theorem PlanReq.caps_den (r : PlanReq) : r.caps.val.1.val = Look.capDen :=
+  (lookaheadOf?_is_what_it_was_given
+    (Option.some_get (Look.lookahead_is_a_lookahead r.look)).symm).2
 
 /-- Why a plan request is refused, by name (AGENTS §5.7, design §10.3).  **There is no
 `planCheckFailed`**: D28 proves the eleven single-run laws rather than gating on them, and a
@@ -2834,6 +2908,439 @@ theorem the_reservation_row_is_exact (r : PlanReq) (q : ActiveRes) (hq : r.activ
   simp only [clampSec, LogStamp.yearEnd] at *
   omega
 
+/-! ############################################################################
+## §8.2 step 4 — PRIORITY (stage 6, step P4)
+
+`priorities = priority::compute(candidates, capacity_lookahead, log, cfg)` — spec §8.2 step 4,
+one line, and the fork's `planner.rs:960-997` is the same: when the caller hands a ranking in
+(and the shipped binary always does, `PlanInput::with_ranking`) step 4 *is* that ranking,
+restricted to the candidates §9.1's overrides keep.  **That ranking is stage 5's**: the whole
+of `Look.prioritiesWithFloors` — the EDF pass, §7.1's bin, §7.2's row table and §7.4's
+hysteresis — was built at step L8 and has had exactly one caller since, the capacity op's
+`Boundary.grantsOf`.  This step gives it its second, and **defines it as the same expression**
+so the two cannot drift: `candAnswers_is_the_capacity_ops_own_grants`.
+
+**What this step does NOT do, and D34 says so.**  It does not collect the candidates.  The
+twelve facts of a `Look.Cand` are still the host's (`priority::collect_candidates`, README
+gaps 113 and 577), they arrive on the wire as they do today, and D27 is a wire change that
+changes *where they come from, not what they are*.  So this step ranks what it is given.
+
+**What it does derive, because the kernel already holds it.**  §7.4's sort key is
+`(p, root line order, own line order)` and the two line orders are `Tree::order` — `(file,
+line)` of the item and of its root.  Those are not candidate facts on the wire and they are not
+D27's either: they are the **plan's**, and `PlanCore.store` and `Plan.rootOf` hold them.  Taking
+them from the host would have been a second reading of the plan (AGENTS §5.3), so `keyOf` reads
+them off `r.plan`.
+
+### AGENTS §5.3 — what is consumed here
+
+`Look.prioritiesWithFloors`, `Look.priorities`, `Look.Cand`, `Look.Cand.enters`,
+`Look.servedOrder`, `Look.servedGrants`, `Look.CandOut`, `Look.FloorOut`, `Look.Floor`,
+`Look.lookahead`, `Look.lookahead_is_a_lookahead`, `Cap.lookaheadOf?`, `Cap.Grant`,
+`Cap.Deadline`, `Cap.grantOf`, `Prio.finalPrio`, `Prio.rawPrio`, `Prio.prio`,
+`Prio.hysteresis`/`applyHysteresis`, `Prio.rowOf`/`rowTable`, `Arith.isImpossible`,
+`Plan.rootOf`, `Replay.insSort`/`insSort_perm`/`insSort_eq_mergeSort`, `Capped`.
+**Nothing of the pass is re-implemented**: `candAnswers` is one call.
+
+One genuinely new function: `natsLe`, the lexicographic order of a tuple of `Nat`s, which the
+nine-deep sort key needs.  `Log.charsLe` is the `List Char` order and `Seal.lexLt` the *strict*
+pair combinator; neither is an order on `List Nat`, and a nine-level nested `Bool` in
+`routineLe`'s shape is the same function written unreadably.
+
+### D9-21, the recursion rule
+
+`candAnswers` is `Look.prioritiesWithFloors`, whose recursion (`entering`, `sortDueIx`,
+`edfGrantsGo`) is stage 5's and already has its `foldl` twin.  `sortRanked` is `Replay.insSort`
+over a list the wire caps at `maxCands`, with the `@[csimp]` twin `sortRankedFast` below —
+the `wallsOfDay` shape, and the reason gap 394 had to close first.  `natsLe` recurses over a
+nine-element literal list, not over anything the wire sizes.
+############################################################################ -/
+
+/-! ### The pass -/
+
+/-- **§8.2 step 4.**  The answers to this request's candidates: `Look.prioritiesWithFloors`
+over this request's own lookahead, in request order, one per candidate. -/
+def PlanReq.candAnswers (r : PlanReq) : List Look.FloorOut :=
+  Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst r.edfDays
+    r.cands.val
+
+/-- **The pass is stage 5's, called and not copied.** -/
+theorem PlanReq.candAnswers_is_the_lookaheads (r : PlanReq) :
+    r.candAnswers = Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst
+      (Look.lookahead r.look) r.cands.val := rfl
+
+/-- **And it is the same expression the capacity op answers `lookahead.grants` with**
+(`Boundary.grantsOf c la q = Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis la
+q.items`, at `la = Look.lookahead c.look`).  Stated as the equation a reader can check against
+`Boundary.lean` by eye: same four configuration values, same lookahead, same items.  A day whose
+ranking disagreed with the `grants` of the very same call is the defect this kernel exists to
+remove, and there is now no way to write it — the lookahead is a view (`PlanReq.caps`), not a
+field, and the pass is one function. -/
+theorem PlanReq.candAnswers_is_the_capacity_ops_own_grants (r : PlanReq) (bins : Bins)
+    (s : Arith.Pos) (dflt : Fin 4) (hy : Bool) (la : List DayCapacity)
+    (items : List (Look.Cand × Option Look.Floor))
+    (hb : bins = r.prio.bins) (hs : s = r.prio.safety) (hd : dflt = r.prio.dflt)
+    (hh : hy = r.prio.hyst) (hl : la = Look.lookahead r.look) (hi : items = r.cands.val) :
+    Look.prioritiesWithFloors bins s dflt hy la items = r.candAnswers := by
+  subst hb; subst hs; subst hd; subst hh; subst hl; subst hi; rfl
+
+/-- One answer per candidate, in request order. -/
+theorem PlanReq.candAnswers_length (r : PlanReq) :
+    r.candAnswers.length = r.cands.val.length :=
+  Look.prioritiesWithFloors_length _ _ _ _ _ _
+
+/-- The answers are as bounded as the candidates: `maxCands` is `Capped`'s and the pass is
+length-preserving, so nothing here needs a second bound (R10). -/
+theorem PlanReq.candAnswers_capped (r : PlanReq) : r.candAnswers.length ≤ maxCands := by
+  rw [r.candAnswers_length]; exact r.cands.property
+
+/-! ### §7.3's two numbers for one item — `edfNumbers`, which was a `sorry` in `Goals.lean` -/
+
+/-- The answer for an id, if the request sent one.  **First by id**, which is the shape
+`Goals.plan_never_drops_an_impossible_item` states its hypothesis in; §5.3's carried instance
+and today's fresh one share an id, and the fork pairs by *index* (`priority::prio_at`) for
+exactly that reason, so an id that names two candidates is answered here by the first.  The
+index-keyed pairing is `candAnswers[i]?` and `rankedCands` uses it. -/
+def PlanReq.answerFor (r : PlanReq) (i : Id) : Option Look.FloorOut :=
+  r.candAnswers.find? (fun o => o.out.cand.id == i)
+
+/-- Its grant, if it entered §7.3's pass (`Look.Cand.enters`). -/
+def PlanReq.grantFor (r : PlanReq) (i : Id) : Option Grant :=
+  (r.answerFor i).bind (fun o => o.out.grant)
+
+/-- **§7.3's two numbers of one candidate**, design §5.5 — the need it reserves for and the
+capacity available to it by its due date after earlier deadlines have reserved.
+
+**Both over `capDen`, and design §5.5's `(g.deadline.need, g.avail)` is WRONG in one of them.**
+`Grant.avail` is a *numerator over the pass's denominator* (`Grant.availQ g den = avail/den`),
+while `Deadline.need` is whole minutes; `Arith.isImpossible need avail = decide (avail < need)`
+compares them directly, so the design's pair asks whether a numerator over 10^18 is smaller
+than a count of minutes and answers `false` for every candidate that has any capacity at all.
+The kernel's own test is `Grant.impossible den g = decide (g.avail < g.deadline.need * den.val)`
+— the need scaled into the pass's units — and `edfNumbers_is_the_grants_own_impossibility` is
+the theorem that the pair below makes `Arith.isImpossible` say exactly that.  Recorded as a
+finding against design §5.5. -/
+def edfNumbers (r : PlanReq) (i : Id) : Nat × Nat :=
+  match r.grantFor i with
+  | some g => (g.deadline.need * Look.capDen, g.avail)
+  | none   => (0, 0)
+
+/-- **The pair is the grant's own impossibility test, not a second opinion on it.** -/
+theorem edfNumbers_is_the_grants_own_impossibility (r : PlanReq) (i : Id) (g : Grant)
+    (h : r.grantFor i = some g) :
+    Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = g.impossible Look.capDenD := by
+  unfold edfNumbers Grant.impossible Arith.isImpossible
+  rw [h]
+  rfl
+
+/-- **An item that did not enter the pass is never impossible.**  §7.3's IMPOSSIBLE is a
+statement about *capacity*, and a candidate with no due date reserves none — fork
+`priority::compute` gives it no grant and `PrioClass::Rank`.  Without this the `(0, 0)` fallback
+would be a silent `isImpossible 0 0 = false` nobody had checked. -/
+theorem edfNumbers_without_a_grant (r : PlanReq) (i : Id) (h : r.grantFor i = none) :
+    Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = false := by
+  unfold edfNumbers Arith.isImpossible
+  rw [h]
+  rfl
+
+/-- And the numbers are the grant's, unscaled, for a reader that wants the fork's `need_min`. -/
+theorem edfNumbers_is_the_grant (r : PlanReq) (i : Id) (g : Grant) (h : r.grantFor i = some g) :
+    edfNumbers r i = (g.deadline.need * Look.capDen, g.avail) := by
+  unfold edfNumbers; rw [h]
+
+/-! ### §7.4's key and the assignment order -/
+
+/-- The lexicographic order of a tuple of `Nat`s, shortest-first.  `Log.charsLe` is the one
+order on `List Char` and `Seal.lexLt` the strict pair combinator; neither orders `List Nat`. -/
+def natsLe : List Nat → List Nat → Bool
+  | [],      _       => true
+  | _ :: _,  []      => false
+  | a :: as, b :: bs => if a < b then true else if b < a then false else natsLe as bs
+
+theorem natsLe_trans : ∀ a b c : List Nat, natsLe a b → natsLe b c → natsLe a c
+  | [], _, _, _, _ => rfl
+  | _ :: _, [], _, h₁, _ => absurd h₁ (by simp [natsLe])
+  | _ :: _, _ :: _, [], _, h₂ => absurd h₂ (by simp [natsLe])
+  | x :: xs, y :: ys, z :: zs, h₁, h₂ => by
+    simp only [natsLe] at h₁ h₂ ⊢
+    split at h₁
+    · rename_i hxy
+      split at h₂
+      · rename_i hyz; rw [if_pos (by omega)]
+      · split at h₂
+        · rename_i hzy; exact absurd h₂ (by simp)
+        · rename_i hzy; rw [if_pos (by omega)]
+    · rename_i hxy
+      split at h₁
+      · exact absurd h₁ (by simp)
+      · rename_i hyx
+        have hxy' : x = y := by omega
+        subst hxy'
+        split at h₂
+        · rename_i hyz; rw [if_pos hyz]
+        · split at h₂
+          · exact absurd h₂ (by simp)
+          · rename_i h1 h2
+            rw [if_neg h1, if_neg h2]
+            exact natsLe_trans xs ys zs h₁ h₂
+
+theorem natsLe_cons (x y : Nat) (xs ys : List Nat) :
+    natsLe (x :: xs) (y :: ys) =
+      if x < y then true else if y < x then false else natsLe xs ys := rfl
+
+theorem natsLe_total : ∀ a b : List Nat, natsLe a b || natsLe b a
+  | [], _ => by simp [natsLe]
+  | _ :: _, [] => by simp [natsLe]
+  | x :: xs, y :: ys => by
+    rw [natsLe_cons, natsLe_cons]
+    rcases Nat.lt_trichotomy x y with h | h | h
+    · rw [if_pos h]; simp
+    · rw [if_neg (by omega), if_neg (by omega), if_neg (by omega), if_neg (by omega)]
+      exact natsLe_total xs ys
+    · rw [if_neg (by omega), if_pos h]; simp [h]
+
+/-- What one step of the order gives back: the heads are ordered, and the tails decide a tie. -/
+theorem natsLe_cons_le {a b : Nat} {as bs : List Nat} (h : natsLe (a :: as) (b :: bs) = true) :
+    a ≤ b ∧ (a = b → natsLe as bs = true) := by
+  rw [natsLe_cons] at h
+  by_cases h1 : a < b
+  · exact ⟨Nat.le_of_lt h1, fun he => absurd he (by omega)⟩
+  · rw [if_neg h1] at h
+    by_cases h2 : b < a
+    · rw [if_pos h2] at h; exact absurd h (by simp)
+    · rw [if_neg h2] at h
+      exact ⟨by omega, fun _ => h⟩
+
+/-- **§7.4's sort key**, fork `priority::sorted_candidates`'s tuple: walls first (`u8::from
+(!c.is_wall)`), then `p` — with a candidate that has none read as `7`, as the fork's
+`map_or(7, …)` and its `if c.is_wall { 7 }` both do — then the root's line order, then the
+item's own, then the request position, which is the fork's `keyed.sort()` tie-break and the
+only thing that separates two instances of one id. -/
+structure CandKey where
+  notWall : Bool
+  p       : Nat
+  root    : Option Site
+  own     : Option Site
+  ix      : Nat
+deriving DecidableEq, Repr
+
+/-- A site as two numbers, with a **missing** one last: fork `order` answers
+`(usize::MAX, usize::MAX)` for an id the tree does not hold, and `Nat` has no maximum, so the
+marker is a leading digit rather than a number nothing can exceed. -/
+def siteNums : Option Site → List Nat
+  | none   => [1, 0, 0]
+  | some s => [0, s.doc, s.rank]
+
+/-- The key as the nine numbers the fork's tuple sort compares, in its order. -/
+def CandKey.nums (k : CandKey) : List Nat :=
+  (if k.notWall then 1 else 0) :: k.p :: (siteNums k.root ++ siteNums k.own ++ [k.ix])
+
+def candKeyLe (a b : CandKey) : Bool := natsLe a.nums b.nums
+
+theorem candKeyLe_trans (a b c : CandKey) (h₁ : candKeyLe a b) (h₂ : candKeyLe b c) :
+    candKeyLe a c := natsLe_trans _ _ _ h₁ h₂
+
+theorem candKeyLe_total (a b : CandKey) : candKeyLe a b || candKeyLe b a := natsLe_total _ _
+
+/-- **Walls first.**  The key's leading digit is `0` for a wall and `1` for everything else, so
+an ordered pair cannot put a task in front of a wall. -/
+theorem candKeyLe_notWall {a b : CandKey} (h : candKeyLe a b = true) :
+    (if a.notWall then 1 else 0) ≤ (if b.notWall then (1 : Nat) else 0) :=
+  (natsLe_cons_le h).1
+
+/-- **Then `p`.**  Between two keys of the same kind the order is `p`'s. -/
+theorem candKeyLe_p {a b : CandKey} (h : candKeyLe a b = true) (hw : a.notWall = b.notWall) :
+    a.p ≤ b.p :=
+  (natsLe_cons_le ((natsLe_cons_le h).2 (by rw [hw]))).1
+
+/-- One ranked candidate: its answer and the key §7.4 sorts it by. -/
+structure Ranked where
+  key : CandKey
+  out : Look.FloorOut
+
+def rankedLe (a b : Ranked) : Bool := candKeyLe a.key b.key
+
+theorem rankedLe_trans (a b c : Ranked) (h₁ : rankedLe a b) (h₂ : rankedLe b c) : rankedLe a c :=
+  candKeyLe_trans _ _ _ h₁ h₂
+
+theorem rankedLe_total (a b : Ranked) : rankedLe a b || rankedLe b a := candKeyLe_total _ _
+
+/-- The assignment order.  `Replay.insSort` is the **specification** sort — quadratic, kept
+because it reduces under `decide` — and `sortRankedFast` its compiled twin, the shape
+`sortWalls`/`sortRoutines` take since gap 394 closed. -/
+def sortRanked (l : List Ranked) : List Ranked := Replay.insSort rankedLe l
+
+def sortRankedFast (l : List Ranked) : List Ranked := l.mergeSort rankedLe
+
+@[csimp] theorem sortRanked_eq_sortRankedFast : @sortRanked = @sortRankedFast := by
+  funext l
+  unfold sortRanked sortRankedFast
+  exact Replay.insSort_eq_mergeSort rankedLe rankedLe_trans rankedLe_total l
+
+theorem mem_sortRanked {l : List Ranked} {x : Ranked} : x ∈ sortRanked l ↔ x ∈ l :=
+  (Replay.insSort_perm rankedLe l).mem_iff
+
+theorem sortRanked_length (l : List Ranked) : (sortRanked l).length = l.length :=
+  (Replay.insSort_perm rankedLe l).length_eq
+
+/-- **Sorted, and this is the half that makes the order a claim rather than a name.** -/
+theorem sortRanked_sorted (l : List Ranked) :
+    (sortRanked l).Pairwise (fun a b => rankedLe a b = true) := by
+  unfold sortRanked
+  rw [Replay.insSort_eq_mergeSort rankedLe rankedLe_trans rankedLe_total l]
+  exact List.pairwise_mergeSort (fun a b c h₁ h₂ => rankedLe_trans a b c h₁ h₂)
+    (fun a b => rankedLe_total a b) l
+
+/-! ### The key of a request's candidate -/
+
+/-- `Tree::order(id)` — the item's `(file, line)`, `none` when the plan does not hold it. -/
+def PlanReq.ownSite (r : PlanReq) (i : Id) : Option Site :=
+  (r.plan.val.store.get i).map (fun e => e.val.live)
+
+/-- `Tree::order(root(id))` — §3.2's root walk is `Plan.rootOf`, already proved total. -/
+def PlanReq.rootSite (r : PlanReq) (i : Id) : Option Site :=
+  r.ownSite (rootOf r.plan.val i)
+
+/-- §7.4's key of the answer at request position `ix`. -/
+def PlanReq.keyOf (r : PlanReq) (ix : Nat) (o : Look.FloorOut) : CandKey :=
+  ⟨!o.out.cand.wall, o.out.p.getD 7, r.rootSite o.out.cand.id, r.ownSite o.out.cand.id, ix⟩
+
+/-- **§8.2 step 4's answer, in §7.4's order** — fork `priority::sorted_candidates` over
+`priority::compute`'s output.
+
+**The eligibility filter is NOT applied here, and that is deliberate.**  The fork's
+`sorted_candidates` also drops `!c.eligible()` (Waiting, closed, dep-blocked, `max:`-exhausted)
+and an Interval that is not today's, and **not one of those five facts is on the wire**: they
+are `priority::Candidate` fields D27 will bring, and the filter itself is §8.2 step 5's
+`eligibleAt`, which design §6.3 gives to **P5** (README gap 365).  Filtering a sorted list by
+any predicate leaves the survivors in the same order, so the factoring is safe and P5 filters
+what this step orders. -/
+def PlanReq.rankedCands (r : PlanReq) : List Ranked :=
+  sortRanked (r.candAnswers.zipIdx.map (fun x => ⟨r.keyOf x.2 x.1, x.1⟩))
+
+theorem PlanReq.rankedCands_length (r : PlanReq) :
+    r.rankedCands.length = r.cands.val.length := by
+  unfold PlanReq.rankedCands
+  rw [sortRanked_length, List.length_map, List.length_zipIdx, r.candAnswers_length]
+
+/-- **Nothing is dropped and nothing is invented**: the ranking is a permutation of the
+answers, each carried with the request position it arrived at. -/
+theorem PlanReq.mem_rankedCands {r : PlanReq} {x : Ranked} :
+    x ∈ r.rankedCands ↔ ∃ p ∈ r.candAnswers.zipIdx, x = ⟨r.keyOf p.2 p.1, p.1⟩ := by
+  unfold PlanReq.rankedCands
+  rw [mem_sortRanked]
+  simp [List.mem_map, eq_comm]
+
+/-- Every ranked entry is an answer of this request, at the position it arrived at. -/
+theorem PlanReq.a_ranked_entry_is_an_answer {r : PlanReq} {x : Ranked} (h : x ∈ r.rankedCands) :
+    r.candAnswers[x.key.ix]? = some x.out := by
+  obtain ⟨p, hp, rfl⟩ := PlanReq.mem_rankedCands.1 h
+  exact List.mem_zipIdx_iff_getElem?.mp hp
+
+/-- **And its key is that answer's own four facts** — not a label attached beside it.  This is
+the half that makes the order laws below claims about the candidate rather than about the key:
+a key whose `p` did not come from `finalPrio` would satisfy every sortedness theorem. -/
+theorem PlanReq.a_ranked_entry_carries_its_answers_facts {r : PlanReq} {x : Ranked}
+    (h : x ∈ r.rankedCands) :
+    x.key.notWall = !x.out.out.cand.wall ∧ x.key.p = x.out.out.p.getD 7 ∧
+      x.key.root = r.rootSite x.out.out.cand.id ∧ x.key.own = r.ownSite x.out.out.cand.id := by
+  obtain ⟨p, hp, rfl⟩ := PlanReq.mem_rankedCands.1 h
+  exact ⟨rfl, rfl, rfl, rfl⟩
+
+theorem PlanReq.rankedCands_sorted (r : PlanReq) :
+    r.rankedCands.Pairwise (fun a b => rankedLe a b = true) := sortRanked_sorted _
+
+/-- **A wall is ranked before every task** — §8.2 step 1 places them and step 5 never competes
+with one.  Stated the way sortedness gives it: a wall cannot stand after a non-wall. -/
+theorem PlanReq.a_wall_ranks_before_a_task (r : PlanReq) (i j : Nat)
+    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
+    (hw : r.rankedCands[j].out.out.cand.wall = true) :
+    r.rankedCands[i].out.out.cand.wall = true := by
+  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
+  have hki := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)).1
+  have hkj := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)).1
+  cases hc : r.rankedCands[i].out.out.cand.wall with
+  | true => rfl
+  | false =>
+    have hle := candKeyLe_notWall (a := r.rankedCands[i].key) (b := r.rankedCands[j].key) hp
+    rw [hki, hkj, hc, hw] at hle
+    exact absurd hle (by simp)
+
+/-- **A lower `p` is ranked first, among candidates of the same kind** — §7.4's first
+component, stated over the produced order.  This is the half `plan_is_monotone_in_rank` rests
+on and the half a wrong `p` breaks. -/
+theorem PlanReq.a_lower_p_ranks_first (r : PlanReq) (i j : Nat)
+    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
+    (hw : r.rankedCands[i].out.out.cand.wall = r.rankedCands[j].out.out.cand.wall) :
+    r.rankedCands[i].out.out.p.getD 7 ≤ r.rankedCands[j].out.out.p.getD 7 := by
+  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
+  obtain ⟨hwi, hpi, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)
+  obtain ⟨hwj, hpj, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)
+  rw [← hpi, ← hpj]
+  exact candKeyLe_p (a := r.rankedCands[i].key) (b := r.rankedCands[j].key) hp
+    (by rw [hwi, hwj, hw])
+
+/-! ### The day's `priorities` -/
+
+/-- One `(id, p)` row of `DayPlan.priorities`, when the candidate has a `p` at all.  A wall has
+none — §7.2's first row is off the scale (`rawPrio_of_a_wall`), and fork `sorted_candidates`
+reads walls as `7` only to sort them, never to report them. -/
+def prioRow (o : Look.FloorOut) : Option (Id × Fin 8) :=
+  match o.out.p with
+  | none   => none
+  | some n =>
+    if hn : n < 8 then some (o.out.cand.id, ⟨n, hn⟩) else none
+
+/-- §8.2 step 8's `priorities`, fork `planner.rs:1066`: one row per candidate **in request
+order**, id and `p`.  Bounded by the candidates' own `Capped`; `filterMap` cannot grow a list. -/
+def dayPriorities (r : PlanReq) : Capped (Id × Fin 8) :=
+  ⟨r.candAnswers.filterMap prioRow, by
+    refine Nat.le_trans (Nat.le_trans (List.length_filterMap_le _ _) ?_) r.cands.property
+    exact Nat.le_of_eq r.candAnswers_length⟩
+
+theorem dayPriorities_val (r : PlanReq) :
+    (dayPriorities r).val = r.candAnswers.filterMap prioRow := rfl
+
+/-- **A wall contributes no priority row.** -/
+theorem a_wall_has_no_priority_row (o : Look.FloorOut) (h : o.out.p = none) :
+    prioRow o = none := by unfold prioRow; rw [h]
+
+/-- **The `dif` in `prioRow` is never the branch taken.**  A `p` the pass produces is on §7.2's
+scale (`Look.prioritiesWithFloors_p_is_on_the_scale`), so no candidate loses its row at the
+bound of a type — which would be a refusal nothing names, §9.2's disguised gap. -/
+theorem an_answer_with_a_p_gets_a_row (r : PlanReq) (o : Look.FloorOut) (n : Nat)
+    (ho : o ∈ r.candAnswers) (h : o.out.p = some n) :
+    (prioRow o).map (fun q => (q.1, q.2.val)) = some (o.out.cand.id, n) := by
+  have hn : n ≤ 7 := Look.prioritiesWithFloors_p_is_on_the_scale ho h
+  unfold prioRow
+  rw [h]
+  show Option.map _ (dite (n < 8) _ _) = _
+  rw [dif_pos (show n < 8 by omega)]
+  rfl
+
+/-- **And an answer with no `p` is the only thing that loses one** — the two directions
+together say the row list is exactly the answers on the scale. -/
+theorem a_row_is_lost_only_off_the_scale (o : Look.FloorOut) (h : prioRow o = none) :
+    o.out.p = none ∨ ∃ n, o.out.p = some n ∧ 8 ≤ n := by
+  unfold prioRow at h
+  split at h
+  · rename_i hp; exact Or.inl hp
+  · rename_i n hp
+    split at h
+    · exact absurd h (by simp)
+    · exact Or.inr ⟨n, hp, by omega⟩
+
+/-- **And a row's `p` is the answer's own `p`** — the value, not a placeholder. -/
+theorem a_priority_row_carries_the_answers_p (o : Look.FloorOut) (i : Id) (q : Fin 8)
+    (h : prioRow o = some (i, q)) : o.out.cand.id = i ∧ o.out.p = some q.val := by
+  unfold prioRow at h
+  split at h
+  · cases h
+  · rename_i n hn
+    split at h
+    · cases h; exact ⟨rfl, hn⟩
+    · cases h
+
 /-- **The day's rows**: steps 1 and 2, and §8.2 choice 5b's reservation, in the fork's order. -/
 def dayRows (r : PlanReq) : List WfSeg :=
   sortRows ((stepOneSegs r ++ stepTwoSegs r ++ reservationSegs r).map segOf)
@@ -2878,7 +3385,8 @@ written here. -/
 def dayPlan (r : PlanReq) : DayPlan :=
   { DayPlan.empty r.today r.window r.blockMin r.budgetBlocks with
     segments := dayRows r
-    diagnostics := dayDiagnostics r }
+    diagnostics := dayDiagnostics r
+    priorities := dayPriorities r }
 
 theorem dayPlan_day (r : PlanReq) : (dayPlan r).day = r.today := rfl
 
@@ -2899,6 +3407,11 @@ theorem dayPlan_remaining_budget_is_the_forks_local (r : PlanReq) :
     remainingBudget r ≤ (dayPlan r).budgetBlocks := remainingBudget_le_budget r
 
 theorem dayPlan_segments (r : PlanReq) : (dayPlan r).segments = dayRows r := rfl
+
+/-- **The day carries §8.2 step 4's answer** — fork `planner.rs:1066`, `day.priorities = cands
+.zip(&prios)`.  P0 left it `Capped.nil`, which was true of a day with no step 4; it is step 4's
+now. -/
+theorem dayPlan_priorities (r : PlanReq) : (dayPlan r).priorities = dayPriorities r := rfl
 
 /-- **P8 must delete this.**  The FNV-1a digest is the emitter's; until it lands, the identity
 `state.last_plan_hash` would compare against is a placeholder and says so. -/

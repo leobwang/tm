@@ -5041,7 +5041,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_an_input_the_decoder_refuses
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_wall_index_that_is_not_the_plans
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_run_the_guards_refuse
-#print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_zero_denominator
 #print axioms Tm.PlannerWit.mkPlanReq?_ok_wallsAgree
 #print axioms Tm.PlannerWit.mkPlanReq?_ok_parts
 #print axioms Tm.PlannerWit.witInput_decodes_ok
@@ -5050,8 +5049,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.lookWallPlan_loads
 #print axioms Tm.PlannerWit.witRun_resumes_ok
 #print axioms Tm.PlannerWit.witRun_resumes
-#print axioms Tm.PlannerWit.witCaps_ok
-#print axioms Tm.PlannerWit.witCaps_eq
 #print axioms Tm.PlannerWit.witBuilds
 #print axioms Tm.PlannerWit.theRequest_wallsAgree
 #print axioms Tm.PlannerWit.the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening
@@ -5266,3 +5263,88 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.routine_span_total
 #print axioms Tm.Planner.routineLe_total
 #print axioms Tm.Planner.sortRoutines_eq_sortRoutinesFast
+
+-- ===========================================================================
+-- APPENDED 2026-09-18 (stage 6, run **W-17**, track P, step **P4** — §8.2
+-- step 4, PRIORITY.
+--
+-- The pass itself is stage 5's and is CALLED, not copied: `PlanReq.candAnswers`
+-- is `Look.prioritiesWithFloors` at step 4's arguments, and
+-- `candAnswers_is_the_capacity_ops_own_grants` is the equation that says it is
+-- the same expression `Boundary.grantsOf` answers `lookahead.grants` with.
+-- What is new here is §7.4's key (`CandKey`, `natsLe`, `sortRanked`) and the
+-- wiring: `edfNumbers` stopped being a `sorry` in `Goals.lean` and
+-- `DayPlan.priorities` stopped being empty.
+--
+-- THREE AUDIT LINES WERE DELETED, each naming a theorem this step deleted with
+-- its subject, and each replaced:
+--   * `Tm.PlannerWit.mkPlanReq?_refuses_a_zero_denominator` — the EDF lookahead
+--     stopped being a FIELD of `PlanReq` and became a view of
+--     `Look.lookahead r.look` (`Planner.PlanReq.caps`), because a carried one
+--     is a second answer to a question `Look.Input` settles.  A view cannot be
+--     handed a zero denominator, so the refusal became unreachable;
+--     `mkPlanReq?_refuses_too_many_candidates` is the R10 refusal that took its
+--     place in the builder.
+--   * `Tm.PlannerWit.witCaps_ok` and `Tm.PlannerWit.witCaps_eq` — the witness
+--     lookahead the field needed, gone with the field.  (Both were `decide` at
+--     `maxRecDepth 40000`; the step is cheaper for their going.)
+-- `Planner.PlanReq.caps_days` and `caps_den` are what replaced what they said.
+-- ===========================================================================
+#print axioms Tm.rawPrio_is_on_the_scale
+#print axioms Tm.applyHysteresis_is_on_the_scale
+#print axioms Tm.finalPrio_is_on_the_scale
+#print axioms Tm.Look.candOut_p_is_on_the_scale
+#print axioms Tm.Look.priorities_p_is_on_the_scale
+#print axioms Tm.Look.withFloor_p_is_on_the_scale
+#print axioms Tm.Look.prioritiesWithFloors_p_is_on_the_scale
+#print axioms Tm.Planner.Capped.ofList?_nil
+#print axioms Tm.Planner.PlanReq.edfDays_is_the_lookaheads
+#print axioms Tm.Planner.lookaheadOf?_is_what_it_was_given
+#print axioms Tm.Planner.PlanReq.caps_days
+#print axioms Tm.Planner.PlanReq.caps_den
+#print axioms Tm.Planner.PlanReq.candAnswers_is_the_lookaheads
+#print axioms Tm.Planner.PlanReq.candAnswers_is_the_capacity_ops_own_grants
+#print axioms Tm.Planner.PlanReq.candAnswers_length
+#print axioms Tm.Planner.PlanReq.candAnswers_capped
+#print axioms Tm.Planner.edfNumbers_is_the_grants_own_impossibility
+#print axioms Tm.Planner.edfNumbers_without_a_grant
+#print axioms Tm.Planner.edfNumbers_is_the_grant
+#print axioms Tm.Planner.natsLe_trans
+#print axioms Tm.Planner.natsLe_cons
+#print axioms Tm.Planner.natsLe_total
+#print axioms Tm.Planner.natsLe_cons_le
+#print axioms Tm.Planner.candKeyLe_trans
+#print axioms Tm.Planner.candKeyLe_total
+#print axioms Tm.Planner.candKeyLe_notWall
+#print axioms Tm.Planner.candKeyLe_p
+#print axioms Tm.Planner.rankedLe_trans
+#print axioms Tm.Planner.rankedLe_total
+#print axioms Tm.Planner.sortRanked_eq_sortRankedFast
+#print axioms Tm.Planner.mem_sortRanked
+#print axioms Tm.Planner.sortRanked_length
+#print axioms Tm.Planner.sortRanked_sorted
+#print axioms Tm.Planner.PlanReq.rankedCands_length
+#print axioms Tm.Planner.PlanReq.mem_rankedCands
+#print axioms Tm.Planner.PlanReq.a_ranked_entry_is_an_answer
+#print axioms Tm.Planner.PlanReq.a_ranked_entry_carries_its_answers_facts
+#print axioms Tm.Planner.PlanReq.rankedCands_sorted
+#print axioms Tm.Planner.PlanReq.a_wall_ranks_before_a_task
+#print axioms Tm.Planner.PlanReq.a_lower_p_ranks_first
+#print axioms Tm.Planner.dayPriorities_val
+#print axioms Tm.Planner.a_wall_has_no_priority_row
+#print axioms Tm.Planner.an_answer_with_a_p_gets_a_row
+#print axioms Tm.Planner.a_row_is_lost_only_off_the_scale
+#print axioms Tm.Planner.a_priority_row_carries_the_answers_p
+#print axioms Tm.Planner.dayPlan_priorities
+#print axioms Tm.PlannerWit.mkPlanReq?_refuses_too_many_candidates
+#print axioms Tm.PlannerWit.witBuildsCands
+#print axioms Tm.PlannerWit.the_ranking_requests_answers_are_stage_fives
+#print axioms Tm.PlannerWit.the_ranking_request_is_ordered
+#print axioms Tm.PlannerWit.the_ranking_requests_day_carries_its_priorities
+#print axioms Tm.PlannerWit.the_ranking_request_reads_the_plans_line_order
+#print axioms Tm.PlannerWit.clearing_overdue_moves_the_candidate
+#print axioms Tm.PlannerWit.clearing_mandatory_moves_the_candidate
+#print axioms Tm.PlannerWit.clearing_wall_moves_it_off_the_front
+#print axioms Tm.PlannerWit.taking_the_written_k_away_moves_the_candidate
+#print axioms Tm.PlannerWit.yesterdays_priority_holds_the_candidate_back
+#print axioms Tm.PlannerWit.the_request_order_breaks_a_tie

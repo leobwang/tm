@@ -102,8 +102,9 @@ inductive WitErr
   | input (e : Look.CapErr)
   /-- `Seal.resumeRun` refused the log (§9.3's guards). -/
   | run (e : Seal.Refusal)
-  /-- `lookaheadOf?` refused the EDF lookahead: a zero denominator, or days out of order. -/
-  | caps
+  /-- **P4**: more candidates than `maxCands`.  The cap is `Capped`'s, which is the wire's own
+  (`Boundary.maxCandidates`); this constructor only carries the refusal out. -/
+  | cands
   /-- The wall index is not the plan's own (README gap 346). -/
   | walls
   /-- **P2's `mkRoutines?` refused a window instance** (W-15's land step).  The rule is
@@ -122,10 +123,13 @@ structure PlanReqIn where
   /-- The lookahead's raw input (L5's `InputIn`): tz, `[day]`, curves, the weekday tables, the
   wall index and today's runtime facts. -/
   input     : Look.InputIn
-  /-- The EDF pass's denominator (`Look.capDen` on the shipped path). -/
-  den       : Nat
   /-- §9's five rows `Look.Today` does not carry. -/
   state     : RuntimeIn
+  /-- **§8.2 step 4's candidates, as the host sends them** (P4), each with its floor.  Uncapped
+  here; `Capped.ofList?` is what caps them, exactly as the wire's `readCands` does. -/
+  cands     : List (Look.Cand × Option Look.Floor)
+  /-- §7's configuration (`capacity.priority` and `candidates.hysteresis`). -/
+  prio      : PrioCfg
   /-- **§8.2 step 2's window instances, as the host sends them** (P2).  Uncapped and
   undecoded here; `Planner.mkRoutines?` is what caps and refuses them. -/
   routines  : List RoutineIn
@@ -144,12 +148,12 @@ def mkPlanReq? (x : PlanReqIn) : Except WitErr PlanReq :=
       match Seal.resumeRun I.tz I.today (Seal.Ckpt.empty I.tz) x.lines with
       | .error e => .error (.run e)
       | .ok run =>
-        match lookaheadOf? x.den (Look.lookahead I) with
-        | none => .error .caps
-        | some la =>
+        match Capped.ofList? x.cands with
+        | none => .error .cands
+        | some cs =>
           match mkRoutines? p.val x.routines with
           | .error e => .error (.routines e)
-          | .ok rs => .ok ⟨p, run, I, la, x.state, rs, x.overrides⟩
+          | .ok rs => .ok ⟨p, run, I, x.state, cs, x.prio, rs, x.overrides⟩
 
 /-! ### The rejection theorems (R10): every stage's refusal is reachable and named -/
 
@@ -178,25 +182,30 @@ theorem mkPlanReq?_refuses_a_run_the_guards_refuse (x : PlanReqIn) (p : WfPlan)
     mkPlanReq? x = .error (.run e) := by
   simp [mkPlanReq?, hp, hI, hw, h]
 
-theorem mkPlanReq?_refuses_a_zero_denominator (x : PlanReqIn) (p : WfPlan) (I : Look.Input)
+/-- **P4's R10 refusal**: a request that sends more than `maxCands` candidates is refused by
+name rather than truncated.  (This replaced `mkPlanReq?_refuses_a_zero_denominator`, which the
+EDF lookahead's promotion from a field to a view — `Planner.PlanReq.caps` — made unreachable:
+`Look.lookahead_is_a_lookahead` proves `lookaheadOf?` cannot answer `none` for it.) -/
+theorem mkPlanReq?_refuses_too_many_candidates (x : PlanReqIn) (p : WfPlan) (I : Look.Input)
     (run : Seal.Run) (hp : loadPlan x.docs = .ok p) (hI : Look.mkInput? x.input = .ok I)
     (hw : I.walls = Look.wallIndex I.tz I.day.cut.blockMin p.val)
     (hr : Seal.resumeRun I.tz I.today (Seal.Ckpt.empty I.tz) x.lines = .ok run)
-    (h : x.den = 0) : mkPlanReq? x = .error .caps := by
-  simp [mkPlanReq?, hp, hI, hw, hr, h, lookaheadOf?_refuses_a_zero_denominator]
+    (h : maxCands < x.cands.length) : mkPlanReq? x = .error .cands := by
+  simp [mkPlanReq?, hp, hI, hw, hr, Capped.ofList?_refuses_past_the_cap _ h]
 
 /-- **The routine refusal is reachable and named** (R10, W-15's land step).  The rule is
 `Planner.mkRoutine?`'s — this builder only carries its `RoutineErr` out under `WitErr.routines`,
 so gap 285's refusal is not dropped between the wire and the request either. -/
 theorem mkPlanReq?_refuses_a_routine_the_rule_refuses (x : PlanReqIn) (p : WfPlan)
-    (I : Look.Input) (run : Seal.Run) (la : Lookahead) (e : RoutineErr)
+    (I : Look.Input) (run : Seal.Run) (cs : Capped (Look.Cand × Option Look.Floor))
+    (e : RoutineErr)
     (hp : loadPlan x.docs = .ok p) (hI : Look.mkInput? x.input = .ok I)
     (hw : I.walls = Look.wallIndex I.tz I.day.cut.blockMin p.val)
     (hr : Seal.resumeRun I.tz I.today (Seal.Ckpt.empty I.tz) x.lines = .ok run)
-    (hla : lookaheadOf? x.den (Look.lookahead I) = some la)
+    (hcs : Capped.ofList? x.cands = some cs)
     (h : mkRoutines? p.val x.routines = .error e) :
     mkPlanReq? x = .error (.routines e) := by
-  simp [mkPlanReq?, hp, hI, hw, hr, hla, h]
+  simp [mkPlanReq?, hp, hI, hw, hr, hcs, h]
 
 /-! ### What every accepted request satisfies -/
 
@@ -230,7 +239,7 @@ theorem mkPlanReq?_ok_wallsAgree (x : PlanReqIn) (r : PlanReq) (h : mkPlanReq? x
 theorem mkPlanReq?_ok_parts (x : PlanReqIn) (r : PlanReq) (h : mkPlanReq? x = .ok r) :
     loadPlan x.docs = .ok r.plan ∧ Look.mkInput? x.input = .ok r.look ∧
       Seal.resumeRun r.look.tz r.look.today (Seal.Ckpt.empty r.look.tz) x.lines = .ok r.run ∧
-      lookaheadOf? x.den (Look.lookahead r.look) = some r.caps ∧
+      Capped.ofList? x.cands = some r.cands ∧ r.prio = x.prio ∧
       r.state = x.state ∧ mkRoutines? r.plan.val x.routines = .ok r.routines ∧
       r.overrides = x.overrides := by
   unfold mkPlanReq? at h
@@ -252,7 +261,7 @@ theorem mkPlanReq?_ok_parts (x : PlanReqIn) (r : PlanReq) (h : mkPlanReq? x = .o
             · cases h
             · rename_i rs hrs
               cases h
-              exact ⟨hp, hI, hr, hla, rfl, hrs, rfl⟩
+              exact ⟨hp, hI, hr, hla, rfl, rfl, hrs, rfl⟩
 
 /-! ############################################################################
 ## 2. The witness: the §4.3 Wednesday, built by the builder
@@ -358,28 +367,24 @@ theorem witRun_resumes :
   · rename_i run h; rw [h]
   · rename_i e h; exact absurd witRun_resumes_ok (by simp [runOk, h])
 
-set_option maxRecDepth 40000 in
-theorem witCaps_ok : (lookaheadOf? Look.capDen (Look.lookahead witInput)).isSome = true := by
-  decide
+/-- §7's configuration for the witnesses: §16's default bin ladder, R1's 1.3 safety factor,
+`default_priority = 3` and §7.4's hysteresis on — the four `Look.priorities_on_a_witness` is
+computed at, so the answers below are stage 5's answers and not a second set.
 
-def witCaps : Lookahead :=
-  match h : lookaheadOf? Look.capDen (Look.lookahead witInput) with
-  | some la => la
-  | none => absurd witCaps_ok (by simp [h])
-
-theorem witCaps_eq : lookaheadOf? Look.capDen (Look.lookahead witInput) = some witCaps := by
-  unfold witCaps
-  split
-  · rename_i la h; rw [h]
-  · rename_i h; exact absurd witCaps_ok (by simp [h])
+*(`witCaps`, `witCaps_ok` and `witCaps_eq` stood here until step P4 and are **deleted**: the EDF
+lookahead stopped being a field of `PlanReq` and became `Planner.PlanReq.caps`, a view of
+`Look.lookahead r.look`, so a request no longer carries one to build.  `Check.lean`'s P4 banner
+records both deletions.)* -/
+def witPrio : PrioCfg := ⟨Look.defaultBinsV, Arith.safety, specDefaultPrio, true⟩
 
 /-- The raw request. -/
 def witReqIn : PlanReqIn where
   docs := lookWallWitness
   lines := witLines
   input := witInputIn
-  den := Look.capDen
   state := RuntimeIn.empty
+  cands := []
+  prio := witPrio
   routines := []
   overrides := none
 
@@ -388,7 +393,7 @@ is EMPTY: the witness day is two replayed blocks and the written wall, and P2's 
 adds no row to a day whose host sent no window instance
 (`the_witness_carries_no_routine`). -/
 def theRequest : PlanReq :=
-  ⟨lookWallPlan, witRun, witInput, witCaps, RuntimeIn.empty, Capped.nil, none⟩
+  ⟨lookWallPlan, witRun, witInput, RuntimeIn.empty, Capped.nil, witPrio, Capped.nil, none⟩
 
 /-- **The builder accepts it**, by rewriting with the four stage equations — never by a
 `decide` that holds the load, the resume and the lookahead at once. -/
@@ -401,7 +406,7 @@ theorem witBuilds : mkPlanReq? witReqIn = .ok theRequest := by
     simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
     exact not_not_intro the_look_wall_calendar_indexes_one_wednesday_wall.symm)]
   rw [hz, ht, witRun_resumes]
-  simp only [witCaps_eq, mkRoutines?_of_none]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
 
 /-- **`hagree` is discharged for this request** — the hypothesis README gap 346 says has no
 caller, and the hypothesis `PlanCheck.dayPlan_ok_core` and `Planner.plan_never_moves_a_wall`
@@ -627,7 +632,7 @@ theorem witRun0_resumes :
 
 /-- **The same day, with nothing in the log.** -/
 def theQuietRequest : PlanReq :=
-  ⟨lookWallPlan, witRun0, witInput, witCaps, RuntimeIn.empty, Capped.nil, none⟩
+  ⟨lookWallPlan, witRun0, witInput, RuntimeIn.empty, Capped.nil, witPrio, Capped.nil, none⟩
 
 theorem witBuilds0 : mkPlanReq? witReqIn0 = .ok theQuietRequest := by
   obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
@@ -638,7 +643,7 @@ theorem witBuilds0 : mkPlanReq? witReqIn0 = .ok theQuietRequest := by
     simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
     exact not_not_intro the_look_wall_calendar_indexes_one_wednesday_wall.symm)]
   rw [hz, ht, witRun0_resumes]
-  simp only [witCaps_eq, mkRoutines?_of_none]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
 
 set_option maxRecDepth 40000 in
 theorem the_quiet_day_assigns_nothing : assignedOf (dayPlan theQuietRequest) = [] := by
@@ -842,7 +847,7 @@ def witReqInRun : PlanReqIn := { witReqIn with state := theRunningState }
 
 /-- The §4.3 Wednesday at 14:00 with `m1` running. -/
 def theRunningRequest : PlanReq :=
-  ⟨lookWallPlan, witRun, witInput, witCaps, theRunningState, Capped.nil, none⟩
+  ⟨lookWallPlan, witRun, witInput, theRunningState, Capped.nil, witPrio, Capped.nil, none⟩
 
 theorem witBuildsRun : mkPlanReq? witReqInRun = .ok theRunningRequest := by
   obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
@@ -853,7 +858,7 @@ theorem witBuildsRun : mkPlanReq? witReqInRun = .ok theRunningRequest := by
     simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
     exact not_not_intro the_look_wall_calendar_indexes_one_wednesday_wall.symm)]
   rw [hz, ht, witRun_resumes]
-  simp only [witCaps_eq, mkRoutines?_of_none]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
 
 /-- **The request agrees with `mkActive?` and with `mkDayCfg?`** — the two R10 hypotheses
 `Planner.plan_reserves_one_block_at_a_time` and `PlanCheck.dayPlan_ok_core` carry, discharged
@@ -982,6 +987,169 @@ theorem plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted :
   obtain ⟨s, hs, hk, hlong⟩ := hb
   exact absurd (h theShortBlockRequest s hs hk) (by omega)
 
+
+/-! ############################################################################
+## 8. §8.2 step 4, run rather than argued (stage 6 step P4, AGENTS §5.2)
+
+Every law in `Planner.lean`'s step-4 section is a `∀` over a request.  The witnesses below are
+`decide` over one, and they are written so that **a wrong value fails them, not only a missing
+name** — README gap 577's lesson, which cost a whole repair step: inverting the `overdue` field
+in the host's `cand_json` left all 1,331 Rust tests green while `tm plan` visibly re-ranked.
+So each fact this step derives has a companion that **perturbs** it and asserts the answer moves.
+
+The candidates deliberately do **not** enter §7.3's pass (`Look.Cand.enters` wants a due *and*
+no placement window), because the EDF arithmetic already has stage 5's own witness
+(`Look.priorities_on_a_witness`, at `witnessCaps`) and re-running it here would be a second
+copy of that measurement — and would force `Look.lookahead witInput` inside a `decide`.  What
+is new at P4 is the **key**, and the key is what these pin.
+############################################################################ -/
+
+/-- §7.4's six: the calendar's own wall `^g1` (the one item `lookWallPlan` holds, so its line
+order is a real one), an optional, an overdue instance, a mandatory instance, and two plain
+`rank` candidates whose `k` differs — `^r1` carries a written `!1` and `^r2` takes
+`default_priority`.  The dated ones carry a placement window, which is what keeps them out of
+the pass without making their `due` a lie. -/
+def witCands : List (Look.Cand × Option Look.Floor) :=
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none⟩, none),
+   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none⟩, none),
+   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none⟩, none),
+   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none⟩, none),
+   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none⟩, none),
+   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none⟩, none)]
+
+/-- The §4.3 Wednesday with six candidates on the wire. -/
+def theRankingRequest : PlanReq := { theRequest with cands := ⟨witCands, by decide⟩ }
+
+def witReqInCands : PlanReqIn := { witReqIn with cands := witCands }
+
+/-- **The builder accepts it** — the candidates go through `Capped.ofList?`, the wire's own cap. -/
+theorem witBuildsCands : mkPlanReq? witReqInCands = .ok theRankingRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInCands witReqIn theRankingRequest theRequest
+  simp only [lookWallPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_look_wall_calendar_indexes_one_wednesday_wall.symm)]
+  rw [hz, ht, witRun_resumes]
+  simp only [mkRoutines?_of_none]
+  rfl
+
+/-- The ids of a request's answers, in §7.4's order. -/
+def rankedIds (r : PlanReq) : List Id := r.rankedCands.map (fun x => x.out.out.cand.id)
+
+/-- The `(id, p)` rows the day carries, with `p` as a number. -/
+def priorityRows (r : PlanReq) : List (Id × Nat) :=
+  (dayPlan r).priorities.val.map (fun q => (q.1, q.2.val))
+
+/-- **§7.2's answer for each of the six, computed** — the *values*, not the shape.  The wall is
+off the scale; the optional is `5`; overdue and mandatory are `0`; `^r1`'s written `!1` gives
+`k = 1` and `p = k + 2 = 3`, and `^r2` takes `default_priority = 3` and lands on `5`.  Every one
+of those numbers is a different row of §7.2's table, so a table read off the wrong row shows
+here. -/
+theorem the_ranking_requests_answers_are_stage_fives :
+    theRankingRequest.candAnswers.map (fun o => (o.out.cand.id, o.out.p, o.out.k)) =
+      [(['g','1'], none, 3), (['o'], some 5, 3), (['o','d'], some 0, 3),
+       (['m'], some 0, 3), (['r','1'], some 3, 1), (['r','2'], some 5, 3)] := by
+  decide
+
+/-- **And §7.4 orders them: the wall first, then `p`, then the line order, then the request
+position.**  `^od` and `^m` tie at `p = 0` and neither is in the plan, so the tie falls all the
+way through to the request index and `^od` (position 2) keeps its place ahead of `^m`
+(position 3) — the fork's `keyed.sort()` on `((u8, (p, root, own)), i)`.  `^o` and `^r2` tie at
+`p = 5` and break the same way. -/
+theorem the_ranking_request_is_ordered :
+    rankedIds theRankingRequest =
+      [['g','1'], ['o','d'], ['m'], ['r','1'], ['o'], ['r','2']] := by
+  decide
+
+/-- **The day carries those `p`s, in request order, and the wall is not among them** — fork
+`day.priorities = cands.zip(&prios)`, less the row §7.2 puts off the scale. -/
+theorem the_ranking_requests_day_carries_its_priorities :
+    priorityRows theRankingRequest =
+      [(['o'], 5), (['o','d'], 0), (['m'], 0), (['r','1'], 3), (['r','2'], 5)] := by
+  decide
+
+/-- **`^g1` is the one candidate the plan holds, and its key carries the plan's own line
+order.**  The other five are not in this plan, which is fork `order`'s
+`unwrap_or((usize::MAX, usize::MAX))` — here `none`, and `siteNums` puts it last. -/
+theorem the_ranking_request_reads_the_plans_line_order :
+    theRankingRequest.ownSite ['g','1'] = some ⟨0, 0⟩ ∧
+    theRankingRequest.rootSite ['g','1'] = some ⟨0, 0⟩ ∧
+    theRankingRequest.ownSite ['r','1'] = none := by
+  decide
+
+/-! ### The perturbations: a wrong VALUE fails, not only a missing name (gap 577) -/
+
+/-- The same request with one candidate's one field changed. -/
+def withCandAt (r : PlanReq) (i : Nat) (f : Look.Cand → Look.Cand) : PlanReq :=
+  { r with cands := ⟨r.cands.val.zipIdx.map (fun x => if x.2 = i then (f x.1.1, x.1.2) else x.1),
+      by
+        refine Nat.le_trans ?_ r.cands.property
+        simp⟩ }
+
+/-- **Inverting `overdue` re-ranks the day.**  Position 2 is `^od`; with its `overdue` flag
+cleared §7.2 answers on the `rank` line instead (`p = k + 2 = 5`) and it falls from second to
+last.  This is exactly the mutation README gap 577 applied to `cand_json` — there it left 1,331
+Rust tests green. -/
+theorem clearing_overdue_moves_the_candidate :
+    rankedIds (withCandAt theRankingRequest 2 (fun c => { c with overdue := false })) =
+      [['g','1'], ['m'], ['r','1'], ['o'], ['o','d'], ['r','2']] ∧
+    rankedIds (withCandAt theRankingRequest 2 (fun c => { c with overdue := false })) ≠
+      rankedIds theRankingRequest := by
+  decide
+
+/-- **And inverting `mandatory` does too**, on the row below it — so the two flags are read
+separately and not through one another. -/
+theorem clearing_mandatory_moves_the_candidate :
+    rankedIds (withCandAt theRankingRequest 3 (fun c => { c with mandatory := false })) =
+      [['g','1'], ['o','d'], ['r','1'], ['o'], ['m'], ['r','2']] := by
+  decide
+
+/-- **A candidate that stops being a wall stops being first**, whatever its `p`: the key's
+leading digit is the whole of §8.2 step 1's precedence. -/
+theorem clearing_wall_moves_it_off_the_front :
+    rankedIds (withCandAt theRankingRequest 0 (fun c => { c with wall := false })) =
+      [['o','d'], ['m'], ['r','1'], ['o'], ['r','2'], ['g','1']] := by
+  decide
+
+/-- **The root's written `!k` is read, not defaulted**: take `^r1`'s away and its `p` goes from
+`3` to `5`, and it falls behind `^o`.  A `kOf` that ignored `rootPrio` would pass every
+name-shaped test and fail this one. -/
+theorem taking_the_written_k_away_moves_the_candidate :
+    rankedIds (withCandAt theRankingRequest 4 (fun c => { c with rootPrio := none })) =
+      [['g','1'], ['o','d'], ['m'], ['o'], ['r','1'], ['r','2']] ∧
+    (withCandAt theRankingRequest 4 (fun c => { c with rootPrio := none })).candAnswers.map
+        (fun o => o.out.p) = [none, some 5, some 0, some 0, some 5, some 5] := by
+  decide
+
+/-- **§7.4's hysteresis is read from the candidate's own `yesterday`**: give `^r1` a stored `6`
+and its `p` is held at `5` — one bin better than yesterday — instead of dropping to `3`, which
+moves it behind `^o`.  `Prio.hysteresis_holds_one_step_back` is the rule; this is it on the
+produced order. -/
+theorem yesterdays_priority_holds_the_candidate_back :
+    (withCandAt theRankingRequest 4 (fun c => { c with yesterday := some 6 })).candAnswers.map
+        (fun o => o.out.p) = [none, some 5, some 0, some 0, some 5, some 5] ∧
+    rankedIds (withCandAt theRankingRequest 4 (fun c => { c with yesterday := some 6 })) =
+      [['g','1'], ['o','d'], ['m'], ['o'], ['r','1'], ['r','2']] := by
+  decide
+
+/-- `witCands` with the two `p = 0` candidates exchanged on the wire, and nothing else. -/
+def witCandsSwapped : List (Look.Cand × Option Look.Floor) :=
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none⟩, none),
+   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none⟩, none),
+   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none⟩, none),
+   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none⟩, none),
+   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none⟩, none),
+   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none⟩, none)]
+
+/-- **And the request position is a real tie-break, not decoration**: swap the two `p = 0`
+candidates on the wire and the order swaps with them.  Two candidates that agree on every key
+component but their arrival order are exactly §5.3's carried instance and today's fresh one. -/
+theorem the_request_order_breaks_a_tie :
+    rankedIds { theRankingRequest with cands := ⟨witCandsSwapped, by decide⟩ } =
+      [['g','1'], ['m'], ['o','d'], ['r','1'], ['o'], ['r','2']] := by
+  decide
 
 end PlannerWit
 end Tm

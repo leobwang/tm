@@ -5241,6 +5241,47 @@ theorem prioritiesWithFloors_without_floors (bins : Bins) (s : Pos) (dflt : Fin 
     rw [hn]
     cases o.grant <;> rfl
 
+/-! ### `p` is on the scale (stage 6 P4)
+
+`DayPlan.priorities` carries a `Fin 8`, so the pass's answers have to be on §7.2's scale or a
+row would vanish at the boundary of a type rather than be refused.  `Prio.finalPrio_is_on_the_scale`
+is the arithmetic; these three carry it through `candOut`, `priorities` and the floor pass, which
+are the only three places an answer's `p` is written. -/
+
+theorem candOut_p_is_on_the_scale {bins : Bins} {s : Pos} {dflt : Fin 4} {hyst : Bool}
+    {served : List (Nat × Grant)} {x : Cand × Nat} {n : Nat}
+    (h : (candOut bins s dflt hyst served x).p = some n) : n ≤ 7 :=
+  finalPrio_is_on_the_scale hyst x.1.yesterday (x.1.kOf dflt) _ h
+
+theorem priorities_p_is_on_the_scale {bins : Bins} {s : Pos} {dflt : Fin 4} {hyst : Bool}
+    {caps : List DayCapacity} {cs : List Cand} {o : CandOut} {n : Nat}
+    (h : o ∈ priorities bins s dflt hyst caps cs) (hp : o.p = some n) : n ≤ 7 := by
+  unfold priorities at h
+  obtain ⟨x, -, rfl⟩ := List.mem_map.1 h
+  exact candOut_p_is_on_the_scale hp
+
+theorem withFloor_p_is_on_the_scale {bins : Bins} {s : Pos} {hyst : Bool}
+    {left : Thunk (List DayCapacity)} {o : CandOut} {f : Option Floor} {n : Nat}
+    (hin : ∀ m, o.p = some m → m ≤ 7)
+    (hp : (withFloor bins s hyst left o f).out.p = some n) : n ≤ 7 := by
+  unfold withFloor at hp
+  split at hp
+  · split at hp
+    · exact hin n hp
+    · exact finalPrio_is_on_the_scale hyst o.cand.yesterday o.k _ hp
+  · exact hin n hp
+
+/-- **Every `p` the wire's answers carry is `0..7`.** -/
+theorem prioritiesWithFloors_p_is_on_the_scale {bins : Bins} {s : Pos} {dflt : Fin 4}
+    {hyst : Bool} {caps : List DayCapacity} {cfs : List (Cand × Option Floor)} {o : FloorOut}
+    {n : Nat} (h : o ∈ prioritiesWithFloors bins s dflt hyst caps cfs)
+    (hp : o.out.p = some n) : n ≤ 7 := by
+  unfold prioritiesWithFloors floorAll at h
+  obtain ⟨q, hq, rfl⟩ := List.mem_map.1 h
+  have hq1 : q.1 ∈ priorities bins s dflt hyst caps (cfs.map Prod.fst) :=
+    (List.of_mem_zip (by simpa using hq)).1
+  exact withFloor_p_is_on_the_scale (fun m hm => priorities_p_is_on_the_scale hq1 hm) hp
+
 /-- **A floor reserves nothing** (the fork's deviation 4): every candidate's grant, floors or not, is
 the grant `priorities` gives it over the same candidates. -/
 theorem a_floor_reserves_nothing (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)

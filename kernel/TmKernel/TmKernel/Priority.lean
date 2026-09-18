@@ -684,6 +684,57 @@ def finalPrio (enabled : Bool) (yesterday : Option (Fin 8)) (k : Nat) (r : RuleI
   (rawPrio k r).map (fun raw =>
     if (rowTable (rowOf r)).2 then applyHysteresis enabled yesterday raw else raw)
 
+/-! ### `p` is on the scale, whichever row answered (stage 6 P4)
+
+`prio_is_clamped` says §7.2's `k + bin` row is clamped to `0..7`; it says nothing about the
+five *fixed* rows or about §7.4's damping, and `DayPlan.priorities` carries a `Fin 8`, so the
+whole cascade has to be on the scale or a row would be silently dropped at the boundary of a
+type.  These two close it. -/
+
+/-- **Every `p` §7.2's table produces is `0..7`** — the fixed rows (`5`, and `0` three times)
+as much as the clamped `k + bin`. -/
+theorem rawPrio_is_on_the_scale (k : Nat) (r : RuleIn) {n : Nat} (h : rawPrio k r = some n) :
+    n ≤ 7 := by
+  unfold rawPrio at h
+  cases hr : rowOf r <;> rw [hr] at h <;>
+    simp only [rowTable, PVal.eval, Option.some.injEq] at h
+  case wall => exact absurd h (by simp)
+  case optional => omega
+  case overdue => omega
+  case mandatory => omega
+  case hotFlag => omega
+  case pressure b => exact h ▸ prio_is_clamped k b
+  case rank => exact h ▸ prio_is_clamped k _
+
+/-- **And §7.4's damping cannot take it off the scale**: yesterday's stored `p` is a `Fin 8`
+and `hysteresis` never exceeds the larger of the two. -/
+theorem applyHysteresis_is_on_the_scale (enabled : Bool) (y : Option (Fin 8)) (raw : Nat)
+    (h : raw ≤ 7) : applyHysteresis enabled y raw ≤ 7 := by
+  cases enabled with
+  | false => cases y <;> exact h
+  | true =>
+    cases y with
+    | none => exact h
+    | some yy =>
+      have hy := yy.isLt
+      have := hysteresis_le_max yy.val raw
+      show hysteresis yy.val raw ≤ 7
+      omega
+
+/-- **The `p` a candidate is ranked by is `0..7`.** -/
+theorem finalPrio_is_on_the_scale (enabled : Bool) (y : Option (Fin 8)) (k : Nat) (r : RuleIn)
+    {n : Nat} (h : finalPrio enabled y k r = some n) : n ≤ 7 := by
+  unfold finalPrio at h
+  cases hr : rawPrio k r with
+  | none => rw [hr] at h; exact absurd h (by simp)
+  | some raw =>
+    rw [hr] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    have hraw : raw ≤ 7 := rawPrio_is_on_the_scale k r hr
+    split at h
+    · exact h ▸ applyHysteresis_is_on_the_scale enabled y raw hraw
+    · omega
+
 /-! ### The bridges: each row, stated over the inputs -/
 
 theorem rawPrio_of_a_wall (k : Nat) (r : RuleIn) (hw : r.wall = true) : rawPrio k r = none := by

@@ -718,13 +718,23 @@ theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (
     ∃ si ∈ (dayPlan r).segments, si.val.item = some i ∧
       si.val.start ≤ sj.val.start := sorry
 
-/-- **Provisional (stage 6), and the last one in this file.**  §7.3's two
-numbers for one candidate: its `need` and the capacity available to it by its
-due date, after earlier deadlines have reserved.  Stage 5's `edf` produces
-both — design §5.5: this becomes `(g.deadline.need, g.avail)` from
-`Cap.grantOf` over `r.caps`, in step **P4**, and since the burn-down counts
-`theorem`s and not `def`s, check 7 does **not** move on the day it goes. -/
-def edfNumbers (r : PlanReq) (i : Id) : Nat × Nat := sorry
+/-! **`edfNumbers` has left this file** (stage 6 step P4).  It was the last
+provisional `def` here: §7.3's two numbers for one candidate, its `need` and
+the capacity available to it by its due date after earlier deadlines have
+reserved.  It is now `Planner.edfNumbers`, a projection of the grant
+`Look.prioritiesWithFloors` gives that candidate, and the goal below reads it
+through `open Planner`.  **The burn-down did not move**, because check 7 counts
+`^theorem ` and not `def`s — design §5.5 says so and this is the step that
+makes it true.
+
+Its **units** are not design §5.5's.  The design wrote the pair as
+`(g.deadline.need, g.avail)`; `Grant.avail` is a numerator over the pass's
+denominator and `Deadline.need` is whole minutes, so `Arith.isImpossible` over
+that pair compares a 10^18-scaled number with a count of minutes and answers
+`false` for every candidate with any capacity at all.  `Planner.edfNumbers`
+scales the need (`need * Look.capDen`), and
+`Planner.edfNumbers_is_the_grants_own_impossibility` is the theorem that the
+hypothesis below now says what `Grant.impossible` says. -/
 
 /-- **L26 / §8.3 "impossible never dropped" (P\*), stage 6.**  §7.3: "IMPOSSIBLE
 items are still scheduled with everything available; the banner names the item

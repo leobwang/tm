@@ -33638,3 +33638,466 @@ probes that found `Char.ext` and `UInt32.lt_iff_toNat_lt` were run at 8G with a
 180-second timeout. Binary drives used two release binaries, this tree's and
 `5ea1541`'s, on scratch `tm init --example` trees **outside the repo**, at
 `MemoryMax=16G`. No bound was raised and nothing was retried uncapped.
+
+<!-- ===========================================================================
+     Stage 6, W-17, track P, step P4 — §8.2 step 4, PRIORITY.
+     Gap range 600-629 (six taken: 600-605).  Cheats 184-187.
+     Whoever merges next renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-17 track P step P4, 2026-09-18: the planner ranks its candidates — and the 5 ms TUI trigger is measured at last
+
+### What landed
+
+1. **§8.2 step 4 is one call, not a second implementation.**  `PlanReq.candAnswers` **is**
+   `Look.prioritiesWithFloors` at step 4's arguments — the EDF pass, §7.1's bin, §7.2's row table,
+   §7.4's hysteresis and gap 79's floor pass, all of them stage 5's step L8, which until today had
+   exactly one caller (`Boundary.grantsOf`).  It has two now, and
+   `PlanReq.candAnswers_is_the_capacity_ops_own_grants` is the equation that stops them drifting:
+   the same four configuration values, the same lookahead, the same items.  A day whose ranking
+   disagreed with the `lookahead.grants` of the very same call is the defect this kernel is named
+   after, and it is no longer writable.
+2. **The EDF lookahead stopped being a FIELD and became a VIEW** (AGENTS §5.3).  P0 put
+   `caps : Lookahead` on `PlanReq` on design §5.4's row and nothing read it for four steps.  The
+   moment step 4 does, a carried lookahead is a **second answer** to a question `Look.Input`
+   already settles: a host could send a `caps` that is not `Look.lookahead r.look` and the ranking
+   would be computed over it.  `Planner.PlanReq.caps` is now
+   `(lookaheadOf? capDen (Look.lookahead r.look)).get (Look.lookahead_is_a_lookahead r.look)`,
+   total by stage 5's own theorem, with `caps_days` and `caps_den` saying what it carries.  This is
+   the rule `Planner.lean`'s own header states about `window` and `budgetBlocks`, applied to the
+   one field that had escaped it.
+3. **§7.4's key, derived from the plan and not taken from the host.**  Fork
+   `priority::sorted_candidates` sorts by `((u8::from(!is_wall)), (p, root_order, own_order)), i`,
+   and the two line orders are `Tree::order` — `(file, line)` of the item and of its root.  Those
+   are **not** candidate facts on the wire and they are **not** D27's either: they are the plan's,
+   and `PlanCore.store` and `Plan.rootOf` hold them.  `PlanReq.ownSite`/`rootSite` read them off
+   `r.plan`; taking them from the host would have been a second reading of the plan.  `CandKey`,
+   `natsLe`, `candKeyLe`, `sortRanked`/`sortRankedFast` (`@[csimp]`, on gap 394's closure) and
+   `PlanReq.rankedCands` are the order, with `rankedCands_sorted` — the half that makes it a claim
+   rather than a name.
+4. **`edfNumbers` left `Goals.lean`.**  It was that file's last provisional `def` and its only
+   non-`theorem` `sorry`.  **The burn-down did not move and that is correct**: check 7 counts
+   `^theorem `, design §5.5 says so, and this is the step that makes it true.  Say it out loud,
+   because a reader comparing goal counts will otherwise look for a discharge that did not happen.
+5. **`DayPlan.priorities` stopped being empty** — fork `planner.rs:1066`,
+   `day.priorities = cands.zip(&prios)`, less the row §7.2 puts off the scale (a wall has no `p`).
+   Carrying it needs `p ≤ 7` for every answer the pass can produce, which nothing in the tree had:
+   `Prio.rawPrio_is_on_the_scale`, `applyHysteresis_is_on_the_scale` and `finalPrio_is_on_the_scale`
+   are the arithmetic, and `Look.prioritiesWithFloors_p_is_on_the_scale` carries it through the
+   three places an answer's `p` is written.  `an_answer_with_a_p_gets_a_row` is why the `Fin 8`
+   cannot silently drop a candidate — §9.2's disguised gap, checked rather than assumed.
+
+### D30, owner question Q8: the 5 ms TUI trigger now has a number, and it does not fit
+
+**This is the measurement design §20 gap 257 records as missing and D30 makes P4's.**  §9.1 lets
+the TUI replan on a tick while a replan stays under **5 ms**; the 0.8 ms behind that budget was
+taken at the FFI spike, against a kernel that did not exist yet.  `tm-kernel-ffi/tests/stack.rs`'s
+new **T12** measures one through the wire.  Best/median of 7 calls, 2 MiB thread, `MemoryMax=16G`:
+
+| row | `opt-level = 0` (cargo's default dev) | `opt-level = 1` (what `logbench` prescribes) |
+|---|---|---|
+| (a) 500 candidates, no tree | 24.2/25.6, 34.8/36.9, 24.5/26.4, 34.8/40.9 ms | 11.8/12.3, 17.3/20.1 ms |
+| (b) 2,000-line tree, no candidates | 21.9/22.8, 28.5/51.8, 22.5/23.6, 24.2/44.7 ms | 11.7/12.1, 14.5/16.4 ms |
+| **(c) both — the replan** | **51.3/88.4, 91.7/125.2, 47.6/51.7, 47.4/53.9 ms** | **21.9/25.1, 22.3/22.8 ms** |
+| (d) 40-line tree, 50 candidates (`tm init --example` scale) | 5.9/6.2, 6.6/8.0, 4.5/4.5, 4.8/4.9 ms | 2.5/2.6, 2.6/2.7 ms |
+
+**The answer: at 500 candidates a replan is 22–25 ms at `opt-level = 1` and 47–125 ms at
+`opt-level = 0` — four to twenty-five times the 5 ms budget — and every one of those numbers is a
+LOWER BOUND.**  There is still no planner op on the wire, so what is measured is the call a replan
+makes *today* (`capacity` + `log`, whole tree, seven-day lookahead, 500 candidates), whose §7 half
+is exactly what step 4 runs; steps 5–8 are not written and are not in it.  The pre-authorised
+fallback therefore applies: **the TUI replans on reload, not on a tick** (gap 600).  D18 governs the
+other direction — the budget is not raised, and the test asserts a 4,000 ms *regression* bound and
+never the budget, because a test that failed at 5 ms would be a latency band re-blessed under
+another name.
+
+**Two things the measurement taught that the brief did not ask for.**  First, **the profile moves
+the row by 2x**, so the number is meaningless without it — the test prints the request size (153 KiB)
+and says so in its own output, and this block quotes both columns rather than the flattering one.
+Second, the cost **splits evenly**: the tree load and the §7 pass are each about half of (c), so no
+single optimisation reaches 5 ms from here, and at the shape a real user has today (row (d)) the
+call is 2.5–8.0 ms — straddling the budget at `opt-level = 0` and inside it at 1.  A trigger that
+fires for a small plan and not a large one is a worse answer than one that never fires.
+
+### The findings: design §5.5's `edfNumbers` is in the wrong units, and §1.4's table is right
+
+**FINDING (gap 601).**  Design §5.5 gives `edfNumbers` as `(g.deadline.need, g.avail)` from
+`Cap.grantOf`.  `Grant.avail` is a **numerator over the pass's denominator** (`Grant.availQ g den`
+is `avail/den`) and `Deadline.need` is **whole minutes**, and `Goals.plan_never_drops_an_impossible_item`
+feeds the pair straight to `Arith.isImpossible need avail = decide (avail < need)`.  On the design's
+pair that asks whether a 10^18-scaled number is smaller than a count of minutes, and answers `false`
+for every candidate with any capacity at all — the goal would have been **vacuous at every input**,
+which is AGENTS §5.2's theorem that compiles and means nothing, arriving through a `def` rather than
+through a statement.  `Planner.edfNumbers` scales the need (`need * capDen`), and
+`edfNumbers_is_the_grants_own_impossibility` proves the pair now says exactly what
+`Grant.impossible capDenD` says.  **Cheat 184** asserts the design's pair instead and `decide`
+refuses it, on a grant that is genuinely impossible.
+
+**Not a finding, checked:** design §1.4 gives `Look.lookahead (I)`, `Look.Input`, `mkInput?` and
+`Look.dayOf` to **P4**, and that is exactly what item 2 above consumes — the table is right and the
+`caps` field was the thing out of step with it.
+
+### AGENTS §5.3: what was CONSUMED, and the greps run before any helper was written
+
+**Consumed, not re-implemented** — this step calls these and defines no second copy:
+
+| stage-5 artefact | where P4 consumes it |
+|---|---|
+| `Look.prioritiesWithFloors` | `PlanReq.candAnswers` **is** the call; `candAnswers_is_the_lookaheads` is the `rfl` |
+| `Look.priorities`, `candOut`, `withFloor`, `floorAll`, `passLeft` | only through it; `prioritiesWithFloors_p_is_on_the_scale` is the one new law and it is proved *on them* |
+| `Look.Cand`, `Cand.enters`, `Cand.kOf`, `Cand.rule`, `Look.Floor`, `Look.FloorOut`, `Look.CandOut` | the request's own candidate type — `PlanReq.cands` is the wire's pair (`Boundary.readCandFloor`'s) and not a copy of it |
+| `Look.servedOrder`, `servedGrants`, `binAt`, `Cap.edf`, `edfGrants`, `Cap.grantOf`, `Cap.Grant`, `Cap.Deadline` | through the pass; `edfNumbers` projects `Grant` and computes nothing |
+| `Look.lookahead`, `Look.lookahead_is_a_lookahead`, `Cap.lookaheadOf?` | `PlanReq.caps` — the view that replaced the field |
+| `Prio.finalPrio`, `rawPrio`, `prio`, `prio_is_clamped`, `rowOf`, `rowTable`, `hysteresis`, `applyHysteresis`, `hysteresis_le_max`, `specDefaultPrio` | `p` on the scale, and the witnesses' expected numbers |
+| `Plan.rootOf`, `PlanCore.store`, `State.Site` | `ownSite`, `rootSite` — §7.4's two line orders, off the plan |
+| `Arith.isImpossible`, `Arith.safety`, `Look.defaultBinsV`, `Look.capDen`/`capDenD` | `edfNumbers`, `witPrio` |
+| `Replay.insSort`, `insSort_perm`, `insSort_eq_mergeSort` | `sortRanked` and its `@[csimp]` twin — the `sortWalls` shape, which only became available when gap 394 closed |
+| `Planner.Capped`, `Capped.ofList?`, `Capped.ofList?_refuses_past_the_cap` | the candidate bound: **reused rather than re-bounded** (R10) |
+
+**Re-implemented: one function, named.**  `Planner.natsLe`, the lexicographic order of a tuple of
+`Nat`s, which the nine-deep sort key needs.  **The greps were run before it was written**, which is
+the step W-16 skipped when it wrote `charsLe` for the third time:
+`grep -rn 'List Nat → List Nat → Bool\|lexLe\|natsLe\|numsLe\|lexicographic' kernel/TmKernel/TmKernel/*.lean`
+returns six hits and every one is prose or a *different* type — `Log.charsLe` (`List Char`, the one
+this repo has), `Seal.lexLt` (the **strict pair** combinator), `Cal.Instant`'s `(sec, ns)` instance,
+and `Plan`'s "box first, files second".  None orders a `List Nat`.  Written as nine nested `Bool`s
+in `routineLe`'s shape it would be the same function, unreadably; written this way it is twelve
+lines with `natsLe_trans`, `natsLe_total` and `natsLe_cons_le` beside it.
+`grep -n 'prioritiesWithFloors\|priorities\|servedOrder\|edfGrants\|finalPrio\|hysteresis\|rootOf'
+kernel/TmKernel/TmKernel/Planner.lean` returns **call sites and prose only** — there is no second
+pass, no second bin, no second hysteresis and no second root walk in the stage.
+
+### `shipped_call_sites`, driven and not asserted (the lesson W-15 and W-16 both paid for)
+
+For every rule this step adds: which **shipped** verbs reach it, found by grepping the host path from
+`main` down, and what driving them showed.  Release binary, scratch `tm init --example` tree outside
+the repo, `MemoryMax=16G`, `--now 2026-09-16T14:00:00-05:00`.
+
+* `grep -rn 'dayPlan\|Planner\.\|rankedCands\|candAnswers\|edfNumbers' tm/src tm-core/src
+  kernel/tm-kernel-ffi/src` returns **nothing**, and
+  `grep -n '"plan"\|dayPlan\|rankedCands\|candAnswers' kernel/TmKernel/TmKernel/Boundary.lean`
+  returns **nothing**: there is no planner op on the wire and no host call to one.
+* Driven, one verb at a time, with its exact output:
+
+```
+$ tm check                    no problems                                        [exit 0]
+$ tm plan                     2026-09-16 · window 14:00–19:00 · budget 6 blocks
+                              14:00  ·      laundry 30m
+                              14:30  3 p5   Call the bank about the ca…   20m …   [exit 0]
+$ tm now                      nothing running · laundry 30m  ci1  p0 …            [exit 0]
+$ tm review day               Day 2026-09-16 · 0/6 blocks · load 0.0 …            [exit 0]
+$ tm drop ^d2                 dropped ^d2                                         [exit 0]
+$ TM_TRACE_KERNEL_CALLS=1 tm plan   kernel call: log
+                                    kernel call: capacity+log
+$ TM_TRACE_KERNEL_CALLS=1 tm now    kernel call: log
+                                    kernel call: capacity+log
+```
+
+  **No planner call in either**, and the rows `tm plan` prints are `tm-core/src/planner.rs`'s.
+* **So none of P4's rules reaches a user, and this block does not imply otherwise.**  `git status`
+  on `tm`, `tm-core`, `Cargo.toml` and `Cargo.lock` is **empty**: the only Rust this step touched is
+  `kernel/tm-kernel-ffi/tests/stack.rs`, which is its own workspace and is not linked into `tm`.
+
+### Non-vacuity, run rather than argued — and the perturbation beside every value (gap 577)
+
+`PlannerWit.theRankingRequest` is the §4.3 Wednesday with six candidates on the wire: the calendar's
+own wall `^g1` (the one item `lookWallPlan` holds, so its line order is a real one), an optional, an
+overdue instance, a mandatory instance, and two plain `rank` candidates whose `k` differs.
+
+* `the_ranking_requests_answers_are_stage_fives` — the six `p`s **computed**: `none`, `5`, `0`, `0`,
+  `3`, `5`, each from a **different row of §7.2's table**, so a table read off the wrong row shows.
+* `the_ranking_request_is_ordered` — the order is `g1, od, m, r1, o, r2`.  The wall first; then `p`;
+  then, where `p` ties and neither is in the plan, the **request position**, which is what separates
+  §5.3's carried instance from today's fresh one.
+* `the_ranking_requests_day_carries_its_priorities` — five rows for six candidates, the wall dropped.
+* `the_ranking_request_reads_the_plans_line_order` — `^g1`'s site is `⟨0, 0⟩` and `^r1`'s is `none`,
+  which is fork `order`'s `unwrap_or((usize::MAX, usize::MAX))`.
+
+**And the half W-16's repair says is the one that matters.**  Five theorems change one field's
+**value** and assert the answer moves:
+
+| perturbation | what moves |
+|---|---|
+| `overdue := false` on position 2 | it falls from second to fifth — **the exact mutation gap 577 applied to `cand_json`**, where it left 1,331 Rust tests green |
+| `mandatory := false` on position 3 | it falls to fifth, on the row below — so the two flags are read separately, not through one another |
+| `wall := false` on position 0 | it goes from first to last |
+| `rootPrio := none` on position 4 | `p` goes `3 → 5` and it falls behind `^o` — a `kOf` that ignored the root's written `!k` fails here and nowhere else |
+| `yesterday := some 6` on position 4 | §7.4 holds it at `5` instead of `3`, and it moves |
+| the two `p = 0` candidates exchanged on the wire | the order exchanges with them |
+
+**Twelve new `decide` witnesses**, against §14.0's budget of twenty.  Every one was probed at
+`MemoryMax=8G` before it was kept: the whole of `PlannerWit.lean` elaborates in **15.7 s inside
+8 GiB**.
+
+### D9-21, the recursion rule
+
+| function | over | form |
+|---|---|---|
+| `PlanReq.candAnswers` | the candidates (`Capped`, ≤ 1,024) | **`Look.prioritiesWithFloors`**, whose `entering`/`sortDueIx`/`edfGrantsGo` are stage 5's with `edfGrantsGo_eq_edfGrantsGoFast` |
+| `PlanReq.rankedCands` | the answers | core `zipIdx`/`map`, then `sortRanked` |
+| `sortRanked` | the same | `Replay.insSort` with the `@[csimp]` twin `sortRankedFast` (`sortRanked_eq_sortRankedFast`) |
+| `dayPriorities` | the answers | core `List.filterMap` |
+| `PlanReq.answerFor` | the answers | core `List.find?` |
+| `natsLe` | a **nine-element literal**, never a wire list | structural |
+| `PlanReq.caps`, `edfDays` | — | `Look.lookahead`, whose `dayOf_eq_dayOfFast` is stage 5's |
+
+### Behaviour rows
+
+**None.**  `dayPlan` has no boundary op and no shipped caller, no Rust outside
+`kernel/tm-kernel-ffi/tests/` was touched, and the drive above is the evidence rather than the
+claim.
+
+### Goals, theorems, cheats, parity (AGENTS §3.2, §6.2, §6.3)
+
+* **Goals: none discharged, none added.  Burn-down 11 → 11, all stage 6.**  `edfNumbers` left
+  `Goals.lean` and is not a `theorem`, so check 7 does not move — design §5.5 predicted exactly this
+  and it is said here so nobody hunts for a missing discharge.
+* **New theorems: 58, every one with a `#print axioms` line in `Check.lean`**, under a W-17 banner.
+  **Three audit lines were deleted**, each naming a theorem this step deleted with its subject and
+  each replaced: `PlannerWit.mkPlanReq?_refuses_a_zero_denominator` (the lookahead stopped being a
+  field, so the refusal became unreachable — `mkPlanReq?_refuses_too_many_candidates` is the R10
+  refusal that took its place in the builder), and `PlannerWit.witCaps_ok`/`witCaps_eq` (the witness
+  lookahead the field needed, both `decide` at `maxRecDepth 40000`).  All three names were grepped
+  **repo-wide, prose included**: the only survivors are the deletion banner in `Check.lean` and the
+  in-place note in `PlannerWit.lean`.  Audit total **4,373 → 4,428**, which is `+58 − 3`.
+* **One live doc comment corrected before the commit** (gap 393's class, gap 582's shape):
+  `PlanCheck.lean:460` cited `Goals.edfNumbers`, which this step deleted.  Found by the
+  repo-wide grep the hard rules require — `grep -rn 'witCaps\|mkPlanReq?_refuses_a_zero_denominator\|Goals.edfNumbers'`
+  over everything, prose included — whose only other survivors are the two deletion banners and
+  dated README blocks, which §6.4 says are written history.
+* **Cheats 184-187**, all four refused by `check.sh` check 4 and each checked in isolation: 184 the
+  design's `edfNumbers` units, 185 a missing line order sorted first, 186 the wire order read as
+  §7.4's first component, 187 a wall reported with a priority.  `uniq -d` over the cheat numbers
+  prints nothing; 172 cheats total.
+* **Parity: none taken.**  `dayPlan` has no caller and no wire.  `kernel_lookahead_parity` is green
+  and unchanged (4/0), which is the suite the `Lookahead.lean` additions could have moved.
+
+### Measured, on the committed tree, every command capped at `MemoryMax=40G`
+
+| measurement | this step | baseline `24acb5a`, built cold in a throwaway worktree this session | what explains the delta |
+|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 ok | — |
+| axiom audit | **4,428 theorems** | 4,373 | **+55**: 58 added, 3 deleted (each named above) |
+| corpus | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged — no grammar touched |
+| burn-down | **11 outstanding, all stage 6** | 11 | nothing discharged, nothing admitted; `edfNumbers` is a `def` |
+| `Negative.lean` | rejected ok, **172 cheats** | 168 | four taken, none renumbered |
+| `check.sh` wall, built tree | **3.70 / 3.48 / 3.38 / 3.44 / 3.47 / 3.41 / 3.37 s**, median **3.44 s** | **3.58 / 3.44 / 3.32 / 3.26 / 3.31 / 3.26 / 3.36 s**, median **3.32 s** | **+3.6%**, inside the 10%-per-step rule.  The last three of each column were taken **alternately**, which is the same-session comparand README gap 470 item 4 asked for: 3.47/3.41/3.37 against 3.31/3.26/3.36, **+3.0%**.  Measured where it goes: `Negative.lean` alone is 2.34-2.40 s against 2.28-2.31 s at the baseline cheats (**+0.06-0.09 s**), so the four new cheats are about a third of the delta and the rest is the 58 extra `#print axioms` and the larger `.olean` |
+| peak RSS, `check.sh` | 1.99-2.05 GiB | 2.05-2.09 GiB | down |
+| `cargo test --workspace` | **1,331 passed / 0 failed / 9 ignored across 78** result lines, exit 0 | 1,331 / 0 / 9 / 78 | unchanged — **no Rust in the tm workspace was touched** |
+| FFI suite (`-p tm-kernel-ffi`) | **101 passed / 0 failed** (kernel 86, corpus 8, stack **7**) | 100/0 (stack 6) | **+1**, T12 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | — |
+| the door (`kernel_log_door`) | **23 / 0** | same | — |
+| `cli_switch_acceptance` | **9 / 0** | same | — |
+| `kernel_call_counts` | **2 / 0** | same | — |
+| `kernel_lookahead_parity` | **4 / 0** | same | — |
+| `cli_check_log` / `cli_items` / `cli_lifecycle` | **11 / 53 / 29**, 0 failed | same | — |
+| `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | same | see the T11 rows |
+| Lean | **+965 / −49** (`git diff --numstat`) | — | `Planner.lean` +516/−3, `PlannerWit.lean` +204/−36, `Check.lean` +85/−3, `Negative.lean` +51, `Priority.lean` +51, `Lookahead.lean` +41, `Goals.lean` +17/−7 |
+| Rust | **+133 / −1**, all of it `kernel/tm-kernel-ffi/tests/stack.rs` | — | T12 and `grants_request`'s `docs` parameter |
+
+### T11, as readings and never as single numbers
+
+Three `cli_latency` passes, release, `--nocapture --test-threads=1`, after a full workspace test run
+and several capped Lean builds — the state W-15's repair established as the one that inflates rows.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| later verb (`tm drop`) | 136.79, 136.59, 136.71 | 146.66-147.01 | **~10 ms below the band**, and remarkably tight — the same place W-16's repair found it |
+| 3-day-old routine | 111.46, 121.64, 106.43 | 121.6-136.8 | below, or at the low edge |
+| reseal (`--now +1 day`) | 187.05, 177.11, 187.07 | 197.5-212.6 | **10-20 ms below** |
+| `review week` (All) | 278.44, 293.80, 268.14 | 248.1-253.3 | **OUT** — gap 275, a capacity verb replays the log twice.  **Not re-blessed** |
+
+All five of `cli_latency`'s own assertions pass in all three runs.  `tm/tests/cli_latency.rs` is
+**byte-identical** to `24acb5a` and no band was moved.  **No Rust in the `tm` workspace was touched
+at all by this step**, so every row here is the machine's.
+
+### What earlier stages bought, re-measured and not assumed
+
+* **D9, ONE reader — and the number four blocks in a row have printed is wrong (gap 604).**
+  `grep -rn 'LOG_PATH\|Log::parse\|Log::new\|iter_day\|effective()\|day_index(\|undo_mask\|parse_timestamp'
+  tm tm-core --include=*.rs` — the command AGENTS §8.3's R8 row defines — returns **52** on this
+  tree **and 52 at `24acb5a`**, not the **41** that W-14, W-15, W-16 and W-16's repair each recorded
+  as "re-measured".  41 is the figure AGENTS §8.3 records at the switch commit `2b26be3`; it has
+  been carried unmeasured since.  **D9 itself still holds**, and that was checked rather than
+  assumed: every `Log::parse` / `iter_day` / `undo_mask` hit in `tm/src` and `tm-core/src` is a
+  **comment**, and every live `LOG_PATH` hit is the chokepoint (which reads bytes and hands them to
+  the kernel), the writer, or a test.  The breakdown is `ctx.rs` 16, `lifecycle.rs` 9,
+  `kernel_log_grammar.rs` 7, `tests/support/fork.rs` 6, `log.rs` 4, `store.rs` 3, `horizon.rs` 2,
+  and one each in five more test files.  **This step did not move it**: the count is identical at
+  the baseline.
+* **D16, ONE writer.**  `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs` returns the same
+  **two** lines as at `24acb5a` — `tm-core/src/horizon.rs:525` and `tm/src/cli/ctx.rs:713` — and
+  this step touches neither file.
+* **D21-D23, the instrument is anchored outside the tree.**  T5 and the door both report fork point
+  **4748911**; `fork_arm` ran unconditionally;
+  `the_frozen_comparand_is_read_at_full_precision` passes **by name**; `float_roundtrip` is still
+  pinned at `Cargo.toml:29`.  **The oracle was not rebuilt and `TM_ORACLE` was not run**: no
+  shipped-path byte changed, and this step's oracle is `planner.rs` and `priority.rs` read by line
+  number, not the frozen JSONL.
+* **D28, `dayPlan` stays total.**  `grep -n 'dayPlan?\|PlanRefusal' kernel/TmKernel/TmKernel/*.lean`
+  returns nothing.  No gate was added.
+* **D5, no law narrowed.**  No theorem was restated and none was deleted for being inconvenient; the
+  three that went are named above with the field that went with them, and each has a replacement.
+* **D34, D27 untouched.**  The candidates arrive on the wire exactly as they do today, `Look.Cand`
+  is unchanged, `cand_json` is unchanged, and gaps **113**, **114**, **116** and **301 item 1** are
+  open and whole.  What this step derives from the plan — the two line orders — are not among D27's
+  nine facts and were never the host's to send.
+* **D18, no memory bound raised.**  40G for builds and suites, 16G for the binary drive and T12, 8G
+  for the `decide` probe.  Nothing was retried uncapped.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no `partial def`, no
+  `unsafe`, no `opaque`, no `panic!`, no `!`-accessor (one was written in a witness and **deleted**
+  when the hard rule caught it), no `.toOption`, no Mathlib.  `lean-toolchain`, `Cargo.toml`,
+  `lake-manifest.json`, `kernel/corpus/` and `tm/tests/cli_latency.rs` untouched.  **No fixture,
+  snapshot, corpus file or latency band re-blessed; no predicate weakened and no checker narrowed.**
+
+### Gaps opened
+
+Range **600-629** is track P's for this run.  **Six taken, 600-605; 606-629 free.**
+
+**Gap 600 — §9.1's 5 ms TUI tick trigger cannot fire, and the fallback is the owner's call.**
+1. *What is not done.*  The trigger is not implemented and this step does not implement it.  T12
+   measures the replan at 22-25 ms (`opt-level = 1`) and 47-125 ms (`opt-level = 0`) at 500
+   candidates, against a 5 ms budget.
+2. *Why.*  The budget's 0.8 ms was taken at the FFI spike and never against this kernel (design §20
+   gap 257).  The measurement is now in the tree and is repeatable; the *decision* is Q8's and
+   D30 pre-authorises the fallback — replan on reload rather than on a tick — but a pre-authorised
+   fallback is still a behaviour change and belongs to the step that owns the TUI.
+3. *What it costs.*  Measured, not guessed: the cost splits evenly between the tree load and the §7
+   pass, so no single optimisation reaches 5 ms; and steps 5-8 are **not** in the number, so the
+   real figure is larger.  At the `tm init --example` shape (40 lines, 50 candidates) the call is
+   2.5-8.0 ms, which straddles the budget — a trigger that fires for a small plan and not a large
+   one is worse than one that never fires.
+4. *Which step clears it.*  **R3** (design §14.4), with `planner.rs`'s retirement and gap 116;
+   Q8 is answered before it.  Gap **257** is closed as to its *instrument* and stays open as to its
+   *decision*.
+
+**Gap 601 — design §5.5's `edfNumbers` pair is in the wrong units.**
+1. *What is not done.*  The design document is not edited (it is a design pass's record, AGENTS
+   §6.4); the kernel's `edfNumbers` does not follow it.
+2. *Why.*  `(g.deadline.need, g.avail)` compares whole minutes with a numerator over `capDen`.
+   `Planner.edfNumbers` scales the need and `edfNumbers_is_the_grants_own_impossibility` proves the
+   result is `Grant.impossible capDenD`; cheat 184 refuses the design's form.
+3. *What it costs.*  A reader of design §5.5 will write a `def` that makes
+   `plan_never_drops_an_impossible_item` vacuous at every input.
+4. *Which step clears it.*  The design's own §5.5 when the owner confirms; AGENTS §10.2's stale list
+   meanwhile.
+
+**Gap 602 — §7.4's eligibility filter is not applied at step 4, and five of its facts are not on the
+wire.**
+1. *What is not done.*  Fork `priority::sorted_candidates` drops `!c.eligible()` (Waiting, a closed
+   state, an unsatisfied `after:`, an exhausted `max:`) and an Interval that is not today's.
+   `PlanReq.rankedCands` orders **every** candidate it is given.
+2. *Why.*  Not one of `waiting`, `state`, `blocked_by`, `cap`, `cap_done_min`, `wall_today` is among
+   `Look.Cand`'s twelve fields; they are `priority::Candidate`'s and therefore D27's.  The filter
+   itself is §8.2 step 5's `eligibleAt`, which design §6.3 gives to **P5** (gap 365).  Filtering a
+   sorted list by any predicate leaves the survivors in the same order, so the factoring is sound.
+3. *What it costs.*  `rankedCands` is longer than the fork's `sorted`, and any law stated over
+   "the first candidate of the order" would be about a candidate the fork skips.  No law here is.
+4. *Which step clears it.*  **P5**, with `eligibleAt`; the facts themselves are D27's.
+
+**Gap 603 — `PlanReq.cands` and `PlanReq.prio` have no wire decoder.**
+1. *What is not done.*  `Boundary.readCands` decodes exactly this pair for the *capacity* op, and
+   `CapReq` carries `bins`/`safety`/`dflt`; nothing connects either to a `PlanReq`.
+2. *Why.*  `PlanReq` has no boundary op at all — gap 346's class, which gaps 556 and 431 already
+   record for `wallsAgree`, `activeAgrees`, `dayAgrees` and the routines.
+   `PlannerWit.mkPlanReq?` is the stand-in and `witBuildsCands` is the discharge for one request.
+3. *What it costs.*  The planner's ranking cannot be reached from the wire, so it cannot be compared
+   against `lookahead.grants` at run time — only by the theorem
+   `candAnswers_is_the_capacity_ops_own_grants`, which is about the *expression*.
+4. *Which step clears it.*  **P8**, with the planner's wire.
+
+**Gap 604 — the one-reader grep is 52, and four consecutive blocks record 41.**
+1. *What is not done.*  No reader was reintroduced and nothing is wrong with the code; the ledger's
+   number is.  41 is AGENTS §8.3's figure at the switch commit `2b26be3`.
+2. *Why it is recorded.*  W-14, W-15, W-16 and W-16's repair each print **41** under a heading that
+   says "re-measured on this tree and not assumed".  The command in AGENTS §8.3's R8 row returns
+   **52**, at this tree and at `24acb5a` alike.  This is the ledger-rot class the campaign exists to
+   catch, arriving in the sentence that claims to prevent it.
+3. *What it costs.*  The grep is a **guard**: a rising count is how a reintroduced in-tree reader
+   would show, and a floor quoted from memory cannot rise.  Checked by hand this time — every
+   `Log::parse`/`iter_day`/`undo_mask` hit in `src` is a comment — but that is not a guard.
+4. *Which step clears it.*  The step that turns the grep into a test with its count asserted, as
+   design §8.3's one-renderer grep guard will be — naturally **R1**.  Until then, quote 52 and the
+   command.
+
+**Gap 605 — nothing produces `state.json`'s `priorities_yesterday`.**
+1. *What is not done.*  `DayPlan.priorities` is one row per answer in request order (fork
+   `planner.rs:1066`).  Fork `priority::priorities_for_state` is a *different* list: walls dropped
+   and, where an id appears twice, the **lowest** `p` of the two kept.  The kernel has no such
+   function.
+2. *Why.*  It is what the host writes back into `state.json` after a plan, and the state section is
+   an *input* to `PlanReq` (`RuntimeIn.yesterday`, `mkYesterday?`); the output half needs the
+   planner's wire.
+3. *What it costs.*  §7.4's hysteresis is fed from a value the kernel reads but does not produce, so
+   the round trip `plan → state.json → plan` has one leg outside the kernel.
+4. *Which step clears it.*  **P8**, with the response's `priorities` key.
+
+### Gaps left open, by name
+
+**500** (D27 half done) and **501** (`Recur.lean` has no caller) are still the two to read first, and
+**577** (the candidate facts' *values* are unpinned) is the third — this step does not close it and
+does not touch `cand_json`.  **584** (a host-only write can still leave a tree the kernel refuses) is
+track A's and D35's.  Track P's **550-556** stand: **550** (the reservation row carries no multiplier)
+is **not** closed by this step and its text is now sharper — the multiplier is a `priority::Candidate`
+field and `Look.Cand` still has no `multiplier`, so P4's arrival does not supply it.  **551** (no
+Break row), **552** (`Look.WallIx` has no `evLo ≤ hi` bound), **553** (`limitSlots` is P5's if
+anyone's), **554** (`open_block_segment`), **555** (`raw_slots`), **556** (three hypotheses with no
+decoder) are untouched.  **285**, **346**, **347**, **365** (`eligibleAt`), **393**, **430**, **431**,
+**435**, **436**, **470**, **502-504**, **530-531**, **570**, **275**, **301 item 1**,
+**113**/**114**/**116** (D27, whole), and stage 5's residue **94, 98, 132, 133, 139, 143, 150, 151,
+152, 160, 170, 180, 181, 182, 190, 200, 201, 226, 260, 262, 270** and the performance levers
+**121, 122, 123, 126, 127**.
+
+### What this step did NOT do, by name
+
+* **It did not build P5.**  §8.2 step 5 — the cursor, the batch split, `eligibleAt`, the `max:` cap,
+  the atomic run and the six §6.3 restatements — is not started.  The brief's own instruction was to
+  land P4 green rather than half-build the assignment, and that is what happened.  The six goals
+  §6.4 gives to P5 are still in `Goals.lean`, untouched.
+* **It did not touch D27**: `Look.Cand` is unchanged, `cand_json` is unchanged, and gaps 113, 114,
+  116 and 301 item 1 are whole.
+* **It did not apply the eligibility filter** (gap 602), and says so rather than writing a filter
+  over facts the wire does not carry.
+* **It did not give the planner a caller or a wire** (gap 603), and the drive above is what says so
+  rather than a grep alone.
+* **It did not implement §9.1's trigger** — it measured it (gap 600), which is what D30 asked for,
+  and reports the number in both directions.
+* **It did not re-bless anything**: no fixture, no snapshot, nothing under `kernel/corpus/`, no
+  latency band (`review week` is quoted out of band and left there), no frozen comparand.
+* **It did not rebuild the fork oracle** and did not run `TM_ORACLE`.
+* **It did not weaken a checker or a goal.**  `PlanCheck`'s eleven are exactly as track G wrote them;
+  `Goals.lean`'s eleven theorems are word for word what they were, and the only statement whose
+  *meaning* changed is `plan_never_drops_an_impossible_item`, which went from resting on a `sorry`ed
+  `def` to resting on a real one — a strengthening, and gap 601 is why it is not the design's.
+
+### Numbering
+
+Gaps: this step **600-605**; 606-629 free.  Cheats: **184-187** taken, none renumbered —
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing and check 4 still
+rejects the file.  No audit name appears twice (4,428 lines).  **Highest on the branch: gap 605,
+cheat 187, parity P38.**
+
+### Worktrees
+
+`.claude/worktrees/stage5-lookahead` is untouched.  One throwaway worktree at `24acb5a` was created
+**outside the repo**, in the scratchpad, for the same-session baseline column, and is removed; the
+tree is clean.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under `systemd-run --user --scope
+-p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except the binary drive and T12 (**16G**) and the
+`decide` probe (**8G**).  No bound was raised and nothing was retried uncapped.  `check.sh` was run
+**ten** times in this checkout — once before any edit (the 7/7, 4,373, burn-down 11 this block's
+baseline column quotes), once after the Lean landed, four as timings, and the rest between edits —
+and 7/7 every time after the first green build.  `lake build TmKernel:static` was run separately
+first, to separate "does it build" from "does it pass"; it **failed four times** before it passed —
+`by_contra` is Mathlib's and not core's, `set` likewise, a `!`-accessor in a witness that the hard
+rules forbid, and a `rw` under a `match` that needed a `show` first — and each is printed here rather
+than dropped.  `cargo test --workspace --no-fail-fast` was run **once** on the final tree and tallied
+by summing the 78 result lines, not by `tail`.  `cli_latency` was run **three** times in release,
+every noisy row reported as all three readings.  T12 was run **five** times, four at `opt-level = 0`
+and one at `opt-level = 1`, and all five readings are in the table.  `PlannerWit.lean`'s twelve new
+`decide` witnesses were probed as a module at **8G with a 900 s ceiling** and elaborated in 15.7 s.
+The binary drive used a release binary on a scratch `tm init --example` tree **outside the repo**,
+with `--now` fixing the clock.

@@ -2253,4 +2253,55 @@ theorem theEveningIsCutIntoSlots :
 theorem theInvertedWallsBufferIsBlockedAnyway :
     Look.covered [(600, 700)] 800 = true := by decide
 
+/- CHEAT 184 — §7.3's two numbers compared in different units (design §5.5).
+   Design §5.5 gives `edfNumbers` as `(g.deadline.need, g.avail)`, but
+   `Grant.avail` is a NUMERATOR over the pass's denominator while
+   `Deadline.need` is whole minutes, and `Arith.isImpossible need avail` is
+   `decide (avail < need)` on the two as given.  This block asserts the
+   design's pair answers what `Grant.impossible` answers, on a grant that is
+   genuinely impossible: a need of two minutes against an availability of one
+   minute's worth of units.  `decide` refuses — the design's pair says `false`
+   where the grant says `true` — and `Planner.edfNumbers` scales the need,
+   with `edfNumbers_is_the_grants_own_impossibility` as the positive form. -/
+theorem theDesignsEdfPairIsTheImpossibilityTest :
+    Arith.isImpossible 2 Look.capDen
+      = Grant.impossible ⟨⟨2, (3 : Fin 6), 0⟩, Look.capDen, 0⟩ Look.capDenD := by decide
+
+/- CHEAT 185 — an id the plan does not hold sorted FIRST.  Fork
+   `priority::collect_candidates` reads a candidate's line order through
+   `tree.order(k).unwrap_or((usize::MAX, usize::MAX))`, so a candidate whose id
+   the tree cannot find sorts **last** among its equals; `Planner.siteNums`
+   encodes that as a leading marker digit because `Nat` has no maximum.  This
+   block asserts the plain `(0, 0)` reading instead — that a missing site is the
+   smallest one.  `decide` refuses.  The positive form is
+   `PlannerWit.the_ranking_request_reads_the_plans_line_order` beside
+   `the_ranking_request_is_ordered`, where `^g1` is the one candidate the plan
+   holds. -/
+theorem aMissingLineOrderSortsFirst :
+    Planner.natsLe (Planner.siteNums none) (Planner.siteNums (some ⟨0, 0⟩)) = true := by decide
+
+/- CHEAT 186 — the request order read as §7.4's first component.  §7.4 sorts by
+   `(p, root order, own order)` and uses the arrival position only to break a
+   tie; a sort that kept the wire order wherever it "looked sorted" would pass
+   every length and permutation law this step proves.  This block asserts that
+   `PlannerWit.theRankingRequest`'s six come back in the order they were sent —
+   `decide` refuses, because the overdue candidate at position 2 and the
+   mandatory one at position 3 both outrank the optional at position 1
+   (`PlannerWit.the_ranking_request_is_ordered`). -/
+theorem theRankingKeepsTheWireOrder :
+    PlannerWit.rankedIds PlannerWit.theRankingRequest
+      = PlannerWit.theRankingRequest.candAnswers.map (fun o => o.out.cand.id) := by decide
+
+/- CHEAT 187 — a wall given a `p` and ranked with the queue.  §7.2's first row
+   is off the scale (`rawPrio_of_a_wall`), and fork `sorted_candidates` reads a
+   wall as `7` only so that `keyed.sort()` has a number, never to report one:
+   `Planner.prioRow` drops it and `DayPlan.priorities` has five rows for six
+   candidates.  This block asserts the day reports a `p` for the wall too —
+   `decide` refuses.  The positive form is
+   `PlannerWit.the_ranking_requests_day_carries_its_priorities`. -/
+theorem theWallIsReportedWithAPriority :
+    (Planner.dayPlan PlannerWit.theRankingRequest).priorities.val.length
+      = PlannerWit.theRankingRequest.cands.val.length := by decide
+
+
 end Tm

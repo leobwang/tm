@@ -457,9 +457,12 @@ theorem hotPairOk_iff (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) :
 Design §6.3 row 6: §7.3's "still scheduled with everything available" is about capacity, not
 eligibility.  The checker reads the plan's **own** account of which items are impossible —
 `Diagnostics.impossible`, the id and its exact shortfall — because L26 is "decidable over the
-produced `DayPlan`".  The bridge from there to §7.3's EDF numbers (`Goals.edfNumbers`, design
-§5.5) is step **P4**'s, and until it lands the goal's own form is not reachable from this
-checker. -/
+produced `DayPlan`".  **P4 landed the other end of that bridge**: §7.3's EDF numbers are
+`Planner.edfNumbers` (this comment named `Goals.edfNumbers`, which was a provisional `def … :=
+sorry` and is now deleted), a projection of the grant the pass gives the candidate, with
+`edfNumbers_is_the_grants_own_impossibility` tying it to `Grant.impossible`.  What is still
+missing is the step that fills `Diagnostics.impossible` from those numbers, which is **P8**'s:
+until it does, this checker is about a list nothing writes. -/
 
 def impossibleKept (el : Eligible) (r : PlanReq) (d : DayPlan) : Bool :=
   d.diagnostics.impossible.val.all (fun p =>
