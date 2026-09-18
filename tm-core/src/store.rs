@@ -220,6 +220,20 @@ fn first_bad_utf8_line<S: Store + ?Sized>(store: &S, rel: &str) -> usize {
     let Ok(bytes) = store.read_bytes(rel) else {
         return 0;
     };
+    bad_utf8_line(&bytes)
+}
+
+/// **The one reader of "which line is the bad byte on"**, over bytes already in
+/// hand — [`first_bad_utf8_line`] is this through a store, and the two strict
+/// readers ([`FsStore::read_text`] and `Snapshot::read`) call it directly with
+/// the bytes their own failed decode was handed (AGENTS §5.3: one definition,
+/// and the strict path had **none**, which is why it printed a line-less
+/// message where `tm check` and the write gate both named the line — W-17
+/// repair, README gap 676).
+///
+/// `0` when every line decodes (a decode that failed for a reason the split
+/// cannot localise) — which [`at_line`] renders as "the whole file".
+pub fn bad_utf8_line(bytes: &[u8]) -> usize {
     bytes
         .split(|b| *b == b'\n')
         .position(|line| std::str::from_utf8(line).is_err())
@@ -395,6 +409,18 @@ pub struct PlanFiles {
 /// the tree*, which is a different question with the same answer, and neither
 /// is spelled twice (AGENTS §5.3).
 pub const NOT_UTF8: &str = "not valid UTF-8; the file was skipped";
+
+/// **The verdict alone**, without what `read_tree` did about it: what a
+/// *strict* reader says, which cannot honestly add "the file was skipped"
+/// because the command is about to fail instead.
+///
+/// [`NOT_UTF8`] is this sentence plus its consequence clause, and
+/// `the_two_not_utf8_spellings_are_one_sentence` pins that so the pair cannot
+/// drift into two verdicts (AGENTS §5.3). Before the W-17 repair the strict
+/// path had **three** spellings between `fs::read_to_string`'s *"stream did not
+/// contain valid UTF-8"* and `Snapshot::read`'s line-less *"not valid UTF-8"*,
+/// and neither carried a position.
+pub const NOT_UTF8_VERDICT: &str = "not valid UTF-8";
 
 impl PlanFiles {
     /// **The first file whose bytes are not text, with the line the bad byte
@@ -1408,7 +1434,13 @@ impl Snapshot {
         let mut h = DefaultHasher::new();
         bytes.hash(&mut h);
         let hash = h.finish();
-        let text = String::from_utf8(bytes).map_err(|_| parse_err(rel, 0, "not valid UTF-8"))?;
+        // **Name the line** (W-17 repair, gap 676). The bytes are already in
+        // hand, so the position costs one split — and without it this reader,
+        // which every guarded write and every id lookup goes through, said
+        // `optional.md: not valid UTF-8` with no position while `tm check` and
+        // the write gate both said `optional.md:3`.
+        let text = String::from_utf8(bytes)
+            .map_err(|e| parse_err(rel, bad_utf8_line(e.as_bytes()), NOT_UTF8_VERDICT))?;
         Ok(Snapshot { text, mtime, hash })
     }
 
@@ -1599,8 +1631,18 @@ impl Store for FsStore {
         Ok(out)
     }
 
+    /// **Bytes then decode, so a file that is not text names its line**
+    /// (W-17 repair, gap 676). `fs::read_to_string` answers
+    /// `ErrorKind::InvalidData` with the sentence *"stream did not contain
+    /// valid UTF-8"* and no position, which is a third spelling of a verdict
+    /// [`NOT_UTF8`] already owns; this raises [`StoreError::Parse`] at
+    /// [`bad_utf8_line`] with [`NOT_UTF8_VERDICT`] instead. `unreadable`
+    /// classifies both shapes as `NotUtf8`, so `read_tree`'s tolerance and
+    /// [`StoreError::is_not_utf8`] are unchanged.
     fn read_text(&self, rel: &str) -> Result<String, StoreError> {
-        fs::read_to_string(self.abs(rel)?).map_err(|e| io_err(rel, e))
+        let bytes = self.read_bytes(rel)?;
+        String::from_utf8(bytes)
+            .map_err(|e| parse_err(rel, bad_utf8_line(e.as_bytes()), NOT_UTF8_VERDICT))
     }
 
     fn read_bytes(&self, rel: &str) -> Result<Vec<u8>, StoreError> {

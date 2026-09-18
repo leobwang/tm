@@ -149,12 +149,107 @@ fn invalid_utf8_in_a_plan_file_is_an_error_tm_check_names_by_line() {
     assert!(!out.stdout.contains("inbox.md:0:"), "line 0 is not a line: {}", out.stdout);
 
     // The other verbs still fail — a plan file that cannot be decoded is not
-    // something to plan around — but they no longer say `:0`.
-    for args in [vec!["plan"], vec!["triage"], vec!["now"]] {
+    // something to plan around — and **they name the same line** (W-17 repair,
+    // README gap 676).
+    //
+    // This loop used to assert only `!contains("inbox.md:0")`, which is a check
+    // no wrong position can fail: the strict readers printed
+    // `inbox.md: stream did not contain valid UTF-8` with no position at all and
+    // it passed for four runs. `tm check` named the line, the write gate named
+    // the line, and the reading verbs named nothing — two spellings of one
+    // verdict (AGENTS §5.3), one of them the W-16 repair's own gap-579
+    // complaint surviving one verb over.
+    for args in [vec!["plan"], vec!["triage"], vec!["now"], vec!["review", "week"]] {
         let out = tm.run(&args);
         assert_eq!(out.code, 1, "{args:?}: {}{}", out.stdout, out.stderr);
+        assert!(
+            out.stderr.contains(&format!("inbox.md:{bad_line}:")),
+            "{args:?} does not name the line: {}",
+            out.stderr
+        );
+        // One verdict, and not `fs::read_to_string`'s third spelling.
+        assert!(out.stderr.contains("not valid UTF-8"), "{args:?}: {}", out.stderr);
+        assert!(
+            !out.stderr.contains("stream did not contain"),
+            "{args:?} still speaks io::Error's sentence: {}",
+            out.stderr
+        );
         assert!(!out.stderr.contains("inbox.md:0"), "{args:?}: {}", out.stderr);
     }
+
+    // And a **host-only write** says the same thing, plus what it means for the
+    // command — the gate's clause, not a different verdict.
+    let write = tm.run(&["edit", "^d2", "ci=3"]);
+    assert_eq!(write.code, 1, "{}{}", write.stdout, write.stderr);
+    assert!(write.stderr.contains(&format!("inbox.md:{bad_line}:")), "{}", write.stderr);
+    assert!(write.stderr.contains("not valid UTF-8"), "{}", write.stderr);
+}
+
+/// **The same verdict on a SWEPT tree, which is a different reader** (W-17
+/// repair, README gap 676).
+///
+/// There are two strict readers of a plan file and the fixture above reaches
+/// only one of them. On a tree with housekeeping still to do, the guarded
+/// `Snapshot::read` fails first; once §6.3's automatic close has swept, the
+/// verb gets as far as `FsStore::read_text`, and *that* was
+/// `fs::read_to_string`'s `ErrorKind::InvalidData` — a **third** spelling,
+/// `inbox.md: stream did not contain valid UTF-8`, with no position and words
+/// `store::NOT_UTF8` does not use.
+///
+/// Reverting either reader alone leaves the other test green, which is why this
+/// one exists as well as that one.
+#[test]
+fn a_swept_tree_names_the_bad_line_too_and_says_the_one_verdict() {
+    let tm = Tm::new();
+    // Two sound runs: the second finds nothing left to close, so the verbs
+    // below reach the tree read rather than the guarded close write.
+    tm.ok(&["plan"]);
+    tm.ok(&["plan"]);
+
+    let path = tm.plan.join("inbox.md");
+    let mut bytes = std::fs::read(&path).expect("read inbox.md");
+    let before_lines = bytes.iter().filter(|b| **b == b'\n').count();
+    bytes.extend_from_slice(b"- caf\xc3\x28 broken utf8\n");
+    std::fs::write(&path, &bytes).expect("write inbox.md");
+    let bad_line = before_lines + 1;
+
+    let check = tm.run(&["check"]);
+    assert_eq!(check.code, 2, "{}{}", check.stdout, check.stderr);
+    assert!(check.stdout.contains(&format!("inbox.md:{bad_line}:")), "{}", check.stdout);
+
+    for args in [vec!["now"], vec!["plan"], vec!["review", "week"]] {
+        let out = tm.run(&args);
+        assert_eq!(out.code, 1, "{args:?}: {}{}", out.stdout, out.stderr);
+        assert!(
+            out.stderr.contains(&format!("inbox.md:{bad_line}:")),
+            "{args:?} does not name the line: {}",
+            out.stderr
+        );
+        assert!(
+            !out.stderr.contains("stream did not contain"),
+            "{args:?} still speaks io::Error's sentence: {}",
+            out.stderr
+        );
+        assert!(out.stderr.contains(tm_core::store::NOT_UTF8_VERDICT), "{args:?}: {}", out.stderr);
+    }
+}
+
+/// **The two spellings of "these bytes are not text" are one sentence plus a
+/// clause, not two verdicts** (AGENTS §5.3, W-17 repair, README gap 676).
+///
+/// `store::NOT_UTF8` is what `read_tree` records as a tree problem — the verdict
+/// *and* what it did about it — and `store::NOT_UTF8_VERDICT` is the verdict a
+/// strict reader says, which cannot honestly add "the file was skipped" because
+/// the command is about to fail instead. If the pair ever drifts, this fails.
+#[test]
+fn the_two_not_utf8_spellings_are_one_sentence() {
+    assert!(
+        tm_core::store::NOT_UTF8.starts_with(tm_core::store::NOT_UTF8_VERDICT),
+        "`NOT_UTF8` ({}) is no longer `NOT_UTF8_VERDICT` ({}) plus its consequence clause",
+        tm_core::store::NOT_UTF8,
+        tm_core::store::NOT_UTF8_VERDICT
+    );
+    assert_ne!(tm_core::store::NOT_UTF8, tm_core::store::NOT_UTF8_VERDICT);
 }
 
 /// **T9**: one byte of invalid UTF-8 is one warning at its own line, the exit
