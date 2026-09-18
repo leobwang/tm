@@ -8,8 +8,27 @@ Stage 6, track W (run W-15).  README **gap 348**: *"no `PlanReq` can be built in
 `Planner.lean`, so the wall laws have no end-to-end witness"* — and the W-14 repair step made
 that gap the blocker for three others (366, 393's witness half, 396).  This module is gap 348
 item 4's second option, taken by name: *"a small `PlannerWit.lean` importing `Boundary` and
-`Planner`"*.  It imports `Boundary` for `loadPlan` and `PlanCheck` for the battery, and
-**nothing imports it**, so no shipped path grows.
+`Planner`"*.  It imports `Boundary` for `loadPlan` and `PlanCheck` for the battery.
+
+**What imports it, measured (W-17, track G).**  The sentence that stood here said *"nothing
+imports it, so no shipped path grows"*, and the first clause is **false as written**:
+`TmKernel/TmKernel.lean:82` carries `import TmKernel.PlannerWit`, put there in the same commit
+that created this module (`3096320`) because AGENTS §9.2 lists *"a new module that is never
+imported into `TmKernel/TmKernel.lean`"* among the disguised gaps — it would look built and
+check 1 would agree.  `Check.lean`, `Negative.lean` and `Goals.lean` reach it from there
+through `import TmKernel`, which is what puts its 64 audit lines under check 3 and its
+`decide` witnesses under check 1.
+
+What is true, and is what the sentence meant, is that **no library module imports it**:
+`grep -l 'import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean` is empty, so it is a leaf of
+the import graph, `Boundary.lean` (the only module the FFI enters) cannot reach it, and no
+shipped path grows.  **That is the right shape and it should stay that way**: this module
+exists to *evaluate* the planner on concrete requests, so anything that imported it would be
+importing 40 000-`maxRecDepth` witnesses into its own elaboration.  A module nothing imports
+is weaker evidence than a driven verb (AGENTS §5.6) — and the honest reading of that rule here
+is that these witnesses are evidence about the **kernel's own output**, not about the binary:
+`dayPlan` has no shipped caller at all yet (README gap 501's sibling — there is no planner op
+on the wire), so no witness in this file can be driven from `tm` until the wire carries one.
 
 ## Why a module and not a witness inside `Planner.lean`
 
@@ -982,6 +1001,263 @@ theorem plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted :
   obtain ⟨s, hs, hk, hlong⟩ := hb
   exact absurd (h theShortBlockRequest s hs hk) (by omega)
 
+
+/-! ############################################################################
+## 9. §8.3's wall law is FALSE as stage 6 wrote it — the witness (W-17, track G)
+############################################################################
+
+`PlanCheck`'s header records finding 1 (README gap 385): *"a Block the log holds can run
+longer than `block_min`, **can sit under a wall**, can overlap a break and can exhaust the
+budget — none of it the planner's doing"*.  Step P3 took the first clause and refuted E1 with
+it.  This is the second clause, taken the same way, and the witness needs **one record**: move
+the calendar's meeting onto a block the morning's log already holds.
+
+Nothing about the log changes — `witRun` is the same six lines — and nothing about the plan
+changes.  Only the wall index the request carries moves, which is the same lever
+`theShortBlockRequest` pulls on `[day] block_min`. -/
+
+/-- The §4.3 Wednesday with the meeting moved to **07:20–07:50**, inside the hour the log
+records as worked on `m1` (07:05–08:05).  A real calendar sync does exactly this: an event
+arrives on a slot the day has already spent. -/
+def theMorningWallRequest : PlanReq :=
+  { theRequest with
+    look := { theRequest.look with
+      walls := [⟨['g','1'], 739867, 739867,
+                 (Cal.instantOf Cal.chicago 739867 440).sec,
+                 (Cal.instantOf Cal.chicago 739867 440).sec,
+                 (Cal.instantOf Cal.chicago 739867 470).sec⟩] } }
+
+set_option maxRecDepth 40000 in
+/-- The witness, computed: the day the planner produces holds a Block row and a Wall row that
+**overlap**, and the battery says so on its own (`noBlockOverAWall = false`) rather than being
+told. -/
+theorem the_morning_wall_day_lays_a_block_across_a_wall :
+    (∃ b ∈ (dayPlan theMorningWallRequest).segments,
+      ∃ w ∈ (dayPlan theMorningWallRequest).segments,
+        b.val.kind = SegKind.block ∧ w.val.kind = SegKind.wall ∧
+          w.val.start < b.val.stop ∧ b.val.start < w.val.stop) ∧
+      PlanCheck.noBlockOverAWall theMorningWallRequest (dayPlan theMorningWallRequest) = false := by
+  decide
+
+/-- **§8.3's "no Block over a Wall" as `Goals.lean` wrote it is FALSE** (AGENTS §3.1 item 3,
+D5), for the reason step P3 refuted E1 with: the day's Block rows include the ones
+`Planner.pastRows` replays from the log, and a Block the log holds can sit under a wall the
+calendar acquired afterwards.  `PlanCheck.plan_places_no_block_over_a_wall` is the restatement
+— over the Block rows that start at or after `now`, the fork's own `assigned_set(day, w.now)`
+restriction — and it ships in the same commit as this. -/
+theorem plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (b w : WfSeg), b ∈ (dayPlan r).segments → w ∈ (dayPlan r).segments →
+        b.val.kind = SegKind.block → w.val.kind = SegKind.wall →
+        b.val.stop ≤ w.val.start ∨ w.val.stop ≤ b.val.start) := by
+  intro h
+  obtain ⟨b, hbmem, w, hwmem, hbk, hwk, h1, h2⟩ :=
+    the_morning_wall_day_lays_a_block_across_a_wall.1
+  rcases h theMorningWallRequest b w hbmem hwmem hbk hwk with hd | hd <;> omega
+
+/-! ############################################################################
+## 10. README gap 396, the other nine: the census, and eleven bites (W-17)
+############################################################################
+
+W-14 asked whether the battery gives an opinion of its own.  W-15 answered it for
+`wallsUnmoved` and `noBlockOverAWall`, W-16 for `oneBlockAtATime` on the row the *planner*
+places.  **Three of eleven.**  This section answers it for the other eight and, more
+importantly, says out loud which of the eleven are checking anything at all over a day
+`Planner.dayPlan` really produces — because *"a check no input can fail"* is §9.2's disguised
+gap and a checker whose quantifier is empty is exactly that, whether or not a `can_fail`
+witness exists for it over a hand-built day.
+
+**The two are different questions and this section keeps them apart.**
+
+* **Non-vacuous** — the checker's quantifier has a subject on the day the planner produced, so
+  the `true` it returns was earned.  `the_battery_census_over_a_produced_day` computes the
+  populations; six of the eleven have one and five do not, and each of the five waits on a
+  named later step.
+* **Bites** — some mutation of that same produced day is refused.  `the_battery_bites_*`
+  below, with W-15's and W-16's, make it **eleven of eleven**.
+
+**No second copy of any placement rule is written here** (AGENTS §5.3, and the W-14 land step's
+own refusal): every mutation is a `List.map` or `List.filter` over the day
+`Planner.dayPlan` built, and every verdict is `PlanCheck`'s own checker evaluating. -/
+
+/-- **A store that holds the ids the morning actually worked.**  `Boundary.lookWallPlan` is a
+one-line calendar, so `effectiveCi` answers §3.1's default of three for the replayed rows'
+`m1`/`m2` and the store has **one** id in it — which leaves five of the eleven checkers with
+nothing to range over for reasons that are about the *witness* and not about the *planner*.
+
+This is `Boundary.undoWitnessRequest`'s two tasks, reused verbatim but for one word: `m1` and
+`m2`, `ci:5`, two ranked siblings of one document, and `hot` on the first.  The ids are the
+ones `witLines` records as started and done, so the day the planner produces assigns items the
+store really holds. -/
+def storedWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1 hot".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_stored_witness_loads : loadsOk storedWitness = true := by decide
+
+/-- The loaded store.  Total by `the_stored_witness_loads`: the error branch is refuted, not
+defaulted (`Boundary.lookWallPlan`'s pattern). -/
+def storedPlan : WfPlan :=
+  match h : loadPlan storedWitness with
+  | .ok p => p
+  | .error _ => absurd the_stored_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 8000 in
+/-- What the store holds, computed: two siblings of one document, both at `ci:5`, ranked 1 and
+2, and `hot` on `m1` alone. -/
+theorem the_stored_witness_holds_two_ranked_siblings :
+    storedPlan.val.store.dom = [['m','2'], ['m','1']] ∧
+      (effectiveCi storedPlan.val ['m','1']).val = 5 ∧
+      (effectiveCi storedPlan.val ['m','2']).val = 5 ∧
+      rootPrio storedPlan.val ['m','1'] = rootPrio storedPlan.val ['m','2'] ∧
+      (storedPlan.val.store.get ['m','1']).map (fun e => (e.val.live.doc, e.val.live.rank,
+          e.val.flags)) = some (0, 1, [Field.Flag.hot]) ∧
+      (storedPlan.val.store.get ['m','2']).map (fun e => (e.val.live.doc, e.val.live.rank,
+          e.val.flags)) = some (0, 2, []) := by
+  decide
+
+/-- The §4.3 Wednesday at 14:00 with `m1` running **and** a store that holds `m1` and `m2`. -/
+def theStoredRequest : PlanReq := { theRunningRequest with plan := storedPlan }
+
+/-- The permissive eligibility — the one the battery is instantiated at until **P5** writes
+`Planner.eligibleAt` (README gap 365).  It is named once here rather than spelled at each use,
+so the day P5 lands there is one place to change. -/
+abbrev permissive : PlanCheck.Eligible := fun _ _ _ _ => true
+
+set_option maxRecDepth 40000 in
+/-- **The day, and the battery's verdict on it.**  Six rows: the two replayed Blocks, the
+written wall, choice 5b's reservation and §16's evening — the same day
+`the_reserved_day_is_the_witness_day_and_the_running_block` computes, with a different store
+behind it. -/
+theorem the_stored_day_passes_the_whole_battery :
+    PlanCheck.planOk permissive theStoredRequest (dayPlan theStoredRequest) = true := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The census: what each of the eleven actually ranges over, on the day the planner
+produced.**  Every line is a population, computed; the prose beside each says which checker it
+makes vacuous and which step ends that.
+
+* three Block rows and one Wall row — `noOverbook`, `oneBlockAtATime`, `noBlockOverAWall` and
+  (at `theRequest`, whose store holds the calendar item) `wallsUnmoved` have subjects;
+* `assignedFrom … now` holds one item, so one of the three Blocks is the **planner's**;
+* **no Break row** — `noBlockOverABreak` is vacuous; the cut's breaks reach the day only when
+  work touches them (`Planner.a_break_row_is_a_replayed_row`, README gap 551), which is **P5**;
+* **no row carries a slot energy** — `energyFilterOk` is vacuous; a Block gets one when the
+  assign fold puts it in an energised slot, which is **P5**;
+* **no Block at or after the wind-down** — `noDemandingAfterWindDown` is vacuous; **P5/P7**;
+* **no Batch row** — `batchDoesNotReachPast` is vacuous; **P5**;
+* **`diagnostics.impossible` is empty** — `impossibleKept` is vacuous; **P4** (README gap 367);
+* the store holds two ranked siblings and one of them is `hot`, and both are assigned, so
+  `monotoneInRank` and `hotBeforeQueue` have real pairs. -/
+theorem the_battery_census_over_a_produced_day :
+    ((dayPlan theStoredRequest).segments.filter
+        (fun s => s.val.kind == SegKind.block)).length = 3 ∧
+      ((dayPlan theStoredRequest).segments.filter
+        (fun s => s.val.kind.isWork)).length = 3 ∧
+      ((dayPlan theStoredRequest).segments.filter
+        (fun s => s.val.kind == SegKind.wall)).length = 1 ∧
+      assignedFrom (dayPlan theStoredRequest) theStoredRequest.now.sec = [['m','1']] ∧
+      (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.brk) = [] ∧
+      (dayPlan theStoredRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        decide (theStoredRequest.windDownSec ≤ s.val.start)) = [] ∧
+      (dayPlan theStoredRequest).diagnostics.impossible.val = [] ∧
+      assignedOf (dayPlan theStoredRequest) = [['m','1'], ['m','2'], ['m','1']] := by
+  decide
+
+/-! ### The eight mutations the other eight checkers refuse
+
+Each is a `List.map`, a `List.filter` or one field of the day `Planner.dayPlan` built — never
+a hand-written day, which is what `PlanCheck`'s `wDay` witnesses already are and what these
+are deliberately not. -/
+
+/-- A budget of nothing, against a day that has already spent an hour on `m2`. -/
+def theSpentDay : DayPlan := { dayPlan theStoredRequest with budgetBlocks := 0 }
+
+/-- `m2`'s block given a slot energy of zero, against its `ci:5`.  It is `m2` and not `m1`
+because `m1` is the running item and `energyOk` excuses the reservation by name (design §6.3
+row 2). -/
+def dimIt (s : WfSeg) : WfSeg :=
+  if s.val.item = some (['m','2'] : Id) then Planner.segOf { s.val with energy := some 0 } else s
+
+def theDimDay : DayPlan :=
+  { dayPlan theStoredRequest with segments := (dayPlan theStoredRequest).segments.map dimIt }
+
+/-- The written wall turned into a break, with `m1`'s first block laid across it. -/
+def breakIt (s : WfSeg) : WfSeg :=
+  if s.val.kind = SegKind.wall then Planner.segOf { s.val with kind := SegKind.brk }
+  else if s.val.item = some (['m','1'] : Id) then
+    Planner.segOf { s.val with start := (Cal.instantOf Cal.chicago 739867 780).sec,
+                               stop := (Cal.instantOf Cal.chicago 739867 800).sec }
+  else s
+
+def theBrokenDay : DayPlan :=
+  { dayPlan theStoredRequest with segments := (dayPlan theStoredRequest).segments.map breakIt }
+
+/-- `m2`'s `ci:5` block moved into the wind-down. -/
+def lateIt (s : WfSeg) : WfSeg :=
+  if s.val.item = some (['m','2'] : Id) then
+    Planner.segOf { s.val with start := (Cal.instantOf Cal.chicago 739867 1300).sec,
+                               stop := (Cal.instantOf Cal.chicago 739867 1310).sec }
+  else s
+
+def theLateDay : DayPlan :=
+  { dayPlan theStoredRequest with segments := (dayPlan theStoredRequest).segments.map lateIt }
+
+/-- The day with every row naming `m1` dropped: the item that ranks ahead of `m2`, and is the
+`hot` one, vanishes while `m2` keeps its block.  That is the shipped bug §8.3's rank and HOT
+laws are about — *"the skipped item simply never appears"*. -/
+def theDroppedFirstDay : DayPlan :=
+  { dayPlan theStoredRequest with
+    segments := (dayPlan theStoredRequest).segments.filter
+      (fun s => !decide (s.val.item = some (['m','1'] : Id))) }
+
+/-- The same day, with `m1` named IMPOSSIBLE in the diagnostics it is missing from. -/
+def theSilentlyDroppedDay : DayPlan :=
+  { theDroppedFirstDay with
+    diagnostics := { (dayPlan theStoredRequest).diagnostics with
+      impossible := Capped.ofListTake [((['m','1'] : Id), 60)] } }
+
+/-- The same day again, with `m2`'s row gathered into a batch that reached past `m1`. -/
+def batchIt (s : WfSeg) : WfSeg :=
+  if s.val.item = some (['m','2'] : Id) then
+    Planner.segOf { s.val with kind := SegKind.batch ⟨[['m','2']], by decide⟩ }
+  else s
+
+def theBatchedDay : DayPlan :=
+  { theDroppedFirstDay with segments := theDroppedFirstDay.segments.map batchIt }
+
+set_option maxRecDepth 40000 in
+/-- **Eight refusals, over eight mutations of the day the planner actually built.**  With
+`the_battery_bites_at_the_witness` (W-15: `wallsUnmoved`, `noBlockOverAWall`,
+`oneBlockAtATime`) and `the_battery_bites_on_the_reservation` (W-16: `oneBlockAtATime` on the
+row the planner placed), **every one of the eleven now refuses something**. -/
+theorem the_battery_bites_over_a_produced_day :
+    PlanCheck.noOverbook theStoredRequest theSpentDay = false ∧
+      PlanCheck.energyFilterOk theStoredRequest theDimDay = false ∧
+      PlanCheck.noBlockOverABreak theStoredRequest theBrokenDay = false ∧
+      PlanCheck.noDemandingAfterWindDown theStoredRequest theLateDay = false ∧
+      PlanCheck.monotoneInRank permissive theStoredRequest theDroppedFirstDay = false ∧
+      PlanCheck.hotBeforeQueue permissive theStoredRequest theDroppedFirstDay = false ∧
+      PlanCheck.impossibleKept permissive theStoredRequest theSilentlyDroppedDay = false ∧
+      PlanCheck.batchDoesNotReachPast permissive theStoredRequest theBatchedDay = false := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- And the battery as a whole refuses each of them — `planOk` is `false` on all eight, so a
+mutation that reaches any single checker reaches the conjunction the lift is about. -/
+theorem the_whole_battery_refuses_each_mutation :
+    PlanCheck.planOk permissive theStoredRequest theSpentDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theDimDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theBrokenDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theLateDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theDroppedFirstDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theSilentlyDroppedDay = false ∧
+      PlanCheck.planOk permissive theStoredRequest theBatchedDay = false := by
+  decide
 
 end PlannerWit
 end Tm

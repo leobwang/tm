@@ -1245,5 +1245,257 @@ theorem a_kept_reservation_defeats_the_prefix_but_not_the_erasure (a x : Id) (hn
   · refine ⟨0, ?_⟩
     simp [hne]
 
+
+/-! ############################################################################
+## §8.3's laws over the rows §8.3 is about — step W-17, track G
+############################################################################
+
+**The finding this section is built on is not new; acting on it is.**  `PlanCheck`'s own
+header records it as finding 1 (README gap 385): the day's Block rows include the ones
+`Planner.pastRows` replays from the log, *"none of it the planner's doing, and none of it
+anything a replan may move"*.  Step P3 acted on it once, for E1
+(`Planner.plan_reserves_one_block_at_a_time`, refuted and restated over the Block rows that
+start at or after `now`).  Two things follow from it that P3 did not take, and both are here.
+
+1. **`plan_places_no_block_over_a_wall` is false for the same reason**, and the witness is
+   one record: move the calendar's meeting onto a block the morning's log already holds and
+   the day the planner produces has a Block row across a Wall row.
+   `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted` computes it.
+   The restatement is below, over `Planner.assignedFrom`'s own restriction — the fork's
+   `assigned_set(day, w.now)` (`planner_invariants.rs:470`) — and it is **not vacuous**:
+   §8.2 choice 5b's reservation is such a row.
+2. **`dayPlan_ok_core`'s `hnopast` is not a fact about the planner and need not be a
+   hypothesis of the lift.**  It says the log holds no Block for today, which is false of
+   every real day after breakfast.  `withoutPast` names the restriction instead of assuming
+   it away, and `dayPlan_ok_core_from_now` is the same conjunction over the same seven
+   checkers with `hnopast` **gone**.  `dayPlan_ok_core` is kept unchanged beside it — the two
+   are incomparable (one drops a hypothesis, the other keeps the whole day) and nothing is
+   weakened (D5). -/
+
+/-- The day with the **work** rows that started before `now` removed, and nothing else
+touched.  Walls, breaks, the wind-down and the sleep row stay: they are the comparands
+§8.3's laws put the planner's Blocks beside, not the subjects of them.
+
+`Planner.SegKind.isWork` is the kernel's one reader of "is this row work" — `Planner.
+assignedFrom` uses the same one — so this filter is that predicate plus an instant, and no
+second reading of either (AGENTS §5.3).  `withoutActive` above is the pattern: hand the
+existing checker a shorter segment list rather than write a second checker. -/
+def keepFromNow (r : PlanReq) (s : WfSeg) : Bool :=
+  !s.val.kind.isWork || decide (r.now.sec ≤ s.val.start)
+
+def withoutPast (r : PlanReq) (d : DayPlan) : DayPlan :=
+  { d with segments := d.segments.filter (keepFromNow r) }
+
+theorem withoutPast_segments (r : PlanReq) (d : DayPlan) :
+    (withoutPast r d).segments = d.segments.filter (keepFromNow r) := rfl
+
+/-- A row of `withoutPast` is a row of the day, and a **work** row of it starts at or after
+`now`. -/
+theorem mem_withoutPast (r : PlanReq) (d : DayPlan) (s : WfSeg)
+    (h : s ∈ (withoutPast r d).segments) :
+    s ∈ d.segments ∧ (s.val.kind.isWork = true → r.now.sec ≤ s.val.start) := by
+  rw [withoutPast_segments] at h
+  obtain ⟨hs, hf⟩ := List.mem_filter.1 h
+  refine ⟨hs, fun hw => ?_⟩
+  unfold keepFromNow at hf
+  rw [hw] at hf
+  simpa using hf
+
+/-- **A Block row that starts at or after `now` is §8.2 choice 5b's reservation** — the
+replayed past cannot reach it, because `Planner.pastRows` ends every row it produces at
+`now`.  This is `dayPlan_block_rows_are_the_reservation` with the hypothesis discharged
+rather than assumed. -/
+theorem a_block_row_from_now_is_the_reservation (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
+    (hnow : r.now.sec ≤ s.val.start) : ∃ t ∈ reservationSegs r, s = segOf t := by
+  rcases dayPlan_block_rows_are_replayed_or_reserved r s hs hk with ⟨t, ht, rfl⟩ | h
+  · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
+    have hlt : (segOf t).val.start < r.now.sec := by
+      show clampSec t.start < r.now.sec
+      simp only [clampSec, LogStamp.yearEnd]; omega
+    omega
+  · exact h
+
+/-- **§8.3's "no Block over a Wall", over the rows §8.3 is about.**  The goal
+`Goals.plan_places_no_block_over_a_wall` leaves `Goals.lean` for this (AGENTS §3.2's burn-down
+protocol), and `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`
+ships in the same commit (AGENTS §3.1 item 3: a restatement without its refutation is a
+weakening).
+
+The restriction is `Planner.assignedFrom`'s — Block rows that start at or after `now` — which
+is the fork's own `assigned_set(day, w.now)` and the one step P3 used for E1.  `hnowcal` is
+the R10 hypothesis `dayPlan_ok_core` already carries: the instant being planned is inside the
+calendar, so `Planner.segOf`'s forcing is the identity on the reservation's start.
+
+**Not vacuous**: `PlannerWit.the_reserved_day_assigns_the_running_block` exhibits such a row,
+and `PlannerWit.the_battery_passes_at_the_reserved_day` puts it beside the calendar's meeting.
+**P5 must re-prove it**: the assign fold puts Blocks of its own into this set, and the proof
+below discharges the reservation alone. -/
+theorem plan_places_no_block_over_a_wall (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) (b w : WfSeg)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.wall)
+    (hnow : r.now.sec ≤ b.val.start) :
+    b.val.stop ≤ w.val.start ∨ w.val.stop ≤ b.val.start := by
+  obtain ⟨t, ht, rfl⟩ := a_block_row_from_now_is_the_reservation r b hb hbk hnow
+  obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+  obtain ⟨e1, e2, e3, e4⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+  obtain ⟨v, hv, hvlt, hv1, hv2⟩ :=
+    a_wall_row_sits_in_a_blocked_span r w (dayPlan_segments r ▸ hw) hwk
+  obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+  have hfree : ∀ u, r.now.sec ≤ u → u < q.stop → ¬ (v.1 ≤ u ∧ u < v.2) := by
+    intro u hu1 hu2
+    have hq1 : q.start ≤ u := by omega
+    exact r.the_reservation_is_free_of_every_wall q hq hv hq1 hu2
+  have hdisj : q.stop ≤ v.1 ∨ v.2 ≤ r.now.sec := by
+    rcases Nat.lt_or_ge v.1 q.stop with hlt1 | hge1
+    · rcases Nat.lt_or_ge r.now.sec v.2 with hlt2 | hge2
+      · exact absurd (⟨by omega, by omega⟩ :
+          v.1 ≤ max r.now.sec v.1 ∧ max r.now.sec v.1 < v.2)
+          (hfree (max r.now.sec v.1) (by omega) (by omega))
+      · exact Or.inr hge2
+    · exact Or.inl hge1
+  simp only [clampSec, LogStamp.yearEnd] at hv1
+  simp only [LogStamp.yearEnd] at e4
+  rcases hdisj with h | h
+  · left; omega
+  · right; omega
+
+/-- **§6.1's lift, with `hnopast` GONE** — the same conjunction over the same seven checkers,
+about the rows the planner is responsible for.
+
+`dayPlan_ok_core` above carries `hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block` — *the
+log holds no Block for today*.  That is false of every real day after the first block is
+worked, and it is not a fact about the planner at all; it is the hypothesis that lets the six
+block-side checks reach a Block the planner never placed.  `withoutPast` names the restriction
+§8.3 is actually about instead of assuming it away, and this theorem is the result: **five
+hypotheses, all of them R10 or decoder obligations, and none of them about the log's
+contents.**
+
+Both lifts are kept.  They are **incomparable** — this one drops a hypothesis and shrinks the
+day, `dayPlan_ok_core` keeps the whole day and pays for it with `hnopast` — so keeping both
+weakens nothing (D5) and each says something the other does not.
+
+**What is non-vacuous here, measured rather than asserted**
+(`PlannerWit.the_battery_census_at_the_reserved_day`): with a block running, `oneBlockAtATime`,
+`noBlockOverAWall` and `wallsUnmoved` all have real subjects; `noOverbook` is vacuous *here*
+because the only surviving Block **is** the Active reservation and `withoutActive` removes it,
+which is design §6.3 row 1 taken literally; and `energyFilterOk`, `noBlockOverABreak` and
+`noDemandingAfterWindDown` are vacuous over the produced day for reasons that are facts about
+the day and are computed in `PlannerWit`, not claimed here.
+
+**P5 must re-prove this.**  The assign fold puts Blocks of its own into `withoutPast`'s
+surviving set, and every one of the six block-side discharges below is about the reservation
+alone. -/
+theorem dayPlan_ok_core_from_now (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
+    planOkCore r (withoutPast r (dayPlan r)) = true := by
+  have hbm : (withoutPast r (dayPlan r)).blockMin = r.blockMin := rfl
+  -- **Every Block row that survives the filter is the reservation** — no hypothesis about
+  -- the log, because `pastRows` ends every row it produces at `now`.
+  have hblk : ∀ s ∈ (withoutPast r (dayPlan r)).segments, s.val.kind = SegKind.block →
+      ∃ q, r.activeRun = some q ∧ s.val.start = r.now.sec ∧ r.now.sec < s.val.stop ∧
+        s.val.stop ≤ q.stop ∧ s.val.stop < LogStamp.yearEnd ∧ s.val.energy = none ∧
+        ∃ a, r.state.activeId = some a ∧ s.val.item = some a := by
+    intro s hs hk
+    obtain ⟨hsd, hwk⟩ := mem_withoutPast r (dayPlan r) s hs
+    have hnow : r.now.sec ≤ s.val.start := hwk (by rw [hk]; rfl)
+    obtain ⟨t, ht, rfl⟩ := a_block_row_from_now_is_the_reservation r s hsd hk hnow
+    obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+    obtain ⟨e1, e2, e3, e4⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+    obtain ⟨-, hen, -, -, -⟩ := r.activeRow_is_an_energyless_block t ht
+    obtain ⟨a, hai, hti⟩ := the_reservation_row_names_the_running_item r t ht
+    exact ⟨q, hq, e1, e2, e3, e4, by show t.energy = none; exact hen,
+      a, hai, by rw [segOf_item]; exact hti⟩
+  have h1 : noOverbook r (withoutPast r (dayPlan r)) = true := by
+    have hnil : (withoutActive r (withoutPast r (dayPlan r))).segments.filter
+        (fun s => decide (s.val.kind = SegKind.block)) = [] := by
+      refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
+      rw [withoutActive_segments] at hs
+      obtain ⟨hs', hna⟩ := List.mem_filter.1 hs
+      simp only [decide_eq_true_eq]
+      intro hk
+      obtain ⟨q, -, -, -, -, -, -, a, hai, hti⟩ := hblk s hs' hk
+      have hact : isActive r s = true := by unfold isActive; rw [hai, hti]; simp
+      rw [hact] at hna
+      simp at hna
+    simp [noOverbook, blockSeconds, hnil]
+  have h2 : oneBlockAtATime r (withoutPast r (dayPlan r)) = true := by
+    refine (oneBlockAtATime_iff r _).mpr (fun s hs hk => ?_)
+    obtain ⟨q, hq, e1, e2, e3, -, -, -⟩ := hblk s hs hk
+    have hone := r.the_reservation_is_at_most_one_block q hactive (r.blockMin_pos hday) hq
+    obtain ⟨-, -, -, -, hs0, -⟩ := r.activeRun_spec q hq
+    rw [hbm]
+    omega
+  have h3 : energyFilterOk r (withoutPast r (dayPlan r)) = true := by
+    refine (energyFilterOk_iff r _).mpr (fun s hs i lvl _ hk _ he => ?_)
+    obtain ⟨-, -, -, -, -, -, hen, -⟩ := hblk s hs hk
+    rw [hen] at he
+    exact absurd he (by simp)
+  have h4 : noBlockOverAWall r (withoutPast r (dayPlan r)) = true := by
+    refine (noBlockOverAWall_iff r _).mpr (fun b hb w hw hbk hwk => ?_)
+    obtain ⟨hwd, -⟩ := mem_withoutPast r (dayPlan r) w hw
+    obtain ⟨q, hq, e1, e2, e3, e4, -, -⟩ := hblk b hb hbk
+    obtain ⟨v, hv, hvlt, hv1, hv2⟩ :=
+      a_wall_row_sits_in_a_blocked_span r w (dayPlan_segments r ▸ hwd) hwk
+    obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+    have hfree : ∀ u, r.now.sec ≤ u → u < q.stop → ¬ (v.1 ≤ u ∧ u < v.2) := by
+      intro u hu1 hu2
+      have hq1 : q.start ≤ u := by omega
+      exact r.the_reservation_is_free_of_every_wall q hq hv hq1 hu2
+    have hdisj : q.stop ≤ v.1 ∨ v.2 ≤ r.now.sec := by
+      rcases Nat.lt_or_ge v.1 q.stop with hlt1 | hge1
+      · rcases Nat.lt_or_ge r.now.sec v.2 with hlt2 | hge2
+        · exact absurd (⟨by omega, by omega⟩ :
+            v.1 ≤ max r.now.sec v.1 ∧ max r.now.sec v.1 < v.2)
+            (hfree (max r.now.sec v.1) (by omega) (by omega))
+        · exact Or.inr hge2
+      · exact Or.inl hge1
+    simp only [clampSec, LogStamp.yearEnd] at hv1
+    simp only [LogStamp.yearEnd] at e4
+    rcases hdisj with h | h
+    · left; omega
+    · right; omega
+  have h5 : noBlockOverABreak r (withoutPast r (dayPlan r)) = true := by
+    refine (noBlockOverABreak_iff r _).mpr (fun b hb k hk hbk hkk => ?_)
+    obtain ⟨hkd, -⟩ := mem_withoutPast r (dayPlan r) k hk
+    obtain ⟨q, hq, e1, e2, e3, e4, -, -⟩ := hblk b hb hbk
+    obtain ⟨t, ht, rfl⟩ := a_break_row_is_a_replayed_row r k (dayPlan_segments r ▸ hkd) hkk
+    obtain ⟨-, hlt2, hstop⟩ := pastRows_end_at_now r t ht
+    right
+    show max (clampSec t.start) (clampSec t.stop) ≤ b.val.start
+    rw [e1]
+    simp only [clampSec, LogStamp.yearEnd]
+    omega
+  have h6 : noDemandingAfterWindDown r (withoutPast r (dayPlan r)) = true := by
+    refine (noDemandingAfterWindDown_iff r _).mpr (fun b hb w hw i _ hbk hwk hle => ?_)
+    exfalso
+    obtain ⟨hwd, -⟩ := mem_withoutPast r (dayPlan r) w hw
+    obtain ⟨q, hq, e1, -, -, -, -, -⟩ := hblk b hb hbk
+    obtain ⟨hnw, hws⟩ := a_wind_down_row_of_the_day r w (dayPlan_segments r ▸ hwd) hwk
+    rw [e1] at hle
+    rw [hws] at hle
+    have hcs : clampSec r.windDownSec = min r.windDownSec (LogStamp.yearEnd - 1) := rfl
+    rw [hcs] at hle
+    simp only [LogStamp.yearEnd] at hle hnowcal
+    omega
+  have h7 : wallsUnmoved r (withoutPast r (dayPlan r)) = true := by
+    refine (wallsUnmoved_iff r _).mpr (fun s hs i e a b hi hget hsh hk => ?_)
+    obtain ⟨hsd, -⟩ := mem_withoutPast r (dayPlan r) s hs
+    obtain ⟨hnbuf, hin, hout, hfwd, hcal⟩ := hplain i e a b hget hsh
+    exact plan_never_moves_a_wall r s i e a b hagree hsd hk hi hget hsh hnbuf hin hout hfwd hcal
+  simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true,
+    h1, h2, h3, h4, h5, h6, h7]
+
 end PlanCheck
 end Tm

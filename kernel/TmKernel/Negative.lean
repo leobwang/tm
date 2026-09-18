@@ -2253,4 +2253,45 @@ theorem theEveningIsCutIntoSlots :
 theorem theInvertedWallsBufferIsBlockedAnyway :
     Look.covered [(600, 700)] 800 = true := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18: stage 6, run W-17, track G.  Cheats 184-186 — the three
+   things this step's two theorems would be if their restrictions were dropped.
+   Track P owns 161-170 still (design §16's P4-P8 rows); this block starts at
+   184, above the highest banner in the checkout.
+   =========================================================================== -/
+
+/- CHEAT 184 — §8.3's wall law over EVERY Block row of the day, which is the
+   form `Goals.lean` carried until this step.  It is false, and
+   `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`
+   is the compiled refutation: a calendar that acquires a meeting on an hour the
+   morning's log already worked puts a Wall row inside a replayed Block row.
+   This block asserts the battery finds nothing wrong with that day; `decide`
+   refuses, because `noBlockOverAWall` answers `false` on it. -/
+theorem theReplayedPastIsNeverUnderAWall :
+    PlanCheck.noBlockOverAWall PlannerWit.theMorningWallRequest
+      (Planner.dayPlan PlannerWit.theMorningWallRequest) = true := by decide
+
+/- CHEAT 185 — §6.1's lift over the whole day rather than over the rows §8.3 is
+   about.  `PlanCheck.dayPlan_ok_core` needs `hnopast` (the log holds no Block
+   today) for exactly this reason, and `dayPlan_ok_core_from_now` drops the
+   hypothesis by restricting the day with `PlanCheck.withoutPast` instead.  This
+   block claims the unrestricted conjunction holds at a request whose log DOES
+   hold a Block and whose calendar moved onto it — the hypothesis-free lift
+   nobody may ship.  `decide` refuses. -/
+theorem theLiftHoldsOverTheReplayedPastToo :
+    PlanCheck.planOkCore PlannerWit.theMorningWallRequest
+      (Planner.dayPlan PlannerWit.theMorningWallRequest) = true := by decide
+
+/- CHEAT 186 — the five vacuous checkers asserted to have subjects.  README
+   gap 396's honest half is that five of the eleven range over nothing on a day
+   the planner produces today, and
+   `PlannerWit.the_battery_census_over_a_produced_day` computes it.  This block
+   claims the day carries a Break row, which is what `noBlockOverABreak` would
+   need to be checking anything (`Planner.a_break_row_is_a_replayed_row`: the
+   cut's breaks reach the day only when work touches them, which is P5's
+   `kept_breaks`, README gap 551).  `decide` refuses — the list is empty. -/
+theorem theProducedDayCarriesABreakRow :
+    ((Planner.dayPlan PlannerWit.theStoredRequest).segments.any
+      (fun s => s.val.kind == Planner.SegKind.brk)) = true := by decide
+
 end Tm

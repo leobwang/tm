@@ -4791,6 +4791,15 @@ open Tm
 --     `plan_places_no_block_over_a_wall` is NOT discharged here: it is vacuous
 --     over this body and design 6.4's row that gives it to P1 is wrong
 --     (README gap 347).
+--     [BANNER, W-17 track G: two names in this bullet have moved and the
+--     sentence is left standing as the record of what was true when it was
+--     written.  The tripwire is `Planner.the_day_assigns_nothing_after_now
+--     _but_the_running_block` since step P3 (choice 5b's reservation made the
+--     empty-list form false).  And `plan_places_no_block_over_a_wall` is
+--     DISCHARGED as of W-17 -- still not by this body, which is what the
+--     sentence says, but as `PlanCheck.plan_places_no_block_over_a_wall`, over
+--     the Block rows that start at or after `now`, with its refutation in
+--     `PlannerWit`.  See this file's last banner.]
 -- ===========================================================================
 #print axioms Tm.Look.mem_wallIxOn
 #print axioms Tm.Look.wallsOn_eq_map_wallIxOn
@@ -5266,3 +5275,54 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.routine_span_total
 #print axioms Tm.Planner.routineLe_total
 #print axioms Tm.Planner.sortRoutines_eq_sortRoutinesFast
+
+-- ===========================================================================
+-- APPENDED 2026-09-18: stage 6, run **W-17**, track **G** -- the lift loses a
+-- hypothesis, and §8.3's wall law leaves `Goals.lean`.
+--
+-- Three groups.
+--
+-- 1. **`PlanCheck.plan_places_no_block_over_a_wall` -- a goal DISCHARGED**
+--    (AGENTS 3.2's burn-down protocol: proved in a shipped module, audited
+--    here, then deleted from `Goals.lean`; burn-down 11 -> 10).  It is a
+--    §3.1-item-3 discharge, not a plain one: the goal as `Goals.lean` wrote it
+--    is FALSE, and
+--    `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`
+--    is the compiled refutation, over the day a request whose calendar acquired
+--    a meeting on an already-worked hour produces.  The restatement is over the
+--    Block rows that start at or after `now` -- the fork's own
+--    `assigned_set(day, w.now)` and step P3's own restriction for E1.
+--
+--    **The banner at `plan_never_moves_a_wall`'s block above is corrected in
+--    place**: it says `plan_places_no_block_over_a_wall` "is NOT discharged
+--    here", which was and remains true of step P1's body, and is no longer the
+--    whole story.
+--
+-- 2. **`PlanCheck.dayPlan_ok_core_from_now` -- §6.1's lift without `hnopast`.**
+--    `dayPlan_ok_core` carries "the log holds no Block for today", which is
+--    false of every real day after breakfast and is not a fact about the
+--    planner.  `withoutPast` names the restriction §8.3 is about instead of
+--    assuming it away, and the same conjunction over the same seven checkers
+--    goes through with five hypotheses, all R10 or decoder obligations.  Both
+--    lifts are kept: they are incomparable, so nothing is weakened (D5).
+--
+-- 3. **README gap 396's other eight.**  `PlannerWit.the_battery_census_over_a
+--    _produced_day` computes what each of the eleven ranges over on a day the
+--    planner really produced -- six have a subject, five do not and each names
+--    the step that ends that -- and `the_battery_bites_over_a_produced_day`
+--    plus `the_whole_battery_refuses_each_mutation` take the battery from
+--    three of eleven refusing something to **eleven of eleven**.
+-- ===========================================================================
+#print axioms Tm.PlanCheck.withoutPast_segments
+#print axioms Tm.PlanCheck.mem_withoutPast
+#print axioms Tm.PlanCheck.a_block_row_from_now_is_the_reservation
+#print axioms Tm.PlanCheck.plan_places_no_block_over_a_wall
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now
+#print axioms Tm.PlannerWit.the_morning_wall_day_lays_a_block_across_a_wall
+#print axioms Tm.PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_stored_witness_loads
+#print axioms Tm.PlannerWit.the_stored_witness_holds_two_ranked_siblings
+#print axioms Tm.PlannerWit.the_stored_day_passes_the_whole_battery
+#print axioms Tm.PlannerWit.the_battery_census_over_a_produced_day
+#print axioms Tm.PlannerWit.the_battery_bites_over_a_produced_day
+#print axioms Tm.PlannerWit.the_whole_battery_refuses_each_mutation

@@ -597,12 +597,25 @@ break only when work touches it (`kept_breaks(breaks, slots, assign)`) and
 `assign` is **P5**'s (README gap 551).  `Planner.a_break_row_is_a_replayed_row`
 is the theorem that says the break side is still the log's alone.
 
-`plan_places_no_block_over_a_wall` **stays**, and staying is the point: the only
-Block row the planner places before P5 is the Active reservation, and the law is
-about the blocks §8.2 step 5 *assigns*.  It becomes real at **P5**.  The tripwire
-that says so is `Planner.the_day_assigns_nothing_after_now_but_the_running_block`
-— which P3 restated from `…_until_the_assign_step_lands`, because choice 5b's
-reservation made the empty-list form false — and which P5 must delete.
+`plan_places_no_block_over_a_wall` **is gone from this file as of W-17 (track
+G)**, and the sentence that stood here — *"it stays, and staying is the point: the
+only Block row the planner places before P5 is the Active reservation"* — is left
+as the record of what was true when it was written.  What it missed is that the
+goal quantified over **every** Block row of the day, the replayed ones included,
+and a Block the log holds can sit under a wall the calendar acquired afterwards:
+`PlanCheck`'s own finding 1 (README gap 385), the clause step P3 used for E1 and
+nobody took twice.  So the goal is **false as it was written here**, and it left
+the way E1 left —
+`PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`
+computed on a request whose meeting moved onto an already-worked hour, with the
+restatement `PlanCheck.plan_places_no_block_over_a_wall` beside it (AGENTS §3.1
+item 3, D5).  The restriction is E1's own — Block rows that start **at or after
+`now`**, the fork's `assigned_set(day, w.now)` — and it is **not vacuous**: choice
+5b's reservation is such a row.  **P5 must re-prove it** when the assign fold puts
+Blocks of its own into that set.  The tripwire for the set itself is
+`Planner.the_day_assigns_nothing_after_now_but_the_running_block` — which P3
+restated from `…_until_the_assign_step_lands`, because choice 5b's reservation
+made the empty-list form false — and which P5 must delete.
 
 **Two goals were stated in SECONDS after the W-14 repair** (README gap
 392): `plan_does_not_overbook` and `plan_reserves_one_block_at_a_time` (the
@@ -622,10 +635,25 @@ discharge below is one line the day its step lands.  What landed with it is
 `PlanCheck.dayPlan_ok_core`, the lift over the seven eligibility-free checks,
 as a **theorem in a shipped module** rather than a goal — track G wrote it over
 P0's empty day, and this run's merge is where P1's own body had to re-prove it
-(README gap 385).  A goal below is still not dischargeable from it: seven of the
-eleven checks are vacuous over a day whose only rows are walls, the replayed
-past and the running interruption, and `dayPlan_ok_core` says exactly that much
-and no more.
+(README gap 385).  A goal below is still not dischargeable from it directly:
+the six block-side checks it discharges are about the rows the log replays and
+the one row choice 5b reserves, and nothing else.
+
+**W-17 (track G) took two things out of that.**  `PlanCheck.dayPlan_ok_core_from_now`
+is the same conjunction over the same seven checkers with `dayPlan_ok_core`'s
+`hnopast` — *the log holds no Block for today* — **gone**: `PlanCheck.withoutPast`
+names the restriction §8.3 is about rather than assuming it away, and the lift
+then holds for every request, whatever the log holds.  Both lifts are kept; they
+are incomparable and nothing is weakened (D5).  And
+`PlannerWit.the_battery_census_over_a_produced_day` stops the vacuity being a
+matter of reading: it **computes**, over a day the planner really produced, that
+six of the eleven checkers have a subject and five do not — `energyFilterOk` (no
+row carries a slot energy until P5), `noBlockOverABreak` (no Break row until P5,
+README gap 551), `noDemandingAfterWindDown` (no Block at or after the wind-down
+until P5/P7), `impossibleKept` (`diagnostics.impossible` is empty until P4,
+README gap 367) and `batchDoesNotReachPast` (no Batch row until P5).  All eleven
+now **refuse** a mutation of that day (`the_battery_bites_over_a_produced_day`),
+which is AGENTS §5.8's other direction and was three of eleven before this run.
 ############################################################################ -/
 
 open Planner
@@ -656,13 +684,6 @@ theorem plan_respects_the_energy_filter (r : PlanReq) (s : WfSeg) (i : Id) (lvl 
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
     (hi : s.val.item = some i) (he : s.val.energy = some lvl) :
     (effectiveCi r.plan.val i).val ≤ lvl.val := sorry
-
-/-- **L26 / §8.3 "no segment overlaps a Wall" (P\*), stage 6.**  On absolute
-seconds, so a wall that crosses midnight is covered. -/
-theorem plan_places_no_block_over_a_wall (r : PlanReq) (b w : WfSeg)
-    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
-    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.wall) :
-    b.val.stop ≤ w.val.start ∨ w.val.stop ≤ b.val.start := sorry
 
 /-- **E5 (P\*), stage 6.**  The same statement for breaks: "free positions
 included breaks" is the shipped defect, and §8.2 step 3 puts "a break of
