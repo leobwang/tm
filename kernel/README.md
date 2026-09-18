@@ -33888,7 +33888,7 @@ nothing was retried uncapped.
 | row | this tree | `24acb5a`, re-measured here | brief's | delta, explained |
 |---|---|---|---|---|
 | check.sh | **7/7 ok** | 7/7 ok | 7/7 | — |
-| check.sh warm | **3.69 / 3.70 / 3.70 s**, median **3.70**; first pass 4.67 s (carries a relink); peak RSS 1.90–1.98 GiB (1,986,748–2,077,416 KiB) | **3.41 / 3.38 / 3.44 s**, median **3.41**; the cold pass that preceded them was **231.19 s at 8.15 GiB** and is printed rather than dropped — it is the whole-kernel rebuild the stash forced, and it is **not** a built-tree figure | — | **+8.5%**, inside the 10%-per-step rule and **attributed**: `lean Negative.lean` goes **2.36/2.41 s → 2.59/2.63 s** (+0.22 s), timed directly, which is the three new `decide` cheats evaluating `dayPlan`; `lean Check.lean` is **0.37/0.41 s → 0.36/0.37 s**, i.e. the 13 new audit lines cost nothing; the rest is check 1's relink of a grown `PlannerWit.o`. **The margin is now thin and the next step inherits it** |
+| check.sh warm | **3.69 / 3.70 / 3.70 s**, median **3.70**, measured in the **same window** as the baseline beside it; first pass 4.67 s (carries a relink); peak RSS 1.90–1.98 GiB (1,986,748–2,077,416 KiB). *(A later, quieter window read **3.52 / 3.53 / 3.57 / 3.57 s** on the final tree — but with no same-window baseline to compare it to, so the +8.5% below is the figure this step is held to, not the +4% that reading would suggest.)* | **3.41 / 3.38 / 3.44 s**, median **3.41**; the cold pass that preceded them was **231.19 s at 8.15 GiB** and is printed rather than dropped — it is the whole-kernel rebuild the stash forced, and it is **not** a built-tree figure | — | **+8.5%**, inside the 10%-per-step rule and **attributed**: `lean Negative.lean` goes **2.36/2.41 s → 2.59/2.63 s** (+0.22 s), timed directly, which is the three new `decide` cheats evaluating `dayPlan`; `lean Check.lean` is **0.37/0.41 s → 0.36/0.37 s**, i.e. the 13 new audit lines cost nothing; the rest is check 1's relink of a grown `PlannerWit.o`. **The margin is now thin and the next step inherits it** |
 | axiom audit | **4,386 theorems**, §6.3 reconciliation `ok` | **4,373** | 4,373 | **+13, and every one is this step's**: 5 in `PlanCheck`, 8 in `PlannerWit`. 4,386 audit lines, **4,386 distinct** names, 4,384 declared theorems; `comm -23` is **empty** and `comm -13` names exactly the two known non-theorems, `WfPlan` and `effectiveScope` — §6.3's deliberate one-directional slack |
 | burn-down (check 7) | **10 outstanding, all stage 6** | **11** | 11 | **−1**: `plan_places_no_block_over_a_wall`, discharged above. Nothing was added |
 | corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged |
@@ -34192,3 +34192,50 @@ check 4 still rejects the file. No audit name appears twice (4,386 lines, 4,386
 distinct names). **Highest on this branch after this step: gap 653, cheat 186,
 parity P38** — and track P, track A and the land step hold 600-629, 630-649 and
 670-674, so a higher number may exist on another branch at merge time.
+
+### Second commit: the new lift's five hypotheses, discharged at a request
+
+`dayPlan_ok_core_from_now` drops `hnopast` and keeps five hypotheses, and **AGENTS §7.4
+item 2 asks whether they are jointly satisfiable** — *"a precondition nothing can satisfy,
+so the conclusion never fires"* is on §9.2's disguised-gap list, and it *"stayed invisible
+for a whole stage once"* (`shapeWfFor .calendar`). A lift with five hypotheses and no
+caller would have been exactly that shape, and the first commit shipped without one.
+
+So all five are supplied at `theRunningRequest` and the lift is **applied**, not admired:
+
+| hypothesis | discharged by |
+|---|---|
+| `hagree` | `theRunningRequest_wallsAgree`, from `mkPlanReq?_ok_wallsAgree` at a request the builder accepts |
+| `hactive`, `hday` | `the_running_request_agrees`, already proved for E1 at W-16 |
+| `hnowcal` | `the_running_request_is_inside_the_calendar`, computed |
+| `hplain` | `the_running_request_is_plain` — **the one that needed an argument rather than a `decide`**: it quantifies over every `Id`, and what bounds it is `PlanCheck.mem_dom_of_get` (a `get` that succeeds lands in `dom`), which here is one id |
+
+`the_lift_applies_at_the_running_request` is the application, and its proof term mentions no
+`decide` at all: it is the general theorem, fired.
+
+And the day it is about is **not empty**.
+`the_restricted_day_keeps_the_reservation_and_the_wall` computes what `withoutPast` removes —
+**the two replayed Blocks of the morning, and nothing else** — leaving the wall the calendar
+wrote (12:50–13:50), §8.2 choice 5b's reservation (14:00–14:40) and §16's two evening rows. So
+`noBlockOverAWall` at that request really does put a Block *the planner placed* beside a Wall
+*the calendar wrote*, and the `true` the lift returns for it was earned.
+
+**Re-measured after this commit**, same worktree, same caps:
+
+| row | after commit 2 | after commit 1 | delta |
+|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | — |
+| axiom audit | **4,392 theorems**, reconciliation `ok` | 4,386 | **+6, every one this commit's** |
+| burn-down | **10, all stage 6** | 10 | unchanged — this commit discharges no goal and adds none |
+| corpus | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged |
+| `Negative.lean` | rejected ok, 171 cheats | 171 | none added |
+| `cargo test --workspace` | **1,331 / 0 / 9 across 78**, 0 warnings | 1,331 / 0 / 9, 78 | identical |
+| FFI / T5 / door / `cli_switch_acceptance` / `kernel_call_counts` / `kernel_lookahead_parity` | **100 / 33 / 23 / 9 / 2 / 4**, 0 failed | same | identical |
+| `lean Negative.lean` | 2.50 / 2.55 s | 2.59 / 2.63 s | inside its own noise; this commit adds no cheat |
+| `lean Check.lean` | 0.33 / 0.39 s | 0.36 / 0.37 s | flat; the six new audit lines cost nothing |
+| check.sh warm | **3.52 / 3.53 / 3.57 / 3.57 s** | 3.69 / 3.70 / 3.70 s | a quieter window, not a speed-up — see the note in the table above |
+
+Three new `decide` witnesses (`the_only_dated_item`, `the_restricted_day_keeps_the_reservation
+_and_the_wall`, `the_running_request_is_inside_the_calendar`), bringing this step's total to
+**eleven** against §5.10a's budget of 20; the whole file elaborates in **1.05 s at 8G** for
+these six theorems and **13.6–14.0 s at 8G** for the module.

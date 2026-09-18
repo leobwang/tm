@@ -1259,5 +1259,110 @@ theorem the_whole_battery_refuses_each_mutation :
       PlanCheck.planOk permissive theStoredRequest theBatchedDay = false := by
   decide
 
+/-! ############################################################################
+## 11. The new lift's five hypotheses, discharged at a request (W-17, track G)
+############################################################################
+
+`PlanCheck.dayPlan_ok_core_from_now` drops `dayPlan_ok_core`'s `hnopast` and keeps five
+hypotheses.  **AGENTS §7.4 item 2 asks whether they are jointly satisfiable, and a theorem
+whose hypotheses nothing can satisfy is §9.2's own disguised gap** — *"a precondition nothing
+can satisfy, so the conclusion never fires"*.  It stayed invisible for a whole stage once.
+
+So all five are discharged here at `theRunningRequest`, the §4.3 Wednesday at 14:00 with `m1`
+running, and the lift is applied rather than admired:
+
+* `hagree` — `mkPlanReq?_ok_wallsAgree` at the request the builder accepts;
+* `hactive`, `hday` — `the_running_request_agrees`, already proved for E1;
+* `hnowcal` — computed;
+* `hplain` — proved, and it is the one that needed an argument rather than a `decide`: it
+  quantifies over **every** `Id`, and what bounds it is that a `get` lands in the store's
+  `dom` (`PlanCheck.mem_dom_of_get`), which here is one id.
+
+And the day the lift is about is **not empty**: `the_restricted_day_keeps_the_reservation
+_and_the_wall` computes the four rows that survive `withoutPast`, which are the wall, §8.2
+choice 5b's reservation and §16's evening.  So `noBlockOverAWall` at that request really does
+put a Block the planner placed beside a Wall the calendar wrote, and the `true` the lift
+returns for it was earned. -/
+
+set_option maxRecDepth 8000 in
+/-- The store behind this request holds exactly one item and it is the calendar's meeting,
+written without a `buffer:` — the two facts `hplain` turns on. -/
+theorem the_only_dated_item :
+    theRunningRequest.plan.val.store.dom = [['g','1']] ∧
+      (theRunningRequest.plan.val.store.get ['g','1']).map
+          (fun e => (e.val.shape, e.val.buffer))
+        = some (Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩,
+                none) := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **`hplain`, discharged.**  The hypothesis quantifies over every `Id`, so it cannot be a
+`decide`; what bounds it is `PlanCheck.mem_dom_of_get` — a `get` that succeeds lands in the
+store's `dom`, and this store's `dom` is one id. -/
+theorem the_running_request_is_plain :
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      theRunningRequest.plan.val.store.get i = some e →
+      e.val.shape = Field.Shape.interval a b →
+      e.val.buffer = none ∧
+        theRunningRequest.dayStart ≤ (Cal.instantOf theRunningRequest.tz a.day a.time).sec ∧
+        (Cal.instantOf theRunningRequest.tz b.day b.time).sec ≤ theRunningRequest.dayEnd ∧
+        (Cal.instantOf theRunningRequest.tz a.day a.time).sec
+          < (Cal.instantOf theRunningRequest.tz b.day b.time).sec ∧
+        (Cal.instantOf theRunningRequest.tz b.day b.time).sec < LogStamp.yearEnd := by
+  intro i e a b hget hsh
+  obtain ⟨hdom, hval⟩ := the_only_dated_item
+  have hmem := PlanCheck.mem_dom_of_get _ i e hget
+  rw [hdom] at hmem
+  simp only [List.mem_singleton] at hmem
+  subst hmem
+  rw [hget, Option.map_some] at hval
+  have he := Option.some.inj hval
+  have hsh0 : e.val.shape
+      = Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩ :=
+    congrArg Prod.fst he
+  have hbuf : e.val.buffer = none := congrArg Prod.snd he
+  rw [hsh0] at hsh
+  injection hsh with ha hb
+  subst ha
+  subst hb
+  exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
+
+/-- `hnowcal`: the instant being planned is inside the calendar. -/
+theorem the_running_request_is_inside_the_calendar :
+    theRunningRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+/-- `hagree` for the request with a block running, as `theRequest_wallsAgree` is for the one
+without.  Both come from the builder and neither is assumed. -/
+theorem theRunningRequest_wallsAgree : theRunningRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqInRun theRunningRequest witBuildsRun
+
+set_option maxRecDepth 40000 in
+/-- **What `withoutPast` actually removes**, computed: the two replayed Blocks of the morning,
+and nothing else.  The wall the calendar wrote, §8.2 choice 5b's reservation and §16's two
+evening rows all stay — which is the point of the filter, since a Wall, a Break and the
+wind-down are the **comparands** §8.3's laws put a Block beside, not the subjects of them. -/
+theorem the_restricted_day_keeps_the_reservation_and_the_wall :
+    (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+/-- **The lift, fired.**  Every hypothesis of `PlanCheck.dayPlan_ok_core_from_now` is supplied
+by a theorem above, so the five are jointly satisfiable and the conclusion is not vacuous
+(AGENTS §7.4 item 2).  Nothing here is a `decide`: it is the general lift applied. -/
+theorem the_lift_applies_at_the_running_request :
+    PlanCheck.planOkCore theRunningRequest
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
+  PlanCheck.dayPlan_ok_core_from_now theRunningRequest theRunningRequest_wallsAgree
+    the_running_request_agrees.1 the_running_request_agrees.2
+    the_running_request_is_inside_the_calendar the_running_request_is_plain
+
 end PlannerWit
 end Tm

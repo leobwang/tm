@@ -5326,3 +5326,25 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_battery_census_over_a_produced_day
 #print axioms Tm.PlannerWit.the_battery_bites_over_a_produced_day
 #print axioms Tm.PlannerWit.the_whole_battery_refuses_each_mutation
+
+-- ===========================================================================
+-- APPENDED 2026-09-18: stage 6, run **W-17**, track **G**, second commit --
+-- the new lift's five hypotheses, discharged at a request.
+--
+-- AGENTS 7.4 item 2: *"Is every hypothesis satisfiable?  Exhibit a witness if
+-- it is not obvious.  A precondition nothing satisfies makes the conclusion
+-- vacuous, and it stayed invisible for a whole stage once."*
+-- `dayPlan_ok_core_from_now` keeps five hypotheses after dropping `hnopast`, so
+-- all five are supplied here at `theRunningRequest` and the lift is APPLIED.
+-- `the_running_request_is_plain` is the one that needed an argument rather than
+-- a `decide` -- it quantifies over every `Id`, and `PlanCheck.mem_dom_of_get`
+-- is what bounds it to the one id this store holds.
+-- `the_restricted_day_keeps_the_reservation_and_the_wall` computes what
+-- `withoutPast` removes: the two replayed Blocks, and nothing else.
+-- ===========================================================================
+#print axioms Tm.PlannerWit.the_only_dated_item
+#print axioms Tm.PlannerWit.the_running_request_is_plain
+#print axioms Tm.PlannerWit.the_running_request_is_inside_the_calendar
+#print axioms Tm.PlannerWit.theRunningRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_restricted_day_keeps_the_reservation_and_the_wall
+#print axioms Tm.PlannerWit.the_lift_applies_at_the_running_request
