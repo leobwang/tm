@@ -1239,10 +1239,12 @@ witness exists for it over a hand-built day.
 * **Non-vacuous** — the checker's quantifier has a subject on the day the planner produced, so
   the `true` it returns was earned.  `the_battery_census_over_a_produced_day` computes the
   populations; **five** of the eleven have one over the day at `theStoredRequest` and six do
-  not, and each of the six waits on a named later step.  (This read *"six … and five do not"*
-  until the W-17 repair: it counted `wallsUnmoved`, whose subject is there at `theRequest` and
-  at `theRunningRequest` but **not** at the request the census is stated over — the caveat the
-  table carried and the count did not.  The census now computes that conjunct too.)
+  not.  (This read *"six … and five do not"* until the W-17 repair: it counted `wallsUnmoved`,
+  whose subject is there at `theRequest` and at `theRunningRequest` but **not** at the request
+  the census is stated over — the caveat the table carried and the count did not.  The census
+  now computes that conjunct too.  And it read *"each of the six waits on a named later step"*
+  until **W-18**, which is the sentence section 13 is about: **two of the six wait on a
+  request, not on a step**, and at `theCensusRequest` the ratio is **seven of eleven**.)
 * **Bites** — some mutation of that same produced day is refused.  `the_battery_bites_*`
   below, with W-15's and W-16's, make it **eleven of eleven**.
 
@@ -1320,15 +1322,30 @@ makes vacuous and which step ends that.
   for the two tasks the morning worked.  That is the conjunct below and it is why the honest
   count over *this* day is **five of eleven**, not six (W-17 repair);
 * `assignedFrom … now` holds one item, so one of the three Blocks is the **planner's**;
-* **no Break row** — `noBlockOverABreak` is vacuous; the cut's breaks reach the day only when
-  work touches them (`Planner.a_break_row_is_a_replayed_row`, README gap 551), which is **P5**;
+* **no Break row** — `noBlockOverABreak` is vacuous **at this request**, because `witLines`
+  records no `break`; the *cut's* breaks reach the day only when work touches them
+  (`kept_breaks`, README gap 551), which is **P5**, but the *log's* breaks reach it today
+  (`Planner.a_break_row_is_a_replayed_row` is the rule, read the other way).  **W-18:** gap
+  650 gave this checker's emptiness to P5 and that was wrong — `theCensusRequest` ends it with
+  one extra log line;
 * **no row carries a slot energy** — `energyFilterOk` is vacuous; a Block gets one when the
-  assign fold puts it in an energised slot, which is **P5**;
-* **no Block at or after the wind-down** — `noDemandingAfterWindDown` is vacuous; **P5/P7**;
-* **no Batch row** — `batchDoesNotReachPast` is vacuous; **P5**;
+  assign fold puts it in an energised slot, which is **P5**, and
+  `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy` proves no request can beat it
+  there (W-18).  *(The population below is "rows carrying an energy", which over-counts: a
+  Routine row carries `PlanReq.routineEnergy` and `energyOk` never reads it.  Both are zero
+  here — this witness has no routine — and the theorem, not the population, is what rules the
+  checker's own subject out.)*;
+* **no Block at or after the wind-down** — `noDemandingAfterWindDown` is vacuous; **P5/P7**,
+  and `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down` proves it of every request
+  (W-18): a WindDown row exists only while `now < wind_down`, and every Block row starts at or
+  before `now`;
+* **no Batch row** — `batchDoesNotReachPast` is vacuous; **P5**, and
+  `PlanCheck.the_day_has_no_batch_row` proves it of every request (W-18);
 * **`diagnostics.impossible` is empty** — `impossibleKept` is vacuous; **P8**, the step that
   fills it (gap 367's second half; its first landed at P4 as `Planner.edfNumbers`, and this
-  line read "**P4**" until the W-17 repair — P4 landed without ending it);
+  line read "**P4**" until the W-17 repair — P4 landed without ending it).
+  `PlanCheck.the_day_names_no_impossible_item` proves it of every request (W-18), and it is
+  `rfl`;
 * the store holds two ranked siblings and one of them is `hot`, and both are assigned, so
   `monotoneInRank` and `hotBeforeQueue` have real pairs. -/
 theorem the_battery_census_over_a_produced_day :
@@ -1707,7 +1724,13 @@ Reading it, for `checksCore`'s seven over the **whole** day:
 
 **Four of seven, not six.**  And over the `withoutPast` day the new lift is about, `noOverbook`
 joins them: the only surviving Block **is** the Active reservation and `withoutActive` removes
-it, which is design §6.3 row 1 taken literally — **three of seven**. -/
+it, which is design §6.3 row 1 taken literally — **three of seven**.
+
+**W-18:** those two numbers are this request's, and one of the three vacuous checkers is
+vacuous only here.  `the_battery_census_at_the_census_request` is the same count at
+`theCensusRequest`, whose log holds a `break`: **five of seven** over the whole day, **four of
+seven** over the `withoutPast` day, and **seven of eleven** over all eleven.  The two that
+stay empty there stay empty everywhere, and `PlanCheck`'s vacuity section proves it. -/
 theorem the_battery_census_at_the_reserved_day :
     ((dayPlan theRunningRequest).segments.filter
         (fun s => s.val.kind == SegKind.block)).length = 3 ∧
@@ -1733,6 +1756,368 @@ theorem the_battery_census_at_the_reserved_day :
         (fun s => s.val.kind == SegKind.block &&
           decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] := by
   decide
+
+/-! ############################################################################
+## 13. The census, settled: one request, one ratio — stage 6, run W-18, track G
+############################################################################
+
+Three numbers for one question stood in this repository at the end of W-17, and they were
+measured at three different places: **five of eleven** with a subject over the day at
+`theStoredRequest` (`the_battery_census_over_a_produced_day`), **four of seven** over
+`checksCore` at `theRunningRequest` (`the_battery_census_at_the_reserved_day`, and
+`PlanCheck.lean`'s header), and gap 650's **four** checkers a later step must clear.  None of
+them is wrong; together they are not an answer, because a reader cannot tell which population
+any of them is about.
+
+This section gives the question one answer, and it has two halves that must not be run
+together:
+
+* **a request question** — how much of the battery a witness can make bite.  Answered here
+  with **one** request, `theCensusRequest`, and **one** ratio: **seven of the eleven** have a
+  subject on the day it produces.  That is up from five, and the two it adds cost no new step:
+  `wallsUnmoved` needed a store that holds the wall the day places, and `noBlockOverABreak`
+  needed a **log with a `break` in it**.  Gap 650 gave the second to P5, and that was wrong.
+* **a step question** — what no witness can reach.  Answered in `PlanCheck.lean`, as four
+  theorems about **every** `PlanReq` rather than a population at one: no Block row carries a
+  slot energy, no Block row reaches the wind-down, no row is a Batch row, and
+  `Diagnostics.impossible` is empty.  Those four are the honest residue, they are P5's and
+  P8's, and each is now a build-time wall that the step must delete.
+
+**Seven, then, and four — and the four are proved, not counted.**
+
+`theCensusRequest` is the two existing witnesses joined, with nothing invented: the calendar
+document `Boundary.lookWallWitness` already holds, the two ranked tasks `storedWitness`
+already holds, the six log lines `witLines` already holds, `theRunningState`'s running block,
+and **one** new line of log.  It goes through `mkPlanReq?`, so its wall index really is its
+plan's (which is what `theStoredRequest` gives up by swapping the plan behind the builder's
+back) and `hagree` comes from `mkPlanReq?_ok_wallsAgree` rather than from a `decide`. -/
+
+/-- **The one new line: a fifteen-minute `break` at 08:05**, between the morning's two blocks,
+in the fork's own bytes (`tm/tests/fixtures/fork-4748911-log-lines.jsonl`'s `break` shape:
+`planned_min`, and `actual_min`/`where` optional).  `Replay.dayArm` turns it into a day
+segment of kind `Replay.SegKind.brk`, and `Planner.pastKind` maps that to `SegKind.brk` — so
+the Break row on the day is the log's, exactly as `Planner.a_break_row_is_a_replayed_row`
+says every Break row is until P5's `kept_breaks` (README gap 551). -/
+def censusBreakLine : Log.Line :=
+  ⟨7, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','8',':','0','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+
+/-- `witLines` with the break appended — the six lines are **reused**, not respelled. -/
+def censusLines : List Log.Line := witLines ++ [censusBreakLine]
+
+set_option maxRecDepth 40000 in
+theorem censusRun_resumes_ok : runOk Cal.chicago 739867 censusLines = true := by decide
+
+def censusRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) censusLines with
+  | .ok run => run
+  | .error _ => absurd censusRun_resumes_ok (by simp [runOk, h])
+
+theorem censusRun_resumes :
+    Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) censusLines
+      = .ok censusRun := by
+  unfold censusRun
+  split
+  · rename_i run h; rw [h]
+  · rename_i e h; exact absurd censusRun_resumes_ok (by simp [runOk, h])
+
+/-- **The calendar and the tasks in one plan** — `Boundary.lookWallWitness`' meeting and
+`storedWitness`' two ranked siblings, unchanged, in one document list.  Neither is a new
+witness and neither line is retyped with a difference. -/
+def censusWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1 hot".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_census_witness_loads : loadsOk censusWitness = true := by decide
+
+def censusPlan : WfPlan :=
+  match h : loadPlan censusWitness with
+  | .ok p => p
+  | .error _ => absurd the_census_witness_loads (by simp [loadsOk, h])
+
+theorem censusPlan_loads : loadPlan censusWitness = .ok censusPlan := by
+  unfold censusPlan
+  split
+  · rename_i p h; rw [h]
+  · rename_i e h; exact absurd the_census_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 40000 in
+/-- **Adding the tasks moves no wall.**  The two task lines carry no `at:`, so the combined
+plan's wall index is the calendar's alone — which is what lets the builder accept this request
+against `witInputIn`'s `Look.wednesdayWall` and what makes `wallsAgree` true here.  (It is
+false at `theStoredRequest`, which swapped the plan for one with no wall in it.) -/
+theorem the_census_witness_indexes_the_calendars_one_wall :
+    Look.wallIndex Cal.chicago 60 censusPlan.val = Look.wednesdayWall := by decide
+
+set_option maxRecDepth 8000 in
+/-- **What the store holds, computed**: the calendar's meeting at §3.1's default `ci` of three,
+and the morning's two tasks at `ci:5`, two ranked siblings of one document with `hot` on the
+first — the three facts the seven non-vacuous checkers turn on. -/
+theorem the_census_witness_holds_the_wall_and_two_ranked_siblings :
+    censusPlan.val.store.dom = [['m','2'], ['m','1'], ['g','1']] ∧
+      (effectiveCi censusPlan.val ['m','1']).val = 5 ∧
+      (effectiveCi censusPlan.val ['m','2']).val = 5 ∧
+      (effectiveCi censusPlan.val ['g','1']).val = 3 ∧
+      rootPrio censusPlan.val ['m','1'] = rootPrio censusPlan.val ['m','2'] ∧
+      (censusPlan.val.store.get ['m','1']).map (fun e => (e.val.live.doc, e.val.live.rank,
+          e.val.flags)) = some (1, 1, [Field.Flag.hot]) ∧
+      (censusPlan.val.store.get ['m','2']).map (fun e => (e.val.live.doc, e.val.live.rank,
+          e.val.flags)) = some (1, 2, []) := by
+  decide
+
+def witReqInCensus : PlanReqIn :=
+  { witReqIn with docs := censusWitness, lines := censusLines, state := theRunningState }
+
+/-- **The census request**: the §4.3 Wednesday at 14:00, `m1` running, a store that holds both
+the calendar's wall and the morning's two tasks, and a log that holds a break. -/
+def theCensusRequest : PlanReq :=
+  ⟨censusPlan, censusRun, witInput, theRunningState, Capped.nil, witPrio, Capped.nil, none⟩
+
+/-- **The builder accepts it** — by rewriting with the four stage equations, never by a
+`decide` that holds the load, the resume and the lookahead at once. -/
+theorem witBuildsCensus : mkPlanReq? witReqInCensus = .ok theCensusRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInCensus witReqIn theCensusRequest
+  simp only [censusPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_census_witness_indexes_the_calendars_one_wall.symm)]
+  rw [hz, ht, censusRun_resumes]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
+
+/-- `hagree`, from the builder and not from a `decide` — and **true here**, where the two
+earlier census requests split it between them. -/
+theorem theCensusRequest_wallsAgree : theCensusRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqInCensus theCensusRequest witBuildsCensus
+
+/-- `hactive` and `hday`, the two R10 hypotheses both lifts carry. -/
+theorem the_census_request_agrees :
+    theCensusRequest.activeAgrees = true ∧ theCensusRequest.dayAgrees = true := by decide
+
+/-- `hnowcal`: the instant being planned is inside the calendar. -/
+theorem the_census_request_is_inside_the_calendar :
+    theCensusRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+set_option maxRecDepth 40000 in
+/-- **The day, end to end**: the morning's two Blocks with the **break between them**, the
+written wall, §8.2 choice 5b's reservation and §16's two evening rows — seven rows, in the
+fork's row order.  The Break row is the only thing here that was not already computed at
+`theRunningRequest`, and it is the row gap 650 said no request could produce before P5. -/
+theorem the_census_day_carries_the_mornings_break :
+    (dayPlan theCensusRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 485).sec, (Cal.instantOf Cal.chicago 739867 500).sec,
+          SegKind.brk, none),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The battery's verdict on that day**: all eleven pass. -/
+theorem the_battery_passes_at_the_census_request :
+    PlanCheck.planOk permissive theCensusRequest (dayPlan theCensusRequest) = true := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **THE RATIO: seven of eleven have a subject on this day; four do not.**  Every line below
+is a population, computed, and the two tables in this module's section 11 are its history.
+
+| checker | subject here | why |
+|---|---|---|
+| `noOverbook` | **yes** | `withoutActive` leaves `m2`'s hour: 3 600 s against the budget |
+| `oneBlockAtATime` | **yes** | three Block rows |
+| `noBlockOverAWall` | **yes** | three Blocks beside one Wall |
+| `noBlockOverABreak` | **yes** | three Blocks beside **one Break row** — the log's, new here |
+| `wallsUnmoved` | **yes** | the Wall row names `^g1` and **this** store holds it |
+| `monotoneInRank` | **yes** | `m1`/`m2`: one document, ranks 1 and 2, both `ci:5`, equal `rootPrio`, both assigned |
+| `hotBeforeQueue` | **yes** | `m1` carries `hot`, `m2` does not, both assigned |
+| `energyFilterOk` | **no** | no Block row carries a slot energy — **and none can**, `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy` (P5) |
+| `noDemandingAfterWindDown` | **no** | no Block row reaches the wind-down — **and none can**, `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down` (P5/P7) |
+| `batchDoesNotReachPast` | **no** | no Batch row — **and none can**, `PlanCheck.the_day_has_no_batch_row` (P5) |
+| `impossibleKept` | **no** | `Diagnostics.impossible` is empty — **and always is**, `PlanCheck.the_day_names_no_impossible_item` (P8) |
+
+The last four conjuncts below are the *populations* at this request; the theorems named beside
+them are the general statements, which is the distinction this section exists to draw.  The
+Break row is computed **twice** — once on the whole day and once on `PlanCheck.withoutPast`'s
+day — because `SegKind.isWork` is false of a Break, so the row survives the restriction and
+`noBlockOverABreak` has a subject in the day *both* lifts are about. -/
+theorem the_battery_census_at_the_census_request :
+    ((dayPlan theCensusRequest).segments.filter
+        (fun s => s.val.kind == SegKind.block)).length = 3 ∧
+      blockSeconds (PlanCheck.withoutActive theCensusRequest (dayPlan theCensusRequest))
+        = 3600 ∧
+      ((dayPlan theCensusRequest).segments.filter
+        (fun s => s.val.kind == SegKind.wall)).map
+          (fun s => (s.val.item.bind
+            (fun i => theCensusRequest.plan.val.store.get i)).isSome) = [true] ∧
+      ((dayPlan theCensusRequest).segments.filter
+        (fun s => s.val.kind == SegKind.brk)).length = 1 ∧
+      ((PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)).segments.filter
+        (fun s => s.val.kind == SegKind.brk)).length = 1 ∧
+      ((PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)).segments.filter
+        (fun s => s.val.kind == SegKind.block)).length = 1 ∧
+      assignedOf (dayPlan theCensusRequest) = [['m','1'], ['m','2'], ['m','1']] ∧
+      assignedFrom (dayPlan theCensusRequest) theCensusRequest.now.sec = [['m','1']] ∧
+      (dayPlan theCensusRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theCensusRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        decide (theCensusRequest.windDownSec ≤ s.val.start)) = [] ∧
+      (dayPlan theCensusRequest).diagnostics.impossible.val = [] := by
+  decide
+
+/-- **The new lift, fired at the census request.**  Every hypothesis of
+`PlanCheck.dayPlan_ok_core_from_now` is supplied by a theorem above; nothing here is a
+`decide`.  `the_running_request_is_plain`'s argument does not carry over — this store holds
+three ids, not one — so `hplain` is re-proved below at this request. -/
+theorem the_census_request_is_plain :
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      theCensusRequest.plan.val.store.get i = some e →
+      e.val.shape = Field.Shape.interval a b →
+      e.val.buffer = none ∧
+        theCensusRequest.dayStart ≤ (Cal.instantOf theCensusRequest.tz a.day a.time).sec ∧
+        (Cal.instantOf theCensusRequest.tz b.day b.time).sec ≤ theCensusRequest.dayEnd ∧
+        (Cal.instantOf theCensusRequest.tz a.day a.time).sec
+          < (Cal.instantOf theCensusRequest.tz b.day b.time).sec ∧
+        (Cal.instantOf theCensusRequest.tz b.day b.time).sec < LogStamp.yearEnd := by
+  intro i e a b hget0 hsh
+  have hget : censusPlan.val.store.get i = some e := hget0
+  have hmem : i ∈ censusPlan.val.store.dom := PlanCheck.mem_dom_of_get _ i e hget
+  rw [the_census_witness_holds_the_wall_and_two_ranked_siblings.1] at hmem
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
+  rcases hmem with rfl | rfl | rfl
+  · have h2 : (censusPlan.val.store.get ['m','2']).map (fun x => x.val.shape)
+        = some Field.Shape.none := by decide
+    rw [hget, Option.map_some] at h2
+    exact absurd ((Option.some.inj h2).symm.trans hsh) (by simp)
+  · have h1 : (censusPlan.val.store.get ['m','1']).map (fun x => x.val.shape)
+        = some Field.Shape.none := by decide
+    rw [hget, Option.map_some] at h1
+    exact absurd ((Option.some.inj h1).symm.trans hsh) (by simp)
+  · have hg : (censusPlan.val.store.get ['g','1']).map (fun x => (x.val.shape, x.val.buffer))
+        = some (Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩,
+                none) := by decide
+    rw [hget, Option.map_some] at hg
+    have he := Option.some.inj hg
+    have hsh0 : e.val.shape
+        = Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩ :=
+      congrArg Prod.fst he
+    have hbuf : e.val.buffer = none := congrArg Prod.snd he
+    rw [hsh0] at hsh
+    injection hsh with ha hb
+    subst ha
+    subst hb
+    exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
+
+theorem the_lift_applies_at_the_census_request :
+    PlanCheck.planOkCore theCensusRequest
+      (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = true :=
+  PlanCheck.dayPlan_ok_core_from_now theCensusRequest theCensusRequest_wallsAgree
+    the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_is_inside_the_calendar the_census_request_is_plain
+
+/-! ### The refutation: a break the log holds **inside** a block the log holds
+
+`Goals.plan_places_no_block_over_a_break` quantifies over **every** Block row and **every**
+Break row of the day.  Both come from the replay (`Planner.a_break_row_is_a_replayed_row`, and
+`PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`), so a log that records a `break` while
+a block is running gives the day a Break row **inside** a Block row, and neither of them is the
+planner's doing.  That is finding 1 (README gap 385) for the third time: step P3 took it for
+E1, W-17 for the wall law, and this is the third.
+
+The witness is the census log with its one break **moved** from 08:05 to 07:30 — nothing else
+changes, and the six original lines are still `witLines`, renumbered by one rather than
+respelled. -/
+
+def midBreakLine : Log.Line :=
+  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','0','7',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+
+/-- `witLines` with the break spliced in after the `start` of `m1` and the rest renumbered —
+`Log.contiguousFrom`'s numbering, kept. -/
+def midBreakLines : List Log.Line :=
+  witLines.take 3 ++ [midBreakLine] ++ (witLines.drop 3).map (fun l => ⟨l.n + 1, l.text⟩)
+
+set_option maxRecDepth 40000 in
+theorem midBreakRun_resumes_ok : runOk Cal.chicago 739867 midBreakLines = true := by decide
+
+def midBreakRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) midBreakLines with
+  | .ok run => run
+  | .error _ => absurd midBreakRun_resumes_ok (by simp [runOk, h])
+
+/-- The census request with that log behind it, and nothing else changed. -/
+def theMidBreakRequest : PlanReq := { theCensusRequest with run := midBreakRun }
+
+set_option maxRecDepth 40000 in
+/-- **The day lays a Block across a Break**, computed: `m1`'s replayed block runs 07:05-08:05
+and the break the log records runs 07:30-07:45, inside it.  Both halves are here — the
+overlapping pair, **and** `PlanCheck.noBlockOverABreak`'s own verdict on the day, which is the
+battery's opinion and not a restatement of a `Planner` theorem. -/
+theorem the_mid_break_day_lays_a_block_across_a_break :
+    (dayPlan theMidBreakRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 450).sec, (Cal.instantOf Cal.chicago 739867 465).sec,
+          SegKind.brk),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep)] ∧
+      PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest) = false ∧
+      PlanCheck.planOkCore theMidBreakRequest (dayPlan theMidBreakRequest) = false := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **`Goals.plan_places_no_block_over_a_break` is FALSE as stage 6 wrote it** (AGENTS §3.1
+item 3, D5).  The goal leaves `Goals.lean` with this beside it and
+`PlanCheck.plan_places_no_block_over_a_break` — the same law over the Block rows that start at
+or after `now` — proved in the same commit. -/
+theorem plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (b k : WfSeg), b ∈ (dayPlan r).segments → k ∈ (dayPlan r).segments →
+        b.val.kind = SegKind.block → k.val.kind = SegKind.brk →
+        b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start) := by
+  intro h
+  have hbad : PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest)
+      = false := the_mid_break_day_lays_a_block_across_a_break.2.1
+  have hok : PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest)
+      = true :=
+    (PlanCheck.noBlockOverABreak_iff theMidBreakRequest _).mpr
+      (fun b hb k hk hbk hkk => h theMidBreakRequest b k hb hk hbk hkk)
+  rw [hok] at hbad
+  exact absurd hbad (by simp)
+
+/-- **The restated law is not vacuous at the census request**: choice 5b's reservation is a
+Block row starting at `now`, the morning's break is a Break row, and
+`PlanCheck.plan_places_no_block_over_a_break` really does compare them.  Applied, not
+admired. -/
+theorem the_break_law_applies_at_the_census_request (b k : WfSeg)
+    (hb : b ∈ (dayPlan theCensusRequest).segments)
+    (hk : k ∈ (dayPlan theCensusRequest).segments)
+    (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk)
+    (hnow : theCensusRequest.now.sec ≤ b.val.start) :
+    b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start :=
+  PlanCheck.plan_places_no_block_over_a_break theCensusRequest
+    the_census_request_is_inside_the_calendar b k hb hk hbk hkk hnow
 
 end PlannerWit
 end Tm
