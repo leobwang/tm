@@ -28197,6 +28197,18 @@ is new machinery, not a repair.
    `(i, m) ∈ d.diagnostics.impossible ↔ Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true`
    beside `edfNumbers`' real definition.
 
+   > **HALF CLOSED AT P4, and the other half is P8** (W-17 repair, gap 685).
+   > `5dc3167` landed `Planner.edfNumbers` — a projection of the grant, with
+   > `Planner.edfNumbers_is_the_grants_own_impossibility` tying it to
+   > `Grant.impossible`, and design §5.5's units corrected (gap 601) — so the
+   > provisional `def` is gone and `Goals.lean`'s hypothesis now says what
+   > `Grant.impossible` says. The **iff above did not land and could not**:
+   > `Planner.dayDiagnostics` is `{ Diagnostics.empty with conflicts := …,
+   > notes := … }` and nothing writes `impossible`, so the left-hand side is
+   > empty for every request. The step that fills it is **P8**, which
+   > `PlanCheck.lean`'s §10 comment says in the commit that landed P4. Gap 367
+   > STAYS OPEN on that half.
+
 #### Gap 368 (new; label W14G-d) — L25's restatement, refutation and `an_open_segment_only_extends` are not written
 
 1. **What is not done.** Design §15's three G3 declarations —
@@ -34175,12 +34187,20 @@ $ tm --now 2026-09-07T09:00:00-05:00 edit '^d1' 'title=CS 234 pset 2 renamed'
                                                                           [exit 0]
 week file md5 before=63343dd2… after=c54a22f8…      (it wrote)
 $ tm --now 2026-09-07T09:00:00-05:00 plan
-tm: kernel refusal: dupId — routines.md:7 and routines.md:8 …                [exit 1]
+tm: kernel refusal: dupId — routines.md:7 and routines.md:9 …                [exit 1]
 $ tm check
 routines.md:7: error[kernel-load]: kernel refusal: dupId — …
-routines.md:8: error[kernel-load]: kernel refusal: dupId — …
+routines.md:9: error[kernel-load]: kernel refusal: dupId — …
 2 errors, 0 warnings                                                        [exit 2]
 ```
+
+> **CORRECTED, W-17 repair step (gap 682).** These four positions were pasted as
+> `:7` and **`:8`** while the `--json` block further down this same section
+> prints `{"path":"routines.md","line":9}`, and the setup adds a **ninth** line.
+> Re-driven on the release binary — `tm init --example`, two `plan` sweeps,
+> `sed -n '7p' routines.md >> routines.md` — every spelling is **7 and 9**:
+> prose, `tm check` and `--json` alike. The `:8` rows were hand-typed, not
+> pasted, which is the transcript-fidelity rule this run was told twice to hold.
 
 **And the cheap alternative was re-driven and is unsound, exactly as W-16 said.**
 On a tree where nothing is due (`state.closed` already stamped by the two `plan`
@@ -34267,7 +34287,22 @@ was raised and nothing was re-blessed.
 
 Across every pass taken this session (ten of the drop row, seven of the gated
 row, including two runs under load) the drop row spans **126.7–142.0 ms** and the
-gated write **126.5–136.8 ms**; the gated write was never the slower of the two.
+gated write **126.5–136.8 ms**.
+
+> **CORRECTED, W-17 repair step (gap 681).** This paragraph ended *"; the gated
+> write was never the slower of the two"*, and **that does not reproduce**. An
+> auditor re-measured six passes and found the gated write slower in three of
+> them (167.04 vs 141.80; 136.84 vs 131.82; 141.53 vs 131.51). The repair step
+> re-measured five more of its own, release, `MemoryMax=40G`, load average
+> 2.0–2.9, reading the two rows from the *same* serial section of the same
+> `cli_latency` run: drop / gated = 131.761 / 131.741, 126.689 / **126.705**,
+> 131.703 / **131.706**, 126.600 / **126.707**, 131.682 / 131.632 ms — **the
+> gated write was the slower in three of five.** It was a sentence written as a
+> measurement over passes that were not all taken side by side. **The verdict on
+> Q2 does not move**: both rows sit in one 126.6–131.8 ms band, inside the
+> brief's own 127–132 ms comparand for `tm drop`; the gate fits, no bound was
+> raised and no band was re-blessed. What is withdrawn is the *ordering* claim,
+> not the fit.
 
 ### The column that would have missed it, pinned (the gap-577 lesson)
 
@@ -34735,28 +34770,53 @@ checking something".
 **(a) Non-vacuous — the quantifier has a subject on a day the planner produced.**
 `PlannerWit.the_battery_census_over_a_produced_day` **computes** it, at
 `theStoredRequest` (the §4.3 Wednesday at 14:00, `m1` running, and a store that
-holds the ids the morning's log actually worked). **Six of eleven have a subject;
-five do not**, and each of the five is a fact about the day, not a reading:
+holds the ids the morning's log actually worked). **Five of eleven have a subject;
+six do not** *(corrected from "six … five" by the W-17 repair — see below the
+table)*, and each of the six is a fact about the day or about the witness's
+store, not a reading:
 
 | checker | subject? | what the census computes | ends at |
 |---|---|---|---|
 | `noOverbook` | **yes** | 3 Block rows, `withoutActive` leaves `m2`'s hour | — |
 | `oneBlockAtATime` | **yes** | 3 Block rows | — |
 | `noBlockOverAWall` | **yes** | 3 Blocks × 1 Wall | — |
-| `wallsUnmoved` | **yes** (at `theRequest`) | 1 Wall row against the plan's own `at:` | — |
+| `wallsUnmoved` | **no** *(at this request)* | 1 Wall row, naming `^g1` — and **this store does not hold `^g1`**, so `wallUnmoved` takes its `store.get i = none` branch. It has a subject at `theRequest` and at `theRunningRequest` | — *(already non-vacuous; a request question, not a step)* |
 | `monotoneInRank` | **yes** | `m1`/`m2`: one document, ranks 1 and 2, both `ci:5`, equal `rootPrio`, **both assigned** | — |
 | `hotBeforeQueue` | **yes** | `m1` carries `hot`, `m2` does not, both assigned | — |
 | `energyFilterOk` | **no** | **no row carries a slot energy** | **P5** |
 | `noBlockOverABreak` | **no** | **no Break row** (`Planner.a_break_row_is_a_replayed_row`; `kept_breaks` is P5's, gap 551) | **P5** |
 | `noDemandingAfterWindDown` | **no** | **no Block at or after the wind-down** | **P5/P7** |
-| `impossibleKept` | **no** | `diagnostics.impossible` is **empty** | **P4** (gap 367) |
+| `impossibleKept` | **no** | `diagnostics.impossible` is **empty** | **P8** (gap 367's second half) |
 | `batchDoesNotReachPast` | **no** | **no Batch row** | **P5** |
 
-**Six of eleven bite non-vacuously; five are still vacuous.** That ratio is the
-honest measure the brief asked for, and it is now a compiled fact rather than a
-sentence.
+**Five of eleven bite non-vacuously over this day; six are still vacuous.** That
+ratio is the honest measure the brief asked for, and it is now a compiled fact
+rather than a sentence.
 
-**What made the other three of the six possible was reuse, not a new witness.**
+> **CORRECTED, W-17 repair step (gaps 679 and 685).** Two numbers in this table
+> were wrong and the theorem could not see either.
+>
+> * The headline read **"Six of eleven … five are still vacuous"**, counting
+>   `wallsUnmoved` — whose subject the row itself put *"(at `theRequest`)"*,
+>   which is **not** the request the census is stated over. At
+>   `theStoredRequest` the day's one Wall row names `^g1` and the store holds
+>   `^m1`/`^m2`, so the checker ranges over nothing there.
+>   `PlannerWit.the_battery_census_over_a_produced_day` now **computes that
+>   conjunct** (`… = [false]`), `Negative.lean` CHEAT 192 states the opposite as
+>   a cheat, and the count is five. `PlannerWit.the_battery_census_at_the
+>   _reserved_day` computes the same population at `theRunningRequest`, where it
+>   is `[true]` — the two requests are what the number turns on.
+> * `impossibleKept`'s step read **P4**, and **P4 landed in this same run
+>   without ending it**: `Planner.dayDiagnostics` is
+>   `{ Diagnostics.empty with conflicts := …, notes := … }` and leaves
+>   `impossible` untouched. Gap 367 has two halves and P4 took the first
+>   (`Planner.edfNumbers` and
+>   `edfNumbers_is_the_grants_own_impossibility`); the step that **fills**
+>   `Diagnostics.impossible` is **P8**, which `PlanCheck.lean`'s own §10 comment
+>   already said in the commit that landed P4. Track G's branch was cut before
+>   P4 merged and §6.5's reconciliation did not catch the forward reference.
+
+**What made three of the five possible was reuse, not a new witness.**
 `Boundary.lookWallPlan` is a one-line calendar, so `effectiveCi` answered §3.1's
 default of three for the replayed rows and the store held **one** id — which left
 `monotoneInRank`, `hotBeforeQueue` and `noDemandingAfterWindDown` with nothing to
@@ -35013,28 +35073,59 @@ already recorded closed (W-15); what this step adds is the eight checkers that
 closure did not reach, and the ratio it did not state — recorded as **gap 650**
 below rather than as a second closure of a closed gap.
 
-#### Gap 650 (new; label W17G-a) — five of the eleven checkers still range over nothing on a produced day
+#### Gap 650 (new; label W17G-a) — four of the eleven checkers still range over nothing on any day the planner can produce
+
+*Restated by the W-17 repair step: the arithmetic below was wrong three ways and
+`check.sh` could not see any of them. The header read "five of the eleven"; the
+count is four **that a later step must clear**, plus `wallsUnmoved`, which is a
+property of the request and not of a step. Items 2, 3 and 4 are corrected with
+their measurements beside them.*
 
 1. **What is not done.** `energyFilterOk`, `noBlockOverABreak`,
-   `noDemandingAfterWindDown`, `impossibleKept` and `batchDoesNotReachPast` return
-   `true` on every day `Planner.dayPlan` can produce today because their
-   quantifiers are **empty**, not because the planner satisfies them.
-   `PlannerWit.the_battery_census_over_a_produced_day` computes each population.
-2. **Why.** Each needs a row no step before P4/P5 places: a slot energy, a Break
-   row (`kept_breaks`, gap 551), a Block at or after the wind-down, an entry in
-   `diagnostics.impossible` (gap 367), a Batch row. Writing a witness that
-   *fabricates* one would be a hand-built day, which is what `PlanCheck`'s `wDay`
-   witnesses already are, and it would not be about `dayPlan`.
-3. **What it costs.** `dayPlan_ok_core` and `dayPlan_ok_core_from_now` each
-   discharge **five of their seven** conjuncts by an empty quantifier, so the lift
-   is weaker evidence than its name suggests, and five of §8.3's eleven laws have
-   no compiled example of the planner honouring them. The *bites* are covered —
-   all eleven refuse a mutation — so this is a vacuity gap and not a blindness
-   gap, and the distinction is the point of the two tables above.
-4. **Which step clears it.** **P4** for `impossibleKept`; **P5** for the other
-   four (**P7** would also do for the wind-down one). Each ends the day its step
-   puts the row in the day, and `the_battery_census_over_a_produced_day` is the
-   `decide` that will stop reducing and say so.
+   `noDemandingAfterWindDown` and `batchDoesNotReachPast` return `true` on every
+   day `Planner.dayPlan` can produce today because their quantifiers are
+   **empty**, not because the planner satisfies them; so does `impossibleKept`,
+   over a list nothing writes.
+   `PlannerWit.the_battery_census_over_a_produced_day` computes each population,
+   and `PlannerWit.the_battery_census_at_the_reserved_day` computes the same
+   populations at `theRunningRequest`. **`wallsUnmoved` is a sixth vacuous
+   checker at `theStoredRequest`** and it is *not* one of these: its subject is
+   there at `theRequest` and at `theRunningRequest` — the witness's store, not
+   the planner, is what empties it.
+2. **Why.** Each needs a row no step before P5 places: a slot energy, a Break
+   row (`kept_breaks`, gap 551), a Block at or after the wind-down, a Batch row
+   — and, for `impossibleKept`, an entry in `diagnostics.impossible`, which is
+   gap 367's **second** half. *(This item said "no step before P4/P5" and gave
+   `diagnostics.impossible` to P4. P4 landed in this same run and left
+   `Planner.dayDiagnostics`' `impossible` untouched; the half P4 took is
+   `Planner.edfNumbers`.)* Writing a witness that *fabricates* one would be a
+   hand-built day, which is what `PlanCheck`'s `wDay` witnesses already are, and
+   it would not be about `dayPlan`.
+3. **What it costs.** *(Corrected: this said "`dayPlan_ok_core` and
+   `dayPlan_ok_core_from_now` each discharge **five of their seven** conjuncts
+   by an empty quantifier", and two of the five it named —* `impossibleKept`
+   *and* `batchDoesNotReachPast` *— live in `PlanCheck.checksEligible` and are
+   **conjuncts of neither lift**: both lifts conclude `planOkCore`, which is
+   `checksCore`'s seven, and neither takes an `Eligible`. The real number is
+   request-dependent, which "each … five of their seven" cannot say.)*
+   Measured by `the_battery_census_at_the_reserved_day` at `theRunningRequest`:
+   `dayPlan_ok_core` discharges **three of its seven** by an empty quantifier
+   (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) and
+   `dayPlan_ok_core_from_now` **four** (those three and `noOverbook`, whose only
+   surviving Block *is* the Active reservation that `withoutActive` removes).
+   Over the whole eleven at `theStoredRequest` it is **six of eleven**. So the
+   lift is weaker evidence than its name suggests, and five of §8.3's eleven laws
+   have no compiled example of the planner honouring them. The *bites* are
+   covered — all eleven refuse a mutation — so this is a vacuity gap and not a
+   blindness gap, and the distinction is the point of the two tables above.
+4. **Which step clears it.** **P5** for `energyFilterOk`,
+   `noBlockOverABreak`, `batchDoesNotReachPast` and `noDemandingAfterWindDown`
+   (**P7** would also do for the wind-down one); **P8** for `impossibleKept`,
+   which is the step that fills `Diagnostics.impossible` (`PlanCheck.lean`'s §10
+   comment says so). `wallsUnmoved` needs no step at all — a witness whose store
+   holds the wall it places, which `theRunningRequest` already is. Each ends the
+   day its step puts the row in the day, and the two census theorems are the
+   `decide`s that will stop reducing and say so.
 
 #### Gap 651 (new; label W17G-b) — `dayPlan_ok_core_from_now`'s six block-side conjuncts are all about the reservation, and P5 must re-prove every one
 
@@ -35105,7 +35196,9 @@ Everything W-16 left open stands. **Gap 365** (`eligibleAt` does not exist, so
 reason the burn-down cannot reach 2 from here. **Gaps 366 and 368** (D29's
 restatement and L25's, both blocked on P5) are untouched — this step attempted
 neither and says so. **Gap 367** (the `impossibleKept` → §7.3 bridge, P4's) is
-now also gap 650's `impossibleKept` row. **Gaps 500, 501, 577, 584, 275, 570,
+now also gap 650's `impossibleKept` row — **its first half landed at P4**
+(`Planner.edfNumbers`, `edfNumbers_is_the_grants_own_impossibility`) and the
+second, the step that fills `Diagnostics.impossible`, is **P8** (W-17 repair). **Gaps 500, 501, 577, 584, 275, 570,
 551, 346, 347** stand.
 
 ### Method disclosure
@@ -35620,3 +35713,446 @@ Cheats: **175 banners, highest 190**, `grep -o '^/- CHEAT [0-9A-Z]*' Negative.le
 prints nothing, and check 4 still rejects the file. `Check.lean`: **77** `APPENDED`
 banners, **4,447** audit lines at **4,447** distinct full names. Parity **P38**,
 unchanged and none owed. New gaps start at **673**.
+
+<!-- ===========================================================================
+     Stage 6, run W-17, the REPAIR step, 2026-09-18.
+     Two auditors read `24acb5a..9202bd3`; twelve findings, reproduced first.
+     New gaps 675-689 (twelve taken: 675-686).  Whoever merges renumbers (§6.4).
+     =========================================================================== -->
+
+## Stage 6, W-17 repair step, 2026-09-18: the key nothing could see, and four numbers no `decide` computed
+
+Two auditors read `24acb5a..9202bd3` — the behaviour auditor drove the shipped
+binary and enumerated the write paths from `cli::run` down, the reuse critic
+evaluated the kernel's own witnesses under `lake env lean`. **Twelve findings.
+Eleven reproduce; one reproduces as a fact and not as its class, and that one is
+LEFT rather than adopted.** Three turned out **larger** than reported, and two
+more of the same class were found while reproducing them.
+
+Three sentences belong at the top, because all three are this campaign's own
+lesson repeating:
+
+* **The gap-577 class was inside the step written to close it.** P4's block
+  quotes fork `sorted_candidates`' `((u8, (p, root_order, own_order)), i)` and
+  §7.4's key implements it — and inverting `root` and `own` left **`check.sh`
+  7/7 and `cargo test --workspace` 1,337/0/9 green**, because every candidate of
+  every witness in the kernel had `rootSite = ownSite`. The one distinction the
+  root walk exists for was pinned by nothing.
+* **A "measured rather than asserted" doc comment cited a theorem that did not
+  exist**, and had for a whole run. Check 3 cannot read doc comments.
+* **A method that provably could not find the class it was used to rule out.**
+  Track A enumerated the host-only write paths by grepping `Recorder::start(`
+  and shipped a source guard keyed on the same marker. `lifecycle::check` calls
+  neither, and `tm check --fix-ids` writes.
+
+### The twelve, in the order they were repaired
+
+| # | gap | finding | reproduced? | repair |
+|---|---|---|---|---|
+| 1 | **675** | `tm check --fix-ids` writes into a tree the kernel refuses, exits 0 on the write, records no undo entry | **yes**, md5 for md5 | `kernel_bridge::fix_ids_refusal`: the same `fix_ids` against a `MemStore` mirror, the kernel asked about the **proposed** tree, nothing written unless it loads |
+| 2 | **677** | §7.4's key can be inverted (`own` before `root`) with both suites green | **yes**, `check.sh` 7/7 **and** 1,337/0/9 under the mutation | `PlannerWit.theRootedRequest` — a plan whose root order is the reverse of its items' own — and two `decide`s that both fail under the inversion |
+| 3 | **678** | `PlanCheck.lean:1383` cites `PlannerWit.the_battery_census_at_the_reserved_day`; no such declaration | **yes** — `grep -rn 'the_battery_census' --include=*.lean --include=*.md .` at `9202bd3` returned only `the_battery_census_over_a_produced_day`, which is stated at `theStoredRequest` and not at the reserved day | the theorem written; it counts four of seven on the whole reserved day and three of seven on the `withoutPast` day |
+| 4 | **678** | `PlanCheck.lean`'s header claims six of seven non-vacuous "whenever something is running"; three of the six are vacuous on the day it cites | **yes**, `#eval` at 8G: 0 break rows, 0 energised rows, 0 Blocks at/after wind-down | header restated — *discharged by the reservation* is not *has a subject*, and only the second is a population |
+| 5 | **679** | the census headline counts `wallsUnmoved` at a request the census is not stated over | **yes**: `store.dom = [m2, m1]`, the Wall row is `^g1` | the census **computes** the wall row's store hit (`= [false]`); the ratio is **five of eleven**; CHEAT 192 states the opposite |
+| 6 | **685** | the census table and gap 650 say `impossibleKept`'s vacuity "ends at **P4**" — P4 landed in this run and did not end it | **yes**, `dayDiagnostics` leaves `impossible` untouched | **P8** everywhere, in the table, in gap 650, in gap 367's own entry, in `Goals.lean` and in `PlannerWit`'s census comment |
+| 7 | **684** | gap 650's arithmetic counts two checkers that are conjuncts of neither lift, and contradicts `PlanCheck.lean`'s own comment | **yes**: both lifts conclude `planOkCore`, which is `checksCore`'s seven | gap 650 restated with the measured, request-dependent numbers |
+| 8 | **683** | `Goals.lean`'s stage-6 header says `edfNumbers` stays provisional; its own later section deletes it | **yes**, two occurrences, the first uncorrected | corrected in place, with why check 3 cannot see it |
+| 9 | **676** | a non-UTF-8 file reaches the reading verbs as a line-less message | **yes — and there are THREE spellings, not two** | one verdict (`store::NOT_UTF8_VERDICT`), one line-finder (`store::bad_utf8_line`), both strict readers repaired, each pinned by its own test |
+| 10 | **681** | "the gated write was never the slower of the two" does not reproduce | **yes** — slower in **three of five** of the repair step's own passes | the sentence withdrawn in place; the **fit** is unchanged and re-measured |
+| 11 | **682** | track A's transcript pastes `:8` where its own `--json` says `:9` | **yes**, every spelling is 7 and 9 | corrected in place |
+| 12 | **680** | `tm init --force` on a refused tree exits 0 and creates a file — reported as "the same class" as #1 | **the fact, yes; the CLASS, no** | the claim **left**, the false *reason* corrected, and `init_force_preserves_a_refused_tree` added |
+
+**Nothing was adopted without driving it, and one claim was not adopted.**
+Finding 12 reproduces exactly as written — `created 14 file(s)`, rc 0, a new
+`week/2026-W38.md` — but it is **not** "a host write landing on a tree the kernel
+refuses": md5 of **every** file before and after shows **not one existing byte
+moved**, and `tm check` prints the identical refusal on both sides. Every
+user-owned file is `init::Mode::Preserve`. So what was wrong was the *reason*
+`gate`'s doc comment gave (`init` "has no tree yet", false under `--force`), and
+a false reason is what the next enumeration inherits. It is corrected, and pinned
+by a test that fails the day `init` rewrites a plan file.
+
+**Two more of the same class, found while reproducing** — gap 679 (the census
+count) came out of checking finding 4's arithmetic, and the third non-UTF-8
+spelling out of driving finding 9 on a tree with housekeeping still pending.
+
+### 1. `tm check --fix-ids` (gap 675) — and why it cannot take `kernel_bridge::gate`
+
+**Reproduced**, release binary at `9202bd3`, scratch tree outside the repo,
+`MemoryMax=16G`, tree made refused by an **unrelated** duplicate `sleep` routine:
+
+```
+$ md5sum backlog.md routines.md
+404dfacfc6583eb48b44ab9c2a4c21cd  backlog.md
+650c655c2350ef9c27fe25a85da4fbbd  routines.md
+$ tm --dir $W/p2 --now 2026-09-07T09:00:00-05:00 check --fix-ids
+backlog.md:13: assigned ^vw8r
+routines.md:1: error[kernel-load]: kernel refusal: dupId — routines.md:1 and routines.md:9 …
+routines.md:9: error[kernel-load]: kernel refusal: dupId — …
+2 errors, 0 warnings                                                        [exit 2]
+$ md5sum backlog.md routines.md
+4da555f6591ce0ee7a0bb8bfb7dfa0e4  backlog.md      <-- WRITTEN
+650c655c2350ef9c27fe25a85da4fbbd  routines.md
+$ tm … undo
+tm: nothing to undo                                                         [exit 1]
+```
+
+**The blanket gate is the wrong repair, and driving says so.** A tree refused
+*for a missing `^id`* is exactly the tree `--fix-ids` exists to repair:
+
+```
+$ printf -- '- [ ] 3 1b Twin thing\n- [ ] 3 1b Twin thing\n' >> backlog.md
+$ tm check           backlog.md:13: error[kernel-load]: … badLine (Tm.PErr.noId)   [exit 2]
+$ tm check --fix-ids backlog.md:13: assigned ^vw8r
+                     backlog.md:14: assigned ^x7z6 / no problems               [exit 0]
+$ tm check           no problems                                              [exit 0]
+```
+
+Gating on the tree *before* the write traps that user inside the refusal — the
+same reason `tm undo` is ungated. So what is asked is the question D35 is
+actually about: **does the tree this write produces load?**
+`kernel_bridge::fix_ids_refusal` builds a `MemStore` mirror (config first, so the
+horizon rules are the tree's own), runs **`tm_core::check::fix_ids` itself** —
+not a second implementation of the assignment (AGENTS §5.3) — and asks
+`refusal_in` about the result. `tree_refusal(ctx)` is now a projection of
+`refusal_in(store)`, and `the_tree_load_question_has_one_asker` gains the half
+that says `refusal_in` has no caller outside the bridge. When the mirror assigns
+nothing, the proposed tree **is** the tree on disk and there is no second kernel
+call.
+
+**The blocking line is named, and that needed its own fix.** The kernel stops at
+its first refusal, so the tree on disk reports the `badLine` the flag would have
+repaired while the `dupId` that actually blocked it appears nowhere. The blocked
+refusal goes through the same `load_problems` and lands in the sorted rows:
+
+```
+$ tm --dir $W/q1 … check --fix-ids
+--fix-ids wrote nothing: the tree it would have written is one the kernel still refuses
+  (dupId) — the line is named below; fix it and run this again
+backlog.md:13: warning[missing-id]: no `^id` on `Thing with no id`; run `tm check --fix-ids`
+backlog.md:13: error[kernel-load]: kernel refusal: badLine — … (Tm.PErr.noId) …
+routines.md:1: error[kernel-load]: kernel refusal: dupId — routines.md:1 and routines.md:9 …
+routines.md:9: error[kernel-load]: kernel refusal: dupId — …
+3 errors, 1 warning                                                         [exit 2]
+both files BYTE-IDENTICAL before and after
+```
+
+**Its cost, measured against the rule D35 binds it by.** A 229-file /
+3,543-line plan tree of T11's own shape, 11 runs each, the same binary built from
+the same tree with and without the change (`git stash`, rebuild, measure,
+restore):
+
+| `tm check --fix-ids` | min | median | max |
+|---|---:|---:|---:|
+| before | 47 | **55** | 63 ms |
+| after, nothing needs an id (short circuit) | 47 | **55** | 62 ms |
+| after, one line needs an id (the gate fires) | 54 | **58** | 70 ms |
+
+≈ **+3 ms median** when the gate fires, indistinguishable when it does not,
+against T11's `tm drop` reliable baseline of **127–132 ms**. It fits; no bound
+raised, no band re-blessed. **The gate was not narrowed to make it fast.**
+
+**The test was driven against the un-gated body**: with `fix_ids_refusal`'s
+answer forced to `None`,
+`fix_ids_writes_nothing_when_the_tree_it_would_write_is_still_refused` fails on
+the appended `^vw8r`.
+
+### 2. §7.4's key (gap 677) — the mutation that left both suites green
+
+**Reproduced first, in full.** `Planner.CandKey.nums`,
+`siteNums k.root ++ siteNums k.own` → `siteNums k.own ++ siteNums k.root`:
+
+| instrument | under the inversion |
+|---|---|
+| `lake build TmKernel:static` | **Build completed successfully (168 jobs)** |
+| `check.sh` | **7/7** — axiom audit 4,447, corpus 29/37 and 4/5, burn-down 10 |
+| `cargo test --workspace` | **1,337 passed / 0 failed / 9 ignored across 79 binaries** |
+
+And it is not a semantic no-op — `#eval` at `MemoryMax=8G`, timeout 120, on
+`kA = ⟨true,3,some ⟨0,5⟩,some ⟨0,1⟩,0⟩`, `kB = ⟨true,3,some ⟨0,1⟩,some ⟨0,5⟩,1⟩`:
+
+```
+mutated:  ([1,3,0,0,1,0,0,5,0], [1,3,0,0,5,0,0,1,1], true,  false)
+restored: ([1,3,0,0,5,0,0,1,0], [1,3,0,0,1,0,0,5,1], false, true)
+```
+
+**Why nothing bit.** `PlannerWit.the_ranking_request_reads_the_plans_line_order`
+computes `ownSite ^g1 = some ⟨0,0⟩ ∧ rootSite ^g1 = some ⟨0,0⟩` — the two are
+**equal**, and they are equal or both `none` for every candidate of every witness
+the kernel held. The block's own perturbation section is exactly the right
+instrument and had this hole.
+
+**The repair.** `PlannerWit.rootedWitness` is `storedWitness` widened by a
+`@parent` on each task and two month outcomes, with the parents **crossed**:
+`^m1` is first in the week and its root `^O2` is second in the month, `^m2` the
+other way. Measured (`the_rooted_witness_separates_the_root_from_the_item`):
+`ownSite ^m1 = ⟨0,1⟩`, `rootSite ^m1 = ⟨1,2⟩`, `ownSite ^m2 = ⟨0,2⟩`,
+`rootSite ^m2 = ⟨1,1⟩`. The two candidates are identical on the wire but for
+their id, so §7.2 gives both `p = 5` (`the_rooted_requests_answers_tie_on_p`) and
+the order falls through to the sites.
+
+`the_root_order_decides_before_the_items_own` says the produced order is
+`[^m2, ^m1]` while the arrival order **and** the item's own line order are both
+`[^m1, ^m2]` — so request position and own site would each give the other answer.
+`exchanging_the_parents_exchanges_the_order` is the perturbation half: with the
+two `@parent`s swapped and nothing else moved, the order swaps with them.
+
+**Driven: the inversion now fails, by name.** Re-applied after the witness
+landed —
+
+```
+error: TmKernel/PlannerWit.lean:1652:2: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:1685:2: Tactic `decide` proved that the proposition
+error: build failed
+```
+
+— which is `the_root_order_decides_before_the_items_own` and
+`exchanging_the_parents_exchanges_the_order`. `Negative.lean` CHEAT 191 states
+the inverted key's answer as a cheat. **No stage-5 artefact was re-implemented**:
+the plan goes through `Boundary.loadPlan`, the root walk is `Plan.rootOf`, the
+candidates go through `Look.prioritiesWithFloors` by way of
+`PlanReq.candAnswers`, and the order through `Planner.sortRanked`.
+
+### 3. The two census numbers (gaps 678, 679, 684, 685)
+
+Measured with `lake env lean` at `MemoryMax=8G`, timeout 120, before a line was
+written:
+
+| population, at `theRunningRequest` | value |
+|---|---:|
+| Block rows | 3 |
+| Wall rows | 1, and its `^g1` **is** in that store |
+| Break rows | **0** |
+| rows carrying a slot energy | **0** |
+| Block rows at or after `windDownSec` | **0** |
+| `blockSeconds (withoutActive …)` | 3 600 s against a 21 600 s budget |
+| the same, on the `withoutPast` day | **0** — the only Block is the reservation |
+
+So on the day `PlanCheck.lean`'s header cites, `energyFilterOk`,
+`noBlockOverABreak` and `noDemandingAfterWindDown` are **vacuous**: four of seven
+have a subject, not six. The header now separates the two questions it was
+running together — *discharged by the reservation* (which is what P3 bought, and
+is true of all seven) from *has a subject* (which is a population) — and
+`PlannerWit.the_battery_census_at_the_reserved_day` computes both days.
+
+And at `theStoredRequest`: `store.dom = [['m','2'],['m','1']]` while the day's one
+Wall row is `some ['g','1']`, so `wallUnmoved` takes its `store.get i = none`
+branch. `the_battery_census_over_a_produced_day` gains that conjunct
+(`… = [false]`), the ratio is **five of eleven**, and CHEAT 192 states the `[true]`
+the count assumed. The caveat was in the table's own cell — *"(at `theRequest`)"*
+— and not in the number.
+
+Gap 650's *"each discharge five of their seven conjuncts by an empty
+quantifier"* named `impossibleKept` and `batchDoesNotReachPast` among the five;
+both live in `PlanCheck.checksEligible`, both lifts conclude `planOkCore` (which
+is `checksCore`'s seven) and neither takes an `Eligible`, so neither is a
+conjunct of either. Restated with the measured, request-dependent numbers: three
+of seven for `dayPlan_ok_core` at `theRunningRequest`, four for
+`dayPlan_ok_core_from_now`.
+
+### 4. One verdict for bytes that are not text (gap 676) — larger than reported
+
+The report named two spellings. **There are three**, and the third only appears
+on a tree with housekeeping still to do, where the strict read dies before the
+write gate can speak at all:
+
+```
+swept tree                 tm check  -> optional.md:3: … not valid UTF-8; the file was skipped
+                           tm edit   -> tm: optional.md:3: … — nothing was written: …
+                           tm now    -> tm: optional.md: stream did not contain valid UTF-8
+tree with housekeeping     tm now    -> tm: optional.md: not valid UTF-8
+pending                    tm edit   -> tm: optional.md: not valid UTF-8   (no gate clause either)
+```
+
+`store::bad_utf8_line(&[u8])` is the one line-finder (`first_bad_utf8_line` is it
+through a store), `store::NOT_UTF8_VERDICT` the one verdict, and `store::NOT_UTF8`
+that sentence **plus** what `read_tree` did about it — which a strict reader
+cannot honestly say. `the_two_not_utf8_spellings_are_one_sentence` pins the pair.
+`unreadable()` classifies both error shapes as `NotUtf8`, so `read_tree`'s
+tolerance, `is_not_utf8` and `PlanFiles::undecodable` are unchanged.
+
+**The test that was there could not fail on the value**: it asserted only
+`!contains("inbox.md:0")`, which a message with no position passes. It now
+asserts the line positively on four verbs — and since **reverting either reader
+alone leaves the other test green**, the swept case is its own test:
+
+* revert `FsStore::read_text` → `a_swept_tree_names_the_bad_line_too_and_says_the_one_verdict`
+  fails: *`["now"] does not name the line: tm: inbox.md: stream did not contain valid UTF-8`*
+* revert `Snapshot::read` → `invalid_utf8_in_a_plan_file_is_an_error_tm_check_names_by_line`
+  fails: *`["plan"] does not name the line: tm: inbox.md: not valid UTF-8`*
+
+### The full acceptance, re-measured on the repaired tree
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G
+-p MemorySwapMax=0 --quiet`; the binary drives at **16G**, every Lean `#eval`
+probe at **8G** with `timeout 120`. **Nothing retried uncapped, no bound
+raised.**
+
+| instrument | **this tree** | `9202bd3` (the brief's comparand is `24acb5a`) | reading |
+|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 | — |
+| axiom audit | **4,454 theorems** | 4,447 | **+7**, exactly the seven `theorem`s added, each with its own `#print axioms` line under a new banner. 4,454 audit lines at 4,454 **distinct** full names (`uniq -d` empty) against **4,453** declarations over **82** modules |
+| check 3's §6.3 reconciliation | **`comm -23` EMPTY** | empty | `comm -13` names **`WfPlan` and `effectiveScope`**, the two deliberate non-theorems, and nothing else |
+| `Negative.lean` | rejected ok, **177 cheats**, highest **192**, `uniq -d` empty | 175 / 190 | **+2**: CHEAT 191 (the inverted key's answer) and CHEAT 192 (`wallsUnmoved`'s absent subject) |
+| corpus round trip | **29/37 files, 4/5 whole plans** | same | **not below the floor**; `kernel/corpus/` untouched |
+| stage goals (check 7) | **10 outstanding, all stage 6** | 10 | **no goal added, none deleted** |
+| `cargo test --workspace` | **1,342 passed / 0 failed / 9 ignored across 79 binaries** | 1,337 / 0 / 9 / 79 | **+5**: three in `cli_write_gate.rs` (now 9), two in `cli_check_log.rs` (now 13) |
+| FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | 101 / 0 | — |
+| **T5** (`kernel_replay_parity`) | **29 passed / 4 ignored** | same | `the_frozen_comparand_is_read_at_full_precision` ran and passed **by name** (D21/D23) |
+| the door (`kernel_log_door`) | **23 / 23** | 23 | — |
+| `kernel_log_grammar` | **16 passed / 2 ignored** | same | — |
+| `cli_switch_acceptance` | **9 / 9** | 9 | — |
+| `kernel_call_counts` | **2 / 2** | 2 | — |
+| `cli_latency`, release, `--include-ignored` | **6 / 6**, five passes | 6 | rows below |
+| `check.sh` wall, built tree | **3.77–3.84 s** over six warm passes (3.79 / 3.84 / 3.81, then 3.80 / 3.77 / 3.79), peak RSS **2.04–2.06 GiB** | **3.54 s** measured here at `9202bd3`, same RSS | **+6.5 % to +8.5 %**, inside the 10 %-per-step rule |
+
+**T11's two compared rows, five release passes, both read from the same serial
+section of the same run** (the 3-year log: 66,169 lines / 6,896,281 bytes; load
+average 2.0–2.9, not idle):
+
+| pass | `tm drop ^z1` | gated host-only write | slower |
+|---|---:|---:|---|
+| 1 | 131.761 | 131.741 ms | drop |
+| 2 | 126.689 | **126.705** ms | **the gated write** |
+| 3 | 131.703 | **131.706** ms | **the gated write** |
+| 4 | 126.600 | **126.707** ms | **the gated write** |
+| 5 | 131.682 | 131.632 ms | drop |
+
+Both rows sit in one **126.6–131.8 ms** band, which contains the brief's
+127–132 ms comparand. The other T11 rows, unchanged and **not re-blessed**: the
+3-day routine 136.80 ms, the reseal 187.49, `review week` 258.25 (out of band for
+gap 275), 10 stalled days 516.35, a 30-day-old hand undo 1.33 s.
+
+### What earlier stages bought, re-measured here and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep returns **41**, its post-switch
+  floor, unchanged. No in-tree reader was reintroduced. (Gap 604 — that a
+  differently-spelled command in AGENTS §8.3 returns 52 — stays open and is
+  R1's.)
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns **two** sites, `tm/src/cli/ctx.rs` and `tm-core/src/horizon.rs`. No
+  third appeared; `--fix-ids` writes plan files, never the log.
+* **The comparand is still the fork at full precision.**
+  `git diff --name-only 9202bd3..HEAD -- tm/tests/fixtures tm/tests/snapshots kernel/corpus`
+  is **empty**. No fixture, snapshot, latency band or corpus file was touched.
+* **The fork oracle was REBUILT**, outside the repo, at `MemoryMax=16G`
+  (§7.3: provenance is not freshness). `build-oracle.sh` extracted
+  **`4748911555969ace2b48faa8929122aeccbfb415`** (its `.oracle-ref` stamp) and
+  the banner prints its four subcommands. With `TM_ORACLE` set,
+  `kernel_log_grammar` runs **18 / 0** and the live arm
+  `the_fork_reads_back_every_rendering_the_kernel_writes` reports *"the fork
+  round trip (4748911): 1375 kernel renderings read back to the fork's own
+  entry, 3862 lines skipped"* — digit for digit what the W-17 land step
+  recorded. **The re-bless arm stayed `INERT`**, as it must without
+  `TM_FORK_BLESS`.
+* **D28 honoured**: `dayPlan` keeps its total signature. Nothing here is a gate
+  behind a proved lift.
+* **D5 honoured**: no law narrowed. `the_battery_census_over_a_produced_day`
+  gained a conjunct (a strengthening, and the old view is its projection); no
+  theorem lost a hypothesis or a binder, and nothing was downgraded to a
+  property test.
+* **D18, no memory bound raised.** 40G for builds and suites, 16G for binary
+  drives, 8G for every Lean probe. Nothing retried uncapped.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no
+  `partial def`, no `.toOption`. `lean-toolchain`, `Cargo.toml`,
+  `lake-manifest.json` and `kernel/corpus/` untouched; **no new dependency** —
+  `MemStore` and `IdGen` are `tm-core`'s own.
+
+### Gaps
+
+**Closed: 675, 676, 677, 678, 679, 680, 681, 682, 683, 684, 685.** Recorded
+below: three that are open, one of them found while reproducing.
+
+#### Gap 686 (new; label W17R-a) — `tm-kernel-ffi/tests/stack.rs` runs in no automated gate, T12 included
+
+1. **What is not done.** `check.sh` check 5 is
+   `( cd tm-kernel-ffi && cargo test --quiet --test kernel )` — `--test kernel`
+   only. The root `Cargo.toml`'s `members = ["tm-core", "tm"]` excludes
+   `tm-kernel-ffi`, so `cargo test --workspace` does not run it either.
+   **All seven tests of `stack.rs` are therefore run by nothing automatic** —
+   not only **T12** (`a_500_candidate_replan_through_the_ffi`, the D30(Q8)
+   instrument gap 600 depends on), but the four 2 MiB-thread stack probes and
+   the two 3 660-day lookahead rows. *(Reported as T12 alone; it is the whole
+   file.)*
+2. **Why.** The exclusion is deliberate and documented (AGENTS §7.5: the two
+   suites "do not overlap"), and it predates `stack.rs` carrying anything but
+   stack-depth probes. Nobody decided to leave T12 unguarded; the file grew into
+   a gate that does not run it.
+3. **What it costs.** A regression in any of the seven is caught only by
+   somebody remembering to run them. They **do** run and pass — `cargo test
+   -p tm-kernel-ffi` here is **101 / 0** and T12 reports *"(a) 500 candidates,
+   no tree 10.89/11.01 ms; (b) 2,000-line tree, no candidates 11.12/11.19 ms;
+   (c) both 21.28/21.37 ms; (d) 40-line tree, 50 candidates 2.38/2.39 ms"* — but
+   that is a procedure, not a gate.
+4. **Which step clears it, and why this step did not.** The fix is one word:
+   check 5 becomes `cargo test --quiet --test kernel --test stack`. **Measured,
+   it costs 2.23 s** against `check.sh`'s 3.79 s built-tree wall — **+59 %**,
+   and the campaign's rule is at most **+10 % per step**. T12 alone is 0.33 s,
+   still **+8.7 %** on its own and leaving the other six unguarded. So this is a
+   budget decision and not a repair: either the 10 % rule is spent on it
+   deliberately, or `tm-kernel-ffi` joins the workspace (which would double-run
+   checks 5 and 6 and move the 1,342 figure every ledger block quotes). **R1**,
+   with the owner's call on which.
+
+#### Gap 687 (new; label W17R-b) — `--fix-ids` records no undo entry, on any tree
+
+1. **What is not done.** `lifecycle::check` calls no `Recorder::start`, so
+   `tm check --fix-ids` leaves nothing to undo. Driven on a **sound** tree:
+   `tm check --fix-ids` assigns `^vw8r`, exits 0, and `tm undo` then says
+   *"nothing to undo"* (exit 1).
+2. **Why.** It is uniform — it has never recorded one, on any tree — so it is a
+   standing design choice rather than a regression, and changing it is a
+   behaviour change a repair step may not take on its own (D19: separable work
+   lands first). Gap 675's repair makes the write land only on a tree that
+   loads, which makes `tm undo` *reachable* afterwards; it does not give it
+   anything to take back.
+3. **What it costs.** An id assignment cannot be backed out by the verb the
+   product tells users to back out with. The bytes are recoverable by hand (only
+   the `^id` token is appended) but not by `tm undo`.
+4. **Which step clears it.** The owner's call: either `--fix-ids` joins the
+   thirty-one recording paths (and `UNDO_RECORDERS` gains a `check` row whose
+   marker is `fix_ids_refusal`), or the choice is written down as deliberate in
+   §13's own text. **R1.**
+
+#### Gap 688 (new; label W17R-c) — two different instruments are called "T12"
+
+1. **What is not done.** Design §14.6's **T12** is *"`model.json` byte-identical
+   to the fork point"*, which README blocks from stage 5 discuss at length and
+   which one of them says *"does not exist"*. W-17's P4 block names its new
+   FFI replan row **T12** as well (`tm-kernel-ffi/tests/stack.rs`). Both names
+   are live in this file.
+2. **Why.** The T-numbering is design-document-scoped and the P4 block took the
+   next free number in its own head, not in §14.6's.
+3. **What it costs.** A reader grepping `T12` gets two instruments, and gap 686
+   above has to spell out which one it means. It is a §5.3 collision in prose,
+   which is where three runs running have shipped stale citations.
+4. **Which step clears it.** Whoever next touches design §14.6's table: rename
+   the FFI row (**T14** is free) and sweep the citations, prose included.
+   **R1**, or the next repair step.
+
+**Gaps left open, by name.** Everything W-17's land step left open stands.
+**Gap 367** is now explicitly **half** closed (P4 took `Planner.edfNumbers`; the
+step that fills `Diagnostics.impossible` is P8) and its entry says so. **Gap
+650** is restated, not closed — four checkers still range over nothing and P5/P8
+clear them. **Gap 577** stays open: this step pinned the *root walk*, which is
+the kernel's own fact; the nine host-supplied candidate values are still D27's.
+**Gaps 365, 366, 368, 500, 501, 630** (gap 584's residue)**, 275, 570, 551, 346,
+347, 604, 670, 671, 672** stand. **689 is free; new gaps start at 689.**
+
+### Method disclosure
+
+Everything ran in the main checkout on `rebuild-on-lean`, which was clean at
+`9202bd3` when this step started (`git status` empty, `check.sh` 7/7 with 4,447
+theorems and burn-down 10, `cargo test --workspace` 1,337/0/9 — the numbers this
+block compares against). No worktree; the three commits are sequential and each
+was green before it landed.
+
+**Every defect was reproduced before a line was written**, and the two
+mutations used to reproduce (the `CandKey.nums` inversion, and each half of the
+non-UTF-8 repair reverted in turn) were **restored and re-verified green**; none
+is in any commit. `git diff --stat` against `9202bd3` touches **eleven files**: five Lean
+(`Check.lean`, `Goals.lean`, `Negative.lean`, `PlanCheck.lean`,
+`PlannerWit.lean`), five Rust (`tm-core/src/store.rs`,
+`tm/src/cli/kernel_bridge.rs`, `tm/src/cli/lifecycle.rs`,
+`tm/tests/cli_check_log.rs`, `tm/tests/cli_write_gate.rs`) and this README —
+**+1,289 −63**. Nothing else.

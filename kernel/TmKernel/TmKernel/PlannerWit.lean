@@ -1326,7 +1326,9 @@ makes vacuous and which step ends that.
   assign fold puts it in an energised slot, which is **P5**;
 * **no Block at or after the wind-down** — `noDemandingAfterWindDown` is vacuous; **P5/P7**;
 * **no Batch row** — `batchDoesNotReachPast` is vacuous; **P5**;
-* **`diagnostics.impossible` is empty** — `impossibleKept` is vacuous; **P4** (README gap 367);
+* **`diagnostics.impossible` is empty** — `impossibleKept` is vacuous; **P8**, the step that
+  fills it (gap 367's second half; its first landed at P4 as `Planner.edfNumbers`, and this
+  line read "**P4**" until the W-17 repair — P4 landed without ending it);
 * the store holds two ranked siblings and one of them is `hot`, and both are assigned, so
   `monotoneInRank` and `hotBeforeQueue` have real pairs. -/
 theorem the_battery_census_over_a_produced_day :
