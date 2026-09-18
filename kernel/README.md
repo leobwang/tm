@@ -34005,8 +34005,15 @@ it. No `foldl` form and no `@[csimp]` twin is owed. The mutation helpers in
 
 ### The `decide` budget (AGENTS §5.10a)
 
-**Eight new `decide` witnesses** (budget is 20), each probed at
-`MemoryMax=8G` with a timeout before it was committed; the whole of
+**Seven new `decide` witnesses in `PlannerWit.lean` and three in
+`Negative.lean` — ten for this commit**, against §5.10a's budget of 20, counted
+by grepping the diff rather than from memory:
+`git diff 24acb5a..HEAD -- PlannerWit.lean | grep -cE '^\+\s*decide$|:= by decide$'`.
+*(Four further `by decide`s appear **inside literals** — a `Fin 1440` bound and a
+`BatchIds` length — and are not witnesses in §5.10a's sense; they are named here
+so the count reconciles.  This paragraph first read "Eight new `decide`
+witnesses", which was a count from memory; the grep says seven.)*  Each was
+probed at `MemoryMax=8G` with a timeout before it was committed; the whole of
 `PlannerWit.lean` elaborates in **13.6–14.0 s at 8G** and `lake build` reports
 **14 s** for the module. None is `native_decide`; none evaluates a realistic
 input — every one is an equation about the one six-row day the witness request
@@ -34210,8 +34217,11 @@ So all five are supplied at `theRunningRequest` and the lift is **applied**, not
 | `hnowcal` | `the_running_request_is_inside_the_calendar`, computed |
 | `hplain` | `the_running_request_is_plain` — **the one that needed an argument rather than a `decide`**: it quantifies over every `Id`, and what bounds it is `PlanCheck.mem_dom_of_get` (a `get` that succeeds lands in `dom`), which here is one id |
 
-`the_lift_applies_at_the_running_request` is the application, and its proof term mentions no
-`decide` at all: it is the general theorem, fired.
+`the_lift_applies_at_the_running_request` is the application: **it is not a `decide` over the
+day**, it is the general theorem applied to five discharged hypotheses.  (Two of those five are
+themselves `decide`-proved, so the *transitive* proof does contain evaluation; what is not
+evaluated is the lift's own conclusion.  This sentence first read "its proof term mentions no
+`decide` at all", which overstated it.)
 
 And the day it is about is **not empty**.
 `the_restricted_day_keeps_the_reservation_and_the_wall` computes what `withoutPast` removes —
@@ -34236,6 +34246,8 @@ wrote (12:50–13:50), §8.2 choice 5b's reservation (14:00–14:40) and §16's 
 | check.sh warm | **3.52 / 3.53 / 3.57 / 3.57 s** | 3.69 / 3.70 / 3.70 s | a quieter window, not a speed-up — see the note in the table above |
 
 Three new `decide` witnesses (`the_only_dated_item`, `the_restricted_day_keeps_the_reservation
-_and_the_wall`, `the_running_request_is_inside_the_calendar`), bringing this step's total to
-**eleven** against §5.10a's budget of 20; the whole file elaborates in **1.05 s at 8G** for
-these six theorems and **13.6–14.0 s at 8G** for the module.
+_and_the_wall`, `the_running_request_is_inside_the_calendar`), bringing the **step's** total to
+**thirteen** — ten theorem-level in `PlannerWit.lean` and three in `Negative.lean` — against
+§5.10a's budget of 20.  These six theorems elaborate in **1.05 s at 8G**; the module,
+**13.6–14.0 s**.  *(Both commit messages carry the older, remembered figures and are not
+rewritten; this ledger is the authority, AGENTS §6.4.)*
