@@ -31178,8 +31178,61 @@ and `readCand`'s refusals are what still apply.
    `remaining` have two readers for id-bearing items.  **Gaps 113, 114, 116 and
    gap 301's item 1 stay open and whole**; this step closed none of them and
    claims none of them.
-4. **When it clears.** The next track-K step: `effectiveDue` and `overdue` in
-   the kernel, then the nine fields and their two host copies in one commit.
+4. **When it clears.** The next track-K step — **but not in the shape the brief
+   for this run gave it**, and the two reasons are findings of this step rather
+   than opinions. They are §"D27, re-priced" below.
+
+##### D27, re-priced: what doing the work found out about D27's own wording
+
+**FINDING 1 — `priority::collect_candidates` cannot be deleted, and it is not
+the copy that matters.** The instruction was "delete the host's copy in the same
+commit the kernel's gains it (`cand_json`, `priority::collect_candidates` at
+`ctx.rs`)". `Ctx::priorities` returns `(Vec<Candidate>, Vec<Prio>,
+Vec<UnitCapacity>)`, and `planning.rs:158` hands that `Vec<Candidate>` straight
+to **`tm-core/src/planner.rs`** as `PlanInput::with_ranking`'s candidate list
+(`planner.rs:900`, `PlanInput.candidates`). `Candidate` has **thirty** fields
+and D27's nine are a slice of them: the shipped planner also reads `title`,
+`planned_min`, `multiplier`, `scope`, `floor`, `cap`, `state`, `blocked_by`,
+`waiting`, `loc`, `splittable`, `wall_today`, `instance`, `root_order`,
+`own_order` and `tags`, none of which D27 moves and none of which the kernel can
+supply until `dayPlan` replaces the eight steps. So `collect_candidates` dies
+with `planner.rs` at **R3** and not before. The copy D27 can actually delete is
+`cand_json`'s nine JSON keys.
+
+**FINDING 2, and it is the load-bearing one — doing D27's kernel half BEFORE R3
+turns one shared reading into two that can disagree inside one command.**
+`tm plan` today asks the kernel for `p` and the fork's planner for the
+placement, and **both read the same `effective_due`, `window`, `mandatory` and
+`overdue`** — the host's, off one `Candidate`. That is gap 113's cost, and it is
+also gap 113's one protection: there is exactly one answer, wrong or right. Move
+the four into the kernel and `tm plan` carries two: the kernel ranks an item as
+due Friday while `planner.rs` places it on the day its own
+`recur::today_instances` says, and the two are different code in different
+languages over the same bytes. `planner.rs` reads `c.window` at lines 1164 and
+1284 and `c.mandatory` at 1319 and 1337 — checked, not assumed.
+
+**So D27's kernel half needs a guard, and the guard is the step's acceptance.**
+A parity test that asserts, for **every** candidate of **every** corpus plan,
+that the kernel's derived `due`, `overdue`, `mandatory`, `window`, `wall`,
+`optional`, `hot`, `ci` and `remaining` are **equal** to the ones
+`collect_candidates` computes — the shape `kernel_lookahead_parity.rs` already
+has for day 0, aimed at the candidate facts instead. With it the two readings
+cannot drift unnoticed and D27 is safe to land before R3; without it, D27 is a
+regression in exactly the property it is named after. Design §14.2's **P4** row
+already says "parity for the candidate facts"; this is what that row is for, and
+it is a **prerequisite**, not a follow-up.
+
+**What the next step owes, in order.** (a) `Tree.effectiveDue` — fork
+`tree.rs:628`, four lines over `effectiveShape`; (b) `Tree.overdue` — fork
+`tree.rs:1092`, five conjuncts, one of which needs the item's document kind
+(`Horizon::Calendar`); (c) the derivation, which is `Recur.todayInstanceOf` plus
+those two plus `Tree.remainingMin`, `Core.ci`, `effectiveShape`,
+`Field.Flag.hot` and the file kind — all of which exist today; (d) the parity
+test above; (e) `cand_json` loses its nine keys and `readCand` its nine
+decoders, **in one commit** with (c); (f) the candidates keep being sent in
+`send_order`, because `prios` is index-aligned with the host's list and P12
+depends on that order — the *ordering* stays the host's even when the *facts*
+do not, and that is not a second reader of a fact, it is a request's shape.
 
 #### Gap 501 (label W16K-b) — `Recur.lean` has no caller
 
@@ -31253,7 +31306,14 @@ false`.
 
 * **It did not do D27** (gap 500).  `cand_json`, `priority::collect_candidates`,
   `readCand`, `readCands` and `Look.Cand` are untouched, and **gaps 113, 114,
-  116 and gap 301 item 1 are open and whole**.
+  116 and gap 301 item 1 are open and whole**.  This is the **eighth honest
+  refusal** of this campaign and it is not a refusal for want of time: gap 500's
+  two findings say that D27's instruction as written cannot be carried out
+  (`collect_candidates` is `planner.rs`'s input until R3) and that its kernel
+  half, landed without a candidate-facts parity test, would put **two** readings
+  of `due`/`window`/`mandatory`/`overdue` inside one `tm plan` where there is
+  one today.  The step that does D27 should carry that test first.  W-14's
+  refusal of D27 became D31; this one names the guard D27 needs.
 * **It did not write `Tree.effectiveDue` or `Tree.overdue`**, the two readers
   the other five fields need.
 * **It did not touch `Planner.lean`** — `RoutineIn` is still host-supplied and
