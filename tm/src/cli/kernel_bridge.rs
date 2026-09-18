@@ -91,7 +91,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use serde_json::{json, Map, Value};
 
 use tm_core::model::{Horizon, IsoWeek, YearMonth};
-use tm_core::store::{self, FileGuard, Store};
+use tm_core::grammar::IdGen;
+use tm_core::store::{self, FileGuard, MemStore, Store};
 
 use super::ctx::Ctx;
 use super::out::{CliError, KernelIssue};
@@ -875,9 +876,20 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
 /// problem separately, naming the line, and `tm check` prints it beside
 /// whatever the kernel says.
 pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
+    refusal_in(&ctx.store)
+}
+
+/// **The same question, of any store** — the body [`tree_refusal`] is now a
+/// projection of.
+///
+/// Widened (and not copied) so that the one write path whose tree is not yet on
+/// disk can ask it too: `tm check --fix-ids` builds the tree it *would* write in
+/// a [`MemStore`] and asks about that ([`fix_ids_refusal`]). One definition of
+/// "does the kernel load this tree", over one trait (AGENTS §5.3).
+pub fn refusal_in(store: &dyn Store) -> Result<Option<KernelIssue>, CliError> {
     let mut docs = Vec::new();
-    for rel in ctx.store.list_files()? {
-        let text = match ctx.store.read_text(&rel) {
+    for rel in store.list_files()? {
+        let text = match store.read_text(&rel) {
             Ok(text) => text,
             Err(e) if e.is_not_utf8() => continue,
             Err(e) => return Err(e.into()),
@@ -889,6 +901,65 @@ pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
         Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(Some(issue)),
         Err(e) => Err(e),
     }
+}
+
+/// **D35 for the one write path [`gate`] cannot gate** (README gap 675):
+/// does the tree `tm check --fix-ids` *would write* load?
+///
+/// `--fix-ids` writes — `tm-core`'s `check::fix_ids` appends an `^id` to every
+/// line that needs one, through [`Store::modify_file`] — and it did so with no
+/// gate, no [`super::undo::Recorder`] entry and exit **0** on the write. Driven
+/// before this landed, on a tree made refused by an unrelated duplicate routine:
+/// `tm check --fix-ids` wrote `backlog.md`, printed the kernel's `dupId` beside
+/// it, exited 2 on the errors, and `tm undo` then said *"nothing to undo"*.
+///
+/// **It cannot be [`gate`], and that is the whole difficulty.** A tree refused
+/// *for a missing `^id`* is exactly the tree `--fix-ids` exists to repair —
+/// driven: two id-less `- [ ] Twin thing` lines in `backlog.md` make the kernel
+/// refuse with `badLine (Tm.PErr.noId)`, `--fix-ids` assigns both ids, and
+/// `tm check` is clean afterwards. Gating on the tree *before* the write would
+/// trap that user inside a refusal, which is the same reason `tm undo` is not
+/// gated.
+///
+/// So the question asked is the one D35 is actually about — **does the tree this
+/// write produces load?** — and it is asked of a [`MemStore`] mirror, so the
+/// answer comes from running the *same* `fix_ids` the real write runs rather
+/// than from a second implementation of the assignment (AGENTS §5.3). The ids
+/// the mirror picks are not the ids the real write picks (the generator is
+/// seeded per call and `taken` keeps both collision-free), and the kernel's
+/// verdict does not depend on which fresh ids were chosen — it depends on
+/// *whether every line that needs one now has one*.
+///
+/// `Ok(None)` means write; `Ok(Some(issue))` means the fix would not be enough
+/// and nothing is written.
+pub fn fix_ids_refusal(ctx: &Ctx, gen: &mut IdGen) -> Result<Option<KernelIssue>, CliError> {
+    let mirror = MemStore::new();
+    // `config.toml` first: `fix_ids` reads the horizon rules through
+    // `Store::read_config`, and a mirror without it would answer `Config`'s
+    // defaults and could decide differently about which lines need an id.
+    if ctx.store.exists(store::CONFIG_PATH) {
+        mirror.insert(store::CONFIG_PATH, &ctx.store.read_text(store::CONFIG_PATH)?);
+    }
+    for rel in ctx.store.list_files()? {
+        match ctx.store.read_text(&rel) {
+            Ok(text) => mirror.insert(&rel, &text),
+            // The undecodable file is `gate`'s own case and is refused before
+            // this is reached; skipping it here keeps the mirror a mirror of
+            // what the kernel would be shown.
+            Err(e) if e.is_not_utf8() => continue,
+            Err(e) => return Err(e.into()),
+        }
+    }
+    let mut files = mirror.read_tree()?.files;
+    if tm_core::check::fix_ids(&mirror, &mut files, gen)?.is_empty() {
+        // **Nothing to write, so nothing to gate.** The proposed tree IS the
+        // tree on disk, and `tm check` is about to ask the kernel about that
+        // one anyway (`lifecycle::kernel_problems`) — so the common
+        // `tm check --fix-ids`, on a tree where every line already has its id,
+        // costs the mirror and no second kernel call at all.
+        return Ok(None);
+    }
+    refusal_in(&mirror)
 }
 
 /// **The one write gate** (the owner's D35, README gap 584): a host-only write
@@ -910,10 +981,25 @@ pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
 /// the "nothing was written" line: the kernel says *what* is wrong and *where*,
 /// this says what it means for the command the user just typed.
 ///
-/// **Deliberately not called from `tm undo`, `tm init` or `tm check`.** `undo`
-/// is the way *out* of a tree the kernel refuses and gating it would trap the
-/// user inside one; `init` has no tree yet; `check` is D18/gap 145's one
-/// tolerant verb, whose whole job is to name the line.
+/// **Deliberately not called from `tm undo`, `tm init` or `tm check`, and the
+/// reason is different for each — two of the three were stated wrongly until the
+/// W-17 repair** (README gaps 675 and 680).
+///
+/// * `tm undo` is the way *out* of a tree the kernel refuses and gating it would
+///   trap the user inside one.
+/// * `tm init` — **not** "no tree yet", which is false under `--force`: driven on
+///   a tree the kernel refuses, `tm init --force` exits 0 and creates
+///   `week/2026-W38.md`. What makes it safe is that it is **preserving and
+///   additive**: every file whose content is the user's is `Mode::Preserve` and
+///   is listed in the run's own `skipped`, so a `--force` over a refused tree
+///   changed **not one existing byte** (md5 of every file before and after, and
+///   the refusal identical on both sides). `init_force_preserves_a_refused_tree`
+///   is the test that keeps it true; the day `init` rewrites a plan file it owes
+///   the gate.
+/// * `tm check` is D18/gap 145's one tolerant verb, whose whole job is to name
+///   the line — but **`tm check --fix-ids` writes**, and that write has its own
+///   gate now ([`fix_ids_refusal`]), because it can neither go ungated nor take
+///   this one.
 pub fn gate(ctx: &Ctx, verb: &str) -> Result<(), CliError> {
     // **A file whose bytes are not text is a tree that does not load either**,
     // and the kernel cannot be asked about it: `tree_refusal` skips it (gap

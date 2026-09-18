@@ -903,6 +903,12 @@ pub struct CheckOut {
     pub problems: Vec<validate::CheckProblem>,
     /// `--fix-ids`: the ids assigned, as `(file, line, id)`.
     pub fixed: Vec<(String, usize, Id)>,
+    /// **`--fix-ids` was asked for and wrote nothing**, because the tree it
+    /// would have written is one the kernel still refuses (the owner's D35,
+    /// README gap 675). The sentence names the refusal; the refusal itself is
+    /// already among `problems`, where `tm check` puts every kernel-load fault.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fix_refused: Option<String>,
     /// `no problems` or `2 errors, 3 warnings`.
     pub summary: String,
     /// The exit code (§13: 2 when anything is an error).
@@ -1242,12 +1248,36 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     // found. Every other verb fails by name on that fault.
     let ctx = Ctx::load_tolerant(g)?;
     let mut files = ctx.files.files.clone();
+    // **D35's gate on the one write this verb does** (README gap 675).
+    // `--fix-ids` writes through the store, so it is a host-only write path and
+    // it went ungated for four runs: on a tree the kernel refused for an
+    // unrelated reason it rewrote a file, exited 0 on the write and left no undo
+    // entry. It cannot take `kernel_bridge::gate` — a tree refused *for a
+    // missing `^id`* is the tree this flag exists to repair — so it asks the
+    // question D35 is actually about: does the tree this write produces load?
+    // `kernel_bridge::fix_ids_refusal` runs the same `fix_ids` against a
+    // `MemStore` mirror and asks the kernel about the result.
+    let mut blocked = None;
     let fixed = if args.fix_ids {
         let mut gen = id_gen(&ctx, "fix-ids");
-        validate::fix_ids(&ctx.store, &mut files, &mut gen)?
+        let mut proposal = id_gen(&ctx, "fix-ids-proposal");
+        match super::kernel_bridge::fix_ids_refusal(&ctx, &mut proposal)? {
+            None => validate::fix_ids(&ctx.store, &mut files, &mut gen)?,
+            Some(issue) => {
+                blocked = Some(issue);
+                Vec::new()
+            }
+        }
     } else {
         Vec::new()
     };
+    let fix_refused = blocked.as_ref().map(|issue| {
+        format!(
+            "--fix-ids wrote nothing: the tree it would have written is one the kernel still \
+             refuses ({}) — the line is named below; fix it and run this again",
+            issue.name
+        )
+    });
     let tree = Tree::build(&files, &ctx.cfg);
     let mut problems = validate::check(&files, &tree, &ctx.cfg);
     // `validate::check` sorts by `(file, line, code, message)`; this stable
@@ -1258,12 +1288,28 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     // `--fix-ids` has written, so the kernel is asked about the tree that is
     // now on disk and not the one that was.
     problems.extend(kernel_problems(&ctx)?);
+    // **And the refusal that blocked `--fix-ids`, when it is not already
+    // there** (gap 675). The kernel stops at its first refusal, so the tree on
+    // disk can be refused for the very fault `--fix-ids` would have repaired
+    // while the fault that BLOCKED it — the one the proposed tree still trips —
+    // is named nowhere. Same `load_problems`, so the rows are spelled once.
+    if let Some(issue) = &blocked {
+        for p in load_problems(issue) {
+            if !problems
+                .iter()
+                .any(|q| q.file == p.file && q.line == p.line && q.message == p.message)
+            {
+                problems.push(p);
+            }
+        }
+    }
     problems.sort_by(|a, b| (a.file.as_str(), a.line).cmp(&(b.file.as_str(), b.line)));
     let code = validate::exit_code(&problems);
     let out = CheckOut {
         summary: validate::summary(&problems),
         problems,
         fixed,
+        fix_refused,
         exit_code: code,
     };
     emit(
@@ -1272,6 +1318,9 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
             let mut s = String::new();
             for (file, line, id) in &out.fixed {
                 s.push_str(&format!("{file}:{line}: assigned {}\n", id.token()));
+            }
+            if let Some(why) = &out.fix_refused {
+                s.push_str(&format!("{why}\n"));
             }
             for p in &out.problems {
                 s.push_str(&format!("{p}\n"));

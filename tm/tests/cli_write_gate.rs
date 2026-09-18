@@ -427,6 +427,15 @@ fn the_tree_load_question_has_one_asker() {
         vec!["cli/ctx.rs".to_string(), "cli/lifecycle.rs".to_string()],
         "the readers of `tree_refusal` moved"
     );
+    // And the body both of them share — `refusal_in`, which `fix_ids_refusal`
+    // asks of a `MemStore` mirror (gap 675) — is the bridge's alone. A caller
+    // outside it would be a second place deciding what "the tree" is.
+    let inners: Vec<String> = source_files()
+        .into_iter()
+        .filter(|(rel, text)| rel != "cli/kernel_bridge.rs" && text.contains("refusal_in("))
+        .map(|(rel, _)| rel)
+        .collect();
+    assert!(inners.is_empty(), "`refusal_in` is called outside the bridge: {inners:?}");
     // And nothing outside the bridge builds the empty-command request by
     // hand. Code only: `lifecycle.rs`'s doc comment quotes the request's shape,
     // which is prose about the one asker and not a second one.
@@ -441,4 +450,125 @@ fn the_tree_load_question_has_one_asker() {
             );
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// `tm check --fix-ids` — the write the gate could not take (gap 675)
+// ---------------------------------------------------------------------------
+
+/// **`--fix-ids` writes, so it is a host-only write path** — and it went
+/// ungated for four runs while the enumeration that was used to rule it out
+/// keyed on `Recorder::start`, which `lifecycle::check` does not call.
+///
+/// Driven before the repair, on exactly this tree: it rewrote `backlog.md`,
+/// printed the kernel's `dupId` beside the write, exited 2 on the errors, and
+/// `tm undo` then said *"nothing to undo"*.
+///
+/// It cannot take `kernel_bridge::gate` — see the next test — so what is
+/// asserted here is D35's actual sentence: **the tree the write produces must
+/// load, or nothing is written.**
+#[test]
+fn fix_ids_writes_nothing_when_the_tree_it_would_write_is_still_refused() {
+    let tm = Tm::new();
+    // A refusal `--fix-ids` cannot repair: two `laundry` routine lines.
+    let path = tm.plan.join("routines.md");
+    let doubled = format!("{}{DOUBLED}", tm.read("routines.md"));
+    fs::write(&path, &doubled).expect("write routines.md");
+    // …and a line that really does need an id, so the flag has work to do.
+    let backlog = tm.plan.join("backlog.md");
+    let grown = format!("{}- [ ] 3 1b Thing with no id\n", tm.read("backlog.md"));
+    fs::write(&backlog, &grown).expect("write backlog.md");
+    let before = snapshot(&tm);
+
+    let out = tm.run(&["check", "--fix-ids"]);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
+
+    // Nothing moved — the whole directory, bytes, `.tm/` included.
+    let after = snapshot(&tm);
+    assert_eq!(before.keys().collect::<Vec<_>>(), after.keys().collect::<Vec<_>>(), "--fix-ids added or removed a file");
+    for (rel, bytes) in &before {
+        assert_eq!(bytes, after.get(rel).expect("same key set"), "--fix-ids wrote {rel}");
+    }
+    assert!(!tm.read("backlog.md").contains("Thing with no id ^"), "an id was appended");
+
+    // It says so, and it names the refusal that blocked it.
+    assert!(out.stdout.contains("--fix-ids wrote nothing"), "{}", out.stdout);
+    assert!(out.stdout.contains("dupId"), "{}", out.stdout);
+    // **The blocking line is named.** The kernel stops at its first refusal, so
+    // the tree on disk reports `badLine` on the id-less line — the very fault
+    // the flag would have repaired — and without this the fault that actually
+    // blocked the write would appear nowhere.
+    assert!(out.stdout.contains("routines.md:7"), "{}", out.stdout);
+    assert!(out.stdout.contains("routines.md:9"), "{}", out.stdout);
+
+    // The same facts reach a script.
+    let json = tm.run(&["--json", "check", "--fix-ids"]);
+    let doc: serde_json::Value = serde_json::from_str(&json.stdout).expect("a json check document");
+    assert_eq!(doc["fixed"].as_array().expect("fixed").len(), 0, "{doc}");
+    assert!(doc["fix_refused"].as_str().expect("fix_refused").contains("dupId"), "{doc}");
+}
+
+/// **And the gate is not a blanket refusal**: a tree the kernel refuses *for a
+/// missing `^id`* is precisely the tree `--fix-ids` exists to repair, so it must
+/// still write there.
+///
+/// This is why `--fix-ids` cannot take `kernel_bridge::gate`, which asks about
+/// the tree *before* the write: it would trap this user inside the refusal, the
+/// same way a gate on `tm undo` would.
+#[test]
+fn fix_ids_is_still_the_way_out_of_a_tree_refused_for_a_missing_id() {
+    let tm = Tm::new();
+    let backlog = tm.plan.join("backlog.md");
+    let grown = format!("{}- [ ] 3 1b Twin thing\n- [ ] 3 1b Twin thing\n", tm.read("backlog.md"));
+    fs::write(&backlog, &grown).expect("write backlog.md");
+
+    // The kernel refuses it now.
+    let before = tm.run(&["check"]);
+    assert_eq!(before.code, 2, "{}{}", before.stdout, before.stderr);
+    assert!(before.stdout.contains("kernel-load"), "{}", before.stdout);
+
+    // `--fix-ids` repairs it, and the tree loads afterwards.
+    let out = tm.run(&["check", "--fix-ids"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(!out.stdout.contains("wrote nothing"), "{}", out.stdout);
+    assert_eq!(out.stdout.matches(": assigned ^").count(), 2, "{}", out.stdout);
+    let after = tm.run(&["check"]);
+    assert_eq!(after.code, 0, "{}{}", after.stdout, after.stderr);
+}
+
+/// **`tm init --force` is exempt from the gate because it is PRESERVING, not
+/// because "there is no tree yet"** (gap 680) — that reason was false, and a
+/// reason that is false is the kind of thing the next enumeration inherits.
+///
+/// Driven: on a tree the kernel refuses, `tm init --force` exits 0 and creates a
+/// horizon file. What makes that safe is that every file whose content is the
+/// user's is `init::Mode::Preserve`, so **not one existing byte moves** and the
+/// refusal is identical on both sides. The day `init` rewrites a plan file, it
+/// owes the gate — and this test fails then.
+#[test]
+fn init_force_preserves_a_refused_tree() {
+    let tm = Tm::new();
+    let path = tm.plan.join("routines.md");
+    let doubled = format!("{}{DOUBLED}", tm.read("routines.md"));
+    fs::write(&path, &doubled).expect("write routines.md");
+    let before = snapshot(&tm);
+    let refused_before = tm.run(&["check"]);
+    assert_eq!(refused_before.code, 2, "{}{}", refused_before.stdout, refused_before.stderr);
+
+    let out = tm.run(&["init", "--force"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+
+    // Every file that was there is byte-identical. New files may appear; a
+    // changed one is the thing that would need the gate.
+    let after = snapshot(&tm);
+    for (rel, bytes) in &before {
+        assert_eq!(
+            Some(bytes),
+            after.get(rel),
+            "`tm init --force` rewrote {rel} on a tree the kernel refuses — it now owes the gate"
+        );
+    }
+    // And the refusal is the same one, unchanged by the run.
+    let refused_after = tm.run(&["check"]);
+    assert_eq!(refused_after.stdout, refused_before.stdout, "`tm init --force` changed what the kernel says");
 }
