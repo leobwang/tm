@@ -685,6 +685,18 @@ fn check_passes_on_the_fixture_and_fails_on_a_duplicate_id() {
     insta::assert_json_snapshot!("check_problems_schema", schema(&json));
 }
 
+/// **A boxed line with no `^id` is now an error, not only a warning** — the
+/// owner's D32, gap 476, and a recorded behaviour change.
+///
+/// `missing-id` was a warning and `tm check` exited 0, while `tm plan` on the
+/// same tree already failed `badLine … PErr.noId`: the kernel never invents an
+/// id for a line the user marked as tracked (cheat 174, unchanged by D31). Now
+/// `tm check` asks the kernel too, so the tree no verb can read fails the verb
+/// whose job is to say so — which is the point of `tm check` sitting in the
+/// pre-commit hook of every generated plan.
+///
+/// The error is **actionable and self-repairing**: `--fix-ids` writes the id,
+/// and the same `tm check` then answers 0. Both halves are asserted here.
 #[test]
 fn check_fix_ids_appends_missing_ids() {
     let tm = Tm::new();
@@ -694,8 +706,11 @@ fn check_fix_ids_appends_missing_ids() {
     std::fs::write(&path, text).expect("write week");
 
     let out = tm.run(&["check"]);
-    assert_eq!(out.code, 0);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
     assert!(out.stdout.contains("missing-id"), "{}", out.stdout);
+    // The host's warning and the kernel's refusal, at the same line.
+    assert!(out.stdout.contains("kernel-load"), "{}", out.stdout);
+    assert!(out.stdout.contains("PErr.noId"), "{}", out.stdout);
 
     let json = tm.json(&["check", "--fix-ids"]);
     assert_eq!(json["fixed"].as_array().map(Vec::len), Some(1));
@@ -706,6 +721,56 @@ fn check_fix_ids_appends_missing_ids() {
         .find(|l| l.contains("No id here"))
         .expect("the line");
     assert!(line.contains(" ^"), "{line}");
+}
+
+/// **`tm check` can see a refusal that stops every other verb** — the owner's
+/// D32 item 2, gap 476 closed.
+///
+/// D31 keys a box-less, id-less line by its **title**, so two lines with one
+/// title are a store-key collision. Driven at `8c3b6dc`: it refused `tm plan`,
+/// `tm now`, `tm review day` and `tm drop` with exit 1 while `tm check` printed
+/// *"no problems"* and exited 0 — fatal everywhere, findable nowhere.
+///
+/// `tm check` now makes one kernel call — `{"docs":…,"cmds":[]}`, no log, no
+/// state, no commands — and reports a refusal as an **error** at the lines the
+/// refusal names, one problem per line (`check`'s own `dup-id` convention).
+#[test]
+fn check_sees_a_kernel_load_refusal() {
+    let tm = Tm::new();
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // Two lines with one title, in one file: `dupId`.
+    let path = tm.plan.join("routines.md");
+    let text = std::fs::read_to_string(&path).expect("read routines");
+    let first = text.lines().next().expect("a routine line").to_string();
+    std::fs::write(&path, format!("{text}{first}\n")).expect("write routines");
+
+    let out = tm.run(&["check"]);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("kernel-load"), "{}", out.stdout);
+    assert!(out.stdout.contains("dupId"), "{}", out.stdout);
+
+    // Both lines, each as its own problem, and both 1-based.  (`Tm::json`
+    // asserts exit 0, and this tree deliberately exits 2.)
+    let raw = tm.run(&["--json", "check"]);
+    let json: serde_json::Value =
+        serde_json::from_str(&raw.stdout).expect("check --json is JSON");
+    let problems = json["problems"].as_array().expect("problems").clone();
+    let lines: Vec<u64> = problems
+        .iter()
+        .filter(|p| p["code"] == "kernel-load")
+        .map(|p| p["line"].as_u64().expect("line"))
+        .collect();
+    let n = text.lines().count() as u64;
+    assert_eq!(lines, vec![1, n + 1], "{problems:?}");
+    assert!(problems
+        .iter()
+        .all(|p| p["code"] != "kernel-load" || p["severity"] == "error"));
+    assert_eq!(json["exit_code"], 2);
+
+    // And the verb that was already failing still fails, on the same tree.
+    let plan = tm.run(&["plan"]);
+    assert_ne!(plan.code, 0, "{}{}", plan.stdout, plan.stderr);
 }
 
 #[test]

@@ -1121,7 +1121,100 @@ fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
     out
 }
 
-/// `tm check [--fix-ids]` (§1.3, §13), plus the log's own warnings (D18).
+/// **What the kernel says about the tree** (the owner's D32, gap 476).
+///
+/// `tm check` is the one verb that loads **tolerantly** (D18, gap 145), so a
+/// log no rebuild can window cannot stop it naming the bad line. It was also
+/// the one verb that could not see a fault the kernel refuses the whole tree
+/// for: since D31 two lines with one title are a store-key collision, and a
+/// duplicated inbox note brings down `tm plan`, `tm now`, `tm review day` and
+/// `tm drop` while this verb answered *"no problems"*, exit 0.
+///
+/// So it asks the kernel, with the **smallest request there is** —
+/// `{"docs":…,"cmds":[]}`, the corpus round trip's own shape. That request
+/// carries no `log` section, no `state.json` and no commands, so it reads
+/// nothing a damaged log could spoil and writes nothing at all: **D18 is
+/// untouched**, the tolerant load above still finds the line, and
+/// [`Ctx::replay_fault`] is still the warning it always was.
+///
+/// The documents are assembled with [`kernel_bridge::doc_json`] and
+/// [`kernel_bridge::doc_lines`] — the same two functions every other kernel
+/// call in this binary uses, so there is no second reader of "what is a
+/// request document" (AGENTS §5.3).
+///
+/// A **fault** (the kernel returned nothing usable) is not a tree problem and
+/// is propagated as this command's error; only a named **refusal** becomes
+/// problems.
+fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
+    let mut docs = Vec::new();
+    for rel in ctx.store.list_files()? {
+        let text = ctx.store.read_text(&rel)?;
+        docs.push(super::kernel_bridge::doc_json(&rel, &super::kernel_bridge::doc_lines(&text)));
+    }
+    match super::kernel_bridge::call(&serde_json::json!({ "docs": docs, "cmds": [] })) {
+        Ok(_) => Ok(Vec::new()),
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(load_problems(&issue)),
+        Err(e) => Err(e),
+    }
+}
+
+/// One kernel load refusal, as `tm check` problems.
+///
+/// A **key collision** carries both colliding lines since D32 (gap 475), and
+/// this follows `check`'s own duplicate-id convention: **one problem per line**
+/// (§17.2), so an editor jumping through the list stops at both. It does not
+/// append *"also at …"* the way `dup-id` does, because the kernel's own message
+/// already names both positions — saying it twice in one line would be the
+/// second reader of a fact that has one (AGENTS §5.3). `badLine` and
+/// `unterminatedComment` carry one position and give one problem. Anything else — `itemCheck`, `duplicatePath`, a `kernel`
+/// name — is about the tree rather than a line, and is reported with no
+/// position, which [`validate::CheckProblem`]'s own `Display` prints without a
+/// `file:line` prefix.
+///
+/// Every line number here is already 1-based: the bridge converts the kernel's
+/// 0-based wire at the one place the two conventions meet (gap 479), and this
+/// reads the converted detail rather than the wire, so the binary still emits
+/// **one** convention.
+fn load_problems(issue: &super::out::KernelIssue) -> Vec<validate::CheckProblem> {
+    let spot = |k: &str| -> Option<(String, usize)> {
+        let s = issue.detail.get(k)?;
+        let path = s.get("path")?.as_str()?.to_string();
+        let line = usize::try_from(s.get("line")?.as_u64()?).ok()?;
+        Some((path, line))
+    };
+    let key = issue.detail.get("key").and_then(serde_json::Value::as_str).map(Id::new);
+    if let (Some(a), Some(b)) = (spot("a"), spot("b")) {
+        return [a, b]
+            .into_iter()
+            .map(|(path, line)| {
+                validate::CheckProblem::error(
+                    validate::KERNEL_LOAD,
+                    &path,
+                    line,
+                    key.clone(),
+                    issue.message.clone(),
+                )
+            })
+            .collect();
+    }
+    let path = issue.detail.get("path").and_then(serde_json::Value::as_str).unwrap_or_default();
+    let line = issue
+        .detail
+        .get("line")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|n| usize::try_from(n).ok())
+        .unwrap_or(0);
+    vec![validate::CheckProblem::error(
+        validate::KERNEL_LOAD,
+        path,
+        line,
+        key,
+        issue.message.clone(),
+    )]
+}
+
+/// `tm check [--fix-ids]` (§1.3, §13), plus the log's own warnings (D18) and
+/// the kernel's own load (D32).
 pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     // **D18, gap 145**: the one verb that loads tolerantly, because it is the
     // one that must survive a log no rebuild can window — it is how the line is
@@ -1140,6 +1233,10 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
     // sort by `(file, line)` merges the log's problems into that order
     // without disturbing it inside a line.
     problems.extend(log_problems(&ctx));
+    // D32, gap 476: and what the kernel says about the same tree — after
+    // `--fix-ids` has written, so the kernel is asked about the tree that is
+    // now on disk and not the one that was.
+    problems.extend(kernel_problems(&ctx)?);
     problems.sort_by(|a, b| (a.file.as_str(), a.line).cmp(&(b.file.as_str(), b.line)));
     let code = validate::exit_code(&problems);
     let out = CheckOut {

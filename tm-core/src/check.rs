@@ -200,6 +200,30 @@ pub const LOG_STALL_DAYS: i64 = 7;
 /// `tm check` must keep working, and keep its exit code, on a damaged log.
 pub const LOG_CODES: &[&str] = &[LOG_LINE, LOG_FUTURE, LOG_STALL];
 
+/// **The kernel refused to load the tree** (the owner's D32, README gap 476).
+///
+/// Since D31 a box-less, id-less line is a real entity keyed by its title, so
+/// two lines with one title are a store-key collision and the kernel refuses
+/// the whole tree by name. Every other verb already fails on such a tree —
+/// `tm plan`, `tm now`, `tm review day`, `tm drop` — and this verb, whose whole
+/// job is to find the broken line, used to answer *"no problems"*.
+///
+/// Like [`LOG_CODES`] it is added by the **CLI** and is deliberately not in
+/// [`CODES`]: [`check`] is pure over the parsed plan and never calls the
+/// kernel, so no fixture of the tree can produce it.
+///
+/// **Unlike the log codes it is an `Error`, and it does move [`exit_code`]** —
+/// D32's campaign call, made because `tm check` sits in the pre-commit hook of
+/// every generated plan, where catching a tree no verb can read is the point.
+/// It does not touch D18: D18 is about surviving a damaged **log**, the request
+/// behind this code carries no log at all, and a log fault is still the warning
+/// it always was.
+pub const KERNEL_LOAD: &str = "kernel-load";
+
+/// The codes the **CLI** adds from the kernel's own load (D32). One, and an
+/// error — see [`KERNEL_LOAD`].
+pub const KERNEL_CODES: &[&str] = &[KERNEL_LOAD];
+
 // ---------------------------------------------------------------------------
 // Problems
 // ---------------------------------------------------------------------------

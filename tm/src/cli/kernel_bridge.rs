@@ -1020,8 +1020,7 @@ fn log_refusal(l: &Value) -> KernelIssue {
 /// does not. The title key is **synthesised**; it is deliberately never written
 /// into a file (`serialize_parseLine`), so there is no `^`-token to grep for.
 const KEY_NOTE: &str = " (a line with no `^id` is keyed by its title, and that key is never \
-                        written into a file, so the two positions above are where it is; \
-                        `tm check` does not report this collision)";
+                        written into a file, so the two positions above are where it is)";
 
 /// One widened key collision (**D32, gap 475**): the store key, and each of the
 /// two colliding lines as `(path, line)` with the line already converted to the
@@ -1192,13 +1191,17 @@ fn refusal(err: &Value) -> KernelIssue {
     // token that exists nowhere in the tree.  These three messages name the key
     // as a key, and say where a key with no `^` came from.
     //
-    // `dupId` also stopped pointing at `tm check`.  Gap 239 added that pointer
-    // on the premise that "`tm check` on the same tree answers instantly and
-    // precisely"; for this class the premise is **false** — `tm check`'s
+    // `dupId` does not point at `tm check`, and since D32 the reason has
+    // changed rather than gone away.  Gap 239 added that pointer on the
+    // premise that "`tm check` on the same tree answers instantly and
+    // precisely"; for this class the premise was false, because `tm check`'s
     // duplicate detection is the host's `Tree::key_of`, which per AGENTS §5.6
-    // keys the later of two colliding lines `file:line` and therefore reports
-    // *no problem at all* (gap 476).  A pointer at a verb that says "no
-    // problems" is a loop, so the message says what to search for instead.
+    // keys the later of two colliding lines `file:line` and reported *no
+    // problem at all*.  D32 closed that (gap 476): `tm check` now asks the
+    // kernel and prints this refusal at both lines, as `kernel-load`.  The
+    // pointer stays off because the message **already names the two lines**,
+    // so sending the reader to another verb to be told the same thing is a
+    // detour, not help.
     } else if let Some(c) = err.get("dupId") {
         let (key, (pa, la), (pb, lb)) = collision(c);
         put("key", key.clone());
@@ -1434,9 +1437,11 @@ mod tests {
     /// appears nowhere the user could grep. None of the three may spell a `^`
     /// in front of the key again.
     ///
-    /// `dupId` also may not send the reader to `tm check`: for this class
-    /// `tm check` answers *"no problems"* (gap 476), and gap 239 added that
-    /// pointer on the opposite premise.
+    /// `dupId` also may not send the reader to `tm check`. Gap 239 added that
+    /// pointer on the premise that `tm check` answers precisely; for this class
+    /// it answered *"no problems"*. D32 (gap 476) fixed `tm check` — it now
+    /// prints this very refusal at both lines — and the pointer still stays
+    /// off, because the message already names them.
     ///
     /// **Widened at W-16 for D32**: the payload is the kernel's widened one,
     /// so this test now also pins that the message and the `--json` detail

@@ -78,7 +78,13 @@ fn problems(tm: &Tm) -> Vec<(String, String, String, u64)> {
 /// [`problems`] at an explicit instant — the stall tests check a tree weeks
 /// after the block they are about was opened.
 fn problems_at(tm: &Tm, now: &str) -> Vec<(String, String, String, u64)> {
-    let doc = tm.json_at(now, &["check"]);
+    problems_of(&tm.json_at(now, &["check"]))
+}
+
+/// The same, off a `tm check --json` document the caller already has — for the
+/// D32 case, where the tree deliberately exits 2 and `Tm::json_at`'s exit-0
+/// assertion would fire first.
+fn problems_of(doc: &serde_json::Value) -> Vec<(String, String, String, u64)> {
     doc["problems"]
         .as_array()
         .expect("problems")
@@ -460,4 +466,67 @@ fn an_interruption_never_resumed_is_named_beside_its_block() {
     assert!(out.stdout.contains("an interruption of ^t4"), "{}", out.stdout);
     assert!(out.stdout.contains("`tm resume`"), "{}", out.stdout);
     assert!(out.stdout.contains("`tm done`"), "{}", out.stdout);
+}
+
+/// **D18 survives D32**: the one verb that loads tolerantly still does.
+///
+/// D32 (gap 476) gave `tm check` sight of a kernel **load** refusal, and gap
+/// 145's whole point is that `tm check` must keep working on a log no rebuild
+/// can window — it is how the bad line is found. The two do not collide,
+/// because the request `tm check` now sends carries **no `log` section**:
+/// `{"docs":…,"cmds":[]}`, the corpus round trip's own shape.
+///
+/// So, on one tree with both faults at once: the log's bad line is still a
+/// **warning** naming its line, the tree's collision is an **error** naming
+/// both of its lines, and the exit code is 2 because of the second and never
+/// because of the first — which is exactly D18's requirement that a damaged
+/// log move no exit code.
+#[test]
+fn a_damaged_log_stays_a_warning_while_a_refused_tree_is_an_error() {
+    let tm = with_a_log();
+    append_bytes(&tm, b"this is not json at all\n");
+    let bad_line = log_lines(&tm) as u64;
+    let now = day_after(
+        &std::fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("read the log"),
+    );
+
+    // The log alone: warning, exit 0 — gap 145, unchanged.
+    let out = tm.run_at(&now, &["check"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert!(
+        problems_at(&tm, &now).contains(&(
+            "log-line".into(),
+            "warning".into(),
+            ".tm/log.jsonl".into(),
+            bad_line
+        )),
+        "{:?}",
+        problems_at(&tm, &now)
+    );
+    let json_of = |out: &cli_common::Out| -> serde_json::Value {
+        serde_json::from_str(&out.stdout).expect("check --json is JSON")
+    };
+
+    // …and now a tree the kernel refuses as well.
+    let path = tm.plan.join("routines.md");
+    let text = std::fs::read_to_string(&path).expect("read routines");
+    let first = text.lines().next().expect("a routine line").to_string();
+    std::fs::write(&path, format!("{text}{first}\n")).expect("write routines");
+
+    let out = tm.run_at(&now, &["check"]);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
+    let ps = problems_of(&json_of(&tm.run_at(&now, &["--json", "check"])));
+    // The log line is still named, still a warning.
+    assert!(
+        ps.contains(&("log-line".into(), "warning".into(), ".tm/log.jsonl".into(), bad_line)),
+        "the damaged log stopped being named: {ps:?}"
+    );
+    // The tree's collision is an error, at both of its lines.
+    let n = text.lines().count() as u64;
+    for line in [1, n + 1] {
+        assert!(
+            ps.contains(&("kernel-load".into(), "error".into(), "routines.md".into(), line)),
+            "routines.md:{line} is not named: {ps:?}"
+        );
+    }
 }

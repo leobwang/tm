@@ -30961,7 +30961,9 @@ token in any file to grep for. This commit is the widening the gap asked for.
 * **`spotPair` orders the two lines by path, then line** — a *total* order, with
   `charsLe` (lexicographic on `List Char`) under it.
 * **`tm check` still says "no problems"** on every one of these trees. That is
-  **gap 476**, D32's second item, and it is NOT closed by this commit.
+  **gap 476**, D32's second item, and it is NOT closed by this commit — it is
+  closed by the **next** one, whose section follows this one; every "still
+  open" and every `exit 0` for `tm check` below is a record of *this* commit.
 
 ### The order the two lines are named in is a theorem, not a habit
 
@@ -31190,3 +31192,148 @@ site was touched.
 **check.sh's time did not rise:** midpoint **3.13 s** against `8c3b6dc`'s
 **3.14 s**, **-0.3%**, far inside the 10%-per-step rule. Peak RSS 1.96-1.98 GiB
 against 1.95-2.00 — the same band, nowhere near the 40 GiB cap.
+
+## Stage 6, W-16 track A, 2026-09-17: `tm check` can see what stops every other verb — D32 item 2, gap 476 closed
+
+`tm check` answered *"no problems"*, exit 0, on three trees `tm plan` refuses
+outright. That was the loop D31 opened: a collision is fatal everywhere and
+findable nowhere, and the one verb whose job is to find the broken line was the
+one verb that could not.
+
+It now makes **one kernel call** and reports a refusal as an **error**.
+
+### The call, and why it does not touch D18
+
+The request is the smallest one there is — `{"docs":…,"cmds":[]}`, the corpus
+round trip's own shape. It carries **no `log` section**, no `state.json` and no
+commands, so it reads nothing a damaged log could spoil and writes nothing at
+all.
+
+That is the whole reconciliation with D18/gap 145, which made `tm check` the one
+verb that loads **tolerantly** precisely so it survives a log no rebuild can
+window. The tolerant load is untouched, `Ctx::replay_fault` is still the named
+warning it always was, and a damaged log still moves no exit code.
+`a_damaged_log_stays_a_warning_while_a_refused_tree_is_an_error` drives both
+faults **on one tree at once**: the log's bad line is a warning at its line, the
+tree's collision is an error at both of its lines, and the 2 comes from the
+second and never from the first.
+
+The documents are assembled with `kernel_bridge::doc_json` and `doc_lines` — the
+same two functions every other kernel call in this binary uses, so there is no
+second reader of "what is a request document" (AGENTS §5.3). The call runs
+**after** `--fix-ids` has written, so the kernel is asked about the tree that is
+now on disk and not the one that was.
+
+### Error, not warning — the campaign call, taken and named
+
+`validate::KERNEL_LOAD` (`kernel-load`) is an **error**, so it moves
+`exit_code` to **2**. Two things about that number:
+
+* **2, not 1.** The brief's parenthetical says "exit 1"; the spec's own
+  taxonomy (§13: *"0 ok, 1 error, 2 validation problems (`check`)"*) says a tree
+  fault `tm check` found is a 2, and every other `tm check` error already exits
+  2. Giving this one a 1 would put two failure codes on one verb for one kind of
+  fault. **Taken as 2, deliberately, and recorded here so the owner can reverse
+  it in a line.**
+* Like `LOG_CODES` the code is added by the **CLI** and is deliberately not in
+  `check::CODES`: `check` is pure over the parsed plan and never calls the
+  kernel, so no fixture of the tree can produce it. Unlike the log codes it is
+  an error, and `KERNEL_CODES` says so beside it.
+
+One problem **per line**, following `check`'s own `dup-id` convention (§17.2) so
+an editor walking the list stops at both. It does not append *"also at …"* the
+way `dup-id` does: the kernel's message already names both positions, and saying
+it twice in one line would be a second reader of a fact that has one.
+
+### The behaviour rows
+
+| input | before (`9fa58fc`) | after | why |
+|---|---|---|---|
+| two lines with one title, `tm check` | `no problems`, **exit 0** | two `error[kernel-load]` lines, `2 errors`, **exit 2** | D32 item 2 |
+| a boxed line with no `^id`, `tm check` | `warning[missing-id]`, `0 errors`, **exit 0** | the warning **plus** `error[kernel-load]: … badLine … (Tm.PErr.noId)`, **exit 2** | D32 item 2 — and see below |
+| the same, `tm check --fix-ids` | `assigned ^…`, exit 0 | **unchanged**: `assigned ^…`, `no problems`, exit 0 | the error is self-repairing |
+| a damaged `.tm/log.jsonl`, `tm check` | `warning[log-line]`, exit 0 | **unchanged** | D18 is untouched |
+| a tree with both faults | the log warning alone, exit 0 | the log warning **and** the tree errors, exit 2 | the 2 is the tree's, never the log's |
+| `dupId`'s message | ends with the key note incl. *"`tm check` does not report this collision"* | the clause is **gone** — it had become false | — |
+| every other verb, every success path, every file on disk | — | **unchanged** | — |
+
+**The second row is the one to argue with.** `missing-id` was a warning because
+`--fix-ids` repairs it; the kernel refuses that tree because it never invents an
+id for a line the user marked as tracked (cheat 174, unchanged by D31). So
+`tm plan` already failed on it and `tm check` said the tree was fine. Under
+D32's call it is now an error — an **actionable** one: `--fix-ids` writes the
+id, and `tm check` then answers 0, which `check_fix_ids_appends_missing_ids`
+asserts in both directions. That test was **strengthened, not re-blessed**: it
+used to assert exit 0 and now asserts exit 2, the kernel's own reason, and the
+repair.
+
+### Driven on a fresh `tm init --example` tree (§5.13)
+
+```
+clean tree                          → no problems, exit 0
+a duplicated inbox note             → inbox.md:4 + inbox.md:5,  error[kernel-load] dupId,        exit 2
+two `sleep` routines                → routines.md:1 + routines.md:9, error[kernel-load] dupId,   exit 2
+a title colliding with an ^id       → backlog.md:13 + routines.md:3, error[kernel-load] notADemotion, exit 2
+a boxed line with no ^id            → backlog.md:13 warning[missing-id] AND error[kernel-load],  exit 2
+…then `tm check --fix-ids`          → assigned ^8p8q, no problems,                                exit 0
+a damaged log, clean tree           → .tm/log.jsonl:1 warning[log-line],                          exit 0
+a damaged log AND a collision       → both, 2 errors 1 warning,                                   exit 2
+```
+
+`TM_TRACE_KERNEL_CALLS=1 tm check` prints `log` then `apply` — the tolerant
+replay it always made, and the load it now makes.
+
+### What it costs, measured
+
+`tm check` on the example tree, 20 runs a reading, three readings each, release
+binaries built from this tree with and without the change (the "before" binary
+is this commit with its five Rust files stashed, so it is a real binary and not
+a recollection):
+
+| | readings (ms/run) |
+|---|---|
+| before | 4.2, 4.2, 4.1 |
+| after | 5.1, 4.9, 4.9 |
+
+**+0.8 ms, +19%** on a tree of 12 files. `tm check` has no T11 row and no band
+was touched; `cli_latency`'s five rows still pass and `cli_check_log` is 9 → 10.
+The cost is one whole-tree kernel load, and **gap 530** records that the load
+pays for a response it throws away.
+
+### AGENTS §5.3: what was CONSUMED, and what was not re-implemented
+
+Consumed by call: `kernel_bridge::call`, `doc_json`, `doc_lines` and `refusal`'s
+own `KernelIssue` detail (the bridge is the one place the kernel's `err` becomes
+English, and this reads what it produced rather than decoding the wire a second
+time); `tm_core::check::CheckProblem::error`, `exit_code`, `summary`;
+`Ctx::load_tolerant`, `FsStore::list_files`/`read_text`. Re-implemented: nothing
+— in particular **not** a second decoder of the three collisions (that is
+`kernel_bridge::collision`, written in this run's first commit and called here
+through the detail it fills), and **not** the host's `Tree::key_of`, which is
+the second answer to "what is this line's key" that this whole line of work
+exists to stop consulting. No stage-5 Lean artefact is touched by this commit at
+all: it adds no Lean.
+
+### Gaps
+
+**Gap 476 — CLOSED at W-16 (this commit).** `tm check` asks the kernel and
+reports a refusal as an error at the lines it names; D18 is preserved and
+driven; the exit code is 2 by the spec's own taxonomy, recorded above as a
+campaign call the owner can reverse in a line.
+
+**Gap 530 — `tm check`'s kernel load pays for a response it discards.**
+1. *What is not done.* The load `tm check` now makes is the `run` op with no
+   commands, so the kernel builds and emits **every document of the tree** back
+   over the wire and the host drops all of it. Nothing was done about it.
+2. *Why.* The alternative is a new kernel op that loads and answers nothing but
+   the refusal — a wire addition, which is a track's commit under D19 and not
+   this step's. The `run`-with-no-commands shape is also exactly what check 6's
+   corpus round trip exercises, so it is the best-tested load there is.
+3. *What it costs.* Measured at **+0.8 ms** on a 12-file example tree, and it
+   scales with the tree's bytes rather than with its faults — on a plan with
+   years of `week/` and `month/` files the discarded response is the larger part
+   of the cost. `tm check` runs in the pre-commit hook and the Claude Code
+   post-edit hook of every generated plan, so it is a cost paid often.
+4. *Which stage clears it.* Any step that opens the wire — a `load` op whose
+   `ok` is empty, or a `"docs": false` request flag — measured against this
+   0.8 ms before it is called a win.
