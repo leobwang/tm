@@ -573,16 +573,40 @@ wall past local midnight is clipped to the day — and it left as
 restatement `Planner.plan_never_moves_a_wall` and the general form
 `Planner.a_wall_row_comes_from_the_index` beside it (AGENTS §3.1 item 3, D5).
 
-`plan_places_no_block_over_a_wall` **stays**, and staying is the point: step 1
-places no Block of its own, so the statement is vacuous over `dayPlan` today
-and a discharge would be AGENTS §5.2's theorem that compiles and means nothing.
-It becomes real at **P5**.  The tripwire that says so is
-`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`, which
-is audited in `Check.lean` and which P5 must delete; while it compiles, no goal
-below that quantifies over an assigned Block is worth discharging.
+**Step P3 has landed** (`Planner.lean`, §8.2 step 3 and choice 5b: the cut on
+L3's own `Look.cutSlots`, the slot energies on L4's own `Look.energizeToday`, and
+the **running block reserved** before the routines and before the cut).  It
+discharges **one** goal, and it is the first of the thirteen to leave this file.
 
-**Two goals below are stated in SECONDS after the W-14 repair** (README gap
-392): `plan_does_not_overbook` and `plan_reserves_one_block_at_a_time`.  P0's
+`plan_reserves_one_block_at_a_time` is **gone from this file**: it is **false as
+it was written here** — the day's Block rows include the ones `Planner.pastRows`
+replays from the log, and a Block the log holds can run longer than `block_min`
+(shorten `[day] block_min` after a morning of hour-long blocks and the day the
+planner produces has one) — and it left as
+`PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`
+with the restatement `Planner.plan_reserves_one_block_at_a_time` beside it
+(AGENTS §3.1 item 3, D5).  The restatement is over the Block rows that start
+**at or after `now`** — the fork's own `assigned_set(day, w.now)` restriction
+(`planner_invariants.rs:470`) — and it is **not vacuous**: §8.2 choice 5b's
+reservation is such a row, and `PlannerWit.the_reserved_day_assigns_the_running
+_block` computes one.
+
+`plan_places_no_block_over_a_break` **stays**, for the reason P1's and P2's goals
+stayed: step 3 cuts the breaks but places **no Break row** — the fork keeps a
+break only when work touches it (`kept_breaks(breaks, slots, assign)`) and
+`assign` is **P5**'s (README gap 551).  `Planner.a_break_row_is_a_replayed_row`
+is the theorem that says the break side is still the log's alone.
+
+`plan_places_no_block_over_a_wall` **stays**, and staying is the point: the only
+Block row the planner places before P5 is the Active reservation, and the law is
+about the blocks §8.2 step 5 *assigns*.  It becomes real at **P5**.  The tripwire
+that says so is `Planner.the_day_assigns_nothing_after_now_but_the_running_block`
+— which P3 restated from `…_until_the_assign_step_lands`, because choice 5b's
+reservation made the empty-list form false — and which P5 must delete.
+
+**Two goals were stated in SECONDS after the W-14 repair** (README gap
+392): `plan_does_not_overbook` and `plan_reserves_one_block_at_a_time` (the
+second is discharged above).  P0's
 port to absolute seconds folded the *floored* `Seg.minutes`, which tolerates 59 s
 of unbudgeted work per Block row where the minutes-since-midnight form it
 replaced could not express a sub-minute overrun at all — a weakening of the
@@ -623,17 +647,6 @@ sub-minute overrun, so the port had quietly made the obligation weaker; seconds
 on both sides is the faithful one.  See `Planner.blockSeconds`. -/
 theorem plan_does_not_overbook (r : PlanReq) :
     blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := sorry
-
-/-- **E1 (P\*), stage 6.**  No block is longer than one block.  The shipped bug:
-"the Active reservation covered the whole remaining estimate; a 6b item
-swallowed 355 minutes".
-
-**Stated in seconds**, for the reason above (W-14 repair, gap 392): `s.val.minutes
-≤ blockMin` admits a Block of `blockMin` minutes and 59 seconds, and `pastRows`
-clips a replayed row at `min stop now` — an arbitrary second. -/
-theorem plan_reserves_one_block_at_a_time (r : PlanReq) (s : WfSeg)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
-    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := sorry
 
 /-- **L26 / §8.3 "energy filter" (P\*), stage 6.**  Every block has
 `item.ci ≤ slot.energy`.  `effectiveCi` (Plan.lean) is §3.2's inheritance walk,

@@ -3646,11 +3646,28 @@ def todayEnergy (I : Input) (t : Cal.Instant) : Fin 6 :=
       (predictShift I.curves (curveKeyOf I.curves I.today0.loc) (hswAt (wakeOn I I.today) t)
         (I.today0.sleep.shiftOf I.today0.slept)).val)
 
+/-- **Fork `capacity::energize(&cut.slots, ectx)` with today's `EnergyCtx`, over an arbitrary
+cut** — `energize` with `futureEnergy` replaced by `todayEnergy`, which is the one difference
+between a future day's energies and today's (the posterior and the sleep debt).
+
+**WIDENED at stage 6 step P3, not forked** (AGENTS §5.3).  §8.2 step 3 cuts a *different* slot
+list from `Ctx::today_slots`: the planner's cut carries the placed routines as rests, the
+evening as a wall and the log's break counter, so `day0Slots`' hard-wired `(day0Cut I).slots`
+is the wrong argument for it.  A `Planner.lean` that mapped `todayEnergy` over its own slots
+would be the second reader of "what a slot of today is worth"; freeing the argument here keeps
+one.  `day0Slots_is_energizeToday` is the projection that says the old reader is unmoved. -/
+def energizeToday (I : Input) (slots : List Slot) : List (Fin 6 × Slot) :=
+  slots.map fun s => (todayEnergy I ⟨s.start, 0⟩, s)
+
 /-- **Fork `capacity::energize(cut.slots, ectx)`** on today: each slot with its energy at its
 start.  (`blocks_done` and `since_break_min` count up in the fork and reach `Features` only;
 `energy::predict` reads `loc`, `hsw` and `slept_min`, so neither can move a level.) -/
-def day0Slots (I : Input) : List (Fin 6 × Slot) :=
-  (day0Cut I).slots.map fun s => (todayEnergy I ⟨s.start, 0⟩, s)
+def day0Slots (I : Input) : List (Fin 6 × Slot) := energizeToday I (day0Cut I).slots
+
+/-- **The old view is the widened one at the old argument** (AGENTS §5.3's widen-and-project,
+the shape `wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical` set). -/
+theorem day0Slots_is_energizeToday (I : Input) :
+    day0Slots I = energizeToday I (day0Cut I).slots := rfl
 
 /-- **Fork `DayCapacity::from_slots(ctx.today, &ctx.today_slots(allow_home))`** — day 0, derived
 from the kernel's own replay instead of handed in (gap 93). -/

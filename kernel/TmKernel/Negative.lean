@@ -2153,4 +2153,56 @@ theorem twoRoutinesWithOneTitleAreTwoEntities :
      | .ok _    => true
      | .error _ => false) = true := by rfl
 
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run W-16, track P — P3, §8.2 step 3's slot cut
+-- and §8.2 choice 5b's reservation).  Appended at the end (§6.2: append, never
+-- renumber).  Labels 177-180; 166-170 stay reserved for track P's later steps.
+-- ===========================================================================
+
+/- CHEAT 177 — the running block reserved for its **whole remaining estimate**.
+   That is the shipped bug §8.3's E1 is written about: "the Active reservation
+   covered the whole remaining estimate; a 6b item swallowed 355 minutes".  Fork
+   `active_run` clips the run at `current_block_end(started)` — the end of the
+   `block_min` block it is in — and `PlannerWit.theRunningRequest` is the case
+   run: `m1` started at 13:40 with a 90-minute estimate and twenty worked, so
+   seventy minutes are still owed and the row runs **forty**, to 14:40 and not
+   to 15:10 (`PlannerWit.the_reservation_is_clipped_to_the_block_it_is_in`).
+   This block asserts the boundary is seventy minutes past `now`; `decide`
+   refuses, and `Planner.the_block_boundary_is_run` is the positive form. -/
+theorem theReservationTakesTheWholeEstimate :
+    Planner.blockBoundary 60 50400 49200 86400 = 50400 + 60 * 70 := by decide
+
+/- CHEAT 178 — a routine placed on top of the running block (README gap 434).
+   Fork `run()` pushes `active_run`'s span onto `blocked` **before**
+   `place_mandatory_and_pref`, so step 2 searches around it;
+   `Planner.PlanReq.blockedBeforeRoutines` is where that happens and
+   `a_routine_is_never_placed_over_the_running_block` is the law.  This block
+   claims the search does not notice: a half-hour routine looking in 14:00-17:00
+   lands in the same place whether or not 14:00-15:00 is reserved.  `decide`
+   refuses — with the reservation it is pushed to 15:00. -/
+theorem aRoutineTakesTheRunningBlocksStretch :
+    Planner.earliestFree 50400 61200 1800 [(50400, 54000)]
+      = Planner.earliestFree 50400 61200 1800 [] := by decide
+
+/- CHEAT 179 — the evening cut into slots.  Fork `run()`'s step 3 pushes
+   `self.night()` onto `slot_blocked` before `cut_slots_around`, so nothing is
+   cut from the wind-down onwards; `Planner.PlanReq.slotBlocked` is that push and
+   `no_slot_reaches_the_evening` is the law.  This block claims the cut is the
+   same with and without it, over 20:00-24:00 on the shipped `[day]` with the
+   night starting at 21:30.  `decide` refuses. -/
+theorem theEveningIsCutIntoSlots :
+    Look.cutSlots Look.CutCfg.shipped 72000 86400 [] [] 0
+      = Look.cutSlots Look.CutCfg.shipped 72000 86400 [(77400, 172800)] [] 0 := by decide
+
+/- CHEAT 180 — a wall's `buffer:` run-up left unblocked (README gap 552).
+   `Look.WallIx` carries no bound tying `evLo` to `hi`, and `Look.wallOfEntity`
+   builds both straight out of `at:<s>/<f>`, which the grammar accepts inverted.
+   On such a wall `Planner.wallRows` still draws the run-up row `[lo, evLo)`
+   while the span `(x.lo, x.hi)` stops at `hi < evLo`, so a second of the run-up
+   is not blocked at all.  This block asserts that the old span covers it —
+   `decide` refuses, which is why `blockedByWalls` blocks `(x.lo, max evLo hi)`
+   and `a_wall_row_sits_in_a_blocked_span` needs no hypothesis. -/
+theorem theInvertedWallsBufferIsBlockedAnyway :
+    Look.covered [(600, 700)] 800 = true := by decide
+
 end Tm

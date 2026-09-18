@@ -4832,7 +4832,6 @@ open Tm
 #print axioms Tm.Planner.mem_dayRows
 #print axioms Tm.Planner.dayPlan_segments
 #print axioms Tm.Planner.dayPlan_remaining_budget_is_the_forks_local
-#print axioms Tm.Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands
 #print axioms Tm.Planner.plan_never_moves_a_wall_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.Planner.plan_never_moves_a_wall
 #print axioms Tm.Planner.a_wall_row_comes_from_the_index
@@ -4903,7 +4902,6 @@ open Tm
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_no_segments
 #print axioms Tm.PlanCheck.planOkCore_of_no_segments
 #print axioms Tm.PlanCheck.planOk_of_no_segments
-#print axioms Tm.PlanCheck.dayPlan_block_rows_come_from_the_log
 #print axioms Tm.PlanCheck.a_replayed_row_is_a_row_of_the_day
 #print axioms Tm.PlanCheck.a_replayed_block_is_assigned
 #print axioms Tm.PlanCheck.dayPlan_has_no_block_row
@@ -4981,7 +4979,6 @@ open Tm
 #print axioms Tm.Planner.stepTwoSegs_are_not_blocks
 #print axioms Tm.Planner.stepTwoSegs_are_not_work
 #print axioms Tm.Planner.a_routine_row_is_where_the_placement_put_it
-#print axioms Tm.Planner.a_block_row_is_a_replayed_row
 #print axioms Tm.Planner.the_wind_down_row_runs_to_bed
 #print axioms Tm.Planner.the_earliest_free_position_is_run
 #print axioms Tm.Planner.the_evening_is_closed_to_a_routine
@@ -5089,3 +5086,79 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.splitSleep_congr
 #print axioms Tm.PlannerWit.the_witness_carries_no_routine
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_routine_the_rule_refuses
+
+-- ===========================================================================
+-- APPENDED 2026-09-17: stage 6 (the planner), run W-16, track P, step P3 —
+-- §8.2 step 3 (the slot cut, on L3's own `Look.cutSlots`, and the slot energies
+-- on L4's own `Look.energizeToday`) and §8.2 choice 5b (the running block
+-- reserved before the routines and before the cut).
+--
+-- THREE AUDIT LINES WERE DELETED BY THIS STEP, and each is a theorem the
+-- reservation made FALSE, restated in the same commit (AGENTS §3.1 item 3, D5):
+--   Tm.Planner.a_block_row_is_a_replayed_row
+--       -> Tm.Planner.a_block_row_is_replayed_or_reserved
+--   Tm.Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands
+--       -> Tm.Planner.the_day_assigns_nothing_after_now_but_the_running_block
+--   Tm.PlanCheck.dayPlan_block_rows_come_from_the_log
+--       -> Tm.PlanCheck.dayPlan_block_rows_are_replayed_or_reserved
+-- All three were grepped repo-wide, prose included, before the rename.
+--
+-- ONE GOAL LEFT Goals.lean: plan_reserves_one_block_at_a_time, restated over
+-- the Block rows that start at or after `now` and proved in Planner.lean, with
+-- PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted
+-- beside it.  Burn-down 12 -> 11.
+-- ===========================================================================
+#print axioms Tm.Look.day0Slots_is_energizeToday
+#print axioms Tm.Planner.segOf_units
+#print axioms Tm.Planner.PlanReq.activeAgrees_of_none
+#print axioms Tm.Planner.PlanReq.activeAgrees_of_mkActive?
+#print axioms Tm.Planner.PlanReq.blockMin_pos
+#print axioms Tm.Planner.the_block_boundary_is_run
+#print axioms Tm.Planner.PlanReq.currentBlockEnd_within_a_block
+#print axioms Tm.Planner.PlanReq.activeRun_spec
+#print axioms Tm.Planner.PlanReq.the_reservation_is_at_most_one_block
+#print axioms Tm.Planner.PlanReq.the_reservation_is_free_of_every_wall
+#print axioms Tm.Planner.PlanReq.the_reservation_stops_at_the_limit
+#print axioms Tm.Planner.PlanReq.mem_activeRow
+#print axioms Tm.Planner.PlanReq.activeRow_is_an_energyless_block
+#print axioms Tm.Planner.placeStep_grows_the_blocked
+#print axioms Tm.Planner.placeStep_keeps_PlacedOffThe
+#print axioms Tm.Planner.foldl_placeStep_grows_the_blocked
+#print axioms Tm.Planner.foldl_placeStep_keeps_PlacedOffThe
+#print axioms Tm.Planner.a_routine_is_never_placed_over_the_running_block
+#print axioms Tm.Planner.PlanReq.todayCut_is_the_lookaheads
+#print axioms Tm.Planner.PlanReq.energisedSlots_are_the_lookaheads
+#print axioms Tm.Planner.PlanReq.a_slots_level_is_todays_energy
+#print axioms Tm.Planner.PlanReq.a_slot_is_inside_the_window
+#print axioms Tm.Planner.PlanReq.a_slot_touches_nothing_blocked
+#print axioms Tm.Planner.PlanReq.no_slot_touches_the_running_block
+#print axioms Tm.Planner.PlanReq.no_slot_reaches_the_evening
+#print axioms Tm.Planner.PlanReq.the_reservation_never_runs_under_a_wind_down_row
+#print axioms Tm.Planner.PlanReq.no_slot_overlaps_a_break
+#print axioms Tm.Planner.PlanReq.a_slot_is_at_most_one_block
+#print axioms Tm.Planner.pastRows_are_not_wind_down
+#print axioms Tm.Planner.a_wind_down_row_is_the_evenings
+#print axioms Tm.Planner.reservationSegs_are_blocks
+#print axioms Tm.Planner.reservationSegs_are_not_walls
+#print axioms Tm.Planner.the_reservation_row_names_the_running_item
+#print axioms Tm.Planner.the_reservation_row_is_exact
+#print axioms Tm.Planner.mem_dayRows_of_mem
+#print axioms Tm.Planner.mem_assignedFrom
+#print axioms Tm.Planner.the_day_assigns_nothing_after_now_but_the_running_block
+#print axioms Tm.Planner.a_wall_row_sits_in_a_blocked_span
+#print axioms Tm.Planner.a_break_row_is_a_replayed_row
+#print axioms Tm.Planner.a_wind_down_row_of_the_day
+#print axioms Tm.Planner.a_block_row_is_replayed_or_reserved
+#print axioms Tm.Planner.plan_reserves_one_block_at_a_time
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_replayed_or_reserved
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_the_reservation
+#print axioms Tm.PlannerWit.witBuildsRun
+#print axioms Tm.PlannerWit.the_running_request_agrees
+#print axioms Tm.PlannerWit.the_reservation_is_clipped_to_the_block_it_is_in
+#print axioms Tm.PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block
+#print axioms Tm.PlannerWit.the_reservation_row_carries_no_energy
+#print axioms Tm.PlannerWit.the_reserved_day_assigns_the_running_block
+#print axioms Tm.PlannerWit.the_battery_passes_at_the_reserved_day
+#print axioms Tm.PlannerWit.the_battery_bites_on_the_reservation
+#print axioms Tm.PlannerWit.the_short_block_day_holds_a_block_longer_than_a_block
+#print axioms Tm.PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted
