@@ -1142,6 +1142,18 @@ fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
 /// call in this binary uses, so there is no second reader of "what is a
 /// request document" (AGENTS §5.3).
 ///
+/// **Why not `kernel_bridge::apply(ctx, &[])`**, which is the existing
+/// load-the-tree-and-write-nothing call (`Ctx::resolve_timeouts` uses it):
+/// because `apply` ends in a write step, and it writes back any document whose
+/// returned lines differ from the sent ones — a *renormalisation* counts. That
+/// is right for a verb that is about to change the tree and wrong for the one
+/// verb whose whole contract is to look. `tm check` runs in the pre-commit hook
+/// and the post-edit hook of every generated plan, so it must be unable to
+/// write **by construction**, not merely unlikely to: this goes through
+/// [`kernel_bridge::call`] directly, which has no write step at all, and
+/// `check_never_writes_a_byte` pins it. The shared part — what a request
+/// document *is* — is still shared.
+///
 /// A **fault** (the kernel returned nothing usable) is not a tree problem and
 /// is propagated as this command's error; only a named **refusal** becomes
 /// problems.

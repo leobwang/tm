@@ -31262,6 +31262,21 @@ second reader of "what is a request document" (AGENTS §5.3). The call runs
 **after** `--fix-ids` has written, so the kernel is asked about the tree that is
 now on disk and not the one that was.
 
+**Why not `kernel_bridge::apply(ctx, &[])`**, which is the existing
+load-the-tree-and-write-nothing call (`Ctx::resolve_timeouts` uses it) and would
+have been the shorter diff: because `apply` ends in a **write step**, and it
+writes back any document whose returned lines differ from the sent ones — a
+renormalisation counts. That is right for a verb about to change the tree and
+wrong for the one verb whose whole contract is to look. `tm check` is in the
+pre-commit hook and the post-edit hook of every generated plan, so it must be
+unable to write **by construction**, not merely unlikely to; this goes through
+`kernel_bridge::call`, which has no write step at all.
+`check_never_writes_a_byte` pins it on a clean tree *and* on a refused one,
+comparing every file of the plan — the Markdown, `.tm/log.jsonl`, `.tm/state.json`
+— byte for byte, with only `.tm/cache/` excluded (a rebuilt replay checkpoint the
+tolerant load has always written, on `995323b` too). The part that *is* shared
+stays shared: what a request document is.
+
 ### Error, not warning — the campaign call, taken and named
 
 `validate::KERNEL_LOAD` (`kernel-load`) is an **error**, so it moves
@@ -31547,7 +31562,7 @@ re-blessed.
 | axiom audit | **4,275 theorems**, §6.3 reconciliation `ok` | 4,275 | 4,275 | 4,265 |
 | burn-down | **12, all stage 6** | 12 | 12 | 12 |
 | corpus round trip | **29/37 files, 4/5 whole plans** | same | same | same |
-| `cargo test --workspace` | **1,322 passed / 0 failed / 9 ignored, 78 result lines** | 1,321 | 1,319 | 1,318 |
+| `cargo test --workspace` | **1,323 passed / 0 failed / 9 ignored, 78 result lines** | 1,321 | 1,319 | 1,318 |
 | FFI suite | **86 / 0** | 86/0 | 86/0 | 86/0 |
 | T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | same | same |
 | the door (`kernel_log_door`) | **23 / 0** | 23/0 | 23/0 | 23/0 |
@@ -31564,8 +31579,9 @@ first commit, which is the only one that changed Lean.
 **The test arithmetic closes with no remainder:** 1,318 (`995323b`) + 1
 (`a_key_collision_names_both_lines`) = 1,319; + 2 (`check_sees_a_kernel_load_refusal`,
 `a_damaged_log_stays_a_warning_while_a_refused_tree_is_an_error`) = 1,321; + 1
-(`dropping_a_title_keyed_line_writes_its_id_and_the_tree_still_loads`) =
-**1,322**. Binaries unchanged at 78, ignored unchanged at 9, 0 warnings.
+(`dropping_a_title_keyed_line_writes_its_id_and_the_tree_still_loads`) = 1,322;
++ 1 (`check_never_writes_a_byte`, the fourth commit) = **1,323**. Binaries
+unchanged at 78, ignored unchanged at 9, 0 warnings.
 `kernel_call_counts`' pairing assertion still passes, which is correct: the
 one-call shape has not landed and no capacity call site was touched.
 

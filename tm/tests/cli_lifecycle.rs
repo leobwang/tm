@@ -723,6 +723,74 @@ fn check_fix_ids_appends_missing_ids() {
     assert!(line.contains(" ^"), "{line}");
 }
 
+/// **`tm check` writes nothing, on a clean tree and on a refused one** — the
+/// property D32 item 2 had to preserve while giving this verb a kernel call.
+///
+/// `tm check` is wired into the git pre-commit hook and the Claude Code
+/// post-edit hook of every generated plan, so a validator that rewrote a file
+/// would be a serious regression — and the obvious implementation,
+/// `kernel_bridge::apply(ctx, &[])`, ends in a write step that fires on any
+/// document the kernel returns differently. The call this verb makes has no
+/// write step at all; this asserts every file of the plan — the Markdown,
+/// `.tm/log.jsonl` and `.tm/state.json` — is byte-identical afterwards.
+///
+/// `.tm/cache/` is excluded and only that: the replay checkpoint is a **cache**
+/// the tolerant load has always rebuilt (`Ctx::load_tolerant`, stage 5's
+/// switch), it is written on the clean tree at `995323b` too, and it carries no
+/// fact the user typed.
+#[test]
+fn check_never_writes_a_byte() {
+    fn snapshot(root: &std::path::Path) -> std::collections::BTreeMap<String, Vec<u8>> {
+        fn walk(
+            dir: &std::path::Path,
+            prefix: &str,
+            out: &mut std::collections::BTreeMap<String, Vec<u8>>,
+        ) {
+            let Ok(rd) = std::fs::read_dir(dir) else { return };
+            for e in rd {
+                let path = e.expect("entry").path();
+                let name = path.file_name().expect("name").to_string_lossy().to_string();
+                let rel = format!("{prefix}{name}");
+                if rel.starts_with(".tm/cache/") {
+                    continue; // a rebuilt cache, not the user's tree
+                }
+                if path.is_dir() {
+                    walk(&path, &format!("{rel}/"), out);
+                } else {
+                    out.insert(rel, std::fs::read(&path).expect("read"));
+                }
+            }
+        }
+        let mut out = std::collections::BTreeMap::new();
+        walk(root, "", &mut out);
+        out
+    }
+
+    let tm = Tm::new();
+    // A clean tree, and a tree with a line whose spacing a renormalising
+    // write-back would be tempted to tidy.
+    let path = tm.plan.join("backlog.md");
+    let mut text = std::fs::read_to_string(&path).expect("read backlog");
+    text.push_str("- [ ] 3 1b   Oddly    spaced   line   ^sp1
+");
+    std::fs::write(&path, text).expect("write backlog");
+
+    let before = snapshot(&tm.plan);
+    assert_eq!(tm.run(&["check"]).code, 0);
+    assert_eq!(snapshot(&tm.plan), before, "`tm check` wrote to the tree");
+
+    // …and on a tree it now refuses, where there is something it might have
+    // been tempted to fix.
+    let routines = tm.plan.join("routines.md");
+    let rt = std::fs::read_to_string(&routines).expect("read routines");
+    let first = rt.lines().next().expect("a routine line").to_string();
+    std::fs::write(&routines, format!("{rt}{first}\n")).expect("write routines");
+
+    let before = snapshot(&tm.plan);
+    assert_eq!(tm.run(&["check"]).code, 2);
+    assert_eq!(snapshot(&tm.plan), before, "`tm check` wrote to a tree it refused");
+}
+
 /// **`tm check` can see a refusal that stops every other verb** — the owner's
 /// D32 item 2, gap 476 closed.
 ///
