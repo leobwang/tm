@@ -747,7 +747,7 @@ theorem items_read_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat) (
         = some (Replay.Answer.date (Replay.minDay? ((st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1))))
       rw [hf]; rfl
     · show some (Replay.Answer.count (((findItem v.items i).map (·.doneCount)).getD 0))
-        = some (Replay.Answer.count (st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).length)
+        = some (Replay.Answer.count ((st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)).length)
       rw [hf]; simp [itemAggOf, ItemAgg.finish]
     · show some (Replay.Answer.bool (((findItem v.items i).map (·.dropped)).getD false))
         = some (Replay.Answer.bool (st.dropped.get i).isSome)
@@ -764,7 +764,7 @@ theorem items_read_state (st : State) (hs : List (Nat × HeaderRec)) (n : Nat) (
         = some (Replay.Answer.date (Replay.minDay? ((st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1))))
       rw [hf, doneDays_nil_of_not_mem _ i h4]; rfl
     · show some (Replay.Answer.count (((findItem v.items i).map (·.doneCount)).getD 0))
-        = some (Replay.Answer.count (st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).length)
+        = some (Replay.Answer.count ((st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)).length)
       rw [hf, doneDays_nil_of_not_mem _ i h4]; rfl
     · show some (Replay.Answer.bool (((findItem v.items i).map (·.dropped)).getD false))
         = some (Replay.Answer.bool (st.dropped.get i).isSome)

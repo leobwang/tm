@@ -30926,3 +30926,377 @@ door, `cli_switch_acceptance`, `kernel_call_counts`, `cli_check_log` and
 added, so nothing was probed at `MemoryMax=8G`**; no bound was raised and nothing
 was retried uncapped. No worktree was created and
 `.claude/worktrees/stage5-lookahead` was not touched.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-17: stage 6 (the planner), run **W-16**, **track K**,
+     step **K3b** — §5's recurrence family, inside the kernel.  Isolated
+     worktree `.claude/worktrees/w16-k`, branch `w16-k`, from `995323b`; the
+     Land step merges it.  Track K's gap range is **500-529**; this block takes
+     **500-504**, leaving **505-529** free.  Cheats **177-179** (track K's own).
+     No goal was discharged and none was added: the burn-down is **12**,
+     unchanged.  **D27 DID NOT LAND** and this block says so in its own section
+     rather than in a footnote.  Every figure below was re-measured on this
+     worktree, each command capped at MemoryMax=40G, MemorySwapMax=0.
+     =========================================================================== -->
+
+## Stage 6, W-16 track K step K3b, 2026-09-17: the kernel can name an occurrence — and D27 still cannot be done without more
+
+**Design §12's F2 row, §14.1's `K3`.** `Recur.lean` is new: 976 lines, 68
+definitions and 29 theorems, porting fork `tm-core/src/recur.rs`'s occurrence
+machinery — `instances` and its four constructors, `rule_occurrences`,
+`span`/`close_on`/`window_on`, `status_of`, `after_done_state`, `waiting_state`,
+`instance_info`, `is_mandatory` and `today_instances`.  **Nothing in the shipped
+binary calls any of it**, and that sentence is a measurement, not a hope — §"The
+shipped call sites" below is the grep and the drive.
+
+### Why this, and why it is only half of D27
+
+D27 wants nine candidate fields — `remaining`, `ci`, `due`, `overdue`,
+`mandatory`, `hot`, `window`, `wall`, `optional` — to stop being host-supplied.
+Five of them are properties of a *line* and the kernel already reads every one
+(`Tree.remainingMin`, `Core.ci`, `effectiveShape`, `Field.Flag.hot`, the file
+kind).  **Four are not.** `due`, `overdue`, `mandatory` and `window` are
+properties of the *occurrence a line has today*, and before this step the kernel
+had no name for an occurrence at all — `Core.recur`'s own doc comment says so
+("the denotation (§5.1's `instances`) is deliberately **not** here").  That is
+why gap 113 has read "the candidates' facts are the host's" since stage 5 and
+why W-14's track K refused D27 twice.
+
+This step is the denotation.  It is **not** D27: no `Cand` field moved, no wire
+key was removed, and `cand_json` and `priority::collect_candidates` are
+untouched.  §"What this step did NOT do" names the rest by function.
+
+### The one representation decision, and the measurement behind it
+
+Every instant here is a **local wall clock** (`Recur.LocalT`): seconds since the
+calendar origin in the plan's zone, which is exactly what `recur.rs`'s
+`NaiveDateTime` is ("Instance windows and dues are wall-clock `Naive*` values in
+`cfg.tz`").  It is `Cal.instantOf`'s own local second, `d * 86400 + c.val * 60`,
+so a caller turns an absolute instant into one with `Cal.localSec` and never
+with a second conversion (AGENTS §5.3).
+
+**Seconds and not minutes**, although every value this module *builds* lands on
+a whole minute.  Flooring `now` to the minute preserves `now < close` and
+`start > now` exactly — both are `⌊n/60⌋ < c ↔ n < 60c` — but it does **not**
+preserve `close_of(i) >= now`, which `today_instances`' own filter asks:
+`n = 60c + 1` makes the Rust false and the floored form true.  So the seconds
+stay, and `a_close_at_or_after_now_needs_the_seconds` is the theorem: the two
+strict comparisons survive flooring and the third does not.  This is written
+down because the cheap choice is wrong in exactly one of the three comparisons
+and the difference is one minute of a routine's life.
+
+### The five rules a reader should check first
+
+| rule | where | what it says |
+|---|---|---|
+| **the phase is the item's, never the range's** | `ruleOccurrences`, `calendarInstances` | `every:Nd` counts from the earliest completion the log knows, else `phaseEpoch` (1970-01-01).  `every_three_days_counts_from_the_anchor_and_not_from_the_range` is the theorem: the same rule asked about two ranges gives the same days, which is `recur.rs`'s own deviation 6 |
+| **`every:Nw` counts weeks, not ISO week numbers** | `weekIdxMod`, `weekEpoch` | whole weeks from the Monday of ISO 1970-W01, so a 53-week year keeps the 14-day rhythm.  Cheat **177** is the week-number reading and it fails |
+| **a month day is clamped, not invented** | `clampDom` | `every:month:31` in February 2026 is the **28th**.  Cheat **179** claims February has no occurrence and fails |
+| **a closed chance is over unless it persists** | `isMandatory`, `todayInstanceOf`'s filter | with the default `on-miss:expire` a window that ran out this morning is not a last chance and not a carry; only `on-miss:persist` keeps it.  Cheat **178** claims otherwise and fails |
+| **one occurrence per item** | `todayInstanceOf` | `todayInstances_singleton` — and it is the reason D27 can derive the four occurrence facts from an **id**: `collect_candidates` builds at most one candidate per id, because `today_instances` yields at most one instance per item |
+
+### What the witnesses actually show, driven end to end
+
+`PlannerWit.lean` is where the plan-level witnesses live, because a `WfPlan`
+needs `loadPlan` and a `Replay.Facts` needs the replay, and `Recur.lean` imports
+neither.  That is the module gap 348 built for exactly this, and **nothing
+imports it**.  The line is §4.3's own `routines.md` lunch — bare, box-less,
+id-less, so an entity only since K3a (D31) and keyed by its **title**.  The day
+is 2026-09-09 in Chicago, the same Wednesday `theRequest` plans.
+
+| witness | what it decides |
+|---|---|
+| `the_lunch_routine_is_todays_mandatory_window_at_noon` | window 11:30–13:30 local, due at its close, status `pending`, `mandatory` **true**, `overdue` false, `durMin` **30** — the four facts `Look.Cand` takes from the host today |
+| `the_lunch_routine_is_gone_by_two_in_the_afternoon` | **`none`**.  The expire veto: the window closed at 13:30, sixty days of earlier occurrences are `Expired` by §5.3 and not actionable, so nothing is carried either |
+| `a_persist_routine_is_one_carried_obligation_not_sixty_one` | the same line with `on-miss:persist` gives **one** instance at 14:00, not sixty-one.  §5.3's laundry, and the collapse `today_instances` exists for |
+
+Eight more witnesses are in `Recur.lean` itself and are pure date arithmetic:
+the seven `every:` rule shapes (`every_day_is_every_day`,
+`every_weekday_and_every_thursday_pick_their_days`,
+`every_three_days_counts_from_the_anchor_and_not_from_the_range`,
+`every_two_weeks_skips_a_week`, `every_week_is_monday_to_sunday`,
+`every_month_31_clamps_in_february`), the daily window in both directions
+(`a_daily_window_closes_on_its_own_date_unless_it_runs_overnight`), the two
+instance-key spellings, the two epochs, and
+`a_future_anchor_does_not_collapse_the_phase` — the arm truncated `Nat`
+subtraction would have got wrong, because `d − anchor` is signed in the fork and
+an anchor *after* the day is a log with a completion dated later than the day
+being asked about.
+
+### AGENTS §5.3: the one body that was three, widened rather than forked
+
+`factsView`'s `doneFirst` row, `factsView`'s `doneCount` row and
+`Seal.datesOf` were **three spellings of one list** —
+`(m.pairs.filter (fun p => p.1.2 = i)).map (·.1.1)` — and this step needed a
+fourth for `calendarInstances`' anchor and `nextOrdinal`'s floor.  It did not
+write one.  `Replay.doneDatesIn` is the body; `Facts.doneDatesOf` is the facts'
+view of it; `Seal.datesOf`'s **statement is unchanged** and its two laws
+(`mem_datesOf`, `datesOf_nodup`) are the same laws over the same value.  This is
+`Look.wallsOn_eq_map_wallIxOn`'s and K3a's `canonicalKeyed_of_canonical`'s
+shape: widen, and the old view is a projection of the new.
+
+Two further `Facts` readers were added beside `Facts.doneOn`, both fork
+functions the kernel had no name for: `Facts.isDone` (fork `Replay::is_done` —
+`done_items` is the key set of `last_done`, C4) and `Facts.instancesOf` (fork
+`Replay::instances_of`), with `mem_instancesOf`.
+
+**Consumed, and re-implemented nowhere:** `Cal.toDay`/`ofDay`/`weekdayOf`/
+`monthLen`/`isLeap`/`localDate`/`localSec`, `Field.Rule`/`Shape`/`Recur`/
+`OnMiss`/`WindowRange`/`Clock`/`DT`/`Dur`/`Moment`/`AfterDone`/`OnEvent` and
+their views, `Plan.shapeOf`, `Plan.declaredDur`, `effectiveOnMiss`,
+`defaultOnMiss`, `Core.recur`/`waiting`/`status`, `glyphOfStatus`,
+`Log.InstanceStatus`, `Log.instDate?`, `Replay.Facts.lastDone`/`instance`/
+`namedAt`, `Replay.NamedRec.push`, `Replay.minDay?`, `Replay.insSort`.  Nothing
+of `Look.windowEnd`, `windowOn`, `budgetOf`, `wallIndex`/`wallsOn`/`wallIxOn`,
+`freeIntervals`, `cutSlots`, `hsw100`, `predictAt`, `capForLocation`,
+`energize`, `limitSlots`, `day0Window`/`day0Cut`/`todayEnergy`/`day0Hist`,
+`Arith.ramp`/`posteriorNum`/`energyAfter`, `Tree.remainingMin`,
+`Plan.effectiveCi`, `Plan.rootPrio`, `Look.Cand`/`Cand.enters`/`servedOrder`/
+`prioritiesWithFloors`, `Prio.finalPrio`/`hysteresis` or `Cap.edf`/`edfGrants`
+was re-implemented; this step calls none of them either, because it computes
+occurrences and not capacity.
+
+**One name is deliberately NOT reused, and the input they disagree on is written
+down.** `Recur.placeMinutesOf` is fork `place_minutes` and is **not**
+`Plan.declaredDur`: on an `at:` interval `declaredDur` answers the interval's
+own length and `place_minutes` answers the line's `dur:`.  On every other shape
+`placeMinutesOf` **calls** `declaredDur`
+(`placeMinutesOf_is_declaredDur_off_an_interval`), and
+`placeMinutesOf_and_declaredDur_differ_on_an_interval` exhibits the one line
+where they part.  This is AGENTS §5.5 taken by name: tabulate where a different
+answer is merely different.
+
+### Laws restated (D5): the old form, the new form, and which implies which
+
+| law | at `995323b` | here | new ⇒ old? |
+|---|---|---|---|
+| `Seal.datesOf` | `(st.doneDates.pairs.filter …).map (·.1.1)` | `Replay.doneDatesIn st.doneDates i` | **yes — the same value.** Definitionally equal; `mem_datesOf` and `datesOf_nodup` are unchanged in statement and in proof |
+| `Replay.factsView` | `doneFirst`/`doneCount` spelled the filter inline | the two rows call `Facts.doneDatesOf` | **yes.** `doneFirst` is unchanged; `doneCount`'s arm is now the **length of the mapped list** rather than of the filter, which is the same number (`List.length_map`) |
+| `Seal.items_read_state` | **statement unchanged** | statement unchanged; two `show`s inside it re-spelled to the mapped form | **yes — no law moved.** This is the only proof in the tree that had to follow the widening, and it is why the widening was safe to make |
+
+No two-run (D5 relational) law is touched: this step adds no `Planner` or `Seal`
+statement and changes none.  Nothing in `Goals.lean` moved.
+
+### The shipped call sites — grepped, then driven
+
+W-15 recorded a rule as having "no caller" without grepping, and four verbs were
+refusing on it.  So:
+
+* **`grep -rl 'import TmKernel.Recur' kernel/`** finds exactly two files:
+  `TmKernel.lean` (the umbrella, where AGENTS requires the import line in the
+  same commit) and `PlannerWit.lean` (which nothing imports).  `Boundary.lean`
+  does not import it, there is no `Recur` op, and no `tm/src/cli/kernel*.rs`
+  names one.
+* **`Replay.lean`'s widening IS on the shipped path** — `factsView`'s
+  `doneFirst`/`doneCount` rows and `Seal.ItemAgg` — so it was driven rather than
+  argued.  Two **release** binaries were built, one from this worktree and one
+  from `995323b`, and run on the same `tm init --example` trees outside the
+  repo: `tm check`, `tm plan`, `tm now`, `tm review day`, `tm drop ^d2`, `tm
+  check`, `tm plan`, `tm --json log --tail 5`, then `tm routine done shower`,
+  `tm skip laundry`, `tm plan`, `tm review week`.  **Every byte is identical**
+  (`diff` reports nothing on both transcripts).  `routine done` and `skip` are
+  in the list on purpose: the fork's `next_ordinal` reads `done_date_count` and
+  its `calendar_instances` reads `done_date_first`, which are the two rows the
+  widening moved, and `shower #1 done` is the ordinal machinery answering.
+* **`TM_TRACE_KERNEL_CALLS=1 tm plan`** prints `log` and `capacity+log`, and
+  nothing else — the same two calls as before this step.
+* **T5 is the anchored arm** (D21): 29 comparisons against fork point
+  `4748911`, 0 failed, unchanged.  A widened fact reader that answered
+  differently would fail there against a frozen answer outside the tree.
+
+### Behaviour rows
+
+**There are none.**  No exit code, no line of output, no `--json` shape, no wire
+key and no refusal changed; the drive above is the evidence and the byte-diff is
+empty.  Nothing was re-blessed: no fixture, no snapshot, nothing under
+`kernel/corpus/`, no latency band, no frozen comparand.
+
+### Measured, at this commit
+
+All capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet` (16G for the FFI and the binary drive, 8G for the
+`decide` probes).  **No bound was raised**; nothing was retried uncapped; no
+`native_decide`; no new axiom; no `sorry` outside `Goals.lean`.
+
+| measurement | this commit | comparand — `995323b`, **built and measured in this session** in a second worktree (`.claude/worktrees/w16-base`) |
+|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 |
+| `check.sh`, built tree, **interleaved** base/here ×4 | **3.34 / 3.40 / 3.55 / 3.58 s** | **3.27 / 3.32 / 3.49 / 3.62 s**.  Medians **3.48 vs 3.41 — +2.1%**, well inside the 10%-per-step rule, and the two bands overlap.  Quoted as a range because a single number is the artefact W-15's defect 6 was about: the first three readings of this step were taken while `cargo test --workspace` was running and came out **3.76–3.94 s** |
+| peak RSS, `check.sh` | **1.78–1.94 GiB** | 1.76–1.94 GiB — the same band, nowhere near the 40 GiB cap |
+| axiom audit | **4,301 theorems**, §6.3 reconciliation `ok` | 4,265.  **+36**: 29 in `Recur.lean`, 1 in `Replay.lean` (`mem_instancesOf`), 6 in `PlannerWit.lean`.  Every added declaration has a line; none was removed |
+| burn-down | **12 outstanding, all stage 6** | 12.  **Unchanged — no goal discharged, none added, none deleted** |
+| corpus round trip | **29/37 files, 4/5 whole plans** | identical.  The 8 failing files are `plan-conflicts`, refused for `manyIds`, which this step does not and must not fix |
+| `cargo test --workspace` | **1,318 passed / 0 failed / 9 ignored across 78 result lines**, exit 0, **0 warnings** | 1,318 / 0 / 9 across 78 — the brief's figure.  **No delta, and none is expected: not one line of Rust changed** |
+| FFI (`tm-kernel-ffi`, `--test kernel`) | **ok** (check.sh step 5) | ok |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4** | 29 / 0 / 4 |
+| door (`kernel_log_door`) | **23 / 0** | 23 / 0 |
+| `cli_switch_acceptance` | **9 / 0** | 9 / 0 |
+| `kernel_call_counts` | **2 / 0** | 2 / 0 — the pairing assertion still passes, which is correct: the one-call shape has not landed |
+| `cli_latency` | **5 / 0 / 1**, every band met | 5 / 0 / 1.  No T11 number is quoted here: nothing on `tm`'s hot path changed (no Rust, and the log path's widened rows are definitionally the same list), so a single-run reading would be this machine's noise and nothing else |
+| `kernel_lookahead_parity` | **4 / 0** | 4 / 0 |
+| `planner_invariants` | **6 / 0** | 6 / 0 |
+
+### The recursion rule (D9-21)
+
+Three fueled walks are added, each bounded by the range the caller fixes and
+each with its length bound proved: `eachDayGo` (`eachDayGo_length_le`,
+`eachDay_length_le` — one step per day), `monthsGo` (`monthsGo_length_le` — one
+per month), `mondaysGo` (`mondaysGo_length_le` — one per week).  `ruleOccurrences`
+is those three and nothing else recurses.  Everything else walks a list through
+core: `loggedInstances` is `filterMap` over `HMap.pairs` then `Replay.insSort`;
+`nextOrdinal` and `completionCount` are `filterMap`/`filter` and a `foldl`;
+`instancesWithInfo` is `map`; `todayInstances` is `filterMap`
+(`todayInstances_length_le`).  `charsLe` recurses once per character of an
+`inst` key, which the log's own line guard bounds.  No new `@[csimp]` twin is
+owed: nothing here is a hand-written structural recursion over a wire list.
+
+**R10.** `Recur` adds no wire type and decodes nothing: `InstKey`, `Inst`,
+`InstInfo`, `AfterDoneSt` and `WaitingSt` are **derived** values, every field of
+which comes from a plan the loader already bounded or a replay the log guard
+already bounded.  When D27 puts them behind `Cand`, `Cand`'s existing R10 bounds
+and `readCand`'s refusals are what still apply.
+
+### Gaps opened
+
+#### Gap 500 (label W16K-a) — D27 is half done: the occurrence exists, the candidate fact does not
+
+1. **What is not done.** None of D27's nine `Look.Cand` fields moved.
+   `readCand` still decodes `ci`, `rootPrio`, `remaining`, `due`, `window`,
+   `wall`, `optional`, `overdue`, `mandatory`, `hot` and `yesterday` off the
+   wire; `cand_json` (`tm/src/cli/kernel_capacity.rs:668`) still writes them and
+   `priority::collect_candidates` (`tm/src/cli/ctx.rs:848`) still computes them.
+2. **Why.** The four occurrence facts needed a denotation and now have one, but
+   the other five need two more kernel readers that do not exist —
+   `Tree::effective_due` (`tree.rs:628`) and `Tree::overdue` (`tree.rs:1092`) —
+   and moving the fields at all is a **wire** change: `readCand` loses ten keys,
+   `send_order` (which orders the request by the host's `effective_due` and
+   `own_order`, and which P12 depends on) has to be re-derived, and the whole
+   thing must land in one commit or the field is computed twice (D19, and the
+   two-reader class D27 exists to end).  That is a step, not a tail.
+3. **What it costs.** Exactly what gap 113 has cost since stage 5: a wrong fact
+   from the host is a wrong priority with no refusal, and `ci`, `!k` and
+   `remaining` have two readers for id-bearing items.  **Gaps 113, 114, 116 and
+   gap 301's item 1 stay open and whole**; this step closed none of them and
+   claims none of them.
+4. **When it clears.** The next track-K step: `effectiveDue` and `overdue` in
+   the kernel, then the nine fields and their two host copies in one commit.
+
+#### Gap 501 (label W16K-b) — `Recur.lean` has no caller
+
+1. **What is not done.** No shipped verb reaches any function in `Recur.lean`.
+   `Boundary.lean` does not import it; the only importers are `TmKernel.lean`
+   and `PlannerWit.lean`, and nothing imports `PlannerWit`.
+2. **Why.** It is the denotation gap 500 needs and nothing else consumes an
+   occurrence yet: `Planner.RoutineIn` is still the host's per-instance record
+   and `mkRoutine?` still refuses on it.
+3. **What it costs.** 957 lines of kernel that the corpus, the oracle and the
+   binary drive cannot exercise.  Its evidence is the fifteen decided witnesses
+   and three cheats above — real, and **weaker than a driven verb**, which is
+   why this is written down as a gap and not as a footnote.  A reader must not
+   read "the recurrence is in the kernel" as "the kernel plans recurrences".
+4. **When it clears.** With gap 500, and with `RoutineIn` at P2's next revision.
+
+#### Gap 502 (label W16K-c) — the sixty-day lookback clamps at the calendar origin
+
+1. **What is not done.** `todayInstanceOf`'s range start is `today −
+   carryLookbackDays` in `Nat`, which truncates to day 0 for the first sixty
+   days of the calendar; fork `today.checked_sub_signed(…).unwrap_or(today)`
+   answers `today` when the subtraction fails.
+2. **Why.** The two disagree only for dates before 0001-03-02 here and before
+   about year −262144 there, and neither is a `Cal.Day` the loader can build.
+3. **What it costs.** Nothing reachable.  It is recorded because a later reader
+   comparing the two functions line by line will see the difference and should
+   find it already known.
+4. **When it clears.** Never, as a recorded deviation, unless a parity sweep
+   over `recur.rs` wants the arm.
+
+#### Gap 503 (label W16K-d) — two ordinals are unbounded where the fork's are `u32`
+
+1. **What is not done.** `nextOrdinal` ends in `+ 1` and `completionCount` in a
+   `Nat.max`; the fork's are `saturating_add(1)` and
+   `u32::try_from(…).unwrap_or(u32::MAX)`.
+2. **Why.** `Nat` has no ceiling, and reaching the fork's would need about four
+   billion logged instances of one item.
+3. **What it costs.** Nothing reachable; the log's own size guard is far below
+   it.  Recorded for the same reason as gap 502.
+4. **When it clears.** With gap 500's R10 pass, if a `Cand` field ever carries
+   an ordinal to the wire.
+
+#### Gap 504 (label W16K-e) — no instrument compares the kernel's occurrences with the fork's
+
+1. **What is not done.** `oracle-compare` has no column for an occurrence: the
+   sweep compares item-ness, ids, acceptance and the log's facts, and nothing
+   asks "which instances does this item have today, and with what status".
+2. **Why.** The oracle binary is built from fork point `4748911` outside the
+   repo and its comparison set predates this module; adding a column is a change
+   to `examples/oracle/src`, which is not this step's file set, and there is
+   nothing in the *kernel* to drive from the shipped binary yet (gap 501).
+3. **What it costs.** The fifteen witnesses pin the seven rule shapes and three
+   end-to-end days; they are not a sweep, and a divergence in an arm no witness
+   names — `after-done:` with a `~validity` across a miss, `on-event:` while the
+   item waits — would not be found until D27 lands and parity runs.
+4. **When it clears.** With gap 500, whose acceptance is the candidate facts'
+   parity; R2 is the natural place for the column.
+
+### Cheats (`Negative.lean`, appended)
+
+| # | label | cheat | fails because |
+|---|---|---|---|
+| **177** | W16K-a | `every:2w:<wd>` fires on the weekday of every week | `weekIdxMod` counts whole weeks from `weekEpoch`, so 2026-09-14 is not an occurrence; `decide` refuses (controls `every_two_weeks_skips_a_week`) |
+| **178** | W16K-b | a `win:` routine whose window closed this morning is still mandatory | `isMandatory`'s last clause is `now < close` unless `on-miss:persist`; `decide` refuses (controls `the_lunch_routine_is_gone_by_two_in_the_afternoon`, `a_persist_routine_is_one_carried_obligation_not_sixty_one`) |
+| **179** | W16K-c | `every:month:31` skips a month without a 31st | `clampDom` clamps to the month's length, so February 2026's occurrence is the 28th; `decide` refuses (controls `every_month_31_clamps_in_february`) |
+
+Each fails at its own line with `Tactic decide proved that the proposition … is
+false`.
+
+### What this step did NOT do, by name
+
+* **It did not do D27** (gap 500).  `cand_json`, `priority::collect_candidates`,
+  `readCand`, `readCands` and `Look.Cand` are untouched, and **gaps 113, 114,
+  116 and gap 301 item 1 are open and whole**.
+* **It did not write `Tree.effectiveDue` or `Tree.overdue`**, the two readers
+  the other five fields need.
+* **It did not touch `Planner.lean`** — `RoutineIn` is still host-supplied and
+  `mkRoutine?` still refuses on it, which is track P's file.
+* **It did not touch `Line.lean`'s grammar, the collision errors or the wire.**
+  No `Boundary.lean` decoder, no `Refusal`, no R10 row, no JSON key.
+* **It did not change one line of Rust**, one byte under `kernel/corpus/`,
+  `lean-toolchain`, or any dependency.  No axiom, no `partial def`, no `unsafe`,
+  no `opaque`, no `panic!`, no `!`-accessor, no `.toOption`, no Mathlib.
+* **It discharged no goal and added none**: the burn-down is 12 before and 12
+  after.
+* **It did not re-bless anything** and did not run the differential oracle with
+  `TM_FORK_BLESS`.  The oracle was **not run at all** this step, and that is a
+  deliberate omission with a reason: this step changes no byte the oracle
+  compares (the binary drive's diff is empty), and there is no occurrence column
+  for it to compare (gap 504).
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran capped.  The
+`decide`/`rfl` budget (§5.10a): **17** new decided witness theorems — eleven in
+`Recur.lean` (pure `Nat` dates, no parsed text) and six in `PlannerWit.lean` (two
+`loadsOk` decisions over a one-line document, one date, three occurrence
+equations) — plus three cheats, **20 in all**, which is the budget exactly.  It
+was 24 when the module was first written and **four witnesses were merged into
+conjunctions to fit it** — the weekday and Thursday rules, the two `every:3d`
+ranges, the two daily-window directions, and the two epochs — so no claim was
+dropped and four probes were.  Every one was probed at
+`MemoryMax=8G timeout 120` before it was kept; the whole `PlannerWit` module
+elaborates in **7.5 s at 8G**.  **One witness was rewritten for its cost and
+the measurement is why:** cheat 178 was first written as
+`todayInstanceOf … |>.isSome = true`, which walks sixty-one days under `decide`
+and pushed `Negative.lean`'s elaboration from **2.18 s to 2.55–2.59 s** and
+`check.sh` to **+12.5%**, over the rule.  It is now the `isMandatory` claim
+against a hand-built instance — the same rule, one `HMap.get` — and
+`Negative.lean` is **2.23–2.25 s**, +0.06 s.  `check.sh` was run **twenty-six** times
+across the two arms; the four **interleaved** base/here pairs on the final trees
+are the ones quoted, and the earlier loaded-machine readings are shown beside
+them rather than hidden.  `cargo test --workspace` was run **once**, on the
+final tree.  The binary drive used two **release** builds, one per worktree, on
+scratch trees outside the repository, and the two transcripts were compared with
+`diff`.
+
+**Highest on this branch:** gap **504**, cheat **179**, parity **P38**
+(unchanged — this step issues no parity entry, because it compares nothing
+against the fork point that a frozen answer does not already cover).

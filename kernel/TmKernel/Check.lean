@@ -5089,3 +5089,51 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.splitSleep_congr
 #print axioms Tm.PlannerWit.the_witness_carries_no_routine
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_routine_the_rule_refuses
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-16**, track K step **K3b** — §5's
+-- recurrence family inside the kernel: `Recur.lean` (new, with its import line
+-- in `TmKernel.lean`), the `doneDatesIn` widening in `Replay.lean` and
+-- `SealAgg2.lean`, and the four end-to-end witnesses in `PlannerWit.lean`.
+--
+-- No goal is discharged and none is added: the burn-down is 12 before and 12
+-- after.  Nothing in the shipped binary calls `Recur.lean`.
+-- ===========================================================================
+#print axioms Tm.Replay.mem_instancesOf
+
+#print axioms Tm.Recur.dateOfT_atClock
+#print axioms Tm.Recur.dateOfT_endOfDay
+#print axioms Tm.Recur.a_close_at_or_after_now_needs_the_seconds
+#print axioms Tm.Recur.parseInstKey_renderInstKey_nth
+#print axioms Tm.Recur.eachDayGo_length_le
+#print axioms Tm.Recur.eachDay_length_le
+#print axioms Tm.Recur.eachDayGo_mem
+#print axioms Tm.Recur.eachDay_mem
+#print axioms Tm.Recur.phaseEpoch_is_1970_01_01
+#print axioms Tm.Recur.the_two_epochs_are_the_dates_the_fork_names
+#print axioms Tm.Recur.mondayOf_is_a_monday
+#print axioms Tm.Recur.dayHere_length_le
+#print axioms Tm.Recur.monthHere_length_le
+#print axioms Tm.Recur.monthsGo_length_le
+#print axioms Tm.Recur.weekHere_length_le
+#print axioms Tm.Recur.mondaysGo_length_le
+#print axioms Tm.Recur.placeMinutesOf_is_declaredDur_off_an_interval
+#print axioms Tm.Recur.placeMinutesOf_and_declaredDur_differ_on_an_interval
+#print axioms Tm.Recur.todayInstances_length_le
+#print axioms Tm.Recur.todayInstances_singleton
+#print axioms Tm.Recur.every_day_is_every_day
+#print axioms Tm.Recur.every_weekday_and_every_thursday_pick_their_days
+#print axioms Tm.Recur.every_three_days_counts_from_the_anchor_and_not_from_the_range
+#print axioms Tm.Recur.every_two_weeks_skips_a_week
+#print axioms Tm.Recur.every_week_is_monday_to_sunday
+#print axioms Tm.Recur.every_month_31_clamps_in_february
+#print axioms Tm.Recur.a_daily_window_closes_on_its_own_date_unless_it_runs_overnight
+#print axioms Tm.Recur.an_instance_key_reads_back_both_ways
+#print axioms Tm.Recur.a_future_anchor_does_not_collapse_the_phase
+
+#print axioms Tm.PlannerWit.the_recur_witness_loads
+#print axioms Tm.PlannerWit.recurDay_is_the_witness_wednesday
+#print axioms Tm.PlannerWit.the_lunch_routine_is_todays_mandatory_window_at_noon
+#print axioms Tm.PlannerWit.the_lunch_routine_is_gone_by_two_in_the_afternoon
+#print axioms Tm.PlannerWit.the_persist_witness_loads
+#print axioms Tm.PlannerWit.a_persist_routine_is_one_carried_obligation_not_sixty_one

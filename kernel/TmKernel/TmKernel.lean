@@ -68,6 +68,7 @@ import TmKernel.SealWire
 import TmKernel.State
 import TmKernel.Plan
 import TmKernel.Tree
+import TmKernel.Recur
 import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Lookahead

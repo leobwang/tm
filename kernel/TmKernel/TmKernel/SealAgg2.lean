@@ -14,8 +14,12 @@ namespace Seal
 open Replay (State HMap KeyHash)
 open Log (Entry)
 
-/-- An item's done dates in a state. -/
-def datesOf (st : State) (i : Log.Id) : List Nat := (st.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)
+/-- An item's done dates in a state.  **Widened at stage 6 step K3b**: the body
+moved to `Replay.doneDatesIn`, which `Facts.doneDatesOf` and `factsView`'s
+`doneFirst`/`doneCount` rows now also call, so the three spellings of one list
+are one function (AGENTS §5.3).  The statement is unchanged and every law below
+is the same law. -/
+def datesOf (st : State) (i : Log.Id) : List Nat := Replay.doneDatesIn st.doneDates i
 
 theorem mem_datesOf (st : State) (hk : AllKeyed st) (i : Log.Id) (d : Nat) :
     d ∈ datesOf st i ↔ (st.doneDates.get (d, i)).isSome := by
