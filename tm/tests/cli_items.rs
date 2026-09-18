@@ -1166,17 +1166,48 @@ fn an_ambiguous_title_is_refused_by_every_verb_and_nothing_is_written() {
     }
 }
 
-/// The refusal is about **this** key: an unambiguous title on the same tree
-/// still works, so the guard is not a blanket refusal of a tree with any
-/// duplicate in it.
+/// **RESTATED under the owner's D35** (gap 584), and the old assertion is
+/// refuted rather than deleted.
+///
+/// As written at the W-16 repair this said: *"the refusal is about **this**
+/// key: an unambiguous title on the same tree still works, so the guard is not
+/// a blanket refusal of a tree with any duplicate in it"*, and asserted
+/// `tm drop groceries` **exits 0** on the collision tree. That is now **false**,
+/// deliberately: D35 makes every write path ask the kernel whether the tree
+/// still loads, and a tree holding a title collision does not load — so
+/// `tm drop groceries` refuses too, and refuses with the *tree's* sentence.
+/// Writing to a tree every reading verb refuses is exactly what D35 stopped.
+///
+/// The property the old assertion was protecting is real and is kept, in the
+/// form that still bites: **which refusal fires.** `Ctx::refuse_ambiguous_title`
+/// is about *which line an argument names* and runs first, on the argument;
+/// the gate is about *the tree* and runs after. So the two verbs below must
+/// fail for two different reasons, and a guard that had become a blanket
+/// refusal of any tree with a duplicate in it would give both the same one.
 #[test]
-fn an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision() {
+fn an_unambiguous_title_is_refused_by_the_tree_and_not_by_the_key() {
     let tm = Tm::new();
     let path = tm.plan.join("routines.md");
     let doubled = format!("{}- laundry    win:09:00-21:00 dur:30m every:week on-miss:persist\n", tm.read("routines.md"));
     fs::write(&path, &doubled).expect("write routines.md");
-    let json = tm.json(&["drop", "groceries"]);
-    assert!(json["assigned"].is_string(), "{json}");
+
+    // The unambiguous key: the gate refuses, naming the *other* two lines.
+    let out = tm.run(&["drop", "groceries"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("dupId"), "{}", out.stderr);
+    assert!(out.stderr.contains("routines.md:7"), "{}", out.stderr);
+    assert!(out.stderr.contains("routines.md:9"), "{}", out.stderr);
+    assert!(!out.stderr.contains("groceries"), "the key guard fired on an unambiguous key: {}", out.stderr);
+
+    // The ambiguous key: the argument guard refuses first, naming the key.
+    let out = tm.run(&["drop", "laundry"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("`laundry`"), "{}", out.stderr);
+    assert!(out.stderr.contains("names 2 lines"), "the key guard did not fire: {}", out.stderr);
+
+    // And neither wrote.
+    assert_eq!(tm.read("routines.md"), doubled);
+    assert!(tm.log().is_empty(), "{:?}", tm.log());
 }
 
 #[test]

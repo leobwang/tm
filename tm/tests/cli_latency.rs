@@ -192,9 +192,19 @@ fn a_verb_on_a_tree_with_months_of_history_takes_well_under_a_second() {
     history_verbs(&tm, "");
 }
 
-/// The two verbs every test here times, with the work the bounds are about
+/// The three verbs every test here times, with the work the bounds are about
 /// checked: `label` names the log behind them in the printed figures.
-fn history_verbs(tm: &Tm, label: &str) -> (Duration, Duration) {
+///
+/// **The third row is the owner's D35 instrument** (gap 584): a *host-only*
+/// write — `tm edit ^z2 'title=…'`, a typed non-key edit, which gap 41 keeps
+/// off the wire — now asks the kernel whether the tree still loads before it
+/// writes. That is a whole-tree kernel load on a path that never had one, and
+/// D35 made measuring it a condition of landing it. It is timed here, on the
+/// same tree, in the same serial section, one line below the `tm drop` row it
+/// has to be compared with: the drop is a verb whose write **is** a kernel
+/// call, so it is what one whole-tree load costs on this tree, and the gated
+/// edit must land in the same band rather than in a new one.
+fn history_verbs(tm: &Tm, label: &str) -> (Duration, Duration, Duration) {
     // One timed pair at a time: the harness runs tests on parallel threads, and
     // two trees closing at once would time each other.
     let _serial = SERIAL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -228,7 +238,27 @@ fn history_verbs(tm: &Tm, label: &str) -> (Duration, Duration) {
     assert_eq!(code, 0, "{out}");
     assert!(later < LATER_VERB, "a drop on the swept tree took {later:?} (bound {LATER_VERB:?})");
     assert!(fs::read_to_string(tm.plan.join("backlog.md")).expect("backlog").contains("[~] 2 30m Synthetic task 1 ^z1"));
-    (first, later)
+
+    // The gated host-only write (D35, gap 584), beside the drop it is compared
+    // with. `title=` is a typed non-key edit: it never reaches the kernel's
+    // `edit` op (gap 41), so before D35 this verb wrote without the kernel
+    // seeing the tree at all, and its whole cost is now one `tree_refusal`.
+    let (code, out, gated) =
+        timed(tm, &["edit", "^z2", "title=Synthetic task 2 renamed"], LATER_VERB);
+    eprintln!("latency{label}: gated host-only write (D35) {gated:?}");
+    assert_eq!(code, 0, "{out}");
+    assert!(
+        gated < LATER_VERB,
+        "a gated host-only edit took {gated:?} (bound {LATER_VERB:?})"
+    );
+    // It did the work the bound is about: the line really was rewritten.
+    assert!(
+        fs::read_to_string(tm.plan.join("backlog.md"))
+            .expect("backlog")
+            .contains("Synthetic task 2 renamed ^z2"),
+        "the gated edit did not rewrite its line"
+    );
+    (first, later, gated)
 }
 
 /// The history tree's last ended day: the log below ends on it.
@@ -258,8 +288,8 @@ fn write_log(tm: &Tm, days: u32) -> (usize, usize) {
 fn a_verb_with_a_year_of_log_takes_well_under_a_second() {
     let tm = history_tree();
     let (lines, bytes) = write_log(&tm, 365);
-    let (first, later) = history_verbs(&tm, &format!(" (1y log: {lines} lines, {bytes} bytes)"));
-    assert!(first < FIRST_VERB && later < LATER_VERB);
+    let (first, later, gated) = history_verbs(&tm, &format!(" (1y log: {lines} lines, {bytes} bytes)"));
+    assert!(first < FIRST_VERB && later < LATER_VERB && gated < LATER_VERB);
     // The verbs appended after the year, not over it.
     let text = fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("log");
     assert!(text.len() > bytes && text.starts_with("{\"t\":\"2025-09-14T"), "{}", &text[..80]);
@@ -273,8 +303,8 @@ fn a_verb_with_a_year_of_log_takes_well_under_a_second() {
 fn a_verb_with_three_years_of_log_takes_well_under_a_second() {
     let tm = history_tree();
     let (lines, bytes) = write_log(&tm, 1_095);
-    let (first, later) = history_verbs(&tm, &format!(" (3y log: {lines} lines, {bytes} bytes)"));
-    assert!(first < FIRST_VERB && later < LATER_VERB);
+    let (first, later, gated) = history_verbs(&tm, &format!(" (3y log: {lines} lines, {bytes} bytes)"));
+    assert!(first < FIRST_VERB && later < LATER_VERB && gated < LATER_VERB);
 }
 
 /// **T14** (stage 5 D10 L8, design §14.8's L8 row and §18.8): since L8 `tm plan`
@@ -428,8 +458,8 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
     // Rows 1 and 2: the first verb (genesis + the automatic close + a drop) and
     // a later verb on the swept tree. `history_verbs` takes the serial lock,
     // times both and checks the work the bounds are about really happened.
-    let (first, later) = history_verbs(&tm, &label);
-    assert!(first < FIRST_VERB && later < LATER_VERB);
+    let (first, later, gated) = history_verbs(&tm, &label);
+    assert!(first < FIRST_VERB && later < LATER_VERB && gated < LATER_VERB);
     // **Gap 140, turned around at S.** The switched binary persists its
     // checkpoint; 0 here would mean every verb paid a genesis.
     let cached = cache_files(&tm);

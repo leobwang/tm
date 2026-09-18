@@ -33160,6 +33160,10 @@ Twelve verbs driven, each on its own damaged tree: `drop`, `edit … ci=`,
 `.tm/log.jsonl` is touched** — asserted by md5 and by an empty log.
 `an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision` pins that
 the guard is about the key and not a blanket refusal.
+*(W-17 track A: **renamed** to `an_unambiguous_title_is_refused_by_the_tree_and_not_by_the_key`,
+and its assertion refuted in place. D35 gates every write on the kernel's load, so
+`tm drop groceries` on this tree now exits 1 too — the property kept is **which** refusal
+fires: the key guard on the ambiguous key, the tree gate on the unambiguous one.)*
 
 **What it does NOT close is gap 584**, below — found while driving this.
 
@@ -33638,3 +33642,454 @@ probes that found `Char.ext` and `UInt32.lt_iff_toNat_lt` were run at 8G with a
 180-second timeout. Binary drives used two release binaries, this tree's and
 `5ea1541`'s, on scratch `tm init --example` trees **outside the repo**, at
 `MemoryMax=16G`. No bound was raised and nothing was retried uncapped.
+
+<!-- ===========================================================================
+     Stage 6, W-17 TRACK A, 2026-09-18 — the owner's D35: one shared write gate,
+     measured before it landed.  Gap range 630-649 (three taken: 630-632).
+     No cheat taken; none renumbered.  No Lean touched.
+     Whoever merges next renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-17 track A, 2026-09-18: every host-only write asks the kernel first — D35, gap 584
+
+**Gap 584 — CLOSED for the kernel-refusal class, and one new hole of the same
+class recorded as gap 630 rather than absorbed.**
+
+The defect W-16 recorded and did not fix: a *host-only* write path — the ones
+gap 41 (`title=`, `p=`, `state=`, `--set`, `--unset ci`), gap 5 (an id-less
+line) and §4.1's positional-slot surgery left behind — never asked the kernel
+anything, so a user could keep editing a tree that `tm plan`, `tm now` and
+`tm review` all refused.
+
+### Reproduced first, on the shipped binary
+
+Release binary, scratch `tm init --example` tree **outside the repo**,
+`MemoryMax=16G`, built at `24acb5a` before any change. `routines.md` gets a
+ninth line repeating `- laundry …`, and two sound `tm plan` runs first so §6.3's
+automatic close has already swept and holds no refusal of its own — which is the
+half W-16 drove and found **unsound** as a substitute for the gate:
+
+```
+$ tm --now 2026-09-07T09:00:00-05:00 edit '^d1' 'title=CS 234 pset 2 renamed'
+- [ ] 4 6b CS 234 pset 2 renamed                @O3 due:2026-09-11T23:59 max:2b/d ^d1
+                                                                          [exit 0]
+week file md5 before=63343dd2… after=c54a22f8…      (it wrote)
+$ tm --now 2026-09-07T09:00:00-05:00 plan
+tm: kernel refusal: dupId — routines.md:7 and routines.md:8 …                [exit 1]
+$ tm check
+routines.md:7: error[kernel-load]: kernel refusal: dupId — …
+routines.md:8: error[kernel-load]: kernel refusal: dupId — …
+2 errors, 0 warnings                                                        [exit 2]
+```
+
+**And the cheap alternative was re-driven and is unsound, exactly as W-16 said.**
+On a tree where nothing is due (`state.closed` already stamped by the two `plan`
+runs), `tm edit` prints **no warning whatever** and exits 0: `closing::auto_close`
+only runs when a period has ended, so the verb holds no refusal to lean on.
+
+### What landed
+
+**One question, one asker** (AGENTS §5.3). `kernel_bridge::tree_refusal(ctx)`
+is now the only definition of *"does the kernel load this tree"* in the binary.
+It is `lifecycle::kernel_problems`' old body, lifted:
+
+* `tm check` reads it and turns a refusal into `CheckProblem`s — `kernel_problems`
+  is now four lines and **D32 item 2 is untouched**: `tree_refusal` goes through
+  `kernel_bridge::call` directly, which has **no write step at all**, so
+  `check_never_writes_a_byte` is now a property of one *function* rather than of
+  one *command*;
+* `kernel_bridge::gate(ctx, verb)` turns the same refusal into a write's, for the
+  host-only paths;
+* `Ctx::resolve_timeouts` and `day::preflight` (gap 115's) **stopped** asking it
+  the second way. Both sent `kernel_bridge::apply(ctx, &[])` — the same question
+  through the machine that ends in a write step, which writes back any document
+  whose returned lines differ from the sent ones, so a *renormalisation* counted
+  and a pre-flight could write. They call the gate now and cannot.
+
+`the_tree_load_question_has_one_asker` pins that, by grepping the sources: it
+names `tree_refusal`'s two readers and fails if a fourth spelling of the
+empty-command request appears outside the bridge.
+
+### The call sites, enumerated by grepping from `main` down
+
+`cli::run`'s dispatch table is 34 verbs. The write paths were found by walking it
+and by grepping every `Recorder::start(` call site — **not** by listing the ones
+that came to mind, which is how gap 584 was missed in the first place: W-16 drove
+every verb that addresses an item *by title* and the defect was in the one that
+addresses it *by `^id`*.
+
+| paths | how they reach the kernel |
+|---|---|
+| `wake`, `start`, `done`, `extend`, `stop`, `break`, `interrupt`, `pause`, `idle`, `event`, `skip`, `routine done`, `sync-cal`, `review --write`, `model --fit`, the TUI's `J`/`K`, inbox capture, `note` and `l` | **`gate`** — they never reached the kernel at all |
+| `add`, `edit`, `move`, `rank`, `readopt`, `drop` — the **host-only branch of each** (id-less lines, `--set`, the typed non-key edits) | **`gate`** |
+| `add`, `edit`, `move`, `rank`, `demote`, `readopt`, `drop` — the **kernel branch of each** | `kernel_bridge::apply`, unchanged: the kernel already sees the whole tree and a refusal writes nothing, so a second load would buy nothing and would double `tm drop`'s T11 row |
+| `arrive`, `resume`, `energy` | `day::preflight`, which **was already** a whole-tree call (gap 115) and is now the gate — the same one call, so these three did not move |
+| `close` | `closing::run_explained` → `apply`, whose kernel call is the first thing it does |
+| **`undo`** | **deliberately ungated.** It is the way *out* of a tree the kernel refuses; a gate on it would lock the user inside one. `tm_undo_is_not_gated_so_a_refused_tree_can_still_be_backed_out_of` says so out loud |
+| `init` | no tree yet |
+| **`check`** | D18/gap 145's one tolerant verb — it *is* how the line is found |
+
+`tm rank`'s "already at that position" arm pays a whole-tree load for a verb that
+then writes nothing (`Recorder::finish` pushes no entry when nothing changed).
+That is deliberate and its reason is in the code: the arm reports **success**, and
+a verb must not report success on a tree every reading verb refuses. Keeping the
+rule exceptionless is what lets the source guard below have no allow-list.
+
+### MEASURED BEFORE IT LANDED — D35's binding condition
+
+The cost is one whole-tree kernel load per host-only write. D35 requires it be
+measured against **T11's `tm drop` row** — the one reliable baseline — and says
+that if it does not fit, that is a finding and **not a bound to raise (D18)**.
+
+**A new T-row was added to the committed harness** rather than measured by hand
+(AGENTS §5.11): `cli_latency::history_verbs` now times `tm edit ^z2 'title=…'` —
+a typed non-key edit, which gap 41 keeps off the wire — one line below the
+`tm drop ^z1` row, on the same 226-file / 2,959-line tree, in the same serial
+section. The A/B was taken by building the same tree twice, once with the gate
+short-circuited behind a temporary env switch that was then **removed** (it is in
+no commit).
+
+Release, `MemoryMax=40G`, three passes each, machine otherwise idle, T11's
+three-year log (66,169 lines, 6.9 MB):
+
+| row | pass 1 | pass 2 | pass 3 | range |
+|---|---:|---:|---:|---|
+| host-only write, **ungated** (pre-D35) | 106.50 | 111.45 | 111.50 ms | **106.5–111.5 ms** |
+| host-only write, **gated** (this tree) | 126.51 | 126.79 | 126.59 ms | **126.5–126.8 ms** |
+| `tm drop`, the comparand, same three runs | 131.70 | 131.87 | 141.61 ms | **131.7–141.6 ms** |
+
+**The gate costs 15–20 ms, and the gated write lands at 126.5–126.8 ms — inside
+`tm drop`'s band and, in every pass taken, *below* it.** It fits. `tm drop`'s row
+is a verb whose write **is** a whole-tree kernel call, so it is what one such
+load costs on this tree; the gated edit is cheaper than it because the gate only
+loads where `apply` also applies a command and writes a document back. No bound
+was raised and nothing was re-blessed.
+
+Across every pass taken this session (ten of the drop row, seven of the gated
+row, including two runs under load) the drop row spans **126.7–142.0 ms** and the
+gated write **126.5–136.8 ms**; the gated write was never the slower of the two.
+
+### The column that would have missed it, pinned (the gap-577 lesson)
+
+`kernel_call_counts` printed an `apply` column and **asserted nothing about it**.
+The gate moved five of its twelve rows and the whole suite stayed green — gap
+577's shape (a fact on the wire pinned by no test), one column over. Measured at
+`24acb5a` by stashing this branch's diff, and re-measured after:
+
+| verb | apply before | apply after | why |
+|---|---:|---:|---|
+| `wake` | 1 | **2** | §6.3's automatic close (it runs first on the shared tree) **+ the gate** |
+| `start`, `pause`, `done`, `break` | 0 | **1** | the gate alone |
+| `arrive`, `energy` | 1 | 1 | `preflight` was already one call |
+| `drop` | 1 | 1 | its own kernel-backed write |
+| `check` | 1 | 1 | `tree_refusal` — now the same function the gate calls |
+| `undo`, `review day`, `log` | 0 | 0 | ungated / read verbs |
+
+`expected_apply_calls` pins every row. **Confirmed to bite**: deleting the
+`break` gate makes it fail by name — *"`tm break` made 0 whole-tree kernel
+load(s), expected 1"*.
+
+### A write refused by the gate says why, where, and that nothing was written
+
+```
+$ tm edit '^d1' 'title=CS 234 pset 2 renamed'
+tm: kernel refusal: dupId — routines.md:7 and routines.md:8 are two lines in one file
+  that resolve to the store key `laundry` (…); the kernel refuses a tree it cannot load whole
+  nothing was written: `tm edit` needs a tree the kernel can load whole, and every reading
+  verb refuses this one too — fix the line named above, or run `tm undo`
+                                                                            [exit 1]
+week file md5 unchanged · log unchanged
+```
+
+The **first** sentence is the kernel's own, byte for byte the one a kernel-backed
+verb already printed, carrying D32's two positions (gap 475) — one spelling of
+the refusal whichever path the verb took (§5.3). The **second** is the gate's, and
+it is the only thing added: `gate` stamps `refusedWrite` with the verb's name and
+`CliError::report` prints that line. So `--json` carries it keyed, not only in
+prose:
+
+```json
+"detail": { "a": {"path":"routines.md","line":7}, "b": {"path":"routines.md","line":9},
+            "key": "laundry", "refusal": "dupId", "refusedWrite": "edit" }
+```
+
+`KernelIssue.message` is **untouched**, so W-12's don't-say-it-twice dedupe (gap
+239) still matches it exactly and a refusal the automatic close already printed
+still prints once.
+
+### `tm check` is still the one tolerant verb — driven, both halves
+
+D18/gap 145, and W-16's gap 579 broke one half of it once, so both were driven on
+the shipped binary rather than reasoned about.
+
+**A damaged log** — a truncated JSON line, a log line with invalid UTF-8, and a
+line dated next year, appended by hand:
+
+```
+$ tm check
+.tm/log.jsonl:3: warning[log-line]: the log reader refused this line: not JSON: emptyInput …
+.tm/log.jsonl:4: warning[log-line]: the log reader refused this line: invalid UTF-8 …
+.tm/log.jsonl:5: warning[log-future]: a `note` dated 2027-03-01 10:00, more than 2 days after now …
+0 errors, 3 warnings                                                        [exit 0]
+$ tm edit '^d1' 'title=renamed'      → exit 0, the line rewritten
+```
+
+Warnings, exit unchanged, and the gated write **goes through** — correct: D18 (i)
+makes a malformed log line a warning, and a damaged log is not an unloadable
+tree. (`reachTooFar`, the one log fault `tm check` alone tolerates, is driven by
+`cli_latency`'s T11 row, which asserts the fault is named and fast; it ran green
+here — *"a 30-day-old hand undo (target ^140, done 2026-08-14) 1.30–1.68 s"*.)
+
+**Invalid UTF-8 in a plan `.md`** — and this one turned up a second hole, which
+is fixed rather than recorded, because leaving it would have made this block's
+own headline false:
+
+```
+$ printf -- '- caf\xc3\x28 broken utf8\n' >> inbox.md
+$ tm check
+inbox.md:5: error[bad-value]: not valid UTF-8; the file was skipped
+1 error, 0 warnings                                                         [exit 2]
+$ tm plan                                                                   [exit 1]
+$ tm edit '^d1' 'title=renamed'     ← BEFORE the fix
+- [ ] 4 6b renamed  … ^d1                                                   [exit 0]   ← it wrote
+```
+
+`tree_refusal` **skips** a file whose bytes are not text (that is gap 579's
+repair, and it is why `tm check` survives one), so the kernel answered "fine"
+about the rest of the tree and the write went through — gap 584's own shape, one
+input class over. The gate now asks `PlanFiles::undecodable()` first, which reads
+back the verdict `Store::read_tree` already reached and the line it already found
+(`store::NOT_UTF8` is the one spelling; nothing decodes anything twice):
+
+```
+$ tm edit '^d1' 'title=renamed'      ← AFTER
+tm: inbox.md:5: not valid UTF-8; the file was skipped — nothing was written: `tm edit` needs
+  a tree that can be read whole, and every reading verb refuses this one too (run `tm check`:
+  it names every such line)                                                 [exit 1]
+week file md5 unchanged
+$ tm check                           ← unchanged: still names the line, still exits 2
+```
+
+### Behaviour changes, recorded next to the rule they replace
+
+| input | before | after | why |
+|---|---|---|---|
+| any write verb on a tree the kernel refuses (a title collision, a dangling `@parent`, a `badLine`) | the host-only ones wrote and exited **0** | refused, exit 1, naming the file and line and saying nothing was written | **D35** |
+| any write verb on a tree holding a file whose bytes are not text | the host-only ones wrote and exited **0** | refused, exit 1, naming the file and the line | D35, the class above |
+| `tm drop <an unambiguous title>` on a tree that holds a collision elsewhere | exited 0 and wrote | refused by the **tree**, naming the two colliding lines | D35 |
+| `tm arrive` / `tm resume` / `tm energy` pre-flight on a tree with a renormalisable file | `apply(ctx, &[])` could write the renormalised file | the gate cannot write at all | §5.3 / D32 item 2 |
+
+The third row **refutes a W-16 assertion**, and it is refuted in place rather than
+deleted: `an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision`
+asserted exit 0 for exactly that command. It is renamed
+`an_unambiguous_title_is_refused_by_the_tree_and_not_by_the_key`, and the
+property it was really protecting is kept in the form that still bites — **which**
+refusal fires: `Ctx::refuse_ambiguous_title` is about which line an argument
+names and runs first, on the argument; the gate is about the tree and runs after.
+A guard that had become a blanket refusal would give both commands the same
+sentence. The W-16 block's citation of the old name is corrected in place.
+
+### The tests, and that they bite
+
+`tm/tests/cli_write_gate.rs`, six tests:
+
+* `every_write_verb_refuses_a_tree_the_kernel_cannot_load_and_writes_nothing` —
+  **27 invocations of 26 verbs** (`tm edit` twice, on a wired key and an unwired
+  one), each on its own tree, each with the setup its own
+  preconditions need; every one exits non-zero and the whole directory
+  (`.tm/log.jsonl`, `.tm/state.json`, `.tm/undo.json` included; `.tm/cache/`
+  excluded as derived, D13) is **byte-identical** afterwards;
+* `every_write_verb_still_works_on_a_tree_the_kernel_loads` — the same 27 on a
+  sound tree, all exit 0, so a `gate` that refused unconditionally would pass the
+  first test and fail this one;
+* `a_refused_write_names_both_lines_and_says_nothing_was_written` — the sentence
+  and the `--json` detail, on a swept tree so the automatic close is not what is
+  being read;
+* `tm_undo_is_not_gated_so_a_refused_tree_can_still_be_backed_out_of`;
+* `every_undo_recording_path_is_accounted_for` — the **source guard**;
+* `the_tree_load_question_has_one_asker`.
+
+**Confirmed to bite, by mutation.** With `gate` short-circuited to `Ok(())`,
+three of the six fail (*"`["wake","07:15"]` exited 0 on a tree the kernel
+refuses"*). With the `event` gate deleted, the source guard fails: *"`cli/items.rs::event`
+is declared to reach the kernel through `kernel_bridge::gate(` and does not"*.
+With a new `fn a_new_write_verb_nobody_gated` added that calls `Recorder::start`:
+*"records an undo entry and is not in `UNDO_RECORDERS` — say how it asks the
+kernel whether the tree still loads (D35, gap 584), then add its row"*.
+
+**What the source guard does not catch, said plainly**: a function that carries a
+marker on one branch and writes on another. That is a judgment no grep makes, and
+the 27-verb drive above is what covers it. The guard's job is the *next* write
+verb, which is the one gap 584 was about.
+
+### AGENTS §5.3: what was consumed, and the greps run before writing anything
+
+**Greps run before any new function was written**, over `tm/src`, `tm-core/src`
+and `kernel/`: `kernel_problems`, `load_problems`, `Recorder::start`,
+`kernel_bridge::apply`, `"cmds"`, `is_not_utf8`, `unreadable`, `read_tree`,
+`first_bad_utf8_line`, `check_plan`, `preflight`, `CHECK_HINT`, `refusal`,
+`KernelIssue`. Those greps are what found that the question already had **two**
+askers (`kernel_problems` and `apply(ctx, &[])` in two places) — so the step
+deleted one of them rather than adding a third.
+
+**Consumed, by name, and re-implemented none of them:**
+`lifecycle::kernel_problems` (lifted, not copied), `lifecycle::load_problems`,
+`kernel_bridge::call`, `kernel_bridge::doc_json`, `kernel_bridge::doc_lines`,
+`kernel_bridge::apply`, `kernel_bridge::capturing_kernel_stderr`,
+`out::KernelIssue`, `out::CliError::report`, `out::the_automatic_close_said`,
+`Store::read_tree`, `Store::list_files`, `Store::read_text`,
+`StoreError::is_not_utf8`, `store::unreadable`, `store::first_bad_utf8_line`,
+`grammar::Problem`, `grammar::ParsedFile::problems`, `undo::Recorder`,
+`Ctx::refuse_ambiguous_title`, `Ctx::item`, `kernel_capacity::check_plan`,
+`closing::run_explained`, `validate::CheckProblem`, `validate::KERNEL_LOAD`,
+`cli_latency::history_verbs`, `cli_latency::timed`,
+`kernel_call_counts::expected_log_calls` (as the shape to copy).
+
+**Two things were added, and neither is a second answer.** `tree_refusal` is the
+old `kernel_problems` body with its `CheckProblem` mapping taken off — the mapping
+still lives in `load_problems` and has one caller. `PlanFiles::undecodable` reads
+back the problem `Store::read_tree` already wrote, through `store::NOT_UTF8`,
+which is now the one spelling of that message and is used by both.
+
+**No Lean was touched**, so no goal moved, no `Check.lean` line is owed, no
+`TmKernel.lean` import is owed, no cheat was taken and no `decide` witness was
+written (no 8G probe owed, none run).
+
+### `shipped_call_sites`, driven and not asserted
+
+Every rule this step added, the shipped verbs that reach it found by grepping the
+host path from `cli::run` down, and what driving each showed. Release binary,
+scratch `tm init --example` trees **outside the repo**, `MemoryMax=16G`, each
+swept with two `tm plan` runs first so the automatic close holds no refusal.
+
+| rule | shipped callers, by grep | driven |
+|---|---|---|
+| `kernel_bridge::gate` | **26 textual call sites**, counted: `cli/day.rs` **10** (nine verbs, plus `preflight`'s one, which `arrive`, `resume` and `energy` share), `cli/items.rs` **10**, `cli/lifecycle.rs` **3**, `tui/mod.rs` **3** | **26 verbs driven on a refused tree**, each on its own: `wake`, `arrive`, `start`, `done`, `extend`, `stop`, `break`, `interrupt`, `resume`, `pause`, `energy`, `idle`, `add`, `edit ^id title=`, `move`, `rank`, `demote`, `readopt`, `drop`, `event`, `skip`, `routine done`, `close day`, `sync-cal`, `review day --write`, `model --fit`. **All exit 1 and the whole directory is byte-identical** (md5 of the tree, `.tm/cache` excluded). The three TUI sites are **not** driven — `tm tui` exits by name when stdout is not a tty (AGENTS §5.13, gap 182) — and are covered by grep and by the source guard, which this row says rather than implying 29 is 26 |
+| `kernel_bridge::tree_refusal` | `lifecycle::kernel_problems` (`tm check`), `Ctx::resolve_timeouts` (every housekeeping load), `kernel_bridge::gate` | `tm check` on the collision tree still prints **both** lines and exits 2; on a damaged log still prints three warnings and exits 0; on an invalid-UTF-8 `.md` still prints `inbox.md:5` and exits 2 |
+| the `refusedWrite` line in `CliError::report` | `gate` only — no other code sets the key | printed by `tm edit`, `tm resume`, `tm extend`, `tm stop`, `tm routine done` (each naming its own verb); **not** printed by `tm readopt ^m4`, which takes the kernel branch and gets `apply`'s refusal — correct, and the drive shows the difference |
+| `PlanFiles::undecodable` | `kernel_bridge::gate` only; `store::NOT_UTF8` also written by `Store::read_tree` | before: `tm edit` exit 0 on a tree with a stray byte in `inbox.md`; after: exit 1 naming `inbox.md:5`, file unchanged; `tm check` unchanged either way |
+| `day::preflight`'s new signature | `arrive`, `resume`, `energy` | all three refuse the collision tree with the gate's sentence naming their own verb; `kernel_call_counts` shows their `apply` column **did not move** (1 before, 1 after) |
+| `tm undo`'s *absence* from the gate | — | `tm undo` on a refused tree exits **0**: *"undid demote (demote ^m4) · 2 file(s) restored · 0 left"* |
+
+### Acceptance
+
+`check.sh` **7/7**, three serial capped runs on a built tree: **3.46 / 3.46 /
+3.47 s**, peak RSS 1.93–1.98 GiB. Axiom audit **4,373 theorems**, corpus **29/37
+files and 4/5 whole plans**, burn-down **11, all stage 6** — every one identical
+to `24acb5a`'s, as it must be: **this step's diff touches no file under
+`kernel/`** other than this README block, so check.sh's inputs are byte-identical
+to HEAD's and the 10%-per-step rule has nothing to measure. (A baseline run in the
+main checkout was attempted and abandoned: that tree is track P's and is dirty, so
+its numbers are not HEAD's. Nothing there was modified — `lake build` and
+`cargo test` write only to build directories.)
+
+`cargo test --workspace`: **1,337 passed / 0 failed / 9 ignored across 79 result
+lines**, 0 warnings, capped. Against the brief's comparand of **1,331 / 0 / 9
+across 78**: **+1 result line** (the new `cli_write_gate.rs` binary) and **+6
+tests** (its six). `cli_items` is unchanged in count — one test renamed and
+restated, not added. Every delta accounted for.
+
+`kernel_replay_parity --include-ignored` (T5) **33**; `kernel_log_door` **23**;
+`cli_switch_acceptance --include-ignored` **9**; `kernel_log_grammar
+--include-ignored` **18**; `kernel_call_counts` **2**, with the `apply` column
+now pinned. `cli_latency --include-ignored` in **release**, 6 passed; its noisy
+rows are quoted as **ranges** over this session's runs and **none was
+re-blessed**. Pre-change / post-change, so a reader can see which is which:
+reseal **171.8** / **187.4, 187.4 ms**; the 3-day routine **101.4** / **126.6,
+136.8 ms**; `review week` **253.1** / **253.3, 268.6 ms**. All are inside or
+beside the recorded bands (README gap 240: reseal 197.5–212.6, routine
+121.6–136.8, `review week` 248.1–253.3) and the two that sit outside them
+(`review week` at 268.6 and the reseal below its band) were taken on a machine
+that had just finished the workspace suite — which is precisely why gap 240 says
+these three are never to be read as single numbers. `tm drop`'s reliable row
+spans **126.7–142.0 ms** over ten passes.
+
+### Gaps taken: 630-632. 633-649 free.
+
+**Gap 630 — OPEN, and NEW: the gate is a PRE-condition, not a post-condition.**
+1. *What is not done.* `kernel_bridge::gate` asks whether the tree loads **now**.
+   It does not ask whether it will load after the write. A host-only write whose
+   own bytes break the tree therefore still exits 0. **Driven**, on a sound, swept
+   example tree: `tm add --to routines -- "- laundry win:09:00-21:00 dur:30m
+   every:week on-miss:persist"` exits **0** and writes `routines.md:9`; `tm check`
+   then exits 2 naming `routines.md:7 and routines.md:9`, and `tm plan` exits 1.
+2. *Why it is recorded rather than fixed.* The fix is a second whole-tree load
+   **after** the write plus a rollback path, which doubles D35's measured 15–20 ms
+   to 30–40 ms per host-only write and needs its own answers for `tm undo`'s
+   stack, the exit code and the `--json` document. D35 priced the pre-condition
+   and only the pre-condition; making it a post-condition is the owner's call and
+   wants its own measurement. The kernel-backed paths do not have this hole —
+   `apply` checks the post-state — so the real cure for `tm add` in particular is
+   to widen `kernel_addable` (gap 5 / gap 41), which is track R's work.
+3. *What it costs.* A user can still reach a tree every reading verb refuses,
+   through a host-only write that exits 0 — but only by a write that *creates* the
+   fault, never by writing on top of one, which is what gap 584 was about. It is
+   bounded the same way: the write is a byte-faithful line edit, `tm undo` takes
+   it back, and every reading verb refuses loudly.
+4. *Which step clears it.* R3, with `planner.rs`, when the host-only branches of
+   `add`/`edit`/`move`/`rank`/`readopt`/`drop` die — or an owner decision to make
+   the gate two-sided, with the measurement beside it.
+
+**Gap 631 — OPEN: the gate's cost has an instrument but no bound.**
+1. *What is not done.* `cli_latency`'s new D35 row asserts only `< LATER_VERB`
+   (1 s), which is about **8×** the measured 126.5–126.8 ms. A change that doubled
+   the gate's cost would print a worse number and still pass.
+2. *Why.* Every row in that file is bounded generously on purpose (its header says
+   so: 8× and 20× the measured figures, so a busy machine does not flake them), and
+   inventing a tight bound for one row would be a different policy for one row.
+3. *What it costs.* The gate's price is *recorded* per run and *guarded* only
+   loosely; a regression is caught by a reader comparing the printed figure with
+   this block, not by the suite.
+4. *Which step clears it.* Whichever step gives T11 a band-per-row policy — gap
+   240's subject.
+
+**Gap 632 — OPEN: the two halves of the gate refuse in two JSON shapes.**
+1. *What is not done.* A kernel refusal gives `"kind":"kernel"` with keyed
+   `detail` (`refusal`, `refusedWrite`, `a`/`b` path and line). The
+   undecodable-bytes refusal gives `"kind":"error"` with `"detail":{}` and the
+   file and line **only inside the sentence**.
+2. *Why.* It is not a kernel refusal and has no `KernelIssue` to carry; inventing
+   one for it would be a second wire shape for a host verdict, which is worse than
+   the asymmetry.
+3. *What it costs.* A script that wants the file and line of a refused write has
+   to parse prose for one of the two cases. `tm check --json` carries both
+   properly, so the information is reachable; it is one command further away.
+4. *Which step clears it.* P8 or R1, when the refusal families are next widened.
+
+### Numbering
+
+Gaps: this step **630-632**; **633-649 free** (track A's range). Cheats: **none
+taken**, none renumbered. No audit line added or removed — no Lean was touched,
+so `Check.lean` is byte-identical and the audit stands at **4,373**. Highest on
+this branch after this step: gap **632** in track A's range; the branch high-water
+mark is whatever the Land step finds across the tracks.
+
+### Worktrees
+
+`.claude/worktrees/stage5-lookahead` untouched. This step worked in
+`.claude/worktrees/w17-a` on branch `w17-a`, branched from `24acb5a`, and commits
+there; the Land step merges. Its `kernel/TmKernel/.lake` was **copied** from the
+main checkout's built tree rather than rebuilt (same commit, same sources) so the
+worktree did not pay a cold Lean build; it is gitignored and in no commit.
+
+### Method disclosure
+
+`check.sh` was run **five** times in this checkout — once to establish the tree
+and the three timed runs, and once on the final tree: 7/7 every time.
+`cargo test --workspace --no-fail-fast` was run **four** times: once before any
+change (1,331 across 78 — the brief's comparand, reproduced), once mid-step where
+**one test failed** (`an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision`
+— printed here rather than dropped, and restated rather than re-blessed), and
+twice on the final tree (1,337 both times). Each total was obtained by summing the
+result lines, not by `tail`. `cli_latency` was run **six** times in release: one
+baseline, three with a temporary ungated build, three gated — the temporary env
+switch used for the A/B was removed and is in no commit, and the numbers above
+name which build each came from. `kernel_call_counts`' before-column was measured
+by `git stash push -u` on this branch at `24acb5a`, then `git stash pop`. Three
+mutations were applied and reverted to confirm the new tests bite (the gate
+short-circuited; one `gate` call deleted; a new ungated write function added);
+each failure message is quoted above. Binary drives used the release binary on
+scratch `tm init --example` trees **outside the repo**, at `MemoryMax=16G`. No
+`decide` or `rfl` witness was written, so no 8G probe was owed and none was run.
+No bound was raised, nothing was retried uncapped, and no snapshot, fixture,
+latency band or corpus entry was re-blessed.

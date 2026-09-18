@@ -387,7 +387,34 @@ pub struct PlanFiles {
     pub files: Vec<ParsedFile>,
 }
 
+/// **The one spelling of "these bytes are not text", as a tree problem.**
+///
+/// [`Store::read_tree`] writes it, [`PlanFiles::undecodable`] reads it back
+/// and `tm check`'s `bad-value` row prints it. `StoreError::is_not_utf8` is the
+/// same verdict about an *error*; this is the verdict about a *file already in
+/// the tree*, which is a different question with the same answer, and neither
+/// is spelled twice (AGENTS §5.3).
+pub const NOT_UTF8: &str = "not valid UTF-8; the file was skipped";
+
 impl PlanFiles {
+    /// **The first file whose bytes are not text, with the line the bad byte
+    /// is on** — `None` when every file decoded.
+    ///
+    /// [`Store::read_tree`] tolerates such a file (it becomes an empty
+    /// [`ParsedFile`] carrying the problem) so that `tm check` can name the
+    /// line rather than dying on it. Every verb that reads the tree *strictly*
+    /// still fails on it, which is why a **write** has to be able to ask:
+    /// nothing else in the binary can tell the difference between a tree the
+    /// kernel would load and one no reading verb can open.
+    pub fn undecodable(&self) -> Option<(&str, usize)> {
+        self.files.iter().find_map(|f| {
+            f.problems
+                .iter()
+                .find(|p| p.message == NOT_UTF8)
+                .map(|p| (f.path.as_str(), p.line))
+        })
+    }
+
     /// The file at a relative path.
     pub fn file(&self, rel: &str) -> Option<&ParsedFile> {
         self.files.iter().find(|f| f.path == rel)
@@ -1022,7 +1049,7 @@ pub trait Store {
                             // command that says only "stream did not contain
                             // valid UTF-8" — and the plan files never got it.
                             line: first_bad_utf8_line(self, &rel),
-                            message: "not valid UTF-8; the file was skipped".to_string(),
+                            message: NOT_UTF8.to_string(),
                         });
                         files.push(f);
                     }

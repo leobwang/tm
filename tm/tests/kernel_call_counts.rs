@@ -105,6 +105,56 @@ fn expected_log_calls(verb: &str) -> u32 {
     }
 }
 
+/// **The per-verb whole-tree `apply`-section count** — pinned for the first
+/// time at W-17, because the owner's **D35** made it the column that says what
+/// the write gate costs (gap 584).
+///
+/// An `apply` section is one whole-tree load: every plan file's lines cross the
+/// FFI and the kernel runs `planWf` over the lot. Until D35 this column was
+/// printed and asserted about by nothing, and the gate — one such load added to
+/// every host-only write path — moved five of the twelve rows while the whole
+/// suite stayed green. That is **gap 577's shape** (a fact on the wire pinned
+/// by no test), one column over, and the fix is the same: pin the value.
+///
+/// Read the numbers against the run's order — all twelve verbs run in sequence
+/// on **one** tree, so §6.3's automatic close fires on the **first** verb and
+/// finds nothing to do afterwards:
+///
+/// * `wake` **2** = the automatic close's own apply, plus the gate;
+/// * `start`, `pause`, `done`, `break` **1** = the gate alone (they came after
+///   the sweep, so no automatic close);
+/// * `arrive`, `energy` **1** = `day::preflight`, which was already a whole-tree
+///   call before D35 (gap 115) and is now the gate — the same one call, so these
+///   two rows did **not** move;
+/// * `drop` **1** = its own kernel-backed write, which is why `tm drop`'s T11
+///   row is what one whole-tree load costs, and why D35's measurement is
+///   compared against it;
+/// * `check` **1** = `kernel_bridge::tree_refusal`, D32's load-the-tree sweep,
+///   which is now the same function the gate calls;
+/// * `undo` **0**, deliberately — it is the way *out* of a tree the kernel
+///   refuses, and a gate on it would lock the user inside one;
+/// * `review day`, `log` **0** — they do not write.
+///
+/// So a change that adds a second whole-tree load to a verb, or that quietly
+/// drops the gate from one, fails here **by name**.
+fn expected_apply_calls(verb: &str) -> u32 {
+    match verb {
+        "wake" => 2,
+        "arrive" => 1,
+        "start" => 1,
+        "pause" => 1,
+        "done" => 1,
+        "energy" => 1,
+        "break" => 1,
+        "drop" => 1,
+        "undo" => 0,
+        "review day" => 0,
+        "log" => 0,
+        "check" => 1,
+        other => panic!("`tm {other}` is not in the measured table"),
+    }
+}
+
 /// **The per-verb `capacity`-section count**, pinned exactly beside the `log`
 /// column for the first time at W-14 (**gap 278**).
 ///
@@ -319,6 +369,20 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
             c.emit, want,
             "`tm {name}` made {} kernel `emit` call(s), expected {want}",
             c.emit
+        );
+    }
+
+    // **The whole-tree column, pinned exactly** — new at W-17, and the
+    // instrument the owner's D35 is measured by: one `apply` section is one
+    // whole-tree kernel load, which is exactly what the write gate adds.
+    for (name, c) in &table {
+        let want = expected_apply_calls(name);
+        assert_eq!(
+            c.apply, want,
+            "`tm {name}` made {} whole-tree kernel load(s), expected {want} — a verb that grew \
+             one is paying a second tree load, and a verb that lost one is writing without asking \
+             whether the tree still loads (D35, gap 584)",
+            c.apply
         );
     }
 

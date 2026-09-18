@@ -246,6 +246,7 @@ pub struct WakeOut {
 /// `tm wake [HH:MM] [--slept 8h10m] [--onset 25m]`.
 pub fn wake(g: &Globals, args: &super::WakeArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    super::kernel_bridge::gate(&ctx, "wake")?;
     let rec = Recorder::start(&ctx, "wake")?;
     let time = match &args.time {
         Some(t) => parse_time(t)?,
@@ -378,21 +379,24 @@ pub struct ArrivalPlan {
 /// losing it outright, since no log line recorded it either.
 ///
 /// [`super::kernel_capacity::check_plan`] covers the *configured* values
-/// (parity P26). This adds the **tree**, through the one no-command kernel
-/// call [`Ctx`]'s `resolve_timeouts` already uses for the same purpose:
-/// [`super::kernel_bridge::apply`] writes a document only when the kernel
-/// changed it, and a request with no commands changes none — so the check
-/// itself writes nothing, on a sound tree or a refused one.
-fn preflight(ctx: &Ctx) -> Result<(), CliError> {
+/// (parity P26). This adds the **tree**, through
+/// [`super::kernel_bridge::gate`] — the one shared write gate the owner's D35
+/// makes every host-only write path ask (gap 584). It used to ask
+/// `kernel_bridge::apply(ctx, &[])`, which is the same question through the
+/// machine that ends in a write step: a request with no commands changes
+/// nothing, but a document the kernel *renormalises* differs from the one sent
+/// and would have been written back by a pre-flight. The gate goes to
+/// `kernel_bridge::call` directly and cannot write at all.
+fn preflight(ctx: &Ctx, verb: &str) -> Result<(), CliError> {
     super::kernel_capacity::check_plan(ctx)?;
-    super::kernel_bridge::apply(ctx, &[])?;
+    super::kernel_bridge::gate(ctx, verb)?;
     Ok(())
 }
 
 /// `tm arrive [lounge|home|<name>]`.
 pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    preflight(&ctx)?;
+    preflight(&ctx, "arrive")?;
     let rec = Recorder::start(&ctx, "arrive")?;
     let loc = args
         .loc
@@ -544,6 +548,7 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
             )));
         }
     }
+    super::kernel_bridge::gate(&ctx, "start")?;
     let rec = Recorder::start(&ctx, "start")?;
     let ended_break = end_break(&mut ctx)?;
 
@@ -682,6 +687,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         None if retro => return Err(missing(&id)),
         None => None,
     };
+    super::kernel_bridge::gate(&ctx, "done")?;
     let rec = Recorder::start(&ctx, "done")?;
 
     let (est_min, actual_min) = if retro {
@@ -803,6 +809,7 @@ pub fn extend(g: &Globals, args: &super::ExtendArgs) -> Result<i32, CliError> {
     let Some(active) = ctx.state.active.clone() else {
         return Err(CliError::msg("nothing is running"));
     };
+    super::kernel_bridge::gate(&ctx, "extend")?;
     let rec = Recorder::start(&ctx, "extend")?;
     let block_min = ctx.block_min();
     let by = match &args.by {
@@ -860,6 +867,7 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
     let Some(active) = ctx.state.active.clone() else {
         return Err(CliError::msg("nothing is running"));
     };
+    super::kernel_bridge::gate(&ctx, "stop")?;
     let rec = Recorder::start(&ctx, "stop")?;
     let id = active.id.clone();
     let started = ctx.at(active.started);
@@ -946,6 +954,7 @@ pub fn take_break(g: &Globals, args: &super::BreakArgs) -> Result<i32, CliError>
         Some(s) => Some(dur(s, ctx.block_min())?.as_minutes()),
         None => None,
     };
+    super::kernel_bridge::gate(&ctx, "break")?;
     let rec = Recorder::start(&ctx, "break")?;
     let running = ctx.state.break_.clone();
     let out = if let Some(br) = running {
@@ -1028,6 +1037,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
     if ctx.state.interrupt.is_some() {
         return Err(CliError::msg("already interrupted — `tm resume` first"));
     }
+    super::kernel_bridge::gate(&ctx, "interrupt")?;
     let rec = Recorder::start(&ctx, "interrupt")?;
     let id = ctx.state.active.as_ref().map(|a| a.id.to_string());
     ctx.state.interrupt = Some(InterruptState {
@@ -1062,7 +1072,7 @@ pub fn interrupt(g: &Globals) -> Result<i32, CliError> {
 /// `tm resume`.
 pub fn resume(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    preflight(&ctx)?;
+    preflight(&ctx, "resume")?;
     let Some(int) = ctx.state.interrupt.clone() else {
         return Err(CliError::msg("nothing to resume"));
     };
@@ -1148,6 +1158,7 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
     let Some(mut active) = ctx.state.active.clone() else {
         return Err(CliError::msg("nothing is running"));
     };
+    super::kernel_bridge::gate(&ctx, "pause")?;
     let rec = Recorder::start(&ctx, "pause")?;
     active.paused = !active.paused;
     let paused = active.paused;
@@ -1213,7 +1224,7 @@ pub fn energy(g: &Globals, args: &super::EnergyArgs) -> Result<i32, CliError> {
         return Err(CliError::msg("energy is 0–5"));
     }
     let mut ctx = Ctx::load(g, true)?;
-    preflight(&ctx)?;
+    preflight(&ctx, "energy")?;
     let rec = Recorder::start(&ctx, "energy")?;
     let at: NaiveTime = match &args.at {
         Some(t) => parse_time(t)?,
@@ -1304,6 +1315,7 @@ pub fn idle(g: &Globals, args: &super::IdleArgs) -> Result<i32, CliError> {
         }
     };
     let mut ctx = Ctx::load(g, true)?;
+    super::kernel_bridge::gate(&ctx, "idle")?;
     let rec = Recorder::start(&ctx, "idle")?;
     let min = args.min.unwrap_or_else(|| {
         let last = ctx.replay.last_effective_t;
