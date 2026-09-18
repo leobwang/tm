@@ -1250,27 +1250,110 @@ pub struct DropOut {
     pub id: Id,
     /// The line afterwards.
     pub line: String,
+    /// **The `^id` this drop wrote onto a title-keyed line** (D33, gap 477),
+    /// when it wrote one. `None` for a line that already carried an id.
+    ///
+    /// D33's accepted cost is a token in the user's Markdown that they did not
+    /// type, and "deliberately and **visibly**" is half the decision — so the
+    /// token is named in the answer rather than found later in a diff.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned: Option<Id>,
 }
 
-/// `tm drop ^id`.
+/// **A verb that puts a state box on a title-keyed line writes its `^id`
+/// first** — the owner's **D33**, gap 477.
+///
+/// Since D31 a box-less, id-less line is a real entity keyed by its **title**.
+/// Putting a box on it makes it a *tracked* item, and a tracked item needs an
+/// id that survives the user editing its title: without one, `tm drop lunch`
+/// wrote `- [~] lunch …`, which the kernel's own grammar then refuses
+/// (`PErr.noId`, `Negative.lean` cheat 174), so one documented one-word command
+/// bricked every kernel-backed verb on the tree.
+///
+/// **Cheat 174 stays, and D33 follows D31 rather than bending it**: the kernel
+/// still never invents an id for a line the user marked as tracked. The *host*
+/// writes it, deliberately and visibly — and the accepted cost is a token in
+/// the user's Markdown that they did not type.
+///
+/// The id is generated the way `--fix-ids` generates one ([`id_gen`] +
+/// [`IdGen::next_id`] against every id in the tree) and written the way
+/// `--fix-ids` writes one ([`ItemLine::append_id`], through
+/// [`Store::modify_file`] so a concurrent save is merged rather than
+/// clobbered). There is no second answer to "how is an id put on a line"
+/// (AGENTS §5.3). Only **this** line is touched: `check::fix_ids` deliberately
+/// assigns nothing in `routines.md`, `optional.md` or `inbox.md`
+/// (`needs_id_in`'s `allows_missing_state`), and that stays true — those files
+/// gain an id only for the one line a verb is about to box.
+///
+/// Call it **after** `Recorder::start`, so `tm undo` takes the token back off
+/// with the box it was written for.
+///
+/// Returns the id the line now carries, and leaves `ctx` reloaded — so the
+/// caller's `Item` is stale and the line is addressed by the returned id.
+fn write_id_for_boxing(ctx: &mut Ctx, key: &Id, salt: &str) -> Result<Id, CliError> {
+    let item = ctx.item(key)?;
+    let (path, line) = (item.src.file.clone(), item.src.line);
+    let mut taken: std::collections::HashSet<String> = ctx
+        .files
+        .files
+        .iter()
+        .flat_map(grammar::ParsedFile::items)
+        .filter(|i| i.has_id())
+        .map(|i| i.id.as_str().to_string())
+        .collect();
+    let id = id_gen(ctx, salt).next_id(&mut taken);
+    let key = key.clone();
+    let assign = id.clone();
+    ctx.store.modify_file(&path.clone(), &mut |parsed: &grammar::ParsedFile| {
+        let mut next = parsed.clone();
+        let Some(target) = next
+            .items_mut()
+            .find(|i| i.src.line == line && Tree::key_of(i) == key)
+        else {
+            // The file moved under us between the load and the write; the
+            // caller's own read is what then fails, by name.
+            return Ok(None);
+        };
+        target.src.tokens.append_id(&assign);
+        target.id = assign.clone();
+        Ok(Some(next.to_text()))
+    })?;
+    ctx.reload()?;
+    Ok(id)
+}
+
+/// `tm drop ^id`, or `tm drop <title>` for a line D31 keys by its title.
 ///
 /// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs"):
 /// the kernel rewrites the item's live line to `[~]` and refuses an
-/// unloadable tree by name. Id-less lines stay on the old path (gap 5).
+/// unloadable tree by name.
+///
+/// **D33, gap 477**: a title-keyed line gets its `^id` written first
+/// ([`write_id_for_boxing`]), because the drop is about to box it. The box
+/// itself still goes on through `horizon::drop_item`, because the kernel does
+/// not add a box to a line that has none — `Plan.boxesWf` refuses the result
+/// and the request comes back `badHorizon` (driven: a `routines.md` line
+/// carrying an `^id` and no box is refused on the kernel path today, which is
+/// **gap 531**). What D33 changes is that the line the host writes is one the
+/// kernel can read back.
 pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
-    let id = Ctx::key(&args.id);
-    let item = ctx.item(&id)?.clone();
+    let key = Ctx::key(&args.id);
+    let item = ctx.item(&key)?.clone();
     let rec = Recorder::start(&ctx, "drop")?;
-    let line = if item.has_id() {
-        let applied = kernel_bridge::apply(&ctx, &[KCmd::Drop { id: id.to_string() }])?;
-        ctx.append_event(Event::Drop { id: id.to_string() })?;
-        applied
-            .line_of(id.as_str())
+    let (id, line, assigned) = if item.has_id() {
+        let applied = kernel_bridge::apply(&ctx, &[KCmd::Drop { id: key.to_string() }])?;
+        ctx.append_event(Event::Drop { id: key.to_string() })?;
+        let line = applied
+            .line_of(key.as_str())
             .map(|(_, l)| l)
-            .unwrap_or_else(|| item.line().to_string())
+            .unwrap_or_else(|| item.line().to_string());
+        (key, line, None)
     } else {
-        horizon::drop_item(&ctx.hz(), &id)?
+        // D33: the box and the id land together, in that order.
+        let id = write_id_for_boxing(&mut ctx, &key, "drop")?;
+        let line = horizon::drop_item(&ctx.hz(), &id)?;
+        (id.clone(), line, Some(id))
     };
     ctx.reload()?;
     rec.finish(&ctx, format!("drop {}", id.token()))?;
@@ -1278,8 +1361,20 @@ pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let out = DropOut {
         id: id.clone(),
         line,
+        assigned,
     };
-    emit(ctx.json, || format!("dropped {}", out.id.token()), &out)?;
+    emit(
+        ctx.json,
+        || match &out.assigned {
+            None => format!("dropped {}", out.id.token()),
+            Some(id) => format!(
+                "dropped {} — a state box makes it a tracked item, so {} was written on the line",
+                out.id.token(),
+                id.token()
+            ),
+        },
+        &out,
+    )?;
     Ok(0)
 }
 

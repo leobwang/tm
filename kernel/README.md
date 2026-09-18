@@ -31337,3 +31337,271 @@ campaign call the owner can reverse in a line.
 4. *Which stage clears it.* Any step that opens the wire — a `load` op whose
    `ok` is empty, or a `"docs": false` request flag — measured against this
    0.8 ms before it is called a win.
+
+## Stage 6, W-16 track A, 2026-09-17: boxing a title-keyed line writes its id — D33, gap 477 closed
+
+Two commands from a fresh tree: `tm init --example`, `tm drop lunch`. The third
+line of `routines.md` became `- [~] lunch win:11:30-13:30 dur:30m every:day` —
+**boxed, with no `^id`**, which is `PErr.noId` by `keyOf`'s own rule (cheat 174,
+unchanged by D31). One documented one-word command bricked every kernel-backed
+verb on the tree. Pre-existing and byte-identical at `d2c0aa6`.
+
+D33 takes the repair that follows D31's own principle: **a boxed line is a
+tracked item, and a tracked item needs an id that survives the user editing its
+title**, so the host writes the id.
+
+### Cheat 174 stays, and the host does the writing
+
+The alternative — key a **boxed** id-less line by its title too — was declined
+by the owner because it has the kernel invent ids for lines the user marked as
+tracked, so a title edit silently orphans the item's history. Nothing in the
+kernel changed in this commit: `Negative.lean`'s cheat 174 still fails, `keyOf`
+still refuses a boxed line with no id, and **no Lean was added** (the axiom audit
+does not move).
+
+`items::write_id_for_boxing` is the whole of it:
+
+* the id is generated the way `--fix-ids` generates one — `id_gen` plus
+  `IdGen::next_id` against every id in the tree;
+* it is written the way `--fix-ids` writes one — `ItemLine::append_id` through
+  `Store::modify_file`, so a concurrent save is merged rather than clobbered;
+* **only the one line is touched.** `check::fix_ids` deliberately assigns
+  nothing in `routines.md`, `optional.md` or `inbox.md`
+  (`needs_id_in`'s `allows_missing_state`), and that stays exactly true — those
+  files gain an id for the one line a verb is about to box and for no other. The
+  test asserts the file's id count rose by exactly one.
+* it runs **after** `Recorder::start`, so `tm undo` takes the token back off with
+  the box it was written for. Driven: after `tm drop lunch; tm undo`,
+  `routines.md` is byte-identical to what it was.
+
+### D33's cost is a token the user did not type, so the answer says so
+
+```
+$ tm drop lunch
+dropped ^8eqd — a state box makes it a tracked item, so ^8eqd was written on the line
+```
+
+`DropOut` gains `assigned`, present only when an id was written, so `--json`
+carries the same fact without parsing the English. "Deliberately and **visibly**"
+is half the decision, and a token found later in a `git diff` is not visible.
+
+### Which paths box, measured rather than assumed
+
+D33's brief says *"every boxing path — drop, demote, close, and any other"*.
+**Driven, one verb at a time, on a `routines.md` line with no box and no id:**
+
+| verb | what it did | boxed the line? |
+|---|---|---|
+| `tm drop lunch` | `- [~] lunch …` | **yes** — the only one |
+| `tm done lunch` | logged an instance (`✓ ^lunch lunch · 0m/30m`) | no |
+| `tm start lunch` | logged a block | no |
+| `tm demote lunch` | refused: *"is in routines: only week items are demoted"* | no |
+| `tm skip lunch` | refused: *"lunch has no instance today"* | no |
+| `tm readopt lunch` | refused: *"not demoted"* | no |
+| `tm move lunch week` / `tm rank lunch 1` | moved the line, box-less | no |
+| `tm edit lunch state=…` | no `state` value the edit accepts writes a box | no |
+
+And on a hand-written box-less line in `week/`, where `demote` and `close` *are*
+in scope: `tm demote <title>` is refused **`badHorizon`** by the kernel and
+`tm close week` refuses with it — because the kernel will not add a box to a
+line that has none (`Plan.boxesWf`). So there is exactly one host path that
+boxes a box-less line, it is `tm drop`'s id-less branch, and it is the one this
+commit repairs. Everything else already refused by name. **Gap 531** records the
+refusals, which are a different defect and not D33's.
+
+### Behaviour rows
+
+| input | before (`f50cd00`, and `d2c0aa6`) | after | why |
+|---|---|---|---|
+| `tm drop <routine title>` | `- [~] lunch …` — boxed, **no id**; `tm plan`/`now`/`move` then `badLine … PErr.noId` | `- [~] lunch … ^8eqd`; every verb reads the tree | D33 |
+| the same, the answer | `dropped ^lunch` — a **store key** printed as an id token | `dropped ^8eqd — a state box makes it a tracked item, so ^8eqd was written on the line` | D33, visibly |
+| the same, `--json` | `{"id":"lunch","line":"- [~] lunch …"}` | `{"id":"8eqd","line":"… ^8eqd","assigned":"8eqd"}` | D33 |
+| `tm drop <inbox title>` | the same defect | the same repair | D33 |
+| `tm drop ^id` on a line that has one | — | **unchanged**, and `assigned` is absent from `--json` | — |
+| `tm undo` after either | — | **unchanged**: the file goes back byte for byte, id and box together | — |
+| every other verb, every file on disk | — | **unchanged** | — |
+
+The success message's old `^lunch` is the last live instance of W-15's
+"a store key is not an `^id`" class on a **success** path — the repair step
+caught the three refusals and this one printed the same lie on the way out.
+
+### Driven on a fresh `tm init --example` tree (§5.13)
+
+```
+tm drop lunch        → dropped ^8eqd — … so ^8eqd was written on the line
+routines.md:3        → - [~] lunch      win:11:30-13:30 dur:30m  every:day ^8eqd
+tm check             → no problems, exit 0        ← was: badLine, every verb down
+tm plan              → plans the day
+tm undo              → undid drop · 1 file(s) restored; routines.md byte-identical
+tm drop 'ask Kun about the dinner place'  → inbox.md:2 gains ^qzym, tm check clean
+tm drop ^d2          → unchanged; no `assigned` in --json
+```
+
+### AGENTS §5.3: what was CONSUMED, and what was not re-implemented
+
+Consumed by call: `grammar::IdGen::next_id`, `ItemLine::append_id`,
+`ParsedFile::items_mut`/`to_text`, `Store::modify_file`, `Tree::key_of`,
+`cli::items::id_gen`, `horizon::drop_item`, `undo::Recorder`. Re-implemented:
+**nothing** — in particular not a second id generator and not a second way to
+put an `^id` on a line; `write_id_for_boxing` is `--fix-ids`' own two steps
+aimed at one line. No Lean was added or changed, so no stage-5 artefact is
+touched: `Look.windowEnd`, `windowOn`, `budgetOf`, `wallIndex`/`wallsOn`/
+`wallIxOn`, `freeIntervals`, `cutSlots`, `hsw100`, `predictAt`,
+`capForLocation`, `energize`, `limitSlots`, `day0Window`/`day0Cut`/
+`todayEnergy`/`day0Hist`, `Arith.ramp`/`posteriorNum`/`energyAfter`,
+`Tree.remainingMin`, `Plan.effectiveCi`, `Plan.rootPrio`,
+`Look.Cand`/`Cand.enters`/`servedOrder`/`prioritiesWithFloors`,
+`Prio.finalPrio`/`hysteresis` and `Cap.edf`/`edfGrants` are all untouched.
+
+### Gaps
+
+**Gap 477 — CLOSED at W-16 (this commit).** `tm drop` on a title-keyed line
+writes the `^id` with the box, the resulting tree loads, `tm undo` reverts both,
+and cheat 174 is intact.
+
+**Gap 531 — the kernel cannot put a box on a line that has none, so every
+state-writing verb but `tm drop` refuses a box-less line by name.**
+1. *What is not done.* `Plan.boxesWf` refuses a box-less line carrying a
+   non-`todo` status and the kernel never sets `RawItem.boxed`, so a command
+   that would box one comes back `badHorizon`. Driven at this commit: a
+   `routines.md` line carrying `^r9` and **no box** answers *"kernel refusal:
+   badHorizon — the rewritten plan fails the kernel's whole-plan check"* to
+   `tm drop ^r9`; a hand-written `- a boxless week line` answers the same to
+   `tm demote`, and drags `tm close week` down with it through the automatic
+   close. Nothing was done about any of them.
+2. *Why.* Making the kernel box a line is a **grammar** decision on D31's own
+   ground — `boxesWf`'s clause is cheat 175, taken deliberately — and D33's
+   owner text settles the *other* half ("the host writes the id") without
+   settling this one. Inventing it inside a track-A commit would be exactly the
+   kind of unannounced grammar change D31 exists to prevent.
+3. *What it costs.* An asymmetry a user can hit: `tm drop lunch` works on a
+   box-less line and `tm drop ^r9` does not, on the *same* line, differing only
+   in whether the user wrote the id themselves. `tm demote` and `tm close` have
+   no host fallback at all, so a hand-written box-less line in `week/` cannot be
+   demoted or closed around — and the close's refusal is reported as the
+   automatic close's, which reads as if the whole tree were broken.
+4. *Which stage clears it.* K3b or whichever step next opens the item grammar,
+   with D31's owner: either the kernel gains "a status that needs a box writes
+   one" (with `boxesWf` restated and cheat 175 re-aimed), or the host's
+   `write_id_for_boxing` grows a sibling that boxes, and the refusal stays.
+
+### W-16 track A: the run's closing measurements and numbering
+
+**Numbering.** Gap range **530-549**; **two taken — 530 and 531**; 532-549 free.
+Gaps **475, 476 and 477 are closed**. No cheat was added; `Negative.lean`'s
+**CHEAT 176 was amended, not renumbered** (its `Placement` literals gained the
+seventh field — the Numbering note in this run's first section says why), and
+`grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing.
+No parity entry was taken. **Highest on the branch: gap 531, cheat 176, parity
+P38.**
+
+**Acceptance, on the final tree, every command capped** with
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`
+(`MemoryMax=8G`, `timeout 120` for the one `#eval` probe). No bound raised,
+nothing retried uncapped, no fixture, snapshot, corpus file or latency band
+re-blessed.
+
+| row | W-16 final | `f50cd00` | `9fa58fc` | `995323b` |
+|---|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | 7/7 | 7/7 |
+| check.sh warm | **3.12 / 3.17 / 3.13 s** (measured at `9fa58fc`; no Lean changed after it) | — | 3.12/3.17/3.13 | — |
+| axiom audit | **4,275 theorems**, §6.3 reconciliation `ok` | 4,275 | 4,275 | 4,265 |
+| burn-down | **12, all stage 6** | 12 | 12 | 12 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | same | same | same |
+| `cargo test --workspace` | **1,322 passed / 0 failed / 9 ignored, 78 result lines** | 1,321 | 1,319 | 1,318 |
+| FFI suite | **86 / 0** | 86/0 | 86/0 | 86/0 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | same | same |
+| the door (`kernel_log_door`) | **23 / 0** | 23/0 | 23/0 | 23/0 |
+| `cli_switch_acceptance` | **9 / 0** | 9/0 | 9/0 | 9/0 |
+| `kernel_call_counts` | **2 / 0** | 2/0 | 2/0 | 2/0 |
+| `cli_check_log` | **10 / 0** | 10/0 | 9/0 | 9/0 |
+| `kernel_lookahead_parity` | **4 / 0** | 4/0 | 4/0 | 4/0 |
+| `cli_latency` | **5 passed / 0 / 1 ignored** | 5/0/1 | 5/0/1 | 5/0/1 |
+
+**The test arithmetic closes with no remainder:** 1,318 (`995323b`) + 1
+(`a_key_collision_names_both_lines`) = 1,319; + 2 (`check_sees_a_kernel_load_refusal`,
+`a_damaged_log_stays_a_warning_while_a_refused_tree_is_an_error`) = 1,321; + 1
+(`dropping_a_title_keyed_line_writes_its_id_and_the_tree_still_loads`) =
+**1,322**. Binaries unchanged at 78, ignored unchanged at 9, 0 warnings.
+`kernel_call_counts`' pairing assertion still passes, which is correct: the
+one-call shape has not landed and no capacity call site was touched.
+
+**The axiom audit moved once, in the first commit**: 4,265 + 10 = 4,275. The
+second and third commits add **no Lean at all** — D32 item 2 and D33 are both
+host work — so the number is right to be flat across them.
+
+### T11, as readings and never as single numbers, with the machine state
+
+Four `cli_latency` passes, `--nocapture --test-threads=1`, **on a machine that
+had just run about thirty capped Lean and cargo builds in this session** —
+which W-15's repair step established is exactly the state that inflates every
+row (its idle re-measurement put all four *below* their bands). These are
+reported for what they are.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| later verb (`tm drop`) | 151.86, 146.95, 146.96 | 146.66-147.01 | two at the band, one above — the loaded-machine pattern |
+| 3-day-old routine | 136.85, 141.89, 136.77 | 121.6-136.8 | at and just above the top edge |
+| reseal (`--now +1 day`) | 217.74 (one pass) | 197.5-212.6 | above, loaded |
+| `review week` (All) | 293.66, 298.55, 303.53 | 248.1-253.3 | **OUT, and NOT re-blessed** — gap 275's known reason, a capacity verb replays the log twice |
+
+**Nothing was re-blessed and no band was moved**: `tm/tests/cli_latency.rs` is
+byte-identical to `995323b` (`git diff --stat 995323b HEAD -- tm/tests/cli_latency.rs`
+is empty), and all five of its own assertions pass. **Gap 470 stays open and is
+not discharged here** — it asks for readings taken on an *idle* machine before
+any build in the session, and this run built continuously; taking them at the
+end of a build-heavy session would be the same mistake W-15's land step made.
+
+`tm check` gained **+0.8 ms** (4.2 → 4.9 ms on the example tree, three readings
+each, before-and-after release binaries from this tree) for its new kernel load;
+it has no T11 row, and **gap 530** records the discarded response that is most
+of that cost.
+
+### What earlier stages bought, re-checked and not assumed
+
+* **D9, one reader.** §12's one-reader grep returns **41**, its post-switch
+  floor, re-run on this tree and not carried from the last block. No in-tree
+  reader was reintroduced; `tm check`'s new call goes through
+  `kernel_bridge::call`, the binary's **only** kernel call site, and reads
+  nothing off the tree a second time. The one decoder of a key collision is
+  `kernel_bridge::collision`, written once in this run's first commit and read
+  from its `detail` by `tm check`.
+* **D16, one writer.** `Horizon::log` is still the single append site and still
+  routes through the installed `LineWriter` (`tm-core/src/horizon.rs:518`); no
+  Rust on that path was touched. D33's id goes onto a **plan file** through
+  `Store::modify_file`, the store's own writer and the same one `--fix-ids`
+  uses — not the log.
+* **D18 is intact.** `tm check` still loads tolerantly and a damaged log is
+  still a warning that moves no exit code — driven on a tree carrying both
+  faults at once.
+* **D5.** Every statement the first commit changed is in its restatement table,
+  derived mechanically; the second and third commits change no statement.
+* **D21-D23.** T5's frozen arms and the door still report fork point
+  **4748911**, `fork_arm` ran unconditionally, and
+  `the_frozen_comparand_is_read_at_full_precision` passes by name. No in-tree
+  reader was reintroduced.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no
+  `partial def`. `lean-toolchain`, `Cargo.toml`, `lake-manifest.json` and
+  `kernel/corpus/` untouched. No predicate weakened: the two test changes in
+  this run — `check_fix_ids_appends_missing_ids` and `drop_marks_the_line_dropped`
+  — both gained assertions.
+
+### Method disclosure
+
+`check.sh` was run **six** times in this checkout: once at `995323b` before any
+edit (the baseline), once cold after the Lean widening (a full rebuild, not
+quoted), three warm at the first commit (the readings in the table), and once
+each at the second and third commits to confirm 7/7 with no Lean change.
+`cargo test --workspace` was run **six** times, `--no-fail-fast` for the four
+that mattered — the first plain run stopped at the first failing binary and
+reported 11 binaries, which is why every number quoted here comes from a
+`--no-fail-fast` pass. `cli_latency` was run **six** times; every noisy row is
+reported as all its readings, with the machine state beside them. The FFI, T5,
+door, `cli_switch_acceptance`, `kernel_call_counts`, `cli_check_log` and
+`kernel_lookahead_parity` suites were run at each of the three commits. Two
+release binaries were built for the `tm check` measurement: this tree, and this
+tree with the five Rust files stashed. The one new `#eval` probe (`charsLe` on
+two 1,000,000-character paths) ran under `MemoryMax=8G -p MemorySwapMax=0` with
+`timeout 120` and was not killed. Every drive was on a scratch
+`tm init --example` tree outside the repo. No worktree was created and
+`.claude/worktrees/stage5-lookahead` was not touched.

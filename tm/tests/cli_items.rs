@@ -983,10 +983,70 @@ fn drop_marks_the_line_dropped() {
     let json = tm.json(&["drop", "^m4"]);
     assert!(json["line"].as_str().unwrap_or_default().starts_with("- [~]"));
     assert!(tm.line("week/2026-W37.md", "m4").starts_with("- [~]"));
+    // A line that already carries an id gains nothing: D33's token is only for
+    // the line that had none.
+    assert!(json.get("assigned").is_none(), "{json}");
     let last = tm.last();
     assert_eq!(last["ev"], "drop");
     assert_eq!(last["id"], "m4");
     insta::assert_json_snapshot!("drop_json", json);
+}
+
+/// **Boxing a title-keyed line writes its `^id`** — the owner's **D33**, gap
+/// 477 closed.
+///
+/// `tm drop lunch` wrote `- [~] lunch …` on a `routines.md` line that carries
+/// no `^id`, and D31's grammar refuses exactly that shape (`PErr.noId`, cheat
+/// 174) — so one documented one-word command bricked every kernel-backed verb
+/// on the tree: `tm check` called it clean and `tm plan`, `tm now` and
+/// `tm move` all answered `badLine`. Pre-existing, byte-identical at `d2c0aa6`.
+///
+/// D33 follows D31 rather than bending it: a boxed line is a **tracked** item
+/// and a tracked item needs an id that survives the user editing its title, so
+/// the host writes the id — visibly, in the answer — and cheat 174 stays.
+#[test]
+fn dropping_a_title_keyed_line_writes_its_id_and_the_tree_still_loads() {
+    for (file, title) in [
+        ("routines.md", "lunch"),
+        ("inbox.md", "ask Kun about the dinner place"),
+    ] {
+        let tm = Tm::new();
+        let before = tm.read(file);
+        assert!(
+            before.lines().any(|l| l.trim_start().starts_with("- ") && l.contains(title)
+                && !l.contains(" ^")),
+            "{file} has no title-keyed `{title}` line to drop"
+        );
+
+        let json = tm.json(&["drop", title]);
+        let id = json["assigned"].as_str().expect("D33 writes an id").to_string();
+        assert_eq!(json["id"], id, "the answer names the id it wrote: {json}");
+        let line = json["line"].as_str().unwrap_or_default();
+        assert!(line.starts_with("- [~]"), "{line}");
+        assert!(line.ends_with(&format!("^{id}")), "{line}");
+
+        // Written on the line itself, and on **only** that line: the other
+        // id-less lines of the same file are untouched (`--fix-ids` still
+        // assigns nothing in these files).
+        let after = tm.read(file);
+        assert_eq!(
+            after.lines().filter(|l| l.contains(" ^")).count(),
+            before.lines().filter(|l| l.contains(" ^")).count() + 1,
+            "{after}"
+        );
+
+        // The whole point: the tree the host just wrote is one the kernel can
+        // read. `tm check` is clean and a kernel-backed verb answers.
+        let check = tm.run(&["check"]);
+        assert_eq!(check.code, 0, "{}{}", check.stdout, check.stderr);
+        assert!(check.stdout.contains("no problems"), "{}", check.stdout);
+        tm.ok(&["plan"]);
+
+        // And `tm undo` takes the token back off with the box it was written
+        // for — the id is part of the drop, not a separate edit.
+        tm.ok(&["undo"]);
+        assert_eq!(tm.read(file), before);
+    }
 }
 
 #[test]
