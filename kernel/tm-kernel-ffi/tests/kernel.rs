@@ -1804,11 +1804,16 @@ fn every_capacity_refusal_is_named() {
 // commands is refused by name.
 // ===========================================================================
 
+/// Section 8.2 step 5's nine, all plain (stage 6 P5a, kernel/README.md gap
+/// 606): nothing planned, multiplier 1, no `loc:`, splittable, no `max:`,
+/// `[ ]`, no unsatisfied dependency, not today's wall. `Look.wfUnconstrained`.
+const PLAIN_PLAN: &str = r#""plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#;
+
 /// One candidate record, with `window`, `optional`, `overdue`, `mandatory` and
-/// `hot` false (a test edits the text to set one).
+/// `hot` false (a test edits the text to set one), and the nine plain.
 fn cand(id: &str, ci: u8, root_prio: &str, remaining: u64, due: &str, wall: bool, yesterday: &str) -> String {
     format!(
-        r#"{{"id":"{id}","ci":{ci},"rootPrio":{root_prio},"remaining":{remaining},"due":{due},"window":false,"wall":{wall},"optional":false,"overdue":false,"mandatory":false,"hot":false,"yesterday":{yesterday}}}"#
+        r#"{{"id":"{id}","ci":{ci},"rootPrio":{root_prio},"remaining":{remaining},"due":{due},"window":false,"wall":{wall},"optional":false,"overdue":false,"mandatory":false,"hot":false,"yesterday":{yesterday},{PLAIN_PLAN}}}"#
     )
 }
 
@@ -1901,6 +1906,52 @@ fn every_candidate_refusal_is_named() {
         let out = call(&base.replacen(from, to, 1)).unwrap();
         assert_eq!(out, format!(r#"{{"err":{{"capacity":"{name}"}}}}"#), "{from:?} -> {to:?}");
     }
+    // Stage 6 P5a: section 8.2 step 5's nine, each refused by its own key
+    // (kernel/README.md gap 606), one candidate per case so every edit is
+    // unique by construction. The `plan` object is REQUIRED: defaulting it
+    // would make every item splittable, uncapped and `[ ]` on a tree where
+    // none of that is true (Negative.lean CHEAT 193).
+    let with_plan = |plan: &str| {
+        format!(
+            r#"{{"id":"p1","ci":3,"rootPrio":null,"remaining":30,"due":null,"window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false,"yesterday":null{plan}}}"#
+        )
+    };
+    let nine: &[(&str, &str)] = &[
+        ("", "badCandidate 0 plan"),
+        (r#","plan":{"plannedMin":"x","multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 plannedMin"),
+        (r#","plan":{"plannedMin":4294967296,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 plan"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":0},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 multiplier"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1001,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 multiplier"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 loc"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":1,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 splittable"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":5,"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 cap"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":{"capMin":4294967296,"doneMin":0},"state":" ","blockedBy":[],"wallToday":false}"#, "badCandidate 0 plan"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":"todo","blockedBy":[],"wallToday":false}"#, "badCandidate 0 state"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":"z","blockedBy":[],"wallToday":false}"#, "badCandidate 0 state"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":["a b"],"wallToday":false}"#, "badCandidate 0 blockedBy"),
+        (r#","plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":"y"}"#, "badCandidate 0 wallToday"),
+    ];
+    for (plan, name) in nine {
+        let out = call(&capacity_req("", &spec_with_candidates(true, &[with_plan(plan)]))).unwrap();
+        assert_eq!(out, format!(r#"{{"err":{{"capacity":"{name}"}}}}"#), "plan {plan:?}");
+    }
+    // And the sixty-fifth dependency is refused by the COUNT, before the list
+    // is read (D9-21: `Look.maxDeps` guards the `mapM`).
+    let deps: Vec<String> = (0..65).map(|i| format!(r#""^d{i}""#)).collect();
+    let many_deps = format!(
+        r#","plan":{{"plannedMin":0,"multiplier":{{"num":1,"den":1}},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[{}],"wallToday":false}}"#,
+        deps.join(",")
+    );
+    let out = call(&capacity_req("", &spec_with_candidates(true, &[with_plan(&many_deps)]))).unwrap();
+    assert_eq!(out, r#"{"err":{"capacity":"badCandidate 0 blockedBy"}}"#);
+    // Sixty-four is inside the bound and reads.
+    let ok_deps = format!(
+        r#","plan":{{"plannedMin":0,"multiplier":{{"num":1,"den":1}},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[{}],"wallToday":false}}"#,
+        deps[..64].join(",")
+    );
+    let out = call(&capacity_req("", &spec_with_candidates(true, &[with_plan(&ok_deps)]))).unwrap();
+    assert!(out.starts_with(r#"{"ok":"#), "{out}");
+
     let long_id = cand(&"x".repeat(1025), 3, "null", 30, "null", false, "null");
     let out = call(&capacity_req("", &spec_with_candidates(true, &[long_id]))).unwrap();
     assert_eq!(out, r#"{"err":{"capacity":"badCandidate 0 id"}}"#);

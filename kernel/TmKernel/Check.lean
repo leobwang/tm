@@ -5459,3 +5459,89 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_swapped_rooted_witness_loads
 #print axioms Tm.PlannerWit.exchanging_the_parents_exchanges_the_order
 #print axioms Tm.PlannerWit.the_battery_census_at_the_reserved_day
+
+-- ===========================================================================
+-- APPENDED 2026-09-18, stage 6 run W-18, track P, step P5a: the wire carries
+-- what the fold reads (AGENTS 6.3).
+--
+-- README gap 606, measured at W-17: the assignment fold reads NINE candidate
+-- facts the wire did not carry -- `planned_min`, `multiplier`, `loc`,
+-- `splittable`, `cap` and `cap_done_min` off each `priority::Candidate`, and
+-- `state`, `blocked_by` and `wall_today` from `sorted_candidates`' own filter.
+-- P5a puts them on it, HOST-COLLECTED exactly as the present twelve are: every
+-- one is derivable inside the kernel from `PlanCore` and the D24 run, and
+-- deriving one here would be doing D27 early, which D34 forbids.
+--
+-- `waiting` is not a tenth fact.  Fork `priority.rs:718` sets it to `state ==
+-- State::Waiting`, so `Look.PlanFacts.waiting` derives it from `state` and
+-- `the_waiting_flag_is_the_state_and_not_a_tenth_fact` says so; README gap 602
+-- lists it beside `state` as though it were independent, and gap 700 records
+-- the correction.
+--
+-- The widening is safe because SEVEN'S PASS DOES NOT READ THE NINE, and that
+-- is a theorem and not a claim: `prioritiesWithFloors_ignores_the_plan_facts`
+-- runs the whole of section 7, floor pass included, over the candidates with
+-- their nine facts erased and gets the same answers.  That is AGENTS 5.3's
+-- "widen it and prove the old view is a projection", discharged.
+--
+-- R10: `Look.PlanFacts.wf` is the predicate, `mkPlanFacts?` the constructor,
+-- and `Cand.plan`'s TYPE is the `Subtype` -- so `Cand.plan_is_bounded` holds
+-- of every candidate there is, on the wire or off it, with no convention to
+-- forget.  Three of the nine are bounded by their type and say so:
+-- `splittable`/`wallToday` are `Bool`, `state` is `Status` through
+-- `Glyph.ofChar?`, and `multiplier` is `Arith.Pos` whose property is
+-- `0 < den`, with its SIZE bound at the wire beside the safety's
+-- (`multiplierOfWire`), where every configured decimal's size bound lives.
+--
+-- The witnesses are gap 677's lesson taken literally: `loudFacts` and
+-- `loudFactsInverted` differ in ALL NINE
+-- (`the_two_loud_records_differ_in_every_one_of_the_nine`), so a decoder that
+-- returned a constant, read two fields off one key, or swapped `splittable`
+-- for `wallToday` fails `readCand_reads_the_nine` or its perturbation half.
+-- ===========================================================================
+#print axioms Tm.Look.MaxCap.reached_iff_nothing_left
+#print axioms Tm.Look.the_waiting_flag_is_the_state_and_not_a_tenth_fact
+#print axioms Tm.Look.the_open_states_are_the_two_live_ones
+#print axioms Tm.Look.PlanFacts.capOk_iff
+#print axioms Tm.Look.PlanFacts.capOk_of_a_cap
+#print axioms Tm.Look.PlanFacts.eligible_iff
+#print axioms Tm.Look.mkPlanFacts?_accepts
+#print axioms Tm.Look.mkPlanFacts?_ok
+#print axioms Tm.Look.mkPlanFacts?_of_not_wf
+#print axioms Tm.Look.mkPlanFacts?_refuses_planned_minutes_past_the_wires_u32
+#print axioms Tm.Look.mkPlanFacts?_refuses_a_cap_past_the_wires_u32
+#print axioms Tm.Look.mkPlanFacts?_refuses_a_spend_past_the_wires_u32
+#print axioms Tm.Look.mkPlanFacts?_refuses_a_second_name_for_a_known_location
+#print axioms Tm.Look.mkPlanFacts?_refuses_too_many_dependencies
+#print axioms Tm.Look.mkPlanFacts?_refuses_a_dependency_that_is_not_a_name
+#print axioms Tm.Look.mkPlanFacts?_refuses_a_dependency_token_past_the_id_bound
+#print axioms Tm.Look.the_unconstrained_facts_are_wf
+#print axioms Tm.Look.the_unconstrained_candidate_is_eligible
+#print axioms Tm.Look.Cand.plan_withPlan
+#print axioms Tm.Look.Cand.plan_is_bounded
+#print axioms Tm.Look.Cand.withPlan_touches_only_the_plan
+#print axioms Tm.Look.Cand.erasePlan_wall
+#print axioms Tm.Look.Cand.erasePlan_ci
+#print axioms Tm.Look.Cand.erasePlan_rule
+#print axioms Tm.Look.Cand.erasePlan_yesterday
+#print axioms Tm.Look.zipIdx_map_fst
+#print axioms Tm.Look.entering_erasePlan
+#print axioms Tm.Look.servedOrder_erasePlan
+#print axioms Tm.Look.servedGrants_erasePlan
+#print axioms Tm.Look.passLeft_erasePlan
+#print axioms Tm.Look.priorities_erasePlan
+#print axioms Tm.Look.withFloor_erasePlan
+#print axioms Tm.Look.prioritiesWithFloors_ignores_the_plan_facts
+#print axioms Tm.CapWire.multiplierOfWire_refuses_a_zero_denominator
+#print axioms Tm.CapWire.multiplierOfWire_refuses_a_wide_denominator
+#print axioms Tm.CapWire.multiplierOfWire_refuses_a_multiplier_past_a_thousand
+#print axioms Tm.CapWire.parseLoc_never_makes_a_second_name
+#print axioms Tm.CapWire.statusOfWire_refuses_a_character_that_is_not_a_box
+#print axioms Tm.CapWire.statusOfWire_refuses_a_word
+#print axioms Tm.CapWire.statusOfWire_reads_the_six
+#print axioms Tm.CapWire.readPlanFacts_is_bounded
+#print axioms Tm.CapWire.the_two_loud_records_differ_in_every_one_of_the_nine
+#print axioms Tm.CapWire.readCand_reads_the_nine
+#print axioms Tm.CapWire.readCand_reads_the_nine_the_other_way
+#print axioms Tm.CapWire.readCand_refuses_each_of_the_nine_by_name
+#print axioms Tm.CapWire.readCand_refuses_too_many_dependencies

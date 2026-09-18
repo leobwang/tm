@@ -4662,6 +4662,274 @@ The recursion rule (D9-21): the candidates are at most 1,024 (the wire's guard);
 
 open Arith
 
+/-! ### §8.2 step 5's nine facts, on the wire beside §7's twelve (README gap 606)
+
+`Cand` above carries the twelve facts **§7** reads.  The fork's assignment step reads nine more
+off the same `priority::Candidate`, and until this block **not one of them crossed**:
+`planned_min`, `multiplier`, `loc`, `splittable`, `cap` and `cap_done_min` (through
+`cap_left_min()`) are read by `Planner::build_groups` and `Planner::pick`, and `state`,
+`blocked_by` and `wall_today` by `priority::sorted_candidates`' own filter.
+
+**They are HOST-COLLECTED, exactly as the twelve are.**  Every one of them is derivable inside
+the kernel from `PlanCore` and the D24 run — and deriving one here would be doing **D27** early,
+which **D34** forbids: `collect_candidates` dies with `planner.rs` at R3 and not before.  D27
+later changes *where they come from*, not *what they are*.
+
+**`waiting` is not a tenth fact.**  Fork `priority.rs:718` sets `waiting: item.state ==
+State::Waiting`, so it is a projection of `state` and `PlanFacts.waiting` below is that
+projection, proved against the six-way `Status`.  README gap 602 lists it beside `state` as
+though it were independent; it is not, and `the_waiting_flag_is_the_state_and_not_a_tenth_fact`
+is why this record has eight fields for nine facts.
+
+**Nothing in §7's pass reads any of them** — `prioritiesWithFloors_ignores_the_plan_facts`
+below is that statement, and it is what makes this a *widening* of `Cand` under AGENTS §5.3
+rather than a second candidate record.
+
+The types are the kernel's own and none of them is new here (AGENTS §5.3, the grep before the
+helper): `Field.Loc` with `parseLoc`/`Loc.wf`, `Field.Dep` with `parseDeps`/`Dep.wf`, `Status`
+with `statusOfGlyph`, and `Arith.Pos` with `ofPair?` for the multiplier, which is a configured
+decimal and crosses as an exact pair (D17) because the kernel has no `Float`. -/
+
+/-- **Fork `max:`, in minutes**: the cap the period allows and what it has already spent
+(`Candidate::cap.amount.as_minutes()` and `Candidate::cap_done_min`).  Two facts, one optional
+record, exactly as `Floor` carries its pair.  The cap's *period* is not here: nothing in §8.2
+step 5 reads it — `cap_left_min()` and `eligible()` are the only readers and both need only
+these two numbers — and a field no reader has is a field no test can pin. -/
+structure MaxCap where
+  capMin  : Nat
+  doneMin : Nat
+deriving DecidableEq, Repr
+
+/-- **Fork `Candidate::cap_left_min()`**: `amount − done`, saturating.  `Nat` subtraction *is*
+`saturating_sub`, so `doneMin > capMin` — a period that overran its own cap, which the fork
+reaches and does not refuse — is representable and gives `0`. -/
+def MaxCap.leftMin (c : MaxCap) : Nat := c.capMin - c.doneMin
+
+/-- Fork `Ineligible::CapReached`'s test: `cap_done_min >= cap.amount.as_minutes()`. -/
+def MaxCap.reached (c : MaxCap) : Bool := decide (c.capMin ≤ c.doneMin)
+
+theorem MaxCap.reached_iff_nothing_left (c : MaxCap) : c.reached = true ↔ c.leftMin = 0 := by
+  unfold MaxCap.reached MaxCap.leftMin
+  simp only [decide_eq_true_eq]
+  omega
+
+/-- **§8.2 step 5's nine facts of one candidate**, host-collected (gap 606).  `cap` carries two
+of the nine; `waiting` is `state`'s projection and not a tenth. -/
+structure PlanFacts where
+  /-- fork `planned_min` — `remaining × multiplier`, what the planner places (§8.5). -/
+  plannedMin : Nat
+  /-- fork `multiplier` — the §8.5 duration multiplier, as an exact pair (D17). -/
+  multiplier : Arith.Pos
+  /-- fork `loc` — the `loc:` constraint (§8.2 step 5). -/
+  loc        : Field.Loc
+  /-- fork `splittable` — `atomic` clears it. -/
+  splittable : Bool
+  /-- fork `cap` and `cap_done_min` — the `max:` ceiling and its spend (§6.2). -/
+  cap        : Option MaxCap
+  /-- fork `state` — the line's own box. -/
+  state      : Status
+  /-- fork `blocked_by` — the **unsatisfied** `after:` dependencies (§5.5). -/
+  blockedBy  : List Field.Dep
+  /-- fork `wall_today` — this Interval's span covers today. -/
+  wallToday  : Bool
+deriving DecidableEq, Repr
+
+/-- **Fork `priority.rs:718`'s `waiting`**: `item.state == State::Waiting`, and `[?]` is
+`Status.live .world` (`statusOfGlyph .waiting`). -/
+def PlanFacts.waiting (f : PlanFacts) : Bool := f.state == Status.live .world
+
+theorem the_waiting_flag_is_the_state_and_not_a_tenth_fact (f : PlanFacts) :
+    f.waiting = (f.state == statusOfGlyph Glyph.waiting) := rfl
+
+/-- **Fork `State::is_open`**: `Todo` or `Active` — `[ ]` and `[>]`. -/
+def PlanFacts.isOpen (f : PlanFacts) : Bool :=
+  f.state == Status.live .free || f.state == Status.live .self
+
+theorem the_open_states_are_the_two_live_ones (f : PlanFacts) :
+    f.isOpen = (f.state == statusOfGlyph Glyph.todo || f.state == statusOfGlyph Glyph.active) :=
+  rfl
+
+/-- Fork `Candidate::cap_left_min()`, lifted to the record: `none` without a `max:`. -/
+def PlanFacts.capLeftMin (f : PlanFacts) : Option Nat := f.cap.map MaxCap.leftMin
+
+/-- **Fork `Candidate::eligible()`** — the *item* half of §8.2 step 5's filter, the half
+`priority::sorted_candidates` applies: not waiting, an open state, no unsatisfied dependency,
+and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`, `loc_ok`, the wind-down, the
+atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
+
+This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
+all; **nothing applies it yet** — `PlanReq.rankedCands` still orders every candidate it is given
+(README gap 602), and the filter lands with the fold. -/
+def PlanFacts.capOk (f : PlanFacts) : Bool :=
+  match f.capLeftMin with | Option.none => true | some n => !(n == 0)
+
+/-- The `max:` half of the filter, both directions: no cap at all, or a cap with minutes left. -/
+theorem PlanFacts.capOk_iff (f : PlanFacts) :
+    f.capOk = true ↔ ∀ c, f.cap = some c → c.leftMin ≠ 0 := by
+  unfold PlanFacts.capOk PlanFacts.capLeftMin
+  cases hc : f.cap with
+  | none => simp
+  | some c => simp
+
+/-- And `reached` is its complement, on the same two numbers. -/
+theorem PlanFacts.capOk_of_a_cap (f : PlanFacts) (c : MaxCap) (h : f.cap = some c) :
+    f.capOk = !c.reached := by
+  unfold PlanFacts.capOk PlanFacts.capLeftMin MaxCap.reached MaxCap.leftMin
+  rw [h]
+  simp only [Option.map_some, beq_iff_eq]
+  cases hle : decide (c.capMin ≤ c.doneMin) with
+  | true => simp only [decide_eq_true_eq] at hle; simp [Nat.sub_eq_zero_of_le hle]
+  | false =>
+      simp only [decide_eq_false_iff_not, Nat.not_le] at hle
+      simp [Nat.sub_ne_zero_of_lt hle]
+
+def PlanFacts.eligible (f : PlanFacts) : Bool :=
+  !f.waiting && f.isOpen && f.blockedBy.isEmpty && f.capOk
+
+theorem PlanFacts.eligible_iff (f : PlanFacts) :
+    f.eligible = true ↔
+      f.waiting = false ∧ f.isOpen = true ∧ f.blockedBy = [] ∧
+        ∀ c, f.cap = some c → c.leftMin ≠ 0 := by
+  unfold PlanFacts.eligible
+  rw [← PlanFacts.capOk_iff]
+  simp only [Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_iff, and_assoc]
+
+
+/-! ### R10 for the nine: a bound each, one constructor, a refusal each
+
+Three of the nine are bounded **by their type** and get no numeric bound, which is the honest
+answer rather than an omission:
+
+* `splittable` and `wallToday` are `Bool` — two inhabitants, both meaningful (`atomic` clears the
+  first; an Interval six weeks out is a wall that is not today's).  Their refusal is the
+  decoder's: `Boundary.boolAt` names a key whose JSON value is not a boolean instead of
+  defaulting it, and `readCand_refuses_a_flag_that_is_not_a_boolean` runs it.
+* `state` is `Status` — six constructors and no numeric slot, reached only through
+  `Glyph.ofChar?` and `statusOfGlyph`, which is a bijection.  A box the wire spells with any
+  other character is refused by name (`readCand_refuses_a_state_that_is_not_a_box`).
+* `multiplier` is `Arith.Pos` — a `Subtype` whose property is `0 < den`, so the one thing that
+  could make the arithmetic partial is unrepresentable.  Its **size** bound is the wire's, beside
+  the safety's (`Boundary.multiplierOfWire`), because that is where every other configured
+  decimal's size bound lives (`safetyOfWire`, `binsOfWire`, `boundedPos`) and a second copy here
+  would be the defect this kernel exists to remove. -/
+
+/-- **The largest minute count the wire carries** — fork `u32`, the bound `remaining` already
+has.  `Boundary.maxRemaining` is defined as this, so the number has one owner (AGENTS §5.3). -/
+def maxPlanMinutes : Nat := 4294967295
+
+/-- **The most unsatisfied `after:` dependencies one candidate may carry.**  `blocked_by` is one
+line's own `after:` list filtered to what is still unsatisfied; sixty-four is far past anything a
+written line can mean, and the bound is what stops a wire-sized list reaching the fold. -/
+def maxDeps : Nat := 64
+
+/-- **The longest dependency token** — `^id` or `event:name` as `Field.renderDep` writes it.  The
+same 1,024 `Boundary.maxCandId` puts on the candidate's own id, for the same reason. -/
+def maxDepToken : Nat := 1024
+
+/-- R10's predicate over the nine.  `Bool`, on a plain record, with the `Subtype` below
+(AGENTS §5.1) — never a proof field. -/
+def PlanFacts.wf (f : PlanFacts) : Bool :=
+  decide (f.plannedMin ≤ maxPlanMinutes)
+    && (match f.cap with
+        | Option.none => true
+        | some c => decide (c.capMin ≤ maxPlanMinutes) && decide (c.doneMin ≤ maxPlanMinutes))
+    && f.loc.wf
+    && decide (f.blockedBy.length ≤ maxDeps)
+    && f.blockedBy.all (fun d => Field.Dep.wf d && decide ((Field.renderDep d).length ≤ maxDepToken))
+
+abbrev WfPlanFacts := { f : PlanFacts // PlanFacts.wf f = true }
+
+/-- The smart constructor.  Nothing is clamped and nothing is repaired. -/
+def mkPlanFacts? (f : PlanFacts) : Option WfPlanFacts :=
+  if h : PlanFacts.wf f = true then some ⟨f, h⟩ else none
+
+theorem mkPlanFacts?_accepts (f : PlanFacts) (h : PlanFacts.wf f = true) :
+    mkPlanFacts? f = some ⟨f, h⟩ := by simp [mkPlanFacts?, h]
+
+theorem mkPlanFacts?_ok (f : PlanFacts) (g : WfPlanFacts) (h : mkPlanFacts? f = some g) :
+    g.val = f ∧ PlanFacts.wf f = true := by
+  unfold mkPlanFacts? at h
+  split at h
+  · cases h; exact ⟨rfl, by assumption⟩
+  · cases h
+
+/-- Nothing is repaired: a record the predicate refuses has no value. -/
+theorem mkPlanFacts?_of_not_wf (f : PlanFacts) (h : PlanFacts.wf f = false) :
+    mkPlanFacts? f = none := by simp [mkPlanFacts?, h]
+
+theorem mkPlanFacts?_refuses_planned_minutes_past_the_wires_u32 (f : PlanFacts)
+    (h : maxPlanMinutes < f.plannedMin) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : decide (f.plannedMin ≤ maxPlanMinutes) = false := by
+    simp only [decide_eq_false_iff_not, Nat.not_le]; omega
+  simp [PlanFacts.wf, hb]
+
+theorem mkPlanFacts?_refuses_a_cap_past_the_wires_u32 (f : PlanFacts) (c : MaxCap)
+    (hc : f.cap = some c) (h : maxPlanMinutes < c.capMin) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : decide (c.capMin ≤ maxPlanMinutes) = false := by
+    simp only [decide_eq_false_iff_not, Nat.not_le]; omega
+  simp [PlanFacts.wf, hc, hb]
+
+theorem mkPlanFacts?_refuses_a_spend_past_the_wires_u32 (f : PlanFacts) (c : MaxCap)
+    (hc : f.cap = some c) (h : maxPlanMinutes < c.doneMin) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : decide (c.doneMin ≤ maxPlanMinutes) = false := by
+    simp only [decide_eq_false_iff_not, Nat.not_le]; omega
+  simp [PlanFacts.wf, hc, hb]
+
+/-- A named location may not spell one of the four the enum already has — `Field.Loc.wf`, the
+existing rule, applied at the wire. -/
+theorem mkPlanFacts?_refuses_a_second_name_for_a_known_location (f : PlanFacts)
+    (h : f.loc.wf = false) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  simp [PlanFacts.wf, h]
+
+theorem mkPlanFacts?_refuses_too_many_dependencies (f : PlanFacts)
+    (h : maxDeps < f.blockedBy.length) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : decide (f.blockedBy.length ≤ maxDeps) = false := by
+    simp only [decide_eq_false_iff_not, Nat.not_le]; omega
+  simp [PlanFacts.wf, hb]
+
+theorem mkPlanFacts?_refuses_a_dependency_that_is_not_a_name (f : PlanFacts) (d : Field.Dep)
+    (hm : d ∈ f.blockedBy) (h : Field.Dep.wf d = false) : mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : f.blockedBy.all
+      (fun e => Field.Dep.wf e && decide ((Field.renderDep e).length ≤ maxDepToken)) = false := by
+    rw [Bool.eq_false_iff]
+    intro hall
+    have hd := List.all_eq_true.mp hall d hm
+    simp [h] at hd
+  simp [PlanFacts.wf, hb]
+
+theorem mkPlanFacts?_refuses_a_dependency_token_past_the_id_bound (f : PlanFacts) (d : Field.Dep)
+    (hm : d ∈ f.blockedBy) (h : maxDepToken < (Field.renderDep d).length) :
+    mkPlanFacts? f = none := by
+  refine mkPlanFacts?_of_not_wf f ?_
+  have hb : f.blockedBy.all
+      (fun e => Field.Dep.wf e && decide ((Field.renderDep e).length ≤ maxDepToken)) = false := by
+    rw [Bool.eq_false_iff]
+    intro hall
+    have hd := List.all_eq_true.mp hall d hm
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hd
+    omega
+  simp [PlanFacts.wf, hb]
+
+/-- **The facts of a candidate nothing constrains**: no planned minutes yet, multiplier 1, no
+`loc:`, splittable, no `max:`, `[ ]`, no unsatisfied dependency, and not today's wall.  The value
+a witness starts from and a host that knows nothing sends. -/
+def PlanFacts.unconstrained : PlanFacts :=
+  ⟨0, Arith.mkPos 1 1 (by decide), .any, true, Option.none, Status.live .free, [], false⟩
+
+theorem the_unconstrained_facts_are_wf : PlanFacts.wf PlanFacts.unconstrained = true := by decide
+
+theorem the_unconstrained_candidate_is_eligible :
+    PlanFacts.eligible PlanFacts.unconstrained = true := by decide
+
+/-- The same, carrying its proof — the value `Cand.plan` holds. -/
+def wfUnconstrained : WfPlanFacts := ⟨PlanFacts.unconstrained, the_unconstrained_facts_are_wf⟩
+
 /-! ### A candidate, and which enter the pass (gap 80) -/
 
 /-- **§7's inputs of one candidate**: fork `priority::Candidate`, the fields `priority::compute`
@@ -4684,7 +4952,32 @@ structure Cand where
   mandatory : Bool
   hot       : Bool
   yesterday : Option (Fin 8)
+  /-- **§8.2 step 5's nine**, added at P5a (README gap 606).  The field's type is the
+  `Subtype`, so R10's bounds are carried by the value and not by a convention — the shape
+  `ci : Fin 6` already has.  Nothing in §7's pass reads them
+  (`prioritiesWithFloors_ignores_the_plan_facts` below), so this is a widening of the record and
+  not a second candidate (AGENTS §5.3). -/
+  plan      : WfPlanFacts
 deriving DecidableEq, Repr
+
+/-- The setter for the nine, with its `view ∘ set = id` and the law that it touches nothing
+§7 reads (R11, AGENTS §4). -/
+def Cand.withPlan (c : Cand) (f : WfPlanFacts) : Cand := { c with plan := f }
+
+theorem Cand.plan_withPlan (c : Cand) (f : WfPlanFacts) : (c.withPlan f).plan = f := rfl
+
+/-- **Every candidate's nine facts are inside R10's bounds**, by the field's type — there is no
+way to build a `Cand` that is not, on the wire or off it. -/
+theorem Cand.plan_is_bounded (c : Cand) : PlanFacts.wf c.plan.val = true := c.plan.property
+
+theorem Cand.withPlan_touches_only_the_plan (c : Cand) (f : WfPlanFacts) :
+    (c.withPlan f).id = c.id ∧ (c.withPlan f).ci = c.ci ∧
+      (c.withPlan f).rootPrio = c.rootPrio ∧ (c.withPlan f).remaining = c.remaining ∧
+      (c.withPlan f).due = c.due ∧ (c.withPlan f).window = c.window ∧
+      (c.withPlan f).wall = c.wall ∧ (c.withPlan f).optional = c.optional ∧
+      (c.withPlan f).overdue = c.overdue ∧ (c.withPlan f).mandatory = c.mandatory ∧
+      (c.withPlan f).hot = c.hot ∧ (c.withPlan f).yesterday = c.yesterday :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **Gap 80, fork `priority::compute`'s filter**: a candidate enters the EDF pass when it is not a
 wall, not optional, has no placement window, and has an effective due; overdue candidates
@@ -5064,11 +5357,11 @@ def witnessCaps : List DayCapacity := [ofHist 1 (histOf [0, 0, 0, 60, 0, 0]), of
 /-- Five candidates: a wall, `^a2` (45 minutes, due day 2) listed before `^a1` (30 minutes, due
 day 1, yesterday at 6), an optional, and an undated one. -/
 def witnessCands : List Cand :=
-  [⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none⟩,
-   ⟨['a', '2'], 3, none, 45, some 2, false, false, false, false, false, false, none⟩,
-   ⟨['a', '1'], 3, none, 30, some 1, false, false, false, false, false, false, some 6⟩,
-   ⟨['o'], 3, none, 20, some 1, false, false, true, false, false, false, none⟩,
-   ⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none⟩]
+  [⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none, wfUnconstrained⟩,
+   ⟨['a', '2'], 3, none, 45, some 2, false, false, false, false, false, false, none, wfUnconstrained⟩,
+   ⟨['a', '1'], 3, none, 30, some 1, false, false, false, false, false, false, some 6, wfUnconstrained⟩,
+   ⟨['o'], 3, none, 20, some 1, false, false, true, false, false, false, none, wfUnconstrained⟩,
+   ⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none, wfUnconstrained⟩]
 
 /-- **The grants on a witness, in request order.**  The wall and the optional enter nothing; `^a1`
 is served first though listed after `^a2`: 60 minutes available, 39 reserved (R1's ceiling of
@@ -5183,6 +5476,101 @@ def prioritiesWithFloors (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool) (c
     (cfs : List (Cand × Option Floor)) : List FloorOut :=
   floorAll bins s hyst (Thunk.mk (fun _ => passLeft s caps (cfs.map Prod.fst)))
     ((priorities bins s dflt hyst caps (cfs.map Prod.fst)).zip (cfs.map Prod.snd))
+
+
+/-! ### §7's pass does not read the nine (AGENTS §5.3: the old view is a projection)
+
+`Cand` gained `plan` at P5a.  That is safe exactly when **nothing §7 computes changes**, and
+these five theorems are that statement, ending at `prioritiesWithFloors` — the whole pass, floor
+and all.  The normal form is `erasePlan`: every candidate's nine facts replaced by
+`PlanFacts.unconstrained`.  If any part of the pass ever started reading a plan fact, the last
+of these would stop being provable. -/
+
+/-- The candidate with its nine facts forgotten. -/
+def Cand.erasePlan (c : Cand) : Cand := c.withPlan wfUnconstrained
+
+theorem Cand.erasePlan_wall (c : Cand) : c.erasePlan.wall = c.wall := rfl
+theorem Cand.erasePlan_ci (c : Cand) : c.erasePlan.ci = c.ci := rfl
+theorem Cand.erasePlan_rule (c : Cand) (b : Option Bin) : c.erasePlan.rule b = c.rule b := rfl
+theorem Cand.erasePlan_yesterday (c : Cand) : c.erasePlan.yesterday = c.yesterday := rfl
+
+/-- The answer with its candidate's nine facts forgotten. -/
+def CandOut.erasePlan (o : CandOut) : CandOut := { o with cand := o.cand.erasePlan }
+
+/-- The floor answer with its candidate's nine facts forgotten. -/
+def FloorOut.erasePlan (o : FloorOut) : FloorOut := { o with out := o.out.erasePlan }
+
+theorem zipIdx_map_fst {α β : Type} (h : α → β) (l : List α) (k : Nat) :
+    (l.map h).zipIdx k = (l.zipIdx k).map (fun p => (h p.1, p.2)) := by
+  induction l generalizing k with
+  | nil => rfl
+  | cons a t ih => simp [List.zipIdx_cons, ih]
+
+/-- Which candidates enter the pass is unchanged, and so are their deadlines. -/
+theorem entering_erasePlan (s : Pos) (cs : List Cand) :
+    entering s (cs.map Cand.erasePlan) = entering s cs := by
+  unfold entering
+  rw [zipIdx_map_fst, List.filterMap_map]
+  rfl
+
+theorem servedOrder_erasePlan (s : Pos) (cs : List Cand) :
+    servedOrder s (cs.map Cand.erasePlan) = servedOrder s cs := by
+  unfold servedOrder; rw [entering_erasePlan]
+
+theorem servedGrants_erasePlan (s : Pos) (caps : List DayCapacity) (cs : List Cand) :
+    servedGrants s caps (cs.map Cand.erasePlan) = servedGrants s caps cs := by
+  unfold servedGrants; rw [servedOrder_erasePlan]
+
+theorem passLeft_erasePlan (s : Pos) (caps : List DayCapacity) (cs : List Cand) :
+    passLeft s caps (cs.map Cand.erasePlan) = passLeft s caps cs := by
+  unfold passLeft; rw [servedOrder_erasePlan]
+
+/-- **§7.2's answer is a function of the twelve.** -/
+theorem priorities_erasePlan (bins : Bins) (s : Pos) (dflt : Fin 4) (hyst : Bool)
+    (caps : List DayCapacity) (cs : List Cand) :
+    priorities bins s dflt hyst caps (cs.map Cand.erasePlan)
+      = (priorities bins s dflt hyst caps cs).map CandOut.erasePlan := by
+  unfold priorities
+  rw [servedGrants_erasePlan, zipIdx_map_fst, List.map_map, List.map_map]
+  rfl
+
+/-- One floor answer, the nine erased on both sides. -/
+theorem withFloor_erasePlan (bins : Bins) (s : Pos) (hyst : Bool)
+    (left : Thunk (List DayCapacity)) (o : CandOut) (f : Option Floor) :
+    withFloor bins s hyst left o.erasePlan f
+      = FloorOut.erasePlan (withFloor bins s hyst left o f) := by
+  unfold withFloor CandOut.erasePlan FloorOut.erasePlan
+  cases o with
+  | mk cand k need grant bin row raw p =>
+      cases grant with
+      | some g => cases f <;> rfl
+      | none =>
+        cases f with
+        | none => rfl
+        | some fl =>
+          dsimp only
+          split <;> rename_i hw <;> rw [Cand.erasePlan_wall] at hw <;> simp only [hw,
+            Bool.false_eq_true, reduceIte, if_true, if_false, ite_true, ite_false,
+            not_false_eq_true] <;> rfl
+
+/-- **And so is the floor pass.**  The whole of §7, the nine facts erased on both sides: this is
+the theorem that says P5a widened `Cand` rather than forking it. -/
+theorem prioritiesWithFloors_ignores_the_plan_facts (bins : Bins) (s : Pos) (dflt : Fin 4)
+    (hyst : Bool) (caps : List DayCapacity) (cfs : List (Cand × Option Floor)) :
+    prioritiesWithFloors bins s dflt hyst caps (cfs.map (fun p => (p.1.erasePlan, p.2)))
+      = (prioritiesWithFloors bins s dflt hyst caps cfs).map FloorOut.erasePlan := by
+  unfold prioritiesWithFloors floorAll
+  have hfst : (cfs.map (fun p => (p.1.erasePlan, p.2))).map Prod.fst
+      = (cfs.map Prod.fst).map Cand.erasePlan := by
+    simp [List.map_map, Function.comp_def]
+  have hsnd : (cfs.map (fun p => (p.1.erasePlan, p.2))).map Prod.snd = cfs.map Prod.snd := by
+    simp [List.map_map, Function.comp_def]
+  rw [hfst, hsnd, priorities_erasePlan, passLeft_erasePlan, List.map_map]
+  rw [List.zip_map_left, List.map_map]
+  congr 1
+  funext p
+  cases p
+  exact withFloor_erasePlan bins s hyst _ _ _
 
 /-- The shortfall an answer reports: a grant's (`CandOut.shortfall`), or a HOT floor's
 `need − avail` (fork `shortfall_min` over the floor pass). -/

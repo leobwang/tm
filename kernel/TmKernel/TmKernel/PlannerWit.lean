@@ -1029,12 +1029,12 @@ order is a real one), an optional, an overdue instance, a mandatory instance, an
 `default_priority`.  The dated ones carry a placement window, which is what keeps them out of
 the pass without making their `due` a lie. -/
 def witCands : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none⟩, none),
-   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none⟩, none),
-   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none⟩, none),
-   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none⟩, none),
-   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none⟩, none),
-   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none⟩, none)]
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
+   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
 
 /-- The §4.3 Wednesday with six candidates on the wire. -/
 def theRankingRequest : PlanReq := { theRequest with cands := ⟨witCands, by decide⟩ }
@@ -1155,12 +1155,12 @@ theorem yesterdays_priority_holds_the_candidate_back :
 
 /-- `witCands` with the two `p = 0` candidates exchanged on the wire, and nothing else. -/
 def witCandsSwapped : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none⟩, none),
-   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none⟩, none),
-   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none⟩, none),
-   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none⟩, none),
-   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none⟩, none),
-   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none⟩, none)]
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
+   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
 
 /-- **And the request position is a real tie-break, not decoration**: swap the two `p = 0`
 candidates on the wire and the order swaps with them.  Two candidates that agree on every key
@@ -1612,8 +1612,8 @@ def rootedPlan : WfPlan :=
 (`wall`, then `p`) tie and the order falls through to the sites — which is where the root walk
 lives. -/
 def rootedCands : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['m','1'], 3, none, 50, none, false, false, false, false, false, false, none⟩, none),
-   (⟨['m','2'], 3, none, 50, none, false, false, false, false, false, false, none⟩, none)]
+  [(⟨['m','1'], 3, none, 50, none, false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
+   (⟨['m','2'], 3, none, 50, none, false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
 
 /-- The §4.3 Wednesday with that plan behind it and those two candidates on the wire. -/
 def theRootedRequest : PlanReq :=

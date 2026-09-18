@@ -684,14 +684,14 @@ fn cand_json(
     today: NaiveDate,
     c: &Candidate,
     yesterday: &BTreeMap<Id, u8>,
-) -> Value {
+) -> Result<Value, CliError> {
     let floor = c.floor.as_ref().map(|r| {
         json!({
             "left": r.amount.as_minutes().saturating_sub(c.floor_done_min),
             "until": priority::period_range(r.per, today).1.to_string(),
         })
     });
-    json!({
+    Ok(json!({
         "id": c.id.as_str(),
         "ci": c.ci,
         "rootPrio": root_prio,
@@ -705,7 +705,45 @@ fn cand_json(
         "hot": c.hot,
         "yesterday": yesterday.get(&c.id),
         "floor": floor,
-    })
+        "plan": plan_json(c)?,
+    }))
+}
+
+/// **§8.2 step 5's nine**, beside §7's twelve (`Look.PlanFacts`, kernel/README.md gap 606).
+///
+/// These are what `Planner::build_groups`, `Planner::pick` and
+/// [`priority::sorted_candidates`]' own filter read off a [`Candidate`] and no
+/// kernel call carried before stage 6 P5a. They are **host-collected, exactly
+/// as the twelve above are**: D34 keeps `collect_candidates` alive until R3, so
+/// D27 later changes where they come from, not what they are.
+///
+/// `waiting` is **not** a tenth: `collect_candidates` sets it to `state ==
+/// State::Waiting` (this file's sibling `priority.rs:718`), and the kernel
+/// derives it from `state` (`Look.PlanFacts.waiting`).
+///
+/// The multiplier is a written `.tm/model.json` decimal and crosses as the
+/// exact pair every configured decimal crosses as (D17) — the kernel holds no
+/// `Float`. A multiplier that is not an exact decimal of at most
+/// [`PRIORITY_PLACES`] places is named here rather than rounded.
+fn plan_json(c: &Candidate) -> Result<Value, CliError> {
+    let text = format!("{}", c.multiplier);
+    let mul = written_pair(&text, PRIORITY_PLACES).map_err(|e| {
+        bad_value(MODEL_FILE, &format!("duration multiplier for {}", c.id.token()), &text,
+            &pair_why(e, PRIORITY_PLACES))
+    })?;
+    Ok(json!({
+        "plannedMin": c.planned_min,
+        "multiplier": nat_pair_of(mul),
+        "loc": c.loc.as_str(),
+        "splittable": c.splittable,
+        "cap": c.cap.as_ref().map(|r| json!({
+            "capMin": r.amount.as_minutes(),
+            "doneMin": c.cap_done_min,
+        })),
+        "state": c.state.glyph().to_string(),
+        "blockedBy": c.blocked_by.iter().map(|d| d.to_string()).collect::<Vec<String>>(),
+        "wallToday": c.wall_today,
+    }))
 }
 
 /// **The capacity request** for `days` days from today, with the candidates when
@@ -830,7 +868,7 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
                 let root_prio = ctx.tree.get(&ctx.tree.root(&c.id)).and_then(|r| r.priority);
                 cand_json(root_prio, ctx.today, c, r.yesterday)
             })
-            .collect();
+            .collect::<Result<Vec<Value>, CliError>>()?;
         section["candidates"] = json!({"hysteresis": cfg.priority.hysteresis, "items": items});
     }
     let cache = ctx.store.root().join(".tm/cache/replay");
@@ -1068,7 +1106,7 @@ mod tests {
     fn the_candidate_facts_cross_the_wire_as_the_host_computed_them() {
         use chrono::NaiveTime;
         use tm_core::capacity::local_dt;
-        use tm_core::model::{Dur, Period, Rate};
+        use tm_core::model::{Dep, Dur, Loc, Period, Rate, State};
 
         let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
 
@@ -1087,11 +1125,24 @@ mod tests {
         c.hot = true;
         c.is_wall = false;
         c.is_optional = true;
+        // §8.2 step 5's nine (stage 6 P5a, kernel/README.md gap 606), every one
+        // a value distinct from its neighbours' and from the plain record's:
+        // `capMin` differs from `doneMin`, and the two booleans disagree, so a
+        // swap or a field read off another field fails here.
+        c.planned_min = 152;
+        c.multiplier = 1.6;
+        c.loc = Loc::Out;
+        c.splittable = false;
+        c.cap = Some(Rate { amount: Dur::from_minutes(120), per: Period::Week });
+        c.cap_done_min = 45;
+        c.state = State::Waiting;
+        c.blocked_by = vec![Dep::Item(Id::new("k7")), Dep::Event("visa".into())];
+        c.wall_today = true;
 
         let yesterday: BTreeMap<Id, u8> = [(Id::new("d1"), 4u8)].into_iter().collect();
 
         assert_eq!(
-            cand_json(Some(1), today, &c, &yesterday),
+            cand_json(Some(1), today, &c, &yesterday).expect("an exact multiplier"),
             json!({
                 "id": "d1",
                 "ci": 3,
@@ -1106,6 +1157,16 @@ mod tests {
                 "hot": true,
                 "yesterday": 4,
                 "floor": {"left": 75, "until": "2026-09-13"},
+                "plan": {
+                    "plannedMin": 152,
+                    "multiplier": {"num": 16, "den": 10},
+                    "loc": "out",
+                    "splittable": false,
+                    "cap": {"capMin": 120, "doneMin": 45},
+                    "state": "?",
+                    "blockedBy": ["^k7", "event:visa"],
+                    "wallToday": true,
+                },
             }),
         );
 
@@ -1120,8 +1181,17 @@ mod tests {
         c.hot = false;
         c.is_wall = true;
         c.is_optional = false;
+        c.planned_min = 30;
+        c.multiplier = 0.25;
+        c.loc = Loc::Named("zoom".into());
+        c.splittable = true;
+        c.cap = None;
+        c.cap_done_min = 0;
+        c.state = State::Demoted;
+        c.blocked_by = Vec::new();
+        c.wall_today = false;
         assert_eq!(
-            cand_json(None, today, &c, &BTreeMap::new()),
+            cand_json(None, today, &c, &BTreeMap::new()).expect("an exact multiplier"),
             json!({
                 "id": "d1",
                 "ci": 3,
@@ -1136,8 +1206,44 @@ mod tests {
                 "hot": false,
                 "yesterday": null,
                 "floor": null,
+                "plan": {
+                    "plannedMin": 30,
+                    "multiplier": {"num": 25, "den": 100},
+                    "loc": "zoom",
+                    "splittable": true,
+                    "cap": null,
+                    "state": "-",
+                    "blockedBy": [],
+                    "wallToday": false,
+                },
             }),
         );
+    }
+
+    /// **A multiplier that is not an exact decimal is named, not rounded**
+    /// (stage 6 P5a). The kernel holds no `Float`, so §8.5's multiplier crosses
+    /// as the exact pair every written decimal crosses as (D17); a
+    /// `.tm/model.json` entry with more than [`PRIORITY_PLACES`] places is a
+    /// value the wire cannot carry and the message says which item it belongs
+    /// to.
+    #[test]
+    fn a_multiplier_the_wire_cannot_carry_is_named_by_item() {
+        let cfg = Config::default();
+        let today = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let mut c = Candidate::new(Id::new("d1"), 0, 1, 30, &cfg);
+        c.multiplier = 1e-19;
+        let err = cand_json(None, today, &c, &BTreeMap::new()).unwrap_err().to_string();
+        assert!(
+            err.starts_with(
+                ".tm/model.json: duration multiplier for ^d1 = 0.0000000000000000001"
+            ),
+            "{err}"
+        );
+        assert!(err.contains("decimal places (at most 18)"), "{err}");
+        // And a finite, exactly written one is carried.
+        c.multiplier = 2.0;
+        let v = cand_json(None, today, &c, &BTreeMap::new()).expect("an exact multiplier");
+        assert_eq!(v["plan"]["multiplier"], json!({"num": 2, "den": 1}));
     }
 
     /// Every key `Boundary.readCand` and `readFloor` ask for is a key
@@ -1146,16 +1252,32 @@ mod tests {
     fn the_candidate_record_carries_the_keys_the_kernel_decodes() {
         let cfg = Config::default();
         let c = Candidate::new(Id::new("d1"), 0, 1, 0, &cfg);
-        let v = cand_json(None, NaiveDate::from_ymd_opt(2026, 9, 7).unwrap(), &c, &BTreeMap::new());
+        let v = cand_json(None, NaiveDate::from_ymd_opt(2026, 9, 7).unwrap(), &c, &BTreeMap::new())
+            .expect("an exact multiplier");
         let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
         keys.sort_unstable();
         assert_eq!(
             keys,
             // `Boundary.readCand`: id ci rootPrio remaining due window wall
-            // optional overdue mandatory hot yesterday; `readFloor`: floor.
+            // optional overdue mandatory hot yesterday; `readFloor`: floor;
+            // `readPlanFacts`: plan.
             vec![
                 "ci", "due", "floor", "hot", "id", "mandatory", "optional", "overdue",
-                "remaining", "rootPrio", "wall", "window", "yesterday",
+                "plan", "remaining", "rootPrio", "wall", "window", "yesterday",
+            ],
+        );
+        // §8.2 step 5's nine, in eight keys: `cap` carries `cap_done_min`
+        // beside the ceiling, and `waiting` is **not** here — the kernel derives
+        // it from `state` (`Look.PlanFacts.waiting`), because
+        // `collect_candidates` sets it to `state == State::Waiting`.
+        let mut plan_keys: Vec<&str> =
+            v["plan"].as_object().unwrap().keys().map(String::as_str).collect();
+        plan_keys.sort_unstable();
+        assert_eq!(
+            plan_keys,
+            vec![
+                "blockedBy", "cap", "loc", "multiplier", "plannedMin", "splittable", "state",
+                "wallToday",
             ],
         );
     }

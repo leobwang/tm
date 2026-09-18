@@ -1542,6 +1542,10 @@ fn cands_json(cs: &[GenCand], hysteresis: bool, today: NaiveDate) -> Value {
                    "due": g.due.map(|(d, _)| d.to_string()), "window": g.window, "wall": g.wall,
                    "optional": g.optional, "overdue": g.overdue, "mandatory": g.mandatory, "hot": g.hot,
                    "yesterday": g.yesterday,
+                   // Section 8.2 step 5's nine, all plain (stage 6 P5a): section 7's answers
+                   // do not read them, which is `prioritiesWithFloors_ignores_the_plan_facts`,
+                   // so this parity is about exactly what it was about before.
+                   "plan": {"plannedMin": 0, "multiplier": {"num": 1, "den": 1}, "loc": "any", "splittable": true, "cap": null, "state": " ", "blockedBy": [], "wallToday": false},
                    "floor": g.floor.map(|(l, per)| json!({"left": l, "until": priority::period_range(per, today).1.to_string()}))})
         })
         .collect();

@@ -69,7 +69,10 @@ fn request(tz: &Value, weights: &[u32; 7], hours: u32, cands: &[(u8, u32, u8)]) 
         .map(|(i, (ci, rem, due))| {
             json!({"id": format!("d{i}"), "ci": ci, "rootPrio": null, "remaining": rem,
                    "due": (today() + Duration::days(i64::from(*due))).to_string(), "window": false, "wall": false,
-                   "optional": false, "overdue": false, "mandatory": false, "hot": false, "yesterday": null})
+                   "optional": false, "overdue": false, "mandatory": false, "hot": false, "yesterday": null,
+                   // Section 8.2 step 5's nine, all plain (stage 6 P5a): section 7's
+                   // pass does not read them (`prioritiesWithFloors_ignores_the_plan_facts`).
+                   "plan": {"plannedMin": 0, "multiplier": {"num": 1, "den": 1}, "loc": "any", "splittable": true, "cap": null, "state": " ", "blockedBy": [], "wallToday": false}})
         })
         .collect();
     for ci in 0..6u8 {
@@ -77,6 +80,7 @@ fn request(tz: &Value, weights: &[u32; 7], hours: u32, cands: &[(u8, u32, u8)]) 
             items.push(json!({"id": format!("probe{ci}-{k}"), "ci": ci, "rootPrio": null, "remaining": 0,
                 "due": null, "window": false, "wall": false, "optional": false, "overdue": false,
                 "mandatory": false, "hot": false, "yesterday": null,
+                "plan": {"plannedMin": 0, "multiplier": {"num": 1, "den": 1}, "loc": "any", "splittable": true, "cap": null, "state": " ", "blockedBy": [], "wallToday": false},
                 "floor": {"left": 0, "until": (today() + Duration::days(k)).to_string()}}));
         }
     }

@@ -2377,4 +2377,60 @@ theorem theWallRowIsInTheStoredRequestsStore :
           (fun i => PlannerWit.theStoredRequest.plan.val.store.get i)).isSome) = [true] := by
   decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-18, track P, step P5a (AGENTS 6.2).
+   The wire carries section 8.2 step 5's nine (README gap 606).  Cheats 193-197.
+   =========================================================================== -/
+
+/- CHEAT 193 — the nine claimed to reach the kernel WITHOUT the host sending
+   them.  D34 keeps `collect_candidates` alive to R3 and D27 changes only where
+   the facts come from, so a candidate whose `plan` object is absent from the
+   wire must be REFUSED, not defaulted: a silent `PlanFacts.unconstrained` would
+   make every item splittable, uncapped and `[ ]` on a tree where none of that
+   is true.  This block claims the record reads with the plain nine.  `rfl`
+   refuses: the answer is `badCandidate 0 plan`. -/
+theorem aCandidateWithoutTheNineTakesTheUnconstrainedOnes :
+    (CapWire.readCand 0 (CapWire.withoutPlanJ CapWire.a1J)).map (fun c => c.plan.val)
+      = .ok Look.PlanFacts.unconstrained := rfl
+
+/- CHEAT 194 — the two booleans claimed interchangeable.  `splittable` is the
+   item's `atomic` and `wallToday` is whether an Interval covers today; a
+   decoder that swapped them left W-17's whole suite green for the root/own site
+   pair (gap 677) and this is the same class one field over.  `loudPlanJ` sends
+   `splittable: false, wallToday: true`, so this block's claim — that the record
+   reads with them the other way round — is exactly the swap.  `rfl` refuses. -/
+theorem theTwoFlagsOfTheNineAreInterchangeable :
+    (CapWire.readCand 0 (CapWire.withPlanJ CapWire.a1J CapWire.loudPlanJ)).map
+      (fun c => (c.plan.val.splittable, c.plan.val.wallToday)) = .ok (true, false) := rfl
+
+/- CHEAT 195 — `waiting` claimed to be a tenth fact the wire must carry.  Fork
+   `priority.rs:718` sets `waiting: item.state == State::Waiting`, so it is a
+   projection of `state` and `Look.PlanFacts.waiting` derives it.  This block
+   claims a `[?]` candidate is NOT waiting, which is what a tenth independent
+   field would allow.  `decide` refuses. -/
+theorem waitingIsIndependentOfTheStateBox :
+    Look.PlanFacts.waiting { Look.PlanFacts.unconstrained with
+      state := Status.live .world } = false := by decide
+
+/- CHEAT 196 — R10 claimed unnecessary for a `Nat` that the fork holds in a
+   `u32`.  `plannedMin` past `Look.maxPlanMinutes` is a value no host can mean
+   and the wire must refuse it rather than carry it into the fold's cursor
+   arithmetic.  This block claims `mkPlanFacts?` accepts one.  `decide` refuses:
+   the predicate is false and the constructor returns `none`. -/
+theorem theConstructorTakesAPlannedMinutePastTheWiresU32 :
+    (Look.mkPlanFacts? { Look.PlanFacts.unconstrained with
+      plannedMin := 4294967296 }).isSome = true := by decide
+
+/- CHEAT 197 — section 7's pass claimed to read the nine.  If it did, the
+   widening of `Look.Cand` would be a second candidate record rather than a
+   widening (AGENTS 5.3), and `prioritiesWithFloors_ignores_the_plan_facts`
+   would be false.  This block claims a `Cand` and its `erasePlan` give
+   different answers, which is what "the pass reads them" means.  `decide`
+   refuses at the one witness the file can evaluate. -/
+theorem thePassSeesTheNine :
+    Look.entering (Arith.mkPos 13 10 (by decide))
+      (Look.witnessCands.map (fun c => c.withPlan
+        ⟨{ Look.PlanFacts.unconstrained with plannedMin := 999 }, by decide⟩))
+      ≠ Look.entering (Arith.mkPos 13 10 (by decide)) Look.witnessCands := by decide
+
 end Tm

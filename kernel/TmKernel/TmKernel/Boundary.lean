@@ -9359,6 +9359,19 @@ inductive CandKey where
   | yesterday
   /-- Stage 5 D10 L8 host half: the record's `floor` object (gap 79). -/
   | floor
+  /-- **Stage 6 P5a, §8.2 step 5's nine** (README gap 606): each key of the `plan` object,
+  named separately so a refusal says which of the nine the host got wrong. -/
+  | plannedMin
+  | multiplier
+  | loc
+  | splittable
+  | cap
+  | state
+  | blockedBy
+  | wallToday
+  /-- The `plan` object itself — absent, of the wrong JSON type, or refused by
+  `Look.mkPlanFacts?` as a whole. -/
+  | plan
 deriving DecidableEq, Repr
 
 -- `CapWire.TzWhy` (`shape key base trans table`) was removed at the merge of the D9 track's B4
@@ -9438,6 +9451,9 @@ def CandKey.name : CandKey → String
   | .id => "id" | .ci => "ci" | .rootPrio => "rootPrio" | .remaining => "remaining" | .due => "due"
   | .window => "window" | .wall => "wall" | .optional => "optional" | .overdue => "overdue"
   | .mandatory => "mandatory" | .hot => "hot" | .yesterday => "yesterday" | .floor => "floor"
+  | .plannedMin => "plannedMin" | .multiplier => "multiplier" | .loc => "loc"
+  | .splittable => "splittable" | .cap => "cap" | .state => "state"
+  | .blockedBy => "blockedBy" | .wallToday => "wallToday" | .plan => "plan"
 
 def werrName : WErr → String
   | .badWeight => "badWeight" | .weightAboveOne => "weightAboveOne" | .weightPrecision => "weightPrecision"
@@ -10189,10 +10205,132 @@ def readDueDate (v : JVal) (r : Refusal) : Except Refusal (Option Day) :=
 /-- The most candidates a request carries, the longest id, the largest remaining (fork `u32`). -/
 def maxCandidates : Nat := 1024
 def maxCandId : Nat := 1024
-def maxRemaining : Nat := 4294967295
+/-- Fork `u32`.  **One owner**: `Look.maxPlanMinutes` is the same bound on the same wire for
+§8.2 step 5's `plannedMin` and its `max:` pair, and two names for one number is the defect this
+kernel exists to remove (AGENTS §5.3). -/
+def maxRemaining : Nat := Look.maxPlanMinutes
 
 /-- A bound, or `r`. -/
 def within (b : Bool) (r : Refusal) : Except Refusal Unit := if b then .ok () else .error r
+
+/-! ### §8.2 step 5's nine, on the wire (stage 6 P5a, README gap 606)
+
+`readCand` above reads §7's twelve.  These read the nine the **assignment** step needs and no
+kernel call carried until this step, in a `plan` object beside them.  They are **host-collected**,
+exactly as the twelve are: every one is derivable from `PlanCore` and the D24 run, and deriving
+one here would be doing **D27** early, which **D34** forbids.
+
+Each value goes through a decoder that already exists — `Field.parseLoc`, `Field.parseDep`,
+`Glyph.ofChar?` with `statusOfGlyph`, `Arith.ofPair?` — and the record as a whole goes through
+`Look.mkPlanFacts?`, so a refusal is named (`badCandidate <i> <key>`) and nothing is defaulted.
+The recursion rule (D9-21): `blockedBy` is guarded by `Look.maxDeps` **before** `mapM` runs, as
+`readCands` guards `items` before `readCandList`. -/
+
+/-- **The multiplier off the wire** (§8.5): an exact pair (D17 — the kernel has no `Float`), a
+denominator of at most `10^18` as every configured decimal has, and a multiplier of at most
+1,000.  `Arith.ofPair?` is the one constructor and it refuses a zero denominator.  The shape is
+`safetyOfWire`'s, deliberately: the safety is the other configured multiplier on this wire. -/
+def maxMultiplier : Nat := 1000
+
+def multiplierOfWire (p : Nat × Nat) : Option Arith.Pos :=
+  if p.2 ≤ maxPairDen ∧ p.1 ≤ maxMultiplier * p.2 then Arith.ofPair? p.1 p.2 else none
+
+theorem multiplierOfWire_refuses_a_zero_denominator (n : Nat) : multiplierOfWire (n, 0) = none := by
+  unfold multiplierOfWire
+  split
+  · exact Arith.ofPair?_zero n
+  · rfl
+
+theorem multiplierOfWire_refuses_a_wide_denominator {n d : Nat} (h : maxPairDen < d) :
+    multiplierOfWire (n, d) = none := by
+  unfold multiplierOfWire; rw [if_neg (fun hc => absurd hc.1 (Nat.not_le.mpr h))]
+
+theorem multiplierOfWire_refuses_a_multiplier_past_a_thousand {n d : Nat}
+    (h : maxMultiplier * d < n) : multiplierOfWire (n, d) = none := by
+  unfold multiplierOfWire; rw [if_neg (fun hc => absurd hc.2 (Nat.not_le.mpr h))]
+
+/-- **`Field.parseLoc` cannot make a second name for a known location**, so `Loc.wf`'s clause in
+`Look.PlanFacts.wf` is about a value built by hand and never about one off the wire.  Said here
+rather than left to be noticed: AGENTS §9.2 counts an unreachable gate as a disguised gap, and
+this is the reason that conjunct is not one — it governs `mkPlanFacts?`'s other caller, the
+`Cand.plan` field's own type. -/
+theorem parseLoc_never_makes_a_second_name {w : List Char} {l : Field.Loc}
+    (h : Field.parseLoc w = some l) : l.wf = true := by
+  unfold Field.parseLoc at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · cases h; rfl
+    · split at h
+      · cases h; rfl
+      · split at h
+        · cases h; rfl
+        · split at h
+          · cases h; rfl
+          · cases h
+            rename_i h0 ha hl hh ho
+            simp only [Field.Loc.wf]
+            simp_all
+
+/-- The `max:` ceiling and its spend, or none.  `capMin` is fork `cap.amount.as_minutes()` and
+`doneMin` fork `cap_done_min`; `doneMin > capMin` is **not** refused, because the fork reaches it
+(`saturating_sub`) on a period that overran its own cap. -/
+def readMaxCap (i : Nat) (v : JVal) : Except Refusal (Option Look.MaxCap) :=
+  match opt v "cap" (.badCandidate i .cap) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some c) =>
+    match natAt c "capMin" (.badCandidate i .cap), natAt c "doneMin" (.badCandidate i .cap) with
+    | .ok a, .ok d => .ok (some ⟨a, d⟩)
+    | _, _ => .error (.badCandidate i .cap)
+
+/-- The line's box, through `Glyph.ofChar?` and `statusOfGlyph` — the kernel's own bijection, so
+a character that is not one of the six `[ ] [>] [x] [-] [~] [?]` is refused by name. -/
+def statusOfWire : List Char → Option Status
+  | [c] => (Glyph.ofChar? c).map statusOfGlyph
+  | _ => none
+
+theorem statusOfWire_refuses_a_character_that_is_not_a_box {c : Char}
+    (h : Glyph.ofChar? c = none) : statusOfWire [c] = none := by
+  simp [statusOfWire, h]
+
+theorem statusOfWire_refuses_a_word : statusOfWire ['t', 'o', 'd', 'o'] = none := rfl
+
+theorem statusOfWire_reads_the_six :
+    (statusOfWire [' '], statusOfWire ['>'], statusOfWire ['x'], statusOfWire ['-'],
+      statusOfWire ['~'], statusOfWire ['?'])
+      = (some (Status.live .free), some (Status.live .self), some (Status.settled .done),
+         some Status.demoted, some (Status.settled .dropped), some (Status.live .world)) := by
+  decide
+
+/-- One unsatisfied dependency, by the grammar's own `after:` element reader. -/
+def depOfWire : JVal → Option Field.Dep
+  | .str s => Field.parseDep s
+  | _ => none
+
+/-- **The `plan` object**: §8.2 step 5's nine, each through its decoder, then `mkPlanFacts?`. -/
+def readPlanFacts (i : Nat) (v : JVal) : Except Refusal Look.WfPlanFacts := do
+  let p ← need v "plan" (.badCandidate i .plan)
+  let pm ← natAt p "plannedMin" (.badCandidate i .plannedMin)
+  let mp ← pairAt p "multiplier" (.badCandidate i .multiplier)
+  let mul ← orErr (multiplierOfWire mp) (.badCandidate i .multiplier)
+  let lc ← strAt p "loc" (.badCandidate i .loc)
+  let loc ← orErr (Field.parseLoc lc) (.badCandidate i .loc)
+  let sp ← boolAt p "splittable" (.badCandidate i .splittable)
+  let cap ← readMaxCap i p
+  let st ← strAt p "state" (.badCandidate i .state)
+  let state ← orErr (statusOfWire st) (.badCandidate i .state)
+  let ds ← arrAt p "blockedBy" (.badCandidate i .blockedBy)
+  let _ ← within (decide (ds.length ≤ Look.maxDeps)) (.badCandidate i .blockedBy)
+  let deps ← orErr (ds.mapM depOfWire) (.badCandidate i .blockedBy)
+  let wt ← boolAt p "wallToday" (.badCandidate i .wallToday)
+  orErr (Look.mkPlanFacts? ⟨pm, mul, loc, sp, cap, state, deps, wt⟩) (.badCandidate i .plan)
+
+/-- **Whatever crosses is inside R10's bounds, by type.**  The decoder's result is the
+`Subtype`, so there is no path from the wire to a `Cand` whose nine facts are out of bounds
+(`Look.Cand.plan_is_bounded`), and no convention to forget. -/
+theorem readPlanFacts_is_bounded {i : Nat} {v : JVal} {f : Look.WfPlanFacts}
+    (h : readPlanFacts i v = .ok f) : Look.PlanFacts.wf f.val = true := f.property
 
 /-- **One candidate record**, every value through its decoder. -/
 def readCand (i : Nat) (v : JVal) : Except Refusal Look.Cand := do
@@ -10211,7 +10349,8 @@ def readCand (i : Nat) (v : JVal) : Except Refusal Look.Cand := do
   let mandatory ← boolAt v "mandatory" (.badCandidate i .mandatory)
   let hot ← boolAt v "hot" (.badCandidate i .hot)
   let y ← optNatWith v "yesterday" (.badCandidate i .yesterday) yesterdayOf?
-  return ⟨id, ci, rp, rem, due, window, wall, optional, overdue, mandatory, hot, y⟩
+  let pf ← readPlanFacts i v
+  return ⟨id, ci, rp, rem, due, window, wall, optional, overdue, mandatory, hot, y, pf⟩
 
 /-- **A record's floor** (stage 5 D10 L8 host half, gap 79): absent or `null` is none; otherwise an
 object with `left` (minutes, at most `2^32 − 1`, fork `u32`) and `until` (a date), else
@@ -11673,15 +11812,50 @@ namespace CapWire
 
 open Look
 
+/-- §8.2 step 5's nine on the wire (P5a). -/
+def planJ (pm mul loc sp cap st deps wt : JVal) : JVal :=
+  .obj [(['p', 'l', 'a', 'n', 'n', 'e', 'd', 'M', 'i', 'n'], pm),
+    (['m', 'u', 'l', 't', 'i', 'p', 'l', 'i', 'e', 'r'], mul),
+    (['l', 'o', 'c'], loc), (['s', 'p', 'l', 'i', 't', 't', 'a', 'b', 'l', 'e'], sp),
+    (['c', 'a', 'p'], cap), (['s', 't', 'a', 't', 'e'], st),
+    (['b', 'l', 'o', 'c', 'k', 'e', 'd', 'B', 'y'], deps),
+    (['w', 'a', 'l', 'l', 'T', 'o', 'd', 'a', 'y'], wt)]
+
+/-- An exact pair as the wire's naturals. -/
+def mulJ (n d : Nat) : JVal := .obj [(['n', 'u', 'm'], .num n), (['d', 'e', 'n'], .num d)]
+
+/-- The `max:` ceiling and its spend. -/
+def capJ (a d : Nat) : JVal :=
+  .obj [(['c', 'a', 'p', 'M', 'i', 'n'], .num a), (['d', 'o', 'n', 'e', 'M', 'i', 'n'], .num d)]
+
+/-- **`Look.wfUnconstrained` as JSON**: nothing planned, multiplier 1, no `loc:`, splittable, no
+`max:`, `[ ]`, no unsatisfied dependency, not today's wall. -/
+def plainPlanJ : JVal :=
+  planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true) .null (.str [' ']) (.arr [])
+    (.bool false)
+
 /-- A candidate record on the wire: `id`, `ci`, `rootPrio`, `remaining`, `due`, `wall` and
-`yesterday` given, `window`, `optional`, `overdue`, `mandatory` and `hot` false. -/
+`yesterday` given, `window`, `optional`, `overdue`, `mandatory` and `hot` false, and the nine
+plain. -/
 def candJ (id : List Char) (ci rp rem due wall y : JVal) : JVal :=
   .obj [(['i', 'd'], .str id), (['c', 'i'], ci), (['r', 'o', 'o', 't', 'P', 'r', 'i', 'o'], rp),
     (['r', 'e', 'm', 'a', 'i', 'n', 'i', 'n', 'g'], rem), (['d', 'u', 'e'], due),
     (['w', 'i', 'n', 'd', 'o', 'w'], .bool false), (['w', 'a', 'l', 'l'], wall),
     (['o', 'p', 't', 'i', 'o', 'n', 'a', 'l'], .bool false), (['o', 'v', 'e', 'r', 'd', 'u', 'e'], .bool false),
     (['m', 'a', 'n', 'd', 'a', 't', 'o', 'r', 'y'], .bool false), (['h', 'o', 't'], .bool false),
-    (['y', 'e', 's', 't', 'e', 'r', 'd', 'a', 'y'], y)]
+    (['y', 'e', 's', 't', 'e', 'r', 'd', 'a', 'y'], y), (['p', 'l', 'a', 'n'], plainPlanJ)]
+
+/-- A candidate record with its `plan` object removed. -/
+def withoutPlanJ (rec : JVal) : JVal :=
+  match rec with
+  | .obj kvs => .obj (kvs.filter (fun kv => kv.1 != ['p', 'l', 'a', 'n']))
+  | v => v
+
+/-- A candidate record whose `plan` object is replaced. -/
+def withPlanJ (rec p : JVal) : JVal :=
+  match rec with
+  | .obj kvs => .obj (kvs.filter (fun kv => kv.1 != ['p', 'l', 'a', 'n']) ++ [(['p', 'l', 'a', 'n'], p)])
+  | v => v
 
 /-- `capacity.candidates` around a list of records. -/
 def inCands (hy : JVal) (xs : List JVal) : JVal :=
@@ -11701,7 +11875,8 @@ candidates`; 1,025 records are `tooManyCandidates` before any is read. -/
 theorem readCands_on_witnesses :
     readCands (.obj []) = .ok none ∧
     (readCands (inCands (.bool true) [a1J])).map (Option.map fun q => (q.hysteresis, q.cands))
-      = .ok (some (true, [⟨['a', '1'], 3, none, 30, some 739866, false, false, false, false, false, false, some 6⟩])) ∧
+      = .ok (some (true, [⟨['a', '1'], 3, none, 30, some 739866, false, false, false, false, false,
+          false, some 6, Look.wfUnconstrained⟩])) ∧
     (readCands (inCands (.bool true) [candJ ['a'] (.num 6) .null (.num 30) sep8J (.bool false) .null])).map
       (fun _ => ()) = .error (.badCandidate 0 .ci) ∧
     (readCands (inCands (.bool true) [candJ ['a'] (.num 3) (.num 5) (.num 30) sep8J (.bool false) .null])).map
@@ -11722,6 +11897,123 @@ theorem readCands_on_witnesses :
     (readCands (inCands (.bool true) (List.replicate 1025 .null))).map (fun _ => ()) = .error .tooManyCandidates := by
   refine ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
+/-! ### §8.2 step 5's nine, read off the wire — and each one alone (P5a, README gap 606)
+
+**Why two records and not one.**  README gap 677's lesson, taken literally: a witness set that
+cannot tell a component apart pins nothing.  `loudPlanJ` gives every one of the nine a value
+distinct from the plain record's *and* from its neighbours' — the two booleans disagree with each
+other — and `loudPlanInvertedJ` is the same nine with every one moved.  A decoder that returned a
+constant, read two fields off one key, or swapped `splittable` for `wallToday` passes neither
+half; one that dropped a key passes neither, because the expected record is compared whole. -/
+
+/-- The nine, all loud: 95 planned minutes at ×1.6, `loc:out`, `atomic` (so **not** splittable),
+a `max:` of 120 minutes with 45 spent, `[?]`, two unsatisfied dependencies of different kinds,
+and today's wall. -/
+def loudPlanJ : JVal :=
+  planJ (.num 95) (mulJ 8 5) (.str ['o', 'u', 't']) (.bool false) (capJ 120 45) (.str ['?'])
+    (.arr [.str ['^', 'k', '7'], .str ['e', 'v', 'e', 'n', 't', ':', 'v', 'i', 's', 'a']])
+    (.bool true)
+
+/-- The same nine, every one moved and both booleans the other way. -/
+def loudPlanInvertedJ : JVal :=
+  planJ (.num 30) (mulJ 1 4) (.str ['z', 'o', 'o', 'm']) (.bool true) (capJ 60 60) (.str ['-'])
+    (.arr [.str ['m', '2']]) (.bool false)
+
+/-- The nine `loudPlanJ` sends, as a record. -/
+def loudFacts : Look.PlanFacts :=
+  ⟨95, Arith.mkPos 8 5 (by decide), .out, false, some ⟨120, 45⟩, Status.live .world,
+    [.item ['k', '7'], .event ['v', 'i', 's', 'a']], true⟩
+
+/-- The nine `loudPlanInvertedJ` sends. -/
+def loudFactsInverted : Look.PlanFacts :=
+  ⟨30, Arith.mkPos 1 4 (by decide), .named ['z', 'o', 'o', 'm'], true, some ⟨60, 60⟩,
+    Status.demoted, [.item ['m', '2']], false⟩
+
+/-- **The two records disagree in every one of the nine** — stated field by field, because `≠`
+between the records is satisfied by a single difference and the claim is about nine.  This is
+what makes the two theorems below a witness set that can tell the nine apart (README gap 677). -/
+theorem the_two_loud_records_differ_in_every_one_of_the_nine :
+    loudFacts.plannedMin ≠ loudFactsInverted.plannedMin ∧
+    loudFacts.multiplier.val ≠ loudFactsInverted.multiplier.val ∧
+    loudFacts.loc ≠ loudFactsInverted.loc ∧
+    loudFacts.splittable ≠ loudFactsInverted.splittable ∧
+    loudFacts.cap.map Look.MaxCap.capMin ≠ loudFactsInverted.cap.map Look.MaxCap.capMin ∧
+    loudFacts.cap.map Look.MaxCap.doneMin ≠ loudFactsInverted.cap.map Look.MaxCap.doneMin ∧
+    loudFacts.capLeftMin ≠ loudFactsInverted.capLeftMin ∧
+    loudFacts.state ≠ loudFactsInverted.state ∧
+    loudFacts.blockedBy ≠ loudFactsInverted.blockedBy ∧
+    loudFacts.wallToday ≠ loudFactsInverted.wallToday := by
+  decide
+
+set_option maxRecDepth 8000 in
+/-- **The nine cross as the host wrote them**, each value in its own field: a swap of the two
+booleans, a constant answer, two fields read off one key, or a dropped key fails this or the
+next, because the record is compared whole and the two records differ in all nine. -/
+theorem readCand_reads_the_nine :
+    (readCand 0 (withPlanJ a1J loudPlanJ)).map (fun c => c.plan.val) = .ok loudFacts := rfl
+
+set_option maxRecDepth 8000 in
+/-- **And every one of them moves when the wire moves it** — the perturbation half. -/
+theorem readCand_reads_the_nine_the_other_way :
+    (readCand 0 (withPlanJ a1J loudPlanInvertedJ)).map (fun c => c.plan.val)
+      = .ok loudFactsInverted := rfl
+
+set_option maxRecDepth 8000 in
+/-- **The nine's refusals, each by its own name** (AGENTS §5.7).  `plannedMin` not a number, a
+multiplier over a zero denominator, one past a thousand, an empty `loc:`, a `splittable` that is
+not a boolean, a `cap` that is not an object, a `state` spelled as a word, a state character that
+is no box, more than `Look.maxDeps` dependencies, a dependency that is not a name, a `wallToday`
+that is not a boolean, and no `plan` object at all.  The two **numeric** bounds — `plannedMin` and
+the cap past the wire's `u32` — are `Look.mkPlanFacts?`'s and so are named `plan`, because R10's
+predicate has one owner and it also governs a record built off the wire. -/
+theorem readCand_refuses_each_of_the_nine_by_name :
+    (readCand 0 (withPlanJ a1J (planJ (.str ['x']) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .plannedMin) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 0) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .multiplier) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1001 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .multiplier) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str []) (.bool true)
+      .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .loc) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.num 1)
+      .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .splittable) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      (.num 5) (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .cap) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str ['t', 'o', 'd', 'o']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .state) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str ['z']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .state) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr [.str ['a', ' ', 'b']]) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .blockedBy) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr []) (.str ['y'])))).map (fun _ => ())
+        = .error (.badCandidate 0 .wallToday) ∧
+    (readCand 0 (withoutPlanJ a1J)).map (fun _ => ()) = .error (.badCandidate 0 .plan) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 4294967296) (mulJ 1 1) (.str ['a', 'n', 'y'])
+      (.bool true) .null (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .plan) ∧
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      (capJ 4294967296 0) (.str [' ']) (.arr []) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .plan) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+set_option maxRecDepth 16000 in
+/-- **The dependency list is guarded before it is read** (D9-21): sixty-five entries are refused
+by the count, not by the sixty-fifth element. -/
+theorem readCand_refuses_too_many_dependencies :
+    (readCand 0 (withPlanJ a1J (planJ (.num 0) (mulJ 1 1) (.str ['a', 'n', 'y']) (.bool true)
+      .null (.str [' ']) (.arr (List.replicate 65 (.str ['a']))) (.bool false)))).map (fun _ => ())
+        = .error (.badCandidate 0 .blockedBy) := rfl
+
 /-- The corpus request for one day with one command. -/
 def corpusRequestWithACommandJ : JVal :=
   match corpusRequestJ true 1 with
@@ -11738,12 +12030,14 @@ theorem runCap_refuses_a_command_beside_the_corpus_request :
 
 /-- The wall of `Look.witnessCands`, answered: off the scale, no grant. -/
 def wallOut : Look.CandOut :=
-  ⟨⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none⟩, 3, 0, none, none, .wall, none, none⟩
+  ⟨⟨['w'], 3, none, 60, some 1, false, true, false, false, false, false, none, Look.wfUnconstrained⟩,
+    3, 0, none, none, .wall, none, none⟩
 
 /-- `^a1` of `Look.witnessCands`, answered (`Look.priorities_on_a_witness`): 60 minutes available,
 39 reserved, the `+0` bin, raw `p` 3 held at 5. -/
 def a1Out : Look.CandOut :=
-  ⟨⟨['a', '1'], 3, none, 30, some 739866, false, false, false, false, false, false, some 6⟩, 3, 39,
+  ⟨⟨['a', '1'], 3, none, 30, some 739866, false, false, false, false, false, false, some 6,
+      Look.wfUnconstrained⟩, 3, 39,
     some ⟨⟨39, 3, 739866⟩, 60 * capDen, 39 * capDen⟩, some (.plus 0), .pressure (.plus 0), some 3, some 5⟩
 
 set_option maxRecDepth 8000 in
@@ -11794,7 +12088,8 @@ theorem readCands_reads_and_refuses_floors :
 (`Look.prioritiesWithFloors_on_a_roomier_witness`): 82 minutes left by the pass, need 26, the `+1`
 bin, `p = 2`. -/
 def rFloorOut : Look.FloorOut :=
-  ⟨⟨⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none⟩, 1, 26, none, some (.plus 1),
+  ⟨⟨⟨['r'], 2, some 0, 50, none, false, false, false, false, false, false, none,
+      Look.wfUnconstrained⟩, 1, 26, none, some (.plus 1),
     .pressure (.plus 1), some 2, some 2⟩, some ⟨⟨20, 739866⟩, 26, 82 * capDen⟩⟩
 
 set_option maxRecDepth 8000 in
