@@ -841,6 +841,45 @@ fn check_sees_a_kernel_load_refusal() {
     assert_ne!(plan.code, 0, "{}{}", plan.stdout, plan.stderr);
 }
 
+/// **`tm check` does not tell the reader to run `tm check`** — W-16 repair,
+/// **gap 580**.
+///
+/// `itemCheck` is a whole-tree fault with no position, so its refusal ends
+/// *"(run `tm check`: it names the file and the line)"* — right advice for
+/// every other verb, and nonsense in `tm check`'s own output, where D32 item 2
+/// newly routes it and where the two lines that **do** name the file and the
+/// line are printed directly beneath it.
+///
+/// Both halves are pinned: `tm check` drops the sentence, `tm plan` on the same
+/// tree keeps it. One is no use without the other — deleting the sentence
+/// outright would have passed the first assertion and lost the advice for
+/// everyone.
+#[test]
+fn the_check_hint_is_not_printed_by_check_itself() {
+    let tm = Tm::new();
+    assert_eq!(tm.run(&["check"]).code, 0);
+
+    // A routine whose window is not a clock: the tree fails the kernel's item
+    // invariant (`fileKindShape`) with no position to report.
+    let path = tm.plan.join("routines.md");
+    let text = std::fs::read_to_string(&path).expect("read routines");
+    std::fs::write(&path, format!("{text}- stretch    win:99:00-21:00 dur:30m every:day\n"))
+        .expect("write routines");
+
+    let hint = "run `tm check`";
+    let out = tm.run(&["check"]);
+    assert_eq!(out.code, 2, "{}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("itemCheck"), "{}", out.stdout);
+    assert!(!out.stdout.contains(hint), "check told the reader to run check: {}", out.stdout);
+    // The advice it replaces is redundant because these are printed:
+    assert!(out.stdout.contains("routines.md:"), "{}", out.stdout);
+
+    // Every other verb still gets the advice.
+    let plan = tm.run(&["plan"]);
+    assert_ne!(plan.code, 0, "{}{}", plan.stdout, plan.stderr);
+    assert!(plan.stderr.contains(hint), "{}", plan.stderr);
+}
+
 #[test]
 fn the_plan_directory_is_found_by_env_and_by_walking_up() {
     use std::process::Command;

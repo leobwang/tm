@@ -727,10 +727,56 @@ impl Ctx {
     }
 
     /// The item behind an argument, or a "no such item" error.
+    ///
+    /// **An ambiguous title is refused, never resolved** (W-16 repair, gap
+    /// 578). D31 keys a box-less, id-less line by its title, so two lines with
+    /// one title are two lines with one address — and `Tree`'s own index gives
+    /// the key to the *first* of them and keys the second `file:line`. Every
+    /// verb that addresses an item by name reaches this function, and until the
+    /// repair `tm drop laundry` and `tm edit laundry ci=3` on a tree with two
+    /// `laundry` routines wrote the first line, exited 0 and said nothing —
+    /// disambiguate-by-occurrence, which is the option **D32 declined** for the
+    /// kernel and AGENTS §5.6's "the loader never picks between two readings"
+    /// for everyone else. The kernel refuses the whole tree for the same
+    /// collision (`LErr.dupId`, naming both lines); this names both lines too,
+    /// in the same path-then-line order, so the two refusals read alike.
+    ///
+    /// [`Tree::ambiguous_title`] is the one place that decides it; this only
+    /// asks.
     pub fn item(&self, id: &Id) -> Result<&Item, CliError> {
+        self.refuse_ambiguous_title(id)?;
         self.tree
             .get(id)
             .ok_or_else(|| CliError::NotFound(id.clone()))
+    }
+
+    /// **The refusal itself**, so the three verbs that look an argument up in
+    /// `self.tree` directly rather than through [`Ctx::item`] — `tm done <id>`
+    /// (which tolerates a missing line, §1.3), `tm skip` and `tm routine done`
+    /// (both through `instance_of`) — say the same thing in the same words.
+    /// [`Tree::ambiguous_title`] is the one place that *decides* it.
+    ///
+    /// The key is printed bare, in backticks, and not as `^title`: a title key
+    /// is never written into a file, which is the fact the kernel's own `dupId`
+    /// message spells out and the reason the two positions are what the user
+    /// has to go on.
+    pub fn refuse_ambiguous_title(&self, id: &Id) -> Result<(), CliError> {
+        let Some(spots) = self.tree.ambiguous_title(id) else {
+            return Ok(());
+        };
+        let where_ = spots
+            .iter()
+            .map(|(path, line)| format!("{path}:{line}"))
+            .collect::<Vec<_>>()
+            .join(" and ");
+        Err(CliError::msg(format!(
+            "`{}` names {} lines and nothing says which: {where_}. A line with no `^id` is \
+             keyed by its title, so a repeated title is an ambiguous address — the kernel \
+             refuses the whole tree for it (`dupId`, naming the same two lines) and this verb \
+             will not pick one. Give one of the lines an `^id`, or change a title.",
+            id.as_str(),
+            spots.len(),
+        )))
     }
 
     /// The item's line, tokenized for a byte-faithful edit (§4.1).

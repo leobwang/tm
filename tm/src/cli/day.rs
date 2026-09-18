@@ -670,6 +670,10 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         (None, Some(a)) => (a.id.clone(), false),
         (None, None) => return Err(CliError::msg("nothing is running (`tm done ^id` for a retro done)")),
     };
+    // An ambiguous title is refused before anything is logged (W-16 repair,
+    // gap 576): this verb looks the argument up in the tree directly rather
+    // than through `Ctx::item`, so it needs the refusal by name.
+    ctx.refuse_ambiguous_title(&id)?;
     // §1.3: the other two writers may have removed the line while the block
     // ran. That must not wedge the block machine, so a missing item only
     // costs the line edit, not the event and not the state change.

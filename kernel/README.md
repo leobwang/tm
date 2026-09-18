@@ -28147,6 +28147,13 @@ is new machinery, not a repair.
    `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` is the
    tripwire that says so.
 
+> **RENAMED at W-16 (track P's P3, `da1acd9`): it is now
+> `PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`.** Choice 5b's reservation
+> is a Block row the *planner* places, so "every Block row is one `pastRows`
+> replayed" went false and the theorem was restated over the produced day. The old
+> name appears nowhere in the kernel — the sentence is left standing as the record of
+> what was true when it was written (gap 578).
+
 > **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
 > `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
 > 5b's reservation is a Block the planner places, so the empty-list form above went
@@ -28270,6 +28277,13 @@ gap **385**.
   `dayPlan_block_rows_come_from_the_log` (unconditional: every `SegKind.block`
   row of `dayPlan r` is one `Planner.pastRows` replayed) and
   `dayPlan_has_no_block_row`.
+
+> **RENAMED at W-16 (track P's P3, `da1acd9`): it is now
+> `PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`.** Choice 5b's reservation
+> is a Block row the *planner* places, so "every Block row is one `pastRows`
+> replayed" went false and the theorem was restated over the produced day. The old
+> name appears nowhere in the kernel — the sentence is left standing as the record of
+> what was true when it was written (gap 578).
 * **One theorem deleted**:
   `dayPlan_ok_at_every_eligibility_while_the_day_is_empty`. Its own name is the
   reason — it was stated about a `dayPlan` with no segments and P1's has some.
@@ -28582,6 +28596,13 @@ in `assignedOf` — the fork counts it too"), `dayPlan_block_rows_come_from_the_
 is unconditional, and `dayPlan_ok_core` carries `hnopast` precisely because
 today's log **can** hold a Block.
 
+> **RENAMED at W-16 (track P's P3, `da1acd9`): it is now
+> `PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`.** Choice 5b's reservation
+> is a Block row the *planner* places, so "every Block row is one `pastRows`
+> replayed" went false and the theorem was restated over the produced day. The old
+> name appears nowhere in the kernel — the sentence is left standing as the record of
+> what was true when it was written (gap 578).
+
 **Fixed, with a proof rather than a retraction.** Two theorems in `PlanCheck.lean`,
 beside the forward direction they invert:
 
@@ -28728,6 +28749,14 @@ Manufacturing them is a real induction over `List Char` and it is not this step'
 `wallsOfDay` sorts one day's walls, not the day's rows, so it is the cheaper half
 by a wide margin. **Gap 394 stays open** for it.
 
+> **CLOSED at W-16's repair step.** The induction was written — `Log.charsLe_antisymm`,
+> `Log.charsLe_total` and `Log.charsLe_trans`, on **`Log.charsLe` itself** — and both spec
+> sorts now have their twins: `Planner.sortWalls`/`sortWallsFast` and
+> `sortRoutines`/`sortRoutinesFast`, each through `Replay.insSort_eq_mergeSort` at the
+> order's own `_trans`/`_total`. The specification bodies are unchanged, so every `decide`
+> witness still reduces. See gap 581: the lemmas were owed to a *fork* of `charsLe` that
+> W-16 had written twice, and proving them on the real one closed both findings at once.
+
 ### 6. Gap 395 — `tm undo`'s conflict refusal reported the two sides as equal, and its advice could not be followed
 
 **Reproduced, by driving the binary** (§5.13), not by reading. In a scratch tree:
@@ -28845,6 +28874,13 @@ fork-anchored arm, and the two frozen arms are the ones that would have caught o
 ### Gaps opened / left open
 
 #### Gap 394 (new; label W14R-a) — `wallsOfDay`'s spec sort still has no compiled twin
+
+> **CLOSED at W-16's repair step** (gap 581), exactly as item 4 specifies: *"with
+> `Log.charsLe`'s two order lemmas, wherever they are first needed"* — which turned out to
+> be W-16's own `Boundary.spotLe`, where track A proved them on a **fork** of `charsLe`
+> instead. The repair deleted the fork, proved `charsLe_antisymm`, `charsLe_total` and
+> `charsLe_trans` on `Log.charsLe`, and gave both `wallsOfDay` and `sortRoutines` their
+> `@[csimp]` twins. It did not wait for P5.
 
 1. **What is not done.** `Planner.wallsOfDay` calls `Replay.insSort wallLe`
    directly and there is no `@[csimp]` twin for it. `stepOneRows`' sort has one
@@ -29196,7 +29232,7 @@ Every function P2 adds that walks a list the wire can make large, with its form:
 |---|---|---|
 | `PlanReq.routineInstances` | `r.routines` (`Capped`, ≤ 1,024) | core `List.filterMap` |
 | `splitSleep` | the same | structural, one pass, bounded by `Capped` |
-| `sortRoutines` | the same | `Replay.insSort` — **the specification sort, and it has no compiled twin for the same reason `wallsOfDay`'s has none**: `Log.charsLe` has no transitivity or totality lemma in the tree and `insSort_eq_mergeSort` needs both. That is **gap 394**, already open, and this step adds a second caller to it rather than a second gap. |
+| `sortRoutines` | the same | `Replay.insSort` — **the specification sort, and it has no compiled twin for the same reason `wallsOfDay`'s has none**: `Log.charsLe` has no transitivity or totality lemma in the tree and `insSort_eq_mergeSort` needs both. That is **gap 394**, already open, and this step adds a second caller to it rather than a second gap. *(Both twins landed at W-16's repair step, gaps 394 and 581: `sortRoutines`/`sortRoutinesFast` and `sortWalls`/`sortWallsFast`.)* |
 | `PlanReq.placedRoutines` | the same | core `List.foldl` |
 | `stepTwoSegs`, `eveningRows` | `placedRoutines` | core `List.flatMap` / `++` |
 | `earliestFree` | `Look.freeIntervals`' answer | core `List.find?` |
@@ -29375,7 +29411,8 @@ the seam's **260**, **262**, the merge's **270**, and the performance levers
   F2's recurrence expansion is track **K3** and is not built. Gaps 113, 114 and 116
   are untouched and whole.
 * **It did not prove `Log.charsLe` transitive or total**, so gap 394 stays open with
-  a second caller.
+  a second caller. *(Proved at W-16's repair step; gap 394 is closed and both callers
+  have their twins.)*
 * **It did not weaken a checker or a goal.** All eleven of `PlanCheck`'s are exactly
   as track G wrote them; `dayPlan_ok_core` was **re-proved** over the new body with
   its hypotheses unchanged, through the four new "no row step 2 places is a Wall /
@@ -29809,6 +29846,14 @@ exhibit: `assignedOf` counts the replayed past, `assignedFrom … now` counts th
 planner's own placements, and only the second is empty.  The second is also
 `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` fired at
 a request — **P5 must delete both**.
+
+> **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
+> `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
+> 5b's reservation is a Block the planner places, so the empty-list form above went
+> false; P5 still must delete it. The old name appears nowhere in the kernel — the
+> sentence is left standing as the record of what was true when it was written.
+> **This is the fifth sentence, and the land block's sweep found four** — W-16's
+> repair step added this banner and corrected the count (gap 578).
 
 ### Gap 396: the battery gives a second opinion, and it bites
 
@@ -31486,6 +31531,23 @@ boxes a box-less line, it is `tm drop`'s id-less branch, and it is the one this
 commit repairs. Everything else already refused by name. **Gap 531** records the
 refusals, which are a different defect and not D33's.
 
+> **WRONG, and corrected at W-16's repair step (gap 575).** The `tm edit lunch state=…`
+> row and the sentence *"there is exactly one host path that boxes a box-less line"* are
+> both **false**, and the table's own heading calls them driven. `ItemLine::set_state`
+> (`tm-core/src/grammar.rs`) inserts a box after the bullet on a line that has none, and
+> `tm edit`'s typed `state` key calls it — so **all six** state values box a box-less
+> `routines.md` line. Driven on a fresh `tm init --example` tree: `tm edit lunch 'state=[ ]'`
+> printed `- [ ] lunch      win:11:30-13:30 dur:30m  every:day`, wrote it to
+> `routines.md:3` and **exited 0**; `tm check` then exited 2 with
+> `badLine — routines.md:3 … (Tm.PErr.noId)`, and `tm plan`, `tm now` and `tm review day`
+> each exited 1. That is the same one-word brick D33 was opened for, on a second verb, and
+> the repair applies D33 there: the edit writes the `^id` too, names it in the answer and
+> in `--json` (`EditOut.assigned`, the twin of `DropOut`'s), and `tm undo` takes both back
+> off. There are **two** host paths that box a box-less line, and both now write the id.
+> The wrong row is left standing above, as §6.4 requires, with this beside it — a table
+> headed "measured rather than assumed" that was not measured is exactly the W-15 lesson
+> repeating, and deleting the evidence of that would be the worse of the two mistakes.
+
 ### Behaviour rows
 
 | input | before (`f50cd00`, and `d2c0aa6`) | after | why |
@@ -32270,8 +32332,11 @@ draws the run-up row `[lo, evLo)` while `(x.lo, x.hi)` stops at `hi < evLo` — 
 place a routine inside a wall's own buffer and step 3 could cut slots there.  The span is now
 `(x.lo, max x.evLo x.hi)`: `max` only ever widens, it is the identity on every wall whose
 interval runs forwards, and it is what makes `a_wall_row_sits_in_a_blocked_span` true with **no**
-hypothesis about the plan.  Cheat 180 asserts the old span from the other side and `decide`
-refuses it.  **Not user-visible**: `dayPlan` has no shipped caller (below).
+hypothesis about the plan.  Cheat **183** asserts the old span from the other side and `decide`
+refuses it.  (This sentence read "cheat 180" until W-16's repair step: the land step's
+177-180 → 180-183 renumber missed it, and because 180 is a real cheat — the reservation's
+whole estimate — the stale number pointed at the wrong theorem instead of at nothing.
+Gap 583.)  **Not user-visible**: `dayPlan` has no shipped caller (below).
 
 ### `shipped_call_sites`, driven and not asserted (the lesson W-15 paid for)
 
@@ -32686,6 +32751,18 @@ readable — the pattern gap 348 and W-16's track A used, and the one W-14 and
 W-15 did not, which is the ledger rot this campaign has paid for twice. This is
 the class check 3 cannot see: it counts theorems and cannot read prose.
 
+> **CORRECTED at W-16's repair step: the count is FIVE, not four, and the same
+> sweep owed three more banners of the same class.** `grep -n` over the whole file
+> finds the old tripwire name in **five** older sentences, not four — the fifth is
+> *"The second is also `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`
+> fired at a request — **P5 must delete both**"*, a present-tense instruction to a
+> future step naming a constant that no longer exists. And the other two renames in
+> the table below —`Planner.a_block_row_is_a_replayed_row` and
+> `PlanCheck.dayPlan_block_rows_come_from_the_log` — were given no banners at all,
+> while the second is cited live in **three** older sentences. All four sentences now
+> carry one. The block's stated count is left as written, with this correction beside
+> it, because that count is itself the evidence the sweep stopped short. **Gap 578.**
+
 `plan_reserves_one_block_at_a_time` was **not** renamed — it left `Goals.lean`
 and reappeared as `Planner.plan_reserves_one_block_at_a_time`, so its five
 citations in `AGENTS.md`, the design and `Planner.lean` still resolve. Grepped
@@ -32935,4 +33012,629 @@ row is reported as all three readings with the machine state. The FFI, T5, door,
 `decide` or `rfl` witness was written by this step, so no 8G probe was owed and
 none was run. Both binary drives used one release binary built from the final
 tree, on a scratch `tm init --example` tree **outside the repo**, at
+`MemoryMax=16G`. No bound was raised and nothing was retried uncapped.
+
+<!-- ===========================================================================
+     Stage 6, W-16 REPAIR STEP, 2026-09-17 — the eleven defects two independent
+     auditors found in W-16's ten commits, reproduced first and then repaired.
+     Gap range 575-589 (ten taken: 575-584).  No cheat taken; none renumbered.
+     Whoever merges next renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-16 repair step, 2026-09-17: the auditors' eleven, reproduced and repaired
+
+Two auditors read `995323b..5ea1541` — the behaviour auditor drove the shipped
+binary, the reuse critic grepped for AGENTS §5.3's second copies. **Eleven
+findings; all eleven reproduced on the first drive.** Ten are repaired outright.
+The eleventh — the nine candidate facts the host still supplies — is repaired as
+far as a repair step may go and **no further**: its *copy* is now pinned, its
+*values* are still the host's, and **gap 577 stays open** because closing it is
+D27 and D27 is a wire change. One new finding of the same class, turned up while
+reproducing the second, is recorded rather than absorbed (**gap 584**).
+
+Two sentences are worth putting at the top, because both are this campaign's own
+lesson repeating:
+
+* **The ledger recorded a driven measurement that was not driven.** A table in
+  W-16's D33 block, headed *"Which paths box, **measured rather than
+  assumed**"*, has a row saying `tm edit lunch state=…` boxes nothing. It boxes
+  on all six state values, and the tree it writes is one `tm check` exits 2 on.
+  That is the W-15 lesson — *a user-visibility claim recorded without driving
+  the path* — verbatim, one run later.
+* **`charsLe` was written three times, twice in this run, under two explicit
+  "re-implemented nothing" claims.** One of the two forks then carried the exact
+  two lemmas gap 394 had been open for since W-14, where they could reach
+  nothing. Proving them on the real `Log.charsLe` closed the duplication **and**
+  gap 394, at both call sites, in one move.
+
+### The eleven, in the order they were repaired
+
+| # | gap | finding | reproduced? | repair |
+|---|---|---|---|---|
+| 1 | **575** | `tm edit <title> state=…` boxes a title-keyed line without writing its `^id`, bricks every kernel verb, exits 0 — and the ledger records it as measured-absent | **yes**, all six state values | D33 applied to `tm edit`; the false table row corrected in place |
+| 2 | **576** | on a `dupId` tree, `tm drop <title>` / `tm edit <title>` write, exit 0, and silently take the **first** of the two lines | **yes**, both, plus `done`/`skip`/`routine done` | `Ctx::item` and the three direct lookups refuse an ambiguous title, naming both lines |
+| 3 | **577** | the nine host-supplied `Look.Cand` facts are pinned by nothing — inverting `overdue` leaves the suite green and re-ranks `tm plan` | **yes**, 1,323 green with the mutation | `cand_json` made `Ctx`-free and pinned field-by-field; **gap 577 stays open** — it pins the copy, not the values |
+| 4 | **578** | the W-16 rename sweep stopped one sentence short and its own count says four | **yes**, and **three more** un-bannered citations of a second renamed name | four banners added; the count corrected beside itself |
+| 5 | **579** | invalid UTF-8 in a plan `.md` defeats `tm check`: exit 1, no line; `tm plan` says `inbox.md:0:` | **yes** | `tm check` names the line and exits 2; `:0` is no longer printed |
+| 6 | **580** | `tm check` prints a refusal telling the reader to run `tm check` | **yes** | one spelling of the sentence, taken back off at the one place it is wrong |
+| 7 | **581** | `charsLe` defined **three** times, two of them added this run | **yes** | both forks deleted; the laws proved on `Log.charsLe` |
+| 8 | **581** | gap 394 open for a reason the same run half-falsified, on a fork | **yes** | **gap 394 CLOSED**: both spec sorts have `@[csimp]` twins |
+| 9 | **578** | a deleted theorem name cited in the present tense; the merge block's count wrong | **yes** | above, same repair |
+| 10 | **582** | P3 shipped a doc comment citing a theorem that exists nowhere in the repo | **yes** | corrected to `a_wall_row_sits_in_a_blocked_span` |
+| 11 | **583** | the cheat renumber missed one sentence, and 180 is a *different real cheat* | **yes** | corrected to 183, with why the counter could not see it |
+
+**Nothing was left un-adopted, and nothing was adopted without driving it.**
+W-12's repair correctly refused a timing defect it could not reproduce; this one
+had no such case. Two of the eleven turned out to be *larger* than reported —
+finding 2 reaches `done`, `skip` and `routine done` as well as `drop` and
+`edit`, and finding 4 covers a second renamed theorem the report did not name —
+and both are repaired at their real size.
+
+### 1. D33's second boxing path (gap 575)
+
+**Reproduced.** Fresh `tm init --example`, release binary, `MemoryMax=16G`:
+
+```
+$ tm edit lunch 'state=[ ]'
+- [ ] lunch      win:11:30-13:30 dur:30m  every:day          [exit 0]
+$ tm check
+routines.md:3: error[kernel-load]: kernel refusal: badLine — routines.md:3 looks like an
+  item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+1 error, 0 warnings                                          [exit 2]
+$ tm now      [exit 1]      $ tm plan      [exit 1]
+```
+
+All six of `[ ] [x] [~] [>] [?] [-]` do it. The cause is one line:
+`ItemLine::set_state` (`tm-core/src/grammar.rs`) *inserts* a box after the
+bullet when the line has none, and `tm edit`'s typed `state` key calls it —
+while `write_id_for_boxing` (`tm/src/cli/items.rs`) had exactly one caller,
+`drop_item`. D33 is a rule about **boxing**, not about `drop`.
+
+**Repaired** by applying the same rule at the same place in the same order:
+`tm edit` calls `write_id_for_boxing` after `Recorder::start` and before the
+line is touched, when and only when the line carries no box, carries no `^id`,
+and the edit includes a typed `state=` pair. `--set state=…` writes a verbatim
+`state:` **key**, not a box, and `--unset` removes — neither is a boxing path
+and neither triggers it. `EditOut` gains `assigned`, `#[serde(skip_serializing_if)]`
+like `DropOut`'s, so no existing `--json` answer moves.
+
+Driven, all six values: the id is written, `tm check` exits 0, `tm now` runs,
+`tm undo` restores `routines.md` **byte for byte**, and exactly one id appears
+in the file that was not there before.
+`cli_items::boxing_a_title_keyed_line_through_edit_writes_its_id_and_the_tree_still_loads`
+is the test, and `an_edit_that_boxes_nothing_writes_no_id` is its other half.
+
+**The ledger's own half of this is the worse defect**, and it is corrected in
+place at the D33 block: the *"measured rather than assumed"* table's
+`tm edit lunch state=…` row and the sentence *"there is exactly one host path
+that boxes a box-less line"* are both false. Both are left standing with a
+correction beside them (§6.4: dated blocks are written history), because a table
+that claimed to be driven and was not is the evidence, and deleting evidence is
+worse than the error.
+
+### 2. A title that names two lines is refused, never resolved (gap 576)
+
+**Reproduced.** Fresh example tree, one duplicated `- laundry …` line (lines 7
+and 9):
+
+```
+$ tm drop laundry
+tm: the automatic close (§6.3) was refused … kernel refusal: dupId — routines.md:7 and
+  routines.md:9 …
+dropped ^ccha — a state box makes it a tracked item, so ^ccha was written on the line
+                                                             [exit 0]
+```
+
+`routines.md:7` is rewritten `- [~] laundry … ^ccha`; line 9 is untouched.
+`tm edit laundry ci=3` does the same. Both went through the host-only path:
+`Tree` gives the title key to the **first** of the two lines and keys the second
+`file:line`, so `Ctx::item` returned the first and said nothing. That is
+**disambiguate-by-occurrence**, the option D32 declined, and AGENTS §5.6's *"the
+loader never picks between two readings"* applied to the host instead of the
+kernel.
+
+**The reproduction found more than the report did.** `tm done laundry` and
+`tm skip laundry` also succeeded, exit 0, appending a log event keyed to an
+ambiguous address — they look the argument up in `self.tree` directly rather
+than through `Ctx::item`, so a grep for `ctx.item(` would have missed them. That
+is the W-15 lesson applied the other way round, and it is why every
+title-addressing verb was driven rather than the two named.
+
+**Repaired** at the address, not at the tree. `Tree::ambiguous_title(&Id)` asks
+the **existing** `duplicate_titles` index about one key — one place decides —
+and `Ctx::refuse_ambiguous_title` is the one host-side refusal, called by
+`Ctx::item` and by the three direct lookups (`done`, `instance_of` for `skip`
+and `routine done`). It names **both** placements in the same path-then-line
+order the kernel's `dupId` uses, and prints the key bare in backticks, because a
+title key is never written into a file and `^laundry` would be a token to grep
+for that does not exist.
+
+**This is not a second copy of D32's rule.** D32 is about the kernel's store
+keys and refuses the whole tree; this is about *which line an argument names*,
+and its answer is a refusal rather than a pick. The two now say the same thing
+in the same shape, and the kernel is still the one that refuses the tree.
+
+Twelve verbs driven, each on its own damaged tree: `drop`, `edit … ci=`,
+`edit … state=`, `move`, `rank`, `demote`, `readopt`, `start`, `event`, `done`,
+`skip`, `routine done`. **All twelve exit 1, and neither `routines.md` nor
+`.tm/log.jsonl` is touched** — asserted by md5 and by an empty log.
+`an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision` pins that
+the guard is about the key and not a blanket refusal.
+
+**What it does NOT close is gap 584**, below — found while driving this.
+
+### 3. The candidate facts are pinned (gap 577, which stays open)
+
+**Reproduced exactly.** `tm/src/cli/kernel_capacity.rs`, `"overdue": c.overdue,`
+→ `"overdue": !c.overdue,`; `cargo test --workspace` **exit 0, 1,323 passed / 0
+failed / 9 ignored across 78 result lines** — nothing bit. And the mutation is
+live: `tm --now 2026-09-12T09:00:00-05:00 plan` on a fresh example tree prints
+`· dropped: m1 · m3 · t1 · t3 · m2 · t4 · d2 · m4 · d1 · …` against the
+unmutated `· dropped: d1 · m1 · m3 · t1 · …` — the overdue `d1` moves from first
+to tenth.
+
+`priority_plan_basic.rs` snapshots the `Candidate` *before* `cand_json` and the
+kernel reads whatever arrives (`Boundary.readCand`), so the **copy** between
+them had no test at all.
+
+**Repaired as far as a repair step may go.** `cand_json` took a `&Ctx` for two
+things — a root priority and `ctx.today` — so it could not be driven without a
+loaded tree; both are parameters now and the function is a pure mapping. Two
+tests drive it: one compares the whole record against an expected object with
+every field distinct from its neighbours' and then **again with all six
+booleans inverted and the three `Option`s empty** (so a swap of `hot` for
+`overdue`, a constant answer, or a dropped field all fail, not only an
+inversion); the other compares the key set whole against the twelve keys
+`Boundary.readCand` reads plus `readFloor`'s `floor`. Confirmed to bite: with
+the auditor's mutation re-applied the first test fails on `overdue`, and passes
+again when it is reverted.
+
+**Gap 577 stays open and is restated**: this pins the *copy*, not the *values*.
+The nine facts are still the host's, which is D27, which did not land. The gap
+text now names that cost, which gap 500's four-part text did not.
+
+### 4 and 9. The rename sweep's four missing banners (gap 578)
+
+**Reproduced by grep, including prose**, as AGENTS' hard rules require. Three
+`#print axioms` names left the roster between `995323b` and `5ea1541`:
+
+| name | now | live prose citations found | banners at the land step |
+|---|---|---|---|
+| `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` | `…_but_the_running_block` | **five** | four |
+| `PlanCheck.dayPlan_block_rows_come_from_the_log` | `…_are_replayed_or_reserved` | **three** | none |
+| `Planner.a_block_row_is_a_replayed_row` | `…_is_replayed_or_reserved` | one, and it is past tense | n/a |
+
+The fifth tripwire sentence — *"The second is also
+`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` fired at
+a request — **P5 must delete both**"* — is a present-tense instruction to a
+future step naming a constant that no longer exists. **Four banners added**, in
+the same wording and the same in-place shape as the land step's, and the land
+block's *"it appeared in **four** README sentences"* now carries a correction
+beneath it. The stated count is left as written: it is itself the evidence the
+sweep stopped short.
+
+### 5. A plan file that is not UTF-8 (gap 579)
+
+**Reproduced.** `- caf\xc3\x28 broken utf8` appended to `plan/inbox.md`:
+`tm check` → **exit 1**, `tm: inbox.md: stream did not contain valid UTF-8` —
+no line, and not the spec's validation code 2. `tm plan` and `tm triage` →
+`tm: inbox.md:0: not valid UTF-8`, and line 0 is not a line. The log side is
+still correct on the same tree (three damaged log lines → `0 errors, 3
+warnings`, exit 0), which is what gap 145 bought and the plan files never got.
+
+**Three causes, three repairs, none of them a widened tolerance:**
+
+1. `StoreError::Parse`'s own field doc says *"1-based line, **or 0 for the whole
+   file**"* and its format string printed the 0 anyway. `at_line` prints
+   nothing for 0. That is where `inbox.md:0:` came from.
+2. `Store::read_tree` already tolerated the file and reported it as a problem —
+   at line 0. It now names the line, by splitting the **bytes** on newlines and
+   finding the first run that will not decode: the same split-then-decode the
+   log's reader does (`Store::read_bytes`' own doc comment says why it exists).
+3. `tm check`'s own kernel load (D32 item 2, `f50cd00` — **this run's**) read
+   every file with a bare `?`, so one stray byte made the one verb whose job is
+   diagnosis die before printing anything. It now skips a file whose bytes are
+   not text — the decode problem is already reported, with its line — and asks
+   the kernel about the rest of the tree.
+
+`StoreError::is_not_utf8` is the one answer to *"are this file's bytes text"*,
+asked by both `read_tree`'s tolerance and `tm check`'s load rather than each
+matching on an `ErrorKind`.
+
+After: `tm check` → `inbox.md:5: error[bad-value]: not valid UTF-8; the file was
+skipped`, **exit 2**. `tm plan` and `tm triage` still fail — a plan file that
+cannot be decoded is not something to plan around — and no longer say `:0`. The
+two halves of the repair are deliberately **not** the same answer: the log's bad
+line is a *warning* because the log is append-only history and the point is to
+keep going; a plan file's is an *error* because the file is the plan and it has
+been skipped whole. Both name the line.
+`cli_check_log::invalid_utf8_in_a_plan_file_is_an_error_tm_check_names_by_line`
+sits directly above its log twin.
+
+### 6. `tm check` does not tell you to run `tm check` (gap 580)
+
+**Reproduced**: on a tree with a malformed routine window, `tm check`'s first
+line ends *"(run `tm check`: it names the file and the line)"* — followed
+immediately by the two lines that do. The advice is right for every other verb
+and nonsense here, which is where D32 item 2 newly routes it.
+
+**Repaired** with one spelling and one removal: `kernel_bridge::CHECK_HINT` is
+the sentence, and `lifecycle::load_problems` — which *is* `tm check` — takes it
+back off. `the_check_hint_is_not_printed_by_check_itself` pins **both** halves
+on the same tree: `tm check` drops it, `tm plan` keeps it. One without the other
+would have passed while losing the advice for everyone.
+
+### 7 and 8. One `charsLe`, and gap 394 closed (gap 581)
+
+**Reproduced.** Three definitions of one lexicographic order on `List Char`:
+
+| where | added | unequal-head arm |
+|---|---|---|
+| `Log.lean:802` | stage 4 | `if a.val < b.val …` |
+| `Boundary.lean:86` | **`9fa58fc`, this run, track A** | `decide (a.toNat < b.toNat)` |
+| `Recur.lean:510` | **`648a160`, this run, track K** | `decide (a < b)` |
+
+All three are the same function (`Char.lt` *is* `a.val < b.val`;
+`Char.toNat c = c.val.toNat`; `UInt32.lt` is unsigned), both new modules can see
+`Log`, and both new copies shipped under an explicit *"re-implemented nothing"*
+claim — track A's block goes further and calls `charsLe` *"the one genuinely new
+algorithm"*. The repo's own precedent for this concept is an **alias**:
+`Seal.idLt := Log.charsLt`.
+
+And the second finding is what makes the first expensive rather than merely
+untidy. Gap 394 has been open since W-14 with one reason: *"`Log.charsLe` has no
+transitivity or totality lemma in the tree and `insSort_eq_mergeSort` needs
+both"*. Track A then **proved two of the three**, on its fork, where no bridging
+theorem connects them to `Planner.wallLe` or `routineLe`.
+
+**Repaired the way §5.3 says: consume, do not fork.**
+
+* `Log.charsLe_antisymm`, `Log.charsLe_total` and `Log.charsLe_trans` are proved
+  on `Log.charsLe` itself, with `Log.char_val_ne` and `Log.char_lt_toNat` (the
+  code-point order as a `Nat` order, because `omega` cannot see a `UInt32`).
+* `Boundary.charsLe` and `Recur.charsLe` are **deleted**. `Boundary.spotLe` and
+  `Recur.keyedLe` call `Log.charsLe`; `spotLe_antisymm` and `spotLe_total` are
+  unchanged except for the namespace of the two lemmas they cite. Track A's two
+  audit lines move from `Tm.charsLe_*` to `Tm.Log.charsLe_*` — **the same short
+  names**, so check 3's multiset reconciliation is undisturbed.
+* **Gap 394 is closed.** `Planner.sortWalls`/`sortWallsFast` and
+  `sortRoutines`/`sortRoutinesFast`, each `@[csimp]` through
+  `Replay.insSort_eq_mergeSort` at `wallLe_trans`/`wallLe_total` and
+  `routineLe_trans`/`routineLe_total`. The **specification bodies are
+  unchanged** — `wallsOfDay` now calls `sortWalls`, which is
+  `Replay.insSort wallLe` — so every `decide` witness still reduces, and
+  `the_spec_days_walls_are_placed_where_they_are_written` and the rest are
+  re-proved untouched. `mem_sortWalls` joins `mem_sortRows` and
+  `mem_sortRoutines`.
+
+**Thirteen audit lines, eleven of them new theorems and two of them track A's
+two restated over the real function** — and their axiom sets, printed rather
+than assumed:
+
+```
+Tm.Log.char_val_ne                          does not depend on any axioms
+Tm.Log.char_lt_toNat                        does not depend on any axioms
+Tm.Log.charsLe_antisymm                     [propext, Quot.sound]
+Tm.Log.charsLe_total                        [propext, Quot.sound]
+Tm.Log.charsLe_trans                        [propext, Quot.sound]
+Tm.Planner.wallLe_trans / wallLe_total      [propext, Quot.sound]
+Tm.Planner.sortWalls_eq_sortWallsFast       [propext, Classical.choice, Quot.sound]
+Tm.Planner.mem_sortWalls                    [propext]
+Tm.Planner.routineLe_trans                  [propext, Quot.sound]
+Tm.Planner.routine_span_total               [propext, Quot.sound]
+Tm.Planner.routineLe_total                  [propext, Quot.sound]
+Tm.Planner.sortRoutines_eq_sortRoutinesFast [propext, Classical.choice, Quot.sound]
+```
+
+Only R2's three, and `Classical.choice` only where the existing
+`sortRows_eq_sortRowsFast` already has it (`List.mergeSort`'s own lemmas). No
+new axiom, no `sorry`, no `native_decide`, no new module — so no `TmKernel.lean`
+import is owed — and no goal added or deleted.
+
+### 10. A doc comment naming a theorem that never existed (gap 582)
+
+**Reproduced** by `grep -rn` over `kernel/`, `AGENTS.md` and the design: exactly
+one hit for `a_wall_row_is_covered_by_the_blocked_list`, and it is the doc
+comment that cites it (`Planner.lean`, `blockedByWalls`). `git log -S` over all
+branches returns only `da1acd9` — the name was **introduced dangling** by P3,
+the same commit whose README block says *"eight live doc-comment citations in
+three modules were corrected … gap 393's class caught before the commit rather
+than by the next audit"*. This is a ninth, of the same class, uncaught.
+`kernel/README.md` spells it right in the twin sentence.
+
+Corrected to `a_wall_row_sits_in_a_blocked_span` (`Planner.lean:3034`, audited
+at `Check.lean:5216`, used at `PlanCheck.lean:879`), with the miss named in
+place: check 3 counts theorems and cannot read doc comments.
+
+### 11. The cheat renumber's one missed sentence (gap 583)
+
+**Reproduced.** The land step renumbered track P's cheats 177-180 → 180-183 and
+claims every citation moved *"found by grepping the whole repo including
+prose"*. The gap-552 run-up section still reads *"Cheat 180 asserts the old span
+from the other side"*. The cheat that asserts the old wall span is **183**
+(`Negative.lean:2245`, `theInvertedWallsBufferIsBlockedAnyway`); 180 is
+`theReservationTakesTheWholeEstimate`, about the reservation, and is correctly
+cited three times elsewhere. Corrected, with the reason it was invisible said
+out loud: **the stale number resolves to a real cheat**, so no counting tool —
+`uniq -d`, check 4 — can see it, and only a reader following the reference can.
+
+### AGENTS §5.3: what was consumed, and what was deleted rather than bridged
+
+**Consumed, by name, and re-implemented none of them.** `Log.charsLe` (the
+point of the whole §5.3 half of this step), `Log.charsLt`, `Replay.insSort`,
+`Replay.insBy`, `Replay.insSort_eq_mergeSort`, `Replay.insSort_perm`,
+`Planner.wallLe`, `Planner.routineLe`, `Planner.wallsOfDay`,
+`Planner.sortRoutines`, `Planner.sortRows`/`sortRowsFast` (as the shape to
+copy), `Look.wallIxOn`, `Look.WallIx`, `Boundary.Spot`/`spotLe`/`spotPair`,
+`Recur.InstKey.le`, `Recur.keyedLe`, `Tree::duplicate_titles`,
+`Tree::locations`, `Store::read_bytes`, `store::unreadable`,
+`items::write_id_for_boxing`, `items::split_pair`, `ItemLine::index_of`,
+`validate::CheckProblem`, `kernel_bridge::refusal`, `Ctx::item`,
+`priority::period_range`, `Candidate::new`, `capacity::local_dt`.
+
+**Two definitions were deleted, not bridged** (§5.3's own prescription — *"the
+fix was deletion, not a bridge"*): `Boundary.charsLe` and `Recur.charsLe`.
+Neither was the wrong shape; both were the right shape written twice.
+
+**Two things were added, and neither is a second answer.**
+`Tree::ambiguous_title` asks the **stored** `duplicate_titles` about one key —
+`Tree::duplicate_titles` still lists them all and is still the only place the
+collision is computed. `StoreError::is_not_utf8` is `store::unreadable`'s
+existing verdict made public, so `tm check` stopped matching on an `ErrorKind`
+of its own.
+
+### `shipped_call_sites`, driven and not asserted (the lesson W-15 paid for)
+
+For every rule this step added or changed: which **shipped** verbs reach it,
+found by grepping the host path, and what driving them on a real
+`tm init --example` tree showed. Release binary, scratch path outside the repo,
+`MemoryMax=16G`.
+
+| rule | shipped callers, by grep | driven |
+|---|---|---|
+| `Ctx::refuse_ambiguous_title` | `Ctx::item` (9 call sites: `edit`, `move`, `rank`, `demote`, `readopt`, `drop`, `event`, `close --drop`, `start`), plus `done` and `instance_of` (`skip`, `routine done`) | **12 verbs driven, all exit 1, no plan file and no log line written** (md5 and an empty log); `tm drop groceries` on the same tree still works. `close --drop` is the one call site **not** driven: its argument must name a line in a month file, and a routine title cannot be one — it is covered by grep and by `Ctx::item`, and this block says so rather than implying twelve is thirteen |
+| `tm edit`'s boxing branch | `items::edit`, the non-kernel path only (`item.has_id()` false) | **6 state values**, each writes the id, `tm check` 0, `tm now` 0, `tm undo` byte-identical |
+| `cand_json`'s new signature | `kernel_capacity::request` → every capacity verb (`plan`, `now`, `review day`, `drop`, …) | `tm plan` output **unchanged** against the pre-repair binary, byte for byte |
+| `at_line` / `first_bad_utf8_line` | `StoreError::Parse`'s `Display` (every verb's error line) and `Store::read_tree` (every verb) | `tm check` names `inbox.md:5` and exits 2; `tm plan`/`tm triage`/`tm now` exit 1 with no `:0` |
+| `CHECK_HINT` removal | `lifecycle::load_problems` — `tm check` **only** | `tm check` drops it; `tm plan` on the same tree keeps it |
+| `Log.charsLe_*`, `sortWalls`/`sortWallsFast`, `sortRoutinesFast`, `wallLe_*`, `routineLe_*` | **none.** `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing: there is still no planner op on the wire, so `dayPlan` has no shipped caller and neither do its two sorts | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh tree prints `log`, `apply`, `capacity+log`, `emit` — the §6.3 auto-close's read, its apply, the capacity call and D16's writer — and **no planner call** |
+| `Boundary.spotLe` (its `charsLe` **changed definition**) | **every capacity verb.** `kernel_capacity::request` sends the whole tree and `Boundary.loadPlan` runs on it — the call site W-15 recorded as having none | duplicated `inbox.md:2`/`inbox.md:5`: `tm check` names **both** lines, in that order, exits 2; `tm plan`, `tm now`, `tm review day`, `tm drop` each refuse with the same sentence. Byte-identical to the pre-repair binary's answer |
+| `Recur.keyedLe` (the same) | **none** — `TmKernel.Recur` is imported by `TmKernel.lean` and `PlannerWit.lean` and by nothing the wire reaches; that is **gap 501**, still open | not drivable from the binary, and this step does not pretend otherwise. `PlannerWit`'s `decide` witnesses over it are re-proved unchanged |
+
+**The one that mattered, and the one thing this step refused to assert.**
+Deleting `Boundary.charsLe` changes the *definition* of the order a collision
+names its two lines in, and that order is reached by
+`kernel_capacity::request` → `Boundary.loadPlan` on **every** capacity verb —
+the exact call site W-15 recorded as having none. So it was **driven**, not
+reasoned about, and further: the whole of `tm plan`, `tm now`, `tm review day`
+and `tm check` on a clean `tm init --example` tree was captured from **two
+release binaries**, one built from `5ea1541` in a throwaway worktree outside the
+repo and one from this tree, and the four outputs are **byte-identical**
+(`diff` is empty on all four, at `--now 2026-09-07T14:00:00-05:00` and again at
+`--now 2026-09-12T09:00:00-05:00`). `tm plan`'s dropped list reads
+`· dropped: d1 · m1 · m3 · t1 · t3 · m2 · t4 · d2 · m4 · x2 · p1 · a1 · c2`,
+which is the auditor's own unmutated baseline.
+
+### Acceptance, re-measured on this tree and never carried
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet`; binary drives and the pre-repair comparison binary at
+**16G**. No bound was raised, nothing was retried uncapped, and **no fixture,
+snapshot, corpus file or latency band was re-blessed** — `git diff 5ea1541 HEAD`
+touches no file under `kernel/corpus/`, `tm/tests/snapshots/`,
+`tm-core/tests/fixtures/` or `tm/tests/cli_latency.rs`.
+
+| row | this tree | `5ea1541` (the brief's) | delta, explained |
+|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | — |
+| check.sh warm | ****3.22 / 3.23 / 3.32 / 3.28 s**, median **3.255 s**; peak RSS 1.90-2.01 GiB (1,992,684-2,102,056 KiB)** | 3.33 / 3.23 / 3.29 / 3.31 s | **−1.4%** against the land step's median 3.30 s — inside the 10%-per-step rule, and *down*: the two new `@[csimp]` twins compile, they do not slow elaboration |
+| axiom audit | **4,373 theorems**, §6.3 reconciliation `ok` | 4,362 | **+11**: 13 lines appended, 2 moved (`Tm.charsLe_antisymm`/`_total` → `Tm.Log.…`, same short names) |
+| burn-down | **11, all stage 6** | 11 | no goal added, none deleted |
+| Negative.lean | rejected ok, **168 cheats**, `uniq -d` prints nothing | 168 | none taken, none renumbered |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged — the spec sort bodies did not move |
+| `cargo test --workspace` | **1,331 passed / 0 failed / 9 ignored, 78 result lines**, 0 warnings | 1,323 / 0 / 9, 78 | **+8**, the eight regression tests named above |
+| FFI (check 5) | **ok** | ok | — |
+| T5 `kernel_replay_parity` | **29 / 0 / 4 ignored** | 29 / 0 / 4 | — |
+| the door `kernel_log_door` | **23 / 0** | 23 / 0 | — |
+| `cli_switch_acceptance` | **9 / 0** | 9 / 0 | — |
+| `kernel_call_counts` | **2 / 0** | 2 / 0 | — |
+| `cli_check_log` | **11 / 0** | 10 / 0 | +1, the plan-file UTF-8 twin |
+| `cli_items` | **53 / 0** | 49 / 0 | +4 |
+| `cli_lifecycle` | **29 / 0** | 28 / 0 | +1 |
+| `kernel_lookahead_parity` | **4 / 0** | 4 / 0 | — |
+| `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | 5 / 0 / 1 | — |
+
+### T11, as readings and never as single numbers, with the machine state
+
+Three `cli_latency` passes, release, `--nocapture --test-threads=1`, on a
+machine that had just run a full `cargo test --workspace` pass and several
+capped Lean builds — the state W-15's repair established as the one that
+*inflates* every row, and W-16's land step found does not.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| later verb (`tm drop`) | 126.71, 136.87, 126.72 | 146.66-147.01 | **10-20 ms BELOW the band** |
+| 3-day-old routine | 106.45, 116.55, 101.27 | 121.6-136.8 | **5-20 ms below** |
+| reseal (`--now +1 day`) | 192.55, 192.32, 187.36 | 197.5-212.6 | **5-10 ms below** |
+| `review week` (All) | 253.29, 263.30, 253.15 | 248.1-253.3 | **at the band and once 10 ms over** — not the 278-303 ms "OUT" the brief reports |
+
+All five of `cli_latency`'s own assertions pass in all three runs.
+`tm/tests/cli_latency.rs` is **byte-identical** to `995323b` and to `5ea1541`
+(`git diff --stat` empty), and no band in this document was moved. `review week`
+stays out of band **as a standing statement** for gap 275's reason — a capacity
+verb replays the log twice — and **gap 570** is still the honest record: these
+readings do not discharge it either way.
+
+**This step adds one thing every title-addressing verb now does**, a
+`Tree::ambiguous_title` lookup over a list that is **empty on every clean
+tree** (it is the stored `duplicate_titles`, built once at `Tree::build`), so
+there is no new per-verb work to pay for and the `tm drop` row is where it would
+have shown.
+
+### What earlier stages bought, re-measured on this tree and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep returns **41**, its
+  post-switch floor. No in-tree reader was reintroduced. There is still no
+  planner op on the wire.
+* **D16, ONE writer, and a note on how the land block counts it.**
+  `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs` returns **two**
+  lines on this tree and returned the same two at `5ea1541`:
+  `tm-core/src/horizon.rs:525` (`Horizon::log`) and `tm/src/cli/ctx.rs:713`
+  (`Ctx::append_entry`). Both render their bytes through
+  `kernel_log::render_one` — the kernel decides the format, which is what D16
+  says — so this is not a finding, but the land block's *"`Horizon::log` … is
+  still the **single** append site"* is one site short of the grep, and this
+  block says the number it measured rather than repeating one it did not.
+  **This step adds no append and touches neither file**
+  (`git diff 5ea1541 HEAD -- tm-core/src/horizon.rs` is empty; the `ctx.rs` diff
+  contains no `append_text`).
+* **D21-D23, the instrument is anchored outside the tree.** Both deletion guards
+  print the post-switch wording; T5's frozen arms report fork point **4748911**;
+  `fork_arm` ran unconditionally; the door reports the same fork point over its
+  16 `All`-scope inputs.
+* **Full precision (gap 235).** `the_frozen_comparand_is_read_at_full_precision`
+  passes **by name**; `float_roundtrip` is still pinned at `Cargo.toml:29`.
+* **D28, `dayPlan` stays total.** No gate was added and no signature changed:
+  `grep -n 'dayPlan?\|PlanRefusal' kernel/TmKernel/TmKernel/*.lean` returns
+  nothing.
+* **D5, no law narrowed.** Every theorem this step touched is *unchanged in
+  statement*: `spotLe_antisymm` and `spotLe_total` are word for word what track
+  A wrote, over `Log.charsLe` instead of the fork. Nothing was downgraded to a
+  property test and nothing was deleted.
+* **D32, a collision keeps refusing.** The host repair **refuses** — it does not
+  tolerate, warn, or disambiguate by occurrence. The kernel's own `dupId` is
+  untouched.
+* **D18, no memory bound raised.** 40G for builds and suites, 16G for binary
+  drives; no 8G `decide` probe was owed, because this step adds no `decide` or
+  `rfl` witness (the thirteen new theorems are inductions and `simp`/`omega`).
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no
+  `partial def`. `lean-toolchain`, `Cargo.toml`, `lake-manifest.json` and
+  `kernel/corpus/` untouched. No predicate weakened, no assertion removed.
+
+### Gaps
+
+**Gap 575 — CLOSED.** D33's second boxing path (`tm edit <title> state=…`), and
+the false "driven" table row that recorded it as absent. Repaired above; the
+table row is corrected in place at the D33 block.
+
+**Gap 576 — CLOSED.** A title-key collision resolved to the first occurrence by
+the host's twelve title-addressing verbs. Repaired above.
+
+**Gap 577 — OPEN: the nine `Look.Cand` facts are the host's, and only the copy
+is pinned.**
+1. *What is not done.* `remaining`, `ci`, `due`, `overdue`, `mandatory`, `hot`,
+   `window`, `wall` and `optional` are still computed by
+   `priority::collect_candidates` (`tm/src/cli/ctx.rs`) and serialised by
+   `cand_json` (`tm/src/cli/kernel_capacity.rs`). The kernel reads them as given
+   (`Boundary.readCand`). **Nothing checks the values against a second opinion.**
+2. *Why it is recorded rather than fixed.* It is **D27**, which did not land at
+   W-16 (gap 500), and D27 is a wire change: a repair step that moved half of it
+   would be exactly the half-landed wire change AGENTS §5.3 and D19 forbid.
+3. *What it costs.* Measured, not guessed: inverting one of the nine in
+   `cand_json` leaves `cargo test --workspace` **green at 1,323** and visibly
+   re-ranks `tm plan`'s dropped list on a fresh example tree. The two new tests
+   close the *copy* — a wrong assignment, a swapped pair, a dropped key now
+   fail — and leave the *derivation* unguarded. Gap 500's four-part text does
+   not name this cost; it names the missing fields. This is the other half.
+4. *Which step clears it.* D27, track K. When the nine become `Cand` fields
+   derived from `PlanCore` and the D24 run, both tests should be **deleted**
+   with the function, not kept as a second reader.
+
+**Gap 578 — CLOSED.** Four missing in-place rename banners and one wrong count,
+across three renamed theorem names. Repaired above.
+
+**Gap 579 — CLOSED.** Invalid UTF-8 in a plan `.md` file. `tm check` names the
+line and exits 2; `inbox.md:0:` is gone.
+
+**Gap 580 — CLOSED.** `tm check`'s own output no longer tells the reader to run
+`tm check`.
+
+**Gap 581 — CLOSED, and it closed gap 394 with it.** Three `charsLe`s became
+one; the three order laws are proved on `Log.charsLe`; both specification sorts
+have their `@[csimp]` twins.
+
+**Gap 582 — CLOSED.** `blockedByWalls`' doc comment names
+`a_wall_row_sits_in_a_blocked_span`, which exists.
+
+**Gap 583 — CLOSED.** The gap-552 run-up section cites cheat **183**.
+
+**Gap 584 — OPEN, and NEW: a host-only write still reaches a tree the kernel
+refuses, when the line is addressed by its `^id`.**
+1. *What is not done.* Gap 576 refuses an ambiguous **title**. It does not
+   refuse a **tree**. Driven on a fresh example tree with one duplicated
+   `- laundry …` line: `tm edit ^d1 'title=CS 234 pset 2 renamed'` takes the
+   host-only edit path (`title` is a typed non-key edit, gap 41), rewrites
+   `week/2026-W37.md:12` and **exits 0**, while `tm plan` exits 1 and `tm check`
+   exits 2 on the same tree. `tm drop ^id` and every wired-key `tm edit` go
+   through the kernel and are refused correctly; it is the host-only branches
+   that are not.
+2. *Why it is recorded rather than fixed.* The fix has one honest shape and it
+   is not a repair step's: **one shared "does the kernel load this tree" gate**,
+   which already exists as `lifecycle::kernel_problems` and would have to be
+   lifted out of `tm check` and called by every host-only write path. That is a
+   **whole-tree kernel load per write**, on `tm edit`'s commonest branches, and
+   it must be measured against T11's `tm drop` row before it lands — the one
+   row this campaign trusts. The alternative, refusing on the auto-close's
+   refusal flag, is **unsound**: `closing::auto_close` runs only when a period
+   has ended (`due`), so on a tree where nothing is due the verb has no refusal
+   in hand at all. Driven: with `--now` inside the example week, the collision
+   produced no warning whatever.
+3. *What it costs.* A user can still leave the tree in a state every reading
+   verb refuses, by a writing verb that exits 0 — the same shape gap 471 and
+   D33 were opened for, one level down. It is bounded: the writes are
+   byte-faithful line edits, `tm undo` takes each back, and every *reading* verb
+   already refuses, so nothing silently computes a wrong answer.
+4. *Which step clears it.* The step that owns the host's write paths — P5 at the
+   latest, where the 5 ms trigger is measured and the same instrument is
+   already being run. It is the owner's call whether the gate is worth a
+   whole-tree load per write, and that call wants the measurement beside it.
+
+585-589 are free.
+
+### Gaps left open, by name
+
+Everything the three tracks and the land step left open stands. **Gap 500**
+(D27 is half done) and **501** (`Recur.lean` has no caller) are still the two to
+read first, and gap 577 is now the third, because it is what gap 500 costs
+today. **502, 503, 504**, track P's **550-556**, track A's **530-531**, **470**
+and **570** are untouched. **Gap 394 is closed** and its two entries say so in
+place. **Gap 531** stands and is unrelated to gap 575: the kernel still will not
+put a box on a line that has none, which is why both boxing verbs write the box
+host-side.
+
+### Numbering
+
+Gaps: this step **575-584**; 585-589 free. Cheats: **none taken**, none
+renumbered — `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d`
+prints nothing and check 4 still rejects the file. No audit name appears twice
+(4,373 lines, 4,373 distinct names). **Highest on the branch: gap 584, cheat
+183, parity P38.**
+
+### Worktrees
+
+`.claude/worktrees/stage5-lookahead` is untouched, as the brief requires. One
+throwaway worktree at `5ea1541` was created **outside the repo**, in the
+scratchpad, to build the pre-repair comparison binary, and is removed; the tree
+is clean.
+
+### Method disclosure
+
+`check.sh` was run **seven** times in this checkout: once after the Lean repair,
+once after the doc-comment edits, the four timed runs in the table, and once
+more on the final tree — 7/7 every time. `lake build TmKernel:static` was run separately first, to separate "does
+it build" from "does it pass"; the first attempt **failed** on
+`routineLe_total` (four `Application type mismatch`es from a mis-shaped
+`Or`), which is printed here rather than dropped, and the proof was restructured
+around `routine_span_total` and rebuilt clean. `cargo test --workspace
+--no-fail-fast` was run **four** times: once at `5ea1541` for the baseline
+(1,323), once with the auditor's `overdue` mutation applied (1,323 — the
+reproduction), and twice on the repaired tree (1,331 both times). Each was tallied by
+summing the 78 result lines, not by `tail`. The mutation was reverted with
+`git checkout` and the tree confirmed clean before any repair was written.
+`cli_latency` was run **three** times in release; every noisy row is reported as
+all three readings with the machine state. **No new `decide` or `rfl` witness
+was written**, so no 8G probe was owed and none was run — the four small `exact?`
+probes that found `Char.ext` and `UInt32.lt_iff_toNat_lt` were run at 8G with a
+180-second timeout. Binary drives used two release binaries, this tree's and
+`5ea1541`'s, on scratch `tm init --example` trees **outside the repo**, at
 `MemoryMax=16G`. No bound was raised and nothing was retried uncapped.

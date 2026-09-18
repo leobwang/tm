@@ -391,6 +391,16 @@ pub struct EditOut {
     pub changes: Vec<FieldChange>,
     /// The line afterwards.
     pub line: String,
+    /// **The `^id` this edit wrote onto a title-keyed line** (D33, gap 477),
+    /// when `state=` put the first box on it. `None` otherwise — including for
+    /// every edit that boxes nothing, which is why the field is skipped when it
+    /// is absent and no existing `--json` answer moves.
+    ///
+    /// The twin of [`DropOut::assigned`], and for the same reason: D33's
+    /// accepted cost is a token the user did not type, and *visibly* is half
+    /// the decision.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub assigned: Option<Id>,
 }
 
 /// Split `k=v`.
@@ -551,6 +561,31 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
         }
     }
     let rec = Recorder::start(&ctx, "edit")?;
+    // **D33, gap 477, the half `c4726e2` left behind** (W-16 repair, gap 575):
+    // `tm edit <title> state=[ ]` boxes a box-less, id-less line exactly as
+    // `tm drop <title>` does — `ItemLine::set_state` inserts the box after the
+    // bullet — and D33's rule is about *boxing*, not about `drop`. All six
+    // state values reach it, and before this the line went out boxed and
+    // id-less, which `Plan.itemsWf` refuses by name (`PErr.noId`): `tm check`
+    // exited 2 and `tm plan`, `tm now` and `tm review day` exited 1 on a tree
+    // the previous command had just written and exited 0 on.
+    //
+    // Only the typed `state=` pair boxes. `--set state=…` writes a verbatim
+    // `state:…` token (a key, not a box) and `--unset` removes; both leave the
+    // positional slot alone, so neither is a boxing path.
+    let boxing = !item.has_id()
+        && item.line().index_of(&grammar::TokenKind::State).is_none()
+        && args
+            .pairs
+            .iter()
+            .any(|p| matches!(split_pair(p), Ok((k, _)) if k == "state"));
+    let (id, item, assigned) = if boxing {
+        let assigned = write_id_for_boxing(&mut ctx, &id, "edit")?;
+        let item = ctx.item(&assigned)?.clone();
+        (assigned.clone(), item, Some(assigned))
+    } else {
+        (id, item, None)
+    };
     let block_min = ctx.block_min();
     let mut line = ctx.line(&id)?;
     let mut changes = Vec::new();
@@ -613,8 +648,20 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
         id: id.clone(),
         changes,
         line: line.to_string(),
+        assigned,
     };
-    emit(ctx.json, || out.line.clone(), &out)?;
+    emit(
+        ctx.json,
+        || match &out.assigned {
+            None => out.line.clone(),
+            Some(id) => format!(
+                "{}\n(a state box makes it a tracked item, so {} was written on the line)",
+                out.line,
+                id.token()
+            ),
+        },
+        &out,
+    )?;
     Ok(0)
 }
 
@@ -760,6 +807,9 @@ fn edit_kernel(
         id: id.clone(),
         changes,
         line,
+        // The kernel edit path is reached only when the item already carries an
+        // `^id` (`item.has_id()` above), so there is never a box to pay for.
+        assigned: None,
     };
     emit(ctx.json, || out.line.clone(), &out)?;
     Ok(0)
@@ -1468,6 +1518,9 @@ fn instance_of(
     name: &str,
 ) -> Result<(tm_core::model::Item, tm_core::model::Instance), CliError> {
     let id = Ctx::key(name);
+    // A routine is addressed by its title, so this is the path an ambiguous
+    // title reaches first (W-16 repair, gap 576).
+    ctx.refuse_ambiguous_title(&id)?;
     let item = ctx
         .tree
         .get(&id)

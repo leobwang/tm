@@ -665,12 +665,30 @@ fn send_order(cands: &[Candidate]) -> Vec<usize> {
 }
 
 /// One candidate record (Boundary.lean's `readCand`, `readFloor`).
-fn cand_json(ctx: &Ctx, c: &Candidate, yesterday: &BTreeMap<Id, u8>) -> Value {
-    let root_prio = ctx.tree.get(&ctx.tree.root(&c.id)).and_then(|r| r.priority);
+///
+/// **The nine facts D27 has not yet moved into the kernel cross here**, and
+/// this is where they are pinned:
+/// `the_candidate_facts_cross_the_wire_as_the_host_computed_them` below drives
+/// exactly this function. Until W-16's repair step nothing did — inverting one
+/// line of it (`"overdue": !c.overdue`) left the whole workspace suite green at
+/// 1,323 passed while visibly re-ranking `tm plan`'s dropped list — so the host
+/// computed the values with no test pinning them and the kernel read them as
+/// given (`Boundary.readCand`). Gap 577 records what is still owed; this at
+/// least makes a wrong *copy* a failing test.
+///
+/// `root_prio` and `today` are parameters rather than `&Ctx` lookups so the
+/// mapping can be driven without a loaded tree — the only two things the
+/// function needed a `Ctx` for.
+fn cand_json(
+    root_prio: Option<u8>,
+    today: NaiveDate,
+    c: &Candidate,
+    yesterday: &BTreeMap<Id, u8>,
+) -> Value {
     let floor = c.floor.as_ref().map(|r| {
         json!({
             "left": r.amount.as_minutes().saturating_sub(c.floor_done_min),
-            "until": priority::period_range(r.per, ctx.today).1.to_string(),
+            "until": priority::period_range(r.per, today).1.to_string(),
         })
     });
     json!({
@@ -805,7 +823,14 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
     let mut order = Vec::new();
     if let Some(r) = ranked {
         order = send_order(r.cands);
-        let items: Vec<Value> = order.iter().map(|&i| cand_json(ctx, &r.cands[i], r.yesterday)).collect();
+        let items: Vec<Value> = order
+            .iter()
+            .map(|&i| {
+                let c = &r.cands[i];
+                let root_prio = ctx.tree.get(&ctx.tree.root(&c.id)).and_then(|r| r.priority);
+                cand_json(root_prio, ctx.today, c, r.yesterday)
+            })
+            .collect();
         section["candidates"] = json!({"hysteresis": cfg.priority.hysteresis, "items": items});
     }
     let cache = ctx.store.root().join(".tm/cache/replay");
@@ -1014,6 +1039,126 @@ pub fn week(ctx: &Ctx, allow_home: bool) -> Result<Vec<UnitCapacity>, CliError> 
 mod tests {
     use super::*;
     use proptest::prelude::*;
+
+    /// **The nine facts the host still supplies to `Look.Cand` are pinned
+    /// here** — W-16 repair, gap 577.
+    ///
+    /// D27 (*"the kernel collects the planning candidates"*) has not landed, so
+    /// `remaining`, `ci`, `due`, `overdue`, `mandatory`, `hot`, `window`,
+    /// `wall` and `optional` are still computed by `priority::collect_candidates`
+    /// and copied onto the wire by [`cand_json`]. The **copy** was pinned by
+    /// nothing: a W-16 auditor inverted one line of it
+    /// (`"overdue": !c.overdue`) and `cargo test --workspace` stayed green at
+    /// **1,323 passed / 0 failed**, while `tm plan` on a fresh `tm init
+    /// --example` tree visibly re-ranked its dropped list (the overdue `d1`
+    /// moved from first to tenth). `priority_plan_basic.rs` snapshots the
+    /// `Candidate` *before* this function and the kernel reads whatever arrives
+    /// (`Boundary.readCand`), so the step between them had no test at all.
+    ///
+    /// Every field is given a value distinct from its neighbours' — the six
+    /// booleans are not all alike, and the run is repeated with all six
+    /// inverted — so a **swap** of two of them (`hot` for `overdue`) fails, not
+    /// only an inversion or a drop. The key set is compared whole, so a field
+    /// the kernel's decoder wants and the host stops sending fails here rather
+    /// than as a `badCandidate` at run time.
+    ///
+    /// This does not close gap 577: it pins the copy, not the values, and the
+    /// values are still the host's. What closes it is D27.
+    #[test]
+    fn the_candidate_facts_cross_the_wire_as_the_host_computed_them() {
+        use chrono::NaiveTime;
+        use tm_core::capacity::local_dt;
+        use tm_core::model::{Dur, Period, Rate};
+
+        let hm = |h, m| NaiveTime::from_hms_opt(h, m, 0).unwrap();
+
+        let today = NaiveDate::from_ymd_opt(2026, 9, 7).unwrap();
+        let tz = chrono_tz::Tz::America__Chicago;
+        let cfg = Config::default();
+
+        let mut c = Candidate::new(Id::new("d1"), 3, 2, 95, &cfg);
+        c.effective_due =
+            Some(local_dt(tz, NaiveDate::from_ymd_opt(2026, 9, 11).unwrap(), hm(23, 59)));
+        c.window = Some((local_dt(tz, today, hm(11, 30)), local_dt(tz, today, hm(13, 30))));
+        c.floor = Some(Rate { amount: Dur::from_minutes(120), per: Period::Week });
+        c.floor_done_min = 45;
+        c.overdue = true;
+        c.mandatory = false;
+        c.hot = true;
+        c.is_wall = false;
+        c.is_optional = true;
+
+        let yesterday: BTreeMap<Id, u8> = [(Id::new("d1"), 4u8)].into_iter().collect();
+
+        assert_eq!(
+            cand_json(Some(1), today, &c, &yesterday),
+            json!({
+                "id": "d1",
+                "ci": 3,
+                "rootPrio": 1,
+                "remaining": 95,
+                "due": "2026-09-11",
+                "window": true,
+                "wall": false,
+                "optional": true,
+                "overdue": true,
+                "mandatory": false,
+                "hot": true,
+                "yesterday": 4,
+                "floor": {"left": 75, "until": "2026-09-13"},
+            }),
+        );
+
+        // The same candidate with every boolean the other way, and the three
+        // `Option`s empty: a constant answer, or two fields read off one field,
+        // cannot pass both halves.
+        c.window = None;
+        c.effective_due = None;
+        c.floor = None;
+        c.overdue = false;
+        c.mandatory = true;
+        c.hot = false;
+        c.is_wall = true;
+        c.is_optional = false;
+        assert_eq!(
+            cand_json(None, today, &c, &BTreeMap::new()),
+            json!({
+                "id": "d1",
+                "ci": 3,
+                "rootPrio": null,
+                "remaining": 95,
+                "due": null,
+                "window": false,
+                "wall": true,
+                "optional": false,
+                "overdue": false,
+                "mandatory": true,
+                "hot": false,
+                "yesterday": null,
+                "floor": null,
+            }),
+        );
+    }
+
+    /// Every key `Boundary.readCand` and `readFloor` ask for is a key
+    /// [`cand_json`] sends, and no other (W-16 repair, gap 577).
+    #[test]
+    fn the_candidate_record_carries_the_keys_the_kernel_decodes() {
+        let cfg = Config::default();
+        let c = Candidate::new(Id::new("d1"), 0, 1, 0, &cfg);
+        let v = cand_json(None, NaiveDate::from_ymd_opt(2026, 9, 7).unwrap(), &c, &BTreeMap::new());
+        let mut keys: Vec<&str> = v.as_object().unwrap().keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            // `Boundary.readCand`: id ci rootPrio remaining due window wall
+            // optional overdue mandatory hot yesterday; `readFloor`: floor.
+            vec![
+                "ci", "due", "floor", "hot", "id", "mandatory", "optional", "overdue",
+                "remaining", "rootPrio", "wall", "window", "yesterday",
+            ],
+        );
+    }
 
     #[test]
     fn a_decimal_is_its_text_not_its_binary_expansion() {

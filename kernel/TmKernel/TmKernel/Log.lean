@@ -1326,6 +1326,93 @@ theorem charsLe_of_lt : ∀ a b : List Char, charsLt a b = true → charsLe a b 
 theorem ne_of_charsLt (a b : List Char) (h : charsLt a b = true) : a ≠ b := by
   rintro rfl; rw [charsLt_irrefl] at h; cases h
 
+/-! ### `charsLe` is a total order
+
+The three laws `Replay.insSort_eq_mergeSort` asks of a comparison, and the two
+`spotLe` asks of a path order.  They live **here**, beside the one definition of
+the concept, because two runs have now wanted them elsewhere and the answer to
+that is never a second `charsLe` (AGENTS §5.3): W-16's track A wrote one in
+`Boundary.lean` and W-16's K3b wrote another in `Recur.lean`, and the repair
+step deleted both and pointed their call sites at this function.
+
+`omega` cannot see a `UInt32` order, so every step goes through
+`UInt32.lt_iff_toNat_lt` first; `Char.ext` is what makes distinct code points
+distinct characters. -/
+
+/-- Two characters that differ differ in their code points. -/
+theorem char_val_ne (a b : Char) (h : a ≠ b) : a.val.toNat ≠ b.val.toNat :=
+  fun hv => h (Char.ext (UInt32.toNat_inj.mp hv))
+
+/-- The code-point order as a `Nat` order, which is the form `omega` reads. -/
+theorem char_lt_toNat {a b : Char} : (a.val < b.val) ↔ (a.val.toNat < b.val.toNat) :=
+  UInt32.lt_iff_toNat_lt
+
+theorem charsLe_antisymm : ∀ (x y : List Char),
+    charsLe x y = true → charsLe y x = true → x = y
+  | [],      []       => fun _ _ => rfl
+  | [],      _ :: _   => fun _ h2 => by simp [charsLe] at h2
+  | _ :: _,  []       => fun h1 _ => by simp [charsLe] at h1
+  | a :: as, b :: bs  => fun h1 h2 => by
+      unfold charsLe at h1 h2
+      by_cases hab : a = b
+      · subst hab
+        rw [if_neg (by rw [char_lt_toNat]; omega), if_pos rfl] at h1 h2
+        rw [charsLe_antisymm as bs h1 h2]
+      · have hne := char_val_ne a b hab
+        rcases Nat.lt_or_ge a.val.toNat b.val.toNat with hlt | hge
+        · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg (Ne.symm hab)] at h2
+          exact absurd h2 (by simp)
+        · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg hab] at h1
+          exact absurd h1 (by simp)
+
+theorem charsLe_total : ∀ (x y : List Char), (charsLe x y || charsLe y x) = true
+  | [],      _        => by simp [charsLe]
+  | _ :: _,  []       => by simp [charsLe]
+  | a :: as, b :: bs  => by
+      unfold charsLe
+      by_cases hab : a = b
+      · subst hab
+        rw [if_neg (by rw [char_lt_toNat]; omega), if_pos rfl]
+        simpa using charsLe_total as bs
+      · have hne := char_val_ne a b hab
+        rcases Nat.lt_or_ge a.val.toNat b.val.toNat with hlt | hge
+        · rw [if_pos (by rw [char_lt_toNat]; omega)]; simp
+        · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg hab,
+              if_pos (show b.val < a.val by rw [char_lt_toNat]; omega)]
+          simp
+
+theorem charsLe_trans : ∀ (x y z : List Char),
+    charsLe x y = true → charsLe y z = true → charsLe x z = true
+  | [],      _,       _,       _,  _  => rfl
+  | _ :: _,  [],      _,       h1, _  => by simp [charsLe] at h1
+  | _ :: _,  _ :: _,  [],      _,  h2 => by simp [charsLe] at h2
+  | a :: as, b :: bs, c :: cs, h1, h2 => by
+      unfold charsLe at h1 h2 ⊢
+      by_cases hab : a = b
+      · subst hab
+        rw [if_neg (by rw [char_lt_toNat]; omega), if_pos rfl] at h1
+        by_cases hbc : a = c
+        · subst hbc
+          rw [if_neg (by rw [char_lt_toNat]; omega), if_pos rfl] at h2 ⊢
+          exact charsLe_trans as bs cs h1 h2
+        · have := char_val_ne a c hbc
+          rcases Nat.lt_or_ge a.val.toNat c.val.toNat with hlt | hge
+          · rw [if_pos (by rw [char_lt_toNat]; omega)]
+          · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg hbc] at h2
+            exact absurd h2 (by simp)
+      · have hab' := char_val_ne a b hab
+        rcases Nat.lt_or_ge a.val.toNat b.val.toNat with hab1 | hab2
+        · by_cases hbc : b = c
+          · subst hbc
+            rw [if_pos (by rw [char_lt_toNat]; omega)]
+          · have hbc' := char_val_ne b c hbc
+            rcases Nat.lt_or_ge b.val.toNat c.val.toNat with hbc1 | hbc2
+            · rw [if_pos (show a.val < c.val by rw [char_lt_toNat]; omega)]
+            · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg hbc] at h2
+              exact absurd h2 (by simp)
+        · rw [if_neg (by rw [char_lt_toNat]; omega), if_neg hab] at h1
+          exact absurd h1 (by simp)
+
 theorem dedup_of_pairwise : ∀ (rest acc : List (List Char × JVal)),
     (acc.reverse ++ rest).Pairwise (fun a b => charsLt a.1 b.1 = true) →
     (rest.foldl dedupStep acc).reverse = acc.reverse ++ rest

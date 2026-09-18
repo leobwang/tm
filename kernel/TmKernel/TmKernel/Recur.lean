@@ -52,7 +52,7 @@ nothing else recurses over a range.  Everything else walks a list through core:
 `loggedInstances` is `filterMap` over `Facts.instancesOf` then stage 5's own
 `Replay.insSort`; `nextOrdinal` and `completionCount` are `filterMap`/`filter`
 and a `foldl`; `todayInstances` is `filterMap` over the ids given
-(`todayInstances_length_le`).  `charsLe` recurses once per character of an
+(`todayInstances_length_le`).  `Log.charsLe` recurses once per character of an
 `inst` key, which the log's own line guard bounds.  No new `@[csimp]` twin is
 owed: nothing here is a hand-written structural recursion over a wire list.
 
@@ -503,20 +503,19 @@ Fork `logged_instances`: the occurrences the log knows about, for the
 ordinal-keyed recurrences.  Their window is not reconstructed — only the log
 says they happened. -/
 
-/-- `BTreeMap<String>`'s order on an `inst` key.  UTF-8 preserves code-point
-order, so comparing characters is comparing bytes; this is the order
-`Replay::instances_of` iterates in, and `sort_by_key(|i| i.key)` keeps it
-between equal keys. -/
-def charsLe : List Char → List Char → Bool
-  | [],      _       => true
-  | _ :: _,  []      => false
-  | a :: as, b :: bs => if a = b then charsLe as bs else decide (a < b)
-
 /-- Fork `out.sort_by_key(|i| i.key)` over a `BTreeMap` iteration: the key
 first, the `inst` string breaking a tie — which is what a *stable* sort of a
-string-ordered list by key is. -/
+string-ordered list by key is.
+
+The string order is **`Log.charsLe`**, the one lexicographic order on
+`List Char` this package has: `BTreeMap<String>`'s order on an `inst` key, and
+UTF-8 preserves code-point order, so comparing characters is comparing bytes.
+K3b's first draft wrote a third copy of it here (spelled `decide (a < b)` where
+`Log`'s is `a.val < b.val`); the W-16 repair step deleted it, because a
+near-copy that differs only in spelling is exactly AGENTS §5.3's drift case
+(README gap 581). -/
 def keyedLe (a b : InstKey × List Char × Log.InstanceStatus) : Bool :=
-  if a.1 = b.1 then charsLe a.2.1 b.2.1 else InstKey.le a.1 b.1
+  if a.1 = b.1 then Log.charsLe a.2.1 b.2.1 else InstKey.le a.1 b.1
 
 /-- Fork `logged_instances`. -/
 def loggedInstances (f : Replay.Facts) (z : Cal.Tz) (i : Id) (lo hi : Nat)

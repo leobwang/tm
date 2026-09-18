@@ -1160,7 +1160,21 @@ fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
 fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
     let mut docs = Vec::new();
     for rel in ctx.store.list_files()? {
-        let text = ctx.store.read_text(&rel)?;
+        let text = match ctx.store.read_text(&rel) {
+            Ok(text) => text,
+            // **A file whose bytes are not text is skipped, not fatal** (W-16
+            // repair, gap 579). `Store::read_tree` already tolerates it and
+            // reports it as a problem of its own, naming the line; this read
+            // did not, so one stray byte in `plan/inbox.md` made the one verb
+            // whose whole job is diagnosis exit 1 saying `tm: inbox.md: stream
+            // did not contain valid UTF-8` — no line, and not even the
+            // validation exit code. The kernel cannot be shown bytes that are
+            // not text, so it is asked about the rest of the tree; the decode
+            // problem is reported beside whatever it says, and is an error, so
+            // `tm check` still exits 2.
+            Err(e) if e.is_not_utf8() => continue,
+            Err(e) => return Err(e.into()),
+        };
         docs.push(super::kernel_bridge::doc_json(&rel, &super::kernel_bridge::doc_lines(&text)));
     }
     match super::kernel_bridge::call(&serde_json::json!({ "docs": docs, "cmds": [] })) {
@@ -1188,6 +1202,14 @@ fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
 /// reads the converted detail rather than the wire, so the binary still emits
 /// **one** convention.
 fn load_problems(issue: &super::out::KernelIssue) -> Vec<validate::CheckProblem> {
+    // **`tm check` does not tell the reader to run `tm check`** (W-16 repair,
+    // gap 580). `itemCheck`'s refusal ends with
+    // `kernel_bridge::CHECK_HINT` because it is a whole-tree fault with no
+    // position and every other verb's user has to be sent somewhere; inside
+    // this command's own output the advice is nonsense, and the two lines that
+    // *do* name the file and the line are printed directly beneath it. One
+    // spelling of the sentence, taken back off at the one place it is wrong.
+    let message = issue.message.replace(super::kernel_bridge::CHECK_HINT, "");
     let spot = |k: &str| -> Option<(String, usize)> {
         let s = issue.detail.get(k)?;
         let path = s.get("path")?.as_str()?.to_string();
@@ -1204,7 +1226,7 @@ fn load_problems(issue: &super::out::KernelIssue) -> Vec<validate::CheckProblem>
                     &path,
                     line,
                     key.clone(),
-                    issue.message.clone(),
+                    message.clone(),
                 )
             })
             .collect();
@@ -1221,7 +1243,7 @@ fn load_problems(issue: &super::out::KernelIssue) -> Vec<validate::CheckProblem>
         path,
         line,
         key,
-        issue.message.clone(),
+        message,
     )]
 }
 

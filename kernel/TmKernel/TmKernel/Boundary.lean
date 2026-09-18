@@ -79,50 +79,20 @@ structure Spot where
   line : Nat
 deriving DecidableEq, Repr, Inhabited
 
-/-- Lexicographic order on paths, as a `Bool`.  Core's `List.Lex` is a `Prop`
-and what is needed here is a decision the loader can take, so it is written
-out: the first character that differs decides, and a prefix is below what
-extends it. -/
-def charsLe : List Char → List Char → Bool
-  | [],      _       => true
-  | _ :: _,  []      => false
-  | a :: as, b :: bs => if a == b then charsLe as bs else decide (a.toNat < b.toNat)
-
-theorem charsLe_antisymm : ∀ (x y : List Char),
-    charsLe x y = true → charsLe y x = true → x = y
-  | [],      []       => fun _ _ => rfl
-  | [],      _ :: _   => fun _ h2 => by simp [charsLe] at h2
-  | _ :: _,  []       => fun h1 _ => by simp [charsLe] at h1
-  | a :: as, b :: bs  => fun h1 h2 => by
-      unfold charsLe at h1 h2
-      by_cases hab : a = b
-      · subst hab
-        simp only [beq_self_eq_true, if_true] at h1 h2
-        rw [charsLe_antisymm as bs h1 h2]
-      · rw [if_neg (by simpa using hab)] at h1
-        rw [if_neg (by simpa using Ne.symm hab)] at h2
-        simp only [decide_eq_true_eq] at h1 h2
-        omega
-
-theorem charsLe_total : ∀ (x y : List Char), (charsLe x y || charsLe y x) = true
-  | [],      _        => by simp [charsLe]
-  | _ :: _,  []       => by simp [charsLe]
-  | a :: as, b :: bs  => by
-      unfold charsLe
-      by_cases hab : a = b
-      · subst hab
-        simpa using charsLe_total as bs
-      · rw [if_neg (by simpa using hab), if_neg (by simpa using Ne.symm hab)]
-        have hne : a.toNat ≠ b.toNat := fun h => hab (Char.ext (UInt32.toNat_inj.mp h))
-        simp only [Bool.or_eq_true, decide_eq_true_eq]
-        omega
-
 /-- **The order two colliding lines are named in**: by path, then by line — the
 order a reader's editor would show them, and in particular *not* the order the
 host listed its documents in.  That is §5.6's rule applied to what a refusal
-says, and `spotPair_comm` below is why it is a rule and not a habit. -/
+says, and `spotPair_comm` below is why it is a rule and not a habit.
+
+The path order is **`Log.charsLe`**, the one lexicographic order on `List Char`
+this package has.  D32's first draft defined a second one here, with the same
+three arms spelled `a.toNat` instead of `a.val`; the W-16 repair step deleted it
+and moved its two order laws onto `Log.charsLe` itself, where `wallLe`,
+`routineLe` and `restOf` could already see them (AGENTS §5.3 — a near-copy that
+differs only in spelling is the drift case, and the repo's own precedent for this
+concept is `Seal.idLt := Log.charsLt`, an alias; README gap 581). -/
 def spotLe (x y : Spot) : Bool :=
-  if x.path == y.path then decide (x.line ≤ y.line) else charsLe x.path y.path
+  if x.path == y.path then decide (x.line ≤ y.line) else Log.charsLe x.path y.path
 
 theorem spotLe_antisymm (x y : Spot) (h1 : spotLe x y = true) (h2 : spotLe y x = true) :
     x = y := by
@@ -137,7 +107,7 @@ theorem spotLe_antisymm (x y : Spot) (h1 : spotLe x y = true) (h2 : spotLe y x =
       _ = y := rfl
   · rw [if_neg (by simpa using hp)] at h1
     rw [if_neg (by simpa using Ne.symm hp)] at h2
-    exact absurd (charsLe_antisymm _ _ h1 h2) hp
+    exact absurd (Log.charsLe_antisymm _ _ h1 h2) hp
 
 theorem spotLe_total (x y : Spot) : (spotLe x y || spotLe y x) = true := by
   unfold spotLe
@@ -146,7 +116,7 @@ theorem spotLe_total (x y : Spot) : (spotLe x y || spotLe y x) = true := by
     simp only [Bool.or_eq_true, decide_eq_true_eq]
     omega
   · rw [if_neg (by simpa using hp), if_neg (by simpa using Ne.symm hp)]
-    exact charsLe_total _ _
+    exact Log.charsLe_total _ _
 
 /-- The two lines a collision names, in that order. -/
 def spotPair (x y : Spot) : Spot × Spot := if spotLe x y then (x, y) else (y, x)

@@ -5099,9 +5099,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- and `buildEntity_collision_is_a_projection` is §5.3's obligation: the two
 -- new fields are `Placement.spot` of placements the loader already held, and
 -- `.map Placement.id` over them gives back the one `Id` the error used to be.
+--
+-- MOVED at W-16's repair step: this block declared `Tm.charsLe_antisymm` and
+-- `Tm.charsLe_total` over a SECOND `charsLe` written in `Boundary.lean`.  The
+-- fork is deleted and both laws are proved on `Tm.Log.charsLe`, the one
+-- lexicographic order this package has (AGENTS §5.3); the two lines moved to
+-- the repair step's own banner at the end of this file, and `spotLe` now calls
+-- `Log.charsLe`.
 -- ===========================================================================
-#print axioms Tm.charsLe_antisymm
-#print axioms Tm.charsLe_total
 #print axioms Tm.spotLe_antisymm
 #print axioms Tm.spotLe_total
 #print axioms Tm.spotPair_comm
@@ -5230,3 +5235,34 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_battery_bites_on_the_reservation
 #print axioms Tm.PlannerWit.the_short_block_day_holds_a_block_longer_than_a_block
 #print axioms Tm.PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-16**, the REPAIR step — the two
+-- auditors' findings.
+--
+-- `Log.charsLe`'s three order laws.  W-16 shipped THREE definitions of one
+-- lexicographic order — `Log.charsLe` (stage 4), `Boundary.charsLe` (track A,
+-- `9fa58fc`) and `Recur.charsLe` (track K, `648a160`) — with the two new ones
+-- covered by an explicit "re-implemented nothing" claim.  Both forks are
+-- deleted and their call sites (`spotLe`, `keyedLe`) consume `Log.charsLe`;
+-- the two laws track A proved on its fork are proved here on the real one, and
+-- transitivity is added beside them.
+--
+-- That closes **gap 394** as well, which had stayed open for exactly these
+-- lemmas: `Replay.insSort_eq_mergeSort` wants the order transitive and total,
+-- so `Planner.wallsOfDay`'s and `sortRoutines`' specification sorts could not
+-- have compiled twins.  Both have one now.
+-- ===========================================================================
+#print axioms Tm.Log.char_val_ne
+#print axioms Tm.Log.char_lt_toNat
+#print axioms Tm.Log.charsLe_antisymm
+#print axioms Tm.Log.charsLe_total
+#print axioms Tm.Log.charsLe_trans
+#print axioms Tm.Planner.wallLe_trans
+#print axioms Tm.Planner.wallLe_total
+#print axioms Tm.Planner.sortWalls_eq_sortWallsFast
+#print axioms Tm.Planner.mem_sortWalls
+#print axioms Tm.Planner.routineLe_trans
+#print axioms Tm.Planner.routine_span_total
+#print axioms Tm.Planner.routineLe_total
+#print axioms Tm.Planner.sortRoutines_eq_sortRoutinesFast

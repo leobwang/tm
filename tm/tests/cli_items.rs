@@ -4,6 +4,8 @@
 
 mod cli_common;
 
+use std::fs;
+
 use cli_common::Tm;
 
 #[test]
@@ -1047,6 +1049,134 @@ fn dropping_a_title_keyed_line_writes_its_id_and_the_tree_still_loads() {
         tm.ok(&["undo"]);
         assert_eq!(tm.read(file), before);
     }
+}
+
+/// **`tm edit <title> state=…` writes the `^id` too** — the same D33, the half
+/// `tm drop`'s repair left behind (W-16 repair, **gap 575**).
+///
+/// D33 is a rule about **boxing**, not about `drop`: `ItemLine::set_state`
+/// inserts a box after the bullet on a `routines.md` line exactly as
+/// `horizon::drop_item` does, and all six state values reach it. Before this,
+/// `tm edit lunch 'state=[ ]'` printed the boxed line, exited **0**, and left a
+/// tree where `tm check` exits 2 (`badLine … PErr.noId`) and `tm plan`,
+/// `tm now` and `tm review day` exit 1 — a command that bricks the tree it just
+/// wrote.
+///
+/// The ledger recorded the opposite as a **driven measurement** (*"no `state`
+/// value the edit accepts writes a box"*), which is the W-15 lesson repeating:
+/// a user-visibility claim written without driving the path.
+#[test]
+fn boxing_a_title_keyed_line_through_edit_writes_its_id_and_the_tree_still_loads() {
+    for state in ["[ ]", "[x]", "[~]", "[>]", "[?]", "[-]"] {
+        let tm = Tm::new();
+        let before = tm.read("routines.md");
+        assert!(before.lines().any(|l| l.contains("lunch") && !l.contains(" ^")));
+
+        let json = tm.json(&["edit", "lunch", &format!("state={state}")]);
+        let id = json["assigned"].as_str().expect("D33 writes an id").to_string();
+        assert_eq!(json["id"], id, "{state}: {json}");
+        let line = json["line"].as_str().unwrap_or_default();
+        assert!(line.starts_with(&format!("- {state}")), "{state}: {line}");
+        assert!(line.ends_with(&format!("^{id}")), "{state}: {line}");
+
+        // One new id, on that line only.
+        let after = tm.read("routines.md");
+        assert_eq!(
+            after.lines().filter(|l| l.contains(" ^")).count(),
+            before.lines().filter(|l| l.contains(" ^")).count() + 1,
+            "{state}: {after}"
+        );
+
+        // The tree the host just wrote is one the kernel reads.
+        let check = tm.run(&["check"]);
+        assert_eq!(check.code, 0, "{state}: {}{}", check.stdout, check.stderr);
+        tm.ok(&["now"]);
+
+        // `tm undo` takes the token back off with the box it was written for.
+        tm.ok(&["undo"]);
+        assert_eq!(tm.read("routines.md"), before, "{state}");
+    }
+}
+
+/// An edit that boxes nothing writes no id and its `--json` shape does not
+/// move: `assigned` is absent, not `null`.
+#[test]
+fn an_edit_that_boxes_nothing_writes_no_id() {
+    let tm = Tm::new();
+    // A dated line that already carries a box and an id.
+    let json = tm.json(&["edit", "^d1", "ci=3"]);
+    assert!(json.get("assigned").is_none(), "{json}");
+    // A `routines.md` line whose edit touches no state.
+    let json = tm.json(&["edit", "lunch", "ci=2"]);
+    assert!(json.get("assigned").is_none(), "{json}");
+    assert!(!tm.read("routines.md").lines().any(|l| l.contains("lunch") && l.contains(" ^")));
+}
+
+/// **A title that names two lines is refused, never resolved to the first** —
+/// W-16 repair, **gap 576**, and the host half of the owner's **D32**.
+///
+/// D31 keys a box-less, id-less line by its **title**, so two `- laundry …`
+/// lines are two lines with one address. `Tree` gives the key to the first and
+/// keys the second `file:line`, so every verb that looked an argument up got
+/// the first one silently: `tm drop laundry` rewrote `routines.md:7`, wrote an
+/// `^id` on it and **exited 0** on a tree the kernel refuses whole (`dupId`,
+/// naming both lines), and `tm edit laundry ci=3` did the same. That is
+/// disambiguate-by-occurrence, which D32 **declined**, and AGENTS §5.6's "the
+/// loader never picks between two readings" applied to the host.
+///
+/// Every verb that addresses an item by name is driven here, including the
+/// three that look the argument up in `self.tree` directly rather than through
+/// `Ctx::item` (`done`, `skip`, `routine done`) — a grep would have missed
+/// those, which is the lesson W-15 paid for.
+#[test]
+fn an_ambiguous_title_is_refused_by_every_verb_and_nothing_is_written() {
+    let verbs: &[&[&str]] = &[
+        &["drop", "laundry"],
+        &["edit", "laundry", "ci=3"],
+        &["edit", "laundry", "state=[ ]"],
+        &["move", "laundry", "week"],
+        &["rank", "laundry", "1"],
+        &["demote", "laundry"],
+        &["readopt", "laundry"],
+        &["start", "laundry"],
+        &["event", "ping", "laundry"],
+        &["done", "laundry"],
+        &["skip", "laundry"],
+        &["routine", "done", "laundry"],
+    ];
+    for args in verbs {
+        let tm = Tm::new();
+        let path = tm.plan.join("routines.md");
+        let doubled = format!("{}- laundry    win:09:00-21:00 dur:30m every:week on-miss:persist\n", tm.read("routines.md"));
+        fs::write(&path, &doubled).expect("write routines.md");
+
+        let out = tm.run(args);
+        assert_eq!(out.code, 1, "{args:?} did not refuse: {}{}", out.stdout, out.stderr);
+        // Both placements are named, the way the kernel's own `dupId` names
+        // them, and the key is printed bare — a title key is never written into
+        // a file, so `^laundry` would be a token to grep for that does not
+        // exist.
+        assert!(out.stderr.contains("routines.md:7"), "{args:?}: {}", out.stderr);
+        assert!(out.stderr.contains("routines.md:9"), "{args:?}: {}", out.stderr);
+        assert!(out.stderr.contains("`laundry`"), "{args:?}: {}", out.stderr);
+        assert!(!out.stderr.contains("^laundry"), "{args:?}: {}", out.stderr);
+        // Nothing written: not the plan file, and not the log either.
+        assert_eq!(tm.read("routines.md"), doubled, "{args:?} wrote the plan file");
+        assert!(tm.log().is_empty(), "{args:?} appended to the log: {:?}", tm.log());
+    }
+}
+
+/// The refusal is about **this** key: an unambiguous title on the same tree
+/// still works, so the guard is not a blanket refusal of a tree with any
+/// duplicate in it.
+#[test]
+fn an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision() {
+    let tm = Tm::new();
+    let path = tm.plan.join("routines.md");
+    let doubled = format!("{}- laundry    win:09:00-21:00 dur:30m every:week on-miss:persist\n", tm.read("routines.md"));
+    fs::write(&path, &doubled).expect("write routines.md");
+    let json = tm.json(&["drop", "groceries"]);
+    assert!(json["assigned"].is_string(), "{json}");
 }
 
 #[test]

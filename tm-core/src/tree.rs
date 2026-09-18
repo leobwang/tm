@@ -924,6 +924,24 @@ impl Tree {
             .collect()
     }
 
+    /// **The placements an id-less title names, when it names more than one**
+    /// (`None` when the key is unambiguous or is an `^id`).
+    ///
+    /// This is [`Tree::duplicate_titles`] asked about **one** key rather than
+    /// listed whole, so there is no second answer to "is this title taken
+    /// twice" (AGENTS §5.3). It exists because the answer has to be a
+    /// *refusal* and not a pick: the tree keys the second such line
+    /// `file:line`, so `Tree::get(title)` quietly returns the first, and a
+    /// loader that picks between two readings is the defect AGENTS §5.6 is
+    /// named after. D32 settled the same question for the kernel — a title-key
+    /// collision keeps refusing — and this is the host side of it.
+    pub fn ambiguous_title(&self, key: &Id) -> Option<Vec<(String, usize)>> {
+        self.duplicate_titles
+            .iter()
+            .find(|(title, _)| Id::new(title.clone()) == *key)
+            .map(|(_, idxs)| self.locations(idxs))
+    }
+
     fn locations(&self, idxs: &[usize]) -> Vec<(String, usize)> {
         idxs.iter()
             .map(|&i| (self.files[self.nodes[i].file].path.clone(), self.nodes[i].item.src.line))

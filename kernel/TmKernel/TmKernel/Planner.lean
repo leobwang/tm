@@ -983,6 +983,45 @@ def clipWall (lo hi : Nat) (x : Look.WallIx) : Look.WallIx :=
 def wallLe (a b : Look.WallIx) : Bool :=
   decide (a.lo < b.lo) || (decide (a.lo = b.lo) && Log.charsLe a.id b.id)
 
+theorem wallLe_trans (a b c : Look.WallIx) (h₁ : wallLe a b) (h₂ : wallLe b c) : wallLe a c := by
+  simp only [wallLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h₁ h₂ ⊢
+  rcases h₁ with h₁ | ⟨h₁, hid₁⟩ <;> rcases h₂ with h₂ | ⟨h₂, hid₂⟩
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inl (by omega)
+  · exact Or.inr ⟨by omega, Log.charsLe_trans _ _ _ hid₁ hid₂⟩
+
+theorem wallLe_total (a b : Look.WallIx) : wallLe a b || wallLe b a := by
+  simp only [wallLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+  rcases Nat.lt_trichotomy a.lo b.lo with h | h | h
+  · exact Or.inl (Or.inl h)
+  · rcases Bool.or_eq_true _ _ |>.mp (Log.charsLe_total a.id b.id) with hid | hid
+    · exact Or.inl (Or.inr ⟨h, hid⟩)
+    · exact Or.inr (Or.inr ⟨h.symm, hid⟩)
+  · exact Or.inr (Or.inl h)
+
+/-- A day's walls in the fork's order.  `Replay.insSort` is the **specification** sort —
+quadratic and not tail-recursive, kept because it reduces under `decide` — and `sortWallsFast`
+is its compiled twin.
+
+**This is gap 394's second half, closed by the W-16 repair step.** The twin was owed from
+W-14 and could not be written, because `insSort_eq_mergeSort` needs the order transitive and
+total and `wallLe` breaks ties on `Log.charsLe`, which had neither law. The repair proved
+`Log.charsLe_trans`, `Log.charsLe_total` and `Log.charsLe_antisymm` **on `Log.charsLe`
+itself** — the move AGENTS §5.3 asks for, rather than the second `charsLe` W-16's track A and
+K3b each wrote — so the two laws are now available at every call site at once
+(README gaps 394 and 581). -/
+def sortWalls (l : List Look.WallIx) : List Look.WallIx := Replay.insSort wallLe l
+
+def sortWallsFast (l : List Look.WallIx) : List Look.WallIx := l.mergeSort wallLe
+
+@[csimp] theorem sortWalls_eq_sortWallsFast : @sortWalls = @sortWallsFast := by
+  funext l
+  exact Replay.insSort_eq_mergeSort wallLe wallLe_trans wallLe_total l
+
+theorem mem_sortWalls {l : List Look.WallIx} {x : Look.WallIx} : x ∈ sortWalls l ↔ x ∈ l :=
+  (Replay.insSort_perm wallLe l).mem_iff
+
 /-- **§8.2 step 1's selection, with the request's three numbers as arguments.**  Stage 5's
 index, selected for a day (`Look.wallIxOn`), clipped to it, in the fork's order; an empty clip
 is dropped (`if e <= s { continue }`).  The request is not a parameter because the rule does
@@ -990,7 +1029,7 @@ not depend on it — which is also what lets the rule be *run* and checked by `d
 (`the_spec_days_walls_are_placed_where_they_are_written`; AGENTS §5.2, non-vacuity is a
 separate check from correctness). -/
 def wallsOfDay (dayLo dayHi d : Nat) (ix : List Look.WallIx) : List Look.WallIx :=
-  Replay.insSort wallLe
+  sortWalls
     ((Look.wallIxOn ix d).filterMap fun x =>
       if (clipWall dayLo dayHi x).lo < (clipWall dayLo dayHi x).hi
       then some (clipWall dayLo dayHi x) else none)
@@ -1768,16 +1807,62 @@ theorem splitSleep_keeps_the_rest (r : PlanReq) :
 /-- **Fork `collect_routines`' sort**: mandatory first, then the moment the window closes — the
 tightest window claims its position first — then the id.
 
-`Replay.insSort` is the **specification** sort, as `wallsOfDay`'s is; it has no compiled twin for
-the same reason that one does not (`Log.charsLe` has no transitivity or totality lemma in the
-tree), and it is the same open **gap 394**, not a second one. -/
+`Replay.insSort` is the **specification** sort, as `wallsOfDay`'s is, and since W-16's repair
+step both have their compiled twins: `Log.charsLe` now carries its transitivity and totality
+laws (**gap 394, closed**), so `insSort_eq_mergeSort` applies at both call sites. -/
 def routineLe (a b : Placed) : Bool :=
   (decide (a.inst.mandatory = true) && decide (b.inst.mandatory = false)) ||
     (decide (a.inst.mandatory = b.inst.mandatory) &&
       (decide (a.span.2 < b.span.2) ||
         (decide (a.span.2 = b.span.2) && Log.charsLe a.inst.id b.inst.id)))
 
+theorem routineLe_trans (a b c : Placed) (h₁ : routineLe a b) (h₂ : routineLe b c) :
+    routineLe a c := by
+  simp only [routineLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq] at h₁ h₂ ⊢
+  rcases h₁ with ⟨ha, hb⟩ | ⟨hab, h₁⟩
+  · rcases h₂ with ⟨hb', _⟩ | ⟨hbc, _⟩
+    · exact absurd (hb'.symm.trans hb) (by simp)
+    · exact Or.inl ⟨ha, hbc ▸ hb⟩
+  · rcases h₂ with ⟨hb', hc⟩ | ⟨hbc, h₂⟩
+    · exact Or.inl ⟨hab.trans hb', hc⟩
+    · refine Or.inr ⟨hab.trans hbc, ?_⟩
+      rcases h₁ with h₁ | ⟨h₁, hid₁⟩ <;> rcases h₂ with h₂ | ⟨h₂, hid₂⟩
+      · exact Or.inl (by omega)
+      · exact Or.inl (by omega)
+      · exact Or.inl (by omega)
+      · exact Or.inr ⟨by omega, Log.charsLe_trans _ _ _ hid₁ hid₂⟩
+
+/-- The tie-break below `mandatory`: the window's close, then the id.  Total, because
+`Log.charsLe` is (`Log.charsLe_total`). -/
+theorem routine_span_total (a b : Placed) :
+    (a.span.2 < b.span.2 ∨ a.span.2 = b.span.2 ∧ Log.charsLe a.inst.id b.inst.id = true) ∨
+      (b.span.2 < a.span.2 ∨ b.span.2 = a.span.2 ∧ Log.charsLe b.inst.id a.inst.id = true) := by
+  rcases Nat.lt_trichotomy a.span.2 b.span.2 with h | h | h
+  · exact Or.inl (Or.inl h)
+  · rcases Bool.or_eq_true _ _ |>.mp (Log.charsLe_total a.inst.id b.inst.id) with hid | hid
+    · exact Or.inl (Or.inr ⟨h, hid⟩)
+    · exact Or.inr (Or.inr ⟨h.symm, hid⟩)
+  · exact Or.inr (Or.inl h)
+
+theorem routineLe_total (a b : Placed) : routineLe a b || routineLe b a := by
+  simp only [routineLe, Bool.or_eq_true, Bool.and_eq_true, decide_eq_true_eq]
+  cases ha : a.inst.mandatory <;> cases hb : b.inst.mandatory
+  · rcases routine_span_total a b with h | h
+    · exact Or.inl (Or.inr ⟨rfl, h⟩)
+    · exact Or.inr (Or.inr ⟨rfl, h⟩)
+  · exact Or.inr (Or.inl ⟨rfl, rfl⟩)
+  · exact Or.inl (Or.inl ⟨rfl, rfl⟩)
+  · rcases routine_span_total a b with h | h
+    · exact Or.inl (Or.inr ⟨rfl, h⟩)
+    · exact Or.inr (Or.inr ⟨rfl, h⟩)
+
 def sortRoutines (l : List Placed) : List Placed := Replay.insSort routineLe l
+
+def sortRoutinesFast (l : List Placed) : List Placed := l.mergeSort routineLe
+
+@[csimp] theorem sortRoutines_eq_sortRoutinesFast : @sortRoutines = @sortRoutinesFast := by
+  funext l
+  exact Replay.insSort_eq_mergeSort routineLe routineLe_trans routineLe_total l
 
 theorem mem_sortRoutines {l : List Placed} {q : Placed} : q ∈ sortRoutines l ↔ q ∈ l :=
   (Replay.insSort_perm routineLe l).mem_iff
@@ -1808,7 +1893,10 @@ inverted.  On a wall written `at:…T13:50/12:50` **with** a `buffer:`, `wallRow
 run-up row `[lo, evLo)` while `(x.lo, x.hi)` stops at `hi < evLo`, so step 2 could place a
 routine inside a wall's own buffer and step 3 could cut slots there.  `max` only ever widens —
 it is the identity on every wall whose interval runs forwards — and it is what makes
-`a_wall_row_is_covered_by_the_blocked_list` true without a hypothesis. -/
+`a_wall_row_sits_in_a_blocked_span` true without a hypothesis.  (That sentence named
+`a_wall_row_is_covered_by_the_blocked_list` until W-16's repair step — a constant that has
+never existed in this repository; the theorem is `a_wall_row_sits_in_a_blocked_span`, below.
+Check 3 counts theorems and cannot read doc comments: gap 582.) -/
 def blockedByWalls (r : PlanReq) : List (Nat × Nat) :=
   (wallsToday r).map (fun x => (x.lo, max x.evLo x.hi)) ++
     (interruptRows r).map (fun s => (s.start, s.stop))

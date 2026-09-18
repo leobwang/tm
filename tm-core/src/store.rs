@@ -131,7 +131,7 @@ pub enum StoreError {
     /// Text that cannot go into a plan file (a line break in a line, a
     /// replacement that is not an item line or changes the `^id`, invalid
     /// UTF-8).
-    #[error("{path}:{line}: {message}")]
+    #[error("{}{}: {}", path, at_line(*line), message)]
     Parse {
         /// File.
         path: String,
@@ -190,12 +190,40 @@ fn io_err(path: &str, source: std::io::Error) -> StoreError {
     }
 }
 
+/// `":12"` for a line, and nothing at all for the whole file.
+///
+/// `StoreError::Parse`'s own field doc says "1-based line, **or 0 for the
+/// whole file**", and the format string printed the 0 anyway — so a plan file
+/// that is not UTF-8 came out as `inbox.md:0: not valid UTF-8`, and line 0 is
+/// not a line (W-16 repair, gap 579).
+fn at_line(line: usize) -> String {
+    if line == 0 { String::new() } else { format!(":{line}") }
+}
+
 fn parse_err(path: &str, line: usize, message: impl Into<String>) -> StoreError {
     StoreError::Parse {
         path: path.to_string(),
         line,
         message: message.into(),
     }
+}
+
+/// The 1-based line of the first run of bytes in `rel` that is not UTF-8, or
+/// `0` when the bytes cannot be read at all (which the caller prints as "the
+/// whole file").
+///
+/// The same split-then-decode the log's reader does
+/// ([`Store::read_bytes`]' own doc comment says why it exists), applied to a
+/// plan file. It is a *diagnostic*: the file is still skipped whole, because a
+/// tree half-decoded would be a tree the kernel and the host disagreed about.
+fn first_bad_utf8_line<S: Store + ?Sized>(store: &S, rel: &str) -> usize {
+    let Ok(bytes) = store.read_bytes(rel) else {
+        return 0;
+    };
+    bytes
+        .split(|b| *b == b'\n')
+        .position(|line| std::str::from_utf8(line).is_err())
+        .map_or(0, |i| i + 1)
 }
 
 /// Why a file in the tree could not be turned into text.
@@ -208,6 +236,15 @@ enum Unreadable {
 
 /// Classify an error from [`Store::read_text`]: `None` for errors that must
 /// still abort a whole-tree read.
+impl StoreError {
+    /// **This file's bytes are not text.** The one answer to that question:
+    /// `read_tree`'s tolerance and `tm check`'s kernel load both ask it here
+    /// rather than each matching on an `ErrorKind` (AGENTS §5.3).
+    pub fn is_not_utf8(&self) -> bool {
+        matches!(unreadable(self), Some(Unreadable::NotUtf8))
+    }
+}
+
 fn unreadable(e: &StoreError) -> Option<Unreadable> {
     match e {
         StoreError::Parse { message, .. } if message.contains("UTF-8") => Some(Unreadable::NotUtf8),
@@ -978,7 +1015,13 @@ pub trait Store {
                     Some(Unreadable::NotUtf8) => {
                         let mut f = parse_file(&rel, "", &config);
                         f.problems.push(Problem {
-                            line: 0,
+                            // **Name the line** (W-16 repair, gap 579). D18 /
+                            // gap 145 did exactly this for `.tm/log.jsonl` —
+                            // split the bytes on newlines *first*, so one bad
+                            // line is a named problem instead of a whole
+                            // command that says only "stream did not contain
+                            // valid UTF-8" — and the plan files never got it.
+                            line: first_bad_utf8_line(self, &rel),
                             message: "not valid UTF-8; the file was skipped".to_string(),
                         });
                         files.push(f);

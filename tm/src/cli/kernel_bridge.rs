@@ -1054,6 +1054,19 @@ fn one_based(kernel_line: u64) -> u64 {
     kernel_line + 1
 }
 
+/// **The one sentence that points a reader at `tm check`**, and the one place
+/// it is spelled.
+///
+/// `itemCheck` is a property of the whole tree, so the refusal carries a fault
+/// name and no position; `tm check` answers exactly that question against the
+/// same tree, so every *other* verb's refusal says so (W-12, gap 239). Inside
+/// `tm check`'s own output it is nonsense — the advice is to run the command
+/// that is printing it, immediately above the two lines that do name the file
+/// and the line — so `lifecycle::load_problems` takes it back off, and
+/// `the_check_hint_is_not_printed_by_check_itself` pins both halves (W-16
+/// repair, gap 580).
+pub const CHECK_HINT: &str = " (run `tm check`: it names the file and the line)";
+
 /// Map the response's `err` payload to a named [`KernelIssue`]. The shapes
 /// are `Boundary.lean`'s: a free-text string, `{"kernel":name}`, the six
 /// structured loader diagnostics, and (stage 5 D9 B4) `{"log":…}`, which
@@ -1270,7 +1283,7 @@ fn refusal(err: &Value) -> KernelIssue {
         // `fileKindShape` with no file and no line. `tm check` answers exactly that question
         // against the same tree, so the refusal now says so instead of leaving it to be guessed.
         ("itemCheck".into(), format!(
-            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole (run `tm check`: it names the file and the line)"
+            "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole{CHECK_HINT}"
         ))
     } else {
         put("error", err.to_string());
@@ -1472,7 +1485,7 @@ mod tests {
         }
         let dup = refusal(&key_collision("dupId", title));
         assert!(
-            !dup.message.contains("run `tm check`"),
+            !dup.message.contains(CHECK_HINT),
             "dupId still points at a verb that reports nothing: {}",
             dup.message
         );

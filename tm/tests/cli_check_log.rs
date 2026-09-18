@@ -108,6 +108,55 @@ fn with_a_log() -> Tm {
     tm
 }
 
+/// **The plan-file half of the same repair** — W-16 repair, **gap 579**.
+///
+/// D18 / gap 145 gave `.tm/log.jsonl` a per-line tolerant read, so one damaged
+/// byte is a warning that names the line (the test below). The **plan files**
+/// never got it, and W-16's own `tm check` kernel load made it worse: one stray
+/// byte in `plan/inbox.md` and the single verb whose whole job is diagnosis
+/// exited **1** with `tm: inbox.md: stream did not contain valid UTF-8` —
+/// naming no line, and not even the spec's validation exit code — while
+/// `tm plan` and `tm triage` reported the impossible `inbox.md:0:` (line 0 is
+/// not a line; `StoreError::Parse`'s own field doc says 0 means "the whole
+/// file").
+///
+/// The two halves are deliberately *not* the same answer: the log's bad line is
+/// a **warning** because the log is append-only history and the point is to
+/// keep going, and a plan file's is an **error** because the file is the plan
+/// and it has been skipped whole. Both name the line.
+#[test]
+fn invalid_utf8_in_a_plan_file_is_an_error_tm_check_names_by_line() {
+    let tm = Tm::new();
+    let clean = tm.run(&["check"]);
+    assert_eq!(clean.code, 0, "{}{}", clean.stdout, clean.stderr);
+
+    let path = tm.plan.join("inbox.md");
+    let mut bytes = std::fs::read(&path).expect("read inbox.md");
+    let before_lines = bytes.iter().filter(|b| **b == b'\n').count();
+    bytes.extend_from_slice(b"- caf\xc3\x28 broken utf8\n");
+    std::fs::write(&path, &bytes).expect("write inbox.md");
+    let bad_line = (before_lines + 1) as u64;
+
+    let out = tm.run(&["check"]);
+    assert_eq!(out.code, 2, "the validation exit code: {}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("inbox.md"), "{}", out.stdout);
+    assert!(out.stdout.contains("not valid UTF-8"), "{}", out.stdout);
+    assert!(
+        out.stdout.contains(&format!("inbox.md:{bad_line}:")),
+        "it names the line: {}",
+        out.stdout
+    );
+    assert!(!out.stdout.contains("inbox.md:0:"), "line 0 is not a line: {}", out.stdout);
+
+    // The other verbs still fail — a plan file that cannot be decoded is not
+    // something to plan around — but they no longer say `:0`.
+    for args in [vec!["plan"], vec!["triage"], vec!["now"]] {
+        let out = tm.run(&args);
+        assert_eq!(out.code, 1, "{args:?}: {}{}", out.stdout, out.stderr);
+        assert!(!out.stderr.contains("inbox.md:0"), "{args:?}: {}", out.stderr);
+    }
+}
+
 /// **T9**: one byte of invalid UTF-8 is one warning at its own line, the exit
 /// code does not move, and every verb still runs.
 #[test]
