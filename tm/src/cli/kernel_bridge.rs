@@ -853,6 +853,98 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
     Ok(Applied { docs, closes: report })
 }
 
+/// **Does the kernel still load this tree?** — asked in one place, by both
+/// the verb that reports it and the verbs that must not write over it.
+///
+/// `Ok(None)` means the kernel loaded the whole tree; `Ok(Some(issue))` is a
+/// named refusal (`dupId`, `danglingParent`, `badLine`, `itemCheck`, …) with
+/// D32's widened `path`/`line` detail on it; `Err` is a **fault**, which is
+/// not a tree problem and is nobody's to swallow.
+///
+/// **It writes nothing, by construction** (D32 item 2, `e31e0c5`): it goes to
+/// [`call`] directly, which has no write step at all, rather than to [`apply`]
+/// with an empty command list — so `tm check`, which runs in the pre-commit
+/// hook of every generated plan, is unable to write rather than merely
+/// unlikely to. `check_never_writes_a_byte` pins that, and it is now the
+/// property of one function instead of one command.
+///
+/// **A file whose bytes are not text is skipped, not fatal** (W-16 repair, gap
+/// 579): the kernel cannot be shown bytes that are not text, so it is asked
+/// about the rest of the tree and `StoreError::is_not_utf8` is the one place
+/// that verdict is taken. `Store::read_tree` reports the decode
+/// problem separately, naming the line, and `tm check` prints it beside
+/// whatever the kernel says.
+pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
+    let mut docs = Vec::new();
+    for rel in ctx.store.list_files()? {
+        let text = match ctx.store.read_text(&rel) {
+            Ok(text) => text,
+            Err(e) if e.is_not_utf8() => continue,
+            Err(e) => return Err(e.into()),
+        };
+        docs.push(doc_json(&rel, &doc_lines(&text)));
+    }
+    match call(&json!({ "docs": docs, "cmds": [] })) {
+        Ok(_) => Ok(None),
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(Some(issue)),
+        Err(e) => Err(e),
+    }
+}
+
+/// **The one write gate** (the owner's D35, README gap 584): a host-only write
+/// path asks the kernel whether the tree still loads, and refuses if it does
+/// not.
+///
+/// Every *kernel-backed* write is gated already — [`apply`] refuses the whole
+/// request and writes nothing. The host-only paths are the ones gap 41, gap 5
+/// and §4.1's line surgery left behind, and before this a user could keep
+/// editing a tree that `tm plan`, `tm now` and `tm review` all refused:
+/// `tm edit ^d1 'title=…'` rewrote its file and exited **0** while `tm check`
+/// exited 2 on the same bytes.
+///
+/// **It refuses with the same error the kernel-backed paths refuse with** —
+/// the kernel's own named sentence, carrying D32's two positions — so a broken
+/// tree reads the same whichever path the verb took (AGENTS §5.3: one spelling
+/// of the refusal). `verb` rides the detail as `refusedWrite`, which is the
+/// only thing added, and it is what [`super::out::CliError::report`] turns into
+/// the "nothing was written" line: the kernel says *what* is wrong and *where*,
+/// this says what it means for the command the user just typed.
+///
+/// **Deliberately not called from `tm undo`, `tm init` or `tm check`.** `undo`
+/// is the way *out* of a tree the kernel refuses and gating it would trap the
+/// user inside one; `init` has no tree yet; `check` is D18/gap 145's one
+/// tolerant verb, whose whole job is to name the line.
+pub fn gate(ctx: &Ctx, verb: &str) -> Result<(), CliError> {
+    // **A file whose bytes are not text is a tree that does not load either**,
+    // and the kernel cannot be asked about it: `tree_refusal` skips it (gap
+    // 579) so that `tm check` survives it, which means the kernel would answer
+    // "fine" about the rest and the write would go through. Driven on a tree
+    // with one stray byte appended to `inbox.md`: `tm check` exits 2 naming
+    // `inbox.md:5`, `tm plan` exits 1, and before this line `tm edit ^d1
+    // 'title=…'` rewrote `week/2026-W37.md` and exited **0** — gap 584's own
+    // shape, one input class over.
+    //
+    // `read_tree` already decided it and already found the line (§17.2's one
+    // reader); this asks `PlanFiles` rather than decoding anything a second
+    // time. `tm check` still reports it as a problem and still exits 2, which
+    // is where a reader is sent.
+    if let Some((path, line)) = ctx.files.undecodable() {
+        return Err(CliError::msg(format!(
+            "{path}:{line}: {} — nothing was written: `tm {verb}` needs a tree that can be read \
+             whole, and every reading verb refuses this one too (run `tm check`: it names every \
+             such line)",
+            store::NOT_UTF8
+        )));
+    }
+    match tree_refusal(ctx)? {
+        None => Ok(()),
+        Some(mut issue) => {
+            issue.detail.insert("refusedWrite".to_string(), json!(verb));
+            Err(CliError::Kernel(issue))
+        }
+    }
+}
+
 /// **The lines the kernel sees for a file's text** (the module-level newline
 /// convention): split on `'\n'`, with exactly one trailing empty segment
 /// stripped iff the text ends with `'\n'`. Every request document is built

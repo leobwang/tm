@@ -940,15 +940,21 @@ impl Ctx {
     /// **Only on a tree the kernel loads whole** (the owner's D6: a dangling
     /// or cyclic `@parent` refuses the whole tree). `refused` says the
     /// automatic close ahead of this was refused, which settles it without a
-    /// second call; otherwise, when some timeout has elapsed, one kernel call
-    /// with no commands ([`kernel_bridge::apply`], which writes nothing
-    /// without a change) checks the tree first. A refusal skips every
-    /// timeout, writes nothing and logs nothing, and is named on stderr — so a
-    /// verb that then refuses the same tree has written nothing either
+    /// second call; otherwise, when some timeout has elapsed, the one shared
+    /// write gate ([`kernel_bridge::tree_refusal`], the owner's D35) asks the
+    /// kernel whether the tree still loads. A refusal skips every timeout,
+    /// writes nothing and logs nothing, and is named on stderr — so a verb
+    /// that then refuses the same tree has written nothing either
     /// (kernel/README.md "Stage 4 final, repair", defect 1: before this, a
     /// typo'd parent on the example tree's Monday rewrote `^a4` and created
     /// the log ahead of a refusal that said nothing was written). A kernel
     /// fault still fails the verb.
+    ///
+    /// It asked `kernel_bridge::apply(self, &[])` until D35 — the same
+    /// question through the machine that ends in a write step. `tree_refusal`
+    /// goes to `kernel_bridge::call` directly and cannot write at all, so
+    /// there is now exactly **one** definition of "does the kernel load this
+    /// tree" in the binary (AGENTS §5.3).
     fn resolve_timeouts(&mut self, refused: bool) -> Result<Vec<Id>, CliError> {
         let mut expired_ids = Vec::new();
         for id in self.tree.waiting_ids() {
@@ -962,19 +968,15 @@ impl Ctx {
         if expired_ids.is_empty() || refused {
             return Ok(Vec::new());
         }
-        match kernel_bridge::apply(self, &[]) {
-            Ok(_) => {}
-            Err(CliError::Kernel(issue)) if !issue.is_fault() => {
-                if !kernel_bridge::capturing_kernel_stderr() {
-                    eprintln!(
-                        "tm: the waiting timeouts (§5.1) were not applied, so nothing was written; \
-                         they run again on the next command. {}",
-                        issue.message
-                    );
-                }
-                return Ok(Vec::new());
+        if let Some(issue) = kernel_bridge::tree_refusal(self)? {
+            if !kernel_bridge::capturing_kernel_stderr() {
+                eprintln!(
+                    "tm: the waiting timeouts (§5.1) were not applied, so nothing was written; \
+                     they run again on the next command. {}",
+                    issue.message
+                );
             }
-            Err(e) => return Err(e),
+            return Ok(Vec::new());
         }
         let mut changed = Vec::new();
         for id in expired_ids {

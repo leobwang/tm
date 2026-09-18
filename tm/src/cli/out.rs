@@ -312,6 +312,21 @@ impl CliError {
             return;
         }
         eprintln!("tm: {message}");
+        // **What the refusal means for the command that was just typed** (the
+        // owner's D35, README gap 584). `kernel_bridge::gate` stamps
+        // `refusedWrite` with the verb's own name; the kernel's sentence above
+        // says what is wrong and names the file and the line, and this says
+        // that the write did not happen and what to do about it. Only the
+        // write gate sets it, so no existing message moves.
+        if let CliError::Kernel(issue) = self {
+            if let Some(Value::String(verb)) = issue.detail.get("refusedWrite") {
+                eprintln!(
+                    "  nothing was written: `tm {verb}` needs a tree the kernel can load whole, \
+                     and every reading verb refuses this one too — fix the line named above, or \
+                     run `tm undo`"
+                );
+            }
+        }
         // A kernel fault is a bug report, not a plan problem: print whatever
         // layer 2 captured off the kernel's stderr (the backtrace the
         // terminal never saw), and say where to send it.

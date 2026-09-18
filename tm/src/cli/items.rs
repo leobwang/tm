@@ -316,6 +316,7 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
         return add_kernel(&mut ctx, &path, &title, raw);
     }
 
+    kernel_bridge::gate(&ctx, "add")?;
     let rec = Recorder::start(&ctx, "add")?;
     let mut line = ItemLine::parse(&text).map_err(|e| CliError::msg(e.to_string()))?;
     let mut id = line.id().unwrap_or_default();
@@ -560,6 +561,7 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
             return edit_kernel(&mut ctx, &id, &item, args, cmds);
         }
     }
+    kernel_bridge::gate(&ctx, "edit")?;
     let rec = Recorder::start(&ctx, "edit")?;
     // **D33, gap 477, the half `c4726e2` left behind** (W-16 repair, gap 575):
     // `tm edit <title> state=[ ]` boxes a box-less, id-less line exactly as
@@ -848,6 +850,7 @@ pub fn move_item(g: &Globals, args: &super::MoveArgs) -> Result<i32, CliError> {
             Horizon::Day(_) => Some(horizon::PINNED_SECTION.to_string()),
             _ => None,
         });
+        kernel_bridge::gate(&ctx, "move")?;
         let rec = Recorder::start(&ctx, "move")?;
         let moved = horizon::move_item(&ctx.hz(), &id, &to, section.as_deref())?;
         ctx.reload()?;
@@ -1023,7 +1026,10 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
             if cmds.is_empty() {
                 // Already at the requested position — the old path's
                 // `moved: false`: no kernel call, nothing written, but the
-                // undo entry still recorded, exactly as before.
+                // undo entry still recorded, exactly as before. Gated anyway
+                // (D35): this arm reports success, and a verb must not report
+                // success on a tree every reading verb refuses.
+                kernel_bridge::gate(&ctx, "rank")?;
                 let rec = Recorder::start(&ctx, "rank")?;
                 ctx.reload()?;
                 rec.finish(&ctx, format!("rank {} {}", id.token(), args.n))?;
@@ -1056,6 +1062,7 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
             return Ok(0);
         }
     }
+    kernel_bridge::gate(&ctx, "rank")?;
     let rec = Recorder::start(&ctx, "rank")?;
     let moved = horizon::rank(&ctx.hz(), &id, args.n)?;
     ctx.reload()?;
@@ -1243,6 +1250,7 @@ pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> 
     };
     if !item.has_id() {
         // Old path: the kernel cannot address a line without a `^id`.
+        kernel_bridge::gate(&ctx, "readopt")?;
         let rec = Recorder::start(&ctx, "readopt")?;
         let moved = horizon::readopt(&ctx.hz(), &id, Some(&to))?;
         ctx.reload()?;
@@ -1400,7 +1408,9 @@ pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
             .unwrap_or_else(|| item.line().to_string());
         (key, line, None)
     } else {
-        // D33: the box and the id land together, in that order.
+        // D33: the box and the id land together, in that order — and the gate
+        // goes ahead of both, because this branch never reaches the kernel.
+        kernel_bridge::gate(&ctx, "drop")?;
         let id = write_id_for_boxing(&mut ctx, &key, "drop")?;
         let line = horizon::drop_item(&ctx.hz(), &id)?;
         (id.clone(), line, Some(id))
@@ -1446,6 +1456,7 @@ pub fn event(g: &Globals, args: &super::EventArgs) -> Result<i32, CliError> {
     if let Some(id) = &only {
         ctx.item(id)?;
     }
+    kernel_bridge::gate(&ctx, "event")?;
     let rec = Recorder::start(&ctx, "event")?;
     ctx.append_event(Event::Named {
         name: args.name.clone(),
@@ -1545,6 +1556,7 @@ fn instance_of(
 pub fn skip(g: &Globals, args: &super::SkipArgs) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
     let (item, inst) = instance_of(&ctx, &args.name)?;
+    kernel_bridge::gate(&ctx, "skip")?;
     let rec = Recorder::start(&ctx, "skip")?;
     let entry = recur::skip_instance(&item, &inst, ctx.now);
     ctx.append_entry(&entry)?;
@@ -1570,6 +1582,7 @@ pub fn routine(g: &Globals, args: &super::RoutineArgs) -> Result<i32, CliError> 
     let super::RoutineCmd::Done { name, min } = &args.cmd;
     let mut ctx = Ctx::load(g, true)?;
     let (item, inst) = instance_of(&ctx, name)?;
+    kernel_bridge::gate(&ctx, "routine done")?;
     let rec = Recorder::start(&ctx, "routine")?;
     let entry = recur::done_instance(&item, &inst, ctx.now, *min);
     ctx.append_entry(&entry)?;

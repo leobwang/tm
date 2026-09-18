@@ -462,6 +462,7 @@ fn perform(
 /// verb, so `tm undo` keeps working across them.
 fn mutate(g: &Globals, m: &queue::Mutation) -> Result<String, CliError> {
     let mut ctx = Ctx::load(g, false)?;
+    crate::cli::kernel_bridge::gate(&ctx, "tui")?;
     let rec = undo::Recorder::start(&ctx, "tui")?;
     let message = match m {
         queue::Mutation::Reorder { id, .. } => match queue::apply_reorder(&ctx.store, m) {
@@ -492,6 +493,7 @@ fn mutate(g: &Globals, m: &queue::Mutation) -> Result<String, CliError> {
 /// 3), which would leave the *previous* command permanently un-undoable.
 fn note(g: &Globals, text: &str) -> Result<(), CliError> {
     let mut ctx = Ctx::load(g, false)?;
+    crate::cli::kernel_bridge::gate(&ctx, "note")?;
     let rec = undo::Recorder::start(&ctx, "note")?;
     ctx.append_event(LogEvent::Note {
         text: text.to_string(),
@@ -506,6 +508,7 @@ fn note(g: &Globals, text: &str) -> Result<(), CliError> {
 /// it with the rest of `state.json`).
 fn set_location(g: &Globals, loc: &str) -> Result<(), CliError> {
     let mut ctx = Ctx::load(g, false)?;
+    crate::cli::kernel_bridge::gate(&ctx, "loc")?;
     let rec = undo::Recorder::start(&ctx, "loc")?;
     ctx.state.loc = Some(loc.to_string());
     ctx.save_state()?;

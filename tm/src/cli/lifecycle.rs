@@ -241,6 +241,7 @@ pub fn sync_calendar(ctx: &Ctx) -> Result<SyncOut, CliError> {
 /// `tm sync-cal`.
 pub fn sync_cal(g: &Globals) -> Result<i32, CliError> {
     let mut ctx = Ctx::load(g, true)?;
+    super::kernel_bridge::gate(&ctx, "sync-cal")?;
     let rec = undo_stack::Recorder::start(&ctx, "sync-cal")?;
     let out = sync_calendar(&ctx)?;
     ctx.reload()?;
@@ -466,6 +467,7 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
         wrote: None,
     };
     if args.write {
+        super::kernel_bridge::gate(&ctx, "review --write")?;
         let rec = undo_stack::Recorder::start(&ctx, "review")?;
         ctx.store.replace_generated(&path, REVIEW_BLOCK, &text)?;
         out.wrote = Some(path.clone());
@@ -519,6 +521,7 @@ pub fn model(g: &Globals, args: &super::ModelArgs) -> Result<i32, CliError> {
         }
     })?;
     if args.fit {
+        super::kernel_bridge::gate(&ctx, "model --fit")?;
         let rec = undo_stack::Recorder::start(&ctx, "model")?;
         let fitted = energy::fit_observations(
             &ctx.cfg,
@@ -1137,51 +1140,35 @@ fn stall_problems(ctx: &Ctx) -> Vec<validate::CheckProblem> {
 /// untouched**, the tolerant load above still finds the line, and
 /// [`Ctx::replay_fault`] is still the warning it always was.
 ///
-/// The documents are assembled with [`kernel_bridge::doc_json`] and
-/// [`kernel_bridge::doc_lines`] — the same two functions every other kernel
-/// call in this binary uses, so there is no second reader of "what is a
-/// request document" (AGENTS §5.3).
+/// **The question itself now lives in one place** (the owner's D35, gap 584):
+/// [`kernel_bridge::tree_refusal`] asks it, this turns its answer into
+/// `tm check`'s problems, and [`kernel_bridge::gate`] turns the same answer
+/// into a host-only write's refusal. Before D35 only `tm check` asked, so a
+/// user could keep editing a tree every reading verb refused. The documents
+/// are assembled there with `doc_json`/`doc_lines`, the same two functions
+/// every other kernel call in this binary uses, so there is no second reader
+/// of "what is a request document" (AGENTS §5.3).
 ///
-/// **Why not `kernel_bridge::apply(ctx, &[])`**, which is the existing
-/// load-the-tree-and-write-nothing call (`Ctx::resolve_timeouts` uses it):
-/// because `apply` ends in a write step, and it writes back any document whose
-/// returned lines differ from the sent ones — a *renormalisation* counts. That
-/// is right for a verb that is about to change the tree and wrong for the one
-/// verb whose whole contract is to look. `tm check` runs in the pre-commit hook
-/// and the post-edit hook of every generated plan, so it must be unable to
-/// write **by construction**, not merely unlikely to: this goes through
-/// [`kernel_bridge::call`] directly, which has no write step at all, and
-/// `check_never_writes_a_byte` pins it. The shared part — what a request
-/// document *is* — is still shared.
+/// **Why the asker is not `kernel_bridge::apply(ctx, &[])`**, which is the
+/// other load-the-tree-and-write-nothing call (`Ctx::resolve_timeouts` and
+/// `day::preflight` use it): because `apply` ends in a write step, and it
+/// writes back any document whose returned lines differ from the sent ones — a
+/// *renormalisation* counts. That is right for a verb that is about to change
+/// the tree and wrong for the one verb whose whole contract is to look.
+/// `tm check` runs in the pre-commit hook and the post-edit hook of every
+/// generated plan, so it must be unable to write **by construction**, not
+/// merely unlikely to: `tree_refusal` goes through `kernel_bridge::call`
+/// directly, which has no write step at all, and `check_never_writes_a_byte`
+/// pins it.
 ///
 /// A **fault** (the kernel returned nothing usable) is not a tree problem and
 /// is propagated as this command's error; only a named **refusal** becomes
 /// problems.
 fn kernel_problems(ctx: &Ctx) -> Result<Vec<validate::CheckProblem>, CliError> {
-    let mut docs = Vec::new();
-    for rel in ctx.store.list_files()? {
-        let text = match ctx.store.read_text(&rel) {
-            Ok(text) => text,
-            // **A file whose bytes are not text is skipped, not fatal** (W-16
-            // repair, gap 579). `Store::read_tree` already tolerates it and
-            // reports it as a problem of its own, naming the line; this read
-            // did not, so one stray byte in `plan/inbox.md` made the one verb
-            // whose whole job is diagnosis exit 1 saying `tm: inbox.md: stream
-            // did not contain valid UTF-8` — no line, and not even the
-            // validation exit code. The kernel cannot be shown bytes that are
-            // not text, so it is asked about the rest of the tree; the decode
-            // problem is reported beside whatever it says, and is an error, so
-            // `tm check` still exits 2.
-            Err(e) if e.is_not_utf8() => continue,
-            Err(e) => return Err(e.into()),
-        };
-        docs.push(super::kernel_bridge::doc_json(&rel, &super::kernel_bridge::doc_lines(&text)));
-    }
-    match super::kernel_bridge::call(&serde_json::json!({ "docs": docs, "cmds": [] })) {
-        Ok(_) => Ok(Vec::new()),
-        Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(load_problems(&issue)),
-        Err(e) => Err(e),
-    }
+    Ok(super::kernel_bridge::tree_refusal(ctx)?
+        .as_ref()
+        .map(load_problems)
+        .unwrap_or_default())
 }
 
 /// One kernel load refusal, as `tm check` problems.
