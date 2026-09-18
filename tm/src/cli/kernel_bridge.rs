@@ -1013,6 +1013,25 @@ fn log_refusal(l: &Value) -> KernelIssue {
     issue
 }
 
+/// What a store key is, appended to the three key-collision refusals.
+///
+/// Since D31 (`Line.lean`'s `keyOf`) the key is the line's `^id` when it spells
+/// one and `Field.titleKey` — the title words joined by single spaces — when it
+/// does not. The title key is **synthesised**; it is deliberately never written
+/// into a file (`serialize_parseLine`), so there is no `^`-token to grep for.
+const KEY_NOTE: &str = " (a line with no `^id` is keyed by its title, and that key is never \
+                        written into a file, so search the tree for the text itself; `tm check` \
+                        does not report this collision)";
+
+/// The kernel counts a document's lines from **0** (`Boundary.lean`'s `badLine`
+/// doc comment: "0-based, as `badLine`"), and `tm check` — every other
+/// `file:line` this binary prints — counts from **1**. The bridge is the one
+/// place the two meet, so it converts here rather than printing two conventions
+/// out of one binary (W-15 repair, gap 479).
+fn one_based(kernel_line: u64) -> u64 {
+    kernel_line + 1
+}
+
 /// Map the response's `err` payload to a named [`KernelIssue`]. The shapes
 /// are `Boundary.lean`'s: a free-text string, `{"kernel":name}`, the six
 /// structured loader diagnostics, and (stage 5 D9 B4) `{"log":…}`, which
@@ -1138,20 +1157,42 @@ fn refusal(err: &Value) -> KernelIssue {
             _ => "an unlisted capacity refusal — see Boundary.lean's `CapWire.Refusal`",
         };
         (name.to_string(), format!("kernel refusal: {text} — {why}"))
+    // ---------------------------------------------------------------------
+    // The three **store-key** collisions (W-15 repair, gaps 475 and 479).
+    //
+    // The kernel's key is not always an `^id`.  Since D31's widened grammar
+    // (`Line.lean`'s `keyOf`) a line with **no** `^id` is keyed by
+    // `Field.titleKey` — the title words joined by single spaces — and that key
+    // is never written into a file.  So `^{key}` is a **lie** for exactly the
+    // lines D31 made loadable: printing `^Factorio` or
+    // `^read the Lean 4 metaprogramming book` sends the reader grepping for a
+    // token that exists nowhere in the tree.  These three messages name the key
+    // as a key, and say where a key with no `^` came from.
+    //
+    // `dupId` also stopped pointing at `tm check`.  Gap 239 added that pointer
+    // on the premise that "`tm check` on the same tree answers instantly and
+    // precisely"; for this class the premise is **false** — `tm check`'s
+    // duplicate detection is the host's `Tree::key_of`, which per AGENTS §5.6
+    // keys the later of two colliding lines `file:line` and therefore reports
+    // *no problem at all* (gap 476).  A pointer at a verb that says "no
+    // problems" is a loop, so the message says what to search for instead.
     } else if let Some(id) = err.get("dupId").and_then(Value::as_str) {
-        put("id", format!("^{id}"));
+        put("key", id.to_string());
         ("dupId".into(), format!(
-            "kernel refusal: dupId — two lines in the tree carry ^{id}; the kernel refuses a tree it cannot load whole (run `tm check`)"
+            "kernel refusal: dupId — two lines in one file resolve to the store key `{id}`{KEY_NOTE}; \
+             the kernel refuses a tree it cannot load whole"
         ))
     } else if let Some(id) = err.get("notADemotion").and_then(Value::as_str) {
-        put("id", format!("^{id}"));
+        put("key", id.to_string());
         ("notADemotion".into(), format!(
-            "kernel refusal: notADemotion — the two lines of ^{id} are not a demotion pair the kernel can read"
+            "kernel refusal: notADemotion — two lines in different files resolve to the store key \
+             `{id}` and are not a demotion pair the kernel can read{KEY_NOTE}"
         ))
     } else if let Some(id) = err.get("ambiguousDemotion").and_then(Value::as_str) {
-        put("id", format!("^{id}"));
+        put("key", id.to_string());
         ("ambiguousDemotion".into(), format!(
-            "kernel refusal: ambiguousDemotion — the documents do not order the two lines of ^{id}, so which one is the record is ambiguous"
+            "kernel refusal: ambiguousDemotion — the documents do not order the two lines that \
+             resolve to the store key `{id}`, so which one is the record is ambiguous{KEY_NOTE}"
         ))
     } else if let Some(p) = err.get("duplicatePath").and_then(Value::as_str) {
         put("path", p.to_string());
@@ -1160,7 +1201,7 @@ fn refusal(err: &Value) -> KernelIssue {
         ))
     } else if let Some(b) = err.get("badLine") {
         let path = b["path"].as_str().unwrap_or_default().to_string();
-        let line = b["line"].as_u64().unwrap_or_default();
+        let line = one_based(b["line"].as_u64().unwrap_or_default());
         let why = b["why"].as_str().unwrap_or_default().to_string();
         put("path", path.clone());
         put("why", why.clone());
@@ -1170,7 +1211,7 @@ fn refusal(err: &Value) -> KernelIssue {
         ))
     } else if let Some(b) = err.get("unterminatedComment") {
         let path = b["path"].as_str().unwrap_or_default().to_string();
-        let line = b["line"].as_u64().unwrap_or_default();
+        let line = one_based(b["line"].as_u64().unwrap_or_default());
         put("path", path.clone());
         detail.insert("line".into(), Value::from(line));
         ("unterminatedComment".into(), format!(
@@ -1344,6 +1385,64 @@ mod tests {
             assert!(issue.message.contains(name), "{}", issue.message);
             assert_eq!(issue.detail["refusal"], name);
         }
+    }
+
+    /// **A store key is not an `^id`** (W-15 repair, audit defect 3; gap 475).
+    ///
+    /// D31's widened grammar keys a line with no `^id` by `Field.titleKey`, and
+    /// that key is **never written into a file**. The three key-collision
+    /// refusals used to print `^{key}`, so a real tree answered *"two lines in
+    /// the tree carry ^read the Lean 4 metaprogramming book"* — a token that
+    /// appears nowhere the user could grep. None of the three may spell a `^`
+    /// in front of the key again.
+    ///
+    /// `dupId` also may not send the reader to `tm check`: for this class
+    /// `tm check` answers *"no problems"* (gap 476), and gap 239 added that
+    /// pointer on the opposite premise.
+    #[test]
+    fn a_key_collision_names_a_key_and_never_invents_an_id_token() {
+        let title = "read the Lean 4 metaprogramming book";
+        for kind in ["dupId", "notADemotion", "ambiguousDemotion"] {
+            let issue = refusal(&serde_json::json!({ kind: title }));
+            assert_eq!(issue.name, kind);
+            assert!(issue.message.contains(title), "{kind}: {}", issue.message);
+            assert!(
+                !issue.message.contains(&format!("^{title}")),
+                "{kind} still spells the synthesised key as an id token: {}",
+                issue.message
+            );
+            // The key reaches `--json` as the key, not as an id token.
+            assert_eq!(issue.detail["key"], title);
+            assert!(!issue.detail.contains_key("id"), "{kind}: {:?}", issue.detail);
+        }
+        let dup = refusal(&serde_json::json!({ "dupId": title }));
+        assert!(
+            !dup.message.contains("run `tm check`"),
+            "dupId still points at a verb that reports nothing: {}",
+            dup.message
+        );
+        // A line that really does spell its id reads the same way, minus the lie.
+        let real = refusal(&serde_json::json!({ "dupId": "a1" }));
+        assert!(real.message.contains("`a1`"), "{}", real.message);
+    }
+
+    /// **One `file:line` convention out of one binary** (W-15 repair, gap 479).
+    ///
+    /// `Boundary.lean` counts a document's lines from 0 ("0-based, as
+    /// `badLine`"); `tm check` and every other `file:line` this binary prints
+    /// counts from 1. A tree whose thirteenth line is `- [ ] no id on this
+    /// line` used to answer `backlog.md:12`, pointing at the line above.
+    #[test]
+    fn a_loader_position_is_printed_the_way_tm_check_prints_one() {
+        let bad = refusal(&serde_json::json!(
+            {"badLine": {"path": "backlog.md", "line": 12, "why": "Tm.PErr.noId"}}
+        ));
+        assert!(bad.message.contains("backlog.md:13"), "{}", bad.message);
+        assert_eq!(bad.detail["line"], 13);
+
+        let cmt = refusal(&serde_json::json!({"unterminatedComment": {"path": "a.md", "line": 0}}));
+        assert!(cmt.message.contains("a.md:1"), "{}", cmt.message);
+        assert_eq!(cmt.detail["line"], 1);
     }
 
     /// Stage 5 D9 B4 (design §10.3): the `log` section's refusals are host

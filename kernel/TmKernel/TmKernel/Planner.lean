@@ -8,12 +8,26 @@ Fork-point `tm-core/src/planner.rs` is the oracle, read by type and function nam
 `planner::DayPlan`, `planner::PlanInput`, `planner::PlanOverrides`,
 `planner::Planner::window_and_budget`, and `store::RuntimeState` beside them.
 
-This module holds **types and their laws**.  It does not place a wall, cut a slot or assign a
-block: §8.2's eight steps are P1..P7, and `dayPlan` here is the fork's own
-`DayPlan::empty` — a day with its window and its budget and **no segments at all**.  Two
-theorems say so out loud (`the_day_has_no_segments_until_the_first_step_lands`,
-`the_plan_hash_is_a_placeholder_until_the_emitter_lands`), and both must be *deleted* by the
-step that makes them false.  Nothing in `Goals.lean` is discharged here.
+This module holds the planner's **types and their laws**, and — since P1 and P2 — §8.2's
+**first two steps**.  `dayPlan` is no longer the fork's `DayPlan::empty`: it is that day
+with `dayRows` for its segments and `dayDiagnostics` for its diagnostics, so the day it
+answers has rows in it.  Step one places today's walls (`wallsToday`, `wallRows`,
+`stepOneSegs`, on stage 5's own `Look.wallIxOn`); step two places today's routine instances
+and closes the day with §16's wind-down and sleep (`placeStep`, `placedRoutines`,
+`routineRow`, `stepTwoSegs`).  **Steps 3 to 7 are not written here**: nothing in this module
+cuts a slot, assigns a block, or fills a batch.
+
+*A tripwire, and the one that already fired.*  P0 left two theorems whose job was to stop
+compiling on the day they became false.  **P1 took the first**:
+`the_day_has_no_segments_until_the_first_step_lands` is **deleted** — with
+`dayPlan_diagnostics` and `dayPlan_assigns_nothing_yet`, which P1's body also made false —
+and `Check.lean`'s block records the deletion.  Do not cite it as a live description of this
+module; it is history.  `the_plan_hash_is_a_placeholder_until_the_emitter_lands` **still
+stands** and is P8's to delete.  Nothing in `Goals.lean` is discharged here.
+
+*(W-15 repair: every clause of this paragraph but the last was false of the code it heads —
+the rot class W-14 opened as gap 393, in the stage's central module.  It is re-stated here
+against the code, not against the step that first wrote it.)*
 
 ## What is settled, and by which rule
 

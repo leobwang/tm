@@ -29252,12 +29252,21 @@ was not re-blessed.**
   reads 12 where the design predicted 10; a reader comparing the two will otherwise
   look for a discharge that did not happen. *Which step clears it*: **P5**, which
   places the first Block.
-* **431** — *what is not done*: nothing calls `Planner.mkRoutines?`. *Why*:
-  `PlanReq` has no decoder (gap 346) and `dayPlan` has no boundary op, so gap 285's
-  refusal is a proved kernel rule with no verb behind it, and `tm plan` still
-  schedules a malformed routine. *What it costs*: **gap 285 stays open**, and the
-  audit finding that opened it still reproduces at the CLI. *Which step clears it*:
-  the planner's request decoder, with **P8**'s wire.
+* **431** — *what is not done*: **no shipped verb** calls `Planner.mkRoutines?`.
+  *Why*: `dayPlan` has no boundary op, so gap 285's refusal is a proved kernel
+  rule with no verb behind it, and `tm plan` still schedules a malformed routine.
+  *What it costs*: **gap 285 stays open**, and the audit finding that opened it
+  still reproduces at the CLI. *Which step clears it*: the planner's boundary op,
+  with **P8**'s wire.
+  > **AMENDED at W-15 (the repair step).** As written this gap said *"nothing
+  > calls `Planner.mkRoutines?`"* and gave *"`PlanReq` has no decoder (gap 346)"*
+  > as half the reason. Both were overtaken **in the same run that wrote them**:
+  > `PlannerWit.mkPlanReq?` decodes routines through P2's own `mkRoutines?`
+  > (`PlannerWit.lean:147`), with `mkPlanReq?_refuses_a_routine_the_rule_refuses`
+  > as the refusal law, and gap 451 narrows gap 346. The gap's **substance** —
+  > no verb a user can run reaches the rule — is untouched, and that is what the
+  > text above now says. (Contrast gap 348, banner-amended in place when it
+  > closed; this one was left standing. Found by W-15's reuse critic.)
 * **432** — *what is not done*: `[day]`'s `wind_down` and `bed` cross on the
   **capacity** request, which does not read them. *Why*: the planner has no request
   of its own yet, and `Look.DayCfg` is the kernel's one `[day]` record — splitting
@@ -30275,6 +30284,28 @@ The `tm drop` row is the one this campaign calls reliable because it pays no
 capacity call, and on this tree it is no longer tight. **The band is not
 re-blessed** and the reading is not rounded away: see gap 470.
 
+> **RE-MEASURED at W-15 (the repair step): every number in the table above is a
+> reading of a loaded machine, and the tree is faster than all four of them.**
+> Three `cli_latency` passes at `fc494c5` on an otherwise idle machine, before
+> any build in the session, `--nocapture --test-threads=1`, capped:
+>
+> | row | idle readings (ms) | this block reported | recorded band | where the tree really sits |
+> |---|---|---|---|---|
+> | reseal (`--now +1 day`) | 177.27, 192.46, 182.28 | 202.67-207.67 | 197.5-212.6 | **below the band** |
+> | 3-day-old routine | 101.44, 106.45, 101.42 | 136.64-136.76 | 121.6-136.8 | **below the band** |
+> | `review week` (All) | 253.25, 258.11, 253.19 | 278.54-288.61 | 248.1-253.3 | **at the band**, two of three inside — **not** the 278.5-294.7 "OUT" this block and the brief report |
+> | later verb (`tm drop`) | 126.67, 131.60, 131.75 | 146.63-157.10 | 146.66-147.01 | **below the band** |
+>
+> So gap 470's item-2 drift hypothesis is right and **generalises to all four
+> rows**: the land step's readings were taken after sixteen capped Lean builds
+> and are quoted as if they were the tree. K3a's own same-session figures
+> (187.06, 101.33, 253.29, 126.72) agree with the idle readings, not with these.
+> **Nothing was re-blessed in either direction** — `tm/tests/cli_latency.rs` is
+> byte-identical to `d2c0aa6` (`git diff --stat d2c0aa6 HEAD -- ` on it is
+> empty) and no band in this document was moved. The rows above are left
+> standing, marked, because a ledger that edits its own measurements away is
+> worse than one that shows two and says which machine each came from.
+
 ### What earlier stages bought, re-measured and not assumed
 
 * **D9, ONE reader.** §12's one-reader grep returns **41**, its post-switch floor,
@@ -30318,9 +30349,26 @@ move and should not.
 On a scratch tree outside the repo, `tm init --example`, clock fixed at
 `2026-09-16T14:00:00-05:00`: `tm check` → *"no problems"*; `tm plan` renders the
 day with routines placed (laundry, workout, dinner, groceries, shower) and §16's
-evening (*"21:30 🌙 wind-down · bed 22:00"*, *"22:00 · sleep 8h30m"*) — P2's rows,
-in the shipped output. `tm drop ^d2` and the kernel-backed `move` both answered.
-One drive produced a finding, recorded as gap 471.
+evening (*"21:30 🌙 wind-down · bed 22:00"*, *"22:00 · sleep 8h30m"*) — ~~P2's rows,
+in the shipped output.~~ **These are `tm-core/src/planner.rs`'s rows, not P2's**
+(corrected at W-15's repair step; see below). `tm drop ^d2` and the kernel-backed
+`move` both answered. One drive produced a finding, recorded as gap 471.
+
+> **CORRECTED at W-15 (the repair step).** *"P2's rows, in the shipped output"*
+> is the one claim in this run's ledger the code does not show, and this block
+> contradicts itself on it: :29055 says *"`dayPlan` has no caller, so nothing in
+> the shipped binary calls `mkRoutines?` and `tm plan` still behaves exactly as
+> printed above"*, and :29189 says *"**This row is not live**"*. Re-driven at
+> `fc494c5` on a fresh `tm init --example` tree with the same fixed clock: the
+> output reproduces **exactly**, and `TM_TRACE_KERNEL_CALLS=1` prints exactly
+> `log` and `capacity+log` on the settled tree (and, on the first run of a fresh
+> one, the §6.3 auto-close's `log`/`apply`/`emit` beside them) — **no planner
+> call in either, because there is no planner op to call**
+> (`grep -n '"plan"\|dayPlan' Boundary.lean` and
+> `grep -n 'dayPlan\|plan_op\|"plan"' tm/src/cli/kernel*.rs` both return
+> nothing). The rows look like P2's because P2 was written **against**
+> `planner.rs` as its oracle; that is the design working, and it is not
+> evidence that the kernel produced them. Found by W-15's reuse critic.
 
 ### Gaps opened
 
@@ -30343,8 +30391,33 @@ is not re-blessed.**
    idle machine: take five readings before any build, and either the band holds
    or the merge that moved it is `2398091`/this one and is bisectable between them.
 
+> **ITEM 4 DISCHARGED, GAP STILL OPEN — W-15 (the repair step).** Item 4's
+> measurement was taken: three passes at `fc494c5` on an idle machine before any
+> build in the session. The `tm drop` row read **126.67, 131.60, 131.75 ms** —
+> not above the band but **20 ms below** it, and the same is true of the reseal
+> and 3-day-routine rows, while `review week` came back to **253.19-258.11 ms**,
+> which is its recorded band and not the 278.5-294.7 the land block and the brief
+> call "OUT". So the land step's readings were the drift, and item 2's hypothesis
+> is confirmed and generalised (the full table is in the T11 section above).
+> **The band is still not re-blessed and `cli_latency.rs` is still byte-identical
+> to `d2c0aa6`**: this gap stays open because a band no reading has landed inside
+> for two steps is not a band, and moving it is the owner's call, not a repair
+> step's. *What is owed now*: one step that decides whether 146.66-147.01 is
+> re-derived from idle readings or retired — with, either way, the machine state
+> recorded beside every number (§5.11).
+
 **Gap 471 — the kernel refuses two routines with one title, and `tm check` says
 "no problems".**
+
+> **ITEM 3 IS WRONG, CORRECTED AT W-15 (the repair step).** *"The kernel's
+> title-key collision rule has no caller"* is **false**. `kernel_capacity.rs:820`
+> sends `"docs": docs` — the whole tree — so `Boundary.loadPlan` runs the rule on
+> **every capacity verb**. A collision does not go unnoticed: it **refuses
+> `tm plan`, `tm now`, `tm review day` and `tm drop`**, on a tree `tm check`
+> calls clean. This gap tested `tm check` alone, saw *"no problems"*, and drew
+> the opposite conclusion from it. The behaviour is **gap 475**; the `tm check`
+> blindness this gap did observe correctly is **gap 476**. Items 1, 2 and 4 stand
+> as written, and this gap stays open for them.
 1. *What is not done.* K3a proved `Tm.two_titles_in_one_file_are_a_dupId` and
    `Tm.a_title_colliding_with_an_id_is_refused`. Appending a second
    `- lunch win:12:00-13:00 dur:20m every:day` to `routines.md` on a driven tree
@@ -30396,3 +30469,460 @@ merge; every noisy row is reported as all its readings. The FFI, T5, door,
 witness (`the_witness_day_is_…_and_the_evening`) and every intermediate proof
 attempt were elaborated under `MemoryMax=8G -p MemorySwapMax=0` with `timeout
 600`; none was killed, no bound was raised, and nothing was retried uncapped.
+
+## Stage 6, W-15 repair step, 2026-09-17: a store key is not an `^id`, and the ledger said the opposite of what the binary does
+
+Two independent auditors returned nine findings against `fc494c5`. **All nine
+reproduce** — every one was driven before anything was touched, four of them
+against a binary built from the `d2c0aa6` baseline to separate "new at W-15"
+from "always been there". Two were repaired in code, six in the ledger, and one
+is left standing by name because repairing it means widening a kernel wire and
+that is a track's decision, not a repair step's. **One tenth defect the audit did
+not find** turned up while reproducing the fifth, and is repaired here too.
+
+### The one sentence
+
+D31 made the kernel key an id-less line by its **title**, and nothing downstream
+was told: the diagnostics print that synthesised key as `^<title>` as if a user
+had written it, `tm check` cannot see the collisions it causes, and the ledger
+recorded the whole class as *"no caller"* while four shipped verbs refuse on it.
+
+### Every defect, reproduced first (the brief's rule), with the baseline arm
+
+`tm init --example` on a scratch tree outside the repo; `HEAD` is the release
+binary at `fc494c5`, `base` the release binary built from `git archive d2c0aa6`
+in a scratch tree of its own. Both binaries, same inputs, same session.
+
+| # | defect | driven at `HEAD` | driven at `d2c0aa6` | verdict |
+|---|---|---|---|---|
+| 1 | a title-key collision refuses every kernel-backed verb | `echo '- Factorio' >> inbox.md` → `tm check` *"no problems"* exit 0; `tm plan`/`now`/`review day`/`drop ^d2` all → `kernel refusal: notADemotion — the two lines of ^Factorio …`, exit 1 | **plans normally** (`2026-09-17 · window … · budget 6 blocks`) | **NEW at W-15**, reproduced |
+| 1b | same, `dupId` arm | a second `- read the Lean 4 metaprogramming book` in `inbox.md` → `dupId ^read the Lean 4 metaprogramming book`; a second `- lunch …` in `routines.md` → `dupId ^lunch` | plans normally, both | **NEW at W-15**, reproduced |
+| 2 | `tm check` says "no problems" on a tree `tm plan` refuses, and the refusal says run `tm check` | both halves, on all three trees above | — | reproduced |
+| 3 | the refusal names a synthesised key with a `^` | `^Factorio` appears nowhere in the tree (`grep -rn '\^Factorio'` → nothing) | — | reproduced |
+| 4 | the "Laws restated (D5)" table declares 9 rows, more statements changed | re-extracted independently, below | — | reproduced, **and the audit's own count is short** |
+| 5 | `tm drop <routine title>` bricks the kernel verbs | `tm drop lunch` → `routines.md:3` becomes `- [~] lunch …`; `tm check` *"no problems"*; `tm plan` → `badLine … Tm.PErr.noId`; `tm undo` recovers | **byte-identical**, same message | **PRE-EXISTING**, reproduced |
+| 6 | T11's land-block readings are a loaded-machine artefact | three idle passes, table in the land block above | — | reproduced, and it generalises to all four rows |
+| 7 | `Planner.lean`'s header is stale and cites a theorem P1 deleted | `grep -rn 'theorem the_day_has_no_segments' kernel/` → exit 1 | — | reproduced |
+| 8 | the land block claims P2's rows are "in the shipped output" | `TM_TRACE_KERNEL_CALLS=1 tm plan` → `log`, `capacity+log`, and nothing else (a first run on a fresh tree adds the §6.3 auto-close's 3 `log`, 2 `apply`, 12 `emit`, 1 `capacity+log`). **No planner call in either, and no planner op exists to call.** | — | reproduced |
+| 9 | gap 431's stated reason is stale | `PlannerWit.lean:147` calls `mkRoutines?` | — | reproduced |
+| **10** | **`badLine` prints a 0-based line in a `file:line` message** | a 13-line `backlog.md` whose line 13 is `- [ ] no id on this line` → `backlog.md:12`; `tm check` on the same class of fault says `routines.md:9` for file line 9 | **byte-identical** (`backlog.md:14` for its own line 15) | **PRE-EXISTING**, found here, not in the audit |
+
+**Nothing was adopted unreproduced, and nothing was left unchecked against the
+baseline.** Defect 1's "NEW at W-15" is the load-bearing one: before K3a those
+lines were prose, so no key existed for them to collide on.
+
+### Defect 1 and 2, and why the code fix is a diagnostic and not a rule change
+
+The kernel is **right** here and was not touched. Two lines that resolve to one
+key are refused by name because the alternative is the fork's rule — fall back to
+`file:line` for the *later* of the two — and which line is "later" depends on the
+order the host listed its documents in. That is AGENTS §5.6, the sharpest lesson
+in this repository, and D31 blessed the grammar that makes the rule bite. **A
+refusal is not the defect.** The defects are that the refusal is unfindable and
+that the ledger recorded its opposite.
+
+So what changed is the message, at the one place the kernel's `err` payload
+becomes English (`tm/src/cli/kernel_bridge.rs`):
+
+| | before | after |
+|---|---|---|
+| `dupId` | ``two lines in the tree carry ^{key}; … (run `tm check`)`` | ``two lines in one file resolve to the store key `{key}` `` + the key note |
+| `notADemotion` | `the two lines of ^{key} are not a demotion pair …` | ``two lines in different files resolve to the store key `{key}` and are not a demotion pair …`` + the key note |
+| `ambiguousDemotion` | `the documents do not order the two lines of ^{key} …` | ``… the two lines that resolve to the store key `{key}` …`` + the key note |
+| `--json` detail | `"id": "^{key}"` | `"key": "{key}"` |
+
+The key note is one `const` beside the three, so they cannot drift apart: *"a
+line with no `^id` is keyed by its title, and that key is never written into a
+file, so search the tree for the text itself; `tm check` does not report this
+collision."*
+
+**`dupId` stopped pointing at `tm check`, and that is a correction to gap 239,
+not a reversal of it.** Gap 239 added the pointer on a premise it drove and
+recorded: *"`tm check` on the same tree answers instantly and precisely, naming
+the file and the line."* For the key-collision class the premise is now false —
+`tm check`'s duplicate detection is the host's `Tree::key_of`, which per §5.6
+keys the later line `file:line` and so reports nothing at all. `itemCheck` keeps
+its pointer, because for `itemCheck` gap 239's premise still holds (driven: a
+`- [ ] 2 30m thing ^x1` in `routines.md` gets `routines.md:9: error[routine-shape]`
+out of `tm check`). A pointer is kept where it is true and dropped where it is
+not.
+
+`a_key_collision_names_a_key_and_never_invents_an_id_token` is the test, and it
+fails by name on any of the three re-growing a `^` in front of the key or `dupId`
+re-growing the `tm check` pointer.
+
+### Defect 10, which the audit did not find: one binary, two `file:line` conventions
+
+`Boundary.lean` counts a document's lines from **0** — its own doc comment says
+so, *"0-based, as `badLine`"* — and `tm check` counts from **1**, like every
+other `file:line` a developer's tools read. Both come out of the same binary, in
+the same shape, and nothing said which was which:
+
+Driven, on two trees, because the two conventions never meet inside one command
+and could only be compared by running both:
+
+```
+# backlog.md, 13 lines, the 13th is `- [ ] no id on this line`
+tm plan  → kernel refusal: badLine — backlog.md:12 …          ← points at line 12
+
+# routines.md, 9 lines, the 9th is `- [ ] 2 30m thing ^x1`
+tm check → routines.md:9: error[routine-shape]: …             ← points at line 9
+```
+
+A user sent to `backlog.md:12` reads the line **above** the broken one. The
+kernel's wire is unchanged (it is 0-based by contract, and the corpus, the FFI
+suite and T5 all read it that way); the bridge converts at the one place the two
+conventions meet, through a named `one_based`, for `badLine` and
+`unterminatedComment` alike, in the message **and** in the `--json` detail so the
+binary does not emit two conventions out of one refusal.
+`a_loader_position_is_printed_the_way_tm_check_prints_one` pins it.
+
+This is **pre-existing, not a W-15 regression** — the `d2c0aa6` binary does the
+same thing — and it has been quoted in this document with the off-by-one intact
+at least once: gap 301's item 2 quotes `backlog.md:12` from a drive that
+appended one line to `kernel/corpus/plan-basic/backlog.md`, which is **12 lines
+long**, so the broken line was the **13th** and the number was already off by one
+where it was recorded as evidence. It survived because no single command prints
+both conventions side by side.
+
+### Defect 4: the D5 restatement accounting, re-derived and then corrected upward
+
+The audit says the K3a table declares 9 rows while 26 statements changed. **Both
+halves reproduce, and the audit's own follow-up count is short.** Re-extracted
+independently — every `theorem`/`lemma` header through its `:=` from the 14 `.lean`
+files `git diff --name-only d2c0aa6 HEAD` reports, at both commits, diffed by
+name:
+
+* **2 removed** — `routine_lines_are_open` (K3a refuted it; declared, with its
+  witness and its survivor) and `Planner.mem_stepOneRows` (P2's rename; declared).
+* **117 added** — no restatement owed.
+* **26 changed.** Five of them are in the K3a table (`serialize_parse`,
+  `parse_serialize`, `itemsWf_parts`, `itemsWf_of_parts`,
+  `optional_items_declare_a_duration`); one more, `spec_line_is_an_item`, is
+  declared in the land block's rename list. **The remaining 20 are in no
+  restatement table** — the audit named them and then counted them as 17.
+
+The 20, and why none of them is a narrowing (checked one at a time, not asserted):
+
+| the change | which theorems | narrowing? |
+|---|---|---|
+| `parseItem` → `parseLine` in a **conclusion** about prose | `scanLinesFrom_prose`, `scanLines_prose_outside_a_comment`, `splitDocC_cons` | **no, and not even a change in content.** `keyOf` adds only `noId`, so `parseLine cs = .error .notAnItem ↔ parseItem cs = .error .notAnItem` |
+| `parseItem` → `parseLine` in a **hypothesis** | `load_render_line`, `splitDoc_cons_ok`, `splitDoc_cons_error`, `scanLinesFrom_cons_ok` | **no — strictly stronger.** `parseLine … = .ok` is a *narrower* hypothesis than `parseItem … = .ok` only in the id-less case, and `splitDoc_cons_error`'s is strictly *broader*; each theorem now quantifies over the reading the loader actually performs |
+| `CanonicalItem` gained `r.boxed`, so its `iff` did | `canonical_iff` | **it tracks a declared change.** The predicate's narrowing is row 2 of the K3a table, with `CanonicalKeyed` + `parseLine_serializeItem` named as the wider replacement |
+| `RawItem` literals gained the `boxed` field | `est_key_overrides_the_leading_estimate`, `unset_ci_key_leaves_the_positional_digit` | **no.** A concrete witness gained a field; every old inhabitant was boxed |
+| `mkDayCfg?` gained §16's two clocks | `mkDayCfg?_wf`, `_of_wf`, `_blockMin`, and the six `_refuses_*` | **no.** Two universally-quantified arguments added; every refusal still fires on the same malformed input, and `_of_wf` now round-trips the two new fields too. Declared in prose by P2, not in a table |
+| `stepOneRows` → `dayRows` | `dayPlan_segments` | **a rename.** Declared in prose by P2 |
+
+**So D5 holds and no law narrowed** — the two genuine narrowings in the whole
+diff (`optional_items_declare_a_duration` losing its `openEnded` conjunct, and
+`CanonicalItem` gaining `r.boxed`) are both in the table with their replacements.
+The defect was the table's completeness, and this is the table. *The lesson worth
+carrying: a restatement table built by listing what the step **meant** to change
+misses what a signature change **did** — the mechanical diff is cheap (one
+script, both commits, names as keys) and it is what §7.4's self-check should run.*
+
+### What the ledger said and what the code shows (defects 1, 8, 9)
+
+Three amendments, all **in place, banner-style, with the original text left
+readable** — the pattern gap 348 used and the pattern gaps 431 and 471 did not:
+
+* **Gap 471 item 3** said *"the kernel's title-key collision rule has no
+  caller"*. `kernel_capacity.rs:820` sends `"docs": docs` — the whole tree — so
+  `Boundary.loadPlan` runs on **every capacity verb** — `plan`, `now`,
+  `review day` and `drop` were each driven into the refusal. The rule has as many
+  callers as there are capacity verbs, not none. Items 1, 2 and 4 stand; the gap
+  stays open for them.
+* **The land block's "P2's rows, in the shipped output"** contradicted two
+  sentences in its own run (:29055 and :29189, both saying the row is not live).
+  Re-driven: the output reproduces, the kernel-call trace has no planner call,
+  and `grep` finds no planner op in `Boundary.lean` and no planner call in
+  `tm/src/cli/kernel*.rs`. The rows are `tm-core/src/planner.rs`'s.
+* **Gap 431** said *"nothing calls `Planner.mkRoutines?`"* and gave *"`PlanReq`
+  has no decoder (gap 346)"* as half its reason; both were overtaken **in the
+  same run that wrote them**. Its four-part text now says what is true — no
+  *shipped verb* reaches the rule — which is the substance it always had.
+
+`Planner.lean`'s header (defect 7) is the fourth and the worst, because it is not
+a gap entry but a **live description in the present tense** at the top of the
+stage's central module, and every clause but the last was false: it said the
+module places no wall and cuts no slot (it places walls at `wallsToday`,
+`wallRows`, `stepOneSegs` and routines at `placeStep`, `PlanReq.placedRoutines`,
+`routineRow`, `stepTwoSegs` — `Planner.lean` lines 985, 1129, 1319, 1803, 1828,
+1935 and 1966 after this step's edit), that `dayPlan` is `DayPlan::empty` (it is
+`DayPlan.empty … with segments := dayRows r`, :2065), and that two tripwire
+theorems say so — one of which **P1 deleted**. It is rewritten
+against the code, it says which tripwire fired and which still stands, and it
+marks the deleted name as history so the next grep does not resurrect it.
+
+**This is exactly gap 393's class, in the module gap 393 was opened about**, and
+P2's own block claims the repo-wide sweep was done (:29082, *"the whole-repo grep
+W-14 taught (gap 393)"*). The sweep found `Check.lean`, `PlanCheck.lean` twice
+and three README blocks, and missed the file the theorem used to live in. Run now
+over the whole repo (`.lake` excluded), the six deleted-or-renamed names
+(`the_day_has_no_segments_until_the_first_step_lands`, `dayPlan_assigns_nothing_yet`,
+`dayPlan_diagnostics`, `mem_stepOneRows`, `routine_lines_are_open`,
+`spec_line_is_an_item`) hit **11 lines in 5 files**, and every one is either a
+record of the deletion or a live citation of the *surviving* declaration:
+`Check.lean` ×5 (four record P1's and P2's deletions; one is the live
+`#print axioms Tm.spec_line_is_an_item` for the theorem K3a **renamed**, which
+still exists at `Line.lean:7204` — the fifth hit), `PlanCheck.lean` ×2 (both
+labelled *"a theorem step P1 **deleted**"*), `Plan.lean` ×1 (*"refuted"*, with
+its replacement), and `Planner.lean` ×2 — this step's amended header. **No live
+description of a deleted theorem remains in any Lean module.** The dated step
+blocks in this document keep their citations, because a dated block is a record
+of what was true at its commit and §6.4 says so.
+
+### AGENTS §5.3: what was CONSUMED, and what was not re-implemented
+
+**This step defines nothing.** It adds no definition, no theorem, no axiom line
+and no goal; the kernel's Lean diff is a doc comment. It therefore consumes no
+stage-5 artefact by call — and, having written no algorithm at all, it
+re-implements none of `Look.windowEnd`, `windowOn`, `budgetOf`,
+`wallIndex`/`wallsOn`/`wallIxOn`, `freeIntervals`, `cutSlots`, `hsw100`,
+`predictAt`, `capForLocation`, `energize`, `limitSlots`,
+`Look.day0Window`/`day0Cut`/`todayEnergy`/`day0Hist`,
+`Arith.ramp`/`posteriorNum`/`energyAfter`, `Tree.remainingMin`,
+`Plan.effectiveCi`, `Plan.rootPrio`, `Look.Cand`/`Cand.enters`/`servedOrder`/
+`prioritiesWithFloors`, `Prio.finalPrio`/`hysteresis`, or `Cap.edf`/`edfGrants`.
+The one place it *names* stage-5 work is the rewritten `Planner.lean` header,
+which now says out loud that step one runs on **`Look.wallIxOn`** — W-14's
+widened index, not a planner copy of it.
+
+The Rust change is subtractive in the same sense: **no second reader was
+added.** The bridge is handed the kernel's own `err` payload and renders it; it
+does not go back to the tree to find the colliding lines, which is the one repair
+that would have been a §5.3 defect (the host's `Tree::key_of` is a *second*
+answer to "what is this line's key", and asking it here is how the two readings
+would start disagreeing in a diagnostic).
+
+### What was NOT fixed, and why — the honest half
+
+**The defect this step could not repair is defect 1 itself.** A user whose tree
+holds two lines with one title now gets a refusal that names the key and says
+where keys come from — but still has to find the two lines by hand, because the
+kernel's `LErr.dupId` carries the key and **not the two placements**. The fix
+that would make the message complete is to widen `LErr.dupId` /
+`.notADemotion` / `.ambiguousDemotion` to carry both `path:line` pairs — the
+§5.3 "widen the artefact, prove the old view is a projection" move, exactly as
+P1 did with `Look.WallIx`. That is a **wire change**: `lerrJson` and its
+build-order theorems, `Boundary.lean`'s `pairedEntity` and `buildEntity` (whose
+`| _ => .error (.dupId i)` arm has three or more placements to choose from),
+§2.4's wire table, the bridge's decoder and the FFI corpus all move with it. It
+is a track's commit under D19, not a repair step's, and inventing it here would
+be the kind of partial landing the campaign forbids. **Gap 475 records it by
+name with the shape the fix has to take.**
+
+Likewise **`tm check`'s blindness (gap 476)** and **`tm drop`'s boxed id-less
+line (gap 477)** are recorded and not fixed: the first wants `tm check` to ask
+the kernel to load the tree — a new kernel call on the one verb D18 made load
+*tolerantly*, which needs the owner's call on what `tm check`'s exit code then
+means; the second is a host command writing a line its own kernel refuses, and
+the two ways out (write the `^id`, or widen `keyOf` to key a boxed id-less line
+by its title against cheat 174) are both grammar decisions that belong to D31's
+track, not here.
+
+### Behaviour rows
+
+| | before | after |
+|---|---|---|
+| a tree with two title-key-colliding lines, `tm plan` | ``kernel refusal: dupId — two lines in the tree carry ^lunch; … (run `tm check`)`` | ``kernel refusal: dupId — two lines in one file resolve to the store key `lunch` (a line with no `^id` is keyed by its title, and that key is never written into a file, so search the tree for the text itself; `tm check` does not report this collision); the kernel refuses a tree it cannot load whole`` |
+| the same tree, `tm --json plan` | `"detail":{"id":"^lunch",…}` | `"detail":{"key":"lunch",…}` |
+| a `backlog.md` whose **13th** line has no id, `tm plan` | `badLine — backlog.md:12 …` | `badLine — backlog.md:13 …` |
+| the same, `tm --json plan` | `"line":12` | `"line":13` |
+| every other refusal, every verb's success path, every file on disk | — | **unchanged** |
+
+No verb gained or lost a refusal, no exit code moved, and no file the binary
+writes changed by a byte.
+
+### The burn-down (AGENTS §3.2)
+
+**12 outstanding, all stage 6 — unchanged.** No goal was discharged, none was
+added, and none was deleted: this step proves nothing, so it is owed no
+`#print axioms` line and takes none. `Goals.lean` is byte-identical to
+`fc494c5`.
+
+### Measured, at this commit, every command capped
+
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` on every
+`lake`, `lean`, `cargo`, `check.sh` and `tm` invocation below. No bound raised,
+nothing retried uncapped, no `decide` or `rfl` witness added to probe.
+
+| row | here | land step `fc494c5` | baseline `d2c0aa6` |
+|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | 7/7 |
+| check.sh warm | **3.14 / 3.14 / 3.24 s** | 3.17 / 3.21 / 3.17 | — |
+| peak RSS | **1.95-2.00 GiB** (2,046,812-2,098,476 KiB) | 1.89-1.99 GiB | — |
+| axiom audit | **4,265 theorems**, §6.3 reconciliation `ok` | 4,265 | 4,151 |
+| burn-down | **12, all stage 6** | 12 | 12 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 |
+| `cargo test --workspace` | **1,318 passed / 0 failed / 9 ignored, 78 result lines** | 1,316 / 0 / 9, 78 | 1,316 / 0 / 9 |
+| FFI suite | **100 / 0** (kernel 86, corpus 8, stack 6) | 100/0 | 100/0 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | same |
+| the door (`kernel_log_door`) | **23 / 0** | 23/0 | 23/0 |
+| `cli_switch_acceptance` | **9 / 0** | 9/0 | 9/0 |
+| `kernel_call_counts` | **2 / 0** | 2/0 | 2/0 |
+| `cli_check_log` | **9 / 0** | 9/0 | 9/0 |
+| `kernel_lookahead_parity` | **4 / 0** | 4/0 | 4/0 |
+| `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | 5/0/1 ×5 | 5/0/1 |
+
+**The one delta, and all of it: `cargo test --workspace` 1,316 → 1,318.** Two
+tests, both added here, both in `tm/src/cli/kernel_bridge.rs`'s unit module —
+`a_key_collision_names_a_key_and_never_invents_an_id_token` and
+`a_loader_position_is_printed_the_way_tm_check_prints_one`. The binary count is
+unchanged at **78**, the ignored count unchanged at **9**, and 0 warnings.
+`kernel_call_counts`'s pairing assertion still passes, which is correct: the
+one-call shape has not landed, and this step did not touch a call site.
+
+**check.sh's time did not rise:** midpoint **3.14 s** against the land step's
+**3.17 s**, **-0.9%**, far inside the 10%-per-step rule. Peak RSS 1.95-2.00 GiB
+against 1.89-1.99 — the same band, and nowhere near the 40 GiB cap.
+
+**Every kernel number is identical to the land step's, and that is the claim this
+step makes about itself**: the axiom audit did not move because no theorem was
+added or removed, and the corpus did not move because the grammar was not
+touched. The only Lean edit is a doc comment.
+
+### Gaps opened
+
+Range 475-489 is this step's. **Five taken, 475-479; 480-489 unused.** Highest
+on the branch: **gap 479**, cheat 176 (none added here), parity P38 (none added).
+
+**Gap 475 — a store-key collision refuses four shipped verbs and the message
+cannot name the two lines.**
+1. *What is not done.* Two lines that resolve to one store key refuse
+   `tm plan`, `tm now`, `tm review day` and `tm drop` (and every other capacity
+   verb) with `dupId` or `notADemotion`. The message now names the key honestly
+   and says where a key with no `^` comes from, but it still **cannot name the
+   two lines**, because `LErr.dupId`, `.notADemotion` and `.ambiguousDemotion`
+   each carry an `Id` and nothing else. Finding the pair is still a hand grep.
+2. *Why.* Naming them means widening those three constructors to carry both
+   placements' `path` and `line` — AGENTS §5.3's "widen the artefact and prove
+   the old view is a projection", the move P1 made on `Look.WallIx`. That is a
+   **wire** change under D19: `lerrJson` and its build-order theorems,
+   `pairedEntity` and `buildEntity` (whose `| _ => .error (.dupId i)` arm sees
+   three or more placements and must choose which two it names), §2.4's wire
+   table, `kernel_bridge.rs`'s decoder, and the FFI corpus. A repair step that
+   started it would either land it half-done or spend the step on it.
+3. *What it costs.* The class D31 made reachable is the class the user is least
+   equipped to find: **the colliding key is synthesised, so there is no token in
+   any file to grep for** — only the title text, which may legitimately appear in
+   both lines and in prose besides. Driven: `- Factorio` appended to `inbox.md`
+   of a `tm init --example` tree brings down four verbs, and `grep -rn '\^Factorio'`
+   returns nothing. This is **new at W-15** (the `d2c0aa6` binary plans the same
+   tree normally), so it is a usability regression the grammar bought, recorded
+   rather than argued away.
+4. *Which stage clears it.* K3b, or whichever step next opens `LErr` — with
+   `dupId_carries_both_placements` (or its kin) and the projection theorem that
+   the old one-`Id` view is `.map Placement.id` of the new one, so §5.3's
+   "prove the old view is a projection" is discharged and not assumed.
+
+**Gap 476 — `tm check` cannot see a refusal that stops every other verb.**
+1. *What is not done.* `tm check` answers *"no problems"*, exit 0, on three
+   trees that `tm plan` refuses outright (a colliding `- Factorio`, a duplicated
+   inbox line, a duplicated routines line). Nothing was done to `tm check`.
+2. *Why.* `tm check` is the **one verb that loads tolerantly** (D18, gap 145),
+   precisely so it survives a tree no other verb can read — it is how the broken
+   line is found. Making it ask the kernel to load the whole plan is a new kernel
+   call on that verb and, worse, a decision about what its **exit code** then
+   means: a tree the kernel refuses is a tree `tm check` would have to fail, and
+   `tm check` is wired into `.githooks/pre-commit` and `.claude/hooks/tm-check.sh`
+   in every generated plan. That is the owner's call, not a repair step's.
+3. *What it costs.* The loop: the refusal used to end *"(run `tm check`)"* and
+   `tm check` said nothing. The pointer is gone (this step), so the user is no
+   longer sent in a circle — but the verb whose whole job is "find the broken
+   line" still cannot find this one, and gap 239's promise ("a tree refusal names
+   where to look") holds for `itemCheck` and not for the loader's three key
+   collisions.
+4. *Which stage clears it.* D27's landing, or a step the owner authorises to give
+   `tm check` a kernel load with a decided exit-code contract. Gap 475's widened
+   `LErr` is a **prerequisite either way**: `tm check` reports `file:line`, and
+   until the kernel's refusal carries one there is nothing for it to print.
+
+**Gap 477 — `tm drop <routine title>` writes a line the kernel refuses, and
+`tm check` calls it clean.**
+1. *What is not done.* Two commands from a fresh tree: `tm init --example`;
+   `tm drop lunch` → *"dropped ^lunch"*, and `routines.md`'s third line becomes
+   `- [~] lunch      win:11:30-13:30 dur:30m  every:day` — **boxed, with no
+   `^id`**, which is `PErr.noId` by `keyOf`'s own rule (cheat 174, unchanged by
+   K3a). `tm check` → *"no problems"*; `tm plan`, `tm now` and `tm move` →
+   `badLine — routines.md:3 … (Tm.PErr.noId)`. `tm undo` recovers it.
+2. *Why.* **PRE-EXISTING, not a W-15 regression** — the `d2c0aa6` binary does the
+   identical thing, verified byte for byte in the same session. The two repairs
+   are (a) the host writes the `^id` when it boxes a title-keyed line, which puts
+   a token in the user's file that was not there, or (b) `keyOf` keys a **boxed**
+   id-less line by its title too, which retires cheat 174 and reverses D31's
+   deliberate "a boxed line is a tracked item whose id the kernel does not
+   invent". Both are grammar decisions on D31's own ground.
+3. *What it costs.* A single, documented, one-word command bricks every
+   kernel-backed verb on the tree, and the verb that exists to diagnose that says
+   nothing (gap 476 again, on a different fault). It also means **K3a's behaviour
+   row is wrong about the shipped binary**: that row says a command that would put
+   a state on a box-less line now answers `{"err":{"kernel":"badHorizon"}}`, and
+   what `tm drop lunch` actually does is succeed, write the line, and refuse
+   every *later* verb with `badLine`.
+4. *Which stage clears it.* K3b, with D31's owner: the row above is a decision
+   between (a) and (b), and the decision belongs in the design before the code.
+
+**Gap 478 — the restatement table is built from intent, and §7.4 has no
+mechanical check.**
+1. *What is not done.* Nothing automates the D5 restatement accounting. The K3a
+   table declared 9 rows; the mechanical diff finds 26 changed statements, of
+   which 20 were in no table (six more were declared only in prose). This step
+   supplies the table for W-15 by hand and leaves no instrument behind.
+2. *Why.* The extraction is a 40-line script over `git show <rev>:<file>` at two
+   commits, keyed by theorem name — cheap — but where it belongs is `check.sh`
+   or §7.4's self-check, and adding an eighth check to `check.sh` moves a number
+   this document quotes on every block. That is a decision about the instrument,
+   which AGENTS §7.3 and D21-D23 say is not changed casually.
+3. *What it costs.* D5 is the campaign's load-bearing rule and its compliance is
+   currently attested by whichever statements the author noticed changing. Here
+   every one of the 20 checked out as non-narrowing — but that is a result, not a
+   guarantee, and the next signature change gets the same unaided review.
+4. *Which stage clears it.* Any step that adds the diff to §7.4 as a documented
+   command a reviewer runs, or to `check.sh` as check 8 with its own baseline.
+
+**Gap 479 — CLOSED at W-15 (this step): the loader's `file:line` was 0-based
+where every other one is 1-based.**
+1. *What was not done.* `kernel_bridge.rs` printed the kernel's 0-based line
+   straight into a `path:line` message for `badLine` and `unterminatedComment`,
+   so a fault on file line 13 read `backlog.md:12` and pointed at line 12. The
+   same binary's `tm check` prints 1-based. Pre-existing; the `d2c0aa6` binary
+   does it too.
+2. *What was done.* One named converter, `one_based`, at the bridge — the single
+   place the kernel's wire becomes English — applied to both refusals, in the
+   message and in the `--json` `line` detail so one refusal does not carry two
+   conventions. **The kernel's wire is unchanged**: 0-based is its contract and
+   the corpus, the FFI suite and T5 all read it that way.
+3. *What is owed.* Nothing by name.
+   `a_loader_position_is_printed_the_way_tm_check_prints_one` fails if either
+   refusal drops the conversion, and the `one_based` doc comment states both
+   conventions and which side of the bridge each lives on.
+
+### Gaps left open, by name
+
+Everything the land step left open stays open, with three amended in place and
+none closed: **470** (amended — item 4's idle measurement taken, the band still
+not re-blessed), **471** (amended — item 3 corrected; items 1, 2, 4 stand),
+**472**, **431** (amended — its stated fact corrected, its substance unchanged),
+**430**, **432**, **285**, **346**/**451**, **348** (already closed at W-15),
+**393** (this step is a second instance of its class and does not close it),
+**275**, **301** item 1, **113**/**114**/**116** (D27, whole), **400**,
+**401**, **402**.
+
+### Method disclosure
+
+Every command capped as above. `check.sh` was run **four** times in this
+checkout: once cold after the `Planner.lean` header edit (a full Lean rebuild —
+not quoted as a warm figure) and three warm, which are the readings quoted.
+`cargo test --workspace` was run **twice** (once before the README work, once on
+the final tree). `cli_latency` was run **three** times, on an **otherwise idle
+machine before any build in this session** — that ordering is the whole point of
+the re-measurement and it is why the readings are quoted as three numbers and
+never as one. Two release binaries were built: `fc494c5` in the repo, and
+`d2c0aa6` from `git archive` in a scratch tree outside it, so the baseline arm of
+every driven comparison is a real binary and not a recollection. The FFI, T5,
+door, `cli_switch_acceptance`, `kernel_call_counts`, `cli_check_log` and
+`kernel_lookahead_parity` suites were run on the final tree. **No Lean proof was
+added, so nothing was probed at `MemoryMax=8G`**; no bound was raised and nothing
+was retried uncapped. No worktree was created and
+`.claude/worktrees/stage5-lookahead` was not touched.
