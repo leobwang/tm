@@ -30409,6 +30409,15 @@ is not re-blessed.**
 **Gap 471 — the kernel refuses two routines with one title, and `tm check` says
 "no problems".**
 
+> **CLOSED at W-16 (track A, `f50cd00`), on the half that was left standing.**
+> Item 3 was corrected below; items 1 and 2 said `tm check` answers *"no
+> problems"* on a colliding tree and that the kernel's rule is proved but
+> nothing on the shipped path asks it. Both are now false, in the user's favour:
+> D32 item 2 gives `tm check` its own kernel load, so the same tree answers two
+> `error[kernel-load]` lines and exits 2. Item 4 named D27 as the step that
+> would clear this; it was cleared earlier, by D32. The text below is left
+> readable as the record of what was true at `8c3b6dc`.
+
 > **ITEM 3 IS WRONG, CORRECTED AT W-15 (the repair step).** *"The kernel's
 > title-key collision rule has no caller"* is **false**. `kernel_capacity.rs:820`
 > sends `"docs": docs` — the whole tree — so `Boundary.loadPlan` runs the rule on
@@ -30789,6 +30798,16 @@ on the branch: **gap 479**, cheat 176 (none added here), parity P38 (none added)
 
 **Gap 475 — a store-key collision refuses four shipped verbs and the message
 cannot name the two lines.**
+
+> **CLOSED at W-16 (track A, `9fa58fc`), exactly as item 4 asked.**
+> `LErr.dupId`, `.notADemotion` and `.ambiguousDemotion` carry both placements'
+> `path` and `line`; the projection theorem is
+> `buildEntity_collision_is_a_projection` (both spots are `Placement.spot` of
+> placements the loader held, and `.map Placement.id` over them gives back the
+> one `Id` the error used to be); and the payload's *order* is a total order on
+> the position, so `pairedEntity_order_independent` holds of what the refusal
+> says (`spotPair_comm`). The wire, §2.4's table, the bridge decoder, the FFI
+> corpus and the oracle example's key reader moved in that one commit (D19).
 1. *What is not done.* Two lines that resolve to one store key refuse
    `tm plan`, `tm now`, `tm review day` and `tm drop` (and every other capacity
    verb) with `dupId` or `notADemotion`. The message now names the key honestly
@@ -30817,6 +30836,15 @@ cannot name the two lines.**
    "prove the old view is a projection" is discharged and not assumed.
 
 **Gap 476 — `tm check` cannot see a refusal that stops every other verb.**
+
+> **CLOSED at W-16 (track A, `f50cd00`).** `tm check` makes one kernel call —
+> `{"docs":…,"cmds":[]}`, no `log` section, no `state.json`, no commands — and
+> reports a refusal as an **error** at the lines it names, one problem per line.
+> Item 2's two worries are both answered rather than waved away: D18 is intact
+> (that request carries no log, and the combined case is driven), and the exit
+> code is **2**, the spec's own "validation problems" code that every other
+> `tm check` error already uses. Item 4's prerequisite — gap 475's widened
+> `LErr` — landed in the commit before it, as item 4 said it must.
 1. *What is not done.* `tm check` answers *"no problems"*, exit 0, on three
    trees that `tm plan` refuses outright (a colliding `- Factorio`, a duplicated
    inbox line, a duplicated routines line). Nothing was done to `tm check`.
@@ -30840,6 +30868,16 @@ cannot name the two lines.**
 
 **Gap 477 — `tm drop <routine title>` writes a line the kernel refuses, and
 `tm check` calls it clean.**
+
+> **CLOSED at W-16 (track A, `c4726e2`), by the owner's D33 — route (a) of
+> item 2, and cheat 174 stays.** The host writes the `^id` when it boxes a
+> title-keyed line, the resulting tree loads, `tm undo` takes the token back off
+> with the box, and the answer names the token it wrote. The *other* half item 3
+> complained of — "the verb that exists to diagnose that says nothing" — is gap
+> 476, closed one commit earlier: `tm check` now catches this exact tree. Item
+> 3's last sentence stands corrected too: K3a's behaviour row was right about
+> the kernel and wrong about `tm drop`, because `tm drop`'s id-less branch never
+> reached the kernel — **gap 531** records what still happens when it does.
 1. *What is not done.* Two commands from a fresh tree: `tm init --example`;
    `tm drop lunch` → *"dropped ^lunch"*, and `routines.md`'s third line becomes
    `- [~] lunch      win:11:30-13:30 dur:30m  every:day` — **boxed, with no
@@ -31504,7 +31542,8 @@ re-blessed.
 | row | W-16 final | `f50cd00` | `9fa58fc` | `995323b` |
 |---|---|---|---|---|
 | check.sh | **7/7 ok** | 7/7 | 7/7 | 7/7 |
-| check.sh warm | **3.12 / 3.17 / 3.13 s** (measured at `9fa58fc`; no Lean changed after it) | — | 3.12/3.17/3.13 | — |
+| check.sh warm | **3.18 / 3.19 / 3.15 s** on the final tree, and **3.12 / 3.17 / 3.13 s** at `9fa58fc` — the *same* Lean tree, because the second and third commits add no Lean, so the 0.05 s between them is this machine's noise and is quoted as both rather than as one | — | 3.12/3.17/3.13 | — |
+| peak RSS | **1.92-1.99 GiB** (2,013,088-2,090,664 KiB) | — | 1.96-1.98 GiB | 1.95-2.00 GiB (`8bc3` W-15) |
 | axiom audit | **4,275 theorems**, §6.3 reconciliation `ok` | 4,275 | 4,275 | 4,265 |
 | burn-down | **12, all stage 6** | 12 | 12 | 12 |
 | corpus round trip | **29/37 files, 4/5 whole plans** | same | same | same |
@@ -31517,6 +31556,10 @@ re-blessed.
 | `cli_check_log` | **10 / 0** | 10/0 | 9/0 | 9/0 |
 | `kernel_lookahead_parity` | **4 / 0** | 4/0 | 4/0 | 4/0 |
 | `cli_latency` | **5 passed / 0 / 1 ignored** | 5/0/1 | 5/0/1 | 5/0/1 |
+
+Against `8c3b6dc`'s **3.14 / 3.14 / 3.24 s**, the final tree's midpoint **3.18 s**
+is **+1.3%** — inside the 10%-per-step rule, and the whole of it lands in the
+first commit, which is the only one that changed Lean.
 
 **The test arithmetic closes with no remainder:** 1,318 (`995323b`) + 1
 (`a_key_collision_names_both_lines`) = 1,319; + 2 (`check_sees_a_kernel_load_refusal`,
