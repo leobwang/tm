@@ -33641,7 +33641,7 @@ probes that found `Char.ext` and `UInt32.lt_iff_toNat_lt` were run at 8G with a
 
 <!-- ===========================================================================
      Stage 6, W-17, track P, step P4 — §8.2 step 4, PRIORITY.
-     Gap range 600-629 (six taken: 600-605).  Cheats 184-187.
+     Gap range 600-629 (seven taken: 600-606).  Cheats 184-187.
      Whoever merges next renumbers (AGENTS §6.4).
      =========================================================================== -->
 
@@ -33952,7 +33952,7 @@ at all by this step**, so every row here is the machine's.
 
 ### Gaps opened
 
-Range **600-629** is track P's for this run.  **Six taken, 600-605; 606-629 free.**
+Range **600-629** is track P's for this run.  **Seven taken, 600-606; 607-629 free.**
 
 **Gap 600 — §9.1's 5 ms TUI tick trigger cannot fire, and the fallback is the owner's call.**
 1. *What is not done.*  The trigger is not implemented and this step does not implement it.  T12
@@ -34032,6 +34032,31 @@ wire.**
    the round trip `plan → state.json → plan` has one leg outside the kernel.
 4. *Which step clears it.*  **P8**, with the response's `priorities` key.
 
+**Gap 606 — P5's assign fold reads nine candidate facts the wire does not carry, and this is
+measured rather than expected.**
+1. *What is not done.*  §8.2 step 5 is not written, and the record it would read is one field
+   short in nine places.  `Look.Cand` carries twelve facts: `id`, `ci`, `rootPrio`, `remaining`,
+   `due`, `window`, `wall`, `optional`, `overdue`, `mandatory`, `hot`, `yesterday`.  Fork
+   `Planner::build_groups` and `Planner::pick` (`planner.rs`) read, off each `Candidate`:
+   `planned_min`, `multiplier`, `loc`, `splittable`, `cap` and `cap_done_min` (through
+   `cap_left_min()`), and `priority::sorted_candidates`' own filter reads `state`, `blocked_by`
+   and `wall_today`.  **Not one of those nine is on the wire.**  (`remaining`, `ci`, `window`,
+   `wall` and `optional` — what `priority::batches` and the group filter need besides — are.)
+2. *Why it is recorded rather than fixed.*  D34 already names the shape: `Candidate` has thirty
+   fields of which D27's nine are a slice, *"the shipped planner reads sixteen more"*, and
+   `collect_candidates` dies with `planner.rs` at **R3 and not before**.  So the nine below are
+   P5's to put on the wire — host-collected, exactly as the present twelve are — and D27 later
+   changes where they come from, not what they are.  Widening the wire is a wire change and D19
+   says separable work lands first, which is why P4 did not do it: P4 needs none of the nine.
+3. *What it costs.*  P5 is not "write the fold": it is a wire widening (`Look.Cand`,
+   `Boundary.readCand`, `cand_json`, and R10's bound and rejection theorem for each new field)
+   **and then** the fold.  Estimating P5 at design §14.2's 700/2,600 without that half is the
+   same miss design §6.2 records for `dayPlan_ok`.  Each of the nine is derivable inside the
+   kernel from `PlanCore` and the D24 run — `loc:`, `splittable`, `max:`, `est:` and the box are
+   the item's, `cap_done_min` and `blocked_by` are the run's — so a step that *chose* to derive
+   them would be doing D27 early, which D34 forbids.
+4. *Which step clears it.*  **P5**, for the wire; **D27 at R3**, for the derivation.
+
 ### Gaps left open, by name
 
 **500** (D27 half done) and **501** (`Recur.lean` has no caller) are still the two to read first, and
@@ -34053,7 +34078,9 @@ decoder) are untouched.  **285**, **346**, **347**, **365** (`eligibleAt`), **39
 * **It did not build P5.**  §8.2 step 5 — the cursor, the batch split, `eligibleAt`, the `max:` cap,
   the atomic run and the six §6.3 restatements — is not started.  The brief's own instruction was to
   land P4 green rather than half-build the assignment, and that is what happened.  The six goals
-  §6.4 gives to P5 are still in `Goals.lean`, untouched.
+  §6.4 gives to P5 are still in `Goals.lean`, untouched.  **And the reason it is a bigger step than
+  its row says is measured, not felt**: gap 606 names the nine candidate facts the fold reads that
+  the wire does not carry, read off `build_groups` and `pick` by line rather than assumed.
 * **It did not touch D27**: `Look.Cand` is unchanged, `cand_json` is unchanged, and gaps 113, 114,
   116 and 301 item 1 are whole.
 * **It did not apply the eligibility filter** (gap 602), and says so rather than writing a filter
@@ -34072,9 +34099,9 @@ decoder) are untouched.  **285**, **346**, **347**, **365** (`eligibleAt`), **39
 
 ### Numbering
 
-Gaps: this step **600-605**; 606-629 free.  Cheats: **184-187** taken, none renumbered —
+Gaps: this step **600-606**; 607-629 free.  Cheats: **184-187** taken, none renumbered —
 `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d` prints nothing and check 4 still
-rejects the file.  No audit name appears twice (4,428 lines).  **Highest on the branch: gap 605,
+rejects the file.  No audit name appears twice (4,428 lines).  **Highest on the branch: gap 606,
 cheat 187, parity P38.**
 
 ### Worktrees
