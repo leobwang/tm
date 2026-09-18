@@ -245,6 +245,8 @@ inductive Note
   | breakWhere (text : List Char)
   /-- `planner.rs:2076` — a replayed `Idle`'s attribution, the log's own text likewise. -/
   | idleAttributed (text : List Char)
+  /-- `planner.rs:1748` — "running · <n>m left", on §8.2 choice 5b's reservation (step P3). -/
+  | runningLeft (leftMin : Nat)
 deriving DecidableEq, Repr
 
 /-! ## `SegFlags` — the marks, and only the marks
@@ -936,6 +938,18 @@ theorem segOf_is_the_row_inside_the_calendar (s : Seg) (h1 : s.start ≤ s.stop)
 
 theorem segOf_kind (s : Seg) : (segOf s).val.kind = s.kind := rfl
 theorem segOf_item (s : Seg) : (segOf s).val.item = s.item := rfl
+
+/-- **The forcing only ever shrinks a row**, so every second the placed row covers is a second
+the written row covered.  This is what lets a law about `[t.start, t.stop)` be read off the
+`WfSeg` the day actually holds. -/
+theorem segOf_units (t : Seg) {u : Nat} (h1 : (segOf t).val.start ≤ u)
+    (h2 : u < (segOf t).val.stop) : t.start ≤ u ∧ u < t.stop := by
+  have e1 : (segOf t).val.start = clampSec t.start := rfl
+  have e2 : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+  rw [e1] at h1
+  rw [e2] at h2
+  simp only [clampSec, LogStamp.yearEnd] at h1 h2
+  omega
 
 /-! ### The day's own bounds, and the one place the request's walls are checked -/
 
@@ -1783,13 +1797,316 @@ def PlanReq.anchorOf (r : PlanReq) (i : Id) : Option Nat :=
 (the `buffer:` run-up included, which is why this reads `x.lo` and not `x.evLo`) and §9's running
 interruption.
 
-**The Active reservation is NOT here** (design §2 choice 5b; fork `run()` pushes `active_run`
-before `place_mandatory_and_pref`).  It is not a missing input — see this section's header — but
-the first Block row the planner places, which `PlanCheck` cannot yet accept.  README gaps 434
-and 437. -/
+**The Active reservation is NOT here** — it joins in `PlanReq.blockedBeforeRoutines`, which is
+what step 2's fold and step 3's cut actually start from (§8.2 choice 5b, step P3).
+
+**The span is `max x.evLo x.hi` and not `x.hi` — a repair, step P3** (README gap **552**).  Fork
+`run()` blocks `(w.blocked_start, w.end)` where `WallSeg`'s three instants satisfy
+`blocked_start ≤ start ≤ end` by construction; `Look.WallIx` carries no such bound, and
+`Look.wallOfEntity` builds `evLo`/`hi` straight out of `at:<s>/<f>`, which the grammar accepts
+inverted.  On a wall written `at:…T13:50/12:50` **with** a `buffer:`, `wallRows` still emits the
+run-up row `[lo, evLo)` while `(x.lo, x.hi)` stops at `hi < evLo`, so step 2 could place a
+routine inside a wall's own buffer and step 3 could cut slots there.  `max` only ever widens —
+it is the identity on every wall whose interval runs forwards — and it is what makes
+`a_wall_row_is_covered_by_the_blocked_list` true without a hypothesis. -/
 def blockedByWalls (r : PlanReq) : List (Nat × Nat) :=
-  (wallsToday r).map (fun x => (x.lo, x.hi)) ++
+  (wallsToday r).map (fun x => (x.lo, max x.evLo x.hi)) ++
     (interruptRows r).map (fun s => (s.start, s.stop))
+
+
+/-! ############################################################################
+## §8.2 choice 5b — the running block is RESERVED, not assigned (stage 6, step P3)
+
+Fork `Planner::active_run` (`planner.rs:1497`) and `run()`'s §9 paragraph: the block that is
+running takes its remaining minutes **before** the routines are placed and **before** the slots
+are cut, so nothing is scheduled on top of a block that is running.  It is a reservation and not
+a slot, so it carries no slot energy (`emit_segments`, `planner.rs:1741`: `energy: None`).
+
+**This is the first `SegKind.block` row the planner itself places**, and that is what makes it
+the step it is: six of `PlanCheck`'s seven eligibility-free checks quantify over a Block row,
+and until now every one of them was about a row `Planner.pastRows` replayed from the log.
+README gaps **433** and **434** are what this section closes.
+
+*The fork's six refusals, each kept by name* — a paused timer, an interruption covering `now`,
+§9.1's `d done` what-if, an estimate already spent, a day whose limit has passed, and a wall
+sitting on `now`.  A seventh, `end <= now`, is the arithmetic's own.
+############################################################################ -/
+
+/-- **Fork `ActiveRun`** (`planner.rs:1477`) — the reservation, in absolute seconds.  `mult` is
+the candidate's multiplier and is **P4**'s (README gap 550); the fork reads it off the candidate
+list, which the kernel does not collect yet. -/
+structure ActiveRes where
+  id      : Id
+  start   : Nat
+  stop    : Nat
+  leftMin : Nat
+deriving DecidableEq, Repr
+
+/-- **The request agrees with `mkActive?`.**  `RuntimeIn.active` is a plain `Option
+ActiveBlock`, so nothing in the type stops a decoder handing in a block that started *after*
+`now`; `ActiveBlock.wf` is the bound and `mkActive?` is its smart constructor (R10, step P0).
+This is the request-level statement of "the decoder used it", in exactly the shape
+`PlanReq.wallsAgree` has, and it is the hypothesis `plan_reserves_one_block_at_a_time` carries
+for the same reason `plan_never_moves_a_wall` carries `hagree` (README gap **346**). -/
+def PlanReq.activeAgrees (r : PlanReq) : Bool :=
+  match r.state.active with
+  | none => true
+  | some a => ActiveBlock.wf r.now a
+
+/-- A request with nothing running agrees trivially. -/
+theorem PlanReq.activeAgrees_of_none (r : PlanReq) (h : r.state.active = none) :
+    r.activeAgrees = true := by unfold PlanReq.activeAgrees; rw [h]
+
+/-- **A block the smart constructor accepted agrees** — the R10 obligation "a smart constructor
+its decoder actually uses", stated so a decoder can discharge it. -/
+theorem PlanReq.activeAgrees_of_mkActive? (r : PlanReq) (a : ActiveBlock) (w : WfActive r.now)
+    (h : r.state.active = some a) (hw : mkActive? r.now a = some w) : r.activeAgrees = true := by
+  unfold PlanReq.activeAgrees
+  rw [h]
+  unfold mkActive? at hw
+  split at hw
+  · assumption
+  · exact absurd hw (by simp)
+
+/-- **The `[day]` the request carries is one `mkDayCfg?` would have built** (R10;
+`Look.mkDayCfg?_wf` is what establishes it).  The one clause this step needs of it is
+`1 ≤ block_min`: the fork's `current_block_end` puts **no** bound on the run when `block_min` is
+zero (`planner.rs:1578`, "a zero `block_min` … puts no bound on the run at all") and
+`Look.cutSlots` answers the empty cut there, so E1 is genuinely false on a hand-edited config
+and this is the hypothesis that says so rather than a weakening that hides it. -/
+def PlanReq.dayAgrees (r : PlanReq) : Bool := r.look.day.wf
+
+/-- A `[day]` the decoder accepted has a block length. -/
+theorem PlanReq.blockMin_pos (r : PlanReq) (h : r.dayAgrees = true) : r.blockMin ≠ 0 := by
+  unfold PlanReq.dayAgrees Look.DayCfg.wf at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  unfold PlanReq.blockMin
+  omega
+
+/-- **Fork `active_run`'s `worked`** (`planner.rs:1516-1524`): the log knows the worked minutes
+exactly — `OpenBlock::worked_min_at(now)`, the banked minutes plus the stretch since the last
+resume — and the clock is the fallback when the replay holds no open block for this item.  Both
+branches read minutes out of an absolute-second span through `Look.spanMinutes`, which is the
+kernel's one such arithmetic (AGENTS §5.3, README gap 390). -/
+def PlanReq.activeWorked (r : PlanReq) (a : ActiveBlock) : Nat :=
+  match r.run.answer.openBlock with
+  | some b =>
+    if b.id = a.id then
+      b.workedMin + (b.since.map (fun s => Look.spanMinutes s.1.sec r.now.sec)).getD 0
+    else Look.spanMinutes a.started.sec r.now.sec
+  | none => Look.spanMinutes a.started.sec r.now.sec
+
+/-- Fork `active_run`'s `left`: `est_min.saturating_sub(worked)` — `Nat` subtraction *is* the
+fork's saturating one. -/
+def PlanReq.activeLeft (r : PlanReq) (a : ActiveBlock) : Nat := a.estMin - r.activeWorked a
+
+/-- **Fork `Planner::current_block_end`** (`planner.rs:1572`): the end of the `block_min` block
+that started at `started` and is still running at `now`.  A block that has overrun its length is
+still the block you are in, so the boundary rolls forward a whole block at a time; a hand-edited
+`block_min = 0` puts no bound on the run at all (§10.2: saturate, never panic).
+
+**The request is not a parameter**, for the reason `wallsOfDay`'s is not (step P1): the rule does
+not depend on it, and a request-free rule can be *run* by `decide` — `the_block_boundary_is_run`
+below, and `Negative.lean`'s cheat 180 from the other side (AGENTS §5.2). -/
+def blockBoundary (blockMin nowSec startedSec dayEndSec : Nat) : Nat :=
+  if blockMin = 0 then dayEndSec
+  else startedSec + (Look.spanMinutes startedSec nowSec / blockMin + 1) * (60 * blockMin)
+
+/-- **The rule, run** (AGENTS §5.2): a block started at 13:40 and still going at 14:00 belongs to
+the hour that ends at **14:40**, whatever estimate is left on it — and a `[day]` with no block
+length puts no boundary on it at all. -/
+theorem the_block_boundary_is_run :
+    blockBoundary 60 50400 49200 86400 = 52800 ∧ blockBoundary 0 50400 49200 86400 = 86400 := by
+  decide
+
+def PlanReq.currentBlockEnd (r : PlanReq) (startedSec : Nat) : Nat :=
+  blockBoundary r.blockMin r.now.sec startedSec r.dayEnd
+
+/-- **A block boundary is at most one block past `now`** — the arithmetic choice 5b's half of
+`plan_reserves_one_block_at_a_time` turns on.  It needs the block to have *started*: for
+`now < startedSec` the fork's own formula answers `startedSec + block_min`, which is further
+than a block from `now`, and `PlanReq.activeAgrees` is the hypothesis that rules it out. -/
+theorem PlanReq.currentBlockEnd_within_a_block (r : PlanReq) (startedSec : Nat)
+    (hst : startedSec ≤ r.now.sec) (hb : r.blockMin ≠ 0) :
+    r.currentBlockEnd startedSec ≤ r.now.sec + 60 * r.blockMin := by
+  unfold PlanReq.currentBlockEnd blockBoundary
+  rw [if_neg hb]
+  have h1 : Look.spanMinutes startedSec r.now.sec / r.blockMin * r.blockMin
+      ≤ Look.spanMinutes startedSec r.now.sec := Nat.div_mul_le_self _ _
+  have h2 : Look.spanMinutes startedSec r.now.sec * 60 ≤ r.now.sec - startedSec := by
+    show (r.now.sec - startedSec) / 60 * 60 ≤ r.now.sec - startedSec
+    exact Nat.div_mul_le_self _ _
+  have h3 : Look.spanMinutes startedSec r.now.sec / r.blockMin * r.blockMin * 60
+      ≤ Look.spanMinutes startedSec r.now.sec * 60 := Nat.mul_le_mul_right 60 h1
+  have hexp : (Look.spanMinutes startedSec r.now.sec / r.blockMin + 1) * (60 * r.blockMin)
+      = Look.spanMinutes startedSec r.now.sec / r.blockMin * r.blockMin * 60 + 60 * r.blockMin := by
+    rw [Nat.add_mul, Nat.one_mul, Nat.mul_comm 60 r.blockMin, ← Nat.mul_assoc]
+  omega
+
+/-- **Fork `active_run`'s `limit`** (`planner.rs:1531`): never past the wind-down while the
+wind-down is still ahead, never past the day's end.  The `if` is the fork's and it is
+load-bearing — see `the_reservation_never_runs_under_a_wind_down_row`, which is why README gap
+**437** does not reproduce. -/
+def PlanReq.activeLimit (r : PlanReq) : Nat :=
+  if r.now.sec < r.windDownSec then min r.windDownSec r.dayEnd else r.dayEnd
+
+/-- Fork `active_run`'s last line: the run ends at the estimate, at the free stretch's end, or
+at the block boundary — whichever comes first. -/
+def PlanReq.activeStop (r : PlanReq) (a : ActiveBlock) (ivStop : Nat) : Nat :=
+  min (min (r.now.sec + 60 * r.activeLeft a) ivStop) (r.currentBlockEnd a.started.sec)
+
+/-- **Fork `active_run`** (`planner.rs:1497`), with its six named refusals in the fork's order.
+The free stretch it may run in is **L3's own `Look.freeIntervals`** and not a second walk over
+the walls (AGENTS §5.3, design §1.2). -/
+def PlanReq.activeRun (r : PlanReq) : Option ActiveRes :=
+  match r.state.active with
+  | none => none
+  | some a =>
+    -- the timer is stopped; the block is not running
+    if a.paused then none
+    -- §9: an interruption pauses the Active block, and its ad-hoc wall covers `now`
+    else if (interruptRows r).any (fun s => decide (r.now.sec ≤ s.stop)) then none
+    -- §9.1's `d done` what-if: the block is finished in that plan
+    else if (r.overrides.map (fun o => decide (a.id ∈ o.drop.val))).getD false then none
+    -- overtime: §9.1's prompt owns the day from here
+    else if r.activeLeft a = 0 then none
+    else if r.activeLimit ≤ r.now.sec then none
+    else
+      match Look.freeIntervals r.now.sec r.activeLimit (blockedByWalls r) with
+      | [] => none
+      -- a wall covers `now`
+      | iv :: _ =>
+        if r.now.sec < iv.1 then none
+        else if r.activeStop a iv.2 ≤ r.now.sec then none
+        else some ⟨a.id, r.now.sec, r.activeStop a iv.2, r.activeLeft a⟩
+
+/-- **Everything a reservation satisfies**, read off the one branch that builds it: it is the
+running item's, it starts at `now`, it is not empty, it ends inside the first free stretch of
+`[now, limit)`, and it ends no later than the block boundary. -/
+theorem PlanReq.activeRun_spec (r : PlanReq) (q : ActiveRes) (h : r.activeRun = some q) :
+    ∃ a iv, r.state.active = some a ∧ q.id = a.id ∧ q.start = r.now.sec ∧ r.now.sec < q.stop ∧
+      q.stop ≤ r.currentBlockEnd a.started.sec ∧ q.stop ≤ iv.2 ∧ iv.1 ≤ r.now.sec ∧
+      iv ∈ Look.freeIntervals r.now.sec r.activeLimit (blockedByWalls r) ∧
+      q.stop ≤ r.activeLimit := by
+  unfold PlanReq.activeRun at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i a ha
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    split at h
+    · exact absurd h (by simp)
+    · rename_i iv rest hfree
+      split at h
+      · exact absurd h (by simp)
+      · rename_i hge
+        split at h
+        · exact absurd h (by simp)
+        · rename_i hgt
+          have he := Option.some.inj h
+          subst he
+          have hiv : iv ∈ Look.freeIntervals r.now.sec r.activeLimit (blockedByWalls r) := by
+            rw [hfree]; simp
+          refine ⟨a, iv, ha, rfl, rfl, Nat.lt_of_not_le hgt, ?_, ?_, Nat.le_of_not_lt hge, hiv, ?_⟩
+          · show r.activeStop a iv.2 ≤ _; unfold PlanReq.activeStop; omega
+          · show r.activeStop a iv.2 ≤ _; unfold PlanReq.activeStop; omega
+          · have := (Look.freeIntervals_inside_the_window hiv).2.2
+            show r.activeStop a iv.2 ≤ _; unfold PlanReq.activeStop; omega
+
+/-- **The reservation is at most one block long** (§8.3's E1, over the row choice 5b places).
+This is the law the step exists for, and both hypotheses are R10's: a running block that has not
+started yet, and a `[day]` with no block length, are neither of them what the smart constructors
+build. -/
+theorem PlanReq.the_reservation_is_at_most_one_block (r : PlanReq) (q : ActiveRes)
+    (hok : r.activeAgrees = true) (hb : r.blockMin ≠ 0) (h : r.activeRun = some q) :
+    q.stop - q.start ≤ r.blockMin * 60 := by
+  obtain ⟨a, iv, ha, -, hs, -, hcbe, -⟩ := r.activeRun_spec q h
+  have hst : a.started.sec ≤ r.now.sec := by
+    unfold PlanReq.activeAgrees at hok
+    rw [ha] at hok
+    unfold ActiveBlock.wf at hok
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hok
+    exact hok.1
+  have hcb := r.currentBlockEnd_within_a_block a.started.sec hst hb
+  omega
+
+/-- **The reservation is free of every wall** — it is placed inside the *first* free stretch
+`Look.freeIntervals` reports, and the fork refuses outright when that stretch does not start at
+`now`.  No second walk over the walls is written here (AGENTS §5.3). -/
+theorem PlanReq.the_reservation_is_free_of_every_wall (r : PlanReq) (q : ActiveRes)
+    (h : r.activeRun = some q) {w : Nat × Nat} (hw : w ∈ blockedByWalls r) {t : Nat}
+    (h1 : q.start ≤ t) (h2 : t < q.stop) : ¬ (w.1 ≤ t ∧ t < w.2) := by
+  obtain ⟨a, iv, -, -, hstart, -, -, hle, hge, hiv, -⟩ := r.activeRun_spec q h
+  refine ((Look.freeIntervals_are_the_free_units r.now.sec r.activeLimit
+    (blockedByWalls r) t).1 ⟨iv, hiv, ?_, ?_⟩).2.2 w hw
+  · omega
+  · omega
+
+/-- **The reservation never runs past `active_run`'s limit** — the wind-down when the wind-down
+is still ahead, the day's end otherwise. -/
+theorem PlanReq.the_reservation_stops_at_the_limit (r : PlanReq) (q : ActiveRes)
+    (h : r.activeRun = some q) : q.stop ≤ r.activeLimit :=
+  let ⟨_, _, _, _, _, _, _, _, _, _, hx⟩ := r.activeRun_spec q h
+  hx
+
+/-- **The span the reservation blocks**, in the order fork `run()` pushes it: onto `blocked`
+before `place_mandatory_and_pref` and before the cut. -/
+def PlanReq.reservedSpan (r : PlanReq) : List (Nat × Nat) :=
+  match r.activeRun with
+  | none => []
+  | some q => [(q.start, q.stop)]
+
+/-- **Fork `run()`'s `blocked` at the moment step 2 starts** (`planner.rs:936`): the walls, the
+running interruption, **and the reservation**.  README gap **434** — *"choice 5b's Active
+reservation is not in `blockedByWalls`, so step 2 can place a routine over the running block"* —
+is closed here, and `a_routine_is_never_placed_over_the_running_block` is the law. -/
+def PlanReq.blockedBeforeRoutines (r : PlanReq) : List (Nat × Nat) :=
+  blockedByWalls r ++ r.reservedSpan
+
+/-- **`emit_segments`' reservation row** (`planner.rs:1741`): a Block that carries **no slot
+energy**, marked `▶`, with the minutes it still needs.  `mult` is the candidate's multiplier and
+is P4's (README gap 550). -/
+def PlanReq.activeRow (r : PlanReq) : List Seg :=
+  match r.activeRun with
+  | none => []
+  | some q =>
+    [{ start := q.start, stop := q.stop, kind := .block, energy := none, item := some q.id,
+       inst := none, flags := { SegFlags.none with current := true },
+       planned := some q.leftMin, mult := none, note := some (.runningLeft q.leftMin) }]
+
+/-- A row of `activeRow` is the reservation's, with its own endpoints. -/
+theorem PlanReq.mem_activeRow (r : PlanReq) (t : Seg) (h : t ∈ r.activeRow) :
+    ∃ q, r.activeRun = some q ∧ t.start = q.start ∧ t.stop = q.stop ∧ t.kind = SegKind.block ∧
+      t.energy = none ∧ t.flags.current = true ∧ t.item = some q.id := by
+  unfold PlanReq.activeRow at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i q hq
+    simp only [List.mem_singleton] at h
+    subst h
+    exact ⟨q, hq, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The reservation carries no slot energy** (§8.2 choice 5b: "it is a reservation, not a
+slot"), and it is the running item's Block row.  This is what makes `PlanCheck.energyFilterOk`
+true of it without an exception — the `energy = none` branch, not `isActive`'s escape. -/
+theorem PlanReq.activeRow_is_an_energyless_block (r : PlanReq) (s : Seg) (h : s ∈ r.activeRow) :
+    s.kind = SegKind.block ∧ s.energy = none ∧ s.flags.current = true ∧
+      s.item = r.state.activeId ∧ s.start = r.now.sec := by
+  obtain ⟨q, hq, hst, -, hk, he, hc, hi⟩ := r.mem_activeRow s h
+  obtain ⟨a, -, ha, hid, hs0, -⟩ := r.activeRun_spec q hq
+  refine ⟨hk, he, hc, ?_, by rw [hst, hs0]⟩
+  rw [hi, hid]
+  unfold RuntimeIn.activeId
+  rw [ha]
+  rfl
 
 /-- **Fork `place_mandatory_and_pref`'s loop body** (`planner.rs:1362`).  A mandatory instance
 takes the earliest feasible position before the wind-down, and reaches into the evening only when
@@ -1823,11 +2140,21 @@ def placeStep (r : PlanReq) (acc : List Placed × List (Nat × Nat)) (q : Placed
 /-- The instance that is sleep (fork `collect_routines`' second return). -/
 def PlanReq.sleepInstance (r : PlanReq) : Option Placed := (splitSleep r r.routineInstances).1
 
+/-- **Fork `run()`'s placement fold** — the whole of `place_mandatory_and_pref`, carrying both
+halves: the instances it placed and the `blocked` list it grew.  Step 3 needs the second half
+(`planner.rs:940`: `let mut slot_blocked = blocked.clone()`), which `placedRoutines` throws
+away, so the fold is named once and projected twice rather than run twice. -/
+def PlanReq.placementFold (r : PlanReq) : List Placed × List (Nat × Nat) :=
+  (sortRoutines (splitSleep r r.routineInstances).2).foldl (placeStep r)
+    ([], r.blockedBeforeRoutines)
+
 /-- **§8.2 step 2, run**: today's window instances, sorted, each placed or deferred.  D9-21: a
-`List.foldl` over a list `Capped` bounds at `maxCands`. -/
-def PlanReq.placedRoutines (r : PlanReq) : List Placed :=
-  (((sortRoutines (splitSleep r r.routineInstances).2).foldl (placeStep r)
-    ([], blockedByWalls r)).1).reverse
+`List.foldl` over a list `Capped` bounds at `maxCands`.
+
+**Since step P3 the fold starts from `blockedBeforeRoutines`**, which is `blockedByWalls` plus
+§8.2 choice 5b's reservation — fork `run()` pushes the running block onto `blocked` *before*
+this call (`planner.rs:934`).  README gap **434** closed. -/
+def PlanReq.placedRoutines (r : PlanReq) : List Placed := r.placementFold.1.reverse
 
 /-! ### What a placement satisfies
 
@@ -1905,9 +2232,137 @@ claim it refuses. -/
 theorem a_placed_routine_is_inside_its_window (r : PlanReq) (p : Placed)
     (hp : p ∈ r.placedRoutines) (a b : Nat) (hab : p.placedAt = some (a, b)) :
     max p.span.1 r.now.sec ≤ a ∧ b ≤ p.span.2 ∧ b = a + 60 * p.inst.durMin := by
-  unfold PlanReq.placedRoutines at hp
+  unfold PlanReq.placedRoutines PlanReq.placementFold at hp
   rw [List.mem_reverse] at hp
   exact foldl_placeStep_keeps_PlacedOk r _ _ (by simp) p hp a b hab
+
+/-! ### A placement never lands on something already blocked
+
+The half of the fold `PlacedOk` does not state, and the half README gap **434** is about: every
+stretch the placement reads as free is free of the list it started from, and since step P3 that
+list holds §8.2 choice 5b's reservation. -/
+
+/-- **A placement is off every span the fold started blocked.** -/
+def PlacedOffThe (ws : List (Nat × Nat)) (p : Placed) : Prop :=
+  ∀ a b, p.placedAt = some (a, b) → ∀ u, a ≤ u → u < b → Look.covered ws u = false
+
+/-- One step only ever conses onto the blocked list, so it keeps everything already there. -/
+theorem placeStep_grows_the_blocked (r : PlanReq) (W : List (Nat × Nat))
+    (acc : List Placed × List (Nat × Nat)) (q : Placed) (hsub : ∀ w ∈ W, w ∈ acc.2) :
+    ∀ w ∈ W, w ∈ (placeStep r acc q).2 := by
+  unfold placeStep
+  simp only
+  split
+  · split
+    · exact fun w hw => List.mem_cons_of_mem _ (hsub w hw)
+    · split
+      · exact fun w hw => List.mem_cons_of_mem _ (hsub w hw)
+      · exact hsub
+  · split
+    · split
+      · exact fun w hw => List.mem_cons_of_mem _ (hsub w hw)
+      · exact hsub
+    · exact hsub
+
+/-- One step keeps it, and keeps the initial list inside the accumulator. -/
+theorem placeStep_keeps_PlacedOffThe (r : PlanReq) (W : List (Nat × Nat))
+    (acc : List Placed × List (Nat × Nat)) (q : Placed)
+    (hsub : ∀ w ∈ W, w ∈ acc.2) (h : ∀ z ∈ acc.1, PlacedOffThe W z) :
+    (∀ w ∈ W, w ∈ (placeStep r acc q).2) ∧ ∀ z ∈ (placeStep r acc q).1, PlacedOffThe W z := by
+  have hcov : ∀ (vs : List (Nat × Nat)) (u : Nat), (∀ w ∈ W, w ∈ vs) →
+      Look.covered vs u = false → Look.covered W u = false := by
+    intro vs u hv hc
+    cases hw : Look.covered W u with
+    | false => rfl
+    | true =>
+      obtain ⟨w, hwm, h1, h2⟩ := Look.covered_eq_true.1 hw
+      exact absurd hc (by simp [Look.covered_eq_true.2 ⟨w, hv w hwm, h1, h2⟩])
+  have hdef : ∀ z : Placed, z.placedAt = none → PlacedOffThe W z := by
+    intro z hz a b hab; rw [hz] at hab; exact absurd hab (by simp)
+  unfold placeStep
+  simp only
+  split
+  · split
+    · next t ht =>
+      refine ⟨fun w hw => List.mem_cons_of_mem _ (hsub w hw), fun z hz => ?_⟩
+      rcases List.mem_cons.1 hz with rfl | hz
+      · intro a b hab u h1 h2
+        simp only [Option.some.injEq, Prod.mk.injEq] at hab
+        obtain ⟨rfl, rfl⟩ := hab
+        exact hcov _ u (fun w hw => List.mem_cons_of_mem _ (hsub w hw))
+          (earliestFree_is_free ht h1 h2)
+      · exact h z hz
+    · split
+      · next t ht =>
+        refine ⟨fun w hw => List.mem_cons_of_mem _ (hsub w hw), fun z hz => ?_⟩
+        rcases List.mem_cons.1 hz with rfl | hz
+        · intro a b hab u h1 h2
+          simp only [Option.some.injEq, Prod.mk.injEq] at hab
+          obtain ⟨rfl, rfl⟩ := hab
+          exact hcov _ u hsub (earliestFree_is_free ht h1 h2)
+        · exact h z hz
+      · refine ⟨hsub, fun z hz => ?_⟩
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hdef _ rfl
+        · exact h z hz
+  · split
+    · next anc _ =>
+      split
+      · next hok =>
+        refine ⟨fun w hw => List.mem_cons_of_mem _ (hsub w hw), fun z hz => ?_⟩
+        rcases List.mem_cons.1 hz with rfl | hz
+        · intro a b hab u h1 h2
+          simp only [Option.some.injEq, Prod.mk.injEq] at hab
+          obtain ⟨rfl, rfl⟩ := hab
+          exact hcov _ u (fun w hw => List.mem_cons_of_mem _ (hsub w hw))
+            (overlapsAny_false_covers_nothing hok.2.2 h1 h2)
+        · exact h z hz
+      · refine ⟨hsub, fun z hz => ?_⟩
+        rcases List.mem_cons.1 hz with rfl | hz
+        · exact hdef _ rfl
+        · exact h z hz
+    · refine ⟨hsub, fun z hz => ?_⟩
+      rcases List.mem_cons.1 hz with rfl | hz
+      · exact hdef _ rfl
+      · exact h z hz
+
+/-- The fold only grows the blocked list, so everything it started with is still there when
+step 3 reads it. -/
+theorem foldl_placeStep_grows_the_blocked (r : PlanReq) (W : List (Nat × Nat)) :
+    ∀ (l : List Placed) (acc : List Placed × List (Nat × Nat)),
+      (∀ w ∈ W, w ∈ acc.2) → ∀ w ∈ W, w ∈ (l.foldl (placeStep r) acc).2
+  | [], acc, h => by simpa using h
+  | q :: t, acc, hs => by
+    simp only [List.foldl_cons]
+    exact foldl_placeStep_grows_the_blocked r W t _ (placeStep_grows_the_blocked r W acc q hs)
+
+theorem foldl_placeStep_keeps_PlacedOffThe (r : PlanReq) (W : List (Nat × Nat)) :
+    ∀ (l : List Placed) (acc : List Placed × List (Nat × Nat)),
+      (∀ w ∈ W, w ∈ acc.2) → (∀ z ∈ acc.1, PlacedOffThe W z) →
+      ∀ z ∈ (l.foldl (placeStep r) acc).1, PlacedOffThe W z
+  | [], acc, _, h => by simpa using h
+  | q :: t, acc, hs, h => by
+    simp only [List.foldl_cons]
+    obtain ⟨h1, h2⟩ := placeStep_keeps_PlacedOffThe r W acc q hs h
+    exact foldl_placeStep_keeps_PlacedOffThe r W t _ h1 h2
+
+/-- **§8.2 choice 5b, from step 2's side: a routine is never placed over the running block.**
+README gap **434** — *"on a day with a block running, a mandatory routine may be placed on top
+of it"* — closed, and stated over the reservation itself rather than over the list it sits in. -/
+theorem a_routine_is_never_placed_over_the_running_block (r : PlanReq) (p : Placed)
+    (hp : p ∈ r.placedRoutines) (a b : Nat) (hab : p.placedAt = some (a, b))
+    (q : ActiveRes) (hq : r.activeRun = some q) {u : Nat} (h1 : a ≤ u) (h2 : u < b) :
+    ¬ (q.start ≤ u ∧ u < q.stop) := by
+  have hmem : (q.start, q.stop) ∈ r.blockedBeforeRoutines := by
+    unfold PlanReq.blockedBeforeRoutines PlanReq.reservedSpan
+    rw [hq]
+    simp
+  unfold PlanReq.placedRoutines PlanReq.placementFold at hp
+  rw [List.mem_reverse] at hp
+  have := foldl_placeStep_keeps_PlacedOffThe r r.blockedBeforeRoutines _ _
+    (fun w hw => hw) (by simp) p hp a b hab u h1 h2
+  intro hc
+  exact absurd this (by simp [Look.covered_eq_true.2 ⟨(q.start, q.stop), hmem, hc.1, hc.2⟩])
 
 /-! ### The rows step 2 places -/
 
@@ -1992,8 +2447,9 @@ theorem stepTwoSegs_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs
     t.kind ≠ SegKind.wall := by
   rcases stepTwoSegs_kinds r t h with h1 | h1 | h1 <;> rw [h1] <;> intro hc <;> cases hc
 
-/-- **No row of step 2 is a Block**, so every block-side check of the battery is still about the
-replayed past alone (`PlanCheck.dayPlan_block_rows_come_from_the_log`). -/
+/-- **No row of step 2 is a Block**, so every block-side check of the battery is about the
+replayed past and §8.2 choice 5b's reservation and nothing else
+(`PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`). -/
 theorem stepTwoSegs_are_not_blocks (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs r) :
     t.kind ≠ SegKind.block := by
   rcases stepTwoSegs_kinds r t h with h1 | h1 | h1 <;> rw [h1] <;> intro hc <;> cases hc
@@ -2019,6 +2475,230 @@ theorem a_routine_row_is_where_the_placement_put_it (r : PlanReq) (q : Placed) (
     subst h
     exact ⟨a, b, hq, rfl, rfl, rfl, rfl⟩
 
+/-! ############################################################################
+## §8.2 step 3 — the slots (stage 6, step P3)
+
+Fork `run()`'s step-3 paragraph (`planner.rs:938-955`), choice 4: *"`cut_slots_around` with the
+placed routines as **rests**, continuing the break counter from the log"*.
+
+**This section computes nothing.**  Every line of it is an argument list for a stage-5
+definition: the cut is `Look.cutSlots` (L3), the energies are `Look.energizeToday` (L4, widened
+here rather than forked), the free stretches inside it are `Look.freeIntervals`, and the window
+is `Look.day0Window` through `PlanReq.window`.  AGENTS §5.3 and design §1.2-§1.3 name these by
+hand precisely so that a second `cutSlots`, a second `energize` or a second `windowEnd` is a
+defect rather than a style question, and the grep that proves there is none is in this step's
+README block.
+
+*The slots are not rows.*  A slot is where §8.2 step 5 may put a Block and step 7 may put Rest;
+neither step exists yet, so `dayPlan` gains exactly **one** row here — choice 5b's reservation
+— and the Break rows the cut produces stay out of the day, because fork `emit_segments` keeps
+a break only when work touches it (`kept_breaks(breaks, slots, assign)`) and `assign` is P5's.
+README gap **551** records that, and it is why `plan_places_no_block_over_a_break` is **not**
+discharged by this step.
+############################################################################ -/
+
+/-- **Fork `blocks_since_last_break`** (`planner.rs:2229`): the `start` events of today that
+come after the last logged break, counted.  Through D24's seam, off this call's own run — the
+kernel does not read the log a second time (D9). -/
+def PlanReq.sinceBreak (r : PlanReq) : Nat :=
+  match r.todayRecord with
+  | none => 0
+  | some d =>
+    let lastBreak : Option Nat :=
+      if d.breaks.isEmpty then none else some (d.breaks.foldl (fun m b => max m b.t.1.sec) 0)
+    (d.starts.filter (fun s =>
+      match lastBreak with | none => true | some t => decide (t < s.t.1.sec))).length
+
+/-- **Fork `run()`'s `rests`** (`planner.rs:939`): the stretches step 2 placed, which the cut
+treats as rests — a routine of at least `break_min` that ends where a stretch does resets the
+break counter (`Look.restfulEnd`). -/
+def PlanReq.restsToday (r : PlanReq) : List (Nat × Nat) :=
+  r.placedRoutines.filterMap (·.placedAt)
+
+/-- **Fork `run()`'s `slot_blocked`** (`planner.rs:940-942`): everything blocked when step 2
+finishes, plus `night()` — so nothing is cut in the evening. -/
+def PlanReq.slotBlocked (r : PlanReq) : List (Nat × Nat) := r.night :: r.placementFold.2
+
+/-- **Fork `run()`'s `from`** (`planner.rs:943`): `now`, never before the window opens and
+never past where it closes. -/
+def PlanReq.cutFrom (r : PlanReq) : Nat := min (max r.now.sec r.window.1) r.window.2
+
+/-- **§8.2 step 3's cut**, which is `Look.cutSlots` and nothing else (design §1.2). -/
+def PlanReq.todayCut (r : PlanReq) : Look.Cut :=
+  Look.cutSlots r.look.day.cut r.cutFrom r.window.2 r.slotBlocked r.restsToday r.sinceBreak
+
+/-- The slots step 5 will assign into. -/
+def PlanReq.todaySlots (r : PlanReq) : List Look.Slot := r.todayCut.slots
+
+/-- The breaks step 8 will keep the ones work touches (**P5**, gap 551). -/
+def PlanReq.todayBreaks (r : PlanReq) : List (Nat × Nat) := r.todayCut.breaks
+
+/-- **Fork `run()`'s `slots`** (`planner.rs:952`): `capacity::energize(&cut.slots, &ectx)` with
+today's `EnergyCtx` — the prediction at the hours since wake, less the sleep-debt shift,
+corrected by today's posterior, then the home cap, in that order (cheat 158's order).  It is
+`Look.energizeToday`, the widening of step L9's `day0Slots`; **no level is computed here**. -/
+def PlanReq.energisedSlots (r : PlanReq) : List (Fin 6 × Look.Slot) :=
+  Look.energizeToday r.look r.todaySlots
+
+/-! ### What the cut is, said as projections rather than re-derived -/
+
+/-- **The cut is L3's**, at step 3's arguments.  A `rfl`, and it is the point of the section:
+there is no second `cutSlots` for this one to disagree with. -/
+theorem PlanReq.todayCut_is_the_lookaheads (r : PlanReq) :
+    r.todayCut =
+      Look.cutSlots r.look.day.cut r.cutFrom r.window.2 r.slotBlocked r.restsToday r.sinceBreak :=
+  rfl
+
+/-- **The energies are L4's**, at step 3's slots. -/
+theorem PlanReq.energisedSlots_are_the_lookaheads (r : PlanReq) :
+    r.energisedSlots = Look.energizeToday r.look r.todaySlots := rfl
+
+/-- **A slot's level is today's, through the one posterior** (`Look.todayEnergy`, cheat 158). -/
+theorem PlanReq.a_slots_level_is_todays_energy (r : PlanReq) (e : Fin 6) (s : Look.Slot)
+    (h : (e, s) ∈ r.energisedSlots) : e = Look.todayEnergy r.look ⟨s.start, 0⟩ := by
+  unfold PlanReq.energisedSlots Look.energizeToday at h
+  simp only [List.mem_map, Prod.mk.injEq] at h
+  obtain ⟨t, _, h1, h2⟩ := h
+  subst h2; exact h1.symm
+
+/-- **Every slot lies inside the window, at or after `now`** — L3's
+`cutSlots_inside_the_window` at these arguments. -/
+theorem PlanReq.a_slot_is_inside_the_window (r : PlanReq) (s : Look.Slot)
+    (h : s ∈ r.todaySlots) : r.cutFrom ≤ s.start ∧ s.start < s.stop ∧ s.stop ≤ r.window.2 := by
+  unfold PlanReq.todaySlots PlanReq.todayCut at h
+  exact Look.cutSlots_inside_the_window _ _ _ _ _ _ h
+
+/-- **No slot is cut on top of a wall, the running interruption, the running block or a placed
+routine** — L3's `cutSlots_avoid_the_walls`, over the list step 3 hands it. -/
+theorem PlanReq.a_slot_touches_nothing_blocked (r : PlanReq) (s : Look.Slot)
+    (h : s ∈ r.todaySlots) {w : Nat × Nat} (hw : w ∈ r.slotBlocked ++ r.restsToday) {t : Nat}
+    (h1 : s.start ≤ t) (h2 : t < s.stop) : ¬ (w.1 ≤ t ∧ t < w.2) := by
+  unfold PlanReq.todaySlots PlanReq.todayCut at h
+  exact Look.cutSlots_avoid_the_walls _ _ _ _ _ _ h hw h1 h2
+
+/-- **The running block is not cut into slots** (§8.2 choice 5b: it is a reservation, not a
+slot).  The reservation reaches the cut because step 2's fold started from
+`blockedBeforeRoutines` and only ever grows its list. -/
+theorem PlanReq.no_slot_touches_the_running_block (r : PlanReq) (q : ActiveRes)
+    (hq : r.activeRun = some q) (s : Look.Slot) (h : s ∈ r.todaySlots) {t : Nat}
+    (h1 : s.start ≤ t) (h2 : t < s.stop) : ¬ (q.start ≤ t ∧ t < q.stop) := by
+  have hmem : (q.start, q.stop) ∈ r.slotBlocked ++ r.restsToday := by
+    refine List.mem_append_left _ ?_
+    unfold PlanReq.slotBlocked
+    refine List.mem_cons_of_mem _ ?_
+    refine foldl_placeStep_grows_the_blocked r r.blockedBeforeRoutines _ _ (fun w hw => hw) _ ?_
+    unfold PlanReq.blockedBeforeRoutines PlanReq.reservedSpan
+    rw [hq]; simp
+  exact r.a_slot_touches_nothing_blocked s h hmem h1 h2
+
+/-- **The evening is not cut** — `night()` is in the blocked list, so no slot reaches the
+wind-down.  §8.2 step 3's own sentence, and the reason `PlanCheck.noDemandingAfterWindDown`
+will still hold when P5 puts a Block in a slot. -/
+theorem PlanReq.no_slot_reaches_the_evening (r : PlanReq) (s : Look.Slot) (h : s ∈ r.todaySlots)
+    {t : Nat} (h1 : s.start ≤ t) (h2 : t < s.stop) : ¬ (r.night.1 ≤ t ∧ t < r.night.2) :=
+  r.a_slot_touches_nothing_blocked s h
+    (List.mem_append_left _ (by unfold PlanReq.slotBlocked; simp)) h1 h2
+
+/-- **The reservation never sits under a WindDown row** — README gap **437**, refuted.
+
+The gap reads: *"`PlanCheck.noDemandingAfterWindDown` has no Active exception and needs one …
+on a day replanned *after* the wind-down the reservation runs in the evening, and its item may
+carry `ci ≥ 4`"*.  The premise is right and the conclusion does not follow, because the two
+halves are **mutually exclusive by construction**: `active_run`'s limit is the wind-down
+exactly when `now < wind_down` (`planner.rs:1531`), and `emit_segments` places a WindDown row
+exactly when `wind_down > now` (`planner.rs:1962`, `PlanReq.eveningRows`).  A day whose
+reservation may reach the evening therefore has **no WindDown row** for the check to compare it
+with, and a day that has one caps the reservation at the wind-down.  So the check needs **no**
+Active exception and none was added: `PlanCheck`'s eleven are still exactly as track G wrote
+them, and README gap 437 is closed as **not a defect**. -/
+theorem PlanReq.the_reservation_never_runs_under_a_wind_down_row (r : PlanReq) (q : ActiveRes)
+    (h : r.activeRun = some q) (hrow : r.windDownSeg ∈ r.eveningRows) :
+    q.stop ≤ r.windDownSeg.start := by
+  have hnow : r.now.sec < r.windDownSec := by
+    by_cases hc : r.now.sec < r.windDownSec ∧ r.windDownSec < r.dayEnd
+    · exact hc.1
+    · exfalso
+      unfold PlanReq.eveningRows at hrow
+      rw [if_neg hc] at hrow
+      simp only [List.nil_append] at hrow
+      by_cases hd : min (max r.bedSec r.now.sec) r.dayEnd < r.dayEnd
+      · rw [if_pos hd] at hrow
+        simp only [List.mem_singleton] at hrow
+        have hkk : SegKind.windDown = SegKind.sleep := congrArg Seg.kind hrow
+        cases hkk
+      · rw [if_neg hd] at hrow; simp at hrow
+  have hlim : r.activeLimit ≤ r.windDownSec := by
+    unfold PlanReq.activeLimit; rw [if_pos hnow]; omega
+  have hstop := r.the_reservation_stops_at_the_limit q h
+  show q.stop ≤ r.windDownSec
+  omega
+
+/-- **No slot overlaps a break of the same cut** — L3's `cutSlots_no_slot_overlaps_a_break`,
+which is the half of `plan_places_no_block_over_a_break` the cut owes.  The other half is
+P5's: a Break row reaches the day only when work touches it (gap 551). -/
+theorem PlanReq.no_slot_overlaps_a_break (r : PlanReq) (s : Look.Slot) (hs : s ∈ r.todaySlots)
+    (b : Nat × Nat) (hb : b ∈ r.todayBreaks) : s.stop ≤ b.1 ∨ b.2 ≤ s.start := by
+  unfold PlanReq.todaySlots PlanReq.todayCut at hs
+  unfold PlanReq.todayBreaks PlanReq.todayCut at hb
+  exact Look.cutSlots_no_slot_overlaps_a_break _ _ _ _ _ _ hs hb
+
+/-- **A full slot is exactly one block long**, and a short last slot is shorter — L3's, and the
+half of E1 that will make P5's assigned Blocks fit inside `block_min` without a second
+argument. -/
+theorem PlanReq.a_slot_is_at_most_one_block (r : PlanReq) (s : Look.Slot)
+    (h : s ∈ r.todaySlots) : s.stop - s.start ≤ 60 * r.blockMin := by
+  show s.stop - s.start ≤ 60 * r.look.day.cut.blockMin
+  unfold PlanReq.todaySlots PlanReq.todayCut at h
+  cases hk : s.kind with
+  | block =>
+    have := (Look.cutSlots_block_is_block_min _ _ _ _ _ _ h hk).1
+    omega
+  | short =>
+    have := (Look.cutSlots_short_block_is_at_least_min_last _ _ _ _ _ _ h hk).2.1
+    omega
+
+
+/-- **The past half never closes the day**: `pastKind` answers Block, Lost, Break or Routine
+and never the evening's two kinds, so a WindDown row is step 2's and nobody else's. -/
+theorem pastRows_are_not_wind_down (r : PlanReq) (s : Seg) (h : s ∈ pastRows r) :
+    s.kind ≠ SegKind.windDown := by
+  unfold pastRows at h
+  split at h
+  · cases h
+  · simp only [List.mem_filterMap] at h
+    obtain ⟨g, _, hg⟩ := h
+    split at hg
+    · cases hg
+    · have he := Option.some.inj hg
+      subst he
+      cases g.kind <;> simp [pastKind]
+
+/-- **A WindDown row is `eveningRows`' own, and it exists only while the wind-down is ahead.**
+This is what makes `PlanCheck.noDemandingAfterWindDown` true of §8.2 choice 5b's reservation
+with no exception (README gap 437, and `the_reservation_never_runs_under_a_wind_down_row`). -/
+theorem a_wind_down_row_is_the_evenings (r : PlanReq) (t : Seg)
+    (ht : t ∈ stepTwoSegs r) (hk : t.kind = SegKind.windDown) :
+    r.now.sec < r.windDownSec ∧ r.windDownSec < r.dayEnd ∧ t = r.windDownSeg := by
+  simp only [stepTwoSegs, List.mem_append] at ht
+  rcases ht with h | h
+  · simp only [List.mem_flatMap] at h
+    obtain ⟨q, -, hq⟩ := h
+    unfold PlanReq.routineRow at hq
+    split at hq
+    · exact absurd hq (by simp)
+    · simp only [List.mem_singleton] at hq; subst hq; exact absurd hk (by simp)
+  · unfold PlanReq.eveningRows at h
+    simp only [List.mem_append] at h
+    rcases h with h | h
+    · by_cases hc : r.now.sec < r.windDownSec ∧ r.windDownSec < r.dayEnd
+      · rw [if_pos hc] at h; simp only [List.mem_singleton] at h; exact ⟨hc.1, hc.2, h⟩
+      · rw [if_neg hc] at h; exact absurd h (by simp)
+    · by_cases hd : min (max r.bedSec r.now.sec) r.dayEnd < r.dayEnd
+      · rw [if_pos hd] at h
+        simp only [List.mem_singleton] at h; subst h
+        exact absurd hk (by simp [PlanReq.sleepSeg])
+      · rw [if_neg hd] at h; exact absurd h (by simp)
+
 /-! ### The day, assembled -/
 
 /-- **A deferred instance has no row until step 6 places it** — fork `emit_segments`' routine
@@ -2027,14 +2707,59 @@ theorem a_deferred_routine_has_no_row (r : PlanReq) (q : Placed) (h : q.placedAt
     r.routineRow q = [] := by
   unfold PlanReq.routineRow; rw [h]
 
-/-- **The day's rows**, steps 1 and 2, in the fork's order. -/
+/-- **§8.2 choice 5b's row** — the only row step P3 adds to the day.  The cut's slots are not
+rows: a slot becomes a Block at step 5 or Rest at step 7, and a Break reaches the day only when
+work touches it (`kept_breaks`, P5, README gap **551**). -/
+def reservationSegs (r : PlanReq) : List Seg := r.activeRow
+
+/-- Every row §8.2 choice 5b places is a Block, so none of them is a Wall. -/
+theorem reservationSegs_are_blocks (r : PlanReq) (t : Seg) (h : t ∈ reservationSegs r) :
+    t.kind = SegKind.block := (r.activeRow_is_an_energyless_block t h).1
+
+theorem reservationSegs_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ reservationSegs r) :
+    t.kind ≠ SegKind.wall := by
+  rw [reservationSegs_are_blocks r t h]; intro hc; cases hc
+
+/-- The reservation row is the one `PlanCheck.isActive` names. -/
+theorem the_reservation_row_names_the_running_item (r : PlanReq) (t : Seg)
+    (h : t ∈ reservationSegs r) : ∃ a, r.state.activeId = some a ∧ t.item = some a := by
+  obtain ⟨-, -, -, hit, -⟩ := r.activeRow_is_an_energyless_block t h
+  obtain ⟨q, hq, -, -, -, -, -, hi⟩ := r.mem_activeRow t h
+  obtain ⟨a, -, ha, hid, -⟩ := r.activeRun_spec q hq
+  exact ⟨a.id, by unfold RuntimeIn.activeId; rw [ha]; rfl, by rw [hi, hid]⟩
+
+/-- **The reservation row, unclamped**: on a day whose `now` is inside the calendar the forcing
+is the identity on its start, and its stop is never past the reservation's own. -/
+theorem the_reservation_row_is_exact (r : PlanReq) (q : ActiveRes) (hq : r.activeRun = some q)
+    (hcal : r.now.sec + 1 < LogStamp.yearEnd) (t : Seg) (ht : t ∈ reservationSegs r) :
+    (segOf t).val.start = r.now.sec ∧ r.now.sec < (segOf t).val.stop ∧
+      (segOf t).val.stop ≤ q.stop ∧ (segOf t).val.stop < LogStamp.yearEnd := by
+  obtain ⟨q', hq', hst, hsp, -, -, -, -⟩ := r.mem_activeRow t ht
+  rw [hq] at hq'
+  have he : q = q' := Option.some.inj hq'
+  subst he
+  obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+  have e1 : (segOf t).val.start = clampSec t.start := rfl
+  have e2 : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+  rw [e1, e2, hst, hsp]
+  rw [hs0]
+  simp only [clampSec, LogStamp.yearEnd] at *
+  omega
+
+/-- **The day's rows**: steps 1 and 2, and §8.2 choice 5b's reservation, in the fork's order. -/
 def dayRows (r : PlanReq) : List WfSeg :=
-  sortRows ((stepOneSegs r ++ stepTwoSegs r).map segOf)
+  sortRows ((stepOneSegs r ++ stepTwoSegs r ++ reservationSegs r).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
-    ∃ t ∈ stepOneSegs r ++ stepTwoSegs r, s = segOf t := by
+    ∃ t ∈ stepOneSegs r ++ stepTwoSegs r ++ reservationSegs r, s = segOf t := by
   have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
+
+/-- **A row the planner places is a row of the day** — the converse `dayRows` owes, used to
+show the reservation really reaches `dayPlan`. -/
+theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
+    (h : t ∈ stepOneSegs r ++ stepTwoSegs r ++ reservationSegs r) : segOf t ∈ dayRows r :=
+  mem_sortRows.2 (List.mem_map.2 ⟨t, h, rfl⟩)
 
 /-- §8.2 step 8's diagnostics, as far as steps 1 and 2 fill them: the overlapping walls step 1
 refused to resolve, and the travel-day note.
@@ -2100,44 +2825,57 @@ that no replan can move. -/
 def assignedFrom (d : DayPlan) (t : Nat) : List Id :=
   (d.segments.filter (fun s => s.val.kind.isWork && decide (t ≤ s.val.start))).flatMap segItems
 
-/-- **P5 must delete this.**  Steps 1 and 2 place six kinds of row and none of them is a *future*
-assignment: the replayed past ends at `now`, the running interruption ends at `now`, a Wall is
-not work, and neither is a Routine, a WindDown or a Sleep.  So the set §8.3's laws are about is
-still empty and no goal that quantifies over an assigned Block may be discharged against this
-body (README gap 347).
+/-- `assignedFrom`'s membership, in the shape `mem_assignedOf` has. -/
+theorem mem_assignedFrom (d : DayPlan) (t : Nat) (i : Id) :
+    i ∈ assignedFrom d t ↔
+      ∃ s ∈ d.segments, s.val.kind.isWork = true ∧ t ≤ s.val.start ∧ i ∈ segItems s := by
+  simp [assignedFrom, List.mem_flatMap, List.mem_filter, and_assoc]
+
+/-- **P5 must delete this.**  Steps 1, 2 and 3 place seven kinds of row and exactly **one** of
+them is a future assignment: §8.2 choice 5b's reservation.  The replayed past ends at `now`, the
+running interruption ends at `now`, a Wall is not work, and neither is a Routine, a WindDown nor
+a Sleep — so the set §8.3's laws are about holds the running block and nothing else, and no goal
+that quantifies over an *assigned* Block may be discharged against this body (README gap 347).
+
+**RESTATED AT STEP P3, and the old form is FALSE** (AGENTS §3.1 item 3).  It read
+`assignedFrom (dayPlan r) r.now.sec = []` and was named
+`the_day_assigns_nothing_after_now_until_the_assign_step_lands`; choice 5b's reservation is a
+`SegKind.block` row starting exactly at `now`, so the day now assigns one item after `now` and
+the empty-list form has a counterexample —
+`PlannerWit.the_reserved_day_assigns_the_running_block` is it, computed.  The name moved with
+the statement (AGENTS §5.2) and `Check.lean` records the deletion.
 
 It is stated over `assignedFrom … now` and **not** over `assignedOf`, because a replayed past
 Block *is* work and *is* in `assignedOf` — the fork counts it too (`DayPlan::assigned`), and a
 tripwire that claimed otherwise would be false the moment the seam had anything to replay. -/
-theorem the_day_assigns_nothing_after_now_until_the_assign_step_lands (r : PlanReq) :
-    assignedFrom (dayPlan r) r.now.sec = [] := by
-  have hw : ∀ s ∈ dayRows r, (s.val.kind.isWork && decide (r.now.sec ≤ s.val.start)) = false := by
-    intro s hs
-    obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
-    simp only [stepOneSegs, List.mem_append] at ht
-    rcases ht with ((ht | ht) | ht) | ht
-    · obtain ⟨_, h2, h3⟩ := pastRows_end_at_now r t ht
-      have : (segOf t).val.start < r.now.sec := by
-        show clampSec t.start < r.now.sec
-        have := clampSec_lt t.start
-        simp only [clampSec]; omega
-      simp [Bool.and_eq_false_iff, decide_eq_false_iff_not, Nat.not_le, this]
-    · have h1 := interruptRows_are_open_lost_time r t ht
-      have h2 : (segOf t).val.kind = SegKind.lost := by rw [segOf_kind, h1.1]
-      simp [SegKind.isWork, h2]
-    · simp only [List.mem_flatMap] at ht
-      obtain ⟨x, _, hx⟩ := ht
-      have h2 : (segOf t).val.kind = SegKind.wall := by
-        rw [segOf_kind, (wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1]
-      simp [SegKind.isWork, h2]
-    · have h2 : (segOf t).val.kind.isWork = false := by
-        rw [segOf_kind]; exact stepTwoSegs_are_not_work r t ht
-      simp [h2]
-  have hf : (dayPlan r).segments.filter
-      (fun s => s.val.kind.isWork && decide (r.now.sec ≤ s.val.start)) = [] := by
-    rw [dayPlan_segments]
-    exact List.filter_eq_nil_iff.2 (fun s hs => by simp [hw s hs])
-  simp [assignedFrom, hf]
+theorem the_day_assigns_nothing_after_now_but_the_running_block (r : PlanReq) (i : Id)
+    (h : i ∈ assignedFrom (dayPlan r) r.now.sec) : r.activeRun.map (·.id) = some i := by
+  obtain ⟨s, hs, hwk, hge, hi⟩ := (mem_assignedFrom _ _ i).1 h
+  rw [dayPlan_segments] at hs
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
+  · obtain ⟨_, h2, h3⟩ := pastRows_end_at_now r t ht
+    have : (segOf t).val.start < r.now.sec := by
+      show clampSec t.start < r.now.sec
+      simp only [clampSec]; omega
+    omega
+  · have h2 : (segOf t).val.kind = SegKind.lost := by
+      rw [segOf_kind, (interruptRows_are_open_lost_time r t ht).1]
+    rw [h2] at hwk; exact absurd hwk (by simp [SegKind.isWork])
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, _, hx⟩ := ht
+    have h2 : (segOf t).val.kind = SegKind.wall := by
+      rw [segOf_kind, (wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1]
+    rw [h2] at hwk; exact absurd hwk (by simp [SegKind.isWork])
+  · rw [segOf_kind, stepTwoSegs_are_not_work r t ht] at hwk
+    exact absurd hwk (by simp)
+  · obtain ⟨q, hq, -, -, hkd, -, -, hit⟩ := r.mem_activeRow t ht
+    rw [hq]
+    unfold segItems Seg.items at hi
+    rw [segOf_kind, hkd] at hi
+    simp only [segOf_item, hit, Option.toList_some, List.mem_singleton] at hi
+    simp [hi]
 
 /-! ### The two wall goals
 
@@ -2200,7 +2938,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with ((ht | ht) | ht) | ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -2248,6 +2986,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       rw [hev, hhi, clampSec_id _ (by omega), clampSec_id _ hcal]
       omega
   · exact absurd (segOf_kind t ▸ hk) (stepTwoSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
 
 /-- **Both ends of every wall row come from the index, and neither comes from the planner** —
 the sentence `plan_never_moves_a_wall` was written to protect, true of a buffered wall and of a
@@ -2264,7 +3003,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
           (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with ((ht | ht) | ht) | ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -2281,25 +3020,173 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
         · cases hr
       · simp only [List.mem_singleton] at hr; subst hr; exact Or.inr ⟨rfl, rfl⟩
   · exact absurd (segOf_kind t ▸ hk) (stepTwoSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
 
-/-- **Every Block row of the day still comes from the log.**  Steps 1 and 2 place walls, the
-running interruption, the replayed past, the routines and the evening; a Wall is not a Block, an
-interruption is Lost time, and `stepTwoSegs_are_not_blocks` covers the rest.  `PlanCheck` states
-the same fact over `dayPlan` and this is the row-level half of it. -/
-theorem a_block_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
-    (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.block) :
+/-- **Every Wall row sits inside a span the blocked list holds** — the half of §8.2 step 1 that
+step 3 and choice 5b need: `blockedByWalls` really does hold every wall the day draws, run-up
+row included (see its own note, README gap 552), and the span is not empty.  Unconditional: no
+hypothesis about the plan, because the `max` in `blockedByWalls` is what an inverted `at:` would
+otherwise cost.
+
+Stated as a **containment** and not unit-by-unit, because a wall row can legitimately be *empty*
+(an event whose start and end coincide) and an empty row covers no unit at all while still
+having to be ordered against a Block. -/
+theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
+    (hw : w ∈ dayRows r) (hk : w.val.kind = SegKind.wall) :
+    ∃ v ∈ blockedByWalls r, v.1 < v.2 ∧ clampSec v.1 ≤ w.val.start ∧ w.val.stop ≤ v.2 := by
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
+  have htk : t.kind = SegKind.wall := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
+  · exact absurd htk (pastRows_are_not_walls r t ht)
+  · exact absurd htk (interruptRows_are_not_walls r t ht)
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, hx, hrow⟩ := ht
+    have hspan : (x.lo, max x.evLo x.hi) ∈ blockedByWalls r :=
+      List.mem_append_left _ (List.mem_map_of_mem hx)
+    obtain ⟨y, -, -, -, hyc, hylt⟩ := mem_wallsToday hx
+    have hle : x.lo ≤ x.evLo := by rw [hyc]; unfold clipWall; simp only; omega
+    refine ⟨(x.lo, max x.evLo x.hi), hspan, by simp only; omega, ?_, ?_⟩ <;>
+      simp only [wallRows, List.mem_append] at hrow <;>
+      rcases hrow with hr | hr
+    · split at hr
+      · simp only [List.mem_singleton] at hr; subst hr
+        show clampSec x.lo ≤ clampSec x.lo
+        exact Nat.le_refl _
+      · cases hr
+    · simp only [List.mem_singleton] at hr; subst hr
+      show clampSec x.lo ≤ clampSec x.evLo
+      simp only [clampSec]; omega
+    · split at hr
+      · simp only [List.mem_singleton] at hr; subst hr
+        show max (clampSec x.lo) (clampSec x.evLo) ≤ max x.evLo x.hi
+        simp only [clampSec]; omega
+      · cases hr
+    · simp only [List.mem_singleton] at hr; subst hr
+      show max (clampSec x.evLo) (clampSec x.hi) ≤ max x.evLo x.hi
+      simp only [clampSec]; omega
+  · exact absurd htk (stepTwoSegs_are_not_walls r t ht)
+  · exact absurd htk (reservationSegs_are_not_walls r t ht)
+
+/-- **Every Break row of the day is replayed from the log.**  Steps 1, 2 and 3 place no break
+of their own: the cut's breaks reach the day only when work touches them
+(`kept_breaks(breaks, slots, assign)`, fork `emit_segments`), and `assign` is **P5**'s (README
+gap **551**).  So `plan_places_no_block_over_a_break` stays in `Goals.lean`: the break side of
+it is still vacuous over what the planner places. -/
+theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.brk) :
     ∃ t ∈ pastRows r, s = segOf t := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
-  have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
+  have htk : t.kind = SegKind.brk := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with ((ht | ht) | ht) | ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
   · exact ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
     obtain ⟨x, _, hx⟩ := ht
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
     cases htk
+  · rcases stepTwoSegs_kinds r t ht with h | h | h <;> rw [h] at htk <;> cases htk
+  · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+
+/-- **A WindDown row of the produced day starts at `[day] wind_down`, and only exists while the
+wind-down is ahead of `now`.** -/
+theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows r)
+    (hk : w.val.kind = SegKind.windDown) :
+    r.now.sec < r.windDownSec ∧ w.val.start = clampSec r.windDownSec := by
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
+  have htk : t.kind = SegKind.windDown := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
+  · exact absurd htk (pastRows_are_not_wind_down r t ht)
+  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, _, hx⟩ := ht
+    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
+  · obtain ⟨h1, -, heq⟩ := a_wind_down_row_is_the_evenings r t ht htk
+    exact ⟨h1, by show clampSec t.start = _; rw [heq]; rfl⟩
+  · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+
+/-- **Every Block row of the day is replayed from the log or is §8.2 choice 5b's reservation.**
+Steps 1, 2 and 3 place walls, the running interruption, the replayed past, the routines, the
+evening and the running block; a Wall is not a Block, an interruption is Lost time, and
+`stepTwoSegs_are_not_blocks` covers the rest.  `PlanCheck` states the same fact over `dayPlan`
+and this is the row-level half of it.
+
+**RESTATED AT STEP P3, and the old form is FALSE** (AGENTS §3.1 item 3).  It read
+`∃ t ∈ pastRows r, s = segOf t` and was named `a_block_row_is_a_replayed_row`; choice 5b's
+reservation is a Block row the *planner* places, and
+`PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block` exhibits one.  The old name is deleted and `Check.lean` records it. -/
+theorem a_block_row_is_replayed_or_reserved (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.block) :
+    (∃ t ∈ pastRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) := by
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
+  have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
+  · exact Or.inl ⟨t, ht, rfl⟩
+  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, _, hx⟩ := ht
+    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
+    cases htk
   · exact absurd htk (stepTwoSegs_are_not_blocks r t ht)
+  · exact Or.inr ⟨t, ht, rfl⟩
+
+/-! ### §8.3's E1 — `plan_reserves_one_block_at_a_time`, restated and DISCHARGED (step P3)
+
+The goal as `Goals.lean` wrote it quantifies over **every** Block row of the produced day:
+
+```lean
+  theorem plan_reserves_one_block_at_a_time (r : PlanReq) (s : WfSeg)
+      (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
+      s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60
+```
+
+**It is false**, and the reason is the one `PlanCheck`'s own header records as finding 1 (README
+gap 385): the day's Block rows include the ones `Planner.pastRows` replays from the log, and *"a
+Block the log holds can run longer than `block_min` … none of it the planner's doing, and none
+of it anything a replan may move"*.  Shorten `[day] block_min` after a morning of longer blocks
+and the day the planner produces has a Block row twice the length the law allows — which is a
+fact about the log, not about the planner.  The witness is
+`PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`, computed on a
+request the builder accepts.
+
+**Restated** the way the fork's own proptest restricts §8.3 (`planner_invariants.rs:470`:
+`assigned_set(day, w.now)`, *"the planner's doing"*): over the Block rows that start **at or
+after `now`**, which is exactly `Planner.assignedFrom`'s restriction and exactly the set
+`the_day_assigns_nothing_after_now_but_the_running_block` describes.  Two R10 hypotheses come
+with it and both are decoder obligations, in `PlanReq.wallsAgree`'s shape: the running block is
+one `mkActive?` would have built, and the `[day]` is one `mkDayCfg?` would have built.
+
+**It is not vacuous.**  §8.2 choice 5b's reservation is a Block row starting exactly at `now`,
+and `PlannerWit.the_reserved_day_assigns_the_running_block` exhibits one. -/
+
+/-- **§8.3's E1, over the rows §8.3 is about** — the goal `Goals.plan_reserves_one_block_at_a
+_time` leaves this file for (AGENTS §3.2's burn-down protocol). -/
+theorem plan_reserves_one_block_at_a_time (r : PlanReq) (hact : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
+    (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
+    s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
+  rw [dayPlan_segments] at hs
+  rcases a_block_row_is_replayed_or_reserved r s hs hk with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
+    have hlt : (segOf t).val.start < r.now.sec := by
+      show clampSec t.start < r.now.sec
+      simp only [clampSec, LogStamp.yearEnd]; omega
+    omega
+  · obtain ⟨q, hq, hst, hsp, -, -, -, -⟩ := r.mem_activeRow t ht
+    obtain ⟨-, -, -, hs0, hlt0, -⟩ := r.activeRun_spec q hq
+    have hone := r.the_reservation_is_at_most_one_block q hact (r.blockMin_pos hday) hq
+    have hbm : (dayPlan r).blockMin = r.blockMin := rfl
+    have hstart : (segOf t).val.start = clampSec q.start := by
+      show clampSec t.start = _; rw [hst]
+    have hstop : (segOf t).val.stop = max (clampSec q.start) (clampSec q.stop) := by
+      show max (clampSec t.start) (clampSec t.stop) = _; rw [hst, hsp]
+    rw [hbm, hstart, hstop]
+    rw [hstart] at hnow
+    simp only [clampSec, LogStamp.yearEnd] at hnow ⊢
+    omega
 
 /-! ### The wind-down goal is NOT discharged here, and the reason is P1's
 
@@ -2310,7 +3197,7 @@ the statement is still vacuous over `dayPlan` and a discharge would be AGENTS §
 that compiles and means nothing.  What P2 owes it is the other half of its subject, and that is
 what landed; the goal becomes real at **P5** (README gap 430).
 
-The tripwire is `the_day_assigns_nothing_after_now_until_the_assign_step_lands` above, which P5
+The tripwire is `the_day_assigns_nothing_after_now_but_the_running_block` above, which P5
 must delete, plus the theorem below — the WindDown row now *exists*, so the half of the law that
 is about the evening can be stated and proved outright. -/
 
@@ -2330,7 +3217,8 @@ theorem the_wind_down_row_runs_to_bed (r : PlanReq)
     exact Or.inl (by rw [if_pos ⟨h1, h2⟩]; exact List.mem_singleton_self _)
   refine ⟨segOf r.windDownSeg, ?_, segOf_kind _, ?_, ?_⟩
   · rw [dayPlan_segments]
-    exact mem_sortRows.2 (List.mem_map.2 ⟨_, List.mem_append_right _ hseg, rfl⟩)
+    exact mem_sortRows.2
+      (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_right _ hseg), rfl⟩)
   · show clampSec r.windDownSec = _
     exact clampSec_id _ h3
   · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _

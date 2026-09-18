@@ -27498,6 +27498,12 @@ invariant P1 was supposed to establish for it is already stage 5's
 `the_day_assigns_nothing_after_now_until_the_assign_step_lands`, audited in
 `Check.lean`, which **P5 must delete**.
 
+> **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
+> `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
+> 5b's reservation is a Block the planner places, so the empty-list form above went
+> false; P5 still must delete it. The old name appears nowhere in the kernel — the
+> sentence is left standing as the record of what was true when it was written.
+
 ### AGENTS §5.3: what was consumed, and what was changed rather than forked
 
 **Consumed, by name, and re-implemented none of them.** `Look.wallIndex`,
@@ -27669,6 +27675,12 @@ recorded below as gap 345 with what remains of it), which is not the same thing.
    must be deleted there; the invariant the goal needs is already stage 5's
    (`Look.day0_slots_avoid_the_walls`), so the discharge is the reflection step
    and not a new induction.
+
+> **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
+> `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
+> 5b's reservation is a Block the planner places, so the empty-list form above went
+> false; P5 still must delete it. The old name appears nowhere in the kernel — the
+> sentence is left standing as the record of what was true when it was written.
 
 #### Gap 348 (new; label W14P1-d) — no `PlanReq` can be built inside `Planner.lean`, so the wall laws have no end-to-end witness
 
@@ -28134,6 +28146,12 @@ is new machinery, not a repair.
    *is* empty is `Planner.assignedFrom … now`, the set §8.3's laws are about, and
    `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` is the
    tripwire that says so.
+
+> **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
+> `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
+> 5b's reservation is a Block the planner places, so the empty-list form above went
+> false; P5 still must delete it. The old name appears nowhere in the kernel — the
+> sentence is left standing as the record of what was true when it was written.
    **The real blocker is the witness**, and it is gap 348's: `PlanReq` carries a
    `WfPlan`, a `Seal.Run`, a `Look.Input` and a `Lookahead`, and there is no
    decoder and no builder for one, so no `r` can be exhibited whose `dayPlan`
@@ -29070,6 +29088,12 @@ compiles and means nothing — the identical call W-14's P1 made for
 `plan_places_no_block_over_a_wall` (gap 347), and the tripwire that says so,
 `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`, is still
 true and still audited.
+
+> **RENAMED at W-16 (track P's P3, `da1acd9`): the tripwire is now
+> `Planner.the_day_assigns_nothing_after_now_but_the_running_block`.** §8.2 choice
+> 5b's reservation is a Block the planner places, so the empty-list form above went
+> false; P5 still must delete it. The old name appears nowhere in the kernel — the
+> sentence is left standing as the record of what was true when it was written.
 
 What P2 could prove instead **is** proved: `Planner.the_wind_down_row_runs_to_bed`
 — the day has a WindDown row from `[day] wind_down` to `bed` exactly when the
@@ -32098,3 +32122,817 @@ scratch trees outside the repository, and the two transcripts were compared with
 **Highest on this branch:** gap **504**, cheat **179**, parity **P38**
 (unchanged — this step issues no parity entry, because it compares nothing
 against the fork point that a frozen answer does not already cover).
+
+<!-- ===========================================================================
+     APPENDED 2026-09-17: stage 6 (the planner), run **W-16**, track P, step
+     **P3** — §8.2 step 3 (the slot cut) and §8.2 choice 5b (the running block
+     reserved).  **This is a reuse step above all others**: the cut is L3's
+     `Look.cutSlots`, the free stretches are L3's `Look.freeIntervals`, the slot
+     energies are L4's `Look.todayEnergy` through a **widened** `energizeToday`,
+     and nothing here computes a window, a cut, a free interval or a level.
+     **One goal left `Goals.lean`** — §8.3's E1, refuted as written and restated
+     — so the burn-down is **11**.  Track P's gap range is **550-569**;
+     **550-556 taken, 557-569 free**.  Cheats **180-183** (renumbered from 177-180 at the land step; track P's 166-170 stay
+     reserved for its later steps, so this step starts above the branch's
+     highest, 176).  Every figure below was re-measured on the committed tree,
+     each command capped at MemoryMax=40G, MemorySwapMax=0.
+     =========================================================================== -->
+
+## Stage 6, W-16 track P step P3, 2026-09-17: the day is cut into slots, and the running block is reserved
+
+### What landed
+
+1. **§8.2 choice 5b — the running block is RESERVED, not assigned.**  Fork
+   `Planner::active_run` (`planner.rs:1497`) with its **six named refusals in the fork's
+   order** — a paused timer, an interruption covering `now`, §9.1's `d done` what-if, an
+   estimate already spent, a day whose limit has passed, and a wall sitting on `now` — plus
+   the arithmetic's own seventh (`end <= now`).  `PlanReq.activeRun` answers an `ActiveRes`;
+   `PlanReq.activeRow` is `emit_segments`' row for it (`SegKind.block`, **`energy = none`**,
+   `flags.current`, `planned = left_min`, `Note.runningLeft`).  **It is the first `SegKind.block`
+   row the planner itself places**, and that is what makes six of `PlanCheck`'s seven
+   eligibility-free checks bite on something the planner is responsible for.
+2. **The blocked list gains it before step 2 runs** — fork `run()` pushes `active_run`'s span
+   onto `blocked` at `planner.rs:934`, *before* `place_mandatory_and_pref`.
+   `PlanReq.blockedBeforeRoutines` is that push and
+   `a_routine_is_never_placed_over_the_running_block` is the law.  **README gap 434 is closed.**
+3. **§8.2 step 3, choice 4 — the cut.**  `PlanReq.todayCut` **is** `Look.cutSlots` at step 3's
+   arguments and nothing else: `slotBlocked` (the placement fold's own blocked list plus
+   `night()`), `restsToday` (the placed routines, which is what makes a routine reset the break
+   counter through `Look.restfulEnd`), `cutFrom` (`now.max(window.0).min(window.1)`) and
+   `sinceBreak` (fork `blocks_since_last_break`, off **this call's own run** through D24's seam,
+   never a second read of the log).  `PlanReq.energisedSlots` **is** `Look.energizeToday`.
+4. **`Look.energizeToday` — a WIDENING, not a fork** (AGENTS §5.3).  `Look.day0Slots` hard-wired
+   `(day0Cut I).slots`; step 3 cuts a different list (rests, the evening, the break counter) and
+   energises it through the same `todayEnergy`.  The argument is freed, `day0Slots` **is**
+   `energizeToday I (day0Cut I).slots` by definition, and `day0Slots_is_energizeToday` is the
+   `rfl` projection that says the old reader is unmoved.  `kernel_lookahead_parity` runs green
+   unchanged (4/0), which is the same claim measured rather than asserted.
+5. **README gap 437 is closed as NOT A DEFECT.**  W-15 recorded a third §8.3 exception owed to
+   choice 5b: *"on a day replanned after the wind-down the reservation runs in the evening and
+   `windDownOk` has no escape for it"*.  The premise is right and the conclusion does not
+   follow, because the two halves are **mutually exclusive by construction**: `active_run`'s
+   limit is the wind-down exactly when `now < wind_down` (`planner.rs:1531`), and
+   `emit_segments` places a WindDown row exactly when `wind_down > now` (`planner.rs:1962`).
+   `PlanReq.the_reservation_never_runs_under_a_wind_down_row` is the theorem.  **No checker was
+   weakened and none gained an exception**: `PlanCheck`'s eleven are still exactly as track G
+   wrote them.
+6. **`PlanCheck.dayPlan_ok_core` re-proved over the day with the reservation in it**, with the
+   six block-side checks discharged **about that row** and not vacuously.  Three hypotheses were
+   added and each is an R10 decoder obligation in `PlanReq.wallsAgree`'s shape — `activeAgrees`
+   (the running block is one `mkActive?` would have built), `dayAgrees` (the `[day]` is one
+   `mkDayCfg?` would have built) and `hnowcal` (the instant being planned is inside the
+   calendar).  E1 is genuinely **false** without the first two, and
+   `Planner.PlanReq.currentBlockEnd_within_a_block` is where that shows.
+
+### The goal this step discharged, and the two refutations it shipped with
+
+**`plan_reserves_one_block_at_a_time` left `Goals.lean`.  Burn-down 12 → 11.**  It is the first
+of the thirteen stage-6 goals to go, and it did not go quietly:
+
+* **As `Goals.lean` wrote it, it is FALSE** (AGENTS §3.1 item 3, D5).  The day's Block rows
+  include the ones `Planner.pastRows` replays from the log, and *"a Block the log holds can run
+  longer than `block_min` … none of it the planner's doing"* — `PlanCheck`'s own finding 1
+  (README gap 385), now with a witness.  Shorten `[day] block_min` to thirty after a morning of
+  hour-long blocks and the day the planner produces holds a Block twice the length the law
+  allows.  `PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`,
+  computed on a request `mkPlanReq?` accepts.
+* **Restated** the way the fork's own proptest restricts §8.3 (`planner_invariants.rs:470`:
+  `assigned_set(day, w.now)`, *"the planner's doing"*): over the Block rows that start **at or
+  after `now`**.  That is exactly `Planner.assignedFrom`'s restriction and exactly the set
+  `the_day_assigns_nothing_after_now_but_the_running_block` describes.
+* **It is not vacuous**, and this is the part §5.2 says to check separately:
+  `PlannerWit.the_reserved_day_assigns_the_running_block` computes
+  `assignedFrom (dayPlan theRunningRequest) now = [m1]`.  The restatement is about a row that
+  exists.
+
+### Two theorems the reservation made FALSE, restated in the same commit (D5)
+
+| before | after | why the old one is false |
+|---|---|---|
+| `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` (`= []`) | `Planner.the_day_assigns_nothing_after_now_but_the_running_block` | the reservation is a `SegKind.block` row starting exactly at `now`, so the day assigns one item after `now` |
+| `Planner.a_block_row_is_a_replayed_row` | `Planner.a_block_row_is_replayed_or_reserved` | the reservation is a Block row the *planner* places |
+| `PlanCheck.dayPlan_block_rows_come_from_the_log` | `PlanCheck.dayPlan_block_rows_are_replayed_or_reserved` | the same, over the produced day |
+
+`PlanCheck.dayPlan_has_no_block_row` **keeps its name** and gains an `hnorun` hypothesis, which
+is what it always meant.  All three deleted names were grepped **repo-wide, prose included**:
+the only survivors are records of the rename (this block, `Check.lean`'s own deletion banner,
+and the two doc comments that say *"was named …"*) plus dated README blocks, which §6.4 says
+are written history.  **Eight live doc-comment citations in three modules were corrected** —
+`PlannerWit.lean` ×3, `PlanCheck.lean` ×3, `Planner.lean` ×2 — which is gap 393's class caught
+before the commit rather than by the next audit.  *(This sentence read "seven … in four
+modules" when it was first written, and the count was wrong in both halves; it was caught by
+adding up its own list before the commit, which is the arithmetic §5.11 asks for.)*
+
+### The finding: design §1.3's `limitSlots` row names P3, and the fork's planner never calls it
+
+Design §1.3 gives `Look.limitSlots`/`limitHist` to **P3** ("§8.4's budget limit, highest level
+first").  `grep -n 'limit_to_budget' tm-core/src/*.rs` returns **one** call site,
+`capacity.rs:867`, inside `capacity::lookahead` — the *future* days' per-level minutes.  Fork
+`planner.rs`'s step 3 does not limit its cut by the budget at all: `remaining_budget` is a local
+the **assign loop** spends one block at a time (`planner.rs:1003`, `let mut used = …`).  So
+`limitSlots` is **P5**'s if it is anyone's, and P3 does not call it.  Recorded as **gap 553**
+rather than called for the sake of the table.
+
+### AGENTS §5.3: what was CONSUMED, and what was widened rather than forked
+
+**Consumed, not re-implemented** — this step calls these and defines no second copy:
+
+| stage-5 artefact | where P3 consumes it |
+|---|---|
+| `Look.cutSlots` | `PlanReq.todayCut` **is** the call; `todayCut_is_the_lookaheads` is the `rfl` that says so |
+| `Look.freeIntervals` | `PlanReq.activeRun`'s free stretch (fork `active_run`'s own `free_intervals(now, limit, walls)`) |
+| `Look.freeIntervals_inside_the_window`, `…_are_the_free_units` | `the_reservation_is_free_of_every_wall`, `the_reservation_stops_at_the_limit` |
+| `Look.cutSlots_inside_the_window`, `…_avoid_the_walls`, `…_no_slot_overlaps_a_break`, `…_block_is_block_min`, `…_short_block_is_at_least_min_last` | the five slot laws, one line each |
+| `Look.todayEnergy` (step L9: predict, sleep-debt shift, posterior, home cap — cheat 158's order) | `energizeToday`, through the widening |
+| `Look.capForLocation`, `predictAt`, `hsw100`, `bucket`, `Curves` | **only** through `todayEnergy`; no level is computed here |
+| `Look.day0Window` (through `PlanReq.window`), `Look.budgetOf` (through `budgetBlocks`) | `cutFrom`, `todayCut`'s `hi` |
+| `Look.spanMinutes` | `activeWorked` and `blockBoundary` — the kernel's one "minutes in a second-span" (gap 390) |
+| `Look.covered`, `Look.covered_eq_true` | `PlacedOffThe`, `a_wall_row_sits_in_a_blocked_span` |
+| `Look.DayCfg.wf`, `Look.mkDayCfg?_wf` | `PlanReq.dayAgrees` and `blockMin_pos` |
+| `Planner.ActiveBlock.wf` / `mkActive?` (step P0) | `PlanReq.activeAgrees`, and `activeAgrees_of_mkActive?` is R10's "a smart constructor its decoder actually uses" |
+| `Replay.DayAcc.starts` / `.breaks` (through the seam) | `PlanReq.sinceBreak` — fork `blocks_since_last_break` |
+| `Replay.OpenBlock.workedMin` / `.since` | `PlanReq.activeWorked` — fork `OpenBlock::worked_min_at` |
+| `Cal.instantOf`, `LogStamp.yearEnd` | every instant and the one calendar bound |
+
+**Re-implemented: nothing.**  `grep -n 'freeIntervals\|cutSlots\|energize\|windowEnd\|capForLocation\|predictAt\|budgetOf\|limitSlots\|hsw' TmKernel/Planner.lean` returns **call sites and prose only** — six calls (`earliestFree`'s `freeIntervals`, `activeRun`'s `freeIntervals`, `todayCut`'s `cutSlots`, `energisedSlots`' `energizeToday`, and the two `day0Window`/`budgetOf` views P0 wrote) and no definition.  There is no second cut, no second free-interval walk, no second energy and no second window in the stage.
+
+**Widened rather than forked:** `Look.day0Slots` → `Look.energizeToday` (one new argument, the
+old view proved to be the new one at the old argument).  That is the only `Lookahead.lean` edit:
+**+19/−2 lines, one `def`, one `rfl` theorem, one body rewritten to call it.**
+
+### A repair the reuse audit found: `blockedByWalls` did not cover a wall's own run-up (gap 552)
+
+Fork `run()` blocks `(w.blocked_start, w.end)`, where `WallSeg`'s three instants satisfy
+`blocked_start ≤ start ≤ end` **by construction**.  `Look.WallIx` carries no such bound and
+`Look.wallOfEntity` builds `evLo`/`hi` straight out of `at:<s>/<f>`, which the grammar accepts
+**inverted**.  On a wall written `at:…T13:50/12:50` *with* a `buffer:`, `Planner.wallRows` still
+draws the run-up row `[lo, evLo)` while `(x.lo, x.hi)` stops at `hi < evLo` — so step 2 could
+place a routine inside a wall's own buffer and step 3 could cut slots there.  The span is now
+`(x.lo, max x.evLo x.hi)`: `max` only ever widens, it is the identity on every wall whose
+interval runs forwards, and it is what makes `a_wall_row_sits_in_a_blocked_span` true with **no**
+hypothesis about the plan.  Cheat 180 asserts the old span from the other side and `decide`
+refuses it.  **Not user-visible**: `dayPlan` has no shipped caller (below).
+
+### `shipped_call_sites`, driven and not asserted (the lesson W-15 paid for)
+
+W-15 recorded a kernel rule as having "no caller" without grepping, and
+`kernel_capacity.rs:820` had been sending the whole tree to `Boundary.loadPlan` on every
+capacity verb.  So, for **every** rule this step adds:
+
+* `grep -rn 'dayPlan\|Planner\.' tm/src tm-core/src kernel/tm-kernel-ffi/src` returns
+  **nothing**, and `grep -n '"plan"\|dayPlan' kernel/TmKernel/TmKernel/Boundary.lean` returns
+  **nothing**: there is no planner op on the wire and no host call to one.
+* Driven on a fresh `tm init --example` tree outside the repo with `--now
+  2026-09-16T14:00:00-05:00`: `tm check` → *"no problems"*; `tm plan`, `tm now`, `tm review day`
+  and `tm drop ^d2` all answer normally.  `TM_TRACE_KERNEL_CALLS=1` prints exactly `log` and
+  `capacity+log` for `tm plan` **and** for `tm now` — **no planner call in either**.  The rows
+  `tm plan` prints are `tm-core/src/planner.rs`'s, as W-15's repair established.
+* **So none of P3's rules reaches a user, and this block does not imply otherwise.**  The one
+  edit that *is* on a shipped path is `Look.day0Slots`' body, which is definitionally the same
+  function (`day0Slots_is_energizeToday`, `rfl`) and whose parity suite
+  (`kernel_lookahead_parity`, 92 comparisons against `Ctx::today_slots`) is green and unmoved.
+
+### Non-vacuity, run rather than argued (AGENTS §5.2)
+
+A second concrete request, `PlannerWit.theRunningRequest` — the §4.3 Wednesday at 14:00 with
+`m1` started at 13:40 on a 90-minute estimate:
+
+* `the_reservation_is_clipped_to_the_block_it_is_in` — **seventy** minutes are still owed and
+  the row runs **forty**, to 14:40.  Neither the estimate nor the window binds here;
+  `current_block_end` does, which is the fork rule E1 turns on.
+* `the_reserved_day_is_the_witness_day_and_the_running_block` — the day is **six** rows: two
+  replayed Blocks, the written wall, the reservation, and §16's evening.
+* `the_reservation_row_carries_no_energy` — `(Block, none, planned 70)`, §8.2 choice 5b's two
+  sentences over the produced day.
+* `the_reserved_day_assigns_the_running_block` — `assignedFrom … now = [m1]`.
+* `the_battery_passes_at_the_reserved_day` — **README gap 396's remaining half.**  W-14's
+  `the_battery_passes_at_the_witness` answered it for the replayed past; this answers it for a
+  Block the planner placed, which is a different claim: the six block-side checks used to be
+  discharged by `hnopast` *and* by there being no planner-placed Block at all.
+* `the_battery_bites_on_the_reservation` — let the reservation run the whole seventy minutes and
+  `oneBlockAtATime` refuses the day.
+* `the_block_boundary_is_run` — the boundary rule itself, on numbers, with its `block_min = 0`
+  arm beside it.
+* `the_running_request_agrees` — `activeAgrees` and `dayAgrees` discharged at a built request,
+  so neither hypothesis is one nothing can satisfy (§9.2's disguised-gap list).
+
+**Ten new `decide` witnesses**, against §14.0's budget of twenty.  Every one was probed at
+`MemoryMax=8G` before it was kept: the whole `PlannerWit.lean` module elaborates inside 8 GiB.
+
+### A `decide` in `Negative.lean` is not free, and it cost 10% before it was caught
+
+Cheat 180 was first written as a `decide` over `PlannerWit.theRunningRequest.activeRun` — a full
+request, at `maxRecDepth 40000`.  It holds at 8 GiB and it is correct, and it took `check.sh`
+from **3.22 s to 3.48 s (+10.1%)**, because `Negative.lean` is *elaborated on every `check.sh`
+run* while a library witness is compiled once into its `.olean`.  The repair is the one P1 made
+for `wallsOfDay`: **make the rule request-free so it can be run on numbers.**
+`Planner.blockBoundary` takes `(blockMin, now, started, dayEnd)`, `PlanReq.currentBlockEnd` is
+one line over it, cheat 180 is now four numerals, and the same claim costs nothing.  **Not a
+gap** — nothing is left undone — but a rule worth carrying: *a cheat is written on the engine,
+not on a request*, which is also why P1 made `wallsOfDay` request-free.  The measurement is in
+the table below, and it is why this step's `check.sh` time is +0.6% and not +10.1%.
+
+### D9-21, the recursion rule
+
+Every function P3 adds that walks a list the wire can make large, with its form:
+
+| function | over | form |
+|---|---|---|
+| `PlanReq.sinceBreak` | `DayAcc.starts`, `DayAcc.breaks` (a day's log) | core `List.filter` / `List.foldl` |
+| `PlanReq.restsToday` | `placedRoutines` (`Capped`, ≤ 1,024) | core `List.filterMap` |
+| `PlanReq.placementFold` | the same | core `List.foldl` — P2's fold, named once and projected twice instead of run twice |
+| `PlanReq.todayCut` | — | **`Look.cutSlots`**, whose `cutStretch` is structural fuel with a `@[csimp]`-backed sort (L3) |
+| `PlanReq.energisedSlots` | the cut's slots | **`Look.energizeToday`**, core `List.map` |
+| `PlanReq.activeRun` | the blocked list | **`Look.freeIntervals`** plus core `List.any` |
+| `PlanReq.reservedSpan`, `activeRow`, `reservationSegs` | at most one element | no recursion |
+| `placeStep_grows_the_blocked`, `foldl_placeStep_*` | proofs, not code | — |
+
+No new recursion is written in this step.
+
+### Behaviour rows
+
+**None.**  `dayPlan` has no boundary op and no shipped caller, so nothing in this commit can
+change an answer a user sees; the drive above is the evidence rather than the claim.  The one
+row that would otherwise be owed — `blockedByWalls`' widened span (gap 552) — is inside the
+same dead code.
+
+### Goals, theorems, cheats, parity (AGENTS §3.2, §6.2, §6.3)
+
+* **Goals discharged: one.**  Burn-down **12 → 11**, all stage 6.  `plan_reserves_one_block_at
+  _a_time` was proved in `Planner.lean`, its `#print axioms` line appended to `Check.lean`, and
+  **then** deleted from `Goals.lean` — §3.2's protocol, in that order.  Nothing was added.
+* **New theorems: 54, every one with a `#print axioms` line in `Check.lean`**, under a W-16
+  banner.  **Three audit lines were deleted**, each naming a theorem the reservation made false
+  and each replaced in the same commit; the banner records all three.  Verified the way check 3
+  verifies it: the §6.3 reconciliation (`comm -23` of declared short names against audited last
+  segments) is **empty**.
+* **Cheats 180-183** (177-180 as this branch wrote them), all four refused by `check.sh` check 4 and each checked in isolation as
+  well, because `Negative.lean` stops at 100 errors and a cheat appended at the end can be
+  *unreached* — worth knowing, and the isolation run is how this step knows its four bite.
+* **Parity: none taken.**  `dayPlan` has no caller and no wire.  `kernel_lookahead_parity` is
+  the one suite the `Lookahead.lean` widening could have moved and it is green and unchanged
+  (4 passed, 0 failed).
+
+### Measured, on the committed tree, every command capped at `MemoryMax=40G`
+
+The comparand is **`995323b` built in a throwaway worktree in this same session**, so both
+columns are the same machine at the same load — which is what README gap 470 asked for.
+
+| measurement | this step | baseline `995323b`, same session | what explains the delta |
+|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 ok | — |
+| axiom audit | **4,316 theorems** | 4,265 | **+51**: 54 added, 3 deleted (each named above) |
+| corpus | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | unchanged — no grammar touched |
+| burn-down | **11 outstanding, all stage 6** | 12 | E1 discharged; nothing admitted |
+| `check.sh` wall, built tree | **3.20 / 3.35 / 3.27 / 3.10 s** | **3.21 / 3.24 / 3.21 / 3.26 s** | medians 3.24 vs 3.22, **+0.6%**, inside the 10%-per-step rule.  (The first draft of cheat 180 made this +10.1%; see the note above.) |
+| peak RSS, `check.sh` | 2.03-2.08 GiB | 2.00-2.05 GiB | — |
+| `cargo test --workspace` | **1,318 passed / 0 failed / 9 ignored across 78** result lines, exit 0 | 1,318 / 0 / 9 / 78 (the brief's figure at `995323b`) | unchanged — **no Rust was touched** |
+| FFI suite (`-p tm-kernel-ffi`) | **100 passed / 0 failed** (kernel 86, corpus 8, stack 6) | 100/0 | — |
+| T5 (`kernel_replay_parity`) | **29 passed / 0 / 4 ignored** | same | — |
+| the door (`kernel_log_door`) | **23 / 0** | same | — |
+| `cli_switch_acceptance` | **9 / 0** | same | — |
+| `kernel_call_counts` | **2 / 0** | same | the pairing assertion still passes; the one-call shape has not landed |
+| `kernel_lookahead_parity` | **4 / 0** | same | the widening is definitionally the old function |
+| `cli_check_log` | **9 / 0** | same | — |
+| `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | same | see the T11 rows |
+| Lean | **+1,472 / −152** (`git diff --numstat`) | — | `Planner.lean` +950/−62, `PlannerWit.lean` +187/−9, `PlanCheck.lean` +154/−55, `Check.lean` +76/−3, `Negative.lean` +52, `Goals.lean` +34/−21, `Lookahead.lean` +19/−2 |
+| Rust | **0 / 0** | — | nothing outside `kernel/` was touched |
+
+### T11, as readings and never as single numbers — and with a same-session baseline
+
+Three `cli_latency` passes on each tree, `--nocapture --test-threads=1`, interleaved:
+
+| row | this step (ms) | baseline `995323b`, same session (ms) | recorded band | verdict |
+|---|---|---|---|---|
+| later verb (`tm drop`) | 151.90, 152.01, 152.02 | 156.97, 152.01, 141.87 | 146.66-147.01 | **both above, the baseline more widely spread** — gap 470's drift, **not re-blessed** |
+| 3-day-old routine | 126.70, 126.66, 126.59 | 121.61, 126.58, 121.61 | 121.6-136.8 | inside on both |
+| `review week` (All) | 288.80, 293.49, 293.83 | 288.82, 278.61, 278.58 | 248.1-253.3 | **OUT on both** — gap 275, a capacity verb replays the log twice.  **Not re-blessed** |
+| reseal (`--now +1 day`) | 202.62, 202.62, 202.58 | 232.74, 217.83, 192.45 | 197.5-212.6 | this step inside; **the baseline is the one out of band**, twice |
+
+**This is the measurement README gap 470 item 4 asked for and could not get**: a same-session
+comparand.  It says the drift is the machine's and not the tree's — the baseline is at least as
+noisy as this step on every row, and is *worse* on two.  **No band was moved and
+`tm/tests/cli_latency.rs` is byte-identical to `995323b`.**
+
+### What earlier stages bought, re-measured and not assumed
+
+* **D9, ONE reader / D16, ONE writer.**  No Rust was touched at all by this step, so neither can
+  have moved; T5's frozen arms, the door and `cli_switch_acceptance` are all green, and the two
+  deletion guards print their post-switch wording.
+* **D21-D23, the instrument is outside the tree.**  T5 and the door report fork point
+  **4748911**; `fork_arm` ran unconditionally; `the_frozen_comparand_is_read_at_full_precision`
+  passes by name.  **The oracle was not rebuilt and `TM_ORACLE` was not run**: no shipped-path
+  byte changed on either fork-anchored arm, and this step's own oracle is `planner.rs` read by
+  line number, not the frozen JSONL.
+* **D18, the memory cap.**  No bound was raised and nothing was retried uncapped; the new
+  `decide` witnesses were probed at **8G** and the binary drive ran at **16G**.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no `partial def`, no
+  `unsafe`, no `opaque`, no `panic!`, no `!`-accessor, no `.toOption`, no Mathlib.
+  `lean-toolchain`, `Cargo.toml`, `lake-manifest.json`, `kernel/corpus/` and
+  `tm/tests/cli_latency.rs` untouched.  **No fixture, snapshot, corpus file or latency band
+  re-blessed; no predicate weakened and no checker narrowed.**
+
+### Gaps opened
+
+Range **550-569** is track P's for this run.  **Seven taken, 550-556; 557-569 free.**  Highest
+on this branch after this step: gap **556**, cheat **180**, parity **P38**.
+
+**Gap 550 — the reservation row carries no multiplier.**
+1. *What is not done.*  `PlanReq.activeRow` writes `mult := none`, where fork `emit_segments`
+   writes `multiplier: run.multiplier` — the multiplier of the **candidate** whose id is running.
+2. *Why.*  The multiplier is a `priority::Candidate` field and the kernel does not collect
+   candidates yet (D27, track K3/K4).  Inventing one here would be a second reader of a fact the
+   candidate list owns.
+3. *What it costs.*  A running block's row prints without its `×` factor, and
+   `Diagnostics.planHonesty`'s numerator will be short by it when P8 computes it.
+4. *Which step clears it.*  **P4**, with the candidate collection.
+
+**Gap 551 — no Break row reaches the day, so `plan_places_no_block_over_a_break` stays.**
+1. *What is not done.*  `PlanReq.todayCut.breaks` holds the cut's breaks and **no `SegKind.brk`
+   row of them is placed**; `Planner.a_break_row_is_a_replayed_row` proves every Break row of the
+   produced day comes from the log.
+2. *Why.*  Fork `emit_segments` keeps a break only when work touches it
+   (`kept_breaks(breaks, slots, assign)`, and then filters the ones a routine covered), and
+   `assign` is **P5**'s.  Emitting every break would be a row the fork does not draw; emitting
+   none is the honest half.
+3. *What it costs.*  `Goals.plan_places_no_block_over_a_break` stays in `Goals.lean` even though
+   design §6.4 gives it to P3: the break side of it is still vacuous over what the planner
+   places, and discharging it would be AGENTS §5.2's theorem that compiles and means nothing —
+   the same call P1 made for the wall goal (gap 347) and P2 for the wind-down goal (gap 430).
+   `Planner.PlanReq.no_slot_overlaps_a_break` is the half the cut does owe and it is proved.
+4. *Which step clears it.*  **P5**, which assigns the slots and therefore decides which breaks
+   are kept.
+
+**Gap 552 — `Look.WallIx` still carries no `evLo ≤ hi` bound.**
+1. *What is not done.*  `blockedByWalls` now blocks `(x.lo, max x.evLo x.hi)` so that an
+   inverted `at:` cannot leave a wall's own run-up unblocked (above).  The **type** is unchanged:
+   nothing stops a `WallIx` whose event starts after it ends, and `Look.wallOfEntity` will build
+   one from `at:…T13:50/12:50`.
+2. *Why.*  Bounding `WallIx` is stage 5's `Lookahead.lean` and its smart constructor is
+   `Look.wallIndex`, which is track K's file and is read by `wallsAgree` on every request; the
+   `max` is the local repair that makes stage 6's laws true without reopening that.
+3. *What it costs.*  Every consumer of `WallIx` must keep asking for `max evLo hi` rather than
+   `hi`; a future step that writes `(x.lo, x.hi)` reintroduces the hole, and only cheat 183
+   stands in front of it.
+4. *Which step clears it.*  The step that gives `Look.WallIx` an R10 `wf` and refuses an
+   inverted `at:` by name — naturally **K3/K4**'s, with the rest of the wall index.
+
+**Gap 553 — design §1.3 gives `Look.limitSlots` to P3 and the fork's planner never calls it.**
+1. *What is not done.*  P3 does not limit its cut by the budget, so `Look.limitSlots` and
+   `Look.limitHist` remain unused by stage-6 code.
+2. *Why.*  Measured, not assumed: `limit_to_budget` has exactly one call site
+   (`tm-core/src/capacity.rs:867`, inside `capacity::lookahead`), and fork `planner.rs`'s step 3
+   does not appear in it.  `remaining_budget` is a local the assign loop spends.
+3. *What it costs.*  Design §1.3's reuse table is wrong in one row, and a future reader of it may
+   add a budget limit to the cut that the fork does not have.
+4. *Which step clears it.*  **P5** if it is anyone's; otherwise the design's own §1.3 when the
+   owner confirms.
+
+**Gap 554 — `open_block_segment` is not ported.**
+1. *What is not done.*  Fork `emit_segments` draws a row for the block that is *currently open in
+   the replay* (`planner.rs:2002`): from `open.since` to `now`, `SegKind::Block`, `open: true`,
+   `current` when nothing is reserved.  `Planner.pastRows` does not draw it, because
+   `Replay.DayAcc.segments` holds closed segments only.
+2. *Why.*  It is the **past** half, which is step P1's, and P3 found it while porting choice 5b —
+   `run()` calls the two together (`open_block_segment(active.is_none() && !interrupted, …)`).
+3. *What it costs.*  A day whose block is running shows the reservation from `now` forward but
+   not the stretch already worked, so the row `tm now` draws as *"Nm so far"* has no kernel
+   source.  It is also a **second** Block row the planner would place, which is why
+   `PlanCheck.dayPlan_ok_core` will need re-proving again when it lands.
+4. *Which step clears it.*  **P5** or a P1 top-up, whichever reaches `Replay.Facts.openBlock`
+   first; the input is already in the request.
+
+**Gap 555 — `raw_slots` (the flat-posterior energies) are not computed.**
+1. *What is not done.*  Fork `run()` energises the cut **twice** (`planner.rs:953-955`): once
+   through today's posterior and once through `Posterior::none`.  P3 computes only the first.
+2. *Why.*  The second exists solely for §8.2 choice 9's `deferred` diagnostic — *"the candidates
+   a posterior downgrade cost a slot"* — which is step 8's.
+3. *What it costs.*  `Diagnostics.deferred` stays empty, and P8 cannot fill it without a second
+   `energizeToday`-shaped call with the posterior switched off.
+4. *Which step clears it.*  **P8** (or P5, if the assign loop wants it first).
+
+**Gap 556 — three new request-level hypotheses have no decoder.**
+1. *What is not done.*  `PlanReq.activeAgrees`, `PlanReq.dayAgrees` and the horizon hypothesis
+   `r.now.sec + 1 < LogStamp.yearEnd` are carried by `Planner.plan_reserves_one_block_at_a_time`
+   and `PlanCheck.dayPlan_ok_core` and are established by **nothing on the wire**.
+2. *Why.*  It is gap 346's class exactly: `PlanReq` has no boundary decoder, so `wallsAgree` had
+   the same status until `PlannerWit.mkPlanReq?` discharged it for one request.
+   `PlannerWit.the_running_request_agrees` does the same here, so neither is a hypothesis nothing
+   can satisfy — but a *decoder* is what makes them free for every request.
+3. *What it costs.*  Two of the stage's laws are conditional on facts a host could violate, and
+   the burn-down's one discharge carries them.
+4. *Which step clears it.*  **P8**, with the planner's wire and its `mkActive?`/`mkDayCfg?`
+   decoding; `activeAgrees_of_mkActive?` is the theorem it will use.
+
+### Gaps left open, by name
+
+**430** (the wind-down goal), **431** (no shipped verb reaches `mkRoutines?` — and now none
+reaches `activeRun` either), **432**, **433** — **CLOSED by this step** (P3 landed), **434** —
+**CLOSED** (`a_routine_is_never_placed_over_the_running_block`), **435**, **436**, **437** —
+**CLOSED as not a defect** (`the_reservation_never_runs_under_a_wind_down_row`), **285**, **346**,
+**347**, **365** (`eligibleAt`), **393** (this step is a second instance of its class, caught
+before the commit, and does not close it), **394**, **396** — **CLOSED** (the battery now gives an
+independent opinion at a request whose day holds a planner-placed Block), **470** (amended: this
+step's same-session baseline is the measurement item 4 asked for; the band still stands
+unblessed), **475-479** (track A's), **275**, **301** item 1, **113**/**114**/**116** (D27,
+whole), and stage 5's residue **94, 98, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181,
+182, 190, 200, 201, 226, 260, 262, 270** and the performance levers **121, 122, 123, 126, 127**.
+
+### What this step did NOT do, by name
+
+* **It did not place a Break row**, so `plan_places_no_block_over_a_break` stays (gap 551) even
+  though design §6.4 gives it to P3.  Said plainly rather than discharged vacuously.
+* **It did not port `open_block_segment`** (gap 554), so a running block's *worked* stretch has
+  no kernel row.
+* **It did not compute `raw_slots`** (gap 555), so `Diagnostics.deferred` stays empty.
+* **It did not call `Look.limitSlots`**, and gap 553 says why the design's table is wrong rather
+  than calling it to make the table true.
+* **It did not touch D27**: candidates are still host-collected, `PlanReq.routines` still arrives
+  on the wire, and gaps 113, 114 and 116 are untouched and whole.
+* **It did not weaken a checker.**  All eleven of `PlanCheck`'s are exactly as track G wrote
+  them; gap 437's proposed Active exception was **refuted**, not taken.
+* **It did not add a gate.**  D28 holds: `dayPlan` is still total, there is no `dayPlan?` and no
+  `PlanRefusal`.
+* **It did not give the planner a caller**, and the drive above is what says so rather than a
+  grep alone.
+* **It did not re-bless anything**: no fixture, no snapshot, nothing under `kernel/corpus/`, no
+  latency band (`review week` and `tm drop` are quoted out of band and left there), no frozen
+  comparand.
+* **It did not rebuild the fork oracle** and did not run `TM_ORACLE`.
+* **It touched `lean-toolchain` not at all**, added no dependency, no axiom, no `sorry` outside
+  `Goals.lean`.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under `systemd-run --user
+--scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except the binary drive and the `decide`
+probes, which ran at **16G** and **8G** respectively.  No bound was raised and nothing was
+retried uncapped.  `check.sh` was run **sixteen** times in this worktree — one cold run at
+`995323b` before any edit (the 7/7, 4,265, burn-down 12 this block compares against), **one that
+failed** (a `blockBoundary` name clash that broke the build, so checks 1 and 7 both reported it),
+three while the audit roster was completed, ten as timings, and the last on the final tree — and
+**five** times in the throwaway baseline worktree.  `lake build` was run many more times as the
+modules were written.  `cargo test --workspace` was run **three** times, all on this tree; the
+first was tallied by eye from a `tail` and is not quoted, and the second and third agree and
+are.  **The baseline column was
+re-measured, not inherited**: a throwaway worktree was created at `995323b`
+(`git worktree add --detach`), built cold, and timed in the same session, interleaved with this
+tree's readings.  *A word of warning for whoever reads the main worktree's numbers while two
+tracks are running: at the time of this step the main checkout was on track A's `9fa58fc` with
+uncommitted work and reported 4,275 theorems — it is **not** this branch's baseline, and
+comparing against it would have shown a phantom −10.*  The binary drive was performed on a
+scratch tree **outside the repo** with `--now` fixing the clock.
+
+<!-- ===========================================================================
+     Stage 6, W-16 LAND STEP, 2026-09-17 — the merge of tracks K and P onto
+     track A's four commits, which were already on the branch.
+     Gap range 570-574 (one taken: 570).  No cheat taken; four RENUMBERED.
+     Whoever merges next renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-16 land step, 2026-09-17: merging the occurrence and the slot cut
+
+Two merge commits, the candidate track first, because it was the track that was
+to delete host code and move a wire and every other track's proofs had to be
+re-checked against it.
+
+* `73f9ae7` merges **`w16-k`** (`648a160` K3b, `6085eca` its findings) into
+  **`e31e0c5`** — track A's D32/D33 work, landed on the branch during the run.
+* **this block's own commit** merges **`w16-p`** (`da1acd9` P3) into `73f9ae7`.
+
+**All three tracks landed. One of them did not land what it was sent to do**,
+and this block says so in its own heading rather than in a footnote: **D27 did
+not land.** Track K's brief was the nine `Look.Cand` fields; what it shipped is
+`Recur.lean`, the occurrence machinery D27 needs and is not. Gaps **113, 114,
+116** and **301's item 1** are open and whole, `cand_json`
+(`tm/src/cli/kernel_capacity.rs`) and `priority::collect_candidates`
+(`tm/src/cli/ctx.rs`) still supply all nine facts, and gap **500** carries the
+ordered list of what the next step owes. Nothing was carried forward unlanded
+beyond that, and nothing was dropped.
+
+### What conflicted, and the one class that is a finding
+
+| merge | file | kind | resolution |
+|---|---|---|---|
+| K | `kernel/README.md` | textual, end-of-file append point | both sides, landing order |
+| K | `Check.lean` | textual, end-of-file append point | both sides, landing order |
+| K | `Negative.lean` | **auto-merged** | — |
+| P | `kernel/README.md` | textual, end-of-file append point | both sides, landing order |
+| P | `Check.lean` | textual, end-of-file append point | both sides, landing order |
+| P | `Negative.lean` | textual, end-of-file append point | both sides, **then renumbered** |
+| P | **`PlannerWit.lean`** | **textual, in a LIBRARY module** | both sections, landing order |
+
+**`PlannerWit.lean` is the finding, and it is the one conflict outside the four
+shared files.** Both tracks appended a whole `/-! ## … -/` section immediately
+before `end PlannerWit`, so git reported it as an ordinary end-of-file overlap —
+but `PlannerWit.lean` is a library module and AGENTS §6.1's "disjoint files"
+rule is about exactly those. It has now been three runs running: W-14 put P1 and
+W in `PlanCheck.lean`, W-15 put P2 and W in `Planner.lean` (where the conflict
+was **semantic** and git saw nothing), and W-16 puts K3b and P3 in
+`PlannerWit.lean`. `PlannerWit.lean` is the stage's shared witness module by
+design — gap 348 built it so that a proof needing `loadPlan` and the replay has
+somewhere to live — so **every** track that computes a witness lands in it. It
+should be named in the next run's brief as a fifth append-only shared file with
+§6.2's convention, or tracks should be given their own witness modules.
+
+One cosmetic consequence, left as it is: track P numbers its sections (`## 7.`,
+`## 8.`) and track K's is unnumbered, so the merged module reads `… 6 …`,
+unnumbered, `7`, `8`. Renumbering would rewrite a landed track's prose for
+nothing.
+
+**No semantic conflict this time, and it was looked for rather than assumed.**
+W-15's cost came from `PlanReq` gaining a seventh field under a builder written
+against six. P3 leaves `PlanReq` at seven fields and adds no constructor
+argument; K3b adds a new module nothing else imports. The merged tree built
+first time — `lake build TmKernel:static`, 168 jobs, exit 0, no error — and that
+is the check, not git's silence.
+
+**A namespace hazard, checked and clear.** `Recur.lean` opens a new top-level
+`Tm.Recur`, one segment away from the existing `Tm.Field.Recur` that
+`Close.lean`, `Plan.lean`, `Boundary.lean` and `Line.lean` all write as
+`Recur.none`. Those four do **not** import `TmKernel.Recur` (confirmed against
+`.lake/build/ir/Close.c`'s own import line, not by reading the source), and
+`Tm.Recur` declares no `none`, so nothing resolves two ways. `PlannerWit.lean`
+is the one module that sees both, and it builds.
+
+### The renumber this merge owed (AGENTS §6.2, §6.5 item 1)
+
+**Tracks K and P both took cheats 177-179 from `995323b`, and P also took 180.**
+Neither branch could see the other. K merged first and keeps **177-179**; P's
+four are renumbered to **180-183**, in P's block and nowhere else:
+
+| P wrote | now | claim |
+|---|---|---|
+| CHEAT 177 | **180** | the running block reserved for its whole remaining estimate |
+| CHEAT 178 | **181** | a routine placed on top of the running block |
+| CHEAT 179 | **182** | the evening cut into slots |
+| CHEAT 180 | **183** | a wall's `buffer:` run-up left unblocked |
+
+Every citation moved with them, found by grepping the whole repo **including
+prose**: `Planner.lean:1910` ("`Negative.lean`'s cheat 177" → 180) and five
+sentences inside track P's own README block. `grep -o '^/- CHEAT [0-9A-Z]*'
+Negative.lean | sort | uniq -d` prints nothing, and check 4 still rejects all
+four blocks.
+
+### A rename this merge had to chase into four older blocks
+
+P3 restated `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`
+as `…_but_the_running_block` — choice 5b's reservation is a Block the planner
+places, so the empty-list form went false. The old name is gone from the kernel,
+and it appeared in **four** README sentences written at W-14 and W-15, one of
+which (*"is still true and still audited"*) read as a present-tense claim. Each
+now carries a one-paragraph in-place rename note with the original text left
+readable — the pattern gap 348 and W-16's track A used, and the one W-14 and
+W-15 did not, which is the ledger rot this campaign has paid for twice. This is
+the class check 3 cannot see: it counts theorems and cannot read prose.
+
+`plan_reserves_one_block_at_a_time` was **not** renamed — it left `Goals.lean`
+and reappeared as `Planner.plan_reserves_one_block_at_a_time`, so its five
+citations in `AGENTS.md`, the design and `Planner.lean` still resolve. Grepped
+to confirm rather than assumed.
+
+### Acceptance, re-measured on each merged tree, never carried
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet`; the binary drives at **16G**. No bound was raised,
+nothing was retried uncapped, and no fixture, snapshot, corpus file or latency
+band was re-blessed.
+
+| row | final tree | candidate merge `73f9ae7` | baseline `e31e0c5` | `995323b` (the brief's) |
+|---|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | 7/7 | 7/7 |
+| check.sh warm | **3.33 / 3.23 / 3.29 / 3.31 s** (and a first reading of 4.05 s that carried the relink — see below) | 3.27 / 3.29 / 3.26 s | 3.12 s | — |
+| cold rebuild | — | 3 m 18.6 s | — | — |
+| peak RSS | **1.93-1.96 GiB** (2,024,304-2,052,012 KiB) | 1.90-1.95 GiB | — | 1.95-2.00 GiB |
+| axiom audit | **4,362 theorems**, §6.3 reconciliation `ok` | 4,311 | 4,275 | 4,265 |
+| burn-down | **11, all stage 6** | 12 | 12 | 12 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | 29/37, 4/5 |
+| `cargo test --workspace` | **1,323 passed / 0 failed / 9 ignored, 78 result lines**, 0 warnings | 1,323 / 0 / 9, 78 | 1,323 / 0 / 9, 78 | 1,318 |
+| FFI | **100 / 0** (kernel 86, corpus 8, stack 6) | 100 / 0 | — | 100 / 0 |
+| T5 `kernel_replay_parity` | **29 / 0 / 4 ignored** | same | — | same |
+| the door `kernel_log_door` | **23 / 0** | 23 / 0 | — | 23 / 0 |
+| `cli_switch_acceptance` | **9 / 0** | 9 / 0 | — | 9 / 0 |
+| `kernel_call_counts` | **2 / 0** | 2 / 0 | — | 2 / 0 |
+| `cli_check_log` | **10 / 0** | 10 / 0 | — | 9 / 0 |
+| `kernel_lookahead_parity` | **4 / 0** | 4 / 0 | — | 4 / 0 |
+| `cli_latency` | **5 passed / 0 / 1 ignored** ×3 | — | — | 5 / 0 / 1 |
+
+**The audit arithmetic closes with no remainder.** 4,265 (`995323b`) + 10 (track
+A, already on the branch) = 4,275; + 36 (K3b: `Replay.mem_instancesOf`, 29
+`Recur`, 6 `PlannerWit`) = 4,311; + 51 (P3) = **4,362**. Track P's own branch
+reports 4,316 = 4,265 + 51, which is the same 51 counted from the other side.
+
+**`cargo test --workspace` did not move, and that is the right answer.** Neither
+K3b nor P3 adds a line of Rust; every one of this run's five new Rust tests is
+track A's and was already on the branch at the baseline.
+
+**check.sh's time rose 5.8%, and the first reading was not it.** The final
+tree's *first* run measured **4.05 s** — taken immediately after a 168-job relink
+on a machine that had just finished two full `cargo test --workspace` passes —
+which against `e31e0c5`'s 3.12 s would be **+30%** and outside the 10%-per-step
+rule. Four further readings on the settled machine are **3.33 / 3.23 / 3.29 /
+3.31 s**, median **3.30 s**, **+5.8%**, inside the rule; the candidate merge,
+which carries 36 of the run's 87 new theorems, sits between at 3.27 / 3.29 /
+3.26 s. So the step's real cost is about 0.18 s for 87 theorems, and the 4.05 s
+was the relink. **The first reading is printed rather than dropped**, because a
+block that quietly keeps only the readings that fit its rule is the failure
+§5.11 is about: the rule is met on four readings and the outlier is named.
+
+### T11, as readings and never as single numbers, with the machine state
+
+Three `cli_latency` passes, release, `--nocapture --test-threads=1`, on a
+machine that had just run two workspace test passes and several capped Lean
+builds — W-15's repair step established that this is the state that *inflates*
+every row. It did not.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| later verb (`tm drop`) | 126.66, 121.68, 126.69 | 146.66-147.01 | **20-25 ms BELOW the band** |
+| 3-day-old routine | 101.37, 101.40, 106.41 | 121.6-136.8 | **15-20 ms below** |
+| reseal (`--now +1 day`) | 187.37, 187.45, 187.40 | 197.5-212.6 | **10 ms below** |
+| `review week` (All) | 253.59, 253.19, 253.30 | 248.1-253.3 | **at the band**, one reading 0.29 ms over — **NOT** the 278-303 ms "OUT" the brief and two earlier blocks report |
+
+All five of `cli_latency`'s own assertions pass. **Nothing was re-blessed**:
+`tm/tests/cli_latency.rs` is byte-identical to `995323b` (`git diff --stat
+995323b HEAD -- tm/tests/cli_latency.rs` is empty) and no band in this document
+was moved. `review week` stays out of band **as a standing statement** for gap
+275's reason — a capacity verb replays the log twice — and this run's readings do
+not discharge that; they are one more sample, recorded, in **gap 570**.
+
+### What earlier stages bought, re-measured on the merged tree and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep returns **41**, its post-switch
+  floor, re-run on this tree. No in-tree reader was reintroduced. There is still
+  no planner op on the wire: `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs`
+  and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing.
+* **D16, ONE writer.** `Horizon::log` (`tm-core/src/horizon.rs:518`) is still the
+  single append site. **Neither merge touches a line of Rust** — `git diff
+  --stat e31e0c5 HEAD -- tm-core tm` is empty.
+* **D21-D23, the instrument is anchored outside the tree.** Both deletion guards
+  print the post-switch wording (*"T5's in-tree region: GONE, and no reference to
+  §12's reader remains"*, and the door's twin). T5's frozen arms report fork
+  point **4748911** over 20 inputs (7,189 + 9,299 + 803 scalar values); the door
+  reports the same fork point over its 16 `All`-scope inputs at **32,976**
+  values. `fork_arm` ran unconditionally.
+* **Full precision (gap 235).** `the_frozen_comparand_is_read_at_full_precision`
+  passes **by name**, printing *"17-significant-digit literals survive the read
+  (3 checked)"*; `float_roundtrip` is still pinned at `Cargo.toml:29`.
+* **The corpus held at 29/37 files and 4/5 whole plans**, measured separately
+  after each merge and not once at the end.
+* No `sorry` outside `Goals.lean` (the three hits are prose), no new `axiom`, no
+  `native_decide`, no `partial def` (all nine hits are prose naming the ban).
+  `lean-toolchain`, `Cargo.toml`, `lake-manifest.json` and `kernel/corpus/`
+  untouched. No predicate weakened, no assertion removed.
+
+### The burn-down (AGENTS §3.2)
+
+**11 outstanding, every one stage 6** — down one, and the first of the thirteen
+to leave the file. `da1acd9` (track P, P3) discharged **E1**,
+`plan_reserves_one_block_at_a_time`, and it is a §3.1-item-3 discharge and not a
+deletion: the goal **as `Goals.lean` wrote it is false** — the day's Block rows
+include the ones `Planner.pastRows` replays, and a replayed Block can run longer
+than `block_min` — so it ships as
+`PlannerWit.plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`
+with the restatement `Planner.plan_reserves_one_block_at_a_time` beside it,
+restricted to Block rows starting at or after `now`, which is the fork's own
+`assigned_set(day, w.now)`. Both are audited (`Check.lean:5220`, `:5232`) and the
+restatement is **not vacuous** — `PlannerWit.the_reserved_day_assigns_the_running_block`
+computes such a row. Neither merge added a goal.
+
+The other ten are stage 6's P4-P8 and the two relational laws; no stage 3, 4 or
+5 obligation remains in the file.
+
+### Driving the merged binary (§5.13, and the lesson W-15 paid for)
+
+A fresh `tm init --example` tree on a scratch path **outside the repo**, clock
+fixed with `--now 2026-09-07T14:00:00-05:00`, release binary built from this
+tree.
+
+**1. A normal day.** `tm check` → *"no problems"*, exit 0. `tm plan` renders the
+day — the 12:50 wall, the due-today item, routines placed (laundry, workout,
+dinner, groceries, shower), §16's evening (*"21:30 🌙 wind-down · bed 22:00"*,
+*"22:00 · sleep 8h30m"*) and the diagnostics line. `tm now` answers *"nothing
+running"* with the next three rows and `0/6 blocks`. `tm review day` prints the
+day's review block. All exit 0.
+
+**These rows are `tm-core/src/planner.rs`'s, not P3's**, and this block says it
+where W-15's said the opposite. `TM_TRACE_KERNEL_CALLS=1` on `tm plan` prints
+exactly `log`, `log`, `capacity+log` — the §6.3 auto-close's read on a fresh
+tree, then the capacity call — **and no planner call**, because there is no
+planner op to call. P3's cut, its reservation and K3b's occurrences are
+**unreachable from the shipped binary**, and that is a grep and a drive, not an
+assertion.
+
+The one P3 edit that *is* on a shipped path is `Look.day0Slots`' body, widened to
+`energizeToday I (day0Cut I).slots` with `day0Slots_is_energizeToday : … = …`
+proved by `rfl` — the same function, so the shipped answer cannot have moved,
+and `kernel_lookahead_parity`'s 92 day-0 comparisons against `Ctx::today_slots`
+are green and unmoved.
+
+**2. A duplicated inbox line — D32, on the merged tree.** Appending a second
+`- ask Kun about the dinner place` to `inbox.md` (lines 2 and 5):
+
+```
+$ tm check
+inbox.md:2: error[kernel-load]: kernel refusal: dupId — inbox.md:2 and inbox.md:5 are two
+  lines in one file that resolve to the store key `ask Kun about the dinner place` …
+inbox.md:5: error[kernel-load]: …
+2 errors, 0 warnings          [exit 2]
+```
+
+Both lines are named, both positions get their own diagnostic, and the exit code
+is 2 — the spec's validation-problems code. `tm plan`, `tm now`, `tm review day`
+and `tm drop ^d2` each print the same refusal naming both lines and exit 1,
+which is the intended behaviour and no longer the silent one gap 471 found. The
+merge changes nothing about D32 and the drive confirms it rather than assuming it.
+
+**3. `tm drop` on a routine title — D33, on the merged tree.**
+
+```
+$ tm drop laundry
+dropped ^seuv — a state box makes it a tracked item, so ^seuv was written on the line
+```
+
+`routines.md:7` becomes `- [~] laundry    win:09:00-21:00 dur:30m every:week on-miss:persist ^seuv`.
+`tm check` on the written tree → *"no problems"*, exit 0, and `tm plan` runs and
+no longer places laundry. The id is written, the tree still loads, and the token
+the user did not type is the accepted cost D33 names.
+
+### Gaps opened
+
+**Gap 570 — the four T11 bands have not held a reading for three steps, and the
+machine state does not explain it.**
+1. *What is not done.* On this merged tree all four noisy T11 rows read **below
+   or at** their recorded bands: `tm drop` 121.68-126.69 against 146.66-147.01,
+   the 3-day routine 101.37-106.41 against 121.6-136.8, the reseal
+   187.37-187.45 against 197.5-212.6, and `review week` 253.19-253.59 against
+   248.1-253.3. No band was moved and `cli_latency.rs` is byte-identical to
+   `995323b`.
+2. *Why it is recorded rather than fixed.* Gap 470's item-2 hypothesis — that
+   high readings are a loaded machine — **does not survive this measurement**.
+   These three passes were taken after two full `cargo test --workspace` runs
+   and a 168-job Lean relink, the most loaded state in this run, and they are
+   the *lowest* readings any step has recorded. W-16's track A, also loaded,
+   read 146.95-151.86 for the same `tm drop` row hours earlier on the same
+   machine. Load is therefore not the variable, and this step did not find what
+   is; re-deriving a band from readings whose cause is unknown would be worse
+   than leaving it.
+3. *What it costs.* Every one of the four bands is now decorative: a real
+   regression of 20 ms in `tm drop` would land inside the recorded band and be
+   invisible, and `review week`'s "OUT for gap 275's reason" — which this
+   campaign's briefs repeat as a standing fact — has not reproduced on either of
+   the last two idle-or-loaded measurements. The campaign is carrying a
+   measurement it cannot reproduce in either direction.
+4. *Which stage clears it.* One step that owns the instrument rather than the
+   tree: pin the release binary and the fixture generation, take five readings at
+   a known machine state, and either re-derive all four bands **with the state
+   recorded beside them** (§5.11) or retire them for a relative check against a
+   same-session baseline — the shape track P used for gap 470's item 4. It is the
+   owner's call which, and it is not a merge step's.
+
+571-574 are free.
+
+### Gaps left open, by name
+
+Every gap each track opened stands as that track wrote it; this merge closed
+none and re-aimed none. **Gap 500** (D27 is half done) and **501** (`Recur.lean`
+has no caller) are the two the next step should read first, and **502, 503, 504**
+(the Nat-clamped lookback, the unbounded ordinals, no occurrence column in
+oracle-compare) are recorded-for-a-later-reader findings. Track P's **550-556**
+and track A's **530-531** stand. **Gap 470** stays open and is now joined by
+**570**, which is the same instrument seen from the other side.
+
+### Numbering
+
+Gaps: A 530-531, K 500-504, P 550-556, this step **570**. No collision, and no
+renumber was owed for gaps. Cheats: **four renumbered**, 177-180 → 180-183, as
+the section above records; this step took none. No audit name appears twice
+(4,362 lines, 4,362 distinct names). **Highest on the branch: gap 570, cheat
+183, parity P38.**
+
+### Worktrees
+
+`.claude/worktrees/w16-k` and `.claude/worktrees/w16-p` are removed and their
+branches `w16-k` and `w16-p` left in place. **`.claude/worktrees/stage5-lookahead`
+is untouched**, as the brief requires.
+
+### Method disclosure
+
+`check.sh` was run **six** times in this checkout: once at `e31e0c5` before any
+merge (the baseline column, 3.12 s), once cold after the candidate merge (3 m
+18.6 s, a full Lean rebuild — not quoted as a warm figure), three warm on the
+candidate merge (the readings in the table), and **five** on the final tree, of
+which the first (4.05 s, carrying the relink) is printed beside the four settled
+readings rather than dropped. `lake build TmKernel:static` was run once on the
+final tree before `check.sh`, to separate "does it build" from "does it pass".
+`cargo test --workspace --no-fail-fast` was run **three** times, twice on the
+candidate merge (the first tallied by `tail`, the second by summing the 78
+result lines, which is the quoted figure) and once on the final tree.
+`cli_latency` was run **three** times in release on the final tree; every noisy
+row is reported as all three readings with the machine state. The FFI, T5, door,
+`cli_switch_acceptance`, `kernel_call_counts`, `cli_check_log` and
+`kernel_lookahead_parity` suites were run on **both** merged trees. No new
+`decide` or `rfl` witness was written by this step, so no 8G probe was owed and
+none was run. Both binary drives used one release binary built from the final
+tree, on a scratch `tm init --example` tree **outside the repo**, at
+`MemoryMax=16G`. No bound was raised and nothing was retried uncapped.

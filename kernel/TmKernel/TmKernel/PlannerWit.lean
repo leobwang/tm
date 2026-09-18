@@ -79,7 +79,9 @@ in the day.  Re-deriving them is a `decide`, not a proof.
 `the_witness_assigns_nothing_after_now` and
 `the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` are different: they
 are **tripwires P5 must delete**, beside
-`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`.
+`Planner.the_day_assigns_nothing_after_now_but_the_running_block` (which step P3 restated from
+`…_until_the_assign_step_lands`, because §8.2 choice 5b's reservation made the empty-list form
+false).
 -/
 
 namespace Tm
@@ -475,11 +477,13 @@ theorem the_witness_assigns_the_two_replayed_blocks :
   decide
 
 set_option maxRecDepth 40000 in
-/-- **And the set §8.3's laws are about is still empty**, at the same request.
-`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` is proved for every
-request; this is it fired at one, and it is the tripwire P5 must delete.  The two theorems
-together are the distinction the W-14 repair drew: `assignedOf` counts the replayed past,
-`assignedFrom … now` counts the planner's own placements, and only the second is empty. -/
+/-- **And the set §8.3's laws are about is still empty**, at the same request — because
+**nothing is running at it**.  `Planner.the_day_assigns_nothing_after_now_but_the_running_block`
+is proved for every request; this is it fired at one whose `RuntimeIn` is empty, and it is the
+tripwire P5 must delete.  `the_reserved_day_assigns_the_running_block` below is the same
+computation at a request with a block running, where the set holds exactly that block.  The two
+theorems together are the distinction the W-14 repair drew: `assignedOf` counts the replayed
+past, `assignedFrom … now` counts the planner's own placements. -/
 theorem the_witness_assigns_nothing_after_now :
     assignedFrom (dayPlan theRequest) theRequest.now.sec = [] := by
   decide
@@ -649,7 +653,7 @@ same list whatever Δ is.  The theorem is stated over `state.budget`, which is t
 (`Planner.PlanReq.budget_is_the_stored_one_when_there_is_one`).
 
 **P5 must delete this**, exactly as it must delete
-`Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands`: the day the fold spends
+`Planner.the_day_assigns_nothing_after_now_but_the_running_block`: the day the fold spends
 the budget this stops being true, and the commit that breaks it is the commit that can write
 D29's witness.
 
@@ -671,8 +675,8 @@ theorem the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands
         = splitSleep r l := splitSleep_congr rfl
   unfold assignedOf
   rw [dayPlan_segments, dayPlan_segments]
-  unfold dayRows stepTwoSegs PlanReq.placedRoutines PlanReq.eveningRows PlanReq.sleepSeg
-    PlanReq.sleepInstance
+  unfold dayRows stepTwoSegs PlanReq.placedRoutines PlanReq.placementFold PlanReq.eveningRows
+    PlanReq.sleepSeg PlanReq.sleepInstance
   rw [show PlanReq.routineInstances
       { r with look := { r.look with today0 := { r.look.today0 with budget := b } } }
         = r.routineInstances from rfl, hs]
@@ -805,6 +809,179 @@ theorem a_persist_routine_is_one_carried_obligation_not_sixty_one :
     (Recur.todayInstances 60 Cal.chicago persistPlan.val emptyFacts ["laundry".toList] recurDay
         (Recur.atClock recurDay ⟨840, by omega⟩)).length = 1 := by
   decide
+
+/-! ############################################################################
+## 7. A request with a block running: §8.2 choice 5b, computed (stage 6, step P3)
+
+The `theRequest` above has an empty `RuntimeIn`, so `Planner.PlanReq.activeRun` answers `none`
+at it and every row of its day is step 1's or step 2's.  This section builds the *same* day
+with a block running, which is the first request in the stage whose `dayPlan` holds a
+`SegKind.block` row **the planner placed**, and computes what the battery says about it.
+
+Why it matters, in one line each:
+
+* it is the non-vacuity witness for `Planner.plan_reserves_one_block_at_a_time` and for
+  `Planner.the_day_assigns_nothing_after_now_but_the_running_block` — without it both are
+  statements about an empty set (AGENTS §5.2);
+* it makes six of `PlanCheck`'s seven eligibility-free checks bite on a row the planner placed,
+  where `PlanCheck.dayPlan_ok_core` used to discharge them under `hnopast` alone (README gap
+  **396**, the half W-14 left open);
+* the reservation it computes is **clipped by `current_block_end`** — 70 minutes are still
+  owed and the row is 40 — which is the fork rule E1 turns on, run rather than argued.
+############################################################################ -/
+
+/-- §9's `state.active`: `m1` started at 13:40 with a 90-minute estimate, timer running.  The
+id is the one the morning's log holds; the *plan* holds only the calendar's `g1`, which is why
+the replayed rows above name items the store does not — the fork does the same. -/
+def theRunningBlock : ActiveBlock :=
+  ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 820).sec, 0⟩, 90, false⟩
+
+def theRunningState : RuntimeIn := { RuntimeIn.empty with active := some theRunningBlock }
+
+def witReqInRun : PlanReqIn := { witReqIn with state := theRunningState }
+
+/-- The §4.3 Wednesday at 14:00 with `m1` running. -/
+def theRunningRequest : PlanReq :=
+  ⟨lookWallPlan, witRun, witInput, witCaps, theRunningState, Capped.nil, none⟩
+
+theorem witBuildsRun : mkPlanReq? witReqInRun = .ok theRunningRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInRun witReqIn theRunningRequest
+  simp only [lookWallPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_look_wall_calendar_indexes_one_wednesday_wall.symm)]
+  rw [hz, ht, witRun_resumes]
+  simp only [witCaps_eq, mkRoutines?_of_none]
+
+/-- **The request agrees with `mkActive?` and with `mkDayCfg?`** — the two R10 hypotheses
+`Planner.plan_reserves_one_block_at_a_time` and `PlanCheck.dayPlan_ok_core` carry, discharged
+at a request the builder accepts (README gap 346's shape). -/
+theorem the_running_request_agrees :
+    theRunningRequest.activeAgrees = true ∧ theRunningRequest.dayAgrees = true := by decide
+
+set_option maxRecDepth 40000 in
+/-- **The reservation, computed**: from `now` to the end of the `block_min` block it is in.
+Seventy minutes are still owed (`leftMin = 70`, the estimate less the twenty worked since
+13:40) and the row runs **forty** — `Planner.PlanReq.currentBlockEnd` is what cuts it, which is
+the fork rule §8.3's E1 turns on.  Neither the estimate nor the window is what binds here, and
+that is the point of computing it. -/
+theorem the_reservation_is_clipped_to_the_block_it_is_in :
+    theRunningRequest.activeRun.map (fun q => (q.start, q.stop, q.leftMin))
+      = some ((Cal.instantOf Cal.chicago 739867 840).sec,
+              (Cal.instantOf Cal.chicago 739867 880).sec, 70) := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The day, end to end, with a block running**: the two replayed Blocks, the written wall,
+**the reservation**, and §16's two evening rows — six rows, in the fork's row order. -/
+theorem the_reserved_day_is_the_witness_day_and_the_running_block :
+    (dayPlan theRunningRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
+          SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The reservation carries no slot energy and is marked `▶`** — §8.2 choice 5b's two
+sentences, computed over the produced day rather than read off the definition. -/
+theorem the_reservation_row_carries_no_energy :
+    ((dayPlan theRunningRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.kind, s.val.energy, s.val.planned))
+      = [(SegKind.block, none, some 70)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The day assigns the running block after `now`, and nothing else** — the non-vacuity
+witness for `Planner.the_day_assigns_nothing_after_now_but_the_running_block`, and the reason
+that tripwire is a statement about a non-empty set.  `PlannerWit.the_witness_assigns_nothing
+_after_now` is the same computation at the request with nothing running. -/
+theorem the_reserved_day_assigns_the_running_block :
+    assignedFrom (dayPlan theRunningRequest) theRunningRequest.now.sec = [['m','1']] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The battery passes at a request whose day holds a Block row the PLANNER placed.**
+
+This is the half of README gap **396** the W-14 land step left open.  `the_battery_passes_at
+_the_witness` above answers it for the replayed past; this answers it for §8.2 choice 5b, and
+the difference matters: six of the seven checks were discharged by
+`PlanCheck.dayPlan_ok_core`'s `hnopast` *and* by the day having no planner-placed Block at all,
+so nothing in the stage had yet shown a checker meeting a row the planner is responsible for.
+Here `oneBlockAtATime` compares the reservation against `block_min`, `noBlockOverAWall` puts it
+beside the calendar's meeting, `noOverbook` runs its `withoutActive` filter on a row that
+really is the running one, and `noDemandingAfterWindDown` has §16's evening to compare with. -/
+theorem the_battery_passes_at_the_reserved_day :
+    PlanCheck.planOkCore theRunningRequest (dayPlan theRunningRequest) = true := by
+  decide
+
+/-- The day with the reservation run half an hour past the block it is in. -/
+def stretchTheReservation (s : WfSeg) : WfSeg :=
+  if s.val.flags.current then Planner.segOf { s.val with stop := s.val.stop + 1800 } else s
+
+def theOverrunDay : DayPlan :=
+  { dayPlan theRunningRequest with
+    segments := (dayPlan theRunningRequest).segments.map stretchTheReservation }
+
+set_option maxRecDepth 40000 in
+/-- **It bites on the row the planner placed**: let the reservation run seventy minutes — the
+whole remaining estimate, which is what the fork's `current_block_end` refuses — and
+`oneBlockAtATime` refuses the day.  A checker that only ever answered `true` about the
+replayed past would not have caught this. -/
+theorem the_battery_bites_on_the_reservation :
+    PlanCheck.oneBlockAtATime theRunningRequest theOverrunDay = false ∧
+      PlanCheck.planOkCore theRunningRequest theOverrunDay = false := by
+  decide
+
+/-! ############################################################################
+## 8. `plan_reserves_one_block_at_a_time` as stage 6 wrote it is REFUTED
+############################################################################ -/
+
+/-- The same Wednesday with `[day] block_min` shortened to half an hour — a config edit a user
+makes after a morning of hour-long blocks.  Nothing else moves: `Planner.dayRows` does not read
+`block_min` at all (steps 1 and 2 place walls, the past, the routines and the evening), so the
+day is the five rows of `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the
+_evening` with a *shorter* declared block. -/
+def theShortBlockRequest : PlanReq :=
+  { theRequest with
+    look := { theRequest.look with
+      day := { theRequest.look.day with
+        cut := { theRequest.look.day.cut with blockMin := 30 } } } }
+
+set_option maxRecDepth 40000 in
+/-- The witness, computed: a Block row of sixty minutes on a day whose `block_min` is thirty. -/
+theorem the_short_block_day_holds_a_block_longer_than_a_block :
+    ((dayPlan theShortBlockRequest).segments.any (fun s =>
+        s.val.kind == SegKind.block &&
+          decide ((dayPlan theShortBlockRequest).blockMin * 60 < s.val.stop - s.val.start)))
+      = true := by
+  decide
+
+/-- **§8.3's E1 as `Goals.lean` wrote it is FALSE** (AGENTS §3.1 item 3, D5), and the reason is
+`PlanCheck`'s own finding 1 (README gap 385): the day's Block rows include the ones
+`Planner.pastRows` replays from the log, and *"a Block the log holds can run longer than
+`block_min` … none of it the planner's doing"*.  `Planner.plan_reserves_one_block_at_a_time` is
+the restatement — over the Block rows that start at or after `now`, which is the fork's own
+`assigned_set(day, w.now)` restriction — and it ships in the same commit as this. -/
+theorem plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (s : WfSeg), s ∈ (dayPlan r).segments → s.val.kind = SegKind.block →
+        s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60) := by
+  intro h
+  have hb := the_short_block_day_holds_a_block_longer_than_a_block
+  simp only [List.any_eq_true, Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hb
+  obtain ⟨s, hs, hk, hlong⟩ := hb
+  exact absurd (h theShortBlockRequest s hs hk) (by omega)
+
 
 end PlannerWit
 end Tm
