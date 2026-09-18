@@ -33562,8 +33562,17 @@ have their `@[csimp]` twins.
 
 **Gap 583 — CLOSED.** The gap-552 run-up section cites cheat **183**.
 
-**Gap 584 — OPEN, and NEW: a host-only write still reaches a tree the kernel
-refuses, when the line is addressed by its `^id`.**
+**Gap 584 — CLOSED at W-17 track A** (`kernel_bridge::gate`, the owner's D35;
+the measurement it was conditional on is 126.5–126.8 ms against `tm drop`'s
+126.7–142.0 ms, and it fits). Item 4 below guessed "P5 at the latest"; it landed
+one step earlier, on its own track. What follows is the gap as it was written,
+kept because a dated block is written history. **Its item 1 is now false and its
+item 3 is now false**; what is still true, as its own gap **630**, is that the
+gate is a *pre*-condition: a host-only write whose own bytes break a sound tree
+still exits 0 — driven with `tm add --to routines -- "- laundry …"`.
+
+**Gap 584 — as written, and now closed: a host-only write still reaches a tree
+the kernel refuses, when the line is addressed by its `^id`.**
 1. *What is not done.* Gap 576 refuses an ambiguous **title**. It does not
    refuse a **tree**. Driven on a fresh example tree with one duplicated
    `- laundry …` line: `tm edit ^d1 'title=CS 234 pset 2 renamed'` takes the
@@ -33600,7 +33609,8 @@ refuses, when the line is addressed by its `^id`.**
 Everything the three tracks and the land step left open stands. **Gap 500**
 (D27 is half done) and **501** (`Recur.lean` has no caller) are still the two to
 read first, and gap 577 is now the third, because it is what gap 500 costs
-today. **502, 503, 504**, track P's **550-556**, track A's **530-531**, **470**
+today. *(W-17 track A: gap **584** is closed — see the block at the end of this
+file — and its residue is gap **630**.)* **502, 503, 504**, track P's **550-556**, track A's **530-531**, **470**
 and **570** are untouched. **Gap 394 is closed** and its two entries say so in
 place. **Gap 531** stands and is unrelated to gap 575: the kernel still will not
 put a box on a line that has none, which is why both boxing verbs write the box
