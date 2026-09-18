@@ -5430,3 +5430,32 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.theRunningRequest_wallsAgree
 #print axioms Tm.PlannerWit.the_restricted_day_keeps_the_reservation_and_the_wall
 #print axioms Tm.PlannerWit.the_lift_applies_at_the_running_request
+
+-- ===========================================================================
+-- APPENDED 2026-09-18: stage 6, run **W-17**, the REPAIR step --
+-- the root walk the key really does, and the census at the reserved day.
+--
+-- README gap 677: inverting `Planner.CandKey.nums`' `siteNums k.root ++
+-- siteNums k.own` to `siteNums k.own ++ siteNums k.root` left check.sh 7/7 and
+-- `cargo test --workspace` 1,337/0/9 green (both re-measured under the
+-- inversion), because every candidate of every witness in the tree had a root
+-- site EQUAL to its own site.  `theRootedRequest` is the first plan in which
+-- the two disagree -- two week tasks whose month parents are crossed -- and
+-- `the_root_order_decides_before_the_items_own` is the `decide` the inversion
+-- fails.  `exchanging_the_parents_exchanges_the_order` is its perturbation
+-- half: a wrong VALUE fails, not only a missing name (gap 577's rule).
+--
+-- README gap 678: `PlanCheck.lean`'s two lift paragraphs quoted populations
+-- nothing computed -- one of them citing
+-- `the_battery_census_at_the_reserved_day` for a whole run before the theorem
+-- existed.  It exists now, and it counts what `checksCore`'s seven range over
+-- at `theRunningRequest`: FOUR of seven over the whole day, THREE of seven
+-- over the `PlanCheck.withoutPast` day the new lift is about.
+-- ===========================================================================
+#print axioms Tm.PlannerWit.the_rooted_witness_loads
+#print axioms Tm.PlannerWit.the_rooted_witness_separates_the_root_from_the_item
+#print axioms Tm.PlannerWit.the_rooted_requests_answers_tie_on_p
+#print axioms Tm.PlannerWit.the_root_order_decides_before_the_items_own
+#print axioms Tm.PlannerWit.the_swapped_rooted_witness_loads
+#print axioms Tm.PlannerWit.exchanging_the_parents_exchanges_the_order
+#print axioms Tm.PlannerWit.the_battery_census_at_the_reserved_day

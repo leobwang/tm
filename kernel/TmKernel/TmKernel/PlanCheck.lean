@@ -811,14 +811,27 @@ carries is the findings above, named:
   whose `now` sits on the horizon produces a zero-length reservation row and the interval
   comparisons stop being about anything.
 
-**Six of the seven checks are now non-vacuous whenever something is running**, which is what
-step P3 bought: `noOverbook` runs its `withoutActive` filter on a row that really is the
+**What step P3 bought is that each of the seven is *discharged* by the reservation** rather
+than by an assumption: `noOverbook` runs its `withoutActive` filter on a row that really is the
 reservation, `oneBlockAtATime` compares a real Block against `block_min`, `energyFilterOk`
 takes the `energy = none` branch choice 5b requires, `noBlockOverAWall` is answered by
 `Look.freeIntervals`, `noBlockOverABreak` by the past half's clip at `now`, and
 `noDemandingAfterWindDown` by `active_run`'s own limit (README gap **437**, refuted).
+
+**Being discharged by a real row is not the same as having a subject, and the count of the
+second is FOUR, not six** (W-17 repair, README gap 678; this paragraph read *"six of the seven
+checks are now non-vacuous whenever something is running"* and nothing computed it).  Measured
+over `dayPlan theRunningRequest` by `PlannerWit.the_battery_census_at_the_reserved_day`:
+`noOverbook` (`withoutActive` leaves `m2`'s hour, 3 600 s against the budget),
+`oneBlockAtATime` (three Block rows), `noBlockOverAWall` (three Blocks beside one Wall) and
+`wallsUnmoved` (the Wall row's `^g1` is in that store) have subjects; `energyFilterOk`,
+`noBlockOverABreak` and `noDemandingAfterWindDown` are **vacuous** — no row carries a slot
+energy, there is no Break row, and no Block starts at or after the wind-down — and each waits
+on **P5** (README gap 650).
 `PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block` and
-`PlannerWit.the_battery_passes_at_the_reserved_day` compute all of it at a concrete request.
+`PlannerWit.the_battery_passes_at_the_reserved_day` compute the day and the verdict; neither
+computes a population, which is why the census is a third theorem and not a reading of those
+two.
 
 This is **not** a discharge of any `Goals.lean` entry beyond E1, which leaves the file in this
 step over its own restatement (`Planner.plan_reserves_one_block_at_a_time`). -/
@@ -1380,7 +1393,9 @@ day, `dayPlan_ok_core` keeps the whole day and pays for it with `hnopast` — so
 weakens nothing (D5) and each says something the other does not.
 
 **What is non-vacuous here, measured rather than asserted**
-(`PlannerWit.the_battery_census_at_the_reserved_day`): with a block running, `oneBlockAtATime`,
+(`PlannerWit.the_battery_census_at_the_reserved_day`, which the W-17 repair step wrote — this
+sentence cited it for a run before it existed, README gap 678): with a block running,
+`oneBlockAtATime`,
 `noBlockOverAWall` and `wallsUnmoved` all have real subjects; `noOverbook` is vacuous *here*
 because the only surviving Block **is** the Active reservation and `withoutActive` removes it,
 which is design §6.3 row 1 taken literally; and `energyFilterOk`, `noBlockOverABreak` and

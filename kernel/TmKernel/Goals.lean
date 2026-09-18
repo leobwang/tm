@@ -544,7 +544,11 @@ P0, `Planner.lean`): `SegKind`, `Seg`, `DayPlan`, `PlanReq` and `dayPlan` are
 real now, and so are `segItems`, `assignedOf` and `blockSeconds`.  `Seg` moved
 from minutes-since-midnight to `Look.Slot`'s **absolute seconds** (README gap
 256), which is why every statement below reads `s.val.start`/`s.val.stop`.
-Only `edfNumbers` stays provisional; design §5.5 gives it to step **P4**.
+**No provisional declaration is left in this file**: `edfNumbers` was the last one and step
+**P4** took it (`Planner.edfNumbers`), which the section below says in full.  *(This sentence
+read "Only `edfNumbers` stays provisional; design §5.5 gives it to step P4" until the W-17
+repair — a stale citation contradicted by this same file two hundred lines down, and check 3
+cannot read doc comments.)*
 
 **NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED.**  Design §6.4
 says which step makes each goal real: P1 the two wall laws, P2 wind-down, P3
@@ -646,12 +650,19 @@ names the restriction §8.3 is about rather than assuming it away, and the lift
 then holds for every request, whatever the log holds.  Both lifts are kept; they
 are incomparable and nothing is weakened (D5).  And
 `PlannerWit.the_battery_census_over_a_produced_day` stops the vacuity being a
-matter of reading: it **computes**, over a day the planner really produced, that
-six of the eleven checkers have a subject and five do not — `energyFilterOk` (no
-row carries a slot energy until P5), `noBlockOverABreak` (no Break row until P5,
-README gap 551), `noDemandingAfterWindDown` (no Block at or after the wind-down
-until P5/P7), `impossibleKept` (`diagnostics.impossible` is empty until P4,
-README gap 367) and `batchDoesNotReachPast` (no Batch row until P5).  All eleven
+matter of reading: it **computes**, over the day the planner produces at
+`theStoredRequest`, that **five** of the eleven checkers have a subject and
+**six** do not — `energyFilterOk` (no row carries a slot energy until P5),
+`noBlockOverABreak` (no Break row until P5, README gap 551),
+`noDemandingAfterWindDown` (no Block at or after the wind-down until P5/P7),
+`wallsUnmoved` (the day's one Wall row names `^g1` and *this* store holds the two
+tasks instead — it has a subject at `theRequest` and at `theRunningRequest`, and
+`PlannerWit.the_battery_census_at_the_reserved_day` computes that),
+`impossibleKept` (`diagnostics.impossible` is empty until **P8**, the step that
+fills it; gap 367's other half landed at P4 as `Planner.edfNumbers`) and
+`batchDoesNotReachPast` (no Batch row until P5).  *(This read "six … and five do
+not" until the W-17 repair: the sixth was `wallsUnmoved`, counted at a request
+the census is not stated over.)*  All eleven
 now **refuse** a mutation of that day (`the_battery_bites_over_a_produced_day`),
 which is AGENTS §5.8's other direction and was three of eleven before this run.
 ############################################################################ -/

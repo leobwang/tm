@@ -2334,9 +2334,11 @@ theorem theLiftHoldsOverTheReplayedPastToo :
     PlanCheck.planOkCore PlannerWit.theMorningWallRequest
       (Planner.dayPlan PlannerWit.theMorningWallRequest) = true := by decide
 
-/- CHEAT 190 — the five vacuous checkers asserted to have subjects.  README
-   gap 396's honest half is that five of the eleven range over nothing on a day
-   the planner produces today, and
+/- CHEAT 190 — the vacuous checkers asserted to have subjects.  README
+   gap 396's honest half is that SIX of the eleven range over nothing on the day
+   the planner produces at `theStoredRequest` (this comment read "five" until the
+   W-17 repair counted `wallsUnmoved`, whose subject is at `theRequest` and not
+   here — README gap 678), and
    `PlannerWit.the_battery_census_over_a_produced_day` computes it.  This block
    claims the day carries a Break row, which is what `noBlockOverABreak` would
    need to be checking anything (`Planner.a_break_row_is_a_replayed_row`: the
@@ -2345,5 +2347,34 @@ theorem theLiftHoldsOverTheReplayedPastToo :
 theorem theProducedDayCarriesABreakRow :
     ((Planner.dayPlan PlannerWit.theStoredRequest).segments.any
       (fun s => s.val.kind == Planner.SegKind.brk)) = true := by decide
+
+/- CHEAT 191 — §7.4's key read the ITEM's line order before its ROOT's.  The
+   fork sorts `((u8::from(!is_wall)), (p, root_order, own_order)), i` and
+   `Planner.CandKey.nums` puts `siteNums k.root` first for exactly that reason.
+   Inverting the two left check.sh 7/7 and `cargo test --workspace` 1,337/0/9
+   green through W-17, because every candidate of every witness had a root site
+   equal to its own (README gap 677).  `theRootedRequest` is the plan in which
+   they disagree: `^m1` is first in the week and its root `^O2` is second in the
+   month, `^m2` the other way.  This block claims the order the inverted key
+   would give — the candidates' own line order, which is also their request
+   order.  `decide` refuses: the produced order is `^m2, ^m1`. -/
+theorem theKeyReadsTheItemsOwnOrderFirst :
+    PlannerWit.rankedIds PlannerWit.theRootedRequest = [['m','1'], ['m','2']] := by decide
+
+/- CHEAT 192 — `wallsUnmoved` asserted to have a subject at the request the
+   census is stated over.  `PlanCheck.wallUnmoved` takes its `store.get i = none`
+   branch for a Wall row naming an id the plan does not hold, and the store
+   behind `theStoredRequest` holds the morning's two tasks, not the calendar's
+   `^g1` — so the checker ranges over nothing there, which is the sixth vacuous
+   checker README gap 678 added to gap 650's five.  This block claims the Wall
+   row's item IS in that store.  `decide` refuses.  (It is in the store behind
+   `theRunningRequest`, and `PlannerWit.the_battery_census_at_the_reserved_day`
+   computes that — the two requests are what the count turns on.) -/
+theorem theWallRowIsInTheStoredRequestsStore :
+    ((Planner.dayPlan PlannerWit.theStoredRequest).segments.filter
+      (fun s => s.val.kind == Planner.SegKind.wall)).map
+        (fun s => (s.val.item.bind
+          (fun i => PlannerWit.theStoredRequest.plan.val.store.get i)).isSome) = [true] := by
+  decide
 
 end Tm

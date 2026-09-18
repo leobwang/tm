@@ -1238,8 +1238,11 @@ witness exists for it over a hand-built day.
 
 * **Non-vacuous** — the checker's quantifier has a subject on the day the planner produced, so
   the `true` it returns was earned.  `the_battery_census_over_a_produced_day` computes the
-  populations; six of the eleven have one and five do not, and each of the five waits on a
-  named later step.
+  populations; **five** of the eleven have one over the day at `theStoredRequest` and six do
+  not, and each of the six waits on a named later step.  (This read *"six … and five do not"*
+  until the W-17 repair: it counted `wallsUnmoved`, whose subject is there at `theRequest` and
+  at `theRunningRequest` but **not** at the request the census is stated over — the caveat the
+  table carried and the count did not.  The census now computes that conjunct too.)
 * **Bites** — some mutation of that same produced day is refused.  `the_battery_bites_*`
   below, with W-15's and W-16's, make it **eleven of eleven**.
 
@@ -1308,8 +1311,14 @@ set_option maxRecDepth 40000 in
 produced.**  Every line is a population, computed; the prose beside each says which checker it
 makes vacuous and which step ends that.
 
-* three Block rows and one Wall row — `noOverbook`, `oneBlockAtATime`, `noBlockOverAWall` and
-  (at `theRequest`, whose store holds the calendar item) `wallsUnmoved` have subjects;
+* three Block rows and one Wall row — `noOverbook`, `oneBlockAtATime` and `noBlockOverAWall`
+  have subjects;
+* **the Wall row's item is NOT in this store** — `wallsUnmoved` takes `wallUnmoved`'s
+  `store.get i = none` branch and is **vacuous here**.  It has a subject at `theRequest` and at
+  `theRunningRequest`, whose store holds the calendar's `^g1`
+  (`the_battery_census_at_the_reserved_day`), and not at this request, whose store was swapped
+  for the two tasks the morning worked.  That is the conjunct below and it is why the honest
+  count over *this* day is **five of eleven**, not six (W-17 repair);
 * `assignedFrom … now` holds one item, so one of the three Blocks is the **planner's**;
 * **no Break row** — `noBlockOverABreak` is vacuous; the cut's breaks reach the day only when
   work touches them (`Planner.a_break_row_is_a_replayed_row`, README gap 551), which is **P5**;
@@ -1328,6 +1337,10 @@ theorem the_battery_census_over_a_produced_day :
       ((dayPlan theStoredRequest).segments.filter
         (fun s => s.val.kind == SegKind.wall)).length = 1 ∧
       assignedFrom (dayPlan theStoredRequest) theStoredRequest.now.sec = [['m','1']] ∧
+      ((dayPlan theStoredRequest).segments.filter
+        (fun s => s.val.kind == SegKind.wall)).map
+          (fun s => (s.val.item.bind
+            (fun i => theStoredRequest.plan.val.store.get i)).isSome) = [false] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.brk) = [] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
@@ -1531,6 +1544,193 @@ theorem the_lift_applies_at_the_running_request :
   PlanCheck.dayPlan_ok_core_from_now theRunningRequest theRunningRequest_wallsAgree
     the_running_request_agrees.1 the_running_request_agrees.2
     the_running_request_is_inside_the_calendar the_running_request_is_plain
+
+/-! ############################################################################
+## 13. The root walk the key really does, and the census at the reserved day
+   (W-17 repair step)
+############################################################################
+
+Two holes the W-17 auditors found, and they are the same hole twice: **a fact asserted in
+prose beside a `decide` that could not see it.**  README gap 577's class, inside the two steps
+written to close it.
+
+**(a) §7.4's key compares the ROOT's line order before the item's own, and nothing in this
+file could tell.**  `the_ranking_request_reads_the_plans_line_order` computes
+`ownSite ^g1 = some ⟨0,0⟩ ∧ rootSite ^g1 = some ⟨0,0⟩` — the two are **equal**, and they are
+equal (or both `none`) for every candidate of every witness the tree held.  So inverting
+`Planner.CandKey.nums`' `siteNums k.root ++ siteNums k.own` to
+`siteNums k.own ++ siteNums k.root` left **`check.sh` 7/7 and `cargo test --workspace`
+1,337 passed / 0 failed / 9 ignored** — both re-measured under the inversion by the repair step
+— while `#eval` shows the order flipping.  `theRootedRequest` below is the first request in
+which the two orders **disagree**, and `the_root_order_decides_before_the_items_own` is the
+`decide` the inversion fails.
+
+**(b) The census stopped at `theStoredRequest`, and `PlanCheck.lean`'s header quoted a number
+from a day nobody had counted.**  `the_battery_census_at_the_reserved_day` counts the same
+populations over `dayPlan theRunningRequest` and over the `PlanCheck.withoutPast` day the new
+lift is about, so both lifts' vacuity is a computed fact at the request their own doc comments
+cite.  It is what `PlanCheck.dayPlan_ok_core_from_now`'s *"measured rather than asserted"*
+paragraph names; that paragraph cited `the_battery_census_at_the_reserved_day` before the
+theorem existed.
+
+**Nothing here re-implements a placement rule or a checker** (AGENTS §5.3): the plan goes
+through `Boundary.loadPlan`, the candidates through `Look.prioritiesWithFloors` by way of
+`PlanReq.candAnswers`, the order through `Planner.sortRanked`, and every population is a
+`List.filter` over the day `Planner.dayPlan` built. -/
+
+/-- **A plan whose root order is the REVERSE of its items' own order.**  Two week tasks, two
+month outcomes, and the parents crossed: `^m1` is first in the week and its root `^O2` is
+second in the month, `^m2` is second in the week and its root `^O1` is first.  That is the one
+shape in which §7.4's `(root, own)` and a hypothetical `(own, root)` give different answers,
+and `PlannerWit` had no such shape in it.
+
+It is `storedWitness` widened by a `@parent` on each task and two outcome lines — the same two
+documents, the same two ids, the same `ci:5`. -/
+def rootedWitness : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList,
+       "- [ ] 5 6b Finish the report @O2 ^m1".toList,
+       "- [ ] 5 6b Write the tests   @O1 ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩,
+      ["# Outcomes".toList,
+       "- [ ] 5 Lean: through ch.8 of the tutorial ^O1".toList,
+       "- [ ] 4 Soundcode: end-to-end demo runs    ^O2".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_rooted_witness_loads : loadsOk rootedWitness = true := by decide
+
+/-- The loaded store.  Total by `the_rooted_witness_loads`: the error branch is refuted, not
+defaulted (`Boundary.lookWallPlan`'s pattern, as `storedPlan` does it). -/
+def rootedPlan : WfPlan :=
+  match h : loadPlan rootedWitness with
+  | .ok p => p
+  | .error _ => absurd the_rooted_witness_loads (by simp [loadsOk, h])
+
+/-- Two candidates that agree on **every** field but their id, so the key's first two digits
+(`wall`, then `p`) tie and the order falls through to the sites — which is where the root walk
+lives. -/
+def rootedCands : List (Look.Cand × Option Look.Floor) :=
+  [(⟨['m','1'], 3, none, 50, none, false, false, false, false, false, false, none⟩, none),
+   (⟨['m','2'], 3, none, 50, none, false, false, false, false, false, false, none⟩, none)]
+
+/-- The §4.3 Wednesday with that plan behind it and those two candidates on the wire. -/
+def theRootedRequest : PlanReq :=
+  { theRequest with plan := rootedPlan, cands := ⟨rootedCands, by decide⟩ }
+
+set_option maxRecDepth 40000 in
+/-- **The two orders disagree, computed.**  `^m1` is earlier in the week and its root is later
+in the month; `^m2` is the other way.  `Plan.rootOf` is the walk and `PlanReq.rootSite` reads
+it — neither is re-implemented here. -/
+theorem the_rooted_witness_separates_the_root_from_the_item :
+    theRootedRequest.ownSite ['m','1'] = some ⟨0, 1⟩ ∧
+      theRootedRequest.rootSite ['m','1'] = some ⟨1, 2⟩ ∧
+      theRootedRequest.ownSite ['m','2'] = some ⟨0, 2⟩ ∧
+      theRootedRequest.rootSite ['m','2'] = some ⟨1, 1⟩ := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **And §7.2 gives the two the same `p`**, so nothing ahead of the sites can decide the
+pair.  Without this the next theorem would be satisfied by a key that never looked at a site
+at all. -/
+theorem the_rooted_requests_answers_tie_on_p :
+    theRootedRequest.candAnswers.map (fun o => (o.out.cand.id, o.out.p))
+      = [(['m','1'], some 5), (['m','2'], some 5)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **THE ROOT'S LINE ORDER DECIDES, AND THE ITEM'S OWN DOES NOT.**  The candidates arrive as
+`^m1, ^m2` and their own line order is `^m1, ^m2`; the produced order is `^m2, ^m1`, because
+`^m2`'s root stands first in the month.  Both the request position and the item's own site
+would give the other answer, so this is the one witness that separates fork
+`((u8, (p, root_order, own_order)), i)` from `((u8, (p, own_order, root_order)), i)`.
+
+**This is the `decide` that the inversion fails** — and the inversion left both suites green
+(README gap 677). -/
+theorem the_root_order_decides_before_the_items_own :
+    rankedIds theRootedRequest = [['m','2'], ['m','1']] ∧
+      theRootedRequest.candAnswers.map (fun o => o.out.cand.id) = [['m','1'], ['m','2']] := by
+  decide
+
+/-- The same two documents with the **parents exchanged**: `^m1 @O1`, `^m2 @O2`.  Nothing else
+moves — not a line, not an id, not a candidate. -/
+def rootedWitnessSwapped : List ReqDoc :=
+  [⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList,
+       "- [ ] 5 6b Finish the report @O1 ^m1".toList,
+       "- [ ] 5 6b Write the tests   @O2 ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩,
+      ["# Outcomes".toList,
+       "- [ ] 5 Lean: through ch.8 of the tutorial ^O1".toList,
+       "- [ ] 4 Soundcode: end-to-end demo runs    ^O2".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_swapped_rooted_witness_loads : loadsOk rootedWitnessSwapped = true := by decide
+
+def rootedPlanSwapped : WfPlan :=
+  match h : loadPlan rootedWitnessSwapped with
+  | .ok p => p
+  | .error _ => absurd the_swapped_rooted_witness_loads (by simp [loadsOk, h])
+
+def theSwappedRootRequest : PlanReq :=
+  { theRequest with plan := rootedPlanSwapped, cands := ⟨rootedCands, by decide⟩ }
+
+set_option maxRecDepth 40000 in
+/-- **Exchanging the two `@parent`s exchanges the order**, on a wire that did not change: the
+perturbation half of the pair above (README gap 577's rule — a wrong *value* must fail, not
+only a missing name).  A key that read the item's own site would answer `^m1, ^m2` for **both**
+witnesses; §7.4's reads the root and answers differently for each. -/
+theorem exchanging_the_parents_exchanges_the_order :
+    rankedIds theSwappedRootRequest = [['m','1'], ['m','2']] ∧
+      rankedIds theSwappedRootRequest ≠ rankedIds theRootedRequest := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The census at the day the two lifts are about**, over `theRunningRequest` — the §4.3
+Wednesday at 14:00 with `m1` running, which is the request
+`PlanCheck.dayPlan_ok_core`'s and `PlanCheck.dayPlan_ok_core_from_now`'s doc comments both
+cite.  `the_battery_census_over_a_produced_day` does this at `theStoredRequest`; this does it
+at the reserved day, which is the one those two paragraphs were written about.
+
+Reading it, for `checksCore`'s seven over the **whole** day:
+
+* `noOverbook` — **a subject**: `withoutActive` drops both `m1` rows and leaves `m2`'s hour, so
+  the sum it compares with the budget is 3 600 s and not 0;
+* `oneBlockAtATime` — **a subject**: three Block rows;
+* `noBlockOverAWall` — **a subject**: three Blocks beside one Wall;
+* `wallsUnmoved` — **a subject**: the one Wall row names `^g1` and this store holds it (which
+  is exactly what the store behind `theStoredRequest` does **not** do);
+* `energyFilterOk` — **vacuous**: no row carries a slot energy (P5);
+* `noBlockOverABreak` — **vacuous**: no Break row (P5, README gap 551);
+* `noDemandingAfterWindDown` — **vacuous**: no Block starts at or after the wind-down (P5/P7).
+
+**Four of seven, not six.**  And over the `withoutPast` day the new lift is about, `noOverbook`
+joins them: the only surviving Block **is** the Active reservation and `withoutActive` removes
+it, which is design §6.3 row 1 taken literally — **three of seven**. -/
+theorem the_battery_census_at_the_reserved_day :
+    ((dayPlan theRunningRequest).segments.filter
+        (fun s => s.val.kind == SegKind.block)).length = 3 ∧
+      ((dayPlan theRunningRequest).segments.filter
+        (fun s => s.val.kind == SegKind.wall)).map
+          (fun s => (s.val.item.bind
+            (fun i => theRunningRequest.plan.val.store.get i)).isSome) = [true] ∧
+      blockSeconds (PlanCheck.withoutActive theRunningRequest (dayPlan theRunningRequest))
+        = 3600 ∧
+      (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.brk) = [] ∧
+      (dayPlan theRunningRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] ∧
+      ((PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
+        (fun s => s.val.kind == SegKind.block)).length = 1 ∧
+      blockSeconds (PlanCheck.withoutActive theRunningRequest
+        (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest))) = 0 ∧
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
+        (fun s => s.val.kind == SegKind.brk) = [] ∧
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
+        (fun s => s.val.energy.isSome) = [] ∧
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
+        (fun s => s.val.kind == SegKind.block &&
+          decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] := by
+  decide
 
 end PlannerWit
 end Tm
