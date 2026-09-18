@@ -333,9 +333,12 @@ through. All ten, from `Boundary.lean`, keys in the order they are emitted:
                                                // did: move|moveReopening|copy|carry; stamp/min may be null
 {"err":"<free text>"}                          // jsonErr: see below
 {"err":{"kernel":"<name>"}}                    // see below
-{"err":{"dupId":"<id>"}}
-{"err":{"notADemotion":"<id>"}}
-{"err":{"ambiguousDemotion":"<id>"}}
+{"err":{"dupId":{"key":…,"a":{"path":…,"line":…},"b":{"path":…,"line":…}}}}       // D32, W-16
+{"err":{"notADemotion":{"key":…,"a":{…},"b":{…}}}}          // key: a store key, NOT an `^id` token —
+{"err":{"ambiguousDemotion":{"key":…,"a":{…},"b":{…}}}}     // since D31 it may be a title the kernel
+                                               // derived.  a/b are the two colliding lines, 0-based
+                                               // like badLine, ordered by path then line (spotPair),
+                                               // NOT by the order the request listed its documents
 {"err":{"duplicatePath":"<path>"}}
 {"err":{"badLine":{"path":…,"line":…,"why":…}}}   // why is repr of a PErr: notAnItem|badState|noId|manyIds
 {"err":{"unterminatedComment":{"path":…,"line":…}}}   // line = the opener's 0-based index (a4ccd9c)

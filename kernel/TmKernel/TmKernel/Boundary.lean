@@ -64,11 +64,117 @@ def Store.insert (s : Store) (i : Id) (e : Entity) : Store :=
         · simp only [List.mem_cons, hj, false_or, if_false]; exact s.domSpec j
       domNodup := by simp [List.nodup_cons, h, s.domNodup] }
 
+/-- **Where a line is**: the path of the document it was read from and its
+0-based line index — exactly `LErr.badLine`'s first two fields, under one name
+so the three key collisions below and `badLine` say the position the same way.
+
+D32 (gap 475).  Before it the three collisions carried an `Id` and nothing
+else, and since D31 that `Id` can be a key the kernel *synthesised* from a
+title, so there was no token anywhere in the tree to search for: the message
+named a collision the reader could not locate.  A `Spot` is what makes it
+locatable, and it is a **projection** of the `Placement` the loader already
+held (`Placement.spot`), never a second answer to "where is this line". -/
+structure Spot where
+  path : List Char
+  line : Nat
+deriving DecidableEq, Repr, Inhabited
+
+/-- Lexicographic order on paths, as a `Bool`.  Core's `List.Lex` is a `Prop`
+and what is needed here is a decision the loader can take, so it is written
+out: the first character that differs decides, and a prefix is below what
+extends it. -/
+def charsLe : List Char → List Char → Bool
+  | [],      _       => true
+  | _ :: _,  []      => false
+  | a :: as, b :: bs => if a == b then charsLe as bs else decide (a.toNat < b.toNat)
+
+theorem charsLe_antisymm : ∀ (x y : List Char),
+    charsLe x y = true → charsLe y x = true → x = y
+  | [],      []       => fun _ _ => rfl
+  | [],      _ :: _   => fun _ h2 => by simp [charsLe] at h2
+  | _ :: _,  []       => fun h1 _ => by simp [charsLe] at h1
+  | a :: as, b :: bs  => fun h1 h2 => by
+      unfold charsLe at h1 h2
+      by_cases hab : a = b
+      · subst hab
+        simp only [beq_self_eq_true, if_true] at h1 h2
+        rw [charsLe_antisymm as bs h1 h2]
+      · rw [if_neg (by simpa using hab)] at h1
+        rw [if_neg (by simpa using Ne.symm hab)] at h2
+        simp only [decide_eq_true_eq] at h1 h2
+        omega
+
+theorem charsLe_total : ∀ (x y : List Char), (charsLe x y || charsLe y x) = true
+  | [],      _        => by simp [charsLe]
+  | _ :: _,  []       => by simp [charsLe]
+  | a :: as, b :: bs  => by
+      unfold charsLe
+      by_cases hab : a = b
+      · subst hab
+        simpa using charsLe_total as bs
+      · rw [if_neg (by simpa using hab), if_neg (by simpa using Ne.symm hab)]
+        have hne : a.toNat ≠ b.toNat := fun h => hab (Char.ext (UInt32.toNat_inj.mp h))
+        simp only [Bool.or_eq_true, decide_eq_true_eq]
+        omega
+
+/-- **The order two colliding lines are named in**: by path, then by line — the
+order a reader's editor would show them, and in particular *not* the order the
+host listed its documents in.  That is §5.6's rule applied to what a refusal
+says, and `spotPair_comm` below is why it is a rule and not a habit. -/
+def spotLe (x y : Spot) : Bool :=
+  if x.path == y.path then decide (x.line ≤ y.line) else charsLe x.path y.path
+
+theorem spotLe_antisymm (x y : Spot) (h1 : spotLe x y = true) (h2 : spotLe y x = true) :
+    x = y := by
+  unfold spotLe at h1 h2
+  by_cases hp : x.path = y.path
+  · rw [if_pos (by simpa using hp)] at h1
+    rw [if_pos (by simpa using hp.symm)] at h2
+    simp only [decide_eq_true_eq] at h1 h2
+    have hl : x.line = y.line := Nat.le_antisymm h1 h2
+    calc x = (⟨x.path, x.line⟩ : Spot) := rfl
+      _ = (⟨y.path, y.line⟩ : Spot) := by rw [hp, hl]
+      _ = y := rfl
+  · rw [if_neg (by simpa using hp)] at h1
+    rw [if_neg (by simpa using Ne.symm hp)] at h2
+    exact absurd (charsLe_antisymm _ _ h1 h2) hp
+
+theorem spotLe_total (x y : Spot) : (spotLe x y || spotLe y x) = true := by
+  unfold spotLe
+  by_cases hp : x.path = y.path
+  · rw [if_pos (by simpa using hp), if_pos (by simpa using hp.symm)]
+    simp only [Bool.or_eq_true, decide_eq_true_eq]
+    omega
+  · rw [if_neg (by simpa using hp), if_neg (by simpa using Ne.symm hp)]
+    exact charsLe_total _ _
+
+/-- The two lines a collision names, in that order. -/
+def spotPair (x y : Spot) : Spot × Spot := if spotLe x y then (x, y) else (y, x)
+
+/-- **The payload is a function of the pair and not of its order.**  Without
+this, `pairedEntity_order_independent` — the theorem that refutes the defect
+§5.6 is named after — would hold of the *constructor* and fail of what the
+constructor carries, which is §5.2's failure mode in a new place. -/
+theorem spotPair_comm (x y : Spot) : spotPair x y = spotPair y x := by
+  unfold spotPair
+  by_cases h1 : spotLe x y = true
+  · by_cases h2 : spotLe y x = true
+    · rw [spotLe_antisymm x y h1 h2]
+    · rw [if_pos h1, if_neg h2]
+  · have h2 : spotLe y x = true := by
+      have ht := spotLe_total x y
+      simp only [Bool.or_eq_true] at ht
+      exact ht.resolve_left h1
+    rw [if_neg h1, if_pos h2]
+
 /-- Load errors are the diagnostics `tm check` prints.  Acceptance is exactly
 "`load` returned `.ok`", so the checker cannot be weaker than the invariant. -/
 inductive LErr
-  /-- more lines of one id than any entity can render, or two in one file -/
-  | dupId (i : Id)
+  /-- more lines of one id than any entity can render, or two in one file.
+      `a` and `b` are the two the message names, in tree order (`spotPair`);
+      where there are three or more, they are the **first two** — see
+      `buildEntity`. -/
+  | dupId (i : Id) (a b : Spot)
   /-- two lines of one id, in two files, neither of which is a tombstone:
       `render` writes a second line only as a tombstone, and a tombstone is
       `[-]`.  Nothing renders these two, so they are rejected rather than
@@ -78,16 +184,22 @@ inductive LErr
       one id whose bytes differ", and §6.3's own week close writes exactly
       that — the month copy carries `est:` = remaining and a `demoted:` stamp
       the week line does not.  A tombstone that holds its own bytes renders
-      the pair, so the error had nothing left to refuse. -/
-  | notADemotion (i : Id)
+      the pair, so the error had nothing left to refuse.
+
+      `a` and `b` are the two lines, in tree order (`spotPair`). -/
+  | notADemotion (i : Id) (a b : Spot)
   /-- two lines of one id in two documents whose **horizons do not order them**,
       so nothing in the files says which line is the tombstone.  `demote` writes
       `[-]` at both sites, so the boxes cannot settle it either; the closed file
       is the one behind the other in `horizonPrecedes`, and if the request
       declared no region for one of them, or the same region for both, that
       question has no answer.  It is asked here rather than answered by the order
-      the host happened to list the documents. -/
-  | ambiguousDemotion (i : Id)
+      the host happened to list the documents.
+
+      `a` and `b` are the two lines, in tree order (`spotPair`) — which is
+      *not* the order the question is about: the whole point of this refusal is
+      that nothing orders them as record and tombstone. -/
+  | ambiguousDemotion (i : Id) (a b : Spot)
   /-- a line that looks like an item and does not parse -/
   | badLine (path : List Char) (n : Nat) (why : PErr)
   /-- two documents with one path: they are one file on disk -/
@@ -268,10 +380,28 @@ structure Placement where
   item   : RawItem
   /-- the horizon of the document this line was read from; `none` is backlog -/
   region : Option Region
+  /-- the **path** of that document (D32, gap 475).  `doc` is an index into the
+      request, which is the right thing to *decide* with — `pairedEntity` asks
+      "one file or two" by comparing indices, and two request documents may
+      share a path until `pathsDistinct` refuses them — and the wrong thing to
+      *print*.  Carrying the path here is AGENTS §5.3's "widen the artefact"
+      rather than asking the documents a second time at the diagnostic, which
+      would be a second reader of "where did this line come from". -/
+  path   : List Char
 deriving DecidableEq, Repr, Inhabited
 
-def placementsOfDoc (k : DocIx) (reg : Option Region) (d : DocSplit) : List Placement :=
-  d.items.map (fun p => ⟨k, p.1, p.2.1, p.2.2.1, p.2.2.2, reg⟩)
+/-- Where a placement is, for a diagnostic: a projection, nothing computed. -/
+def Placement.spot (q : Placement) : Spot := ⟨q.path, q.rank⟩
+
+/-- The two colliding lines of a pair of placements, in `spotPair`'s order. -/
+def placementSpots (a b : Placement) : Spot × Spot := spotPair a.spot b.spot
+
+theorem placementSpots_comm (a b : Placement) : placementSpots a b = placementSpots b a :=
+  spotPair_comm _ _
+
+def placementsOfDoc (k : DocIx) (reg : Option Region) (pa : List Char) (d : DocSplit) :
+    List Placement :=
+  d.items.map (fun p => ⟨k, p.1, p.2.1, p.2.2.1, p.2.2.2, reg, pa⟩)
 
 def dedupIds : List Id → List Id
   | []        => []
@@ -493,15 +623,16 @@ and a stamp — and an entity whose tombstone holds its own bytes renders both.
 Refusing them was a rule about a model that had one token vector, and it
 refused three of the five fixture plans. -/
 def pairedEntity (i : Id) (a b : Placement) : Except LErr Entity :=
-  if a.doc == b.doc then .error (.dupId i)
-  else if a.glyph != Glyph.demoted && b.glyph != Glyph.demoted then .error (.notADemotion i)
+  if a.doc == b.doc then .error (.dupId i (placementSpots a b).1 (placementSpots a b).2)
+  else if a.glyph != Glyph.demoted && b.glyph != Glyph.demoted then
+    .error (.notADemotion i (placementSpots a b).1 (placementSpots a b).2)
   else
     match orientPair a b with
-    | none => .error (.ambiguousDemotion i)
+    | none => .error (.ambiguousDemotion i (placementSpots a b).1 (placementSpots a b).2)
     | some (arch, live) =>
       match pairEntity arch live with
       | some e => .ok e
-      | none   => .error (.notADemotion i)
+      | none   => .error (.notADemotion i (placementSpots a b).1 (placementSpots a b).2)
 
 /-- **The whole defect, refuted.**  Listing the two documents the other way
 round is the same request: the loader's answer — the entity, or the named error
@@ -513,7 +644,7 @@ theorem pairedEntity_order_independent (i : Id) (a b : Placement) :
   have hgl : (b.glyph != Glyph.demoted && a.glyph != Glyph.demoted)
       = (a.glyph != Glyph.demoted && b.glyph != Glyph.demoted) := Bool.and_comm _ _
   unfold pairedEntity
-  rw [hdoc, hgl, orientPair_comm b a]
+  rw [hdoc, hgl, orientPair_comm b a, placementSpots_comm b a]
 
 /-- **The ambiguity is named, not resolved.**  Two `[-]` lines of one id whose
 documents declare no order between them — two backlog files, one file with no
@@ -529,17 +660,110 @@ theorem unordered_horizons_are_rejected (i : Id) (a b : Placement)
     (hd : a.doc ≠ b.doc) (hga : a.glyph = Glyph.demoted) (hgb : b.glyph = Glyph.demoted)
     (hab : horizonPrecedes a.region b.region = false)
     (hba : horizonPrecedes b.region a.region = false) :
-    pairedEntity i a b = .error (.ambiguousDemotion i) := by
+    pairedEntity i a b
+      = .error (.ambiguousDemotion i (placementSpots a b).1 (placementSpots a b).2) := by
   unfold pairedEntity orientPair
   rw [if_neg (by simpa using hd), if_neg (by simp [hga, hgb])]
   simp only [hga, hgb, beq_self_eq_true]
   rw [if_neg (by simp [hab]), if_neg (by simp [hba])]
 
-/-- The whole inverse, for one id's lines. -/
+/-- The whole inverse, for one id's lines.
+
+**Which two lines a three-way collision names** (D32, gap 475).  With three or
+more placements no entity renders them and the refusal has to pick a pair to
+print.  It names the **first two in the group's own order**, and the group is
+`ps.filter (·.id == i)` over `placementsOf`, which is the request's documents in
+order and each document's lines in line order — so the pair named is the
+earliest two occurrences in the tree.  Three reasons, in the order they
+decided it: appending a *fourth* colliding line does not change the message, so
+a reader fixing the tree is not sent somewhere new each run; it is the same
+pair `pairedEntity` would have named had the third line not been there, so the
+two-line and three-line messages have one shape; and the earliest pair is the
+one that made the collision — the later lines are its consequences.
+
+The empty case names no line, and it cannot arise through the loader:
+`buildEntities` only asks about ids it read off the placement list, and
+`buildEntity_is_never_asked_about_an_absent_id` is that statement.  The arm
+exists because the function is total. -/
 def buildEntity (i : Id) : List Placement → Except LErr Entity
-  | [q]    => .ok (loneEntity q)
-  | [a, b] => pairedEntity i a b
-  | _      => .error (.dupId i)
+  | [q]         => .ok (loneEntity q)
+  | [a, b]      => pairedEntity i a b
+  | a :: b :: _ => .error (.dupId i (placementSpots a b).1 (placementSpots a b).2)
+  | []          => .error (.dupId i ⟨[], 0⟩ ⟨[], 0⟩)
+
+/-- The two lines a load error names, where it names two. -/
+def LErr.spots : LErr → Option (Spot × Spot)
+  | .dupId _ a b => some (a, b)
+  | .notADemotion _ a b => some (a, b)
+  | .ambiguousDemotion _ a b => some (a, b)
+  | _ => none
+
+/-- The store key a load error is about, where it is about one.  **This is the
+view the error used to *be***: before D32 the three collisions carried exactly
+this and nothing else, so every statement made about the old payload is a
+statement about `LErr.key` of the new one. -/
+def LErr.key : LErr → Option Id
+  | .dupId i _ _ => some i
+  | .notADemotion i _ _ => some i
+  | .ambiguousDemotion i _ _ => some i
+  | _ => none
+
+theorem spotPair_cases (x y : Spot) : spotPair x y = (x, y) ∨ spotPair x y = (y, x) := by
+  unfold spotPair
+  split
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
+/-- Every way `pairedEntity` refuses names the same two lines — the pair it was
+handed, in `spotPair`'s order — and the key it was asked about.  Three of its
+four error arms are different *diagnoses* of one collision, and this is the
+statement that they do not disagree about where it is. -/
+theorem pairedEntity_error_spots (i : Id) (x y : Placement) (e : LErr)
+    (h : pairedEntity i x y = .error e) :
+    e.key = some i ∧ e.spots = some (placementSpots x y) := by
+  unfold pairedEntity at h
+  split at h
+  · injection h with h; subst h; exact ⟨rfl, rfl⟩
+  · split at h
+    · injection h with h; subst h; exact ⟨rfl, rfl⟩
+    · split at h
+      · injection h with h; subst h; exact ⟨rfl, rfl⟩
+      · split at h
+        · exact absurd h (by simp)
+        · injection h with h; subst h; exact ⟨rfl, rfl⟩
+
+/-- **The widened payload is a projection of the placements that were refused**
+— AGENTS §5.3's obligation when an artefact is widened rather than forked, and
+the shape `Look.wallsOn_eq_map_wallIxOn` and `canonicalKeyed_of_canonical` set.
+Both spots a collision names are `Placement.spot` of two of the very placements
+`buildEntity` was handed, and **mapping `Placement.id` over that pair gives back
+the single `Id` the error carried before D32** — so the new fields are a view of
+the old argument and not a second answer to "where is this line", which is the
+class the kernel exists to remove. -/
+theorem buildEntity_collision_is_a_projection (i : Id) (qs : List Placement) (e : LErr)
+    (a b : Spot) (hid : ∀ q ∈ qs, q.id = i) (h : buildEntity i qs = .error e)
+    (hne : qs ≠ []) (hs : e.spots = some (a, b)) :
+    ∃ pa ∈ qs, ∃ pb ∈ qs, [pa, pb].map Placement.spot = [a, b] ∧
+      [pa, pb].map Placement.id = [i, i] ∧ e.key = some i := by
+  match qs, hne with
+  | x :: y :: t2, _ =>
+    have hsp : e.key = some i ∧ e.spots = some (placementSpots x y) := by
+      match t2 with
+      | [] => exact pairedEntity_error_spots i x y e h
+      | _ :: _ =>
+        have he : e = .dupId i (placementSpots x y).1 (placementSpots x y).2 := by
+          simpa [buildEntity] using h.symm
+        subst he; exact ⟨rfl, rfl⟩
+    have hab : (a, b) = placementSpots x y := by
+      rw [hsp.2] at hs; injection hs with hs; exact hs.symm
+    have hx : x.id = i := hid x (by simp)
+    have hy : y.id = i := hid y (by simp)
+    rcases spotPair_cases x.spot y.spot with hc | hc <;>
+      rw [placementSpots, hc] at hab <;> injection hab with h1 h2
+    · exact ⟨x, by simp, y, by simp, by simp [h1, h2], by simp [hx, hy], hsp.1⟩
+    · exact ⟨y, by simp, x, by simp, by simp [h1, h2], by simp [hx, hy], hsp.1⟩
+  | [x], _ => simp [buildEntity] at h
+  | [], hne => exact absurd rfl hne
 
 def buildEntities (ps : List Placement) : Except LErr (List (Id × Entity)) :=
   (dedupIds (ps.map Placement.id)).foldlM
@@ -547,6 +771,22 @@ def buildEntities (ps : List Placement) : Except LErr (List (Id × Entity)) :=
       let e ← buildEntity i (ps.filter (fun q => q.id == i))
       pure (acc ++ [(i, e)]))
     []
+
+/-- **The loader never asks about an id with no line**, so `buildEntity`'s
+empty arm — the one that names no position — is unreachable from `loadPlan`.
+`buildEntities` folds over `dedupIds (ps.map Placement.id)`, every id in which
+is some placement's, and the filter it then hands `buildEntity` contains that
+placement.  Stated rather than assumed, because the arm has to answer
+*something* and what it answers is the one collision message that points
+nowhere. -/
+theorem buildEntity_is_never_asked_about_an_absent_id (ps : List Placement) (i : Id)
+    (h : i ∈ dedupIds (ps.map Placement.id)) :
+    ps.filter (fun q => q.id == i) ≠ [] := by
+  obtain ⟨q, hq, hqi⟩ := List.mem_map.1 ((mem_dedupIds _ i).1 h)
+  intro hnil
+  have hmem : q ∈ ps.filter (fun q => q.id == i) := List.mem_filter.2 ⟨hq, by simp [hqi]⟩
+  rw [hnil] at hmem
+  simp at hmem
 
 /-! ### `buildEntities` from one grouping pass (`@[csimp]`)
 
@@ -762,11 +1002,12 @@ line the loader takes on its own.  Parse the bytes, build the entity, ask
 counterexample to this statement and not to `serialize_parse`, which is why it
 survived. -/
 theorem load_render_line (cs : List Char) (i : Id) (g : Glyph) (r : RawItem)
-    (k rk : Nat) (reg : Option Region) (e : Entity) (hp : parseLine cs = .ok (i, g, r))
-    (he : e = loneEntity ⟨k, rk, i, g, r, reg⟩) :
+    (k rk : Nat) (reg : Option Region) (pa : List Char) (e : Entity)
+    (hp : parseLine cs = .ok (i, g, r))
+    (he : e = loneEntity ⟨k, rk, i, g, r, reg, pa⟩) :
     serializeItem i (glyphAt e.val e.val.live) e.val.line = cs := by
   subst he
-  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back ⟨k, rk, i, g, r, reg⟩
+  obtain ⟨_, hline, hglyph⟩ := lone_placement_renders_back ⟨k, rk, i, g, r, reg, pa⟩
   rw [hglyph, hline]
   exact serialize_parseLine cs i g r hp
 
@@ -818,7 +1059,7 @@ where the boxes tie.  In the other branch there is nothing to take. -/
 would read it back: the site, the box, the bytes, and the region the plan's own
 document declares. -/
 def placementIn (p : PlanCore) (i : Id) (s : Site) (g : Glyph) (r : RawItem) : Placement :=
-  ⟨s.doc, s.rank, i, g, r, docRegion p s.doc⟩
+  ⟨s.doc, s.rank, i, g, r, docRegion p s.doc, docPath p s.doc⟩
 
 /-- **The kernel can read back every pair it writes.**  For an entity of an
 accepted plan that carries a tombstone, `pairedEntity` on the two lines the plan
@@ -1566,10 +1807,22 @@ are further keys after it. -/
 def reportJson (r : Report) : JVal :=
   .obj [("closes".toList, .arr (r.closes.map closeEntryJson))]
 
+/-- One spot on the wire: `path` then `line`, the same two keys `badLine`
+already emits and in the same order. -/
+def spotJson (s : Spot) : JVal :=
+  .obj [("path".toList, .str s.path), ("line".toList, .num s.line)]
+
+/-- The three key collisions carry `key`, then the two spots under `a` and `b`
+(D32, gap 475).  The key is **`key`, not `id`**: since D31 it may be a title the
+kernel derived, and the W-15 repair already stopped the bridge printing a `^`
+in front of it. -/
+def collisionJson (i : Id) (a b : Spot) : JVal :=
+  .obj [("key".toList, .str i), ("a".toList, spotJson a), ("b".toList, spotJson b)]
+
 def lerrJson : LErr → JVal
-  | .dupId i          => jone "dupId" (.str i)
-  | .notADemotion i   => jone "notADemotion" (.str i)
-  | .ambiguousDemotion i => jone "ambiguousDemotion" (.str i)
+  | .dupId i a b          => jone "dupId" (collisionJson i a b)
+  | .notADemotion i a b   => jone "notADemotion" (collisionJson i a b)
+  | .ambiguousDemotion i a b => jone "ambiguousDemotion" (collisionJson i a b)
   | .duplicatePath pa => jone "duplicatePath" (.str pa)
   | .badLine pa n w   => jone "badLine" (.obj
       [("path".toList, .str pa), ("line".toList, .num n), ("why".toList, .str (toString (repr w)).toList)])
@@ -1583,6 +1836,34 @@ def firstUnoriented (p : PlanCore) : Option Id :=
     match p.store.get i with
     | none   => false
     | some e => !demotionOriented p e)
+
+/-- Where a site is, for a diagnostic: `docPath` and the rank, which is the
+line index.  The same projection `Placement.spot` is, one tier up — the plan
+holds sites where the loader held placements. -/
+def spotOfSite (p : PlanCore) (s : Site) : Spot := ⟨docPath p s.doc, s.rank⟩
+
+/-- The unoriented id **and its two lines** (D32, gap 475).  This refusal is
+raised on the *loaded* plan rather than on a pair of placements, so the spots
+come off the entity's two sites: the tombstone's and the record's, in tree
+order, by the same rule `spotPair` applies to placements.
+
+`demotionOriented` answers `true` whenever the archive is absent, so the entity
+this names always has one; the `none` arms name no line and cannot be reached
+from `loadPlan`, which is the same shape as the `getD` the caller already
+had for an id `find?` did not return.  The pair goes out in `spotPair`'s
+order, the same rule the loader's own collisions use. -/
+def firstUnorientedAt (p : PlanCore) : Option (Id × Spot × Spot) :=
+  match firstUnoriented p with
+  | none   => none
+  | some i =>
+    match p.store.get i with
+    | none   => some (i, ⟨[], 0⟩, ⟨[], 0⟩)
+    | some e =>
+      match e.val.archive with
+      | none   => some (i, ⟨[], 0⟩, ⟨[], 0⟩)
+      | some t =>
+        let ab := spotPair (spotOfSite p t.site) (spotOfSite p e.val.live)
+        some (i, ab.1, ab.2)
 
 /-- Name the path two documents share, for the diagnostic. -/
 def firstDupPath : List (List Char) → Option (List Char)
@@ -1644,11 +1925,13 @@ of the document it was read from.  A recursion over the documents rather than
 `zipIdx` over them, so that `mem_placementsOf` is an induction. -/
 def placementsOf : Nat → List ReqDoc → List Placement
   | _, []        => []
-  | k, d :: rest => placementsOfDoc k d.reg (splitDoc 0 d.lines) ++ placementsOf (k + 1) rest
+  | k, d :: rest =>
+    placementsOfDoc k d.reg d.path.toList (splitDoc 0 d.lines) ++ placementsOf (k + 1) rest
 
-theorem mem_placementsOfDoc {k : DocIx} {reg : Option Region} {s : DocSplit} {q : Placement} :
-    q ∈ placementsOfDoc k reg s ↔
-      ∃ it ∈ s.items, q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, reg⟩ := by
+theorem mem_placementsOfDoc {k : DocIx} {reg : Option Region} {pa : List Char} {s : DocSplit}
+    {q : Placement} :
+    q ∈ placementsOfDoc k reg pa s ↔
+      ∃ it ∈ s.items, q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, reg, pa⟩ := by
   unfold placementsOfDoc
   constructor
   · intro h
@@ -1660,7 +1943,7 @@ theorem mem_placementsOfDoc {k : DocIx} {reg : Option Region} {s : DocSplit} {q 
 theorem mem_placementsOf (q : Placement) : ∀ (k : Nat) (ds : List ReqDoc),
     q ∈ placementsOf k ds ↔
       ∃ j, ∃ d : ReqDoc, ds[j]? = some d ∧
-        q ∈ placementsOfDoc (k + j) d.reg (splitDoc 0 d.lines) := by
+        q ∈ placementsOfDoc (k + j) d.reg d.path.toList (splitDoc 0 d.lines) := by
   intro k ds
   induction ds generalizing k with
   | nil => simp [placementsOf]
@@ -1927,7 +2210,7 @@ theorem placements_of_doc (docs : List ReqDoc) (k : Nat) (rd : ReqDoc)
     (hk : docs[k]? = some rd) (q : Placement) :
     (q ∈ placementsOf 0 docs ∧ q.doc = k) ↔
       ∃ it ∈ (splitDoc 0 rd.lines).items,
-        q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg⟩ := by
+        q = ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg, rd.path.toList⟩ := by
   constructor
   · rintro ⟨hq, hdoc⟩
     obtain ⟨j, d, hd', hqj⟩ := (mem_placementsOf q 0 docs).1 hq
@@ -1993,7 +2276,8 @@ theorem renderDocAt_loadCore (docs : List ReqDoc) (items : List (Id × Entity))
         exact List.mem_map.2 ⟨it, hit, by rw [← hxl]; rfl⟩
       · intro hx
         obtain ⟨it, hit, hxit⟩ := List.mem_map.1 hx
-        refine List.mem_map.2 ⟨placementLine ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg⟩, ?_, ?_⟩
+        refine List.mem_map.2
+          ⟨placementLine ⟨k, it.1, it.2.1, it.2.2.1, it.2.2.2, rd.reg, rd.path.toList⟩, ?_, ?_⟩
         · refine List.mem_filter.2 ⟨?_, by simp [placementLine]⟩
           exact (loadCore_lines_mem docs items hb _).2
             ⟨_, ((placements_of_doc docs k rd hk _).2 ⟨it, hit, rfl⟩).1, rfl⟩
@@ -2023,8 +2307,9 @@ def loadPlan (docs : List ReqDoc) : Except JVal WfPlan :=
             .error (jone "err"
               (jone "itemCheck" (.str (firstItemFault (loadCore docs items)).toList)))
         else
-          .error (jone "err" (lerrJson (.ambiguousDemotion
-            ((firstUnoriented (loadCore docs items)).getD []))))
+          .error (jone "err" (lerrJson
+            (let u := (firstUnorientedAt (loadCore docs items)).getD ([], ⟨[], 0⟩, ⟨[], 0⟩)
+             .ambiguousDemotion u.1 u.2.1 u.2.2)))
       else
         .error (jone "err" (jone "kernel" (.str "siteOutOfRange".toList)))
     else
@@ -4002,11 +4287,11 @@ theorem placements_slot_nodup :
   | nil => intro k; simp [placementsOf]
   | cons d rest ih =>
       intro k
-      show ((placementsOfDoc k d.reg (splitDoc 0 d.lines) ++
+      show ((placementsOfDoc k d.reg d.path.toList (splitDoc 0 d.lines) ++
           placementsOf (k + 1) rest).map (fun q => (q.doc, q.rank))).Nodup
       rw [List.map_append, List.nodup_append]
       refine ⟨?_, ih (k + 1), ?_⟩
-      · have hmap : (placementsOfDoc k d.reg (splitDoc 0 d.lines)).map
+      · have hmap : (placementsOfDoc k d.reg d.path.toList (splitDoc 0 d.lines)).map
             (fun q => (q.doc, q.rank)) =
           ((splitDoc 0 d.lines).items.map fun it => (k, it.1)) := by
           simp only [placementsOfDoc]
@@ -5216,7 +5501,8 @@ theorem two_titles_in_one_file_are_a_dupId :
     loadPlan [⟨"routines.md", none,
         ["- lunch win:11:30-13:30 dur:30m every:day".toList,
          "- lunch win:12:30-13:30 dur:30m every:day".toList]⟩]
-      = .error (jone "err" (lerrJson (LErr.dupId "lunch".toList))) := by rfl
+      = .error (jone "err" (lerrJson (LErr.dupId "lunch".toList
+          ⟨"routines.md".toList, 0⟩ ⟨"routines.md".toList, 1⟩))) := by rfl
 
 /-- **A title that collides with an `^id` is refused by name too** — the two
 lines are one key in two files, which is the demotion shape, and neither is
@@ -5224,7 +5510,8 @@ lines are one key in two files, which is the demotion shape, and neither is
 theorem a_title_colliding_with_an_id_is_refused :
     loadPlan [⟨"routines.md", none, ["- lunch win:11:30-13:30 dur:30m every:day".toList]⟩,
               ⟨"week/2026-W37.md", some ⟨week, 37⟩, ["- [ ] Write ^lunch".toList]⟩]
-      = .error (jone "err" (lerrJson (LErr.notADemotion "lunch".toList))) := by rfl
+      = .error (jone "err" (lerrJson (LErr.notADemotion "lunch".toList
+          ⟨"routines.md".toList, 0⟩ ⟨"week/2026-W37.md".toList, 0⟩))) := by rfl
 
 /-- §5.7 at the parse tier, one named refusal per bridged key — a value the
 key's grammar rejects (Feb 30, an end before its start, hour 25, a zero period,

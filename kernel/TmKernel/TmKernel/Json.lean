@@ -3434,10 +3434,19 @@ def demoRequest : JVal :=
                                              .str "- [ ] b ^x1".toList])]]),
         ("cmds".toList, .arr [])]
 
-def demoResponseBytes : List Char := "{\"err\":{\"dupId\":\"x1\"}}".toList
+/-- D32 (gap 475) widened the three key collisions to name **both** lines, so
+these bytes are the widened shape: the key, then `a` and `b`, each `path` then
+`line` — `badLine`'s own two keys, in `badLine`'s order. -/
+def demoResponseBytes : List Char :=
+  ("{\"err\":{\"dupId\":{\"key\":\"x1\"," ++
+   "\"a\":{\"path\":\"w.md\",\"line\":0},\"b\":{\"path\":\"w.md\",\"line\":1}}}}").toList
 
 def demoResponse : JVal :=
-  .obj [("err".toList, .obj [("dupId".toList, .str "x1".toList)])]
+  .obj [("err".toList, .obj [("dupId".toList,
+    .obj [("key".toList, .str "x1".toList),
+          ("a".toList, .obj [("path".toList, .str "w.md".toList), ("line".toList, .num 0)]),
+          ("b".toList, .obj [("path".toList, .str "w.md".toList),
+                             ("line".toList, .num 1)])])])]
 
 /-- **The kernel's own emitter reproduces a real request byte for byte**, and
 the parser reads those bytes back to the value they came from.  The first half

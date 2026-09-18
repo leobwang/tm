@@ -111,13 +111,25 @@ fn edit_est_actually_changes_what_the_kernel_reads() {
 
 /// `tm check`'s `dup-id` is an acceptance rule, not a diagnostic that runs
 /// afterwards: a duplicate id never becomes a plan value at all.
+///
+/// **D32, gap 475 — the payload widened here.** It used to be `"dupId":"x1"`,
+/// the key alone; since D31 that key can be a title the kernel *derived*, so
+/// there was nothing in the tree to search for. It now carries both colliding
+/// lines' `path` and `line`, in `spotPair`'s order (path, then line) — which
+/// is deliberately **not** the order the documents were listed in, so that
+/// `pairedEntity_order_independent` holds of what the refusal says and not
+/// only of which constructor it uses.
 #[test]
 fn duplicate_ids_are_rejected_at_load() {
     let out = call(
         r#"{"docs":[{"path":"w.md","grain":1,"ix":35,"lines":["- [ ] a ^x1","- [ ] b ^x1"]}],"cmds":[]}"#,
     )
     .unwrap();
-    assert_eq!(out, r#"{"err":{"dupId":"x1"}}"#, "{out}");
+    assert_eq!(
+        out,
+        r#"{"err":{"dupId":{"key":"x1","a":{"path":"w.md","line":0},"b":{"path":"w.md","line":1}}}}"#,
+        "{out}"
+    );
 }
 
 /// A plain `structure Horizon where depth : Nat` accepted `horizon: 99`.
@@ -233,7 +245,14 @@ fn two_demoted_lines_with_no_horizons_are_rejected_by_name() {
         r##"{"docs":[{"path":"w.md","lines":["- [-] 5 6b Old work ^m1"]},{"path":"m.md","lines":["- [-] 5 6b Old work ^m1"]}],"cmds":[]}"##,
     )
     .unwrap();
-    assert_eq!(out, r##"{"err":{"ambiguousDemotion":"m1"}}"##, "{out}");
+    // D32, gap 475: the two lines are named, in path order — `m.md` before
+    // `w.md` — and the request lists them the other way round, which is the
+    // point (AGENTS §5.6).
+    assert_eq!(
+        out,
+        r##"{"err":{"ambiguousDemotion":{"key":"m1","a":{"path":"m.md","line":0},"b":{"path":"w.md","line":0}}}}"##,
+        "{out}"
+    );
 }
 
 /// §4.3's own demotion pair — the record live in the week, the archive copy
@@ -1023,7 +1042,11 @@ fn an_item_line_inside_a_comment_is_prose() {
         r##"{"docs":[{"path":"w.md","lines":["    - [ ] 3 1b Example ^m1","- [ ] 5 6b Finish the report ^m1"]}],"cmds":[]}"##,
     )
     .unwrap();
-    assert_eq!(out, r#"{"err":{"dupId":"m1"}}"#, "{out}");
+    assert_eq!(
+        out,
+        r#"{"err":{"dupId":{"key":"m1","a":{"path":"w.md","line":0},"b":{"path":"w.md","line":1}}}}"#,
+        "{out}"
+    );
 }
 
 /// A comment still open at the end of a file is refused by name, at its

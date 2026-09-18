@@ -2140,16 +2140,25 @@ theorem aBoxlessLineCanCarryAState :
    silently collides is a wrong answer (§5.6), and the fork's fallback — key the
    *later* line `file:line` — depends on the order the host listed its
    documents, which is the defect §5.6 exists to forbid.  So the kernel refuses
-   by name: `{"err":{"dupId":"lunch"}}` for two in one file, `notADemotion` for
-   two in different files or for a title that collides with an `^id`.  The claim
-   below is that the loader builds an entity from two `lunch` placements; the
-   positive forms are `two_titles_in_one_file_are_a_dupId` and
-   `a_title_colliding_with_an_id_is_refused` (Boundary.lean), which run the
-   whole loader and pin the JSON each refusal emits. -/
+   by name.  The claim below is that the loader builds an entity from two
+   `lunch` placements; the positive forms are `two_titles_in_one_file_are_a_dupId`
+   and `a_title_colliding_with_an_id_is_refused` (Boundary.lean), which run the
+   whole loader and pin the JSON each refusal emits.
+
+   AMENDED 2026-09-17 (W-16, **D32**): the two placement literals gained
+   `Placement`'s seventh field, the document's path, and the refusal JSON this
+   block used to quote inline moved with it — it is now
+   `{"err":{"dupId":{"key":"lunch","a":{…},"b":{…}}}}`, which the two positive
+   theorems pin byte for byte.  The edit is not a renumber (§6.2): without it
+   this block would fail to elaborate for a **field count** and stop failing
+   for the claim it is about, which is §9.2's disguised gap wearing check 4's
+   clothes. -/
 theorem twoRoutinesWithOneTitleAreTwoEntities :
     (match buildEntity "lunch".toList
-        [⟨0, 0, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none⟩,
-         ⟨0, 1, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none⟩] with
+        [⟨0, 0, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none,
+          "routines.md".toList⟩,
+         ⟨0, 1, "lunch".toList, Glyph.todo, ⟨[], false, tokenize " lunch".toList⟩, none,
+          "routines.md".toList⟩] with
      | .ok _    => true
      | .error _ => false) = true := by rfl
 

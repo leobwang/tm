@@ -30926,3 +30926,267 @@ door, `cli_switch_acceptance`, `kernel_call_counts`, `cli_check_log` and
 added, so nothing was probed at `MemoryMax=8G`**; no bound was raised and nothing
 was retried uncapped. No worktree was created and
 `.claude/worktrees/stage5-lookahead` was not touched.
+
+<!-- ===========================================================================
+     Stage 6, W-16, TRACK A, 2026-09-17 — D32 and D33, the grammar's two
+     user-facing edges.  Gap range 530-549.  Whoever merges next renumbers
+     (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-16 track A, 2026-09-17: a collision names both lines — D32 item 1, gap 475 closed
+
+D31 made a box-less, id-less line a real entity keyed by its **title**. Two
+lines that resolve to one key are then a collision, and the kernel refuses by
+name — which is right, and which the W-15 repair step drove into four shipped
+verbs (`tm plan`, `tm now`, `tm review day`, `tm drop`) on a tree `tm check`
+calls clean. What that step could not repair, and named as **gap 475**, is that
+the refusal **could not say where the two lines are**: `LErr.dupId`,
+`.notADemotion` and `.ambiguousDemotion` each carried an `Id` and nothing else,
+and since D31 that `Id` can be a key the kernel *synthesised* — so there was no
+token in any file to grep for. This commit is the widening the gap asked for.
+
+### What changed, in one sentence each
+
+* **`Spot`** — a path and a 0-based line, the two fields `LErr.badLine` already
+  carried, under one name so every position this kernel emits has one shape.
+* **`Placement` gained `path`** (its seventh field). `doc` is an index into the
+  request and stays the thing the loader *decides* with — `pairedEntity` asks
+  "one file or two" by comparing indices — and the path is what a diagnostic
+  *prints*. This is AGENTS §5.3's "widen the artefact": the alternative was to
+  ask the documents a second time at the diagnostic, and the host's own
+  `Tree::key_of` is already a second answer to "what is this line's key".
+* **The three collisions carry `(i : Id) (a b : Spot)`**, and
+  `lerrJson` emits `{"key":…,"a":{"path":…,"line":…},"b":{…}}`. The key is
+  **`key`, not `id`**, continuing the W-15 repair.
+* **`spotPair` orders the two lines by path, then line** — a *total* order, with
+  `charsLe` (lexicographic on `List Char`) under it.
+* **`tm check` still says "no problems"** on every one of these trees. That is
+  **gap 476**, D32's second item, and it is NOT closed by this commit.
+
+### The order the two lines are named in is a theorem, not a habit
+
+`pairedEntity_order_independent` is the theorem that refutes AGENTS §5.6's
+sharpest defect — the loader's answer used to depend on the order the host
+listed its documents. **A payload that carried the two lines in argument order
+would have broken it**, and broken it in the §5.2 way: the theorem would still
+have compiled about the *constructor* while the bytes the user sees moved when
+the host reordered its request.
+
+So the payload is ordered:
+
+| theorem | what it says |
+|---|---|
+| `charsLe_antisymm`, `charsLe_total` | `charsLe` is a total order on paths |
+| `spotLe_antisymm`, `spotLe_total` | so is `spotLe` = path, then line |
+| `spotPair_comm` | `spotPair x y = spotPair y x` — **unconditionally** |
+| `placementSpots_comm` | the same, one projection up |
+| `pairedEntity_order_independent` | **re-proved over the widened payload** (D5), same name, same statement |
+
+`charsLe_total` is where the proof actually has to work: it needs
+`a ≠ b → a.toNat ≠ b.toNat`, which is `Char.ext` composed with
+`UInt32.toNat_inj`. `charsLe_antisymm` does not need it, and the two are
+written so that only one of them does.
+
+Driven, and this is the visible half of the rule: appending
+`- [ ] 3 1b Write the thing ^lunch` to `backlog.md` of an example tree answers
+**`backlog.md:13 and routines.md:3`** — alphabetical by path, while the request
+sends `backlog.md` *after* `routines.md` in its own document list.
+
+### §5.3's obligation: the new payload is a projection of the old argument
+
+`buildEntity_collision_is_a_projection` — the `Look.WallIx` /
+`canonicalKeyed_of_canonical` move, discharged rather than asserted:
+
+```lean
+theorem buildEntity_collision_is_a_projection (i : Id) (qs : List Placement) (e : LErr)
+    (a b : Spot) (hid : ∀ q ∈ qs, q.id = i) (h : buildEntity i qs = .error e)
+    (hne : qs ≠ []) (hs : e.spots = some (a, b)) :
+    ∃ pa ∈ qs, ∃ pb ∈ qs, [pa, pb].map Placement.spot = [a, b] ∧
+      [pa, pb].map Placement.id = [i, i] ∧ e.key = some i
+```
+
+Both spots are `Placement.spot` of placements the loader **already held**, and
+`.map Placement.id` over that pair gives back the single `Id` the error used to
+be — so the new fields are a *view* of the old argument and not a second answer
+to "where is this line". `LErr.key` is that old view, written down as a
+function. `pairedEntity_error_spots` is the lemma under it: all three of
+`pairedEntity`'s error arms name the same two lines, so the three *diagnoses*
+of one collision do not disagree about where it is.
+
+### Which two lines a three-way collision names, and why
+
+`buildEntity`'s `| _ => .error (.dupId i)` arm saw three or more placements and
+had nothing to choose between them. It now reads
+`| a :: b :: _ => .error (.dupId i (placementSpots a b).1 (placementSpots a b).2)`
+— **the first two in the group's own order**, which is `ps.filter` over
+`placementsOf`: the request's documents in order, each document's lines in line
+order. So the pair named is the earliest two occurrences in the tree. Three
+reasons, in the order they decided it:
+
+1. appending a *fourth* colliding line does not change the message, so a reader
+   fixing the tree is not sent somewhere new on each run;
+2. it is the same pair `pairedEntity` would have named had the third line not
+   been there, so the two-line and three-line messages have one shape;
+3. the earliest pair is the one that *made* the collision — the later lines are
+   its consequences.
+
+The `| [] =>` arm names no line, and `buildEntity_is_never_asked_about_an_absent_id`
+is the statement that nothing on the loader's path reaches it:
+`buildEntities` folds over `dedupIds (ps.map Placement.id)`, every id in which is
+some placement's, so the filter it hands `buildEntity` contains that placement.
+Stated rather than assumed, because the arm has to answer *something* and what
+it answers is the one collision message that points nowhere.
+
+### Behaviour rows
+
+| input | before (`995323b`) | after | why |
+|---|---|---|---|
+| a tree with two title-key-colliding lines in one file, `tm plan` | ``dupId — two lines in one file resolve to the store key `sleep` `` | ``dupId — routines.md:1 and routines.md:9 are two lines in one file that resolve to the store key `sleep` `` | D32 item 1 |
+| the same, `tm --json plan` | `"detail":{"key":"sleep","refusal":"dupId"}` | `…,"a":{"path":"routines.md","line":1},"b":{"path":"routines.md","line":9}` | D32 item 1 |
+| a title colliding with an `^id` in another file, `tm drop ^d2` | ``notADemotion — two lines in different files resolve to the store key `lunch` `` | ``notADemotion — backlog.md:13 and routines.md:3 are two lines in different files that resolve to the store key `lunch` `` | D32 item 1 |
+| the FFI wire, all three collisions | `{"err":{"dupId":"x1"}}` | `{"err":{"dupId":{"key":"x1","a":{"path":"w.md","line":0},"b":{"path":"w.md","line":1}}}}` | D32 item 1 (§2.4's table moved with it) |
+| every other refusal, every verb's success path, every file on disk | — | **unchanged** | — |
+
+The wire's line numbers stay **0-based** — that is the kernel's contract, and the
+corpus, the FFI suite and T5 all read it that way. The bridge converts through
+the same named `one_based` gap 479 installed, in the message **and** in the
+`--json` detail, so one refusal never carries two conventions.
+
+### Driven on a fresh `tm init --example` tree (§5.13)
+
+Release binary, scratch tree outside the repo, three collision classes:
+
+```
+# 1. a duplicated inbox note
+echo '- read the Lean 4 metaprogramming book' >> inbox.md
+tm check  → "no problems", exit 0                                   ← gap 476, still open
+tm plan   → dupId — inbox.md:4 and inbox.md:5 …, exit 1
+
+# 2. two `sleep` routines
+tm now    → dupId — routines.md:1 and routines.md:9 …, exit 1
+tm --json plan → detail.a = {path: routines.md, line: 1}, detail.b = {…, line: 9}
+
+# 3. a title colliding with an existing ^id, in another file
+echo '- [ ] 3 1b Write the thing ^lunch' >> backlog.md
+tm drop ^d2 → notADemotion — backlog.md:13 and routines.md:3 …, exit 1
+tm review day → the same refusal
+tm check  → "no problems", exit 0                                   ← gap 476, still open
+```
+
+Every one of those is a verb that reaches `Boundary.loadPlan` through
+`kernel_capacity.rs:820`'s `"docs": docs` — the caller W-15's gap 471 recorded
+as "no caller" and the repair step corrected. The rule has as many callers as
+there are capacity verbs, and this commit was driven on four of them.
+
+### AGENTS §5.3: what was CONSUMED, and what was not re-implemented
+
+Consumed by call: `Boundary.pairedEntity`, `buildEntity`, `buildEntities`,
+`placementsOf`/`placementsOfDoc`, `orientPair`, `mem_dedupIds`, `loadPlan`,
+`lerrJson`, `Json.jone`/`JVal`, `Plan.docRegion` (and `docPath` beside it,
+written in the same shape), `Plan.DocSplit`/`splitDoc`, and — for the amended
+cheat — `Line.tokenize`. Re-implemented: **none** of `Look.windowEnd`,
+`windowOn`, `budgetOf`, `wallIndex`/`wallsOn`/`wallIxOn`, `freeIntervals`,
+`cutSlots`, `hsw100`, `predictAt`, `capForLocation`, `energize`, `limitSlots`,
+`day0Window`/`day0Cut`/`todayEnergy`/`day0Hist`,
+`Arith.ramp`/`posteriorNum`/`energyAfter`, `Tree.remainingMin`,
+`Plan.effectiveCi`, `Plan.rootPrio`,
+`Look.Cand`/`Cand.enters`/`servedOrder`/`prioritiesWithFloors`,
+`Prio.finalPrio`/`hysteresis`, or `Cap.edf`/`edfGrants` — this commit touches
+the loader and its diagnostics and computes nothing a planner computes.
+
+`charsLe` is the one genuinely new algorithm, and it is new because core's
+`List.Lex` is a `Prop` and what the loader needs is a decision it can take.
+
+### D9-21, the recursion rule
+
+`charsLe` recurses over a list the wire can make large — a document's path has
+no declared bound. It needs no `foldl` form and no `@[csimp]` twin because its
+recursive call is in **tail position** (the other two arms return constants), so
+the compiled code is a loop. Measured rather than argued: `#eval` on two
+1,000,000-character paths, under `MemoryMax=8G -p MemorySwapMax=0` with
+`timeout 120`, returns `true` and does not overflow. Nothing else added here
+recurses.
+
+### Laws restated (D5)
+
+**The accounting is mechanical, not remembered** — gap 478's own lesson, applied
+before the table was written. Every `theorem`/`lemma` header through its `:=` was
+extracted from the five `.lean` files `git diff --name-only` reports, at
+`995323b` and here, and diffed by name: **10 added, 0 removed, 8 changed**, out
+of 956 declarations in those files. All eight are below; there is no ninth.
+
+| theorem | old form | new form | new ⇒ old? |
+|---|---|---|---|
+| `unordered_horizons_are_rejected` | `… = .error (.ambiguousDemotion i)` | `… = .error (.ambiguousDemotion i (placementSpots a b).1 (placementSpots a b).2)` | **yes** — the conclusion pins the same constructor and the same `i` plus two further fields; `LErr.key` of the new is the old |
+| `two_titles_in_one_file_are_a_dupId` | `lerrJson (.dupId "lunch")` | `lerrJson (.dupId "lunch" ⟨"routines.md", 0⟩ ⟨"routines.md", 1⟩)` | **yes** — same equation, two more fields pinned |
+| `a_title_colliding_with_an_id_is_refused` | `lerrJson (.notADemotion "lunch")` | `… ⟨"routines.md", 0⟩ ⟨"week/2026-W37.md", 0⟩` | **yes**, same |
+| `load_render_line` | `(k rk : Nat) (reg)` | `(k rk : Nat) (reg) (pa : List Char)` | **yes** — one more universally-quantified argument; every old instance is the new one at `pa := q.path` |
+| `mem_placementsOfDoc`, `mem_placementsOf`, `placements_of_doc` | over `placementsOfDoc k reg s` | over `placementsOfDoc k reg pa s` | **yes** — same, an argument added (three rows, three names) |
+| `twoRoutinesWithOneTitleAreTwoEntities` | two 6-field `Placement` literals | two 7-field ones | it is a **cheat**, so "implies" is the wrong question: the claim is unchanged and it still fails, and the Numbering section below says why the literal had to move |
+
+**Nothing narrowed**, and two theorems a reader would expect in this table are
+deliberately not in it, because the mechanical diff says their statements did
+**not** change:
+
+* `pairedEntity_order_independent` — byte-identical statement. What moved is its
+  *proof* (it gained `placementSpots_comm`) and what the statement now quantifies
+  over: a payload that carries positions. It is strictly more content under the
+  same name, which is why the payload had to be ordered at all.
+* `the_real_response_bytes_round_trip` — byte-identical statement; the `def`s it
+  is about (`demoResponseBytes`, `demoResponse`) moved with the wire, together
+  with the FFI assertion they are copied from, in this one commit (D19).
+
+### Numbering
+
+Gaps: this step's range is **530-549** and it took **none** — it *closes* 475
+and opens nothing. Cheats: none added. **`Negative.lean`'s CHEAT 176 was
+amended, not renumbered**: its two `Placement` literals gained the seventh
+field, because without the edit the block would fail to elaborate on a **field
+count** and stop failing for the claim it is about — check 4 would still say
+`ok` while the cheat had quietly stopped biting, which is §9.2's disguised gap
+wearing check 4's clothes. Verified: the block's error is again a `rfl` failure
+at its own line (`Negative.lean:2163`). Highest on the branch after this
+commit: **gap 479**, cheat **176**, parity **P38**.
+
+### Measured, at this commit, every command capped
+
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` on every
+`lake`, `lean`, `cargo`, `check.sh` and `tm` invocation. No bound raised, nothing
+retried uncapped.
+
+| row | here | `995323b` (main baseline) | `8c3b6dc` |
+|---|---|---|---|
+| check.sh | **7/7 ok** | 7/7 | 7/7 |
+| check.sh warm | **3.12 / 3.17 / 3.13 s** | — | 3.14 / 3.14 / 3.24 |
+| peak RSS | **1.96-1.98 GiB** (2,054,908-2,079,476 KiB) | — | 1.95-2.00 GiB |
+| axiom audit | **4,275 theorems**, §6.3 reconciliation `ok` | 4,265 | 4,265 |
+| burn-down | **12, all stage 6** | 12 | 12 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 |
+| `cargo test --workspace` | **1,319 passed / 0 failed / 9 ignored, 78 result lines** | 1,318 / 0 / 9, 78 | 1,318 / 0 / 9, 78 |
+| FFI suite | **86 / 0** (the `kernel` test binary) | 86 / 0 | 86 / 0 |
+| T5 (`kernel_replay_parity`) | **29 / 0 / 4 ignored** | same | same |
+| the door (`kernel_log_door`) | **23 / 0** | 23 / 0 | 23 / 0 |
+| `cli_switch_acceptance` | **9 / 0** | 9 / 0 | 9 / 0 |
+| `kernel_call_counts` | **2 / 0** | 2 / 0 | 2 / 0 |
+| `cli_check_log` | **9 / 0** | 9 / 0 | 9 / 0 |
+| `kernel_lookahead_parity` | **4 / 0** | 4 / 0 | 4 / 0 |
+
+**The audit arithmetic closes with no remainder:** 4,265 + 10 = **4,275**, and
+the ten are the ten `#print axioms` lines this step appended under its own
+banner — `charsLe_antisymm`, `charsLe_total`, `spotLe_antisymm`, `spotLe_total`,
+`spotPair_comm`, `placementSpots_comm`, `spotPair_cases`,
+`pairedEntity_error_spots`, `buildEntity_collision_is_a_projection`,
+`buildEntity_is_never_asked_about_an_absent_id`. No theorem was deleted or
+renamed, so no repo-wide prose grep was owed for a name — and the three FFI
+assertions, the oracle example's key reader and §2.4's wire table were all moved
+with the wire in this one commit (D19).
+
+**`cargo test --workspace` 1,318 → 1,319**: one test, `a_key_collision_names_both_lines`,
+in `kernel_bridge.rs`'s unit module. The binary count is unchanged at **78**, the
+ignored count at **9**, and 0 warnings. `kernel_call_counts`'s pairing assertion
+still passes, which is correct: the one-call shape has not landed and no call
+site was touched.
+
+**check.sh's time did not rise:** midpoint **3.13 s** against `8c3b6dc`'s
+**3.14 s**, **-0.3%**, far inside the 10%-per-step rule. Peak RSS 1.96-1.98 GiB
+against 1.95-2.00 — the same band, nowhere near the 40 GiB cap.

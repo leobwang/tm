@@ -5089,3 +5089,27 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.splitSleep_congr
 #print axioms Tm.PlannerWit.the_witness_carries_no_routine
 #print axioms Tm.PlannerWit.mkPlanReq?_refuses_a_routine_the_rule_refuses
+
+-- ===========================================================================
+-- APPENDED 2026-09-17 (stage 6, run **W-16**, track A — **D32 item 1**, gap
+-- 475: `LErr.dupId`, `.notADemotion` and `.ambiguousDemotion` widened to carry
+-- BOTH colliding lines' `path` and `line`.
+--
+-- The order the two lines are named in is a total order on `Spot` (`charsLe`
+-- on the path, then the line), because `pairedEntity_order_independent` — the
+-- theorem that refutes AGENTS §5.6's defect — has to hold of what the refusal
+-- *says* and not only of which constructor it uses.  `spotPair_comm` is that,
+-- and `buildEntity_collision_is_a_projection` is §5.3's obligation: the two
+-- new fields are `Placement.spot` of placements the loader already held, and
+-- `.map Placement.id` over them gives back the one `Id` the error used to be.
+-- ===========================================================================
+#print axioms Tm.charsLe_antisymm
+#print axioms Tm.charsLe_total
+#print axioms Tm.spotLe_antisymm
+#print axioms Tm.spotLe_total
+#print axioms Tm.spotPair_comm
+#print axioms Tm.placementSpots_comm
+#print axioms Tm.spotPair_cases
+#print axioms Tm.pairedEntity_error_spots
+#print axioms Tm.buildEntity_collision_is_a_projection
+#print axioms Tm.buildEntity_is_never_asked_about_an_absent_id

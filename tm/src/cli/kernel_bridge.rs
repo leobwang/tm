@@ -1020,8 +1020,31 @@ fn log_refusal(l: &Value) -> KernelIssue {
 /// does not. The title key is **synthesised**; it is deliberately never written
 /// into a file (`serialize_parseLine`), so there is no `^`-token to grep for.
 const KEY_NOTE: &str = " (a line with no `^id` is keyed by its title, and that key is never \
-                        written into a file, so search the tree for the text itself; `tm check` \
-                        does not report this collision)";
+                        written into a file, so the two positions above are where it is; \
+                        `tm check` does not report this collision)";
+
+/// One widened key collision (**D32, gap 475**): the store key, and each of the
+/// two colliding lines as `(path, line)` with the line already converted to the
+/// 1-based convention every other position this binary prints uses (gap 479).
+///
+/// The kernel decides *which* two lines and *in which order* — path, then line,
+/// by `Boundary.lean`'s `spotPair`, which is a total order on the position and
+/// deliberately not the order the host listed its documents in (AGENTS §5.6).
+/// The bridge does not go back to the tree to find them: the host's
+/// `Tree::key_of` is a **second** answer to "what is this line's key", and
+/// asking it here is how the two readings would start to disagree inside a
+/// diagnostic (AGENTS §5.3).
+fn collision(c: &Value) -> (String, (String, u64), (String, u64)) {
+    let key = c.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
+    let spot = |k: &str| {
+        let s = c.get(k);
+        (
+            s.and_then(|s| s.get("path")).and_then(Value::as_str).unwrap_or_default().to_string(),
+            one_based(s.and_then(|s| s.get("line")).and_then(Value::as_u64).unwrap_or_default()),
+        )
+    };
+    (key, spot("a"), spot("b"))
+}
 
 /// The kernel counts a document's lines from **0** (`Boundary.lean`'s `badLine`
 /// doc comment: "0-based, as `badLine`"), and `tm check` — every other
@@ -1176,23 +1199,35 @@ fn refusal(err: &Value) -> KernelIssue {
     // keys the later of two colliding lines `file:line` and therefore reports
     // *no problem at all* (gap 476).  A pointer at a verb that says "no
     // problems" is a loop, so the message says what to search for instead.
-    } else if let Some(id) = err.get("dupId").and_then(Value::as_str) {
-        put("key", id.to_string());
+    } else if let Some(c) = err.get("dupId") {
+        let (key, (pa, la), (pb, lb)) = collision(c);
+        put("key", key.clone());
+        detail.insert("a".into(), serde_json::json!({ "path": pa, "line": la }));
+        detail.insert("b".into(), serde_json::json!({ "path": pb, "line": lb }));
         ("dupId".into(), format!(
-            "kernel refusal: dupId — two lines in one file resolve to the store key `{id}`{KEY_NOTE}; \
-             the kernel refuses a tree it cannot load whole"
+            "kernel refusal: dupId — {pa}:{la} and {pb}:{lb} are two lines in one file that \
+             resolve to the store key `{key}`{KEY_NOTE}; the kernel refuses a tree it cannot \
+             load whole"
         ))
-    } else if let Some(id) = err.get("notADemotion").and_then(Value::as_str) {
-        put("key", id.to_string());
+    } else if let Some(c) = err.get("notADemotion") {
+        let (key, (pa, la), (pb, lb)) = collision(c);
+        put("key", key.clone());
+        detail.insert("a".into(), serde_json::json!({ "path": pa, "line": la }));
+        detail.insert("b".into(), serde_json::json!({ "path": pb, "line": lb }));
         ("notADemotion".into(), format!(
-            "kernel refusal: notADemotion — two lines in different files resolve to the store key \
-             `{id}` and are not a demotion pair the kernel can read{KEY_NOTE}"
+            "kernel refusal: notADemotion — {pa}:{la} and {pb}:{lb} are two lines in different \
+             files that resolve to the store key `{key}` and are not a demotion pair the kernel \
+             can read{KEY_NOTE}"
         ))
-    } else if let Some(id) = err.get("ambiguousDemotion").and_then(Value::as_str) {
-        put("key", id.to_string());
+    } else if let Some(c) = err.get("ambiguousDemotion") {
+        let (key, (pa, la), (pb, lb)) = collision(c);
+        put("key", key.clone());
+        detail.insert("a".into(), serde_json::json!({ "path": pa, "line": la }));
+        detail.insert("b".into(), serde_json::json!({ "path": pb, "line": lb }));
         ("ambiguousDemotion".into(), format!(
-            "kernel refusal: ambiguousDemotion — the documents do not order the two lines that \
-             resolve to the store key `{id}`, so which one is the record is ambiguous{KEY_NOTE}"
+            "kernel refusal: ambiguousDemotion — the documents do not order {pa}:{la} and \
+             {pb}:{lb}, which resolve to the store key `{key}`, so which one is the record is \
+             ambiguous{KEY_NOTE}"
         ))
     } else if let Some(p) = err.get("duplicatePath").and_then(Value::as_str) {
         put("path", p.to_string());
@@ -1318,9 +1353,12 @@ mod tests {
             (serde_json::json!({"kernel":"danglingDep"}), "danglingDep"),
             (serde_json::json!({"kernel":"depCycle"}), "depCycle"),
             (serde_json::json!({"kernel":"siteOutOfRange"}), "siteOutOfRange"),
-            (serde_json::json!({"dupId":"m1"}), "dupId"),
-            (serde_json::json!({"notADemotion":"m1"}), "notADemotion"),
-            (serde_json::json!({"ambiguousDemotion":"m1"}), "ambiguousDemotion"),
+            // D32, gap 475: the widened shape, which is the only shape the
+            // kernel emits — a bare string here would pass against a payload
+            // nothing sends.
+            (key_collision("dupId", "m1"), "dupId"),
+            (key_collision("notADemotion", "m1"), "notADemotion"),
+            (key_collision("ambiguousDemotion", "m1"), "ambiguousDemotion"),
             (serde_json::json!({"duplicatePath":"a.md"}), "duplicatePath"),
             (
                 serde_json::json!({"badLine":{"path":"a.md","line":3,"why":"noId"}}),
@@ -1399,11 +1437,23 @@ mod tests {
     /// `dupId` also may not send the reader to `tm check`: for this class
     /// `tm check` answers *"no problems"* (gap 476), and gap 239 added that
     /// pointer on the opposite premise.
+    ///
+    /// **Widened at W-16 for D32**: the payload is the kernel's widened one,
+    /// so this test now also pins that the message and the `--json` detail
+    /// carry *both* colliding lines.
+    fn key_collision(kind: &str, key: &str) -> Value {
+        serde_json::json!({ kind: {
+            "key": key,
+            "a": { "path": "inbox.md", "line": 3 },
+            "b": { "path": "week/2026-W38.md", "line": 11 },
+        }})
+    }
+
     #[test]
     fn a_key_collision_names_a_key_and_never_invents_an_id_token() {
         let title = "read the Lean 4 metaprogramming book";
         for kind in ["dupId", "notADemotion", "ambiguousDemotion"] {
-            let issue = refusal(&serde_json::json!({ kind: title }));
+            let issue = refusal(&key_collision(kind, title));
             assert_eq!(issue.name, kind);
             assert!(issue.message.contains(title), "{kind}: {}", issue.message);
             assert!(
@@ -1415,15 +1465,40 @@ mod tests {
             assert_eq!(issue.detail["key"], title);
             assert!(!issue.detail.contains_key("id"), "{kind}: {:?}", issue.detail);
         }
-        let dup = refusal(&serde_json::json!({ "dupId": title }));
+        let dup = refusal(&key_collision("dupId", title));
         assert!(
             !dup.message.contains("run `tm check`"),
             "dupId still points at a verb that reports nothing: {}",
             dup.message
         );
         // A line that really does spell its id reads the same way, minus the lie.
-        let real = refusal(&serde_json::json!({ "dupId": "a1" }));
+        let real = refusal(&key_collision("dupId", "a1"));
         assert!(real.message.contains("`a1`"), "{}", real.message);
+    }
+
+    /// **A collision names both lines, 1-based, in the message and in
+    /// `--json`** — D32 item 1, gap 475.
+    ///
+    /// Before it the three refusals carried the key and nothing else, so the
+    /// one class D31 made reachable was also the one class with no token in
+    /// any file to grep for: the reader was told a collision existed and not
+    /// where. The kernel's 0-based wire lines come out 1-based here, through
+    /// the same `one_based` gap 479 installed, in the English **and** in the
+    /// detail, so one refusal never carries two conventions.
+    #[test]
+    fn a_key_collision_names_both_lines() {
+        for kind in ["dupId", "notADemotion", "ambiguousDemotion"] {
+            let issue = refusal(&key_collision(kind, "lunch"));
+            assert!(
+                issue.message.contains("inbox.md:4") && issue.message.contains("week/2026-W38.md:12"),
+                "{kind} does not name both lines: {}",
+                issue.message
+            );
+            assert_eq!(issue.detail["a"]["path"], "inbox.md");
+            assert_eq!(issue.detail["a"]["line"], 4);
+            assert_eq!(issue.detail["b"]["path"], "week/2026-W38.md");
+            assert_eq!(issue.detail["b"]["line"], 12);
+        }
     }
 
     /// **One `file:line` convention out of one binary** (W-15 repair, gap 479).

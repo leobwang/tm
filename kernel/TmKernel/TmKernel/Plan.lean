@@ -413,6 +413,15 @@ def docRegion (p : PlanCore) (k : DocIx) : Option Region :=
   | none   => none
   | some d => d.region
 
+/-- A document's path, the same way (D32, gap 475): what a diagnostic prints
+where `docRegion` is what the loader decides with.  `sitesInRange` is part of
+`planWf`, so on an accepted plan the index is always in range and the empty
+answer is the out-of-range arm, not a path. -/
+def docPath (p : PlanCore) (k : DocIx) : List Char :=
+  match p.docs[k]? with
+  | none   => []
+  | some d => d.path
+
 def demotionOriented (p : PlanCore) (e : Entity) : Bool :=
   match e.val.archive with
   | none   => true

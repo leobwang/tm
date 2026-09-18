@@ -89,9 +89,17 @@ fn ask_kernel(line: &str) -> Kernel {
         Reply::Docs(_) => (false, None, None), // two prose lines: not an item
         Reply::Err(e) => {
             let j = parse_json(&e).expect("the kernel's error is JSON");
+            // D32 (gap 475) widened the three key collisions from a bare
+            // string to `{"key":…,"a":{…},"b":{…}}`, so the key is read out of
+            // the object; the two historical names are still tried as strings
+            // because a frozen oracle answer may spell them the old way.
             let id = ["dupId", "orphanDemotion", "splitLine", "notADemotion", "ambiguousDemotion"]
                 .iter()
-                .find_map(|k| j.get(k).and_then(J::str).map(str::to_string));
+                .find_map(|k| {
+                    j.get(k).and_then(|v| {
+                        v.get("key").and_then(J::str).or_else(|| v.str()).map(str::to_string)
+                    })
+                });
             let fault = j
                 .get("badLine")
                 .and_then(|b| b.get("why"))
@@ -215,8 +223,9 @@ fn generalise(msg: &str) -> String {
     out
 }
 
-/// The kernel's diagnostic, as a name: `{"dupId":"a1"}` and `{"dupId":"b2"}`
-/// are one finding, not two.
+/// The kernel's diagnostic, as a name: a `dupId` on `a1` and a `dupId` on `b2`
+/// are one finding, not two.  (Since D32 the three key collisions carry an
+/// object — `{"key":…,"a":{…},"b":{…}}` — and the name is still the outer key.)
 fn err_kind(err: &str) -> String {
     let Ok(j) = parse_json(err) else { return err.to_string() };
     let J::Obj(kv) = &j else { return err.to_string() };
