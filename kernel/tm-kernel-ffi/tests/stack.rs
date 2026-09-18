@@ -565,8 +565,15 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
 // `a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb`
 // (`tm/tests/cli_latency.rs:310`), which is why the gap's own suggestion of
 // T14 could not be taken either.  **T17 was free and is the first number that
-// was.**  A new instrument starts above the highest number in the checkout:
-// `grep -rhoE '\bT[0-9]+\b' kernel/README.md kernel/design | sort -uV | tail -1`.
+// was.**  Before taking a number, find the highest MENTIONED and then check
+// that one is free -- the README's newest block names the next free number, so
+// the highest mentioned is usually it rather than a taken one:
+//
+//     grep -rhoE '\bT[0-9]+\b' kernel/README.md kernel/design | sort -uV | tail -1
+//     grep -rn '\bT<n>\b' . | grep -v ^./target        # must find no instrument
+//
+// README gap 733 asks for a roster, next to gap 226's for the parity numbers,
+// so that this is a lookup rather than two greps.
 // ---------------------------------------------------------------------------
 
 /// §9.1's stop condition: the TUI replans on a **tick** while a replan stays

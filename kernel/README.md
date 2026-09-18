@@ -36180,3 +36180,452 @@ is in any commit. `git diff --stat` against `9202bd3` touches **eleven files**: 
 `tm/src/cli/kernel_bridge.rs`, `tm/src/cli/lifecycle.rs`,
 `tm/tests/cli_check_log.rs`, `tm/tests/cli_write_gate.rs`) and this README —
 **+1,289 −63**. Nothing else.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-18**, **track A** —
+     the gate, the undo and the instrument names, on the isolated worktree
+     `.claude/worktrees/w18-a` (branch `w18-a`, from `eb4150f`).  The main
+     checkout was never touched.  Track A's gap range is **730-749**; this step
+     takes **730-734** and leaves **735-749** free.  Closes **686, 687, 688**.
+     No Lean, no cheats, no goals, no parity entry: **burn-down stays 10** and
+     the axiom audit stays **4,454**.  Whoever merges renumbers (§6.4).
+     =========================================================================== -->
+
+## Stage 6, W-18 track A, 2026-09-18: a gate that had never run, a write that could not be taken back, and a number that was not free
+
+Three commits, each green on its own, from `eb4150f`:
+
+| | commit | what |
+|---|---|---|
+| 1 | `76b49dc` | gap 688 — the FFI replan row is **T17**, and **not T14** |
+| 2 | `794c0e1` | gap 686 / **D36** — `check.sh` check 5 gains `--test stack` |
+| 3 | `1345a3e` | gap 687 / **D37** — `tm check --fix-ids` records an undo entry |
+
+`git diff --stat eb4150f..HEAD` touches **six files** — `AGENTS.md`,
+`kernel/README.md`, `kernel/check.sh`, `kernel/tm-kernel-ffi/tests/stack.rs`,
+`tm/src/cli/lifecycle.rs`, `tm/tests/cli_write_gate.rs` — **+251 −32**. Nothing
+else, and no Lean at all.
+
+### 1. Gap 688: the number the gap told this step to take was taken
+
+Gap 688 reports one collision and prescribes another. Its item 4 reads *"rename
+the FFI row (**T14** is free)"*. **T14 is not free**, and the check is one line:
+
+```bash
+$ grep -rn '\bT14\b' --include=*.rs . | grep -v ^./target
+tm/tests/cli_latency.rs:310:/// **T14** (stage 5 D10 L8, design §14.8's L8 row and §18.8): since L8 `tm plan`
+$ grep -c '\bT14\b' kernel/README.md
+37
+```
+
+T14 is `a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb` — a live
+`#[test]` with 37 ledger citations. Renaming into it would have shipped gap 688's
+own defect one number over, onto a name with a function behind it rather than
+prose.
+
+**Item 2 is why item 4 is wrong.** It says *"the T-numbering is
+design-document-scoped"*. It is not: there is **one** sequence, and those 37
+citations plus this file's own `T0`–`T16` are what it looks like. The first free
+number, measured and not assumed:
+
+```bash
+$ grep -rhoE '\bT[0-9]+\b' kernel/README.md kernel/design | sort -uV | tail -3
+T14
+T15
+T16
+$ grep -rn '\bT1[789]\b' . | grep -v ^./target | grep -vE '[0-9]{8}T1[789]|[0-9]{4}-[0-9]{2}-[0-9]{2}T1[789]'
+(nothing)
+```
+
+So **T17**, and `tests/stack.rs` now carries that grep at the row's banner so the
+next instrument does not repeat this. Swept: the banner, the doc comment and the
+`eprintln!` the ledger quotes, plus **eight** README prose lines in W-17's P4 and
+repair blocks and four lines of `AGENTS.md` (D36's and D38's rows). **Gap 688's
+own paragraph is left exactly as written** — its subject is the *name* "T12", and
+rewriting it would have erased the defect report — with the closure and this
+correction above it. The `#[test]` function name never changed:
+`a_500_candidate_replan_through_the_ffi`.
+
+### 2. Gap 686 / D36: the gate that had never run, and was then watched failing
+
+`check.sh` check 5 was `cargo test --quiet --test kernel`, and the root
+`Cargo.toml`'s `members` excludes `tm-kernel-ffi`, so **all seven** tests of
+`tests/stack.rs` were run by nothing automatic. Check 5 is now
+`--test kernel --test stack` and **says its count**, the way checks 3, 6 and 7 say
+theirs:
+
+```
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+```
+
+All seven, by name, out of the **gate's own command** rather than a separate run:
+
+```
+$ cd kernel/tm-kernel-ffi && cargo test --test kernel --test stack
+     Running tests/kernel.rs   test result: ok. 86 passed; 0 failed; 0 ignored
+     Running tests/stack.rs    test result: ok.  7 passed; 0 failed; 0 ignored
+a_200000_element_array_reads_on_a_2mib_thread                   ok
+a_200000_key_object_reads_on_a_2mib_thread                      ok
+the_log_op_reads_and_renders_at_the_line_bound_on_a_2mib_thread ok
+a_3660_day_lookahead_runs_on_a_2mib_thread                      ok
+grants_over_a_3660_day_lookahead_run_on_a_2mib_thread           ok
+floors_over_a_3660_day_lookahead_force_the_pass_once            ok
+a_500_candidate_replan_through_the_ffi                          ok
+```
+
+**And it was watched failing, twice** — a gate nobody has seen fail is the class
+this campaign keeps finding. Both mutations were restored and `stack.rs`
+re-verified byte-identical to `76b49dc`; neither is in any commit.
+
+| mutation | what check 5 printed | `check.sh` |
+|---|---|---|
+| T17's `REGRESSION_MS` `4_000` → `1` | `FAILED` · `---- a_500_candidate_replan_through_the_ffi stdout ----` · `6 passed; 1 failed` | exit **1** |
+| a stack probe's expectation `"array expected"` → `"arrays expected"` | `FAILED` · `---- a_200000_element_array_reads_on_a_2mib_thread stdout ----` · `6 passed; 1 failed` | exit **1** |
+
+The second is the point of the payment: it is **not** the instrument, and no
+other automatic check in the repository could see it.
+
+**THE COST, RE-MEASURED. This is the one step permitted past the 10%-per-step
+rule, only for this, and only because the owner declared it (D36).** Built tree,
+`MemoryMax=40G`, this worktree, three passes each and then three **alternating**
+pairs — the same-session comparand gap 470 item 4 asks for:
+
+| | readings (s) | median |
+|---|---|---|
+| before, three passes | 3.827 / 3.828 / 4.033 | 3.828 |
+| after, three passes | 7.144 / 6.381 / 6.138 | 6.381 |
+| **before, alternating** | **3.854 / 3.839 / 3.831** | **3.839** |
+| **after, alternating** | **6.011 / 6.022 / 6.110** | **6.022** |
+
+**+2.18 s on 3.84 s = +56.9 %.** Gap 686 predicted +2.23 s on 3.79 s = +59 %;
+`stack.rs` itself reports **2.23 s** inside the run, so the prediction reproduces
+and the delta is the file and nothing else. The first three-pass column was taken
+while the load average was still falling from the baseline suite and reads high —
+**quote the alternating pairs**. Peak RSS is unchanged: **1.92 GiB** against
+**1.98 GiB** at the baseline script.
+
+Swept, because a rule that is reversed leaves citations behind: `AGENTS.md` §7.1's
+check-5 command and count; §7.5's *"`cargo test --workspace` does not run the FFI
+crate's own 100 tests (checks 5 and 6 do)"*, which was **false for four runs** —
+5 and 6 ran 94 of 101; `stack.rs`'s own header, which said check 5 *"runs only
+that one"*; and this file's stage-5 A1 bullet **"T0 lives in its own test
+binary"**, the decision D36 reverses, annotated where it stands.
+
+### 3. Gap 687 / D37: the write that could not be taken back
+
+**BEHAVIOUR ROW.**
+
+| input | before | after | why |
+|---|---|---|---|
+| `tm check --fix-ids` on a tree the kernel loads | ids written, exit 0, **`tm undo` says "nothing to undo"** and no `.tm/undo.json` exists | ids written, exit 0, **one undo entry**; `tm undo` restores the bytes and logs `{"ev":"undo","of":"verb:check"}` | D37, gap 687 |
+| `tm check --fix-ids` with nothing to fix | (as before) | **no entry** — `tm undo` still reaches the user's last real command | `Recorder::finish`'s own rule |
+
+REPRODUCED FIRST, release binary at `794c0e1`, `tm init --example` tree outside
+the repo, `MemoryMax=16G`; then DRIVEN after, two id-less lines so the count is
+not one:
+
+```
+BEFORE                                   AFTER
+$ tm check --fix-ids                     $ tm check --fix-ids
+backlog.md:13: assigned ^n9gu            backlog.md:13: assigned ^2ijc
+no problems                       rc=0   backlog.md:14: assigned ^bvti
+$ tm undo                                no problems                       rc=0
+tm: nothing to undo               rc=1   $ tm undo
+$ ls .tm/                                undid check (--fix-ids: 2 ids assigned)
+cache        # no undo.json              · 1 file(s) restored · 0 left      rc=0
+                                         $ diff backlog.md.before backlog.md
+                                         (byte-identical)
+                                         $ cat .tm/log.jsonl
+                                         {"t":"…","ev":"undo","of":"verb:check"}
+                                         $ tm undo
+                                         tm: nothing to undo               rc=1
+```
+
+The entry: `verb='check'`, `summary='--fix-ids: 2 ids assigned'`,
+`files=['backlog.md']`, `events=[]`, `log_line=None`. `verb:check` is §10.1's
+form for a command that changed a file and logged nothing — `tm rank`'s shape
+since gap 84.
+
+**No `ctx.reload()` here, unlike every other recording path.** `check` is
+D18/gap 145's one tolerant verb and `Ctx::reload` is a strict `read_tree` plus a
+replay — both can fail on exactly the tree this verb exists to diagnose.
+`Recorder::finish` does not need one: the file diff is read back through the
+store, `log_now` tolerates a log it cannot tail, and `--fix-ids` writes no log
+event and no runtime state.
+
+`UNDO_RECORDERS` gains `("cli/lifecycle.rs", "check", &[FIX_IDS])` — a **new**
+marker, because this path cannot take `kernel_bridge::gate`: a tree refused *for
+a missing `^id`* is the tree the flag exists to repair, so it asks the other
+question (`fix_ids_refusal`, against a `MemStore` mirror). Thirty-one recorders
+became thirty-two.
+
+**THE TESTS WERE WATCHED FAILING.** Three inversions, each restored and the tree
+re-verified green; none is in any commit:
+
+| inversion | what failed, and with what words |
+|---|---|
+| the `Recorder` removed from `lifecycle::check` | `fix_ids_records_an_undo_entry_…` — *"`--fix-ids` wrote no .tm/undo.json — D37, gap 687: NotFound"*; **and** `every_undo_recording_path_is_accounted_for` — *"`UNDO_RECORDERS` and the sources disagree …"* |
+| the row removed from `UNDO_RECORDERS` | *"cli/lifecycle.rs::check records an undo entry and is not in `UNDO_RECORDERS` — say how it asks the kernel whether the tree still loads"* |
+| the row declaring `GATE` instead of `FIX_IDS` | *"cli/lifecycle.rs::check is declared to reach the kernel through `kernel_bridge::gate(` and does not"* |
+
+### 4. The write paths, re-enumerated by a method that could see what the first one could not
+
+**W-17's lesson 1 is aimed at this step.** D35's gate shipped with an enumeration
+built by walking `cli::run`'s dispatch table and grepping `Recorder::start(`.
+**That method by construction cannot see a writer that records no undo entry**,
+which is exactly what `tm check --fix-ids` was. So the paths were enumerated
+again, **from the other end**.
+
+**THE METHOD.** Start at the *physical* filesystem mutation and walk **up** to
+the shipped verb, instead of starting at a verb and walking down:
+
+1. every raw mutation in `tm/src` and `tm-core/src` —
+   `fs::write|remove_file|remove_dir|create_dir|rename|copy|set_permissions`,
+   `File::create`, `OpenOptions`, `set_len`, `hard_link`, `symlink`;
+2. every mutating method of the `Store`/`StoreExt` API, read off their
+   declarations rather than recalled — `write_file`, `append_text`, `write_json`,
+   `write_line(_in)`, `remove_line(_in)`, `append_to_section`,
+   `replace_generated(_stamped)`, `save_state`, `modify_file`, `modify_line`,
+   `write_guarded`;
+3. each call site attributed to its containing function by script, then that
+   function's callers traced to a verb.
+
+**WHAT THE TWO METHODS AGREE ON.** Every function in `UNDO_RECORDERS` appears,
+and every host-only write reaches `gate`, `apply`, `run_explained`, `preflight`
+or (now) `fix_ids_refusal`.
+
+**WHERE THEY DISAGREE — and the disagreement is the finding.** The new method
+reaches `tm-core/src/check.rs:1018` (`validate::fix_ids`'s `modify_file`)
+directly, which is the site D35's enumeration missed; it would have been found
+before the repair rather than after. It also surfaces **four write paths that
+record no undo entry at all**, which method 1 cannot see by construction:
+
+| path | verb | gated? | undo entry |
+|---|---|---|---|
+| `planning::write_plan` → `replace_generated_stamped(day)`, `write_file`, `Ctx::save_last_plan` | bare `tm plan` | yes, in effect — the kernel call in `build_ranked` precedes the write (driven: on a `dupId` tree `tm plan` exits 1 and **nothing moved**) | **none** (gap 730) |
+| `closing::auto_close` → `closing::run` | every verb whose `Ctx::load` does housekeeping | yes (`AutoClosed::Refused`) | **none** (gap 731) |
+| `Ctx::resolve_timeouts` → `write_line` + an `Edit` event | same | yes (`tree_refusal`) | **none** (gap 731) |
+| `roll_day` → `save_state` | same | state only | **none** (gap 731) |
+
+Everything else is accounted for by an existing decision: `tm init`'s own
+`fs::write` (gap 680 — preserving), `tm undo`'s `write_file`/`remove_file`
+(deliberately ungated, it is the way *out*), and the two `.tm/cache/` writers
+(`cli/tz_table.rs`, `cli/kernel_log.rs` — D13, derived and rebuildable).
+
+**WHAT THIS METHOD CANNOT SEE**, said plainly, because a completeness claim whose
+blind spot is unnamed is the same failure as an unmeasured *"driven"*:
+
+* **It is syntactic.** A write reached through a trait object whose method is not
+  one of the names in step 2 is invisible; so is a write performed by a spawned
+  process or a C library. (`R9`/the shim make the last one unlikely, not
+  impossible.)
+* **It cannot judge reachability.** `tm-core::review::write_day_review` appears in
+  the list and has **no caller in `tm/src` or `tm-core/src`** at all (gap 732) —
+  the method cannot tell dead code from live, and equally cannot prove a listed
+  site is reachable from `main`.
+* **It cannot see a *missing* write** — a verb that should have written and did
+  not is not a call site.
+* **It does not cross the crate boundary automatically.** The first pass grepped
+  `tm/src` only and missed `tm-core/src/check.rs:1018` — the very site at issue —
+  until `tm-core/src` was added. Any crate the binary links that is not grepped is
+  a hole, and the method gives no signal when one is forgotten.
+* **It says nothing about ordering.** A site that writes *before* its gate looks
+  identical to one that writes after.
+
+**Together the two methods still leave one hole neither covers**: a function that
+carries a gate on one branch and writes on another. `cli_write_gate.rs` already
+says so at `UNDO_RECORDERS`, and the answer is
+`every_write_verb_refuses_a_tree_the_kernel_cannot_load_and_writes_nothing` —
+driving the verbs, which is a third method again.
+
+### Acceptance, re-measured at `1345a3e`, capped
+
+Every number against the main-session baseline at `eb4150f`, and every delta
+explained.
+
+| | this step | `eb4150f` | delta |
+|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 | — |
+| axiom audit | **4,454 theorems** | 4,454 | **0** — no Lean touched |
+| corpus | **29/37 files, 4/5 whole plans** | same | — |
+| burn-down | **10 outstanding, all stage 6** | 10 | **0** — no goal added or discharged |
+| check 5 | **ok (93 tests)** — `kernel` 86 + `stack` 7 | ok, `kernel` 86 only | **+7 guarded**, D36 |
+| `check.sh` wall, built tree | **6.011 / 6.022 / 6.110 s** | **3.854 / 3.839 / 3.831 s** (alternating, same session) | **+56.9 %**, D36's declared payment |
+| peak RSS, `check.sh` | **1.92 GiB** | 1.98 GiB | down |
+| `cargo test --workspace` | **1,344 passed / 0 failed / 9 ignored across 79** | 1,342 / 0 / 9 / 79 | **+2**, D37's two tests |
+| FFI (`-p tm-kernel-ffi`) | **101 / 0** — `kernel` 86, `corpus` 8, `stack` 7 | same | — |
+| `cli_write_gate` | **11 / 0** | 9 / 0 | **+2** |
+| T5 `kernel_replay_parity` | **29 / 0 / 4 ignored** | same | — |
+| the door `kernel_log_door` | **23 / 0** | same | — |
+| `cli_switch_acceptance` | **9 / 0** | same | — |
+| `kernel_call_counts` | **2 / 0** | same | — |
+| `kernel_lookahead_parity` | **4 / 0** | same | — |
+| `kernel_unit_reserve` | **2 / 0** | same | — |
+| `cli_check_log` | **13 / 0** | same | — |
+| `cli_latency` | **6 / 0** ×3, `--include-ignored --release` | same | see below |
+| T17, `MemoryMax=16G`, best/median of 7 | (a) 11.22/11.29, (b) 11.25/11.29, **(c) 21.33/21.39**, (d) 2.37/2.40 ms | W-17 at `opt-level = 1`: (c) 21.9/25.1, 22.3/22.8 | inside |
+
+**T11 as ranges, never as single numbers** (gap 240). Three serial runs of each
+column, taken in **this** session against a stash of exactly the D37 change, so
+the two columns are comparable to each other and not to another machine's:
+
+| row (3y log) | pre-D37 | with D37 |
+|---|---|---|
+| later verb | 131.7–238.2 | 126.7–131.8 |
+| gated host-only write (D35) | 131.7–199.6 | 131.7 |
+| the verb after a windowable hand undo | 131.8–141.9 | 131.5–131.7 |
+| a routine for a 3-day-old instance | 131.7–147.0 | 136.6–136.8 |
+| `review week` (the `All` scope) | 263.1–283.6 | 253.3–**424.2** |
+| `--now` +1 day (a reseal) | 192.3–212.7 | 182.3–**390.4** |
+| 10 stalled days, worst | 526.5–581.8 | 536.0–557.3 |
+| T14, `tm plan` due 3 y / 10 y | 86.1–86.2 / 146.8–157.0 | 81.1–86.2 / 146.9–151.9 |
+
+The two bold readings are both **run 1**, the cold run, in a column whose pre-D37
+counterpart also peaks at run 1 (238.2, 199.6). **By construction the binary
+cannot be slower**: every line D37 adds sits inside
+`if args.fix_ids { … match … { None => … } }`, and no latency row passes the flag.
+
+### Rules
+
+* **D5**: no law narrowed, no theorem touched — **no Lean file was opened**.
+* **D18**: no memory bound raised. 40 G for `check.sh` and the suites, 16 G for
+  the release build, the binary drives and T17. Nothing retried uncapped.
+* **D19**: three separable commits, the behaviour change last and alone.
+* **D34**: no candidate fact derived anywhere; gaps **113, 114, 116** and **301
+  item 1** open and whole.
+* No `sorry`, no `axiom`, no `native_decide`, no `partial def`, no `unsafe`, no
+  `panic!`, no `!`-accessor, no `.toOption`, no Mathlib, **no new dependency**.
+  `lean-toolchain`, `Cargo.toml`, `lake-manifest.json`, `kernel/corpus/` and
+  `tm/tests/cli_latency.rs` untouched. **No fixture, snapshot, corpus file or
+  latency band re-blessed; no predicate weakened and no checker narrowed.**
+* `Negative.lean` untouched — **no cheat taken**. Parity **P38** still free.
+
+### Gaps
+
+**Closed: 686, 687, 688.** Range **730–749** is track A's; **730–734** taken,
+**735–749 free**.
+
+#### Gap 730 (new; label W18A-a) — `tm plan` rewrites the day file and records no undo entry
+
+1. **What is not done.** `planning::write_plan` writes the day file's
+   `<!-- tm:plan -->` block through `replace_generated_stamped`, writes
+   `.tm/last_plan.json` through `Ctx::save_last_plan`, and calls no
+   `Recorder::start`. Driven on a fresh `tm init --example` tree: `tm plan`
+   exits 0, `day/2026-09-07.md` gains the block at line 10, and `tm undo` then
+   says *"nothing to undo"* (exit 1). The same write **inside** `tm arrive`,
+   `tm resume` and `tm stop` is undoable, because those verbs hold a recorder
+   around it — so whether the identical write can be backed out depends on which
+   verb made it.
+2. **Why.** Not decided here, and no decision is recorded anywhere this step
+   could find. The plausible reading is that the block is *generated* and the
+   next `tm plan` regenerates it, so it is derived like `.tm/cache/` (D13) — but
+   `review --write` writes a generated block too and **does** record one, so the
+   two cannot both be following a rule.
+3. **What it costs.** A `tm plan` that replaces a block a user was reading cannot
+   be backed out by `tm undo`. The bytes are recoverable only by re-running a
+   planner that has since moved.
+4. **Which step clears it.** P8 or R1, when the day file's rows become the
+   kernel's: either `plan` joins the recorders, or §13's text says the generated
+   block is not undoable and `UNDO_RECORDERS`' doc says why. It is a **behaviour
+   change** either way and belongs to a step that owns the verb (D19).
+
+#### Gap 731 (new; label W18A-b) — the housekeeping inside `Ctx::load` writes, logs, and is in no undo entry
+
+1. **What is not done.** Three writers run inside `Ctx::load_with` before any
+   verb body: `roll_day` → `save_state`; `closing::auto_close` → `closing::run`,
+   which rewrites plan files, appends `close` events and stamps `state.closed`;
+   and `Ctx::resolve_timeouts` → `write_line` plus an `Edit` event. All three are
+   **gated** (the automatic close by its own `AutoClosed::Refused`,
+   `resolve_timeouts` by `kernel_bridge::tree_refusal`) and none is in an undo
+   entry, because every verb's `Recorder::start` runs *after* the load. Driven:
+   a first `tm plan` on a stale `--example` tree rewrote `backlog.md`,
+   `week/2026-W37.md`, `month/2026-09.md`, created `day/2026-09-18.md` and
+   `week/2026-W38.md`, exited 0 — and `tm undo` said *"nothing to undo"*.
+2. **Why.** It is uniform and long-standing, so it is a standing design choice
+   rather than a regression: §6.3's automatic close is meant to be housekeeping
+   nobody has to think about. `undo()` already anticipates an entry that carries
+   a `close` event (`closed_by_this`), which is the **explicit** verb's.
+3. **What it costs.** The single largest write the product makes without being
+   asked is the one write `tm undo` cannot reach. README **gap 86** is the
+   adjacent known defect — an undo after housekeeping cancels the automatic
+   close — and this is why it is hard: there is no entry to attach the close to.
+4. **Which step clears it.** R1, with gap 86, or the owner records the choice in
+   §13's text. Found by this step's second write-path enumeration; not repaired
+   here because it is a behaviour change on every verb at once (D19).
+
+#### Gap 732 (new; label W18A-c) — `tm_core::review::write_day_review` has no caller in the shipped binary
+
+1. **What is not done.** `tm-core/src/review.rs:2126` is `pub fn
+   write_day_review`, and `grep -rn write_day_review tm/src tm-core/src` finds
+   only its own definition and its doc-comment mention. Its only callers are
+   `tm-core/tests/review_write.rs` and `tm/tests/horizon_close.rs`.
+2. **Why.** Not investigated here — it was surfaced by the write-path
+   enumeration, which lists sites and cannot tell dead code from live.
+3. **What it costs.** Six tests exercise a writer the product does not use, which
+   reads as coverage it is not. If it is the intended home of **F3**
+   (`close day` replacing a written review with `review pending`), that is a
+   design fact nothing states; if it is dead, it is a §5.6 *"delete rather than
+   wire in"* candidate.
+4. **Which step clears it.** P8/F3-review, which owns the review block, or R3
+   with the rest of the Rust retirement.
+
+#### Gap 733 (new; label W18A-d) — the instrument numbering has no home and no check
+
+1. **What is not done.** `T0`–`T17` are allocated across two design documents and
+   this file, and nothing holds the sequence. Gap 688 is the collision; **gap 688's
+   own repair instruction was a second collision** (it prescribed T14, which is
+   `cli_latency.rs:310`). There is no list, and no check that a new `T<n>` is free.
+2. **Why.** The same shape as **gap 226** for the parity list `P<n>`, which has
+   the same complaint and the same absence of a home.
+3. **What it costs.** Two runs in a row allocated a taken number. The next one
+   has only a grep to protect it, and the grep lives in a comment in
+   `tests/stack.rs`.
+4. **Which step clears it.** The land step or R1: one table, next to gap 226's,
+   naming every `T<n>` and `P<n>` and the file each lives in. **T18 is the next
+   free instrument number; P38 the next free parity number.**
+
+#### Gap 734 (new; label W18A-e) — check 5 prints its count but does not assert it
+
+1. **What is not done.** Check 5 now says `ok (93 tests)`, the way checks 3, 6
+   and 7 say theirs, but nothing compares 93 to anything. A test marked
+   `#[ignore]` would move the number and the check would still say `ok`; so
+   would a `--test` argument lost from the command in a later edit of one line.
+   Check 3 *does* assert — its reconciliation fails by name — which is the
+   standard this does not meet.
+2. **Why.** Deliberate for this step: a hard-coded count is a number that has to
+   be re-blessed on every legitimate addition, and re-blessing is the habit this
+   campaign is trying to remove. The printed count plus the block above is what
+   a reader compares against.
+3. **What it costs.** The gate can shrink silently, which is gap 686's own class
+   one level down. The *ignored* count is printed when non-zero, so the most
+   likely shrink is visible; a removed `--test` argument is not.
+4. **Which step clears it.** R1, if it is worth a rule: check 5 asserts
+   `stack.rs` ran at least seven tests and `kernel.rs` at least eighty-six, both
+   as floors that only ever rise.
+
+**Gaps left open, by name.** Everything W-17's repair step left open stands:
+**365, 366, 368, 500, 501, 630, 275, 570, 551, 346, 347, 604, 670, 671, 672, 577,
+650, 367** (half), **600–606**, **113, 114, 116, 301 item 1** (D34's, whole).
+**735 is free within track A's range; other tracks take their own.**
+
+### Method disclosure
+
+Everything ran in the isolated worktree `.claude/worktrees/w18-a` on branch
+`w18-a`, cut from `eb4150f`; the **main checkout was never touched** and was clean
+at `eb4150f` throughout. The baseline was re-measured *in the worktree* before any
+edit — `check.sh` 7/7 with **4,454** theorems, corpus 29/37 and 4/5, burn-down 10,
+`cargo test --workspace` **1,342 / 0 / 9 across 79** — and those are the numbers
+every delta above is against, not numbers read out of a previous block.
+
+**Both defects were reproduced on the shipped release binary before a line was
+written**, on `tm init --example` trees outside the repository, at
+`MemoryMax=16G`. **Five mutations** were used — two to make the widened gate fail,
+three to make D37's tests fail — and every one was restored and the file
+re-verified against its commit; none is in any commit, and `git status` is clean.
+
+**What this step did NOT do**, by name: it did not touch a single Lean file, so
+the axiom audit, the corpus score and the burn-down are unchanged **by
+construction** and not by luck; it did not repair gaps 730, 731 or 732, each of
+which is a behaviour change on a verb this step does not own (D19); and it did not
+run the §5.13 drive, which is still the human's and still owed.
+
