@@ -9005,6 +9005,9 @@ and owes D9-21 there; or earlier if a step touches `run`.
 - **T0 lives in its own test binary.** `check.sh` check 5 runs only `--test kernel`. With T0
   inside it, `check.sh` went from 2.8 s to 3.4 s, over §14.0 item 4's 10% budget. In
   `tests/stack.rs`, `cargo test` in the FFI crate still runs it, and `check.sh` stays at 2.7 s.
+  *(**REVERSED by the owner's D36 at stage 6 W-18**, README gap 686: "`cargo test` in the FFI
+  crate still runs it" is a procedure and not a gate, and nothing automatic ran the file for
+  four runs. Check 5 is `--test kernel --test stack` since, at a declared **+59%**.)*
 - Design §18's "gap 44 today: 14,941 array elements parse; 22,055 abort" is LAT's figure. At
   `43e6309` this step measured 20,000 read and 30,000 abort on 2 MiB, which matches the README's
   earlier 21,500 / 22,000.

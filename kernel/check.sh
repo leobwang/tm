@@ -93,8 +93,36 @@ else
 fi
 
 # 5. Rust calls the kernel and gets the right answers.
-( cd tm-kernel-ffi && cargo test --quiet --test kernel >/dev/null 2>&1 ) \
-  && say "cargo test (Rust -> C shim -> Lean)" "ok" || { say "cargo test" "FAILED"; fail=1; }
+#
+#    BOTH test binaries since the owner's D36 (README gap 686).  This check ran
+#    `--test kernel` only, and the root Cargo.toml's `members` excludes
+#    tm-kernel-ffi, so `cargo test --workspace` did not run the crate either:
+#    ALL SEVEN tests of tests/stack.rs were run by nothing automatic.  Not only
+#    T17, the D30(Q8) replan instrument gap 600 depends on -- also the four
+#    2 MiB-thread stack probes (T0 (a), the log op, T0 (c)) and the two
+#    3,660-day lookahead rows.  They ran and passed; that was a procedure, not
+#    a gate, and a regression in any of them waited on somebody remembering.
+#
+#    THE COST IS DECLARED, NOT HIDDEN.  stack.rs sends megabyte requests and
+#    takes ~2.2 s against this script's ~3.8 s built-tree wall -- +59%, against
+#    design 14.0 item 4's 10%-per-step rule.  D36 spends the rule on this, once,
+#    deliberately: the measured before/after is in README "Stage 6 W-18, track
+#    A".  Do not read that +59% as a licence for the next step.
+#
+#    The count is SAID, the way checks 3, 6 and 7 say theirs, so a test that
+#    stops running is visible instead of silent: `--test kernel --test stack`
+#    is 86 + 7 = 93 today, and an #[ignore] added later moves the number without
+#    changing the verdict.  A binary that vanished would fail cargo outright.
+out=$( cd tm-kernel-ffi && cargo test --quiet --test kernel --test stack 2>&1 )
+rc=$?
+n=$( printf '%s\n' "$out" | awk '/^test result:/ { p += $4; i += $8 }
+                                 END { printf "%d tests%s", p, (i ? ", " i " ignored" : "") }' )
+if [ $rc -eq 0 ]; then
+  say "cargo test (Rust -> C shim -> Lean)" "ok  (${n:-no count reported})"
+else
+  say "cargo test (Rust -> C shim -> Lean)" "FAILED"; fail=1
+  printf '%s\n' "$out" | grep -E '^(test |error|thread |---- )' | head -20
+fi
 
 # 6. Stage two's acceptance evidence: every Markdown file of the fixture corpus
 #    goes through the String -> String boundary with NO COMMANDS and comes back

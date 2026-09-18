@@ -1,8 +1,16 @@
 //! **T0, design §14.1 and D9-21: every recursion over a list the wire can make
 //! large runs in constant stack per element.**  Its own test binary, not
-//! `tests/kernel.rs`: `check.sh` check 5 runs only that one, and these requests
-//! are megabytes each, so keeping them out keeps `check.sh`'s wall time inside
-//! design §14.0 item 4's 10% budget.  `cargo test` in this crate runs both.
+//! `tests/kernel.rs`, because these requests are megabytes each.
+//!
+//! **`check.sh` check 5 runs this binary since the owner's D36** (stage 6 W-18
+//! track A; README gap 686).  It ran `--test kernel` alone for four runs, and
+//! the root `Cargo.toml` excludes this crate from the workspace, so every test
+//! below was run by nothing automatic — a procedure, not a gate.  The header
+//! used to say keeping them out *"keeps `check.sh`'s wall time inside design
+//! §14.0 item 4's 10% budget"*, and that was true and was the reason: the file
+//! costs **2.23 s** against a **3.8 s** built-tree wall, **+59%**.  The owner
+//! declared that one-time payment rather than leave the file unguarded.
+//! **A test added here is paid for by every `check.sh` from now on.**
 //!
 //! Stage 5 step A1 (gap 44 closed).  T0 (c) joined at L6 (gap 105 closed); T0 (b) joins at W3.
 //! Stage 5 D9 B4 adds the `log` op at the line bound (`readLine`, `renderLine`).
