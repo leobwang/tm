@@ -2162,4 +2162,43 @@ theorem twoRoutinesWithOneTitleAreTwoEntities :
      | .ok _    => true
      | .error _ => false) = true := by rfl
 
+
+/- CHEAT 177 — `every:2w:<wd>` counts ISO week *numbers*, so it fires on the
+   weekday of every week whose ISO number is even.  It does not: a 53-week year
+   restarts the numbering and two occurrences land on consecutive weeks, which
+   is why `weekIdxMod` counts whole weeks from `Recur.weekEpoch` instead.  The
+   claim below is that the fortnightly rule gives BOTH Mondays of a two-week
+   range; `Recur.every_two_weeks_skips_a_week` is the positive form. -/
+theorem everyTwoWeeksFiresEveryWeek :
+    Recur.ruleOccurrences (.everyNWeeks 2 .monday) (Cal.toDay ⟨2026, 9, 7⟩)
+        (Cal.toDay ⟨2026, 9, 20⟩) 0
+      = [(Cal.toDay ⟨2026, 9, 7⟩, Cal.toDay ⟨2026, 9, 7⟩),
+         (Cal.toDay ⟨2026, 9, 14⟩, Cal.toDay ⟨2026, 9, 14⟩)] := by decide
+
+/- CHEAT 178 — a `win:` routine whose window ran out this morning is still
+   today's instance, so the planner can place it after the window closed.  §5.2
+   and `today_instances`' own filter say otherwise: with the default
+   `on-miss:expire` the chance is gone once `now` passes the close, and only
+   `on-miss:persist` carries it.  The claim below is that §4.3's lunch line
+   is still §5.2-mandatory at 14:00; the positive forms are
+   `PlannerWit.the_lunch_routine_is_gone_by_two_in_the_afternoon` and
+   `PlannerWit.a_persist_routine_is_one_carried_obligation_not_sixty_one`. -/
+theorem aClosedWindowIsStillMandatory :
+    Recur.isMandatory PlannerWit.recurPlan.val "lunch".toList
+        ⟨"lunch".toList, .date PlannerWit.recurDay,
+         some (Recur.atClock PlannerWit.recurDay ⟨810, by omega⟩),
+         some (Recur.atClock PlannerWit.recurDay ⟨690, by omega⟩,
+               Recur.atClock PlannerWit.recurDay ⟨810, by omega⟩),
+         Log.InstanceStatus.pending⟩
+        PlannerWit.recurDay (Recur.atClock PlannerWit.recurDay ⟨840, by omega⟩) = true := by decide
+
+/- CHEAT 179 — `every:month:31` means the 31st, and a month without one has no
+   occurrence.  The fork clamps the day of the month to the month's length
+   (`u32::from(*day).clamp(1, month_len(y, m))`), so February's occurrence is
+   the 28th — the claim below is that February 2026 has none.
+   `Recur.every_month_31_clamps_in_february` is the positive form. -/
+theorem monthlyThirtyFirstSkipsFebruary :
+    Recur.ruleOccurrences (.monthly 31) (Cal.toDay ⟨2026, 2, 1⟩) (Cal.toDay ⟨2026, 2, 28⟩) 0
+      = [] := by decide
+
 end Tm

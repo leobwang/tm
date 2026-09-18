@@ -1,5 +1,6 @@
 import TmKernel.Boundary
 import TmKernel.PlanCheck
+import TmKernel.Recur
 /-!
 # A `PlanReq` that can be written down, and the four witnesses it unblocks
 
@@ -718,6 +719,92 @@ theorem erasing_the_active_item_does_not_repair_a_law_whose_run_is_free (a : Id)
   simp only [List.erase_nil, List.take_nil] at hn
   -- `l.erase a = []` forces `l = []` or `l = [a]`, and the assigned set has two members.
   exact absurd hn (by simp)
+
+
+/-! ## The recurrence, on a loaded routine (stage 6, step K3b)
+
+`Recur.lean` has no shipped caller and no `Boundary` import, so its end-to-end
+witnesses live here, in the module gap 348 built for exactly this: a `WfPlan`
+needs `loadPlan` and a `Replay.Facts` needs the replay, and `Recur.lean` can
+reach neither.
+
+The line is §4.3's own `routines.md` lunch — a bare, box-less, id-less line, so
+it is an entity only since K3a (D31) and its store key is its **title**.  The
+day is the same Wednesday 2026-09-09 the request above plans. -/
+
+/-- §4.3's `routines.md`, one line. -/
+def recurWitness : List ReqDoc :=
+  [⟨"routines.md", none, ["- lunch win:11:30-13:30 dur:30m every:day".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_recur_witness_loads : loadsOk recurWitness = true := by decide
+
+/-- The loaded routine.  Total by `the_recur_witness_loads`. -/
+def recurPlan : WfPlan :=
+  match h : loadPlan recurWitness with
+  | .ok p => p
+  | .error _ => absurd the_recur_witness_loads (by simp [loadsOk, h])
+
+/-- A log with nothing in it: the facts a first day has. -/
+def emptyFacts : Replay.Facts := Replay.replay Cal.chicago []
+
+/-- 2026-09-09, the witness day. -/
+def recurDay : Nat := 739867
+
+theorem recurDay_is_the_witness_wednesday : recurDay = Cal.toDay ⟨2026, 9, 9⟩ := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The lunch routine is today's occurrence, and at noon it is MANDATORY** —
+§5.2's rule, end to end from the bytes: the window is 11:30 to 13:30 local, the
+due point is its close, the status is `pending`, and `place_minutes` is the
+line's own `dur:30m`.  This is the answer `Look.Cand`'s `due`, `window` and
+`mandatory` are taken from the host for today (README gap 113). -/
+theorem the_lunch_routine_is_todays_mandatory_window_at_noon :
+    (Recur.todayInstanceOf 60 Cal.chicago recurPlan.val emptyFacts "lunch".toList recurDay
+        (Recur.atClock recurDay ⟨720, by omega⟩)).map
+      (fun x => (x.1.window, x.1.due, x.1.status)) =
+      some (some (Recur.atClock recurDay ⟨690, by omega⟩, Recur.atClock recurDay ⟨810, by omega⟩),
+            some (Recur.atClock recurDay ⟨810, by omega⟩), Log.InstanceStatus.pending) ∧
+    (Recur.todayInstanceOf 60 Cal.chicago recurPlan.val emptyFacts "lunch".toList recurDay
+        (Recur.atClock recurDay ⟨720, by omega⟩)).map
+      (fun x => (x.2.mandatory, x.2.overdue, x.2.durMin)) = some (true, false, some 30) := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And at two in the afternoon there is no occurrence at all** — the expire
+veto.  `on-miss:` defaults to `expire` on a `win:` shape (`defaultOnMiss`), the
+window closed at 13:30, and `today_instances`' own filter
+(`item.on_miss == Persist || close_of(i) >= now`) drops it: a chance that ran
+out this morning is over, not a last chance and not a carry.  Sixty days of
+earlier occurrences are `Expired` by §5.3 and are not actionable, so nothing is
+carried either. -/
+theorem the_lunch_routine_is_gone_by_two_in_the_afternoon :
+    Recur.todayInstanceOf 60 Cal.chicago recurPlan.val emptyFacts "lunch".toList recurDay
+        (Recur.atClock recurDay ⟨840, by omega⟩) = none := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **A carried `persist` routine is today's obligation, overdue, with the date
+it was carried from** — §5.3's laundry, the half `every:day` + `on-miss:persist`
+produces.  At 14:00 the window has closed, but `persist` keeps the instance and
+`today_instances` reports **one** occurrence and not sixty-one. -/
+def persistWitness : List ReqDoc :=
+  [⟨"routines.md", none,
+     ["- laundry win:11:30-13:30 dur:30m every:day on-miss:persist".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_persist_witness_loads : loadsOk persistWitness = true := by decide
+
+def persistPlan : WfPlan :=
+  match h : loadPlan persistWitness with
+  | .ok p => p
+  | .error _ => absurd the_persist_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 100000 in
+theorem a_persist_routine_is_one_carried_obligation_not_sixty_one :
+    (Recur.todayInstances 60 Cal.chicago persistPlan.val emptyFacts ["laundry".toList] recurDay
+        (Recur.atClock recurDay ⟨840, by omega⟩)).length = 1 := by
+  decide
 
 end PlannerWit
 end Tm

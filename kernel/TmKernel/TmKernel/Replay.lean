@@ -3214,6 +3214,43 @@ def Facts.namedAt (f : Facts) (name : List Char) (id : Option Id) : Option Named
 /-- Whether `(d, i)` is one of fork `done_dates`. -/
 def Facts.doneOn (f : Facts) (i : Id) (d : Nat) : Bool := (f.doneDates.get (d, i)).isSome
 
+/-- **An item's completion dates**, out of a `doneDates` map.  `factsView`'s
+`doneFirst` and `doneCount` rows and `Seal.datesOf` were three spellings of this
+one body; they are all this function now (AGENTS §5.3, stage 6 step K3b). -/
+def doneDatesIn (m : HMap (Nat × Id) Unit) (i : Id) : List Nat :=
+  (m.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)
+
+/-- An item's completion dates in the facts. -/
+def Facts.doneDatesOf (f : Facts) (i : Id) : List Nat := doneDatesIn f.doneDates i
+
+/-- **Fork `Replay::is_done`**: `done_items` is the key set of `last_done` (C4),
+so an item is done exactly when it has a last completion. -/
+def Facts.isDone (f : Facts) (i : Id) : Bool := (f.lastDoneMap.get i).isSome
+
+/-- **Fork `Replay::instances_of(item)`**: every `(inst, record)` the log has for
+one item.  The fork iterates a `BTreeMap<String, _>`, so its order is the `inst`
+string's; this is bucket order and every caller that depends on the order sorts
+first (stage 6 step K3b's `loggedInstances`). -/
+def Facts.instancesOf (f : Facts) (item : List Char) : List (List Char × InstRec) :=
+  (f.instances.pairs.filter (fun p => decide (p.1.1 = item))).map (fun p => (p.1.2, p.2))
+
+theorem mem_instancesOf (f : Facts) (item ins : List Char) (r : InstRec) :
+    (ins, r) ∈ f.instancesOf item ↔ ((item, ins), r) ∈ f.instances.pairs := by
+  unfold Facts.instancesOf
+  constructor
+  · intro h
+    obtain ⟨q, hq, hqe⟩ := List.mem_map.1 h
+    obtain ⟨hm, hf⟩ := List.mem_filter.1 hq
+    have h1 : q.1.1 = item := of_decide_eq_true hf
+    simp only [Prod.mk.injEq] at hqe
+    obtain ⟨h2, h3⟩ := hqe
+    have : q = ((item, ins), r) := by
+      obtain ⟨⟨a, b⟩, c⟩ := q
+      simp_all
+    exact this ▸ hm
+  · intro h
+    exact List.mem_map.2 ⟨((item, ins), r), List.mem_filter.2 ⟨h, by simp⟩, rfl⟩
+
 /-! ### The two sorts of `finish` -/
 
 /-- Insert before the first element `a` may precede. -/
@@ -6710,8 +6747,8 @@ def factsView (f : Facts) : Q → Answer
   | .win d (.inst item inst) => .inst (if Log.instDate? inst = some d then f.instance item inst else none)
   | .item i => .item (f.items.get i)
   | .lastDone i => .stamp (f.lastDone i)
-  | .doneFirst i => .date (minDay? ((f.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).map (·.1.1)))
-  | .doneCount i => .count (f.doneDates.pairs.filter (fun p => decide (p.1.2 = i))).length
+  | .doneFirst i => .date (minDay? (f.doneDatesOf i))
+  | .doneCount i => .count (f.doneDatesOf i).length
   | .dropped i => .bool (f.dropped.get i).isSome
   | .instOther item inst => .inst (if Log.instDate? inst = none then f.instance item inst else none)
   | .named name id => .named (f.namedAt name id)
@@ -7807,11 +7844,11 @@ theorem factsView_finish_of_sameReadings {a b : State} (h : SameReadings a b) (h
     rw [HMap.keys_pairs_mapVals, HMap.keys_pairs_mapVals,
       maxDay?_perm (HMap.perm_keys_pairs _ _ ha.1 hb.1 h.days)]
   | doneFirst i =>
-    simp only [factsView, finish]
+    simp only [factsView, finish, Facts.doneDatesOf, doneDatesIn]
     rw [doneKeys_filter, doneKeys_filter,
       minDay?_perm (((HMap.perm_keys_pairs _ _ ha.2 hb.2 h.doneDates).filter _).map _)]
   | doneCount i =>
-    simp only [factsView, finish]
+    simp only [factsView, finish, Facts.doneDatesOf, doneDatesIn, List.length_map]
     rw [doneCount_filter, doneCount_filter, ((HMap.perm_keys_pairs _ _ ha.2 hb.2 h.doneDates).filter _).length_eq]
   | _ =>
     simp only [factsView, finish, HMap.get_mapVals, Facts.lastDone, Facts.instance, Facts.namedAt, h.items,
