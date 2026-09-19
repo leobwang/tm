@@ -4303,7 +4303,7 @@ theorem PlanReq.a_started_group_is_a_built_group {r : PlanReq} {g : Group}
 energised slots in time order; at each free slot the **first** group in §7.4's key order that
 passes the filter takes it, and the budget stops the walk.
 
-**This is `eligibleAt`'s SLOT half** (README gap 365).  The *item* half —
+**This is eligibleAt's SLOT half** (README gap 365).  The *item* half —
 `Candidate::eligible()` and `!is_wall || wall_today` — is `entersTheOrder`'s and was applied
 before the sort at P5b-i.  The two halves are written once each and in different places for the
 reason the fork puts them in different places: the item half decides who is in the order at all,
@@ -4372,7 +4372,7 @@ def contiguousFits (slots : List Look.Slot) (slotOf : List (Option Nat))
   fitsRun breaks Option.none need ((slots.zip slotOf).drop i)
 
 /-- **Fork `Planner::pick`'s per-group test** — §8.2 step 5's filter at one slot, and the whole
-of `eligibleAt`'s slot half.  Five clauses, the fork's, in the fork's order: the group still
+of eligibleAt's slot half.  Five clauses, the fork's, in the fork's order: the group still
 owes minutes; its `ci` is within the slot's energy; its `loc:` fits where we are; nothing
 demanding runs after the wind-down (step 3's rule again, defensively); and a non-`splittable`
 group needs an unbroken run long enough for what it still owes. -/

@@ -43,7 +43,7 @@ Design §6.3 found that **five of the eleven are false as written against the fo
 the same restriction repairs four of them: §8.2 step 5 skips a `loc:`-constrained, `atomic` or
 `max:`-capped item for reasons no §8.3 invariant is about, so a comparison between two
 candidates has to be restricted to the candidates its rule is written about.  §6.3 calls that
-predicate `eligibleAt` and design §15 gives its **body to step P5**, because it is step 5's
+predicate eligibleAt and design §15 gives its **body to step P5**, because it is step 5's
 own filter and the assign fold is its first caller.
 
 So this module takes it as a parameter (`Eligible`) rather than writing it:
@@ -69,10 +69,10 @@ exactly that (its own doc comment says so).  They are in the eligibility-free ha
   same seven checkers, and carrying the two hypotheses P1's body makes necessary.
 * **`checksEligible el` — four that do**: rank, hot, impossible, batch.  `planOk el` is the
   whole battery at a given eligibility.  **§6.1's `dayPlan_ok` is NOT stated here**, because
-  the honest form of it names `Planner.eligibleAt`, which does not exist: the `∀ el` form is
+  the honest form of it names Planner.eligibleAt, which does not exist: the `∀ el` form is
   the *unrestricted* statement, which is the one design §6.3 refutes, and an `∃ el` form is
   satisfied by the predicate that answers `false`.  It is not stateable yet, it is recorded as
-  such in `Goals.lean`'s "not stateable yet" list, and the step that writes `eligibleAt`
+  such in `Goals.lean`'s "not stateable yet" list, and the step that writes eligibleAt
   states it.  `planOk_of_no_segments` is the base case, and it is now the only place the `∀ el`
   form is available: P1's day has segments, and over them the `∀ el` form is false (see the
   note where its specialisation to `dayPlan` used to stand).
@@ -952,7 +952,7 @@ applied to one day, and that lemma stays above, unchanged and general.  The `∀
 **false** of P1's body — `hotPairOk` asks a hot item's row to start before every row carrying
 the queued one, and a permissive `el` makes that a real obligation over the replayed past —
 so it is not restated here either; §6.1's honest `dayPlan_ok` still waits on
-`Planner.eligibleAt` (gap 365).
+Planner.eligibleAt (gap 365).
 
 *(**W-19 proved that sentence.**  It stood here from W-14 as prose, which is the shape AGENTS
 §5.2 warns about from the other side — a claim about the code that no run of the code makes.
@@ -1762,7 +1762,7 @@ theorem plan_places_no_block_over_a_break (r : PlanReq)
 
 Design §6.1's lift is `planOk r (dayPlan r) = true` over all **eleven** checkers.  It is still
 not stateable in its honest form: four of the eleven take an eligibility predicate, and
-`Planner.eligibleAt` — which P5 writes, because it is step 5's own filter — does not exist
+Planner.eligibleAt — which P5 writes, because it is step 5's own filter — does not exist
 (README gap 365).  The `∀ el` form is the *unrestricted* claim design §6.3 refutes, and an
 `∃ el` form is satisfied by the predicate that answers `false`.
 
@@ -1793,7 +1793,7 @@ where the residue is named rather than counted.
 
 So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
 and owed a subject (P5's batch, P8's impossible list), **two refuted at every eligibility and
-owed both `Planner.eligibleAt` and the fold** (README gap 850), and the fold induction design
+owed both Planner.eligibleAt and the fold** (README gap 850), and the fold induction design
 §6.2 prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
 theorem dayPlan_ok_from_now_except_the_two_comparisons (el : Eligible) (r : PlanReq)
     (hagree : r.wallsAgree = true)
@@ -1829,7 +1829,7 @@ reason it is worth stating anyway is the theorem beside it:
 hypotheses **cannot be dropped** — at the permissive eligibility both are `false` on a day
 `dayPlan` really produces, so no proof over an arbitrary `el` will ever remove them.  Together
 the two statements say precisely what §6.1's lift is waiting for: not more proof about the
-seven core checks, but `Planner.eligibleAt` and the assign fold that gives the two comparisons
+seven core checks, but Planner.eligibleAt and the assign fold that gives the two comparisons
 something honest to range over.
 
 *(Before W-19 this file asserted the second half in prose — *"the `∀ el` form is **false** of

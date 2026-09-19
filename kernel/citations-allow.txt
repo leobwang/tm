@@ -137,6 +137,17 @@ map_append
 succ_le
 register_builtin_option
 
+# Lean KEYWORDS.  `set_option`, `termination_by` and `decreasing_by` are syntax, not
+# declarations: no `def` declares them, source 6 cannot resolve them, and every citation of
+# them names the real thing.  `set_option` and `termination_by` stood as counted entries (1
+# and 2) in section 4's grandfathered baseline until the W-20 repair step swept kernel/*.py
+# and check.sh as prose, which is `mutate.py`'s specification of its own extent rule citing
+# all three.  OPENED, not bumped: the header says the honest move for a name cited once more
+# is to move it up here with a reason, and being a keyword is the reason.
+set_option
+termination_by
+decreasing_by
+
 # A naming CONVENTION, not one declaration: `can_fail` is the suffix eleven real checker
 # witnesses carry (`noOverbook_can_fail`, `monotoneInRank_can_fail`, …) and the sentence names
 # the family, not a constant.
@@ -159,19 +170,20 @@ can_fail
 5 mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint
 4 logSectionWith_passes_its_zone
 #
-# ADDED AT W-20 by D41's camelCase widening.  `eligibleAt` and `Planner.eligibleAt` name a
-# predicate README gap 809 declares nonexistent -- the slot half is `PlanReq.groupFitsSlot` --
-# and D41 says the citations are real defects and are repaired, not exempted.  RE-MEASURED at
-# 86c4dc6 with this file's own resolver: 64 eligibleAt citations, and 5 of emitRefused.  45 of
-# the 64 and all 5 WERE repaired at W-20, by the UN-BACKTICK convention at the top of this file
-# -- 40 + 3 in README.md, 4 in Check.lean, 1 + 1 in AGENTS.md, 1 in Boundary.lean -- along with
-# one Boundary.lean sentence naming six zone readers a 2026-09-14 merge had deleted.  The 19 that remain are in files W-20's track A does not own and must not touch --
-# PlanCheck.lean 7 and Goals.lean 5 (track G's), Planner.lean 2 and PlannerWit.lean 4 (track P's),
-# Lookahead.lean 1 (track P's wire) -- exactly the ownership reason the four rows above carry.
-# README gap 932 owes them; track P's or track G's own next commit, or the repair step, clears
-# them.  Counted at 19, so not one more can be written.
-6 eligibleAt
-13 Planner.eligibleAt
+# CLOSED AT THE W-20 REPAIR STEP, and the two entries that stood here are GONE.  eligibleAt and
+# Planner.eligibleAt name a predicate README gap 809 declares nonexistent -- the slot half is
+# `PlanReq.groupFitsSlot` -- and D41 says the citations are real defects and are repaired, not
+# exempted.  RE-MEASURED at 86c4dc6 with this file's own resolver: 64 eligibleAt citations, and
+# 5 of emitRefused.  45 of the 64 and all 5 were repaired at W-20 by the UN-BACKTICK convention
+# at the top of this file -- 40 + 3 in README.md, 4 in Check.lean, 1 + 1 in AGENTS.md, 1 in
+# Boundary.lean -- along with one Boundary.lean sentence naming six zone readers a 2026-09-14
+# merge had deleted.  The remaining 19 were left behind two counted entries reading `6
+# eligibleAt` and `13 Planner.eligibleAt`, because they sat in files track A did not own; the
+# LAND step owned the merged tree, where that argument no longer holds, and left them anyway.
+# The repair step un-backticked all 19 -- PlanCheck.lean 7, Goals.lean 5, PlannerWit.lean 4,
+# Planner.lean 2, Lookahead.lean 1 -- and the two spans reading `planOk Planner.eligibleAt` in
+# README.md, which `CITED` refused for the space in them.  64 of 64.  README gap 932 is closed.
+# NOTHING IS ALLOWED HERE: a sentence that cites either name again fails check 8.
 
 # ============ 3. ADJUDICATED DEAD NAMES, cited BY a sentence that says so ============
 #
@@ -418,20 +430,17 @@ can_fail
 2 rust_facts
 4 saturating_add
 1 set_len
-1 set_option
 1 set_var
 6 shipped_call_sites
 1 skelAfter_stamps
 1 stepSkel_line
 2 stepSkel_stamps
-2 termination_by
 3 the_log_op_answers_every_entrys_day
 1 the_response_run_emits_parses_back
 1 tm_kernel_call
 1 to_string
 4 to_string_pretty
 1 too_big
-1 trace_kind
 1 trim_end_matches
 2 try_from
 2 var_os
@@ -445,9 +454,9 @@ can_fail
 # and a human opened at W-20: chrono 0.4.45 / serde_json 1.0.151 / ratatui / Rust `std`
 # types (`BTreeSet`, `OpenOptions`, `NonZeroU64`, `PartialEq`, `PartialOrd`, `ErrorKind`),
 # IEEE-754's `NaN`, Linux's `/proc` field `VmHWM`, Lean OPTIONS (`maxRecDepth`,
-# `maxHeartbeats`, `maxErrors`) and the error kind `unknownIdentifier` -- all declared by
-# `register_builtin_option`/`register_builtin_error`, which source 6's declaration regex does
-# not match -- core's `getElem?`, which is a CLASS FIELD and not a `def`, the Lean runtime
+# `maxHeartbeats`, `maxErrors`), which core declares with `register_builtin_option` and source
+# 6's declaration regex does not match, and the error kind `unknownIdentifier`, which core
+# tags with `unknownIdentifierMessageTag` in `Lean/Exception.lean` -- core's `getElem?`, which is a CLASS FIELD and not a `def`, the Lean runtime
 # symbol `lean_mark_mt`, build artefacts (`libTmKernel`, `TmKernel.olean`), PLAN 2.5's
 # `TmArch`, the fork's `to_path` local and its `groupBy`/`minBy`, and `NhMm` -- the fork's own
 # name for the `2h30m` mixed-duration form, written as a comment at tm-core/src/model.rs:248

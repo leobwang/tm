@@ -26261,7 +26261,7 @@ the wake, and `CapWire.todayFromLog` is the projection.
 
 #### Gap 278 (new; label L9-d) — the per-verb call-count table cannot see the second replay
 
-1. **What is not done.** `tm_kernel_ffi::trace_kind` classifies a request by the first literal it
+1. **What is not done.** tm_kernel_ffi::trace_kind classifies a request by the first literal it
    finds and tests `"capacity":` first, so a request carrying **both** sections counts as one
    `capacity` call and no `log` call. `kernel_call_counts.rs` pins the `log` and `emit` columns
    exactly and they did not move — correctly, and yet the replay gap 275 names is invisible there.
@@ -26865,7 +26865,7 @@ measurements.
 
 ### What landed
 
-**Gap 278 is closed.** `tm_kernel_ffi::trace_kind` classified a request by the
+**Gap 278 is closed.** tm_kernel_ffi::trace_kind classified a request by the
 first literal it found and tested `"capacity":` first, so a request carrying
 **both** a `capacity` and a `log` section counted as one `capacity` call and no
 `log` call. It is now `trace_kinds`, which names **every** section the request
@@ -27210,7 +27210,7 @@ otherwise.** Track K was asked for **K3** (F2) and **K4** (F3-rule) — D27's
 substance, *the kernel collects the planning candidates* — plus the one-call
 wire shape. **None of K3, K4 or the one-call shape is in the tree.** What
 landed across `3b65beb`, `665f74b`, `275ef17`, `f085b68` is the *instrument*
-half of that brief — **gap 278 closed**: `trace_kind` became `trace_kinds`, a
+half of that brief — **gap 278 closed**: trace_kind became `trace_kinds`, a
 capacity call now traces `capacity+log` instead of `capacity` alone, and
 `kernel_call_counts` pins the `capacity` column for the first time and asserts
 each capacity section travels with a `log` section — and two findings that
@@ -28117,7 +28117,7 @@ is new machinery, not a repair.
    eligibility-free invariants are established, because six of §6.4's goals are
    in the restricted four's group.
 4. **When it clears.** **P5**, in the commit that writes eligibleAt: it states
-   `dayPlan_ok` at that predicate, `planOk Planner.eligibleAt` becomes the
+   `dayPlan_ok` at that predicate, planOk at Planner.eligibleAt becomes the
    battery's one instantiation, and the four bridges lose their parameter.
 
 #### Gap 366 (new; label W14G-b) — D29's restatement and its refutation are blocked on a `dayPlan` that places something
@@ -41688,10 +41688,12 @@ AGENTS's W-17 lesson 1, applied to every completeness claim above.
    still satisfy check 4; neither of these is.
 6. **"The prose cites nothing stale."** *Method:* check 8, which **caught three
    stale citations in this step's own doc comments before the first commit** —
-   two theorem names this step renamed while writing (`the_deferred_pass_never_
-   moves_a_placed_routine`, `the_deferred_pass_places_nothing_in_a_closed_
-   window`) and one Rust std method that resolves to nothing. All three
-   repaired. *Blind spot:* check 8 does not read `kernel/design/**`, so the
+   two theorem names this step renamed while writing
+   (the_deferred_pass_never_moves_a_placed_routine and
+   the_deferred_pass_places_nothing_in_a_closed_window, now
+   `PlanReq.deferOne_keeps_a_placed_routine` and
+   `PlanReq.deferOne_places_nothing_in_a_closed_window`) and one Rust std
+   method that resolves to nothing. All three repaired. *Blind spot:* check 8 does not read `kernel/design/**`, so the
    design's own §14.2 P6 row is not swept, and it does not read camelCase yet
    (D41, track A's this run).
 7. **"The port is the fork's."** *Method:* `tm-core/src/planner.rs` read line by
@@ -42211,7 +42213,7 @@ is one more instance of the class W-19 recorded and did not apply to itself.
 2. **"This is every camelCase citation."** *Method:* the backtick regex with a lower-to-upper
    transition test. *Blind spots:* a PascalCase name with no internal transition (`Json`,
    `Refusal`) is not swept and never was; a span that is not one identifier is not swept, and there
-   are **19,779 of those (7,157 distinct)** — `planOk Planner.eligibleAt` at `README.md:28120` is
+   are **19,779 of those (7,157 distinct)** — planOk at Planner.eligibleAt at `README.md:28120` is
    one, and its dead name is invisible for that reason; and the whole of §4's table is a count, not
    a reading — **130 of the 6,555 distinct names were opened and 6,425 were not, because they
    resolve.** A name that resolves against the wrong declaration is item 4.

@@ -107,11 +107,11 @@ stage then has to fight.
   P1 produces and carrying the two hypotheses that day makes necessary (README
   gap 385).  The other four checks compare
   two candidates and have to be restricted to comparable ones (design §6.3),
-  and that predicate — `eligibleAt`, design §15 — is step **P5**'s.  Until it
+  and that predicate — eligibleAt, design §15 — is step **P5**'s.  Until it
   exists the whole-battery lift is **not stateable**: `∀ el, planOk el r
   (dayPlan r) = true` is the *unrestricted* claim §6.3 refutes, and `∃ el, …` is
   satisfied by the predicate that answers `false`.  So it is here as prose and
-  not as a `sorry`, and the step that writes `eligibleAt` states it.
+  not as a `sorry`, and the step that writes eligibleAt states it.
 * **§7.1's bin ladder is deliberately absent.**  Three of its four edges are
   halvings and the fourth is 1/10, so it does not derive; the only property it
   supports is antitonicity, and that is already proved
@@ -716,7 +716,7 @@ same request (`PlannerWit.the_other_nine_hold_where_the_two_fail`).  So the
 (`PlannerWit.dayPlan_ok_at_every_eligibility_is_refuted`,
 `PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`), and with it
 `plan_is_monotone_in_rank` and `plan_puts_hot_before_the_queue` below.  **The
-burn-down did not move**: both restatements need `Planner.eligibleAt`, which is
+burn-down did not move**: both restatements need Planner.eligibleAt, which is
 P5's, so both goals stay here beside `plan_tail_drop`, refuted and standing.
 README gaps 850 and 851.
 ############################################################################ -/
@@ -784,7 +784,7 @@ one document's siblings at equal `rootPrio` and equal `effectiveCi`, ranked 1
 and 2, the day assigns `m2` and the day does not assign `m1`.  The reason is not
 design §6.3's `loc:`/`atomic`/`max:` list: **there is no assign fold yet**, so
 nothing can assign `m1` at all.  The goal is **not** deleted, because the
-restatement needs `Planner.eligibleAt` and is P5's (README gap 365), and a
+restatement needs Planner.eligibleAt and is P5's (README gap 365), and a
 restatement without its refutation is a weakening (AGENTS §3.1 item 3) — which
 is `plan_tail_drop`'s situation below, handled the same way.  README gap 851. -/
 theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
@@ -807,7 +807,7 @@ computed counter-example, at the same `PlannerWit.theQueuedRequest`: `m1` carrie
 `hot` and `m2` does not, the day holds two rows carrying `m2` and **none**
 carrying `m1`, so no row can be "before the queue".  As above, the goal is not
 deleted: the restatement adds that the hot item is eligible at some slot of the
-day, which needs `Planner.eligibleAt` and is P5's.  README gap 851.
+day, which needs Planner.eligibleAt and is P5's.  README gap 851.
 
 **W-20 (track G) refuted it a SECOND time, and the second cause is not the
 fold's.**  `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes the same

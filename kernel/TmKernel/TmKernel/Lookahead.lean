@@ -4786,7 +4786,7 @@ atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
 This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
 all.  **`Planner.entersTheOrder` applies it** — `PlanReq.rankedCands` is fork
 `sorted_candidates`, filter and all, since P5b-i (README gap 602 closed).  The *slot* half is
-still owed: `Planner.eligibleAt` lands with the fold (README gap 365).
+still owed: Planner.eligibleAt lands with the fold (README gap 365).
 
 (These three paragraphs sat on `PlanFacts.capOk` until W-18's repair step — a docstring one
 declaration too early, so Lean bound them to the `max:` conjunct and the predicate they are

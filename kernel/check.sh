@@ -201,8 +201,10 @@ fi
 #    the single largest recurring defect class in this campaign's ledger was
 #    invisible to the gate by construction.
 #
-#    So: every backticked identifier in TmKernel/**.lean, in README.md and --
-#    since D41 -- in AGENTS.md is resolved against SEVEN DECLARATION sets: Lean
+#    So: every backticked identifier in TmKernel/**.lean, in README.md, in
+#    AGENTS.md (D41) and -- since the W-20 repair step -- in this file, in
+#    kernel/*.py and in mutations.txt, on one line OR wrapped across two, is
+#    resolved against SEVEN DECLARATION sets: Lean
 #    declarations, fields, constructors and namespaces; Lean string literals (a
 #    wire key is declared by the literal that spells it); Rust declarations and
 #    fields; Rust string literals; file stems (`cargo test --test cli_latency`
@@ -212,7 +214,7 @@ fi
 #    names its own blind spots.
 #
 #    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
-#    because snake_case-only reported green on a live stale `emitRefused` and
+#    because snake_case-only reported green on a live stale emitRefused and
 #    hid a name gap 809 declares nonexistent at, as re-measured at W-20, 64
 #    sites.  camelCase is a LOWER-TO-UPPER TRANSITION and nothing else: `decide`,
 #    `rfl`, `Nat`, `sorry`, `lake`, hypothesis names and commit shas have none,
@@ -229,12 +231,15 @@ fi
 #
 #    It found eight LIVE stale citations on its first run (README gap 832 keeps
 #    the four W-19 did not own) and, widened, 51 more that W-20 repaired with
-#    the un-backtick convention.  19 stand, in files W-20's track A does not own,
-#    declared as defects in allow-list section 2 (README gap 932).
+#    the un-backtick convention.  The last 19 -- all of one dead name, left
+#    behind two counted allow-list entries because they sat in files track A did
+#    not own -- were repaired at the W-20 repair step, and gap 932 is closed:
+#    64 of 64.  The line-wrap widening found two more, in the paragraph claiming
+#    this check had caught the step's stale citations.
 #
-#    The cost is declared, not hidden: 0.49-0.51 s against a 7.83-7.87 s
-#    built-tree wall, of which source 6 is 0.21 s.  It was 0.22-0.23 s before
-#    D41.  Re-measured in README "Stage 6 W-20, track A".
+#    The cost is declared, not hidden: 0.52 s (three runs, this machine)
+#    against a 7.91-8.01 s built-tree wall, 6.5%, of which source 6 is 0.21 s.
+#    It was 0.22-0.23 s before D41.  RE-MEASURE; do not quote.
 out=$( python3 citations.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "prose citations" "ok  (${out:-no count reported})"

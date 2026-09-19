@@ -1388,7 +1388,7 @@ theorem the_stored_witness_holds_two_ranked_siblings :
 def theStoredRequest : PlanReq := { theRunningRequest with plan := storedPlan }
 
 /-- The permissive eligibility — the one the battery is instantiated at until **P5** writes
-`Planner.eligibleAt` (README gap 365).  It is named once here rather than spelled at each use,
+Planner.eligibleAt (README gap 365).  It is named once here rather than spelled at each use,
 so the day P5 lands there is one place to change. -/
 abbrev permissive : PlanCheck.Eligible := fun _ _ _ _ => true
 
@@ -2772,7 +2772,7 @@ same plan, same lookahead input, same configuration, same builder.
 **What it does NOT show, said before the theorems rather than after.**  This is not a defect in
 the planner.  `m1` is missing from the day because **the assign fold is not written** — §8.2
 step 5 is P5's and `Planner.dayRows` places steps 1, 2 and choice 5b's reservation only.  Nor
-does it show that `Planner.eligibleAt` cannot rescue the two: an eligibility predicate that
+does it show that Planner.eligibleAt cannot rescue the two: an eligibility predicate that
 answers `false` for `m1` at every row of this day makes both conjuncts hold again, and whether
 the real one does is P5's decision.  **That is the inheritance this section is for** — it names
 the decision instead of leaving it inside a count.  See README gap 850. -/
@@ -2981,7 +2981,7 @@ theorem dayPlan_ok_from_now_at_every_eligibility_is_refuted :
 
 Design §6.3 rows 4 and 5 record both as false against the fork and hand the **restatements** to
 P5, which is why neither goal leaves `Goals.lean` here: a restatement without its refutation is
-a weakening (AGENTS §3.1 item 3), and the restatement needs `Planner.eligibleAt`, which does not
+a weakening (AGENTS §3.1 item 3), and the restatement needs Planner.eligibleAt, which does not
 exist (README gap 365).  This is `Goals.plan_tail_drop`'s situation exactly — refuted in this
 module at W-15, still standing in `Goals.lean`, with the refutation named at its doc comment —
 and it is handled the same way.  Burn-down **9, unchanged**, and README gap 851 says why. -/
@@ -2997,7 +2997,7 @@ is not about"* — and the reason **here** is simpler and is not in that list: t
 yet, so nothing can assign `m1` at all.
 
 The restatement is **P5**'s and takes the two candidates to be additionally comparable
-(`PlanCheck.eligibleSomewhere` at `Planner.eligibleAt`). -/
+(`PlanCheck.eligibleSomewhere` at Planner.eligibleAt). -/
 theorem plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted :
     ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity),
         r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →

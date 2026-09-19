@@ -8,12 +8,15 @@ no check in check.sh reads a doc comment.  Check 3 reads `#print axioms` lines
 and says so in its own comment; check 4 reads `/- CHEAT` headers.  Nothing read
 the sentences.  That is README gap 779, and this is the check that ends it.
 
-WHAT IS SWEPT.  Every backticked span on one line of
+WHAT IS SWEPT.  Every backticked span -- on one line, or wrapped across two
+(`wrapped`) -- of
 
     kernel/TmKernel/TmKernel/*.lean   the library
     kernel/TmKernel/*.lean            Check, Negative, Goals, TmKernel
     kernel/README.md                  the ledger
     AGENTS.md                         the process authority (D41, W-20)
+    kernel/check.sh, kernel/*.py,     the gate's own prose (W-20 repair step;
+    kernel/mutations.txt              `CHECKERS`, and why the allow-list is not)
 
 whose content is a dotted identifier that is EITHER snake_case (an underscore
 anywhere -- the shape this kernel's theorem names have) OR camelCase (a
@@ -85,7 +88,7 @@ A citation resolves if its LAST dotted segment is in any of the seven.
 
 THE ALLOW-LIST IS MATCHED ON THE WHOLE SPAN, not on the last segment, and the
 two rules are deliberately different.  `energy.sort_by_key` and `out.sort_by`
-each need their own entry; an entry `sort_by` exempts nothing.  That is the
+each need their own entry; an entry spelled sort_by exempts nothing.  That is the
 safe direction -- an exemption cannot silence the same method on a different
 receiver -- but it is not guessable, and the W-19 merge lost a cycle to it.
 
@@ -117,7 +120,7 @@ how this gets useless a second way.
 WHAT THIS CANNOT SEE.  Re-measured at W-20 with the resolver in this file and
 nothing else; do not quote these, RE-MEASURE.
   * THE NAMESPACE, and this is the largest one.  Resolution is on the LAST
-    dotted segment, so `Tm.Look.foo_bar` resolves against a `Tm.Cap.foo_bar`
+    dotted segment, so a citation Tm.Look.foo_bar resolves against a Tm.Cap.foo_bar
     that still exists, and a theorem MOVED between namespaces is invisible.
     Measured at W-20 over the kernel's 7,783 distinct declared short names:
     115 of them are declared under MORE THAN ONE full name -- `wf` under 28
@@ -151,22 +154,45 @@ nothing else; do not quote these, RE-MEASURE.
     citations-allow.txt's header): a sentence recording that something was
     refuted, renamed or deleted spells it without backticks, so it needs no
     exemption and a later sentence citing it as live still fails.  W-20's own
-    repair of `eligibleAt` and `emitRefused` is 51 applications of it.
-  * A span that is not one identifier.  `planOk Planner.eligibleAt` at
-    README.md:28120 contains a space, so `CITED` refuses it and the sweep never
-    sees the dead name inside it.  There are 19,779 such spans (7,157 distinct) -- backticked code
-    fragments, commands and phrases, of which this is one.
+    repair of eligibleAt and emitRefused is 51 applications of it, and the W-20
+    repair step's last 19 + 2 are the rest.
+  * A span that is not one identifier.  A backticked span containing a SPACE is
+    refused by `CITED`, and the dead name inside it is never seen: `planOk
+    Planner.eligibleAt` at README.md:28120 was exactly that and is repaired.
+    There are 19,779 such spans (7,157 distinct) -- backticked code fragments,
+    commands and phrases.  A span containing `::` is refused the same way and is
+    a DIFFERENT population, measured at the W-20 repair step: 1,574 citations
+    (505 distinct) are otherwise identifier-shaped, and 67 distinct / 111
+    citations have a last segment declared nowhere this file reads.  Almost all
+    are Rust `std`, chrono, serde or ENUM VARIANTS, which `RUST_DECL` does not
+    capture (`u32::MAX` x11, `EditError::Ambiguous` x4) -- but at least one was
+    an in-repo rename the ledger itself recorded, tm_kernel_ffi::trace_kind,
+    repaired here.  Turning `::` on costs 67 adjudications and is a scope
+    decision, not a repair; README gap 989.
+  * A SPAN WRAPPED OVER THREE LINES, or wrapped mid-word.  A span wrapped over
+    TWO lines is now swept -- see `wrapped` -- and joining it is what found two
+    theorem names W-20 track P had renamed away from, in the paragraph claiming
+    check 8 caught its stale citations.  The join requires the break to fall at
+    an `_` or a `.`; a break that ate a SPACE joins two tokens into a word that
+    resolves to nothing, which would fail the gate on a correct sentence.
+    Measured over the swept files: 48 spans wrap, 43 at an underscore or dot
+    and all 43 real names, 5 at an eaten space and all 5 spurious.  The carry
+    survives exactly one line boundary and is dropped at a fence.
   * kernel/design/**, tm-spec-v1.md and PLAN-lean-kernel.md.  D41 scoped the
     widening to AGENTS.md and DECLINED the design: measured at W-19,
     kernel/design/** holds 144 unresolved names, and they are not this class --
     the design is a prospective specification whose unresolved names are work to
-    do (`mkStateDay?` and refuses_an_inverted_window sit in a column headed
+    do (mkStateDay? and refuses_an_inverted_window sit in a column headed
     "bound, constructor, rejection theorem" for a record that has no such field
     yet).  tm-spec-v1.md 26 citations / 20 distinct / 0 unresolved;
     PLAN-lean-kernel.md 83 / 65 / 9.
-  * RUST.  Not one of the six sets is read as PROSE for Rust: a stale citation
-    inside a `///` doc comment in tm/src is not swept at all, because only the
-    four file sets above are swept.  Check 9 has the same edge (README gap 936).
+  * RUST.  Not one of the seven sets is read as PROSE for Rust: a stale citation
+    inside a `///` doc comment in tm/src is not swept at all.  Check 9 has the
+    same edge (README gap 936).  kernel/check.sh, kernel/mutations.txt and
+    kernel/*.py ARE swept as prose since the W-20 repair step, which is where
+    check.sh's own specification of D41's widening was found citing a
+    backticked emitRefused; citations-allow.txt is not, and `CHECKERS` says
+    why.
   * The allow-list itself.  At W-20 it holds 110 uncounted VOCABULARY names and
     352 counted ones.  Sections 4 and 8 are SEEDED BASELINES nobody has opened
     -- 160 snake (gap 833) and 50 camel (gap 934) -- and may hide stale
@@ -198,6 +224,25 @@ LEAN_FILES = sorted(glob.glob(os.path.join(HERE, "TmKernel", "TmKernel", "*.lean
              sorted(glob.glob(os.path.join(HERE, "TmKernel", "*.lean")))
 README = os.path.join(HERE, "README.md")
 AGENTS = os.path.join(ROOT, "AGENTS.md")
+# The gate's OWN files, swept as PROSE at the W-20 repair step.  They were the
+# last unswept prose in kernel/, and check.sh line 215 -- the sentence that
+# specifies D41's camelCase widening -- carried a backticked emitRefused, which
+# is the dead name that widening exists because of.  kernel/*.py is already a
+# DECLARATION source (source 7); reading the same files as prose is a different
+# question and was not being asked.
+#
+# citations-allow.txt IS DELIBERATELY NOT HERE, and the reason is mechanical:
+# an allow-list entry's own comment has to spell the name it exempts, so
+# sweeping this file charges every COUNTED entry one extra citation against its
+# own cap.  Measured at the repair step: 16 counted entries went over by
+# exactly one, every one of them because the allow-list quotes itself, and none
+# of the 16 was a defect.  The one real defect in that file -- a
+# register_builtin_error core does not declare -- was found by running this
+# file's resolver over it by hand, and repaired; doing that by hand is what the
+# file gets instead of the sweep.
+CHECKERS = [os.path.join(HERE, "check.sh"),
+            os.path.join(HERE, "mutations.txt")] + \
+           sorted(glob.glob(os.path.join(HERE, "*.py")))
 TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 RUST_DIRS = ["tm/src", "tm-core/src", "tm/tests", "tm-core/tests",
              "kernel/tm-kernel-ffi/src", "kernel/tm-kernel-ffi/tests",
@@ -225,6 +270,9 @@ PY_DECL = re.compile(r"^(?:def|class)[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*[(:]"
 SPAN = re.compile(r"`([^`\n]+)`")
 CITED = re.compile(r"^[A-Za-z][A-Za-z0-9_'?!]*(?:\.[A-Za-z0-9_'?!]+)*$")
 CAMEL = re.compile(r"[a-z][A-Z]")
+# A span may be at most 200 characters long before it is not a name any more;
+# a longer carry is prose that happens to sit between two backticks.
+WRAP_MAX = 200
 
 
 def is_citation(name):
@@ -321,24 +369,74 @@ def declared():
     return names
 
 
+def wrapped(prefix, suffix):
+    """The name a span that WRAPPED spells, or None.
+
+    A long identifier hard-wrapped inside backticks is invisible to `SPAN`,
+    which cannot cross a newline, so it is not counted, not resolved and not
+    exempted -- check 8 reported GREEN on two theorem names W-20 track P had
+    renamed away from, in the paragraph claiming check 8 caught its stale
+    citations.  This is the join, and it is deliberately narrow.
+
+    THE WRAP MUST BE AT AN UNDERSCORE OR A DOT -- the prefix ends with one or
+    the suffix begins with one.  Without that test the join is wrong in the
+    other direction: a span holding TWO tokens that wrapped at the space
+    between them (`deriving` / `DecidableEq`, `import` / `Lean.Data.Json`,
+    `Option` / `ActiveBlock`) joins into a camelCase word that resolves to
+    nothing, and the gate fails on a sentence that is correct.  Measured over
+    the swept files at the repair step: 48 spans wrap, 43 of them at an
+    underscore or a dot and all 43 real names, 5 of them at an eaten space and
+    all 5 spurious.  NOT SEEN: an identifier wrapped mid-word with no
+    underscore at the break (`assign` / `Fold`), and a span wrapped over THREE
+    lines."""
+    suffix = suffix.lstrip()
+    if not prefix or not suffix:
+        return None
+    if prefix[-1] not in "_." and suffix[0] not in "_.":
+        return None
+    name = (prefix + suffix).strip()
+    return name if len(name) <= WRAP_MAX and is_citation(name) else None
+
+
 def cited():
     """Every backticked snake_case citation, with count and first location."""
     hits = collections.Counter()
     where = {}
-    for path in LEAN_FILES + [README, AGENTS]:
+    for path in LEAN_FILES + [README, AGENTS] + CHECKERS:
         fenced = path.endswith(".md")
         inside = False
+        # The carry is the tail of a span left OPEN at the end of a line.  It
+        # survives exactly one line boundary and is dropped at a fence, at a
+        # line holding ``` and at a line with no backtick at all, because
+        # backtick parity inside this repository's prose is only reliable
+        # line-locally -- which is why the per-line sweep below is UNCHANGED
+        # and this runs beside it rather than replacing it.
+        carry = None
         for n, line in enumerate(read(path).split("\n"), 1):
             if fenced and line.lstrip().startswith("```"):
                 inside = not inside
+                carry = None
                 continue
-            if inside:
+            if inside or "```" in line:
+                carry = None
                 continue
             for m in SPAN.finditer(line):
                 name = m.group(1).strip()
                 if is_citation(name):
                     hits[name] += 1
                     where.setdefault(name, "%s:%d" % (os.path.relpath(path, HERE), n))
+            parts = line.split("`")
+            if carry is not None and len(parts) > 1:
+                name = wrapped(carry, parts[0])
+                if name is not None:
+                    hits[name] += 1
+                    where.setdefault(name, "%s:%d"
+                                     % (os.path.relpath(path, HERE), n - 1))
+                parts = parts[1:]
+            carry = None
+            if len(parts) >= 2 and len(parts) % 2 == 0 \
+               and len(parts[-1]) <= WRAP_MAX:
+                carry = parts[-1]
     return hits, where
 
 
