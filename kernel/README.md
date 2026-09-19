@@ -41382,7 +41382,9 @@ None entered and none created. `.claude/worktrees/stage5-lookahead` is untouched
 | `b1544fb` | **check 8 widened** — D41: camelCase, `AGENTS.md`, a sixth declaration set, two scraper repairs. `kernel/citations.py`, `kernel/citations-allow.txt`, `kernel/check.sh` | **D19**: it changes what "green" means |
 | `286ad79` | **check 9** — D40: every `def`/`abbrev` a step adds or changes is constant-folded and must break the build. `kernel/mutate.py`, `kernel/mutations.txt`, `kernel/check.sh` | **D19**: it changes what "green" means, and it is a different change from the one before it |
 | `ea57452` | **check 8's seventh declaration set: the checkers' own Python.** Found by this block's own first run failing | **D19**: a third change to what "green" means, and §4a says why it was not foreseeable from the desk |
-| this one | this block, and three VOCABULARY entries it needs | docs |
+| `35ebb32` | this block, and the three VOCABULARY entries §4a item 2 needs | docs |
+| `423b987` | `mutate.py` refuses a flag it does not know, and loses three dead locals. A typo'd flag used to fall through to the path that mutates every new definition — minutes of kernel builds for a misspelling | it changes no verdict, so it is not a `check.sh` change; separable, and found by typing `--list` |
+| this one | the two rows above, which `35ebb32` could not carry because they did not exist yet | docs |
 
 ### 2. Check 9 (D40): what it does, and why the third verdict exists
 
