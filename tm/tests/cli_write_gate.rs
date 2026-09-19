@@ -98,8 +98,10 @@ fn broken_after(setup: &[&[&str]]) -> (Tm, BTreeMap<String, Vec<u8>>) {
 /// title*, and the defect was in the one that addresses it by `^id`.
 ///
 /// `tm init` is not here (there is no tree yet), nor `tm check` (D18/gap 145's
-/// tolerant verb — its own tests), nor `tm undo` (deliberately ungated, below),
-/// nor the read verbs, which refuse already.
+/// tolerant verb — its own tests, and `--fix-ids` has its own section below:
+/// it asks the kernel about the tree its write **produces**, which is a
+/// different question from the one `gate` asks), nor `tm undo` (deliberately
+/// ungated, below), nor the read verbs, which refuse already.
 const WRITE_VERBS: &[(&[&[&str]], &[&str])] = &[
     (&[], &["wake", "07:15"]),
     (&[], &["arrive", "lounge"]),
@@ -258,6 +260,12 @@ const APPLY: &str = "kernel_bridge::apply(";
 const GATE: &str = "kernel_bridge::gate(";
 const CLOSE: &str = "closing::run_explained(";
 const PREFLIGHT: &str = "preflight(&ctx,";
+/// `tm check --fix-ids` is the one write that cannot take `gate`: a tree
+/// refused *for a missing `^id`* is the tree the flag exists to repair. It asks
+/// the question D35 is actually about — does the tree this write **produces**
+/// load? — against a `MemStore` mirror. Gap 675 landed that; D37 (gap 687) gave
+/// the same path its `Recorder::start`, which is why this marker exists at all.
+const FIX_IDS: &str = "kernel_bridge::fix_ids_refusal(";
 
 /// **Every function in the binary that records an undo entry, and how it asks
 /// the kernel.** One row per function, not per call site: a function with two
@@ -298,6 +306,7 @@ const UNDO_RECORDERS: &[(&str, &str, &[&str])] = &[
     ("cli/items.rs", "event", &[GATE]),
     ("cli/items.rs", "skip", &[GATE]),
     ("cli/items.rs", "routine", &[GATE]),
+    ("cli/lifecycle.rs", "check", &[FIX_IDS]),
     ("cli/lifecycle.rs", "close", &[CLOSE]),
     ("cli/lifecycle.rs", "sync_cal", &[GATE]),
     ("cli/lifecycle.rs", "review", &[GATE]),
@@ -534,6 +543,105 @@ fn fix_ids_is_still_the_way_out_of_a_tree_refused_for_a_missing_id() {
     assert_eq!(out.stdout.matches(": assigned ^").count(), 2, "{}", out.stdout);
     let after = tm.run(&["check"]);
     assert_eq!(after.code, 0, "{}{}", after.stdout, after.stderr);
+}
+
+/// **D37, README gap 687: `--fix-ids` writes, so `tm undo` takes it back.**
+///
+/// `lifecycle::check` called no `Recorder::start` on any tree, ever, so an id
+/// assignment could not be backed out by the verb the product tells users to
+/// back out with. Driven before the repair, on the `--example` tree:
+/// `tm check --fix-ids` printed `backlog.md:13: assigned ^n9gu`, exited **0**,
+/// and `tm undo` answered *"nothing to undo"* with exit 1 — there was no
+/// `.tm/undo.json` at all.
+///
+/// Three things, because an undo entry can be wrong in three ways: the bytes
+/// have to come back, the **whole** tree has to come back (an entry that
+/// restored the file and left `.tm/` behind would pass a one-file assertion),
+/// and the stack has to be one entry deep afterwards rather than empty and
+/// silently ignored.
+#[test]
+fn fix_ids_records_an_undo_entry_and_tm_undo_takes_the_ids_back() {
+    let tm = Tm::new();
+    let backlog = tm.plan.join("backlog.md");
+    let grown = format!("{}- [ ] 3 1b Thing with no id\n", tm.read("backlog.md"));
+    fs::write(&backlog, &grown).expect("write backlog.md");
+    let before = snapshot(&tm);
+
+    let out = tm.run(&["check", "--fix-ids"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(out.stdout.matches(": assigned ^").count(), 1, "{}", out.stdout);
+    assert!(tm.read("backlog.md").contains("Thing with no id ^"), "no id was appended");
+
+    // The entry exists, and it is this verb's.
+    let stack: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(tm.plan.join(".tm/undo.json")).expect(
+            "`--fix-ids` wrote no .tm/undo.json — D37, gap 687",
+        ))
+        .expect("an undo stack");
+    let entries = stack["entries"].as_array().expect("entries");
+    assert_eq!(entries.len(), 1, "{stack}");
+    assert_eq!(entries[0]["verb"], "check", "{stack}");
+    assert!(
+        entries[0]["summary"].as_str().expect("summary").contains("--fix-ids"),
+        "{stack}"
+    );
+
+    // `tm undo` takes it back, and says which verb it undid.
+    let undo = tm.run(&["undo"]);
+    assert_eq!(undo.code, 0, "{}{}", undo.stdout, undo.stderr);
+    assert!(undo.stdout.starts_with("undid check (--fix-ids: 1 id assigned)"), "{}", undo.stdout);
+    assert_eq!(tm.read("backlog.md"), grown, "the id was not taken off the line");
+
+    // And the rest of the tree is where it was — **every plan file**, byte for
+    // byte. The three files under `.tm/` are excluded by name and for a reason
+    // each: `log.jsonl` is append-only and now carries the compensating event,
+    // `undo.json` did not exist before and now holds the emptied stack, and
+    // `state.json` is the runtime state the entry put back. Everything else
+    // compares, so an entry that restored `backlog.md` and left another file
+    // rewritten fails here.
+    let after = snapshot(&tm);
+    let housekeeping = |rel: &str| rel.replace('\\', "/").starts_with(".tm/");
+    let plan_files: Vec<&String> = before.keys().filter(|r| !housekeeping(r)).collect();
+    assert_eq!(plan_files.len(), 9, "{plan_files:?}");
+    for rel in plan_files {
+        assert_eq!(
+            before.get(rel),
+            after.get(rel),
+            "undo left {rel} changed"
+        );
+    }
+    // The fixture carries no `.tm/` at all, so the three that appeared are
+    // exactly the three excluded above — and nothing else did.
+    let new_keys: Vec<&String> = after.keys().filter(|r| !before.contains_key(*r)).collect();
+    assert_eq!(
+        new_keys,
+        vec![".tm/log.jsonl", ".tm/state.json", ".tm/undo.json"],
+        "a file nobody asked for"
+    );
+    // A verb that logged nothing still cancels itself by name (§10.1).
+    let log = fs::read_to_string(tm.plan.join(".tm/log.jsonl")).expect("log");
+    assert!(log.contains(r#""of":"verb:check""#), "{log}");
+
+    // Nothing left to undo, and the stack is empty rather than absent.
+    let again = tm.run(&["undo"]);
+    assert_eq!(again.code, 1, "{}{}", again.stdout, again.stderr);
+}
+
+/// **A `--fix-ids` with no work records no entry**, so `tm undo` still reaches
+/// the user's last real command instead of a no-op that shadows it. This is
+/// `Recorder::finish`'s own rule — *"a command that changed nothing pushes
+/// nothing"* — asserted here because D37 is the first time this verb can push.
+#[test]
+fn fix_ids_with_nothing_to_fix_records_nothing() {
+    let tm = Tm::new();
+    tm.ok(&["edit", "^d2", "ci=3"]);
+    let out = tm.run(&["check", "--fix-ids"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    assert_eq!(out.stdout.matches(": assigned ^").count(), 0, "{}", out.stdout);
+
+    let undo = tm.run(&["undo"]);
+    assert_eq!(undo.code, 0, "{}{}", undo.stdout, undo.stderr);
+    assert!(undo.stdout.starts_with("undid edit"), "{}", undo.stdout);
 }
 
 /// **`tm init --force` is exempt from the gate because it is PRESERVING, not

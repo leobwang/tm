@@ -1,8 +1,16 @@
 //! **T0, design §14.1 and D9-21: every recursion over a list the wire can make
 //! large runs in constant stack per element.**  Its own test binary, not
-//! `tests/kernel.rs`: `check.sh` check 5 runs only that one, and these requests
-//! are megabytes each, so keeping them out keeps `check.sh`'s wall time inside
-//! design §14.0 item 4's 10% budget.  `cargo test` in this crate runs both.
+//! `tests/kernel.rs`, because these requests are megabytes each.
+//!
+//! **`check.sh` check 5 runs this binary since the owner's D36** (stage 6 W-18
+//! track A; README gap 686).  It ran `--test kernel` alone for four runs, and
+//! the root `Cargo.toml` excludes this crate from the workspace, so every test
+//! below was run by nothing automatic — a procedure, not a gate.  The header
+//! used to say keeping them out *"keeps `check.sh`'s wall time inside design
+//! §14.0 item 4's 10% budget"*, and that was true and was the reason: the file
+//! costs **2.23 s** against a **3.8 s** built-tree wall, **+59%**.  The owner
+//! declared that one-time payment rather than leave the file unguarded.
+//! **A test added here is paid for by every `check.sh` from now on.**
 //!
 //! Stage 5 step A1 (gap 44 closed).  T0 (c) joined at L6 (gap 105 closed); T0 (b) joins at W3.
 //! Stage 5 D9 B4 adds the `log` op at the line bound (`readLine`, `renderLine`).
@@ -436,14 +444,32 @@ fn grants_request_docs(days: u32, docs: &str, cands: &[String]) -> String {
     )
 }
 
+/// Section 8.2 step 5's nine candidate facts, all plain — `Look.wfUnconstrained`:
+/// nothing planned, multiplier 1, no `loc:`, splittable, no `max:`, `[ ]`, no
+/// unsatisfied dependency, not today's wall.
+///
+/// **It is REQUIRED on every candidate since stage 6 P5a (`f84d8cf`, README gap
+/// 606); a candidate without it is refused `badCandidate <i> plan`** and the
+/// call answers no `grants` at all.  These tests sent nine-field candidates and
+/// three of the seven in this file failed on exactly that at W-18's land step —
+/// the FIRST thing the owner's **D36** gate caught, and it could not have been
+/// caught earlier because until D36 this file ran in no automated gate at all
+/// (README gaps 686, 770).
+///
+/// **This is the SECOND spelling of this constant**: `tests/kernel.rs` holds the
+/// first, by the same name.  They are separate test binaries with no shared
+/// fixture module (only `corpus.rs` includes `tests/harness/mod.rs`), so the two
+/// must be edited together whenever the nine change — README gap 771.
+const PLAIN_PLAN: &str = r#""plan":{"plannedMin":0,"multiplier":{"num":1,"den":1},"loc":"any","splittable":true,"cap":null,"state":" ","blockedBy":[],"wallToday":false}"#;
+
 /// `n` dated candidates at `ci` 3, 600 minutes each, due dates spread evenly
-/// over `days` (the shape README gap 106 was measured with).
+/// over `days` (the shape README gap 106 was measured with), and the nine plain.
 fn spread_deadlines(n: usize, days: i64) -> Vec<String> {
     (0..n)
         .map(|i| {
             let due = date_after_spec_monday(((i as i64 + 1) * days) / n as i64 - 1);
             format!(
-                r#"{{"id":"d{i}","ci":3,"remaining":600,"due":"{due}","window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false}}"#
+                r#"{{"id":"d{i}","ci":3,"remaining":600,"due":"{due}","window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false,{PLAIN_PLAN}}}"#
             )
         })
         .collect()
@@ -516,7 +542,7 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
         let floors: Vec<String> = (0..512)
             .map(|i| {
                 format!(
-                    r#"{{"id":"f{i}","ci":{},"remaining":60,"due":null,"window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false,"floor":{{"left":{},"until":"{last}"}}}}"#,
+                    r#"{{"id":"f{i}","ci":{},"remaining":60,"due":null,"window":false,"wall":false,"optional":false,"overdue":false,"mandatory":false,"hot":false,{PLAIN_PLAN},"floor":{{"left":{},"until":"{last}"}}}}"#,
                     i % 6,
                     30 + i
                 )
@@ -546,8 +572,26 @@ fn floors_over_a_3660_day_lookahead_force_the_pass_once() {
 }
 
 // ---------------------------------------------------------------------------
-// T12 — the replan the TUI would make on a tick (stage 6 W-17, step P4;
+// T17 — the replan the TUI would make on a tick (stage 6 W-17, step P4;
 // design §20 gap 257, owner question Q8 / D30)
+//
+// **It was called T12 for one run, and T12 was taken** (README gap 688, closed
+// at W-18 track A).  The campaign's instrument numbers are ONE sequence, not
+// one per design document: T0-T16 are all claimed, T12 is
+// `model_fit_is_the_fork_points_on_the_corpus` (stage-5 design §14.6,
+// `cli_switch_acceptance.rs`) and T14 is
+// `a_plan_with_a_due_three_and_ten_years_out_stays_a_later_verb`
+// (`tm/tests/cli_latency.rs:310`), which is why the gap's own suggestion of
+// T14 could not be taken either.  **T17 was free and is the first number that
+// was.**  Before taking a number, find the highest MENTIONED and then check
+// that one is free -- the README's newest block names the next free number, so
+// the highest mentioned is usually it rather than a taken one:
+//
+//     grep -rhoE '\bT[0-9]+\b' kernel/README.md kernel/design | sort -uV | tail -1
+//     grep -rn '\bT<n>\b' . | grep -v ^./target        # must find no instrument
+//
+// README gap 733 asks for a roster, next to gap 226's for the parity numbers,
+// so that this is a lookup rather than two greps.
 // ---------------------------------------------------------------------------
 
 /// §9.1's stop condition: the TUI replans on a **tick** while a replan stays
@@ -588,7 +632,7 @@ fn time_call(req: &str, n: usize) -> (f64, f64, String) {
     (sorted[0], sorted[sorted.len() / 2], last)
 }
 
-/// **T12: what one replan costs through the FFI, at 500 candidates.**
+/// **T17: what one replan costs through the FFI, at 500 candidates.**
 ///
 /// **Why this exists.** `kernel/design/stage6/stage6-planner-design.md` §9.1
 /// gives the TUI a 5 ms stop condition for replanning on a tick, and §20 gap
@@ -655,7 +699,7 @@ fn a_500_candidate_replan_through_the_ffi() {
             "a 500-candidate replan took {all_med:.1} ms (regression bound {REGRESSION_MS} ms)"
         );
         eprintln!(
-            "T12 replan through the FFI, 2 MiB thread, best/median of 7: \
+            "T17 replan through the FFI, 2 MiB thread, best/median of 7: \
              (a) {REPLAN_CANDS} candidates, no tree {pass_best:.2}/{pass_med:.2} ms; \
              (b) 2,000-line tree, no candidates {tree_best:.2}/{tree_med:.2} ms; \
              (c) both {all_best:.2}/{all_med:.2} ms; \

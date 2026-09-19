@@ -1262,7 +1262,37 @@ pub fn check(g: &Globals, args: &super::CheckArgs) -> Result<i32, CliError> {
         let mut gen = id_gen(&ctx, "fix-ids");
         let mut proposal = id_gen(&ctx, "fix-ids-proposal");
         match super::kernel_bridge::fix_ids_refusal(&ctx, &mut proposal)? {
-            None => validate::fix_ids(&ctx.store, &mut files, &mut gen)?,
+            None => {
+                // **D37, README gap 687: the write is undoable.** This verb
+                // called no `Recorder::start` on any tree, ever — so
+                // `tm check --fix-ids` assigned ids, exited 0, and `tm undo`
+                // then said *"nothing to undo"*. The bytes were recoverable by
+                // hand (only the `^id` token is appended) but not by the verb
+                // the product tells users to back out with. D35's gate above
+                // made `tm undo` *reachable* afterwards; it gave it nothing to
+                // take back.
+                //
+                // **No `ctx.reload()` here, unlike every other recording
+                // path.** `check` is D18/gap 145's one tolerant verb — it is
+                // how a tree no other verb can load is diagnosed — and
+                // `Ctx::reload` is a *strict* `read_tree` plus a replay, both
+                // of which can fail on exactly the tree this verb exists for.
+                // `Recorder::finish` does not need it: the file diff is read
+                // back through the store, and `log_now` tolerates a log it
+                // cannot tail. `--fix-ids` writes no log event and no state,
+                // so there is nothing a reload would add to the entry.
+                //
+                // A `--fix-ids` that assigns nothing records nothing:
+                // `Recorder::finish` pushes no entry when no file moved.
+                let rec = undo_stack::Recorder::start(&ctx, "check")?;
+                let fixed = validate::fix_ids(&ctx.store, &mut files, &mut gen)?;
+                let n = fixed.len();
+                rec.finish(
+                    &ctx,
+                    format!("--fix-ids: {n} id{} assigned", if n == 1 { "" } else { "s" }),
+                )?;
+                fixed
+            }
             Some(issue) => {
                 blocked = Some(issue);
                 Vec::new()
