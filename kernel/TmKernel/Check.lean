@@ -5778,3 +5778,51 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_split_cuts_a_batch_on_atomic
 #print axioms Tm.PlannerWit.the_split_cuts_a_batch_on_its_location
 #print axioms Tm.PlannerWit.the_split_cuts_out_the_running_block
+
+-- ===========================================================================
+-- APPENDED 2026-09-18 (stage 6, run **W-19**, track P, step **P5b** -- the
+-- assign fold's second half: the CURSOR).
+--
+-- Fork `plan()`'s assign loop (planner.rs:1017-1026) over fork `Planner::pick`
+-- (planner.rs:1582) and fork `contiguous_fits` (planner.rs:2303).  This is
+-- `eligibleAt`'s SLOT half (README gap 365); the item half is
+-- `entersTheOrder`'s and ran before the sort at P5b-i.
+--
+-- 15 theorems in `Planner.lean` and 11 `decide` witnesses in `PlannerWit.lean`.
+-- `PlanReq.assignFold_ok` is the one a later step reads: every slot the cursor
+-- filled went to a group whose `ci` the slot's energy covers, whose `loc:` fits
+-- where the day is lived, and which is not demanding work after the wind-down.
+-- Those three are about fields the walk never moves, which is why they survive
+-- it; the other two clauses of `pick` (`g.live` and the atomic run) are about
+-- values the walk does move and are pinned by witnesses instead.
+--
+-- NOTHING HERE REACHES `dayPlan`.  No row is emitted, `dayRows` is unchanged,
+-- `PlanCheck`'s four emptiness theorems still hold, no goal is discharged and
+-- none is added.  README gaps 803-806 say what is owed.
+-- ===========================================================================
+#print axioms Tm.Planner.lt_of_getElem?_some
+#print axioms Tm.Planner.pickFrom_sound
+#print axioms Tm.Planner.PlanReq.an_assigned_slot_names_a_group
+#print axioms Tm.Planner.PlanReq.a_spent_budget_assigns_nothing
+#print axioms Tm.Planner.PlanReq.assignFold_ok
+#print axioms Tm.Planner.PlanReq.assignFold_used
+#print axioms Tm.Planner.PlanReq.assignStart_ok
+#print axioms Tm.Planner.PlanReq.assignStep_cases
+#print axioms Tm.Planner.PlanReq.assignStep_keeps_the_group
+#print axioms Tm.Planner.PlanReq.assignStep_lengths
+#print axioms Tm.Planner.PlanReq.assignStep_ok
+#print axioms Tm.Planner.PlanReq.assignStep_used
+#print axioms Tm.Planner.PlanReq.energisedSlots_length
+#print axioms Tm.Planner.PlanReq.foldl_assignStep_ok
+#print axioms Tm.Planner.PlanReq.foldl_assignStep_used
+#print axioms Tm.PlannerWit.an_assigned_slot_breaks_an_atomic_run
+#print axioms Tm.PlannerWit.an_atomic_group_needs_its_whole_run
+#print axioms Tm.PlannerWit.an_atomic_group_that_fits_is_placed
+#print axioms Tm.PlannerWit.a_planned_break_does_not_break_an_atomic_run
+#print axioms Tm.PlannerWit.the_budget_stops_the_cursor
+#print axioms Tm.PlannerWit.the_cursor_fills_the_day_in_key_order
+#print axioms Tm.PlannerWit.the_cursor_refuses_a_slot_in_the_wrong_place
+#print axioms Tm.PlannerWit.the_cursor_refuses_a_slot_that_is_not_good_enough
+#print axioms Tm.PlannerWit.the_cursor_request_batches_nothing
+#print axioms Tm.PlannerWit.the_cursor_requests_day_is_four_slots
+#print axioms Tm.PlannerWit.two_groups_fit_the_first_slot_and_the_order_decides

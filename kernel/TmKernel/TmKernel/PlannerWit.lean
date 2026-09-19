@@ -2402,5 +2402,190 @@ and this is the one behaviour this step deviates in. -/
 theorem the_gather_stops_at_the_batch_bound :
     (batchIds theZeroRequest).map List.length = [16, 4] := by decide
 
+/-! ### §8.2 step 5's cursor, run rather than argued (P5b, the second half)
+
+Four candidates, none of them gatherable (`remaining` 50 against `batch_max_min` 20), so each
+leads a group of its own and the batching below is a no-op: what these measure is the **filter
+at a slot** and nothing else.  The §4.3 Wednesday at 14:00 cuts four slots at energies
+3, 3, 2, 2 and the day's remaining budget is four, so the budget never binds and every `none`
+below is a filter's doing. -/
+
+/-- One cursor candidate: `remaining` past `batch_max_min`, so it never shares a block. -/
+def cCand (id : List Char) (ci : Fin 6) (pm : Nat) (l : Field.Loc) (sp : Bool)
+    (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
+    Look.Cand × Option Look.Floor :=
+  (⟨id, ci, some 0, 50, none, false, false, false, false, false, false, none,
+     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+
+/-- `^c1` fits anywhere; `^c2` is an errand (`loc:out`) and the day is being lived in the
+lounge; `^c3` is `ci 5` and no slot of this day is that good; `^c4` is `ci 2`, asks for four
+hours and is splittable. -/
+def witCursorCands : List (Look.Cand × Option Look.Floor) :=
+  [cCand ['c','1'] 3 60  .any  true (by decide),
+   cCand ['c','2'] 3 60  .out  true (by decide),
+   cCand ['c','3'] 5 60  .any  true (by decide),
+   cCand ['c','4'] 2 240 .any  true (by decide)]
+
+def theCursorRequest : PlanReq := { theRequest with cands := ⟨witCursorCands, by decide⟩ }
+
+/-- The same four with `^c2`'s `loc:` changed from `out` to `lounge`, and nothing else. -/
+def witCursorLocCands : List (Look.Cand × Option Look.Floor) :=
+  [cCand ['c','1'] 3 60  .any    true (by decide),
+   cCand ['c','2'] 3 60  .lounge true (by decide),
+   cCand ['c','3'] 5 60  .any    true (by decide),
+   cCand ['c','4'] 2 240 .any    true (by decide)]
+
+def theCursorLocRequest : PlanReq := { theRequest with cands := ⟨witCursorLocCands, by decide⟩ }
+
+/-- The same four with `^c3`'s `ci` changed from 5 to 3, and nothing else. -/
+def witCursorCiCands : List (Look.Cand × Option Look.Floor) :=
+  [cCand ['c','1'] 3 60  .any true (by decide),
+   cCand ['c','2'] 3 60  .out true (by decide),
+   cCand ['c','3'] 3 60  .any true (by decide),
+   cCand ['c','4'] 2 240 .any true (by decide)]
+
+def theCursorCiRequest : PlanReq := { theRequest with cands := ⟨witCursorCiCands, by decide⟩ }
+
+/-- The same four with `^c4` made `atomic`, and nothing else. -/
+def witCursorAtomicCands : List (Look.Cand × Option Look.Floor) :=
+  [cCand ['c','1'] 3 60  .any true  (by decide),
+   cCand ['c','2'] 3 60  .out true  (by decide),
+   cCand ['c','3'] 5 60  .any true  (by decide),
+   cCand ['c','4'] 2 240 .any false (by decide)]
+
+def theCursorAtomicRequest : PlanReq :=
+  { theRequest with cands := ⟨witCursorAtomicCands, by decide⟩ }
+
+/-- The same, `atomic`, asking for **three** hours rather than four — the run the day can
+actually give it. -/
+def witCursorAtomicFitCands : List (Look.Cand × Option Look.Floor) :=
+  [cCand ['c','1'] 3 60  .any true  (by decide),
+   cCand ['c','2'] 3 60  .out true  (by decide),
+   cCand ['c','3'] 5 60  .any true  (by decide),
+   cCand ['c','4'] 2 180 .any false (by decide)]
+
+def theCursorAtomicFitRequest : PlanReq :=
+  { theRequest with cands := ⟨witCursorAtomicFitCands, by decide⟩ }
+
+/-- Which group took each slot, by its members' ids — `none` for a slot the filter left empty. -/
+def assignIds (r : PlanReq) : List (Option (List Id)) :=
+  r.assignFold.slotOf.map (fun o => o.bind (fun gi =>
+    (r.assignFold.groups[gi]?).map (fun g => g.members.map (fun x => x.cand.id))))
+
+/-- The same walk at a budget the caller names — fork `remaining_budget`, which is a *local* of
+`plan()` and not a field of the day. -/
+def assignAt (r : PlanReq) (budget : Nat) : Assign :=
+  r.energisedSlots.zipIdx.foldl (r.assignStep r.todaySlots r.todayBreaks budget) r.assignStart
+
+def assignIdsAt (r : PlanReq) (budget : Nat) : List (Option (List Id)) :=
+  (assignAt r budget).slotOf.map (fun o => o.bind (fun gi =>
+    ((assignAt r budget).groups[gi]?).map (fun g => g.members.map (fun x => x.cand.id))))
+
+set_option maxRecDepth 100000 in
+/-- **The four candidates lead four groups of their own**, so nothing below is about §7.5: the
+batching is a no-op here and the cursor is the only thing under test. -/
+theorem the_cursor_request_batches_nothing :
+    rankedIds theCursorRequest = [['c','1'], ['c','2'], ['c','3'], ['c','4']] ∧
+    groupIds theCursorRequest =
+      [[['c','1']], [['c','2']], [['c','3']], [['c','4']]] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The day's four slots, their energies and the budget** — the ground every witness below
+stands on, computed rather than assumed. -/
+theorem the_cursor_requests_day_is_four_slots :
+    theCursorRequest.energisedSlots.map (fun p => p.1.val) = [3, 3, 2, 2] ∧
+    remainingBudget theCursorRequest = 4 ∧
+    theCursorRequest.curLoc = Field.Loc.lounge := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The cursor, computed.**  `^c1` takes the first slot because it is first in §7.4's order
+and fits it.  At the second slot `^c1` is done (its whole commitment went into one 60-minute
+block), `^c2` is refused for its `loc:`, `^c3` for its `ci`, and `^c4` takes it and the two
+after it — four hours asked for, three given, which is the group still owing minutes at the end
+of the day. -/
+theorem the_cursor_fills_the_day_in_key_order :
+    assignIds theCursorRequest =
+      [some [['c','1']], some [['c','4']], some [['c','4']], some [['c','4']]] ∧
+    theCursorRequest.assignFold.used = 4 := by decide
+
+set_option maxRecDepth 100000 in
+/-- **`loc_ok` is the only reason `^c2` was passed over.**  The same four with `^c2`'s `loc:`
+changed from `out` to `lounge` — one field, nothing else — and `^c2` takes the second slot,
+pushing `^c4` back by one.  Without this line the theorem above would be satisfied by a cursor
+that never looked at `loc:` at all and simply preferred `^c4`. -/
+theorem the_cursor_refuses_a_slot_in_the_wrong_place :
+    assignIds theCursorLocRequest =
+      [some [['c','1']], some [['c','2']], some [['c','4']], some [['c','4']]] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **And the energy filter is the only reason `^c3` was.**  `^c3`'s `ci` changed from 5 to 3 —
+one field — and it takes the second slot, whose energy is 3.  It still never reaches slots three
+and four, whose energy is 2: `ci ≤ energy` is a comparison and not a flag. -/
+theorem the_cursor_refuses_a_slot_that_is_not_good_enough :
+    assignIds theCursorCiRequest =
+      [some [['c','1']], some [['c','3']], some [['c','4']], some [['c','4']]] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **An `atomic` group takes a slot only when the whole run is there.**  `^c4` asks for four
+hours and the day has three free after the first slot, so the same candidate that is placed
+three times when splittable is placed **not at all** when `atomic` — and the day loses the
+afternoon rather than starting a job it cannot finish. -/
+theorem an_atomic_group_needs_its_whole_run :
+    assignIds theCursorAtomicRequest = [some [['c','1']], none, none, none] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **And the test is the run's length, not the `atomic` flag.**  The same `atomic` candidate
+asking for the three hours the day can actually give takes all three slots.  Without this line
+the theorem above would be satisfied by a cursor that refused every `atomic` group. -/
+theorem an_atomic_group_that_fits_is_placed :
+    assignIds theCursorAtomicFitRequest =
+      [some [['c','1']], some [['c','4']], some [['c','4']], some [['c','4']]] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **A planned break does not break the run, and a gap that is not one does.**  The three-hour
+run above crosses step 3's own 20-minute break (`todayBreaks`' second entry is exactly the gap
+between the second and third slots).  Given the same slots and the same need with **no** breaks
+declared, the identical walk answers `false` — which is fork `contiguous_fits`' "sitting through
+the break the planner itself inserted is not a context switch", measured. -/
+theorem a_planned_break_does_not_break_an_atomic_run :
+    contiguousFits theCursorRequest.todaySlots [none, none, none, none]
+      theCursorRequest.todayBreaks 1 180 = true ∧
+    contiguousFits theCursorRequest.todaySlots [none, none, none, none] [] 1 180 = false := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **An assigned slot inside the run breaks it too** — the fork's first clause.  The same walk
+with the third slot already taken cannot find three hours from the second. -/
+theorem an_assigned_slot_breaks_an_atomic_run :
+    contiguousFits theCursorRequest.todaySlots [none, none, some 0, none]
+      theCursorRequest.todayBreaks 1 180 = false := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The budget stops the walk**, and it stops it at the slot rather than at the day: the same
+four candidates at a remaining budget of two fill two slots and leave the rest of the afternoon
+to Rest.  This is the clause `remaining_budget` owns, and it is the one §9's "→ drops: …" reads
+when a block runs long. -/
+theorem the_budget_stops_the_cursor :
+    assignIdsAt theCursorRequest 2 = [some [['c','1']], some [['c','4']], none, none] ∧
+    assignIdsAt theCursorRequest 0 = [none, none, none, none] ∧
+    assignIdsAt theCursorRequest 4 = assignIds theCursorRequest := by decide
+
+/-- Which groups pass §8.2 step 5's filter at slot `i` of an empty day. -/
+def fitsAt (r : PlanReq) (i : Nat) : List Bool :=
+  match r.energisedSlots[i]? with
+  | Option.none => []
+  | some (e, s) => r.assignStart.groups.map (fun g =>
+      r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks i e s g)
+
+set_option maxRecDepth 100000 in
+/-- **Two groups pass the filter at the first slot, and §7.4's order is the only thing that
+chooses between them.**  `^c1` and `^c4` both fit it — `^c4`'s `ci 2` is inside the slot's
+energy 3 and it has no `loc:` — so `the_cursor_fills_the_day_in_key_order`'s first entry is the
+cursor taking the **first** group that fits and not the best-fitting one.  A `pick` that
+answered the last fitting group would satisfy every other witness in this section and fail that
+one; this line is what says so. -/
+theorem two_groups_fit_the_first_slot_and_the_order_decides :
+    fitsAt theCursorRequest 0 = [true, false, false, true] := by decide
+
 end PlannerWit
 end Tm

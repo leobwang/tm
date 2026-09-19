@@ -2541,4 +2541,40 @@ theorem theGatherReachesPastAnEqualCiCandidate :
     PlannerWit.batchIds PlannerWit.theBatchRequest =
       [[['b','1'], ['b','2'], ['b','5']], [['b','3'], ['b','6']], [['b','4']]] := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-19, track P, step P5b — the CURSOR.
+   §8.2 step 5's slot walk: `pick`, `contiguous_fits` and the budget.
+   Cheats 206-208.  Whoever merges renumbers. -/
+/- CHEAT 206 — an `atomic` group asserted to be placed when the day cannot give
+   it its whole run.  `^c4` asks for four hours and the §4.3 Wednesday has three
+   free after the first slot, so fork `contiguous_fits` refuses every position
+   and the afternoon is left to Rest rather than to a job that cannot finish.
+   This block claims it is placed three times, which is what the same candidate
+   does when it is **splittable** — so a cursor that read `splittable` and
+   nothing else would satisfy it.  `decide` refuses. -/
+theorem anAtomicGroupTakesWhateverItCanGet :
+    PlannerWit.assignIds PlannerWit.theCursorAtomicRequest =
+      [some [['c','1']], some [['c','4']], some [['c','4']], some [['c','4']]] := by decide
+
+/- CHEAT 207 — a `loc:out` errand asserted to take a lounge slot.  The day is
+   being lived in the lounge (`state.loc`), and fork `loc_ok` lets an item with a
+   constraint take a slot only where the constraint is met or where the current
+   location is unknown.  `^c2` differs from `^c1` in `loc:` and in nothing else,
+   which is what makes this block about `loc_ok` and not about the order.
+   `decide` refuses: `^c4` takes that slot. -/
+theorem anErrandTakesALoungeSlot :
+    PlannerWit.assignIds PlannerWit.theCursorRequest =
+      [some [['c','1']], some [['c','2']], some [['c','4']], some [['c','4']]] := by decide
+
+/- CHEAT 208 — a group asserted to owe **negative** minutes, which is what fork
+   `Group::left_min` is (`i64`, decremented by a whole slot and incremented back
+   by §8.2 step 6 when a mandatory routine displaces an assigned block).  The
+   kernel carries the pair `commitMin`/`spent` instead, so "owes −50" is not a
+   value of the type: `Nat` has no `Neg`, and the two readers the fork has —
+   `pick`'s `left_min <= 0` and `contiguous_fits`' `need` — are `commitMin ≤
+   spent` and `commitMin − spent`, which say the same thing and invert exactly
+   under step 6's restore. -/
+theorem aGroupCanOweNegativeMinutes (g : Planner.Group) :
+    ({ g with spent := g.spent + 60 } : Planner.Group).leftMin = -50 := by decide
+
 end Tm

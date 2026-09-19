@@ -4783,5 +4783,373 @@ theorem PlanReq.a_started_group_is_a_built_group {r : PlanReq} {g : Group}
   | none => rw [hq] at hg; exact ⟨g, hg, rfl, rfl, rfl, rfl, rfl, rfl⟩
   | some q => rw [hq] at hg; exact spendActive_keys _ _ _ g hg
 
+/-! ############################################################################
+## §8.2 step 5, the second half: the cursor
+
+**Fork `plan()`'s assign loop** (`planner.rs:1017-1026`) over **fork `Planner::pick`**
+(`planner.rs:1582`) and **fork `contiguous_fits`** (`planner.rs:2303`).  One walk over the
+energised slots in time order; at each free slot the **first** group in §7.4's key order that
+passes the filter takes it, and the budget stops the walk.
+
+**This is `eligibleAt`'s SLOT half** (README gap 365).  The *item* half —
+`Candidate::eligible()` and `!is_wall || wall_today` — is `entersTheOrder`'s and was applied
+before the sort at P5b-i.  The two halves are written once each and in different places for the
+reason the fork puts them in different places: the item half decides who is in the order at all,
+the slot half decides whether *this* slot may hold them.
+
+**Nothing here reaches `dayPlan`.**  The rows an assignment emits are the step after this one;
+`dayRows` is unchanged and `PlanCheck`'s four emptiness theorems still hold.  README gap 803.
+############################################################################ -/
+
+/-- An index a `getElem?` answered at is in range.  Core states this as an existential inside
+`List.getElem?_eq_some_iff`, which `omega` cannot destructure. -/
+theorem lt_of_getElem?_some {α : Type} {l : List α} {n : Nat} {a : α} (h : l[n]? = some a) :
+    n < l.length := by
+  obtain ⟨hlt, -⟩ := List.getElem?_eq_some_iff.1 h
+  exact hlt
+
+/-- **One energised entry per slot**, in the cut's own order — `Look.energizeToday` is a `map`,
+so the cursor's slot vector and the slot list are indexed alike. -/
+theorem PlanReq.energisedSlots_length (r : PlanReq) :
+    r.energisedSlots.length = r.todaySlots.length := by
+  unfold PlanReq.energisedSlots Look.energizeToday
+  exact List.length_map _
+
+/-- **Fork `Planner::loc_ok`** (`planner.rs:1609`): an item with no constraint fits anywhere,
+and an unknown current location constrains nothing. -/
+def locOk (cur item : Field.Loc) : Bool :=
+  match item with
+  | .any => true
+  | other => (cur == Field.Loc.any) || (other == cur)
+
+/-- The request's current location as the grammar's own value.  `state.loc` is a word and
+`Field.parseLoc` is the kernel's single reader of it (AGENTS §5.3); a word the grammar does not
+accept — the empty one — constrains nothing, which is fork `Loc::Any`. -/
+def PlanReq.curLoc (r : PlanReq) : Field.Loc := (Field.parseLoc r.loc).getD .any
+
+/-- **Fork `contiguous_fits`' walk** (`planner.rs:2313-2327`): from the slot the cursor is at,
+forwards, while the run is unbroken — an assigned slot ends it, and so does a gap that is not
+one of step 3's own breaks.  "Sitting through the break the planner itself inserted is not a
+context switch", which is why `breaks` is consulted and not merely the clock.
+
+The test is over **free slots** and never over what the budget can pay for: bounding the run by
+the budget would break §8.3's tail-drop, because shrinking the budget by one block would make a
+non-splittable item skip its slot and a *different* candidate take it — a re-shuffle, not the
+removal of a suffix.  The fork's comment says exactly that and it is carried here because L24 is
+stated against this function. -/
+def fitsRun (breaks : List (Nat × Nat)) (prev : Option Nat) (need : Nat) :
+    List (Look.Slot × Option Nat) → Bool
+  | [] => false
+  | (s, a) :: rest =>
+    if a.isSome then false
+    else if (match prev with
+             | Option.none => false
+             | some p => decide (s.start ≠ p) && !breaks.any (fun b => decide (b = (p, s.start))))
+      then false
+    else if need ≤ s.minutes then true
+    else fitsRun breaks (some s.stop) (need - s.minutes) rest
+
+/-- **Fork `contiguous_fits`**, at the cursor's position. -/
+def contiguousFits (slots : List Look.Slot) (slotOf : List (Option Nat))
+    (breaks : List (Nat × Nat)) (i need : Nat) : Bool :=
+  fitsRun breaks Option.none need ((slots.zip slotOf).drop i)
+
+/-- **Fork `Planner::pick`'s per-group test** — §8.2 step 5's filter at one slot, and the whole
+of `eligibleAt`'s slot half.  Five clauses, the fork's, in the fork's order: the group still
+owes minutes; its `ci` is within the slot's energy; its `loc:` fits where we are; nothing
+demanding runs after the wind-down (step 3's rule again, defensively); and a non-`splittable`
+group needs an unbroken run long enough for what it still owes. -/
+def PlanReq.groupFitsSlot (r : PlanReq) (slots : List Look.Slot) (slotOf : List (Option Nat))
+    (breaks : List (Nat × Nat)) (i : Nat) (e : Fin 6) (s : Look.Slot) (g : Group) : Bool :=
+  g.live && decide (g.ci.val ≤ e.val) && locOk r.curLoc g.loc &&
+    !(decide (r.windDownSec ≤ s.start) && decide (4 ≤ g.ci.val)) &&
+    (g.splittable || contiguousFits slots slotOf breaks i g.leftMin)
+
+/-- Fork `pick`'s `for (gi, g) in groups.iter().enumerate()`: the **first** group in §7.4's
+order that passes, by index. -/
+def pickFrom (P : Group → Bool) : Nat → List Group → Option Nat
+  | _, [] => Option.none
+  | k, g :: rest => if P g then some k else pickFrom P (k + 1) rest
+
+theorem pickFrom_sound : ∀ (P : Group → Bool) (k : Nat) (l : List Group) (n : Nat),
+    pickFrom P k l = some n → k ≤ n ∧ ∃ g, l[n - k]? = some g ∧ P g = true
+  | _, _, [], _, h => by simp [pickFrom] at h
+  | P, k, g :: rest, n, h => by
+    unfold pickFrom at h
+    by_cases hp : P g = true
+    · rw [if_pos hp] at h
+      have : n = k := (Option.some.inj h).symm
+      subst this
+      exact ⟨Nat.le_refl _, g, by simp, hp⟩
+    · rw [if_neg hp] at h
+      obtain ⟨hk, g', hg', hpg⟩ := pickFrom_sound P (k + 1) rest n h
+      refine ⟨by omega, g', ?_, hpg⟩
+      have : n - k = (n - (k + 1)) + 1 := by omega
+      rw [this]
+      simpa using hg'
+
+/-- What the cursor carries: which group each slot went to, the groups with what they have
+spent, and the blocks the day has committed. -/
+structure Assign where
+  /-- One entry per slot, in the cut's own order — fork `assign : Vec<Option<usize>>`. -/
+  slotOf : List (Option Nat)
+  groups : List Group
+  /-- Fork `used`, seeded at `u32::from(active.is_some())`: the running block costs exactly one
+  block against the budget however long it runs. -/
+  used   : Nat
+
+/-- Fork `plan()`'s loop body (`planner.rs:1017-1026`).  A slot already taken is passed over,
+and a spent budget passes over the slot without ending the walk — the fork `continue`s rather
+than breaking, because `place_deferred` may free a slot later and re-place into it. -/
+def PlanReq.assignStep (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
+    (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) : Assign :=
+  if (a.slotOf[x.2]?).join.isSome || decide (budget ≤ a.used) then a
+  else
+    match pickFrom (r.groupFitsSlot slots a.slotOf breaks x.2 x.1.1 x.1.2) 0 a.groups with
+    | Option.none => a
+    | some gi =>
+      match a.groups[gi]? with
+      | Option.none => a
+      | some g =>
+        ⟨a.slotOf.set x.2 (some gi),
+         a.groups.set gi { g with spent := g.spent + x.1.2.minutes }, a.used + 1⟩
+
+/-- Fork `used`'s seed. -/
+def PlanReq.activeSeed (r : PlanReq) : Nat := if r.activeRun.isSome then 1 else 0
+
+/-- Nothing assigned yet: one `none` per slot, the groups as `build_groups` left them with the
+running block's minutes already charged, and one block of the budget already gone if it runs. -/
+def PlanReq.assignStart (r : PlanReq) : Assign :=
+  ⟨List.replicate r.todaySlots.length Option.none, r.startGroups, r.activeSeed⟩
+
+/-- **§8.2 step 5's assignment.** -/
+def PlanReq.assignFold (r : PlanReq) : Assign :=
+  r.energisedSlots.zipIdx.foldl
+    (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r)) r.assignStart
+
+/-! ### What the cursor guarantees
+
+Every law below is proved by the same case split, taken once: a step either **changes nothing**
+or fills exactly one slot with a group the filter passed.  `assignStep_cases` is that split, and
+nothing else in this section unfolds `assignStep`. -/
+
+/-- The two shapes a step can have. -/
+theorem PlanReq.assignStep_cases (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) :
+    r.assignStep slots breaks budget a x = a ∨
+      ∃ gi g, a.groups[gi]? = some g ∧
+        r.groupFitsSlot slots a.slotOf breaks x.2 x.1.1 x.1.2 g = true ∧
+        a.used < budget ∧
+        r.assignStep slots breaks budget a x =
+          ⟨a.slotOf.set x.2 (some gi),
+           a.groups.set gi { g with spent := g.spent + x.1.2.minutes }, a.used + 1⟩ := by
+  unfold PlanReq.assignStep
+  split
+  · exact Or.inl rfl
+  · rename_i hguard
+    simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Bool.not_eq_true] at hguard
+    split
+    · exact Or.inl rfl
+    · rename_i gi hp
+      split
+      · exact Or.inl rfl
+      · rename_i g hg
+        refine Or.inr ⟨gi, g, hg, ?_, by omega, rfl⟩
+        obtain ⟨-, g₀, hg₀, hpg⟩ := pickFrom_sound _ 0 a.groups gi hp
+        simp only [Nat.sub_zero] at hg₀
+        rw [hg] at hg₀
+        rwa [(Option.some.inj hg₀.symm : g₀ = g)] at hpg
+
+/-- The slot vector keeps one entry per slot, and the group list its length. -/
+theorem PlanReq.assignStep_lengths (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) :
+    (r.assignStep slots breaks budget a x).slotOf.length = a.slotOf.length ∧
+      (r.assignStep slots breaks budget a x).groups.length = a.groups.length := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gi, g, -, -, -, heq⟩ <;>
+    rw [heq] <;> simp
+
+/-- **The cursor moves nothing but `spent`** — a group's key, members, `ci`, `loc:`,
+`splittable` and commitment are what `build_groups` made them, at every point of the walk. -/
+theorem PlanReq.assignStep_keeps_the_group (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat)
+    (n : Nat) (g' : Group) (h : (r.assignStep slots breaks budget a x).groups[n]? = some g') :
+    ∃ g, a.groups[n]? = some g ∧ g.key = g'.key ∧ g.members = g'.members ∧ g.ci = g'.ci ∧
+      g.loc = g'.loc ∧ g.splittable = g'.splittable ∧ g.commitMin = g'.commitMin := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gi, g, hg, -, -, heq⟩
+  · rw [heq] at h; exact ⟨g', h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  · rw [heq] at h
+    simp only at h
+    by_cases hn : n = gi
+    · subst hn
+      rw [List.getElem?_set_self (lt_of_getElem?_some hg)] at h
+      simp only [Option.some.injEq] at h
+      exact ⟨g, hg, by rw [← h], by rw [← h], by rw [← h], by rw [← h], by rw [← h], by rw [← h]⟩
+    · rw [List.getElem?_set_ne (by omega)] at h
+      exact ⟨g', h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **§8.2 step 5's filter, as a property of the assignment it produced**: a slot that went to a
+group went to one whose `ci` the slot's energy covers, whose `loc:` fits where the day is being
+lived, and which is not demanding work after the wind-down.  Those three read only fields the
+cursor never touches, which is what makes them survive the rest of the walk — the other two
+clauses (`g.live` and the atomic run) are about values the walk *does* move, and are
+`plan_does_not_overbook`'s and E1's business at the step that emits rows. -/
+def PlanReq.AssignOk (r : PlanReq) (a : Assign) : Prop :=
+  a.slotOf.length = r.energisedSlots.length ∧
+  ∀ (i gi : Nat), a.slotOf[i]? = some (some gi) →
+    ∃ (e : Fin 6) (s : Look.Slot) (g : Group),
+      r.energisedSlots[i]? = some (e, s) ∧ a.groups[gi]? = some g ∧
+        g.ci.val ≤ e.val ∧ locOk r.curLoc g.loc = true ∧
+        ¬ (r.windDownSec ≤ s.start ∧ 4 ≤ g.ci.val)
+
+theorem PlanReq.assignStart_ok (r : PlanReq) : r.AssignOk r.assignStart := by
+  unfold PlanReq.AssignOk PlanReq.assignStart
+  refine ⟨by simp [PlanReq.energisedSlots_length], ?_⟩
+  intro i gi h
+  simp only [List.getElem?_replicate] at h
+  split at h
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+theorem PlanReq.assignStep_ok (r : PlanReq) (breaks : List (Nat × Nat)) (budget : Nat)
+    (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) (hx : r.energisedSlots[x.2]? = some x.1)
+    (h : r.AssignOk a) : r.AssignOk (r.assignStep r.todaySlots breaks budget a x) := by
+  unfold PlanReq.AssignOk at h ⊢
+  obtain ⟨hlen, h⟩ := h
+  have hxlt : x.2 < a.slotOf.length := by
+    rw [hlen]; exact lt_of_getElem?_some hx
+  rcases PlanReq.assignStep_cases r r.todaySlots breaks budget a x with
+    heq | ⟨gj, g, hg, hpg, -, heq⟩
+  · rw [heq]; exact ⟨hlen, h⟩
+  · rw [heq]
+    refine ⟨by simpa using hlen, ?_⟩
+    intro i gi hi
+    simp only at hi ⊢
+    unfold PlanReq.groupFitsSlot at hpg
+    simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq, Bool.and_eq_false_iff,
+      decide_eq_false_iff_not] at hpg
+    by_cases hix : i = x.2
+    · subst hix
+      rw [List.getElem?_set_self hxlt] at hi
+      simp only [Option.some.injEq] at hi
+      subst hi
+      refine ⟨x.1.1, x.1.2, { g with spent := g.spent + x.1.2.minutes }, hx,
+        by rw [List.getElem?_set_self (lt_of_getElem?_some hg)], hpg.1.1.1.2, hpg.1.1.2, ?_⟩
+      rintro ⟨h1, h2⟩
+      rcases hpg.1.2 with hw | hc
+      · exact hw h1
+      · exact hc h2
+    · rw [List.getElem?_set_ne (by omega)] at hi
+      obtain ⟨e, s, g₀, he, hg₀, h1, h2, h3⟩ := h i gi hi
+      by_cases hgi : gi = gj
+      · subst hgi
+        rw [hg] at hg₀
+        have hgg : g₀ = g := Option.some.inj hg₀.symm
+        subst hgg
+        exact ⟨e, s, { g₀ with spent := g₀.spent + x.1.2.minutes }, he,
+          by rw [List.getElem?_set_self (lt_of_getElem?_some hg)], h1, h2, h3⟩
+      · exact ⟨e, s, g₀, he, by rw [List.getElem?_set_ne (by omega)]; exact hg₀, h1, h2, h3⟩
+
+theorem PlanReq.foldl_assignStep_ok (r : PlanReq) (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)),
+      (∀ x ∈ l, r.energisedSlots[x.2]? = some x.1) →
+      ∀ a, r.AssignOk a → r.AssignOk (l.foldl (r.assignStep r.todaySlots breaks budget) a)
+  | [], _, a, ha => ha
+  | x :: xs, hl, a, ha => by
+    simp only [List.foldl_cons]
+    exact PlanReq.foldl_assignStep_ok r breaks budget xs
+      (fun y hy => hl y (List.mem_cons_of_mem _ hy)) _
+      (PlanReq.assignStep_ok r breaks budget a x (hl x (List.mem_cons_self ..)) ha)
+
+/-- **The energy filter, the `loc:` filter and the wind-down rule hold of the produced
+assignment** — the three of §8.2 step 5's five that are about fields the walk cannot move.  This
+is what `plan_respects_the_energy_filter` and `plan_places_no_demanding_block_after_wind_down`
+will read once a slot emits a row. -/
+theorem PlanReq.assignFold_ok (r : PlanReq) : r.AssignOk r.assignFold := by
+  unfold PlanReq.assignFold
+  exact PlanReq.foldl_assignStep_ok r _ _ _
+    (fun x hx => List.mem_zipIdx_iff_getElem?.mp hx) _ (PlanReq.assignStart_ok r)
+
+/-- **The walk never spends more than the remaining budget** — fork `used >= remaining_budget`,
+with the running block's one block already counted by the seed. -/
+theorem PlanReq.assignStep_used (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat)
+    (h : a.used ≤ max r.activeSeed budget) :
+    (r.assignStep slots breaks budget a x).used ≤ max r.activeSeed budget := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gi, g, -, -, hlt, heq⟩ <;>
+    rw [heq]
+  · exact h
+  · simp only
+    omega
+
+theorem PlanReq.foldl_assignStep_used (r : PlanReq) (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign), a.used ≤ max r.activeSeed budget →
+      (l.foldl (r.assignStep r.todaySlots breaks budget) a).used ≤ max r.activeSeed budget
+  | [], a, h => h
+  | x :: xs, a, h => by
+    simp only [List.foldl_cons]
+    exact PlanReq.foldl_assignStep_used r breaks budget xs _
+      (PlanReq.assignStep_used r _ breaks budget a x h)
+
+theorem PlanReq.assignFold_used (r : PlanReq) :
+    r.assignFold.used ≤ max r.activeSeed (remainingBudget r) :=
+  PlanReq.foldl_assignStep_used r _ _ _ _ (Nat.le_max_left _ _)
+
+/-- **A day with no budget left and nothing running assigns nothing** — the travel-day case, and
+the case of a day whose blocks are all done.  Fork `used >= remaining_budget` is the whole of it,
+and this is the half of §9's "→ drops" the budget owns. -/
+theorem PlanReq.a_spent_budget_assigns_nothing (r : PlanReq) (hb : remainingBudget r = 0)
+    (ha : r.activeRun = none) : r.assignFold = r.assignStart := by
+  have hseed : r.assignStart.used = 0 := by
+    unfold PlanReq.assignStart PlanReq.activeSeed; rw [ha]; rfl
+  unfold PlanReq.assignFold
+  have key : ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign), a.used = 0 →
+      l.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r)) a = a := by
+    intro l
+    induction l with
+    | nil => intro a _; rfl
+    | cons x xs ih =>
+      intro a h
+      simp only [List.foldl_cons]
+      have hstep : r.assignStep r.todaySlots r.todayBreaks (remainingBudget r) a x = a := by
+        unfold PlanReq.assignStep
+        rw [if_pos (by simp [hb, h])]
+      rw [hstep]
+      exact ih a h
+  exact key _ r.assignStart hseed
+
+/-- **Every slot the cursor filled names a group `build_groups` built** — the index is real, and
+the group it names carries the key, the members, the `ci`, the `loc:`, the `splittable` and the
+commitment that step 5's first half gave it. -/
+theorem PlanReq.an_assigned_slot_names_a_group (r : PlanReq) (i gi : Nat)
+    (h : r.assignFold.slotOf[i]? = some (some gi)) :
+    ∃ g, r.assignFold.groups[gi]? = some g ∧
+      ∃ g₀ ∈ r.startGroups, g₀.key = g.key ∧ g₀.members = g.members ∧ g₀.ci = g.ci ∧
+        g₀.loc = g.loc ∧ g₀.splittable = g.splittable ∧ g₀.commitMin = g.commitMin := by
+  have hok := PlanReq.assignFold_ok r
+  unfold PlanReq.AssignOk at hok
+  obtain ⟨e, s, g, -, hg, -, -, -⟩ := hok.2 i gi h
+  refine ⟨g, hg, ?_⟩
+  have key : ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign) (n : Nat) (g' : Group),
+      (l.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r)) a).groups[n]?
+        = some g' →
+      ∃ g₀, a.groups[n]? = some g₀ ∧ g₀.key = g'.key ∧ g₀.members = g'.members ∧
+        g₀.ci = g'.ci ∧ g₀.loc = g'.loc ∧ g₀.splittable = g'.splittable ∧
+        g₀.commitMin = g'.commitMin := by
+    intro l
+    induction l with
+    | nil => intro a n g' h; exact ⟨g', h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    | cons x xs ih =>
+      intro a n g' h
+      simp only [List.foldl_cons] at h
+      obtain ⟨g₁, h1, e1, e2, e3, e4, e5, e6⟩ := ih _ n g' h
+      obtain ⟨g₂, h2, f1, f2, f3, f4, f5, f6⟩ :=
+        PlanReq.assignStep_keeps_the_group r r.todaySlots r.todayBreaks (remainingBudget r)
+          a x n g₁ h1
+      exact ⟨g₂, h2, f1.trans e1, f2.trans e2, f3.trans e3, f4.trans e4, f5.trans e5,
+        f6.trans e6⟩
+  obtain ⟨g₀, h0, k1, k2, k3, k4, k5, k6⟩ := key _ r.assignStart gi g (by
+    unfold PlanReq.assignFold at hg; exact hg)
+  exact ⟨g₀, List.mem_of_getElem? h0, k1, k2, k3, k4, k5, k6⟩
+
 end Planner
 end Tm
