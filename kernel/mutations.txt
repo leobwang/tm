@@ -1,0 +1,38 @@
+# check.sh check 9's roster (D40, README gap 930).  `mutate.py`'s own module docstring
+# is the specification; this file is the record.
+#
+# The FIRST line that is not a comment names the baseline: every `def` and `abbrev` in
+# kernel/TmKernel/TmKernel/*.lean that exists at that commit with that body is out of
+# scope.  D40 scoped check 9 to NEW definitions and DECLINED a full sweep of the existing
+# kernel as producing a backlog rather than preventing new instances, and this line is
+# where that decline is written down: 86c4dc6 is W-19's closing commit, so the grandfathered
+# set is the whole kernel as stage 6 W-19 left it.
+#
+# A step that adds or changes a definition runs
+#
+#     python3 mutate.py --since <the baseline> --write
+#
+# capped (AGENTS 2.1), watches each constant break the build, and commits the rows it
+# appended together with the definitions they are about.  ADVANCING THE BASELINE is the
+# other half: a step whose rows are all in may move the line to its own commit, and then
+# check 9 is empty and costs ~0.1 s again.  Moving it WITHOUT running the mutations is the
+# forgery this file cannot detect; `mutate.py --verify` is what re-runs every row.
+#
+# Row: <sha1-12 of the body, whitespace-normalised> <file> <name> <constants> <why it failed>
+
+baseline 86c4dc6
+
+# NO ROWS YET, and that is correct: nothing in the library is new or changed since the
+# baseline, so check 9 has nothing to run and `--verify` has nothing to re-run.  The first
+# rows arrive with the first P or K step that lands a definition after this commit.
+#
+# A row looks like this.  It is the real output of
+#   $ python3 mutate.py --only Ranked.gatherable
+# at this commit, written out by hand HERE rather than by `--write`, because
+# `Planner.Ranked.gatherable` is NOT new since the baseline and a live row for it would be a
+# row check 9 never consults -- a claim with no reader, which is the thing this campaign is
+# about.  Commented out for exactly that reason:
+#
+#   9c3a8b1e4f20 TmKernel/TmKernel/Planner.lean Ranked.gatherable true,false PlannerWit.lean:2539; PlannerWit.lean:2391
+#
+# (The sha1 above is illustrative.  `mutate.py --write` computes it; do not copy it.)

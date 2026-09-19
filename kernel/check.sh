@@ -242,4 +242,48 @@ else
   printf '%s\n' "$out" | head -20
 fi
 
+# 9. Every definition a step ADDS is constant-folded.  The owner's D40
+#    (README gap 930).
+#
+#    THREE TIMES this campaign a definition shipped whose body nothing in the
+#    package could tell from a constant, and a human found all three:
+#    W-17's P4 sort key (halves swapped, 1,342 tests green), W-18's nine
+#    candidate facts (invert one, the suite green, `tm plan` visibly re-ranks),
+#    and W-19's `Planner.Ranked.gatherable` -- `:= true`, and 168 build targets,
+#    every theorem, all nineteen witnesses and check.sh 8/8 still green.  No
+#    check above can see it: check 3 reads axiom sets, check 4 reads a file that
+#    must fail, check 8 reads sentences.  A definition nothing distinguishes
+#    passes all eight.
+#
+#    So: every `def` and `abbrev` in the library that is NEW OR CHANGED since
+#    the baseline commit in `mutations.txt` has its body replaced by a constant
+#    of its type -- `true` AND `false` for `Bool`, `True`/`False` for `Prop`,
+#    `0`/`1` for `Nat`, `default` otherwise -- one at a time, and the build must
+#    FAIL for each.  A build that SUCCEEDS is the defect.  A build that fails
+#    with an error INSIDE the mutated declaration is also a failure, not a pass:
+#    that is the constant not typechecking, which would otherwise hand out a
+#    free PINNED verdict.
+#
+#    SCOPED TO NEW DEFINITIONS because D40 scoped it there: a full sweep of the
+#    existing 2,810 library definitions was declined as producing a backlog
+#    rather than preventing new instances.  The baseline is the decline, written
+#    down.
+#
+#    THE COST IS THE STEP'S OWN, AND IT IS ~0 HERE.  At a settled tree nothing
+#    is new, one `git diff` says so, and this check is 0.03 s -- under half a
+#    percent of the wall.  A step that ADDS definitions pays one kernel build
+#    per constant, measured in README "Stage 6 W-20, track A" at 53 s
+#    (Planner.lean), 54 s (PlannerWit.lean) and 205 s (Boundary.lean); that is
+#    the step's cost, not this script's steady state, and it is why the roster
+#    is trusted on a matching body sha1 rather than re-run.  `mutate.py
+#    --verify` re-runs every row and is what an auditor uses.  The whole script
+#    went 7.37-7.48 s at eight checks to 7.83-7.87 s at nine, +5.1%.
+out=$( python3 mutate.py --gate 2>&1 )
+if [ $? -eq 0 ]; then
+  say "new definitions mutated" "ok  (${out:-no count reported})"
+else
+  say "new definitions mutated" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
 exit $fail
