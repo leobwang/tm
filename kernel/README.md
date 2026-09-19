@@ -45983,11 +45983,12 @@ purpose. They stay until P5 and P5/P7 give them a subject.
 * **Nothing was re-blessed.** No snapshot, fixture, latency band or corpus
   expectation was rewritten at either merge.
 
-### 6. Driving the merged binary (AGENTS §5.13), unabridged in the run's report
+### 6. Driving the merged binary (AGENTS §5.13), unabridged
 
 The release `tm` was built from `a1e2444` and driven on a fresh `tm init` tree
-in the scratch directory, every invocation capped at 8G. The full transcript is
-in the run's report; what it established:
+in the scratch directory, every invocation capped at 8G. **The transcript is at
+the end of this section**, unabridged, because the run's report is size-capped
+and this file is the durable record. What it established:
 
 * **A normal day runs.** `wake`, `arrive home`, three `add`s under a month
   outcome, `plan` (window 08:00-16:00, budget 6 blocks), `start ^w3`, `now`,
@@ -46015,6 +46016,236 @@ in the run's report; what it established:
   kernel's sentence says why: *"a line with no `^id` is keyed by its title, and
   that key is never written into a file, so the two positions above are where it
   is"*.
+
+#### The transcript
+
+Every line below is `tm`'s own output. Each invocation ran as
+`systemd-run --user --scope -p MemoryMax=8G -p MemorySwapMax=0 --quiet tm …`
+from the plan directory; the `--now` stamps make it reproducible. The `[exit n]`
+lines are the shell's.
+
+```
+$ tm init
+created 20 file(s) in plan
+enable the pre-commit hook with:
+  git config core.hooksPath plan/.githooks
+[exit 0]
+
+$ tm --now 2026-09-19T07:30:00-05:00 wake
+wake 07:30 · slept 0m
+[exit 0]
+
+$ tm --now 2026-09-19T08:00:00-05:00 arrive home
+arrive home 08:00 · window 08:00–16:00 · budget 6 blocks
+[exit 0]
+
+$ tm --now 2026-09-19T08:01:00-05:00 add --to month "- [ ] 5 Ship the W-21 merge ^O1"
+- [ ] 5 Ship the W-21 merge ^O1 → month/2026-09.md
+[exit 0]
+
+$ tm --now 2026-09-19T08:02:00-05:00 add --to week "- [ ] 5 2b Write the land block @O1 ^w1"
+- [ ] 5 2b Write the land block @O1 ^w1 → week/2026-W38.md
+[exit 0]
+
+$ tm --now 2026-09-19T08:03:00-05:00 add --to week "- [ ] 4 1b Re-measure the nine checks @O1 ^w2"
+- [ ] 4 1b Re-measure the nine checks @O1 ^w2 → week/2026-W38.md
+[exit 0]
+
+$ tm --now 2026-09-19T08:04:00-05:00 add --to week "- [ ] 3 1b Drive the merged binary @O1 ^w3"
+- [ ] 3 1b Drive the merged binary @O1 ^w3 → week/2026-W38.md
+[exit 0]
+
+$ tm --now 2026-09-19T08:05:00-05:00 plan
+2026-09-19 · window 08:00–16:00 · budget 6 blocks
+08:05  ·      rest 1h
+09:05  3 p5   Drive the merged binary      @O1  1b
+10:05  ·      break 20m
+10:25  ·      rest 1h
+11:25  ·      rest 1h
+12:45  ·      rest 1h
+13:45  ·      rest 1h
+15:05  ·      rest 55m
+16:00  ───    window ends 16:00
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+· 0 underused · 0 ci-5 lost
+· dropped: w1 · w2
+[exit 0]
+
+$ tm --json --now 2026-09-19T08:05:00-05:00 plan      (diagnostics only)
+'diagnostics': {'underused': [], 'a_capacity_lost': 0, 'hot': [], 'impossible': [],
+ 'conflicts': [], 'blocked': [], 'deferred': [], 'waiting': [],
+ 'dropped_tail': ['w1', 'w2'], 'plan_honesty': 0.16666666666666666,
+ 'rest_debt_min': 0, 'notes': []}
+
+$ tm --now 2026-09-19T09:05:00-05:00 start ^w3
+▶ ^w3 Drive the merged binary · 09:05 · pred 3
+[exit 0]
+
+$ tm --now 2026-09-19T09:20:00-05:00 now
+▶ ^w3 Drive the merged binary · started 09:05 · 15m of 60m
+▶ Drive the merged binary  @O1  ci3  p5  1b
+  09:20–10:05 · elapsed 0m · left 45m
+next
+  10:05  Drive the merged binary  @O1  1b
+  11:05  · break 20m
+  11:25  · rest 1h
+0/6 blocks
+[exit 0]
+
+$ rm .tm/state.json            <-- D42, with ^w3 running
+
+$ tm --now 2026-09-19T09:21:00-05:00 now
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^w3 is running, started 09:05
+tm: the log does not carry these, so they were NOT restored: `break` (a running break is logged only when it ends), `active.est_min` (no `start` event carries an estimate), `priorities_yesterday` (no event carries a `p`), `closed` (`swept` is a fact about a sweep, not an event)
+▶ ^w3 Drive the merged binary · started 09:05 · 16m of 60m
+▶ Drive the merged binary  @O1  ci3  p5  1b
+  09:21–10:05 · elapsed 0m · left 44m
+next
+  10:05  Drive the merged binary  @O1  1b
+  11:05  · break 20m
+  11:25  · rest 1h
+0/6 blocks
+[exit 0]
+
+$ diff <the deleted state.json> .tm/state.json
+[diff exit 0]                  <-- byte-identical
+
+$ tm --now 2026-09-19T09:32:00-05:00 extend 30m
++30m on ^w3 · now 90m
+[exit 0]
+    active = {'id': 'w3', 'started': '09:05', 'est_min': 90, 'paused': False}
+    the item line became:  - [>] 3 1b Drive the merged binary @O1 est:1h30m ^w3
+
+$ rm .tm/state.json ; tm --now 2026-09-19T09:33:00-05:00 now
+    (same two tm: lines)
+    active = {'id': 'w3', 'started': '09:05', 'est_min': 90, 'paused': False}
+                                   <-- the extend SURVIVED: gap 1081
+
+$ sed -i 's/ est:1h30m//' week/2026-W38.md ; rm .tm/state.json
+$ tm --now 2026-09-19T09:34:00-05:00 now
+    (same two tm: lines)
+    active = {'id': 'w3', 'started': '09:05', 'est_min': 60, 'paused': False}
+                                   <-- est_min comes from the TREE, not the log's
+                                       {"ev":"extend","id":"w3","by_min":30}
+
+$ tm --now 2026-09-19T09:40:00-05:00 check     (two hand-written id-less lines)
+week/2026-W38.md:25: warning[missing-id]: no `^id` on `A line with no id`; run `tm check --fix-ids`
+week/2026-W38.md:25: error[kernel-load]: kernel refusal: badLine — week/2026-W38.md:25 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+week/2026-W38.md:26: warning[missing-id]: no `^id` on `Another with no id`; run `tm check --fix-ids`
+1 error, 2 warnings
+[exit 2]
+
+$ tm --now 2026-09-19T09:41:00-05:00 check --fix-ids
+week/2026-W38.md:25: assigned ^xcdq
+week/2026-W38.md:26: assigned ^uev6
+no problems
+[exit 0]
+
+$ tm --now 2026-09-19T09:42:00-05:00 undo
+undid check (--fix-ids: 2 ids assigned) · 1 file(s) restored · 8 left
+[exit 0]
+                                   <-- both ^id tokens gone from the file again
+
+$ tm --now 2026-09-19T09:45:00-05:00 drop ^w2          (the tree is refused again)
+tm: kernel refusal: badLine — week/2026-W38.md:25 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+[exit 1]
+
+$ tm --now 2026-09-19T09:46:00-05:00 rank ^w1 1
+tm: kernel refusal: badLine — week/2026-W38.md:25 …
+  nothing was written: `tm rank` needs a tree the kernel can load whole, and every reading verb refuses this one too — fix the line named above, or run `tm undo`
+[exit 1]
+
+$ tm --now 2026-09-19T09:47:00-05:00 add --to week "- [ ] 2 1b Something new @O1 ^w9"
+tm: kernel refusal: badLine — … ;  nothing was written: `tm add` …
+[exit 1]
+
+$ tm --now 2026-09-19T09:48:00-05:00 done
+tm: kernel refusal: badLine — … ;  nothing was written: `tm done` …
+[exit 1]
+
+    the week file: byte-identical.  .tm/log.jsonl: still 11 lines.
+
+    The D35 line, verb by verb, on this one refusal (gap 1080):
+      drop ^w2          no gate line      demote ^w2        no gate line
+      readopt ^w2       no gate line      move ^w2 backlog  no gate line
+      rank ^w1 1        GATE-LINE         done              GATE-LINE
+      stop              GATE-LINE         close day         no gate line
+      review day        no gate line      plan              no gate line
+
+$ tm --now 2026-09-19T09:56:00-05:00 add --to week "- [ ] 4 1b Re-measure the nine checks @O1"
+- [ ] 4 1b Re-measure the nine checks @O1 ^3983 → week/2026-W38.md
+[exit 0]
+$ tm --now 2026-09-19T09:57:00-05:00 check
+no problems
+[exit 0]                           <-- a duplicated TITLE is legal: items are keyed by id
+
+$ tm --now 2026-09-19T10:00:00-05:00 check      (^3983 hand-changed to ^w2)
+week/2026-W38.md:23: error[dup-id]: duplicate id ^w2; also at week/2026-W38.md:25
+week/2026-W38.md:23: error[kernel-load]: kernel refusal: dupId — week/2026-W38.md:23 and week/2026-W38.md:25 are two lines in one file that resolve to the store key `w2` (a line with no `^id` is keyed by its title, and that key is never written into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+week/2026-W38.md:25: error[dup-id]: duplicate id ^w2; also at week/2026-W38.md:23
+week/2026-W38.md:25: error[kernel-load]: kernel refusal: dupId — …
+4 errors, 0 warnings
+[exit 2]
+
+$ tm --now 2026-09-19T10:35:00-05:00 done --went 1
+✓ ^w3 Drive the merged binary · 90m/60m
+[exit 0]
+
+$ tm --now 2026-09-19T10:36:00-05:00 now
+nothing running
+· rest 1h  ci3
+  10:36–11:36 · elapsed 0m · left 1h
+next
+  11:56  · rest 1h
+  12:56  · rest 1h
+  14:16  · rest 1h
+1/6 blocks
+[exit 0]
+
+$ tm --now 2026-09-19T10:37:00-05:00 plan
+2026-09-19 · window 08:00–16:00 · budget 6 blocks
+09:05  3    ✓ Drive the merged binary      @O1  1b  (90m)
+10:37  ·      rest 1h
+11:57  ·      rest 1h
+12:57  ·      rest 1h
+14:17  ·      rest 1h
+15:17  ·      rest 43m
+16:00  ───    window ends 16:00
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+· 0 underused · 0 ci-5 lost
+· dropped: w1 · w2 · 3983
+[exit 0]
+
+$ tm --now 2026-09-19T10:38:00-05:00 review day
+ Day 2026-09-19 · home · 1/6 blocks · load 54.0 · window 08:00–16:00 · lost 0 · leak 0m · adherence -
+ done      w3    demoted  -    underused 0    replans 3 · drift 0m
+ energy    pred    rep     MAE 0.0  bias 0.0
+ estimates -
+ breaks    planned none · actual - · rest debt 0
+ sleep     0m
+ tomorrow  first candidate w1 (p5) · w2 p5 · 3983 p5
+[exit 0]
+
+$ tm --now 2026-09-19T10:39:00-05:00 check
+no problems
+[exit 0]
+
+$ cat .tm/log.jsonl   (the last six of eleven)
+{"t":"2026-09-19T09:05:00-05:00","ev":"start","id":"w3","pred":3,"hsw":1.58,"slept_min":0,"loc":"home","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-19T09:32:00-05:00","ev":"extend","id":"w3","by_min":30}
+{"t":"2026-09-19T09:42:00-05:00","ev":"undo","of":"verb:check"}
+{"t":"2026-09-19T09:56:00-05:00","ev":"edit","id":"3983","field":"add","from":"","to":"- [ ] 4 1b Re-measure the nine checks @O1 ^3983"}
+{"t":"2026-09-19T10:35:00-05:00","ev":"done","id":"w3","est_min":60,"actual_min":90,"went":1,"tags":[],"ci":3}
+{"t":"2026-09-19T10:37:00-05:00","ev":"plan","hash":"4eb6c2ddf7d2168e","replans_today":2,"drift_min":0}
+```
+
+**One reading of the last line of that log.** `done` recorded `est_min: 60` and
+printed `90m/60m` — correct, because the ` est:1h30m` token had been stripped by
+hand two commands earlier to isolate gap 1081, so the tree really did say one
+block. It is the same mechanism twice, and it is the only place in this
+transcript where a number looks wrong and is not.
 
 ### 7. Gaps
 
