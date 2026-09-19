@@ -550,6 +550,21 @@ read "Only `edfNumbers` stays provisional; design §5.5 gives it to step P4" unt
 repair — a stale citation contradicted by this same file two hundred lines down, and check 3
 cannot read doc comments.)*
 
+**TWO GOALS BELOW ARE ONE LINE FROM LEAVING THIS FILE, AND BOTH WOULD BE
+VACUOUS** (W-18, track G).  `plan_respects_the_energy_filter`'s hypothesis
+`he : s.val.energy = some lvl` on a Block row is **refuted** by
+`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`, and
+`plan_never_batches_past_an_equal_ci_candidate`'s `hk : s.val.kind = SegKind.batch
+ids` by `PlanCheck.the_day_has_no_batch_row` — both for **every** `PlanReq`, not
+at one witness.  So each is `exact absurd …` away and the burn-down could read
+**7** today.  It reads **9**, and the two are left here on purpose: a discharge
+whose subject is empty is AGENTS §5.2's theorem that compiles and means nothing,
+and check 7's number would stop being true.  This is the same call P1 made for
+the wall goal (README gap 347), P2 for the wind-down goal (gap 430) and P3 for
+the break goal (gap 551) — the difference is that the emptiness is now **proved**
+rather than observed, so the refusal is evidenced and the two theorems are the
+build-time walls **P5** must break.
+
 **NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED.**  Design §6.4
 says which step makes each goal real: P1 the two wall laws, P2 wind-down, P3
 the break and one-block laws, P5 the remaining six, G2 and G3 the two
@@ -595,11 +610,25 @@ with the restatement `Planner.plan_reserves_one_block_at_a_time` beside it
 reservation is such a row, and `PlannerWit.the_reserved_day_assigns_the_running
 _block` computes one.
 
-`plan_places_no_block_over_a_break` **stays**, for the reason P1's and P2's goals
-stayed: step 3 cuts the breaks but places **no Break row** — the fork keeps a
-break only when work touches it (`kept_breaks(breaks, slots, assign)`) and
-`assign` is **P5**'s (README gap 551).  `Planner.a_break_row_is_a_replayed_row`
-is the theorem that says the break side is still the log's alone.
+`plan_places_no_block_over_a_break` **is gone from this file as of W-18 (track
+G)**, and the sentence that stood here — *"it stays, for the reason P1's and P2's
+goals stayed: step 3 cuts the breaks but places no Break row"* — was true about
+the **cut's** breaks and wrong about the day's.  Every Break row of the day is a
+replayed one (`Planner.a_break_row_is_a_replayed_row`, still the theorem that
+says so), and a log that records a `break` while a block is running puts a Break
+row **inside** a Block row — neither of them the planner's doing, which is
+`PlanCheck`'s finding 1 (README gap 385) for the third time after E1 and the wall
+law.  So the goal is **false as it was written here** and it left the way those
+two left: `PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is
+_refuted` computed on a day whose log breaks at 07:30 inside `m1`'s 07:05–08:05
+block, with the restatement `PlanCheck.plan_places_no_block_over_a_break` beside
+it (AGENTS §3.1 item 3, D5).  The restriction is E1's own — Block rows that start
+**at or after `now`**, the fork's `assigned_set(day, w.now)` — and it is **not
+vacuous**: `PlannerWit.the_break_law_applies_at_the_census_request` applies it to
+choice 5b's reservation beside a Break row the morning's log holds.  **P5 must
+re-prove it** when the assign fold puts Blocks of its own into that set, and P5
+still owes the *cut's* breaks (`kept_breaks`, README gap 551), which is a
+different sentence from this one.
 
 `plan_places_no_block_over_a_wall` **is gone from this file as of W-17 (track
 G)**, and the sentence that stood here — *"it stays, and staying is the point: the
@@ -649,22 +678,31 @@ is the same conjunction over the same seven checkers with `dayPlan_ok_core`'s
 names the restriction §8.3 is about rather than assuming it away, and the lift
 then holds for every request, whatever the log holds.  Both lifts are kept; they
 are incomparable and nothing is weakened (D5).  And
-`PlannerWit.the_battery_census_over_a_produced_day` stops the vacuity being a
+`PlannerWit.the_battery_census_over_a_produced_day` stopped the vacuity being a
 matter of reading: it **computes**, over the day the planner produces at
-`theStoredRequest`, that **five** of the eleven checkers have a subject and
-**six** do not — `energyFilterOk` (no row carries a slot energy until P5),
-`noBlockOverABreak` (no Break row until P5, README gap 551),
-`noDemandingAfterWindDown` (no Block at or after the wind-down until P5/P7),
-`wallsUnmoved` (the day's one Wall row names `^g1` and *this* store holds the two
-tasks instead — it has a subject at `theRequest` and at `theRunningRequest`, and
-`PlannerWit.the_battery_census_at_the_reserved_day` computes that),
-`impossibleKept` (`diagnostics.impossible` is empty until **P8**, the step that
-fills it; gap 367's other half landed at P4 as `Planner.edfNumbers`) and
-`batchDoesNotReachPast` (no Batch row until P5).  *(This read "six … and five do
-not" until the W-17 repair: the sixth was `wallsUnmoved`, counted at a request
-the census is not stated over.)*  All eleven
-now **refuse** a mutation of that day (`the_battery_bites_over_a_produced_day`),
-which is AGENTS §5.8's other direction and was three of eleven before this run.
+`theStoredRequest`, that **five** of the eleven checkers have a subject and six
+do not.  All eleven **refuse** a mutation of that day
+(`the_battery_bites_over_a_produced_day`), which is AGENTS §5.8's other direction
+and was three of eleven before that run.
+
+**W-18 (track G) settled the ratio and split the question in two.**  The repo
+carried three numbers for one question — five of eleven at `theStoredRequest`,
+four of seven at `theRunningRequest`, and gap 650's four checkers — measured at
+three different populations.  There is now **one** request and **one** ratio:
+`PlannerWit.the_battery_census_at_the_census_request` computes **seven of the
+eleven** with a subject at `PlannerWit.theCensusRequest`, the §4.3 Wednesday with
+`m1` running, a store that holds the calendar's wall **and** the morning's two
+tasks, and a log that holds a **break**.  The two it adds over W-17's five cost
+no step at all: `wallsUnmoved` wanted a store holding the wall the day places,
+and `noBlockOverABreak` wanted a log with a break in it — **gap 650 gave the
+second to P5 and that was wrong**.  The remaining **four** are not a request
+question and are no longer counted: `PlanCheck.no_block_row_of_the_day_carries_a
+_slot_energy`, `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down`,
+`PlanCheck.the_day_has_no_batch_row` and
+`PlanCheck.the_day_names_no_impossible_item` prove, for **every** `PlanReq`, that
+no witness can give `energyFilterOk`, `noDemandingAfterWindDown`,
+`batchDoesNotReachPast` or `impossibleKept` a subject — P5's three and P8's one,
+each now a build-time wall its step must delete.
 ############################################################################ -/
 
 open Planner
@@ -695,15 +733,6 @@ theorem plan_respects_the_energy_filter (r : PlanReq) (s : WfSeg) (i : Id) (lvl 
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
     (hi : s.val.item = some i) (he : s.val.energy = some lvl) :
     (effectiveCi r.plan.val i).val ≤ lvl.val := sorry
-
-/-- **E5 (P\*), stage 6.**  The same statement for breaks: "free positions
-included breaks" is the shipped defect, and §8.2 step 3 puts "a break of
-`break_min` after every `break_after_blocks` blocks" into the slot list, so a
-planner that treats free time as free will place work on top of one. -/
-theorem plan_places_no_block_over_a_break (r : PlanReq) (b k : WfSeg)
-    (hb : b ∈ (dayPlan r).segments) (hk : k ∈ (dayPlan r).segments)
-    (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk) :
-    b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := sorry
 
 /-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
 2: "sleep and wind-down define the hard end of the day".

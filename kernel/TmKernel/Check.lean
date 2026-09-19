@@ -5581,3 +5581,70 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.a_wall_that_is_not_todays_is_dropped
 #print axioms Tm.PlannerWit.wall_today_is_read_only_of_a_wall
 #print axioms Tm.PlannerWit.the_filter_keeps_the_survivors_in_order
+
+-- ===========================================================================
+-- APPENDED 2026-09-18: stage 6, run **W-18**, **track G** --
+-- the vacuity proved rather than counted, the break law refuted and restated,
+-- and one request with one ratio.
+--
+-- README gap 650 left four checkers "ranging over nothing on any day the
+-- planner can produce today", measured at two requests.  A population computed
+-- at a request is evidence about that request, not the claim.  The first four
+-- theorems below are the claim, about EVERY `PlanReq`: no Block row of the day
+-- carries a slot energy, no Block row reaches the wind-down, no row is a Batch
+-- row, and `Diagnostics.impossible` is empty.  The next four are the same four
+-- in the battery's own terms -- each checker returns `true` BECAUSE its subject
+-- is empty -- and each is a build-time wall P5 and P8 must delete.
+--
+-- Two of gap 650's four were not of that kind, and this step says which:
+-- `wallsUnmoved` wanted a store that holds the wall the day places, and
+-- `noBlockOverABreak` wanted a LOG WITH A BREAK IN IT.  Both are request
+-- questions.  `theCensusRequest` supplies both and
+-- `the_battery_census_at_the_census_request` computes the ratio: SEVEN of the
+-- eleven have a subject there, four do not, and the four are the proved ones.
+--
+-- `Goals.plan_places_no_block_over_a_break` is FALSE as stage 6 wrote it --
+-- a `break` logged while a block is running puts a Break row INSIDE a Block
+-- row, neither of them the planner's doing (README gap 385, for the third
+-- time).  It leaves `Goals.lean` here as
+-- `PlanCheck.plan_places_no_block_over_a_break`, over the Block rows that start
+-- at or after `now`, with `..._as_stage_6_wrote_it_is_refuted` beside it and
+-- `the_break_law_applies_at_the_census_request` showing it is not vacuous.
+-- Burn-down 10 -> 9.
+--
+-- `dayPlan_ok_from_now_except_the_two_comparisons` is how far design §6.1's
+-- lift has come: NINE of the eleven at every eligibility, two of those nine
+-- true only because they are empty, and the missing two are `monotoneInRank`
+-- and `hotBeforeQueue`, which wait on `Planner.eligibleAt` (gap 365).
+-- ===========================================================================
+#print axioms Tm.PlanCheck.the_day_has_no_batch_row
+#print axioms Tm.PlanCheck.no_block_row_of_the_day_carries_a_slot_energy
+#print axioms Tm.PlanCheck.no_block_row_of_the_day_reaches_the_wind_down
+#print axioms Tm.PlanCheck.the_day_names_no_impossible_item
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_of_no_batch_row
+#print axioms Tm.PlanCheck.impossibleKept_of_no_impossible
+#print axioms Tm.PlanCheck.energyFilterOk_is_true_because_its_subject_is_empty
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_is_true_because_its_subject_is_empty
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_is_true_because_its_subject_is_empty
+#print axioms Tm.PlanCheck.impossibleKept_is_true_because_its_subject_is_empty
+#print axioms Tm.PlanCheck.plan_places_no_block_over_a_break
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons
+#print axioms Tm.PlannerWit.censusRun_resumes_ok
+#print axioms Tm.PlannerWit.censusRun_resumes
+#print axioms Tm.PlannerWit.the_census_witness_loads
+#print axioms Tm.PlannerWit.censusPlan_loads
+#print axioms Tm.PlannerWit.the_census_witness_indexes_the_calendars_one_wall
+#print axioms Tm.PlannerWit.the_census_witness_holds_the_wall_and_two_ranked_siblings
+#print axioms Tm.PlannerWit.witBuildsCensus
+#print axioms Tm.PlannerWit.theCensusRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_census_request_agrees
+#print axioms Tm.PlannerWit.the_census_request_is_inside_the_calendar
+#print axioms Tm.PlannerWit.the_census_day_carries_the_mornings_break
+#print axioms Tm.PlannerWit.the_battery_passes_at_the_census_request
+#print axioms Tm.PlannerWit.the_battery_census_at_the_census_request
+#print axioms Tm.PlannerWit.the_census_request_is_plain
+#print axioms Tm.PlannerWit.the_lift_applies_at_the_census_request
+#print axioms Tm.PlannerWit.midBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_mid_break_day_lays_a_block_across_a_break
+#print axioms Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_break_law_applies_at_the_census_request

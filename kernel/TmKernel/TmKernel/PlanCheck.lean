@@ -826,8 +826,14 @@ over `dayPlan theRunningRequest` by `PlannerWit.the_battery_census_at_the_reserv
 `oneBlockAtATime` (three Block rows), `noBlockOverAWall` (three Blocks beside one Wall) and
 `wallsUnmoved` (the Wall row's `^g1` is in that store) have subjects; `energyFilterOk`,
 `noBlockOverABreak` and `noDemandingAfterWindDown` are **vacuous** — no row carries a slot
-energy, there is no Break row, and no Block starts at or after the wind-down — and each waits
-on **P5** (README gap 650).
+energy, there is no Break row, and no Block starts at or after the wind-down.
+
+*(This paragraph ended "and each waits on **P5** (README gap 650)" until W-18, and one of the
+three does not: `noBlockOverABreak` wanted a **log with a `break` in it**, not a step.  It has
+a subject at `PlannerWit.theCensusRequest` today, on the whole day and on the `withoutPast`
+day both, so at that request `checksCore` is **five of seven** and not four.  The other two
+wait on nothing a witness can supply — see the vacuity section at the end of this file, which
+proves it for every `PlanReq` — and they are P5's.)*
 `PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block` and
 `PlannerWit.the_battery_passes_at_the_reserved_day` compute the day and the verdict; neither
 computes a population, which is why the census is a third theorem and not a reading of those
@@ -1402,6 +1408,13 @@ which is design §6.3 row 1 taken literally; and `energyFilterOk`, `noBlockOverA
 `noDemandingAfterWindDown` are vacuous over the produced day for reasons that are facts about
 the day and are computed in `PlannerWit`, not claimed here.
 
+**W-18:** `noBlockOverABreak` is vacuous at *that* request and not at every one.  A Break row
+survives `withoutPast` (`SegKind.isWork` is false of a Break), so a request whose log holds a
+`break` gives this lift's own day a Break row beside the reservation —
+`PlannerWit.the_battery_census_at_the_census_request` computes it and
+`PlannerWit.the_lift_applies_at_the_census_request` fires the lift there.  The other two are
+vacuous at **every** request, and the section at the end of this file proves it.
+
 **P5 must re-prove this.**  The assign fold puts Blocks of its own into `withoutPast`'s
 surviving set, and every one of the six block-side discharges below is about the reservation
 alone. -/
@@ -1514,6 +1527,275 @@ theorem dayPlan_ok_core_from_now (r : PlanReq)
     exact plan_never_moves_a_wall r s i e a b hagree hsd hk hi hget hsh hnbuf hin hout hfwd hcal
   simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true,
     h1, h2, h3, h4, h5, h6, h7]
+
+/-! ############################################################################
+## The vacuity, PROVED rather than counted — stage 6, run W-18, track G
+############################################################################
+
+README gap 650 records four checkers that *"range over nothing on any day the planner can
+produce today"*, and two `PlannerWit` census theorems **measure** it at two requests.  A
+population computed at a request is evidence about that request; it is not the claim, and the
+claim is what a reader takes away.  This section proves the claim: for **every** `PlanReq`,
+each of those four checkers returns `true` with an **empty** subject, and the reason in each
+case is a structural fact about what `Planner.dayPlan` can put in a day today.
+
+Three of the four are therefore *strengthenings* of `dayPlan_ok_core`'s own conjuncts — `h3`
+and `h6` there discharge `energyFilterOk` and `noDemandingAfterWindDown` under `hnopast`, and
+the theorems below discharge them under nothing and under `hnowcal` respectively.  That is
+not a weakening of anything (D5): the lifts keep their statements, and these say the same
+`true` is free.
+
+**The method, and what it cannot see.**  Each fact is proved by the row-source case split
+`Planner.mem_dayRows` gives — the replayed past, the running interruption, the walls, step 2's
+rows, and §8.2 choice 5b's reservation — so it covers every row `dayRows` can hold and
+**nothing else**.  It is blind to:
+
+* any checker whose subject is not a row of the day.  `noOverbook`'s subject is an arithmetic
+  comparison, `wallsUnmoved`'s is a store lookup, and `monotoneInRank`/`hotBeforeQueue`'s are
+  pairs of ids in `store.dom`; **all three are request questions**, not step questions, and
+  `PlannerWit.the_battery_census_at_the_census_request` measures them at one named request rather than
+  claiming them here;
+* what a later step adds.  Every theorem here is a **build-time wall** in a shipped module,
+  in the shape of `Planner.the_day_assigns_nothing_after_now_but_the_running_block`: the
+  commit that makes `dayPlan` energise a Block, gather a Batch or fill
+  `Diagnostics.impossible` stops it compiling, and **P5 and P8 must delete these four**.
+
+**What it does settle, and it is the answer gap 650 asked for**: no *witness* can give these
+four a subject.  Two of gap 650's original four were not of this kind — see
+`plan_places_no_block_over_a_break` below and `PlannerWit`'s section 13. -/
+
+/-- **No row of the day is a Batch row.**  Steps 1, 2 and 3 place the replayed past, the
+running interruption, the walls, the routines, the evening and the reservation; `SegKind.batch`
+is gathered by §8.2 step 5's assign fold and by nothing else, and the fold is **P5**. -/
+theorem the_day_has_no_batch_row (r : PlanReq) (s : WfSeg) (hs : s ∈ (dayPlan r).segments)
+    (ids : BatchIds) : s.val.kind ≠ SegKind.batch ids := by
+  intro hk
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hs)
+  have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with (((ht | ht) | ht) | ht) | ht
+  · unfold pastRows at ht
+    split at ht
+    · cases ht
+    · simp only [List.mem_filterMap] at ht
+      obtain ⟨g, -, hg⟩ := ht
+      split at hg
+      · cases hg
+      · have he := Option.some.inj hg
+        subst he
+        revert htk
+        cases g.kind <;> simp [pastKind]
+  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
+  · simp only [List.mem_flatMap] at ht
+    obtain ⟨x, -, hx⟩ := ht
+    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
+  · rcases stepTwoSegs_kinds r t ht with h | h | h <;> rw [h] at htk <;> cases htk
+  · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+
+/-- **No Block row of the day carries a slot energy.**  A Block row is replayed or reserved
+(`dayPlan_block_rows_are_replayed_or_reserved`); `Planner.pastRows` writes `energy := none` on
+every row it makes, and choice 5b's reservation carries none by
+`Planner.PlanReq.activeRow_is_an_energyless_block`.  A Block gets a level when the assign fold
+puts it in an energised slot, which is **P5**. -/
+theorem no_block_row_of_the_day_carries_a_slot_energy (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) : s.val.energy = none := by
+  rcases dayPlan_block_rows_are_replayed_or_reserved r s hs hk with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · show t.energy = none
+    unfold pastRows at ht
+    split at ht
+    · cases ht
+    · simp only [List.mem_filterMap] at ht
+      obtain ⟨g, -, hg⟩ := ht
+      split at hg
+      · cases hg
+      · have he := Option.some.inj hg
+        subst he
+        rfl
+  · obtain ⟨-, hen, -, -, -⟩ := r.activeRow_is_an_energyless_block t ht
+    show t.energy = none
+    exact hen
+
+/-- **No Block row of the day starts at or after a WindDown row.**  Two facts meet: a WindDown
+row exists only when `now < wind_down` (`Planner.PlanReq.eveningRows`' own guard, carried out
+by `Planner.a_wind_down_row_of_the_day`), and every Block row of the day starts at or before
+`now` — the replayed ones end at `now`, and the reservation starts exactly there.
+
+So `noDemandingAfterWindDown`'s `w.start ≤ b.start` cannot be satisfied by any day
+`Planner.dayPlan` produces, whatever the request.  **P5** is the step that places a Block into
+the evening (**P7** for an optional), and it must delete this. -/
+theorem no_block_row_of_the_day_reaches_the_wind_down (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) (b w : WfSeg)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown) :
+    b.val.start < w.val.start := by
+  obtain ⟨hnw, hws⟩ := a_wind_down_row_of_the_day r w (dayPlan_segments r ▸ hw) hwk
+  have hbs : b.val.start ≤ r.now.sec := by
+    rcases dayPlan_block_rows_are_replayed_or_reserved r b hb hbk with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+    · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
+      show clampSec t.start ≤ r.now.sec
+      simp only [clampSec, LogStamp.yearEnd]
+      omega
+    · obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+      obtain ⟨e1, -, -, -⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+      omega
+  rw [hws]
+  have hcs : clampSec r.windDownSec = min r.windDownSec (LogStamp.yearEnd - 1) := rfl
+  rw [hcs]
+  simp only [LogStamp.yearEnd] at hnowcal ⊢
+  omega
+
+/-- **The day names no impossible item.**  `Planner.dayDiagnostics` sets `conflicts` and
+`notes` and leaves every other field at `Diagnostics.empty`; the step that fills
+`Diagnostics.impossible` from §7.3's grants is **P8** (README gap 367's second half — its
+first landed at P4 as `Planner.edfNumbers`). -/
+theorem the_day_names_no_impossible_item (r : PlanReq) :
+    (dayPlan r).diagnostics.impossible.val = [] := rfl
+
+/-! ### The same four, in the battery's own terms
+
+Each returns `true` on every day the planner produces, and each does so **because its
+quantifier is empty**.  That is AGENTS §9.2's *"a check no input can fail"* said out loud with
+a proof behind it, and it is the honest reading of four of the eleven conjuncts of §6.1's
+lift. -/
+
+/-- `energyFilterOk` cannot fail today, because no Block row carries a level to compare.
+**Unconditional** — `dayPlan_ok_core`'s `h3` proves the same `true` under `hnopast`. -/
+theorem energyFilterOk_is_true_because_its_subject_is_empty (r : PlanReq) :
+    energyFilterOk r (dayPlan r) = true :=
+  (energyFilterOk_iff r _).mpr (fun s hs i lvl _ hk _ he => by
+    rw [no_block_row_of_the_day_carries_a_slot_energy r s hs hk] at he
+    exact absurd he (by simp))
+
+/-- `noDemandingAfterWindDown` cannot fail today, because no Block row reaches the wind-down.
+Its one hypothesis is R10's, the same `hnowcal` both lifts carry. -/
+theorem noDemandingAfterWindDown_is_true_because_its_subject_is_empty (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    noDemandingAfterWindDown r (dayPlan r) = true :=
+  (noDemandingAfterWindDown_iff r _).mpr (fun b hb w hw i _ hbk hwk hle =>
+    absurd (no_block_row_of_the_day_reaches_the_wind_down r hnowcal b w hb hw hbk hwk)
+      (by omega))
+
+/-- A day with no Batch row passes `batchDoesNotReachPast` at **every** eligibility.  Stated
+over an arbitrary `DayPlan` so that the whole day and `withoutPast`'s restriction of it both
+get it from one proof, rather than two copies of the same case split (AGENTS §5.3). -/
+theorem batchDoesNotReachPast_of_no_batch_row (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ s ∈ d.segments, ∀ ids, s.val.kind ≠ SegKind.batch ids) :
+    batchDoesNotReachPast el r d = true := by
+  refine List.all_eq_true.2 (fun s hs => ?_)
+  have hn := h s hs
+  revert hn
+  cases s.val.kind <;> intro hn <;> try rfl
+  exact absurd rfl (hn _)
+
+/-- A day whose `Diagnostics.impossible` is empty passes `impossibleKept` at **every**
+eligibility, for the same reason and with the same generality. -/
+theorem impossibleKept_of_no_impossible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : d.diagnostics.impossible.val = []) : impossibleKept el r d = true := by
+  unfold impossibleKept
+  rw [h]
+  rfl
+
+/-- `batchDoesNotReachPast` cannot fail today, at **any** eligibility, because there is no
+Batch row to range over.  The `∀ el` here is not the unrestricted claim design §6.3 refutes —
+it is the statement that the choice of `el` cannot matter to an empty quantifier. -/
+theorem batchDoesNotReachPast_is_true_because_its_subject_is_empty (el : Eligible)
+    (r : PlanReq) : batchDoesNotReachPast el r (dayPlan r) = true :=
+  batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids => the_day_has_no_batch_row r s hs ids)
+
+/-- `impossibleKept` cannot fail today, at **any** eligibility, because
+`Diagnostics.impossible` is the empty list on every day the planner produces. -/
+theorem impossibleKept_is_true_because_its_subject_is_empty (el : Eligible) (r : PlanReq) :
+    impossibleKept el r (dayPlan r) = true :=
+  impossibleKept_of_no_impossible el r _ (the_day_names_no_impossible_item r)
+
+/-! ### The break law, restated over the rows §8.3 is about
+
+**`plan_places_no_block_over_a_break` is FALSE as `Goals.lean` wrote it**, and for the third
+time in this stage it is finding 1 (README gap 385) that makes it so: the day's rows include
+the ones `Planner.pastRows` replays, and a log that records a `break` while a block is running
+gives the day a Break row *inside* a Block row — neither of them the planner's doing.  Step P3
+took that clause for E1, W-17 took it for the wall law, and this is the third and last of the
+three block-side comparisons it reaches.
+
+`PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted` is the
+refutation, computed on a day whose log holds a break at 07:30 inside `m1`'s 07:05-08:05
+block, and it ships in the same commit (AGENTS §3.1 item 3: a restatement without its
+refutation is a weakening).
+
+**The restriction is E1's own** — Block rows that start at or after `now`, the fork's
+`assigned_set(day, w.now)` (`planner_invariants.rs:470`) — and `hnowcal` is the R10 hypothesis
+both lifts already carry.
+
+**It is not vacuous, and its subject is a request question and not a step question**: §8.2
+choice 5b's reservation is such a Block row, a Break row is any `break` the day's log holds,
+and `PlannerWit.theCensusRequest` has both.  That is what gap 650 got wrong about this
+checker — it gave `noBlockOverABreak`'s emptiness to **P5**, and a log with a break in it ends
+it today.  **P5 must still re-prove this**: the assign fold puts Blocks of its own into the
+set, and the proof below discharges the reservation alone. -/
+theorem plan_places_no_block_over_a_break (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) (b k : WfSeg)
+    (hb : b ∈ (dayPlan r).segments) (hk : k ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hkk : k.val.kind = SegKind.brk)
+    (hnow : r.now.sec ≤ b.val.start) :
+    b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := by
+  obtain ⟨t, ht, rfl⟩ := a_block_row_from_now_is_the_reservation r b hb hbk hnow
+  obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+  obtain ⟨e1, -, -, -⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+  obtain ⟨u, hu, rfl⟩ := a_break_row_is_a_replayed_row r k (dayPlan_segments r ▸ hk) hkk
+  obtain ⟨-, hlt2, hstop⟩ := pastRows_end_at_now r u hu
+  right
+  show max (clampSec u.start) (clampSec u.stop) ≤ (segOf t).val.start
+  rw [e1]
+  simp only [clampSec, LogStamp.yearEnd]
+  omega
+
+/-! ### How far §6.1's `dayPlan_ok` has come, stated exactly
+
+Design §6.1's lift is `planOk r (dayPlan r) = true` over all **eleven** checkers.  It is still
+not stateable in its honest form: four of the eleven take an eligibility predicate, and
+`Planner.eligibleAt` — which P5 writes, because it is step 5's own filter — does not exist
+(README gap 365).  The `∀ el` form is the *unrestricted* claim design §6.3 refutes, and an
+`∃ el` form is satisfied by the predicate that answers `false`.
+
+What **is** provable today is the theorem below: **nine of the eleven**, at every eligibility,
+over `withoutPast`'s day.  And the honest accounting of those nine is the point of stating it
+in one place:
+
+* **seven** are `planOkCore`'s, from `dayPlan_ok_core_from_now`; of those seven, three
+  (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) were vacuous over the
+  restricted day at every request the kernel held before this step, and `noBlockOverABreak`
+  is vacuous no longer (`PlannerWit.theCensusRequest`);
+* **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`, and both hold
+  **because their subject is empty at every request** — proved above, not measured.  They
+  are in this conjunction because the arithmetic of "how much of §6.1's lift is done" is
+  otherwise a matter of counting by hand, which README gap 684 is the record of getting
+  wrong;
+* **two** are missing, and they are the two comparisons: `monotoneInRank` and
+  `hotBeforeQueue`.  Both are real obligations over the replayed past at a permissive `el`
+  (see the note above `dayPlan_ok_core`'s own deleted `∀ el` corollary), and both wait on P5.
+
+So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
+and owed a subject (P5's batch, P8's impossible list), and the fold induction design §6.2
+prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
+theorem dayPlan_ok_from_now_except_the_two_comparisons (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
+    planOkCore r (withoutPast r (dayPlan r)) = true ∧
+      impossibleKept el r (withoutPast r (dayPlan r)) = true ∧
+      batchDoesNotReachPast el r (withoutPast r (dayPlan r)) = true :=
+  ⟨dayPlan_ok_core_from_now r hagree hactive hday hnowcal hplain,
+   impossibleKept_of_no_impossible el r _ (the_day_names_no_impossible_item r),
+   batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
+     the_day_has_no_batch_row r s (mem_withoutPast r _ s hs).1 ids)⟩
 
 end PlanCheck
 end Tm

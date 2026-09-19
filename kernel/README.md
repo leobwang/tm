@@ -37136,3 +37136,606 @@ construction** and not by luck; it did not repair gaps 730, 731 or 732, each of
 which is a behaviour change on a verb this step does not own (D19); and it did not
 run the §5.13 drive, which is still the human's and still owed.
 
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-18**, **track G** —
+     the goals track, on the isolated worktree `.claude/worktrees/w18-g`
+     (branch `w18-g`, from `eb4150f`).  The main checkout was **not touched**;
+     track P holds it for P5 and track A holds `.claude/worktrees/w18-a`.
+     Track G's gap range is **750-769**; this step takes **750-753** and leaves
+     **754-769** free.  Cheats **193-194** (whoever merges renumbers, §6.2)
+     — **RENUMBERED 201-202 BY THE LAND STEP**, because track P branched from the
+     same commit and landed 193-200 first.  Every citation below moved with them.
+     Parity **P38**, unchanged and none owed.  **Burn-down 10 → 9.**
+     =========================================================================== -->
+
+## Stage 6, W-18 track G, 2026-09-18: the vacuity proved rather than counted, and the break law refuted
+
+**What landed.** Five Lean files and nothing else: `PlanCheck.lean` (**+284/−2**),
+`PlannerWit.lean` (**+396/−11**), `Check.lean` (+67: a banner and 31 `#print axioms`
+lines), `Negative.lean` (+30/−3: cheats **201-202** (written 193-194, renumbered by the merge) and one in-place correction) and
+`Goals.lean` (+58/−29: **one goal deleted with its proof elsewhere**, and four
+in-place corrections). **No Rust, no wire value, no behaviour row, nothing
+re-blessed** — `git diff --name-only` names those five files and this document,
+and `git diff --name-only -- tm/tests/fixtures tm/tests/snapshots kernel/corpus
+tm/tests/cli_latency.rs tm-core/tests/fixtures` is **empty**.
+
+Four things, in the order they matter.
+
+### 1. The vacuity is now a theorem, not a census — and that changes the answer
+
+The brief said the numbers disagreed three ways, and they did: **five of eleven**
+with a subject at `theStoredRequest`, **four of seven** over `checksCore` at
+`theRunningRequest`, and gap 650's **four checkers a later step must clear**.
+None was wrong. Together they were not an answer, because a population computed
+at one request is evidence about that request and the claim a reader takes away
+is about every request.
+
+**So the question was split in two, and each half was answered with the right
+instrument.**
+
+**The step question — what no witness can reach — is four theorems about every
+`PlanReq`**, in `PlanCheck.lean`, not a count:
+
+| theorem | what it proves, for every request | ends at |
+|---|---|---|
+| `no_block_row_of_the_day_carries_a_slot_energy` | a Block row is replayed or reserved, and both carry `energy = none` | **P5** |
+| `no_block_row_of_the_day_reaches_the_wind_down` | a WindDown row exists only while `now < wind_down`, and every Block row starts at or before `now` | **P5**/**P7** |
+| `the_day_has_no_batch_row` | `dayRows`' five sources place nine kinds and `batch` is not one | **P5** |
+| `the_day_names_no_impossible_item` | `dayDiagnostics` leaves `impossible` at `Diagnostics.empty` — `rfl` | **P8** |
+
+and the same four in the battery's own terms —
+`energyFilterOk_is_true_because_its_subject_is_empty` (no hypotheses),
+`noDemandingAfterWindDown_is_true_because_its_subject_is_empty` (`hnowcal` only),
+`batchDoesNotReachPast_is_true_because_its_subject_is_empty` and
+`impossibleKept_is_true_because_its_subject_is_empty` (both at **every**
+eligibility). Three of those are *strengthenings* of `dayPlan_ok_core`'s own
+conjuncts, which discharge the same `true` under `hnopast`; nothing was narrowed
+(D5), both lifts keep their statements, and what the four add is the word
+**because**.
+
+**The request question — how much a witness can make bite — is one request and
+one ratio.** `PlannerWit.theCensusRequest` is the two existing witnesses joined
+and **one new line of log**: `Boundary.lookWallWitness`' calendar document,
+`storedWitness`' two ranked tasks, `witLines`' six lines, `theRunningState`'s
+running block, and a fifteen-minute `break` at 08:05. It goes through
+`mkPlanReq?`, so its wall index really is its plan's and `hagree` comes from
+`mkPlanReq?_ok_wallsAgree` rather than from a `decide` — which is what
+`theStoredRequest` gave up by swapping the plan behind the builder's back.
+`the_battery_census_at_the_census_request` computes the ratio:
+
+> **SEVEN of the eleven have a subject at `theCensusRequest`. Four do not, and
+> those four are the proved ones.**
+
+**Two of gap 650's four were never step questions**, and saying so is the
+finding:
+
+* **`wallsUnmoved`** wanted a store that holds the wall the day places. W-17's
+  repair already knew this (gap 679) and left it split across two requests; this
+  request holds both the wall and the tasks, so it is not split any more.
+* **`noBlockOverABreak`** wanted **a log with a `break` in it**. Gap 650 gave it
+  to **P5** on the reasoning that the *cut's* breaks reach the day only when work
+  touches them (`kept_breaks`, gap 551) — which is true of the cut's breaks and
+  says nothing about the **log's**. `Planner.a_break_row_is_a_replayed_row` says
+  every Break row of the day is replayed; read the other way it says a `break`
+  the log holds **is** one. One line of log ends the vacuity, and no step was
+  needed. CHEAT **202** states the emptiness gap 650 claimed, and `decide`
+  refuses.
+
+The Break row is computed **twice** — on the whole day and on
+`PlanCheck.withoutPast`'s day — because `SegKind.isWork` is false of a Break, so
+the row survives the restriction and `noBlockOverABreak` has a subject in the day
+**both** lifts are about. At `theCensusRequest`, `checksCore` is therefore **five
+of seven** on the whole day and **four of seven** on the `withoutPast` day, where
+W-17 measured four and three.
+
+**Every prose statement of the ratio in the repo now agrees**, and the ones that
+were corrected in place say what they read before: `PlanCheck.lean`'s two lift
+paragraphs, `PlannerWit.lean`'s section 11 header, its two census doc comments,
+`Negative.lean`'s CHEAT 190 comment (whose *reason* was wrong even though its
+claim was right) and `Goals.lean`'s stage-6 banner.
+
+### 2. `plan_places_no_block_over_a_break` is FALSE as `Goals.lean` wrote it — refuted, restated, discharged
+
+**Burn-down 10 → 9.** The third of the thirteen to leave the file, and like the
+first two (`plan_reserves_one_block_at_a_time` at P3,
+`plan_places_no_block_over_a_wall` at W-17) it left as a **§3.1-item-3
+discharge**: the goal as written is false, the refutation ships in the same
+commit, and the restatement is proved beside it.
+
+The reason is `PlanCheck`'s finding 1 (gap 385) for the third time — the day's
+rows include the ones `Planner.pastRows` replays, and **both** sides of this
+comparison are replayed. A log that records a `break` while a block is running
+gives the day a Break row **inside** a Block row, and neither of them is the
+planner's doing. The witness is the census log with its one break **moved** from
+08:05 to 07:30, into `m1`'s 07:05–08:05 block; the six original lines are
+`witLines`, renumbered by one rather than respelled:
+
+```
+07:05–08:05 block m1 | 07:30–07:45 brk | 09:05–10:05 block m2 | 12:50–13:50 wall g1
+| 14:00–14:40 block m1 (the reservation) | 21:30 windDown | 22:00 sleep
+```
+
+`PlannerWit.the_mid_break_day_lays_a_block_across_a_break` computes all three
+halves — the rows, `PlanCheck.noBlockOverABreak` answering **`false`**, and
+`planOkCore` answering **`false`** — so the battery gives its own opinion on a day
+`Planner.dayPlan` really produced, with **no mutation at all**. That is a stronger
+non-vacuity than a mutated day, and it is the first one in this module.
+`plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted` is the
+refutation; CHEAT **201** states the `true` from the other side.
+
+The restatement is `PlanCheck.plan_places_no_block_over_a_break`, over the Block
+rows that start **at or after `now`** — `Planner.assignedFrom`'s restriction, the
+fork's own `assigned_set(day, w.now)` (`planner_invariants.rs:470`), and the one
+P3 used for E1 and W-17 for the wall. It carries `hnowcal`, the R10 hypothesis
+both lifts already carry. **It is not vacuous**:
+`the_break_law_applies_at_the_census_request` applies it to choice 5b's
+reservation beside a Break row the morning's log holds. **P5 must re-prove it**
+when the assign fold puts Blocks of its own into that set.
+
+### 3. How far §6.1's `dayPlan_ok` has come, stated exactly
+
+`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons` is **nine of the
+eleven**, at every eligibility, over `withoutPast`'s day — and the honest
+accounting of the nine is the point of putting them in one statement, because
+gap 684 is the record of getting that arithmetic wrong by hand:
+
+* **seven** are `planOkCore`'s, from W-17's `dayPlan_ok_core_from_now`, unchanged;
+* **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`, and
+  both hold **because their subject is empty at every request** — §1's theorems,
+  not a measurement;
+* **two** are missing and they are the two comparisons, `monotoneInRank` and
+  `hotBeforeQueue`. Both are real obligations over the replayed past at a
+  permissive `el`, and both wait on `Planner.eligibleAt`, which **P5** writes
+  (gap **365**, unchanged).
+
+**What the next step inherits, said precisely.** Nine of eleven conjuncts proved;
+**two of the nine empty** and owed a subject (P5's Batch row, P8's impossible
+list); six block-side discharges that still go through the reservation alone (gap
+651, unchanged); and design §6.2's ≈ 4,500 proof lines for the fold induction
+**not started** — no line of it is claimed here, because there is still no fold
+to induct over.
+
+**And two goals were refused a discharge they would have passed.**
+`plan_respects_the_energy_filter` and
+`plan_never_batches_past_an_equal_ci_candidate` are each one `exact absurd …` from
+leaving `Goals.lean`: §1's theorems refute their `energy = some lvl` and
+`kind = batch ids` hypotheses for every request. **The burn-down could read 7
+today. It reads 9.** A discharge whose subject is empty is AGENTS §5.2's theorem
+that compiles and means nothing, and check 7's number would stop being true. That
+is the call P1 made for the wall goal (gap 347), P2 for the wind-down goal (gap
+430) and P3 for the break goal (gap 551); what is new is that the emptiness is
+**proved** rather than observed, so the refusal is evidenced. Gap **751**.
+
+**Nothing P4 or P5 made provable was discharged, and the reason is not a
+judgement.** P4 discharges no goal by design (§14.2: `edfNumbers` stops being
+provisional and the burn-down does not move — it landed at `5dc3167`), and **P5
+is not in this tree**: track P holds the main checkout for it and this worktree
+branches from `eb4150f`. The one goal that left did so for a reason that is
+older than both.
+
+### 4. `PlannerWit.lean` still has no importer, and that is enough — here is why
+
+The brief asks plainly whether a witness module nothing imports is evidence,
+under §5.6's dead-code lesson. Measured first:
+
+```
+grep -l '^import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean   -> 0 library modules
+grep -c  '^import TmKernel.PlannerWit' TmKernel/TmKernel.lean    -> 1 (the package root)
+```
+
+*(W-17's block quoted the first grep **without** the `^` anchor and it returns
+**1** — `PlannerWit.lean` matching its own doc comment, which quotes the grep. A
+grep whose pattern appears in the prose it is cited in is a small trap and is
+named here so the next reader does not repeat it.)*
+
+**The answer is yes, and what makes it so is that the `decide`s run at build
+time.** Every claim in this module is a closed `decide` or `rfl` in a module
+`lake build TmKernel:static` compiles, so check 1 fails the moment one of them
+stops holding — the same build-time wall `PlanCheck.lean`'s header claims for the
+battery, and strictly stronger than the same statement sitting in `Goals.lean`
+where a step may simply not look. Three inversions in §6 below show it firing.
+`Check.lean` reaches every theorem here through `import TmKernel`, so all 31 new
+names are under check 3's axiom audit.
+
+**What it is *not* evidence of, and §5.6's lesson is right about this**: nothing
+here is a claim about `tm`. `dayPlan` has **no shipped caller** — gap **652**,
+unchanged and restated below — so these witnesses cannot be driven, and the
+honest reading of the dead-code lesson is the uncomfortable one. It should stay a
+leaf: importing it would pull 40 000-`maxRecDepth` witnesses into another module's
+elaboration, and §5 records what that now costs.
+
+### 5. `shipped_call_sites`, driven and not asserted
+
+| rule added or changed | shipped callers, by grep from `main` down | driven |
+|---|---|---|
+| the four vacuity theorems, `plan_places_no_block_over_a_break`, `dayPlan_ok_from_now_except_the_two_comparisons`, and every `PlannerWit` witness | **none.** `grep -rc 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` is **0, 0, 0**; `grep -c '"plan"\|dayPlan' Boundary.lean` is **0**; `grep -rn 'theCensusRequest\|theMidBreakRequest\|censusWitness\|plan_places_no_block_over_a_break\|the_day_has_no_batch_row\|no_block_row_of_the_day\|dayPlan_ok_from_now' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0 lines**. There is still no planner op on the wire | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — and **no planner call**, digit for digit what W-17 recorded. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` and the day, exit 0; `tm triage` → three rows, exit 0 |
+
+**The honest sentence this table is for:** this step's Lean *is* linked into the
+`tm` binary, so "Lean-only" does not by itself mean the binary did not move. What
+shows it did not is that the whole workspace suite, the FFI suite, T5, the door,
+`cli_switch_acceptance`, `kernel_call_counts`, `kernel_lookahead_parity` and the
+corpus all return the **same** numbers as the baseline measured in this same
+session, and those suites compare the binary's bytes against frozen fixtures.
+
+### 6. The inversions — a witness that cannot distinguish a component pins nothing
+
+W-17's auditors paid for this lesson, so each new component was **inverted and
+watched to fail**. All three mutations were restored and the tree re-verified
+green; none is in any commit.
+
+| inversion | what failed, by name |
+|---|---|
+| **A.** `censusLines := witLines ++ [censusBreakLine]` → `witLines` (the one new log line removed) | `lake build` **fails**: `TmKernel/PlannerWit.lean:1928:2` and `:1980:2`, *"Tactic `decide` proved that the proposition … is false"* — `the_census_day_carries_the_mornings_break` and `the_battery_census_at_the_census_request`. The break line is load-bearing for the whole ratio |
+| **B.** the calendar document removed from `censusWitness` (the tasks left) | `lake build` **fails at four sites**: `the_census_witness_indexes_the_calendars_one_wall`, `the_census_witness_holds_the_wall_and_two_ranked_siblings`, `the_battery_census_at_the_census_request` and `the_census_request_is_plain`. The wall's presence in *this* store is what `wallsUnmoved`'s subject turns on, and the builder refuses the request without it |
+| **C.** `hnow : r.now.sec ≤ b.val.start` → `True` in `plan_places_no_block_over_a_break` (the restriction dropped) | `lake build` **fails**: `TmKernel/PlanCheck.lean:1741:76`, *"Application type mismatch"* at `a_block_row_from_now_is_the_reservation`. The restriction is not decoration; without it the law is the one the refutation kills |
+| **standing.** CHEAT **201** (`noBlockOverABreak` says `true` on the mid-break day) and CHEAT **202** (the census day has no Break row) | both fail at a line of their own, every run, *"Tactic `decide` proved that the proposition …"* — `Negative.lean:2493` and `:2505` on the merged tree (`:2390` and `:2402` on the branch, before track P’s eight moved them). Check 4 lifts `maxErrors` to 1,000,000 and requires an error **per `/- CHEAT` block**, so these are run and checked on every `check.sh`, not merely present |
+
+### Acceptance, re-measured on this worktree against a baseline measured in the same session
+
+The brief's comparands are `eb4150f`'s. **They were re-measured here rather than
+quoted**, by stashing this step's diff in this worktree and running the identical
+commands — the only way to say "unchanged" with evidence on a shared box. Every
+command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0
+--quiet`; binary drives at **16G**; every Lean probe at **8G** with `timeout`.
+**No bound was raised and nothing was retried uncapped.**
+
+| row | this tree | `eb4150f`, re-measured here | brief's | delta, explained |
+|---|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 ok | 7/7 | — |
+| axiom audit | **4,485 theorems**, §6.3 reconciliation `ok` | **4,454** | 4,454 | **+31, and every one is this step's**: 12 in `PlanCheck`, 19 in `PlannerWit`. 4,485 audit lines at **4,485 distinct** names against **4,484** declarations; `comm -23` **empty**, `comm -13` names exactly `WfPlan` and `effectiveScope`, §6.3's deliberate one-directional slack |
+| burn-down (check 7) | **9 outstanding, all stage 6** | **10** | 10 | **−1**: `plan_places_no_block_over_a_break`, discharged above. **Nothing was added.** Two more could have left and were refused — gap 751 |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` untouched |
+| `Negative.lean` | rejected ok, **179 cheats**, highest **194**, `uniq -d` prints nothing *(branch figures; the merged tree is **181** cheats, highest **202** — see the land block)* | 177 / 192 | 177 | **+2**, each failing at a line of its own with `Tactic 'decide' proved that the proposition …` |
+| `cargo test --workspace --no-fail-fast` | **1,342 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** | — (Lean-only; the binary is rebuilt by the FFI crate's `build.rs`) | 1,342 / 0 / 9 / 79 | **identical — a Lean-only step must not move it, and it did not** |
+| FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | — | 101 | — |
+| **T5** `kernel_replay_parity --include-ignored` | **33 / 0** | — | 33 | fork point **4748911**, frozen arms |
+| the door `kernel_log_door --include-ignored` | **23 / 0** | — | 23 | — |
+| `cli_switch_acceptance --include-ignored` | **9 / 0** | — | 9 | — |
+| `kernel_call_counts` | **2 / 0** | — | 2 | — |
+| `kernel_lookahead_parity` | **4 / 0** | — | 4 | — |
+| `kernel_log_grammar --include-ignored` | **18 / 0**, with **`TM_ORACLE` unset** | — | — | the live fork arm does not compare without it; the frozen arms above are the ones that ran |
+| `the_frozen_comparand_is_read_at_full_precision` | **passes by name** (1 passed, 32 filtered out) | — | — | gap 235's tripwire; `float_roundtrip` still pinned |
+| `cli_latency --release --include-ignored --test-threads=1` | **6 passed / 0 failed** ×3 | — | — | rows below, as readings |
+
+**check.sh wall time, built tree, same window, both directions measured.** The box
+was **not quiet**: track P and track A were building and testing throughout (load
+average 3.1–6.7 across the measurement window), so every figure is a band.
+
+| | passes 3-6 (warm) | median | peak RSS |
+|---|---|---|---|
+| `eb4150f`, this worktree | 3.98 / 3.97 / 4.12 / 3.95 s | **3.97 s** | 1.98–2.06 GiB |
+| this tree | 3.90 / 3.91 / 3.90 / 3.76 s | **3.90 s** | 2.00–2.06 GiB |
+
+**No measurable rise, and the bands overlap.** The attribution, measured
+separately because the whole-run figure is the noisier one:
+
+* `lean -DmaxErrors=1000000 Negative.lean` — **the flag check 4 actually uses**:
+  baseline **2.88 / 2.88 / 2.97 s**; this tree **2.87 / 2.89 / 2.92 / 2.88 s** in a
+  quiet window and **3.02 / 3.21 / 3.56 s** in a loaded one. The two cheats cost
+  nothing the loaded box does not swamp. *(A first attempt measured this **without**
+  the flag and read 1.99 s → 1.96 s, which measures nothing: plain `lean` stops at
+  100 errors, around line 961, and never reaches cheat 201 at all. The figures above
+  replace it.)*
+* `lean Check.lean` — baseline **0.34 / 0.35 s**, this tree **0.40 / 0.42 s**:
+  **+0.06 s** for 31 new audit lines.
+* **`PlannerWit.lean` elaboration, at 8G with `timeout`** — baseline **20.87 /
+  22.17 s** at peak RSS **3.78–4.08 GiB**; this tree **30.83 / 31.18 / 31.40 s** at
+  **4.31–4.62 GiB**. That is **+45%**, and it is the real price of this step. It is
+  **not** check.sh's wall time — check 1 is a no-op on a built tree, which is why
+  the table above does not move — but it is a cost the next step inherits, and the
+  8G probe cap now has ≈ 3.4 GiB of headroom instead of ≈ 4 GiB. **Gap 750.**
+  `PlanCheck.lean` elaborates in **1.02 s**.
+
+### T11, as readings and never as single numbers, with the machine state
+
+Three `cli_latency` release passes, `--include-ignored --nocapture
+--test-threads=1`, on the 3-year log (66,169 lines / 6,896,281 bytes), box **not
+quiet** (two other tracks building). Every assertion met in all three passes.
+
+| row | readings (ms) | recorded band | verdict |
+|---|---|---|---|
+| **later verb (`tm drop`) — the reliable row** | 131.82 / 136.75 / 136.81 | the brief gives two: D35's measured **126.6–131.7** and *"~127–142 ms"* | **inside the second, at and just above the top of the first**, and inside W-17's own recorded 126.7–136.9 spread on this machine. **Not re-blessed** |
+| gated host-only write (D35) | 131.79 / 131.64 / 136.77 | 126.6–131.7 | the same band as `tm drop`, which is what D35's own block found |
+| 3-day-old routine | 136.64 / 151.83 / 151.89 | 121.6–136.8 | **two of three above the band**, on a loaded box; one of gap 240's three noisy rows and **not re-blessed** |
+| reseal (`--now +1 day`) | 177.25 / 192.11 / 197.22 | 197.5–212.6 | **below**, as W-17 also found. **Not re-blessed** |
+| **`review week` (the `All` scope)** | 263.15 / 262.94 / 268.46 | 248.1–253.3 | **STILL OUTSIDE**, as it has been since L9 — **gap 275**, a capacity verb replaying the log twice. Untouched here and **not re-blessed** (gap 570 stands) |
+| first verb (genesis), 226 files | 693.68 ms (fresh tree) / 2.31 s (3-year log) | — | as before |
+| 10 stalled days, worst | 521.05 / 530.57 / 566.22, **0** checkpoint generations | — | as before |
+| `tm plan`, due 3 / 10 years out | 86.17 / 141.80 ms | `LATER_VERB` 1 s | inside |
+
+**This step adds nothing to any shipped path**, which is what §5's driven trace
+shows, so no row should have moved and none did beyond session noise.
+
+### Behaviour rows
+
+**None.** No shipped-path Rust, no wire value, no rendered text and no refusal
+changed.
+
+### Parity
+
+**No parity entry is taken or owed.** Nothing here is compared against the fork:
+the battery is a statement about the kernel's own output and the fork's planner
+has no corresponding object. Highest parity stays **P38**.
+
+**The fork oracle was not rebuilt and the `TM_ORACLE` census was not re-run**,
+said plainly: this step changes no Rust and no wire value, and both fork-anchored
+frozen arms (T5's 33 and the door's 23) ran green against
+`fork-4748911-*.jsonl`, which are the arms that would have caught a change.
+Provenance is not freshness (§7.3) and this block does not claim otherwise.
+
+### What was consumed rather than re-implemented (AGENTS §5.3)
+
+**The greps were run BEFORE anything was written**, and each is named with what
+it found:
+
+* `grep -rn "theorem pastRows_are_not\|theorem pastRows_" TmKernel/*.lean` → found
+  `pastRows_end_at_now`, `pastRows_are_not_walls`, `pastRows_are_not_wind_down`;
+  there is **no** `pastRows_are_not_batch` and no kind enumeration, so
+  `the_day_has_no_batch_row` does the case split once, in the shape
+  `a_wind_down_row_of_the_day` already uses, and **calls** the four existing
+  source lemmas (`interruptRows_are_open_lost_time`,
+  `wallRows_are_walls_of_the_item`, `stepTwoSegs_kinds`,
+  `reservationSegs_are_blocks`) rather than restating them;
+* `grep -rn "energyless\|energy = none\|_carries_no_energy" TmKernel/*.lean` →
+  found `PlanReq.activeRow_is_an_energyless_block`, which is what the reservation
+  branch uses;
+* `grep -rn "diagnostics.impossible\|Diagnostics.empty" TmKernel/*.lean` → found
+  `Planner.Diagnostics.empty` and `Planner.dayDiagnostics`, so
+  `the_day_names_no_impossible_item` is `rfl` and not a new computation;
+* `grep -rn "SegKind.batch" TmKernel/*.lean Check.lean Negative.lean Goals.lean` →
+  the only uses are `PlanCheck.batchDoesNotReachPast`'s match,
+  `PlannerWit.batchIt`'s mutation and `Goals.lean`'s statement; nothing claims the
+  day has none, which is why the theorem was owed;
+* `grep -rn "of the eleven\|of eleven\|of seven\|five of\|six of\|four of"
+  --include=*.lean --include=*.md kernel/` → the eight prose statements of the
+  ratio, every one of which was read and made to agree (§1).
+
+**CONSUMED, by name, and re-implemented NONE of them.** From `Planner.lean`:
+`dayPlan`, `dayPlan_segments`, `dayRows`, `mem_dayRows`, `pastRows`, `pastKind`,
+`pastRows_end_at_now`, `stepOneSegs`, `stepTwoSegs_kinds`,
+`interruptRows_are_open_lost_time`, `wallRows_are_walls_of_the_item`,
+`reservationSegs`, `reservationSegs_are_blocks`, `segOf`, `segOf_kind`,
+`segOf_item`, `clampSec`, `a_break_row_is_a_replayed_row`,
+`a_wind_down_row_of_the_day`, `PlanReq.mem_activeRow`,
+`PlanReq.activeRow_is_an_energyless_block`, `the_reservation_row_is_exact`,
+`assignedOf`, `assignedFrom`, `blockSeconds`, `SegKind.isWork`, `Seg`, `WfSeg`,
+`SegKind`, `BatchIds`, `Diagnostics.empty`, `dayDiagnostics`, `LogStamp.yearEnd`,
+`PlanReq.windDownSec`. From `PlanCheck.lean` (W-14's and W-17's):
+**all eleven checkers unchanged**, all eleven reflection lemmas, `planOk`,
+`planOkCore`, `checksCore`, `withoutActive`, `withoutPast`, `mem_withoutPast`,
+`a_block_row_from_now_is_the_reservation`,
+`dayPlan_block_rows_are_replayed_or_reserved`, `dayPlan_ok_core_from_now`,
+`mem_dom_of_get`. From `PlannerWit.lean`: `mkPlanReq?`,
+`mkPlanReq?_ok_wallsAgree`, `witLines`, `witInput`, `witInputIn`, `witInput_fields`,
+`witPrio`, `witReqIn`, `runOk`, `theRunningState`, `permissive`. From
+`Boundary.lean`: `loadPlan`, `loadsOk`, **`lookWallWitness`'s calendar line** and
+**`storedWitness`'s two task lines**, reused verbatim. From stage 5 and earlier:
+`Look.wallIndex`, `Look.wednesdayWall`, `Seal.resumeRun`, `Plan.effectiveCi`,
+`Plan.rootPrio`, `Cal.instantOf`, `Cal.chicago`, `Field.Shape`, `Field.Flag`,
+`Log.Line`, `Log.contiguousFrom`'s numbering.
+
+**Nothing new computes a window, a budget, a cut, an energy, an EDF number or a
+placement**, and **no new `def` was written at all** outside the witness data:
+the additions to `PlanCheck.lean` are **twelve theorems and no definition**.
+
+### D9-21, the recursion rule
+
+**Nothing new recurses over a wire-sized list.** `batchDoesNotReachPast_of_no
+_batch_row` and `impossibleKept_of_no_impossible` are `List.all_eq_true` over
+lists the existing checkers already walk; the census conjuncts are
+`List.filter`/`List.map` over one seven-row day; `midBreakLines` is a
+`take`/`drop`/`map` over a six-line literal. No `foldl` form and no `@[csimp]`
+twin is owed, and nothing on a shipped path evaluates any of it (§5).
+
+### The `decide` budget (AGENTS §5.10a)
+
+**Sixteen new `decide` witnesses, against §5.10a's budget of 20**, counted by
+grepping the diff and not from memory
+(`git diff -- …/PlannerWit.lean | grep -cE '^\+\s*decide$|:= by decide$'` → 14,
+of which 11 are theorem-level and 3 are inside `the_census_request_is_plain`'s
+store lookups; the remaining `by decide`s in that diff are `Fin` bounds inside
+literals and instant comparisons, which are not witnesses in §5.10a's sense;
+plus 2 in `Negative.lean`). **Zero in `PlanCheck.lean`** — its twelve theorems are
+proofs, not evaluations, which is the whole point of §1.
+
+Each was probed at `MemoryMax=8G` with `timeout` before it was committed; the
+module's own cost is measured above (**30.8–31.4 s, peak 4.31–4.62 GiB**) rather
+than assumed. None is `native_decide`; none evaluates a realistic input — every
+one is an equation about the one seven-row day a witness request produces, with
+instants written as `Cal.instantOf` of a literal clock and log lines spelled as
+character lists (the module header's rule).
+
+### What earlier decisions bought, re-measured on this tree and not assumed
+
+* **D28, `dayPlan` stays total.** `grep -n 'dayPlan?\|PlanRefusal'
+  TmKernel/TmKernel/*.lean` returns **two lines and both are the doc comment in
+  `Planner.lean` saying there is no such thing**. No gate was added; the battery
+  is still the object a theorem is **about**, and §1's four theorems are about it
+  too.
+* **D5, nothing narrowed.** No existing theorem's statement changed. The eleven
+  checkers are byte-identical to W-14's; both lifts are kept; the goal that left
+  was **refuted first**; three of §1's four theorems are strictly stronger than
+  the conjunct `dayPlan_ok_core` proves under `hnopast`, and the old view is a
+  projection of each.
+* **D34 honoured.** Nothing here derives a candidate fact inside the kernel; gaps
+  113, 114, 116 and 301's item 1 are untouched and whole.
+* **D9, ONE reader**; **D16, ONE writer.** This step touches **no `.rs` file at
+  all** (`git diff --name-only | grep -c '\.rs$'` → **0**), so neither grep could
+  have moved; both suites that would catch a move ran green.
+* **D21-D23, the instrument is anchored outside the tree.** T5's frozen arms and
+  the door ran green; `the_frozen_comparand_is_read_at_full_precision` passes **by
+  name**. No failing comparison was repaired by anything.
+* **D18, no memory bound raised.** 40G for builds and suites, 16G for binary
+  drives, 8G for every Lean probe. Nothing was retried uncapped.
+* No `sorry` outside `Goals.lean`, no new `axiom`, no `native_decide`, no
+  `partial def`, no `.toOption`, no Mathlib, no new dependency.
+  `lean-toolchain`, `Cargo.toml`, `lake-manifest.json` and `kernel/corpus/`
+  untouched.
+
+### Gaps
+
+**Closed: none outright.** Gap **650** is **restated and half answered** — see
+below — and gap **551**'s third item is corrected in place.
+
+#### Gap 750 (new; label W18G-a) — `PlannerWit.lean` costs 31 s and 4.6 GiB to elaborate, and the 8G probe cap is the ceiling
+
+1. **What is not done.** The module is not split, and nothing measures its cost
+   except this block. Measured at 8G with `timeout`: **20.87–22.17 s** at
+   `eb4150f`, **30.83–31.40 s** here, peak RSS **3.78–4.08 GiB → 4.31–4.62 GiB**.
+   W-17 recorded **13.6–14.0 s** for the same module, so it has more than doubled
+   in two runs.
+2. **Why.** Every witness in it is a closed `decide` over a day `Planner.dayPlan`
+   produces, and each new request adds a load, a resume, a lookahead and a day.
+   That is what makes them evidence (§4); it is also what makes them expensive.
+3. **What it costs.** It is **not** `check.sh`'s wall time — check 1 is a no-op on
+   a built tree and the measured bands above overlap — so the 10%-per-step rule
+   does not see it. It is paid on every cold build and by every agent probing at
+   `MemoryMax=8G` (§14.0 item 4), where the headroom is now ≈ 3.4 GiB. At this
+   growth rate a future step's probe is killed rather than slow, and **D18 forbids
+   raising the bound**.
+4. **Which step clears it.** Whoever adds the next request: either split the
+   module along its section boundaries (sections 1-8 are the P0-P3 witnesses,
+   9-13 are P4's and the census's) or state the next census by *applying* a
+   general theorem instead of evaluating a day. **P5**, which will add witnesses
+   of its own, is the natural place.
+
+#### Gap 751 (new; label W18G-b) — two goals are one line from a vacuous discharge, and the burn-down reads 9 rather than 7 by decision
+
+1. **What is not done.** `Goals.plan_respects_the_energy_filter` and
+   `Goals.plan_never_batches_past_an_equal_ci_candidate` are **not** discharged,
+   although each is `exact absurd …` away:
+   `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy` refutes the first's
+   `he : s.val.energy = some lvl` and `PlanCheck.the_day_has_no_batch_row` refutes
+   the second's `hk : s.val.kind = SegKind.batch ids`, for **every** `PlanReq`.
+2. **Why.** A discharge whose subject is empty is AGENTS §5.2's theorem that
+   compiles and means nothing, and §3.2's burn-down "is not a score". Design §6.4
+   gives both to **P5**, and `Goals.lean`'s own banner forbids a discharge before
+   the step lands. This is the same call P1, P2 and P3 made (gaps 347, 430, 551);
+   what is new is that the emptiness is proved rather than observed.
+3. **What it costs.** Check 7 would print **7** instead of 9 and two of the three
+   would be lies. It also means the burn-down is **not** a measure of how much of
+   §8.3 is established: three of the nine remaining goals
+   (these two and `plan_never_drops_an_impossible_item`) turn on rows no step has
+   placed, which the number cannot show.
+4. **Which step clears it.** **P5**, which places the energised Block and the
+   Batch row and must then prove both properly — and which will find §1's two
+   theorems failing to compile, which is the point of shipping them.
+
+#### Gap 752 (new; label W18G-c) — `plan_places_no_demanding_block_after_wind_down` carries no `hnowcal`, and cannot be closed either way here
+
+1. **What is not done.** The goal as `Goals.lean` writes it has hypotheses
+   `hb, hw, hbk, hwk, hi, hafter` and **no** `hnowcal : r.now.sec + 1 <
+   LogStamp.yearEnd`. `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down`
+   needs that hypothesis: without it, a request whose `now` sits on the horizon has
+   `clampSec r.now.sec = clampSec r.windDownSec = LogStamp.yearEnd - 1`, so the
+   reservation row's start **equals** the wind-down row's, `hafter` is satisfied,
+   and the conclusion `(effectiveCi …).val < 4` becomes a real obligation on the
+   running item's `ci`.
+2. **Why.** Whether that makes the goal **false** or merely unprovable-here turns
+   on whether `mkPlanReq?` can produce such a `now` at all, and **this step did not
+   determine it** — the decoder's bound on `Look.Today.now` was not traced. Saying
+   so is cheaper than guessing, and the same hypothesis is already carried by both
+   lifts and by `plan_never_moves_a_wall`, so the shape is settled either way.
+3. **What it costs.** The goal cannot be discharged (its subject is empty — §1)
+   *and* cannot be refuted (the witness is not known to exist), so it sits in
+   `Goals.lean` for a reason neither §3.1 item 3 nor §3.2 covers cleanly. A step
+   that restates it must add `hnowcal` or prove it unnecessary.
+4. **Which step clears it.** **P5**, when it places a Block into the evening; the
+   restatement should carry `hnowcal` as the wall law and the break law now do.
+
+#### Gap 753 (new; label W18G-d) — the two comparisons are the whole of what §6.1's lift still owes, and `eligibleAt` is still not written
+
+1. **What is not done.** `PlanCheck.dayPlan_ok_from_now_except_the_two
+   _comparisons` proves nine of the eleven; `monotoneInRank` and `hotBeforeQueue`
+   are missing, and §6.1's honest `dayPlan_ok` is still not **stateable** because
+   `Planner.eligibleAt` does not exist (gap **365**, unchanged).
+2. **Why.** `eligibleAt` is step 5's own filter and design §15 gives its body to
+   **P5**; the `∀ el` form is the unrestricted claim design §6.3 refutes and the
+   `∃ el` form is satisfied by the predicate that answers `false`.
+3. **What it costs.** The number "nine of eleven" is the honest one only if the
+   two vacuous conjuncts are counted honestly with it, which is why they are named
+   in the theorem's own doc comment and in gap 751. A reader who takes nine as
+   "nine laws established" is overcounting by two.
+4. **Which step clears it.** **P5** writes `eligibleAt` and **G1** states and
+   proves `dayPlan_ok`; this theorem is the shape it should take.
+
+#### Gap 650, RESTATED (not closed) — two of its four were request questions
+
+Gap 650 recorded four checkers that *"range over nothing on any day the planner
+can produce today"* and gave all four to a later step. **Two of the four were not
+step questions**: `wallsUnmoved` wanted a store holding the wall (W-17's repair
+found this and split it across two requests), and `noBlockOverABreak` wanted a
+**log with a break in it** — one line, no step. Both have subjects at
+`theCensusRequest`, and the ratio over all eleven there is **seven of eleven**.
+The four that remain — `energyFilterOk`, `noDemandingAfterWindDown`,
+`batchDoesNotReachPast`, `impossibleKept` — are now **proved** empty for every
+`PlanReq` rather than measured at a request, and each is a build-time wall its
+step must delete: **P5** for the first three (P7 would also do for the
+wind-down), **P8** for the fourth.
+
+#### Gap 551, CORRECTED in place
+
+Its items 1 and 2 stand: `PlanReq.todayCut.breaks` holds the cut's breaks and no
+`SegKind.brk` row of **them** is placed, and that is P5's `kept_breaks`. Its item
+3 — *"`Goals.plan_places_no_block_over_a_break` stays in `Goals.lean` … the break
+side of it is still vacuous over what the planner places"* — is **wrong as
+written and corrected here**: the goal's Break rows are the **log's**, not the
+cut's, so it was never vacuous in the way the item claimed, and the goal left at
+W-18 as a §3.1-item-3 discharge. What is still owed to P5 is the cut's breaks,
+which is a different sentence.
+
+**754-769 are free.**
+
+### Gaps left open, by name
+
+Everything W-17's repair left open stands. **Gap 365** (`eligibleAt` does not
+exist) and **gap 651** (the six block-side conjuncts are all about the
+reservation) are unchanged, and both are named above. **Gap 652** (`PlannerWit`'s
+witnesses cannot be driven, because `dayPlan` has no shipped caller) is unchanged
+and re-measured in §5 — the greps and the trace return exactly what W-17 recorded.
+**Gap 367**'s second half is still **P8**'s and `the_day_names_no_impossible_item`
+is now the theorem that says so. **Gaps 366, 368, 385, 396, 500, 501, 577, 584,
+630, 275, 570, 346, 347, 430, 604, 670, 671, 672, 686, 687, 688** stand.
+
+### Method disclosure
+
+Everything ran on the isolated worktree `.claude/worktrees/w18-g` (branch
+`w18-g`, from `eb4150f`), created with `git worktree add`. Its `.lake` was seeded
+by copying the main checkout's build directory at the same commit, to avoid a
+cold whole-kernel build; `check.sh` was then run there **before any edit** and
+printed **7/7 with 4,454 theorems, corpus 29/37 and 4/5, and burn-down 10**,
+which is the baseline this block compares against.
+
+**The main checkout was not touched.** It was clean at `eb4150f` when this
+worktree was cut; track P holds it for P5 and track A holds
+`.claude/worktrees/w18-a`. `.claude/worktrees/stage5-lookahead` is untouched.
+
+`check.sh` was run before any edit, after each of the three edit rounds, **six
+timed passes on the stashed baseline**, **six on this tree**, once after the three
+inversions were restored, and once more before the commit — **7/7 every time**,
+with the baseline passes printing the baseline's own numbers (4,454 theorems,
+burn-down 10) and the rest printing this step's.
+`cargo test --workspace --no-fail-fast` was run **once**, cleanly, with nothing
+else of this session running (W-17's interleaved-output correction is why that is
+said): **1,342 / 0 / 9 across 79**. `cli_latency` was run **three** times in
+release with every noisy row reported as all three readings and the machine state
+named.
+
+**The three inversions in §6 were applied, watched to fail, restored, and the
+tree re-verified green**; none is in any commit. Two of them (A and B) were run as
+full `lake build` passes, so the failures quoted are the build's own error lines.
+
+**What this block's method cannot see** (W-17's first lesson): §1's four theorems
+are proved by the row-source case split `Planner.mem_dayRows` gives, which covers
+every row `dayRows` can hold and **nothing else**. It is blind to any checker
+whose subject is not a row of the day — `noOverbook`'s arithmetic,
+`wallsUnmoved`'s store lookup and the two comparisons' id pairs — and those are
+exactly the ones this block answers with a *request* and a computed population
+instead, which is the other half of §1. It is also blind by construction to what a
+later step adds: nothing here can tell P5's author that his fold has broken the
+four, except the build failing, which is why they are theorems in a shipped module
+and not sentences here. And the ratio "seven of eleven" is a property of
+`theCensusRequest`, not of the planner: a different witness gives a different
+number, which is the whole reason the four that no witness can move are proved
+rather than counted.

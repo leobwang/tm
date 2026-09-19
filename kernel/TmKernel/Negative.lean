@@ -2341,9 +2341,12 @@ theorem theLiftHoldsOverTheReplayedPastToo :
    here — README gap 678), and
    `PlannerWit.the_battery_census_over_a_produced_day` computes it.  This block
    claims the day carries a Break row, which is what `noBlockOverABreak` would
-   need to be checking anything (`Planner.a_break_row_is_a_replayed_row`: the
-   cut's breaks reach the day only when work touches them, which is P5's
-   `kept_breaks`, README gap 551).  `decide` refuses — the list is empty. -/
+   need to be checking anything.  `decide` refuses — the list is empty, because
+   `witLines` records no `break`.  (This comment read "the cut's breaks reach the
+   day only when work touches them, which is P5's `kept_breaks`, README gap 551",
+   which is true of the CUT's breaks and was the wrong reason for THIS emptiness:
+   a `break` in the log reaches the day today, and CHEAT 202 is the same claim at
+   a request whose log holds one — W-18.) -/
 theorem theProducedDayCarriesABreakRow :
     ((Planner.dayPlan PlannerWit.theStoredRequest).segments.any
       (fun s => s.val.kind == Planner.SegKind.brk)) = true := by decide
@@ -2379,7 +2382,9 @@ theorem theWallRowIsInTheStoredRequestsStore :
 
 /- ===========================================================================
    APPENDED 2026-09-18, stage 6 run W-18, track P, step P5a (AGENTS 6.2).
-   The wire carries section 8.2 step 5's nine (README gap 606).  Cheats 193-197.
+   The wire carries section 8.2 step 5's nine (README gap 606).  Cheats 193-200.
+   (This line read "193-197"; P5b-i added 198-200 and did not move it.  Corrected
+   by W-18's land step -- README gap 772.)
    =========================================================================== -/
 
 /- CHEAT 193 — the nine claimed to reach the kernel WITHOUT the host sending
@@ -2466,5 +2471,39 @@ theorem anyCapAtAllDropsTheCandidate :
 theorem wallTodayIsReadOfEveryCandidate :
     PlannerWit.rankedIds (PlannerWit.withFactsAt PlannerWit.theRankingRequest 4
       PlannerWit.todaysWallFacts) ≠ PlannerWit.rankedIds PlannerWit.theRankingRequest := by decide
+
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-18, track G (AGENTS 6.2).
+   The break law refuted, and gap 650's measured emptiness given its real
+   reason (README gap 650).  Cheats 201-202.
+
+   RENUMBERED BY THE MERGE (AGENTS 6.2, 6.5 item 1): track G wrote these as
+   193 and 194 on a branch from `eb4150f`, where 192 was the highest.  Track P
+   branched from the same commit and landed 193-200 first, so both tracks
+   started at 193 -- the second time in two runs (W-17's gap 671).  Every
+   citation of track G's 193/194, in Lean and in prose, moved with them. -/
+/- CHEAT 201 — `noBlockOverABreak` asserted to hold on a day whose log records a
+   `break` while a block is running.  Every Break row of the day is a replayed
+   one (`Planner.a_break_row_is_a_replayed_row`) and so is every Block row the
+   planner did not reserve, so a log with a break at 07:30 inside `m1`'s
+   07:05-08:05 block gives the day a Break row INSIDE a Block row — which is why
+   `Goals.plan_places_no_block_over_a_break` was false as stage 6 wrote it
+   (W-18, README gap 385's third instance).  This block claims the checker says
+   `true` there.  `decide` refuses: it says `false`, and so does `planOkCore`. -/
+theorem theMidBreakDayKeepsItsBlocksOffTheBreak :
+    PlanCheck.noBlockOverABreak PlannerWit.theMidBreakRequest
+      (Planner.dayPlan PlannerWit.theMidBreakRequest) = true := by decide
+
+/- CHEAT 202 — `noBlockOverABreak` asserted to range over nothing at the census
+   request, which is what README gap 650 claimed of it until W-18: it gave the
+   checker's emptiness to **P5**, on the reasoning that the cut's breaks reach
+   the day only when work touches them (`kept_breaks`, gap 551).  That is true of
+   the CUT's breaks and says nothing about the LOG's.  `censusLines` is
+   `witLines` with one `break` line appended, and the day the planner produces
+   carries the Break row it makes.  This block claims there is no such row.
+   `decide` refuses: there is exactly one. -/
+theorem theCensusDayHasNoBreakRow :
+    (Planner.dayPlan PlannerWit.theCensusRequest).segments.filter
+      (fun s => s.val.kind == Planner.SegKind.brk) = [] := by decide
 
 end Tm
