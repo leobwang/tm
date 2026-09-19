@@ -3161,5 +3161,447 @@ theorem the_one_id_store_gives_neither_comparison_a_subject :
       hotSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] := by
   decide
 
+/-! ############################################################################
+## 17. §8.2 step 6, run rather than argued (stage 6 step P6, AGENTS §5.2)
+
+**The first request in this repository that carries a window instance.**  Every `PlanReq` above
+has `routines := []` (`the_witness_carries_no_routine`), so until now §8.2 step 2's placement
+fold and every law about it ranged over an empty list, and step 6 had nothing at all.  This
+section builds the day W-15's P2 and this step's P6 are about and computes what each does to it.
+
+**The day.**  §4.3's Wednesday at 14:00, the same calendar wall, plus a `routines.md` of three
+lines.  Two instances are sent: `warmup`, **mandatory**, 16:00–17:00 for 60 minutes, which step
+2 places at the earliest feasible position — 16:00; and `stretch`, not mandatory and with no
+`pref:` anchor, 14:00–19:00 for 30 minutes, which step 2 therefore **defers** (`deferred :=
+true`, no position).  That leaves the afternoon in two free stretches, 14:00–16:00 and
+17:00–19:00, and their starts are at **different energies** — 4 and 2 — which is what makes the
+rule under test the only thing that decides.
+
+**What the four theorems isolate.**
+* the earliest rule and the lowest-energy rule **disagree at these very arguments**:
+  `Planner.earliestFree` answers 14:00 and `Planner.PlanReq.lowestFree` answers 17:00, so the
+  end-to-end placement at 17:00–17:30 is step 6's rule and not step 2's leaking through;
+* a **tie** on energy goes to the earlier position, computed at two stretches whose starts are
+  both at energy 3;
+* **one field differs** — the instance's `durMin`, 30 minutes against 150 — and the day that had
+  room has none, so the instance ends in `Planner.Note.noPosition` instead of on the timeline;
+* an instance whose window has **closed** (a `win:11:30-13:30` line carried into the afternoon,
+  whose span comes back inverted) is passed over and is **not** reported — §5.3's expiry is not
+  a placement failure, and the note list stays empty.
+
+**The displacement is witnessed at its own arguments and not through a request, and README gap
+903 says why**: no `PlanReq` reaches `Planner.PlanReq.displaceInto`, because step 2 places a
+mandatory instance wherever a stretch as wide as it is free, and a slot wide enough inside its
+window is exactly such a stretch.  The three victim theorems and the re-placement theorem
+therefore feed the functions directly — which is what gives them a subject at all (README gap
+875's lesson). -/
+
+/-- §4.3's Wednesday calendar, and a `routines.md` of three lines: one mandatory anchor, one
+that will be deferred, and one whose daily hours closed this morning. -/
+def routineWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"routines.md", none,
+     ["- warmup win:16:00-17:00 dur:60m every:day".toList,
+      "- stretch win:14:00-19:00 dur:30m every:day".toList,
+      "- lapsed win:11:30-13:30 dur:30m every:day".toList]⟩]
+
+set_option maxRecDepth 100000 in
+theorem the_routine_witness_loads : loadsOk routineWitness = true := by decide
+
+/-- The loaded plan.  Total by `the_routine_witness_loads`: the error branch is refuted, not
+defaulted (`Boundary.lookWallPlan`'s pattern). -/
+def routinePlan : WfPlan :=
+  match h : loadPlan routineWitness with
+  | .ok p => p
+  | .error _ => absurd the_routine_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 100000 in
+/-- **Three routine lines and the meeting, and the calendar still indexes exactly the one wall**
+— so this request's `PlanReq.wallsAgree` is the one `theRequest` has, and a `win:` line is not
+a wall. -/
+theorem the_routine_witness_holds_three_routines_and_the_wall :
+    routinePlan.val.store.dom
+        = [['l','a','p','s','e','d'], ['s','t','r','e','t','c','h'], ['w','a','r','m','u','p'],
+           ['g','1']] ∧
+      Look.wallIndex Cal.chicago 60 routinePlan.val = Look.wednesdayWall := by
+  refine ⟨by decide, by decide⟩
+
+/-- `loadsOk`'s shape for `Planner.mkRoutines?`. -/
+def routinesOk (p : PlanCore) (xs : List RoutineIn) : Bool :=
+  match mkRoutines? p xs with | .ok _ => true | .error _ => false
+
+/-- The two instances the host sends: the mandatory anchor and the one that will be deferred. -/
+def routineIns : List RoutineIn :=
+  [⟨['w','a','r','m','u','p'], none, (Cal.instantOf Cal.chicago 739867 960).sec,
+      (Cal.instantOf Cal.chicago 739867 1020).sec, 60, true⟩,
+   ⟨['s','t','r','e','t','c','h'], none, (Cal.instantOf Cal.chicago 739867 840).sec,
+      (Cal.instantOf Cal.chicago 739867 1140).sec, 30, false⟩]
+
+set_option maxRecDepth 100000 in
+/-- **R10 accepts both** — each names an item its plan holds, each declares a window, neither is
+empty and neither is past the horizon (`Planner.mkRoutine?`'s five refusals, none of them
+fired). -/
+theorem the_routine_instances_are_accepted : routinesOk routinePlan.val routineIns = true := by
+  decide
+
+/-- The bounded list, as the decoder built it. -/
+def routineCap : Capped RoutineIn :=
+  match h : mkRoutines? routinePlan.val routineIns with
+  | .ok c => c
+  | .error _ => absurd the_routine_instances_are_accepted (by simp [routinesOk, h])
+
+/-- §4.3's Wednesday at 14:00 with two window instances on it. -/
+def theRoutineRequest : PlanReq := { theRequest with plan := routinePlan, routines := routineCap }
+
+set_option maxRecDepth 100000 in
+/-- **Step 2, computed** — the mandatory instance takes the earliest feasible position inside
+its own window and the other is deferred to step 6 with no position at all.  This is the
+subject `Planner.a_placed_routine_is_inside_its_window` and every other step-two law has never
+had. -/
+theorem the_mandatory_routine_is_placed_and_the_other_is_deferred :
+    theRoutineRequest.placedRoutines.map (fun q => (q.inst.id, q.placedAt, q.deferred))
+      = [(['w','a','r','m','u','p'],
+          some ((Cal.instantOf Cal.chicago 739867 960).sec,
+                (Cal.instantOf Cal.chicago 739867 1020).sec), false),
+         (['s','t','r','e','t','c','h'], none, true)] := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **The two stretches the deferred instance may take, and their energies** — 14:00 at level 4
+and 17:00 at level 2, so the rule under test is the only thing that can decide between them. -/
+theorem the_deferred_windows_two_stretches_are_at_different_energies :
+    Look.freeIntervals (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec
+        [((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec)]
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec,
+          (Cal.instantOf Cal.chicago 739867 1140).sec)] ∧
+    (Look.todayEnergy theRoutineRequest.look
+        ⟨(Cal.instantOf Cal.chicago 739867 840).sec, 0⟩).val = 4 ∧
+    (Look.todayEnergy theRoutineRequest.look
+        ⟨(Cal.instantOf Cal.chicago 739867 1020).sec, 0⟩).val = 2 := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The two rules disagree at these very arguments.**  Step 2's `Planner.earliestFree` answers
+14:00; step 6's `Planner.PlanReq.lowestFree` answers 17:00, two hours later and two levels
+lower.  Without this pair the end-to-end placement below would be consistent with step 6 having
+no rule of its own. -/
+theorem the_lowest_energy_rule_and_the_earliest_rule_disagree_here :
+    theRoutineRequest.lowestFree
+        [((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec)]
+        (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 1800
+      = some (Cal.instantOf Cal.chicago 739867 1020).sec ∧
+    earliestFree (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 1800
+        [((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec)]
+      = some (Cal.instantOf Cal.chicago 739867 840).sec := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And a tie goes to the earlier position** — design §2's choice 6's own parenthesis.  Both
+stretches here start at level 3, so the energy decides nothing and the second key does. -/
+theorem a_tie_on_energy_goes_to_the_earlier_position :
+    (Look.todayEnergy theRoutineRequest.look
+        ⟨(Cal.instantOf Cal.chicago 739867 860).sec, 0⟩).val = 3 ∧
+    (Look.todayEnergy theRoutineRequest.look
+        ⟨(Cal.instantOf Cal.chicago 739867 960).sec, 0⟩).val = 3 ∧
+    theRoutineRequest.lowestFree
+        [((Cal.instantOf Cal.chicago 739867 900).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec)]
+        (Cal.instantOf Cal.chicago 739867 860).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 1800
+      = some (Cal.instantOf Cal.chicago 739867 860).sec := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **End to end: the routine that missed its window gets a place.**  `warmup` is where step 2
+put it and step 6 did not move it; `stretch` is at 17:00–17:30, marked `deferred`, and nothing
+is owed to the notes. -/
+theorem the_deferred_routine_takes_the_lowest_energy_position :
+    theRoutineRequest.finalRoutines.map (fun q => (q.inst.id, q.placedAt, q.deferred))
+      = [(['w','a','r','m','u','p'],
+          some ((Cal.instantOf Cal.chicago 739867 960).sec,
+                (Cal.instantOf Cal.chicago 739867 1020).sec), false),
+         (['s','t','r','e','t','c','h'],
+          some ((Cal.instantOf Cal.chicago 739867 1020).sec,
+                (Cal.instantOf Cal.chicago 739867 1050).sec), true)] ∧
+    theRoutineRequest.noPositionNotes = [] := by
+  refine ⟨by decide, by decide⟩
+
+/-- The same two instances, with **one field changed**: `stretch` asks for 150 minutes and not
+for 30.  Neither free stretch is that wide. -/
+def crowdedIns : List RoutineIn :=
+  [⟨['w','a','r','m','u','p'], none, (Cal.instantOf Cal.chicago 739867 960).sec,
+      (Cal.instantOf Cal.chicago 739867 1020).sec, 60, true⟩,
+   ⟨['s','t','r','e','t','c','h'], none, (Cal.instantOf Cal.chicago 739867 840).sec,
+      (Cal.instantOf Cal.chicago 739867 1140).sec, 150, false⟩]
+
+set_option maxRecDepth 100000 in
+theorem the_crowded_instances_are_accepted : routinesOk routinePlan.val crowdedIns = true := by
+  decide
+
+def crowdedCap : Capped RoutineIn :=
+  match h : mkRoutines? routinePlan.val crowdedIns with
+  | .ok c => c
+  | .error _ => absurd the_crowded_instances_are_accepted (by simp [routinesOk, h])
+
+def theCrowdedRequest : PlanReq := { theRoutineRequest with routines := crowdedCap }
+
+set_option maxRecDepth 100000 in
+/-- **A day with no room says so** — fork `run()`'s un-placed note (`planner.rs:1046`), *"a day
+that quietly loses lunch is a day no monitor can see"*.  The only difference from the request
+above is the minutes asked for. -/
+theorem an_instance_with_no_room_is_named_in_the_notes :
+    theCrowdedRequest.finalRoutines.map (fun q => (q.inst.id, q.placedAt))
+      = [(['w','a','r','m','u','p'],
+          some ((Cal.instantOf Cal.chicago 739867 960).sec,
+                (Cal.instantOf Cal.chicago 739867 1020).sec)),
+         (['s','t','r','e','t','c','h'], none)] ∧
+    theCrowdedRequest.noPositionNotes
+      = [Note.noPosition ['s','t','r','e','t','c','h'] 150
+           (Cal.instantOf Cal.chicago 739867 840).sec
+           (Cal.instantOf Cal.chicago 739867 1140).sec] := by
+  refine ⟨by decide, by decide⟩
+
+/-- The mandatory anchor and a **carried** instance whose line's daily hours are 11:30–13:30:
+its span comes back inverted, which is §5.3's expiry. -/
+def lapsedIns : List RoutineIn :=
+  [⟨['w','a','r','m','u','p'], none, (Cal.instantOf Cal.chicago 739867 960).sec,
+      (Cal.instantOf Cal.chicago 739867 1020).sec, 60, true⟩,
+   ⟨['l','a','p','s','e','d'], none, (Cal.instantOf Cal.chicago 739867 900).sec,
+      (Cal.instantOf Cal.chicago 739867 960).sec, 30, false⟩]
+
+set_option maxRecDepth 100000 in
+theorem the_lapsed_instances_are_accepted : routinesOk routinePlan.val lapsedIns = true := by
+  decide
+
+def lapsedCap : Capped RoutineIn :=
+  match h : mkRoutines? routinePlan.val lapsedIns with
+  | .ok c => c
+  | .error _ => absurd the_lapsed_instances_are_accepted (by simp [routinesOk, h])
+
+def theLapsedRequest : PlanReq := { theRoutineRequest with routines := lapsedCap }
+
+set_option maxRecDepth 100000 in
+/-- **A window that has closed is passed over and is not reported.**  The span really is
+inverted — 15:00 to 13:30 — and `Planner.PlanReq.deferOne_places_nothing_in_a_closed_window` is
+the theorem that says nothing is squeezed into it; this is the request where that theorem's
+hypothesis holds, and the empty note list is the other half: an expired chance is not a
+placement failure. -/
+theorem an_instance_whose_window_has_closed_is_passed_over_and_not_reported :
+    theLapsedRequest.routineInstances.map (fun q => (q.inst.id, q.span))
+      = [(['w','a','r','m','u','p'],
+          ((Cal.instantOf Cal.chicago 739867 960).sec,
+           (Cal.instantOf Cal.chicago 739867 1020).sec)),
+         (['l','a','p','s','e','d'],
+          ((Cal.instantOf Cal.chicago 739867 900).sec,
+           (Cal.instantOf Cal.chicago 739867 810).sec))] ∧
+    theLapsedRequest.finalRoutines.map (fun q => (q.inst.id, q.placedAt))
+      = [(['w','a','r','m','u','p'],
+          some ((Cal.instantOf Cal.chicago 739867 960).sec,
+                (Cal.instantOf Cal.chicago 739867 1020).sec)),
+         (['l','a','p','s','e','d'], none)] ∧
+    theLapsedRequest.noPositionNotes = [] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! ### The displacement, at its own arguments (README gap 903)
+
+`Planner.PlanReq.victimSlot`, `Planner.unspend` and `Planner.PlanReq.rePlaceWalk` are ported
+from fork `place_deferred`'s last paragraph and **no request reaches them** — the argument is in
+this section's header and in README gap 903.  A definition no input reaches is a definition no
+mutation can break (README gap 875's lesson, from the other side), so each is computed here at
+its own arguments over the day `theRequest` really produces: four slots at levels **3, 3, 2,
+2**. -/
+
+/-- A day whose four slots all went to a group, in the cursor's own vector shape. -/
+def theFullDay : Assign := ⟨[some 0, some 1, some 2, some 3], [], 4⟩
+
+set_option maxRecDepth 100000 in
+/-- **The victim is the lowest-energy assigned slot, and the latest of those** — fork
+`place_deferred`'s own comparator (`planner.rs:1682`), each key isolated.  Over the whole afternoon
+the answer is slot **3** (level 2, the later of the two); restricted to the window that ends at
+16:20 only the two level-3 slots remain and the answer is slot **1**, the later of *those*;
+restricted to a window that starts at 15:00 slot 0 drops out and the answer is 3 again;
+restricted to one that ends at 18:00 slot 3 drops out and the answer is **2**; asked for 90
+minutes nothing is wide enough; and with a single slot assigned the answer is that slot whatever
+its energy. -/
+theorem the_victim_is_the_lowest_energy_slot_and_the_latest_of_those :
+    theRequest.energisedSlots.map (fun p => p.1.val) = [3, 3, 2, 2] ∧
+    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 3 ∧
+    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 980).sec 3600 = some 1 ∧
+    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 900).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 3 ∧
+    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1080).sec 3600 = some 2 ∧
+    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 5400 = none ∧
+    theRequest.victimSlot ⟨[some 0, none, none, none], [], 1⟩
+        (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 0 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The restore is exact and local** — fork `groups[gi].left_min += slots[vi].minutes()`.  The
+cursor's own day at `theCursorRequest` leaves group 0 with 60 minutes spent against a 60-minute
+commitment; giving that slot back takes it to 0 and leaves the other three untouched. -/
+theorem the_restore_lowers_one_groups_spent_and_touches_no_other :
+    theCursorRequest.assignFold.groups.map (fun g => (g.commitMin, g.spent))
+      = [(60, 60), (60, 0), (60, 0), (240, 180)] ∧
+    (unspend 0 60 theCursorRequest.assignFold.groups).map (fun g => (g.commitMin, g.spent))
+      = [(60, 0), (60, 0), (60, 0), (240, 180)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The re-placement is the cursor stopped at its first success**, and here is the difference
+computed: from the same empty start, `Planner.PlanReq.assignFold` fills all four slots and
+`Planner.PlanReq.rePlaceWalk` fills exactly **one**.  Started after the first slot it fills the
+second and stops there — which is fork `place_deferred`'s `break` and the whole of why the
+re-placement is not simply the fold run again. -/
+theorem the_re_placement_fills_one_slot_where_the_cursor_fills_four :
+    theCursorRequest.assignFold.slotOf = [some 0, some 3, some 3, some 3] ∧
+    (theCursorRequest.rePlaceWalk (remainingBudget theCursorRequest)
+        theCursorRequest.assignStart theCursorRequest.energisedSlots.zipIdx).slotOf
+      = [some 0, none, none, none] ∧
+    (theCursorRequest.rePlaceWalk (remainingBudget theCursorRequest)
+        theCursorRequest.assignStart (theCursorRequest.energisedSlots.zipIdx.drop 1)).slotOf
+      = [none, some 0, none, none] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! ### Step 6 against a day the cursor filled
+
+The requests above carry no candidate, so `Planner.PlanReq.assignFold` assigns nothing and both
+`Planner.PlanReq.assignedSpans` and `Planner.PlanReq.keptBreaksToday` are empty — which would
+make two of this step's definitions unfalsifiable here.  This request is the same afternoon with
+§8.2 step 5's own four candidates on it (`witCursorCands`), and it is the one where the day runs
+out of room: the cursor takes all four slots, the break the morning's log made the cut insert is
+**kept** because work touches it, and the 20 minutes before the first slot are the only free
+time left — which is the break, so `stretch` has nowhere to go and is named in the notes. -/
+
+def busyIns : List RoutineIn :=
+  [⟨['w','a','r','m','u','p'], none, (Cal.instantOf Cal.chicago 739867 960).sec,
+      (Cal.instantOf Cal.chicago 739867 1020).sec, 60, true⟩,
+   ⟨['s','t','r','e','t','c','h'], none, (Cal.instantOf Cal.chicago 739867 840).sec,
+      (Cal.instantOf Cal.chicago 739867 1140).sec, 20, false⟩]
+
+set_option maxRecDepth 100000 in
+theorem the_busy_instances_are_accepted : routinesOk routinePlan.val busyIns = true := by decide
+
+def busyCap : Capped RoutineIn :=
+  match h : mkRoutines? routinePlan.val busyIns with
+  | .ok c => c
+  | .error _ => absurd the_busy_instances_are_accepted (by simp [routinesOk, h])
+
+def busyCands : Capped (Look.Cand × Option Look.Floor) := ⟨witCursorCands, by decide⟩
+
+/-- The routine day with §8.2 step 5's four candidates on it. -/
+def theBusyRequest : PlanReq :=
+  { theRoutineRequest with cands := busyCands, routines := busyCap }
+
+set_option maxRecDepth 100000 in
+/-- **A day the cursor filled has nothing left for the routine that missed its window.**  The
+four slots go to groups 0 and 3; their spans are what
+`Planner.PlanReq.assignedSpans` reports; the 14:00–14:20 break is **kept**, because the slot
+that starts at 14:20 touches it; and between them they cover every second of the window, so
+`stretch` gets no position and is named. -/
+theorem a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go :
+    theBusyRequest.assignFold.slotOf = [some 0, some 3, some 3, some 3] ∧
+    theBusyRequest.assignedSpans theBusyRequest.assignFold
+      = [((Cal.instantOf Cal.chicago 739867 860).sec,
+          (Cal.instantOf Cal.chicago 739867 920).sec),
+         ((Cal.instantOf Cal.chicago 739867 920).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec,
+          (Cal.instantOf Cal.chicago 739867 1080).sec),
+         ((Cal.instantOf Cal.chicago 739867 1080).sec,
+          (Cal.instantOf Cal.chicago 739867 1140).sec)] ∧
+    theBusyRequest.keptBreaksToday
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 860).sec)] ∧
+    Look.freeIntervals (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec
+        (theBusyRequest.occupiedNow theBusyRequest.placedRoutines theBusyRequest.assignFold ++
+          theBusyRequest.keptBreaksToday ++ [theBusyRequest.night]) = [] ∧
+    theBusyRequest.finalRoutines.map (fun q => (q.inst.id, q.placedAt))
+      = [(['w','a','r','m','u','p'],
+          some ((Cal.instantOf Cal.chicago 739867 960).sec,
+                (Cal.instantOf Cal.chicago 739867 1020).sec)),
+         (['s','t','r','e','t','c','h'], none)] ∧
+    theBusyRequest.noPositionNotes
+      = [Note.noPosition ['s','t','r','e','t','c','h'] 20
+           (Cal.instantOf Cal.chicago 739867 840).sec
+           (Cal.instantOf Cal.chicago 739867 1140).sec] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And each of the two halves is what does it.**  Take the kept break out and the 20 minutes
+before the first slot are free — exactly the 20 this instance asks for, so it would be placed
+*on the break*.  Take the filled slots out — `Planner.PlanReq.occupiedNow` at the *start* of the
+cursor's walk rather than at its end — and two stretches of the afternoon are free and the
+instance would take the lower-energy one.  Neither is a hypothetical the day avoids by luck. -/
+theorem the_kept_break_and_the_filled_slots_are_each_what_leaves_no_room :
+    Look.freeIntervals (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec
+        (theBusyRequest.occupiedNow theBusyRequest.placedRoutines theBusyRequest.assignFold ++
+          [theBusyRequest.night])
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 860).sec)] ∧
+    theBusyRequest.lowestFree
+        (theBusyRequest.occupiedNow theBusyRequest.placedRoutines theBusyRequest.assignFold ++
+          [theBusyRequest.night])
+        (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 1200
+      = some (Cal.instantOf Cal.chicago 739867 840).sec ∧
+    Look.freeIntervals (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec
+        (theBusyRequest.occupiedNow theBusyRequest.placedRoutines theBusyRequest.assignStart ++
+          theBusyRequest.keptBreaksToday ++ [theBusyRequest.night])
+      = [((Cal.instantOf Cal.chicago 739867 860).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec,
+          (Cal.instantOf Cal.chicago 739867 1140).sec)] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-- An instance with nothing on it but the minutes it asks for: the displacement below reads
+only those, and never anything else about the routine. -/
+def aBareInstance : Placed := ⟨⟨['x'], none, 0, 1, 30, false⟩, (0, 1), none, false⟩
+
+/-- §8.2 step 5's second slot at `theCursorRequest`, written out. -/
+def theSecondSlot : Look.Slot :=
+  ⟨(Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
+   Look.SlotKind.block⟩
+
+set_option maxRecDepth 100000 in
+/-- **The displacement, computed at its own arguments** (README gap 903: no request reaches it).
+The cursor's day at `theCursorRequest` gives all four slots away and spends four blocks; taking
+the second slot back frees exactly that entry, gives the group that held it its 60 minutes back
+— 180 spent becomes 120, and no other group moves — costs the day one block, and puts the
+instance at the slot's own start for the minutes it asked for.  The re-placement finds nothing,
+because every later slot is still taken; `the_re_placement_fills_one_slot_where_the_cursor_fills_four`
+is the half where it does fire. -/
+theorem the_displacement_frees_one_slot_and_gives_its_minutes_back :
+    theCursorRequest.assignFold.used = 4 ∧
+    (theCursorRequest.displaceInto (remainingBudget theCursorRequest)
+        theCursorRequest.assignFold aBareInstance 1 theSecondSlot).2.slotOf
+      = [some 0, none, some 3, some 3] ∧
+    (theCursorRequest.displaceInto (remainingBudget theCursorRequest)
+        theCursorRequest.assignFold aBareInstance 1 theSecondSlot).2.used = 3 ∧
+    (theCursorRequest.displaceInto (remainingBudget theCursorRequest)
+        theCursorRequest.assignFold aBareInstance 1 theSecondSlot).2.groups.map
+        (fun g => (g.commitMin, g.spent)) = [(60, 60), (60, 0), (60, 0), (240, 120)] ∧
+    (theCursorRequest.displaceInto (remainingBudget theCursorRequest)
+        theCursorRequest.assignFold aBareInstance 1 theSecondSlot).1.placedAt
+      = some ((Cal.instantOf Cal.chicago 739867 920).sec,
+              (Cal.instantOf Cal.chicago 739867 950).sec) := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
 end PlannerWit
 end Tm

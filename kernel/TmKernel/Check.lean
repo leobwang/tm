@@ -5899,3 +5899,85 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_gather_reads_each_of_its_five_clauses
 #print axioms Tm.PlannerWit.the_two_comparisons_hold_at_the_reserved_day
 #print axioms Tm.PlannerWit.the_two_comparison_lift_applies_at_the_reserved_day
+
+-- ===========================================================================
+-- APPENDED 2026-09-19 (stage 6, run **W-20**, track P, step **P6** -- §8.2
+-- step 6, the routines that missed their window).
+--
+-- `freeStretch_gives_a_position` and `earliestFree_from_a_stretch` are a
+-- REFACTOR, not new content: step 2's `earliestFree_inside` and
+-- `earliestFree_is_free` (audited above, statements unchanged) and step 6's
+-- `PlanReq.lowestFree_inside` are now one lemma at two choices of stretch.
+--
+-- `leastBy` is `Replay.lastMax?` with its replacing relation turned round, so
+-- `leastBy_spec` is `Replay.lastMax?_spec` at `flip_trans`/`flip_skip`; the two
+-- orders it is taken in are `Seal.lexLt Seal.natLt _`, with `Seal.natLt` and
+-- `Seal.lexLt_strictTotal` doing the work.  Nothing here is a second fold,
+-- a second free-interval walk, a second energy reader or a second picker:
+-- `PlanReq.rePlaceWalk` calls `PlanReq.assignStep`, step 5's own body.
+--
+-- `PlanReq.deferOne_cases` is the section's one case split (the shape
+-- `PlanReq.assignStep_cases` set at P5b): nothing else unfolds the loop body.
+--
+-- `a_deferred_routine_is_inside_its_window` is step 2's own law restated over
+-- step 6's output, and `PlanReq.deferOne_places_nothing_in_a_closed_window` is
+-- README gap 285's family -- an occurrence whose span has closed is passed
+-- over, never squeezed in.
+-- ===========================================================================
+#print axioms Tm.Planner.freeStretch_gives_a_position
+#print axioms Tm.Planner.earliestFree_from_a_stretch
+#print axioms Tm.Planner.flip_trans
+#print axioms Tm.Planner.flip_skip
+#print axioms Tm.Planner.leastBy_spec
+#print axioms Tm.Planner.posLt_strictTotal
+#print axioms Tm.Planner.victimLt_strictTotal
+#print axioms Tm.Planner.PlanReq.lowestFree_from_a_stretch
+#print axioms Tm.Planner.PlanReq.lowestFree_inside
+#print axioms Tm.Planner.unspend_keeps_the_group
+#print axioms Tm.Planner.unspend_length
+#print axioms Tm.Planner.PlanReq.victimSlot_spec
+#print axioms Tm.Planner.PlanReq.energised_slot_is_a_slot
+#print axioms Tm.Planner.PlanReq.deferOne_cases
+#print axioms Tm.Planner.PlanReq.deferOne_keeps_a_placed_routine
+#print axioms Tm.Planner.PlanReq.deferOne_places_nothing_in_a_closed_window
+#print axioms Tm.Planner.placeAt_PlacedOk
+#print axioms Tm.Planner.PlanReq.deferOne_keeps_PlacedOk
+#print axioms Tm.Planner.PlanReq.a_light_deferred_instance_stays_out_of_the_evening
+#print axioms Tm.Planner.PlanReq.rePlaceWalk_lengths
+#print axioms Tm.Planner.PlanReq.rePlaceWalk_used
+#print axioms Tm.Planner.PlanReq.displaceInto_lengths
+#print axioms Tm.Planner.PlanReq.displaceInto_used
+#print axioms Tm.Planner.PlanReq.deferOne_lengths
+#print axioms Tm.Planner.PlanReq.deferOne_used
+#print axioms Tm.Planner.PlanReq.deferWalk_keeps_PlacedOk
+#print axioms Tm.Planner.PlanReq.deferWalk_lengths
+#print axioms Tm.Planner.PlanReq.deferWalk_used
+#print axioms Tm.Planner.a_deferred_routine_is_inside_its_window
+#print axioms Tm.Planner.the_deferred_pass_keeps_the_assignments_shape
+#print axioms Tm.Planner.the_deferred_pass_stays_inside_the_budget
+
+-- APPENDED 2026-09-19 (stage 6, run **W-20**, track P, step **P6** -- the
+-- witnesses).  `theRoutineRequest` is the FIRST request in this repository
+-- that carries a window instance, so these are also the first computed subject
+-- §8.2 step 2's placement fold has ever had.  The displacement's three
+-- (`victimSlot`, `unspend`, `rePlaceWalk`) are computed at their own arguments
+-- because no request reaches them -- README gap 903.
+#print axioms Tm.PlannerWit.the_routine_witness_loads
+#print axioms Tm.PlannerWit.the_routine_witness_holds_three_routines_and_the_wall
+#print axioms Tm.PlannerWit.the_routine_instances_are_accepted
+#print axioms Tm.PlannerWit.the_mandatory_routine_is_placed_and_the_other_is_deferred
+#print axioms Tm.PlannerWit.the_deferred_windows_two_stretches_are_at_different_energies
+#print axioms Tm.PlannerWit.the_lowest_energy_rule_and_the_earliest_rule_disagree_here
+#print axioms Tm.PlannerWit.a_tie_on_energy_goes_to_the_earlier_position
+#print axioms Tm.PlannerWit.the_deferred_routine_takes_the_lowest_energy_position
+#print axioms Tm.PlannerWit.the_crowded_instances_are_accepted
+#print axioms Tm.PlannerWit.an_instance_with_no_room_is_named_in_the_notes
+#print axioms Tm.PlannerWit.the_lapsed_instances_are_accepted
+#print axioms Tm.PlannerWit.an_instance_whose_window_has_closed_is_passed_over_and_not_reported
+#print axioms Tm.PlannerWit.the_victim_is_the_lowest_energy_slot_and_the_latest_of_those
+#print axioms Tm.PlannerWit.the_restore_lowers_one_groups_spent_and_touches_no_other
+#print axioms Tm.PlannerWit.the_re_placement_fills_one_slot_where_the_cursor_fills_four
+#print axioms Tm.PlannerWit.the_busy_instances_are_accepted
+#print axioms Tm.PlannerWit.a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+#print axioms Tm.PlannerWit.the_kept_break_and_the_filled_slots_are_each_what_leaves_no_room
+#print axioms Tm.PlannerWit.the_displacement_frees_one_slot_and_gives_its_minutes_back

@@ -1545,48 +1545,56 @@ first stretch wide enough, and not a second walk (AGENTS §5.3, design §1.2). -
 def earliestFree (lo hi durSec : Nat) (ws : List (Nat × Nat)) : Option Nat :=
   ((Look.freeIntervals lo hi ws).find? (fun iv => decide (durSec ≤ iv.2 - iv.1))).map Prod.fst
 
-/-- **What `earliestFree` answers is inside the range it was asked about.** -/
-theorem earliestFree_inside {lo hi d : Nat} {ws : List (Nat × Nat)} {s : Nat}
-    (h : earliestFree lo hi d ws = some s) : lo ≤ s ∧ s + d ≤ hi := by
+/-- **What a free stretch wide enough gives**: a position inside the range that was searched,
+every second of which is off the blocked list.
+
+Both of `earliestFree`'s laws and both of `PlanReq.lowestFree`'s (step P6) are this lemma at a
+different choice of stretch — the two searches differ in **which** stretch of
+`Look.freeIntervals` they take and in nothing else, so the reasoning is written once
+(AGENTS §5.3). -/
+theorem freeStretch_gives_a_position {lo hi d : Nat} {ws : List (Nat × Nat)} {iv : Nat × Nat}
+    (hm : iv ∈ Look.freeIntervals lo hi ws) (hd : d ≤ iv.2 - iv.1) :
+    lo ≤ iv.1 ∧ iv.1 + d ≤ hi ∧ ∀ u, iv.1 ≤ u → u < iv.1 + d → Look.covered ws u = false := by
+  obtain ⟨hlo, hlt, hhi⟩ := Look.freeIntervals_inside_the_window hm
+  refine ⟨hlo, by omega, fun u hu1 hu2 => ?_⟩
+  have hin : ∃ w ∈ Look.freeIntervals lo hi ws, w.1 ≤ u ∧ u < w.2 := ⟨iv, hm, hu1, by omega⟩
+  have hfree := (Look.freeIntervals_are_the_free_units lo hi ws u).1 hin
+  cases hc : Look.covered ws u with
+  | false => rfl
+  | true =>
+    obtain ⟨w, hw, hw1, hw2⟩ := Look.covered_eq_true.1 hc
+    exact absurd ⟨hw1, hw2⟩ (hfree.2.2 w hw)
+
+/-- The stretch `earliestFree` took: the first one wide enough. -/
+theorem earliestFree_from_a_stretch {lo hi d : Nat} {ws : List (Nat × Nat)} {s : Nat}
+    (h : earliestFree lo hi d ws = some s) :
+    ∃ iv ∈ Look.freeIntervals lo hi ws, iv.1 = s ∧ d ≤ iv.2 - iv.1 := by
   unfold earliestFree at h
   cases hf : (Look.freeIntervals lo hi ws).find? (fun iv => decide (d ≤ iv.2 - iv.1)) with
   | none => rw [hf] at h; exact absurd h (by simp)
   | some iv =>
     rw [hf] at h
     simp only [Option.map_some, Option.some.injEq] at h
-    subst h
-    have hm : iv ∈ Look.freeIntervals lo hi ws := List.mem_of_find?_eq_some hf
-    have hd : d ≤ iv.2 - iv.1 := by
-      have := List.find?_some hf
-      simpa using this
-    obtain ⟨h1, h2, h3⟩ := Look.freeIntervals_inside_the_window hm
-    exact ⟨h1, by omega⟩
+    refine ⟨iv, List.mem_of_find?_eq_some hf, h, ?_⟩
+    have := List.find?_some hf
+    simpa using this
+
+/-- **What `earliestFree` answers is inside the range it was asked about.** -/
+theorem earliestFree_inside {lo hi d : Nat} {ws : List (Nat × Nat)} {s : Nat}
+    (h : earliestFree lo hi d ws = some s) : lo ≤ s ∧ s + d ≤ hi := by
+  obtain ⟨iv, hm, hs, hd⟩ := earliestFree_from_a_stretch h
+  subst hs
+  obtain ⟨h1, h2, -⟩ := freeStretch_gives_a_position hm hd
+  exact ⟨h1, h2⟩
 
 /-- **And every second of it is free.**  This is the half that makes the placement laws mean
 something: a routine placed at `earliestFree` overlaps nothing that was blocked. -/
 theorem earliestFree_is_free {lo hi d : Nat} {ws : List (Nat × Nat)} {s u : Nat}
     (h : earliestFree lo hi d ws = some s) (h1 : s ≤ u) (h2 : u < s + d) :
     Look.covered ws u = false := by
-  unfold earliestFree at h
-  cases hf : (Look.freeIntervals lo hi ws).find? (fun iv => decide (d ≤ iv.2 - iv.1)) with
-  | none => rw [hf] at h; exact absurd h (by simp)
-  | some iv =>
-    rw [hf] at h
-    simp only [Option.map_some, Option.some.injEq] at h
-    subst h
-    have hm : iv ∈ Look.freeIntervals lo hi ws := List.mem_of_find?_eq_some hf
-    have hd : d ≤ iv.2 - iv.1 := by
-      have := List.find?_some hf
-      simpa using this
-    obtain ⟨hlo, hlt, hhi⟩ := Look.freeIntervals_inside_the_window hm
-    have hin : ∃ w ∈ Look.freeIntervals lo hi ws, w.1 ≤ u ∧ u < w.2 :=
-      ⟨iv, hm, h1, by omega⟩
-    have hfree := (Look.freeIntervals_are_the_free_units lo hi ws u).1 hin
-    cases hc : Look.covered ws u with
-    | false => rfl
-    | true =>
-      obtain ⟨w, hw, hw1, hw2⟩ := Look.covered_eq_true.1 hc
-      exact absurd ⟨hw1, hw2⟩ (hfree.2.2 w hw)
+  obtain ⟨iv, hm, hs, hd⟩ := earliestFree_from_a_stretch h
+  subst hs
+  exact (freeStretch_gives_a_position hm hd).2.2 u h1 h2
 
 /-- **`overlapsAny` is `covered`, pointwise** — the two readings of "this stretch is taken" are
 one reading (AGENTS §5.3).  `false` means every second of `[lo, hi)` is uncovered, which is what
@@ -5176,6 +5184,658 @@ theorem PlanReq.an_assigned_slot_names_a_group (r : PlanReq) (i gi : Nat)
   obtain ⟨g₀, h0, k1, k2, k3, k4, k5, k6⟩ := key _ r.assignStart gi g (by
     unfold PlanReq.assignFold at hg; exact hg)
   exact ⟨g₀, List.mem_of_getElem? h0, k1, k2, k3, k4, k5, k6⟩
+
+/-! ############################################################################
+## §8.2 step 6 — the routines that missed their window (stage 6, step P6)
+
+**Fork `Planner::place_deferred`** (`planner.rs:1622`), over **fork `occupied_now`**
+(`planner.rs:2271`) and **fork `kept_breaks`** (`planner.rs:2333`), called from `run()` at
+`planner.rs:1032` with the assignment §8.2 step 5 ended with.  Design §2's choice 6:
+
+> *deferred routines take the **lowest predicted energy** free position (ties: earliest); a
+> mandatory one may reach into the wind-down and then displace the lowest-energy assigned
+> block; an instance with no position is named in `diagnostics.notes`.*
+
+**Nothing here computes a free stretch, a slot energy or a slot.**  The search is
+`Look.freeIntervals` — step L3's own, the same function step 2's `earliestFree` and step 3's
+`Look.cutSlots` call; the energy is `Look.todayEnergy`, step L4's, at the instant the fork
+asks about (`ectx.energy_at(a, blocks_done, 0)`, whose other two arguments reach `Features`
+and cannot move a level — `Look.energizeToday`'s own doc comment says so); the re-placement of
+a displaced group is `PlanReq.assignStep`, §8.2 step 5's own body, stopped at its first
+success.  The **only** new search is "the lowest of these", and that is `Replay.lastMax?`
+with its replacing relation turned round (`leastBy`).
+
+**What step 6 may do that step 2 may not.**  Step 2 takes the *earliest* feasible position and
+never touches anything already placed; step 6 takes the *lowest-energy* one, may reach into the
+evening when the instance is mandatory, and may take a slot away from the group step 5 gave it
+to.  The three are different rules over the same free time, which is why the fork runs them in
+this order and why `PlanReq.deferOne_keeps_a_placed_routine` is stated below: step 6 only
+ever fills a position step 2 left empty.
+
+**README gap 285's family is not re-admitted here.**  A routine whose declared window is
+malformed is refused **by name** at the boundary (`mkRoutine?`, `undeclaredWindow`), and an
+occurrence whose remaining span has closed is passed over by the fork's own
+`if span_to <= from { continue }` — §5.3's expiry, not a placement failure.
+`PlanReq.deferOne_places_nothing_in_a_closed_window` is that guard as a theorem, and
+`a_deferred_routine_is_inside_its_window` is step 2's own law restated over step 6's output:
+every position step 6 gives is inside the instance's own span, at or after `now`, and exactly
+the minutes the instance asked for.
+
+**D9-21.**  `deferWalk` and `rePlaceWalk` are structural recursions over lists `Capped` bounds
+at `maxCands` and at the day's own slot count — the shape `splitSleep` already has, and
+neither carries an accumulator core's `foldl` could carry instead, because each step reads the
+list it is walking (`occupied_now` is recomputed from every instance's current position).
+
+**What does NOT reach `dayPlan` here** — README gap 803 is still open and this step does not
+close it: `assignFold` emits no rows, so the slots step 6 frees and re-fills change no row of
+the day.  What *does* reach the day is this step's own half: a routine step 6 places gets its
+Routine row, and one it cannot place gets `Note.noPosition`.
+############################################################################ -/
+
+/-! ### The first minimum of a list, once -/
+
+/-- **The first minimum of a list under a strict order.**  `Replay.lastMax?` is the running
+*maximum* under a *replacing* relation — "`x` replaces `a` when `r a x`" — so the minimum is
+that same fold with the relation turned round, and not a second walk (AGENTS §5.3).  Because
+the relation is strict, a later element equal on every key does **not** replace an earlier one,
+which is Rust's own rule for the minimum of an iterator, by key or not: the first of the
+minima wins.
+
+*(`Replay.minDay?` and `Seal.minInstant?` are minima too, each folding `Nat.min` / `if` over
+its own element type.  Neither is a call of this one and this is not a call of them: widening
+either into this shape would restate its laws, which is D5's price and not this step's.
+README gap 900.)* -/
+def leastBy {α : Type} (lt : α → α → Bool) (l : List α) : Option α :=
+  Replay.lastMax? (fun a x => lt x a) l
+
+/-- The turned-round relation is transitive when the order is. -/
+theorem flip_trans {α : Type} {lt : α → α → Bool} (h : Seal.StrictTotal lt) (a b c : α)
+    (h₁ : lt b a = true) (h₂ : lt c b = true) : lt c a = true := h.trans _ _ _ h₂ h₁
+
+/-- And a candidate it does not replace is replaced by whatever replaces that one — the
+`skip` side condition `Replay.lastMax?_spec` asks for. -/
+theorem flip_skip {α : Type} {lt : α → α → Bool} (h : Seal.StrictTotal lt) (a b c : α)
+    (h₁ : lt b a = false) (h₂ : lt c a = true) : lt c b = true := by
+  by_cases hab : lt a b = true
+  · exact h.trans _ _ _ h₂ hab
+  · have hba : a = b := h.eq_of_not (by simpa using hab) h₁
+    rw [← hba]; exact h₂
+
+/-- **What the minimum is**: an element of the list, and no element of the list is below it. -/
+theorem leastBy_spec {α : Type} {lt : α → α → Bool} (h : Seal.StrictTotal lt)
+    (l : List α) (b : α) (hb : leastBy lt l = some b) :
+    b ∈ l ∧ ∀ x ∈ l, lt x b = false := by
+  obtain ⟨l₁, l₂, hsp, h1, h2⟩ :=
+    Replay.lastMax?_spec (fun a x => lt x a) (flip_trans h) (flip_skip h) l b hb
+  refine ⟨by rw [hsp]; simp, fun x hx => ?_⟩
+  rw [hsp] at hx
+  simp only [List.mem_append, List.mem_cons] at hx
+  rcases hx with hx | rfl | hx
+  · -- an element before the minimum: the minimum replaced it, so it is not below
+    have hbx : lt b x = true := h1 x hx
+    cases hxb : lt x b with
+    | false => rfl
+    | true => exact absurd (h.trans _ _ _ hbx hxb) (by simp [h.irrefl])
+  · exact h.irrefl x
+  · exact h2 x hx
+
+/-! ### The two orders step 6 takes a minimum in -/
+
+/-- **Fork `place_deferred`'s `(energy_at(a), a)`** (`planner.rs:1653`): the free positions are
+compared on their predicted energy first and on their start second, so the lowest energy wins
+and the earlier start breaks the tie — design §2's choice 6, in the fork's own key order.
+`Seal.lexLt` and `Seal.natLt` are the kernel's strict pair order and its strict `Nat` order and
+are called, not copied. -/
+abbrev posLt : Nat × Nat → Nat × Nat → Bool := Seal.lexLt Seal.natLt Seal.natLt
+
+theorem posLt_strictTotal : Seal.StrictTotal posLt :=
+  Seal.lexLt_strictTotal Seal.natLt_strictTotal Seal.natLt_strictTotal
+
+/-- **Fork `place_deferred`'s victim comparator** (`planner.rs:1682`): the lowest slot energy,
+and among equals the **later** slot — the fork writes the second key as `bi.cmp(ai)`, which is
+the index descending.
+
+The fork's *third* key, the slot's start ascending, is unreachable and is not ported: the
+candidates come from an enumeration, so two of them never share an index, and a key after a
+key that always decides is a clause no input can reach (AGENTS §5.2, and the class README gap
+876 records for the cursor's own slot-taken guard). -/
+abbrev victimLt : Nat × Nat → Nat × Nat → Bool :=
+  Seal.lexLt Seal.natLt (fun a b => Seal.natLt b a)
+
+theorem victimLt_strictTotal : Seal.StrictTotal victimLt :=
+  Seal.lexLt_strictTotal Seal.natLt_strictTotal
+    ⟨fun a => by simp [Seal.natLt], fun a b c h₁ h₂ => by
+      simp only [Seal.natLt, decide_eq_true_eq] at *; omega,
+     fun a b hne => by
+      simp only [Seal.natLt, decide_eq_true_eq]
+      rcases Nat.lt_trichotomy a b with h | h | h
+      · exact Or.inr h
+      · exact absurd h hne
+      · exact Or.inl h⟩
+
+/-! ### The search, and what it guarantees -/
+
+/-- **Fork `place_deferred`'s search** (`planner.rs:1651-1655`): every free position inside
+what is left of the instance's window that is wide enough for it, at that position's own
+predicted energy, and the least of them in `posLt`.
+
+`Look.freeIntervals` is step L3's and `Look.todayEnergy` step L4's; neither is re-derived
+(design §1.2, §1.3). -/
+def PlanReq.lowestFree (r : PlanReq) (occ : List (Nat × Nat)) (lo hi durSec : Nat) :
+    Option Nat :=
+  (leastBy posLt
+    (((Look.freeIntervals lo hi occ).filter (fun iv => decide (durSec ≤ iv.2 - iv.1))).map
+      (fun iv => ((Look.todayEnergy r.look ⟨iv.1, 0⟩).val, iv.1)))).map Prod.snd
+
+/-- The position the search answers with comes from a free stretch of the range it searched,
+wide enough for the instance. -/
+theorem PlanReq.lowestFree_from_a_stretch {r : PlanReq} {occ : List (Nat × Nat)}
+    {lo hi durSec t : Nat} (h : r.lowestFree occ lo hi durSec = some t) :
+    ∃ iv ∈ Look.freeIntervals lo hi occ, iv.1 = t ∧ durSec ≤ iv.2 - iv.1 := by
+  unfold PlanReq.lowestFree at h
+  cases hl : leastBy posLt
+      (((Look.freeIntervals lo hi occ).filter (fun iv => decide (durSec ≤ iv.2 - iv.1))).map
+        (fun iv => ((Look.todayEnergy r.look ⟨iv.1, 0⟩).val, iv.1))) with
+  | none => rw [hl] at h; exact absurd h (by simp)
+  | some b =>
+    rw [hl] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    obtain ⟨hmem, -⟩ := leastBy_spec posLt_strictTotal _ b hl
+    simp only [List.mem_map, List.mem_filter, decide_eq_true_eq] at hmem
+    obtain ⟨iv, ⟨hiv, hd⟩, hb⟩ := hmem
+    exact ⟨iv, hiv, by rw [← h, ← hb], hd⟩
+
+/-- **It is inside the range it was asked about, and every second of it is free** — the search
+half of `PlacedOk`, and the half that makes a placement mean something. -/
+theorem PlanReq.lowestFree_inside {r : PlanReq} {occ : List (Nat × Nat)} {lo hi durSec t : Nat}
+    (h : r.lowestFree occ lo hi durSec = some t) :
+    lo ≤ t ∧ t + durSec ≤ hi ∧ ∀ u, t ≤ u → u < t + durSec → Look.covered occ u = false := by
+  obtain ⟨iv, hiv, ht, hd⟩ := PlanReq.lowestFree_from_a_stretch h
+  subst ht
+  exact freeStretch_gives_a_position hiv hd
+
+/-! ### What is occupied at the moment step 6 looks -/
+
+/-- **Fork `occupied_now`'s third list** (`planner.rs:2278-2285`): the slots the cursor filled.
+The day's slots and the cursor's vector are indexed alike (`energisedSlots_length`), so the
+`zip` loses neither. -/
+def PlanReq.assignedSpans (r : PlanReq) (a : Assign) : List (Nat × Nat) :=
+  (r.todaySlots.zip a.slotOf).filterMap
+    (fun p => if p.2.isSome then some (p.1.start, p.1.stop) else none)
+
+/-- **Fork `occupied_now`** (`planner.rs:2271`): everything a deferred routine must flow
+around — the blocked list step 2 finished with (the walls with their `buffer:` run-ups, §9's
+running interruption, §8.2 choice 5b's reservation and every routine step 2 placed), every
+position given since, and the slots step 5 filled. -/
+def PlanReq.occupiedNow (r : PlanReq) (qs : List Placed) (a : Assign) : List (Nat × Nat) :=
+  r.placementFold.2 ++ qs.filterMap (·.placedAt) ++ r.assignedSpans a
+
+/-- **Fork `kept_breaks`** (`planner.rs:2333`): a break belongs to the day only when work
+touches it — the slot that ends where it starts, or the slot that starts where it ends, went to
+a group.  README gap **551** is the row half of this; what step 6 needs is that a break the day
+really keeps is not free time a routine may be dropped into. -/
+def PlanReq.keptBreaks (r : PlanReq) (a : Assign) : List (Nat × Nat) :=
+  r.todayBreaks.filter (fun b =>
+    (r.todaySlots.zip a.slotOf).any
+      (fun p => p.2.isSome && (decide (p.1.stop = b.1) || decide (p.1.start = b.2))))
+
+/-- **Fork `run()`'s `kept_breaks(&cut.breaks, &slots, &assign)`** (`planner.rs:1031`), taken
+**once**, on the assignment step 5 ended with — the fork does not recompute it as step 6
+frees and re-fills slots, and neither does this. -/
+def PlanReq.keptBreaksToday (r : PlanReq) : List (Nat × Nat) := r.keptBreaks r.assignFold
+
+/-! ### The displacement -/
+
+/-- **Fork's `groups[gi].left_min += slots[vi].minutes()`** (`planner.rs:1688`): the group whose
+slot was taken gets its minutes back.  `left_min` is carried here as `commitMin`/`spent`
+(§8.2 step 5's first half), so giving minutes back is lowering `spent` — and it is **exact**,
+because `assignStep` raised `spent` by the same number when the group took that very slot. -/
+def unspend (gi mins : Nat) (gs : List Group) : List Group :=
+  match gs[gi]? with
+  | none => gs
+  | some g => gs.set gi { g with spent := g.spent - mins }
+
+/-- **The restore moves nothing but `spent`**, and only downwards. -/
+theorem unspend_keeps_the_group (gi mins : Nat) (gs : List Group) (n : Nat) (g' : Group)
+    (h : (unspend gi mins gs)[n]? = some g') :
+    ∃ g, gs[n]? = some g ∧ g.key = g'.key ∧ g.members = g'.members ∧ g.ci = g'.ci ∧
+      g.loc = g'.loc ∧ g.splittable = g'.splittable ∧ g.commitMin = g'.commitMin ∧
+      g'.spent ≤ g.spent := by
+  unfold unspend at h
+  cases hg : gs[gi]? with
+  | none => rw [hg] at h; exact ⟨g', h, rfl, rfl, rfl, rfl, rfl, rfl, Nat.le_refl _⟩
+  | some g =>
+    rw [hg] at h
+    by_cases hn : n = gi
+    · subst hn
+      rw [List.getElem?_set_self (lt_of_getElem?_some hg)] at h
+      simp only [Option.some.injEq] at h
+      exact ⟨g, hg, by rw [← h], by rw [← h], by rw [← h], by rw [← h], by rw [← h], by rw [← h],
+        by rw [← h]; exact Nat.sub_le _ _⟩
+    · rw [List.getElem?_set_ne (by omega)] at h
+      exact ⟨g', h, rfl, rfl, rfl, rfl, rfl, rfl, Nat.le_refl _⟩
+
+theorem unspend_length (gi mins : Nat) (gs : List Group) : (unspend gi mins gs).length = gs.length := by
+  unfold unspend
+  cases gs[gi]? <;> simp
+
+/-- **Fork `place_deferred`'s victim** (`planner.rs:1672-1683`): among the slots inside what is
+left of the instance's window that a group holds and that are long enough for it, the one with
+the lowest energy, latest first. -/
+def PlanReq.victimSlot (r : PlanReq) (a : Assign) (lo hi durSec : Nat) : Option Nat :=
+  (leastBy victimLt
+    ((r.energisedSlots.zipIdx.filter (fun x =>
+        (a.slotOf[x.2]?).join.isSome && decide (lo ≤ x.1.2.start) &&
+          decide (x.1.2.stop ≤ hi) && decide (durSec ≤ x.1.2.stop - x.1.2.start))).map
+      (fun x => (x.1.1.val, x.2)))).map Prod.snd
+
+/-- What the victim satisfies: it is an energised slot of this day, a group holds it, and it is
+inside the window and long enough. -/
+theorem PlanReq.victimSlot_spec {r : PlanReq} {a : Assign} {lo hi durSec vi : Nat}
+    (h : r.victimSlot a lo hi durSec = some vi) :
+    ∃ e s, r.energisedSlots[vi]? = some (e, s) ∧ (a.slotOf[vi]?).join.isSome = true ∧
+      lo ≤ s.start ∧ s.stop ≤ hi ∧ durSec ≤ s.stop - s.start := by
+  unfold PlanReq.victimSlot at h
+  cases hl : leastBy victimLt
+      ((r.energisedSlots.zipIdx.filter (fun x =>
+          (a.slotOf[x.2]?).join.isSome && decide (lo ≤ x.1.2.start) &&
+            decide (x.1.2.stop ≤ hi) && decide (durSec ≤ x.1.2.stop - x.1.2.start))).map
+        (fun x => (x.1.1.val, x.2))) with
+  | none => rw [hl] at h; exact absurd h (by simp)
+  | some b =>
+    rw [hl] at h
+    simp only [Option.map_some, Option.some.injEq] at h
+    obtain ⟨hmem, -⟩ := leastBy_spec victimLt_strictTotal _ b hl
+    simp only [List.mem_map, List.mem_filter, Bool.and_eq_true, decide_eq_true_eq] at hmem
+    obtain ⟨x, ⟨hx, ⟨⟨⟨hass, h1⟩, h2⟩, h3⟩⟩, hb⟩ := hmem
+    have hidx : r.energisedSlots[x.2]? = some x.1 := List.mem_zipIdx_iff_getElem?.mp hx
+    have hvi : x.2 = vi := by rw [← h, ← hb]
+    subst hvi
+    exact ⟨x.1.1, x.1.2, hidx, hass, h1, h2, h3⟩
+
+/-! ### The loop body, and the walk -/
+
+/-- **Fork `place_deferred`'s re-placement** (`planner.rs:1693-1704`): the group that lost its
+slot is offered the slots after it, and the **first** one that takes a group ends the walk.
+
+It is `PlanReq.assignStep` — §8.2 step 5's own loop body — stopped at its first success, and
+not a second picker: the fork calls the same `self.pick` here that step 5 calls, with the same
+budget guard and the same slot-taken guard, and **this** is the caller that makes that guard
+reachable (README gap 876). -/
+def PlanReq.rePlaceWalk (r : PlanReq) (budget : Nat) :
+    Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign
+  | a, [] => a
+  | a, x :: rest =>
+    let a' := r.assignStep r.todaySlots r.todayBreaks budget a x
+    if a'.used = a.used then r.rePlaceWalk budget a' rest else a'
+
+/-- The position step 6 gives: the instance's own minutes from `t`, marked `deferred` because
+it is step 6 and not step 2 that placed it (fork `routines[ri].deferred = true`). -/
+def placeAt (q : Placed) (t : Nat) : Placed :=
+  { q with placedAt := some (t, t + 60 * q.inst.durMin), deferred := true }
+
+/-- **Fork `place_deferred`'s displacement** (`planner.rs:1684-1704`): the slot goes back to
+being free, the group that held it gets its minutes back, the day gives a block back, the
+instance takes the slot's start, and the displaced group is offered the slots after it. -/
+def PlanReq.displaceInto (r : PlanReq) (budget : Nat) (a : Assign) (q : Placed) (vi : Nat)
+    (s : Look.Slot) : Placed × Assign :=
+  (placeAt q s.start,
+   r.rePlaceWalk budget
+     ⟨a.slotOf.set vi Option.none,
+      (match (a.slotOf[vi]?).join with
+       | none => a.groups
+       | some gi => unspend gi s.minutes a.groups),
+      a.used - 1⟩
+     (r.energisedSlots.zipIdx.drop (vi + 1)))
+
+/-- **Fork `place_deferred`'s loop body** (`planner.rs:1633-1705`), for one instance.
+
+The five outcomes are the fork's five, in the fork's order: an instance step 2 already placed
+is passed over; one whose remaining span has closed is passed over (§5.3's expiry, not a
+failure); otherwise the lowest-energy free position inside the window that is not in the
+evening; failing that, and only when the instance is **mandatory**, the same search with the
+evening opened; and failing that, the lowest-energy assigned slot inside the window, taken
+from the group that held it. -/
+def PlanReq.deferOne (r : PlanReq) (budget : Nat) (qs : List Placed) (a : Assign) (q : Placed) :
+    Placed × Assign :=
+  if q.placedAt.isSome then (q, a)
+  else if q.span.2 ≤ max q.span.1 r.now.sec then (q, a)
+  else
+    match r.lowestFree (r.occupiedNow qs a ++ r.keptBreaksToday ++ [r.night])
+            (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+    | some t => (placeAt q t, a)
+    | none =>
+      if q.inst.mandatory = false then (q, a)
+      else
+        match r.lowestFree (r.occupiedNow qs a ++ r.keptBreaksToday)
+                (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+        | some t => (placeAt q t, a)
+        | none =>
+          match r.victimSlot a (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+          | none => (q, a)
+          | some vi =>
+            -- structurally unreachable: `victimSlot`'s candidates come from `zipIdx`
+            match r.energisedSlots[vi]? with
+            | none => (q, a)
+            | some es => r.displaceInto budget a q vi es.2
+
+/-- **Fork `place_deferred`'s loop** (`planner.rs:1633`), over the instances step 2 left, with
+the ones already visited in front: `occupied_now` reads every instance's *current* position, so
+the walk carries the whole list and not only what is left of it. -/
+def PlanReq.deferWalk (r : PlanReq) (budget : Nat) :
+    List Placed → Assign → List Placed → List Placed × Assign
+  | pre, a, [] => (pre.reverse, a)
+  | pre, a, q :: post =>
+    let e := r.deferOne budget (pre.reverse ++ q :: post) a q
+    r.deferWalk budget (e.1 :: pre) e.2 post
+
+/-- **§8.2 step 6, run.** -/
+def PlanReq.deferFold (r : PlanReq) : List Placed × Assign :=
+  r.deferWalk (remainingBudget r) [] r.assignFold r.placedRoutines
+
+/-- The day's routine instances after step 6 — the list fork `emit_segments` is handed. -/
+def PlanReq.finalRoutines (r : PlanReq) : List Placed := r.deferFold.1
+
+/-- The assignment after step 6, with any displacement and its re-placement in it. -/
+def PlanReq.finalAssign (r : PlanReq) : Assign := r.deferFold.2
+
+/-- **Fork `run()`'s un-placed note** (`planner.rs:1046-1060`): an instance with no position and
+a window still open is named, because *"a day that quietly loses lunch is a day no monitor can
+see"*.  An instance whose window has **closed** is §5.3's expiry and is not reported — the
+fork's `if r.span.1 <= from { continue }`, the same guard `deferOne` takes. -/
+def PlanReq.noPositionNotes (r : PlanReq) : List Note :=
+  r.finalRoutines.filterMap (fun q =>
+    if q.placedAt.isSome then none
+    else if q.span.2 ≤ max q.span.1 r.now.sec then none
+    else some (Note.noPosition q.inst.id q.inst.durMin (max q.span.1 r.now.sec) q.span.2))
+
+/-! ### What step 6 guarantees
+
+Every law below is about one of two things: what the loop may do to an **instance** (it fills a
+position step 2 left empty, inside that instance's own window, and never moves one step 2
+placed), and what it may do to the **assignment** (it frees at most the one slot it displaces,
+re-fills at most one, and keeps both vectors the length step 5 left them).
+
+`PlanReq.deferOne_cases` is the one case split this section takes, in the shape
+`PlanReq.assignStep_cases` set at §8.2 step 5: **nothing else below unfolds the loop body.** -/
+
+/-- An energised entry's slot is a slot of this day — `Look.energizeToday` is a `map`. -/
+theorem PlanReq.energised_slot_is_a_slot (r : PlanReq) {e : Fin 6} {s : Look.Slot}
+    (h : (e, s) ∈ r.energisedSlots) : s ∈ r.todaySlots := by
+  unfold PlanReq.energisedSlots Look.energizeToday at h
+  simp only [List.mem_map, Prod.mk.injEq] at h
+  obtain ⟨t, ht, -, h2⟩ := h
+  exact h2 ▸ ht
+
+/-- **The three shapes one step of the loop can have**: it leaves the instance and the
+assignment exactly as they were; it gives the instance a position a search found, inside the
+instance's own span and — when the instance is not mandatory — outside the evening, and leaves
+the assignment alone; or it displaces an assigned slot into the instance.
+
+This lemma does the unfolding once and carries out what the searches guarantee, so that
+**nothing below unfolds `PlanReq.deferOne` again** (the shape `PlanReq.assignStep_cases` set at
+§8.2 step 5). -/
+theorem PlanReq.deferOne_cases (r : PlanReq) (budget : Nat) (qs : List Placed) (a : Assign)
+    (q : Placed) :
+    r.deferOne budget qs a q = (q, a) ∨
+      (∃ t, q.placedAt = none ∧ max q.span.1 r.now.sec ≤ t ∧
+        t + 60 * q.inst.durMin ≤ q.span.2 ∧
+        (q.inst.mandatory = false → ∀ u, t ≤ u → u < t + 60 * q.inst.durMin →
+          ¬ (r.night.1 ≤ u ∧ u < r.night.2)) ∧
+        r.deferOne budget qs a q = (placeAt q t, a)) ∨
+      (∃ vi s, q.placedAt = none ∧ q.inst.mandatory = true ∧
+        max q.span.1 r.now.sec ≤ s.start ∧ s.start + 60 * q.inst.durMin ≤ q.span.2 ∧
+        r.deferOne budget qs a q = r.displaceInto budget a q vi s) := by
+  unfold PlanReq.deferOne
+  by_cases hp : q.placedAt.isSome = true
+  · exact Or.inl (by rw [if_pos hp])
+  have hnone : q.placedAt = none := by
+    cases hq : q.placedAt with
+    | none => rfl
+    | some _ => rw [hq] at hp; exact absurd rfl hp
+  rw [if_neg hp]
+  by_cases hs : q.span.2 ≤ max q.span.1 r.now.sec
+  · exact Or.inl (by rw [if_pos hs])
+  rw [if_neg hs]
+  cases ht1 : r.lowestFree (r.occupiedNow qs a ++ r.keptBreaksToday ++ [r.night])
+      (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+  | some t =>
+    obtain ⟨g1, g2, gfree⟩ := PlanReq.lowestFree_inside ht1
+    refine Or.inr (Or.inl ⟨t, hnone, g1, g2, fun _ u hu1 hu2 hnight => ?_, by rfl⟩)
+    have hc := gfree u hu1 hu2
+    rw [Look.covered_eq_true.2 ⟨r.night, by simp, hnight.1, hnight.2⟩] at hc
+    exact absurd hc (by simp)
+  | none =>
+    by_cases hm : q.inst.mandatory = false
+    · exact Or.inl (by rw [if_pos hm])
+    have hmt : q.inst.mandatory = true := by
+      cases hq : q.inst.mandatory with
+      | false => exact absurd hq hm
+      | true => rfl
+    rw [if_neg hm]
+    cases ht2 : r.lowestFree (r.occupiedNow qs a ++ r.keptBreaksToday)
+        (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+    | some t =>
+      obtain ⟨g1, g2, -⟩ := PlanReq.lowestFree_inside ht2
+      exact Or.inr (Or.inl
+        ⟨t, hnone, g1, g2, fun hf => absurd (hmt.symm.trans hf) (by simp), by rfl⟩)
+    | none =>
+      cases hv : r.victimSlot a (max q.span.1 r.now.sec) q.span.2 (60 * q.inst.durMin) with
+      | none => exact Or.inl (by rfl)
+      | some vi =>
+        -- iota-reduce the outer match so the inner discriminant names this `vi`
+        dsimp only
+        cases he : r.energisedSlots[vi]? with
+        | none => exact Or.inl (by rfl)
+        | some es =>
+          obtain ⟨ee, ss⟩ := es
+          obtain ⟨e, s, hslot, -, h1, h2, h3⟩ := PlanReq.victimSlot_spec hv
+          have hpair : (ee, ss) = (e, s) := by rw [he] at hslot; exact Option.some.inj hslot
+          have hss : ss = s := congrArg Prod.snd hpair
+          subst hss
+          have hlt := (r.a_slot_is_inside_the_window ss
+            (r.energised_slot_is_a_slot (List.mem_of_getElem? he))).2.1
+          exact Or.inr (Or.inr ⟨vi, ss, hnone, hmt, h1, by omega, by rfl⟩)
+
+/-- **Step 6 never moves a routine step 2 placed** — the fork's first `continue`
+(`planner.rs:1634`), and the sentence that makes every step-2 law survive this step. -/
+theorem PlanReq.deferOne_keeps_a_placed_routine (r : PlanReq) (budget : Nat) (qs : List Placed)
+    (a : Assign) (q : Placed) (h : q.placedAt.isSome = true) :
+    r.deferOne budget qs a q = (q, a) := by
+  unfold PlanReq.deferOne; rw [if_pos h]
+
+/-- **README gap 285's family, as a theorem**: an occurrence whose remaining span has closed is
+passed over, not squeezed in — the fork's `if span_to <= from { continue }`.  §5.3's expiry
+owns that instance, and a placement rule that quietly re-admitted one would be putting a
+routine outside the window its own line declares. -/
+theorem PlanReq.deferOne_places_nothing_in_a_closed_window (r : PlanReq) (budget : Nat)
+    (qs : List Placed) (a : Assign) (q : Placed) (h : q.span.2 ≤ max q.span.1 r.now.sec) :
+    r.deferOne budget qs a q = (q, a) := by
+  unfold PlanReq.deferOne
+  by_cases hp : q.placedAt.isSome = true
+  · rw [if_pos hp]
+  · rw [if_neg hp, if_pos h]
+
+/-- A position `placeAt` gives satisfies `PlacedOk` as soon as it is inside the span. -/
+theorem placeAt_PlacedOk (r : PlanReq) (q : Placed) (t : Nat)
+    (h1 : max q.span.1 r.now.sec ≤ t) (h2 : t + 60 * q.inst.durMin ≤ q.span.2) :
+    PlacedOk r (placeAt q t) := by
+  intro x y hxy
+  simp only [placeAt, Option.some.injEq, Prod.mk.injEq] at hxy
+  obtain ⟨rfl, rfl⟩ := hxy
+  exact ⟨h1, h2, rfl⟩
+
+/-- **One step keeps `PlacedOk`** — every position step 6 gives is inside the instance's own
+span, at or after `now`, and exactly the minutes it asked for.  The displacement is the
+interesting case: the slot it takes lies inside the window by `PlanReq.victimSlot_spec`'s
+filter, and is long enough for the instance because the cut never makes an empty slot
+(`PlanReq.a_slot_is_inside_the_window`). -/
+theorem PlanReq.deferOne_keeps_PlacedOk (r : PlanReq) (budget : Nat) (qs : List Placed)
+    (a : Assign) (q : Placed) (h : PlacedOk r q) : PlacedOk r (r.deferOne budget qs a q).1 := by
+  rcases r.deferOne_cases budget qs a q with heq | ⟨t, -, g1, g2, -, heq⟩ |
+    ⟨vi, s, -, -, g1, g2, heq⟩ <;> rw [heq]
+  · exact h
+  · exact placeAt_PlacedOk r q t g1 g2
+  · exact placeAt_PlacedOk r q s.start g1 g2
+
+/-- **Nothing a light instance takes is in the evening** — design §2's choice 6: only a
+mandatory instance may reach into the wind-down, because only the mandatory branch searches
+with `night()` taken out of the occupied list, and the displacement is behind that same
+branch. -/
+theorem PlanReq.a_light_deferred_instance_stays_out_of_the_evening (r : PlanReq) (budget : Nat)
+    (qs : List Placed) (a : Assign) (q : Placed) (hq : q.placedAt = none)
+    (hm : q.inst.mandatory = false) (x y : Nat)
+    (h : (r.deferOne budget qs a q).1.placedAt = some (x, y)) (u : Nat)
+    (h1 : x ≤ u) (h2 : u < y) : ¬ (r.night.1 ≤ u ∧ u < r.night.2) := by
+  rcases r.deferOne_cases budget qs a q with heq | ⟨t, -, -, -, hev, heq⟩ |
+    ⟨-, -, -, hmt, -, -, -⟩
+  · rw [heq] at h; simp only at h; rw [hq] at h; exact absurd h (by simp)
+  · rw [heq] at h
+    simp only [placeAt, Option.some.injEq, Prod.mk.injEq] at h
+    obtain ⟨rfl, rfl⟩ := h
+    exact hev hm u h1 h2
+  · rw [hmt] at hm; exact absurd hm (by simp)
+
+/-! #### The assignment: the lengths and the budget -/
+
+theorem PlanReq.rePlaceWalk_lengths (r : PlanReq) (budget : Nat) :
+    ∀ (a : Assign) (l : List ((Fin 6 × Look.Slot) × Nat)),
+      (r.rePlaceWalk budget a l).slotOf.length = a.slotOf.length ∧
+        (r.rePlaceWalk budget a l).groups.length = a.groups.length
+  | _, [] => ⟨rfl, rfl⟩
+  | a, x :: rest => by
+    unfold PlanReq.rePlaceWalk
+    obtain ⟨e1, e2⟩ := r.assignStep_lengths r.todaySlots r.todayBreaks budget a x
+    simp only
+    split
+    · obtain ⟨f1, f2⟩ := PlanReq.rePlaceWalk_lengths r budget
+        (r.assignStep r.todaySlots r.todayBreaks budget a x) rest
+      exact ⟨f1.trans e1, f2.trans e2⟩
+    · exact ⟨e1, e2⟩
+
+theorem PlanReq.rePlaceWalk_used (r : PlanReq) (budget : Nat) :
+    ∀ (a : Assign) (l : List ((Fin 6 × Look.Slot) × Nat)), a.used ≤ max r.activeSeed budget →
+      (r.rePlaceWalk budget a l).used ≤ max r.activeSeed budget
+  | _, [], h => h
+  | a, x :: rest, h => by
+    unfold PlanReq.rePlaceWalk
+    have hstep := r.assignStep_used r.todaySlots r.todayBreaks budget a x h
+    simp only
+    split
+    · exact PlanReq.rePlaceWalk_used r budget _ rest hstep
+    · exact hstep
+
+theorem PlanReq.displaceInto_lengths (r : PlanReq) (budget : Nat) (a : Assign) (q : Placed)
+    (vi : Nat) (s : Look.Slot) :
+    (r.displaceInto budget a q vi s).2.slotOf.length = a.slotOf.length ∧
+      (r.displaceInto budget a q vi s).2.groups.length = a.groups.length := by
+  unfold PlanReq.displaceInto
+  obtain ⟨h1, h2⟩ := PlanReq.rePlaceWalk_lengths r budget
+    ⟨a.slotOf.set vi Option.none,
+     (match (a.slotOf[vi]?).join with
+      | none => a.groups
+      | some gi => unspend gi s.minutes a.groups), a.used - 1⟩
+    (r.energisedSlots.zipIdx.drop (vi + 1))
+  refine ⟨h1.trans (by simp), h2.trans ?_⟩
+  show (match (a.slotOf[vi]?).join with
+        | none => a.groups
+        | some gi => unspend gi s.minutes a.groups).length = a.groups.length
+  cases (a.slotOf[vi]?).join with
+  | none => rfl
+  | some gi => exact unspend_length _ _ _
+
+theorem PlanReq.displaceInto_used (r : PlanReq) (budget : Nat) (a : Assign) (q : Placed)
+    (vi : Nat) (s : Look.Slot) (h : a.used ≤ max r.activeSeed budget) :
+    (r.displaceInto budget a q vi s).2.used ≤ max r.activeSeed budget := by
+  unfold PlanReq.displaceInto
+  exact PlanReq.rePlaceWalk_used r budget _ _ (by simp only; omega)
+
+theorem PlanReq.deferOne_lengths (r : PlanReq) (budget : Nat) (qs : List Placed) (a : Assign)
+    (q : Placed) :
+    (r.deferOne budget qs a q).2.slotOf.length = a.slotOf.length ∧
+      (r.deferOne budget qs a q).2.groups.length = a.groups.length := by
+  rcases r.deferOne_cases budget qs a q with heq | ⟨t, -, -, -, -, heq⟩ |
+    ⟨vi, s, -, -, -, -, heq⟩ <;> rw [heq]
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
+  · exact r.displaceInto_lengths budget a q vi s
+
+theorem PlanReq.deferOne_used (r : PlanReq) (budget : Nat) (qs : List Placed) (a : Assign)
+    (q : Placed) (h : a.used ≤ max r.activeSeed budget) :
+    (r.deferOne budget qs a q).2.used ≤ max r.activeSeed budget := by
+  rcases r.deferOne_cases budget qs a q with heq | ⟨t, -, -, -, -, heq⟩ |
+    ⟨vi, s, -, -, -, -, heq⟩ <;> rw [heq]
+  · exact h
+  · exact h
+  · exact r.displaceInto_used budget a q vi s h
+
+/-! #### The walk -/
+
+theorem PlanReq.deferWalk_keeps_PlacedOk (r : PlanReq) (budget : Nat) :
+    ∀ (post : List Placed) (pre : List Placed) (a : Assign),
+      (∀ z ∈ pre, PlacedOk r z) → (∀ z ∈ post, PlacedOk r z) →
+      ∀ z ∈ (r.deferWalk budget pre a post).1, PlacedOk r z
+  | [], pre, a, hpre, _ => by
+    intro z hz
+    exact hpre z (List.mem_reverse.1 hz)
+  | q :: post, pre, a, hpre, hpost => by
+    unfold PlanReq.deferWalk
+    refine PlanReq.deferWalk_keeps_PlacedOk r budget post _ _ (fun z hz => ?_)
+      (fun z hz => hpost z (List.mem_cons_of_mem _ hz))
+    rcases List.mem_cons.1 hz with rfl | hz
+    · exact r.deferOne_keeps_PlacedOk budget _ a q (hpost q (List.mem_cons_self ..))
+    · exact hpre z hz
+
+theorem PlanReq.deferWalk_lengths (r : PlanReq) (budget : Nat) :
+    ∀ (post : List Placed) (pre : List Placed) (a : Assign),
+      (r.deferWalk budget pre a post).2.slotOf.length = a.slotOf.length ∧
+        (r.deferWalk budget pre a post).2.groups.length = a.groups.length
+  | [], _, _ => ⟨rfl, rfl⟩
+  | q :: post, pre, a => by
+    unfold PlanReq.deferWalk
+    obtain ⟨e1, e2⟩ := r.deferOne_lengths budget (pre.reverse ++ q :: post) a q
+    obtain ⟨f1, f2⟩ := PlanReq.deferWalk_lengths r budget post
+      ((r.deferOne budget (pre.reverse ++ q :: post) a q).1 :: pre)
+      (r.deferOne budget (pre.reverse ++ q :: post) a q).2
+    exact ⟨f1.trans e1, f2.trans e2⟩
+
+theorem PlanReq.deferWalk_used (r : PlanReq) (budget : Nat) :
+    ∀ (post : List Placed) (pre : List Placed) (a : Assign),
+      a.used ≤ max r.activeSeed budget →
+      (r.deferWalk budget pre a post).2.used ≤ max r.activeSeed budget
+  | [], _, _, h => h
+  | q :: post, pre, a, h => by
+    unfold PlanReq.deferWalk
+    exact PlanReq.deferWalk_used r budget post _ _
+      (r.deferOne_used budget (pre.reverse ++ q :: post) a q h)
+
+/-! #### What the day gets -/
+
+/-- **§8.2 step 6's own law: a routine step 6 places is inside its window.**  The same sentence
+step 2's `a_placed_routine_is_inside_its_window` makes true of the earliest-feasible rule, now
+of the lowest-energy rule and of the displacement — which is what keeps `Negative.lean`'s "a
+routine placed outside its window" a cheat that does not close once a second rule can place
+one. -/
+theorem a_deferred_routine_is_inside_its_window (r : PlanReq) (p : Placed)
+    (hp : p ∈ r.finalRoutines) (a b : Nat) (hab : p.placedAt = some (a, b)) :
+    max p.span.1 r.now.sec ≤ a ∧ b ≤ p.span.2 ∧ b = a + 60 * p.inst.durMin :=
+  PlanReq.deferWalk_keeps_PlacedOk r _ _ [] _ (by simp)
+    (fun z hz x y hxy => a_placed_routine_is_inside_its_window r z hz x y hxy) p hp a b hab
+
+/-- **Step 6 keeps the cursor's two vectors the length step 5 left them** — one entry per slot
+and one group per group, so every law of §8.2 step 5 that is about those lengths survives the
+displacement and the re-placement. -/
+theorem the_deferred_pass_keeps_the_assignments_shape (r : PlanReq) :
+    r.finalAssign.slotOf.length = r.assignFold.slotOf.length ∧
+      r.finalAssign.groups.length = r.assignFold.groups.length :=
+  PlanReq.deferWalk_lengths r _ _ [] _
+
+/-- **And it never spends more of the budget than step 5 could** — the displacement gives a
+block back and the re-placement takes at most that one back, under `PlanReq.assignStep`'s own
+guard. -/
+theorem the_deferred_pass_stays_inside_the_budget (r : PlanReq) :
+    r.finalAssign.used ≤ max r.activeSeed (remainingBudget r) :=
+  PlanReq.deferWalk_used r _ _ [] _ (PlanReq.assignFold_used r)
 
 end Planner
 end Tm
