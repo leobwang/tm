@@ -3421,8 +3421,10 @@ def logOpZ (r : VLogReq) : Except LogRefusal LogAnswer :=
 
 /-- **The `log` op** — the bytes half of the seam, and the only half every law below this point
 reads.  It is a *view* of `logOpZ`, not a second definition (AGENTS §5.3): every theorem stated
-about `logOp` before D24 holds of `logOpZ`'s bytes unchanged, which is what
-`the_seam_changes_no_byte` says at the section. -/
+about `logOp` before D24 holds of `logOpZ`'s bytes unchanged.  That is **definitional** here — the `map`
+below is the whole of it, and `logOpZ_core` is the `rfl` that states the core it maps.  (This sentence
+named the_seam_changes_no_byte until W-19, a constant that has never existed in this repository and
+whose only occurrence anywhere was this citation.  Unbackticked on purpose; README gap 830.) -/
 def logOp (r : VLogReq) : Except LogRefusal JVal := (logOpZ r).map LogAnswer.wire
 
 /-- `within53A` is `within53` on the bytes: the seam's replay rides beside law 13's check, never

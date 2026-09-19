@@ -642,8 +642,11 @@ def parentsTotal (p : PlanCore) : Bool :=
 def parentsAcyclic (p : PlanCore) : Bool :=
   p.store.dom.all (fun i => (anc p (fuel p) i).isNone)
 
-/-- §3.2's `root(item)`.  Total by construction; `rootOf_is_a_root` is what
-says the fuel was not merely exhausted. -/
+/-- §3.2's `root(item)`.  Total by construction; `climb_reaches_a_root` is what
+says the fuel was not merely exhausted, and `every_item_has_a_root` is that fact
+about `rootOf` on an accepted plan.  (Named rootOf_is_a_root until W-19 — a constant that has
+never existed in this repository.  Check 8 found it; the dead name is written here WITHOUT
+backticks on purpose, so that a later sentence citing it as live still fails.  README gap 830.) -/
 def rootOf (p : PlanCore) (i : Id) : Id := climb p (fuel p) i
 
 /-- `i` is its own proper ancestor — §5.5's error, for the parent relation. -/
