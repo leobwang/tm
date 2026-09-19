@@ -5569,7 +5569,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- removes it, and setting it on `^r1`, which is not a wall, changes nothing --
 -- so the pair is about the fork's conjunction and not about the flag alone.
 --
--- What is NOT here: `Planner.eligibleAt`, the SLOT half of section 8.2 step 5's
+-- What is NOT here: Planner.eligibleAt, the SLOT half of section 8.2 step 5's
 -- filter (ci against the slot's energy, `loc_ok`, the wind-down rule, the
 -- atomic run). That is the fold's and README gap 365 still stands.
 -- ===========================================================================
@@ -5615,7 +5615,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- `dayPlan_ok_from_now_except_the_two_comparisons` is how far design §6.1's
 -- lift has come: NINE of the eleven at every eligibility, two of those nine
 -- true only because they are empty, and the missing two are `monotoneInRank`
--- and `hotBeforeQueue`, which wait on `Planner.eligibleAt` (gap 365).
+-- and `hotBeforeQueue`, which wait on Planner.eligibleAt (gap 365).
 -- ===========================================================================
 #print axioms Tm.PlanCheck.the_day_has_no_batch_row
 #print axioms Tm.PlanCheck.no_block_row_of_the_day_carries_a_slot_energy
@@ -5785,7 +5785,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --
 -- Fork `plan()`'s assign loop (planner.rs:1017-1026) over fork `Planner::pick`
 -- (planner.rs:1582) and fork `contiguous_fits` (planner.rs:2303).  This is
--- `eligibleAt`'s SLOT half (README gap 365); the item half is
+-- eligibleAt's SLOT half (README gap 365); the item half is
 -- `entersTheOrder`'s and ran before the sort at P5b-i.
 --
 -- 15 theorems in `Planner.lean` and 11 `decide` witnesses in `PlannerWit.lean`.
@@ -5850,7 +5850,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --     are refuted AS WRITTEN -- design 6.3 rows 4 and 5, predicted from the
 --     fork's proptest header and until now never computed;
 --   * NEITHER goal leaves `Goals.lean`, because the restatements need
---     `Planner.eligibleAt`, which is P5's (gap 365), and a restatement without
+--     Planner.eligibleAt, which is P5's (gap 365), and a restatement without
 --     its refutation is a weakening -- `Goals.plan_tail_drop`'s situation
 --     exactly.  The burn-down is 9, unchanged.  README gap 851.
 --

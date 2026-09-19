@@ -191,7 +191,7 @@ else
   printf '%s\n' "$out" | grep -v 'declaration uses' | head -40
 fi
 
-# 8. The prose resolves.  The owner's D39 (README gap 779).
+# 8. The prose resolves.  The owner's D39 (README gap 779), WIDENED by D41 (W-20).
 #
 #    FIVE CONSECUTIVE RUNS shipped a stale prose citation -- a doc comment or a
 #    README line naming a theorem that had been deleted or renamed -- and every
@@ -201,33 +201,89 @@ fi
 #    the single largest recurring defect class in this campaign's ledger was
 #    invisible to the gate by construction.
 #
-#    So: every backticked snake_case identifier in TmKernel/**.lean AND in
-#    README.md is resolved against five DECLARATION sets -- Lean declarations,
-#    fields and constructors; Lean string literals (a wire key is declared by
-#    the literal that spells it); Rust declarations and fields; Rust string
-#    literals; and file stems (`cargo test --test cli_latency` names a file).
-#    None of the five is prose, so one stale sentence cannot launder another.
-#    citations.py's header is the specification and names its own blind spots.
+#    So: every backticked identifier in TmKernel/**.lean, in README.md and --
+#    since D41 -- in AGENTS.md is resolved against SEVEN DECLARATION sets: Lean
+#    declarations, fields, constructors and namespaces; Lean string literals (a
+#    wire key is declared by the literal that spells it); Rust declarations and
+#    fields; Rust string literals; file stems (`cargo test --test cli_latency`
+#    names a file); the checkers' own Python in kernel/*.py; and the PINNED Lean
+#    toolchain's own sources.  None of the seven is prose, so one stale sentence
+#    cannot launder another.  citations.py's header is the specification and
+#    names its own blind spots.
+#
+#    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
+#    because snake_case-only reported green on a live stale `emitRefused` and
+#    hid a name gap 809 declares nonexistent at, as re-measured at W-20, 64
+#    sites.  camelCase is a LOWER-TO-UPPER TRANSITION and nothing else: `decide`,
+#    `rfl`, `Nat`, `sorry`, `lake`, hypothesis names and commit shas have none,
+#    which is why the noise gap 880 measured (812 distinct names) does not
+#    arrive with the widening.  D41 also DECLINED `kernel/design/**`: 144
+#    unresolved names there are a prospective specification's work to do, not
+#    stale citations.
 #
 #    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
 #    that silenced a class is how this check would get quietly useless, because
-#    the next stale citation would land inside the silenced class.  Its four
+#    the next stale citation would land inside the silenced class.  Its eight
 #    sections say which exemptions were adjudicated and which were merely
 #    grandfathered, so a reader can tell an intention from an oversight.
 #
-#    It found four LIVE stale citations on its first run, in files W-19 did not
-#    own; they are carried in the allow-list's section 2 declared as defects
-#    (README gap 832), not laundered as exemptions.  Four more it found in files
-#    W-19 did own were repaired in the commit before this one.
+#    It found eight LIVE stale citations on its first run (README gap 832 keeps
+#    the four W-19 did not own) and, widened, 51 more that W-20 repaired with
+#    the un-backtick convention.  19 stand, in files W-20's track A does not own,
+#    declared as defects in allow-list section 2 (README gap 932).
 #
-#    The cost is declared, not hidden: 0.21-0.23 s against a 6.7-8.8 s
-#    built-tree wall, about 3%.  Gap 703's measurement is re-taken with it in
-#    README "Stage 6 W-19, track A".
+#    The cost is declared, not hidden: 0.49-0.51 s against a 7.83-7.87 s
+#    built-tree wall, of which source 6 is 0.21 s.  It was 0.22-0.23 s before
+#    D41.  Re-measured in README "Stage 6 W-20, track A".
 out=$( python3 citations.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "prose citations" "ok  (${out:-no count reported})"
 else
   say "prose citations" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
+# 9. Every definition a step ADDS is constant-folded.  The owner's D40
+#    (README gap 930).
+#
+#    THREE TIMES this campaign a definition shipped whose body nothing in the
+#    package could tell from a constant, and a human found all three:
+#    W-17's P4 sort key (halves swapped, 1,342 tests green), W-18's nine
+#    candidate facts (invert one, the suite green, `tm plan` visibly re-ranks),
+#    and W-19's `Planner.Ranked.gatherable` -- `:= true`, and 168 build targets,
+#    every theorem, all nineteen witnesses and check.sh 8/8 still green.  No
+#    check above can see it: check 3 reads axiom sets, check 4 reads a file that
+#    must fail, check 8 reads sentences.  A definition nothing distinguishes
+#    passes all eight.
+#
+#    So: every `def` and `abbrev` in the library that is NEW OR CHANGED since
+#    the baseline commit in `mutations.txt` has its body replaced by a constant
+#    of its type -- `true` AND `false` for `Bool`, `True`/`False` for `Prop`,
+#    `0`/`1` for `Nat`, `default` otherwise -- one at a time, and the build must
+#    FAIL for each.  A build that SUCCEEDS is the defect.  A build that fails
+#    with an error INSIDE the mutated declaration is also a failure, not a pass:
+#    that is the constant not typechecking, which would otherwise hand out a
+#    free PINNED verdict.
+#
+#    SCOPED TO NEW DEFINITIONS because D40 scoped it there: a full sweep of the
+#    existing 2,810 library definitions was declined as producing a backlog
+#    rather than preventing new instances.  The baseline is the decline, written
+#    down.
+#
+#    THE COST IS THE STEP'S OWN, AND IT IS ~0 HERE.  At a settled tree nothing
+#    is new, one `git diff` says so, and this check is 0.03 s -- under half a
+#    percent of the wall.  A step that ADDS definitions pays one kernel build
+#    per constant, measured in README "Stage 6 W-20, track A" at 53 s
+#    (Planner.lean), 54 s (PlannerWit.lean) and 205 s (Boundary.lean); that is
+#    the step's cost, not this script's steady state, and it is why the roster
+#    is trusted on a matching body sha1 rather than re-run.  `mutate.py
+#    --verify` re-runs every row and is what an auditor uses.  The whole script
+#    went 7.37-7.48 s at eight checks to 7.83-7.87 s at nine, +5.1%.
+out=$( python3 mutate.py --gate 2>&1 )
+if [ $? -eq 0 ]; then
+  say "new definitions mutated" "ok  (${out:-no count reported})"
+else
+  say "new definitions mutated" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20
 fi
 
