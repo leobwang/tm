@@ -5688,3 +5688,56 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.CapWire.multiplierOfWire_ok
 #print axioms Tm.Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states
 #print axioms Tm.Look.PlanFacts.eligible_iff_without_the_free_component
+
+-- ===========================================================================
+-- APPENDED 2026-09-18 (stage 6, run **W-19**, track G).
+--
+-- Seventeen theorems, and what they settle is a question the two numbers this
+-- module already prints could not answer between them.  Section 14 of
+-- `PlannerWit.lean` measures SEVEN of the eleven checkers with a subject at
+-- `theCensusRequest`; `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons`
+-- proves NINE of the eleven at every eligibility.  Neither says whether the
+-- other two are unproved or FALSE.
+--
+-- They are false.  `PlannerWit.theQueuedRequest` is the census request with
+-- `m1`'s two log lines removed and `m2` running instead -- so the hot sibling
+-- that ranks FIRST reaches no row of the day -- and on the day it produces,
+-- with no mutation at all, `monotoneInRank` and `hotBeforeQueue` both answer
+-- `false` at the permissive eligibility, on the whole day and on
+-- `withoutPast`'s day alike, while the other nine keep answering `true`.
+--
+-- Consequences, each a theorem here:
+--   * the `∀ el` form of design 6.1's lift is refuted, BOTH over the whole day
+--     and over the restricted day (`PlanCheck.lean` asserted the first in prose
+--     from W-14 and never stated the second);
+--   * `Goals.plan_is_monotone_in_rank` and `Goals.plan_puts_hot_before_the_queue`
+--     are refuted AS WRITTEN -- design 6.3 rows 4 and 5, predicted from the
+--     fork's proptest header and until now never computed;
+--   * NEITHER goal leaves `Goals.lean`, because the restatements need
+--     `Planner.eligibleAt`, which is P5's (gap 365), and a restatement without
+--     its refutation is a weakening -- `Goals.plan_tail_drop`'s situation
+--     exactly.  The burn-down is 9, unchanged.  README gap 851.
+--
+-- `dayPlan_ok_from_now_given_the_two_comparisons` assembles design 6.1's own
+-- `planOk` from the nine plus the two, so that "nine of eleven" is the
+-- compiler's arithmetic and not a reader's (README gap 684's class).
+-- ===========================================================================
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons
+#print axioms Tm.PlannerWit.queuedRun_resumes_ok
+#print axioms Tm.PlannerWit.queuedRun_resumes
+#print axioms Tm.PlannerWit.witBuildsQueued
+#print axioms Tm.PlannerWit.theQueuedRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_queued_request_agrees
+#print axioms Tm.PlannerWit.the_queued_request_is_inside_the_calendar
+#print axioms Tm.PlannerWit.the_queued_request_is_plain
+#print axioms Tm.PlannerWit.the_queued_day_is_the_second_sibling_twice
+#print axioms Tm.PlannerWit.the_queued_day_assigns_the_second_sibling_only
+#print axioms Tm.PlannerWit.the_two_comparisons_are_false_at_the_queued_request
+#print axioms Tm.PlannerWit.the_other_nine_hold_where_the_two_fail
+#print axioms Tm.PlannerWit.the_lift_applies_at_the_queued_request
+#print axioms Tm.PlannerWit.dayPlan_ok_at_every_eligibility_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted
+#print axioms Tm.PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_two_comparisons_have_subjects_where_they_bite
+#print axioms Tm.PlannerWit.the_one_id_store_gives_neither_comparison_a_subject

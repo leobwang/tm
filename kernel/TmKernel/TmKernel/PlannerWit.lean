@@ -1347,8 +1347,17 @@ own refusal): every mutation is a `List.map` or `List.filter` over the day
 
 /-- **A store that holds the ids the morning actually worked.**  `Boundary.lookWallPlan` is a
 one-line calendar, so `effectiveCi` answers §3.1's default of three for the replayed rows'
-`m1`/`m2` and the store has **one** id in it — which leaves five of the eleven checkers with
-nothing to range over for reasons that are about the *witness* and not about the *planner*.
+`m1`/`m2` and the store has **one** id in it — which leaves **seven** of the eleven checkers
+with nothing to range over at `theRunningRequest`, **three** of them for reasons that are
+about the *witness* and not about the *planner*.
+
+*(**W-19 corrected this sentence and computed it.**  It read *"which leaves five of the eleven
+checkers with nothing to range over for reasons that are about the witness and not about the
+planner"* — a number that matches no reading of any census in the repository, and one nothing
+computed.  `the_one_id_store_gives_neither_comparison_a_subject` measures the half that was
+never measured: a one-id store gives `PlanCheck.monotoneInRank` and `PlanCheck.hotBeforeQueue`
+no pair at all.  Four of eleven have a subject there; seven do not; three of the seven are the
+witness's doing and four are gap 650's.  README gap 852.)*
 
 This is `Boundary.undoWitnessRequest`'s two tasks, reused verbatim but for one word: `m1` and
 `m2`, `ci:5`, two ranked siblings of one document, and `hot` on the first.  The ids are the
@@ -2220,6 +2229,429 @@ theorem the_break_law_applies_at_the_census_request (b k : WfSeg)
     b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start :=
   PlanCheck.plan_places_no_block_over_a_break theCensusRequest
     the_census_request_is_inside_the_calendar b k hb hk hbk hkk hnow
+
+
+/-! ############################################################################
+## 15. The ceiling: two of the eleven are FALSE on a day the planner produces
+     — stage 6, run W-19, track G
+############################################################################
+
+Section 14 answered *how much of the battery a witness can make bite*: **seven of the eleven**
+have a subject at `theCensusRequest`.  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons`
+answers *how much of §6.1's lift is proved*: **nine of the eleven**, at every eligibility, over
+`PlanCheck.withoutPast`'s day.  Neither answers the question a reader of those two numbers asks
+next, which is whether the remaining two conjuncts are **unproved** or **false**.
+
+They are false, and this section proves it.  The claim itself is not new — `PlanCheck.lean`
+has said *"the `∀ el` form is **false** of P1's body"* since W-14, and design §6.3 rows 4 and 5
+predict it from the fork's proptest header.  What was missing is the thing this campaign keeps
+finding missing: **nothing computed it.**  A sentence saying a statement is false, in a
+repository whose whole method is that a claim is a theorem, is a claim of having checked that
+was never made (AGENTS §5.2, §9.2).
+
+**One request settles four statements**, and it is one line of the morning's log away from the
+census request:
+
+| statement | verdict here |
+|---|---|
+| `Goals.plan_is_monotone_in_rank`, as stage 6 wrote it | **refuted** |
+| `Goals.plan_puts_hot_before_the_queue`, as stage 6 wrote it | **refuted** |
+| `∀ el r, PlanCheck.planOk el r (Planner.dayPlan r) = true` | **refuted** |
+| `∀ el r, PlanCheck.planOk el r (PlanCheck.withoutPast r (Planner.dayPlan r)) = true` | **refuted** |
+
+and the nine that *are* proved keep holding at the very same request, so **exactly two** fail
+and the nine-of-eleven is a **ceiling** rather than a stopping place.
+
+**Why the witness is one line of log and not a new plan.**  `censusWitness`' store already
+holds what the two comparisons need: `m1` and `m2`, one document, ranks 1 and 2, both `ci:5`,
+equal `rootPrio`, and `hot` on `m1` alone (`the_census_witness_holds_the_wall_and_two_ranked
+_siblings`).  At `theCensusRequest` both are assigned — the log worked both, and `m1` is the
+one running — so both checks pass.  Take `m1`'s two log lines away and run **`m2`** instead,
+and the hot sibling that ranks first is the one the day never mentions.  Nothing else moves:
+same plan, same lookahead input, same configuration, same builder.
+
+**What it does NOT show, said before the theorems rather than after.**  This is not a defect in
+the planner.  `m1` is missing from the day because **the assign fold is not written** — §8.2
+step 5 is P5's and `Planner.dayRows` places steps 1, 2 and choice 5b's reservation only.  Nor
+does it show that `Planner.eligibleAt` cannot rescue the two: an eligibility predicate that
+answers `false` for `m1` at every row of this day makes both conjuncts hold again, and whether
+the real one does is P5's decision.  **That is the inheritance this section is for** — it names
+the decision instead of leaving it inside a count.  See README gap 850. -/
+
+/-- The morning's log with `m1`'s block taken out: `witLines`' wake and arrive, then its
+`start`/`done` pair for `m2`.  The four lines are `witLines`' own bytes, taken rather than
+respelled (`List.take`/`List.drop`, numbers 1, 2, 5, 6). -/
+def queuedLines : List Log.Line := witLines.take 2 ++ witLines.drop 4
+
+set_option maxRecDepth 40000 in
+theorem queuedRun_resumes_ok : runOk Cal.chicago 739867 queuedLines = true := by decide
+
+def queuedRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) queuedLines with
+  | .ok run => run
+  | .error _ => absurd queuedRun_resumes_ok (by simp [runOk, h])
+
+theorem queuedRun_resumes :
+    Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) queuedLines
+      = .ok queuedRun := by
+  unfold queuedRun
+  split
+  · rename_i run h; rw [h]
+  · rename_i e h; exact absurd queuedRun_resumes_ok (by simp [runOk, h])
+
+/-- §9's `state.active`, with **`m2`** running — `theRunningBlock` with one character changed,
+so that the item choice 5b reserves is the sibling that ranks *second*. -/
+def theQueuedBlock : ActiveBlock :=
+  ⟨['m','2'], ⟨(Cal.instantOf Cal.chicago 739867 820).sec, 0⟩, 90, false⟩
+
+def theQueuedState : RuntimeIn := { RuntimeIn.empty with active := some theQueuedBlock }
+
+def witReqInQueued : PlanReqIn :=
+  { witReqIn with docs := censusWitness, lines := queuedLines, state := theQueuedState }
+
+/-- **The queued request**: the §4.3 Wednesday at 14:00 with the census store, a log that
+worked only `m2`, and `m2` running.  `m1` — hot, ranked first, `ci:5`, in the store — reaches
+no row of the day at all. -/
+def theQueuedRequest : PlanReq :=
+  ⟨censusPlan, queuedRun, witInput, theQueuedState, Capped.nil, witPrio, Capped.nil, none⟩
+
+/-- **The builder accepts it** — by rewriting with the four stage equations, never by a
+`decide` that holds the load, the resume and the lookahead at once. -/
+theorem witBuildsQueued : mkPlanReq? witReqInQueued = .ok theQueuedRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInQueued witReqIn theQueuedRequest
+  simp only [censusPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_census_witness_indexes_the_calendars_one_wall.symm)]
+  rw [hz, ht, queuedRun_resumes]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
+
+/-- `hagree`, from the builder and not from a `decide`. -/
+theorem theQueuedRequest_wallsAgree : theQueuedRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqInQueued theQueuedRequest witBuildsQueued
+
+/-- `hactive` and `hday`, the two R10 hypotheses both lifts carry. -/
+theorem the_queued_request_agrees :
+    theQueuedRequest.activeAgrees = true ∧ theQueuedRequest.dayAgrees = true := by decide
+
+/-- `hnowcal`: the instant being planned is inside the calendar. -/
+theorem the_queued_request_is_inside_the_calendar :
+    theQueuedRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+set_option maxRecDepth 40000 in
+/-- `hplain`, **reused and not re-proved**: this request's plan is `censusPlan` and its
+lookahead input is `witInput`, exactly as the census request's are, so the statement is the
+same one (AGENTS §5.3 — a second proof of one fact is a second copy of it). -/
+theorem the_queued_request_is_plain :
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      theQueuedRequest.plan.val.store.get i = some e →
+      e.val.shape = Field.Shape.interval a b →
+      e.val.buffer = none ∧
+        theQueuedRequest.dayStart ≤ (Cal.instantOf theQueuedRequest.tz a.day a.time).sec ∧
+        (Cal.instantOf theQueuedRequest.tz b.day b.time).sec ≤ theQueuedRequest.dayEnd ∧
+        (Cal.instantOf theQueuedRequest.tz a.day a.time).sec
+          < (Cal.instantOf theQueuedRequest.tz b.day b.time).sec ∧
+        (Cal.instantOf theQueuedRequest.tz b.day b.time).sec < LogStamp.yearEnd :=
+  the_census_request_is_plain
+
+set_option maxRecDepth 40000 in
+/-- **The day, end to end**: `m2`'s replayed block, the written wall, §8.2 choice 5b's
+reservation of `m2`, and §16's two evening rows.  Five rows, and **`m1` is in none of them**. -/
+theorem the_queued_day_is_the_second_sibling_twice :
+    (dayPlan theQueuedRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The four populations the two refutations turn on**, computed: the day assigns `m2` and
+only `m2`, on the whole day and on the restricted one both; some row carries `m2`; **no** row
+carries `m1`.  The last two are the halves `hotBeforeQueue` reads, and they are stated as
+`List.any`/`List.all` rather than as an existential so that one `decide` settles them. -/
+theorem the_queued_day_assigns_the_second_sibling_only :
+    assignedOf (dayPlan theQueuedRequest) = [['m','2'], ['m','2']] ∧
+      assignedOf (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest))
+        = [['m','2']] ∧
+      ((dayPlan theQueuedRequest).segments.any
+        (fun s => s.val.item == some (['m','2'] : Id))) = true ∧
+      ((dayPlan theQueuedRequest).segments.all
+        (fun s => s.val.item != some (['m','1'] : Id))) = true := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The two comparisons answer `false`, and so does the whole battery** — on the day
+`Planner.dayPlan` really produced, with **no mutation at all**, at the permissive eligibility,
+on the whole day and on `PlanCheck.withoutPast`'s day alike.
+
+This is the second no-mutation bite in this module (`the_mid_break_day_lays_a_block_across_a
+_break` is the first), and it is the stronger kind: the battery is refusing a day for a
+*comparison* between two candidates rather than for an interval overlap. -/
+theorem the_two_comparisons_are_false_at_the_queued_request :
+    PlanCheck.monotoneInRank permissive theQueuedRequest (dayPlan theQueuedRequest) = false ∧
+      PlanCheck.hotBeforeQueue permissive theQueuedRequest (dayPlan theQueuedRequest) = false ∧
+      PlanCheck.planOk permissive theQueuedRequest (dayPlan theQueuedRequest) = false ∧
+      PlanCheck.monotoneInRank permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = false ∧
+      PlanCheck.hotBeforeQueue permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = false ∧
+      PlanCheck.planOk permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = false := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **And the other nine still hold at that same request** — which is what makes the failure
+*exactly two* rather than "the battery fails here".  `planOkCore` is the seven, computed on
+both days; `impossibleKept` and `batchDoesNotReachPast` are the two that hold because their
+subject is empty at every request (`PlanCheck.impossibleKept_is_true_because_its_subject_is
+_empty` and its sibling).
+
+Without this conjunction the refutation above would be compatible with three of the eleven
+failing, or seven — and README gap 684 is the record of what counting that by hand costs. -/
+theorem the_other_nine_hold_where_the_two_fail :
+    PlanCheck.planOkCore theQueuedRequest (dayPlan theQueuedRequest) = true ∧
+      PlanCheck.planOkCore theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+      PlanCheck.impossibleKept permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+      PlanCheck.batchDoesNotReachPast permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true := by
+  decide
+
+/-- **The nine-of-eleven lift, fired at this request** — not a `decide`, but
+`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons` with every hypothesis discharged by
+a theorem above.  Two theorems stating the same `true` is not a duplication here and the
+difference is the point: `the_other_nine_hold_where_the_two_fail` *computes* the nine at one
+request, and this *derives* them from the general lift.  A day on which the computation and
+the lift disagreed would be a defect in the lift. -/
+theorem the_lift_applies_at_the_queued_request :
+    PlanCheck.planOkCore theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+      PlanCheck.impossibleKept permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+      PlanCheck.batchDoesNotReachPast permissive theQueuedRequest
+        (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true :=
+  PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons permissive theQueuedRequest
+    theQueuedRequest_wallsAgree the_queued_request_agrees.1 the_queued_request_agrees.2
+    the_queued_request_is_inside_the_calendar the_queued_request_is_plain
+
+/-! ### §6.1's lift at an arbitrary eligibility is REFUTED, both ways round
+
+Design §6.1 writes the lift `planOk r (dayPlan r) = true`, with no eligibility parameter,
+because it was written before §6.3 found that four of the eleven need one.  The two honest
+readings of it once the parameter exists are the `∀ el` form and the `∃ el` form, and §6.3
+disposes of the second: `fun _ _ _ _ => false` satisfies it.  The first is below, refuted at
+both of the days the stage's two lifts are stated over.
+
+`PlanCheck.lean` has asserted the whole-day half in prose since W-14 and the restricted-day
+half has never been stated at all. -/
+
+/-- **The `∀ el` form of §6.1's lift, over the whole day, is false.** -/
+theorem dayPlan_ok_at_every_eligibility_is_refuted :
+    ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq), PlanCheck.planOk el r (dayPlan r) = true) := by
+  intro h
+  exact absurd (h permissive theQueuedRequest)
+    (by rw [the_two_comparisons_are_false_at_the_queued_request.2.2.1]; simp)
+
+/-- **And over `PlanCheck.withoutPast`'s day too** — the day
+`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons` is stated over, so this is the one
+that says the nine are a ceiling.  It is a separate statement and not a corollary: restricting
+the day removes rows, which can only make a `∀`-shaped checker *easier* to satisfy, so the
+whole-day refutation does not imply this one.  (At `theCensusRequest` the difference is
+visible in the other direction: `noBlockOverABreak` has a subject on both days, and the Block
+rows `withoutPast` removes are exactly the ones `plan_places_no_block_over_a_break` could not
+be proved about.) -/
+theorem dayPlan_ok_from_now_at_every_eligibility_is_refuted :
+    ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        PlanCheck.planOk el r (PlanCheck.withoutPast r (dayPlan r)) = true) := by
+  intro h
+  exact absurd (h permissive theQueuedRequest)
+    (by rw [the_two_comparisons_are_false_at_the_queued_request.2.2.2.2.2]; simp)
+
+/-! ### The two `Goals.lean` statements, refuted
+
+Design §6.3 rows 4 and 5 record both as false against the fork and hand the **restatements** to
+P5, which is why neither goal leaves `Goals.lean` here: a restatement without its refutation is
+a weakening (AGENTS §3.1 item 3), and the restatement needs `Planner.eligibleAt`, which does not
+exist (README gap 365).  This is `Goals.plan_tail_drop`'s situation exactly — refuted in this
+module at W-15, still standing in `Goals.lean`, with the refutation named at its doc comment —
+and it is handled the same way.  Burn-down **9, unchanged**, and README gap 851 says why. -/
+
+set_option maxRecDepth 40000 in
+/-- **`Goals.plan_is_monotone_in_rank` as stage 6 wrote it is FALSE** (AGENTS §3.1 item 3, D5).
+
+`m1` and `m2` are one document's two siblings at equal `rootPrio` and equal `effectiveCi`,
+ranked 1 and 2.  The day assigns `m2` and does not assign `m1`, so the goal's conclusion fails
+under every one of its hypotheses.  Design §6.3 predicted this from the fork's proptest header
+— *"step 5 skips a `loc:`-constrained, `atomic` or `max:`-capped item for reasons the invariant
+is not about"* — and the reason **here** is simpler and is not in that list: there is no step 5
+yet, so nothing can assign `m1` at all.
+
+The restatement is **P5**'s and takes the two candidates to be additionally comparable
+(`PlanCheck.eligibleSomewhere` at `Planner.eligibleAt`). -/
+theorem plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity),
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        rootPrio r.plan.val i = rootPrio r.plan.val j →
+        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
+        e.val.live.doc = f.val.live.doc →
+        e.val.live.rank < f.val.live.rank →
+        j ∈ assignedOf (dayPlan r) →
+        i ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨hass, -, -, -⟩ := the_queued_day_assigns_the_second_sibling_only
+  cases hm1 : censusPlan.val.store.get ['m','1'] with
+  | none => exact absurd hm1 (by decide)
+  | some e =>
+    cases hm2 : censusPlan.val.store.get ['m','2'] with
+    | none => exact absurd hm2 (by decide)
+    | some f =>
+      have h1 : (censusPlan.val.store.get ['m','1']).map
+          (fun x => (x.val.live.doc, x.val.live.rank)) = some (1, 1) := by decide
+      rw [hm1, Option.map_some] at h1
+      have h2 : (censusPlan.val.store.get ['m','2']).map
+          (fun x => (x.val.live.doc, x.val.live.rank)) = some (1, 2) := by decide
+      rw [hm2, Option.map_some] at h2
+      injection Option.some.inj h1 with hed her
+      injection Option.some.inj h2 with hfd hfr
+      have hd : e.val.live.doc = f.val.live.doc := by rw [hed, hfd]
+      have hr : e.val.live.rank < f.val.live.rank := by rw [her, hfr]; decide
+      have hp : rootPrio censusPlan.val ['m','1'] = rootPrio censusPlan.val ['m','2'] :=
+        the_census_witness_holds_the_wall_and_two_ranked_siblings.2.2.2.2.1
+      have hc : effectiveCi censusPlan.val ['m','1'] = effectiveCi censusPlan.val ['m','2'] := by
+        decide
+      have hin : (['m','2'] : Id) ∈ assignedOf (dayPlan theQueuedRequest) := by
+        rw [hass]; simp
+      have := h theQueuedRequest ['m','1'] ['m','2'] e f hm1 hm2 hp hc hd hr hin
+      rw [hass] at this
+      simp at this
+
+set_option maxRecDepth 40000 in
+/-- **`Goals.plan_puts_hot_before_the_queue` as stage 6 wrote it is FALSE** (AGENTS §3.1 item
+3, D5).
+
+`m1` carries §7.2's `hot` flag and `m2` does not; the day holds two rows carrying `m2` and
+**none** carrying `m1`, so there is no row to be "before the queue" at.  Design §6.3 row 5
+predicted it — *"a dep-blocked or `Waiting` hot item is not assigned at all"* — and, as with
+the rank law, the reason here is that step 5 is unwritten rather than that `m1` is blocked.
+
+The restatement is **P5**'s and adds that the hot item is eligible at some slot of the day. -/
+theorem plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg),
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        Field.Flag.hot ∈ e.val.flags → Field.Flag.hot ∉ f.val.flags →
+        sj ∈ (dayPlan r).segments → sj.val.item = some j →
+        ∃ si ∈ (dayPlan r).segments, si.val.item = some i ∧
+          si.val.start ≤ sj.val.start) := by
+  intro h
+  obtain ⟨-, -, hany, hall⟩ := the_queued_day_assigns_the_second_sibling_only
+  cases hm1 : censusPlan.val.store.get ['m','1'] with
+  | none => exact absurd hm1 (by decide)
+  | some e =>
+    cases hm2 : censusPlan.val.store.get ['m','2'] with
+    | none => exact absurd hm2 (by decide)
+    | some f =>
+      have h1 : (censusPlan.val.store.get ['m','1']).map (fun x => x.val.flags)
+          = some [Field.Flag.hot] := by decide
+      rw [hm1, Option.map_some] at h1
+      have h2 : (censusPlan.val.store.get ['m','2']).map (fun x => x.val.flags)
+          = some [] := by decide
+      rw [hm2, Option.map_some] at h2
+      have hhot : Field.Flag.hot ∈ e.val.flags := by rw [Option.some.inj h1]; simp
+      have hnot : Field.Flag.hot ∉ f.val.flags := by rw [Option.some.inj h2]; simp
+      obtain ⟨sj, hsj, hji⟩ := List.any_eq_true.1 hany
+      obtain ⟨si, hsi, hii, -⟩ :=
+        h theQueuedRequest ['m','1'] ['m','2'] e f sj hm1 hm2 hhot hnot hsj (by simpa using hji)
+      have := List.all_eq_true.1 hall si hsi
+      simp [hii] at this
+
+
+/-! ### The two comparisons' subjects, counted — and one number in this file was wrong
+
+`the_battery_census_at_the_census_request` counts a checker's subject by filtering the day's
+**segments**.  Two of the eleven do not range over segments at all: `PlanCheck.monotoneInRank`
+and `PlanCheck.hotBeforeQueue` range over **pairs of store ids**, and the census's `= true`
+rows for them are the only two it takes on trust.  The two populations below close that, in the
+census's own idiom — a `filterMap` over the thing the checker quantifies over, whose length is
+the count.  They are **populations, not checkers**: each spells the antecedents of
+`PlanCheck.rankPairOk` / `PlanCheck.hotPairOk` and neither spells the conclusion, so a bug in
+one cannot make a checker pass (AGENTS §5.3 — grepped first; `store.dom.all` is `PlanCheck`'s
+and is not re-implemented, `PlanCheck.eligibleSomewhere` is called and not copied). -/
+
+/-- The pairs `PlanCheck.rankPairOk`'s implication is **about** at `el`, `r` and `d`: every
+antecedent of the checker, and none of its conclusion. -/
+def rankSubjects (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
+  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
+    match r.plan.val.store.get i, r.plan.val.store.get j with
+    | some e, some f =>
+        if decide (rootPrio r.plan.val i = rootPrio r.plan.val j)
+             && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
+             && decide (e.val.live.doc = f.val.live.doc)
+             && decide (e.val.live.rank < f.val.live.rank)
+             && PlanCheck.eligibleSomewhere el r d i && PlanCheck.eligibleSomewhere el r d j
+             && decide (j ∈ assignedOf d)
+        then some (i, j) else none
+    | _, _ => none))
+
+/-- The pairs `PlanCheck.hotPairOk`'s implication is **about**: a hot `i`, a not-hot `j` that
+some row of the day carries, and `i` eligible somewhere. -/
+def hotSubjects (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
+  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
+    match r.plan.val.store.get i, r.plan.val.store.get j with
+    | some e, some f =>
+        if decide (Field.Flag.hot ∈ e.val.flags) && decide (Field.Flag.hot ∉ f.val.flags)
+             && PlanCheck.eligibleSomewhere el r d i
+             && d.segments.any (fun s => s.val.item == some j)
+        then some (i, j) else none
+    | _, _ => none))
+
+set_option maxRecDepth 40000 in
+/-- **The refutation above is not vacuous**: both comparisons really do range over something
+at `theQueuedRequest`, on the whole day and on `PlanCheck.withoutPast`'s day alike, so their
+`false` is earned rather than an empty quantifier answering the wrong way (AGENTS §5.2).  The
+rank pair is `(m1, m2)`; the hot pairs are `(m1, m2)` and `(m1, g1)` — the calendar's meeting
+has a row and carries no `hot`, so it is a queued item this rule is about too. -/
+theorem the_two_comparisons_have_subjects_where_they_bite :
+    rankSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
+        = [(['m','1'], ['m','2'])] ∧
+      hotSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
+        = [(['m','1'], ['m','2']), (['m','1'], ['g','1'])] ∧
+      rankSubjects permissive theQueuedRequest
+          (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest))
+        = [(['m','1'], ['m','2'])] ∧
+      (hotSubjects permissive theQueuedRequest
+          (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest))).length = 2 := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **And the correction this file owed.**  Section 11's `storedWitness` doc comment said
+`Boundary.lookWallPlan`'s one-id store *"leaves five of the eleven checkers with nothing to
+range over"*.  It is **not five**, under any reading, and nothing in the repository computed
+it.  Measured here: at `theRunningRequest` the two comparisons have **no** subject at all —
+one id cannot make a pair — so with `the_battery_census_at_the_reserved_day`'s **four of
+seven** over `checksCore`, and `impossibleKept` and `batchDoesNotReachPast` empty at every
+request (`PlanCheck.impossibleKept_is_true_because_its_subject_is_empty` and its sibling), the
+count is **four of eleven with a subject and seven without**.
+
+Of those seven, **three** are starved by the witness — `noBlockOverABreak` wants a log with a
+break, and the two comparisons want a second id — and **four** by the planner, which is gap
+650's four.  The sentence conflated the two halves and used a number matching neither; it is
+corrected in place and says what it read.  README gap 852. -/
+theorem the_one_id_store_gives_neither_comparison_a_subject :
+    theRunningRequest.plan.val.store.dom = [['g','1']] ∧
+      rankSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] ∧
+      hotSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] := by
+  decide
 
 end PlannerWit
 end Tm
