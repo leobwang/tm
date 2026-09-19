@@ -2649,4 +2649,49 @@ set_option maxRecDepth 100000 in
 theorem aDayWithNoRoomForARoutineSaysNothingAboutIt :
     (Planner.dayPlan PlannerWit.theCrowdedRequest).diagnostics.notes.val = [] := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-19, stage 6 run W-21, track P, step P7 (AGENTS 6.2).
+   §8.2 step 7's three claims a reader would make and the kernel refuses.
+   Cheats 213-215. -/
+/- CHEAT 213 — Rest is all the free time left in the day.  Spec 8.2 step 7 says
+   "leftover SLOTS after the budget", and a slot is what the cut made: at
+   `PlannerWit.theRequest` the day is planned from 14:00 and the first slot
+   starts at 14:20, because the morning's two blocks put the break counter at
+   two and the cut opens with a 20-minute break.  Those 20 minutes are free and
+   are NOT Rest -- nothing was cut there, so there is no slot for a Rest row to
+   be a piece of.  This block claims a Rest row starting at 14:00.  `decide`
+   refuses; `PlannerWit.the_rest_rows_are_the_slots_no_group_took` is the list. -/
+set_option maxRecDepth 100000 in
+theorem theRestRowsStartWhenTheDayDoes :
+    (PlannerWit.theRequest.restRows.map (fun s => s.start)).head?
+      = some (Cal.instantOf Cal.chicago 739867 840).sec := by decide
+
+/- CHEAT 214 — an optional takes every minute it has left.  Spec 8.2 step 7
+   says "within `max:`", and fork's own `want` is
+   `cap_left_min().map_or(remaining_min, |l| remaining_min.min(l))`.
+   `PlannerWit.theOptionalRequest`'s `^p2` has 60 minutes of work left and a
+   `max:` of 90 with 70 of it already spent, so it may take 20.  This block
+   claims the 60.  `decide` refuses
+   (`PlannerWit.an_optional_asks_for_what_its_cap_leaves`). -/
+set_option maxRecDepth 100000 in
+theorem anOptionalTakesEveryMinuteItHasLeft :
+    (PlannerWit.theOptionalRequest.optionalFold.map (fun o => (o.id, o.want))).getLast?
+      = some (['p','2'], 60) := by decide
+
+/- CHEAT 215 — a break the day keeps is free time an optional may use.  Fork
+   `emit_segments` puts `kept_breaks` into the optionals' `occupied` list
+   precisely so that it is not: a break work touches is the day's rest, and an
+   optional dropped onto it is the day's rest spent.  At
+   `PlannerWit.theBusyRequest` the cursor's four slots and the 14:00-14:20 kept
+   break cover the window, so the only stretch left is after the last slot.
+   This block claims the break is free.  `decide` refuses
+   (`PlannerWit.the_break_the_day_keeps_is_not_free_for_an_optional`). -/
+set_option maxRecDepth 100000 in
+theorem aKeptBreakIsFreeTimeForAnOptional :
+    PlannerWit.theBusyRequest.optionalFree
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 860).sec),
+         ((Cal.instantOf Cal.chicago 739867 1140).sec,
+          (Cal.instantOf Cal.chicago 739867 1290).sec)] := by decide
+
 end Tm
