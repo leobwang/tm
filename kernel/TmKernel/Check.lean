@@ -5885,3 +5885,17 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- gap 877.
 #print axioms Tm.Planner.pickedGroup_is_the_first_that_fits
 
+-- APPENDED 2026-09-19 (stage 6, run **W-19**, the REPAIR step -- the witnesses).
+--   `the_gather_predicate_refuses_on_each_clause` and
+--   `the_gather_reads_each_of_its_five_clauses` are the subjects
+--   `Planner.Ranked.gatherable` never had: `:= true` was green across the whole
+--   build before them, and so was the removal of any one of its clauses.
+--   README gap 875.
+--   `the_two_comparisons_hold_at_the_reserved_day` and
+--   `the_two_comparison_lift_applies_at_the_reserved_day` give
+--   `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` the computed
+--   instance it shipped without.  README gap 879.
+#print axioms Tm.PlannerWit.the_gather_predicate_refuses_on_each_clause
+#print axioms Tm.PlannerWit.the_gather_reads_each_of_its_five_clauses
+#print axioms Tm.PlannerWit.the_two_comparisons_hold_at_the_reserved_day
+#print axioms Tm.PlannerWit.the_two_comparison_lift_applies_at_the_reserved_day

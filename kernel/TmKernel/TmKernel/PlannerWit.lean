@@ -1666,6 +1666,38 @@ theorem the_lift_applies_at_the_running_request :
     the_running_request_agrees.1 the_running_request_agrees.2
     the_running_request_is_inside_the_calendar the_running_request_is_plain
 
+set_option maxRecDepth 40000 in
+/-- **The two assumed comparisons, computed on the day the lift is about** (W-19's repair
+step).  `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` takes `hrank` and `hhot` as
+hypotheses and had **no instance in which all of its hypotheses hold**: the nearest computed
+fact in the tree was `the_battery_passes_at_the_census_request`, which is `planOk` over the
+**whole** day and not over `withoutPast`'s, and this file argues elsewhere that neither of
+those two days implies the other.  That is AGENTS §7.4 item 2's question left unanswered about
+the one theorem W-19 added with assumed hypotheses.  Here they are, at the reserved day, where
+the other five hypotheses already have theorems. -/
+theorem the_two_comparisons_hold_at_the_reserved_day :
+    PlanCheck.monotoneInRank permissive theRunningRequest
+        (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true ∧
+      PlanCheck.hotBeforeQueue permissive theRunningRequest
+        (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true := by
+  decide
+
+/-- **The two-comparison lift, fired.**  Seven hypotheses, every one of them a theorem above,
+so the conclusion is not vacuous and the statement is not a promise about an empty domain.
+Nothing here is a `decide` on the conclusion: it is the general lift applied.
+
+It does **not** weaken `PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`, which
+says the two hypotheses cannot be dropped for an arbitrary `el`; this says they are satisfiable
+at one, which is the other half of the same question. -/
+theorem the_two_comparison_lift_applies_at_the_reserved_day :
+    PlanCheck.planOk permissive theRunningRequest
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
+  PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons permissive theRunningRequest
+    theRunningRequest_wallsAgree the_running_request_agrees.1 the_running_request_agrees.2
+    the_running_request_is_inside_the_calendar the_running_request_is_plain
+    the_two_comparisons_hold_at_the_reserved_day.1
+    the_two_comparisons_hold_at_the_reserved_day.2
+
 /-! ############################################################################
 ## 13. The root walk the key really does, and the census at the reserved day
    (W-17 repair step)
@@ -2410,6 +2442,117 @@ and the seventeenth leads a batch of its own.  Nothing is lost — the four are 
 and this is the one behaviour this step deviates in. -/
 theorem the_gather_stops_at_the_batch_bound :
     (batchIds theZeroRequest).map List.length = [16, 4] := by decide
+
+/-! ### `Ranked.gatherable`'s five clauses, each refuted on its own (W-19's repair step)
+
+**The predicate fork `batches` calls `small` was entirely unwitnessed in the refusing
+direction.**  Replacing the whole of `Planner.Ranked.gatherable`'s body with `:= true` left
+`lake build TmKernel:static` green at 168/168 jobs and `check.sh` 8/8 — every theorem in
+`Planner.lean` and every one of P5b's nineteen `decide` witnesses included — and each of its
+three conjuncts dropped green on its own as well.  Only `:= false` was caught.  That is README
+gap 577's class a third time, and it is exactly where P5b's own gap 805 item 4 sends an
+auditor: *"a step that wants a behaviour-only inversion of the gather should mutate a reader
+(`Ranked.facts`, `Ranked.gatherable`) rather than the loop."*  README gap 875.
+
+What was missing is not a law but a **subject**: every candidate of every witness in this file
+was gatherable, so the predicate ranged over nothing that could say `false`.  The six requests
+below are three candidates each, differing in **one field of `^t2`** and in nothing else, and
+between them they pin all five clauses at the fold's own answer.
+
+*(One honest caveat, said here rather than left for an auditor: `optional` is read by §7's pass
+as well — it answers `p = 5` where the other two answer `3` — so `theGatherOptionalRequest`'s
+`^t2` also moves to the **end** of the order.  `the_gather_reads_each_of_its_five_clauses`
+records that movement rather than hiding it, and the batching answer is still the gather's: a
+`gatherable` that dropped `!optional` puts `^t2` back into `^t1`'s batch at its new position,
+which is a different list from the one stated.  `wall` moves `^t2` the other way, to the front,
+for the same reason — `CandKey.notWall` is the key's first number.)* -/
+
+/-- The nine facts of a gather candidate.  `wall_today` moves with `wall` so that a wall stays
+in the **order** (`Planner.entersTheOrder`, `PlanReq.another_days_wall_is_not_ranked`): what is
+under test here is the gather's refusal, not the filter's. -/
+def gatherFacts (w : Bool) : Look.PlanFacts := { planFacts 10 .any with wallToday := w }
+
+/-- One gather candidate, with the four `Look.Cand` fields `Ranked.gatherable` reads exposed and
+every other field of `bCand`'s shape held fixed. -/
+def gCand (id : List Char) (rem : Nat) (w o win : Bool)
+    (h : Look.PlanFacts.wf (gatherFacts w) = true) : Look.Cand × Option Look.Floor :=
+  (⟨id, 3, some 0, rem, none, win, w, o, false, false, false, none, ⟨gatherFacts w, h⟩⟩, none)
+
+def gPlain (id : List Char) : Look.Cand × Option Look.Floor :=
+  gCand id 10 false false false (by decide)
+
+/-- `^t1` and `^t3` are the same in all six requests; only `^t2` moves. -/
+def gatherTriple (c : Look.Cand × Option Look.Floor) : List (Look.Cand × Option Look.Floor) :=
+  [gPlain ['t','1'], c, gPlain ['t','3']]
+
+/-- Three gatherable candidates: one batch. -/
+def theGatherRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gPlain ['t','2']), by decide⟩ }
+
+/-- `^t2` with **nothing left to do** — fork `small`'s `remaining_min > 0`. -/
+def theGatherZeroRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gCand ['t','2'] 0 false false false (by decide)),
+                              by decide⟩ }
+
+/-- `^t2` asking for twenty-five minutes against a `batch_max_min` of twenty — too big to share
+a block, and the only candidate in this file that is. -/
+def theGatherBigRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gCand ['t','2'] 25 false false false (by decide)),
+                              by decide⟩ }
+
+/-- `^t2` as a wall: an Interval, which is placed as itself and never shares. -/
+def theGatherWallRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gCand ['t','2'] 10 true false false (by decide)),
+                              by decide⟩ }
+
+/-- `^t2` optional: §16's rest-filler, which takes what is left rather than a share of a block. -/
+def theGatherOptionalRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gCand ['t','2'] 10 false true false (by decide)),
+                              by decide⟩ }
+
+/-- `^t2` with a placement window: it is placed inside its own window and nowhere else. -/
+def theGatherWindowRequest : PlanReq :=
+  { theRequest with cands := ⟨gatherTriple (gCand ['t','2'] 10 false false true (by decide)),
+                              by decide⟩ }
+
+/-- `Ranked.gatherable`'s own answer for each entry of the order, at this request's
+`batch_max_min`. -/
+def gatherFlags (r : PlanReq) : List (Id × Bool) :=
+  r.rankedCands.map (fun x => (x.cand.id, x.gatherable r.prio.batchMaxMin))
+
+/-- **The predicate answers `false` for each of the five clauses, and `true` when none bites.**
+This is the reader-level half: it fails on `:= true`, on `:= false`, and on the removal of any
+one of the three conjuncts — the last because the `remaining` clauses and the three flags are
+witnessed by different rows of the same list. -/
+theorem the_gather_predicate_refuses_on_each_clause :
+    gatherFlags theGatherRequest =
+      [(['t','1'], true), (['t','2'], true), (['t','3'], true)] ∧
+    gatherFlags theGatherZeroRequest =
+      [(['t','1'], true), (['t','2'], false), (['t','3'], true)] ∧
+    gatherFlags theGatherBigRequest =
+      [(['t','1'], true), (['t','2'], false), (['t','3'], true)] ∧
+    gatherFlags theGatherWallRequest =
+      [(['t','2'], false), (['t','1'], true), (['t','3'], true)] ∧
+    gatherFlags theGatherOptionalRequest =
+      [(['t','1'], true), (['t','3'], true), (['t','2'], false)] ∧
+    gatherFlags theGatherWindowRequest =
+      [(['t','1'], true), (['t','2'], false), (['t','3'], true)] := by decide
+
+/-- **And the refusal reaches the batches**, which is the half a reader-level theorem cannot
+give: gathering consumes `room` and `tot`, so a candidate wrongly gathered changes which later
+members are gathered, which groups exist, `commitOf`, and every answer of the cursor.
+
+Three gatherable candidates are **one** batch.  Each of the five clauses cuts that batch: the
+gather stops at `^t2` (fork `break`) and `^t2` then leads a batch of its own.  Every one of
+these six lists changes under `Ranked.gatherable := true`; each of the last five changes under
+the removal of its own clause alone, and `theGatherRequest`'s changes under `:= false`. -/
+theorem the_gather_reads_each_of_its_five_clauses :
+    batchIds theGatherRequest = [[['t','1'], ['t','2'], ['t','3']]] ∧
+    batchIds theGatherZeroRequest = [[['t','1']], [['t','2']], [['t','3']]] ∧
+    batchIds theGatherBigRequest = [[['t','1']], [['t','2']], [['t','3']]] ∧
+    batchIds theGatherWallRequest = [[['t','2']], [['t','1'], ['t','3']]] ∧
+    batchIds theGatherOptionalRequest = [[['t','1'], ['t','3']], [['t','2']]] ∧
+    batchIds theGatherWindowRequest = [[['t','1']], [['t','2']], [['t','3']]] := by decide
 
 /-! ### §8.2 step 5's cursor, run rather than argued (P5b, the second half)
 
