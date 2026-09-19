@@ -44156,3 +44156,465 @@ parity P38.**
 
 None entered and none created. `git worktree list` shows the main checkout and
 `stage5-lookahead`, which is untouched.
+
+## Stage 6, W-21 track P, 2026-09-19: §8.2 step 7 — the slot nobody took becomes Rest, and the optional takes its minutes out of it
+
+**What landed, in one sentence each.** `9f42341` ports fork `emit_segments`' step-7 half
+(`planner.rs:1876-1957`) as a rule with no caller: the breaks the day keeps, the optionals
+filling the free day before the wind-down within what is left of their `max:`, the Rest pieces
+of every slot the cursor did not fill, and the two numbers §8.2 step 8 reads off them.
+`c2de2dd` adds cheats 213-215. `fcfe2ee` **wires it into the day**: `dayRows` gains the Optional
+and Rest rows, `dayDiagnostics` gains `Diagnostics.aCapacityLost` and `Note.budgetSpent`, and
+thirteen computed witnesses are restated over the day that now has Rest in it.
+
+### The four sentences that belong at the top
+
+* **The rest rule and the cut already had a relationship, and this step read it instead of
+  building a second one.** `Look.cutSlots` takes the placed routines as `rests` (AGENTS §8.4),
+  so no slot is ever cut under a routine **step 2** placed. What step 7 adds is exactly the
+  difference: the routines **step 6** placed, which ran after the cut, and the optionals step 7
+  has just placed. `Planner.PlanReq.restTaken` is that difference and `Look.freeIntervals` —
+  L3's own walk — carves each unfilled slot around it. Computed, not asserted:
+  `PlannerWit.a_routine_step_six_placed_is_taken_out_of_rest` shows the routine day's third
+  Rest row starting at **17:30** because `stretch` sits at 17:00-17:30 inside a slot the cut
+  knew nothing about, and `PlannerWit.an_optional_takes_its_minutes_out_of_rest` shows the §4.3
+  Wednesday's first Rest row starting at **14:50** instead of 14:20 because two optionals took
+  the 50 minutes before it.
+* **`keptBreaks` is P6's, widened, not something new.** Fork `emit_segments` takes step 6's own
+  function at the assignment step 6 **left** and drops the breaks a placed routine covers;
+  `Planner.PlanReq.emitKeptBreaks` is that one extra filter over `Planner.PlanReq.keptBreaks`,
+  and the filter's test is `Planner.overlapsAny`, step 2's. Why it matters is computed too: at
+  `PlannerWit.theBusyRequest` the kept break is the **only** difference between step 6's
+  occupied list and step 7's, and it is 20 minutes an optional would otherwise be dropped onto
+  (`PlannerWit.the_break_the_day_keeps_is_not_free_for_an_optional`, cheat 215).
+* **CHECK 9 CAUGHT FOUR DEFINITIONS THIS STEP WROTE WITH NO INSTRUMENT, and the repair was to
+  build the instruments.** `python3 mutate.py --since 86c4dc6`, run before the first commit,
+  came back **SURVIVED** for `Planner.PlanReq.optionalOccupied`, `Planner.PlanReq.optionalSpans`,
+  `Planner.PlanReq.restTaken` and `Planner.PlanReq.restHighMin` — five constant-folds, five
+  green builds, and nineteen freshly written laws all still true. That is the W-19
+  `Planner.Ranked.gatherable` class exactly, caught by a gate rather than by a reader, at the
+  moment it was cheapest to fix. README gap **1001**.
+* **The Block and Batch rows are still not emitted, and this step does not change that.** README
+  gap **803** item 4 stands: emission is the switch-shaped change (D19) that makes four
+  `PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core`'s
+  `hblk` — *"every Block row of this day is the reservation"* — with it, which is **G1**'s lift.
+  Step 7's three kinds are none of those, so they land beside it and `dayPlan_ok_core` is
+  re-proved unchanged. The day now shows its free afternoon as Rest and its assigned slots as
+  nothing. Gap **1000**.
+
+### The numbers, re-measured
+
+Every command capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet` — no exception, and none was retried uncapped.
+
+| measurement | `4ccf4ef` (baseline) | `9f42341` (the rule) | `c2de2dd` (the cheats) | `fcfe2ee` (the wire) |
+|---|---|---|---|---|
+| `check.sh` | **9/9** | **9/9** | **9/9** | **9/9** |
+| axiom audit | 4,754 theorems | **4,781** (+27) | 4,781 | **4,795** (+14) |
+| check 5 (FFI through `check.sh`) | 93 tests | 93 | 93 | 93 |
+| check 8 | 23,630 cit. / 22,118 res. | 23,713 / 22,200 | 23,721 / 22,208 | **23,745 / 22,232**, 0 allow entries unused |
+| check 9 | 46 new or changed / 46 rostered (23 unfoldable) / 0 owed | 70 / 70 (28 unfoldable) / 0 | 70 / 70 / 0 | **71 / 71 (28 unfoldable, 0 literal) / 0** |
+| corpus | 29/37 files, 4/5 whole plans | unchanged | unchanged | unchanged |
+| burn-down | 9, all stage 6 | unchanged | unchanged | **unchanged — design §6.4 gives step 7 no goal** |
+| `cargo test --workspace` | 1,345 / 0 / 9 across 79 | unchanged | unchanged | **1,345 / 0 / 9 across 79** |
+| `Negative.lean` cheats | 212 | 212 | **215** | 215 |
+
+**THE BRIEF'S BASELINE IS OFF BY ONE IN TWO PLACES, and the baseline column above is
+re-measured rather than quoted (§5.11).** W-21's brief gives check 8 at `4ccf4ef` as
+"23,629 citations, 22,117 resolved". Running `./check.sh` on a clean `4ccf4ef` kernel —
+twice, once at the start of this run and once at its end with the baseline kernel checked
+back out — reports **23,630 / 22,118** both times. Everything else in the brief's baseline
+line is exact.
+
+**`check.sh` wall time, warm, measured against the baseline kernel checked back out into
+this tree and rebuilt** — the comparand is re-measured on this machine and this load, not
+quoted from W-20's block (§5.11):
+
+| tree | readings | median |
+|---|---|---|
+| `4ccf4ef`, checked out and rebuilt | 8.93 · 7.95 · 8.03 s | 8.03 s |
+| with the cheats (`c2de2dd`) | 8.25 · 8.25 · 8.27 s | 8.25 s |
+| the wire (`fcfe2ee`) | 12.34 (cold) · 8.33 · 8.32 s | **8.32 s** |
+
+**+3.6% end to end**, inside design §14.0 item 4's 10%-per-step rule. The rise is check 1's
+and check 4's: three cheats and twenty-seven witnesses, several of which decide a whole
+`dayPlan`.
+
+**The other suites, all at `fcfe2ee`:** FFI **101** 0 failed; `kernel_log_door` 23;
+`cli_switch_acceptance` 9; `kernel_call_counts` 2; `kernel_lookahead_parity` 4;
+`kernel_replay_parity` 29; `planner_invariants` 6 — **73 passed / 0 failed across the six**.
+`cli_latency --include-ignored --test-threads=1`, release: **6 passed / 0 failed**. T11 rows
+**as ranges or as this run's readings, none re-blessed**: the `tm drop` row (the gated
+host-only write, D35) **131.63–131.69 ms** against its 127–142 band; the 3-day-old routine
+**131.76–136.83 ms** against the recorded 121.6–136.8; `review week` **263.42–263.53 ms**
+against the recorded 248.1–253.3 (W-18 saw 268–278, W-19 258–273, W-20 288–309 — gap 275,
+and this machine is inside that spread); the reseal **187.32–197.20 ms** against the
+recorded 197.5–212.6, i.e. **below** it this session. The 3-year-log later verb reads
+**131.69–136.82 ms** against its recorded 146.66–147.01 band — *this session's machine is
+faster than every session that set that band*, which is the reason the band is a band.
+Every assertion inside the test passed; nothing was re-blessed.
+
+**Memory.** The whole build completes at `MemoryMax=40G`; the twenty-seven new `decide`
+witnesses add no probe above the budget — `check.sh`'s own wall time is the measurement and
+it rose 3.6%. No bound was raised (D18).
+
+**A process note, disclosed not corrected.** No command in this run was executed outside
+`systemd-run`. The one thing that went wrong was mechanical: a background waiter's
+`pgrep -f "lake build"` matched **its own command line**, so it never exited and a timing
+loop sat behind it for several minutes. Nothing was measured wrong by it; the timings above
+were then taken in the foreground.
+
+### What step 7 emits, and what it still does not
+
+| §8.2 step 7 / 8 row | in this step | where |
+|---|---|---|
+| Rest, one per free piece of an unfilled slot, carrying the slot's level | **yes** | `Planner.PlanReq.restRows` |
+| Optional, first fit before the wind-down, within `max:` | **yes** | `Planner.PlanReq.optionalRows` |
+| `Diagnostics.aCapacityLost` | **yes** | `Planner.PlanReq.aCapacityLost` |
+| `Note.budgetSpent` | **yes** | `Planner.PlanReq.budgetSpentNotes` |
+| Break rows (the spans are read, the rows are not emitted) | **no** — gap 1003 | `Planner.PlanReq.emitKeptBreaks` |
+| Block and Batch rows | **no** — gap 1000, README gap **803** item 4 | — |
+| `underused`, `hot`, `impossible`, `blocked`, `deferred`, `waiting`, `droppedTail`, `planHonesty`, `restDebtMin` | **no** — gap 1005 | — |
+
+### Witnesses: the component under test is the only thing that differs
+
+W-17's lesson. **Eleven new theorems in `PlannerWit.lean`, every one computed**, on days the
+engine really runs, and **five of the eleven exist because check 9 reported SURVIVED** for a
+definition nothing else could tell from a constant (gap 1001).
+
+* **The Rest rows are the slots the cursor left, and nothing else.** `theRequest` sends no
+  candidate, so all four of its slots are Rest at levels 3, 3, 2, 2; `theBusyRequest` is the
+  same afternoon with §8.2 step 5's four candidates on it, the cursor takes every slot, and
+  `restRows` is **empty**. One difference on the wire, two answers.
+* **An optional takes its minutes out of Rest.** `theOptionalRequest` is `theRequest` with
+  four `optional.md` lines and nothing else changed: the first Rest row starts at **14:50**
+  instead of 14:20.
+* **A routine STEP 6 placed is taken out of Rest too** — which is why `restTaken` reads
+  `finalRoutines` and not `placedRoutines`: on the routine day the third Rest row starts at
+  **17:30**, because `stretch` sits at 17:00–17:30 inside a slot the cut knew nothing about.
+* **Each of fork's four loop branches, one candidate apiece.** `^p1` asks for all 30 minutes
+  it has left; `^p3` has nothing left and is skipped; `^p4` wants ten hours and no stretch is
+  that wide, and the loop **continues** — which is the only reason `^p2`, the candidate after
+  it, is placed at all; `^p2` has an hour of work left and a `max:` of 90 with 70 spent, so it
+  may take **20**. That last one is §8.2 step 7's "within `max:`", computed.
+* **The kept break is 20 minutes an optional would otherwise be dropped onto.** At
+  `theBusyRequest` it is the *only* difference between step 6's occupied list and step 7's.
+* **A-capacity lost, three answers on one day.** `theQuietRequest` is the one witness day
+  whose first slot is at level **4** — an hour of Rest at a level that could have carried the
+  most demanding work there is. With no candidate the number is **0**; with `^c3` (`ci 5`,
+  which no slot of this day can take) it is **60**; with `^c3` in the assigned set it is 0
+  again.
+* **A spent budget is named and a live one is not.** `theSpentBudgetRequest` is the §4.3
+  Wednesday with `tm arrive`'s stored budget set to the two blocks the morning already closed:
+  `remainingBudget` is 0 and the note list is `[Note.budgetSpent 2]`. The same day with the
+  shipped budget of six has four blocks left and no note.
+* **And, on the wired day:** the whole eleven-row day with two optionals on it; the battery's
+  verdict **unmoved** at five requests; and `dayAssigned` computed at three.
+
+### One population really moved, and it is named
+
+**A Rest row carries a slot energy** — the first row any produced day has ever carried one on.
+Four censuses that said *"no row of the day carries a slot energy"* now say *"no **Block** row
+does"* and compute what the Rest rows carry instead. The old sentence was true only of a day
+with no Rest in it and was the wrong claim about `PlanCheck.energyOk`'s subject, which fires
+only on a row that is a Block **and** carries an item **and** carries a level; a Rest row has
+no item (`PlanReq.restRows`' `item := none`), so `PlanCheck.energyFilterOk` is unmoved and
+`PlannerWit.the_battery_is_unmoved_by_the_rest_rows` computes that too. D5: re-proved over the
+new shape, never weakened, and the change said out loud rather than absorbed.
+
+### D9-21, the recursion rule
+
+`PlanReq.optionalFold` is a `List.foldl` over `PlanReq.optionalCands`, which the wire caps at
+`maxCands` (`PlanReq.cands` is `Capped`); `foldl` is already the compiled form, as
+`PlanReq.assignFold`'s is, so no `@[csimp]` twin is owed. `PlanReq.restRows` is a
+`List.flatMap` over the slot list with `Look.freeIntervals` inside it, both core's.
+`Planner.placeOptional` is `List.findIdx?`, `List.set` and `List.eraseIdx` and does not
+recurse at all. **Nothing this step adds recurses by hand over a wire-sized list.**
+
+### What this step did NOT do, by name
+
+* **§8.2 step 5's Block and Batch rows** — gap 1000, which is README gap 803 item 4.
+* **The Break rows** — gap 1003. Their spans are read; the rows are not emitted.
+* **P8 and `Emit.lean`** — gap 1007. The fourteenth honest stop of this campaign.
+* **The `loc:` filter on an optional.** Fork does not apply one either
+  (`planner.rs:1914`'s filter is `is_optional && eligible()`), and neither does this.
+* **`Diagnostics.deferred`.** Still §8.2 step 8's *posterior-downgrade* list and **not** the
+  routines step 2 deferred, and **not** the optionals step 7 could not place — one field, one
+  meaning (AGENTS §5.3). An optional with no room is simply not a row; fork's `continue` says
+  nothing about it either.
+* **A second `PlanCheck` entry.** The battery is still eleven; no checker is about a Rest or an
+  Optional row and none is added. Design §6.4 gives step 7 no goal, this step discharges none,
+  and the burn-down stays at **9** — measured, not predicted:
+  `PlannerWit.the_battery_is_unmoved_by_the_rest_rows` computes the verdict at five requests
+  and the population the one moved checker ranges over.
+
+### The mutations, run and watched failing (D40)
+
+Every definition this step adds or changes, body replaced by a constant of its type one at a
+time, `lake build TmKernel:static` run capped, the first error recorded, then reverted.
+**None is in any commit**; `git status` was empty between each, and the rows are in
+`kernel/mutations.txt` beside the definitions they are about. **Twenty-five definitions
+audited across three passes: 20 PINNED, 5 UNFOLDABLE, 0 LITERAL, and 5 SURVIVED before their
+witnesses were written.**
+
+| # | the mutation | what failed |
+|---|---|---|
+| A | `PlanReq.blocksDone` is 0, then 1 | `PlannerWit.the_cursor_requests_day_is_four_slots` (both) |
+| B | `remainingBudget` is 0, then 1 | `remainingBudget_le_budget`; `a_travel_day_has_no_budget` |
+| C | `PlanReq.emitKeptBreaks` is empty | `PlanReq.emitKeptBreaks_is_a_kept_break` |
+| D | `PlanReq.optionalOccupied` is empty | **SURVIVED.** Then **`PlannerWit.the_break_the_day_keeps_is_not_free_for_an_optional`** |
+| E | `PlanReq.optionalFree` is empty | `an_optional_is_placed_in_the_free_day_before_the_wind_down` |
+| F | `optionalWant` is 0, then 1 | `optionalWant_without_a_cap` (both) |
+| G | `PlanReq.optionalCands` is empty | `PlanReq.an_optional_candidate_is_optional_and_eligible` |
+| H | `placeOptional` answers `none` | `placeOptional_spec` |
+| I | `optionalStep` does nothing | `optionalFold_ok` |
+| J | `PlanReq.optionalFold` is empty | `an_optional_is_placed_in_the_free_day_before_the_wind_down` |
+| K | `FreeOk` is `True`, then `False` | `freeIntervals_FreeOk` (both) |
+| L | `PlanReq.optionalRows` is empty | `PlanReq.optionalRows_kinds` |
+| M | `PlanReq.optionalSpans` is empty | **SURVIVED.** Then **`PlannerWit.the_optionals_fill_the_day_in_request_order`** |
+| N | `PlanReq.restTaken` is empty | **SURVIVED.** Then **`PlannerWit.an_optional_takes_its_minutes_out_of_rest`** |
+| O | `PlanReq.restRows` is empty | `PlanReq.restRows_kinds` |
+| P | `PlanReq.restHighMin` is 0, then 1 | **SURVIVED at both.** Then **`PlannerWit.the_a_capacity_lost_is_the_high_rest_a_ci_5_item_could_not_have`** (both) |
+| Q | `PlanReq.aCapacityLost` is 0, then 1 | `PlanReq.aCapacityLost_needs_rest` (both) |
+| R | `PlanReq.budgetSpentNotes` is empty | `PlanReq.no_budget_note_while_the_budget_lasts` |
+| S | `dayRows` is empty | `mem_dayRows` |
+| T | `dayAssigned` is empty | **SURVIVED.** Then `assignedOf_dayPlan_is_dayAssigned` |
+| U | `dayDiagnostics` | **UNFOLDABLE** — no `Inhabited Diagnostics` |
+| V | `PlannerWit.witOptionalCands` is empty | `PlannerWit.an_optional_asks_for_what_its_cap_leaves` |
+| W | `PlannerWit.oFacts`, `oCand`, `theOptionalRequest`, `theHighRestRequest`, `theSpentBudgetRequest` | **UNFOLDABLE** — no `Inhabited` for `Look.PlanFacts`, `Look.Cand` or `PlanReq` |
+
+**GAP 985'S SHAPE, APPLIED BY HAND, AND WHAT IT SHOWED.** The brief asks about the extension
+check 9 does not yet do: fold an accumulator function to the **identity on its accumulator**
+rather than to a constant. This step adds exactly one such function, `Planner.optionalStep`,
+and the probe was run: body replaced by `acc`, `lake build TmKernel:static` capped, then
+reverted. **It did not survive** — `optionalFold_ok`'s `split` no longer finds an `if` or a
+`match` in the goal (`Planner.lean:5607`). But read the *instrument*: it failed **inside its
+own proof in `Planner.lean`**, so `PlannerWit.lean` was never elaborated and the witness that
+would also have caught it — `the_optionals_fill_the_day_in_request_order`, which computes two
+placed optionals where the identity places none — **cannot be shown doing so in that
+transcript**. That is README gap **805**'s class, disclosed here for the one definition the
+brief asked about, and it is the reason the extension is worth building in `mutate.py` (track
+A's, not this step's): a gate's verdict and a gate's *instrument* are different claims.
+
+**What these mutations cannot show, said plainly.** **Fifteen** of the twenty-five failed
+inside their own proofs in `Planner.lean` rather than as a false computed claim, which means
+`PlannerWit.lean` was not elaborated at all for those fifteen and the transcript cannot show
+a witness failing beside the proof. The instruments that **bite** are D, M, N, P, T and V —
+every one a witness, and five of the six exist only because the gate reported SURVIVED first.
+And a constant is not an inversion (README gap 937): swapping two clauses of `optionalStep`
+or reversing `victimLt`'s order is invisible to all of this.
+
+### Method, and what each method cannot see
+
+AGENTS's W-17 lesson, applied to every completeness claim above.
+
+1. **"Nothing new was written that the kernel already had."** *Method:* **body searches, not
+   name searches**, run **before** writing rather than after (W-19's capMin?/`Seal.minOpt`
+   lesson). `grep -rn 'findIdx?' TmKernel/*.lean` → **3 hits, all `Planner.lean`**: the
+   cursor's `assignStep`, step 7's `placeOptional`, and the one inversion lemma both go
+   through — which is why `pickedGroup_is_the_first_that_fits` was **generalised over its
+   element type** rather than copied. `grep -rn 'def freeIntervals\|def freeChain\|def
+   freeStep\|def clipTo'` → **4, all `Lookahead.lean`**, so there is still exactly one
+   free-interval walk. `grep -rn 'iv.2 - iv.1'` → **16 lines**, which resolve to **three
+   searches over that one walk** — `earliestFree` (step 2's earliest), `PlanReq.lowestFree`
+   (step 6's lowest-energy) and `placeOptional` (step 7's first-fit-and-shrink) — and all
+   three take their position through the same `freeStretch_gives_a_position`.
+   `grep -rn 'minOpt'` → `Seal.minOpt` in `SealResume.lean` with **two** callers in
+   `Planner.lean`: `capLeftOf`'s fold and step 7's `optionalWant`. `grep -rn '\.2 ∧ .*\.1 <'`
+   → **1**, `Planner.overlapsAny`, which `emitKeptBreaks` calls. `grep -rn 'eraseIdx'` → **3,
+   all step 7's**. `grep -rn 'Look.cutSlots '` → **2 lines, one call site and its `rfl`**.
+   *Blind spots, two of them measured:* (a) a body search is a search for a **shape I thought
+   of** — a helper written with a `foldr`, a `rec` or a different `match` is invisible to all
+   seven of these; (b) **a grep is line-oriented and these bodies wrap.** `grep -rn 'foldl
+   (fun a s => a + '` returns **one** hit (`Look.Cut.slotMinutes`) and **misses
+   `PlanReq.restHighMin`**, whose `.foldl` ends one line and whose function opens the next.
+   Chasing that by hand finds **three** fold-sums of minutes in the kernel at three element
+   types — `Cut.slotMinutes` over `Look.Slot`, `blockSeconds` over `WfSeg`, `restHighMin` over
+   `Seg` — sharing the one arithmetic (`Look.spanMinutes`) and not a `sum` helper, because
+   there is none to share. That is a judgement, not a duplicate, and it is written down here
+   rather than left for an auditor.
+2. **"Every definition this step adds was constant-folded, and something failed for each."**
+   *Method:* `python3 mutate.py --since 86c4dc6 --write`, capped, one `lake build` per
+   constant, the first error recorded per row; three passes as the step grew. *Blind spots:*
+   the ones `mutate.py`'s own header lists, plus the two this run measured — **five
+   definitions SURVIVED** before their witnesses existed (gap 1001), and **fifteen of
+   twenty-five failed inside `Planner.lean`**, so `PlannerWit.lean` never elaborated for them
+   and no witness can be *seen* failing in those transcripts.
+3. **"No shipped verb reaches this code."** *Method:* `grep -c 'Planner\.'
+   TmKernel/Boundary.lean` → **0**; `grep -c 'restRows\|optionalFold\|optionalRows\|
+   emitKeptBreaks\|aCapacityLost\|budgetSpent' TmKernel/Boundary.lean` → **0**; and over the
+   Rust, `grep -rn 'restRows\|optionalFold\|aCapacityLost\|a_capacity_lost'
+   tm-core/src/kernel_*.rs tm/src` → **0 hits**. `PlanReq` still has no decoder, so
+   `callExport` cannot reach any of it. *Blind spot:* a grep over one file and two
+   directories. The corroborating measurement is that `cargo test --workspace` is **unchanged
+   at 1,345 / 0 / 9 across 79** and check 5 unchanged at 93 — no Rust was touched and no Rust
+   answer moved.
+4. **"The shipped binary still works."** *Method:* a release `tm` on a scratch `tm init
+   --example` tree **outside the repo**: `tm check` prints `no problems` and exits 0; `tm
+   plan` prints the day and exits 0. *Blind spot:* **the drive cannot show that any of this
+   step's code ran, because none of it did** — `tm plan`'s output is still the *Rust*
+   planner's (gap 603), and the `19:05 ○ Severance S3E4` line in it is fork
+   `emit_segments`' optional row, not this step's. It is evidence of no regression, not
+   evidence of step 7.
+5. **"Every theorem added is audited."** *Method:* check 3's own multiset reconciliation
+   (`comm -23` of declared short names against audited last segments), run after each append —
+   **empty** every time; the count moved 4,754 → 4,781 → 4,795, which is 27 + 14 = the 41
+   theorems appended. *Blind spot:* one-directional; it cannot see a theorem audited under the
+   wrong namespace prefix.
+6. **"Every cheat is refused, and for the right reason."** *Method:* `lean
+   -DmaxErrors=1000000 Negative.lean` read for the three new blocks — **all three** fail as
+   *"`decide` proved that the proposition … is false"*, with the proposition printed.
+   *Blind spot:* a cheat refused by a **parse** error would still satisfy check 4; none of
+   these is.
+7. **"The prose cites nothing stale."** *Method:* check 8, which **caught one citation in
+   this step's own doc comments before the first commit**: the citation named a fork **local**,
+   not a declaration, so it resolved to nothing. Repaired by naming the thing instead of the
+   local — D41: repaired, never exempted, and the allow-list did not grow (1,513 allowed, 113
+   vocabulary, 347 counted, 0 entries unused, the same shape as the baseline's 1,512).
+   *Blind spot:* it cannot see a citation that resolves and is **wrong**.
+8. **"The battery's verdict did not move."** *Method:* before the wire was applied, the
+   post-wire day was **computed** in a scratch file that reproduced `dayRows`' new body
+   and `dayDiagnostics`', and `PlanCheck.planOkCore` and
+   `PlanCheck.planOk permissive` were evaluated on both the old and the new day at **twelve**
+   witness requests: every pair agreed, and `assignedOf` agreed at eight. That is why the
+   thirteen restated witnesses were patched in **one** pass rather than iterated.
+   *Blind spot:* twelve requests are not every request — the ∀-theorems are what cover the
+   rest, and `dayPlan_ok_core`'s proof is re-proved, not re-measured.
+### Gaps taken: 1000-1007 (track P's range is 1000-1029; 1008-1029 free)
+
+**Gap 1000 — §8.2 step 5's Block and Batch rows are still not emitted, so the day shows Rest
+where work will be.**
+1. *What is not done.* `Planner.PlanReq.assignFold` produces a slot-to-group assignment and
+   nothing turns it into `Seg`s. `Planner.dayRows` is steps 1, 2, 6 and 7 and choice 5b's
+   reservation: a slot the cursor **filled** contributes no row at all, while a slot it did not
+   fill is now Rest.
+2. *Why.* README gap **803** item 2's reason, unchanged and now priced. Emission makes
+   `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`,
+   `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down`,
+   `PlanCheck.the_day_has_no_batch_row` and
+   `Planner.the_day_assigns_nothing_after_now_but_the_running_block` false on one commit, and
+   `PlanCheck.dayPlan_ok_core`'s whole proof rests on its `hblk` — *"every Block row of this day
+   is the reservation"* — which is exactly what stops being true. Re-proving the seven checkers
+   over a day with assigned Blocks on it is **G1**'s lift, not a step-7 edit. Step 7's three
+   kinds are **not** Block rows, which is why they land beside it and `dayPlan_ok_core` is
+   re-proved unchanged.
+3. *What it costs.* A reader of the day sees Rest where the cursor put work. Nothing is false:
+   every Rest row is a piece of a slot `PlanReq.finalAssign.slotOf` really left empty
+   (`Planner.a_rest_row_is_a_piece_of_an_unfilled_slot`), and at
+   `PlannerWit.theBusyRequest`, where the cursor takes all four slots, there is **no Rest row at
+   all** (`PlannerWit.the_rest_rows_are_the_slots_no_group_took`).
+4. *Which step clears it.* Gap 803's item 4, then **G1**.
+
+**Gap 1001 — FIVE of step 7's definitions had no instrument when they were written, and check 9
+is what said so.**
+1. *What is not done.* Nothing is broken; this is a **method disclosure** and the record of a
+   repair made inside the step.
+2. *Why.* `python3 mutate.py --since 86c4dc6`, run before the first commit, reported
+   **SURVIVED** for `Planner.PlanReq.optionalOccupied` (`:= default`),
+   `Planner.PlanReq.optionalSpans` (`:= default`), `Planner.PlanReq.restTaken` (`:= default`)
+   and `Planner.PlanReq.restHighMin` (`:= 0` **and** `:= 1`) — five constant-folds, five green
+   builds, every one of the 19 laws the step had written still true — and, at the wire, a
+   **fifth** definition, `Planner.dayAssigned`, for the same reason one step on: the only
+   witness day with high Rest assigns nothing, so replacing the day's assigned set with `[]`
+   changed no answer. Each of the five is read only through another definition, and the laws
+   quoted the caller and never the callee: that is README gap **805**'s shape from the other
+   side, and it is the W-19 `gatherable` class exactly.
+3. *What it costs.* Nothing now: the repair is five computed witnesses and
+   `Planner.assignedOf_dayPlan_is_dayAssigned`
+   (`PlannerWit.the_break_the_day_keeps_is_not_free_for_an_optional`,
+   `…the_optionals_fill_the_day_in_request_order`, `…an_optional_takes_its_minutes_out_of_rest`,
+   `…a_routine_step_six_placed_is_taken_out_of_rest`,
+   `…the_a_capacity_lost_is_the_high_rest_a_ci_5_item_could_not_have`). What it costs as a lesson
+   is that without the gate this step would have shipped five unwitnessed definitions while
+   claiming nineteen laws.
+4. *Which step clears it.* Cleared here.
+
+**Gap 1002 — `emitKeptBreaks`' routine filter is UNREACHABLE from any `PlanReq`.**
+1. *What is not done.* No request makes the `Planner.overlapsAny` clause of
+   `Planner.PlanReq.emitKeptBreaks` answer `true`: on every request the filter removes nothing
+   and `emitKeptBreaks = keptBreaks finalAssign`.
+2. *Why.* A break of the cut cannot lie under a routine **step 2** placed — those are the cut's
+   own `rests` and `Look.freeIntervals` cuts around them — and a routine **step 6** placed flowed
+   around `PlanReq.keptBreaksToday`, which is the same list. So no placed routine overlaps a kept
+   break. The fork has the same filter in `emit_segments` and it is dead there for the same
+   reason: README gap **903**'s class, one step on.
+3. *What it costs.* One clause of one definition that no day exhibits.
+   `Planner.PlanReq.an_emitted_break_is_clear_of_the_routines` proves the disjointness the
+   filter asserts, so it is not a soundness hole; the cost is that a reader reasoning about the
+   day from `emitKeptBreaks` will believe a routine can take a break over.
+4. *Which step clears it.* Either a proof that step 6 never places over a kept break — which
+   needs a completeness law for `PlanReq.lowestFree` that nothing in the tree states, the same
+   law gap 903 is waiting on — or **R3**, which deletes the fork's clause and the kernel's
+   together.
+
+**Gap 1003 — the Break rows are still owed, and their spans are already read.**
+1. *What is not done.* `Planner.PlanReq.emitKeptBreaks` computes the breaks the day keeps and
+   **no `SegKind.brk` row is produced from them**. The day's only Break rows are the log's.
+2. *Why.* A planner-placed Break row makes `Planner.a_break_row_is_a_replayed_row` false, and
+   that theorem is how `PlanCheck.dayPlan_ok_core`'s `noBlockOverABreak` conjunct is discharged.
+   Re-proving it needs `Look.cutSlots_breaks_avoid_the_walls` at the reservation's own span —
+   small, and it belongs with the Block rows the breaks sit *between* (README gap **551**), not
+   in front of them.
+3. *What it costs.* `PlanCheck.noBlockOverABreak` has a subject only at a request whose **log**
+   holds a break, and the day does not show the rest the cut planned. The optionals already
+   flow around the spans, so no placement is wrong — only the rendering is short.
+4. *Which step clears it.* The emission step gap 803 item 4 names.
+
+**Gap 1004 — an Optional row carries no instance key.**
+1. *What is not done.* `Planner.PlanReq.optionalRows` sets `inst := none`; fork's row carries
+   `c.instance`.
+2. *Why.* `Look.Cand` has no instance key on the wire. `Planner.RoutineIn` has one, because
+   step 2's occurrences are host-collected; the candidate record does not. Deriving one inside
+   the kernel is D27, and **D34** puts D27 downstream of the planner.
+3. *What it costs.* Two occurrences of one recurring `optional.md` line cannot be told apart in
+   the emitted row. It matters to `Emit.lean` at **P8** and to nothing before it.
+4. *Which step clears it.* The candidate wire gaining the field (README gap 113's family), or
+   D27 itself.
+
+**Gap 1005 — §8.2 step 8's other nine diagnostics are still empty.**
+1. *What is not done.* `Diagnostics.underused`, `hot`, `impossible`, `blocked`, `deferred`,
+   `waiting`, `droppedTail`, `planHonesty` and `restDebtMin` are all `Diagnostics.empty`'s.
+   Step 7 fills `aCapacityLost` and adds `Note.budgetSpent`, and nothing else.
+2. *Why.* Seven of the nine read fork `diagnose`'s `assigned` set, which is gap 1000's;
+   `underused` reads a flag only a Block row carries; `restDebtMin` reads the replay's break
+   records and is §11's, not §8.2's.
+3. *What it costs.* The day carries two of step 8's eleven fields.
+4. *Which step clears it.* **P8**, after gap 803's item 4.
+
+**Gap 1006 — no parity entry for step 7, and none is possible yet.**
+1. *What is not done.* No P38 was issued and the fork oracle was **not** rebuilt or run.
+2. *Why.* README gap **807**'s reason, unchanged: parity compares the kernel's answer with the
+   fork's through the wire, and §8.2 step 7's answer does not cross — there is no `plan` request
+   section and `Planner.dayPlan` has no caller (gap 603).
+3. *What it costs.* The rest rule, the optional loop, the `max:` clamp and the A-capacity number
+   are checked against the fork **by reading** and by the witnesses above, whose expected values
+   this step computed rather than took from the fork. A disagreement on a shape no witness covers
+   would not be caught.
+4. *Which step clears it.* **P8** with the wire, then **R2**. Gap 226 must be settled before the
+   first entry; the next free number is still **P38**.
+
+**Gap 1007 — P8 is not built.**
+1. *What is not done.* `Emit.lean` does not exist. Design §14.2's **P8** row — D30 Q6's `Row`
+   cells, `emit::render_row` as the only padder, D30 Q5's one-renderer Rust test,
+   `render_now_with` and `tui/today.rs::seg_title` deleted, the grep guard, F3-review, §11's
+   ratios as numerator/denominator pairs.
+2. *Why.* This step's brief asked for P7 **and** P8 and said to land P7 green and say so if P8
+   would not fit. It did not fit: P8 is priced at 900 definition and 1,800 proof lines plus
+   +400/−900 Rust and 10-14 agent-days, against P7's 200/600/3-4, and the first half of this run
+   went to §8.2 step 7's own four unwitnessed definitions (gap 1001).
+3. *What it costs.* G1 is not yet structurally dead, `Planner.dayPlan` still has no caller, and
+   the plan hash is still `PlanHash.zero`
+   (`Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`).
+4. *Which step clears it.* **P8**, whose natural internal boundary design §14.6 names is the
+   review block.
+
+### Highest numbers after this step
+
+Gap **1007**, cheat **215**, `PlannerWit` section 18 (none added), parity **P38**
+(none issued). Track P's range this run was 1000-1029 and **1008-1029 are free**;
+track A's 1030-1059, track G's 1060-1079, Land's 1080-1084 and the repair step's
+1085-1099 were not touched.
+
+### Worktrees
+
+None entered and none created.
