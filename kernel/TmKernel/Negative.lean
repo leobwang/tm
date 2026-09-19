@@ -2616,4 +2616,37 @@ theorem theRestrictedQueuedDayPassesTheWholeBattery :
       (PlanCheck.withoutPast PlannerWit.theQueuedRequest
         (Planner.dayPlan PlannerWit.theQueuedRequest)) = true := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-19, stage 6 run W-20, track P, step P6 (AGENTS 6.2).
+   §8.2 step 6's two claims a reader would make and the kernel refuses.
+   Cheats 211-212. -/
+/- CHEAT 211 — step 6 takes the EARLIEST free position.  That is step 2's rule,
+   not step 6's: design 2's choice 6 is the LOWEST PREDICTED ENERGY position,
+   ties to the earlier start.  At `PlannerWit.theRoutineRequest` the afternoon
+   splits into 14:00-16:00 and 17:00-19:00 around the mandatory routine, the
+   first starts at level 4 and the second at level 2, and
+   `Planner.PlanReq.lowestFree` answers 17:00 where `Planner.earliestFree`
+   answers 14:00 (`PlannerWit.the_lowest_energy_rule_and_the_earliest_rule_
+   disagree_here`).  This block claims the earliest.  `decide` refuses. -/
+set_option maxRecDepth 40000 in
+theorem theDeferredRoutineTakesTheEarliestFreePosition :
+    PlannerWit.theRoutineRequest.lowestFree
+        [((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec)]
+        (Cal.instantOf Cal.chicago 739867 840).sec
+        (Cal.instantOf Cal.chicago 739867 1140).sec 1800
+      = some (Cal.instantOf Cal.chicago 739867 840).sec := by decide
+
+/- CHEAT 212 — a day with no room for a routine loses it quietly.  Fork
+   `run()`'s note (`planner.rs:1046`) exists because "a day that quietly loses
+   lunch is a day no monitor can see": an instance with no position and a window
+   still open is named in `diagnostics.notes`.  `PlannerWit.theCrowdedRequest`
+   is `theRoutineRequest` with the instance asking for 150 minutes instead of
+   30, and neither free stretch is that wide.  This block claims its day says
+   nothing.  `decide` refuses -- the note is there
+   (`PlannerWit.the_day_with_no_room_carries_the_note_instead`). -/
+set_option maxRecDepth 100000 in
+theorem aDayWithNoRoomForARoutineSaysNothingAboutIt :
+    (Planner.dayPlan PlannerWit.theCrowdedRequest).diagnostics.notes.val = [] := by decide
+
 end Tm
