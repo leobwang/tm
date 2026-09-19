@@ -41,6 +41,12 @@ against it cannot launder one stale sentence with another.
 
 A citation resolves if its LAST dotted segment is in any of the five.
 
+THE ALLOW-LIST IS MATCHED ON THE WHOLE SPAN, not on the last segment, and the
+two rules are deliberately different.  `energy.sort_by_key` and `out.sort_by`
+each need their own entry; an entry `sort_by` exempts nothing.  That is the
+safe direction -- an exemption cannot silence the same method on a different
+receiver -- but it is not guessable, and the W-19 merge lost a cycle to it.
+
 THE ALLOW-LIST IS THE REST, AND IT IS EXACT NAMES, NEVER PATTERNS.  A regex
 that silenced a class -- "anything ending _min", "anything the sentence calls a
 fork function" -- would make this check quietly useless, because the next stale
