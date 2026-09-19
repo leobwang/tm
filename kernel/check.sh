@@ -286,15 +286,26 @@ fi
 #    down.
 #
 #    THE COST IS THE STEP'S OWN, AND IT IS ~0 AT A SETTLED TREE.  Nothing is
-#    new, one `git diff` says so, and this check is 0.03 s -- under half a
-#    percent of the wall.  It is ~0 here only because the 46 rows are IN: the
+#    new, two git calls say so, and this check is 0.09-0.10 s on this machine --
+#    about 1.1% of the wall.  It was 0.05 s with one git call; the second is
+#    `git ls-files --others`, which is what makes an UNTRACKED new module
+#    visible, and acceptance runs before the commit.  (This comment said 0.03 s
+#    and "under half a percent" while `mutate.py`'s own header and the land
+#    block's table beside it both said 0.05 -- README gap 871's class, a
+#    checker's prose misquoting the measurement printed next to it, for the
+#    fourth time this campaign and inside the file the campaign had just added.
+#    Repaired at the W-20 repair step; RE-MEASURE, do not quote.)
+#    It is ~0 here only because the 46 rows are IN: the
 #    W-20 land step paid 69 kernel builds, about 75 minutes, to put them there.  A step that ADDS definitions pays one kernel build
 #    per constant, measured in README "Stage 6 W-20, track A" at 53 s
 #    (Planner.lean), 54 s (PlannerWit.lean) and 205 s (Boundary.lean); that is
 #    the step's cost, not this script's steady state, and it is why the roster
 #    is trusted on a matching body sha1 rather than re-run.  `mutate.py
 #    --verify` re-runs every row and is what an auditor uses.  The whole script
-#    went 7.37-7.48 s at eight checks to 7.83-7.87 s at nine, +5.1%.
+#    went 7.37-7.48 s at eight checks to 7.83-7.87 s at nine on the machine that
+#    measured it -- min to min +6.2%, max to max +5.2%; the "+5.1%" that stood
+#    here followed from neither pair.  This machine's quiet wall is 7.91-8.01 s
+#    at nine.
 out=$( python3 mutate.py --gate 2>&1 )
 if [ $? -eq 0 ]; then
   say "new definitions mutated" "ok  (${out:-no count reported})"

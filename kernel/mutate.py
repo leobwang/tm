@@ -28,16 +28,33 @@ the body text, so a step that rewrites an existing body owes a mutation for it
 too, and a step that only re-indents one does not.
 
 THE CONSTANTS, by the declared return type -- the text between the last
-depth-zero `:` of the header and the `:=` that opens the body:
+depth-zero `:` of the header and the `:=` that opens the body, RESOLVED first
+through library `abbrev` synonyms and then through its own depth-zero arrows:
 
     Bool          true   and   false      (AGENTS 5.8: both directions)
     Prop          True   and   False
     Nat           0      and   1
+    A -> ... -> T the constants of T under binders: `fun _ ... _ => c`
     anything else default
 
-`default` is a constant of ANY inhabited type, arrow types included -- for
-`def f (a : A) : B -> C`, `:= default` is the constant function -- so the table
-needs no per-type knowledge and does not go stale as the kernel grows types.
+THE RESOLUTION IS NOT DECORATION, IT IS W-20'S BLOCKER.  Until this repair the
+table was keyed on the type's LITERAL TEXT, so `Bool` got both directions and
+`Nat -> Bool` got `default` -- and `default : Nat -> Bool` is `fun _ => false`,
+which is the ONE direction that does not matter.  Driven at the repair step in a
+`git clone --shared` sandbox: `def w21DirectBool (n : Nat) : Bool := true` was
+caught (SURVIVED, gate rc=1) and the SAME CONSTANT arrow-spelled,
+`def w21ArrowBool : Nat -> Bool := fun _ => true`, was reported `:= default
+PINNED` with `python3 mutate.py --gate` EXITING 0.  `Planner.posLt` and
+`Planner.victimLt` were in that class and are re-audited at both directions in
+`mutations.txt`.  Measured over the library: 99 definitions are arrow-spelled to
+a scalar and 19 more reach one through an `abbrev` (`Hist := Fin 6 -> Nat`,
+`Day := Nat`, `PlanCheck.Eligible := ... -> Bool`, which is `gatherable`'s own
+shape).  A type carrying a depth-zero `forall` or `,` keeps `default`: its
+binders are not all anonymous, and an error inside the declaration is INVALID,
+which fails the gate.
+
+`default` is a constant of ANY inhabited type, arrow types included, so it
+remains the fallback for every type the table cannot name.
 
 HOW A MUTATION IS APPLIED, and why the line numbers do not move.  The body's
 characters, from just after the header's `:=` to the end of the declaration
@@ -61,6 +78,20 @@ THE FOUR VERDICTS, and the reason each of the last two exists:
                 to fold to, so D40's mutation does not exist for this
                 definition.  ROSTERED BY NAME with the type in the reason
                 column, counted on every run, and NOT fatal.
+    LITERAL     the BODY is itself a constant -- `true`, `7`, `fun _ => true`.
+                Raised BEFORE any build, alongside whatever the type's own
+                constants then earn, never instead of them.  It is not fatal
+                because the gate cannot tell a defect from a wire bound: 66
+                library definitions are bare literals and 64 of them are bounds
+                (`maxCands : Nat := 1024`), which are SUPPOSED to be constants.
+                What it buys is that PINNED stops reading as "nothing can tell
+                this from a constant" when the body IS one -- the repair step's
+                probe `def w21Seven (_x : Nat) : Nat := 7` is PINNED by `0` and
+                by `1` and is the constant 7, and before this verdict the gate
+                printed only the two PINNEDs and `0 SURVIVED`.  A `Bool` or
+                `Prop` literal, or a `Nat` literal 0 or 1, is still SURVIVED and
+                still FATAL: `Planner.Ranked.gatherable := true`, the W-19
+                defect D40 exists for, is caught by the constant, not by this.
 
 WHY UNFOLDABLE EXISTS, AND WHY IT IS NOT A FREE PASS.  This verdict was added at
 the W-20 LAND step, where check 9 met its first real step output -- 46 new or
@@ -94,7 +125,15 @@ per audited definition forever, and the steady-state cost has to be ~0.
 WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
   * AN UNFOLDABLE DEFINITION IS NOT AUDITED AT ALL.  It is named and counted,
     and that is the whole of what it gets: nothing here says any theorem reads
-    it.  At the W-20 land step that is HALF of what the step added -- 23 of 46.
+    it.  At the W-20 land step that is HALF of what the step added -- 23 of 46 --
+    and the half is not evenly composed: 15 are `PlannerWit` witness FIXTURES,
+    where a literal body is correct and the exemption is benign, but the other
+    EIGHT are step 6's own algorithm -- `placeAt`, `PlanReq.displaceInto`,
+    `PlanReq.deferOne`, `PlanReq.deferWalk`, `PlanReq.deferFold`,
+    `PlanReq.finalAssign`, `PlanReq.rePlaceWalk` and `dayDiagnostics`.  The half
+    the fold cannot see includes the half that does the work.  README gap 985
+    names the shape a fix would take (fold an accumulator to the argument it
+    returns) and gap 980 puts the exemption itself to the owner.
   * A ROW IS A CLAIM.  check 9 does not re-run a mutation whose sha1 matches, so
     a row written by hand, with a plausible error string, passes.  What makes it
     not a bare claim: `mutate.py --write` appends a row only after watching the
@@ -102,6 +141,16 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
     a diff.  `mutate.py --verify` re-runs every row and is what an auditor or a
     repair step uses; it is not in check.sh because it costs one kernel build
     per row.
+  * A CONSTANT BODY IS NOT ALWAYS VISIBLE.  `literal_body` matches a bare
+    scalar -- `true`, `7`, `"x"`, with or without `fun _ =>` in front.  A RECORD
+    OR STRUCTURE LITERAL (`{ a := 1, b := 2 }`) is a constant too and is NOT
+    matched: that is the witness-fixture shape, where a literal body is what the
+    definition is FOR, and 15 of the 23 UNFOLDABLE rows are exactly that.
+  * THE TYPE RESOLUTION IS TEXTUAL, AND ONE `abbrev` DEEP TIMES THREE.  A type
+    spelled through a `def` synonym rather than an `abbrev` is not unfolded (a
+    `def` is not reducible, and a constant written at the unfolded type would
+    fail to elaborate); a type built by a function (`Capped n`) is not either.
+    Those keep `default`, which is the old behaviour and not a regression.
   * ONLY `def` and `abbrev`, and only in the library.  `theorem` has no body to
     fold (its "constant" is a different proof of the same statement, which is
     not this defect class); `structure`, `inductive` and `instance` are not
@@ -115,11 +164,29 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
   * TWO CONSTANTS, NOT ALL.  A `Nat`-valued definition that every witness pins
     at 7 survives neither `0` nor `1`, but one that nothing reads except through
     `if n > 0` is pinned by `0` and says nothing about the rest of its range.
+    AND THE VERDICT USED TO SAY MORE THAN THAT: a body that IS the constant 7
+    earned PINNED, which is the word D40 coined for "something can tell this
+    from a constant", and the run line said `0 SURVIVED`.  That is what the
+    LITERAL verdict is for; PINNED means DISTINGUISHED FROM THE CONSTANTS TRIED
+    and has never meant more.
   * THE EXTENT RULE IS TEXTUAL.  A declaration runs to the next line that starts
     at column zero with a declaration keyword, an attribute, a comment opener,
     `namespace`/`section`/`end`/`open`/`set_option`/`mutual` or `#`.  A
     definition laid out some other way is reported UNPARSED and fails the gate
-    rather than being skipped silently.
+    rather than being skipped silently -- INCLUDING an INDENTED one, which until
+    the repair step produced no row at all: `HEAD` anchored at `^`, so
+    `namespace T` / two spaces / `def indentedProbe : Bool := true` was neither
+    audited nor reported while Lean accepted it and `citations.py` saw the name.
+    `INDENTED` now reports it, outside block comments (`/- ... -/` nests, and a
+    commented-out `def` must not fail the gate for a sentence).  There are 0
+    indented definitions in the library today, so this is a latch, not a repair
+    of live code.
+  * THE FILE SET IS `git diff` PLUS `git ls-files --others`.  `git diff
+    --name-only <commit>` never lists an UNTRACKED file, and AGENTS acceptance
+    runs check.sh BEFORE the commit -- so until the repair step every definition
+    in a step's brand-new module was exempt at exactly the moment the gate
+    exists to bite.  Still unseen: a library file outside
+    `kernel/TmKernel/TmKernel`, and anything `.gitignore` hides.
   * A KILLED RUN.  The mutation is restored in a `finally`, which covers an
     exception but not a SIGKILL, so the original bytes go to a `.mutate-in-flight`
     sidecar first and every run begins by putting back whatever it finds.  A
@@ -159,8 +226,34 @@ HEAD = re.compile(
     r"(?:(?:private|protected|noncomputable|partial|unsafe|scoped|local)[ \t]+)*"
     r"(def|abbrev)[ \t]+([^\s(){}\[\],:]+)")
 
+# The same header INDENTED.  Lean accepts it and this file's extent rule does
+# not: `starts_declaration` answers False for any line beginning with a space,
+# so an indented `def` used to produce no row at all -- neither audited nor
+# UNPARSED -- while the header promised the opposite.  It is reported UNPARSED,
+# which FAILS the gate, rather than supported: supporting it means a second
+# extent rule, and there are 0 indented definitions in the library today.
+INDENTED = re.compile(
+    r"^[ \t]+(?:@\[[^\]]*\][ \t]*)?"
+    r"(?:(?:private|protected|noncomputable|partial|unsafe|scoped|local)[ \t]+)*"
+    r"(def|abbrev)[ \t]+([^\s(){}\[\],:]+)")
+
 CONSTANTS = {"Bool": ["true", "false"], "Prop": ["True", "False"],
              "Nat": ["0", "1"]}
+
+# An `abbrev` whose body is a type: `abbrev Hist := Fin 6 -> Nat`, `abbrev Day
+# := Nat`, `abbrev PlanCheck.Eligible := PlanReq -> DayPlan -> Seg -> Id ->
+# Bool`.  `abbrev` and not `def`, because an `abbrev` is reducible by
+# construction and a constant written at the unfolded type elaborates at the
+# folded one; a `def`-spelled synonym does not and is left alone.
+ABBREV = re.compile(r"^abbrev[ \t]+([A-Za-z_][A-Za-z0-9_.']*)"
+                    r"(?:[ \t]*:[ \t]*(?:Type|Sort)[^\n:=]*)?[ \t]*:=[ \t]*"
+                    r"([^\n]+)$", re.M)
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_.']*$")
+
+# A body that IS a constant, with or without `fun` binders in front of it.  See
+# `literal_body` and the LITERAL verdict.
+LITERAL = re.compile(r"^(?:fun[ \t][^=]*=>[ \t]*)?"
+                     r"(true|false|True|False|[0-9]+|\"[^\"]*\"|'.')$")
 
 
 def read(path):
@@ -232,10 +325,21 @@ def declarations(text, path):
     out = []
     lines = text.split("\n")
     starts = []
+    # `/- ... -/` nests in Lean, and a doc comment's continuation lines are
+    # indented: without this tracker a commented-out `def` would be reported
+    # UNPARSED and would fail the gate for a sentence.
+    comment = 0
     for n, line in enumerate(lines):
         m = HEAD.match(line)
         if m:
             starts.append((n, m.group(2)))
+        elif comment == 0 and INDENTED.match(line):
+            out.append({"name": INDENTED.match(line).group(2), "file": path,
+                        "line": n + 1, "last": n + 1, "body": None,
+                        "type": None, "at": None, "stop": None, "lead": "",
+                        "indented": True})
+        comment += line.count("/-") - line.count("-/")
+        comment = max(comment, 0)
     offsets = [0]
     for line in lines:
         offsets.append(offsets[-1] + len(line) + 1)
@@ -297,18 +401,31 @@ def at_commit(sha, path):
 
 
 def touched(base):
-    """Library files whose BYTES differ from `base` -- git, one call.
+    """Library files whose BYTES differ from `base` -- git, two calls.
 
     A file identical to the baseline cannot hold a new or changed definition,
     and at a settled tree that is all of them, which is what keeps check 9 at
-    ~0.05 s instead of one `git show` per module."""
-    got = subprocess.run(
-        ["git", "diff", "--name-only", base, "--", "kernel/TmKernel/TmKernel"],
-        cwd=ROOT, capture_output=True, text=True)
-    if got.returncode != 0:
-        raise SystemExit("mutate.py: git diff against %s failed: %s"
-                         % (base, got.stderr.strip()))
-    return {line[len("kernel/"):] for line in got.stdout.split("\n") if line}
+    ~0.05 s instead of one `git show` per module.
+
+    THE SECOND CALL IS UNTRACKED FILES, and it is not optional.  `git diff
+    --name-only <commit>` NEVER lists a file that has not been `git add`ed, and
+    AGENTS acceptance runs check.sh BEFORE the commit -- so without this every
+    definition in a step's brand-new module was exempt at exactly the moment
+    the gate exists to bite, while `citations.py`, written in the same run,
+    globs the filesystem and saw the same file.  Two checkers disagreeing about
+    whether a file exists is the shape of a gate going quietly useless."""
+    files = set()
+    for argv in (["git", "diff", "--name-only", base,
+                  "--", "kernel/TmKernel/TmKernel"],
+                 ["git", "ls-files", "--others", "--exclude-standard",
+                  "--", "kernel/TmKernel/TmKernel"]):
+        got = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True)
+        if got.returncode != 0:
+            raise SystemExit("mutate.py: %s failed: %s"
+                             % (" ".join(argv[:3]), got.stderr.strip()))
+        files |= {line[len("kernel/"):] for line in got.stdout.split("\n")
+                  if line.endswith(".lean")}
+    return files
 
 
 def new_or_changed(base):
@@ -319,7 +436,7 @@ def new_or_changed(base):
         if path not in moved:
             continue
         now = read(os.path.join(HERE, path))
-        was = at_commit(base, path)
+        was = at_commit(base, path)   # None for a file the baseline lacks
         # A multiset, not a dict: one file may declare the same SHORT name in
         # two namespaces (`Replay.HMap.get` and `Replay.KMap.get` are both
         # spelled `get`), and keying by name alone reported four such pairs as
@@ -420,8 +537,98 @@ def mutate_one(decl, const):
     return "PINNED", first or "build failed with no located error"
 
 
+_SYNONYMS = {}
+
+
+def synonyms():
+    """Short name -> body text, for every library `abbrev` that names a TYPE.
+
+    Read once per run from the same files `lib_files` mutates.  Keyed on the
+    last dotted segment, which is how a declared type is usually spelled at the
+    use site (`PlanCheck.Eligible` and `Eligible` are the same abbrev)."""
+    if not _SYNONYMS:
+        for path in lib_files():
+            for m in ABBREV.finditer(read(os.path.join(HERE, path))):
+                _SYNONYMS.setdefault(m.group(1).split(".")[-1], m.group(2).strip())
+    return _SYNONYMS
+
+
+def arrow_parts(text):
+    """Split a type on its DEPTH-ZERO arrows: `A -> (B -> C) -> D` is three."""
+    depth, parts, cur, i = 0, [], "", 0
+    while i < len(text):
+        c = text[i]
+        if c in "([{⟨⦃":
+            depth += 1
+        elif c in ")]}⟩⦄":
+            depth -= 1
+        if depth == 0 and (c == "→" or text.startswith("->", i)):
+            parts.append(cur)
+            cur = ""
+            i += 2 if c == "-" else 1
+            continue
+        cur += c
+        i += 1
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def resolve_type(text):
+    """Unfold a declared type through library `abbrev`s, up to three levels."""
+    seen = set()
+    for _ in range(3):
+        text = text.strip()
+        last = text.split(".")[-1]
+        if not IDENT.match(text) or last in seen or last not in synonyms():
+            break
+        seen.add(last)
+        text = synonyms()[last]
+    return text.strip()
+
+
+def literal_body(decl):
+    """The body if it IS a constant -- `true`, `7`, `fun _ => true` -- else None.
+
+    A definition whose body is a bare literal is not DISTINGUISHABLE from a
+    constant of its type by anything, ever: it is one.  `Planner.Ranked
+    .gatherable := true` -- the W-19 defect D40 was written for -- is this
+    shape, and so is every wire bound (`maxCands : Nat := 1024`, 66 of them in
+    the library today).  The gate cannot tell those two apart, so this is a
+    REPORTED verdict and not a fatal one; see LITERAL in the header.  A record
+    or structure literal body (`{ a := 1, b := 2 }`) is also a constant and is
+    NOT matched here -- that is the witness-fixture shape, where a literal body
+    is what the definition is for."""
+    body = " ".join((decl["body"] or "").split())
+    m = LITERAL.match(body)
+    return m.group(0) if m else None
+
+
 def constants_for(decl):
-    return CONSTANTS.get((decl["type"] or "").strip(), ["default"])
+    """The constants to fold this definition to, by its DECLARED type.
+
+    Resolved through `abbrev` synonyms and through the type's depth-zero
+    arrows, so that a `Bool` spelled `Nat -> Bool`, or spelled `Eligible`, gets
+    `fun _ => true` and `fun _ => false` rather than `default` alone.  Keying
+    on the type's literal TEXT was W-20's blocker: `default : Nat -> Bool` is
+    `fun _ => false`, so only the `false` direction was ever tried for an
+    arrow-spelled `Bool`, and AGENTS 5.8 asks for both.  99 library
+    definitions are arrow-spelled to a scalar and 19 more reach one through an
+    `abbrev`.
+
+    A type carrying a depth-zero `forall` or `,` is left on `default`: its
+    binders are not all anonymous and `fun _ => c` may not elaborate, and an
+    error inside the declaration is INVALID, which fails the gate."""
+    text = resolve_type((decl["type"] or "").strip())
+    if "∀" in text or "," in arrow_parts(text)[0]:
+        return ["default"]
+    parts = arrow_parts(text)
+    consts = CONSTANTS.get(parts[-1])
+    if consts is None:
+        return ["default"]
+    if len(parts) == 1:
+        return list(consts)
+    binders = "fun " + "_ " * (len(parts) - 1) + "=> "
+    return [binders + c for c in consts]
 
 
 def run(decls, write, verbose=True):
@@ -433,10 +640,20 @@ def run(decls, write, verbose=True):
     for decl in decls:
         tag = "%s:%s" % (decl["file"], decl["name"])
         if decl["body"] is None:
-            bad.append((tag, "UNPARSED", "no depth-zero `:=` (equation-style?)"))
+            why = ("indented; this file's extent rule is column-zero"
+                   if decl.get("indented")
+                   else "no depth-zero `:=` (equation-style?)")
+            bad.append((tag, "UNPARSED", why))
             if verbose:
-                print("  %-58s UNPARSED" % tag, flush=True)
+                print("  %-58s UNPARSED  %s" % (tag, why), flush=True)
             continue
+        literal = literal_body(decl)
+        if literal is not None:
+            soft.append((tag, "LITERAL", "the body IS the constant `%s`" % literal))
+            if verbose:
+                print("  %-58s %-9s %-8s %-38s"
+                      % (tag, ":= " + literal, "LITERAL",
+                         "the body IS this constant"), flush=True)
         verdicts = []
         for const in constants_for(decl):
             if verbose:
@@ -456,9 +673,14 @@ def run(decls, write, verbose=True):
         if all(v in ("PINNED", "UNFOLDABLE") for _, v, _ in verdicts):
             rows.append("%s %s %s %s %s" % (
                 decl["sha"], decl["file"], decl["name"],
-                ",".join(c if v == "PINNED" else "unfoldable"
-                         for c, v, _ in verdicts),
-                "; ".join(w for _, _, w in verdicts)))
+                # WHITESPACE-FREE, because the roster is whitespace-delimited
+                # and `fun _ _ => true` is one FIELD, not four.
+                ",".join("".join(c.split()) if v == "PINNED" else "unfoldable"
+                         for c, v, _ in verdicts)
+                + ("" if literal is None else ",literal"),
+                "; ".join(w for _, _, w in verdicts)
+                + ("" if literal is None
+                   else "; the body IS the constant `%s`" % literal)))
     if write and rows:
         with open(ROSTER, "a", encoding="utf-8") as handle:
             handle.write("\n".join(rows) + "\n")
@@ -522,8 +744,13 @@ def main(argv):
                     if d["name"] == only:
                         d["sha"] = digest(d["body"]) if d["body"] else None
                         decls.append(d)
+    # `d["sha"] is not None` is load-bearing: an UNPARSED declaration has no
+    # sha, and an absent roster row's `.get("sha")` is None too, so without it
+    # `None == None` counted every unparsable definition as ALREADY AUDITED and
+    # the gate reported it rostered with 0 owed.
     rostered = [d for d in decls
-                if rows.get((d["file"], d["name"]), {}).get("sha") == d["sha"]]
+                if d["sha"] is not None
+                and rows.get((d["file"], d["name"]), {}).get("sha") == d["sha"]]
     owed = [d for d in decls if d not in rostered]
 
     # The UNFOLDABLE count is printed on EVERY run, owed or not: a definition the
@@ -532,17 +759,22 @@ def main(argv):
     unfold = sum(1 for d in decls
                  if "unfoldable" in rows.get((d["file"], d["name"]),
                                              {}).get("consts", ""))
+    lit = sum(1 for d in decls
+              if "literal" in rows.get((d["file"], d["name"]),
+                                       {}).get("consts", ""))
     if gate:
         if not owed:
-            print("%d new or changed since %s, %d rostered (%d unfoldable), 0 owed"
-                  % (len(decls), base[:7], len(rostered), unfold))
+            print("%d new or changed since %s, %d rostered "
+                  "(%d unfoldable, %d literal), 0 owed"
+                  % (len(decls), base[:7], len(rostered), unfold, lit))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
     bad, soft = run(owed, write)
     if soft:
-        print("%d definition(s) UNFOLDABLE -- no constant of the type exists:"
-              % len(soft))
+        print("%d definition(s) the fold cannot speak about -- "
+              "UNFOLDABLE (no constant of the type exists) or "
+              "LITERAL (the body IS one):" % len(soft))
         for tag, verdict, why in soft:
             print("  %-58s %-11s %s" % (tag, verdict, why))
     if bad:
@@ -551,8 +783,10 @@ def main(argv):
             print("  %-58s %-9s %s" % (tag, verdict, why))
         return 1
     if owed:
-        print("%d definition(s) audited (%d pinned, %d unfoldable)"
-              % (len(owed), len(owed) - len(soft), len(soft)))
+        kinds = collections.Counter(v for _, v, _ in soft)
+        print("%d definition(s) audited (%d pinned, %d unfoldable, %d literal)"
+              % (len(owed), len(owed) - kinds["UNFOLDABLE"],
+                 kinds["UNFOLDABLE"], kinds["LITERAL"]))
     return 0
 
 

@@ -28,6 +28,19 @@
 # that it can be counted and cannot grow unnoticed.  `mutate.py --gate` prints the count on
 # every run.  THE DEFINITION IS THEN NOT AUDITED AT ALL: nothing below says a theorem reads
 # it.  README gap 980 puts the narrowing of D40 to the owner; reversing it is one line.
+# Fifteen of the 23 are `PlannerWit` witness fixtures; the other EIGHT are step 6's own
+# algorithm, and README gap 985 names them and the shape a fix would take.
+#
+# A <constants> field carrying `literal` is the FIFTH verdict, added at the W-20 REPAIR
+# step: the body is itself a constant (`true`, `7`, `fun _ => true`), so PINNED for it means
+# "distinguished from the constants TRIED" and not "distinguished from every constant".  It
+# is printed and counted, never fatal on its own -- 64 of the library's 66 bare-literal
+# bodies are wire bounds (`maxCands : Nat := 1024`), which are supposed to be constants --
+# and it never displaces the constants themselves, so `gatherable := true` is still SURVIVED
+# and still fatal.
+#
+# A <constants> field is ONE WHITESPACE-FREE FIELD: an arrow-typed constant is written
+# `fun__=>true` in this file and applied as `fun _ _ => true` in the source.
 
 baseline 86c4dc6
 
@@ -37,6 +50,14 @@ baseline 86c4dc6
 # it is the evidence the gate works and the evidence it has a hole, in one line:
 #
 #     46 audited: 23 PINNED, 23 unfoldable, 0 SURVIVED.
+#
+# TWO OF THE 23 PINNED WERE RE-AUDITED AT THE W-20 REPAIR STEP and their rows are at the
+# END of this file rather than in place, because `--write` appends.  `posLt` and `victimLt`
+# are spelled `Nat x Nat -> Nat x Nat -> Bool`, and the constants table used to be keyed on
+# the type's literal text, so both got `default` -- which for an arrow to `Bool` is
+# `fun _ _ => false`, one direction of two.  Re-run at both: PINNED at `fun__=>true` and at
+# `fun__=>false`, `Planner.lean:4796` and `:4811`.  The tally above is unchanged; what
+# changed is that two of its PINNEDs now mean what the word says.
 #
 # ZERO SURVIVED is the good half: no definition either track added is one nothing in the
 # package can tell from a constant.  The 23 unfoldable are the other half, and they are the
@@ -59,8 +80,6 @@ baseline 86c4dc6
 34911c82d0c8 TmKernel/TmKernel/Planner.lean routineRows default Planner.lean:2630
 f18d3551771b TmKernel/TmKernel/Planner.lean stepTwoSegs default Planner.lean:2649
 b138b425f1c9 TmKernel/TmKernel/Planner.lean leastBy default Planner.lean:4773
-98d34e4c6f85 TmKernel/TmKernel/Planner.lean posLt default Planner.lean:4796
-e4326514ea1f TmKernel/TmKernel/Planner.lean victimLt default Planner.lean:4811
 f7b172dd243d TmKernel/TmKernel/Planner.lean PlanReq.lowestFree default Planner.lean:4843
 6ff639dbc20f TmKernel/TmKernel/Planner.lean PlanReq.assignedSpans default PlannerWit.lean:3533
 d7d5884af56b TmKernel/TmKernel/Planner.lean PlanReq.occupiedNow default PlannerWit.lean:3327
@@ -101,3 +120,5 @@ bf7e1beca255 TmKernel/TmKernel/PlannerWit.lean busyCap unfoldable no Inhabited (
 deafde65c398 TmKernel/TmKernel/PlannerWit.lean theSecondSlot unfoldable no Inhabited Look.Slot
 b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no Inhabited PlanReqIn
 7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq
+98d34e4c6f85 TmKernel/TmKernel/Planner.lean posLt fun__=>true,fun__=>false Planner.lean:4796; Planner.lean:4796
+e4326514ea1f TmKernel/TmKernel/Planner.lean victimLt fun__=>true,fun__=>false Planner.lean:4811; Planner.lean:4811
