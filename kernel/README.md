@@ -44166,8 +44166,8 @@ None entered and none created. `git worktree list` shows the main checkout and
      ordering the `loud` gate rests on), and the `docs:` commits carrying this
      block and its corrections — which cannot name their own shas, so the
      branch's own log is the roster.
-     Gap range **1030-1059**; this step takes **1030-1038** and leaves
-     1039-1059 free.  No goal added, discharged or deleted: **burn-down stays
+     Gap range **1030-1059**; this step takes **1030-1039** and leaves
+     1040-1059 free.  No goal added, discharged or deleted: **burn-down stays
      9**.  `check.sh` **9/9**.  Whoever merges renumbers (AGENTS 6.4).
      =========================================================================== -->
 
@@ -44455,7 +44455,7 @@ Negative.lean rejected                         ok
 cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
 corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
 stage goals                                    ok  (9 outstanding, all stage 6)
-prose citations                                ok  (23704 citations, 22191 resolved, 1513 allowed (113 vocabulary, 347 counted), 0 allow entries unused)
+prose citations                                ok  (23706 citations, 22193 resolved, 1513 allowed (113 vocabulary, 347 counted), 0 allow entries unused)
 new definitions mutated                        ok  (46 new or changed since 86c4dc6, 46 rostered (23 unfoldable, 18 of those pinned by nothing; 0 literal), 0 owed)
 ```
 
@@ -44475,7 +44475,7 @@ brief's known flake did not need the serial re-run, and both were taken anyway.
 | check 5 | 93 | 93 | unchanged |
 | corpus | 29/37, 4/5 | 29/37, 4/5 | unchanged |
 | burn-down | 9, all stage 6 | 9, all stage 6 | no goal touched |
-| check 8 citations | 23,629 / 22,117 | 23,704 / 22,191 | **+75 / +74**, split: **+12 / +12** from the two commits' prose in `check.sh`, `mutate.py` and `mutations.txt` (measured at `ecb9084`: 23,641 / 22,129), and **+63 / +62** from THIS block, which check 8 sweeps. check 8 does not sweep `tm/src`, so the Rust's doc comments are not in either number. Allowed citations went 1,512 → 1,513 and **no allow ENTRY was added** — 113 vocabulary and 347 counted, the same as the baseline, 0 unused |
+| check 8 citations | 23,629 / 22,117 | 23,706 / 22,193 | **+77 / +76**, split: **+12 / +12** from the two commits' prose in `check.sh`, `mutate.py` and `mutations.txt` (measured at `ecb9084`: 23,641 / 22,129), and **+65 / +64** from THIS block, which check 8 sweeps. check 8 does not sweep `tm/src`, so the Rust's doc comments are not in either number. Allowed citations went 1,512 → 1,513 and **no allow ENTRY was added** — 113 vocabulary and 347 counted, the same as the baseline, 0 unused |
 | check 9 | 46 rostered, 0 owed | 46 rostered, 0 owed | the same 46; five rows re-run against the identity and the exemption line widened from one number to two |
 | `cargo test --workspace` | 1,345 | 1,346 | **+1**, `deleting_the_runtime_state_changes_nothing` |
 | T11 `tm drop` rows | ~127-142 ms | 151.9 ms (later verb), 151.8 ms (gated write) | above the brief's band; another agent was running `lake` in the main checkout throughout, so this is a **loaded-machine** figure and the bound it is asserted against is 1 s |
@@ -44496,9 +44496,9 @@ campaign's own defect class.
 **A second wrong-tree number, caught by re-running instead of by trusting.**
 The commit that corrected this block's own commit count first carried
 *"check 8 23,708 citations, 22,195 resolved"* — a figure PREDICTED from the
-prose added rather than read off a run. Measured, it is **23,704 / 22,191**,
-unchanged, because every span the new paragraph adds carries a `::` or is a
-single lowercase word and check 8 counts neither (gap 988). The commit was
+prose added rather than read off a run. Measured at that commit it was
+**23,704 / 22,191**, unchanged, because every span that paragraph adds carries
+a `::` or is a single lowercase word and check 8 counts neither (gap 988). The commit was
 amended before it left this branch. AGENTS §5.11 is one measurement per number,
 and a predicted number is not a measurement.
 
@@ -44535,7 +44535,7 @@ no predicate was weakened.
   land mid-frame. Checked, not driven.
 * **It added no cheat, no `PlannerWit` section, no parity entry and no goal.**
 
-### 11. Gaps taken — 1030-1038; **1039-1059 free**
+### 11. Gaps taken — 1030-1039; **1040-1059 free**
 
 **Gap 1030 — `active.est_min` is rebuilt from the tree, so a `tm extend` before
 the rebuild is lost.**
@@ -44670,13 +44670,38 @@ is unreadable.**
    to be passed through `tr '\r' '\n'` before it can be read.
 4. *Which step clears it.* One `isatty` test.
 
+**Gap 1039 — the multiplier arithmetic has THREE readers, two of them
+byte-identical copies, and this step unified a different two.** PRE-EXISTING.
+1. *What is not done.* `energy::planned_minutes(est, duration_multiplier(model,
+   item.ci, tags))` appears three times outside `tm-core`. `ghost.rs:142-148`
+   and `tui/app.rs:781-789` are the **same eight lines twice**, modulo `self.`:
+   the same `tree.planned_minutes(id).or_else(|| tree.remaining(id))` estimate
+   and the same `.max(MIN_REMAINING_MIN)` floor. `Ctx::planned_block`, which
+   this step made the one reader for `tm start` and for D42's rebuild, is a
+   THIRD variant with neither the `planned_minutes` fallback nor the floor.
+2. *Why it is not simply merged.* The two copies answer a different question —
+   what the ghost row and the TUI *display* for an item, floored so a row is
+   never zero-height — from the one `tm start` asks, which is the minutes a
+   block is given. Folding them together changes a displayed number, which is a
+   behaviour change nobody asked for.
+3. *What it costs.* AGENTS §5.3's own count: one concept, three definitions,
+   two of them literally duplicated. A change to the floor or the fallback has
+   to be made twice and cannot be made once. Nothing is wrong today — the two
+   copies agree, verified by reading both.
+4. *How it was found, and which step clears it.* By the **body-shaped** search
+   the brief asks for, not by a name: `grep -rn 'planned_minutes\|duration_multiplier'`
+   over `tm/` and `tm-core/` with `energy.rs` excluded. Any step that owns
+   `ghost.rs` and the TUI together; D30(Q5)'s one-renderer work is the natural
+   place, since it is already making `render_now_with` select rather than
+   format.
+
 ### 12. Numbering
 
-Gaps: this step **1030-1038**; **1039-1059 free** inside track A's range, and
+Gaps: this step **1030-1039**; **1040-1059 free** inside track A's range, and
 tracks G (1060-1079), Land (1080-1084) and the repair step (1085-1099) are
 untouched. Cheats: none taken; `Negative.lean` untouched. No `PlannerWit`
 section added — the probe of §7 was removed and is in no commit. No parity
-entry. **Highest taken by this track: gap 1038.**
+entry. **Highest taken by this track: gap 1039.**
 
 ### 13. Worktrees
 
