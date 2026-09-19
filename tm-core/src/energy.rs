@@ -11,10 +11,12 @@
 //!   `p_lounge` and `expected_arrival` ([`WeekdayMap`], `Mon`..`Sun` order),
 //!   `fitted`, `n_obs`. [`Model::default`] is the empty model (everything
 //!   falls back to the config priors); [`Model::from_config`] writes the
-//!   config priors out as a model; [`Model::load`] / [`Model::save`] read and
-//!   write the file (the path is injected — nothing here knows about
-//!   `.tm/`). `Model` is plain serde, so a [`crate::store::Store`] can also
-//!   carry it with `store.read_json(store::MODEL_PATH)`.
+//!   config priors out as a model; [`Model::load`] reads the file (the path is
+//!   injected — nothing here knows about `.tm/`). There is no writer here: the
+//!   one writer is `tm model --fit`, through [`crate::store::Store`] at
+//!   `store::MODEL_PATH`, where D35's gate and the undo recorder can see it.
+//!   `Model::save`, a second and ungated `fs::write` of that same file with no
+//!   production caller, was deleted at W-19 (README gaps 776 and 834).
 //! * [`Features`] + [`predict`] — the slot-energy prediction: the learned
 //!   `energy[curve][floor(hsw)]` when the model has it, else
 //!   [`Config::prior_energy`], minus the sleep-debt shift when
@@ -414,9 +416,9 @@ impl Model {
         serde_json::from_str(text)
     }
 
-    /// Render as pretty JSON with a trailing newline (what [`Model::save`]
-    /// writes; §8.5 wants the file human-readable, so objects are indented
-    /// and the curves stay on one line each).
+    /// Render as pretty JSON with a trailing newline (what `tm model --fit`
+    /// writes through the store; §8.5 wants the file human-readable, so objects
+    /// are indented and the curves stay on one line each).
     pub fn to_json(&self) -> String {
         let mut buf = Vec::new();
         let mut ser = serde_json::Serializer::with_formatter(&mut buf, CompactArrays::default());
@@ -448,19 +450,6 @@ impl Model {
         Ok(Model::load(path)?.unwrap_or_default())
     }
 
-    /// Write the model (creating parent directories).
-    pub fn save(&self, path: &Path) -> Result<(), EnergyError> {
-        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
-            std::fs::create_dir_all(dir).map_err(|source| EnergyError::Io {
-                path: dir.display().to_string(),
-                source,
-            })?;
-        }
-        std::fs::write(path, self.to_json()).map_err(|source| EnergyError::Io {
-            path: path.display().to_string(),
-            source,
-        })
-    }
 }
 
 /// A JSON formatter that indents objects like `serde_json`'s pretty printer
