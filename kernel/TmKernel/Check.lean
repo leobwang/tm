@@ -5899,3 +5899,51 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_gather_reads_each_of_its_five_clauses
 #print axioms Tm.PlannerWit.the_two_comparisons_hold_at_the_reserved_day
 #print axioms Tm.PlannerWit.the_two_comparison_lift_applies_at_the_reserved_day
+
+-- APPENDED 2026-09-19 (stage 6, run **W-20**, track G -- the quiet day, README
+-- gap 960, and the two clauses README gap 806 left unpinned).
+--
+--   `dayPlan_ok_on_a_quiet_day_except_hot` is **TEN of §6.1's eleven**, over the
+--   WHOLE day and at every eligibility, for the class of requests whose log
+--   holds no Block and whose runtime holds no reservation.  W-19's ceiling was
+--   nine, over `withoutPast`'s day.  `monotoneInRank` is the tenth and
+--   `dayPlan_assigns_nothing_on_a_quiet_day` is why.
+--   `hotBeforeQueue_is_false_on_a_quiet_day` and
+--   `a_quiet_day_does_not_pass_the_whole_battery` are the matching ceiling:
+--   the eleventh fails on a day with no Block row at all, so neither the fold
+--   nor an `eligibleAt` at the reservation row reaches it (README gap 850).
+--
+--   `the_cursor_refuses_a_group_that_owes_nothing` and
+--   `the_cursor_refuses_an_atomic_group_whose_run_is_broken` are README gap
+--   806's two clauses, as ∀-theorems over every accumulator rather than as
+--   witnesses.  `the_cursor_skips_no_group_that_fits` is README gap 877's
+--   consumer for `pickedGroup_is_the_first_that_fits`' second conjunct.
+--   `assignFold_owes` is the same first clause lifted over the whole walk.
+#print axioms Tm.PlanCheck.dayPlan_assigns_nothing_on_a_quiet_day
+#print axioms Tm.PlanCheck.monotoneInRank_of_nothing_assigned
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day_given_hot
+#print axioms Tm.PlanCheck.the_cursor_refuses_a_group_that_owes_nothing
+#print axioms Tm.PlanCheck.the_cursor_refuses_an_atomic_group_whose_run_is_broken
+#print axioms Tm.PlanCheck.the_cursor_skips_no_group_that_fits
+#print axioms Tm.PlanCheck.assignStart_owes
+#print axioms Tm.PlanCheck.assignStep_owes
+#print axioms Tm.PlanCheck.foldl_assignStep_owes
+#print axioms Tm.PlanCheck.assignFold_owes
+#print axioms Tm.PlannerWit.witBuildsQuietCensus
+#print axioms Tm.PlannerWit.the_quiet_census_request_is_quiet
+#print axioms Tm.PlannerWit.the_quiet_census_day_is_a_wall_and_an_evening
+#print axioms Tm.PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day
+#print axioms Tm.PlannerWit.the_ten_hold_where_the_eleventh_fails
+#print axioms Tm.PlannerWit.a_quiet_day_does_not_pass_the_whole_battery
+#print axioms Tm.PlannerWit.the_quiet_request_agrees
+#print axioms Tm.PlannerWit.theQuietRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_quiet_lift_applies_at_the_quiet_request
+#print axioms Tm.PlannerWit.the_quiet_battery_passes_at_the_quiet_request
+#print axioms Tm.PlannerWit.the_first_group_is_spent_after_one_slot
+#print axioms Tm.PlannerWit.the_owes_invariant_has_a_subject
+#print axioms Tm.PlanCheck.the_cursor_gives_no_slot_to_a_group_that_owes_nothing
+#print axioms Tm.PlannerWit.the_quiet_census_request_agrees
+#print axioms Tm.PlannerWit.theQuietCensusRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_quiet_lift_applies_at_the_quiet_census_request
+#print axioms Tm.PlannerWit.the_tenth_is_vacuous_where_the_eleventh_bites

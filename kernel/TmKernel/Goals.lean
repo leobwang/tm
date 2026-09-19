@@ -807,7 +807,20 @@ computed counter-example, at the same `PlannerWit.theQueuedRequest`: `m1` carrie
 `hot` and `m2` does not, the day holds two rows carrying `m2` and **none**
 carrying `m1`, so no row can be "before the queue".  As above, the goal is not
 deleted: the restatement adds that the hot item is eligible at some slot of the
-day, which needs `Planner.eligibleAt` and is P5's.  README gap 851. -/
+day, which needs `Planner.eligibleAt` and is P5's.  README gap 851.
+
+**W-20 (track G) refuted it a SECOND time, and the second cause is not the
+fold's.**  `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes the same
+`false` at a request with an **empty log, nothing running and no candidates** —
+a day whose only rows are the calendar's Wall and the evening, and whose
+`assignedOf` is `[]`.  The cause is this statement's own quantifier: `sj` ranges
+over **every** segment, so a Wall row carrying `^g1` is a queue position that a
+hot `^m1` with no row has failed to precede.  Neither repair README gap 850
+offered P5 reaches it — there is no reservation here to refuse a candidate at,
+and `^m1` is not a candidate — so the restatement this goal is to become owes
+either an eligibility that refuses an item step 5 never queues, or the
+restriction of `sj` to `sj.val.kind.isWork`.  It is still P5's row (§6.3) and it
+is still not deleted here.  README gap 960. -/
 theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)
