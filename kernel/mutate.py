@@ -139,7 +139,7 @@ def read(path):
         return handle.read()
 
 
-def lib_files(text_of=None):
+def lib_files():
     """The library's .lean files, as relative paths under kernel/."""
     return sorted("TmKernel/TmKernel/" + n for n in os.listdir(LIB)
                   if n.endswith(".lean"))
@@ -210,7 +210,7 @@ def declarations(text, path):
     offsets = [0]
     for line in lines:
         offsets.append(offsets[-1] + len(line) + 1)
-    for idx, (n, name) in enumerate(starts):
+    for n, name in starts:
         end = len(lines)
         for j in range(n + 1, len(lines)):
             line = lines[j]
@@ -416,7 +416,24 @@ def run(decls, write, verbose=True):
     return bad
 
 
+FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
+
+
 def main(argv):
+    # An unrecognised flag is REFUSED, not ignored.  A typo used to fall through
+    # to the default path, which mutates every new definition -- one kernel
+    # build per constant, minutes of it, for a misspelling.
+    known = set(FLAGS)
+    skip = False
+    for i, arg in enumerate(argv):
+        if skip:
+            skip = False
+            continue
+        if arg not in known:
+            print("mutate.py: unknown argument %r; flags are %s"
+                  % (arg, " ".join(FLAGS)))
+            return 2
+        skip = arg in ("--only", "--since")
     restore_in_flight()
     base, rows = roster()
     if rows is None:
@@ -434,8 +451,6 @@ def main(argv):
         base = argv[argv.index("--since") + 1]
 
     if verify:
-        want = {(r[0], r[1]) for r in
-                [(k[0], k[1]) for k in rows]}
         decls = [d for path in lib_files()
                  for d in declarations(read(os.path.join(HERE, path)), path)
                  if (d["file"], d["name"]) in rows]
