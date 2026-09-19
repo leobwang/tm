@@ -35118,7 +35118,20 @@ their measurements beside them.*
    (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) and
    `dayPlan_ok_core_from_now` **four** (those three and `noOverbook`, whose only
    surviving Block *is* the Active reservation that `withoutActive` removes).
-   Over the whole eleven at `theStoredRequest` it is **six of eleven**. So the
+   Over the whole eleven at `theStoredRequest` it is **six of eleven**.
+   *(**Superseded — corrected at W-18, gaps 678/679, annotated here at W-19's
+   repair step, gap 883.** The machine-checked census is **five of eleven** at
+   `theStoredRequest`: `PlannerWit.the_battery_census_over_a_produced_day`, a
+   `decide`, with the paragraph above it in `PlannerWit.lean` reading "the count
+   over *this* day is **five of eleven**, not six (W-17 repair)" and
+   `Negative.lean`'s CHEAT 190 comment carrying the complementary **six**, which
+   is why 5 + 6 = 11 and the tree is internally consistent. Every other ratio
+   agrees once the request is held fixed: **seven** at `theCensusRequest`
+   (`the_battery_passes_at_the_census_request`'s neighbourhood), **four** at
+   `theQueuedRequest`, nine-of-eleven for the lift's conjuncts. The correction
+   lived only in W-18's block, so a reader landing on this entry got the
+   superseded number; that is what this annotation ends. No check can catch it —
+   a ratio is a numeral, and check 8 sweeps backticked identifiers.)* So the
    lift is weaker evidence than its name suggests, and five of §8.3's eleven laws
    have no compiled example of the planner honouring them. The *bites* are
    covered — all eleven refuse a mutation — so this is a vacuity gap and not a
@@ -39351,6 +39364,23 @@ mutation fails as a rewrite mismatch and not as a false claim.**
 4. *Which step clears it.* **G1**, where the fold induction carries §6.3's eleven
    invariants and can carry these two beside them.
 
+*(**A third unpinned clause, added at W-19's repair step — gap 876.** This roster
+named `g.live` and the atomic run and stopped there. `PlanReq.assignStep`'s own
+**slot-taken guard** — `(a.slotOf[x.2]?).join.isSome ||` — is pinned by nothing
+either, and for a different reason: it is **structurally unreachable**.
+`assignStart` seeds `slotOf` with one `Option.none` per slot and `assignFold`
+folds over `r.energisedSlots.zipIdx`, so every index is visited exactly once and
+the only entry a step `set`s is `x.2`'s. Dropping the guard leaves the build
+**green at 168/168** (W-19's audit, inversion I2, re-driven by the repair step).
+The fork is the same shape and its guard is dead in step 5 too
+(`tm-core/src/planner.rs:1017`, `if assign[i].is_some() || …`), reached only once
+`place_deferred` — step **6** — writes `assign` out of order, so the port is
+right and the guard stays. Unlike the two above, **no theorem and no witness can
+pin it until P6 exists**, which is why it is recorded rather than repaired. The
+other four clauses of the step all fail when perturbed: the budget guard, `used`
+not incremented and `spent` not charged each land on `Planner.lean`'s `omega` in
+`assignFold_ok`. The record is now in `Planner.assignStep`'s own doc comment.)*
+
 **Gap 807 — no parity entry, and none is possible yet.**
 1. *What is not done.* No P38 was issued and the fork oracle was **not** rebuilt
    or run.
@@ -39461,7 +39491,9 @@ probe file in the session scratchpad, outside the repo.
 | commit | what | why it is its own commit |
 |---|---|---|
 | **1** | four stale prose citations in `Plan.lean`, `Recur.lean`, `SealHeaders.lean` and `Boundary.lean`, repaired | **D19**: separable work lands first, and check 8 could not be green until these were gone |
-| **2** | **check 8** — `kernel/check.sh`, `kernel/citations.py` (206 lines, of which 89 are its own specification), `kernel/citations-allow.txt` (328 entries in four declared sections) | **D19**: it changes what "green" means |
+| **2** | **check 8** — `kernel/check.sh`, `kernel/citations.py` (a module docstring that is its own specification, then the resolver), `kernel/citations-allow.txt` (exact names, never patterns, in four declared sections) | **D19**: it changes what "green" means |
+
+*(**Corrected at W-19's repair step, gap 882.** This row read "206 lines, of which 89 are its own specification" and "328 entries". Both were false of every commit in the repository when they were written: at `8855855`, the commit that ships check 8, `git show 8855855:kernel/citations.py | wc -l` is **246** with a **90**-line module docstring, and `git show 8855855:kernel/citations-allow.txt | grep -c '^[^#]'` is **325**. The same two figures hold at `4ce935b`, this block's own commit. At the merge `31771ae` they are **260** and **328** — so 328 matches only a tree this block predates, and 206 matches nothing. This is the **third** set of wrong numbers in check 8's paperwork, after the four header counts gap 871 records, and it is outside gap 871's fix because it is in the ledger rather than in the header. The sizes are removed rather than re-quoted: a line count is a §5.11 number with no gate behind it, and check 8 cannot see a numeral. Re-measure with the two commands above.)*
 | **3** | `tm_core::energy::Model::save` **deleted** — gap 776 | a behaviour change to `tm-core`'s API, separable from both |
 | **4** | this block | docs |
 
@@ -40033,7 +40065,26 @@ Planner.dayPlan r  reads  dayRows r, dayDiagnostics r, dayPriorities r
 `grep -rn 'rankedCands\|entersTheOrder' TmKernel/*.lean` outside `PlannerWit.lean`
 returns **36 lines: 35 in `Planner.lean`, every one of them at `:3013` or between
 `:3232` and `:3339` — `rankedCands`' own section, its definition, its theorems
-and its doc comments — and one in `Lookahead.lean`, a doc comment.** The fourteen
+and its doc comments — and one in `Lookahead.lean`, a doc comment.**
+
+*(**Re-taken at W-19's repair step — gap 884. The numbers and the range are wrong
+of the merged tree, and the conclusion below is not.** Track G measured this on
+branch `w19-g`, which did not hold P5b; the land step re-took none of its tracks'
+greps. Run from `kernel/TmKernel` at the merge `31771ae` the same grep returns
+**40 lines: 39 in `Planner.lean` and 1 in `Lookahead.lean:4787`** — and four of
+the `Planner.lean` hits are outside the stated range: `:4614` (`PlanReq.dayBatches`
+reading `r.rankedCands`), `:4636` and `:4645` (`a_group_member_is_ranked` and
+`a_ranked_candidate_has_a_group`) and `:4795` (a doc comment). All four are
+P5b's. At this repair step's HEAD the same four sit one line earlier — `:4613`,
+`:4635`, `:4644`, `:4794` — because this step deleted `Planner.capMin?`; the
+count is still 40. **The conclusion survives the correction**, and by a stronger
+argument than a line range: `dayPlan` is defined at `Planner.lean:3450` and
+`dayBatches` at `:4613`, so `dayPlan` cannot read it, and `dayRows`,
+`dayDiagnostics` and `dayPriorities` are unchanged. The general lesson is gap
+870 one level up — **check 8 is a function of the tree, and so is every grep a
+track publishes; a merge owes a re-take of both.**)*
+
+The fourteen
 definitions the `dayPlan` chain is made of (`segOf`, `wallsToday`,
 `wallConflicts`, `travelDay`, `sortRows`, `stepOneSegs`, `stepTwoSegs`,
 `reservationSegs`, `candAnswers`, `prioRow`, `dayPriorities`, `dayRows`,
@@ -40592,6 +40643,20 @@ Release build, capped at `16G`, on a fresh `tm init --example` tree
 
 **A normal day** — wake, arrive, plan, start, now, done, log:
 
+*(**Repaired at W-19's repair step — gap 885.** As first published, the `plan`
+transcript below pasted **ten** of the day's rows and the binary prints
+**twenty**, inside a fence with `$` prompts, no ellipsis and no note of
+trimming; the `tm now` transcript dropped its whole `next` block and its
+`0/6 blocks` line. Re-driven at this step's HEAD with a release binary rebuilt
+in this session, on a fresh `tm init --example` tree outside the repo, running
+these commands in this order: every other line reproduces **to the character** —
+`hash="4c9f4c5833855bdc"`, `^v9pv`/`^qgk7` and D35's "nothing was written"
+included — which is what makes this an abridgement and not a fabrication. The
+missing rows are now restored, and they are the ones that matter most: they show
+the day placing the **2-block** `Pick winter courses @O3` at 10:50, 12:00 **and**
+13:50. AGENTS §5.2 asks that evidence be what a reader can re-run; a `…` line or
+the word "abridged" costs nothing and neither was there.)*
+
 ```
 $ tm --now 2026-09-07T07:10:00-05:00 wake --slept 7h20m
 wake 07:10 · slept 440m
@@ -40605,10 +40670,19 @@ $ tm --now 2026-09-07T08:05:00-05:00 plan
 09:50  3 p3   Claude Code drafts tests     @m2  1b
 10:50  3 p5   Pick winter courses          @O3  2b
 11:30  ·      lunch 30m
+12:00  3 p5   Pick winter courses          @O3  2b
 12:50  ⏰     Meeting w/ host                   1h
+13:50  3 p5   Pick winter courses          @O3  2b
+14:50  ·      break 20m
 15:10  2 p5   Insurance claim for the bi…       30m
+16:00  ·      workout 1h
 17:00  ───    window ends 17:00
+17:00  ·      shower 20m
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ○      Severance S3E4                    1h
 21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
 · 0 underused · 0 ci-5 lost
 · t5 blocked by t4
 · waiting: a4
@@ -40619,6 +40693,11 @@ $ tm --now 2026-09-07T11:10:00-05:00 now
 ▶ ^t4 Claude Code drafts tests · started 10:50 · 20m of 60m
 ▶ Claude Code drafts tests  @m2  ci3  p3  1b
   11:10–11:50 · elapsed 0m · left 40m
+next
+  11:50  · lunch 30m
+  12:20  · Pick up package  20m
+  12:50  ⏰ Meeting w/ host  1h
+0/6 blocks
 $ tm --now 2026-09-07T11:50:00-05:00 done
 ✓ ^t4 Claude Code drafts tests · 60m/60m
 $ tm --now 2026-09-07T11:51:00-05:00 log --tail 3
@@ -40786,3 +40865,509 @@ The branches are kept as the record, as W-11…W-18's are.
 Gaps: this step **870-873**; **874 free**. Cheats: none taken; track G's two
 renumbered to **209-210**. **Highest on the branch after this merge: gap 873,
 cheat 210, `PlannerWit` section 16, parity P38.**
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-19**, the **REPAIR**
+     step, on the main checkout at `31771ae`.  Thirteen defects from two
+     independent readers — an auditor (six) and a reuse critic (seven).
+     **Twelve reproduce exactly as reported; one reproduces as a fact and NOT as
+     its stated class, and is left as a claim rather than adopted.  One is a
+     symptom of a gap already open (731) and is recorded, not repaired.**
+     Three commits of code and prose plus this block.  Gap range **875-889**;
+     this step takes **875-888** and leaves **889** free.  No goal added,
+     discharged or deleted: **burn-down stays 9**.  `check.sh` **8/8**.
+     =========================================================================== -->
+
+## Stage 6 — W-19's repair step: thirteen defects, twelve reproduced, one left as a fact and not as its class
+
+### 0. What landed
+
+| commit | what | why it is its own commit |
+|---|---|---|
+| `43cbf4f` | **three names the kernel already had** — `Planner.capMin?` deleted for `Seal.minOpt`, `Planner.pickFrom` deleted for `List.findIdx?`, `Planner.locOk` renamed `groupLocOk` | **D19**: it changes what the cursor *runs*; separable from the witnesses |
+| `c1d6569` | **the gather's five clauses get a subject**, and the two-comparison lift gets its first instance | new theorems only; no definition moves |
+| `021dcb4` | **two stale sentences, and two blind spots measured instead of guessed** | prose and `citations.py`'s header; touches no proof |
+| this one | the ledger repairs and this block | docs |
+
+### 1. The two majors that were code, and what reproducing them showed
+
+**1a. `Ranked.gatherable` — fork `batches`' `small` — was unwitnessed in the
+refusing direction, and `:= true` was GREEN across the whole build.**
+Reproduced first, in the tree, capped:
+
+```
+$ python3 - <<'EOF'   # Ranked.gatherable's body -> `true`
+...
+EOF
+$ systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet \
+    lake build TmKernel:static
+✔ [164/168] Built TmKernel.PlannerWit (45s)
+✔ [168/168] Built TmKernel:static (19ms)
+Build completed successfully (168 jobs).
+
+real	0m49.575s
+```
+
+Every theorem in `Planner.lean`, every one of P5b's nineteen `PlannerWit`
+`decide` witnesses, and `check.sh` 8/8, all green with the predicate replaced by
+a constant. **This is gap 577's class a third time**, and it is exactly where
+P5b's own gap 805 item 4 sends an auditor: *"a step that wants a behaviour-only
+inversion of the gather should mutate a reader (`Ranked.facts`,
+`Ranked.gatherable`) rather than the loop."* The block's seventeen inversions
+include none that touches this predicate's content.
+
+**What was missing is not a law but a subject.** Every candidate of every
+witness in the tree was gatherable — `bCand` fixes `remaining := 10` against a
+`batch_max_min` of 20 and clears all three flags — so the predicate ranged over
+nothing that could answer `false`. The repair is six requests of three
+candidates each, differing in **one field of `^t2`** and in nothing else, and
+two theorems over them: `the_gather_predicate_refuses_on_each_clause` (the
+reader's own answer) and `the_gather_reads_each_of_its_five_clauses` (the answer
+reaching the batches, which a reader-level theorem cannot give — gathering
+consumes `room` and `tot`, so a wrongly gathered candidate changes which later
+members are gathered, which groups exist, `commitOf`, and every answer of the
+cursor).
+
+*Two honest caveats, in the doc comment rather than left for an auditor.*
+`optional` is read by §7's pass as well and answers `p = 5` where the others
+answer `3`, so `theGatherOptionalRequest`'s `^t2` also moves to the **end** of
+the order; `wall` moves it to the **front**, because `CandKey.notWall` is the
+key's first number. Both movements are in the stated answers rather than hidden,
+and the batching answers still change under the corresponding clause's removal
+alone.
+
+**1b. `Planner.capMin?` was byte-for-byte `Seal.minOpt`.** Same three
+equations, same type, in a file whose line 2 is `import TmKernel.SealResume` —
+AGENTS §5.3's W-16 `charsLe` case verbatim. `Seal.minOpt` is not an orphan: it
+has `minOpt_assoc` (`SealAgg.lean:24`) and call sites in `SealLaw2D`,
+`SealAgg2`, `SealRsDefs` and `SealFoldPoint`. The new copy is **deleted** and
+`capLeftOf` folds with `Seal.minOpt`. README gap 886.
+
+The critic's sharpest sentence is the one worth carrying forward: P5b's Method
+item 1 listed fifteen names greped before the first helper, **and none of them
+could reach `minOpt`** — the same paragraph names the blind spot ("a helper
+whose body duplicates an existing one under a different name is invisible to
+it") and then concludes "Nothing here re-derives a slot, a window, a budget or
+an energy", which is true and is not the claim that was owed.
+
+### 2. The one that does NOT reproduce as its class, and is LEFT
+
+**Claim (auditor, minor):** *"Check 8 does not sweep AGENTS.md or
+kernel/design/, and both carry live stale prose citations of exactly the class
+D39 exists to end."*
+
+**AGENTS.md's half reproduces and is repaired** (§3 below). **The design's half
+reproduces as a fact and not as its class, and the claim is left standing rather
+than adopted.** `kernel/design/stage6/stage6-planner-design.md:931` cites
+refuses_a_day_past_9999, which resolves to nothing — that much is exact. But
+it sits in §9's table, whose column header is **"bound, constructor, rejection
+theorem"**, and the three names beside it in that column — `mkStateDay?`,
+`mkWindow?` and refuses_an_inverted_window — are **equally undeclared**
+(un-backticked here for the reason the allow-list's header gives: a sentence
+recording that a name has no referent must not put that name on the exemption
+list):
+
+```
+$ for n in mkStateDay refuses_a_day_past_9999 refuses_an_inverted_window mkWindow; do
+    echo "--- $n"; grep -rn "$n" --include=*.lean --include=*.rs . | head -3; done
+--- mkStateDay
+--- refuses_a_day_past_9999
+--- refuses_an_inverted_window
+--- mkWindow
+```
+
+The rows that say **"reuse — already exists"** (`WakeClock.wf`, `Field.Clock`,
+`Loc.curve`) all resolve. And `Planner.lean:644`'s `RuntimeIn` carries
+`active`, `brk`, `interrupt`, `lastHash` and `yesterday` — **none** of `date`,
+`wake`, `arrival`, `loc`, `window`. The table is a **specification of what has
+yet to cross**, not a record of what the tree holds, so its unresolved names are
+work to do and not stale citations. Sweeping `kernel/design/**` on those numbers
+would demand 144 exemptions for a prospective document.
+
+What *is* adopted from the claim is the part that was true and unmeasured:
+`citations.py`'s "WHAT THIS CANNOT SEE" list did not name "every file outside
+the three swept locations, AGENTS.md included". It does now, with numbers.
+
+### 3. The rest, one line each, with what reproducing each one showed
+
+| # | claim | reproduced? | disposition |
+|---|---|---|---|
+| A1 | `gatherable` unwitnessed, `:= true` green | **exactly** | repaired, gap 875 |
+| A2 | `assignStep`'s slot-taken guard structurally unreachable, unrecorded | **exactly** — I2 re-driven, `Build completed successfully (168 jobs)` | **recorded, not repaired**: the guard is fork-faithful and nothing can pin it until P6. Gap 876, and it is now in `assignStep`'s own doc comment |
+| A3 | check 8 does not sweep AGENTS.md or the design | **half** | AGENTS.md repaired (gap 881); the design's half **left as a claim** (§2) |
+| A4 | `tm undo` behind an automatic close blames an external editor | **exactly**, byte for byte | **symptom of gap 731**, already open; the new half recorded as gap 887 |
+| A5 | track A's `committed[]` omits `4ce935b` | **exactly** — `git log --oneline d1a602a..HEAD` is 12, track A reported 3 | recorded, gap 888. All twelve carry `Co-Authored-By` (12/12) |
+| A6 | gap 650 still says "six of eleven" where the census is five | **exactly** | annotated in place, gap 883 |
+| R1 | `capMin?` is `minOpt` | **exactly** | repaired, gap 886 |
+| R2 | a live stale citation check 8 reports green, plus an unmeasured camelCase blind spot | **exactly** | `emitRefused` repaired; blind spot **measured**, gap 880 |
+| R3 | the land block's drive transcripts are silently abridged | **exactly** — 20 rows printed, 10 pasted | re-driven and restored, gap 885 |
+| R4 | track A's §1 table mis-measures the file it shipped | **exactly** | the sizes are **removed**, not re-quoted, gap 882 |
+| R5 | track G's `rankedCands` grep is false on the merged tree | **exactly** — 40, not 36 | re-taken in place, gap 884 |
+| R6 | `pickFrom` re-implements `List.findIdx?` | **exactly** | repaired, gap 877 — and the replacement is **stronger** |
+| R7 | `Planner.locOk` collides with `Cmd.locOk` | **exactly** | renamed `groupLocOk`, gap 878 |
+| R8 | the two-comparison lift has no instance where its hypotheses hold | **exactly** | repaired, gap 879 |
+
+### 4. `driven` — the inversions, run and watched failing, then reverted
+
+All capped at `MemoryMax=40G -p MemorySwapMax=0`. Each one replaces
+`Planner.Ranked.gatherable`'s body, builds, and is reverted from a saved copy.
+
+| label | mutation | result |
+|---|---|---|
+| RE-I9 | `:= true` | **FAILS** |
+| RE-I10 | `decide (0 < x.cand.remaining)` removed | **FAILS** |
+| RE-I11 | `decide (x.cand.remaining ≤ maxSmall)` removed | **FAILS** |
+| RE-I12 | `!x.cand.wall` removed | **FAILS** |
+| RE-I13 | `!x.cand.optional` removed | **FAILS** |
+| RE-I14 | `!x.cand.window` removed | **FAILS** |
+| RE-I15 | `capLeftOf` folds with `Seal.maxOpt` | **FAILS**, `Planner.lean:4469 Type mismatch` |
+| RE-I16 | `assignStep`'s slot-taken guard dropped (audit I2) | **GREEN — 168/168.** This is gap 876, re-driven, not repaired |
+
+Every one of RE-I9…RE-I14 fails identically:
+
+```
+✖ [164/168] Building TmKernel.PlannerWit (45s)
+error: TmKernel/PlannerWit.lean:2539:71: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:2555:84: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+error: build failed
+```
+
+RE-I16, for contrast, and it is the point of gap 876:
+
+```
+### INVERSION RE-I16 slot-taken guard dropped (audit I2)
+Build completed successfully (168 jobs).
+```
+
+**The drive that repaired the transcripts** (gap 885), release binary rebuilt in
+this session under `MemoryMax=16G`, fresh `tm init --example` tree outside the
+repo. `tm --now 2026-09-07T08:05:00-05:00 plan` prints **twenty** rows; the land
+block pasted **ten**, in a fence with `$` prompts, no ellipsis, no note of
+trimming. The nine missing body rows are now restored, and they are the ones
+that matter: they show the day placing the 2-block `Pick winter courses @O3` at
+**10:50, 12:00 and 13:50**. `tm now` likewise dropped its whole `next` block and
+its `0/6 blocks` line. Every other line reproduced **to the character**,
+`hash="4c9f4c5833855bdc"` and `^v9pv`/`^qgk7` included — which is what makes it
+an abridgement and not a fabrication.
+
+**The undo drive** (gap 887), on a fresh copy of `kernel/corpus/plan-basic`:
+
+```
+$ tm --now 2026-09-07T09:30:00-05:00 start ^m1     ▶ ^m1 Finish ch.5 exercises · 09:30 · pred 5
+$ tm --now 2026-09-07T11:00:00-05:00 done          ✓ ^m1 Finish ch.5 exercises · 90m/360m
+$ tm --now 2026-09-08T09:00:00-05:00 now           (runs §6.3's automatic close)
+$ tm --now 2026-09-08T09:30:00-05:00 start ^a1  /  done  /  now
+$ tm undo     undid done (done ^a1) · 2 file(s) restored · 3 left
+$ tm undo     undid start (start ^a1) · 2 file(s) restored · 2 left
+$ tm undo
+tm: conflict in day/2026-09-07.md — the file changed under us
+  ours:   39 lines — what the undone command wrote
+  theirs: 38 lines — what day/2026-09-07.md holds now
+  first difference, line 28:
+    ours:   - [ ] 2 20m Call the bank about the card  ^p1
+    theirs: 
+```
+
+### 5. Method, and what each method cannot see
+
+1. **"Every clause of `gatherable` is pinned."** *Method:* remove exactly one
+   clause, build capped, watch it fail, revert from a saved copy; six times.
+   *Cannot see:* the two new theorems are **conjunctions over six requests**, so
+   the build reports the whole theorem failing and not which conjunct. What the
+   method establishes is that removing that clause **alone** turns a true
+   statement false — which is the claim — and not which line of the expected
+   list moved. It also cannot see a change to `gatherBatch`'s *loop* that leaves
+   the predicate alone; those are P5b's inversions A and H2.
+2. **"`capMin?` and `pickFrom` were the only duplicates in P5b's fold."** *Method:*
+   the critic's, adopted: read each new `def` body against the 42 stage-5
+   artefacts and against Lean core. *Cannot see:* anything the reader did not
+   think to compare against. This is the same blind spot P5b's own Method item 1
+   declared, and it caught nothing then; a name-based grep cannot find a body
+   duplicated under a different name, and no gate in this repository can.
+   **Both instances this run were found by a human reading bodies.**
+3. **"The design's unresolved names are prospective."** *Method:* compare the
+   unresolved name against the other names in its own table column, and against
+   the structure the tree actually holds (`RuntimeIn`'s fields). *Cannot see:* a
+   design row that was once true and has since gone stale would look identical
+   to a row that was always prospective. Distinguishing them needs the commit
+   that wrote the row, which was not chased.
+4. **"Twelve of thirteen reproduce."** *Method:* run each claim's own commands at
+   this step's HEAD. *Cannot see:* a defect neither reader found. Two readers is
+   not a proof of completeness, and the last five runs each found what a gate
+   could not.
+5. **"The camelCase blind spot is measured."** *Method:* `citations.py`'s own
+   resolver with the underscore test inverted. *Cannot see:* which of the 1,120
+   unresolved Lean citations are real; the sweep cannot separate `decide` and
+   `rfl` from `emitRefused`. Two were separated **by hand**, and there may be
+   more.
+
+### 6. Acceptance, and every delta explained
+
+All capped at `MemoryMax=40G -p MemorySwapMax=0`.
+
+| check | `d1a602a` | `31771ae` | here | delta |
+|---|---|---|---|---|
+| lake build | ok | ok | ok | — |
+| totality | ok | ok | ok | — |
+| axiom audit | 4,549 | 4,661 | **4,665** | **+4**: exactly the four `#print axioms` lines appended in `c1d6569`. `43cbf4f` is net **0** — pickFrom_sound deleted, `pickedGroup_is_the_first_that_fits` added |
+| `Negative.lean` | ok | ok (195 cheats) | ok | — none taken |
+| check 5 (FFI) | 93 | 93 | **93** | — |
+| corpus | 29/37, 4/5 | 29/37, 4/5 | **29/37, 4/5** | — |
+| stage goals | 9 | 9 | **9**, all stage 6 | — no goal added, discharged or deleted |
+| check 8 | — | 10,753 / 9,689 / 1,064 (78 voc, 250 counted), 0 unused | **10,807 / 9,739 / 1,068 (79 voc, 250 counted), 0 unused** | **+1 vocabulary**: `List.findIdx?_eq_some_iff_getElem`, the Lean core lemma the new proof cites — the only allow-list entry this step adds, and it is a literal name. **+54 citations / +50 resolved / +4 allowed**: this step's own new prose. pickFrom_sound, refuses_a_day_past_9999 and refuses_an_inverted_window all left the swept set because the sentences that record them as dead or undeclared spell them **without backticks** — the allow-list's own convention, so they cost no exemption. **Check 8 failed this block on its first run**, at three of exactly those names, which is the gate doing the job D39 built it for |
+| wall | — | — | **7.43 / 7.36 s** | two runs |
+
+`cargo test --workspace`: **1,345 passed / 0 failed / 9 ignored over 79 `test
+result` lines** — identical to `d1a602a` and to `31771ae`. The known `cli_latency`
+flake did **not** fire in the parallel run, and
+`cargo test -p tm --test cli_latency -- --test-threads=1` is **5 passed / 0
+failed / 1 ignored in 14.16 s**; both results are reported, not only the green
+one. `cli_switch_acceptance`, `kernel_call_counts` and the door suite all ran
+inside that workspace run and are green.
+
+### 7. Gaps — this step takes 875-888; **889 free**
+
+**Gap 875 — `Ranked.gatherable` had no refusing subject, and `:= true` was green. CLOSED here.**
+1. *What was not done.* Fork `batches`' `small` predicate was pinned by nothing
+   in the refusing direction: replacing its whole body with `:= true`, or
+   removing any one of its three conjuncts, left `lake build TmKernel:static` at
+   168/168 and `check.sh` 8/8. Only `:= false` was caught.
+2. *Why it happened.* Every candidate of every witness in the tree was
+   gatherable, so the predicate had nothing to say `false` about. The step's
+   seventeen inversions all mutated the *loop* or the *key*, never the reader.
+3. *What it cost.* A candidate past `batch_max_min`, or a wall / optional /
+   window instance, could have been gathered into a block-sharing batch and
+   nothing in the tree would have said so — and gathering consumes `room` and
+   `tot`, so which later members are gathered, which groups exist, `commitOf`
+   and every cursor answer move with it. No Rust test could see it either:
+   nothing outside `PlannerWit.lean` consumes the fold.
+4. *Closed by.* `the_gather_predicate_refuses_on_each_clause` and
+   `the_gather_reads_each_of_its_five_clauses`, six requests, five clauses, six
+   inversions driven and watched failing.
+
+**Gap 876 — `assignStep`'s slot-taken guard is pinned by nothing, because nothing can reach it.**
+1. *What is not done.* `(a.slotOf[x.2]?).join.isSome ||` at
+   `Planner.lean`'s `PlanReq.assignStep` has no ∀-theorem and no witness, and
+   dropping it leaves the build **green at 168/168** (RE-I16 above).
+2. *Why.* It is **structurally unreachable**: `assignStart` seeds `slotOf` with
+   one `Option.none` per slot and `assignFold` folds over
+   `r.energisedSlots.zipIdx`, so each index is visited exactly once and the only
+   entry a step sets is its own. The fork is the same shape
+   (`tm-core/src/planner.rs:1017`) and its guard is dead in step 5 too; only
+   `place_deferred` — step **6** — writes `assign` out of order. **The port is
+   faithful and the guard stays.**
+3. *What it costs.* Gap 806's roster of unpinned clauses named two and this is a
+   third, of a different kind: the other two are unpinned *for now*, this one
+   cannot be pinned by anything until P6 exists. The other four clauses of the
+   step all fail when perturbed (the budget guard, `used` not incremented,
+   `spent` not charged — each lands on `assignFold_ok`'s `omega`).
+4. *Which step clears it.* **P6**, which writes `place_deferred` and is the first
+   caller that can put a slot in a state this guard can observe.
+
+**Gap 877 — `pickedGroup_is_the_first_that_fits` has a subject and no consumer.**
+1. *What is not done.* The theorem that replaced pickFrom_sound states two
+   things and only one is used: `PlanReq.assignStep_cases` destructures it as
+   `⟨⟨g₀, hg₀, hpg⟩, -⟩` and **discards** the "every earlier group fails" half.
+2. *Why.* It is free — `List.findIdx?_eq_some_iff_getElem` gives both — and it
+   is the claim the fork's `for` loop actually makes, so stating less would be
+   the weaker record.
+3. *What it costs.* Nothing today; the half is **not vacuous** —
+   `the_cursor_fills_the_day_in_key_order` gives §4.3's second slot to group
+   **3**, so groups 0, 1 and 2 are refused there — but no proof in the tree
+   consumes it, so a change that broke it would be caught only by the theorem
+   itself.
+4. *Which step clears it.* **G1**, where the fold induction is the natural
+   consumer of "and everything before it refused".
+
+**Gap 878 — one short name, two predicates, and check 8 resolves on the last segment.** *(Repaired at the moment of naming; recorded so the reason is not lost.)*
+1. *What was not done.* P5b named its slot-fit helper `Planner.locOk` while
+   `Cmd.locOk` — well-formedness of a location *word* — already existed.
+2. *Why it matters.* `citations.py:224` resolves a citation on its **last dotted
+   segment**, and names that as its own blind spot 2. With two `locOk`s, a prose
+   citation of either resolves against the other and no gate can tell a stale
+   one from a live one.
+3. *What it cost.* Nothing shipped; the namespaces separate the code.
+4. *Closed by.* `groupLocOk`, renamed here. **Cheap at the moment a name is
+   chosen, expensive to notice later** — the lesson, not the rename.
+
+**Gap 879 — the two-comparison lift had no instance. CLOSED here.**
+1. *What was not done.* `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons`
+   takes `hrank` and `hhot` as hypotheses and nothing in the tree satisfied all
+   seven at once. The nearest computed fact was
+   `the_battery_passes_at_the_census_request`, which is `planOk` over the
+   **whole** day and not over `withoutPast`'s — and W-19's own block argues the
+   two days are independent, so it establishes nothing about the new theorem's
+   hypotheses.
+2. *Why it happened.* The run that made refuting-by-computation its whole thesis
+   left its one new assumed-hypothesis theorem without AGENTS §7.4 item 2's
+   answer.
+3. *What it cost.* A theorem that could have been about an empty domain, in the
+   file whose subject is vacuity.
+4. *Closed by.* `the_two_comparisons_hold_at_the_reserved_day` (a `decide` on
+   `withoutPast`'s day at `theRunningRequest`) and
+   `the_two_comparison_lift_applies_at_the_reserved_day` (the lift **applied**,
+   all seven hypotheses from theorems, no `decide` on the conclusion).
+
+**Gap 880 — check 8's camelCase blind spot, measured, with two real names in it.**
+1. *What is not done.* Check 8 sweeps snake_case only. Reading camel too, over
+   exactly its own file set: Lean files **10,226 citations / 2,660 distinct /
+   1,120 unresolved (297 distinct)**; `README.md` **16,962 / 3,785 / 2,356 (515
+   distinct)**.
+2. *Why it stays.* Widening the regex is not the fix. The top of that list is
+   `decide` (x170 Lean, x303 README), `rfl`, `Nat`, `Bool`, `sorry`, `lake`,
+   hypothesis names (`hnopast` x20) and commit shas: a camelCase span is not
+   distinguishable from tactic, type and prose vocabulary the way a snake_case
+   one is, and an allow-list of 812 distinct names is the check written twice.
+3. *What it costs.* Two real names hid there. **`emitRefused`** — a constant that
+   has never existed, named in the **present tense** at `Boundary.lean:3647`,
+   and `python3 citations.py` exited 0 on it — is repaired here; the live
+   referent is `EmitRefusal.refused`. **`eligibleAt`** (x16 in Lean as
+   `Planner.eligibleAt`, x26 in the README) is **not stale**: gap 809 already
+   owns it as a name for work P5's next step will write. The blind spot is real;
+   the population inside it is mostly noise, and separating the two is a human's
+   job today.
+4. *Which step clears it.* The owner, if D39 is widened. Not a repair step's.
+
+**Gap 881 — every file outside check 8's three swept locations, the process authority included.**
+1. *What is not done.* D39 scoped check 8 to `kernel/TmKernel/**.lean` and
+   `kernel/README.md`, so `AGENTS.md`, `kernel/design/**`, `tm-spec-v1.md` and
+   `PLAN-lean-kernel.md` are outside their own gate. Measured with the same
+   resolver, sets and allow-list: **AGENTS.md 440 / 308 / 3 distinct
+   unresolved; kernel/design/** 1,855 / 687 / 144; tm-spec-v1.md 26 / 20 / 0;
+   PLAN-lean-kernel.md 83 / 65 / 9.**
+2. *Why.* The scope is D39's, so this is not a contract breach — but
+   `citations.py`'s own "WHAT THIS CANNOT SEE" list did not name it, and a
+   reader of check 8's comment would not have learned that the process authority
+   is outside the gate **and already held one**.
+3. *What it costs.* `AGENTS.md:1630` cited
+   a_file_splits_into_the_lines_it_was_joined_from, which resolves nowhere; the
+   live theorem is `…_char` and AGENTS.md:1188 spells it correctly eight
+   sentences earlier. Repaired here. The design's unresolved names are **not**
+   this class (§2 above) and must not be swept on those numbers.
+4. *Which step clears it.* The owner. Widening to `AGENTS.md` alone would cost
+   three exemptions or three repairs; widening to `kernel/design/**` would cost
+   144 and would be wrong.
+
+**Gap 882 — a third set of wrong numbers in check 8's paperwork.** Track A's §1
+table said `citations.py` was "206 lines, of which 89 are its own specification"
+and the allow-list "328 entries". At `8855855`, the commit that ships check 8,
+the file is **246** lines with a **90**-line docstring and **325** entries; the
+same at `4ce935b`, the block's own commit; **260** and **328** at the merge. So
+206 matches no commit and 328 matches only a tree the block predates. Distinct
+from gap 871's four header counts, and outside its fix, because these are in the
+ledger. **The sizes are removed rather than re-quoted** — a line count is a §5.11
+number with no gate behind it, and check 8 cannot see a numeral. Annotated in
+place. *Which step clears it:* none; the class is closed by not writing sizes
+into prose.
+
+**Gap 883 — gap 650's ratio is superseded and its entry did not say so.** Gap
+650 records "six of eleven" at `theStoredRequest`; the machine-checked census is
+**five** (`PlannerWit.the_battery_census_over_a_produced_day`, a `decide`), with
+`Negative.lean`'s CHEAT 190 carrying the complementary six, so 5 + 6 = 11 and the
+tree is consistent. The correction landed in W-18's block (gaps 678/679) and gap
+650's own four-part entry was never annotated, so a reader landing there got the
+superseded number. Annotated in place. **No check can catch this: a ratio is a
+numeral.** *Which step clears it:* none; the class is the ledger's, and the fix
+is annotating the entry rather than only the newer block.
+
+**Gap 884 — a grep a track published is a function of the tree, and the merge re-took none.**
+Track G's §5 reported `grep -rn 'rankedCands\|entersTheOrder' TmKernel/*.lean`
+outside `PlannerWit.lean` as **36 lines, 35 in `Planner.lean`** in a stated line
+range. On the merged tree it is **40 — 39 in `Planner.lean` and 1 in
+`Lookahead.lean:4787`** — with four hits outside the range, all of them P5b's,
+which branch `w19-g` did not hold. **The conclusion survives**, and by a stronger
+argument: `dayPlan` is defined at `Planner.lean:3450` and `dayBatches` at
+`:4613`, so `dayPlan` cannot read it. This is gap 870 one level up — check 8 is
+a function of the tree, and so is every grep a track publishes. *Which step
+clears it:* every merge, by re-taking each branch's published greps (AGENTS §6.5
+gains the obligation).
+
+**Gap 885 — the land block's drive transcripts were abridged without saying so.**
+Ten of twenty rows pasted for `tm plan`, inside a fence with `$` prompts, no
+ellipsis and no note; `tm now`'s whole `next` block and its `0/6 blocks` line
+dropped. Re-driven here with a release binary rebuilt in this session and
+restored in full. The runs themselves were genuine — every other line reproduces
+to the character — which is what makes it an abridgement and not a fabrication;
+but the trimmed rows are the ones that show the day placing a 2-block item three
+separate times, and a reader who re-runs the block's own commands gets a
+mismatch on the first and largest transcript. *Which step clears it:* none; **a
+`…` line or the word "abridged" costs nothing** and is what §5.2 asks.
+
+**Gap 886 — `Planner.capMin?` was a second copy of `Seal.minOpt`. CLOSED here.**
+Byte-for-byte the same three equations and the same type, in a file that imports
+`SealResume` on line 2. Deleted; `capLeftOf` folds with `Seal.minOpt`. What it
+cost: `capFold_some` and `capFold_le_member` re-prove from scratch what a
+widened `minOpt` could have carried, and `minOpt_assoc` was never available to
+them. *Found by a human reading bodies; no gate in this repository can see this
+class* (gap 877's item 3 and §5 item 2).
+
+**Gap 887 — `tm undo` behind an automatic close blames an external editor, and the stack is then a dead end.**
+1. *What is not done.* An undo reaching behind §6.3's automatic close refuses
+   with *"the file changed under us"* and never names the close, though
+   `.tm/log.jsonl` holds it one entry after the undone command
+   (`{"ev":"demote",…}` then `{"ev":"close","period":"day","key":"2026-09-07"}`).
+   Repeating the undo gives the identical message every time.
+2. *Why.* **This is gap 731's class, already open**, and the mechanism is
+   confirmed here: `.tm/undo.json` on the driven tree holds **two** entries
+   (`start ^m1`, `done ^m1`) and the close that rewrote `day/2026-09-07.md` is in
+   **neither** — `closing::auto_close` runs inside `Ctx::load_with`, before every
+   verb's `Recorder::start`. The refusal itself is correct and safe (D37: never
+   clobber) and W-16's gap-395 repair correctly names the first differing line.
+3. *What it costs.* tm blames an external editor for its own automatic write, and
+   the undo stack is a permanent dead end for every entry older than that close.
+4. *Which step clears it, and the shape the fix must take.* **R1, with gap 731
+   and gap 86.** Attribution cannot be bolted onto `CliError::message`, which is
+   shared by every verb's write conflict; it needs the *undo* path to carry the
+   later writer's identity. The only two sources are the undo stack — which does
+   not hold the close — and `.tm/log.jsonl`, which **must be read through the one
+   reader (D9)**, never by a second parse in `undo.rs`. Not attempted here: gap
+   731 records the underlying change as *"a behaviour change on every verb at
+   once (D19)"*, which is not a repair step's commit.
+
+**Gap 888 — a commit on the branch is in no step's `committed[]`.** `git log
+--oneline d1a602a..HEAD` returns **twelve** commits; track A's report lists
+three. `4ce935b` — *"docs: the gate read the prose and the first thing it read
+was wrong — W-19 track A"*, track A's own README-block commit — appears in no
+step's `committed[]`. All twelve are real and all twelve carry
+`Co-Authored-By: Claude Opus 5` (**12/12**). Nothing is lost in the tree; what
+is lost is the ledger's ability to reconcile reports against `git log`. *Which
+step clears it:* every step, by listing **its own block commit** among its
+commits.
+
+### 8. What this step did NOT do, by name
+
+* **It did not widen check 8's scope or its regex.** D39 wrote the scope; both
+  blind spots are measured and recorded instead (gaps 880, 881). No pattern
+  entered the allow-list — the one entry added is the literal name
+  `List.findIdx?_eq_some_iff_getElem`, a Lean core lemma.
+* **It did not repair gap 887 or gap 731.** Recorded with the shape the fix must
+  take, because the change is a behaviour change on every verb at once (D19).
+* **It did not adopt the design half of the check-8 scope claim.** §2 says why,
+  with the evidence.
+* **It did not touch the fold, the wire, the grammar or any Rust.** Not one file
+  under `tm/src` or `tm-core/src` changed. `dayPlan` is still total (D28), no law
+  was narrowed (D5), no candidate fact is derived in the kernel (D34).
+* **It did not discharge, add or delete a goal.** Burn-down **9**, all stage 6.
+* **It did not take a cheat.** `Negative.lean` is untouched — 195 cheats,
+  unchanged.
+* **It did not rebuild the fork oracle** (gap 807) and did not set `TM_ORACLE`.
+* **It did not re-bless a snapshot, fixture, latency band or corpus file**, and
+  did not raise a memory bound.
+* **It did not give `pickedGroup_is_the_first_that_fits`' second conjunct a
+  consumer** (gap 877), and it did not add a witness for it — the subject is
+  `the_cursor_fills_the_day_in_key_order`, which already exists (§5.3: no second
+  copy).
+* **It did not re-take every grep the three tracks published** — only the one the
+  critic named. Gap 884 says a merge owes all of them.
+
+### Numbering
+
+Gaps: this step **875-888**; **889 free**. Cheats: none taken; `Negative.lean`
+untouched. **Highest on the branch after this step: gap 888, cheat 210,
+`PlannerWit` section 16, parity P38.**
+
+### Worktrees
+
+None entered and none created. `.claude/worktrees/stage5-lookahead` is untouched;
+`git worktree list` shows the main checkout and `stage5-lookahead`.
