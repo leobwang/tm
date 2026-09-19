@@ -36626,3 +36626,40 @@ One untracked `tm/tests/kernel_unit_reserve.proptest-regressions` appeared while
 the wire was half-wired and was **deleted**, not committed: the seed it recorded
 was an artefact of a `badCandidate 0 plan` that no longer reproduces, and
 committing it would have been a false record of a proptest finding.
+
+### Addendum: which SHIPPED verbs reach the new decoder, driven rather than grepped
+
+Written after the block above, which said only that a drive *"cannot show which
+values crossed"* (gap 707).  That is still true of the **values**; the
+**enumeration** is now driven.
+
+The grep, from `cli::run`'s dispatch table down: a capacity request carries
+`candidates` only through `Ctx::priorities` → `kernel_capacity::rank` →
+`request(…, Some(ranked))` → `cand_json`, and the callers are
+`planning::build_ranked` (reached by `tm plan`, `tm now` through
+`planning::build`, `tm arrive`, `tm resume`, `tm energy`, and `tm review`
+through `day_extras`), `lifecycle::review` directly, and `tui::data_of`.
+`planning::week` calls `kernel_capacity::week`, which is `ask(…, None)` and
+sends **no** candidates.
+
+**The method's blind spot** — a grep down a dispatch table cannot see a caller
+reached through a trait object, a closure stored in a struct, or a path the TUI
+builds at run time.  So the enumeration was **driven**: `plan_json`'s call was
+deleted from `cand_json` (inversion I), the release binary rebuilt, and every
+verb run on a scratch `tm init --example` tree outside the repo.
+
+| verb | with the `plan` object | without it |
+|---|---|---|
+| `tm plan` | exit 0 | **exit 1**, `kernel refusal: badCandidate 0 plan` |
+| `tm now` | exit 0 | **exit 1**, same |
+| `tm arrive lounge` | exit 0 | **exit 1**, same |
+| `tm energy 3` | exit 0 | **exit 1**, same |
+| `tm review day` | exit 0 | **exit 1**, same |
+| `tm plan --week` | exit 0 | **exit 0** — it sends no candidates, as the grep said |
+| `tm start`, `tm interrupt`, `tm resume` | exit 0 | (state verbs; `resume` replans and is covered by `tm plan`'s row) |
+
+So five shipped verbs reach `readPlanFacts` on every invocation, one provably
+does not, and the refusal a host that stopped sending the nine would get is the
+one CHEAT 193 claims cannot happen.  The mutation is in no commit; the tree was
+clean before and after (`git status --porcelain` empty) and the release binary
+was rebuilt from the restored source and re-driven.
