@@ -191,7 +191,7 @@ else
   printf '%s\n' "$out" | grep -v 'declaration uses' | head -40
 fi
 
-# 8. The prose resolves.  The owner's D39 (README gap 779).
+# 8. The prose resolves.  The owner's D39 (README gap 779), WIDENED by D41 (W-20).
 #
 #    FIVE CONSECUTIVE RUNS shipped a stale prose citation -- a doc comment or a
 #    README line naming a theorem that had been deleted or renamed -- and every
@@ -201,28 +201,39 @@ fi
 #    the single largest recurring defect class in this campaign's ledger was
 #    invisible to the gate by construction.
 #
-#    So: every backticked snake_case identifier in TmKernel/**.lean AND in
-#    README.md is resolved against five DECLARATION sets -- Lean declarations,
-#    fields and constructors; Lean string literals (a wire key is declared by
-#    the literal that spells it); Rust declarations and fields; Rust string
-#    literals; and file stems (`cargo test --test cli_latency` names a file).
-#    None of the five is prose, so one stale sentence cannot launder another.
-#    citations.py's header is the specification and names its own blind spots.
+#    So: every backticked identifier in TmKernel/**.lean, in README.md and --
+#    since D41 -- in AGENTS.md is resolved against six DECLARATION sets: Lean
+#    declarations, fields, constructors and namespaces; Lean string literals (a
+#    wire key is declared by the literal that spells it); Rust declarations and
+#    fields; Rust string literals; file stems (`cargo test --test cli_latency`
+#    names a file); and the PINNED Lean toolchain's own sources.  None of the
+#    six is prose, so one stale sentence cannot launder another.  citations.py's
+#    header is the specification and names its own blind spots.
+#
+#    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
+#    because snake_case-only reported green on a live stale `emitRefused` and
+#    hid a name gap 809 declares nonexistent at, as re-measured at W-20, 64
+#    sites.  camelCase is a LOWER-TO-UPPER TRANSITION and nothing else: `decide`,
+#    `rfl`, `Nat`, `sorry`, `lake`, hypothesis names and commit shas have none,
+#    which is why the noise gap 880 measured (812 distinct names) does not
+#    arrive with the widening.  D41 also DECLINED `kernel/design/**`: 144
+#    unresolved names there are a prospective specification's work to do, not
+#    stale citations.
 #
 #    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
 #    that silenced a class is how this check would get quietly useless, because
-#    the next stale citation would land inside the silenced class.  Its four
+#    the next stale citation would land inside the silenced class.  Its eight
 #    sections say which exemptions were adjudicated and which were merely
 #    grandfathered, so a reader can tell an intention from an oversight.
 #
-#    It found four LIVE stale citations on its first run, in files W-19 did not
-#    own; they are carried in the allow-list's section 2 declared as defects
-#    (README gap 832), not laundered as exemptions.  Four more it found in files
-#    W-19 did own were repaired in the commit before this one.
+#    It found eight LIVE stale citations on its first run (README gap 832 keeps
+#    the four W-19 did not own) and, widened, 51 more that W-20 repaired with
+#    the un-backtick convention.  19 stand, in files W-20's track A does not own,
+#    declared as defects in allow-list section 2 (README gap 932).
 #
-#    The cost is declared, not hidden: 0.21-0.23 s against a 6.7-8.8 s
-#    built-tree wall, about 3%.  Gap 703's measurement is re-taken with it in
-#    README "Stage 6 W-19, track A".
+#    The cost is declared, not hidden: 0.49-0.51 s against a 7.83-7.87 s
+#    built-tree wall, of which source 6 is 0.21 s.  It was 0.22-0.23 s before
+#    D41.  Re-measured in README "Stage 6 W-20, track A".
 out=$( python3 citations.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "prose citations" "ok  (${out:-no count reported})"
