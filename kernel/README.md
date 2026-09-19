@@ -44160,9 +44160,13 @@ None entered and none created. `git worktree list` shows the main checkout and
 <!-- ===========================================================================
      APPENDED 2026-09-19: stage 6 (the planner), run **W-21**, **track A**, on
      the worktree `.claude/worktrees/w21-a`, branch `w21-a`, from `4ccf4ef`.
-     Two commits: `2085103` (check 9's identity on the accumulator, gap 985)
-     and `ecb9084` (D42 — `.tm/state.json` becomes a cache of the log, gap
-     993).  Gap range **1030-1059**; this step takes **1030-1038** and leaves
+     Commits: `2085103` (check 9's identity on the accumulator, gap 985),
+     `ecb9084` (D42 — `.tm/state.json` becomes a cache of the log, gap 993),
+     `e32d1fd` (two gap cross-references naming the wrong gap, and the TUI
+     ordering the `loud` gate rests on), and the `docs:` commits carrying this
+     block and its corrections — which cannot name their own shas, so the
+     branch's own log is the roster.
+     Gap range **1030-1059**; this step takes **1030-1038** and leaves
      1039-1059 free.  No goal added, discharged or deleted: **burn-down stays
      9**.  `check.sh` **9/9**.  Whoever merges renumbers (AGENTS 6.4).
      =========================================================================== -->
@@ -44175,7 +44179,8 @@ None entered and none created. `git worktree list` shows the main checkout and
 |---|---|
 | `2085103` | **check 9's identity on the accumulator** — `mutate.py` gains the degenerate body that exists for an uninhabited type, five of the 23 UNFOLDABLE rows are re-run and all five are PINNED, and the gate that was **green on an instance of its own class** now exits 1 on it |
 | `ecb9084` | **D42** — `.tm/state.json` becomes a derivable cache: nine of §10.2's fields come back out of `.tm/log.jsonl`, four cannot and are **named on stderr**, and `deleting_the_runtime_state_changes_nothing` is T9's symmetric half |
-| this block | the ledger |
+| `e32d1fd` | **this step's own repair**: two gap cross-references naming the wrong gap (a class check 8 cannot see, because a gap number is prose and not an identifier), and the TUI ordering §10 now records |
+| the `docs:` commits | the ledger — this block and its corrections |
 
 `kernel/corpus/`, `lean-toolchain`, `Goals.lean`, `Check.lean`,
 `Negative.lean`, `Planner.lean`, `Emit.lean`, `PlanCheck.lean` and every
@@ -44487,6 +44492,15 @@ noticed because the number disagreed with §2's own drive, the workspace was
 rebuilt, and the measurement re-taken; the figure in gap 1034 is the second one.
 Nothing was committed from the first. AGENTS §5.11 is exactly this, and the
 campaign's own defect class.
+
+**A second wrong-tree number, caught by re-running instead of by trusting.**
+The commit that corrected this block's own commit count first carried
+*"check 8 23,708 citations, 22,195 resolved"* — a figure PREDICTED from the
+prose added rather than read off a run. Measured, it is **23,704 / 22,191**,
+unchanged, because every span the new paragraph adds carries a `::` or is a
+single lowercase word and check 8 counts neither (gap 988). The commit was
+amended before it left this branch. AGENTS §5.11 is one measurement per number,
+and a predicted number is not a measurement.
 
 **Check 8 caught this step twice, and both were repaired rather than
 exempted.** `mutate.py`'s new `split_header` docstring backticked binder_text,
