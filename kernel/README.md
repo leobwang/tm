@@ -36156,3 +36156,473 @@ is in any commit. `git diff --stat` against `9202bd3` touches **eleven files**: 
 `tm/src/cli/kernel_bridge.rs`, `tm/src/cli/lifecycle.rs`,
 `tm/tests/cli_check_log.rs`, `tm/tests/cli_write_gate.rs`) and this README —
 **+1,289 −63**. Nothing else.
+
+<!-- ===========================================================================
+     Stage 6, run W-18, TRACK P, 2026-09-18 — P5a the wire, P5b-i the filter.
+     Gap range 700-729 (eight taken: 700-707).  Cheats 193-200.
+     Whoever merges renumbers (§6.4).
+     =========================================================================== -->
+
+## Stage 6, W-18 track P, 2026-09-18: the wire carries what the fold reads, and the order drops what cannot be placed
+
+Two commits, each green before it landed: **`f84d8cf`** puts §8.2 step 5's nine
+candidate facts on the wire (README gap 606), and **`dc6a56b`** applies fork
+`priority::sorted_candidates`' own filter with them (README gap 602).  **The
+assign fold itself is NOT written** — see "What this step did NOT do" below,
+which says so by name rather than by omission.
+
+Three sentences belong at the top.
+
+* **Gap 606's nine are nine, and the tenth is not a fact.**  Gap 602 lists
+  `waiting` beside `state` as though the wire owed both.  Fork
+  `priority.rs:718` sets `waiting: item.state == State::Waiting`, so it is
+  `state`'s projection; `Look.PlanFacts.waiting` derives it and
+  `the_waiting_flag_is_the_state_and_not_a_tenth_fact` is the theorem.  **Gap
+  700** records the correction, the method that found it, and what the method
+  cannot see.
+* **The widening is safe because §7's pass does not read the nine, and that is a
+  theorem.**  `prioritiesWithFloors_ignores_the_plan_facts` runs the whole of
+  §7 — floor pass included — over the candidates with their nine erased and gets
+  the same answers.  That is AGENTS §5.3's *"widen it and prove the old view is
+  a projection"*, discharged rather than asserted.
+* **The 10%-per-step rule is being spent on bookkeeping, and this run measured
+  the split.**  Each step is inside it (+8.5%, then +3.4%), but the run
+  cumulatively costs **+12.8% to +13.9%** of `check.sh`'s wall time, and
+  **all of it** is check 3 (`lean Check.lean`) and check 4 (`lean
+  Negative.lean`) — two uncached `lean` runs that grow with the audit roster and
+  the cheat file.  **Gap 703**, with the numbers.
+
+### The numbers, re-measured
+
+Every command capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet` unless a narrower cap is named.
+
+| measurement | eb4150f (baseline) | `f84d8cf` (P5a) | `dc6a56b` (P5b-i) |
+|---|---|---|---|
+| `check.sh` | **7/7** | **7/7** | **7/7** |
+| axiom audit | 4,454 theorems | **4,500** (+46) | **4,508** (+8) |
+| corpus | 29/37 files, 4/5 whole plans | unchanged | unchanged |
+| burn-down | 10, all stage 6 | unchanged | unchanged |
+| `cargo test --workspace` | 1,342 / 0 / 9 across **79** | **1,343** / 0 / 9 across 79 | 1,343 / 0 / 9 across 79 |
+| `Negative.lean` cheats | 192 | 197 | **200** |
+
+**`check.sh` wall time, measured against a worktree at `eb4150f` built from a
+copy of this checkout's `.lake` and run interleaved, run for run, on the same
+machine** — not against a remembered figure:
+
+| tree | readings (warm) | against the baseline |
+|---|---|---|
+| eb4150f | 3.70 · 3.74 · 3.74 · 3.83 · 3.77 · 3.77 · 3.76 · 3.75 · 3.73 s | — |
+| P5a | 4.04 · 4.09 · 4.10 · 4.10 · 4.09 s | **+7.0% … +8.8%**, median **+8.5%** |
+| P5b-i | 4.19 · 4.24 · 4.23 · 4.25 · 4.28 · 4.29 s | +12.8% … +13.9% cumulative; **+3.4% against P5a** |
+
+Where it goes, measured by timing the two `lean` invocations directly (two runs
+each, same cap):
+
+| check | eb4150f | `dc6a56b` | Δ |
+|---|---|---|---|
+| 3, `lean Check.lean` | 0.31 · 0.32 s | 0.36 · 0.37 s | +0.05 s |
+| 4, `lean -DmaxErrors=1000000 Negative.lean` | 2.72 · 2.74 s | 3.19 · 3.23 s | **+0.47 s** |
+| whole of `check.sh` | 3.73 s | 4.24 s | +0.51 s |
+
+**0.52 s of the 0.51 s rise is checks 3 and 4.**  Check 4 alone is 73% of the
+baseline's whole wall time.  Nothing about the kernel's build, the FFI or the
+corpus moved.  Gap 703.
+
+**`cli_latency`, release, `--include-ignored --test-threads=1`, three passes at
+`dc6a56b`, 6 passed / 0 failed each.**  The noisy rows as ranges (AGENTS §14.0.6;
+they are **not** re-blessed):
+
+| T11 row (3-year log, 66,169 lines) | three readings |
+|---|---|
+| later verb (`tm drop` — the reliable one) | **126.65 · 126.69 · 126.64 ms** |
+| gated host-only write (D35) | 131.75 · 126.68 · 126.61 ms |
+| a routine for a 3-day-old instance | 136.56 · 136.69 · 136.80 ms |
+| `review week` (the All scope) | **268.21 · 269.24 · 278.08 ms** |
+| `--now +1 day` (a reseal) | 187.44 · 177.31 · 187.33 ms |
+
+`tm drop` sits at the bottom of its 127–142 ms band.  **`review week` is out of
+its recorded 248.1–253.3 ms band in all three passes and is left there** — it is
+gap 275's row, quoted and not re-blessed, and this run changed nothing any
+shipped verb reaches (gap 603), so the rise is the machine and not the step.
+
+### P5a — the wire (`f84d8cf`)
+
+`Look.Cand` gains **one field**, `plan : Look.WfPlanFacts`, carrying gap 606's
+nine in eight keys:
+
+| fork `priority::Candidate` | `Look.PlanFacts` | wire key | bound / constructor / rejection |
+|---|---|---|---|
+| `planned_min` | `plannedMin : Nat` | `plannedMin` | `≤ Look.maxPlanMinutes` (fork `u32`); `mkPlanFacts?`; `mkPlanFacts?_refuses_planned_minutes_past_the_wires_u32` |
+| `multiplier` | `multiplier : Arith.Pos` | `multiplier` `{num,den}` | **the type**: `Pos`'s property is `0 < den`. Size bound at the wire beside the safety's — `multiplierOfWire`, `den ≤ 10^18` and `num ≤ 1000 × den`; three rejection theorems |
+| `loc` | `loc : Field.Loc` | `loc` (string) | `Field.parseLoc` (the grammar's own), `Loc.wf`; `mkPlanFacts?_refuses_a_second_name_for_a_known_location`, and `parseLoc_never_makes_a_second_name` says why that clause cannot fire from the wire |
+| `splittable` | `splittable : Bool` | `splittable` | **the type**: two inhabitants, both meaningful (`atomic` clears it). Refusal is `boolAt`'s — a non-boolean is named, not defaulted |
+| `cap`, `cap_done_min` | `cap : Option MaxCap` (`capMin`, `doneMin`) | `cap` `{capMin,doneMin}` or `null` | both `≤ maxPlanMinutes`; two rejection theorems. **`doneMin > capMin` is NOT refused** — the fork reaches it (`saturating_sub`) on a period that overran its cap |
+| `state` | `state : Status` | `state` (one box char) | **the type**: six constructors, no numeric slot, reached only through `Glyph.ofChar?` and `statusOfGlyph`; `statusOfWire_refuses_a_character_that_is_not_a_box`, `statusOfWire_refuses_a_word` |
+| `blocked_by` | `blockedBy : List Field.Dep` | `blockedBy` (array of tokens) | `≤ Look.maxDeps = 64`, each `Dep.wf` and its rendered token `≤ Look.maxDepToken = 1024`; three rejection theorems |
+| `wall_today` | `wallToday : Bool` | `wallToday` | **the type**, as `splittable` |
+| `waiting` | *derived* (`PlanFacts.waiting`) | — | **not on the wire**: it is `state == live .world`. Gap 700 |
+
+**R10 is carried by the field's type.**  `Cand.plan : WfPlanFacts` is the
+`Subtype`, so `Cand.plan_is_bounded : PlanFacts.wf c.plan.val = true` holds of
+**every** candidate there is, on the wire or off it — the shape `ci : Fin 6`
+already had, with no convention to forget and no decoder to trust.
+
+**Nothing was written that the kernel already had.**  The grep before each
+helper found `Field.Loc`/`parseLoc`/`Loc.wf`/`parse_render_loc`,
+`Field.Dep`/`parseDep`/`parseDeps`/`Dep.wf`, `Status`/`statusOfGlyph` with
+`Glyph.ofChar?`, `Field.Rate`/`Period` (**not** used — the `max:` pair crosses
+in minutes, as `Look.Floor`'s does, because nothing in §8.2 step 5 reads the
+cap's period), and `Arith.Pos`/`ofPair?`/`boundedPos`/`safetyOfWire` for the
+multiplier.  On the host side `Dep`'s `fmt::Display` already renders the token
+and is reused; `State::glyph()` already gives the box character.
+
+**One §5.3 instance was introduced by this step and then removed.**
+`Look.maxPlanMinutes` and `Boundary.maxRemaining` were two copies of
+`4294967295`.  `maxRemaining` is now **defined as** `Look.maxPlanMinutes`.  It
+was caught by grepping the commit message against the tree before publishing it
+— the message had already claimed the fix.  Said here because "caught it
+myself" is the only honest way to record a claim that was written before it was
+true.
+
+**The projection law, in six steps**: `entering_erasePlan` →
+`servedOrder_erasePlan` → `servedGrants_erasePlan` / `passLeft_erasePlan` →
+`priorities_erasePlan` → `withFloor_erasePlan` →
+**`prioritiesWithFloors_ignores_the_plan_facts`**.  If any part of §7's pass ever
+started reading a plan fact, the last of these would stop being provable.
+
+**Witnesses (W-17 lesson 2).**  `loudFacts` and `loudFactsInverted` differ in
+**all nine** — `the_two_loud_records_differ_in_every_one_of_the_nine` states it
+field by field, because `≠` between the records is satisfied by a single
+difference and the claim is about nine.  `readCand_reads_the_nine` and
+`readCand_reads_the_nine_the_other_way` are the two halves; the two booleans
+disagree with each other in each, so a swap fails as well as an inversion, and
+the record is compared whole so a dropped key fails too.
+`readCand_refuses_each_of_the_nine_by_name` is thirteen refusals and
+`readCand_refuses_too_many_dependencies` the count guard.
+
+### P5b-i — `sorted_candidates`' own filter (`dc6a56b`)
+
+`Planner.entersTheOrder` is the fork's two clauses verbatim —
+`Candidate::eligible()` and `!c.is_wall || c.wall_today` — and
+`PlanReq.rankedCands` applies it **before** the sort, as the fork does.  Gap 602
+is **closed**.
+
+`rankedCands_length` becomes a **bound** and not an equality; that is the step's
+one visible consequence and is why it is restated rather than kept.  Filtering a
+sorted list changes no pair's order, so `rankedCands_sorted`,
+`a_wall_ranks_before_a_task` and `a_lower_p_ranks_first` are untouched, and
+`the_filter_keeps_the_survivors_in_order` **computes** that at two of the
+perturbations rather than asserting it.
+
+**One cause at a time.**  `[?]`, `[x]`, one unsatisfied `after:` and a `max:`
+with nothing left each drop `^r1` with nothing else about it changed
+(`each_cause_of_ineligibility_drops_the_candidate`).
+`a_cap_with_minutes_left_keeps_the_candidate` is the line that stops that being
+satisfied by a filter which dropped every capped item — 60 capped with 30 spent
+keeps its place.  `wall_today` gets both halves:
+`a_wall_that_is_not_todays_is_dropped` clears it on the calendar's `^g1` and
+`wall_today_is_read_only_of_a_wall` sets it on `^r1`, which is not a wall, and
+watches nothing change.
+
+**`witCands`' `^g1` gains `wall_today`.**  The §4.3 Wednesday's calendar wall
+**is** today's; the witness was saying something it did not mean, and the filter
+is what made that visible — the first build after the filter landed refused
+`the_ranking_request_is_ordered` because `^g1` had dropped out.
+
+### The inversions, run and watched failing
+
+Every one was applied, built, the failure pasted, and reverted.  None is in any
+commit; `git status` was empty between each.
+
+| # | the mutation | what failed |
+|---|---|---|
+| A | `readPlanFacts` builds `⟨pm, mul, loc, **wt**, cap, state, deps, **sp**⟩` — the two flags swapped | `readCand_reads_the_nine` *"Not a definitional equality"*, its perturbation half, and the refusal battery |
+| B | `cand_json` sends `"splittable": !c.splittable` | `the_candidate_facts_cross_the_wire_as_the_host_computed_them` FAILED |
+| C | `readPlanFacts` reads `plannedMin` off the record's `remaining` key | `readCand_reads_the_nine` and its perturbation half |
+| D | the `Look.maxDeps` guard deleted from `readPlanFacts` | `readCand_refuses_too_many_dependencies` — the 65-dep record is then refused by `mkPlanFacts?` as `plan` rather than by the count as `blockedBy`, **after** the `mapM` has run |
+| E | `cand_json` swaps `splittable` and `wallToday` | `the_candidate_facts_cross_the_wire_as_the_host_computed_them`, with both fields named in the diff |
+| F | the `wall_today` clause dropped from `entersTheOrder` | `another_days_wall_is_not_ranked` — *"`he.right` has type `True`"* |
+| G | `capLeftFacts` changed from 30 spent of 60 to 60 of 60 | `a_cap_with_minutes_left_keeps_the_candidate` — *"`decide` proved that the proposition … is false"* |
+| H | `witCands`' `^g1` left at `wfUnconstrained` (this is how the wall's `wall_today` was found) | `the_ranking_request_is_ordered` and four more `rankedIds` witnesses |
+
+**What these inversions cannot show.**  A, C, D, F and G are kernel-side and are
+caught by `decide`/`rfl` witnesses inside `check.sh`; B and E are host-side and
+are caught by one unit test over a **synthetic** `Candidate`.  **No test in the
+tree pins the nine against a `Candidate` that `collect_candidates` actually
+built** — that is gap 577's class, now extended to the nine, and **gap 705**
+records it.  Inverting `entersTheOrder`'s *shape* (F) fails at a theorem rather
+than at a witness, which is the stronger outcome and is said here rather than
+dressed up as a witness failure.
+
+### Method, and what each method cannot see
+
+AGENTS's W-17 lesson 1, applied to every completeness claim this block makes.
+
+1. **"The nine are nine and `waiting` is the tenth that is not a fact."**
+   *Method:* read `priority::collect_candidates`' constructor literally
+   (`priority.rs:700-731`), then `grep -rn '\.waiting = \|waiting:'` over
+   `tm-core/src` and `tm/src` — **one** assignment, `waiting: item.state ==
+   State::Waiting`.  *Blind spot:* a mutation of `c.waiting` through a `&mut`
+   binding with a different spelling, or a `Candidate` built by a test helper
+   rather than by `collect_candidates`.  The grep cannot see either.
+2. **"Nothing in §7's pass reads the nine."**  *Method:* a **theorem**
+   (`prioritiesWithFloors_ignores_the_plan_facts`), not a reading.  *Blind
+   spot:* it is about `prioritiesWithFloors` and its six named components; a
+   future `Lookahead` function that reads `Cand.plan` and is **not** in that
+   chain is not covered, and nothing makes the chain complete by construction.
+3. **"Every theorem added is audited."**  *Method:* `check.sh` check 3's own
+   multiset reconciliation (`comm -23` of declared short names against audited
+   last segments), run after each append — **empty** both times.  *Blind spot:*
+   it is one-directional and cannot see a theorem audited under the wrong
+   namespace prefix, nor a `def` audited as though it were a theorem.
+4. **"Every cheat is refuted by the type system."**  *Method:* `check.sh` check
+   4's own per-block script, plus a grep for `unknownIdentifier` in the raw
+   output — **two** hits, both in cheats from earlier runs (lines 447, 489), none
+   in 193-200.  *Blind spot:* a cheat refuted by a **parse** error rather than a
+   type error still satisfies check 4; cheat 197 had exactly that (a multi-line
+   `{ x with … }` at the wrong indentation) and was rewritten until the error was
+   `decide`'s.
+5. **"The shipped binary still works."**  *Method:* a release binary on a scratch
+   `tm init --example` tree **outside the repo**, `tm plan` and `tm check`, both
+   exit 0.  *Blind spot:* **the drive cannot show which values crossed**, only
+   that the request was accepted — and `tm plan`'s output is still the **Rust**
+   planner's, because the kernel's `dayPlan` has no caller (gap 603).  What pins
+   the values is the unit test, whose own blind spot is item (1)'s.  **Gap 707.**
+6. **"The wall-time rise is checks 3 and 4."**  *Method:* timed the two `lean`
+   invocations directly on both trees, two runs each.  *Blind spot:* the two
+   figures are `/usr/bin/time` wall clock on a machine running nothing else
+   *observed*; they do not separate elaboration from I/O, and a third run could
+   move them by the ±0.02 s the pairs already show.
+
+### Gaps taken — 700-707; **708-729 free**
+
+**Gap 700 — README gap 602 counts `waiting` as a wire fact; it is `state`'s projection.**
+1. *What is not done.*  Nothing is owed: the wire carries **nine** facts in eight
+   keys and `waiting` is not one of them.  The ledger's number is what was wrong.
+2. *Why it is recorded.*  Gap 602 reads *"Not one of `waiting`, `state`,
+   `blocked_by`, `cap`, `cap_done_min`, `wall_today` is among `Look.Cand`'s twelve
+   fields"* — six facts, one of which is derived.  Fork `priority.rs:718` sets
+   `waiting: item.state == State::Waiting`.  A step that had taken gap 602's list
+   literally would have added a tenth wire field with no independent value, and
+   two readers of one fact is the class this kernel exists to remove.
+3. *What it costs.*  Nothing now; it would have cost a redundant field and a
+   second reader.  `the_waiting_flag_is_the_state_and_not_a_tenth_fact` is the
+   theorem that keeps it true.
+4. *Which step clears it.*  Cleared here as to the fact.  The ledger sentence in
+   gap 602's own paragraph stands as written (README blocks are append-only,
+   AGENTS §6.4) and this paragraph is its correction.
+
+**Gap 701 — `Cap.edf` and `Cap.edfGrants` are NOT unused, and §8.2 step 5 is not an EDF pass.**
+1. *What is not done.*  No EDF pass was added to the fold, and none should be.
+2. *Why it is recorded.*  W-18's brief instructs P5b to *"REUSE `Cap.edf` and
+   `Cap.edfGrants` (still unused; grep before writing anything that looks like an
+   EDF pass)"*.  Both halves are wrong at this tree.  The grep:
+   `Cap.edfGrants` is used by `Look.scaleGrant`'s law (`Lookahead.lean:519`), by
+   `servedGrants_are_the_pass` and `grantAt_servedGrants`, by `Boundary.lean:8724`
+   and by four cheats; `Cap.edf` by `passLeft_is_edf` and
+   `withFloor_is_the_floor_pass`.  And fork `Planner::pick` is a **greedy cursor**
+   over slots in §7.4's key order with no deadline anywhere — the EDF pass is
+   §7.3's, it already ran, and its result reaches step 5 only as the `p` in the
+   sort key.
+3. *What it costs.*  A step that took the instruction literally would build a
+   second EDF pass inside the fold, which is §5.3's defect with a scheduler
+   behind it.
+4. *Which step clears it.*  P5b's own block, by not doing it; and AGENTS §10.2's
+   stale list if the sentence is repeated.
+
+**Gap 702 — the `after:` dependency token is rendered in three places on the host.**
+1. *What is not done.*  Not fixed here; P5a **reuses** `Dep`'s `fmt::Display`
+   (`model.rs:1117`) rather than adding a fourth.
+2. *Why.*  `priority::fmt_deps` (`priority.rs:188`) and `emit.rs:1671` each map
+   `Dep::Item`/`Dep::Event` to text themselves.  Three readers of one rendering.
+3. *What it costs.*  A `^id`/`event:name` spelling can drift between the
+   diagnostic, the emitted block and the wire, and nothing would fail.
+4. *Which step clears it.*  **P8**, which owns `emit.rs`, or **R3** with
+   `planner.rs`.  It is host-side and D19 says separable work lands first.
+
+**Gap 703 — `check.sh`'s 10%-per-step budget is spent by checks 3 and 4, not by the kernel.**
+1. *What is not done.*  Nothing was optimised; the cost is recorded, not paid.
+2. *Why.*  Measured (table above): check 4 (`lean Negative.lean`, uncached, 200
+   cheat blocks) is 2.72 → 3.19 s and is **73% of the baseline's whole wall
+   time**; check 3 is 0.31 → 0.36 s; together they are the entire +0.51 s rise.
+   Both grow monotonically with any step that adds a theorem or a cheat, which
+   every step does.
+3. *What it costs.*  The per-step rule (design §14.0.4) is a budget for **the
+   kernel's** elaboration cost, and bookkeeping is consuming it: two steps at
+   +8.5% and +3.4% is +12.8-13.9% for the run.  Six more such steps and the
+   figure doubles with no kernel change behind it.
+4. *Which step clears it.*  The step that gives `Negative.lean` a cached or
+   split elaboration, or that measures the budget against checks 1, 5 and 6 only
+   and says so.  Whoever next revises design §14.0.4 — naturally **R1**.
+
+**Gap 704 — a `.tm/model.json` duration multiplier that is not an exact decimal now refuses the plan by name.**
+1. *What is not done.*  The multiplier is not rounded to make it cross.
+2. *Why.*  The kernel holds no `Float` (D17), so §8.5's multiplier crosses as an
+   exact pair through `written_pair(_, PRIORITY_PLACES)`.  A value needing more
+   than 18 decimal places is refused as
+   `.tm/model.json: duration multiplier for ^<id> = <text> has N decimal places
+   (at most 18)` — the shape `a_weight_outside_its_domain_is_named_by_file_and_key`
+   already uses for `[energy]`.
+3. *What it costs.*  A behaviour row (below).  *Reachability, read not assumed:*
+   `energy::fit` writes `round2(shrunken_mean(…))` into `model.duration`, so a
+   fitted multiplier is a two-decimal value and cannot trip it; only a hand-written
+   or third-party `.tm/model.json` can.  **Blind spot:** that reading covers
+   `energy::fit` and `duration_multiplier`'s three lookups; a future writer of
+   `model.duration` that does not round would trip it silently at the next
+   `tm plan`.
+4. *Which step clears it.*  The step that validates `duration` in
+   `check_inputs` beside the `[energy]` decimals, so the message arrives at the
+   file's own check rather than at the plan.  **P8**, or the next host step.
+
+**Gap 705 — the nine are pinned by a copy test over a synthetic `Candidate`.**
+1. *What is not done.*  No test builds a `Candidate` through
+   `priority::collect_candidates` and checks the nine that reach the kernel.
+2. *Why.*  `the_candidate_facts_cross_the_wire_as_the_host_computed_them` sets
+   nine fields on a `Candidate::new` and compares `cand_json`'s object.  That
+   pins the **copy** — inversions B and E fail it — and says nothing about
+   whether `collect_candidates` computed the right values in the first place.
+   This is gap 577's class, which W-17 closed only for the kernel's own root
+   walk.
+3. *What it costs.*  A wrong `cap_done_min` or `wall_today` out of
+   `collect_candidates` reaches the fold and nothing fails.
+4. *Which step clears it.*  **D27 at R3**, which deletes the copy; or, sooner, a
+   parity test that builds a tree, runs `collect_candidates` and compares the
+   nine against the tree's own text.
+
+**Gap 706 — `Look.maxDeps = 64` is a bound the fork does not have.**
+1. *What is not done.*  The bound is not derived from anything; it is chosen.
+2. *Why.*  `blocked_by` is a `Vec<Dep>` in the fork with no limit, and R10 plus
+   D9-21 require the wire's list to be bounded **before** the `mapM` that reads
+   it.  Sixty-four unsatisfied `after:` dependencies on one line is past anything
+   a written line can mean — but that is a judgement, not a measurement.
+3. *What it costs.*  A tree whose line carries 65 unsatisfied dependencies is
+   refused by the kernel (`badCandidate <i> blockedBy`) where the fork plans it.
+   No corpus file comes close; nothing in the tree measures the real maximum.
+4. *Which step clears it.*  The step that measures the longest `after:` list the
+   corpus and a real plan carry and either confirms 64 or moves it with the
+   measurement beside it.  **R2**, with the proptest through the FFI.
+
+**Gap 707 — driving `tm plan` cannot show which values crossed.**
+1. *What is not done.*  Nothing in the tree lets a drive observe the request the
+   host built.
+2. *Why.*  There is no request-dump hook (`grep -rn 'var("TM_' tm/src` finds only
+   `TM_DIR` and `TM_KERNEL_FAULT_PROBE`), and `tm plan`'s output is still the
+   **Rust** planner's because the kernel's `dayPlan` has no caller (gap 603).  So
+   the drive proves the kernel **accepted** a request carrying the nine — a
+   missing `plan` object is `badCandidate 0 plan` and the verb would exit non-zero
+   — and nothing more.
+3. *What it costs.*  The strongest end-to-end evidence this step can offer is
+   "the request was accepted", and a reader could mistake the drive for a check on
+   the values.  Said here so they cannot.
+4. *Which step clears it.*  **P8**, with the planner's wire and `--json`; gap 603
+   is the same edge.
+
+### Gaps left open, by name
+
+**500** (D27 half done) and **501** (`Recur.lean` has no caller) are still the two
+to read first.  **577** stands and is now wider: the nine host facts are pinned by
+a copy test, not by their values (gap 705).  **602** is **closed**.  **606** is
+**closed as to the wire**; the fold it was measured for is not written.  **365**
+(`eligibleAt`, the slot half) stands.  **603** (`PlanReq` has no boundary op)
+stands and gap 707 is its consequence.  **550** (the reservation row carries no
+multiplier) is **not** closed — `Look.PlanFacts.multiplier` is now on the wire,
+so the fact is available, but `PlanReq.activeRow` still emits no multiplier and
+that is P8's.  **551** (no Break row), **552**, **553**, **554**, **555**, **556**,
+**600**, **601**, **604**, **605** stand.  **584**'s residue (**630**), **285**,
+**346**, **347**, **393**, **430**, **431**, **435**, **436**, **470**,
+**502-504**, **530-531**, **570**, **275**, **301 item 1**, **113**/**114**/**116**
+(D27, whole), **650**, **670-672**, **675-689** stand, and stage 5's residue
+**94, 98, 132, 133, 139, 143, 150, 151, 152, 160, 170, 180, 181, 182, 190, 200,
+201, 226, 260, 262, 270** with the performance levers **121, 122, 123, 126, 127**.
+
+### Behaviour rows this step owes
+
+| input | before | after | why |
+|---|---|---|---|
+| a capacity request whose candidate record has no `plan` object | there was no such key | **refused** by name, `badCandidate <i> plan` | P5a. Defaulting it would make every item splittable, uncapped and `[ ]` on a tree where none of that is true — `Negative.lean` CHEAT 193 |
+| `tm plan` on a tree whose `.tm/model.json` writes a duration multiplier with more than 18 decimal places | planned, the multiplier used as a double | **refused** by name, naming the file, the item and the count | P5a, D17. Unreachable from `energy::fit` (it writes `round2`); reachable by hand — gap 704 |
+| a candidate that is `[?]`, closed, dep-blocked or `max:`-exhausted, or an Interval that is not today's | ranked in the kernel's assignment order | **left out of it** | P5b-i, fork `sorted_candidates`. Not yet user-visible: the kernel's order has no caller (gap 603) |
+
+No parity entry was taken.  No fixture, snapshot, latency band or corpus file was
+re-blessed; `kernel/corpus/`, `lean-toolchain` and `lake-manifest.json` are
+untouched.
+
+### What this step did NOT do, by name
+
+* **It did not write the assign fold.**  §8.2 step 5 — the cursor,
+  `priority::batches`, `split_by_filters`, `contiguous_fits`, the `max:` commit,
+  the atomic run, `Planner.eligibleAt`'s slot half and the six §6.3 restatements
+  — is **not started**.  The six goals §6.4 gives to P5 are still in `Goals.lean`,
+  word for word; the burn-down is 10 and did not move.
+* **It did not touch D27.**  Every one of the nine is host-collected;
+  `collect_candidates` is unchanged; gaps 113, 114, 116 and 301 item 1 are whole.
+* **It did not touch `check.sh`, the host write paths or `Goals.lean`** — track
+  A's and track G's.
+* **It did not implement §9.1's trigger** and did not re-open D38.
+* **It did not rebuild the fork oracle** and did not run `TM_ORACLE`.
+* **It did not weaken a predicate, a checker or a goal.**  `PlanCheck`'s eleven
+  are untouched.  The one statement whose *form* changed is
+  `PlanReq.rankedCands_length`, from an equality to a `≤`, which is the filter's
+  visible consequence and is restated in the commit, in `Check.lean`'s banner and
+  here.
+
+### Numbering
+
+Gaps: this step **700-707**; **708-729 free**.  Cheats: **193-200** taken, none
+renumbered — `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean | sort | uniq -d`
+prints nothing and check 4 still rejects the file.  No audit name appears twice.
+**Highest on the branch: gap 707, cheat 200, parity P38.**
+
+### Worktrees
+
+`.claude/worktrees/stage5-lookahead` is untouched.  **`.claude/worktrees/w18-a`
+and `w18-g` exist and are this run's other two tracks** — nothing here entered
+either, this block's gap range (700-729) is track P's alone, and the `Check.lean`
+and `Negative.lean` material is appended under its **own** end-of-file banner so
+the merge renumbers (AGENTS §6.2, §6.3).  One throwaway worktree at `eb4150f`
+was created **outside the repo**, in the scratchpad, for the interleaved
+wall-time column, built from a copy of this checkout's `.lake` and
+`tm-kernel-ffi/target`; it is removed.
+
+### Method disclosure
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`, except
+the release builds and the binary drives (**16G**) and the `decide` probes
+(**8G**, `timeout 900`).  No bound was raised and nothing was retried uncapped.
+
+`check.sh` was run **seventeen** times in this checkout and **ten** in the
+baseline worktree, and 7/7 every time after the first green build.  `lake build
+TmKernel:static` was run separately first, to separate "does it build" from
+"does it pass"; it failed repeatedly before it passed — no count is claimed,
+because none was kept — and every **distinct cause** is printed rather than
+dropped: `ite_congr` needed `refine` and then a `split`
+because the two `if`s carried different `Decidable` instances; `if_congr` is
+Mathlib's and not core's; `omega` could not see through `maxMultiplier * d` and
+was replaced by `Nat.not_le.mpr`; `List.isEmpty_eq_false` does not exist;
+`obtain ⟨p, hp, rfl⟩` stopped matching when `mem_rankedCands` gained a conjunct;
+a multi-line `{ x with … }` at the wrong indentation is a parse error, not a
+refutation; and **twenty-three** `Cand` literals across `Lookahead.lean` (5),
+`Boundary.lean` (4) and `PlannerWit.lean` (14) needed a thirteenth field.
+
+`cargo test --workspace --no-fail-fast` was run **seven** times — twice at the
+baseline, four during P5a and once at P5b-i — and tallied by summing the 79
+result lines, not by `tail`.  **The first baseline
+run reported 1,340 passed / 2 failed**: `cli_latency`'s two wall-clock rows flaked
+under parallel load.  Re-run serially they pass 5/5, and the second full run was
+1,342 / 0 / 9 — which is the figure this block compares against.  It is recorded
+because a reader seeing 1,340/2 in a transcript would otherwise think the baseline
+was red.
+
+`cli_latency` was run **six** times in release (three before P5b-i, three at the
+tip) with `--include-ignored --test-threads=1 --nocapture`; every noisy row is
+reported as all three readings at the tip.  The `decide` witnesses of P5a and
+P5b-i were probed as a whole module at **8G with a 900 s ceiling** and elaborated
+inside it.  The binary drives used a release binary on scratch `tm init --example`
+trees **outside the repo**.
+
+One untracked `tm/tests/kernel_unit_reserve.proptest-regressions` appeared while
+the wire was half-wired and was **deleted**, not committed: the seed it recorded
+was an artefact of a `badCandidate 0 plan` that no longer reproduces, and
+committing it would have been a false record of a proptest finding.
