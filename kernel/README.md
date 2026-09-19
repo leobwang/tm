@@ -46338,3 +46338,475 @@ merges were green; the branches `w21-a` and `w21-g` are kept, as every previous
 run's are. One scratch worktree was created at `023b681` to measure the check-8
 delta in §2 and removed in the same step. `git worktree list` now shows the main
 checkout and **`.claude/worktrees/stage5-lookahead`**, untouched.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-21**, the **REPAIR
+     STEP**, in the main checkout on `rebuild-on-lean`, from `9fa6c2c`.
+     The repair itself is `3679df6`; this block is the commit after it.
+     Ten findings from two independent auditors.  Gap range **1085-1099**; this
+     step takes **1085-1090** and leaves 1091-1099 free.  No goal added,
+     discharged or deleted: **burn-down stays 9**.  `check.sh` **9/9**.
+     Highest gap after this block: **1090**.
+     =========================================================================== -->
+
+## Stage 6 — W-21, the repair step: three checkers that could not see a directory, a whole class of citation nobody swept, and a cache whose deletion moves an answer
+
+### 1. The ten findings, and what reproduced
+
+| # | finding | reproduced? | what this step did |
+|---|---|---|---|
+| R1 | check 8 blind to every citation with no underscore and no case transition — 600 distinct dotted spans (4,848 citations) unswept | **yes, and wider than reported** | `is_citation` widened twice; **3** adjudications; gap22Parent repaired at six sites |
+| R2 | a library module in a SUBDIRECTORY is invisible to checks 2, 8 **and** 9 at once, `partial def` included | **yes, exactly** | all three enumerations made recursive; driven until each bit |
+| R3 | `check.sh:204` overstates check 8's sweep (`TmKernel/**.lean`, "seven declaration sets") | **yes** | the recursion is now real; the sentence re-written beside it |
+| R4 | `mutations.txt` has two undocumented duplicated rows, so a hand count is 29 where the gate prints 28 | **yes, exactly** | `--write` replaces in place; the two superseded rows removed; hand count and gate now agree at **28** |
+| A1 | D42's T9 test does not cover the running-break state, where deleting the cache **does** move answers | **yes for the move; no for the cascade** | a second test that asserts exactly what moves and that **no log line is written**; the notice now names `active.paused` |
+| A2 | gap 1035 and check 9's "pinned by nothing" count overstate the exemption | **yes** | two new constant sources; all three re-audited **PINNED**; exemption 23 → **18** |
+| A3 | check 8's counted allow-list has silent headroom when a use count falls | **yes, exactly** | a counted cap is now **exact**; three entries tightened |
+| A4 | two independent display-width / padding implementations; gap 1007 does not name the second | **yes** | recorded by name, gap 1089 |
+| A5 | check 8's four declared blind spots re-confirmed by planting | **yes** | one of the four **fixed** (the three-line wrap); three recorded, gap 1087 |
+| A6 | gap 991, gap 1080 and gap 139 still bite exactly as written | not re-driven | already in the ledger by name; **nothing owed**, see §9 |
+
+**One claim in the reuse critic's report is WRONG and is left standing rather than
+adopted.** It names stage5OnMiss beside gap22Parent as a dead name "check 8 reports
+green on". It is not in the blind spot: stage5OnMiss has a lower-to-upper transition
+at nM, so `is_citation` has swept it since D41, and it is an **adjudicated** entry —
+3 stage5OnMiss, section 6, under "older removals". The gate was green on it because a
+human opened it at W-20 and counted it, which is the opposite of a silent exemption.
+gap22Parent is the real instance: `p`→`2`→`2`→`P`, no lower-to-upper transition
+anywhere, so it was never swept at all.
+
+### 2. R1 — the class nobody swept, measured three ways before it was widened
+
+`is_citation` was `CITED.match(name) and ("_" in name or CAMEL.search(name))`, and
+`CAMEL` was `[a-z][A-Z]`. Measured at `9fa6c2c` with this file's own resolver:
+
+```
+identifier-shaped spans: 43,590 citations,  8,854 distinct
+swept:                   24,426 citations,  6,940 distinct
+DROPPED:                 19,164 citations,  1,914 distinct
+  of which DOTTED:        4,848 citations,    600 distinct
+```
+
+Sweeping **everything** `CITED` accepts puts **370 distinct names / 1,767 citations** in
+front of an adjudicator — `hnopast` ×45, `sorry` ×93, `theorem` ×36, `match` ×17, `panic!`
+×16, prose words, `gdb`, `md5sum` — which is the noise the header's camel argument is
+about, and an allow-list of 370 names is the "regex that silenced a class" the file
+refuses, written out longhand. Sweeping the **dotted** half costs **18**. Sweeping the
+dotted half **with a capitalised head** costs **3**:
+
+```
+JSON.stringify   ×1   README.md:3007          -> VOCABULARY (JavaScript's)
+Subtype.val      ×2   Planner.lean:82         -> VOCABULARY (a Lean core structure FIELD)
+day0Wf           ×2   README.md:11250, :11398 -> ADJUDICATED DEAD, counted 2
+```
+
+The other 15 are projections on a variable (`a.val`, `q.val`, `x.2`, `e.2`, `x.5`),
+filenames (`mutate.py` ×33, `mutations.txt` ×19, `citations.py` ×20, `totality.py` ×14,
+`gen.py`, `gendays.py`, `genlog.py`, `genlog80.py`) and one `set_option` key
+(`trace.compiler.ir.result`). None names a declaration, and every namespace in this kernel
+is capitalised, so the head test keeps the whole target class and drops the whole of that.
+It is a blind spot and it is declared as one.
+
+**The digit is the second widening, and it is what caught the live instance.**
+`[a-z][A-Z]` does not match a capital with a DIGIT in front of it, so gap22Parent and
+day0Wf were unswept. gap22Parent was renamed childFoldB3 at stage 4 final step 3 and is
+declared nowhere in Lean, Rust, Python or core; it stood **backticked at six live sites**
+— `Close.lean:123`, `Check.lean:1955`, `README.md:4189`, `:6792`, `:6996`
+(Owed.gap22Parent) and `:7167` — with check 8 green. Every one of the six is a sentence
+RECORDING the rename, so all six were repaired by the un-backtick convention, not exempted
+(D41). day0Wf is an older removal: `def day0Wf` last existed at `5ab24bf` and went with
+badDay0 when step L9 replaced day 0's own check with `nowDisagrees`; its two citing lines
+are L-series ledger blocks, so it is counted beside `19 badDay0`.
+
+**DRIVEN, the reuse critic's own probe.** Renaming the live `def ramp` at
+`Arith.lean:988` to `rampcurve`:
+
+```
+before:  27,805 citations, ... rc 0                    <- byte-identical, green
+after:   1 unresolved:
+           TmKernel/TmKernel/Lookahead.lean:3248  Arith.ramp  (resolves to nothing)
+         rc 1
+```
+
+### 3. R2 — one directory, three blind checkers, and a HARD RULE inside it
+
+`kernel/mutate.py`'s `lib_files` used `os.listdir(LIB)`; `citations.py`'s `LEAN_FILES`
+globbed `TmKernel/TmKernel/*.lean`; `totality.py` globbed `*.lean` one level deep. And
+`mutate.py`'s own `touched()` asks git with a RECURSIVE pathspec, so a subdirectory file
+was put into `moved` by one half of that function and dropped by the other — which is the
+"two checkers disagreeing about whether a file exists" failure `touched()`'s own docstring
+was written about, in the same file, against itself. `check.sh:204` has said
+`TmKernel/**.lean` the whole time.
+
+**DRIVEN before the repair.** `kernel/TmKernel/TmKernel/Sub/Probe.lean`:
+
+```lean
+/-- A probe: `Look.zzz_no_such_thing` and `Cap.zzzNoSuchThing` are dead citations. -/
+def w21SubGatherable (_n : Nat) : Bool := true
+partial def w21SubLoop (n : Nat) : Nat := if n = 0 then 0 else w21SubLoop (n - 1)
+```
+
+```
+=== totality.py ===  rc=0                       <- a `partial def`, R4, a HARD RULE
+=== citations.py === 24426 citations, 22913 resolved, ...   rc=0   <- byte-identical
+=== mutate.py --gate === 77 ... 0 owed          rc=0   <- gatherable's own shape
+```
+
+**AFTER**, the same file, the same probe:
+
+```
+=== totality.py === TmKernel/TmKernel/Sub/Probe.lean:4: banned: partial def   rc=1
+=== citations.py === 2 unresolved:
+    TmKernel/TmKernel/Sub/Probe.lean:1  Cap.zzzNoSuchThing      (resolves to nothing)
+    TmKernel/TmKernel/Sub/Probe.lean:1  Look.zzz_no_such_thing  (resolves to nothing)
+   rc=1
+=== mutate.py --gate === 78 new or changed, 77 rostered, 1 OWED A MUTATION
+    ...Sub/Probe.lean:w21SubGatherable  := true   SURVIVED  build completed
+    ...Sub/Probe.lean:w21SubGatherable  := false  SURVIVED  build completed
+    2 definition(s) not pinned by a constant                  rc=1
+```
+
+**And the recursion narrowed an exemption rather than widening one.** `totality.py`
+exempts `Goals.lean` by filename; with a recursive scan that would have exempted a
+`Sub/Goals.lean` anybody could create. It is now exempt only at the ROOT of a directory
+named on the command line. The same patch fixed a double-scan the recursion introduced:
+`check.sh` passes `TmKernel/TmKernel` **and** `TmKernel`, so every library file is reached
+twice and a set of `(path, at_root)` pairs held both, scanning each file twice and
+double-counting every banned line. `.lake`, `target` and `.git` are pruned in all three
+(0 `.lean` files under `kernel/TmKernel/.lake` today; the prune is for the layout that
+comes later).
+
+### 4. A2 — "pinned by nothing" was the gate's limit read as a fact about the kernel
+
+Gap 1035 said of `PlanReq.deferFold`, `PlanReq.finalAssign` and `dayDiagnostics` —
+the whole of what was left of step 6's algorithm — that *"nothing below the gate says any
+theorem reads those three"*. An auditor folded two of them by hand and watched the build
+fail. **`default` is not the only constant a type has**, and for a `Bool`+`Subtype` kernel
+it is usually not one at all. `mutate.py` now synthesises two more, beside the type's own
+constants and the identity on the accumulator and never instead of them:
+
+* a **nullary `T.empty`** (`.empty`/`.nil`/`.none`/`.zero`) this kernel declares in the
+  **same file** — `Diagnostics.empty`, at `Planner.lean:398`;
+* a **structure literal** `⟨c1, …, cn⟩`, offered only when EVERY field of the type has a
+  constant — `Assign`'s three fields are `List (Option Nat)`, `List Group` and `Nat`, so
+  `⟨[], [], 0⟩` elaborates, while `Diagnostics` has `Capped _` fields and gets no literal.
+
+Re-audited, capped, one kernel build per constant:
+
+```
+Planner.lean  dayDiagnostics       := Diagnostics.empty                 PINNED  PlannerWit.lean:3704
+Planner.lean  PlanReq.finalAssign  := ⟨[], [], 0⟩                       PINNED  Planner.lean:5348
+Planner.lean  PlanReq.deferFold    := ([], ⟨[], [], 0⟩)                 PINNED  Planner.lean:5340
+PlannerWit    theFullDay           := ⟨[], [], 0⟩                       PINNED  PlannerWit.lean:3486
+PlannerWit    aBareInstance        := ⟨⟨[], none, 0, 0, 0, true⟩, …⟩    PINNED  PlannerWit.lean:3640
+```
+
+**Five of five PINNED**, so the rows pinned by nothing fall from **23 of 77 to 18 of 77**.
+Gap 1035 is **closed**; gap 1086 is what is left of it.
+
+**The source was NARROWED on purpose, and the wider version is a different experiment.**
+Taking *every* nullary constant of the type reached 21 of the 23 — but 15 of those are
+fixture swaps (`theCrowdedRequest := theRequest`, `routinePlan := recurPlan`) and one
+would have replaced a definition's body with **its own name** (`routineCap := routineCap`).
+Swapping one witness fixture for another asks whether two populations are distinguishable,
+not whether a body is degenerate; that is gap **1088**, with its shape.
+
+**A synthesised constant that does not elaborate is UNAVAILABLE, not INVALID.** What failed
+is this checker's guess at a term, built by a textual rule out of a type's field list; a
+gate that failed there would make a correct definition unshippable because `type_constant`
+read a field type wrong. It is not a free PINNED: it is named, it is written into the row
+as `unavailable`, and it counts on the "pinned by nothing" line exactly as `unfoldable`
+does. There are 0 of them today.
+
+**And the gate's own summary was misquoting itself.** It read "pinned by an identity on an
+accumulator" off the mere presence of an UNFOLDABLE verdict beside the pin — true while
+the identity was the only thing that could pin an unfoldable definition, false the moment a
+synthesised constant could. It now counts the two separately. README gap 871's class, for
+the fifth time in this campaign, inside the file the campaign added last.
+
+### 5. R4 and A3 — two counts that could be done two ways
+
+**The roster.** `mutations.txt` held **79 physical rows over 77 keys**:
+`Planner.dayRows` at `b8d2a0168832` and `05bbb5008b07`, `Planner.dayDiagnostics` at
+`830cfdbafcae` and `d932b39765bc`, each earlier row silently shadowed by `roster()`'s dict.
+So `grep -v '^#' mutations.txt | awk '$4 ~ /unfoldable/' | wc -l` gave **29** while the
+gate printed **28** — and the file's whole argument for the exemption is that it "can be
+counted and cannot grow unnoticed". Three things changed: `--write` now REPLACES a row in
+place instead of appending a shadow; the two superseded rows were removed and are quoted in
+the header so nothing is lost; and `roster()` records any key written twice, which the gate
+prints. **77 rows over 77 keys, hand count 28, gate 28.**
+
+**The allow-list.** A counted entry was an upper bound, so a cap could come to exceed its
+live count **without anybody editing the file** — prose citing the name is deleted or
+un-backticked and the slack opens by itself. Measured: `17 dayPlan_ok` against 15 live
+(the auditor's figure exactly), and two more that opened in this very run because this
+step un-backticked them. A counted cap is now **exact**, and the failure names the number:
+
+```
+DRIVE A (one more citation):   dayPlan_ok  (16 citations, 15 allowed)
+DRIVE B (one fewer):           dayPlan_ok  (15 allowed, 14 live -- tighten the cap to 14)
+```
+
+`17 dayPlan_ok` → `15`, `4 childFoldB3` → `1`, `3 stage5OnMiss` → `2`. **The cost is
+declared**: an edit that REMOVES a counted citation now fails check 8 until the cap is
+tightened. That is the ratchet working in the direction that used to be free.
+
+### 6. A1 — a derivable cache whose deletion moves an answer
+
+`tm break` writes `state.break_` and sets `active.paused = true` and appends **nothing**
+(`tm_core::log`'s convention: the `Event::Break`'s `t` is the START, so it is written when
+the break ENDS). `Ctx::reconcile_state` ORs the cache's own running break back into the
+derived `paused` — and when the FILE IS GONE there is no cache to OR from.
+`deleting_the_runtime_state_changes_nothing` warms with wake/arrive/start and never with a
+break, so its name promised more than its coverage.
+
+**DRIVEN**, capped, on `energy-14d` at `2026-09-10T09:00:00-05:00`:
+
+```
+state BEFORE:  "active": {"id":"p1","started":"13:00","est_min":20,"paused":true},
+               "break": {"started":"09:00","planned_min":20,"where":"walk"}
+rm .tm/state.json
+stderr:        tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl
+               (§10.2 is a cache of the log — D42) — ^p1 is running, started 13:00
+moved:         ["now"]
+  now BEFORE:  "active": { ... "paused": true }
+  now AFTER:   "active": { ... "paused": false }
+state AFTER:   "active": {..., "paused": false},  "break": null
+log lines:     162 before, 162 after
+```
+
+So the auditor's core claim reproduces: **deleting a derivable cache moves an answer.**
+Its second half — a re-laid afternoon, a moved plan hash and a second `Event::Plan` —
+**did not reproduce on this fixture**: `tm plan` is byte-identical across the deletion and
+the log does not grow. That is a fixture-dependent cascade, not a refutation of it, and
+gap 1085 records it as a possibility this tree does not reach.
+
+Three things landed. `HOST_ONLY_STATE`'s `break` entry now names the consequence — *"and
+with it `active.paused` — a paused block comes back RUNNING"* — so D42's rule (a field the
+log cannot carry is **named**, not regenerated in silence) covers the pause and not only
+the break. The old test's doc says what it does not warm. And a second test,
+`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`, asserts (i) exactly one
+of eleven spellings moves, (ii) within it exactly the pause — substituting `false` back to
+`true` must make the two byte-identical, so a future change that moves a second thing fails
+here — and (iii) **`.tm/log.jsonl` has the same number of lines after as before**, which is
+the claim that matters: a derivable cache whose deletion appends to its own authority is
+not a cache.
+
+**It bites.** With `HOST_ONLY_STATE`'s break entry put back as it was:
+
+```
+panicked at tm/tests/cli_switch_acceptance.rs:533:
+  the rebuild named the break but not the pause it silently cleared: "..."
+test result: FAILED. 0 passed; 1 failed
+```
+
+### 7. A5 — one of four blind spots closed, by planting
+
+The auditor planted ten citations and check 8 caught nine; four shapes escaped, all four
+already declared in `citations.py`'s own WHAT THIS CANNOT SEE. One was cheap and safe and
+is now closed: **a span wrapped over THREE lines**. A line with no backtick at all, inside
+an open span, is the MIDDLE of the wrap and the carry takes it — with **every** boundary
+held to the same `_`-or-`.` test, not only the last, so a middle line that ate a space
+drops the carry exactly as a two-line join at a space is refused. Measured when it landed:
+**+2 citations, both resolving, 0 new unresolved names.** Driven both ways:
+
+```
+`Planner.w21_no_such_     -> README.md:46343  Planner.w21_no_such_thing_at_all
+thing_at_                    (resolves to nothing)      rc 1
+all`
+
+`Planner.w21 no such      -> rc 0 -- an eaten space is still not joined
+thing at
+all`
+```
+
+The other three stay open and are gap **1087**: a stale citation inside a README **fenced
+block** (deliberate — the fences are pasted terminal output from commits that have gone,
+and demanding they resolve against today's tree is demanding the ledger be rewritten); a
+`::` span (gap 989 prices it at 67 adjudications); and the **namespace hole** (gap 933 —
+resolution is on the last dotted segment, and 115 short names are declared under more than
+one full name). The auditor's own note is the right reading: the fenced block and the
+namespace hole are the two a real stale citation is most likely to land in.
+
+### 8. What the numbers did, and every delta explained
+
+| gate | at `9fa6c2c` | at this step | why |
+|---|---|---|---|
+| check.sh | 9/9 | **9/9** | — |
+| check 3, axiom audit | 4,839 theorems | **4,839** | no theorem added or removed; every Lean edit is a comment |
+| check 5 | 93 tests | **93** | — |
+| check 6, corpus | 29/37 files, 4/5 plans | **29/37, 4/5** | untouched (never touched) |
+| check 7, burn-down | 9, all stage 6 | **9** | no goal added, discharged or deleted |
+| check 8 | 24,426 citations, 22,913 resolved, 1,513 allowed (113 vocab, 347 counted), 0 unused | **27,860 / 26,337 / 1,523 (115 vocab, 348 counted), 0 unused** | +3,434 citations is the widening (digit-camel, qualified spans, the three-line wrap) and this block's own prose — the figure
+is measured WITH this block in the tree, because check 8 sweeps it, and quoting the
+pre-append run here would be README gap 871's class for the sixth time; +2 vocabulary is `Subtype.val` and `JSON.stringify`; +1 counted is `2 day0Wf` |
+| check 9 | 77 rostered, 28 unfoldable, **23** pinned by nothing | 77 rostered, 28 unfoldable, **18** pinned by nothing | five re-audited against a synthesised constant, all five PINNED (§4) |
+| `mutations.txt` | 79 rows / 77 keys, hand count 29 | **77 / 77, hand count 28** | two superseded rows removed (§5) |
+
+**Acceptance, capped, before the commit.**
+
+```
+check.sh                                   9/9, exit 0
+cargo test --workspace     79 result lines, 1,347 passed / 0 failed / 9 ignored
+cargo test -p tm-kernel-ffi      86 + 8 + 7 passed / 0 failed        (the FFI)
+cargo test --test kernel_replay_parity     29 passed / 0 failed / 4 ignored  (T5)
+cargo test --test kernel_log_door          23 passed / 0 failed     (the door suite)
+cargo test --test cli_switch_acceptance    11 passed / 0 failed     (10 before: §6's new one)
+cargo test --test kernel_call_counts        2 passed / 0 failed
+cargo test --test cli_latency               5 passed / 0 failed / 1 ignored  (parallel, inside --workspace)
+cargo test --test cli_latency -- --test-threads=1
+                                            5 passed / 0 failed / 1 ignored, 14.41 s  (serial)
+```
+
+**Both `cli_latency` results are reported, and they agree** — the known flake (two rows
+failing fully parallel on a loaded machine) did not fire this run, in either mode.
+
+**The workspace count moved by exactly +1, and the brief's baseline is two commits older.**
+The brief quotes 1,345 at `4ccf4ef`; this step measured 1,347 at `9fa6c2c` + these changes.
+This step adds exactly **one** `#[test]` (`cli_switch_acceptance` went 10 → 11, measured
+both ways), so `9fa6c2c` stood at 1,346 and the other +1 is W-21's land step between
+`4ccf4ef` and `9fa6c2c`. The 1,346 is **inferred, not re-measured**: `cargo test
+--workspace` was not re-run at `9fa6c2c` with these changes stashed.
+
+### 9. Gaps
+
+**Gap 1085 — deleting `.tm/state.json` while a break runs un-pauses the block, and on
+some trees writes to the log.** SUPERSEDES gap 1034's item 3, which stopped at
+*"the block reads as running rather than paused, and `since_break_min` restarts"*.
+1. *What is not done.* The pause a running break sets cannot be recovered from the log, so
+   `tm --json now`'s `active.paused` goes `true` → `false` across the deletion. Driven on
+   `energy-14d`: **one of eleven** spellings moves, only the pause inside it moves, and the
+   log stays at 162 lines. On a tree whose plan depends on the pause, the auditor measured
+   a re-laid afternoon, a plan hash moving `e9a7f6cb5722b55a` → `f98fb2b40f1e61c4` and a
+   **second `Event::Plan`** — a derivable cache's deletion writing to the authority. That
+   half did **not** reproduce here and is recorded as reachable, not as measured on this tree.
+2. *Why.* `tm_core::log`'s convention: the `Event::Break`'s `t` is the break's START, so
+   nothing is appended until it ends, and `tm break` writes no `Event::Pause` either.
+3. *What it costs.* T9's "changes nothing" is true of a warm-up without a break and false
+   of one with it. The mitigation is now that the notice **names** `active.paused` and a
+   test asserts the exact size of the move and that no log line is written.
+4. *Which step clears it.* A `break start` event — a log-format change, D16 — which is what
+   gap 1034 item 4 already says.
+
+**Gap 1086 — 18 of 77 rostered definitions are pinned by nothing.** REPLACES gap 1035,
+which is closed: its three are all PINNED (§4).
+1. *What is not done.* 18 rows have no constant of their type, no identity on an accumulator
+   and no synthesised term. **15 are `PlannerWit` witness fixtures**, where a literal body is
+   what the definition is for; the other three are `routineCap`, `busyCap`-shaped
+   `Capped _` values and `oFacts`/`oCand`, whose types are built by a function
+   (`Capped n`) and so cannot be named.
+2. *Why.* `Capped _` is `Bool` + `Subtype` (AGENTS 5.1) and deliberately has no inhabitant
+   anybody can name without a proof; a type built by a function is not reached by
+   `type_constant`'s textual rules at all.
+3. *What it costs.* D40's letter — *"the step must show something FAILING for each"* — is
+   unmet for 18 of 77, none of them algorithm any more. That is the whole of the change
+   from gap 1035: the exemption is now fixtures and bounded types, not step 6's own code.
+4. *Which step clears it.* Gap 1088's fixture swap reaches the 15. The bounded ones need
+   `Capped`'s smart constructor applied to a constant — a term with a proof in it, which is
+   a decision about what a checker may synthesise, not a patch. With gap 980.
+
+**Gap 1087 — check 8's three remaining blind spots, each declared and each reachable.**
+1. *What is not done.* (a) A stale citation inside a README **fenced block**. (b) A span
+   containing `::`. (c) The **namespace**: resolution is on the last dotted segment, so a
+   citation `Tm.Look.foo` resolves against a `Tm.Cap.foo` that still exists.
+2. *Why.* (a) is deliberate — the fences are pasted output from commits that have gone.
+   (b) is gap 989's 67 adjudications. (c) is gap 933: 115 short names are declared under
+   more than one full name, prose abbreviates, and a best-effort namespace tracker still
+   reports 267 dotted citations matching no full name it believes in.
+3. *What it costs.* An auditor's own reading, adopted here: (a) and (c) are the two a real
+   stale citation is most likely to land in. A theorem MOVED between namespaces is invisible.
+4. *Which step clears it.* (c) needs the 267 adjudicated before suffix matching can be
+   turned on; (b) needs the 67. (a) needs a decision that the ledger's fences are prose.
+
+**Gap 1088 — the fixture swap: a nullary constant of the type that is not an empty.**
+1. *What is not done.* `type_constant` takes a named nullary constant only when it is
+   spelled `.empty`/`.nil`/`.none`/`.zero`. Any nullary `def n : T` is a constant of `T`.
+2. *Why.* Measured: taking all of them reaches 21 of the 23 exempt rows, 15 by swapping one
+   `PlannerWit` fixture for another and one by handing a definition its own name. That asks
+   a different question from D40's — are these two populations distinguishable, rather than
+   is this body degenerate — and a SURVIVED there is a finding of a different kind.
+3. *What it costs.* 15 fixtures stay in gap 1086's count that a swap would reach.
+4. *Which step clears it.* A sixth verdict, or a flag `mutate.py --swap` an auditor runs,
+   with the self-reference excluded. It is one function (`nullary_constants`'s `EMPTIES`
+   test) and a decision about what the word PINNED should mean.
+
+**Gap 1089 — `tm/src/tui/queue.rs` is the SECOND padder, and it measures width differently.**
+EXTENDS gap 1007, whose P8 row owes D30 Q6's *"`emit::render_row` the only padder"* and the
+grep guard but does not name what the guard will have to kill.
+1. *What is not done.* `tm-core/src/emit.rs` owns the East-Asian table, `char_width` (:305),
+   `display_width` (:319) and `pad` (:323), used by `render_row` (:748) and by
+   `tui/today.rs:55`. `tm/src/tui/queue.rs` has its **own** `width` (:290, `Span::raw(s).width()`
+   — ratatui's unicode-width, a different measurement), `truncate` (:297) and `pad` (:317).
+2. *Why.* Pre-existing, and P8 has not landed. Merging them changes a displayed number.
+3. *What it costs.* AGENTS §5.3's shape on the display axis: one concept, two definitions,
+   two different measurements. On the good side, the table stayed out of the kernel —
+   `grep -rn 'EastAsian|0x1100|wcwidth|charWidth|displayWidth' kernel/TmKernel/TmKernel/*.lean`
+   returns **nothing**, so `Id := List Char`'s purpose is intact.
+4. *Which step clears it.* **P8**, and its grep guard has to name `queue.rs`.
+
+**Gap 1090 — Lean core's structure FIELDS and constructors are not in source 7.**
+1. *What is not done.* `core_declared` reads the toolchain's `LEAN_DECL` lines only, so
+   `Subtype.val` — a field, not a `def` — does not resolve against core and needed a
+   VOCABULARY entry, where `List.mapTR` needs none.
+2. *Why.* Source 1 was widened to fields and constructors for this repository; source 7 was
+   not, and nobody had cited a core field until the qualified-span widening landed.
+3. *What it costs.* One name today. It grows with every core field a doc comment names.
+4. *Which step clears it.* Reading `LEAN_FIELD`/`LEAN_CTOR` over the toolchain sources the
+   way `declared()` does over ours — +0 adjudications, some seconds of check 8.
+
+**Already recorded, and nothing owed.** The second auditor re-drove gap **991** (`tm drop`
+resolves a ROUTINE title where `tm edit` does not), gap **1080** (D35's "nothing was
+written" line fires for `rank`/`done`/`stop` and not for the other seven verbs) and gap
+**139** (`--now` before the stored runtime day rolls `.tm/state.json`'s date back). All
+three are in the ledger by name with the same evidence, all three are still open, and this
+step re-drove none of them — it confirmed they are recorded, which is all that was owed.
+Recording that it did not re-drive them is AGENTS §5.12.
+
+### 10. Numbering
+
+Gaps: this step **1085-1090**; **1091-1099 free** inside the repair step's range. Gap
+**1035 is closed** and gap **1086** replaces it; gap **1034 item 3** is superseded by gap
+1085; gap **1007** is extended by gap 1089. Cheats: none taken; `Negative.lean` untouched.
+No `PlannerWit` section added. No parity entry. No goal added, discharged or deleted.
+**Highest gap after this block: 1090.**
+
+### 11. Method, and what it cannot see
+
+* **The citation measurements** were taken by importing `citations.py` and substituting
+  `is_citation`, so they are that file's own resolver over that file's own file set and not
+  a second implementation. What they cannot see is anything outside the swept set —
+  `kernel/design/**`, `tm-spec-v1.md`, `PLAN-lean-kernel.md` and every Rust doc comment
+  (gap 936) are not read as prose at all, so "0 unresolved" is a statement about eight file
+  sets and not about the repository.
+* **The subdirectory drive** was a single module in one subdirectory. It shows the three
+  enumerations agree at depth 2; it does not show they agree at depth 3, nor that any other
+  checker enumerates the library (checks 1, 3, 4, 6 and 7 go through `lake`, which reads
+  imports, so an unimported subdirectory module is invisible to them by construction —
+  and `TmKernel.lean` not importing it is exactly what made the probe safe to leave in the
+  tree during the drive).
+* **The five re-audits** were run one kernel build per constant, capped at 40G. Each row is
+  a claim backed by a watched build, and the transcripts are in §4. What they do not show
+  is that the OTHER 72 rows are still right: `mutate.py --verify` re-runs every row at one
+  kernel build each and was not run here.
+* **The running-break drive** is one fixture (`energy-14d`) at one instant. It bounds the
+  move on that tree exactly; it says nothing about a tree whose plan depends on the pause,
+  which is why gap 1085 records the auditor's cascade as reachable rather than as refuted.
+* **`grep`-shaped searches were not the method for the padders.** `emit.rs` and `queue.rs`
+  were found by reading both bodies, which is how the second `pad` — spelled the same, doing
+  a different measurement — shows up at all; a name grep for `display_width` finds one of
+  the two.
+
+### 12. Worktrees
+
+None entered and none created. The drives that mutated the tree — the `def ramp` rename,
+the `Sub/Probe.lean` module, the three planted citations, the two allow-list drives and the
+`HOST_ONLY_STATE` revert — were each run in the main checkout and reverted in the same
+command, with `git status` read afterwards. `git worktree list` shows the main checkout and
+`.claude/worktrees/stage5-lookahead`, untouched.
+
+### 13. Capping
+
+Every `lake`, `lean`, `cargo`, `check.sh` and `python3` invocation in this step ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+`check.sh`, `cargo test` and `mutate.py` (which runs `lake build`), 16G for the measurement
+scripts, 8G for `citations.py` and `totality.py`. **No breach to disclose.**
