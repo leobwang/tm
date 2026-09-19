@@ -122,3 +122,27 @@ b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no
 7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq
 98d34e4c6f85 TmKernel/TmKernel/Planner.lean posLt fun__=>true,fun__=>false Planner.lean:4796; Planner.lean:4796
 e4326514ea1f TmKernel/TmKernel/Planner.lean victimLt fun__=>true,fun__=>false Planner.lean:4811; Planner.lean:4811
+6747992d36f2 TmKernel/TmKernel/Planner.lean PlanReq.blocksDone 0,1 PlannerWit.lean:2641; PlannerWit.lean:2641
+c3cea089034e TmKernel/TmKernel/Planner.lean remainingBudget 0,1 Planner.lean:1258; Planner.lean:1255
+d795d852500b TmKernel/TmKernel/Planner.lean PlanReq.emitKeptBreaks default Planner.lean:5412
+6c968fdb4c99 TmKernel/TmKernel/Planner.lean PlanReq.optionalOccupied default PlannerWit.lean:4103
+9854a1777083 TmKernel/TmKernel/Planner.lean PlanReq.optionalFree default Planner.lean:5638
+31d274c494b7 TmKernel/TmKernel/Planner.lean optionalWant 0,1 Planner.lean:5454; Planner.lean:5454
+c37c2f1b288f TmKernel/TmKernel/Planner.lean PlanReq.optionalCands default Planner.lean:5479
+6beacc8e867e TmKernel/TmKernel/Planner.lean placeOptional default Planner.lean:5510
+ade00af332f2 TmKernel/TmKernel/Planner.lean optionalStep default Planner.lean:5611
+c95878a2fda0 TmKernel/TmKernel/Planner.lean PlanReq.optionalFold default Planner.lean:5638
+79162ac6ef40 TmKernel/TmKernel/Planner.lean FreeOk True,False Planner.lean:5570; Planner.lean:5570
+f5608b759d6b TmKernel/TmKernel/Planner.lean PlanReq.optionalRows default Planner.lean:5661
+530a2cd01243 TmKernel/TmKernel/Planner.lean PlanReq.optionalSpans default PlannerWit.lean:4012
+1ed7ace7dabe TmKernel/TmKernel/Planner.lean PlanReq.restTaken default PlannerWit.lean:4055
+68fc778f1fe6 TmKernel/TmKernel/Planner.lean PlanReq.restRows default Planner.lean:5686
+ebcccca33a6d TmKernel/TmKernel/Planner.lean PlanReq.restHighMin 0,1 PlannerWit.lean:4130; PlannerWit.lean:4130
+433556cf4950 TmKernel/TmKernel/Planner.lean PlanReq.aCapacityLost 0,1 Planner.lean:5749; Planner.lean:5749
+b9a6c9bd8c10 TmKernel/TmKernel/Planner.lean PlanReq.budgetSpentNotes default Planner.lean:5771
+231bfa683480 TmKernel/TmKernel/PlannerWit.lean oFacts unfoldable no Inhabited Look.PlanFacts
+d41489d3cf84 TmKernel/TmKernel/PlannerWit.lean oCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+d6f25f44caff TmKernel/TmKernel/PlannerWit.lean witOptionalCands default PlannerWit.lean:3988
+451f7cccd65c TmKernel/TmKernel/PlannerWit.lean theOptionalRequest unfoldable no Inhabited PlanReq
+e579eb40790c TmKernel/TmKernel/PlannerWit.lean theHighRestRequest unfoldable no Inhabited PlanReq
+d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean theSpentBudgetRequest unfoldable no Inhabited PlanReq

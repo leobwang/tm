@@ -3931,5 +3931,228 @@ invariant is not a statement about an empty assignment. -/
 theorem the_owes_invariant_has_a_subject :
     theCursorRequest.assignFold.slotOf = [some 0, some 3, some 3, some 3] := by decide
 
+/-! ### §8.2 step 7, computed: rest, optionals, and the two numbers they give step 8
+
+W-17's lesson, applied to the step that turns a slot nobody took into a row.  Every theorem
+below is `decide` over a day `Planner.dayPlan` really produces, and each is arranged so that
+**the component under test is the only thing that differs** from the day beside it:
+
+* the four Rest rows of `theRequest` against the **none** of `theBusyRequest`, where the cursor
+  took every slot;
+* the same day with two optionals on the wire, where the first Rest row starts **half an hour
+  later** because an optional took the minutes;
+* `theRoutineRequest`, where a Rest row starts at 17:30 because §8.2 **step 6** put `stretch`
+  at 17:00 — the rest rule reading step 6's output and not step 2's;
+* `theBusyRequest`'s kept break, which is 20 minutes an optional would otherwise be dropped
+  onto;
+* `theQuietRequest`'s level-**4** first slot, which is the only witness day in this file with
+  A-capacity to lose, against the same day with a `ci = 5` candidate on the wire.
+
+**Four of these definitions had no instrument when they were written and check 9 said so**:
+`PlanReq.optionalOccupied`, `PlanReq.optionalSpans`, `PlanReq.restTaken` and
+`PlanReq.restHighMin` all came back **SURVIVED** from `mutate.py --since 86c4dc6`, and this
+section is the repair (README gap **1001**). -/
+
+/-- An optional's facts: everything unconstrained but its `max:`. -/
+def oFacts (cap : Option Look.MaxCap) : Look.PlanFacts :=
+  { Look.PlanFacts.unconstrained with cap := cap }
+
+/-- One `optional.md` line on the wire: `optional` set, `ci 3`, no due and no window, with the
+minutes it has left and the `max:` that may cap them. -/
+def oCand (id : List Char) (rem : Nat) (cap : Option Look.MaxCap)
+    (h : Look.PlanFacts.wf (oFacts cap) = true) : Look.Cand × Option Look.Floor :=
+  (⟨id, 3, none, rem, none, false, false, true, false, false, false, none, ⟨oFacts cap, h⟩⟩,
+   none)
+
+/-- Four optionals, in **request order**, each aimed at one clause of fork's loop: `^p1` asks
+for all 30 minutes it has left; `^p3` has nothing left to ask for; `^p4` wants ten hours and no
+stretch of this day is that wide; `^p2` has an hour left but a `max:` of 90 with 70 already
+spent, so it may take only 20. -/
+def witOptionalCands : List (Look.Cand × Option Look.Floor) :=
+  [oCand ['p','1'] 30  Option.none      (by decide),
+   oCand ['p','3'] 0   Option.none      (by decide),
+   oCand ['p','4'] 600 Option.none      (by decide),
+   oCand ['p','2'] 60  (some ⟨90, 70⟩)  (by decide)]
+
+/-- The §4.3 Wednesday with four optionals on the wire and nothing else changed. -/
+def theOptionalRequest : PlanReq := { theRequest with cands := ⟨witOptionalCands, by decide⟩ }
+
+set_option maxRecDepth 100000 in
+/-- **What each optional asks the day for, and why** — fork
+`c.cap_left_min().map_or(c.remaining_min, |l| c.remaining_min.min(l))`, one candidate per
+branch.  `^p2` is the clause §8.2 step 7 words as *"within `max:`"*: it has 60 minutes of work
+left and asks for **20**. -/
+theorem an_optional_asks_for_what_its_cap_leaves :
+    theOptionalRequest.optionalCands.map (fun c => (c.id, c.remaining, optionalWant c))
+      = [(['p','1'], 30, 30), (['p','3'], 0, 0), (['p','4'], 600, 600),
+         (['p','2'], 60, 20)] := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The loop: request order, first fit, and two kinds of pass-over.**  `^p1` takes the day's
+first free stretch at 14:00; `^p3` wants nothing and is skipped; `^p4` wants ten hours, no
+stretch holds it, and the loop **continues** rather than stopping — which is why `^p2`, the
+candidate after it, is placed at all.  The stretch `^p1` left is where `^p2` goes. -/
+theorem the_optionals_fill_the_day_in_request_order :
+    theOptionalRequest.optionalFree
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 1290).sec)] ∧
+    theOptionalRequest.optionalFold.map (fun o => (o.id, o.start, o.stop, o.want))
+      = [(['p','1'], (Cal.instantOf Cal.chicago 739867 840).sec,
+                     (Cal.instantOf Cal.chicago 739867 870).sec, 30),
+         (['p','2'], (Cal.instantOf Cal.chicago 739867 870).sec,
+                     (Cal.instantOf Cal.chicago 739867 890).sec, 20)] ∧
+    theOptionalRequest.optionalSpans
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 870).sec),
+         ((Cal.instantOf Cal.chicago 739867 870).sec,
+          (Cal.instantOf Cal.chicago 739867 890).sec)] ∧
+    theOptionalRequest.optionalRows.map (fun s => (s.kind, s.item, s.energy, s.planned))
+      = [(SegKind.optional, some ['p','1'], Option.none, some 30),
+         (SegKind.optional, some ['p','2'], Option.none, some 20)] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The Rest rows are the slots the cursor did not fill, and nothing else.**  `theRequest`
+sends no candidate, so all four slots are Rest at their own levels; `theBusyRequest` is the
+same afternoon with §8.2 step 5's four candidates on it, the cursor takes every slot, and
+there is **no Rest row at all**.  One difference, two answers. -/
+theorem the_rest_rows_are_the_slots_no_group_took :
+    theRequest.finalAssign.slotOf = [Option.none, Option.none, Option.none, Option.none] ∧
+    theRequest.restRows.map (fun s => (s.start, s.stop, s.energy.map Fin.val)) =
+      [((Cal.instantOf Cal.chicago 739867 860).sec,
+        (Cal.instantOf Cal.chicago 739867 920).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 920).sec,
+        (Cal.instantOf Cal.chicago 739867 980).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 1000).sec,
+        (Cal.instantOf Cal.chicago 739867 1060).sec, some 2),
+       ((Cal.instantOf Cal.chicago 739867 1060).sec,
+        (Cal.instantOf Cal.chicago 739867 1120).sec, some 2)] ∧
+    theBusyRequest.finalAssign.slotOf = [some 0, some 3, some 3, some 3] ∧
+    theBusyRequest.restRows = [] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **An optional takes its minutes out of Rest.**  The same four slots as above, and the only
+change on the wire is the four `optional.md` lines: the first Rest row now starts at **14:50**
+instead of 14:20, because `^p1` and `^p2` took the 50 minutes before it, and the day's Rest
+minutes fall by exactly those 30 the first slot lost.  `PlanReq.restTaken` is the list that
+does it. -/
+theorem an_optional_takes_its_minutes_out_of_rest :
+    theOptionalRequest.restTaken
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 870).sec),
+         ((Cal.instantOf Cal.chicago 739867 870).sec,
+          (Cal.instantOf Cal.chicago 739867 890).sec)] ∧
+    theOptionalRequest.restRows.map (fun s => (s.start, s.stop, s.energy.map Fin.val)) =
+      [((Cal.instantOf Cal.chicago 739867 890).sec,
+        (Cal.instantOf Cal.chicago 739867 920).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 920).sec,
+        (Cal.instantOf Cal.chicago 739867 980).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 1000).sec,
+        (Cal.instantOf Cal.chicago 739867 1060).sec, some 2),
+       ((Cal.instantOf Cal.chicago 739867 1060).sec,
+        (Cal.instantOf Cal.chicago 739867 1120).sec, some 2)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And a routine STEP 6 placed is taken out of Rest too** — which is the whole reason
+`restTaken` reads `PlanReq.finalRoutines` and not `PlanReq.placedRoutines`.  On the routine day
+`warmup` sits at 16:00–17:00 (step 2's, and the cut already avoided it, so it is not a slot at
+all) and `stretch` sits at **17:00–17:30** (step 6's, inside the third slot, which the cut knew
+nothing about).  The third Rest row therefore starts at 17:30 and the slot's first half hour is
+not Rest. -/
+theorem a_routine_step_six_placed_is_taken_out_of_rest :
+    theRoutineRequest.restTaken
+      = [((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec,
+          (Cal.instantOf Cal.chicago 739867 1050).sec)] ∧
+    theRoutineRequest.restRows.map (fun s => (s.start, s.stop, s.energy.map Fin.val)) =
+      [((Cal.instantOf Cal.chicago 739867 860).sec,
+        (Cal.instantOf Cal.chicago 739867 920).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 920).sec,
+        (Cal.instantOf Cal.chicago 739867 960).sec, some 3),
+       ((Cal.instantOf Cal.chicago 739867 1050).sec,
+        (Cal.instantOf Cal.chicago 739867 1080).sec, some 2),
+       ((Cal.instantOf Cal.chicago 739867 1080).sec,
+        (Cal.instantOf Cal.chicago 739867 1140).sec, some 2)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The break the day keeps is not free time.**  On the busy day the cursor's four slots and
+the morning's kept break between them cover the whole window, so the only stretch an optional
+could use is the hour after the last slot.  Drop the kept break from the occupied list — the
+one thing `PlanReq.optionalOccupied` adds to step 6's own — and the 20 minutes at 14:00 come
+back as free, which is exactly the stretch an optional would be dropped onto.  Fork
+`emit_segments` adds `kept_breaks` to `occupied` for this reason and this is that reason
+computed. -/
+theorem the_break_the_day_keeps_is_not_free_for_an_optional :
+    theBusyRequest.emitKeptBreaks
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 860).sec)] ∧
+    theBusyRequest.optionalFree
+      = [((Cal.instantOf Cal.chicago 739867 1140).sec,
+          (Cal.instantOf Cal.chicago 739867 1290).sec)] ∧
+    Look.freeIntervals (max theBusyRequest.now.sec theBusyRequest.dayStart)
+        theBusyRequest.windDownSec
+        (theBusyRequest.occupiedNow theBusyRequest.finalRoutines theBusyRequest.finalAssign)
+      = [((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 860).sec),
+         ((Cal.instantOf Cal.chicago 739867 1140).sec,
+          (Cal.instantOf Cal.chicago 739867 1290).sec)] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! #### The two numbers step 7 hands to step 8 -/
+
+/-- The quiet day with one `ci = 5` candidate on the wire and nothing else changed.  No slot of
+this day is that good — the best is **4** — so the cursor cannot take it, which is precisely
+fork `diagnose`'s condition for A-capacity lost. -/
+def theHighRestRequest : PlanReq :=
+  { theQuietRequest with cands := ⟨[cCand ['c','3'] 5 60 .any true (by decide)], by decide⟩ }
+
+set_option maxRecDepth 100000 in
+/-- **A-capacity lost is the high Rest, and only on a day that wanted it.**  `theQuietRequest`
+is the one witness day whose first slot is at level **4**: a full hour of Rest at a level that
+could have carried the most demanding work there is.  With no candidate on the wire the day
+lost nothing and the number is **0**; with `^c3` — `ci 5`, which no slot of this day can take —
+it is **60**; and once `^c3` is in the assigned set it is 0 again.  Three answers, one
+difference each. -/
+theorem the_a_capacity_lost_is_the_high_rest_a_ci_5_item_could_not_have :
+    theQuietRequest.restRows.map (fun s => s.energy.map Fin.val)
+      = [some 4, some 3, some 2, some 2] ∧
+    theQuietRequest.restHighMin = 60 ∧
+    theQuietRequest.aCapacityLost [] = 0 ∧
+    theHighRestRequest.restHighMin = 60 ∧
+    theHighRestRequest.aCapacityLost [] = 60 ∧
+    theHighRestRequest.aCapacityLost [['c','3']] = 0 ∧
+    theRequest.restHighMin = 0 ∧
+    theRequest.aCapacityLost [] = 0 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- The §4.3 Wednesday with `tm arrive`'s stored budget set to the **two** blocks the morning's
+log already closed.  Nothing else moves: `state.window` is still unset, so `Look.day0Window`
+answers what it answered before (`Look.Today.storedWindow` needs both). -/
+def theSpentBudgetRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 :=
+      { theRequest.look.today0 with date := some theRequest.look.today, budget := some 2 } } }
+
+set_option maxRecDepth 100000 in
+/-- **A day whose budget is spent says so, and a day with budget left says nothing.**  Fork
+`diagnose`'s last `notes.push`: two blocks done against a stored budget of two leaves nothing,
+so every slot from here on is about to be Rest — which is what §8.2 step 7 makes true and what
+`Planner.Note.budgetSpent` was written at P0 to say.  The same day with the shipped budget of
+six has four blocks left and no note. -/
+theorem a_spent_budget_is_named_and_a_live_one_is_not :
+    theSpentBudgetRequest.blocksDone = 2 ∧
+    theSpentBudgetRequest.budgetBlocks = 2 ∧
+    remainingBudget theSpentBudgetRequest = 0 ∧
+    theSpentBudgetRequest.budgetSpentNotes = [Note.budgetSpent 2] ∧
+    theSpentBudgetRequest.window = theRequest.window ∧
+    theRequest.blocksDone = 2 ∧
+    remainingBudget theRequest = 4 ∧
+    theRequest.budgetSpentNotes = [] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+
 end PlannerWit
 end Tm

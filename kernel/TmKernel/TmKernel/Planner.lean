@@ -1238,11 +1238,16 @@ and `blocks_done` both come from here, never from a second read of the log (D9).
 def PlanReq.todayRecord (r : PlanReq) : Option Replay.DayAcc :=
   (r.run.answer.days.find? (fun d => decide (d.day = r.today))).bind (·.record)
 
+/-- **Fork `self.blocks_done`** (`planner.rs:884`): today's closed blocks, off this call's own
+replay.  It was inline inside `remainingBudget` until §8.2 step 7, which needs the same number
+for `Note.budgetSpent` — fork `diagnose`'s `self.blocks_done > 0` (`planner.rs:2216`) — and a
+second reading of the day record is the defect this kernel exists to remove (AGENTS §5.3). -/
+def PlanReq.blocksDone (r : PlanReq) : Nat := (r.todayRecord.map (·.blocksDone)).getD 0
+
 /-- Fork `capacity::remaining_budget(budget, blocks_done)` — `Nat` subtraction *is* the fork's
 `saturating_sub` — with §8.2 step 1's travel-day zeroing in front of it. -/
 def remainingBudget (r : PlanReq) : Nat :=
-  if travelDay r then 0
-  else r.budgetBlocks - (r.todayRecord.map (·.blocksDone)).getD 0
+  if travelDay r then 0 else r.budgetBlocks - r.blocksDone
 
 /-- **A travel day plans no blocks** (§8.2 step 1: "a `travel-day` wall today zeroes the
 remaining budget"). -/
@@ -4400,8 +4405,16 @@ group **3**, so groups 0, 1 and 2 are refused there — `^c2` for its `loc:` and
 `ci` — and the quantifier is not empty.  Its consumer is nobody: `PlanReq.assignStep_cases`
 destructures this theorem as `⟨⟨g₀, hg₀, hpg⟩, -⟩` and discards it.  It is kept because it is
 free from the core lemma and because it is the claim the fork's `for` loop actually makes;
-README gap 877. -/
-theorem pickedGroup_is_the_first_that_fits (P : Group → Bool) (l : List Group) (n : Nat)
+README gap 877.
+
+**GENERALISED AT §8.2 STEP 7, over the element type and nothing else.**  Step 7's optionals
+take the **first free stretch wide enough** (`Planner.placeOptional`, fork
+`free.iter().position(…)`), which is this walk at `List (Nat × Nat)`, and a second copy of an
+eight-line `findIdx?` inversion is the class §5.3 names.  The statement is the same
+conjunction at `α = Group`, so every consumer of the old form is unchanged and D5's
+"re-proved over the new shape, never weakened" is satisfied by construction.  The name is
+still step 5's; it is the one caller that named it. -/
+theorem pickedGroup_is_the_first_that_fits {α : Type} (P : α → Bool) (l : List α) (n : Nat)
     (h : l.findIdx? P = some n) :
     (∃ g, l[n]? = some g ∧ P g = true) ∧
       ∀ j, j < n → ∀ g, l[j]? = some g → P g = false := by
@@ -5340,6 +5353,429 @@ guard. -/
 theorem the_deferred_pass_stays_inside_the_budget (r : PlanReq) :
     r.finalAssign.used ≤ max r.activeSeed (remainingBudget r) :=
   PlanReq.deferWalk_used r _ _ [] _ (PlanReq.assignFold_used r)
+
+/-! ############################################################################
+## §8.2 step 7 — rest and optionals
+
+Spec §8.2 step 7: *"leftover slots after the budget → Rest; optionals (`p = 5`) fill Rest and
+the evening before wind-down, within `max:`."*  Fork `emit_segments` does both, in that order,
+at `planner.rs:1900-1957`, after step 6 has finished with the routines and the assignment.
+
+**The rest rule and the cut already have a relationship, and this section does not build a
+second one.**  `Look.cutSlots` takes the placed routines as `rests` (AGENTS §8.4, design §1.2)
+— which is `PlanReq.restsToday`, step 3's argument — so a slot never overlaps a routine **step
+2** placed, and the break counter resets after one.  What step 7 adds is the routines **step
+6** placed, which the cut could not know about because step 6 runs after it, and the optionals
+step 7 has just placed.  `PlanReq.restTaken` is exactly that difference; `Look.freeIntervals`,
+L3's own walk, carves each unfilled slot around it.  Nothing here cuts, energises, or computes
+a free stretch a second time.
+
+**And the breaks are step 6's list, widened, not a new rule.**  P6 landed `PlanReq.keptBreaks`
+— a break belongs to the day only when work touches it — and `PlanReq.keptBreaksToday` at the
+assignment step 5 ended with.  Fork `emit_segments` takes the *same function* at the assignment
+**step 6** left and drops the breaks a placed routine has taken over; `PlanReq.emitKeptBreaks`
+is that one extra filter over `keptBreaks`, and the filter's test is `Planner.overlapsAny`,
+step 2's own.  There is no second break rule and no second overlap test.
+
+**What step 7 does NOT emit, and why.**  The Block and Batch rows of §8.2 step 5 are still
+owed (README gap **803** item 4): they are the switch-shaped change (D19) that makes four
+`PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core`'s
+`hblk` — *"every Block row of this day is the reservation"* — with them, which is **G1**'s
+lift.  Rest, Optional and Break rows are none of those kinds, so they land without touching it.
+The **Break rows** themselves are gap **551**'s and stay with the Block rows they are between:
+their spans are read here (the optionals flow around them) and no `SegKind.brk` row is
+produced, because a Break row of the planner's own would falsify
+`Planner.a_break_row_is_a_replayed_row` in the same commit as the four.
+
+### D9-21, the recursion rule
+
+`optionalFold` is a `foldl` over `optionalCands`, which the wire caps at `maxCands`
+(`PlanReq.cands` is `Capped`); `foldl` is already the compiled form, as `assignFold`'s is.
+`restRows` is a `List.flatMap` over the slot list and `Look.freeIntervals` inside it, both
+core's.  Nothing here recurses by hand.
+############################################################################ -/
+
+/-! ### The breaks the day keeps -/
+
+/-- **Fork `emit_segments`' own `kept_breaks`** (`planner.rs:1876-1885`): §8.2 step 6's list at
+the assignment step 6 **left** (`PlanReq.finalAssign`, not `assignFold` — the fork recomputes
+it here, and gap **906** is the record of the one it did not), less every break a routine has
+taken over.  `Planner.overlapsAny` is the test, called and not copied. -/
+def PlanReq.emitKeptBreaks (r : PlanReq) : List (Nat × Nat) :=
+  (r.keptBreaks r.finalAssign).filter
+    (fun b => !overlapsAny b.1 b.2 (r.finalRoutines.filterMap (·.placedAt)))
+
+/-- **Every break the day keeps is one the cut made and work touches** — `emitKeptBreaks`
+adds nothing to `keptBreaks`, it only removes. -/
+theorem PlanReq.emitKeptBreaks_is_a_kept_break (r : PlanReq) (b : Nat × Nat)
+    (h : b ∈ r.emitKeptBreaks) : b ∈ r.keptBreaks r.finalAssign :=
+  (List.mem_filter.1 h).1
+
+/-- **And no break the day keeps is under a routine** — the second half of the fork's filter,
+as a disjointness rather than as a `Bool`. -/
+theorem PlanReq.an_emitted_break_is_clear_of_the_routines (r : PlanReq) (b : Nat × Nat)
+    (hb : b ∈ r.emitKeptBreaks) (p : Placed) (hp : p ∈ r.finalRoutines) (x y : Nat)
+    (hxy : p.placedAt = some (x, y)) : b.2 ≤ x ∨ y ≤ b.1 := by
+  have h2 : overlapsAny b.1 b.2 (r.finalRoutines.filterMap (·.placedAt)) = false := by
+    have := (List.mem_filter.1 hb).2
+    simpa using this
+  have hmem : (x, y) ∈ r.finalRoutines.filterMap (·.placedAt) :=
+    List.mem_filterMap.2 ⟨p, hp, hxy⟩
+  have h3 : ¬ (b.1 < y ∧ x < b.2) := by
+    have := (List.any_eq_false.1 h2) (x, y) hmem
+    simpa using this
+  omega
+
+/-! ### The optionals -/
+
+/-- **Fork `emit_segments`' `occupied`** (`planner.rs:1901-1911`): everything step 6 had to
+flow around, at step 6's own answer, and the breaks the day keeps.  `PlanReq.occupiedNow` is
+step 6's list and is called here with step 6's output, which is exactly the fork's three
+`extend`s. -/
+def PlanReq.optionalOccupied (r : PlanReq) : List (Nat × Nat) :=
+  r.occupiedNow r.finalRoutines r.finalAssign ++ r.emitKeptBreaks
+
+/-- **Fork's `free`** (`planner.rs:1912-1913`): `free_intervals(now.max(day_start),
+wind_down, occupied)`.  The optionals fill the day **before** the wind-down and never the
+evening — which is the half of §8.2 step 7 that is not about the budget at all. -/
+def PlanReq.optionalFree (r : PlanReq) : List (Nat × Nat) :=
+  Look.freeIntervals (max r.now.sec r.dayStart) r.windDownSec r.optionalOccupied
+
+/-- **Fork `c.cap_left_min().map_or(c.remaining_min, |l| c.remaining_min.min(l))`**
+(`planner.rs:1915`): what an optional asks the day for, within what is left of its `max:`.
+`Seal.minOpt` is the kernel's own `Option Nat` minimum — the function a byte-for-byte copy of
+which shipped at P5b and was deleted by W-19's repair (README gap 886). -/
+def optionalWant (c : Look.Cand) : Nat :=
+  (Seal.minOpt (some c.remaining) c.plan.val.capLeftMin).getD 0
+
+/-- Without a `max:` an optional asks for everything it has left. -/
+theorem optionalWant_without_a_cap (c : Look.Cand) (h : c.plan.val.capLeftMin = none) :
+    optionalWant c = c.remaining := by
+  unfold optionalWant; rw [h]; rfl
+
+/-- **With one, it asks for no more than the cap allows** — §8.2 step 7's "within `max:`". -/
+theorem optionalWant_is_within_the_cap (c : Look.Cand) (l : Nat)
+    (h : c.plan.val.capLeftMin = some l) : optionalWant c = min c.remaining l := by
+  unfold optionalWant; rw [h]; rfl
+
+theorem optionalWant_le_remaining (c : Look.Cand) : optionalWant c ≤ c.remaining := by
+  unfold optionalWant Seal.minOpt
+  cases h : c.plan.val.capLeftMin with
+  | none => simp
+  | some l => simp [Nat.min_le_left]
+
+/-- **Fork `cands.iter().filter(|c| c.is_optional && c.eligible())`** (`planner.rs:1914`): the
+`optional.md` lines, in **request order**.  §7's ranking is not consulted and cannot be: an
+optional never enters a group (fork `build_groups`' own `c.is_optional` guard,
+`planner.rs:1281`), so it has no key to be sorted by.  Both facts are the wire's
+(`Look.Cand.optional`, `Look.PlanFacts.eligible`); nothing is derived here, which would be
+doing D27 early (**D34**). -/
+def PlanReq.optionalCands (r : PlanReq) : List Look.Cand :=
+  (r.cands.val.map Prod.fst).filter (fun c => c.optional && c.plan.val.eligible)
+
+/-- Every candidate step 7 considers is an optional the wire called eligible. -/
+theorem PlanReq.an_optional_candidate_is_optional_and_eligible (r : PlanReq) (c : Look.Cand)
+    (h : c ∈ r.optionalCands) : c.optional = true ∧ c.plan.val.eligible = true := by
+  have h2 := (List.mem_filter.1 h).2
+  simp only [Bool.and_eq_true] at h2
+  exact h2
+
+/-- **Fork `free.iter().position(|(a, b)| *b - *a >= dur)` and the shrink after it**
+(`planner.rs:1919-1941`): the **first** free stretch wide enough, the position at its start,
+and that stretch left shorter — or dropped, when the optional took all of it.
+
+The `findIdx?`-then-`getElem?` shape is §8.2 step 5's own (`PlanReq.assignStep`), and
+`pickedGroup_is_the_first_that_fits` — generalised over the element type for this caller — is
+the inversion both use. -/
+def placeOptional (durSec : Nat) (free : List (Nat × Nat)) : Option (Nat × List (Nat × Nat)) :=
+  match free.findIdx? (fun iv => decide (durSec ≤ iv.2 - iv.1)) with
+  | Option.none => Option.none
+  | some k =>
+    match free[k]? with
+    | Option.none => Option.none
+    | some iv =>
+      some (iv.1,
+        if iv.1 + durSec < iv.2 then free.set k (iv.1 + durSec, iv.2) else free.eraseIdx k)
+
+/-- **The stretch it took, and that every earlier one was too narrow.**  The second half is
+the whole of what "first fit" means, and it is the clause a search that merely found *a*
+stretch would not satisfy. -/
+theorem placeOptional_spec {d t : Nat} {free free' : List (Nat × Nat)}
+    (h : placeOptional d free = some (t, free')) :
+    ∃ k iv, free[k]? = some iv ∧ iv.1 = t ∧ d ≤ iv.2 - iv.1 ∧
+      (∀ j, j < k → ∀ w, free[j]? = some w → w.2 - w.1 < d) ∧
+      free' = (if iv.1 + d < iv.2 then free.set k (iv.1 + d, iv.2) else free.eraseIdx k) := by
+  unfold placeOptional at h
+  cases hf : free.findIdx? (fun iv => decide (d ≤ iv.2 - iv.1)) with
+  | none => rw [hf] at h; exact absurd h (by simp)
+  | some k =>
+    rw [hf] at h
+    simp only at h
+    cases hg : free[k]? with
+    | none => rw [hg] at h; exact absurd h (by simp)
+    | some iv =>
+      rw [hg] at h
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨-, hbefore⟩ := pickedGroup_is_the_first_that_fits _ free k hf
+      have hwide : d ≤ iv.2 - iv.1 := by
+        obtain ⟨w, hw, hpw⟩ := (pickedGroup_is_the_first_that_fits _ free k hf).1
+        rw [hg] at hw
+        rw [(Option.some.inj hw : iv = w)]
+        simpa using hpw
+      refine ⟨k, iv, hg, h.1, hwide, fun j hj w hw => ?_, h.2.symm⟩
+      have := hbefore j hj w hw
+      simpa using this
+
+/-- One placed optional, before it is a row: fork's `Segment` fields at `planner.rs:1926-1937`
+without the text, which is `Emit.lean`'s (D30 Q6). -/
+structure OptPlaced where
+  id    : Id
+  start : Nat
+  stop  : Nat
+  /-- Fork `SegFlags::planned_min` — the minutes it asked for, within its `max:`. -/
+  want  : Nat
+deriving DecidableEq, Repr
+
+/-- One turn of fork's optional loop (`planner.rs:1914-1942`): an optional with nothing left
+to ask for is passed over (`if want == 0 { continue }`), and so is one no free stretch can
+hold. -/
+def optionalStep (acc : List (Nat × Nat) × List OptPlaced) (c : Look.Cand) :
+    List (Nat × Nat) × List OptPlaced :=
+  if optionalWant c = 0 then acc
+  else
+    match placeOptional (60 * optionalWant c) acc.1 with
+    | Option.none => acc
+    | some (t, free) => (free, ⟨c.id, t, t + 60 * optionalWant c, optionalWant c⟩ :: acc.2)
+
+/-- **§8.2 step 7's optionals**, in request order, each in the earliest free stretch that
+could hold it. -/
+def PlanReq.optionalFold (r : PlanReq) : List OptPlaced :=
+  (r.optionalCands.foldl optionalStep (r.optionalFree, [])).2.reverse
+
+/-- **The invariant the loop carries**: every stretch still on the working list lies inside
+the day before the wind-down and is free of everything steps 1–6 occupied.  It is what makes
+an optional's position a claim about the *day* and not only about a list.
+
+Stated as a `Prop` in the shape `PlanReq.AssignOk` and `Planner.PlacedOk` set: the fold's law
+is that the start satisfies it and each step preserves it. -/
+def FreeOk (lo hi : Nat) (occ : List (Nat × Nat)) (free : List (Nat × Nat)) : Prop :=
+  ∀ iv ∈ free, lo ≤ iv.1 ∧ iv.1 < iv.2 ∧ iv.2 ≤ hi ∧
+    ∀ u, iv.1 ≤ u → u < iv.2 → Look.covered occ u = false
+
+/-- `Look.freeIntervals` answers a list that satisfies it — which is `freeIntervals_spec`'s
+two halves at one stretch, and is `freeStretch_gives_a_position` widened from a position to
+the whole stretch. -/
+theorem freeIntervals_FreeOk (lo hi : Nat) (occ : List (Nat × Nat)) :
+    FreeOk lo hi occ (Look.freeIntervals lo hi occ) := by
+  intro iv hiv
+  obtain ⟨h1, h2, h3⟩ := Look.freeIntervals_inside_the_window hiv
+  refine ⟨h1, h2, h3, fun u hu1 hu2 => ?_⟩
+  obtain ⟨-, -, hfree⟩ := freeStretch_gives_a_position hiv (Nat.le_refl (iv.2 - iv.1))
+  exact hfree u hu1 (by omega)
+
+/-- Shrinking a stretch from the left, or dropping it, keeps the invariant. -/
+theorem placeOptional_FreeOk {lo hi d t : Nat} {occ free free' : List (Nat × Nat)}
+    (hok : FreeOk lo hi occ free) (h : placeOptional d free = some (t, free')) :
+    FreeOk lo hi occ free' := by
+  obtain ⟨k, iv, hk, ht, hd, -, hf⟩ := placeOptional_spec h
+  subst hf
+  intro w hw
+  split at hw
+  · rcases List.mem_or_eq_of_mem_set hw with hw | rfl
+    · exact hok w hw
+    · obtain ⟨g1, g2, g3, g4⟩ := hok iv (List.mem_of_getElem? hk)
+      exact ⟨by simp only; omega, by simp only; omega, g3,
+        fun u hu1 hu2 => g4 u (by simp only at hu1; omega) (by simp only at hu2; omega)⟩
+  · exact hok w (List.eraseIdx_subset hw)
+
+/-- **What an optional's position is a claim about**: it starts inside the day and at or after
+`now`, it ends at or before the wind-down, it is exactly the minutes it asked for, and every
+second of it is free of the walls, the routines, the slots the cursor filled and the breaks
+the day keeps.
+
+The proof is one induction over the fold, carrying `FreeOk`; `optionalStep` is unfolded here
+and **nowhere else**, which is the shape `PlanReq.assignStep_cases` and
+`PlanReq.deferOne_cases` set. -/
+theorem optionalFold_ok (lo hi : Nat) (occ : List (Nat × Nat)) :
+    ∀ (cs : List Look.Cand) (free : List (Nat × Nat)) (acc : List OptPlaced),
+      FreeOk lo hi occ free →
+      (∀ o ∈ acc, lo ≤ o.start ∧ o.stop ≤ hi ∧ o.stop = o.start + 60 * o.want ∧
+        ∀ u, o.start ≤ u → u < o.stop → Look.covered occ u = false) →
+      ∀ o ∈ (cs.foldl optionalStep (free, acc)).2,
+        lo ≤ o.start ∧ o.stop ≤ hi ∧ o.stop = o.start + 60 * o.want ∧
+          ∀ u, o.start ≤ u → u < o.stop → Look.covered occ u = false
+  | [], _, _, _, hacc => hacc
+  | c :: cs, free, acc, hfree, hacc => by
+    simp only [List.foldl_cons]
+    unfold optionalStep
+    split
+    · exact optionalFold_ok lo hi occ cs free acc hfree hacc
+    · rename_i hw
+      cases hp : placeOptional (60 * optionalWant c) free with
+      | none =>
+        simp only [hp]
+        exact optionalFold_ok lo hi occ cs free acc hfree hacc
+      | some p =>
+        obtain ⟨t, free'⟩ := p
+        simp only [hp]
+        refine optionalFold_ok lo hi occ cs free' _
+          (placeOptional_FreeOk hfree hp) (fun o ho => ?_)
+        rcases List.mem_cons.1 ho with rfl | ho
+        · obtain ⟨k, iv, hk, hti, hd, -, -⟩ := placeOptional_spec hp
+          obtain ⟨g1, g2, g3, g4⟩ := hfree iv (List.mem_of_getElem? hk)
+          subst hti
+          exact ⟨by simp only; omega, by simp only; omega, rfl,
+            fun u hu1 hu2 => g4 u (by simp only at hu1; omega) (by simp only at hu2; omega)⟩
+        · exact hacc o ho
+
+/-- **§8.2 step 7's own law.**  The sentence above, at the day's own arguments. -/
+theorem an_optional_is_placed_in_the_free_day_before_the_wind_down (r : PlanReq) (o : OptPlaced)
+    (h : o ∈ r.optionalFold) :
+    max r.now.sec r.dayStart ≤ o.start ∧ o.stop ≤ r.windDownSec ∧
+      o.stop = o.start + 60 * o.want ∧
+      ∀ u, o.start ≤ u → u < o.stop → Look.covered r.optionalOccupied u = false :=
+  optionalFold_ok _ _ _ r.optionalCands r.optionalFree []
+    (freeIntervals_FreeOk _ _ _) (by simp) o (List.mem_reverse.1 h)
+
+/-- **Its rows.**  No energy: an optional is not on §7's scale and takes no slot's level —
+fork `Segment { kind: SegKind::Optional, energy: None, … }` (`planner.rs:1926-1937`).
+
+**`inst` is `none` and that is a gap, not a choice** (README gap **1006**): fork's row carries
+`c.instance`, and `Look.Cand` has no instance key on the wire — `RoutineIn` has one and the
+candidate record does not.  Deriving it here would be D27 in the kernel (**D34**). -/
+def PlanReq.optionalRows (r : PlanReq) : List Seg :=
+  r.optionalFold.map (fun o =>
+    { start := o.start, stop := o.stop, kind := .optional, energy := none, item := some o.id,
+      inst := none, flags := SegFlags.none, planned := some o.want, mult := none,
+      note := none })
+
+/-- And the time they took, which the Rest loop flows around (fork's `taken`). -/
+def PlanReq.optionalSpans (r : PlanReq) : List (Nat × Nat) :=
+  r.optionalFold.map (fun o => (o.start, o.stop))
+
+/-- **An Optional row is an Optional row**, whatever the day holds — the clause every "these
+rows cannot reach that set" law below is built on. -/
+theorem PlanReq.optionalRows_kinds (r : PlanReq) (s : Seg) (h : s ∈ r.optionalRows) :
+    s.kind = SegKind.optional := by
+  unfold PlanReq.optionalRows at h
+  obtain ⟨o, -, rfl⟩ := List.mem_map.1 h
+  rfl
+
+/-! ### Rest -/
+
+/-- **Fork's `taken` at the Rest loop** (`planner.rs:1944`): the optionals just placed, and
+the routines **step 6** left placed.  The cut already flowed around the routines step **2**
+placed — that is `PlanReq.restsToday`, step 3's own argument — so this is the difference step
+6 and step 7 made to it and not a second rest rule. -/
+def PlanReq.restTaken (r : PlanReq) : List (Nat × Nat) :=
+  r.optionalSpans ++ r.finalRoutines.filterMap (·.placedAt)
+
+/-- **§8.2 step 7's Rest rows** (`planner.rs:1945-1957`): every slot the cursor did not fill,
+carved around what step 6 and the optionals took, each piece carrying **the slot's own
+energy** — which is what gives `Diagnostics.aCapacityLost` a subject, and is why a Rest row is
+the one row of the day besides a Block that has a level at all. -/
+def PlanReq.restRows (r : PlanReq) : List Seg :=
+  ((r.energisedSlots.zip r.finalAssign.slotOf).filter (fun p => p.2.isNone)).flatMap
+    (fun p => (Look.freeIntervals p.1.2.start p.1.2.stop r.restTaken).map (fun iv =>
+      { start := iv.1, stop := iv.2, kind := .rest, energy := some p.1.1, item := none,
+        inst := none, flags := SegFlags.none, planned := none, mult := none, note := none }))
+
+theorem PlanReq.restRows_kinds (r : PlanReq) (s : Seg) (h : s ∈ r.restRows) :
+    s.kind = SegKind.rest := by
+  unfold PlanReq.restRows at h
+  obtain ⟨p, -, hs⟩ := List.mem_flatMap.1 h
+  obtain ⟨iv, -, rfl⟩ := List.mem_map.1 hs
+  rfl
+
+/-- **A Rest row is a piece of a slot the cursor left empty, at that slot's level, free of
+every optional and of every routine step 6 placed.**  §8.2 step 7's second law, and the one
+that says "leftover slots" means the slots and not free time in general: a Rest row cannot
+appear where there was no slot, so the evening, the walls and the breaks are not Rest. -/
+theorem a_rest_row_is_a_piece_of_an_unfilled_slot (r : PlanReq) (s : Seg)
+    (h : s ∈ r.restRows) :
+    ∃ (e : Fin 6) (sl : Look.Slot), (e, sl) ∈ r.energisedSlots ∧
+      sl.start ≤ s.start ∧ s.start < s.stop ∧ s.stop ≤ sl.stop ∧ s.energy = some e ∧
+      ∀ u, s.start ≤ u → u < s.stop → Look.covered r.restTaken u = false := by
+  unfold PlanReq.restRows at h
+  obtain ⟨p, hp, hs⟩ := List.mem_flatMap.1 h
+  obtain ⟨iv, hiv, rfl⟩ := List.mem_map.1 hs
+  obtain ⟨g1, g2, g3⟩ := Look.freeIntervals_inside_the_window hiv
+  obtain ⟨-, -, hfree⟩ := freeStretch_gives_a_position hiv (Nat.le_refl (iv.2 - iv.1))
+  have hfree2 : ∀ u, iv.1 ≤ u → u < iv.2 → Look.covered r.restTaken u = false :=
+    fun u hu1 hu2 => hfree u hu1 (by omega)
+  refine ⟨p.1.1, p.1.2, ?_, g1, g2, g3, rfl, hfree2⟩
+  have hmem := (List.mem_filter.1 hp).1
+  have := List.of_mem_zip hmem
+  simpa using this.1
+
+/-- **And the slot it is a piece of really is one the cursor left empty** — the `filter`'s own
+clause, carried out to the assignment so that a reader does not have to take the `Bool` on
+trust. -/
+theorem a_rest_row_comes_from_a_slot_no_group_took (r : PlanReq) (p : (Fin 6 × Look.Slot) × Option Nat)
+    (h : p ∈ (r.energisedSlots.zip r.finalAssign.slotOf).filter (fun q => q.2.isNone)) :
+    p.2 = Option.none := by
+  have h2 := (List.mem_filter.1 h).2
+  cases hp : p.2 with
+  | none => rfl
+  | some k => rw [hp] at h2; exact absurd h2 (by simp)
+
+/-! ### What step 7 tells §8.2 step 8 -/
+
+/-- **Fork `diagnose`'s high-Rest sum** (`planner.rs:2141-2145`): the Rest minutes at energy
+≥ 4.  `Seg.minutes` is `Look.spanMinutes` and not a second arithmetic (AGENTS §5.3). -/
+def PlanReq.restHighMin (r : PlanReq) : Nat :=
+  (r.restRows.filter (fun s =>
+      match s.energy with | some e => decide (4 ≤ e.val) | Option.none => false)).foldl
+    (fun a s => a + s.minutes) 0
+
+/-- **Fork `diagnose`'s A-capacity test** (`planner.rs:2146-2152`): those minutes, but only on
+a day that also held a `ci = 5` candidate — not a wall, not an optional — the day did not
+assign.  Zero otherwise, which is fork `Diagnostics::default()`.
+
+`assigned` is a parameter and not a field read: the caller is `dayDiagnostics`, which is
+building the day the set is read off, so taking it as an argument is what keeps the definition
+from being circular. -/
+def PlanReq.aCapacityLost (r : PlanReq) (assigned : List Id) : Nat :=
+  if (decide (0 < r.restHighMin) &&
+      (r.cands.val.map Prod.fst).any (fun c =>
+        decide (c.ci.val = 5) && !c.wall && !c.optional && !assigned.contains c.id)) = true
+  then r.restHighMin else 0
+
+/-- **A day with no high Rest loses no A-capacity** — the `rest_high > 0` guard, stated, so
+that "this number is about Rest rows" is a theorem and not a reading of the body. -/
+theorem PlanReq.aCapacityLost_needs_rest (r : PlanReq) (assigned : List Id)
+    (h : r.restHighMin = 0) : r.aCapacityLost assigned = 0 := by
+  unfold PlanReq.aCapacityLost
+  rw [if_neg (by simp [h])]
+
+/-- **And what it reports is exactly those minutes when it reports anything.** -/
+theorem PlanReq.aCapacityLost_is_the_rest_minutes (r : PlanReq) (assigned : List Id) :
+    r.aCapacityLost assigned = 0 ∨ r.aCapacityLost assigned = r.restHighMin := by
+  unfold PlanReq.aCapacityLost
+  split
+  · exact Or.inr rfl
+  · exact Or.inl rfl
+
+/-- **Fork `diagnose`'s last note** (`planner.rs:2216-2221`): a day whose budget is spent and
+that has blocks behind it says so — every slot from here on is about to be Rest, and §8.2 step
+7 is the step that makes that true.  `Note.budgetSpent` was written at P0 and nothing
+constructed it until now (README gap **904** item 3). -/
+def PlanReq.budgetSpentNotes (r : PlanReq) : List Note :=
+  if (decide (remainingBudget r = 0) && decide (0 < r.blocksDone)) = true
+  then [Note.budgetSpent r.blocksDone] else []
+
+/-- **A day with budget left says nothing** — the note's own guard. -/
+theorem PlanReq.no_budget_note_while_the_budget_lasts (r : PlanReq)
+    (h : 0 < remainingBudget r) : r.budgetSpentNotes = [] := by
+  unfold PlanReq.budgetSpentNotes
+  rw [if_neg (by simp; omega)]
+
+/-- **A day that has done nothing says nothing either** — a travel day zeroes the budget
+(`a_travel_day_has_no_budget`) and must not therefore claim blocks were done. -/
+theorem PlanReq.no_budget_note_without_a_block (r : PlanReq) (h : r.blocksDone = 0) :
+    r.budgetSpentNotes = [] := by
+  unfold PlanReq.budgetSpentNotes
+  rw [if_neg (by simp [h])]
 
 /-- **§8.2 step 6's rows, which are the day's**: the routine instances as **step 6** left them
 — fork `emit_segments(…, &routines, …)` is called after `place_deferred` (`planner.rs:1032`),
