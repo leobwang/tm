@@ -5719,6 +5719,45 @@ theorem a_rest_row_comes_from_a_slot_no_group_took (r : PlanReq) (p : (Fin 6 × 
   | none => rfl
   | some k => rw [hp] at h2; exact absurd h2 (by simp)
 
+/-! #### Step 7's rows, against every set the day keeps them out of
+
+Ten one-line corollaries of `PlanReq.optionalRows_kinds` and `PlanReq.restRows_kinds`, in the
+shape `routineRows_are_not_walls` set at §8.2 step 2: an Optional row and a Rest row are not
+work, not a Block, not a Wall, not a Break and not the wind-down, so neither can enter
+`assignedOf`, be compared against a wall, answer for a break or be mistaken for the evening.
+Every law of the assembled day below takes them through exactly these. -/
+
+theorem PlanReq.optionalRows_are_not_work (r : PlanReq) (t : Seg) (h : t ∈ r.optionalRows) :
+    t.kind.isWork = false := by rw [r.optionalRows_kinds t h]; rfl
+
+theorem PlanReq.optionalRows_are_not_blocks (r : PlanReq) (t : Seg) (h : t ∈ r.optionalRows) :
+    t.kind ≠ SegKind.block := by rw [r.optionalRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.optionalRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ r.optionalRows) :
+    t.kind ≠ SegKind.wall := by rw [r.optionalRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.optionalRows_are_not_breaks (r : PlanReq) (t : Seg) (h : t ∈ r.optionalRows) :
+    t.kind ≠ SegKind.brk := by rw [r.optionalRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.optionalRows_are_not_wind_down (r : PlanReq) (t : Seg)
+    (h : t ∈ r.optionalRows) : t.kind ≠ SegKind.windDown := by
+  rw [r.optionalRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.restRows_are_not_work (r : PlanReq) (t : Seg) (h : t ∈ r.restRows) :
+    t.kind.isWork = false := by rw [r.restRows_kinds t h]; rfl
+
+theorem PlanReq.restRows_are_not_blocks (r : PlanReq) (t : Seg) (h : t ∈ r.restRows) :
+    t.kind ≠ SegKind.block := by rw [r.restRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.restRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ r.restRows) :
+    t.kind ≠ SegKind.wall := by rw [r.restRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.restRows_are_not_breaks (r : PlanReq) (t : Seg) (h : t ∈ r.restRows) :
+    t.kind ≠ SegKind.brk := by rw [r.restRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.restRows_are_not_wind_down (r : PlanReq) (t : Seg) (h : t ∈ r.restRows) :
+    t.kind ≠ SegKind.windDown := by rw [r.restRows_kinds t h]; intro hc; cases hc
+
 /-! ### What step 7 tells §8.2 step 8 -/
 
 /-- **Fork `diagnose`'s high-Rest sum** (`planner.rs:2141-2145`): the Rest minutes at energy
@@ -5784,20 +5823,30 @@ still has none (`a_deferred_routine_has_no_row`).  `stepTwoSegs` is the same ren
 2's list and stays, because step 2's own laws are about step 2's list. -/
 def dayRoutineSegs (r : PlanReq) : List Seg := routineRows r r.finalRoutines
 
-/-- **The day's rows**: steps 1, 2 and 6, and §8.2 choice 5b's reservation, in the fork's
-order. -/
+/-- **The day's rows**: steps 1, 2, 6 and **7**, and §8.2 choice 5b's reservation, in the
+fork's order — `emit_segments` renders the optionals and then the Rest slots
+(`planner.rs:1900-1957`), and the sort puts every row where its start says.
+
+**The Block and Batch rows of §8.2 step 5 are still not here** (README gap **803** item 4):
+they are the switch-shaped change (D19) that makes four `PlanCheck` emptiness theorems false
+and takes `PlanCheck.dayPlan_ok_core`'s `hblk` with them.  Step 7's three kinds are not Block
+rows and land without touching it — which is why this list can gain two entries and
+`dayPlan_ok_core` is re-proved unchanged. -/
 def dayRows (r : PlanReq) : List WfSeg :=
-  sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r).map segOf)
+  sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+    r.optionalRows ++ r.restRows).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
-    ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r, s = segOf t := by
+    ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+      r.optionalRows ++ r.restRows, s = segOf t := by
   have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
 
 /-- **A row the planner places is a row of the day** — the converse `dayRows` owes, used to
 show the reservation really reaches `dayPlan`. -/
 theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
-    (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r) : segOf t ∈ dayRows r :=
+    (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+      r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
   mem_sortRows.2 (List.mem_map.2 ⟨t, h, rfl⟩)
 
 /-- §8.2 step 8's diagnostics, as far as steps 1 and 2 fill them: the overlapping walls step 1
@@ -5810,11 +5859,17 @@ deferred instances into it would give one field two meanings, which is the defec
 is named after (AGENTS §5.3).  A deferred routine is carried on its own `Placed` record with
 `deferred := true` and no position, which is exactly the state fork `place_deferred` receives,
 and `Note.noPosition` is what names it if step 6 cannot place it either (**P6**). -/
+def dayAssigned (r : PlanReq) : List Id :=
+  ((dayRows r).filter (fun s => s.val.kind.isWork)).flatMap segItems
+
+/-- §8.2 step 8's diagnostics, as far as steps 1, 2, 6 and **7** fill them. -/
 def dayDiagnostics (r : PlanReq) : Diagnostics :=
   { Diagnostics.empty with
     conflicts := Capped.ofListTake (wallConflicts (wallsToday r))
+    aCapacityLost := r.aCapacityLost (dayAssigned r)
     notes := Capped.ofListTake
-      ((if travelDay r then [Note.travelDay] else []) ++ r.noPositionNotes) }
+      ((if travelDay r then [Note.travelDay] else []) ++ r.noPositionNotes ++
+        r.budgetSpentNotes) }
 
 /-- **D28: this signature is total and stays total.**  There is no `dayPlan?`, no
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
@@ -5853,6 +5908,18 @@ theorem dayPlan_remaining_budget_is_the_forks_local (r : PlanReq) :
 
 theorem dayPlan_segments (r : PlanReq) : (dayPlan r).segments = dayRows r := rfl
 
+/-- **The set §8.2 step 8's A-capacity test reads is the day's own.**  `dayDiagnostics` cannot
+write `assignedOf (dayPlan r)` — it is building the very day that set is read off — so it takes
+`dayAssigned`, and this is the `rfl` that keeps the two from ever drifting apart.
+
+**It exists because check 9 said it had to** (README gap 1001's second half): `dayAssigned`
+came back **SURVIVED** from `mutate.py` at `:= default`, because on every witness day the only
+day with high Rest assigns nothing, so replacing the set with `[]` changed no answer.
+`PlannerWit.the_day_reports_its_lost_capacity_and_its_spent_budget` computes the set as well
+as the number. -/
+theorem assignedOf_dayPlan_is_dayAssigned (r : PlanReq) :
+    assignedOf (dayPlan r) = dayAssigned r := rfl
+
 /-- **The day's assigned set never sees a routine row.**  `assignedOf` keeps the rows
 `SegKind.isWork` accepts — Block and Batch and nothing else — a Routine, WindDown or Sleep row
 is none of those (`routineRows_are_not_work`), and `sortRows_filter` lets the filter run
@@ -5872,11 +5939,22 @@ theorem assignedOf_dayPlan_drops_the_routine_rows (r : PlanReq) :
     obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
     rw [segOf_kind, routineRows_are_not_work r _ t ht]
     simp
-  have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r).map segOf).filter
-      (fun s => s.val.kind.isWork)
+  have hnilo : ((r.optionalRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := by
+    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
+    rw [segOf_kind, r.optionalRows_are_not_work t ht]
+    simp
+  have hnilr : ((r.restRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := by
+    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
+    rw [segOf_kind, r.restRows_are_not_work t ht]
+    simp
+  have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.optionalRows ++
+      r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
         = ((stepOneSegs r ++ reservationSegs r).map segOf).filter
           (fun s => s.val.kind.isWork) := by
-    simp only [List.map_append, List.filter_append, hnil, List.append_nil, List.nil_append]
+    simp only [List.map_append, List.filter_append, hnil, hnilo, hnilr, List.append_nil,
+      List.nil_append]
   rw [hsplit]
 
 /-- **The day carries §8.2 step 4's answer** — fork `planner.rs:1066`, `day.priorities = cands
@@ -5926,7 +6004,7 @@ theorem the_day_assigns_nothing_after_now_but_the_running_block (r : PlanReq) (i
   rw [dayPlan_segments] at hs
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · obtain ⟨_, h2, h3⟩ := pastRows_end_at_now r t ht
     have : (segOf t).val.start < r.now.sec := by
       show clampSec t.start < r.now.sec
@@ -5948,6 +6026,10 @@ theorem the_day_assigns_nothing_after_now_but_the_running_block (r : PlanReq) (i
     rw [segOf_kind, hkd] at hi
     simp only [segOf_item, hit, Option.toList_some, List.mem_singleton] at hi
     simp [hi]
+  · rw [segOf_kind, r.optionalRows_are_not_work t ht] at hwk
+    exact absurd hwk (by simp)
+  · rw [segOf_kind, r.restRows_are_not_work t ht] at hwk
+    exact absurd hwk (by simp)
 
 /-! ### The two wall goals
 
@@ -6025,7 +6107,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6074,6 +6156,8 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       omega
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
 /-- **Both ends of every wall row come from the index, and neither comes from the planner** —
 the sentence `plan_never_moves_a_wall` was written to protect, true of a buffered wall and of a
@@ -6090,7 +6174,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
           (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6108,6 +6192,8 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
       · simp only [List.mem_singleton] at hr; subst hr; exact Or.inr ⟨rfl, rfl⟩
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
 /-- **Every Wall row sits inside a span the blocked list holds** — the half of §8.2 step 1 that
 step 3 and choice 5b need: `blockedByWalls` really does hold every wall the day draws, run-up
@@ -6124,7 +6210,7 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.wall := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (pastRows_are_not_walls r t ht)
   · exact absurd htk (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6154,6 +6240,8 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
       simp only [clampSec]; omega
   · exact absurd htk (routineRows_are_not_walls r _ t ht)
   · exact absurd htk (reservationSegs_are_not_walls r t ht)
+  · exact absurd htk (r.optionalRows_are_not_walls t ht)
+  · exact absurd htk (r.restRows_are_not_walls t ht)
 
 /-- **Every Break row of the day is replayed from the log.**  Steps 1, 2 and 3 place no break
 of their own: the cut's breaks reach the day only when work touches them
@@ -6177,7 +6265,7 @@ theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.brk := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6186,6 +6274,8 @@ theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
     cases htk
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · exact absurd htk (r.optionalRows_are_not_breaks t ht)
+  · exact absurd htk (r.restRows_are_not_breaks t ht)
 
 /-- **A WindDown row of the produced day starts at `[day] wind_down`, and only exists while the
 wind-down is ahead of `now`.** -/
@@ -6195,7 +6285,7 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.windDown := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (pastRows_are_not_wind_down r t ht)
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6204,6 +6294,8 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
   · obtain ⟨h1, -, heq⟩ := a_wind_down_row_is_the_evenings r _ t ht htk
     exact ⟨h1, by show clampSec t.start = _; rw [heq]; rfl⟩
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · exact absurd htk (r.optionalRows_are_not_wind_down t ht)
+  · exact absurd htk (r.restRows_are_not_wind_down t ht)
 
 /-- **Every Block row of the day is replayed from the log or is §8.2 choice 5b's reservation.**
 Steps 1, 2 and 3 place walls, the running interruption, the replayed past, the routines, the
@@ -6221,7 +6313,7 @@ theorem a_block_row_is_replayed_or_reserved (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · exact Or.inl ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6230,6 +6322,8 @@ theorem a_block_row_is_replayed_or_reserved (r : PlanReq) (s : WfSeg)
     cases htk
   · exact absurd htk (routineRows_are_not_blocks r _ t ht)
   · exact Or.inr ⟨t, ht, rfl⟩
+  · exact absurd htk (r.optionalRows_are_not_blocks t ht)
+  · exact absurd htk (r.restRows_are_not_blocks t ht)
 
 /-! ### §8.3's E1 — `plan_reserves_one_block_at_a_time`, restated and DISCHARGED (step P3)
 
@@ -6316,7 +6410,8 @@ theorem the_wind_down_row_runs_to_bed (r : PlanReq)
   refine ⟨segOf r.windDownSeg, ?_, segOf_kind _, ?_, ?_⟩
   · rw [dayPlan_segments]
     exact mem_sortRows.2
-      (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_right _ hseg), rfl⟩)
+      (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_left _
+        (List.mem_append_left _ (List.mem_append_right _ hseg))), rfl⟩)
   · show clampSec r.windDownSec = _
     exact clampSec_id _ h3
   · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _

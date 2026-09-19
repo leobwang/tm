@@ -6090,3 +6090,17 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_break_the_day_keeps_is_not_free_for_an_optional
 #print axioms Tm.PlannerWit.the_a_capacity_lost_is_the_high_rest_a_ci_5_item_could_not_have
 #print axioms Tm.PlannerWit.a_spent_budget_is_named_and_a_live_one_is_not
+#print axioms Tm.Planner.PlanReq.optionalRows_are_not_work
+#print axioms Tm.Planner.PlanReq.optionalRows_are_not_blocks
+#print axioms Tm.Planner.PlanReq.optionalRows_are_not_walls
+#print axioms Tm.Planner.PlanReq.optionalRows_are_not_breaks
+#print axioms Tm.Planner.PlanReq.optionalRows_are_not_wind_down
+#print axioms Tm.Planner.PlanReq.restRows_are_not_work
+#print axioms Tm.Planner.PlanReq.restRows_are_not_blocks
+#print axioms Tm.Planner.PlanReq.restRows_are_not_walls
+#print axioms Tm.Planner.PlanReq.restRows_are_not_breaks
+#print axioms Tm.Planner.PlanReq.restRows_are_not_wind_down
+#print axioms Tm.PlannerWit.the_day_with_two_optionals_on_it
+#print axioms Tm.PlannerWit.the_battery_is_unmoved_by_the_rest_rows
+#print axioms Tm.PlannerWit.the_day_reports_its_lost_capacity_and_its_spent_budget
+#print axioms Tm.Planner.assignedOf_dayPlan_is_dayAssigned

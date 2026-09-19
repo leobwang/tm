@@ -464,6 +464,14 @@ theorem the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening 
           SegKind.block, some (['m','2'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
           SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 860).sec, (Cal.instantOf Cal.chicago 739867 920).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1000).sec, (Cal.instantOf Cal.chicago 739867 1060).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1060).sec, (Cal.instantOf Cal.chicago 739867 1120).sec,
+          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
           SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -901,6 +909,14 @@ theorem the_reserved_day_is_the_witness_day_and_the_running_block :
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
+          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
           SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -1454,7 +1470,12 @@ theorem the_battery_census_over_a_produced_day :
           (fun s => (s.val.item.bind
             (fun i => theStoredRequest.plan.val.store.get i)).isSome) = [false] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.brk) = [] ∧
-      (dayPlan theStoredRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        s.val.energy.isSome) = [] ∧
+      ((dayPlan theStoredRequest).segments.filter (fun s => s.val.energy.isSome)).map
+        (fun s => (s.val.kind, s.val.energy.map Fin.val))
+          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
+             (SegKind.rest, some 2)] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theStoredRequest.windDownSec ≤ s.val.start)) = [] ∧
       (dayPlan theStoredRequest).diagnostics.impossible.val = [] ∧
@@ -1641,6 +1662,14 @@ theorem the_restricted_day_keeps_the_reservation_and_the_wall :
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
+          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -1870,7 +1899,12 @@ theorem the_battery_census_at_the_reserved_day :
       blockSeconds (PlanCheck.withoutActive theRunningRequest (dayPlan theRunningRequest))
         = 3600 ∧
       (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.brk) = [] ∧
-      (dayPlan theRunningRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        s.val.energy.isSome) = [] ∧
+      ((dayPlan theRunningRequest).segments.filter (fun s => s.val.energy.isSome)).map
+        (fun s => (s.val.kind, s.val.energy.map Fin.val))
+          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
+             (SegKind.rest, some 2)] ∧
       (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] ∧
       ((PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
@@ -1880,7 +1914,11 @@ theorem the_battery_census_at_the_reserved_day :
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
         (fun s => s.val.kind == SegKind.brk) = [] ∧
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
-        (fun s => s.val.energy.isSome) = [] ∧
+        (fun s => s.val.kind == SegKind.block && s.val.energy.isSome) = [] ∧
+      ((PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
+        (fun s => s.val.energy.isSome)).map (fun s => (s.val.kind, s.val.energy.map Fin.val))
+          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
+             (SegKind.rest, some 2)] ∧
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
         (fun s => s.val.kind == SegKind.block &&
           decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] := by
@@ -2055,6 +2093,14 @@ theorem the_census_day_carries_the_mornings_break :
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
+          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -2107,7 +2153,12 @@ theorem the_battery_census_at_the_census_request :
         (fun s => s.val.kind == SegKind.block)).length = 1 ∧
       assignedOf (dayPlan theCensusRequest) = [['m','1'], ['m','2'], ['m','1']] ∧
       assignedFrom (dayPlan theCensusRequest) theCensusRequest.now.sec = [['m','1']] ∧
-      (dayPlan theCensusRequest).segments.filter (fun s => s.val.energy.isSome) = [] ∧
+      (dayPlan theCensusRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        s.val.energy.isSome) = [] ∧
+      ((dayPlan theCensusRequest).segments.filter (fun s => s.val.energy.isSome)).map
+        (fun s => (s.val.kind, s.val.energy.map Fin.val))
+          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
+             (SegKind.rest, some 2)] ∧
       (dayPlan theCensusRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theCensusRequest.windDownSec ≤ s.val.start)) = [] ∧
       (dayPlan theCensusRequest).diagnostics.impossible.val = [] := by
@@ -2213,6 +2264,14 @@ theorem the_mid_break_day_lays_a_block_across_a_break :
           SegKind.wall),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block),
+         ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
+          SegKind.rest),
+         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
+          SegKind.rest),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
+          SegKind.rest),
+         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
+          SegKind.rest),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -2867,6 +2926,14 @@ theorem the_queued_day_is_the_second_sibling_twice :
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
           SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
+          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -3615,18 +3682,26 @@ theorem the_day_carries_the_deferred_routines_row :
           (Cal.instantOf Cal.chicago 739867 605).sec, SegKind.block, some ['m','2']),
          ((Cal.instantOf Cal.chicago 739867 770).sec,
           (Cal.instantOf Cal.chicago 739867 830).sec, SegKind.wall, some ['g','1']),
+         ((Cal.instantOf Cal.chicago 739867 860).sec,
+          (Cal.instantOf Cal.chicago 739867 920).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 920).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec, SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 960).sec,
           (Cal.instantOf Cal.chicago 739867 1020).sec, SegKind.routine,
           some ['w','a','r','m','u','p']),
          ((Cal.instantOf Cal.chicago 739867 1020).sec,
           (Cal.instantOf Cal.chicago 739867 1050).sec, SegKind.routine,
           some ['s','t','r','e','t','c','h']),
+         ((Cal.instantOf Cal.chicago 739867 1050).sec,
+          (Cal.instantOf Cal.chicago 739867 1080).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1080).sec,
+          (Cal.instantOf Cal.chicago 739867 1140).sec, SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec,
           (Cal.instantOf Cal.chicago 739868 0).sec, SegKind.sleep, none)] ∧
     (dayPlan theRoutineRequest).segments.map (fun s => s.val.flags.deferred)
-      = [false, false, false, false, true, false, false] ∧
+      = [false, false, false, false, false, false, true, false, false, false, false] ∧
     (dayPlan theRoutineRequest).diagnostics.notes.val = [] ∧
     assignedOf (dayPlan theRoutineRequest) = [['m','1'], ['m','2']] := by
   refine ⟨by decide, by decide, by decide, by decide⟩
@@ -3640,8 +3715,9 @@ morning's two blocks in both, because a Routine row is not work
 theorem the_day_with_no_room_carries_the_note_instead :
     (dayPlan theCrowdedRequest).segments.map (fun s => (s.val.kind, s.val.item))
       = [(SegKind.block, some ['m','1']), (SegKind.block, some ['m','2']),
-         (SegKind.wall, some ['g','1']), (SegKind.routine, some ['w','a','r','m','u','p']),
-         (SegKind.windDown, none), (SegKind.sleep, none)] ∧
+         (SegKind.wall, some ['g','1']), (SegKind.rest, none), (SegKind.rest, none),
+         (SegKind.routine, some ['w','a','r','m','u','p']), (SegKind.rest, none),
+         (SegKind.rest, none), (SegKind.windDown, none), (SegKind.sleep, none)] ∧
     (dayPlan theCrowdedRequest).diagnostics.notes.val
       = [Note.noPosition ['s','t','r','e','t','c','h'] 150
            (Cal.instantOf Cal.chicago 739867 840).sec
@@ -3672,7 +3748,11 @@ theorem the_battery_passes_on_the_day_step_six_filled :
         (fun s => decide (s.val.kind = SegKind.wall))).length = 1 ∧
     ((dayPlan theRoutineRequest).segments.filter
         (fun s => decide (s.val.kind = SegKind.routine))).length = 2 ∧
-    ((dayPlan theRoutineRequest).segments.filter (fun s => s.val.energy.isSome)).length = 0 ∧
+    ((dayPlan theRoutineRequest).segments.filter (fun s => s.val.energy.isSome)).length = 4 ∧
+    ((dayPlan theRoutineRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.rest))).length = 4 ∧
+    ((dayPlan theRoutineRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        s.val.energy.isSome)).length = 0 ∧
     ((dayPlan theRoutineRequest).segments.filter
         (fun s => decide (s.val.kind = SegKind.brk))).length = 0 := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
@@ -3746,6 +3826,14 @@ theorem the_quiet_census_day_is_a_wall_and_an_evening :
         (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
       = [((Cal.instantOf Cal.chicago 739867 770).sec,
           (Cal.instantOf Cal.chicago 739867 830).sec, SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec,
+          (Cal.instantOf Cal.chicago 739867 900).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 900).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 980).sec,
+          (Cal.instantOf Cal.chicago 739867 1040).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1040).sec,
+          (Cal.instantOf Cal.chicago 739867 1100).sec, SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec,
@@ -4153,6 +4241,104 @@ theorem a_spent_budget_is_named_and_a_live_one_is_not :
     theRequest.budgetSpentNotes = [] := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
+
+/-! ### The day, with step 7 in it
+
+`Planner.dayRows` now carries the Optional and the Rest rows and `Planner.dayDiagnostics`
+carries the number and the note step 7 computes.  Four things that needs saying with a
+computation beside it, in the shape W-20's step-6 wire used:
+
+* **the day a free afternoon really looks like**, with two optionals on it;
+* **what the battery says about it** — the same verdict as before, at every witness request,
+  because none of step 7's kinds is a Block, a Wall, a Break or the wind-down;
+* **`assignedOf` does not move**, which is `Planner.assignedOf_dayPlan_drops_the_routine_rows`
+  widened to step 7's two lists;
+* **the two diagnostics fire**, at the one witness day with A-capacity to lose and at the one
+  whose budget is spent. -/
+
+set_option maxRecDepth 100000 in
+/-- **The §4.3 Wednesday with two optionals on it, whole.**  Eleven rows: the morning's two
+replayed Blocks, the written wall, `^p1` and `^p2` at 14:00 and 14:30, the four Rest slots —
+**the first of them starting at 14:50, not 14:20** — and §16's evening.  The same day without
+the optionals (`the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening`) has
+the first Rest row at 14:20 and no Optional row at all, and the two wire lists are the only
+difference. -/
+theorem the_day_with_two_optionals_on_it :
+    (dayPlan theOptionalRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 870).sec,
+          SegKind.optional, some (['p','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 870).sec, (Cal.instantOf Cal.chicago 739867 890).sec,
+          SegKind.optional, some (['p','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 890).sec, (Cal.instantOf Cal.chicago 739867 920).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1000).sec,
+          (Cal.instantOf Cal.chicago 739867 1060).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1060).sec,
+          (Cal.instantOf Cal.chicago 739867 1120).sec, SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] ∧
+    ((dayPlan theOptionalRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.optional))).map (fun s => s.val.planned)
+      = [some 30, some 20] ∧
+    assignedOf (dayPlan theOptionalRequest) = [['m','1'], ['m','2']] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And NOT ONE of L26's eleven gains or loses a subject from the wire** — the same question
+`the_battery_passes_on_the_day_step_six_filled` asked of step 6, asked of step 7 and answered
+the same way, but for one population that **does** move and is named: a Rest row **carries a
+slot energy**, and it is the first row of any produced day that does.
+
+`PlanCheck.energyFilterOk` is unmoved all the same, because `PlanCheck.energyOk` fires only on
+a row that is a **Block** *and* carries an item *and* carries a level, and a Rest row has no
+item (`Planner.PlanReq.restRows`' `item := none`).  That is why the censuses above now say
+"no **Block** row carries a slot energy" where they used to say "no row does": the old
+sentence was true of a day with no Rest in it and is the wrong claim about `energyOk`'s
+subject.  D5: re-proved over the new shape, never weakened. -/
+theorem the_battery_is_unmoved_by_the_rest_rows :
+    PlanCheck.planOk permissive theOptionalRequest (dayPlan theOptionalRequest) = true ∧
+    PlanCheck.planOk permissive theRequest (dayPlan theRequest) = true ∧
+    PlanCheck.planOk permissive theQuietRequest (dayPlan theQuietRequest) = true ∧
+    PlanCheck.planOk permissive theHighRestRequest (dayPlan theHighRestRequest) = true ∧
+    PlanCheck.planOk permissive theSpentBudgetRequest (dayPlan theSpentBudgetRequest) = true ∧
+    PlanCheck.energyFilterOk theOptionalRequest (dayPlan theOptionalRequest) = true ∧
+    ((dayPlan theOptionalRequest).segments.filter
+        (fun s => s.val.energy.isSome)).map (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.rest, none), (SegKind.rest, none), (SegKind.rest, none),
+         (SegKind.rest, none)] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The two numbers step 7 hands to step 8, on the day itself.**  `theHighRestRequest` is the
+quiet day — first slot at level **4** — with one `ci = 5` candidate on the wire that no slot of
+it can take: an hour of A-capacity went to Rest and the day says **60**.  The same day without
+the candidate says 0, and so does every other witness day, because none of them has both.
+`theSpentBudgetRequest` is the §4.3 Wednesday whose stored budget is the two blocks the morning
+closed, and its note list is `Note.budgetSpent 2`. -/
+theorem the_day_reports_its_lost_capacity_and_its_spent_budget :
+    (dayPlan theHighRestRequest).diagnostics.aCapacityLost = 60 ∧
+    (dayPlan theQuietRequest).diagnostics.aCapacityLost = 0 ∧
+    (dayPlan theRequest).diagnostics.aCapacityLost = 0 ∧
+    (dayPlan theOptionalRequest).diagnostics.aCapacityLost = 0 ∧
+    (dayPlan theSpentBudgetRequest).diagnostics.notes.val = [Note.budgetSpent 2] ∧
+    (dayPlan theRequest).diagnostics.notes.val = [] ∧
+    (dayPlan theSpentBudgetRequest).diagnostics.aCapacityLost = 0 ∧
+    dayAssigned theRequest = [['m','1'], ['m','2']] ∧
+    dayAssigned theHighRestRequest = [] ∧
+    dayAssigned theRunningRequest = [['m','1'], ['m','2'], ['m','1']] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

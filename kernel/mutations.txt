@@ -146,3 +146,6 @@ d6f25f44caff TmKernel/TmKernel/PlannerWit.lean witOptionalCands default PlannerW
 451f7cccd65c TmKernel/TmKernel/PlannerWit.lean theOptionalRequest unfoldable no Inhabited PlanReq
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean theHighRestRequest unfoldable no Inhabited PlanReq
 d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean theSpentBudgetRequest unfoldable no Inhabited PlanReq
+05bbb5008b07 TmKernel/TmKernel/Planner.lean dayRows default Planner.lean:5842
+d932b39765bc TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
+daaa2458af08 TmKernel/TmKernel/Planner.lean dayAssigned default Planner.lean:5911

@@ -753,8 +753,8 @@ theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ p
     segOf t ∈ (dayPlan r).segments := by
   rw [dayPlan_segments]
   refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
-  exact List.mem_append_left _ (List.mem_append_left _
-    (List.mem_append_left _ (List.mem_append_left _ ht)))
+  exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+    (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ ht)))))
 
 /-- **A replayed Block *is* assigned**, so `assignedOf (dayPlan r) = []` is **not** a law of
 this `dayPlan` (W-14 repair, gap 393).
@@ -1582,7 +1582,7 @@ theorem the_day_has_no_batch_row (r : PlanReq) (s : WfSeg) (hs : s ∈ (dayPlan 
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hs)
   have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((ht | ht) | ht) | ht) | ht
+  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
   · unfold pastRows at ht
     split at ht
     · cases ht
@@ -1600,6 +1600,8 @@ theorem the_day_has_no_batch_row (r : PlanReq) (s : WfSeg) (hs : s ∈ (dayPlan 
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · rw [r.optionalRows_kinds t ht] at htk; cases htk
+  · rw [r.restRows_kinds t ht] at htk; cases htk
 
 /-- **No Block row of the day carries a slot energy.**  A Block row is replayed or reserved
 (`dayPlan_block_rows_are_replayed_or_reserved`); `Planner.pastRows` writes `energy := none` on
