@@ -581,6 +581,18 @@ fn a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second() {
         cache_generations(&tm)
     );
 
+    // **Close what row 4 reopened, before row 6 opens its own.** That row
+    // hand-appends an `undo` of the last `done`, which puts `^224`'s `start`
+    // back in the log with no `done` after it — and since the owner's **D42**
+    // `.tm/state.json` is a cache of the log, so the log is what decides which
+    // block is open. `tm start ^z5` is then correctly refused *"^224 is
+    // running"*. This is a **behaviour change**, recorded here beside the line
+    // it moved: before D42 the two readers disagreed in silence, and `tm plan`
+    // drew `^224` with `▶` on this very tree while `tm now` said nothing was
+    // running.
+    let (code, out, _) = timed_at(&tm, "2026-09-15T09:04:00-05:00", &["stop"], LATER_VERB);
+    assert_eq!(code, 0, "closing the block row 4's hand undo reopened: {out}");
+
     // Row 6: a block left open, then ten successive `--now` days. The stall
     // holds the ledger day back (design §18.7), so each day's verb carries one
     // more open day than the last; each must stay a later verb, and each day

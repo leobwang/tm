@@ -26,8 +26,16 @@
 # definition.  It is an EXEMPTION, and it is written the way check 8's allow-list is
 # written -- exact names, never a pattern, with the type named in the reason column -- so
 # that it can be counted and cannot grow unnoticed.  `mutate.py --gate` prints the count on
-# every run.  THE DEFINITION IS THEN NOT AUDITED AT ALL: nothing below says a theorem reads
-# it.  README gap 980 puts the narrowing of D40 to the owner; reversing it is one line.
+# every run.  README gap 980 puts the narrowing of D40 to the owner; reversing it is one line.
+#
+# A ROW WHOSE CONSTANTS ARE `unfoldable` AND NOTHING ELSE is the one that is not audited at
+# all: nothing below it says a theorem reads that definition.  A row reading
+# `unfoldable,funa0_=>a0` IS audited -- by the IDENTITY ON THE ACCUMULATOR, which W-21 track A
+# added for README gap 985 and which exists for a type `default` cannot name.  The gate prints
+# both numbers, because "no constant of this type exists" and "nothing mutates this definition
+# at all" are two different claims and only the second is an exemption.  The identity's
+# constant is whitespace-free in this column like every other: `funa0a1_=>(a0,a1)` is ONE
+# field, and `mutate.py`'s own header spells it with its spaces.
 # Fifteen of the 23 are `PlannerWit` witness fixtures; the other EIGHT are step 6's own
 # algorithm, and README gap 985 names them and the shape a fix would take.
 #
@@ -49,7 +57,8 @@ baseline 86c4dc6
 # neither track could run check 9 because it did not exist on their branches.  The tally, and
 # it is the evidence the gate works and the evidence it has a hole, in one line:
 #
-#     46 audited: 23 PINNED, 23 unfoldable, 0 SURVIVED.
+#     46 audited: 23 PINNED, 23 unfoldable, 0 SURVIVED.  (W-21 track A re-ran five of the 23
+#     against the identity on the accumulator: all five PINNED, so the exemption is 18 of 46.)
 #
 # TWO OF THE 23 PINNED WERE RE-AUDITED AT THE W-20 REPAIR STEP and their rows are at the
 # END of this file rather than in place, because `--write` appends.  `posLt` and `victimLt`
@@ -97,11 +106,6 @@ d27484c1223a TmKernel/TmKernel/PlannerWit.lean routineIns default PlannerWit.lea
 321e7929ab49 TmKernel/TmKernel/PlannerWit.lean crowdedIns default PlannerWit.lean:3362
 5cb3a44a68f4 TmKernel/TmKernel/PlannerWit.lean lapsedIns default PlannerWit.lean:3403
 4b27cf5721a7 TmKernel/TmKernel/PlannerWit.lean busyIns default PlannerWit.lean:3533
-4a9c27a3e4bb TmKernel/TmKernel/Planner.lean PlanReq.rePlaceWalk unfoldable no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign)
-7eac768f6f2d TmKernel/TmKernel/Planner.lean placeAt unfoldable no Inhabited Placed
-6a2d87dbb5ac TmKernel/TmKernel/Planner.lean PlanReq.displaceInto unfoldable no Inhabited (Placed × Assign)
-2273f641d70a TmKernel/TmKernel/Planner.lean PlanReq.deferOne unfoldable no Inhabited (Placed × Assign)
-a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable no Inhabited (List Placed → Assign → List Placed → List Placed × Assign)
 cf4b8a3d2ee5 TmKernel/TmKernel/Planner.lean PlanReq.deferFold unfoldable no Inhabited (List Placed × Assign)
 66cda41c7ccb TmKernel/TmKernel/Planner.lean PlanReq.finalAssign unfoldable no Inhabited Assign
 830cfdbafcae TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
@@ -149,3 +153,8 @@ d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean theSpentBudgetRequest unfoldable 
 05bbb5008b07 TmKernel/TmKernel/Planner.lean dayRows default Planner.lean:5842
 d932b39765bc TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
 daaa2458af08 TmKernel/TmKernel/Planner.lean dayAssigned default Planner.lean:5911
+4a9c27a3e4bb TmKernel/TmKernel/Planner.lean PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
+7eac768f6f2d TmKernel/TmKernel/Planner.lean placeAt unfoldable,q no Inhabited Placed; Planner.lean:5169
+6a2d87dbb5ac TmKernel/TmKernel/Planner.lean PlanReq.displaceInto unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5183
+2273f641d70a TmKernel/TmKernel/Planner.lean PlanReq.deferOne unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5095
+a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1_=>(a0,a1) no Inhabited (List Placed → Assign → List Placed → List Placed × Assign); Planner.lean:5284

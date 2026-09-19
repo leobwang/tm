@@ -272,7 +272,7 @@ fi
 #
 #    ONE EXCEPTION, AND IT IS NAMED, COUNTED AND EXACT.  If that in-declaration
 #    error is exactly `failed to synthesize ... Inhabited T`, the type has no
-#    constant to fold to and D40's mutation DOES NOT EXIST for that definition.
+#    constant to fold to and D40's constant DOES NOT EXIST for that definition.
 #    The verdict is UNFOLDABLE: the definition is rostered in mutations.txt with
 #    `unfoldable` in its constants column and the type in its reason column, the
 #    count is printed on every run, and the gate does not fail.  This is check
@@ -284,6 +284,24 @@ fi
 #    `Subtype` types (AGENTS 5.1) that deliberately have no default, so the gate
 #    and the kernel's own discipline are in tension; README gap 980 puts that to
 #    the owner, and reversing it is one line in `mutate.py`.
+#
+#    A CONSTANT IS NOT THE ONLY DEGENERATE BODY, and W-21 track A added the
+#    other one: the IDENTITY ON THE ACCUMULATOR (README gap 985).  When a
+#    definition's result type appears among its own argument types, its
+#    degenerate body is that argument -- `PlanReq.rePlaceWalk` folded to
+#    `fun a0 _ => a0`, `PlanReq.deferWalk` to `fun a0 a1 _ => (a0, a1)`,
+#    `placeAt` to `q` -- which is the shape a walk that forgets to walk actually
+#    takes, and which EXISTS for an uninhabited type.  It is tried BESIDE the
+#    type's own constants, never instead of them.  Measured when it landed:
+#    5 of the 23 UNFOLDABLE rows are reached and all five are PINNED, so the
+#    exemption fell from 23 of 46 to **18 of 46**; the gate's summary now prints
+#    both numbers, because "no constant of this type exists" and "nothing
+#    mutates this definition at all" are two different claims and only the
+#    second is an exemption.  DRIVEN, the way W-20's own repair was: before the
+#    widening, `def w21AccumWalk : Assign -> List Nat -> Assign` with a body
+#    nothing in the package distinguishes from the identity was reported
+#    UNFOLDABLE and `mutate.py --only` EXITED 0 -- green on an instance of the
+#    class check 9 exists to catch.
 #
 #    SCOPED TO NEW DEFINITIONS because D40 scoped it there: a full sweep of the
 #    existing 2,810 library definitions was declined as producing a backlog
