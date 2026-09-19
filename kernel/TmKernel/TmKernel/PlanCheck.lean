@@ -1562,7 +1562,9 @@ rows, and §8.2 choice 5b's reservation — so it covers every row `dayRows` can
 
 **What it does settle, and it is the answer gap 650 asked for**: no *witness* can give these
 four a subject.  Two of gap 650's original four were not of this kind — see
-`plan_places_no_block_over_a_break` below and `PlannerWit`'s section 13. -/
+`plan_places_no_block_over_a_break` below and `PlannerWit`'s section 14 (written
+`13` on branch `w18-g`, where `## 13.` was already taken; renumbered by W-18's land
+step, README gap 772). -/
 
 /-- **No row of the day is a Batch row.**  Steps 1, 2 and 3 place the replayed past, the
 running interruption, the walls, the routines, the evening and the reservation; `SegKind.batch`
