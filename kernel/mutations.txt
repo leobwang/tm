@@ -158,3 +158,9 @@ daaa2458af08 TmKernel/TmKernel/Planner.lean dayAssigned default Planner.lean:591
 6a2d87dbb5ac TmKernel/TmKernel/Planner.lean PlanReq.displaceInto unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5183
 2273f641d70a TmKernel/TmKernel/Planner.lean PlanReq.deferOne unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5095
 a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1_=>(a0,a1) no Inhabited (List Placed → Assign → List Placed → List Placed × Assign); Planner.lean:5284
+6669d324687e TmKernel/TmKernel/PlanCheck.lean WorkAnchored True,False PlanCheck.lean:2338; PlanCheck.lean:2338
+5d10d44756f4 TmKernel/TmKernel/PlanCheck.lean rankSubjects default PlanCheck.lean:2581
+9c51fca1e1da TmKernel/TmKernel/PlanCheck.lean hotSubjects default PlanCheck.lean:2592
+e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2523; PlanCheck.lean:2523
+d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2683; PlanCheck.lean:2683
+4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:3938; PlannerWit.lean:3938

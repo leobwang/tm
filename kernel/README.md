@@ -45171,3 +45171,610 @@ Created and worked in `.claude/worktrees/w21-a`, branch `w21-a`, from `4ccf4ef`
 and `kernel/tm-kernel-ffi/target` were copied in from the main checkout at the
 same commit so the first build was warm; both are gitignored. The Land step
 merges this branch. `stage5-lookahead` is untouched.
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-21**, **track G**, on
+     worktree `.claude/worktrees/w21-g`, branch `w21-g`, from `4ccf4ef`.  Gap
+     range **1060-1079**; this step takes 1060-1067.  Tracks P and A are not in
+     this tree; the Land step merges.  **Burn-down stays 9** and the reason is
+     now three theorems rather than a judgement.
+     =========================================================================== -->
+
+## Stage 6, W-21 track G, 2026-09-19: eleven of eleven on the quiet class, and the ratio stops being a reader's count
+
+**What landed.** Five files: `PlanCheck.lean` (**+599/−5**), `PlannerWit.lean`
+(**+163/−45**), `Check.lean` (**+70/−0**: a banner and 44 `#print axioms`
+lines), `Goals.lean` (**+46/−0**, a doc comment and nothing else — **zero**
+DECLARATION lines changed; three changed lines contain the *words*
+`theorem`/`sorry` and all three are prose) and `kernel/mutations.txt` (**+6/−0**,
+check 9's roster rows, §11).  **Fifty declarations — 44 theorems and 6 `def`s**,
+of which two `def`s are MOVED from `PlannerWit.lean` to `PlanCheck.lean` and
+forty-eight are new.  The axiom audit rose by **exactly 44**.
+
+`Planner.lean`, `Emit.lean`, `check.sh`, `citations.py`, `mutate.py`,
+`citations-allow.txt`, `Negative.lean`, `corpus/`, every fixture and every line
+of Rust are **untouched**; the eight mutations of §6 were applied to
+`Planner.lean` and reverted, and `git status` was checked between each.
+
+### 1. §6.1's lift reaches ELEVEN — and the residue stops being an L26 restatement
+
+W-19 left design §6.1's lift at **nine of eleven at every eligibility** over
+`PlanCheck.withoutPast`'s day; W-20 left it at **ten of eleven over the whole
+day** on the *quiet* class (a log with no Block for today, nothing running) with
+the eleventh **refuted** at the permissive eligibility, and gap 960 recorded that
+neither repair it could name reached the cause.
+
+`PlanCheck.dayPlan_ok_on_a_quiet_day` is **eleven of eleven**, over the whole
+day, for every quiet request and every eligibility satisfying one named
+property.  It is `PlanCheck.planOk` itself — `checksOf`'s own eleven-way `all`,
+not a hand-written conjunction — so the arithmetic is the compiler's (README gap
+684 is the record of doing it by hand and getting it wrong).
+
+**What is new is the ∀, not the eleven.**  W-20 already had `planOk` `true` at
+**one** request — `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`,
+where the eleventh conjunct came from a `by decide` at a one-id store that makes
+it vacuous.  What did not exist is a theorem: a class of requests, a stated
+condition on `el`, and no `decide` on any conjunct.  Do not read this block as
+*"eleven for the first time"*; read it as *"the eleven that stood at one request
+now stands at a class, and the last conjunct has a reason"*.
+
+**The property is `PlanCheck.WorkAnchored`, and it is not a restatement of any
+L26 goal.**  §8.2 step 5 assigns a candidate *into a slot*, and a slot is a work
+row; an `el` that answers `true` at a Wall, a Routine or the wind-down is
+claiming step 5 might put a candidate there.  `WorkAnchored el` says it does not,
+and that is all it says.  Gap 960 offered two repairs and said each was P5's:
+(a) an eligibility that refuses a candidate at choice 5b's reservation row — no
+reservation exists on a quiet day; (b) restricting `hotPairOk`'s `sj` to
+`sj.val.kind.isWork`, which **is** a restatement of one of L26's eleven and so
+ships with its refutation in the step that owns the row (AGENTS §3.1 item 3,
+design §6.3 row 5 = P5).  **This is a third repair and it touches neither the
+checker nor the planner**, so `Goals.plan_puts_hot_before_the_queue` is *not*
+restated here, the burn-down does not move, and what P5 owes for the eleven is
+one line: that Planner.eligibleAt is `PlanCheck.WorkAnchored`.
+
+**And the whole `∀ el` axis collapses.**  `PlanCheck.planOk_antitone`: all four
+eligibility-dependent checkers read `el` in the ANTECEDENT of their implication
+— `rankPairOk`, `hotPairOk` and `impossibleKept` through
+`PlanCheck.eligibleSomewhere`, `batchPairOk` at the segment directly — so an `el`
+admitting fewer candidates can only make the battery easier.
+`PlanCheck.planOk_at_every_eligibility` is the corollary: `PlannerWit.permissive`
+is the top of that order, so *passing there is passing everywhere*.  **That turns
+W-19's "nine is a ceiling" from an argument into a theorem**: its refutations are
+computed at `permissive`, which antitonicity now proves is the hardest case, so
+they really do refute the `∀ el` form and not merely one instance of it.
+
+**Say what eleven is worth before counting it.**  On a quiet day no row is work
+(`PlanCheck.dayPlan_has_no_work_row`), so a `WorkAnchored` `el` makes
+`eligibleSomewhere` false everywhere
+(`PlanCheck.eligibleSomewhere_of_no_work_row`) and **all four**
+eligibility-dependent conjuncts go vacuous, where W-20's tenth was one.
+`PlannerWit.the_quiet_eleven_is_one_checker_biting` computes it: of the eleven,
+**one** — `wallsUnmoved` — has a subject at `theQuietCensusRequest`.  The advance
+is that the residue is a property of an `el` P5 will write, **not** that more of
+the battery bites.
+
+`PlannerWit.the_whole_battery_passes_on_the_quiet_census_day` fires the lift at
+the very request where `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day`
+computes the eleventh as `false` at `permissive`, and
+`the_whole_battery_passes_on_the_quiet_day` fires it at W-20's one-id request.
+Neither is a `decide` on the conclusion.
+
+### 2. THE RATIO: one request, one number, computed — and SEVEN is a proved ceiling
+
+**The brief's item 2, answered.**  Three runs shipped a sentence of the form "N
+of the eleven" and they were counting two different things: W-18's **seven of
+eleven with a subject at `PlannerWit.theCensusRequest`**, W-19's **nine of eleven
+conjuncts proved**, W-20's **ten of eleven on the quiet class**.  The first is
+subject coverage; the other two are proof coverage.
+
+Proof coverage already had a compiler-checked count (`PlanCheck.checksOf_length`
+and lifts that assemble `planOk` itself).  **Subject coverage did not**: it was a
+prose table in `PlannerWit.lean` beside an eleven-way `decide`, and "seven" was a
+reader's count of the table's `yes` rows — README gap 684's shape exactly, one
+file over.
+
+`PlanCheck.subjectOf` is the census as a **function**: one case per
+`PlanCheck.CheckName`, each spelling that checker's ANTECEDENT and none of its
+conclusion.  `PlanCheck.subjectCount` filters **`checksOf`'s own list** on each
+check's **own** `name`, so there is no second list to fall out of step and no
+transcription to miscount.
+
+| what | theorem | value |
+|---|---|---|
+| the ratio at the one named request | `PlannerWit.the_census_ratio` | **7 of 11**, with the eleven `Bool`s in `checksOf`'s order |
+| the same at a `WorkAnchored` `el` | `PlannerWit.the_census_ratio_at_a_work_anchored_eligibility` | **7** |
+| and it is a CEILING over every request | `PlanCheck.the_census_ceiling_is_seven` | `subjectCount el r (dayPlan r) ≤ 7` |
+| an empty subject is a free pass | `PlanCheck.a_check_with_no_subject_is_a_free_pass` | over `checksOf`, all eleven |
+| an empty census is worth nothing | `PlanCheck.planOk_of_no_subject` | `subjectCount = 0 → planOk = true` |
+
+**The ceiling is the part that was never proved.**  W-18 named four checkers no
+witness can give a subject and proved four theorems about the *checkers* —
+`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy` and its three siblings
+say the checker cannot FAIL.  `PlanCheck.energyFilter_has_no_subject`,
+`windDown_has_no_subject`, `batch_has_no_subject` and `impossible_has_no_subject`
+say the stronger thing the census needs: there is nothing for it to pass.  Seven
+is therefore reached at `theCensusRequest` and cannot be beaten by any future
+witness until P5, P5/P7 and P8 land.
+
+**Every prose statement of the ratio in the repository was checked against the
+computed census, one by one, and they all agree.**  Method: `#eval` of
+`subjectCount permissive r (dayPlan r)` over **all 35** `the*Request` witnesses
+this module builds, read against every sentence that a grep for the two
+phrasings finds outside `README.md`.
+
+| sentence, where it stands | its number | computed |
+|---|---|---|
+| `Goals.lean`:683, `PlannerWit.lean`:1322 and :1416 and :1899 — `theStoredRequest` | five with a subject, six without | **5** |
+| `Negative.lean`:2338 — the same day | SIX range over nothing | **6** |
+| `PlannerWit.lean`:1341 and :1350, and :3121 — `theRunningRequest` | seven with nothing; four with a subject | **4** |
+| `PlannerWit.lean`:1328, :1861, :1910, :2071, :2738; `Goals.lean`; `Check.lean`:5833 — `theCensusRequest` | seven of eleven | **7** |
+| `PlannerWit.lean`:1861 — `checksCore` at `theCensusRequest` | five of seven | **5** |
+| `PlannerWit.lean` §13 — `checksCore` at `theRunningRequest` | four of seven | **4** |
+
+**Nothing disagreed.**  The two that *did* disagree were repaired before this run
+(W-19's gap 852 and W-17's own repair), so what this step adds is not a
+correction: it is that the number is now **computed** rather than counted, and
+that a future sentence which drifts has a theorem beside it.  **`theMidBreakRequest`
+also reaches 7**; the census is a ceiling, not a unique maximum, and the block
+says so rather than letting "one request" read as "the only one".
+
+`PlannerWit.the_census_counts_a_checker_that_fails` is the guard that
+`subjectOf` has not quietly become a checker: at `theQueuedRequest` both
+comparisons have a subject **and** `planOk` is `false`.
+
+### 3. Which of L26's eleven gained a subject from P5b and P6 — NONE, as a SET
+
+P6's addendum computed that the populations were unchanged, row kind by row kind.
+`PlannerWit.step_six_gave_no_checker_a_subject` is the same claim in the census's
+own terms and it is stronger: the eleven-entry census at `theRoutineRequest` —
+the only request whose day holds Routine rows — is **equal to** the census at
+`theRunningRequest`, which has none.  Four in both, and the same four
+(`overbook`, `oneBlock`, `overWall`, `wallMoved`).
+
+**P7 and P8 have not landed**, so the brief's "discharge what P6, P7 and P8 make
+provable" has no P7/P8 half this run; see §10.
+
+**And `Planner.dayPlan` DOES read the assign fold now, which it did not when
+W-20 track G measured it.**  P6 put `Planner.dayRoutineSegs` into
+`Planner.dayRows`; that definition calls `Planner.routineRows` on
+`PlanReq.finalRoutines`, which is `PlanReq.deferFold`'s first component, which
+reads `PlanReq.assignFold`.  W-20 track G's §5 argued
+from definition ORDER that `dayPlan` could not reach the fold; **that argument is
+now false on the main line** and the four vacuity theorems are the part that
+could not be fooled: they are build-time walls over every `PlanReq` and check 1
+passes.  A reader inheriting that paragraph should not re-run the ordering
+argument.
+
+### 4. AGENTS §5.3: two spellings of one population, deleted rather than bridged
+
+`PlanCheck.subjectOf`'s `rank` and `hot` cases need the two comparison
+populations, and `PlannerWit.lean` already held them.  Writing Bool-valued
+copies in `PlanCheck.lean` would have been the defect this kernel is named after
+— *"the fix was deletion, not a bridge"* (AGENTS §5.3).  So
+`PlanCheck.rankSubjects` and `PlanCheck.hotSubjects` are **moved**, verbatim, to
+sit beside the checkers whose antecedents they spell; `PlannerWit.lean` keeps its
+paragraph about them, now saying where they live, and its eight call sites are
+qualified.  Nothing was re-implemented and nothing was duplicated.
+
+`PlanCheck.mem_rankSubjects` and `PlanCheck.mem_hotSubjects` are new and are what
+the vacuity lemmas consume: *the antecedents holding puts the pair in the
+population*, which is the direction a `subjectOf` case has to have to be honest.
+
+### 5. Gap 877 and gap 806 — already closed, and the brief is behind the tree
+
+The brief asks this track to consume gap 877's second conjunct or say why not.
+**W-20 track G closed it**: `PlanCheck.the_cursor_skips_no_group_that_fits` is
+the consumer, and its inversion I6 — weakening
+`Planner.pickedGroup_is_the_first_that_fits`' second conjunct to a disjunction
+with `True` — leaves `Planner.lean` green and fails at exactly that one line.  It is in
+this tree at `PlanCheck.lean`, and gap 877's README entry is marked closed.
+Nothing was owed and nothing is claimed.  Gap 806's roster is likewise at
+**one** (gap 876's slot-taken guard), not three.
+
+### 6. D40, both halves: the six this step adds, and gap 985's eight
+
+**(6a) Every definition this step adds, constant-folded — 6 of 6 PINNED, 0
+SURVIVED, 0 UNFOLDABLE, 0 LITERAL.**  `python3 mutate.py --write`, capped, twelve
+kernel builds; the rows are in `kernel/mutations.txt`.
+
+| definition | constants tried | first error |
+|---|---|---|
+| `PlanCheck.WorkAnchored` | `True`, `False` | `PlanCheck.lean:2338` both — the eleven-of-eleven lift stops being provable when its hypothesis stops being a function |
+| `PlanCheck.rankSubjects` | `default` (= `[]`) | `PlanCheck.lean:2581` — `mem_rankSubjects` |
+| `PlanCheck.hotSubjects` | `default` | `PlanCheck.lean:2592` — `mem_hotSubjects` |
+| `PlanCheck.subjectOf` | `true`, `false` | `PlanCheck.lean:2523` both |
+| `PlanCheck.subjectCount` | `0`, `1` | `PlanCheck.lean:2683` both |
+| `PlannerWit.onlyOnWorkRows` | `fun _ _ _ _ => true`, `… => false` | `PlannerWit.lean:3938` both |
+
+**`subjectOf := false` is the one that earned its keep, and it is why
+`planOk_of_no_subject` exists.**  Folded to `false` the census would report every
+checker free, and the free-pass theorem would have to prove `PlanCheck.noOverbook`
+`true` of every day unconditionally — which `PlanCheck.noOverbook_can_fail`
+refutes.  Folded to
+`true` the census reports eleven and `PlannerWit.the_census_ratio`'s `= 7` fails.
+Both directions bite, and they bite on different theorems.
+
+**(6b) Gap 985's extension, RUN — the eight UNFOLDABLE definitions that are step
+6's own algorithm.**  Gap 985 said D40's letter is unmet for 23 of 46 and that
+the unmet half includes the half that does the work, and it named the shape the
+fix must take: not a constant, but the **identity on the accumulator**.  This
+step wrote that mutation for all eight and watched every one.  Each was applied
+to `Planner.lean`, built capped at `MemoryMax=40G`, the failure recorded, and
+**reverted**; none is in any commit and `git status` was checked after.
+
+| # | definition | the degenerate body | verdict, and where it failed |
+|---|---|---|---|
+| **M1** | `PlanReq.rePlaceWalk` | `| a, _ => a` | PINNED — `Planner.lean:5214`, `:5228` (`split` failed), `:5253`, `:5255` |
+| **M2** | `placeAt` | `q` | PINNED — `Planner.lean:5169`, `:5199` (`cases` failed with a nested error) |
+| **M3** | `PlanReq.displaceInto` | `(q, a)` | PINNED — `Planner.lean:5183` type mismatch, `:5243`, `:5244`, `:5255` |
+| **M4** | `PlanReq.deferOne` | `(q, a)` | PINNED — five `rewrite` failures at `:5097`-`:5163`, and `:5292` *"Unknown identifier `q`"* |
+| **M5** | `PlanReq.deferWalk` | `| pre, a, _ => (pre, a)` | PINNED — `Planner.lean:5284`, `:5289`, `:5304`, `:5314`, all application type mismatches |
+| **M6** | `PlanReq.deferFold` | `(r.placedRoutines, r.assignFold)` | PINNED — `:5327`, `:5335`, `:5342` |
+| **M7** | `PlanReq.finalAssign` | `r.assignFold` | PINNED — `:5335` `the_deferred_pass_keeps_the_assignments_shape`, `:5342` `the_deferred_pass_stays_inside_the_budget` |
+| **M8** | `dayDiagnostics` | `Diagnostics.empty` | PINNED — and **this is the clean one**: `Planner.lean` and `PlanCheck.lean` both compile, and 98 s later the build fails at `PlannerWit.lean:3628` with *"`decide` proved that the proposition … is false"* — `the_day_with_no_room_carries_the_note_instead`, whose `diagnostics.notes` conjunct names the instance step 6 could not place |
+
+**Eight of eight fail, so gap 985's LETTER is answered: D40's *"something must
+FAIL for each"* now has an answer for the eight definitions the constant fold
+could not reach, and the answer is not a constant.**  The owner's question in gap
+980 is unchanged by this — the exemption in `mutate.py` is still an exemption —
+but the claim that *nothing below the gate says any theorem reads those eight* is
+now false, and the eight mutations are the record.
+
+**And what these eight CANNOT show, said plainly.**  **Seven of the eight fail
+INSIDE `Planner.lean`**, at lines 5097-5342, in the deferred pass's own
+structural lemmas — `PlanReq.deferOne_cases`, `PlanReq.deferWalk_lengths`,
+`the_deferred_pass_keeps_the_assignments_shape`,
+`the_deferred_pass_stays_inside_the_budget` and their neighbours — which quote
+the definitions' own equations.  That is README gap 805's shape exactly: *a proof
+that quotes its subject is not an instrument for that subject's content.*  Lean
+stops there, so the witnesses in `PlannerWit.lean` are never reached and nothing
+says the eight are read by anything that evaluates the planner.  **M8 is the
+exception and is the strongest line of this section**: the mutated day compiles
+through two modules and is caught by a `decide` that computes the wrong answer at
+a real request.  Gap 1063.
+
+### 7. Acceptance, re-measured on this worktree, every delta explained
+
+Every command under `systemd-run` with `MemoryMax=40G` and `MemorySwapMax=0`.  **No bound was raised and nothing was retried
+uncapped.**  The comparand column is this worktree checked out clean at
+`4ccf4ef` and measured in this session, not quoted.
+
+| row | this tree | `4ccf4ef`, measured here | brief's | delta, explained |
+|---|---|---|---|---|
+| `check.sh` | **9/9 ok** | 9/9 ok | 9/9 | — |
+| axiom audit | **4,798 theorems** | **4,754** | 4,754 | **+44, and 44 is exactly the theorems this step declares** (`git diff -U0 \| grep -c '^+theorem '` = 44).  Six `def`s are added too and are not counted by check 3 |
+| burn-down (check 7) | **9 outstanding, all stage 6** | 9, all stage 6 | 9 | **unchanged, and the diff proves it**: `Goals.lean` changes **0** declaration lines — three changed lines contain the *words* `theorem`/`sorry` and all three are prose |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` untouched |
+| check 5, the FFI | **ok, 93 tests** | ok, 93 | 93 | unchanged — `--test kernel --test stack`, D36's pair |
+| check 8, prose citations | **23,990 citations, 22,482 resolved, 1,508 allowed (113 vocabulary, 347 counted), 0 allow entries unused** | 23,630 / 22,118 / 1,512 / 0 | 23,629 / 22,117 / 0 | **+360 citations, +364 resolved, −4 allowed.**  Of the +360, **144** are this step's Lean prose (measured before this block was appended, at 23,774 / 22,267 / 1,507) and the rest are this block.  The **−5** the Lean half carried is the paragraph AGENTS §5.3's move replaced: the deleted `PlannerWit` sentence held five vocabulary-allowed spans.  This block puts one back, hence −4.  `0 allow entries unused` holds on both measurements, so nothing was orphaned, and `kernel/citations-allow.txt` is **untouched** (`git diff --stat` over it is empty) |
+| check 9, D40 | **52 new or changed since `86c4dc6`, 52 rostered (23 unfoldable, 0 literal), 0 owed** | 46 / 46 (23 unfoldable, 0 literal) / 0 | 46 / 46 / 0 | **+6, this step's six `def`s**, all PINNED (§6a).  The 23 unfoldable are unchanged and are gap 985's — §6b runs their mutation by hand |
+| `cargo test --workspace --no-fail-fast` | **1,345 passed / 0 failed / 9 ignored across 79 result lines** | — (Lean-only) | 1,345 / 0 / 9 / 79 | **exactly the brief's comparand, and the named flake did not fire** — `cli_latency` passed inside the parallel run.  Both that and the serial re-run below are reported |
+| FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | — | 101 | — |
+| **T5** `kernel_replay_parity --include-ignored` | **33 / 0** | — | 33 | fork point **4748911**, frozen arms |
+| the door `kernel_log_door --include-ignored` | **23 / 0** | — | 23 | — |
+| `cli_switch_acceptance --include-ignored` | **9 / 0** | — | 9 | — |
+| `kernel_call_counts` | **2 / 0** | — | 2 | — |
+| `kernel_lookahead_parity` | **4 / 0** | — | 4 | — |
+| `kernel_log_grammar --include-ignored` | **18 / 0** | — | — | `TM_ORACLE` unset; the frozen arms are the ones that ran |
+| `cli_latency -- --test-threads=1` | **6 passed / 0 failed**, three passes | — | — | the serial re-run the brief prescribes |
+| `Negative.lean` | rejected ok, **untouched** | identical | — | `git diff --stat` over it is empty; no cheat taken |
+
+**`check.sh` wall time, built tree, both directions measured in this session.**
+
+| tree | readings (warm) | median | peak RSS |
+|---|---|---|---|
+| `4ccf4ef`, this worktree | 9.47 · 8.27 · 9.67 s | **9.47 s** | 2,014,932 / 2,093,852 / 2,053,568 KiB (**1.92–2.00 GiB**) |
+| this tree | 8.25 · 8.06 · 8.17 s | **8.17 s** | 2,060,044 / 2,093,368 / 2,035,176 KiB (**1.94–2.00 GiB**) |
+
+**The medians say this tree is 14% FASTER, which is not true and is reported
+rather than banked.**  The machine was shared for the whole of this run — another
+track's session was building in the main checkout, `pgrep` caught it mid-`lake
+build` of `Planner.lean` — and this step's own ~30 kernel builds ran beside it.
+Adding 44 theorems and six `def`s cannot make `check.sh` faster; the readings
+straddle 8.06–9.67 s on both sides of the diff and the honest statement is that
+**the wall is inside noise on a loaded box and design §14.0 item 4's
+10%-per-step rule is not stressed either way**.  Peak RSS is 1.92–2.00 GiB on
+both sides, inside W-19's 1.99–2.09 GiB band.  Do not quote 8.17 s as this
+tree's quiet wall: the W-20 repair step's quiet figure was 7.91–8.01 s at nine
+checks, and nothing here should be read as beating it.
+
+**`cli_latency`, `--include-ignored --test-threads=1`, three passes, 6 passed /
+0 failed each.**  The noisy T11 rows as RANGES (AGENTS §14.0.6; **none is
+re-blessed**):
+
+| T11 row (3-year log, 66,169 lines) | three readings |
+|---|---|
+| later verb (`tm drop` — the reliable one) | **151.84 · 258.90 · 152.10 ms** |
+| a routine for a 3-day-old instance | 166.80 · 182.43 · 141.67 ms |
+| `review week` (the All scope) | 298.90 · 323.82 · 298.35 ms |
+| `--now +1 day` (a reseal) | 212.67 · 242.81 · 207.26 ms |
+
+**`tm drop` is OUT of the brief's 127–142 ms band in all three passes and is
+left there.**  So is `review week`, which is gap 275's row and was out of band
+for W-20 too.  Every row is uniformly high in the same direction, the 258.90 ms
+reading is one pass of three and is printed rather than dropped, and the box was
+shared — which is a reason, not an excuse, and the row is not re-blessed.  What
+argues it is not this step's: no verb reaches `Planner.dayPlan` (gap 652), the
+test's own assertions pass 6/6 in every pass, and `check.sh`'s baseline wall was
+measured *slower* than this tree's in the same session.
+
+### 8. Method, and what each method CANNOT see
+
+AGENTS's W-17 lesson 1, applied to every completeness claim above.
+
+1. **"Eleven of eleven on the quiet class, at every `WorkAnchored` eligibility."**
+   *Method:* one theorem, `PlanCheck.dayPlan_ok_on_a_quiet_day`, assembling
+   `PlanCheck.planOk` over `checksOf`'s own list from `dayPlan_ok_core`'s seven
+   plus four vacuity lemmas; fired at two requests with every hypothesis a
+   theorem.  *Blind spot:* **all four eligibility-dependent conjuncts are
+   vacuous** on that class, so this is proof coverage and not subject coverage —
+   worse on that axis than W-20's ten, which had three vacuous.
+   `PlannerWit.the_quiet_eleven_is_one_checker_biting` is the number: **one**.
+   And `WorkAnchored` has no shipped consumer, because Planner.eligibleAt does
+   not exist (gap 1061).
+
+2. **"`planOk` is antitone in the eligibility."**  *Method:* four antitonicity
+   lemmas, one per eligibility-dependent checker, each routing through
+   `PlanCheck.eligibleSomewhere_mono` or `el` at the segment, composed by
+   `planOk_antitone`.  *Blind spot:* it says nothing about `planOkCore`, which
+   does not mention `el` at all, and nothing about whether any particular `el` is
+   the right one.  It also has no *instance* in this step — no existing
+   `permissive` witness was restated as an ∀-el fact (gap 1064).
+
+3. **"Seven of the eleven have a subject at `theCensusRequest`, and seven is a
+   ceiling."**  *Method:* `PlanCheck.subjectCount` filtered over `checksOf`'s own
+   list keyed on each check's own `name` (so no second list can drift), one
+   `decide` at one request for the reached value, and four ∀-theorems
+   (`energyFilter_has_no_subject` and siblings) for the ceiling, composed by
+   `the_census_ceiling_is_seven`.  *Blind spot, and it is the real one:* the free-
+   pass theorem proves **no subject ⇒ the checker is true**, never the converse.
+   A `subjectOf` case written too WEAK — answering `false` where a subject exists
+   — would under-count and **nothing in the package would notice**; a case
+   written too strong is caught, because the free-pass theorem stops compiling.
+   `subjectCount` is therefore a lower bound on the honest count (gap 1060).
+   `the_census_ceiling_is_seven` additionally needs `hnowcal`, so it is silent
+   about a request whose `now` sits outside the calendar (gap 1066).
+
+4. **"Every prose statement of the ratio in the repository agrees."**  *Method:*
+   `grep -rn "of the eleven\|of eleven"` over `kernel/**/*.lean`, `kernel/*.py`,
+   `kernel/*.txt` and `AGENTS.md`, each sentence read for the request it is about
+   and checked against an `#eval` of `PlanCheck.subjectCount` at the permissive
+   eligibility and that request; the two sub-ratios over `PlanCheck.checksCore`
+   were computed the same way.  *Blind spot:* the sweep is a grep for two phrasings.  A sentence that
+   states the ratio as digits, or as "five of them", or inside `kernel/README.md`
+   (**excluded — 44,000 lines of historical blocks, and a past block is a record
+   of what was true then**) is not covered.  The `#eval` half is compiler
+   evaluation, not kernel reduction (gap 1066).  One sub-ratio in the tree was
+   **not** re-measured: `PlannerWit.lean`'s *"four of seven over the
+   `PlanCheck.withoutPast` day"* at `theCensusRequest`, because `subjectOf`
+   ranges over the day it is handed and the survey was run over
+   `Planner.dayPlan`'s.  It is the one row of the six that this step takes on
+   trust.
+
+5. **"P6 gave no checker a subject."**  *Method:* an equality between two
+   computed eleven-entry censuses — `theRoutineRequest`, whose day holds Routine
+   rows, against `theRunningRequest`, which has none — by `decide`.  *Blind
+   spot:* it is two requests, not a ∀-statement; what is general is only the four
+   `*_has_no_subject` theorems, and those are about four of the eleven.
+
+6. **"The eight gap-985 mutations all fail."**  *Method:* each degenerate body
+   written by hand, built capped, the first errors recorded, reverted, and the
+   tree checked clean after each.  *Blind spot:* seven of the eight fail
+   **inside `Planner.lean`**, in lemmas that quote the mutated definition's own
+   equations (gap 805's shape), so they show the definition is *mentioned*, not
+   that anything computes with it; Lean stops before `PlannerWit.lean` and the
+   witnesses are never reached.  Only **M8** fails at a witness, with a false
+   `decide`.  And a degenerate body is not an inversion: `deferOne` with two of
+   its five outcomes swapped is not a degenerate body and is not caught here
+   (README gap 937, one level up).
+
+7. **"Every theorem added is audited."**  *Method:* check 3's own multiset
+   reconciliation — `comm -23` over declared short names against audited last
+   segments — run by `check.sh` itself, plus the count delta explained below.
+   *Blind spot:* unchanged from W-19/W-20 — one-directional by design, blind to a
+   theorem audited under the wrong namespace prefix, and unable to tell a
+   declaration from a prose line beginning with the word `theorem`.
+
+8. **"The shipped binary did not move."**  *Method:* this step's Lean **is**
+   linked into `tm`, so "Lean-only" does not by itself mean the binary is
+   unchanged; what shows it is that the whole workspace suite, the FFI suite, T5,
+   the door, `cli_switch_acceptance`, `kernel_call_counts`,
+   `kernel_lookahead_parity`, `kernel_log_grammar` and the corpus all return the
+   baseline numbers.  *Blind spot:* unchanged and total — **no verb reaches
+   `dayPlan`** (gap 652), so no drive of `tm` can exercise one line of this step.
+   The suites evidence *absence of harm*, never presence of function.
+
+### 9. What this step's own gates caught, before any commit
+
+Three, all of them this step's own prose, all of them check 8.
+
+1. **A citation of a theorem that never existed under that name.**  A
+   `PlanCheck.lean` doc comment cited a `PlannerWit` theorem spelled
+   *the_quiet_eleven_are_four_more_empty_quantifiers* — written here without
+   backticks, because it does not exist; the theorem is
+   `PlannerWit.the_quiet_eleven_is_one_checker_biting`, renamed mid-step when the
+   count turned out to be one rather than four.  check.sh: *"PlanCheck.lean:2223
+   … (resolves to nothing)"*.  The rename was the honest one and the citation was
+   left behind; D39 is what caught it.
+2. **Planner.eligibleAt backticked, five times — the class W-20's repair step
+   closed at 64 of 64.**  Gap 809 declares the name nonexistent and the repair
+   convention is to write it **without** backticks.  Nothing in the tree stops a
+   new step from re-introducing it except this gate, which is the right answer
+   and which worked; the five are repaired the same way.  Gap 1067.
+3. **`dayPlan_ok` backticked four more times, against a counted cap of 17.**
+   check.sh: *"dayPlan_ok (21 citations, 17 allowed)"*.  Repaired by
+   un-backticking all four — design §6.1's name for the lift is not a
+   declaration — **not** by raising the cap: D41 says citations are repaired, not
+   exempted, and `kernel/citations-allow.txt` is untouched (`git diff --stat`
+   over it is empty).
+
+<!-- GAPS 1060-1069 — track G, run W-21.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1060 — the subject census is proved in ONE direction, so it is a lower bound.**
+*What is not done:* `PlanCheck.a_check_with_no_subject_is_a_free_pass` proves *no
+subject ⇒ the checker answers `true` for no reason*.  The converse — *a subject
+exists ⇒ some day that checker refuses* — is proved for none of the eleven.
+*Why:* the converse is an existential over mutated days; that is what
+`PlannerWit.the_battery_bites_over_a_produced_day` does at one request, and as a
+∀-theorem it is a different and larger obligation.
+*What it costs:* a `subjectOf` case written too WEAK — answering `false` where a
+subject exists — under-counts `PlanCheck.subjectCount` and **nothing in the
+package notices**.  (Too STRONG is caught: the free-pass theorem stops
+compiling.)  So the seven is a lower bound on the honest count, and a ceiling of
+seven is a ceiling on that lower bound.
+*Which step clears it:* any step willing to pair each `subjectOf` case with a
+`*_can_fail` instance at a request where its subject is non-empty; the eleven
+`*_can_fail` witnesses in `PlanCheck.lean` are the halves.
+
+**Gap 1061 — `PlanCheck.WorkAnchored` has no shipped consumer, and cannot have one yet.**
+*What is not done:* the eleven-of-eleven lift's hypothesis is discharged only by
+`PlannerWit.onlyOnWorkRows`, a witness eligibility written for it.
+*Why:* Planner.eligibleAt does not exist — its body is P5's (design §6.3, §15),
+and gap 809 is the record.
+*What it costs:* nothing says the eligibility the fold will actually use is
+work-anchored.  If P5 writes one that is not, §6.1's lift drops back to ten on
+the quiet class and README gap 960's two repairs return, both of them P5's.
+*Which step clears it:* **P5**, in one line beside eligibleAt.
+
+**Gap 1062 — eleven of eleven on the quiet class is ONE checker biting, which is fewer than W-20's ten.**
+*What is not done:* `WorkAnchored` buys the eleventh conjunct by emptying the
+quantifiers of **all four** eligibility-dependent checkers, where W-20's tenth
+emptied one.  `PlannerWit.the_quiet_eleven_is_one_checker_biting` computes the
+subject count on that day as **1** (`wallsUnmoved`), against 2 at the permissive
+eligibility.
+*Why:* a quiet day has no work row (`PlanCheck.dayPlan_has_no_work_row`), so a
+work-anchored `el` admits nothing anywhere.
+*What it costs:* a reader taking "eleven of eleven" as eleven checkers biting
+over-counts by ten.  Nothing in `check.sh` distinguishes a proved conjunct from a
+proved-empty one — README gap 961, unchanged, and now measurable by
+`PlanCheck.subjectCount`.
+*Which step clears it:* **P5**'s fold, the first thing that can put a work row
+the planner assigned onto the day.
+
+**Gap 1063 — the eight gap-985 mutations all fail INSIDE `Planner.lean`, which is README gap 805's shape.**
+*What is not done:* the eight accumulator-identity
+mutations of §6b all fail, but seven fail at `Planner.lean:5097`-`:5342`, inside
+the deferred pass's own structural lemmas, which quote the equations of the
+definition under test.
+*Why:* the deferred pass's structural lemmas live beside their definitions and
+quote their equations, so Lean stops in `Planner.lean` before the build reaches
+`PlanCheck.lean` or `PlannerWit.lean` — the same wall W-20's I4b and I4c hit.
+*What it costs:* "these eight are read by something" rests on type and rewrite
+failures rather than on a false `decide` at a witness.  D40's letter is met; the
+instrument is the weaker kind.
+*Which step clears it:* a two-part mutation that patches the quoting lemmas and
+then observes the witnesses — W-20's gap 964, one level up.
+
+**Gap 1064 — `PlanCheck.planOk_antitone` has no instance in this step.**
+*What is not done:* `PlanCheck.planOk_at_every_eligibility` gives one direction of
+the collapse; the other (instantiate at `PlannerWit.permissive`) is trivial and
+is not written, and the dozen `permissive` witnesses in `PlannerWit.lean` still
+read as facts about one eligibility rather than about every one.
+*Why:* each restatement is a theorem, and this step spent its budget on the
+census and the lift.
+*What it costs:* `PlannerWit.the_battery_passes_at_the_census_request` is in fact
+a fact about **every** eligibility and does not say so, which is the kind of
+under-statement AGENTS §5.2 is about — from the other side.
+*Which step clears it:* any run that owns `PlannerWit.lean`.
+
+**Gap 1065 — `impossibleKept`'s subject and `plan_never_drops_an_impossible_item`'s hypothesis are different things.**
+*What is not done:* `PlanCheck.impossible_has_no_subject` proves the checker's
+quantifier empty at every request, but `Goals.plan_never_drops_an_impossible_item`
+is stated over `Planner.edfNumbers`, not over `Planner.Diagnostics.impossible`:
+its hypothesis is satisfiable by a real candidate and its conclusion is about
+`Planner.assignedOf`.  The checker's vacuity therefore says **nothing** about
+that goal, and the goal is open on its own terms.
+*Why:* L26 is *"decidable over the produced `DayPlan`"* so the checker reads the
+day's own account; the goal reads §7.3's numbers.  P4 landed one end of the
+bridge (`Planner.edfNumbers_is_the_grants_own_impossibility`).
+*What it costs:* the rule this step gives the burn-down — *a goal is
+dischargeable when its checker has a subject* — is right for three of the four
+vacuous rows and wrong for this one.  A step applying it mechanically would look
+for a discharge that is not available.
+*Which step clears it:* **P8**, the step that fills `Diagnostics.impossible`.
+
+**Gap 1066 — the census survey over 35 requests is an `#eval`, and the ceiling needs `hnowcal`.**
+*What is not done:* "seven is the maximum over every witness request in
+`PlannerWit.lean`, and `theMidBreakRequest` also reaches it" is compiler
+EVALUATION, not kernel reduction — R3's own distrust applies to it as evidence.
+And `PlanCheck.the_census_ceiling_is_seven` carries `hnowcal`, so it is silent
+about a request whose `now` sits outside the calendar.
+*Why:* 35 `dayPlan` evaluations under `decide` is a cost this step did not take,
+and the ceiling theorem is the stronger claim anyway;
+`PlanCheck.no_block_row_of_the_day_reaches_the_wind_down` needs `hnowcal` and
+`windDown_has_no_subject` inherits it.
+*What it costs:* the two requests that reach seven are each pinned by a `decide`;
+the other 33 rows of the survey are a measurement in this block and nothing
+re-runs them.
+*Which step clears it:* any step willing to pay the `decide`, or none.
+
+**Gap 1067 — the un-backtick convention is enforced only by check 8, and a new step re-introduces the class.**
+*What is not done:* Planner.eligibleAt is a name README gap 809 declares
+nonexistent; W-20's repair step un-backticked 64 of 64 citations of it, and this
+step wrote five more before the gate caught them.
+*Why:* the convention lives in `check.sh`'s comment and in
+`kernel/citations-allow.txt`'s prose, neither of which a writer reads while
+writing a doc comment.
+*What it costs:* one gate run per occurrence.  The gate is doing its job and the
+cost is bounded; what is missing is anything that *tells* an author at the moment
+of writing.
+*Which step clears it:* track A, if it wants a per-name hint in the failure line
+(*"declared nowhere; W-20's convention is to drop the backticks"*), or nobody.
+
+### 10. Corrections to this run's brief
+
+1. **Gap 877 is already closed, and gap 806's roster is at one, not three.**  The
+   brief asks this track to consume `Planner.pickedGroup_is_the_first_that_fits`'
+   second conjunct or say why not.  **W-20 track G consumed it**:
+   `PlanCheck.the_cursor_skips_no_group_that_fits` is in this tree, its inversion
+   I6 leaves `Planner.lean` green and fails at exactly that one line, and the
+   README's gap 877 is marked closed.  Nothing was owed here and nothing is
+   claimed for it.
+2. **P7 and P8 have not landed**, so the brief's *"discharge what P6, P7 and P8
+   make provable"* has only a P6 half this run — and P6 makes **none** of the
+   eleven provable, which §3 computes as a set equality rather than repeating
+   P6's addendum.
+3. **Gap 985's mutation did not survive — all eight fail.**  The brief says *"it
+   may SURVIVE, which would be a real finding and a witness owed"*.  It does not,
+   so no witness is owed; but seven of the eight fail **inside `Planner.lean`**,
+   which is a weaker instrument than a false `decide`, and that is gap 1063.  The
+   eighth, `dayDiagnostics`, is the clean one.
+4. **The brief's check-8 comparand is one short.**  It gives `4ccf4ef` as
+   *23,629 citations, 22,117 resolved*; `check.sh` run on a clean worktree
+   checked out at `4ccf4ef` reports **23,630 / 22,118**.  The most likely reading
+   is that the figure was taken before `4ccf4ef` — a docs commit — was itself
+   swept, since check 8 reads `README.md` and `AGENTS.md`.  Every other comparand
+   in the brief (4,754 theorems, 93 tests, 29/37 and 4/5, burn-down 9, 0 allow
+   entries unused) re-measured **exactly** on that worktree.
+5. **"Three runs have shipped disagreeing numbers" is about history, not about
+   the tree.**  At `4ccf4ef` every prose statement of the ratio already agreed
+   with the computed census — the two that did disagree were repaired by W-17's
+   own repair step and by W-19 (README gap 852).  A step told to "make them
+   agree" could have "corrected" a correct sentence; what was actually missing is
+   that the number was a **reader's count of a table**, and that is what §2
+   fixes.  Every sentence was checked rather than assumed, and the table in §2 is
+   that check.
+
+### 11. Numbering
+
+Gaps: this step **1060-1067**; **1068-1079 free** within track G's range.
+Cheats: **none taken**; `Negative.lean` is untouched (`git diff --stat` over it
+is empty).  `PlannerWit` section **19** as this track wrote it — the merge
+renumbers if track P or track A took 19 on the main line first (AGENTS §6.2,
+§6.4).  No parity entry; none is possible until the wire carries a `plan`
+section (gap 905).
+
+**A file this track does not own was written, and it is disclosed rather than
+hidden**: `kernel/mutations.txt` gained **six** rows, one per definition this
+step adds, written by `python3 mutate.py --write` after watching each build fail.
+`check.sh` and `mutate.py` themselves are untouched.  Without the rows check 9
+re-runs twelve kernel builds on **every** run of `check.sh` for the rest of the
+campaign; the roster is the mechanism `mutate.py`'s own docstring prescribes for
+exactly that, and the six rows land in the diff where a reader can see them.
+
+### 12. Worktrees
+
+`.claude/worktrees/w21-g` created by this step from `4ccf4ef` on branch `w21-g`,
+and committed in.  `.claude/worktrees/stage5-lookahead` is untouched.  **The main
+checkout was not written to** — it was read once, for a comparand, and found
+DIRTY (another track's `Check.lean`, `Planner.lean` and `PlannerWit.lean` edits
+were in it), so every number in §7 is this worktree's.

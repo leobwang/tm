@@ -6104,3 +6104,73 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_battery_is_unmoved_by_the_rest_rows
 #print axioms Tm.PlannerWit.the_day_reports_its_lost_capacity_and_its_spent_budget
 #print axioms Tm.Planner.assignedOf_dayPlan_is_dayAssigned
+
+-- APPENDED 2026-09-19 (stage 6, run **W-21**, track G -- eleven of eleven on the
+-- quiet class, and the subject census as a function).
+--
+--   `planOk_antitone` is the structural half: all four eligibility-dependent
+--   checkers read `el` in their ANTECEDENT, so narrowing `el` can only make the
+--   battery easier, and `planOk_at_every_eligibility` collapses the whole
+--   "at every eligibility" axis to one computation at `PlannerWit.permissive`.
+--   W-19's "nine is a ceiling" was that argument in prose.
+--
+--   `WorkAnchored` is the other half: an `el` that admits a candidate only at a
+--   row §8.2 step 5 could assign into.  `dayPlan_ok_on_a_quiet_day` is design
+--   §6.1's dayPlan_ok at **ELEVEN of eleven** for every quiet request and
+--   every such `el` -- the class W-20 left at ten with the eleventh refuted
+--   (README gap 960).  `the_whole_battery_passes_on_the_quiet_census_day` is it
+--   fired at the very request where `hotBeforeQueue` is `false` at `permissive`.
+--
+--   `subjectOf` / `subjectCount` are the SUBJECT census, keyed on each check's
+--   own `CheckName` and filtered over `checksOf`'s own list, so the ratio is the
+--   compiler's arithmetic and not a reader's over a table.
+--   `a_check_with_no_subject_is_a_free_pass` is what makes it a measurement;
+--   `planOk_of_no_subject` says what an empty census is worth.
+--   `the_census_ceiling_is_seven` proves SEVEN is a ceiling over every request,
+--   and `PlannerWit.the_census_ratio` reaches it at `theCensusRequest`.
+--   `PlannerWit.the_quiet_eleven_is_one_checker_biting` is the honest price of
+--   the eleven: one checker has a subject there.
+#print axioms Tm.PlanCheck.eligibleSomewhere_mono
+#print axioms Tm.PlanCheck.monotoneInRank_antitone
+#print axioms Tm.PlanCheck.hotBeforeQueue_antitone
+#print axioms Tm.PlanCheck.impossibleKept_antitone
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_antitone
+#print axioms Tm.PlanCheck.planOk_antitone
+#print axioms Tm.PlanCheck.planOk_at_every_eligibility
+#print axioms Tm.PlanCheck.dayPlan_has_no_work_row
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_no_work_row
+#print axioms Tm.PlanCheck.monotoneInRank_of_nothing_eligible
+#print axioms Tm.PlanCheck.hotBeforeQueue_of_nothing_eligible
+#print axioms Tm.PlanCheck.impossibleKept_of_nothing_eligible
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day
+#print axioms Tm.PlanCheck.false_of_any_eq_false
+#print axioms Tm.PlanCheck.blockSeconds_of_no_block
+#print axioms Tm.PlanCheck.noOverbook_of_no_subject
+#print axioms Tm.PlanCheck.oneBlockAtATime_of_no_subject
+#print axioms Tm.PlanCheck.energyFilterOk_of_no_subject
+#print axioms Tm.PlanCheck.noBlockOverAWall_of_no_subject
+#print axioms Tm.PlanCheck.noBlockOverABreak_of_no_subject
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_of_no_subject
+#print axioms Tm.PlanCheck.wallsUnmoved_of_no_subject
+#print axioms Tm.PlanCheck.mem_rankSubjects
+#print axioms Tm.PlanCheck.mem_hotSubjects
+#print axioms Tm.PlanCheck.monotoneInRank_of_no_subject
+#print axioms Tm.PlanCheck.hotBeforeQueue_of_no_subject
+#print axioms Tm.PlanCheck.impossibleKept_of_no_subject
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_of_no_subject
+#print axioms Tm.PlanCheck.a_check_with_no_subject_is_a_free_pass
+#print axioms Tm.PlanCheck.planOk_of_no_subject
+#print axioms Tm.PlanCheck.subjectCount_le_eleven
+#print axioms Tm.PlanCheck.energyFilter_has_no_subject
+#print axioms Tm.PlanCheck.windDown_has_no_subject
+#print axioms Tm.PlanCheck.batch_has_no_subject
+#print axioms Tm.PlanCheck.impossible_has_no_subject
+#print axioms Tm.PlanCheck.the_census_ceiling_is_seven
+#print axioms Tm.PlannerWit.onlyOnWorkRows_is_work_anchored
+#print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_census_day
+#print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_day
+#print axioms Tm.PlannerWit.the_quiet_eleven_is_one_checker_biting
+#print axioms Tm.PlannerWit.the_census_ratio
+#print axioms Tm.PlannerWit.the_census_ratio_at_a_work_anchored_eligibility
+#print axioms Tm.PlannerWit.step_six_gave_no_checker_a_subject
+#print axioms Tm.PlannerWit.the_census_counts_a_checker_that_fails

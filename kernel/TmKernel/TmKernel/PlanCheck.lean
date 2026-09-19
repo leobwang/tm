@@ -9,7 +9,7 @@ of §8.3's eleven invariants is **three** things and this module holds the first
 2. **the reflection lemma** — `checker r d = true ↔ <the Prop the goal states>`;
 3. **the discharge** — one line, in the step that has made the battery pass at `dayPlan r`.
 
-The third is not here, and §6.1's `dayPlan_ok` is only half here.  What that means exactly is
+The third is not here, and §6.1's dayPlan_ok is only half here.  What that means exactly is
 the next section, because it is the one thing a reader of this file has to get right.
 
 ## What is proved here, and what is emphatically not
@@ -68,7 +68,7 @@ exactly that (its own doc comment says so).  They are in the eligibility-free ha
   **`dayPlan_ok_core` is the half of §6.1's lift that does not wait for P5** — stated over the
   same seven checkers, and carrying the two hypotheses P1's body makes necessary.
 * **`checksEligible el` — four that do**: rank, hot, impossible, batch.  `planOk el` is the
-  whole battery at a given eligibility.  **§6.1's `dayPlan_ok` is NOT stated here**, because
+  whole battery at a given eligibility.  **§6.1's dayPlan_ok is NOT stated here**, because
   the honest form of it names Planner.eligibleAt, which does not exist: the `∀ el` form is
   the *unrestricted* statement, which is the one design §6.3 refutes, and an `∃ el` form is
   satisfied by the predicate that answers `false`.  It is not stateable yet, it is recorded as
@@ -113,7 +113,7 @@ they are quadratic in their list: `noBlockOverAWall`, `noBlockOverABreak`,
 `noDemandingAfterWindDown` (segments × segments), `monotoneInRank` and `hotBeforeQueue`
 (dom × dom), `batchDoesNotReachPast` (segments × batch × dom).  That is a *specification*
 cost, not a latency one — nothing on the shipped path evaluates `planOk`; it is the object
-`dayPlan_ok` is proved about.  A step that ever does run it says so and measures it.
+dayPlan_ok is proved about.  A step that ever does run it says so and measures it.
 -/
 
 namespace Tm
@@ -951,7 +951,7 @@ statement has no subject left.  It loses nothing: what it asserted is `planOk_of
 applied to one day, and that lemma stays above, unchanged and general.  The `∀ el` form is
 **false** of P1's body — `hotPairOk` asks a hot item's row to start before every row carrying
 the queued one, and a permissive `el` makes that a real obligation over the replayed past —
-so it is not restated here either; §6.1's honest `dayPlan_ok` still waits on
+so it is not restated here either; §6.1's honest dayPlan_ok still waits on
 Planner.eligibleAt (gap 365).
 
 *(**W-19 proved that sentence.**  It stood here from W-14 as prose, which is the shape AGENTS
@@ -1760,7 +1760,7 @@ theorem plan_places_no_block_over_a_break (r : PlanReq)
   simp only [clampSec, LogStamp.yearEnd]
   omega
 
-/-! ### How far §6.1's `dayPlan_ok` has come, stated exactly
+/-! ### How far §6.1's dayPlan_ok has come, stated exactly
 
 Design §6.1's lift is `planOk r (dayPlan r) = true` over all **eleven** checkers.  It is still
 not stateable in its honest form: four of the eleven take an eligibility predicate, and
@@ -2188,6 +2188,600 @@ theorem the_cursor_gives_no_slot_to_a_group_that_owes_nothing (r : PlanReq) (i g
     (g : Group) (hs : r.assignFold.slotOf[i]? = some (some gi))
     (hg : r.assignFold.groups[gi]? = some g) : 0 < g.commitMin :=
   assignFold_owes r i gi g hs hg
+
+/-! ############################################################################
+## W-21: the eligibility axis collapses, and ELEVEN of eleven on a quiet day
+############################################################################
+
+Two facts §6.1's lift did not have, and they are one fact seen from two sides.
+
+**(a) `planOk` is ANTITONE in the eligibility.**  All four eligibility-dependent checkers read
+`el` in the ANTECEDENT of their implication — `rankPairOk`, `hotPairOk` and `impossibleKept`
+through `eligibleSomewhere`, `batchPairOk` at the segment directly — so an `el` that admits
+FEWER candidates can only make the battery easier.  `planOk_antitone` is that, and
+`planOk_at_every_eligibility` is its corollary: the whole `∀ el` axis this file has been
+carrying since W-19 **collapses to one computation at the permissive eligibility**.
+
+That is what W-19's "nine is a ceiling" argument was, made into a theorem rather than a
+reading: `PlannerWit.the_two_comparisons_are_false_at_the_queued_request` computes both
+comparisons `false` at `permissive`, and because `permissive` is the top of this order a
+refutation there is a refutation of the `∀ el` form and of nothing weaker.  It is also what
+makes **(b)** worth stating, because (b) is a hypothesis ON `el` and antitonicity says which
+direction such a hypothesis may point.
+
+**(b) `WorkAnchored`, and eleven of eleven.**  README gap 960 left the eleventh conjunct
+`false` on the quiet class and named two repairs, one of them P5's restatement of an L26 goal.
+There is a third, and it touches neither the checker nor the planner: §8.2 step 5 assigns a
+candidate INTO A SLOT, and a slot is a work row, so an `el` that answers `true` at a Wall, a
+Routine or the wind-down is claiming step 5 might put a candidate there.  `WorkAnchored` is
+that property of `el` and **nothing else**; `dayPlan_ok_on_a_quiet_day` is §6.1's dayPlan_ok
+at eleven of eleven for every quiet request and every `WorkAnchored` eligibility.
+
+**Say what it is worth, before a reader counts it.**  On a quiet day it is worth proof
+coverage and NOT subject coverage, for the same reason W-20's tenth conjunct was: no row of a
+quiet day is work (`dayPlan_has_no_work_row`), so a `WorkAnchored` `el` makes
+`eligibleSomewhere` FALSE everywhere and all four eligibility-dependent conjuncts become
+vacuous instead of one.  The census below is what measures that, and
+`PlannerWit.the_quiet_eleven_is_one_checker_biting` computes it.  What the theorem
+buys is not a bigger number: it is that **the residue of §6.1's lift on the quiet class is now
+a named property of Planner.eligibleAt** that P5 can discharge in one line, instead of a
+restatement of one of L26's eleven that P5 must refute first. -/
+
+/-- **`el` never admits a candidate at a row §8.2 step 5 cannot assign into.**  A property of
+the eligibility, not of the checkers, and the only thing `dayPlan_ok_on_a_quiet_day` asks of
+it.  Planner.eligibleAt's body is P5's (design §6.3, §15); this names what the lift needs
+that body to satisfy, so the obligation is in a type rather than in a comment. -/
+def WorkAnchored (el : Eligible) : Prop :=
+  ∀ (r : PlanReq) (d : DayPlan) (s : Seg) (i : Id), el r d s i = true → s.kind.isWork = true
+
+/-- `eligibleSomewhere` is monotone in the eligibility. -/
+theorem eligibleSomewhere_mono {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan) (i : Id)
+    (ha : eligibleSomewhere a r d i = true) : eligibleSomewhere b r d i = true := by
+  simp only [eligibleSomewhere, List.any_eq_true] at ha ⊢
+  obtain ⟨s, hs, hel⟩ := ha
+  exact ⟨s, hs, h r d s.val i hel⟩
+
+theorem monotoneInRank_antitone {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
+    (hb : monotoneInRank b r d = true) : monotoneInRank a r d = true := by
+  refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+  have hbij : rankPairOk b r d i j = true :=
+    List.all_eq_true.1 (List.all_eq_true.1 hb i hi) j hj
+  refine (rankPairOk_iff a r d i j).2 (fun e f hgi hgj hp hc hdoc hr hei hej hmem => ?_)
+  exact (rankPairOk_iff b r d i j).1 hbij e f hgi hgj hp hc hdoc hr
+    (eligibleSomewhere_mono h r d i hei) (eligibleSomewhere_mono h r d j hej) hmem
+
+theorem hotBeforeQueue_antitone {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
+    (hb : hotBeforeQueue b r d = true) : hotBeforeQueue a r d = true := by
+  refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+  have hbij : hotPairOk b r d i j = true :=
+    List.all_eq_true.1 (List.all_eq_true.1 hb i hi) j hj
+  refine (hotPairOk_iff a r d i j).2 (fun e f hgi hgj hhot hnot hei sj hsj hj' => ?_)
+  exact (hotPairOk_iff b r d i j).1 hbij e f hgi hgj hhot hnot
+    (eligibleSomewhere_mono h r d i hei) sj hsj hj'
+
+theorem impossibleKept_antitone {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
+    (hb : impossibleKept b r d = true) : impossibleKept a r d = true :=
+  (impossibleKept_iff a r d).2 (fun p hp hel =>
+    (impossibleKept_iff b r d).1 hb p hp (eligibleSomewhere_mono h r d p.1 hel))
+
+theorem batchDoesNotReachPast_antitone {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
+    (hb : batchDoesNotReachPast b r d = true) : batchDoesNotReachPast a r d = true := by
+  refine List.all_eq_true.2 (fun s hs => ?_)
+  have hbs := List.all_eq_true.1 hb s hs
+  cases hk : s.val.kind
+  case batch ids =>
+    rw [hk] at hbs
+    refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+    have hbij : batchPairOk b r d s ids i j = true :=
+      List.all_eq_true.1 (List.all_eq_true.1 hbs i hi) j hj
+    refine (batchPairOk_iff a r d s ids i j).2 (fun e f hn hgi hgj hel hc hdoc hr => ?_)
+    exact (batchPairOk_iff b r d s ids i j).1 hbij e f hn hgi hgj (h r d s.val j hel) hc hdoc hr
+  all_goals rfl
+
+/-- **§6.1's `planOk` is antitone in the eligibility.**  The four eligibility-dependent
+checkers read `el` only in their antecedents, so narrowing `el` narrows what has to be
+checked.  `planOkCore` does not mention `el` at all. -/
+theorem planOk_antitone {a b : Eligible}
+    (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
+    (hb : planOk b r d = true) : planOk a r d = true := by
+  have hcore : planOkCore r d = true := planOk_imp_core b r d hb
+  have hrank : monotoneInRank b r d = true :=
+    checks_all b r d hb ⟨.rank, monotoneInRank b⟩ (by simp [checksOf, checksEligible])
+  have hhot : hotBeforeQueue b r d = true :=
+    checks_all b r d hb ⟨.hot, hotBeforeQueue b⟩ (by simp [checksOf, checksEligible])
+  have himp : impossibleKept b r d = true :=
+    checks_all b r d hb ⟨.impossible, impossibleKept b⟩ (by simp [checksOf, checksEligible])
+  have hbat : batchDoesNotReachPast b r d = true :=
+    checks_all b r d hb ⟨.batch, batchDoesNotReachPast b⟩ (by simp [checksOf, checksEligible])
+  simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
+    Bool.and_true, monotoneInRank_antitone h r d hrank, hotBeforeQueue_antitone h r d hhot,
+    impossibleKept_antitone h r d himp, batchDoesNotReachPast_antitone h r d hbat]
+  exact hcore
+
+/-- **The `∀ el` axis collapses to one computation.**  `fun _ _ _ _ => true` — the
+`PlannerWit.permissive` eligibility — is the top of the order `planOk_antitone` is about, so
+the battery passing there is the battery passing at EVERY eligibility, Planner.eligibleAt
+included whenever P5 writes it.
+
+This is the converse of W-19's ceiling and the two together are an `↔`: a refutation at
+`permissive` refutes the `∀ el` form (instantiate), and a proof at `permissive` proves it. -/
+theorem planOk_at_every_eligibility (r : PlanReq) (d : DayPlan)
+    (h : planOk (fun _ _ _ _ => true) r d = true) (el : Eligible) : planOk el r d = true :=
+  planOk_antitone (fun _ _ _ _ _ => rfl) r d h
+
+/-- **No row of a quiet day is work.**  Strictly stronger than
+`dayPlan_assigns_nothing_on_a_quiet_day`, which it now proves: `SegKind.isWork` is `Block` and
+`Batch` and nothing else, `dayPlan_has_no_block_row` kills the first and
+`the_day_has_no_batch_row` the second. -/
+theorem dayPlan_has_no_work_row (r : PlanReq)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnorun : r.activeRun = none) :
+    ∀ s ∈ (dayPlan r).segments, s.val.kind.isWork = false := by
+  intro s hs
+  have hnb : ∀ ids, s.val.kind ≠ SegKind.batch ids := the_day_has_no_batch_row r s hs
+  have hnbl : s.val.kind ≠ SegKind.block := dayPlan_has_no_block_row r hnopast hnorun s hs
+  cases hk : s.val.kind <;> first
+    | exact absurd hk hnbl
+    | exact absurd hk (hnb _)
+    | rfl
+
+/-- A `WorkAnchored` eligibility admits nothing at all on a day with no work row. -/
+theorem eligibleSomewhere_of_no_work_row {el : Eligible} (hw : WorkAnchored el) (r : PlanReq)
+    (d : DayPlan) (hno : ∀ s ∈ d.segments, s.val.kind.isWork = false) (i : Id) :
+    eligibleSomewhere el r d i = false := by
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  simp only [eligibleSomewhere, List.any_eq_true] at h
+  obtain ⟨s, hs, hel⟩ := h
+  exact absurd ((hw r d s.val i hel).symm.trans (hno s hs)) (by simp)
+
+theorem monotoneInRank_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : monotoneInRank el r d = true := by
+  refine List.all_eq_true.2 (fun i _ => List.all_eq_true.2 (fun j _ => ?_))
+  refine (rankPairOk_iff el r d i j).2 (fun e f _ _ _ _ _ _ hei _ _ => ?_)
+  exact absurd (hei.symm.trans (h i)) (by simp)
+
+theorem hotBeforeQueue_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : hotBeforeQueue el r d = true := by
+  refine List.all_eq_true.2 (fun i _ => List.all_eq_true.2 (fun j _ => ?_))
+  refine (hotPairOk_iff el r d i j).2 (fun e f _ _ _ _ hei _ _ _ => ?_)
+  exact absurd (hei.symm.trans (h i)) (by simp)
+
+theorem impossibleKept_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : impossibleKept el r d = true :=
+  (impossibleKept_iff el r d).2 (fun p _ hel => absurd (hel.symm.trans (h p.1)) (by simp))
+
+/-- **ELEVEN of §6.1's eleven, over the WHOLE day, at every `WorkAnchored` eligibility.**
+Design §6.1's dayPlan_ok, for the class W-20 left at ten.  The hypotheses are W-20's quiet
+class unchanged — a log with no Block for today and nothing running — plus one property of
+`el`, and `WorkAnchored`'s doc comment says why that property is step 5's own and not a
+weakening of any checker.
+
+**The four eligibility-dependent conjuncts are all vacuous here** and
+`PlannerWit.the_quiet_eleven_is_one_checker_biting` computes that; see the section
+header before quoting "eleven of eleven" as eleven checkers biting. -/
+theorem dayPlan_ok_on_a_quiet_day (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnorun : r.activeRun = none)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hwork : WorkAnchored el) :
+    planOk el r (dayPlan r) = true := by
+  have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
+    eligibleSomewhere_of_no_work_row hwork r _ (dayPlan_has_no_work_row r hnopast hnorun)
+  refine dayPlan_ok_on_a_quiet_day_given_hot el r hagree hactive hday hnowcal hnopast hnorun
+    hplain ?_
+  exact hotBeforeQueue_of_nothing_eligible el r _ hnone
+
+/-! ############################################################################
+## The subject census, as a function of the battery's own list (W-21)
+############################################################################
+
+**The problem this ends.**  Three runs have shipped a sentence of the form "N of the eleven",
+and they were counting different things over different requests: W-18's **seven of eleven have
+a subject at `theCensusRequest`**, W-19's **nine of eleven conjuncts proved at every
+eligibility**, W-20's **ten of eleven on the quiet class**.  Two of those are proof coverage
+and one is subject coverage, and a reader who takes either for the other over-counts by the
+whole of design §6.4's remaining work (README gaps 650, 684, 852, 961).
+
+Proof coverage already has a compiler-checked count: `checksOf_length` and the lift theorems
+assemble `planOk` itself rather than a transcription of it.  **Subject coverage did not**: it
+was a prose table in `PlannerWit.lean` beside an eleven-way `decide`, and the "seven" was a
+reader's count of the table's `yes` rows.  `subjectOf` and `subjectCount` are that count,
+keyed on the checker's OWN `CheckName`, filtered over `checksOf`'s OWN list — so there is no
+second list to fall out of step with the first, and no transcription to miscount.
+
+**What a subject is here.**  Each checker is an implication (or, for `overbook`, a sum), and
+its subject is the population its ANTECEDENT admits — exactly the idiom
+`rankSubjects`/`hotSubjects` already used for the two comparisons.  `subjectOf` spells each
+antecedent and none of any conclusion, so no bug in it can make a checker pass;
+`a_check_with_no_subject_is_a_free_pass` is the theorem that makes it mean something, and
+`planOk_of_no_subject` is the honest statement of what a battery with an empty census is worth
+— which is nothing. -/
+
+/-- The pairs `rankPairOk`'s implication is **about** at `el`, `r` and `d`: every antecedent
+of the checker, and none of its conclusion.  (`PlannerWit`'s until W-21 — see the note there.)
+-/
+def rankSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
+  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
+    match r.plan.val.store.get i, r.plan.val.store.get j with
+    | some e, some f =>
+        if decide (rootPrio r.plan.val i = rootPrio r.plan.val j)
+             && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
+             && decide (e.val.live.doc = f.val.live.doc)
+             && decide (e.val.live.rank < f.val.live.rank)
+             && eligibleSomewhere el r d i && eligibleSomewhere el r d j
+             && decide (j ∈ assignedOf d)
+        then some (i, j) else none
+    | _, _ => none))
+
+/-- The pairs `hotPairOk`'s implication is **about**: a hot `i`, a not-hot `j` that some row
+of the day carries, and `i` eligible somewhere. -/
+def hotSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
+  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
+    match r.plan.val.store.get i, r.plan.val.store.get j with
+    | some e, some f =>
+        if decide (Flag.hot ∈ e.val.flags) && decide (Flag.hot ∉ f.val.flags)
+             && eligibleSomewhere el r d i
+             && d.segments.any (fun s => s.val.item == some j)
+        then some (i, j) else none
+    | _, _ => none))
+
+/-- **Does this checker's quantifier have anything to range over on this day?**  One case per
+`CheckName`, each spelling that checker's ANTECEDENT and nothing else. -/
+def subjectOf (el : Eligible) (n : CheckName) (r : PlanReq) (d : DayPlan) : Bool :=
+  match n with
+  | .overbook => (withoutActive r d).segments.any (fun s => s.val.kind == SegKind.block)
+  | .oneBlock => d.segments.any (fun s => s.val.kind == SegKind.block)
+  | .energyFilter =>
+      d.segments.any (fun s => !isActive r s && s.val.kind == SegKind.block
+        && s.val.item.isSome && s.val.energy.isSome)
+  | .overWall =>
+      d.segments.any (fun s => s.val.kind == SegKind.block)
+        && d.segments.any (fun s => s.val.kind == SegKind.wall)
+  | .overBreak =>
+      d.segments.any (fun s => s.val.kind == SegKind.block)
+        && d.segments.any (fun s => s.val.kind == SegKind.brk)
+  | .windDown =>
+      d.segments.any (fun b => b.val.kind == SegKind.block && b.val.item.isSome
+        && d.segments.any (fun w => w.val.kind == SegKind.windDown
+            && decide (w.val.start ≤ b.val.start)))
+  | .wallMoved =>
+      d.segments.any (fun s => s.val.kind == SegKind.wall &&
+        (match s.val.item with
+         | none => false
+         | some i =>
+             match r.plan.val.store.get i with
+             | none => false
+             | some e =>
+                 match e.val.shape with
+                 | Shape.interval _ _ => true
+                 | _ => false))
+  | .rank => !(rankSubjects el r d).isEmpty
+  | .hot => !(hotSubjects el r d).isEmpty
+  | .impossible => d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1)
+  | .batch =>
+      d.segments.any (fun s =>
+        match s.val.kind with
+        | SegKind.batch ids =>
+            ids.val.any (fun i => r.plan.val.store.dom.any (fun j =>
+              !decide (j ∈ ids.val) &&
+                (match r.plan.val.store.get i, r.plan.val.store.get j with
+                 | some e, some f =>
+                     el r d s.val j
+                       && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
+                       && decide (e.val.live.doc = f.val.live.doc)
+                       && decide (f.val.live.rank < e.val.live.rank)
+                 | _, _ => false)))
+        | _ => false)
+
+/-- **The ratio, as the compiler's arithmetic over `checksOf`'s own list.**  The filter is
+keyed on each check's own `name`, so the count cannot drift from the battery it is about the
+way a parallel table can. -/
+def subjectCount (el : Eligible) (r : PlanReq) (d : DayPlan) : Nat :=
+  ((checksOf el).filter (fun c => subjectOf el c.name r d)).length
+
+/-! ### An empty subject is a free pass, checker by checker
+
+Eleven lemmas and one theorem over `checksOf`'s own list.  Without them `subjectOf` would be
+eleven opinions about what a quantifier ranges over; with them it is a **sufficient condition
+for the checker to answer `true` for no reason at all**, which is the thing AGENTS §9.2 calls
+a check no input can fail and which §5.2 calls a theorem that compiles and means nothing. -/
+
+/-- The dual of `all_eq_false_of_mem`: nothing in the list satisfies a `false` `any`. -/
+theorem false_of_any_eq_false {α : Type} {l : List α} {p : α → Bool} (h : l.any p = false)
+    {x : α} (hx : x ∈ l) : p x = false := by
+  cases hp : p x with
+  | false => rfl
+  | true => exact absurd (List.any_eq_true.2 ⟨x, hx, hp⟩) (by simp [h])
+
+theorem blockSeconds_of_no_block (d : DayPlan)
+    (h : d.segments.any (fun s => s.val.kind == SegKind.block) = false) :
+    blockSeconds d = 0 := by
+  have hnil : d.segments.filter (fun s => decide (s.val.kind = SegKind.block)) = [] := by
+    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
+    have := false_of_any_eq_false h hs
+    simpa using this
+  unfold blockSeconds
+  rw [hnil]
+  rfl
+
+theorem noOverbook_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .overbook r d = false) : noOverbook r d = true := by
+  simp only [subjectOf] at h
+  simp [noOverbook, blockSeconds_of_no_block _ h]
+
+theorem oneBlockAtATime_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .oneBlock r d = false) : oneBlockAtATime r d = true := by
+  simp only [subjectOf] at h
+  refine (oneBlockAtATime_iff r d).2 (fun s hs hk => ?_)
+  have := false_of_any_eq_false h hs
+  simp [hk] at this
+
+theorem energyFilterOk_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .energyFilter r d = false) : energyFilterOk r d = true := by
+  simp only [subjectOf] at h
+  refine (energyFilterOk_iff r d).2 (fun s hs i lvl ha hk hi he => ?_)
+  have := false_of_any_eq_false h hs
+  simp [ha, hk, hi, he] at this
+
+theorem noBlockOverAWall_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .overWall r d = false) : noBlockOverAWall r d = true := by
+  simp only [subjectOf, Bool.and_eq_false_iff] at h
+  refine (noBlockOverAWall_iff r d).2 (fun b hb w hw hkb hkw => ?_)
+  rcases h with h | h
+  · have := false_of_any_eq_false h hb; simp [hkb] at this
+  · have := false_of_any_eq_false h hw; simp [hkw] at this
+
+theorem noBlockOverABreak_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .overBreak r d = false) : noBlockOverABreak r d = true := by
+  simp only [subjectOf, Bool.and_eq_false_iff] at h
+  refine (noBlockOverABreak_iff r d).2 (fun b hb k hk hkb hkk => ?_)
+  rcases h with h | h
+  · have := false_of_any_eq_false h hb; simp [hkb] at this
+  · have := false_of_any_eq_false h hk; simp [hkk] at this
+
+theorem noDemandingAfterWindDown_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .windDown r d = false) : noDemandingAfterWindDown r d = true := by
+  simp only [subjectOf] at h
+  refine (noDemandingAfterWindDown_iff r d).2 (fun b hb w hw i hi hkb hkw hle => ?_)
+  have hbf := false_of_any_eq_false h hb
+  have hwt : (d.segments.any (fun w => w.val.kind == SegKind.windDown
+      && decide (w.val.start ≤ b.val.start))) = true :=
+    List.any_eq_true.2 ⟨w, hw, by simp [hkw, hle]⟩
+  simp [hkb, hi, hwt] at hbf
+
+theorem wallsUnmoved_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .wallMoved r d = false) : wallsUnmoved r d = true := by
+  simp only [subjectOf] at h
+  refine (wallsUnmoved_iff r d).2 (fun s hs i e a b hi hg hsh hk => ?_)
+  have := false_of_any_eq_false h hs
+  simp [hk, hi, hg, hsh] at this
+
+/-- `(i, j)` is in `rankSubjects` exactly when `rankPairOk`'s antecedents all hold of it. -/
+theorem mem_rankSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) {i j : Id} {e f : Entity}
+    (hi : i ∈ r.plan.val.store.dom) (hj : j ∈ r.plan.val.store.dom)
+    (hgi : r.plan.val.store.get i = some e) (hgj : r.plan.val.store.get j = some f)
+    (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
+    (hc : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
+    (hdoc : e.val.live.doc = f.val.live.doc) (hr : e.val.live.rank < f.val.live.rank)
+    (hei : eligibleSomewhere el r d i = true) (hej : eligibleSomewhere el r d j = true)
+    (hmem : j ∈ assignedOf d) : (i, j) ∈ rankSubjects el r d := by
+  refine List.mem_flatMap.2 ⟨i, hi, List.mem_filterMap.2 ⟨j, hj, ?_⟩⟩
+  simp [hgi, hgj, hp, hc, hdoc, hr, hei, hej, hmem]
+
+/-- `(i, j)` is in `hotSubjects` exactly when `hotPairOk`'s antecedents all hold of it. -/
+theorem mem_hotSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) {i j : Id} {e f : Entity}
+    (hi : i ∈ r.plan.val.store.dom) (hj : j ∈ r.plan.val.store.dom)
+    (hgi : r.plan.val.store.get i = some e) (hgj : r.plan.val.store.get j = some f)
+    (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)
+    (hei : eligibleSomewhere el r d i = true)
+    (hrow : d.segments.any (fun s => s.val.item == some j) = true) :
+    (i, j) ∈ hotSubjects el r d := by
+  refine List.mem_flatMap.2 ⟨i, hi, List.mem_filterMap.2 ⟨j, hj, ?_⟩⟩
+  simp [hgi, hgj, hhot, hnot, hei, hrow]
+
+theorem monotoneInRank_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .rank r d = false) : monotoneInRank el r d = true := by
+  simp only [subjectOf] at h
+  have hnil : rankSubjects el r d = [] := by
+    cases hx : rankSubjects el r d with
+    | nil => rfl
+    | cons a t => rw [hx] at h; simp at h
+  refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+  refine (rankPairOk_iff el r d i j).2 (fun e f hgi hgj hp hc hdoc hr hei hej hmem => ?_)
+  have := mem_rankSubjects el r d hi hj hgi hgj hp hc hdoc hr hei hej hmem
+  rw [hnil] at this
+  exact absurd this (by simp)
+
+theorem hotBeforeQueue_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .hot r d = false) : hotBeforeQueue el r d = true := by
+  simp only [subjectOf] at h
+  have hnil : hotSubjects el r d = [] := by
+    cases hx : hotSubjects el r d with
+    | nil => rfl
+    | cons a t => rw [hx] at h; simp at h
+  refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+  refine (hotPairOk_iff el r d i j).2 (fun e f hgi hgj hhot hnot hei sj hsj hij => ?_)
+  have hrow : d.segments.any (fun s => s.val.item == some j) = true :=
+    List.any_eq_true.2 ⟨sj, hsj, by simp [hij]⟩
+  have := mem_hotSubjects el r d hi hj hgi hgj hhot hnot hei hrow
+  rw [hnil] at this
+  exact absurd this (by simp)
+
+theorem impossibleKept_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .impossible r d = false) : impossibleKept el r d = true := by
+  simp only [subjectOf] at h
+  refine (impossibleKept_iff el r d).2 (fun p hp hel => ?_)
+  have := false_of_any_eq_false h hp
+  simp [hel] at this
+
+theorem batchDoesNotReachPast_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectOf el .batch r d = false) : batchDoesNotReachPast el r d = true := by
+  simp only [subjectOf] at h
+  refine List.all_eq_true.2 (fun s hs => ?_)
+  have hsf := false_of_any_eq_false h hs
+  cases hk : s.val.kind
+  case batch ids =>
+    rw [hk] at hsf
+    refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+    refine (batchPairOk_iff el r d s ids i j).2 (fun e f hn hgi hgj hel hc hdoc hr => ?_)
+    have hin : (ids.val.any (fun i => r.plan.val.store.dom.any (fun j =>
+        !decide (j ∈ ids.val) &&
+          (match r.plan.val.store.get i, r.plan.val.store.get j with
+           | some e, some f =>
+               el r d s.val j
+                 && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
+                 && decide (e.val.live.doc = f.val.live.doc)
+                 && decide (f.val.live.rank < e.val.live.rank)
+           | _, _ => false)))) = true :=
+      List.any_eq_true.2 ⟨i, hi, List.any_eq_true.2 ⟨j, hj, by
+        simp [hn, hgi, hgj, hel, hc, hdoc, hr]⟩⟩
+    simp [hin] at hsf
+  all_goals rfl
+
+/-- **A checker whose subject is empty answers `true` for no reason at all.**  This is what
+makes `subjectCount` a measurement rather than eleven opinions: below the census a `true` is
+free, and `checksOf` is the list both sides range over. -/
+theorem a_check_with_no_subject_is_a_free_pass (el : Eligible) (r : PlanReq) (d : DayPlan) :
+    ∀ c ∈ checksOf el, subjectOf el c.name r d = false → c.run r d = true := by
+  intro c hc h
+  simp only [checksOf, checksCore, checksEligible, List.mem_append, List.mem_cons,
+    List.not_mem_nil, or_false] at hc
+  rcases hc with (rfl|rfl|rfl|rfl|rfl|rfl|rfl)|(rfl|rfl|rfl|rfl)
+  · exact noOverbook_of_no_subject el r d h
+  · exact oneBlockAtATime_of_no_subject el r d h
+  · exact energyFilterOk_of_no_subject el r d h
+  · exact noBlockOverAWall_of_no_subject el r d h
+  · exact noBlockOverABreak_of_no_subject el r d h
+  · exact noDemandingAfterWindDown_of_no_subject el r d h
+  · exact wallsUnmoved_of_no_subject el r d h
+  · exact monotoneInRank_of_no_subject el r d h
+  · exact hotBeforeQueue_of_no_subject el r d h
+  · exact impossibleKept_of_no_subject el r d h
+  · exact batchDoesNotReachPast_of_no_subject el r d h
+
+/-- **A battery with an empty census passes, and is worth nothing.**  `planOk` answering
+`true` at a request where `subjectCount` is `0` is eleven empty quantifiers, and this theorem
+is the statement of that in the compiler rather than in a comment.  It is also the D40 witness
+for `subjectOf`: folded to `fun _ _ _ _ => false` this proof would make `planOk` unconditional
+and `planOk_can_fail` refutes that. -/
+theorem planOk_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : subjectCount el r d = 0) : planOk el r d = true := by
+  have hempty : (checksOf el).filter (fun c => subjectOf el c.name r d) = [] :=
+    List.eq_nil_of_length_eq_zero h
+  refine List.all_eq_true.2 (fun c hc => ?_)
+  refine a_check_with_no_subject_is_a_free_pass el r d c hc ?_
+  cases hsub : subjectOf el c.name r d with
+  | false => rfl
+  | true =>
+      have : c ∈ (checksOf el).filter (fun c => subjectOf el c.name r d) :=
+        List.mem_filter.2 ⟨hc, hsub⟩
+      rw [hempty] at this
+      exact absurd this (by simp)
+
+/-- The census is over the battery's own list, so it cannot exceed it. -/
+theorem subjectCount_le_eleven (el : Eligible) (r : PlanReq) (d : DayPlan) :
+    subjectCount el r d ≤ 11 := by
+  have := List.length_filter_le (fun c => subjectOf el c.name r d) (checksOf el)
+  rw [checksOf_length el] at this
+  exact this
+
+/-! ### The census's own ceiling: SEVEN, proved, not surveyed
+
+The four vacuity theorems above say four checkers cannot FAIL on a day `Planner.dayPlan`
+produces.  The four below say something the census needs and they did not: that those four
+checkers have **no subject at all**, at every request and at every eligibility.  The
+difference is the difference between "it passes" and "there is nothing for it to pass" — it is
+exactly the distinction this whole section exists to keep, and until now the "and none can"
+column of `PlannerWit`'s census table was prose beside an eleven-way `decide` at one request.
+
+`the_census_ceiling_is_seven` is what they buy: **no `PlanReq` whatever can put more than
+seven of the eleven in play today**, so the seven `PlannerWit.the_census_ratio` computes at
+`theCensusRequest` is a ceiling that has been reached and not a high-water mark that a future
+witness might beat.  The four that cannot reach it are design §6.4's P5, P5/P7 and P8 rows,
+and they are the same four either way round. -/
+
+theorem energyFilter_has_no_subject (el : Eligible) (r : PlanReq) :
+    subjectOf el .energyFilter r (dayPlan r) = false := by
+  simp only [subjectOf]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 h
+  simp only [Bool.and_eq_true, beq_iff_eq] at hp
+  obtain ⟨⟨⟨-, hk⟩, -⟩, hen⟩ := hp
+  rw [no_block_row_of_the_day_carries_a_slot_energy r s hs hk] at hen
+  simp at hen
+
+theorem windDown_has_no_subject (el : Eligible) (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectOf el .windDown r (dayPlan r) = false := by
+  simp only [subjectOf]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨b, hb, hp⟩ := List.any_eq_true.1 h
+  simp only [Bool.and_eq_true, beq_iff_eq] at hp
+  obtain ⟨⟨hbk, -⟩, hany⟩ := hp
+  obtain ⟨w, hw, hwp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hwp
+  have := no_block_row_of_the_day_reaches_the_wind_down r hnowcal b w hb hw hbk hwp.1
+  omega
+
+theorem batch_has_no_subject (el : Eligible) (r : PlanReq) :
+    subjectOf el .batch r (dayPlan r) = false := by
+  simp only [subjectOf]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 h
+  cases hk : s.val.kind
+  case batch ids => exact absurd hk (the_day_has_no_batch_row r s hs ids)
+  all_goals (rw [hk] at hp; simp at hp)
+
+theorem impossible_has_no_subject (el : Eligible) (r : PlanReq) :
+    subjectOf el .impossible r (dayPlan r) = false := by
+  simp only [subjectOf, the_day_names_no_impossible_item r, List.any_nil]
+
+/-- **Seven is the ceiling of the census, for every request and every eligibility.**  Four of
+`checksOf`'s eleven have an empty subject on every day `Planner.dayPlan` produces, so the
+filter `subjectCount` runs can keep at most the other seven.  P5's fold ends it for
+`energyFilter` and `batch`, P5/P7 for `windDown`, P8 for `impossible` (design §6.4). -/
+theorem the_census_ceiling_is_seven (el : Eligible) (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectCount el r (dayPlan r) ≤ 7 := by
+  have e1 := energyFilter_has_no_subject el r
+  have e2 := windDown_has_no_subject el r hnowcal
+  have e3 := batch_has_no_subject el r
+  have e4 := impossible_has_no_subject el r
+  show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 7
+  have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
+      = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+          ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+          ⟨.wallMoved, wallsUnmoved⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (dayPlan r)) := by
+    simp only [checksCore, List.filter_cons, e1, e2, Bool.false_eq_true, if_false]
+  have helig : (checksEligible el).filter (fun c => subjectOf el c.name r (dayPlan r))
+      = ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (dayPlan r)) := by
+    simp only [checksEligible, List.filter_cons, e3, e4, Bool.false_eq_true, if_false]
+  rw [checksOf, List.filter_append, List.length_append, hcore, helig]
+  have b1 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
+    ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+      ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+      ⟨.wallMoved, wallsUnmoved⟩] : List Check)
+  have b2 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
+    ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩] : List Check)
+  simp only [List.length_cons, List.length_nil] at b1 b2
+  omega
 
 end PlanCheck
 end Tm
