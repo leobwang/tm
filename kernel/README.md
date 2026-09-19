@@ -36445,7 +36445,14 @@ AGENTS's W-17 lesson 1, applied to every completeness claim this block makes.
    `Cap.edfGrants` is used by `Look.scaleGrant`'s law (`Lookahead.lean:519`), by
    `servedGrants_are_the_pass` and `grantAt_servedGrants`, by `Boundary.lean:8724`
    and by four cheats; `Cap.edf` by `passLeft_is_edf` and
-   `withFloor_is_the_floor_pass`.  And fork `Planner::pick` is a **greedy cursor**
+   `Tm.Look.a_floor_answer_reads_what_the_pass_left` (`Lookahead.lean:5729` at
+   `620b499`, `:5781` after W-18's repair commit).  *(W-18
+   repair: this line read `withFloor_is_the_floor_pass`, a name that exists
+   nowhere in the kernel — the only hit in the repo was this sentence.  The
+   rest of the paragraph's citations all check out, and the reuse critic's own
+   backticked-identifier sweep of all 2,124 lines of the W-18 blocks — 239
+   candidate names — found this as the only dangling referent.)*
+   And fork `Planner::pick` is a **greedy cursor**
    over slots in §7.4's key order with no deadline anywhere — the EDF pass is
    §7.3's, it already ran, and its result reaches step 5 only as the `p` in the
    sort key.
@@ -36530,12 +36537,32 @@ AGENTS's W-17 lesson 1, applied to every completeness claim this block makes.
 **Gap 707 — driving `tm plan` cannot show which values crossed.**
 1. *What is not done.*  Nothing in the tree lets a drive observe the request the
    host built.
-2. *Why.*  There is no request-dump hook (`grep -rn 'var("TM_' tm/src` finds only
-   `TM_DIR` and `TM_KERNEL_FAULT_PROBE`), and `tm plan`'s output is still the
+2. *Why.*  There is no request-dump hook, and `tm plan`'s output is still the
    **Rust** planner's because the kernel's `dayPlan` has no caller (gap 603).  So
    the drive proves the kernel **accepted** a request carrying the nine — a
    missing `plan` object is `badCandidate 0 plan` and the verb would exit non-zero
    — and nothing more.
+
+   **W-18 repair — the method here was wrong, and the conclusion survives it.**
+   This item read *"There is no request-dump hook (`grep -rn 'var("TM_' tm/src`
+   finds only `TM_DIR` and `TM_KERNEL_FAULT_PROBE`)"*.  Re-run verbatim that
+   command returns **two lines, both `TM_KERNEL_FAULT_PROBE`**
+   (`tm/src/tui/mod.rs:690` `set_var`, `:695` `remove_var`).  `TM_DIR` is **not**
+   among them: it is read as `env::var_os("TM_DIR")` at `tm/src/cli/ctx.rs:105`,
+   and `var("TM_` does not match `var_os("TM_`.  **What that pattern is blind
+   to**, said plainly: an env var read through `var_os`; one read through a named
+   constant (`tm/src/cli/ctx.rs:526` `env::var_os(TRACE_SCOPE_ENV)`, with `:246`
+   `pub const TRACE_SCOPE_ENV: &str = "TM_TRACE_REPLAY_SCOPE"`); and, being
+   `tm/src`-only, anything in the FFI crate
+   (`kernel/tm-kernel-ffi/src/lib.rs:20` `TM_KERNEL_ID`, `:64`
+   `TM_TRACE_KERNEL_CALLS`).  **The roster is five, not two.**  And one of the
+   five is exactly the class the item said does not exist: `TM_TRACE_KERNEL_CALLS`
+   **is** a hook that observes what crosses the FFI — track G's own block in this
+   same run drives it, and so does this repair step.  What it prints is
+   `trace_kinds()`'s **section names** (`log`, `apply`, `capacity+log`, `emit`),
+   never a value, so the gap's *conclusion* is unchanged: nothing in the tree lets
+   a drive observe the request the host built.  The stated method and its pasted
+   output were both wrong, in a paragraph whose subject is method.
 3. *What it costs.*  The strongest end-to-end evidence this step can offer is
    "the request was accepted", and a reader could mistake the drive for a check on
    the values.  Said here so they cannot.
@@ -36681,10 +36708,34 @@ verb run on a scratch `tm init --example` tree outside the repo.
 | `tm review day` | exit 0 | **exit 1**, same |
 | `tm plan --week` | exit 0 | **exit 0** — it sends no candidates, as the grep said |
 | `tm start`, `tm interrupt`, `tm resume` | exit 0 | (state verbs; `resume` replans and is covered by `tm plan`'s row) |
+| `tm review week` | exit 0 | **exit 1**, same *(W-18 repair)* |
+| `tm tui` (under a pty, `script -qec`) | runs | **exit 1**, same *(W-18 repair)* |
 
-So five shipped verbs reach `readPlanFacts` on every invocation, one provably
-does not, and the refusal a host that stopped sending the nine would get is the
-one CHEAT 193 claims cannot happen.  The mutation is in no commit; the tree was
+**The last two rows are W-18's repair step's, and the headline was short.**  This
+sentence read *"So **five** shipped verbs reach `readPlanFacts` on every
+invocation"*.  The block's own grep prose named `lifecycle::review` directly and
+`tui::data_of` as further callers of `request(…, Some(ranked))`, and **both reach
+the decoder** — `tm/src/cli/lifecycle.rs:415` `ctx.priorities(false)?` inside the
+`Period::Week` branch (guarded by `week.contains(ctx.today)`), and
+`tm/src/tui/mod.rs:176` the same call inside `fn data_of`, each landing on
+`ctx.rs:903` → `kernel_capacity::rank` → `ask(…, Some(&Ranked{..}))` →
+`request` → `"plan": plan_json(c)?`.  The addendum exists **because** a grep-only
+enumeration was judged insufficient, and its drive was then narrower than its own
+grep.  Driven now, with the same inversion I and the same scratch
+`tm init --example` tree outside the repo:
+`TM_TRACE_KERNEL_CALLS=1 tm review week` prints `log`, `capacity+log`; under
+inversion I it exits **1** with `kernel refusal: badCandidate 0 plan`.  The TUI
+needs a tty, so it was driven under `script -qec`: unmodified it prints `log`,
+`capacity+log` at start-up and then `log` on every tick (which is D38's
+measurement from the other side — it replans on reload, not on a tick); under
+inversion I it exits **1** with the same refusal before it ever draws.
+
+So **seven** shipped surfaces reach `readPlanFacts` on every invocation — `tm
+plan`, `tm now`, `tm arrive`, `tm energy`, `tm review day`, **`tm review week`**
+and **the TUI** — one (`tm plan --week`) provably does not, and the refusal a host
+that stopped sending the nine would get is the one CHEAT 193 claims cannot happen.
+`tm review week` is the verb whose noisy T11 row this same run measures every
+pass and reports out of band, which is how it was missed.  The mutation is in no commit; the tree was
 clean before and after (`git status --porcelain` empty) and the release binary
 was rebuilt from the restored source and re-driven.
 
@@ -36918,6 +36969,24 @@ Everything else is accounted for by an existing decision: `tm init`'s own
 `fs::write` (gap 680 — preserving), `tm undo`'s `write_file`/`remove_file`
 (deliberately ungated, it is the way *out*), and the two `.tm/cache/` writers
 (`cli/tz_table.rs`, `cli/kernel_log.rs` — D13, derived and rebuildable).
+
+**W-18 repair: that sentence was false by one row, and the miss is this step's
+own method failing, not its blind spot.**  Step 1 was re-run over `tm/src` and
+`tm-core/src` and surfaces **`tm-core/src/energy.rs:452` `Model::save`** —
+`std::fs::create_dir_all` (`:454`) + `std::fs::write(path, self.to_json())`
+(`:459`).  It is production code (`#[cfg(test)]` begins at `:1397`) and it has
+**no caller in `tm/src` or `tm-core/src`**: `grep -rn '\.save(' tm/src tm-core/src`
+returns only `undo.rs:215` and `:319`, a different type, and the only caller
+anywhere in the repo is `tm-core/tests/energy_model.rs:160`.  The shipped `tm
+model --fit` writes through `ctx.store.write_file(MODEL_PATH, …)`
+(`tm/src/cli/lifecycle.rs:533`), **gated** at `:524` and **recorded** at `:525`.
+So `Model::save` is a second dead raw-`fs` writer of exactly gap 732's class, and
+a method that found one and missed the other had a hole no blind spot covered.
+Recorded as gap **776**.  *The repair step re-ran the whole of step 1 and
+classified every hit by `#[cfg(test)]` boundary; the production set is
+`energy.rs` (776), `store.rs` (the `Store` impl itself), `kernel_log.rs` and
+`tz_table.rs` (D13 caches), `undo.rs`, `init/mod.rs` (gap 680) — and **nothing
+else**.  That method's blind spot is unchanged and is the one named below.*
 
 **WHAT THIS METHOD CANNOT SEE**, said plainly, because a completeness claim whose
 blind spot is unnamed is the same failure as an unmeasured *"driven"*:
@@ -37235,6 +37304,21 @@ paragraphs, `PlannerWit.lean`'s section 11 header, its two census doc comments,
 `Negative.lean`'s CHEAT 190 comment (whose *reason* was wrong even though its
 claim was right) and `Goals.lean`'s stage-6 banner.
 
+*(**W-18 repair: this sentence was false, and the sweep's own grep returns the
+counter-example.**  `grep -rn "of the eleven\|of eleven\|of seven\|five of\|six
+of\|four of" --include=*.lean --include=*.md kernel/` returns
+`kernel/TmKernel/TmKernel/Planner.lean:3542`, which still read *"five of the
+eleven checkers still range over nothing on a produced day, which is README gap
+650"* — the pre-W-17-repair number, surviving one file over from the CHEAT 190
+comment this block corrected, and disagreeing with the very gap it cites.  Eight
+statements were read; the grep returned nine.  Corrected there now, with the two
+questions named apart: **four** over every `PlanReq` (gap 650), **seven of
+eleven** with a subject at `theCensusRequest` (`PlannerWit` section 14).
+`Negative.lean:2338`'s *"SIX of the eleven range over nothing on the day the
+planner produces at `theStoredRequest`"* was re-read and is **correct** —
+it scopes itself to that request, where the census computes five with a subject —
+so it was left as it stands.)*
+
 ### 2. `plan_places_no_block_over_a_break` is FALSE as `Goals.lean` wrote it — refuted, restated, discharged
 
 **Burn-down 10 → 9.** The third of the thirteen to leave the file, and like the
@@ -37349,7 +37433,7 @@ elaboration, and §5 records what that now costs.
 
 | rule added or changed | shipped callers, by grep from `main` down | driven |
 |---|---|---|
-| the four vacuity theorems, `plan_places_no_block_over_a_break`, `dayPlan_ok_from_now_except_the_two_comparisons`, and every `PlannerWit` witness | **none.** `grep -rc 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` is **0, 0, 0**; `grep -c '"plan"\|dayPlan' Boundary.lean` is **0**; `grep -rn 'theCensusRequest\|theMidBreakRequest\|censusWitness\|plan_places_no_block_over_a_break\|the_day_has_no_batch_row\|no_block_row_of_the_day\|dayPlan_ok_from_now' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0 lines**. There is still no planner op on the wire | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — and **no planner call**, digit for digit what W-17 recorded. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` and the day, exit 0; `tm triage` → three rows, exit 0 |
+| the four vacuity theorems, `plan_places_no_block_over_a_break`, `dayPlan_ok_from_now_except_the_two_comparisons`, and every `PlannerWit` witness | **none.** `grep -rc 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` is **0, 0, 6** and `grep -c '"plan"\|dayPlan' Boundary.lean` is **2** *(W-18 repair, re-measured on the merged tree; both read **0** on `w18-g`'s branch and at its base `eb4150f`, and track P's P5a landing underneath falsified them — the six are the candidate wire's `"plan"` JSON key at `kernel_capacity.rs:708, 1160, 1209, 1246, 1266, 1274` and the two are the refusal-name table's `.plan => "plan"` (`Boundary.lean:9456`) and `readPlanFacts`' own `need v "plan"` (`:10313` at `620b499`, `:10362` after the repair commit), none of them a planner op; not one is `dayPlan`, whose only hit anywhere in `tm`, `tm-core` and `tm-kernel-ffi` is a doc comment at `stack.rs:647`, so the conclusion stands unchanged)*; `grep -rn 'theCensusRequest\|theMidBreakRequest\|censusWitness\|plan_places_no_block_over_a_break\|the_day_has_no_batch_row\|no_block_row_of_the_day\|dayPlan_ok_from_now' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0 lines**. There is still no planner op on the wire | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — and **no planner call**, digit for digit what W-17 recorded. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` and the day, exit 0; `tm triage` → three rows, exit 0 |
 
 **The honest sentence this table is for:** this step's Lean *is* linked into the
 `tm` binary, so "Lean-only" does not by itself mean the binary did not move. What
@@ -37386,7 +37470,7 @@ command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0
 | axiom audit | **4,485 theorems**, §6.3 reconciliation `ok` | **4,454** | 4,454 | **+31, and every one is this step's**: 12 in `PlanCheck`, 19 in `PlannerWit`. 4,485 audit lines at **4,485 distinct** names against **4,484** declarations; `comm -23` **empty**, `comm -13` names exactly `WfPlan` and `effectiveScope`, §6.3's deliberate one-directional slack |
 | burn-down (check 7) | **9 outstanding, all stage 6** | **10** | 10 | **−1**: `plan_places_no_block_over_a_break`, discharged above. **Nothing was added.** Two more could have left and were refused — gap 751 |
 | corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` untouched |
-| `Negative.lean` | rejected ok, **179 cheats**, highest **194**, `uniq -d` prints nothing *(branch figures; the merged tree is **181** cheats, highest **202** — see the land block)* | 177 / 192 | 177 | **+2**, each failing at a line of its own with `Tactic 'decide' proved that the proposition …` |
+| `Negative.lean` | rejected ok, **179 cheats**, highest **194**, `uniq -d` prints nothing *(branch figures, counted as **all** `/- CHEAT ` blocks; the merged tree is **187** by that same method, or **181** counted as track A's and the land block's `/- CHEAT <number>` — W-18 repair: this parenthesis originally said "the merged tree is **181** cheats, highest **202**", which switched counting methods mid-sentence and read as +2 where the merge added +8.  The six lettered blocks `/- CHEAT A`…`F` at `Negative.lean:243-272` are the whole of the difference)* | 177 / 192 | 177 | **+2**, each failing at a line of its own with `Tactic 'decide' proved that the proposition …` |
 | `cargo test --workspace --no-fail-fast` | **1,342 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** | — (Lean-only; the binary is rebuilt by the FFI crate's `build.rs`) | 1,342 / 0 / 9 / 79 | **identical — a Lean-only step must not move it, and it did not** |
 | FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | — | 101 | — |
 | **T5** `kernel_replay_parity --include-ignored` | **33 / 0** | — | 33 | fork point **4748911**, frozen arms |
@@ -37826,7 +37910,17 @@ this one was not made by the merge.** `w18-g` carried both **on the branch**:
 `## 13.` has existed since W-17's repair step (`ceeae10`), which is in `w18-g`'s
 own base. Track G's is renumbered **14**, and the one prose citation of it —
 `PlanCheck.lean:1565`, *"`PlannerWit`'s section 13"*, written by track G in the
-same commit — moved with it. Nothing in `check.sh` can see a duplicated Markdown
+same commit — moved with it.  **W-18 repair: there were two, and the second
+shipped.**  `PlannerWit.lean:1336` still read *"until **W-18**, which is the
+sentence section 13 is about: two of the six wait on a request, not on a step"* —
+and that sentence is section **14**'s (*"The census, settled: one request, one
+ratio"*), not section 13's (*"The root walk the key really does"*, W-17's).  `git log -S "which is the sentence section 13 is
+about"` attributes the line to `fc26630`, track G's own commit, so it was
+renumberable and was missed: **the sweep looked for citations of `PlannerWit`'s
+sections in other files and not inside `PlannerWit` itself.**  Fixed, and the
+whole-repo re-sweep for `PlannerWit[^ ]* section [0-9]+` now returns three
+citations, all correct (`PlanCheck.lean` → 14, `Planner.lean` → 14,
+`PlannerWit.lean`'s own back-reference → 11).  Fifth consecutive run to ship a stale citation. Nothing in `check.sh` can see a duplicated Markdown
 heading inside a doc comment, which is why it shipped twice in two runs. Gap 772.
 
 **4. AGENTS §6.3's three counts did not reconcile, and the reason is §6.3's own
@@ -37870,7 +37964,7 @@ brief's comparand is `eb4150f`; each track's own figure is beside it.
 | `check.sh` | **7/7 ok** | 7/7 | 7/7 | 7/7 | 7/7 | **5/7 before the `stack.rs` repair** — see above |
 | axiom audit | **4,539 theorems** | 4,454 | 4,508 | 4,454 (no Lean) | 4,485 | **+85 = +54 (P) + 31 (G)**, and the arithmetic closes exactly. 4,539 audit lines at **4,539 distinct full names** (`sort \| uniq -d` empty) over **82** modules, **81** `APPENDED` banners |
 | check 3's §6.3 reconciliation | **`comm -23` EMPTY**, and now the counts close | — | — | — | *quoted 4,485 against 4,484 with two extras named — a difference that cannot close* | **4,537 declared against 4,539 audited**, `comm -13` = `WfPlan`, `effectiveScope`. Before the gap-773 reflow it was 4,538/4,539 with two extras. **24** short names are declared in more than one namespace, which is why this is a multiset diff and not a count |
-| `Negative.lean` | rejected ok, **181 cheats**, highest **202**, no block number used twice | 171 / 192 | 179 / 200 | — | 179 / 194 (on-branch) | **+10 = P's 193-200 and G's renumbered 201-202** |
+| `Negative.lean` | rejected ok, **181 cheats**, highest **202**, no block number used twice *(**numbered** blocks: `grep -cE '^/- CHEAT [0-9]+'`.  All `/- CHEAT ` blocks, the method track G's row uses, is **187** here and **177** at `eb4150f` — the two methods differ by the six lettered blocks `A`–`F`, and W-18's repair step names which is which wherever both are quoted)* | 171 / 192 | 179 / 200 | — | 179 / 194 (on-branch) | **+10 = P's 193-200 and G's renumbered 201-202** |
 | corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | same | — | same | **not below the floor**; `kernel/corpus/` untouched |
 | stage goals (check 7) | **9 outstanding, all stage 6** | 10 | 10 | 10 | 9 | **burn-down 10 → 9**; see below |
 | check 5 | **ok (93 tests)** — `kernel` 86 + `stack` 7 | *`--test kernel` only; 86, and the count was not said* | same | ok (93) | — | D36. The count is now printed the way checks 3, 6 and 7 print theirs |
@@ -38311,3 +38405,550 @@ alone** as the brief requires. Branches `w18-a` and `w18-g` are kept.
   D19-separable work that should land on their own.
 * It did **not** chase the `review week` rise; the range is recorded and the row
   is not re-blessed.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-18**, the **REPAIR**
+     step, on the main checkout at `620b499`.  Fifteen defects from two
+     independent readers — W-18's audit (4) and its reuse critic (11).  Every
+     one was reproduced before it was touched; **fourteen reproduced whole**,
+     one reproduced in its major half only and the rest of it was **left as a
+     fact that is not its stated class**, and reproducing two of them found
+     each to be **larger than reported**.  One of this step's own inversions
+     falsified this step's own prediction, and a tenth theorem is the result.
+     Gap range **775-789**; this step takes **775-779** and leaves **780-789**
+     free.  No planner code, no wire change, no goal discharged, no goal added:
+     **burn-down stays 9**.  Ten new theorems, axiom audit **4,539 → 4,549**.
+     Whoever merges renumbers (§6.4).
+     =========================================================================== -->
+
+## Stage 6 — W-18's repair step: what two readers found, and what reproducing it found
+
+### 0. The shape of this block
+
+Every defect below is stated as: **what reproduced**, **what the repair is**, and
+where that leaves the claim. The two W-17 lessons the brief puts in front of this
+run are the two things almost every one of these fifteen is an instance of —
+**a completeness claim whose method has an unnamed blind spot**, and **a
+component no witness can distinguish**. **Twelve of the fifteen are defects in
+prose no check in `check.sh` can read** — that is gap **779**, and it is not
+fixed here because fixing it is a change to the acceptance script (D19). The
+other three are in code: §2's three-copies duplication, §3's undecidable
+conjunct, and M6's second dead writer.
+
+### 1. The six majors
+
+**M1 — `Planner.lean:3732` said a goal "stays in `Goals.lean`" that this same run
+deleted from it.** Reproduced verbatim: the doc comment on
+`a_break_row_is_a_replayed_row` read *"So `plan_places_no_block_over_a_break`
+stays in `Goals.lean`: the break side of it is still vacuous over what the
+planner places."* Both halves are false at `620b499`. (a) `git diff
+eb4150f..HEAD -- kernel/TmKernel/Goals.lean` shows the theorem **deleted** at
+`fc26630`; it lives at `PlanCheck.lean:1737` with its audit line at
+`Check.lean:5630`. (b) It was never vacuous in that way — the goal's Break rows
+are the **log's**, which is exactly why it is *false* rather than empty. Track G
+corrected the identical sentence in the README and not the Lean copy;
+`git show eb4150f:…/Planner.lean | grep -n "stays in .Goals\.lean."` puts it at
+line 3683, so the text is pre-existing and was made false **by this run's own
+deletion**, in a file the run touched (`dc6a56b`, +67/−18). Rewritten in place,
+with what it used to say quoted.
+
+*Found while reproducing it, same class, not reported:*
+`Planner.lean:2802`'s *"which is the half of `plan_places_no_block_over_a_break`
+the cut owes. The other half is P5's"* still described a goal wholly owed, with
+no mention that it has been refuted and restated. One clause added. Its neighbour
+at `Planner.lean:2658` (*"why … is **not** discharged by **this step**"*) was
+read and is **correct** — it scopes itself to P3 — and was left.
+
+**M2 — the vacuity ratio read three ways, and `Planner.lean:3542`'s reading
+matched none of them.** It said *"five of the eleven checkers still range over
+nothing on a produced day, which is README gap 650 and is P5's"*. Gap 650's own
+title is **four**. Track G's sweep grep for the ratio **returns this line** and
+the block still claimed *"every prose statement of the ratio in the repo now
+agrees"* — eight were read, the grep returned nine. The repo keeps two questions
+apart and this sentence conflated them: **over every `PlanReq`** the answer is
+gap 650's **four** (`no_block_row_of_the_day_carries_a_slot_energy`,
+`no_block_row_of_the_day_reaches_the_wind_down`, `the_day_has_no_batch_row`,
+`the_day_names_no_impossible_item`); **at one request** it is
+`PlannerWit.the_battery_census_at_the_census_request`'s **seven of eleven** with
+a subject at `theCensusRequest`, so four without. Corrected, with both questions
+named. Track G's sweep sentence is corrected in place beside it.
+
+**Left as a fact and not as its class, deliberately.** The reuse critic lists
+`Negative.lean:2338` (*"SIX of the eleven range over nothing on the day the
+planner produces at `theStoredRequest`"*) as a third disagreeing number. It is
+**not**: it scopes itself to that request, where the census computes five with a
+subject and six without, and it is right there. The audit's own item says the
+same. **It was re-read and left as it stands.** Two readings of one question are
+not three numbers for it.
+
+**M3 — `PlannerWit.lean:1336` still cited "section 13" for a sentence that is
+section 14's.** The land step's repair 3 said it renumbered track G's section
+and moved *"the one prose citation of it"*. There were **two**.
+`git log -S "which is the sentence section 13 is about"` attributes the survivor
+to `fc26630`, track G's own commit. **The sweep looked for citations of
+`PlannerWit`'s sections in other files and not inside `PlannerWit`.** Fixed, and
+the whole-repo re-sweep (`grep -rEn "PlannerWit[^ ]* section [0-9]+|section
+1[0-9][^0-9]" --include=*.lean kernel/`) now returns three citations, all
+correct: `PlanCheck.lean:1565` → 14, `Planner.lean:3549` → 14,
+`PlannerWit.lean:2040` → 11. Fifth consecutive run to ship a stale citation.
+
+**M4 — gap 707's quoted grep does not reproduce, and its unnamed blind spot hid
+the one hook that *does* observe kernel calls.** Re-run verbatim,
+`grep -rn 'var("TM_' tm/src` returns **two lines, both `TM_KERNEL_FAULT_PROBE`**
+(`tui/mod.rs:690`, `:695`). `TM_DIR` is **not** among them — it is
+`env::var_os("TM_DIR")` at `cli/ctx.rs:105`. The pattern is blind to `var_os`, to
+a var read through a named constant (`ctx.rs:526` `env::var_os(TRACE_SCOPE_ENV)`,
+`:246` `TRACE_SCOPE_ENV = "TM_TRACE_REPLAY_SCOPE"`) and, being `tm/src`-only, to
+the FFI crate (`tm-kernel-ffi/src/lib.rs:20` `TM_KERNEL_ID`, `:64`
+`TM_TRACE_KERNEL_CALLS`). **The roster is five, not two**, and one of the five is
+exactly the class the gap says does not exist — track G's block and this one both
+drive it. **The gap's conclusion survives**: `trace_kinds()` prints section names
+(`log`, `apply`, `capacity+log`, `emit`), never a value. The method and its pasted
+output were both wrong, in a paragraph whose subject is method. Corrected in
+place, with the blind spot written down.
+
+**M5 — track P's addendum counted five shipped verbs; its own grep names two
+more, and neither was driven.** The block's prose names `lifecycle::review`
+directly and `tui::data_of` as further callers of `request(…, Some(ranked))`.
+Both reach `readPlanFacts`: `cli/lifecycle.rs:415` `ctx.priorities(false)?` in
+the `Period::Week` branch, and `tui/mod.rs:176` the same call in `fn data_of`,
+each landing on `ctx.rs:903` → `kernel_capacity::rank` → `ask(…, Some(&Ranked))`
+→ `request` → `"plan": plan_json(c)?`. **Driven, with the addendum's own
+inversion I** (`plan_json`'s call deleted from `cand_json`, release binary
+rebuilt, scratch `tm init --example` tree outside the repo, everything capped at
+`MemoryMax=16G`):
+
+```
+$ TM_DIR=…/plan TM_TRACE_KERNEL_CALLS=1 tm review week     # unmodified
+kernel call: log
+kernel call: capacity+log
+exit=0
+$ TM_DIR=…/plan tm review week                             # INVERSION I
+tm: kernel refusal: badCandidate 0 plan — a candidate record's key is absent, …
+exit=1
+$ TM_DIR=…/plan TM_TRACE_KERNEL_CALLS=1 script -qec "tm tui" /dev/null   # unmodified
+kernel call: log
+kernel call: capacity+log      ← start-up, then `log` on every tick
+$ TM_DIR=…/plan script -qec "tm tui" /dev/null             # INVERSION I
+tm: kernel refusal: badCandidate 0 plan — …
+exit=1
+```
+
+So **seven** shipped surfaces reach the decoder, not five. The TUI needs a tty
+and was driven under `script -qec`; its tick trace is **`log` only**, which is
+**D38's measurement from the other side** — it replans on reload, not on a tick.
+`tm review week` is the verb whose noisy T11 row this same run measures every
+pass and reports out of band, which is how it was missed. The addendum exists
+*because* a grep-only enumeration was judged insufficient, and its drive was then
+narrower than its own grep.
+
+**One qualification, read from the code and NOT driven**, said here rather than
+left for the next reader: `tm review week`'s call is inside
+`match week.contains(ctx.today)` (`lifecycle.rs:413`), so it reaches the decoder
+on the **current** week and a `--date` naming a past week takes the `false` arm
+and sends nothing. The drive above is the current week. The other six surfaces
+carry no such guard.
+
+**The mutation is in no commit.** `tm/src/cli/kernel_capacity.rs` was restored
+from a byte copy taken before the edit and is identical to `620b499`'s
+(`git diff HEAD -- tm/src/cli/kernel_capacity.rs` is empty), and the release
+binary was rebuilt from the restored source before the unmodified rows were
+re-driven.
+
+**M6 — track A's re-enumerated write paths miss a second dead raw-`fs` writer, so
+"everything else is accounted for" is false.** Step 1 re-run over `tm/src` and
+`tm-core/src` surfaces **`tm-core/src/energy.rs:452` `Model::save`** —
+`create_dir_all` (`:454`) + `fs::write(path, self.to_json())` (`:459`). It is
+production code (`#[cfg(test)]` begins at `:1397`) with **no caller** in either
+crate: `grep -rn '\.save(' tm/src tm-core/src` gives only `undo.rs:215` and
+`:319` (a different type), and the sole caller anywhere is
+`tm-core/tests/energy_model.rs:160`. The shipped `tm model --fit` writes through
+`ctx.store.write_file(MODEL_PATH, …)` (`cli/lifecycle.rs:533`), **gated** at
+`:524`, **recorded** at `:525`. This is gap 732's class exactly, and no named
+blind spot covers it — the method simply did not finish. Gap **776**.
+
+*Reproducing it, the whole of step 1 was re-run and every hit classified by its
+file's `#[cfg(test)]` boundary.* The production set is: `energy.rs` (776),
+`store.rs` (the `Store` impl itself), `kernel_log.rs` and `tz_table.rs` (D13
+caches), `undo.rs` (the way out), `init/mod.rs` (gap 680) — **and nothing else**.
+`config.rs:836/838`, `ctx.rs:1039-1188`, `tui/mod.rs:605/612` and
+`init/mod.rs:614` are all inside `#[cfg(test)]`. **What this re-run cannot see**
+is unchanged and is track A's own list: it is syntactic, it cannot judge
+reachability, it cannot see a *missing* write, and — the one that bit here — it
+cannot tell a caller-less production function from a live one without a second
+grep, which is why `Model::save` needs `grep -rn '\.save('` beside it and
+`write_day_review` needed the same.
+
+### 2. `boundedPos`, `safetyOfWire`, `multiplierOfWire` — three copies, now one
+
+AGENTS §5.3's class, one size down from W-16's `charsLe`-three-times, **and
+recorded honestly by the block that created the third copy while it repaired a
+different duplication it also created**. `Boundary.lean` held
+
+| reader | bound | constructor |
+|---|---|---|
+| `boundedPos n d` | `d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d` | `Arith.ofPair?` |
+| `safetyOfWire p` | `p.2 ≤ maxPairDen ∧ p.1 ≤ 1000 * p.2` | `safetyOf?` (`ofPair?` + `0 < n`) |
+| `multiplierOfWire p` | `p.2 ≤ maxPairDen ∧ p.1 ≤ maxMultiplier * p.2` | `Arith.ofPair?` |
+
+— three structurally identical `if`s with three parallel refusal batteries.
+
+**The fix is §5.3's and the brief's: the existing artefact was the wrong shape,
+so it was WIDENED and the old views proved to be projections.**
+`CapWire.boundedPair maxNum maxDen n d` is the one definition.
+`boundedPos n d := boundedPair maxRatioNum maxRatioDen n d` and
+`multiplierOfWire p := boundedPair maxMultiplier maxPairDen p.1 p.2`, each with a
+`rfl` projection theorem; **all seven old theorems** — `boundedPos`'s four
+(`_zero_den`, `_wide_den`, `_large_num`, `_ok`) and `multiplierOfWire`'s three
+(`_refuses_a_zero_denominator`, `_refuses_a_wide_denominator`,
+`_refuses_a_multiplier_past_a_thousand`) — **keep their exact statements**, and
+their proofs are now one application each of `boundedPair_zero_den`,
+`boundedPair_wide_den`, `boundedPair_large_num` and `boundedPair_ok`. **No
+statement changed and nothing was narrowed (D5).**
+
+`safetyOfWire` is **not** folded in, and that is a decision rather than an
+omission: `safetyOf?` also refuses a zero numerator (parity entry P8), which the
+other two must not. It is proved to be the same reader past that one refusal —
+`safetyOfWire_is_the_pair_reader_past_one_more_refusal` — so a reader can see the
+whole of the difference in one line. Gap **778** records what is left.
+
+**The inversion, because a `rfl` projection with the wrong constants is not a
+compile error you can assume.** Swapping the two bound arguments in
+`multiplierOfWire`'s definition (`boundedPair maxPairDen maxMultiplier`) — every
+statement in the file left untouched — makes `lake build` fail at **six** named
+places, transcript in §5. Five are the reader's own battery and the sixth is
+`readCand_refuses_each_of_the_nine_by_name`, the decoder witness, which is the
+one that shows the widening is load-bearing and not bookkeeping.
+
+### 3. `PlanFacts.eligible`: a conjunct no input can make decisive, in the run whose theme is vacuity
+
+`Lookahead.lean` had
+
+```lean
+def PlanFacts.eligible (f : PlanFacts) : Bool :=
+  !f.waiting && f.isOpen && f.blockedBy.isEmpty && f.capOk
+```
+
+with `waiting = (state == Status.live .world)` and `isOpen = (state ==
+Status.live .free || state == Status.live .self)`, over a `Holder` with exactly
+three disjoint constructors (`State.lean:151`). **`!waiting` is implied by
+`isOpen` and can never decide the answer** — AGENTS §9.2's *"a check no input can
+fail"*, which is this same block's stated standard for four **other** predicates
+and was not applied to this one. `eligible_iff` then restates `f.waiting = false`
+as an independent component of the iff, which reads as an obligation and is not.
+
+**This is W-17 lesson 2 from the other side.** Lesson 2 says a witness set that
+cannot distinguish a component pins nothing; here **no witness set can exist** —
+`waitingFacts` (`PlannerWit.lean:1194`) cannot pin it either, since `[?]` fails
+`isOpen` on its own. So the repair is not a witness but a **proof that none is
+possible**:
+
+```lean
+theorem PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states (f : PlanFacts) :
+    (!f.waiting && f.isOpen) = f.isOpen
+```
+
+The conjunct is **kept**, because the fork writes it (`Candidate::eligible()`
+reads `item.state == State::Waiting` first); the theorem and the docstring are
+the record that it decides nothing, and gap **775** is the honest entry.
+**Deleting it would have been the wrong repair**: it would make the kernel's
+filter stop looking like the fork's for no gain any test can see — and inversion
+II (§5) measured exactly how little: the whole tree notices in **one** place,
+`eligible_iff`'s own proof, which is the defect and not a use. That inversion
+also falsified this step's prediction, and the second new theorem,
+`eligible_iff_without_the_free_component`, exists because of it.
+
+### 4. `readPlanFacts_is_bounded`'s doc, and the docstring on the wrong definition
+
+**Two blind-spot defects in one paragraph's neighbourhood, both invisible to
+check 3, whose own comment says it reads `#print axioms` lines.**
+
+1. The doc above `readPlanFacts_is_bounded` read *"Whatever crosses is inside
+   R10's bounds, **by type**… no path from the wire to a `Cand` whose **nine**
+   facts are out of bounds (`Look.Cand.plan_is_bounded`), and no convention to
+   forget."* It holds for **eight**. `Look.PlanFacts.wf` constrains
+   `plannedMin`, the two `cap` minutes, `loc` and `blockedBy`; `splittable`,
+   `wallToday` and `state` are bounded by their types. **The multiplier's *size*
+   bound is in no conjunct of `wf`** — `Arith.Pos` carries only `0 < den` — so
+   `Cand.plan_is_bounded` says nothing about it and a `Cand` built *inside* the
+   kernel may hold an arbitrarily large one. R10 is still met (a smart
+   constructor the decoder uses, three named rejection theorems) and the P5a
+   table states it correctly; the Lean doc generalised. Corrected, and
+   `multiplierOfWire_ok` is new so the corrected sentence has a theorem behind
+   it rather than prose. Gap **777** records the residue by name.
+2. `Lookahead.lean:4755`'s three-paragraph docstring **"Fork
+   `Candidate::eligible()`"** sat one declaration too early — Lean bound it to
+   `def PlanFacts.capOk`, and `PlanFacts.eligible`, the predicate
+   `entersTheOrder` actually calls and the one those paragraphs are about,
+   shipped with **no docstring at all**. Split: `capOk` has its own, `eligible`
+   has the fork's.
+
+### 5. `driven` — the three inversions, and the enumerations, with their blind spots
+
+**Inversion I (the shipped-verb enumeration).** See §1 M5 for the transcript.
+Seven surfaces refuse, `tm plan --week` does not — exit 0 under inversion I, as
+the grep said, because it sends no candidates.
+
+**Inversion II (`!waiting`) — and it did not do what this step predicted, which
+is the reason to run one.** The prediction written before the drive was *"delete
+the conjunct and nothing moves"*. Deleting `!f.waiting &&` from
+`PlanFacts.eligible` makes `lake build` **fail**, at exactly one place:
+
+```
+error: TmKernel/Lookahead.lean:4821:47: unsolved goals
+f : PlanFacts
+⊢ f.isOpen = true ∧ f.blockedBy = [] ∧ f.capOk = true ↔
+    f.waiting = false ∧ f.isOpen = true ∧ f.blockedBy = [] ∧ f.capOk = true
+```
+
+That is `eligible_iff`'s **own proof**, and the residual goal is *literally the
+defect the critic named*: an iff that restates `waiting = false` as a fourth
+component beside three real ones. Nothing else in the kernel, and nothing in
+either suite, refers to the conjunct at all. So the honest statement is sharper
+than the predicted one:
+
+> **The conjunct is invisible to every test, every witness and every other
+> theorem. The one thing in the tree that can see it is a restatement of
+> `eligible` whose extra component is a consequence of another of its
+> components.**
+
+With that one proof patched — four lines, using
+`the_waiting_conjunct_is_implied_by_the_open_states` to supply the free component
+— the inversion runs clean and **the whole of acceptance is unchanged, digit for
+digit**: `check.sh` 7/7 with the same 4,549 / 93 / 29-37 / 4-5 / 9, and `cargo
+test --workspace` 1,345 passed / 0 failed / 9 ignored across 79 result lines.
+Restored and re-driven green afterwards.
+
+**What the inversion bought, beyond the measurement.** It is why this step also
+ships `PlanFacts.eligible_iff_without_the_free_component` — the same answer stated
+over the **three** conditions a caller must discharge. `eligible_iff` is kept
+exactly as it stands (**D5**: a law is never narrowed to make a point), and the
+new theorem proves the fourth component is free rather than deleting it.
+
+**Inversion III (`boundedPair`'s constants).** `multiplierOfWire`'s two bound
+arguments swapped (`boundedPair maxPairDen maxMultiplier`), nothing else touched:
+
+```
+error: TmKernel/Boundary.lean:10281:0: Not a definitional equality: the left-hand side
+                              ↳ def multiplierOfWire
+error: TmKernel/Boundary.lean:10284:73: Type mismatch
+                              ↳ multiplierOfWire_is_the_pair_at_the_multiplier_bounds
+error: TmKernel/Boundary.lean:10290:59: Application type mismatch
+                              ↳ multiplierOfWire_refuses_a_wide_denominator
+error: TmKernel/Boundary.lean:10293:90: Application type mismatch
+                              ↳ multiplierOfWire_refuses_a_multiplier_past_a_thousand
+error: TmKernel/Boundary.lean:10299:86: Application type mismatch
+                              ↳ multiplierOfWire_ok
+error: TmKernel/Boundary.lean:12069:13: Application type mismatch: The argument
+    Except.error (Refusal.badCandidate 0 CandKey.multiplier)
+                              ↳ readCand_refuses_each_of_the_nine_by_name
+error: build failed
+```
+
+Six named failures, the last of them the **decoder witness** — so the two
+constants are load-bearing at the wire and not only inside the battery that
+states them. Restored and rebuilt green.
+
+**The identifier sweep, and what it cannot see.** Every backticked snake_case
+identifier in every `.lean` file of the kernel was resolved against every
+declaration in it (`theorem|def|abbrev|structure|inductive|instance|class`).
+166 do not resolve. **Almost all are not defects**: the sweep cannot tell a
+*fork* function name (`place_mandatory_and_pref`, `last_wake_before`), a config
+key (`posterior_full_hours`), a Lean/`Std` lemma (`decidable_of_iff`,
+`List.Nodup.length_le_of_subset`) or a deliberately-withdrawn theorem
+(`every_transform_preserves_the_invariant`, AGENTS §5.2) from a stale citation.
+Six that looked like live kernel citations were opened by hand —
+`a_block_row_is_a_replayed_row`, `dayPlan_assigns_nothing_yet`,
+`the_day_has_no_segments_until_the_first_step_lands`,
+`mkPlanReq?_refuses_a_zero_denominator`,
+`close_week_folds_a_dropped_child_into_its_parent`,
+`plan_tail_drop_as_stage_6_wrote_it_is_refuted` — and **not one is a stale
+citation**. Five are explicit *historical* references whose own sentence says the
+name was deleted (`Planner.lean:22` and `Check.lean:4705` name three of them as
+deliberately-taken tripwires; `PlanCheck.lean:730` and `Boundary.lean:7993` name
+two more as refute-and-rename discharges). The sixth,
+`plan_tail_drop_as_stage_6_wrote_it_is_refuted` at `Goals.lean:852`, is a
+*forward* reference — **D29's planned name**, which README gap 450 already
+records as not the name that shipped
+(`PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`).
+All six reproduce as facts and not as the class; they were **left**. **The sweep
+found no live stale citation in Lean at all.**
+
+**And it would not have found the one the critic did.** `withFloor_is_the_floor_pass`
+lives in `kernel/README.md` (gap 701), and this sweep reads `.lean` files only —
+a blind spot named here rather than discovered by the next reader. The critic's
+own method (a backticked-identifier sweep of all 2,124 lines of the W-18 blocks,
+239 candidate names) is the complement, and between the two the run's prose has
+been resolved from both sides. **Neither is a gate and neither can become one
+without a declared allow-list of fork-function and config-key names; that is gap
+779.**
+
+*This block was swept against itself before it shipped.* Seventeen backticked
+snake_case identifiers in it do not resolve in Lean; **every one is deliberate** —
+the six historical names above, the critic's `withFloor_is_the_floor_pass`, the
+Rust names (`create_dir_all`, `write_day_review`), the Lean/`Std` lemmas quoted
+as examples of what the sweep cannot classify, the config key
+`posterior_full_hours`, and the two suffix abbreviations `_wide_den` /
+`_large_num`. No accidental referent.
+
+### 6. Gaps — this step takes 775-779; **780-789 free**
+
+**Gap 775 (new; label W18R-a) — `Look.PlanFacts.eligible`'s `!waiting` conjunct
+can never decide the answer.**
+1. *What is not done.* The conjunct is not removed and no input distinguishes it.
+2. *Why.* It is fork `Candidate::eligible()`'s first test, and dropping it would
+   make the kernel's filter stop matching the function it forks for no gain any
+   test can see. `the_waiting_conjunct_is_implied_by_the_open_states` is the
+   proof that it is implied by `isOpen`; §9.2 says a check no input can fail is
+   worth writing down. **Measured** (inversion II, §5): deleting it breaks
+   exactly one thing in the whole tree — `eligible_iff`'s own proof, which is a
+   restatement and not a use — and with that one proof patched, both suites are
+   unchanged digit for digit.
+3. *What it costs.* `eligible_iff` states `f.waiting = false` as a component of
+   its iff, and a reader takes it for an obligation. It is a consequence.
+   `eligible_iff_without_the_free_component` is now stated beside it so a caller
+   has the three-obligation form; the four-component one is **kept** (D5).
+4. *Which step clears it.* **P5b**'s fold or **R3**, when `entersTheOrder`'s
+   filter is compared against the fork's line by line and the two can be shown to
+   agree with the conjunct gone.
+
+**Gap 776 (new; label W18R-b) — `tm_core::energy::Model::save` is a second dead
+raw-`fs::write` writer, ungated and unrecorded.**
+1. *What is not done.* `tm-core/src/energy.rs:452` writes a file with
+   `std::fs::write` and reaches no D35 gate and no `Recorder::start`.
+2. *Why.* It has **no caller** in `tm/src` or `tm-core/src` — only
+   `tm-core/tests/energy_model.rs:160`. The shipped `tm model --fit` writes
+   through `ctx.store.write_file` (`cli/lifecycle.rs:533`), gated at `:524` and
+   recorded at `:525`, so nothing a user runs reaches it today.
+3. *What it costs.* It is gap 732's class: a second raw writer sitting beside the
+   gated path, so a future caller gets an ungated, unrecordable write for free —
+   and track A's *"everything else is accounted for"* was false by this row.
+4. *Which step clears it.* **R9** with the shim, or whichever step removes
+   `write_day_review` (gap 732); the two should go together, and the decision is
+   "delete or route through `Store`", not "gate a second raw writer".
+
+**Gap 777 (new; label W18R-c) — the multiplier's size bound is the decoder's, not
+the type's, so `Cand.plan_is_bounded` does not carry it.**
+1. *What is not done.* `Look.PlanFacts.wf` has no multiplier conjunct.
+2. *Why.* `safetyOfWire`'s precedent (§13.6's row): every configured decimal's
+   size bound lives at the wire, and a second copy in `wf` would be §5.3's defect.
+3. *What it costs.* A `Cand` built **inside** the kernel — a witness, a future
+   fold, anything not off the wire — may carry an arbitrarily large `Arith.Pos`,
+   and `Cand.plan_is_bounded` will not catch it. Off the wire,
+   `CapWire.multiplierOfWire_ok` is the bound. The Lean doc said *"all nine, by
+   type"*; it is eight.
+4. *Which step clears it.* **P8** if the reservation row ever emits a multiplier
+   (gap 550) — that is the first in-kernel producer — or the step that decides
+   `wf` should carry every size bound, in which case `safetyOf?`'s goes in too.
+
+**Gap 778 (new; label W18R-d) — `safetyOfWire` is `boundedPair` past one extra
+refusal and is not written as one.**
+1. *What is not done.* It keeps its own `if`, and only a theorem ties it to
+   `boundedPair`.
+2. *Why.* `safetyOf?` refuses a zero numerator and the other two readers must
+   not; parameterising over the constructor would put a higher-order function on
+   the decoding path for one call site.
+3. *What it costs.* One `if` that could drift from the other two.
+   `safetyOfWire_is_the_pair_reader_past_one_more_refusal` is what fails if it does.
+4. *Which step clears it.* Whichever step next adds a **fourth** bounded rational
+   to this wire; at three, the theorem is cheaper than the abstraction.
+
+**Gap 779 (new; label W18R-e) — nothing in `check.sh` reads a doc comment, and
+five consecutive runs have shipped a stale citation inside one.**
+1. *What is not done.* No check resolves a backticked identifier in Lean prose,
+   and no check sees a heading, a section number or a "stays in `Goals.lean`".
+2. *Why.* Check 3 reads `#print axioms` lines and says so in its own comment;
+   gap 672 named the heading half of this and was not cleared.
+3. *What it costs.* **M1, M2, M3 and §4's two are all this**, plus the run's own
+   `withFloor_is_the_floor_pass` and W-17's gaps 653 and 672. It is the single
+   largest recurring defect class in this campaign's ledger.
+4. *Which step clears it.* A check 8 that resolves backticked snake_case
+   identifiers in `kernel/TmKernel/**.lean` **and in `kernel/README.md`** against
+   the declaration set, with a **declared allow-list** of fork-function and
+   config-key names — the §5 sweep finds 166 unresolved in Lean and **none** of
+   them a defect, while the one real dangling referent this run had was in the
+   README, so the allow-list and the README half are the whole of the work. It
+   is a change to the acceptance script itself and so is
+   **D19-separable**: it lands on its own, not inside a repair step.
+
+### 7. Acceptance, and every delta explained
+
+Everything capped; `MemoryMax=40G`/`MemorySwapMax=0` for `check.sh` and `cargo`,
+`16G` for the binary drives and the release build.
+
+| | HEAD `620b499` | this step | delta |
+|---|---|---|---|
+| `check.sh` | 7/7 ok | **7/7 ok** | — |
+| axiom audit | 4,539 theorems | **4,549** | **+10**, the ten new theorems below |
+| corpus | 29/37 files, 4/5 whole plans | **29/37, 4/5** | — (`kernel/corpus/` untouched) |
+| burn-down | 9 outstanding, all stage 6 | **9, all stage 6** | — (no goal added, none discharged) |
+| check 5 | ok (93 tests) | **ok (93 tests)** | — |
+| `cargo test --workspace` | 1,345 / 0 / 9 across 79 result lines | **1,345 / 0 / 9 across 79** | — |
+| FFI crate whole | 101 / 0 | **101 / 0** (corpus 8, kernel 86, stack 7) | — |
+| T5 `kernel_replay_parity` | 29 / 0 / 4 | **29 / 0 / 4** | — |
+| the door (`kernel_log_door`) | 23 / 0 | **23 / 0** | — |
+| `kernel_log_grammar` | 16 / 0 / 2 | **16 / 0 / 2** | — |
+| `cli_switch_acceptance` | 9 / 0 | **9 / 0** | — |
+| `kernel_call_counts` | 2 / 0 | **2 / 0** | — |
+| `cli_write_gate` (D35's gate) | 11 / 0 | **11 / 0** | — |
+| `the_frozen_comparand_is_read_at_full_precision` (D21-D23) | passes | **passes** | — |
+| `cli_latency --include-ignored`, release, ×3 | 6 / 6 | **6 / 6, 6 / 6, 6 / 6** | rows below, as **ranges** |
+
+**The T11 rows are up about 15% on this machine, and the attribution is in the
+rows themselves — not in this step's code.** Three release runs,
+`--include-ignored --test-threads=1 --nocapture`, capped:
+
+| T11 row (3y log, 66,169 lines) | land block's range | this step, ×3 |
+|---|---|---|
+| **later verb (`tm drop`'s one kernel call)** — the *reliable* baseline | 126.7–131.7 ms | **146.96 / 146.82 / 152.02 ms** |
+| **gated host-only write (D35)** | 126.7–131.7 ms | **146.96 / 151.98 / 146.92 ms** |
+| a routine for a 3-day-old instance (noisy) | — | **151.96 / 141.81 / 156.74 ms** |
+| `--now +1 day` (a reseal, noisy) | — | **207.56 / 207.62 / 207.69 ms** |
+| `review week` (out of band, gap 275) | — | **283.69 / 288.68 / 288.85 ms** |
+
+**`tm drop`'s row is the control and it moved too, by the same amount.** That is
+what makes this a machine-state reading rather than a kernel one: D35's gated
+write sits at **exactly** `tm drop`'s band, run for run, which is the invariant
+the land block asserted and the only thing these two rows are evidence for. All
+six assertions pass; **nothing is re-blessed** and no band is touched. The
+supporting argument is that `tm/src`, `tm-core/src` and `Cargo.lock` are
+**byte-identical to `620b499`** (`git diff HEAD -- tm tm-core Cargo.lock` is
+empty) and the only non-prose Lean change is definitional.
+
+**What was NOT done, so the attribution is not overstated:** these rows were not
+re-measured at `620b499` on this machine in this session. Three kernel builds and
+four full suites ran here beforehand. The claim is *"the control moved with it"*,
+which the table shows, and **not** *"the difference is provably thermal"*.
+
+**Nothing in this step can move a Rust number and nothing did.** The only
+non-prose Lean change is `boundedPos`/`multiplierOfWire` becoming applications of
+`boundedPair`, which is a **definitional** equality — both projection theorems are
+`rfl` — so the extracted C is the same computation, and the two new `Look`
+theorems are theorems, which the FFI never calls. That is the *argument*; the
+table is the measurement, and the measurement is what the claim rests on.
+
+The ten: `CapWire.boundedPair_zero_den`, `_wide_den`, `_large_num`, `_ok`,
+`boundedPos_is_the_pair_at_the_energy_bounds`,
+`safetyOfWire_is_the_pair_reader_past_one_more_refusal`,
+`multiplierOfWire_is_the_pair_at_the_multiplier_bounds`, `multiplierOfWire_ok`,
+`Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states` and
+`Look.PlanFacts.eligible_iff_without_the_free_component`. **Ten**, not nine: the
+tenth was added *because* inversion II falsified this step's own prediction (§5).
+All ten have `#print axioms` lines under this step's banner in `Check.lean`, and
+the audit count closes exactly: 4,539 + 10 = **4,549**.
+
+### 8. What this step did NOT do, by name
+
+* **No planner code.** P5b's assign fold is where track P left it. No candidate
+  fact is derived in the kernel — D34 stands and D27 is still R3's.
+* **No wire change.** `PlanFacts` has the same nine fields, `PlanFacts.wf` the
+  same conjuncts, `readPlanFacts` the same decoders. Gap 777 is recorded, not paid.
+* **No goal touched.** `dayPlan` keeps its total signature (D28), no law was
+  narrowed or re-stated (D5), no snapshot, fixture, latency band or corpus was
+  re-blessed, and no memory bound was raised (D18).
+* **It did not fix gap 779**, which is the class three of its own six majors
+  and both of §4's defects belong to, because a new `check.sh` check is a
+  behaviour change to the acceptance script and D19 says it lands on its own.
+* **It did not delete `!waiting`** (gap 775) or fold `safetyOfWire` (gap 778);
+  both are recorded with the shape the fix must take.
+* **It left `Negative.lean:2338` alone** after reading it, because it is correct.
