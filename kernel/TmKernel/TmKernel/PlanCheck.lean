@@ -1855,5 +1855,337 @@ theorem dayPlan_ok_from_now_given_the_two_comparisons (el : Eligible) (r : PlanR
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
 
+/-! ############################################################################
+## The quiet day: §6.1's lift at TEN of eleven, over the WHOLE day (W-20, track G)
+############################################################################
+
+W-19 left the record at **nine of eleven at every eligibility, over
+`withoutPast`'s day**, with the two comparisons refuted.  This section adds the
+other axis, and it is a different statement in two ways: it is over the **whole**
+day rather than `withoutPast`'s restriction of it, and it reaches **ten**.
+
+**The class it is about is named in its hypotheses and is not a special case of
+convenience.**  A *quiet* request is one whose log holds no Block for today
+(`hnopast`, which `dayPlan_ok_core` already carries) and whose runtime holds no
+reservation (`hnorun`).  On such a day the planner assigns nothing at all —
+`dayPlan_assigns_nothing_on_a_quiet_day` — and `monotoneInRank`, the first of
+W-19's two refuted comparisons, becomes provable.  It is the **tenth** conjunct
+of §6.1's lift, and no proof in this repository had it before.
+
+**What that tenth conjunct is worth, measured rather than implied.**  It is
+provable here *because its quantifier is empty*: `rankPairOk`'s conclusion is
+`j ∈ assignedOf d → i ∈ assignedOf d`, and `assignedOf` is `[]`.
+`PlannerWit.the_tenth_is_vacuous_where_the_eleventh_bites` computes the
+population as `[]` at the request where the eleventh has one.  So this is a
+**proof-coverage** advance over W-19's nine and **not** a subject-coverage one:
+the count of the eleven with something to range over does not move, and a reader
+taking "ten of eleven" as "ten checkers biting" is over-counting by the same
+argument README gap 650 got wrong about `noBlockOverABreak`.
+
+**Ten is a ceiling on the quiet class too, and the eleventh fails for a cause
+that has nothing to do with the assign fold.**
+`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes `hotBeforeQueue` as
+`false` at a request with **no log, nothing running and no candidates** — so no
+step 5, no choice 5b reservation and no replayed past can be blamed.  The cause
+is in the checker's own quantifier: `hotPairOk` ranges `sj` over **every**
+segment of the day, and a calendar Wall carrying `^g1` is therefore a queue
+position that a hot `^m1` with no row of its own has failed to precede.
+
+**That refines README gap 850's inheritance for P5**, and the refinement is the
+point of stating it: gap 850 offered P5 two repairs — an `eligibleAt` that
+refuses a candidate at the reservation row, or the fold.  **Neither reaches
+`hotBeforeQueue`.**  The only eligibility that repairs it is one that answers
+`false` for an item the plan holds but step 5 never queues, and the only other
+repair is in the checker, restricting `sj` to `sj.val.kind.isWork` — which is a
+restatement of one of L26's eleven and so is P5's to take with its refutation
+beside it (AGENTS §3.1 item 3), not this step's to take quietly.  README gap
+960. -/
+
+/-- **A quiet day assigns nothing.**  `assignedOf` filters `SegKind.isWork`, which is `Block`
+and `Batch` and nothing else; `dayPlan_has_no_block_row` kills the first on a day with no
+replayed Block and no reservation, and `the_day_has_no_batch_row` kills the second on every
+day until §8.2 step 5 lands.
+
+This is **not** `PlannerWit.the_quiet_day_assigns_nothing`, which is one `decide` at one
+request; this is the ∀-statement that request is an instance of. -/
+theorem dayPlan_assigns_nothing_on_a_quiet_day (r : PlanReq)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnorun : r.activeRun = none) : assignedOf (dayPlan r) = [] := by
+  rw [List.eq_nil_iff_forall_not_mem]
+  intro i hi
+  obtain ⟨s, hs, hw, -⟩ := (mem_assignedOf _ i).1 hi
+  have hnb : ∀ ids, s.val.kind ≠ SegKind.batch ids := the_day_has_no_batch_row r s hs
+  have hnbl : s.val.kind ≠ SegKind.block := dayPlan_has_no_block_row r hnopast hnorun s hs
+  have hfalse : s.val.kind.isWork = false := by
+    cases hk : s.val.kind <;> first
+      | exact absurd hk hnbl
+      | exact absurd hk (hnb _)
+      | rfl
+  rw [hfalse] at hw
+  exact absurd hw (by simp)
+
+/-- **`monotoneInRank` holds of a day that assigns nothing**, at every eligibility.  Stated
+over an arbitrary `DayPlan` so that the quiet day and any later empty-assignment day get it
+from one proof (AGENTS §5.3), in the shape `batchDoesNotReachPast_of_no_batch_row` already
+uses. -/
+theorem monotoneInRank_of_nothing_assigned (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : assignedOf d = []) : monotoneInRank el r d = true := by
+  refine List.all_eq_true.2 (fun i _ => List.all_eq_true.2 (fun j _ => ?_))
+  refine (rankPairOk_iff el r d i j).2 ?_
+  intro e f _ _ _ _ _ _ _ _ hmem
+  rw [h] at hmem
+  exact absurd hmem (by simp)
+
+/-- **TEN of §6.1's eleven, over the whole day, at every eligibility.**  Seven are
+`planOkCore`'s, two hold because their subject is empty at every request, and the tenth is
+`monotoneInRank`, which this step adds.
+
+The eleventh is `hotBeforeQueue` and it is **refuted** on this very class —
+`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` — so this conjunction is not a waypoint
+towards eleven by this route.  See the section header. -/
+theorem dayPlan_ok_on_a_quiet_day_except_hot (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnorun : r.activeRun = none)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
+    planOkCore r (dayPlan r) = true ∧
+      monotoneInRank el r (dayPlan r) = true ∧
+      impossibleKept el r (dayPlan r) = true ∧
+      batchDoesNotReachPast el r (dayPlan r) = true :=
+  ⟨dayPlan_ok_core r hagree hactive hday hnowcal hnopast hplain,
+   monotoneInRank_of_nothing_assigned el r _
+     (dayPlan_assigns_nothing_on_a_quiet_day r hnopast hnorun),
+   impossibleKept_is_true_because_its_subject_is_empty el r,
+   batchDoesNotReachPast_is_true_because_its_subject_is_empty el r⟩
+
+/-- **§6.1's `planOk` itself, assembled from the ten plus the one** — so that "ten of eleven"
+is the compiler's arithmetic over `checksOf`'s list and not a reader's over a transcription of
+it.  README gap 684 is the record of doing that arithmetic by hand and getting it wrong, and
+this is the whole-day sibling of `dayPlan_ok_from_now_given_the_two_comparisons`.
+
+**It assumes one of the eleven and its name says so.**  What makes it worth stating is what
+stands beside it: `PlannerWit.a_quiet_day_does_not_pass_the_whole_battery` proves the
+hypothesis cannot be dropped, and `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`
+is the instance in which it holds. -/
+theorem dayPlan_ok_on_a_quiet_day_given_hot (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnorun : r.activeRun = none)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hhot : hotBeforeQueue el r (dayPlan r) = true) :
+    planOk el r (dayPlan r) = true := by
+  obtain ⟨hcore, hrank, himp, hbat⟩ :=
+    dayPlan_ok_on_a_quiet_day_except_hot el r hagree hactive hday hnowcal hnopast hnorun hplain
+  simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
+    List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
+  exact hcore
+
+/-! ############################################################################
+## G1's fold: the two clauses README gap 806 left unpinned, and gap 877's consumer
+############################################################################
+
+Gap 806 records that three of `pick`'s five clauses are ∀-theorems
+(`Planner.PlanReq.assignFold_ok`) and that **`g.live` and the atomic run are pinned by
+witnesses only**, because both are statements about the walk's history rather than about the
+value it produces.  Gap 806 item 4 names **G1** as the step that clears it.  This is that
+step, and the resolution is that the history does not have to be reconstructed: `assignStep`
+is universally quantified over the accumulator it is handed, so a ∀-theorem about **one step
+at an arbitrary accumulator** is a ∀-theorem about every point of the fold's own walk.
+
+The three theorems below are stated as **gates** — the contrapositive — because that is what
+a clause of `pick` *is*: a group the clause refuses does not get the slot.  Stating them the
+other way round ("the group that got the slot was live") is the same content and is weaker to
+use, because the fold's later steps carry the group forward with its `spent` already moved.
+
+**These live here and not in `Planner.lean` because `Planner.lean`'s step bodies are track P's
+this run** (W-20's brief).  They are G1's induction lemmas; the step that writes the fold
+induction proper consumes them where they stand.
+-/
+
+/-- **`pick`'s first clause, as a ∀-theorem** (README gap 806, half one): a step never hands a
+slot to a group that owes nothing.  Whatever the accumulator, whatever the slot, whatever the
+budget: if the group at `gi` is not `live`, then the slot was already its own before the step,
+which is to say the step did not give it. -/
+theorem the_cursor_refuses_a_group_that_owes_nothing (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat)
+    (gi : Nat) (g : Group) (hg : a.groups[gi]? = some g) (hdead : g.live = false)
+    (hfresh : a.slotOf[x.2]? ≠ some (some gi)) :
+    (r.assignStep slots breaks budget a x).slotOf[x.2]? ≠ some (some gi) := by
+  intro h
+  refine hfresh ?_
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gj, gg, hgj, hpg, -, heq⟩
+  · rwa [heq] at h
+  · rw [heq] at h
+    simp only at h
+    by_cases hlt : x.2 < a.slotOf.length
+    · rw [List.getElem?_set_self hlt] at h
+      have hji : gj = gi := by simpa using h
+      rw [hji] at hgj
+      rw [(Option.some.inj (hgj.symm.trans hg) : gg = g)] at hpg
+      unfold PlanReq.groupFitsSlot at hpg
+      rw [hdead] at hpg
+      simp at hpg
+    · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at h
+      exact absurd h (by simp)
+
+/-- **`pick`'s fifth clause, as a ∀-theorem** (README gap 806, half two): a step never hands a
+slot to a non-`splittable` group whose remaining run does not fit from that slot on.
+`contiguousFits` is read at the accumulator's **own** `slotOf`, which is what makes this a
+statement about the assignment as it then stood — the thing gap 806 says a property of the
+produced value cannot express. -/
+theorem the_cursor_refuses_an_atomic_group_whose_run_is_broken (r : PlanReq)
+    (slots : List Look.Slot) (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign)
+    (x : (Fin 6 × Look.Slot) × Nat) (gi : Nat) (g : Group) (hg : a.groups[gi]? = some g)
+    (hat : g.splittable = false)
+    (hbroken : contiguousFits slots a.slotOf breaks x.2 g.leftMin = false)
+    (hfresh : a.slotOf[x.2]? ≠ some (some gi)) :
+    (r.assignStep slots breaks budget a x).slotOf[x.2]? ≠ some (some gi) := by
+  intro h
+  refine hfresh ?_
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gj, gg, hgj, hpg, -, heq⟩
+  · rwa [heq] at h
+  · rw [heq] at h
+    simp only at h
+    by_cases hlt : x.2 < a.slotOf.length
+    · rw [List.getElem?_set_self hlt] at h
+      have hji : gj = gi := by simpa using h
+      rw [hji] at hgj
+      rw [(Option.some.inj (hgj.symm.trans hg) : gg = g)] at hpg
+      unfold PlanReq.groupFitsSlot at hpg
+      rw [hat, hbroken] at hpg
+      simp at hpg
+    · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at h
+      exact absurd h (by simp)
+
+/-- **The cursor skips no group that fits** — README gap 877's consumer.
+
+`Planner.pickedGroup_is_the_first_that_fits` states two things and
+`Planner.PlanReq.assignStep_cases` destructures away the second; gap 877 records that the
+"every earlier group fails" half had a computed subject and no proof consuming it.  This is
+that proof.  It is the statement §7.4's key order is *for*: a slot that went to `gi` went
+there because everything ranked ahead of `gi` was refused at that very slot, which is the
+claim the fork's `for (gi, g) in groups.iter().enumerate()` actually makes.
+
+It is also the shape `monotoneInRank`'s honest discharge needs — "the higher-ranked candidate
+was not merely unlucky, it failed the filter" — which is why G1 is the step that owes it. -/
+theorem the_cursor_skips_no_group_that_fits (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat)
+    (gi j : Nat) (gj : Group) (hj : j < gi) (hgj : a.groups[j]? = some gj)
+    (hnew : a.slotOf[x.2]? ≠ some (some gi))
+    (h : (r.assignStep slots breaks budget a x).slotOf[x.2]? = some (some gi)) :
+    r.groupFitsSlot slots a.slotOf breaks x.2 x.1.1 x.1.2 gj = false := by
+  unfold PlanReq.assignStep at h
+  split at h
+  · exact absurd h hnew
+  · split at h
+    · exact absurd h hnew
+    · rename_i gk hp
+      split at h
+      · exact absurd h hnew
+      · rename_i g hgk
+        simp only at h
+        by_cases hlt : x.2 < a.slotOf.length
+        · rw [List.getElem?_set_self hlt] at h
+          have hki : gk = gi := by simpa using h
+          obtain ⟨-, hbefore⟩ := pickedGroup_is_the_first_that_fits _ a.groups gk hp
+          exact hbefore j (by omega) gj hgj
+        · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at h
+          exact absurd h (by simp)
+
+/-! ### The same clause, lifted over the whole walk by induction
+
+The gates above are per-step.  This is the induction, and it is the first one in this
+repository that runs over `Planner.PlanReq.assignFold` for something other than
+`Planner.PlanReq.AssignOk`.  What it carries is the one consequence of `g.live` that survives
+every later step: a group the cursor ever gave a slot to had a **positive commitment**, and
+`Planner.PlanReq.assignStep_keeps_the_group` says no step moves `commitMin`. -/
+
+/-- The invariant: every slot that is taken was taken by a group that asks for minutes. -/
+def OwesSomething (a : Assign) : Prop :=
+  ∀ (i gi : Nat) (g : Group),
+    a.slotOf[i]? = some (some gi) → a.groups[gi]? = some g → 0 < g.commitMin
+
+theorem assignStart_owes (r : PlanReq) : OwesSomething r.assignStart := by
+  intro i gi g h _
+  unfold PlanReq.assignStart at h
+  simp only [List.getElem?_replicate] at h
+  split at h
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+theorem assignStep_owes (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
+    (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) (h : OwesSomething a) :
+    OwesSomething (r.assignStep slots breaks budget a x) := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gj, gg, hgj, hpg, -, heq⟩
+  · rw [heq]; exact h
+  · rw [heq]
+    have hpos : 0 < gg.commitMin := by
+      unfold PlanReq.groupFitsSlot at hpg
+      simp only [Bool.and_eq_true] at hpg
+      have hlive : gg.live = true := hpg.1.1.1.1
+      unfold Group.live at hlive
+      simp only [decide_eq_true_eq] at hlive
+      omega
+    intro i gi g hi hgi
+    simp only at hi hgi
+    by_cases hig : gi = gj
+    · subst hig
+      rw [List.getElem?_set_self (lt_of_getElem?_some hgj)] at hgi
+      rw [← Option.some.inj hgi]
+      exact hpos
+    · rw [List.getElem?_set_ne (by omega)] at hgi
+      by_cases hix : i = x.2
+      · subst hix
+        by_cases hlt : x.2 < a.slotOf.length
+        · rw [List.getElem?_set_self hlt] at hi
+          exact absurd (by simpa using hi : gj = gi) (by omega)
+        · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at hi
+          exact absurd hi (by simp)
+      · rw [List.getElem?_set_ne (by omega)] at hi
+        exact h i gi g hi hgi
+
+theorem foldl_assignStep_owes (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign), OwesSomething a →
+      OwesSomething (l.foldl (r.assignStep slots breaks budget) a)
+  | [], _, ha => ha
+  | _ :: xs, a, ha => by
+      simp only [List.foldl_cons]
+      exact foldl_assignStep_owes r slots breaks budget xs _ (assignStep_owes r slots breaks budget a _ ha)
+
+/-- **The cursor gives no slot to a group that owes nothing** — over the whole of §8.2 step
+5's walk, for every `PlanReq`.  README gap 806's first half, as a property of the produced
+assignment rather than of one step. -/
+theorem assignFold_owes (r : PlanReq) : OwesSomething r.assignFold :=
+  foldl_assignStep_owes r r.todaySlots r.todayBreaks (remainingBudget r) _ _ (assignStart_owes r)
+
+/-- **The invariant's consumer, with `OwesSomething` nowhere in its statement.**  A predicate
+that is only ever mentioned by theorems *about* it is the `Planner.Ranked.gatherable := true`
+shape (README gap 875): constant-folding it to `fun _ => True` leaves every such theorem green.
+This is the statement that stops being provable when it is —- the fold's own guarantee, written
+without the invariant's name.  D40. -/
+theorem the_cursor_gives_no_slot_to_a_group_that_owes_nothing (r : PlanReq) (i gi : Nat)
+    (g : Group) (hs : r.assignFold.slotOf[i]? = some (some gi))
+    (hg : r.assignFold.groups[gi]? = some g) : 0 < g.commitMin :=
+  assignFold_owes r i gi g hs hg
+
 end PlanCheck
 end Tm

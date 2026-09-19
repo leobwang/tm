@@ -3677,5 +3677,259 @@ theorem the_battery_passes_on_the_day_step_six_filled :
         (fun s => decide (s.val.kind = SegKind.brk))).length = 0 := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
+/-! ############################################################################
+## 18. The quiet day: TEN of the eleven — and the eleventh is not the fold's fault
+############################################################################
+
+W-19 put §6.1's lift at **nine of eleven at every eligibility, over
+`PlanCheck.withoutPast`'s day**, and proved the two missing conjuncts false.  This
+section is the other axis: the **whole** day, at every eligibility, over the class of
+requests whose log holds no Block and whose runtime holds no reservation.  There the
+lift reaches **ten** — `PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot` — because
+`monotoneInRank`, one of W-19's two refuted comparisons, becomes provable when the day
+assigns nothing at all.  **The tenth conjunct is vacuous where it is provable** and
+`the_tenth_is_vacuous_where_the_eleventh_bites` computes that: the advance is in proof
+coverage, not in how many of the eleven have a subject, which is unchanged.
+
+**And ten is a ceiling there too, for a cause that is not the assign fold's.**
+`hotBeforeQueue_is_false_on_a_quiet_day` computes the eleventh as `false` at a request
+with an **empty log, nothing running and no candidates** — so no step 5, no choice 5b
+reservation and no replayed past is available to blame.  The cause is inside the
+checker's own quantifier: `PlanCheck.hotPairOk` ranges `sj` over **every** segment of the
+day, so the calendar's Wall row carrying `^g1` is a queue position that the hot `^m1`,
+which has no row of its own, has failed to get in front of.
+
+That matters for README gap 850, which offered P5 two repairs and said the step must
+name which it takes.  **Neither repair reaches this one.**  An `eligibleAt` that refuses
+a candidate at choice 5b's reservation row does not, because there is no reservation
+here; the fold does not, because `^m1` is not a candidate here.  What repairs it is
+either an eligibility that answers `false` for an item the plan holds and step 5 never
+queues, or a restriction of `sj` to `sj.val.kind.isWork` — a **restatement of one of
+L26's eleven**, which AGENTS §3.1 item 3 says ships with its refutation in the step that
+owns the row, and §6.3 gives that row to P5.  This step supplies the refutation and
+leaves the restatement where the design put it.  README gap 960. -/
+
+def witReqInQuietCensus : PlanReqIn :=
+  { witReqIn with docs := censusWitness, lines := [] }
+
+/-- **The census Wednesday with nothing going on**: `censusPlan`'s wall and two ranked
+siblings, the same day, the same configuration — and an empty log, `RuntimeIn.empty` and
+no candidates.  Every field is one an existing witness already uses; nothing is retyped. -/
+def theQuietCensusRequest : PlanReq :=
+  ⟨censusPlan, witRun0, witInput, RuntimeIn.empty, Capped.nil, witPrio, Capped.nil, none⟩
+
+/-- **The builder accepts it**, by the four stage equations, as every other request here. -/
+theorem witBuildsQuietCensus : mkPlanReq? witReqInQuietCensus = .ok theQuietCensusRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInQuietCensus witReqIn theQuietCensusRequest
+  simp only [censusPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_census_witness_indexes_the_calendars_one_wall.symm)]
+  rw [hz, ht, witRun0_resumes]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
+
+set_option maxRecDepth 40000 in
+/-- **It is quiet, computed**: nothing replayed and nothing running — the two hypotheses
+`PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot` adds to `dayPlan_ok_core`'s five. -/
+theorem the_quiet_census_request_is_quiet :
+    pastRows theQuietCensusRequest = [] ∧ theQuietCensusRequest.activeRun = none := by decide
+
+set_option maxRecDepth 40000 in
+/-- **The day it produces**: the calendar's wall and §16's two evening rows.  **No Block
+row of any kind** — not a replayed one, because the log is empty, and not choice 5b's
+reservation, because nothing is running.  This is what makes the refutation below a
+statement about the checker and not about the planner. -/
+theorem the_quiet_census_day_is_a_wall_and_an_evening :
+    (dayPlan theQuietCensusRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 770).sec,
+          (Cal.instantOf Cal.chicago 739867 830).sec, SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec,
+          (Cal.instantOf Cal.chicago 739868 0).sec, SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The eleventh checker is FALSE on a quiet day** — at the permissive eligibility, on a
+day with no Block row at all.  `assignedOf` is empty here, so this cannot be repaired by
+assigning anything: `hotPairOk`'s conclusion is about **segments**, not about the assigned
+set, and the segment that defeats it is a Wall.
+
+**It is not vacuous**: `hotSubjects` computes the pair the quantifier is about. -/
+theorem hotBeforeQueue_is_false_on_a_quiet_day :
+    assignedOf (dayPlan theQuietCensusRequest) = [] ∧
+      PlanCheck.hotBeforeQueue permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = false ∧
+      hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
+        = [(['m','1'], ['g','1'])] := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **The other ten hold at that same request** — the seven of `checksCore`, `monotoneInRank`
+(this step's tenth), and the two whose subject is empty at every request.  Computed at the
+same `PlanReq` as the refutation above, so "ten of eleven" is a reading of one day and not an
+average over two. -/
+theorem the_ten_hold_where_the_eleventh_fails :
+    PlanCheck.planOkCore theQuietCensusRequest (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.monotoneInRank permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.impossibleKept permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.batchDoesNotReachPast permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true := by
+  decide
+
+/-- **§6.1's whole `planOk` is refuted on the quiet class** — being quiet is not enough.
+The two hypotheses this statement carries are exactly the two the quiet lift adds, and both
+are theorems above, so the refutation is of the lift's *residue* and not of a strawman.
+
+It does not subsume `dayPlan_ok_at_every_eligibility_is_refuted`: that one refutes the `∀ el
+r` form outright, this one refutes it **under the hypotheses that make ten of the eleven
+provable**, which is the statement a reader trying to close the last conjunct needs. -/
+theorem a_quiet_day_does_not_pass_the_whole_battery :
+    ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        r.activeRun = none → (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        PlanCheck.planOk el r (dayPlan r) = true) := by
+  intro h
+  have hq := h permissive theQuietCensusRequest the_quiet_census_request_is_quiet.2
+    (by rw [the_quiet_census_request_is_quiet.1]; simp)
+  have hhot : PlanCheck.hotBeforeQueue permissive theQuietCensusRequest
+      (dayPlan theQuietCensusRequest) = true :=
+    PlanCheck.checks_all permissive _ _ hq ⟨.hot, PlanCheck.hotBeforeQueue permissive⟩
+      (by simp [PlanCheck.checksOf, PlanCheck.checksEligible])
+  rw [hotBeforeQueue_is_false_on_a_quiet_day.2.1] at hhot
+  exact absurd hhot (by simp)
+
+/-! ### The quiet lift, fired — every hypothesis a theorem, none assumed
+
+AGENTS §7.4 item 2: a lift with seven hypotheses and no instance is a promise about a domain
+nobody has shown to be inhabited.  `theQuietRequest` is that instance.  Its `hplain` is
+**`the_running_request_is_plain` itself** — the two requests differ only in `run` and `state`,
+neither of which `hplain` reads, so the hypothesis is the same proposition and is not
+re-proved (AGENTS §5.3). -/
+
+set_option maxRecDepth 40000 in
+theorem the_quiet_request_agrees :
+    theQuietRequest.activeAgrees = true ∧ theQuietRequest.dayAgrees = true ∧
+      theQuietRequest.now.sec + 1 < LogStamp.yearEnd ∧
+      pastRows theQuietRequest = [] ∧ theQuietRequest.activeRun = none := by decide
+
+/-- `hagree`, from the builder. -/
+theorem theQuietRequest_wallsAgree : theQuietRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqIn0 theQuietRequest witBuilds0
+
+set_option maxRecDepth 40000 in
+/-- **The ten-of-eleven lift, applied.**  Nothing here is a `decide` on the conclusion. -/
+theorem the_quiet_lift_applies_at_the_quiet_request :
+    PlanCheck.planOkCore theQuietRequest (dayPlan theQuietRequest) = true ∧
+      PlanCheck.monotoneInRank permissive theQuietRequest (dayPlan theQuietRequest) = true ∧
+      PlanCheck.impossibleKept permissive theQuietRequest (dayPlan theQuietRequest) = true ∧
+      PlanCheck.batchDoesNotReachPast permissive theQuietRequest
+        (dayPlan theQuietRequest) = true :=
+  PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot permissive theQuietRequest
+    theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    the_quiet_request_agrees.2.2.1
+    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
+
+set_option maxRecDepth 40000 in
+/-- **The whole battery, at one request, from the general lift plus one computed conjunct.**
+The one-id store makes `hotBeforeQueue` vacuously true here — `the_one_id_store_gives_neither
+_comparison_a_subject` computes that population as empty — so this is `PlanCheck.planOk` over
+a day `Planner.dayPlan` really produces, at every field the lift names.  **It is an instance,
+not a discharge**: the conjunct that is vacuous here is the one refuted above. -/
+theorem the_quiet_battery_passes_at_the_quiet_request :
+    PlanCheck.planOk permissive theQuietRequest (dayPlan theQuietRequest) = true :=
+  PlanCheck.dayPlan_ok_on_a_quiet_day_given_hot permissive theQuietRequest
+    theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    the_quiet_request_agrees.2.2.1
+    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
+    (by decide)
+
+/-! ### The same lift at the request where the eleventh fails
+
+`theQuietCensusRequest`'s store holds three ids, so `monotoneInRank` and `hotBeforeQueue`
+have pairs to range over here and the ten are not ten vacuous conjuncts.  Its `hplain` is
+`the_census_request_is_plain` itself: the two requests share `plan`, `tz` and the day, and
+differ only in `run` and `state`, neither of which `hplain` reads (AGENTS §5.3). -/
+
+set_option maxRecDepth 40000 in
+theorem the_quiet_census_request_agrees :
+    theQuietCensusRequest.activeAgrees = true ∧ theQuietCensusRequest.dayAgrees = true ∧
+      theQuietCensusRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+theorem theQuietCensusRequest_wallsAgree : theQuietCensusRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqInQuietCensus theQuietCensusRequest witBuildsQuietCensus
+
+set_option maxRecDepth 40000 in
+/-- **The ten, from the general lift, at the request where the eleventh is `false`.**  This is
+`the_ten_hold_where_the_eleventh_fails` again by a second route: that one computes the four
+conjunctions with `decide`, this one derives them from
+`PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot`.  What the two together cross-check is the
+**lift**, not the day — both evaluate the same `Planner.dayPlan`. -/
+theorem the_quiet_lift_applies_at_the_quiet_census_request :
+    PlanCheck.planOkCore theQuietCensusRequest (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.monotoneInRank permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.impossibleKept permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true ∧
+      PlanCheck.batchDoesNotReachPast permissive theQuietCensusRequest
+        (dayPlan theQuietCensusRequest) = true :=
+  PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot permissive theQuietCensusRequest
+    theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
+    (by rw [the_quiet_census_request_is_quiet.1]; simp)
+    the_quiet_census_request_is_quiet.2 the_census_request_is_plain
+
+set_option maxRecDepth 40000 in
+/-- **The two comparisons' subject populations at that request, computed** — the census idiom
+(README gap 852), and it is the honest limit of the tenth conjunct.
+
+**`monotoneInRank` is VACUOUS here, and that is exactly why it is provable.**
+`rankSubjects` requires `j ∈ assignedOf d`, and `assignedOf` is empty on a quiet day, so its
+population is `[]` at this request and at every quiet one:
+`PlanCheck.monotoneInRank_of_nothing_assigned` proves the conjunct by proving the quantifier
+empty.  W-19's ceiling of nine was over a day with a subject for it; the tenth conjunct this
+step adds is a **proof-coverage** advance and not a subject-coverage one, and the count of
+checkers with a subject does not move.  Said here rather than left for a reader to infer from
+a count.
+
+**`hotBeforeQueue`'s population is not empty** — the pair `(^m1, ^g1)` — which is what makes
+its refutation a refutation and not a second empty quantifier. -/
+theorem the_tenth_is_vacuous_where_the_eleventh_bites :
+    rankSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest) = [] ∧
+      hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
+        = [(['m','1'], ['g','1'])] := by
+  decide
+
+/-! ### README gap 806's two clauses, fired at the cursor's own day
+
+`PlanCheck.the_cursor_refuses_a_group_that_owes_nothing` and
+`PlanCheck.the_cursor_refuses_an_atomic_group_whose_run_is_broken` are ∀-theorems over every
+accumulator, so they hold at every point of `Planner.PlanReq.assignFold`'s walk; what they
+need beside them is a request where the thing they gate really happens, or they are AGENTS
+§9.2's *"a check no input can fail"*.  `theCursorRequest` is that request:
+`the_cursor_fills_the_day_in_key_order` gives `^c1` the first slot and **nothing** after it,
+and the reason is the first clause — `^c1`'s whole commitment went into that one block. -/
+
+set_option maxRecDepth 100000 in
+/-- **The clause bites here**: after the walk, `^c1`'s group owes nothing, and the three later
+slots went elsewhere.  `PlanCheck.the_cursor_refuses_a_group_that_owes_nothing` is the reason,
+and `PlanCheck.assignFold_owes` is the invariant it survives as. -/
+theorem the_first_group_is_spent_after_one_slot :
+    (theCursorRequest.assignFold.groups.map (fun g => (g.commitMin, g.spent, g.live))).take 1
+      = [(60, 60, false)] := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **`PlanCheck.OwesSomething` has a subject at this request** — four slots are taken, so the
+invariant is not a statement about an empty assignment. -/
+theorem the_owes_invariant_has_a_subject :
+    theCursorRequest.assignFold.slotOf = [some 0, some 3, some 3, some 3] := by decide
+
 end PlannerWit
 end Tm
