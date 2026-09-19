@@ -31,7 +31,7 @@ excludes the whole of that noise without an allow-list entry for any of it.
 Measured over this file set: 11,247 snake citations (3,964 distinct) and 11,383
 camel-only ones (2,591 distinct).
 
-WHAT IT RESOLVES AGAINST.  SIX declaration sets, in this order.  None of them
+WHAT IT RESOLVES AGAINST.  SEVEN declaration sets, in this order.  None of them
 is prose: every one is a place where the name is *declared*, so resolving
 against it cannot launder one stale sentence with another.
 
@@ -55,7 +55,20 @@ against it cannot launder one stale sentence with another.
        `cargo test --test cli_latency` names a FILE, and tm/tests/cli_latency.rs
        is where that name is declared; so are the snapshot stems the README
        quotes and the corpus documents.
-    6. THE PINNED LEAN TOOLCHAIN'S OWN SOURCES (D41, W-20), read out of
+    6. THE CHECKERS' OWN PYTHON (W-20).  `def`s, `class`es and module-level
+       ALL_CAPS constants in `kernel/*.py` -- 53 names, of which 46 are not
+       declared anywhere else.  `citations.py`'s and `mutate.py`'s own headers
+       and the README blocks about them cite `LEAN_CTOR`, `core_declared` and
+       `new_or_changed`, which are declarations of this repository in exactly
+       the sense a Rust `fn` is.  The W-20 block's first run failed on those
+       three, which is how this set was found.  It carries source 3's risk in
+       miniature: seven of the 53 (`read`, `run`, `build`, `main`, `digest`,
+       `README`, `SPAN`) are generic, though all seven are already declared
+       elsewhere, and none of the 53 collides with an allow-list entry.
+       Its own blind spot: a `.py` file outside kernel/ is not read, and this
+       set's names are not swept as PROSE either -- a stale citation inside
+       citations.py's own docstring is invisible to citations.py.
+    7. THE PINNED LEAN TOOLCHAIN'S OWN SOURCES (D41, W-20), read out of
        `~/.elan/toolchains/<the pin>/src/lean` -- the pin comes from
        `kernel/TmKernel/lean-toolchain` and AGENTS R8 forbids moving it.  38,538
        distinct short names.  CONSULTED ONLY FOR A CITATION WITH NO UNDERSCORE:
@@ -68,7 +81,7 @@ against it cannot launder one stale sentence with another.
        would otherwise each need an allow-list entry (`List.mapTR`, `zipIdx`,
        `filterMap`, `mergeSort`, `mapM`, `DecidableEq`, `sorryAx`, `findIdx?`).
 
-A citation resolves if its LAST dotted segment is in any of the six.
+A citation resolves if its LAST dotted segment is in any of the seven.
 
 THE ALLOW-LIST IS MATCHED ON THE WHOLE SPAN, not on the last segment, and the
 two rules are deliberately different.  `energy.sort_by_key` and `out.sort_by`
@@ -124,9 +137,9 @@ nothing else; do not quote these, RE-MEASURE.
     those 267 would have to be adjudicated before the stricter rule could be
     turned on, and a tracker that is wrong about a namespace fails a citation
     that is right.  README gap 933.
-  * A name that is also a Rust name, a JSON key or a Lean core name.  A deleted
-    Lean theorem whose short name is any of those still resolves, by source 3,
-    4 or 6.
+  * A name that is also a Rust name, a JSON key, a Python name in kernel/*.py
+    or a Lean core name.  A deleted Lean theorem whose short name is any of
+    those still resolves, by source 3, 4, 6 or 7.
   * Fenced code blocks in the README.  They are skipped: they are pasted
     terminal output and past `check.sh` runs, a RECORD of what a command
     printed at a commit that has gone, and a check that demanded they resolve
@@ -198,6 +211,12 @@ LEAN_CTOR = re.compile(r"\|[ \t]*([A-Za-z_][A-Za-z0-9_']*)")
 RUST_DECL = re.compile(r"\b(?:fn|struct|enum|const|static|type|trait|mod|union)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
 RUST_FIELD = re.compile(r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?([a-z_][a-z0-9_]*)[ \t]*:[ \t]*[^=]", re.M)
 STRING_LIT = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
+# Source 7: the checkers' own Python.  `def f(` / `class C(` / `class C:` and
+# module-level ALL_CAPS constants.  The `[(:]` is load-bearing: without it the
+# word `class` inside totality.py's own docstring declared a constant named
+# `this`.
+PY_DECL = re.compile(r"^(?:def|class)[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*[(:]"
+                     r"|^([A-Z][A-Z0-9_]*)[ \t]*=", re.M)
 
 SPAN = re.compile(r"`([^`\n]+)`")
 CITED = re.compile(r"^[A-Za-z][A-Za-z0-9_'?!]*(?:\.[A-Za-z0-9_'?!]+)*$")
@@ -287,6 +306,9 @@ def declared():
             names.update(RUST_DECL.findall(text))
             names.update(RUST_FIELD.findall(text))
             names.update(STRING_LIT.findall(text))
+    for path in sorted(glob.glob(os.path.join(HERE, "*.py"))):
+        for m in PY_DECL.finditer(read(path)):
+            names.add(m.group(1) or m.group(2))
     for rel in ("tm", "tm-core", "kernel"):
         for base, dirs, files in os.walk(os.path.join(ROOT, rel)):
             dirs[:] = [d for d in dirs if d not in ("target", ".lake", ".git")]

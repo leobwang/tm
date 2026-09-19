@@ -202,13 +202,14 @@ fi
 #    invisible to the gate by construction.
 #
 #    So: every backticked identifier in TmKernel/**.lean, in README.md and --
-#    since D41 -- in AGENTS.md is resolved against six DECLARATION sets: Lean
+#    since D41 -- in AGENTS.md is resolved against SEVEN DECLARATION sets: Lean
 #    declarations, fields, constructors and namespaces; Lean string literals (a
 #    wire key is declared by the literal that spells it); Rust declarations and
 #    fields; Rust string literals; file stems (`cargo test --test cli_latency`
-#    names a file); and the PINNED Lean toolchain's own sources.  None of the
-#    six is prose, so one stale sentence cannot launder another.  citations.py's
-#    header is the specification and names its own blind spots.
+#    names a file); the checkers' own Python in kernel/*.py; and the PINNED Lean
+#    toolchain's own sources.  None of the seven is prose, so one stale sentence
+#    cannot launder another.  citations.py's header is the specification and
+#    names its own blind spots.
 #
 #    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
 #    because snake_case-only reported green on a live stale `emitRefused` and
