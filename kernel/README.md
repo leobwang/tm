@@ -27854,14 +27854,14 @@ it writes `<bridge> r (dayPlan r) (dayPlan_ok_core r) …` and nothing else.
 | over a break | `noBlockOverABreak` | `noBlockOverABreak_iff` | **yes** |
 | wind-down | `noDemandingAfterWindDown` | `windDownOk_iff`, `noDemandingAfterWindDown_iff` | **yes** |
 | wall moved | `wallsUnmoved` | `wallUnmoved_iff`, `wallsUnmoved_iff` | **yes** |
-| rank | `monotoneInRank` | `rankPairOk_iff` | **built and proved; the *lift* waits on P5's `eligibleAt`** |
+| rank | `monotoneInRank` | `rankPairOk_iff` | **built and proved; the *lift* waits on P5's eligibleAt** |
 | hot | `hotBeforeQueue` | `hotPairOk_iff` | same |
 | impossible | `impossibleKept` | `impossibleKept_iff` | same, **and** its bridge to §7.3's numbers waits on P4 (gap 367) |
 | batch | `batchDoesNotReachPast` | `batchPairOk_iff` | same |
 
 **Why the battery is parameterised, and why that is not a hedge.** Design §6.3
 found that four of the eleven have to be restricted to *comparable* candidates,
-and §15 gives that predicate — `eligibleAt` — to step **P5**, because §8.2 step
+and §15 gives that predicate — eligibleAt — to step **P5**, because §8.2 step
 5's assign fold is its first caller. So `PlanCheck` takes it as a parameter
 (`abbrev Eligible`). Writing a second copy here is the defect AGENTS §5.3 is
 named after: P5 needs the same predicate to *decide* assignment and the battery
@@ -27888,7 +27888,7 @@ more useful shape.**
   that is recorded in `Goals.lean`'s own "not stateable yet" list rather than as
   a `sorry`. `∀ el, planOk el r (dayPlan r) = true` is the **unrestricted**
   claim design §6.3 refutes; `∃ el, …` is satisfied by the predicate that
-  answers `false`. The honest form names `Planner.eligibleAt`, so the step that
+  answers `false`. The honest form names Planner.eligibleAt, so the step that
   writes it states the lift. `dayPlan_ok_at_every_eligibility_while_the_day_is_empty`
   records the one reason the `∀ el` form holds today — the day is empty, so
   nothing is eligible anywhere — under a name that cannot be misread.
@@ -27951,7 +27951,7 @@ owed and still belongs to the step that makes `dayPlan` place something.
 
 `Goals.lean` gained two prose edits saying this, and no `theorem` and no `sorry`:
 the stage-6 banner now points at `PlanCheck.lean` and at `dayPlan_ok_core`, and
-the "not stateable yet" list gained the `eligibleAt` entry.
+the "not stateable yet" list gained the eligibleAt entry.
 
 ### Non-vacuity (AGENTS §5.2) — every checker refuses something
 
@@ -28097,9 +28097,9 @@ free.
 **Closed: none.** This step closes no gap of its own and says so — the battery
 is new machinery, not a repair.
 
-#### Gap 365 (new; label W14G-a) — four of the eleven checkers are parameterised because `eligibleAt` does not exist, so §6.1's whole-battery lift cannot be stated
+#### Gap 365 (new; label W14G-a) — four of the eleven checkers are parameterised because eligibleAt does not exist, so §6.1's whole-battery lift cannot be stated
 
-1. **What is not done.** `Planner.eligibleAt` — design §6.3's shared
+1. **What is not done.** Planner.eligibleAt — design §6.3's shared
    restriction, §15's one-line `def`, step **P5**'s — is not written, so
    `PlanCheck.checksEligible`, `planOk`, `monotoneInRank`, `hotBeforeQueue`,
    `impossibleKept` and `batchDoesNotReachPast` all take an `Eligible`
@@ -28110,13 +28110,13 @@ is new machinery, not a repair.
    the second is exactly the unrestricted form §6.3 refutes. `∀ el, …` is that
    unrestricted claim and is false of any day that places two comparable
    candidates; `∃ el, …` is satisfied by the predicate that answers `false`. So
-   the honest statement names `eligibleAt`, and it does not exist.
+   the honest statement names eligibleAt, and it does not exist.
 3. **What it costs.** Four of the eleven reflection lemmas are proved but their
    *bridges* are stated at a parameter, so a P step cannot yet apply them to
    `dayPlan`; and the burn-down cannot fall below 7 even after the seven
    eligibility-free invariants are established, because six of §6.4's goals are
    in the restricted four's group.
-4. **When it clears.** **P5**, in the commit that writes `eligibleAt`: it states
+4. **When it clears.** **P5**, in the commit that writes eligibleAt: it states
    `dayPlan_ok` at that predicate, `planOk Planner.eligibleAt` becomes the
    battery's one instantiation, and the four bridges lose their parameter.
 
@@ -28528,7 +28528,7 @@ thing.
    `hotPairOk` asks a hot item's row to start at or before every row carrying a
    queued one, and a permissive `el` makes that a real obligation over rows the
    log replayed.
-2. **Why not now.** Stating the true form names `Planner.eligibleAt`, which is
+2. **Why not now.** Stating the true form names Planner.eligibleAt, which is
    step **P5**'s (design §6.3, §15). Nothing else is honest: an `∃ el` form is
    satisfied by the predicate that answers `false`, which is AGENTS §9.2's
    disguised gap.
@@ -28537,7 +28537,7 @@ thing.
    eligibility-restricted bridges (`monotone_in_rank_from_the_battery` and the
    three beside it) are therefore unreachable from `dayPlan` until P5, and the
    four goals they serve cannot be discharged even in principle.
-4. **When it clears.** At **P5**, with `eligibleAt` written once and
+4. **When it clears.** At **P5**, with eligibleAt written once and
    `dayPlan_ok : ∀ r, planOk (eligibleAt) r (dayPlan r) = true` stated at it.
    `planOk_of_no_segments` stays as the induction's base case either way.
 
@@ -29404,7 +29404,7 @@ was not re-blessed.**
 
 **285** (above, half-paid and open), **346** (no `PlanReq` decoder), **347**
 (§6.4's P1 row), **348** (no concrete `PlanReq`, which is why every law here is a
-∀ or a request-free `decide`), **365** (`eligibleAt`), **394** (`Log.charsLe` has
+∀ or a request-free `decide`), **365** (eligibleAt), **394** (`Log.charsLe` has
 no transitivity or totality lemma, so neither `wallsOfDay`'s sort nor
 `sortRoutines` has a compiled twin — this step adds a **caller**, not a gap),
 **275** (`review week`'s band), and stage 5's residue **94, 98, 113, 114, 116,
@@ -32610,7 +32610,7 @@ on this branch after this step: gap **556**, cheat **180**, parity **P38**.
 reaches `activeRun` either), **432**, **433** — **CLOSED by this step** (P3 landed), **434** —
 **CLOSED** (`a_routine_is_never_placed_over_the_running_block`), **435**, **436**, **437** —
 **CLOSED as not a defect** (`the_reservation_never_runs_under_a_wind_down_row`), **285**, **346**,
-**347**, **365** (`eligibleAt`), **393** (this step is a second instance of its class, caught
+**347**, **365** (eligibleAt), **393** (this step is a second instance of its class, caught
 before the commit, and does not close it), **394**, **396** — **CLOSED** (the battery now gives an
 independent opinion at a request whose day holds a planner-placed Block), **470** (amended: this
 step's same-session baseline is the measurement item 4 asked for; the band still stands
@@ -34020,11 +34020,11 @@ wire.**
    `PlanReq.rankedCands` orders **every** candidate it is given.
 2. *Why.*  Not one of `waiting`, `state`, `blocked_by`, `cap`, `cap_done_min`, `wall_today` is among
    `Look.Cand`'s twelve fields; they are `priority::Candidate`'s and therefore D27's.  The filter
-   itself is §8.2 step 5's `eligibleAt`, which design §6.3 gives to **P5** (gap 365).  Filtering a
+   itself is §8.2 step 5's eligibleAt, which design §6.3 gives to **P5** (gap 365).  Filtering a
    sorted list by any predicate leaves the survivors in the same order, so the factoring is sound.
 3. *What it costs.*  `rankedCands` is longer than the fork's `sorted`, and any law stated over
    "the first candidate of the order" would be about a candidate the fork skips.  No law here is.
-4. *Which step clears it.*  **P5**, with `eligibleAt`; the facts themselves are D27's.
+4. *Which step clears it.*  **P5**, with eligibleAt; the facts themselves are D27's.
 
 **Gap 603 — `PlanReq.cands` and `PlanReq.prio` have no wire decoder.**
 1. *What is not done.*  `Boundary.readCands` decodes exactly this pair for the *capacity* op, and
@@ -34098,7 +34098,7 @@ is **not** closed by this step and its text is now sharper — the multiplier is
 field and `Look.Cand` still has no `multiplier`, so P4's arrival does not supply it.  **551** (no
 Break row), **552** (`Look.WallIx` has no `evLo ≤ hi` bound), **553** (`limitSlots` is P5's if
 anyone's), **554** (`open_block_segment`), **555** (`raw_slots`), **556** (three hypotheses with no
-decoder) are untouched.  **285**, **346**, **347**, **365** (`eligibleAt`), **393**, **430**, **431**,
+decoder) are untouched.  **285**, **346**, **347**, **365** (eligibleAt), **393**, **430**, **431**,
 **435**, **436**, **470**, **502-504**, **530-531**, **570**, **275**, **301 item 1**,
 **113**/**114**/**116** (D27, whole), and stage 5's residue **94, 98, 132, 133, 139, 143, 150, 151,
 152, 160, 170, 180, 181, 182, 190, 200, 201, 226, 260, 262, 270** and the performance levers
@@ -34106,7 +34106,7 @@ decoder) are untouched.  **285**, **346**, **347**, **365** (`eligibleAt`), **39
 
 ### What this step did NOT do, by name
 
-* **It did not build P5.**  §8.2 step 5 — the cursor, the batch split, `eligibleAt`, the `max:` cap,
+* **It did not build P5.**  §8.2 step 5 — the cursor, the batch split, eligibleAt, the `max:` cap,
   the atomic run and the six §6.3 restatements — is not started.  The brief's own instruction was to
   land P4 green rather than half-build the assignment, and that is what happened.  The six goals
   §6.4 gives to P5 are still in `Goals.lean`, untouched.  **And the reason it is a bigger step than
@@ -34751,7 +34751,7 @@ refuses.
 
 **What the next step inherits, said precisely.** §6.1's whole-battery lift
 `dayPlan_ok` is **still not stated** — gap **365** stands unchanged, because
-`Planner.eligibleAt` does not exist and `∀ el, …` is the unrestricted claim design
+Planner.eligibleAt does not exist and `∀ el, …` is the unrestricted claim design
 §6.3 refutes. What P5 inherits is: the eligibility-free half proved twice, once
 over the whole day under `hnopast` and once over the planner's own rows under
 nothing, with the second in the shape §8.3 means; six block-side proofs that each
@@ -35209,7 +35209,7 @@ their measurements beside them.*
 
 ### Gaps left open, by name
 
-Everything W-16 left open stands. **Gap 365** (`eligibleAt` does not exist, so
+Everything W-16 left open stands. **Gap 365** (eligibleAt does not exist, so
 §6.1's whole-battery `dayPlan_ok` is not stated) is unchanged and is still the
 reason the burn-down cannot reach 2 from here. **Gaps 366 and 368** (D29's
 restatement and L25's, both blocked on P5) are untouched — this step attempted
@@ -36588,7 +36588,7 @@ AGENTS's W-17 lesson 1, applied to every completeness claim this block makes.
 to read first.  **577** stands and is now wider: the nine host facts are pinned by
 a copy test, not by their values (gap 705).  **602** is **closed**.  **606** is
 **closed as to the wire**; the fold it was measured for is not written.  **365**
-(`eligibleAt`, the slot half) stands.  **603** (`PlanReq` has no boundary op)
+(eligibleAt, the slot half) stands.  **603** (`PlanReq` has no boundary op)
 stands and gap 707 is its consequence.  **550** (the reservation row carries no
 multiplier) is **not** closed — `Look.PlanFacts.multiplier` is now on the wire,
 so the fact is available, but `PlanReq.activeRow` still emits no multiplier and
@@ -36616,7 +36616,7 @@ untouched.
 
 * **It did not write the assign fold.**  §8.2 step 5 — the cursor,
   `priority::batches`, `split_by_filters`, `contiguous_fits`, the `max:` commit,
-  the atomic run, `Planner.eligibleAt`'s slot half and the six §6.3 restatements
+  the atomic run, Planner.eligibleAt's slot half and the six §6.3 restatements
   — is **not started**.  The six goals §6.4 gives to P5 are still in `Goals.lean`,
   word for word; the burn-down is 10 and did not move.
 * **It did not touch D27.**  Every one of the nine is host-collected;
@@ -37383,7 +37383,7 @@ gap 684 is the record of getting that arithmetic wrong by hand:
   not a measurement;
 * **two** are missing and they are the two comparisons, `monotoneInRank` and
   `hotBeforeQueue`. Both are real obligations over the replayed past at a
-  permissive `el`, and both wait on `Planner.eligibleAt`, which **P5** writes
+  permissive `el`, and both wait on Planner.eligibleAt, which **P5** writes
   (gap **365**, unchanged).
 
 **What the next step inherits, said precisely.** Nine of eleven conjuncts proved;
@@ -37741,20 +37741,20 @@ below — and gap **551**'s third item is corrected in place.
 4. **Which step clears it.** **P5**, when it places a Block into the evening; the
    restatement should carry `hnowcal` as the wall law and the break law now do.
 
-#### Gap 753 (new; label W18G-d) — the two comparisons are the whole of what §6.1's lift still owes, and `eligibleAt` is still not written
+#### Gap 753 (new; label W18G-d) — the two comparisons are the whole of what §6.1's lift still owes, and eligibleAt is still not written
 
 1. **What is not done.** `PlanCheck.dayPlan_ok_from_now_except_the_two
    _comparisons` proves nine of the eleven; `monotoneInRank` and `hotBeforeQueue`
    are missing, and §6.1's honest `dayPlan_ok` is still not **stateable** because
-   `Planner.eligibleAt` does not exist (gap **365**, unchanged).
-2. **Why.** `eligibleAt` is step 5's own filter and design §15 gives its body to
+   Planner.eligibleAt does not exist (gap **365**, unchanged).
+2. **Why.** eligibleAt is step 5's own filter and design §15 gives its body to
    **P5**; the `∀ el` form is the unrestricted claim design §6.3 refutes and the
    `∃ el` form is satisfied by the predicate that answers `false`.
 3. **What it costs.** The number "nine of eleven" is the honest one only if the
    two vacuous conjuncts are counted honestly with it, which is why they are named
    in the theorem's own doc comment and in gap 751. A reader who takes nine as
    "nine laws established" is overcounting by two.
-4. **Which step clears it.** **P5** writes `eligibleAt` and **G1** states and
+4. **Which step clears it.** **P5** writes eligibleAt and **G1** states and
    proves `dayPlan_ok`; this theorem is the shape it should take.
 
 #### Gap 650, RESTATED (not closed) — two of its four were request questions
@@ -37786,7 +37786,7 @@ which is a different sentence.
 
 ### Gaps left open, by name
 
-Everything W-17's repair left open stands. **Gap 365** (`eligibleAt` does not
+Everything W-17's repair left open stands. **Gap 365** (eligibleAt does not
 exist) and **gap 651** (the six block-side conjuncts are all about the
 reservation) are unchanged, and both are named above. **Gap 652** (`PlannerWit`'s
 witnesses cannot be driven, because `dayPlan` has no shipped caller) is unchanged
@@ -39096,7 +39096,7 @@ than labels beside them, and `PlanReq.a_group_is_a_bounded_batch`, which is why
 Fork `plan()`'s assign loop (`planner.rs:1017-1026`) over fork `Planner::pick`
 and fork `contiguous_fits`.
 
-**This is `eligibleAt`'s SLOT half and it closes README gap 365** — with a naming
+**This is eligibleAt's SLOT half and it closes README gap 365** — with a naming
 correction the design owes (gap **809**). The two halves stay where the fork puts
 them: the item half (`Candidate::eligible()`, `!is_wall || wall_today`) is
 `entersTheOrder`'s and ran before the sort at P5b-i; the slot half decides
@@ -39406,7 +39406,7 @@ not incremented and `spent` not charged each land on `Planner.lean`'s `omega` in
    reservation emits no multiplier either.
 4. *Which step clears it.* **P8**, with the row.
 
-**Gap 809 — design §6.3's `eligibleAt` signature cannot be written before rows
+**Gap 809 — design §6.3's eligibleAt signature cannot be written before rows
 exist, and this step's slot half is `groupFitsSlot`.**
 1. *What is not done.* There is no `Planner.eligibleAt (r) (d : DayPlan)
    (s : Seg) (i : Id) : Bool`. The slot half of §8.2 step 5's filter is
@@ -39416,10 +39416,10 @@ exist, and this step's slot half is `groupFitsSlot`.**
    the fold applies is over a slot and a group, which is what fork `Planner::pick`
    takes. Writing one function with the design's signature and calling it from the
    fold would require a `Seg` that does not exist during the walk.
-3. *What it costs.* A reader of design §6.3 looking for `eligibleAt` finds nothing
+3. *What it costs.* A reader of design §6.3 looking for eligibleAt finds nothing
    under that name; README gap 365 is closed **as to the filter** and open as to
    the name.
-4. *Which step clears it.* The next P5 step: once rows exist, `eligibleAt` is
+4. *Which step clears it.* The next P5 step: once rows exist, eligibleAt is
    `groupFitsSlot` read off the row's own slot and group, with a theorem
    connecting them — written **once**, as design §6.3 requires.
 
@@ -40013,12 +40013,12 @@ an empty quantifier would be the same defect from the other side.
 **assign fold is not written**: `Planner.dayRows` is `stepOneSegs ++ stepTwoSegs
 ++ reservationSegs`, and §8.2 step 5 is P5's.
 
-**Nor does it show that `Planner.eligibleAt` cannot rescue the two.** An
+**Nor does it show that Planner.eligibleAt cannot rescue the two.** An
 eligibility that answers `false` for `m1` at every row of this day makes both
 conjuncts hold again. **Whether the real one does is P5's decision, and naming
 that decision is what this section is for** — it was previously inside a count.
 Gap **850** states it as an inheritance: P5 must either (a) write an
-`eligibleAt` that refuses a candidate at the reservation row, in which case the
+eligibleAt that refuses a candidate at the reservation row, in which case the
 two conjuncts hold over today's day and G1 gets them for free, or (b) write the
 fold, in which case `m1` is assigned and they hold for the honest reason. The
 step's block must say which.
@@ -40027,7 +40027,7 @@ step's block must say which.
 
 Design §6.3 rows 4 and 5 record both as false against the fork and hand the
 **restatements** to P5. A restatement without its refutation is a weakening
-(AGENTS §3.1 item 3), and both restatements need `Planner.eligibleAt`, which
+(AGENTS §3.1 item 3), and both restatements need Planner.eligibleAt, which
 does not exist (gap 365). So neither goal is deleted.
 
 **This is `Goals.plan_tail_drop`'s situation exactly** — refuted in
@@ -40224,7 +40224,7 @@ with `timeout`. **No bound was raised and nothing was retried uncapped.**
 |---|---|---|---|---|
 | `check.sh` | **7/7 ok** | 7/7 ok | 7/7 | — (check 8 is track A's and is not in this tree) |
 | axiom audit | **4,568 theorems**, §6.3 reconciliation `ok` | **4,549** | 4,549 | **+19, and every one is this step's**: 1 in `PlanCheck`, 18 in `PlannerWit`. 4,568 audit lines at **4,568 distinct** names against **4,566** declarations; `comm -23` **empty**, `comm -13` names exactly `WfPlan` and `effectiveScope`, §6.3's deliberate one-directional slack |
-| burn-down (check 7) | **9 outstanding, all stage 6** | **9** | 9 | **unchanged, and deliberately** — two goals were *refuted* and neither was deleted, because the restatements need `Planner.eligibleAt` (§4 above, gap 851). Nothing was added |
+| burn-down (check 7) | **9 outstanding, all stage 6** | **9** | 9 | **unchanged, and deliberately** — two goals were *refuted* and neither was deleted, because the restatements need Planner.eligibleAt (§4 above, gap 851). Nothing was added |
 | corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` untouched |
 | check 5, the FFI | **ok, 93 tests** | ok, 93 | 93 | unchanged — `--test kernel --test stack`, D36's pair |
 | FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | — | 101 | — |
@@ -40346,10 +40346,10 @@ day and on `PlanCheck.withoutPast`'s day alike.
 same `rootPrio` — reaches no row, because §8.2 step 5 is unwritten.
 *What it costs:* §6.1's lift stops at **nine of eleven** for every `el`, and
 `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` can only assume the
-two. **P5 must say which repair it takes**: an `eligibleAt` that refuses a
+two. **P5 must say which repair it takes**: an eligibleAt that refuses a
 candidate at choice 5b's reservation row (the two conjuncts then hold over
 today's day and G1 gets them at no cost), or the fold itself (`m1` is assigned
-and they hold for the honest reason). A step that lands `eligibleAt` without
+and they hold for the honest reason). A step that lands eligibleAt without
 saying which of the two it did has left this gap open.
 *Which stage clears it:* **P5**, then **G1**.
 
@@ -40359,7 +40359,7 @@ saying which of the two it did has left this gap open.
 (`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` and its
 sibling) and are still in `Goals.lean`.
 *Why:* a restatement without its refutation is a weakening (AGENTS §3.1 item 3),
-and both restatements need `Planner.eligibleAt`, which is P5's (gap 365). This is
+and both restatements need Planner.eligibleAt, which is P5's (gap 365). This is
 `Goals.plan_tail_drop`'s situation and is handled identically.
 *What it costs:* check 7's *"9 outstanding"* is an upper bound on what can be
 discharged **as written**: three of the nine (these two and `plan_tail_drop`) are
@@ -40775,7 +40775,7 @@ merged tree. No goal was added and, more to the point, **no goal was deleted** �
 track G refuted two of the nine (`plan_is_monotone_in_rank` and
 `plan_puts_hot_before_the_queue`) and deliberately left both **in** `Goals.lean`,
 because a restatement without its refutation is a weakening (D5) and both
-restatements need `Planner.eligibleAt`, which does not exist. That is gap 851,
+restatements need Planner.eligibleAt, which does not exist. That is gap 851,
 and it means check 7's **9 is an upper bound**: three of the nine (those two and
 `plan_tail_drop`) are known false as written, and nothing in `check.sh` tells a
 standing goal from a refuted one.
@@ -40999,7 +40999,7 @@ the three swept locations, AGENTS.md included". It does now, with numbers.
 | A5 | track A's `committed[]` omits `4ce935b` | **exactly** — `git log --oneline d1a602a..HEAD` is 12, track A reported 3 | recorded, gap 888. All twelve carry `Co-Authored-By` (12/12) |
 | A6 | gap 650 still says "six of eleven" where the census is five | **exactly** | annotated in place, gap 883 |
 | R1 | `capMin?` is `minOpt` | **exactly** | repaired, gap 886 |
-| R2 | a live stale citation check 8 reports green, plus an unmeasured camelCase blind spot | **exactly** | `emitRefused` repaired; blind spot **measured**, gap 880 |
+| R2 | a live stale citation check 8 reports green, plus an unmeasured camelCase blind spot | **exactly** | emitRefused repaired; blind spot **measured**, gap 880 |
 | R3 | the land block's drive transcripts are silently abridged | **exactly** — 20 rows printed, 10 pasted | re-driven and restored, gap 885 |
 | R4 | track A's §1 table mis-measures the file it shipped | **exactly** | the sizes are **removed**, not re-quoted, gap 882 |
 | R5 | track G's `rankedCands` grep is false on the merged tree | **exactly** — 40, not 36 | re-taken in place, gap 884 |
@@ -41099,7 +41099,7 @@ tm: conflict in day/2026-09-07.md — the file changed under us
 5. **"The camelCase blind spot is measured."** *Method:* `citations.py`'s own
    resolver with the underscore test inverted. *Cannot see:* which of the 1,120
    unresolved Lean citations are real; the sweep cannot separate `decide` and
-   `rfl` from `emitRefused`. Two were separated **by hand**, and there may be
+   `rfl` from emitRefused. Two were separated **by hand**, and there may be
    more.
 
 ### 6. Acceptance, and every delta explained
@@ -41219,11 +41219,11 @@ inside that workspace run and are green.
    hypothesis names (`hnopast` x20) and commit shas: a camelCase span is not
    distinguishable from tactic, type and prose vocabulary the way a snake_case
    one is, and an allow-list of 812 distinct names is the check written twice.
-3. *What it costs.* Two real names hid there. **`emitRefused`** — a constant that
+3. *What it costs.* Two real names hid there. **emitRefused** — a constant that
    has never existed, named in the **present tense** at `Boundary.lean:3647`,
    and `python3 citations.py` exited 0 on it — is repaired here; the live
-   referent is `EmitRefusal.refused`. **`eligibleAt`** (x16 in Lean as
-   `Planner.eligibleAt`, x26 in the README) is **not stale**: gap 809 already
+   referent is `EmitRefusal.refused`. **eligibleAt** (x16 in Lean as
+   Planner.eligibleAt, x26 in the README) is **not stale**: gap 809 already
    owns it as a name for work P5's next step will write. The blind spot is real;
    the population inside it is mostly noise, and separating the two is a human's
    job today.

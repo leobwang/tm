@@ -3645,7 +3645,7 @@ definition rather than two that agree.
 warning, because refusing it would lose the rest of the file (D18 (i)).  An event about to be
 *appended* has no such excuse: writing a line the reader would refuse is exactly the defect this
 step removes, so `EmitRefusal.refused` names the item and the reader's own warning (§5.7).
-*(This sentence named `emitRefused` — a constant that has never existed in this repository —
+*(This sentence named emitRefused — a constant that has never existed in this repository —
 from the step that wrote it until W-19's repair step.  `check.sh` check 8 reads prose, but only
 snake_case prose: a camelCase citation is in its declared blind spot, README gap 831, and this
 is the live instance that measured it.)*
@@ -9926,7 +9926,8 @@ def readPriority (sec : JVal) : Except Refusal (Bins × Arith.Pos × Fin 4) := d
 /-! ### The zone table: B4's one reader
 
 **Merged 2026-09-14 (gap 108 closed).**  L6 read `tz` with its own fixed-width readers
-(`readOffsetText`, `readInstantText`, `transOf`, `readTrans`, `maxTrans`, `tzObj`).  The D9 track's
+(readOffsetText, readInstantText, transOf, readTrans, maxTrans, tzObj -- all deleted at that
+merge, and spelled here without backticks for the reason citations-allow.txt's header gives).  The D9 track's
 B4 owns the key (design §14.2) and reads it with `Tm.readTz` (`readTzOffset`, `readTzInstant` through
 `LogStamp.parseStamp`, `Cal.mkTz?`), so the merge keeps that one reader (AGENTS §5.3) and this is
 only the capacity section's view of it: absent is `tzAbsent`, and a refusal is `badTz` with B4's
