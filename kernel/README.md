@@ -39440,3 +39440,436 @@ renumbers*). Every citation of 203-208 in Lean and in this block moves with them
 This step ran on the main checkout throughout; the only scratch was the stash
 used for the interleaved wall-time baseline, popped and gone, and a `#eval`
 probe file in the session scratchpad, outside the repo.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-19**, **track A**, on
+     branch `w19-a` off `d1a602a`.  The owner's **D39**: `check.sh` gains a
+     **check 8** that resolves the identifiers the prose CITES, so the
+     campaign's single largest recurring defect class stops being invisible to
+     the gate.  Plus the two dead-writer debts, gaps 776 and 732.
+     Gap range **830-849**; this step takes **830-835** and leaves **836-849**
+     free.  No planner code, no wire change, no Lean definition changed, no
+     goal added or discharged: **burn-down stays 9**, axiom audit stays
+     **4,549**.  Four commits (D19): the prose repairs, then check 8, then the
+     deleted writer, then this block.  Whoever merges renumbers (§6.4).
+     =========================================================================== -->
+
+## Stage 6 — W-19, track A: the gate learns to read prose, and the first thing it read was wrong
+
+### 1. What landed
+
+| commit | what | why it is its own commit |
+|---|---|---|
+| **1** | four stale prose citations in `Plan.lean`, `Recur.lean`, `SealHeaders.lean` and `Boundary.lean`, repaired | **D19**: separable work lands first, and check 8 could not be green until these were gone |
+| **2** | **check 8** — `kernel/check.sh`, `kernel/citations.py` (206 lines, of which 89 are its own specification), `kernel/citations-allow.txt` (328 entries in four declared sections) | **D19**: it changes what "green" means |
+| **3** | `tm_core::energy::Model::save` **deleted** — gap 776 | a behaviour change to `tm-core`'s API, separable from both |
+| **4** | this block | docs |
+
+### 2. Check 8, and why its allow-list is the whole of the work
+
+**What is swept.** Every backticked span on one line of `kernel/TmKernel/TmKernel/*.lean`,
+`kernel/TmKernel/*.lean` and `kernel/README.md` whose content is a dotted identifier holding at
+least one underscore — the shape this kernel's theorem names have. **10,460 citations** at
+commit 2, where check 8 lands; **10,502** at commit 4, once this block is in the file, because a
+ledger block is prose and check 8 reads it.
+
+**What it resolves against — five DECLARATION sets, and not one of them is prose**, so one stale
+sentence cannot be laundered by another:
+
+| # | set | what it buys |
+|---|---|---|
+| 1 | Lean `theorem`/`def`/`abbrev`/`structure`/`inductive`/`instance`/`class`/`example`/`opaque`/`axiom`, plus `structure` fields and `inductive` constructors | the kernel's own names, 8,148 short names |
+| 2 | Lean string literals in those files | a wire key, a refusal tag and a JSON field name are **declared by the literal that spells them** — `cap_done_min` resolves with no exemption |
+| 3 | Rust `fn`/`struct`/`enum`/`const`/`static`/`type`/`trait`/`mod`/`union` and struct fields in `tm/src`, `tm-core/src`, `tm/tests`, `tm-core/tests`, `kernel/tm-kernel-ffi/{src,tests,examples}` | **the fork's planner is in-tree** (`tm-core/src/planner.rs`), so `place_mandatory_and_pref` and `active_run` resolve by themselves |
+| 4 | Rust string literals in those files | config keys |
+| 5 | file stems under `tm/`, `tm-core/`, `kernel/` (`target/` and `.lake/` pruned) | `cargo test --test cli_latency` names a **file**, and that file is where the name is declared |
+
+**9,411 of the 10,460 resolve** at commit 2 (9,447 of 10,502 at commit 4). The rest are the
+allow-list's, and **every entry is
+a literal name, never a pattern** — a regex that silenced a class is how this check would get
+quietly useless, because the next stale citation would land inside the silenced class. The file
+has two syntaxes (`name` uncounted, `N name` at most N occurrences) and **four sections that mean
+four different things**:
+
+| section | entries | meaning |
+|---|---|---|
+| 1 VOCABULARY, uncounted | **75** | adjudicated: Lean core and tactic names; chrono 0.4.45 / serde_json 1.0.151 / `std` items named where `Stamp.lean`, `Cal.lean` and `Log.lean` record which function each one ports; the fork's own vocabulary that is **not** in-tree; one Rust dependency (`toml_edit`, §4's inversion E); and one naming *convention*, the `can_fail` suffix eleven real checker witnesses carry |
+| 2 LIVE STALE CITATIONS, found and **not** repaired | **4** | declared as **defects**, not laundered as exemptions. Gap 832 |
+| 3 ADJUDICATED DEAD names | **86** | opened at W-19: the sentence citing each one says the name was refuted, renamed, retired, superseded or deleted. Check 8 cannot read "refuted"; a human did, once, and this roster is that reading |
+| 4 GRANDFATHERED | **160** | a `README.md` baseline **nobody has opened**, so the check could land as a **ratchet on new prose** instead of a demand that an append-only ledger be rewritten. Gap 833 |
+
+**Counting is what makes sections 2-4 safe.** Old prose keeps working; a *new* sentence reaching
+for one of those names raises the count past its cap and fails, so it shows up in a diff.
+
+**And the convention that keeps the file from growing.** When a sentence records that a name is
+dead, **write the dead name without backticks**. It is then not swept, needs no entry, and a later
+sentence that cites it as though it were alive still fails.
+
+### 3. What it found on its first run: eight live stale citations
+
+The sweep's residue was 391 names before sources 3-5 were added and **329 after**; of those, 174
+appear nowhere in the Rust and nowhere in the design documents, and **every one of those 174 was
+opened by hand**. The overwhelming majority are the campaign's own discipline leaving tracks — a
+refutation or a rename citing the dead name in the sentence that records the death (AGENTS §3.1
+item 3). **Eight are not.** Each is a doc comment naming, in the present tense, a constant that
+does not exist:
+
+| where | the citation | what is actually there |
+|---|---|---|
+| `Boundary.lean:3425` | the_seam_changes_no_byte — *"which is what X says at the section"*. **The only occurrence of this name anywhere in the repository was this sentence.** | nothing. The fact is *definitional*: `logOp` is `(logOpZ r).map LogAnswer.wire`, and `logOpZ_core` is the `rfl` that states the core it maps |
+| `Plan.lean:645` | rootOf_is_a_root — *"is what says the fuel was not merely exhausted"* | `climb_reaches_a_root`, and `every_item_has_a_root` for `rootOf` on an accepted plan |
+| `SealHeaders.lean:8` | tailHeaders_eq — the module header's own statement of its law | `tailHeaders_eq_spec`, beside `tailHeaders_foldl` and `tailHeadersSpec_eq`. The dead name is a **prefix of three real names and the name of none of them** |
+| `Recur.lean:441` | placeMinutes_is_declaredDur_off_an_interval | `placeMinutesOf_is_declaredDur_off_an_interval` — the `Of` was missing |
+| `Lookahead.lean:4854` | readCand_refuses_a_flag_that_is_not_a_boolean — *"and X runs it"* | `readCand_refuses_each_of_the_nine_by_name` |
+| `Lookahead.lean:4857` | readCand_refuses_a_state_that_is_not_a_box — *"is refused by name (X)"* | the same theorem |
+| `Boundary.lean:9135` | mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint, on a **live** theorem's doc comment | nothing — **the same file retires that name at `:12287`**, *"Retired with the wire they pinned"* |
+| `Boundary.lean:12260` | logSectionWith_passes_its_zone | `readLogSection_is_zoneOf_then_logSectionWith` |
+
+**Four were repaired** (commit 1: `Plan.lean`, `Recur.lean`, `SealHeaders.lean`, `Boundary.lean`'s
+seam). **Four were not**, and the reason is ownership, not doubt: the two `Lookahead.lean` rows are
+the wire decoder track P is editing this run (P5a/P5b), and the two `Boundary.lean` log-op rows sit
+in a section whose own retirement note contradicts them, which is a reading a repair step should
+make rather than a gate step. They are **gap 832**, carried in allow-list section 2 under a heading
+that says they are defects.
+
+**This makes it six consecutive runs**, not five: two of the eight are W-18's own P5a wire work.
+
+### 4. Driving it — five inversions, four of which FAILED as they had to, and one that did not
+
+Every one of these ran in place and was restored; the restore's output is quoted each time.
+
+**Inversion A — W-18's own stale citation, put back.** README gap 701's sentence reverted to its
+pre-repair form, which named withFloor_is_the_floor_pass where the live law is
+`Tm.Look.a_floor_answer_reads_what_the_pass_left`:
+
+```
+$ python3 citations.py
+1 unresolved:
+  README.md:36448  withFloor_is_the_floor_pass  (5 citations, 4 allowed)
+$ echo rc=$?
+rc=1
+```
+
+That is the **count ratchet**, not the resolver: the name is on the list at 4, and the fifth
+citation is what fails. Restored: `10460 citations, 9411 resolved, 1049 allowed (74 vocabulary, 251 counted), 0 allow
+entries unused` — the tree as it stood at the moment of this inversion, before inversion E moved
+`toml_edit` up a section.  At the commit that ships check 8 the same line reads **1,049 allowed
+(75 vocabulary, 250 counted), 0 allow entries unused**, driven there and quoted from that run.
+
+**Inversion B — a name nobody has ever written.** `Plan.lean:645`'s repaired citation replaced with
+the_root_walk_terminates_on_an_accepted_plan:
+
+```
+1 unresolved:
+  TmKernel/TmKernel/Plan.lean:645  the_root_walk_terminates_on_an_accepted_plan  (resolves to nothing)
+rc=1
+```
+
+**Inversion C — this step's own repair undone, twice, and the first time IT PASSED.** `Plan.lean`
+put back exactly as it stood at `d1a602a`:
+
+```
+10461 citations, 9409 resolved, 1052 allowed (74 vocabulary, 254 counted), 0 allow entries unused
+rc=0
+```
+
+**The check said ok on a defect it had itself found an hour earlier.** The cause is this step's own
+repair: the correcting sentence cited the dead name **in backticks**, which put it on the
+allow-list at count 1 — and undoing the repair leaves exactly one citation, which is within cap. A
+gate that green-lights the regression of the fix it just shipped is the W-17 class exactly: a
+method that by construction cannot see the thing it is for. The fix is the **unbackticked
+convention** of §2; with it, and with the three names dropped from the list, the same inversion:
+
+```
+1 unresolved:
+  TmKernel/TmKernel/Plan.lean:645  rootOf_is_a_root  (resolves to nothing)
+rc=1
+```
+
+**Inversion D — section 2's four un-exempted**, to show the declared defects are real and not
+bookkeeping:
+
+```
+4 unresolved:
+  TmKernel/TmKernel/Boundary.lean:12262  logSectionWith_passes_its_zone  (resolves to nothing)
+  TmKernel/TmKernel/Boundary.lean:9137   mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint  (resolves to nothing)
+  TmKernel/TmKernel/Lookahead.lean:4854  readCand_refuses_a_flag_that_is_not_a_boolean  (resolves to nothing)
+  TmKernel/TmKernel/Lookahead.lean:4857  readCand_refuses_a_state_that_is_not_a_box  (resolves to nothing)
+rc=1
+```
+
+**Inversion E — not an inversion at all: the ratchet fired on THIS BLOCK, unprompted.** Appending
+§1-§11 above and running the check:
+
+```
+1 unresolved:
+  README.md:21717  toml_edit  (2 citations, 1 allowed)
+rc=1
+```
+
+`toml_edit` was grandfathered at one citation and §5 below cites it a second time, as an example of
+a writer a textual enumeration cannot see. **That is the moment the file's own rules are for**, and
+the rules say open it rather than bump it: it is a Rust dependency, declared in `Cargo.lock` and in
+no source file this check reads, so it moved **up to VOCABULARY with that reason written beside
+it** and the grandfathered row went. The check then reported
+`10498 citations, 9447 resolved, 1051 allowed (75 vocabulary, 250 counted), 0 allow entries unused`
+— that was the figure at the moment of the fix; the three sentences added afterwards to record it
+put the committed figure at 10,502 / 9,447 / 1,055.
+**This is the only evidence in this block that was not arranged**, and it is the one that shows the
+check working on prose written after it landed.
+
+### 5. Method, and what each method CANNOT see
+
+Four completeness claims are made above. Each one's method and its blind spot:
+
+1. **"These are all the citations."** *Method:* a one-line regex for backtick-delimited spans over
+   86,259 lines of Lean and 38,954 of README, filtered to dotted identifiers containing `_`.
+   *Blind spots, four, all named in `citations.py`'s own header:* **camelCase is not swept at all**,
+   so a stale `def` or field citation is invisible; resolution is on the **last dotted segment**,
+   so a theorem moved between namespaces still resolves; a name that is also a Rust name or a JSON
+   key resolves by source 3 or 4 even if its Lean theorem is gone; and **fenced README code blocks
+   are skipped** on purpose — they are pasted terminal output from commits that have gone, and
+   demanding they resolve against today's tree would demand that an append-only ledger be
+   rewritten. Measured: sweeping them too adds **2** unresolved names, both in quoted Lean output.
+2. **"None of the 174 prose-only residue names except these eight is a live citation."** *Method:*
+   three lines of context around every one, read. *Blind spot:* it is a **reading**, and "refuted",
+   "restated", "retired" and "superseded" were taken at their word — a sentence that says a name
+   was renamed, when it was not, passes this reading. And it covers the **Lean** residue; the 161
+   README-only names were **not** opened (gap 833).
+3. **"These are all the raw writers left in the shipped crates."** *Method:* a regex for
+   `fs::{write,create_dir,create_dir_all,remove_file,remove_dir,remove_dir_all,rename,copy,hard_link,set_permissions}`,
+   `File::create` and `OpenOptions::new` over `tm/src/**/*.rs` and `tm-core/src/**/*.rs`, split
+   ship-from-test at each file's first `#[cfg(test)]`. **33 sites, 21 shipped**: the `Store`'s own
+   atomic write and append (`store.rs`), `kernel_log.rs`'s atomic write and its stale-tmp sweep,
+   `tz_table.rs`'s cache, `undo.rs`'s file removal, and `tm init`'s scaffolding. *Blind spots,
+   five:* it is **textual**, so a write inside a third-party crate (`toml_edit`, `insta`, `ureq`)
+   or behind a macro is invisible; a write by a **spawned process** is invisible; the ship/test
+   split is a **first-`#[cfg(test)]` heuristic**, so a shipped writer placed after a mid-file test
+   module would be mislabelled TEST (checked by hand for the four files with a hit past the cut —
+   `ctx.rs`'s two `#[cfg(test)]` are adjacent at 1007 and 1012, and all three others have theirs in
+   the last quarter); it does **not** cover `kernel/tm-kernel-ffi` or the test trees; and — this is
+   the one that matters — **it cannot tell dead code from live**, which is exactly why D35's
+   enumeration listed `Model::save` as a site and could not say it had no caller.
+4. **"`Model::save` has no production caller."** *Method:* `grep -rn "\.save(\|Model::save" tm/src
+   tm-core/src tm-core/tests tm/tests` — five hits, of which two are its own doc comments, two are
+   `undo::stack.save(ctx)` (a different `save`), and **one** is `tm-core/tests/energy_model.rs:160`.
+   *Blind spot:* a call built by a macro, or through a trait object, is invisible to it; and the
+   grep is over four directories, not the whole workspace.
+
+### 6. Gap 703, re-measured with check 8 in place
+
+Idle machine, capped, built tree, three passes each; `/usr/bin/time` wall clock.
+
+| | seven checks (before commit 2) | eight checks (after) |
+|---|---|---|
+| whole script, ×3 | **8.76 / 7.26 / 6.73 s** | **7.71 / 8.17 / 7.06 s** |
+| check 1 `lake build` (warm), ×2 | — | 0.14 / 0.15 s |
+| check 3 `lean Check.lean`, ×2 | — | 0.40 / 0.39 s |
+| check 4 `lean Negative.lean`, ×2 | — | 3.44 / 3.45 s |
+| **check 8 `python3 citations.py`, ×3** | — | **0.22 / 0.22 / 0.22 s** |
+
+**Check 8 costs 0.22 s, about 3% of the wall, and the two bands overlap** — 6.73-8.76 s before and
+7.06-8.17 s after — so the whole-script figure cannot separate it from run-to-run noise on this
+machine, which is why it is also timed on its own. **It is not trimmed to get there**: it reads
+every Lean file, the whole README and 101,260 lines of Rust, and the number is what it is.
+
+**Gap 703's finding has moved and is worth restating.** It read *"check 4 alone is 73% of the
+baseline's whole wall time"*. At this tree check 4 is **3.45 s of a 7.1-8.2 s wall, 42-49%**, and
+checks 3 + 4 together are **3.85 s, 47-55%**. The other half is **D36's check 5** (+2.23 s
+measured at W-18), which the owner bought deliberately. So the 10%-per-step budget is now spent by
+checks 4 and 5, not by checks 3 and 4, and **the kernel's own elaboration is still not what is
+spending it**. Nothing was optimised here either; the cost is re-measured, not paid.
+
+### 7. The two dead writers — one deleted, one KEPT, and the brief was wrong about it
+
+**`Model::save` is deleted (gap 776).** It was `std::fs::create_dir_all` + `std::fs::write` of
+`.tm/model.json`, reaching no D35 gate and no `Recorder::start`, with **no caller in `tm/src` or
+`tm-core/src`** — while the shipped `tm model --fit` writes the same file through
+`ctx.store.write_file(MODEL_PATH, …)`, gated at `lifecycle.rs:524` and recorded at `:525`. Two
+writers of one file is **AGENTS §5.3's defect class** with a gate on one of them, and §5.6's
+*"delete rather than wire in"* is the answer; routing it through `Store` was declined because that
+produces a *second* `Store` writer of a file one verb already owns, which is the same defect with
+better manners. `tm-core/tests/energy_model.rs`'s round-trip keeps its load-side coverage and now
+writes the bytes **itself**, which is a test writing a fixture and not a product writing a document.
+Two doc comments that linked `[`Model::save`]` are rewritten to name the one writer.
+
+**`write_day_review` is KEPT, and gap 732's entry needs two corrections** (gap 835):
+
+1. **It is not a raw writer.** W-19's brief says *"`tm_core::energy::Model::save` and
+   `write_day_review` are raw `fs::write` calls with no production caller, which is why D35's gate
+   enumeration could not see them."* The first half is false of the second function: `write_day_review`
+   contains **no `fs::` call at all** — it is `store.ensure_horizon_file(…)` then
+   `store.modify_file(…)`, so it already routes through `Store` and **D35's gate already covers it**.
+   Gap 732's own text never said otherwise; it said *"has no caller in the shipped binary"*, which
+   is the accurate complaint and is still true.
+2. **It is not dead, it is early.** Design §8.4 puts **F3-review** — `close day` leaving a
+   hand-written review alone instead of replacing it with `horizon::REVIEW_PLACEHOLDER` — in step
+   **P8**, *"because it needs generated-block ownership: once `Emit.lean` owns the
+   `<!-- tm:review -->` block's content, `close day` can tell a written review from the placeholder
+   it wrote"*. `write_day_review` is the function that writes that block. Deleting it would delete
+   the site a scheduled step of this very stage is going to wire in, and §20's behaviour table
+   already owes the row. So the decision is **keep**, and gap 732 is narrowed rather than closed:
+   what it still costs is six tests reading as product coverage they are not, and **P8 is the step
+   that clears it**, not R3 and not R9.
+
+### 8. Acceptance, and every delta explained
+
+Everything capped; `MemoryMax=40G`/`MemorySwapMax=0` for `check.sh` and `cargo`.
+
+| | baseline `d1a602a` | this step | delta |
+|---|---|---|---|
+| `check.sh` | 7/7 ok | **8/8 ok** | **+1 check** — D39's check 8, commit 2 |
+| axiom audit | 4,549 theorems | **4,549** | — (no theorem added, deleted or renamed) |
+| totality | ok | **ok** | — |
+| `Negative.lean` rejected | ok | **ok** | — |
+| check 5 | ok (93 tests) | **ok (93 tests)** | — |
+| corpus | 29/37 files, 4/5 whole plans | **29/37, 4/5** | — (`kernel/corpus/` untouched) |
+| burn-down | 9 outstanding, all stage 6 | **9, all stage 6** | — (§3.2: none added, none discharged) |
+| **check 8** | — | **ok** — commit 2: 10,460 citations, 9,411 resolved, 1,049 allowed, 0 unused; commit 4 (this block in): **10,502 / 9,447 / 1,055 / 0** | new |
+| `cargo test --workspace` | 1,345 / 0 / 9 across 79 result lines | **1,345 / 0 / 9 across 79** | — |
+| FFI crate whole | 101 / 0 | **101 / 0** (corpus 8, kernel 86, stack 7) | — |
+| T5 `kernel_replay_parity` | 29 / 0 / 4 | **29 / 0 / 4** | — |
+| the door (`kernel_log_door`) | 23 / 0 | **23 / 0** | — |
+| `kernel_log_grammar` | 16 / 0 / 2 | **16 / 0 / 2** | — |
+| `cli_switch_acceptance` | 9 / 0 | **9 / 0** | — |
+| `kernel_call_counts` | 2 / 0 | **2 / 0** | — |
+| `cli_write_gate` (D35's gate) | 11 / 0 | **11 / 0** | — |
+| `the_frozen_comparand_is_read_at_full_precision` (D21-D23) | passes | **passes** | — |
+| `cli_latency --include-ignored`, release, ×3 | 6 / 6 | **6 / 6, 6 / 6, 6 / 6** | rows below, as **ranges** |
+
+**The test count did not move although a `pub fn` was deleted**, because
+`model_saves_and_loads_through_a_path` was rewritten, not removed: `tm-core`'s `energy_model`
+binary is 14 passed before and after.
+
+**T11 rows, three release runs, `--include-ignored --test-threads=1 --nocapture`, capped.** They
+have come **back down** to the land block's band from W-18's reading, which is what the W-18 block
+predicted when it declined to call its own rise thermal:
+
+| T11 row (3y log, 66,169 lines) | land block | W-18 repair | this step, ×3 |
+|---|---|---|---|
+| **later verb (`tm drop`'s one kernel call)** — the *reliable* baseline | 126.7-131.7 ms | 146.8-152.0 ms | **126.42 / 136.55 / 126.61 ms** |
+| **gated host-only write (D35)** | 126.7-131.7 ms | 146.9-152.0 ms | **126.69 / 141.67 / 126.62 ms** |
+| a routine for a 3-day-old instance (noisy) | — | 141.8-156.7 ms | **146.95 / 136.65 / 136.53 ms** |
+| `--now +1 day` (a reseal, noisy) | — | 207.6-207.7 ms | **187.29 / 197.33 / 177.13 ms** |
+| `review week` (out of band, gap 275) | — | 283.7-288.9 ms | **273.62 / 278.46 / 263.02 ms** |
+
+**D35's gated write sits at `tm drop`'s band run for run**, which is the invariant the land block
+asserted and the only thing these two rows are evidence for. Nothing is re-blessed and no band is
+touched. **Nothing in this step can move a Rust number on the kernel side** — the only Lean changes
+are doc comments, so the extracted C is identical — and the one Rust change deletes a function no
+shipped path calls. *What was NOT done:* these rows were not re-measured at `d1a602a` on this
+machine in this session, so the claim is *"they are back inside the land block's band"*, which the
+table shows, and **not** *"W-18's rise is provably explained"*.
+
+### 9. Gaps — this step takes 830-835; **836-849 free**
+
+**Gap 830 (new; label W19A-a) — four stale prose citations were repaired, and the four repairs are
+themselves the thing to check next time.**
+1. *What is not done.* Nothing is owed on these four. The paragraph exists because the repair is
+   the kind of change a later reader will want the evidence for.
+2. *Why it is recorded.* `Plan.lean:645`, `Recur.lean:441`, `SealHeaders.lean:8` and
+   `Boundary.lean:3425` each named, in the present tense, a constant that does not exist; §3's
+   table gives each one's live referent, and each repair writes the dead name **without backticks**
+   so that check 8 still fails on a later sentence that cites it as live.
+3. *What it cost.* Nothing measurable: doc comments only, `lake build` clean, axiom audit unmoved
+   at 4,549.
+4. *Which step cleared it.* This one.
+
+**Gap 831 (new; label W19A-b) — check 8 does not read camelCase, namespaces, or fenced README
+blocks.**
+1. *What is not done.* Only backticked **snake_case** identifiers are swept; resolution is on the
+   **last dotted segment**; README code fences are skipped.
+2. *Why.* D39 scoped it to snake_case, which is the shape of a theorem name here; full-name
+   resolution needs a namespace tracker and the last-segment form catches the class the campaign
+   actually keeps hitting; and fences hold pasted output from commits that are gone, which an
+   append-only ledger may not have rewritten under it.
+3. *What it costs.* A stale `def` or field citation (`loadPlan`, `readPlanFacts`) is invisible; a
+   theorem **moved between namespaces** still resolves; a Lean theorem deleted whose name is also a
+   Rust `fn` or a JSON key still resolves; and a stale citation inside a fence escapes (measured:
+   2 more unresolved names if fences are swept, both quoted Lean output).
+4. *Which step clears it.* Whichever step wants camelCase pays for the noise it brings; the
+   namespace half is a tracker in `citations.py` and is cheap, and **R1** is its natural home.
+
+**Gap 832 (new; label W19A-c) — four LIVE stale citations, found by check 8 and NOT repaired.**
+1. *What is not done.* `Lookahead.lean:4854` and `:4857` name readCand_refuses_a_flag_that_is_not_a_boolean
+   and readCand_refuses_a_state_that_is_not_a_box; `Boundary.lean:9135` names
+   mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint; `Boundary.lean:12260` names
+   logSectionWith_passes_its_zone. None of the four exists.
+2. *Why.* Ownership, not doubt. The two `Lookahead.lean` rows are the wire decoder **track P** is
+   editing this run (P5a landed it, P5b is folding it), and a track-A prose edit there is a merge
+   conflict for no gain; the live theorem is `readCand_refuses_each_of_the_nine_by_name`. The two
+   `Boundary.lean` rows sit in a `log`-op section whose **own** retirement note at `:12287`
+   contradicts them, and deciding whether the guarantee still holds under C6's view is a reading
+   for a repair step, not a gate step; the live law for the second is
+   `readLogSection_is_zoneOf_then_logSectionWith`.
+3. *What it costs.* Four sentences that a reader will take for statements about theorems. They are
+   in allow-list **section 2**, capped at their current counts, under a heading that calls them
+   defects — so they cannot spread, and they cannot be mistaken for exemptions.
+4. *Which step clears it.* The **repair step** (gaps 875-889), or **track P**'s own next commit for
+   the two `Lookahead.lean` rows.
+
+**Gap 833 (new; label W19A-d) — 160 grandfathered README citations that nobody has opened.**
+1. *What is not done.* Allow-list section 4 is a **seeded baseline**, not an adjudication.
+2. *Why.* `kernel/README.md` is 38,954 lines of append-only ledger and the residue after five
+   declaration sets is 350 names, of which 128 also appear in Lean prose and were read with it.
+   Reading the remaining 160 was not affordable beside D39's own delivery, and seeding them is what
+   let check 8 land as a **ratchet** — every *new* citation is gated from today — instead of not
+   landing at all.
+3. *What it costs.* Some of the 160 are certainly stale citations nobody has found; the file says
+   so in its own heading rather than implying they were checked. The count caps them, so none can
+   spread, but none is repaired either.
+4. *Which step clears it.* Any step with the budget, a tranche at a time — W-19 did exactly one,
+   `toml_edit`, when its own block tripped the ratchet: move each to VOCABULARY
+   with a reason, to section 3 with the sentence that kills it, or repair the prose. **R1** is the
+   natural owner, and the burn-down is visible because the section's own count is in the file.
+
+**Gap 834 (new; label W19A-e) — `tm-core`'s `energy::Model` no longer has a writer, and that is a
+behaviour change to the crate's API.**
+1. *What is not done.* Nothing is owed; this records the deletion.
+2. *Why.* Gap 776: it was a second, ungated, unrecorded `fs::write` of `.tm/model.json` beside the
+   gated `store.write_file` the shipped `tm model --fit` uses, with no production caller.
+3. *What it costs.* Any caller outside this repository that used `Model::save` loses it; inside,
+   there was one, in a test, and it now writes the bytes itself. `Model::load`,
+   `Model::load_or_default`, `Model::to_json` and `Model::from_json` are untouched, so the file's
+   **shape** still has exactly one definition.
+4. *Which step clears it.* Cleared here. If **R9**'s shim ever needs a library-level writer it
+   takes a `&dyn Store`, and the gate and the recorder come with it.
+
+**Gap 835 (new; label W19A-f) — gap 732 is corrected in two places and narrowed, not closed.**
+1. *What is not done.* `write_day_review` still has no production caller.
+2. *Why it is recorded.* Two claims about it are false at this tree. It is **not** a raw `fs::write`
+   — it has no `fs::` call at all, going through `store.ensure_horizon_file` and
+   `store.modify_file`, so **D35's gate already covers it**; and it is **not** dead code, it is the
+   site design §8.4 gives **F3-review** in step **P8**. A step that took the W-19 brief literally
+   and deleted it would have deleted the function a scheduled step of this stage is going to call.
+3. *What it costs.* Gap 732's residual cost stands: six tests exercise a writer the product does not
+   use, which reads as coverage it is not. Nothing else.
+4. *Which step clears it.* **P8**, when `close day` stops overwriting a hand-written review — not
+   R3 and not R9, which is what gap 732 guessed.
+
+### 10. Behaviour rows
+
+| input | before | after | why |
+|---|---|---|---|
+| a `tm-core` caller of `energy::Model::save` | wrote `.tm/model.json` with `fs::write`, ungated and unrecorded | **the function does not exist**; `tm model --fit` is the one writer, through `store.write_file`, gated and recorded | gap 776; AGENTS §5.3 and §5.6 |
+| `check.sh` on a tree whose prose cites a name that does not exist | seven `ok` lines, exit 0 | **check 8 FAILS, naming the identifier and its file and line** | D39, gap 779 |
+| `check.sh` on a tree that cites a capped allow-list name once more than its cap | seven `ok` lines, exit 0 | **check 8 FAILS**, `(N citations, M allowed)` | D39 |
+
+No user-visible `tm` behaviour changed: no verb's output, no file's bytes, no refusal.
+
+### 11. What this step did NOT do, by name
+
+* **No planner code, no wire change, no Lean definition changed.** The only Lean edits are four doc
+  comments. `dayPlan` keeps its total signature (D28), no law was narrowed or re-stated (D5), no
+  goal was added or discharged, no snapshot, fixture, latency band or corpus was re-blessed, and no
+  memory bound was raised (D18).
+* **It did not repair the four citations of gap 832**, or open the 161 of gap 833.
+* **It did not touch `Planner.lean`, `PlanCheck.lean` or `Goals.lean`** — tracks P and G own those
+  this run.
+* **It did not delete `write_day_review`**, and §7 says why the instruction to consider it was
+  working from a false premise.
+* **It did not pay gap 703**, only re-measure it; and it did not trim what check 8 reads to make
+  the number smaller.
+* **It did not make check 8 read camelCase or fences** (gap 831), or teach it to tell a deliberate
+  historical citation from a stale one — a human read did that once, and allow-list section 3 is
+  the record of that reading, not a capability of the check.

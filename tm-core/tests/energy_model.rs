@@ -157,7 +157,11 @@ fn model_saves_and_loads_through_a_path() {
     assert_eq!(Model::load(&path).unwrap(), None);
     assert_eq!(Model::load_or_default(&path).unwrap(), Model::default());
     let m = fixture_model();
-    m.save(&path).unwrap();
+    // The bytes are written by the TEST, not by tm-core: `Model::save` was a
+    // second, ungated writer of `.tm/model.json` beside `tm model --fit`'s
+    // gated `store.write_file`, and was deleted at W-19 (README gap 834).
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, m.to_json()).unwrap();
     assert_eq!(Model::load(&path).unwrap(), Some(m.clone()));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), m.to_json());
 }

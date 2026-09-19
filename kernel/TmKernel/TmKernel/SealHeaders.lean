@@ -5,7 +5,9 @@ import TmKernel.SealRestore
 
 A checkpoint's stored headers, read on a day at or after its ledger day, are the folded lines' headers on that day
 (`storedHeaders_filter`); the tail's headers carry each entry's day on the tail's index and whether it survives the
-unsettled tail (`tailHeaders_eq`).  Specification only (D9-21).
+unsettled tail (`tailHeaders_eq_spec`, whose foldl form is `tailHeaders_foldl` and whose specification-side
+equality is `tailHeadersSpec_eq`).  Specification only (D9-21).  (This read tailHeaders_eq until W-19 — a prefix of three
+real names and the name of none of them.  Unbackticked on purpose; README gap 830.)
 -/
 namespace Tm
 namespace Seal

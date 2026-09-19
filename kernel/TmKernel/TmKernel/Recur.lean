@@ -438,7 +438,8 @@ an `at:` interval it answers the interval's own length; `place_minutes` answers
 "how many minutes does the planner place", and on an interval it answers the
 line's `dur:` — which is usually nothing at all, because a wall is not placed.
 On every other shape the two are the same reading and this calls `declaredDur`
-for it (`placeMinutes_is_declaredDur_off_an_interval`). -/
+for it (`placeMinutesOf_is_declaredDur_off_an_interval`; the `Of` was missing
+from this citation until W-19, check 8, README gap 830). -/
 def placeMinutesOf (bm : Nat) (c : Core) : Option Nat :=
   match c.shape with
   | .interval _ _ => (Field.viewDur c.line).map (fun d => d.minutes bm)
