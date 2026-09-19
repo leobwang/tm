@@ -676,7 +676,16 @@ impl Ctx {
     /// stderr** are asserted byte-identical with the fork's over seven corpus
     /// trees, one of which (`logs/three-days`) ends with `^t8` still running
     /// and no `.tm/state.json` beside it. What `tm check` still cannot do is
-    /// name the disagreement as a *problem* of its own — README gap 1031.
+    /// name the disagreement as a *problem* of its own — README gap 1032.
+    ///
+    /// **That gate is also what keeps these two lines off the TUI's screen**,
+    /// and the ordering was checked rather than assumed: `tui::run` calls
+    /// `tui::load` — `housekeeping`, so loud — at `tui/mod.rs:102`, **before**
+    /// `tui::setup` enters the alternate screen at `:111`, and `tui::reload`
+    /// loads with `housekeeping` false, so nothing writes to stderr while
+    /// ratatui owns the terminal. AGENTS §4's own reason for the kernel being
+    /// total is that `exit(1)` with no unwind leaves a ratatui terminal in raw
+    /// mode; an `eprintln!` mid-frame is the smaller cousin of that.
     ///
     /// # It writes nothing, and that is not a shortcut
     ///

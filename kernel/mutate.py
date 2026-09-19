@@ -163,7 +163,7 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
     `PlanReq.deferFold`, `PlanReq.finalAssign` and `dayDiagnostics`, each of
     which takes a `PlanReq` and returns something else, so neither a constant
     nor an identity exists for it; README gap 980 puts the exemption itself to
-    the owner and gap 1032 names what would reach these three.
+    the owner and gap 1035 names what would reach these three.
   * A ROW IS A CLAIM.  check 9 does not re-run a mutation whose sha1 matches, so
     a row written by hand, with a plausible error string, passes.  What makes it
     not a bare claim: `mutate.py --write` appends a row only after watching the

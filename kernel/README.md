@@ -44513,7 +44513,12 @@ no predicate was weakened.
 * **It did not teach `tm check` to report the disagreement.** D42's own commit
   message declined that as a *substitute* for the cache; it is still not a
   problem `tm check` names (gap 1032).
-* **It did not drive the TUI**, which no agent can (AGENTS §5.13, gap 182).
+* **It did not drive the TUI**, which no agent can (AGENTS §5.13, gap 182) —
+  but the one thing D42 could have done to it was checked by reading:
+  `tui::run` calls the loud, housekeeping `tui::load` at `tui/mod.rs:102`,
+  **before** `tui::setup` enters the alternate screen at `:111`, and
+  `tui::reload` loads with `housekeeping` false, so neither stderr line can
+  land mid-frame. Checked, not driven.
 * **It added no cheat, no `PlannerWit` section, no parity entry and no goal.**
 
 ### 11. Gaps taken — 1030-1038; **1039-1059 free**
