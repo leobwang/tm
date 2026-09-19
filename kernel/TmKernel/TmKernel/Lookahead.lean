@@ -4752,15 +4752,9 @@ theorem the_open_states_are_the_two_live_ones (f : PlanFacts) :
 /-- Fork `Candidate::cap_left_min()`, lifted to the record: `none` without a `max:`. -/
 def PlanFacts.capLeftMin (f : PlanFacts) : Option Nat := f.cap.map MaxCap.leftMin
 
-/-- **Fork `Candidate::eligible()`** — the *item* half of §8.2 step 5's filter, the half
-`priority::sorted_candidates` applies: not waiting, an open state, no unsatisfied dependency,
-and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`, `loc_ok`, the wind-down, the
-atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
-
-This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
-all.  **`Planner.entersTheOrder` applies it** — `PlanReq.rankedCands` is fork
-`sorted_candidates`, filter and all, since P5b-i (README gap 602 closed).  The *slot* half is
-still owed: `Planner.eligibleAt` lands with the fold (README gap 365). -/
+/-- **Fork `Candidate::cap_ok()`** — the `max:` conjunct of the filter below, on its own: no
+`max:` at all, or a `max:` with minutes left.  Nothing is clamped and a reached cap is not
+repaired. -/
 def PlanFacts.capOk (f : PlanFacts) : Bool :=
   match f.capLeftMin with | Option.none => true | some n => !(n == 0)
 
@@ -4784,8 +4778,42 @@ theorem PlanFacts.capOk_of_a_cap (f : PlanFacts) (c : MaxCap) (h : f.cap = some 
       simp only [decide_eq_false_iff_not, Nat.not_le] at hle
       simp [Nat.sub_ne_zero_of_lt hle]
 
+/-- **Fork `Candidate::eligible()`** — the *item* half of §8.2 step 5's filter, the half
+`priority::sorted_candidates` applies: not waiting, an open state, no unsatisfied dependency,
+and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`, `loc_ok`, the wind-down, the
+atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
+
+This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
+all.  **`Planner.entersTheOrder` applies it** — `PlanReq.rankedCands` is fork
+`sorted_candidates`, filter and all, since P5b-i (README gap 602 closed).  The *slot* half is
+still owed: `Planner.eligibleAt` lands with the fold (README gap 365).
+
+(These three paragraphs sat on `PlanFacts.capOk` until W-18's repair step — a docstring one
+declaration too early, so Lean bound them to the `max:` conjunct and the predicate they are
+about shipped with none.  `check.sh` check 3 reads `#print axioms` lines and cannot see a
+docstring at all.)
+
+**The first conjunct decides nothing**, and that is §9.2's *"a check no input can fail"*:
+`the_waiting_conjunct_is_implied_by_the_open_states` below proves `!waiting` is a consequence
+of `isOpen`, so no `PlanFacts` can distinguish it.  It is kept because the fork writes it, and
+recorded as README gap **775** rather than deleted. -/
 def PlanFacts.eligible (f : PlanFacts) : Bool :=
   !f.waiting && f.isOpen && f.blockedBy.isEmpty && f.capOk
+
+/-- **`!waiting` is implied by `isOpen`, so `eligible`'s first conjunct can never decide the
+answer** (AGENTS §9.2; W-18's reuse critic, README gap 775).  `waiting` is
+`state == Status.live .world` and `isOpen` is `state == Status.live .free || state ==
+Status.live .self`; `Holder`'s three constructors are disjoint, so an open state is already a
+non-waiting one.  **No witness can pin this conjunct** — that is what this theorem says, and
+it is why none below tries to — which makes `eligible_iff`'s `waiting = false` component a
+consequence of its `isOpen = true` component and not a second obligation. -/
+theorem PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states (f : PlanFacts) :
+    (!f.waiting && f.isOpen) = f.isOpen := by
+  unfold PlanFacts.waiting PlanFacts.isOpen
+  cases f.state with
+  | settled o => rfl
+  | live h => cases h <;> rfl
+  | demoted => rfl
 
 theorem PlanFacts.eligible_iff (f : PlanFacts) :
     f.eligible = true ↔
@@ -4794,6 +4822,25 @@ theorem PlanFacts.eligible_iff (f : PlanFacts) :
   unfold PlanFacts.eligible
   rw [← PlanFacts.capOk_iff]
   simp only [Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_iff, and_assoc]
+
+/-- **The same answer with the free component dropped — three obligations, not four.**
+`eligible_iff` is kept exactly as it stands (D5: a law is never narrowed), but its
+`waiting = false` component is a *consequence* of its `isOpen = true` component and reads as
+an obligation, which is the half of README gap 775 a reader actually trips over.  This states
+the iff a caller has to discharge.  Driving W-18's inversion II — deleting `!waiting` from
+`eligible` — breaks **nothing in the tree except `eligible_iff`'s own proof**, which is the
+measured form of the same sentence. -/
+theorem PlanFacts.eligible_iff_without_the_free_component (f : PlanFacts) :
+    f.eligible = true ↔
+      f.isOpen = true ∧ f.blockedBy = [] ∧ ∀ c, f.cap = some c → c.leftMin ≠ 0 := by
+  rw [PlanFacts.eligible_iff]
+  constructor
+  · rintro ⟨-, h2, h3, h4⟩; exact ⟨h2, h3, h4⟩
+  · rintro ⟨h2, h3, h4⟩
+    refine ⟨?_, h2, h3, h4⟩
+    have hw := PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states f
+    rw [h2] at hw
+    simpa using hw
 
 
 /-! ### R10 for the nine: a bound each, one constructor, a refusal each
@@ -4810,9 +4857,16 @@ answer rather than an omission:
   other character is refused by name (`readCand_refuses_a_state_that_is_not_a_box`).
 * `multiplier` is `Arith.Pos` — a `Subtype` whose property is `0 < den`, so the one thing that
   could make the arithmetic partial is unrepresentable.  Its **size** bound is the wire's, beside
-  the safety's (`Boundary.multiplierOfWire`), because that is where every other configured
+  the safety's (`CapWire.multiplierOfWire`), because that is where every other configured
   decimal's size bound lives (`safetyOfWire`, `binsOfWire`, `boundedPos`) and a second copy here
-  would be the defect this kernel exists to remove. -/
+  would be the defect this kernel exists to remove.  **What that costs, said plainly** (W-18
+  repair, README gap **777**): the size bound is therefore *not* a conjunct of `PlanFacts.wf`,
+  so `Cand.plan_is_bounded` does not carry it and a `Cand` built inside the kernel may hold an
+  arbitrarily large `Arith.Pos`.  Off the wire it is bounded and `CapWire.multiplierOfWire_ok`
+  is the theorem; since W-18's repair `boundedPos` and `multiplierOfWire` **are** one
+  definition (`CapWire.boundedPair`) with their refusal batteries as its projections, and
+  `safetyOfWire` is proved to be the same reader past one further refusal it alone needs
+  (`safetyOfWire_is_the_pair_reader_past_one_more_refusal`, README gap 778). -/
 
 /-- **The largest minute count the wire carries** — fork `u32`, the bound `remaining` already
 has.  `Boundary.maxRemaining` is defined as this, so the number has one owner (AGENTS §5.3). -/

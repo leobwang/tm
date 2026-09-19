@@ -5648,3 +5648,43 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_mid_break_day_lays_a_block_across_a_break
 #print axioms Tm.PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_break_law_applies_at_the_census_request
+
+-- ===========================================================================
+-- APPENDED 2026-09-18 (stage 6, run **W-18**, the REPAIR step).
+--
+-- Ten new theorems, from two repairs.
+--
+-- (1) AGENTS 5.3, W-18's reuse critic: `boundedPos`, `safetyOfWire` and (from
+--     P5a) `multiplierOfWire` were three copies of one bounded-rational wire
+--     reader in one namespace, with three parallel refusal batteries.  The
+--     concept is now ONE definition, `CapWire.boundedPair`, and each of the
+--     three old views is PROVED to be a projection of it -- the widen-and-
+--     project pattern, so no statement changed and no law narrowed (D5).  All
+--     SEVEN old theorems -- boundedPos's four and multiplierOfWire's three --
+--     keep their exact statements and are re-proved from the generic ones.
+--     `multiplierOfWire_ok` is new and is where the
+--     multiplier's SIZE bound is stated, because `Look.PlanFacts.wf` does not
+--     carry it (README gap 777).
+--
+-- (2) AGENTS 9.2, "a check no input can fail": `Look.PlanFacts.eligible`'s
+--     first conjunct `!waiting` is implied by its second, `isOpen` -- Holder's
+--     three constructors are disjoint -- so NO `PlanFacts` can distinguish it
+--     and no witness could pin it (W-17 lesson 2's shape, from the other
+--     side).  The conjunct is kept because the fork writes it; the theorem is
+--     the record that it decides nothing.  README gap 775.  The INVERSION --
+--     delete the conjunct and run everything -- broke exactly ONE thing in the
+--     tree, `eligible_iff`'s own proof, whose residual goal is literally the
+--     defect: an iff restating `waiting = false` beside three real conditions.
+--     So `eligible_iff_without_the_free_component` is added, stating the three
+--     obligations a caller has.  `eligible_iff` itself is untouched (D5).
+-- ===========================================================================
+#print axioms Tm.CapWire.boundedPair_zero_den
+#print axioms Tm.CapWire.boundedPair_wide_den
+#print axioms Tm.CapWire.boundedPair_large_num
+#print axioms Tm.CapWire.boundedPair_ok
+#print axioms Tm.CapWire.boundedPos_is_the_pair_at_the_energy_bounds
+#print axioms Tm.CapWire.safetyOfWire_is_the_pair_reader_past_one_more_refusal
+#print axioms Tm.CapWire.multiplierOfWire_is_the_pair_at_the_multiplier_bounds
+#print axioms Tm.CapWire.multiplierOfWire_ok
+#print axioms Tm.Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states
+#print axioms Tm.Look.PlanFacts.eligible_iff_without_the_free_component

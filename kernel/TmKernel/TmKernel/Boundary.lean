@@ -9619,28 +9619,40 @@ million are far outside anything a night or a curve can mean. -/
 def maxRatioDen : Nat := 1000000
 def maxRatioNum : Nat := 1000000
 
-/-- **A configured `[energy]` decimal, bounded** (R10): `Arith.ofPair?` is the one constructor —
-it refuses a zero denominator — and the bounds refuse the rest.  Nothing is clamped. -/
-def boundedPos (n d : Nat) : Option Arith.Pos :=
-  if d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d then Arith.ofPair? n d else none
+/-! ### One bounded-rational wire reader, at three pairs of constants (AGENTS §5.3)
 
-theorem boundedPos_zero_den (n : Nat) : boundedPos n 0 = none := by
-  simp only [boundedPos]
+Until W-18's repair step this shape was written out three times in this namespace — `boundedPos`
+below, `safetyOfWire` and (from P5a) `multiplierOfWire` — differing only in the two bounds, with
+three parallel refusal batteries.  W-18's reuse critic found the third; `boundedPair` is the one
+definition, and each of the three is **proved** to be a projection of it, so the old views and
+their statements are unchanged and nothing is narrowed (D5).
+-/
+
+/-- **A bounded rational off the wire, once.**  `Arith.ofPair?` is the one constructor — it
+refuses a zero denominator — and the two bounds refuse the rest.  Nothing is clamped. -/
+def boundedPair (maxNum maxDen n d : Nat) : Option Arith.Pos :=
+  if d ≤ maxDen ∧ n ≤ maxNum * d then Arith.ofPair? n d else none
+
+theorem boundedPair_zero_den (maxNum maxDen n : Nat) : boundedPair maxNum maxDen n 0 = none := by
+  simp only [boundedPair]
   split
   · exact Arith.ofPair?_zero n
   · rfl
 
-theorem boundedPos_wide_den {n d : Nat} (h : maxRatioDen < d) : boundedPos n d = none := by
-  simp only [boundedPos]
+theorem boundedPair_wide_den {maxNum maxDen n d : Nat} (h : maxDen < d) :
+    boundedPair maxNum maxDen n d = none := by
+  simp only [boundedPair]
   rw [if_neg (by omega)]
 
-theorem boundedPos_large_num {n d : Nat} (h : maxRatioNum * d < n) : boundedPos n d = none := by
-  simp only [boundedPos]
+theorem boundedPair_large_num {maxNum maxDen n d : Nat} (h : maxNum * d < n) :
+    boundedPair maxNum maxDen n d = none := by
+  simp only [boundedPair]
   rw [if_neg (by omega)]
 
-theorem boundedPos_ok {n d : Nat} {q : Arith.Pos} (h : boundedPos n d = some q) :
-    0 < d ∧ d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d ∧ q.val = ⟨n, d⟩ := by
-  unfold boundedPos at h
+theorem boundedPair_ok {maxNum maxDen n d : Nat} {q : Arith.Pos}
+    (h : boundedPair maxNum maxDen n d = some q) :
+    0 < d ∧ d ≤ maxDen ∧ n ≤ maxNum * d ∧ q.val = ⟨n, d⟩ := by
+  unfold boundedPair at h
   split at h
   · rename_i hb
     unfold Arith.ofPair? at h
@@ -9650,6 +9662,26 @@ theorem boundedPos_ok {n d : Nat} {q : Arith.Pos} (h : boundedPos n d = some q) 
       exact ⟨hd, hb.1, hb.2, rfl⟩
     · cases h
   · cases h
+
+/-- **A configured `[energy]` decimal, bounded** (R10): `boundedPair` at the `[energy]`
+constants.  `Arith.ofPair?` is the one constructor — it refuses a zero denominator — and the
+bounds refuse the rest.  Nothing is clamped. -/
+def boundedPos (n d : Nat) : Option Arith.Pos := boundedPair maxRatioNum maxRatioDen n d
+
+/-- The old view is a projection of the widened one, definitionally. -/
+theorem boundedPos_is_the_pair_at_the_energy_bounds (n d : Nat) :
+    boundedPos n d = boundedPair maxRatioNum maxRatioDen n d := rfl
+
+theorem boundedPos_zero_den (n : Nat) : boundedPos n 0 = none := boundedPair_zero_den _ _ n
+
+theorem boundedPos_wide_den {n d : Nat} (h : maxRatioDen < d) : boundedPos n d = none :=
+  boundedPair_wide_den h
+
+theorem boundedPos_large_num {n d : Nat} (h : maxRatioNum * d < n) : boundedPos n d = none :=
+  boundedPair_large_num h
+
+theorem boundedPos_ok {n d : Nat} {q : Arith.Pos} (h : boundedPos n d = some q) :
+    0 < d ∧ d ≤ maxRatioDen ∧ n ≤ maxRatioNum * d ∧ q.val = ⟨n, d⟩ := boundedPair_ok h
 
 /-- **A configured decimal as an exact non-negative pair** (R10): `{"num": n, "den": d}` through
 `boundedPos`. -/
@@ -9860,6 +9892,17 @@ def binsOfWire (xs : List JVal) : Option Bins :=
 safety of at most 1,000. -/
 def safetyOfWire (p : Nat × Nat) : Option Arith.Pos :=
   if p.2 ≤ maxPairDen ∧ p.1 ≤ 1000 * p.2 then safetyOf? p.1 p.2 else none
+
+/-- **The safety is `boundedPair` past one more refusal**, and that refusal is the whole of the
+difference: `safetyOf?` also rejects a zero numerator (parity entry P8), which the other two
+readers do not.  Stated rather than folded, because folding it would put a numerator refusal on
+the `[energy]` decimals and on the multiplier, where zero is a legal value. -/
+theorem safetyOfWire_is_the_pair_reader_past_one_more_refusal (p : Nat × Nat) :
+    safetyOfWire p = if 0 < p.1 then boundedPair 1000 maxPairDen p.1 p.2 else none := by
+  unfold safetyOfWire boundedPair safetyOf?
+  by_cases h0 : 0 < p.1
+  · simp only [if_pos h0]
+  · simp only [if_neg h0, ite_self]
 
 /-- **`[priority]`, through step 2's decoders** (gap 77): `binsOfPairs?`, `safetyOf?` (a safety of
 at most 1,000), `defaultPrioOf?`. -/
@@ -10233,21 +10276,27 @@ denominator of at most `10^18` as every configured decimal has, and a multiplier
 def maxMultiplier : Nat := 1000
 
 def multiplierOfWire (p : Nat × Nat) : Option Arith.Pos :=
-  if p.2 ≤ maxPairDen ∧ p.1 ≤ maxMultiplier * p.2 then Arith.ofPair? p.1 p.2 else none
+  boundedPair maxMultiplier maxPairDen p.1 p.2
 
-theorem multiplierOfWire_refuses_a_zero_denominator (n : Nat) : multiplierOfWire (n, 0) = none := by
-  unfold multiplierOfWire
-  split
-  · exact Arith.ofPair?_zero n
-  · rfl
+/-- The view is a projection of `boundedPair`, definitionally — **no second copy of the shape**
+(AGENTS §5.3; W-18's reuse critic found the third copy and this is where it went). -/
+theorem multiplierOfWire_is_the_pair_at_the_multiplier_bounds (p : Nat × Nat) :
+    multiplierOfWire p = boundedPair maxMultiplier maxPairDen p.1 p.2 := rfl
+
+theorem multiplierOfWire_refuses_a_zero_denominator (n : Nat) : multiplierOfWire (n, 0) = none :=
+  boundedPair_zero_den _ _ n
 
 theorem multiplierOfWire_refuses_a_wide_denominator {n d : Nat} (h : maxPairDen < d) :
-    multiplierOfWire (n, d) = none := by
-  unfold multiplierOfWire; rw [if_neg (fun hc => absurd hc.1 (Nat.not_le.mpr h))]
+    multiplierOfWire (n, d) = none := boundedPair_wide_den h
 
 theorem multiplierOfWire_refuses_a_multiplier_past_a_thousand {n d : Nat}
-    (h : maxMultiplier * d < n) : multiplierOfWire (n, d) = none := by
-  unfold multiplierOfWire; rw [if_neg (fun hc => absurd hc.2 (Nat.not_le.mpr h))]
+    (h : maxMultiplier * d < n) : multiplierOfWire (n, d) = none := boundedPair_large_num h
+
+/-- **What a multiplier that crossed satisfies.**  The `Subtype` carries only `0 < den`, so this
+is where the multiplier's *size* bound lives — in the decoder, exactly as `safetyOfWire`'s does
+and **not** in `Look.PlanFacts.wf` (README gap 777). -/
+theorem multiplierOfWire_ok {n d : Nat} {q : Arith.Pos} (h : multiplierOfWire (n, d) = some q) :
+    0 < d ∧ d ≤ maxPairDen ∧ n ≤ maxMultiplier * d ∧ q.val = ⟨n, d⟩ := boundedPair_ok h
 
 /-- **`Field.parseLoc` cannot make a second name for a known location**, so `Loc.wf`'s clause in
 `Look.PlanFacts.wf` is about a value built by hand and never about one off the wire.  Said here
@@ -10326,11 +10375,24 @@ def readPlanFacts (i : Nat) (v : JVal) : Except Refusal Look.WfPlanFacts := do
   let wt ← boolAt p "wallToday" (.badCandidate i .wallToday)
   orErr (Look.mkPlanFacts? ⟨pm, mul, loc, sp, cap, state, deps, wt⟩) (.badCandidate i .plan)
 
-/-- **Whatever crosses is inside R10's bounds, by type.**  The decoder's result is the
-`Subtype`, so there is no path from the wire to a `Cand` whose nine facts are out of bounds
-(`Look.Cand.plan_is_bounded`), and no convention to forget. -/
+/-- **Whatever crosses is inside R10's bounds — eight of the nine by type, the ninth by this
+decoder.**  The result is the `Subtype`, so there is no path from the wire to a `Cand` whose
+facts are out of bounds (`Look.Cand.plan_is_bounded`), and no convention to forget.
+
+**What that theorem does and does not see** (W-17 lesson 1, and W-18's audit found this
+sentence saying *"all nine, by type"*).  `Look.PlanFacts.wf` constrains `plannedMin`, the two
+`cap` minutes, `loc`, and `blockedBy`'s length and each dep; `splittable`, `wallToday` and
+`state` are bounded by their own types and need no conjunct.  **The multiplier's *size* bound is
+not in `wf`** — the `Subtype` `Arith.Pos` carries only `0 < den` — so `Cand.plan_is_bounded`
+says nothing about it, and a `Cand` built *inside* the kernel may carry an arbitrarily large
+`Arith.Pos`.  Off the wire it **is** bounded, and `multiplierOfWire_ok` is that theorem: the
+bound lives beside the safety's, in the decoder, which is where every other configured
+decimal's size bound lives.  R10 is still met — a smart constructor the
+decoder actually uses plus three named rejection theorems — and README gap 777 records the
+residue by name. -/
 theorem readPlanFacts_is_bounded {i : Nat} {v : JVal} {f : Look.WfPlanFacts}
     (h : readPlanFacts i v = .ok f) : Look.PlanFacts.wf f.val = true := f.property
+
 
 /-- **One candidate record**, every value through its decoder. -/
 def readCand (i : Nat) (v : JVal) : Except Refusal Look.Cand := do

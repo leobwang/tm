@@ -1333,8 +1333,11 @@ witness exists for it over a hand-built day.
   whose subject is there at `theRequest` and at `theRunningRequest` but **not** at the request
   the census is stated over — the caveat the table carried and the count did not.  The census
   now computes that conjunct too.  And it read *"each of the six waits on a named later step"*
-  until **W-18**, which is the sentence section 13 is about: **two of the six wait on a
-  request, not on a step**, and at `theCensusRequest` the ratio is **seven of eleven**.)
+  until **W-18**, which is the sentence section **14** is about: **two of the six wait on a
+  request, not on a step**, and at `theCensusRequest` the ratio is **seven of eleven**.  (This
+  read *"section 13"* until W-18's repair step: track G wrote the line and the section, the
+  merge renumbered the section to 14 because `## 13.` already existed on the branch, and the
+  sweep for citations looked in every file **but this one**.))
 * **Bites** — some mutation of that same produced day is refused.  `the_battery_bites_*`
   below, with W-15's and W-16's, make it **eleven of eleven**.
 

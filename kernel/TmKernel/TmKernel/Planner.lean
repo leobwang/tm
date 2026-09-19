@@ -1995,8 +1995,12 @@ sitting on `now`.  A seventh, `end <= now`, is the arithmetic's own.
 ############################################################################ -/
 
 /-- **Fork `ActiveRun`** (`planner.rs:1477`) — the reservation, in absolute seconds.  `mult` is
-the candidate's multiplier and is **P4**'s (README gap 550); the fork reads it off the candidate
-list, which the kernel does not collect yet. -/
+the candidate's multiplier and is still **README gap 550**, but the reason has moved (W-18
+repair; this comment said *"is P4's … the fork reads it off the candidate list, which the
+kernel does not collect yet"*, and P4 landed at `5dc3167` without clearing the gap).  Since
+P5a the fact **is** available — `Look.PlanFacts.multiplier` is on the wire, decoded by
+`CapWire.multiplierOfWire` — and what is still missing is that `PlanReq.activeRow` emits no
+multiplier.  That is **P8**'s, not P4's, and D34 forbids deriving it here. -/
 structure ActiveRes where
   id      : Id
   start   : Nat
@@ -2797,7 +2801,13 @@ theorem PlanReq.the_reservation_never_runs_under_a_wind_down_row (r : PlanReq) (
 
 /-- **No slot overlaps a break of the same cut** — L3's `cutSlots_no_slot_overlaps_a_break`,
 which is the half of `plan_places_no_block_over_a_break` the cut owes.  The other half is
-P5's: a Break row reaches the day only when work touches it (gap 551). -/
+P5's: a Break row reaches the day only when work touches it (gap 551).
+
+(W-18: the goal itself no longer sits in `Goals.lean` waiting on both halves — as written it
+is **false**, because the day's Break rows and Block rows alike include `pastRows`' replayed
+ones, and it left the file as a §3.1-item-3 discharge.  What this theorem is a half of is now
+`PlanCheck.plan_places_no_block_over_a_break`, the restatement over the Block rows that start
+at or after `now`; gap 551 still stands and is still what the *cut* half waits on.) -/
 theorem PlanReq.no_slot_overlaps_a_break (r : PlanReq) (s : Look.Slot) (hs : s ∈ r.todaySlots)
     (b : Nat × Nat) (hb : b ∈ r.todayBreaks) : s.stop ≤ b.1 ∨ b.2 ≤ s.start := by
   unfold PlanReq.todaySlots PlanReq.todayCut at hs
@@ -3539,8 +3549,15 @@ row gives it to P1, and that row is wrong (README gap 347).
 the Block rows that start at or after `now`; still not by this body, which is what the paragraph
 above says.**  The form `Goals.lean` carried is FALSE and
 `PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted` is the compiled
-refutation; five of the eleven checkers still range over nothing on a produced day, which is
-README gap 650 and is P5's, not this sentence's.  (Banner owed by README gap 653, paid at the
+refutation; **four** of the eleven checkers still range over nothing on **any** day the planner
+can produce, which is README gap 650 and is P5's, not this sentence's.  (This read *"five … on
+a produced day"* until W-18's repair, and matched no reading of the census under any run: the
+two questions the repo keeps apart are *at one request* — `PlannerWit`'s section 14 computes
+**seven of eleven** with a subject at `theCensusRequest`, so four without — and *over every
+`PlanReq`*, which is gap 650's four and is what this sentence is about.  The four are
+`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`,
+`no_block_row_of_the_day_reaches_the_wind_down`, `the_day_has_no_batch_row` and
+`the_day_names_no_impossible_item`.)  (Banner owed by README gap 653, paid at the
 W-17 land step.)
 
 `plan_never_moves_a_wall` **is** non-vacuous here, and is **false as stage 6 wrote it**. -/
@@ -3729,8 +3746,19 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
 /-- **Every Break row of the day is replayed from the log.**  Steps 1, 2 and 3 place no break
 of their own: the cut's breaks reach the day only when work touches them
 (`kept_breaks(breaks, slots, assign)`, fork `emit_segments`), and `assign` is **P5**'s (README
-gap **551**).  So `plan_places_no_block_over_a_break` stays in `Goals.lean`: the break side of
-it is still vacuous over what the planner places. -/
+gap **551**).
+
+**This paragraph used to end *"so `plan_places_no_block_over_a_break` stays in `Goals.lean`:
+the break side of it is still vacuous over what the planner places"*, and both halves are now
+false** (W-18 repair; the README copy of the same sentence was corrected by track G and this
+one was not).  (a) The goal **left `Goals.lean` at `fc26630`** as a §3.1-item-3 discharge —
+`PlannerWit.plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted` is the refutation
+and `PlanCheck.plan_places_no_block_over_a_break` the restatement, audited in `Check.lean`.
+(b) It was never vacuous *in that way*: the goal's Break rows are the **log's**, not the cut's,
+so `a_break_row_is_a_replayed_row` is precisely what makes the comparison have a subject — a
+log that records a `break` while a block runs gives the day a Break row inside a Block row, and
+**neither** row is the planner's doing, which is why the goal as written is false rather than
+empty. -/
 theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
     (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.brk) :
     ∃ t ∈ pastRows r, s = segOf t := by
