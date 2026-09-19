@@ -3649,5 +3649,33 @@ theorem the_day_with_no_room_carries_the_note_instead :
     assignedOf (dayPlan theCrowdedRequest) = [['m','1'], ['m','2']] := by
   refine ⟨by decide, by decide, by decide⟩
 
+set_option maxRecDepth 100000 in
+/-- **The battery still passes on a day step 6 put a row in, and NOT ONE of the eleven gained a
+subject from it** — the answer to "which of L26's eleven does P6 make provable", measured
+rather than asserted: design §6.4 assigns no goal to P6, and this is why.
+
+A Routine row is not a Block (`Planner.routineRows_are_not_blocks`), is not a Wall
+(`Planner.routineRows_are_not_walls`), is not work
+(`Planner.assignedOf_dayPlan_drops_the_routine_rows`), is not a Break, and carries **no slot
+energy**, because `Planner.PlanReq.routineEnergy` answers `none` for a `routines.md` line
+(fork `emit_segments`' `scheduled` test: furniture has no `ci`).  So the day the deferred
+routine is on has **two** Block rows — the morning's replayed pair — **one** Wall, **two**
+Routine rows and **nothing** with a slot energy or a Break; every population the eleven range
+over is exactly what it was before step 6 wired in, and the burn-down does not move. -/
+theorem the_battery_passes_on_the_day_step_six_filled :
+    PlanCheck.planOk permissive theRoutineRequest (dayPlan theRoutineRequest) = true ∧
+    PlanCheck.planOk permissive theCrowdedRequest (dayPlan theCrowdedRequest) = true ∧
+    PlanCheck.planOk permissive theBusyRequest (dayPlan theBusyRequest) = true ∧
+    ((dayPlan theRoutineRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.block))).length = 2 ∧
+    ((dayPlan theRoutineRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.wall))).length = 1 ∧
+    ((dayPlan theRoutineRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.routine))).length = 2 ∧
+    ((dayPlan theRoutineRequest).segments.filter (fun s => s.val.energy.isSome)).length = 0 ∧
+    ((dayPlan theRoutineRequest).segments.filter
+        (fun s => decide (s.val.kind = SegKind.brk))).length = 0 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
 end PlannerWit
 end Tm

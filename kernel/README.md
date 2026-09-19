@@ -41871,3 +41871,29 @@ stand.**
   nothing else.
 * **A second `PlanCheck` entry.** The battery is still eleven; no check is about
   a Routine row, and none is added.
+
+### Addendum, at `4c3c56f`+1: which of L26's eleven P6 makes provable — **none**, measured
+
+The step's brief asks it and design §6.4 answers it in advance (P6 has no row
+in that table), but "no goal" and "no subject" are different claims and only the
+first was written down. `PlannerWit.the_battery_passes_on_the_day_step_six_filled`
+computes the second: the battery passes at `theRoutineRequest`,
+`theCrowdedRequest` and `theBusyRequest`, and the day the deferred routine is on
+holds **two** Block rows (the morning's replayed pair), **one** Wall, **two**
+Routine rows, **no** row carrying a slot energy and **no** Break. Every
+population the eleven range over is exactly what it was before the wire, because
+a Routine row is not a Block (`Planner.routineRows_are_not_blocks`), not a Wall
+(`Planner.routineRows_are_not_walls`), not work
+(`Planner.assignedOf_dayPlan_drops_the_routine_rows`), not a Break, and carries
+no slot energy — `Planner.PlanReq.routineEnergy` answers `none` for a
+`routines.md` line, because furniture has no `ci`. **The burn-down stays at 9
+and the reason is now computed rather than predicted.**
+
+RE-MEASURED with that theorem in the tree: check.sh **8/8** — axiom audit
+**4,726 theorems**, check 5 **93 tests**, check 8 **10,971 citations, 9,903
+resolved, 0 allow entries unused**, corpus **29/37 and 4/5**, burn-down **9, all
+stage 6**; `cargo test --workspace` **1,345 / 0 / 9 across 79**; check.sh wall,
+warm, **7.74 · 7.77 · 7.82 s (median 7.77)** against the stashed `86c4dc6`
+baseline's median 7.55 s — **+2.9%**, inside design §14.0 item 4's
+10%-per-step rule. The whole of that rise is check 1 and check 4: this theorem
+and cheat 212 each decide a `dayPlan`.

@@ -6014,3 +6014,4 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.assignedOf_dayPlan_drops_the_routine_rows
 #print axioms Tm.PlannerWit.the_day_carries_the_deferred_routines_row
 #print axioms Tm.PlannerWit.the_day_with_no_room_carries_the_note_instead
+#print axioms Tm.PlannerWit.the_battery_passes_on_the_day_step_six_filled
