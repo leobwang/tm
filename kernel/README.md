@@ -39167,7 +39167,7 @@ Every one applied, built, its failure pasted into the handover, then reverted.
 | P | the atomic-run clause dropped | **one witness**: `an_atomic_group_needs_its_whole_run` |
 | Q | `contiguous_fits` stops at a planned break | **two witnesses**: `an_atomic_group_that_fits_is_placed` and `a_planned_break_does_not_break_an_atomic_run` |
 | R | `contiguous_fits` walks through an assigned slot | **one witness**: `an_assigned_slot_breaks_an_atomic_run` |
-| S | `pick` answers the **last** fitting group | `pickFrom_sound`'s own proof |
+| S | `pick` answers the **last** fitting group | pickFrom_sound's own proof — that lemma and the `pickFrom` it was about are **deleted** at W-19's repair step (gap 877); the cursor calls `List.findIdx?` and the standing theorem is `pickedGroup_is_the_first_that_fits`, which also states that every earlier group fails |
 | T | the budget clause dropped from the cursor | `assignStep_cases` — its `a.used < budget` conclusion |
 
 **What these inversions cannot show, said plainly.** Inversion K is the one that

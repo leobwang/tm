@@ -5801,7 +5801,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- none is added.  README gaps 803-806 say what is owed.
 -- ===========================================================================
 #print axioms Tm.Planner.lt_of_getElem?_some
-#print axioms Tm.Planner.pickFrom_sound
 #print axioms Tm.Planner.PlanReq.an_assigned_slot_names_a_group
 #print axioms Tm.Planner.PlanReq.a_spent_budget_assigns_nothing
 #print axioms Tm.Planner.PlanReq.assignFold_ok
@@ -5878,3 +5877,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_two_comparisons_have_subjects_where_they_bite
 #print axioms Tm.PlannerWit.the_one_id_store_gives_neither_comparison_a_subject
+
+-- APPENDED 2026-09-19 (stage 6, run **W-19**, the REPAIR step -- the reuse
+-- repairs).  `pickedGroup_is_the_first_that_fits` replaces the deleted
+-- pickFrom_sound: the cursor calls `List.findIdx?` rather than a third copy of
+-- it, and the new statement carries the "first" the old one did not.  README
+-- gap 877.
+#print axioms Tm.Planner.pickedGroup_is_the_first_that_fits
+

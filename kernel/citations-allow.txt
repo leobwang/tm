@@ -28,6 +28,7 @@
 # Lean core, `Std` and tactic names.  Cited in proofs and in the notes that explain
 # them: the toolchain's vocabulary, not this kernel's, and the toolchain is not swept.
 List.Nodup.length_le_of_subset
+List.findIdx?_eq_some_iff_getElem
 List.mergeSort_cons
 Option.bind_some
 String.ofList_toList

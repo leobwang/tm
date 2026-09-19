@@ -4427,37 +4427,37 @@ theorem minGroupKey_le_mem : ∀ (l : List Ranked) (k : GroupKey) (y : Ranked), 
     · exact minGroupKey_le_mem xs _ y h
 
 /-- Fork `cap_left.min()`: the tightest `max:` any member is still under, `none` when no member
-has one (the fork's `unwrap_or(u32::MAX)`, which is "no constraint"). -/
-def capMin? : Option Nat → Option Nat → Option Nat
-  | none, b => b
-  | some a, none => some a
-  | some a, some b => some (min a b)
+has one (the fork's `unwrap_or(u32::MAX)`, which is "no constraint").
 
+The combining step is **`Seal.minOpt`**, stage 5's own `Option Nat` minimum, not a second copy
+of it (AGENTS §5.3).  A byte-for-byte duplicate of it under a different name shipped here at
+P5b and is **deleted** by W-19's repair step; `Seal.minOpt_assoc` is the law it never had.
+README gap 886. -/
 def capLeftOf (l : List Ranked) : Option Nat :=
-  l.foldl (fun a x => capMin? a x.facts.capLeftMin) none
+  l.foldl (fun a x => Seal.minOpt a x.facts.capLeftMin) none
 
 theorem capFold_some : ∀ (l : List Ranked) (e : Nat),
-    ∃ c, l.foldl (fun a x => capMin? a x.facts.capLeftMin) (some e) = some c ∧ c ≤ e
+    ∃ c, l.foldl (fun a x => Seal.minOpt a x.facts.capLeftMin) (some e) = some c ∧ c ≤ e
   | [], e => ⟨e, rfl, Nat.le_refl e⟩
   | x :: xs, e => by
     simp only [List.foldl_cons]
     cases hc : x.facts.capLeftMin with
     | none =>
       obtain ⟨c, h1, h2⟩ := capFold_some xs e
-      exact ⟨c, by simpa [capMin?, hc] using h1, h2⟩
+      exact ⟨c, by simpa [Seal.minOpt, hc] using h1, h2⟩
     | some d =>
       obtain ⟨c, h1, h2⟩ := capFold_some xs (min e d)
-      exact ⟨c, by simpa [capMin?, hc] using h1, Nat.le_trans h2 (Nat.min_le_left e d)⟩
+      exact ⟨c, by simpa [Seal.minOpt, hc] using h1, Nat.le_trans h2 (Nat.min_le_left e d)⟩
 
 theorem capFold_le_member : ∀ (l : List Ranked) (acc : Option Nat) (y : Ranked), y ∈ l →
     ∀ d, y.facts.capLeftMin = some d →
-      ∃ c, l.foldl (fun a x => capMin? a x.facts.capLeftMin) acc = some c ∧ c ≤ d
+      ∃ c, l.foldl (fun a x => Seal.minOpt a x.facts.capLeftMin) acc = some c ∧ c ≤ d
   | [], _, _, h, _, _ => by simp at h
   | x :: xs, acc, y, hy, d, hd => by
     simp only [List.foldl_cons]
     rcases List.mem_cons.1 hy with rfl | hy
-    · have hstep : capMin? acc y.facts.capLeftMin = some (min (acc.getD d) d) := by
-        cases acc <;> simp [capMin?, hd]
+    · have hstep : Seal.minOpt acc y.facts.capLeftMin = some (min (acc.getD d) d) := by
+        cases acc <;> simp [Seal.minOpt, hd]
       rw [hstep]
       obtain ⟨c, h1, h2⟩ := capFold_some xs (min (acc.getD d) d)
       exact ⟨c, h1, Nat.le_trans h2 (Nat.min_le_right _ _)⟩
@@ -4816,8 +4816,13 @@ theorem PlanReq.energisedSlots_length (r : PlanReq) :
   exact List.length_map _
 
 /-- **Fork `Planner::loc_ok`** (`planner.rs:1609`): an item with no constraint fits anywhere,
-and an unknown current location constrains nothing. -/
-def locOk (cur item : Field.Loc) : Bool :=
+and an unknown current location constrains nothing.
+
+**Named `groupLocOk` and not `locOk`** — `Cmd.locOk` is a different predicate (well-formedness
+of a location *word*), and check 8 resolves a prose citation on its **last dotted segment**, so
+two `locOk`s would make a citation of either resolve against the other and no gate could tell a
+stale one from a live one (W-19's reuse critic; README gap 878). -/
+def groupLocOk (cur item : Field.Loc) : Bool :=
   match item with
   | .any => true
   | other => (cur == Field.Loc.any) || (other == cur)
@@ -4861,32 +4866,42 @@ demanding runs after the wind-down (step 3's rule again, defensively); and a non
 group needs an unbroken run long enough for what it still owes. -/
 def PlanReq.groupFitsSlot (r : PlanReq) (slots : List Look.Slot) (slotOf : List (Option Nat))
     (breaks : List (Nat × Nat)) (i : Nat) (e : Fin 6) (s : Look.Slot) (g : Group) : Bool :=
-  g.live && decide (g.ci.val ≤ e.val) && locOk r.curLoc g.loc &&
+  g.live && decide (g.ci.val ≤ e.val) && groupLocOk r.curLoc g.loc &&
     !(decide (r.windDownSec ≤ s.start) && decide (4 ≤ g.ci.val)) &&
     (g.splittable || contiguousFits slots slotOf breaks i g.leftMin)
 
-/-- Fork `pick`'s `for (gi, g) in groups.iter().enumerate()`: the **first** group in §7.4's
-order that passes, by index. -/
-def pickFrom (P : Group → Bool) : Nat → List Group → Option Nat
-  | _, [] => Option.none
-  | k, g :: rest => if P g then some k else pickFrom P (k + 1) rest
+/-- **Fork `pick`'s `for (gi, g) in groups.iter().enumerate()`**: the **first** group in §7.4's
+order that passes, by index — and that walk is **`List.findIdx?`**, which the cursor calls
+rather than carrying a third copy of it (AGENTS §5.3; W-19's reuse critic, README gap 877).
+Lean 4.33.1's `List.findIdx?` is `go l 0`, an accumulator walk of exactly the shape the
+hand-written definition deleted here had, so it reduces under `decide` as that one did.
 
-theorem pickFrom_sound : ∀ (P : Group → Bool) (k : Nat) (l : List Group) (n : Nat),
-    pickFrom P k l = some n → k ≤ n ∧ ∃ g, l[n - k]? = some g ∧ P g = true
-  | _, _, [], _, h => by simp [pickFrom] at h
-  | P, k, g :: rest, n, h => by
-    unfold pickFrom at h
-    by_cases hp : P g = true
-    · rw [if_pos hp] at h
-      have : n = k := (Option.some.inj h).symm
-      subst this
-      exact ⟨Nat.le_refl _, g, by simp, hp⟩
-    · rw [if_neg hp] at h
-      obtain ⟨hk, g', hg', hpg⟩ := pickFrom_sound P (k + 1) rest n h
-      refine ⟨by omega, g', ?_, hpg⟩
-      have : n - k = (n - (k + 1)) + 1 := by omega
-      rw [this]
-      simpa using hg'
+This is **stronger** than the hand-written soundness lemma it replaces, and deliberately so:
+`List.findIdx?_eq_some_iff_getElem` also gives that every group *before* the answer **fails**
+the test, which is the whole of what the fork's `for` loop means by "first" and which the
+deleted lemma never stated.
+
+**The second conjunct has a subject and no consumer**, and both halves are said here rather
+than left for an auditor.  Its subject is computed:
+`PlannerWit.the_cursor_fills_the_day_in_key_order` gives the second slot of §4.3's Wednesday to
+group **3**, so groups 0, 1 and 2 are refused there — `^c2` for its `loc:` and `^c3` for its
+`ci` — and the quantifier is not empty.  Its consumer is nobody: `PlanReq.assignStep_cases`
+destructures this theorem as `⟨⟨g₀, hg₀, hpg⟩, -⟩` and discards it.  It is kept because it is
+free from the core lemma and because it is the claim the fork's `for` loop actually makes;
+README gap 877. -/
+theorem pickedGroup_is_the_first_that_fits (P : Group → Bool) (l : List Group) (n : Nat)
+    (h : l.findIdx? P = some n) :
+    (∃ g, l[n]? = some g ∧ P g = true) ∧
+      ∀ j, j < n → ∀ g, l[j]? = some g → P g = false := by
+  obtain ⟨hlt, hp, hbefore⟩ := List.findIdx?_eq_some_iff_getElem.1 h
+  refine ⟨⟨l[n], List.getElem?_eq_getElem hlt, hp⟩, ?_⟩
+  intro j hj g hg
+  have hjl : j < l.length := Nat.lt_trans hj hlt
+  rw [List.getElem?_eq_getElem hjl] at hg
+  have hje : l[j] = g := Option.some.inj hg
+  have hb := hbefore j hj
+  rw [hje] at hb
+  simpa using hb
 
 /-- What the cursor carries: which group each slot went to, the groups with what they have
 spent, and the blocks the day has committed. -/
@@ -4900,12 +4915,24 @@ structure Assign where
 
 /-- Fork `plan()`'s loop body (`planner.rs:1017-1026`).  A slot already taken is passed over,
 and a spent budget passes over the slot without ending the walk — the fork `continue`s rather
-than breaking, because `place_deferred` may free a slot later and re-place into it. -/
+than breaking, because `place_deferred` may free a slot later and re-place into it.
+
+**The slot-taken guard is structurally unreachable here, and it is unreachable in the fork
+too.**  `assignStart` seeds `slotOf` with one `Option.none` per slot and `assignFold` folds
+over `r.energisedSlots.zipIdx`, so each index is visited exactly **once** and the only entry a
+step ever `set`s is `x.2`'s: no step can observe an occupied slot.  The fork's step-5 loop has
+the same shape — `let mut assign = vec![None; slots.len()]` then `for i in 0..slots.len() { if
+assign[i].is_some() || … { continue } }` — and only `place_deferred` (step 6) writes `assign`
+out of order.  So **dropping `(a.slotOf[x.2]?).join.isSome ||` leaves the whole build green**
+(W-19's audit, inversion I2), and the guard stays anyway because the port is faithful and step
+6 is the caller that will reach it.  It is the **sixth** clause of this fold that no
+∀-theorem pins, beside the two README gap 806 names — and unlike those two, nothing can pin
+it until P6 exists.  README gap 876. -/
 def PlanReq.assignStep (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
     (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) : Assign :=
   if (a.slotOf[x.2]?).join.isSome || decide (budget ≤ a.used) then a
   else
-    match pickFrom (r.groupFitsSlot slots a.slotOf breaks x.2 x.1.1 x.1.2) 0 a.groups with
+    match a.groups.findIdx? (r.groupFitsSlot slots a.slotOf breaks x.2 x.1.1 x.1.2) with
     | Option.none => a
     | some gi =>
       match a.groups[gi]? with
@@ -4955,8 +4982,7 @@ theorem PlanReq.assignStep_cases (r : PlanReq) (slots : List Look.Slot)
       · exact Or.inl rfl
       · rename_i g hg
         refine Or.inr ⟨gi, g, hg, ?_, by omega, rfl⟩
-        obtain ⟨-, g₀, hg₀, hpg⟩ := pickFrom_sound _ 0 a.groups gi hp
-        simp only [Nat.sub_zero] at hg₀
+        obtain ⟨⟨g₀, hg₀, hpg⟩, -⟩ := pickedGroup_is_the_first_that_fits _ a.groups gi hp
         rw [hg] at hg₀
         rwa [(Option.some.inj hg₀.symm : g₀ = g)] at hpg
 
@@ -4998,7 +5024,7 @@ def PlanReq.AssignOk (r : PlanReq) (a : Assign) : Prop :=
   ∀ (i gi : Nat), a.slotOf[i]? = some (some gi) →
     ∃ (e : Fin 6) (s : Look.Slot) (g : Group),
       r.energisedSlots[i]? = some (e, s) ∧ a.groups[gi]? = some g ∧
-        g.ci.val ≤ e.val ∧ locOk r.curLoc g.loc = true ∧
+        g.ci.val ≤ e.val ∧ groupLocOk r.curLoc g.loc = true ∧
         ¬ (r.windDownSec ≤ s.start ∧ 4 ≤ g.ci.val)
 
 theorem PlanReq.assignStart_ok (r : PlanReq) : r.AssignOk r.assignStart := by
