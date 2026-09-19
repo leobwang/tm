@@ -3205,36 +3205,85 @@ def PlanReq.rootSite (r : PlanReq) (i : Id) : Option Site :=
 def PlanReq.keyOf (r : PlanReq) (ix : Nat) (o : Look.FloorOut) : CandKey :=
   ⟨!o.out.cand.wall, o.out.p.getD 7, r.rootSite o.out.cand.id, r.ownSite o.out.cand.id, ix⟩
 
+/-- **Fork `priority::sorted_candidates`' own filter** (README gap 602, closed here on P5a's
+wire).
+
+Two clauses, both the fork's:
+
+* `Candidate::eligible()` — not `[?]`, an open state, no unsatisfied `after:`, and a `max:`
+  with minutes left.  `Look.PlanFacts.eligible` is that predicate, over the facts P5a put on
+  the wire; an ineligible candidate is left out of the **assignment order** and
+  `diagnostics.blocked` keeps it with its reason (§5.5), which is P8's.
+* `!c.is_wall || c.wall_today` — an Interval whose span does not cover today is another day's
+  wall, and nothing about it can be placed in this one.
+
+Both read only wire facts: nothing here derives a candidate fact inside the kernel, which
+would be doing D27 early and is what **D34** forbids. -/
+def entersTheOrder (o : Look.FloorOut) : Bool :=
+  o.out.cand.plan.val.eligible && (!o.out.cand.wall || o.out.cand.plan.val.wallToday)
+
 /-- **§8.2 step 4's answer, in §7.4's order** — fork `priority::sorted_candidates` over
-`priority::compute`'s output.
+`priority::compute`'s output, **filter and all** since P5a put its facts on the wire.
 
-**The eligibility filter is NOT applied here, and that is deliberate.**  The fork's
-`sorted_candidates` also drops `!c.eligible()` (Waiting, closed, dep-blocked, `max:`-exhausted)
-and an Interval that is not today's, and **not one of those five facts is on the wire**: they
-are `priority::Candidate` fields D27 will bring, and the filter itself is §8.2 step 5's
-`eligibleAt`, which design §6.3 gives to **P5** (README gap 365).  Filtering a sorted list by
-any predicate leaves the survivors in the same order, so the factoring is safe and P5 filters
-what this step orders. -/
+The filter runs **before** the sort, as the fork's does; filtering a sorted list by any
+predicate leaves the survivors in the same order, so the two orders agree and the sortedness
+laws below are unchanged by it. -/
 def PlanReq.rankedCands (r : PlanReq) : List Ranked :=
-  sortRanked (r.candAnswers.zipIdx.map (fun x => ⟨r.keyOf x.2 x.1, x.1⟩))
+  sortRanked ((r.candAnswers.zipIdx.filter (fun x => entersTheOrder x.1)).map
+    (fun x => ⟨r.keyOf x.2 x.1, x.1⟩))
 
+/-- The order is **at most** the request's candidates — an equality until P5a's filter, and a
+bound after it.  The `Capped` bound every list in `DayPlan` needs still follows. -/
 theorem PlanReq.rankedCands_length (r : PlanReq) :
-    r.rankedCands.length = r.cands.val.length := by
+    r.rankedCands.length ≤ r.cands.val.length := by
   unfold PlanReq.rankedCands
-  rw [sortRanked_length, List.length_map, List.length_zipIdx, r.candAnswers_length]
+  rw [sortRanked_length, List.length_map]
+  exact Nat.le_trans (List.length_filter_le _ _)
+    (Nat.le_of_eq (by rw [List.length_zipIdx, r.candAnswers_length]))
 
-/-- **Nothing is dropped and nothing is invented**: the ranking is a permutation of the
-answers, each carried with the request position it arrived at. -/
+/-- **Nothing is invented and nothing but the filter is dropped**: every entry of the ranking
+is an answer of this request that passes `entersTheOrder`, at the position it arrived at. -/
 theorem PlanReq.mem_rankedCands {r : PlanReq} {x : Ranked} :
-    x ∈ r.rankedCands ↔ ∃ p ∈ r.candAnswers.zipIdx, x = ⟨r.keyOf p.2 p.1, p.1⟩ := by
+    x ∈ r.rankedCands ↔
+      ∃ p ∈ r.candAnswers.zipIdx, entersTheOrder p.1 = true ∧ x = ⟨r.keyOf p.2 p.1, p.1⟩ := by
   unfold PlanReq.rankedCands
   rw [mem_sortRanked]
-  simp [List.mem_map, eq_comm]
+  simp only [List.mem_map, List.mem_filter, decide_eq_true_eq]
+  constructor
+  · rintro ⟨p, ⟨hp, he⟩, rfl⟩; exact ⟨p, hp, he, rfl⟩
+  · rintro ⟨p, hp, he, rfl⟩; exact ⟨p, ⟨hp, he⟩, rfl⟩
+
+/-- **Every entry of the order passes the filter** — the direction §8.2 step 5's fold reads:
+a group built from this list never contains a Waiting, closed, dep-blocked or `max:`-exhausted
+item, nor another day's wall. -/
+theorem PlanReq.a_ranked_entry_enters_the_order {r : PlanReq} {x : Ranked}
+    (h : x ∈ r.rankedCands) : entersTheOrder x.out = true := by
+  obtain ⟨p, _hp, he, rfl⟩ := PlanReq.mem_rankedCands.1 h
+  exact he
+
+/-- **An ineligible candidate is not in the order** — the fork's `!c.eligible()` drop, stated
+as the contrapositive so the fold can use it directly. -/
+theorem PlanReq.an_ineligible_candidate_is_not_ranked {r : PlanReq} {x : Ranked}
+    (h : x ∈ r.rankedCands) : x.out.out.cand.plan.val.eligible = true := by
+  have he := PlanReq.a_ranked_entry_enters_the_order h
+  unfold entersTheOrder at he
+  simp only [Bool.and_eq_true] at he
+  exact he.1
+
+/-- **Another day's wall is not in the order.**  An exam six weeks out is a wall and is not
+today's; §8.2 step 1 places today's and step 5 never sees either. -/
+theorem PlanReq.another_days_wall_is_not_ranked {r : PlanReq} {x : Ranked}
+    (h : x ∈ r.rankedCands) (hw : x.out.out.cand.wall = true) :
+    x.out.out.cand.plan.val.wallToday = true := by
+  have he := PlanReq.a_ranked_entry_enters_the_order h
+  unfold entersTheOrder at he
+  simp only [Bool.and_eq_true, hw, Bool.not_true, Bool.false_or] at he
+  exact he.2
 
 /-- Every ranked entry is an answer of this request, at the position it arrived at. -/
 theorem PlanReq.a_ranked_entry_is_an_answer {r : PlanReq} {x : Ranked} (h : x ∈ r.rankedCands) :
     r.candAnswers[x.key.ix]? = some x.out := by
-  obtain ⟨p, hp, rfl⟩ := PlanReq.mem_rankedCands.1 h
+  obtain ⟨p, hp, -, rfl⟩ := PlanReq.mem_rankedCands.1 h
   exact List.mem_zipIdx_iff_getElem?.mp hp
 
 /-- **And its key is that answer's own four facts** — not a label attached beside it.  This is
@@ -3244,7 +3293,7 @@ theorem PlanReq.a_ranked_entry_carries_its_answers_facts {r : PlanReq} {x : Rank
     (h : x ∈ r.rankedCands) :
     x.key.notWall = !x.out.out.cand.wall ∧ x.key.p = x.out.out.p.getD 7 ∧
       x.key.root = r.rootSite x.out.out.cand.id ∧ x.key.own = r.ownSite x.out.out.cand.id := by
-  obtain ⟨p, hp, rfl⟩ := PlanReq.mem_rankedCands.1 h
+  obtain ⟨p, -, -, rfl⟩ := PlanReq.mem_rankedCands.1 h
   exact ⟨rfl, rfl, rfl, rfl⟩
 
 theorem PlanReq.rankedCands_sorted (r : PlanReq) :

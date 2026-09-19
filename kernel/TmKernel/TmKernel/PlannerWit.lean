@@ -1023,13 +1023,20 @@ copy of that measurement — and would force `Look.lookahead witInput` inside a 
 is new at P4 is the **key**, and the key is what these pin.
 ############################################################################ -/
 
+/-- **Today's wall**, as fork `collect_candidates` marks it: the nine plain but for
+`wall_today`, which it sets when the Interval's span covers today — and `^g1`'s does
+(`lookWallPlan` is the §4.3 Wednesday's calendar).  Without it `priority::sorted_candidates`
+leaves the wall out of the assignment order, which is exactly what P5a's filter does. -/
+def todaysWallFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with wallToday := true }, by decide⟩
+
 /-- §7.4's six: the calendar's own wall `^g1` (the one item `lookWallPlan` holds, so its line
 order is a real one), an optional, an overdue instance, a mandatory instance, and two plain
 `rank` candidates whose `k` differs — `^r1` carries a written `!1` and `^r2` takes
 `default_priority`.  The dated ones carry a placement window, which is what keeps them out of
 the pass without making their `due` a lie. -/
 def witCands : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, Look.wfUnconstrained⟩, none),
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, todaysWallFacts⟩, none),
    (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
    (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
    (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
@@ -1155,7 +1162,7 @@ theorem yesterdays_priority_holds_the_candidate_back :
 
 /-- `witCands` with the two `p = 0` candidates exchanged on the wire, and nothing else. -/
 def witCandsSwapped : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, Look.wfUnconstrained⟩, none),
+  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, todaysWallFacts⟩, none),
    (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
    (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
    (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
@@ -1168,6 +1175,89 @@ component but their arrival order are exactly §5.3's carried instance and today
 theorem the_request_order_breaks_a_tie :
     rankedIds { theRankingRequest with cands := ⟨witCandsSwapped, by decide⟩ } =
       [['g','1'], ['m'], ['o','d'], ['r','1'], ['o'], ['r','2']] := by
+  decide
+
+
+/-! ### §8.2 step 5's filter, one cause at a time (P5b-i, README gap 602)
+
+`PlanReq.rankedCands` now applies fork `priority::sorted_candidates`' own filter, which is what
+P5a's wire made possible.  Five causes drop a candidate and **each is given its own witness in
+which that cause is the only thing that differs** — the shape README gap 677 was paid for.  The
+order of the survivors never moves, which is the other half of the claim: the filter runs before
+the sort and filtering a sorted list changes no pair's order. -/
+
+/-- The same request with one candidate's **nine** replaced, nothing else touched. -/
+def withFactsAt (r : PlanReq) (i : Nat) (g : Look.WfPlanFacts) : PlanReq :=
+  withCandAt r i (fun c => c.withPlan g)
+
+/-- `[?]` — waiting for an event (§5.1). -/
+def waitingFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with state := Status.live .world }, by decide⟩
+
+/-- `[x]` — a closed state. -/
+def doneFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with state := Status.settled .done }, by decide⟩
+
+/-- One unsatisfied `after:` dependency (§5.5). -/
+def blockedFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with blockedBy := [.item ['k', '7']] }, by decide⟩
+
+/-- A `max:` of sixty minutes with sixty spent (§6.2). -/
+def capReachedFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with cap := some ⟨60, 60⟩ }, by decide⟩
+
+/-- The same `max:` with thirty minutes left. -/
+def capLeftFacts : Look.WfPlanFacts :=
+  ⟨{ Look.PlanFacts.unconstrained with cap := some ⟨60, 30⟩ }, by decide⟩
+
+/-- **Each of the four item causes drops the candidate, one at a time.**  Position 4 is `^r1`,
+which stands fourth in the unfiltered order; each line below changes exactly one of its nine and
+nothing else, and `^r1` leaves.  A filter that read `state` for `blocked_by`, or `cap` for
+`state`, would pass one line and fail another. -/
+theorem each_cause_of_ineligibility_drops_the_candidate :
+    rankedIds (withFactsAt theRankingRequest 4 waitingFacts)
+      = [['g','1'], ['o','d'], ['m'], ['o'], ['r','2']] ∧
+    rankedIds (withFactsAt theRankingRequest 4 doneFacts)
+      = [['g','1'], ['o','d'], ['m'], ['o'], ['r','2']] ∧
+    rankedIds (withFactsAt theRankingRequest 4 blockedFacts)
+      = [['g','1'], ['o','d'], ['m'], ['o'], ['r','2']] ∧
+    rankedIds (withFactsAt theRankingRequest 4 capReachedFacts)
+      = [['g','1'], ['o','d'], ['m'], ['o'], ['r','2']] := by
+  decide
+
+/-- **And the `max:` cause turns on the two numbers, not on the cap's presence**: the same
+candidate with sixty minutes capped and *thirty* spent is eligible and keeps its place.  Without
+this line `capReachedFacts` above would be satisfied by a filter that dropped every capped item.
+-/
+theorem a_cap_with_minutes_left_keeps_the_candidate :
+    rankedIds (withFactsAt theRankingRequest 4 capLeftFacts) = rankedIds theRankingRequest := by
+  decide
+
+/-- **Another day's wall is dropped, and today's is not.**  Position 0 is `^g1`, the calendar's
+Wednesday wall; clearing `wall_today` — one boolean, nothing else — removes it from the
+assignment order, and it is the only candidate whose removal this boolean can cause. -/
+theorem a_wall_that_is_not_todays_is_dropped :
+    rankedIds (withFactsAt theRankingRequest 0 Look.wfUnconstrained)
+      = [['o','d'], ['m'], ['r','1'], ['o'], ['r','2']] ∧
+    rankedIds (withFactsAt theRankingRequest 0 Look.wfUnconstrained)
+      ≠ rankedIds theRankingRequest := by
+  decide
+
+/-- **`wall_today` is read only of a wall.**  Setting it on `^r1`, which is not a wall, changes
+nothing — so the theorem above is about the conjunction the fork writes
+(`!c.is_wall || c.wall_today`) and not about the flag alone. -/
+theorem wall_today_is_read_only_of_a_wall :
+    rankedIds (withFactsAt theRankingRequest 4 todaysWallFacts) = rankedIds theRankingRequest := by
+  decide
+
+/-- **The filter drops and never reorders.**  Every one of the five perturbations above leaves
+the survivors in the order they had, which is the claim that makes `rankedCands`' sortedness
+laws unchanged by P5b-i: filtering a sorted list by any predicate is a sublist of it. -/
+theorem the_filter_keeps_the_survivors_in_order :
+    (rankedIds (withFactsAt theRankingRequest 4 waitingFacts)).Sublist
+      (rankedIds theRankingRequest) ∧
+    (rankedIds (withFactsAt theRankingRequest 0 Look.wfUnconstrained)).Sublist
+      (rankedIds theRankingRequest) := by
   decide
 
 /-! ############################################################################

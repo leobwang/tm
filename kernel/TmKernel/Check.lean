@@ -5545,3 +5545,39 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.CapWire.readCand_reads_the_nine_the_other_way
 #print axioms Tm.CapWire.readCand_refuses_each_of_the_nine_by_name
 #print axioms Tm.CapWire.readCand_refuses_too_many_dependencies
+
+-- ===========================================================================
+-- APPENDED 2026-09-18, stage 6 run W-18, track P, step P5b-i: the assignment
+-- order's own filter (AGENTS 6.3).
+--
+-- README gap 602 said fork `priority::sorted_candidates` drops `!c.eligible()`
+-- and an Interval that is not today's, and that NONE of those facts was on the
+-- wire. P5a put them there, so the filter lands: `Planner.entersTheOrder` is
+-- the fork's two clauses and `PlanReq.rankedCands` applies it BEFORE the sort,
+-- as the fork does. Filtering a sorted list changes no pair's order, so every
+-- sortedness law above is untouched -- `the_filter_keeps_the_survivors_in_order`
+-- computes that at two of the perturbations rather than asserting it.
+--
+-- `rankedCands_length` is now a BOUND and not an equality, which is the visible
+-- consequence of the step and is why it is restated rather than kept.
+--
+-- The witnesses are one cause at a time: `[?]`, a closed state, an unsatisfied
+-- `after:` and an exhausted `max:` each drop `^r1` with nothing else about it
+-- changed, and `a_cap_with_minutes_left_keeps_the_candidate` is the line that
+-- stops `capReachedFacts` being satisfied by a filter that dropped every capped
+-- item. `wall_today` gets both halves too: clearing it on the calendar's `^g1`
+-- removes it, and setting it on `^r1`, which is not a wall, changes nothing --
+-- so the pair is about the fork's conjunction and not about the flag alone.
+--
+-- What is NOT here: `Planner.eligibleAt`, the SLOT half of section 8.2 step 5's
+-- filter (ci against the slot's energy, `loc_ok`, the wind-down rule, the
+-- atomic run). That is the fold's and README gap 365 still stands.
+-- ===========================================================================
+#print axioms Tm.Planner.PlanReq.a_ranked_entry_enters_the_order
+#print axioms Tm.Planner.PlanReq.an_ineligible_candidate_is_not_ranked
+#print axioms Tm.Planner.PlanReq.another_days_wall_is_not_ranked
+#print axioms Tm.PlannerWit.each_cause_of_ineligibility_drops_the_candidate
+#print axioms Tm.PlannerWit.a_cap_with_minutes_left_keeps_the_candidate
+#print axioms Tm.PlannerWit.a_wall_that_is_not_todays_is_dropped
+#print axioms Tm.PlannerWit.wall_today_is_read_only_of_a_wall
+#print axioms Tm.PlannerWit.the_filter_keeps_the_survivors_in_order

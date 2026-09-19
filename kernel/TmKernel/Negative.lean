@@ -2433,4 +2433,38 @@ theorem thePassSeesTheNine :
         ⟨{ Look.PlanFacts.unconstrained with plannedMin := 999 }, by decide⟩))
       ≠ Look.entering (Arith.mkPos 13 10 (by decide)) Look.witnessCands := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-18, track P, step P5b-i (AGENTS 6.2).
+   The assignment order's own filter (README gap 602).  Cheats 198-200.
+   =========================================================================== -/
+
+/- CHEAT 198 — an ineligible candidate claimed to keep its place in the
+   assignment order.  Fork `priority::sorted_candidates` drops `!c.eligible()`
+   before it sorts, so a `[?]` item competes for no slot at all; a fold over an
+   unfiltered order would plan a block on an item the user is waiting on.  This
+   block claims `^r1` still ranks fourth with its state set to `[?]` and nothing
+   else changed.  `decide` refuses: it is not in the list. -/
+theorem aWaitingCandidateStillRanks :
+    PlannerWit.rankedIds (PlannerWit.withFactsAt PlannerWit.theRankingRequest 4
+      PlannerWit.waitingFacts) = PlannerWit.rankedIds PlannerWit.theRankingRequest := by decide
+
+/- CHEAT 199 — the `max:` cause claimed to be about the cap's presence rather
+   than its two numbers.  Fork `Candidate::ineligible_reason` compares
+   `cap_done_min >= cap.amount.as_minutes()`, so sixty minutes capped with thirty
+   spent is eligible.  A filter that dropped every capped item would satisfy
+   `each_cause_of_ineligibility_drops_the_candidate` and be wrong; this block
+   claims exactly that reading.  `decide` refuses. -/
+theorem anyCapAtAllDropsTheCandidate :
+    PlannerWit.rankedIds (PlannerWit.withFactsAt PlannerWit.theRankingRequest 4
+      PlannerWit.capLeftFacts)
+      = [['g','1'], ['o','d'], ['m'], ['o'], ['r','2']] := by decide
+
+/- CHEAT 200 — `wall_today` claimed to be read of every candidate.  The fork's
+   clause is `!c.is_wall || c.wall_today`: it is read ONLY of a wall, so setting
+   it on `^r1`, which is not one, must change nothing.  This block claims it
+   changes the order.  `decide` refuses. -/
+theorem wallTodayIsReadOfEveryCandidate :
+    PlannerWit.rankedIds (PlannerWit.withFactsAt PlannerWit.theRankingRequest 4
+      PlannerWit.todaysWallFacts) ≠ PlannerWit.rankedIds PlannerWit.theRankingRequest := by decide
+
 end Tm

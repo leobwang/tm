@@ -4758,8 +4758,9 @@ and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`, `loc_ok`, the
 atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
 
 This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
-all; **nothing applies it yet** — `PlanReq.rankedCands` still orders every candidate it is given
-(README gap 602), and the filter lands with the fold. -/
+all.  **`Planner.entersTheOrder` applies it** — `PlanReq.rankedCands` is fork
+`sorted_candidates`, filter and all, since P5b-i (README gap 602 closed).  The *slot* half is
+still owed: `Planner.eligibleAt` lands with the fold (README gap 365). -/
 def PlanFacts.capOk (f : PlanFacts) : Bool :=
   match f.capLeftMin with | Option.none => true | some n => !(n == 0)
 
