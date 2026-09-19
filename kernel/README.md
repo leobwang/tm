@@ -38952,3 +38952,491 @@ the audit count closes exactly: 4,539 + 10 = **4,549**.
 * **It did not delete `!waiting`** (gap 775) or fold `safetyOfWire` (gap 778);
   both are recorded with the shape the fix must take.
 * **It left `Negative.lean:2338` alone** after reading it, because it is correct.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-19**, **track P**,
+     step **P5b — the assign fold**, on the main checkout at `d1a602a`.
+     Two commits: `2618eaa` the groups, `cb64831` the cursor.  Track P's gap
+     range is **800-829**; this step takes **800-809** and leaves **810-829**
+     free.  Cheats **203-208**.  Parity **P38**, unchanged and none owed.
+     **Burn-down stays 9** — no goal discharged, none added.  Axiom audit
+     **4,549 → 4,642**.  Whoever merges renumbers (§6.2, §6.4).
+     =========================================================================== -->
+
+## Stage 6, W-19 track P, 2026-09-18: §8.2 step 5's fold — the groups, the cursor, and the rows that are still owed
+
+**What landed, in one sentence each.** `2618eaa` turns §7.4's order into the
+groups a slot may be given to — fork `priority::batches`, fork
+`split_by_filters`, and the `max:` commit. `cb64831` walks the day's energised
+slots and gives each free one to the first group in key order that passes fork
+`Planner::pick`'s filter, with fork `contiguous_fits` behind the `atomic` clause.
+**Nothing reaches `dayPlan`**: no row is emitted, `dayRows` is byte-for-byte the
+one P2 left, and `PlanCheck`'s four emptiness theorems still hold. Gaps
+**803**–**806** say what that costs, by name.
+
+### The three sentences that belong at the top
+
+* **This is not an EDF pass, and the grep says so again.** Gap 701 refuted W-18's
+  brief on exactly this point and W-19's brief repeats the refutation rather than
+  the error. Re-run here: `grep -rn 'edfGrants\|Cap\.edf\b' TmKernel/*.lean
+  Negative.lean` returns **103** lines. §7.3's deadline pass already ran; its
+  result reaches step 5 only as the `p` inside `CandKey`, and fork
+  `build_groups`/`pick` is a greedy cursor in §7.4's key order with **no deadline
+  anywhere**. A step that "reused" one here would have built a second scheduler.
+* **`left_min` is carried as `commitMin`/`spent`, and that is stronger than the
+  fork's `i64`.** Fork `Group::left_min` is a signed counter the assign loop
+  decrements by a whole slot and **step 6 increments back** when a mandatory
+  routine displaces an assigned block, so a saturating `Nat` would not invert
+  (`10 − 60 = −50`, restored `+60`, is `10` in the fork and `60` under
+  saturation). Both of `left_min`'s readers are order comparisons — `pick`'s
+  `<= 0` and `contiguous_fits`' `need`, reached only when it is positive — so
+  `commitMin ≤ spent` and `commitMin − spent` say exactly what the fork says and
+  P6's restore is `spent − minutes`, exact. **Cheat 208** is that a group cannot
+  owe −50: `Nat` has no `Neg`.
+* **One behaviour deviates from the fork, and it is recorded rather than
+  discovered later.** The gather stops at `maxBatch`; the fork's does not stop at
+  all. Gap **800**, with its witness.
+
+### The numbers, re-measured
+
+Every command capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet` unless a narrower cap is named.
+
+| measurement | `d1a602a` (baseline) | `2618eaa` (groups) | `cb64831` (cursor) |
+|---|---|---|---|
+| `check.sh` | **7/7** | **7/7** | **7/7** |
+| axiom audit | 4,549 theorems | **4,616** (+67) | **4,642** (+26) |
+| check 5 (FFI through `check.sh`) | 93 tests | 93 | 93 |
+| corpus | 29/37 files, 4/5 whole plans | unchanged | unchanged |
+| burn-down | 9, all stage 6 | unchanged | unchanged |
+| `cargo test --workspace` | 1,345 / 0 / 9 across **79** | unchanged | **1,345 / 0 / 9 across 79** |
+| `Negative.lean` cheats | 202 | 205 | **208** |
+
+**`check.sh` wall time, warm, on this machine, measured against a stashed
+baseline interleaved with the change** — not against a remembered figure:
+
+| tree | readings | median |
+|---|---|---|
+| `d1a602a` | 6.81 · 6.91 · 7.06 s | 6.91 s |
+| groups (`2618eaa`) | 6.71 · 6.84 · 6.85 · 6.91 · 7.40 s | 6.85 s |
+| cursor (`cb64831`) | 6.95 · 6.99 · 6.99 · 7.04 · 7.09 s | **6.99 s** |
+
+**+1.2% for the whole run**, inside the 10%-per-step rule, and the two `lean`
+invocations gap 703 named are **flat**: check 3 `0.36-0.37 → 0.33-0.38 s`,
+check 4 `3.55-3.68 → 3.44-3.47 s`. *(These absolute numbers are roughly 1.6× the
+W-18 block's, on the same repo and a heavier machine; §5.11 applies to this table
+too, which is why the baseline was re-measured here rather than quoted.)*
+
+**The other suites, all at `cb64831`:** FFI **101** (kernel 86, stack 7,
+corpus 8) 0 failed; `kernel_log_door` 9; `cli_switch_acceptance` 2;
+`kernel_call_counts` 23; `kernel_lookahead_parity` 4; `kernel_replay_parity` 29;
+`planner_invariants` 6 — **73 passed / 0 failed across the six**.
+`cli_latency --include-ignored --test-threads=1`, release: **6 passed / 0
+failed**. T11 rows **as ranges, none re-blessed**: `tm drop` 126.63-136.72 ms
+(band 127-142, at or just under its floor), the 3-day-old routine
+136.65-136.80 ms (band 121.6-136.8), `review week` 258.38-273.31 ms (recorded
+band 248.1-253.3; W-18 saw 268-278 and left it there, gap 275), the reseal
+187.23-192.42 ms (recorded band 197.5-212.6; W-18 saw 177-187).
+
+**Memory.** The whole build, `Negative.lean` and every new `decide` witness
+complete at `MemoryMax=8G` with a peak RSS of **5.3 GB**; the eleven cursor
+witnesses need `set_option maxRecDepth 100000`, the two running-block ones
+`40000`. No bound was raised (D18).
+
+### `2618eaa` — the groups
+
+Fork `Planner::build_groups` (`planner.rs:1406`) over fork `priority::batches`
+(`priority.rs:1214`) and fork `split_by_filters` (`planner.rs:2354`).
+
+* **`gatherBatch`** is `batches`' inner loop as a walk over the rest of the order
+  rather than over a `used` array: a member of a different `ci` is *passed over
+  and kept* (the fork's `continue`) and the first member of the **same** `ci`
+  that cannot join **stops** the walk (the fork's `break`, which is §8.3's
+  monotone-rank rule). `gatherBatch_fst_is_a_prefix_of_its_ci` is E2's content as
+  a theorem: the gathered members are a **prefix** of the same-`ci` entries of
+  the order, so gathering cannot reach past one it left behind.
+* **`batchLoop`** is the outer loop on structural fuel — `Look.cutStretch`'s own
+  shape — and `batchLoop_flatten_perm` is the law that the batches are the order
+  rearranged, so nothing enters and nothing is lost.
+* **`splitGroups`** is fork `split_by_filters`. **It is a group-by, not the
+  run-split its own doc comment calls it** (gap **802**): `out.iter_mut()
+  .find(|(k, _)| *k == key)` puts a member into the *first* bucket with its key
+  wherever that bucket already sits. The fork is what the parity harness measures
+  against (design §13), so the group-by is what is ported.
+* **`commitOf`** is `planned.min(cap_left)`, and `groupOf_commit_le_cap` is the
+  theorem that §6.2's `max:` binds the commitment rather than merely being
+  reported.
+* **`spendActive`** charges the running block's minutes to its own group before
+  the cursor starts — fork `groups[gi].left_min -= run.minutes()`.
+
+**Four laws a later step reads:** `PlanReq.a_group_member_is_ranked` (nothing
+invented), `PlanReq.a_ranked_candidate_has_a_group` (nothing a slot could take is
+dropped), `gatherBatch_fst_is_a_prefix_of_its_ci` (E2) and
+`groupOf_commit_le_cap` (the `max:` ceiling). Plus
+`PlanReq.a_group_member_carries_the_groups_filters` and `…_the_groups_ci`, which
+are what make `Group.loc`/`splittable`/`ci` statements about every member rather
+than labels beside them, and `PlanReq.a_group_is_a_bounded_batch`, which is why
+`mkBatch?` cannot refuse the row a group's slot will emit.
+
+### `cb64831` — the cursor
+
+Fork `plan()`'s assign loop (`planner.rs:1017-1026`) over fork `Planner::pick`
+and fork `contiguous_fits`.
+
+**This is `eligibleAt`'s SLOT half and it closes README gap 365** — with a naming
+correction the design owes (gap **809**). The two halves stay where the fork puts
+them: the item half (`Candidate::eligible()`, `!is_wall || wall_today`) is
+`entersTheOrder`'s and ran before the sort at P5b-i; the slot half decides
+whether *this* slot may hold *this* group. `Planner.locOk` is fork `loc_ok`, and
+`PlanReq.curLoc` reads `state.loc` through `Field.parseLoc`, the grammar's single
+reader of a location word (AGENTS §5.3).
+
+`contiguous_fits` is ported **with its comment's reasoning**, because L24 is
+stated against it: the test is over **free slots** and never over what the budget
+can pay for, since bounding the run by the budget would make shrinking the budget
+by one block re-shuffle the day rather than remove a suffix.
+
+**What is proved, and what is deliberately not.** `PlanReq.assignFold_ok` says
+every slot the cursor filled went to a group whose `ci` the slot's energy covers,
+whose `loc:` fits where the day is being lived, and which is not demanding work
+after the wind-down — **three of `pick`'s five clauses, and exactly the three
+about fields the walk never moves**, which is why they survive the rest of it.
+The other two (`g.live`, the atomic run) are about values the walk *does* move
+and are pinned by witnesses; gap **806**. `assignStep_cases` is the one case
+split the section takes and nothing else unfolds the step.
+`PlanReq.assignFold_used` bounds the blocks the walk spends by the remaining
+budget with the running block's one block already counted, and
+`PlanReq.a_spent_budget_assigns_nothing` is the travel-day case.
+
+### Witnesses: the component under test is the only thing that differs
+
+W-17's lesson, applied twice. **Nineteen `decide` witnesses**, on two days the
+engine actually runs.
+
+**The groups (eight).** Six candidates at one `p`, so §7.4 orders them by arrival
+and the batching is the only thing measured. `^b1` (10 m) gathers `^b2` (20 m);
+`^b3` is `ci 2` and is **passed over**, which is why it later leads a batch that
+reaches past `^b4` and `^b5` to gather `^b6`; `^b4` (40 m) would take the batch
+to 70 > 60 and **stops** the walk, so `^b5` (5 m) is left behind **although
+10 + 20 + 5 = 35 would have fitted** — that last clause is the whole of E2 and
+the whole of the shipped bug it is named after. Then: `^b2` is cut out of its
+group on `loc:out` **alone**; `^b5` is cut out on `atomic` **alone**; and `m1` is
+cut out by `state.active` **alone** — two requests carrying the *identical*
+candidate list and differing only in `state`. The `max:` commit gets both halves:
+`max: 60` with 40 spent caps a 45-minute group at **20**, and the same cap with
+*nothing* spent binds nothing.
+
+**The cursor (eleven).** The §4.3 Wednesday cuts four slots at energies
+`3, 3, 2, 2` with a remaining budget of four; four candidates whose `remaining`
+is past `batch_max_min`, so each leads a group of its own and the batching is a
+no-op. `^c1` takes the first slot; at the second it is **done**, `^c2` is refused
+for `loc:out`, `^c3` for `ci 5`, and `^c4` takes the rest. Each refusal has a
+**one-field twin**: `^c2`'s `loc:` changed to `lounge` and it takes the slot;
+`^c3`'s `ci` changed to 3 and it takes the slot **and still not** the two at
+energy 2. The atomic run gets both halves — the same `^c4` asking four hours when
+the day has three free is placed **not at all** when `atomic` and three times
+when splittable, and the same `atomic` candidate asking for **three** hours is
+placed. `a_planned_break_does_not_break_an_atomic_run` is the fork's "sitting
+through the break the planner itself inserted is not a context switch",
+**computed**: the same slots and the same need answer `true` with the day's
+breaks declared and `false` with none; an assigned slot inside the run answers
+`false` too. And `two_groups_fit_the_first_slot_and_the_order_decides` computes
+that `^c1` **and** `^c4` both pass the filter at the first slot, so the day's
+first entry is the cursor taking the *first* group that fits and not the
+best-fitting one.
+
+### The inversions, run and watched failing
+
+Every one applied, built, its failure pasted into the handover, then reverted.
+**None is in any commit**; `git status` was empty between each.
+
+| # | the mutation | what failed |
+|---|---|---|
+| A | the gather's `break` becomes a `continue` | `gatherBatch_perm`, `…_fst_is_a_prefix_of_its_ci`, `…_fst_length` — three **theorems** |
+| C | the split key forgets `loc:` | `a_group_member_carries_the_groups_filters` — *"the argument `rfl` … but is expected to have type `y.facts.loc = …Loc.any…`"* |
+| D | the split key forgets `atomic` | the same theorem, on `splittable` |
+| E | the split key forgets the running block | **witnesses only**: `the_split_cuts_out_the_running_block` and `the_running_block_starts_its_group_with_its_minutes_spent`, both *"`decide` proved that the proposition … is false"* |
+| F | the commitment ignores the `max:` ceiling | `commitOf_le_planned` and `commitOf_le_cap` — theorems |
+| G3 | the reservation spends **no** minutes of its group | **one witness**: `the_running_block_starts_its_group_with_its_minutes_spent` |
+| H2 | `maxBatch` raised to 32 | **one witness**: `the_gather_stops_at_the_batch_bound` (`[16, 4]` becomes `[20]`) |
+| I | the groups are not restored to key order | `mem_sortGroups` and `sortGroups_sorted` do not typecheck |
+| K | `Ranked.facts` answers `PlanFacts.unconstrained` — the nine are not read | **all six request-level group witnesses**, every proof still green |
+| L | the energy clause dropped from `pick` | `assignStep_ok` — the conclusion `AssignOk` asserts it, so the theorem is **false**, not merely unproved |
+| M | the `loc:` clause dropped from `pick` | `assignStep_ok`, both halves named in the mismatch |
+| O | `g.live` dropped from `pick` | `assignStep_ok`'s own proof |
+| P | the atomic-run clause dropped | **one witness**: `an_atomic_group_needs_its_whole_run` |
+| Q | `contiguous_fits` stops at a planned break | **two witnesses**: `an_atomic_group_that_fits_is_placed` and `a_planned_break_does_not_break_an_atomic_run` |
+| R | `contiguous_fits` walks through an assigned slot | **one witness**: `an_assigned_slot_breaks_an_atomic_run` |
+| S | `pick` answers the **last** fitting group | `pickFrom_sound`'s own proof |
+| T | the budget clause dropped from the cursor | `assignStep_cases` — its `a.used < budget` conclusion |
+
+**What these inversions cannot show, said plainly.** Inversion K is the one that
+matters most and it is the one that took three attempts to construct. A, H, J, O
+and S all failed as **rewrite mismatches inside their own proofs** rather than as
+false claims, because those proofs quote the definitions they are about
+(`by_cases hstop : (room == 0 || !x.gatherable ms || decide (bm < tot +
+x.facts.plannedMin)) = true` is a literal copy of the stop condition). **A proof
+that quotes its subject is not an instrument for that subject's content**; the
+witnesses are, and inversion K — which changes what every fact *reads* while
+leaving every proof's syntax intact — is the one that demonstrates the witnesses
+biting. That is gap **805**, and it is a method disclosure and not a defect.
+Two inversions (`g.live`, last-fit `pick`) therefore have witnesses that
+*would* distinguish them (`^c1` stops after one slot only because its commitment
+is met; `^c1` and `^c4` both fit the first slot) but were never watched doing so.
+
+### Method, and what each method cannot see
+
+AGENTS's W-17 lesson 1, applied to every completeness claim above.
+
+1. **"Nothing new was written that the kernel already had."** *Method:* before the
+   first helper, `grep -rn` over `TmKernel/*.lean` for `batches`, `gather`,
+   `splitByFilters`, `contiguousFits`, `buildGroups`, `Group`, `groupBy`, `minBy`,
+   `def small`, `splitKey`, `commitMin`, `leftMin`, `def pick`, `assignFold` and
+   `cursor` — 0, 5 (all prose), 0, 0, 0, 24 (all `SealTwin`'s `WinGroups` and
+   `SealCutGroup`), 0, 0, 0, 0, 0, 13 (`MaxCap.leftMin` and `ActiveRes.leftMin`,
+   both different concepts), 1 (`Replay.pick`, a two-element chooser) and 5
+   (prose). `natsLe`, `siteNums`, `Replay.insSort`/`insSort_eq_mergeSort`,
+   `Look.spanMinutes`, `Look.PlanFacts.capLeftMin`, `Field.parseLoc`, `Field.Loc`
+   and `Arith.Pos` are **called**. *Blind spot:* the grep is over names, not over
+   bodies — a helper whose body duplicates an existing one under a different name
+   is invisible to it, which is exactly how `charsLe` came to exist three times
+   (W-16). Nothing here re-derives a slot, a window, a budget or an energy.
+2. **"No shipped verb reaches this code."** *Method:* `grep -rn 'Planner\.'
+   TmKernel/Boundary.lean` → **0**; `grep -rn
+   'dayPlan\|assignFold\|buildGroups\|rankedCands' TmKernel/Boundary.lean` → **0**;
+   `PlanReq` has no decoder anywhere. So `callExport` cannot reach any of it and
+   the behaviour of every shipped verb is unchanged by construction. *Blind spot:*
+   this is a grep over one file; it would not see a caller added in `Json.lean` or
+   a `@[export]` elsewhere. The corroborating measurement is that
+   `cargo test --workspace` is **unchanged at 1,345/0/9 across 79** and check 5 is
+   unchanged at 93 — no Rust was touched and no Rust answer moved.
+3. **"The shipped binary still works."** *Method:* a release `tm` on a scratch
+   `tm init --example` tree **outside the repo**, `tm plan` and `tm check`, both
+   exit 0 and `tm plan` prints the §4.3 day. *Blind spot:* **the drive cannot show
+   that any of this step's code ran, because none of it did** — `tm plan`'s output
+   is still the *Rust* planner's (gap 603). It is evidence of no regression, not
+   evidence of the fold.
+4. **"Every theorem added is audited."** *Method:* `check.sh` check 3's own
+   multiset reconciliation (`comm -23` of declared short names against audited last
+   segments), run after each append — **empty** both times; the other direction
+   names `effectiveScope` and `WfPlan`, both pre-existing `def`s (§6.3). *Blind
+   spot:* one-directional; it cannot see a theorem audited under the wrong
+   namespace prefix.
+5. **"Every cheat is refused by the type system or by `decide`."** *Method:*
+   `lean -DmaxErrors=1000000 Negative.lean` read per block — 203 fails as a
+   `CandKey`/`GroupKey` **type mismatch**, 204 as `List ?m` against `BatchIds`,
+   208 as `failed to synthesize Neg Nat`, and 205/206/207 as *"`decide` proved
+   that the proposition … is false"*. *Blind spot:* a cheat refused by a **parse**
+   error would still satisfy check 4; none of these six is (each error names a
+   type or a proposition).
+6. **"The batching, the split and the commit are the fork's."** *Method:* the fork
+   was read line by line (`priority.rs:1214-1257`, `planner.rs:1406-1470`,
+   `planner.rs:2303-2340`, `planner.rs:1582-1614`, `planner.rs:1017-1026`). *Blind
+   spot:* **no parity harness compares this fold against the fork**, and none can
+   until rows are emitted and the wire carries a `plan` section. Gap **807**.
+
+### Gaps taken — 800-809; **810-829 free**
+
+**Gap 800 — the gather stops at `maxBatch` and the fork's stops at nothing.**
+1. *What is not done.* The kernel's `gatherBatch` takes at most `maxBatch − 1`
+   members behind its leader. Fork `priority::batches` has **no bound at all**.
+2. *Why.* `BatchIds` is R10-bounded at 16 and the row a batch emits must go
+   through `mkBatch?`. The fork's loop bounds only `total_min ≤ block_min`, and
+   `planned_min` is `round(est × multiplier)` (`energy::planned_minutes`), which
+   is **0** for a small enough multiplier — so `total_min + 0 ≤ block_min` never
+   fires and a fork batch may hold any number of members.
+   `the_gather_stops_at_the_batch_bound` computes it: twenty zero-minute
+   candidates come back as **16 + 4** where the fork answers **20**.
+   **Design §5.2's sentence is wrong**: `maxBatch = 16` is *not* "the most §7.5
+   can gather under `batch_max_min`" — at `batch_max_min = 20`, `block_min = 60`
+   and a one-minute estimate the fork gathers fifty.
+3. *What it costs.* A behaviour deviation, and it is the only one this step takes.
+   **No candidate is lost**: a member not gathered leads a group of its own and is
+   still assigned. What differs is the *row* — where the fork prints one
+   `batch: … (20)`, the kernel prints one of 16 and one of 4.
+4. *Which step clears it.* **P8**, which owns the emitted text, with a behaviour
+   row and a parity entry; or the owner, by raising `maxBatch` — which is an R10
+   bound and therefore a plan-tier call, not an agent's.
+
+**Gap 801 — `PrioCfg.batchMaxMin` is a wire value with no wire and no bound.**
+1. *What is not done.* §16's `[priority] batch_max_min` is a plain `Nat` field on
+   `Planner.PrioCfg` with no smart constructor and no rejection theorem.
+2. *Why.* There is no `plan` request section: `Boundary.lean` names no `PlanReq`
+   and nothing decodes one, so R10's obligation has no decoder to attach to. The
+   field is set only by `PlannerWit.witPrio` (to the shipped default, 20).
+3. *What it costs.* The day the wire carries it, a host may send any `u32` and
+   nothing refuses it. Nothing is wrong today because nothing crosses.
+4. *Which step clears it.* **P0's wire half** — the step that decodes a `plan`
+   section — alongside the twelve `state` fields design §9 tables.
+
+**Gap 802 — fork `split_by_filters` is a group-by and its own doc comment calls
+it a run-split.**
+1. *What is not done.* Nothing is owed; the kernel ports the **code**.
+2. *Why it is recorded.* `planner.rs:2356` says *"One batch's members split into
+   runs of equal `(loc:, splittable, running)`"*, and `out.iter_mut().find(|(k,
+   _)| *k == key)` is a group-by: two members with one key end in one bucket even
+   with a differently-keyed member between them. `Planner.splitGroups` is the
+   group-by, because the fork is what the parity harness measures against.
+3. *What it costs.* Nothing in the kernel. A reader who trusts the fork's comment
+   would predict the wrong groups for a batch shaped `out, lounge, out`.
+4. *Which step clears it.* **R3**, with `planner.rs`; until then this paragraph.
+
+**Gap 803 — the fold emits no rows, so `dayPlan` is unchanged.**
+1. *What is not done.* `PlanReq.assignFold` produces a slot-to-group assignment
+   and **nothing turns it into `Seg`s**. `dayRows` is still steps 1, 2 and the
+   reservation; `dayPlan` is untouched; `assignedFrom (dayPlan r) now` still holds
+   the running block and nothing else.
+2. *Why.* Emission is a switch-shaped change (D19) that makes four `PlanCheck`
+   theorems **false** on the same commit —
+   `no_block_row_of_the_day_carries_a_slot_energy`,
+   `no_block_row_of_the_day_reaches_the_wind_down`, `the_day_has_no_batch_row`
+   and `the_day_assigns_nothing_after_now_but_the_running_block` — each of which
+   must be deleted with its record, and `dayPlan_ok_core`'s battery re-proved over
+   a day that has Block and Batch rows in it. That did not fit beside the fold,
+   and design §14.6's instruction is to land the green part and name the rest.
+3. *What it costs.* **None of the six §6.4 goals P5 owns can be discharged**, and
+   the burn-down does not move. The fold is proved about its own output and not
+   yet about the day.
+4. *Which step clears it.* The next P5 step, in this order: emit Block/Batch rows
+   from `assignFold`, delete the four emptiness theorems with their record, then
+   **G1**'s lift.
+
+**Gap 804 — the six §6.3 restatements are not written.**
+1. *What is not done.* Design §6.3 gives **P5** five refutations and two
+   sharpenings — `plan_does_not_overbook` (the Active reservation excluded),
+   `plan_respects_the_energy_filter` (a `hactive` hypothesis), `plan_is_monotone_
+   in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_
+   item` (all three restricted to *comparable* candidates) and
+   `plan_never_batches_past_an_equal_ci_candidate` (same split group). **None is
+   written**, and `Goals.lean` holds all six as stage 6 first wrote them.
+2. *Why.* Each restatement's hypothesis is `eligibleAt (r) (d) (s : Seg) (i : Id)`
+   — a predicate over a **produced row** — and no row is produced (gap 803). A
+   restatement written now would quantify over an empty subject, which is AGENTS
+   §5.2's theorem that compiles and means nothing.
+3. *What it costs.* The refutations design §6.3 promises are still promises, and a
+   reader of `Goals.lean` sees six statements the fork does not satisfy.
+4. *Which step clears it.* The same next P5 step, immediately after emission —
+   the witnesses the refutations need are the ones this step already built.
+
+**Gap 805 — the proofs quote the definitions they are about, so a definitional
+mutation fails as a rewrite mismatch and not as a false claim.**
+1. *What is not done.* Nothing is broken; this is a **method disclosure**.
+2. *Why.* `gatherBatch_perm`, `…_fst_is_a_prefix_of_its_ci` and `…_fst_length`
+   each `by_cases` on a **literal copy** of the gather's stop condition, and
+   `batchLoop_flatten_perm` names `x.facts.plannedMin` in a `have`. Inversions A,
+   H, J, O and S therefore failed with *"Did not find an occurrence of the
+   pattern"* rather than with a false goal. The instrument that does bite is the
+   witness, and inversion **K** — `Ranked.facts` answering
+   `PlanFacts.unconstrained`, which leaves every proof's syntax intact — is the
+   one that shows all six group witnesses failing.
+3. *What it costs.* An auditor reading "the inversion failed" must ask *where*.
+   Two clauses (`g.live`, first-fit `pick`) have witnesses that would distinguish
+   them and no inversion that reached those witnesses.
+4. *Which step clears it.* Nothing has to; a step that wants a behaviour-only
+   inversion of the gather should mutate a **reader** (`Ranked.facts`,
+   `Ranked.gatherable`) rather than the loop.
+
+**Gap 806 — two of `pick`'s five clauses have no ∀-theorem.**
+1. *What is not done.* `PlanReq.assignFold_ok` covers the energy filter, `loc_ok`
+   and the wind-down rule. **`g.live` and the atomic run are pinned by witnesses
+   only.**
+2. *Why.* Both are about `spent`, which the walk moves: "the group still owed
+   minutes **at the moment it took this slot**" and "an unbroken run existed **in
+   the assignment as it then stood**" are statements about a history, not about
+   the produced value, so they need the fold's trace rather than its result.
+3. *What it costs.* A change that let a satisfied group keep taking slots, or that
+   placed an `atomic` group across a wall, would be caught by
+   `the_cursor_fills_the_day_in_key_order` and `an_atomic_group_needs_its_whole_
+   run` on **this** day and by no theorem on any other.
+4. *Which step clears it.* **G1**, where the fold induction carries §6.3's eleven
+   invariants and can carry these two beside them.
+
+**Gap 807 — no parity entry, and none is possible yet.**
+1. *What is not done.* No P38 was issued and the fork oracle was **not** rebuilt
+   or run.
+2. *Why.* Parity compares the kernel's answer with the fork's through the wire,
+   and §8.2 step 5's answer does not cross the wire: there is no `plan` request
+   section and `dayPlan` has no caller (gap 603). There is nothing to compare.
+3. *What it costs.* The batching, the split, the commit and the cursor are checked
+   against the fork **by reading**, and by nineteen `decide` witnesses whose
+   expected values this step computed rather than took from the fork. A
+   disagreement with fork `planner.rs` on a shape no witness covers would not be
+   caught.
+4. *Which step clears it.* **P8** with the wire, then **R2**, which aims
+   `planner_invariants.rs` at the kernel. Gap 226 (the parity list has no single
+   home) must be settled before the first entry; the next free number is **P38**.
+
+**Gap 808 — a group's multiplier is its first member's and nothing pins it.**
+1. *What is not done.* `Group.mult` is `first.multiplier`, fork `build_groups`'
+   own choice, and **no witness or theorem reads it**.
+2. *Why.* It is consumed by the row a slot emits (`SegFlags::multiplier`), and no
+   row is emitted (gap 803).
+3. *What it costs.* A group that mixed multipliers would report the leader's, and
+   nothing here would notice. This is README gap **550**'s neighbour: the
+   reservation emits no multiplier either.
+4. *Which step clears it.* **P8**, with the row.
+
+**Gap 809 — design §6.3's `eligibleAt` signature cannot be written before rows
+exist, and this step's slot half is `groupFitsSlot`.**
+1. *What is not done.* There is no `Planner.eligibleAt (r) (d : DayPlan)
+   (s : Seg) (i : Id) : Bool`. The slot half of §8.2 step 5's filter is
+   `PlanReq.groupFitsSlot`, over a `Look.Slot` and a `Group`.
+2. *Why.* The design's signature is the **restatement** predicate the six §6.3
+   goals are restricted to — it quantifies over a produced row — while the thing
+   the fold applies is over a slot and a group, which is what fork `Planner::pick`
+   takes. Writing one function with the design's signature and calling it from the
+   fold would require a `Seg` that does not exist during the walk.
+3. *What it costs.* A reader of design §6.3 looking for `eligibleAt` finds nothing
+   under that name; README gap 365 is closed **as to the filter** and open as to
+   the name.
+4. *Which step clears it.* The next P5 step: once rows exist, `eligibleAt` is
+   `groupFitsSlot` read off the row's own slot and group, with a theorem
+   connecting them — written **once**, as design §6.3 requires.
+
+### What this step did NOT do, by name
+
+* **It did not emit a single row.** `dayPlan`, `dayRows`, `dayDiagnostics` and
+  `dayPriorities` are byte-for-byte what P4 and P2 left. Gap 803.
+* **It did not discharge or add a goal.** The burn-down is **9** and check 7 says
+  so. The six §6.4 goals are in `Goals.lean` word for word, plus
+  `plan_places_no_demanding_block_after_wind_down` (P2's, still owed — gap 430)
+  and L24/L25.
+* **It did not write the six §6.3 restatements or their refutations.** Gap 804.
+* **It did not touch D27.** Every fact the fold reads is host-collected;
+  `collect_candidates` is unchanged; gaps 113, 114, 116 and 301 item 1 are whole.
+* **It did not touch `check.sh`** (track A's), **the host write paths**, or
+  `Goals.lean` (track G's; §3.2 required nothing of it, because nothing was
+  discharged).
+* **It did not touch the wire, `Boundary.lean` or any Rust.** `git diff
+  --name-only d1a602a..HEAD` names four Lean files and this document.
+* **It did not build a second EDF pass** (gap 701), **a second `cutSlots`,
+  `energize`, `windowEnd` or `spanMinutes`** (§5.3), or a second reader of a
+  location word.
+* **It did not rebuild the fork oracle** and did not run `TM_ORACLE`. Gap 807.
+* **It did not re-bless anything.** `git diff --name-only d1a602a..HEAD --
+  tm/tests/fixtures tm/tests/snapshots kernel/corpus tm/tests/cli_latency.rs
+  tm-core/tests/fixtures` is **empty**.
+
+### Numbering
+
+Gaps: this step **800-809**; **810-829 free** in track P's range. Cheats
+**203-208** taken, none renumbered — `grep -o '^/- CHEAT [0-9A-Z]*' Negative.lean
+| sort | uniq -d` prints nothing and check 4 still rejects the file. No audit name
+appears twice, and `comm -23` of declared against audited is empty. **Highest on
+the branch: gap 809, cheat 208, parity P38.**
+
+### Worktrees
+
+`.claude/worktrees/stage5-lookahead` is untouched. **`git worktree list` shows
+two more — `.claude/worktrees/w19-a` and `.claude/worktrees/w19-g`, this run's
+other two tracks** — and nothing here entered either. Track P's gap range
+(800-829) is its own; track A's is 830-849 and track G's 850-869.
+
+**Cheats 203-208 were taken from a tree whose highest was 202, and track G
+branched from the same commit**, so the merge must expect the collision W-17
+(gap 671) and W-18 (gap 774) both had and renumber (§6.2: *the merge
+renumbers*). Every citation of 203-208 in Lean and in this block moves with them.
+
+This step ran on the main checkout throughout; the only scratch was the stash
+used for the interleaved wall-time baseline, popped and gone, and a `#eval`
+probe file in the session scratchpad, outside the repo.
