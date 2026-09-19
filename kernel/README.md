@@ -39873,3 +39873,491 @@ No user-visible `tm` behaviour changed: no verb's output, no file's bytes, no re
 * **It did not make check 8 read camelCase or fences** (gap 831), or teach it to tell a deliberate
   historical citation from a stale one — a human read did that once, and allow-list section 3 is
   the record of that reading, not a capability of the check.
+<!-- ===========================================================================
+     APPENDED 2026-09-18: stage 6 (the planner), run **W-19**, **track G**, on
+     branch `w19-g` off `d1a602a`.  The ceiling: nine of §6.1's eleven is a
+     CEILING and not a way-point — the two comparisons are FALSE on a day the
+     planner really produces, at every eligibility.  Gap range **850-869**;
+     this step takes **850-854** and leaves **855-869** free.
+
+     THE BANNER IS THE MERGE'S, not the branch's: track G appended without one
+     (§6.4), and the merge owes the declaration.  THREE THINGS WERE RENUMBERED
+     HERE and the text below still says the branch's numbers in places:
+       * `Negative.lean` cheats **203-204 became 209-210** — track P took
+         203-208 from the same base (§6.2, §6.5 item 1).  README gap 872.
+       * `PlannerWit.lean`'s section **15 became 16**, because track P's new
+         block took 15 (it was written as a second `## 10`; one sequence, §6.5).
+       * Nothing else.  The gap numbers 850-854 are track G's own range and
+         do not move.
+     =========================================================================== -->
+
+## Stage 6, W-19 track G, 2026-09-18: nine of eleven is a ceiling, and two of the thirteen are refuted
+
+**What landed.** Five Lean files and nothing else: `PlannerWit.lean`
+(**+434/−2**), `PlanCheck.lean` (**+59/−3**), `Check.lean` (+53: a banner and 19
+`#print axioms` lines), `Negative.lean` (+38: cheats **203-204** on the branch,
+**renumbered to 209-210 at the merge**) and
+`Goals.lean` (+38/−2: **no goal deleted**, three doc comments corrected).
+**Nineteen theorems and eight `def`s**, all in the two planner modules. **No Rust, no wire value, no
+behaviour row, nothing re-blessed** — `git diff --name-only` names those five
+files and this document, and `git diff --name-only -- tm/tests/fixtures
+tm/tests/snapshots kernel/corpus tm/tests/cli_latency.rs tm-core/tests/fixtures
+kernel/check.sh kernel/TmKernel/lean-toolchain` is **empty**.
+
+**Branch `w19-g`, from `d1a602a`.** Track P's W-19 work is not in this tree and
+track A's check 8 is not either; the Land step merges all three.
+
+### 1. The question the two standing numbers could not answer between them
+
+At the end of W-18 the repository held two numbers about §6.1's lift, both
+right, and a reader could not get from them to the thing they wanted to know.
+
+* **Seven of eleven** checkers have a subject at `PlannerWit.theCensusRequest`
+  (`the_battery_census_at_the_census_request`) — a *request* question.
+* **Nine of eleven** conjuncts are proved at every eligibility over
+  `PlanCheck.withoutPast`'s day
+  (`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons`) — a *proof*
+  question.
+
+Neither says whether the **two** that are missing from the nine —
+`PlanCheck.monotoneInRank` and `PlanCheck.hotBeforeQueue` — are *unproved* or
+*false*. The block that stated the nine said *"both are real obligations over
+the replayed past at a permissive `el` … and both wait on P5"*, which reads as
+the first. `PlanCheck.lean` has said the second in prose since W-14 — *"the
+`∀ el` form is **false** of P1's body"* — and **nothing in the tree computed
+it.** That is this campaign's failure class exactly: a claim of having checked
+that was never made (AGENTS §5.2, §9.2).
+
+**They are false, and one request settles it.**
+
+### 2. `theQueuedRequest`: one line of log away from the census, and four statements fall
+
+`PlannerWit.theQueuedRequest` is `theCensusRequest` with two changes and no
+invention: `m1`'s `start`/`done` pair taken out of the morning's log
+(`queuedLines := witLines.take 2 ++ witLines.drop 4` — `witLines`' own bytes,
+taken and not respelled), and **`m2`** running instead of `m1`. Same plan
+(`censusPlan`), same lookahead input, same configuration, same builder — and
+`mkPlanReq?` accepts it, so `hagree` comes from `mkPlanReq?_ok_wallsAgree` and
+not from a `decide`.
+
+The day it produces is five rows: `m2`'s replayed block 09:05–10:05, the
+calendar's wall 12:50–13:50, §8.2 choice 5b's reservation of `m2` 14:00–14:40,
+and §16's two evening rows. **`m1` — hot, ranked first, `ci:5`, one document
+with `m2`, equal `rootPrio` — is in none of them.**
+
+| what is proved | theorem |
+|---|---|
+| both comparisons answer `false`, whole day **and** `withoutPast` day, at the permissive `el`, **with no mutation** | `the_two_comparisons_are_false_at_the_queued_request` |
+| the **other nine** answer `true` at that same request | `the_other_nine_hold_where_the_two_fail` |
+| and the nine come out of the general lift, not only out of a `decide` | `the_lift_applies_at_the_queued_request` |
+| `∀ el r, planOk el r (dayPlan r) = true` | `dayPlan_ok_at_every_eligibility_is_refuted` |
+| `∀ el r, planOk el r (withoutPast r (dayPlan r)) = true` | `dayPlan_ok_from_now_at_every_eligibility_is_refuted` |
+| `Goals.plan_is_monotone_in_rank` **as written** | `plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` |
+| `Goals.plan_puts_hot_before_the_queue` **as written** | `plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted` |
+
+**So nine is a ceiling and not a waypoint.** No proof quantified over an
+arbitrary `el` reaches ten. The two restricted-day and whole-day refutations are
+**separate statements and not corollaries of each other**: `withoutPast` removes
+rows, which can only make a `∀`-shaped checker easier to satisfy, so neither
+implies the other — both are stated and both are proved.
+
+`PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` assembles design
+§6.1's own `planOk` from the nine plus the two, so that "nine of eleven" is the
+compiler's arithmetic over `checksOf`'s list and not a reader's over a
+transcription of it. **It assumes two of the eleven and its name says so**; it
+is worth stating only because the refutation beside it proves the two
+hypotheses cannot be dropped. README gap 684 is the record of doing that
+arithmetic by hand and getting it wrong.
+
+**The refutations are not vacuous, and that is computed too.**
+`the_two_comparisons_have_subjects_where_they_bite` shows both comparisons
+really range over something at this request — the rank pair `(m1, m2)`, the hot
+pairs `(m1, m2)` and `(m1, g1)` — on both days. A checker answering `false` with
+an empty quantifier would be the same defect from the other side.
+
+### 3. What this does **not** show, said before it can be misread
+
+**It is not a defect in the planner.** `m1` is missing from the day because the
+**assign fold is not written**: `Planner.dayRows` is `stepOneSegs ++ stepTwoSegs
+++ reservationSegs`, and §8.2 step 5 is P5's.
+
+**Nor does it show that `Planner.eligibleAt` cannot rescue the two.** An
+eligibility that answers `false` for `m1` at every row of this day makes both
+conjuncts hold again. **Whether the real one does is P5's decision, and naming
+that decision is what this section is for** — it was previously inside a count.
+Gap **850** states it as an inheritance: P5 must either (a) write an
+`eligibleAt` that refuses a candidate at the reservation row, in which case the
+two conjuncts hold over today's day and G1 gets them for free, or (b) write the
+fold, in which case `m1` is assigned and they hold for the honest reason. The
+step's block must say which.
+
+### 4. The two goals are refuted and **stay in `Goals.lean`** — the burn-down is 9
+
+Design §6.3 rows 4 and 5 record both as false against the fork and hand the
+**restatements** to P5. A restatement without its refutation is a weakening
+(AGENTS §3.1 item 3), and both restatements need `Planner.eligibleAt`, which
+does not exist (gap 365). So neither goal is deleted.
+
+**This is `Goals.plan_tail_drop`'s situation exactly** — refuted in
+`PlannerWit.lean` at W-15, still standing in `Goals.lean`, with the refutation
+named at its doc comment — and it is handled the same way. Both doc comments now
+name their refutation and say why the goal stays. Gap **851** records the cost:
+**the burn-down number 9 now counts two statements that are known false**, so
+"9 outstanding" is an upper bound on what can ever be discharged as written, and
+a reader who takes it as "9 things left to prove" is over-counting by two.
+
+**Nothing else was discharged, and the reason is not a judgement.** Of the six
+§6.4 goals P5 unblocks: `plan_does_not_overbook` needs the fold;
+`plan_respects_the_energy_filter` and `plan_never_batches_past_an_equal_ci
+_candidate` are each one `exact absurd …` away and were refused at W-18 as gap
+**751** (a discharge whose subject is empty is AGENTS §5.2's theorem that
+compiles and means nothing) — **that refusal stands unchanged**;
+`plan_never_drops_an_impossible_item` waits on **P8**; and the two above are
+refuted. `plan_places_no_demanding_block_after_wind_down` (P2's row, gap 430) is
+in the same position as the first two except that its `Goals.lean` statement
+carries no `hnowcal`, so even the empty-subject discharge is not available to it.
+
+### 5. What P5b landed for track G, measured — and the answer is nothing, with the grep that shows it
+
+The brief asks whether P5b gave any of the four proved-vacuous checkers a
+subject. **It did not, and the method is a grep from `dayPlan` down rather than
+a reading of the commit.**
+
+```
+Planner.dayPlan r  reads  dayRows r, dayDiagnostics r, dayPriorities r
+  dayRows        = sortRows ((stepOneSegs ++ stepTwoSegs ++ reservationSegs).map segOf)
+  dayDiagnostics = wallConflicts (wallsToday r), travelDay r
+  dayPriorities  = r.candAnswers.filterMap prioRow          <- candAnswers, NOT rankedCands
+```
+
+`grep -rn 'rankedCands\|entersTheOrder' TmKernel/*.lean` outside `PlannerWit.lean`
+returns **36 lines: 35 in `Planner.lean`, every one of them at `:3013` or between
+`:3232` and `:3339` — `rankedCands`' own section, its definition, its theorems
+and its doc comments — and one in `Lookahead.lean`, a doc comment.** The fourteen
+definitions the `dayPlan` chain is made of (`segOf`, `wallsToday`,
+`wallConflicts`, `travelDay`, `sortRows`, `stepOneSegs`, `stepTwoSegs`,
+`reservationSegs`, `candAnswers`, `prioRow`, `dayPriorities`, `dayRows`,
+`dayDiagnostics`, `dayPlan`) contain **zero** occurrences between them.
+**No field of `DayPlan` reads `PlanReq.rankedCands`.** P5b-i's filter is built
+for a fold that does not exist, so it cannot have given any checker a subject —
+and the four vacuity theorems are the independent confirmation: they are
+build-time walls over **every** `PlanReq`, they are in the tree at `d1a602a`
+(which includes both `f84d8cf` and `dc6a56b`), and check 1 passes.
+
+**Which step gives each of the four a subject** (the brief's question, answered
+one at a time):
+
+| checker | what it needs | which step |
+|---|---|---|
+| `energyFilterOk` | a Block row carrying a **slot** energy; today every Block is replayed (`energy = none`) or is choice 5b's reservation (which §8.2 says takes no slot) | **P5's fold** — only the assign step puts a Block into a `Look.Slot` |
+| `noDemandingAfterWindDown` | a Block row starting **at or after** the wind-down; today every Block starts at or before `now`, and a WindDown row exists only while `now < wind_down` | **P5's fold**. Not P7: `SegKind.optional` and `rest` are their own kinds and this checker reads `.block` alone |
+| `batchDoesNotReachPast` | a Batch row; `dayRows`' three sources place nine kinds and `batch` is not one | **P5's fold**, §7.5's gathering |
+| `impossibleKept` | `Diagnostics.impossible` non-empty; `dayDiagnostics` fills `conflicts` and `notes` and leaves the rest at `Diagnostics.empty` | **P8**, §8.2 step 8 |
+
+**Three of the four are one step's, and it is the step that has not started.**
+
+### 6. The ratio, and the number in this file that was wrong
+
+The brief asks for one measured ratio over a named request and for every prose
+statement of it in the repository to agree. The ratio is unchanged and is
+**seven of the eleven at `PlannerWit.theCensusRequest`**; `theQueuedRequest` is a
+refutation witness and **not** a second census, and this block says so rather
+than leaving a reader to infer a new population from it.
+
+W-18's own sweep — `grep -rn "of the eleven\|of eleven\|of seven\|five of\|six
+of\|four of\|seven of\|nine of" --include=*.lean --include=*.md kernel/` — was
+re-run over all of `kernel/` this time (W-18 ran it over the Lean and this run
+read the design document's rows too). **82 hits outside this file; about thirty
+are statements about the eleven-checker battery's ratios, and one of those
+disagrees with every reading of every census in the tree** — it is in
+`PlannerWit.lean` itself, one section above the census:
+
+> `PlannerWit.lean:1350`, the `storedWitness` doc comment: *"the store has **one**
+> id in it — which leaves **five** of the eleven checkers with nothing to range
+> over for reasons that are about the witness and not about the planner."*
+
+It is not five under any reading. `lookWallPlan`'s store is `[['g','1']]`, and
+**a one-id store cannot give either comparison a pair**: `the_one_id_store_gives
+_neither_comparison_a_subject` computes both subject populations as `[]` at
+`theRunningRequest`. With `the_battery_census_at_the_reserved_day`'s **four of
+seven** over `checksCore`, and `impossibleKept`/`batchDoesNotReachPast` empty at
+every request, the count there is **four of eleven with a subject, seven
+without** — and of those seven, **three** are the witness's doing
+(`noBlockOverABreak` wants a log with a break; the two comparisons want a second
+id) and **four** are gap 650's. The sentence ran the two halves together and used
+a number matching neither. Corrected in place, saying what it read. Gap **852**.
+
+**That is the sixth consecutive stale or unsupported prose number in this
+campaign, and D39's check 8 will not catch it** — check 8 resolves backticked
+*identifiers* against the declaration set; this is a bare numeral in prose and no
+check reads it. Said here so the next run does not expect check 8 to close gap
+779's class outright.
+
+**The measured half of the fix is new machinery and it is the census's own
+idiom.** `PlannerWit.rankSubjects` and `hotSubjects` are `filterMap`s over the
+pairs `PlanCheck.rankPairOk` / `hotPairOk` quantify over — populations, not
+checkers: each spells the checker's **antecedents** and neither spells its
+conclusion, so a bug in one cannot make a checker pass. They were written after
+grepping (`Subjects`, `subjects`, `Population`, `rankPairs`, `hotPairs`,
+`store.dom.flatMap`, `store.dom.all`) found nothing of the kind, and they call
+`PlanCheck.eligibleSomewhere` rather than re-deriving it (AGENTS §5.3). Until
+now the census counted a checker's subject by filtering **segments**, and the two
+comparisons do not range over segments at all — their census rows were the only
+two taken on trust.
+
+### 7. `PlannerWit.lean` still has no importer, and the answer is the same as W-18's
+
+Re-measured on this tree, not quoted:
+
+```
+grep -l '^import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean   -> 0 library modules
+grep -c  '^import TmKernel.PlannerWit' TmKernel/TmKernel.lean    -> 1 (the package root)
+grep -l  'import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean   -> 1 (PlannerWit.lean, matching
+                                                                    its own doc comment)
+```
+
+The third line is W-18's named trap — a grep whose pattern appears in the prose
+citing it — re-run here so the record shows it still bites.
+
+**Yes, it is evidence enough, and what makes it so is that the `decide`s run at
+build time.** Every claim in the module is a closed `decide` or `rfl` in a module
+`lake build TmKernel:static` compiles, so check 1 fails the moment one stops
+holding — and the three inversions in §8 below are that firing, by name.
+`Check.lean` reaches every theorem here through `import TmKernel`, so all 19 new
+names are under check 3.
+
+**It should stay a leaf.** Importing it would pull 40 000-`maxRecDepth` witnesses
+into another module's elaboration, and §9 below prices what this run's section
+alone added to check 4.
+
+**What it is not evidence of** is unchanged and is the uncomfortable reading of
+AGENTS §5.6: nothing here is a claim about `tm`. `grep -rn 'dayPlan' tm tm-core
+kernel/tm-kernel-ffi --include=*.rs` returns **one line, a doc comment**
+(`stack.rs:647`), and `grep -rn 'PlannerWit\|theQueuedRequest\|queuedLines\|
+dayPlan_ok_at_every_eligibility' tm tm-core kernel/tm-kernel-ffi --include=*.rs`
+returns **0**. There is still no planner op on the wire (gap 652, unchanged).
+
+### 8. The inversions — run, watched failing, reverted
+
+Every one was applied, built under `MemoryMax=40G`, the failure recorded, and
+reverted. None is in any commit; `git status` was checked between each.
+
+| # | the mutation | what failed, by name |
+|---|---|---|
+| **A** | `theQueuedBlock`'s id `['m','2']` → `['m','1']` (run the *hot* sibling, as the census does) | `lake build` **fails at three**: `the_queued_day_is_the_second_sibling_twice`, `the_queued_day_assigns_the_second_sibling_only`, `the_two_comparisons_are_false_at_the_queued_request` — *"Tactic `decide` proved that the proposition … is false"*. **Which sibling is running is load-bearing**: run `m1` and the reservation assigns the item that ranks first, and both comparisons are true again |
+| **B** | `queuedLines := witLines.take 2 ++ witLines.drop 4` → `witLines` (give `m1` its morning block back) | `lake build` **fails at the same three**. The log edit is load-bearing for the same reason from the other end: a replayed Block for `m1` puts it in `assignedOf` |
+| **C** | the word `hot` removed from `censusWitness`' `^m1` line | `lake build` **fails at three, and they are different three**: `the_census_witness_holds_the_wall_and_two_ranked_siblings` (the flag row), `the_two_comparisons_are_false_at_the_queued_request` (its `hotBeforeQueue` conjunct alone) and `plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`. **`plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` survives**, which is the point of running this one: the two refutations are not one theorem wearing two names |
+| **standing** | CHEAT **203** (the whole battery passes on the queued day) and CHEAT **204** (the same over `withoutPast`'s day) | both fail at a line of their own, every run, *"Tactic `decide` proved that the proposition … is false"*. Check 4 lifts `maxErrors` to 1,000,000 and requires an error **per `/- CHEAT` block**, so these run on every `check.sh` rather than merely being present |
+
+**And one near-miss, caught by running check 3's own grep rather than by check 3.**
+A doc-comment line in `PlanCheck.lean` began *"theorem below hands it to the
+compiler…"*. Check 3's roster is built with `grep -hoE '^(@\[[^]]*\][[:space:]]*)
+?theorem [^ (){}:]+'` over `TmKernel/*.lean` — **a prose line starting at column
+zero with the word `theorem` is counted as a declaration**, and `comm -23` would
+then have reported `below` as declared-and-never-audited and failed check 3. It
+was found by diffing the new declarations out of the patch with check 3's own
+command before running check 3. Reworded. Gap **854**: check 3's declaration
+roster is a line-anchored grep and cannot tell a declaration from a sentence that
+begins with the same word.
+
+### 9. Acceptance, re-measured on this worktree against a baseline measured in the same session
+
+The brief's comparands are `d1a602a`'s. **They were re-measured here rather than
+quoted**, by stashing this step's diff in this worktree, rebuilding, and running
+the identical commands — the only way to say "unchanged" with evidence on a box
+where two other tracks are building. Every command under `systemd-run --user
+--scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`; every Lean probe at **8G**
+with `timeout`. **No bound was raised and nothing was retried uncapped.**
+
+| row | this tree | `d1a602a`, re-measured here | brief's | delta, explained |
+|---|---|---|---|---|
+| `check.sh` | **7/7 ok** | 7/7 ok | 7/7 | — (check 8 is track A's and is not in this tree) |
+| axiom audit | **4,568 theorems**, §6.3 reconciliation `ok` | **4,549** | 4,549 | **+19, and every one is this step's**: 1 in `PlanCheck`, 18 in `PlannerWit`. 4,568 audit lines at **4,568 distinct** names against **4,566** declarations; `comm -23` **empty**, `comm -13` names exactly `WfPlan` and `effectiveScope`, §6.3's deliberate one-directional slack |
+| burn-down (check 7) | **9 outstanding, all stage 6** | **9** | 9 | **unchanged, and deliberately** — two goals were *refuted* and neither was deleted, because the restatements need `Planner.eligibleAt` (§4 above, gap 851). Nothing was added |
+| corpus round trip | **29/37 files, 4/5 whole plans** | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` untouched |
+| check 5, the FFI | **ok, 93 tests** | ok, 93 | 93 | unchanged — `--test kernel --test stack`, D36's pair |
+| FFI crate, whole | **101 / 0** — `corpus` 8, `kernel` 86, `stack` 7 | — | 101 | — |
+| `kernel_log_grammar --include-ignored` | **18 / 0**, with **`TM_ORACLE` unset** | — | — | the live fork arm does not compare without it; the frozen arms above are the ones that ran |
+| `Negative.lean` | rejected ok, **189 `/- CHEAT ` blocks** (183 numbered, highest **204**), `uniq -d` prints nothing | 187 / 181 / 202 | 187 | **+2**, each failing at a line of its own.  *Branch figures: the merge renumbered these two to 209-210 and the merged file is measured in the land block* |
+| `cargo test --workspace --no-fail-fast` | **1,345 passed / 0 failed / 9 ignored across 79 result lines**, exit 0, **0 warnings** | — (Lean-only; the binary is rebuilt by the FFI crate's `build.rs`) | 1,345 / 0 / 9 / 79 | **identical to the brief's comparand — a Lean-only step must not move it, and it did not** |
+| **T5** `kernel_replay_parity --include-ignored` | **33 / 0** | — | 33 | fork point **4748911**, frozen arms |
+| the door `kernel_log_door --include-ignored` | **23 / 0** | — | 23 | — |
+| `cli_switch_acceptance --include-ignored` | **9 / 0** | — | 9 | — |
+| `kernel_call_counts` | **2 / 0** | — | 2 | — |
+| `kernel_lookahead_parity` | **4 / 0** | — | 4 | — |
+| `the_frozen_comparand_is_read_at_full_precision` | **passes by name** (1 passed, 32 filtered out) | — | — | gap 235's tripwire; `float_roundtrip` still pinned |
+| `cli_latency --release --include-ignored --test-threads=1` | **6 passed / 0 failed** ×3 | — | — | rows below, as readings |
+
+**`check.sh` wall time, built tree, interleaved, both directions measured.** The
+box was **not quiet** — track P and track A were building and testing throughout
+(load average **4.0 → 8.4** across the window) — so every figure is a band.
+
+| tree | readings (warm) | median |
+|---|---|---|
+| `d1a602a`, this worktree | 7.59 · 6.82 · 6.84 · 6.72 · 6.80 · 6.80 · 6.84 s | **6.82 s** |
+| this tree | 7.01 · 7.05 · 7.04 · 7.07 · 7.99 · 7.79 · 7.53 s | **7.05 s** |
+
+**+3.4% on the medians, inside design §14.0 item 4's 10%-per-step rule** — and
+the attribution is gap 703's, for the third run running. Timed directly, two runs
+each, same cap:
+
+| check | `d1a602a` | this tree | Δ |
+|---|---|---|---|
+| 3, `lean Check.lean` | 0.34 · 0.34 s | 0.37 · 0.33 s | **none measurable** (19 audit lines) |
+| 4, `lean -DmaxErrors=1000000 Negative.lean` | 3.41 · 3.33 s | 3.76 · 3.72 s | **+0.37 s** |
+
+**`cli_latency`, release, `--include-ignored --test-threads=1`, three passes,
+6 passed / 0 failed each.** The noisy T11 rows as ranges (AGENTS §14.0.6; they
+are **not** re-blessed):
+
+| T11 row (3-year log, 66,169 lines) | three readings |
+|---|---|
+| later verb (`tm drop` — the reliable one) | **136.72 · 136.72 · 126.52 ms** |
+| gated host-only write (D35) | 131.77 · 136.81 · 131.75 ms |
+| a routine for a 3-day-old instance | 126.55 · 131.56 · 121.66 ms |
+| `review week` (the All scope) | **263.44 · 273.19 · 293.65 ms** |
+| `--now +1 day` (a reseal) | 192.38 · 197.55 · 172.28 ms |
+
+`tm drop` sits at the bottom of its 127–142 ms band and one reading (126.52 ms)
+is half a millisecond **below** it — said rather than rounded into the band.
+**`review week` is out of its recorded 248.1–253.3 ms band in all three passes
+and is left there**: it is gap 275's row, quoted and not re-blessed, and this run
+changed nothing any shipped verb reaches (gap 652), so the rise is the machine —
+the same box that was running two other tracks throughout, and the same reading
+W-18 recorded for the same reason. *(No `cli_latency` row was re-run to get a
+greener one; these are the first three passes.)*
+
+**Check 4 accounts for more than the whole median rise**, which means the rest of
+the run moved the other way inside its own noise. The +0.37 s is two cheats whose
+`decide`s evaluate `Planner.dayPlan` at `maxRecDepth 40000` — the same shape gap
+703 priced at W-18, and the same conclusion: **the budget is being spent on the
+cheat file, not on the kernel's build.** `check.sh`'s peak RSS is **1.99–2.09
+GiB** on both trees.
+
+### 10. Method, and what each method cannot see
+
+AGENTS's W-17 lesson 1, applied to every completeness claim above.
+
+1. **"The two comparisons are false at every eligibility."** *Method:* two
+   theorems (`dayPlan_ok_at_every_eligibility_is_refuted` and its
+   `withoutPast` sibling), each an application of a `decide` at one request.
+   *Blind spot:* a refutation is an existential — it says these two conjuncts
+   fail **somewhere**, not that they fail at every request. At
+   `theCensusRequest` both are `true`. What is *general* is only what the four
+   vacuity theorems prove, and these two are not among them.
+2. **"Exactly two of the eleven fail, and the other nine hold."** *Method:*
+   `the_other_nine_hold_where_the_two_fail` computes `planOkCore` (seven) plus
+   the two empty ones at the same request, and `the_lift_applies_at_the_queued
+   _request` re-derives the nine from the general lift so the computation and
+   the theorem agree. *Blind spot:* the two routes are not independent — both
+   evaluate the same `dayPlan`; what they cross-check is the **lift**, not the
+   day.
+3. **"P5b gave none of the four a subject."** *Method:* a grep from `dayPlan`
+   down (`dayRows`, `dayDiagnostics`, `dayPriorities`), which shows no field of
+   `DayPlan` reads `PlanReq.rankedCands`, plus the four vacuity theorems
+   standing as build-time walls at `d1a602a`. *Blind spot:* the grep is over
+   `TmKernel/*.lean` and reads definitions, not the call graph; a reader
+   introduced through an `abbrev` or a field projection spelled differently
+   would not appear. The four theorems are the part that cannot be fooled.
+4. **"Every prose statement of the ratio agrees."** *Method:* W-18's own grep,
+   widened to all of `kernel/` (so the design document's rows were read too);
+   twenty-three statements read, one corrected. *Blind spot:* it greps for a
+   fixed set of spellings of small numbers. A ratio written *"most of the
+   eleven"*, or with a digit (*"5 of 11"*), or split across two lines, is
+   invisible to it — and so is every number that is not a ratio. **D39's check
+   8 does not close this**: it resolves identifiers, not numerals.
+5. **"Every theorem added is audited."** *Method:* check 3's own multiset
+   reconciliation (`comm -23`), run after each append — **empty** both times.
+   *Blind spot:* one-directional; it cannot see a theorem audited under the
+   wrong namespace prefix, nor a `def` audited as a theorem. It also cannot
+   distinguish a declaration from a prose line starting with `theorem`, which
+   this run nearly shipped (gap 854).
+6. **"The shipped binary did not move."** *Method:* this step's Lean *is* linked
+   into `tm`, so "Lean-only" does not by itself mean the binary is unchanged.
+   What shows it is that the whole workspace suite, the FFI suite, T5, the door,
+   `cli_switch_acceptance`, `kernel_call_counts`, `kernel_lookahead_parity` and
+   the corpus all return the same numbers as the baseline measured in this same
+   session, and those suites compare the binary's bytes against frozen fixtures.
+   *Blind spot:* no verb reaches `dayPlan`, so no drive of `tm` can exercise a
+   single line of this step; the suites evidence *absence of harm*, never
+   presence of function.
+
+<!-- GAPS 850-854 — track G, run W-19.  Whoever merges renumbers (AGENTS 6.4). -->
+
+**Gap 850 — the two comparisons of §6.1's lift are FALSE at every eligibility,
+and P5 owes a decision about which way to repair them.**
+*What is not done:* `PlanCheck.monotoneInRank` and `PlanCheck.hotBeforeQueue` are
+not proved over `Planner.dayPlan`, and now cannot be: both answer `false` at the
+permissive eligibility on a day the planner really produces
+(`PlannerWit.the_two_comparisons_are_false_at_the_queued_request`), on the whole
+day and on `PlanCheck.withoutPast`'s day alike.
+*Why:* `m1` — hot, ranked ahead of the assigned `m2`, same document, same `ci`,
+same `rootPrio` — reaches no row, because §8.2 step 5 is unwritten.
+*What it costs:* §6.1's lift stops at **nine of eleven** for every `el`, and
+`PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` can only assume the
+two. **P5 must say which repair it takes**: an `eligibleAt` that refuses a
+candidate at choice 5b's reservation row (the two conjuncts then hold over
+today's day and G1 gets them at no cost), or the fold itself (`m1` is assigned
+and they hold for the honest reason). A step that lands `eligibleAt` without
+saying which of the two it did has left this gap open.
+*Which stage clears it:* **P5**, then **G1**.
+
+**Gap 851 — the burn-down number counts two statements that are known false.**
+*What is not done:* `Goals.plan_is_monotone_in_rank` and
+`Goals.plan_puts_hot_before_the_queue` are refuted
+(`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` and its
+sibling) and are still in `Goals.lean`.
+*Why:* a restatement without its refutation is a weakening (AGENTS §3.1 item 3),
+and both restatements need `Planner.eligibleAt`, which is P5's (gap 365). This is
+`Goals.plan_tail_drop`'s situation and is handled identically.
+*What it costs:* check 7's *"9 outstanding"* is an upper bound on what can be
+discharged **as written**: three of the nine (these two and `plan_tail_drop`) are
+refuted, so a reader taking the number as "nine things left to prove" over-counts
+by three. Nothing in `check.sh` distinguishes a standing goal from a refuted one.
+*Which stage clears it:* **P5** restates these two; **G2** restates
+`plan_tail_drop`.
+
+**Gap 852 — a ratio in `PlannerWit.lean` matched no census in the tree, and
+nothing computed it.**
+*What is not done:* corrected in place this run, and the correction is measured
+(`PlannerWit.the_one_id_store_gives_neither_comparison_a_subject`). What remains
+undone is the class: the census counts a checker's subject by filtering
+**segments**, and until this run the two comparisons — which range over **pairs
+of store ids** — had no measured population at any request.
+*Why:* `PlannerWit.rankSubjects` and `hotSubjects` now supply it, but only at the
+two requests this run needed. `theStoredRequest`'s *"five of eleven"* and
+`theCensusRequest`'s *"seven of eleven"* still take their two comparison rows
+from a reading of the store rather than from a computed population.
+*What it costs:* two of the eleven rows of every published census are asserted,
+not computed — the same shape as the sentence this run corrected.
+*Which stage clears it:* whichever run next touches the census; it is two extra
+conjuncts in `the_battery_census_at_the_census_request`.
+
+**Gap 853 — this run spent +0.37 s of check 4 on two cheats, and gap 703's
+diagnosis holds for the third run running.**
+*What is not done:* nothing separates `Negative.lean`'s cost per cheat, so a
+run cannot tell in advance what a `decide` over `Planner.dayPlan` will cost check
+4.
+*Why:* check 4 is one uncapped-by-count `lean` invocation over a 2,547-line file
+whose newest cheats each evaluate the planner at `maxRecDepth 40000`.
+*What it costs:* check 4 is now **3.72–3.76 s** of a **7.05 s** `check.sh` —
+**53%** of the whole gate, up from **49%** (3.33–3.41 s of 6.82 s) at `d1a602a`. Three more runs at this rate exhaust
+the 10%-per-step rule on the cheat file alone.
+*Which stage clears it:* the owner, or a run that is willing to price splitting
+`Negative.lean` by stage.
+
+**Gap 854 — check 3's declaration roster cannot tell a declaration from a
+sentence.**
+*What is not done:* check 3 builds the declared-name multiset with a
+line-anchored grep for `theorem `, over `TmKernel/*.lean`. A doc-comment line
+beginning at column zero with the word `theorem` is counted as a declaration, and
+`comm -23` then reports it as declared-and-never-audited and **fails check 3**.
+*Why:* the grep cannot see comment structure.
+*What it costs:* a false failure, not a false pass — so it is a nuisance rather
+than a hole. This run nearly shipped one (`theorem below hands it…`) and caught
+it by running check 3's own command against the patch; the fix was rewording the
+prose. **A future agent hitting an unexplained `no #print axioms for: <english
+word>` should look for a doc-comment line, not a missing audit line.**
+*Which stage clears it:* track A, next time check 3 is touched — the grep can
+require the line to be outside a `/-` … `-/` span, or simply exclude lines whose
+match is followed by a lower-case English word rather than an identifier.

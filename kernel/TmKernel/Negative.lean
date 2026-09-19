@@ -2577,4 +2577,43 @@ theorem anErrandTakesALoungeSlot :
 theorem aGroupCanOweNegativeMinutes (g : Planner.Group) :
     ({ g with spent := g.spent + 60 } : Planner.Group).leftMin = -50 := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-19, track G (AGENTS 6.2).
+   The ceiling: two of the eleven are FALSE on a day the planner produces, at
+   every eligibility (README gap 850).  Cheats 209-210.
+
+   WRITTEN as 203-204 on `w19-g`, numbered from 202, the highest on
+   `rebuild-on-lean` at `d1a602a`.  Track P branched from the same commit and
+   took 203-208, so THE MERGE RENUMBERED THESE TWO TO 209-210 (AGENTS 6.2, 6.5
+   item 1) -- the third run in three where two tracks started at the same number
+   (W-17's gap 671, W-18's own note above).  Every citation of them in Lean and
+   in README.md moved with them; README gap 872. -/
+/- CHEAT 209 — design 6.1's lift asserted at the permissive eligibility on the
+   day `PlannerWit.theQueuedRequest` produces.  That request is the census
+   request with `m1`'s two log lines removed and `m2` running, so `m1` — hot,
+   ranked ahead of `m2`, same document, same `ci`, same `rootPrio` — reaches no
+   row of the day: `monotoneInRank` and `hotBeforeQueue` both say `false`, and
+   so does `planOk`.  This block claims the whole battery passes.  `decide`
+   refuses.  The other NINE conjuncts do pass, which is
+   `PlannerWit.the_other_nine_hold_where_the_two_fail` and is why the number is
+   a ceiling and not a failure. -/
+set_option maxRecDepth 40000 in
+theorem theQueuedDayPassesTheWholeBattery :
+    PlanCheck.planOk PlannerWit.permissive PlannerWit.theQueuedRequest
+      (Planner.dayPlan PlannerWit.theQueuedRequest) = true := by decide
+
+/- CHEAT 210 — the same claim over `PlanCheck.withoutPast`'s day, which is the
+   day `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons` is stated
+   over.  The plausible reading is that the restriction repairs the two
+   comparisons the way it repaired the wall law and the break law — it does not,
+   and it cannot: dropping the past's work rows removes `m1`'s chances of being
+   assigned, never adds one.  Here it removes nothing, because `m1` has no row
+   on either day.  This block claims the restricted battery passes.  `decide`
+   refuses. -/
+set_option maxRecDepth 40000 in
+theorem theRestrictedQueuedDayPassesTheWholeBattery :
+    PlanCheck.planOk PlannerWit.permissive PlannerWit.theQueuedRequest
+      (PlanCheck.withoutPast PlannerWit.theQueuedRequest
+        (Planner.dayPlan PlannerWit.theQueuedRequest)) = true := by decide
+
 end Tm

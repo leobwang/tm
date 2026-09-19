@@ -703,6 +703,22 @@ _slot_energy`, `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down`,
 no witness can give `energyFilterOk`, `noDemandingAfterWindDown`,
 `batchDoesNotReachPast` or `impossibleKept` a subject — P5's three and P8's one,
 each now a build-time wall its step must delete.
+
+**W-19 (track G) proved the nine is a CEILING, and refuted two of the thirteen
+below.**  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons` records its
+two missing conjuncts — `monotoneInRank` and `hotBeforeQueue` — as *missing*.
+They are **false**: at `PlannerWit.theQueuedRequest` (the census request with
+`m1`'s two log lines removed and `m2` running) both answer `false` at the
+permissive eligibility, on the whole day and on `PlanCheck.withoutPast`'s day
+alike, with **no mutation at all** — and the other nine answer `true` at that
+same request (`PlannerWit.the_other_nine_hold_where_the_two_fail`).  So the
+`∀ el` form of design §6.1's lift is refuted both ways round
+(`PlannerWit.dayPlan_ok_at_every_eligibility_is_refuted`,
+`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`), and with it
+`plan_is_monotone_in_rank` and `plan_puts_hot_before_the_queue` below.  **The
+burn-down did not move**: both restatements need `Planner.eligibleAt`, which is
+P5's, so both goals stay here beside `plan_tail_drop`, refuted and standing.
+README gaps 850 and 851.
 ############################################################################ -/
 
 open Planner
@@ -758,7 +774,19 @@ equality of the computed priority; the shape of the goal does not change.
 
 Design §6.3 records this as **false as written** — §8.2 step 5 skips a
 `loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3
-invariant is about — and gives the restatement plus its refutation to **P5**. -/
+invariant is about — and gives the restatement plus its refutation to **P5**.
+
+**REFUTED AT W-19, and it stays here** (track G).
+`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` is the
+computed counter-example: at `PlannerWit.theQueuedRequest` — the census
+Wednesday with `m1`'s two log lines removed and `m2` running — `m1` and `m2` are
+one document's siblings at equal `rootPrio` and equal `effectiveCi`, ranked 1
+and 2, the day assigns `m2` and the day does not assign `m1`.  The reason is not
+design §6.3's `loc:`/`atomic`/`max:` list: **there is no assign fold yet**, so
+nothing can assign `m1` at all.  The goal is **not** deleted, because the
+restatement needs `Planner.eligibleAt` and is P5's (README gap 365), and a
+restatement without its refutation is a weakening (AGENTS §3.1 item 3) — which
+is `plan_tail_drop`'s situation below, handled the same way.  README gap 851. -/
 theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
@@ -771,7 +799,15 @@ theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
 /-- **L26 / §8.3 "HOT before queue" (P\*), stage 6.**  Stated over §7.2's `hot`
 **flag**, which is in the grammar (`Field.Flag.hot`) and so needs nothing from
 stage 5.  The `u ≥ 1` half of HOT is the next goal's business.  Design §6.3
-gives its restatement and refutation to **P5**. -/
+gives its restatement and refutation to **P5**.
+
+**REFUTED AT W-19, and it stays here** (track G).
+`PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted` is the
+computed counter-example, at the same `PlannerWit.theQueuedRequest`: `m1` carries
+`hot` and `m2` does not, the day holds two rows carrying `m2` and **none**
+carrying `m1`, so no row can be "before the queue".  As above, the goal is not
+deleted: the restatement adds that the hot item is eligible at some slot of the
+day, which needs `Planner.eligibleAt` and is P5's.  README gap 851. -/
 theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)

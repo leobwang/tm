@@ -952,7 +952,14 @@ applied to one day, and that lemma stays above, unchanged and general.  The `∀
 **false** of P1's body — `hotPairOk` asks a hot item's row to start before every row carrying
 the queued one, and a permissive `el` makes that a real obligation over the replayed past —
 so it is not restated here either; §6.1's honest `dayPlan_ok` still waits on
-`Planner.eligibleAt` (gap 365). -/
+`Planner.eligibleAt` (gap 365).
+
+*(**W-19 proved that sentence.**  It stood here from W-14 as prose, which is the shape AGENTS
+§5.2 warns about from the other side — a claim about the code that no run of the code makes.
+`PlannerWit.dayPlan_ok_at_every_eligibility_is_refuted` is the whole-day form and
+`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted` the restricted one, both
+computed at `PlannerWit.theQueuedRequest`, where `hotPairOk` fails for the reason this
+paragraph names and `rankPairOk` fails beside it.  README gap 850.)* -/
 
 /-! ## Non-vacuity (AGENTS §5.2)
 
@@ -1776,9 +1783,18 @@ in one place:
   `hotBeforeQueue`.  Both are real obligations over the replayed past at a permissive `el`
   (see the note above `dayPlan_ok_core`'s own deleted `∀ el` corollary), and both wait on P5.
 
+**W-19 turned that last bullet from "missing" into "false", which is a different inheritance.**
+`PlannerWit.the_two_comparisons_are_false_at_the_queued_request` computes both conjuncts as
+`false` at the permissive eligibility, on a day `dayPlan` really produces and with no mutation,
+while `PlannerWit.the_other_nine_hold_where_the_two_fail` computes the other nine as `true` at
+the same request.  So **nine is a ceiling**, not a waypoint: no proof quantified over an
+arbitrary `el` can reach ten, and `dayPlan_ok_from_now_given_the_two_comparisons` below is
+where the residue is named rather than counted.
+
 So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
-and owed a subject (P5's batch, P8's impossible list), and the fold induction design §6.2
-prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
+and owed a subject (P5's batch, P8's impossible list), **two refuted at every eligibility and
+owed both `Planner.eligibleAt` and the fold** (README gap 850), and the fold induction design
+§6.2 prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
 theorem dayPlan_ok_from_now_except_the_two_comparisons (el : Eligible) (r : PlanReq)
     (hagree : r.wallsAgree = true)
     (hactive : r.activeAgrees = true)
@@ -1798,6 +1814,46 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons (el : Eligible) (r : Plan
    impossibleKept_of_no_impossible el r _ (the_day_names_no_impossible_item r),
    batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
      the_day_has_no_batch_row r s (mem_withoutPast r _ s hs).1 ids)⟩
+
+/-! ### §6.1's `planOk`, assembled — and why the residue is two named conjuncts (W-19)
+
+The theorem above is a **nine-way conjunction written out by hand**, and the arithmetic that
+turns "nine of these eleven" into "the eleven `planOk` computes" is a reader's, not the
+compiler's.  README gap 684 is the record of getting exactly that arithmetic wrong.  What
+follows hands it to the compiler: given the two conjuncts that are missing, `planOk` itself
+answers `true`, over `checksOf`'s own list rather than over a transcription of it.
+
+**It assumes two of the eleven and says so in its name.**  That is not a discharge, and the
+reason it is worth stating anyway is the theorem beside it:
+`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted` proves that the two
+hypotheses **cannot be dropped** — at the permissive eligibility both are `false` on a day
+`dayPlan` really produces, so no proof over an arbitrary `el` will ever remove them.  Together
+the two statements say precisely what §6.1's lift is waiting for: not more proof about the
+seven core checks, but `Planner.eligibleAt` and the assign fold that gives the two comparisons
+something honest to range over.
+
+*(Before W-19 this file asserted the second half in prose — *"the `∀ el` form is **false** of
+P1's body"*, above `dayPlan_ok_core` — and nothing computed it.)* -/
+theorem dayPlan_ok_from_now_given_the_two_comparisons (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hrank : monotoneInRank el r (withoutPast r (dayPlan r)) = true)
+    (hhot : hotBeforeQueue el r (withoutPast r (dayPlan r)) = true) :
+    planOk el r (withoutPast r (dayPlan r)) = true := by
+  obtain ⟨hcore, himp, hbat⟩ :=
+    dayPlan_ok_from_now_except_the_two_comparisons el r hagree hactive hday hnowcal hplain
+  simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
+    List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
+  exact hcore
 
 end PlanCheck
 end Tm
