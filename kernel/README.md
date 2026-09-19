@@ -41409,6 +41409,16 @@ step is also the first computed subject W-15's step P2 has ever had.
   two beside them are `PlannerWit.routinesOk` and `dayDiagnostics`' changed
   notes clause: **23 mutations**, 23 failures. Four of them failed nothing at
   first —
+  *(**Corrected at the W-20 repair step.** That sentence reads as a
+  completeness claim and is narrower than it reads: `mutate.py`'s own diff
+  against `86c4dc6` reports **24** new-or-changed definitions in
+  `Planner.lean`, not 21 plus 2. `Planner.stepTwoSegs` and `Planner.dayRows`
+  both existed at the baseline and both had their BODIES changed by this step
+  — verified by body sha1 — and neither is in the table below. Nothing shipped
+  unmutated: the merge's own run caught both, and `mutations.txt` rows
+  `f18d3551771b … stepTwoSegs default Planner.lean:2649` and `b8d2a0168832 …
+  dayRows default Planner.lean:5358` are where. What was wrong is the count and
+  the word "every", not the coverage.)*
   `assignedSpans`, `keptBreaks`, `keptBreaksToday` and `displaceInto` — and the
   repair was to build the witnesses, not to report the finding: `theBusyRequest`
   (the routine day with §8.2 step 5's four candidates on it) and
@@ -41709,6 +41719,16 @@ other two.**
 1. *What is not done.* `Replay.minDay?` and `Seal.minInstant?` are minima too,
    each folding `Nat.min` / an `if` over its own element type. `leastBy` is a
    call of neither and neither is a call of it.
+   *(**Re-measured at the W-20 repair step, BY BODY and not by name**, because
+   the gap's own census was smaller than the tree's: the minimum-shaped folds
+   in `TmKernel/TmKernel/*.lean` are `Replay.minDay?`, `Seal.minInstant?`,
+   `SealResume.minOpt`, `SealResume.minOptI`, the bare `lows.foldl Nat.min` at
+   `SealWire.lean:369` and `SealResume.lean:349` with `SealCutLows`'s
+   `foldl_min_le_of_mem` family stating its laws, and `Replay.lastMax?` — which
+   `leastBy` actually calls, at a flipped relation, so it adds no new fold.
+   **Seven shapes, not three**, and the §5.3 reading of the gap is therefore
+   wider than "three names for one concept". Nothing this step wrote duplicates
+   any of them.)*
 2. *Why.* `leastBy` is `Replay.lastMax?` at a flipped relation, so it adds **no**
    new fold; widening `minDay?` or `minInstant?` into it would restate their
    laws (`minDay?_cons`, `minDay?_append`, `minInstant?`'s bounds lemmas and the
@@ -43322,7 +43342,7 @@ which D40 put on the step rather than on the gate.
   module. *Blind spot:* this sees the import **line**; it cannot see a module
   imported but unused, or one whose import is commented out mid-line.
 * **The audit roster reconciles** (AGENTS §6.3): **4,754** audit lines, **4,754**
-  distinct names, **4,752** declarations, **90** `APPENDED` banners, `comm -23`
+  distinct names, **4,752** declarations, **91** `APPENDED` banners, `comm -23`
   **empty**. `comm -13` names **two** non-theorems, `Tm.WfPlan` and
   `Tm.effectiveScope` — §6.3 says "plus one", and it has been two since before
   this campaign's baseline. Gap **981**.
@@ -43514,6 +43534,14 @@ definitions are named, counted and not audited at all.**
    `lapsedCap`, `theLapsedRequest`, `theFullDay`, `busyCap`, `busyCands`,
    `theBusyRequest`, `aBareInstance`, `theSecondSlot`, `witReqInQuietCensus`,
    `theQuietCensusRequest`.
+   *(**Sharpened at the W-20 repair step**, because the list above reads as one
+   population and is two. **Fifteen** are `PlannerWit` witness FIXTURES, where a
+   literal body is correct and the exemption is benign. The other **eight** —
+   `placeAt`, `PlanReq.displaceInto`, `PlanReq.deferOne`, `PlanReq.deferWalk`,
+   `PlanReq.deferFold`, `PlanReq.finalAssign`, `PlanReq.rePlaceWalk` and
+   `dayDiagnostics` — are step 6's own ALGORITHM, so the half of the step's
+   output the fold cannot see includes the half that does the work. Gap **985**
+   names the shape a fix must take, and it is not a constant.)*
 2. *Why.* D40's constant is `default`, and `default` needs `Inhabited`. AGENTS
    §5.1's `Bool` + `Subtype` discipline means the kernel's own types have no
    inhabitant that nobody proved; `deriving instance Inhabited` was tried and
@@ -43641,3 +43669,490 @@ clean and both branches are merged (`git branch --merged HEAD` names them). The
 branches are kept as the record, as W-11…W-19's are.
 **`.claude/worktrees/stage5-lookahead` was not entered and is untouched.**
 `git worktree list` now shows the main checkout and `stage5-lookahead`.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-20**, the **REPAIR**
+     step, on the main checkout at `318dfe5`.  Seventeen defects from two
+     independent auditors; **every one reproduced first**, one of them LARGER
+     than reported, none left on a claim.  Gap range **985-999**; this step
+     takes **985-996** and leaves 997-999 free.  No goal added, discharged or
+     deleted: **burn-down stays 9**.  `check.sh` **9/9**.  **Both gates this
+     campaign built were green on the defect they exist to catch**; §2 and §3
+     are that, driven.
+     =========================================================================== -->
+
+## Stage 6 — W-20, the repair step: the constant a gate spelled with an arrow, and the sentence that wrapped
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `29dd5fd` | **check 9's four holes** — the arrow-spelled constant, the literal body, the untracked module, the indented definition, and a `None == None` that counted every unparsable definition as audited |
+| `8cb0129` | **check 8's eighth set** — the span that wrapped a line, the last 19 eligibleAt citations with both allow-list entries deleted, and the gate's own prose swept |
+| this block | the ledger |
+
+`kernel/corpus/`, `lean-toolchain`, every fixture, every snapshot and every line
+of Rust are untouched: `git diff --name-only 318dfe5..HEAD -- tm tm-core
+Cargo.toml Cargo.lock kernel/tm-kernel-ffi kernel/corpus` is **empty**. The only
+Lean that changed is doc-comment prose in five files.
+
+### 2. The blocker: check 9 was green on the constant it was built to catch
+
+The reuse critic's finding, **reproduced before it was believed**, in a
+`git clone --shared` sandbox at `318dfe5` with a warm `.lake`, every build capped
+at `MemoryMax=40G`:
+
+```
+  PlannerWit.lean:w21DirectBool   := true     SURVIVED  build completed
+  PlannerWit.lean:w21DirectBool   := false    PINNED    PlannerWit.lean:3936
+  PlannerWit.lean:w21ArrowBool    := default  PINNED    PlannerWit.lean:3939
+  1 definition(s) not pinned by a constant:
+    PlannerWit.lean:w21DirectBool  SURVIVED  := true -- build completed
+  EXIT=1
+```
+
+`w21DirectBool (n : Nat) : Bool := true` and `w21ArrowBool : Nat → Bool :=
+fun _ => true` are **the same constant**. The first was caught. The second got
+`default`, which at `Nat → Bool` is `fun _ => false` — and README's own table
+says why that is fatal: *"`gatherable` was caught by `false` alone, and that was
+exactly the half that did not matter."* With w21DirectBool removed the gate
+exits **0** on a definition that IS the constant `true`.
+
+`CONSTANTS` was keyed on the return type's **literal text**. It is now resolved
+first through library `abbrev` synonyms and then through its own depth-zero
+arrows, and the constant is written under binders (`fun _ _ => true`).
+
+| where the scalar hides | library definitions | example |
+|---|---|---|
+| spelled directly (`: Bool`) | as before | `Ranked.gatherable` |
+| behind depth-zero arrows | **99** | `posLt : Nat × Nat → Nat × Nat → Bool` |
+| behind one `abbrev` | **19** | `permissive : PlanCheck.Eligible`, `mix : Hist` |
+| depth-zero `∀` or `,` | **0** | kept on `default` deliberately |
+
+**Two rostered rows were re-run, not re-labelled.** `Planner.posLt` and
+`Planner.victimLt` were in the arrow class and had been audited at `default`
+only. Re-mutated at both directions, capped, four kernel builds: PINNED at
+`fun__=>true` and at `fun__=>false`, `Planner.lean:4796` and `:4811`. Their rows
+are at the END of `mutations.txt` because `--write` appends, and the file's
+header says so. No kernel defect: `posLt_strictTotal` and `victimLt_strictTotal`
+pin both directions already, so the hole was in the gate and never in the
+kernel.
+
+### 3. Three more holes in check 9, each driven, none live in the tree
+
+* **A body that IS a constant earned PINNED.** `def w21Seven (_x : Nat) : Nat
+  := 7` fails `:= 0` and fails `:= 1`, and the run line read *"2 pinned, 0
+  survived"*. PINNED is the word D40 coined for *"something can tell this from a
+  constant"*, and the body was one. New verdict **LITERAL**, raised before any
+  build, printed and counted and **never instead of** the type's own constants:
+
+  ```
+    PlannerWit.lean:w21Seven  := 7  LITERAL  the body IS this constant
+    PlannerWit.lean:w21Seven  := 0  PINNED   PlannerWit.lean:3939
+    PlannerWit.lean:w21Seven  := 1  PINNED   PlannerWit.lean:3939
+  ```
+
+  **It is not fatal, and that is a measurement, not a preference:** 66 library
+  definitions have a bare-literal body and **64 of them are wire bounds**
+  (`maxCands : Nat := 1024`, `Seal.maxTags : Nat := 89`), which are *supposed*
+  to be constants, and nothing textual separates those from a defect. A `Bool`
+  or `Prop` literal, or a `Nat` literal 0 or 1, is still SURVIVED and still
+  fatal, so `gatherable := true` is caught by the constant exactly as before.
+  Gap **986** puts the non-fatality to the owner.
+* **An untracked module was exempt.** `git diff --name-only <commit>` never
+  lists an un-`git add`ed file, and AGENTS acceptance runs `check.sh` BEFORE the
+  commit — so every definition in a step's brand-new module was invisible at
+  exactly the moment the gate exists to bite, while `citations.py`, written in
+  the same run, globs the filesystem and would have seen the same file.
+* **An indented definition produced no row at all.** `HEAD` is anchored at `^`,
+  so `namespace T` / two spaces / `def indentedProbe : Bool := true` was neither
+  audited nor reported UNPARSED — while the header promised *"reported UNPARSED
+  and fails the gate rather than being skipped silently"*. Now reported, outside
+  `/- -/` block comments so that a commented-out `def` cannot fail the gate for
+  a sentence. **0 in the library today**, so this is a latch and not a repair.
+
+**And one the repair found itself, which is why the probe mattered.** `rostered`
+compared `rows.get((file, name), {}).get("sha")` with `d["sha"]`, and **both are
+`None` for an unparsable definition** — so every UNPARSED declaration counted as
+already audited. The untracked probe exposed it: the new module was seen, and
+the gate then reported `47 new or changed, 47 rostered, 0 owed`.
+
+Old gate then new, same sandbox tree, both capped:
+
+```
+  untracked W21Probe.lean holding an indented def
+    OLD  46 new or changed since 86c4dc6, 46 rostered (23 unfoldable), 0 owed   EXIT=0
+    NEW  47 new or changed, 46 rostered, 1 OWED A MUTATION
+         W21Probe.lean:indentedProbe  UNPARSED  indented; …                     EXIT=1
+```
+
+### 4. check 8 reported green on a citation that wrapped a line
+
+`SPAN` is `` `([^`\n]+)` `` and the sweep is line-local, so a backticked span
+holding a newline was **not counted, not resolved and not exempted**. The live
+instance is in the paragraph claiming check 8 caught this step's stale
+citations: README.md:41691-41692 named two theorem names track P had **renamed
+away from while writing**, both in backticks, both wrapped, both resolving to
+nothing anywhere in the repository. Driven in the sandbox: as shipped,
+`python3 citations.py` → **EXIT=0**; removing only the two line breaks and no
+other byte → `2 unresolved`, **EXIT=1**.
+
+`wrapped` joins a span the carry left open, and the join is deliberately narrow
+— **the break must fall at an `_` or a `.`**:
+
+| the 48 spans that wrap | count | verdict |
+|---|---|---|
+| break at `_` or `.` | **43** | all 43 real names; swept |
+| break ate a SPACE | **5** | `deriving`/`DecidableEq`, `import`/`Lean.Data.Json`, `lean`/`Negative.lean`, `Option`/`ActiveBlock`, `badCapacity`/`candidates` — all spurious; joining them would fail the gate on a correct sentence |
+
+The carry survives exactly one line boundary and is dropped at a fence, so a
+span wrapped over THREE lines is still unseen (gap **990**).
+
+### 5. D41 says repaired, not exempted, and 19 shipped exempted
+
+The land step left 19 backticked citations of eligibleAt behind two counted
+allow-list entries — `6 eligibleAt` and `13 Planner.eligibleAt` — on the reason
+that they sat in files track A did not own. **The land step owned the merged
+tree**, where that argument does not hold. Re-measured here over exactly check
+8's swept set: **19** spans (PlanCheck.lean 7, Goals.lean 5, PlannerWit.lean 4,
+Planner.lean 2, Lookahead.lean 1), and `grep -rn 'def .*eligibleAt'
+kernel/TmKernel --include=*.lean` returns **nothing**.
+
+All 19 are un-backticked, and so are the **two** README spans reading `planOk
+Planner.eligibleAt`, which `CITED` refused for the space in them and which
+therefore hid the same dead name a second way. **Both allow-list entries are
+deleted.** 64 of 64. Gap **932 is closed**; counted entries 352 → 347.
+
+emitRefused, the other name D41 named, was already fully repaired at W-20 —
+0 backticked spans, 10 un-backticked mentions — **except inside check 8's own
+specification**, which was not swept. That is §6.
+
+### 6. The gate's own prose is now prose
+
+`kernel/check.sh`, `kernel/mutations.txt` and `kernel/*.py` are swept as PROSE.
+They were the last unswept prose in `kernel/`, and `check.sh:215` — the sentence
+that specifies D41's camelCase widening — carried a backticked emitRefused,
+which is the dead name that widening exists because of. `kernel/*.py` was
+already a **declaration** source (source 6); reading the same files as prose is
+a different question and was not being asked.
+
+Seven sites, **all repaired, none silenced**: emitRefused ×2; a
+register_builtin_error core does not declare (checked against the pinned
+toolchain's sources — the real referent is `unknownIdentifierMessageTag` in
+`Lean/Exception.lean`); two invented Tm.Look.foo_bar/Tm.Cap.foo_bar
+illustrations; a sort_by naming a hypothetical allow-list entry; and
+mkStateDay?. `set_option` and `termination_by` **moved up** from section 4's
+grandfathered baseline to VOCABULARY, with `decreasing_by` beside them: they are
+Lean **keywords**, which is the reason the header asks for and not a bumped
+count.
+
+**`citations-allow.txt` is deliberately not swept**, and the reason is
+mechanical: an entry's own comment has to spell the name it exempts, so sweeping
+it charges every COUNTED entry one extra citation against its own cap. Measured:
+**14** counted entries went over by exactly one, every one because the
+allow-list quotes itself, and **none of the 14 was a defect**. Its one real
+defect was found by running `citations.py`'s resolver over it by hand, which is
+what that file gets instead of the sweep. Gap **989**.
+
+### 7. The four number repairs
+
+| where | said | is | class |
+|---|---|---|---|
+| `check.sh:289` (check 9's own comment) | 0.03 s, *"under half a percent"* | **0.09-0.10 s**, ~1.1% | gap 871 — a checker's prose misquoting the measurement printed beside it, **fourth instance this campaign**, inside the file the campaign had just added |
+| `check.sh:297` | *"7.37-7.48 s … to 7.83-7.87 s, +5.1%"* | min→min **+6.2%**, max→max **+5.2%** | an arithmetic that follows from neither pair |
+| README.md:43325 (the land block's *"re-measured here and not assumed"* line) | **90** `APPENDED` banners | **91** | one number of five carried from the FIRST of the two merges the sentence is about (`13cbadc` → 90, `bd09fcd` → 91) |
+| README.md:41408 (track P's completeness sentence) | *"21 definitions … **23 mutations**, 23 failures"* | `mutate.py`'s own diff reports **24** in `Planner.lean` | `stepTwoSegs` and `dayRows` existed at the baseline and had their BODIES changed; **nothing shipped unmutated** — the merge caught both — but the word "every" was wider than the table |
+
+`README.md` gap 900's census is widened in place too: it called `leastBy` the
+third minimum, and there are **seven** minimum-shaped folds in the library
+(`Replay.minDay?`, `Seal.minInstant?`, `SealResume.minOpt`,
+`SealResume.minOptI`, two bare `lows.foldl Nat.min` with `SealCutLows`'s
+`foldl_min_le_of_mem` family stating their laws, and `Replay.lastMax?`, which
+`leastBy` actually calls). Measured **by body**, which is the search §5.3 asks
+for and the one the P5b block itself said it had not run.
+
+Track A's own block still reads *"check 9's steady-state cost is 0.03 s"*. That
+is left standing: it is track A's record of what track A measured on its own
+branch, and this block is where the re-measurement lives.
+
+### 8. Every claim the auditors made about the shipped binary, driven
+
+`tm init --example`, release binary at `318dfe5`, every invocation capped. **All
+six reproduced**, and one is larger than it was reported.
+
+| finding | verdict | evidence |
+|---|---|---|
+| `tm drop` on a ROUTINE title deletes the routine | **reproduced exactly** | `tm drop laundry` → exit 0, *"dropped ^bryn — a state box makes it a tracked item"*; routines.md line 7 becomes `- [~] laundry … ^bryn`; `tm routine done laundry` and `tm skip laundry` → *"no such routine: laundry"*, exit 1; the 09:00 row is gone from `tm plan`; `tm check` → **"no problems"**, exit 0. `tm edit laundry state=[x]` correctly refuses with *"no such item: ^laundry"* — `drop` resolves a routine title where `edit` does not. `tm undo` restores routines.md **byte-for-byte** (`diff` empty) and the routine verbs work again. Gap **991** |
+| `tm add` with no `--to` writes a tree every verb refuses | **reproduced exactly** | exit 0, *"- [ ] 1 30m a new week item → inbox.md"*, written without an `^id`; then `tm check` → `inbox.md:5: error[kernel-load]: … badLine … (Tm.PErr.noId)`, exit 2, and `tm plan`, `tm now`, `tm start` all refuse. The SECOND `tm add` is gated. D35 bought the direction it aimed at and not this one. Gap **992** |
+| deleting `.tm/state.json` strands the running block | **reproduced exactly** | after `wake`/`arrive home`/`start p1`, `rm .tm/state.json` → `tm now` *"nothing running"*; state.json regenerates with `date`, `wake`, `arrival`, `loc`, `window`, `budget` and `active` **all null** while `.tm/log.jsonl` still holds the `wake`, `arrive` and `start id="p1"` lines; `tm done` → *"nothing is running"*, exit 1; `tm stop` → the same; and **in the same tree `tm plan` still renders `^p1` with ▶**. `tm check` → "no problems", exit 0. Gap **993** |
+| `tm plan` schedules the running item twice | **reproduced, and LARGER** | the report says three block rows; with `^p1` running 2m of 20m there are **FIVE**: `{08:19-08:19, 0 min}`, `{08:19-08:20, 0 min}`, `{08:20-08:22, 2 min, "2m so far"}`, `{08:22-08:40, 18 min, ▶ "running · 18m left"}` and `{09:30-10:30, **60 min**, plain, energy 3}`. Rows 3+4 already cover the whole 20m estimate; the fifth schedules it again for an hour, and `tm now`'s next list repeats it — *"09:30 Call the bank about the card 20m"*. At 0m elapsed the two zero-minute rows and the ▶ row are there and the 09:30 row is not. Gap **994** |
+| one non-UTF-8 byte reorders `tm check` | **reproduced exactly** | the derived `danglingParent` refusal prints FIRST, `month/2026-09.md:14: error[dangling-parent]: parent @x1 does not exist` second, and the real cause — `week/2026-W38.md:7: error[bad-value]: not valid UTF-8; the file was skipped` — **third**. `^x1` is in the file that was skipped. `tm plan` and `tm now` name it correctly and alone. Gap **995** |
+| the refusal gate's reassurance line is inconsistent | **reproduced exactly** | on the refused tree, `tm energy 3`, `tm start p1` and `tm add` print the refusal AND *"nothing was written: …"*; `tm plan`, `tm rank x1 1` and `tm drop x1` print the refusal alone. Nothing IS written in any of the six (`md5sum inbox.md` unchanged across all six, `tm undo` then restores). Gap **996** |
+
+All six are **PRE-EXISTING**: `git diff --stat 86c4dc6..HEAD -- tm tm-core
+Cargo.toml Cargo.lock` is empty, so not one is a W-20 regression, and none is
+repairable from the kernel side today — four of them are the fork's in-tree
+`planner.rs` and host, which R3 retires.
+
+### 9. The numbers, re-measured
+
+Every command capped with `systemd-run --user --scope -p MemoryMax=40G
+-p MemorySwapMax=0 --quiet`.
+
+```
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (4754 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (23629 citations, 22117 resolved, 1512 allowed (113 vocabulary, 347 counted), 0 allow entries unused)
+new definitions mutated                        ok  (46 new or changed since 86c4dc6, 46 rostered (23 unfoldable, 0 literal), 0 owed)
+```
+
+| line | campaign baseline `86c4dc6` | here | the delta, explained |
+|---|---|---|---|
+| axiom audit | 4,665 theorems | **4,754** | +89, all from the W-20 merges; this step added none |
+| check 5 | 93 tests | **93** | unchanged |
+| corpus | 29/37 files, 4/5 plans | **29/37, 4/5** | floor held; `kernel/corpus/` untouched |
+| stage goals | burn-down 9, all stage 6 | **9, all stage 6** | no goal added, discharged or deleted |
+| check 8 citations | 10,807 / 9,739 resolved | **23,629 / 22,117** | the land step's own widening took it to 23,468 / 21,949. The two code commits take it to **23,579 / 22,070** — +43 wrapped spans now visible, +77 from the three newly swept checker files, −19 eligibleAt repaired, +10 net from the prose the repairs rewrote — and **this block's own prose, plus the nine-line sharpening of gap 980, is the last +50 / +47**, which is why this row is re-taken after appending it and not before |
+| check 8 allow-list | 0 unused | **0 unused**, 113 vocabulary (+3 Lean keywords), 347 counted (−5: 2 eligibleAt, trace_kind, set_option and termination_by moved to VOCABULARY) | no entry added that silences a real defect |
+| check 9 | 46 rostered, 23 unfoldable, 0 owed | **46 rostered, 23 unfoldable, 0 literal, 0 owed** | 2 of the 46 re-audited at the corrected constants |
+| `cargo test --workspace` | 1,345 / 0 / 9 across 79 | **1,345 / 0 / 9 across 79** | no Rust changed; **no `cli_latency` flake**, rc=0 first time |
+| `check.sh` wall | 7.83-7.87 s (land step's machine) | **7.91 · 8.01 s** quiet, here | the independent auditor measured 8.04-8.25 s on the same machine under load |
+| check 8 cost | 0.48-0.52 s | **0.52 · 0.52 · 0.52 s** | +3 files swept, +1 pass for the carry |
+| check 9 cost | 0.05 s | **0.09 · 0.09 · 0.10 s** | **the second git call**, `git ls-files --others`; the price of seeing an untracked module, declared and not hidden |
+
+### 10. What this step did NOT do
+
+* **It did not fix the 23 UNFOLDABLE definitions**, and eight of them are step
+  6's own algorithm rather than witness data. Gap **985** names all eight and
+  the shape a fix would take; the framing in `mutate.py`'s header and in
+  `mutations.txt` is corrected to say *"the half the fold cannot see includes
+  the half that does the work."*
+* **It did not turn on `::` resolution** (67 adjudications, gap 988) or sweep
+  `citations-allow.txt` (14 cap bumps, none of them defects, gap 989) or
+  `kernel/design/**` (D41 declined it).
+* **It did not open the 160 grandfathered snake names or the 50 camel ones**
+  (gaps 833, 934).
+* **It did not repair the six shipped-binary findings**, because four are the
+  fork's in-tree `planner.rs` and host and none is the kernel's to fix today.
+* **It did not raise a memory bound, re-bless a fixture, weaken a predicate,
+  narrow a gate to make it pass, or add an allow-list entry.** Two entries were
+  deleted and three names were MOVED to VOCABULARY with a stated reason; five
+  counted entries fewer than it started with.
+* **It did not drive the TUI**, which no agent can (AGENTS §5.13, gap 182).
+* **Two disclosures, because a number quoted from the wrong tree is this
+  campaign's own defect class.** (a) `29dd5fd`'s message quotes check 8 at
+  **23,579 / 22,070**, which is the WORKING TREE's figure — it already carried
+  `8cb0129`'s `citations.py`. At `29dd5fd` alone, with the old line-local sweep,
+  check 8 reports the land step's 23,468 / 21,949; the check-9 figures in that
+  message are the commit's own. Acceptance in this campaign is run on the
+  working tree, and this is where that shows. (b) **One process breach:** a single `python3 mutate.py --gate` was run
+  **uncapped** in the main checkout while re-auditing posLt and victimLt —
+  four `lake` builds outside `systemd-run`. It completed; the run was then
+  repeated capped with `--write`, and every other Lean, cargo, `check.sh` and
+  `tm` invocation in this step was capped. AGENTS §2.1 says always, and it was
+  not.
+
+### 11. Gaps taken — 985-996; **997-999 free**
+
+**Gap 985 — eight of check 9's 23 UNFOLDABLE definitions are step 6's algorithm,
+and the fold that would reach them is an accumulator fold, not a constant.**
+1. *What is not done.* `placeAt`, `PlanReq.displaceInto`, `PlanReq.deferOne`,
+   `PlanReq.deferWalk`, `PlanReq.deferFold`, `PlanReq.finalAssign`,
+   `PlanReq.rePlaceWalk` and `dayDiagnostics` are exempt from D40 because their
+   return types (`Placed`, `Assign`, `Placed × Assign`, `List Placed × Assign`,
+   `Diagnostics`) have no `Inhabited` instance and `default` does not typecheck.
+   The other fifteen of the 23 are `PlannerWit` witness FIXTURES, where a
+   literal body is correct and the exemption is benign.
+2. *Why.* AGENTS §5.1: the kernel's types are `Bool` + `Subtype`, and a bounded
+   type deliberately has no inhabitant nobody can name without a proof.
+   `deriving instance Inhabited` was tried at the land step and Lean refused
+   four of five. Adding those instances to make a checker green hands out
+   bounded values without their smart constructors.
+3. *What it costs.* D40's letter — *"the step must show something FAILING for
+   each"* — is unmet for 23 of 46, and the unmet half includes the half that
+   does the work. Nothing below the gate says any theorem reads those eight.
+4. *Which step clears it.* **The shape the fix must take is not a constant.**
+   For a function whose result type appears among its own depth-zero argument
+   types, the degenerate body is the **identity on the accumulator** —
+   `PlanReq.rePlaceWalk : Assign → List … → Assign` folded to `fun a _ => a`,
+   `PlanReq.deferWalk : List Placed → Assign → List Placed → List Placed ×
+   Assign` folded to `fun ps a _ => (ps, a)`. That is a mutation which EXISTS
+   for an uninhabited type, and it is the shape the walk-and-fold bug class
+   actually takes. It costs one kernel build per definition and it may SURVIVE,
+   which would be a real finding and a witness owed. Not attempted here: it is
+   an extension of D40's mutation, not a repair of its implementation, and it
+   belongs with the owner's answer to gap 980.
+
+**Gap 986 — check 9's LITERAL verdict is reported and counted but not fatal, and
+nothing mechanical can make it fatal.**
+1. *What is not done.* A definition whose body is a bare literal outside the
+   constants tried — `def f : Nat := 7` — is named, counted and printed, and
+   the gate still exits 0.
+2. *Why.* Measured: 66 library definitions have a bare-literal body and **64 are
+   wire bounds** (`maxCands := 1024`, `Log.u64Max`, `Seal.maxTags := 89`). A
+   named bound IS its value, so no mutation can distinguish it from a defect of
+   the same shape, and making LITERAL fatal would refuse every future bound.
+3. *What it costs.* `0 SURVIVED` on a run that also printed `N literal` means
+   less than a reader takes it to mean, and the LITERAL line is the only thing
+   saying so.
+4. *Which step clears it.* An owner decision, with gap 980: either LITERAL
+   becomes fatal and bounds get a named exemption roster of their own, or it
+   stays a report. Nothing in the kernel changes either way.
+
+**Gap 987 — check 9's type resolution is textual, and two spellings still fall
+back to `default`.**
+1. *What is not done.* A result type spelled through a **`def`** synonym rather
+   than an `abbrev`, or built by a function (`Capped n`), is not unfolded.
+2. *Why.* An `abbrev` is reducible by construction, so a constant written at the
+   unfolded type elaborates at the folded one; a `def` is not, and the constant
+   would fail to elaborate — which is INVALID, which fails the gate on a correct
+   definition.
+3. *What it costs.* Those definitions keep `default`, which is the behaviour
+   before this repair, so nothing regressed; the widening simply stops short.
+4. *Which step clears it.* Asking Lean for the type instead of reading it, which
+   costs a build per definition and is the reason it is not done.
+
+**Gap 988 — check 8 does not sweep a backticked span containing `::`, and 67
+names inside them resolve to nothing.**
+1. *What is not done.* `CITED` refuses any span with `::`. Measured at this
+   step: **1,574** citations (505 distinct) are otherwise identifier-shaped, and
+   **67 distinct / 111 citations** have a last segment declared nowhere this
+   check reads.
+2. *Why.* Almost all 67 are Rust `std`, chrono, serde or ENUM VARIANTS, which
+   `RUST_DECL` does not capture (`u32::MAX` ×11, `EditError::Ambiguous` ×4), so
+   turning it on demands 67 adjudications before the first run can be green.
+3. *What it costs.* An in-repo rename hides there: tm_kernel_ffi::trace_kind was
+   backticked at README.md:26264 and :26868 while the live name is
+   `trace_kinds`, and the ledger's own sentence beside it said so. Repaired
+   here; the class is not.
+4. *Which step clears it.* Any step willing to widen `RUST_DECL` to enum
+   variants first, then adjudicate what is left.
+
+**Gap 989 — check 8 does not sweep its own allow-list, and sweeping it costs 14
+cap bumps that are not defects.**
+1. *What is not done.* `citations-allow.txt` is the one file in `kernel/` whose
+   prose is not swept.
+2. *Why.* An entry's comment has to spell the name it exempts, so sweeping the
+   file charges every counted entry one extra citation against its own cap.
+   Measured: 14 counted entries went over by exactly one, all 14 because the
+   allow-list quotes itself.
+3. *What it costs.* A stale citation inside the allow-list's own prose escapes
+   — one did, a register_builtin_error core does not declare, found by running
+   the resolver over the file by hand and repaired here.
+4. *Which step clears it.* Sweeping it while resolving a name against its own
+   entry, which is a resolver change and not a file-set change.
+
+**Gap 990 — check 8 sees a span wrapped over two lines and not over three, and
+not one wrapped mid-word.**
+1. *What is not done.* The carry survives exactly one line boundary, and the
+   join requires the break to fall at an `_` or a `.`.
+2. *Why.* Backtick parity in this repository's prose is only reliable
+   line-locally (fenced blocks inside `.lean` doc comments shift it), and a join
+   over an eaten space produces a word that resolves to nothing — 5 of the 48
+   wrapping spans are that shape, and failing the gate on them would be failing
+   it on correct sentences.
+3. *What it costs.* `assign`/`Fold` wrapped mid-word is invisible; measured at
+   this step, **0** such spans exist today.
+4. *Which step clears it.* A real tokeniser over the whole file, with fences
+   tracked in `.lean` as well as `.md`.
+
+**Gap 991 — `tm drop` resolves a ROUTINE title, deletes the routine, and `tm
+check` says "no problems".**
+1. *What is not done.* `tm drop laundry` boxes the routine line in
+   `routines.md`, writes an `^id` on it and exits 0; the routine then does not
+   exist for `tm routine done`, `tm skip` or `tm plan`, and `tm check` reports
+   no problems. `tm edit laundry state=[x]` refuses the same title with *"no
+   such item: ^laundry"*, so two verbs disagree about what a routine title is.
+2. *Why.* Title resolution is the host's, and the kernel has no routine
+   vocabulary on the wire.
+3. *What it costs.* A user can delete a routine with a verb documented for
+   items, and the only recovery named anywhere is `tm undo` — which does restore
+   `routines.md` byte-for-byte.
+4. *Which step clears it.* **R3 or later**, when the planner's wire carries
+   routines; §5.13 finding, PRE-EXISTING (no Rust changed since `86c4dc6`).
+
+**Gap 992 — `tm add` with no `--to` exits 0 and leaves a tree every verb
+refuses.**
+1. *What is not done.* `tm add -- "- [ ] 1 30m a new week item"` writes the line
+   into `inbox.md` **without an `^id`** and reports success; the next command
+   gets `badLine … (Tm.PErr.noId)` and every reading verb refuses the tree.
+   `tm add --to week` does assign an id.
+2. *Why.* D35's gate is PRE-WRITE: it asks the kernel whether the tree still
+   loads before a host-only write, and it cannot ask about a tree the write is
+   about to create.
+3. *What it costs.* A host-only write can CREATE the refusal and still report
+   success — the other half of the direction AGENTS.md:582 names.
+4. *Which step clears it.* The inbox path assigning an id like the `--to` path
+   does, or D35's gate becoming post-write; PRE-EXISTING.
+
+**Gap 993 — deleting `.tm/state.json` discards the day's runtime, strands the
+running block, and nothing says the cache and the log disagree.**
+1. *What is not done.* After `wake`/`arrive`/`start ^p1`, removing
+   `.tm/state.json` regenerates it with `wake`, `arrival`, `loc`, `window`,
+   `budget` and `active` **all null** while `.tm/log.jsonl` still holds all
+   three events. `tm done` and `tm stop` answer *"nothing is running"*; `tm
+   plan` in the same tree still renders `^p1` with ▶; `tm check` says "no
+   problems".
+2. *Why.* D9's one-reader rule is about the kernel half; the host's cache and
+   the host's log are two readers of the same day and nothing compares them.
+3. *What it costs.* A recoverable session looks unrecoverable, and the recovery
+   (`tm done ^p1`, retro) is named nowhere. README:5006's existing test deletes
+   `state.json` for a different property.
+4. *Which step clears it.* A host-side consistency check, or the kernel owning
+   the day's runtime; PRE-EXISTING.
+
+**Gap 994 — `tm plan` schedules the running item again once a minute has
+elapsed, and there are five of its rows, not three.**
+1. *What is not done.* With `^p1` running 2m of 20m the day holds FIVE block
+   rows for it: two zero-minute rows, a 2-minute *"2m so far"* row, an 18-minute
+   ▶ row, and a **60-minute** row at 09:30 that `tm now`'s next list repeats. At
+   0m elapsed the 09:30 row is absent.
+2. *Why.* This is the user-visible face of the Active-not-erased exception D29
+   and `Goals.plan_tail_drop` are about, in the fork's in-tree `planner.rs`.
+3. *What it costs.* The estimate is double-counted against the day's budget, and
+   whether it is the fork's intent cannot be settled from the outside.
+4. *Which step clears it.* **R3**, with `plan_tail_drop` restated and proved;
+   until then it is an observation for the owner. PRE-EXISTING.
+
+**Gap 995 — one non-UTF-8 byte makes `tm check` print the derived refusal before
+the real cause.**
+1. *What is not done.* `tm check` prints the `danglingParent` kernel refusal
+   first, the dangling `@x1` second, and `not valid UTF-8; the file was skipped`
+   **third** — and `^x1` is in the skipped file, so the first two errors are
+   consequences of the third.
+2. *Why.* The skip happens at read time and the kernel refusal is raised on what
+   is left; nothing orders the diagnostics by cause.
+3. *What it costs.* The loudest, first error sends the reader to the wrong file.
+   `tm plan` and `tm now` name it correctly and alone.
+4. *Which step clears it.* Ordering `tm check`'s diagnostics so a read-time skip
+   precedes anything derived from the partial tree; PRE-EXISTING.
+
+**Gap 996 — the refusal gate's reassurance line is printed by three verbs of
+six.**
+1. *What is not done.* On a refused tree `tm energy`, `tm start` and `tm add`
+   print the refusal AND *"nothing was written: …"*; `tm plan`, `tm rank` and
+   `tm drop` print the refusal alone.
+2. *Why.* The line is attached at the write-verb call sites rather than at the
+   gate.
+3. *What it costs.* Message consistency only — nothing is written in any of the
+   six, verified (`md5sum inbox.md` unchanged across all six).
+4. *Which step clears it.* Moving the line to the gate; PRE-EXISTING.
+
+### 12. Numbering
+
+Gaps: this step **985-996**; **997-999 free**, and the next range starts at
+**1000**. Cheats: none taken; `Negative.lean` untouched at **197 blocks, 191
+numbered, highest 212**, `uniq -d` empty. No `PlannerWit` section added. No
+parity entry; none is possible until the wire carries a `plan` section (gap
+905). **Highest on the branch: gap 996, cheat 212, `PlannerWit` section 18,
+parity P38.**
+
+### 13. Worktrees
+
+None entered and none created. `git worktree list` shows the main checkout and
+`stage5-lookahead`, which is untouched.
