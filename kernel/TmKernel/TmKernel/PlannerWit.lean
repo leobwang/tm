@@ -694,16 +694,7 @@ theorem the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands
     assignedOf (dayPlan { r with
         look := { r.look with today0 := { r.look.today0 with budget := b } } })
       = assignedOf (dayPlan r) := by
-  have hs : ∀ l : List Placed,
-      splitSleep { r with look := { r.look with today0 := { r.look.today0 with budget := b } } } l
-        = splitSleep r l := splitSleep_congr rfl
-  unfold assignedOf
-  rw [dayPlan_segments, dayPlan_segments]
-  unfold dayRows stepTwoSegs PlanReq.placedRoutines PlanReq.placementFold PlanReq.eveningRows
-    PlanReq.sleepSeg PlanReq.sleepInstance
-  rw [show PlanReq.routineInstances
-      { r with look := { r.look with today0 := { r.look.today0 with budget := b } } }
-        = r.routineInstances from rfl, hs]
+  rw [assignedOf_dayPlan_drops_the_routine_rows, assignedOf_dayPlan_drops_the_routine_rows]
   rfl
 
 set_option maxRecDepth 40000 in
@@ -3602,6 +3593,61 @@ theorem the_displacement_frees_one_slot_and_gives_its_minutes_back :
       = some ((Cal.instantOf Cal.chicago 739867 920).sec,
               (Cal.instantOf Cal.chicago 739867 950).sec) := by
   refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+/-! ### The day, with step 6 in it
+
+`dayRows` reads `Planner.PlanReq.finalRoutines` rather than
+`Planner.PlanReq.placedRoutines`, which is where fork `emit_segments` reads its routines from
+(`planner.rs:1032` calls `place_deferred` and `planner.rs:1063` renders after it).  These two
+theorems are what that buys, computed on the day above and on the day with no room. -/
+
+set_option maxRecDepth 100000 in
+/-- **The day a routine that missed its window is on.**  Seven rows: the morning's two replayed
+blocks, the written wall, the mandatory routine where step 2 put it, **the deferred routine at
+17:00–17:30 carrying `deferred`**, and §16's evening.  The row is marked, so a reader can see
+that the planner put it there and the day did not. -/
+theorem the_day_carries_the_deferred_routines_row :
+    (dayPlan theRoutineRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 425).sec,
+          (Cal.instantOf Cal.chicago 739867 485).sec, SegKind.block, some ['m','1']),
+         ((Cal.instantOf Cal.chicago 739867 545).sec,
+          (Cal.instantOf Cal.chicago 739867 605).sec, SegKind.block, some ['m','2']),
+         ((Cal.instantOf Cal.chicago 739867 770).sec,
+          (Cal.instantOf Cal.chicago 739867 830).sec, SegKind.wall, some ['g','1']),
+         ((Cal.instantOf Cal.chicago 739867 960).sec,
+          (Cal.instantOf Cal.chicago 739867 1020).sec, SegKind.routine,
+          some ['w','a','r','m','u','p']),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec,
+          (Cal.instantOf Cal.chicago 739867 1050).sec, SegKind.routine,
+          some ['s','t','r','e','t','c','h']),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec,
+          (Cal.instantOf Cal.chicago 739868 0).sec, SegKind.sleep, none)] ∧
+    (dayPlan theRoutineRequest).segments.map (fun s => s.val.flags.deferred)
+      = [false, false, false, false, true, false, false] ∧
+    (dayPlan theRoutineRequest).diagnostics.notes.val = [] ∧
+    assignedOf (dayPlan theRoutineRequest) = [['m','1'], ['m','2']] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **And the day that had no room says so.**  The same request with the instance asking for
+150 minutes: no Routine row for it, and `Planner.Note.noPosition` in the day's own diagnostics
+— *"a day that quietly loses lunch is a day no monitor can see"*.  The assigned set is the
+morning's two blocks in both, because a Routine row is not work
+(`Planner.assignedOf_dayPlan_drops_the_routine_rows`). -/
+theorem the_day_with_no_room_carries_the_note_instead :
+    (dayPlan theCrowdedRequest).segments.map (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.block, some ['m','1']), (SegKind.block, some ['m','2']),
+         (SegKind.wall, some ['g','1']), (SegKind.routine, some ['w','a','r','m','u','p']),
+         (SegKind.windDown, none), (SegKind.sleep, none)] ∧
+    (dayPlan theCrowdedRequest).diagnostics.notes.val
+      = [Note.noPosition ['s','t','r','e','t','c','h'] 150
+           (Cal.instantOf Cal.chicago 739867 840).sec
+           (Cal.instantOf Cal.chicago 739867 1140).sec] ∧
+    assignedOf (dayPlan theCrowdedRequest) = [['m','1'], ['m','2']] := by
+  refine ⟨by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

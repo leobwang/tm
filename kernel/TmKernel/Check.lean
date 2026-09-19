@@ -5981,3 +5981,36 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
 #print axioms Tm.PlannerWit.the_kept_break_and_the_filled_slots_are_each_what_leaves_no_room
 #print axioms Tm.PlannerWit.the_displacement_frees_one_slot_and_gives_its_minutes_back
+
+-- APPENDED 2026-09-19 (stage 6, run **W-20**, track P, step **P6** -- the
+-- wire).  `dayRows` reads the routines as STEP 6 left them, which is where
+-- fork `emit_segments` reads its own (`planner.rs:1032`, then 1063), and
+-- `dayDiagnostics` carries `Note.noPosition`.  The day-assembly block moved
+-- below §8.2 steps 4, 5 and 6 in `Planner.lean` so that it can: nothing else
+-- about it changed and its 26 declarations keep their names.
+--
+-- `routineRows` is `stepTwoSegs` widened to the routine list it renders
+-- (AGENTS 5.3's widen-and-project): one renderer, two arguments -- step 2's
+-- list and the day's.  The four `stepTwoSegs_*` laws keep their names and
+-- statements and are now specialisations, and `a_wind_down_row_is_the_evenings`
+-- is generalised the same way (D5: re-proved over the new shape, never
+-- weakened).
+--
+-- `assignedOf_dayPlan_drops_the_routine_rows` is what makes the move safe:
+-- `assignedOf` keeps only `SegKind.isWork` rows, and `sortRows_filter` --
+-- `Seal.insSort_filter` at `rowLe` -- lets the filter run before the sort, so
+-- neither step 2's rows nor step 6's can enter the assigned set OR reorder it.
+-- `the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` is
+-- re-proved through it: the budget now reaches `assignFold` and therefore
+-- reaches which routine rows exist, and that theorem's `rfl` proof was true
+-- only while it did not.
+#print axioms Tm.Planner.rowLe_trans
+#print axioms Tm.Planner.rowLe_total
+#print axioms Tm.Planner.sortRows_filter
+#print axioms Tm.Planner.routineRows_kinds
+#print axioms Tm.Planner.routineRows_are_not_walls
+#print axioms Tm.Planner.routineRows_are_not_blocks
+#print axioms Tm.Planner.routineRows_are_not_work
+#print axioms Tm.Planner.assignedOf_dayPlan_drops_the_routine_rows
+#print axioms Tm.PlannerWit.the_day_carries_the_deferred_routines_row
+#print axioms Tm.PlannerWit.the_day_with_no_room_carries_the_note_instead

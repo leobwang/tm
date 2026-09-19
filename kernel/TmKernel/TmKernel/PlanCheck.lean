@@ -1598,7 +1598,7 @@ theorem the_day_has_no_batch_row (r : PlanReq) (s : WfSeg) (hs : s ∈ (dayPlan 
   · simp only [List.mem_flatMap] at ht
     obtain ⟨x, -, hx⟩ := ht
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
-  · rcases stepTwoSegs_kinds r t ht with h | h | h <;> rw [h] at htk <;> cases htk
+  · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
 
 /-- **No Block row of the day carries a slot energy.**  A Block row is replayed or reserved
