@@ -3080,39 +3080,17 @@ theorem plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted :
 `the_battery_census_at_the_census_request` counts a checker's subject by filtering the day's
 **segments**.  Two of the eleven do not range over segments at all: `PlanCheck.monotoneInRank`
 and `PlanCheck.hotBeforeQueue` range over **pairs of store ids**, and the census's `= true`
-rows for them are the only two it takes on trust.  The two populations below close that, in the
-census's own idiom — a `filterMap` over the thing the checker quantifies over, whose length is
-the count.  They are **populations, not checkers**: each spells the antecedents of
-`PlanCheck.rankPairOk` / `PlanCheck.hotPairOk` and neither spells the conclusion, so a bug in
-one cannot make a checker pass (AGENTS §5.3 — grepped first; `store.dom.all` is `PlanCheck`'s
-and is not re-implemented, `PlanCheck.eligibleSomewhere` is called and not copied). -/
+rows for them are the only two it takes on trust.  `PlanCheck.rankSubjects` and
+`PlanCheck.hotSubjects` close that, in the census's own idiom — a `filterMap` over the thing
+the checker quantifies over, whose length is the count.  They are **populations, not
+checkers**: each spells the antecedents of `PlanCheck.rankPairOk` / `PlanCheck.hotPairOk` and
+neither spells the conclusion, so a bug in one cannot make a checker pass.
 
-/-- The pairs `PlanCheck.rankPairOk`'s implication is **about** at `el`, `r` and `d`: every
-antecedent of the checker, and none of its conclusion. -/
-def rankSubjects (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
-  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
-    match r.plan.val.store.get i, r.plan.val.store.get j with
-    | some e, some f =>
-        if decide (rootPrio r.plan.val i = rootPrio r.plan.val j)
-             && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-             && decide (e.val.live.doc = f.val.live.doc)
-             && decide (e.val.live.rank < f.val.live.rank)
-             && PlanCheck.eligibleSomewhere el r d i && PlanCheck.eligibleSomewhere el r d j
-             && decide (j ∈ assignedOf d)
-        then some (i, j) else none
-    | _, _ => none))
-
-/-- The pairs `PlanCheck.hotPairOk`'s implication is **about**: a hot `i`, a not-hot `j` that
-some row of the day carries, and `i` eligible somewhere. -/
-def hotSubjects (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
-  r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
-    match r.plan.val.store.get i, r.plan.val.store.get j with
-    | some e, some f =>
-        if decide (Field.Flag.hot ∈ e.val.flags) && decide (Field.Flag.hot ∉ f.val.flags)
-             && PlanCheck.eligibleSomewhere el r d i
-             && d.segments.any (fun s => s.val.item == some j)
-        then some (i, j) else none
-    | _, _ => none))
+**They were declared here until W-21 and are declared beside their checkers now** (AGENTS
+§5.3's *"the fix was deletion, not a bridge"*): `PlanCheck.subjectOf` is the census as a
+function and needs both, and a second Bool-valued copy of either in `PlanCheck.lean` would
+have been the class this kernel is named after.  Nothing else moved and nothing was
+re-implemented. -/
 
 set_option maxRecDepth 40000 in
 /-- **The refutation above is not vacuous**: both comparisons really do range over something
@@ -3121,14 +3099,14 @@ at `theQueuedRequest`, on the whole day and on `PlanCheck.withoutPast`'s day ali
 rank pair is `(m1, m2)`; the hot pairs are `(m1, m2)` and `(m1, g1)` — the calendar's meeting
 has a row and carries no `hot`, so it is a queued item this rule is about too. -/
 theorem the_two_comparisons_have_subjects_where_they_bite :
-    rankSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
+    PlanCheck.rankSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
         = [(['m','1'], ['m','2'])] ∧
-      hotSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
+      PlanCheck.hotSubjects permissive theQueuedRequest (dayPlan theQueuedRequest)
         = [(['m','1'], ['m','2']), (['m','1'], ['g','1'])] ∧
-      rankSubjects permissive theQueuedRequest
+      PlanCheck.rankSubjects permissive theQueuedRequest
           (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest))
         = [(['m','1'], ['m','2'])] ∧
-      (hotSubjects permissive theQueuedRequest
+      (PlanCheck.hotSubjects permissive theQueuedRequest
           (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest))).length = 2 := by
   decide
 
@@ -3148,8 +3126,8 @@ break, and the two comparisons want a second id — and **four** by the planner,
 corrected in place and says what it read.  README gap 852. -/
 theorem the_one_id_store_gives_neither_comparison_a_subject :
     theRunningRequest.plan.val.store.dom = [['g','1']] ∧
-      rankSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] ∧
-      hotSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] := by
+      PlanCheck.rankSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] ∧
+      PlanCheck.hotSubjects permissive theRunningRequest (dayPlan theRunningRequest) = [] := by
   decide
 
 /-! ############################################################################
@@ -3758,12 +3736,12 @@ day with no Block row at all.  `assignedOf` is empty here, so this cannot be rep
 assigning anything: `hotPairOk`'s conclusion is about **segments**, not about the assigned
 set, and the segment that defeats it is a Wall.
 
-**It is not vacuous**: `hotSubjects` computes the pair the quantifier is about. -/
+**It is not vacuous**: `PlanCheck.hotSubjects` computes the pair the quantifier is about. -/
 theorem hotBeforeQueue_is_false_on_a_quiet_day :
     assignedOf (dayPlan theQuietCensusRequest) = [] ∧
       PlanCheck.hotBeforeQueue permissive theQuietCensusRequest
         (dayPlan theQuietCensusRequest) = false ∧
-      hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
+      PlanCheck.hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
         = [(['m','1'], ['g','1'])] := by
   decide
 
@@ -3890,8 +3868,8 @@ set_option maxRecDepth 40000 in
 (README gap 852), and it is the honest limit of the tenth conjunct.
 
 **`monotoneInRank` is VACUOUS here, and that is exactly why it is provable.**
-`rankSubjects` requires `j ∈ assignedOf d`, and `assignedOf` is empty on a quiet day, so its
-population is `[]` at this request and at every quiet one:
+`PlanCheck.rankSubjects` requires `j ∈ assignedOf d`, and `assignedOf` is empty on a quiet
+day, so its population is `[]` at this request and at every quiet one:
 `PlanCheck.monotoneInRank_of_nothing_assigned` proves the conjunct by proving the quantifier
 empty.  W-19's ceiling of nine was over a day with a subject for it; the tenth conjunct this
 step adds is a **proof-coverage** advance and not a subject-coverage one, and the count of
@@ -3901,8 +3879,8 @@ a count.
 **`hotBeforeQueue`'s population is not empty** — the pair `(^m1, ^g1)` — which is what makes
 its refutation a refutation and not a second empty quantifier. -/
 theorem the_tenth_is_vacuous_where_the_eleventh_bites :
-    rankSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest) = [] ∧
-      hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
+    PlanCheck.rankSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest) = [] ∧
+      PlanCheck.hotSubjects permissive theQuietCensusRequest (dayPlan theQuietCensusRequest)
         = [(['m','1'], ['g','1'])] := by
   decide
 
@@ -3930,6 +3908,146 @@ set_option maxRecDepth 100000 in
 invariant is not a statement about an empty assignment. -/
 theorem the_owes_invariant_has_a_subject :
     theCursorRequest.assignFold.slotOf = [some 0, some 3, some 3, some 3] := by decide
+
+/-! ############################################################################
+## 19. The ratio, computed; and the eleven, at a work-anchored eligibility (W-21)
+
+**One request, one ratio, and the compiler counts it.**  Three runs shipped a sentence of the
+form "N of the eleven" and they were counting two different things — W-18's **seven of eleven
+with a subject at `theCensusRequest`**, W-19's **nine of eleven conjuncts proved**, W-20's
+**ten of eleven on the quiet class**.  `PlanCheck.subjectCount` ends the ambiguity on the
+subject side: it filters `PlanCheck.checksOf`'s **own** list on each check's **own** name, so
+the count is the compiler's arithmetic over the battery rather than a reader's over a table
+beside it.  `the_census_ratio` below is that number at `theCensusRequest` and it is **seven**,
+which is what W-18 settled and what every sentence in this repository now says.
+
+**And seven is a ceiling, not a high-water mark.**  `PlanCheck.the_census_ceiling_is_seven`
+proves that no `PlanReq` at all can put more than seven of the eleven in play on a day
+`Planner.dayPlan` produces, because four of them have an empty subject at **every** request —
+design §6.4 gives those four to P5, P5/P7 and P8.  The survey that used to stand for this was
+a `#eval` over the module's witnesses; the theorem replaces it.
+############################################################################ -/
+
+/-- **An eligibility that admits a candidate only at a row §8.2 step 5 could assign into.**
+The most permissive `PlanCheck.WorkAnchored` one: everything, at a Block or a Batch row, and
+nothing anywhere else.  Planner.eligibleAt's body is P5's; this is the shape the lift needs
+it to have, made concrete so the lift can be fired today. -/
+def onlyOnWorkRows : PlanCheck.Eligible := fun _ _ s _ => s.kind.isWork
+
+theorem onlyOnWorkRows_is_work_anchored : PlanCheck.WorkAnchored onlyOnWorkRows :=
+  fun _ _ _ _ h => h
+
+set_option maxRecDepth 40000 in
+/-- **§6.1's dayPlan_ok at ELEVEN of eleven, fired.**  Nothing here is a `decide` on the
+conclusion: `PlanCheck.dayPlan_ok_on_a_quiet_day` is the general theorem and every hypothesis
+is a theorem above.  This is the request W-20 left at ten with the eleventh **refuted** at
+`permissive` — `hotBeforeQueue_is_false_on_a_quiet_day` — so the two theorems together locate
+the residue exactly: it was never the planner's and never the fold's, it was an eligibility
+that called a Wall row a queue position. -/
+theorem the_whole_battery_passes_on_the_quiet_census_day :
+    PlanCheck.planOk onlyOnWorkRows theQuietCensusRequest (dayPlan theQuietCensusRequest)
+      = true :=
+  PlanCheck.dayPlan_ok_on_a_quiet_day onlyOnWorkRows theQuietCensusRequest
+    theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
+    (by rw [the_quiet_census_request_is_quiet.1]; simp)
+    the_quiet_census_request_is_quiet.2 the_census_request_is_plain
+    onlyOnWorkRows_is_work_anchored
+
+set_option maxRecDepth 40000 in
+/-- The same, at the one-id request W-20 fired the ten-of-eleven lift at. -/
+theorem the_whole_battery_passes_on_the_quiet_day :
+    PlanCheck.planOk onlyOnWorkRows theQuietRequest (dayPlan theQuietRequest) = true :=
+  PlanCheck.dayPlan_ok_on_a_quiet_day onlyOnWorkRows theQuietRequest
+    theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
+    the_quiet_request_agrees.2.2.1
+    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
+    onlyOnWorkRows_is_work_anchored
+
+set_option maxRecDepth 100000 in
+/-- **WHAT THE ELEVEN IS WORTH ON A QUIET DAY: one checker.**  The theorem above proves all
+eleven conjuncts; this computes how many of them had anything to range over, and the answer is
+`wallsUnmoved` and nothing else.  A `WorkAnchored` eligibility admits nothing at all on a day
+with no work row (`PlanCheck.eligibleSomewhere_of_no_work_row`), so the four
+eligibility-dependent conjuncts go from *one* vacuous (W-20's tenth) to **four**.
+
+That is the honest reading and it is stated here rather than left for a reader to infer from
+"eleven of eleven": the advance is that the residue is now a named property of
+Planner.eligibleAt instead of a restatement of an L26 goal, **not** that more of the battery
+bites. -/
+theorem the_quiet_eleven_is_one_checker_biting :
+    ((PlanCheck.checksOf onlyOnWorkRows).map (fun c =>
+        PlanCheck.subjectOf onlyOnWorkRows c.name theQuietCensusRequest
+          (dayPlan theQuietCensusRequest)))
+      = [false, false, false, false, false, false, true, false, false, false, false] ∧
+    PlanCheck.subjectCount onlyOnWorkRows theQuietCensusRequest
+      (dayPlan theQuietCensusRequest) = 1 := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **THE RATIO — one request, one number, computed: SEVEN of the eleven.**  The `Bool` list
+is `PlanCheck.checksOf`'s own order — `overbook, oneBlock, energyFilter, overWall, overBreak,
+windDown, wallMoved, rank, hot, impossible, batch` — so a reader can see *which* seven without
+a table to transcribe, and `PlanCheck.subjectCount` is the same eleven counted by the
+compiler.
+
+The four `false`s are `energyFilter`, `windDown`, `impossible` and `batch`, and
+`PlanCheck.the_census_ceiling_is_seven` proves those four are `false` at **every** request, so
+this seven is the ceiling and it is reached here.  Section 14's table is its prose. -/
+theorem the_census_ratio :
+    ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theCensusRequest (dayPlan theCensusRequest)))
+      = [true, true, false, true, true, false, true, true, true, false, false] ∧
+    PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **The ratio does not depend on the eligibility here.**  `onlyOnWorkRows` is strictly less
+permissive than `permissive`, and the census is the same seven — the census day has work rows,
+so `PlanCheck.eligibleSomewhere` answers `true` under both.  Stated because
+`PlanCheck.planOk_antitone` makes "at every eligibility" a real quantifier now, and a ratio
+that moved with `el` would be a ratio that needs one named. -/
+theorem the_census_ratio_at_a_work_anchored_eligibility :
+    PlanCheck.subjectCount onlyOnWorkRows theCensusRequest (dayPlan theCensusRequest) = 7 := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **§8.2 step 6 gave no checker a subject — as a SET, not as a count.**  The addendum to
+P6's block computed that the populations the eleven range over were unchanged by the deferred
+pass, row kind by row kind.  This is the same claim in the census's own terms and it is
+stronger: the eleven-entry census at `theRoutineRequest` — the first request in this
+repository that carries a window instance and the only one whose day holds Routine rows — is
+**equal to** the census at `theRunningRequest`, which has none.  Four in both, and the same
+four.
+
+**Design §6.4 predicted it** (P6 has no row in that table) and README gap 961 owns the
+distinction; what is new is that the prediction is now an equality between two computed
+lists. -/
+theorem step_six_gave_no_checker_a_subject :
+    ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theRoutineRequest (dayPlan theRoutineRequest)))
+      = ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theRunningRequest (dayPlan theRunningRequest))) ∧
+    PlanCheck.subjectCount permissive theRoutineRequest (dayPlan theRoutineRequest) = 4 ∧
+    ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theRoutineRequest (dayPlan theRoutineRequest)))
+      = [true, true, false, true, false, false, true, false, false, false, false] := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **The census is not a checker in disguise.**  `PlanCheck.subjectOf` spells antecedents and
+never a conclusion, so it must be possible for a checker to have a subject **and fail**.  It
+is, and this is the instance: at `theQueuedRequest` both comparisons have a subject and both
+are `false` (`the_two_comparisons_are_false_at_the_queued_request`,
+`the_two_comparisons_have_subjects_where_they_bite`), and the census there counts **five**.  A
+`subjectOf` that had quietly become a checker would have answered `false` for those two. -/
+theorem the_census_counts_a_checker_that_fails :
+    PlanCheck.subjectCount permissive theQueuedRequest (dayPlan theQueuedRequest) = 5 ∧
+      PlanCheck.subjectOf permissive .rank theQueuedRequest (dayPlan theQueuedRequest) = true ∧
+      PlanCheck.subjectOf permissive .hot theQueuedRequest (dayPlan theQueuedRequest) = true ∧
+      PlanCheck.planOk permissive theQueuedRequest (dayPlan theQueuedRequest) = false := by
+  decide
 
 end PlannerWit
 end Tm

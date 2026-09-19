@@ -719,6 +719,55 @@ same request (`PlannerWit.the_other_nine_hold_where_the_two_fail`).  So the
 burn-down did not move**: both restatements need Planner.eligibleAt, which is
 P5's, so both goals stay here beside `plan_tail_drop`, refuted and standing.
 README gaps 850 and 851.
+
+**W-21 (track G) made the ratio a function and the ceiling a theorem — and that
+is why four of the nine below are NOT discharged.**  `PlanCheck.subjectOf` is
+the subject census keyed on each check's own `PlanCheck.CheckName` and filtered
+over `PlanCheck.checksOf`'s own list, so the count is the compiler's;
+`PlannerWit.the_census_ratio` computes **seven** at
+`PlannerWit.theCensusRequest`, which is exactly what W-18 settled by hand.
+`PlanCheck.the_census_ceiling_is_seven` then proves seven is a **ceiling over
+every request**, because the four W-18 named have no subject at any of them
+(`PlanCheck.energyFilter_has_no_subject` and its three siblings).
+
+**That gives the burn-down a computed rule where it had a judgement.**
+`plan_respects_the_energy_filter` and
+`plan_never_batches_past_an_equal_ci_candidate` are PROVABLE today with no extra
+hypothesis at all — their `s.val.energy = some lvl` and
+`s.val.kind = SegKind.batch ids` are satisfied by no day `Planner.dayPlan`
+produces (`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`,
+`PlanCheck.the_day_has_no_batch_row`) — and
+`plan_places_no_demanding_block_after_wind_down` is the same once `hnowcal` is
+added.  **None is discharged**, because each would be AGENTS §5.2's theorem that
+compiles and means nothing: `PlanCheck.energyFilter_has_no_subject`,
+`PlanCheck.batch_has_no_subject` and `PlanCheck.windDown_has_no_subject` now
+PROVE the quantifier empty at **every** `PlanReq`, where W-18 argued it.  They
+stay until P5 and P5/P7 give them a subject.
+
+**The fourth is a finding rather than an application of that rule.**
+`PlanCheck.impossibleKept`'s subject is `Planner.Diagnostics.impossible` and
+`PlanCheck.impossible_has_no_subject` proves it empty at every request — but
+`plan_never_drops_an_impossible_item` below is **not** stated over that list.
+It is stated over `Planner.edfNumbers`, whose hypothesis a real candidate can
+satisfy, with a conclusion about `Planner.assignedOf`.  So the checker being
+vacuous does not make the goal provable and the two are not the same statement;
+the step that bridges them — filling `Diagnostics.impossible` from §7.3's grants
+— is **P8**'s.  README gap 1065.
+
+**And §6.1's lift is ELEVEN of eleven as a THEOREM about a class**, where W-20
+left eleven standing only at one request and only by a `decide` on the last
+conjunct (`PlannerWit.the_quiet_battery_passes_at_the_quiet_request`).
+`PlanCheck.dayPlan_ok_on_a_quiet_day` is the ∀-statement: every quiet
+request, every eligibility satisfying `PlanCheck.WorkAnchored` — an `el` that
+admits a candidate only at a row §8.2 step 5 could assign into.  That is a
+third repair for README gap 960, and unlike
+the two gap 960 named it touches neither the checker nor the planner, so
+`plan_puts_hot_before_the_queue` below is **not** restated and the burn-down
+does not move.  What P5 owes for it is one line: that Planner.eligibleAt is
+`PlanCheck.WorkAnchored`.  `PlanCheck.planOk_antitone` is why a hypothesis on
+`el` is the right shape — `planOk` is antitone in the eligibility, so
+`PlannerWit.permissive` is the top and W-19's ceiling argument is now a theorem
+rather than a reading.  **The burn-down stayed 9 and no goal was added.**
 ############################################################################ -/
 
 open Planner

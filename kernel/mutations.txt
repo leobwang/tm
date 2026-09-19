@@ -122,3 +122,9 @@ b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no
 7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq
 98d34e4c6f85 TmKernel/TmKernel/Planner.lean posLt fun__=>true,fun__=>false Planner.lean:4796; Planner.lean:4796
 e4326514ea1f TmKernel/TmKernel/Planner.lean victimLt fun__=>true,fun__=>false Planner.lean:4811; Planner.lean:4811
+6669d324687e TmKernel/TmKernel/PlanCheck.lean WorkAnchored True,False PlanCheck.lean:2338; PlanCheck.lean:2338
+5d10d44756f4 TmKernel/TmKernel/PlanCheck.lean rankSubjects default PlanCheck.lean:2581
+9c51fca1e1da TmKernel/TmKernel/PlanCheck.lean hotSubjects default PlanCheck.lean:2592
+e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2523; PlanCheck.lean:2523
+d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2683; PlanCheck.lean:2683
+4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:3938; PlannerWit.lean:3938
