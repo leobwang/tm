@@ -37,6 +37,33 @@ through library `abbrev` synonyms and then through its own depth-zero arrows:
     A -> ... -> T the constants of T under binders: `fun _ ... _ => c`
     anything else default
 
+AND, BESIDE THEM AND NEVER INSTEAD OF THEM, THE IDENTITY ON THE ACCUMULATOR
+(`identity_for`, README gap 985).  A constant of the type is not the only
+degenerate body a definition can have, and for the half of this kernel whose
+types have no `Inhabited` instance it is not even an available one.  When the
+result type appears among the definition's own argument types, the degenerate
+body is the argument:
+
+    PlanReq.rePlaceWalk : ... -> Assign -> List ... -> Assign
+        |->  fun a0 _ => a0
+    PlanReq.deferWalk   : ... -> List Placed -> Assign -> List Placed
+                                  -> List Placed × Assign
+        |->  fun a0 a1 _ => (a0, a1)
+    placeAt (q : Placed) (t : Nat) : Placed          |->  q
+    PlanReq.deferOne (...) (a : Assign) (q : Placed) : Placed × Assign
+        |->  (q, a)
+
+That is the shape the walk-and-fold bug class actually takes -- a fold that
+returns its accumulator unchanged on the branch that should have changed it is
+not a constant, and no constant catches it -- and it EXISTS for an uninhabited
+type, which is what makes it the one mutation that reaches an UNFOLDABLE
+definition.  Measured at the run that added it: **395 of 2,853** library
+definitions have one, **5 of the 23** UNFOLDABLE rows are reached by it (and
+all five are PINNED), and **18 are not** -- three of step 6's algorithm
+(`PlanReq.deferFold`, `PlanReq.finalAssign`, `dayDiagnostics`, none of which
+takes an argument of its own result type) and the fifteen `PlannerWit` witness
+fixtures, which take no arguments at all.
+
 THE RESOLUTION IS NOT DECORATION, IT IS W-20'S BLOCKER.  Until this repair the
 table was keyed on the type's LITERAL TEXT, so `Bool` got both directions and
 `Nat -> Bool` got `default` -- and `default : Nat -> Bool` is `fun _ => false`,
@@ -123,17 +150,20 @@ sha1 matches -- otherwise every run of check.sh would re-build the kernel once
 per audited definition forever, and the steady-state cost has to be ~0.
 
 WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
-  * AN UNFOLDABLE DEFINITION IS NOT AUDITED AT ALL.  It is named and counted,
-    and that is the whole of what it gets: nothing here says any theorem reads
-    it.  At the W-20 land step that is HALF of what the step added -- 23 of 46 --
-    and the half is not evenly composed: 15 are `PlannerWit` witness FIXTURES,
-    where a literal body is correct and the exemption is benign, but the other
-    EIGHT are step 6's own algorithm -- `placeAt`, `PlanReq.displaceInto`,
-    `PlanReq.deferOne`, `PlanReq.deferWalk`, `PlanReq.deferFold`,
-    `PlanReq.finalAssign`, `PlanReq.rePlaceWalk` and `dayDiagnostics`.  The half
-    the fold cannot see includes the half that does the work.  README gap 985
-    names the shape a fix would take (fold an accumulator to the argument it
-    returns) and gap 980 puts the exemption itself to the owner.
+  * AN UNFOLDABLE DEFINITION THAT NO IDENTITY REACHES IS NOT AUDITED AT ALL.
+    It is named and counted on its own line -- "pinned by nothing" -- and that
+    is the whole of what it gets: nothing here says any theorem reads it.  At
+    the W-20 land step this was HALF of what the step added, 23 of 46, and the
+    half was not evenly composed: 15 are `PlannerWit` witness FIXTURES, where a
+    literal body is correct and the exemption is benign, but the other EIGHT
+    were step 6's own algorithm.  The identity on the accumulator (above) took
+    FIVE of those eight -- `placeAt`, `PlanReq.displaceInto`,
+    `PlanReq.deferOne`, `PlanReq.deferWalk` and `PlanReq.rePlaceWalk`, all
+    PINNED -- and the exemption is now 18 of 46.  What is left is
+    `PlanReq.deferFold`, `PlanReq.finalAssign` and `dayDiagnostics`, each of
+    which takes a `PlanReq` and returns something else, so neither a constant
+    nor an identity exists for it; README gap 980 puts the exemption itself to
+    the owner and gap 1032 names what would reach these three.
   * A ROW IS A CLAIM.  check 9 does not re-run a mutation whose sha1 matches, so
     a row written by hand, with a plausible error string, passes.  What makes it
     not a bare claim: `mutate.py --write` appends a row only after watching the
@@ -146,6 +176,12 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
     OR STRUCTURE LITERAL (`{ a := 1, b := 2 }`) is a constant too and is NOT
     matched: that is the witness-fixture shape, where a literal body is what the
     definition is FOR, and 15 of the 23 UNFOLDABLE rows are exactly that.
+  * THE IDENTITY'S MATCH IS TEXTUAL TOO.  A result component is matched against
+    a binder by EXACT type text after `abbrev` resolution, so a source spelled
+    differently from the result -- definitionally equal, textually not -- is a
+    miss.  It is never a false PINNED: an identity that does not elaborate is
+    an error inside the declaration, which is INVALID, which FAILS the gate.
+    Implicit, instance and strict-implicit binders are not offered as sources.
   * THE TYPE RESOLUTION IS TEXTUAL, AND ONE `abbrev` DEEP TIMES THREE.  A type
     spelled through a `def` synonym rather than an `abbrev` is not unfolded (a
     `def` is not reducible, and a constant written at the unfolded type would
@@ -275,11 +311,14 @@ def starts_declaration(line):
 
 
 def split_header(text, start):
-    """Offsets of the header's `:=` and of the return type, from `start`.
+    """Offsets of the header's `:=`, its return type, and its binder text.
 
-    Returns (body_at, type_text) with body_at the offset just past the
-    depth-zero `:=`, or (None, None) if the declaration has no such `:=`
-    (equation-style `| a => ...`, which this cannot fold)."""
+    Returns a triple, or three Nones if the declaration has no depth-zero `:=`
+    (equation-style `| a => ...`, which this cannot fold).  First the offset
+    just past that `:=`; second the return type; third everything in FRONT of
+    the depth-zero `:` -- the keyword, the name and the binders -- which is
+    what `binders` reads a named accumulator out of, and which `declarations`
+    stores under the key `header`."""
     depth = 0
     i = start
     colon = None
@@ -293,11 +332,11 @@ def split_header(text, start):
         elif text.startswith("--", i):
             i = text.find("\n", i)
             if i < 0:
-                return None, None
+                return None, None, None
         elif text.startswith("/-", i):
             j = text.find("-/", i)
             if j < 0:
-                return None, None
+                return None, None, None
             i = j + 1
         elif c in "([{⟨⦃":
             depth += 1
@@ -305,7 +344,7 @@ def split_header(text, start):
             depth -= 1
         elif depth == 0 and text.startswith(":=", i):
             kind = text[colon + 1:i].strip() if colon is not None else ""
-            return i + 2, kind
+            return i + 2, kind, text[start:colon if colon is not None else i]
         elif depth == 0 and c == ":" and not text.startswith("::", i):
             colon = i
         elif depth == 0 and c == "|" and colon is not None \
@@ -315,9 +354,9 @@ def split_header(text, start):
             # line.  The header ends at that `|`, and the constant is written
             # with its own `:=`, which the signature does not have.
             kind = text[colon + 1:i].strip() if colon is not None else ""
-            return -(i), kind
+            return -(i), kind, text[start:colon]
         i += 1
-    return None, None
+    return None, None, None
 
 
 def declarations(text, path):
@@ -352,18 +391,19 @@ def declarations(text, path):
                 break
         head_at = offsets[n]
         stop = offsets[end] - 1 if end < len(lines) else len(text)
-        body_at, kind = split_header(text, head_at)
+        body_at, kind, header = split_header(text, head_at)
         lead = ""
         if body_at is not None and body_at < 0:
             body_at, lead = -body_at, ":= "
         if body_at is None or body_at > stop:
             out.append({"name": name, "file": path, "line": n + 1,
                         "last": end, "body": None, "type": None,
-                        "at": None, "stop": stop, "lead": ""})
+                        "at": None, "stop": stop, "lead": "", "header": header})
             continue
         out.append({"name": name, "file": path, "line": n + 1, "last": end,
                     "body": text[body_at:stop], "type": kind.strip(),
-                    "at": body_at, "stop": stop, "lead": lead})
+                    "at": body_at, "stop": stop, "lead": lead,
+                    "header": header})
     return out
 
 
@@ -631,12 +671,132 @@ def constants_for(decl):
     return [binders + c for c in consts]
 
 
+BINDER = re.compile(r"\(([^():]+?):([^()]*(?:\([^()]*\)[^()]*)*)\)")
+
+
+def binders(decl):
+    """The EXPLICIT named binders of a header: [(name, type text), ...].
+
+    `def f (r : PlanReq) (budget : Nat) (a : Assign)` gives three. Implicit
+    (`{}`), instance (`[]`) and strict-implicit (`⦃⦄`) binders are skipped:
+    a mutation that names one would be writing a term the elaborator was
+    going to supply, which is a different experiment.
+
+    The header is the text from just after the declaration's name to the
+    depth-zero `:` that opens its type; `split_header` has already found that
+    colon, so this re-walks only what is in front of it."""
+    text = decl.get("header") or ""
+    out = []
+    for m in BINDER.finditer(text):
+        kind = m.group(2).strip()
+        for name in m.group(1).split():
+            if IDENT.match(name):
+                out.append((name, kind))
+    return out
+
+
+def product_parts(text):
+    """Split a type on its DEPTH-ZERO `×`: `Placed × Assign` is two."""
+    depth, parts, cur, i = 0, [], "", 0
+    while i < len(text):
+        c = text[i]
+        if c in "([{⟨⦃":
+            depth += 1
+        elif c in ")]}⟩⦄":
+            depth -= 1
+        if depth == 0 and c == "×":
+            parts.append(cur)
+            cur = ""
+            i += 1
+            continue
+        cur += c
+        i += 1
+    parts.append(cur)
+    return [p.strip() for p in parts]
+
+
+def identity_for(decl):
+    """**The identity on the accumulator** (README gap 985), or `None`.
+
+    D40's constant fold does not exist for a definition whose result type has
+    no `Inhabited` instance, and at the W-20 land step that was HALF of what
+    the step added -- 23 of 46, EIGHT of them step 6's own algorithm. The
+    kernel's types are `Bool` + `Subtype` and a bounded type deliberately has
+    no inhabitant anybody can name without a proof (AGENTS 5.1), so the answer
+    is not to hand out instances; it is a degenerate body that EXISTS for an
+    uninhabited type.
+
+    For a function whose result type appears among its own argument types, that
+    body is the argument itself:
+
+        PlanReq.rePlaceWalk : ... -> Assign -> List ... -> Assign
+            |->  fun a0 _ => a0
+        PlanReq.deferWalk : ... -> List Placed -> Assign -> List Placed
+                                     -> List Placed × Assign
+            |->  fun a0 a1 _ => (a0, a1)
+        placeAt (q : Placed) (t : Nat) : Placed
+            |->  q
+        PlanReq.deferOne (...) (a : Assign) (q : Placed) : Placed × Assign
+            |->  (q, a)
+
+    **This is the shape the walk-and-fold bug class actually takes.** A fold
+    that forgets to fold -- that returns its accumulator unchanged on the
+    branch that should have changed it -- is not a constant and no constant
+    catches it; it is exactly this term. It is a mutation the type system
+    accepts where `default` does not, so it reaches definitions the constants
+    cannot.
+
+    HOW A SOURCE IS FOUND, and the two places it gives up:
+
+      * the result type is split on its depth-zero `×`, so a fold returning a
+        pair is served when BOTH halves are available;
+      * a component is matched, by **exact type text** after `abbrev`
+        resolution, first against the explicit named binders of the header and
+        then against the anonymous binders of the declared type's depth-zero
+        arrows;
+      * if any component has no source, there is no identity and this returns
+        `None` -- `PlanReq.deferFold : List Placed × Assign` takes only a
+        `PlanReq`, so nothing here reaches it.
+
+    The match is TEXTUAL, like everything else in this file: `Assign` and a
+    definitionally-equal spelling of `Assign` are two different strings here,
+    and the one this cannot see is a component whose source is spelled
+    differently from the result. That is a miss, never a false PINNED -- an
+    identity that does not elaborate is INVALID, which FAILS the gate."""
+    kind = resolve_type((decl.get("type") or "").strip())
+    if "∀" in kind or not kind:
+        return None
+    parts = arrow_parts(kind)
+    if "," in parts[0] and len(parts) == 1:
+        return None
+    wants = product_parts(parts[-1])
+    named = {t: n for n, t in reversed(binders(decl))}
+    anon = parts[:-1]
+    used, picks = set(), []
+    for want in wants:
+        if want in named:
+            picks.append(named[want])
+            continue
+        where = next((i for i, t in enumerate(anon) if t == want), None)
+        if where is None:
+            return None
+        used.add(where)
+        picks.append("a%d" % where)
+    if not picks:
+        return None
+    body = picks[0] if len(picks) == 1 else "(%s)" % ", ".join(picks)
+    if not anon:
+        return body
+    lam = " ".join("a%d" % i if i in used else "_" for i in range(len(anon)))
+    return "fun %s => %s" % (lam, body)
+
+
 def run(decls, write, verbose=True):
     """Mutate each declaration with each of its constants.
 
     -> (bad, soft).  `bad` fails the gate; `soft` is the UNFOLDABLE roster --
     named, counted and printed on every run, never silent."""
-    rows, bad, soft = [], [], []
+    rows, bad, soft, pinned = [], [], [], set()
     for decl in decls:
         tag = "%s:%s" % (decl["file"], decl["name"])
         if decl["body"] is None:
@@ -655,7 +815,12 @@ def run(decls, write, verbose=True):
                       % (tag, ":= " + literal, "LITERAL",
                          "the body IS this constant"), flush=True)
         verdicts = []
-        for const in constants_for(decl):
+        # **The identity on the accumulator, BESIDE the type's constants and
+        # never instead of them** (README gap 985).  It exists for a type with
+        # no `Inhabited` instance, which is exactly where `default` does not,
+        # so it is the one mutation that reaches an UNFOLDABLE definition.
+        ident = identity_for(decl)
+        for const in constants_for(decl) + ([ident] if ident else []):
             if verbose:
                 # BEFORE the build, flushed: one mutation is a whole kernel
                 # build, and a gate with no progress output looks like a hang.
@@ -670,6 +835,8 @@ def run(decls, write, verbose=True):
                 soft.append((tag, verdict, ":= %s -- %s" % (const, why)))
             elif verdict != "PINNED":
                 bad.append((tag, verdict, ":= %s -- %s" % (const, why)))
+        if any(v == "PINNED" for _, v, _ in verdicts):
+            pinned.add(tag)
         if all(v in ("PINNED", "UNFOLDABLE") for _, v, _ in verdicts):
             rows.append("%s %s %s %s %s" % (
                 decl["sha"], decl["file"], decl["name"],
@@ -685,7 +852,7 @@ def run(decls, write, verbose=True):
         with open(ROSTER, "a", encoding="utf-8") as handle:
             handle.write("\n".join(rows) + "\n")
         print("%d row(s) appended to mutations.txt" % len(rows))
-    return bad, soft
+    return bad, soft, pinned
 
 
 FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
@@ -729,7 +896,7 @@ def main(argv):
         for d in decls:
             d["sha"] = digest(d["body"]) if d["body"] is not None else None
         print("re-running %d rostered mutation(s)" % len(decls))
-        bad, soft = run(decls, False)
+        bad, soft, _ = run(decls, False)
         print("%d rostered definition(s) failed re-verification, "
               "%d unfoldable" % (len(bad), len(soft)))
         return 1 if bad else 0
@@ -756,27 +923,45 @@ def main(argv):
     # The UNFOLDABLE count is printed on EVERY run, owed or not: a definition the
     # fold cannot reach is an exemption, and check 8's allow-list is the precedent
     # -- an exemption nobody counts is how a gate goes quietly useless.
-    unfold = sum(1 for d in decls
-                 if "unfoldable" in rows.get((d["file"], d["name"]),
-                                             {}).get("consts", ""))
-    lit = sum(1 for d in decls
-              if "literal" in rows.get((d["file"], d["name"]),
-                                       {}).get("consts", ""))
+    # `unfold` is every row the CONSTANT fold could not reach; `mute` is the
+    # ones nothing reached, the identity on an accumulator included (README gap
+    # 985).  They are printed as two numbers because they are two claims: the
+    # first says `default` does not typecheck, the second says no mutation of
+    # this definition exists at all, and only the second is an exemption.
+    consts_of = lambda d: rows.get((d["file"], d["name"]), {}).get("consts", "")
+    unfold = sum(1 for d in decls if "unfoldable" in consts_of(d))
+    mute_rows = sum(1 for d in decls
+                    if [c for c in consts_of(d).split(",") if c] == ["unfoldable"])
+    lit = sum(1 for d in decls if "literal" in consts_of(d))
     if gate:
         if not owed:
             print("%d new or changed since %s, %d rostered "
-                  "(%d unfoldable, %d literal), 0 owed"
-                  % (len(decls), base[:7], len(rostered), unfold, lit))
+                  "(%d unfoldable, %d of those pinned by nothing; %d literal), "
+                  "0 owed"
+                  % (len(decls), base[:7], len(rostered), unfold, mute_rows,
+                     lit))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
-    bad, soft = run(owed, write)
+    bad, soft, pinned = run(owed, write)
     if soft:
         print("%d definition(s) the fold cannot speak about -- "
               "UNFOLDABLE (no constant of the type exists) or "
               "LITERAL (the body IS one):" % len(soft))
         for tag, verdict, why in soft:
             print("  %-58s %-11s %s" % (tag, verdict, why))
+    # **An UNFOLDABLE definition that an IDENTITY pins is audited after all**
+    # (README gap 985).  One that neither reaches is the half nothing below the
+    # gate speaks about, and it is named and counted on its own line so the
+    # exemption cannot shrink out of sight -- check 8's allow-list discipline,
+    # for the third time in this file.
+    mute = sorted({tag for tag, verdict, _ in soft
+                   if verdict == "UNFOLDABLE" and tag not in pinned})
+    if mute:
+        print("%d of them are pinned by NOTHING -- no constant of the type and "
+              "no identity on an accumulator:" % len(mute))
+        for tag in mute:
+            print("  %s" % tag)
     if bad:
         print("%d definition(s) not pinned by a constant:" % len(bad))
         for tag, verdict, why in bad:
@@ -784,9 +969,17 @@ def main(argv):
         return 1
     if owed:
         kinds = collections.Counter(v for _, v, _ in soft)
-        print("%d definition(s) audited (%d pinned, %d unfoldable, %d literal)"
-              % (len(owed), len(owed) - kinds["UNFOLDABLE"],
-                 kinds["UNFOLDABLE"], kinds["LITERAL"]))
+        # `pinned` is per DEFINITION, not per verdict: a definition whose
+        # `default` is UNFOLDABLE and whose identity is PINNED is pinned, and
+        # counting the soft list instead reported five such rows as "0 pinned,
+        # 5 unfoldable" on the run that introduced them.
+        print("%d definition(s) audited (%d pinned, %d of them by an identity "
+              "on an accumulator; %d unfoldable, %d pinned by nothing; "
+              "%d literal)"
+              % (len(owed), len(pinned),
+                 sum(1 for t in pinned
+                     if any(x == t and v == "UNFOLDABLE" for x, v, _ in soft)),
+                 kinds["UNFOLDABLE"], len(mute), kinds["LITERAL"]))
     return 0
 
 
