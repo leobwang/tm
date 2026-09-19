@@ -1952,7 +1952,7 @@ open Tm
 -- `the_pre_close_pair_closes_on_a_loaded_plan` (gains `loadsOk … = true`: without
 -- it the statement held of a request that no longer loads), and
 -- `closePolicy_owes_only_the_child_fold` (the column's constructor renamed
--- `gap22Parent` -> `childFoldB3`).  Four close witnesses gained the outcome their
+-- gap22Parent -> childFoldB3).  Four close witnesses gained the outcome their
 -- lines name (`specMonthDoc`, `closePreClosePairWitness`, `closeStrayTombWitness`,
 -- `closeMergeWitness`); every theorem over them is re-decided under its own name,
 -- and their audit lines above stand.  No two-run theorem's statement or proof

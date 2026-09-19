@@ -120,7 +120,7 @@ deriving DecidableEq, Repr
 
 /-- What a row does with an unfinished child of a line it files from the same file.
 (This column was `Owed`, the table's last scope-out — `nothing | childFoldB3`, and
-before that `gap22Parent` and `stage5OnMiss` — until goal B3's repair made the fold
+before that gap22Parent and stage5OnMiss — until goal B3's repair made the fold
 real, stage 4 final step 4; the table owes nothing now.) -/
 inductive ChildRule
   /-- nothing of its own: the child is taken, or not, like any other line -/

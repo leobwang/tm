@@ -28,6 +28,18 @@
 # that it can be counted and cannot grow unnoticed.  `mutate.py --gate` prints the count on
 # every run.  README gap 980 puts the narrowing of D40 to the owner; reversing it is one line.
 #
+# A <constants> field reading `unavailable` is the SIXTH verdict, added at the W-21 REPAIR
+# step beside the fifth.  It marks a constant this checker SYNTHESISED out of the type's own
+# text -- a named `T.empty`, or a structure literal `⟨c1, …, cn⟩` -- that did not elaborate
+# at the mutated declaration's site.  What failed is the guess at a term, not the definition,
+# so it is not INVALID and does not fail the gate; it is counted on the "pinned by nothing"
+# line exactly the way `unfoldable` is, because a constant that does not elaborate pins
+# nothing.  `mutate.py`'s `type_constant` is the rule.
+#
+# A SYNTHESISED CONSTANT MAY ITSELF CONTAIN COMMAS (`⟨[],[],0⟩`), and the <constants> field
+# separates constants with commas too.  The reliable test on this column is therefore the
+# WORDS `unfoldable` and `unavailable`, never the number of comma-separated pieces.
+#
 # A ROW WHOSE CONSTANTS ARE `unfoldable` AND NOTHING ELSE is the one that is not audited at
 # all: nothing below it says a theorem reads that definition.  A row reading
 # `unfoldable,funa0_=>a0` IS audited -- by the IDENTITY ON THE ACCUMULATOR, which W-21 track A
@@ -38,6 +50,20 @@
 # field, and `mutate.py`'s own header spells it with its spaces.
 # Fifteen of the 23 are `PlannerWit` witness fixtures; the other EIGHT are step 6's own
 # algorithm, and README gap 985 names them and the shape a fix would take.
+#
+# FIVE MORE WERE RE-AUDITED AT THE W-21 REPAIR STEP, against the SYNTHESISED constant, and
+# all five are PINNED -- so the count of rows pinned by nothing fell from 23 of 77 to 18 of
+# 77.  Three of the five are gap 1035's, the whole of what was left of step 6's algorithm:
+#
+#     Planner.lean  dayDiagnostics       := Diagnostics.empty          PINNED  PlannerWit.lean:3704
+#     Planner.lean  PlanReq.finalAssign  := ⟨[], [], 0⟩                PINNED  Planner.lean:5348
+#     Planner.lean  PlanReq.deferFold    := ([], ⟨[], [], 0⟩)          PINNED  Planner.lean:5340
+#     PlannerWit    theFullDay           := ⟨[], [], 0⟩                PINNED  PlannerWit.lean:3486
+#     PlannerWit    aBareInstance        := ⟨⟨[], none, …⟩, …⟩         PINNED  PlannerWit.lean:3640
+#
+# Gap 1035 said of the first three that "nothing below the gate says any theorem reads those
+# three".  That was the gate's own limit read as a fact about the kernel, and it was wrong:
+# every one of them is read, and now the gate says so.  README gap 1086.
 #
 # A <constants> field carrying `literal` is the FIFTH verdict, added at the W-20 REPAIR
 # step: the body is itself a constant (`true`, `7`, `fun _ => true`), so PINNED for it means
@@ -60,8 +86,22 @@ baseline 86c4dc6
 #     46 audited: 23 PINNED, 23 unfoldable, 0 SURVIVED.  (W-21 track A re-ran five of the 23
 #     against the identity on the accumulator: all five PINNED, so the exemption is 18 of 46.)
 #
+# `--write` REPLACES A ROW IN PLACE when one already holds its (file, name); it used to
+# append unconditionally.  That is the W-21 repair step's, and what it fixes is a count:
+# a definition re-audited after its body changed left its stale row behind, shadowed by
+# `roster()`'s dict, so this file held 79 physical rows over 77 keys and a hand count of the
+# exemption -- `awk '$4 ~ /unfoldable/'` -- gave 29 where the gate printed 28.  The two
+# superseded rows were removed at the same step, and they read
+#
+#     b8d2a0168832 … Planner.lean dayRows default Planner.lean:5358
+#     830cfdbafcae … Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
+#
+# each superseded by a later row for the same definition at a later body sha.  77 rows over
+# 77 keys now, and `mutate.py --gate` prints the superseded count on every run if one comes
+# back.  A hand count and the gate's line agree at 28.
+#
 # TWO OF THE 23 PINNED WERE RE-AUDITED AT THE W-20 REPAIR STEP and their rows are at the
-# END of this file rather than in place, because `--write` appends.  `posLt` and `victimLt`
+# END of this file rather than in place, because `--write` appended then.  `posLt` and `victimLt`
 # are spelled `Nat x Nat -> Nat x Nat -> Bool`, and the constants table used to be keyed on
 # the type's literal text, so both got `default` -- which for an arrow to `Bool` is
 # `fun _ _ => false`, one direction of two.  Re-run at both: PINNED at `fun__=>true` and at
@@ -99,16 +139,14 @@ a40dbf02369a TmKernel/TmKernel/Planner.lean unspend default Planner.lean:4910
 08f9f450c670 TmKernel/TmKernel/Planner.lean PlanReq.finalRoutines default Planner.lean:5327
 ac97bc74a566 TmKernel/TmKernel/Planner.lean PlanReq.noPositionNotes default PlannerWit.lean:3362
 68a4ddb27390 TmKernel/TmKernel/Planner.lean dayRoutineSegs default Planner.lean:5437
-b8d2a0168832 TmKernel/TmKernel/Planner.lean dayRows default Planner.lean:5358
 7590ec19b538 TmKernel/TmKernel/PlannerWit.lean routineWitness default PlannerWit.lean:3219
 f7ba963417f6 TmKernel/TmKernel/PlannerWit.lean routinesOk true,false PlannerWit.lean:3243; PlannerWit.lean:3237
 d27484c1223a TmKernel/TmKernel/PlannerWit.lean routineIns default PlannerWit.lean:3259
 321e7929ab49 TmKernel/TmKernel/PlannerWit.lean crowdedIns default PlannerWit.lean:3362
 5cb3a44a68f4 TmKernel/TmKernel/PlannerWit.lean lapsedIns default PlannerWit.lean:3403
 4b27cf5721a7 TmKernel/TmKernel/PlannerWit.lean busyIns default PlannerWit.lean:3533
-cf4b8a3d2ee5 TmKernel/TmKernel/Planner.lean PlanReq.deferFold unfoldable no Inhabited (List Placed × Assign)
-66cda41c7ccb TmKernel/TmKernel/Planner.lean PlanReq.finalAssign unfoldable no Inhabited Assign
-830cfdbafcae TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
+cf4b8a3d2ee5 TmKernel/TmKernel/Planner.lean PlanReq.deferFold unfoldable,([],⟨[],[],0⟩) no Inhabited (List Placed × Assign); Planner.lean:5340
+66cda41c7ccb TmKernel/TmKernel/Planner.lean PlanReq.finalAssign unfoldable,⟨[],[],0⟩ no Inhabited Assign; Planner.lean:5348
 b103560cc1f8 TmKernel/TmKernel/PlannerWit.lean routinePlan unfoldable no Inhabited WfPlan
 2d15d5671852 TmKernel/TmKernel/PlannerWit.lean routineCap unfoldable no Inhabited (Capped RoutineIn)
 635608372772 TmKernel/TmKernel/PlannerWit.lean theRoutineRequest unfoldable no Inhabited PlanReq
@@ -116,11 +154,11 @@ e311a8bc7ea8 TmKernel/TmKernel/PlannerWit.lean crowdedCap unfoldable no Inhabite
 320e2c4842c5 TmKernel/TmKernel/PlannerWit.lean theCrowdedRequest unfoldable no Inhabited PlanReq
 f9f65378bc1b TmKernel/TmKernel/PlannerWit.lean lapsedCap unfoldable no Inhabited (Capped RoutineIn)
 ddf7e0f45229 TmKernel/TmKernel/PlannerWit.lean theLapsedRequest unfoldable no Inhabited PlanReq
-c9a72af4a8dd TmKernel/TmKernel/PlannerWit.lean theFullDay unfoldable no Inhabited Assign
+c9a72af4a8dd TmKernel/TmKernel/PlannerWit.lean theFullDay unfoldable,⟨[],[],0⟩ no Inhabited Assign; PlannerWit.lean:3486
 bf7e1beca255 TmKernel/TmKernel/PlannerWit.lean busyCap unfoldable no Inhabited (Capped RoutineIn)
 72994f183669 TmKernel/TmKernel/PlannerWit.lean busyCands unfoldable no Inhabited (Capped (Look.Cand × Option Look.Floor))
 62a73cbd8dca TmKernel/TmKernel/PlannerWit.lean theBusyRequest unfoldable no Inhabited PlanReq
-59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean aBareInstance unfoldable no Inhabited Placed
+59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean aBareInstance unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩ no Inhabited Placed; PlannerWit.lean:3640
 deafde65c398 TmKernel/TmKernel/PlannerWit.lean theSecondSlot unfoldable no Inhabited Look.Slot
 b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no Inhabited PlanReqIn
 7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq
@@ -151,7 +189,7 @@ d6f25f44caff TmKernel/TmKernel/PlannerWit.lean witOptionalCands default PlannerW
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean theHighRestRequest unfoldable no Inhabited PlanReq
 d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean theSpentBudgetRequest unfoldable no Inhabited PlanReq
 05bbb5008b07 TmKernel/TmKernel/Planner.lean dayRows default Planner.lean:5842
-d932b39765bc TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable no Inhabited Diagnostics
+d932b39765bc TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable,Diagnostics.empty no Inhabited Diagnostics; PlannerWit.lean:3704
 daaa2458af08 TmKernel/TmKernel/Planner.lean dayAssigned default Planner.lean:5911
 4a9c27a3e4bb TmKernel/TmKernel/Planner.lean PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
 7eac768f6f2d TmKernel/TmKernel/Planner.lean placeAt unfoldable,q no Inhabited Placed; Planner.lean:5169

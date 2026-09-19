@@ -11,28 +11,50 @@ the sentences.  That is README gap 779, and this is the check that ends it.
 WHAT IS SWEPT.  Every backticked span -- on one line, or wrapped across two
 (`wrapped`) -- of
 
-    kernel/TmKernel/TmKernel/*.lean   the library
-    kernel/TmKernel/*.lean            Check, Negative, Goals, TmKernel
+    kernel/TmKernel/**/*.lean         the library AND the package root, and
+                                      RECURSIVELY (the W-21 repair step: a
+                                      module in a SUBDIRECTORY was invisible
+                                      here, in totality.py and in mutate.py at
+                                      once, while check.sh line 204 already
+                                      said `TmKernel/**.lean`)
     kernel/README.md                  the ledger
     AGENTS.md                         the process authority (D41, W-20)
     kernel/check.sh, kernel/*.py,     the gate's own prose (W-20 repair step;
     kernel/mutations.txt              `CHECKERS`, and why the allow-list is not)
 
-whose content is a dotted identifier that is EITHER snake_case (an underscore
-anywhere -- the shape this kernel's theorem names have) OR camelCase (a
-lowercase letter immediately followed by an uppercase one, anywhere in the span
--- the shape its `def`s, fields and constructors have).  D41 widened it; D39
-swept snake_case only, and `is_citation` is the whole of the predicate.
+whose content is an identifier that is ANY OF THREE THINGS: snake_case (an
+underscore anywhere -- the shape this kernel's theorem names have), camelCase (a
+lowercase letter OR A DIGIT immediately followed by an uppercase one, anywhere
+in the span -- the shape its `def`s, fields and constructors have), or QUALIFIED
+(two or more dotted segments with a capitalised head -- the shape a declaration
+has at a use site in another namespace).  D39 swept snake_case only; D41 added
+camelCase; the W-21 repair step added the digit and the dotted test, and
+`is_citation` is the whole of the predicate.
 
 WHY THAT IS THE CAMEL TEST, and not "has a capital in it".  The population
 inside the camel blind spot was measured at W-19 (gap 880) and is mostly tactic,
 type and prose vocabulary: `decide` (x170 in the Lean, x303 in the README),
 `rfl`, `Nat`, `Bool`, `sorry`, `lake`, hypothesis names (`hnopast` x20) and
-commit shas.  NOT ONE of those has a lower-to-upper transition -- they are
-single-case runs, capitalised words, or lowercase hex -- so the transition test
-excludes the whole of that noise without an allow-list entry for any of it.
-Measured over this file set: 11,247 snake citations (3,964 distinct) and 11,383
-camel-only ones (2,591 distinct).
+commit shas.  NOT ONE of those has a case transition -- they are single-case
+runs, capitalised words, or lowercase hex -- so the transition test excludes the
+whole of that noise without an allow-list entry for any of it.  Measured at the
+W-21 repair step over the whole identifier-shaped population: sweeping EVERY
+span `CITED` accepts would put 370 distinct names / 1,767 citations in front of
+an adjudicator, almost all of it that noise.
+
+AND WHY THE OTHER TWO WERE ADDED, both driven.  `[a-z][A-Z]` does not match a
+capital with a DIGIT in front of it, so gap22Parent and day0Wf were unswept --
+gap22Parent was renamed childFoldB3 at stage 4 final step 3, is declared
+nowhere since, and stood backticked at six live sites with this check green.
+And a name with neither an underscore nor a transition was unswept altogether:
+`Arith.ramp`, `Cap.edf`, `Look.energize`, `Look.bucket`, `Cal.Instant.wf`,
+`Cand.enters` and `Ckpt.wf` are declarations of this kernel, and 4,848
+citations / 600 distinct dotted spans were dropped.  DRIVEN: renaming the live
+`def ramp` at Arith.lean:988 left eleven backticked `Arith.ramp` citations and
+this file exited 0 with byte-identical counts; it now reports `Arith.ramp`
+unresolved.  The dotted test costs THREE adjudications in all -- `JSON.stringify`
+and `Subtype.val`, which are real referents this kernel does not declare, and
+day0Wf, which is an older removal counted beside badDay0.
 
 WHAT IT RESOLVES AGAINST.  SEVEN declaration sets, in this order.  None of them
 is prose: every one is a place where the name is *declared*, so resolving
@@ -104,6 +126,10 @@ occurrences across everything swept) -- and four commented sections:
        Lean core lemma, a chrono/serde/std item, a fork function, a config key.
     2. LIVE STALE CITATIONS found and NOT repaired, counted.  Declared as
        defects rather than laundered as exemptions; README gap 832 owes them.
+       A COUNTED CAP IS EXACT SINCE THE W-21 REPAIR STEP: more citations than
+       the cap fails, and so does FEWER, naming the number to tighten to.  Slack
+       opened by a falling count is the same free exemption as a bumped cap and
+       opens without anybody editing the allow-list.
     3. ADJUDICATED DEAD names, counted.  Opened at W-19: the sentence citing
        each one says it was refuted, renamed, retired, superseded or deleted.
        This check cannot read "refuted"; a human did, and that roster is here.
@@ -140,6 +166,19 @@ nothing else; do not quote these, RE-MEASURE.
     those 267 would have to be adjudicated before the stricter rule could be
     turned on, and a tracker that is wrong about a namespace fails a citation
     that is right.  README gap 933.
+  * A DOTTED SPAN WITH A LOWERCASE HEAD.  `QUAL` requires a capitalised first
+    segment, because every namespace in this kernel is capitalised and a
+    lowercase head is a projection on a variable (`a.val`, `q.val`, `x.2`), a
+    filename (`mutate.py`, `mutations.txt`, `genlog80.py`) or a `set_option`
+    key (`trace.compiler.ir.result`).  Measured at the W-21 repair step: of the
+    18 dotted spans that would otherwise be unresolved, 15 are exactly those
+    three shapes and none names a declaration.  A kernel definition spelled
+    through a lowercase head would be missed, and there are none today.
+  * LEAN CORE'S STRUCTURE FIELDS AND CONSTRUCTORS.  Source 7 reads the
+    toolchain's `LEAN_DECL` lines only, so `Subtype.val` -- a field, not a
+    `def` -- does not resolve against core and needs a VOCABULARY entry, where
+    `List.mapTR` does not.  Widening source 7 the way source 1 is widened is a
+    scope decision nobody has taken; the population is one name today.
   * A name that is also a Rust name, a JSON key, a Python name in kernel/*.py
     or a Lean core name.  A deleted Lean theorem whose short name is any of
     those still resolves, by source 3, 4, 6 or 7.
@@ -169,8 +208,9 @@ nothing else; do not quote these, RE-MEASURE.
     an in-repo rename the ledger itself recorded, tm_kernel_ffi::trace_kind,
     repaired here.  Turning `::` on costs 67 adjudications and is a scope
     decision, not a repair; README gap 989.
-  * A SPAN WRAPPED OVER THREE LINES, or wrapped mid-word.  A span wrapped over
-    TWO lines is now swept -- see `wrapped` -- and joining it is what found two
+  * A SPAN WRAPPED MID-WORD.  A span wrapped over TWO lines is swept -- see
+    `wrapped` -- and so is one wrapped over more, since the W-21 repair step;
+    joining it is what found two
     theorem names W-20 track P had renamed away from, in the paragraph claiming
     check 8 caught its stale citations.  The join requires the break to fall at
     an `_` or a `.`; a break that ate a SPACE joins two tokens into a word that
@@ -220,8 +260,20 @@ import collections
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-LEAN_FILES = sorted(glob.glob(os.path.join(HERE, "TmKernel", "TmKernel", "*.lean"))) + \
-             sorted(glob.glob(os.path.join(HERE, "TmKernel", "*.lean")))
+# RECURSIVELY, `.lake`/`target`/`.git` pruned -- the W-21 repair step's, and
+# one of three enumerations that disagreed with `check.sh` line 204's
+# `TmKernel/**.lean`.  A library module in a SUBDIRECTORY was invisible here,
+# in `totality.py` and in `mutate.py` at once, while `mutate.py`'s own
+# `touched()` asked git with a recursive pathspec: driven before the repair, a
+# `TmKernel/TmKernel/Sub/Probe.lean` holding a backticked Look.zzz_no_such_thing
+# left this file's counts BYTE-IDENTICAL and rc 0.  One glob and not two,
+# because the recursive one subsumes `TmKernel/*.lean` and a path reached twice
+# would have its every citation counted twice.
+PRUNE = {".lake", "target", ".git"}
+LEAN_FILES = sorted(
+    path for path in glob.glob(os.path.join(HERE, "TmKernel", "**", "*.lean"),
+                               recursive=True)
+    if not PRUNE & set(path.split(os.sep)))
 README = os.path.join(HERE, "README.md")
 AGENTS = os.path.join(ROOT, "AGENTS.md")
 # The gate's OWN files, swept as PROSE at the W-20 repair step.  They were the
@@ -269,21 +321,49 @@ PY_DECL = re.compile(r"^(?:def|class)[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*[(:]"
 
 SPAN = re.compile(r"`([^`\n]+)`")
 CITED = re.compile(r"^[A-Za-z][A-Za-z0-9_'?!]*(?:\.[A-Za-z0-9_'?!]+)*$")
-CAMEL = re.compile(r"[a-z][A-Z]")
+# A lower-to-upper transition, OR A DIGIT-TO-UPPER ONE (the W-21 repair step).
+# `[a-z][A-Z]` alone does not match gap22Parent or day0Wf: the character in
+# front of the capital is a digit, so both were unswept, and gap22Parent --
+# renamed childFoldB3 at stage 4 final step 3 and declared nowhere since --
+# was backticked at six live sites with this check green.  A digit in front of
+# a capital is still a compound word; none of the noise the header measures
+# (`decide`, `rfl`, `Nat`, `sorry`, `lake`, `hnopast`, a commit sha) has one,
+# because a sha is lowercase hex and the rest are single-case runs.
+CAMEL = re.compile(r"[a-z0-9][A-Z]")
+# A QUALIFIED name: two or more dotted segments whose FIRST is capitalised.
+# That is how every declaration of this kernel is spelled at a use site
+# (`Arith.ramp`, `Cap.edf`, `Look.bucket`, `Cal.Instant.wf`, `Ckpt.wf`), and
+# none of those has an underscore or a case transition, so the two tests above
+# dropped the whole population.  Measured at the W-21 repair step over the
+# swept files: 4,848 citations / 600 distinct dotted spans were dropped, and
+# sweeping the ones with a capitalised head costs THREE adjudications.
+QUAL = re.compile(r"^[A-Z][A-Za-z0-9_'?!]*(?:\.[A-Za-z0-9_'?!]+)+$")
 # A span may be at most 200 characters long before it is not a name any more;
 # a longer carry is prose that happens to sit between two backticks.
 WRAP_MAX = 200
 
 
 def is_citation(name):
-    """A backticked span this check sweeps: snake_case, or camelCase (D41).
+    """A span this check sweeps: snake_case, camelCase (D41), or QUALIFIED.
 
     `decide`, `rfl`, `Nat`, `sorry`, `lake`, a hypothesis name (`hnopast`) and a
-    commit sha are all lowercase-or-capitalised runs with no lower-to-upper
-    transition, so they are NOT camelCase and are not swept.  That transition is
-    the whole discriminator; see the header.
+    commit sha are all lowercase-or-capitalised runs with no case transition and
+    no dot, so they are none of the three and are not swept.
+
+    THE THIRD TEST IS THE W-21 REPAIR STEP'S, and it is what makes a name with
+    neither an underscore nor a transition visible: `Arith.ramp`, `Cap.edf`,
+    `Look.bucket`, `Ckpt.wf` are declarations of this kernel and every one was
+    dropped.  It is the DOT, with a capitalised head, that carries it -- prose
+    does not write `Look.bucket` by accident, and a dotted span with a LOWERCASE
+    head is a projection on a variable (`a.val`, `x.2`), a filename
+    (`mutate.py`, `mutations.txt`) or a `set_option` key
+    (`trace.compiler.ir.result`), never a kernel name, because every namespace
+    in this kernel is capitalised.  Measured: of the 18 dotted spans that would
+    otherwise be unresolved, 15 are exactly those three shapes and none is a
+    declaration.  That is the blind spot this test keeps; see the header.
     """
-    return bool(CITED.match(name)) and ("_" in name or CAMEL.search(name) is not None)
+    return bool(CITED.match(name)) and (
+        "_" in name or CAMEL.search(name) is not None or QUAL.match(name) is not None)
 
 
 def read(path):
@@ -387,8 +467,16 @@ def wrapped(prefix, suffix):
     the swept files at the repair step: 48 spans wrap, 43 of them at an
     underscore or a dot and all 43 real names, 5 of them at an eaten space and
     all 5 spurious.  NOT SEEN: an identifier wrapped mid-word with no
-    underscore at the break (`assign` / `Fold`), and a span wrapped over THREE
-    lines."""
+    underscore at the break (`assign` / `Fold`).
+
+    A SPAN WRAPPED OVER MORE THAN TWO LINES is swept since the W-21 repair
+    step: a line with no backtick at all, inside an open span, is the MIDDLE of
+    the wrap and `cited` adds it to the carry.  EVERY boundary is held to the
+    same `_`-or-`.` test, not only the last, so a middle line that ate a space
+    drops the carry exactly as a two-line join at a space is refused.  Measured
+    when it landed: +2 citations over the swept files, both resolving, 0 new
+    unresolved names -- and a planted Planner.w21_no_such_thing_at_all broken
+    over three lines is reported, where before it was invisible."""
     suffix = suffix.lstrip()
     if not prefix or not suffix:
         return None
@@ -419,6 +507,20 @@ def cited():
                 continue
             if inside or "```" in line:
                 carry = None
+                continue
+            # A SPAN WRAPPED OVER MORE THAN TWO LINES.  A line with no backtick
+            # at all, inside an open span, is the MIDDLE of the wrap: the carry
+            # takes it and keeps going.  Bounded by `WRAP_MAX`, and `is_citation`
+            # still has to accept the join, so an unterminated stray backtick
+            # swallows at most 200 characters and resolves to nothing rather
+            # than to something.  README gap 989's third item.
+            if carry is not None and "`" not in line:
+                tail = line.strip()
+                joined = carry + tail
+                carry = (joined
+                         if tail and len(joined) <= WRAP_MAX
+                         and (carry[-1:] in ("_", ".") or tail[0] in "_.")
+                         else None)
                 continue
             for m in SPAN.finditer(line):
                 name = m.group(1).strip()
@@ -485,6 +587,27 @@ def main():
             continue
         bad.append((name, where[name], "resolves to nothing"))
 
+    # A COUNTED ENTRY WHOSE CAP EXCEEDS ITS LIVE COUNT IS SLACK, AND SLACK FAILS.
+    # The cap is a ratchet: it exists so that a NEW sentence reaching for an
+    # exempted name lands in a diff.  A cap of 17 against 15 live citations is
+    # two free citations nobody adjudicated -- the same hole as bumping N
+    # without looking, reached from the other side, and reached WITHOUT touching
+    # this file: it opens by itself the moment prose that cited the name is
+    # deleted or un-backticked.  Measured at the W-21 repair step, which is
+    # where an auditor found it: 3 of 348 counted entries carried slack, 6
+    # citations in all, and two of the three had opened that very run.
+    #
+    # The cost is declared: an edit that REMOVES a counted citation now fails
+    # this check until the cap is tightened.  That is the ratchet working -- the
+    # tightening is one line and the message names the number -- and the
+    # alternative is a cap that only ever ratchets in the direction that costs
+    # nothing.
+    for name, cap in sorted(capped.items()):
+        live = hits.get(name, 0)
+        if live < cap:
+            bad.append((name, where.get(name, "citations-allow.txt"),
+                        "%d allowed, %d live -- tighten the cap to %d"
+                        % (cap, live, live)))
     stale = (vocabulary | set(capped)) - used
     if bad:
         print("%d unresolved:" % len(bad))

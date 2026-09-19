@@ -4186,7 +4186,7 @@ nothing in `Cmd` consumes it.
   | `recurring` | `stays` | `stays` | `stays` |
   | `walls` | `carried` | `carried` | `carried` |
   | `overdue` | `nothing` | **`stage5OnMiss`** | `nothing` |
-  | `children` | `nothing` | **`gap22Parent`** | `nothing` |
+  | `children` | `nothing` | **gap22Parent** | `nothing` |
 
   Each row is pinned by a bridge that says something the row does not:
   `closeStamp_names_the_closed_grain` (a stamp names the grain it closed —
@@ -6789,7 +6789,7 @@ next heading down exactly as `# Demoted` does.  The transform is `moveTo`, so th
 skeleton is kept but for the file: box, bytes, tombstone.  The report entry is the
 sixth disposition, `moveOverdue`, unstamped.  `ClosePolicy.overdue` was an `Owed`
 column (`stage5OnMiss`); it is now `OverdueRule` (`asAnyLine | toBacklogOverdue`), and
-`Owed` keeps only `gap22Parent` (`closePolicy_owes_only_the_child_fold`).
+`Owed` keeps only gap22Parent (`closePolicy_owes_only_the_child_fold`).
 
 **Deliberate differences from the fork point, each with its reason.**
 (a) *Day resolution* (README gap 57, the wall carry's rule): the kernel's `now` is a
@@ -6993,7 +6993,7 @@ script (`/tmp/claude-1000/proof_ratio.py kernel/TmKernel/TmKernel`).  Gaps run t
 <!-- ===================================================================
      APPENDED 2026-09-13 (stage-4 final).  Step 3: README gap 22 closed — the owner's D6.  `@parent` is a view of the line; a dangling or cyclic link refuses the whole tree by name; §3.2's prep rule, `effectiveCi` and `rootPrio` fire on loaded plans; check 6 loads whole trees only.
      Closes gap 22; takes gaps 68–71; takes cheats 59–61.  Retires no theorem name; five kept names changed statement (listed below).
-     Supersedes, by name: gap 22 (whole); gap 19's consequence as a description of what a label does (the kernel still takes ids only; a label now refuses `danglingParent`); stage 4 final step 1's D6 costs (ii) "check 6's per-file count … is re-based on whole plans in the step that lands D6" and (iv) (both done, below); step 2's "Owed (2)"; step 2's difference (b) "Clears with D6" (it does not: gap 68); AGENTS §5.3's "`parent` (gap 22) is the one that stands", §7.1 check 6's and §7.2's per-file score `33/37` as a description of check 6, §10.2's "five. `parent` is still a stored slot"; `State.lean`'s module header paragraph "`parent` is the **one** field still stored"; `Close.lean`'s `Owed.gap22Parent` (renamed `childFoldB3`); `Boundary.lean`'s `hpar` paragraph on `the_kernel_can_read_the_pairs_it_writes`; `addCore`'s "`parent none` like every line the kernel writes until gap 22 lands"; `Fast.lean`'s "the two bodies are the same term up to that `let`, so the equality is `rfl`" for `parentsAcyclic`; `tui/inbox.rs`'s "`tm add` writes such a line" for a dangling `@parent`, and the test `a_dangling_reference_is_a_warning_not_a_refusal` (split and renamed).
+     Supersedes, by name: gap 22 (whole); gap 19's consequence as a description of what a label does (the kernel still takes ids only; a label now refuses `danglingParent`); stage 4 final step 1's D6 costs (ii) "check 6's per-file count … is re-based on whole plans in the step that lands D6" and (iv) (both done, below); step 2's "Owed (2)"; step 2's difference (b) "Clears with D6" (it does not: gap 68); AGENTS §5.3's "`parent` (gap 22) is the one that stands", §7.1 check 6's and §7.2's per-file score `33/37` as a description of check 6, §10.2's "five. `parent` is still a stored slot"; `State.lean`'s module header paragraph "`parent` is the **one** field still stored"; `Close.lean`'s Owed.gap22Parent (renamed childFoldB3); `Boundary.lean`'s `hpar` paragraph on `the_kernel_can_read_the_pairs_it_writes`; `addCore`'s "`parent none` like every line the kernel writes until gap 22 lands"; `Fast.lean`'s "the two bodies are the same term up to that `let`, so the equality is `rfl`" for `parentsAcyclic`; `tui/inbox.rs`'s "`tm add` writes such a line" for a dangling `@parent`, and the test `a_dangling_reference_is_a_warning_not_a_refusal` (split and renamed).
      =================================================================== -->
 
 ## Stage 4 final, step 3, 2026-09-13: a parent is read off its line
@@ -7164,7 +7164,7 @@ FFI: `a_dangling_parent_refuses_the_whole_tree_by_name` (with a command, which n
 = d.parent`); `wf_ignores_the_item_fields` (the `parent :=` binder went with the slot);
 `the_kernel_can_read_the_pairs_it_writes` (hypothesis `hpar` removed);
 `the_pre_close_pair_closes_on_a_loaded_plan` (gains `loadsOk … = true`);
-`closePolicy_owes_only_the_child_fold` (its constructor renamed `gap22Parent` → `childFoldB3`,
+`closePolicy_owes_only_the_child_fold` (its constructor renamed gap22Parent → childFoldB3,
 the same table).  No name retired.
 
 **The two-run laws (D5).**  None broke.  `close_is_idempotent` (L16), `close_keeps_source_order`
@@ -7256,7 +7256,7 @@ start at 72); cheats to 61 (new cheats start at 62).
 <!-- ===================================================================
      APPENDED 2026-09-13 (stage-4 final).  Step 4: goal B3, the week row's child fold — the additive statement refuted and renamed, §6.4's `max` law proved beside it; stage 4's goal count is zero.
      Closes goal B3 and stage 4; takes gaps 72–74; takes cheats 62–66.  Retires twelve theorem names and restates each beside its replacement (table below); the goal is refuted as `close_week_does_not_add_a_dropped_child_to_its_parent`.
-     Supersedes, by name: stage-4 step 2's scope-out "unfinished children are dropped, their remaining folded into the parent's `est:`" (`children := .gap22Parent`, later `.childFoldB3`) and `Close.lean`'s module-header sentence to the same effect; `closePolicy_owes_only_the_child_fold` and the `Owed` type; stage 4 final step 1's "B3 is expected to be refuted and renamed … its statement is unchanged" (done, below); step 2's and step 3's "Owed (1) B3"; AGENTS §8.2's "What remains, by name: B3" and "Stage 4 has B3 left", §10.5's closing paragraphs' "B3 stands"; `Goals.lean`'s B3 docstring and its stage-4 header's "one goal of this section stands"; `closing.rs`'s module-doc clause "the folding of children into their parent (gap 22)" as something the close does not do; the host's `CloseDid` as "six names"; `cli_lifecycle.rs`'s `close_on_the_monday_after_reports_each_line_it_took` as it stood (it pinned the four tasks as `copy`); `the_example_week_closes_with_d1_in_the_backlog_overdue`'s expected lines as they stood (the four tasks filed as records).
+     Supersedes, by name: stage-4 step 2's scope-out "unfinished children are dropped, their remaining folded into the parent's `est:`" (`children := .gap22Parent`, later .childFoldB3) and `Close.lean`'s module-header sentence to the same effect; `closePolicy_owes_only_the_child_fold` and the `Owed` type; stage 4 final step 1's "B3 is expected to be refuted and renamed … its statement is unchanged" (done, below); step 2's and step 3's "Owed (1) B3"; AGENTS §8.2's "What remains, by name: B3" and "Stage 4 has B3 left", §10.5's closing paragraphs' "B3 stands"; `Goals.lean`'s B3 docstring and its stage-4 header's "one goal of this section stands"; `closing.rs`'s module-doc clause "the folding of children into their parent (gap 22)" as something the close does not do; the host's `CloseDid` as "six names"; `cli_lifecycle.rs`'s `close_on_the_monday_after_reports_each_line_it_took` as it stood (it pinned the four tasks as `copy`); `the_example_week_closes_with_d1_in_the_backlog_overdue`'s expected lines as they stood (the four tasks filed as records).
      =================================================================== -->
 
 ## Stage 4 final, step 4, 2026-09-13: a dropped child is folded by `max` — stage 4 at zero

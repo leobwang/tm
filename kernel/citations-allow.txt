@@ -6,8 +6,17 @@
 # Two syntaxes, and four sections that mean four different things.
 #
 #   name          uncounted.  Cite it as often as the prose likes.
-#   N name        counted.  At most N occurrences across everything swept.  Fewer is fine;
-#                 more FAILS, so a NEW sentence reaching for one of these shows up in a diff.
+#   N name        counted.  EXACTLY N occurrences across everything swept.  More FAILS, so a
+#                 NEW sentence reaching for one of these shows up in a diff; FEWER fails too,
+#                 naming the number to tighten it to.
+#
+# FEWER USED TO BE FINE, AND THAT WAS A HOLE (W-21 repair step).  A cap of 17 against 15 live
+# citations is two free citations nobody adjudicated -- the same hole as bumping N without
+# looking, reached from the other side and reached WITHOUT editing this file: it opens by
+# itself the moment prose that cited the name is deleted or un-backticked.  Measured when it
+# was found: 3 of 348 counted entries carried slack, 6 citations in all, and two of the three
+# had opened in the run that found it.  The cost is that an edit REMOVING a counted citation
+# now fails check 8 until the cap is tightened -- one line, and the failure prints the number.
 #
 # To cite a counted name once more, the honest moves are: open it, and either move it up to
 # VOCABULARY with a reason, or fix the sentence.  Bumping N without looking is how this file
@@ -38,6 +47,16 @@ motive_1
 motive_4
 native_decide
 implemented_by
+# Adjudicated at the W-21 REPAIR STEP, where `is_citation` was widened to sweep a QUALIFIED
+# name -- two dotted segments with a capitalised head -- because `Arith.ramp`, `Cap.edf`,
+# `Look.bucket` and `Ckpt.wf` have neither an underscore nor a case transition and the whole
+# class was unswept.  `Subtype.val` is a Lean core structure FIELD and `Subtype.val` is how
+# `Planner.lean`'s D9-21 note spells it: source 7 reads the toolchain's `LEAN_DECL` lines
+# only, so core's structure fields and constructors are not in it, which is a blind spot the
+# header now names.  `JSON.stringify` is JavaScript's, named where `Log.lean`'s float note
+# records what serde_json does NOT do.
+Subtype.val
+JSON.stringify
 # Adjudicated at the W-19 MERGE, not on track A's branch: check 8 could not see track P's
 # or track G's prose until the tracks were merged, so their vocabulary is a merge-time
 # obligation (README gap 870).  `List.getElem?_eq_some_iff` is used one line below the
@@ -240,7 +259,7 @@ can_fail
 6 dayPlan_assigns_nothing_yet
 5 dayPlan_block_rows_come_from_the_log
 4 dayPlan_diagnostics
-17 dayPlan_ok
+15 dayPlan_ok
 6 dayPlan_ok_at_every_eligibility_while_the_day_is_empty
 4 demote_not_idem
 3 demote_verb_is_cmdDemote_at_freshRank_without_a_shift
@@ -507,6 +526,14 @@ unknownIdentifier
 #   * older removals: badDay0, childFoldB3, stage5OnMiss, statusOfGlyphDemoted, DocRegion,
 #     findDoc, demoteTarget, resolveHorizon, entitiesOfDoc, witCaps, logOpFast, ClosedPeriod,
 #     openEnded.
+#   * day0Wf, FOUND AT THE W-21 REPAIR STEP by the digit-to-upper half of the camel test:
+#     `[a-z][A-Z]` does not match a capital with a digit in front of it, so this name was
+#     unswept the whole time badDay0 -- its own refusal, removed in the same step -- was
+#     costing 19 counted citations here.  Opened: `def day0Wf` last existed at 5ab24bf and
+#     went with badDay0 when step L9 replaced day 0's own check with nowDisagrees
+#     (Lookahead.lean's mkInput? paragraph: "where badDay0 used to be").  The two citing
+#     lines are L-series ledger blocks that still list it among the fallbacks the kernel
+#     applies; counted, so a NEW sentence reaching for it lands in a diff.
 1 Boundary.logOpFast
 1 ClosedPeriod
 1 DocRegion
@@ -519,9 +546,10 @@ unknownIdentifier
 1 Planner.stepOneDiagnostics
 2 Planner.stepOneRows
 19 badDay0
+2 day0Wf
 3 blockMinutes
 2 capMin?
-4 childFoldB3
+1 childFoldB3
 6 dayPlan?
 1 demoteTarget
 2 endMin
@@ -540,7 +568,7 @@ unknownIdentifier
 3 readTrans
 2 resolveHorizon
 1 splitByFilters
-3 stage5OnMiss
+2 stage5OnMiss
 2 startMin
 3 statusOfGlyphDemoted
 1 stepOneDiagnostics

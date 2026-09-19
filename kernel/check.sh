@@ -201,7 +201,11 @@ fi
 #    the single largest recurring defect class in this campaign's ledger was
 #    invisible to the gate by construction.
 #
-#    So: every backticked identifier in TmKernel/**.lean, in README.md, in
+#    So: every backticked identifier in TmKernel/**.lean -- RECURSIVELY since
+#    the W-21 repair step, which is where this line stopped overstating the
+#    sweep: three checkers enumerated the library one level deep while this
+#    sentence claimed a recursion none of them did, and a module in a
+#    SUBDIRECTORY was invisible to checks 2, 8 and 9 at once -- in README.md, in
 #    AGENTS.md (D41) and -- since the W-20 repair step -- in this file, in
 #    kernel/*.py and in mutations.txt, on one line OR wrapped across two, is
 #    resolved against SEVEN DECLARATION sets: Lean
@@ -216,12 +220,29 @@ fi
 #    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
 #    because snake_case-only reported green on a live stale emitRefused and
 #    hid a name gap 809 declares nonexistent at, as re-measured at W-20, 64
-#    sites.  camelCase is a LOWER-TO-UPPER TRANSITION and nothing else: `decide`,
+#    sites.  camelCase is a CASE TRANSITION and nothing else: `decide`,
 #    `rfl`, `Nat`, `sorry`, `lake`, hypothesis names and commit shas have none,
 #    which is why the noise gap 880 measured (812 distinct names) does not
 #    arrive with the widening.  D41 also DECLINED `kernel/design/**`: 144
 #    unresolved names there are a prospective specification's work to do, not
 #    stale citations.
+#
+#    THE W-21 REPAIR STEP WIDENED IT TWICE MORE, and the second is the bigger
+#    one.  A DIGIT in front of the capital counts as the transition, because
+#    gap22Parent -- renamed childFoldB3 at stage 4 final step 3 and declared
+#    nowhere since -- was backticked at six live sites with this check green.
+#    And a QUALIFIED span (two dotted segments, capitalised head) is swept
+#    whether or not it has a transition at all: `Arith.ramp`, `Cap.edf`,
+#    `Look.bucket` and `Ckpt.wf` have neither, and 4,848 citations / 600
+#    distinct dotted spans were unswept.  Driven: renaming the live `def ramp`
+#    left eleven `Arith.ramp` citations and this check exited 0 with
+#    byte-identical counts; it now names it.  Three adjudications in all.
+#
+#    A COUNTED ALLOW-LIST CAP IS EXACT, also the W-21 repair step's: FEWER
+#    citations than the cap fails too, naming the number to tighten to.  Slack
+#    opened by a falling count is a free exemption nobody adjudicated, and it
+#    opens without anyone editing the allow-list -- 3 of 348 entries carried 6
+#    citations of it when it was found.
 #
 #    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
 #    that silenced a class is how this check would get quietly useless, because
@@ -269,6 +290,19 @@ fi
 #    with an error INSIDE the mutated declaration is also a failure, not a pass:
 #    that is the constant not typechecking, which would otherwise hand out a
 #    free PINNED verdict.
+#
+#    A CONSTANT OF THE TYPE IS NOT ONLY `default`, and the W-21 repair step
+#    added the two that exist where `default` does not: a nullary `T.empty`
+#    this kernel declares in the SAME FILE, and a structure literal
+#    `⟨c1, …, cn⟩` built when EVERY field of the type has a constant.  README
+#    gap 1035 said of `PlanReq.deferFold`, `PlanReq.finalAssign` and
+#    `dayDiagnostics` -- the whole of what was left of step 6's algorithm --
+#    that nothing below the gate said any theorem read them.  Re-audited: all
+#    three PINNED, at PlannerWit.lean:3704, Planner.lean:5348 and
+#    Planner.lean:5340, and two `PlannerWit` fixtures with them, so the rows
+#    pinned by NOTHING fell from 23 of 77 to 18 of 77.  A synthesised constant
+#    that does not elaborate is UNAVAILABLE, not INVALID: the guess failed, not
+#    the definition, and it is counted on the "pinned by nothing" line.
 #
 #    ONE EXCEPTION, AND IT IS NAMED, COUNTED AND EXACT.  If that in-declaration
 #    error is exactly `failed to synthesize ... Inhabited T`, the type has no

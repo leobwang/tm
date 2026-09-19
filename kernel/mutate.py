@@ -297,10 +297,36 @@ def read(path):
         return handle.read()
 
 
+# Build directories and checkouts, never sources.  0 `.lean` files live under
+# `kernel/TmKernel/.lake` today; pruning is what keeps a future layout from
+# being mutated as if it were this kernel.
+PRUNE = {".lake", "target", ".git"}
+
+
 def lib_files():
-    """The library's .lean files, as relative paths under kernel/."""
-    return sorted("TmKernel/TmKernel/" + n for n in os.listdir(LIB)
-                  if n.endswith(".lean"))
+    """The library's .lean files, RECURSIVELY, as relative paths under kernel/.
+
+    IT USED TO BE ONE LEVEL DEEP, and `touched()` three functions below asks
+    git with a RECURSIVE pathspec -- so a module in a SUBDIRECTORY was put into
+    `moved` by one and then dropped by the other for not being in this list.
+    `citations.py` and `totality.py` enumerated the same set the same wrong way
+    and `check.sh` line 204 states it as `TmKernel/**.lean`, a recursion that
+    did not exist anywhere.  DRIVEN at the W-21 repair step:
+    `TmKernel/TmKernel/Sub/Probe.lean` holding `def w21SubGatherable (_n : Nat)
+    : Bool := true` -- gatherable's own shape, the one D40 exists for -- and a
+    `partial def`, which is a HARD RULE, gave `--gate` rc=0 "0 owed",
+    `totality.py` rc=0 and `citations.py` rc=0 with byte-identical counts.  The
+    control, the same definition at the top level of `PlanCheck.lean`, was
+    OWED.  That is the "two checkers disagreeing about whether a file exists"
+    failure `touched()`'s own docstring names, in this file, against itself."""
+    out = []
+    for base, dirs, files in os.walk(LIB):
+        dirs[:] = [d for d in dirs if d not in PRUNE]
+        for name in files:
+            if name.endswith(".lean"):
+                out.append(os.path.relpath(os.path.join(base, name),
+                                           HERE).replace(os.sep, "/"))
+    return sorted(out)
 
 
 def starts_declaration(line):
@@ -411,8 +437,26 @@ def digest(body):
     return hashlib.sha1(" ".join(body.split()).encode("utf-8")).hexdigest()[:12]
 
 
+SHADOWED = []
+
+
 def roster():
-    """(baseline sha, {(file, name): row}) from mutations.txt."""
+    """(baseline sha, {(file, name): row}) from mutations.txt.
+
+    A KEY WRITTEN TWICE IS RECORDED IN `SHADOWED`, not silently dropped.  This
+    dict is keyed on (path, name), so a definition RE-AUDITED after its body
+    changed -- the file is append-only, so the second audit appends a second row
+    -- shadows its own earlier row, and the file then holds more physical rows
+    than keys.  At the W-21 repair step it held 79 rows over 77 keys
+    (`Planner.dayRows` and `Planner.dayDiagnostics` twice each, from W-20's land
+    step and W-21 track P) while `mutations.txt`'s header documented only
+    `posLt`/`victimLt` as intentional re-audits, so a hand count of the
+    exemption -- `awk '$4 ~ /unfoldable/'` -- gave 29 where the gate printed 28.
+    The gate's number was the right one; the file's own argument for the
+    exemption is that it "can be counted and cannot grow unnoticed", and a count
+    that two readers do differently is not that.  The success line now prints
+    both, so the two can be reconciled without reading the file."""
+    del SHADOWED[:]
     base, rows = None, {}
     if not os.path.exists(ROSTER):
         return None, {}
@@ -429,6 +473,8 @@ def roster():
             print("mutate.py: bad roster line: %s" % line)
             return None, None
         sha, path, name, consts = fields[0], fields[1], fields[2], fields[3]
+        if (path, name) in rows:
+            SHADOWED.append("%s %s" % (path, name))
         rows[(path, name)] = {"sha": sha, "consts": consts,
                               "why": fields[4] if len(fields) > 4 else ""}
     return base, rows
@@ -542,8 +588,18 @@ def restore_in_flight():
     print("mutate.py: restored %s from a killed run" % rel, flush=True)
 
 
-def mutate_one(decl, const):
-    """Apply one constant, build, restore.  -> (verdict, first error line)."""
+def mutate_one(decl, const, synthesised=False):
+    """Apply one constant, build, restore.  -> (verdict, first error line).
+
+    `synthesised` marks a constant this file BUILT out of the type's own text --
+    `extra_constant`'s named nullary or structure literal.  An error inside the
+    mutated declaration is then UNAVAILABLE, not INVALID: what failed to
+    elaborate is the checker's guess at a term, not the definition, and failing
+    the gate on it would make a correct definition unshippable because
+    `type_constant` read a field type wrong.  It is NOT a free PINNED -- it is
+    reported by name, counted on the "pinned by nothing" line, and the row
+    records `unavailable`, so the exemption is visible exactly the way
+    `unfoldable` is."""
     full = os.path.join(HERE, decl["file"])
     text = read(full)
     span = text[decl["at"]:decl["stop"]]
@@ -572,6 +628,9 @@ def mutate_one(decl, const):
             want = INHAB.search(out[m.end():stop])
             if want:
                 return "UNFOLDABLE", "no Inhabited %s" % want.group(1).strip()
+            if synthesised:
+                return "UNAVAILABLE", "%s:%d -- the synthesised constant does " \
+                    "not elaborate here" % (os.path.basename(where), line)
             return "INVALID", "%s:%d is inside the declaration" % (
                 os.path.basename(where), line)
     return "PINNED", first or "build failed with no located error"
@@ -624,6 +683,167 @@ def resolve_type(text):
         seen.add(last)
         text = synonyms()[last]
     return text.strip()
+
+
+# A `structure T where` and the types of its fields, for `type_constant`.
+STRUCT = re.compile(r"^structure[ \t]+([A-Za-z_][A-Za-z0-9_.']*)")
+FIELD = re.compile(r"^[ \t]+([A-Za-z_][A-Za-z0-9_']*)[ \t]*:[ \t]*([^\n]+?)[ \t]*$")
+
+# The last segment of a name this kernel spells as the canonical empty of its
+# type.  See `nullary_constants`: any other nullary constant is another FIXTURE,
+# and swapping fixtures is a different experiment (gap 1088).
+EMPTIES = {"empty", "nil", "none", "zero"}
+
+_NULLARY = {}
+_FIELDS = {}
+
+
+def nullary_constants():
+    """(file, resolved type) -> a NAMED closed term of that type, per file.
+
+    A `def n : T := …` with NO binders is a constant of `T` that this kernel
+    itself declares -- `Diagnostics.empty` is one, at Planner.lean:398 -- and it
+    is a constant of a type that has no `Inhabited` instance, which is exactly
+    where `default` is not available.  README gap 1035 said of
+    `PlanReq.deferFold`, `PlanReq.finalAssign` and `dayDiagnostics` that
+    "nothing below the gate says any theorem reads those three"; W-21's audit
+    refuted that by hand, folding `dayDiagnostics` to `Diagnostics.empty` and
+    watching PlannerWit.lean fail in three places.  This is that mutation, made
+    the gate's.
+
+    KEYED BY FILE, and that is not an optimisation: the mutation is applied in
+    place, so the constant has to resolve in the mutated declaration's own
+    namespace context, and a name declared in another module may need a prefix
+    this file cannot compute.  Same file is the case it can be sure of."""
+    if not _NULLARY:
+        for path in lib_files():
+            for d in declarations(read(os.path.join(HERE, path)), path):
+                if d["body"] is None or d["type"] is None:
+                    continue
+                # `header` is the whole text in FRONT of the depth-zero `:`
+                # -- the keyword and the name included -- so the binders are
+                # what is left after `HEAD` has eaten those two.
+                head = HEAD.match(d.get("header") or "")
+                if head is None or (d["header"][head.end():]).strip():
+                    continue          # it has binders; not a constant
+                if d["name"].split(".")[-1] not in EMPTIES:
+                    continue
+                _NULLARY.setdefault((path, resolve_type(d["type"].strip())),
+                                    d["name"])
+    return _NULLARY
+
+
+def struct_fields():
+    """Short structure name -> the declared types of its fields, in order."""
+    if not _FIELDS:
+        for path in lib_files():
+            name, fields, depth = None, [], 0
+            for line in read(os.path.join(HERE, path)).split("\n"):
+                depth += line.count("/-") - line.count("-/")
+                if depth > 0 or line.lstrip().startswith("--"):
+                    continue
+                head = STRUCT.match(line)
+                if head:
+                    if name:
+                        _FIELDS.setdefault(name.split(".")[-1], fields)
+                    name, fields = head.group(1), []
+                    continue
+                if name is None:
+                    continue
+                if line[:1] not in ("", " ", "\t"):
+                    _FIELDS.setdefault(name.split(".")[-1], fields)
+                    name, fields = None, []
+                    continue
+                got = FIELD.match(line)
+                if got and "--" not in got.group(2):
+                    fields.append(got.group(2).strip())
+            if name:
+                _FIELDS.setdefault(name.split(".")[-1], fields)
+    return _FIELDS
+
+
+def type_constant(text, path, depth=0):
+    """A closed term of type `text` that is NOT `default`, or None.
+
+    `default` is a constant of every INHABITED type and of no other, and half of
+    this kernel's types deliberately have no `Inhabited` instance (AGENTS 5.1).
+    These are the constants that exist anyway, in the order they are tried:
+
+        List _        []                  Option _      none
+        A × B         (cA, cB)            Nat/Bool/Prop 0 / true / True
+        a nullary `def T.empty : T` in the SAME FILE      T.empty
+        a `structure T` whose every field has one         ⟨c1, …, cn⟩
+
+    THE NAMED ONE IS SPELLED `.empty`/`.nil`/`.none`/`.zero`, AND THAT IS NOT A
+    CONVENIENCE.  Any nullary `def n : T` is a constant of `T`, but most of them
+    are OTHER FIXTURES -- `theCrowdedRequest := theRequest`, `routinePlan :=
+    recurPlan` -- and swapping one witness fixture for another is a DIFFERENT
+    experiment from folding a definition to a constant: it asks whether two
+    populations are distinguishable, not whether a body is degenerate.  Measured
+    at the W-21 repair step: taking every nullary constant reached 21 of the 23
+    "pinned by nothing" rows, 15 of them by a fixture swap, and one of those 15
+    would have replaced a definition's body with ITS OWN NAME.  The canonical
+    empty is the one that is a constant fold in D40's sense.  The fixture swap
+    is README gap 1088, with the shape it would have to take.
+
+    The last two are the W-21 repair step's, and the structure literal is
+    OFFERED ONLY WHEN EVERY FIELD RESOLVES: `Planner.Assign`'s three fields are
+    `List (Option Nat)`, `List Group` and `Nat`, so `⟨[], [], 0⟩` elaborates,
+    while `Planner.Diagnostics` has `Capped _` fields -- a type built by a
+    function, which nothing here can name a value of -- so no literal is offered
+    for it and its own `Diagnostics.empty` is what reaches it.  A type whose
+    fields this cannot name is NOT given a half-built literal.
+
+    EVERY TERM THIS RETURNS IS SYNTHESISED BY A TEXTUAL RULE, so it may fail to
+    elaborate where a hand-written one would not; see the UNAVAILABLE verdict,
+    which is why that is not a gate failure."""
+    if depth > 3:
+        return None
+    text = resolve_type(text.strip())
+    while text.startswith("(") and text.endswith(")") and \
+            arrow_parts(text[1:-1]) and len(product_parts(text[1:-1])) >= 1 and \
+            text[1:-1].count("(") == text[1:-1].count(")"):
+        text = text[1:-1].strip()
+    if not text or "∀" in text or "," in text or len(arrow_parts(text)) > 1:
+        return None
+    if text in CONSTANTS:
+        return CONSTANTS[text][0]
+    parts = product_parts(text)
+    if len(parts) > 1:
+        picks = [type_constant(part, path, depth + 1) for part in parts]
+        return None if any(c is None for c in picks) else "(%s)" % ", ".join(picks)
+    head = text.split()[0]
+    if head == "List":
+        return "[]"
+    if head == "Option":
+        return "none"
+    named = nullary_constants().get((path, text))
+    if named is not None:
+        return named
+
+    fields = struct_fields().get(text.split(".")[-1])
+    if fields:
+        picks = [type_constant(f, path, depth + 1) for f in fields]
+        if not any(c is None for c in picks):
+            return "⟨%s⟩" % ", ".join(picks)
+    return None
+
+
+def extra_constant(decl):
+    """`type_constant` of the RESULT type, under the declaration's binders.
+
+    Beside `constants_for` and `identity_for`, never instead of them, and never
+    a duplicate of what those already try."""
+    kind = resolve_type((decl.get("type") or "").strip())
+    if "∀" in kind or not kind:
+        return None
+    parts = arrow_parts(kind)
+    const = type_constant(parts[-1], decl["file"])
+    if const is None or const in CONSTANTS.get(parts[-1], []):
+        return None
+    if len(parts) == 1:
+        return const
+    return "fun " + "_ " * (len(parts) - 1) + "=> " + const
 
 
 def literal_body(decl):
@@ -791,12 +1011,56 @@ def identity_for(decl):
     return "fun %s => %s" % (lam, body)
 
 
+def write_rows(rows):
+    """Append each row -- or REPLACE the row that already holds its key.
+
+    `--write` used to append unconditionally, so a definition RE-AUDITED after
+    its body changed left its stale row in the file, shadowed by `roster()`'s
+    dict.  Measured at the W-21 repair step: 79 physical rows over 77 keys, and
+    a hand count of the exemption that disagreed with the gate's by one.  A row
+    is a claim about a (file, name) at a body sha; two claims about one key is
+    one claim too many, and the older one is the one nobody can act on."""
+    text = read(ROSTER)
+    lines = text.split("\n")
+    keyed = {}
+    for i, line in enumerate(lines):
+        bare = line.split("#", 1)[0].strip()
+        fields = bare.split(None, 4)
+        if len(fields) >= 4 and fields[0] != "baseline":
+            keyed[(fields[1], fields[2])] = i
+    added, replaced = [], 0
+    for row in rows:
+        fields = row.split(None, 4)
+        at = keyed.get((fields[1], fields[2]))
+        if at is None:
+            added.append(row)
+        else:
+            lines[at] = row
+            replaced += 1
+    out = "\n".join(lines)
+    if added:
+        if not out.endswith("\n"):
+            out += "\n"
+        out += "\n".join(added) + "\n"
+    with open(ROSTER, "w", encoding="utf-8") as handle:
+        handle.write(out)
+    print("%d row(s) appended, %d replaced in mutations.txt"
+          % (len(added), replaced))
+
+
 def run(decls, write, verbose=True):
     """Mutate each declaration with each of its constants.
 
     -> (bad, soft).  `bad` fails the gate; `soft` is the UNFOLDABLE roster --
     named, counted and printed on every run, never silent."""
     rows, bad, soft, pinned = [], [], [], set()
+    # Which mutation earned the pin, per definition.  Counted rather than
+    # inferred: the summary used to read "pinned by an identity" off the mere
+    # PRESENCE of an UNFOLDABLE verdict beside the pin, which was true while the
+    # identity was the only thing that could pin an unfoldable definition and
+    # stopped being true the moment a synthesised constant could -- gap 871's
+    # class, a checker's own prose misquoting the measurement beside it.
+    by = collections.Counter()
     for decl in decls:
         tag = "%s:%s" % (decl["file"], decl["name"])
         if decl["body"] is None:
@@ -820,39 +1084,56 @@ def run(decls, write, verbose=True):
         # no `Inhabited` instance, which is exactly where `default` does not,
         # so it is the one mutation that reaches an UNFOLDABLE definition.
         ident = identity_for(decl)
-        for const in constants_for(decl) + ([ident] if ident else []):
+        # **A named nullary constant, or a structure literal** (W-21 repair
+        # step).  `default` is not the only constant a type has, and for a type
+        # with no `Inhabited` instance it is not one at all: `Diagnostics.empty`
+        # is a constant of `Diagnostics` this kernel declares, and `⟨[], [], 0⟩`
+        # is one of `Assign`.  README gap 1035 counted all three of step 6's
+        # remaining definitions as pinned by NOTHING; an auditor folded two of
+        # them by hand and watched the build fail.  Beside the others, never
+        # instead of them, and marked synthesised so a guess that does not
+        # elaborate is UNAVAILABLE rather than a gate failure.
+        extra = extra_constant(decl)
+        tries = [(c, False) for c in constants_for(decl)]
+        if ident:
+            tries.append((ident, False))
+        if extra:
+            tries.append((extra, True))
+        for const, synth in tries:
             if verbose:
                 # BEFORE the build, flushed: one mutation is a whole kernel
                 # build, and a gate with no progress output looks like a hang.
                 print("  %-58s %-9s building…" % (tag, ":= " + const),
                       end="\r", flush=True)
-            verdict, why = mutate_one(decl, const)
+            verdict, why = mutate_one(decl, const, synth)
             if verbose:
                 print("  %-58s %-9s %-8s %-38s" % (tag, ":= " + const, verdict, why),
                       flush=True)
             verdicts.append((const, verdict, why))
-            if verdict == "UNFOLDABLE":
+            if verdict in ("UNFOLDABLE", "UNAVAILABLE"):
                 soft.append((tag, verdict, ":= %s -- %s" % (const, why)))
             elif verdict != "PINNED":
                 bad.append((tag, verdict, ":= %s -- %s" % (const, why)))
         if any(v == "PINNED" for _, v, _ in verdicts):
             pinned.add(tag)
-        if all(v in ("PINNED", "UNFOLDABLE") for _, v, _ in verdicts):
+            if ident and any(c == ident and v == "PINNED" for c, v, _ in verdicts):
+                by["identity"] += 1
+            if extra and any(c == extra and v == "PINNED" for c, v, _ in verdicts):
+                by["synthesised"] += 1
+        if all(v in ("PINNED", "UNFOLDABLE", "UNAVAILABLE") for _, v, _ in verdicts):
             rows.append("%s %s %s %s %s" % (
                 decl["sha"], decl["file"], decl["name"],
                 # WHITESPACE-FREE, because the roster is whitespace-delimited
                 # and `fun _ _ => true` is one FIELD, not four.
-                ",".join("".join(c.split()) if v == "PINNED" else "unfoldable"
+                ",".join("".join(c.split()) if v == "PINNED" else v.lower()
                          for c, v, _ in verdicts)
                 + ("" if literal is None else ",literal"),
                 "; ".join(w for _, _, w in verdicts)
                 + ("" if literal is None
                    else "; the body IS the constant `%s`" % literal)))
     if write and rows:
-        with open(ROSTER, "a", encoding="utf-8") as handle:
-            handle.write("\n".join(rows) + "\n")
-        print("%d row(s) appended to mutations.txt" % len(rows))
-    return bad, soft, pinned
+        write_rows(rows)
+    return bad, soft, pinned, by
 
 
 FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
@@ -896,7 +1177,7 @@ def main(argv):
         for d in decls:
             d["sha"] = digest(d["body"]) if d["body"] is not None else None
         print("re-running %d rostered mutation(s)" % len(decls))
-        bad, soft, _ = run(decls, False)
+        bad, soft, _, _ = run(decls, False)
         print("%d rostered definition(s) failed re-verification, "
               "%d unfoldable" % (len(bad), len(soft)))
         return 1 if bad else 0
@@ -919,6 +1200,13 @@ def main(argv):
                 if d["sha"] is not None
                 and rows.get((d["file"], d["name"]), {}).get("sha") == d["sha"]]
     owed = [d for d in decls if d not in rostered]
+    # `--only NAME` means AUDIT EXACTLY THIS, whether or not a row already holds
+    # it.  Without this it was a no-op on every definition already rostered --
+    # which is all of them at a settled tree -- so the flag an auditor reaches
+    # for could not re-run the one row they were asking about.  It is not in
+    # `check.sh` and cannot change what the gate does.
+    if only:
+        rostered, owed = [], list(decls)
 
     # The UNFOLDABLE count is printed on EVERY run, owed or not: a definition the
     # fold cannot reach is an exemption, and check 8's allow-list is the precedent
@@ -929,21 +1217,32 @@ def main(argv):
     # first says `default` does not typecheck, the second says no mutation of
     # this definition exists at all, and only the second is an exemption.
     consts_of = lambda d: rows.get((d["file"], d["name"]), {}).get("consts", "")
+    # The constants column, minus `literal`, which is a note about the BODY and
+    # not a mutation's verdict.
+    col = lambda d: [c for c in consts_of(d).split(",") if c and c != "literal"]
     unfold = sum(1 for d in decls if "unfoldable" in consts_of(d))
+    # PINNED BY NOTHING: no constant, no identity and no synthesised term told
+    # this definition from a fold.  `unavailable` counts here beside
+    # `unfoldable` -- a constant that did not elaborate pins nothing either.
     mute_rows = sum(1 for d in decls
-                    if [c for c in consts_of(d).split(",") if c] == ["unfoldable"])
+                    if col(d) and all(c in ("unfoldable", "unavailable")
+                                      for c in col(d)))
     lit = sum(1 for d in decls if "literal" in consts_of(d))
+    # The physical row count beside the key count, so that a hand count of the
+    # exemption and this line cannot disagree in silence; see `roster`.
+    shadow = ("" if not SHADOWED
+              else ", %d row(s) superseded by a re-audit" % len(SHADOWED))
     if gate:
         if not owed:
             print("%d new or changed since %s, %d rostered "
-                  "(%d unfoldable, %d of those pinned by nothing; %d literal), "
+                  "(%d unfoldable, %d of those pinned by nothing; %d literal)%s, "
                   "0 owed"
                   % (len(decls), base[:7], len(rostered), unfold, mute_rows,
-                     lit))
+                     lit, shadow))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
-    bad, soft, pinned = run(owed, write)
+    bad, soft, pinned, by = run(owed, write)
     if soft:
         print("%d definition(s) the fold cannot speak about -- "
               "UNFOLDABLE (no constant of the type exists) or "
@@ -956,10 +1255,11 @@ def main(argv):
     # exemption cannot shrink out of sight -- check 8's allow-list discipline,
     # for the third time in this file.
     mute = sorted({tag for tag, verdict, _ in soft
-                   if verdict == "UNFOLDABLE" and tag not in pinned})
+                   if verdict in ("UNFOLDABLE", "UNAVAILABLE")
+                   and tag not in pinned})
     if mute:
-        print("%d of them are pinned by NOTHING -- no constant of the type and "
-              "no identity on an accumulator:" % len(mute))
+        print("%d of them are pinned by NOTHING -- no constant of the type, no "
+              "identity on an accumulator and no synthesised term:" % len(mute))
         for tag in mute:
             print("  %s" % tag)
     if bad:
@@ -974,12 +1274,11 @@ def main(argv):
         # counting the soft list instead reported five such rows as "0 pinned,
         # 5 unfoldable" on the run that introduced them.
         print("%d definition(s) audited (%d pinned, %d of them by an identity "
-              "on an accumulator; %d unfoldable, %d pinned by nothing; "
-              "%d literal)"
-              % (len(owed), len(pinned),
-                 sum(1 for t in pinned
-                     if any(x == t and v == "UNFOLDABLE" for x, v, _ in soft)),
-                 kinds["UNFOLDABLE"], len(mute), kinds["LITERAL"]))
+              "on an accumulator and %d by a synthesised constant; "
+              "%d unfoldable, %d unavailable, %d pinned by nothing; %d literal)"
+              % (len(owed), len(pinned), by["identity"], by["synthesised"],
+                 kinds["UNFOLDABLE"], kinds["UNAVAILABLE"], len(mute),
+                 kinds["LITERAL"]))
     return 0
 
 

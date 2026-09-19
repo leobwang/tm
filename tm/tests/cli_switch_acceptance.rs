@@ -384,6 +384,12 @@ fn deleting_the_replay_cache_changes_nothing() {
 ///
 /// **And the bite is asserted before anything else**: a state file with no running block in it
 /// would make every line below vacuously true.
+///
+/// **What it does NOT warm, named here because the title does not say it** (W-21 repair step):
+/// a RUNNING BREAK. `tm break` sets `active.paused` and appends nothing, so in that state the
+/// deletion does move an answer, and "changes nothing" is true of this warm-up and not of every
+/// one. [`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`] is that state,
+/// asserted to move exactly the pause and no log line.
 #[test]
 fn deleting_the_runtime_state_changes_nothing() {
     let tm = plan_with_log("energy-14d");
@@ -467,6 +473,103 @@ fn deleting_the_runtime_state_changes_nothing() {
         before.len(),
         log_lines(&tm).len(),
         done.code
+    );
+}
+
+/// **T9's third half, and the state the two above do not warm**: with a break RUNNING,
+/// deleting `.tm/state.json` DOES move an answer — the block comes back un-paused — and this
+/// test is where that is stated, measured and bounded (the owner's **D42**, README gap 1085).
+///
+/// **Why it exists.** [`deleting_the_runtime_state_changes_nothing`] warms with a wake, an
+/// arrival and a running block and never with a break, so its name promised more than its
+/// coverage: `tm break` writes `state.break_` and sets `active.paused` **without appending any
+/// event** — `tm_core::log`'s convention is that the `Event::Break` is written when the break
+/// *ends*, because its `t` is the start — so a running break has left no line in the log, and
+/// neither has the pause it caused. [`Ctx::reconcile_state`] ORs the cache's own running break
+/// back into the derived `paused`; when the FILE IS GONE there is no cache to OR from.
+///
+/// **What it asserts, and the two halves are different claims.**
+///
+/// 1. The move is EXACTLY ONE spelling and EXACTLY the pause. `tm --json now`'s
+///    `active.paused` goes `true` -> `false` and nothing else in it moves; the other ten
+///    spellings are byte-identical. Asserted as an equality after substituting the pause back,
+///    so a future change that moves a SECOND thing fails here rather than widening quietly.
+/// 2. **Nothing was written to the authority.** `.tm/log.jsonl` has the same number of lines
+///    after the deletion as before. That is the claim that matters: a *derivable cache* whose
+///    deletion appends to the log it is derived from is not a cache. On a tree whose plan
+///    depends on the pause the re-laid plan moves the plan hash and `tm plan` appends a second
+///    `Event::Plan` — gap 1085 records that, and this fixture does not reach it.
+/// 3. The notice NAMES the pause, not only the break. D42's rule is that a field the log cannot
+///    carry is named rather than regenerated in silence, and `active.paused` was being
+///    regenerated as `false` while the sentence spoke only of `break`.
+#[test]
+fn deleting_the_runtime_state_while_a_break_runs_resumes_the_block() {
+    let tm = plan_with_log("energy-14d");
+    tm.ok_at(INSIDE, &["wake", "06:05"]);
+    tm.ok_at(INSIDE, &["arrive", "lounge"]);
+    tm.ok_at(INSIDE, &["start", "^p1"]);
+    tm.ok_at(LATER, &["break", "20m", "--where", "walk"]);
+
+    let before = answers(&tm, LATER, JSON_SPELLINGS);
+    let before_lines = log_lines(&tm).len();
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value =
+        serde_json::from_str(&before_bytes).expect(".tm/state.json is not JSON");
+    // The bite: without a RUNNING break and a PAUSED block in the file, every line below is
+    // vacuously true and this test is the one above with more words.
+    assert_eq!(
+        before_state["active"]["paused"], true,
+        "nothing is paused, so this test would prove nothing: {before_bytes}"
+    );
+    assert!(
+        !before_state["break"].is_null(),
+        "no break is running, so this test would prove nothing: {before_bytes}"
+    );
+
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+
+    let first = tm.run_at(LATER, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+    assert!(
+        first.stderr.contains("active.paused"),
+        "the rebuild named the break but not the pause it silently cleared: {:?}",
+        first.stderr
+    );
+
+    let after = answers(&tm, LATER, JSON_SPELLINGS);
+    assert_eq!(
+        moved(&before, &after),
+        vec!["now".to_string()],
+        "the running break moved something other than `tm now`"
+    );
+    // And within `now`, exactly the pause. Substituting it back must make the two identical.
+    let (_, now_before) = before.iter().find(|(n, _)| n == "now").expect("`now` was asked");
+    let (_, now_after) = after.iter().find(|(n, _)| n == "now").expect("`now` was asked");
+    assert_eq!(
+        now_after.replace("\"paused\": false", "\"paused\": true"),
+        *now_before,
+        "the deletion moved more of `tm now` than the pause:\nBEFORE {now_before}\nAFTER  {now_after}"
+    );
+
+    // **The authority was not written to.** A derived cache's deletion may cost an answer; it
+    // may not cost a log line.
+    assert_eq!(
+        log_lines(&tm).len(),
+        before_lines,
+        "deleting the derived runtime state appended to .tm/log.jsonl"
+    );
+
+    let after_state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("rebuilt state"))
+            .expect("the rebuilt .tm/state.json is not JSON");
+    assert!(after_state["break"].is_null(), "a running break came back out of the log");
+    assert_eq!(after_state["active"]["paused"], false, "the pause came back from nowhere");
+
+    eprintln!(
+        "running-break deletion: 1 of {} `--json` spellings moved (`now`, and only \
+         `active.paused` within it), {} log lines before and after",
+        before.len(),
+        before_lines
     );
 }
 

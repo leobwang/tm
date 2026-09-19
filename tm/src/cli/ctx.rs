@@ -159,6 +159,17 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 ///   `active.paused` it set goes with it (`tm break` pauses the block without
 ///   an `Event::Pause`), which is why [`derived_state`] ORs the cache's own
 ///   running break back into the derived `paused`.
+///
+///   **And when the file is MISSING there is no cache to OR from, so the block
+///   comes back RUNNING.** That is the one place a deletion moves an answer,
+///   and it is named in the notice rather than left to be found: `tm --json
+///   now`'s `active.paused` goes `true` -> `false` across the deletion, driven
+///   at the W-21 repair step on `energy-14d`
+///   (`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`), where
+///   it is the ONLY spelling of eleven that moves and `.tm/log.jsonl` stays at
+///   162 lines. On a tree whose plan depends on the pause it reaches further —
+///   a re-laid afternoon, a moved plan hash and a second `Event::Plan` — which
+///   is a derivable cache's deletion writing to the authority; README gap 1085.
 /// * **`active.est_min`** — `Event::Start` carries `pred`, `hsw`, `slept_min`,
 ///   `loc`, `blocks_done` and `since_break_min`, and **no estimate**; `tm
 ///   extend` then adds its minutes to the cached number, so two `extend`s and
@@ -174,7 +185,8 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 ///   that happened. Its absence is load-bearing in the safe direction (it
 ///   makes the automatic close sweep once), so the rebuild leaves it alone.
 pub const HOST_ONLY_STATE: &[&str] = &[
-    "`break` (a running break is logged only when it ends)",
+    "`break` (a running break is logged only when it ends) and with it \
+     `active.paused` — a paused block comes back RUNNING",
     "`active.est_min` (no `start` event carries an estimate)",
     "`priorities_yesterday` (no event carries a `p`)",
     "`closed` (`swept` is a fact about a sweep, not an event)",
@@ -199,7 +211,7 @@ pub const HOST_ONLY_STATE: &[&str] = &[
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
-/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) |
+/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) — and `active.paused` with it |
 /// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]) |
 ///
 /// **The one residue inside a derivable field, measured rather than waved at.**
