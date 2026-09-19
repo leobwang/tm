@@ -44156,3 +44156,513 @@ parity P38.**
 
 None entered and none created. `git worktree list` shows the main checkout and
 `stage5-lookahead`, which is untouched.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-21**, **track A**, on
+     the worktree `.claude/worktrees/w21-a`, branch `w21-a`, from `4ccf4ef`.
+     Two commits: `2085103` (check 9's identity on the accumulator, gap 985)
+     and `ecb9084` (D42 — `.tm/state.json` becomes a cache of the log, gap
+     993).  Gap range **1030-1059**; this step takes **1030-1038** and leaves
+     1039-1059 free.  No goal added, discharged or deleted: **burn-down stays
+     9**.  `check.sh` **9/9**.  Whoever merges renumbers (AGENTS 6.4).
+     =========================================================================== -->
+
+## Stage 6 — W-21, track A: a missing file and an empty one were one value, and a fold a constant cannot reach
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `2085103` | **check 9's identity on the accumulator** — `mutate.py` gains the degenerate body that exists for an uninhabited type, five of the 23 UNFOLDABLE rows are re-run and all five are PINNED, and the gate that was **green on an instance of its own class** now exits 1 on it |
+| `ecb9084` | **D42** — `.tm/state.json` becomes a derivable cache: nine of §10.2's fields come back out of `.tm/log.jsonl`, four cannot and are **named on stderr**, and `deleting_the_runtime_state_changes_nothing` is T9's symmetric half |
+| this block | the ledger |
+
+`kernel/corpus/`, `lean-toolchain`, `Goals.lean`, `Check.lean`,
+`Negative.lean`, `Planner.lean`, `Emit.lean`, `PlanCheck.lean` and every
+fixture and snapshot are untouched:
+`git diff --name-only 4ccf4ef..HEAD` is exactly `kernel/check.sh`,
+`kernel/mutate.py`, `kernel/mutations.txt`, `tm/src/cli/ctx.rs`,
+`tm/src/cli/day.rs`, `tm/tests/cli_latency.rs`,
+`tm/tests/cli_switch_acceptance.rs` and this file.
+
+### 2. Gap 993, reproduced before anything was written
+
+The owner's D42 is driven, so this step began by driving it. Debug binary at
+`4ccf4ef`, `kernel/corpus/plan-basic`, every invocation capped at
+`MemoryMax=40G`:
+
+```
+tm --now 2026-09-07T09:00 wake 06:05 ; arrive lounge ; start ^p1
+rm .tm/state.json
+tm plan    09:00  2 p5 ▶ Call the bank about the ca…       20m     30m so far   exit 0
+tm now     nothing running                                                       exit 0
+tm done    tm: nothing is running (`tm done ^id` for a retro done)                exit 1
+tm stop    tm: nothing is running                                                 exit 1
+tm check   no problems                                                            exit 0
+```
+
+`.tm/log.jsonl` still held the `wake`, the `arrive` and the `start`. The
+regenerated file had `date`, `wake`, `arrival`, `loc`, `window`, `budget` and
+`active` **all null**.
+
+**The root is one line, and it is not about `active`.**
+`Store::load_state` is `read_json(..)?.unwrap_or_default()`, so *"there is no
+file"* and *"the file says nothing is running"* arrive as the same
+`RuntimeState`. They are not the same statement: a `null` `active` in a file
+that exists is a positive claim, because every verb that ends a block writes it,
+and an absent file makes no claim at all. `Ctx::load_with` now asks
+`store.exists` **before** `load_state` and hands the answer to
+`Ctx::reconcile_state`.
+
+After, on the same tree, same instants:
+
+```
+tm plan    09:00  2 p5 ▶ Call the bank about the ca…       20m     30m so far   exit 0
+tm now     ▶ ^p1 Call the bank about the card · started 09:00 · 30m of 20m       exit 0
+tm done    ✓ ^p1 Call the bank about the card · 30m/20m                          exit 0
+tm stop    stopped ^p1 after 30m · 5m left                                       exit 0
+tm check   no problems                                                            exit 0
+```
+
+and the rebuilt file is the deleted one **byte for byte**, `last_plan_hash`
+(`1b0d690666689769`) and `est_min` (20) included.
+
+### 3. D42 item 2 — which fields are derivable, measured rather than assumed
+
+The brief expected `last_plan_hash` and `interrupt` to be the host-only ones.
+**Both are derivable, and the honest split is different.**
+
+| §10.2 field | derivable? | from, or why not |
+|---|---|---|
+| `date` | yes | `today` |
+| `wake` | yes | the latest `DayReplay::wake` **on or before** today |
+| `arrival` | yes | `DayReplay::arrival` (`Event::Arrive`) |
+| `loc` | yes | the latest `DayReplay::loc_changes` on or before today, else `DayReplay::loc` |
+| `window` | yes | `DayReplay::window` |
+| `budget` | yes | `DayReplay::budget` |
+| `active` | yes, but not `est_min` | `Replay::open_block` — id, `started`, `paused` |
+| `interrupt` | **yes** | `Replay::open_interrupt`; `tm interrupt` appends its `Event::Interrupt` immediately |
+| `last_plan_hash` | **yes** | `DayReplay::last_plan_hash`; `Event::Plan` carries `hash` |
+| `break` | **no** | `tm_core::log`'s own event convention: *"the entry is appended when the break ends"*, and `day::end_break` is the only writer of an `Event::Break`. A running break has left no line at all |
+| `active.est_min` | **no** | `Event::Start` carries `pred`, `hsw`, `slept_min`, `loc`, `blocks_done`, `since_break_min` — and no estimate; `tm extend` then adds its minutes to the cached number |
+| `priorities_yesterday` | **no** | no event carries a `p` |
+| `closed` | **no** | `closed.swept` is a fact about whether a kernel sweep has run, not about anything that happened |
+
+**`wake` and `loc` are the two `roll_day` deliberately does not clear**, so the
+cache carries them across days and the derivation has to as well. Reading
+today's `DayReplay` alone was tried: it moved `tm now`, `tm plan`, `tm log`,
+`tm log --tail 5`, `tm log --since 7d`, `tm review day` and `tm review week` on
+the T9 fixture — wrong, not merely narrower.
+
+**`est_min` is not a second definition.** `Ctx::planned_block` is the one
+function `tm start` writes it from, and the rebuild calls the same one;
+`tm start`'s five lines of arithmetic are gone. What it returns after a rebuild
+is the estimate the item carries **now**.
+
+**The one residue inside a derivable field.** `tm plan` appends its
+`Event::Plan` only when the hash *moved*, so a day whose first plan reproduces a
+hash last logged on an earlier day logs nothing and `last_plan_hash` derives as
+`None`. That is never worse than the cache: `roll_day` already nulls it at every
+day boundary.
+
+### 4. Failing loudly, and the three design choices measurement settled
+
+D42's *"a field that cannot be derived must FAIL LOUDLY rather than regenerate
+as null"* is two stderr lines, and only when something was **stranded** — a
+running block or a running interruption came back:
+
+```
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^p1 is running, started 09:00
+tm: the log does not carry these, so they were NOT restored: `break` (a running break is logged only when it ends), `active.est_min` (no `start` event carries an estimate), `priorities_yesterday` (no event carries a `p`), `closed` (`swept` is a fact about a sweep, not an event)
+```
+
+A plan directory synced without `.tm/state.json` — `tm init` gitignores it, so
+that is the ordinary case and not an incident — has lost nothing and is told
+nothing.
+
+Three choices were settled by a test failing, not by argument, and each is
+written into `Ctx::reconcile_state`'s own doc comment beside the rule it bought:
+
+1. **It writes nothing.** Writing the rebuilt cache in `load_with` made
+   `tm wake` create `.tm/state.json` on a tree the kernel refuses —
+   `cli_write_gate`'s
+   `every_write_verb_refuses_a_tree_the_kernel_cannot_load_and_writes_nothing`
+   caught it, and that is D35's own rule, *"none of them writes a byte"*. It
+   also made a read-only verb at an early `--now` persist that instant's
+   `arrival`, `window` and `budget`, which
+   `a_now_before_the_ledger_is_answered_and_not_persisted` caught. The
+   reconciled runtime reaches disk only through the `save_state` the verb was
+   going to run anyway, every one of which is past `kernel_bridge::gate`.
+2. **Only a housekeeping verb is loud.** `tm_log_is_byte_identical_on_the_corpus`
+   asserts `tm log`'s **stderr** empty over seven corpus trees, and
+   `logs/three-days` ends with `^t8` still running and no `.tm/state.json` beside
+   it. A read verb did not rebuild anything and says nothing about it.
+3. **The stale half is real and the log wins it.** Driven at `4ccf4ef` on
+   `corpus/plan-basic`: `start ^p1`, `done`, then one hand-appended
+   `{"ev":"undo","of":"done","id":"p1"}` — the line `tm undo` itself writes —
+   and **with `.tm/state.json` present** `tm plan` drew `^p1` with `▶` and
+   *"60m so far"* while `tm now` said *"nothing running"* and `tm done` said
+   *"nothing is running"*. That is gap 993's whole symptom set without deleting
+   anything. The comparison is on the running block's **identity** alone, so
+   `est_min` and `paused` stay the cache's when the same block is named.
+
+`cli_latency`'s three-year row builds exactly that tree — its row 4 hand-appends
+an `undo` of the last `done`, reopening `^224` — so row 6's `tm start ^z5` was
+correctly refused *"^224 is running"*. **That is a behaviour change, and it is
+recorded beside the line it moved**: row 6 now closes the block row 4 reopened
+first.
+
+### 5. The T9 test, and what it cannot see
+
+`deleting_the_runtime_state_changes_nothing`
+(`tm/tests/cli_switch_acceptance.rs`), modelled on
+`deleting_the_replay_cache_changes_nothing` beside it. Run verbs, delete,
+rerun, diff every `--json`:
+
+```
+runtime-state deletion: 11 `--json` spellings identical, every §10.2 field but
+`priorities_yesterday` came back out of 163 log lines, `tm done` exit 0
+```
+
+It makes four assertions, and the first is the bite: the file must hold a
+running block, a `wake` and a `loc` before the deletion, or every line below is
+vacuously true. The setup verbs run at `INSIDE` — three days behind the instant
+everything is asked from — precisely so the `wake`/`loc` carry-forward is
+exercised. Then: eleven spellings byte-identical; the **rebuilt file itself**
+equal to the deleted one on every field but `priorities_yesterday`; and
+`tm done` exit 0 naming `^p1`, which is the half of gap 993 the user met.
+
+**It bites on its own class, measured.** With `Ctx::reconcile_state`'s body
+replaced by a bare `return` and the two stderr assertions removed, `moved()`
+reports **seven of the eleven** — `now`, `plan`, `log`, `log --tail 5`,
+`log --since 7d`, `review day`, `review week` — and `same()` fails on the
+first.
+
+**What it cannot see**, said plainly: it asserts nothing about a tree whose
+`.tm/state.json` is present and stale (§4 item 3 is driven by hand and has no
+test); it runs one fixture, `plan-basic` carrying `logs/energy-14d`; and
+`priorities_yesterday` is asserted **lost**, not asserted harmless — measured
+separately, nulling a 25-entry map moved neither `tm plan` nor `tm now` on this
+tree, which is a fact about this tree and not about §7.4.
+
+### 6. Gap 985 — the identity on the accumulator
+
+D40 folds a body to a **constant of its type**, and 23 of the W-20 land step's
+46 definitions have no such constant. A constant is not the only degenerate
+body. When a definition's result type appears among its own argument types, the
+degenerate body is that argument, and it **exists for an uninhabited type**:
+
+| definition | the identity `mutate.py` writes |
+|---|---|
+| `PlanReq.rePlaceWalk : … → Assign → List … → Assign` | `fun a0 _ => a0` |
+| `PlanReq.deferWalk : … → List Placed → Assign → List Placed → List Placed × Assign` | `fun a0 a1 _ => (a0, a1)` |
+| `placeAt (q : Placed) (t : Nat) : Placed` | `q` |
+| `PlanReq.displaceInto (…) (a : Assign) (q : Placed) … : Placed × Assign` | `(q, a)` |
+| `PlanReq.deferOne (…) (a : Assign) (q : Placed) : Placed × Assign` | `(q, a)` |
+
+`identity_for` splits the result type on its depth-zero `×`, matches each
+component by **exact type text** after `abbrev` resolution — first against the
+header's explicit named binders, then against the declared type's anonymous
+arrow binders — and returns `None` when any component has no source. It is
+tried **beside** the type's own constants and never instead of them.
+
+**All five are PINNED.** Ten kernel builds, capped, 28.4 s:
+`Planner.lean:5214`, `:5169`, `:5183`, `:5095`, `:5284`. Gap 985 said the
+mutation *"may SURVIVE, which would be a real finding and a witness owed"* — it
+did not, so **no witness is owed**, and what the run bought is that five of step
+6's eight algorithm definitions are now audited rather than exempt.
+
+**Reach, measured over the whole library.** 395 of 2,853 parsed definitions
+have an identity. Of the 23 UNFOLDABLE rows, **5 are reached and 18 are not**:
+`PlanReq.deferFold`, `PlanReq.finalAssign` and `dayDiagnostics`, each of which
+takes a `PlanReq` and returns something else, plus the fifteen `PlannerWit`
+witness fixtures, which take no arguments at all. The gate's line now prints
+both numbers —
+
+```
+46 new or changed since 86c4dc6, 46 rostered (23 unfoldable, 18 of those pinned
+by nothing; 0 literal), 0 owed
+```
+
+— because *"no constant of this type exists"* and *"nothing mutates this
+definition at all"* are two different claims and only the second is an
+exemption.
+
+### 7. The W-20 rule, applied to the gate this step touched
+
+**The gate was green on an instance of its own class, and it was driven before
+it was believed.** A probe with gap 985's own shape — an accumulator fold
+nothing in the package reads —
+
+```lean
+def w21AccumWalk : Planner.Assign → List Nat → Planner.Assign
+  | a, [] => a
+  | a, _ :: rest => w21AccumWalk { a with used := a.used + 1 } rest
+```
+
+was reported, with `identity_for` disabled:
+
+```
+  PlannerWit.lean:w21AccumWalk  := default  UNFOLDABLE  no Inhabited (Assign → List Nat → Assign)
+  1 of them are pinned by NOTHING …
+  EXIT=0
+```
+
+and with it live:
+
+```
+  PlannerWit.lean:w21AccumWalk  := default            UNFOLDABLE  no Inhabited (…)
+  PlannerWit.lean:w21AccumWalk  := fun a0 _ => a0     SURVIVED    build completed
+  1 definition(s) not pinned by a constant:
+  EXIT=1
+```
+
+The probe was removed with `git checkout` and `git status` is clean; it is in
+no commit.
+
+**What check 9 still cannot see, after this step.**
+
+* **18 of 46 are pinned by nothing at all.** Three of them are step 6's
+  algorithm (gap 1035).
+* **The identity's type match is textual** (gap 1036). A component whose source
+  is spelled differently from the result — definitionally equal, textually not —
+  is a miss. It is never a false PINNED: an identity that does not elaborate is
+  an error inside the declaration, which is INVALID, which fails the gate.
+  Implicit, instance and strict-implicit binders are not offered as sources.
+* **A constant is still not an inversion** (gap 937, unchanged) and **two
+  constants are not all** (unchanged). The identity buys one more degenerate
+  body, not the whole space of wrong ones.
+* **An identity that is the RIGHT body is indistinguishable from a defect.** A
+  definition whose correct implementation *is* `fun a _ => a` would be reported
+  SURVIVED. There are none in the library today; there is no mechanical test
+  for it, and the LITERAL verdict's own paragraph is the precedent.
+* Everything `mutate.py`'s header already lists: a row is a claim, only `def`
+  and `abbrev`, only the library, a structure-literal body is unmatched, and no
+  Rust is mutated at all (gap 936).
+
+### 8. Acceptance, capped, re-measured at `ecb9084`
+
+```
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (4754 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (23704 citations, 22191 resolved, 1513 allowed (113 vocabulary, 347 counted), 0 allow entries unused)
+new definitions mutated                        ok  (46 new or changed since 86c4dc6, 46 rostered (23 unfoldable, 18 of those pinned by nothing; 0 literal), 0 owed)
+```
+
+exit 0; 8.21 s, 8.49 s and 8.90 s over three runs, the last with this block in the tree. `cargo test --workspace`: **1,346
+passed / 0 failed / 9 ignored across 79 binaries**, `--no-fail-fast`, rc 0.
+Named suites, from that run: `cli_switch_acceptance` 10, `cli_write_gate` 11,
+`kernel_log_door` 23, `kernel_replay_parity` (T5) 29 with 4 ignored,
+`kernel_call_counts` 2, `kernel_lookahead_parity` 4, all 0 failed. `cli_latency`
+**5 passed / 1 ignored both fully parallel and at `--test-threads=1`** — the
+brief's known flake did not need the serial re-run, and both were taken anyway.
+
+**Every delta against `4ccf4ef`'s baseline, explained.**
+
+| figure | baseline | here | why |
+|---|---|---|---|
+| axiom audit | 4,754 | 4,754 | no Lean changed |
+| check 5 | 93 | 93 | unchanged |
+| corpus | 29/37, 4/5 | 29/37, 4/5 | unchanged |
+| burn-down | 9, all stage 6 | 9, all stage 6 | no goal touched |
+| check 8 citations | 23,629 / 22,117 | 23,704 / 22,191 | **+75 / +74**, split: **+12 / +12** from the two commits' prose in `check.sh`, `mutate.py` and `mutations.txt` (measured at `ecb9084`: 23,641 / 22,129), and **+63 / +62** from THIS block, which check 8 sweeps. check 8 does not sweep `tm/src`, so the Rust's doc comments are not in either number. Allowed citations went 1,512 → 1,513 and **no allow ENTRY was added** — 113 vocabulary and 347 counted, the same as the baseline, 0 unused |
+| check 9 | 46 rostered, 0 owed | 46 rostered, 0 owed | the same 46; five rows re-run against the identity and the exemption line widened from one number to two |
+| `cargo test --workspace` | 1,345 | 1,346 | **+1**, `deleting_the_runtime_state_changes_nothing` |
+| T11 `tm drop` rows | ~127-142 ms | 151.9 ms (later verb), 151.8 ms (gated write) | above the brief's band; another agent was running `lake` in the main checkout throughout, so this is a **loaded-machine** figure and the bound it is asserted against is 1 s |
+
+### 9. A process breach, disclosed
+
+**One figure was taken from the wrong tree, caught, and re-taken.** While
+measuring the running-break residue for gap 1034, `tm/src/cli/ctx.rs` had been
+restored from the neutralisation probe but the binary had **not** been rebuilt,
+so `target/debug/tm` still held `reconcile_state` stubbed to a bare `return`.
+The first measurement therefore read *"`active = None`, every field null"* —
+which is the pre-D42 behaviour, reported as though it were the new one. It was
+noticed because the number disagreed with §2's own drive, the workspace was
+rebuilt, and the measurement re-taken; the figure in gap 1034 is the second one.
+Nothing was committed from the first. AGENTS §5.11 is exactly this, and the
+campaign's own defect class.
+
+**Check 8 caught this step twice, and both were repaired rather than
+exempted.** `mutate.py`'s new `split_header` docstring backticked binder_text,
+a name no declaration carries — the campaign's own most persistent defect
+class, shipped by the sixth consecutive run and caught by the gate for the
+first time inside `kernel/*.py`. The first draft of §8's delta row then
+backticked the same dead name **while describing it**, and check 8 caught that
+too. Neither reached a commit; no allow entry was added for either.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm`, `mutate.py` and `citations.py`
+invocation in this step ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`. No
+memory bound was raised, no `native_decide` was used, no fixture, snapshot,
+latency band or corpus file was re-blessed, no allow-list entry was added, and
+no predicate was weakened.
+
+### 10. What this step did NOT do
+
+* **It did not touch the kernel.** No Lean file changed; `Planner.lean`,
+  `Emit.lean`, `PlanCheck.lean`, `Goals.lean`, `Check.lean` and `Negative.lean`
+  are byte-identical to `4ccf4ef`.
+* **It did not do D27 early.** No candidate fact is derived anywhere; gaps 113,
+  114, 116 and 301's item 1 are untouched, and D34 stands.
+* **It did not teach `tm check` to report the disagreement.** D42's own commit
+  message declined that as a *substitute* for the cache; it is still not a
+  problem `tm check` names (gap 1032).
+* **It did not drive the TUI**, which no agent can (AGENTS §5.13, gap 182).
+* **It added no cheat, no `PlannerWit` section, no parity entry and no goal.**
+
+### 11. Gaps taken — 1030-1038; **1039-1059 free**
+
+**Gap 1030 — `active.est_min` is rebuilt from the tree, so a `tm extend` before
+the rebuild is lost.**
+1. *What is not done.* `Event::Start` carries no estimate, so a rebuilt
+   `active.est_min` is `Ctx::planned_block`'s answer **now**, not the number
+   `tm start` wrote. `tm extend` adds its minutes to the cached value and logs
+   only `Event::Extend{by_min}`, so two extends and a duration multiplier are
+   not reconstructible either.
+2. *Why.* Adding the estimate to `Event::Start` is a log-format change, which is
+   D16's ground and one definition of the line format away from this step.
+3. *What it costs.* After a rebuild, `tm now`'s *"30m of 20m"* denominator and
+   §9.1's overtime prompt read the item's present estimate. Measured: on a block
+   whose item had already been marked done and re-opened, the denominator moved
+   20 → 60 (`remaining` is 0, so `block_min` is the fallback).
+4. *Which step clears it.* Any step that widens `Event::Start`; until then the
+   stderr notice names it.
+
+**Gap 1031 — `priorities_yesterday` is lost by a rebuild, and nothing says so at
+the moment it would matter.**
+1. *What is not done.* §7.4's hysteresis map has no event behind it and comes
+   back empty. The rebuild names it on stderr; `tm plan` does not.
+2. *Why.* The map is the priorities of the last plan stored **before** today's
+   first plan, and `.tm/last_plan.json` has since been overwritten with today's.
+   No log line carries a `p`.
+3. *What it costs.* One day's ranking is computed without yesterday's damping.
+   Measured on `plan-basic` + `logs/energy-14d`: nulling a **25-entry** map
+   moved neither `tm --json plan` nor `tm --json now`, so the cost is real but
+   did not bite on this tree — a fact about this fixture, not about §7.4.
+4. *Which step clears it.* Logging the map, or accepting the loss by name.
+
+**Gap 1032 — `tm check` still does not name a cache/log disagreement as a
+problem of its own.**
+1. *What is not done.* On a tree whose `.tm/state.json` disagreed with the log,
+   `tm check` said *"no problems"* before this step and says *"no problems"*
+   after it — correctly now, because the two no longer disagree by the time it
+   looks, but it has no diagnostic for the condition and it is not a
+   housekeeping verb, so it is never the one that is loud.
+2. *Why.* D42's own commit declined teaching `tm check` to report it **as the
+   fix**, as leaving two authorities that can still diverge between checks. Its
+   value as a *report* beside the fix was not put to the owner.
+3. *What it costs.* A user who runs `tm check` after a hand edit of the log
+   learns nothing about a block the log reopened.
+4. *Which step clears it.* An owner call, and then one problem kind in
+   `lifecycle::check`.
+
+**Gap 1033 — `closed` is not derived, though `Replay::closes` could supply
+day/week/month.**
+1. *What is not done.* A rebuild leaves `closed` at whatever the absent file
+   implied — `Default` — and `closing::auto_close` re-stamps it on the next
+   housekeeping verb.
+2. *Why.* `closed.swept` is a fact about whether a kernel sweep has run, not
+   about an event, and its absence is load-bearing in the **safe** direction: it
+   makes the automatic close sweep once. The stamps themselves are also scope
+   dependent — `Replay::closes` under `ReplayScope::Hot` is not the whole
+   history — and deriving them wrongly would skip a close.
+3. *What it costs.* One extra `autoClose` sweep after a rebuild, which is work
+   and not a wrong answer.
+4. *Which step clears it.* Any step willing to price the scope question.
+
+**Gap 1034 — a running break is invisible to the log, so a rebuild un-pauses the
+block.**
+1. *What is not done.* `tm break` writes `state.break_` and sets
+   `active.paused = true` and appends **nothing**; the `Event::Break` is written
+   when the break ENDS. Driven, capped: with a break running
+   (`{started: 09:00, planned_min: 20, where: walk}`, `paused: true`), `rm
+   .tm/state.json` then a verb gives back `active = {id: p1, started: 09:00,
+   est_min: 20, paused: false}` and `break = null`.
+2. *Why.* The event's `t` is the break's START, so it cannot be written until
+   its length is known. That is `tm_core::log`'s stated convention, not an
+   oversight here.
+3. *What it costs.* The break's remaining minutes and its `where` are gone, the
+   block reads as running rather than paused, and `since_break_min` restarts.
+   The rebuild names `break` first in its stderr line, which is the whole of the
+   mitigation.
+4. *Which step clears it.* A `break start` event, which is a log-format change
+   (D16).
+
+**Gap 1035 — three of step 6's eight UNFOLDABLE definitions are pinned by
+neither a constant nor an identity.**
+1. *What is not done.* `PlanReq.deferFold : PlanReq → List Placed × Assign`,
+   `PlanReq.finalAssign : PlanReq → Assign` and
+   `dayDiagnostics : PlanReq → Diagnostics` each take a `PlanReq` and return
+   something else, so no argument has the result's type and no `Inhabited`
+   instance exists for it.
+2. *Why.* Both degenerate bodies this gate knows are unavailable at once.
+3. *What it costs.* D40's letter — *"the step must show something FAILING for
+   each"* — is still unmet for 18 of 46, three of them algorithm. Nothing below
+   the gate says any theorem reads those three. (`PlanReq.deferFold` is
+   `PlanReq.deferWalk` applied, and `deferWalk` IS now pinned, so the practical
+   exposure is narrower than the count — but that is an argument, not a
+   measurement, and the gate makes no such claim.)
+4. *Which step clears it.* A third degenerate body — the most likely is
+   *"replace the body with a call to one of its own arguments' accessors"*, or
+   an `Inhabited` instance written **for the checker only** and never exported,
+   which is a decision and not a patch. With gap 980.
+
+**Gap 1036 — the identity's type match is textual, so a differently-spelled
+source is a miss.**
+1. *What is not done.* A result component is matched against a binder by exact
+   type text after `abbrev` resolution. A source that is definitionally equal
+   but textually different is not found, and neither is one behind a `def`
+   synonym (gap 987's class).
+2. *Why.* Everything in `mutate.py` is textual; asking Lean for the type costs a
+   build per definition, which is gap 987's own answer.
+3. *What it costs.* A definition that has an identity is reported as having
+   none, so it stays in the "pinned by nothing" count. It is never a false
+   PINNED: an identity that does not elaborate is INVALID, which fails the gate.
+4. *Which step clears it.* The same elaborator round trip gap 987 names.
+
+**Gap 1037 — an identity that is the RIGHT body reads as a defect, and nothing
+can tell them apart.**
+1. *What is not done.* A definition whose correct implementation *is* the
+   identity on its accumulator would be reported SURVIVED and would fail the
+   gate.
+2. *Why.* Mechanically identical to a fold that forgot to fold. This is the
+   LITERAL verdict's problem one level up, and LITERAL was made non-fatal for
+   it; the identity is left FATAL because, measured, there are **0** such
+   definitions in the library today.
+3. *What it costs.* A future definition of that shape needs a named exemption
+   row, the way `unfoldable` is one.
+4. *Which step clears it.* Whoever writes the first one.
+
+**Gap 1038 — `mutate.py`'s progress line uses `\r`, so a piped or redirected run
+is unreadable.**
+1. *What is not done.* The `building…` line is written with `end="\r"`, which
+   overwrites in a terminal and interleaves in a pipe: a captured run reads
+   `…:deferWalk := default building…  …:deferWalk := default UNFOLDABLE …`
+   on one line.
+2. *Why.* It was written for a terminal, and `check.sh` captures the output into
+   `$out`.
+3. *What it costs.* Every transcript in a ledger — this block's included — has
+   to be passed through `tr '\r' '\n'` before it can be read.
+4. *Which step clears it.* One `isatty` test.
+
+### 12. Numbering
+
+Gaps: this step **1030-1038**; **1039-1059 free** inside track A's range, and
+tracks G (1060-1079), Land (1080-1084) and the repair step (1085-1099) are
+untouched. Cheats: none taken; `Negative.lean` untouched. No `PlannerWit`
+section added — the probe of §7 was removed and is in no commit. No parity
+entry. **Highest taken by this track: gap 1038.**
+
+### 13. Worktrees
+
+Created and worked in `.claude/worktrees/w21-a`, branch `w21-a`, from `4ccf4ef`
+(`git worktree add .claude/worktrees/w21-a -b w21-a HEAD`). `kernel/TmKernel/.lake`
+and `kernel/tm-kernel-ffi/target` were copied in from the main checkout at the
+same commit so the first build was warm; both are gitignored. The Land step
+merges this branch. `stage5-lookahead` is untouched.
