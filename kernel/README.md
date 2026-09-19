@@ -43610,6 +43610,13 @@ falls on the merge.**
   did not raise a memory bound.
 * **It did not optimise check 4** — gap 703 is re-measured for the fifth time,
   not paid.
+* **It repaired one thing it was not looking for, and it is gap 871's third
+  instance:** `citations.py`'s own header read *"107 uncounted VOCABULARY
+  names"* and claimed the success line prints `107 vocabulary`, while the line
+  beside it prints **110** — the figure is `b1544fb`'s and the file shipped
+  three commits later at `ea57452`. Found by reading the success line next to
+  the sentence quoting it. Repaired in place, with the third instance recorded
+  where the paragraph warns about the class.
 * **It did not adjudicate track A's 19 declared eligibleAt defects** (gap 932)
   or the 160 grandfathered names (gap 833). The six it repaired are the six the
   merge itself introduced.

@@ -167,7 +167,7 @@ nothing else; do not quote these, RE-MEASURE.
   * RUST.  Not one of the six sets is read as PROSE for Rust: a stale citation
     inside a `///` doc comment in tm/src is not swept at all, because only the
     four file sets above are swept.  Check 9 has the same edge (README gap 936).
-  * The allow-list itself.  At W-20 it holds 107 uncounted VOCABULARY names and
+  * The allow-list itself.  At W-20 it holds 110 uncounted VOCABULARY names and
     352 counted ones.  Sections 4 and 8 are SEEDED BASELINES nobody has opened
     -- 160 snake (gap 833) and 50 camel (gap 934) -- and may hide stale
     citations.  The other 142 counted entries were opened by a human once.
@@ -176,8 +176,12 @@ nothing else; do not quote these, RE-MEASURE.
     numbers the W-19 version of this paragraph carried were wrong at the commit
     that introduced it (74/254/93/161 against a file holding 75/250/90/160), and
     the ledger's own account of this file's size was wrong a second time (gap
-    882).  The success line this script prints on every check.sh run says the
-    two that matter -- `107 vocabulary, 352 counted` -- so the gate carries the
+    882).  It was wrong a THIRD time, and this paragraph is where: it read
+    `107 vocabulary` from `b1544fb` while the file it shipped with, three
+    commits later at `ea57452`, holds 110 -- found at the W-20 land step, by
+    reading the success line beside the sentence claiming to quote it.  The
+    success line this script prints on every check.sh run says the two that
+    matter -- `110 vocabulary, 352 counted` -- so the gate carries the
     measurement and this comment carries only the reading.  README gap 871.
 """
 
