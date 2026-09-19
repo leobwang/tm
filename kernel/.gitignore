@@ -1,2 +1,3 @@
 TmKernel/.lake/
 tm-kernel-ffi/target/
+__pycache__/

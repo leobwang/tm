@@ -1,0 +1,404 @@
+# check.sh check 8's allow-list (D39, README gap 779).  `citations.py`'s own header is the
+# specification; this file is the exemptions, and NOTHING in it is a pattern — every entry is
+# a literal name, because a regex that silenced a class is how this check would get quietly
+# useless: the next stale citation would land inside the silenced class.
+#
+# Two syntaxes, and four sections that mean four different things.
+#
+#   name          uncounted.  Cite it as often as the prose likes.
+#   N name        counted.  At most N occurrences across everything swept.  Fewer is fine;
+#                 more FAILS, so a NEW sentence reaching for one of these shows up in a diff.
+#
+# To cite a counted name once more, the honest moves are: open it, and either move it up to
+# VOCABULARY with a reason, or fix the sentence.  Bumping N without looking is how this file
+# stops being worth reading.
+#
+# AND THE CONVENTION THAT KEEPS THIS FILE SMALL.  When a sentence records that a name is
+# DEAD — refuted, renamed, deleted — write the dead name WITHOUT backticks.  It is then not
+# swept, it needs no entry here, and a later sentence that cites it as though it were alive
+# still fails.  W-19 found this by inverting its own repair: the three names it had just
+# corrected were backticked in the correcting sentence, which put them on this list, which
+# would have let the very citations it repaired come back with the check still green.
+
+# =========================== 1. VOCABULARY (uncounted) ===========================
+#
+# Adjudicated at W-19: somebody opened the citing line, and it names a real thing that this
+# kernel does not declare.
+
+# Lean core, `Std` and tactic names.  Cited in proofs and in the notes that explain
+# them: the toolchain's vocabulary, not this kernel's, and the toolchain is not swept.
+List.Nodup.length_le_of_subset
+List.mergeSort_cons
+Option.bind_some
+String.ofList_toList
+UInt32.lt_iff_toNat_lt
+decidable_of_iff
+motive_1
+motive_4
+native_decide
+implemented_by
+
+# chrono 0.4.45, serde_json 1.0.151 and Rust `std` items, named where `Stamp.lean`,
+# `Cal.lean` and `Log.lean` record exactly which function each one ports.
+OUT_OF_RANGE
+TOO_LONG
+TOO_SHORT
+White_Space
+colon_or_space
+timezone_offset
+parse_rfc3339
+parse_internal
+write_rfc3339
+local_minus_utc
+signed_duration_since
+with_timezone
+num_seconds_from_midnight
+from_utc_datetime
+offset_from_local_datetime
+offset_from_utc_datetime
+num_days_from_monday
+num_minutes
+num_seconds
+rem_euclid
+saturating_sub
+partition_point
+or_insert
+sort_by_key
+dedup_by
+float_roundtrip
+f64_from_parts
+parse_integer
+parse_long_integer
+parse_decimal
+parse_decimal_overflow
+parse_exponent
+parse_exponent_overflow
+parse_number
+skip_serializing_if
+define_events!
+
+# The FORK's own vocabulary that is NOT in-tree.  tm-core/src/{planner,log,priority}.rs are
+# in-tree and resolve by themselves (source 3); these are functions, fields, tests and constants
+# of the fork checkout at 4748911 (AGENTS §7.3), which this repository does not hold.
+AUTO_CLOSE_CATCHUP
+# (not cited at W-19, kept as a declaration of intent) active_run
+base_end
+restful_end
+u_floor
+t_i
+slot_blocked
+catch_up
+close_sub
+close_pause
+uncredit_cut
+mark_done
+last_wake_before
+wake_of
+local_midnight
+slept_by_day
+paused_at
+replay_lines
+day_mut
+item_mut
+days.get_mut
+items.get_mut
+energy.sort_by_key
+stamp_from_key
+parse_instance_status
+day_index_wake_to_wake
+undo_mask_pairs_and_dangling
+config.priority_bins
+# (not cited at W-19, kept as a declaration of intent) grammar_proptest
+
+# A Rust DEPENDENCY, declared in `Cargo.lock` and not in any source file this check reads.
+# Adjudicated at W-19: `toml_edit` was grandfathered at one citation and the W-19 block cited it
+# a second time as an example of a writer a textual enumeration cannot see, which is exactly the
+# moment this file says to open an entry rather than bump its count.
+toml_edit
+
+# A naming CONVENTION, not one declaration: `can_fail` is the suffix eleven real checker
+# witnesses carry (`noOverbook_can_fail`, `monotoneInRank_can_fail`, …) and the sentence names
+# the family, not a constant.
+can_fail
+
+# ================= 2. LIVE STALE CITATIONS, FOUND AND NOT REPAIRED =================
+#
+# Check 8 found these on its FIRST run and W-19 did NOT repair them, so they are carried
+# here DECLARED AS DEFECTS rather than laundered as exemptions.  Each is a doc comment that
+# names, in the present tense, a constant that does not exist.  README gap 832 owes them,
+# and the reason they are not fixed here is ownership, not doubt:
+#   * the two `readCand_…` rows are `Lookahead.lean`'s wire decoder, which track P is
+#     editing this run (P5a/P5b); the live theorem is `readCand_refuses_each_of_the_nine_by_name`.
+#   * `mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint` at `Boundary.lean:9135` is a
+#     doc comment on a live theorem naming a constant the SAME FILE retires at `:12287`.
+#   * `logSectionWith_passes_its_zone` at `Boundary.lean:12260`; the live law is
+#     `readLogSection_is_zoneOf_then_logSectionWith`.
+1    readCand_refuses_a_flag_that_is_not_a_boolean                            # TmKernel/TmKernel/Lookahead.lean:4854
+1    readCand_refuses_a_state_that_is_not_a_box                               # TmKernel/TmKernel/Lookahead.lean:4857
+5    mkLogReq?_refuses_headers_of_a_tail_without_a_checkpoint                 # TmKernel/TmKernel/Boundary.lean:9137
+4    logSectionWith_passes_its_zone                                           # TmKernel/TmKernel/Boundary.lean:12262
+
+# ============ 3. ADJUDICATED DEAD NAMES, cited BY a sentence that says so ============
+#
+# Every one of these was opened at W-19: the citation is in a `.lean` file and its own
+# sentence marks the name as refuted, renamed, retired, superseded, withdrawn or deleted —
+# which is AGENTS §3.1 item 3 and §3.2's refute-and-rename discipline leaving its tracks.
+# Check 8 cannot read "refuted"; a human did, once, and this roster is that reading.  The
+# count is what stops a later sentence quietly re-citing one as though it were alive.
+#
+3    Instant.lt_iff_nanos                                                     # TmKernel/TmKernel/Cal.lean:918
+3    LogReq.wf_facts_from_line_one                                            # TmKernel/TmKernel/Boundary.lean:12289
+3    LogReq.wf_headers_from_line_one                                          # TmKernel/TmKernel/Boundary.lean:12289
+4    Planner.a_block_row_is_a_replayed_row                                    # TmKernel/TmKernel/PlanCheck.lean:732
+6    Planner.dayPlan_assigns_nothing_yet                                      # TmKernel/TmKernel/PlanCheck.lean:763
+3    Planner.the_day_has_no_segments_until_the_first_step_lands               # TmKernel/Check.lean:4861
+2    Tm.Planner.mem_stepOneRows                                               # TmKernel/Check.lean:4957
+1    Tm.PlannerWit.mkPlanReq?_refuses_a_zero_denominator                      # TmKernel/Check.lean:5290
+1    Tm.PlannerWit.witCaps_eq                                                 # TmKernel/Check.lean:5297
+1    Tm.PlannerWit.witCaps_ok                                                 # TmKernel/Check.lean:5297
+2    a_block_row_is_a_replayed_row                                            # TmKernel/TmKernel/Planner.lean:3803
+2    a_wall_row_is_covered_by_the_blocked_list                                # TmKernel/TmKernel/Planner.lean:1971
+1    afterDone_is_history_dependent                                           # TmKernel/Goals.lean:63
+5    an_extend_changes_only_the_bookkeeping                                   # TmKernel/TmKernel/Replay.lean:6994
+4    an_open_segment_only_extends                                             # TmKernel/Goals.lean:887
+3    autoClose_adds_at_most_one_stamp_to_each_line                            # TmKernel/TmKernel/Close.lean:3523
+5    autoClose_runs_every_period_it_passes                                    # TmKernel/TmKernel/Boundary.lean:6319
+5    autoClose_stamps_each_line_at_most_once                                  # TmKernel/TmKernel/Boundary.lean:7041
+1    calendar_is_history_independent                                          # TmKernel/Goals.lean:62
+4    closeAct_of_exempt                                                       # TmKernel/TmKernel/Close.lean:1461
+2    closeOne_never_refuses_alreadyDemoted                                    # TmKernel/TmKernel/Close.lean:2456
+4    closePolicy_owes                                                         # TmKernel/Check.lean:1868
+9    closePolicy_owes_only_the_child_fold                                     # TmKernel/TmKernel/Close.lean:279
+7    closeReport_agrees_with_close                                            # TmKernel/TmKernel/Boundary.lean:7235
+7    closeReport_names_the_destination_of_now                                 # TmKernel/TmKernel/Boundary.lean:8316
+3    closeReport_names_the_region_of_now                                      # TmKernel/Check.lean:1870
+5    close_files_a_taken_line_into_closeTo                                    # TmKernel/TmKernel/Boundary.lean:8136
+6    close_keeps_every_remaining_estimate                                     # TmKernel/TmKernel/Boundary.lean:7018
+5    close_keeps_the_remaining_estimate_of_a_line_with_no_record              # TmKernel/TmKernel/Boundary.lean:8091
+14   close_leaves_no_live_line_in_a_closed_region                             # TmKernel/TmKernel/Boundary.lean:6501
+14   close_never_demotes_a_wall                                               # TmKernel/TmKernel/Boundary.lean:6501
+8    close_never_refuses_alreadyDemoted                                       # TmKernel/TmKernel/Boundary.lean:7222
+10   close_reads_every_remaining_estimate_through_demoteEst                   # TmKernel/TmKernel/Boundary.lean:6518
+8    close_rewrites_a_line_only_by_stamping_it                                # TmKernel/TmKernel/Boundary.lean:6994
+10   close_rewrites_a_line_only_by_stamping_or_merging_it                     # TmKernel/TmKernel/Boundary.lean:6517
+5    close_rewrites_a_line_with_no_record_only_by_stamping_it                 # TmKernel/TmKernel/Boundary.lean:8048
+6    close_week_and_close_month_commute                                       # TmKernel/TmKernel/Boundary.lean:6010
+7    close_week_demotes_a_not_yet_due_line_keeping_its_date                   # TmKernel/TmKernel/Boundary.lean:8249
+7    close_week_files_a_dated_line_keeping_its_date                           # TmKernel/TmKernel/Boundary.lean:7367
+11   close_week_folds_a_dropped_child_into_its_parent                         # TmKernel/TmKernel/Boundary.lean:7995
+8    close_week_merges_a_standing_record                                      # TmKernel/TmKernel/Boundary.lean:8161
+1    close_week_merges_a_standing_record_is_not_vacuous                       # TmKernel/TmKernel/Boundary.lean:7182
+17   close_writes_every_estimate_through_demoteEst                            # TmKernel/TmKernel/Boundary.lean:6502
+5    dayOf_agrees_two_days_before                                             # TmKernel/TmKernel/SealInStep.lean:45
+6    dayPlan_assigns_nothing_yet                                              # TmKernel/TmKernel/Planner.lean:23
+5    dayPlan_block_rows_come_from_the_log                                     # TmKernel/TmKernel/PlanCheck.lean:732
+4    dayPlan_diagnostics                                                      # TmKernel/TmKernel/Planner.lean:23
+17   dayPlan_ok                                                               # TmKernel/TmKernel/PlanCheck.lean:12
+6    dayPlan_ok_at_every_eligibility_while_the_day_is_empty                   # TmKernel/TmKernel/PlanCheck.lean:948
+4    demote_not_idem                                                          # TmKernel/Negative.lean:508
+3    demote_verb_is_cmdDemote_at_freshRank_without_a_shift                    # TmKernel/TmKernel/Boundary.lean:6828
+5    each_close_refusal_is_named_on_a_loaded_plan                             # TmKernel/TmKernel/Boundary.lean:5878
+4    every_transform_preserves_the_invariant                                  # TmKernel/TmKernel/Cmd.lean:2153
+2    finiteF64_reads_only_the_digit_counts_beyond_seven_exponent_digits       # TmKernel/TmKernel/Log.lean:2379
+4    jparse_accepts_leading_zeros                                             # TmKernel/TmKernel/Json.lean:3502
+3    jparse_refuses_what_the_fragment_has_no_type_for                         # TmKernel/TmKernel/Json.lean:3596
+6    lifecycle_commands_commute                                               # TmKernel/TmKernel/Boundary.lean:6050
+3    localDate_is_constant_between_transitions                                # TmKernel/TmKernel/Cal.lean:1700
+9    logAnswer_facts                                                          # TmKernel/TmKernel/Boundary.lean:12288
+4    logAnswer_headers                                                        # TmKernel/TmKernel/Boundary.lean:12178
+5    lookahead_day_zero_is_the_hosts                                          # TmKernel/Check.lean:4638
+3    mkInput?_refuses_a_bad_day0                                              # TmKernel/Check.lean:4640
+4    mkLogReq?_refuses_facts_of_a_tail_without_a_checkpoint                   # TmKernel/TmKernel/Boundary.lean:12185
+2    mkPlanReq?_refuses_a_zero_denominator                                    # TmKernel/TmKernel/PlannerWit.lean:205
+8    month_items_are_outcomes                                                 # TmKernel/TmKernel/Boundary.lean:7428
+5    move_has_an_inverse_command                                              # TmKernel/Goals.lean:144
+6    observations_are_in_file_order                                           # TmKernel/TmKernel/Replay.lean:6580
+8    parseStamp_renderStamp                                                   # TmKernel/TmKernel/Stamp.lean:551
+6    plan_tail_drop_as_stage_6_wrote_it_is_refuted                            # TmKernel/Goals.lean:852
+4    prose_is_never_an_item                                                   # TmKernel/TmKernel/Plan.lean:975
+2    refuses_a_negative_break                                                 # TmKernel/TmKernel/Planner.lean:564
+3    remaining_falls_back_to_the_leading_estimate                             # TmKernel/TmKernel/Boundary.lean:8618
+3    remaining_is_the_est_key_when_set                                        # TmKernel/TmKernel/Boundary.lean:8601
+4    remaining_sums_the_children                                              # TmKernel/TmKernel/Boundary.lean:8635
+6    routine_lines_are_open                                                   # TmKernel/TmKernel/Plan.lean:2529
+4    scanLines_prose                                                          # TmKernel/TmKernel/Boundary.lean:278
+2    splitDoc_prose_not_item                                                  # TmKernel/TmKernel/Plan.lean:1334
+3    stepSkel_adds_at_most_one_stamp                                          # TmKernel/TmKernel/Close.lean:3465
+4    stepSkel_line_is_stamped_or_merged                                       # TmKernel/TmKernel/Close.lean:1840
+6    the_close_refusals_are_named_on_loaded_plans                             # TmKernel/TmKernel/Boundary.lean:5914
+5    the_day_assigns_nothing_after_now_until_the_assign_step_lands            # TmKernel/TmKernel/Planner.lean:3502
+6    the_day_has_no_segments_until_the_first_step_lands                       # TmKernel/TmKernel/Planner.lean:22
+13   the_json_edge_round_trips                                                # TmKernel/TmKernel/Boundary.lean:5333
+3    the_log_op_answers_the_block_facts                                       # TmKernel/Check.lean:3352
+2    witCaps_eq                                                               # TmKernel/TmKernel/PlannerWit.lean:393
+1    witCaps_ok                                                               # TmKernel/TmKernel/PlannerWit.lean:393
+
+# ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
+#
+# 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose
+# rather than as a demand that an append-only ledger be rewritten.  NOBODY HAS OPENED THESE.
+# Some are refute-and-rename tracks like section 3's; some are design-document names that
+# never became declarations; some are Rust and fork names; AND SOME ARE STALE CITATIONS
+# NOBODY HAS FOUND YET.  That is the honest reading of an unadjudicated list, and README
+# gap 833 is the debt to burn it down.
+#
+1    Char.ofNat_toNat                                                         # README.md:2952
+1    Core.skel_overdue                                                        # README.md:7211
+3    Ctx.log_warnings                                                         # README.md:20241
+1    EXPECTED_LOG_CALLS                                                       # README.md:20804
+1    Json.Parser.strCore.eq_def                                               # README.md:2244
+1    Json.compress.eq_def                                                     # README.md:2241
+1    LEAN_PATH                                                                # README.md:8850
+1    Lean.Json.parse_compress                                                 # README.md:1819
+1    List.Perm.length_eq                                                      # README.md:16401
+1    List.isEmpty_eq_false                                                    # README.md:36654
+1    List.length_map                                                          # README.md:31913
+1    List.mergeSort_of_pairwise                                               # README.md:10770
+1    List.mergeSort_perm                                                      # README.md:10257
+1    List.pairwise_mergeSort                                                  # README.md:10256
+1    Machine.last_cut                                                         # README.md:12426
+1    NO_LOG                                                                   # README.md:12937
+1    Nat.not_le.mpr                                                           # README.md:36654
+2    O_APPEND                                                                 # README.md:13191
+3    PlanCheck.dayPlan_block_rows_come_from_the_log                           # README.md:32291
+1    Planner.dayPlan_spends_no_minutes_yet                                    # README.md:28283
+2    Planner.mem_stepOneRows                                                  # README.md:29164
+8    Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands    # README.md:28150
+1    PlannerWit.mkPlanReq?_refuses_a_zero_denominator                         # README.md:33888
+1    PlannerWit.the_witness_day_is_two_replayed_blocks_and_the_written_wall   # README.md:30264
+1    PlannerWit.witCaps_ok                                                    # README.md:33890
+1    String.toList_split_intercalate                                          # README.md:1806
+1    TM_FORK                                                                  # README.md:18670
+1    Tm.routine_lines_are_open                                                # README.md:30305
+1    UInt32.toNat_inj                                                         # README.md:31111
+1    a_catch_up_sweep_leaves_one_archive_copy_per_id                          # README.md:4964
+1    a_dangling_reference_is_a_warning_not_a_refusal                          # README.md:6996
+4    a_demoted_section_is_a_month_section                                     # README.md:840
+1    a_line_dated_next_year_changes_no_fact_about_today                       # README.md:17946
+4    a_pinned_section_is_a_day_section                                        # README.md:840
+1    absurd_minute_counts_saturate_instead_of_panicking                       # README.md:21176
+3    an_unambiguous_title_still_works_on_a_tree_that_holds_a_collision        # README.md:33176
+3    an_undo_of_a_close_cancels_the_latest_close_whatever_its_period          # README.md:15847
+2    an_undo_of_an_undo_cancels_nothing                                       # README.md:14830
+1    app_with                                                                 # README.md:12702
+1    append_creates_the_directory_and_one_object_per_line                     # README.md:13437
+1    append_repairs_a_missing_trailing_newline                                # README.md:13439
+1    as_u64                                                                   # README.md:3327
+2    assert_eq!                                                               # README.md:3203
+1    auto_close_catch_up_is_capped                                            # README.md:4963
+1    auto_close_catches_up_on_every_skipped_period                            # README.md:4963
+1    auto_close_runs_each_period_once                                         # README.md:4961
+1    auto_close_without_history_catches_up_over_the_window                    # README.md:4962
+1    blockMinutes_empty                                                       # README.md:28950
+1    by_contra                                                                # README.md:34153
+1    cli_items__readopt_json                                                  # README.md:2566
+3    closeOne_week_refuses_a_standing_tombstone                               # README.md:4277
+1    closed_by_this                                                           # README.md:37123
+1    compensating_undo                                                        # README.md:13366
+1    compress_parse                                                           # README.md:1819
+2    create_dir_all                                                           # README.md:38561
+1    dayPlan_spends_no_minutes_yet                                            # README.md:27565
+1    day_index                                                                # README.md:13366
+1    days_run_wake_to_wake                                                    # README.md:13366
+1    demote_with_a_standing_record_is_refused_by_name                         # README.md:2535
+1    div_euclid                                                               # README.md:9414
+1    dupId_carries_both_placements                                            # README.md:30918
+6    events_for                                                               # README.md:12409
+8    events_named                                                             # README.md:12406
+7    every_scope_is_the_whole_replay_before_the_switch                        # README.md:13518
+1    every_transform_keeps_lines_le_two                                       # README.md:516
+1    field_error                                                              # README.md:19021
+4    fit_replay                                                               # README.md:12415
+1    fixture_log_serializes_back_byte_identically_and_is_snapshotted          # README.md:13368
+1    fork_read                                                                # README.md:22364
+1    from_entries                                                             # README.md:12761
+1    genesis_in_chunks_equals_one_call                                        # README.md:17946
+1    hard_link                                                                # README.md:36942
+1    if_congr                                                                 # README.md:36652
+1    if_neg                                                                   # README.md:10678
+1    install_name                                                             # README.md:1838
+1    instantOf_localSec                                                       # README.md:9449
+1    ite_congr                                                                # README.md:36651
+1    items_eq_itemsFast                                                       # README.md:18248
+1    iter_item                                                                # README.md:19035
+1    iter_range                                                               # README.md:13366
+1    jemitTailAcc_go                                                          # README.md:8943
+2    joining_lines_is_injective                                               # README.md:1745
+1    jtailAcc_go                                                              # README.md:8943
+3    last_cut                                                                 # README.md:12426
+1    lean_dec                                                                 # README.md:897
+1    lean_dec_ref                                                             # README.md:897
+1    lean_inc                                                                 # README.md:897
+1    lean_initialize_runtime_module                                           # README.md:899
+1    lean_io_mk_world                                                         # README.md:897
+1    lean_io_result_is_ok                                                     # README.md:898
+2    lean_list_to_array                                                       # README.md:18147
+1    lean_run_main                                                            # README.md:11337
+1    lean_string_cstr                                                         # README.md:898
+2    logOpFast_core                                                           # README.md:18196
+2    logOp_core                                                               # README.md:18196
+1    logOp_eq_logOpFast                                                       # README.md:18285
+5    log_len                                                                  # README.md:12834
+1    log_narrowed_facts                                                       # README.md:20020
+7    log_replay__three_days_replay.snap                                       # README.md:12546
+1    log_warnings                                                             # README.md:19659
+1    lp_TmKernel_Tm_Look_lookahead                                            # README.md:11255
+1    malformed_lines_are_warnings_not_errors                                  # README.md:13436
+2    max_places                                                               # README.md:14123
+2    mem_stepOneRows                                                          # README.md:29278
+1    mergeSort_cons                                                           # README.md:6201
+1    move_to_a_day_pins_the_line                                              # README.md:2549
+1    naive_local                                                              # README.md:10569
+3    new_events                                                               # README.md:12834
+5    no_verb_makes_a_kernel_log_call_before_the_switch                        # README.md:21700
+1    or_else                                                                  # README.md:10698
+2    overflowing_add_signed                                                   # README.md:9416
+1    pastRows_are_not_batch                                                   # README.md:37558
+1    pending_closes                                                           # README.md:4958
+1    pending_closes_names_what_auto_close_would_run                           # README.md:4961
+1    period_str                                                               # README.md:4959
+1    plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted            # README.md:28219
+1    preserve_order                                                           # README.md:21711
+1    range_keeps_only_the_requested_days                                      # README.md:13367
+4    raw_value                                                                # README.md:14562
+7    read_log                                                                 # README.md:12454
+1    read_to_string                                                           # README.md:19697
+1    read_tolerates_a_line_that_is_not_utf8                                   # README.md:13438
+2    reader_tests                                                             # README.md:13394
+1    refuses_a_break_longer_than_a_day                                        # README.md:26563
+1    refuses_a_non_hex_digit                                                  # README.md:26565
+1    refuses_a_priority_past_seven                                            # README.md:26566
+1    refuses_a_short_digest                                                   # README.md:26565
+3    refuses_a_start_after_now                                                # README.md:26562
+1    refuses_an_estimate_past_the_day                                         # README.md:26562
+2    refuses_an_inverted_window                                               # README.md:26560
+1    refuses_too_many                                                         # README.md:26566
+1    remove_file                                                              # README.md:36969
+1    remove_var                                                               # README.md:36550
+1    rename_i                                                                 # README.md:7759
+1    replay_now                                                               # README.md:12964
+1    replay_refs                                                              # README.md:22964
+1    resume_equals_genesis_at_fifty_cuts                                      # README.md:17944
+6    runCap_without_capacity_is_runWithLog                                    # README.md:11904
+2    rust_facts                                                               # README.md:21761
+4    saturating_add                                                           # README.md:7876
+1    set_len                                                                  # README.md:36942
+1    set_option                                                               # README.md:5485
+1    set_var                                                                  # README.md:36550
+6    shipped_call_sites                                                       # README.md:32356
+1    skelAfter_stamps                                                         # README.md:6332
+1    stepSkel_line                                                            # README.md:6330
+2    stepSkel_stamps                                                          # README.md:4601
+2    termination_by                                                           # README.md:2075
+3    the_log_op_answers_every_entrys_day                                      # README.md:15002
+1    the_response_run_emits_parses_back                                       # README.md:2291
+1    tm_kernel_call                                                           # README.md:11357
+1    to_string                                                                # README.md:24923
+4    to_string_pretty                                                         # README.md:21715
+1    too_big                                                                  # README.md:18517
+1    trace_kind                                                               # README.md:27213
+1    trim_end_matches                                                         # README.md:10798
+2    try_from                                                                 # README.md:16208
+2    var_os                                                                   # README.md:36553
+4    withFloor_is_the_floor_pass                                              # README.md:36450
+1    write_all                                                                # README.md:13193

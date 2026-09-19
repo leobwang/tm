@@ -191,4 +191,44 @@ else
   printf '%s\n' "$out" | grep -v 'declaration uses' | head -40
 fi
 
+# 8. The prose resolves.  The owner's D39 (README gap 779).
+#
+#    FIVE CONSECUTIVE RUNS shipped a stale prose citation -- a doc comment or a
+#    README line naming a theorem that had been deleted or renamed -- and every
+#    one was found by hand by an independent auditor, because no check above
+#    reads a sentence.  Check 3 reads `#print axioms` lines and says so in its
+#    own comment; check 4 reads `/- CHEAT` headers.  Nothing read the prose, so
+#    the single largest recurring defect class in this campaign's ledger was
+#    invisible to the gate by construction.
+#
+#    So: every backticked snake_case identifier in TmKernel/**.lean AND in
+#    README.md is resolved against five DECLARATION sets -- Lean declarations,
+#    fields and constructors; Lean string literals (a wire key is declared by
+#    the literal that spells it); Rust declarations and fields; Rust string
+#    literals; and file stems (`cargo test --test cli_latency` names a file).
+#    None of the five is prose, so one stale sentence cannot launder another.
+#    citations.py's header is the specification and names its own blind spots.
+#
+#    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
+#    that silenced a class is how this check would get quietly useless, because
+#    the next stale citation would land inside the silenced class.  Its four
+#    sections say which exemptions were adjudicated and which were merely
+#    grandfathered, so a reader can tell an intention from an oversight.
+#
+#    It found four LIVE stale citations on its first run, in files W-19 did not
+#    own; they are carried in the allow-list's section 2 declared as defects
+#    (README gap 832), not laundered as exemptions.  Four more it found in files
+#    W-19 did own were repaired in the commit before this one.
+#
+#    The cost is declared, not hidden: 0.21-0.23 s against a 6.7-8.8 s
+#    built-tree wall, about 3%.  Gap 703's measurement is re-taken with it in
+#    README "Stage 6 W-19, track A".
+out=$( python3 citations.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "prose citations" "ok  (${out:-no count reported})"
+else
+  say "prose citations" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
 exit $fail
