@@ -45778,3 +45778,332 @@ and committed in.  `.claude/worktrees/stage5-lookahead` is untouched.  **The mai
 checkout was not written to** — it was read once, for a comparand, and found
 DIRTY (another track's `Check.lean`, `Planner.lean` and `PlannerWit.lean` edits
 were in it), so every number in §7 is this worktree's.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-21**, the **LAND
+     STEP**, in the main checkout on `rebuild-on-lean`.
+     Merges: `023b681` (track A, `2085103..207606e`, six commits) and
+     `a1e2444` (track G, `807ad51..e4dc161`, two commits), on top of track P's
+     `71181a5`, which landed on the main line directly.
+     Gap range **1080-1084**; this step takes **1080-1083** and leaves 1084
+     free.  No goal added, discharged or deleted: **burn-down stays 9**.
+     `check.sh` **9/9**.  Highest gap after this block: **1083**.
+     =========================================================================== -->
+
+## Stage 6 — W-21, the land step: two merges, four append-collisions, and two gates made to bite on the merged tree
+
+### 1. What was merged, and what nobody had to renumber
+
+| merge | branch | commits | conflicts |
+|---|---|---|---|
+| `023b681` | `w21-a` | `2085103..207606e` (6) | `kernel/README.md`, `kernel/mutations.txt` |
+| `a1e2444` | `w21-g` | `807ad51..e4dc161` (2) | `kernel/README.md`, `Check.lean`, `PlannerWit.lean`, `kernel/mutations.txt` |
+
+**All six conflicts were the same conflict**: two branches appending at the same
+end of a file. Every resolution keeps both sides in the order HEAD-then-branch,
+and nothing was dropped or rewritten.
+
+**AGENTS §6.5's five merge debts, discharged by name.**
+
+1. *Cheats renumbered.* Nothing to do: only track P wrote to `Negative.lean`
+   (cheats 213-215), and it landed on the main line. Highest is **215**,
+   `uniq -d` over the `/- CHEAT <n>` headers is empty.
+2. *One gap sequence.* No collision to fix. P took **1000-1007**, A took
+   **1030-1039**, G took **1060-1067**, and this block takes **1080-1083**;
+   1008-1029, 1040-1059, 1068-1079 and 1084 are free.
+3. *Every branch's theorems in `Check.lean`.* **4,839** `#print axioms` lines,
+   **4,839** distinct names (`sort -u`), **4,837** theorem declarations under
+   `TmKernel/TmKernel/`, **92** `APPENDED` banners; the two extra audit lines
+   are the `def`s AGENTS §6.3 says are deliberately audited. Check 3's own
+   `comm -23` reconciliation is empty, which is the gate form of the same count.
+4. *Goals discharged.* **None.** `Goals.lean` is **9 outstanding, all stage 6**
+   on both sides of both merges, and **no commit of W-21 discharged a goal** —
+   see §4 below, which is the honest reason and not an omission.
+5. *Every module imported.* **82** files under `TmKernel/TmKernel/`, **82**
+   `import TmKernel.` lines in `TmKernel.lean`, `comm -23` over the two sorted
+   lists empty. No branch added a module.
+
+`PlannerWit`'s sections did not collide either: track P added none this run and
+said so, so track G's is **19**, and `grep '^## [0-9]*\.'` gives 12..19 with no
+repeat.
+
+### 2. The full acceptance, on the merged tree at `a1e2444`, every command capped
+
+```
+systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet ./check.sh
+
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (4839 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (24389 citations, 22879 resolved, 1510 allowed (113 vocabulary, 347 counted), 0 allow entries unused)
+new definitions mutated                        ok  (77 new or changed since 86c4dc6, 77 rostered (28 unfoldable, 23 of those pinned by nothing; 0 literal), 0 owed)
+```
+
+Exit 0. Three consecutive warm capped runs: **8.37 / 8.31 / 8.34 s**, peak RSS
+**2,083,748 / 2,254,796 / 2,300,776 KiB** (2.0-2.2 GiB). The cold run that
+followed the second merge was **1m47.268s**, which is the kernel rebuild track
+G's 604 new lines of `PlanCheck.lean` cost, not this script's steady state.
+
+The Rust, all capped, all from the merged tree:
+
+| suite | result |
+|---|---|
+| `cargo test --workspace` | **1,346 passed / 0 failed / 9 ignored across 79 result lines** |
+| FFI (`kernel/tm-kernel-ffi`, `cargo test`) | **101**: `kernel` 86, `stack` 7, `corpus` 8, 0 failed |
+| T5 `kernel_replay_parity --include-ignored` | **33 passed / 0 failed**, 6.19 s |
+| the door suite `kernel_log_door --include-ignored` | **23 passed / 0 failed** |
+| `cli_switch_acceptance --include-ignored` | **10 passed / 0 failed** |
+| `kernel_log_grammar --include-ignored` | **18 passed / 0 failed** |
+| `kernel_call_counts` | **2 passed / 0 failed** |
+| `cli_latency` (release, `--test-threads=1`) | **5 passed / 0 failed / 1 ignored**, 13.55 s |
+
+**The known `cli_latency` flake did not fire, and both runs are reported.**
+`cli_latency` ran twice: once fully parallel inside `cargo test --workspace`
+(green) and once **serially** in release (green). T11's noisy rows as RANGES
+from the serial run: later verb **60.9-131.8 ms** across the three log sizes;
+the D35 gated host-only write **60.9-131.7 ms**; `tm log` **65.9-222.8 ms**;
+first verb **693 ms - 2.18 s** (it is the genesis replay and it is the reliable
+one only in that it is always the largest); the 30-day-old hand undo
+**1.296 s**; review week **263.5 ms**; the worst stalled day **521.6 ms**.
+
+**Every delta against the pre-merge main line at `71181a5`, explained.**
+
+| figure | `71181a5` | `a1e2444` | why |
+|---|---|---|---|
+| theorems | 4,795 | **4,839** | +44, all track G's |
+| check 5 | 93 | 93 | unchanged |
+| corpus | 29/37, 4/5 | 29/37, 4/5 | unchanged; `kernel/corpus/` byte-identical |
+| burn-down | 9 | 9 | no goal added, discharged or deleted |
+| citations | 23,953 | **24,389** | +436: two README blocks, 604 lines of Lean, `check.sh`'s and `mutations.txt`'s new prose |
+| resolved | 22,440 | **22,879** | +439 |
+| allowed | 1,514 at `023b681` | **1,510** | **it went DOWN, and it was chased** — see below |
+| allow entries unused | 0 | 0 | unchanged |
+| check 9 rostered | 71 | **77** | +6, all track G's |
+| check 9 unfoldable | 28 | 28 | unchanged in count, **5 now pinned by an identity** |
+| `cargo test --workspace` | 1,345 at `4ccf4ef` | **1,346** | +1: `deleting_the_runtime_state_changes_nothing`, D42's symmetric T9 test |
+
+**The one number that went down.** Check 8's `allowed` fell 1,514 → 1,510 across
+the track G merge, which is the wrong direction for a merge that only adds text,
+so it was measured rather than assumed: a worktree was cut at `023b681`, the
+per-name allow tally taken on both trees, and the difference is **one name** —
+`dayPlan_ok`, **17 citations to 13**. Track G MOVED two comparison populations
+instead of copying them (AGENTS §5.3), and four sentences naming `dayPlan_ok`
+moved out with them. Its allow entry is still used at 13, which is why "0 allow
+entries unused" still holds. *(The worktree was created in the scratch directory
+and removed; `git worktree list` at the end of this step shows the main checkout
+and `stage5-lookahead` alone.)*
+
+### 3. Both merged gates were made to BITE on the merged tree
+
+W-20's lesson is that a gate shipping green proves nothing until you try to make
+it report green on the class it exists to catch. Neither gate *caught* anything
+at this merge — the conflicts were all appends and the resolutions were clean —
+so the catch was **driven** instead, on the merged tree, and reverted.
+
+**Check 8, on the class the W-20 repair widened it for.** Two dead names were
+appended to `README.md`, one on a line and one **wrapped across two**:
+
+```
+2 unresolved:
+  README.md:45782  PlanCheck.subjectCountThatNeverExisted  (resolves to nothing)
+  README.md:45783  PlanCheck.theCensusRatio_thatNeverExisted  (resolves to nothing)
+[citations.py exit 1]
+```
+
+The wrapped one is the exact shape W-20 found check 8 blind to. It resolves the
+two halves and fails.
+
+**Check 9, on the roster's own trust assumption.** Check 9 trusts a row on a
+matching body sha1 rather than re-running it, so the thing to attack is the
+match. `PlanReq.deferWalk`'s body was changed from `e.2` to `a` — a walk that
+forgets its accumulator, which is exactly gap 985's class — and the gate noticed
+and did the work rather than trusting the stale row:
+
+```
+77 new or changed since 86c4dc6, 76 rostered, 1 OWED A MUTATION
+  …PlanReq.deferWalk := default                        UNFOLDABLE no Inhabited (List Placed → Assign → List Placed → List Placed × Assign)
+  …PlanReq.deferWalk := fun a0 a1 _ => (a0, a1)        PINNED   Planner.lean:5297
+1 definition(s) audited (1 pinned, 1 of them by an identity on an accumulator; 1 unfoldable, 0 pinned by nothing; 0 literal)
+```
+
+This is also the merge's own evidence that track A's widening REACHES track P's
+definitions: `deferWalk` is one of the five rows the merge had to reconcile, and
+its identity constant came from A's branch while the `Planner.lean` around it
+came from P's. `mutations.txt` was not rewritten (`--gate`, not `--write`) and
+`Planner.lean` was restored; `git status` is clean.
+
+**What the probe does NOT show, and it matters.** The defective `e.2 → a` body
+BUILT. Check 9 says something in the package distinguishes the definition from a
+degenerate constant; it does not say the body is right. A wrong-but-not-
+degenerate body is still invisible to all nine checks, which is what §5.2's
+witnesses and the `decide` batteries are for.
+
+### 4. The burn-down, and why no commit discharged a goal
+
+**9 outstanding, all stage 6**, unchanged by all eight commits of W-21.
+
+Track G's 49 new lines in `Goals.lean` are the reason written down, and it is a
+finding rather than an omission: `plan_respects_the_energy_filter`,
+`plan_never_batches_past_an_equal_ci_candidate` and
+`plan_places_no_demanding_block_after_wind_down` are **provable today**, because
+`PlanCheck.energyFilter_has_no_subject`, `PlanCheck.batch_has_no_subject` and
+`PlanCheck.windDown_has_no_subject` now PROVE the quantifier empty at **every**
+`PlanReq` where W-18 argued it. Discharging them would put three of AGENTS
+§5.2's theorems-that-mean-nothing into the kernel and drop check 7's number by
+three while nothing became true — §9.2's worst disguised gap, committed on
+purpose. They stay until P5 and P5/P7 give them a subject.
+
+### 5. What earlier stages bought, re-measured here and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep —
+  `grep -rn 'fn replay\b\|undo_mask\|DayIndex\|parse_bytes\|LogEntry::parse\|Log::parse\|Log::new\|Machine\b\|iter_day\|effective()\|parse_timestamp' tm-core tm --include=*.rs | wc -l`
+  — returns **41**, its post-switch floor, unchanged by either merge. No in-tree
+  reader was reintroduced. *(Gap 604 stays open and is R1's.)* **This is the
+  number to watch on the D42 merge specifically**, because D42 gave `ctx.rs` a
+  second way to learn what is running; it learns it through
+  `kernel_log::replay_scoped` like everything else, and the grep is the evidence.
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns **two** sites — `tm/src/cli/ctx.rs:1052` and `tm-core/src/horizon.rs:525`
+  — the same two every merge since W-16 has recorded. *(The `ctx.rs` line number
+  moved from 713 to 1052; D42 added 345 lines above it. The count is the claim.)*
+* **The comparand is still fork `4748911` at full precision.**
+  `the_frozen_comparand_is_read_at_full_precision` passed by name;
+  `serde_json`'s `float_roundtrip` feature is still on in the root `Cargo.toml`;
+  T5's own census printed **20 inputs compared against a frozen fork answer**
+  inside `cargo test --workspace` (7 corpus logs, the generated month, §6.4's 12
+  zone cases), 458 reachable only under `TM_ORACLE`, 6 kernel-only. No Rust
+  file, fixture, snapshot or corpus file changed in either merge except the two
+  `tm/tests/` files track A added a test to.
+* **The corpus is not below its floor:** 29/37 files and 4/5 whole plans, and
+  `git diff 4ccf4ef..a1e2444 -- kernel/corpus/` is empty.
+* **Nothing was re-blessed.** No snapshot, fixture, latency band or corpus
+  expectation was rewritten at either merge.
+
+### 6. Driving the merged binary (AGENTS §5.13), unabridged in the run's report
+
+The release `tm` was built from `a1e2444` and driven on a fresh `tm init` tree
+in the scratch directory, every invocation capped at 8G. The full transcript is
+in the run's report; what it established:
+
+* **A normal day runs.** `wake`, `arrive home`, three `add`s under a month
+  outcome, `plan` (window 08:00-16:00, budget 6 blocks), `start ^w3`, `now`,
+  `extend 30m`, `done --went 1`, `review day`, `check` — all exit 0. `plan`'s
+  tail-drop is visible and named: `· dropped: w1 · w2` with
+  `plan_honesty 0.1666…` in the JSON, which is D29's `plan_tail_drop` doing its
+  job at a 6-block budget.
+* **D42 holds, and it is LOUD.** With `^w3` running, `rm .tm/state.json`; the
+  next verb printed **two** lines before its own output — the rebuild and the
+  honest split:
+
+  ```
+  tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^w3 is running, started 09:05
+  tm: the log does not carry these, so they were NOT restored: `break` …, `active.est_min` …, `priorities_yesterday` …, `closed` …
+  ```
+
+  The running block survived with its start time, and the rebuilt file was
+  **byte-identical** to the one deleted (`diff` exit 0).
+* **`tm check --fix-ids` then `tm undo`** round-trips: two hand-written id-less
+  lines, `check` exits 2 naming both, `--fix-ids` assigns `^xcdq` and `^uev6`,
+  `undo` restores the file and says `8 left`.
+* **A write on a refused tree writes nothing.** Four verbs on the id-less tree,
+  four refusals, the week file byte-identical and `.tm/log.jsonl` still 11 lines.
+* **A duplicated title is legal; a duplicated id is a refusal**, and the
+  kernel's sentence says why: *"a line with no `^id` is keyed by its title, and
+  that key is never written into a file, so the two positions above are where it
+  is"*.
+
+### 7. Gaps
+
+**Gap 1080.** *What is not done.* **D35's "nothing was written" line does not
+reach four of the seven kernel-backed write verbs.** On one refused tree, at one
+refusal (`badLine`, `Tm.PErr.noId`, `week/2026-W38.md:25`), `tm rank`, `tm done`
+and `tm stop` printed the second line and `tm drop`, `tm demote`, `tm readopt`,
+`tm move`, `tm close day`, `tm review day` and `tm plan` printed only the
+kernel's sentence.
+*Why.* Mechanical, and **pre-existing**: neither track touched
+`tm/src/cli/items.rs` this run. `kernel_bridge::gate` is what stamps
+`refusedWrite`, and `out.rs:322` prints the line only when that stamp is there.
+In `drop` (`items.rs:1413`), `move` (`:853`) and `readopt` (`:1253`) the `gate`
+call sits **inside the id-less branch** — D33's "the gate goes ahead of both,
+because this branch never reaches the kernel" — so an item that HAS an id goes
+straight to `kernel_bridge::apply` and is refused by the kernel with no stamp.
+`rank` calls `gate` unconditionally at `:1065`, which is why it is the odd one.
+*What it costs.* A user who types `tm drop ^x` on a refused tree is told what is
+wrong and where, and is NOT told that nothing was written or that `tm undo` is
+the way out — which is the whole of what D35 (README gap 584) bought. The
+refusal is correct and nothing is written; only the sentence is missing.
+*Which step clears it.* Not a planner step: a one-line move of each `gate` call
+out of its branch, plus a test in `cli_write_gate.rs` that asserts the second
+line for each of the seven. Cheap, and it should be taken by whichever run next
+touches `items.rs`.
+
+**Gap 1081.** *What is not done.* **Gap 1030's stated cost is wider than the
+defect.** It says `active.est_min` is rebuilt from the tree "so a `tm extend` is
+lost". Driven: `tm extend 30m` on `^w3`, then `rm .tm/state.json`, then a verb —
+and `est_min` came back as **90**, not 60. The extend is NOT lost, because
+`tm extend` writes `est:1h30m` onto the item line, and the tree is what the
+rebuild reads.
+*Why.* The mechanism gap 1030 names is exactly right and was isolated: stripping
+` est:1h30m` from the line by hand and rebuilding again gave `est_min: 60` while
+the log still held `{"ev":"extend","id":"w3","by_min":30}`. So the rebuild
+really does read the tree and really does ignore the log's `extend` event; what
+does not follow is the loss, because `extend` keeps the two in step.
+*What it costs.* A gap that overstates its own damage is the mirror of a
+disguised one and gets triaged wrongly: the real exposure is narrow — a tree and
+a log that disagree about the running block's estimate, which is reachable by a
+hand edit to the line, by `tm undo` of the `extend`'s file write, or by any
+future verb that logs an estimate change without writing it — and it is worth
+fixing for that, not for `tm extend`.
+*Which step clears it.* The same step that clears 1030; it should restate 1030's
+item 3 in these terms first.
+
+**Gap 1082.** *What is not done.* **The D42 rebuild's honest-split sentence
+describes the rebuild, not the file the user then reads**, and two of the four
+fields it names come back anyway. It says `active.est_min` and `closed` were NOT
+restored; on the driven tree both were present and correct in `.tm/state.json`
+immediately afterwards — `est_min` from the item line (gap 1081) and `closed`
+from the automatic close that every verb runs.
+*Why.* The sentence is true about the **log**, which is what it says, and the
+other two sources fill the fields in the same command. Nobody wrote a sentence
+about the file.
+*What it costs.* A reader who deletes the cache is told four things were lost
+and can check only one of them (`break`); for `priorities_yesterday` the warning
+is accurate, for the other two it is alarming and wrong about the outcome. It
+makes D42's own disclosure harder to trust, which is the opposite of what an
+honest split is for.
+*Which step clears it.* Whichever step next touches `ctx.rs`'s rebuild: say
+which fields the log could not supply AND which of those another source filled
+in this same command, and name the source.
+
+**Gap 1083.** *What is not done.* **No parity entry and no witness records the
+merged D42 behaviour against the fork.** D42 changes what `.tm/state.json` is,
+and the acceptance for it is one Rust test (`deleting_the_runtime_state_changes_
+nothing`) plus the driving above. T5's census still reports 20 frozen-fork
+inputs and 6 kernel-only, unchanged.
+*Why.* Correct and deliberate: the fork has no derivable state file to compare
+against, so there is nothing for `fork_arm` to say. This is recorded so that the
+absence is a decision on the page rather than a hole somebody finds.
+*What it costs.* The `state.json` rebuild is covered by one test and one
+transcript, not by a differential. A regression in which log events feed which
+fields would be caught only if it changed that one test's five verbs.
+*Which step clears it.* None, unless the owner wants a kernel-side `Replay`
+projection of the runtime fields — which would be D27-shaped and is downstream
+of the planner under **D34**.
+
+### 8. Highest numbers after this step
+
+Gap **1083**, cheat **215**, `PlannerWit` section **19**, parity **P38** (none
+issued). The land step's range was 1080-1084 and **1084 is free**; the repair
+step's 1085-1099 were not touched.
+
+### 9. Worktrees
+
+`.claude/worktrees/w21-a` and `.claude/worktrees/w21-g` were removed once both
+merges were green; the branches `w21-a` and `w21-g` are kept, as every previous
+run's are. One scratch worktree was created at `023b681` to measure the check-8
+delta in §2 and removed in the same step. `git worktree list` now shows the main
+checkout and **`.claude/worktrees/stage5-lookahead`**, untouched.
