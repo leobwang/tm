@@ -165,6 +165,11 @@ fn cache_dir(tm: &Tm) -> PathBuf {
     tm.plan.join(".tm/cache/replay")
 }
 
+/// `.tm/state.json` (§10.2) — the other derived file, under the owner's **D42**.
+fn state_path(tm: &Tm) -> PathBuf {
+    tm.plan.join(".tm/state.json")
+}
+
 /// The checkpoint the replay cache holds (`kernel_log::CKPT_FILE`, §9.8's format 3), as JSON.
 fn checkpoint(tm: &Tm) -> serde_json::Value {
     let path = cache_dir(tm).join("ckpt.json");
@@ -350,6 +355,118 @@ fn deleting_the_replay_cache_changes_nothing() {
         cached.len(),
         rebuilt.len(),
         before.len()
+    );
+}
+
+/// **T9's symmetric half**: `.tm/state.json` is derived too, so deleting it changes no answer
+/// (the owner's **D42**, README **gap 993**) — the same shape as
+/// [`deleting_the_replay_cache_changes_nothing`] above, over the other derived file.
+///
+/// **What it is about, as the owner drove it.** With `^p1` running, `rm .tm/state.json` left
+/// `tm plan` drawing `^p1` with `▶` — it reads the log — while `tm now` said *"nothing running"*,
+/// `tm done` and `tm stop` said *"nothing is running"* and exited **1**, and `tm check` said
+/// *"no problems"*. The log still held the `wake`, the `arrive` and the `start`. Two readers of
+/// one day, disagreeing: AGENTS §5.3.
+///
+/// **Three assertions, and the second and third are why the first is not enough.**
+///
+/// 1. Every `--json` spelling is byte-identical across the deletion. That is the D13 sentence
+///    said about this file.
+/// 2. The rebuilt file itself is read, and it must name the same running block. The answers
+///    alone would hold if `Ctx::reconcile_state` were deleted and `tm now` happened to be
+///    answered from the plan — README gap 195's lesson, applied here: a test that stops at the
+///    answers stays green while the mechanism it is named for is gone. Measured: with
+///    `reconcile_state`'s body replaced by `Ok(())` this test fails at assertion 2 and at
+///    assertion 3, and `moved()` reports `now` and `triage` as well.
+/// 3. `tm done` **succeeds**, which is the half of gap 993 the user actually met. Exit 1 before,
+///    exit 0 after, and it names the block the log knew about all along. It runs last, because
+///    it is the one verb here that closes the thing being asserted.
+///
+/// **And the bite is asserted before anything else**: a state file with no running block in it
+/// would make every line below vacuously true.
+#[test]
+fn deleting_the_runtime_state_changes_nothing() {
+    let tm = plan_with_log("energy-14d");
+
+    // Warm it with the verbs that WRITE the runtime — a wake, an arrival and a running block —
+    // and write them INSIDE the log's own last day, three days behind the instant everything is
+    // asked from. That is deliberate: `roll_day` clears `arrival`, `window`, `budget` and
+    // `last_plan_hash` at a day boundary and KEEPS `wake` and `loc`, so a rebuild from the log
+    // has to carry those two across days too. Setting up at LATER would never exercise it.
+    tm.ok_at(INSIDE, &["wake", "06:05"]);
+    tm.ok_at(INSIDE, &["arrive", "lounge"]);
+    tm.ok_at(INSIDE, &["start", "^p1"]);
+
+    let before = answers(&tm, LATER, JSON_SPELLINGS);
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value =
+        serde_json::from_str(&before_bytes).expect(".tm/state.json is not JSON");
+    // The bite: without these three in the file, every line below is vacuously true.
+    assert_eq!(
+        before_state["active"]["id"], "p1",
+        "nothing is running, so deleting the runtime state would prove nothing: {before_bytes}"
+    );
+    assert_eq!(before_state["wake"], "06:05", "the wake is not in the cache: {before_bytes}");
+    assert_eq!(before_state["loc"], "lounge", "the location is not in the cache: {before_bytes}");
+
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+    assert!(!state_path(&tm).exists(), "the runtime state is still there");
+
+    // **The rebuild is LOUD**, which is the half of gap 993 that mattered: a field the log cannot
+    // carry must be named, not regenerated as `null` in silence.
+    let first = tm.run_at(LATER, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+    assert!(
+        first.stderr.contains("rebuilt from .tm/log.jsonl"),
+        "the rebuild said nothing: {:?}",
+        first.stderr
+    );
+    assert!(
+        first.stderr.contains("priorities_yesterday"),
+        "the rebuild did not name what it could not restore: {:?}",
+        first.stderr
+    );
+
+    let after = answers(&tm, LATER, JSON_SPELLINGS);
+    eprintln!("PROBE bite = {:?}", moved(&before, &after));
+    same(&before, &after, "deleting the runtime state moved an answer");
+
+    // **This test bites on its own class**, measured rather than asserted: with
+    // `Ctx::reconcile_state`'s body replaced by `Ok(())` and the two stderr assertions above
+    // removed, `moved()` reports SEVEN of the eleven spellings — `now`, `plan`, `log`,
+    // `log --tail 5`, `log --since 7d`, `review day`, `review week` — and `same()` fails on the
+    // first. What it cannot see is in the test's own doc comment.
+    //
+    // The file itself is read as well as the answers, because README gap 195's lesson is that a
+    // test which stops at the answers stays green while the mechanism it is named for is gone.
+    // **Every §10.2 field comes back**, and the one that does not is written out here rather
+    // than skipped.
+    let after_bytes = fs::read_to_string(state_path(&tm)).expect("the runtime state was never rebuilt");
+    let after_state: serde_json::Value =
+        serde_json::from_str(&after_bytes).expect("the rebuilt .tm/state.json is not JSON");
+    let mut expected = before_state.clone();
+    // §7.4's hysteresis map is the one §10.2 field with no event behind it: no log line carries a
+    // `p`. It comes back empty, the rebuild says so by name, and `tm plan` then ranks without
+    // yesterday's damping — which on this tree moves no answer, and on another could.
+    expected["priorities_yesterday"] = serde_json::json!({});
+    assert_eq!(
+        after_state, expected,
+        "the rebuilt runtime state is not the deleted one minus the hysteresis map:\n{after_bytes}"
+    );
+
+    // The verb the defect was actually reported as: `tm done` exited **1** with "nothing is
+    // running" while `tm plan` drew the same block with `▶`.
+    let done = tm.run_at(LATER, &["--json", "done"]);
+    assert_eq!(done.code, 0, "`tm done` still cannot see the running block: {}{}", done.stdout, done.stderr);
+    assert_eq!(done.json()["id"], "p1", "`tm done` closed something else: {}", done.stdout);
+
+    eprintln!(
+        "runtime-state deletion: {} `--json` spellings identical, every §10.2 field but \
+         `priorities_yesterday` came back out of {} log lines, `tm done` exit {}",
+        before.len(),
+        log_lines(&tm).len(),
+        done.code
     );
 }
 

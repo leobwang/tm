@@ -559,14 +559,11 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
     }
     let pred = energy::predict(&ctx.model, &ctx.cfg, &f);
     let rep = args.energy.or_else(|| ask_energy(pred));
-    let tags = ctx.tree.tags_effective(&id);
-    let multiplier = energy::duration_multiplier(&ctx.model, item.ci, &tags);
-    let remaining = ctx
-        .tree
-        .remaining(&id)
-        .filter(|m| *m > 0)
-        .unwrap_or_else(|| ctx.block_min());
-    let est_min = energy::planned_minutes(remaining, multiplier);
+    // §8.5's planned minutes, through the ONE function that computes them:
+    // D42's rebuild of `.tm/state.json` puts the same number back when the
+    // cache is gone, and a second copy of this arithmetic here would be the
+    // AGENTS §5.3 defect that rebuild exists to stop having an instance of.
+    let (est_min, multiplier) = ctx.planned_block(&id);
 
     // §5.1/§4.3: a routine or optional line has no state and never changes —
     // its occurrences live in the log, not in the file.

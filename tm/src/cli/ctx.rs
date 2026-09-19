@@ -50,14 +50,15 @@ use serde_json::Value;
 
 use tm_core::capacity::{self, UnitCapacity, Wall};
 use tm_core::config::Config;
-use tm_core::energy::Model;
+use tm_core::energy::{self, Model};
 use tm_core::grammar::ItemLine;
 use tm_core::horizon;
-use tm_core::log::{Event, LogEntry, Replay};
+use tm_core::log::{DayReplay, Event, LogEntry, Replay};
 use tm_core::model::{Id, Item, Loc, Shape, State};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{
-    self, FsStore, PlanFiles, RuntimeState, Store, StoreExt, LOG_PATH, MODEL_PATH,
+    self, ActiveBlock, Closed, FsStore, InterruptState, PlanFiles, RuntimeState, Store, StoreExt,
+    LOG_PATH, MODEL_PATH,
 };
 use tm_core::tree::Tree;
 use tm_core::recur;
@@ -141,6 +142,129 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
     state.budget = None;
     state.last_plan_hash = None;
     true
+}
+
+/// **The fields of `.tm/state.json` no replay of `.tm/log.jsonl` can supply**
+/// (the owner's **D42**, README gap 993) — named here so the rebuild below can
+/// say what it could not restore instead of regenerating it as `null`.
+///
+/// Each one is host-only for a reason the log module's own conventions state,
+/// not for a reason this file decided:
+///
+/// * **`break`** — "`break.t` is when the break began; the entry is appended
+///   when the break **ends**" (`tm_core::log`'s event conventions, and
+///   `day::end_break` is the only caller that writes an `Event::Break`). A
+///   break that is *running* has left no line in the log at all, so neither
+///   its start, its planned length nor its `where` can be recovered. The
+///   `active.paused` it set goes with it (`tm break` pauses the block without
+///   an `Event::Pause`), which is why [`derived_state`] ORs the cache's own
+///   running break back into the derived `paused`.
+/// * **`active.est_min`** — `Event::Start` carries `pred`, `hsw`, `slept_min`,
+///   `loc`, `blocks_done` and `since_break_min`, and **no estimate**; `tm
+///   extend` then adds its minutes to the cached number, so two `extend`s and
+///   a multiplier are not reconstructible from `Event::Extend{by_min}` either.
+///   The rebuild puts [`Ctx::planned_block`] there — the same one function
+///   `tm start` writes from, never a second copy of its arithmetic (AGENTS
+///   §5.3) — which is the estimate the item carries **now**, not the one the
+///   block was started with.
+/// * **`priorities_yesterday`** — §7.4's hysteresis map. No event carries a
+///   `p`; the host rolls it out of `.tm/last_plan.json`.
+/// * **`closed`** — §6.3's stamps plus `closed.swept`, which is a fact about
+///   whether a kernel `autoClose` has swept this tree and not about anything
+///   that happened. Its absence is load-bearing in the safe direction (it
+///   makes the automatic close sweep once), so the rebuild leaves it alone.
+pub const HOST_ONLY_STATE: &[&str] = &[
+    "`break` (a running break is logged only when it ends)",
+    "`active.est_min` (no `start` event carries an estimate)",
+    "`priorities_yesterday` (no event carries a `p`)",
+    "`closed` (`swept` is a fact about a sweep, not an event)",
+];
+
+/// **Which of §10.2's fields the log can answer for, and how.**
+///
+/// The owner's **D42** makes `.tm/state.json` a *derivable cache*, rebuilt
+/// from the log when missing or stale exactly as `.tm/cache/replay` is under
+/// D13. This is the derivation, and it reads **only today's** facts:
+/// [`DayReplay`] for the day-scoped fields and the two whole-log "still open"
+/// facts for the running block and the running interruption.
+///
+/// | §10.2 field | from |
+/// |---|---|
+/// | `date` | `today`, when the log has anything to say about it |
+/// | `wake` | `DayReplay::wake` (`Event::Wake`) |
+/// | `arrival` | `DayReplay::arrival` (`Event::Arrive`) |
+/// | `loc` | the last of `DayReplay::loc_changes`, else `DayReplay::loc` |
+/// | `window` | `DayReplay::window` (`Event::Arrive`) |
+/// | `budget` | `DayReplay::budget` (`Event::Arrive`) |
+/// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
+/// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
+/// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
+/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) |
+/// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]) |
+///
+/// **The one residue inside a derivable field, measured rather than waved at.**
+/// `tm plan` appends its `Event::Plan` only when the hash *moved*, so a day
+/// whose first plan reproduces a hash last logged on an earlier day logs
+/// nothing and `last_plan_hash` derives as `None`. That is not a regression:
+/// [`roll_day`] already nulls it at every day boundary, so the derived value is
+/// never worse than the cached one, and the cost of the miss is one extra
+/// `plan` line.
+/// The most recent day on or before `today` that has an answer for `pick`.
+///
+/// `.tm/state.json`'s `wake` and `loc` are not day-scoped ([`roll_day`] keeps
+/// them), so neither is their derivation; every other day field reads
+/// `today`'s [`DayReplay`] alone.
+fn latest<T>(replay: &Replay, today: NaiveDate, pick: impl Fn(&DayReplay) -> Option<T>) -> Option<T> {
+    replay.days.range(..=today).rev().find_map(|(_, d)| pick(d))
+}
+
+fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
+    let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
+    let day = replay.day(today);
+    let open = replay.open_block.as_ref();
+    let interrupted = replay.open_interrupt.as_ref().filter(|i| i.end.is_none());
+    RuntimeState {
+        date: Some(today),
+        // **`wake` and `loc` are the two fields [`roll_day`] deliberately does
+        // NOT clear at a day boundary**, so the cache carries them across days
+        // and the derivation has to as well: the most recent one on or before
+        // today, not today's. A derivation that read today's `DayReplay` alone
+        // answers `null` on any day with neither a `tm wake` nor a `tm arrive`
+        // in it, which is WRONG and not merely narrower — measured on the T9
+        // fixture, where it moved `tm now`, `tm plan`, `tm log` and two
+        // reviews.
+        wake: latest(replay, today, |d| d.wake).map(hhmm),
+        arrival: day.and_then(|d| d.arrival).map(hhmm),
+        loc: latest(replay, today, |d| {
+            d.loc_changes.last().map(|(_, l)| l.clone()).or_else(|| d.loc.clone())
+        }),
+        window: day.and_then(|d| d.window.as_ref()).and_then(|w| {
+            let a = NaiveTime::parse_from_str(&w[0], "%H:%M").ok()?;
+            let b = NaiveTime::parse_from_str(&w[1], "%H:%M").ok()?;
+            Some((a, b))
+        }),
+        budget: day.and_then(|d| d.budget),
+        active: open.map(|b| ActiveBlock {
+            id: Id::new(&b.id),
+            started: hhmm(b.started),
+            // Not the log's: `Event::Start` carries no estimate. The caller
+            // fills it from `Ctx::planned_block`, the one function
+            // `tm start` writes it from.
+            est_min: 0,
+            // `tm break` and `tm interrupt` pause the block in the cache; only
+            // `tm pause` logs an `Event::Pause`. So the derived pause is the
+            // log's OR whatever the cache still knows is running.
+            paused: b.paused || running_break || interrupted.is_some(),
+        }),
+        break_: None,
+        interrupt: interrupted.map(|i| InterruptState {
+            started: i.start.map(hhmm),
+            id: i.id.as_deref().map(Id::new),
+        }),
+        last_plan_hash: day.and_then(|d| d.last_plan_hash.clone()),
+        priorities_yesterday: BTreeMap::new(),
+        closed: Closed::default(),
+    }
 }
 
 /// The stored plan behind `--diff` and the hysteresis roll.
@@ -421,6 +545,11 @@ impl Ctx {
         let now = g.now.unwrap_or_else(|| Local::now().fixed_offset());
         let now_tz = now.with_timezone(&cfg.tz);
         let today = now_tz.date_naive();
+        // **D42: `.tm/state.json` is a CACHE of the log** (README gap 993), so
+        // whether the file was there at all is a fact the rebuild below needs.
+        // `load_state` answers a missing file with `Default::default()`, which
+        // is the null-for-every-field the owner drove.
+        let cached = store.exists(store::STATE_PATH);
         let mut state = store.load_state()?;
         let scope = scope(&state, today);
         // Gap 145: `tm check` alone loads tolerantly, and only `reachTooFar` is
@@ -466,6 +595,10 @@ impl Ctx {
             model,
             timed_out: Vec::new(),
         };
+        // **D42**, before the automatic close and before any verb reads
+        // `cx.state`: the cache is reconciled with the log it is a cache of.
+        // IN MEMORY ONLY — see the function's last section.
+        cx.reconcile_state(cached, housekeeping);
         let mut refused = false;
         if auto_close {
             // Writes, logs, stamps `state.closed` and reloads when it closed
@@ -480,6 +613,203 @@ impl Ctx {
             }
         }
         Ok(cx)
+    }
+
+    /// **Reconcile `.tm/state.json` with the log it is a cache of** — the
+    /// owner's **D42**, README **gap 993**.
+    ///
+    /// # The defect this closes, as the owner drove it
+    ///
+    /// With `^p1` running, `rm .tm/state.json` regenerated the file with
+    /// `date`, `wake`, `arrival`, `loc`, `window`, `budget` and `active` **all
+    /// null** while `.tm/log.jsonl` still held the `wake`, the `arrive` and the
+    /// `start`. `tm plan` read the log and drew `^p1` with `▶`; `tm now` read
+    /// the cache and said *"nothing running"*; `tm done` and `tm stop` said
+    /// *"nothing is running"* and exited **1**; `tm check` said *"no
+    /// problems"*. Two readers of one day, disagreeing — AGENTS §5.3, the
+    /// defect class this rebuild is named after — and a recoverable session
+    /// looked unrecoverable.
+    ///
+    /// # The root of it: a missing file and an empty one were one value
+    ///
+    /// `Store::load_state` is `read_json(..)?.unwrap_or_default()`, so **"there
+    /// is no file"** and **"the file says nothing is running"** arrived as the
+    /// same `RuntimeState`. They are not the same statement. A `null` `active`
+    /// in a file that exists is a *positive* claim — every verb that ends a
+    /// block writes it — and an absent file makes no claim at all. `load_with`
+    /// now asks `store.exists` before `load_state` and hands the answer here.
+    ///
+    /// # What this does, in two halves, and why they are not symmetric
+    ///
+    /// **The file is absent — REBUILD.** Every field [`derived_state`] can
+    /// answer for is taken from the log, exactly as `.tm/cache/replay` is
+    /// rebuilt when it is not there (D13). What the log cannot answer for is
+    /// named on stderr rather than left to read as "there was nothing there"
+    /// ([`HOST_ONLY_STATE`]).
+    ///
+    /// **The file is present and says a different block is open — STALE, and
+    /// the log wins.** This is the other half of D42's *"missing or stale"*,
+    /// and it is not hypothetical: `tm undo`'s own compensating line, appended
+    /// to the log by hand without its `.tm/undo.json` snapshot, reopens a block
+    /// the cache has already closed. **Driven at `4ccf4ef`** on
+    /// `corpus/plan-basic`: `start ^p1`, `done`, then one hand-appended
+    /// `{"ev":"undo","of":"done","id":"p1"}` — and `tm plan` drew `^p1` with
+    /// `▶` and *"60m so far"* while `tm now` said *"nothing running"* and `tm
+    /// done` said *"nothing is running"*, **with `.tm/state.json` present**.
+    /// That is gap 993's whole symptom set without deleting anything, and
+    /// `cli_latency`'s three-year row builds exactly that tree.
+    ///
+    /// The comparison is on the running block's **identity** alone. What only
+    /// the cache knows about that block stays the cache's: `est_min`, which
+    /// `tm extend` adds to and no event carries, and `paused`, which `tm break`
+    /// sets without an `Event::Pause`. Only when the log names a *different*
+    /// block is the whole record replaced, and then `est_min` is rebuilt
+    /// through [`Ctx::planned_block`] because the cache's belonged to another
+    /// block.
+    ///
+    /// # Who is told
+    ///
+    /// `loud` is `housekeeping` — the verbs that **own** the day's runtime and
+    /// are the ones that write it. A read verb (`tm log`, `tm check`, `tm
+    /// undo`, the TUI's reloads) gets the reconciled runtime and says nothing
+    /// about it: it did not rebuild anything, and `tm log`'s stdout **and
+    /// stderr** are asserted byte-identical with the fork's over seven corpus
+    /// trees, one of which (`logs/three-days`) ends with `^t8` still running
+    /// and no `.tm/state.json` beside it. What `tm check` still cannot do is
+    /// name the disagreement as a *problem* of its own — README gap 1031.
+    ///
+    /// # It writes nothing, and that is not a shortcut
+    ///
+    /// The reconciled runtime lives in memory and reaches the disk only through
+    /// the `save_state` the verb was going to run anyway — every one of which
+    /// is **past `kernel_bridge::gate`**. Writing it here was tried and
+    /// **measured**: `cli_write_gate`'s
+    /// `every_write_verb_refuses_a_tree_the_kernel_cannot_load_and_writes_nothing`
+    /// caught `tm wake` creating `.tm/state.json` on a tree the kernel refuses,
+    /// which is precisely the D35 rule that test exists for — *"none of them
+    /// writes a byte"* — and `a_now_before_the_ledger_is_answered_and_not_persisted`
+    /// caught a read-only verb at an early `--now` persisting that instant's
+    /// `arrival`, `window` and `budget`. A derived cache is not worth one byte
+    /// written ahead of the gate.
+    ///
+    /// # What this is NOT
+    ///
+    /// It is not a second definition of any fact. `est_min` comes from
+    /// [`Ctx::planned_block`], the one function `tm start` also writes it from;
+    /// `wake` derives exactly as [`Ctx::logged_wake`] already fell back to the
+    /// log; the day facts are `DayReplay`'s own fields and not a second read of
+    /// `.tm/log.jsonl`.
+    fn reconcile_state(&mut self, cached: bool, loud: bool) {
+        let derived = derived_state(
+            &self.replay,
+            self.cfg.tz,
+            self.today,
+            self.state.break_.is_some(),
+        );
+
+        if cached {
+            // **The cache exists, so it is STALE only where the log contradicts
+            // it about what is OPEN.** That is one comparison, on identity, and
+            // the log wins it.
+            let here = self.state.active.as_ref().map(|a| a.id.clone());
+            let logged = derived.active.as_ref().map(|a| a.id.clone());
+            if here != logged {
+                if loud {
+                    let say = |id: &Option<Id>| match id {
+                        Some(i) => format!("{} is running", i.token()),
+                        None => "nothing is running".to_string(),
+                    };
+                    eprintln!(
+                        "tm: .tm/state.json said {} and .tm/log.jsonl says {} — \
+                         the log decides (§10.2 is a cache of it, D42)",
+                        say(&here),
+                        say(&logged),
+                    );
+                }
+                self.state.active = derived.active.clone().map(|mut a| {
+                    a.est_min = self.planned_block(&a.id).0;
+                    a
+                });
+            }
+            let here = self.state.interrupt.as_ref().map(|i| i.id.clone());
+            let logged = derived.interrupt.as_ref().map(|i| i.id.clone());
+            if here != logged {
+                self.state.interrupt = derived.interrupt.clone();
+            }
+            return;
+        }
+
+        let before = self.state.clone();
+        self.state = RuntimeState {
+            // Host-only: an absent file cannot have held them, so they are
+            // `Default` — and the notice below says which they were.
+            break_: None,
+            priorities_yesterday: before.priorities_yesterday.clone(),
+            closed: before.closed.clone(),
+            active: derived.active.clone().map(|mut a| {
+                a.est_min = self.planned_block(&a.id).0;
+                a
+            }),
+            ..derived
+        };
+        if self.state == before {
+            return;
+        }
+
+        // **LOUD, and only when something was STRANDED.** A plan directory
+        // synced without `.tm/state.json` — `tm init` gitignores it, so that is
+        // the ordinary case and not an incident — has lost nothing and is told
+        // nothing. A rebuild that hands a RUNNING block or a RUNNING
+        // interruption back is the case gap 993 was reported as, and there the
+        // fields the log cannot carry have to be named.
+        if loud && (self.state.active.is_some() || self.state.interrupt.is_some()) {
+            eprintln!(
+                "tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl \
+                 (§10.2 is a cache of the log — D42){}",
+                self.state
+                    .active
+                    .as_ref()
+                    .map(|a| format!(" — {} is running, started {}", a.id.token(), a.started.format("%H:%M")))
+                    .unwrap_or_default()
+            );
+            eprintln!(
+                "tm: the log does not carry these, so they were NOT restored: {}",
+                HOST_ONLY_STATE.join(", ")
+            );
+        }
+    }
+
+    /// **The planned minutes one block of `id` gets** (§8.5): the item's
+    /// remaining estimate, or one block when it has none, through
+    /// [`energy::duration_multiplier`].
+    ///
+    /// `tm start` writes this into `state.active.est_min` and **D42**'s rebuild
+    /// puts the same number back when the cache is gone. It is one function
+    /// because two would be AGENTS §5.3 — the defect this rebuild exists to
+    /// stop having an instance of. It is also the one number in `active` that
+    /// the log cannot return: `Event::Start` carries no estimate
+    /// ([`HOST_ONLY_STATE`]), so after a rebuild this is the estimate the item
+    /// carries **now**, and a `tm extend` that ran before the file was deleted
+    /// is not in it.
+    /// Returns the minutes **and** the multiplier they were computed with,
+    /// because `tm start --json` prints the multiplier beside them
+    /// (`StartOut::multiplier`) and reading it off a second call would be the
+    /// same two-definitions mistake one step smaller.
+    pub fn planned_block(&self, id: &Id) -> (u32, f64) {
+        // `tm start` has already refused a missing line, so the `unwrap_or` is
+        // reached only from the rebuild — a block the log holds whose line the
+        // other writers have since removed (§1.3). `duration_multiplier` looks
+        // its key up and falls through to the default tag, so `0` costs the
+        // ci-specific multiplier and nothing else.
+        let ci = self.tree.get(id).map(|i| i.ci).unwrap_or(0);
+        let tags = self.tree.tags_effective(id);
+        let multiplier = energy::duration_multiplier(&self.model, ci, &tags);
+        let remaining = self
+            .tree
+            .remaining(id)
+            .filter(|m| *m > 0)
+            .unwrap_or_else(|| self.block_min());
+        (energy::planned_minutes(remaining, multiplier), multiplier)
     }
 
     /// Re-read files, tree, log and replay after a write, in the same scope.
