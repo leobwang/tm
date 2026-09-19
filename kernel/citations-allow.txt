@@ -127,6 +127,16 @@ config.priority_bins
 # moment this file says to open an entry rather than bump its count.
 toml_edit
 
+# Lean core SNAKE_CASE names, cited as examples of the class source 6 deliberately does NOT
+# resolve.  Source 6 is consulted only for a citation with no underscore, precisely so that
+# core's 19,449 snake_case lemma names cannot resolve a deleted kernel theorem; these three are
+# the individual adjudications that costs.  `map_append` and `succ_le` are core lemmas,
+# `register_builtin_option` is the core command that declares `maxRecDepth` and its family.
+# Added at W-20, when this file's own ratchet fired on the block describing source 6.
+map_append
+succ_le
+register_builtin_option
+
 # A naming CONVENTION, not one declaration: `can_fail` is the suffix eleven real checker
 # witnesses carry (`noOverbook_can_fail`, `monotoneInRank_can_fail`, …) and the sentence names
 # the family, not a constant.
