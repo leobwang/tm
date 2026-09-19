@@ -794,6 +794,12 @@ structure PrioCfg where
   safety : Arith.Pos
   dflt   : Fin 4
   hyst   : Bool
+  /-- §16 `[priority] batch_max_min` (default `20`): the largest `remaining` §7.5 will gather
+  into another item's block.  It is a **configured count of minutes**, not a wire value: there
+  is no `plan` request section yet (`Boundary.lean` names no `PlanReq`), so nothing decodes it
+  and R10's bound on it lands with P0's wire half, which is not this step's.  Its R10 statement
+  is written down beside the step that will owe it — README gap 801. -/
+  batchMaxMin : Nat
 
 /-! ## `PlanReq` — what §9 and the seam make necessary
 
@@ -3933,6 +3939,849 @@ routine whose window runs past the wind-down is placed before it — the fork's
 theorem the_evening_is_closed_to_a_routine :
     earliestFree 72000 79200 1800 [(75600, 165600)] = some 72000 ∧
     earliestFree 76000 79200 1800 [(75600, 165600)] = none := by decide
+
+/-! ############################################################################
+## §8.2 step 5, the first half: the groups the fold walks
+
+**Fork `Planner::build_groups`** (`planner.rs:1406`), over **fork `priority::batches`**
+(`priority.rs:1214`) and **fork `split_by_filters`** (`planner.rs:2354`).  Step 5's cursor is
+the other half and is below; this half turns the ranked order into the list of *things a slot
+may be given to*.
+
+**This is not an EDF pass** (README gap 701).  §7.3's deadline pass already ran — it is
+`Cap.edf`/`Cap.edfGrants`, it has six call sites, and its result reaches this step only as the
+`p` inside `CandKey`.  Fork `build_groups`/`pick` is a **greedy cursor in §7.4's key order with
+no deadline anywhere**, and a step that reused the EDF pass here would build a second scheduler.
+
+**Nothing here derives a candidate fact** (D34): every fact read below —
+`remaining`, `wall`, `optional`, `window`, `ci`, and the nine of `PlanFacts` — arrives on the
+wire, host-collected, and `Look.PlanFacts` is P5a's single reader of the nine.
+
+**`left_min` is carried as `commitMin` and `spent`, and that is stronger than the fork's
+`i64`** (AGENTS §5.3, and the one place this module deviates in *representation* rather than in
+behaviour).  Fork `Group::left_min` is a signed counter the assign loop decrements by a whole
+slot's minutes and **step 6 increments back** when a mandatory routine displaces an assigned
+block, so a saturating `Nat` would not invert: `left 10 − slot 60 = −50`, restored `+60`, is
+`10` in the fork and `60` under saturation.  Both of `left_min`'s readers are order comparisons
+— `pick`'s `g.left_min <= 0` and `contiguous_fits`' `need`, which is reached only when it is
+positive — so `commitMin ≤ spent` and `commitMin − spent` say exactly what the fork says, in
+`Nat`, and P6's restore is `spent − minutes`, which is exact.
+############################################################################ -/
+
+/-! ### The ranked entry's own facts -/
+
+/-- The candidate one ranked entry is about. -/
+def Ranked.cand (x : Ranked) : Look.Cand := x.out.out.cand
+
+/-- Its §8.2 step 5 facts — P5a's nine, off the wire (`Look.PlanFacts`). -/
+def Ranked.facts (x : Ranked) : Look.PlanFacts := x.out.out.cand.plan.val
+
+/-- **Fork `batches`' `small`** (`priority.rs:1219`): a candidate small enough to share a block,
+and none of the three kinds that never share one — a wall is an interval, an optional only
+fills rest, and a window instance is placed inside its own window. -/
+def Ranked.gatherable (maxSmall : Nat) (x : Ranked) : Bool :=
+  decide (0 < x.cand.remaining) && decide (x.cand.remaining ≤ maxSmall) &&
+    !x.cand.wall && !x.cand.optional && !x.cand.window
+
+/-! ### §7.5's batching -/
+
+/-- **Fork `batches`' inner loop** (`priority.rs:1242-1256`), as a walk over the rest of the
+order rather than over a `used` array: a member of a different `ci` is *passed over and kept*
+(the fork's `continue`), and the first member of the **same** `ci` that cannot join stops the
+walk and everything from there is kept (the fork's `break`, which is §8.3's monotone-rank rule).
+The two halves come back as `(gathered, kept)`, and `kept` is what the next leader walks.
+
+`room` is the kernel's own stop and is **not** the fork's: `BatchIds` is bounded at `maxBatch`
+(R10) and the fork's loop is not bounded at all — `planned_min` is `round(est × multiplier)`
+(`energy::planned_minutes`) and is `0` for a small enough multiplier, so `total_min + 0 ≤
+block_min` never fires and a fork batch may hold any number of members.  Gathering stops at
+`maxBatch` here; a member not gathered is a **group of its own** and is still assigned, so the
+deviation loses no candidate.  README gap 800. -/
+def gatherBatch (maxSmall blockMin : Nat) (ci : Fin 6) (room tot : Nat) :
+    List Ranked → List Ranked × List Ranked
+  | [] => ([], [])
+  | x :: xs =>
+    if x.cand.ci = ci then
+      if room == 0 || !x.gatherable maxSmall ||
+          decide (blockMin < tot + x.facts.plannedMin) then ([], x :: xs)
+      else
+        let p := gatherBatch maxSmall blockMin ci (room - 1) (tot + x.facts.plannedMin) xs
+        (x :: p.1, p.2)
+    else
+      let p := gatherBatch maxSmall blockMin ci room tot xs
+      (p.1, x :: p.2)
+
+/-- **Nothing is invented and nothing is lost**: the gathered members and the kept rest are the
+walk's input, rearranged. -/
+theorem gatherBatch_perm (ms bm : Nat) (ci : Fin 6) : ∀ (l : List Ranked) (room tot : Nat),
+    ((gatherBatch ms bm ci room tot l).1 ++ (gatherBatch ms bm ci room tot l).2).Perm l
+  | [], _, _ => by simp [gatherBatch]
+  | x :: xs, room, tot => by
+    unfold gatherBatch
+    by_cases hci : x.cand.ci = ci
+    · rw [if_pos hci]
+      by_cases hstop : (room == 0 || !x.gatherable ms ||
+          decide (bm < tot + x.facts.plannedMin)) = true
+      · rw [if_pos hstop]; simp
+      · rw [if_neg hstop]
+        exact List.Perm.cons x (gatherBatch_perm ms bm ci xs (room - 1) (tot + x.facts.plannedMin))
+    · rw [if_neg hci]
+      exact ((List.perm_middle).trans
+        (List.Perm.cons x (gatherBatch_perm ms bm ci xs room tot)))
+
+/-- The kept rest is no longer than the walk's input — what makes the outer loop's fuel enough. -/
+theorem gatherBatch_snd_length (ms bm : Nat) (ci : Fin 6) (room tot : Nat) (l : List Ranked) :
+    (gatherBatch ms bm ci room tot l).2.length ≤ l.length := by
+  have h := (gatherBatch_perm ms bm ci l room tot).length_eq
+  rw [List.length_append] at h
+  omega
+
+/-- **The gathered members are a prefix of the same-`ci` entries of the order** — §8.3's
+monotone-rank rule, stated as the thing the `break` buys: gathering cannot reach *past* an
+equal-`ci` candidate it left behind.  This is the half `plan_never_batches_past_an_equal_ci_
+candidate` rests on. -/
+theorem gatherBatch_fst_is_a_prefix_of_its_ci (ms bm : Nat) (ci : Fin 6) :
+    ∀ (l : List Ranked) (room tot : Nat),
+      (gatherBatch ms bm ci room tot l).1 <+: l.filter (fun y => decide (y.cand.ci = ci))
+  | [], _, _ => by simp [gatherBatch]
+  | x :: xs, room, tot => by
+    unfold gatherBatch
+    by_cases hci : x.cand.ci = ci
+    · rw [if_pos hci]
+      by_cases hstop : (room == 0 || !x.gatherable ms ||
+          decide (bm < tot + x.facts.plannedMin)) = true
+      · rw [if_pos hstop]; exact List.nil_prefix
+      · rw [if_neg hstop]
+        simp only [List.filter_cons, hci, decide_true, if_pos]
+        obtain ⟨t, ht⟩ :=
+          gatherBatch_fst_is_a_prefix_of_its_ci ms bm ci xs (room - 1) (tot + x.facts.plannedMin)
+        exact ⟨t, by rw [List.cons_append, ht]⟩
+    · rw [if_neg hci]
+      simp only [List.filter_cons, hci, decide_false, Bool.false_eq_true, if_neg, not_false_iff]
+      exact gatherBatch_fst_is_a_prefix_of_its_ci ms bm ci xs room tot
+
+/-- Every gathered member carries the leader's `ci` — the fork's `other.ci != c.ci` skip. -/
+theorem gatherBatch_fst_ci (ms bm : Nat) (ci : Fin 6) (room tot : Nat) (l : List Ranked)
+    (y : Ranked) (h : y ∈ (gatherBatch ms bm ci room tot l).1) : y.cand.ci = ci := by
+  have hp := (gatherBatch_fst_is_a_prefix_of_its_ci ms bm ci l room tot).subset h
+  simpa using (List.mem_filter.1 hp).2
+
+/-- And the gather takes at most `room` of them: `BatchIds`' bound, established rather than
+assumed (R10). -/
+theorem gatherBatch_fst_length (ms bm : Nat) (ci : Fin 6) :
+    ∀ (l : List Ranked) (room tot : Nat), (gatherBatch ms bm ci room tot l).1.length ≤ room
+  | [], _, _ => by simp [gatherBatch]
+  | x :: xs, room, tot => by
+    unfold gatherBatch
+    by_cases hci : x.cand.ci = ci
+    · rw [if_pos hci]
+      by_cases hstop : (room == 0 || !x.gatherable ms ||
+          decide (bm < tot + x.facts.plannedMin)) = true
+      · rw [if_pos hstop]; simp
+      · rw [if_neg hstop]
+        have hr : room ≠ 0 := by
+          intro h0; rw [h0] at hstop; simp at hstop
+        have := gatherBatch_fst_length ms bm ci xs (room - 1) (tot + x.facts.plannedMin)
+        simp only [List.length_cons]
+        omega
+    · rw [if_neg hci]
+      exact gatherBatch_fst_length ms bm ci xs room tot
+
+/-- **Fork `batches`' outer loop**, on structural fuel — `Look.cutStretch`'s own shape.  Each
+turn takes the first entry of what is left as a leader and gathers behind it. -/
+def batchLoop (ms bm : Nat) : Nat → List Ranked → List (List Ranked)
+  | 0, _ => []
+  | _ + 1, [] => []
+  | fuel + 1, x :: xs =>
+    let p := if x.gatherable ms then
+        gatherBatch ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs
+      else ([], xs)
+    (x :: p.1) :: batchLoop ms bm fuel p.2
+
+/-- **§7.5's groups**, fork `priority::batches`: the order walked once, each leader carrying
+what it gathered.  The fuel is the order's own length, which the theorem below shows is
+enough. -/
+def batches (ms bm : Nat) (l : List Ranked) : List (List Ranked) := batchLoop ms bm l.length l
+
+/-- **Every batch is non-empty** — it holds at least its leader. -/
+theorem batchLoop_ne_nil (ms bm : Nat) : ∀ (fuel : Nat) (l : List Ranked),
+    ∀ b ∈ batchLoop ms bm fuel l, b ≠ []
+  | 0, _, _, h => by simp [batchLoop] at h
+  | _ + 1, [], _, h => by simp [batchLoop] at h
+  | fuel + 1, x :: xs, b, h => by
+    unfold batchLoop at h
+    rcases List.mem_cons.1 h with rfl | h
+    · simp
+    · exact batchLoop_ne_nil ms bm fuel _ b h
+
+/-- **And no batch is longer than `maxBatch`**, so `mkBatch?` cannot refuse one (R10). -/
+theorem batchLoop_length (ms bm : Nat) : ∀ (fuel : Nat) (l : List Ranked),
+    ∀ b ∈ batchLoop ms bm fuel l, b.length ≤ maxBatch
+  | 0, _, _, h => by simp [batchLoop] at h
+  | _ + 1, [], _, h => by simp [batchLoop] at h
+  | fuel + 1, x :: xs, b, h => by
+    unfold batchLoop at h
+    rcases List.mem_cons.1 h with rfl | h
+    · simp only [List.length_cons]
+      by_cases hg : x.gatherable ms = true
+      · simp only [hg, if_pos]
+        have := gatherBatch_fst_length ms bm x.cand.ci xs (maxBatch - 1) x.facts.plannedMin
+        simp only [maxBatch] at this ⊢
+        omega
+      · simp only [hg, Bool.false_eq_true, if_neg, not_false_iff]
+        simp [maxBatch]
+    · exact batchLoop_length ms bm fuel _ b h
+
+/-- **The batches are the order, rearranged** — given fuel enough, nothing entered and nothing
+left.  This is the law §8.3's "never drops" goals read: a candidate in the assignment order is
+in exactly one group of it. -/
+theorem batchLoop_flatten_perm (ms bm : Nat) : ∀ (fuel : Nat) (l : List Ranked),
+    l.length ≤ fuel → ((batchLoop ms bm fuel l).flatten).Perm l
+  | 0, l, h => by
+    have : l = [] := List.eq_nil_of_length_eq_zero (by omega)
+    subst this; simp [batchLoop]
+  | fuel + 1, [], _ => by simp [batchLoop]
+  | fuel + 1, x :: xs, h => by
+    unfold batchLoop
+    simp only [List.flatten_cons, List.cons_append]
+    refine List.Perm.cons x ?_
+    by_cases hg : x.gatherable ms = true
+    · simp only [hg, if_pos]
+      have hlen := gatherBatch_snd_length ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs
+      have hrec := batchLoop_flatten_perm ms bm fuel
+        (gatherBatch ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs).2
+        (by simp only [List.length_cons] at h; omega)
+      exact (hrec.append_left _).trans
+        (gatherBatch_perm ms bm x.cand.ci xs (maxBatch - 1) x.facts.plannedMin)
+    · simp only [hg, Bool.false_eq_true, if_neg, not_false_iff]
+      simpa using batchLoop_flatten_perm ms bm fuel xs (by simp only [List.length_cons] at h; omega)
+
+theorem batches_flatten_perm (ms bm : Nat) (l : List Ranked) :
+    ((batches ms bm l).flatten).Perm l := batchLoop_flatten_perm ms bm l.length l (Nat.le_refl _)
+
+/-- Every member of every batch came from the order. -/
+theorem mem_of_mem_batches {ms bm : Nat} {l b : List Ranked} {y : Ranked}
+    (hb : b ∈ batches ms bm l) (hy : y ∈ b) : y ∈ l :=
+  (batches_flatten_perm ms bm l).subset (List.mem_flatten.2 ⟨b, hb, hy⟩)
+
+/-- **And every entry of the order is in a batch** — the direction that says the batching drops
+nothing. -/
+theorem batches_cover {ms bm : Nat} {l : List Ranked} {y : Ranked} (hy : y ∈ l) :
+    ∃ b ∈ batches ms bm l, y ∈ b :=
+  List.mem_flatten.1 ((batches_flatten_perm ms bm l).mem_iff.2 hy)
+
+theorem batches_ne_nil (ms bm : Nat) (l : List Ranked) : ∀ b ∈ batches ms bm l, b ≠ [] :=
+  batchLoop_ne_nil ms bm l.length l
+
+theorem batches_length (ms bm : Nat) (l : List Ranked) : ∀ b ∈ batches ms bm l, b.length ≤ maxBatch :=
+  batchLoop_length ms bm l.length l
+
+/-- **A batch is one `ci`** — §7.5 gathers by `ci` alone, and this is the law that makes a
+group's energy filter a statement about every member of it. -/
+theorem batchLoop_ci (ms bm : Nat) : ∀ (fuel : Nat) (l : List Ranked),
+    ∀ b ∈ batchLoop ms bm fuel l, ∀ y ∈ b, ∀ z ∈ b, y.cand.ci = z.cand.ci
+  | 0, _, _, h, _, _, _, _ => by simp [batchLoop] at h
+  | _ + 1, [], _, h, _, _, _, _ => by simp [batchLoop] at h
+  | fuel + 1, x :: xs, b, h, y, hy, z, hz => by
+    unfold batchLoop at h
+    rcases List.mem_cons.1 h with rfl | h
+    · have key : ∀ w ∈ x :: (if x.gatherable ms then
+          gatherBatch ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs
+        else ([], xs)).1, w.cand.ci = x.cand.ci := by
+        intro w hw
+        rcases List.mem_cons.1 hw with rfl | hw
+        · rfl
+        · by_cases hgb : x.gatherable ms = true
+          · rw [if_pos hgb] at hw
+            exact gatherBatch_fst_ci ms bm x.cand.ci (maxBatch - 1) x.facts.plannedMin xs w hw
+          · rw [if_neg (by simpa using hgb)] at hw; simp at hw
+      rw [key y hy, key z hz]
+    · exact batchLoop_ci ms bm fuel _ b h y hy z hz
+
+theorem batches_ci {ms bm : Nat} {l b : List Ranked} (hb : b ∈ batches ms bm l) :
+    ∀ y ∈ b, ∀ z ∈ b, y.cand.ci = z.cand.ci := batchLoop_ci ms bm l.length l b hb
+
+/-! ### The batch split (fork `split_by_filters`)
+
+**It is a group-by, not a run-split**, and the fork's own doc comment says "runs": `out.iter_mut
+().find(|(k, _)| *k == key)` puts a member into the *first* bucket with its key wherever that
+bucket already sits, so two members with one key end up together even with a differently-keyed
+member between them.  The fork is what the parity harness measures against (design §13), so the
+group-by is what is ported and this sentence is the record of the disagreement. -/
+
+/-- The key `split_by_filters` groups by (`planner.rs:2360`): the two halves of §8.2 step 5's
+filter that are written about the *item* — its `loc:` and whether `atomic` cleared its
+`splittable` — plus the block that is already running (§9), whose remaining minutes are its own
+and not its batch's. -/
+structure SplitKey where
+  loc        : Field.Loc
+  splittable : Bool
+  running    : Bool
+deriving DecidableEq, Repr
+
+def splitKeyOf (act : Option Id) (x : Ranked) : SplitKey :=
+  ⟨x.facts.loc, x.facts.splittable, act == some x.cand.id⟩
+
+/-- One member into its bucket, appended at the end so a bucket keeps the order §7.4 gave it. -/
+def splitPush (k : SplitKey) (x : Ranked) :
+    List (SplitKey × List Ranked) → List (SplitKey × List Ranked)
+  | [] => [(k, [x])]
+  | e :: rest => if e.1 = k then (e.1, e.2 ++ [x]) :: rest else e :: splitPush k x rest
+
+/-- **Fork `split_by_filters`**: one batch's members bucketed by the key above, the buckets in
+first-appearance order. -/
+def splitGroups (act : Option Id) (members : List Ranked) : List (SplitKey × List Ranked) :=
+  members.foldl (fun acc x => splitPush (splitKeyOf act x) x acc) []
+
+/-- The flattened buckets are the members, rearranged. -/
+theorem splitPush_flatten (k : SplitKey) (x : Ranked) :
+    ∀ acc : List (SplitKey × List Ranked),
+      (((splitPush k x acc).map Prod.snd).flatten).Perm (((acc.map Prod.snd).flatten) ++ [x])
+  | [] => by simp [splitPush]
+  | e :: rest => by
+    unfold splitPush
+    by_cases hk : e.1 = k
+    · rw [if_pos hk]
+      simp only [List.map_cons, List.flatten_cons, List.append_assoc]
+      exact List.Perm.append_left _ (List.perm_append_comm)
+    · rw [if_neg hk]
+      simp only [List.map_cons, List.flatten_cons, List.append_assoc]
+      exact List.Perm.append_left _ (splitPush_flatten k x rest)
+
+theorem splitFold_flatten (act : Option Id) :
+    ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)),
+      (((members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc).map Prod.snd).flatten).Perm
+        ((acc.map Prod.snd).flatten ++ members)
+  | [], acc => by simp
+  | x :: xs, acc => by
+    simp only [List.foldl_cons]
+    refine (splitFold_flatten act xs (splitPush (splitKeyOf act x) x acc)).trans ?_
+    refine ((splitPush_flatten (splitKeyOf act x) x acc).append_right xs).trans ?_
+    simp only [List.append_assoc, List.singleton_append]
+    exact List.Perm.refl _
+
+theorem splitGroups_flatten (act : Option Id) (members : List Ranked) :
+    (((splitGroups act members).map Prod.snd).flatten).Perm members := by
+  unfold splitGroups
+  simpa using splitFold_flatten act members []
+
+/-- Every member of a bucket came from the batch. -/
+theorem mem_of_mem_splitGroups {act : Option Id} {members : List Ranked}
+    {e : SplitKey × List Ranked} {y : Ranked} (he : e ∈ splitGroups act members) (hy : y ∈ e.2) :
+    y ∈ members :=
+  (splitGroups_flatten act members).subset
+    (List.mem_flatten.2 ⟨e.2, List.mem_map.2 ⟨e, he, rfl⟩, hy⟩)
+
+/-- And every member is in a bucket. -/
+theorem splitGroups_cover {act : Option Id} {members : List Ranked} {y : Ranked}
+    (hy : y ∈ members) : ∃ e ∈ splitGroups act members, y ∈ e.2 := by
+  obtain ⟨g, hg, hyg⟩ := List.mem_flatten.1 ((splitGroups_flatten act members).mem_iff.2 hy)
+  obtain ⟨e, he, rfl⟩ := List.mem_map.1 hg
+  exact ⟨e, he, hyg⟩
+
+/-- A bucket is no longer than the batch it came from. -/
+theorem splitGroups_length {act : Option Id} {members : List Ranked}
+    {e : SplitKey × List Ranked} (he : e ∈ splitGroups act members) :
+    e.2.length ≤ members.length := by
+  have hperm := (splitGroups_flatten act members).length_eq
+  have hmem : e.2 ∈ (splitGroups act members).map Prod.snd := List.mem_map.2 ⟨e, he, rfl⟩
+  have := List.Sublist.length_le (List.sublist_flatten_of_mem hmem)
+  omega
+
+/-- **Every member of a bucket carries that bucket's key** — the half that makes `Group.loc` and
+`Group.splittable` statements about the members and not labels beside them. -/
+def SplitOk (act : Option Id) (acc : List (SplitKey × List Ranked)) : Prop :=
+  ∀ e ∈ acc, ∀ y ∈ e.2, splitKeyOf act y = e.1
+
+theorem splitPush_keeps_SplitOk {act : Option Id} {x : Ranked} :
+    ∀ {acc : List (SplitKey × List Ranked)}, SplitOk act acc →
+      SplitOk act (splitPush (splitKeyOf act x) x acc)
+  | [], _ => by
+    intro e he y hy
+    simp only [splitPush, List.mem_singleton] at he
+    subst he
+    simp only [List.mem_singleton] at hy
+    subst hy; rfl
+  | e :: rest, h => by
+    unfold splitPush
+    by_cases hk : e.1 = splitKeyOf act x
+    · rw [if_pos hk]
+      intro f hf y hy
+      rcases List.mem_cons.1 hf with rfl | hf
+      · simp only at hy
+        rcases List.mem_append.1 hy with hy | hy
+        · exact h e (List.mem_cons_self ..) y hy
+        · simp only [List.mem_singleton] at hy; subst hy; exact hk.symm
+      · exact h f (List.mem_cons_of_mem _ hf) y hy
+    · rw [if_neg hk]
+      intro f hf y hy
+      rcases List.mem_cons.1 hf with rfl | hf
+      · exact h f (List.mem_cons_self ..) y hy
+      · exact splitPush_keeps_SplitOk
+          (fun g hg z hz => h g (List.mem_cons_of_mem _ hg) z hz) f hf y hy
+
+theorem splitFold_SplitOk (act : Option Id) :
+    ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)), SplitOk act acc →
+      SplitOk act (members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc)
+  | [], _, h => h
+  | x :: xs, acc, h => by
+    simp only [List.foldl_cons]
+    exact splitFold_SplitOk act xs _ (splitPush_keeps_SplitOk h)
+
+theorem splitGroups_keys (act : Option Id) (members : List Ranked) :
+    SplitOk act (splitGroups act members) :=
+  splitFold_SplitOk act members [] (by intro e he; simp at he)
+
+/-- No bucket is empty. -/
+def SplitNe (acc : List (SplitKey × List Ranked)) : Prop := ∀ e ∈ acc, e.2 ≠ []
+
+theorem splitPush_keeps_SplitNe {k : SplitKey} {x : Ranked} :
+    ∀ {acc : List (SplitKey × List Ranked)}, SplitNe acc → SplitNe (splitPush k x acc)
+  | [], _ => by intro e he; simp only [splitPush, List.mem_singleton] at he; subst he; simp
+  | e :: rest, h => by
+    unfold splitPush
+    by_cases hk : e.1 = k
+    · rw [if_pos hk]
+      intro f hf
+      rcases List.mem_cons.1 hf with rfl | hf
+      · simp
+      · exact h f (List.mem_cons_of_mem _ hf)
+    · rw [if_neg hk]
+      intro f hf
+      rcases List.mem_cons.1 hf with rfl | hf
+      · exact h f (List.mem_cons_self ..)
+      · exact splitPush_keeps_SplitNe (fun g hg => h g (List.mem_cons_of_mem _ hg)) f hf
+
+theorem splitFold_SplitNe (act : Option Id) :
+    ∀ (members : List Ranked) (acc : List (SplitKey × List Ranked)), SplitNe acc →
+      SplitNe (members.foldl (fun a x => splitPush (splitKeyOf act x) x a) acc)
+  | [], _, h => h
+  | x :: xs, acc, h => by
+    simp only [List.foldl_cons]
+    exact splitFold_SplitNe act xs _ (splitPush_keeps_SplitNe h)
+
+theorem splitGroups_ne_nil (act : Option Id) (members : List Ranked) :
+    ∀ e ∈ splitGroups act members, e.2 ≠ [] :=
+  splitFold_SplitNe act members [] (by intro e he; simp at he)
+
+/-! ### The group, and the `max:` commit -/
+
+/-- **Fork `priority::sort_key`** (`priority.rs:1103`): `(prio.p, root_order, own_order)` — the
+key `build_groups` takes the **minimum** of over a group's members and then sorts the groups by.
+It is `CandKey` without the wall digit and without the request position: `build_groups` never
+sees a wall (they are filtered out of `members`), and the fork's `out.sort_by` is **stable**, so
+two groups that agree on all three keep the order the batching gave them.  `siteNums` and
+`natsLe` are §7.4's own and are called, not copied (AGENTS §5.3). -/
+structure GroupKey where
+  p    : Nat
+  root : Option Site
+  own  : Option Site
+deriving DecidableEq, Repr
+
+def GroupKey.nums (k : GroupKey) : List Nat := k.p :: (siteNums k.root ++ siteNums k.own)
+
+def groupKeyLe (a b : GroupKey) : Bool := natsLe a.nums b.nums
+
+theorem groupKeyLe_trans (a b c : GroupKey) (h₁ : groupKeyLe a b) (h₂ : groupKeyLe b c) :
+    groupKeyLe a c := natsLe_trans _ _ _ h₁ h₂
+
+theorem groupKeyLe_total (a b : GroupKey) : groupKeyLe a b || groupKeyLe b a := natsLe_total _ _
+
+/-- A ranked entry's three, read off the key §7.4 already gave it. -/
+def groupKeyOf (x : Ranked) : GroupKey := ⟨x.key.p, x.key.root, x.key.own⟩
+
+/-- Fork `members.iter().map(sort_key).min()`, which answers the **first** minimum. -/
+def minGroupKey (k : GroupKey) : List Ranked → GroupKey
+  | [] => k
+  | x :: xs => minGroupKey (if groupKeyLe (groupKeyOf x) k then groupKeyOf x else k) xs
+
+/-- The minimum is no greater than the seed. -/
+theorem minGroupKey_le_seed : ∀ (l : List Ranked) (k : GroupKey), groupKeyLe (minGroupKey k l) k
+  | [], k => by
+    show groupKeyLe k k = true
+    have := groupKeyLe_total k k
+    simpa using this
+  | x :: xs, k => by
+    unfold minGroupKey
+    by_cases h : groupKeyLe (groupKeyOf x) k = true
+    · rw [if_pos h]
+      exact groupKeyLe_trans _ _ _ (minGroupKey_le_seed xs _) h
+    · rw [if_neg h]
+      exact minGroupKey_le_seed xs k
+
+/-- **And no greater than any member's** — the half that makes `Group.key` the group's own
+minimum rather than a number beside it. -/
+theorem minGroupKey_le_mem : ∀ (l : List Ranked) (k : GroupKey) (y : Ranked), y ∈ l →
+    groupKeyLe (minGroupKey k l) (groupKeyOf y)
+  | [], _, _, h => by simp at h
+  | x :: xs, k, y, h => by
+    unfold minGroupKey
+    rcases List.mem_cons.1 h with rfl | h
+    · by_cases hk : groupKeyLe (groupKeyOf y) k = true
+      · rw [if_pos hk]; exact minGroupKey_le_seed xs _
+      · rw [if_neg hk]
+        refine groupKeyLe_trans _ _ _ (minGroupKey_le_seed xs k) ?_
+        have := groupKeyLe_total (groupKeyOf y) k
+        simp only [hk, Bool.false_or] at this
+        exact this
+    · exact minGroupKey_le_mem xs _ y h
+
+/-- Fork `cap_left.min()`: the tightest `max:` any member is still under, `none` when no member
+has one (the fork's `unwrap_or(u32::MAX)`, which is "no constraint"). -/
+def capMin? : Option Nat → Option Nat → Option Nat
+  | none, b => b
+  | some a, none => some a
+  | some a, some b => some (min a b)
+
+def capLeftOf (l : List Ranked) : Option Nat :=
+  l.foldl (fun a x => capMin? a x.facts.capLeftMin) none
+
+theorem capFold_some : ∀ (l : List Ranked) (e : Nat),
+    ∃ c, l.foldl (fun a x => capMin? a x.facts.capLeftMin) (some e) = some c ∧ c ≤ e
+  | [], e => ⟨e, rfl, Nat.le_refl e⟩
+  | x :: xs, e => by
+    simp only [List.foldl_cons]
+    cases hc : x.facts.capLeftMin with
+    | none =>
+      obtain ⟨c, h1, h2⟩ := capFold_some xs e
+      exact ⟨c, by simpa [capMin?, hc] using h1, h2⟩
+    | some d =>
+      obtain ⟨c, h1, h2⟩ := capFold_some xs (min e d)
+      exact ⟨c, by simpa [capMin?, hc] using h1, Nat.le_trans h2 (Nat.min_le_left e d)⟩
+
+theorem capFold_le_member : ∀ (l : List Ranked) (acc : Option Nat) (y : Ranked), y ∈ l →
+    ∀ d, y.facts.capLeftMin = some d →
+      ∃ c, l.foldl (fun a x => capMin? a x.facts.capLeftMin) acc = some c ∧ c ≤ d
+  | [], _, _, h, _, _ => by simp at h
+  | x :: xs, acc, y, hy, d, hd => by
+    simp only [List.foldl_cons]
+    rcases List.mem_cons.1 hy with rfl | hy
+    · have hstep : capMin? acc y.facts.capLeftMin = some (min (acc.getD d) d) := by
+        cases acc <;> simp [capMin?, hd]
+      rw [hstep]
+      obtain ⟨c, h1, h2⟩ := capFold_some xs (min (acc.getD d) d)
+      exact ⟨c, h1, Nat.le_trans h2 (Nat.min_le_right _ _)⟩
+    · exact capFold_le_member xs _ y hy d hd
+
+/-- **A member's `max:` binds the group's commitment**: if any member has minutes left under a
+`max:`, the group's cap is at most that member's. -/
+theorem capLeftOf_le_member (l : List Ranked) (y : Ranked) (hy : y ∈ l) (d : Nat)
+    (hd : y.facts.capLeftMin = some d) : ∃ c, capLeftOf l = some c ∧ c ≤ d :=
+  capFold_le_member l none y hy d hd
+
+/-- Σ `planned_min` over a group (fork `members.iter().map(planned_min).sum()`). -/
+def plannedSum (l : List Ranked) : Nat := l.foldl (fun a x => a + x.facts.plannedMin) 0
+
+/-- **Fork `build_groups`' `commit`** (`planner.rs:1451`): `planned.min(cap_left)` — what the
+group asks the cursor for, capped by the tightest `max:` a member is still under. -/
+def commitOf (l : List Ranked) : Nat :=
+  match capLeftOf l with
+  | none => plannedSum l
+  | some c => min (plannedSum l) c
+
+theorem commitOf_le_planned (l : List Ranked) : commitOf l ≤ plannedSum l := by
+  unfold commitOf
+  cases capLeftOf l with
+  | none => exact Nat.le_refl _
+  | some c => exact Nat.min_le_left _ _
+
+theorem commitOf_le_cap (l : List Ranked) (y : Ranked) (hy : y ∈ l) (d : Nat)
+    (hd : y.facts.capLeftMin = some d) : commitOf l ≤ d := by
+  obtain ⟨c, hc, hcd⟩ := capLeftOf_le_member l y hy d hd
+  unfold commitOf
+  rw [hc]
+  exact Nat.le_trans (Nat.min_le_right _ _) hcd
+
+/-- **Fork `planner::Group`** (`planner.rs:1440`), with `left_min` carried as the pair
+`commitMin`/`spent` (see this section's header). -/
+structure Group where
+  key        : GroupKey
+  members    : List Ranked
+  ci         : Fin 6
+  loc        : Field.Loc
+  splittable : Bool
+  mult       : Arith.Pos
+  /-- Fork `commit_min` = `planned.min(cap_left)`: the §8.5 minutes the group asks for, capped
+  by the tightest `max:` a member is still under. -/
+  commitMin  : Nat
+  /-- The slot minutes already given to this group — the fork's `commit_min − left_min`. -/
+  spent      : Nat
+
+/-- Fork `g.left_min`, whenever the fork's is positive. -/
+def Group.leftMin (g : Group) : Nat := g.commitMin - g.spent
+
+/-- Fork `pick`'s first clause, `g.left_min > 0`. -/
+def Group.live (g : Group) : Bool := decide (g.spent < g.commitMin)
+
+theorem Group.live_iff (g : Group) : g.live = true ↔ 0 < g.leftMin := by
+  unfold Group.live Group.leftMin
+  simp only [decide_eq_true_eq]
+  omega
+
+/-- Fork `build_groups`' body for one split bucket.  `none` only for an empty bucket, which
+`splitGroups_ne_nil` says cannot arise. -/
+def groupOf (k : SplitKey) : List Ranked → Option Group
+  | [] => none
+  | x :: xs =>
+    some ⟨minGroupKey (groupKeyOf x) xs, x :: xs, x.cand.ci, k.loc, k.splittable,
+      x.facts.multiplier, commitOf (x :: xs), 0⟩
+
+theorem groupOf_members {k : SplitKey} {l : List Ranked} {g : Group} (h : groupOf k l = some g) :
+    g.members = l ∧ g.loc = k.loc ∧ g.splittable = k.splittable := by
+  cases l with
+  | nil => exact absurd h (by simp [groupOf])
+  | cons x xs =>
+    unfold groupOf at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact ⟨rfl, rfl, rfl⟩
+
+/-- **The commitment never exceeds what the estimates ask for.** -/
+theorem groupOf_commit_le_planned {k : SplitKey} {l : List Ranked} {g : Group}
+    (h : groupOf k l = some g) : g.commitMin ≤ plannedSum g.members := by
+  cases l with
+  | nil => exact absurd h (by simp [groupOf])
+  | cons x xs =>
+    unfold groupOf at h
+    simp only [Option.some.injEq] at h
+    subst h
+    exact commitOf_le_planned (x :: xs)
+
+/-- **And never exceeds a member's `max:`** — §6.2's ceiling, honoured by the commitment and
+not merely reported.  This is the `max:` half of §8.2 step 5. -/
+theorem groupOf_commit_le_cap {k : SplitKey} {l : List Ranked} {g : Group} (h : groupOf k l = some g)
+    (y : Ranked) (hy : y ∈ g.members) (d : Nat) (hd : y.facts.capLeftMin = some d) :
+    g.commitMin ≤ d := by
+  cases l with
+  | nil => exact absurd h (by simp [groupOf])
+  | cons x xs =>
+    have hm := (groupOf_members h).1
+    unfold groupOf at h
+    simp only [Option.some.injEq] at h
+    subst h
+    rw [hm] at hy
+    exact commitOf_le_cap (x :: xs) y hy d hd
+
+/-! ### The groups of a request -/
+
+def groupLe (a b : Group) : Bool := groupKeyLe a.key b.key
+
+theorem groupLe_trans (a b c : Group) (h₁ : groupLe a b) (h₂ : groupLe b c) : groupLe a c :=
+  groupKeyLe_trans _ _ _ h₁ h₂
+
+theorem groupLe_total (a b : Group) : groupLe a b || groupLe b a := groupKeyLe_total _ _
+
+/-- Fork `out.sort_by(|a, b| a.key.cmp(&b.key))`, a **stable** sort: `Replay.insSort` is the
+specification (`decide` evaluates it) and core's `mergeSort` the compiled twin. -/
+def sortGroups (l : List Group) : List Group := Replay.insSort groupLe l
+
+def sortGroupsFast (l : List Group) : List Group := l.mergeSort groupLe
+
+@[csimp] theorem sortGroups_eq_sortGroupsFast : @sortGroups = @sortGroupsFast := by
+  funext l
+  unfold sortGroups sortGroupsFast
+  exact Replay.insSort_eq_mergeSort groupLe groupLe_trans groupLe_total l
+
+theorem mem_sortGroups {l : List Group} {x : Group} : x ∈ sortGroups l ↔ x ∈ l :=
+  (Replay.insSort_perm groupLe l).mem_iff
+
+theorem sortGroups_sorted (l : List Group) :
+    (sortGroups l).Pairwise (fun a b => groupLe a b = true) := by
+  unfold sortGroups
+  rw [Replay.insSort_eq_mergeSort groupLe groupLe_trans groupLe_total l]
+  exact List.pairwise_mergeSort (fun a b c h₁ h₂ => groupLe_trans a b c h₁ h₂)
+    (fun a b => groupLe_total a b) l
+
+/-- **Fork `build_groups`' `members` filter** (`planner.rs:1420`): a wall is placed by step 1, an
+optional only fills Rest in step 7, and a window instance is placed inside its own window by
+step 2, so none of the three is ever given a slot here. -/
+def batchMembers (b : List Ranked) : List Ranked :=
+  b.filter (fun x => !x.cand.wall && !x.cand.optional && !x.cand.window)
+
+theorem mem_batchMembers {b : List Ranked} {y : Ranked} (h : y ∈ batchMembers b) :
+    y ∈ b ∧ y.cand.wall = false ∧ y.cand.optional = false ∧ y.cand.window = false := by
+  simp only [batchMembers, List.mem_filter, Bool.and_eq_true, Bool.not_eq_true'] at h
+  exact ⟨h.1, h.2.1.1, h.2.1.2, h.2.2⟩
+
+theorem mem_batchMembers_of {b : List Ranked} {y : Ranked} (hy : y ∈ b)
+    (hw : y.cand.wall = false) (ho : y.cand.optional = false) (hn : y.cand.window = false) :
+    y ∈ batchMembers b := by
+  simp [batchMembers, List.mem_filter, hy, hw, ho, hn]
+
+/-- **§7.5's groups of this request** — the one call `build_groups` walks, so a witness that
+reads the batching and the step that consumes it cannot drift apart (AGENTS §5.3). -/
+def PlanReq.dayBatches (r : PlanReq) : List (List Ranked) :=
+  batches r.prio.batchMaxMin r.blockMin r.rankedCands
+
+/-- **§8.2 step 5's groups, unsorted** — the batching, the split and one `Group` per bucket. -/
+def PlanReq.rawGroups (r : PlanReq) : List Group :=
+  r.dayBatches.flatMap (fun b =>
+    (splitGroups (r.activeRun.map (·.id)) (batchMembers b)).filterMap (fun e => groupOf e.1 e.2))
+
+/-- **Fork `build_groups`**: §7.4's key order, restored after the batching gathered forward. -/
+def PlanReq.buildGroups (r : PlanReq) : List Group := sortGroups r.rawGroups
+
+theorem PlanReq.mem_rawGroups {r : PlanReq} {g : Group} (h : g ∈ r.rawGroups) :
+    ∃ b ∈ r.dayBatches,
+      ∃ e ∈ splitGroups (r.activeRun.map (·.id)) (batchMembers b), groupOf e.1 e.2 = some g := by
+  simp only [PlanReq.rawGroups, List.mem_flatMap, List.mem_filterMap] at h
+  obtain ⟨b, hb, e, he, hg⟩ := h
+  exact ⟨b, hb, e, he, hg⟩
+
+theorem PlanReq.mem_buildGroups {r : PlanReq} {g : Group} :
+    g ∈ r.buildGroups ↔ g ∈ r.rawGroups := mem_sortGroups
+
+/-- **Every member of every group is a candidate this request ranked** — nothing is invented. -/
+theorem PlanReq.a_group_member_is_ranked {r : PlanReq} {g : Group} {y : Ranked}
+    (hg : g ∈ r.buildGroups) (hy : y ∈ g.members) : y ∈ r.rankedCands := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  rw [(groupOf_members hgo).1] at hy
+  exact mem_of_mem_batches hb (mem_batchMembers (mem_of_mem_splitGroups he hy)).1
+
+/-- **And every ranked candidate a slot could take is in one** — the direction the "never
+drops" goals read.  A wall, an optional and a window instance are placed by other steps and are
+deliberately not here. -/
+theorem PlanReq.a_ranked_candidate_has_a_group {r : PlanReq} {y : Ranked}
+    (hy : y ∈ r.rankedCands) (hw : y.cand.wall = false) (ho : y.cand.optional = false)
+    (hn : y.cand.window = false) : ∃ g ∈ r.buildGroups, y ∈ g.members := by
+  obtain ⟨b, hb, hyb⟩ := batches_cover (ms := r.prio.batchMaxMin) (bm := r.blockMin) hy
+  obtain ⟨e, he, hye⟩ := splitGroups_cover (act := r.activeRun.map (·.id))
+    (mem_batchMembers_of hyb hw ho hn)
+  have hne : e.2 ≠ [] := splitGroups_ne_nil _ _ e he
+  cases hgo : groupOf e.1 e.2 with
+  | none =>
+    cases hl : e.2 with
+    | nil => exact absurd hl hne
+    | cons z zs => rw [hl] at hgo; simp [groupOf] at hgo
+  | some g =>
+    refine ⟨g, PlanReq.mem_buildGroups.2 ?_, ?_⟩
+    · simp only [PlanReq.rawGroups, List.mem_flatMap, List.mem_filterMap]
+      exact ⟨b, hb, e, he, hgo⟩
+    · rw [(groupOf_members hgo).1]; exact hye
+
+/-- **A group's `loc:` and `splittable` are its members'**, by the key they were bucketed on. -/
+theorem PlanReq.a_group_member_carries_the_groups_filters {r : PlanReq} {g : Group} {y : Ranked}
+    (hg : g ∈ r.buildGroups) (hy : y ∈ g.members) :
+    y.facts.loc = g.loc ∧ y.facts.splittable = g.splittable := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  obtain ⟨hm, hl, hs⟩ := groupOf_members hgo
+  rw [hm] at hy
+  have hk := splitGroups_keys (r.activeRun.map (·.id)) (batchMembers b) e he y hy
+  unfold splitKeyOf at hk
+  rw [hl, hs, ← hk]
+  exact ⟨rfl, rfl⟩
+
+/-- **And its `ci` is its members'** — §7.5 gathers by `ci` alone, so a group is one level, and
+that is what `pick`'s energy filter needs to be a statement about every member. -/
+theorem PlanReq.a_group_member_carries_the_groups_ci {r : PlanReq} {g : Group} {y : Ranked}
+    (hg : g ∈ r.buildGroups) (hy : y ∈ g.members) : y.cand.ci = g.ci := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  have hm := (groupOf_members hgo).1
+  rw [hm] at hy
+  cases hl : e.2 with
+  | nil => rw [hl] at hgo; simp [groupOf] at hgo
+  | cons z zs =>
+    have hci : g.ci = z.cand.ci := by rw [hl] at hgo; simp only [groupOf, Option.some.injEq] at hgo;
+                                      rw [← hgo]
+    rw [hl] at hy
+    have h1 := mem_of_mem_splitGroups (e := e) he (by rw [hl]; exact hy)
+    have h2 := mem_of_mem_splitGroups (e := e) he (by rw [hl]; exact List.mem_cons_self ..)
+    rw [hci]
+    exact batches_ci hb _ (mem_batchMembers h1).1 _ (mem_batchMembers h2).1
+
+/-- **No group is empty and none is longer than `maxBatch`** — so `mkBatch?` cannot refuse the
+row a group's slot emits (R10). -/
+theorem PlanReq.a_group_is_a_bounded_batch {r : PlanReq} {g : Group} (hg : g ∈ r.buildGroups) :
+    g.members ≠ [] ∧ g.members.length ≤ maxBatch := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  have hm := (groupOf_members hgo).1
+  refine ⟨by rw [hm]; exact splitGroups_ne_nil _ _ e he, ?_⟩
+  rw [hm]
+  refine Nat.le_trans (splitGroups_length he) (Nat.le_trans ?_ (batches_length _ _ _ b hb))
+  exact List.Sublist.length_le List.filter_sublist
+
+/-- **Sorted in §7.4's key order.** -/
+theorem PlanReq.buildGroups_sorted (r : PlanReq) :
+    r.buildGroups.Pairwise (fun a b => groupLe a b = true) := sortGroups_sorted _
+
+/-- **And a group's key is the minimum of its members'** — fork `members.iter().map(sort_key)
+.min()`, stated over the value rather than assumed of it. -/
+theorem PlanReq.a_group_key_is_its_minimum {r : PlanReq} {g : Group} {y : Ranked}
+    (hg : g ∈ r.buildGroups) (hy : y ∈ g.members) : groupKeyLe g.key (groupKeyOf y) := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  have hm := (groupOf_members hgo).1
+  rw [hm] at hy
+  cases hl : e.2 with
+  | nil => rw [hl] at hgo; simp [groupOf] at hgo
+  | cons z zs =>
+    have hk : g.key = minGroupKey (groupKeyOf z) zs := by
+      rw [hl] at hgo; simp only [groupOf, Option.some.injEq] at hgo; rw [← hgo]
+    rw [hl] at hy
+    rw [hk]
+    rcases List.mem_cons.1 hy with rfl | hy
+    · exact minGroupKey_le_seed zs _
+    · exact minGroupKey_le_mem zs _ y hy
+
+/-! ### §9's running block, against its own group
+
+Fork `plan()` (`planner.rs:1008-1015`): the block running at `now` has already spent part of
+the work its group was owed, so its group starts the cursor with those minutes taken.  It costs
+exactly **one** block against the budget however long it runs, which is the cursor's `used`
+seed and is P5b's other half. -/
+
+/-- The first group holding `id` starts with `mins` of its commitment spent (fork `groups[gi]
+.left_min -= run.minutes()`). -/
+def spendActive (id : Id) (mins : Nat) : List Group → List Group
+  | [] => []
+  | g :: rest =>
+    if g.members.any (fun x => x.cand.id == id) then { g with spent := g.spent + mins } :: rest
+    else g :: spendActive id mins rest
+
+/-- **§8.2 step 5's groups, as the cursor receives them.** -/
+def PlanReq.startGroups (r : PlanReq) : List Group :=
+  match r.activeRun with
+  | none => r.buildGroups
+  | some q => spendActive q.id (Look.spanMinutes q.start q.stop) r.buildGroups
+
+/-- `spendActive` touches nothing but one group's `spent`. -/
+theorem spendActive_keys (id : Id) (mins : Nat) : ∀ (l : List Group) (g : Group),
+    g ∈ spendActive id mins l →
+      ∃ g₀ ∈ l, g.key = g₀.key ∧ g.members = g₀.members ∧ g.ci = g₀.ci ∧ g.loc = g₀.loc ∧
+        g.splittable = g₀.splittable ∧ g.commitMin = g₀.commitMin
+  | [], _, h => by simp [spendActive] at h
+  | g₀ :: rest, g, h => by
+    unfold spendActive at h
+    by_cases hb : (g₀.members.any (fun x => x.cand.id == id)) = true
+    · rw [if_pos hb] at h
+      rcases List.mem_cons.1 h with rfl | h
+      · exact ⟨g₀, List.mem_cons_self .., rfl, rfl, rfl, rfl, rfl, rfl⟩
+      · exact ⟨g, List.mem_cons_of_mem _ h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · rw [if_neg hb] at h
+      rcases List.mem_cons.1 h with rfl | h
+      · exact ⟨g, List.mem_cons_self .., rfl, rfl, rfl, rfl, rfl, rfl⟩
+      · obtain ⟨g₁, h₁, hrest⟩ := spendActive_keys id mins rest g h
+        exact ⟨g₁, List.mem_cons_of_mem _ h₁, hrest⟩
+
+theorem spendActive_length (id : Id) (mins : Nat) : ∀ l : List Group,
+    (spendActive id mins l).length = l.length
+  | [] => rfl
+  | g :: rest => by
+    unfold spendActive
+    by_cases hb : (g.members.any (fun x => x.cand.id == id)) = true
+    · rw [if_pos hb]; simp
+    · rw [if_neg hb]; simp [spendActive_length id mins rest]
+
+/-- **A group the cursor receives is a group `build_groups` built**, with at most one of them
+holding a different `spent` — so every law above about `buildGroups` is a law about the
+cursor's input. -/
+theorem PlanReq.a_started_group_is_a_built_group {r : PlanReq} {g : Group}
+    (hg : g ∈ r.startGroups) :
+    ∃ g₀ ∈ r.buildGroups, g.key = g₀.key ∧ g.members = g₀.members ∧ g.ci = g₀.ci ∧
+      g.loc = g₀.loc ∧ g.splittable = g₀.splittable ∧ g.commitMin = g₀.commitMin := by
+  unfold PlanReq.startGroups at hg
+  cases hq : r.activeRun with
+  | none => rw [hq] at hg; exact ⟨g, hg, rfl, rfl, rfl, rfl, rfl, rfl⟩
+  | some q => rw [hq] at hg; exact spendActive_keys _ _ _ g hg
 
 end Planner
 end Tm

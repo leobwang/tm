@@ -5688,3 +5688,93 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.CapWire.multiplierOfWire_ok
 #print axioms Tm.Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states
 #print axioms Tm.Look.PlanFacts.eligible_iff_without_the_free_component
+
+-- ===========================================================================
+-- APPENDED 2026-09-18 (stage 6, run **W-19**, track P, step **P5b** -- the
+-- assign fold's first half: the GROUPS the cursor walks).
+--
+-- Fork `Planner::build_groups` (planner.rs:1406) over fork `priority::batches`
+-- (priority.rs:1214) and fork `split_by_filters` (planner.rs:2354).  This is
+-- NOT an EDF pass (README gap 701): fork `build_groups`/`pick` is a greedy
+-- cursor in 7.4's key order with no deadline anywhere, and 7.3's pass reaches
+-- step 5 only as the `p` inside `CandKey`.
+--
+-- 59 theorems in `Planner.lean` and 8 `decide` witnesses in `PlannerWit.lean`.
+-- The four laws a later step reads are `PlanReq.a_group_member_is_ranked`
+-- (nothing invented), `PlanReq.a_ranked_candidate_has_a_group` (nothing
+-- dropped), `gatherBatch_fst_is_a_prefix_of_its_ci` (E2: the gather cannot
+-- reach past an equal-`ci` candidate it left behind) and
+-- `groupOf_commit_le_cap` (6.2's `max:` binds the commitment).
+--
+-- No goal is discharged and none is added: the burn-down does not move.  The
+-- CURSOR -- `contiguous_fits`, `pick`, the slot walk and the Block/Batch rows
+-- -- is NOT written; `dayPlan` is unchanged and no group reaches a segment.
+-- README gaps 800-806 say so by name.
+-- ===========================================================================
+#print axioms Tm.Planner.batches_ci
+#print axioms Tm.Planner.batches_cover
+#print axioms Tm.Planner.batches_flatten_perm
+#print axioms Tm.Planner.batches_length
+#print axioms Tm.Planner.batches_ne_nil
+#print axioms Tm.Planner.batchLoop_ci
+#print axioms Tm.Planner.batchLoop_flatten_perm
+#print axioms Tm.Planner.batchLoop_length
+#print axioms Tm.Planner.batchLoop_ne_nil
+#print axioms Tm.Planner.capFold_le_member
+#print axioms Tm.Planner.capFold_some
+#print axioms Tm.Planner.capLeftOf_le_member
+#print axioms Tm.Planner.commitOf_le_cap
+#print axioms Tm.Planner.commitOf_le_planned
+#print axioms Tm.Planner.gatherBatch_fst_ci
+#print axioms Tm.Planner.gatherBatch_fst_is_a_prefix_of_its_ci
+#print axioms Tm.Planner.gatherBatch_fst_length
+#print axioms Tm.Planner.gatherBatch_perm
+#print axioms Tm.Planner.gatherBatch_snd_length
+#print axioms Tm.Planner.groupKeyLe_total
+#print axioms Tm.Planner.groupKeyLe_trans
+#print axioms Tm.Planner.groupLe_total
+#print axioms Tm.Planner.groupLe_trans
+#print axioms Tm.Planner.Group.live_iff
+#print axioms Tm.Planner.groupOf_commit_le_cap
+#print axioms Tm.Planner.groupOf_commit_le_planned
+#print axioms Tm.Planner.groupOf_members
+#print axioms Tm.Planner.mem_batchMembers
+#print axioms Tm.Planner.mem_batchMembers_of
+#print axioms Tm.Planner.mem_of_mem_batches
+#print axioms Tm.Planner.mem_of_mem_splitGroups
+#print axioms Tm.Planner.mem_sortGroups
+#print axioms Tm.Planner.minGroupKey_le_mem
+#print axioms Tm.Planner.minGroupKey_le_seed
+#print axioms Tm.Planner.PlanReq.a_group_is_a_bounded_batch
+#print axioms Tm.Planner.PlanReq.a_group_key_is_its_minimum
+#print axioms Tm.Planner.PlanReq.a_group_member_carries_the_groups_ci
+#print axioms Tm.Planner.PlanReq.a_group_member_carries_the_groups_filters
+#print axioms Tm.Planner.PlanReq.a_group_member_is_ranked
+#print axioms Tm.Planner.PlanReq.a_ranked_candidate_has_a_group
+#print axioms Tm.Planner.PlanReq.a_started_group_is_a_built_group
+#print axioms Tm.Planner.PlanReq.buildGroups_sorted
+#print axioms Tm.Planner.PlanReq.mem_buildGroups
+#print axioms Tm.Planner.PlanReq.mem_rawGroups
+#print axioms Tm.Planner.sortGroups_eq_sortGroupsFast
+#print axioms Tm.Planner.sortGroups_sorted
+#print axioms Tm.Planner.spendActive_keys
+#print axioms Tm.Planner.spendActive_length
+#print axioms Tm.Planner.splitFold_flatten
+#print axioms Tm.Planner.splitFold_SplitNe
+#print axioms Tm.Planner.splitFold_SplitOk
+#print axioms Tm.Planner.splitGroups_cover
+#print axioms Tm.Planner.splitGroups_flatten
+#print axioms Tm.Planner.splitGroups_keys
+#print axioms Tm.Planner.splitGroups_length
+#print axioms Tm.Planner.splitGroups_ne_nil
+#print axioms Tm.Planner.splitPush_flatten
+#print axioms Tm.Planner.splitPush_keeps_SplitNe
+#print axioms Tm.Planner.splitPush_keeps_SplitOk
+#print axioms Tm.PlannerWit.the_batch_request_is_ordered
+#print axioms Tm.PlannerWit.the_commitment_is_capped_by_a_members_max
+#print axioms Tm.PlannerWit.the_gather_passes_over_another_ci_and_stops_at_its_own
+#print axioms Tm.PlannerWit.the_gather_stops_at_the_batch_bound
+#print axioms Tm.PlannerWit.the_running_block_starts_its_group_with_its_minutes_spent
+#print axioms Tm.PlannerWit.the_split_cuts_a_batch_on_atomic
+#print axioms Tm.PlannerWit.the_split_cuts_a_batch_on_its_location
+#print axioms Tm.PlannerWit.the_split_cuts_out_the_running_block

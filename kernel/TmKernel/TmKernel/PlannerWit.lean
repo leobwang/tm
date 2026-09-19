@@ -394,7 +394,7 @@ computed at, so the answers below are stage 5's answers and not a second set.
 lookahead stopped being a field of `PlanReq` and became `Planner.PlanReq.caps`, a view of
 `Look.lookahead r.look`, so a request no longer carries one to build.  `Check.lean`'s P4 banner
 records both deletions.)* -/
-def witPrio : PrioCfg := ⟨Look.defaultBinsV, Arith.safety, specDefaultPrio, true⟩
+def witPrio : PrioCfg := ⟨Look.defaultBinsV, Arith.safety, specDefaultPrio, true, 20⟩
 
 /-- The raw request. -/
 def witReqIn : PlanReqIn where
@@ -2220,6 +2220,187 @@ theorem the_break_law_applies_at_the_census_request (b k : WfSeg)
     b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start :=
   PlanCheck.plan_places_no_block_over_a_break theCensusRequest
     the_census_request_is_inside_the_calendar b k hb hk hbk hkk hnow
+
+/-! ############################################################################
+## 10. §8.2 step 5's groups, run rather than argued (stage 6 step P5b, AGENTS §5.2)
+
+Every law in `Planner.lean`'s group section is a `∀` over a request.  The witnesses below are
+`decide` over one, and each is built so that **the component it is about is the only thing that
+differs** — W-17's lesson, which cost P4 a sort key whose two halves could be swapped with 1,342
+tests green.  Six components: the gather's `continue` on a different `ci`, its `break` on an
+equal one, the `maxBatch` room, the split's three key parts, the `max:` commit, and the group
+sort.
+############################################################################ -/
+
+/-- The nine, with `planned_min` and `loc:` set — the two facts §8.2 step 5's grouping reads. -/
+def planFacts (pm : Nat) (l : Field.Loc) : Look.PlanFacts :=
+  { Look.PlanFacts.unconstrained with plannedMin := pm, loc := l }
+
+def wfPlanFacts (pm : Nat) (l : Field.Loc) (h : Look.PlanFacts.wf (planFacts pm l) = true) :
+    Look.WfPlanFacts := ⟨planFacts pm l, h⟩
+
+/-- One batching candidate: no due (so §7.3's pass does not enter it), a written `!1` so every
+one of the six answers `p = 3` and the order is the request's, and the two grouping facts. -/
+def bCand (id : List Char) (ci : Fin 6) (pm : Nat) (l : Field.Loc)
+    (h : Look.PlanFacts.wf (planFacts pm l) = true) : Look.Cand × Option Look.Floor :=
+  (⟨id, ci, some 0, 10, none, false, false, false, false, false, false, none,
+     wfPlanFacts pm l h⟩, none)
+
+/-- **Six candidates aimed at §7.5's two rules.**  `blockMin` is 60 and `batch_max_min` 20, so
+every one of the six is *gatherable* and only the planned minutes and the `ci` decide.
+
+`^b1` (10m) leads; `^b2` (20m) joins; `^b3` is `ci 2` and is **passed over**; `^b4` (40m) is
+`ci 3` and would take the batch to 70 > 60, so it **stops** the gather; `^b5` (5m) is `ci 3`
+and *would* have fitted — it is the candidate a gather without the `break` would have reached
+past, which is §8.3's monotone-rank rule and E2's whole content; `^b6` is `ci 2` again.
+`^b2` carries `loc:out` where the rest carry none, which is what the split reads. -/
+def witBatchCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any  (by decide),
+   bCand ['b','2'] 3 20 .out  (by decide),
+   bCand ['b','3'] 2 10 .any  (by decide),
+   bCand ['b','4'] 3 40 .any  (by decide),
+   bCand ['b','5'] 3 5  .any  (by decide),
+   bCand ['b','6'] 2 10 .any  (by decide)]
+
+def theBatchRequest : PlanReq := { theRequest with cands := ⟨witBatchCands, by decide⟩ }
+
+/-- The ids of each batch §7.5 gathered, in the order the fold walks them. -/
+def batchIds (r : PlanReq) : List (List Id) :=
+  r.dayBatches.map (fun b => b.map (fun x => x.cand.id))
+
+/-- The ids of each group `build_groups` built, with the minutes it commits to. -/
+def groupIds (r : PlanReq) : List (List Id) :=
+  r.buildGroups.map (fun g => g.members.map (fun x => x.cand.id))
+
+def groupCommits (r : PlanReq) : List Nat := r.buildGroups.map Group.commitMin
+
+/-- The same six with a `max:` on `^b4`: sixty minutes capped, `d` of them already spent. -/
+def bCandCap (id : List Char) (ci : Fin 6) (pm : Nat) (d : Nat)
+    (h : Look.PlanFacts.wf { planFacts pm .any with cap := some ⟨60, d⟩ } = true) :
+    Look.Cand × Option Look.Floor :=
+  (⟨id, ci, some 0, 10, none, false, false, false, false, false, false, none,
+     ⟨{ planFacts pm .any with cap := some ⟨60, d⟩ }, h⟩⟩, none)
+
+/-- `^b4` with forty of its sixty capped minutes spent — twenty left, which is **less** than
+the forty-five its group's estimates ask for. -/
+def witCapCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
+   bCand ['b','3'] 2 10 .any (by decide), bCandCap ['b','4'] 3 40 40 (by decide),
+   bCand ['b','5'] 3 5 .any (by decide), bCand ['b','6'] 2 10 .any (by decide)]
+
+/-- The same `max:` with **nothing** spent — sixty left, which binds nothing. -/
+def witCapSlackCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
+   bCand ['b','3'] 2 10 .any (by decide), bCandCap ['b','4'] 3 40 0 (by decide),
+   bCand ['b','5'] 3 5 .any (by decide), bCand ['b','6'] 2 10 .any (by decide)]
+
+def theCapRequest : PlanReq := { theRequest with cands := ⟨witCapCands, by decide⟩ }
+def theCapSlackRequest : PlanReq := { theRequest with cands := ⟨witCapSlackCands, by decide⟩ }
+
+/-- The six with `^b5` made `atomic`, and nothing else. -/
+def witAtomicCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
+   bCand ['b','3'] 2 10 .any (by decide), bCand ['b','4'] 3 40 .any (by decide),
+   (⟨['b','5'], 3, some 0, 10, none, false, false, false, false, false, false, none,
+      ⟨{ planFacts 5 .any with splittable := false }, by decide⟩⟩, none),
+   bCand ['b','6'] 2 10 .any (by decide)]
+
+def theAtomicRequest : PlanReq := { theRequest with cands := ⟨witAtomicCands, by decide⟩ }
+
+/-- The six with `^b4` renamed to `m1` — §9's running item, so that one request can differ from
+another in `state` alone. -/
+def witRunBatchCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
+   bCand ['b','3'] 2 10 .any (by decide), bCand ['m','1'] 3 40 .any (by decide),
+   bCand ['b','5'] 3 5 .any (by decide), bCand ['b','6'] 2 10 .any (by decide)]
+
+def theIdleBatchRequest : PlanReq := { theRequest with cands := ⟨witRunBatchCands, by decide⟩ }
+
+def theRunBatchRequest : PlanReq :=
+  { theRequest with cands := ⟨witRunBatchCands, by decide⟩, state := theRunningState }
+
+/-- Twenty candidates that plan **nothing** — `round(est × multiplier)` is `0` for a small
+enough multiplier (fork `energy::planned_minutes`), so `total_min + 0 ≤ block_min` never fires
+and the fork's gather has no bound at all.  This is gap 800's own witness. -/
+def witZeroCands : List (Look.Cand × Option Look.Floor) :=
+  List.replicate 20 (bCand ['z'] 3 0 .any (by decide))
+
+def theZeroRequest : PlanReq := { theRequest with cands := ⟨witZeroCands, by decide⟩ }
+
+def groupSpents (r : PlanReq) : List (List Id × Nat) :=
+  r.startGroups.map (fun g => (g.members.map (fun x => x.cand.id), g.spent))
+
+/-- **The six rank in request order**, so nothing below is about §7.4: they answer one `p`, none
+is in the plan, and the tie falls through to the request position. -/
+theorem the_batch_request_is_ordered :
+    rankedIds theBatchRequest =
+      [['b','1'], ['b','2'], ['b','3'], ['b','4'], ['b','5'], ['b','6']] := by decide
+
+/-- **§7.5's two rules, computed.**  `^b1` gathers `^b2` (10 + 20 ≤ 60); `^b3` is another `ci`
+and is **passed over**, not a stop — which is why `^b3` later leads a batch of its own that
+reaches *past* `^b4` and `^b5` to gather `^b6`; and `^b4` would take `^b1`'s batch to 70, so it
+**stops** the walk and `^b5` is left behind although 10 + 20 + 5 = 35 would have fitted.
+
+**`^b5` is the whole of E2**: a gather that treated a candidate that cannot join as a `continue`
+rather than a `break` would put it in `^b1`'s batch, and the day would look correct — the batch
+prints fine and `^b4`, which ranks ahead of `^b5`, simply never appears.  That is the shipped
+bug this law is named after. -/
+theorem the_gather_passes_over_another_ci_and_stops_at_its_own :
+    batchIds theBatchRequest =
+      [[['b','1'], ['b','2']], [['b','3'], ['b','6']], [['b','4'], ['b','5']]] := by decide
+
+/-- **And the split cuts `^b1`'s batch in two on `loc:` alone** — `^b2` carries `loc:out`, every
+other fact of the two is equal, and the errand does not ride into the lounge on `^b1`'s block.
+The groups `^b3` and `^b4` lead are untouched, so the cut is the key's and not the split's
+existence. -/
+theorem the_split_cuts_a_batch_on_its_location :
+    groupIds theBatchRequest =
+      [[['b','1']], [['b','2']], [['b','3'], ['b','6']], [['b','4'], ['b','5']]] := by decide
+
+/-- **`atomic` cuts on its own**: the same six with `^b5`'s `splittable` cleared and **nothing
+else** — `^b4` and `^b5` stop sharing a block, and `^b1`/`^b2`'s cut does not move.  A split
+that read one of the two keys for the other would pass one of these two theorems and fail the
+other. -/
+theorem the_split_cuts_a_batch_on_atomic :
+    groupIds theAtomicRequest =
+      [[['b','1']], [['b','2']], [['b','3'], ['b','6']], [['b','4']], [['b','5']]] := by decide
+
+set_option maxRecDepth 40000 in
+/-- **And §9's running item is cut out of its batch by the *state* alone.**  These two requests
+carry the identical candidate list; they differ in `state.active` and in nothing else.  Idle,
+`m1` and `^b5` share a block; running, the minutes `m1`'s block still needs are its own. -/
+theorem the_split_cuts_out_the_running_block :
+    groupIds theIdleBatchRequest =
+      [[['b','1']], [['b','2']], [['b','3'], ['b','6']], [['m','1'], ['b','5']]] ∧
+    groupIds theRunBatchRequest =
+      [[['b','1']], [['b','2']], [['b','3'], ['b','6']], [['m','1']], [['b','5']]] := by decide
+
+set_option maxRecDepth 40000 in
+/-- **The reservation's minutes are spent against its own group before the cursor starts** —
+fork `groups[gi].left_min -= run.minutes()`.  Forty is the reservation's own length
+(`the_reservation_is_clipped_to_the_block_it_is_in`), and it is charged to `m1`'s group and to
+no other. -/
+theorem the_running_block_starts_its_group_with_its_minutes_spent :
+    groupSpents theRunBatchRequest =
+      [([['b','1']], 0), ([['b','2']], 0), ([['b','3'], ['b','6']], 0),
+       ([['m','1']], 40), ([['b','5']], 0)] := by decide
+
+/-- **§6.2's `max:` binds the commitment, and it binds it by its two numbers.**  The two requests
+below carry the same `max: 60` on `^b4`; in the first forty of the sixty are spent, leaving
+twenty, and the group commits **twenty** where its estimates ask for forty-five.  In the second
+*nothing* is spent, sixty are left, and the same cap binds nothing — so the theorem is about
+`cap_left_min()` and not about the presence of a cap. -/
+theorem the_commitment_is_capped_by_a_members_max :
+    groupCommits theCapRequest = [10, 20, 20, 20] ∧
+    groupCommits theCapSlackRequest = [10, 20, 20, 45] := by decide
+
+/-- **The gather stops at `maxBatch`, and the fork's does not** (README gap 800).  Twenty
+candidates that plan zero minutes each: `total_min + 0 ≤ block_min` never fires, so the fork's
+loop would gather all twenty into one `SegKind::Batch`; `BatchIds` is bounded at sixteen (R10)
+and the seventeenth leads a batch of its own.  Nothing is lost — the four are still assigned —
+and this is the one behaviour this step deviates in. -/
+theorem the_gather_stops_at_the_batch_bound :
+    (batchIds theZeroRequest).map List.length = [16, 4] := by decide
 
 end PlannerWit
 end Tm

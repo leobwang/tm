@@ -2506,4 +2506,39 @@ theorem theCensusDayHasNoBreakRow :
     (Planner.dayPlan PlannerWit.theCensusRequest).segments.filter
       (fun s => s.val.kind == Planner.SegKind.brk) = [] := by decide
 
+/- ===========================================================================
+   APPENDED 2026-09-18, stage 6 run W-19, track P, step P5b (AGENTS 6.2).
+   §8.2 step 5's groups: the batching, the split and the `max:` commit.
+   Cheats 203-205.  Whoever merges renumbers. -/
+/- CHEAT 203 — §7.4's five-part `CandKey` offered where the group's key is
+   wanted.  Fork `build_groups` takes the minimum of `priority::sort_key`, which
+   is the THREE `(p, root_order, own_order)` and not `sorted_candidates`' tuple:
+   the wall digit is meaningless there (a wall never reaches a group) and the
+   request position is deliberately absent, because the fork's `out.sort_by` is
+   stable and two groups that agree on all three keep the order the batching
+   gave them.  Two keys, two types, so the confusion is not expressible. -/
+theorem theGroupKeyIsSortedCandidatesOwnKey :
+    Planner.groupKeyLe (Planner.CandKey.mk true 0 none none 0)
+      (Planner.CandKey.mk true 0 none none 0) = true := by decide
+
+/- CHEAT 204 — a group's members handed straight to `SegKind.batch`.  `BatchIds`
+   is bounded at `maxBatch` (R10) and `Group.members` is a plain list, so the row
+   a slot emits must pass `mkBatch?` and cannot be built from the group by
+   coincidence.  This matters more than it looks: the fork's gather has NO bound
+   (README gap 800), so a port that skipped the smart constructor would be one
+   zero-minute multiplier away from a `Vec` of any length. -/
+theorem aGroupsMembersMakeABatchRow (g : Planner.Group) :
+    Planner.SegKind.batch (g.members.map (fun x => x.cand.id)) = Planner.SegKind.brk := by
+  decide
+
+/- CHEAT 205 — the gather asserted to reach PAST an equal-`ci` candidate that
+   could not join.  `^b4` (40 m) takes `^b1`'s batch to 70 > 60 and stops the
+   walk; `^b5` (5 m) would have fitted (10 + 20 + 5 = 35) and is left behind,
+   which is §8.3's monotone-rank rule and E2's whole content.  This block claims
+   the fork's `break` is a `continue`.  `decide` refuses: `^b5` leads `^b4`'s
+   batch instead, and `Planner.gatherBatch_fst_is_a_prefix_of_its_ci` is why. -/
+theorem theGatherReachesPastAnEqualCiCandidate :
+    PlannerWit.batchIds PlannerWit.theBatchRequest =
+      [[['b','1'], ['b','2'], ['b','5']], [['b','3'], ['b','6']], [['b','4']]] := by decide
+
 end Tm
