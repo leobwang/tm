@@ -43027,3 +43027,608 @@ section 18.**
 
 `.claude/worktrees/w20-g` created by this step from `86c4dc6` on branch `w20-g`,
 and committed in.  `.claude/worktrees/stage5-lookahead` is untouched.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-19: stage 6 (the planner), run **W-20**, the **LAND**
+     step, on the main checkout at `2695ddd`.  Two merges — `w20-a` (the gate
+     track) and `w20-g` (the goals track) — onto the line track P had already
+     landed P6 on.  Gap range **980-984**; this step takes all five.  No goal
+     added, discharged or deleted: **burn-down stays 9**.  `check.sh` **9/9**.
+     **Check 9 ran against real step output for the first time and half of what
+     it met had no constant to fold to**; §3 is that, out loud.
+     =========================================================================== -->
+
+## Stage 6 — W-20, the land step: check 9's first real run, and the half of a kernel a constant cannot reach
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `13cbadc` | merge `w20-a` — D40's **check 9**, D41's **widened check 8**, and the 56 stale prose citations the widening exposed |
+| `bd09fcd` | merge `w20-g` — ten of §6.1's eleven on a quiet day, gap 806's two cursor clauses as ∀-theorems, and the one section number the merge renumbered |
+| `7d03487` | **check 9's fourth verdict, the 46 roster rows it earned, and the six citations check 8 caught at the merge** |
+| this block | the ledger |
+
+`kernel/corpus/`, `lean-toolchain`, every fixture, every snapshot and
+`cli_latency.rs` are untouched: `git diff --name-only 86c4dc6..HEAD --
+tm/tests/fixtures tm/tests/snapshots kernel/corpus tm-core/tests/fixtures
+tm/tests/cli_latency.rs kernel/TmKernel/lean-toolchain` is **empty**. No Rust
+file changed at all this run, in any track.
+
+### 2. The conflicts, and the one renumbering
+
+**Four conflicts across the two merges, and every one is append-versus-append** —
+the files §6.2 and §6.3 tell parallel tracks not to edit, edited by parallel
+tracks, for the fifth run running. None was semantic; no line of any side was
+dropped.
+
+| merge | file | what collided |
+|---|---|---|
+| `13cbadc` | `README.md` | track P's block and track A's, both opening at the same end of the file |
+| `bd09fcd` | `README.md` | the same again, for track G |
+| `bd09fcd` | `Check.lean` | two `-- APPENDED` banners at the tail |
+| `bd09fcd` | `PlannerWit.lean` | two `/-! ##` sections before `end PlannerWit` |
+
+`PlanCheck.lean` and `Goals.lean` auto-merged, and so did track A's four
+un-backticked doc-comment citations in `Check.lean`, which sit well above track
+P's appended banner. **Nothing conflicted outside `kernel/README.md` that was
+not one of these two append points**, which is the answer to the brief's
+question.
+
+**One thing was renumbered.** Track P (P6) and track G (the quiet day) each
+opened `PlannerWit` **section 17**. P6's landed on the main line first, so track
+G's is **section 18** here, and its block's Numbering paragraph says so in place
+rather than leaving a reader to find it. The sweep, re-run whole:
+
+```
+$ grep -rEn "PlannerWit[^ ]* section [0-9]+|section 1[0-9][^0-9]" --include=*.lean kernel/
+kernel/TmKernel/TmKernel/PlanCheck.lean:1572:  … `PlannerWit`'s section 14 (written
+kernel/TmKernel/TmKernel/PlannerWit.lean:1329:  read *"section 13"* until W-18's repair step: …
+kernel/TmKernel/TmKernel/PlannerWit.lean:2072:  … this module's section 11 are its history.
+kernel/TmKernel/TmKernel/Planner.lean:5531:  … `PlannerWit`'s section 14 computes
+```
+
+Four, all correct, none pointing at 17 or 18; the file's `/-! ##` headers read
+**1…18 once each** (18 headers, `uniq -d` empty). *Method and blind spot,
+unchanged from W-19's:* this is a text grep for the words "section N", so a
+citation spelled `§17` or naming a section by its title is invisible to it.
+**No cheat number collided** this time — track P took 211-212 and neither other
+track touched `Negative.lean` — which is the first run in four that gap 872 did
+not fire.
+
+### 3. Check 9's first real run, out loud
+
+The brief asked that a first catch be said out loud. **It caught something, and
+what it caught is itself.**
+
+`mutations.txt`'s baseline is `86c4dc6`, and tracks P and G between them added or
+changed **46** `def`s and `abbrev`s after it — 24 in `Planner.lean`, 21 in
+`PlannerWit.lean`, one in `PlanCheck.lean`. Neither track could have run check 9:
+it did not exist on their branches. So the merge is the first tree on which the
+gate has ever had anything to do, and the whole of it was paid here — **69 kernel
+builds, about 75 minutes**, capped at `MemoryMax=40G`.
+
+```
+46 audited: 23 PINNED, 23 INVALID, 0 SURVIVED.
+```
+
+**Zero SURVIVED is the good half, and it is the half D40 was bought for**: not one
+definition either track added is a definition nothing in the package can tell from
+a constant. The three shipped instances this campaign found by hand (W-17's sort
+key, W-18's nine facts, W-19's `Planner.Ranked.gatherable`) have no fourth.
+
+**Every one of the 23 INVALID is the same error, and none of them is a defect in
+the definition:**
+
+```
+failed to synthesize instance of type class
+  Inhabited Look.Slot
+```
+
+`Look.Slot`, `Planner.Placed`, `Planner.Diagnostics`, `Planner.PlanReq`,
+`Capped _`, `WfPlan` and `PlanReqIn` have **no `Inhabited` instance**, so
+`default` does not typecheck and **D40's constant does not exist for them**.
+That is not an oversight in the kernel; it is AGENTS §5.1 working. The kernel's
+types are `Bool` + `Subtype`, and a bounded type deliberately has no inhabitant
+that nobody had to prove. The obvious escape was tried and measured rather than
+assumed:
+
+```
+$ lean InhabProbe2.lean       # deriving instance Inhabited for each
+error: failed to generate `Inhabited` instance for `Look.Slot`
+error: failed to generate `Inhabited` instance for `Planner.Placed`
+error: failed to generate `Inhabited` instance for `Planner.Diagnostics`
+error: failed to generate `Inhabited` instance for `Planner.PlanReq`
+```
+
+Four of five refuse to derive; only `Planner.Assign` does. **Adding those
+instances by hand would hand out bounded values without their smart constructors
+— weakening the kernel to suit a checker — so it was not done.**
+
+**What was done, and it is a narrowing of D40.** `mutate.py` gains a fourth
+verdict, **UNFOLDABLE**, deliberately shaped like check 8's allow-list rather
+than invented fresh:
+
+* it fires **only** on exactly that synthesis error at exactly the mutated
+  declaration — any other in-declaration error is still INVALID and still fatal,
+  and SURVIVED is still fatal;
+* each definition is rostered **by name** in `mutations.txt` with its type in the
+  reason column — exact names, never a pattern, which is the rule that keeps
+  check 8's allow-list from becoming the check written twice;
+* the count prints on **every** run, so it cannot grow unnoticed:
+  `46 new or changed since 86c4dc6, 46 rostered (23 unfoldable), 0 owed`;
+* and it is **not** a claim that anything reads the definition. Half of what this
+  merge added is now named, counted and **not audited at all**.
+
+**This narrows D40's letter** — *"the step must show something FAILING for each"* —
+and an agent should not quietly narrow an owner decision, so it is recorded as
+**gap 980** and put to the owner there. Reversing it is deleting one branch in
+`mutate_one`; the gate then fails on all 23 again and nothing else changes.
+
+**The gate's bite, proved on this tree, not assumed.** A definition nothing reads
+was appended to `PlannerWit.lean` and the gate run at it:
+
+```
+$ python3 mutate.py --only aDefinitionNothingReads
+  TmKernel/TmKernel/PlannerWit.lean:aDefinitionNothingReads  := 0  SURVIVED build completed
+  TmKernel/TmKernel/PlannerWit.lean:aDefinitionNothingReads  := 1  SURVIVED build completed
+2 definition(s) not pinned by a constant:
+EXIT=1
+```
+
+Reverted; `git diff --stat -- kernel/TmKernel/TmKernel/PlannerWit.lean` shows only
+this step's own citation repair afterwards.
+
+### 4. Check 8's six catches at the merge — gap 870, for real
+
+Gap 870 said a track's prose is only swept at the merge and that the land step
+inherits an adjudication it cannot schedule. It inherited six, all of them **real
+stale names over track A's counted caps**, none of them vocabulary:
+
+| citation | where | what it is |
+|---|---|---|
+| eligibleAt ×2 | `README.md` 42614, 42616 (track G's block) | a name gap 809 declares nonexistent; D41 says repair, not exempt |
+| eligibleAt | `Check.lean` 6030 (track G's banner) | the same |
+| eligibleAt | `PlanCheck.lean` 1895 (track G) | the same |
+| eligibleAt | `PlannerWit.lean` 3703 (track G) | the same |
+| capMin? | `README.md` 41647 (track P's block) | deleted at `43cbf4f` for `Seal.minOpt` |
+| deferFold.2 | `README.md` 41829 (track P's gap 907) | a projection, not a name; resolves to nothing |
+
+All repaired D41's way — un-backticked, or rewritten to name `PlanReq.deferFold`
+— and **not one exemption was added**. *(And check 8 bit this block too: the
+table above first spelled all six names in backticks while calling them dead,
+and the check failed at three lines with the same three names. That is the
+allow-list file's own convention arriving as a gate instead of as advice, for
+the second run running — W-19's block records it happening three sentences in.)*
+The whole of it: `citations-allow.txt` is byte-identical to
+track A's (`git diff 4d5b112..HEAD -- kernel/citations-allow.txt` is empty).
+
+**Three inversions, on the merged tree, with real exit codes** (`$?` of the
+script, not of a pipeline's `head`):
+
+```
+--- inversion A: a snake_case theorem that does not exist ---
+1 unresolved:
+  TmKernel/TmKernel/Plan.lean:33  the_day_plan_folds_a_routine_that_does_not_exist  (resolves to nothing)
+EXIT=1 (must be 1)
+--- inversion B: a camelCase name that does not exist (D41's widening) ---
+1 unresolved:
+  TmKernel/TmKernel/Plan.lean:33  dayPlanRoutineFold  (resolves to nothing)
+EXIT=1 (must be 1)
+--- inversion C: AGENTS.md is swept too (D41) ---
+1 unresolved:
+  ../AGENTS.md:3182  agentsMdCitationThatResolvesToNothing  (resolves to nothing)
+EXIT=1 (must be 1)
+--- reverted ---
+23403 citations, 21884 resolved, 1519 allowed (110 vocabulary, 352 counted), 0 allow entries unused
+EXIT=0 (must be 0)
+```
+
+*The 23,403 is the tree as it stood when the inversions were run — before this
+block existed. §5's row carries the figure at the commit that ships it; a count
+that includes the sentence quoting it cannot be quoted before it is written.*
+
+B and C are the two halves D41 bought, each shown failing by name for the first
+time on a tree that holds all three tracks.
+
+### 5. Acceptance, every number, every delta
+
+Everything capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet`; `16G` for the release build and the binary drives.
+Each check by name, with its number and its figure.
+
+| check | `86c4dc6` (campaign baseline) | `2695ddd` (track P landed) | **merged, HEAD** | delta and why |
+|---|---|---|---|---|
+| `check.sh` | 8/8 | 8/8 | **9/9** | **+1 check**: D40's check 9, from `13cbadc` |
+| 1 `lake build TmKernel:static` | ok | ok | **ok** | 168 jobs |
+| 2 totality | ok | ok | **ok** | — |
+| 3 axiom audit | 4,665 | 4,726 | **4,754 theorems** | **+89**: track P's 61 (P6 and its witnesses) and track G's 28, exactly |
+| 4 `Negative.lean` rejected | 210 cheats | 212 | **212** (197 blocks, 191 numbered) | **+2**, track P's 211-212; no track G or A cheat, so nothing renumbered |
+| 5 FFI through `check.sh` | 93 tests | 93 | **93 tests** | — |
+| 6 corpus | 29/37 files, 4/5 plans | same | **29/37 files and 4/5 whole plans** | — (`kernel/corpus/` untouched; **not below the floor**) |
+| 7 stage goals | 9, all stage 6 | 9 | **9 outstanding, all stage 6** | — (none added, none discharged, **none deleted**; the nine names are identical by `diff`) |
+| 8 prose citations | 10,807 / 9,739 / 1,068 (79 vocab, 250 counted), 0 unused | 10,971 / 9,903 / 0 unused | **23,468 citations, 21,949 resolved, 1,519 allowed (110 vocabulary, 352 counted), 0 allow entries unused** | D41's widening is most of it (+11,906 measured by track A); the rest is three blocks of new prose |
+| 9 new definitions mutated | *did not exist* | *did not exist* | **46 new or changed since `86c4dc6`, 46 rostered (23 unfoldable), 0 owed** | new; §3 is the whole story |
+| `cargo test --workspace` | 1,345 / 0 / 9 across 79 | 1,345 / 0 / 9 / 79 | **1,345 passed / 0 failed / 9 ignored across 79 binaries**, 0 warnings | — |
+| FFI crate whole | 101 / 0 | — | **101 / 0** (corpus 8, kernel 86, stack 7) | — |
+| T5 `kernel_replay_parity` | 29 / 0 / 4 | — | **29 / 0 / 4** | — |
+| the door, `kernel_log_door` | 23 / 0 | — | **23 / 0** | — |
+| `kernel_log_grammar` | 16 / 0 / 2 | — | **16 / 0 / 2** | frozen arm; the oracle was **not** rebuilt (gap 807) |
+| `cli_switch_acceptance` | 9 / 0 | — | **9 / 0** | — |
+| `kernel_call_counts` | 2 / 0 | — | **2 / 0** | — |
+| `cli_write_gate` (D35) | 11 / 0 | — | **11 / 0** | — |
+| `the_frozen_comparand_is_read_at_full_precision` | passes | — | **passes by name** | — |
+| `cli_latency --include-ignored`, release, ×3 | 6 / 6 | — | **6 / 6, 6 / 6, 6 / 6** | ranges below |
+
+**The known `cli_latency` flake did not fire.** `cargo test --workspace` ran
+fully parallel **three times** and reported **0 failed** each time, so there was
+no serial re-run to report. Recorded as *not observed this run*, not as *fixed*.
+
+**T11 rows, three release runs, `--include-ignored --test-threads=1 --nocapture`,
+as RANGES:**
+
+| T11 row (3y log, 66,169 lines, 6,896,281 bytes) | this run, ×3 | W-19's land band |
+|---|---|---|
+| **later verb (`tm drop`'s one kernel call)** — the reliable control | **126.50 · 131.76 · 126.67 ms** | 126.7–131.7 ms |
+| **gated host-only write (D35)** | **126.62 · 131.77 · 126.72 ms** | 126.7–131.7 ms |
+| the verb after a windowable hand undo | 126.60 · 126.76 · 126.69 ms | — |
+| the verb after that one | 126.40 · 126.55 · 131.77 ms | — |
+| a routine for a 3-day-old instance (noisy) | 121.38 · 121.56 · 131.73 ms | — |
+| `--now +1 day` (a reseal, noisy) | 197.46 · 187.45 · 187.44 ms | — |
+| `review week` (out of band, gap 275) | 258.44 · 258.34 · 258.27 ms | — |
+
+The control sits on D35's gated write run for run — the invariant those two rows
+exist for — and both are inside W-19's band to within the 5 ms quantum this
+machine's timer shows. P6 is 24 new definitions in `Planner.lean` and **moved
+neither row**, which is what one expects while `dayPlan` has no caller (gap 603).
+
+**`check.sh` wall, warm, built tree, three runs:** **7.97 · 7.95 · 7.96 s**
+(median **7.96**), peak RSS **1.89–2.05 GiB**. Against track P's median **7.77 s**
+at eight checks that is **+2.4%**, and against `86c4dc6`'s **7.55 s** it is
+**+5.4%** — both inside design §14.0 item 4's 10%-per-step rule. The per-check
+split, each timed on its own, twice:
+
+| check | time | share of the 7.96 s gate |
+|---|---|---|
+| 3, `lean Check.lean` | 0.37 · 0.33 s | 4.4% |
+| 4, `lean -DmaxErrors=1000000 Negative.lean` | **4.07 · 4.05 s** | **51%** |
+| 8, `python3 citations.py` | 0.48 · 0.49 s | 6.1% |
+| 9, `python3 mutate.py --gate` | **0.05 · 0.05 s** | **0.6%** |
+
+**Gap 703, re-measured on the merged tree:** check 4 alone is **51%** of the whole
+gate and checks 3+4 are **55%** — the same share W-19 and track G measured, for the
+fifth run running, and nothing was optimised. **Check 9's steady-state cost is
+0.05 s**, the cheapest check in the file; its real price is the 69 builds in §3,
+which D40 put on the step rather than on the gate.
+
+### 6. What earlier stages bought, re-measured here and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep —
+  `grep -rn 'fn replay\b\|undo_mask\|DayIndex\|parse_bytes\|LogEntry::parse\|Log::parse\|Log::new\|Machine\b\|iter_day\|effective()\|parse_timestamp' tm-core tm --include=*.rs | wc -l`
+  — returns **41**, its post-switch floor, unchanged by either merge. No in-tree
+  reader was reintroduced. *(Gap 604 stays open and is R1's.)*
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns **two** sites — `tm/src/cli/ctx.rs:713` and `tm-core/src/horizon.rs:525`
+  — the count every merge since W-16 has recorded.
+* **The comparand is still fork `4748911` at full precision.** No Rust file, no
+  fixture, no snapshot and no corpus file changed this run in any track, and
+  `the_frozen_comparand_is_read_at_full_precision` passed by name.
+* **The corpus is not below its floor:** 29/37 files and 4/5 whole plans, with
+  `kernel/corpus/` byte-identical.
+* **Every module is imported.** **82** files under `TmKernel/TmKernel/`, **82**
+  `import TmKernel.` lines in `TmKernel.lean`, `comm -23` empty; no branch added a
+  module. *Blind spot:* this sees the import **line**; it cannot see a module
+  imported but unused, or one whose import is commented out mid-line.
+* **The audit roster reconciles** (AGENTS §6.3): **4,754** audit lines, **4,754**
+  distinct names, **4,752** declarations, **90** `APPENDED` banners, `comm -23`
+  **empty**. `comm -13` names **two** non-theorems, `Tm.WfPlan` and
+  `Tm.effectiveScope` — §6.3 says "plus one", and it has been two since before
+  this campaign's baseline. Gap **981**.
+* **The fork oracle was NOT rebuilt and `TM_ORACLE` was not set** — gap 807
+  stands, carried from track P. `kernel_log_grammar` ran its frozen arm,
+  **16 / 0 / 2**, not the 18 / 0 a live oracle gives.
+
+### 7. Driving the merged binary
+
+Release build (`cargo build --release`, capped at `16G`) on a fresh
+`tm init --example` tree (`2026-09-07`, week `2026-W37`) **outside the repo**.
+W-19's land block pasted ten of `tm plan`'s twenty rows and dropped `tm now`'s
+`next` section, and its repair step called that silently abridged. **What follows
+is every byte the binary printed, in the order the commands were run.**
+
+**A normal day** — wake, arrive, plan, start, now, done, log:
+
+```
+$ tm --now 2026-09-07T07:10:00-05:00 wake --slept 7h20m
+wake 07:10 · slept 440m
+$ tm --now 2026-09-07T08:00:00-05:00 arrive home
+arrive home 08:00 · window 08:00–17:00 · budget 6 blocks
+$ tm --now 2026-09-07T08:05:00-05:00 plan
+2026-09-07 · window 08:00–17:00 · budget 6 blocks
+08:05  ·      breakfast 30m
+09:00  1 p0 ⚠ Pick up package                   20m     due today
+09:20  ·      laundry 30m
+09:50  3 p3   Claude Code drafts tests     @m2  1b
+10:50  3 p5   Pick winter courses          @O3  2b
+11:30  ·      lunch 30m
+12:00  3 p5   Pick winter courses          @O3  2b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  3 p5   Pick winter courses          @O3  2b
+14:50  ·      break 20m
+15:10  2 p5   Insurance claim for the bi…       30m
+16:00  ·      workout 1h
+17:00  ───    window ends 17:00
+17:00  ·      shower 20m
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · t3 · m2 · d2 · d1 · x2 · c2 · p1
+$ tm --now 2026-09-07T10:50:00-05:00 start ^t4
+▶ ^t4 Claude Code drafts tests · 10:50 · pred 4
+$ tm --now 2026-09-07T11:10:00-05:00 now
+▶ ^t4 Claude Code drafts tests · started 10:50 · 20m of 60m
+▶ Claude Code drafts tests  @m2  ci3  p3  1b
+  11:10–11:50 · elapsed 0m · left 40m
+next
+  11:50  · lunch 30m
+  12:20  · Pick up package  20m
+  12:50  ⏰ Meeting w/ host  1h
+0/6 blocks
+$ tm --now 2026-09-07T11:50:00-05:00 done
+✓ ^t4 Claude Code drafts tests · 60m/60m
+$ tm --now 2026-09-07T11:51:00-05:00 log --tail 3
+2026-09-07 08:05 plan drift_min=85 hash="4c9f4c5833855bdc" replans_today=1
+2026-09-07 10:50 start blocks_done=0 hsw=3.67 id="t4" loc="home" pred=4 since_break_min=0 slept_min=440
+2026-09-07 11:50 done actual_min=60 ci=3 est_min=60 id="t4" tags=[]
+```
+
+**Twenty rows, and every one of them is here.** The day is byte-identical to
+W-19's restored transcript — `hash="4c9f4c5833855bdc"` included — which is the
+useful thing to know after a merge that landed 24 new `Planner.lean` definitions:
+**P6 changed nothing a user sees**, because `dayPlan` still has no caller
+(gap 603) and `tm plan` is still the Rust planner's.
+
+**`tm check --fix-ids` and `tm undo`** (D37 — the repair is reversible). On a
+second fresh tree, two idless lines appended to `backlog.md` by hand:
+
+```
+$ tm --now 2026-09-07T12:00:00-05:00 check
+backlog.md:13: warning[missing-id]: no `^id` on `An idless backlog line`; run `tm check --fix-ids`
+backlog.md:13: error[kernel-load]: kernel refusal: badLine — backlog.md:13 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+backlog.md:14: warning[missing-id]: no `^id` on `Another idless line`; run `tm check --fix-ids`
+1 error, 2 warnings
+[exit 2]
+$ tm --now 2026-09-07T12:01:00-05:00 check --fix-ids
+backlog.md:13: assigned ^v9pv
+backlog.md:14: assigned ^qgk7
+no problems
+[exit 0]
+$ tm --now 2026-09-07T12:02:00-05:00 undo
+undid check (--fix-ids: 2 ids assigned) · 1 file(s) restored · 2 left
+[exit 0]
+$ tm --now 2026-09-07T12:03:00-05:00 log --tail 1
+2026-09-07 12:02 undo of="verb:check"
+[exit 0]
+```
+
+The two lines came back **without** their `^id`s, byte for byte, and `^v9pv` /
+`^qgk7` are the same two ids W-19 saw — the assignment is a function of the tree,
+not of the clock. *(The undo counter reads "2 left" where W-19 read "4 left":
+this tree ran two undoable verbs before the check, not four. Nothing else
+differs.)*
+
+**A write on a refused tree** (D35's gate). The undo put the tree back in its
+refused state, and the next three verbs are a kernel verb, a **host-only write**
+and a read:
+
+```
+$ tm --now 2026-09-07T12:10:00-05:00 drop ^t5
+tm: kernel refusal: badLine — backlog.md:13 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+[exit 1]
+$ tm --now 2026-09-07T12:12:00-05:00 energy 4
+tm: kernel refusal: badLine — backlog.md:13 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+  nothing was written: `tm energy` needs a tree the kernel can load whole, and every reading verb refuses this one too — fix the line named above, or run `tm undo`
+[exit 1]
+$ tm --now 2026-09-07T12:13:00-05:00 plan
+tm: kernel refusal: badLine — backlog.md:13 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+[exit 1]
+```
+
+`tm energy` is the host-only write, and it asked the kernel first and said
+**"nothing was written"** — D35 doing the thing it was added for.
+
+**A duplicated title** (D32/D33 — refuse, and name both lines). `backlog.md` put
+back, then `routines.md`'s `laundry` line duplicated at line 9:
+
+```
+$ tm --now 2026-09-07T12:30:00-05:00 check
+routines.md:7: error[kernel-load]: kernel refusal: dupId — routines.md:7 and routines.md:9 are two lines in one file that resolve to the store key `laundry` (a line with no `^id` is keyed by its title, and that key is never written into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+routines.md:9: error[kernel-load]: kernel refusal: dupId — routines.md:7 and routines.md:9 are two lines in one file that resolve to the store key `laundry` (a line with no `^id` is keyed by its title, and that key is never written into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+2 errors, 0 warnings
+[exit 2]
+$ tm --now 2026-09-07T12:31:00-05:00 drop laundry
+tm: `laundry` names 2 lines and nothing says which: routines.md:7 and routines.md:9. A line with no `^id` is keyed by its title, so a repeated title is an ambiguous address — the kernel refuses the whole tree for it (`dupId`, naming the same two lines) and this verb will not pick one. Give one of the lines an `^id`, or change a title.
+[exit 1]
+$ tm --now 2026-09-07T12:32:00-05:00 edit laundry ci=3
+tm: `laundry` names 2 lines and nothing says which: routines.md:7 and routines.md:9. A line with no `^id` is keyed by its title, so a repeated title is an ambiguous address — the kernel refuses the whole tree for it (`dupId`, naming the same two lines) and this verb will not pick one. Give one of the lines an `^id`, or change a title.
+[exit 1]
+```
+
+Both messages are printed **in full**, not elided with a "the same, at the other
+line" — they really are the same sentence twice, from the kernel and from the
+host, naming the same two lines in the same order. And the log's last entry after
+all of it:
+
+```
+$ tm --now 2026-09-07T12:33:00-05:00 log --tail 1
+2026-09-07 12:02 undo of="verb:check"
+[exit 0]
+```
+
+Still the `undo` at 12:02: **no `drop`, no `edit`, no `energy` row.** Nothing was
+written by any refused verb.
+
+*What an agent cannot drive, said rather than skipped (AGENTS §5.13):* `tm tui`
+exits by name when stdout is not a tty, so the TUI half of every drive list —
+including D38's replan-on-RELOAD — is still owed to a human. README gap 182.
+
+### 8. The burn-down, and which commit discharged a goal
+
+**None did.** The burn-down is **9**, all stage 6, and check 7 says so on the
+merged tree. No goal was added, and **no goal was deleted**:
+
+```
+$ diff <(git show 86c4dc6:kernel/TmKernel/Goals.lean | grep -oE '^theorem [A-Za-z_0-9]+' | sort) \
+       <(grep -oE '^theorem [A-Za-z_0-9]+' kernel/TmKernel/Goals.lean | sort)
+(empty)
+```
+
+The same nine names, letter for letter. Track G **refuted `plan_puts_hot_before_
+the_queue` a second time** (`hotBeforeQueue_is_false_on_a_quiet_day`, at a cause
+that is not the assign fold's) and deliberately left it in `Goals.lean`, because a
+restatement without its refutation is a weakening (D5). So check 7's **9 is an
+upper bound** for the third run running: three of the nine are known false as
+written, and nothing in `check.sh` tells a standing goal from a refuted one.
+
+Design §14.2 predicted this — P6 has no row in §6.4's table — and track P's
+addendum at `2695ddd` computed the stronger claim, that the eleven have no new
+**subject** either. Nothing here changes it.
+
+### 9. New gaps, 980-984 (none free in the land range)
+
+**Gap 980 — check 9's UNFOLDABLE verdict narrows D40, and 23 of this merge's 46
+definitions are named, counted and not audited at all.**
+1. *What is not done.* No mutation is run for a definition whose return type has
+   no `Inhabited` instance. The 23 are rostered in `mutations.txt` with
+   `unfoldable` in their constants column: `PlanReq.rePlaceWalk`, `placeAt`,
+   `PlanReq.displaceInto`, `PlanReq.deferOne`, `PlanReq.deferWalk`,
+   `PlanReq.deferFold`, `PlanReq.finalAssign`, `dayDiagnostics`, `routinePlan`,
+   `routineCap`, `theRoutineRequest`, `crowdedCap`, `theCrowdedRequest`,
+   `lapsedCap`, `theLapsedRequest`, `theFullDay`, `busyCap`, `busyCands`,
+   `theBusyRequest`, `aBareInstance`, `theSecondSlot`, `witReqInQuietCensus`,
+   `theQuietCensusRequest`.
+2. *Why.* D40's constant is `default`, and `default` needs `Inhabited`. AGENTS
+   §5.1's `Bool` + `Subtype` discipline means the kernel's own types have no
+   inhabitant that nobody proved; `deriving instance Inhabited` was tried and
+   refused for four of the five probed. The alternatives were worse: adding the
+   instances hands out bounded values without their smart constructors, and
+   leaving check 9 red makes it impossible for any step to land a definition
+   returning a bounded type, ever. **This is an agent narrowing an owner
+   decision, which §4 says needs the owner's assent, so it is written here rather
+   than assumed.**
+3. *What it costs.* Exactly what D40 was bought to prevent, for half of a step's
+   output: a `theRoutineRequest` whose record literal nothing reads, or a
+   `deferOne` whose displacement branch no theorem constrains, would pass check 9
+   in silence. The campaign's three shipped instances were all of *simple* types
+   (`Bool`, a sort key, nine `Bool` facts) and would still be caught; the ones
+   this cannot see are the structured ones.
+4. *Which step clears it.* **The owner**, by confirming or reversing the
+   narrowing — reversal is deleting the UNFOLDABLE branch in `mutate_one`. If it
+   stands, the step that gives check 9 a second constant for structured types:
+   a definition's own argument of the same type, a sibling definition, or a
+   `Nonempty`-derived witness; none of the three is designed here.
+
+**Gap 981 — AGENTS.md's own numbers are stale in two places, and check 8 cannot
+see either of them.**
+1. *What is not done.* §6.3 says the audit names *"one definition as well"*
+   (`Tm.WfPlan`); `comm -13` names **two**, `Tm.WfPlan` and `Tm.effectiveScope`,
+   and `Tm.effectiveScope` was already audited at `86c4dc6` — it is not this
+   run's. §7.1 is still titled *"The seven checks"* while `check.sh` runs **nine**.
+2. *Why.* Both are prose and counts, not backticked identifiers, so D41's
+   widening of check 8 to `AGENTS.md` does not reach them. This is gap 871's
+   class — the document specifying the gate going stale beneath it — one level up
+   and in the process authority instead of in `citations.py`.
+3. *What it costs.* A reader who checks the audit against §6.3's sentence finds a
+   discrepancy and cannot tell an oversight from an intention, which is the exact
+   thing §6.3 exists to prevent. Nothing is unsound: `comm -23` is empty and that
+   is the direction check 3 enforces.
+4. *Which step clears it.* Any step editing `AGENTS.md`, cheaply, in one line
+   each. The repair step, if nobody sooner.
+
+**Gap 982 — the 46 roster rows are 46 claims, and `--verify` was not run.**
+1. *What is not done.* `mutate.py --verify` re-runs every rostered mutation. It
+   was **not** run at this merge; the rows are exactly the output of the
+   `--write` run that produced them, in this session, capped.
+2. *Why.* It costs one kernel build per row — 46 builds, about 50 minutes on top
+   of the 69 already paid — and the rows were written by watching the builds fail
+   in the same session, in a diff a reader can read.
+3. *What it costs.* `mutate.py`'s own header says a row is a claim and that
+   `--verify` is what makes it more than one. Forty-six unverified rows is the
+   largest single batch this file will ever hold, and they all arrived at once,
+   from a step that did not write the definitions they are about.
+4. *Which step clears it.* The repair step, or any auditor: `python3 mutate.py
+   --verify`, capped, once. It is the cheapest independent check of this merge
+   that exists.
+
+**Gap 983 — track P's README block carries no §6.4 Numbering paragraph, so the
+merge had to derive the branch highs itself.**
+1. *What is not done.* Every other block in this campaign ends with *"Gaps: this
+   step N-M … Highest on the branch after this step: …"*. Track P's W-20 block
+   does not, and its `PlannerWit` section number — the one that collided — is
+   nowhere in it.
+2. *Why.* Not a decision; an omission. §6.4 asks for the banner and the closing
+   sentence, and the block has the banner.
+3. *What it costs.* The section collision in §2 was found by reading the file's
+   headers, not by comparing two blocks' closing lines, which is the cheap way and
+   the way §6.4 intends. A merge that did not read the headers would have shipped
+   two `## 17`s, which is exactly what gap 873 records happening on this branch
+   already.
+4. *Which step clears it.* Nothing needs undoing; this block states the merged
+   highs in §11. The class is gap 873's — an `awk` over `/-! ##` headers
+   asserting 1…N once each would end it, and it is four lines.
+
+**Gap 984 — check 9 cannot run on a track's branch either, and the whole bill
+falls on the merge.**
+1. *What is not done.* Nothing lets a track mutate its own new definitions before
+   the merge. Tracks P and G each added definitions with no way to run the gate;
+   the land step paid **69 kernel builds, about 75 minutes**, at the end of a run.
+2. *Why.* `mutations.txt`'s baseline is a commit on the shared line, and check 9
+   only existed on `w20-a`. Even once it is everywhere, a track's `--since` is its
+   own base and its rows would then collide at the merge the way cheat numbers do.
+3. *What it costs.* Gap 870's cost, in kernel builds rather than in adjudication:
+   an unbounded, unschedulable task discovered at the end of a run, when there is
+   least time for it. A track that added 100 definitions would hand the merge two
+   and a half hours.
+4. *Which step clears it.* Whichever step next touches `mutate.py`: make a track
+   run `--since <its own base> --write` as part of its own acceptance, and make
+   the merge re-key the rows rather than re-run them. Gap 870's fix has the same
+   shape, and one step could do both.
+
+### 10. What this step did NOT do, by name
+
+* **It did not touch the planner, the wire, `Boundary.lean` or any Rust** beyond
+  what the two branches brought — and neither branch brought any Rust at all.
+* **It did not discharge, add or delete a goal.** Burn-down **9**.
+* **It did not rebuild the fork oracle** (gap 807) and did not set `TM_ORACLE`.
+* **It did not run `mutate.py --verify`** (gap 982).
+* **It did not re-bless a snapshot, fixture, latency band or corpus file**, and
+  did not raise a memory bound.
+* **It did not optimise check 4** — gap 703 is re-measured for the fifth time,
+  not paid.
+* **It did not adjudicate track A's 19 declared eligibleAt defects** (gap 932)
+  or the 160 grandfathered names (gap 833). The six it repaired are the six the
+  merge itself introduced.
+* **It did not drive the TUI**, which no agent can (AGENTS §5.13, gap 182).
+
+### 11. Numbering
+
+Gaps: this step **980-984**; **none free in the land range**, and **985-999**
+remain the repair step's. Cheats: none taken; `Negative.lean` untouched at
+**197 blocks, 191 numbered, highest 212**, `uniq -d` empty. `PlannerWit`
+sections **1…18 once each** after the merge renumbered track G's 17 to 18.
+**Highest on the branch after this merge: gap 984, cheat 212, `PlannerWit`
+section 18, parity P38** — no parity entry was issued, and none is possible
+until the wire carries a `plan` section (gap 905).
+
+### 12. Worktrees
+
+`.claude/worktrees/w20-a` and `.claude/worktrees/w20-g` are **removed**; both were
+clean and both branches are merged (`git branch --merged HEAD` names them). The
+branches are kept as the record, as W-11…W-19's are.
+**`.claude/worktrees/stage5-lookahead` was not entered and is untouched.**
+`git worktree list` now shows the main checkout and `stage5-lookahead`.
