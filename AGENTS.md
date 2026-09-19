@@ -1627,9 +1627,10 @@ route, plus the two provisional signatures replaced** (`cmdRank`, `freshId`):
 to `the_response_call_emits_parses_back`, `b7f504d` (the original was stated over
 `Lean.Json`'s `partial def`s and could be neither proved nor refuted);
 `the_char_edge_round_trips` proved, `d61fece`;
-`a_file_splits_into_the_lines_it_was_joined_from` restated over the kernel's own
-`Tm.splitOn` and proved as `…_char`, and `joining_lines_is_injective` **refuted**
-as `joining_lines_is_not_injective_char`, both `a6dcc96`;
+a_file_splits_into_the_lines_it_was_joined_from restated over the kernel's own
+`Tm.splitOn` and proved as `a_file_splits_into_the_lines_it_was_joined_from_char`
+(`Text.lean`, audited in `Check.lean`), and `joining_lines_is_injective`
+**refuted** as `joining_lines_is_not_injective_char`, both `a6dcc96`;
 `the_loader_builds_sites_in_range` and `the_loader_builds_oriented_demotions`
 proved, `9812dd9`; `the_loader_builds_a_normalized_plan` proved, `6f32f41`;
 `the_command_path_writes_what_the_field_path_reads` proved, `7af7f1a`. Where a

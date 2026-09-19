@@ -72,11 +72,25 @@ one once more, the honest moves are: open it, and either move it up to
 VOCABULARY with a reason, or fix the sentence.  Bumping N without looking is
 how this gets useless a second way.
 
-WHAT THIS CANNOT SEE (README gap 831).
-  * camelCase.  `loadPlan`, `readPlanFacts` and every field spelled in camel
-    are not swept at all, so a stale `def` citation is invisible to it.  The
-    sweep is snake_case because that is the shape of a theorem name here and
-    because D39 scoped it that way.
+WHAT THIS CANNOT SEE (README gap 831).  The first two bullets were guesses
+until W-19's repair step MEASURED them; both numbers are re-takeable with the
+resolver in this file and nothing else.
+  * camelCase, MEASURED.  `loadPlan`, `readPlanFacts` and every field spelled in
+    camel are not swept at all, so a stale `def` citation is invisible to it.
+    The sweep is snake_case because that is the shape of a theorem name here and
+    because D39 scoped it that way.  Reading camel too, over exactly this file
+    set: 10,226 citations / 2,660 distinct / 1,120 unresolved (297 distinct) in
+    the Lean files, and 16,962 / 3,785 / 2,356 (515 distinct) in README.md.
+    That is why it is not merely a matter of widening the regex -- the top of
+    that list is `decide` (x170 in Lean, x303 in the README), `rfl`, `Nat`,
+    `Bool`, `sorry`, `lake`, hypothesis names (`hnopast` x20) and commit shas.
+    A camelCase span is not distinguishable from tactic, type and prose
+    vocabulary the way a snake_case one is, and an allow-list of 812 distinct
+    names is the check being written twice.  Two REAL defects hid in there and
+    both are named in README gap 880: `emitRefused` (Boundary.lean, a constant
+    that never existed, present tense, repaired at W-19's repair step) and
+    `eligibleAt` (x16 in Lean as `Planner.eligibleAt`, x26 in README.md), which
+    is not stale but PROSPECTIVE and is owned by README gap 809.
   * The namespace.  Resolution is on the LAST dotted segment, so
     `Tm.Look.foo_bar` resolves against a `Tm.Cap.foo_bar` that still exists.
     A theorem moved between namespaces is invisible to it.
@@ -89,7 +103,28 @@ WHAT THIS CANNOT SEE (README gap 831).
     stale citation inside a fence escapes.  (Measured at W-19: sweeping them
     too adds 2 unresolved names, both in quoted Lean output.)
   * Anything not in backticks.  A sentence that names a theorem in plain prose
-    is not swept.
+    is not swept.  That is also the CONVENTION for a dead name (see
+    citations-allow.txt's header): a sentence recording that something was
+    refuted, renamed or deleted spells it without backticks, so it needs no
+    exemption and a later sentence citing it as live still fails.
+  * EVERY FILE OUTSIDE THE THREE SWEPT LOCATIONS -- AGENTS.md included.  D39
+    scoped this check to the Lean library and kernel/README.md, so the PROCESS
+    AUTHORITY is outside its own gate, and so is kernel/design/**, tm-spec-v1.md
+    and PLAN-lean-kernel.md.  Measured at W-19's repair step by running this
+    file's own resolver, same five declaration sets and same allow-list, over
+    each of them: AGENTS.md 440 citations / 308 distinct / 3 distinct
+    unresolved; kernel/design/** 1,855 / 687 / 144; tm-spec-v1.md 26 / 20 / 0;
+    PLAN-lean-kernel.md 83 / 65 / 9.  AGENTS.md really did hold one
+    (a_file_splits_into_the_lines_it_was_joined_from, repaired at W-19's repair
+    step, live theorem `…_char`), which is the class D39 exists to end, one file
+    outside its scope.  The design docs are NOT that class and must not be swept
+    on these numbers: they are prospective specifications whose unresolved names
+    are work to do -- `mkStateDay?` and `refuses_an_inverted_window` sit in the
+    same table column as `refuses_a_day_past_9999` and are equally undeclared,
+    because the column is headed "bound, constructor, rejection theorem" and the
+    RuntimeIn that crosses today has none of those fields yet.  Widening the
+    scope is an OWNER decision (D39 wrote the scope), not a repair step's.
+    README gap 881.
   * The allow-list itself.  At the W-19 MERGE it holds 78 uncounted VOCABULARY
     names and 250 counted ones, and only 90 of the counted ones have been opened
     by anybody (sections 2 and 3); the 160 in section 4 are a seeded baseline and

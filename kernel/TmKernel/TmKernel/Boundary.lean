@@ -3644,7 +3644,11 @@ definition rather than two that agree.
 **A bad event is a refusal, not a warning.**  A line already on disk that does not parse is a
 warning, because refusing it would lose the rest of the file (D18 (i)).  An event about to be
 *appended* has no such excuse: writing a line the reader would refuse is exactly the defect this
-step removes, so `emitRefused` names the item and the reader's own warning (§5.7).
+step removes, so `EmitRefusal.refused` names the item and the reader's own warning (§5.7).
+*(This sentence named `emitRefused` — a constant that has never existed in this repository —
+from the step that wrote it until W-19's repair step.  `check.sh` check 8 reads prose, but only
+snake_case prose: a camelCase citation is in its declared blind spot, README gap 831, and this
+is the live instance that measured it.)*
 
 **R10.**  The instant and the offset cross the wire as numbers and are built only by
 `Cal.mkInstant?` and `Cal.mkOffset?`; a pair either constructor refuses is `badAt <item>`.
