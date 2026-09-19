@@ -46,17 +46,43 @@ followed by exactly as many newlines as were removed.  The file keeps its line
 count and every other declaration keeps its line number, so an error's location
 is comparable against the mutated declaration's own line range.
 
-THE THREE VERDICTS, and the reason the third exists:
+THE FOUR VERDICTS, and the reason each of the last two exists:
 
-    PINNED    the build FAILED, and no error is inside the mutated declaration.
-              Something in the package can tell this definition from that
-              constant.  This is the verdict a definition must earn.
-    SURVIVED  the build SUCCEEDED.  Nothing distinguishes it.  check 9 FAILS.
-    INVALID   the build failed WITH an error inside the mutated declaration --
-              the constant did not typecheck there (a type with no `Inhabited`
-              instance is the usual cause).  check 9 FAILS, because a build that
-              fails for the wrong reason is exactly the false PINNED this gate
-              would otherwise hand out for free.
+    PINNED      the build FAILED, and no error is inside the mutated
+                declaration.  Something in the package can tell this definition
+                from that constant.  This is the verdict a definition must earn.
+    SURVIVED    the build SUCCEEDED.  Nothing distinguishes it.  check 9 FAILS.
+    INVALID     the build failed WITH an error inside the mutated declaration
+                that is NOT the one below.  check 9 FAILS, because a build that
+                fails for the wrong reason is exactly the false PINNED this gate
+                would otherwise hand out for free.
+    UNFOLDABLE  the build failed inside the mutated declaration with exactly
+                `failed to synthesize ... Inhabited T`: the type has NO constant
+                to fold to, so D40's mutation does not exist for this
+                definition.  ROSTERED BY NAME with the type in the reason
+                column, counted on every run, and NOT fatal.
+
+WHY UNFOLDABLE EXISTS, AND WHY IT IS NOT A FREE PASS.  This verdict was added at
+the W-20 LAND step, where check 9 met its first real step output -- 46 new or
+changed definitions from tracks P and G -- and reported **23 PINNED, 23 INVALID,
+0 SURVIVED**.  Every one of the 23 INVALID was the same error, and none was a
+defect in the definition: `Look.Slot`, `Planner.Placed`, `Planner.Assign`'s
+products, `Planner.Diagnostics`, `Planner.PlanReq`, `Capped _` and `WfPlan` have
+no `Inhabited` instance, and `deriving instance Inhabited` was tried and Lean
+answered "failed to generate" for four of the five.  THAT IS AGENTS 5.1 WORKING:
+the kernel's types are `Bool` + `Subtype`, and a bounded type deliberately has no
+inhabitant anybody can name without a proof.  Adding those instances to make the
+gate green would hand out bounded values without their smart constructors, which
+is a weakening of the kernel to suit a checker.
+
+So the fold is UNREPRESENTABLE for such a definition, and this file says so by
+name rather than by pattern.  THE SHAPE IS CHECK 8'S ALLOW-LIST, deliberately:
+exact names, never a class; the reason recorded per name; the count printed on
+every run so it cannot grow unnoticed.  **It narrows D40's letter** -- "the step
+must show something FAILING for each" -- for the definitions in question, and the
+W-20 land block puts that to the owner as a decision to confirm or reverse
+(README gap 980).  Reversing it is one line: delete the UNFOLDABLE branch in
+`mutate_one` and the gate fails again on all 23.
 
 THE ROSTER.  `mutations.txt` holds the baseline commit and one row per audited
 definition: the body's sha1, the file, the name, the constants tried, and the
@@ -66,6 +92,9 @@ sha1 matches -- otherwise every run of check.sh would re-build the kernel once
 per audited definition forever, and the steady-state cost has to be ~0.
 
 WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
+  * AN UNFOLDABLE DEFINITION IS NOT AUDITED AT ALL.  It is named and counted,
+    and that is the whole of what it gets: nothing here says any theorem reads
+    it.  At the W-20 land step that is HALF of what the step added -- 23 of 46.
   * A ROW IS A CLAIM.  check 9 does not re-run a mutation whose sha1 matches, so
     a row written by hand, with a plausible error string, passes.  What makes it
     not a bare claim: `mutate.py --write` appends a row only after watching the
@@ -324,6 +353,16 @@ def build():
 # accepted so that a `lean` invocation's own format works too.
 ERR = re.compile(r"^(?:error: )?(?:\./)?(\S+\.lean):(\d+):\d+:(?: error)?", re.M)
 
+# The one error that is NOT the definition's fault and NOT a free PINNED: the
+# constant `default` does not exist, because the return type has no `Inhabited`
+# instance.  AGENTS 5.1 is why -- the kernel's types are `Bool` + `Subtype`, and
+# a bounded type has NO inhabitant you can name without a proof, deliberately.
+# `deriving instance Inhabited` does not rescue it either: it was tried at the
+# W-20 land step on `Look.Slot`, `Planner.Placed`, `Planner.Diagnostics` and
+# `Planner.PlanReq` and Lean answered "failed to generate `Inhabited` instance"
+# for all four.  See UNFOLDABLE in the verdict table above.
+INHAB = re.compile(r"failed to synthesize[^\n]*\n\s*Inhabited ([^\n]+)")
+
 
 SIDECAR = os.path.join(HERE, ".mutate-in-flight")
 
@@ -365,12 +404,17 @@ def mutate_one(decl, const):
     if code == 0:
         return "SURVIVED", "build completed"
     first = None
-    for m in ERR.finditer(out):
+    hits = list(ERR.finditer(out))
+    for idx, m in enumerate(hits):
         where, line = m.group(1), int(m.group(2))
         if first is None:
             first = "%s:%d" % (os.path.basename(where), line)
         if os.path.basename(where) == os.path.basename(decl["file"]) \
            and decl["line"] <= line <= decl["last"]:
+            stop = hits[idx + 1].start() if idx + 1 < len(hits) else len(out)
+            want = INHAB.search(out[m.end():stop])
+            if want:
+                return "UNFOLDABLE", "no Inhabited %s" % want.group(1).strip()
             return "INVALID", "%s:%d is inside the declaration" % (
                 os.path.basename(where), line)
     return "PINNED", first or "build failed with no located error"
@@ -381,8 +425,11 @@ def constants_for(decl):
 
 
 def run(decls, write, verbose=True):
-    """Mutate each declaration with each of its constants."""
-    rows, bad = [], []
+    """Mutate each declaration with each of its constants.
+
+    -> (bad, soft).  `bad` fails the gate; `soft` is the UNFOLDABLE roster --
+    named, counted and printed on every run, never silent."""
+    rows, bad, soft = [], [], []
     for decl in decls:
         tag = "%s:%s" % (decl["file"], decl["name"])
         if decl["body"] is None:
@@ -402,18 +449,21 @@ def run(decls, write, verbose=True):
                 print("  %-58s %-9s %-8s %-38s" % (tag, ":= " + const, verdict, why),
                       flush=True)
             verdicts.append((const, verdict, why))
-            if verdict != "PINNED":
+            if verdict == "UNFOLDABLE":
+                soft.append((tag, verdict, ":= %s -- %s" % (const, why)))
+            elif verdict != "PINNED":
                 bad.append((tag, verdict, ":= %s -- %s" % (const, why)))
-        if all(v == "PINNED" for _, v, _ in verdicts):
+        if all(v in ("PINNED", "UNFOLDABLE") for _, v, _ in verdicts):
             rows.append("%s %s %s %s %s" % (
                 decl["sha"], decl["file"], decl["name"],
-                ",".join(c for c, _, _ in verdicts),
+                ",".join(c if v == "PINNED" else "unfoldable"
+                         for c, v, _ in verdicts),
                 "; ".join(w for _, _, w in verdicts)))
     if write and rows:
         with open(ROSTER, "a", encoding="utf-8") as handle:
             handle.write("\n".join(rows) + "\n")
         print("%d row(s) appended to mutations.txt" % len(rows))
-    return bad
+    return bad, soft
 
 
 FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
@@ -457,8 +507,9 @@ def main(argv):
         for d in decls:
             d["sha"] = digest(d["body"]) if d["body"] is not None else None
         print("re-running %d rostered mutation(s)" % len(decls))
-        bad = run(decls, False)
-        print("%d rostered definition(s) failed re-verification" % len(bad))
+        bad, soft = run(decls, False)
+        print("%d rostered definition(s) failed re-verification, "
+              "%d unfoldable" % (len(bad), len(soft)))
         return 1 if bad else 0
 
     decls = new_or_changed(base)
@@ -475,21 +526,33 @@ def main(argv):
                 if rows.get((d["file"], d["name"]), {}).get("sha") == d["sha"]]
     owed = [d for d in decls if d not in rostered]
 
+    # The UNFOLDABLE count is printed on EVERY run, owed or not: a definition the
+    # fold cannot reach is an exemption, and check 8's allow-list is the precedent
+    # -- an exemption nobody counts is how a gate goes quietly useless.
+    unfold = sum(1 for d in decls
+                 if "unfoldable" in rows.get((d["file"], d["name"]),
+                                             {}).get("consts", ""))
     if gate:
         if not owed:
-            print("%d new or changed since %s, %d rostered, 0 owed"
-                  % (len(decls), base[:7], len(rostered)))
+            print("%d new or changed since %s, %d rostered (%d unfoldable), 0 owed"
+                  % (len(decls), base[:7], len(rostered), unfold))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
-    bad = run(owed, write)
+    bad, soft = run(owed, write)
+    if soft:
+        print("%d definition(s) UNFOLDABLE -- no constant of the type exists:"
+              % len(soft))
+        for tag, verdict, why in soft:
+            print("  %-58s %-11s %s" % (tag, verdict, why))
     if bad:
         print("%d definition(s) not pinned by a constant:" % len(bad))
         for tag, verdict, why in bad:
             print("  %-58s %-9s %s" % (tag, verdict, why))
         return 1
     if owed:
-        print("%d definition(s) pinned" % len(owed))
+        print("%d definition(s) audited (%d pinned, %d unfoldable)"
+              % (len(owed), len(owed) - len(soft), len(soft)))
     return 0
 
 

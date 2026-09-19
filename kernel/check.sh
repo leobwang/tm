@@ -265,14 +265,30 @@ fi
 #    that is the constant not typechecking, which would otherwise hand out a
 #    free PINNED verdict.
 #
+#    ONE EXCEPTION, AND IT IS NAMED, COUNTED AND EXACT.  If that in-declaration
+#    error is exactly `failed to synthesize ... Inhabited T`, the type has no
+#    constant to fold to and D40's mutation DOES NOT EXIST for that definition.
+#    The verdict is UNFOLDABLE: the definition is rostered in mutations.txt with
+#    `unfoldable` in its constants column and the type in its reason column, the
+#    count is printed on every run, and the gate does not fail.  This is check
+#    8's allow-list discipline applied to check 9 -- exact names, never a
+#    pattern -- and it is NOT a claim that anything reads the definition.
+#
+#    THE FIRST REAL RUN, at the W-20 land step, was 46 definitions from tracks P
+#    and G: 23 PINNED, 23 UNFOLDABLE, **0 SURVIVED**.  The 23 are `Bool` +
+#    `Subtype` types (AGENTS 5.1) that deliberately have no default, so the gate
+#    and the kernel's own discipline are in tension; README gap 980 puts that to
+#    the owner, and reversing it is one line in `mutate.py`.
+#
 #    SCOPED TO NEW DEFINITIONS because D40 scoped it there: a full sweep of the
 #    existing 2,810 library definitions was declined as producing a backlog
 #    rather than preventing new instances.  The baseline is the decline, written
 #    down.
 #
-#    THE COST IS THE STEP'S OWN, AND IT IS ~0 HERE.  At a settled tree nothing
-#    is new, one `git diff` says so, and this check is 0.03 s -- under half a
-#    percent of the wall.  A step that ADDS definitions pays one kernel build
+#    THE COST IS THE STEP'S OWN, AND IT IS ~0 AT A SETTLED TREE.  Nothing is
+#    new, one `git diff` says so, and this check is 0.03 s -- under half a
+#    percent of the wall.  It is ~0 here only because the 46 rows are IN: the
+#    W-20 land step paid 69 kernel builds, about 75 minutes, to put them there.  A step that ADDS definitions pays one kernel build
 #    per constant, measured in README "Stage 6 W-20, track A" at 53 s
 #    (Planner.lean), 54 s (PlannerWit.lean) and 205 s (Boundary.lean); that is
 #    the step's cost, not this script's steady state, and it is why the roster

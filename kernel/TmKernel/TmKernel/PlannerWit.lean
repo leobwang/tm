@@ -3700,7 +3700,7 @@ day, so the calendar's Wall row carrying `^g1` is a queue position that the hot 
 which has no row of its own, has failed to get in front of.
 
 That matters for README gap 850, which offered P5 two repairs and said the step must
-name which it takes.  **Neither repair reaches this one.**  An `eligibleAt` that refuses
+name which it takes.  **Neither repair reaches this one.**  An eligibleAt that refuses
 a candidate at choice 5b's reservation row does not, because there is no reservation
 here; the fold does not, because `^m1` is not a candidate here.  What repairs it is
 either an eligibility that answers `false` for an item the plan holds and step 5 never

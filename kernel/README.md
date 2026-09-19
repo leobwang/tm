@@ -41644,7 +41644,7 @@ request the planner can build.
 AGENTS's W-17 lesson 1, applied to every completeness claim above.
 
 1. **"Nothing new was written that the kernel already had."** *Method:* **body
-   searches, not name searches** — W-19's `capMin?`/`minOpt` lesson applied
+   searches, not name searches** — W-19's capMin?/`Seal.minOpt` lesson applied
    before writing rather than after. `grep -rn 'foldl (fun acc [a-z]* => some
    (match acc with'` over `TmKernel/*.lean` → **13 hits in six files**, which is
    how `Replay.lastMax?`/`Replay.pick` were found and why `leastBy` calls them;
@@ -41826,7 +41826,8 @@ slots.**
 so no computed value can distinguish them.**
 1. *What is not done.* Nothing is broken; this is a **method disclosure** and
    the one row of the D40 table that has no witness.
-2. *Why.* `finalAssign` is `deferFold.2`, and `deferOne` changes the assignment
+2. *Why.* `finalAssign` is the second component of `PlanReq.deferFold`, and
+   `deferOne` changes the assignment
    only in the displacement branch, which gap 903 shows is unreachable. So
    replacing `finalAssign`'s body with `r.assignFold` produces the same function
    on every input; the mutation fails only because
@@ -42611,9 +42612,9 @@ get in front of.  `assignedOf` is empty here, so nothing about assignment can
 repair it.
 
 **That refines README gap 850's inheritance for P5, and the refinement is the
-point.**  Gap 850 offered P5 two repairs and said a step that lands `eligibleAt`
+point.**  Gap 850 offered P5 two repairs and said a step that lands eligibleAt
 without saying which it took has left the gap open.  **Neither reaches this
-one.**  (a) An `eligibleAt` that refuses a candidate at choice 5b's reservation
+one.**  (a) An eligibleAt that refuses a candidate at choice 5b's reservation
 row does not: there is no reservation here.  (b) The fold does not: `^m1` is not
 a candidate here — `cands` is `Capped.nil`.  What *would* repair it is an
 eligibility that answers `false` for an item the plan holds and step 5 never

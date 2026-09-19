@@ -1892,7 +1892,7 @@ segment of the day, and a calendar Wall carrying `^g1` is therefore a queue
 position that a hot `^m1` with no row of its own has failed to precede.
 
 **That refines README gap 850's inheritance for P5**, and the refinement is the
-point of stating it: gap 850 offered P5 two repairs — an `eligibleAt` that
+point of stating it: gap 850 offered P5 two repairs — an eligibleAt that
 refuses a candidate at the reservation row, or the fold.  **Neither reaches
 `hotBeforeQueue`.**  The only eligibility that repairs it is one that answers
 `false` for an item the plan holds but step 5 never queues, and the only other

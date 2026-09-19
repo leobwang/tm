@@ -6027,7 +6027,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   `hotBeforeQueue_is_false_on_a_quiet_day` and
 --   `a_quiet_day_does_not_pass_the_whole_battery` are the matching ceiling:
 --   the eleventh fails on a day with no Block row at all, so neither the fold
---   nor an `eligibleAt` at the reservation row reaches it (README gap 850).
+--   nor an eligibleAt at the reservation row reaches it (README gap 850).
 --
 --   `the_cursor_refuses_a_group_that_owes_nothing` and
 --   `the_cursor_refuses_an_atomic_group_whose_run_is_broken` are README gap
