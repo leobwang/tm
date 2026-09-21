@@ -715,10 +715,10 @@ pub fn fmt_dur(minutes: u32) -> String {
     }
 }
 
-/// `HH:MM`.
-pub fn fmt_time(t: chrono::NaiveTime) -> String {
-    t.format("%H:%M").to_string()
-}
+/// `HH:MM` — **re-exported, not declared** (AGENTS §5.3, W-23).  This file held a
+/// byte-for-byte copy of `tm_core::model::fmt_time`; eight functions in this
+/// repository rendered `HH:MM` and this was one of them.
+pub use tm_core::model::fmt_time;
 
 #[cfg(test)]
 mod tests {

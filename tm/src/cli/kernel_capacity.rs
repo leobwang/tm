@@ -636,10 +636,9 @@ fn say_clamped(today: NaiveDate, want: u32, days: u32) {
 // The request
 // ---------------------------------------------------------------------------
 
-/// `HH:MM`.
-fn hhmm(t: chrono::NaiveTime) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
+/// `HH:MM` — `tm_core::model::fmt_time` under this file's own name (AGENTS
+/// §5.3, W-23: a byte-for-byte copy of it stood here).
+use tm_core::model::fmt_time as hhmm;
 
 /// The ranking half of a request: the candidates in the fork's service order,
 /// and yesterday's priorities.

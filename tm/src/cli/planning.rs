@@ -21,7 +21,6 @@
 
 use std::collections::BTreeSet;
 
-use chrono::Timelike;
 use serde::Serialize;
 use tm_core::capacity::{self, Exact, UnitCapacity};
 use tm_core::log::Event;
@@ -141,9 +140,9 @@ impl DayOut {
 }
 
 /// `HH:MM`.
-fn hhmm(t: chrono::DateTime<chrono_tz::Tz>) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
+/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// §5.3, W-23: a byte-for-byte copy of it stood here).
+use tm_core::planner::fmt_clock as hhmm;
 
 /// Build the plan for `ctx` (§8), with the priorities it was ordered by.
 pub fn build(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Prio>), CliError> {

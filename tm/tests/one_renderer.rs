@@ -597,6 +597,63 @@ fn no_second_set_of_row_words() {
     );
 }
 
+/// The file allowed to build an `HH:MM` by hand: the row's **time** cell is one
+/// of the nine, and `planner::fmt_clock`'s own doc comment calls it "one §4.3
+/// timeline row's leading `HH:MM`". `Emit.lean`'s header names it as the Rust
+/// half of the kernel's one clock, beside `Field.renderClock`.
+const CLOCK_HOME: &str = "tm-core/src/planner.rs";
+
+/// **One clock, hand-rolled.** Nothing but [`CLOCK_HOME`] writes
+/// `format!("{:02}:{:02}", …)`.
+///
+/// **Eight functions in this repository rendered `HH:MM`** until W-23, found by
+/// body shape rather than by name — five taking a `DateTime<Tz>`
+/// (`planner::fmt_clock`, and copies in `emit.rs`, `cli/render.rs`,
+/// `cli/planning.rs` and `cli/day.rs`, all four called `hhmm`) and three taking a
+/// `NaiveTime` (`model::fmt_time`, a byte-for-byte copy in `cli/out.rs`, and
+/// `cli/kernel_capacity.rs`'s own `hhmm`). All eight produced identical bytes,
+/// which is what made them invisible: nothing could ever fail.
+///
+/// Six are gone. `fmt_clock` and `model::fmt_time` are the two that survive —
+/// two because the input types are two, and neither can be written in terms of
+/// the other without a zone.
+///
+/// **What this needle cannot see**, measured rather than assumed:
+/// `.format("%H:%M")` is the same cell spelled with chrono's formatter and there
+/// are **15** of those, in `tui/today.rs`, `tui/daybar.rs`, `cli/dayfile.rs`,
+/// `cli/ctx.rs`, `planner.rs`, `check.rs`, `review.rs`, `model.rs` and
+/// `config.rs`. They are not all this cell — a day-bar cursor label and a review
+/// window line are not §4.3 rows — so unifying them is a judgement this step did
+/// not take. README gap **1214**.
+#[test]
+fn exactly_one_function_renders_a_clock_by_hand() {
+    let mut hits = Vec::new();
+    for (name, text) in sources() {
+        if name == CLOCK_HOME {
+            continue;
+        }
+        for (n, line) in code_lines(&text) {
+            // `{:02}:{:02}:{:02}` is a UTC **offset** (`cli/tz_table.rs`'s
+            // `fmt_offset`, `±HH:MM:SS`), a different arity and a different
+            // concept — excluded by shape, not by an allow-list entry.
+            if line.contains(r#"{:02}:{:02}"#) && !line.contains(r#"{:02}:{:02}:{:02}"#) {
+                hits.push(format!("{name}:{n}: {}", line.trim()));
+            }
+        }
+    }
+    assert!(
+        hits.is_empty(),
+        "a second hand-rolled clock (AGENTS §5.3 — there is one, and it is          `{CLOCK_HOME}`'s `fmt_clock`):\n  {}",
+        hits.join("\n  ")
+    );
+    // And the home file still has it, so this cannot pass by deletion.
+    let (_, planner) = sources()
+        .into_iter()
+        .find(|(n, _)| n == CLOCK_HOME)
+        .expect("tm-core/src/planner.rs");
+    assert!(planner.contains("pub fn fmt_clock("), "the one clock is gone");
+}
+
 /// **The home file still holds the renderer**, so neither grep can pass by the
 /// renderer having been deleted rather than unified — `one_padder.rs`'s
 /// `the_one_table_is_still_there`, for rows.

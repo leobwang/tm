@@ -28,7 +28,7 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, IsTerminal, Write};
 
-use chrono::{DateTime, NaiveTime, Timelike};
+use chrono::{DateTime, NaiveTime};
 use serde::Serialize;
 
 use tm_core::capacity;
@@ -44,10 +44,9 @@ use super::out::{emit, fmt_time, CliError};
 use super::planning;
 use super::undo::Recorder;
 
-/// `HH:MM` of an instant in `cfg.tz`.
-fn hhmm(t: DateTime<chrono_tz::Tz>) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
+/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// §5.3, W-23: a byte-for-byte copy of it stood here).
+use tm_core::planner::fmt_clock as hhmm;
 
 /// The unit a tool-written `est:` uses: whole blocks when the minutes divide
 /// evenly (§9's "est: += 1b"), else the compact `Nm`/`Nh`/`NhMm` form. Mirrors

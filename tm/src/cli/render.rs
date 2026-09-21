@@ -18,7 +18,7 @@
 //! it is: everything here delegates, so `tm plan`, `tm tui` and the M4
 //! snapshots print one text for one [`DayPlan`].
 
-use chrono::{DateTime, Timelike};
+use chrono::DateTime;
 use chrono_tz::Tz;
 use serde::Serialize;
 use tm_core::config::Config;
@@ -53,10 +53,9 @@ pub struct Row {
     pub kind: String,
 }
 
-/// `HH:MM` in `cfg.tz`.
-fn hhmm(t: DateTime<Tz>) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
+/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// §5.3, W-23: a byte-for-byte copy of it stood here).
+use tm_core::planner::fmt_clock as hhmm;
 
 /// The rows of a plan, in start order — one per segment, each carrying the
 /// §4.3 row `emit` writes into the day file.

@@ -116,7 +116,7 @@ use thiserror::Error;
 
 use crate::config::Config;
 use crate::model::{Dep, Dur, Id, Shape, WindowRange};
-use crate::planner::{DayPlan, Diagnostics, SegKind, Segment};
+use crate::planner::{DayPlan, Diagnostics, SegKind, Segment, fmt_clock};
 use crate::priority::fmt_blocks;
 use crate::tree::Tree;
 
@@ -422,10 +422,6 @@ pub fn pad_to(s: &str, w: usize) -> String {
     pad(&truncate(s, w), w)
 }
 
-/// `HH:MM` in the plan's zone.
-fn hhmm(t: &DateTime<Tz>) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
 
 /// Minutes as the shortest natural unit: `20m`, `1h`, `1h22m`, `8h30m`.
 fn fmt_dur(minutes: u32) -> String {
@@ -543,11 +539,12 @@ pub fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
         SegKind::Sleep => format!("{} {}", name("sleep"), fmt_dur(planned)),
         SegKind::Rest => format!("rest {}", fmt_dur(planned)),
         SegKind::Lost => format!("lost {}", fmt_dur(planned)),
-        SegKind::WindDown => format!(
-            "wind-down · bed {:02}:{:02}",
-            cfg.day.bed.hour(),
-            cfg.day.bed.minute()
-        ),
+        // `crate::model::fmt_time`, not a `{:02}:{:02}` of its own — the kernel's
+        // `Emit.titleCell` renders this cell's clock with `Field.renderClock`
+        // like every other, and this was a ninth `HH:MM` hiding inside the one
+        // renderer (AGENTS §5.3, found by `one_renderer.rs`'s clock guard on its
+        // first run, W-23).
+        SegKind::WindDown => format!("wind-down · bed {}", crate::model::fmt_time(cfg.day.bed)),
         SegKind::Block | SegKind::Optional | SegKind::Wall => name("—"),
     }
 }
@@ -824,7 +821,7 @@ pub fn render_plan_section_with(
         body.push_str(&line.text);
         body.push('\n');
     }
-    (hhmm(&now), body)
+    (fmt_clock(now), body)
 }
 
 /// Where the budget runs out, or the window ends — whichever is earlier.
@@ -859,9 +856,9 @@ fn divider_instant(plan: &DayPlan, cfg: &Config) -> Option<DateTime<Tz>> {
 
 /// `15:10  ───     window ends 16:00`.
 fn divider_row(at: &DateTime<Tz>, window_end: &DateTime<Tz>) -> String {
-    let head = format!("{}  {}", hhmm(at), DIVIDER);
+    let head = format!("{}  {}", fmt_clock(*at), DIVIDER);
     let mut row = pad(&head, TITLE_COL);
-    row.push_str(&format!("window ends {}", hhmm(window_end)));
+    row.push_str(&format!("window ends {}", fmt_clock(*window_end)));
     row
 }
 
@@ -915,7 +912,7 @@ fn render_row(
     };
 
     let mut row = String::with_capacity(80);
-    row.push_str(&pad(&hhmm(&seg.start), TIME_W));
+    row.push_str(&pad(&fmt_clock(seg.start), TIME_W));
     row.push_str("  ");
     row.push_str(&pad(&ci_cell, CI_W));
     row.push_str(&pad(&p_cell, P_W));
@@ -1503,7 +1500,7 @@ pub fn render_svg(
         y = num(ghost_y + ghost_h),
         lx = num((cx + 3.0).min(w - 26.0)),
         ly = num((main_h * 0.5).max(9.0)),
-        now = hhmm(&bar.now)
+        now = fmt_clock(bar.now)
     );
     s.push_str("</svg>\n");
     s
@@ -1698,14 +1695,14 @@ pub fn render_now_with(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<
             let seg = &plan.segments[i];
             out.push_str(&format!(
                 "  {}–{} · elapsed {} · left {}\n",
-                hhmm(&seg.start),
-                hhmm(&seg.end),
+                fmt_clock(seg.start),
+                fmt_clock(seg.end),
                 fmt_dur(minutes_between(&seg.start, &now)),
                 fmt_dur(minutes_between(&now, &seg.end))
             ));
         }
         None => {
-            out.push_str(&format!("— nothing running ({})\n", hhmm(&now)));
+            out.push_str(&format!("— nothing running ({})\n", fmt_clock(now)));
         }
     }
     if next.is_empty() {
