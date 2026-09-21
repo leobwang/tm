@@ -239,3 +239,7 @@ d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4547
 fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean emitBed default PlannerWit.lean:4569
 dee5ba118680 TmKernel/TmKernel/PlanCheck.lean SlotAnchored True,False PlanCheck.lean:2925; PlanCheck.lean:2925
 8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4648; PlannerWit.lean:4648
+e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean FromNowAnchored True,False PlanCheck.lean:3217 eligibleSomewhere_of_nothing_from_now; PlanCheck.lean:3217 eligibleSomewhere_of_nothing_from_now
+c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean fromNowWorkRows fun____=>true,fun____=>false PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored; PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored
+279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean witReqInIdleQueued unfoldable no Inhabited PlanReqIn
+2dbe82e792af TmKernel/TmKernel/PlannerWit.lean theIdleQueuedRequest unfoldable no Inhabited PlanReq

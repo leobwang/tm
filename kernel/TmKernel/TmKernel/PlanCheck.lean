@@ -2836,9 +2836,14 @@ single statement of them, and every other sentence about the ratio points here.
 
 | the question | what counts it | today's answer, with its coordinates |
 |---|---|---|
-| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons`) |
-| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four`), reached at the same request |
-| how many **bite inside a proved lift** | the census evaluated at the lift's own arguments | **one** on the quiet class (`PlannerWit.the_quiet_eleven_is_one_checker_biting`); **four** at the census request on `withoutPast`'s day (`PlannerWit.the_eleven_from_now_is_four_checkers_biting`) |
+| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons`); **the seven core checks** on the whole day, every request, every `FromNowAnchored` `el` (`dayPlan_ok_is_the_core_seven`, W-23) — and the eleven there is **refuted** at a merely `SlotAnchored` one (`PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted`) |
+| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four`), reached at the same request; ceiling **five**, whole day, every request, every `FromNowAnchored` `el` (`the_census_ceiling_on_the_whole_day_is_five`, W-23), reached at the same request again |
+| how many **bite inside a proved lift** | the census evaluated at the lift's own arguments | **one** on the quiet class (`PlannerWit.the_quiet_eleven_is_one_checker_biting`); **four** at the census request on `withoutPast`'s day (`PlannerWit.the_eleven_from_now_is_four_checkers_biting`); **five** at the same request on the whole day at a `FromNowAnchored` `el` (`PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five`, W-23) |
+
+**W-23 added the fourth coordinate — the whole day at a `FromNowAnchored` eligibility — and
+moved no number in the three that were here.**  Its row is five, and five is what a hypothesis
+on the eligibility costs in subjects on the day that already had seven; the headline below is
+unchanged by it.
 
 **The honest headline is the SUBJECT count and the number is SEVEN.**  A conjunct can be
 proved by emptiness — four of the eleven are, at every request, and `a_check_with_no_subject_is_a_free_pass`
@@ -3125,6 +3130,169 @@ theorem the_census_ceiling_from_now_is_four {el : Eligible} (hsl : SlotAnchored 
     (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
     ([⟨.oneBlock, oneBlockAtATime⟩, ⟨.overWall, noBlockOverAWall⟩,
       ⟨.overBreak, noBlockOverABreak⟩, ⟨.wallMoved, wallsUnmoved⟩] : List Check)
+  simp only [List.length_cons, List.length_nil] at b1
+  omega
+
+
+/-! ############################################################################
+## W-23: the eligibility axis closes on the WHOLE day, and what is left is the log
+############################################################################
+
+W-22 put §6.1's `planOk` at eleven of eleven over `withoutPast`'s day for **every** request,
+and left the whole day standing on a hypothesis about the log: `dayPlan_ok_on_a_day_with_no_
+replayed_block` needs `hnopast`, which its own doc comment calls *"false of every real day
+after the first block is worked"*.  This section asks what the whole day is worth at every
+request, and the answer is two halves that have to be read together.
+
+**The positive half.**  `SlotAnchored` plus one clause — *the row has not already started* —
+makes all four eligibility-dependent conjuncts vacuous on the **whole** day, at every request,
+with nothing whatever assumed about the log.  `dayPlan_ok_is_the_core_seven` is the statement,
+and it is a `Bool` **equality** rather than an implication: at such an eligibility
+`planOk el r (dayPlan r)` *is* `planOkCore r (dayPlan r)`.  So the whole of §6.1's lift on the
+whole day is the seven eligibility-free checks and nothing else — the eligibility axis
+contributes nothing more, at any request, and closes.
+
+**Why that clause is step 5's own and not a patch fitted to a witness.**  §8.2 step 3 cuts the
+day's free slots from `now` forward — `Planner.PlanReq.cutFrom` is `now` clamped into the
+window, and it is the cut's own left end — so a row that started before `now` is not a slot
+step 5 can assign into — the same argument `SlotAnchored` makes one row over about
+choice 5b's reservation, which choice 5b takes out of the slot supply.  `keepFromNow` is
+W-17's own reader of *"has this row already started"* and it is reused rather than re-spelled
+(AGENTS §5.3), so `FromNowAnchored` introduces no third reading of anything.  What P5 owes
+the lift beside Planner.eligibleAt is now **three** lines, not two (README gaps 1061, 1170,
+and **1281**).
+
+**The negative half, which is why the positive half needs the clause at all.**  Drop it and
+the whole-day lift is **false**.  `PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_
+eligibility_is_refuted` computes `planOk` `false` at `PlannerWit.theIdleQueuedRequest` — every
+one of `dayPlan_ok_from_now`'s five hypotheses satisfied, at `PlannerWit.onlyOnFreeWorkRows`,
+which **is** `SlotAnchored` — with no mutation of the day at all.  The two conjuncts that fail
+are W-19's two comparisons and the cause is one row: a block the log replayed onto the morning
+for the sibling that ranks *second*, while the hot sibling that ranks first reaches no row of
+the day.  That row is not a row §8.3's laws are about, which is the whole reason `withoutPast`
+exists — and it is a **work** row, so `SlotAnchored` alone cannot see past it.
+
+**What that buys, exactly, is one of `hnopast`'s two uses.**  `dayPlan_ok_on_a_day_with_no_
+replayed_block` spends it **twice**: once on the seven core checks (through `dayPlan_ok_core`)
+and once on the four comparisons (through `dayPlan_work_rows_are_the_reservation`).  This
+section removes the **second** use outright — the comparisons need no hypothesis about the log
+at all, only a third clause on the eligibility — and leaves the first exactly where it was.
+`PlannerWit.the_core_seven_is_false_on_three_whole_days` is why the first cannot simply be
+dropped after it: `planOkCore` is `false` on the whole day at three requests this kernel
+already builds, each one a recorded refutation of a goal that quantified over the replayed
+past.  **So how far §6.1's lift goes is now a bounded statement on both axes**, and what
+stands between it and the whole day is the **log**, one named checker at a time, and no part
+of it is the assign fold's.
+
+**What the closure is worth, and the number is FIVE.**  The four eligibility-dependent
+conjuncts are vacuous under `FromNowAnchored`, so the census falls from the whole-day ceiling
+of seven to `the_census_ceiling_on_the_whole_day_is_five`, reached at
+`PlannerWit.theCensusRequest` (`PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_
+five`).  **That is the cost of the clause, said in the same breath as the benefit**: the two
+checks it buys a proof for are the two it takes the subject away from, and a reader who wants
+the one number that does not move should read the SUBJECT row of W-22's table above — seven,
+whole day, every request, every eligibility. -/
+
+/-- **An eligibility that admits a candidate only where §8.2 step 5 could put one, on the
+whole day**: `SlotAnchored` (W-22) plus the clause step 3's cut makes true — the day's free
+slots begin at `Planner.PlanReq.cutFrom`, which is `now` clamped into the window, so a row
+that has already started is not one of them.
+
+`keepFromNow` is reused rather than re-spelled (AGENTS §5.3): it is W-17's own reader of the
+same instant, the one `withoutPast` filters with, so the two cannot drift apart.  This is the
+third of the three lines P5 owes the lift beside Planner.eligibleAt, and
+`PlannerWit.fromNowWorkRows` is the concrete instance that fires it today. -/
+def FromNowAnchored (el : Eligible) : Prop :=
+  SlotAnchored el ∧
+    ∀ (r : PlanReq) (d : DayPlan) (s : WfSeg) (i : Id),
+      el r d s.val i = true → keepFromNow r s = true
+
+/-- **A `FromNowAnchored` eligibility admits nothing at all on the WHOLE day, at every
+request.**  The row it is offered is a work row (clause 1) that has not started (clause 3), so
+it is a work row of `withoutPast`'s day, so it is choice 5b's reservation
+(`withoutPast_work_rows_are_the_reservation`) — and clause 2 says it is not.
+
+This is `eligibleSomewhere_of_only_the_reservation` moved off the smaller day: there the
+filter was applied to the day and the hypothesis was about the rows that survived; here the
+filter is applied to the eligibility and the day is left whole. -/
+theorem eligibleSomewhere_of_nothing_from_now {el : Eligible} (hfn : FromNowAnchored el)
+    (r : PlanReq) (i : Id) : eligibleSomewhere el r (dayPlan r) i = false := by
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  simp only [eligibleSomewhere, List.any_eq_true] at h
+  obtain ⟨s, hs, hel⟩ := h
+  have hw : s.val.kind.isWork = true := hfn.1.1 r (dayPlan r) s.val i hel
+  have hmem : s ∈ (withoutPast r (dayPlan r)).segments := by
+    rw [withoutPast_segments]
+    exact List.mem_filter.2 ⟨hs, hfn.2 r (dayPlan r) s i hel⟩
+  exact absurd ((withoutPast_work_rows_are_the_reservation r s hmem hw).symm.trans
+    (hfn.1.2 r (dayPlan r) s i hel)) (by simp)
+
+/-- **§6.1's eleven on the whole day IS §6.1's seven, at every request and every
+`FromNowAnchored` eligibility.**  An equality, not an implication: nothing is assumed about
+the log, the runtime or the day, and the four eligibility-dependent conjuncts are `true` on
+both sides of it.
+
+**Read it as a closure, not as an advance in coverage.**  What it says is that the eligibility
+axis of §6.1's lift has nothing left to give on the whole day — every remaining conjunct of
+the battery is one of the seven, and each of those is refuted or proved on its own merits by a
+statement about the replayed past.  `the_census_ceiling_on_the_whole_day_is_five` is the price
+paid for it, in subjects. -/
+theorem dayPlan_ok_is_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq) :
+    planOk el r (dayPlan r) = planOkCore r (dayPlan r) := by
+  have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
+    eligibleSomewhere_of_nothing_from_now hfn r
+  simp only [planOk, planOkCore, checksOf, List.all_append, checksEligible, List.all_cons,
+    List.all_nil, Bool.and_true,
+    monotoneInRank_of_nothing_eligible el r _ hnone,
+    hotBeforeQueue_of_nothing_eligible el r _ hnone,
+    impossibleKept_is_true_because_its_subject_is_empty el r,
+    batchDoesNotReachPast_is_true_because_its_subject_is_empty el r]
+
+/-- The same, as the discharge a later step will want: the whole battery on the whole day
+follows from the seven alone.  `PlannerWit.the_from_now_lift_holds_where_the_slot_anchored_
+one_is_refuted` fires it, at the one request where the lift at a merely `SlotAnchored`
+eligibility is refuted; `PlannerWit.the_core_seven_is_false_on_three_whole_days` is why it is
+not a theorem about every request. -/
+theorem dayPlan_ok_of_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hcore : planOkCore r (dayPlan r) = true) : planOk el r (dayPlan r) = true :=
+  (dayPlan_ok_is_the_core_seven hfn r).trans hcore
+
+/-- **FIVE is the ceiling of the census on the whole day at a `FromNowAnchored` eligibility**,
+for every request — `the_census_ceiling_is_seven`'s five survivors minus the two comparisons,
+which lose their subject with their quantifier.  `PlannerWit.the_whole_day_census_at_the_from_
+now_eligibility_is_five` reaches it at the census request, so five is touched and not a
+high-water mark.
+
+**Read it beside seven, not instead of it.**  Seven is the ceiling on the same day at *any*
+eligibility and it is the repo's headline (W-22's table above); five is what one hypothesis on
+the eligibility costs in subjects, and the two checks it removes are exactly the two
+`dayPlan_ok_is_the_core_seven` buys a proof for.  Neither number corrects the other. -/
+theorem the_census_ceiling_on_the_whole_day_is_five {el : Eligible} (hfn : FromNowAnchored el)
+    (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectCount el r (dayPlan r) ≤ 5 := by
+  have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
+    eligibleSomewhere_of_nothing_from_now hfn r
+  have e1 := energyFilter_has_no_subject el r
+  have e2 := windDown_has_no_subject el r hnowcal
+  have e3 := rank_has_no_subject_of_nothing_eligible el r _ hnone
+  have e4 := hot_has_no_subject_of_nothing_eligible el r _ hnone
+  have e5 := impossible_has_no_subject el r
+  have e6 := batch_has_no_subject el r
+  show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 5
+  have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
+      = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+          ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+          ⟨.wallMoved, wallsUnmoved⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (dayPlan r)) := by
+    simp only [checksCore, List.filter_cons, e1, e2, Bool.false_eq_true, if_false]
+  have helig : (checksEligible el).filter (fun c => subjectOf el c.name r (dayPlan r)) = [] := by
+    simp only [checksEligible, List.filter_cons, e3, e4, e5, e6, Bool.false_eq_true, if_false,
+      List.filter_nil]
+  rw [checksOf, List.filter_append, List.length_append, hcore, helig]
+  have b1 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
+    ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+      ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+      ⟨.wallMoved, wallsUnmoved⟩] : List Check)
   simp only [List.length_cons, List.length_nil] at b1
   omega
 
