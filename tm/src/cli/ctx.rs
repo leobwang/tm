@@ -230,10 +230,10 @@ fn host_only(field: &str) -> &'static str {
 /// |---|---|
 /// | `date` | `today`, when the log has anything to say about it |
 /// | `wake` | `DayReplay::wake` (`Event::Wake`) |
-/// | `arrival` | `DayReplay::arrival` (`Event::Arrive`) |
+/// | `arrival` | [`last_arrival`] — the **last** `Event::Arrive` of the day, which is what `tm arrive` leaves in the cache (**D45**) |
 /// | `loc` | the last of `DayReplay::loc_changes`, else `DayReplay::loc` |
-/// | `window` | `DayReplay::window` (`Event::Arrive`) |
-/// | `budget` | `DayReplay::budget` (`Event::Arrive`) |
+/// | `window` | [`Ctx::arrival_window`] at that arrival — the one function `tm arrive` writes it from, never a second copy (**D45**, AGENTS §5.3) |
+/// | `budget` | [`Ctx::arrival_window`] at that arrival, with `window` |
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
@@ -256,6 +256,48 @@ fn latest<T>(replay: &Replay, today: NaiveDate, pick: impl Fn(&DayReplay) -> Opt
     replay.days.range(..=today).rev().find_map(|(_, d)| pick(d))
 }
 
+/// **The day's arrival as `tm arrive` leaves it: the LAST one** (the owner's
+/// **D45**, README gap **1202**).
+///
+/// `DayReplay::arrival` is the day's **first** `Event::Arrive`, and it stays
+/// that way: it is the fork's own derivation, `Replay.lean`'s
+/// `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan` proves
+/// it, and T5 compares it key for key. The **cache** holds the last arrival,
+/// because `tm arrive` overwrites `state.arrival` every time it runs. So on a
+/// day with two arrivals the two readings disagreed, and deleting
+/// `.tm/state.json` moved `arrival`, `window` and five of eleven `--json`
+/// spellings with them. D45 makes the derivation follow the verb.
+///
+/// It reads the day's **headers** ([`Replay::view`]) rather than a fact,
+/// because no fact carries the later arrivals: a header is a tag, an instant
+/// and a mask bit, and that is exactly what "the last surviving `arrive` of
+/// this day" needs. Rows are in **file order**, which is the order the cache
+/// was written in — a retro `tm arrive --at 07:00` run after a 13:00 one wrote
+/// 07:00 to the cache and appended its line last, and this returns 07:00.
+///
+/// **Its one blind spot, declared:** a day whose headers the replay's scope did
+/// not carry answers `None` here. Every verb that reads the runtime asks about
+/// **today**, which is an open day in every scope, so this has no reachable
+/// caller — but rather than claim that, [`derived_state`] falls back to
+/// `DayReplay::arrival`, which is never worse than the reading this replaces.
+fn last_arrival(replay: &Replay, today: NaiveDate) -> Option<DateTime<FixedOffset>> {
+    // The tag is asked of `Event` rather than spelled a second time here
+    // (AGENTS §5.3). An empty `String` allocates nothing, so the probe costs a
+    // stack value and no heap.
+    let probe = Event::Arrive {
+        loc: String::new(),
+        window: [String::new(), String::new()],
+        budget: 0,
+    };
+    let tag = probe.name();
+    replay
+        .view()
+        .iter()
+        .filter(|r| r.day == today && !r.cancelled && r.tag == tag)
+        .next_back()
+        .map(|r| r.t)
+}
+
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
     let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
     let day = replay.day(today);
@@ -272,16 +314,22 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
         // fixture, where it moved `tm now`, `tm plan`, `tm log` and two
         // reviews.
         wake: latest(replay, today, |d| d.wake).map(hhmm),
-        arrival: day.and_then(|d| d.arrival).map(hhmm),
+        // **The LAST `arrive` of the day, not `DayReplay::arrival`** — the
+        // owner's D45, README gap 1202. `DayReplay`'s field is the day's
+        // FIRST arrival, because that is what the fork derives and what
+        // `Replay.lean`'s `a_day_keeps_its_first_arrival` proves; the CACHE
+        // holds whatever the last `tm arrive` wrote. Two readings of one day,
+        // and the derivation is the one that moves (AGENTS §5.3).
+        arrival: last_arrival(replay, today).or(day.and_then(|d| d.arrival)).map(hhmm),
         loc: latest(replay, today, |d| {
             d.loc_changes.last().map(|(_, l)| l.clone()).or_else(|| d.loc.clone())
         }),
-        window: day.and_then(|d| d.window.as_ref()).and_then(|w| {
-            let a = NaiveTime::parse_from_str(&w[0], "%H:%M").ok()?;
-            let b = NaiveTime::parse_from_str(&w[1], "%H:%M").ok()?;
-            Some((a, b))
-        }),
-        budget: day.and_then(|d| d.budget),
+        // Not the log's: `DayReplay::window` and `DayReplay::budget` are the
+        // FIRST arrival's, and the arrival above is the LAST. The caller fills
+        // these from `Ctx::arrival_window`, the one function `tm arrive`
+        // writes them from — the same move `active.est_min` makes below.
+        window: None,
+        budget: None,
         active: open.map(|b| ActiveBlock {
             id: Id::new(&b.id),
             started: hhmm(b.started),
@@ -747,12 +795,21 @@ impl Ctx {
     /// log; the day facts are `DayReplay`'s own fields and not a second read of
     /// `.tm/log.jsonl`.
     fn reconcile_state(&mut self, cached: bool, loud: bool) {
-        let derived = derived_state(
+        let mut derived = derived_state(
             &self.replay,
             self.cfg.tz,
             self.today,
             self.state.break_.is_some(),
         );
+        // **D45: the window and the budget are the arrival's**, computed by
+        // the one function `tm arrive` writes them from. `derived_state` left
+        // them `None` because it has no tree and no walls; this is the same
+        // shape `active.est_min` takes two blocks below.
+        if let Some(at) = derived.arrival {
+            let (window, budget) = self.arrival_window(at);
+            derived.window = Some(window);
+            derived.budget = Some(budget);
+        }
 
         if cached {
             // **The cache exists, so it is STALE only where the log contradicts
@@ -1296,6 +1353,32 @@ impl Ctx {
     /// A local time on today's date, in `cfg.tz`.
     pub fn at(&self, t: NaiveTime) -> DateTime<Tz> {
         capacity::local_dt(self.cfg.tz, self.today, t)
+    }
+
+    /// **§8.1's working window and block budget from one arrival** — the ONE
+    /// definition `tm arrive` writes into `.tm/state.json` and D42's rebuild
+    /// derives back out of the log (the owner's **D45**, AGENTS §5.3).
+    ///
+    /// It is not a resurrection of the `Ctx::window` this module's header says
+    /// is gone. That one answered "what is today's window?" beside the
+    /// kernel's own answer, which is the two-definitions bug; this answers
+    /// "what does `tm arrive` write at `at`?", it is the only wrapper around
+    /// [`capacity::window_and_budget`] in `tm/src`, and its two callers are
+    /// `tm arrive` and the rebuild — the writer and the derivation, agreeing
+    /// by construction rather than by inspection.
+    ///
+    /// **What it reads that the log does not carry.** The walls and the config
+    /// are **today's**, not the ones standing when the arrival was logged, so
+    /// a calendar item added since moves the window this returns. That is the
+    /// same fidelity [`Ctx::planned_block`] gives `active.est_min` — the
+    /// estimate the item carries *now* — and it is the honest one: a derivable
+    /// cache is a function of the tree it is derived from. The alternative,
+    /// reading `Event::Arrive`'s own `window` back, can only answer for the
+    /// **first** arrival of the day (`DayReplay::window`), which is the defect
+    /// D45 exists to close.
+    pub fn arrival_window(&self, at: NaiveTime) -> ((NaiveTime, NaiveTime), u32) {
+        let (end, budget) = capacity::window_and_budget(self.at(at), &self.walls_today(), &self.cfg);
+        ((at, end.time()), budget)
     }
 
     /// Today's walls: every open Interval item that overlaps the day, with

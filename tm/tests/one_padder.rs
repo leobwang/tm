@@ -34,15 +34,32 @@
 //!    literal outside [`HOME`], measured at **zero** occurrences in either `src`
 //!    tree, so the needle costs nothing and generalises.
 //!
-//! **What it still cannot see.** It reads the two `src` trees as text, so a
-//! padder written in a `tests/`, `examples/` or `build.rs` file is invisible,
-//! and so is one that reaches a width through a dependency this file does not
-//! name (ratatui's `Span::width`, `unicode-width` and `wcwidth` are named; a new
-//! crate would not be). It cannot see a padder that measures correctly and lays
-//! out wrongly — it is about *one measurement*, not about layout. It cannot see
-//! a fill built out of anything but a literal space (`'\u{2007}'`, a `Vec<char>`
-//! of them, a `write!` loop). And it reads *text*, so a name assembled by a
-//! macro is invisible to it.
+//! **A fourth shape, found at W-23 by planting it** (README gaps 1200/1201 asked
+//! for exactly that). `format!("{s:<w$}")` is Rust's own pad — it fills with
+//! spaces, it measures in `char`s, and it needs no name, no `" ".repeat(` and
+//! no `.width()`. Planted in `tm/src/tui/queue.rs` it got **`7 passed; 0
+//! failed`**. [`format_pad`] is the answer, and it is the same move [1] was:
+//! the *shape*, measured to zero occurrences before it was taken.
+//!
+//! **And README gap 1201 is closed**, because it was driven rather than
+//! reasoned about: `fn f(s: &'static str) -> usize { … } // … .width() …`
+//! failed [`exactly_one_thing_measures_a_terminal_column`] on its own comment,
+//! since `'` opened a string that never closed. [`is_char_literal`] is Rust's
+//! actual rule.
+//!
+//! **What it still cannot see**, re-stated at W-23. It reads the two `src`
+//! trees as text, so a padder written in a `tests/`, `examples/` or `build.rs`
+//! file is invisible, and so is one that reaches a width through a dependency
+//! this file does not name (ratatui's `Span::width`, `unicode-width` and
+//! `wcwidth` are named; a new crate would not be). It cannot see a padder that
+//! measures correctly and lays out wrongly — it is about *one measurement*, not
+//! about layout. It cannot see a fill built out of anything but a literal space
+//! (`'\u{2007}'`, a `Vec<char>` of them, a `write!` loop that pushes a
+//! variable). It reads *text*, so a name assembled by a macro is invisible to
+//! it. And [`format_pad`] deliberately stops at a **runtime** width: the
+//! **30** constant-width `{:<9}`-shaped pads already in the tree are fixed
+//! report columns, not cells, and README gap **1251** is where that class is
+//! written down rather than swept into an allow-list nobody would re-read.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -95,6 +112,103 @@ fn hex_codepoint(line: &str) -> bool {
         }
     }
     false
+}
+
+/// Is the `'` at the head of `rest` opening a **char literal** rather than a
+/// lifetime or a loop label? (README gap **1201**.)
+///
+/// `'\n'`, `'\u{2007}'` and `'x'` are literals; `'static`, `'a` and `'outer`
+/// are not. The rule is the whole of Rust's: a literal is either an escape
+/// (`'\`) or exactly one character closed by a second `'`. Nothing else can
+/// be, because a lifetime is an identifier and an identifier of one character
+/// followed by `'` would be a literal anyway.
+fn is_char_literal(rest: &str) -> bool {
+    let mut cs = rest.chars();
+    if cs.next() != Some('\'') {
+        return false;
+    }
+    match cs.next() {
+        Some('\\') => true,
+        Some(_) => cs.next() == Some('\''),
+        None => false,
+    }
+}
+
+/// A **format-spec pad**: `format!("{s:<w$}")` and its family.
+///
+/// **The third shape, and the one nobody had tried** (W-23 track A; README
+/// gaps 1200/1201 asked for exactly this). Rust's own formatter pads to a
+/// width with spaces and measures in `char`s — so `format!("{title:<w$}")` is
+/// a complete second padder with a second measurement in it, under no name at
+/// all. It carries no `" ".repeat(`, no `push(' ')`, no reserved identifier
+/// and no hex literal, and the guard was **green** on it when it was planted.
+///
+/// **Only a DYNAMIC width is a cell**, and that is what this matches: a width
+/// spelled `w$` or `12$` rather than a constant. Measured before it was taken,
+/// the way [`hex_codepoint`] was: `{…$…}` appears **twice** in the two `src`
+/// trees, both in `tm/src/cli/kernel_capacity.rs`, and both zero-fill a number
+/// (`{num:0>width$}`, `{:0>w$}`) — so the fill test below takes the needle to
+/// **zero** occurrences and it costs no allow-list.
+///
+/// **What it deliberately does NOT match, measured and recorded rather than
+/// swept in:** a **constant** width, `format!("{label:<10}")`. There are
+/// **30** of those outside the home file — 23 `{:<9}` in `tm-core/src/review.rs`
+/// alone, plus four `{:<10}`/`{label:<10}` in `capacity.rs`, one in
+/// `energy.rs`, one `{:<10}` and one `{k:<12}` in `tm/src/tui/prompts.rs` —
+/// every one of them a fixed report column and not a pane-width cell.
+/// Matching them would put the guard RED at 30 sites, which is a repair and
+/// not a guard; README gap **1251** is where that class is written down.
+fn format_pad(line: &str) -> bool {
+    let b: Vec<char> = line.chars().collect();
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != '{' {
+            i += 1;
+            continue;
+        }
+        if b.get(i + 1) == Some(&'{') {
+            i += 2; // `{{` is an escaped brace
+            continue;
+        }
+        let Some(close) = (i + 1..b.len()).find(|j| b[*j] == '}') else { break };
+        if let Some(colon) = (i + 1..close).find(|j| b[*j] == ':') {
+            if dynamic_space_width(&b[colon + 1..close]) {
+                return true;
+            }
+        }
+        i = close + 1;
+    }
+    false
+}
+
+/// Does this format spec pad to a **runtime** width with **spaces**?
+///
+/// The grammar is Rust's: `[[fill]align][sign]['#']['0'][width]['.'prec][type]`.
+/// An explicit fill, or the `0` flag, means the pad is not spaces and is not a
+/// cell; a width ending in `$` means the width is a variable.
+fn dynamic_space_width(spec: &[char]) -> bool {
+    let mut i = 0;
+    let mut fill = ' ';
+    if spec.len() >= 2 && matches!(spec[1], '<' | '^' | '>') {
+        fill = spec[0];
+        i = 2;
+    } else if !spec.is_empty() && matches!(spec[0], '<' | '^' | '>') {
+        i = 1;
+    }
+    for flag in ['+', '-', '#'] {
+        if spec.get(i) == Some(&flag) {
+            i += 1;
+        }
+    }
+    if spec.get(i) == Some(&'0') {
+        fill = '0';
+        i += 1;
+    }
+    let start = i;
+    while i < spec.len() && (spec[i].is_alphanumeric() || spec[i] == '_') {
+        i += 1;
+    }
+    i > start && spec.get(i) == Some(&'$') && fill == ' '
 }
 
 /// Every `.rs` file of the two crates the binary is built from.
@@ -162,12 +276,12 @@ fn code_lines(text: &str) -> Vec<(usize, String)> {
     let mut in_block = false;
     for (i, line) in text.lines().enumerate() {
         let mut code = String::new();
-        let mut chars = line.chars().peekable();
+        let mut chars = line.char_indices().peekable();
         let mut in_str: Option<char> = None;
         let mut escaped = false;
-        while let Some(c) = chars.next() {
+        while let Some((i, c)) = chars.next() {
             if in_block {
-                if c == '*' && chars.peek() == Some(&'/') {
+                if c == '*' && chars.peek().is_some_and(|(_, n)| *n == '/') {
                     chars.next();
                     in_block = false;
                 }
@@ -185,12 +299,27 @@ fn code_lines(text: &str) -> Vec<(usize, String)> {
                 continue;
             }
             match c {
-                '"' | '\'' => {
+                '"' => {
                     in_str = Some(c);
                     code.push(c);
                 }
-                '/' if chars.peek() == Some(&'/') => break,
-                '/' if chars.peek() == Some(&'*') => {
+                // **README gap 1201, closed here.** `'` used to open a string
+                // unconditionally, so `&'static str` opened a quote that never
+                // closed and everything after it on that line — a trailing
+                // `//` comment included — was scanned as string content. The
+                // gap called that harmless because it can only produce a FALSE
+                // POSITIVE; it was driven at W-23 and it does:
+                // `fn f(s: &'static str) -> usize { s.len() } // … .width() …`
+                // failed the measurement guard on its own comment. A `'` opens
+                // a **char literal** only when it is one — an escape, or a
+                // single character closed by a second `'` — and is otherwise a
+                // lifetime or a loop label, which is ordinary code.
+                '\'' if is_char_literal(&line[i..]) => {
+                    in_str = Some(c);
+                    code.push(c);
+                }
+                '/' if chars.peek().is_some_and(|(_, n)| *n == '/') => break,
+                '/' if chars.peek().is_some_and(|(_, n)| *n == '*') => {
                     chars.next();
                     in_block = true;
                 }
@@ -290,7 +419,7 @@ fn nothing_outside_the_home_file_composes_a_pad() {
             continue;
         }
         for (n, line) in code_lines(&text) {
-            if PADDINGS.iter().any(|p| line.contains(p)) {
+            if PADDINGS.iter().any(|p| line.contains(p)) || format_pad(&line) {
                 hits.push((name.clone(), line.trim().to_string(), n));
             }
         }
@@ -421,12 +550,23 @@ fn every_screen_pads_through_emit() {
 ///   outside U+0300..U+036F (Arabic and Hebrew points, Indic matras) and the
 ///   bidi controls, which `ZERO_RANGES` does not carry. Cut **early**.
 /// * **1,163 the other way**, mostly unassigned CJK radical positions.
-/// * Above one code point, a skin-toned or ZWJ emoji is two columns to ratatui
-///   and four or six to `emit` (`👍🏽`, `👨‍👩‍👧`).
+/// * Above one code point, a skin-toned or ZWJ emoji **used to be** two columns
+///   to ratatui and four or six to `emit`. **The owner's D44 closed that**
+///   (README gap 1198): `emit::Walk` collapses a ZWJ sequence and a skin-tone
+///   modifier onto their base, so `👍🏽` and `👨‍👩‍👧` are 2 to both. What is left
+///   above one code point is the **regional-indicator pair** — `🇯🇵` is 4 to
+///   `emit` and 2 to ratatui — which D44 does not name and README gap **1250**
+///   does.
 ///
 /// The owner declined unifying on ratatui because the day file's bytes are
 /// this table's, so the corpus round trip and the frozen-fork comparand would
 /// both have moved. This test is what that decision costs, in numbers.
+///
+/// **The three bands below do not move at D44**, and that is a fact worth an
+/// assertion rather than a sentence: the sweep measures one code point at a
+/// time, and on a one-code-point string the walk's two rules cannot fire —
+/// there is no base in front of a lone modifier and no cluster in front of a
+/// lone joiner. Re-measured here after D44: 8,099 / 6,053 / 1,163, unmoved.
 #[test]
 fn the_accepted_divergence_is_measured_and_not_predicted() {
     use ratatui::text::Span;
@@ -454,8 +594,20 @@ fn the_accepted_divergence_is_measured_and_not_predicted() {
     assert!((7_500..8_700).contains(&narrow), "{narrow} under-counted (measured 8,099)");
     assert!((5_700..6_400).contains(&zero), "{zero} zero-width missed (measured 6,053)");
     assert!((1_000..1_400).contains(&other), "{other} the other way (measured 1,163)");
-    assert_eq!(emit::display_width("👍🏽"), 4);
-    assert_eq!(Span::raw("👍🏽".to_string()).width(), 2);
+    // **D44.** The two tables now agree on every shape D44 names, in both
+    // directions — the assertion used to be `4` and `2` here.
+    for s in ["👍🏽", "👨‍👩‍👧", "👨🏽‍👩🏽‍👧🏽", "👩‍🔬", "🏳️‍🌈"] {
+        assert_eq!(
+            emit::display_width(s),
+            Span::raw(s.to_string()).width(),
+            "D44: {s:?} is one glyph and both tables should say so"
+        );
+        assert_eq!(emit::display_width(s), 2, "D44: {s:?} is two columns");
+    }
+    // And the shape D44 does **not** name, asserted so the divergence is
+    // recorded and not claimed away (README gap 1250, parity **P37**).
+    assert_eq!(emit::display_width("🇯🇵"), 4, "a regional-indicator pair is still two code points");
+    assert_eq!(Span::raw("🇯🇵".to_string()).width(), 2);
 }
 
 /// **The runtime half.** The guard is a grep; this is the measurement it is
@@ -467,6 +619,20 @@ fn the_one_table_is_the_east_asian_one() {
     assert_eq!(emit::display_width("読書"), 4, "a CJK title is two columns a character");
     assert_eq!(emit::display_width("⏰"), 2, "U+23F0");
     assert_eq!(emit::display_width("abc"), 3);
+    // **D44's two rules, and the edges that say they are rules and not a
+    // special case for two strings** (README gap 1198).
+    assert_eq!(emit::display_width("👨‍👩‍👧"), 2, "a ZWJ sequence is one glyph (was 6)");
+    assert_eq!(emit::display_width("👍🏽"), 2, "a skin-tone modifier re-colours its base (was 4)");
+    assert_eq!(emit::display_width("👨🏽‍👩🏽‍👧🏽"), 2, "and the two rules compose (was 10)");
+    assert_eq!(emit::display_width("🏽"), 2, "a LONE modifier has no base, so it keeps its own width");
+    assert_eq!(emit::display_width("\u{200D}👨"), 2, "a leading joiner joins nothing");
+    assert_eq!(emit::display_width("👨👩"), 4, "two emoji with no joiner are still two glyphs");
+    assert_eq!(emit::display_width("読👨‍👩‍👧書"), 6, "a cluster in the middle of a CJK title");
+    // The cut walks the same clusters: a glyph is never split, and the `…`
+    // never lands after a dangling joiner.
+    assert_eq!(emit::clip("ab👨‍👩‍👧cd", 4), "ab…", "the family did not fit, so it is not half-emitted");
+    assert_eq!(emit::clip("ab👨‍👩‍👧cd", 5), "ab👨‍👩‍👧…");
+    assert_eq!(emit::display_width(&emit::pad_to("👨‍👩‍👧", 5)), 5, "and a padded cell is exactly its width");
     // `pad_to` is exactly what `tui/queue.rs::pad` was: cut, then left-align.
     assert_eq!(emit::pad_to("abc", 6), "abc   ");
     assert_eq!(emit::display_width(&emit::pad_to("読書読書", 5)), 5);

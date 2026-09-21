@@ -31,7 +31,6 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use chrono::{DateTime, NaiveTime, Timelike};
 use serde::Serialize;
 
-use tm_core::capacity;
 use tm_core::energy::{self, Features};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{self, Event};
@@ -422,19 +421,21 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
         }
     }
 
-    let arrival = ctx.at(at);
-    let walls = ctx.walls_today();
-    let (end, budget) = capacity::window_and_budget(arrival, &walls, &ctx.cfg);
+    // **One definition of §8.1's window, shared with D42's rebuild** (the
+    // owner's **D45**, AGENTS §5.3): `Ctx::arrival_window` is what writes the
+    // cache here and what derives it back from the log when the cache is
+    // gone, so the two cannot disagree about a day with two arrivals.
+    let (window, budget) = ctx.arrival_window(at);
     ctx.state.date = Some(ctx.today);
     ctx.state.arrival = Some(at);
     ctx.state.loc = Some(loc.clone());
-    ctx.state.window = Some((at, end.time()));
+    ctx.state.window = Some(window);
     ctx.state.budget = Some(budget);
     ctx.save_state()?;
 
     ctx.append_event(Event::Arrive {
         loc: loc.clone(),
-        window: [fmt_time(at), hhmm(end)],
+        window: [fmt_time(window.0), fmt_time(window.1)],
         budget,
     })?;
     ctx.reload()?;
@@ -471,7 +472,7 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
         ctx.today,
         &[
             ("loc", loc.clone()),
-            ("window", format!("{}..{}", fmt_time(at), hhmm(end))),
+            ("window", format!("{}..{}", fmt_time(window.0), fmt_time(window.1))),
             ("budget", budget.to_string()),
         ],
     )?;
@@ -482,7 +483,7 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
         date: ctx.today.to_string(),
         loc,
         arrival: fmt_time(at),
-        window: [fmt_time(at), hhmm(end)],
+        window: [fmt_time(window.0), fmt_time(window.1)],
         budget,
         synced,
         warnings,
