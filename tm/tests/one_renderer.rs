@@ -184,6 +184,55 @@ fn the_day_file_the_json_and_tm_now_print_one_row_list() {
     assert!(out.lines().any(|l| l == "next"), "{out}");
 }
 
+/// **`tm now` and `tm now --json` select the same rows.**
+///
+/// They did not until W-23. "The current block and the next three" (§13) had
+/// **three** implementations in the tree and no two agreed:
+///
+/// | | current | next three |
+/// |---|---|---|
+/// | `emit::render_now_with` | `flags.current` **and** `start ≤ now < end`, else the first unfinished row over `now` | `start ≥ now`, the current one excluded |
+/// | `cli/planning.rs::now` (the JSON) | the first row over `now`, marked or not, done or not | `start > now`, **Sleep hidden** |
+/// | `tui/today.rs::current_segment` | `flags.current` **anywhere in the day** — no time guard at all | `start > now`, **Sleep hidden** |
+///
+/// The third was a defect and not a difference: a `▶` the planner left on a
+/// block that has since ended kept the Now pane on it, elapsed bar and all. The
+/// TUI fixture at 12:51 showed `Exercises 5.3–5.5`, which ran 09:32–12:50, with
+/// `elapsed 3h19m`; it now shows the meeting that actually contains 12:51.
+///
+/// The rule that survives is `emit::now_window`'s, and **hiding a kind is what
+/// decided it**: D30 Q5 (a) asks for `tm now`'s rows to be a *contiguous*
+/// sub-list of the file's, and a `next` that skips Sleep cannot be one.
+#[test]
+fn tm_now_and_tm_now_json_select_the_same_rows() {
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T10:42:00-05:00", &["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok_at("2026-09-07T10:42:00-05:00", &["arrive", "lounge"]);
+
+    // **21:40 is the instant that made this test worth writing.** Only sleep is
+    // left of the day, and the JSON's `next` hid Sleep, so it answered `[]`
+    // where the text printed the row. At 10:42 the three rules happen to agree
+    // and the test would have been green on the tree that had the defect —
+    // which is the failure mode this campaign keeps finding, so both instants
+    // are here and the late one is the one that bites.
+    for (now, want_rows) in [("2026-09-07T10:42:00-05:00", 4), ("2026-09-07T21:40:00-05:00", 1)] {
+        let json = tm.json_at(now, &["now"]);
+        let mut want: Vec<String> = Vec::new();
+        if let Some(c) = json["current"].as_object() {
+            want.push(c["text"].as_str().expect("current.text").to_string());
+        }
+        for n in json["next"].as_array().expect("next") {
+            want.push(n["text"].as_str().expect("next[].text").to_string());
+        }
+        assert_eq!(want.len(), want_rows, "§13, at {now}: {want:#?}");
+
+        let out = tm.ok_at(now, &["now"]).stdout;
+        let printed: Vec<String> =
+            out.lines().filter(|l| is_row(l)).map(String::from).collect();
+        assert_eq!(printed, want, "the two `tm now`s chose different rows at {now}");
+    }
+}
+
 /// **The TUI's Timeline is the day file's lines**, at the same [`Layout`].
 ///
 /// `App::timeline_rows` and `emit::render_plan_section_with` both go through

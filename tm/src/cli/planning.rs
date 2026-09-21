@@ -26,7 +26,7 @@ use serde::Serialize;
 use tm_core::capacity::{self, Exact, UnitCapacity};
 use tm_core::log::Event;
 use tm_core::model::{Id, IsoWeek};
-use tm_core::planner::{self, DayPlan, Diagnostics, PlanInput, SegKind};
+use tm_core::planner::{self, DayPlan, Diagnostics, PlanInput};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::Store;
 
@@ -475,19 +475,18 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
     let ctx = Ctx::load(g, true)?;
     let (plan, _) = build(&ctx, false)?;
     let segs = seg_out(&plan, &ctx);
-    let current_idx = plan
-        .segments
-        .iter()
-        .position(|s| s.start <= ctx.now_tz && ctx.now_tz < s.end);
+    // **One selection** (W-23, README gap 1104). `tm now`'s text and
+    // `tm now --json` each had their own answer to "the current block and the
+    // next three" and the two disagreed: this one took the first segment
+    // containing `now` whatever the planner had marked and whether or not it
+    // was done, and its `next` used `start > now` and hid Sleep. Hiding a kind
+    // is what makes D30 Q5 (a)'s "`tm now`'s rows are a contiguous sub-list of
+    // the file's" unsatisfiable, so the rule that survives is the one that
+    // filters nothing: `emit::now_window`, and the JSON's positions are the
+    // text's positions.
+    let (current_idx, next_idx) = tm_core::emit::now_window(&plan, ctx.now_tz);
     let current = current_idx.map(|i| segs[i].clone());
-    let next: Vec<SegOut> = plan
-        .segments
-        .iter()
-        .enumerate()
-        .filter(|(_, s)| s.start > ctx.now_tz && !matches!(s.kind, SegKind::Sleep))
-        .take(3)
-        .map(|(i, _)| segs[i].clone())
-        .collect();
+    let next: Vec<SegOut> = next_idx.into_iter().map(|i| segs[i].clone()).collect();
     let active = ctx.state.active.as_ref().map(|a| {
         let started = ctx.at(a.started);
         ActiveOut {

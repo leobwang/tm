@@ -27,7 +27,7 @@ use ratatui::Frame;
 
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::planner::{SegKind, Segment};
+use tm_core::planner::Segment;
 use tm_core::review;
 
 use super::app::{App, Mode, Screen};
@@ -156,17 +156,15 @@ pub fn timeline_lines(app: &App, width: usize, height: usize) -> Vec<Line<'stati
 }
 
 /// The segment `now` is inside, preferring the one the planner marked current.
+///
+/// **`emit::now_window`'s answer, not a fourth one** (W-23, README gap 1104).
+/// This used to take the first segment carrying `flags.current` *anywhere in the
+/// day* — with no `start <= now < end` guard at all, so a `▶` the planner left
+/// on a finished row kept the pane on it.
 fn current_segment(app: &App) -> Option<&Segment> {
-    app.plan
-        .segments
-        .iter()
-        .find(|s| s.flags.current)
-        .or_else(|| {
-            app.plan
-                .segments
-                .iter()
-                .find(|s| s.start <= app.now && app.now < s.end && !s.flags.done)
-        })
+    emit::now_window(&app.plan, app.now)
+        .0
+        .map(|i| &app.plan.segments[i])
 }
 
 /// `▐████████░░░░░░░▌` — elapsed against the planned minutes (§12.1).
@@ -251,13 +249,14 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         ))),
     }
 
-    let next: Vec<String> = app
-        .plan
-        .segments
-        .iter()
-        .filter(|s| s.start > app.now && !matches!(s.kind, SegKind::Sleep))
-        .take(3)
-        .map(|s| {
+    // The same three the day file, `tm now` and `tm now --json` name — this
+    // filtered Sleep out and started at `start > now`, which is a third answer
+    // (W-23, README gap 1104).
+    let next: Vec<String> = emit::now_window(&app.plan, app.now)
+        .1
+        .into_iter()
+        .map(|i| {
+            let s = &app.plan.segments[i];
             format!(
                 "{} {}",
                 s.start.format("%H:%M"),
