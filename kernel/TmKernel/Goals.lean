@@ -768,6 +768,45 @@ does not move.  What P5 owes for it is one line: that Planner.eligibleAt is
 `el` is the right shape — `planOk` is antitone in the eligibility, so
 `PlannerWit.permissive` is the top and W-19's ceiling argument is now a theorem
 rather than a reading.  **The burn-down stayed 9 and no goal was added.**
+
+**W-22 (track G) took §6.1's lift OFF the class axis, and the burn-down still did not
+move.**  `PlanCheck.dayPlan_ok_from_now` is design §6.1's `PlanCheck.planOk` at eleven of
+eleven over `PlanCheck.withoutPast`'s day — the rows §8.3's laws are about — for **every**
+request and every `PlanCheck.SlotAnchored` eligibility, where W-20 and W-21 reached eleven
+only on the *quiet* class.  `PlannerWit.the_census_requests_are_not_quiet` is why that
+matters: the quiet class has **one** inhabitant in the whole witness set, and the new lift
+fires at three requests including the one where the same lift at `PlannerWit.permissive` is
+refuted.  `PlanCheck.the_census_ceiling_from_now_is_four` is what it is worth — at most four
+of the eleven can have a subject on that day at any request — and
+`PlannerWit.the_eleven_from_now_is_four_checkers_biting` reaches it, against the quiet class's
+**one**.
+
+**Which number to quote is settled in one place and nowhere else**: `PlanCheck.lean`'s W-22
+section header carries the table of the three questions a *"N of the eleven"* can answer, and
+says which is the honest headline — the SUBJECT count, whose one figure is **seven**, the
+whole-day ceiling `PlanCheck.the_census_ceiling_is_seven` proves and
+`PlannerWit.the_census_ratio` reaches.  Every sentence below and every sentence in
+`PlanCheck.lean`, `PlannerWit.lean`, `Check.lean` and `Negative.lean` was re-read against the
+computed census at W-22 and agrees with it; the one that named two days and gave one number
+now names the day.
+
+**And none of the nine below is dischargeable by any of it.**  §8.2 step 7 landed between W-21
+and W-22 and `PlannerWit.step_seven_gave_no_checker_a_subject` computes that it gave no
+checker a subject — the eleven-entry census at `PlannerWit.theOptionalRequest`, the only
+request whose day carries Optional rows, is **equal to** `PlannerWit.theRequest`'s.  So W-21's
+rule stands unchanged: `plan_respects_the_energy_filter`,
+`plan_never_batches_past_an_equal_ci_candidate` and
+`plan_places_no_demanding_block_after_wind_down` are provable and would each be AGENTS
+§5.2's statement that compiles and means nothing; `plan_never_drops_an_impossible_item` is P8's
+(README gap 1065); the two comparisons and `plan_does_not_overbook` need their P5
+restatements; and `plan_tail_drop` and `plan_is_stable_across_a_replan` are G2 and G3.
+
+**The one sentence a later step must not inherit backwards.**  It is tempting to read
+`PlanCheck.dayPlan_ok_core`'s `hblk` — *every Block row of the day is the reservation* — as
+evidence that §8.2 step 5's fold is now under the battery.  It is evidence of the **opposite**:
+`Planner.dayRows`' own doc comment records that step 5's Block and Batch rows are **not in the
+day**, and `hblk` holds *because* they are absent.  The fold induction design §6.2 prices at
+≈ 4,500 proof lines has no subject in this tree and no line of it is claimed by any run so far.
 ############################################################################ -/
 
 open Planner

@@ -831,7 +831,11 @@ energy, there is no Break row, and no Block starts at or after the wind-down.
 *(This paragraph ended "and each waits on **P5** (README gap 650)" until W-18, and one of the
 three does not: `noBlockOverABreak` wanted a **log with a `break` in it**, not a step.  It has
 a subject at `PlannerWit.theCensusRequest` today, on the whole day and on the `withoutPast`
-day both, so at that request `checksCore` is **five of seven** and not four.  The other two
+day both, so at that request `checksCore` is **five of seven** **over the whole day** and not
+four.  *(W-22 named the day: the sentence gave one number while naming two days, and over the
+`withoutPast` day the same count is **four** — `PlannerWit.the_battery_census_at_the_census_request`
+computes both and `PlannerWit.lean` §13's prose has said both since W-18.  Nothing was wrong;
+one of the two readings was missing.)*  The other two
 wait on nothing a witness can supply — see the vacuity section at the end of this file, which
 proves it for every `PlanReq` — and they are P5's.)*
 `PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block` and
@@ -2782,6 +2786,348 @@ theorem the_census_ceiling_is_seven (el : Eligible) (r : PlanReq)
     ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩] : List Check)
   simp only [List.length_cons, List.length_nil] at b1 b2
   omega
+
+/-! ############################################################################
+## W-22: ELEVEN of eleven over the rows §8.3 is about, at EVERY request
+############################################################################
+
+W-20 reached ten over the whole day on the *quiet* class; W-21 reached eleven on the same
+class, for every `WorkAnchored` eligibility.  **Both are statements about a class of
+requests**, and the class has exactly one inhabitant in this kernel's whole witness set
+(`PlannerWit.theQuietCensusRequest`): `hnorun` — *nothing is running* — and `hnopast` — *the
+log holds no Block for today* — are both false at every other request the module builds.
+
+This section drops **both** hypotheses.  What replaces them is not a weaker checker and not a
+larger class assumption: it is the day W-17 already named.  `withoutPast` keeps the rows §8.3's
+laws are about — the work rows that start at or after `now`, and every non-work comparand —
+and `a_block_row_from_now_is_the_reservation` says, **for every request and with nothing
+assumed about the log**, that a Block row surviving that filter is §8.2 choice 5b's
+reservation.  `the_day_has_no_batch_row` says the same of the other work kind.  So *every work
+row of `withoutPast`'s day is the reservation*, at every request, and the four
+eligibility-dependent conjuncts collapse for a reason that is a property of §8.2 step 5's own
+filter rather than of the day.
+
+**`SlotAnchored` is that property and it is one clause longer than `WorkAnchored`.**  §8.2
+step 5 assigns a candidate into a **free** slot; the reservation is the row choice 5b takes
+*out* of the slot supply before the fold runs ("the running block takes no slot at all",
+design §6.3 row 2).  An `el` answering `true` there is claiming step 5 might assign into the
+row it was told not to.  README gap 960 offered exactly this as repair **(a)** and W-21 could
+not use it, because *"no reservation exists on a quiet day"*.  Off the quiet class it is the
+repair that works, and nothing else has to move.
+
+**What it is worth, and the number is FOUR.**  The four eligibility-dependent conjuncts are
+vacuous here, as they are on the quiet class — but three more of the seven core checks have a
+subject than did there, and `overbook` loses one it had on the whole day, because
+`withoutActive` removes the only Block `withoutPast` leaves.
+`the_census_ceiling_from_now_is_four` proves the exact ceiling: **at most four** of the eleven
+can have a subject on this day at a `SlotAnchored` eligibility, at any request whatever, and
+`PlannerWit.the_eleven_from_now_is_four_checkers_biting` reaches it.  Four is not seven: the
+whole-day ceiling `the_census_ceiling_is_seven` counts `overbook` and the two comparisons,
+and every one of those three is counted there **because of the replayed past**, which is the
+half of the day §8.3 is not about.  Neither number is the other's correction; they are
+ceilings on two different days and each says which.
+
+### THE ONE NUMBER, AND WHICH QUESTION IT ANSWERS
+
+Four runs of this campaign have shipped a bare *"N of the eleven"*, and the reason they
+disagreed is that **there are three questions and a number is meaningless without its three
+coordinates** — which day, which class of request, which eligibility.  This is the repo's
+single statement of them, and every other sentence about the ratio points here.
+
+| the question | what counts it | today's answer, with its coordinates |
+|---|---|---|
+| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons`) |
+| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four`), reached at the same request |
+| how many **bite inside a proved lift** | the census evaluated at the lift's own arguments | **one** on the quiet class (`PlannerWit.the_quiet_eleven_is_one_checker_biting`); **four** at the census request on `withoutPast`'s day (`PlannerWit.the_eleven_from_now_is_four_checkers_biting`) |
+
+**The honest headline is the SUBJECT count and the number is SEVEN.**  A conjunct can be
+proved by emptiness — four of the eleven are, at every request, and `a_check_with_no_subject_is_a_free_pass`
+is the theorem that says so — so the proof count is the number most likely to be read for more
+than it is.  Seven is the one figure that is a **ceiling over every request and every
+eligibility** on the day the planner actually produces, and it is *not an achievement*: it is
+the measure of how much of the battery the stage has given anything to do.  **Four is the same
+figure on the smaller day**, and it is smaller because the day is smaller, not because
+anything regressed — `overbook`, `rank` and `hot` are the three it loses, and every one of them
+is counted in the seven *because of the replayed past*.
+
+**The fold induction design §6.2 prices at ≈ 4,500 lines is still not started, and this is not
+a down payment on it.**  `Planner.dayRows`'s own doc comment is the record: the Block and
+Batch rows of §8.2 step 5 are **not in the day** — they are the switch-shaped change (D19)
+that makes the four emptiness theorems above false and takes `dayPlan_ok_core`'s `hblk` with
+them.  Everything proved here is proved *because* those rows are absent.  `hblk` holding and
+"the fold induction has its subject" are the same sentence with opposite signs. -/
+
+/-- **An eligibility that admits a candidate only where §8.2 step 5 could put one**: at a work
+row (`WorkAnchored`, W-21), and **not** at §8.2 choice 5b's reservation, which step 5 never
+sees because choice 5b removes it from the slot supply before the fold runs.
+
+`WorkAnchored` is reused rather than re-spelled (AGENTS §5.3) and `isActive` is the kernel's
+one reader of *"is this row the running block's"*, so this predicate introduces no second
+reading of either half.  Planner.eligibleAt's body is P5's; this is the second of the two
+lines P5 owes the lift, and `PlannerWit.onlyOnFreeWorkRows` is the concrete instance that
+fires it today. -/
+def SlotAnchored (el : Eligible) : Prop :=
+  WorkAnchored el ∧
+    ∀ (r : PlanReq) (d : DayPlan) (s : WfSeg) (i : Id),
+      el r d s.val i = true → isActive r s = false
+
+/-- **Every work row of `withoutPast`'s day is §8.2 choice 5b's reservation**, at every
+request and with nothing assumed about the log.  This is the whole content of the section:
+`dayPlan_has_no_work_row` needed `hnopast` *and* `hnorun` to say a weaker thing (there are no
+work rows at all); this says the rows that exist are all one row. -/
+theorem withoutPast_work_rows_are_the_reservation (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (withoutPast r (dayPlan r)).segments) (hw : s.val.kind.isWork = true) :
+    isActive r s = true := by
+  obtain ⟨hs', hnow⟩ := mem_withoutPast r _ s hs
+  have hnb : ∀ ids, s.val.kind ≠ SegKind.batch ids := the_day_has_no_batch_row r s hs'
+  have hk : s.val.kind = SegKind.block := by
+    cases hkk : s.val.kind <;> rw [hkk] at hw <;>
+      first
+        | rfl
+        | exact absurd hkk (hnb _)
+        | simp [SegKind.isWork] at hw
+  obtain ⟨t, ht, rfl⟩ := a_block_row_from_now_is_the_reservation r s hs' hk (hnow hw)
+  obtain ⟨a, hai, hti⟩ := the_reservation_row_names_the_running_item r t ht
+  unfold isActive
+  rw [hai, segOf_item, hti]
+  simp
+
+/-- **The same, over the WHOLE day, for a log that holds no Block for today.**  W-21's quiet
+class asked for `hnorun` on top of `hnopast`; this asks only for `hnopast`, and says the work
+rows that do exist are the reservation rather than that none exists. -/
+theorem dayPlan_work_rows_are_the_reservation (r : PlanReq)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hw : s.val.kind.isWork = true) : isActive r s = true := by
+  have hnb : ∀ ids, s.val.kind ≠ SegKind.batch ids := the_day_has_no_batch_row r s hs
+  have hk : s.val.kind = SegKind.block := by
+    cases hkk : s.val.kind <;> rw [hkk] at hw <;>
+      first
+        | rfl
+        | exact absurd hkk (hnb _)
+        | simp [SegKind.isWork] at hw
+  obtain ⟨t, ht, rfl⟩ := dayPlan_block_rows_are_the_reservation r hnopast s hs hk
+  obtain ⟨a, hai, hti⟩ := the_reservation_row_names_the_running_item r t ht
+  unfold isActive
+  rw [hai, segOf_item, hti]
+  simp
+
+/-- **A `SlotAnchored` eligibility admits nothing at all on a day whose only work row is the
+reservation.**  Stated over an arbitrary `DayPlan` and an arbitrary "every work row is the
+reservation" hypothesis, so the whole day and `withoutPast`'s get it from one proof — the
+shape `monotoneInRank_of_nothing_assigned` already uses. -/
+theorem eligibleSomewhere_of_only_the_reservation {el : Eligible} (hsl : SlotAnchored el)
+    (r : PlanReq) (d : DayPlan)
+    (hres : ∀ s ∈ d.segments, s.val.kind.isWork = true → isActive r s = true) (i : Id) :
+    eligibleSomewhere el r d i = false := by
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  simp only [eligibleSomewhere, List.any_eq_true] at h
+  obtain ⟨s, hs, hel⟩ := h
+  have hw : s.val.kind.isWork = true := hsl.1 r d s.val i hel
+  exact absurd ((hres s hs hw).symm.trans (hsl.2 r d s i hel)) (by simp)
+
+/-- **§6.1's dayPlan_ok at ELEVEN of eleven, over the rows §8.3 is about, for EVERY
+request.**
+
+Five hypotheses, and **not one of them is about the log, the runtime or the shape of the day**:
+`hagree` is the decoder's (gap 346), `hactive`, `hday` and `hnowcal` are R10 obligations, and
+`hplain` is the same hypothesis `Planner.plan_never_moves_a_wall` has carried since P1.  W-19
+left this day at nine of eleven with the two comparisons **refuted** at the permissive
+eligibility; the sixth hypothesis is what repairs them, and it is a property of step 5's own
+filter, not of any checker (`SlotAnchored`).
+
+**`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted` still stands and is not
+weakened by this.**  It computes both comparisons `false` at `PlannerWit.permissive` on this
+very day at `PlannerWit.theQueuedRequest`, and `PlannerWit.the_whole_battery_passes_from_now_at_the_queued_request`
+fires this theorem at the same request.  The pair is the statement: what separates a refuted
+∀-`el` claim from a proved one is exactly one clause about where step 5 may assign. -/
+theorem dayPlan_ok_from_now (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hslot : SlotAnchored el) :
+    planOk el r (withoutPast r (dayPlan r)) = true := by
+  have hnone : ∀ i, eligibleSomewhere el r (withoutPast r (dayPlan r)) i = false :=
+    eligibleSomewhere_of_only_the_reservation hslot r _
+      (fun s hs hw => withoutPast_work_rows_are_the_reservation r s hs hw)
+  exact dayPlan_ok_from_now_given_the_two_comparisons el r hagree hactive hday hnowcal hplain
+    (monotoneInRank_of_nothing_eligible el r _ hnone)
+    (hotBeforeQueue_of_nothing_eligible el r _ hnone)
+
+/-- **The whole-day sibling: W-21's eleven with `hnorun` GONE.**  The class is *the log holds
+no Block for today* — running or not — where `dayPlan_ok_on_a_quiet_day` additionally asks
+that nothing be running.  The two are incomparable and both are kept (D5): this one drops a
+hypothesis on the request and pays for it with `SlotAnchored` in place of `WorkAnchored`.
+
+It is the weaker of this section's two lifts in one respect a reader should see: `hnopast` is
+*"false of every real day after the first block is worked"* (`dayPlan_ok_core_from_now`'s own
+doc comment), and `dayPlan_ok_from_now` above is the one with no such hypothesis at all. -/
+theorem dayPlan_ok_on_a_day_with_no_replayed_block (el : Eligible) (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hslot : SlotAnchored el) :
+    planOk el r (dayPlan r) = true := by
+  have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
+    eligibleSomewhere_of_only_the_reservation hslot r _
+      (fun s hs hw => dayPlan_work_rows_are_the_reservation r hnopast s hs hw)
+  have hcore := dayPlan_ok_core r hagree hactive hday hnowcal hnopast hplain
+  simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
+    Bool.and_true, monotoneInRank_of_nothing_eligible el r _ hnone,
+    hotBeforeQueue_of_nothing_eligible el r _ hnone,
+    impossibleKept_is_true_because_its_subject_is_empty el r,
+    batchDoesNotReachPast_is_true_because_its_subject_is_empty el r]
+  exact hcore
+
+/-! ### The census on that day: the ceiling is FOUR, and it is reached
+
+Seven of the eleven have no subject on `withoutPast`'s day at a `SlotAnchored` eligibility —
+the four `the_census_ceiling_is_seven` already names at every request, plus `overbook` and the
+two comparisons.  `overbook` is the one that *changes sign* between the two days and the
+reason is design §6.3 row 1 taken literally: its subject is a Block row that survives
+`withoutActive`, every Block row of this day is the reservation, and `withoutActive` removes
+exactly that.  A day where `overbook` has something to say is a day with a Block the fold
+placed — which is P5's row, not in `Planner.dayRows` yet. -/
+
+/-- A row filtered out of a list cannot give an `any` a witness the whole list did not. -/
+theorem any_filter_of_any_eq_false {α : Type} {l : List α} {p q : α → Bool}
+    (h : l.any q = false) : (l.filter p).any q = false := by
+  refine Bool.eq_false_iff.2 (fun hx => ?_)
+  obtain ⟨a, ha, hq⟩ := List.any_eq_true.1 hx
+  exact absurd (List.any_eq_true.2 ⟨a, (List.mem_filter.1 ha).1, hq⟩) (by simp [h])
+
+/-- **`overbook` has no subject on the rows §8.3 is about**, at every request: `withoutActive`
+removes the only Block `withoutPast` leaves.  It DOES have one on the whole day — the replayed
+past — which is why `the_census_ceiling_is_seven` counts it and this section does not. -/
+theorem overbook_has_no_subject_from_now (el : Eligible) (r : PlanReq) :
+    subjectOf el .overbook r (withoutPast r (dayPlan r)) = false := by
+  simp only [subjectOf, withoutActive_segments]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 h
+  obtain ⟨hs', hna⟩ := List.mem_filter.1 hs
+  simp only [beq_iff_eq] at hp
+  have hact : isActive r s = true :=
+    withoutPast_work_rows_are_the_reservation r s hs' (by rw [hp]; rfl)
+  rw [hact] at hna
+  simp at hna
+
+theorem energyFilter_has_no_subject_from_now (el : Eligible) (r : PlanReq) :
+    subjectOf el .energyFilter r (withoutPast r (dayPlan r)) = false := by
+  simp only [subjectOf, withoutPast_segments]
+  exact any_filter_of_any_eq_false (by
+    have := energyFilter_has_no_subject el r
+    simpa only [subjectOf] using this)
+
+theorem windDown_has_no_subject_from_now (el : Eligible) (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectOf el .windDown r (withoutPast r (dayPlan r)) = false := by
+  simp only [subjectOf]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨b, hb, hp⟩ := List.any_eq_true.1 h
+  simp only [Bool.and_eq_true, beq_iff_eq] at hp
+  obtain ⟨⟨hbk, -⟩, hany⟩ := hp
+  obtain ⟨w, hw, hwp⟩ := List.any_eq_true.1 hany
+  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hwp
+  have := no_block_row_of_the_day_reaches_the_wind_down r hnowcal b w
+    (mem_withoutPast r _ b hb).1 (mem_withoutPast r _ w hw).1 hbk hwp.1
+  omega
+
+theorem batch_has_no_subject_from_now (el : Eligible) (r : PlanReq) :
+    subjectOf el .batch r (withoutPast r (dayPlan r)) = false := by
+  simp only [subjectOf]
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 h
+  cases hk : s.val.kind
+  case batch ids =>
+    exact absurd hk (the_day_has_no_batch_row r s (mem_withoutPast r _ s hs).1 ids)
+  all_goals (rw [hk] at hp; simp at hp)
+
+theorem impossible_has_no_subject_from_now (el : Eligible) (r : PlanReq) :
+    subjectOf el .impossible r (withoutPast r (dayPlan r)) = false := by
+  simp only [subjectOf]
+  show ((dayPlan r).diagnostics.impossible.val.any
+    (fun p => eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1)) = false
+  simp only [the_day_names_no_impossible_item r, List.any_nil]
+
+/-- The two comparisons' populations are empty whenever nothing is eligible anywhere. -/
+theorem rankSubjects_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : rankSubjects el r d = [] := by
+  refine List.flatMap_eq_nil_iff.2 (fun i _ => List.filterMap_eq_nil_iff.2 (fun j _ => ?_))
+  cases r.plan.val.store.get i <;> cases r.plan.val.store.get j <;> simp [h i]
+
+theorem hotSubjects_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : hotSubjects el r d = [] := by
+  refine List.flatMap_eq_nil_iff.2 (fun i _ => List.filterMap_eq_nil_iff.2 (fun j _ => ?_))
+  cases r.plan.val.store.get i <;> cases r.plan.val.store.get j <;> simp [h i]
+
+theorem rank_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : subjectOf el .rank r d = false := by
+  simp only [subjectOf, rankSubjects_of_nothing_eligible el r d h, List.isEmpty_nil,
+    Bool.not_true]
+
+theorem hot_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : subjectOf el .hot r d = false := by
+  simp only [subjectOf, hotSubjects_of_nothing_eligible el r d h, List.isEmpty_nil,
+    Bool.not_true]
+
+/-- **FOUR is the ceiling of the census on the rows §8.3 is about, at every request and every
+`SlotAnchored` eligibility** — `oneBlock`, `overWall`, `overBreak` and `wallMoved`, and the
+other seven have nothing to range over.  `PlannerWit.the_eleven_from_now_is_four_checkers_biting`
+reaches it, so four is a ceiling that has been touched and not a high-water mark.
+
+**Read it beside `the_census_ceiling_is_seven`, not instead of it.**  That one is over the
+WHOLE day at any eligibility and counts three checks this one does not — `overbook` and the
+two comparisons — and all three are counted there because of the **replayed past**, the half
+of the day §8.3's laws are not about.  Neither number corrects the other. -/
+theorem the_census_ceiling_from_now_is_four {el : Eligible} (hsl : SlotAnchored el)
+    (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectCount el r (withoutPast r (dayPlan r)) ≤ 4 := by
+  have hnone : ∀ i, eligibleSomewhere el r (withoutPast r (dayPlan r)) i = false :=
+    eligibleSomewhere_of_only_the_reservation hsl r _
+      (fun s hs hw => withoutPast_work_rows_are_the_reservation r s hs hw)
+  have e1 := overbook_has_no_subject_from_now el r
+  have e2 := energyFilter_has_no_subject_from_now el r
+  have e3 := windDown_has_no_subject_from_now el r hnowcal
+  have e4 := rank_has_no_subject_of_nothing_eligible el r _ hnone
+  have e5 := hot_has_no_subject_of_nothing_eligible el r _ hnone
+  have e6 := impossible_has_no_subject_from_now el r
+  have e7 := batch_has_no_subject_from_now el r
+  show (List.filter (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
+    (checksOf el)).length ≤ 4
+  have hcore : checksCore.filter
+      (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
+      = ([⟨.oneBlock, oneBlockAtATime⟩, ⟨.overWall, noBlockOverAWall⟩,
+          ⟨.overBreak, noBlockOverABreak⟩, ⟨.wallMoved, wallsUnmoved⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (withoutPast r (dayPlan r))) := by
+    simp only [checksCore, List.filter_cons, e1, e2, e3, Bool.false_eq_true, if_false]
+  have helig : (checksEligible el).filter
+      (fun c => subjectOf el c.name r (withoutPast r (dayPlan r))) = [] := by
+    simp only [checksEligible, List.filter_cons, e4, e5, e6, e7, Bool.false_eq_true, if_false,
+      List.filter_nil]
+  rw [checksOf, List.filter_append, List.length_append, hcore, helig]
+  have b1 := List.length_filter_le
+    (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
+    ([⟨.oneBlock, oneBlockAtATime⟩, ⟨.overWall, noBlockOverAWall⟩,
+      ⟨.overBreak, noBlockOverABreak⟩, ⟨.wallMoved, wallsUnmoved⟩] : List Check)
+  simp only [List.length_cons, List.length_nil] at b1
+  omega
+
 
 end PlanCheck
 end Tm

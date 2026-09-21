@@ -202,3 +202,5 @@ a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1
 e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2523; PlanCheck.lean:2523
 d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2683; PlanCheck.lean:2683
 4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:3938; PlannerWit.lean:3938
+dee5ba118680 TmKernel/TmKernel/PlanCheck.lean SlotAnchored True,False PlanCheck.lean:2898; PlanCheck.lean:2898
+8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4491; PlannerWit.lean:4491
