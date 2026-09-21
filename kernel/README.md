@@ -46810,3 +46810,537 @@ Every `lake`, `lean`, `cargo`, `check.sh` and `python3` invocation in this step 
 `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
 `check.sh`, `cargo test` and `mutate.py` (which runs `lake build`), 16G for the measurement
 scripts, 8G for `citations.py` and `totality.py`. **No breach to disclose.**
+<!-- ===========================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-22**, **track P**, in
+     the MAIN CHECKOUT on `rebuild-on-lean`, from `6ce574d`.  Commits `9e291dc`
+     (Emit.lean) and `4d24aae` (D43).  Gap range **1100-1139**; this
+     step takes **1100-1110** and leaves 1111-1139 free.  Cheats **216-218**.
+     `PlannerWit` section **20**.  No goal added, discharged or deleted:
+     **burn-down stays 9**.  `check.sh` **9/9**.  Two other tracks (`w22-a`,
+     `w22-g`) ran in parallel worktrees; whoever merges renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6 — W-22, track P: the day section is cells, and one table decides every column
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `9e291dc` | **`Emit.lean`** — D30 Q6 (a)'s `Row`: §4.3's nine cells as `List Char`, thirty-one definitions, twenty-one laws, its `import` line in `TmKernel.lean`, twenty-seven audit lines in `Check.lean`, `PlannerWit` §20's six witnesses and three `Negative.lean` cheats |
+| `4d24aae` | **D43** — `tm/src/tui/queue.rs`'s `width`/`truncate`/`pad` and `tm/src/tui/today.rs`'s `clip` are **deleted**; `tm-core/src/emit.rs` owns the measurement, the cell fit and the viewport clip; `tm/tests/one_padder.rs` is the grep guard README gap **1007** has owed since it was opened |
+| the `docs:` commit | the ledger — this block, which cannot name its own sha |
+
+**P8 is HALF LANDED and this block says which half.**  §8.2 step 8's *content* is in
+the kernel and the *padding* is unified in one Rust file.  What is **not** here: the
+wire, `emit::render_row` reading the kernel's cells, D30 Q5's one-renderer test,
+`render_now_with`'s retirement, F3-review and the plan hash.  Gaps **1100** and
+**1104**-**1107** name each by name.  That is the sixteenth honest stop of this
+campaign (design §14.6 predicted P8 would need one and named the review block as
+its boundary; the boundary this step actually found is *the wire*, which is a
+cleaner cut — everything that landed is checkable without a caller).
+
+### 2. `Emit.lean`: what D30 Q6 (a) turns out to mean
+
+`Row {time, ci, p, mark, title, parent, est, actual, note}`, `List Char` each, in a
+fixed order that `cells_are_the_nine_in_order` pins as data.  **No Unicode range
+entered the kernel**: `grep -rnE 'EastAsian|0x1100|wcwidth|charWidth|displayWidth'
+kernel/TmKernel/TmKernel/*.lean` is still empty, which is what `Id := List Char`
+exists for (AGENTS §4).
+
+Two laws come close to being about a column and are deliberately not:
+`timeCell_length` (the `HH:MM` cell is **five characters**, so `TIME_W` cannot be
+overrun) and `markCell_length` (**one character**, so `MARK_W` cannot be).  Both are
+`List.length` facts and neither knows what a terminal column is.  On the glyphs —
+which *are* the two-column characters — the kernel proves only
+`the_glyphs_stay_out_of_the_mark_column`, which is G6's rule and not G6's arithmetic.
+
+**`Planner.Note` gets its words.**  P0 wrote "Rendering is P8's" into `Note`'s own
+header and carried eleven constructors with their arguments and no text.  `noteText`
+is that text, and `the_eleven_notes_are_these_sentences` is all eleven computed at
+once.  Two of them (`breakWhere`, `idleAttributed`) play the log's own bytes back,
+which is why they are `List Char` in the constructor and not a new wire value.
+
+**Reused, not copied** (AGENTS §5.3, and the search was by BODY SHAPE):
+`Field.renderClock` is the `HH:MM` cell (it already has `parse_render_clock`,
+`renderClock_length` and `renderClock_chars` proved about it, and this module uses
+all three); `Field.renderDur` is **every** duration and every block count, so
+`durCell` is a choice of `Field.Dur` constructor (`canonDur`) composed with it rather
+than a second renderer; `digitsOf`/`digitChar` are every numeral; `joinWith` joins
+the title's words; `Arith.halfUpQ` with `Arith.mkPos`/`Arith.scale` is both roundings
+(`Arith.plannedMin` already rounds that way — a second rounding written to chase a
+formatter would have been the defect this kernel is named after);
+`Look.spanMinutes` through `Planner.Seg.minutes` is the `(67m)` cell;
+`Plan.parentStep` is the `@parent` cell; `Core.title`, `Core.ci` and `Core.est` are
+the one reader of each of those fields.
+
+**`rowOf` takes a `Planner.Seg`, not a `Planner.WfSeg`**, because no cell reads the
+well-formedness bit: `Seg.wf` bounds where a segment ends and nothing here asks.
+Taking the subtype would have been a hypothesis the emitter does not use.
+
+### 3. `PlannerWit` §20: the day, readable
+
+`the_day_section_of_the_routine_day_is_these_cells` is `Emit.rowsOf` at
+`theRoutineRequest` — a request the planner really answers — and it is the first
+time in this repository that §4.3's day can be **read** in a theorem:
+
+```
+["07:05", " ",  "", "✓", "—",                     "",     "",   "(60m)", ""]
+["09:05", " ",  "", "✓", "—",                     "",     "",   "(60m)", ""]
+["12:50", "⏰", "", " ", "Meeting w/ host",        "",     "1h", "",      ""]
+["14:20", "·",  "", " ", "rest 1h",                "",     "",   "",      ""]
+["15:20", "·",  "", " ", "rest 40m",               "",     "",   "",      ""]
+["16:00", "·",  "", " ", "warmup 1h",              "",     "",   "",      ""]
+["17:00", "·",  "", " ", "stretch 30m",            "",     "",   "",      ""]
+["17:30", "·",  "", " ", "rest 30m",               "",     "",   "",      ""]
+["18:00", "·",  "", " ", "rest 1h",                "",     "",   "",      ""]
+["21:30", "🌙", "", " ", "wind-down · bed 22:00",  "",     "",   "",      ""]
+["22:00", "·",  "", " ", "sleep 2h",               "",     "",   "",      ""]
+```
+
+The `mark` column holds nothing but `✓` and a space and every glyph is in `ci`,
+which is `the_glyphs_stay_out_of_the_mark_column` observed rather than asserted.
+`the_emit_witness_rows_are_these_cells` adds the seven branches that day has not got
+— a batch (`batch: Finish the report · Write the tests (2)`, keyed by its first
+member so `p5` is §7's answer for `m1`), an under-used hot row with a multiplier and
+a parent (`4↓`, `⚠`, `@O2`, `6b×1.6`), a closed Rest with **no** actual beside a
+closed Block with one, an optional carrying §8.2 step 8's `planned 2.5b of 4b (63%)`,
+a row whose estimate is only `planned_min` (`1.2b`), and a wind-down, which exists
+because check 9 said it was missing (§7).
+
+### 4. D43: one table, and what the guard kills
+
+`tm-core/src/emit.rs` now owns four public functions and one private one, and
+nothing else in either `src` tree declares any of them:
+
+| | what it is |
+|---|---|
+| `char_width` / `display_width` | the measurement — `WIDE_RANGES` and `ZERO_RANGES` |
+| `truncate` | the **cell** fit: drops the spaces in front of the `…` |
+| `clip` | the **viewport** cut: keeps them, because the row it is handed is already padded to its columns |
+| `pad_to` | cut, then left-align — what `queue.rs::pad` was |
+| `pad` (private) | left-align only |
+
+**`truncate` and `clip` are two operations, not two implementations of one.**  The
+first draft of this step unified every cut on `truncate`, and six TUI snapshots moved
+— `…` walking backwards into the middle of an already-padded Timeline row
+(`@m2  1b    …` became `@m2  1b…    `).  That was not D43's accepted cost, it was a
+regression, and the second draft says so with a name: a pane clip and a cell fit want
+different rules and both want **one table**.  After the split, **no snapshot moved at
+all**: `git status --porcelain tm/tests/snapshots/` is empty and `cargo insta accept`
+was never run.
+
+### 5. The guard, DRIVEN
+
+`tm/tests/one_padder.rs`, six tests.  Design §8.3's last line asks for it and gap
+**1007** has owed it: without it a future private stand-in renderer reintroduces G1
+and three byte-equality assertions still pass, because they compare two surfaces that
+both call the new one.
+
+Driven the way W-20's own repair was — **the class it exists to catch, planted in the
+main checkout and reverted in the same command**.  The plant was gap 1089's shape,
+byte for byte:
+
+```rust
+fn width(s: &str) -> usize { Span::raw(s).width() }
+fn pad(s: &str, n: usize) -> String {
+    format!("{s}{}", " ".repeat(n.saturating_sub(width(s))))
+}
+```
+
+```
+test exactly_one_thing_pads_a_cell ... FAILED
+test exactly_one_thing_measures_a_terminal_column ... FAILED
+---- exactly_one_thing_pads_a_cell stdout ----
+a second padder (D43, README gap 1089 — this is what the guard is for):
+  tm/src/tui/queue.rs: fn pad
+---- exactly_one_thing_measures_a_terminal_column stdout ----
+a second measurement of terminal width (D43: there is one, and it is
+`tm-core/src/emit.rs`'s `char_width`):
+  tm/src/tui/queue.rs:291: .width() in `Span::raw(s).width()`
+test result: FAILED. 4 passed; 2 failed
+```
+
+and after putting the file back: `test result: ok. 6 passed; 0 failed`, with the
+plant gone from `git diff`.
+
+**The name list is not the whole of it.**  The plant's `fn width` is caught by the
+*measurement* test and not by the name test, because `width` was not reserved; it is
+now, along with `0x1100` — the first entry of every hand-rolled East-Asian table
+there has ever been — which is what the guard has instead of a name for the one
+shape a name list cannot see.
+
+**The guard also bit on its own author, twice.**  Its first run failed on
+`tm-core/src/energy.rs::fit` — §13's energy-curve fit, nothing to do with columns —
+because this step had named the new function `fit`.  The fix was to rename it
+`pad_to`, **not** to add an exemption: check 8's allow-list discipline says exact
+names and never a pattern, and an exemption is a hole in exactly the place the next
+padder would land.
+
+### 6. D43's cost, MEASURED — and the brief's own claim is corrected
+
+D43 says "columns containing CJK or emoji may shift by a cell — that is ACCEPTED".
+Measured over all 1,112,064 code points
+(`the_accepted_divergence_is_measured_and_not_predicted`): **CJK does not shift.**
+The two tables agree on every Han, Kana and Hangul character in the BMP, on `한국어`,
+on `⏰` and `🌙` and `·` — the glyphs this repository actually prints.  They part on
+**15,315** code points, in **both** directions:
+
+| | count | what |
+|---:|---:|---|
+| `emit`=1, ratatui=2 | **8,099** | Tangut U+17000..U+187F7, Tangut Components, Nushu, the Kana supplements — absent from `WIDE_RANGES`. Measured **narrow**, cut **late** |
+| `emit`=1, ratatui=0 | **6,053** | combining marks outside U+0300..U+036F (Arabic and Hebrew points, Indic matras) and the bidi controls — absent from `ZERO_RANGES`. Cut **early** |
+| the other way | **1,163** | mostly unassigned CJK radical positions; U+17A4 and U+17D8 are Khmer |
+| above one code point | — | `👍🏽` is 2 to ratatui and **4** to `emit`; `👨‍👩‍👧` is 2 and **6** |
+
+**The behaviour row, stated against that measurement.**  A Queue, Necessities, Inbox
+or Today column holding one of those characters is now cut by `emit`'s count instead
+of ratatui's, earlier or later by the amounts above.  **No test in the tree exhibits
+it**, because every fixture is Latin or BMP CJK, where the two agree — which is why
+the divergence is pinned by a measurement test rather than by a snapshot, and why
+that test carries bands rather than equalities (a `unicode-width` bump should be
+visible without being a failure).  Gap **1110** records that `emit`'s table is
+measurably the less complete of the two; the owner declined ratatui for parity with
+the fork, and this is what that costs.
+
+### 7. D40: sixty-six folds, and the one the gate caught
+
+`python3 mutate.py --since 86c4dc6 --write`, capped at 40G. **35 definitions** (31 in
+`Emit.lean`, 4 in `PlannerWit.lean`), **66 constants**, and after the repair below:
+**66 PINNED, 0 SURVIVED, 0 INVALID, 0 UNFOLDABLE, 0 UNAVAILABLE, 0 LITERAL.** Check
+9's exemption line does not move — `28 unfoldable, 18 of those pinned by nothing`
+before and after — because every type this step introduces has a constant:
+`Row` derives `Inhabited`, every cell is a `List Char`, every predicate a `Bool`,
+and the one bounded type (`Field.Clock`) is a `Fin`.
+
+**One SURVIVED, and the step built the witness rather than recording it** — the
+brief's rule and P7's precedent:
+
+```
+TmKernel/TmKernel/PlannerWit.lean:emitBed   := default   SURVIVED   build completed
+1 definition(s) not pinned by a constant
+```
+
+`emitBed` is §16's `22:00`, and `Emit.titleCell` reads a bed clock on the
+**wind-down arm alone**. `emitSegs` had six rows and none of them was a wind-down, so
+folding `emitBed` to `⟨0, _⟩` changed nothing any theorem could see — while the
+routine day's own wind-down row (`wind-down · bed 22:00`) was proved off
+`theRoutineRequest.look.day.bed` and said nothing about `emitBed` at all. The fix is
+`emitSegs`'s **seventh** row, a wind-down; re-run:
+
+```
+TmKernel/TmKernel/PlannerWit.lean:emitBed   := default   PINNED   PlannerWit.lean:4569
+2 definition(s) audited (2 pinned, ... 0 unfoldable, 0 unavailable, 0 pinned by nothing; 0 literal)
+```
+
+**And a fold got loose in the tree, which is a finding about `git`, not about
+`mutate.py`.** Check 9's own `--gate` runs the sweep when rows are owed, so the first
+`check.sh` of this step started a 66-build mutation run inside itself; this step
+killed it (it writes no rows, so the work would have had to be done twice) and
+**`git status --porcelain` then showed a clean library while `Emit.lean` sat
+constant-folded on disk** — because the module is NEW and therefore UNTRACKED, and
+`??` says nothing about content. The next `lake build` failed three `PlannerWit`
+witnesses, `mutate.py`'s own `restore_in_flight` put the bytes back from
+`.mutate-in-flight`, and the tree was sound again. Two things worth keeping: the
+recovery path works, and **`git status` is not the check for this** on a step that
+adds a module (gap **1111**). It is also the earliest evidence in this step that
+§20's witnesses bite — a folded `Emit` definition made three of them false before
+`mutate.py` ever reported.
+
+### 8. Acceptance, re-measured on this tree, every delta explained
+
+All capped at 40G (`citations.py` and the probes at 8G), from their own directories.
+
+| | baseline `6ce574d` | here | why |
+|---|---|---|---|
+| `check.sh` | 9/9 | **9/9** | — |
+| axiom audit | 4,839 theorems | **4,866** | +27: `Emit.lean`'s 21 laws and `PlannerWit` §20's 6 witnesses, each with its `#print axioms` line |
+| check 5 (FFI) | 93 tests | **93** | no FFI change |
+| corpus round trip | 29/37 files, 4/5 plans | **29/37, 4/5** | `Emit.lean` has no caller and D43 moved no byte the day file writes |
+| stage goals | 9, all stage 6 | **9, all stage 6** | **burn-down unchanged**: this step discharges no goal and admits none |
+| prose citations | 27,860 citations, 26,337 resolved, 1,523 allowed, 0 unused | **28,151 / 26,628 / 1,523 / 0** | +291 citations and +291 resolved: the new module, the witness section, the guard's prose and this block. The allow-list did not move |
+| new definitions mutated | 77 rostered, 28 unfoldable, 18 pinned by nothing, 0 owed | **112 rostered, 28, 18, 0 owed** | +35 rows, all pinned (§7) |
+| `cargo test --workspace` | 1,347 / 0 / 9 across 79 | **1,353 / 0 / 9 across 80** | +6 tests and +1 binary, exactly `tm/tests/one_padder.rs`; every other test byte-identical |
+| snapshots | — | **none moved** | `git status --porcelain tm/tests/snapshots/` empty; `cargo insta accept` never run |
+
+**check 8 caught this step's own prose before its first commit**, for the second run
+running: `Emit.lean` cited two of `render_row`'s locals — the ci cell and the p cell
+— in backticks, as if they were functions of that module. They are locals, so there
+is no name to resolve, and the two doc comments now say so in words instead. (The
+names are deliberately not repeated here: this check reads the README too, and a
+sentence about a stale citation that contains one is a sentence that fails the
+check. That is not hypothetical — it is how this paragraph failed on its first run.)
+
+The named suites, each run and each green: the FFI crate's `kernel`, `stack` and
+`corpus` binaries (check 5 and check 6 above), **T5**, the **door suite**,
+`cli_switch_acceptance`, `cli_latency` and `kernel_call_counts` — all inside the
+workspace total, none failing, and no re-run needed (the parallel-`cli_latency`
+flake did not fire).  `cli_latency`'s reliable row, the **later verb** (gap 240),
+read **152.09 ms** on this run against the 146.66-147.01 ms the design records from
+the machine that set it; the three rows that design calls too noisy to quote are
+quoted as its ranges and not as numbers from here.  Two other tracks of this run
+were building in parallel worktrees throughout, which is the first thing to suspect
+in that 3.5%.
+
+**`check.sh`'s wall**: **8.31-8.36 s** over three consecutive settled-tree runs,
+against the 7.91-8.01 s the W-21 repair block measured on this machine — **+4.2% to
++5.1%**, inside design §14.0 item 4's 10%-per-step rule.  (The first run after the
+build was 9.1 s on a cold cache and is not the number.)
+
+### 9. Driving the shipped binary (AGENTS §5.13)
+
+An agent can drive the CLI half and cannot drive the TUI (`tm tui` exits when stdout
+is not a tty; AGENTS §5.13, gap **182**), and D43's visible surface **is** the TUI.
+So: the CLI half, on a tree built for this, with a CJK title, a title carrying a
+combining acute, and an ASCII one long enough to be cut.
+
+```
+$ tm add "2b 3 読書 日本語のタイトルを読む ^cjk1" --to week
+$ tm add "1b 2 café naïve é-acute ^mark1" --to week      (the é is e + U+0301)
+$ tm add "1b 4 plain ascii task with a rather long title ^asc1" --to week
+$ tm plan --now 2026-09-21T09:00:00-05:00
+2026-09-21 · window 09:00–17:00 · budget 6 blocks
+09:00  4 p5   3 読書 日本語のタイトルを…        2b
+10:00  4 p5   3 読書 日本語のタイトルを…        2b
+11:00  ·      break 20m
+11:20  3 p5   2 café naïve é-acute              1b
+12:20  3 p5   4 plain ascii task with a…        1b
+13:20  ·      break 20m
+13:40  ·      rest 1h
+14:40  ·      rest 1h
+16:00  ·      rest 1h
+17:00  ───    window ends 17:00
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+```
+
+Two things this drive is evidence for, and one it refutes.
+
+**D30 Q5 (a)'s first assertion holds today, measured.** `tm plan --json`'s eleven
+`segments[].text` values are **byte-equal** to the eleven rows the day file's
+`<!-- tm:plan start … -->` block holds; the twelfth file row is the `window ends`
+divider, which is not a segment and has no JSON entry. That is the comparison
+`one_renderer.rs` will make, made by hand on a real tree, and it passes **before**
+the test exists — which is worth knowing, because it means gap 1104's work is about
+`render_now_with` and `seg_title`, not about these two.
+
+**`tm now` is still a second renderer, observed rather than argued** (gap 1104):
+
+```
+$ tm now --now 2026-09-21T09:30:00-05:00
+nothing running
+▶ 3 読書 日本語のタイトルを読む  ci4  p5  2b
+  09:30–10:30 · elapsed 0m · left 1h
+next
+  10:30  3 読書 日本語のタイトルを読む  2b
+  11:30  · break 20m
+  11:50  2 café naïve é-acute  1b
+```
+
+Not one of those lines is a row of the day file. The title is **not truncated**
+(the file cuts it at the title column), the columns are absent, and the format
+string is `render_now_with`'s own. D30 Q5 (a) says this becomes a *selection* over
+the file's rows; it has not.
+
+**`tm review day` is green and the combining acute survives the round trip**
+(`tomorrow  first candidate cjk1 (p5) · mark1 p5 · asc1 p5`), so nothing in D43
+disturbed the review block or the grammar.
+
+
+### 10. Method, and what each method CANNOT see
+
+* **The byte-parity between `Emit.lean`'s cells and `emit::render_row`'s has not been
+  measured, because there is nothing to measure it with.** No wire carries a `Row`,
+  so the two renderers agree only by reading. Every cell function was written
+  against the fork's own body and the readings are in `Emit.lean`'s header; four
+  places where this kernel deliberately answers differently are gaps **1100**-**1103**.
+  A disagreement on a shape neither the witness rows nor the routine day covers
+  would not be caught. **That is the honest boundary of what landed** and the whole
+  content of gap **1105**.
+* **The witnesses are three days and thirteen segments.** `theRoutineRequest`'s
+  eleven rows, seven hand-built segments and eleven notes. They reach every one of
+  the 31 definitions (check 9 says so, one kernel build per constant), but a cell
+  is a function of a `Seg` and a plan and these are two plans.
+* **The guard is a grep over two `src` trees.** A padder in a `tests/`, `examples/`
+  or `build.rs` file is invisible; so is one that reaches a width through a crate
+  the `MEASUREMENTS` list does not name. It is about **one measurement**, not about
+  layout: a module that measures correctly and places wrongly passes it. The
+  `0x1100` probe is what it has instead of a name for a hand-rolled table.
+* **The divergence measurement is this machine's `unicode-width`**, through
+  ratatui 0.29. Its bands are wide enough that a revision is not a failure and
+  narrow enough that a table swap is.
+* **`emit::truncate` versus `emit::clip` was settled by six snapshots, not by a
+  proof.** The first draft unified every cut on `truncate` and the TUI's own
+  fixtures said no. Nothing in the tree stops a future caller picking the wrong one
+  of the two; their doc comments are the whole of the distinction.
+* **The TUI itself was not driven.** `tm tui` exits when stdout is not a tty
+  (AGENTS §5.13, gap 182), and D43's visible surface is the TUI. What stands in for
+  it is the snapshot suite (unmoved), the guard and the divergence measurement.
+
+### 11. Gaps
+
+**Gap 1100 — the plan hash is still a placeholder.**
+1. *What is not done.* `Planner.PlanHash.zero` is still what `Planner.dayPlan`
+   answers, and `Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`
+   still stands. `Emit.lean` computes no FNV-1a digest.
+2. *Why.* The digest is of the day's *placement*, and its comparand is
+   `state.last_plan_hash`, which crosses the wire. Nothing of the wire landed here,
+   so a hash would have had no reader and no parity check.
+3. *What it costs.* `tm plan` cannot tell the kernel's day from the one it last
+   wrote, so §9.1's "did the plan change?" is still the Rust planner's answer.
+4. *Which step clears it.* P8's second half, with the wire (gap 1105).
+
+**Gap 1101 — two precedences for "the estimate", and the kernel has one.**
+1. *What is not done.* `emit::est_cell` reads `est_original`, then `est:`, then
+   `dur:`. The kernel's one estimate view is `Core.est` = `Field.viewRemainingDur`,
+   which is `est:` **then** the leading estimate. `Emit.itemEstOf` reads `Core.est`.
+2. *Why.* `est_original` is what a close forwarded, and this kernel has no view of
+   it: adding one would be a second reading of the same field (AGENTS §5.3) and the
+   close tranche is where that decision belongs, not the emitter.
+3. *What it costs.* On a line a close has rewritten, the `est` cell can show the
+   remaining estimate where the fork shows the original.
+4. *Which step clears it.* The wire step, against real parity; or a decision that
+   the fork's order is the defect.
+
+**Gap 1102 — `note_cell`'s `⚠` branch needs a deadline the kernel cannot see.**
+1. *What is not done.* `Emit.noteCell` answers the explicit note and the `↓`
+   derivation. The fork also derives `overdue` / `due today` / `due Fri` /
+   `due 2026-11-20` from `Tree::effective_due`, and this kernel has no such view.
+2. *Why.* `effective_due` is §6.4's rule over `due:`, `win:` and the recurrence —
+   K3's territory, not P8's (D34's shape: deriving it here would be doing another
+   step early).
+3. *What it costs.* A hot row's note cell is empty where the fork names the day.
+4. *Which step clears it.* K3, then the wire step.
+
+**Gap 1103 — the kernel rounds half-up where the fork rounds half-to-even.**
+1. *What is not done.* `Emit.blocksCell`, `Emit.multCell` and `Emit.noteText`'s
+   percentage round with `Arith.halfUpQ`. The fork's `{:.1}`, `{:.2}` and
+   `f64::round` round half-to-even on a double, so the two part **exactly at a tie**
+   — `50m` at a 40-minute block is `1.2b` to the fork and `1.3b` here.
+2. *Why.* `Arith.halfUpQ` is this kernel's one rounding and `Arith.plannedMin`
+   already uses it; a second rounding written to chase a formatter is AGENTS §5.3's
+   own defect, and there is no `f64` in this kernel (AGENTS §4).
+3. *What it costs.* One cell, on a tie, on a non-integral block length.
+4. *Which step clears it.* The wire step measures it; the owner decides whether the
+   fork's tie or the kernel's is the answer.
+
+**Gap 1104 — D30 Q5's one-renderer test is not built, and two renderers still live.**
+1. *What is not done.* `tm/tests/one_renderer.rs` does not exist. `emit::render_now_with`
+   is still a second renderer with its own format string, and `tm/src/tui/today.rs`'s
+   `seg_title` is still a second title renderer (`break`, `rest`, `interruption`,
+   `batch (3)` where `emit::title_cell` says `break 20m`, `rest 20m`, the wall's item
+   and `batch: … (3)`).
+2. *Why.* Both are behaviour changes to what a user sees, and both want the kernel's
+   cells to compare against — which is gap 1105. Deleting them now would have been a
+   behaviour change with nothing to check it against.
+3. *What it costs.* **G1 is not yet structurally dead.** D43's guard kills the
+   *padder* half; the *renderer* half is still three implementations agreeing by
+   hand. §8.4 calls G1 an architecture row, and this is the half still owed.
+4. *Which step clears it.* P8's second half.
+
+**Gap 1105 — `Emit.lean` has no caller.**
+1. *What is not done.* Nothing on the wire carries a `Row`. `emit::render_row`
+   still builds its cells from the Rust `Segment`, and no byte comparison between
+   the two has ever been run.
+2. *Why.* The natural internal boundary design §14.6 asks a partial P8 to cut at:
+   everything that landed is checkable without a caller, and everything that needs
+   one is behind it.
+3. *What it costs.* The cells are proved consistent with themselves and checked
+   against the fork **by reading**. §14.6's warning applies exactly — a step that
+   ports a choice without knowing it exists produces a parity failure it cannot
+   explain — and this is where such a failure would appear.
+4. *Which step clears it.* P8's second half: the response's day section, `render_row`
+   consuming it, and `one_renderer.rs`.
+
+**Gap 1106 — F3-review is not done.**
+1. *What is not done.* `close day` still replaces a hand-written review with
+   `horizon::REVIEW_PLACEHOLDER`. `Emit.lean` does not own the `<!-- tm:review -->`
+   block's content.
+2. *Why.* Design §8.4 puts it in P8 because it needs generated-block ownership, and
+   generated-block ownership is gap 1105.
+3. *What it costs.* PLAN §4's F3 stays open; a written review is still lost.
+4. *Which step clears it.* P8's second half, with a `cli_close_kernel.rs` leg.
+
+**Gap 1107 — §11's ratios do not cross as pairs yet.**
+1. *What is not done.* `Planner.Diagnostics.planHonesty` is a numerator and a
+   denominator and `Emit.noteText` divides it once, for the `planned … (…%)`
+   sentence. §11's monitors (`review.rs`) still compute their own ratios in Rust.
+2. *Why.* Design §8.2's table puts the review block's content in P8; the review
+   block is gap 1106.
+3. *What it costs.* Two places decide what a percentage is.
+4. *Which step clears it.* P8's second half.
+
+**Gap 1108 — the batch title cannot be fitted where it is built.**
+1. *What is not done.* `Emit.batchTitle` emits §7.5's whole frame —
+   `batch: a · b · c (3)` — as one cell. `emit::fit_batch` shortens it by sharing the
+   leftover columns among the *members*, which needs the member list and not the
+   joined string.
+2. *Why.* D30 Q6 (a) puts every width in Rust, and the kernel has no width; but
+   `fit_batch` needs a structure the cell has flattened.
+3. *What it costs.* When `render_row` starts consuming the kernel's cells, either the
+   members cross separately (a second wire shape for one concept) or a batch title
+   truncates like any other (§7.5's frame is lost on a narrow pane).
+4. *Which step clears it.* The wire step, as a decision, not a patch.
+
+**Gap 1109 — `tui/today.rs::seg_title` and `emit::render_now_with` survive; see gap 1104.**
+1. *What is not done.* Both are still declared and still called.
+2. *Why.* Gap 1104.
+3. *What it costs.* Gap 1104.
+4. *Which step clears it.* Gap 1104. *(Recorded separately because design §8.2's
+   table names each renderer's fate by name and an auditor reads that table.)*
+
+**Gap 1110 — `emit`'s width table is measurably the less complete of the two.**
+1. *What is not done.* `WIDE_RANGES` and `ZERO_RANGES` disagree with ratatui's
+   `unicode-width` on **15,315** code points (§6's table), 8,099 of them wide
+   characters `emit` calls narrow. D43 unified on `emit`'s table anyway.
+2. *Why.* The owner's: the day file's bytes are that table's, so unifying on ratatui
+   would move the corpus round trip and the frozen-fork comparand.
+3. *What it costs.* A Queue, Necessities, Inbox or Today column holding a combining
+   mark, a Tangut/Nushu/Kana-supplement character or a composed emoji is cut by the
+   wrong count. No fixture in the tree contains one, so no snapshot shows it;
+   `the_accepted_divergence_is_measured_and_not_predicted` is the whole of the
+   evidence.
+4. *Which step clears it.* A decision to carry `unicode-width` (a new external
+   dependency, so plan-tier), or to widen `WIDE_RANGES` from the same data and
+   re-bless the fork comparand deliberately.
+
+**Gap 1111 — a killed mutation run leaves an UNTRACKED module folded, and `git
+status` says the tree is clean.**
+1. *What is not done.* `mutate.py`'s `restore_in_flight` recovers it on the next
+   run, but nothing *detects* it: `git status --porcelain` reports `??` for a new
+   module and says nothing about its content, so the sidecar is the only evidence.
+2. *Why.* `.mutate-in-flight` was designed against a SIGKILL of a tracked file,
+   where `git diff` shows the fold immediately. A step that adds a module is the
+   case that was not considered.
+3. *What it costs.* Measured here: a constant-folded `Emit.lean` survived a
+   `git status` that this step read as proof the tree was sound. The next build
+   caught it, so the window is one command wide — but a step that committed between
+   the two would have committed a folded kernel.
+4. *Which step clears it.* One line in `check.sh` or in `mutate.py --gate`: fail if
+   `.mutate-in-flight` exists. It is not a decision, it is a missing test.
+
+### 12. Numbering
+
+Gaps: this step **1100-1111**; **1112-1139 free** inside track P's range.
+Cheats **216-218** (`rowWithoutANote`, `midnightTwice`, `theMarkColumnTakesTheWallGlyph`).
+`PlannerWit` section **20**. No parity entry. No goal added, discharged or deleted.
+**Highest gap after this block: 1111. Highest cheat: 218.**
+Tracks `w22-a` and `w22-g` ran in parallel worktrees and took their own ranges;
+whoever merges renumbers (AGENTS §6.4) and the label-to-number map is the list above.
+
+### 13. Worktrees, and capping
+
+Worked in the **main checkout** on `rebuild-on-lean`; none entered and none created.
+`git worktree list` shows the main checkout, `.claude/worktrees/stage5-lookahead`,
+`.claude/worktrees/w22-a` and `.claude/worktrees/w22-g` — the last two are the other
+tracks of this run and were not touched.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+`check.sh`, `cargo`, `lake` and `mutate.py` (which runs `lake build`), 16G for the
+`#eval` probes, 8G for `citations.py` and for the `decide` probe of every new
+witness (AGENTS §5.10a: `TmKernel/PlannerWit.lean` elaborates in **115 s** at
+`MemoryMax=8G`, against 113 s before §20, so the six new `decide`s cost ~2 s).
+**One breach to disclose, and it is a kill rather than an uncapped run:** the first
+`check.sh` of this step was interrupted at check 9 while its `--gate` ran the
+mutation sweep, and the kill is what produced §7's loose fold. Nothing was re-run
+uncapped, and no memory bound was raised.
