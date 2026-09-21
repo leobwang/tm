@@ -37,15 +37,14 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
+use tm_core::emit;
 use tm_core::ics::ALL_DAY_TAG;
 use tm_core::model::{Dep, Id, InstanceKey, Recur, Shape, State};
 use tm_core::priority::{self, PrioClass};
 use tm_core::recur;
 use tm_core::tree::Tree;
 
-use super::queue::{
-    fmt_u, pad, truncate, width, Action, Mutation, Prompt, View,
-};
+use super::queue::{fmt_u, Action, Mutation, Prompt, View};
 
 // ---------------------------------------------------------------------------
 // Left half — the week grid
@@ -701,7 +700,7 @@ pub fn render(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, area
     render_rows(state, view, frame, halves[1]);
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            truncate(KEYMAP, outer[1].width as usize),
+            emit::clip(KEYMAP, outer[1].width as usize),
             Style::default().fg(Color::DarkGray),
         ))),
         outer[1],
@@ -806,7 +805,7 @@ fn render_rows(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, are
     let w = inner.width as usize;
     let id_w = all
         .iter()
-        .map(|r| width(r.id.as_str()))
+        .map(|r| emit::display_width(r.id.as_str()))
         .max()
         .unwrap_or(2)
         .clamp(2, 12);
@@ -821,10 +820,10 @@ fn render_rows(state: &NecessitiesState, view: &View<'_>, frame: &mut Frame, are
                 Style::default().fg(Color::DarkGray)
             };
             let title = r.section.title();
-            let rule = "─".repeat(w.saturating_sub(width(title) + 6));
+            let rule = "─".repeat(w.saturating_sub(emit::display_width(title) + 6));
             display.push((None, Line::from(Span::styled(format!("──── {title} {rule}"), style))));
         }
-        display.push((Some(i), Line::from(truncate(&row_text(r, w, id_w), w))));
+        display.push((Some(i), Line::from(emit::clip(&row_text(r, w, id_w), w))));
     }
     if display.is_empty() {
         display.push((
@@ -877,7 +876,7 @@ fn row_text(r: &Row, w: usize, id_w: usize) -> String {
         Section::Necessary => "!",
         Section::Dated => " ",
     };
-    let head = format!("{mark} {} ", pad(r.id.as_str(), id_w));
+    let head = format!("{mark} {} ", emit::pad_to(r.id.as_str(), id_w));
     let mut tail: Vec<String> = Vec::new();
     if !r.need.is_empty() {
         tail.push(format!("need {}", r.need));
@@ -895,6 +894,6 @@ fn row_text(r: &Row, w: usize, id_w: usize) -> String {
         tail.push(r.detail.clone());
     }
     let tail = tail.join("  ");
-    let title_w = w.saturating_sub(width(&head) + width(&tail) + 2);
-    format!("{head}{}  {tail}", pad(&r.title, title_w))
+    let title_w = w.saturating_sub(emit::display_width(&head) + emit::display_width(&tail) + 2);
+    format!("{head}{}  {tail}", emit::pad_to(&r.title, title_w))
 }

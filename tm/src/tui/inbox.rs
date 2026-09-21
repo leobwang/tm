@@ -55,13 +55,14 @@ use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::Frame;
 
 use tm_core::config::Config;
+use tm_core::emit;
 use tm_core::grammar::{self, ParseCtx, ParsedFile};
 use tm_core::store::{edit, Store, StoreError};
 use tm_core::model::{
     self, Dep, Dur, Horizon, Rate, Rule, WindowRange,
 };
 
-use super::queue::{truncate, Action, Mutation, View};
+use super::queue::{Action, Mutation, View};
 
 /// The command `C` prints (§12.5: "C Claude Code triages all"). The screen
 /// never runs it; §14 makes Claude Code a peer frontend, not a subprocess of
@@ -826,7 +827,7 @@ pub fn render(state: &CaptureState, view: &View<'_>, frame: &mut Frame, area: Re
     let header = format!(" Inbox ({})   {}", lines.len(), KEYMAP_LIST.trim());
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            truncate(&header, rows[1].width as usize),
+            emit::clip(&header, rows[1].width as usize),
             Style::default().fg(Color::DarkGray),
         ))),
         rows[1],
@@ -855,13 +856,13 @@ fn render_capture(state: &CaptureState, view: &View<'_>, frame: &mut Frame, area
     let mut lines = vec![Line::from(vec![
         Span::styled("> ", Style::default().fg(Color::DarkGray)),
         Span::styled(
-            truncate(&format!("{}{cursor}", state.buffer), w.saturating_sub(2)),
+            emit::clip(&format!("{}{cursor}", state.buffer), w.saturating_sub(2)),
             Style::default().add_modifier(Modifier::BOLD),
         ),
     ])];
     let preview = preview_text(&cap);
     lines.push(Line::from(Span::styled(
-        truncate(&format!("  {preview}"), w),
+        emit::clip(&format!("  {preview}"), w),
         match (&cap.problem, &cap.warning, cap.raw.is_empty()) {
             (_, _, true) => Style::default().fg(Color::DarkGray),
             (Some(_), _, _) => Style::default().fg(Color::Red),
@@ -877,7 +878,7 @@ fn render_capture(state: &CaptureState, view: &View<'_>, frame: &mut Frame, area
         }
     });
     lines.push(Line::from(Span::styled(
-        truncate(&format!("  {hint}"), w),
+        emit::clip(&format!("  {hint}"), w),
         Style::default().fg(Color::DarkGray),
     )));
     frame.render_widget(Paragraph::new(lines), inner);
@@ -894,7 +895,7 @@ fn render_list(state: &CaptureState, lines: &[InboxLine], frame: &mut Frame, are
     let offset = if state.sel >= h { state.sel + 1 - h } else { 0 };
     for (i, l) in lines.iter().enumerate().skip(offset).take(h) {
         let mark = if l.problem.is_some() { "!" } else { " " };
-        let text = truncate(&format!(" {mark} {:>3}  {}", l.line, l.raw), w);
+        let text = emit::clip(&format!(" {mark} {:>3}  {}", l.line, l.raw), w);
         let style = if i == state.sel && !state.editing {
             Style::default().add_modifier(Modifier::REVERSED)
         } else {

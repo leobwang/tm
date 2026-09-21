@@ -26,7 +26,7 @@
 //! * [`Action`] — what a key press asks the shell to do (`Ignored`, `Redraw`,
 //!   `Note`, `Edit`, [`Prompt`], [`Mutation`]).
 //! * Small formatting helpers: [`fmt_u`], [`fmt_fits`], [`bar`], [`due_text`],
-//!   [`est_text`], [`truncate`], [`width`].
+//!   [`est_text`]. The width ones are `tm_core::emit`'s since D43.
 //!
 //! ## The screen
 //!
@@ -70,6 +70,7 @@ use ratatui::Frame;
 
 use tm_core::capacity::{self, UnitCapacity, CAP_DEN};
 use tm_core::config::Config;
+use tm_core::emit;
 use tm_core::grammar::ParsedFile;
 use tm_core::log::Replay;
 use tm_core::model::{Id, InstanceKey, IsoWeek, State, YearMonth};
@@ -286,39 +287,12 @@ pub enum Mutation {
 // Formatting helpers shared by the three screens
 // ---------------------------------------------------------------------------
 
-/// Display width of `s` (unicode-aware, via ratatui's own measurement).
-pub fn width(s: &str) -> usize {
-    Span::raw(s).width()
-}
-
-/// `s` cut to `max` display columns, with `…` when it had to be cut.
-pub fn truncate(s: &str, max: usize) -> String {
-    if max == 0 {
-        return String::new();
-    }
-    if width(s) <= max {
-        return s.to_string();
-    }
-    let mut out = String::new();
-    let mut w = 0;
-    for c in s.chars() {
-        let cw = width(&c.to_string());
-        if w + cw > max.saturating_sub(1) {
-            break;
-        }
-        out.push(c);
-        w += cw;
-    }
-    out.push('…');
-    out
-}
-
-/// `s` padded with spaces to `n` display columns (cut when longer).
-pub fn pad(s: &str, n: usize) -> String {
-    let t = truncate(s, n);
-    let w = width(&t);
-    format!("{t}{}", " ".repeat(n.saturating_sub(w)))
-}
+// The three functions that used to live here -- `width`, `truncate` and `pad`
+// -- are GONE (the owner's **D43**). They were a second implementation of
+// `tm-core::emit`'s padding, measuring with ratatui's `unicode-width` where
+// `emit` measures with its own East-Asian table, so one concept had two
+// answers (AGENTS 5.3). The screens now call `emit::display_width`,
+// `emit::clip` and `emit::pad_to`; `tm/tests/one_padder.rs` is the guard.
 
 /// §12.2's utilization column: `u=0.6`, `u=0.15`, `u=∞`.
 pub fn fmt_u(u: Option<f64>) -> String {
@@ -1097,7 +1071,7 @@ pub fn render(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Rect
     let keymap = if narrow { KEYMAP_NARROW } else { KEYMAP };
     frame.render_widget(
         Paragraph::new(Line::from(Span::styled(
-            truncate(keymap, footer.width as usize),
+            emit::clip(keymap, footer.width as usize),
             Style::default().fg(Color::DarkGray),
         ))),
         footer,
@@ -1126,17 +1100,17 @@ fn render_month(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Re
         let text = if r.demoted {
             let head = format!("· {} ", r.id);
             let title_w = inner
-                .saturating_sub(width(&head) + width(&r.stamps) + 1)
+                .saturating_sub(emit::display_width(&head) + emit::display_width(&r.stamps) + 1)
                 .max(4);
-            format!("{head}{} {}", pad(&r.title, title_w), r.stamps)
+            format!("{head}{} {}", emit::pad_to(&r.title, title_w), r.stamps)
         } else {
             let head = format!(
                 "{} {} ",
                 r.priority.map(|k| format!("!{k}")).unwrap_or("  ".into()),
                 r.id
             );
-            let title_w = inner.saturating_sub(width(&head) + 4);
-            format!("{head}{} {}", pad(&r.title, title_w), r.bar)
+            let title_w = inner.saturating_sub(emit::display_width(&head) + 4);
+            format!("{head}{} {}", emit::pad_to(&r.title, title_w), r.bar)
         };
         lines.push((Some(i), Line::from(text)));
     }
@@ -1168,7 +1142,7 @@ fn render_week(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Rec
                 None => String::new(),
             }
         };
-        let head = format!("{} {} {:>2} {} ", pad(&p, 3), r.ci, r.est, r.id);
+        let head = format!("{} {} {:>2} {} ", emit::pad_to(&p, 3), r.ci, r.est, r.id);
         let tail = if r.done {
             "✓".to_string()
         } else {
@@ -1189,19 +1163,19 @@ fn render_week(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Rec
             }
         };
         let parent = &r.parent;
-        let used = width(&head) + width(&tail) + width(parent) + 2;
+        let used = emit::display_width(&head) + emit::display_width(&tail) + emit::display_width(parent) + 2;
         let title_w = inner.saturating_sub(used).max(4);
         let text = format!(
             "{head}{} {} {}",
-            pad(&r.title, title_w),
-            pad(parent, width(parent)),
+            emit::pad_to(&r.title, title_w),
+            emit::pad_to(parent, emit::display_width(parent)),
             tail
         );
-        lines.push((Some(i), Line::from(truncate(&text, inner))));
+        lines.push((Some(i), Line::from(emit::clip(&text, inner))));
     }
     let footer = if any_hysteresis {
         Some(Line::from(Span::styled(
-            truncate("* held by hysteresis (≤ 1 bin better per day, §7.4)", inner),
+            emit::clip("* held by hysteresis (≤ 1 bin better per day, §7.4)", inner),
             Style::default().fg(Color::DarkGray),
         )))
     } else {
@@ -1272,9 +1246,9 @@ fn render_tasks(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Re
                     .map(|b| format!(" {b}"))
                     .unwrap_or_default()
             };
-            let title_w = inner.saturating_sub(width(&head) + width(&mark));
-            let line = format!("{head}{}{mark}", pad(&r.title, title_w));
-            (Some(i), Line::from(truncate(&line, inner)))
+            let title_w = inner.saturating_sub(emit::display_width(&head) + emit::display_width(&mark));
+            let line = format!("{head}{}{mark}", emit::pad_to(&r.title, title_w));
+            (Some(i), Line::from(emit::clip(&line, inner)))
         })
         .collect();
     let title = match &parent {
@@ -1282,7 +1256,7 @@ fn render_tasks(state: &QueueState, view: &View<'_>, frame: &mut Frame, area: Re
         None => " Tasks ".to_string(),
     };
     let footer = Some(Line::from(Span::styled(
-        truncate(&fits_footer(view, &rows), inner),
+        emit::clip(&fits_footer(view, &rows), inner),
         Style::default().fg(Color::DarkGray),
     )));
     render_pane(

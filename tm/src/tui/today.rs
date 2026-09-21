@@ -41,32 +41,16 @@ const ENERGY_ROWS: u16 = 5;
 /// Rows the Now pane takes when the panes are stacked.
 const NOW_ROWS: u16 = 8;
 
-/// Truncate to `width` display columns, with `…` when something was cut.
-fn clip(s: &str, width: usize) -> String {
-    if emit::display_width(s) <= width {
-        return s.to_string();
-    }
-    if width == 0 {
-        return String::new();
-    }
-    let mut out = String::new();
-    let mut w = 0usize;
-    for c in s.chars() {
-        let cw = emit::char_width(c);
-        if w + cw > width.saturating_sub(1) {
-            break;
-        }
-        out.push(c);
-        w += cw;
-    }
-    out.push('…');
-    out
-}
+// `clip` -- which was this module's own copy of a viewport cut -- is GONE with
+// D43: its body is `tm_core::emit::clip` now, beside the table it always
+// measured with. It is NOT `emit::truncate` (which fits a *cell* and drops the
+// spaces in front of the `…`); a pane clip keeps them, because the row it is
+// handed is already padded to its columns.
 
 /// §12.1's first line: `tm · Mon 2026-09-07 · 10:42 · lounge · … ● 3/6 · …`.
 pub fn status_line(app: &App, width: usize) -> Line<'static> {
     Line::from(Span::styled(
-        clip(&review::render_status_full(&app.head, &app.status), width),
+        emit::clip(&review::render_status_full(&app.head, &app.status), width),
         theme::STATUS,
     ))
 }
@@ -83,7 +67,7 @@ pub fn status_row(app: &App, width: usize) -> Line<'static> {
         return status_line(app, width);
     }
     let fw = emit::display_width(&fold);
-    let left = clip(
+    let left = emit::clip(
         &review::render_status_full(&app.head, &app.status),
         width.saturating_sub(fw + 2),
     );
@@ -133,7 +117,7 @@ pub fn week_fold_text(app: &App, width: usize) -> String {
         }
         out = next;
     }
-    clip(&out, width)
+    emit::clip(&out, width)
 }
 
 /// The Timeline pane (§12.1): [`tm_core::emit::render_plan_section`]'s rows,
@@ -153,7 +137,7 @@ pub fn timeline_lines(app: &App, width: usize, height: usize) -> Vec<Line<'stati
         .skip(top)
         .take(height.max(1))
         .map(|(i, row)| {
-            let text = clip(&row.text, width);
+            let text = emit::clip(&row.text, width);
             let pad = width.saturating_sub(emit::display_width(&text));
             let style = if i == app.selection {
                 theme::SELECTED
@@ -220,7 +204,7 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
                     head.push_str(&format!(" #{tag}"));
                 }
             }
-            out.push(Line::from(Span::styled(clip(&head, width), theme::ACCENT)));
+            out.push(Line::from(Span::styled(emit::clip(&head, width), theme::ACCENT)));
 
             let planned = seg
                 .flags
@@ -250,10 +234,10 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
             if app.state.active.as_ref().is_some_and(|a| a.paused) {
                 second.push_str(" · paused");
             }
-            out.push(Line::from(clip(&second, width)));
+            out.push(Line::from(emit::clip(&second, width)));
         }
         None => out.push(Line::from(Span::styled(
-            clip(
+            emit::clip(
                 &format!("— nothing running ({})", app.now.format("%H:%M")),
                 width,
             ),
@@ -270,7 +254,7 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         .map(|s| format!("{} {}", s.start.format("%H:%M"), seg_title(app, s)))
         .collect();
     out.push(Line::from(Span::styled(
-        clip(
+        emit::clip(
             &if next.is_empty() {
                 "next —".to_string()
             } else {
@@ -282,11 +266,11 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     )));
     out.push(Line::from(String::new()));
     out.push(Line::from(Span::styled(
-        clip("d done  x extend  s stop  b break  i interrupt", width),
+        emit::clip("d done  x extend  s stop  b break  i interrupt", width),
         theme::HINT,
     )));
     out.push(Line::from(Span::styled(
-        clip(
+        emit::clip(
             "0-5 energy  l location  K skip  n note  Space pause",
             width,
         ),
@@ -340,13 +324,13 @@ pub fn energy_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         .map(|h| cell(format!("{h:02}")))
         .collect();
     vec![
-        Line::from(clip(&format!("pred {}", pred.trim_end()), width)),
+        Line::from(emit::clip(&format!("pred {}", pred.trim_end()), width)),
         Line::from(Span::styled(
-            clip(&format!("rep  {}", rep.trim_end()), width),
+            emit::clip(&format!("rep  {}", rep.trim_end()), width),
             theme::DIM,
         )),
         Line::from(Span::styled(
-            clip(&format!("     {}", hours.trim_end()), width),
+            emit::clip(&format!("     {}", hours.trim_end()), width),
             theme::HINT,
         )),
     ]
@@ -414,7 +398,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         let text = format!(
             "{mark} {} {}",
             m.id,
-            clip(&m.title, width.saturating_sub(20).max(4))
+            emit::clip(&m.title, width.saturating_sub(20).max(4))
         );
         let tail = format!(
             "{} {}/{}",
@@ -434,7 +418,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         out.push(separator("HOT / overdue", width));
         for h in &app.week.hot {
             out.push(Line::from(Span::styled(
-                clip(&format!("⚠ {} · {}", label(&h.id, &h.title), h.note), width),
+                emit::clip(&format!("⚠ {} · {}", label(&h.id, &h.title), h.note), width),
                 theme::WARN,
             )));
         }
@@ -442,7 +426,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     if !app.week.waiting.is_empty() {
         out.push(separator("Waiting", width));
         for w in &app.week.waiting {
-            out.push(Line::from(clip(
+            out.push(Line::from(emit::clip(
                 &format!("? {} · {}", label(&w.id, &w.title), w.note),
                 width,
             )));
@@ -450,7 +434,7 @@ pub fn week_lines(app: &App, width: usize) -> Vec<Line<'static>> {
     }
     out.push(separator("Diagnostics", width));
     for d in &app.week.diagnostics {
-        out.push(Line::from(Span::styled(clip(d, width), theme::DIM)));
+        out.push(Line::from(Span::styled(emit::clip(d, width), theme::DIM)));
     }
     out
 }
@@ -476,7 +460,7 @@ pub fn hint_line(app: &App, width: usize) -> Line<'static> {
         ),
     };
     let right = right.as_str();
-    let left = clip(&left, width);
+    let left = emit::clip(&left, width);
     let lw = emit::display_width(&left);
     let rw = emit::display_width(right);
     if lw + rw + 1 > width {
@@ -638,10 +622,10 @@ mod tests {
 
     #[test]
     fn clipping_marks_what_it_cut() {
-        assert_eq!(clip("hello", 10), "hello");
-        assert_eq!(clip("hello", 5), "hello");
-        assert_eq!(clip("hello", 4), "hel…");
-        assert_eq!(clip("hello", 0), "");
+        assert_eq!(emit::clip("hello", 10), "hello");
+        assert_eq!(emit::clip("hello", 5), "hello");
+        assert_eq!(emit::clip("hello", 4), "hel…");
+        assert_eq!(emit::clip("hello", 0), "");
     }
 
     #[test]

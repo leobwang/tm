@@ -320,6 +320,9 @@ pub fn display_width(s: &str) -> usize {
 }
 
 /// Left-align `s` in `w` terminal columns (a wider `s` is returned unchanged).
+///
+/// Private on purpose: a caller that wants a cell of exactly `w` columns wants
+/// [`pad_to`], which cuts an over-wide `s` first. See [`pad_to`] for D43.
 fn pad(s: &str, w: usize) -> String {
     let n = display_width(s);
     if n >= w {
@@ -336,11 +339,15 @@ fn pad(s: &str, w: usize) -> String {
 
 /// Truncate `s` to `w` terminal columns, marking the cut with `…`.
 ///
+/// **Public since D43.** The TUI had its own copy of this, measuring with
+/// ratatui's `unicode-width` instead of [`char_width`]'s table; there is now
+/// one truncation in the workspace and this is it.
+///
 /// The result is never wider than `w`; a cut that would land inside a
 /// double-width character drops that character instead of splitting it, and a
 /// cut that lands after a space drops the space, so the result can be a column
 /// or two narrower.
-fn truncate(s: &str, w: usize) -> String {
+pub fn truncate(s: &str, w: usize) -> String {
     if display_width(s) <= w {
         return s.to_string();
     }
@@ -363,6 +370,53 @@ fn truncate(s: &str, w: usize) -> String {
     }
     out.push('…');
     out
+}
+
+/// Cut `s` to `w` terminal columns for a **viewport**, marking the cut with `…`
+/// **at the edge**.
+///
+/// [`truncate`] and this are two operations, not two implementations of one
+/// (AGENTS §5.3): `truncate` fits a *cell*, so it drops the spaces in front of
+/// the `…` and the result can be a column or two narrower; `clip` fits a pane,
+/// where the row it is given is already padded to its columns and eating that
+/// padding would walk the `…` backwards into the middle of the line. Both
+/// measure with [`char_width`], which is what D43 is about — the TUI used to
+/// clip with ratatui's `unicode-width` instead.
+pub fn clip(s: &str, w: usize) -> String {
+    if display_width(s) <= w {
+        return s.to_string();
+    }
+    if w == 0 {
+        return String::new();
+    }
+    let mut out = String::with_capacity(s.len());
+    let mut used = 0usize;
+    for c in s.chars() {
+        let cw = char_width(c);
+        if used + cw > w - 1 {
+            break;
+        }
+        used += cw;
+        out.push(c);
+    }
+    out.push('…');
+    out
+}
+
+/// A cell of exactly `w` terminal columns: `s` cut to fit, then left-aligned.
+///
+/// **The owner's D43.** `tui/queue.rs` had its own `pad` — cut-then-pad, the
+/// same shape — measuring with ratatui's `unicode-width` where this module
+/// measures with [`char_width`]'s East-Asian table. The two disagree on a
+/// handful of code points, so a Queue column holding CJK or an emoji can shift
+/// by a cell; that is the accepted cost of having one padder, and it is a
+/// behaviour row in `kernel/README.md`. Unifying the other way was declined:
+/// the day file's bytes are this table's, so the corpus round trip and the
+/// frozen-fork comparand would both have moved.
+///
+/// `tm/tests/one_padder.rs` is the guard that stops a second one appearing.
+pub fn pad_to(s: &str, w: usize) -> String {
+    pad(&truncate(s, w), w)
 }
 
 /// `HH:MM` in the plan's zone.
