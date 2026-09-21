@@ -50479,6 +50479,16 @@ No other behaviour row: nothing else in these commits can move an answer.
    D45 asked for.
 
 **Gap 1253 — "`tm now`" is one of D44's four surfaces and no byte of it moves.**
+**CORRECTED IN PLACE AT THE W-23 LAND STEP, and half of it REFUTED — item 1's
+first clause was true of this branch and false of the merge.** Track P's
+`6b05f50`/`a91c954`, on the same baseline, made `render_now_with` *select* rows
+from `plan_rows` instead of formatting its own, so on the merged tree `tm now`
+prints padded, columned rows and **D44 does move its bytes**. Driven at the
+land step: on a day carrying `👨‍👩‍👧 family sync` and `👍🏽 sign the form`, the day
+file, `tm now` and `plan --json` give byte-identical rows and all three put the
+`@parent` cell at terminal column **43**, the same column the ASCII rows use.
+What survives of this gap is its TUI half only, and item 4 still clears that.
+The original text follows.
 1. *What is not done.* D44 says one fix corrects the day file, `--json`, `tm
    now` and the TUI at once. The first two are driven on shipped bytes (§1.1).
    `render_now_with` builds its rows from a format string with **no fixed-width
@@ -51111,3 +51121,347 @@ the class; this one now names the day it shares with the refutation.
    A reader of design §6.4 would conclude the row is P8's and done.
 4. *Which step clears it.* It needs an **owner** decided first: the remainder of
    P8, or P5 (which computes the grants).  That is an owner call, not a proof.
+
+---
+
+<!-- ===================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-23**, the **LAND
+     STEP**, on `rebuild-on-lean`.  Merges `w23-a` and `w23-g` on top of
+     track P's four commits.  Gap range **1300-1304**; this step takes
+     **1300** and **1301** and leaves 1302-1304 free.  Gap **1253** is
+     CORRECTED IN PLACE above and half of it REFUTED by the merge.
+     No cheat taken; `Negative.lean` untouched.  No goal added, discharged
+     or deleted: **burn-down stays 9, all stage 6**.  `check.sh` **9/9**.
+     Highest gap in the file after this block: **1301**.
+     =================================================================== -->
+
+## Stage 6 — W-23, the land step: three tracks merge, G1's renderer half is dead in Rust, and the drive found the one day on which D45 does not hold
+
+Baseline `3ec119b`. Track P landed on `rebuild-on-lean` directly (`6b05f50`,
+`18b68b7`, `a91c954`, `751e7d1`); this step merges `w23-a` and `w23-g` and
+drives the merged binary.
+
+### 1. The two merges
+
+| | |
+|---|---|
+| `0ef4adf` | merge the width track — one table, one arrival, and a guard that sees shapes |
+| `32a0c6d` | merge the eligibility track — the whole-day lift, and 22 more pin sites |
+
+**Neither track reported nothing, and both were checked rather than believed:**
+`git log w23-a` gave four commits and `git log w23-g` three, matching their
+blocks.
+
+**Three conflicts, all in files two tracks append to.**
+
+1. **`kernel/README.md`, twice** (once per merge). Both tracks append a block
+   that *ends* in an acceptance table, so git matched the shared
+   `| | baseline `3ec119b` | here | delta |` header as common text and
+   interleaved the two blocks around it. Resolved by rebuilding each block
+   whole — P's prose, its own copy of the shared header rows, then A's, then
+   G's. **No sentence from any block was dropped**; the three `## Stage 6 —
+   W-23` headings are at lines 49709, 50140 and 50671.
+2. **`kernel/mutations.txt`.** Both tracks ran `mutate.py --verify --write` and
+   both rewrote the same twelve-row window: track A upgraded the eleven
+   `Planner.lean` rows, track G upgraded `PlanCheck.lean OwesSomething`. The
+   resolution takes each track's own upgrade. **It is checked, not assumed** —
+   and this is the merge's one piece of real evidence, because track G added
+   +434 lines of Lean to the two files track A's rows point *into*.
+   `mutate.py::stale_sites` re-derives every **named** pin site against the
+   merged tree on every gate run: a row whose `PlannerWit.lean:3579` had moved
+   would fail check 9. Check 9 is green and reports **0 stale**. (The reason it
+   holds: track G's `PlannerWit.lean` insertions are all above line 3579 in the
+   file's order — `busyIns` re-derived to **3579** on *both* branches
+   independently — and its `PlanCheck.lean` insertions are six lines, which is
+   exactly the `2127 → 2133` track G recorded.)
+
+### 2. Acceptance on the merged tree, every command capped (AGENTS §2.1)
+
+| | baseline `3ec119b` | merged `32a0c6d` | delta |
+|---|---|---|---|
+| `check.sh` | **9/9** | **9/9** | — |
+| 1 `lake build TmKernel:static` | ok | ok | — |
+| 2 totality | ok | ok | — |
+| 3 axiom audit | 4,891 theorems | **4,910** | **+19**, exactly track G's nineteen new `#print axioms` lines |
+| 4 `Negative.lean` rejected | ok | ok | no cheat taken by any track |
+| 5 FFI | 93 tests | **93** | — |
+| 6 corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | **at its floor, not below**; `git diff 3ec119b..HEAD -- kernel/corpus/` is empty |
+| 7 stage goals | **9, all stage 6** | **9, all stage 6** | no goal added, discharged or deleted by any track |
+| 8 citations | 28,780 / 27,255 / 1,525 / **0 unused** | **29,231 / 27,704 / 1,527 / 0** | **+451** = P's +77, A's +90, G's +284. The allow-list gained **two citations and no entry** (track A's); the 115/348 entry counts are unmoved. *This block adds 44 more (29,275 / 27,747 / 1,528 / 0) — and check 8 caught two of its own on the first run: the sentence recording render_segment_row and kind_name as dead had them in backticks, where they resolve to nothing. Un-backticked, which is W-20's convention and the gate reporting green on its own class.* |
+| 9 mutations | 114 rostered, 28 unfoldable, 18 fixtures, 0 pinned by nothing, 0 owed, **65** bare pin sites | **118 / 30 / 20 / 0 / 0, 32** | **+4 rostered** (track G's `FromNowAnchored`, `fromNowWorkRows`, `witReqInIdleQueued`, `theIdleQueuedRequest`); **65 → 32 bare**, A's −11 and G's −22, and they compose exactly |
+| `cargo test --workspace` | 1,367 / 0 / 9 across 80 | **1,394 / 0 / 9 across 81** | **+27** = P's +25 (and the 81st binary, `one_renderer`) and A's +2. Track G added no Rust test |
+
+Named suites, each run on its own and each green:
+
+```
+kernel_log_door                          23 passed; 0 failed
+kernel_log_door --include-ignored         23 passed; 0 failed; 0 ignored
+cli_write_gate                           14 passed; 0 failed
+kernel_call_counts                        2 passed; 0 failed
+cli_switch_acceptance                    14 passed; 0 failed      (+1, track A's)
+kernel_replay_parity                     29 passed; 0 failed; 4 ignored
+kernel_replay_parity --include-ignored   33 passed; 0 failed      (T5)
+kernel_log_grammar                       16 passed; 0 failed; 2 ignored
+cli_conformance                           2 passed; 0 failed
+emit_planner                              9 passed; 0 failed
+one_padder                                8 passed; 0 failed      (+1, track A's)
+one_renderer                             25 passed; 0 failed      (track P's, new)
+cli_day                                  28 passed; 0 failed
+cli_latency                               5 passed; 0 failed; 1 ignored   (fully parallel)
+cli_latency -- --test-threads=1           5 passed; 0 failed; 1 ignored   (serial)
+```
+
+**The known two-row `cli_latency` flake DID NOT fire** at this tree, in either
+spelling. Both are reported anyway because the brief asks for both: parallel
+14.25 s, serial 14.38 s, same 5/0/1.
+
+**T11's noisy rows as RANGES**, over two capped serial runs — never as single
+numbers (gap 240): 3-year later verb **151.9–151.9 ms**, gated host-only write
+(D35) **151.9 ms**, verb after a windowable hand undo **157.0 ms**, 3-day-old
+routine instance **156.8–162.1 ms**, `review week` (the `All` scope)
+**288.7–293.8 ms**, `--now +1 day` (a reseal) **212.8–217.8 ms**, ten stalled
+days worst **546.8–551.9 ms** with **0** checkpoint generations, 3-year first
+verb **2.21–2.22 s**, 30-day-old hand undo **1.330–1.361 s**. One-year log:
+later verb **101.5–106.4 ms**. Plan with a due ten years out
+**157.1–157.1 ms**. Nothing is near a band edge; **no band was touched**.
+
+### 3. What earlier stages bought, re-measured here and not assumed
+
+* **D9, ONE reader.** §12's one-reader grep —
+  `grep -rn 'fn replay\b\|undo_mask\|DayIndex\|parse_bytes\|LogEntry::parse\|Log::parse\|Log::new\|Machine\b\|iter_day\|effective()\|parse_timestamp' tm-core tm --include=*.rs | wc -l`
+  — returns **41**, its post-switch floor, unmoved by either merge. No in-tree
+  reader was reintroduced. *(Gap 604 stays open and is R1's.)*
+* **D16, ONE writer.** `grep -rn 'append_text(LOG_PATH' tm tm-core --include=*.rs`
+  returns **two** sites — `tm/src/cli/ctx.rs:1229` and `tm-core/src/horizon.rs:525`
+  — the same two every merge since W-16. *(The `ctx.rs` number moved 1052 → 1229;
+  track A added 107 lines above it. **The count is the claim, not the line.**)*
+* **The comparand is still fork `4748911` at full precision.**
+  `the_frozen_comparand_is_read_at_full_precision` passed by name and printed
+  "17-significant-digit literals survive the read (3 checked)";
+  `serde_json`'s `float_roundtrip` is still on in the root `Cargo.toml`; T5's own
+  census printed **20 frozen inputs** (7 corpus logs, the generated month, §6.4's
+  12 zone cases) plus 6 kernel-only, `fork_arm` unconditional.
+* **No new external dependency.** `git diff 3ec119b..HEAD -- Cargo.toml Cargo.lock
+  */Cargo.toml` is **empty** — which is D44's hard rule met, since a width table
+  is exactly where a crate would have been reached for.
+* **`kernel/corpus/` and `lean-toolchain` untouched**: both diffs empty.
+* **Nothing was re-blessed.** No snapshot, fixture, latency band or corpus
+  expectation was rewritten at either merge.
+
+### 4. Driving the merged binary (AGENTS §5.13)
+
+A fresh `tm init` tree, clock pinned with the hidden `--now`, every invocation
+under a 16G scope.
+
+**A normal day.** `wake 06:40 · slept 450m`; `arrive lounge 07:05 · window
+07:05–15:05 · budget 6 blocks`; `plan` wrote a fourteen-line day section with a
+break, a lunch and a workout routine, the `───  window ends 15:05` divider, the
+wind-down and sleep rows, and `· dropped: t1 · t2 · t3`. `tm check`: no
+problems. A dangling `@parent` was refused by name mid-drive —
+`kernel refusal: itemCheck … (danglingParent)` — which is R10's rejection
+working on a tree I broke by accident.
+
+**D30 Q5 — the three surfaces, byte for byte.** On a plan whose titles carry
+both D44 clusters, at one clock, the day file's section, `tm now`'s rows and
+`plan --json`'s `segments[].text` are **byte-identical**:
+
+```
+09:25  5 p5   Finish the kernel chapter         1b
+10:25  5 p5   👍🏽 sign the form             @m1  1b
+11:30  ·      lunch 30m
+12:00  4 p5   Draft the land block         @m1  1b
+```
+
+`tm now` prints rows 1 and 2–4 of that list with its own two non-row lines
+between them (`  09:25–10:25 · elapsed 0m · left 1h`, indented two spaces, and
+`next`). Every row `tm now` printed was found verbatim in the file.
+**One row is not byte-comparable and it is not a rounding error — see gap 1301.**
+
+**D44 — the column, on all four surfaces.** A ZWJ family (`👨‍👩‍👧`, three base
+emoji and two ZWJs, which a per-code-point table measures at 6) and a
+skin-tone thumb (`👍🏽`, measured at 4 before). The instrument is the terminal
+column the `@parent` cell starts at, computed with `unicodedata`'s East-Asian
+table **plus** the cluster rules:
+
+```
+cols_to_@=  43  '07:06  4 p5   Draft the land block         @m1  1b'
+cols_to_@=  43  '09:26  5 p5   👨‍👩‍👧 family sync               @m1  1b'
+cols_to_@=  43  '10:26  5 p5   👍🏽 sign the form             @m1  1b'
+cols_to_@=  43  '13:00  4 p5   Review the merge notes       @m2  1b'
+```
+
+and per surface: `file @ [43] · json @ [43] · tm now @ [43]`. Surface 4, the
+TUI, is still argued and not driven (`tm tui` needs a tty, gap **182**) — but
+the argument is **stronger after the merge than either track could state
+alone**: `App::timeline_rows` now returns `emit::day_lines` rows unchanged and
+`tui/today.rs:147` pads them with `emit::pad_to(&emit::clip(…))`, so the TUI
+shares the renderer, not merely the table.
+
+**D45 — two arrivals in one day, then the cache deleted.** `arrive lounge
+07:05`, then `arrive home --at 11:10` logged at 11:15. The cache holds the
+**last** arrival (`loc: home`), which is D45's letter. Deleting
+`.tm/state.json` prints the D42 notice —
+`.tm/state.json was missing; rebuilt from .tm/log.jsonl`, then `GONE …: break`
+and `RESET, both deliberately: priorities_yesterday … and closed …` — and
+rebuilds. **`loc` and `budget` agree; `arrival` and `window` do not.** That is
+gap **1300**, and it is the one thing this drive found that the three tracks'
+suites cannot see.
+
+**`tm undo` behind an automatic close.** A day with `start ^t4` and `done`,
+then a verb on 2026-09-22 which swept `closed.day` from 2026-09-20 to
+2026-09-21. `tm undo` then undid the 09-22 `arrive` *and* the `plan` it
+carried as one step (two `undo` lines at one stamp, append-only, nothing
+rewritten), and a second `tm undo` reached **back across the close boundary**
+to undo 09-21's `done ^t4` — `undid done (done ^t4) · 2 file(s) restored · 3
+left`. The item went `[x]` → `[>]`, and `tm check` said no problems. *(Note
+for whoever owns the close: `closed.day` stays at 2026-09-21 after that undo.
+Consistent with D42's own message that `swept` is a fact about a sweep and not
+an event, and the close is re-runnable, so this is recorded and not filed.)*
+
+### 5. Is G1 dead?
+
+**In Rust, the renderer half is dead — one function, and it is checked by name.**
+`emit::render_row` is the only thing that builds a day-section row;
+`emit::render_now_with` now *selects* from `plan_rows` (its own format string is
+gone); `tui/today.rs::seg_title` is deleted — the only surviving occurrences of
+`seg_title`, render_segment_row and kind_name in `tm`/`tm-core` are doc
+comments recording their death and `one_renderer.rs`'s guard, which was driven
+red on five plants including restoring `seg_title` verbatim. The drive above is
+the same claim on shipped bytes.
+
+**In the tree as a whole, no — and §8.4 says not to credit the Lean compiler for
+this row.** There are still **two** row renderers: `emit::render_row` in Rust,
+which ships, and `TmKernel.Emit` in Lean, which does not. Re-checked here rather
+than quoted: `TmKernel.Emit` is imported by `TmKernel.lean` (so it builds and is
+audited) and by `PlannerWit.lean` (so it has witnesses) — **and by nothing else**.
+`Boundary.lean` does not import it and names no `Row`; the response has no
+`plan` key carrying one; and the only mentions of `Emit.titleCell` and
+`Emit.rowsOf` on the Rust side are **doc comments**, not calls. So **`Emit.lean`'s
+cells have still never been compared to a Rust byte by a machine.** That is gap
+**1105**, open and whole, and it is what "G1 is structurally dead" will mean when
+it is true.
+
+### 6. Goals, the burn-down, and what discharged one
+
+**No goal was discharged by any of the three tracks, and none was added or
+deleted.** Check 7 prints **9, all stage 6**, the same 9 as at `3ec119b`. Track
+G's only `Goals.lean` edit is prose in a doc block recording *why* its
+whole-day lift did not move the number: the eleven's remaining subject is the
+replayed past, not an eligibility. **No commit in W-23 discharged a goal.**
+
+### 7. Gaps
+
+<!-- Gap 1300 and gap 1301, the land step's. -->
+
+**Gap 1300 — D45's agreement holds only where `tm arrive` was given no `--at`,
+and the one input class that separates the two definitions is the one nobody
+ran.**
+1. *What is not done.* D45 says `tm arrive` and D42's rebuild-from-log must
+   agree, **with one definition and not two** (AGENTS §5.3). They do not.
+   `tm arrive` writes `state.arrival = Some(at)` (`tm/src/cli/day.rs:429`) — the
+   `--at` value. The rebuild's `last_arrival` (`tm/src/cli/ctx.rs:283`) returns
+   the **log row's own timestamp** `r.t` — when the entry was written. On the
+   default path those are the same instant and the disagreement is invisible.
+   Driven, minimally, on a fresh tree:
+   ```
+   arrive home --at 11:10   (logged at 11:15)
+   cache    : arrival 11:10  loc home  window ["11:10","19:00"]  budget 6
+   rm .tm/state.json ; tm now
+   rebuilt  : arrival 11:15  loc home  window ["11:15","19:00"]  budget 6
+   log line : {"t":"2026-09-21T11:15:00-05:00","ev":"arrive","loc":"home",
+               "window":["11:10","19:00"],"budget":6}
+   ```
+   **The true arrival is in the entry** — `window[0]` is `11:10` — and the
+   derivation reads `t` instead.
+2. *Why.* Not time; a blind spot with a name.
+   `deleting_the_runtime_state_keeps_the_last_arrival_of_the_day` (track A's,
+   `cli_switch_acceptance.rs:514`) is a good test that runs `arrive home` with
+   **no `--at`**, so its two readings coincide by construction and it is green
+   on a tree where they differ. Track A built three witnesses for that file's
+   other holes and this class was not among them. **The fix is not a one-liner
+   and should not be taken at a land step:** `Replay::view`'s `ViewRow`
+   (`tm-core/src/log.rs:1268`) carries `line`, `tag`, `id`, `t`, `day`,
+   `cancelled` and **no payload**, so reading `window[0]` means changing which
+   reader `derived_state` uses — which is D9's territory and an owner call
+   about what `arrival` *means*.
+3. *What it costs.* On a day whose last `arrive` carried `--at`, deleting or
+   losing `.tm/state.json` silently moves `arrival` and both ends of `window`,
+   and everything computed from the window with them. It is **worse than the
+   failure D42 legislates for**: D42 says a field that cannot be derived fails
+   **loudly** rather than regenerating as null, and this one regenerates
+   **wrong** and says nothing. D45's "`tm arrive` and D42's table must be SHOWN
+   to agree" is therefore shown on one input class and false on another.
+   `--at` is not exotic: it exists so you can log an arrival you did not record
+   at the time, which is exactly when it differs from `t`.
+4. *Which step clears it.* An owner decision first (is `arrival` the instant of
+   the verb or the instant it names?), then the step that owns `derived_state`.
+
+**Gap 1301 — the `window ends` divider is rendered by the one renderer and has
+no `--json` counterpart, so D30 Q5's byte comparison covers every row but one.**
+1. *What is not done.* `emit::day_lines` splices the divider in as a `DayLine`
+   with `segment: None`, so the day file and the TUI carry it. `plan --json`
+   emits `segments`, one entry per `Segment`, and the divider **is not a
+   segment**. Driven: the day file's section had 11 lines and
+   `segments[].text` had 10, the difference being exactly
+   `'15:05  ───    window ends 15:05'`; every other line matched byte for byte.
+2. *Why.* A decision that predates P8 and was never restated: `--json` exports
+   the plan, and the divider is a fact about the plan (`divider_instant`), not
+   a part of it.
+3. *What it costs.* D30 Q5(a) is "one row renderer whose output every surface
+   prints", and that is met. But a `--json` consumer **cannot reconstruct the
+   day section byte-for-byte** — it can rebuild 10 of 11 lines and has no way
+   to learn where the 11th goes without re-implementing `divider_instant`,
+   which is a second answer to a question `day_lines` settles and is gap 1197's
+   defect in a new place. The Q5 acceptance sentence names `tm plan --json` as
+   one of the four surfaces; on the divider row it is not one.
+4. *Which step clears it.* The step that lands the wire (gap **1105**), because
+   that is where the response's shape is settled and the cheapest fix — a
+   `lines` key beside `segments`, each with its `segment: Option<usize>`, which
+   is the struct `day_lines` already returns — is a boundary change.
+
+### 8. Numbering, worktrees, capping
+
+Gaps: this step **1300** and **1301**; **1302-1304** of the land range are free.
+Gap **1253** is **corrected in place and half refuted** (§above, in track A's
+block). Gaps **1105**, **1194**'s wire third, **1195**, **1196** (at 32),
+**1199**, **1200**, **1250**, **1251**, **1252**, **1254** and **1280-1284**
+stay open and whole; **1104**, **1109**, **1197**, **1198**, **1201** and
+**1202** were closed by their tracks and this step closes none.
+**Highest gap in the file: 1301.** Highest cheat: **218**, unchanged.
+Parity entries: track A added **P37**; the next free is **P38**. No predicate or
+assertion weakened, no memory bound raised, nothing re-blessed.
+
+**Worktrees.** `.claude/worktrees/w23-a` and `.claude/worktrees/w23-g` were both
+clean at merge time (`git status --short` empty in each) and are **removed**.
+`git worktree list` now shows two: the main checkout and
+`.claude/worktrees/stage5-lookahead`, **left alone** as the brief requires.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm` and `python3` invocation ran
+under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` —
+40G for `check.sh` and `cargo`, 16G for the `tm` drives. `mutate.py` was **not**
+run (no Lean definition changed at the merge; check 9's own `stale_sites` walk
+is what verified the roster, §1). **No breach to disclose:** nothing was retried
+uncapped, no bound was raised, and no run was killed at the cap.
+
+### 9. Method, and what it cannot see
+
+* **"No sentence was dropped from any block"** was checked by reconstructing the
+  conflict from the marker line numbers and re-splicing whole ranges, then
+  confirming the three headings and the file's tail. It **cannot see** a
+  sentence that git merged *cleanly* but wrongly outside the conflict hunks.
+* **"The pin sites are not stale"** is `mutate.py::stale_sites`, which checks
+  that a **named** site's line still falls inside that declaration. It **cannot
+  see** the 32 rows that are still a bare `file:line` — that is gap 1196's whole
+  point and the honest half of check 9's own line — and it does not re-run the
+  mutations, so it cannot see a verdict that would now come out differently.
+* **"G1's renderer half is dead"** is a grep for three retired names plus
+  `one_renderer.rs`'s five-plant guard plus the three-surface byte comparison on
+  one driven day. It **cannot see** a fourth renderer that shares none of those
+  three names and was never plausible enough to plant, and it does not cover the
+  TUI's own screen (gap 182).
+* **The D44 column measurement** is a Python model of terminal width, not a
+  terminal. It **cannot see** a font or emulator that draws these clusters at
+  some other width; it agrees with ratatui's table, which is what the TUI uses.
+* **The D45 drive** found gap 1300 by varying one flag. It **cannot see** the
+  other fields of the rebuild on other input classes; I varied `--at` and
+  nothing else, and four fields were compared, not eleven.
