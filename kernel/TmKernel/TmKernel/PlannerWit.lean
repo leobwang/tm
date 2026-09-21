@@ -4614,5 +4614,25 @@ theorem four_is_the_ceiling_and_it_is_reached :
    fun r h =>
      PlanCheck.the_census_ceiling_from_now_is_four onlyOnFreeWorkRows_is_slot_anchored r h⟩
 
+/-- **`PlanCheck.SlotAnchored` is the whole residue of §6.1's lift on this day, and it is
+load-bearing.**  The same battery, on the same day, at the same request: `false` at
+`permissive` and `true` at `onlyOnFreeWorkRows`, and `permissive` is not `PlanCheck.SlotAnchored`.
+That is AGENTS §5.2 from both sides at once — the hypothesis cannot be dropped, and it is
+satisfiable — and it is what turns `PlanCheck.dayPlan_ok_from_now` from a theorem with a
+hypothesis into a statement about where step 5 may assign.
+
+The first conjunct is **not re-proved** here (AGENTS §5.3): it is
+`the_two_comparisons_are_false_at_the_queued_request`'s last component, which W-19 computed. -/
+theorem the_slot_anchoring_is_the_whole_residue :
+    PlanCheck.planOk permissive theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = false ∧
+    PlanCheck.planOk onlyOnFreeWorkRows theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+    ¬ PlanCheck.SlotAnchored permissive :=
+  ⟨the_two_comparisons_are_false_at_the_queued_request.2.2.2.2.2,
+   the_whole_battery_passes_from_now_at_the_queued_request,
+   fun h => absurd (h.1 theRequest (dayPlan theRequest) PlanCheck.aWallAcross.val ['m','1'] rfl)
+     (by decide)⟩
+
 end PlannerWit
 end Tm

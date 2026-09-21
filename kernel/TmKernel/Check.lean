@@ -6210,3 +6210,4 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_census_requests_are_not_quiet
 #print axioms Tm.PlannerWit.step_seven_gave_no_checker_a_subject
 #print axioms Tm.PlannerWit.four_is_the_ceiling_and_it_is_reached
+#print axioms Tm.PlannerWit.the_slot_anchoring_is_the_whole_residue
