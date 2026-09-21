@@ -47190,16 +47190,34 @@ disturbed the review block or the grammar.
 
 ### 11. Gaps
 
-**Gap 1100 — the plan hash is still a placeholder.**
+**Gap 1100 — the plan hash is still a placeholder.** *(Items 2 and 4 CORRECTED
+IN PLACE at W-23, which read `DayPlan::hash`'s input and found a harder blocker
+than "the wire has not landed".)*
 1. *What is not done.* `Planner.PlanHash.zero` is still what `Planner.dayPlan`
    answers, and `Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`
    still stands. `Emit.lean` computes no FNV-1a digest.
-2. *Why.* The digest is of the day's *placement*, and its comparand is
-   `state.last_plan_hash`, which crosses the wire. Nothing of the wire landed here,
-   so a hash would have had no reader and no parity check.
+2. *Why.* **The digest is over bytes this kernel cannot produce.** The fork's
+   `DayPlan::hash` is FNV-1a over `serde_json::to_string` of a `Vec` of the
+   private `Placement` record, and that record carries `multiplier: Option<f64>`
+   — §8.5's duration multiplier, live in four snapshots of this tree as `×1.6`.
+   Reproducing the digest means reproducing serde_json's shortest-round-trip
+   rendering of an `f64`, and **this kernel has no `f64`** (AGENTS §4) and must
+   not acquire a float renderer: D23 pins `float_roundtrip` as the fork's, outside
+   the tree. A digest that merely *differs* is worse than none — `PlanHash`'s own
+   doc comment says two representations of the identity would be "exactly AGENTS
+   §5.3's defect with a log write behind it". (The original item 2 — "its
+   comparand crosses the wire, so a hash would have had no reader" — is true and
+   is the smaller half.)
 3. *What it costs.* `tm plan` cannot tell the kernel's day from the one it last
    wrote, so §9.1's "did the plan change?" is still the Rust planner's answer.
-4. *Which step clears it.* P8's second half, with the wire (gap 1105).
+   Measured at W-23: it works — a replan at the same instant answers the same
+   `4067ab0d087c4e40` and is not logged twice.
+4. *Which step clears it.* **A decision, then a step.** Either the digest's input
+   stops being serde JSON of an `f64` — the kernel's multiplier is an exact
+   rational, `Arith.Pos`, and a digest over the kernel's own placement shape is
+   provable — or the Rust stops computing the comparand and the kernel's digest
+   becomes the definition, which needs the wire (gap 1105). Both re-bless
+   `state.last_plan_hash` for every existing tree, so both are plan-tier.
 
 **Gap 1101 — two precedences for "the estimate", and the kernel has one.**
 1. *What is not done.* `emit::est_cell` reads `est_original`, then `est:`, then
@@ -49685,3 +49703,426 @@ kill left a mutated `Emit.lean` on disk; `mutate.py`'s own `restore_in_flight`
 sidecar put it back, which is the mechanism working. The scoped run that replaced
 it (`--verify --only Emit.lean --write`) is the flag this step added, and it is
 why the flag exists.
+
+---
+
+## Stage 6 — W-23, track P: one renderer prints the day, and "the current block and the next three" had three answers
+
+Baseline `3ec119b`. Three commits, all green, all Rust bar four lines of Lean
+prose. **G1's renderer half is dead**; the wire (gap **1105**) is not built and
+is recorded whole.
+
+### 1. What landed, and what it is
+
+| | |
+|---|---|
+| `6b05f50` | one renderer prints the day — G1 is dead |
+| `18b68b7` | one selection too — the current block and the next three had three answers |
+| `a91c954` | nine functions rendered HH:MM, and the ninth was inside the one renderer |
+
+**The row list is a value now, and it is indexed by position.**
+`emit::plan_rows` answers one row per segment in segment order;
+`emit::day_lines` is that list with the `window ends` divider spliced in, every
+line carrying `segment: Option<usize>` — the position it renders, `None` only
+for the divider. `emit::render_plan_section_with` joins `day_lines`;
+`tm/src/cli/render.rs::rows` zips it; `App::timeline_rows` maps it;
+`emit::render_now_with` selects a window of it.
+
+**The two surviving renderers are gone** (design §8.2's table, by name).
+`render_now_with` stops formatting and starts selecting — it prints *the row*,
+byte for byte as the day file wrote it, and chooses which with
+`emit::now_window`. `tm/src/tui/today.rs`'s seg_title, a second renderer of the
+title cell alone, is deleted; the Now pane takes `emit::title_cell`, which is
+public for exactly that. The fork's render_segment_row and
+`tm/src/cli/render.rs`'s kind_name are deleted too (§3 below).
+
+**`tm/tests/one_renderer.rs`** is design §8.3's test, 7 of its own tests: the
+three byte-equality legs on the **shipped binary**, the TUI leg, `tm now` against
+`tm now --json`, gap **1197**'s byte-identical pair *constructed*, and the two
+greps §8.3's last line asks for.
+
+### 2. The behaviour rows
+
+Six rows, each deliberate, each with its snapshot named. Nothing was re-blessed
+to make a test pass: every one is a change this step chose, and the diff is one
+or two lines per snapshot.
+
+| what moved | from | to | where it shows |
+|---|---|---|---|
+| `tm now`'s rows | its own format string — `▶ title  @O1  ci4  p5  2b`, two spaces, no columns, no truncation | the day file's row, byte for byte | `emit_now__now_current`, `emit_now__now_idle` |
+| the TUI Now pane's `next` list | `lunch`, `break`, `dinner` | `lunch 30m`, `break 20m`, `dinner 30m` | `tui_today_render__the_now_pane`, `…_with_nothing_running`, `…_at_120_columns`, `…_at_90_columns_stacks_the_panes`, `tui_today_prompts__a_prompt_is_drawn_over_the_screen`, `…__the_help_overlay_is_drawn_over_the_screen` |
+| the TUI Now pane's head, at 12:51 | `ci4 p1 Exercises 5.3–5.5` — a block that ended at 12:50 — with `elapsed 3h19m` | `ci3 Meeting w/ host`, the row that contains 12:51 | `tui_today_prompts__a_prompt_is_drawn_over_the_screen` |
+| an id-less interruption wall, in the TUI | `interruption` | `—` | no fixture holds one; declared as gap **1212** |
+| a batch, in the TUI | `batch (3)` | `batch: a · b · c (3)` | no fixture holds one in the Now pane |
+| `tm now --json`'s `current` / `next` | its own selection | `emit::now_window`'s | no snapshot; `one_renderer.rs` pins it |
+
+**The two the design said would not move did not.** The day file's bytes and the
+TUI Timeline's are unchanged — no `emit_day_section`, `emit_planner`,
+`review_*`, `tui_today_daybar`, `tui_today_ghost` or corpus row moved, and the
+corpus round trip is 29/37 and 4/5 exactly as before.
+
+**And design §5's Q5 (a) is wrong about itself.** Its last sentence reads "No
+user-visible change". That is true of the file and the Timeline and **false of
+`tm now`**, whose bytes were never the file's — gap **1194** measured that by
+hand at the land step and this step moves them. The option is still the right
+one; the sentence overstates it, and an auditor reading §5 alone would have
+called this step's first behaviour row a defect.
+
+### 3. Found by BODY SHAPE, not by name (AGENTS §5.3)
+
+Two §5.3 duplicates, neither of which any grep for a name would have found,
+because the names are different and the bodies are the same.
+
+**`tm/src/cli/render.rs`'s kind_name was `tm-core/src/planner.rs`'s `kind_label`,
+statement for statement** — ten `SegKind` arms answering ten identical string
+literals, in two crates, both live, both called. `kind_label` is public now and
+is the one; kind_name is deleted and its two callers (`render.rs::rows` and
+`planning.rs`'s `.tm/last_plan.json` writer) take it. This is W-19's capMin?
+and W-22's `emit::clip`/`emit::truncate` for the third time in five runs — the
+first two are dead names and are written here without backticks for that reason.
+
+**"The current block and the next three" (§13) had three implementations and no
+two agreed.**
+
+| | current | next three |
+|---|---|---|
+| `emit::render_now_with` | `flags.current` **and** `start ≤ now < end`, else the first unfinished row over `now` | `start ≥ now`, the current excluded, nothing filtered |
+| `tm/src/cli/planning.rs`'s `tm now --json` | the first row over `now` — marked or not, done or not | `start > now`, **Sleep hidden** |
+| `tm/src/tui/today.rs`'s `current_segment` | `flags.current` **anywhere in the day**, no time guard at all | `start > now`, **Sleep hidden** |
+
+The third is a defect and not a difference: a `▶` the planner left on a block
+that has since ended kept the Now pane on it, elapsed bar and all — the fixture
+at 12:51 is the behaviour row above. **`emit::now_window` is the one, and hiding
+a kind is what decided it**: D30 Q5 (a) asks `tm now`'s rows to be a *contiguous*
+sub-list of the file's, and a `next` that skips Sleep cannot be one. That is a
+reason from the acceptance criterion, not a preference.
+
+**And nine functions rendered `HH:MM`.** The row's *time* cell is one of the
+nine cells, and `tm-core/src/planner.rs::fmt_clock`'s own doc comment calls it
+"one §4.3 timeline row's leading `HH:MM`" — `Emit.lean`'s header has named it as
+the Rust half of the kernel's one clock since W-22. There were **eight declared
+functions** with that body, found by shape: five taking a `DateTime<Tz>`
+(`fmt_clock` itself and four copies all called hhmm, in `emit.rs`,
+`cli/render.rs`, `cli/planning.rs` and `cli/day.rs`) and three taking a
+`NaiveTime` (`tm_core::model::fmt_time`, a byte-for-byte copy of it in
+`cli/out.rs`, and `cli/kernel_capacity.rs`'s own hhmm). **Every one produced
+identical bytes**, which is exactly what made them invisible — nothing could ever
+fail. Six are gone; `fmt_clock` and `model::fmt_time` survive, two because the
+input types are two and neither can be written in terms of the other without a
+zone.
+
+**The ninth was inside the one renderer**, and the guard written for the other
+eight found it on its first run: `emit::title_cell`'s wind-down arm wrote
+`format!("wind-down · bed {:02}:{:02}", …)` rather than calling anything, in the
+file this whole step is about. It takes `model::fmt_time` now, byte for byte the
+same. `exactly_one_function_renders_a_clock_by_hand` is what caught it and is
+what keeps it caught; `cli/tz_table.rs`'s `fmt_offset` (`±HH:MM:SS`) is excluded
+by **arity**, not by an allow-list entry.
+
+**A third shape, smaller.** `App::timeline_rows` re-derived which segment a row
+belongs to by rendering the section to text, looking for `───` at
+`emit::TIME_W` plus two columns in, and counting around it. `day_lines` answers
+it once; is_divider_row is deleted. A row whose *title* held that glyph at that
+exact offset would have shifted every following row onto the wrong segment.
+
+### 4. The guard, and what it cannot see
+
+Design §8.3's last line asks for a grep, and W-22 shipped a brand-new guard that
+reported green on two instances of its own class. So this one was **driven RED on
+five plants before it was kept**, and every result is in `one_renderer.rs`'s own
+header:
+
+| plant | caught by |
+|---|---|
+| `fn day_line_for` in `cli/render.rs` naming `title_cell` **and** `mark_of` | `exactly_one_function_composes_a_plan_row` |
+| seg_title restored verbatim in `tui/today.rs` | `no_second_set_of_row_words` **and** `the_one_renderer_is_still_there` |
+| `let t = emit::title_cell;` aliased **inside** the function | `exactly_one_function_composes_a_plan_row` |
+| `use emit::{title_cell as tc, mark_of as mo}` at file scope | `exactly_one_function_composes_a_plan_row`, in its `<file>` bucket |
+| `fn compact_row` naming **one** cell and writing the rest with `format!` | **NOTHING — it walked through** |
+
+**The shape, not a vocabulary.** The first needle is "a function outside
+`tm-core/src/emit.rs` that names two or more of the row's ten cell producers",
+which a stand-in has to have whatever it is called — gap **1193**'s lesson
+applied. The second needle *is* a vocabulary (`SegKind::` beside a string
+literal) and is declared as one; it is there because the shape needle cannot see
+a second renderer of a **single** cell, which is exactly what seg_title was: ten
+arms and not one call into `emit`. Its allow-list is ten exact lines,
+`kind_label`'s, each adjudicated as the wire word and every one required to still
+be found.
+
+**The hole is declared and is not closable by tightening.** `tui/today.rs`'s
+legitimate `next 11:20 lunch 30m · …` line is exactly "one cell plus a format
+string", so that cannot be the rule. What stops the hole widening is
+`one_padder.rs`: a stand-in that lays out *columns* has to measure and pad, and
+nothing outside `emit.rs` may. Also invisible: a renderer in `tests/`,
+`examples/` or `build.rs` (the walk is two `src` trees), and one assembled by a
+macro (the splitter reads text). The function splitter is crude and says so — a
+nested `fn` closes its parent early.
+
+**The cross-surface test was driven RED too.** `tm_now_and_tm_now_json_select_the_same_rows`
+runs at **21:40** as well as 10:42, because at 10:42 all three rules happen to
+agree: on the tree that had the defect the 10:42-only version was green, and the
+21:40 leg fails with `§13, at 2026-09-07T21:40:00-05:00: []` — the JSON's `next`
+hiding the day's last row.
+
+### 5. Is `render_row` the only padder *and* the only renderer?
+
+**The second changed; the first did not.** `render_row` is now the only thing in
+the workspace that composes a §4.3 row, and every surface that prints one prints
+its output. It is not the only padder: gap **1195**'s item 1 lists three entry
+points — `render_row`, `emit::pad_to` and `emit::clip` — with
+`tm/src/tui/queue.rs`, `tm/src/tui/necessities.rs` and `tm/src/tui/inbox.rs`
+calling the last two, and **that is unchanged**, because a Queue column and a
+Necessities gutter are not day rows. Gap 1195 therefore **stays open**, exactly
+as written.
+
+### 6. §5.13 — driving the shipped binary
+
+Every drive capped at 16G. `plan-basic` copied to a temp tree, two items added
+with CJK and a ZWJ emoji, `tm arrive`, `tm start cj1`.
+
+```
+$ tm --now 2026-09-07T08:40:00-05:00 now
+▶ ^cj1 会議の準備 🍵 レビュー · started 08:05 · 35m of 120m
+08:40  5 p3 ▶ 会議の準備 🍵 レビュー       @O1  2b     running · 85m left
+  08:40–09:05 · elapsed 0m · left 25m
+next
+09:05  1 p0 ⚠ Pick up package                   20m     due today
+09:25  ·      laundry 30m
+09:55  5 p3   Finish ch.5 exercises        @O1  6b
+0/6 blocks
+```
+
+Four things this drive is evidence for, and one it corrects.
+
+**Gap 1197's shape is live in the shipped fixture.** The day file this drive
+wrote holds `Finish ch.5 exercises        @O1  6b` at 08:30, 09:50 and 10:50 —
+three rows sharing a title, a parent and an estimate, differing in the time
+column alone. Gap 1197 says "differ only in their start time"; that is what a
+real day looks like, and it is why nothing here matches a row to a segment by
+value.
+
+**`tm now` at 21:45, where the two selections used to part:**
+
+```
+$ tm --now 2026-09-07T21:45:00-05:00 now         $ … --json now
+▶ ^cj1 会議の準備 🍵 レビュー · started …        current: None
+— nothing running (21:45)                        next: 22:00  ·      sleep 8h30m
+next
+22:00  ·      sleep 8h30m
+0/6 blocks
+```
+
+Same row, both surfaces. Before `18b68b7` the JSON's `next` was `[]`.
+
+**The plan hash works and is not a stage-6 regression.** `tm plan` twice at
+10:00 answers `4067ab0d087c4e40` both times and writes one `plan` event, so
+§9.1's "did the plan change?" is intact — it is simply still the Rust's answer
+(gap **1100**, corrected in place above).
+
+**`tm review day` and `tm tui` are untouched.** The review block renders as
+before; `tm tui` still exits 1 with "needs a terminal" (gap **182**), which is
+why the TUI leg of `one_renderer.rs` is a library test.
+
+**And the drive CORRECTS a reading of D30 Q5 (a).** At 08:40 not one of
+`tm now`'s rows is in the day file **on disk**, because the file was written at
+08:00 and `tm now` re-plans. The acceptance is about **one `DayPlan`**, not about
+a file written at another instant — `one_renderer.rs` plans and reads at the same
+`--now` for exactly that reason. Recorded as gap **1210** so the criterion is not
+read literally later and declared unmet.
+
+### 7. Gaps taken — 1210-1214
+
+**Gap 1210 — D30 Q5 (a)'s byte-equality is about one `DayPlan`, not about the
+file on disk.**
+1. *What is not done.* Nothing compares `tm now`'s rows against a day file
+   written at a *different* instant, and nothing could: `tm now` re-plans at
+   `now` and the file holds the plan as of when it was last written. Measured
+   above — at 08:40, against a file written at 08:00, **no** row matches.
+2. *Why.* `tm now` showing the 08:00 plan at 08:40 would be the wrong answer to
+   a verb whose whole point is *now*.
+3. *What it costs.* The acceptance sentence "byte-equal to that row as the day
+   file wrote it" is satisfiable only when the two are the same plan, which is
+   how `one_renderer.rs` drives it. An auditor reading §8.3 literally against a
+   stale file would find every row different and be right about the bytes and
+   wrong about the claim.
+4. *Which step clears it.* Nobody — it is a reading, recorded so the next
+   auditor starts from it. If the owner wants the stronger claim, it is a
+   different verb: `tm now --as-written`, reading the file rather than planning.
+
+**Gap 1211 — `one_renderer.rs`'s shape needle cannot see a one-cell renderer.**
+1. *What is not done.* `exactly_one_function_composes_a_plan_row` fires at two
+   cells. A stand-in naming **one** and writing the rest with `format!` is green,
+   and was: `fn compact_row` was planted and walked through.
+2. *Why.* `tui/today.rs`'s legitimate `next 11:20 lunch 30m · …` line has that
+   exact shape, so "one" cannot be the rule without an allow-list that would
+   grow with every pane.
+3. *What it costs.* The residual class is a renderer that composes a row out of
+   one cell and its own strings. `one_padder.rs` bounds it — such a thing cannot
+   lay out *columns* without measuring, and nothing outside `emit.rs` may — so
+   what is left is a row-shaped line that is not a grid.
+4. *Which step clears it.* Nobody, probably; it is written down so the next
+   auditor starts from it rather than rediscovering it, as gap 1200 is.
+
+**Gap 1212 — the TUI's Now pane loses the word `interruption`.**
+1. *What is not done.* seg_title answered `interruption` for a `SegKind::Wall`
+   with no item (§9's ad-hoc interruption); `emit::title_cell` answers `—`
+   there, because that is what the day file prints. The word survives in the day
+   row's **note** column (`Planner.Note.interruption`, `Emit.noteText`), and the
+   Now pane has no note column.
+2. *Why.* Two definitions of one cell is the bug (AGENTS §5.3) and the day
+   file's is the one that survives; changing `title_cell` to say `interruption`
+   would move the file's bytes and part from the fork.
+3. *What it costs.* On the one screen where it matters, an interruption wall
+   reads `—` where it used to read `interruption`. No fixture in the tree holds
+   an id-less wall, so no snapshot shows it and this is the only record.
+4. *Which step clears it.* A decision: either the Now pane grows the note cell
+   (it has the row, `day_lines` carries the position), or the fork's `—` stands.
+
+**Gap 1213 — `now_window`'s contiguity is a property of the day, not of the
+selector.**
+1. *What is not done.* `emit::now_window`'s `next` takes the first three
+   positions after the current whose segment has not started. A segment *after*
+   the current one that started *before* `now` — an overlap — is skipped, and the
+   run then has a hole, which is D30 Q5 (a)'s contiguity claim failing.
+2. *Why.* Changing the filter to "the next three positions, whatever they are"
+   would print a row that has already started as though it were next.
+3. *What it costs.* Nothing measured: the planner does not emit overlapping rows
+   and `one_renderer.rs` asserts the run is whole at both instants it drives. It
+   is an unproved precondition of a stated acceptance, which is the class this
+   campaign exists to stop leaving implicit.
+4. *Which step clears it.* Track G, if `plan_places_no_block_over_a_wall`'s
+   neighbours ever grow a "rows do not overlap" law; or a Rust proptest over
+   `plan()`.
+
+**Gap 1214 — `.format("%H:%M")` is the same cell in chrono's spelling, 15 times.**
+1. *What is not done.* W-23 unified the eight *declared* `HH:MM` functions onto
+   `planner::fmt_clock` and `model::fmt_time`. It did not touch the **15**
+   inline `.format("%H:%M")` sites, which produce the same bytes:
+   `tui/today.rs` ×2, `tui/daybar.rs` ×2, `cli/dayfile.rs`, `cli/ctx.rs`,
+   `planner.rs`, `check.rs`, `review.rs` ×4, `model.rs` (inside the one that
+   survives) and `config.rs`'s serde adapter.
+2. *Why.* They are not all the §4.3 time cell — a day-bar cursor label, a review
+   window line, an `HH:MM` serde field for a config value and a status message
+   are four different reasons to print a clock, and collapsing them onto one name
+   would assert they are one concept. That is a judgement, and this step's
+   business was the row.
+3. *What it costs.* `exactly_one_function_renders_a_clock_by_hand` sees the
+   hand-rolled shape and not this one, so a *tenth* clock written as
+   `.format("%H:%M")` is invisible to it. The blast radius is small — chrono's
+   formatter cannot disagree with itself — and the risk is a *cell* being
+   rendered outside the renderer, which the cell needles catch instead.
+4. *Which step clears it.* Whoever decides whether "print a clock" is one concept
+   in this repository or four, with the count above in hand.
+
+### 8. What this step did NOT do, by name
+
+* **It did not build the wire.** Gap **1105** stays **open and whole**: nothing
+  on the wire carries a `Row`, `emit::render_row` still builds its cells from the
+  Rust `Segment`, and no byte comparison between `Emit.lean`'s cells and
+  `emit.rs`'s has ever been run by a machine. `Boundary.lean` still names no
+  `PlanReq` and the response has no `plan` key. The half that landed here is
+  §14.6's separable half (D19) and the half that did not is named rather than
+  approximated. **Gap 1194's renderer third closes; its wire third is 1105.**
+* **It did not retire the plan hash** (gap **1100**) — it read
+  `DayPlan::hash`'s input instead and found the blocker is an `f64` in the
+  digested bytes, not the wire. Gap 1100's items 2 and 4 are corrected in place;
+  the theorem `Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`
+  stands, undeleted.
+* **It did not do F3-review** (gap **1106**), §11's ratio pairs (gap **1107**),
+  `fit_batch`'s member list (gap **1108**) or the width table (gap **1110**,
+  D44 — track A's).
+* **It did not touch `Goals.lean`, `Negative.lean`, `Check.lean`,
+  `kernel/corpus/`, `lean-toolchain`, `citations-allow.txt` or any Lean proof.**
+  The burn-down is **9**, unchanged, all stage 6; the axiom audit is **4,891**,
+  unchanged; no cheat taken, no goal added, discharged or deleted, no parity
+  entry, and **the allow-list did not move**.
+* **It did not re-run `mutate.py`.** No Lean *definition* changed — the only Lean
+  edit is four lines of `Emit.lean`'s header — and §9 below says what was done
+  instead of an hour of rebuilds.
+* **It did not narrow any gate.** `one_padder.rs` is untouched and still green;
+  `one_renderer.rs` is new and was driven RED on five plants first.
+* **It did not drive the TUI** (gap **182**, no tty). What stands in for it is
+  the snapshot suite, which moved by six adjudicated lines and not otherwise.
+
+### 9. Acceptance, measured at `a91c954`
+
+Every command capped (AGENTS §2.1).
+
+| | baseline `3ec119b` | here | delta |
+|---|---|---|---|
+| `check.sh` | **9/9** | **9/9** | — |
+| axiom audit | 4,891 theorems | **4,891** | no Lean theorem changed |
+| check 4 `Negative.lean` | rejected | rejected | — |
+| check 5 FFI | 93 tests | **93** | — |
+| corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | the day file's bytes did not move |
+| check 7 burn-down | **9, all stage 6** | **9** | — |
+| check 8 citations | 28,780 / 27,255 resolved / 1,525 allowed / **0 unused** | **28,857 / 27,330 / 1,527 / 0** | +77 citations, +75 resolved; this block's own. The allow-list gained **two citations and no entry** — uncounted VOCABULARY names cited once more each, the 115/348 entry counts unmoved |
+| check 9 | 114 rostered, 28 unfoldable, 18 fixtures, 0 pinned by nothing, 0 owed, 65 bare pin sites | **same, 65** | no definition added or changed |
+| `cargo test --workspace` | 1,367 / 0 / 9 across 80 binaries | **1,392 / 0 / 9 across 81** | +25 and one binary: `one_renderer.rs` (8 of its own tests plus the 17 unit tests its `cli_common`/`tui_common` modules carry). **No other test moved and no snapshot moved** for the clock unification — the six deleted functions' bytes were identical, which is the whole point |
+
+**Check 8 caught two of this step's own deletions**, which is the gate working
+and is worth the line: render_segment_row was cited in `Emit.lean`'s header and
+kind_name in the W-21 design table, and both stopped resolving the moment the
+functions went. Both are repaired by W-20's convention — a name a sentence
+records as dead is written **without** backticks.
+
+**Check 9 caught the Lean edit too.** Rewriting `Emit.lean`'s header three lines
+longer moved every line of the file and eleven roster pin sites drifted
+(`Emit.lean:374 cells_are_the_nine_in_order` landing inside `rowsOf`, and ten
+more). The header was rewritten to the **same four lines** instead, which leaves
+every pin valid — disclosed rather than tidied away, because the alternative was
+`mutate.py --verify --only Emit.lean --write`, measured by gap **1196** at over
+an hour for these 31 rows, to re-derive verdicts for definitions that did not
+change.
+
+Named suites, each green and each run on its own:
+
+```
+cargo test --test kernel_log_door        23 passed; 0 failed
+cargo test --test cli_write_gate         14 passed; 0 failed
+cargo test --test kernel_call_counts      2 passed; 0 failed
+cargo test --test cli_switch_acceptance  13 passed; 0 failed
+cargo test --test kernel_replay_parity   29 passed; 0 failed; 4 ignored   (T5)
+cargo test --test kernel_log_grammar     16 passed; 0 failed; 2 ignored
+cargo test --test cli_conformance         2 passed; 0 failed
+cargo test --test emit_planner            9 passed; 0 failed
+cargo test --test one_padder              7 passed; 0 failed
+cargo test --test one_renderer           25 passed; 0 failed
+cargo test --test cli_latency             5 passed; 0 failed; 1 ignored   (fully parallel)
+cargo test --test cli_latency -- --test-threads=1
+                                          5 passed; 0 failed; 1 ignored   (serial)
+```
+
+**The known `cli_latency` flake DID fire**, once, inside a fully parallel
+`cargo test --workspace`:
+`a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second`. Both
+spellings are reported as the brief asks — at the final tree the file on its own
+is 5/0/1 parallel at 15.89 s and 5/0/1 serial at 15.85 s, and the `--workspace`
+run beside them was 1,392/0/9. It is the flake, not a regression: nothing this
+step touched is on that path.
+
+### 10. Numbering
+
+Gaps: this step **1210-1214**, five taken; **1215-1249** of track P's range are
+free. Gaps **1104**, **1109** and **1197** are **CLOSED**. Gap **1100**'s items 2
+and 4 are **corrected in place**. Gaps **1105**, **1194** (its wire third),
+**1195**, **1196**, **1106**, **1107**, **1108** and **1110** stay open and
+whole. Highest gap in the file after this block: **1214**. Highest cheat: **218**,
+unchanged — no cheat was taken and `Negative.lean` was not touched. No parity
+entry; the next is still **P37**. No goal added, discharged or deleted.
+
+### 11. Worktrees, and capping
+
+Worked in the **main checkout** on `rebuild-on-lean`; none entered and none
+created. `git worktree list` shows four: the main checkout,
+`.claude/worktrees/stage5-lookahead`, and `.claude/worktrees/w23-a` and
+`.claude/worktrees/w23-g` — this run's other two tracks, neither of which this
+step touched. Whoever merges renumbers (AGENTS §6.4); the gap numbers above are
+track P's range, **1210-1249**.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm` and `python3` invocation ran
+under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` —
+40G for `check.sh` and `cargo`, 16G for the `tm` drives. **No breach to
+disclose:** nothing was retried uncapped, no bound was raised, and no run was
+killed at the cap. `mutate.py` was not run at all (§9).
