@@ -225,6 +225,7 @@ fn add_kernel(
     let rec = Recorder::start(ctx, "add")?;
     let applied = kernel_bridge::apply(
         ctx,
+        "add",
         &[KCmd::Add {
             seed,
             to: path.to_string(),
@@ -789,7 +790,7 @@ fn edit_kernel(
         });
     }
     let rec = Recorder::start(ctx, "edit")?;
-    let applied = kernel_bridge::apply(ctx, &cmds)?;
+    let applied = kernel_bridge::apply(ctx, "edit", &cmds)?;
     for c in &changes {
         ctx.append_event(Event::Edit {
             id: id.to_string(),
@@ -882,6 +883,7 @@ pub fn move_item(g: &Globals, args: &super::MoveArgs) -> Result<i32, CliError> {
     let rec = Recorder::start(&ctx, "move")?;
     kernel_bridge::apply(
         &ctx,
+        "move",
         &[KCmd::Move {
             id: id.to_string(),
             to: to_path.clone(),
@@ -1046,7 +1048,7 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
                 return Ok(0);
             }
             let rec = Recorder::start(&ctx, "rank")?;
-            kernel_bridge::apply(&ctx, &cmds)?;
+            kernel_bridge::apply(&ctx, "rank", &cmds)?;
             ctx.reload()?;
             rec.finish(&ctx, format!("rank {} {}", id.token(), args.n))?;
             let out = RankOut {
@@ -1127,6 +1129,7 @@ pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let rec = Recorder::start(&ctx, "demote")?;
     let applied = kernel_bridge::apply(
         &ctx,
+        "demote",
         &[KCmd::Demote {
             id: id.to_string(),
             to: month_path.clone(),
@@ -1273,6 +1276,7 @@ pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> 
     let rec = Recorder::start(&ctx, "readopt")?;
     let applied = kernel_bridge::apply(
         &ctx,
+        "readopt",
         &[KCmd::Readopt {
             id: id.to_string(),
             to: to_path.clone(),
@@ -1400,7 +1404,7 @@ pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let item = ctx.item(&key)?.clone();
     let rec = Recorder::start(&ctx, "drop")?;
     let (id, line, assigned) = if item.has_id() {
-        let applied = kernel_bridge::apply(&ctx, &[KCmd::Drop { id: key.to_string() }])?;
+        let applied = kernel_bridge::apply(&ctx, "drop", &[KCmd::Drop { id: key.to_string() }])?;
         ctx.append_event(Event::Drop { id: key.to_string() })?;
         let line = applied
             .line_of(key.as_str())

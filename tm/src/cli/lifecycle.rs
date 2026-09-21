@@ -133,7 +133,8 @@ pub fn close(g: &Globals, args: &super::CloseArgs) -> Result<i32, CliError> {
     }
     let key = closing::last_ended_key(grain, ctx.today);
     let rec = undo_stack::Recorder::start(&ctx, "close")?;
-    let report = closing::run_explained(&mut ctx, closing::Which::One(grain), &drops)?;
+    let verb = format!("close {}", grain.name());
+    let report = closing::run_explained(&mut ctx, closing::Which::One(grain), &verb, &drops)?;
     ctx.reload()?;
     rec.finish(&ctx, format!("close {} {key}", grain.name()))?;
 
@@ -381,6 +382,17 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
     // §11.1: every review reads every day (`lounge_rate`) or every duration
     // (`estimate_calibration`).
     let mut ctx = Ctx::load_scoped(g, true, |_, _| ReplayScope::All)?;
+    // **The write gate goes FIRST, not beside the write** (README gap 1080).
+    // It is the same one call it always was — `--write` has always paid it —
+    // moved ahead of the body that computes the review. It has to be: on a
+    // tree the kernel refuses, `day_extras` (and the week's
+    // `Ctx::priorities`) reaches the kernel first and the user got the
+    // kernel's sentence with no word about whether their `--write` happened,
+    // which is the one thing D35 bought. A read that refuses ahead of a
+    // pre-write check is a pre-write check in the wrong place.
+    if args.write {
+        super::kernel_bridge::gate(&ctx, "review --write")?;
+    }
     let period: Period = args.period.into();
     let (key, body, path) = match period {
         Period::Day => {
@@ -467,7 +479,6 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
         wrote: None,
     };
     if args.write {
-        super::kernel_bridge::gate(&ctx, "review --write")?;
         let rec = undo_stack::Recorder::start(&ctx, "review")?;
         ctx.store.replace_generated(&path, REVIEW_BLOCK, &text)?;
         out.wrote = Some(path.clone());

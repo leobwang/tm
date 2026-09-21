@@ -220,6 +220,129 @@ fn a_refused_write_names_both_lines_and_says_nothing_was_written() {
     assert_eq!(doc["detail"]["b"]["line"], 9, "{doc}");
 }
 
+// ---------------------------------------------------------------------------
+// W-22 track A — README gap 1080: the reassurance is one rule, not a coin flip.
+//
+// D35's line was stamped by `kernel_bridge::gate` alone, and in `drop`, `move`,
+// `readopt` and `demote` that call sits inside the **id-less** branch (D33:
+// "the gate goes ahead of both, because this branch never reaches the kernel"),
+// so an item that HAS an id went straight to `apply` and was refused with no
+// stamp. Driven at one refusal on one tree: `rank`, `edit`, `skip`, `start`,
+// `add` (inbox), `event`, `routine done`, `wake` and `break` printed the second
+// line; `drop`, `demote`, `readopt`, `move`, `add --to` and `close day` printed
+// only the kernel's sentence. `apply` now stamps too, and the rule it stamps by
+// is the one definition of "does the kernel load this tree" — `tree_refusal`,
+// asked only after a refusal — rather than a list of refusal names that would
+// go stale the next time `Boundary.lean` gains an `LErr`.
+
+/// The verb as D35's line spells it, from the argv the test sends. The first
+/// word is enough to tell `tm drop` from `tm move`, and it is the word the
+/// user typed; the rest (`close day`, `review --write`) is the verb's own
+/// business and is read by the `--json` assertions below.
+fn typed_verb(args: &[&str]) -> String {
+    args[0].to_string()
+}
+
+/// **Every write verb says nothing was written, and says it in its own name**
+/// (README gap 1080).
+///
+/// The enumeration is `WRITE_VERBS` — the same table gap 584's own test walks,
+/// built by reading `cli::run`'s dispatch from `main` down — so a new write
+/// verb is in this test the moment it is in that one. What the table cannot
+/// see is a write path that never reaches the dispatch table at all; the
+/// source guard `every_undo_recording_path_is_accounted_for` is the other half
+/// of that, and neither can see a writer that records no undo entry and takes
+/// no verb name (README gap 731's three).
+///
+/// Driven on a **swept** tree, like `a_refused_write_names_both_lines_…`: if
+/// §6.3's automatic close speaks first, `CliError::report` suppresses the
+/// repeat by design (gap 239) and this would be reading the close's sentence
+/// instead of the verb's.
+#[test]
+fn every_write_verb_says_nothing_was_written_in_its_own_name() {
+    for (setup, args) in WRITE_VERBS {
+        let tm = Tm::new();
+        tm.ok(&["plan"]);
+        tm.ok(&["plan"]);
+        for s in *setup {
+            let out = tm.run(s);
+            assert_eq!(out.code, 0, "setup {s:?}: {}{}", out.stdout, out.stderr);
+        }
+        let path = tm.plan.join("routines.md");
+        let doubled = format!("{}{DOUBLED}", tm.read("routines.md"));
+        fs::write(&path, &doubled).expect("write routines.md");
+
+        let out = tm.run(args);
+        assert_ne!(out.code, 0, "{args:?} exited 0: {}{}", out.stdout, out.stderr);
+        assert!(
+            !out.stderr.contains("automatic close"),
+            "{args:?}: the close spoke, not the verb: {}",
+            out.stderr
+        );
+        assert!(
+            out.stderr.contains("nothing was written:"),
+            "{args:?} refused without saying the write did not happen: {}",
+            out.stderr
+        );
+        let verb = typed_verb(args);
+        assert!(
+            out.stderr.contains(&format!("`tm {verb}")),
+            "{args:?}: the line does not name the verb that was typed: {}",
+            out.stderr
+        );
+    }
+}
+
+/// **And it does NOT fire when the tree loads** (AGENTS §5.8: both directions).
+///
+/// `notDemoted` is a refusal about the *command* — the tree is sound, every
+/// reading verb answers, and "every reading verb refuses this one too" would
+/// be false. That is why the rule asks `tree_refusal` rather than stamping
+/// every refusal `apply` returns.
+#[test]
+fn a_command_refusal_on_a_sound_tree_does_not_claim_the_tree_is_unloadable() {
+    let tm = Tm::new();
+    tm.ok(&["plan"]);
+    tm.ok(&["plan"]);
+    // `^m4` is live, not demoted: the kernel refuses the readopt by name.
+    let out = tm.run(&["readopt", "^m4"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("notDemoted"), "{}", out.stderr);
+    assert!(
+        !out.stderr.contains("nothing was written:"),
+        "a command refusal claimed the tree cannot be loaded: {}",
+        out.stderr
+    );
+    // And the tree really does still load, which is what makes the absence
+    // right rather than merely quiet.
+    tm.ok(&["check"]);
+
+    let json = tm.run(&["--json", "readopt", "^m4"]);
+    let doc: serde_json::Value =
+        serde_json::from_str(&json.stderr).expect("a json failure document");
+    assert_eq!(doc["detail"]["refusal"], "notDemoted", "{doc}");
+    assert_eq!(doc["detail"]["refusedWrite"], serde_json::Value::Null, "{doc}");
+}
+
+/// **The kernel-backed half, keyed** — the same `--json` shape
+/// `a_refused_write_names_both_lines_…` pins for a host-only path, for a verb
+/// that reaches the kernel instead. `tm drop ^a1` takes `apply`, not `gate`.
+#[test]
+fn a_kernel_backed_write_stamps_refused_write_too() {
+    let tm = Tm::new();
+    tm.ok(&["plan"]);
+    tm.ok(&["plan"]);
+    let path = tm.plan.join("routines.md");
+    let doubled = format!("{}{DOUBLED}", tm.read("routines.md"));
+    fs::write(&path, &doubled).expect("write routines.md");
+
+    let json = tm.run(&["--json", "drop", "^a1"]);
+    let doc: serde_json::Value =
+        serde_json::from_str(&json.stderr).expect("a json failure document");
+    assert_eq!(doc["detail"]["refusal"], "dupId", "{doc}");
+    assert_eq!(doc["detail"]["refusedWrite"], "drop", "{doc}");
+}
+
 /// **`tm undo` is deliberately NOT gated**, and this is the test that says so
 /// out loud: it is the way *out* of a tree the kernel refuses, and a gate on it
 /// would lock the user inside one.
