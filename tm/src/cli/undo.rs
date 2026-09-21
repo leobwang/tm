@@ -34,7 +34,7 @@ use tm_core::model::Id;
 use tm_core::store::{RuntimeState, Store, StoreError, StoreExt};
 
 use super::ctx::{Ctx, LogHeader};
-use super::out::CliError;
+use super::out::{CliError, LaterWriter};
 
 /// `.tm/undo.json`.
 pub const UNDO_PATH: &str = ".tm/undo.json";
@@ -144,6 +144,54 @@ fn recorded(rows: &[LogHeader]) -> (Vec<UndoneEvent>, Option<u64>) {
     (events, rows.first().map(|h| h.line))
 }
 
+/// **What `.tm/log.jsonl` holds after the command `entry` records** (README
+/// gap 887) — the undo path's answer to *"who changed the file under us?"*.
+///
+/// §6.3's automatic close is the writer this matters for: it runs inside
+/// `Ctx::load_with`, before every verb's [`Recorder::start`], so it is in no
+/// undo entry (README gap 731) and the stack cannot name it. The log can, and
+/// the log is read **through the one reader** — [`Ctx::log_tail_of`] for the
+/// tail's headers, [`Ctx::entries_at`] for the close's own rendering — never
+/// by a second parse here (D9, gap 887 item 4).
+///
+/// **The anchor is the entry's own first event, minus one.** `log_line` is
+/// the physical line the undone command's *first* event landed on, so reading
+/// from `log_line - 1` returns that command's own headers first and the tail
+/// after them; skipping `entry.events.len()` of them leaves exactly what came
+/// later. Computing the anchor as `log_line + len - 1` instead would be wrong
+/// whenever a line the reader refuses sits between two of the command's own
+/// events: the headers are contiguous in the header list, not in the file.
+///
+/// Both reads are **failure-path only** — this is called when the guard has
+/// already tripped — so no successful verb gains a kernel call
+/// (`kernel_call_counts.rs` pins `tm undo` at 2 log calls and 0 apply calls).
+/// A read that fails leaves the field it would have filled empty rather than
+/// replacing the conflict with a different error: the user's problem is the
+/// conflict.
+fn later_writer(ctx: &Ctx, entry: &UndoEntry) -> LaterWriter {
+    let Some(first) = entry.log_line else {
+        return LaterWriter::default();
+    };
+    let Ok((_, rows)) = Ctx::log_tail_of(&ctx.store, &ctx.cfg, ctx.today, Some(first.saturating_sub(1)))
+    else {
+        return LaterWriter { anchored: true, ..LaterWriter::default() };
+    };
+    let later: Vec<LogHeader> = rows.into_iter().skip(entry.events.len()).collect();
+    let close_line = later.iter().find(|h| h.tag == "close").map(|h| h.line);
+    let close_at = close_line.and_then(|line| {
+        Ctx::entries_at(&ctx.store, &ctx.cfg, ctx.today, &[line])
+            .ok()
+            .and_then(|mut m| m.remove(&line))
+            .map(|(_, display)| display)
+    });
+    LaterWriter {
+        anchored: true,
+        entries_after: later.len(),
+        close_line,
+        close_at,
+    }
+}
+
 /// Records what one command changed.
 pub struct Recorder {
     verb: String,
@@ -249,12 +297,22 @@ pub fn undo(ctx: &mut Ctx) -> Result<Undone, CliError> {
             .then(|| ctx.store.read_text(&f.path))
             .transpose()?;
         if current != f.after {
-            return Err(CliError::from(StoreError::Conflict {
-                id: Id::new(""),
-                file: f.path.clone(),
-                ours: f.after.clone().unwrap_or_default(),
-                theirs: current.unwrap_or_default(),
-            }));
+            // **And it says who wrote it** (README gap 887). The refusal
+            // itself is unchanged — D37: never clobber — but a refusal that
+            // blames an external editor for tm's own automatic close is a
+            // refusal the user cannot act on. `later_writer` reads the log
+            // through the one reader and names the close; the entry stays on
+            // the stack either way.
+            let blame = later_writer(ctx, &entry);
+            return Err(CliError::UndoBlocked {
+                conflict: StoreError::Conflict {
+                    id: Id::new(""),
+                    file: f.path.clone(),
+                    ours: f.after.clone().unwrap_or_default(),
+                    theirs: current.unwrap_or_default(),
+                },
+                blame,
+            });
         }
     }
 

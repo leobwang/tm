@@ -94,6 +94,126 @@ pub enum CliError {
     /// free text is not.
     #[error("{}", .0.message)]
     Kernel(KernelIssue),
+    /// **A `tm undo` stopped by §1.3's guard, carrying who wrote the file
+    /// afterwards** (README gap 887).
+    ///
+    /// The conflict itself is exactly the [`StoreError::Conflict`] the
+    /// `Store` arm carries — [`CliError::conflict`] projects it, so the exit
+    /// code (§13's `3`), the one-sentence [`CliError::message`] and the two
+    /// whole texts in `--json` are byte-for-byte what they were. What is new
+    /// is [`LaterWriter`], which only the undo path can build, because only
+    /// the undo path knows *which* command is being reversed and therefore
+    /// where in `.tm/log.jsonl` to read forward from.
+    ///
+    /// Gap 887 is explicit that attribution cannot be bolted onto
+    /// `CliError::message`: that sentence is shared by every verb's write
+    /// race and none of the others has an undone command to read forward
+    /// from. So it is a variant, and nothing else changes.
+    #[error("{conflict}")]
+    UndoBlocked {
+        /// The write race, unchanged.
+        conflict: StoreError,
+        /// What the log records after the command being undone.
+        blame: LaterWriter,
+    },
+}
+
+/// **Who wrote the plan after the command `tm undo` is reversing** (README
+/// gap 887), read from `.tm/log.jsonl` through the one reader (D9).
+///
+/// §6.3's automatic close runs inside `Ctx::load_with`, *before* every verb's
+/// `Recorder::start`, so it is in no undo entry (README gap 731) and the undo
+/// stack cannot name it. The log can: the close appends
+/// `{"ev":"close","period":…,"key":…}` like any other event, and the undo
+/// entry records the physical line its own first event landed on, so the
+/// entries that came after it are exactly the tail past that point.
+///
+/// Every field is a **measurement**, never an inference: this says what the
+/// log holds after the undone command, and does not claim that any of it
+/// wrote the file the guard tripped on. Saying which entry touched which file
+/// would need the close to be in an undo entry, which is gap 731 and a
+/// behaviour change on every verb at once (D19).
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct LaterWriter {
+    /// False when the undone command appended no log entry at all (`tm rank`
+    /// on a tree it did not have to log, and every entry written before the
+    /// `log_line` field existed). There is then no anchor to read forward
+    /// from and this carries nothing.
+    pub anchored: bool,
+    /// How many entries `.tm/log.jsonl` holds after the undone command's own.
+    pub entries_after: usize,
+    /// The physical line of the **first `close`** among them, when there is
+    /// one — the automatic close, or an explicit `tm close` that is itself
+    /// further up the stack.
+    pub close_line: Option<u64>,
+    /// **When** that close ran, as the kernel renders the line's instant
+    /// (`Ctx::entries_at`'s display, the same door `tm log` prints through),
+    /// when it could be read back.
+    ///
+    /// The *display* and not the payload, deliberately: `tm log`'s body —
+    /// `key=…  period=…` — is built by re-parsing the line's JSON in the
+    /// host (`lifecycle.rs`'s `log_human`), and gap 887 rules out a second
+    /// parse on the undo path (D9). A line number, a tag and an instant are
+    /// what the two doors hand back, so they are what this says; `tm log`
+    /// is where the payload is already spelled, and the message points
+    /// there.
+    pub close_at: Option<String>,
+}
+
+/// `.tm/log.jsonl`, spelled once for the sentences below.
+const LOG: &str = ".tm/log.jsonl";
+
+impl LaterWriter {
+    /// The human lines, printed under the conflict's own summary.
+    ///
+    /// Four cases and no fifth, because each is a different thing to do next:
+    /// a close is named and the user is told it is unreachable by design; a
+    /// tail with no close says the log knows of no `tm` write that could have
+    /// done it; an empty tail says the same more strongly; and an unanchored
+    /// entry says plainly that this undo cannot tell, rather than guessing
+    /// from the first close in the file — which would name a close that ran
+    /// *before* the command being undone.
+    fn report(&self) {
+        if !self.anchored {
+            eprintln!(
+                "  the command being undone appended no log entry, so there is no point in \
+                 {LOG} to read forward from and this undo cannot say who wrote next"
+            );
+            return;
+        }
+        match (self.close_line, self.entries_after) {
+            (Some(line), _) => {
+                match &self.close_at {
+                    Some(at) => eprintln!(
+                        "  the later writer is tm itself: {LOG}:{line} records a `close` at \
+                         {at}, appended after the command being undone"
+                    ),
+                    None => eprintln!(
+                        "  the later writer is tm itself: {LOG}:{line} records a `close`, \
+                         appended after the command being undone"
+                    ),
+                }
+                eprintln!(
+                    "    §6.3's automatic close runs inside every verb's load, before that \
+                     verb's undo entry is opened, so it is in no entry and `tm undo` cannot \
+                     reverse it (README gap 731)"
+                );
+                eprintln!(
+                    "    every entry older than that close is behind it; `tm log` prints the \
+                     close and what it wrote"
+                );
+            }
+            (None, 0) => eprintln!(
+                "  {LOG} records no entry after the command being undone, so no `tm` verb \
+                 wrote this file since — it was changed from outside tm"
+            ),
+            (None, n) => eprintln!(
+                "  {LOG} records {n} entr{} after the command being undone and no `close` \
+                 among them; `tm log` shows them",
+                if n == 1 { "y" } else { "ies" }
+            ),
+        }
+    }
 }
 
 /// One named kernel refusal (or FFI fault), as the kernel bridge mapped it
@@ -146,6 +266,10 @@ impl CliError {
             CliError::Store(e) => e,
             CliError::Horizon(tm_core::horizon::HorizonError::Store(e)) => e,
             CliError::Check(tm_core::check::CheckError::Store(e)) => e,
+            // README gap 887: the undo's conflict IS a conflict, so §13's
+            // exit code 3, the shared sentence and the two whole texts all
+            // come from here exactly as they did before the variant existed.
+            CliError::UndoBlocked { conflict, .. } => conflict,
             _ => return None,
         };
         store.is_conflict().then_some(store)
@@ -213,6 +337,16 @@ impl CliError {
                 "not-found"
             }
             CliError::Store(e) => store_kind(e, d),
+            // README gap 887: the same `conflict` kind and the same detail as
+            // any other write race, plus the one thing only `tm undo` knows.
+            CliError::UndoBlocked { conflict, blame } => {
+                let kind = store_kind(conflict, d);
+                d.insert(
+                    "laterWriter".to_string(),
+                    serde_json::to_value(blame).unwrap_or(Value::Null),
+                );
+                kind
+            }
             CliError::Horizon(HorizonError::Store(e)) => store_kind(e, d),
             CliError::Check(CheckError::Store(e)) => store_kind(e, d),
             CliError::Horizon(HorizonError::NotFound(id)) => {
@@ -390,6 +524,13 @@ impl CliError {
                         "  every line agrees — they differ only in a line ending or a trailing \
                          newline"
                     ),
+                }
+                // **Who wrote it afterwards** (README gap 887). Only the undo
+                // path can say, and only the half the log can answer for: it
+                // names the close, which is the writer the undo stack
+                // structurally cannot hold (gap 731).
+                if let CliError::UndoBlocked { blame, .. } = self {
+                    blame.report();
                 }
                 eprintln!(
                     "  undo needs {file} to hold exactly what the undone command wrote, byte for \

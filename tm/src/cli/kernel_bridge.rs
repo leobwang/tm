@@ -624,11 +624,59 @@ pub fn region_of(path: &str) -> Option<(u64, u64)> {
     }
 }
 
+/// **D35's "nothing was written" line, for the kernel-backed half** (README
+/// gap 1080).
+///
+/// [`gate`] stamps `refusedWrite` on the host-only write paths, and in `drop`,
+/// `move`, `readopt` and `demote` that call sits inside the **id-less** branch
+/// — D33's "the gate goes ahead of both, because this branch never reaches the
+/// kernel" — so an item that HAS an id went straight to [`apply`] and was
+/// refused with no stamp. Driven on one refused tree at one refusal
+/// (`badLine`, `Tm.PErr.noId`): `rank`, `edit`, `skip`, `start`, `add`
+/// (inbox), `event`, `routine done`, `wake` and `break` printed the second
+/// line; `drop`, `demote`, `readopt`, `move`, `add --to`, `close day` and the
+/// two readers printed only the kernel's sentence. Half the verbs reassured
+/// the user and half did not, on identical bytes.
+///
+/// **The rule is one rule and it is not a list of refusal names.** The line
+/// says the tree cannot be loaded whole and every reading verb refuses it too,
+/// so it fires exactly when that is true — and "does the kernel load this
+/// tree?" already has one definition in this module ([`tree_refusal`], AGENTS
+/// §5.3). So the failing `apply` asks it. A name list would have to grow every
+/// time `Boundary.lean` gains an `LErr` constructor, silently, which is the
+/// class this repository keeps finding; this cannot go stale.
+///
+/// **It costs nothing on a green tree.** The ask happens only after the
+/// kernel has already refused, so no successful verb gains a whole-tree load
+/// and `kernel_call_counts.rs`'s `apply` column does not move.
+///
+/// What it cannot see: the two calls are two instants, so a writer that
+/// repairs the tree between them makes this answer `None` and the line is
+/// missed. That is a missing reassurance, never a false one — and nothing is
+/// written either way.
+fn stamp_refused_write(ctx: &Ctx, verb: &str, e: CliError) -> CliError {
+    let CliError::Kernel(mut issue) = e else { return e };
+    // A fault is not a tree problem: it already prints its own "nothing was
+    // written to the plan" line and a bug-report address.
+    if issue.is_fault() {
+        return CliError::Kernel(issue);
+    }
+    if matches!(tree_refusal(ctx), Ok(Some(_))) {
+        issue.detail.insert("refusedWrite".to_string(), json!(verb));
+    }
+    CliError::Kernel(issue)
+}
+
 /// Apply `cmds` to the plan tree through the kernel: read every plan file,
 /// call the kernel once, write the changed files back. See the module
 /// docs for the contract; on any kernel refusal ([`CliError::Kernel`],
 /// named) nothing has been written.
-pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
+///
+/// `verb` is the user's own word for what they typed, and it is here for the
+/// same reason [`gate`] takes one: a refusal that names a file and a line, and
+/// does not say whether the command went through, is half an answer
+/// ([`stamp_refused_write`], README gap 1080).
+pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
     // 1. The whole tree, guarded.
     let mut paths = ctx.store.list_files()?;
     let mut texts: Vec<String> = Vec::new();
@@ -755,8 +803,10 @@ pub fn apply(ctx: &Ctx, cmds: &[Cmd]) -> Result<Applied, CliError> {
         request["now"] = json!(ctx.today.format("%Y-%m-%d").to_string());
         request["blockMin"] = json!(ctx.block_min());
     }
-    // 3. One call ([`call`]: stderr captured, the fault probe, the refusal by name).
-    let (resp, stderr) = call(&request)?;
+    // 3. One call ([`call`]: stderr captured, the fault probe, the refusal by
+    // name) — and, on a refusal, D35's own sentence for the verb that was
+    // typed (README gap 1080).
+    let (resp, stderr) = call(&request).map_err(|e| stamp_refused_write(ctx, verb, e))?;
     let out_docs = resp["ok"]["docs"]
         .as_array()
         .ok_or_else(|| CliError::Kernel(fault_issue("response carries neither ok nor err", &stderr)))?;

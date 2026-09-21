@@ -329,6 +329,119 @@ def lib_files():
     return sorted(out)
 
 
+# ---------------------------------------------------------------------------
+# WITNESS MODULES, AND THE VERDICT FIXTURE (README gap 1086).
+#
+# 18 of 77 rostered rows were "pinned by NOTHING" -- no constant of the type,
+# no identity on an accumulator, no synthesised term -- and ALL 18 are in
+# `PlannerWit.lean`.  That is not a coincidence and it is not a defect: a
+# witness fixture's body is a literal BECAUSE the fixture is a named day, a
+# named request, a named slot, and the theorem beside it computes the planner's
+# answer AT that day.  Fold one to some other constant and its own theorem
+# becomes false by construction, which measures nothing about any rule -- and
+# for these types no constant exists to fold to in the first place, which is
+# why they sit in the exemption rather than in the audit.
+#
+# So they are DECLARED exempt, and the declaration is a rule with three
+# conjuncts, every one of them structural.  A definition is a FIXTURE when:
+#
+#   (a) it is declared in a module named in `WITNESS_MODULES` below -- EXACT
+#       PATHS, never a pattern and never a name regex.  `^the[A-Z]` or
+#       `.*Wit.*` would have swallowed a real rule the day someone named one
+#       theEligibleFilter -- a name nothing declares, spelled without
+#       backticks because check 8 is right to ask.  Check 8's allow-list
+#       discipline, for the fourth time in this file;
+#   (b) the module really is a LEAF of the module graph -- nothing in the
+#       library imports it, so no definition outside it can consume what it
+#       declares.  This is CHECKED (`witness_violations`), not assumed, and a
+#       violation FAILS the gate: the whole force of (a) is that a witness
+#       module cannot quietly become a library module, and the one thing that
+#       would make it one is an import;
+#   (c) the fold could not speak about it anyway -- every verdict it earned is
+#       UNFOLDABLE or UNAVAILABLE.  A definition in a witness module that a
+#       constant, an identity or a synthesised term DID pin stays PINNED and
+#       stays audited; this verdict only re-labels rows that were already in
+#       the "pinned by nothing" bucket, so it can subtract nothing from what
+#       the gate measures.
+#
+# WHAT IT STILL CANNOT SEE, and what the rows need to leave the exemption:
+#
+#   * FIVE of the 18 are `Capped _`-typed -- `routineCap`, `crowdedCap`,
+#     `lapsedCap`, `busyCap` and `busyCands` -- and README gap 1086 calls them
+#     three, which is its own prose and not a measurement (`Capped RoutineIn`
+#     four times and `Capped (Look.Cand x Option Look.Floor)` once).  A
+#     constant of that type EXISTS and this kernel declares it:
+#     `Capped.nil {a : Type} : Capped a := <[], by simp>` at Planner.lean:124.
+#     Two rules here keep it out of reach, and both are textual, not deep:
+#     `nullary_constants` is KEYED BY FILE on purpose (a name from another
+#     module may need a prefix this file cannot compute) and `Capped.nil` is
+#     in `Planner.lean` while the fixtures are in `PlannerWit.lean`; and
+#     `type_constant` cannot resolve `Capped RoutineIn`, a type built by
+#     applying a function, so it never asks.  Widening either is a decision
+#     about what a checker may synthesise ACROSS modules, which is README gap
+#     980's question, not a patch.
+#   * The other thirteen are `PlanReq` (eight), `WfPlan`, `PlanReqIn`,
+#     `Look.Slot`, `Look.PlanFacts` and `Look.Cand x Option Look.Floor`.
+#     Those are `Bool` + `Subtype` types with no `Inhabited` instance (AGENTS
+#     5.1), deliberately: handing them one to make a checker green would give
+#     out bounded values without their smart constructors.  Gap 1088's fixture
+#     swap -- one `PlannerWit` fixture for another -- is the different
+#     experiment that reaches them, and it asks a different question.
+#   * THE RULE IS ABOUT A MODULE, NOT ABOUT A BODY.  A definition in a witness
+#     module that is NOT a fixture -- a helper rule somebody put there for
+#     convenience -- is exempt by (a) the moment (c) holds of it.  What stops
+#     that costing anything is (b): nothing outside the module can read it, so
+#     a rule declared there is a rule nothing runs.
+WITNESS_MODULES = ("TmKernel/TmKernel/PlannerWit.lean",)
+
+
+def module_name(path):
+    """`TmKernel/TmKernel/PlannerWit.lean` -> `TmKernel.PlannerWit`, the name
+    an `import` line spells."""
+    rel = path.split("/", 1)[1] if "/" in path else path
+    return rel[:-len(".lean")].replace("/", ".")
+
+
+def witness_violations():
+    """Why `WITNESS_MODULES` may not be trusted, as a list of sentences.
+
+    Two ways it can go wrong, and both FAIL the gate rather than quietly
+    widening the exemption:
+
+      * a listed path is not a library module at all (a rename, a deletion) --
+        an allow-list entry that matches nothing, which is exactly what check
+        8's `0 allow entries unused` line exists to catch;
+      * some library module `import`s a listed module, which makes its
+        definitions reachable from code the gate is supposed to audit and
+        ends the leaf property conjunct (b) rests on.
+
+    The import scan is TEXTUAL, like everything else here: `import <name>` at
+    column zero, comment tail stripped.  What it cannot see is an import
+    reached some other way -- there is no other way in Lean 4 -- and a module
+    that imports a witness module's own importer, which is not the same claim
+    and does not make the witness module non-leaf."""
+    listed = set(WITNESS_MODULES)
+    files = set(lib_files())
+    out = ["%s is in WITNESS_MODULES and is not a library module" % m
+           for m in sorted(listed - files)]
+    names = {module_name(m): m for m in listed & files}
+    for path in sorted(files - listed):
+        for line in read(os.path.join(HERE, path)).split("\n"):
+            head = line.split("--", 1)[0].rstrip()
+            if not head.startswith("import "):
+                continue
+            imported = head[len("import "):].strip()
+            if imported in names:
+                out.append("%s imports the witness module %s, so %s is no "
+                           "longer a leaf and its definitions are reachable"
+                           % (path, imported, names[imported]))
+    return out
+
+
+def is_witness(path):
+    return path in WITNESS_MODULES
+
+
 def starts_declaration(line):
     if not line or line[0] in (" ", "\t"):
         return False
@@ -1224,21 +1337,35 @@ def main(argv):
     # PINNED BY NOTHING: no constant, no identity and no synthesised term told
     # this definition from a fold.  `unavailable` counts here beside
     # `unfoldable` -- a constant that did not elaborate pins nothing either.
-    mute_rows = sum(1 for d in decls
-                    if col(d) and all(c in ("unfoldable", "unavailable")
-                                      for c in col(d)))
+    exempt_rows = [d for d in decls
+                   if col(d) and all(c in ("unfoldable", "unavailable")
+                                     for c in col(d))]
+    fixture_rows = sum(1 for d in exempt_rows if is_witness(d["file"]))
+    mute_rows = len(exempt_rows) - fixture_rows
     lit = sum(1 for d in decls if "literal" in consts_of(d))
     # The physical row count beside the key count, so that a hand count of the
     # exemption and this line cannot disagree in silence; see `roster`.
     shadow = ("" if not SHADOWED
               else ", %d row(s) superseded by a re-audit" % len(SHADOWED))
+    # **The declared exemption is checked before it is trusted** (README gap
+    # 1086).  `WITNESS_MODULES` buys the FIXTURE verdict on the strength of
+    # one property -- nothing in the library imports those modules -- so the
+    # property is asserted here, on every run, and a violation FAILS rather
+    # than widening the exemption in silence.
+    violations = witness_violations()
+    if violations:
+        print("WITNESS_MODULES is not what it claims:")
+        for why in violations:
+            print("  %s" % why)
+        return 1
+
     if gate:
         if not owed:
             print("%d new or changed since %s, %d rostered "
-                  "(%d unfoldable, %d of those pinned by nothing; %d literal)%s, "
-                  "0 owed"
-                  % (len(decls), base[:7], len(rostered), unfold, mute_rows,
-                     lit, shadow))
+                  "(%d unfoldable, %d witness fixtures, %d pinned by nothing; "
+                  "%d literal)%s, 0 owed"
+                  % (len(decls), base[:7], len(rostered), unfold,
+                     fixture_rows, mute_rows, lit, shadow))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
@@ -1254,9 +1381,21 @@ def main(argv):
     # gate speaks about, and it is named and counted on its own line so the
     # exemption cannot shrink out of sight -- check 8's allow-list discipline,
     # for the third time in this file.
-    mute = sorted({tag for tag, verdict, _ in soft
-                   if verdict in ("UNFOLDABLE", "UNAVAILABLE")
-                   and tag not in pinned})
+    exempt = sorted({tag for tag, verdict, _ in soft
+                     if verdict in ("UNFOLDABLE", "UNAVAILABLE")
+                     and tag not in pinned})
+    # **The declared exemption, split from the undeclared one** (README gap
+    # 1086).  A row in a `WITNESS_MODULES` leaf is a FIXTURE: named, counted,
+    # and exempt BY A RULE that is written down above.  A row anywhere else is
+    # still pinned by NOTHING, which is the number that must not grow.
+    fixture = [t for t in exempt if is_witness(t.rsplit(":", 1)[0])]
+    mute = [t for t in exempt if t not in fixture]
+    if fixture:
+        print("%d of them are WITNESS FIXTURES -- declared exempt by "
+              "WITNESS_MODULES, a leaf nothing in the library imports:"
+              % len(fixture))
+        for tag in fixture:
+            print("  %s" % tag)
     if mute:
         print("%d of them are pinned by NOTHING -- no constant of the type, no "
               "identity on an accumulator and no synthesised term:" % len(mute))
@@ -1275,10 +1414,11 @@ def main(argv):
         # 5 unfoldable" on the run that introduced them.
         print("%d definition(s) audited (%d pinned, %d of them by an identity "
               "on an accumulator and %d by a synthesised constant; "
-              "%d unfoldable, %d unavailable, %d pinned by nothing; %d literal)"
+              "%d unfoldable, %d unavailable, %d witness fixtures, "
+              "%d pinned by nothing; %d literal)"
               % (len(owed), len(pinned), by["identity"], by["synthesised"],
-                 kinds["UNFOLDABLE"], kinds["UNAVAILABLE"], len(mute),
-                 kinds["LITERAL"]))
+                 kinds["UNFOLDABLE"], kinds["UNAVAILABLE"], len(fixture),
+                 len(mute), kinds["LITERAL"]))
     return 0
 
 

@@ -369,7 +369,11 @@ fn period_key(path: &str) -> String {
 /// `close_week` logged nothing for its `dropped_children` — plus a `drop` per
 /// `--drop` id and a `close` per grain, advance `state.closed`, and return the
 /// report. On a refusal nothing has been written, logged or stamped.
-pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliError> {
+/// `verb` is what D35's "nothing was written" line calls the command (README
+/// gap 1080): `close day` for an explicit close, `close` for §6.3's automatic
+/// one — which never reaches the line, because [`auto_close`] swallows the
+/// refusal and prints its own sentence with those words in it.
+pub fn run(ctx: &mut Ctx, which: Which, verb: &str, drops: &[Id]) -> Result<ReportOut, CliError> {
     let mut cmds: Vec<Cmd> = drops
         .iter()
         .map(|id| Cmd::Drop { id: id.to_string() })
@@ -378,7 +382,7 @@ pub fn run(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliEr
         Which::One(grain) => Cmd::Close { grain },
         Which::All => Cmd::AutoClose,
     });
-    let applied = kernel_bridge::apply(ctx, &cmds)?;
+    let applied = kernel_bridge::apply(ctx, verb, &cmds)?;
 
     let mut report = ReportOut {
         closes: Vec::new(),
@@ -467,7 +471,7 @@ pub fn auto_close(ctx: &mut Ctx) -> Result<AutoClosed, CliError> {
     if !due(&ctx.state.closed, ctx.today) {
         return Ok(AutoClosed::NotDue);
     }
-    match run(ctx, Which::All, &[]) {
+    match run(ctx, Which::All, "close", &[]) {
         Ok(report) => Ok(AutoClosed::Closed(report)),
         Err(CliError::Kernel(issue)) if !issue.is_fault() => {
             if !kernel_bridge::capturing_kernel_stderr() {
@@ -535,8 +539,13 @@ pub fn explain(issue: &KernelIssue) -> String {
 
 /// [`run`] for the explicit verb: a refusal's message gains [`explain`]'s
 /// hint, and keeps its name.
-pub fn run_explained(ctx: &mut Ctx, which: Which, drops: &[Id]) -> Result<ReportOut, CliError> {
-    run(ctx, which, drops).map_err(|e| match e {
+pub fn run_explained(
+    ctx: &mut Ctx,
+    which: Which,
+    verb: &str,
+    drops: &[Id],
+) -> Result<ReportOut, CliError> {
+    run(ctx, which, verb, drops).map_err(|e| match e {
         CliError::Kernel(issue) if !issue.is_fault() => {
             let message = explain(&issue);
             CliError::Kernel(KernelIssue { message, ..issue })

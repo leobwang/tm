@@ -47344,3 +47344,544 @@ witness (AGENTS §5.10a: `TmKernel/PlannerWit.lean` elaborates in **115 s** at
 `check.sh` of this step was interrupted at check 9 while its `--gate` ran the
 mutation sweep, and the kill is what produced §7's loose fold. Nothing was re-run
 uncapped, and no memory bound was raised.
+
+<!-- ===========================================================================
+     APPENDED 2026-09-20: stage 6 (the planner), run **W-22**, **track A** —
+     the user-facing defects — in the worktree `.claude/worktrees/w22-a` on
+     branch `w22-a`, from `6ce574d`.  Four commits: `9d0f594`, `5f5257e`,
+     `c5fe894`, `7121ee8`; this block is the fifth.  Gap range **1140-1169**;
+     this step takes **1140-1144** and leaves 1145-1169 free.  No goal added,
+     discharged or deleted: **burn-down stays 9**, all stage 6.  `check.sh`
+     **9/9**.  No Lean module, no `Negative.lean` cheat, no corpus file, no
+     `Goals.lean` line and no `Check.lean` line touched.
+     Highest gap after this block: **1144**.
+     =========================================================================== -->
+
+## Stage 6 — W-22 track A: the writer the undo could not name, one rule for "nothing was written", a gap that does not reproduce, and an exemption that is finally a rule
+
+Four defects were handed to this step. **Three were repaired and one is refuted.** Every
+one was reproduced first and the transcripts are below, unabridged.
+
+### 1. What landed
+
+| # | gap | what it was | what this step did |
+|---|---|---|---|
+| 1 | **887** / 731 | `tm undo` behind §6.3's automatic close refuses with *"the file changed under us"*, names nothing, and the stack is a dead end | the refusal now **names the close**, at its own `.tm/log.jsonl` line and instant, read through the one reader (D9). `9d0f594` |
+| 2 | **991** | *"`tm drop` resolves a ROUTINE title where `tm edit` does not"* | **REFUTED** — it does not reproduce; the quoted refusal is post-`drop`. The real defect is the boxing notice, and there were two spellings of it. `c5fe894` |
+| 3 | **1080** | D35's "nothing was written" line printed by some verbs and not others | **one rule**: `apply` stamps too, deciding by the one definition of "does the kernel load this tree". Six more verbs, one of them the gap did not name. `5f5257e` |
+| 4 | **1086** | 18 of 77 rostered definitions "pinned by nothing" | **declared exempt by a rule with three structural conjuncts**, one of which is checked and fails the gate. `7121ee8` |
+
+### 2. Gap 887 — the undo names the close
+
+**The mechanism was already known** and gap 887 states it: `closing::auto_close` runs inside
+`Ctx::load_with`, **before** every verb's `Recorder::start`, so the close is in no undo entry
+(gap 731) and the undo stack structurally cannot name it. Gap 887 also states where the
+identity has to come from — `.tm/log.jsonl`, **through the one reader** (D9), never a second
+parse in `undo.rs` — and that making the close itself undoable is a behaviour change on every
+verb at once (D19). **This step landed the half that names it and left gap 731 open and whole.**
+
+**How the anchor works.** An undo entry records `log_line`, the physical line its command's
+*first* event landed on. Reading the tail from `log_line - 1` through `Ctx::log_tail_of`
+returns that command's own headers first and everything after them; skipping
+`entry.events.len()` of them leaves exactly what came later. Computing the anchor as
+`log_line + len - 1` instead would be wrong the moment a line the reader refuses sits between
+two of the command's own events — the headers are contiguous in the header list, not in the
+file. `Ctx::entries_at` then gives the close's instant. **Both reads are failure-path only**,
+so no successful verb gains a kernel call and `kernel_call_counts.rs`'s columns do not move.
+
+**Attribution does not go on `CliError::message`**, which gap 887 is explicit about and which
+every verb's write race shares. It rides a new `CliError::UndoBlocked`, carrying the same
+`StoreError::Conflict` — same §13 exit code 3, same one-sentence message, same two whole texts
+in `--json` — beside a `LaterWriter` only the undo path can build.
+
+**What it says, and the four cases.** One per thing to do next; there is no fifth.
+
+```
+### D1. gap 887 — the undo behind the automatic close, on a fresh copy of kernel/corpus/plan-basic
+$ tm --now 2026-09-07T09:30:00-05:00 start ^m1
+▶ ^m1 Finish ch.5 exercises · 09:30 · pred 5
+$ tm --now 2026-09-07T11:00:00-05:00 done
+✓ ^m1 Finish ch.5 exercises · 90m/360m
+$ tm --now 2026-09-08T09:00:00-05:00 now
+nothing running
+· laundry 30m  ci1  p0
+$ tm --now 2026-09-08T09:30:00-05:00 start ^a1
+▶ ^a1 Insurance claim for the bike · 09:30 · pred 5
+$ tm --now 2026-09-08T10:30:00-05:00 done
+✓ ^a1 Insurance claim for the bike · 60m/30m
+$ tm --now 2026-09-08T10:40:00-05:00 undo
+undid done (done ^a1) · 2 file(s) restored · 3 left
+$ tm --now 2026-09-08T10:41:00-05:00 undo
+undid start (start ^a1) · 2 file(s) restored · 2 left
+$ tm --now 2026-09-08T10:42:00-05:00 undo
+tm: conflict in day/2026-09-07.md — the file changed under us
+  ours:   39 lines — what the undone command wrote
+  theirs: 38 lines — what day/2026-09-07.md holds now
+  first difference, line 28:
+    ours:   - [ ] 2 20m Call the bank about the card  ^p1
+    theirs: 
+  the later writer is tm itself: .tm/log.jsonl:4 records a `close` at 2026-09-08 09:00, appended after the command being undone
+    §6.3's automatic close runs inside every verb's load, before that verb's undo entry is opened, so it is in no entry and `tm undo` cannot reverse it (README gap 731)
+    every entry older than that close is behind it; `tm log` prints the close and what it wrote
+  undo needs day/2026-09-07.md to hold exactly what the undone command wrote, byte for byte
+  `tm --json undo` prints both texts whole, as detail.ours and detail.theirs
+[exit 3]
+$ tm --json --now 2026-09-08T10:43:00-05:00 undo   (detail.laterWriter)
+{"anchored": true, "close_at": "2026-09-08 09:00", "close_line": 4, "entries_after": 6}
+$ tm --now 2026-09-08T10:44:00-05:00 log --since 2026-09-07   (lines 3-4)
+2026-09-08 09:00 demote est_min=20 from="2026-09-07" id="p1" to="2026-W37"
+2026-09-08 09:00 close key="2026-09-07" period="day"
+```
+
+The first eight lines reproduce the W-19 transcript **to the character**, `39`/`38` lines and
+`line 28` included, which is what makes this a repair of that defect and not of a different one.
+
+The other three cases, driven on their own trees:
+
+```
+$ tm --now 2026-09-07T09:35:00-05:00 undo     (an external editor appended to day/2026-09-07.md)
+  .tm/log.jsonl records no entry after the command being undone, so no `tm` verb wrote this file since — it was changed from outside tm
+
+$ tm --now 2026-09-07T11:40:00-05:00 undo     (four later entries, none of them a close)
+  .tm/log.jsonl records 4 entries after the command being undone and no `close` among them; `tm log` shows them
+
+$ tm --now 2026-09-07T09:35:00-05:00 undo     (undoing a `tm rank`, which appends no event)
+  the command being undone appended no log entry, so there is no point in .tm/log.jsonl to read forward from and this undo cannot say who wrote next
+```
+
+The last one is the honest refusal: naming the *first* close in the file would name a close
+that ran **before** the command being undone.
+
+**Why the message names a line and an instant and not `close day 2026-09-07`.** `tm log`'s
+body — `key="2026-09-07" period="day"` — is built by re-parsing the line's JSON in the host
+(`lifecycle.rs`'s `log_human`), and gap 887 rules out a second parse on the undo path. A line
+number, a tag and an instant are what the two doors hand back, so they are what this says, and
+the message points at `tm log`, where the payload is already spelled. **Gap 1143** records what
+that costs.
+
+### 3. Gap 991 — refuted, with the transcript
+
+Gap 991 says *"`tm drop laundry` … exits 0 … `tm edit laundry state=[x]` refuses the same title
+with 'no such item: ^laundry', so two verbs disagree about what a routine title is."*
+
+**It does not reproduce.** On a fresh tree all three of `tm drop laundry`, `tm edit laundry
+state=[x]` and `tm edit laundry ci=3` resolve the title and exit 0. The refusal the gap quotes
+comes from running `edit` **after** `drop` has already written an `^id` onto the line — at which
+point D31's title key is gone and **both** verbs refuse it, and so do `tm routine done` and
+`tm skip`. What the transcript compared was a pre-`drop` `drop` with a post-`drop` `edit`.
+
+```
+### D2. gap 991 — REFUTED.  Three fresh trees, one command each.
+$ tm --now 2026-09-07T09:30:00-05:00 drop laundry
+dropped ^57r5 — a state box makes it a tracked item, so ^57r5 was written on the line, and `laundry` addressed it only while it carried no `^id` (D31); a routine line with a box does not recur, so `tm routine done`, `tm skip` and `tm plan` no longer see an instance of it — `tm undo` puts the line back
+  [exit 0]
+$ tm --now 2026-09-07T09:30:00-05:00 edit laundry state=[x]
+- [x] laundry    win:09:00-21:00 dur:30m  every:week on-miss:persist ^wk9t
+(a state box makes it a tracked item, so ^wk9t was written on the line, and `laundry` addressed it only while it carried no `^id` (D31); a routine line with a box does not recur, so `tm routine done`, `tm skip` and `tm plan` no longer see an instance of it — `tm undo` puts the line back)
+  [exit 0]
+$ tm --now 2026-09-07T09:30:00-05:00 edit laundry ci=3
+- laundry    win:09:00-21:00 dur:30m  every:week on-miss:persist ci:3
+  [exit 0]
+
+### and after EITHER boxing verb, both refuse the same title
+  after `tm drop laundry`:
+    $ tm drop laundry  ->  tm: no such item: ^laundry
+    $ tm edit laundry ci=3  ->  tm: no such item: ^laundry
+    $ tm routine done laundry  ->  tm: no such routine: laundry
+    $ tm skip laundry  ->  tm: no such routine: laundry
+  after `tm edit laundry state=[x]`:
+    $ tm drop laundry  ->  tm: no such item: ^laundry
+    $ tm edit laundry ci=3  ->  tm: no such item: ^laundry
+    $ tm routine done laundry  ->  tm: no such routine: laundry
+    $ tm skip laundry  ->  tm: no such routine: laundry
+
+### and the plan stops scheduling it
+  before: 09:20  ·      laundry 30m
+  after drop: (none)
+  after drop, tm check: no problems
+```
+
+Note `edit laundry ci=3` on a **fresh** tree: it writes a key, not a box, so it assigns no id
+and the title still addresses the line. That is the control that keeps the two directions from
+collapsing into one, and it is in the test.
+
+**So the brief's instruction — "make them agree; say which way and why" — has no repair in it:
+they already agree, in both directions.** What is real is gap 991's third bullet, and it is a
+routine-vocabulary defect, not a two-verb one: **boxing a routine — by either verb —
+silently converts it into a tracked item.** It loses its title address *and* its recurrence
+(the plan scheduled `laundry 30m` at 09:20 before the box and nothing after it), and `tm check`
+says "no problems". That is **gap 1140**.
+
+**What this step repaired is the sentence**, because there were two of them for one concept
+(AGENTS §5.3) — `dropped ^x — a state box makes it…` in `drop` and `(a state box makes it…)`
+in `edit` — and **neither was pinned by any test**. `boxed_note` is now the one spelling and it
+says both consequences. The recurrence clause is keyed on `routines.md`, not on the boxing,
+because recurrence is that file's: an `optional.md` line is told only what happened to it.
+
+```
+$ tm --now 2026-09-07T09:30:00-05:00 drop "Severance S3E4"     (optional.md)
+dropped ^57r5 — a state box makes it a tracked item, so ^57r5 was written on the line, and `Severance S3E4` addressed it only while it carried no `^id` (D31)
+$ tm --now 2026-09-07T09:31:00-05:00 drop ^m4                  (already has an id)
+dropped ^m4
+```
+
+### 4. Gap 1080 — one rule, and a sixth verb the gap did not name
+
+D35's line was stamped by `kernel_bridge::gate` alone, and in `drop`, `move`, `readopt` and
+`demote` that call sits **inside the id-less branch** — D33's *"the gate goes ahead of both,
+because this branch never reaches the kernel"* — so an item that HAS an id went straight to
+`kernel_bridge::apply` and was refused with no stamp.
+
+**The repair is not gap 1080's own prescription.** Gap 1080 proposes *"a one-line move of each
+`gate` call out of its branch"*. That would add a whole-tree load to four verbs on the **happy**
+path, and `kernel_call_counts.rs` pins `tm drop` at exactly **1** apply call with a docstring
+that says a second one *"fails here by name"*. Re-blessing that table to buy a sentence is the
+wrong trade. Instead `apply` takes the verb it is writing for and stamps **on the failure path
+only**, and the rule it stamps by is the one definition of *"does the kernel load this tree"*
+this module already has — `tree_refusal`, asked after the kernel has already refused. **A list
+of refusal names was declined**: it would have to grow every time `Boundary.lean` gains an
+`LErr` constructor, silently, which is the class this repository keeps finding.
+
+The enumeration also found a verb the gap does not name. **`tm review <p> --write` gated beside
+its write**, and on a refused tree `day_extras` reaches the kernel first, so the user got the
+kernel's sentence with no word about their `--write`. The gate moves to the top of the verb:
+the same one call, ahead of the body that computes the review.
+
+```
+### D3. gap 1080 — one refused tree, one refusal (badLine / Tm.PErr.noId at week/2026-W37.md:21).
+###     The tree is SWEPT first, so the automatic close is not what is speaking.
+verb                     D35 line?
+tm drop ^m4              YES
+tm demote ^m4            YES
+tm readopt ^m4           YES
+tm move ^m4 backlog      YES
+tm add --to week         YES
+tm close day             YES
+tm review day --write    YES
+tm rank ^m1 1            YES
+tm edit ^m4 ci=3         YES
+tm skip laundry          YES
+tm start ^m1             YES
+tm wake                  YES
+tm break                 YES
+tm event blocked         YES
+tm routine done laundry  YES
+tm plan                  no
+tm now                   no
+
+### the sentence itself, for one of the six that used to be silent
+tm: kernel refusal: badLine — week/2026-W37.md:21 looks like an item but does not parse (Tm.PErr.noId); the kernel refuses a tree it cannot load whole
+  nothing was written: `tm drop` needs a tree the kernel can load whole, and every reading verb refuses this one too — fix the line named above, or run `tm undo`
+
+### and the other direction: a COMMAND refusal on a tree that LOADS
+$ tm readopt ^m4
+tm: kernel refusal: notDemoted — the item is not demoted, so there is nothing to readopt (use `tm move`)
+$ tm check
+no problems
+```
+
+**Six verbs changed**, and the first five are gap 1080's own list: `drop`, `demote`, `readopt`,
+`move`, `close day` — plus **`add --to <horizon>`**, which gap 1080 does not name (its id-less
+sibling `tm add` with no `--to` always had the line, because that path takes the gate) and
+**`review --write`**, which it also does not. The two readers still print nothing, and `tm check`
+— D18/gap 145's one tolerant verb — is untouched: the line says *"every reading verb refuses
+this one too"*, which is false of a reader and is `tm check`'s whole job.
+
+### 5. Gap 1086 — the exemption is a rule now, and the rule is checked
+
+Check 9's *"18 of 77 pinned by nothing"* was one number covering two different things. **All 18
+are in `PlannerWit.lean`** — measured off `mutations.txt`, not assumed — where a literal body is
+what the definition is FOR: fold a named day to another constant and its own theorem is false by
+construction, which measures nothing about any rule.
+
+They are now **DECLARED exempt**, by a rule with three structural conjuncts and no name regex:
+
+* **(a)** the module is named in `WITNESS_MODULES` — **exact paths**, check 8's allow-list
+  discipline. A name regex (`^the[A-Z]`, `.*Wit.*`) would swallow a real rule the day somebody
+  names one badly;
+* **(b)** the module really is a **leaf** — nothing in the library imports it, so no definition
+  outside it can consume what it declares. `PlannerWit.lean`'s own header already asserted this
+  in prose; now it is checked;
+* **(c)** every verdict the definition earned was already `UNFOLDABLE` or `UNAVAILABLE`. A
+  fixture that a constant, an identity or a synthesised term **did** pin stays PINNED and stays
+  audited, so the verdict can subtract nothing from what the gate measures.
+
+**(b) fails the gate**, because the whole force of (a) is that a witness module cannot quietly
+become a library module. **Driven until it bit, three ways:**
+
+```
+### PROBE 1: a library module imports the witness module ###
+$ printf 'import TmKernel.PlannerWit\n' > TmKernel/TmKernel/W22Probe.lean
+$ python3 mutate.py --gate
+WITNESS_MODULES is not what it claims:
+  TmKernel/TmKernel/W22Probe.lean imports the witness module TmKernel.PlannerWit, so TmKernel/TmKernel/PlannerWit.lean is no longer a leaf and its definitions are reachable
+[exit 1]
+
+### PROBE 2: a stale WITNESS_MODULES entry ###
+WITNESS_MODULES is not what it claims:
+  TmKernel/TmKernel/Renamed.lean is in WITNESS_MODULES and is not a library module
+[exit 1]
+
+### PROBE 3: no witness modules declared -> the 18 are pinned by nothing again ###
+77 new or changed since 86c4dc6, 77 rostered (28 unfoldable, 0 witness fixtures, 18 pinned by nothing; 0 literal), 0 owed
+[exit 0]
+```
+
+Check 9 now reads **28 unfoldable, 18 witness fixtures, 0 pinned by nothing**. `mutations.txt`
+is **unchanged**: the verdict is computed at report time from (module, constants column), so no
+row's claim moved and no kernel build was spent on it.
+
+**And the `Capped _` rows are named, with what they need — and there are five, not three.**
+Gap 1086 says *"the other three are `routineCap`, `busyCap`-shaped `Capped _` values and
+`oFacts`/`oCand`"*; measured off the roster, the `Capped _`-typed rows are `routineCap`,
+`crowdedCap`, `lapsedCap`, `busyCap` (`Capped RoutineIn`) and `busyCands`
+(`Capped (Look.Cand × Option Look.Floor)`) — **five** — while `oFacts : Look.PlanFacts` and
+`oCand : … → Look.Cand × Option Look.Floor` are two of the other thirteen. That is gap 1086's
+own prose against its own measurement, and **gap 1142** records it.
+
+A constant of their type **already exists and this kernel declares it**:
+`Capped.nil {α : Type} : Capped α := ⟨[], by simp⟩`, at `Planner.lean:124`. Two textual rules in
+`mutate.py` keep it out of reach, and neither is deep: `nullary_constants` is **keyed by file**
+on purpose (a name from another module may need a prefix that function cannot compute) and
+`Capped.nil` is in `Planner.lean` while the fixtures are in `PlannerWit.lean`; and
+`type_constant` cannot resolve `Capped RoutineIn`, a type built by **applying** a function, so it
+never asks.
+
+**Hand-audited, one capped kernel build, so this is a measurement and not a guess.**
+`routineCap := Capped.nil`, the rest of the file untouched, `lake build TmKernel:static` under
+`MemoryMax=40G -p MemorySwapMax=0`, 1 m 50 s wall:
+
+```
+error: TmKernel/PlannerWit.lean:3304:2: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:3372:13: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:3685:13: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:3685:24: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:3736:68: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:4145:13: Tactic `decide` proved that the proposition
+error: TmKernel/PlannerWit.lean:4145:24: Tactic `decide` proved that the proposition
+error: Lean exited with code 1
+```
+
+`routineCap` is declared at `PlannerWit.lean:3285-3288`; **no error is inside it**, so under
+`mutate.py`'s own verdict table this is **PINNED**, in seven places. Widening either rule would
+therefore *strengthen* the gate on these five rather than hand out a free pass — but it is a
+decision about what a checker may synthesise **across modules**, which is README gap 980's
+question and not a patch. The file was restored from a backup in the same command and
+`git status` read afterwards.
+
+### 6. The tests, and the mutation that proves each one bites
+
+Ten new tests, **+10 on the workspace total**. Every one was probed by mutating the code it
+covers and watching it fail — D40's discipline applied to Rust, which check 9 cannot reach
+(gap 936).
+
+| file | tests | the mutation, and what failed |
+|---|---|---|
+| `cli_undo.rs` | 3 | `later_writer` returning `LaterWriter::default()` unconditionally → **all three FAILED** |
+| `cli_write_gate.rs` | 3 | the rule stubbed to `false` → the two that say it fires FAILED; stubbed to `true` → the one that says it does not over-fire FAILED |
+| `cli_items.rs` | 4 | the recurrence clause forced on → the `optional.md` test FAILED; forced off → the routine test FAILED |
+
+**One of the three `cli_undo.rs` tests did not bite at first**, and that is worth writing down.
+`an_undo_of_a_verb_that_logged_nothing_says_it_cannot_tell` asserts `anchored: false`, which is
+exactly what `LaterWriter::default()` returns — so the first mutation left it **green** while
+the other two went red. It now drives a logged verb on the same tree and the same file and
+asserts `anchored: true` beside it, and the same mutation fails all three.
+
+**And the gap-1080 test found `review --write` on its first run**, before any assertion about it
+existed: the enumeration is `WRITE_VERBS`, the table gap 584's own test walks, so a verb is in
+this test the moment it is in that one.
+
+### 7. Method, and what each method cannot see
+
+1. **"Every write verb prints the line."** *Method:* run `WRITE_VERBS` — 27 rows, built at W-17
+   by walking `cli::run`'s dispatch from `main` down — against one refused tree at one refusal,
+   on a **swept** tree so §6.3's close is not what is speaking. *Cannot see:* a write path that
+   never reaches the dispatch table. The source guard
+   `every_undo_recording_path_is_accounted_for` is the other half, and **neither can see gap
+   731's three** — `roll_day`, `closing::auto_close` and `Ctx::resolve_timeouts` — because they
+   record no undo entry and take no verb name. W-17's write-path enumeration missed two writers
+   because it grepped `Recorder::start(`; this enumeration has the same shape and the same
+   hole, and the hole is named.
+2. **"One refusal, one tree."** *Method:* `badLine`/`Tm.PErr.noId` at one line of one week file.
+   *Cannot see:* a refusal class that reaches `apply` by a different route. The rule is
+   `tree_refusal`-shaped and not name-shaped precisely so that it cannot go stale per class —
+   but that argument is a reading of the code, and the **only class driven end to end is this
+   one** plus `dupId` (the test's) and `notDemoted` (the negative).
+3. **"The two verbs agree."** *Method:* six commands over four fresh trees, both orders, plus
+   `tm plan` and `tm check` before and after. *Cannot see:* a third verb that resolves titles by
+   some other route. `Ctx::item` and `instance_of` are the two resolvers found by reading
+   `items.rs`; a fourth resolver spelled differently would be invisible, which is the
+   body-shape problem no gate in this repository can see (gap 877 item 3).
+4. **"All 18 exempt rows are in `PlannerWit.lean`."** *Method:* parse `mutations.txt` and group
+   by file — the gate's own record, not a reading. *Cannot see:* whether a row's claim is still
+   true; `mutate.py --verify` re-runs every row at one kernel build each and **was not run
+   here**.
+5. **"`routineCap` would be PINNED."** *Method:* one hand mutation, one watched capped build,
+   error locations compared against the declaration's own line range. *Cannot see:* the other
+   four `Capped _` rows, which were **not** built — `crowdedCap`, `lapsedCap`, `busyCap` and
+   `busyCands` are argued from the same shape and not measured.
+6. **"The witness guard bites."** *Method:* three probes, each reverted in the same command
+   with `git status` read afterwards. *Cannot see:* an import reached some way other than an
+   `import` line at column zero — there is none in Lean 4 — and it does not claim anything
+   about a module that imports a witness module's *importer*, which is a different property.
+7. **"The undo's attribution is right."** *Method:* four branches driven, and the first eight
+   lines compared character-for-character against W-19's recorded transcript. *Cannot see:*
+   whether the close it names is the writer of **that** file. It reports what the log holds
+   after the undone command and says so; **gap 1143**.
+8. **"No kernel-call count moved."** *Method:* `kernel_call_counts.rs` green, and the two new
+   calls are on failure paths the test does not take. *Cannot see:* the cost of those failure
+   paths, which is one extra whole-tree load per refused kernel-backed write and two extra log
+   reads per conflicting undo. Neither is measured by any instrument here.
+
+### 8. Acceptance, and every delta explained
+
+All capped at `MemoryMax=40G -p MemorySwapMax=0` (16G for the hand probe's `lake`, and for
+`mutate.py --gate`, which runs `lake build`).
+
+| check | `6ce574d` (baseline) | here | delta |
+|---|---|---|---|
+| lake build | ok | ok | — no Lean module touched |
+| totality | ok | ok | — |
+| axiom audit | 4,839 | **4,839** | — no theorem added or removed; `Check.lean` untouched |
+| `Negative.lean` | ok | ok | — no cheat taken |
+| check 5 (FFI) | 93 tests | **93** | — |
+| corpus | 29/37, 4/5 | **29/37, 4/5** | — |
+| stage goals | 9, all stage 6 | **9, all stage 6** | — no goal added, discharged or deleted |
+| check 8 | 27,860 / 26,337 / 1,523 allowed (115 voc, 348 counted), 0 unused | **27,979 / 26,456 / 1,523 allowed (115 voc, 348 counted), 0 unused** | **+119 citations / +119 resolved**: this block's own prose and `mutate.py`'s. The allowed column does not move — **0 allow-list entries added, 0 unused** |
+| check 9 | 77 rostered, 28 unfoldable, **18 pinned by nothing**, 0 owed | **77 rostered, 28 unfoldable, 18 witness fixtures, 0 pinned by nothing, 0 owed** | §5. No row left the audit and `mutations.txt` is unchanged |
+| `cargo test --workspace` | 1,347 / 0 / 9 across 79 binaries | **1,357 / 0 / 9 across 79 binaries** | **+10**: 3 `cli_undo`, 3 `cli_write_gate`, 4 `cli_items`. No binary added or removed |
+
+**`cli_latency` failed once, in the fully parallel run, and is the known flake — both results
+are reported.** `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` panicked
+with *"`tm drop ^z15` was still running after 1s"* on one `cargo test --workspace` run (its
+other rows that run printed 161 ms, 157 ms and 1.65 s). Re-run **serially**, on the same tree
+and the same binary: `5 passed; 0 failed; 1 ignored`, with `first verb 2.52 s`, `later verb
+157 ms`, `gated host-only write (D35) 157 ms`, `a 30-day-old hand undo 1.65 s`, `review week
+298 ms`. The next full `--no-fail-fast` workspace run was green. **No band was re-blessed.**
+
+`cli_switch_acceptance` 11/0, `kernel_call_counts` 2/0, `kernel_log_door` 23/0, T5
+(`kernel_replay_parity`) 29 passed / 4 ignored — all unmoved from the baseline.
+
+**Check 8 refused this step's own prose on its first run**, at `mutate.py:351`, on a
+hypothetical name written in backticks that resolves to nothing. It is spelled without them
+now. That is D39's gate doing what it was bought for, for the second run in a row.
+
+### 9. Gaps
+
+<!-- GAPS 1140-1144 — track A, run W-22.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1140 — boxing a routine silently converts it into a tracked item, and `tm check` says
+"no problems".** REPLACES gap **991**, which is **refuted** (§3): `tm drop` and `tm edit` agree
+about a routine title in both directions, and the refusal gap 991 quotes was taken after its own
+`drop` had written the id.
+1. *What is not done.* `tm drop <routine title>` and `tm edit <routine title> state=…` both box
+   a `routines.md` line and write an `^id` on it. The line then has no title address for any
+   verb, and **`recur` produces no instance for it**: `tm routine done`, `tm skip` and `tm plan`
+   all stop seeing it — driven, with `tm plan` scheduling `laundry 30m` at 09:20 before the box
+   and nothing after it. `tm check` reports no problem, and nothing in the tree records that a
+   routine stopped being one.
+2. *Why.* Routine vocabulary is the host's and the kernel has none on the wire, so the state box
+   is the only thing either side reads, and a boxed line is a tracked item by definition. This
+   step repaired the **sentence** — `boxed_note` now says both consequences — and did not change
+   what the verbs do, because changing it is a decision about what `tm drop <routine>` should
+   MEAN (refuse? drop today's instance? end the recurrence?) and that is the owner's.
+3. *What it costs.* A user can end a recurrence with a verb documented for items and be told
+   only that an id was written. The only recovery named anywhere is `tm undo`, which does
+   restore `routines.md` byte-for-byte.
+4. *Which step clears it.* **R3 or later**, when the planner's wire carries routines — or an
+   owner decision recorded in §13's text. PRE-EXISTING.
+
+**Gap 1141 — the D35 rule asks a second question at a second instant.**
+1. *What is not done.* `kernel_bridge::stamp_refused_write` decides whether to print "nothing
+   was written" by asking `tree_refusal` **after** `apply`'s own call has already been refused.
+   Those are two calls at two instants, so a writer that repairs the tree between them makes
+   the second answer `None` and the line is not printed.
+2. *Why.* Deliberate, and the alternative is worse: the only way to decide from the first
+   answer alone is a list of refusal names, which goes stale the next time `Boundary.lean`
+   gains an `LErr` constructor and goes stale **silently**. Asking the one definition of the
+   question (AGENTS §5.3) cannot go stale.
+3. *What it costs.* A missing reassurance, never a false one, and nothing is written either
+   way. It also costs one extra whole-tree load per refused kernel-backed write, on the failure
+   path only — measured by no instrument here, because `kernel_call_counts.rs` measures
+   successful runs.
+4. *Which step clears it.* Either a wire field on the refusal saying whether the tree loaded —
+   which is `Boundary.lean`'s to add and is the honest shape — or nothing, if the cost is
+   accepted. R1 or later.
+
+**Gap 1142 — gap 1086's prose says three where its own roster says five.**
+1. *What is not done.* Gap 1086 names *"the other three … `routineCap`, `busyCap`-shaped
+   `Capped _` values and `oFacts`/`oCand`"*. Measured off `mutations.txt`: the `Capped _`-typed
+   exempt rows are **five** (`routineCap`, `crowdedCap`, `lapsedCap`, `busyCap`, `busyCands`),
+   and `oFacts`/`oCand` are not `Capped _` at all. The sentence is not corrected in gap 1086
+   itself, which stays as written.
+2. *Why.* §5.11's class, one gap over: a number in prose beside a measurement that disagrees
+   with it. Correcting gap 1086 in place would rewrite another run's record.
+3. *What it costs.* An auditor sizing the exemption from the prose sizes it wrong by two, and
+   the two are exactly the rows a `Capped.nil` widening would reach.
+4. *Which step clears it.* The land step, by carrying this correction into gap 1086's own
+   paragraph — or gap 980, which owns the exemption decision and would restate both.
+
+**Gap 1143 — the undo names a close, not the writer of the file.**
+1. *What is not done.* `LaterWriter` reports the first `close` in `.tm/log.jsonl` after the
+   undone command, its line and its instant. It does **not** establish that that close rewrote
+   the file the §1.3 guard tripped on. It also carries no period or key, because the payload is
+   only reachable by re-parsing the line's JSON in the host (`log_human`'s way), which gap 887
+   rules out on the undo path (D9).
+2. *Why.* Both halves need the close to be **in** an undo entry — which is gap **731**, open and
+   whole, and a behaviour change on every verb at once (D19). This step landed the half gap 887
+   asked for: *"say so and land the half that names the close."*
+3. *What it costs.* On a tree where a close and an external editor both wrote, the message names
+   the close and the editor goes unmentioned; and a user who wants `close day 2026-09-07`
+   rather than `a close at 2026-09-08 09:00` has to run `tm log`, which the message says.
+4. *Which step clears it.* **R1, with gaps 731 and 86.**
+
+**Gap 1144 — `check.sh`'s check-9 comment block does not name the FIXTURE verdict.**
+1. *What is not done.* `check.sh` lines ~290-340 document check 9's verdicts — PINNED,
+   SURVIVED, INVALID, UNFOLDABLE, LITERAL — and the exemption's shape. `WITNESS_MODULES` and
+   FIXTURE are documented in `mutate.py`'s own header (which that block calls *"the
+   specification"*) and not there, so the two disagree about how many verdicts exist.
+2. *Why.* Deliberate: `check.sh` is shared with tracks P and G this run, and track P's D43 grep
+   guard is expected to land in it. A comment-block append from two branches is a conflict for
+   no gain.
+3. *What it costs.* One stale paragraph in the file an agent reads first.
+4. *Which step clears it.* **The W-22 land step.** The sentence to add, after the UNFOLDABLE
+   paragraph: *"A SIXTH label, FIXTURE, re-labels an already-exempt row declared in a
+   `WITNESS_MODULES` leaf — exact paths, the leaf property checked on every run and fatal if
+   it fails. It subtracts nothing from the audit: a witness-module definition a constant pins
+   stays PINNED. README gap 1086."*
+
+### 10. What this step did NOT do, by name
+
+* **It did not repair gap 731**, and did not try. The close is still in no undo entry; making it
+  undoable is a behaviour change on every verb at once (D19). Gap 887 is **half** closed — the
+  naming half — and gap 1143 says which half is left.
+* **It did not touch `Planner.lean`, `Emit.lean`, `PlanCheck.lean`, `Goals.lean`,
+  `Check.lean`, `Negative.lean`, `TmKernel.lean` or any file under `kernel/corpus/`.** Track P's
+  and track G's files are untouched; `git diff --stat 6ce574d..HEAD` names ten files: six
+  under `tm/src/cli/` (`out.rs`, `undo.rs`, `kernel_bridge.rs`, `items.rs`, `closing.rs`,
+  `lifecycle.rs`), three under `tm/tests/` and `kernel/mutate.py` — plus this README.
+* **It did not change `mutations.txt`**, `check.sh`, `citations.py` or `totality.py`.
+* **It did not widen `mutate.py`'s constant sources.** `Capped.nil` is measured and left; that
+  is gap 980's decision.
+* **It did not run `mutate.py --verify`** (one kernel build per row, 77 rows), so the other 72
+  roster claims are trusted as written.
+* **It did not re-bless a snapshot, fixture, latency band or corpus file**, and did not raise a
+  memory bound. The one `cli_latency` failure was re-run serially and reported both ways.
+* **It did not add an allow-list entry to check 8.** The one citation it refused was re-spelled
+  without backticks.
+* **It did not discharge, add or delete a goal.** Burn-down **9**, all stage 6.
+* **It did not drive the TUI**, which needs a tty (README gap 182, AGENTS §5.13) — and `tm/src/tui/`
+  is untouched, so nothing here reaches D43's second padder.
+* **It did not rebuild the fork oracle** (gap 807) and did not set `TM_ORACLE`.
+
+### 11. Worktree, and capping
+
+Work was done in `.claude/worktrees/w22-a` on branch `w22-a`, created from `6ce574d` with
+`git worktree add`. The kernel's `.lake` build directory was copied in from the main checkout
+so the FFI crate's `build.rs` did not rebuild Lean from scratch; no Lean source was modified,
+so those oleans are the main checkout's own. The Land step merges the branch.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm`, `python3` and `mutate.py` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for `check.sh`,
+`cargo`, the hand mutation's `lake build` and `cargo test --workspace`; 16G for `mutate.py
+--gate` and `citations.py`. **No breach to disclose.**

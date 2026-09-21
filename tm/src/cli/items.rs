@@ -225,6 +225,7 @@ fn add_kernel(
     let rec = Recorder::start(ctx, "add")?;
     let applied = kernel_bridge::apply(
         ctx,
+        "add",
         &[KCmd::Add {
             seed,
             to: path.to_string(),
@@ -581,6 +582,8 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
             .pairs
             .iter()
             .any(|p| matches!(split_pair(p), Ok((k, _)) if k == "state"));
+    let was = id.clone();
+    let boxed_in = item.src.file.clone();
     let (id, item, assigned) = if boxing {
         let assigned = write_id_for_boxing(&mut ctx, &id, "edit")?;
         let item = ctx.item(&assigned)?.clone();
@@ -646,6 +649,9 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     ctx.reload()?;
     rec.finish(&ctx, format!("edit {}", id.token()))?;
 
+    let note = assigned
+        .as_ref()
+        .map(|id| boxed_note(&was, id, &boxed_in));
     let out = EditOut {
         id: id.clone(),
         changes,
@@ -654,13 +660,9 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     };
     emit(
         ctx.json,
-        || match &out.assigned {
+        || match &note {
             None => out.line.clone(),
-            Some(id) => format!(
-                "{}\n(a state box makes it a tracked item, so {} was written on the line)",
-                out.line,
-                id.token()
-            ),
+            Some(note) => format!("{}\n({note})", out.line),
         },
         &out,
     )?;
@@ -789,7 +791,7 @@ fn edit_kernel(
         });
     }
     let rec = Recorder::start(ctx, "edit")?;
-    let applied = kernel_bridge::apply(ctx, &cmds)?;
+    let applied = kernel_bridge::apply(ctx, "edit", &cmds)?;
     for c in &changes {
         ctx.append_event(Event::Edit {
             id: id.to_string(),
@@ -882,6 +884,7 @@ pub fn move_item(g: &Globals, args: &super::MoveArgs) -> Result<i32, CliError> {
     let rec = Recorder::start(&ctx, "move")?;
     kernel_bridge::apply(
         &ctx,
+        "move",
         &[KCmd::Move {
             id: id.to_string(),
             to: to_path.clone(),
@@ -1046,7 +1049,7 @@ pub fn rank(g: &Globals, args: &super::RankArgs) -> Result<i32, CliError> {
                 return Ok(0);
             }
             let rec = Recorder::start(&ctx, "rank")?;
-            kernel_bridge::apply(&ctx, &cmds)?;
+            kernel_bridge::apply(&ctx, "rank", &cmds)?;
             ctx.reload()?;
             rec.finish(&ctx, format!("rank {} {}", id.token(), args.n))?;
             let out = RankOut {
@@ -1127,6 +1130,7 @@ pub fn demote(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let rec = Recorder::start(&ctx, "demote")?;
     let applied = kernel_bridge::apply(
         &ctx,
+        "demote",
         &[KCmd::Demote {
             id: id.to_string(),
             to: month_path.clone(),
@@ -1273,6 +1277,7 @@ pub fn readopt(g: &Globals, args: &super::ReadoptArgs) -> Result<i32, CliError> 
     let rec = Recorder::start(&ctx, "readopt")?;
     let applied = kernel_bridge::apply(
         &ctx,
+        "readopt",
         &[KCmd::Readopt {
             id: id.to_string(),
             to: to_path.clone(),
@@ -1380,6 +1385,43 @@ fn write_id_for_boxing(ctx: &mut Ctx, key: &Id, salt: &str) -> Result<Id, CliErr
     Ok(id)
 }
 
+/// **One spelling of "this line just gained an `^id`"** (AGENTS §5.3, README
+/// gap 991).
+///
+/// `tm drop <title>` and `tm edit <title> state=…` are the two verbs D33 lets
+/// box a box-less, id-less line, and each spelled the consequence its own way
+/// — `dropped ^x — a state box makes it…` and `(a state box makes it…)`. Two
+/// sentences for one concept, and neither was pinned by a test.
+///
+/// It now says the two things a user is about to need and neither spelling
+/// said. **The title stops being an address**: D31 keys a line by its title
+/// only while it carries no `^id`, so after the box `tm drop laundry`, `tm
+/// edit laundry ci=3`, `tm routine done laundry` and `tm skip laundry` all
+/// refuse the title — driven, all four, and *both* boxing verbs leave exactly
+/// that state, which is why gap 991's "two verbs disagree" is refuted rather
+/// than repaired. And **a boxed routine stops recurring**: on one tree at one
+/// instant, `tm plan` scheduled `laundry 30m` at 09:20 before the box and
+/// nothing at all after it.
+///
+/// The recurrence clause is keyed on `routines.md` and not on the boxing,
+/// because recurrence is that file's: an `optional.md` or week line gains an
+/// id and loses a title, and that is the whole of what happened to it.
+fn boxed_note(was: &Id, assigned: &Id, file: &str) -> String {
+    let mut note = format!(
+        "a state box makes it a tracked item, so {} was written on the line, and `{}` addressed \
+         it only while it carried no `^id` (D31)",
+        assigned.token(),
+        was.as_str()
+    );
+    if matches!(Horizon::from_path(file), Some(Horizon::Routine)) {
+        note.push_str(
+            "; a routine line with a box does not recur, so `tm routine done`, `tm skip` and \
+             `tm plan` no longer see an instance of it — `tm undo` puts the line back",
+        );
+    }
+    note
+}
+
 /// `tm drop ^id`, or `tm drop <title>` for a line D31 keys by its title.
 ///
 /// Kernel-backed (kernel/README.md, 2026-09-12 "the five lifecycle verbs"):
@@ -1399,8 +1441,9 @@ pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
     let key = Ctx::key(&args.id);
     let item = ctx.item(&key)?.clone();
     let rec = Recorder::start(&ctx, "drop")?;
+    let boxed_in = item.src.file.clone();
     let (id, line, assigned) = if item.has_id() {
-        let applied = kernel_bridge::apply(&ctx, &[KCmd::Drop { id: key.to_string() }])?;
+        let applied = kernel_bridge::apply(&ctx, "drop", &[KCmd::Drop { id: key.to_string() }])?;
         ctx.append_event(Event::Drop { id: key.to_string() })?;
         let line = applied
             .line_of(key.as_str())
@@ -1411,27 +1454,27 @@ pub fn drop_item(g: &Globals, args: &super::IdArgs) -> Result<i32, CliError> {
         // D33: the box and the id land together, in that order — and the gate
         // goes ahead of both, because this branch never reaches the kernel.
         kernel_bridge::gate(&ctx, "drop")?;
+        let was = key.clone();
         let id = write_id_for_boxing(&mut ctx, &key, "drop")?;
         let line = horizon::drop_item(&ctx.hz(), &id)?;
-        (id.clone(), line, Some(id))
+        (id.clone(), line, Some((was, id)))
     };
     ctx.reload()?;
     rec.finish(&ctx, format!("drop {}", id.token()))?;
 
+    let note = assigned
+        .as_ref()
+        .map(|(was, id)| boxed_note(was, id, &boxed_in));
     let out = DropOut {
         id: id.clone(),
         line,
-        assigned,
+        assigned: assigned.map(|(_, id)| id),
     };
     emit(
         ctx.json,
-        || match &out.assigned {
+        || match &note {
             None => format!("dropped {}", out.id.token()),
-            Some(id) => format!(
-                "dropped {} — a state box makes it a tracked item, so {} was written on the line",
-                out.id.token(),
-                id.token()
-            ),
+            Some(note) => format!("dropped {} — {note}", out.id.token()),
         },
         &out,
     )?;
