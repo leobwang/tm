@@ -240,6 +240,8 @@ import re
 import subprocess
 import sys
 
+import leanfiles
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 PKG = os.path.join(HERE, "TmKernel")
@@ -297,10 +299,14 @@ def read(path):
         return handle.read()
 
 
-# Build directories and checkouts, never sources.  0 `.lean` files live under
-# `kernel/TmKernel/.lake` today; pruning is what keeps a future layout from
-# being mutated as if it were this kernel.
-PRUNE = {".lake", "target", ".git"}
+# THE WALK IS `leanfiles.lean_files` since the W-22 repair step; this file no
+# longer has one of its own.  The prune list it used to hold named `target`,
+# which is a legal Lean module path component, so a library module under
+# `kernel/TmKernel/TmKernel/target/` was reported `NOT IN lib_files()` while
+# `touched()` below saw it -- the same "two checkers disagreeing about whether a
+# file exists" failure `touched()`'s docstring names, one layer down from the
+# recursion W-21 repaired.  Driven: `lib_files()` stayed at 83 files with a
+# `target/Probe.lean` holding a `partial def` on disk.
 
 
 def lib_files():
@@ -318,15 +324,14 @@ def lib_files():
     `totality.py` rc=0 and `citations.py` rc=0 with byte-identical counts.  The
     control, the same definition at the top level of `PlanCheck.lean`, was
     OWED.  That is the "two checkers disagreeing about whether a file exists"
-    failure `touched()`'s own docstring names, in this file, against itself."""
-    out = []
-    for base, dirs, files in os.walk(LIB):
-        dirs[:] = [d for d in dirs if d not in PRUNE]
-        for name in files:
-            if name.endswith(".lean"):
-                out.append(os.path.relpath(os.path.join(base, name),
-                                           HERE).replace(os.sep, "/"))
-    return sorted(out)
+    failure `touched()`'s own docstring names, in this file, against itself.
+
+    AND THE WALK IS NOT HERE ANY MORE (the W-22 repair step): four checkers
+    enumerated the kernel four ways, `check.sh`'s check-3 roster grep was still
+    one level deep, and the three recursive walks shared a prune list that hid a
+    directory named `target`.  `leanfiles.lean_files` is the one enumeration."""
+    return sorted(os.path.relpath(str(p), HERE).replace(os.sep, "/")
+                  for p in leanfiles.lean_files(LIB))
 
 
 # ---------------------------------------------------------------------------
@@ -613,17 +618,33 @@ def touched(base):
     the gate exists to bite, while `citations.py`, written in the same run,
     globs the filesystem and saw the same file.  Two checkers disagreeing about
     whether a file exists is the shape of a gate going quietly useless."""
-    files = set()
-    for argv in (["git", "diff", "--name-only", base,
-                  "--", "kernel/TmKernel/TmKernel"],
-                 ["git", "ls-files", "--others", "--exclude-standard",
-                  "--", "kernel/TmKernel/TmKernel"]):
+    files, tracked = set(), set()
+    for argv, into in ((["git", "diff", "--name-only", base,
+                         "--", "kernel/TmKernel/TmKernel"], files),
+                       (["git", "ls-files", "--others", "--exclude-standard",
+                         "--", "kernel/TmKernel/TmKernel"], files),
+                       (["git", "ls-files", "--",
+                         "kernel/TmKernel/TmKernel"], tracked)):
         got = subprocess.run(argv, cwd=ROOT, capture_output=True, text=True)
         if got.returncode != 0:
             raise SystemExit("mutate.py: %s failed: %s"
                              % (" ".join(argv[:3]), got.stderr.strip()))
-        files |= {line[len("kernel/"):] for line in got.stdout.split("\n")
-                  if line.endswith(".lean")}
+        into |= {line[len("kernel/"):] for line in got.stdout.split("\n")
+                 if line.endswith(".lean")}
+    # **THE THIRD CALL IS THE W-22 REPAIR STEP'S, and it is the same failure one
+    # layer down.**  `--exclude-standard` asks git's IGNORE RULES, and this
+    # repository's `.gitignore` line 2 is `**/target` -- so a library module at
+    # `kernel/TmKernel/TmKernel/target/Probe.lean` is not "other", it is
+    # IGNORED, and the second call above does not list it.  With `lib_files()`
+    # repaired to walk it, `--gate` STILL printed "0 owed" on a `def
+    # w22TargetGatherable : Bool := true` sitting on disk -- D40's exact class,
+    # green.  So the file list and the git list are RECONCILED rather than
+    # trusted: a `.lean` file the walk finds and git does not TRACK is new,
+    # whatever git's ignore rules think of it.  That also subsumes the second
+    # call; it is kept because it is the cheap answer for the ordinary
+    # not-yet-added module and because losing it would make this reconciliation
+    # the only thing standing between an untracked module and the gate.
+    files |= {path for path in lib_files() if path not in tracked}
     return files
 
 
@@ -701,6 +722,118 @@ def restore_in_flight():
     print("mutate.py: restored %s from a killed run" % rel, flush=True)
 
 
+# ---------------------------------------------------------------------------
+# WHERE THE BUILD BROKE, AS A NAME (README gap 1190, the W-22 repair step).
+#
+# The roster's fifth column used to be `Emit.lean:373` -- a LINE NUMBER, which
+# is the one kind of citation this campaign has already learned rots.  Measured
+# at W-22 by an independent auditor: 25 of 25 track-P rows re-ran at a different
+# line from the one committed, systematically (+1 in `Emit.lean`, +6 and +9 in
+# `PlannerWit.lean`), because the step edited doc comments and inserted a
+# witness row AFTER its mutation sweep.  The verdicts were all still PINNED --
+# no soundness was lost -- and the column's whole purpose, being the one
+# human-readable evidence that a mutation was watched to fail, was.
+#
+# So the site is recorded as `<file>:<line> <declaration>`: the line for the
+# person reading the build output, and the DECLARATION THE ERROR FELL INSIDE,
+# which does not move when a doc comment above it does.  That is gap 1190's own
+# item 4, and it is what makes a build-free staleness check possible -- see
+# `stale_sites`, which `--gate` runs on every check.sh run at no cost.
+#
+# The scan is deliberately its own and not `declarations()`: that one finds the
+# `def`s and `abbrev`s this file MUTATES, and a pin site is almost always a
+# THEOREM, which it does not return.
+DECL_START = re.compile(
+    r"^(?:@\[[^\]]*\][ \t]*)*"
+    r"(?:private[ \t]+|protected[ \t]+|noncomputable[ \t]+|partial[ \t]+"
+    r"|unsafe[ \t]+|scoped[ \t]+)*"
+    r"(?:theorem|lemma|def|abbrev|structure|inductive|instance|class|example"
+    r"|opaque|axiom)[ \t]+([^\s(){}\[\]:]+)")
+
+_SPANS = {}
+
+
+def decl_spans(text):
+    """[(first line, name)] for every column-zero declaration, doc comment first.
+
+    The doc comment is INSIDE the span because that is where Lean reports the
+    error for a failed declaration: `Emit.lean:374` is the `/--` line of
+    `cells_are_the_nine_in_order`, not its `theorem` line."""
+    lines = text.split("\n")
+    out = []
+    for i, line in enumerate(lines, 1):
+        m = DECL_START.match(line)
+        if not m:
+            continue
+        start = i
+        # Walk back over the doc comment that belongs to this declaration.
+        j = i - 2
+        if j >= 0 and lines[j].rstrip().endswith("-/"):
+            while j >= 0:
+                if lines[j].lstrip().startswith("/--") or lines[j].lstrip().startswith("/-!"):
+                    start = j + 1
+                    break
+                j -= 1
+        out.append((start, m.group(1)))
+    return sorted(out)
+
+
+def site(where, line):
+    """`<file>:<line> <declaration>` for an error at `where:line`."""
+    base = os.path.basename(where)
+    if base not in _SPANS:
+        path = next((p for p in lib_files() if os.path.basename(p) == base), None)
+        _SPANS[base] = (decl_spans(read(os.path.join(HERE, path)))
+                        if path else [])
+    name = None
+    for start, decl in _SPANS[base]:
+        if start <= line:
+            name = decl
+        else:
+            break
+    return "%s:%d%s" % (base, line, (" " + name) if name else "")
+
+
+# A pin site that carries its declaration: `Emit.lean:374
+# cells_are_the_nine_in_order`.  The name is what this can check without a
+# build; the number is what a reader needs to find the line.
+NAMED_SITE = re.compile(
+    r"\b([A-Za-z][A-Za-z0-9_]*\.lean):(\d+)[ \t]+([A-Za-z_][A-Za-z0-9_.']*)")
+BARE_SITE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\.lean:\d+")
+
+
+def stale_sites(rows):
+    """(stale, un-upgraded) over the roster's fifth column.  NO BUILD.
+
+    README gap 1190: the column records where the build first errored, and
+    nothing re-checked it, so 25 of 25 track-P rows re-ran at a different line
+    from the one committed and `check.sh` was 9/9 throughout.  A row whose site
+    carries a DECLARATION NAME can be checked for free -- the name must still be
+    the one that encloses that line -- and that check runs on every gate run.
+
+    THE SECOND NUMBER IS THE HONEST HALF.  A row whose site is a bare
+    `file:line` cannot be checked at all and is COUNTED rather than passed over
+    in silence, which is check 8's allow-list discipline: an exemption nobody
+    counts is how a gate goes quietly useless.  Those rows are upgraded by
+    `mutate.py --verify --write`, which costs one kernel build per constant, so
+    the count falls as steps re-verify their own files and not before."""
+    stale, unnamed = [], 0
+    for (path, name), row in sorted(rows.items()):
+        why = row.get("why", "")
+        hits = NAMED_SITE.findall(why)
+        if not hits:
+            unnamed += 1 if BARE_SITE.search(why) else 0
+            continue
+        for base, line, decl in hits:
+            want = "%s:%s %s" % (base, line, decl)
+            got = site(base, int(line))
+            if got != want:
+                stale.append("%s %s: roster says `%s`, %s:%s is now in `%s`"
+                             % (path, name, want, base, line,
+                                got.split(" ", 1)[-1] if " " in got else "no declaration"))
+    return stale, unnamed
+
+
 def mutate_one(decl, const, synthesised=False):
     """Apply one constant, build, restore.  -> (verdict, first error line).
 
@@ -734,7 +867,7 @@ def mutate_one(decl, const, synthesised=False):
     for idx, m in enumerate(hits):
         where, line = m.group(1), int(m.group(2))
         if first is None:
-            first = "%s:%d" % (os.path.basename(where), line)
+            first = site(where, line)
         if os.path.basename(where) == os.path.basename(decl["file"]) \
            and decl["line"] <= line <= decl["last"]:
             stop = hits[idx + 1].start() if idx + 1 < len(hits) else len(out)
@@ -742,10 +875,9 @@ def mutate_one(decl, const, synthesised=False):
             if want:
                 return "UNFOLDABLE", "no Inhabited %s" % want.group(1).strip()
             if synthesised:
-                return "UNAVAILABLE", "%s:%d -- the synthesised constant does " \
-                    "not elaborate here" % (os.path.basename(where), line)
-            return "INVALID", "%s:%d is inside the declaration" % (
-                os.path.basename(where), line)
+                return "UNAVAILABLE", "%s -- the synthesised constant does " \
+                    "not elaborate here" % site(where, line)
+            return "INVALID", "%s is inside the declaration" % site(where, line)
     return "PINNED", first or "build failed with no located error"
 
 
@@ -1164,8 +1296,10 @@ def write_rows(rows):
 def run(decls, write, verbose=True):
     """Mutate each declaration with each of its constants.
 
-    -> (bad, soft).  `bad` fails the gate; `soft` is the UNFOLDABLE roster --
-    named, counted and printed on every run, never silent."""
+    -> (bad, soft, pinned, by, rows).  `bad` fails the gate; `soft` is the
+    UNFOLDABLE roster -- named, counted and printed on every run, never silent;
+    `rows` is what this run WOULD write, which is what `--verify` compares the
+    committed roster against (README gap 1190)."""
     rows, bad, soft, pinned = [], [], [], set()
     # Which mutation earned the pin, per definition.  Counted rather than
     # inferred: the summary used to read "pinned by an identity" off the mere
@@ -1246,7 +1380,7 @@ def run(decls, write, verbose=True):
                    else "; the body IS the constant `%s`" % literal)))
     if write and rows:
         write_rows(rows)
-    return bad, soft, pinned, by
+    return bad, soft, pinned, by, rows
 
 
 FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
@@ -1284,16 +1418,64 @@ def main(argv):
         base = argv[argv.index("--since") + 1]
 
     if verify:
+        # **`--only` NARROWS A VERIFY** (the W-22 repair step).  A full
+        # re-verification is one kernel build per constant -- 114 rows and ~285
+        # constants at this commit, measured at about two minutes a constant on
+        # this machine, so hours -- and until now the flag an auditor reaches for
+        # to ask about ONE row re-ran all of them or nothing.  It matches a
+        # definition's name, its `file:name` tag, or a FILE, so "re-verify
+        # `Emit.lean`" is a sentence this tool can be asked.
         decls = [d for path in lib_files()
                  for d in declarations(read(os.path.join(HERE, path)), path)
                  if (d["file"], d["name"]) in rows]
+        if only:
+            decls = [d for d in decls
+                     if d["name"] == only
+                     or "%s:%s" % (d["file"], d["name"]) == only
+                     or d["file"] == only
+                     or os.path.basename(d["file"]) == only]
+            if not decls:
+                print("mutate.py: --only %r matches no rostered definition"
+                      % only)
+                return 2
         for d in decls:
             d["sha"] = digest(d["body"]) if d["body"] is not None else None
         print("re-running %d rostered mutation(s)" % len(decls))
-        bad, soft, _, _ = run(decls, False)
+        bad, soft, _, _, fresh = run(decls, write)
+        # **THE FIFTH COLUMN IS COMPARED, NOT ONLY RE-RUN** (README gap 1190).
+        # `--verify` used to re-run every row and throw the result away except
+        # for its verdict, so a row whose recorded pin SITE had gone stale --
+        # the file and line where the build first errored -- re-verified clean.
+        # Measured at the W-22 repair step: 25 of 25 track-P rows re-ran at a
+        # DIFFERENT line from the one committed (+1 in `Emit.lean`, +6 and +9 in
+        # `PlannerWit.lean`), because the step edited doc comments and inserted a
+        # witness row after its sweep and re-ran only one row.  The land step
+        # reported the class as TWO rows and blamed the merge; it is systematic
+        # and the merge is not its cause.  It costs no soundness -- every verdict
+        # re-derived PINNED -- and it costs the column's whole purpose, which is
+        # to be the one human-readable evidence that a mutation was watched to
+        # fail.  `--verify --write` rewrites the drifted rows; `--verify` alone
+        # names them and FAILS, because a roster whose evidence column has rotted
+        # is a roster nobody can audit by reading.
+        norm = lambda t: " ".join(t.split())
+        stale = []
+        for row in fresh:
+            got = row.split(None, 4)
+            was = rows.get((got[1], got[2]), {})
+            mine = (norm(got[3]), norm(got[4] if len(got) > 4 else ""))
+            theirs = (norm(was.get("consts", "")), norm(was.get("why", "")))
+            if mine != theirs:
+                stale.append((got[1], got[2], theirs, mine))
+        for path, name, theirs, mine in stale:
+            print("  STALE ROW %s %s" % (path, name))
+            print("    roster: %s | %s" % theirs)
+            print("    actual: %s | %s" % mine)
         print("%d rostered definition(s) failed re-verification, "
-              "%d unfoldable" % (len(bad), len(soft)))
-        return 1 if bad else 0
+              "%d unfoldable, %d row(s) whose recorded verdict or pin site "
+              "had drifted%s"
+              % (len(bad), len(soft), len(stale),
+                 " (rewritten)" if write and stale else ""))
+        return 1 if bad or (stale and not write) else 0
 
     decls = new_or_changed(base)
     if only:
@@ -1359,17 +1541,31 @@ def main(argv):
             print("  %s" % why)
         return 1
 
+    # **THE RECORDED PIN SITE IS RE-RESOLVED, on every run and without a build**
+    # (README gap 1190).  A row whose site names the declaration the error fell
+    # inside is checked against the tree as it stands; a row whose site is still
+    # a bare line number cannot be checked and is COUNTED.
+    drifted, unnamed = stale_sites(rows)
+    if drifted:
+        print("%d roster row(s) whose recorded pin site has drifted -- "
+              "`mutate.py --verify --write` re-runs and rewrites them:"
+              % len(drifted))
+        for why in drifted:
+            print("  %s" % why)
+        return 1
+
     if gate:
         if not owed:
             print("%d new or changed since %s, %d rostered "
                   "(%d unfoldable, %d witness fixtures, %d pinned by nothing; "
-                  "%d literal)%s, 0 owed"
+                  "%d literal)%s, 0 owed, %d pin site(s) still a bare line "
+                  "number"
                   % (len(decls), base[:7], len(rostered), unfold,
-                     fixture_rows, mute_rows, lit, shadow))
+                     fixture_rows, mute_rows, lit, shadow, unnamed))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
               % (len(decls), base[:7], len(rostered), len(owed)))
-    bad, soft, pinned, by = run(owed, write)
+    bad, soft, pinned, by, _ = run(owed, write)
     if soft:
         print("%d definition(s) the fold cannot speak about -- "
               "UNFOLDABLE (no constant of the type exists) or "

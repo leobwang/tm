@@ -42,12 +42,24 @@ fi
 #    deliberately audited (6.3), and auditing more than the theorems is not a
 #    defect.  A `sort -u` count cannot replace this: 23 short names are declared
 #    in more than one namespace.
+#
+#    AND THE ROSTER GREP WAS THE FOURTH ENUMERATION, repaired at the W-22 repair
+#    step.  W-21 made `totality.py`, `citations.py` and `mutate.py` recursive and
+#    left THIS one at `TmKernel/*.lean`, because none of the three named it: a
+#    theorem in a SUBDIRECTORY was never required to have a `#print axioms` line,
+#    which is exactly the class the paragraph above says this check exists to
+#    catch.  DRIVEN before the repair, in a scratch copy: the same theorem gave
+#    `unaudited` EMPTY at `TmKernel/TmKernel/Sub/Probe.lean` and named it at
+#    `TmKernel/Probe2.lean`.  The walk is now `leanfiles.lean_files`, the one
+#    enumeration all four checkers share, so a fifth disagreement needs someone
+#    to write a second walk.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
-unaudited=$( cd TmKernel && comm -23 \
-  <( grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
+unaudited=$( comm -23 \
+  <( python3 leanfiles.py TmKernel/TmKernel \
+       | xargs -r grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' \
        | sed 's/.*theorem //' | sed 's/.*\.//' | sort ) \
-  <( grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
+  <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
 elif bad=$( printf '%s\n' "$out" | grep -E '^Check\.lean:[0-9]+:[0-9]+: error' | head -3 ); [ -n "$bad" ]; then

@@ -257,23 +257,29 @@ import os
 import glob
 import collections
 
+import leanfiles
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
-# RECURSIVELY, `.lake`/`target`/`.git` pruned -- the W-21 repair step's, and
-# one of three enumerations that disagreed with `check.sh` line 204's
+# RECURSIVELY, build directories pruned -- `leanfiles.lean_files`, which is where
+# this walk went at the W-22 repair step.  It was the W-21 repair step's, and one
+# of three enumerations that disagreed with `check.sh` line 204's
 # `TmKernel/**.lean`.  A library module in a SUBDIRECTORY was invisible here,
 # in `totality.py` and in `mutate.py` at once, while `mutate.py`'s own
 # `touched()` asked git with a recursive pathspec: driven before the repair, a
 # `TmKernel/TmKernel/Sub/Probe.lean` holding a backticked Look.zzz_no_such_thing
-# left this file's counts BYTE-IDENTICAL and rc 0.  One glob and not two,
+# left this file's counts BYTE-IDENTICAL and rc 0.  One walk and not two,
 # because the recursive one subsumes `TmKernel/*.lean` and a path reached twice
 # would have its every citation counted twice.
-PRUNE = {".lake", "target", ".git"}
-LEAN_FILES = sorted(
-    path for path in glob.glob(os.path.join(HERE, "TmKernel", "**", "*.lean"),
-                               recursive=True)
-    if not PRUNE & set(path.split(os.sep)))
+#
+# AND THE PRUNE LIST WAS THE NEXT HOLE, repaired at W-22: the three walks shared
+# the hard-coded name `target`, which is a legal Lean module path component, so a
+# module under `kernel/TmKernel/TmKernel/target/` was invisible here, in
+# `totality.py` and in `mutate.py` at once.  Driven: it left this file at
+# 28699/27174/1525/0, byte-identical again.  `leanfiles.is_build_dir` prunes on a
+# property a build directory has, never on a name.
+LEAN_FILES = [str(p) for p in leanfiles.lean_files(os.path.join(HERE, "TmKernel"))]
 README = os.path.join(HERE, "README.md")
 AGENTS = os.path.join(ROOT, "AGENTS.md")
 # The gate's OWN files, swept as PROSE at the W-20 repair step.  They were the

@@ -27,12 +27,24 @@ a backticked Look.zzz_no_such_thing gave this file rc=0, `citations.py` rc=0
 with byte-identical counts, and `mutate.py --gate` rc=0 "0 owed".  A library
 module in a SUBDIRECTORY was invisible to checks 2, 8 and 9 at once.
 
+AND THE W-22 REPAIR STEP MOVED THE WALK OUT OF THIS FILE, because the W-21
+repair left two holes of the same shape.  `check.sh`'s check-3 roster grep was
+never made recursive -- a theorem in a subdirectory was never required to have a
+`#print axioms` line -- and the three walks that WERE repaired shared a prune
+list holding the name `target`, a legal Lean module path component, so a library
+module under `kernel/TmKernel/TmKernel/target/` was invisible to checks 2, 8 and
+9 again.  Both driven; `leanfiles.py` is the one enumeration all four now use,
+and it prunes on a PROPERTY (a leading dot, or a CACHEDIR.TAG file) rather than
+on a name.
+
 AND THE EXEMPTION NARROWED WITH IT.  `Goals.lean` is exempt only AT THE ROOT of
 a directory named on the command line; a `Sub/Goals.lean` is scanned like any
 other file.  Without that test the recursion would have widened the one
 exemption into a directory anybody could create.
 """
 import re, sys, pathlib
+
+import leanfiles
 
 # The one exemption, named file by file rather than by loosening a pattern.
 #
@@ -57,10 +69,18 @@ BANNED = [
     (r"\.toOption", ".toOption"),
 ]
 
-# Build directories and checkouts, never sources.  There are 0 `.lean` files
-# under `kernel/TmKernel/.lake` today; pruning is what keeps a future layout --
-# or a vendored toolchain -- from being scanned as if it were this kernel.
-PRUNE = {".lake", "target", ".git"}
+# THE ENUMERATION IS `leanfiles.lean_files`, and it is not this file's any more
+# (the W-22 repair step).  Four checkers answered "which files ARE the kernel"
+# separately; three were made recursive at W-21 and the fourth -- `check.sh`'s
+# check-3 roster grep -- was not, because nothing named it.  Worse, the three
+# that were repaired shared a hard-coded prune list holding the name `target`,
+# which is a LEGAL Lean module path component, so a library module under
+# `kernel/TmKernel/TmKernel/target/` was invisible to checks 2, 8 and 9 at once
+# -- W-21's `Sub/` class reached through the prune list instead of through the
+# non-recursion.  DRIVEN before the repair: a `target/Probe.lean` holding
+# `partial def w22TargetLoop`, a HARD RULE, gave this file rc=0.  The prune rule
+# is now a PROPERTY a build directory has (a leading dot, or a CACHEDIR.TAG
+# file) and never a name.
 
 bad = 0
 # path -> is it at the ROOT of any directory named on the command line.  A dict
@@ -72,9 +92,7 @@ bad = 0
 files = {}
 for d in sys.argv[1:]:
     root = pathlib.Path(d)
-    for p in root.rglob("*.lean"):
-        if PRUNE & set(p.parts):
-            continue
+    for p in leanfiles.lean_files(root):
         files[p] = files.get(p, False) or p.parent == root
 for p in sorted(files):
     if files[p] and p.name in EXEMPT:
