@@ -347,24 +347,23 @@ fn pad(s: &str, w: usize) -> String {
 /// double-width character drops that character instead of splitting it, and a
 /// cut that lands after a space drops the space, so the result can be a column
 /// or two narrower.
+///
+/// **It is [`clip`] plus the trim, and not a second copy of the walk** (AGENTS
+/// §5.3, the W-22 repair step). The two used to be the same `for c in
+/// s.chars()` written twice, statement for statement, differing only by the
+/// `while out.ends_with(' ')` below — so a change to the width walk had to be
+/// made in two places, which is README gap 1089's own lesson inside the one
+/// file D43 is about. The trim runs **only when a cut happened**: an `s` that
+/// already fits comes back untouched even when it ends in `…`.
 pub fn truncate(s: &str, w: usize) -> String {
-    if display_width(s) <= w {
-        return s.to_string();
+    let out = clip(s, w);
+    if display_width(s) <= w || w == 0 {
+        return out; // nothing was cut; `s` unchanged, or empty at `w == 0`
     }
-    if w == 0 {
-        return String::new();
-    }
-    let keep = w - 1; // room for the `…`
-    let mut out = String::with_capacity(s.len());
-    let mut used = 0usize;
-    for c in s.chars() {
-        let cw = char_width(c);
-        if used + cw > keep {
-            break;
-        }
-        used += cw;
-        out.push(c);
-    }
+    // `clip` put the `…` there; take it off, eat the spaces it was hiding, and
+    // put it back.
+    let mut out = out;
+    out.pop();
     while out.ends_with(' ') {
         out.pop();
     }
@@ -382,6 +381,10 @@ pub fn truncate(s: &str, w: usize) -> String {
 /// padding would walk the `…` backwards into the middle of the line. Both
 /// measure with [`char_width`], which is what D43 is about — the TUI used to
 /// clip with ratatui's `unicode-width` instead.
+///
+/// **That defence was true of the operations and false of the bodies**, and an
+/// auditor said so at W-22: they were the same char walk written twice. This is
+/// the walk; `truncate` is this plus a trim.
 pub fn clip(s: &str, w: usize) -> String {
     if display_width(s) <= w {
         return s.to_string();

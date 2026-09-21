@@ -137,14 +137,20 @@ pub fn timeline_lines(app: &App, width: usize, height: usize) -> Vec<Line<'stati
         .skip(top)
         .take(height.max(1))
         .map(|(i, row)| {
-            let text = emit::clip(&row.text, width);
-            let pad = width.saturating_sub(emit::display_width(&text));
+            // **Cut, then pad — both in `emit`** (D43, the W-22 repair step).
+            // This used to cut with `emit::clip` and then fill with its own
+            // `" ".repeat`, which is a second padder under no name at all;
+            // `one_padder.rs` could not see it and an auditor could. The
+            // composition is byte-for-byte what it was: `pad_to` truncates
+            // first, and a string `clip` has already fitted is returned by
+            // `truncate` unchanged, so only the fill moved.
+            let text = emit::pad_to(&emit::clip(&row.text, width), width);
             let style = if i == app.selection {
                 theme::SELECTED
             } else {
                 Style::new()
             };
-            Line::from(Span::styled(format!("{text}{}", " ".repeat(pad)), style))
+            Line::from(Span::styled(text, style))
         })
         .collect()
 }
