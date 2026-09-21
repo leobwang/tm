@@ -313,6 +313,11 @@ fi
 #    8's allow-list discipline applied to check 9 -- exact names, never a
 #    pattern -- and it is NOT a claim that anything reads the definition.
 #
+#    A SIXTH label, FIXTURE, re-labels an already-exempt row declared in a
+#    `WITNESS_MODULES` leaf -- exact paths, the leaf property checked on every
+#    run and fatal if it fails.  It subtracts nothing from the audit: a
+#    witness-module definition a constant pins stays PINNED.  README gap 1086.
+#
 #    THE FIRST REAL RUN, at the W-20 land step, was 46 definitions from tracks P
 #    and G: 23 PINNED, 23 UNFOLDABLE, **0 SURVIVED**.  The 23 are `Bool` +
 #    `Subtype` types (AGENTS 5.1) that deliberately have no default, so the gate

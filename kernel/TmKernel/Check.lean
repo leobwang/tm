@@ -6203,3 +6203,39 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_emit_predicates_at_the_witness_rows
 #print axioms Tm.PlannerWit.the_emit_numerals
 #print axioms Tm.PlannerWit.the_time_cell_is_local
+/-! ############################################################################
+## Stage 6, W-22, track G: §6.1's lift off the quiet class, and the census on the
+## rows §8.3 is about
+##
+## `PlanCheck.dayPlan_ok_from_now` is design §6.1's `planOk` at ELEVEN of eleven over
+## `PlanCheck.withoutPast`'s day, for EVERY request and every `PlanCheck.SlotAnchored`
+## eligibility — W-19 left that day at nine with the two comparisons refuted, and W-20/W-21
+## reached eleven only on the quiet class.  `PlanCheck.the_census_ceiling_from_now_is_four`
+## is what it is worth: at most four of the eleven can have a subject there, at any request.
+############################################################################ -/
+
+#print axioms Tm.PlanCheck.withoutPast_work_rows_are_the_reservation
+#print axioms Tm.PlanCheck.dayPlan_work_rows_are_the_reservation
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_only_the_reservation
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block
+#print axioms Tm.PlanCheck.any_filter_of_any_eq_false
+#print axioms Tm.PlanCheck.overbook_has_no_subject_from_now
+#print axioms Tm.PlanCheck.energyFilter_has_no_subject_from_now
+#print axioms Tm.PlanCheck.windDown_has_no_subject_from_now
+#print axioms Tm.PlanCheck.batch_has_no_subject_from_now
+#print axioms Tm.PlanCheck.impossible_has_no_subject_from_now
+#print axioms Tm.PlanCheck.rankSubjects_of_nothing_eligible
+#print axioms Tm.PlanCheck.hotSubjects_of_nothing_eligible
+#print axioms Tm.PlanCheck.rank_has_no_subject_of_nothing_eligible
+#print axioms Tm.PlanCheck.hot_has_no_subject_of_nothing_eligible
+#print axioms Tm.PlanCheck.the_census_ceiling_from_now_is_four
+#print axioms Tm.PlannerWit.onlyOnFreeWorkRows_is_slot_anchored
+#print axioms Tm.PlannerWit.the_whole_battery_passes_from_now_at_the_census_request
+#print axioms Tm.PlannerWit.the_whole_battery_passes_from_now_at_the_queued_request
+#print axioms Tm.PlannerWit.the_whole_battery_passes_from_now_at_the_running_request
+#print axioms Tm.PlannerWit.the_eleven_from_now_is_four_checkers_biting
+#print axioms Tm.PlannerWit.the_census_requests_are_not_quiet
+#print axioms Tm.PlannerWit.step_seven_gave_no_checker_a_subject
+#print axioms Tm.PlannerWit.four_is_the_ceiling_and_it_is_reached
+#print axioms Tm.PlannerWit.the_slot_anchoring_is_the_whole_residue

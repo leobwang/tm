@@ -4614,6 +4614,182 @@ not a truncation of the absolute second. -/
 theorem the_time_cell_is_local :
     Emit.timeCell Cal.chicago (Cal.instantOf Cal.chicago 739867 840).sec = "14:00".toList ∧
       (Cal.instantOf Cal.chicago 739867 840).sec % 86400 / 60 = 1140 := by decide
+/-! ############################################################################
+## 21. The eleven, off the quiet class: every request, and FOUR checkers biting (W-22)
+############################################################################
+
+W-21 fired §6.1's lift at eleven of eleven on the **quiet** class, and
+`the_quiet_eleven_is_one_checker_biting` computed what that was worth: **one** checker with
+anything to range over.  The class has one inhabitant in this whole module — `hnopast` *and*
+`hnorun` are both false at every other request it builds, which `the_census_requests_are_not_quiet`
+below computes rather than asserts.
+
+`PlanCheck.dayPlan_ok_from_now` drops both hypotheses.  What it asks instead is one clause
+about `el`: §8.2 choice 5b takes the running block **out of the slot supply** before the fold
+runs, so step 5's own filter answers `false` there.  `onlyOnFreeWorkRows` is that eligibility
+made concrete, and the theorems below fire the lift at three requests, one of which is the
+request where the same lift at `permissive` is **refuted**.
+############################################################################ -/
+
+/-- **An eligibility that admits a candidate only where §8.2 step 5 could put one**:
+`onlyOnWorkRows` (W-21) with §8.2 choice 5b's reservation taken out.  `PlanCheck.isActive` is
+reused through `Planner.segOf` rather than re-spelled, so there is no second reading of "is
+this row the running block's" (AGENTS §5.3).
+
+`Planner.segOf`'s forcing does not touch `Seg.item` (`Planner.segOf_item` is `rfl`), which is
+the only field `PlanCheck.isActive` reads, so this answers exactly what `isActive` answers at
+the row it is handed. -/
+def onlyOnFreeWorkRows : PlanCheck.Eligible := fun r _ s _ =>
+  s.kind.isWork && !PlanCheck.isActive r (Planner.segOf s)
+
+theorem onlyOnFreeWorkRows_is_slot_anchored : PlanCheck.SlotAnchored onlyOnFreeWorkRows := by
+  refine ⟨fun r d s i h => ?_, fun r d s i h => ?_⟩
+  · simp only [onlyOnFreeWorkRows, Bool.and_eq_true] at h
+    exact h.1
+  · simp only [onlyOnFreeWorkRows, Bool.and_eq_true] at h
+    have h2 := h.2
+    simp only [Bool.not_eq_true'] at h2
+    show PlanCheck.isActive r s = false
+    unfold PlanCheck.isActive at h2 ⊢
+    rw [Planner.segOf_item] at h2
+    exact h2
+
+set_option maxRecDepth 40000 in
+/-- **§6.1's lift at ELEVEN of eleven, at the census request** — the request `the_census_ratio`
+computes the whole-day ceiling at.  Nothing here is a `decide` on the conclusion:
+`PlanCheck.dayPlan_ok_from_now` is the general theorem and every hypothesis is a theorem
+above. -/
+theorem the_whole_battery_passes_from_now_at_the_census_request :
+    PlanCheck.planOk onlyOnFreeWorkRows theCensusRequest
+      (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = true :=
+  PlanCheck.dayPlan_ok_from_now onlyOnFreeWorkRows theCensusRequest
+    theCensusRequest_wallsAgree the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_is_inside_the_calendar the_census_request_is_plain
+    onlyOnFreeWorkRows_is_slot_anchored
+
+set_option maxRecDepth 40000 in
+/-- **The same lift, at the request where the same lift at `permissive` is REFUTED.**
+`dayPlan_ok_from_now_at_every_eligibility_is_refuted` computes `PlanCheck.planOk permissive`
+as `false` on this very day; this proves `PlanCheck.planOk onlyOnFreeWorkRows` `true` on it.
+The two together locate W-19's residue exactly: the two comparisons were never the planner's
+and never the fold's, they were an eligibility claiming step 5 might assign into a row it was
+told not to. -/
+theorem the_whole_battery_passes_from_now_at_the_queued_request :
+    PlanCheck.planOk onlyOnFreeWorkRows theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true :=
+  PlanCheck.dayPlan_ok_from_now onlyOnFreeWorkRows theQueuedRequest
+    theQueuedRequest_wallsAgree the_queued_request_agrees.1 the_queued_request_agrees.2
+    the_queued_request_is_inside_the_calendar the_queued_request_is_plain
+    onlyOnFreeWorkRows_is_slot_anchored
+
+set_option maxRecDepth 40000 in
+/-- And at the request E1 was proved over, whose day carries three Block rows and a Wall. -/
+theorem the_whole_battery_passes_from_now_at_the_running_request :
+    PlanCheck.planOk onlyOnFreeWorkRows theRunningRequest
+      (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)) = true :=
+  PlanCheck.dayPlan_ok_from_now onlyOnFreeWorkRows theRunningRequest
+    theRunningRequest_wallsAgree the_running_request_agrees.1 the_running_request_agrees.2
+    the_running_request_is_inside_the_calendar the_running_request_is_plain
+    onlyOnFreeWorkRows_is_slot_anchored
+
+set_option maxRecDepth 200000 in
+/-- **WHAT THE ELEVEN IS WORTH HERE: four checkers, against the quiet class's one.**
+`oneBlock`, `overWall`, `overBreak` and `wallMoved` all have a subject at the census request
+on the rows §8.3 is about; the other seven have none, and
+`PlanCheck.the_census_ceiling_from_now_is_four` proves that seven-way emptiness at **every**
+request.  So this is the ceiling, reached.
+
+`overbook` is the one to look at twice: it has a subject on the WHOLE day at this request
+(`the_census_ratio`) and none here, because every Block row `PlanCheck.withoutPast` leaves is
+§8.2 choice 5b's reservation and `PlanCheck.withoutActive` removes exactly that.  That is
+design §6.3 row 1 taken literally, and it is why four and seven are ceilings on two different
+days rather than two readings of one. -/
+theorem the_eleven_from_now_is_four_checkers_biting :
+    ((PlanCheck.checksOf onlyOnFreeWorkRows).map (fun c =>
+        PlanCheck.subjectOf onlyOnFreeWorkRows c.name theCensusRequest
+          (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest))))
+      = [false, true, false, true, true, false, true, false, false, false, false] ∧
+    PlanCheck.subjectCount onlyOnFreeWorkRows theCensusRequest
+      (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = 4 :=
+  ⟨by decide, by decide⟩
+
+set_option maxRecDepth 100000 in
+/-- **The class W-21's eleven was about has one inhabitant in this module**, and this is the
+measurement rather than the claim: at the three requests the lift above fires at, `hnopast`
+— *the log holds no Block for today* — is **false**, so
+`PlanCheck.dayPlan_ok_on_a_quiet_day` cannot be applied to any of them and neither can
+`PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block`. -/
+theorem the_census_requests_are_not_quiet :
+    ((pastRows theCensusRequest).all (fun t => t.kind != SegKind.block)) = false ∧
+    ((pastRows theQueuedRequest).all (fun t => t.kind != SegKind.block)) = false ∧
+    ((pastRows theRunningRequest).all (fun t => t.kind != SegKind.block)) = false ∧
+    ((pastRows theQuietCensusRequest).all (fun t => t.kind != SegKind.block)) = true := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **§8.2 step 7 gave no checker a subject either** — the P7 sibling of
+`step_six_gave_no_checker_a_subject`, and measured the same way.  `theOptionalRequest` is the
+only request in this module whose day carries **Optional** rows
+(`the_day_with_two_optionals_on_it`); its eleven-entry census is **equal to** `theRequest`'s,
+whose day differs from it by exactly those two rows.  Four in both, and the same four.
+
+**This is not `the_battery_is_unmoved_by_the_rest_rows` again.**  That theorem is P7's own and
+it says the battery still **passes** on five step-7 days; this says how much of the battery
+had anything to **range over**, which is the axis three runs of this campaign have confused
+(README gaps 650, 684, 961).  Both are wanted and neither implies the other.
+
+**One clause of one checker could have gone the other way, and it is named rather than left
+to a reader.**  `PlanCheck.hotSubjects` asks whether *any* row of the day carries `j` — it does
+not ask the row's kind — so an Optional row carrying an item is a "queue position" for
+`PlanCheck.hotPairOk` in exactly the way W-20 found a Wall row was (README gap 960).  It does
+not fire here because this store flags nothing hot; what makes it harmless in general is
+`PlanCheck.SlotAnchored`, under which `hot`'s conjunct is empty at every request. -/
+theorem step_seven_gave_no_checker_a_subject :
+    ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theOptionalRequest (dayPlan theOptionalRequest)))
+      = ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theRequest (dayPlan theRequest))) ∧
+    PlanCheck.subjectCount permissive theOptionalRequest (dayPlan theOptionalRequest) = 4 ∧
+    ((PlanCheck.checksOf permissive).map (fun c =>
+        PlanCheck.subjectOf permissive c.name theOptionalRequest (dayPlan theOptionalRequest)))
+      = [true, true, false, true, false, false, true, false, false, false, false] := by
+  decide
+
+
+/-- **The ceiling, instantiated where it is reached.**
+`PlanCheck.the_census_ceiling_from_now_is_four` is a ∀-theorem over every request;
+`the_eleven_from_now_is_four_checkers_biting` computes 4 at one.  This is the two put side by
+side, so that "four is a ceiling" and "four is reached" are one statement a reader cannot
+take for a survey. -/
+theorem four_is_the_ceiling_and_it_is_reached :
+    PlanCheck.subjectCount onlyOnFreeWorkRows theCensusRequest
+      (PlanCheck.withoutPast theCensusRequest (dayPlan theCensusRequest)) = 4 ∧
+    ∀ r : PlanReq, r.now.sec + 1 < LogStamp.yearEnd →
+      PlanCheck.subjectCount onlyOnFreeWorkRows r
+        (PlanCheck.withoutPast r (dayPlan r)) ≤ 4 :=
+  ⟨the_eleven_from_now_is_four_checkers_biting.2,
+   fun r h =>
+     PlanCheck.the_census_ceiling_from_now_is_four onlyOnFreeWorkRows_is_slot_anchored r h⟩
+
+/-- **`PlanCheck.SlotAnchored` is the whole residue of §6.1's lift on this day, and it is
+load-bearing.**  The same battery, on the same day, at the same request: `false` at
+`permissive` and `true` at `onlyOnFreeWorkRows`, and `permissive` is not `PlanCheck.SlotAnchored`.
+That is AGENTS §5.2 from both sides at once — the hypothesis cannot be dropped, and it is
+satisfiable — and it is what turns `PlanCheck.dayPlan_ok_from_now` from a theorem with a
+hypothesis into a statement about where step 5 may assign.
+
+The first conjunct is **not re-proved** here (AGENTS §5.3): it is
+`the_two_comparisons_are_false_at_the_queued_request`'s last component, which W-19 computed. -/
+theorem the_slot_anchoring_is_the_whole_residue :
+    PlanCheck.planOk permissive theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = false ∧
+    PlanCheck.planOk onlyOnFreeWorkRows theQueuedRequest
+      (PlanCheck.withoutPast theQueuedRequest (dayPlan theQueuedRequest)) = true ∧
+    ¬ PlanCheck.SlotAnchored permissive :=
+  ⟨the_two_comparisons_are_false_at_the_queued_request.2.2.2.2.2,
+   the_whole_battery_passes_from_now_at_the_queued_request,
+   fun h => absurd (h.1 theRequest (dayPlan theRequest) PlanCheck.aWallAcross.val ['m','1'] rfl)
+     (by decide)⟩
 
 end PlannerWit
 end Tm

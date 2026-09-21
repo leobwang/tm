@@ -237,3 +237,5 @@ d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4541
 67967006f216 TmKernel/TmKernel/PlannerWit.lean emitPrios default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
 7b44d4d525d8 TmKernel/TmKernel/PlannerWit.lean emitNotes default,[] PlannerWit.lean:4575; PlannerWit.lean:4575
 fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean emitBed default PlannerWit.lean:4569
+dee5ba118680 TmKernel/TmKernel/PlanCheck.lean SlotAnchored True,False PlanCheck.lean:2925; PlanCheck.lean:2925
+8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4648; PlannerWit.lean:4648
