@@ -331,6 +331,70 @@ fn code_lines(text: &str) -> Vec<(usize, String)> {
     out
 }
 
+/// **The guard's own needles, driven on the lines they were planted with.**
+///
+/// **Built because a mutation found nothing** (D40's rule applied to Rust,
+/// which `mutate.py` cannot reach — README gap 936). Folding
+/// [`format_pad`] to `false` and [`is_char_literal`] to `true` — the exact
+/// pre-repair behaviour in both cases — left `one_padder` at **7 passed; 0
+/// failed**, because both needles fire only on a padder that is not in the
+/// tree and the plant that drove them was removed before the commit. A needle
+/// whose only witness is a plant nobody kept is README gap 16's own register:
+/// *"a checker whose bite is a proof and not a test"*. This is the test.
+///
+/// Both directions, because a needle that over-fires is a trapdoor and a
+/// needle that under-fires is decoration (AGENTS §5.8). Folding
+/// [`dynamic_space_width`] to `true` already fails
+/// [`nothing_outside_the_home_file_composes_a_pad`] on the tree's real
+/// `{:>6}` rows, so the over-fire direction had a witness and the under-fire
+/// direction had none.
+#[test]
+fn the_guard_recognises_the_shapes_it_was_driven_with() {
+    // The third shape, verbatim as it was planted in `tm/src/tui/queue.rs`.
+    assert!(format_pad(r#"    format!("{s:<w$}")"#), "the planted format-spec pad");
+    for pad in [
+        r#"format!("{s:w$}")"#,
+        r#"format!("{:<width$}", title)"#,
+        r#"format!("{:^w$}", cell)"#,
+        r#"write!(f, "{title:>w$}")"#,
+    ] {
+        assert!(format_pad(pad), "a space fill to a runtime width: {pad}");
+    }
+    // And what it must NOT match, each for its own reason.
+    for keep in [
+        r#"format!("{num:0>width$}")"#,          // zero fill: a number, not a cell
+        r#"format!("{:0>w$}", n)"#,              // the same, with no name
+        r#"format!("{label:<10}")"#,             // a CONSTANT width: gap 1251's class
+        r#"format!("{:>6}", fmt_min(x))"#,       // a fixed report column
+        r#"format!("{:02}:{:02}", h, m)"#,       // zero-padded clock parts
+        r#"format!("{a}{b}")"#,                  // no spec at all
+        r#"let cost = price * qty;"#,            // no braces at all
+        r#"println!("{{literal braces}}")"#,     // escaped braces
+    ] {
+        assert!(!format_pad(keep), "not a cell pad, and the needle must stay off it: {keep}");
+    }
+
+    // README gap 1201: a lifetime is not a quote, and a char literal is.
+    let src = "fn f(s: &'static str) -> usize { s.len() } // Span::raw(s).width()\n\
+               let c = '\\u{2007}'; // and this one IS a literal\n\
+               let q = 'x'; let r = b'y';\n";
+    let code: Vec<String> = code_lines(src).into_iter().map(|(_, c)| c).collect();
+    assert!(
+        !code[0].contains(".width()"),
+        "the comment after a lifetime is still being read as code: {:?}",
+        code[0]
+    );
+    assert!(code[0].contains("s.len()"), "and the code before it is still read: {:?}", code[0]);
+    assert!(
+        !code[1].contains("IS a literal"),
+        "a `'\\u{{2007}}'` is a char literal and what follows it is a comment: {:?}",
+        code[1]
+    );
+    assert!(code[2].contains("'x'") && code[2].contains("b'y'"), "{:?}", code[2]);
+    assert!(is_char_literal("'x'") && is_char_literal(r"'\n'") && is_char_literal("'é'"));
+    assert!(!is_char_literal("'static") && !is_char_literal("'a") && !is_char_literal("'outer"));
+}
+
 /// **One measurement.** Nothing outside [`HOME`] asks a string how wide it is.
 #[test]
 fn exactly_one_thing_measures_a_terminal_column() {

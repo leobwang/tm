@@ -540,6 +540,22 @@ fn deleting_the_runtime_state_keeps_the_last_arrival_of_the_day() {
         arrivals[0]
     );
 
+    // **And the window must be a REAL window before the deletion**, or the
+    // agreement below is vacuous. Built because a mutation found it: folding
+    // `Ctx::arrival_window` to `((at, at), 0)` — the identity on its argument —
+    // left this test GREEN, because the writer and the derivation both go
+    // through that one function and a fold moves *both* sides equally.
+    // `cli_day`'s `arrive_computes_window_and_budget_and_plans` fails on it, so
+    // the definition is witnessed; this row was not the witness, and an
+    // agreement assertion that cannot tell a window from a point is exactly
+    // AGENTS §5.2's "a theorem can compile and mean nothing" in test form.
+    let window = before_state["window"].as_array().expect("a window array");
+    assert_ne!(window[0], window[1], "the cached window is a point: {before_bytes}");
+    assert!(
+        before_state["budget"].as_u64().is_some_and(|b| b > 0),
+        "the cached budget is zero, so agreeing about it proves nothing: {before_bytes}"
+    );
+
     let before = answers(&tm, INSIDE, JSON_SPELLINGS);
 
     fs::remove_file(state_path(&tm)).expect("delete the runtime state");
