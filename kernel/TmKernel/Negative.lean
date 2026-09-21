@@ -2694,4 +2694,28 @@ theorem aKeptBreakIsFreeTimeForAnOptional :
          ((Cal.instantOf Cal.chicago 739867 1140).sec,
           (Cal.instantOf Cal.chicago 739867 1290).sec)] := by decide
 
+/- CHEAT 216 — §4.3's row is nine cells and a renderer that forgets one is a
+   `format!` with one fewer `{}`, which compiles.  Here the row is a record:
+   this block builds an `Emit.Row` without its `note` cell.  The elaborator
+   refuses, which is what makes `Emit.cells_are_the_nine_in_order` a statement
+   about every row there is rather than about the rows somebody remembered. -/
+def rowWithoutANote : Emit.Row :=
+  { time := [], ci := [], p := [], mark := [], title := [], parent := [],
+    est := [], actual := [] }
+
+/- CHEAT 217 — the overflow `emit.hhmm` cannot see: it formats whatever
+   `DateTime` it is handed, so a minute-of-day arithmetic that ran past the day
+   printed `24:00` and the column still looked right.  The time cell here goes
+   through `Field.Clock = Fin 1440`; this block asks for 24:00 and `decide`
+   refuses the bound (`Emit.clockOfLocal` is where the bound is discharged). -/
+def midnightTwice : Field.Clock := ⟨1440, by decide⟩
+
+/- CHEAT 218 — G6 in its original shape: the wall's `⏰` in the MARK column,
+   where it is two terminal columns wide and pushes every column after it one
+   right.  `Emit.the_glyphs_stay_out_of_the_mark_column` says no segment's mark
+   is any kind's glyph; this block claims a segment's is.  `rfl` refuses, and so
+   would any proof, because the theorem above it is the refutation. -/
+theorem theMarkColumnTakesTheWallGlyph (s : Planner.Seg) :
+    Emit.markChar s = Emit.glyphOf Planner.SegKind.wall := rfl
+
 end Tm

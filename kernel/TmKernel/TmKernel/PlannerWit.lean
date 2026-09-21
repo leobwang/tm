@@ -1,5 +1,6 @@
 import TmKernel.Boundary
 import TmKernel.PlanCheck
+import TmKernel.Emit
 import TmKernel.Recur
 /-!
 # A `PlanReq` that can be written down, and the four witnesses it unblocks
@@ -4456,6 +4457,163 @@ theorem the_census_counts_a_checker_that_fails :
       PlanCheck.subjectOf permissive .hot theQueuedRequest (dayPlan theQueuedRequest) = true ∧
       PlanCheck.planOk permissive theQueuedRequest (dayPlan theQueuedRequest) = false := by
   decide
+
+/-! ## 20. The day section as CELLS, computed (stage 6 step P8, `Emit.lean`; AGENTS §5.2)
+
+`Emit.lean` states what a cell *is* and what the nine of them *are*; a theorem about a cell's
+length or its character set holds of a great many wrong emitters.  **These witnesses are the
+values.**  D40 is the reason they are here as well as §5.2: `mutate.py` folds every definition
+that step P8 adds, and a cell function whose body nothing in the package could tell from a
+constant would otherwise ship — which is exactly what check 9 found five times at P7.
+
+Three subjects, and they answer different questions:
+
+* `the_day_section_of_the_routine_day_is_these_cells` — **`Emit.rowsOf` at a request the
+  planner really answers**, so every cell function is reached through `Planner.dayPlan` and not
+  through a hand-built segment.  It is also the first time in this repository that the day
+  §4.3 describes can be *read*, row by row, in a theorem.
+* `the_emit_witness_rows_are_these_cells` — seven segments chosen for the branches the routine
+  day does not have: a batch, an under-used hot row with a multiplier and a parent, a closed
+  Rest (no actual), a closed Block (an actual), an optional carrying a note, a row whose
+  estimate is only `planned_min`, and a wind-down — the seventh added because **check 9 caught
+  `emitBed` SURVIVING** a fold to `⟨0, _⟩`: `Emit.titleCell` reads the bed clock on the
+  wind-down arm alone, the first six rows had no wind-down, and D40's answer is to build the
+  witness rather than to record the finding.
+* `the_eleven_notes_are_these_sentences` — `Planner.Note`'s eleven constructors, each rendered.
+
+The plan under the six is `rootedPlan` (§13's), because it is the only fixture in this module
+whose records carry a parent, a title, a `ci` **and** an estimate at once. -/
+
+/-- The seven segments §20's row witness is about.  A `List`, deliberately: `mutate.py` folds it
+to `[]` and every row below goes with it, where a `Seg`-typed fixture would have been a row of
+check 9's "pinned by nothing" list (README gap 1086). -/
+def emitSegs : List Seg :=
+  [⟨(Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 930).sec,
+      .block, some 4, some "m1".toList, none, { hot := true, underused := true },
+      some 90, some (Arith.mkPos 8 5 (by omega)), none⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 600).sec, (Cal.instantOf Cal.chicago 739867 690).sec,
+      .batch ⟨["m1".toList, "m2".toList], by decide⟩, some 2, none, none, {}, some 90, none,
+      none⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 1140).sec, (Cal.instantOf Cal.chicago 739867 1170).sec,
+      .rest, none, none, none, { done := true }, none, none, none⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 540).sec, (Cal.instantOf Cal.chicago 739867 570).sec,
+      .block, some 3, some "m2".toList, none, { done := true, current := true }, none, none,
+      none⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 1200).sec, (Cal.instantOf Cal.chicago 739867 1220).sec,
+      .optional, none, none, none, {}, none, none, some (.plannedOf 150 240)⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 480).sec, (Cal.instantOf Cal.chicago 739867 550).sec,
+      .block, some 1, none, none, {}, some 70, none, none⟩,
+   ⟨(Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
+      .windDown, none, none, none, {}, none, none, none⟩]
+
+/-- §7's answer for the two items `emitSegs` names. -/
+def emitPrios : List (Id × Fin 8) := [("m1".toList, 5), ("m2".toList, 2)]
+
+/-- §16's `bed`, `22:00` — read by `Emit.titleCell`'s wind-down arm and by nothing else, which
+is why `emitSegs`'s seventh row exists (README gap 1111 records the catch). -/
+def emitBed : Field.Clock := ⟨1320, by decide⟩
+
+/-- `Planner.Note`'s eleven constructors, once each. -/
+def emitNotes : List Note :=
+  [.travelDay,
+   .noPosition "m1".toList 30 (Cal.instantOf Cal.chicago 739867 690).sec
+     (Cal.instantOf Cal.chicago 739867 810).sec,
+   .budgetSpent 4, .plannedOf 150 240, .bufferBefore "m1".toList, .travelDayWall,
+   .paused, .interruption, .breakWhere "walk".toList, .idleAttributed "lunch".toList,
+   .runningLeft 70]
+
+set_option maxRecDepth 100000 in
+/-- **§4.3's day, as cells, at a request the planner answers.**  Eleven rows: two replayed
+Blocks the log closed (`✓` and an actual, and `—` for a title because the log's items are not
+this plan's), the Wednesday wall with its `⏰` in the `ci` column and its own length in the
+`est` column, the two window instances step 2 placed, the Rest rows step 7 filled the day with,
+and §16's wind-down and sleep.  `Emit.rowsOf` and every cell function it calls is reached here.
+
+Read the `mark` column: nothing but `✓` and a space, and the glyphs are in `ci` where
+`the_glyphs_stay_out_of_the_mark_column` says they belong. -/
+theorem the_day_section_of_the_routine_day_is_these_cells :
+    (Emit.rowsOf theRoutineRequest).map (fun r => r.cells)
+      = [["07:05", " ", "", "✓", "—", "", "", "(60m)", ""],
+         ["09:05", " ", "", "✓", "—", "", "", "(60m)", ""],
+         ["12:50", "⏰", "", " ", "Meeting w/ host", "", "1h", "", ""],
+         ["14:20", "·", "", " ", "rest 1h", "", "", "", ""],
+         ["15:20", "·", "", " ", "rest 40m", "", "", "", ""],
+         ["16:00", "·", "", " ", "warmup 1h", "", "", "", ""],
+         ["17:00", "·", "", " ", "stretch 30m", "", "", "", ""],
+         ["17:30", "·", "", " ", "rest 30m", "", "", "", ""],
+         ["18:00", "·", "", " ", "rest 1h", "", "", "", ""],
+         ["21:30", "🌙", "", " ", "wind-down · bed 22:00", "", "", "", ""],
+         ["22:00", "·", "", " ", "sleep 2h", "", "", "", ""]].map (fun r => r.map String.toList)
+      := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The seven branches the routine day has not got.**  `4↓` is the slot energy beside §8.2
+step 5's under-use marker; `p5` is §7's answer through `Emit.keyId`, which for the batch is its
+first member; `6b×1.6` is the written estimate scaled by `Arith.Pos` and rendered without an
+`f64`; `@O2` is the written parent through `Plan.parentStep`; the closed Rest has **no** actual
+and the closed Block has one; the optional carries §8.2 step 8's `planned … of … (…%)`
+sentence; and the wind-down is the row `emitBed` is read on, which is the row check 9 said was
+missing. -/
+theorem the_emit_witness_rows_are_these_cells :
+    emitSegs.map (fun s =>
+        (Emit.rowOf rootedPlan.val Cal.chicago 60 emitBed emitPrios s).cells)
+      = [["14:00", "4↓", "p5", "⚠", "Finish the report", "@O2", "6b×1.6", "",
+            "↓ slot 4, item 5"],
+         ["10:00", "2", "p5", " ", "batch: Finish the report · Write the tests (2)", "", "1.5b",
+            "", ""],
+         ["19:00", "·", "", "✓", "rest 30m", "", "", "", ""],
+         ["09:00", "3", "p2", "✓", "Write the tests", "@O1", "6b", "(30m)", ""],
+         ["20:00", "○", "", " ", "—", "", "20m", "", "planned 2.5b of 4b (63%)"],
+         ["08:00", "1", "", " ", "—", "", "1.2b", "", ""],
+         ["21:30", "🌙", "", " ", "wind-down · bed 22:00", "", "", "",
+            ""]].map (fun r => r.map String.toList) := by decide
+
+set_option maxRecDepth 100000 in
+/-- **`Planner.Note`'s eleven, rendered.**  P0 carried the arguments and left the words to P8
+(`Planner.Note`'s own header); these are the words, and each one is a `notes.push` or a
+`note: Some(…)` of `tm-core/src/planner.rs`.  Two of them play the log's own text back
+unchanged, which is why they are `List Char` in the constructor and not a new wire value. -/
+theorem the_eleven_notes_are_these_sentences :
+    emitNotes.map (Emit.noteText rootedPlan.val Cal.chicago 60)
+      = ["travel day: no blocks planned (`travel-day` wall today)",
+         "m1: no free 30m position in 11:30–13:30; not planned today",
+         "budget spent: 4 blocks done, the rest of the day is rest",
+         "planned 2.5b of 4b (63%)",
+         "buffer before Finish the report",
+         "travel day", "paused", "interruption", "walk", "lunch",
+         "running · 70m left"].map String.toList := by decide
+
+set_option maxRecDepth 100000 in
+/-- **The three predicates, at the seven.**  `showsScale` and `showsEst` are different questions
+and the optional row is where they part: it shows an estimate and is not on §7's scale. -/
+theorem the_emit_predicates_at_the_witness_rows :
+    emitSegs.map Emit.showsScale = [true, true, false, true, false, true, false] ∧
+      emitSegs.map Emit.showsEst = [true, true, false, true, true, true, false] ∧
+      emitSegs.map Emit.keyId
+        = [some "m1".toList, some "m1".toList, none, some "m2".toList, none, none, none]
+      := by decide
+
+/-- **The numerals, at their four branches each.**  `blocksCell` divides exactly, then falls to
+one decimal, then to bare minutes, and answers minutes at all when there is no block length;
+`durCell` is `0m`, `45m`, `1h`, `1h22m`; and `multCell` drops the trailing zeros `{:.2}` would
+leave, with `multShown` refusing to print a multiplier of one. -/
+theorem the_emit_numerals :
+    (Emit.blocksCell 60 120 = "2b".toList ∧ Emit.blocksCell 60 70 = "1.2b".toList ∧
+        Emit.blocksCell 60 30 = "30m".toList ∧ Emit.blocksCell 0 45 = "45m".toList) ∧
+      (Emit.durCell 0 = "0m".toList ∧ Emit.durCell 45 = "45m".toList ∧
+        Emit.durCell 60 = "1h".toList ∧ Emit.durCell 82 = "1h22m".toList) ∧
+      (Emit.tenths 12 = "1.2".toList ∧ Emit.tenths 7 = "0.7".toList) ∧
+      (Emit.multCell (Arith.mkPos 8 5 (by omega)) = "1.6".toList ∧
+        Emit.multCell (Arith.mkPos 1 1 (by omega)) = "1".toList ∧
+        Emit.multShown (Arith.mkPos 8 5 (by omega)) = true ∧
+        Emit.multShown (Arith.mkPos 1 1 (by omega)) = false) := by decide
+
+/-- **The `HH:MM` cell is the plan's zone and not UTC.**  Wednesday 14:00 Chicago is 19:00 UTC,
+and `Emit.timeCell` says `14:00` — `Cal.localSec` is doing the work and `Emit.clockOfLocal` is
+not a truncation of the absolute second. -/
+theorem the_time_cell_is_local :
+    Emit.timeCell Cal.chicago (Cal.instantOf Cal.chicago 739867 840).sec = "14:00".toList ∧
+      (Cal.instantOf Cal.chicago 739867 840).sec % 86400 / 60 = 1140 := by decide
 
 end PlannerWit
 end Tm

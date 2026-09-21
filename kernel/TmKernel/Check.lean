@@ -6174,3 +6174,32 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_census_ratio_at_a_work_anchored_eligibility
 #print axioms Tm.PlannerWit.step_six_gave_no_checker_a_subject
 #print axioms Tm.PlannerWit.the_census_counts_a_checker_that_fails
+
+-- the day section as cells (stage 6 step P8, Emit.lean and PlannerWit §20)
+#print axioms Tm.Emit.cells_are_the_nine_in_order
+#print axioms Tm.Emit.cells_length
+#print axioms Tm.Emit.timeCell_length
+#print axioms Tm.Emit.markCell_length
+#print axioms Tm.Emit.markChar_mem
+#print axioms Tm.Emit.glyphOf_mem
+#print axioms Tm.Emit.the_glyphs_stay_out_of_the_mark_column
+#print axioms Tm.Emit.ciCell_is_the_glyph_off_the_scale
+#print axioms Tm.Emit.pCell_is_empty_off_the_scale
+#print axioms Tm.Emit.actualCell_of_not_done
+#print axioms Tm.Emit.actualCell_of_rest
+#print axioms Tm.Emit.the_three_quiet_kinds_are_off_the_scale
+#print axioms Tm.Emit.rowsOf_length
+#print axioms Tm.Emit.rowsOf_eq
+#print axioms Tm.Emit.digitChar_no_newline
+#print axioms Tm.Emit.digitsOf_no_newline
+#print axioms Tm.Emit.timeCell_no_newline
+#print axioms Tm.Emit.markCell_no_newline
+#print axioms Tm.Emit.glyphOf_no_newline
+#print axioms Tm.Emit.ciCell_no_newline
+#print axioms Tm.Emit.actualCell_no_newline
+#print axioms Tm.PlannerWit.the_day_section_of_the_routine_day_is_these_cells
+#print axioms Tm.PlannerWit.the_emit_witness_rows_are_these_cells
+#print axioms Tm.PlannerWit.the_eleven_notes_are_these_sentences
+#print axioms Tm.PlannerWit.the_emit_predicates_at_the_witness_rows
+#print axioms Tm.PlannerWit.the_emit_numerals
+#print axioms Tm.PlannerWit.the_time_cell_is_local

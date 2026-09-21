@@ -202,3 +202,38 @@ a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1
 e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2523; PlanCheck.lean:2523
 d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2683; PlanCheck.lean:2683
 4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:3938; PlannerWit.lean:3938
+63bdb67f1035 TmKernel/TmKernel/Emit.lean Row.cells default,[] Emit.lean:373; Emit.lean:373
+f7e41c6eb99b TmKernel/TmKernel/Emit.lean clockOfLocal default PlannerWit.lean:4541
+332d3148bb73 TmKernel/TmKernel/Emit.lean timeCell default,[] Emit.lean:382; Emit.lean:382
+3bfce0f0810f TmKernel/TmKernel/Emit.lean showsScale true,false Emit.lean:432; PlannerWit.lean:4541
+876ee83e17d3 TmKernel/TmKernel/Emit.lean glyphOf default Emit.lean:395
+a0db4b98f8a0 TmKernel/TmKernel/Emit.lean markChar default Emit.lean:389
+9ae97a6d460e TmKernel/TmKernel/Emit.lean markCell default,[] Emit.lean:384; Emit.lean:384
+12f306db652c TmKernel/TmKernel/Emit.lean ciCell default,[] Emit.lean:411; Emit.lean:411
+f767dfd6e9e1 TmKernel/TmKernel/Emit.lean keyId default,none PlannerWit.lean:4560; PlannerWit.lean:4560
+0013d526bdaa TmKernel/TmKernel/Emit.lean pCell default,[] Emit.lean:417; PlannerWit.lean:4560
+4ef2d4b52b6f TmKernel/TmKernel/Emit.lean actualCell default,[] Emit.lean:421; Emit.lean:500
+3845805dd962 TmKernel/TmKernel/Emit.lean canonDur default PlannerWit.lean:4541
+2e9e8c543069 TmKernel/TmKernel/Emit.lean durCell default,[] PlannerWit.lean:4541; PlannerWit.lean:4541
+4000c6435730 TmKernel/TmKernel/Emit.lean tenths default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+5bf7922e541b TmKernel/TmKernel/Emit.lean blocksCell default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+c7fd6fb0edd8 TmKernel/TmKernel/Emit.lean multCell default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+812620962a1f TmKernel/TmKernel/Emit.lean multShown true,false PlannerWit.lean:4599; PlannerWit.lean:4560
+116e27498e7d TmKernel/TmKernel/Emit.lean titleText default,none PlannerWit.lean:4541; PlannerWit.lean:4541
+f4e3c2bd162d TmKernel/TmKernel/Emit.lean itemCiOf default,none PlannerWit.lean:4560; PlannerWit.lean:4560
+0e55f6fdd37f TmKernel/TmKernel/Emit.lean itemEstOf default,none PlannerWit.lean:4560; PlannerWit.lean:4560
+c496a0b4c8df TmKernel/TmKernel/Emit.lean nameOr default,fallback,[] PlannerWit.lean:4541; PlannerWit.lean:4541; PlannerWit.lean:4541
+fc55c87277aa TmKernel/TmKernel/Emit.lean batchTitle default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+88bd1acd9ff9 TmKernel/TmKernel/Emit.lean titleCell default,[] PlannerWit.lean:4541; PlannerWit.lean:4541
+030df9ebf670 TmKernel/TmKernel/Emit.lean parentCell default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+9fdea03f6db1 TmKernel/TmKernel/Emit.lean showsEst true,false PlannerWit.lean:4541; PlannerWit.lean:4541
+d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4541; PlannerWit.lean:4541
+43df21a2e6c6 TmKernel/TmKernel/Emit.lean noteText default,fun_=>[] PlannerWit.lean:4560; PlannerWit.lean:4560
+77c84d8612e7 TmKernel/TmKernel/Emit.lean underusedCell default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+795ce604b676 TmKernel/TmKernel/Emit.lean noteCell default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+89d6ae89fd1c TmKernel/TmKernel/Emit.lean rowOf default,⟨[],[],[],[],[],[],[],[],[]⟩ PlannerWit.lean:4541; PlannerWit.lean:4541
+697078736f86 TmKernel/TmKernel/Emit.lean rowsOf default,[] Emit.lean:437; Emit.lean:437
+0c31dfe7342e TmKernel/TmKernel/PlannerWit.lean emitSegs default,[] PlannerWit.lean:4569; PlannerWit.lean:4569
+67967006f216 TmKernel/TmKernel/PlannerWit.lean emitPrios default,[] PlannerWit.lean:4560; PlannerWit.lean:4560
+7b44d4d525d8 TmKernel/TmKernel/PlannerWit.lean emitNotes default,[] PlannerWit.lean:4575; PlannerWit.lean:4575
+fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean emitBed default PlannerWit.lean:4569
