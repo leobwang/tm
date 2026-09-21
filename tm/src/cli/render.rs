@@ -12,7 +12,8 @@
 //!   [`rows`] and it never did — `tm now` had its own renderer until W-23.)
 //! The `SegKind` word the JSON and `.tm/last_plan.json` use is
 //! [`tm_core::planner::kind_label`]. This module declared a second, byte-for-byte
-//! identical `kind_name` until W-23 (AGENTS §5.3).
+//! identical kind_name until W-23 (AGENTS §5.3). A deleted name loses its
+//! backticks, here as in the README (gap 1313).
 //!
 //! §1.2 puts the renderer itself in `tm-core/src/emit.rs`, and that is where
 //! it is: everything here delegates, so `tm plan`, `tm tui` and the M4
@@ -65,7 +66,7 @@ use tm_core::planner::fmt_clock as hhmm;
 /// because it is taken at `i` — not because it was looked up by anything the row
 /// says. Two items with one title give byte-identical rows, so a by-value
 /// lookup here would have more than one witness. This used to call
-/// `emit::render_segment_row(seg, …)`, which rebuilt the priority map once per
+/// emit::render_segment_row(seg, …), which rebuilt the priority map once per
 /// row and was the by-value form; `plan_rows` replaced it and it is gone.
 pub fn rows(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<Row> {
     plan.segments

@@ -21,6 +21,7 @@ use ratatui::text::Line;
 use ratatui::widgets::{Clear, Paragraph};
 use ratatui::Frame;
 
+use tm_core::emit;
 use tm_core::review::fmt_hm;
 
 use super::app::{Idle, Overtime, Prompt};
@@ -130,12 +131,29 @@ pub fn centred(area: Rect, w: u16, h: u16) -> Rect {
     }
 }
 
+/// How wide one already-built `Line` draws, **by the one table** (D43; README
+/// gap **1309**).
+///
+/// `Line::width` is ratatui's `unicode-width`, which is exactly the second
+/// measurement D43 exists to remove: for `\u{1F44D}\u{1F3FD}` it answers 4
+/// where `emit`'s `Walk` answers 2 (D44 collapses a skin-tone modifier onto
+/// its base), so a box sized with one and filled with the other overflows its
+/// own border. It survived [`exactly_one_thing_measures_a_terminal_column`]
+/// because `MEASUREMENTS` matched `.width()` — the call form — and this is a
+/// **path**, `Line::width`; the needle is the shape now, not the spelling.
+fn line_width(line: &Line<'static>) -> usize {
+    line.spans.iter().map(|s| emit::display_width(&s.content)).sum()
+}
+
 /// Draw a titled box of lines centred in `area`.
 fn box_of(f: &mut Frame, area: Rect, title: &str, lines: Vec<Line<'static>>) {
+    // The title's own width is the same table's, not `chars().count()` — a
+    // third rule on the next line, and the one that decides whether the border
+    // clears the title (README gap 1309).
     let width = lines
         .iter()
-        .map(Line::width)
-        .chain(std::iter::once(title.chars().count() + 4))
+        .map(line_width)
+        .chain(std::iter::once(emit::display_width(title) + 4))
         .max()
         .unwrap_or(0);
     let width = u16::try_from(width + 4).unwrap_or(u16::MAX);

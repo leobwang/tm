@@ -432,11 +432,29 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
     ctx.state.budget = Some(budget);
     ctx.save_state()?;
 
-    ctx.append_event(Event::Arrive {
-        loc: loc.clone(),
-        window: [fmt_time(window.0), fmt_time(window.1)],
-        budget,
-    })?;
+    // **`arrive.t` IS the arrival** — `tm_core::log`'s own event convention
+    // ("`wake.t` is the wake time; `arrive.t` the arrival; `start.t` the block
+    // start"), which `tm wake` above has always honoured and this verb did not:
+    // it stamped [`Ctx::now`], so a retro `tm arrive --at 07:00` run at 13:00
+    // wrote a header reading 13:00 and left the arrival only inside
+    // `window[0]`. Two readings of one fact (AGENTS §5.3), and the one that
+    // moved was the reader's: D42's rebuild takes the header for the arrival,
+    // so deleting `.tm/state.json` moved `arrival` and `window` to an instant
+    // in neither the cache nor the payload (README gap 1305).
+    //
+    // Without `--at` this is the same instant to the second — `at` is
+    // `ctx.now_tz.time()` and `Ctx::at` puts it back on today's date in the
+    // same zone — so the only bytes that move are a retro or future `--at`'s,
+    // which move to what the convention says they must be.
+    let entry = log::LogEntry::new(
+        ctx.at(at).fixed_offset(),
+        Event::Arrive {
+            loc: loc.clone(),
+            window: [fmt_time(window.0), fmt_time(window.1)],
+            budget,
+        },
+    );
+    ctx.append_entry(&entry)?;
     ctx.reload()?;
 
     // The plan, and the ghost row §12.1 draws from it.

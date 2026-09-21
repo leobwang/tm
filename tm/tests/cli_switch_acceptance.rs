@@ -594,6 +594,147 @@ fn deleting_the_runtime_state_keeps_the_last_arrival_of_the_day() {
     );
 }
 
+/// **The shape the row above never drove: `tm arrive --at`** — README gaps **1305** and **1307**.
+///
+/// [`deleting_the_runtime_state_keeps_the_last_arrival_of_the_day`] makes its second arrival with
+/// a bare `tm arrive`, so the event's `t` equals the arrival instant and the writer and the
+/// derivation agreed **by accident**. The one shape where they diverge is the one D45's own
+/// sentence describes, and it was untested: an auditor drove
+/// `wake 06:00; arrive lounge --at 13:00; arrive home --at 07:00`, deleted the cache, and got
+/// `arrival 14:12` and `window ["14:12","19:00"]` back — an instant carried by neither the cache
+/// nor the log, and a REGRESSION on `3ec119b`, which read the logged payload.
+///
+/// **What was actually wrong, which is wider than the report.** `tm_core::log`'s own event
+/// convention reads *"`wake.t` is the wake time; `arrive.t` the arrival; `start.t` the block
+/// start"*. `tm wake` has always honoured it (`LogEntry::new(ctx.at(time), …)`); `tm arrive`
+/// stamped `Ctx::now`, so `--at` survived only inside `window[0]` and every reader that took the
+/// header for the arrival — `Ctx::last_arrival`, `DayReplay::arrival`,
+/// `DayReplay::wake_to_arrival_min` — read the clock instead of the verb. The repair is in the
+/// **writer**, so there is one fact and not two (AGENTS §5.3).
+///
+/// **The bite is asserted before the deletion**: the last arrival's logged `t` must BE 09:00, and
+/// it must differ from the instant the command ran at, or every line below holds vacuously.
+#[test]
+fn a_retro_arrival_is_logged_at_its_own_time_and_survives_the_deletion() {
+    let tm = plan_with_log("energy-14d");
+
+    // The fixture's 2026-09-07 already holds `arrive lounge 07:10`; this is the second, and it is
+    // dated four hours before the command that writes it.
+    tm.ok_at(INSIDE, &["arrive", "home", "--at", "09:00"]);
+
+    let arrivals: Vec<String> = log_lines(&tm)
+        .iter()
+        .filter(|l| l.contains(r#""ev":"arrive""#) && l.contains("2026-09-07T"))
+        .cloned()
+        .collect();
+    assert_eq!(arrivals.len(), 2, "the day does not have two arrivals:\n  {}", arrivals.join("\n  "));
+    // The bite, in the LOG: `arrive.t` is the arrival, not the clock.
+    assert!(
+        arrivals[1].contains(r#""t":"2026-09-07T09:00:00-05:00""#),
+        "`arrive.t` is not the arrival, so `--at` survives only inside the payload:\n  {}",
+        arrivals[1]
+    );
+    assert!(
+        !arrivals[1].contains("T13:00:00"),
+        "`arrive.t` is the instant the command ran at; this test's bite is gone:\n  {}",
+        arrivals[1]
+    );
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value = serde_json::from_str(&before_bytes).expect("JSON");
+    assert_eq!(before_state["arrival"], "09:00", "the cache is not the retro arrival: {before_bytes}");
+    let window = before_state["window"].as_array().expect("a window array");
+    assert_eq!(window[0], "09:00", "the cached window does not start at the arrival: {before_bytes}");
+    assert_ne!(window[0], window[1], "the cached window is a point: {before_bytes}");
+
+    let before = answers(&tm, INSIDE, JSON_SPELLINGS);
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+    let first = tm.run_at(INSIDE, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+
+    let after_bytes = fs::read_to_string(state_path(&tm)).expect("the runtime state was never rebuilt");
+    let after_state: serde_json::Value = serde_json::from_str(&after_bytes).expect("JSON");
+    for key in ["arrival", "window", "budget", "loc"] {
+        assert_eq!(
+            after_state[key], before_state[key],
+            "the rebuild disagrees with the cache about `{key}` after a retro `--at` \
+             (D45, README gap 1305):\n  cached  {}\n  rebuilt {}",
+            before_state[key], after_state[key]
+        );
+    }
+    let after = answers(&tm, INSIDE, JSON_SPELLINGS);
+    same(&before, &after, "deleting the runtime state after a retro arrival moved an answer");
+
+    // **And the day with two arrivals SAYS the window is recomputed** (gap 1306). The log's facts
+    // carry only the first arrival's payload, so the rebuild computes the last one's from today's
+    // walls; D42's rule is that such a field is named, never regenerated in silence.
+    assert!(
+        first.stderr.contains("RECOMPUTED rather than restored: `window` and `budget`"),
+        "the rebuild recomputed the window on a two-arrival day and did not say so:\n{}",
+        first.stderr
+    );
+}
+
+/// **One arrival, and the tree moves under it** — README gap **1306**, the reuse critic's half.
+///
+/// W-23 made D42's rebuild recompute `window` and `budget` from `Ctx::arrival_window` **against
+/// today's walls and config**, which is not the tree the arrival was logged against. Driven with
+/// no `--at` anywhere: `arrive` at 09:00 logs `window ["09:00","17:00"]`, a calendar item is added
+/// at 16:00, the cache is deleted, and the rebuild answers `["09:00","21:30"]` — hours of drift,
+/// with the correct value sitting one line down in `.tm/log.jsonl`.
+///
+/// The repair reads the arrival record's own payload back whenever the log carries it, which on a
+/// one-arrival day it always does. **The bite**: the added wall must actually move
+/// `Ctx::arrival_window`, or this test is the row above with more files, so the recomputation is
+/// asked for by name and asserted to differ from the logged answer.
+#[test]
+fn a_calendar_item_added_after_the_arrival_does_not_move_the_rebuilt_window() {
+    let tm = corpus_plan("plan-basic");
+    tm.ok_at(INSIDE, &["wake", "06:00"]);
+    tm.ok_at(INSIDE, &["arrive", "lounge", "--at", "09:00"]);
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value = serde_json::from_str(&before_bytes).expect("JSON");
+    let logged: Vec<String> = log_lines(&tm).iter().filter(|l| l.contains(r#""ev":"arrive""#)).cloned().collect();
+    assert_eq!(logged.len(), 1, "the day must have exactly ONE arrival here:\n  {}", logged.join("\n  "));
+    let before_window = before_state["window"].clone();
+
+    // The wall that moves the formula: an evening Interval the arrival never saw.
+    let cal = tm.plan.join("calendar/2026-W37.md");
+    let mut text = fs::read_to_string(&cal).expect("read the calendar file");
+    text.push_str("- [ ] 3 Late review          at:2026-09-07T16:00/19:30 loc:zoom ^g9\n");
+    fs::write(&cal, &text).expect("write the calendar file");
+
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+    let first = tm.run_at(INSIDE, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+    let after_state: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("rebuilt")).expect("JSON");
+
+    for key in ["arrival", "window", "budget", "loc"] {
+        assert_eq!(
+            after_state[key], before_state[key],
+            "a calendar item added after the arrival moved `{key}` on a rebuild \
+             (D42/D45, README gap 1306):\n  cached  {}\n  rebuilt {}",
+            before_state[key], after_state[key]
+        );
+    }
+
+    // **The bite.** Ask the formula what it would have said with the new wall in the tree: if it
+    // agrees with the logged window, this tree cannot tell a read from a recomputation.
+    let planned = tm.run_at(INSIDE, &["--json", "plan"]);
+    assert_eq!(planned.code, 0, "`tm --json plan` failed: {}{}", planned.stdout, planned.stderr);
+    let with_wall = tm.run_at(INSIDE, &["arrive", "lounge", "--at", "09:00"]);
+    assert_eq!(with_wall.code, 0, "the second arrive failed: {}{}", with_wall.stdout, with_wall.stderr);
+    let recomputed: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("state")).expect("JSON");
+    assert_ne!(
+        recomputed["window"], before_window,
+        "the added wall does not move `Ctx::arrival_window`, so this test would prove nothing: {}",
+        recomputed["window"]
+    );
+}
+
 /// **T9's third half, and the state the two above do not warm**: with a break RUNNING,
 /// deleting `.tm/state.json` DOES move an answer — the block comes back un-paused — and this
 /// test is where that is stated, measured and bounded (the owner's **D42**, README gap 1085).

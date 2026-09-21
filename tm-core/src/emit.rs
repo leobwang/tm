@@ -604,7 +604,7 @@ fn est_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
 /// carry their duration in the title (`break 20m`, `lunch 30m`).
 ///
 /// **Public since W-23** (D30 Q5 (a), README gap 1104). `tm/src/tui/today.rs`
-/// had a second one — `seg_title`, which said `break`, `rest`, `interruption`
+/// had a second one — seg_title, which said `break`, `rest`, `interruption`
 /// and `batch (3)` where this says `break 20m`, `rest 20m`, the wall's item and
 /// `batch: … (3)`. Two implementations of one concept is the bug (AGENTS §5.3),
 /// and the one the day file prints is the one that survives, so the Now pane

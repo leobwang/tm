@@ -215,9 +215,27 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
                 .planned_min
                 .unwrap_or_else(|| seg.minutes())
                 .max(1);
-            let elapsed = app
-                .active_elapsed_min()
-                .unwrap_or_else(|| (app.now - seg.start).num_minutes().max(0) as u32);
+            // **The elapsed is THIS segment's, not another row's** (README gap
+            // **1315**). `App::active_elapsed_min` is a fact about
+            // `state.active` — the running ITEM — and the head above names the
+            // segment containing `now`, which since W-23 is
+            // `emit::now_window`'s answer and no longer the `flags.current`
+            // row. The two coincided before that and stopped coinciding
+            // silently: with a `▶` block ended and a wall covering `now`, the
+            // pane drew `ci3 Meeting w/ host` over `elapsed 3h19m` and a full
+            // bar — the previous item's run, printed against a 1h meeting —
+            // while the overtime prompt three rows down named the right item
+            // for the same 3h19m. One pane, two subjects.
+            let running = app.state.active.as_ref().map(|a| &a.id);
+            let clock = || (app.now - seg.start).num_minutes().max(0) as u32;
+            let elapsed = match (seg.item.as_ref(), running) {
+                // The log's worked minutes — pauses, breaks and interruptions
+                // excluded — but only when the head IS the running block.
+                (Some(id), Some(active)) if id == active => {
+                    app.active_elapsed_min().unwrap_or_else(clock)
+                }
+                _ => clock(),
+            };
             let mut second = format!(
                 "elapsed {} {}",
                 review::fmt_hm(elapsed),

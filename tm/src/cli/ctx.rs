@@ -230,10 +230,10 @@ fn host_only(field: &str) -> &'static str {
 /// |---|---|
 /// | `date` | `today`, when the log has anything to say about it |
 /// | `wake` | `DayReplay::wake` (`Event::Wake`) |
-/// | `arrival` | [`last_arrival`] — the **last** `Event::Arrive` of the day, which is what `tm arrive` leaves in the cache (**D45**) |
+/// | `arrival` | [`last_arrival`] — the **last** `Event::Arrive` of the day, whose `t` **is** the arrival (`tm_core::log`'s event convention; **D45**) |
 /// | `loc` | the last of `DayReplay::loc_changes`, else `DayReplay::loc` |
-/// | `window` | [`Ctx::arrival_window`] at that arrival — the one function `tm arrive` writes it from, never a second copy (**D45**, AGENTS §5.3) |
-/// | `budget` | [`Ctx::arrival_window`] at that arrival, with `window` |
+/// | `window` | the arrival record's own payload — `DayReplay::window`, read back verbatim — on a day with **one** arrival; [`Ctx::arrival_window`] and a LOUD line on a day with more (**D45**, README gap 1306) |
+/// | `budget` | `DayReplay::budget` with `window`, and recomputed with it |
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
@@ -275,12 +275,32 @@ fn latest<T>(replay: &Replay, today: NaiveDate, pick: impl Fn(&DayReplay) -> Opt
 /// was written in — a retro `tm arrive --at 07:00` run after a 13:00 one wrote
 /// 07:00 to the cache and appended its line last, and this returns 07:00.
 ///
+/// **That last sentence was FALSE until README gap 1305 was repaired**, and it
+/// is worth keeping the record. `Event::Arrive` was stamped with
+/// [`Ctx::now`] — the instant of invocation — while `tm_core::log`'s own event
+/// convention says *"`wake.t` is the wake time; `arrive.t` the arrival"*, which
+/// `tm wake` honoured and `tm arrive` did not. So `--at` survived only inside
+/// `window[0]`, this function returned the wall clock, and the rebuild moved
+/// `arrival` and `window` to an instant carried by neither the cache nor the
+/// log. The repair is in the **writer** (`day.rs`'s `arrive`), not here: one
+/// fact, written where the reader already looks.
+///
 /// **Its one blind spot, declared:** a day whose headers the replay's scope did
 /// not carry answers `None` here. Every verb that reads the runtime asks about
 /// **today**, which is an open day in every scope, so this has no reachable
 /// caller — but rather than claim that, [`derived_state`] falls back to
 /// `DayReplay::arrival`, which is never worse than the reading this replaces.
 fn last_arrival(replay: &Replay, today: NaiveDate) -> Option<DateTime<FixedOffset>> {
+    arrive_rows(replay, today).next_back().map(|r| r.t)
+}
+
+/// The day's surviving `arrive` headers, in file order — the one enumeration
+/// [`last_arrival`] and [`arrivals_today`] share, so the two cannot disagree
+/// about which rows are arrivals.
+fn arrive_rows<'a>(
+    replay: &'a Replay,
+    today: NaiveDate,
+) -> impl DoubleEndedIterator<Item = &'a tm_core::log::ViewRow> {
     // The tag is asked of `Event` rather than spelled a second time here
     // (AGENTS §5.3). An empty `String` allocates nothing, so the probe costs a
     // stack value and no heap.
@@ -289,18 +309,32 @@ fn last_arrival(replay: &Replay, today: NaiveDate) -> Option<DateTime<FixedOffse
         window: [String::new(), String::new()],
         budget: 0,
     };
-    let tag = probe.name();
+    let tag = probe.name().to_string();
     replay
         .view()
         .iter()
-        .filter(|r| r.day == today && !r.cancelled && r.tag == tag)
-        .next_back()
-        .map(|r| r.t)
+        .filter(move |r| r.day == today && !r.cancelled && r.tag == tag)
+}
+
+/// **How many arrivals the day has**, which is what decides whether the log can
+/// answer for the LAST one's window (README gap **1306**).
+///
+/// `DayReplay::window` and `DayReplay::budget` are the **first** `arrive`'s
+/// payload — the fork's derivation, which `Replay.lean`'s
+/// `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan` proves
+/// and T5 compares key for key. So on a day with exactly one arrival that
+/// payload **is** the last arrival's and the rebuild reads it back verbatim;
+/// with two or more, no fact carries the later payloads and the rebuild has to
+/// recompute — which it says out loud ([`Ctx::rebuild_notice`]).
+fn arrivals_today(replay: &Replay, today: NaiveDate) -> usize {
+    arrive_rows(replay, today).count()
 }
 
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
     let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
     let day = replay.day(today);
+    // One walk of today's headers, not one per field.
+    let one_arrival = arrivals_today(replay, today) == 1;
     let open = replay.open_block.as_ref();
     let interrupted = replay.open_interrupt.as_ref().filter(|i| i.end.is_none());
     RuntimeState {
@@ -326,12 +360,30 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
         loc: latest(replay, today, |d| {
             d.loc_changes.last().map(|(_, l)| l.clone()).or_else(|| d.loc.clone())
         }),
-        // Not the log's: `DayReplay::window` and `DayReplay::budget` are the
-        // FIRST arrival's, and the arrival above is the LAST. The caller fills
-        // these from `Ctx::arrival_window`, the one function `tm arrive`
-        // writes them from — the same move `active.est_min` makes below.
-        window: None,
-        budget: None,
+        // **The arrival record's own payload, read back verbatim** — which is
+        // what `tm arrive` wrote and therefore what the cache held, walls and
+        // config as they stood THEN (README gap **1306**).
+        //
+        // `DayReplay::window`/`budget` are the day's FIRST `arrive`'s, so this
+        // is the last arrival's exactly when the day has one arrival. With two
+        // or more the log carries no payload for the later ones and these stay
+        // `None`; the caller fills them from `Ctx::arrival_window` and SAYS SO
+        // ([`Ctx::rebuild_notice`]), the same shape `active.est_min` takes
+        // below. Recomputing unconditionally is what W-23 shipped, and it moved
+        // the window by 3h30m on a plain one-arrival day the moment a calendar
+        // item was added after the arrival — a value in neither the cache nor
+        // the log, written in silence.
+        window: one_arrival
+            .then(|| day.and_then(|d| d.window.as_ref()))
+            .flatten()
+            .and_then(|w| {
+                let a = NaiveTime::parse_from_str(&w[0], "%H:%M").ok()?;
+                let b = NaiveTime::parse_from_str(&w[1], "%H:%M").ok()?;
+                Some((a, b))
+            }),
+        budget: one_arrival
+            .then(|| day.and_then(|d| d.budget))
+            .flatten(),
         active: open.map(|b| ActiveBlock {
             id: Id::new(&b.id),
             started: hhmm(b.started),
@@ -803,11 +855,15 @@ impl Ctx {
             self.today,
             self.state.break_.is_some(),
         );
-        // **D45: the window and the budget are the arrival's**, computed by
-        // the one function `tm arrive` writes them from. `derived_state` left
-        // them `None` because it has no tree and no walls; this is the same
-        // shape `active.est_min` takes two blocks below.
-        if let Some(at) = derived.arrival {
+        // **D45: the window and the budget are the LAST arrival's.**
+        // `derived_state` has already read them back from the arrival record
+        // whenever the log carries that record's payload; this fills the one
+        // case it cannot — a day with two or more arrivals, whose later
+        // payloads are no fact — from the one function `tm arrive` writes them
+        // from, and [`Ctx::rebuild_notice`] names it. Same shape as
+        // `active.est_min` two blocks below, and it is a fallback and not a
+        // second definition: it never overwrites a value the log answered for.
+        if let (Some(at), None) = (derived.arrival, derived.window) {
             let (window, budget) = self.arrival_window(at);
             derived.window = Some(window);
             derived.budget = Some(budget);
@@ -954,6 +1010,26 @@ impl Ctx {
                 "RECOMPUTED rather than restored: `active.est_min` is {}m — {}.",
                 a.est_min,
                 host_only("`active.est_min`")
+            ));
+        }
+        // **The day with two arrivals, named rather than regenerated in
+        // silence** (README gap **1306**). `DayReplay` carries the FIRST
+        // arrival's window and budget and no fact carries the later ones, so
+        // the rebuild recomputes them from `Ctx::arrival_window` against
+        // TODAY's walls and config. Any calendar item added since the arrival
+        // moves the answer, and the user is the only one who can tell whether
+        // it should have.
+        let arrivals = arrivals_today(&self.replay, self.today);
+        if arrivals > 1 {
+            out.push(format!(
+                "RECOMPUTED rather than restored: `window` and `budget` — the day has \
+                 {arrivals} arrivals and the log's facts carry only the first one's payload, \
+                 so these are {} recomputed from TODAY's walls and config; a calendar item \
+                 added since the arrival moves them.",
+                self.state
+                    .window
+                    .map(|(a, b)| format!("{}–{}", a.format("%H:%M"), b.format("%H:%M")))
+                    .unwrap_or_else(|| "absent,".to_string())
             ));
         }
         out.push(format!(

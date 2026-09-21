@@ -200,6 +200,15 @@ fn the_day_file_the_json_and_tm_now_print_one_row_list() {
 /// TUI fixture at 12:51 showed `Exercises 5.3–5.5`, which ran 09:32–12:50, with
 /// `elapsed 3h19m`; it now shows the meeting that actually contains 12:51.
 ///
+/// **The head moved and the line under it did NOT, which was a second defect**
+/// (README gap **1315**, the W-23 repair step). `App::active_elapsed_min` is a
+/// fact about `state.active` — the running *item* — so the pane shipped
+/// `ci3 Meeting w/ host` over `elapsed 3h19m ▐███████████████▌`: the previous
+/// block's run, drawn full against a 1h meeting, while the overtime prompt in
+/// the same snapshot correctly said `Exercises 5.3–5.5 … elapsed 3h19m`. The
+/// elapsed is now the head's own segment's unless the head IS the running
+/// block, and the snapshot reads `elapsed 1m ▐░░░░░░░░░░░░░░░▌`.
+///
 /// The rule that survives is `emit::now_window`'s, and **hiding a kind is what
 /// decided it**: D30 Q5 (a) asks for `tm now`'s rows to be a *contiguous*
 /// sub-list of the file's, and a `next` that skips Sleep cannot be one.
@@ -342,7 +351,7 @@ const HOME: &str = "tm-core/src/emit.rs";
 /// them is composing a row out of cells, and there is exactly one of those.
 ///
 /// One is fine and deliberate: `tm/src/tui/today.rs`'s Now pane takes
-/// `emit::title_cell` (that is what killed `seg_title`) and
+/// `emit::title_cell` (that is what killed seg_title) and
 /// `tm/src/cli/render.rs::rows` takes `emit::mark_of` for the JSON's `mark`
 /// field. Neither is laying out a row.
 const CELLS: &[&str] = &[
@@ -524,7 +533,7 @@ fn exactly_one_function_composes_a_plan_row() {
 /// This is a **vocabulary** and a vocabulary is one rename away from useless
 /// (README gap **1193** is the lesson). It is here because the shape needle
 /// above cannot see a second renderer of a *single* cell, which is exactly what
-/// `seg_title` was: ten `SegKind` arms and not one call into `emit`.
+/// seg_title was: ten `SegKind` arms and not one call into `emit`.
 const KIND_WORDS: &str = "SegKind::";
 
 /// The `SegKind`-arms-with-text outside [`HOME`] that are **not** display cells
