@@ -445,3 +445,165 @@ fn an_undo_of_a_close_names_the_period_it_closed() {
         "the undo of a close must name the period it closed: {undos:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// W-22 track A — README gap 887: the undo names the writer that got there
+// first, and says why that writer is unreachable.
+//
+// The mechanism is gap 731's: §6.3's automatic close runs inside
+// `Ctx::load_with`, before every verb's `Recorder::start`, so it is in no undo
+// entry. Until here the refusal said only "the file changed under us", which
+// blames an external editor for tm's own write and leaves the stack a dead end
+// with nothing to act on. Attribution cannot go on `CliError::message` — that
+// sentence is every verb's — so it rides `CliError::UndoBlocked`, which only
+// the undo path builds, off `.tm/log.jsonl` read through the one reader (D9):
+// `Ctx::log_tail_of` for the tail's headers and `Ctx::entries_at` for the
+// close's instant. Neither read happens unless the guard has already tripped.
+
+/// The `--json` failure document of a command that fails: `ErrorOut` goes to
+/// **stderr** (§13), so `Tm::json_at` — which asserts exit 0 and reads stdout —
+/// cannot be used for one.
+fn failure_doc(tm: &Tm, now: &str, args: &[&str]) -> serde_json::Value {
+    let out = tm.run_at(now, args);
+    assert_ne!(out.code, 0, "expected a failure: {}{}", out.stdout, out.stderr);
+    serde_json::from_str(&out.stderr)
+        .unwrap_or_else(|e| panic!("stderr is not the JSON document ({e}): {}", out.stderr))
+}
+
+/// The physical 1-based line of the first `close` entry in the log.
+fn first_close_line(tm: &Tm) -> u64 {
+    physical_lines(tm)
+        .iter()
+        .position(|l| {
+            serde_json::from_str::<serde_json::Value>(l)
+                .map(|v| v["ev"] == "close")
+                .unwrap_or(false)
+        })
+        .map(|i| i as u64 + 1)
+        .expect("the automatic close appended no `close` entry")
+}
+
+#[test]
+fn an_undo_behind_the_automatic_close_names_the_close() {
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+    tm.ok_at("2026-09-07T09:00:00-05:00", &["start", "^t3", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["done"]);
+    // A verb on the next day. §6.3's automatic close runs inside its load and
+    // rewrites the day file the `done` above is holding bytes for — and pushes
+    // no undo entry of its own, which is the whole of gap 731.
+    tm.ok_at("2026-09-08T09:00:00-05:00", &["now"]);
+
+    let at = first_close_line(&tm);
+    let out = tm.run_at("2026-09-08T09:05:00-05:00", &["undo"]);
+    assert_eq!(out.code, 3, "{}{}", out.stdout, out.stderr);
+    // The shared sentence is unchanged — every verb's write race still reads
+    // the same — and the new lines sit under it.
+    assert!(
+        out.stderr.contains("the file changed under us"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("the later writer is tm itself"),
+        "the refusal still blames an outside editor: {}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains(&format!(".tm/log.jsonl:{at} records a `close`")),
+        "the close is not named at its own line {at}: {}",
+        out.stderr
+    );
+    assert!(
+        out.stderr.contains("README gap 731"),
+        "the refusal does not say why the close cannot be undone: {}",
+        out.stderr
+    );
+
+    // The same fact, machine-readable, and pinned to the log's own numbering.
+    let doc = failure_doc(&tm, "2026-09-08T09:06:00-05:00", &["--json", "undo"]);
+    let blame = &doc["detail"]["laterWriter"];
+    assert_eq!(blame["anchored"], true, "{doc}");
+    assert_eq!(blame["close_line"], at, "{doc}");
+    assert!(
+        blame["close_at"].is_string(),
+        "the close's instant did not read back: {doc}"
+    );
+    assert!(
+        blame["entries_after"].as_u64().unwrap_or(0) >= 1,
+        "{doc}"
+    );
+    // Nothing was half-undone: the guard still refuses and the entry stays.
+    assert_eq!(doc["exit_code"], 3, "{doc}");
+    assert_eq!(top_of_stack(&tm)["verb"], "done");
+}
+
+#[test]
+fn an_undo_behind_an_outside_editor_says_the_log_knows_of_no_writer() {
+    // The other direction (AGENTS §5.8): when tm really did not write, the
+    // refusal must not invent a close. The log holds nothing after the undone
+    // `done`, and that is what it says.
+    let tm = Tm::new();
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok(&["start", "^t3", "--energy", "4"]);
+    tm.ok_at("2026-09-07T10:00:00-05:00", &["done"]);
+
+    let path = tm.plan.join("week/2026-W37.md");
+    let mut text = std::fs::read_to_string(&path).expect("read week");
+    text.push_str("- [ ] 3 1b Written by Claude Code   @m2 ^zz1\n");
+    std::fs::write(&path, &text).expect("write week");
+
+    let out = tm.run_at("2026-09-07T10:01:00-05:00", &["undo"]);
+    assert_eq!(out.code, 3, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("it was changed from outside tm"),
+        "{}",
+        out.stderr
+    );
+    assert!(
+        !out.stderr.contains("`close`"),
+        "a close was named where the log holds none: {}",
+        out.stderr
+    );
+    let doc = failure_doc(&tm, "2026-09-07T10:02:00-05:00", &["--json", "undo"]);
+    let blame = &doc["detail"]["laterWriter"];
+    assert_eq!(blame["anchored"], true, "{doc}");
+    assert_eq!(blame["close_line"], serde_json::Value::Null, "{doc}");
+    assert_eq!(blame["entries_after"], 0, "{doc}");
+}
+
+#[test]
+fn an_undo_of_a_verb_that_logged_nothing_says_it_cannot_tell() {
+    // `tm rank` is line order and appends no event (§7.4), so its entry has no
+    // `log_line` and there is no point in the log to read forward from. The
+    // honest answer is to say so — naming the first close in the file instead
+    // would name a close that ran BEFORE the command being undone.
+    let tm = Tm::new();
+    tm.ok(&["rank", "^t4", "1"]);
+    let path = tm.plan.join("week/2026-W37.md");
+    let mut text = std::fs::read_to_string(&path).expect("read week");
+    text.push_str("- [ ] 3 1b Written by an editor   @m2 ^zz2\n");
+    std::fs::write(&path, &text).expect("write week");
+
+    let out = tm.run_at("2026-09-07T09:05:00-05:00", &["undo"]);
+    assert_eq!(out.code, 3, "{}{}", out.stdout, out.stderr);
+    assert!(
+        out.stderr.contains("appended no log entry"),
+        "{}",
+        out.stderr
+    );
+    let doc = failure_doc(&tm, "2026-09-07T09:06:00-05:00", &["--json", "undo"]);
+    assert_eq!(doc["detail"]["laterWriter"]["anchored"], false, "{doc}");
+
+    // **And the unanchored answer is a reading, not a default.** On the same
+    // tree and the same file, a verb that DOES log reads `anchored: true` —
+    // without this half a `later_writer` that returned `LaterWriter::default()`
+    // unconditionally would pass the assertion above (probed: it does).
+    std::fs::write(&path, &text).expect("put the editor's line back");
+    tm.ok_at("2026-09-07T09:07:00-05:00", &["edit", "^t4", "ci=2"]);
+    let mut wider = std::fs::read_to_string(&path).expect("read week");
+    wider.push_str("- [ ] 3 1b And another editor line   @m2 ^zz3\n");
+    std::fs::write(&path, &wider).expect("write week");
+    let doc = failure_doc(&tm, "2026-09-07T09:08:00-05:00", &["--json", "undo"]);
+    assert_eq!(doc["detail"]["laterWriter"]["anchored"], true, "{doc}");
+}
