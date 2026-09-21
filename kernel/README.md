@@ -48499,3 +48499,602 @@ with `timeout 120`** for every new `decide` probe (AGENTS §2.1).  The
 `the_eleven_from_now_is_four_checkers_biting` probe ran in **2.79 s at 8G**.  **No
 bound was raised, nothing was retried uncapped, and no `native_decide` appears
 anywhere in this diff.**
+
+<!-- ===========================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-22**, the **LAND**
+     step, in the MAIN CHECKOUT on `rebuild-on-lean`, from `cf26cb2`.
+     Two merge commits — `0b2f449` (track A, `9d0f594..51a0b1d`) and `7e2c8c9`
+     (track G, `d1118c6..b14299f`) — plus the `docs:` commit carrying this
+     block, which cannot name its own sha.  Track P landed in the main
+     checkout before this step and needed no merge.
+     Gap range **1190-1194**; this step takes all five and leaves none free.
+     No goal added, discharged or deleted by ANY of the three tracks:
+     **burn-down stays 9**, all stage 6.  `check.sh` **9/9**.  No cheat taken;
+     `Negative.lean` is untouched.  Whoever merges renumbers (AGENTS §6.4).
+     =========================================================================== -->
+
+## Stage 6 — W-22, the land step: three tracks, one collision, and a state file that lies in both directions
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `0b2f449` | **merge of track A** (`w22-a`, five commits) — gap 887's naming half, gap 1080's one rule for "nothing was written", gap 991 refuted, gap 1086's FIXTURE exemption. **One conflict**, the usual append-collision in `kernel/README.md` |
+| `7e2c8c9` | **merge of track G** (`w22-g`, three commits) — §6.1's lift off the quiet class, the second census ceiling. **Four conflicts**, all append-collisions; plus the one real reconciliation of the run (§2) and gap 1144 discharged (§3) |
+| this block | the ledger, and gaps **1190-1194** |
+
+**Neither merge discarded a line.** Every conflict was two branches appending at
+the same end of a file, and both sides were kept in run order. `kernel/corpus/`,
+`lean-toolchain`, `Negative.lean`, `tm/tests/fixtures/` and every snapshot are
+byte-untouched: `git diff --stat 6ce574d..HEAD -- kernel/corpus/ tm/tests/fixtures/`
+is empty, and `git status --porcelain tm/tests/snapshots/` is empty.
+
+### 2. The one collision a keep-both could not resolve: two `PlannerWit` section 20s
+
+Track P's step P8 took `PlannerWit` section **20** ("The day section as CELLS")
+and track G independently took **20** ("The eleven, off the quiet class"). This
+is AGENTS §6.2's cheat-numbering failure in a different file, and §6.2's rule
+applies unchanged: track P's was on the main line first, so **track G's is
+renumbered to 21**. Track G's own README §11 anticipated this in writing — *"the
+merge renumbers if track P or track A took 20 on the main line first"* — and that
+sentence is now amended to record the renumber rather than to ask for it.
+Nothing outside `Check.lean`'s P8 banner cites either section by number, and that
+banner names 20 and still means 20.
+
+### 3. Gap 1144, discharged — with the sentence track A wrote out verbatim
+
+`check.sh`'s check-9 comment block documented five verdicts and not the sixth,
+while `mutate.py`'s header — which that block calls *"the specification"* —
+documented `WITNESS_MODULES` and FIXTURE. The two now agree. **The sentence was
+checked against the code before it was shipped**, not copied on trust:
+
+* `WITNESS_MODULES` is one **exact path**, `TmKernel/TmKernel/PlannerWit.lean` —
+  a tuple of paths, not a pattern.
+* `witness_violations()` runs on **every** invocation, before any build, and
+  returns 1 — so a violation fails the gate rather than widening the exemption.
+* `fixture` is computed as a **subset of `exempt`**, which is itself
+  `{UNFOLDABLE, UNAVAILABLE} minus pinned`. So the label really does subtract
+  nothing from the audit: a witness-module definition a constant pins stays
+  PINNED.
+
+**DRIVEN, on the class it exists to catch.** Injecting `import TmKernel.PlannerWit`
+at the top of `Emit.lean` — the leaf property's exact negation:
+
+```
+$ python3 mutate.py --gate
+WITNESS_MODULES is not what it claims:
+  TmKernel/TmKernel/Emit.lean imports the witness module TmKernel.PlannerWit, so
+  TmKernel/TmKernel/PlannerWit.lean is no longer a leaf and its definitions are reachable
+[rc=1]
+```
+
+Restored; `git diff` over `Emit.lean` is empty. **What it still cannot see** is in
+`witness_violations()`'s own docstring and is unchanged by this step: the import
+scan is textual, and a module that imports a witness module's *importer* is not
+the same claim and does not make the witness module non-leaf.
+
+### 4. Two roster rows whose pin site was no longer true
+
+`kernel/mutations.txt`'s fifth column records where the build first errored when
+the mutation ran. **Nothing re-checks it**: check 9 trusts a row by its body
+sha1, and check 8 sweeps the file for *names*, not for `file:line` correctness.
+Both of track G's rows were therefore re-run on the **merged** tree with
+`mutate.py --only … --write` rather than hand-corrected:
+
+```
+onlyOnFreeWorkRows  fun _ _ _ _ => true / false   PINNED  PlannerWit.lean:4648   (row said 4491)
+SlotAnchored        True / False                  PINNED  PlanCheck.lean:2925    (row said 2898)
+```
+
+Both still PIN — which is the merge's own evidence that track G's two mutations
+bite after track P's 157 lines landed above them. The first number moved **because
+of this merge**. The second did **not**: `PlanCheck.lean` is byte-identical to
+`w22-g`'s tip, so that row was already 27 lines stale on track G's own branch,
+written at `d1118c6` and left behind by `657d050`. Gap **1190**.
+
+### 5. Acceptance, capped, on the merged tree
+
+`check.sh`, all nine, `MemoryMax=40G`, exit 0, **1 m 51.6 s** (the run is long
+only because check 9 re-ran two mutations — four kernel builds; it is ~0 once
+their rows are trusted, and the same tree gave **8.326 s** at `0b2f449`):
+
+```
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (4891 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (28646 citations, 27122 resolved, 1524 allowed (115 vocabulary, 348 counted), 0 allow entries unused)
+new definitions mutated                        ok  (114 new or changed since 86c4dc6, 114 rostered (28 unfoldable, 18 witness fixtures, 0 pinned by nothing; 0 literal), 0 owed)
+```
+
+**The corpus did not move**: 29/37 files and 4/5 whole plans, the floor the brief
+names, and P8 is the step that could have moved it.
+
+*(Those nine lines are the run at `7e2c8c9`, before this block existed. Re-run at
+the commit that carries the block, check 8 reads **28,699 citations, 27,174
+resolved, 1,525 allowed, 0 allow entries unused** — +53, this block's own prose,
+which check 8 sweeps like any other. Nothing else moves, and
+`kernel/citations-allow.txt` is byte-untouched by this whole run: one citation
+this block refused — a probe name declared nowhere — was re-spelled without
+backticks rather than allowed.)*
+
+**Every delta against the brief's `6ce574d` baseline, explained:**
+
+| figure | `6ce574d` | here | why |
+|---|---|---|---|
+| axiom audit | 4,839 | **4,891** | +27 track P (`Emit.lean`'s 21 laws, `PlannerWit` §20's 6), +25 track G (16 `PlanCheck`, 9 `PlannerWit`). Track A added none |
+| check 5 | 93 | **93** | unchanged |
+| citations | 27,860 / 26,337 | **28,646 / 27,122** | +291 track P, +119 track A, +375 track G, +1 this step's FIXTURE paragraph |
+| allow entries | 0 unused | **0 unused** | 1,523 → 1,524 allowed; no entry was added to make a check pass |
+| check 9 roster | 77 | **114** | +35 track P (`Emit.lean` and `PlannerWit`), +2 track G. **0 owed** |
+| check 9 exemption | 28 unfoldable, 18 pinned by nothing | **28 unfoldable, 18 witness fixtures, 0 pinned by nothing** | gap 1086: the same eighteen, now exempt by a **declared, checked rule** rather than by silence. The count did not fall; the *silence* did |
+| stage goals | 9, all stage 6 | **9, all stage 6** | **no goal was discharged, added, refuted or deleted by any of the three tracks.** No commit of this run discharged a goal |
+| `cargo test --workspace` | 1,347 / 0 / 9, 79 binaries | **1,363 / 0 / 9, 80 binaries** | +6 track P (`one_padder.rs`, the one new binary), +10 track A (`cli_items` 53→57, `cli_undo` 20→23, `cli_write_gate` 11→14). The `cli_latency` flake did not fire |
+
+The named suites, each capped and run on its own: **FFI** `tm-kernel-ffi` 8 + 86 + 7
+= 101 passed / 0 failed; **T5** `kernel_replay_parity` 29 passed / 0 failed / 4
+ignored, and its census is byte-for-byte AGENTS §8.3's — **20 inputs, 360 Replay
+keys, 17,291 scalar values, 4 event-name sets**, P21 **4 + 8 + 0**, 458 reachable
+only under `TM_ORACLE`, 6 kernel-only; **the door suite** `kernel_log_door` 23
+passed; **`cli_switch_acceptance`** 11 passed; **`kernel_call_counts`** 2 passed;
+**`cli_latency`** 5 passed / 1 ignored, three serial runs.
+
+**T11 as RANGES** (AGENTS §8.3, gap 240 — three of these rows never hold still),
+three capped serial runs on the merged tree, beside track G's own four-run session
+earlier the same day:
+
+| row | this step (3 runs) | W-22 track G (4 runs) |
+|---|---|---|
+| later verb, 3 y log — the reliable control | **151.91 · 151.93 · 151.99 ms** | 156.89 · 157.03 · 156.95 · 157.14 ms |
+| a routine for a 3-day-old instance | **146.86 · 146.89 · 152.02 ms** | 156.90 · 161.94 · 161.99 · 162.13 ms |
+| `review week` (the All scope) | **288.73 · 288.76 · 293.77 ms** | 303.85 · 298.90 · 304.06 · 293.79 ms |
+| `--now +1 day` (a reseal) | **212.60 · 212.69 · 222.68 ms** | 212.59 · 222.71 · 207.79 · 222.42 ms |
+
+Every row is at or **below** the most recent recorded session's readings, so
+nothing here is a regression. All are asserted against a 1 s bound and none is
+near it.
+
+### 6. What earlier stages bought, re-confirmed rather than assumed
+
+* **One reader (D9), one writer (D16).** `.tm/log.jsonl` has exactly **two**
+  `append_text(LOG_PATH, …)` call sites in the whole tree —
+  `tm/src/cli/ctx.rs:1064`, whose line is `kernel_log::render_one(entry)`
+  unconditionally, and `tm-core/src/horizon.rs:525`, whose line is the installed
+  `LineWriter` (the Lean kernel in the shipped binary) and falls back to
+  `LogEntry::to_json` only with no writer installed, which the doc comment calls
+  *"now only a test oracle"*.
+* **§12's grep is at its floor, and this run did not move it.** The guard's own
+  thirteen needles, over `tm-core` and `tm`: **79** hits, of which **13** lie
+  under `tm-core/src` or `tm/src` and **every one of the 13 is a comment** —
+  filtering out `//`, `///` and `//!` lines leaves nothing. Both numbers are
+  **identical at `6ce574d` and at HEAD**, so no in-tree reader was reintroduced
+  by any of the three tracks, including track A, which edited six `tm/src/cli/`
+  files.
+* **The comparand is still fork 4748911 at full precision.** The four
+  `tm/tests/fixtures/fork-4748911-*` files are untouched by this run;
+  `float_roundtrip` is still pinned in the workspace `Cargo.toml` with the
+  comment naming parity P25; and `fork_arm` is still unconditional — a missing
+  frozen answer is counted `skipped`, never as agreement.
+
+### 7. The drive, unabridged
+
+Debug binary built from `7e2c8c9`, fresh copies of `kernel/corpus/plan-basic` and
+`kernel/corpus/plan-conflicts` in a scratch directory, every invocation capped at
+`MemoryMax=16G`. **The TUI half is not driven and cannot be** (AGENTS §5.13,
+README gap 182: `tm tui` exits by name when stdout is not a tty).
+
+#### 7.1 A normal day
+
+```
+$ tm --now 2026-09-09T07:30:00-05:00 wake
+wake 07:30 · slept 0m
+$ tm --now 2026-09-09T07:45:00-05:00 arrive lounge
+arrive lounge 07:45 · window 07:45–17:05 · budget 6 blocks
+$ tm --now 2026-09-09T07:46:00-05:00 energy 4
+energy 4 (pred 3) at 07:46 · replanned
+$ tm --now 2026-09-09T07:50:00-05:00 plan
+2026-09-09 · window 07:45–17:05 · budget 6 blocks
+07:50  ·      breakfast 30m
+08:20  4 p3   Exercises 5.3–5.5            @m1  2b
+09:00  ·      laundry 30m
+09:30  5 p3   Finish ch.5 exercises        @O1  6b
+10:30  5 p3   Finish ch.5 exercises        @O1  6b
+11:30  ·      lunch 30m
+12:00  5 p3   Finish ch.5 exercises        @O1  6b
+13:00  3 p3   Claude Code drafts tests     @m2  1b
+14:00  ·      break 20m
+14:20  3 p5   Pick winter courses          @O3  2b
+15:00  ⏰     CS 234 lecture                    1h20m
+16:20  ·      workout 1h
+17:05  ───    window ends 17:05
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ·      shower 20m
+19:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· plan honesty 1.67 — planned above a realistic budget
+· t5 blocked by t4
+· waiting: a4
+· dropped: m3 · t1 · m2 · d1 · d2 · x2 · p1 · a1 · c2
+```
+
+#### 7.2 D30 Q5 — the day section, `tm now`, and `tm plan --json` side by side
+
+The brief asks whether the rows are byte-equal. **Two of the three surfaces are,
+and the third is a different renderer.** Measured mechanically, not by eye:
+
+* `tm plan --json`'s `segments[].text` against the `<!-- tm:plan -->` block of
+  `day/2026-09-09.md`: **all 18 shared rows byte-equal**, 0 rows differ.
+* The file carries **one row `--json` does not** — `17:05  ───    window ends 17:05`.
+  It is rendered into the file and is not a `segments` entry, so the file has 19
+  rows and the JSON 18. **That is the whole of the disagreement**: there is no
+  row the JSON has and the file has not.
+* `tm now` is a **second renderer** and its rows are a different shape:
+
+```
+$ tm --now 2026-09-09T09:45:00-05:00 now
+nothing running
+· laundry 30m  ci1  p0
+  09:45–10:15 · elapsed 0m · left 30m
+next
+  10:15  Finish ch.5 exercises  @O1  6b
+  11:30  · lunch 30m
+  12:00  Finish ch.5 exercises  @O1  6b
+0/6 blocks
+```
+
+Two spaces, no ci/p column, no mark column, `@O1` in a different place. This is
+**not a new finding** — it is exactly what track P recorded as OWED in gaps
+**1104** (the one-renderer test and the two surviving renderers) and **1109**
+(`seg_title` / `render_now_with` by name). The drive quantifies it: D30 Q5's
+acceptance is **two-thirds met** at this commit, and the missing third is one
+renderer and one un-JSON'd row. Gap **1194**.
+
+#### 7.3 D43 — a title with CJK and emoji, and what actually shifts
+
+```
+$ tm --now 2026-09-09T07:51:00-05:00 add "- [ ] 5 2b 会議の準備 🍵 レビュー @O1 ^cj1" --to week
+$ tm --now 2026-09-09T08:41:00-05:00 add "- [ ] 5 1b Family 👨‍👩‍👧 sync @O1 ^zw1" --to week
+$ tm --now 2026-09-09T08:43:00-05:00 plan
+08:30  5    ✓ 会議の準備 🍵 レビュー       @O1  2b  (10m)
+08:42  5 p3   Family 👨‍👩‍👧 sync           @O1  1b     1m so far
+08:43  5 p3 ▶ Family 👨‍👩‍👧 sync           @O1  1b     running · 59m left
+09:42  ·      laundry 30m
+```
+
+`emit.rs`'s `WIDE_RANGES` and `ZERO_RANGES` were extracted from the source and
+run over every row of the produced day section, beside the Unicode East-Asian
+table a terminal uses:
+
+| | |
+|---|---|
+| the `@parent` column, **character** index | 33 (CJK), 42 (ZWJ), 43 (ASCII) — three different numbers |
+| the `@parent` column, **`emit.rs`'s table** | **43 on every row** |
+| the `@parent` column, **a terminal's EA table** | **43 on every row** |
+| rows where `emit.rs` and the EA table disagree on total width | **0 of 19** |
+
+So **one table decides every column and it gets ordinary CJK and emoji right**:
+U+1F375 🍵, U+1F319 🌙, U+23F0 ⏰ and U+1F468/469/467 👨👩👧 are all inside
+`(0x1_F300, 0x1_F9FF)` or their own range, ZWJ U+200D is inside
+`(0x200B, 0x200F)` and measures 0, and the columns land where a terminal draws
+them. D43's accepted shift is against **ratatui's `unicode-width`**, not against
+the terminal, and track P's §6 measurement says which code points it covers
+(15,315: Tangut, Nushu, the Kana supplements, combining marks outside
+U+0300..U+036F, and ZWJ/skin-tone sequences) — **ordinary CJK and emoji are not
+among them**, which is what track P's `the_accepted_divergence_is_measured_and_not_predicted`
+already says and what this drive confirms end-to-end on the shipped bytes.
+
+**A correction to this step's own first pass, disclosed rather than quietly
+fixed.** The first extraction of `WIDE_RANGES` used the regex
+`\(0x([0-9A-Fa-f]+), *0x([0-9A-Fa-f]+)\)`, which silently dropped all nine
+`0x1_F…` entries — the underscore separators — and produced 47 ranges instead of
+**56**. On that broken table 🍵 and 🌙 and the family emoji all measured 1, and
+the conclusion would have been that the day section is misaligned by up to three
+cells. It is not. The finding was wrong, the parser was, and the corrected
+measurement is the one above.
+
+#### 7.4 D43's grep guard, driven both ways
+
+**Red on its class.** Appending a hand-rolled second padder to
+`tm/src/tui/queue.rs` — the file gap 1089 named:
+
+```
+$ cargo test -p tm --test one_padder
+test exactly_one_thing_measures_a_terminal_column ... FAILED
+thread 'exactly_one_thing_measures_a_terminal_column' panicked at tm/tests/one_padder.rs:118:5:
+  tm/src/tui/queue.rs:1334: 0x1100 in `let cw = if (ch as u32) >= 0x1100 { 2 } else { 1 };`
+test result: FAILED. 5 passed; 1 failed
+```
+
+It caught it by the **`0x1100` needle**, not by the reserved-name list — the
+needle the guard's own doc comment says exists for *"a second table under a name
+nobody thought to reserve"*. Restored; `git status` over `queue.rs` empty.
+
+**And green on the same defect one edit away.** The same function, renamed
+fit_cell (a name nothing in either `src` tree declares) and started at `0x4E00`
+instead of `0x1100`:
+
+```
+$ cargo test -p tm --test one_padder
+test result: ok. 6 passed; 0 failed
+```
+
+Gap **1193**. This is a *measured* blind spot, not an argued one, and it is
+narrower than it looks: the guard still holds `emit.rs` as the only declarer of
+the seven reserved names and the only user of the five measurement idioms.
+
+#### 7.5 D42 — `rm .tm/state.json` with a block running
+
+```
+$ tm --now 2026-09-09T08:51:00-05:00 now
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^zw1 is running, started 08:42
+tm: the log does not carry these, so they were NOT restored: `break` (a running break is logged only when it ends) and with it `active.paused` — a paused block comes back RUNNING, `active.est_min` (no `start` event carries an estimate), `priorities_yesterday` (no event carries a `p`), `closed` (`swept` is a fact about a sweep, not an event)
+▶ ^zw1 Family 👨‍👩‍👧 sync · started 08:42 · 9m of 60m
+```
+
+D42 works and it is loud. **But the notice is wrong in both directions, and both
+halves reproduce.**
+
+**It over-claims when it fires.** The rebuilt `state.json` was diffed against the
+deleted one: **byte-identical**, `active.est_min`, `priorities_yesterday` and the
+whole `closed` object included. And `active.paused` is the sharpest case, because
+its value is observable:
+
+```
+$ tm --now 2026-09-09T08:55:00-05:00 pause
+paused ^zw1
+   state.active = {'id': 'zw1', 'started': '08:42', 'est_min': 60, 'paused': True}
+$ rm .tm/state.json
+$ tm --now 2026-09-09T08:56:00-05:00 now
+tm: … `active.paused` — a paused block comes back RUNNING …
+▶ ^zw1 Family 👨‍👩‍👧 sync · started 08:42 · 14m of 60m · paused
+   state.active = {'id': 'zw1', 'started': '08:42', 'est_min': 60, 'paused': True}
+```
+
+The block came back **paused**, `tm now` printed `· paused`, and the log carries
+the line the notice says it does not: `{"t":"2026-09-09T08:55:00-05:00","ev":"pause","id":"zw1"}`.
+Gap **1192**.
+
+**And it stays silent when something really is lost.** `break` is the one clause
+that is TRUE — the log carries no line for a running break — and it is the one
+case where no notice prints:
+
+```
+$ tm --now 2026-09-09T09:06:00-05:00 break
+break 20m
+   state.break = {'started': '09:06', 'planned_min': 20, 'where': None}
+$ rm .tm/state.json
+$ tm --now 2026-09-09T09:07:00-05:00 now
+nothing running
+· laundry 30m  ci1  p0
+   state.break = None
+```
+
+No `tm:` line at all. With a block running as well, the notice fires again and
+the break is dropped just the same. The notice appears to be gated on there being
+an active block to name, so the one field that genuinely cannot be derived is the
+one that disappears in silence — which is the inverse of what D42 buys. Gap **1191**.
+
+#### 7.6 `tm undo` behind an automatic close — gap 887, reproduced on the merged binary
+
+Track A's transcript reproduces **to the character** on a fresh copy of
+`kernel/corpus/plan-basic`, `39`/`38` lines, `line 28`, `.tm/log.jsonl:4` and
+exit 3 included:
+
+```
+$ tm --now 2026-09-08T10:42:00-05:00 undo
+tm: conflict in day/2026-09-07.md — the file changed under us
+  ours:   39 lines — what the undone command wrote
+  theirs: 38 lines — what day/2026-09-07.md holds now
+  first difference, line 28:
+    ours:   - [ ] 2 20m Call the bank about the card  ^p1
+    theirs: 
+  the later writer is tm itself: .tm/log.jsonl:4 records a `close` at 2026-09-08 09:00, appended after the command being undone
+    §6.3's automatic close runs inside every verb's load, before that verb's undo entry is opened, so it is in no entry and `tm undo` cannot reverse it (README gap 731)
+    every entry older than that close is behind it; `tm log` prints the close and what it wrote
+  undo needs day/2026-09-07.md to hold exactly what the undone command wrote, byte for byte
+  `tm --json undo` prints both texts whole, as detail.ours and detail.theirs
+[exit 3]
+
+$ tm --json --now 2026-09-08T10:43:00-05:00 undo   (detail.laterWriter)
+{"anchored": true, "close_at": "2026-09-08 09:00", "close_line": 4, "entries_after": 6}
+
+$ tm --now 2026-09-08T10:44:00-05:00 log --since 2026-09-07   (lines 3-4)
+2026-09-08 09:00 demote est_min=20 from="2026-09-07" id="p1" to="2026-W37"
+2026-09-08 09:00 close key="2026-09-07" period="day"
+```
+
+**Note what this is and is not.** Gap 887 is about the *refusal*. On the success
+path the undo still names the user's verb and says nothing about the close that
+ran in front of it — `undid wake (wake 07:30) · 1 file(s) restored`, on a tree
+whose log's second line is `{"ev":"close","period":"day","key":"2026-09-08"}`.
+That is gap **731** and gap **1143**, both open and untouched, exactly as track A
+said.
+
+#### 7.7 `tm check --fix-ids`, then `tm undo`
+
+Gap 1080's rule first — a tree the kernel refuses writes **nothing**, and says so
+with the refusal named, on `kernel/corpus/plan-conflicts`:
+
+```
+$ tm --now 2026-09-09T09:05:00-05:00 check --fix-ids
+--fix-ids wrote nothing: the tree it would have written is one the kernel still refuses (badLine) — the line is named below; fix it and run this again
+[exit 2]
+$ tm --now 2026-09-09T09:06:00-05:00 undo
+tm: nothing to undo
+[exit 1]
+```
+
+Then the writing path, on a clean tree with one id-less line appended to
+`backlog.md`:
+
+```
+$ tm --now 2026-09-09T09:05:00-05:00 check --fix-ids
+backlog.md:13: assigned ^kzt9
+no problems
+[exit 0]
+   backlog.md:13  - [ ] 2 30m Book the flight home ^kzt9
+$ tm --now 2026-09-09T09:06:00-05:00 undo
+undid check (--fix-ids: 1 id assigned) · 1 file(s) restored · 0 left
+[exit 0]
+   backlog.md:13  - [ ] 2 30m Book the flight home
+```
+
+The undo names the verb **and what it did**, and restores the line byte for byte.
+`--fix-ids` appends no log entry (`.tm/log.jsonl` does not exist in that tree at
+all) and the undo is carried by the stack, not the log — consistent with track A's
+fourth case, where an undone `tm rank` "appended no log entry, so there is no
+point in `.tm/log.jsonl` to read forward from".
+
+### 8. The burn-down, and which commit discharged a goal
+
+**Nine, all stage 6, unchanged — and NO commit of this run discharged, added,
+refuted or deleted a goal.** That is stated plainly rather than softened: three
+tracks and two merges moved the axiom audit by +52 theorems and check 9's roster
+by +37 definitions and left `Goals.lean`'s count exactly where `6ce574d` left it.
+Track G edited `Goals.lean` and the edit is **prose only** — a paragraph recording
+why none of the nine is dischargeable by its lift, which
+`PlannerWit.step_seven_gave_no_checker_a_subject` computes rather than asserts.
+
+The nine, and why each is still there, is track G's §8 and is not restated here.
+
+### 9. Gaps taken — 1190-1194, all five
+
+**Gap 1190 — a mutation row's pin site is a line number nothing re-checks.**
+1. *What is not done.* `mutations.txt`'s fifth column records where the build first
+   errored for each constant. No gate verifies it: check 9 trusts a row by body
+   sha1 alone, and check 8 sweeps the file for backticked **names**, never for
+   `file:line` correctness.
+2. *Why.* Not a decision — it was not noticed until this merge shifted one of the
+   two track-G rows by 157 lines and re-running it showed the *other* had been 27
+   lines stale on its own branch since `d1118c6`, with `check.sh` 9/9 throughout.
+3. *What it costs.* The column is the roster's only human-readable evidence that a
+   mutation was actually watched to fail (`mutate.py`'s own *"A ROW IS A CLAIM"*
+   paragraph). A stale site makes a true row look fabricated and a fabricated one
+   indistinguishable from a stale one. It costs no soundness: the verdict is
+   still PINNED and still re-derivable with `--verify`.
+4. *Which step clears it.* Cheaply, a repair step that teaches check 8 or check 9
+   to re-resolve the `file:line` column the way `citations.py` resolves a name;
+   or, more honestly, record the site as a **declaration name** rather than a line
+   number, which does not rot. The W-22 repair step, or W-23.
+
+**Gap 1191 — D42's notice does not fire when the only lost field is `break`.**
+1. *What is not done.* Deleting `.tm/state.json` while a break is running and **no
+   block is active** silently discards the running break (`state.break` goes from
+   `{'started': …, 'planned_min': 20}` to `null`) and prints **no `tm:` line at
+   all**. Reproduced twice; with a block running as well, the notice fires and
+   the break is dropped the same way.
+2. *Why.* Appears to be a gating defect, not a design choice: the notice's first
+   sentence names the active block, and with nothing to name the whole notice —
+   including the second sentence, which is about the log's limits and not about
+   the block — seems to be suppressed. Not read in the source; stated as what the
+   binary does.
+3. *What it costs.* D42's whole purchase. *"A field that cannot be derived fails
+   LOUDLY rather than regenerating as null"* — `break` is the one field of the
+   four that genuinely cannot be derived, and it is the one that regenerates as
+   null in silence. A user loses a running break and is told nothing.
+4. *Which step clears it.* The W-22 repair step. It is a Rust change in the notice's
+   gating, plus a T9 case asserting the notice fires with a break and no block.
+
+**Gap 1192 — D42's notice names three things as lost that come back.**
+1. *What is not done.* When the notice does fire it says `active.paused`,
+   `active.est_min`, `priorities_yesterday` and `closed` "were NOT restored". The
+   rebuilt `state.json` is **byte-identical** to the deleted one on all of them.
+   `active.paused` is the discriminating case: a paused block comes back **paused**,
+   `tm now` prints `· paused`, and the log carries `{"ev":"pause","id":"zw1"}` —
+   the notice's parenthetical *"a paused block comes back RUNNING"* is false.
+2. *Why.* The notice enumerates §10.2 fields no **`start`** event carries, which was
+   true of the fields and false of the file: `pause` is its own event, `close` is
+   its own event, and an estimate is recoverable from the item's own line.
+3. *What it costs.* The opposite of gap 1191 and worse for trust: a user who reads
+   the notice believes state was lost, and may re-enter it. It also makes the true
+   clause — `break` — indistinguishable from the three false ones.
+4. *Which step clears it.* The W-22 repair step, with gap 1191; the two are one
+   paragraph of the same notice. The honest form names only what the rebuild
+   actually failed to produce, computed rather than listed.
+
+**Gap 1193 — `one_padder.rs` misses a second padder one rename and one constant away.**
+1. *What is not done.* The guard catches a hand-rolled width table by its `0x1100`
+   needle and by seven reserved names. A byte-identical padder named fit_cell
+   whose table starts at `0x4E00` is **green**: `6 passed; 0 failed`, driven in §7.4.
+2. *Why.* The needle list is deliberately exact, not a pattern — the same
+   allow-list discipline as check 8 — and `0x1100` is named in the file's own doc
+   comment as *"the first entry of every hand-rolled East-Asian range table there
+   has ever been"*, which is an empirical claim about past code, not a bound.
+3. *What it costs.* Gap 1007's grep-guard clause is discharged against the class it
+   names and not against the class it exists to prevent. G1 is structurally dead
+   against a *re-introduction of the deleted code* and not against a fresh one.
+4. *Which step clears it.* A widening with a measurement beside it: the needle
+   that generalises is *a `match`/`if` on a `char as u32` compared against a
+   four-or-five-digit hex literal inside a function that also pushes `' '`*. Worth
+   one measurement of its false-positive rate over both `src` trees before it is
+   taken. W-23, or whoever next touches `emit.rs`.
+
+**Gap 1194 — D30 Q5 is two-thirds met, measured.**
+1. *What is not done.* The day file's generated section and `tm plan --json`'s
+   `segments[].text` are byte-equal on **all 18 shared rows**, and the file carries
+   **one row the JSON does not** — `17:05  ───    window ends 17:05`, rendered but
+   not a `segments` entry. `tm now` is a **second renderer** with a different row
+   shape entirely.
+2. *Why.* Track P's step P8 landed `Emit.lean` and D43's single padder and stopped
+   at the wire; gaps **1104**, **1105** and **1109** are the same debt from the
+   producing side. This gap is the **acceptance** stated as a measurement, so the
+   step that does the work has a number to move.
+3. *What it costs.* D30 Q5 is P8's stated acceptance and the thing that
+   *"structurally kills G1"*. At this commit two surfaces agree and the third does
+   not, so G1 is two-thirds dead. The un-JSON'd `window ends` row also means a
+   consumer of `--json` cannot reconstruct the file's bytes.
+4. *Which step clears it.* P8's other half — the wire, `render_now_with` stopping
+   formatting and starting SELECTING, and the one-renderer test D30 Q5 names as a
+   **Rust** test. Not a repair step: it is the rest of P8.
+
+### 10. What this step did NOT do, by name
+
+* **It did not touch `Goals.lean`, `Negative.lean`, `kernel/corpus/`,
+  `lean-toolchain`, any fixture or any snapshot.** No cheat was taken; no goal
+  moved; nothing was re-blessed.
+* **It did not repair gaps 1190-1194.** All five are recorded and none is fixed —
+  three of them (1191, 1192, 1194) are user-visible and two of those are D42's,
+  which W-21 track A landed. Repairing a notice mid-merge is a behaviour change
+  outside a merge commit (D19), and D30 Q5 is the rest of P8, not a repair.
+* **It did not run `mutate.py --verify`** over the whole roster (114 rows, one
+  kernel build each). Two rows were re-run by name; the other 112 are trusted as
+  written, and gap 1190 is about exactly that trust.
+* **It did not drive the TUI**, which needs a tty (gap 182, AGENTS §5.13). Track P's
+  D43 change is *in* `tm/src/tui/`, so the surface most changed by this run is the
+  one no agent can drive. `tui_queue_*`, `tui_today_*` and `tui_screen_router`
+  are green inside the workspace run and no snapshot moved, which is evidence and
+  not a drive.
+* **It did not rebuild the fork oracle** and did not set `TM_ORACLE`: the 458
+  oracle-only inputs are unexercised here, as they are in every capped run.
+* **It did not delete the `w22-a` or `w22-g` branches.** Both worktrees are
+  removed and pruned; the branches stay, as `w21-a`/`w21-g` and their predecessors do.
+  `.claude/worktrees/stage5-lookahead` is untouched.
+* **It did not renumber `Negative.lean`'s cheats** (AGENTS §6.5 item 1, outstanding
+  since `c8f3a38`). No cheat was added this run, so the merge owed nothing new there.
+
+### 11. Numbering
+
+Gaps: this step **1190-1194**, all five taken, none free in the land range.
+Highest gap in the file after this block: **1194**. Highest cheat: **218**
+(track P's, unchanged). `PlannerWit` sections run to **21** after §2's renumber.
+No parity entry; the next is still **P37**.
+
+### 12. Worktrees, and capping
+
+`.claude/worktrees/w22-a` and `.claude/worktrees/w22-g` are **removed and pruned**;
+`git worktree list` is the main checkout and `.claude/worktrees/stage5-lookahead`,
+which is untouched.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm`, `python3` and `mutate.py`
+invocation in this step ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+`check.sh`, `cargo` and `mutate.py` (which runs `lake build`), 16G for the
+`mutate.py --gate` probe and for every `tm` invocation of the drive. **No breach
+to disclose:** nothing was retried uncapped, no bound was raised, and no run was
+killed at the cap.
