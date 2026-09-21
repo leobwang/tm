@@ -126,17 +126,17 @@ baseline 86c4dc6
 #
 # (The sha1 above is illustrative.  `mutate.py --write` computes it; do not copy it.)
 0b1f9f39194a TmKernel/TmKernel/PlanCheck.lean OwesSomething True,False PlanCheck.lean:2127; PlanCheck.lean:2127
-34911c82d0c8 TmKernel/TmKernel/Planner.lean routineRows default Planner.lean:2630
-f18d3551771b TmKernel/TmKernel/Planner.lean stepTwoSegs default Planner.lean:2649
-b138b425f1c9 TmKernel/TmKernel/Planner.lean leastBy default Planner.lean:4773
-f7b172dd243d TmKernel/TmKernel/Planner.lean PlanReq.lowestFree default Planner.lean:4843
-6ff639dbc20f TmKernel/TmKernel/Planner.lean PlanReq.assignedSpans default PlannerWit.lean:3533
-d7d5884af56b TmKernel/TmKernel/Planner.lean PlanReq.occupiedNow default PlannerWit.lean:3327
-5c11c3770fc6 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaks default PlannerWit.lean:3533
-fda83246caf1 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaksToday default PlannerWit.lean:3533
-a40dbf02369a TmKernel/TmKernel/Planner.lean unspend default Planner.lean:4910
-9b21bc0fe500 TmKernel/TmKernel/Planner.lean PlanReq.victimSlot default Planner.lean:4948
-08f9f450c670 TmKernel/TmKernel/Planner.lean PlanReq.finalRoutines default Planner.lean:5327
+34911c82d0c8 TmKernel/TmKernel/Planner.lean routineRows default,[] Planner.lean:2635 routineRows_kinds; Planner.lean:2635 routineRows_kinds
+f18d3551771b TmKernel/TmKernel/Planner.lean stepTwoSegs default,[] Planner.lean:2654 stepTwoSegs_kinds; Planner.lean:2654 stepTwoSegs_kinds
+b138b425f1c9 TmKernel/TmKernel/Planner.lean leastBy default,none Planner.lean:4786 leastBy_spec; Planner.lean:4786 leastBy_spec
+f7b172dd243d TmKernel/TmKernel/Planner.lean PlanReq.lowestFree default,none Planner.lean:4856 PlanReq.lowestFree_from_a_stretch; Planner.lean:4856 PlanReq.lowestFree_from_a_stretch
+6ff639dbc20f TmKernel/TmKernel/Planner.lean PlanReq.assignedSpans default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+d7d5884af56b TmKernel/TmKernel/Planner.lean PlanReq.occupiedNow default,[] PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position; PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position
+5c11c3770fc6 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaks default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+fda83246caf1 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaksToday default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+a40dbf02369a TmKernel/TmKernel/Planner.lean unspend default,gs,[] Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group
+9b21bc0fe500 TmKernel/TmKernel/Planner.lean PlanReq.victimSlot default,none Planner.lean:4961 PlanReq.victimSlot_spec; Planner.lean:4961 PlanReq.victimSlot_spec
+08f9f450c670 TmKernel/TmKernel/Planner.lean PlanReq.finalRoutines default,[] Planner.lean:5340 a_deferred_routine_is_inside_its_window; Planner.lean:5340 a_deferred_routine_is_inside_its_window
 ac97bc74a566 TmKernel/TmKernel/Planner.lean PlanReq.noPositionNotes default PlannerWit.lean:3362
 68a4ddb27390 TmKernel/TmKernel/Planner.lean dayRoutineSegs default Planner.lean:5437
 7590ec19b538 TmKernel/TmKernel/PlannerWit.lean routineWitness default PlannerWit.lean:3219

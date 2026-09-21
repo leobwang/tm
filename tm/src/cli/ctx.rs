@@ -317,7 +317,9 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
         // **The LAST `arrive` of the day, not `DayReplay::arrival`** — the
         // owner's D45, README gap 1202. `DayReplay`'s field is the day's
         // FIRST arrival, because that is what the fork derives and what
-        // `Replay.lean`'s `a_day_keeps_its_first_arrival` proves; the CACHE
+        // `Replay.lean`'s
+        // `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan`
+        // proves; the CACHE
         // holds whatever the last `tm arrive` wrote. Two readings of one day,
         // and the derivation is the one that moves (AGENTS §5.3).
         arrival: last_arrival(replay, today).or(day.and_then(|d| d.arrival)).map(hhmm),

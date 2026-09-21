@@ -49685,3 +49685,510 @@ kill left a mutated `Emit.lean` on disk; `mutate.py`'s own `restore_in_flight`
 sidecar put it back, which is the mechanism working. The scoped run that replaced
 it (`--verify --only Emit.lean --write`) is the flag this step added, and it is
 why the flag exists.
+
+<!-- ===================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-23**, **TRACK A**,
+     branch `w23-a`, from the D44/D45 decision commit `3ec119b`.  The owner's
+     two new decisions, plus the two gate debts W-22's repair declared.
+     Gaps **1250-1254** are this step's; its range was 1250-1279 and the rest
+     are free.  Whoever merges renumbers (AGENTS §6.4).
+     =================================================================== -->
+
+## Stage 6 — W-23 track A: one glyph is one cluster, the derivation follows the verb, and two needles whose only witness was a plant
+
+**Four things were asked for and four landed.** D44's width table, D45's
+arrival, the one-padder guard's own holes, and gap 1196's pin sites — the last
+of which is the one that did **not** land whole, and §11 says so by name with
+the cost measured rather than estimated.
+
+### 1. D44 (gap 1198): the table learns that a glyph is not a code point
+
+`emit::display_width` was `s.chars().map(char_width).sum()`, and a sum of a
+table cannot see two code points at once. So a family emoji measured **6** and a
+skin-toned one **4** where a terminal draws **2**, and since D43 made this table
+the TUI's as well, a row carrying one rendered about four columns narrow on
+every surface at once.
+
+The fix is `Walk`, twenty lines beside the table it reads, and **no new
+dependency** — the hard rule that has held six stages (AGENTS R7), and D44's own
+reason for declining a segmentation crate. Two rules:
+
+1. a `ZWJ` with something already drawn before it makes the **next** code point
+   cost 0 — it joined a cluster rather than starting one;
+2. a code point in `SKIN_TONE` (U+1F3FB..U+1F3FF) with something already drawn
+   before it costs 0 — it re-coloured the base rather than drawing beside it.
+
+"Something already drawn" is the walk's `open` flag, and it is what keeps a
+string that *starts* with a joiner or a modifier honest: a lone 🏽 is still the
+two columns its table entry says.
+
+**One walk, not two** (AGENTS §5.3). `display_width` and `clip` both drive it,
+so the count and the cut cannot disagree about where a glyph begins — which is
+how a cut that fits *by the count* could still land inside a cluster. A cluster
+costs its columns at its base and 0 after it, so a cut that accepted a base
+accepts the whole of its glyph and never emits a dangling joiner. Asserted in
+both directions by the_one_table_is_the_east_asian_one — written here without
+backticks, the W-20 convention, because the name is a test and not a
+declaration this check resolves.
+
+#### 1.1 The four surfaces, DRIVEN — and the two of the four that are argued
+
+D44 says one fix corrects the day file, `--json`, `tm now` and the TUI at once.
+Driven on a plan tree carrying two emoji titles and one ASCII control row, at
+`2026-09-07T09:00:00-05:00`, with the binary built from this branch and then
+from the same tree with `emit.rs` alone reverted. The instrument is the
+**terminal column the `30m` cell starts at**, computed with Python's
+`unicodedata` East-Asian table *plus* the cluster rules — not code point by code
+point, which is the mistake W-22's land drive made and corrected in place:
+
+| row | before | after |
+|---|---:|---:|
+| `👨‍👩‍👧 family call` (ZWJ) | **44** | **48** |
+| `👍🏽 thumbs review` (skin tone) | **46** | **48** |
+| `ABCDEFGH ascii ctl` (control) | **48** | **48** |
+
+Three different columns became one. The same three rows of `tm --json plan`'s
+`text` key move with them (46 / 48 / 50 → 59 / 59 / 59, the offset being the
+JSON quoting), which is **surfaces 1 and 2 driven end to end on the shipped
+bytes** — one table, because D43 made it one.
+
+**Surfaces 3 and 4 are argued, not driven, and that is stated rather than
+implied.** `tm now` renders through `render_now_with`, whose rows carry no
+fixed-width cell at all — it is a format string, not a padded column — so **no
+byte of `tm now`'s current output moves**, on this tree or any other, and the
+claim "one fix corrects `tm now`" is true of the table it shares and false of
+its bytes today (gap **1253**). The **TUI** does pad: `tui/queue.rs`,
+`tui/necessities.rs`, `tui/inbox.rs` and `tui/today.rs` all reach a column
+through `emit::pad_to` or `emit::clip`, which
+every_screen_pads_through_emit asserts by name; but `tm tui` needs a tty
+(gap 182) and its renderer is track P's file this step must not touch, so the
+TUI half is the same table measured and not a screen driven.
+
+#### 1.2 What D44 does NOT move: measured, not assumed
+
+A repository-wide grep for the three code-point classes —
+`grep -rlP '\x{200D}|[\x{1F3FB}-\x{1F3FF}]|[\x{1F1E6}-\x{1F1FF}]'` over
+everything but `target/` and `.git/` — returns **three files**:
+`tm-core/src/emit.rs`, `tm/tests/one_padder.rs` and this README. **No fixture,
+no snapshot, no corpus file and no frozen fork answer carries a ZWJ, a
+skin-tone modifier or a regional-indicator pair**, so D44 moves no committed
+byte, which is why the corpus round trip stays 29/37 and 4/5 and every snapshot
+is untouched. *What that grep cannot see:* a cluster **produced at run time**
+from data outside the tree — a user's own item title — which is exactly what the
+behaviour row in §7 is about.
+
+The three bands of the_accepted_divergence_is_measured_and_not_predicted
+do not move either (8,099 / 6,053 / 1,163), and that is now an assertion rather
+than a sentence: the sweep measures **one code point at a time**, and on a
+one-code-point string neither of the walk's rules can fire.
+
+### 2. D45 (gap 1202): the derivation follows the verb, and it is wider than the gap said
+
+`.tm/state.json` holds whatever the **last** `tm arrive` of a day wrote;
+`derived_state` read `DayReplay::arrival`, which is the day's **first**
+`Event::Arrive`. Two readings of one day — AGENTS §5.3, the class this rebuild
+is named after — inside the one file D42 added to remove exactly that.
+
+**The kernel's fold does not move, and could not.** `DayReplay::arrival`,
+`window` and `budget` are the *fork's* derivation, `Replay.lean`'s
+`a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan` proves
+it, and T5 compares all three key for key against the frozen fork answers.
+Changing it would have moved `tm review day`'s own numbers and needed a parity
+entry for a law the fork holds. So the **derivation** is what moves, which is
+D45's own sentence.
+
+**Where the one definition lives**, because §5.3 asks and the answer is a file
+and a line:
+
+* the arrival is `last_arrival` in `tm/src/cli/ctx.rs` — the day's last
+  surviving `arrive` **header** (`Replay::view`), in **file order**, which is
+  the order the cache was written in: a retro `tm arrive --at 07:00` run after a
+  13:00 one writes 07:00 to the cache and appends its line last, and this
+  returns 07:00.
+* the window and the budget are `Ctx::arrival_window`, the **only** wrapper
+  around `capacity::window_and_budget` in `tm/src`, and its two callers are
+  `tm arrive` (which now writes the cache and the `Event::Arrive` payload from
+  it) and the rebuild. The writer and the derivation agree **by construction**,
+  not by inspection. It is the same move `active.est_min` already makes through
+  `Ctx::planned_block`, and the D42 table in `ctx.rs` is rewritten to say so.
+
+**The bite, measured before the repair** with the field assertions relaxed to
+prints, on `energy-14d` whose own 2026-09-07 already carries
+`arrive lounge 07:10`, plus one `tm arrive home` at 13:00:
+
+| §10.2 field | cached | rebuilt (before) | after |
+|---|---|---|---|
+| `arrival` | `13:00` | **`07:10`** | `13:00` |
+| `window` | `["13:00","19:50"]` | **`["07:10","15:10"]`** | `["13:00","19:50"]` |
+| `budget` | `6` | `6` | `6` |
+| `loc` | `home` | `home` | `home` |
+
+**Two of the four arrival-shaped fields were already last-arrival and two were
+first** — `loc` reads `loc_changes.last()`, and `budget` cannot move because
+`capacity::budget_blocks` is a function of the config alone. One function
+disagreeing with itself about which arrival it is describing, which is why the
+new test asserts all four and not the two that moved.
+
+**And gap 1202 under-reported its own cost.** It says *"Nothing in the shipped
+answers moves on the fixture measured, which is why this is a gap and not a
+repair."* Measured here: `moved()` reports **five of eleven** `--json`
+spellings — `plan`, `log`, `log --tail 5`, `log --since 7d`, `review day` —
+because `Planner::window_and_budget` in `tm-core/src/planner.rs` reads
+`.tm/state.json`'s window when it has one and falls back to the formula when it
+does not, so a rebuilt window re-lays the afternoon, moves the plan hash and
+appends a second `Event::Plan`. The gap's measurement was taken on a day whose
+arrival had already rolled away; this one is taken on the arrival's own day.
+
+**No shipped behaviour changes**, as D45 requires: `tm arrive` writes the same
+bytes it wrote before (the `Event::Arrive` payload is now spelled through
+`fmt_time` on both ends rather than `fmt_time` and a private `hhmm`, which are
+the same `%H:%M`), and `cli_day`'s
+arrive_computes_window_and_budget_and_plans and the day-file front-matter
+test are unmoved. What moves is what a **rebuild** produces, which is the repair.
+
+### 3. The one-padder guard: both W-22 plants re-driven, a hole closed, and a third shape found
+
+W-22's repair taught the guard **shapes rather than vocabulary**. Verified by
+planting both of its own class again, in `tm/src/tui/queue.rs`, the file gap
+1089 named:
+
+| plant | guard |
+|---|---|
+| `fn fill_cell` measuring with `chars().count()` and filling with `push(' ')` | **RED** — `nothing_outside_the_home_file_composes_a_pad`, `queue.rs:1334` |
+| `*acc += ratatui::text::Span::raw(s.to_string()).width();`, a line beginning with `*` | **RED** — `exactly_one_thing_measures_a_terminal_column`, `queue.rs:1341` |
+| **third shape, never tried before:** `format!("{s:<w$}")` | **GREEN — `7 passed; 0 failed`** |
+| gap 1201's own shape: `fn f(s: &'static str) -> usize { … } // … .width() …` | **RED, and wrongly** — a FALSE POSITIVE on its own comment |
+
+**The third shape is a complete second padder under no name at all.** Rust's
+own formatter fills with spaces and measures in `char`s, so
+`format!("{title:<w$}")` is a second measurement and a second pad in eighteen
+characters, with no `" ".repeat(`, no `push(' ')`, no reserved identifier and
+no hex literal. `format_pad` is the answer, and it is the same move
+`hex_codepoint` was: **the shape, measured to zero before it was taken.**
+`grep -rnoE '\{[a-zA-Z_0-9.]*:[^}"]*\$[^}"]*\}'` over both `src` trees returns
+**two** spans, both in `tm/src/cli/kernel_capacity.rs` and both zero-filling a
+number (`{num:0>width$}`, `{:0>w$}`), which `dynamic_space_width`'s fill test
+excludes — so the needle costs **no allow-list entry at all**.
+
+**It stops at a RUNTIME width, deliberately, and the constant-width class is
+written down rather than swept in.** `format!("{label:<10}")` is the same
+defect with a fixed number, and there are **30** of them outside the home file:
+23 `{:<9}` in `tm-core/src/review.rs`, four in `tm-core/src/capacity.rs`, one in
+`tm-core/src/energy.rs`, one `{k:<12}` in `tm/src/tui/prompts.rs`, one more
+`{:<10}`. Every one is a fixed report column rather than a pane-width cell;
+matching them would put the guard RED at 30 sites, which is a repair and not a
+guard. Gap **1251**.
+
+**And README gap 1201 is CLOSED, by driving it rather than reasoning about
+it.** `code_lines` treated `'` as a string quote, so `&'static str` opened a
+quote that never closed. The gap argued that was harmless because it can only
+produce a false positive — true, and it *does*: the planted line above failed
+the measurement guard on the text of its own `//` comment. `is_char_literal` is
+Rust's actual rule (an escape, or one character closed by a second `'`), and
+the four plants now give RED, RED, RED and **nothing**.
+
+### 4. D40 by hand, because `mutate.py` reaches only Lean
+
+This step adds **nine** Rust definitions and no Lean one, and README gap 936
+says the gate cannot see a constant-folded `fn`. So each was folded by hand, one
+at a time, and the suite re-run. **Three of the nine failed NOTHING:**
+
+| fold | before | after the witness |
+|---|---|---|
+| `format_pad := false` | `one_padder` **7 passed; 0 failed** | FAILS |
+| `is_char_literal := true` (exactly gap 1201's own behaviour) | `one_padder` **7 passed; 0 failed** | FAILS |
+| `Ctx::arrival_window := ((at, at), 0)`, the identity on its argument | `cli_switch_acceptance` **14 passed; 0 failed** | FAILS |
+
+The first two are README gap 16's register — *"a checker whose bite is a proof
+and not a test"*: both needles fire only on a padder that is **not in the tree**,
+and the plants that drove them were removed before the commit. The third is
+sharper and worth the sentence: the new T9 row compares the rebuild with the
+cache, and **both sides go through the one function being folded**, so folding
+it moves them equally and the agreement still holds. An agreement assertion that
+cannot tell a window from a point is AGENTS §5.2 in test form.
+
+**Each is FIXED by building the witness, never recorded** — the brief's rule and
+W-22's precedent with `emitBed`. the_guard_recognises_the_shapes_it_was_driven_with
+drives both needles in **both** directions on the exact lines that were planted
+(four shapes that must match, eight that must not, and `code_lines` over a
+lifetime, a `'\u{2007}'` literal and a byte literal); the T9 row now asserts the
+cached window is not a point and the budget is not zero **before** it asserts the
+rebuild agrees with them. Re-run after: **all nine folds fail something**, the
+other six being `Walk::advance := char_width(c)` (the pre-D44 body),
+`Walk`'s `open` guard folded to `true`, `last_arrival := None`,
+`last_arrival` taking the FIRST arrival instead of the last,
+`dynamic_space_width := true`, and `code_lines` stripping nothing.
+
+### 5. Method, and what each method cannot see
+
+Every completeness claim above, with its instrument and its blind spot.
+
+| claim | method | what it cannot see |
+|---|---|---|
+| "D44 moves no committed byte" | `grep -rlP` for U+200D, U+1F3FB..U+1F3FF and U+1F1E6..U+1F1FF over the whole tree minus `target/` and `.git/`: three files, all of them this step's or this README | a cluster **assembled at run time** from a user's title or an `ics` import — which is what §7's behaviour row is for. It also says nothing about a **regional-indicator pair**, which D44 does not fix (gap 1250) |
+| "the columns line up" | the `30m` cell's start column under a Python East-Asian table **with the cluster rules applied** | it is a *model* of a terminal, not a terminal. The three rows now agree with each other, which is the property that matters for a fixed column; the absolute number is only as right as the model |
+| "one walk, not two" | `clip` and `display_width` are the only two loops over `char_width` in `emit.rs`, `grep -n "char_width(" tm-core/src/emit.rs` | a third measurement added elsewhere is the grep guard's job, not this one's; and the guard cannot see the shapes §6's gaps name |
+| "the needle costs no allow-list" | `grep -rnoE` for a dynamic width over both `src` trees: two spans, both zero-fill | it is a measurement of **today's** tree. A legitimate `{:<w$}` added later is a false positive that must be adjudicated into `PAD_ALLOW`, which is the mechanism working |
+| "the W-22 repairs hold" | both of W-22's own plants re-planted in `queue.rs` and the guard run | two plants are two shapes. The third shape was green, which is the point of trying one |
+| "five of eleven spellings moved" | `moved()` over `JSON_SPELLINGS` with the field assertions relaxed to prints, on `energy-14d` | one fixture, one day, one pair of arrivals. It does not bound how far the disagreement reaches on a tree whose plan depends on the window more heavily |
+| "no shipped behaviour changes" (D45) | `cargo test --workspace` and the named suites, all unmoved except the one new test | a verb nothing tests. `tm arrive`'s own bytes are covered by `cli_day` and the day-file front matter; the `Event::Arrive` payload's spelling changed from `hhmm` to `fmt_time`, and those are the same `%H:%M` by inspection and by the tests passing, not by a theorem |
+| "65 pin sites" | check 9's own success line, not a hand count | a hand count over the roster's fifth column gives **48 rows**, because a row with three constants carries three sites. The two numbers measure different things and only the gate's is quotable (AGENTS §5.11) |
+
+### 6. The parity entry, and the behaviour rows
+
+#### P37 — the first new parity entry since P36
+
+D44 diverges from fork `4748911` on emoji widths, and the fork's own table is
+**byte-identical** to this branch's (`diff` of `WIDE_RANGES` and `ZERO_RANGES`
+against `git show 4748911:tm-core/src/emit.rs`: no output). What parts is the
+**walk over** it, so this is a parity entry and not a table difference.
+
+| | case | this branch | fork `4748911` | why | where |
+|---|---|---|---|---|---|
+| **P37** | a cell whose text carries an emoji ZWJ sequence (U+200D between two emoji) or an emoji modifier (U+1F3FB..U+1F3FF) after a base | the cluster's **base** width — 2 for `👨‍👩‍👧` and for `👍🏽` — so the cell is padded to the columns a terminal draws | the **sum over code points**: 6 and 4, so the cell is padded 4 or 2 columns short | owner **D44**, README gap 1198. The tables are identical; `Walk` is the difference | **recorded; the oracle does not reach it** — `run-oracle.sh` compares the grammar and the log reader, and `tm-oracle` has no day-section mode. Asserted in-tree instead, in both directions, by the_accepted_divergence_is_measured_and_not_predicted against ratatui's `unicode-width`, which agrees with the terminal here |
+
+That "recorded, not measured by the oracle" is **P17's** own shape and is
+written the way P17 was. It is not a weakening: nothing in `kernel/corpus/` or
+any frozen fork answer contains one of these code points (§1.2), so there is no
+existing comparison for it to move, and the oracle's numbers are unchanged.
+
+#### Behaviour rows
+
+1. **A day row, a `--json` `text`, or a TUI cell whose text carries a ZWJ
+   sequence or a skin-tone modifier is now padded to a DIFFERENT number of
+   spaces** — two fewer per skin tone and four fewer per two-joiner family,
+   which is what makes the column land where a terminal draws it. The bytes
+   change; the *alignment* is what is being fixed. **No test in the tree
+   exhibits it** on committed data (§1.2), which is why this row is pinned by a
+   measurement test rather than by a snapshot. It is a change to **shipped
+   output** and it is D44's whole point.
+2. **A rebuild of `.tm/state.json` on a day with more than one `tm arrive` now
+   reproduces the cache instead of contradicting it** — `arrival` and `window`
+   take the last arrival's, and with them `tm plan` and the three `tm log`
+   spellings and `tm review day` stop moving across a deletion. On a day with
+   one arrival nothing moves at all. **Nothing `tm arrive` writes changes.**
+3. **A rebuilt `window` is computed from TODAY's walls and config**, not the
+   ones standing when the arrival was logged, so a calendar item added between
+   the arrival and a cache deletion moves the rebuilt window. That is the same
+   fidelity `active.est_min` has had since D42 — "the estimate the item carries
+   *now*" — and it is gap **1252** rather than a silent choice.
+
+No other behaviour row: nothing else in these commits can move an answer.
+`format_pad`, `is_char_literal` and the new tests are test-only, and the
+`Event::Arrive` payload's two `%H:%M` spellings are the same bytes.
+
+### 7. Gaps
+
+**Gap 1250 — a regional-indicator pair is still two code points to `emit`.**
+1. *What is not done.* `🇯🇵` is U+1F1EF U+1F1F5, both inside
+   `WIDE_RANGES`'s `(0x1_F1E6, 0x1_F1FF)`, so `emit::display_width` says **4**
+   and a terminal draws one flag of **2**. A title carrying a flag renders two
+   columns narrow, which is exactly the class D44 fixes for the other two
+   shapes.
+2. *Why.* D44 names **ZWJ sequences and skin-tone modifiers** and this is
+   neither. Widening a decision without being asked is how a parity entry ends
+   up covering more than the decision it cites, and the rule — "a regional
+   indicator pairs with the *next* regional indicator, and an odd one stands
+   alone" — is a third rule with its own edge cases (three in a row, a flag
+   after a flag).
+3. *What it costs.* One assertion in
+   the_accepted_divergence_is_measured_and_not_predicted records it in both
+   directions, so it is measured rather than latent; a user with a flag in a
+   title sees a two-column shortfall. Parity **P37** does not cover it: on this
+   shape the branch and the fork still agree.
+4. *Which step clears it.* Whoever next touches the table, with the owner's
+   answer on whether D44 extends to it.
+
+**Gap 1251 — thirty constant-width format pads the guard does not look at.**
+1. *What is not done.* `format!("{label:<10}")` fills with spaces and measures
+   in `char`s — gap 1089's live class — and `format_pad` deliberately matches
+   only a **runtime** width. Measured: **30** spans outside
+   `tm-core/src/emit.rs`, 23 of them `{:<9}` in `tm-core/src/review.rs`, four in
+   `tm-core/src/capacity.rs`, one in `tm-core/src/energy.rs`, one `{k:<12}` in
+   `tm/src/tui/prompts.rs` and one more `{:<10}`.
+2. *Why.* Every one is a **fixed report column** — the week grid, the energy
+   curve dump, `tm review`'s own tables — rather than a pane-width cell
+   competing with `emit::pad_to`. Matching them puts the guard RED at 30 sites,
+   which is a repair of a different surface and not a guard, and an allow-list
+   of 30 exact lines is an exemption nobody re-reads.
+3. *What it costs.* A second padder written with a **constant** width walks
+   through the guard. So does one in `tests/`, `examples/` or `build.rs`, and
+   one built from a non-space fill (gap **1200**, which stays open and whole).
+4. *Which step clears it.* Whoever decides whether a fixed ASCII report column
+   is inside D43's "one padder" at all — it is a question for the owner, not a
+   gate to widen unasked.
+
+**Gap 1252 — the rebuilt window is today's walls, not the arrival's.**
+1. *What is not done.* `Ctx::arrival_window` recomputes through
+   `capacity::window_and_budget` at the derived arrival, using the tree as it
+   stands **now**. The log carries the arrival's own `window`, but only for the
+   day's **first** arrive (`DayReplay::window`), which is the reading D45
+   replaces — so the recomputation is the only source that can answer for the
+   last one.
+2. *Why.* One definition rather than two (AGENTS §5.3), and the same fidelity
+   `active.est_min` has had since D42.
+3. *What it costs.* `deleting_the_runtime_state_changes_nothing` holds only
+   while the walls have not moved between the arrival and the deletion. Add an
+   Interval item overlapping the window and the rebuilt end extends past the
+   cached one. No test exhibits it; it is recorded rather than measured.
+4. *Which step clears it.* A kernel that carries **every** arrival's record
+   rather than the first — a `Replay` field and a wire key, which is more than
+   D45 asked for.
+
+**Gap 1253 — "`tm now`" is one of D44's four surfaces and no byte of it moves.**
+1. *What is not done.* D44 says one fix corrects the day file, `--json`, `tm
+   now` and the TUI at once. The first two are driven on shipped bytes (§1.1).
+   `render_now_with` builds its rows from a format string with **no fixed-width
+   cell**, so `tm now` shares the table and pads nothing, and the TUI's rows are
+   not driven at all: `tm tui` needs a tty (gap **182**) and `tui/today.rs` is
+   track P's file this step must not touch.
+2. *Why.* Not a defect — `tm now` is a three-line answer and not a grid. It is
+   recorded because the decision's own sentence names four surfaces and the
+   evidence covers two.
+3. *What it costs.* If `render_now_with` ever gains a column, it gains it
+   already corrected; nobody has shown that it has one now. The TUI's
+   correctness rests on every_screen_pads_through_emit plus the table's
+   own tests, which is an argument and not a screenshot.
+4. *Which step clears it.* The step that can drive a TUI — gap 182's, and no
+   agent has one.
+
+**Gap 1254 — `last_arrival` falls back to the first arrival and nothing proves
+the fallback is unreachable.**
+1. *What is not done.* `last_arrival` reads the day's `arrive` **headers**
+   (`Replay::view`). A replay scope that carried no header for today would
+   answer `None`, and `derived_state` then falls back to `DayReplay::arrival` —
+   the first arrival, the very reading D45 replaces.
+2. *Why.* Every verb that reads the runtime asks about **today**, which is an
+   open day in every scope, so the fallback should be unreachable; the
+   alternative to the fallback is answering `None` and losing the field
+   entirely, which is strictly worse than the behaviour that shipped before
+   this step.
+3. *What it costs.* A silent reversion to the pre-D45 reading if the premise is
+   ever false. Nothing asserts it — no test constructs a replay whose today has
+   facts but no headers.
+4. *Which step clears it.* Whoever can state the header/day invariant as a
+   kernel theorem, or a test that builds that replay and asserts `None`.
+
+### 8. What this step did NOT do, by name
+
+* **It did not clear gap 1196 whole.** §9 has the number and the cost.
+* **It did not touch `kernel/TmKernel/TmKernel/Emit.lean`, any renderer, or
+  `PlanCheck.lean`/`Goals.lean`** — track P's and track G's, per the brief. No
+  Lean **source** changed at all; `kernel/mutations.txt` is the one file under
+  `kernel/` this step rewrites, and only the rows it re-ran.
+* **It did not fix a column defect by adding a second measurement** (D43's
+  letter). `Walk` is one walk that `display_width` and `clip` share; the
+  per-code-point table `char_width` is unchanged, byte for byte.
+* **It did not add a dependency.** `Cargo.toml` and `Cargo.lock` are untouched
+  (`git diff --stat` names five Rust files and one roster), which is what D44
+  asked to be true and R7 has required for six stages.
+* **It did not touch `Goals.lean`, `Negative.lean`, `kernel/corpus/`,
+  `lean-toolchain`, any fixture, any snapshot or any latency band.** No cheat
+  taken, no goal added, discharged or deleted; the burn-down is **9**, all
+  stage 6, unchanged. Nothing was re-blessed.
+* **It did not narrow a gate to make it pass.** Every change to
+  `one_padder.rs` is a widening (`format_pad`) or a false-positive repair
+  (`is_char_literal`), and both were driven RED on the class before and GREEN
+  after the plants were removed.
+* **It did not drive the TUI** (gap 182) and did not rebuild the fork oracle or
+  set `TM_ORACLE`; the frozen arms ran inside `cargo test --workspace` as usual.
+* **It did not extend D44 to regional indicators** (gap 1250) or `format_pad`
+  to constant widths (gap 1251). Both are recorded, neither is taken.
+
+### 9. Gap 1196, and what it cost to move it at all
+
+Gap 1196 says **65** pin sites are a bare line number and that clearing them is
+one kernel build per constant. Measured here rather than estimated:
+
+* A full `mutate.py --verify --only Planner.lean --write` re-runs **43**
+  declarations — the file's whole share of the roster's 114, not only the
+  bare-sited ones — and the first constant had not finished building after two
+  minutes. It was started, run for
+  about four minutes, and **killed** — disclosed rather than tidied away, as
+  W-22's own note about the same tool was. The kill left a mutated
+  `Planner.lean` on disk and `mutate.py`'s `restore_in_flight` sidecar put it
+  back on the next invocation, which is the mechanism working and the second
+  time this campaign has watched it work.
+* `--only <name>` was used instead, one rostered definition at a time, which is
+  the granularity the flag actually affords and which `write_rows` supports
+  without touching a row it did not re-run. **Seven rows upgraded in about
+  fifteen minutes**, every verdict re-deriving **PINNED**, and each row also
+  gained a constant it did not have: `routineRows` and `stepTwoSegs` went
+  `default` → `default,[]`, `leastBy`, `PlanReq.lowestFree` and
+  `PlanReq.victimSlot` → `default,none`, `unspend` → `default,gs,[]`. **The
+  re-verification is strictly stronger than the row it replaced**, which is a
+  second reason to run it beyond the pin site.
+* The batch was then extended over every remaining bare row in `Planner.lean`
+  and `PlannerWit.lean`. **`PlanCheck.lean`'s seven were deliberately left**:
+  it is track G's file this run, and track G was observed running
+  `mutate.py --write` in its own worktree at the same time.
+
+### 10. Worktrees, capping, and one thing the Land step must know
+
+**Worktree.** `.claude/worktrees/w23-a`, branch `w23-a`, created from
+`3ec119b`. It is **not** removed by this step; the Land step merges the branch
+and removes it. `git worktree list` also shows the untouched
+`.claude/worktrees/stage5-lookahead` and track G's `.claude/worktrees/w23-g`.
+
+**Capping.** Every `lake`, `lean`, `cargo`, `check.sh`, `tm`, `python3` and
+`mutate.py` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+`check.sh`, `cargo` and `mutate.py` (which runs `lake build`), 8G for the
+`restore_in_flight` probe. **No breach to disclose:** nothing was retried
+uncapped, no bound was raised, and no run was killed at the cap. The one kill
+was a deliberate stop on wall time, not an OOM.
+
+**A COLLISION THE LAND STEP MUST RESOLVE, reported and not worked around.**
+`git status` in the main checkout during this run showed track P holding
+**`tm-core/src/emit.rs`** modified, along with `planner.rs`, `tui/today.rs`,
+`cli/render.rs`, `cli/planning.rs`, four `emit_now`/`tui_today_render`
+snapshots and an untracked `tm/tests/one_renderer.rs`. D44 is **track A's** by
+the brief and the width table is in that same file, so both tracks edit
+`emit.rs`: this step touches only `char_width`'s neighbourhood,
+`display_width` and the one loop inside `clip`, and track P's rows are the
+renderer below them. A textual merge should hold; a **semantic** one must check
+that `one_renderer.rs`'s byte-equality assertions are taken against the
+post-D44 widths, because a row holding a cluster is now two or four columns
+different and D30 Q5(a) compares rows across surfaces. Nothing else of this
+step reaches track P's files.
+
+### 11. Acceptance, measured at this commit
+
+Every command capped (AGENTS §2.1).
+
+| | baseline `3ec119b` | here | delta |
+|---|---|---|---|
+| `check.sh` | **9/9** | **9/9** | — |
+| axiom audit | 4,891 theorems | **4,891** | no Lean source changed |
+| check 4 `Negative.lean` | rejected | rejected | no cheat taken |
+| check 5 FFI | 93 tests | **93** | — |
+| corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | no fixture carries a cluster (§1.2), so D44 cannot move it |
+| check 7 burn-down | **9, all stage 6** | **9** | no goal added, discharged or deleted |
+| check 8 citations | 28,780 / 27,255 resolved / 1,525 allowed / **0 unused** | **28,861 / 27,336 / 1,525 / 0** | +81, all of it this block. The allow list did not move, and the check caught one of this block's own citations — a backticked assertion macro, which resolves to nothing and is un-backticked here, the W-20 convention |
+| check 9 mutations | 114 rostered, 28 unfoldable, 18 witness fixtures, 0 pinned by nothing, 0 owed, **65** bare pin sites | 114 / 28 / 18 / 0 / 0, **54** | **−11**: eleven rows re-verified by name, every verdict **PINNED**, six of them also gaining a constant they did not have (§9) |
+| `cargo test --workspace` | 1,367 passed / 0 failed / 9 ignored across 80 | **1,369 / 0 / 9 across 80** | **+2**: the T9 two-arrival row and the guard's own witness |
+| **T5** `kernel_replay_parity --include-ignored` | 33 / 0 | **33 / 0** | the frozen fork arms, unmoved |
+| `kernel_log_door --include-ignored` | 23 / 0 | **23 / 0** | — |
+| `cli_switch_acceptance --include-ignored` | **13 / 0** | **14 / 0** | +1, this step's |
+| `kernel_call_counts` | 2 / 0 | **2 / 0** | — |
+| `one_padder` | 7 / 0 | **8 / 0** | +1, the witness §4 owes |
+| `cli_day` | 28 / 0 | **28 / 0** | `tm arrive`'s own bytes, unmoved — which is D45's "no shipped behaviour changes" |
+| `cli_latency`, serially | 5 / 0 / 1 | **5 / 0 / 1** | also green in the fully-parallel workspace run, so the known two-row flake did not fire; both runs reported |
+
+**T11's noisy rows as ranges**, over the two serial runs: later verb on the
+three-year log **157–162 ms**, gated host-only write **157–162 ms**, the verb
+after a windowable hand undo **157 ms** both times, `review week` (the `All`
+scope) **294–319 ms**, `--now +1 day` (a reseal) **203–223 ms**, ten stalled
+days worst **577–587 ms** with **0** checkpoint generations, first verb
+**2.38–2.53 s**. One-year log: later verb **106–112 ms**. Plan with a due ten
+years out **147–162 ms**. Nothing here is near a band edge and no band was
+touched.
+
+Gaps: this step **1250-1254**, five taken; **1255-1279** of its range are free.
+Highest gap in the file after this block: **1254**. Gaps **1198, 1201 and 1202
+are CLOSED** by this step; gap **1196** is moved from 65 to 54 and stays open;
+gaps **1193, 1194, 1195, 1197, 1199 and 1200** are untouched and whole. Highest
+cheat: **218**, unchanged — no cheat was taken and `Negative.lean` was not
+touched. **New parity entry: P37**, the first since P36; the next free is
+**P38**. No predicate or assertion was weakened, no memory bound raised, no
+snapshot, fixture, latency band or corpus re-blessed.
