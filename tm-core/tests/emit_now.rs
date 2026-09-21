@@ -14,11 +14,34 @@ fn now_shows_the_current_block_and_the_next_three() {
     let cfg = config();
     let tree = tree(&cfg);
     let day = plan();
-    let out = emit::render_now_with(&day, &tree, &cfg, at(10, 42));
+    let now = at(10, 42);
+    let out = emit::render_now_with(&day, &tree, &cfg, now);
     // 09:20 → 11:20, so at 10:42: 1h22m gone, 38m left.
     assert!(out.contains("▶ Exercises 5.3–5.5"));
     assert!(out.contains("elapsed 1h22m · left 38m"));
-    assert_eq!(out.lines().filter(|l| l.starts_with("  1")).count(), 3);
+
+    // **D30 Q5 (a), W-23**: `tm now` SELECTS rows, it does not render them.
+    // Every line but the two annotations is a row of the day file, byte for
+    // byte — and it is taken by POSITION out of `plan_rows`, never looked up
+    // by what it says, because two items with one title give byte-identical
+    // rows (README gap **1197**).
+    //
+    // This assertion used to count lines beginning `"  1"`, which is what a
+    // second renderer's indentation looked like; three such lines is a fact
+    // about a format string and not about agreement between two surfaces.
+    let rows = emit::plan_rows(&day, &tree, &cfg, &emit::Layout::default());
+    let (current, next) = emit::now_window(&day, now);
+    assert_eq!(next.len(), 3, "§13: the current block and the next three");
+    let printed: Vec<&str> = out
+        .lines()
+        .filter(|l| !l.starts_with("  ") && *l != "next")
+        .collect();
+    let want: Vec<&str> = current
+        .into_iter()
+        .chain(next)
+        .map(|i| rows[i].as_str())
+        .collect();
+    assert_eq!(printed, want, "`tm now` printed something that is not a row");
     insta::assert_snapshot!("now_current", out);
 }
 

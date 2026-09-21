@@ -201,7 +201,7 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
             if let Some(p) = id.as_ref().and_then(|i| app.priority_of(i)) {
                 head.push_str(&format!("p{p} "));
             }
-            head.push_str(&seg_title(app, seg));
+            head.push_str(&emit::title_cell(seg, &app.tree, &app.cfg));
             if let Some(item) = id.as_ref().and_then(|i| app.tree.get(i)) {
                 if let Some(parent) = &item.parent {
                     head.push_str(&format!("  {}", parent.token()));
@@ -257,7 +257,13 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         .iter()
         .filter(|s| s.start > app.now && !matches!(s.kind, SegKind::Sleep))
         .take(3)
-        .map(|s| format!("{} {}", s.start.format("%H:%M"), seg_title(app, s)))
+        .map(|s| {
+            format!(
+                "{} {}",
+                s.start.format("%H:%M"),
+                emit::title_cell(s, &app.tree, &app.cfg)
+            )
+        })
         .collect();
     out.push(Line::from(Span::styled(
         emit::clip(
@@ -283,29 +289,6 @@ pub fn now_lines(app: &App, width: usize) -> Vec<Line<'static>> {
         theme::HINT,
     )));
     out
-}
-
-/// A segment's name: the item's title, else the word for its kind.
-fn seg_title(app: &App, seg: &Segment) -> String {
-    if let Some(title) = seg
-        .item
-        .as_ref()
-        .and_then(|id| app.tree.get(id))
-        .map(|i| i.title.clone())
-        .filter(|t| !t.is_empty())
-    {
-        return title;
-    }
-    match &seg.kind {
-        SegKind::Break => "break".to_string(),
-        SegKind::Rest => "rest".to_string(),
-        SegKind::Lost => "lost".to_string(),
-        SegKind::Sleep => "sleep".to_string(),
-        SegKind::WindDown => "wind-down".to_string(),
-        SegKind::Wall => "interruption".to_string(),
-        SegKind::Batch(ids) => format!("batch ({})", ids.len()),
-        _ => "—".to_string(),
-    }
 }
 
 /// The Energy pane (§12.1): the predicted row, the reported row (`·` where

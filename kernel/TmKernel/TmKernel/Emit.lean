@@ -3,9 +3,9 @@ import TmKernel.Planner
 # `Emit.lean` — the day section is CELLS, never padded text (stage 6, step P8)
 
 Fork-point `tm-core/src/emit.rs` is the oracle, read by function name: `render_row`,
-`render_segment_row`, `glyph_of`, `shows_scale`, `mark_of`, `est_cell`, `title_cell`,
-`batch_names`, `parent_cell`, `key_id`, `note_cell`, `underused_note`, `fmt_dur`, and
-`priority.fmt_blocks` and `energy.fmt_multiplier` beside them.
+`glyph_of`, `shows_scale`, `mark_of`, `est_cell`, `title_cell`, `batch_names`, `parent_cell`,
+`key_id`, `note_cell`, `underused_note`, `fmt_dur`, `priority.fmt_blocks` and
+`energy.fmt_multiplier`.  `rowsOf` is `emit.plan_rows`; render_segment_row died at W-23.
 
 ## D30 Q6, which is the whole shape of this module
 

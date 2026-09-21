@@ -514,7 +514,14 @@ fn est_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
 
 /// The title cell: the item's title, or the row's own words for the kinds that
 /// carry their duration in the title (`break 20m`, `lunch 30m`).
-fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
+///
+/// **Public since W-23** (D30 Q5 (a), README gap 1104). `tm/src/tui/today.rs`
+/// had a second one — `seg_title`, which said `break`, `rest`, `interruption`
+/// and `batch (3)` where this says `break 20m`, `rest 20m`, the wall's item and
+/// `batch: … (3)`. Two implementations of one concept is the bug (AGENTS §5.3),
+/// and the one the day file prints is the one that survives, so the Now pane
+/// calls this. `Emit.titleCell` is the kernel's statement of the same cell.
+pub fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
     let planned = seg.flags.planned_min.unwrap_or_else(|| seg.minutes());
     let name = |fallback: &str| -> String {
         seg.item
@@ -725,12 +732,83 @@ pub fn render_plan_section(
     render_plan_section_with(plan, tree, cfg, now, &Layout::default())
 }
 
-/// One segment's §4.3 row — the same text [`render_plan_section`] writes for
-/// it, for callers that need the rows one at a time (`tm plan --json`, which
-/// hands Claude Code the row beside the fields it was built from, §14).
-pub fn render_segment_row(seg: &Segment, plan: &DayPlan, tree: &Tree, cfg: &Config) -> String {
+/// **The day's rows, one per segment, in the day's order** — the list every
+/// surface selects from (D30 Q5 (a), README gap 1104).
+///
+/// `rows[i]` is the row `plan.segments[i]` gets, byte for byte, wherever it is
+/// printed: the day file writes this list with the `window ends` divider spliced
+/// in ([`render_plan_section_with`]), `tm plan --json` numbers it
+/// (`tm/src/cli/render.rs::rows`), the TUI's Timeline draws it at its own
+/// [`Layout`], and `tm now` prints a window of it ([`render_now_with`]).
+///
+/// **Indexed by position and never by value**: two items with one title give
+/// byte-identical rows that differ only in their start time, so `rows` and
+/// `plan.segments` are matched by index (README gap **1197**). The list is
+/// `Vec<String>` and not an iterator for exactly that reason — a caller holds
+/// positions into it.
+///
+/// It is the kernel's `Emit.rowsOf` on the Rust side of the wire: one row per
+/// segment and no other row (`Emit.rowsOf_length`).
+pub fn plan_rows(plan: &DayPlan, tree: &Tree, cfg: &Config, layout: &Layout) -> Vec<String> {
     let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
-    render_row(seg, plan, tree, cfg, &prios, &Layout::default())
+    plan.segments
+        .iter()
+        .map(|seg| render_row(seg, plan, tree, cfg, &prios, layout))
+        .collect()
+}
+
+/// **One line of the day section, and the segment it renders.**
+///
+/// `segment` is a position into `plan.segments`, `None` only for the single
+/// `─── window ends HH:MM` divider, which belongs to no segment.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DayLine {
+    /// The line, byte for byte as the day file holds it.
+    pub text: String,
+    /// The segment this line renders, by position.
+    pub segment: Option<usize>,
+}
+
+/// **The whole day section, line by line, each carrying its provenance.**
+///
+/// [`plan_rows`] with the `window ends` divider spliced in where
+/// [`divider_instant`] puts it: at the end of the `Block`/`Batch` segment whose
+/// minutes take the running total to `budget_blocks × block_min`, or at the
+/// window end, whichever comes first, before the first segment that starts at
+/// or after that instant.
+///
+/// **Every surface that needs to know which segment a line belongs to takes it
+/// from here** (README gap **1197**). The TUI used to re-derive the mapping by
+/// looking for `───` at a fixed offset in the rendered text and counting
+/// around it — a second answer to a question this function settles, and one
+/// that a title containing the glyph at the right column could have moved.
+pub fn day_lines(plan: &DayPlan, tree: &Tree, cfg: &Config, layout: &Layout) -> Vec<DayLine> {
+    let rows = plan_rows(plan, tree, cfg, layout);
+    let divider_at = divider_instant(plan, cfg);
+    let mut out: Vec<DayLine> = Vec::with_capacity(rows.len() + 1);
+    let mut divider_done = divider_at.is_none();
+    for (i, (seg, row)) in plan.segments.iter().zip(rows).enumerate() {
+        if let Some(at) = divider_at {
+            if !divider_done && seg.start >= at {
+                out.push(DayLine {
+                    text: divider_row(&at, &plan.window.1),
+                    segment: None,
+                });
+                divider_done = true;
+            }
+        }
+        out.push(DayLine {
+            text: row,
+            segment: Some(i),
+        });
+    }
+    if let (false, Some(at)) = (divider_done, divider_at) {
+        out.push(DayLine {
+            text: divider_row(&at, &plan.window.1),
+            segment: None,
+        });
+    }
+    out
 }
 
 /// [`render_plan_section`] with an explicit title width.
@@ -741,23 +819,9 @@ pub fn render_plan_section_with(
     now: DateTime<Tz>,
     layout: &Layout,
 ) -> (String, String) {
-    let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
-    let divider_at = divider_instant(plan, cfg);
     let mut body = String::new();
-    let mut divider_done = divider_at.is_none();
-    for seg in &plan.segments {
-        if let Some(at) = divider_at {
-            if !divider_done && seg.start >= at {
-                body.push_str(&divider_row(&at, &plan.window.1));
-                body.push('\n');
-                divider_done = true;
-            }
-        }
-        body.push_str(&render_row(seg, plan, tree, cfg, &prios, layout));
-        body.push('\n');
-    }
-    if let (false, Some(at)) = (divider_done, divider_at) {
-        body.push_str(&divider_row(&at, &plan.window.1));
+    for line in day_lines(plan, tree, cfg, layout) {
+        body.push_str(&line.text);
         body.push('\n');
     }
     (hhmm(&now), body)
@@ -1565,9 +1629,24 @@ pub fn render_now(plan: &DayPlan, tree: &Tree, now: DateTime<Tz>) -> String {
     render_now_with(plan, tree, &Config::default(), now)
 }
 
-/// [`render_now`] with an explicit config.
-pub fn render_now_with(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<Tz>) -> String {
-    let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
+/// **The positions `tm now` shows** (§13): the segment `now` is inside — the
+/// one the planner marked current, else the first unfinished one containing
+/// `now` — and the next three that have not started.
+///
+/// It answers **positions into `plan.segments`**, not segments, because that is
+/// what makes D30 Q5 (a)'s "`tm now`'s rows are a contiguous sub-list of the
+/// file's" a checkable claim: two items sharing a title give byte-identical
+/// rows, so a sub-list found by value has more than one witness (README gap
+/// **1197**). `one_renderer.rs` indexes by these.
+///
+/// **Contiguity is a property of the day, not of this selector**, and that is
+/// declared rather than assumed: `next` takes the first three positions after
+/// `current` whose segment has not started, so a segment *after* the current
+/// one that started *before* `now` — an overlap — would be skipped and the run
+/// would have a hole. The planner does not emit overlapping rows and
+/// `one_renderer.rs` asserts the run is whole on the fixture it drives; nothing
+/// here forces it.
+pub fn now_window(plan: &DayPlan, now: DateTime<Tz>) -> (Option<usize>, Vec<usize>) {
     let current = plan
         .segments
         .iter()
@@ -1577,41 +1656,46 @@ pub fn render_now_with(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<
                 .iter()
                 .position(|s| s.start <= now && now < s.end && !s.flags.done)
         });
+    let next: Vec<usize> = plan
+        .segments
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| s.start >= now && Some(*i) != current)
+        .map(|(i, _)| i)
+        .take(3)
+        .collect();
+    (current, next)
+}
+
+/// [`render_now`] with an explicit config.
+///
+/// **A selection over [`plan_rows`], not a second renderer** (D30 Q5 (a),
+/// README gaps **1104** and **1109**). Until W-23 this function had its own
+/// format string — `▶ title  @O1  ci4  p5  2b` over two spaces, with no
+/// columns and no truncation — so `tm now` and the day file printed different
+/// text for the same segment, which is PLAN §4's G1 with one of its three
+/// implementations still alive. It now prints *the row*, byte for byte as the
+/// day file wrote it, and chooses **which** rows with [`now_window`].
+///
+/// **This is a behaviour change to `tm now`** and is the one this step takes
+/// deliberately: design §5's Q5 (a) says "`render_now_with` stops formatting and
+/// starts selecting" and then adds "No user-visible change", which is false of
+/// (a) and true only of the day file and the TUI Timeline — `tm now`'s bytes
+/// necessarily move, because they were never the file's (README gap 1194
+/// measured exactly that). The behaviour row is in the README block.
+///
+/// The two lines that are **not** rows stay `tm now`'s own: the `elapsed … left
+/// …` annotation under the current row (indented two spaces, so it cannot be
+/// mistaken for one) and `— nothing running (HH:MM)`.
+pub fn render_now_with(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<Tz>) -> String {
+    let rows = plan_rows(plan, tree, cfg, &Layout::default());
+    let (current, next) = now_window(plan, now);
     let mut out = String::new();
-    match current.map(|i| &plan.segments[i]) {
-        Some(seg) => {
-            let mut head = format!(
-                "{} {}",
-                if seg.flags.done {
-                    MARK_DONE
-                } else if is_work(&seg.kind) {
-                    MARK_CURRENT
-                } else {
-                    glyph_of(&seg.kind)
-                },
-                title_cell(seg, tree, cfg)
-            );
-            let parent = parent_cell(seg, tree);
-            if !parent.is_empty() {
-                head.push_str(&format!("  {parent}"));
-            }
-            if let Some(level) = seg.energy.or_else(|| {
-                seg.item
-                    .as_ref()
-                    .and_then(|id| tree.get(id))
-                    .map(|i| i.ci)
-            }) {
-                head.push_str(&format!("  ci{level}"));
-            }
-            if let Some(p) = seg.item.as_ref().and_then(|id| prios.get(id)) {
-                head.push_str(&format!("  p{p}"));
-            }
-            let est = est_cell(seg, tree, cfg);
-            if !est.is_empty() {
-                head.push_str(&format!("  {est}"));
-            }
-            out.push_str(&head);
+    match current {
+        Some(i) => {
+            out.push_str(&rows[i]);
             out.push('\n');
+            let seg = &plan.segments[i];
             out.push_str(&format!(
                 "  {}–{} · elapsed {} · left {}\n",
                 hhmm(&seg.start),
@@ -1624,35 +1708,13 @@ pub fn render_now_with(plan: &DayPlan, tree: &Tree, cfg: &Config, now: DateTime<
             out.push_str(&format!("— nothing running ({})\n", hhmm(&now)));
         }
     }
-    let next: Vec<&Segment> = plan
-        .segments
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| s.start >= now && Some(*i) != current)
-        .map(|(_, s)| s)
-        .take(3)
-        .collect();
     if next.is_empty() {
         out.push_str("next   —\n");
         return out;
     }
     out.push_str("next\n");
-    for seg in next {
-        let mut line = format!("  {}  ", hhmm(&seg.start));
-        if !is_work(&seg.kind) {
-            line.push(glyph_of(&seg.kind));
-            line.push(' ');
-        }
-        line.push_str(&title_cell(seg, tree, cfg));
-        let parent = parent_cell(seg, tree);
-        if !parent.is_empty() {
-            line.push_str(&format!("  {parent}"));
-        }
-        let est = est_cell(seg, tree, cfg);
-        if !est.is_empty() {
-            line.push_str(&format!("  {est}"));
-        }
-        out.push_str(line.trim_end());
+    for i in next {
+        out.push_str(&rows[i]);
         out.push('\n');
     }
     out

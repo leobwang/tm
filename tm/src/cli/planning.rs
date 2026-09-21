@@ -211,7 +211,7 @@ fn stored(plan: &DayPlan, priorities: &[Prio]) -> StoredPlan {
             .map(|s| StoredSegment {
                 start: hhmm(s.start),
                 end: hhmm(s.end),
-                kind: render::kind_name(&s.kind).to_string(),
+                kind: tm_core::planner::kind_label(&s.kind).to_string(),
                 item: s.item.as_ref().map(|i| i.to_string()),
             })
             .collect(),

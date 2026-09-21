@@ -832,38 +832,20 @@ impl App {
     /// The timeline rows at a given title width (§4.3's row format, straight
     /// from `emit`; the pane re-renders at its own width).
     ///
-    /// `emit` writes one row per segment, in segment order, plus at most one
-    /// `───` divider row, so the rows are matched to segments by position: the
-    /// divider is the single extra row, and it is the only row that carries
-    /// `───` in place of the `ci` column ([`emit::TIME_W`] plus two spaces in).
-    /// Searching the whole row for `───` would also match a segment whose
-    /// *title* or note contains that glyph and would then shift every
-    /// following row onto the wrong segment.
+    /// **The provenance comes with the line** (W-23, README gap **1197**).
+    /// This used to re-render the section to text, look for `───` at
+    /// [`emit::TIME_W`] plus two columns in, and count segments around it —
+    /// a second answer to "which segment is this row?", and one that a row
+    /// whose title held the glyph at that exact offset could have moved,
+    /// shifting every following row onto the wrong segment. `emit::day_lines`
+    /// answers it once, where the divider is spliced in.
     pub fn timeline_rows(&self, title_w: usize) -> Vec<TimelineRow> {
         let layout = emit::Layout::new(title_w);
-        let (_, body) =
-            emit::render_plan_section_with(&self.plan, &self.tree, &self.cfg, self.now, &layout);
-        let lines: Vec<&str> = body.lines().collect();
-        let divider = (lines.len() == self.plan.segments.len() + 1)
-            .then(|| lines.iter().position(|l| is_divider_row(l)))
-            .flatten();
-        let mut seg = 0usize;
-        lines
-            .iter()
-            .enumerate()
-            .map(|(i, line)| {
-                if divider == Some(i) {
-                    return TimelineRow {
-                        text: (*line).to_string(),
-                        segment: None,
-                    };
-                }
-                let idx = seg;
-                seg += 1;
-                TimelineRow {
-                    text: (*line).to_string(),
-                    segment: (idx < self.plan.segments.len()).then_some(idx),
-                }
+        emit::day_lines(&self.plan, &self.tree, &self.cfg, &layout)
+            .into_iter()
+            .map(|l| TimelineRow {
+                text: l.text,
+                segment: l.segment,
             })
             .collect()
     }
@@ -1998,17 +1980,6 @@ fn today_key(key: KeyEvent) -> Action {
         KeyCode::Char(' ') => Action::Pause,
         _ => Action::None,
     }
-}
-
-/// True for [`emit::render_plan_section`]'s
-/// `15:10  ───     window ends 16:00` row.
-///
-/// The `───` sits where a segment row keeps its `ci` cell — right after the
-/// `HH:MM` time and two spaces ([`emit::TIME_W`]) — and a `ci` cell is always
-/// a digit or one of `emit`'s kind glyphs, so the test is exact.
-fn is_divider_row(line: &str) -> bool {
-    line.get(emit::TIME_W + 2..)
-        .is_some_and(|rest| rest.starts_with(emit::DIVIDER))
 }
 
 /// Split a `:` command line into arguments, honouring `'` and `"` quotes so

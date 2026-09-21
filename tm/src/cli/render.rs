@@ -7,10 +7,12 @@
 //!   grid, with the `───  window ends HH:MM` divider.
 //! * [`svg`] — `day/<date>.svg`: §12.1's day bar, 24 h from wake to wake,
 //!   with the ghost row beneath.
-//! * [`rows`] — the same rows as data, which `tm plan --json` and `tm now`
-//!   reuse.
-//! * [`kind_name`] — a [`SegKind`] as the word the JSON and
-//!   `.tm/last_plan.json` use.
+//! * [`rows`] — the same rows as data, which `tm plan --json` emits. (`tm now`
+//!   selects from `emit::plan_rows` directly; this sentence said it "reuses"
+//!   [`rows`] and it never did — `tm now` had its own renderer until W-23.)
+//! The `SegKind` word the JSON and `.tm/last_plan.json` use is
+//! [`tm_core::planner::kind_label`]. This module declared a second, byte-for-byte
+//! identical `kind_name` until W-23 (AGENTS §5.3).
 //!
 //! §1.2 puts the renderer itself in `tm-core/src/emit.rs`, and that is where
 //! it is: everything here delegates, so `tm plan`, `tm tui` and the M4
@@ -22,7 +24,7 @@ use serde::Serialize;
 use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::planner::{DayPlan, SegKind};
+use tm_core::planner::{self, DayPlan};
 use tm_core::tree::Tree;
 
 /// Pixels of `day/<date>.svg` (§12.1's bar is a wide, short strip; the ghost
@@ -56,34 +58,27 @@ fn hhmm(t: DateTime<Tz>) -> String {
     format!("{:02}:{:02}", t.hour(), t.minute())
 }
 
-/// The `SegKind` as a word (`block`, `batch`, `break`, …).
-pub fn kind_name(kind: &SegKind) -> &'static str {
-    match kind {
-        SegKind::Block => "block",
-        SegKind::Batch(_) => "batch",
-        SegKind::Break => "break",
-        SegKind::Routine => "routine",
-        SegKind::Wall => "wall",
-        SegKind::Rest => "rest",
-        SegKind::Optional => "optional",
-        SegKind::WindDown => "wind-down",
-        SegKind::Sleep => "sleep",
-        SegKind::Lost => "lost",
-    }
-}
-
 /// The rows of a plan, in start order — one per segment, each carrying the
 /// §4.3 row `emit` writes into the day file.
+///
+/// **Zipped by position** (README gap **1197**): `emit::plan_rows` answers one
+/// row per segment in the same order, and `rows[i].text` is `segments[i]`'s row
+/// because it is taken at `i` — not because it was looked up by anything the row
+/// says. Two items with one title give byte-identical rows, so a by-value
+/// lookup here would have more than one witness. This used to call
+/// `emit::render_segment_row(seg, …)`, which rebuilt the priority map once per
+/// row and was the by-value form; `plan_rows` replaced it and it is gone.
 pub fn rows(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<Row> {
     plan.segments
         .iter()
-        .map(|seg| Row {
+        .zip(emit::plan_rows(plan, tree, cfg, &emit::Layout::default()))
+        .map(|(seg, text)| Row {
             time: hhmm(seg.start),
             energy: seg.energy,
             mark: emit::mark_of(seg).to_string().trim().to_string(),
-            text: emit::render_segment_row(seg, plan, tree, cfg),
+            text,
             item: seg.item.clone(),
-            kind: kind_name(&seg.kind).to_string(),
+            kind: planner::kind_label(&seg.kind).to_string(),
         })
         .collect()
 }

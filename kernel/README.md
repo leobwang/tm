@@ -25323,7 +25323,7 @@ to be noticed.**
 | `tm-core/src/priority.rs` | **1,499** | §7; the rule and the hysteresis are already the kernel's, the candidate collection is not |
 | `tm-core/src/capacity.rs` | **1,012** (948 code) | already the kernel's since D10 |
 | `tm-core/src/review.rs` | **2,249** (2,156 code) | the review block's content moves in P8 (F3-review) |
-| `tm/src/cli/render.rs` | **117** | already delegates; `kind_name` dies |
+| `tm/src/cli/render.rs` | **117** | already delegates; kind_name dies — it did, at W-23: `tm_core::planner::kind_label` held a byte-for-byte copy of its ten arms and is the one that survives |
 | `TmKernel/Lookahead.lean` | **4,752** | the eighteen reused names |
 
 ### 6. Gaps opened (250-257; **258 and 259 free**)

@@ -3,7 +3,7 @@ source: tm/tests/tui_today_render.rs
 expression: pane
 ---
 "— nothing running (16:30)                     "
-"next 17:30 dinner · 18:00 Severance S3E4 · 21…"
+"next 17:30 dinner 30m · 18:00 Severance S3E4 …"
 "                                              "
 "d done  x extend  s stop  b break  i interrupt"
 "0-5 energy  l location  K skip  n note  Space…"

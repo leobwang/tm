@@ -2488,7 +2488,17 @@ pub fn explain(day: &DayPlan, id: &Id, cands: &[Candidate], cfg: &Config) -> Str
     ex.to_string()
 }
 
-fn kind_label(kind: &SegKind) -> &'static str {
+/// **A `SegKind` as one word** — `block`, `batch`, `break`, … — the *wire*
+/// word, not a display cell: it is what `tm plan --json`'s `kind` field and
+/// `.tm/last_plan.json` carry, and what `--explain` names a slot by. It is never
+/// padded, truncated or printed in a column; `emit::title_cell` is the cell.
+///
+/// **Public since W-23** (AGENTS §5.3). `tm/src/cli/render.rs::kind_name` held a
+/// byte-for-byte copy of these ten arms, found by body shape rather than by
+/// name, and is gone. Design §8.2's table says this word becomes the kernel's
+/// `SegKind` name when the wire carries the plan (README gap **1105**); until
+/// then there is one of it here.
+pub fn kind_label(kind: &SegKind) -> &'static str {
     match kind {
         SegKind::Block => "block",
         SegKind::Batch(_) => "batch",

@@ -8,7 +8,7 @@ expression: term.backend().to_string()
 "┌ Timeline ──────────────────────────────────┐┌ Now ─────────────────────────────────┐┌ Week W37 · 2/25 ───────────────┐"
 "│07:00  5 p1 ✓ Read ch.6 §1–2    @m3  1b  (6…││ci4 p1 Exercises 5.3–5.5  @m1         ││  m1 Finish ch.5…     ░░░░░░ 0/6│"
 "│08:07  5 p1 ✓ Read ch.6         @O1  3b  (6…││elapsed 1h10m ▐█████░░░░░░░░░░▌ est 2…││  m2 Rollback pa…     ░░░░░░ 0/6│"
-"│09:08  ·    ✓ break 20m                  (2…││next 11:20 lunch · 11:50 Claude Code …││▶ m3 Read ch.6        ▓▓▓▓░░ 3/3│"
+"│09:08  ·    ✓ break 20m                  (2…││next 11:20 lunch 30m · 11:50 Claude C…││▶ m3 Read ch.6        ▓▓▓▓░░ 3/3│"
 "│09:32  4 p1 ▶ Exe┌ Keys — tm-spec §12.6 ───────────────────────────────────────────────────────────┐er…     ░░░░░░ 0/2│"
 "│11:20  ·      lun│  1–5          screens: Today · Queue · Necessities · Review · Inbox             │et…     ░░░░░░ 0/6│"
 "│11:50  4↓p3   Cla│  ?            this help  ·  :  command line (any tm verb)  ·  q  quit           │        ░░░░░░ 0/2│"

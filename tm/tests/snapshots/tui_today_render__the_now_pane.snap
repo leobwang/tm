@@ -4,7 +4,7 @@ expression: "render_lines(&today::now_lines(&app(), 46), 46)"
 ---
 "ci4 p1 Exercises 5.3–5.5  @m1                 "
 "elapsed 1h10m ▐█████░░░░░░░░░░▌ est 2b ×1.6   "
-"next 11:20 lunch · 11:50 Claude Code drafts t…"
+"next 11:20 lunch 30m · 11:50 Claude Code draf…"
 "                                              "
 "d done  x extend  s stop  b break  i interrupt"
 "0-5 energy  l location  K skip  n note  Space…"
