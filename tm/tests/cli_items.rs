@@ -1434,3 +1434,131 @@ fn a_file_without_a_final_newline_follows_the_recorded_convention() {
         "a rewritten file is normalized to newline-terminated"
     );
 }
+
+// ---------------------------------------------------------------------------
+// W-22 track A — README gap 991, REFUTED as written, and the sentence it
+// should have been about.
+//
+// The gap says `tm drop` resolves a ROUTINE title where `tm edit` does not,
+// and quotes `tm edit laundry state=[x]` answering "no such item: ^laundry".
+// It does not reproduce: on a FRESH tree both verbs resolve the title and both
+// exit 0. The refusal the gap quotes comes from running `edit` AFTER `drop`
+// has already written an `^id` onto the line — at which point D31's title key
+// is gone and BOTH verbs refuse it. The two verbs agree in both directions;
+// what the transcript compared was a pre-drop `drop` with a post-drop `edit`.
+//
+// What is real, and both verbs do it identically, is that boxing a routine
+// line converts it into a tracked item: it loses its title address and its
+// recurrence, and `tm check` says "no problems". That is what the one boxing
+// notice now says, in one spelling (AGENTS §5.3) — and these are the first
+// tests to pin either sentence.
+
+/// The `^id` a boxing verb wrote onto `routines.md`'s `laundry` line.
+fn boxed_routine_id(tm: &Tm) -> String {
+    tm.read("routines.md")
+        .lines()
+        .find(|l| l.contains("laundry"))
+        .and_then(|l| l.rsplit(" ^").next().map(|s| s.trim().to_string()))
+        .unwrap_or_else(|| panic!("no boxed laundry line: {}", tm.read("routines.md")))
+}
+
+#[test]
+fn drop_and_edit_agree_about_a_routine_title_in_both_directions() {
+    // Direction 1: on a fresh tree, a routine title is an address for both.
+    let by_drop = Tm::new();
+    by_drop.ok(&["drop", "laundry"]);
+    let by_edit = Tm::new();
+    by_edit.ok(&["edit", "laundry", "state=[x]"]);
+    let by_field = Tm::new();
+    by_field.ok(&["edit", "laundry", "ci=3"]);
+
+    // Direction 2: once the line carries an `^id`, it is an address for
+    // neither — which is D31 working, not two verbs disagreeing.
+    for tm in [&by_drop, &by_edit] {
+        for args in [
+            &["drop", "laundry"][..],
+            &["edit", "laundry", "ci=3"][..],
+        ] {
+            let out = tm.run(args);
+            assert_eq!(out.code, 1, "{args:?}: {}{}", out.stdout, out.stderr);
+            assert!(
+                out.stderr.contains("no such item: ^laundry"),
+                "{args:?}: {}",
+                out.stderr
+            );
+        }
+        // And the routine verbs answer the same way, in their own words.
+        let out = tm.run(&["routine", "done", "laundry"]);
+        assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+        assert!(out.stderr.contains("no such routine: laundry"), "{}", out.stderr);
+    }
+
+    // `edit laundry ci=3` writes a key, not a box, so it assigns no id and the
+    // title still addresses it — the control that keeps the two directions
+    // from being one.
+    by_field.ok(&["drop", "laundry"]);
+}
+
+#[test]
+fn boxing_a_routine_says_the_title_is_gone_and_the_recurrence_with_it() {
+    for args in [
+        &["drop", "laundry"][..],
+        &["edit", "laundry", "state=[x]"][..],
+    ] {
+        let tm = Tm::new();
+        let out = tm.ok(args);
+        let id = boxed_routine_id(&tm);
+        // One sentence, whichever verb typed it.
+        assert!(
+            out.stdout.contains(&format!(
+                "a state box makes it a tracked item, so ^{id} was written on the line, and \
+                 `laundry` addressed it only while it carried no `^id` (D31)"
+            )),
+            "{args:?}: {}",
+            out.stdout
+        );
+        assert!(
+            out.stdout.contains("a routine line with a box does not recur"),
+            "{args:?}: {}",
+            out.stdout
+        );
+        // And the sentence is true: the plan stops scheduling it.
+        let before = Tm::new();
+        assert!(
+            before.ok(&["plan"]).stdout.contains("laundry"),
+            "the fixture does not schedule laundry, so this test measures nothing"
+        );
+        assert!(
+            !tm.ok(&["plan"]).stdout.contains("laundry"),
+            "{args:?}: the plan still schedules a boxed routine: {}",
+            tm.ok(&["plan"]).stdout
+        );
+    }
+}
+
+#[test]
+fn boxing_a_line_that_does_not_recur_says_only_what_happened_to_it() {
+    // `optional.md` has no recurrence, so the clause that names `tm routine
+    // done` must not appear — the note is keyed on the file, not on the box.
+    let tm = Tm::new();
+    let out = tm.ok(&["drop", "Severance S3E4"]);
+    assert!(
+        out.stdout.contains("`Severance S3E4` addressed it only while it carried no `^id`"),
+        "{}",
+        out.stdout
+    );
+    assert!(
+        !out.stdout.contains("does not recur"),
+        "an optional line was told it stopped recurring: {}",
+        out.stdout
+    );
+}
+
+#[test]
+fn dropping_by_id_says_nothing_about_boxing() {
+    // The other direction (AGENTS §5.8): a line that already has an `^id`
+    // gains no note at all.
+    let tm = Tm::new();
+    let out = tm.ok(&["drop", "^m4"]);
+    assert_eq!(out.stdout.trim(), "dropped ^m4", "{}", out.stdout);
+}
