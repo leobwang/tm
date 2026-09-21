@@ -51,12 +51,23 @@ fi
 #    catch.  DRIVEN before the repair, in a scratch copy: the same theorem gave
 #    `unaudited` EMPTY at `TmKernel/TmKernel/Sub/Probe.lean` and named it at
 #    `TmKernel/Probe2.lean`.  The walk is now `leanfiles.lean_files`, the one
-#    enumeration all four checkers share, so a fifth disagreement needs someone
-#    to write a second walk.
+#    enumeration all four checkers share.
+#
+#    AND SHARING THE WALK WAS NOT ENOUGH: TWO OF THE FOUR CALLED IT ON THE
+#    MODULE DIRECTORY AND NOT ON THE LIBRARY (README gap 1314, the W-23 repair
+#    step).  A Lake library is `TmKernel/TmKernel/**.lean` PLUS the root module
+#    `TmKernel/TmKernel.lean` beside it; this roster and mutate.py's asked for
+#    the directory, so a theorem in the ROOT module was never required to carry
+#    a `#print axioms` line and a def there was never constant-folded, while
+#    lake compiled both.  DRIVEN with these very lines: the probe theorem in
+#    TmKernel/TmKernel.lean left `unaudited: []` and the same theorem in
+#    Emit.lean named itself.  `leanfiles.py --library TmKernel` names the root,
+#    once, so a fifth disagreement needs someone to write a second walk OR a
+#    second root.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
 unaudited=$( comm -23 \
-  <( python3 leanfiles.py TmKernel/TmKernel \
+  <( python3 leanfiles.py --library TmKernel \
        | xargs -r grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' \
        | sed 's/.*theorem //' | sed 's/.*\.//' | sort ) \
   <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
@@ -225,9 +236,23 @@ fi
 #    wire key is declared by the literal that spells it); Rust declarations and
 #    fields; Rust string literals; file stems (`cargo test --test cli_latency`
 #    names a file); the checkers' own Python in kernel/*.py; and the PINNED Lean
-#    toolchain's own sources.  None of the seven is prose, so one stale sentence
-#    cannot launder another.  citations.py's header is the specification and
+#    toolchain's own sources.  citations.py's header is the specification and
 #    names its own blind spots.
+#
+#    "NONE OF THE SEVEN IS PROSE, SO ONE STALE SENTENCE CANNOT LAUNDER ANOTHER"
+#    IS WHAT THIS LINE USED TO SAY, AND IT WAS FALSE (README gap 1312).
+#    RUST_DECL ran over whole Rust file text with no anchor, and LEAN_DECL
+#    allows leading whitespace, so `// The old fn foo is gone.` and an indented
+#    `def foo` inside a `/-! ... -/` block each DECLARED foo.  Driven at the
+#    W-23 repair step: a citation planted in README.md was caught alone, and
+#    laundered green by either of those two comments.  Two names in the tree
+#    were resolving that way -- seg_title, deleted at W-23, from a needle STRING
+#    in one_renderer.rs, and fit_cell, a plant removed before its commit, from
+#    one_padder.rs's prose about it.  citations.py's rust_code() and lean_code()
+#    strip comments (and Rust string CONTENTS) before the declaration scan; the
+#    two citations lost their backticks.  What is still deliberately prose-free
+#    is the STRING LITERAL set: a string that is exactly an identifier declares
+#    it, because that is how a wire key is spelled, and `"fn foo"` is not one.
 #
 #    D41 WIDENED THE SPAN TEST from snake_case to snake_case OR camelCase,
 #    because snake_case-only reported green on a live stale emitRefused and

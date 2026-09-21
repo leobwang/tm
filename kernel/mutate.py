@@ -329,9 +329,15 @@ def lib_files():
     AND THE WALK IS NOT HERE ANY MORE (the W-22 repair step): four checkers
     enumerated the kernel four ways, `check.sh`'s check-3 roster grep was still
     one level deep, and the three recursive walks shared a prune list that hid a
-    directory named `target`.  `leanfiles.lean_files` is the one enumeration."""
+    directory named `target`.  `leanfiles.lean_files` is the one enumeration.
+
+    AND THE ROOT MODULE IS IN IT (the W-23 repair step; README gap 1314).  The
+    walk was called on `LIB`, the module DIRECTORY, so `TmKernel/TmKernel.lean`
+    -- which Lake compiles into the same library -- was never folded, the same
+    way check 3's roster never audited a theorem there.
+    `leanfiles.library_files` names the root."""
     return sorted(os.path.relpath(str(p), HERE).replace(os.sep, "/")
-                  for p in leanfiles.lean_files(LIB))
+                  for p in leanfiles.library_files(PKG))
 
 
 # ---------------------------------------------------------------------------
@@ -424,13 +430,32 @@ def witness_violations():
     column zero, comment tail stripped.  What it cannot see is an import
     reached some other way -- there is no other way in Lean 4 -- and a module
     that imports a witness module's own importer, which is not the same claim
-    and does not make the witness module non-leaf."""
+    and does not make the witness module non-leaf.
+
+    **A MODULE THAT DECLARES NOTHING IS NOT AN IMPORTER FOR THIS PURPOSE**, and
+    the W-23 repair step is where that had to be said out loud (README gap
+    1314).  `lib_files()` was called on the module DIRECTORY and so had never
+    seen `TmKernel/TmKernel.lean`; the moment the root module joined the walk,
+    this check went RED -- the root module imports `TmKernel.PlannerWit`, as it
+    must, or Lake would not compile it at all.  So conjunct (b) as it was
+    written -- "nothing in the library imports those modules" -- was NEVER TRUE,
+    and nobody could see it.
+
+    What (b) is actually for is REACHABILITY OF DEFINITIONS: folding a witness
+    fixture must not be able to change anything the rest of the library proves.
+    A file with no declarations is the library's import manifest; it defines
+    nothing, proves nothing and re-exports names no audited definition reads.
+    So the rule is a PROPERTY -- `decl_spans` finds no declaration in it -- and
+    not the root module's name, because a name list is what W-22's PRUNE
+    finding was about.  Today exactly one library file has the property."""
     listed = set(WITNESS_MODULES)
     files = set(lib_files())
     out = ["%s is in WITNESS_MODULES and is not a library module" % m
            for m in sorted(listed - files)]
     names = {module_name(m): m for m in listed & files}
     for path in sorted(files - listed):
+        if not decl_spans(read(os.path.join(HERE, path))):
+            continue  # an import manifest declares nothing and reaches nothing
         for line in read(os.path.join(HERE, path)).split("\n"):
             head = line.split("--", 1)[0].rstrip()
             if not head.startswith("import "):
@@ -758,10 +783,35 @@ def decl_spans(text):
 
     The doc comment is INSIDE the span because that is where Lean reports the
     error for a failed declaration: `Emit.lean:374` is the `/--` line of
-    `cells_are_the_nine_in_order`, not its `theorem` line."""
+    `cells_are_the_nine_in_order`, not its `theorem` line.
+
+    **PROSE IS NOT A DECLARATION** (README gap 1308).  `DECL_START` is anchored
+    at column zero and a doc comment's own continuation lines are flush left, so
+    a sentence beginning with `instance`, `class`, `structure` or `example`
+    registered a phantom declaration named after the NEXT WORD -- `at`, `is`,
+    `the`, `of`, `takes` -- which then SHADOWED the real theorem the site
+    belonged to, because `site()` takes the last span at or before the line.
+    Measured over the library before the repair: 8,103 spans, **11 phantom**,
+    and `kernel/mutations.txt` carried one of them (`PlannerWit.lean:3641 at`,
+    from the prose *"instance at the slot's own start ..."*), which check 9
+    counted as a NAMED pin site -- the gate green on exactly the class gap 1196
+    exists to close.
+
+    The tracker is `declarations()`'s own, lines 511-514, and so is its blind
+    spot: `/-` and `-/` are counted as bytes, so a `/-` inside a string literal
+    or a `--` line comment would open a span that never closes.  The library
+    holds none; `stale_sites` is what would notice, because every site in
+    `mutations.txt` after such a line would stop resolving."""
     lines = text.split("\n")
+    depth, inside = 0, []
+    for line in lines:
+        inside.append(depth)
+        depth += line.count("/-") - line.count("-/")
+        depth = max(depth, 0)
     out = []
     for i, line in enumerate(lines, 1):
+        if inside[i - 1] > 0:
+            continue
         m = DECL_START.match(line)
         if not m:
             continue

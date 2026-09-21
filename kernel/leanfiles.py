@@ -84,18 +84,56 @@ def lean_files(root):
     return sorted(out)
 
 
+def library_files(pkg):
+    """Every .lean file Lake compiles into the LIBRARY target of `pkg`.
+
+    THE ROOT MODULE IS ONE OF THEM, and that is the whole reason this function
+    exists (README gap 1314, the W-23 repair step).  A Lake library named
+    `TmKernel` is `TmKernel/TmKernel/**.lean` PLUS `TmKernel/TmKernel.lean`, the
+    root module beside the directory -- and four consumers sharing one walk
+    still disagreed, because two of them called it on the DIRECTORY:
+
+      * check.sh 19  totality.py TmKernel/TmKernel TmKernel   (both)
+      * citations.py sweeps lean_files(kernel/TmKernel)       (the package)
+      * check.sh 59  leanfiles.py TmKernel/TmKernel           (the subdir ONLY)
+      * mutate.py    LIB = PKG/TmKernel                       (the subdir ONLY)
+
+    So a `theorem` in the root module was never required to carry a `#print
+    axioms` line and a `def` there was never constant-folded, while `lake`
+    compiled both.  DRIVEN in a scratch copy of kernel/ with check.sh's own
+    lines 58-62: `theorem w23_probe_root_theorem : True := trivial` appended to
+    `TmKernel/TmKernel.lean` left `unaudited: []`; the identical theorem in
+    `TmKernel/TmKernel/Emit.lean` gave `unaudited: [w23_probe_lib_theorem]`.
+    Same class as the subdirectory (W-21), the roster grep (W-22) and the PRUNE
+    list (W-22), one level UP instead of one level down.
+
+    "The one enumeration all four share" was true and not sufficient: they
+    shared the walk and not the ROOT.  This names the root, once."""
+    pkg = pathlib.Path(pkg)
+    out = lean_files(pkg / pkg.name)
+    root = pkg / (pkg.name + ".lean")
+    if root.is_file():
+        out.append(root)
+    return sorted(out)
+
+
 def main(argv):
     """Print every .lean file under each directory named, one per line.
 
     check.sh's check 3 is the caller: bash cannot express the prune rule above
     without repeating it, and repeating it is the defect this file exists to
-    remove."""
+    remove.
+
+    `--library <pkg>` prints the library target of `pkg` -- its module
+    directory AND its root module (`library_files`)."""
     if not argv:
-        print("usage: leanfiles.py <dir> [<dir> ...]", file=sys.stderr)
+        print("usage: leanfiles.py [--library] <dir> [<dir> ...]", file=sys.stderr)
         return 2
+    library = argv[0] == "--library"
+    argv = argv[1:] if library else argv
     seen = set()
     for name in argv:
-        for path in lean_files(name):
+        for path in (library_files(name) if library else lean_files(name)):
             text = str(path)
             if text not in seen:
                 seen.add(text)

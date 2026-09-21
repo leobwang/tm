@@ -315,6 +315,7 @@ LEAN_NS = re.compile(r"^[ \t]*namespace[ \t]+([A-Za-z_][A-Za-z0-9_.']*)", re.M)
 LEAN_BLOCK = re.compile(r"^[ \t]*(?:@\[[^\]]*\][ \t]*)*(?:private[ \t]+|protected[ \t]+)*(structure|inductive)\b")
 LEAN_FIELD = re.compile(r"^[ \t]+([A-Za-z_][A-Za-z0-9_']*)[ \t]*:[^=]")
 LEAN_CTOR = re.compile(r"\|[ \t]*([A-Za-z_][A-Za-z0-9_']*)")
+RAW_OPEN = re.compile(r'b?r#*"')
 RUST_DECL = re.compile(r"\b(?:fn|struct|enum|const|static|type|trait|mod|union)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
 RUST_FIELD = re.compile(r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?([a-z_][a-z0-9_]*)[ \t]*:[ \t]*[^=]", re.M)
 STRING_LIT = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
@@ -412,12 +413,116 @@ def core_declared():
     return names
 
 
+def lean_code(text):
+    """`text` with every `/- ... -/` block's INSIDE blanked, lines preserved.
+
+    **PROSE DOES NOT DECLARE** (README gap 1312).  `LEAN_DECL` allows leading
+    whitespace, so an indented `def f` inside a doc comment declared `f` and a
+    citation to a deleted definition resolved to the sentence that described
+    its deletion.  DRIVEN: a `/-! ... def w23_probe_renderer ... -/` block
+    appended to `Emit.lean` made w23_probe_renderer resolve from the README,
+    exit 0.  Comment depth only; `--` line comments are left alone, because a
+    `--` in Lean is also a prefix of `---` rules and the declarations it could
+    launder are already covered by the block rule.
+    """
+    out, depth = [], 0
+    for line in text.split("\n"):
+        opens, closes = line.count("/-"), line.count("-/")
+        out.append(line if depth == 0 and opens == 0 else "")
+        depth = max(depth + opens - closes, 0)
+    return "\n".join(out)
+
+
+def rust_code(text):
+    """`text` with `//` and `/* */` comments and string/char CONTENTS blanked.
+
+    **PROSE DOES NOT DECLARE** (README gap 1312).  `RUST_DECL` has no anchor
+    and ran over whole file text, so `// The old fn foo is gone.` declared
+    `foo`, and so did the literal `"fn foo"` in a guard that greps for it.
+    Both were LIVE: seg_title, deleted at W-23, resolved only from
+    `tm/tests/one_renderer.rs`'s needle string and `tm/tests/one_padder.rs`'s
+    prose about a plant that was removed before the commit.
+
+    `STRING_LIT` still runs over the RAW text, because a bare `"name"` string
+    is a declared source of its own (the wire keys) and not a laundering path:
+    it matches a string that is exactly an identifier, never one with a `fn`
+    in front of it.
+
+    Lines are preserved so nothing else in this file has to care.
+    """
+    def blank(chunk):
+        return "".join("\n" if c == "\n" else " " for c in chunk)
+
+    out = []
+    i, n, depth = 0, len(text), 0
+    while i < n:
+        c = text[i]
+        if depth:
+            # `/* */` NESTS in Rust, unlike C.
+            if text.startswith("*/", i):
+                depth, i = depth - 1, i + 2
+            elif text.startswith("/*", i):
+                depth, i = depth + 1, i + 2
+            else:
+                out.append("\n" if c == "\n" else " ")
+                i += 1
+            continue
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            out.append(" " * (j - i))
+            i = j
+            continue
+        if text.startswith("/*", i):
+            depth, i = 1, i + 2
+            out.append("  ")
+            continue
+        # A RAW string: `r"..."`, `br##"..."##`.  Its body has no escapes, so
+        # the terminator is the quote followed by as many `#` as opened it.
+        raw = RAW_OPEN.match(text, i)
+        if raw:
+            close = '"' + "#" * raw.group(0).count("#")
+            j = text.find(close, raw.end())
+            j = n if j < 0 else j + len(close)
+            out.append(raw.group(0)[:-1] + '"' + blank(text[raw.end():j]))
+            i = j
+            continue
+        if c == '"' or (c == "b" and text.startswith('b"', i)):
+            k = i + (2 if c == "b" else 1)
+            if c == "b":
+                out.append("b")
+            j = k
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            out.append('"' + blank(text[k:j]) + ('"' if j < n else ""))
+            i = min(j + 1, n)
+            continue
+        # A CHAR literal, which may hold a quote: `'"'`.  A `'` that is not one
+        # is a lifetime or a loop label and is ordinary code (one_padder.rs's
+        # `is_char_literal`, README gap 1201, in Python).
+        if c == "'" or (c == "b" and text.startswith("b'", i)):
+            k = i + (2 if c == "b" else 1)
+            if k < n and text[k] == "\\":
+                j = text.find("'", k + 2)
+            elif k + 1 < n and text[k + 1] == "'":
+                j = k + 1
+            else:
+                j = -1
+            if j >= 0:
+                out.append(text[i:k] + blank(text[k:j]) + "'")
+                i = j + 1
+                continue
+        out.append(c)
+        i += 1
+    return "".join(out)
+
+
 def declared():
     """The four declaration sets, as one set of short names."""
     names = set()
     for path in LEAN_FILES:
         text = read(path)
-        for m in LEAN_DECL.finditer(text):
+        for m in LEAN_DECL.finditer(lean_code(text)):
             names.add(m.group(1).split(".")[-1])
         for m in LEAN_NS.finditer(text):
             names.update(m.group(1).split("."))
@@ -441,8 +546,9 @@ def declared():
     for rel in RUST_DIRS:
         for path in sorted(glob.glob(os.path.join(ROOT, rel, "**", "*.rs"), recursive=True)):
             text = read(path)
-            names.update(RUST_DECL.findall(text))
-            names.update(RUST_FIELD.findall(text))
+            code = rust_code(text)
+            names.update(RUST_DECL.findall(code))
+            names.update(RUST_FIELD.findall(code))
             names.update(STRING_LIT.findall(text))
     for path in sorted(glob.glob(os.path.join(HERE, "*.py"))):
         for m in PY_DECL.finditer(read(path)):

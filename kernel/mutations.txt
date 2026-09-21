@@ -158,7 +158,7 @@ c9a72af4a8dd TmKernel/TmKernel/PlannerWit.lean theFullDay unfoldable,⟨[],[],0�
 bf7e1beca255 TmKernel/TmKernel/PlannerWit.lean busyCap unfoldable no Inhabited (Capped RoutineIn)
 72994f183669 TmKernel/TmKernel/PlannerWit.lean busyCands unfoldable no Inhabited (Capped (Look.Cand × Option Look.Floor))
 62a73cbd8dca TmKernel/TmKernel/PlannerWit.lean theBusyRequest unfoldable no Inhabited PlanReq
-59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean aBareInstance unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩ no Inhabited Placed; PlannerWit.lean:3641 at
+59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean aBareInstance unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩ no Inhabited Placed; PlannerWit.lean:3641 the_displacement_frees_one_slot_and_gives_its_minutes_back
 deafde65c398 TmKernel/TmKernel/PlannerWit.lean theSecondSlot unfoldable no Inhabited Look.Slot
 b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no Inhabited PlanReqIn
 7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq

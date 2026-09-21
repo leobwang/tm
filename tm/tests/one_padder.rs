@@ -79,7 +79,17 @@ const RESERVED: &[&str] =
 /// range table there has ever been" — an empirical claim about past code, and
 /// README gap **1193** is the auditor's answer: a byte-identical table starting
 /// at `0x4E00` was green. [`hex_codepoint`] replaces it with the shape.
-const MEASUREMENTS: &[&str] = &[".width()", "unicode_width", "UnicodeWidthStr", "wcwidth"];
+///
+/// **`::width` is the fourth entry, and it was LIVE** (README gap **1309**).
+/// `tm/src/tui/prompts.rs:137` read `.map(Line::width)` — the same function,
+/// written as a path instead of a call, so it carried no `(` and the needle
+/// walked past it. It sized the prompt and help overlay box while the lines
+/// inside it were fitted by `emit`, and for `\u{1F44D}\u{1F3FD}` the two answer
+/// 4 and 2. A field access is `.width`, never `::width`, so the path form costs
+/// no allow-list: measured at **zero** occurrences in either `src` tree after
+/// the repair.
+const MEASUREMENTS: &[&str] =
+    &[".width()", "::width", "unicode_width", "UnicodeWidthStr", "wcwidth"];
 
 /// A four-or-five-digit hex literal — a code point written down, which is what
 /// a hand-rolled width table is made of, under any name and starting anywhere.
@@ -89,9 +99,16 @@ const MEASUREMENTS: &[&str] = &[".width()", "unicode_width", "UnicodeWidthStr", 
 /// [`HOME`] returns **nothing at all**, so the needle's false-positive rate on
 /// this tree is zero and it costs no allow-list.
 ///
-/// **What it does not match**, declared rather than discovered: a literal
-/// written with Rust's digit separators (`0x1_F300`), a code point written in
-/// decimal, and one built from `char::from_u32` of a computed value.
+/// **Digit separators were the declared hole, and an auditor walked through
+/// it** (README gap **1310**). `(0x1_100..=0x1_15F)` is the same table written
+/// the way `rustfmt` will not complain about, and it was GREEN: the old scan
+/// stopped at the `_`, counted one hex digit and moved on. Separators are
+/// skipped now and only the hex digits are counted, so `0x1_100`, `0x11_00`
+/// and `0x1100` are one needle.
+///
+/// **What it still does not match**, declared rather than discovered: a code
+/// point written in decimal, one built from `char::from_u32` of a computed
+/// value, and a range whose ends are named constants declared elsewhere.
 fn hex_codepoint(line: &str) -> bool {
     let bytes = line.as_bytes();
     for (i, w) in bytes.windows(2).enumerate() {
@@ -101,13 +118,16 @@ fn hex_codepoint(line: &str) -> bool {
         if i > 0 && (bytes[i - 1].is_ascii_alphanumeric() || bytes[i - 1] == b'_') {
             continue;
         }
-        let digits = bytes[i + 2..]
-            .iter()
-            .take_while(|b| b.is_ascii_hexdigit())
-            .count();
-        let after = bytes.get(i + 2 + digits);
-        if (4..=5).contains(&digits) && !after.is_some_and(|b| b.is_ascii_alphanumeric() || *b == b'_')
-        {
+        let (mut j, mut digits) = (i + 2, 0usize);
+        while let Some(b) = bytes.get(j) {
+            if b.is_ascii_hexdigit() {
+                digits += 1;
+            } else if *b != b'_' {
+                break;
+            }
+            j += 1;
+        }
+        if (4..=5).contains(&digits) && !bytes.get(j).is_some_and(u8::is_ascii_alphanumeric) {
             return true;
         }
     }
@@ -393,6 +413,48 @@ fn the_guard_recognises_the_shapes_it_was_driven_with() {
     assert!(code[2].contains("'x'") && code[2].contains("b'y'"), "{:?}", code[2]);
     assert!(is_char_literal("'x'") && is_char_literal(r"'\n'") && is_char_literal("'é'"));
     assert!(!is_char_literal("'static") && !is_char_literal("'a") && !is_char_literal("'outer"));
+
+    // **The four space fills the old three-string needle was green on**
+    // (README gap 1311), each verbatim as it was driven in `daybar.rs`.
+    for pad in [
+        "while out.chars().count() < w { out.push(' '); }",
+        "out.extend(std::iter::repeat(' ').take(n));",
+        r#"format!("{}{}", s, str::repeat(" ", n))"#,
+        "v.resize(n, ' ');",
+        "std::iter::repeat_n(' ', n).collect::<String>()",
+        r#"out.push_str(" ");"#,
+        r#"let bar = " ".repeat(w);"#,
+    ] {
+        assert!(space_fill(pad), "a space fill the guard must see: {pad}");
+    }
+    // And what it must NOT match: a verb with no space, a space with no verb,
+    // and a longer literal that happens to contain one.
+    for keep in [
+        "out.push_str(title);",
+        "let sep = \" \";",
+        r#"out.push_str(" — ");"#,
+        "v.resize(n, '0');",
+        "let pushed = pushes + 1;",
+    ] {
+        assert!(!space_fill(keep), "not a space fill, and the needle must stay off it: {keep}");
+    }
+    assert!(word("a.repeat(3)", "repeat") && !word("let repeated = x;", "repeat"));
+
+    // **The two measurement shapes that were live or declared-blind**
+    // (README gaps 1309, 1310).
+    assert!(
+        MEASUREMENTS.iter().any(|m| ".map(Line::width)".contains(m)),
+        "the path form of ratatui's width is not a needle"
+    );
+    assert!(
+        hex_codepoint("if (0x1_100..=0x1_15F).contains(&c) { 2 }"),
+        "a width table written with digit separators is not seen"
+    );
+    assert!(hex_codepoint("0x1100..=0x115F") && hex_codepoint("(0x4E00, 2)"));
+    assert!(
+        !hex_codepoint("let mask = 0xff;") && !hex_codepoint("let h = 0x1F;"),
+        "a short hex literal is not a code point"
+    );
 }
 
 /// **One measurement.** Nothing outside [`HOME`] asks a string how wide it is.
@@ -422,12 +484,63 @@ fn exactly_one_thing_measures_a_terminal_column() {
     );
 }
 
-/// Ways of **building** a pad: filling to a width with spaces.
+/// The verbs that put one value into a buffer **more than once** — Rust's whole
+/// vocabulary for "fill", as far as `std` has one.
 ///
-/// [`RESERVED`] is a vocabulary and a vocabulary is one rename away from
-/// useless — `fn fill_cell` and `fn fit_cell` both walked through it (README
-/// gap **1193**). This is the shape instead, and a padder has to have it.
-const PADDINGS: &[&str] = &["\" \".repeat(", "push(' ')", "push_str(\" \")"];
+/// A pad is a space literal and one of these on the same line, and that pair is
+/// the shape [`space_fill`] matches.
+const FILL_VERBS: &[&str] = &[
+    "repeat", "repeat_n", "repeat_with", "extend", "extend_from_slice", "resize", "push",
+    "push_str", "insert_str", "from_iter", "fill", "fill_with", "write_str",
+];
+
+/// A bare **space literal**: `' '` or `" "`, and nothing longer. A `" — "` and a
+/// `"{} {}"` are not one.
+fn space_literal(line: &str) -> bool {
+    line.contains("' '") || line.contains("\" \"")
+}
+
+/// Is `word` present as a whole identifier rather than inside a longer one?
+fn word(line: &str, needle: &str) -> bool {
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let (bytes, n) = (line.as_bytes(), needle.len());
+    line.match_indices(needle).any(|(i, _)| {
+        !(i > 0 && ident(bytes[i - 1])) && !bytes.get(i + n).is_some_and(|b| ident(*b))
+    })
+}
+
+/// **Filling with spaces, as a shape rather than as three spellings** (README
+/// gap **1311**).
+///
+/// The old needle was three literal strings — `" ".repeat(`, `push(' ')`,
+/// `push_str(" ")` — under a doc comment claiming *"This is the shape instead,
+/// and a padder has to have it."* It was not the shape, and an auditor drove
+/// two padders straight through it in a scratch copy of the tree:
+///
+/// * `out.extend(std::iter::repeat(' ').take(n));` — **GREEN**, 8/8.
+/// * `format!("{}{}", s, str::repeat(" ", n))` — **GREEN**, 8/8.
+///
+/// Two more found here by planting them: `v.resize(n, ' ');` and
+/// `std::iter::repeat_n(' ', n)`. All four are a space literal beside a
+/// repetition verb, and so are the three the old list named, so the pair is the
+/// needle: [`FILL_VERBS`] × [`space_literal`], on one line of **code**
+/// ([`code_lines`] has already removed the prose).
+///
+/// **Measured before it was taken**, the way [`hex_codepoint`] and
+/// [`format_pad`] were: over both `src` trees outside [`HOME`] the widened
+/// needle finds the five sites [`PAD_ALLOW`] already adjudicated and **one**
+/// more — `necessities.rs`'s one-column separator between two styled glyph
+/// spans, which is the same class as the three `today.rs` entries and is
+/// adjudicated beside them. One new exemption, written out by its exact line,
+/// is what the shape costs.
+///
+/// **What it still cannot see**, declared: a fill whose character is not a
+/// space literal on that line (`const SP: char = ' ';` then `push(SP)`, or
+/// `char::from(32)`), a fill spread over two lines, and a fill built by a macro
+/// that assembles the verb's name.
+fn space_fill(line: &str) -> bool {
+    space_literal(line) && FILL_VERBS.iter().any(|v| word(line, v))
+}
 
 /// The space fills outside [`HOME`] that are **not** a cell padder — exact
 /// lines, never a pattern, the way check 8's allow-list is written, each with
@@ -459,6 +572,14 @@ const PAD_ALLOW: &[(&str, &str, &str)] = &[
         "RFC 5545 TEXT unescaping: a literal \\n becomes a space. Not a column.",
     ),
     (
+        "tm/src/tui/necessities.rs",
+        r#"spans.push(Span::raw(" "));"#,
+        "the one-column separator BETWEEN two styled glyph cells of the heat \
+         grid — the same class as the three `today.rs` entries above, and the \
+         shape a String-returning padder cannot make. It fills no width: there \
+         is no count and no target, one space per cell.",
+    ),
+    (
         "tm-core/src/ics.rs",
         r#"s.push(' ');"#,
         "RFC 5545 line UNFOLDING: a continuation line is joined with a space. \
@@ -483,7 +604,7 @@ fn nothing_outside_the_home_file_composes_a_pad() {
             continue;
         }
         for (n, line) in code_lines(&text) {
-            if PADDINGS.iter().any(|p| line.contains(p)) || format_pad(&line) {
+            if space_fill(&line) || format_pad(&line) {
                 hits.push((name.clone(), line.trim().to_string(), n));
             }
         }

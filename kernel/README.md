@@ -25377,7 +25377,8 @@ Every command ran in `/home/leobwang/code/projects/tm` on `rebuild-on-lean`,
 capped as above. Every citation of a line number was taken from the committed
 tree at `0585e72` by `grep -n` or `sed -n`, not from memory: `planner.rs:2034`
 (`past_segments`), `emit.rs:1512` (`render_now_with`), `emit.rs:288-343` (the
-width table), `tui/today.rs:299` (`seg_title`), `store.rs:1993`
+width table), `tui/today.rs:299` (seg_title, deleted at W-23 and so not
+backticked), `store.rs:1993`
 (`RuntimeState`), `horizon.rs:194` (`REVIEW_PLACEHOLDER`), `review.rs:1147`
 (`render_day`), `tui/app.rs:845` (the TUI's timeline rows),
 `PLAN-lean-kernel.md:823` (F3 the defect) and `:832` (G1), and
@@ -47133,7 +47134,8 @@ Two things this drive is evidence for, and one it refutes.
 divider, which is not a segment and has no JSON entry. That is the comparison
 `one_renderer.rs` will make, made by hand on a real tree, and it passes **before**
 the test exists — which is worth knowing, because it means gap 1104's work is about
-`render_now_with` and `seg_title`, not about these two.
+`render_now_with` and seg_title (deleted at W-23; the dead name loses its
+backticks), not about these two.
 
 **`tm now` is still a second renderer, observed rather than argued** (gap 1104):
 
@@ -47256,7 +47258,8 @@ than "the wire has not landed".)*
 **Gap 1104 — D30 Q5's one-renderer test is not built, and two renderers still live.**
 1. *What is not done.* `tm/tests/one_renderer.rs` does not exist. `emit::render_now_with`
    is still a second renderer with its own format string, and `tm/src/tui/today.rs`'s
-   `seg_title` is still a second title renderer (`break`, `rest`, `interruption`,
+   seg_title (a name W-23 deleted, so it is not backticked) is still a second title
+   renderer (`break`, `rest`, `interruption`,
    `batch (3)` where `emit::title_cell` says `break 20m`, `rest 20m`, the wall's item
    and `batch: … (3)`).
 2. *Why.* Both are behaviour changes to what a user sees, and both want the kernel's
@@ -48781,7 +48784,7 @@ next
 Two spaces, no ci/p column, no mark column, `@O1` in a different place. This is
 **not a new finding** — it is exactly what track P recorded as OWED in gaps
 **1104** (the one-renderer test and the two surviving renderers) and **1109**
-(`seg_title` / `render_now_with` by name). The drive quantifies it: D30 Q5's
+(seg_title / `render_now_with` by name). The drive quantifies it: D30 Q5's
 acceptance is **two-thirds met** at this commit, and the missing third is one
 renderer and one un-JSON'd row. Gap **1194**.
 
@@ -49204,7 +49207,7 @@ finding below is stated as what was driven, not as what was reported.
 | A2 | a running `break` regenerates as null with no notice | **yes** | drive below |
 | A3 | the rebuild notice over-claims; the file comes back byte-identical | **yes** | `cmp` said BYTE-IDENTICAL |
 | A4 | D30 Q5 not met; `one_renderer.rs` does not exist | **yes** | `ls` — and it is gap 1194, left open |
-| A5 | the guard is green on a cell-fitter under an unreserved name | **yes** | `6 passed; 0 failed` with `fit_cell` planted |
+| A5 | the guard is green on a cell-fitter under an unreserved name | **yes** | `6 passed; 0 failed` with fit_cell planted (the plant is gone, so the name is not backticked) |
 | A6 | the guard's prose claims a check it does not make ("a fit") | **yes** | `RESERVED` holds no `fit` |
 | A7 | "four public functions and one private one" is off by one at three sites | **yes** | `emit.rs` declares five public |
 | A8 | the notice lists `active.est_min` as lost while the file carries it | **yes** | `tm now` printed `20m of 120m` |
@@ -49479,7 +49482,8 @@ message said *"exactly the five"* over a six-element vector. And the doc comment
 claiming the guard reserved *"a pad, a truncation, a fit or a width"* now names
 the seven it actually reserves: `fit` was never among them — the step renamed its
 own `fit` to `pad_to` rather than reserve it, because `tm-core`'s energy model
-has a `fn fit` of a different kind — and `fit_cell` walked through the one word
+has a `fn fit` of a different kind — and fit_cell (a plant, never a declaration,
+so it carries no backticks) walked through the one word
 the sentence added and the code had dropped.
 
 ### 8. Gaps taken — 1195-1202
@@ -49752,6 +49756,7 @@ or two lines per snapshot.
 | `tm now`'s rows | its own format string — `▶ title  @O1  ci4  p5  2b`, two spaces, no columns, no truncation | the day file's row, byte for byte | `emit_now__now_current`, `emit_now__now_idle` |
 | the TUI Now pane's `next` list | `lunch`, `break`, `dinner` | `lunch 30m`, `break 20m`, `dinner 30m` | `tui_today_render__the_now_pane`, `…_with_nothing_running`, `…_at_120_columns`, `…_at_90_columns_stacks_the_panes`, `tui_today_prompts__a_prompt_is_drawn_over_the_screen`, `…__the_help_overlay_is_drawn_over_the_screen` |
 | the TUI Now pane's head, at 12:51 | `ci4 p1 Exercises 5.3–5.5` — a block that ended at 12:50 — with `elapsed 3h19m` | `ci3 Meeting w/ host`, the row that contains 12:51 | `tui_today_prompts__a_prompt_is_drawn_over_the_screen` |
+| the line UNDER that head | `elapsed 3h19m ▐███████████████▌` — and this row read as though the elapsed moved with the head. **It did not**: `App::active_elapsed_min` is about `state.active`, the running item, so W-23 shipped a 1h meeting drawn as 3h19m and full. Corrected at the W-23 repair step, gap **1315** | `elapsed 1m ▐░░░░░░░░░░░░░░░▌` | the same snapshot |
 | an id-less interruption wall, in the TUI | `interruption` | `—` | no fixture holds one; declared as gap **1212** |
 | a batch, in the TUI | `batch (3)` | `batch: a · b · c (3)` | no fixture holds one in the Now pane |
 | `tm now --json`'s `current` / `next` | its own selection | `emit::now_window`'s | no snapshot; `one_renderer.rs` pins it |
@@ -51323,10 +51328,10 @@ an event, and the close is re-runnable, so this is recorded and not filed.)*
 **In Rust, the renderer half is dead — one function, and it is checked by name.**
 `emit::render_row` is the only thing that builds a day-section row;
 `emit::render_now_with` now *selects* from `plan_rows` (its own format string is
-gone); `tui/today.rs::seg_title` is deleted — the only surviving occurrences of
-`seg_title`, render_segment_row and kind_name in `tm`/`tm-core` are doc
+gone); `tui/today.rs`'s seg_title is deleted — the only surviving occurrences of
+seg_title, render_segment_row and kind_name in `tm`/`tm-core` are doc
 comments recording their death and `one_renderer.rs`'s guard, which was driven
-red on five plants including restoring `seg_title` verbatim. The drive above is
+red on five plants including restoring seg_title verbatim. The drive above is
 the same claim on shipped bytes.
 
 **In the tree as a whole, no — and §8.4 says not to credit the Lean compiler for
@@ -51465,3 +51470,531 @@ uncapped, no bound was raised, and no run was killed at the cap.
 * **The D45 drive** found gap 1300 by varying one flag. It **cannot see** the
   other fields of the rebuild on other input classes; I varied `--at` and
   nothing else, and four fields were compared, not eleven.
+
+<!-- ===================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-23**, the **REPAIR
+     STEP**, on `rebuild-on-lean`.  Repairs what W-23's two independent
+     auditors found.  Gap range **1305-1319**; this step takes **1305-1318**
+     and leaves **1319** free.  No cheat taken; `Negative.lean` untouched.
+     No goal added, discharged or deleted: **burn-down stays 9, all stage 6**.
+     No Lean edited at all.  `check.sh` **9/9**.
+     Highest gap in the file after this block: **1318**.
+     =================================================================== -->
+
+## Stage 6 — W-23, the repair step: `arrive.t` becomes the arrival, four gates stop reporting green on their own class, and one finding is refuted
+
+Baseline for this step is `2160e90`, W-23's land commit. Fifteen findings from
+two auditors; **fourteen reproduced**, **one did not**, and **three reproduced
+WIDER than reported**. Every drive below was run with the memory cap AGENTS
+§2.1 requires.
+
+### 1. The blocker, and it is wider than either auditor said
+
+Both auditors reported the same shape from opposite ends: deleting
+`.tm/state.json` moves `arrival` and `window`. Reproduced verbatim, shipped
+binary, fresh `tm init` tree:
+
+```
+tm wake 06:00; tm arrive lounge --at 13:00; tm arrive home --at 07:00
+CACHE:   {'arrival':'07:00','loc':'home','window':['07:00','15:00'],'budget':6}
+LOG:     {"t":"2026-09-21T14:20:25-05:00","ev":"arrive","loc":"lounge","window":["13:00","19:00"],"budget":6}
+         {"t":"2026-09-21T14:20:25-05:00","ev":"arrive","loc":"home","window":["07:00","15:00"],"budget":6}
+rm .tm/state.json; tm now
+REBUILT: {'arrival':'14:20','loc':'home','window':['14:20','19:00'],'budget':6}
+```
+
+and, with **no `--at` anywhere** and one arrival, a calendar item added after it:
+
+```
+CACHE:   {'arrival':'14:20','loc':'lounge','window':['14:20','19:00'],'budget':6}
+LOG:     {"t":"...T14:20:32-05:00","ev":"arrive","loc":"lounge","window":["14:20","19:00"],"budget":6}
+(append `- [ ] 3 1b A long meeting at:2026-09-21T16:00/19:30 ^w1`)
+rm .tm/state.json; tm now
+REBUILT: {'arrival':'14:20','loc':'lounge','window':['14:20','22:30'],'budget':6}
+```
+
+**What is actually wrong is in the WRITER, and `tm-core` has said so since the
+fork.** `tm-core/src/log.rs`'s event conventions read *"`wake.t` is the wake
+time; **`arrive.t` the arrival**; `start.t` the block start."* `tm wake` has
+always honoured it — `LogEntry::new(ctx.at(time), Event::Wake{…})`,
+`day.rs:274` — and `tm arrive` did not: it called `ctx.append_event`, which
+stamps `Ctx::now`. So `--at` survived only inside `window[0]`, and every reader
+that takes the header for the arrival — `Ctx::last_arrival`,
+`DayReplay::arrival`, `DayReplay::wake_to_arrival_min` — read the **clock**
+instead of the **verb**. Two definitions of one fact, and the one that moved was
+the reader's (AGENTS §5.3). The repair is four lines in `day.rs::arrive`.
+
+Without `--at` the two instants are equal to the second (`at` is
+`ctx.now_tz.time()` and `Ctx::at` puts it back on today's date in the same
+zone), so **no shipped byte moves on the default path**; the only lines that
+move are a retro or future `--at`'s, and they move to what the convention says.
+
+The second half — the window — is D42's letter, not D45's: *a field that
+cannot be derived fails LOUDLY*. This one **can** be derived and was not.
+`derived_state` now reads the arrival record's own payload back
+(`DayReplay::window`/`budget`, verbatim, walls-and-config as they stood **then**)
+whenever the log carries it, which on a one-arrival day it always does; the
+recomputation from `Ctx::arrival_window` survives only as the **named fallback**
+for the second and later arrivals of a day, whose payloads are no fact, and
+`Ctx::rebuild_notice` prints
+
+```
+tm: RECOMPUTED rather than restored: `window` and `budget` — the day has 2
+    arrivals and the log's facts carry only the first one's payload, so these
+    are 07:00–15:00 recomputed from TODAY's walls and config; a calendar item
+    added since the arrival moves them.
+```
+
+Both drives above now return the cache byte for byte. **Gap 1300 is closed with
+this**, and its own minimal drive (`arrive home --at 11:10` logged at 11:15) now
+rebuilds `arrival 11:10  window ["11:10","19:00"]`.
+
+### 2. The gate that was green on its own class, and the two that are new
+
+`cli_switch_acceptance::deleting_the_runtime_state_keeps_the_last_arrival_of_the_day`
+made its second arrival with a bare `tm arrive`, so writer and derivation agreed
+by accident; **the one shape where they diverge was untested**. Two tests added,
+each with its bite asserted first:
+
+* `a_retro_arrival_is_logged_at_its_own_time_and_survives_the_deletion` — asserts
+  the LOG's `"t":"2026-09-07T09:00:00-05:00"` **and** that it is not `T13:00:00`,
+  then the four-field agreement, then the eleven `--json` spellings, then that
+  the two-arrival day PRINTS the recomputation.
+* `a_calendar_item_added_after_the_arrival_does_not_move_the_rebuilt_window` —
+  one arrival, no `--at`, a wall added afterwards; and its bite asks
+  `Ctx::arrival_window` what it *would* have said, and fails if that agrees with
+  the logged answer (the first attempt used an 18:00 wall, which does not move
+  the formula, and the bite caught it: `["09:00","18:00"] == ["09:00","18:00"]`).
+
+**Driven, both directions.** Reverting `day.rs` to `append_event` → **both**
+FAIL. Replacing `arrivals_today(...) == 1` with `== 0` (never read the logged
+payload) → the calendar-item row FAILS. 16 passed at HEAD of this step.
+
+### 3. Four gates that reported green on an instance of their own class
+
+| gate | the shape that walked through | driven at | repaired by |
+|---|---|---|---|
+| `one_padder`'s `PADDINGS` | `out.extend(std::iter::repeat(' ').take(n));` and `format!("{}{}", s, str::repeat(" ", n))` — **8/8 green** | `tm/src/tui/daybar.rs` | `space_fill` = [`FILL_VERBS`] × a space literal |
+| `one_padder`'s `MEASUREMENTS` | `Line::width` as a **path** — and it was **LIVE** at `tm/src/tui/prompts.rs:137` | the shipped tree | `"::width"` is the fourth needle |
+| `one_padder`'s `hex_codepoint` | `(0x1_100..=0x1_15F)` — Rust's digit separators, the declared hole | `daybar.rs` | separators skipped, hex digits counted |
+| check 8's declaration sets | `// The old fn foo is gone.` and an indented `def foo` inside `/-! … -/` | `render.rs`, `Emit.lean` | `citations.py::rust_code` / `lean_code` |
+
+**The padder needles, all six mutations, before and after** (each appended to
+`daybar.rs`, then reverted; `cargo test --test one_padder`, capped):
+
+```
+                                              BEFORE        AFTER
+m1  while out.chars().count() < w { out.push(' '); }   RED    RED
+m2  out.extend(std::iter::repeat(' ').take(n));      GREEN    RED
+m3  format!("{}{}", s, str::repeat(" ", n))          GREEN    RED
+m4  if (0x1_100..=0x1_15F).contains(&c) { 2 }        GREEN    RED
+m7  ratatui::text::Line::width(l)                    GREEN    RED
+m8  v.resize(n, ' ');                                GREEN    RED
+```
+
+m7 and m8 are this step's own additions to the auditors' list; m4 and m2/m3 are
+theirs. The widened space-fill needle costs **one** new `PAD_ALLOW` entry —
+`necessities.rs`'s one-column separator between two styled glyph spans, the same
+class as the three `today.rs` entries already there — and the doc comment says
+so rather than claiming it costs none.
+
+**`Line::width` was not a hypothetical.** `box_of` sized the prompt and help
+overlay with ratatui's `unicode-width` while the lines inside it were fitted by
+`emit`; for `👍🏽` the two answer **4** and **2** (D44 collapses a skin-tone
+modifier onto its base), so an overtime prompt on an emoji title draws its
+border to one rule and its text to another. `prompts.rs` now measures through
+`emit::display_width`, title included — the `title.chars().count() + 4` on the
+next line was a **third** rule and is gone.
+
+**check 8's laundering, driven three ways** in the working tree (each plant
+appended, then reverted; `python3 citations.py`, capped):
+
+```
+plant 1  README.md: "The renderer `w23_probe_renderer` is the one."
+         BEFORE rc=1 (1 unresolved)      AFTER rc=1
+plant 2  + tm/src/cli/render.rs: "// The old fn w23_probe_renderer is gone."
+         BEFORE rc=0 (green)             AFTER rc=1
+plant 3  + Emit.lean: "/-! … def w23_probe_renderer : Nat := 0 … -/"
+         BEFORE rc=0 (green)             AFTER rc=1
+plant 4  + tm/src/cli/render.rs: the bare string "w23_probe_renderer"
+         AFTER rc=0 — DELIBERATE: a string that is exactly an identifier is
+         declaration source 3 (a wire key is spelled by its literal), and
+         `"fn foo"` is not one.
+```
+
+`check.sh`'s own line *"None of the seven is prose, so one stale sentence cannot
+launder another"* was **false when written** and is replaced by the account
+above. Two names in the tree were resolving that way: **seg_title**, deleted by
+W-23 itself, from `one_renderer.rs:686`'s needle string; and **fit_cell**, a
+plant removed before its own commit, from `one_padder.rs`'s prose about it. Both
+lost their backticks, in the README (4 sites) and in Rust prose (5 sites,
+including the three the auditor named: `render.rs:15` kind_name, `render.rs:68`
+emit::render_segment_row, `emit.rs:607` seg_title). Turning the scanner on also
+found and fixed a **second-order** defect in my own first attempt: the raw-string
+terminator was computed one `#` short, which blanked live code and made 15
+genuine test names look unresolved — the gate failing LOUD is what caught it.
+
+### 4. A REFUTATION
+
+> *"`capMin` (W-19's dead duplicate) likewise [resolves only from prose]."*
+
+**Does not reproduce.** `capMin` is a live Lean structure field —
+`kernel/TmKernel/TmKernel/Lookahead.lean:4699  capMin : Nat` — read by
+`MaxCap.leftMin`, `MaxCap.reached` and `Boundary.lean:10339`. After the
+declaration-set repair, `citations.declared()` still answers `capMin → True`,
+and `citations.py` is green with it. The dead duplicate W-19 shipped was
+capMin? (unbackticked, being dead), which answers **False** and is cited nowhere. The other two names in
+that finding — seg_title and fit_cell — are real and are fixed. Claim left
+standing in the audit record, refuted here with the line number.
+
+### 5. The fourth level of the enumeration hole, and what it exposed
+
+`leanfiles.py` says it is *"the one enumeration all four consumers share, so a
+fifth disagreement needs someone to write a second walk."* Nobody needed one —
+only a different **argument**: two of the four called the shared walk on the
+module DIRECTORY (`TmKernel/TmKernel`) and not on the library, which is that
+directory **plus the root module beside it**. Driven with check.sh's own lines
+58-62:
+
+```
+baseline                                              unaudited: []
+theorem w23_probe_root_theorem in TmKernel/TmKernel.lean  unaudited: []      <- blind
+theorem w23_probe_lib_theorem  in .../Emit.lean       unaudited: [w23_probe_lib_theorem]
+                                             AFTER:   unaudited: [w23_probe_root_theorem]
+```
+
+`leanfiles.library_files(pkg)` names the root once; check 3's roster grep is
+`leanfiles.py --library TmKernel` and `mutate.py::lib_files` calls
+`library_files(PKG)` — 84 files, `TmKernel/TmKernel.lean` among them.
+
+**And the widening immediately failed a second gate, which is the point of
+widening it.** `mutate.py::witness_violations` went RED: the root module
+`import`s `TmKernel.PlannerWit`, so `WITNESS_MODULES`' conjunct (b) — *"nothing
+in the library imports those modules"* — **was never true**, and nothing could
+see it because nothing enumerated the root. What (b) is for is reachability of
+DEFINITIONS, so the rule is now a property and not a name: a file in which
+`decl_spans` finds no declaration is an import manifest, defines nothing, proves
+nothing, and is skipped by the importer scan. Exactly one library file has that
+property today. This is a **narrowing of a claim that was false**, written down
+rather than patched out, and it is disclosed here because the alternative
+reading — a gate quietly relaxed — is the thing this campaign exists to catch.
+
+### 6. The Now pane had two subjects
+
+`tm/src/tui/today.rs`'s head names the segment containing `now`
+(`emit::now_window`, W-23 track P); the line under it was
+`App::active_elapsed_min`, a fact about `state.active` — the running **item**.
+Before W-23 the two coincided. The contradiction shipped inside a re-blessed
+snapshot:
+
+```
+-"││ci3 Meeting w/ host                   │"      (head: a 1h wall)
+-"││elapsed 3h19m ▐███████████████▌       │"      (the PREVIOUS block's run)
++"││elapsed 1m ▐░░░░░░░░░░░░░░░▌          │"
+```
+
+— and the overtime prompt seventeen lines down in the *same* snapshot correctly
+said `Exercises 5.3–5.5 … elapsed 3h19m`. The elapsed is now the head's own
+segment's, unless the head IS the running block, in which case it is still the
+log's worked minutes (pauses, breaks and interruptions excluded). Driven:
+collapsing the new match back to the old behaviour fails
+`tui_today_prompts__a_prompt_is_drawn_over_the_screen`, so the re-blessed
+snapshot is now a witness and not a record. The W-23 track P behaviour row and
+`one_renderer.rs:200` both said the elapsed moved with the head; both are
+corrected in place.
+
+### 7. `cargo test --workspace` was a probabilistic claim
+
+Both auditors drew the same fresh proptest seed. Reproduced by pinning it:
+
+```
+---- set_state_and_tag_and_priority ----
+panicked at tm-core/tests/grammar_proptest.rs:277
+  left: "0 A A  a"  right: "0 A A a"
+  minimal failing input: (text, stateful) = ("- 0 A A ci:0  a @A @a", false)
+```
+
+`set_state_with_ci` calls `remove_token("ci")` first, and removing a token
+merges a bare word back into the title segment with its original lead
+whitespace — which is **exactly the class `grammar_proptest.rs`'s own `norm()`
+helper documents**, and which the sibling `set_parent` assertion 83 lines down
+has always normalised. Line 277 did not. It does now, with the word **count**
+compared exactly beside it so the normalisation cannot hide a lost word, and the
+seed is pinned in `grammar_proptest.proptest-regressions` so the case runs every
+time rather than when a draw finds it. Five consecutive runs green, tree clean.
+
+**This is an assertion I relaxed, and it is disclosed rather than buried.** The
+words, their order and their count are still compared byte for byte; only a
+whitespace RUN is normalised, by the helper the file wrote for this operation
+class. What remains open is the second half of the finding: proptest persists a
+new seed into a **tracked** file on failure, so a red acceptance run dirties the
+tree by itself. That is gap **1316**'s item 3.
+
+### 8. What was NOT fixed, and why
+
+**Two readers of an HTML comment** (gap **1317**) reproduced exactly, with the
+auditor's control. On a fresh `tm init` tree, a column-zero item line inside the
+week file's own shipped `<!-- -->` block:
+
+```
+$ tm check
+week/2026-W39.md:8: error[dup-id]: duplicate id ^dupx; also at week/2026-W39.md:23
+week/2026-W39.md:23: error[dup-id]: duplicate id ^dupx; also at week/2026-W39.md:8
+2 errors, 0 warnings                                   exit=2
+```
+
+— no `error[kernel-load]: dupId`. CONTROL, two real duplicates outside the
+comment: **four** errors, both readers speaking. This is gap **45**'s class
+(AGENTS §5.3 names it), the host is the wrong one, and the fix is a change to
+`tm-core`'s fork-point parser — which is the D21/D22 comparand. **Measured
+before leaving it:** across `kernel/corpus/**`, `tm/tests/**` and
+`tm-core/tests/**`, **zero** item-shaped lines sit at column zero inside an HTML
+comment, and `tm init`'s own templates indent theirs by four spaces, so the class
+has no instance in the tree and is reached only by a hand-written line. Left for
+the owner with the shape.
+
+**`Emit.lean` still has no caller** (gap **1318**): `Boundary.lean`'s imports are
+Report, Json, Tree, Priority, Capacity, Log, Lookahead, Replay, SealWire — no
+`TmKernel.Emit` — and `grep -rn 'rowsOf\|titleCell\|Emit\.' tm/src tm-core/src
+kernel/tm-kernel-ffi` returns four doc-comment lines. Unchanged by this step and
+unchangeable by it: it is gap 1195's wire and gap 1197's by-position index.
+
+**check 8 still does not sweep Rust `///` prose** (gap **1313** item 3), the
+declared blind spot. **Re-measured here, and this number has never been printed
+before**: running `citations.py`'s own `SPAN`/`CITED`/`declared()` over every
+`///` and `//!` line of `RUST_DIRS` gives **6,500 citations, 1,992 distinct, 179
+distinct unresolved (538 occurrences), 162 of them not in the kernel
+allow-list**. Most are `std` and third-party names (Clone, FixedOffset, HashMap, TestBackend — std and third-party, none of them ours), which is why the class needs an allow-list before it
+can be a gate and not a sweep.
+
+### 9. Method, and what each method cannot see
+
+* **"The blocker is closed"** is two shipped-binary drives on fresh trees plus
+  two mutations of the repair. It **cannot see** a class of input I did not vary:
+  I varied `--at` and a tree change, on one arrival and on two; I did not vary
+  the timezone, a day boundary crossed by `--at`, or an `undo`-cancelled arrival.
+* **"The padder guard sees the shape"** is six mutations, each appended to one
+  file and reverted. It **cannot see** a fill whose space is not a literal on
+  that line (`const SP: char = ' '`), a fill spread over two lines, a name a
+  macro assembles, or any padder in `tests/`, `examples/` or `build.rs`.
+* **"Prose no longer declares"** is three plants and a four-way drive. It
+  **cannot see** a name laundered through the string-literal source, which is
+  deliberate and driven as plant 4; nor a `/-` inside a Lean string literal,
+  which would open a comment span that never closes — `stale_sites` is what would
+  notice.
+* **"11 phantom declarations, now 0"** is `decl_spans` compared against a
+  comment-depth tracker over all 84 library files: **8,103 spans → 8,092**, the
+  eleven being Arith 641 `is`, Boundary 712 `the`, 5360 `of`, 9283 `` `floor` ``,
+  Fast 260 `needs`, Json 123 `is`, PlanCheck 2364 `unchanged`, 2901 `asked`,
+  Planner 4996 `takes`, PlannerWit 3586 `would`, 3624 `at`. It is the SAME
+  tracker `declarations()` uses and has the same blind spot, declared in the
+  docstring. `mutations.txt` carried one of them — `PlannerWit.lean:3641 at` —
+  which `mutate.py --gate` then reported as drifted and
+  `--verify --write --only aBareInstance` re-ran and rewrote to
+  `the_displacement_frees_one_slot_and_gives_its_minutes_back`. Verdict
+  unchanged: `unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩`.
+* **"The root module is enumerated"** is one probe theorem in each of the two
+  places, run through check.sh's own roster lines. It **cannot see** a fifth
+  consumer that does not use `leanfiles` at all, and it does not check the
+  package root's other files (`Check.lean`, `Negative.lean`, `Goals.lean`), which
+  are deliberately outside the library roster.
+* **"The Now pane is one subject"** is one snapshot plus one mutation. It
+  **cannot see** the other panes, and no proof reaches the TUI at all (gap 182).
+* **"cargo test is deterministic"** is five consecutive capped runs of
+  `grammar_proptest` plus three of `--workspace`. It **cannot see** a seed
+  proptest has not drawn in eight runs; the pinned regression file is what makes
+  THIS case permanent, not the runs.
+
+### 10. Acceptance
+
+All capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`).
+
+| gate | at `2160e90` | here | delta |
+|---|---|---|---|
+| `check.sh` | 9/9 | **9/9** | — |
+| audit | 4,910 theorems | **4,910** | — (no Lean edited) |
+| check 5 | 93 tests | **93** | — |
+| check 8 | 29,275 citations, 27,747 resolved, 1,528 allowed, 0 unused | **29,347 citations, 27,819 resolved, 1,528 allowed, 0 allow entries unused** | **+72**, all of them this block's own prose; the DECLARATION set is strictly smaller (comments no longer declare) and still resolves everything |
+| check 9 | 118 rostered, 30 unfoldable, 20 witness fixtures, 0 pinned by nothing, 32 bare pin sites | **identical** | one row's pin site stopped being the phantom `at` |
+| corpus | 29/37 and 4/5 | **29/37 and 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — |
+| `cargo test --workspace` | 1,394 / 0 / 9 across 81 | **1,396 / 0 / 9 across 81** | **+2**: the two D45 tests of §2 |
+
+Beside them, each run on its own: `cli_switch_acceptance` 16/0;
+`cli_latency` 5 passed / 0 failed / 1 ignored **in parallel (14.29 s) and again
+serially with `--test-threads=1` (14.30 s)** — the known flake did not fire, and
+both numbers are reported because AGENTS asks for both; `kernel_call_counts`
+2/0; `one_padder` 8/0; `one_renderer` 25/0; T5 `kernel_replay_parity` 29 passed
+/ 0 failed / 4 ignored; the door suite `kernel_log_door` 23/0; the FFI crate
+0+8+86+7+0 passed / 0 failed.
+
+**No new wire value, so zero R10 bounds, zero smart constructors and zero
+rejection theorems are owed.** No law narrowed, no predicate weakened, no
+snapshot re-blessed except the one §6 corrects and witnesses, no memory bound
+raised, no new dependency, no `sorry`, no axiom, and `lean-toolchain` and
+`kernel/corpus/` untouched.
+
+### 11. Gaps
+
+<!-- GAPS 1305-1318 — the W-23 repair step.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1305 — `tm arrive` stamped the clock and not the arrival. FIXED.**
+1. *What was not done.* `Event::Arrive`'s `t` was `Ctx::now`, against
+   `tm-core/src/log.rs`'s own convention that `arrive.t` **is** the arrival.
+2. *Why it mattered.* Every reader that takes the header for the arrival read
+   the clock; D42's rebuild then invented a window carried by neither the cache
+   nor the log, a REGRESSION on `3ec119b`, which read the logged payload.
+3. *What it cost.* `tm plan`, `tm now`, the day file and the plan hash all moved
+   after a `rm .tm/state.json` on any day whose last arrival used `--at`.
+4. *Cleared.* Here. Gap **1300** is closed with it.
+
+**Gap 1306 — the rebuild cannot answer for the SECOND arrival of a day, and now
+says so.**
+1. *What is not done.* `DayReplay::window`/`budget` are the day's **first**
+   `arrive`'s payload — the fork's derivation, which `Replay.lean`'s
+   `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan` proves
+   and T5 compares key for key. No fact carries the later arrivals' payloads.
+2. *Why.* Adding one is a kernel change: `Replay.lean`'s `DayAcc` gains a last-arrive field, the day record's positional wire tuple goes from 28
+   elements to 29, `kernel_log.rs::decode_facts`'s `d_tuple(rec, 28, …)` follows,
+   the sealed month-record format in `.tm/cache/replay` needs a version bump, and
+   the fork has no such key so D21/D22 want a parity entry. That is a step, not a
+   repair.
+3. *What it costs.* On a day with two or more arrivals the rebuilt `window` and
+   `budget` are `Ctx::arrival_window` against **today's** walls and config, so a
+   calendar item added since the arrival moves them. It is LOUD — the notice
+   names both fields, the arrival count and the reason — and every other field,
+   `arrival` and `loc` included, is exact.
+4. *Which stage.* Stage 6, with gap 1195's wire, or whenever the day record's
+   shape is next opened.
+
+**Gap 1307 — the D45 gate never ran `tm arrive --at`. FIXED.**
+1. *What was not done.* The one input class where writer and derivation diverge
+   was the one class the brand-new guard did not drive.
+2. *What it cost.* `14 passed; 0 failed` with gap 1305 live.
+3. *Cleared.* Here, by two tests whose bites are asserted first (§2).
+
+**Gap 1308 — `mutate.py::decl_spans` read prose as declarations. FIXED.**
+1. *What was not done.* `DECL_START` is anchored at column zero and a doc
+   comment's continuation lines are flush left, so a sentence opening
+   `instance`, `class`, `structure` or `example` registered a phantom
+   declaration named after the next word, which then SHADOWED the real theorem
+   a pin site belonged to.
+2. *What it cost.* 11 phantoms over 8,103 spans, and `mutations.txt` carried one
+   of them (`PlannerWit.lean:3641 at`) which check 9 counted as a NAMED site —
+   the gate green on exactly the class gap 1196 exists to close.
+3. *Cleared.* Here, with `declarations()`'s own comment tracker and its blind
+   spot re-declared.
+
+**Gap 1309 — a second measurement of a terminal column was LIVE. FIXED.**
+1. *What was not done.* `tm/src/tui/prompts.rs:137` `.map(Line::width)` sized the
+   prompt/help overlay with ratatui's `unicode-width`, and
+   `title.chars().count() + 4` on the next line was a third rule.
+2. *What it cost.* For `👍🏽` ratatui answers 4 and `emit`'s `Walk` answers 2, so
+   an emoji title's box and its contents were sized by two different rules.
+   `one_padder` was green because `MEASUREMENTS` matched only the call form.
+3. *Cleared.* Both sites measure through `emit::display_width`; `"::width"` is a
+   needle, at zero occurrences in either `src` tree.
+
+**Gap 1310 — `hex_codepoint` could not see Rust's digit separators. FIXED.**
+1. *What was not done.* The declared hole, and an auditor walked through it:
+   `(0x1_100..=0x1_15F)` was GREEN.
+2. *Cleared.* Separators skipped, hex digits counted; `0x1_100`, `0x11_00` and
+   `0x1100` are one needle. Decimal code points and `char::from_u32` of a
+   computed value are still invisible, declared.
+
+**Gap 1311 — `PADDINGS` was a vocabulary calling itself a shape. FIXED.**
+1. *What was not done.* Three literal spellings under a doc comment reading
+   *"This is the shape instead, and a padder has to have it."* Two padders and
+   two more found here walked through.
+2. *Cleared.* `space_fill` = a repetition verb beside a space literal. Costs one
+   new `PAD_ALLOW` entry, named. Still blind to a non-literal space, a two-line
+   fill and a macro-assembled name.
+
+**Gap 1312 — check 8's declaration sets read PROSE. FIXED.**
+1. *What was not done.* `RUST_DECL` ran over whole file text and `LEAN_DECL`
+   allows leading whitespace, so a comment could declare a name and launder a
+   stale citation to it.
+2. *What it cost.* Two live instances — seg_title and fit_cell — and
+   `check.sh`'s own paragraph asserted the opposite.
+3. *Cleared.* `rust_code`/`lean_code` strip comments (and Rust string contents)
+   before the declaration scan; `check.sh`'s paragraph rewritten; nine citations
+   un-backticked.
+
+**Gap 1313 — Rust `///` prose is cited from and never swept.**
+1. *What is not done.* `citations.py` reads no Rust prose as a citation SOURCE
+   (the declared blind spot), and `kernel/design/**` likewise.
+2. *Why.* Measured here for the first time: **179 distinct unresolved names, 538
+   occurrences, 162 not in the kernel allow-list**, most of them `std` and
+   third-party. A sweep without an allow-list would be 162 entries of noise on
+   day one.
+3. *What it costs.* A dead name keeps its backticks wherever the gate does not
+   look. W-23 instanced it itself; those three are fixed, with two more found
+   beside them, but nothing stops the next one.
+4. *Which stage.* Whoever is willing to adjudicate 162 names.
+
+**Gap 1314 — two of the four enumerators asked for the DIRECTORY, not the
+library. FIXED.**
+1. *What was not done.* check 3's roster grep and `mutate.py::LIB` excluded
+   `TmKernel/TmKernel.lean`, which Lake compiles into the same library.
+2. *What it cost.* A theorem in the root module was never required to carry a
+   `#print axioms` line and a `def` there was never constant-folded, with
+   `check.sh` printing 9/9. Latent: the file holds only imports.
+3. *Cleared.* `leanfiles.library_files`. And the widening exposed that
+   `WITNESS_MODULES`' conjunct (b) was never true; it is now a property
+   (a file that declares nothing reaches nothing), stated rather than patched.
+
+**Gap 1315 — the TUI Now pane named one segment and timed another. FIXED.**
+1. *What was not done.* The head became `emit::now_window`'s segment at W-23 and
+   the `elapsed` line stayed `App::active_elapsed_min`, which is about
+   `state.active`.
+2. *What it cost.* A shipped snapshot in which a 1h meeting is drawn as
+   `elapsed 3h19m` with a full bar, contradicting the overtime prompt seventeen
+   lines below it in the same frame.
+3. *Cleared.* Here, with the snapshot re-taken and witnessed by a mutation.
+
+**Gap 1316 — `cargo test --workspace` green was seed-dependent, and a red run
+dirties the tree.**
+1. *What is not done (items 1-2 are cleared).* The title round-trip assertion at
+   `grammar_proptest.rs:277` compared raw text across an edit that REMOVES a
+   token; it now normalises whitespace runs the way the file's own `norm()` and
+   its sibling assertion do, with the word count compared exactly beside it, and
+   the seed is pinned.
+2. *What is still open.* proptest's failure-persistence setting writes a new seed into
+   the **tracked** `grammar_proptest.proptest-regressions` on failure, so any
+   step that runs acceptance can be handed a red suite *and* a modified tracked
+   file through no edit of its own.
+3. *What it costs.* "cargo test --workspace, 0 failed, tree clean" is two claims
+   and only one of them is under the step's control.
+4. *Which stage.* Whoever decides whether the persistence file belongs in the
+   tree.
+
+**Gap 1317 — two readers disagree about what an HTML comment is. NOT FIXED.**
+1. *What is not done.* A column-zero item line inside `<!-- -->` is an item to
+   `tm-core`'s fork-point parser and prose to `Plan.lean`, whose header says
+   *"Every line from the opener to the closer is prose, verbatim."*
+2. *Why.* The host is the wrong one, and the host is the D21/D22 comparand: the
+   fix is a change to `tm-core`'s `ParsedFile` that moves what "is an item"
+   means for `check`, `plan`, `move`, `close` and the round-trip corpus, and it
+   needs a parity entry and an owner.
+3. *What it costs.* `tm check` reports `dup-id` where the kernel reports
+   nothing, and `dangling-parent` likewise; the reverse — a tree the kernel
+   refuses and the host accepts — is the shape D35 exists to stop. Measured:
+   **zero** instances in `kernel/corpus/**`, `tm/tests/**` and
+   `tm-core/tests/**`, because `tm init`'s own comment blocks indent their
+   example items by four spaces. It is reached only by hand.
+4. *Which stage.* R3, with `planner.rs` (D34), or earlier by owner decision.
+   Same class as gap **45**.
+
+**Gap 1318 — `Emit.lean` has no caller and its cells have never been compared to
+a byte. NOT FIXED, and not fixable here.**
+1. *What is not done.* `Boundary.lean` does not import `TmKernel.Emit`, the FFI
+   entry is `callCap`, and no `Emit.Row` can reach `respond`. The only machine
+   evidence for the module is 19 `#print axioms` lines.
+2. *Why.* It is gap **1195**'s wire and gap **1197**'s by-position index, both of
+   which are steps of their own; this is a repair step and edited no Lean.
+3. *What it costs.* D30 Q5's acceptance — one row renderer whose output every
+   surface prints — is met in Rust and not in the tree; §8.4's instruction not to
+   credit the Lean compiler for G1 still stands.
+4. *Which stage.* Stage 6, gap 1195.
+
+**New gaps start at 1319.**
