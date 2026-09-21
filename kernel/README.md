@@ -46909,8 +46909,11 @@ because check 9 said it was missing (§7).
 
 ### 4. D43: one table, and what the guard kills
 
-`tm-core/src/emit.rs` now owns four public functions and one private one, and
-nothing else in either `src` tree declares any of them:
+`tm-core/src/emit.rs` now owns **five** public functions and one private one, and
+nothing else in either `src` tree declares any of them.  *(This sentence said
+"four" over a table naming five, and `one_padder.rs`'s own assertion message said
+"the five" beside a six-element list — gap 871's class, the fifth and sixth
+instances this campaign, both repaired at the W-22 repair step.)*
 
 | | what it is |
 |---|---|
@@ -46920,7 +46923,16 @@ nothing else in either `src` tree declares any of them:
 | `pad_to` | cut, then left-align — what `queue.rs::pad` was |
 | `pad` (private) | left-align only |
 
-**`truncate` and `clip` are two operations, not two implementations of one.**  The
+**`truncate` and `clip` are two operations, not two implementations of one — and
+at W-22 they stopped being two implementations as well.**  An auditor observed
+that the defence was true of the *operations* and false of the *bodies*: the two
+were the same `for c in s.chars()` walk written twice, statement for statement,
+differing only by `truncate`'s trailing-space trim.  `truncate` is now `clip` plus
+that trim, which is three lines over it, and the trim runs only when a cut
+actually happened so an `s` that already ends in `…` is still returned untouched.
+No snapshot moved and `emit_planner` is unchanged.
+
+The original reason for the split stands, and is why they are still two names.  The
 first draft of this step unified every cut on `truncate`, and six TUI snapshots moved
 — `…` walking backwards into the middle of an already-padded Timeline row
 (`@m2  1b    …` became `@m2  1b…    `).  That was not D43's accepted cost, it was a
@@ -48785,9 +48797,23 @@ U+1F375 🍵, U+1F319 🌙, U+23F0 ⏰ and U+1F468/469/467 👨👩👧 are all 
 them. D43's accepted shift is against **ratatui's `unicode-width`**, not against
 the terminal, and track P's §6 measurement says which code points it covers
 (15,315: Tangut, Nushu, the Kana supplements, combining marks outside
-U+0300..U+036F, and ZWJ/skin-tone sequences) — **ordinary CJK and emoji are not
-among them**, which is what track P's `the_accepted_divergence_is_measured_and_not_predicted`
+U+0300..U+036F, and ZWJ/skin-tone sequences) — **single-code-point CJK and emoji
+are not among them**, which is what track P's `the_accepted_divergence_is_measured_and_not_predicted`
 already says and what this drive confirms end-to-end on the shipped bytes.
+
+**AND THAT SENTENCE SAID "ordinary CJK and emoji" UNTIL THE W-22 REPAIR STEP,
+which is an over-claim an auditor drove.** A ZWJ SEQUENCE is an ordinary emoji
+and it *is* among them: `👨‍👩‍👧` is three wide code points and two zero-width
+joiners, so `emit`'s table measures it **6** and a terminal draws **one glyph, 2
+columns**; `👍🏽` is 4 to `emit` and 2 to a terminal, which `one_padder.rs`
+asserts in both directions. The table above cannot see it, and the reason is
+worth writing down: the comparand — "a terminal's EA table" — was applied **code
+point by code point**, so it makes exactly the same mistake `emit` does and the
+`0 of 19` row is a comparison of two tables that agree, not of a table against a
+terminal. A row holding a ZWJ sequence therefore renders about four columns
+narrow on screen. It is `emit`'s pre-existing table and not something D43
+introduced — gap **1110** owns it — and this drive's own conclusion was wider
+than its evidence.
 
 **A correction to this step's own first pass, disclosed rather than quietly
 fixed.** The first extraction of `WIDE_RANGES` used the regex
@@ -48973,6 +48999,15 @@ The nine, and why each is still there, is track G's §8 and is not restated here
 2. *Why.* Not a decision — it was not noticed until this merge shifted one of the
    two track-G rows by 157 lines and re-running it showed the *other* had been 27
    lines stale on its own branch since `d1118c6`, with `check.sh` 9/9 throughout.
+   **This item named the wrong mechanism and undercounted the class by about
+   15×, and an auditor said so at the repair step.** The merge is not the cause:
+   **25 of 25** re-verified rows were stale and all 25 are **track P's**, which
+   this step never checked, drifting **systematically** — `+1` in `Emit.lean`,
+   `+6` and `+9` in `PlannerWit.lean` — because track P edited `Emit.lean`'s doc
+   comments after its sweep (check 8's own catch) and inserted `emitSegs`'
+   seventh wind-down row into `PlannerWit.lean` after it, re-running only
+   `emitBed`. A merge that moves a file moves every row in it; an edit *inside a
+   step, after its own sweep* does the same thing and is the commoner case.
 3. *What it costs.* The column is the roster's only human-readable evidence that a
    mutation was actually watched to fail (`mutate.py`'s own *"A ROW IS A CLAIM"*
    paragraph). A stale site makes a true row look fabricated and a fabricated one
@@ -49098,3 +49133,555 @@ invocation in this step ran under
 `mutate.py --gate` probe and for every `tm` invocation of the drive. **No breach
 to disclose:** nothing was retried uncapped, no bound was raised, and no run was
 killed at the cap.
+
+<!-- ===================================================================
+     APPENDED 2026-09-21: stage 6 (the planner), run **W-22**, the **REPAIR**
+     step, against the land commit `91df3d0`.  Sixteen findings from two
+     independent auditors: ten from the defect audit, six from the reuse
+     critic.  Gaps **1195-1201** are this step's; its range was 1195-1209 and
+     the rest are free.  Whoever merges renumbers (AGENTS §6.4).
+     =================================================================== -->
+
+## Stage 6 — W-22, the repair step: four checkers that could not agree which files are the kernel, a guard green on its own class, and a notice that lied in both directions
+
+**Sixteen findings. Every one reproduced — nothing was refuted this run — and
+two reproduced WIDER than reported.** Thirteen are repaired; three stay open by
+name and one of those three is the rest of P8.
+
+The two that grew:
+
+* The shared prune list hides a library module from **four** checkers, not
+  three. `mutate.py`'s `touched()` asks git with `--exclude-standard`, and this
+  repository's `.gitignore` line 2 is `**/target` — so with `lib_files()`
+  repaired, check 9 **still** printed `0 owed` over a `def w22TargetGatherable
+  (_n : Nat) : Bool := true` sitting on disk. Two enumerations disagreeing about
+  whether a file exists, one layer below the one the critic measured.
+* `one_padder.rs` was green on a **third** shape, and that one is not a plant:
+  `tm/src/tui/today.rs`'s Timeline rows cut with `emit::clip` and then filled
+  with their own `" ".repeat(pad)` — a padder under no name at all, live in the
+  tree the guard had just been written for.
+
+### 1. The commits
+
+| commit | what |
+|---|---|
+| `38fb871` | **one walk, four checkers** — `leanfiles.py`; check 3's roster made recursive; the prune list becomes a property; `touched()` reconciled with the walk; and the roster's pin site becomes a name `--verify` compares, `--verify --write` rewrites and `--gate` re-resolves without a build |
+| `1d0cef0` | **the D43 guard sees the shape, not the vocabulary** — `code_lines` strips comments, `nothing_outside_the_home_file_composes_a_pad`, `hex_codepoint`; `today.rs` loses its own fill; `truncate` becomes `clip` plus a trim |
+| `6802c4b` | **D42's notice is computed** — it fires when only a break was lost, and stops naming four fields that came back |
+| this one | this block |
+
+Each of the three was verified on **its own tree**: the two that follow it were
+stashed, `check.sh` and `cargo test --workspace` were run, and the stash was
+popped. `38fb871` is 1,363 tests, `1d0cef0` is 1,364, `6802c4b` is 1,367 — the
+four this step adds, named in §10.
+
+### 2. Reproduced first, every one
+
+AGENTS §5.11 and the brief's standing rule: reproduce before repairing. Each
+finding below is stated as what was driven, not as what was reported.
+
+| # | finding | reproduced | how |
+|---|---|---|---|
+| A1 | gap 1190 undercounts its class ~15× and names the wrong mechanism | **yes** | `mutate.py --only Row.cells` printed `Emit.lean:374`; the roster says `Emit.lean:373` |
+| A2 | a running `break` regenerates as null with no notice | **yes** | drive below |
+| A3 | the rebuild notice over-claims; the file comes back byte-identical | **yes** | `cmp` said BYTE-IDENTICAL |
+| A4 | D30 Q5 not met; `one_renderer.rs` does not exist | **yes** | `ls` — and it is gap 1194, left open |
+| A5 | the guard is green on a cell-fitter under an unreserved name | **yes** | `6 passed; 0 failed` with `fit_cell` planted |
+| A6 | the guard's prose claims a check it does not make ("a fit") | **yes** | `RESERVED` holds no `fit` |
+| A7 | "four public functions and one private one" is off by one at three sites | **yes** | `emit.rs` declares five public |
+| A8 | the notice lists `active.est_min` as lost while the file carries it | **yes** | `tm now` printed `20m of 120m` |
+| A9 | two items sharing a title give byte-identical rows | **yes** | gap **1197**, left open — it is a trap for gap 1104, not a defect in what shipped |
+| A10 | a ZWJ emoji measures 4-6 where a terminal draws 2 | **yes** | gap **1198**; §7.3's conclusion corrected in place |
+| C1 | check 3's roster grep is still one level deep | **yes** | drive below |
+| C2 | the shared `PRUNE` list hides a `target/` module from checks 2, 8 and 9 | **yes, and wider** | drive below — it hides it from check 9 twice over |
+| C3 | the D43 guard is green on two instances of its own class | **yes, and a third** | drive below |
+| C4 | D43's letter is not met — `render_row` is not the only padder | **yes** | gap **1195** |
+| C5 | `emit::clip` and `emit::truncate` are the same walk written twice | **yes** | repaired |
+| C6 | two prose miscounts of the list printed beside them | **yes** | repaired |
+
+### 3. What was wrong: four checkers, four answers
+
+`check.sh` asks "which files ARE the kernel" four times and got four different
+answers. W-21 repaired three of them and the fourth was never named, so it was
+never looked at:
+
+```
+$ cd kernel/TmKernel && mkdir -p TmKernel/Sub && cat > TmKernel/Sub/Probe.lean <<'EOF'
+namespace Tm.W22Probe
+theorem w22_sub_theorem_never_audited : 1 + 1 = 2 := rfl
+end Tm.W22Probe
+EOF
+$ cp TmKernel/Sub/Probe.lean TmKernel/Probe2.lean
+$ comm -23 <( grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
+             | sed 's/.*theorem //' | sed 's/.*\.//' | sort ) \
+           <( grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort )
+w22_sub_theorem_never_audited        # the TOP-LEVEL copy
+$ rm TmKernel/Probe2.lean
+$ comm -23 …                         # the SUBDIRECTORY copy alone
+                                     # EMPTY
+```
+
+A theorem in a subdirectory was never required to have a `#print axioms` line —
+the exact class check 3's own comment says it exists to catch (gap 260: *"the
+audit had a count, not a roster"*).
+
+And the three that **were** made recursive shared a hard-coded
+`PRUNE = {".lake", "target", ".git"}` applied to a *library* walk, while
+`TmKernel.target.Probe` is a legal Lean module path:
+
+```
+$ cat > kernel/TmKernel/TmKernel/target/Probe.lean <<'EOF'
+namespace Tm.W22Target
+/-- A probe. `Look.w22_zzz_no_such_thing_at_all` is not a real name. -/
+partial def w22TargetLoop (n : Nat) : Nat := w22TargetLoop n
+def w22TargetGatherable (_n : Nat) : Bool := true
+end Tm.W22Target
+EOF
+$ python3 totality.py TmKernel/TmKernel TmKernel   ; echo $?      # 0
+$ python3 citations.py | tail -1
+28699 citations, 27174 resolved, 1525 allowed (115 vocabulary, 348 counted), 0 allow entries unused
+$ python3 -c 'import mutate; print(len(mutate.lib_files()))'      # 83, unchanged
+```
+
+`partial def` is a **HARD RULE** (R4) and `def … : Bool := true` is D40's exact
+class, and all three checkers were green.
+
+### 4. What was done: one enumeration, four consumers
+
+`kernel/leanfiles.py` is the walk now, and `check.sh`, `totality.py`,
+`citations.py` and `mutate.py` all use it. **It prunes on a property, never on a
+name**: a directory whose name begins with a dot (not a legal Lean module path
+component) or which holds a CACHEDIR.TAG (the marker cargo writes into its
+build directory). A Lean module directory has neither; a build directory has
+one. Measured: **0** `.lean` files live under any pruned directory of this
+repository today, so the pruning changes nothing here and exists for a future
+layout — that is written into the file, with what it cannot see beside it.
+
+**And `touched()` was the fourth hole, one layer down.** `git ls-files --others
+--exclude-standard` asks git's *ignore rules*, and `.gitignore:2` is
+`**/target`, so the plant is not "other", it is **ignored**. With `lib_files()`
+repaired, check 9 was still green:
+
+```
+$ python3 mutate.py --gate            # with the plant on disk, lib_files() fixed
+114 new or changed since 86c4dc6, 114 rostered (…), 0 owed
+```
+
+So the file list and the git list are **reconciled** rather than trusted: a
+`.lean` file the walk finds and git does not **track** is new, whatever git's
+ignore rules think of it. After that, all four report RED on the class each
+exists to catch:
+
+```
+$ python3 totality.py TmKernel/TmKernel TmKernel
+TmKernel/TmKernel/target/Probe.lean:3: banned: partial def          rc=1
+$ comm -23 …                                       # check 3's roster
+w22_sub_theorem_never_audited
+$ python3 citations.py
+1 unresolved:
+  TmKernel/TmKernel/target/Probe.lean:2  Look.w22_zzz_no_such_thing_at_all  (resolves to nothing)
+$ python3 mutate.py --gate
+116 new or changed since 86c4dc6, 114 rostered, 2 OWED A MUTATION
+  …target/Probe.lean:w22TargetLoop  := 0  SURVIVED build completed
+  …target/Probe.lean:w22TargetGatherable  := true  LITERAL  the body IS this constant
+```
+
+Both plants were then removed and `check.sh` is 9/9 again.
+
+**What this still cannot see**, declared in `leanfiles.py` itself: a build
+directory that is neither dot-prefixed nor tagged is walked, and a `.lean` file
+inside it is read as a source. That direction is the safe one — a gate scanning
+too much fails loudly on a generated file rather than falling silent on a real
+one — but a vendored toolchain unpacked under `kernel/` would be scanned as if
+it were this kernel.
+
+### 5. The roster's fifth column stops being a line number
+
+Gap 1190's item 4 asked for exactly this: *"record the site as a declaration
+name rather than a line number, which does not rot."* Three things landed.
+
+1. **The site is `<file>:<line> <declaration>`** — the line for a reader, the
+   declaration for a checker. The scan is its own, because `declarations()`
+   finds the `def`s and `abbrev`s this file *mutates* and a pin site is almost
+   always a **theorem**. The doc comment is inside the span, because that is
+   where Lean reports a failed declaration: `Emit.lean:374` is the `/--` line of
+   `cells_are_the_nine_in_order`, not its `theorem` line.
+2. **`--verify` COMPARES the column and `--verify --write` rewrites it.** It used
+   to re-run every mutation and throw everything but the verdict away, which is
+   why 25 stale rows re-verified clean. Without `--write` a drifted row now
+   FAILS, naming roster-versus-actual.
+3. **`--gate` re-resolves every named site on every run, without a build**, and
+   counts the rows that still carry a bare line number. That count is printed on
+   the success line, the way check 8 prints its allow-list, so the un-upgraded
+   remainder is visible and shrinking rather than silently exempt.
+
+**A migration that was tried and REFUTED, disclosed rather than dropped.** The
+obvious way to upgrade all 114 rows without a build is `git blame` on
+`mutations.txt` for each row, resolve the recorded line to a declaration *at the
+commit that wrote the row*, and re-locate that declaration now. It runs in
+seconds and it is **wrong**: checked against the nine rows this step re-verified
+for real, it named `rowsOf` where the build says `cells_are_the_nine_in_order`
+and `timeCell_length` where the build says `markCell_length`. The reason is the
+finding itself — track P edited `Emit.lean`'s doc comments **inside the same
+commit**, after its sweep, so the line was already stale when it was written and
+"at the commit" is already post-drift. `mutations.txt` was restored and the rows
+were re-run instead.
+
+### 6. D42: the notice that lied in both directions
+
+Driven on a scratch plan tree, `tm` at `target/debug/tm`.
+
+**Gap 1191 — the silence.** A running break, nothing started:
+
+```
+$ tm --now 2026-09-21T09:00:00-05:00 wake
+$ tm --now 2026-09-21T11:09:00-05:00 break 20m
+break 20m
+state.break = {'started': '11:09', 'planned_min': 20, 'where': None}
+$ rm .tm/state.json
+$ tm --now 2026-09-21T11:15:00-05:00 now
+nothing running
+· rest 1h  ci3
+…
+state.break = None                       # and NOT ONE `tm:` LINE
+```
+
+`break` is the one field of §10.2 that genuinely cannot be derived and it was the
+one whose loss was silent — the exact inverse of D42's *"fails LOUDLY rather
+than regenerating as null"*. The notice was gated on there being a running block
+*to name*, so with nothing to name the whole notice was suppressed, including its
+second sentence, which is about the log's limits and not about the block.
+
+**Gap 1192 — the over-claim.** A block paused by `tm pause`:
+
+```
+$ tm … start t4 ; tm … pause
+active = {'id': 't4', 'started': '09:02', 'est_min': 60, 'paused': True}
+$ cp .tm/state.json /tmp/before ; rm .tm/state.json
+$ tm --now 2026-09-21T09:20:00-05:00 now
+tm: .tm/state.json was missing; rebuilt … — ^t4 is running, started 09:02
+tm: the log does not carry these, so they were NOT restored: `break` … and with it
+    `active.paused` — a paused block comes back RUNNING, `active.est_min` …,
+    `priorities_yesterday` …, `closed` …
+▶ ^t4 a plain task · started 09:02 · 18m of 60m · paused
+$ cmp /tmp/before .tm/state.json && echo BYTE-IDENTICAL
+BYTE-IDENTICAL
+```
+
+Four fields named as lost; the file comes back identical on all four, and `tm
+now` prints `· paused` two lines under the sentence saying it would not.
+
+**And the parenthetical is not simply false — it is true of a different case**,
+which the repair had to keep. Driven with a break running *while* a block is
+started: `paused` goes `true → false` and the break is gone, because `tm break`
+pauses without an `Event::Pause`. A `tm pause` writes one, so that pause
+survives. The old sentence asserted the first case unconditionally.
+
+**What landed.** `HOST_ONLY_STATE` stops being the notice and goes back to being
+the field list, with each entry saying what the field is *derived from*.
+`Ctx::rebuild_notice` computes three claims that are three different claims:
+
+* **GONE** — `break`, always, plus the pause it set *if the rebuilt block came
+  back running*, phrased conditionally because nothing can know whether a break
+  was in fact running. When the block came back **paused**, the notice says so:
+  the pause came from the log's own `pause` event and only the break is gone.
+* **RECOMPUTED rather than restored** — `active.est_min`, with the number
+  printed, and the caveat `Ctx::planned_block`'s doc comment already carried and
+  no user could see: a `tm extend` from before the deletion is not in it.
+* **RESET** — `priorities_yesterday`, and `closed`, whose reset is *deliberate*
+  because an absent stamp makes the automatic sweep run once more, which is the
+  safe direction.
+
+**And the gate gained a third condition**: the log having anything to say about
+**today**. A plan directory synced without `.tm/state.json` is still told
+nothing — `tm init` gitignores the file, so that is the ordinary case — and a
+tree that has been driven today and lost its cache is always told. Two new T9
+cases, `a_break_lost_with_no_block_running_is_still_named` and
+`the_rebuild_notice_names_only_what_did_not_come_back`, are the acceptance, and
+each opens with the bite that stops it being the other one.
+
+### 7. The D43 guard, driven on its own class
+
+The guard reported `6 passed; 0 failed` on three shapes:
+
+```
+# PLANT A, appended to tm/src/tui/queue.rs — gap 1089's live class
+fn fill_cell(s: &str, w: usize) -> String {
+    let n = s.chars().count();
+    format!("{s}{}", " ".repeat(w.saturating_sub(n)))
+}
+# PLANT B, same file — a deref-assign, which `code_lines` dropped for starting with `*`
+fn accum_width(acc: &mut usize, s: &String) { *acc += ratatui::text::Span::raw(s.clone()).width(); }
+# PLANT C, tm/src/tui/__audit_plant2.rs — measures through emit, lays out itself
+pub fn fit_cell(s: &str, n: usize) -> String { … " ".repeat(n - w) … }
+```
+
+```
+$ cargo test --test one_padder
+test result: ok. 6 passed; 0 failed; 0 ignored
+```
+
+Three repairs, and each is the *shape* rather than a longer vocabulary:
+
+1. **`code_lines` strips comments instead of guessing from the first
+   character.** Block-comment state is tracked and string literals are
+   respected, so a `"//"` inside one is not a comment and `*acc += …` is code.
+2. **`nothing_outside_the_home_file_composes_a_pad`** greps for filling to a
+   width with spaces — `" ".repeat(`, `push(' ')`, `push_str(" ")` — with an
+   **exact, fully-used** allow-list of the five sites outside `emit.rs` that do
+   it for another reason, each with its adjudication beside it. An unused entry
+   fails the test, which is check 8's *"0 allow entries unused"* line applied
+   here.
+3. **`hex_codepoint`** replaces the `0x1100` needle with *any* four-or-five-digit
+   hex literal, which is what gap 1193 asked for and asked to be measured first:
+   over both `src` trees outside `emit.rs` the needle returns **nothing at all**,
+   so its false-positive rate here is zero and it costs no allow-list. It does
+   not match a literal written with Rust's digit separators, a decimal code
+   point, or one computed — declared in the file.
+
+**And the third shape was live.** `tm/src/tui/today.rs`'s Timeline rows cut with
+`emit::clip` and filled with their own `" ".repeat(pad)`. That is now
+`emit::pad_to(&emit::clip(&row.text, width), width)` — byte-for-byte the same
+output, because `pad_to` truncates first and `truncate` returns a string `clip`
+has already fitted unchanged, so only the fill moved. Three sites remain in the
+allow-list and all three are **gap fills between two differently styled spans**,
+which a `String`-returning padder cannot produce; two more are RFC 5545 text
+unfolding in `ics.rs` and are not columns at all.
+
+**`truncate` is now `clip` plus a trim** (AGENTS §5.3, finding C5). The two were
+the same `for c in s.chars()` walk written twice, statement for statement,
+differing only by `truncate`'s trailing-space trim — inside the one file D43 is
+about, which is gap 1089's own lesson. The trim runs only when a cut actually
+happened, so an `s` that already ends in `…` is still returned untouched.
+
+**Two prose miscounts repaired** (finding C6, gap **871**'s class for the fifth
+and sixth time this campaign): `kernel/README.md` said *"four public functions
+and one private one"* over a table naming five, and `one_padder.rs`'s assertion
+message said *"exactly the five"* over a six-element vector. And the doc comment
+claiming the guard reserved *"a pad, a truncation, a fit or a width"* now names
+the seven it actually reserves: `fit` was never among them — the step renamed its
+own `fit` to `pad_to` rather than reserve it, because `tm-core`'s energy model
+has a `fn fit` of a different kind — and `fit_cell` walked through the one word
+the sentence added and the code had dropped.
+
+### 8. Gaps taken — 1195-1202
+
+**Gap 1195 — D43's letter is met only when P8's other half lands.**
+1. *What is not done.* D43 says *"`emit::render_row` becomes genuinely the only
+   padder and the TUI calls it"*. What is in the tree is one file, one table, one
+   measurement and one guard — and **three** entry points (`render_row`,
+   `pad_to`, `clip`), with `tm/src/tui/{queue,necessities,inbox}.rs` calling the
+   last two and only `today.rs`'s Timeline reaching `render_row`.
+2. *Why.* `render_row` renders a **§4.3 day row**. A Queue column and a
+   Necessities gutter are not day rows, so "the TUI calls `render_row`" is only
+   achievable for the surfaces that print day rows — which is D30 Q5, which is
+   gap **1194**, which is the rest of P8. The substance D43 bought (one
+   measurement, guarded) did land; the letter is downstream.
+3. *What it costs.* Nothing new — it is 1194 seen from the padder's side. It
+   costs the ledger a recorded disagreement, which is what this entry is: neither
+   the design row nor gap 1007 was amended when the interpretation was taken.
+4. *Which step clears it.* The step that clears 1194.
+
+**Gap 1196 — 65 roster sites still carry a bare line number.**
+1. *What is not done.* The pin site is a checked declaration name only where a
+   row has been re-run since the W-22 repair step — `Emit.lean`'s 31 rows, and
+   nothing else. **65** sites are still a bare `file:line` that no gate can
+   resolve, and the measurement below says most of them are probably stale.
+2. *Why.* Upgrading a row means re-running its mutations, and that is one kernel
+   build per constant. Measured on this machine at the repair step:
+   `Emit.lean`'s 31 rows took **over an hour**; the whole roster is ~285
+   constants and would take most of a day. A build-free migration was tried and
+   refuted (§5).
+3. *What it costs.* The class gap 1190 names stays live for those rows, and the
+   gate's new re-resolution has nothing to check on them. It costs no soundness:
+   every verdict re-derived PINNED.
+4. *Which step clears it.* Any step that touches `Planner.lean`,
+   `PlannerWit.lean` or `PlanCheck.lean` runs `mutate.py --verify --only <file>
+   --write` for its own file, which is now a sentence this tool understands. The
+   count on check 9's success line is the number to move.
+
+**Gap 1197 — two items with one title make D30 Q5(a)'s assertion ambiguous.**
+1. *What is not done.* Two items whose titles are equal produce day rows that
+   differ only in their start time, and §4.3's row carries no id column. So *"`tm
+   now`'s rows are a contiguous sub-list of the file's rows"* has more than one
+   witness whenever a title repeats, and `tm check` says *"no problems"*.
+2. *Why.* Not a defect in anything shipped — a trap for the test that has not
+   been written.
+3. *What it costs.* The `one_renderer.rs` gap 1104 owes will pass on a
+   mis-selection unless it indexes by **position**, not by value.
+4. *Which step clears it.* The step that writes `one_renderer.rs` (gap 1104).
+
+**Gap 1198 — `emit`'s table measures a ZWJ or skin-tone sequence 4-6 where a
+terminal draws 2.**
+1. *What is not done.* `emit::display_width` sums code points, so `👨‍👩‍👧` is
+   6 and `👍🏽` is 4, while a terminal draws one grapheme cluster of 2 columns. A
+   row holding one renders about four columns narrow **on screen**, not merely
+   against ratatui.
+2. *Why.* Pre-existing (gap **1110**, with its 15,315-code-point measurement),
+   and unifying on ratatui was declined by the owner because the day file's bytes
+   are this table's. Fixing it means grapheme segmentation, which is a
+   dependency (R7) or a table.
+3. *What it costs.* The land step's §7.3 concluded *"ordinary CJK and emoji are
+   not among them"* — corrected in place at this step, because its comparand was
+   applied code point by code point and therefore makes the same mistake `emit`
+   does. `one_padder.rs` asserts both numbers, so the divergence is recorded and
+   not claimed away.
+4. *Which step clears it.* Whoever next touches `emit.rs`'s table, with the
+   owner's decision on the round trip in hand.
+
+**Gap 1199 — `.gitignore`'s `**/target` makes a legal Lean module path
+uncommittable.**
+1. *What is not done.* `kernel/TmKernel/TmKernel/target/Anything.lean` cannot be
+   `git add`ed without `-f`. The **gate** no longer cares (§4), but the repository
+   rule still does.
+2. *Why.* `**/target` exists for cargo's build directories, of which this
+   workspace has more than one. Narrowing it is a repository-wide change with a
+   worse failure mode — committing build output — and it was not this step's to
+   take.
+3. *What it costs.* Nothing today: no module is named `target`. It is recorded so
+   that the next person who hits it finds the reason rather than the symptom.
+4. *Which step clears it.* Whoever decides the repository's ignore rules, if they
+   ever want that module path.
+
+**Gap 1200 — `one_padder.rs` reads text, and a padder can be written out of
+reach of text.**
+1. *What is not done.* The guard cannot see a fill built out of anything but a
+   literal space (a `'\u{2007}'`, a `Vec<char>` of them, a `write!` loop), a name
+   assembled by a macro, or a padder in `tests/`, `examples/` or `build.rs`.
+2. *Why.* It is a grep, deliberately: the runtime half is
+   `the_one_table_is_the_east_asian_one`, and a guard that had to *run* the TUI
+   could not run at all (gap 182).
+3. *What it costs.* The same class the three W-22 plants belong to, one step
+   further out. Each of the three is now caught; these are the shapes that are
+   not.
+4. *Which step clears it.* Nobody, probably — it is written down so that the next
+   auditor starts from it rather than rediscovering it.
+
+**Gap 1201 — `code_lines` treats `'` as a string quote, so a lifetime swallows
+the rest of its line.**
+1. *What is not done.* `&'static str` opens a quote that never closes, so
+   anything after it on that line is scanned as string content.
+2. *Why.* The alternative is a Rust lexer inside a test.
+3. *What it costs.* Nothing in the direction that matters: string content is
+   still **scanned**, so the guard sees more, not less. What it loses is the
+   ability to strip a `//` comment that follows a lifetime on one line, which can
+   only produce a false POSITIVE — a loud failure someone reads.
+4. *Which step clears it.* Whoever it first fails, if it ever does.
+
+**Gap 1202 — the cache holds the LAST `tm arrive` of a day and the rebuild
+derives the FIRST.**
+1. *What is not done.* D42's table says `arrival` comes from
+   `DayReplay::arrival`, and that is the day's **first** `Event::Arrive`. The
+   cache holds whatever the **last** `tm arrive` wrote. On the `energy-14d`
+   fixture, deleting `.tm/state.json` moves `arrival` `13:00 → 07:10` and
+   `window` with it. Found by this step while writing gap 1192's acceptance, not
+   reported by either auditor.
+2. *Why.* Not looked at: `deleting_the_runtime_state_changes_nothing` compares
+   the **answers** eleven verbs give and they do not move on that fixture, so no
+   instrument was asking about the bytes.
+3. *What it costs.* A second `tm arrive` in one day is not idempotent across a
+   cache deletion — D42's *"a cache of the log"* is exactly true only where the
+   derivation agrees with the writer, and here it does not. Nothing in the
+   shipped answers moves on the fixture measured, which is why this is a gap and
+   not a repair.
+4. *Which step clears it.* Whoever owns §10.2's `arrival` derivation, by deciding
+   which of the two is the answer and making `derived_state` and `tm arrive`
+   agree — one definition, not two (AGENTS §5.3).
+
+### 9. What this step did NOT do, by name
+
+* **It did not repair gap 1194** — D30 Q5, `one_renderer.rs`, the wire. That is
+  the rest of P8 and a repair step does not do a step's work.
+* **It did not run `mutate.py --verify` over the whole roster.** `Emit.lean`'s 31
+  rows were re-run and rewritten; the other 83 are gap **1196**, with the cost
+  measured rather than estimated.
+* **It did not touch `Goals.lean`, `Negative.lean`, `kernel/corpus/`,
+  `lean-toolchain`, any fixture or any snapshot.** No cheat taken, no goal moved,
+  nothing re-blessed. The burn-down is **9**, unchanged, all stage 6.
+* **It did not narrow any gate to make it pass.** Every change to a checker is a
+  widening, and each was driven RED on the class before and GREEN after the
+  plants were removed.
+* **It did not change `.gitignore`** (gap 1199) or any Lean source.
+* **It did not drive the TUI**, which needs a tty (gap 182). `today.rs` changed,
+  and the evidence that its output did not is that no snapshot moved.
+* **It did not rebuild the fork oracle** and did not set `TM_ORACLE`.
+
+### 10. Acceptance, measured at this commit
+
+Every command capped (AGENTS §2.1).
+
+| | baseline `91df3d0` | here | delta |
+|---|---|---|---|
+| `check.sh` | **9/9** | **9/9** | — |
+| axiom audit | 4,891 theorems | 4,891 | no Lean source changed |
+| check 4 `Negative.lean` | rejected | rejected | — |
+| check 5 FFI | 93 tests | 93 | — |
+| corpus round trip | 29/37 files, 4/5 whole plans | 29/37, 4/5 | — |
+| check 7 burn-down | **9, all stage 6** | **9** | no goal added, discharged or deleted |
+| check 8 citations | 28,699 / 27,174 resolved / 1,525 allowed / **0 unused** | **28,780 / 27,255 / 1,525 / 0** | +81 citations, +81 resolved; the checkers' new prose (+22, measured before this block) and this block (+59). The allow-list did not move. **This check caught one of the block's own citations**: a backticked CACHEDIR.TAG, a qualified span that resolves to nothing, un-backticked the way W-20's convention says |
+| check 9 | 114 rostered, 28 unfoldable, 18 fixtures, 0 pinned by nothing, 0 owed | same, **+ 65 pin site(s) still a bare line number** | a new number on the line, not a new exemption |
+| `cargo test --workspace` | 1,363 passed / 0 failed / 9 ignored / 80 binaries | **1,367 / 0 / 9 / 80** | +4: `nothing_outside_the_home_file_composes_a_pad`, `a_break_lost_with_no_block_running_is_still_named`, `the_rebuild_notice_names_only_what_did_not_come_back`, `every_host_only_field_leads_its_own_entry` |
+
+*(The brief quotes `6ce574d`'s 1,347 across 79 binaries. `91df3d0` — the tree this
+step repairs — is 1,363 across 80; the difference is the three W-22 tracks and
+the land merge, measured here rather than assumed.)*
+
+Named suites, each green and each run on its own:
+
+```
+cargo test --test kernel_log_door        23 passed; 0 failed
+cargo test --test cli_write_gate         14 passed; 0 failed
+cargo test --test kernel_call_counts      2 passed; 0 failed
+cargo test --test cli_switch_acceptance  13 passed; 0 failed
+cargo test --test kernel_replay_parity   29 passed; 0 failed; 4 ignored   (T5)
+cargo test --test kernel_log_grammar     16 passed; 0 failed; 2 ignored
+cargo test --test cli_conformance         2 passed; 0 failed
+cargo test --test emit_planner            9 passed; 0 failed
+cargo test --test one_padder              7 passed; 0 failed
+cargo test --test cli_latency             5 passed; 0 failed; 1 ignored   (fully parallel)
+cargo test --test cli_latency -- --test-threads=1
+                                          5 passed; 0 failed; 1 ignored   (serial)
+```
+
+**The known `cli_latency` flake did not fire**, and both spellings are reported
+because the brief asks for both: the fully parallel run inside
+`cargo test --workspace` and the serial one above agree, 14.22 s and 14.28 s.
+
+`check.sh` warm wall, capped, this machine, three consecutive runs at this
+commit: **8.42, 8.34, 8.33 s** at nine checks. The land block's quiet wall was
+7.91-8.01 s, so min to min is +5.3% and max to max +4.1%; the cost is check 9's
+new build-free site re-resolution and check 3's `leanfiles.py` subprocess, and it
+is declared rather than hidden. RE-MEASURE; do not quote (§10.4).
+
+### 11. Numbering
+
+Gaps: this step **1195-1202**, eight taken; **1203-1209** of its range are free.
+Highest gap in the file after this block: **1202**. Gaps **1190, 1191, 1192 and
+1193 are CLOSED** by this step — 1190's own text was corrected in place first,
+because it undercounted its class by about 15× and named the merge as a cause
+that was not one. Gap **1194 stays open and whole**: it is the rest of P8, and a
+repair step does not do a step's work. Highest cheat: **218**, unchanged — no
+cheat was taken and `Negative.lean` was not touched. No parity entry; the next is
+still **P37**.
+
+### 12. Worktrees, and capping
+
+No worktree was created or removed. `git worktree list` is the main checkout and
+`.claude/worktrees/stage5-lookahead`, which is untouched.
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `tm`, `python3` and `mutate.py`
+invocation in this step ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+`check.sh`, `cargo` and `mutate.py` (which runs `lake build`), 8G for the
+standalone `totality.py`/`citations.py` probes, 16G for the `tm` drives. **No
+breach to disclose:** nothing was retried uncapped, no bound was raised, and no
+run was killed at the cap.
+
+**One process note, disclosed rather than tidied away.** A full
+`mutate.py --verify --write` over all 114 rows was started, ran for about 25
+minutes, and was killed — it was going to take most of a day, and `run()` writes
+its rows only at the end, so nothing would have survived a later kill either. The
+kill left a mutated `Emit.lean` on disk; `mutate.py`'s own `restore_in_flight`
+sidecar put it back, which is the mechanism working. The scoped run that replaced
+it (`--verify --only Emit.lean --write`) is the flag this step added, and it is
+why the flag exists.
