@@ -50164,7 +50164,7 @@ Every command capped (AGENTS §2.1).
 | check 5 FFI | 93 tests | **93** | — |
 | corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | no fixture carries a cluster (§1.2), so D44 cannot move it |
 | check 7 burn-down | **9, all stage 6** | **9** | no goal added, discharged or deleted |
-| check 8 citations | 28,780 / 27,255 resolved / 1,525 allowed / **0 unused** | **28,861 / 27,336 / 1,525 / 0** | +81, all of it this block. The allow list did not move, and the check caught one of this block's own citations — a backticked assertion macro, which resolves to nothing and is un-backticked here, the W-20 convention |
+| check 8 citations | 28,780 / 27,255 resolved / 1,525 allowed / **0 unused** | **28,870 / 27,345 / 1,525 / 0** | +90, all of it this block. The allow list did not move, and the check caught one of this block's own citations — a backticked assertion macro, which resolves to nothing and is un-backticked here, the W-20 convention |
 | check 9 mutations | 114 rostered, 28 unfoldable, 18 witness fixtures, 0 pinned by nothing, 0 owed, **65** bare pin sites | 114 / 28 / 18 / 0 / 0, **54** | **−11**: eleven rows re-verified by name, every verdict **PINNED**, six of them also gaining a constant they did not have (§9) |
 | `cargo test --workspace` | 1,367 passed / 0 failed / 9 ignored across 80 | **1,369 / 0 / 9 across 80** | **+2**: the T9 two-arrival row and the guard's own witness |
 | **T5** `kernel_replay_parity --include-ignored` | 33 / 0 | **33 / 0** | the frozen fork arms, unmoved |
@@ -50192,3 +50192,23 @@ cheat: **218**, unchanged — no cheat was taken and `Negative.lean` was not
 touched. **New parity entry: P37**, the first since P36; the next free is
 **P38**. No predicate or assertion was weakened, no memory bound raised, no
 snapshot, fixture, latency band or corpus re-blessed.
+
+### 12. One process breach, disclosed rather than corrected
+
+**The middle commit of the three did not get a full acceptance run in front of
+it.** AGENTS and the brief say all nine `check.sh` checks and
+`cargo test --workspace` go before **every** commit. The witness commit — the
+one that builds the three missing witnesses §4 names — ran only
+`cli_switch_acceptance` and `one_padder`, on the reasoning that it changes two
+test files and one `if` in a doc-commented Rust function and cannot reach the
+Lean package. That reasoning is probably right and it is not the rule. The
+commit after it carries the full run, so the **branch tip** is green on all
+nine and on 1,369 tests; the intermediate commit is green only on what was
+asked of it. Recorded here because the alternative — running the suite now and
+saying nothing — is the thing this campaign keeps finding.
+
+For the same reason: `kernel_replay_parity`, `kernel_log_door`,
+`kernel_call_counts` and `cli_latency` were measured **before** the last
+comment-only edit to `tm/src/cli/ctx.rs` (a theorem name written out in full
+inside a `//` comment) and not after. `cargo test --workspace`, `check.sh`,
+`cli_switch_acceptance`, `one_padder` and `cli_day` all ran after it.
