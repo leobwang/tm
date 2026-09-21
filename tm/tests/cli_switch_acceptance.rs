@@ -573,6 +573,144 @@ fn deleting_the_runtime_state_while_a_break_runs_resumes_the_block() {
     );
 }
 
+/// **D42's notice fires when the ONLY thing lost is the break** — README gap **1191**,
+/// repaired at the W-22 repair step.
+///
+/// `break` is the one field of §10.2 that genuinely cannot be derived, and it was the one
+/// whose loss was silent. The notice was gated on there being a running block or a running
+/// interruption *to name*, so with a break running and nothing started, deleting
+/// `.tm/state.json` discarded the break and printed **no `tm:` line at all** — the exact
+/// inverse of D42's rule that a field which cannot be derived *fails LOUDLY rather than
+/// regenerating as null*. Reproduced by both of W-22's auditors independently.
+///
+/// The bite is the second assertion: without a running break and **no** active block in the
+/// file, this is [`deleting_the_runtime_state_while_a_break_runs_resumes_the_block`] again.
+#[test]
+fn a_break_lost_with_no_block_running_is_still_named() {
+    let tm = plan_with_log("energy-14d");
+    tm.ok_at(INSIDE, &["wake", "06:05"]);
+    tm.ok_at(INSIDE, &["break", "20m", "--where", "walk"]);
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value =
+        serde_json::from_str(&before_bytes).expect(".tm/state.json is not JSON");
+    assert!(
+        !before_state["break"].is_null(),
+        "no break is running, so this test would prove nothing: {before_bytes}"
+    );
+    assert!(
+        before_state["active"].is_null(),
+        "a block is running, so this is the test above with fewer words: {before_bytes}"
+    );
+
+    let before_lines = log_lines(&tm).len();
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+
+    let first = tm.run_at(INSIDE, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+    assert!(
+        first.stderr.contains("`break`"),
+        "the running break was discarded in silence (gap 1191): {:?}",
+        first.stderr
+    );
+    assert!(
+        first.stderr.contains("rebuilt from .tm/log.jsonl"),
+        "the rebuild itself was not announced: {:?}",
+        first.stderr
+    );
+
+    // The notice is the remedy; the break really is gone, and nothing was written to the
+    // authority to pretend otherwise.
+    let after: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(state_path(&tm)).expect("rebuilt state"))
+            .expect("the rebuilt .tm/state.json is not JSON");
+    assert!(after["break"].is_null(), "a running break came back out of the log");
+    assert_eq!(
+        log_lines(&tm).len(),
+        before_lines,
+        "deleting the derived runtime state appended to .tm/log.jsonl"
+    );
+}
+
+/// **D42's notice names only what did not come back** — README gap **1192**, repaired at the
+/// W-22 repair step.
+///
+/// The notice used to print a constant list of four fields as *"NOT restored"*. Driven by two
+/// auditors: the rebuilt `.tm/state.json` is **byte-identical** to the deleted one on all four.
+/// `active.paused` is the discriminating case — a block paused by `tm pause` comes back
+/// **paused**, because `Event::Pause` is in the log — and the parenthetical *"a paused block
+/// comes back RUNNING"* is true only of a pause a running `break` set, which is a different
+/// thing. A loud notice that names what it did in fact restore trains the reader to ignore it,
+/// which is what makes gap 1191's silence land.
+///
+/// So: the file comes back identical, and the notice says so rather than the opposite.
+#[test]
+fn the_rebuild_notice_names_only_what_did_not_come_back() {
+    let tm = plan_with_log("energy-14d");
+    // The arrival matters: the fixture's log carries an `Event::Arrive` for this day, so a
+    // rebuild derives `arrival`, `window` and `budget` whether or not the host ever wrote
+    // them. Without this line the rebuilt file is BETTER than the deleted one and the
+    // byte-equality below fails for a reason that is not the defect.
+    tm.ok_at(INSIDE, &["wake", "06:05"]);
+    tm.ok_at(INSIDE, &["arrive", "lounge"]);
+    tm.ok_at(INSIDE, &["start", "^p1"]);
+    tm.ok_at(INSIDE, &["pause"]);
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value =
+        serde_json::from_str(&before_bytes).expect(".tm/state.json is not JSON");
+    // The bite: a block paused by `tm pause`, which is the case the old sentence was false about.
+    assert_eq!(
+        before_state["active"]["paused"], true,
+        "nothing is paused, so this test would prove nothing: {before_bytes}"
+    );
+    assert!(
+        before_state["break"].is_null(),
+        "a break is running, so this is the break test and not this one: {before_bytes}"
+    );
+
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+    let first = tm.run_at(INSIDE, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+
+    let after_bytes = fs::read_to_string(state_path(&tm)).expect("rebuilt state");
+    let after_state: serde_json::Value =
+        serde_json::from_str(&after_bytes).expect("the rebuilt .tm/state.json is not JSON");
+    // **The four fields the old sentence named, and they all came back.** Not whole-file
+    // byte equality, and the reason is a finding of its own: on this fixture the deleted
+    // cache holds the LAST `tm arrive` of the day and the rebuild derives the FIRST, so
+    // `arrival`, `window` and `budget` differ for a reason that has nothing to do with the
+    // notice (README gap 1202). By hand on a tree with no fixture log, `cmp` says the
+    // rebuilt file is byte-identical — that drive is in the README block.
+    for field in ["active", "priorities_yesterday", "closed"] {
+        assert_eq!(
+            after_state[field], before_state[field],
+            "`{field}` did not come back, so the notice was right about it:\n\
+             BEFORE {before_bytes}\nAFTER  {after_bytes}"
+        );
+    }
+    assert!(
+        !first.stderr.contains("were NOT restored"),
+        "the notice still claims a list it did not check: {:?}",
+        first.stderr
+    );
+    assert!(
+        !first.stderr.contains("comes back RUNNING"),
+        "the block came back PAUSED and the notice says it came back running: {:?}",
+        first.stderr
+    );
+    assert!(
+        first.stderr.contains("came back from the log's own"),
+        "the notice does not say the pause was restored: {:?}",
+        first.stderr
+    );
+    assert!(
+        first.stderr.contains("RECOMPUTED"),
+        "`active.est_min` came back from another source and the notice calls it lost: {:?}",
+        first.stderr
+    );
+}
+
 /// **T9**: a changed `tz` invalidates the checkpoint — the tree answers in the **new** zone.
 ///
 /// The comparand is the same tree with the cache deleted: two trees identical in every byte except

@@ -184,13 +184,39 @@ fn roll_day(state: &mut RuntimeState, today: NaiveDate) -> bool {
 ///   whether a kernel `autoClose` has swept this tree and not about anything
 ///   that happened. Its absence is load-bearing in the safe direction (it
 ///   makes the automatic close sweep once), so the rebuild leaves it alone.
-pub const HOST_ONLY_STATE: &[&str] = &[
-    "`break` (a running break is logged only when it ends) and with it \
-     `active.paused` — a paused block comes back RUNNING",
-    "`active.est_min` (no `start` event carries an estimate)",
-    "`priorities_yesterday` (no event carries a `p`)",
-    "`closed` (`swept` is a fact about a sweep, not an event)",
+/// **This is the FIELD LIST, and it stopped being the notice at W-22.**
+/// [`Ctx::rebuild_notice`] is the notice: two auditors drove the rebuild and
+/// found the file byte-identical to the deleted one on all four of these, while
+/// the sentence built out of this constant said they *"were NOT restored"*.
+/// What is true of each field is what it is *derived from*, not that it is
+/// lost, so the entries below say that and the notice computes the rest.
+pub const HOST_ONLY_STATE: &[(&str, &str)] = &[
+    ("`break`",
+     "a running break is logged only when it ends, so one that was running left \
+      no line to rebuild from"),
+    ("`active.paused`",
+     "restored when a `tm pause` set it, because `Event::Pause` is in the log, \
+      and gone when a running `break` set it, because that writes nothing"),
+    ("`active.est_min`",
+     "recomputed by `Ctx::planned_block` from the item's line — no `start` event \
+      carries an estimate — so a `tm extend` that ran before the file was \
+      deleted is not in it"),
+    ("`priorities_yesterday`",
+     "§7.4's hysteresis map, and no event carries a `p`"),
+    ("`closed`",
+     "`swept` is a fact about a sweep, not an event, and its absence makes the \
+      automatic close sweep run once more, which is the safe direction"),
 ];
+
+/// Why one [`HOST_ONLY_STATE`] field is what it is — the notice's own text,
+/// read out of the one table rather than written twice (AGENTS §5.3).
+fn host_only(field: &str) -> &'static str {
+    HOST_ONLY_STATE
+        .iter()
+        .find(|(name, _)| *name == field)
+        .map(|(_, why)| *why)
+        .unwrap_or("the log does not carry it")
+}
 
 /// **Which of §10.2's fields the log can answer for, and how.**
 ///
@@ -211,8 +237,8 @@ pub const HOST_ONLY_STATE: &[&str] = &[
 /// | `active` | `Replay::open_block` — id, `started`, `paused`; **not** `est_min` |
 /// | `interrupt` | `Replay::open_interrupt` — `started`, `id` |
 /// | `last_plan_hash` | `DayReplay::last_plan_hash` (`Event::Plan`) |
-/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) — and `active.paused` with it |
-/// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]) |
+/// | `break` | **nothing** ([`HOST_ONLY_STATE`]) — and the `active.paused` a *break* set with it; a `tm pause`'s survives, because `Event::Pause` is in the log |
+/// | `priorities_yesterday`, `closed` | **nothing** ([`HOST_ONLY_STATE`]); both come back empty, and `closed`'s emptiness is load-bearing in the safe direction |
 ///
 /// **The one residue inside a derivable field, measured rather than waved at.**
 /// `tm plan` appends its `Event::Plan` only when the hash *moved*, so a day
@@ -783,7 +809,21 @@ impl Ctx {
         // nothing. A rebuild that hands a RUNNING block or a RUNNING
         // interruption back is the case gap 993 was reported as, and there the
         // fields the log cannot carry have to be named.
-        if loud && (self.state.active.is_some() || self.state.interrupt.is_some()) {
+        //
+        // **AND A TREE THAT WAS BEING USED TODAY IS STRANDED TOO** (README gap
+        // 1191, the W-22 repair step). `break` is the ONE field of §10.2 that
+        // genuinely cannot be derived, and it was the one field whose loss was
+        // silent: with a break running and nothing started, there was no block
+        // to name, so the whole notice — including its second sentence, which
+        // is about the log's limits and not about the block — was suppressed,
+        // and `state.break` went from a running break to `null` with no `tm:`
+        // line at all. D42's own words are that a field that cannot be derived
+        // *fails LOUDLY rather than regenerating as null*, so the third
+        // condition is the log having anything to say about today: a synced
+        // directory nobody has driven today still says nothing, and a tree that
+        // has been driven today and lost its cache always does.
+        let used_today = self.replay.day(self.today).is_some();
+        if loud && (self.state.active.is_some() || self.state.interrupt.is_some() || used_today) {
             eprintln!(
                 "tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl \
                  (§10.2 is a cache of the log — D42){}",
@@ -793,11 +833,77 @@ impl Ctx {
                     .map(|a| format!(" — {} is running, started {}", a.id.token(), a.started.format("%H:%M")))
                     .unwrap_or_default()
             );
-            eprintln!(
-                "tm: the log does not carry these, so they were NOT restored: {}",
-                HOST_ONLY_STATE.join(", ")
-            );
+            for line in self.rebuild_notice() {
+                eprintln!("tm: {line}");
+            }
         }
+    }
+
+    /// **What the rebuild could not put back — computed, not listed** (README
+    /// gap **1192**, the W-22 repair step).
+    ///
+    /// The notice used to print [`HOST_ONLY_STATE`], a constant naming four
+    /// fields as *"NOT restored"*. Driven by two auditors independently: the
+    /// rebuilt `.tm/state.json` was **byte-identical** to the deleted one on all
+    /// four, `cmp` and all — `active.paused` came back `true`, `active.est_min`
+    /// came back `120`, `priorities_yesterday` and `closed` came back with their
+    /// contents — while `tm now` printed *"a paused block comes back RUNNING"*
+    /// and the user read that four things were lost. A loud notice that names
+    /// what it did in fact restore trains the reader to ignore it, which is what
+    /// makes gap 1191 land.
+    ///
+    /// So each clause is now checked against the state this rebuild actually
+    /// produced, and the three claims are kept apart because they are three
+    /// different claims:
+    ///
+    /// * **Gone.** `break`. Nothing in the log says a break was running (the
+    ///   entry is appended when it *ends*), so one that was is not recoverable —
+    ///   the only field of §10.2 for which that is true. The pause it had set
+    ///   goes with it, and whether that happened is **visible**: a block that
+    ///   comes back running was either never paused or was paused by the break,
+    ///   and a block that comes back paused was paused by an `Event::Pause`,
+    ///   which the log does carry. The old parenthetical asserted the first case
+    ///   unconditionally and was false in the second.
+    /// * **Recomputed.** `active.est_min`, from [`Ctx::planned_block`] — the
+    ///   item's estimate *now*, not the one the block was started with. That is
+    ///   a different source, not an absence, and the number is printed so the
+    ///   reader can tell whether it looks right.
+    /// * **Reset.** `priorities_yesterday` (§7.4's hysteresis; no event carries
+    ///   a `p`) and `closed` — and `closed`'s reset is *deliberate*, because an
+    ///   absent stamp makes the automatic sweep run once more, which is the safe
+    ///   direction. Calling either of those "not restored" was true of the field
+    ///   and misleading about the consequence.
+    fn rebuild_notice(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        let pause_note = match self.state.active.as_ref() {
+            Some(a) if a.paused => {
+                " — this block's `active.paused` came back from the log's own \
+                 `pause` event, so only the break itself is gone"
+            }
+            Some(_) => {
+                " — and if one was running, the `active.paused` it had set is \
+                 gone with it and the block is running again"
+            }
+            None => "",
+        };
+        out.push(format!(
+            "GONE, and the log cannot answer for it: `break` — {}{pause_note}.",
+            host_only("`break`")
+        ));
+        if let Some(a) = self.state.active.as_ref() {
+            out.push(format!(
+                "RECOMPUTED rather than restored: `active.est_min` is {}m — {}.",
+                a.est_min,
+                host_only("`active.est_min`")
+            ));
+        }
+        out.push(format!(
+            "RESET, both deliberately: `priorities_yesterday` ({}) and \
+             `closed` ({}).",
+            host_only("`priorities_yesterday`"),
+            host_only("`closed`")
+        ));
+        out
     }
 
     /// **The planned minutes one block of `id` gets** (§8.5): the item's
@@ -1363,6 +1469,42 @@ mod loggen;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// **The field list and the notice do not drift apart** (README gap 1192).
+    ///
+    /// [`HOST_ONLY_STATE`] stopped being the sentence `tm` prints at the W-22
+    /// repair step — it was a constant claiming four fields were lost while the
+    /// rebuilt file came back byte-identical on all four — and stayed the
+    /// *documentation* of which §10.2 fields the log cannot answer for.
+    /// [`Ctx::rebuild_notice`] computes the sentence instead. This is what still
+    /// ties the two together: five entries, each leading with the field it is
+    /// about, in the spelling the notice uses.
+    ///
+    /// **What it cannot check**: that the notice still *prints* each of them.
+    /// That needs a `Ctx`, and it is what the two T9 cases in
+    /// `cli_switch_acceptance.rs` are for.
+    #[test]
+    fn every_host_only_field_leads_its_own_entry() {
+        let fields = [
+            "`break`",
+            "`active.paused`",
+            "`active.est_min`",
+            "`priorities_yesterday`",
+            "`closed`",
+        ];
+        assert_eq!(
+            HOST_ONLY_STATE.len(),
+            fields.len(),
+            "HOST_ONLY_STATE has {} entries and this test knows {}",
+            HOST_ONLY_STATE.len(),
+            fields.len()
+        );
+        for ((name, why), field) in HOST_ONLY_STATE.iter().zip(fields) {
+            assert_eq!(*name, field, "the table is not in the order this test knows");
+            assert!(!why.is_empty(), "{field} has no reason beside it");
+            assert_eq!(host_only(field), *why, "`host_only` cannot find {field}");
+        }
+    }
 
     /// The body of an `insta` JSON snapshot: everything after its `---`
     /// header.
