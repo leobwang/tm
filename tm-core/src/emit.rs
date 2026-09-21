@@ -299,9 +299,14 @@ fn in_ranges(cp: u32, ranges: &[(u32, u32)]) -> bool {
         .is_ok()
 }
 
-/// The terminal columns `c` occupies: 0 for a combining mark or a variation
-/// selector, 2 for East-Asian Wide/Fullwidth and the emoji that default to an
-/// emoji presentation, 1 otherwise.
+/// The terminal columns `c` occupies **on its own**: 0 for a combining mark or
+/// a variation selector, 2 for East-Asian Wide/Fullwidth and the emoji that
+/// default to an emoji presentation, 1 otherwise.
+///
+/// **A code point at a time, which is not a glyph at a time.** `👨‍👩‍👧` is three
+/// of these and two joiners; a terminal draws one glyph of two columns.
+/// [`Walk`] is where that is reconciled, and [`display_width`] is the only
+/// thing anybody should be summing — this is the table it reads.
 pub fn char_width(c: char) -> usize {
     let cp = c as u32;
     if in_ranges(cp, ZERO_RANGES) {
@@ -313,10 +318,92 @@ pub fn char_width(c: char) -> usize {
     }
 }
 
+/// U+200D ZERO WIDTH JOINER: the code point that glues two emoji into one
+/// glyph. Already 0 columns by `ZERO_RANGES`; what matters here is that it
+/// makes the code point **after** it 0 as well.
+const ZWJ: char = '\u{200D}';
+
+/// The five emoji modifiers — U+1F3FB..U+1F3FF, FITZPATRICK TYPE-1-2 to
+/// TYPE-6. Each re-colours the emoji before it rather than drawing anything of
+/// its own, so `👍🏽` is one glyph of two columns and not two of two.
+///
+/// They sit inside `WIDE_RANGES`'s `(0x1_F300, 0x1_F9FF)` and so measure 2 on
+/// their own, which is right for a lone modifier and wrong the moment one
+/// follows a base. [`Walk`] is the difference.
+const SKIN_TONE: (u32, u32) = (0x1_F3FB, 0x1_F3FF);
+
+/// **The owner's D44: a width walk that knows a glyph from a code point.**
+///
+/// [`char_width`] is a table lookup and a table cannot see two code points at
+/// once, so the sum of it over `👨‍👩‍👧` was **6** and over `👍🏽` was **4** where a
+/// terminal draws **2** (README gap 1198). A row carrying one rendered about
+/// four columns narrow on screen — and since D43 made this table the TUI's as
+/// well, that reached four surfaces at once.
+///
+/// **This is the whole of the fix, hand-rolled beside the table it reads**: no
+/// segmentation crate, because a new external dependency is the one thing six
+/// stages of this rebuild have never taken (AGENTS R7). Two rules, and they
+/// compose:
+///
+/// 1. a **ZWJ** with something already drawn before it makes the next code
+///    point cost 0 — it joined the cluster rather than starting one;
+/// 2. a **skin-tone modifier** with something already drawn before it costs 0
+///    — it re-coloured the base rather than drawing beside it.
+///
+/// "Something already drawn" is `Walk::open`, and it is what keeps a string
+/// that *starts* with a joiner or a modifier honest: a lone `🏽` is still the
+/// two columns its table entry says, because there is no base for it to
+/// modify.
+///
+/// **One walk, not two** (AGENTS §5.3). [`display_width`] and [`clip`] both
+/// drive this, so the count and the cut cannot disagree about where a glyph
+/// begins — which is how a cut that fits by the count could still land inside
+/// a cluster. A cluster costs its columns at its **base**, and every code
+/// point after it costs 0, so `clip` accepts the whole of a cluster whose base
+/// it accepted and never emits a dangling joiner.
+///
+/// **What it still does not do**, declared rather than discovered: a
+/// **regional-indicator pair** (`🇯🇵`) is still 4 where a terminal draws 2
+/// (README gap 1250); a ZWJ between two ordinary letters swallows the second
+/// one; and the general grapheme-cluster rules — Indic conjuncts, emoji tag
+/// sequences, U+20E3 keycaps — are not implemented, because D44 names two
+/// shapes and this is those two.
+#[derive(Clone, Copy, Default)]
+struct Walk {
+    /// Something with a column of its own has already been counted, so there
+    /// is a cluster for a joiner or a modifier to attach to.
+    open: bool,
+    /// The code point just seen was a `ZWJ` that attached to an open cluster,
+    /// so the next one is part of that cluster.
+    joined: bool,
+}
+
+impl Walk {
+    /// The columns `c` adds to the row, given everything before it.
+    fn advance(&mut self, c: char) -> usize {
+        if c == ZWJ {
+            self.joined = self.open;
+            return 0;
+        }
+        if std::mem::take(&mut self.joined) {
+            return 0;
+        }
+        let cp = c as u32;
+        if self.open && (SKIN_TONE.0..=SKIN_TONE.1).contains(&cp) {
+            return 0;
+        }
+        let w = char_width(c);
+        self.open |= w > 0;
+        w
+    }
+}
+
 /// The terminal columns `s` occupies — what the timeline's fixed columns are
-/// counted in, so that `⏰` and `🌙` do not push their rows one column right.
+/// counted in, so that `⏰` and `🌙` do not push their rows one column right,
+/// and so that `👨‍👩‍👧` does not push its row four columns left (D44, [`Walk`]).
 pub fn display_width(s: &str) -> usize {
-    s.chars().map(char_width).sum()
+    let mut walk = Walk::default();
+    s.chars().map(|c| walk.advance(c)).sum()
 }
 
 /// Left-align `s` in `w` terminal columns (a wider `s` is returned unchanged).
@@ -394,8 +481,13 @@ pub fn clip(s: &str, w: usize) -> String {
     }
     let mut out = String::with_capacity(s.len());
     let mut used = 0usize;
+    // **The same [`Walk`] `display_width` drives** (D44, AGENTS §5.3): a
+    // cluster costs its columns at its base and 0 after it, so a cut that
+    // accepted a base accepts the rest of its glyph and never leaves a
+    // dangling joiner or a base without its skin tone.
+    let mut walk = Walk::default();
     for c in s.chars() {
-        let cw = char_width(c);
+        let cw = walk.advance(c);
         if used + cw > w - 1 {
             break;
         }

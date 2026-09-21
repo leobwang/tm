@@ -476,6 +476,124 @@ fn deleting_the_runtime_state_changes_nothing() {
     );
 }
 
+/// **T9's FOURTH half, and the day the three above do not build: one with TWO arrivals**
+/// — the owner's **D45**, README **gap 1202**.
+///
+/// **What it is about.** `.tm/state.json` holds whatever the LAST `tm arrive` wrote;
+/// `Ctx::derived_state` used to read `DayReplay::arrival`, which is the day's **FIRST**
+/// `Event::Arrive`. On a day with one arrival the two agree and
+/// [`deleting_the_runtime_state_changes_nothing`] is green — which is exactly why nothing
+/// caught it: its warm-up appends one arrival to a day whose own arrival has already rolled
+/// away, and its answers are asked three days later, where `roll_day` has nulled the field on
+/// both sides. **This test asks on the arrival's own day**, and the `energy-14d` fixture's last
+/// day already carries `arrive lounge 07:10`, so one `tm arrive` at [`INSIDE`] makes two.
+///
+/// **The bite is asserted first, and it is the whole point**: the two arrivals must differ, or
+/// every line below holds for the wrong reason. Measured before the repair: `arrival` came back
+/// `07:10` where the cache said `13:00`, and `window` came back `["07:10","15:10"]` where the
+/// cache said `["13:00","21:00"]` — a deletion moving a field is precisely what D42 was bought
+/// to make impossible.
+///
+/// **And it is WIDER than gap 1202 reported.** That entry says *"Nothing in the shipped answers
+/// moves on the fixture measured, which is why this is a gap and not a repair."* Measured here,
+/// before the repair, with the field assertions relaxed to prints: `moved()` reports **five** of
+/// the eleven spellings — `plan`, `log`, `log --tail 5`, `log --since 7d`, `review day`.
+/// `planner::Planner::window_and_budget` reads `.tm/state.json`'s window when it has one and
+/// falls back to the formula when it does not, so a rebuilt window re-lays the afternoon, moves
+/// the plan hash and appends a second `Event::Plan` — which is what the three `log` spellings and
+/// the day review are seeing. The gap's own measurement was taken on a day whose arrival had
+/// already rolled away; this one is taken on the arrival's own day.
+///
+/// **What it still does not cover.** `budget` does not move even before the repair, because
+/// `capacity::budget_blocks` is a function of the config alone and every arrival of a day
+/// therefore computes the same one; and `loc` does not move because `derived_state` already read
+/// `loc_changes.last()`. So of §10.2's four arrival-shaped fields, **two** were first-arrival and
+/// **two** were already last-arrival — one function disagreeing with itself, which is why the
+/// assertion below names all four rather than the two that moved.
+#[test]
+fn deleting_the_runtime_state_keeps_the_last_arrival_of_the_day() {
+    let tm = plan_with_log("energy-14d");
+
+    // The fixture's own 2026-09-07 already holds `arrive lounge 07:10`; this is the second.
+    tm.ok_at(INSIDE, &["arrive", "home"]);
+
+    let arrivals: Vec<String> = log_lines(&tm)
+        .iter()
+        .filter(|l| l.contains(r#""ev":"arrive""#) && l.contains("2026-09-07T"))
+        .cloned()
+        .collect();
+    assert_eq!(
+        arrivals.len(),
+        2,
+        "the day does not have two arrivals, so this test would prove nothing:\n  {}",
+        arrivals.join("\n  ")
+    );
+
+    let before_bytes = fs::read_to_string(state_path(&tm)).expect("read .tm/state.json");
+    let before_state: serde_json::Value =
+        serde_json::from_str(&before_bytes).expect(".tm/state.json is not JSON");
+    // The bite: the cache must hold the SECOND arrival, and it must differ from the first.
+    assert_eq!(before_state["arrival"], "13:00", "the cache is not the last arrival: {before_bytes}");
+    assert!(
+        arrivals[0].contains(r#""t":"2026-09-07T07:10:00-05:00""#),
+        "the fixture's first arrival moved; this test's bite is gone:\n  {}",
+        arrivals[0]
+    );
+
+    // **And the window must be a REAL window before the deletion**, or the
+    // agreement below is vacuous. Built because a mutation found it: folding
+    // `Ctx::arrival_window` to `((at, at), 0)` — the identity on its argument —
+    // left this test GREEN, because the writer and the derivation both go
+    // through that one function and a fold moves *both* sides equally.
+    // `cli_day`'s `arrive_computes_window_and_budget_and_plans` fails on it, so
+    // the definition is witnessed; this row was not the witness, and an
+    // agreement assertion that cannot tell a window from a point is exactly
+    // AGENTS §5.2's "a theorem can compile and mean nothing" in test form.
+    let window = before_state["window"].as_array().expect("a window array");
+    assert_ne!(window[0], window[1], "the cached window is a point: {before_bytes}");
+    assert!(
+        before_state["budget"].as_u64().is_some_and(|b| b > 0),
+        "the cached budget is zero, so agreeing about it proves nothing: {before_bytes}"
+    );
+
+    let before = answers(&tm, INSIDE, JSON_SPELLINGS);
+
+    fs::remove_file(state_path(&tm)).expect("delete the runtime state");
+    let first = tm.run_at(INSIDE, &["--json", "now"]);
+    assert_eq!(first.code, 0, "the first verb after the deletion failed: {}{}", first.stdout, first.stderr);
+
+    let after_bytes = fs::read_to_string(state_path(&tm)).expect("the runtime state was never rebuilt");
+    let after_state: serde_json::Value =
+        serde_json::from_str(&after_bytes).expect("the rebuilt .tm/state.json is not JSON");
+
+    // **D45: the derivation follows the verb.** Three fields, named one at a time so a failure
+    // says which one, and then the whole record so a fourth cannot slip through.
+    for key in ["arrival", "window", "budget", "loc"] {
+        assert_eq!(
+            after_state[key], before_state[key],
+            "the rebuild disagrees with the cache about `{key}` on a day with two arrivals \
+             (D45, README gap 1202):\n  cached  {}\n  rebuilt {}",
+            before_state[key], after_state[key]
+        );
+    }
+    let mut expected = before_state.clone();
+    expected["priorities_yesterday"] = serde_json::json!({});
+    assert_eq!(
+        after_state, expected,
+        "the rebuilt runtime state is not the deleted one minus the hysteresis map:\n{after_bytes}"
+    );
+
+    let after = answers(&tm, INSIDE, JSON_SPELLINGS);
+    same(&before, &after, "deleting the runtime state after a second arrival moved an answer");
+
+    eprintln!(
+        "two arrivals: cached arrival {} window {}, rebuilt arrival {} window {}, {} spellings identical",
+        before_state["arrival"], before_state["window"],
+        after_state["arrival"], after_state["window"],
+        before.len()
+    );
+}
+
 /// **T9's third half, and the state the two above do not warm**: with a break RUNNING,
 /// deleting `.tm/state.json` DOES move an answer — the block comes back un-paused — and this
 /// test is where that is stated, measured and bounded (the owner's **D42**, README gap 1085).
