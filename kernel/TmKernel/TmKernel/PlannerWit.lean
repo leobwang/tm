@@ -4791,5 +4791,265 @@ theorem the_slot_anchoring_is_the_whole_residue :
    fun h => absurd (h.1 theRequest (dayPlan theRequest) PlanCheck.aWallAcross.val ['m','1'] rfl)
      (by decide)⟩
 
+/-! ############################################################################
+## 21. W-23: the whole day, at a `PlanCheck.SlotAnchored` eligibility — REFUTED
+############################################################################
+
+W-22 fired §6.1's eleven at three requests over `PlanCheck.withoutPast`'s day and left the
+whole day carried by a hypothesis about the log.  This section is the pair `PlanCheck`'s W-23
+header asks for: **the clause that closes the eligibility axis on the whole day, and the day
+that proves the clause cannot be dropped.**
+
+**The request is one line of state away from `theQueuedRequest` and nothing else moves.**
+`theIdleQueuedRequest` is the queued log — the census Wednesday whose morning worked `m2`
+alone — with `Planner.RuntimeIn.empty` in place of the running block.  Same plan, same
+lookahead input, same builder, same four log lines.  What that one change buys is a **work row
+of the day that is not §8.2 choice 5b's reservation**: the replayed block for `m2`.
+`onlyOnFreeWorkRows` is `PlanCheck.SlotAnchored` and admits a candidate there, because
+`PlanCheck.isActive` is `false` at a row no runtime claims — and then `m1`, hot and ranked
+first and in the store, is a candidate the day never mentions.  Both of W-19's comparisons
+answer `false`, on the day `Planner.dayPlan` really produces, with no mutation at all.
+
+**That is not a defect in the planner and the reason is the same one W-19 gave.**  `m1` is
+missing because the assign fold is not written; the row that defeats the two comparisons is
+one the *log* put there, and §8.3's laws are not about it.  What is new is where the residue
+now sits: after W-22 it was tempting to read `PlanCheck.SlotAnchored` as the whole of what P5
+owes the lift, and this says it is two thirds of it.  `PlanCheck.FromNowAnchored` is the third
+line, `fromNowWorkRows` is the instance, and `PlanCheck.dayPlan_ok_is_the_core_seven` is what
+it buys: on the whole day, at every request, §6.1's eleven **is** §6.1's seven. -/
+
+/-- **An eligibility that admits a candidate only where §8.2 step 5 could put one, on the
+whole day**: `onlyOnFreeWorkRows` (W-22) and `PlanCheck.keepFromNow` — the row has not already
+started, because step 3 cuts the day's free slots from `now` forward.
+
+Both halves are reused rather than re-spelled (AGENTS §5.3): this is W-22's own eligibility
+`&&` W-17's own filter, so there is no second reading of "is this row work", of "is this row
+the running block's", or of "has this row already started". -/
+def fromNowWorkRows : PlanCheck.Eligible := fun r d s i =>
+  onlyOnFreeWorkRows r d s i && PlanCheck.keepFromNow r (Planner.segOf s)
+
+theorem fromNowWorkRows_is_from_now_anchored : PlanCheck.FromNowAnchored fromNowWorkRows := by
+  have hsplit : ∀ (r : PlanReq) (d : DayPlan) (s : Seg) (i : Id), fromNowWorkRows r d s i = true →
+      onlyOnFreeWorkRows r d s i = true ∧ PlanCheck.keepFromNow r (Planner.segOf s) = true := by
+    intro r d s i h
+    simpa only [fromNowWorkRows, Bool.and_eq_true] using h
+  refine ⟨⟨fun r d s i h => ?_, fun r d s i h => ?_⟩, fun r d s i h => ?_⟩
+  · exact onlyOnFreeWorkRows_is_slot_anchored.1 r d s i (hsplit r d s i h).1
+  · exact onlyOnFreeWorkRows_is_slot_anchored.2 r d s i (hsplit r d s.val i h).1
+  · have h2 := (hsplit r d s.val i h).2
+    unfold PlanCheck.keepFromNow at h2 ⊢
+    rw [Planner.segOf_kind] at h2
+    cases hk : s.val.kind.isWork
+    · simp
+    · rw [hk] at h2
+      simp only [Bool.not_true, Bool.false_or, decide_eq_true_eq] at h2 ⊢
+      have hc : (Planner.segOf s.val).val.start ≤ s.val.start := Nat.min_le_left _ _
+      omega
+
+set_option maxRecDepth 40000 in
+/-- **All three clauses are read, and each one is read at a row of the same family** (AGENTS
+§5.2, and D40's own question of whether anything distinguishes the definition from a
+constant).  One hour of work at `now` is admitted; the same hour *before* `now` is refused and
+`onlyOnFreeWorkRows` admits it, which is the whole difference between the two eligibilities;
+the same hour carrying the running item's name is refused by choice 5b's clause; and the same
+hour as a Rest row is refused by the work clause.  `PlanCheck.wSeg` is the witness
+constructor the eleven refutations above already use. -/
+theorem the_from_now_eligibility_reads_all_three_of_its_clauses :
+    fromNowWorkRows theCensusRequest (dayPlan theCensusRequest)
+        (PlanCheck.wSeg theCensusRequest.now.sec (theCensusRequest.now.sec + 3600)
+          SegKind.block none none) ['m','1'] = true ∧
+      fromNowWorkRows theCensusRequest (dayPlan theCensusRequest)
+        PlanCheck.aBlockOfAnHour.val ['m','1'] = false ∧
+      onlyOnFreeWorkRows theCensusRequest (dayPlan theCensusRequest)
+        PlanCheck.aBlockOfAnHour.val ['m','1'] = true ∧
+      fromNowWorkRows theCensusRequest (dayPlan theCensusRequest)
+        (PlanCheck.wSeg theCensusRequest.now.sec (theCensusRequest.now.sec + 3600)
+          SegKind.block (some ['m','1']) none) ['m','1'] = false ∧
+      fromNowWorkRows theCensusRequest (dayPlan theCensusRequest)
+        (PlanCheck.wSeg theCensusRequest.now.sec (theCensusRequest.now.sec + 3600)
+          SegKind.rest none none) ['m','1'] = false := by
+  decide
+
+/-- **W-22's eligibility is not W-23's**, which is what makes the third clause a hypothesis and
+not a decoration: `PlanCheck.aBlockOfAnHour` is a work row `onlyOnFreeWorkRows` admits and
+`PlanCheck.keepFromNow` refuses, at every request. -/
+theorem onlyOnFreeWorkRows_is_not_from_now_anchored :
+    ¬ PlanCheck.FromNowAnchored onlyOnFreeWorkRows :=
+  fun h => absurd (h.2 theRequest (dayPlan theRequest) PlanCheck.aBlockOfAnHour ['m','1']
+    (by decide)) (by decide)
+
+/-! ### The day whose only work row is one the log replayed -/
+
+def witReqInIdleQueued : PlanReqIn :=
+  { witReqIn with docs := censusWitness, lines := queuedLines }
+
+/-- **The idle queued request**: the §4.3 Wednesday at 14:00 with the census store, a log that
+worked only `m2`, and **nothing running**.  `theQueuedRequest` with `Planner.RuntimeIn.empty`
+for `theQueuedState`, and every other field the same term. -/
+def theIdleQueuedRequest : PlanReq :=
+  ⟨censusPlan, queuedRun, witInput, RuntimeIn.empty, Capped.nil, witPrio, Capped.nil, none⟩
+
+/-- **The builder accepts it** — by the four stage equations, as every other request here. -/
+theorem witBuildsIdleQueued : mkPlanReq? witReqInIdleQueued = .ok theIdleQueuedRequest := by
+  obtain ⟨ht, hz, hd, hw, -⟩ := witInput_fields
+  unfold mkPlanReq? witReqInIdleQueued witReqIn theIdleQueuedRequest
+  simp only [censusPlan_loads, witInput_decodes]
+  rw [if_neg (by
+    rw [hw, hz, hd]
+    simp only [Look.DayCfg.shipped, Look.CutCfg.shipped, ne_eq]
+    exact not_not_intro the_census_witness_indexes_the_calendars_one_wall.symm)]
+  rw [hz, ht, queuedRun_resumes]
+  simp only [Capped.ofList?_nil, mkRoutines?_of_none]
+
+/-- `hagree`, from the builder and not from a `decide`. -/
+theorem theIdleQueuedRequest_wallsAgree : theIdleQueuedRequest.wallsAgree = true :=
+  mkPlanReq?_ok_wallsAgree witReqInIdleQueued theIdleQueuedRequest witBuildsIdleQueued
+
+/-- `hactive` and `hday`, the two R10 hypotheses every lift carries. -/
+theorem the_idle_queued_request_agrees :
+    theIdleQueuedRequest.activeAgrees = true ∧ theIdleQueuedRequest.dayAgrees = true := by decide
+
+/-- `hnowcal`: the instant being planned is inside the calendar. -/
+theorem the_idle_queued_request_is_inside_the_calendar :
+    theIdleQueuedRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+set_option maxRecDepth 40000 in
+/-- `hplain`, **reused and not re-proved**: this request's plan is `censusPlan` and its
+lookahead input is `witInput`, exactly as the census request's are (AGENTS §5.3). -/
+theorem the_idle_queued_request_is_plain :
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      theIdleQueuedRequest.plan.val.store.get i = some e →
+      e.val.shape = Field.Shape.interval a b →
+      e.val.buffer = none ∧
+        theIdleQueuedRequest.dayStart ≤ (Cal.instantOf theIdleQueuedRequest.tz a.day a.time).sec ∧
+        (Cal.instantOf theIdleQueuedRequest.tz b.day b.time).sec ≤ theIdleQueuedRequest.dayEnd ∧
+        (Cal.instantOf theIdleQueuedRequest.tz a.day a.time).sec
+          < (Cal.instantOf theIdleQueuedRequest.tz b.day b.time).sec ∧
+        (Cal.instantOf theIdleQueuedRequest.tz b.day b.time).sec < LogStamp.yearEnd :=
+  the_census_request_is_plain
+
+set_option maxRecDepth 100000 in
+/-- **The day, end to end**: `m2`'s replayed block, the written wall, and §16's evening —
+**no reservation**, because nothing is running, and **no row carrying `m1`**.  Eight rows, and
+the first of them is the one that defeats the two comparisons. -/
+theorem the_idle_queued_day_is_the_second_sibling_and_an_evening :
+    (dayPlan theIdleQueuedRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 545).sec, (Cal.instantOf Cal.chicago 739867 605).sec,
+          SegKind.block, some (['m','2'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 980).sec, (Cal.instantOf Cal.chicago 739867 1040).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1060).sec, (Cal.instantOf Cal.chicago 739867 1120).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec,
+          (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 100000 in
+/-- **§6.1's lift over the WHOLE day is FALSE at a `PlanCheck.SlotAnchored` eligibility** — and
+**exactly two** of the eleven fail, which is what keeps it a statement about the two
+comparisons rather than "the battery fails here" (README gap 684's cost, paid once).
+
+The last conjunct is the one that locates the cause: the **same** battery, at the **same**
+eligibility, at the **same** request, is `true` over `PlanCheck.withoutPast`'s day.  Nothing
+about the eligibility, the planner or the checkers separates the two — only the replayed row
+the filter drops. -/
+theorem dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted :
+    PlanCheck.monotoneInRank onlyOnFreeWorkRows theIdleQueuedRequest
+        (dayPlan theIdleQueuedRequest) = false ∧
+      PlanCheck.hotBeforeQueue onlyOnFreeWorkRows theIdleQueuedRequest
+        (dayPlan theIdleQueuedRequest) = false ∧
+      PlanCheck.planOk onlyOnFreeWorkRows theIdleQueuedRequest
+        (dayPlan theIdleQueuedRequest) = false ∧
+      PlanCheck.planOkCore theIdleQueuedRequest (dayPlan theIdleQueuedRequest) = true ∧
+      PlanCheck.impossibleKept onlyOnFreeWorkRows theIdleQueuedRequest
+        (dayPlan theIdleQueuedRequest) = true ∧
+      PlanCheck.batchDoesNotReachPast onlyOnFreeWorkRows theIdleQueuedRequest
+        (dayPlan theIdleQueuedRequest) = true ∧
+      PlanCheck.planOk onlyOnFreeWorkRows theIdleQueuedRequest
+        (PlanCheck.withoutPast theIdleQueuedRequest (dayPlan theIdleQueuedRequest)) = true := by
+  decide
+
+/-- **The ∀-statement the day above refuses**, stated with every hypothesis
+`PlanCheck.dayPlan_ok_from_now` carries so that none of them is what is missing: no request
+question, no R10 obligation and no property of the log is the reason.  `PlanCheck.SlotAnchored`
+is, and `PlanCheck.FromNowAnchored` is the clause that repairs it. -/
+theorem dayPlan_ok_at_every_slot_anchored_eligibility_on_the_whole_day_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq), PlanCheck.SlotAnchored el →
+        r.wallsAgree = true → r.activeAgrees = true → r.dayAgrees = true →
+        r.now.sec + 1 < LogStamp.yearEnd →
+        PlanCheck.planOk el r (dayPlan r) = true := by
+  intro h
+  have := h onlyOnFreeWorkRows theIdleQueuedRequest onlyOnFreeWorkRows_is_slot_anchored
+    theIdleQueuedRequest_wallsAgree the_idle_queued_request_agrees.1
+    the_idle_queued_request_agrees.2 the_idle_queued_request_is_inside_the_calendar
+  rw [dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 100000 in
+/-- **And the repair holds where the refutation bites**, at the same request and on the same
+whole day: `PlanCheck.dayPlan_ok_of_the_core_seven` with `planOkCore` supplied by the
+refutation's own fourth conjunct, so the two theorems share the computation rather than
+repeating it.  The pair is the statement — one clause on the eligibility is the difference
+between a refuted whole-day lift and a proved one. -/
+theorem the_from_now_lift_holds_where_the_slot_anchored_one_is_refuted :
+    PlanCheck.planOk fromNowWorkRows theIdleQueuedRequest (dayPlan theIdleQueuedRequest) = true :=
+  PlanCheck.dayPlan_ok_of_the_core_seven fromNowWorkRows_is_from_now_anchored
+    theIdleQueuedRequest
+    dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted.2.2.2.1
+
+set_option maxRecDepth 200000 in
+/-- **WHAT THE CLOSURE COSTS: five checkers, where the same day at any eligibility has seven.**
+The two it loses are the two `PlanCheck.dayPlan_ok_is_the_core_seven` buys the proof of, and
+`PlanCheck.the_census_ceiling_on_the_whole_day_is_five` proves five is the ceiling at every
+request.  This reaches it. -/
+theorem the_whole_day_census_at_the_from_now_eligibility_is_five :
+    ((PlanCheck.checksOf fromNowWorkRows).map (fun c =>
+        PlanCheck.subjectOf fromNowWorkRows c.name theCensusRequest (dayPlan theCensusRequest)))
+      = [true, true, false, true, true, false, true, false, false, false, false] ∧
+    PlanCheck.subjectCount fromNowWorkRows theCensusRequest (dayPlan theCensusRequest) = 5 :=
+  ⟨by decide, by decide⟩
+
+/-- **Five is a ceiling and five is reached**, the two put side by side the way
+`four_is_the_ceiling_and_it_is_reached` puts W-22's. -/
+theorem five_is_the_ceiling_and_it_is_reached :
+    PlanCheck.subjectCount fromNowWorkRows theCensusRequest (dayPlan theCensusRequest) = 5 ∧
+    ∀ r : PlanReq, r.now.sec + 1 < LogStamp.yearEnd →
+      PlanCheck.subjectCount fromNowWorkRows r (dayPlan r) ≤ 5 :=
+  ⟨the_whole_day_census_at_the_from_now_eligibility_is_five.2,
+   fun r h =>
+     PlanCheck.the_census_ceiling_on_the_whole_day_is_five fromNowWorkRows_is_from_now_anchored
+       r h⟩
+
+set_option maxRecDepth 200000 in
+/-- **The other half of how far §6.1's lift goes, and it is not the eligibility's.**  The seven
+eligibility-free checks are `false` on the WHOLE day at three requests this module already
+builds — the morning wall that moved onto a worked hour, the block longer than a shortened
+`block_min`, and the break the log records inside a running block.  Each is a recorded
+refutation of a goal that quantified over the replayed past
+(`plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted`,
+`plan_reserves_one_block_at_a_time_as_stage_6_wrote_it_is_refuted`,
+`plan_places_no_block_over_a_break_as_stage_6_wrote_it_is_refuted`); what is new here is
+reading the three as one fact about `PlanCheck.planOkCore`, which is the whole residue
+`PlanCheck.dayPlan_ok_is_the_core_seven` leaves.
+
+So the whole-day lift is bounded on **both** axes, each by a named day, and neither bound is
+the assign fold's: `PlanCheck.withoutPast` is not removable and no clause on an eligibility
+can make it so. -/
+theorem the_core_seven_is_false_on_three_whole_days :
+    PlanCheck.planOkCore theMorningWallRequest (dayPlan theMorningWallRequest) = false ∧
+      PlanCheck.planOkCore theShortBlockRequest (dayPlan theShortBlockRequest) = false ∧
+      PlanCheck.planOkCore theMidBreakRequest (dayPlan theMidBreakRequest) = false := by
+  decide
+
+
 end PlannerWit
 end Tm

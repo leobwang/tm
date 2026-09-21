@@ -6239,3 +6239,34 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.step_seven_gave_no_checker_a_subject
 #print axioms Tm.PlannerWit.four_is_the_ceiling_and_it_is_reached
 #print axioms Tm.PlannerWit.the_slot_anchoring_is_the_whole_residue
+/-! ############################################################################
+## Stage 6, W-23, track G: the eligibility axis closes on the WHOLE day, and the
+## day that proves one clause of it cannot be dropped
+##
+## `PlanCheck.dayPlan_ok_is_the_core_seven` says §6.1's eleven over the whole day IS §6.1's
+## seven, at every request and every `PlanCheck.FromNowAnchored` eligibility — a `Bool`
+## equality, nothing assumed about the log.  `PlannerWit.dayPlan_ok_at_every_slot_anchored_
+## eligibility_on_the_whole_day_is_refuted` is why the third clause is a hypothesis and not a
+## decoration, and `PlannerWit.the_core_seven_is_false_on_three_whole_days` is the residue it
+## leaves: the replayed past, on three days this kernel already builds.
+############################################################################ -/
+
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_nothing_from_now
+#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven
+#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven
+#print axioms Tm.PlanCheck.the_census_ceiling_on_the_whole_day_is_five
+#print axioms Tm.PlannerWit.fromNowWorkRows_is_from_now_anchored
+#print axioms Tm.PlannerWit.the_from_now_eligibility_reads_all_three_of_its_clauses
+#print axioms Tm.PlannerWit.onlyOnFreeWorkRows_is_not_from_now_anchored
+#print axioms Tm.PlannerWit.witBuildsIdleQueued
+#print axioms Tm.PlannerWit.theIdleQueuedRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_idle_queued_request_agrees
+#print axioms Tm.PlannerWit.the_idle_queued_request_is_inside_the_calendar
+#print axioms Tm.PlannerWit.the_idle_queued_request_is_plain
+#print axioms Tm.PlannerWit.the_idle_queued_day_is_the_second_sibling_and_an_evening
+#print axioms Tm.PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_at_every_slot_anchored_eligibility_on_the_whole_day_is_refuted
+#print axioms Tm.PlannerWit.the_from_now_lift_holds_where_the_slot_anchored_one_is_refuted
+#print axioms Tm.PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five
+#print axioms Tm.PlannerWit.five_is_the_ceiling_and_it_is_reached
+#print axioms Tm.PlannerWit.the_core_seven_is_false_on_three_whole_days

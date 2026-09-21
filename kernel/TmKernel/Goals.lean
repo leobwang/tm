@@ -807,6 +807,28 @@ evidence that §8.2 step 5's fold is now under the battery.  It is evidence of t
 `Planner.dayRows`' own doc comment records that step 5's Block and Batch rows are **not in the
 day**, and `hblk` holds *because* they are absent.  The fold induction design §6.2 prices at
 ≈ 4,500 proof lines has no subject in this tree and no line of it is claimed by any run so far.
+
+**W-23 (track G) closed the ELIGIBILITY axis of that lift on the WHOLE day, and the burn-down
+still did not move.**  `PlanCheck.dayPlan_ok_is_the_core_seven` says §6.1's eleven over the
+whole day **is** §6.1's seven — a `Bool` equality, at every request, at every
+`PlanCheck.FromNowAnchored` eligibility, with nothing assumed about the log.  So no goal below
+is waiting on an eligibility any more: the four checks that take one are vacuous on every day
+this kernel produces, and what stands between the lift and the whole day is the **replayed
+past**, which is not one of the eleven's subjects and not the fold's.  The two bounds are both
+witnessed: `PlannerWit.dayPlan_ok_at_every_slot_anchored_eligibility_on_the_whole_day_is_refuted`
+is the eligibility one (W-22's `PlanCheck.SlotAnchored` is two thirds of what P5 owes, not all
+of it), and `PlannerWit.the_core_seven_is_false_on_three_whole_days` is the other, on three
+days this module already builds.
+
+**And §8.2 step 8 landed between W-22 and W-23 and gave no checker a subject either** — for a
+reason that is structural rather than measured, which is the one improvement W-23 makes on the
+form of W-21's and W-22's answers.  `PlanCheck.lean` imports `TmKernel.Planner` and **not**
+`TmKernel.Emit`; `Emit.lean` is that module's sibling, downstream of the battery.  So no
+checker of the eleven can read a cell, no row text can be any checker's subject, and P8 could
+not have moved the census whatever it emitted.  What P8 was owed by name is a different
+sentence and it is **not** paid: `plan_never_drops_an_impossible_item` still needs
+`Planner.Diagnostics.impossible` filled from §7.3's grants (README gap 1065), and
+`Planner.dayDiagnostics` still leaves that field at `Planner.Diagnostics.empty`'s value.
 ############################################################################ -/
 
 open Planner
