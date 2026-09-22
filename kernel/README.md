@@ -54676,11 +54676,11 @@ are reflowed and no line of the file now reads as a declaration.
 | check 5 | 93 tests | 93 |
 | corpus | 29/37 files, 4/5 whole plans | unchanged |
 | burn-down | 9, all stage 6 | **9**, all stage 6 — none added, discharged or deleted |
-| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,181 / 31,517 / 1,664** (134 / 351), 0 unused — **this table's own block moves the figure**, so it is the one `check.sh` printed at the commit that carries it, not the one measured before the block was written (§5.11) |
+| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,182 / 31,518 / 1,664** (134 / 351), 0 unused — **this table's own block moves the figure**, so it is the one `check.sh` printed at the commit that carries it, not the one measured before the block was written (§5.11) |
 | check 9 | 154 rostered, 40 unfoldable, 21 fixtures, 8 pinned by nothing, 1 literal, 0 owed, **32** bare pin sites | **156** rostered (+`u32Within`, +`secWithin`), 40 / 21 / 8 / 1, 0 owed, **31** bare |
 | check 10 | — | **39 registered (P1–P39), 39 anchors re-resolved in 3 files (37 row, 1 cite, 1 taken), 54 register rows and 1 issuance line read, next free P40** |
 | `citations-allow.txt` | — | **byte-identical** (`git diff --stat` empty) |
-| `cargo test --workspace` | 1,431 / 0 / 9 across 83 | **1,431 / 0 / 9 across 83 — FOUR runs, identical** |
+| `cargo test --workspace` | 1,431 / 0 / 9 across 83 | **1,431 / 0 / 9 across 83 — FIVE runs, identical** |
 | `one_renderer` | — | 25 passed |
 | `one_padder` | — | 9 passed |
 | `kernel_row_cells` | — | 26 passed |
@@ -54693,8 +54693,8 @@ are reflowed and no line of the file now reads as a declaration.
 | `check.sh` wall, this machine | 12.84 s at nine (load 2.3) | 13.70 / 13.84 / 14.54 s at ten (load 3.5) |
 | `parity.py` alone | — | **0.06 / 0.06 / 0.07 s** |
 
-**`cargo test --workspace` was run FOUR times** (D46) — three in a row after the
-last Lean edit and one more immediately before the commit — every number
+**`cargo test --workspace` was run FIVE times** (D46) — one to build, three in a
+row after the last Lean edit, and one more at the final commit — every number
 identical, and the tree was clean after each. `.proptest-regressions` drew no new seed —
 this track touched no proptest, which is track P's.
 
@@ -54710,7 +54710,31 @@ this track touched no proptest, which is track P's.
 | "154 rows rewrote with no build" | the rewrite reported 0 missing and 0 ambiguous; check 9 then printed `154 rostered, 0 owed` with every other number unchanged | it shows the KEYS match the scanner. That the keys are the names **Lean** knows is the separate `#check` probe below |
 | "the qualified names are Lean's" | `#check @<name>` over **2,960** names, one kernel build: **2,957** resolve | the three that do not are `private def`s, which is privacy and not a wrong key — and it is a one-off probe, not a gate (gap 1476) |
 | "31 bare sites cost ~1 h 45 m" | one row timed end to end at **4 m 31 s** for two constants, and the 48 building constants counted from the roster | one row's build time on one machine at one load, multiplied. The real run would be one `--verify --only Planner.lean`, which shares no work between constants but does share the process |
-| "check.sh 10/10, workspace green" | the capped commands; `check.sh` ran green at commit-time acceptance and **failed twice mid-step** — check 3's `rather` and check 9's EmitWire drift, both above — and the workspace ran **four** times | gap 1412: a green workspace run is a sample. Load was 2.3–7.8 throughout and `cli_latency` did not fire gap **1333**. A count of check.sh runs is left out on purpose: writing it down here changes it |
+| "check.sh 10/10, workspace green" | the capped commands; `check.sh` ran green at commit-time acceptance and **failed twice mid-step** — check 3's `rather` and check 9's EmitWire drift, both above — and the workspace ran **five** times | gap 1412: a green workspace run is a sample. Load was 2.3–7.8 throughout and `cli_latency` did not fire gap **1333**. A count of check.sh runs is left out on purpose: writing it down here changes it |
+
+### 10. What the merge owes, beyond AGENTS §6.5
+
+**`mutations.txt`'s key changed on this branch and nowhere else.** Every row
+here is `(file, QUALIFIED name)`; a row another track appended while this ran is
+`(file, SHORT name)`. A textual merge produces a **mixed** file, and check 9's
+symptom is loud but misleading: the short-keyed rows will be reported **OWED A
+MUTATION**, because `declarations()` now yields qualified names and no row
+matches. **The fix is not to re-run those mutations.** It is to re-run the
+column rewrite — find each row's declaration by `(file, last segment)`, take its
+qualified name — which needs no build, and then confirm check 9 prints `0 owed`
+with the rostered count equal to the number of rows. The rewrite is fifteen
+lines of `mutate.py`'s own `declarations()` plus `digest()`; the W-25 run that
+did it reported **0 with no declaration found, 0 ambiguous** over 154 rows.
+
+**`check.sh` gained check 10 at the end of the file**, before `exit $fail`,
+which is the append convention; **AGENTS §2.1, §6.5 item 7 and §7.1's heading
+now say TEN.** A track that merges after also saying "nine" reopens exactly the
+staleness the W-24 repair step fixed once and this one fixed again.
+
+**`parity.txt`'s anchors are line numbers.** `README.md` is append-only so a
+merge that appends blocks does not move them; a merge that **edits** an existing
+block above `README.md:52676` does, and check 10 will name the row. Re-anchor,
+do not delete.
 
 Every `cargo`, `check.sh`, `lake`, `lean`, `mutate.py`, `parity.py` and `python3`
 invocation ran under `systemd-run --user --scope -p MemoryMax=… -p
