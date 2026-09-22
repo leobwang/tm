@@ -54676,7 +54676,7 @@ are reflowed and no line of the file now reads as a declaration.
 | check 5 | 93 tests | 93 |
 | corpus | 29/37 files, 4/5 whole plans | unchanged |
 | burn-down | 9, all stage 6 | **9**, all stage 6 — none added, discharged or deleted |
-| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,071 / 31,407 / 1,664** (134 / 351), 0 unused |
+| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,181 / 31,517 / 1,664** (134 / 351), 0 unused — **this table's own block moves the figure**, so it is the one `check.sh` printed at the commit that carries it, not the one measured before the block was written (§5.11) |
 | check 9 | 154 rostered, 40 unfoldable, 21 fixtures, 8 pinned by nothing, 1 literal, 0 owed, **32** bare pin sites | **156** rostered (+`u32Within`, +`secWithin`), 40 / 21 / 8 / 1, 0 owed, **31** bare |
 | check 10 | — | **39 registered (P1–P39), 39 anchors re-resolved in 3 files (37 row, 1 cite, 1 taken), 54 register rows and 1 issuance line read, next free P40** |
 | `citations-allow.txt` | — | **byte-identical** (`git diff --stat` empty) |
@@ -54710,7 +54710,7 @@ this track touched no proptest, which is track P's.
 | "154 rows rewrote with no build" | the rewrite reported 0 missing and 0 ambiguous; check 9 then printed `154 rostered, 0 owed` with every other number unchanged | it shows the KEYS match the scanner. That the keys are the names **Lean** knows is the separate `#check` probe below |
 | "the qualified names are Lean's" | `#check @<name>` over **2,960** names, one kernel build: **2,957** resolve | the three that do not are `private def`s, which is privacy and not a wrong key — and it is a one-off probe, not a gate (gap 1476) |
 | "31 bare sites cost ~1 h 45 m" | one row timed end to end at **4 m 31 s** for two constants, and the 48 building constants counted from the roster | one row's build time on one machine at one load, multiplied. The real run would be one `--verify --only Planner.lean`, which shares no work between constants but does share the process |
-| "check.sh 10/10, workspace green" | the capped commands, check.sh **nine** times across the step and the workspace **four** | gap 1412: a green workspace run is a sample. Load was 2.3–7.8 throughout and `cli_latency` did not fire gap **1333** |
+| "check.sh 10/10, workspace green" | the capped commands; `check.sh` ran green at commit-time acceptance and **failed twice mid-step** — check 3's `rather` and check 9's EmitWire drift, both above — and the workspace ran **four** times | gap 1412: a green workspace run is a sample. Load was 2.3–7.8 throughout and `cli_latency` did not fire gap **1333**. A count of check.sh runs is left out on purpose: writing it down here changes it |
 
 Every `cargo`, `check.sh`, `lake`, `lean`, `mutate.py`, `parity.py` and `python3`
 invocation ran under `systemd-run --user --scope -p MemoryMax=… -p
