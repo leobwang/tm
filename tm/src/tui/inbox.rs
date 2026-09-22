@@ -607,18 +607,18 @@ pub fn inbox_lines(view: &View<'_>) -> Vec<InboxLine> {
         return Vec::new();
     };
     let mut out = Vec::new();
+    // `grammar::comment_after` is `Plan.lean`'s automaton and the only one:
+    // this pane had its own copy of it until W-24 (D47).
     let mut in_comment = false;
     for line in &file.lines {
         let text = line.text();
+        let was_in_comment = in_comment;
+        let opener = grammar::opens_comment(&text);
+        in_comment = grammar::comment_after(in_comment, &text);
+        if was_in_comment || opener {
+            continue;
+        }
         let trimmed = text.trim();
-        if in_comment {
-            in_comment = !trimmed.contains("-->");
-            continue;
-        }
-        if trimmed.starts_with("<!--") {
-            in_comment = !trimmed.contains("-->");
-            continue;
-        }
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }

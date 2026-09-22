@@ -21,6 +21,15 @@ WHAT IS SWEPT.  Every backticked span -- on one line, or wrapped across two
     AGENTS.md                         the process authority (D41, W-20)
     kernel/check.sh, kernel/*.py,     the gate's own prose (W-20 repair step;
     kernel/mutations.txt              `CHECKERS`, and why the allow-list is not)
+    tm/src, tm-core/src, tm/tests,    THE RUST COMMENTS (W-24, README gap 1313
+    tm-core/tests, kernel/            item 3).  `//!`, `///`, `//` and `/* */`
+    tm-kernel-ffi/{src,tests,         only -- `rust_prose` is the exact
+    examples}  **/*.rs                complement of `rust_code`, so what the one
+                                      blanks the other reads and no byte of
+                                      either file is read as both code and
+                                      prose.  String and char CONTENTS are
+                                      blanked in both: a "fn foo" literal
+                                      declares nothing and cites nothing.
 
 whose content is an identifier that is ANY OF THREE THINGS: snake_case (an
 underscore anywhere -- the shape this kernel's theorem names have), camelCase (a
@@ -70,11 +79,25 @@ against it cannot launder one stale sentence with another.
     2. Lean string literals in those files.  A wire key, a refusal tag and a
        JSON field name are declared by the literal that spells them, and
        `"cap_done_min"` in Boundary.lean is that declaration.
-    3. Rust declarations -- fn/struct/enum/const/static/type/trait/mod/union
-       and struct fields -- in tm/src, tm-core/src, tm/tests, tm-core/tests and
-       kernel/tm-kernel-ffi/{src,tests,examples}.  The FORK's planner is
-       in-tree (tm-core/src/planner.rs), so `place_mandatory_and_pref` and
-       `active_run` resolve here and need no exemption.
+    3. Rust declarations -- fn/struct/enum/const/static/type/trait/mod/union,
+       struct fields AND FUNCTION PARAMETERS -- in tm/src, tm-core/src,
+       tm/tests, tm-core/tests and kernel/tm-kernel-ffi/{src,tests,examples}.
+       The FORK's planner is in-tree (tm-core/src/planner.rs), so
+       `place_mandatory_and_pref` and `active_run` resolve here and need no
+       exemption.
+       PARAMETERS ARRIVED WITH THE RUST PROSE SWEEP (W-24), and they arrived
+       because of it: a doc comment naming the parameter of the very `fn` it is
+       attached to is CORRECT prose, and eleven of the forty-one names the
+       sweep first reported were exactly that (min_ci, new_text, flight_re,
+       hours_since, is_last, mark_current, min_min, model_weights, own_round,
+       palette_len, new_lines).  A parameter is declared by a signature, which
+       is code and not prose, so it belongs in this source by the rule at the
+       head of this list.  Its price is +119 distinct short names on a base of
+       14,227, and it is the whole of the widening: `let` bindings were
+       MEASURED and DECLINED at the same step -- +896 names for 2 more
+       resolutions, a large laundering surface bought for nothing.  ghost_y and
+       max_energy, the two `let`s cited from prose, are allow-list entries
+       instead.
     4. Rust string literals in those files.
     5. File stems under tm/, tm-core/ and kernel/ (target/ and .lake/ pruned).
        `cargo test --test cli_latency` names a FILE, and tm/tests/cli_latency.rs
@@ -226,9 +249,26 @@ nothing else; do not quote these, RE-MEASURE.
     "bound, constructor, rejection theorem" for a record that has no such field
     yet).  tm-spec-v1.md 26 citations / 20 distinct / 0 unresolved;
     PLAN-lean-kernel.md 83 / 65 / 9.
-  * RUST.  Not one of the seven sets is read as PROSE for Rust: a stale citation
-    inside a `///` doc comment in tm/src is not swept at all.  Check 9 has the
-    same edge (README gap 936).  kernel/check.sh, kernel/mutations.txt and
+  * RUST PROSE IS SWEPT SINCE W-24 and this bullet is its record.  It read, for
+    four runs: "not one of the seven sets is read as PROSE for Rust; a stale
+    citation inside a `///` doc comment in tm/src is not swept at all".  Turning
+    it on cost 30 adjudications, not the 162 the W-23 measurement predicted --
+    that number came from a WIDER span predicate than `is_citation`, and under
+    this file's own predicate the population is 2,371 citations / 1,182 distinct
+    / 86 distinct unresolved (153 occurrences), 44 of them already exempt.
+    Its yield on the tree it landed against was EIGHT live stale citations:
+    sectionOf (a Plan.lean definition that has never existed; the name is
+    liveHeading), q6b_separations and day_separations (rustdoc intra-doc links
+    to nothing), energy_mae and energy_bias (backticked inside the sentence
+    saying they were invented), calendar_date and entry_json (past-tense
+    removals still in backticks) and HotFlag (a class name beside the live
+    variant `Overdue`).  WHAT IT STILL CANNOT SEE: a `let` binding cited from
+    prose needs an allow-list entry (measured and declined above); a
+    `#[doc = "..."]` attribute is a string literal and is blanked; and a Rust
+    comment under a directory outside RUST_DIRS is unswept -- tm/build.rs and
+    kernel/tm-kernel-ffi/build.rs are OUTSIDE it, a future crate would be too.
+    Check 9 has the same edge (README gap 936).
+    kernel/check.sh, kernel/mutations.txt and
     kernel/*.py ARE swept as prose since the W-20 repair step, which is where
     check.sh's own specification of D41's widening was found citing a
     backticked emitRefused; citations-allow.txt is not, and `CHECKERS` says
@@ -305,6 +345,12 @@ TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 RUST_DIRS = ["tm/src", "tm-core/src", "tm/tests", "tm-core/tests",
              "kernel/tm-kernel-ffi/src", "kernel/tm-kernel-ffi/tests",
              "kernel/tm-kernel-ffi/examples"]
+
+# A Rust FUNCTION PARAMETER, read out of `rust_code` so a comment cannot
+# declare one.  `(name:` or `, name:`, with `mut` allowed -- deliberately the
+# same shape as `RUST_FIELD`, which is why the two share the laundering risk
+# already declared in the header rather than adding a new one.  Source 3.
+RUST_PARAM = re.compile(r"(?:^|[(,]\s*)(?:mut\s+)?([a-z_][A-Za-z0-9_]*)\s*:", re.M)
 
 LEAN_KW = r"(?:theorem|lemma|def|abbrev|structure|inductive|instance|class|example|opaque|axiom)"
 LEAN_DECL = re.compile(
@@ -433,6 +479,64 @@ def lean_code(text):
     return "\n".join(out)
 
 
+def rust_prose(text):
+    """The exact COMPLEMENT of `rust_code`: comment text only, lines preserved.
+
+    `rust_code` blanks comments and string contents and keeps the code; this
+    keeps the comments and blanks everything else, INCLUDING the `//`, `///`,
+    `//!` and `/* */` markers themselves, so a swept line is ordinary prose and
+    the wrap carry cannot pick a marker up as part of a name.  Every byte of a
+    `.rs` file is therefore read by exactly one of the two, which is what makes
+    "prose does not declare" (gap 1312) and "prose is cited from" (gap 1313
+    item 3) the same partition seen from its two sides.
+    """
+    out, i, n, depth = [], 0, len(text), 0
+    while i < n:
+        c = text[i]
+        if depth:
+            # `/* */` NESTS in Rust, unlike C.
+            if text.startswith("*/", i):
+                depth, i = depth - 1, i + 2
+                out.append("  ")
+            elif text.startswith("/*", i):
+                depth, i = depth + 1, i + 2
+                out.append("  ")
+            else:
+                out.append(c)
+                i += 1
+            continue
+        if text.startswith("//", i):
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+            run = text[i:j]
+            k = 2
+            while k < len(run) and run[k] in "/!":
+                k += 1
+            out.append(" " * k + run[k:])
+            i = j
+            continue
+        if text.startswith("/*", i):
+            depth, i = 1, i + 2
+            out.append("  ")
+            continue
+        if c == '"' or c == "'":
+            q, i = c, i + 1
+            out.append(" ")
+            while i < n and text[i] != q:
+                if text[i] == "\\":
+                    out.append("  ")
+                    i += 2
+                    continue
+                out.append("\n" if text[i] == "\n" else " ")
+                i += 1
+            out.append(" ")
+            i += 1
+            continue
+        out.append("\n" if c == "\n" else " ")
+        i += 1
+    return "".join(out)
+
+
 def rust_code(text):
     """`text` with `//` and `/* */` comments and string/char CONTENTS blanked.
 
@@ -549,6 +653,7 @@ def declared():
             code = rust_code(text)
             names.update(RUST_DECL.findall(code))
             names.update(RUST_FIELD.findall(code))
+            names.update(RUST_PARAM.findall(code))
             names.update(STRING_LIT.findall(text))
     for path in sorted(glob.glob(os.path.join(HERE, "*.py"))):
         for m in PY_DECL.finditer(read(path)):
@@ -602,7 +707,14 @@ def cited():
     """Every backticked snake_case citation, with count and first location."""
     hits = collections.Counter()
     where = {}
-    for path in LEAN_FILES + [README, AGENTS] + CHECKERS:
+    sources = [(p, read(p)) for p in LEAN_FILES + [README, AGENTS] + CHECKERS]
+    # THE RUST COMMENTS (W-24).  Read through `rust_prose`, the complement of
+    # the `rust_code` that `declared()` reads, so neither half of a `.rs` file
+    # can stand in for the other.
+    for rel in RUST_DIRS:
+        for p in sorted(glob.glob(os.path.join(ROOT, rel, "**", "*.rs"), recursive=True)):
+            sources.append((p, rust_prose(read(p))))
+    for path, text in sources:
         fenced = path.endswith(".md")
         inside = False
         # The carry is the tail of a span left OPEN at the end of a line.  It
@@ -612,7 +724,7 @@ def cited():
         # line-locally -- which is why the per-line sweep below is UNCHANGED
         # and this runs beside it rather than replacing it.
         carry = None
-        for n, line in enumerate(read(path).split("\n"), 1):
+        for n, line in enumerate(text.split("\n"), 1):
             if fenced and line.lstrip().startswith("```"):
                 inside = not inside
                 carry = None

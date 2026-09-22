@@ -1690,17 +1690,18 @@ pub fn triage(g: &Globals) -> Result<i32, CliError> {
     // §14: `tm init` fills `inbox.md` with its guidance inside one HTML
     // comment. Everything between `<!--` and `-->` is commentary, not
     // capture — previewing it would have `/triage` `tm add` the guidance.
+    // The automaton is `grammar::comment_after`, which is `Plan.lean`'s, so
+    // this screen, the TUI inbox and the parser cannot disagree about where a
+    // comment ends (D47). This loop had its own copy until W-24.
     let mut in_comment = false;
     for (i, raw) in text.lines().enumerate() {
+        let was_in_comment = in_comment;
+        let opener = grammar::opens_comment(raw);
+        in_comment = grammar::comment_after(in_comment, raw);
+        if was_in_comment || opener {
+            continue;
+        }
         let trimmed = raw.trim();
-        if in_comment {
-            in_comment = !trimmed.contains("-->");
-            continue;
-        }
-        if trimmed.starts_with("<!--") {
-            in_comment = !trimmed.contains("-->");
-            continue;
-        }
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }

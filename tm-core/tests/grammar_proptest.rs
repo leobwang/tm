@@ -202,13 +202,6 @@ fn without_src(mut it: Item) -> Item {
     it
 }
 
-/// Title text with whitespace runs collapsed: removing a token can merge a
-/// bare word back into the title segment with its original lead whitespace
-/// (`a @A  a` → `a  a`), which is the same title.
-fn norm(title: &str) -> String {
-    title.split_whitespace().collect::<Vec<_>>().join(" ")
-}
-
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(512))]
 
@@ -274,24 +267,20 @@ proptest! {
                     Ok(()) => {
                         prop_assert!(is_digit);
                         let after = parse_line(&line.to_string(), &ctx).unwrap();
-                        // `norm`, not raw, because `set_state_with_ci` REMOVES
-                        // the `ci:` key first and `norm`'s own doc names that
-                        // exact class: a removed token merges a bare word back
-                        // into the title with its original lead whitespace.
-                        // The sibling assertion for `set_parent` below has
-                        // always normalised; this one did not, and a fresh
-                        // proptest seed found the shape in 1 run of 3 —
-                        // `("- 0 A A ci:0  a @A @a", false)`, title
-                        // `0 A A a` -> `0 A A  a`. The seed is pinned in
+                        // RAW, not normalised. `set_state_with_ci` removes the
+                        // `ci:` key first, and a removal used to merge the bare
+                        // word behind it back into the title segment carrying
+                        // whatever whitespace run it happened to have: a fresh
+                        // seed drew `("- 0 A A ci:0  a @A @a", false)` and the
+                        // title `0 A A a` came back `0 A A  a` (README gap
+                        // **1316**, owner **D46**). W-23 normalised this
+                        // comparison; W-24 fixed the edit instead
+                        // (`ItemLine::fix_absorbed_leads`) and took the
+                        // normalisation back out, here and at the `set_parent`
+                        // sibling below. The seed stays pinned in
                         // `grammar_proptest.proptest-regressions`, so the case
-                        // runs every time rather than when a draw finds it
-                        // (README gap **1316**). The words, their order and
-                        // their count are still compared exactly.
-                        prop_assert_eq!(norm(&after.title), norm(&before.title));
-                        prop_assert_eq!(
-                            after.title.split_whitespace().count(),
-                            before.title.split_whitespace().count()
-                        );
+                        // runs every time rather than when a draw finds it.
+                        prop_assert_eq!(&after.title, &before.title);
                         prop_assert_eq!(after.ci, before.ci);
                         prop_assert!(after.ci_explicit);
                         prop_assert_eq!(after.state, State::Done);
@@ -374,7 +363,12 @@ proptest! {
             Ok(()) => {
                 let after = parse_line(&line.to_string(), &ctx).unwrap();
                 prop_assert_eq!(after.parent, None);
-                prop_assert_eq!(norm(&after.title), norm(&before.title));
+                // Also RAW since W-24. This is the older half of gap 1316's
+                // class — its own pinned seed `("- [ ] a @A  a zz:0 @A", true)`
+                // is a title `a a` that came back `a  a` — and it normalised
+                // from the fork point on, which is why the ci site's identical
+                // shape had nothing standing in its way.
+                prop_assert_eq!(&after.title, &before.title);
                 prop_assert_eq!(&after.flags, &before.flags);
                 prop_assert_eq!(&after.tags, &before.tags);
             }

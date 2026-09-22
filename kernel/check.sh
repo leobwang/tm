@@ -233,8 +233,8 @@ fi
 #    kernel/*.py and in mutations.txt, on one line OR wrapped across two, is
 #    resolved against SEVEN DECLARATION sets: Lean
 #    declarations, fields, constructors and namespaces; Lean string literals (a
-#    wire key is declared by the literal that spells it); Rust declarations and
-#    fields; Rust string literals; file stems (`cargo test --test cli_latency`
+#    wire key is declared by the literal that spells it); Rust declarations,
+#    fields and parameters; Rust string literals; file stems (`cargo test --test cli_latency`
 #    names a file); the checkers' own Python in kernel/*.py; and the PINNED Lean
 #    toolchain's own sources.  citations.py's header is the specification and
 #    names its own blind spots.
@@ -281,9 +281,25 @@ fi
 #    opens without anyone editing the allow-list -- 3 of 348 entries carried 6
 #    citations of it when it was found.
 #
+#    W-24 ADDED THE RUST COMMENTS AS A SWEPT SOURCE, closing README gap 1313
+#    item 3 -- the last unswept prose in the repository, and the half of the
+#    partition the W-23 repair left open: rust_code() has blanked comments since
+#    that repair so prose cannot DECLARE, and rust_prose(), its exact
+#    complement, is what makes prose CITED.  Every byte of a .rs file is now
+#    read by exactly one of the two.  Source 3 gained function PARAMETERS in the
+#    same step, because a doc comment naming its own fn's argument is correct
+#    prose and eleven names were exactly that; `let` bindings were measured and
+#    DECLINED (+896 short names for two resolutions).  Driven: the same plant --
+#    a backticked w24_module_comment_plant in a //! at tm-core/src/emit.rs:1 --
+#    leaves the PREVIOUS citations.py's output byte-identical and is named by
+#    this one, and so are plants in ///, // and a nested /* */; a plant inside a
+#    STRING literal is correctly seen by neither half.  It cost 30 adjudications
+#    (not the 162 W-23 predicted from a wider span test) and found SIX live
+#    stale citations plus a seventh written while building it.
+#
 #    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
 #    that silenced a class is how this check would get quietly useless, because
-#    the next stale citation would land inside the silenced class.  Its eight
+#    the next stale citation would land inside the silenced class.  Its nine
 #    sections say which exemptions were adjudicated and which were merely
 #    grandfathered, so a reader can tell an intention from an oversight.
 #

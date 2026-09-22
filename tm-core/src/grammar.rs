@@ -6,7 +6,9 @@
 //! * [`parse_file`]`(path, text, &Config) -> `[`ParsedFile`] — every line is
 //!   either an [`Item`] or kept verbatim (prose, headings, blank lines, front
 //!   matter, generated `<!-- tm:x start -->…<!-- tm:x end -->` ranges,
-//!   comments). [`serialize_file`] writes it back byte-identically.
+//!   comments). [`serialize_file`] writes it back byte-identically. A line
+//!   inside an `<!-- … -->` comment is prose whatever it looks like — see
+//!   [`comment_after`], which is `Plan.lean`'s reading and the only one.
 //! * [`parse_line`]`(text, &`[`ParseCtx`]`) -> Result<Item, ParseError>` — one
 //!   item line; [`ParseCtx::new`]`(file, block_min)` derives the horizon from
 //!   the path.
@@ -544,9 +546,46 @@ impl ItemLine {
         Ok(())
     }
 
+    /// True when the token at `idx` is title text that a re-parse would read
+    /// as part of the leading title *segment* rather than as a word of its
+    /// own — so the whitespace in front of it is about to become title text.
+    /// A token that ends the title itself (a lone `@`, a malformed `!9`) is
+    /// not absorbed; neither is the segment, which needs no kind test because
+    /// it is the FIRST title-text token and the last conjunct already
+    /// excludes it (a `t.kind != Title` conjunct was here and no mutation of
+    /// it could fail anything, so it went).
+    fn absorbed_into_title(&self, idx: usize) -> bool {
+        let t = &self.tokens[idx];
+        t.kind.is_title_text()
+            && !starts_token(&t.text)
+            && !self.boundary_before(idx)
+            && self.tokens[..idx].iter().any(|t| t.kind.is_title_text())
+    }
+
+    /// [`ItemLine::title`] joins the title-text tokens with ONE space, while
+    /// the title segment keeps its whitespace verbatim, so the two agree only
+    /// while every absorbed word carries a single-space lead. A freshly
+    /// parsed line always satisfies that — the tokenizer merges every word
+    /// before the first `@ # ! ^ key:` into one `Title` token, so a `Word`
+    /// always has a boundary in front of it. A removal can take that
+    /// boundary away, and then the run the word happened to carry becomes
+    /// title text (`A ci:0  a` → title `A  a`, a title the line never had;
+    /// README gap 1316, owner D46). Give such a word the one space `title()`
+    /// already reports. Whitespace *inside* the segment is the author's and
+    /// is left alone, as is a word that still has a boundary in front of it.
+    fn fix_absorbed_leads(&mut self) {
+        for i in 0..self.tokens.len() {
+            if self.absorbed_into_title(i) {
+                self.tokens[i].lead = " ".to_string();
+            }
+        }
+    }
+
     /// Run `edit` on a copy and keep it only if the flags still have a
     /// boundary afterwards (moving them after the `^id` when needed), so a
-    /// refused edit changes nothing.
+    /// refused edit changes nothing. The same pass re-leads any title word
+    /// the edit left with no boundary in front of it, so the line still
+    /// renders the title it reports ([`ItemLine::fix_absorbed_leads`]).
     fn edit_keeping_flags<T>(
         &mut self,
         edit: impl FnOnce(&mut ItemLine) -> T,
@@ -554,6 +593,7 @@ impl ItemLine {
         let mut edited = self.clone();
         let out = edit(&mut edited);
         edited.fix_flag_boundaries()?;
+        edited.fix_absorbed_leads();
         *self = edited;
         Ok(out)
     }
@@ -1319,6 +1359,34 @@ impl fmt::Display for Problem {
     }
 }
 
+/// The line **opens** an HTML comment: `<!--` after leading spaces. Mirrors
+/// `Plan.lean`'s `opensComment`, whose `isSp` is `c == ' '` — a TAB does not
+/// indent an opener, and an inline `<!--` in the middle of a line opens
+/// nothing, so an item line can never open a comment.
+pub fn opens_comment(line: &str) -> bool {
+    line.trim_start_matches(' ').starts_with("<!--")
+}
+
+/// The line **closes** an HTML comment: `-->` anywhere on it, the opening
+/// line included. Mirrors `Plan.lean`'s `closesComment`.
+pub fn closes_comment(line: &str) -> bool {
+    line.contains("-->")
+}
+
+/// Whether a comment is open **after** `line`, given whether one was open
+/// before it — `Plan.lean`'s `commentAfter`, which is the whole automaton.
+/// CommonMark's HTML block type 2 and nothing wider.
+///
+/// Every line from the opener to the closer is prose, verbatim: a
+/// `- [ ] … ^id` written inside `<!-- … -->` is an example or a line commented
+/// out, the Markdown preview the user reads hides it, and every reader of a tm
+/// file must agree it is gone (owner **D47**, README gap 1317). This is the one
+/// step function on the host side too: [`parse_file`], `tm triage` and the TUI
+/// inbox all read comments through it.
+pub fn comment_after(open: bool, line: &str) -> bool {
+    (open || opens_comment(line)) && !closes_comment(line)
+}
+
 /// A `<!-- tm:<name> start … -->` … `<!-- tm:<name> end -->` range.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GeneratedRange {
@@ -1546,12 +1614,34 @@ pub fn parse_file(path: &str, text: &str, cfg: &Config) -> ParsedFile {
     let mut section: Option<String> = None;
     let mut series: Option<(String, u32)> = None;
     let mut in_generated = false;
+    // The HTML-comment automaton, run over every line after the front
+    // matter, exactly as `Plan.lean`'s is (D47). `comment` is the state
+    // BEFORE the line about to be read, so the opener itself is an ordinary
+    // prose line — which is what keeps `<!-- tm:plan start -->`, an opener
+    // that closes on its own line, a generated marker.
+    let mut comment = false;
+    let mut comment_opened_at = 0usize;
 
     while i < raw.len() {
         let (l, eol) = raw[i];
         let number = i + 1;
         i += 1;
         let verbatim = |s: &str| LineContent::Verbatim(s.to_string());
+
+        let was_in_comment = comment;
+        if !comment && opens_comment(l) {
+            comment_opened_at = number;
+        }
+        comment = comment_after(comment, l);
+        if was_in_comment {
+            // Inside a comment nothing is an item, a heading or a marker.
+            lines.push(Line {
+                number,
+                content: verbatim(l),
+                eol: eol.to_string(),
+            });
+            continue;
+        }
 
         if let Some((name, start, info)) = generated_marker(l) {
             if start {
@@ -1626,6 +1716,17 @@ pub fn parse_file(path: &str, text: &str, cfg: &Config) -> ParsedFile {
             number,
             content,
             eol: eol.to_string(),
+        });
+    }
+
+    if comment {
+        // The kernel's loader refuses the file by name
+        // (`LErr.unterminatedComment`, naming the opener); the host reports it
+        // the way it reports the other two unterminated things, so the two
+        // readers agree about where the comment stopped instead of guessing.
+        problems.push(Problem {
+            line: comment_opened_at,
+            message: "unterminated comment".to_string(),
         });
     }
 
@@ -2259,6 +2360,83 @@ mod tests {
         let mut l = ItemLine::parse("- [ ] 5 things").unwrap();
         l.set_state(State::Done).unwrap();
         assert_eq!(l.to_string(), "- [x] 5 things");
+    }
+
+    #[test]
+    fn removing_a_token_does_not_widen_the_title() {
+        // A bare word after a `@ # ! ^ key:` token is a token of its own, and
+        // `title()` joins those with ONE space; the leading title segment
+        // keeps its whitespace verbatim. Remove the token that separated
+        // them and the word is absorbed into the segment, so whichever
+        // whitespace run it happened to carry becomes title text: the line
+        // below has title `0 A A a` and came back `0 A A  a`. Found by a
+        // proptest seed (README gap 1316, owner D46); `set_parent(None)`,
+        // `remove_tag` and `set_priority(None)` reach the same shape, and
+        // `add_flag_and_remove_parent_keep_flags`'s pinned seed
+        // `- [ ] a @A  a zz:0 @A` is the second case below.
+        let rctx = ctx("routines.md");
+        let it = parse_line("- 0 A A ci:0  a @A @a", &rctx).unwrap();
+        assert_eq!(it.title, "0 A A a");
+        let mut l = it.line().clone();
+        l.set_state_with_ci(State::Done, it.ci).unwrap();
+        assert_eq!(l.to_string(), "- [x] 0 0 A A a @A @a");
+        assert_eq!(parse_line(&l.to_string(), &rctx).unwrap().title, "0 A A a");
+
+        let wctx = ctx("week/2026-W37.md");
+        let it = parse_line("- [ ] a @A  a zz:0 @A", &wctx).unwrap();
+        assert_eq!(it.title, "a a");
+        let mut l = it.line().clone();
+        l.set_parent(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] a a zz:0");
+        assert_eq!(parse_line(&l.to_string(), &wctx).unwrap().title, "a a");
+
+        let mut l = ItemLine::parse("- [ ] A #t  b ^x").unwrap();
+        assert_eq!(l.title(), "A b");
+        l.remove_tag("t").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A b ^x");
+
+        let mut l = ItemLine::parse("- [ ] A !1  b ^x").unwrap();
+        l.set_priority(None).unwrap();
+        assert_eq!(l.to_string(), "- [ ] A b ^x");
+
+        // A flag with no boundary left is moved after the `^id` first, and
+        // the word behind it is still absorbed.
+        let mut l = ItemLine::parse("- [ ] A ci:0 open  b ^x").unwrap();
+        assert_eq!(l.title(), "A b");
+        l.remove_token("ci").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A b ^x open");
+
+        // And the shapes it must NOT touch. Whitespace INSIDE the title
+        // segment is the author's and is preserved.
+        let mut l = ItemLine::parse("- [ ] A  B #t ^x").unwrap();
+        assert_eq!(l.title(), "A  B");
+        l.remove_tag("t").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A  B ^x");
+        // A word that keeps a boundary in front of it stays a word.
+        let mut l = ItemLine::parse("- [ ] A #t @p  b ^x").unwrap();
+        l.remove_tag("t").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A @p  b ^x");
+        // A lone sigil and a malformed token END the title segment
+        // themselves, so nothing behind them is absorbed and their own lead
+        // is not the title's.
+        let mut l = ItemLine::parse("- [ ] A #t @  b ^x").unwrap();
+        assert_eq!(l.title(), "A @ b");
+        l.remove_tag("t").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A @  b ^x");
+        assert_eq!(l.title(), "A @ b");
+        let mut l = ItemLine::parse("- [ ] A #t  !9 ^x").unwrap();
+        assert_eq!(l.title(), "A !9");
+        l.remove_tag("t").unwrap();
+        assert_eq!(l.to_string(), "- [ ] A  !9 ^x");
+        assert_eq!(l.title(), "A !9");
+        // With no title text in front of it the word is the whole title, so
+        // its lead is not internal whitespace and nothing needs re-leading:
+        // the edit moves the bytes it must and no others.
+        let mut l = ItemLine::parse("- [ ] ci:0  a").unwrap();
+        assert_eq!(l.title(), "a");
+        l.remove_token("ci").unwrap();
+        assert_eq!(l.to_string(), "- [ ]  a");
+        assert_eq!(l.title(), "a");
     }
 
     #[test]

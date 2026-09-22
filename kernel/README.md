@@ -51998,3 +51998,291 @@ a byte. NOT FIXED, and not fixable here.**
 4. *Which stage.* Stage 6, gap 1195.
 
 **New gaps start at 1319.**
+
+<!-- ===================================================================
+     STAGE 6 — W-24, TRACK A.  D46's real bug, D47's comment reading, and
+     the last unswept prose in the repository.  Gaps 1360-1389 are this
+     track's range; whoever merges renumbers (AGENTS §6.4).
+     =================================================================== -->
+
+## Stage 6, W-24 track A — a removed token stops widening a title, a comment means gone, and the Rust comments are swept
+
+Branch `w24-a`, off `596b56d`. Four things landed: **D46's bug is fixed in the
+code and the assertion that was weakened over it is taken back**; **D47's
+reading is the host's**, with one automaton where there were three; **AGENTS'
+acceptance rule now has a denominator**; and **README gap 1313 item 3 is
+closed** — Rust comments are a swept citation source, which was the last prose
+in this repository no gate read.
+
+### 1. D46 — the BUG was wrong, not the assertion, and W-23's repair took the other branch
+
+The seed an auditor drew is `("- 0 A A ci:0  a @A @a", false)`: title `0 A A a`
+in, title `0 A A  a` out of `set_state_with_ci`. **The defect is in
+`tm-core/src/grammar.rs` and it is the one this rebuild is named after.** A
+title lives in two representations — the `Title` token, whose whitespace is
+verbatim, and the `Word` tokens after the first `@ # ! ^ key:`, which
+`ItemLine::title` joins with ONE space. A parse can never disagree with itself,
+because the tokenizer merges everything before the first structured token into
+one `Title`; so a `Word` always has a boundary in front of it. **A removal can
+take that boundary away**, and then the whitespace run the word happened to
+carry becomes title text.
+
+`ItemLine::fix_absorbed_leads` runs in `edit_keeping_flags`, beside
+`fix_flag_boundaries`, which is the pass that already exists to keep an edit
+re-parseable as the same item — it gained the second clause of its own promise.
+`absorbed_into_title` is the predicate: title text, not itself a boundary (a
+lone `@`, a malformed `!9`), no boundary in front of it, and some title text
+before it.
+
+**W-23 normalised the assertion instead** (`8acaad3`: `norm(&after.title)`
+against `norm(&before.title)`, with a word count beside it). That is a
+weakening of an assertion to make a test pass, which AGENTS' hard rules forbid
+by name, and it is recorded here as a breach rather than inherited: the
+normalisation is **removed**, at that site *and* at the `set_parent` sibling
+that had normalised since the fork point — whose own pinned seed
+`("- [ ] a @A  a zz:0 @A", true)` is the identical shape, `a a` → `a  a`, which
+is why the newer site had nothing standing in its way. **Both assertions compare
+RAW titles now and both are green**, including at `PROPTEST_CASES=20000` over
+three runs (60,000 cases each, no new seed written).
+
+Both seeds stay tracked and pinned (D46).
+
+### 2. D47 — one comment automaton, and it is `Plan.lean`'s
+
+`grammar::opens_comment` / `closes_comment` / `comment_after` are
+`Plan.lean`'s `opensComment` / `closesComment` / `commentAfter`, to the
+character: an opener is `<!--` after leading **SPACES** (the kernel's `isSp` is
+`c == ' '`, so a tab indents nothing), a closer is `-->` anywhere on the line
+including the opening one, and the state consulted for a line is the state
+**before** it — so the closing line is itself prose and an opener that closes on
+its own line leaves nothing open, which is what keeps `<!-- tm:plan start -->` a
+generated marker.
+
+`parse_file` reads it, and so do **`tm triage`** (`tm/src/cli/items.rs`) and the
+**TUI inbox pane** (`tm/src/tui/inbox.rs`), each of which had its own copy that
+trimmed tabs. Three readers became one; that is the §5.3 half of this, and it is
+why the change is larger than "skip a line".
+
+The kernel's loader refuses an unterminated comment by name
+(`LErr.unterminatedComment`). The host now reports it the way it reports
+unterminated front matter and an unterminated generated section — see the
+behaviour rows.
+
+### 3. Gap 1313 item 3 — the Rust comments are swept, and it cost 30 adjudications
+
+`citations.py` gained `rust_prose`, **the exact complement of the `rust_code`
+the W-23 repair added**, so every byte of a `.rs` file is read by exactly one of
+the two: what blanks a comment for the declaration scan is what reads it for the
+citation scan. Prose cannot declare (gap 1312) and prose is now cited from (gap
+1313) are one partition seen from its two sides.
+
+Source 3 gained **function parameters** in the same step, because a doc comment
+naming its own `fn`'s argument is correct prose and eleven of the first
+forty-one reported names were exactly that. `let` bindings were **measured and
+declined**: +896 distinct short names for two more resolutions.
+
+**It found eight live stale citations**, six repaired in the prose with the
+un-backtick convention (q6b_separations and day_separations, rustdoc
+intra-doc links to names that have never existed; energy_mae and
+energy_bias, backticked *inside the sentence saying they were invented*;
+calendar_date and entry_json, past-tense removals still in backticks), one
+adjudicated (`HotFlag`, a real enum variant the checker cannot see) — and a
+seventh, sectionOf, **written in this very step's own new test file and caught
+by the gate it was building.** The name is `liveHeading`.
+
+### 4. Method, and what each method cannot see
+
+| claim | method | what it cannot see |
+|---|---|---|
+| "the removal bug is fixed and the fix is load-bearing" | ten folds of the four definitions it touches, each run against `comment_is_prose`, `grammar_proptest` and the `tm-core` lib: **all ten fail something**, baseline 155/0 | a removal path that does not go through `edit_keeping_flags`. `remove_flag` is the only one, and a flag is never a boundary, so it cannot orphan a word — argued, not tested |
+| "both proptest assertions bite" | the same fold, with the normalisation already removed: `set_state_and_tag_and_priority` and `add_flag_and_remove_parent_keep_flags` both go red on their pinned seeds | 60,000 cases × 3 runs is a sample. `line()` always emits a title BEFORE its tokens, so the shape in gap 1360 is **outside the generator** and no number of cases reaches it |
+| "D47's blast radius is zero" | the automaton re-implemented in Python and run over **379 files** under `kernel/corpus/`, `tm/tests/` and `tm-core/tests/`: 0 items in comments, 0 unterminated comments. Then the whole workspace suite, three times, unmoved | a fixture that lives **inside a Rust string literal** and is indented in the source: the file scan sees neither the opener nor the item at column 0. The suite run is what covers that, and it is a test of today's fixtures, not of the class |
+| "three comment readers became one" | `grep -rn '<!--' --include=*.rs` over both `src` trees, then reading each of the 9 sites | a reader that spells the marker differently (`"<!"`, a byte compare) would not be in that grep. Nothing else in the two trees tracks comment state |
+| "check 8 sees the class it now claims" | the SAME plant — a backticked w24_module_comment_plant inside a `//!` at `tm-core/src/emit.rs:1` — leaves **HEAD's `citations.py` byte-identical** and is named by this one; likewise plants in `///`, `//` and a nested `/* */`. A plant inside a **string literal** is correctly invisible to both halves | a comment in a `.rs` file **outside `RUST_DIRS`** — `tm/build.rs` and `kernel/tm-kernel-ffi/build.rs` are outside it — and a `#[doc = "…"]` attribute, which is a string literal and is blanked |
+| "30 adjudications, not 162" | `citations.py`'s own `is_citation`, `declared`, `core_declared` and `allow_list`, imported rather than re-implemented | the figure is predicate-relative and that is the whole correction: under a span test that also takes `::` spans the population is 8,425 / 2,781 / 243, and under "every backticked span" it is 14,920 / 5,117 / 2,409. None of six readings reproduces the W-23 numbers exactly |
+| "1,404 / 0 / 9, and the seeds stayed clean" | **SIX** capped `cargo test --workspace` runs (D46's own rule, applied to itself) — three on the code, three more after the comment-only repairs put fresh bytes in four `.rs` files — each followed by `git status --porcelain -- '*.proptest-regressions'` | six runs is still a sample, and it is the point of the rule rather than an exception to it. It is also 6 draws of a generator whose `line()` cannot produce gap 1360's shape at all |
+| "`tm check` agrees with the kernel now" | the shipped binary on a `tm init` tree, both directions: commented → `no problems`, exit 0; the same three lines uncommented → 5 errors including the kernel's own `dupId`, exit 2 | one tree, two shapes. The TUI half of the drive is the one no agent can run (AGENTS §5.13) |
+
+### 5. Parity entry
+
+D47 changes what `tm-core` reads as an item, and `tm-core` is the D21/D22
+comparand, so it diverges from fork `4748911` and needs an entry.
+
+| | case | this branch | fork `4748911` | why | where |
+|---|---|---|---|---|---|
+| **P38** | a column-zero `- [ ] … ^id` line between a `<!--` opener (after leading spaces) and the first line containing `-->` | **prose**, verbatim: not an item, not a section if it is a heading, not checked, not planned, not moved, not closed | an **item**, indistinguishable from a live one | owner **D47**, README gap 1317. The kernel has read it this way since stage 3 (`Plan.lean`, `commentAfter`); the host is the half that moved | **recorded; the oracle does not reach it** — `run-oracle.sh`'s grammar arm is a `String → String` comparison per item LINE (is it an item, does it come back unchanged, what id, what does `tm edit est=` give), and this is a whole-FILE property. `parse_line` is **untouched**, so every frozen fork answer and every oracle arm is unmoved. Asserted in-tree instead, in both directions, by `tm-core/tests/comment_is_prose.rs` |
+
+That "recorded, not measured by the oracle" is **P17**'s shape and **P37**'s,
+and it is not a weakening: the divergence needs an input the comparison does not
+take, and there are **zero** such inputs in `kernel/corpus/` (§4).
+
+### 6. Behaviour rows
+
+1. **A column-zero item line inside `<!-- … -->` is gone for every verb.**
+   `tm check` no longer reports `dup-id` or `dangling-parent` against one;
+   `plan`, `move` and `close` no longer see it; the round trip is unchanged,
+   because a commented line was already written back verbatim and now is
+   `Verbatim` rather than a re-rendered `Item`. **Zero instances in the
+   committed trees** (§4), so this row is pinned by a test and not by a
+   snapshot. `tm init`'s own guidance blocks indent their examples by four
+   spaces and are unaffected — driven on a fresh tree.
+2. **A TAB before `<!--` no longer opens a comment for `tm triage` or the TUI
+   inbox pane.** Those two trimmed all whitespace; the kernel's `isSp` is the
+   space character alone, and they now agree with it. A tab-indented guidance
+   block in `inbox.md` is previewed as capture again.
+3. **`tm check` on a file with an unterminated `<!--` prints TWO errors where it
+   printed one**: the host's own `bad-value: unterminated comment` beside the
+   kernel's `kernel-load: unterminatedComment`. It is one fact named by two
+   readers that now agree, where before only the kernel could say it — and
+   `tm-core::check` is usable without the kernel, which is why the host keeps
+   its own. Recorded as gap **1364**; the exit code does not move.
+4. **An edit that REMOVES a `key:`, `#tag`, `!k` or `@parent` token now also
+   collapses the whitespace in front of the first bare word behind it, when
+   removing that token merged the word into the title.** One space, the one
+   `title()` already reported. Whitespace *inside* a title is untouched, and a
+   word that keeps a boundary in front of it is untouched. It is a change to
+   bytes on disk for `tm edit ci=`, `tm edit parent=`, `tm tag -`, `tm done` on
+   a ci-keyed line and every other path through `ItemLine`'s removals.
+5. **`check.sh` check 8 reads Rust comments.** A stale backticked name in a
+   `///`, `//!`, `//` or `/* */` anywhere under `RUST_DIRS` now fails the gate.
+   The cost is declared in `citations-allow.txt`'s new section 9: an enum
+   variant or a `let` binding cited from prose needs an entry until gap 1362
+   closes.
+
+<!-- GAPS 1360-1365 — W-24 track A.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1360 — `remove_ci` eats a title word when the title has no segment. NOT
+FIXED.**
+1. *What is not done.* `ItemLine::remove_ci` and `set_leading_est(None)` guard
+   with `guard_title(self.title_segment(), …)`, and `title_segment()` is the
+   `Title` token's text — **empty** on a line whose first word is already a
+   `key:`, because then every title word is a `Word` after the boundary. Driven:
+   `- [ ] ci:0 3 things` has title `3 things`, and `remove_ci` returns `Ok` and
+   leaves `- [ ] 3 things` — title `things`, ci **3**. `- [ ] ci:0 30m walk`
+   loses `30m` into the estimate slot the same way.
+2. *Why.* It is a different defect from D46's with a different fix: the guard
+   must run on the POST-state's title, not on a token that is empty. Refusing
+   the edit is a **behaviour change to `tm edit ci=`** (`tm/src/cli/items.rs`
+   line 624 is the caller), so it wants an owner, and D46's brief is the
+   whitespace class.
+3. *What it costs.* A silent wrong answer of the exact shape this rebuild
+   exists to remove: a word becomes a number. Reachable only on a hand-written
+   line whose `ci:` precedes its title — tm's own writer puts `ci:` after it —
+   which is the same "reached only by hand" bound gap 1317 had.
+4. *Which stage.* R3 with `planner.rs` (D34), or earlier by owner decision.
+   `grammar_proptest`'s `line()` emits the title before its tokens, so **no
+   number of proptest cases reaches this**; a generator that can put a token
+   first is the other half of the fix.
+
+**Gap 1361 — an assertion was weakened to make a test pass, and the count could
+not see it. FIXED.**
+1. *What was not done.* W-23 answered the seed by normalising
+   `grammar_proptest.rs`'s title comparison rather than by fixing
+   `tm-core/src/grammar.rs`. AGENTS' hard rules forbid weakening an assertion by
+   name; `cargo test --workspace` went green and its number ROSE, so nothing
+   looked wrong — the same shape as the `Check.lean` breach §6.3 records.
+2. *What it cost.* One release's worth of a live title-widening bug, and a
+   second assertion (`set_parent`'s) that had normalised the identical shape
+   since the fork point and had therefore never been able to report it.
+3. *Cleared.* Here: the code is fixed and both normalisations are removed, with
+   the ten-fold mutation sweep in §4 as the evidence that they now bite.
+
+**Gap 1362 — check 8 does not read Rust ENUM VARIANTS as declarations. NOT
+FIXED.**
+1. *What is not done.* `RUST_DECL` reads fn/struct/enum/const/static/type/
+   trait/mod/union and fields. It does not read the variants of an `enum`, where
+   source 1 DOES read the constructors of a Lean `inductive` — an asymmetry the
+   Rust prose sweep made visible.
+2. *Why.* Capturing them wants a brace-tracking pass over each `enum` body; the
+   cheap regex (`^\s*[A-Z]\w*[,({]`) would also take every match arm and tuple
+   constructor in the tree, which is a laundering surface, not a declaration set.
+3. *What it costs.* Three counted allow-list entries stand in for it today
+   (`HotFlag`, `CopyMerging`, `DuplicateId`) and **a new doc comment citing an
+   enum variant fails check 8** until someone adds a fourth. A tax on correct
+   prose, which is the wrong direction for a gate.
+4. *Which stage.* Whoever next touches `citations.py`.
+
+**Gap 1363 — last-segment resolution has a live instance now. NOT FIXED.**
+1. *What is not done.* `citations.py` resolves a dotted citation on its LAST
+   segment, which its header names as its largest blind spot. Until this step
+   the population was measured (115 short names declared under more than one
+   full name) but had no live instance in the allow-list.
+2. *Why.* Widening source 3 with parameters made
+   `log_replay__three_days_replay.snap` resolve — against some parameter named
+   `snap`, not against the snapshot file — so its 7-citation exemption became
+   unused and was removed rather than kept as an entry that exempts nothing.
+3. *What it costs.* If that snapshot is deleted, its seven citations stay green.
+   One name today.
+4. *Which stage.* Gap 933's, with full-name resolution; 267 dotted citations
+   must be adjudicated first.
+
+**Gap 1364 — one unterminated comment, two diagnostics. NOT FIXED (deliberate).**
+1. *What is not done.* `tm check` prints the host's `bad-value: unterminated
+   comment` and the kernel's `kernel-load: unterminatedComment` for the same
+   line. The kernel's message is the better one.
+2. *Why.* `tm-core::check` is the host's own reader and is used without the
+   kernel; dropping the host problem re-opens the D35 direction on every path
+   that does not consult the kernel.
+3. *What it costs.* One extra line of output in an already-failing case. The
+   exit code does not move.
+4. *Which stage.* R3, when the host checker's overlap with the kernel's refusal
+   set is settled as a whole rather than one diagnostic at a time.
+
+**Gap 1365 — the kernel refuses an unterminated comment and the host only warns
+about it. NOT FIXED.**
+1. *What is not done.* `LErr.unterminatedComment` refuses the **tree**; the
+   host records a `Problem` and carries on reading the rest of the file as
+   prose. For a kernel-backed verb the kernel's refusal wins, so the two agree
+   where it matters; for `tm-core` used as a library they do not.
+2. *Why.* Making `parse_file` refuse means giving it a failure mode it has never
+   had — every caller returns a `ParsedFile`.
+3. *What it costs.* A host-only path reads everything after a stray `<!--` as
+   prose where the kernel reads nothing at all. Zero instances in the committed
+   trees (§4).
+4. *Which stage.* R3.
+
+**New gaps start at 1366** (track A's range runs to 1389).
+
+### 7. Numbering, acceptance, capping
+
+Gaps: this step **1360-1365**; **1366-1389** of track A's range are free. Gap
+**1313 item 3** is **closed**; **1316** items 1-2 stand as W-23 left them and
+this step closes item 1 *properly* (the code, not the assertion) while item 2 —
+the tracked-file question — is answered by **D46** and written into AGENTS §7.5;
+**1317** is **closed**. `Negative.lean` untouched — **no cheat taken**; highest
+cheat **218**, unchanged. **No Lean was edited**, so check 3's 4,910 theorems,
+check 7's burn-down of 9 and check 9's 118 rostered / 32 bare pin sites are all
+unmoved, and **no goal was added, discharged or deleted**. Parity: **P38** is
+this step's; the next free is **P39**.
+
+**Acceptance, all capped.** `check.sh` **9/9, exit 0** — audit **4,910
+theorems**, check 5 **93 tests**, corpus **29/37 files and 4/5 whole plans**,
+burn-down **9, all stage 6**, check 8 **31,785 citations, 30,134 resolved,
+1,651 allowed (134 vocabulary, 351 counted), 0 allow entries unused** (was
+29,347: the Rust comments add 2,378 and this block adds 60), check 9 **118 rostered, 30
+unfoldable, 20 witness fixtures, 0 pinned by nothing, 0 owed, 32 pin sites still
+a bare line number**. `cargo test --workspace` **1,404 passed / 0 failed / 9
+ignored across 82 binaries, THREE runs on the tree as committed** — and three
+earlier on the same code, before the comment-only prose repairs of §3, so
+**six in all**, every one identical, with
+`git status --porcelain -- '*.proptest-regressions'` empty after each. The
+delta from 1,396/81 is exactly +1 (`removing_a_token_does_not_widen_the_title`)
+and +7 (`comment_is_prose.rs`, a new binary). The named suites, once each:
+`cli_latency` 5/0/1, `cli_switch_acceptance` 16/0, `kernel_call_counts` 2/0,
+`kernel_log_door` 23/0, `kernel_replay_parity` 29/0/4, `one_padder` 8/0,
+`one_renderer` 25/0. The FFI crate is check 5's.
+
+**A process breach of this step's own, disclosed.** A mutation harness written
+here restored each fold with `git checkout -- tm-core/src/grammar.rs`, and that
+file's work was **uncommitted**, so the first fold's restore reverted every edit
+of §1 and §2 in it. Nothing committed was lost and no other file was touched;
+the edits were rebuilt from the same scripts and the harness restores from a
+copy in the scratchpad now. It is recorded because "the tree looked clean" is
+how a lost edit hides.
+
+Every `cargo`, `check.sh`, `tm` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` (40G for
+the suites and `check.sh`, 16G for the measurement scripts and the binary
+drive). No memory bound was raised, no predicate or assertion weakened — two
+were **un**-weakened — no snapshot, fixture, latency band or corpus re-blessed,
+no new dependency, and `lean-toolchain` and `kernel/corpus/` untouched.

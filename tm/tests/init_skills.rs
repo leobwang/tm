@@ -278,7 +278,7 @@ fn the_review_skills_declare_the_fields_they_quote() {
 ///
 /// The `→` declarations were checked above; the prose was not, and it had
 /// drifted from them: `/review-day` told Claude to read `days[].done`,
-/// `leak_min`, `energy_mae` and `energy_bias`, and `/review-week` the same
+/// `leak_min`, energy_mae and energy_bias, and `/review-week` the same
 /// plus `days[].blocks`, four paragraphs below its own list of the fields
 /// that exist. Nothing in `tm review … --json` is called any of those, so the
 /// numbers could only have been invented.

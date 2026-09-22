@@ -546,7 +546,7 @@ impl LogEntry {
     /// The entry as one JSON object (no trailing newline).
     ///
     /// **The writer, which S keeps** (design §12; D16's S2 is where it moves
-    /// into the kernel). `parse`, `local` and `calendar_date` were the reading
+    /// into the kernel). `parse`, `local` and calendar_date were the reading
     /// half and went at S with the rest of the reader.
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
