@@ -54757,3 +54757,77 @@ ones and then driven on its own class four times; no snapshot, fixture, latency
 band or corpus was re-blessed; no generator was narrowed; no new dependency;
 `lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`,
 `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.
+
+---
+
+## Stage 6 — W-25, track P: a CORRECTION to the two blocks above, and the session's runs enumerated
+
+**No code changed.** This block exists because the two blocks above quote
+**`cargo test --workspace` run counts that are too low**, and under **D46** the
+denominator is the claim. Both were written from memory of the session rather
+than from a list, which is exactly the failure mode D46 names: a number that
+sounds like evidence and was not counted.
+
+### 1. What the two blocks said, and what the runs actually were
+
+* The **first** block (§7) says *"seven green runs of eight"* and its commit
+  message says *"SEVEN green runs of EIGHT"*. **It was ten runs, of which nine
+  were green.**
+* The **second** block (§6) says *"eleven times in the session"*. **It was
+  fifteen by that point.**
+
+Neither correction changes a verdict — the failure count is **one**, in both
+tellings, and it is the same run — but an undercounted denominator makes a
+sample look smaller than it was in one direction and the campaign's own
+standard is that it is counted, not recalled.
+
+### 2. Every `cargo test --workspace` run of this session, in order
+
+| # | tree | flags | result |
+|---|---|---|---|
+| 1 | baseline `d6e514c` | fail-fast | green |
+| 2 | baseline `d6e514c` | fail-fast | **1,431 / 0 / 9** across **83** |
+| 3 | `kernel_item_grammar.rs` added | fail-fast | **FAILED — 229 passed, 1 failed, 1 ignored, 10 binaries.** The failing test's name was not captured: without `--no-fail-fast` cargo prints no `failures:` list (gap **1436**) |
+| 4 | same | fail-fast | 1,437 / 0 / 9 / 84 |
+| 5 | same | fail-fast | 1,437 / 0 / 9 / 84 |
+| 6 | same | `--no-fail-fast` | green (no failure line) |
+| 7 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 8 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 9 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 10 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 11 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 12 | same | `--no-fail-fast` | 1,437 / 0 / 9 / 84 |
+| 13 | the second commit's work | `--no-fail-fast` | 1,438 / 0 / 9 / 84 |
+| 14 | same | `--no-fail-fast` | 1,438 / 0 / 9 / 84 |
+| 15 | same | `--no-fail-fast` | 1,438 / 0 / 9 / 84 |
+| 16 | the committed tree at `c1dd68b` | `--no-fail-fast` | **1,438 / 0 / 9 across 84** |
+
+**Sixteen runs; one failure; fifteen green.** On the first commit's tree: **ten
+runs, one failed, nine green.** Load average over the session ran from **6.03 to
+25**, driven by a parallel track's work on this shared machine.
+
+### 3. The other count the first block got wrong
+
+Its §7 says `kernel_item_grammar` was run at *"50,000 (×2, one red)"*. **Both
+50,000 runs before the fix were red**, and a **third** 50,000 run after it was
+green. The corrected list:
+
+| cases | runs | verdict |
+|---|---|---|
+| 256 | many, through the iteration | red while the arms were being written, green from the last fix on |
+| 1,000 | 1 | green |
+| 5,000 | 2 | one red (the first pinned seed), one green after the fix |
+| 20,000 | 2 | **both red** — the second pinned seed |
+| 50,000 | 3 | **two red** (`parentCycle`, `depCycle` undeclared), one green after they were declared |
+| 100,000 | 4 | **all green** |
+
+The 100,000 × 4 figure the block rests on is unchanged and was counted at the
+time.
+
+### 4. What this says about the method
+
+The two blocks were written while the work was still moving, and both quoted a
+run count from memory. The fix is not "remember better": it is that a count
+worth quoting is worth **keeping a list of while it accumulates**, the way the
+proptest case counts in §3 were kept. That is a note to the next run's author,
+and this block is the correction it would otherwise have had to make.
