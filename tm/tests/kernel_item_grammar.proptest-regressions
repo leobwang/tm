@@ -1,0 +1,15 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9500ba573444eb1c6a3c77c1e442ccf0f3ac6c80eb44eb2431fcbd1d19c07f29 # shrinks to (text, _stateful) = ("- [ ]    a max:1m/d    cap:1m/d", true), which = 5
+cc e135014f0e2130cc1d6576b8875adccce52042d3f849b4205e96c9d9e52679b6 # shrinks to (text, _stateful) = ("- a loc:lounge cap:3h/d", false), which = 6
+cc 4ec1c4372a44b9dec63e2ec755f2bcf813a90fb20063665cf735e3fb4dcb0732 # shrinks to (text, _stateful) = ("- a ^o @o", false)
+cc cf691c99e1d49802d590c5c3865b45e0b2b0ac4ae35c835ce50355e5878e039d # shrinks to (text, _stateful) = ("- [ ] A ^s after:^s", true)
+cc e3711e2d0dfb3f196f90e9fe1420aef51e575cf0a4ca1dc5f03e664a5b866b85 # shrinks to (text, _stateful) = ("-  [ ] a", true)
+cc 11da6d526ab753e6c0801a9bbc4347c2e7ab8a7409f54ab31c52ca39aa95482c # shrinks to (text, _stateful) = ("- a ^", false)
+cc 4d048478d59637cb3bb403a02eb13006427546c56738c41b5b258f3250247b5f # shrinks to (text, _stateful) = ("- [ ] 0 A a ^a ^a", true)
+cc 158ffc3ab37402854933422a315dd5d72216b86eae91cc802aff0b4dcacf6fd4 # shrinks to (text, _stateful) = ("- [ ] a ^", true)
+cc 96a71c29f0fd49178768bd453c9ff9f1621e45c276a6b4aa48b1b93737f0c37c # shrinks to (text, _stateful) = ("- A ^", false), which = 0

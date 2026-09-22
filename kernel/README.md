@@ -54356,3 +54356,261 @@ snapshot, fixture, latency band or corpus was re-blessed; no new dependency;
 `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.
 Every plant made to drive a gate was reverted in the same command that made it
 and `git status` was checked clean afterwards.
+
+---
+
+## Stage 6 — W-25, track P (step R2, first half): the grammar proptest reads BOTH parsers
+
+**Range:** gaps **1430–1469** (track P's; track A has 1470–1499, track G 1500–1519,
+Land 1520–1524, repair 1525–1539). **Taken here: 1430–1436.** Parity: **none
+issued** — §6.5's reconciliation was run first and prints `P38` **twice** (gap
+1417, still open) with `P39` the highest, so **P40 is the next free number** and
+this step did not need it.
+
+### 1. What landed
+
+`tm/tests/kernel_item_grammar.rs` — §14.4 row **R2**'s second half:
+`tm-core/tests/grammar_proptest.rs`'s generators, drawn again and handed to the
+**kernel** through `tm_kernel_ffi::call`. The generators moved to
+`tm-core/tests/grammar_common/mod.rs` (a pure move) and the fork test now imports
+them, so the two files draw **one** set of lines rather than two that drift
+(AGENTS §5.3). Six arms:
+
+| arm | what the kernel is asked | what is compared |
+|---|---|---|
+| `the_kernel_round_trips_every_line_the_fork_round_trips` | the line in one document, `cmds: []` | `ok.docs[0].lines` against the input, **byte for byte**, beside the fork's own two readers |
+| `the_two_readers_agree_on_which_lines_are_items` | a keyed `edit` by the fork's id | **`noSuchId` iff the kernel reads the line as prose** — cheats **122/123**, pinned as a biconditional |
+| `the_two_editors_write_the_same_drop` | the `drop` op | against `ItemLine::set_state(State::Dropped)`, the fork's own editor for the verb |
+| `the_two_editors_write_the_same_keyed_edit` | the `edit` op, 7 wired keys | against `ItemLine::set_token`, byte for byte |
+| `no_line_faults_the_kernel` | free-form bytes after the bullet | the kernel **answers** (never a fault) and an `ok` answer is byte-identical |
+| `zz_the_declared_refusals_are_all_reachable` | nine deliberate probes | every declared refusal still fires, and nothing the arms saw is undeclared |
+
+**The Rust never tells the kernel where a token is.** The request is the line's
+bytes; the answer is `Boundary.runPlan`'s own re-render of its own parse.
+
+### 2. What the two parsers disagree about, each classified
+
+The brief asked for one of three verdicts per disagreement — a kernel bug, a fork
+quirk needing a parity entry, or a test asserting something untrue. **No kernel
+bug was found. No parity entry was needed.** Eight divergences, all already
+deliberate and named in the kernel, plus **two test bugs a deeper draw found**:
+
+| what the two readers do differently | verdict | where it was already written down |
+|---|---|---|
+| `-  [ ] A ^a1` (two spaces) and `- <TAB>[ ] …` are **items to the fork and prose to the kernel** | deliberate | **cheats 122 and 123**, `Line.lean`'s `tokBare` header. Never machine-checked until now |
+| two `^id`s on a line | kernel refuses `manyIds` | the eight `plan-conflicts` corpus files |
+| a boxed line with no `^id` | kernel refuses `noId`; the fork keys on `Id(title)` | this README's "the key" row |
+| `after:^zz9`, `@m1`, `^o @o`, `^s after:^s` in a one-line document | kernel refuses `danglingDep` / `danglingParent` / `depCycle` / `parentCycle`; the fork resolves nothing | the tree checks; `parentCycle` and `depCycle` appeared only at **50,000 cases** |
+| a tab anywhere in the line | kernel refuses **every** edit, `tabbedLine` | **gap 32**'s guard, `Cmd.editE_refuses_a_tabbed_line` |
+| `drop` on a **box-less** line | kernel refuses `badHorizon`; the fork writes a `[~]` box in | **D31 / K3a**, `Plan.boxWf` |
+| `cap=` writes `max:` | kernel normalises; the fork keeps the spelling | `Line.set_max_writes_max` — *"the alias cannot become a second place a budget lives"* |
+| a routines-file shape rule | `fileKindShape`; the fork's `parse_line` checks no file kind | `Plan.shapeWfFor` |
+
+Each is a **`DECLARED_REFUSALS` entry with its reason written in the file**, and a
+refusal outside that list fails the arm that saw it. The list is not a widening:
+the same test asserts every entry **still fires**
+(`zz_the_declared_refusals_are_all_reachable`), so a class that stops being
+reachable is reported rather than quietly kept.
+
+### 3. FINDING, DRIVEN ON THE SHIPPED BINARY (gap 1430): `tm edit` has two paths and they write different bytes
+
+`tm/src/cli/items.rs`'s `kernel_edit_cmds` sends an edit to the kernel only when
+**every** pair in it is wired (`KERNEL_EDIT_KEYS`); one unwired pair and the whole
+edit takes the old Rust path. The two paths do not write the same thing. Driven,
+on a scratch tree, with the built binary:
+
+```
+- [ ] 3 Alpha thing ^a1        + tm edit ^a1 cap=3h/d                  -> max:3h/d
+- [ ] 3 Beta  thing ^b1        + tm edit ^b1 cap=3h/d due=2026-10-01   -> cap:3h/d due:2026-10-01
+- [ ] 3 Gamma thing est:1b ^c1 + tm edit ^c1 est=2b                    -> est:120m
+- [ ] 3 Delta thing est:1b ^d1 + tm edit ^d1 est=2b due=2026-10-01     -> est:2b
+- [ ] 3 Alpha thing ^a1        + tm edit ^a1 est=2b                    -> est:120m
+- [ ] 3 Beta  thing ^b1        + tm edit ^b1 est=2b due=2026-10-01     -> "3 2b Beta thing" (the LEADING estimate)
+```
+
+Three divergences in one verb. The third is the serious one: on a line carrying
+no `est:` key the kernel path writes the **`est:` key** and the Rust path writes
+the **leading positional estimate** — and `items.rs`'s own comment says those are
+different fields, §4.1's *remaining* estimate versus §3.1's `est_original`, "the
+historical number §11 calibrates actual/est against". So which field `tm edit
+est=` rewrites depends on whether some other pair in the same command happened to
+be wired.
+
+**Not fixed here, and the reason is not shortage of time.** Which answer is right
+is an owner call in three places at once — the slot (`est:` or leading), the
+rendering (`120m` or `2b`), and the alias (`max:` or `cap:`) — and two of the
+three are settled by a kernel theorem on one side and by a written comment on the
+other. Recorded whole (§9.2), claimed by nothing.
+
+### 4. Four seeds, and the two that were THIS TEST asserting something untrue (D46)
+
+`tm/tests/kernel_item_grammar.proptest-regressions` is **new and tracked**. Four
+lines, all drawn by raising the case count rather than by luck:
+
+| seed | drawn at | what it found |
+|---|---|---|
+| `("- [ ]    a max:1m/d    cap:1m/d", true), which = 5` | 5,000 | the `cap:`→`max:` comparand renamed **every** budget token; both readers touch only the first |
+| `("- a loc:lounge cap:3h/d", false), which = 6` | 20,000 | the fix renamed "the token whose text moved" — and when the value does not move, nothing moves and the kernel rewrites the key anyway |
+| `("- a ^o @o", false)` | 50,000 | `parentCycle`, an undeclared refusal |
+| `("- [ ] A ^s after:^s", true)` | 50,000 | `depCycle`, an undeclared refusal |
+
+**No seed was reverted** and none was made to go away by narrowing the generator.
+The first two are the brief's third verdict — *a test that was asserting something
+untrue* — and the fix is in `canonical_budget_key`, whose doc comment carries both
+seeds and what each taught.
+
+### 5. Method, and what each method cannot see
+
+| claim | method | what it cannot see |
+|---|---|---|
+| "the kernel reads the line the fork reads" | 6 arms × **100,000 cases × 4 runs**, plus 5,000 / 20,000 / 50,000 sweeps | **one line in one document.** No collisions, ranks, sections or cross-line resolution; that is `check_fix_ids.rs`' and `cli_check_log.rs`' ground |
+| "the divergence is exactly cheats 122/123" | a biconditional against `kernel_reads_as_item` | **that function is a Rust RESTATEMENT of `Line.parseBody`** (gap 1433). It is pinned in both directions every draw, so a kernel that widens *or* narrows fails immediately — but a rule both statements get wrong together is invisible |
+| the same, on **tabbed** lines | — | **it cannot see them at all** (gap 1432). Gap 32's `tabbedLine` guard refuses the probe edit before item-ness is reached, and cheat 122 makes the id itself tab-dependent, so `noSuchId` there means "a different key", not "prose". The arm assumes them away **by name**; every other arm still draws them |
+| "every declared refusal is real" | 9 deliberate probes, asserted to fire | a class reachable only from a spelling the generator never draws |
+| "the box-less half is exercised" | `inbox.md`, not the fork test's `routines.md` | the routines shape rule itself. Sent to `routines.md`, **nearly every drawn line** comes back `fileKindShape` and the half becomes a check no input can pass (§9.2's named shape). Both readers are given the same path, so it is one file with two readers |
+| "no kernel bug was found" | the above | a bug in a surface the **wire does not carry** — and the `plan` section carries rows, not a planner (§8) |
+
+**Did a probe make the new instrument report green on its own class?** Three
+plants were made and run; **none went green**, and each was reverted in the same
+edit that made it (`git status` checked after):
+
+| plant | run | verdict, verbatim |
+|---|---|---|
+| `kernel_reads_as_item` returns `true` always | 256 cases | `the_two_readers_agree_on_which_lines_are_items` **FAILED** — *"the kernel says noSuchId on `-  [ ] a ^q9x2`, which this file says it reads as an item"*; the other five stayed green, which is the arm being specific rather than the plant being weak |
+| `canonical_budget_key` renames **every** `cap:` token | 256 cases | `the_two_editors_write_the_same_keyed_edit` **FAILED on the first case** — the pinned seed `- [ ]    a max:1m/d    cap:1m/d` runs before any novel draw, so the bug that took **5,000** cases to find now takes none. That is D46's whole point, shown |
+| `"manyIds"` removed from `DECLARED_REFUSALS` | 256 cases | **five of six arms FAILED** — *"UNDECLARED refusal `manyIds` dropping `- a ^ ^q9x2`"* and three more like it. The declared list is load-bearing in every arm, not decoration |
+
+**What the plants do NOT show.** They show the arms fail when the *test's own*
+statements are wrong. The plant this file cannot make is a **kernel** that reads a
+line differently, because the kernel is a linked archive and not a function this
+test can stub — so "no kernel bug was found" rests on 100,000 × 4 draws and not on
+a demonstration that a bug would have been caught.
+
+### 6. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1430** | **`tm edit` writes different bytes through its two paths** — `cap:`/`max:`, `est:`'s rendering, and `est:` key versus the leading estimate | `tm/src/cli/items.rs`'s `kernel_edit_cmds` / `apply_pair`; `kernel/TmKernel/TmKernel/Cmd.lean` | a user's file depends on which *other* pair was in the command. The `est` half rewrites the wrong field — history instead of remaining |
+| **1431** | **§14.4's R2 cannot be finished as written, and §14.5's graph has a cycle** — see §8 | `kernel/design/stage6/stage6-planner-design.md` §14.4/§14.5 | the next run repeats this discovery instead of doing the work |
+| **1432** | the item-ness arm cannot see a **tabbed** line, for two reasons at once | `tm/tests/kernel_item_grammar.rs` | cheat 122's boundary is asserted on untabbed lines only |
+| **1433** | `kernel_reads_as_item` is a **second statement** of `Line.parseBody`'s rule, in Rust | same file | a rule both statements get wrong together is invisible; §5.3's own hazard, taken deliberately and said out loud |
+| **1434** | the census in `zz_the_declared_refusals_are_all_reachable` reads a `Mutex` the arms write, so its **second** half depends on test ordering; its first half (the nine probes) does not | same file | the "nothing undeclared" half can under-report when that test runs before the arms |
+| **1435** | `WEEK`'s `(grain, ix)` is **hard-coded** in a fourth test file | `tm/tests/kernel_item_grammar.rs` and three others | `kernel_bridge::region_of` is the one definition and four files restate its answer |
+| **1436** | one `cargo test --workspace` run in **eight** failed and **the failing test's name was not captured** — `cargo test` without `--no-fail-fast` prints no `failures:` list when it stops | this run's own method | see §7 |
+
+### 7. Acceptance, every figure against the brief's baseline at `d6e514c`
+
+| gate | baseline | here | delta |
+|---|---|---|---|
+| `check.sh` | 9/9 | **9/9** | — |
+| axiom audit | 4,979 theorems | **4,979** | — no Lean touched |
+| check 5 (FFI through the shim) | 93 tests | **93** | — |
+| check 8 | 32,986 citations, 0 allow entries unused | **33,138 citations**, 0 unused | **+152**: 65 from this step's Rust prose, which check 8 walks since W-24, and 87 from this block itself |
+| check 9 | 154 rostered, 40 unfoldable, 21 fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare line numbers | **identical** | — no definition added, so `mutate.py` had nothing to verify |
+| corpus | 29/37 files, 4/5 whole plans | **29/37, 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — |
+| `cargo test --workspace` | 1,431 / 0 / 9 across 83, three runs | **1,437 / 0 / 9 across 84**, **seven green runs of eight** | **+6 passed, +1 binary** = the six arms of the new file |
+| FFI crate (D36's 101) | 101 | **101** (kernel 86, stack 7, corpus 8) | — |
+| T5 `kernel_replay_parity` | — | 29 passed, 4 ignored | — |
+| door suite `kernel_log_door` | — | 23 | — |
+| `cli_switch_acceptance` | — | 16 | — |
+| `kernel_call_counts` | — | 2 | — |
+| `one_padder` / `one_renderer` / `kernel_row_cells` | — | 9 / 25 / 26 | — |
+| `cli_latency` | seven T11 rows | **5 passed, 1 ignored**, run alone at **load average 25** | — |
+
+**The eighth run.** The **first** of eight `cargo test --workspace` runs failed —
+`229 passed, 1 failed, 1 ignored across 10 binaries`, cargo's fail-fast stopping
+the run — and **the failing test's name was not captured**, because without
+`--no-fail-fast` cargo prints no `failures:` list. Seven later runs (three
+fail-fast, four `--no-fail-fast`) were **1,437 / 0 / 9 across 84**, and
+`cli_latency` alone passed 5/5 at load average **25**. The machine's load rose from
+6.03 to 25 across the session under a parallel track's work, which is exactly
+**gap 1333**'s load threshold — but that is where the evidence runs out, so this
+is **recorded as gap 1436, not explained away**. Every later run used
+`--no-fail-fast` for this reason, and that is the rule this step would add to
+§7.5.
+
+**The proptest counts, said out loud (D46).** `kernel_item_grammar` was run at
+**256, 1,000, 5,000 (one red then green), 20,000 (×2, red), 50,000 (×2, one red),
+and 100,000 (×4, all green)** — four runs of 100,000 cases per arm, six arms. The
+reds are the four pinned seeds in §4. `cargo test --workspace` was run **eight**
+times; `check.sh` once.
+
+### 8. What R2's other half and R3 now need — the next run's brief (gap 1431)
+
+**R2's other half did not land, and it cannot land as §14.4 writes it.** §14.4 says
+`tm/tests/planner_invariants.rs` must exercise "the kernel's `dayPlan` through the
+FFI". **`dayPlan` is not reachable through the FFI.** The `plan` request section
+`EmitWire.lean` added at W-24 carries the day's **rows** — `bed`, `priorities`,
+`segments` — and the module's own header says why not the rest:
+
+> Design §10.1's `plan` section (`blockMin`, `day`, `curves`, `allowHome`,
+> `overrides`) is the *planner's* input and belongs with step **R3**, where
+> `tm-core/src/planner.rs` dies (D34).
+
+So R2 depends on a wire section the tree assigns to R3, and R3 depends on R2 —
+**§14.5's graph has a cycle it does not draw**, and no reordering inside it fixes
+that. The resolution is to move the planner's wire into R2 and leave R3 the
+deletion. Priced here rather than guessed, from `Planner.PlanReq`'s own fields:
+
+1. **The request's `plan` section gains the planner's inputs.** `PlanReq` needs
+   `plan` (**have it** — `docs`), `run` (**have it** — `log`, since K1's seam),
+   `look` (**have it** — the `capacity` section), `cands` (**have it** —
+   `capacity.candidates`, through `Boundary.readCandFloor`), `prio`'s first four
+   (**have them** — `CapReq.bins`/`safety`/`dflt` and `CandReq.hysteresis`), and
+   **four that are on no wire at all**: `state` (§9's `RuntimeIn`), `routines`
+   (`Capped RoutineIn`), `overrides` (`Option PlanOverrides`) and
+   `prio.batchMaxMin` (§16's `[priority] batch_max_min`, whose R10 statement is
+   **already owed as gap 801**). Each needs its smart constructor and its
+   rejection theorem (R10, §10.4), and the bounds are **`Planner.maxCands`,
+   `CapWire.maxCandId` and `Look.maxPlanMinutes` — reuse them, do not mint
+   numbers** (§5.3; and note gap **1330**: `CapWire.maxCandidates` is already
+   `Planner.maxCands` under a second name).
+2. **The response's `plan` key gains `day`, `window`, `budgetBlocks`, `segments`,
+   `diagnostics`, `priorities` and `hash`.** §10.2's keys are **disjoint** from the
+   `rows` key already there, and `EmitWire.lean` says the two families share the
+   one object rather than replacing it. The refusal family is §10.3's
+   `planRefusal.*`, which **does not exist yet** — `EmitWire.RowRefusal` is
+   deliberately not it, and `Planner.dayPlan` stays **total** (D28).
+3. **Then `planner_invariants.rs`'s `plan()` call becomes that kernel call**, its
+   882 lines of generators and its explicit tail-drop and stability sections
+   unchanged (§7.3), and only then is R2 finished.
+4. **G2 and G3 are NOT in the tree.** §14.4 lists them as R2's dependencies, and
+   `Goals.lean` still carries `plan_tail_drop` and `plan_is_stable_across_a_replan`
+   as two of the burn-down's nine `sorry`s — checked, not assumed. What their
+   absence costs is bounded and small: under **D5** the proptest is not a
+   substitute for the theorems and the theorems are not a precondition for the
+   proptest — §7.3 says the proptest "catches what the theorems do not quantify
+   over", which is a different job from proving them. The tail-drop and stability
+   **sections of the proptest are already written** and would be aimed with the
+   rest. So **R2 can land without G2 and G3**; what it cannot land without is item
+   1.
+5. R3 then deletes `tm-core/src/planner.rs` with its last caller, kills gap 94's
+   two reserves, closes or deliberately records gap 116, and unblocks D27.
+
+Gaps **113 / 114 / 116** and 301's item 1 stay **open and whole** (D34). Nothing
+here claims any of them.
+
+### 9. Capping, and the hard rules
+
+Every `cargo`, `check.sh`, `lake` and binary invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+the suites and `check.sh`, 16G for the FFI probes and the driven binary. **No
+memory bound was raised.** No Lean was touched, so no `decide` was probed and
+`mutate.py` had nothing to verify. No predicate or assertion was weakened; no
+generator was narrowed to make a disagreement go away; no snapshot, fixture,
+latency band or corpus was re-blessed; no new dependency; `lean-toolchain` and
+`kernel/corpus/` untouched; no `sorry`, `axiom`, `partial def`, `unsafe`,
+`opaque`, `panic!`, `!`-accessor or `.toOption` added. The three plants made to
+drive the new gate were reverted in the same edit that made them and `git status`
+was checked clean afterwards.
+
+**One process breach, disclosed.** A `python3` one-liner used to patch this README
+computed an empty `old` string (two `str.index` calls matched earlier blocks, not
+this one) and `str.replace("", new)` inserted the replacement between every
+character, producing a **5.5 GB** file. It was caught by `git diff --stat` on the
+next command, the file was restored with `git checkout -- kernel/README.md`, and
+this block was re-appended from a heredoc. Nothing was committed in between and no
+other file was touched. The lesson is the repository's own: a patch script that
+locates its target by a string ten other blocks also contain is not locating
+anything.
