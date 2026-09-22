@@ -239,7 +239,7 @@ d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4547
 fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean emitBed default PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 dee5ba118680 TmKernel/TmKernel/PlanCheck.lean SlotAnchored True,False PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation; PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation
 8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored; PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored
-e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean FromNowAnchored True,False PlanCheck.lean:3217 eligibleSomewhere_of_nothing_from_now; PlanCheck.lean:3217 eligibleSomewhere_of_nothing_from_now
+e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean FromNowAnchored True,False PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now; PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now
 c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean fromNowWorkRows fun____=>true,fun____=>false PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored; PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored
 279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean witReqInIdleQueued unfoldable no Inhabited PlanReqIn
 2dbe82e792af TmKernel/TmKernel/PlannerWit.lean theIdleQueuedRequest unfoldable no Inhabited PlanReq
@@ -276,3 +276,5 @@ cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean segErrName default EmitWire.lean:57
 b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean readOptNote default EmitWire.lean:599 readOptNote_of_a_present_note
 91604f05f269 TmKernel/TmKernel/EmitWire.lean batchNamesOf default,[] EmitWire.lean:609 batchNamesOf_of_a_batch; EmitWire.lean:609 batchNamesOf_of_a_batch
 b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:618 withPlan_appends_the_plan_key; EmitWire.lean:618 withPlan_appends_the_plan_key
+24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
+d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean theOverBudgetRequest unfoldable no Inhabited PlanReq

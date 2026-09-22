@@ -5051,5 +5051,289 @@ theorem the_core_seven_is_false_on_three_whole_days :
   decide
 
 
+/-! ############################################################################
+## 24. The LOG axis: four clauses, four named days, and a lift that fires on a worked morning
+############################################################################
+
+APPENDED 2026-09-22 (stage 6, run **W-24**, track G).
+
+W-23 left §6.1's whole-day lift bounded on two axes and only one of them named: the
+eligibility one was `PlanCheck.FromNowAnchored`, and the log one was `hnopast` — *the log
+holds no Block for today* — which `PlanCheck.dayPlan_ok_core`'s own doc comment calls false of
+every real day.  `PlanCheck.PastPays` names the second, and this section is its evidence, in
+the shape §18 and §22 used for the first.
+
+**The ratio does not move and no census number changes.**  `PlanCheck.PastPays` is a
+hypothesis, not a checker: `PlanCheck.checksOf` is the same eleven, `PlanCheck.subjectOf` does
+not read it, and `the_census_ratio` still computes **seven** at `theCensusRequest`.
+`the_log_axis_moves_no_census_number` says so with a computation rather than a sentence. -/
+
+/-- The §4.3 Wednesday with `tm arrive`'s stored budget set to **one** block against a morning
+whose log closed **two** — a day worked past its own budget, which is the only one of
+`PlanCheck.PastPays`' four clauses the rest of this module does not already refute.
+
+It is `theSpentBudgetRequest` with `budget := some 1` and nothing else moved, so the day, the
+walls, the log and the window are that request's; only the number `tm arrive` wrote changes. -/
+def theOverBudgetRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 :=
+      { theRequest.look.today0 with date := some theRequest.look.today, budget := some 1 } } }
+
+set_option maxRecDepth 200000 in
+/-- **The budget really is over-spent, and the day says so.**  Two blocks done against a
+stored budget of one, no remaining budget, and `Planner.blockSeconds` over the replayed half
+at 7 200 s against a 1 × 60 × 60 cap. -/
+theorem the_over_budget_request_is_over_budget :
+    theOverBudgetRequest.budgetBlocks = 1 ∧
+    theOverBudgetRequest.blocksDone = 2 ∧
+    remainingBudget theOverBudgetRequest = 0 ∧
+    blockSeconds (PlanCheck.pastHalf theOverBudgetRequest (dayPlan theOverBudgetRequest))
+      = 7200 ∧
+    blockSeconds (dayPlan theOverBudgetRequest) = 7200 ∧
+    (dayPlan theOverBudgetRequest).budgetBlocks * (dayPlan theOverBudgetRequest).blockMin * 60
+      = 3600 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 200000 in
+/-- **`hnopast` is FALSE at the census request** — the §4.3 Wednesday's morning worked `m1`
+twice, so `PlanCheck.dayPlan_ok_core` does not apply to it and never applies to a real day
+after the first block is closed.  This is the fact `PlanCheck.PastPays` exists to get past. -/
+theorem the_log_at_the_census_request_holds_a_block :
+    ¬ ∀ t ∈ pastRows theCensusRequest, t.kind ≠ SegKind.block := by decide
+
+set_option maxRecDepth 100000 in
+/-- **And `PlanCheck.PastPays` holds there anyway.**  The pair is the statement: the weaker
+hypothesis is satisfied at a request where the stronger one is refuted, so
+`PlanCheck.dayPlan_ok_core_of_a_paying_past` is strictly more general than
+`PlanCheck.dayPlan_ok_core` and not merely incomparable to it
+(`PlanCheck.PastPays_of_no_past_block` is the other half). -/
+theorem the_paying_past_at_the_census_request : PlanCheck.PastPays theCensusRequest where
+  oneBlock := by decide
+  offWall := by decide
+  offBreak := by decide
+  budget := by decide
+
+theorem the_paying_past_holds_where_hnopast_does_not :
+    PlanCheck.PastPays theCensusRequest ∧
+      ¬ ∀ t ∈ pastRows theCensusRequest, t.kind ≠ SegKind.block :=
+  ⟨the_paying_past_at_the_census_request, the_log_at_the_census_request_holds_a_block⟩
+
+/-- **§6.1's seven on the WHOLE day of a morning that worked**, by the lift and not by a
+`decide`: `PlanCheck.dayPlan_ok_core_of_a_paying_past` at `theCensusRequest`, whose log holds
+two Blocks and a break.  `the_lift_applies_at_the_census_request` is the same request on
+`PlanCheck.withoutPast`'s day, which is what W-17 could reach; this is the whole day. -/
+theorem the_core_seven_hold_on_the_whole_day_of_a_worked_morning :
+    PlanCheck.planOkCore theCensusRequest (dayPlan theCensusRequest) = true :=
+  PlanCheck.dayPlan_ok_core_of_a_paying_past theCensusRequest theCensusRequest_wallsAgree
+    the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_is_inside_the_calendar the_census_request_is_plain
+    the_paying_past_at_the_census_request
+
+/-- **§6.1's ELEVEN on the whole day of a morning that worked** — both of W-23's bounds
+discharged at one request, the eligibility one by `fromNowWorkRows_is_from_now_anchored` and
+the log one by `the_paying_past_at_the_census_request`.  Nothing here is a `decide` on the
+battery: it is `PlanCheck.dayPlan_ok_on_the_whole_day` fired. -/
+theorem the_eleven_hold_on_the_whole_day_of_a_worked_morning :
+    PlanCheck.planOk fromNowWorkRows theCensusRequest (dayPlan theCensusRequest) = true :=
+  PlanCheck.dayPlan_ok_on_the_whole_day fromNowWorkRows_is_from_now_anchored theCensusRequest
+    theCensusRequest_wallsAgree the_census_request_agrees.1 the_census_request_agrees.2
+    the_census_request_is_inside_the_calendar the_census_request_is_plain
+    the_paying_past_at_the_census_request
+
+set_option maxRecDepth 200000 in
+/-- **Each of the four clauses is refuted by a day, and by a DIFFERENT day.**  The list is
+`PlanCheck.PastPays`' own four fields in order — `oneBlock`, `offWall`, `offBreak`, `budget` —
+computed at the four requests, and each row has exactly one `false` in it.  So no clause of
+the four is AGENTS §9.2's *"a check no input can fail"*, and none of the four is implied by
+the other three.
+
+Three of the four days are the ones `the_core_seven_is_false_on_three_whole_days` already
+names, each a recorded refutation of a goal that quantified over the replayed past; the
+fourth is `theOverBudgetRequest`, built here because nothing in the witness set reached the
+`budget` clause and a clause nothing refutes is a gap, not a theorem. -/
+theorem the_paying_past_fails_on_four_whole_days :
+    [ decide (∀ t ∈ pastRows theShortBlockRequest, t.kind = SegKind.block →
+        t.stop - t.start ≤ theShortBlockRequest.blockMin * 60)
+    , decide (∀ t ∈ pastRows theShortBlockRequest, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls theShortBlockRequest, t.stop ≤ v.1 ∨ v.2 ≤ t.start)
+    , decide (∀ t ∈ pastRows theShortBlockRequest, ∀ u ∈ pastRows theShortBlockRequest,
+        t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start)
+    , decide (blockSeconds
+        (PlanCheck.pastHalf theShortBlockRequest (dayPlan theShortBlockRequest)) ≤
+        (dayPlan theShortBlockRequest).budgetBlocks *
+          (dayPlan theShortBlockRequest).blockMin * 60) ]
+      = [false, true, true, true] ∧
+    [ decide (∀ t ∈ pastRows theMorningWallRequest, t.kind = SegKind.block →
+        t.stop - t.start ≤ theMorningWallRequest.blockMin * 60)
+    , decide (∀ t ∈ pastRows theMorningWallRequest, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls theMorningWallRequest, t.stop ≤ v.1 ∨ v.2 ≤ t.start)
+    , decide (∀ t ∈ pastRows theMorningWallRequest, ∀ u ∈ pastRows theMorningWallRequest,
+        t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start)
+    , decide (blockSeconds
+        (PlanCheck.pastHalf theMorningWallRequest (dayPlan theMorningWallRequest)) ≤
+        (dayPlan theMorningWallRequest).budgetBlocks *
+          (dayPlan theMorningWallRequest).blockMin * 60) ]
+      = [true, false, true, true] ∧
+    [ decide (∀ t ∈ pastRows theMidBreakRequest, t.kind = SegKind.block →
+        t.stop - t.start ≤ theMidBreakRequest.blockMin * 60)
+    , decide (∀ t ∈ pastRows theMidBreakRequest, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls theMidBreakRequest, t.stop ≤ v.1 ∨ v.2 ≤ t.start)
+    , decide (∀ t ∈ pastRows theMidBreakRequest, ∀ u ∈ pastRows theMidBreakRequest,
+        t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start)
+    , decide (blockSeconds
+        (PlanCheck.pastHalf theMidBreakRequest (dayPlan theMidBreakRequest)) ≤
+        (dayPlan theMidBreakRequest).budgetBlocks *
+          (dayPlan theMidBreakRequest).blockMin * 60) ]
+      = [true, true, false, true] ∧
+    [ decide (∀ t ∈ pastRows theOverBudgetRequest, t.kind = SegKind.block →
+        t.stop - t.start ≤ theOverBudgetRequest.blockMin * 60)
+    , decide (∀ t ∈ pastRows theOverBudgetRequest, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls theOverBudgetRequest, t.stop ≤ v.1 ∨ v.2 ≤ t.start)
+    , decide (∀ t ∈ pastRows theOverBudgetRequest, ∀ u ∈ pastRows theOverBudgetRequest,
+        t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start)
+    , decide (blockSeconds
+        (PlanCheck.pastHalf theOverBudgetRequest (dayPlan theOverBudgetRequest)) ≤
+        (dayPlan theOverBudgetRequest).budgetBlocks *
+          (dayPlan theOverBudgetRequest).blockMin * 60) ]
+      = [true, true, true, false] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 200000 in
+/-- **And the fourth day joins the other three as a refutation of the core seven.**
+`the_core_seven_is_false_on_three_whole_days` reads the first three; this reads the fourth,
+so each of `PlanCheck.PastPays`' four clauses is necessary for the whole-day lift and not
+merely for its own checker.  `PlanCheck.noOverbook` is the conjunct that fails. -/
+theorem the_core_seven_is_false_on_the_over_budget_day :
+    PlanCheck.noOverbook theOverBudgetRequest (dayPlan theOverBudgetRequest) = false ∧
+      PlanCheck.planOkCore theOverBudgetRequest (dayPlan theOverBudgetRequest) = false := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 200000 in
+/-- **The log axis moves no published number.**  `PlanCheck.PastPays` is a hypothesis and not
+a twelfth checker: the battery is the same eleven, and the subject census at the one named
+request is the **seven** §14 settled and W-21 made a function.  The over-budget day is here to
+say what the new request is worth as a population — **four**, fewer than the census request's
+seven, which is why it is a refutation and not a new headline. -/
+theorem the_log_axis_moves_no_census_number :
+    PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 ∧
+    PlanCheck.subjectCount permissive theOverBudgetRequest (dayPlan theOverBudgetRequest) = 4 ∧
+    (PlanCheck.checksOf permissive).length = 11 := by
+  refine ⟨by decide, by decide, rfl⟩
+
+set_option maxRecDepth 200000 in
+/-- **The replayed half is not the day, and the numbers say by how much.**  At
+`theCensusRequest` `PlanCheck.pastHalf` keeps **2** of the day's **11** rows and **7 200** of
+its **9 600** Block seconds — the 2 400 s difference is §8.2 choice 5b's reservation, the one
+Block row the planner itself places.  Without this the `budget` clause of
+`PlanCheck.PastPays` would be weighed on a filter nothing distinguishes from the identity
+(D40, README gap 930): `PlanCheck.pastHalf_segments` alone is an unfolding and says only that
+the definition was not changed. -/
+theorem the_replayed_half_is_a_strict_part_of_the_day :
+    blockSeconds (dayPlan theCensusRequest) = 9600 ∧
+    blockSeconds (PlanCheck.pastHalf theCensusRequest (dayPlan theCensusRequest)) = 7200 ∧
+    (PlanCheck.pastHalf theCensusRequest (dayPlan theCensusRequest)).segments.length = 2 ∧
+    (dayPlan theCensusRequest).segments.length = 11 := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+
+set_option maxRecDepth 200000 in
+/-- **`Goals.plan_does_not_overbook` is FALSE as stage 6 wrote it, and NOT for the reason the
+design recorded.**  Design §6.3 row 1 says the law fails because §8.2 choice 5b *"gives the
+running block its minutes whatever the budget says"*.  **Nothing is running at this request.**
+The day is over budget because the log worked two blocks against a budget `tm arrive` wrote as
+one — the replayed past, which is `PlanCheck`'s finding 1 (README gap 385) reaching its
+fourth checker after the wall law, E1 and the break law.
+
+The goal is **not** discharged and does not leave `Goals.lean`: its restatement over the rows
+§8.3 is about is vacuous (`PlanCheck.overbook_has_no_subject_from_now`), so shipping one would
+be AGENTS §5.2's theorem that compiles and means nothing.  This is W-19's call for the two
+comparisons, at a third goal. -/
+theorem plan_does_not_overbook_as_stage_6_wrote_it_is_refuted :
+    ¬ ∀ r : PlanReq,
+        blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := by
+  intro h
+  have := h theOverBudgetRequest
+  rw [the_over_budget_request_is_over_budget.2.2.2.2.1,
+    the_over_budget_request_is_over_budget.2.2.2.2.2] at this
+  omega
+
+/-- **And design §6.3 row 1's own restatement does not survive it either.**  That row proposes
+Σ over *"the blocks that are not the Active reservation"*, which is exactly
+`PlanCheck.noOverbook`; the same request refutes it, because `PlanCheck.withoutActive` removes
+nothing when nothing is running.  So the overbooking law needs a restriction the design does
+not name — either §8.3's own rows (`PlanCheck.withoutPast`, where it is vacuous today) or a
+clause on the log (`PlanCheck.PastPays.budget`, which is what this run's lift takes).
+README gap **1392**. -/
+theorem the_designs_restatement_of_the_overbooking_law_is_refuted_too :
+    ¬ ∀ r : PlanReq, PlanCheck.noOverbook r (dayPlan r) = true := by
+  intro h
+  have hf := h theOverBudgetRequest
+  rw [the_core_seven_is_false_on_the_over_budget_day.1] at hf
+  exact absurd hf (by simp)
+
+
+set_option maxRecDepth 200000 in
+/-- **No clause of `PlanCheck.PastPays` is droppable, and each refuted day refutes the lift
+with it.**  The first four conjuncts are the clause refutations, one day each; the last four
+read `the_core_seven_is_false_on_three_whole_days` and
+`the_core_seven_is_false_on_the_over_budget_day` rather than re-deciding them.
+
+**This is the consumer W-23's three-day theorem did not have.**  Gap 877's shape is a
+conjunct with a computed subject and nothing reading it, and
+`the_core_seven_is_false_on_three_whole_days` was exactly that: three `decide`s of equal
+weight and no theorem downstream.  Weakening any one of them now breaks this statement. -/
+theorem every_refuted_day_refutes_its_own_clause :
+    (¬ PlanCheck.PastPays theShortBlockRequest) ∧
+    (¬ PlanCheck.PastPays theMorningWallRequest) ∧
+    (¬ PlanCheck.PastPays theMidBreakRequest) ∧
+    (¬ PlanCheck.PastPays theOverBudgetRequest) ∧
+    PlanCheck.planOkCore theShortBlockRequest (dayPlan theShortBlockRequest) = false ∧
+    PlanCheck.planOkCore theMorningWallRequest (dayPlan theMorningWallRequest) = false ∧
+    PlanCheck.planOkCore theMidBreakRequest (dayPlan theMidBreakRequest) = false ∧
+    PlanCheck.planOkCore theOverBudgetRequest (dayPlan theOverBudgetRequest) = false :=
+  ⟨fun hp => absurd hp.oneBlock (by decide), fun hp => absurd hp.offWall (by decide),
+   fun hp => absurd hp.offBreak (by decide), fun hp => absurd hp.budget (by decide),
+   the_core_seven_is_false_on_three_whole_days.2.1,
+   the_core_seven_is_false_on_three_whole_days.1,
+   the_core_seven_is_false_on_three_whole_days.2.2,
+   the_core_seven_is_false_on_the_over_budget_day.2⟩
+
+set_option maxRecDepth 400000 in
+/-- **THE RATIO, as a comparand every sentence in the repo can be checked against.**
+
+Six runs of this campaign shipped a *"N of the eleven"* that disagreed with another, and
+`PlanCheck.lean`'s W-22 table fixed the *question* — which day, which request, which
+eligibility — without giving the answers a single computed home.  Every live sentence in
+`PlanCheck.lean`, `PlannerWit.lean`, `Planner.lean`, `Goals.lean`, `Check.lean` and
+`Negative.lean` that quotes a subject census names one of these five requests; this theorem is
+the number it must match, in the three shapes the prose uses: **all eleven on the whole day**,
+**`PlanCheck.checksCore` on the whole day**, **`checksCore` on `PlanCheck.withoutPast`'s day**,
+each at `permissive`, which `PlanCheck.planOk_antitone` makes the top of the eligibility order.
+
+**The headline is unchanged and it is SEVEN**, the first column at `theCensusRequest`, and it
+is what `the_census_ratio` computes and `PlanCheck.the_census_ceiling_is_seven` bounds.  What
+is new is that a reader no longer has to find which theorem measured which request. -/
+theorem the_census_at_every_request_the_prose_quotes :
+    ( PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest)
+    , (PlanCheck.checksCore.filter (fun c =>
+        PlanCheck.subjectOf permissive c.name theCensusRequest (dayPlan theCensusRequest))).length
+    , (PlanCheck.checksCore.filter (fun c => PlanCheck.subjectOf permissive c.name
+        theCensusRequest (PlanCheck.withoutPast theCensusRequest
+          (dayPlan theCensusRequest)))).length ) = (7, 5, 4) ∧
+    ( PlanCheck.subjectCount permissive theStoredRequest (dayPlan theStoredRequest)
+    , (PlanCheck.checksCore.filter (fun c =>
+        PlanCheck.subjectOf permissive c.name theStoredRequest (dayPlan theStoredRequest))).length
+    ) = (5, 3) ∧
+    ( PlanCheck.subjectCount permissive theRunningRequest (dayPlan theRunningRequest)
+    , (PlanCheck.checksCore.filter (fun c => PlanCheck.subjectOf permissive c.name
+        theRunningRequest (dayPlan theRunningRequest))).length
+    , (PlanCheck.checksCore.filter (fun c => PlanCheck.subjectOf permissive c.name
+        theRunningRequest (PlanCheck.withoutPast theRunningRequest
+          (dayPlan theRunningRequest)))).length ) = (4, 4, 3) ∧
+    PlanCheck.subjectCount permissive theQueuedRequest (dayPlan theQueuedRequest) = 5 ∧
+    PlanCheck.subjectCount permissive theQuietCensusRequest
+      (dayPlan theQuietCensusRequest) = 2 := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+
 end PlannerWit
 end Tm

@@ -3297,5 +3297,342 @@ theorem the_census_ceiling_on_the_whole_day_is_five {el : Eligible} (hfn : FromN
   omega
 
 
+/-! ############################################################################
+## W-24: the LOG axis, one named clause at a time — and THREE of the seven owe it nothing
+############################################################################
+
+W-23 closed the **eligibility** axis on the whole day: `dayPlan_ok_is_the_core_seven` says
+§6.1's eleven *is* §6.1's seven there, at every request, so what stands between the lift and
+the whole day is the **replayed past** and nothing else.  Its own closing sentence named the
+work — *"the log, one named checker at a time"* — and this section is that.
+
+**`hnopast` is one hypothesis doing four jobs, and it is false of every real day.**
+`dayPlan_ok_core` carries *"the log holds no Block for today"* and spends it on the six
+block-side checks at once, by emptying their subject.  `dayPlan_ok_core`'s own doc comment
+calls that *"false of every real day after the first block is worked"*, and
+`PlannerWit.the_log_at_the_census_request_holds_a_block` computes a request where it is: the
+§4.3 Wednesday, whose log replays **two** Block rows and a break.
+
+**Three of the seven owe the log nothing at all, and that is the first half of the answer.**
+`energyFilterOk` and `noDemandingAfterWindDown` are vacuous at **every** request
+(`energyFilter_has_no_subject`, `windDown_has_no_subject`), and `wallsUnmoved` never reads a
+Block row — its subject is the Wall rows the plan's own index puts there, which is why
+`dayPlan_ok_core`'s `h7` never touches `hnopast`.  So the whole of the log's debt to §6.1's
+seven is **four** clauses, and `PastPays` is them.
+
+**Each clause is about the LOG, not about the day**, except the one that is a sum.  Three are
+`∀ t ∈ Planner.pastRows r` — the rows as the replay wrote them, before `Planner.segOf` and
+before the sort — because that is the form a caller can discharge by reading the log.  The
+fourth is `blockSeconds` over `pastHalf`, the day's own meter applied to the day's own
+replayed half: re-summing the log beside it would be a second reader of the same number,
+which is the defect this kernel is named after (AGENTS §5.3).  `pastHalf` is `withoutPast`'s
+complement and uses `keepFromNow` — the same one instant, not a second reading of it.
+
+**The bound in the other direction is four refuted days, three of them already here.**
+`PlannerWit.the_core_seven_is_false_on_three_whole_days` computes `planOkCore = false` at
+`theMorningWallRequest`, `theShortBlockRequest` and `theMidBreakRequest`, and
+`PlannerWit.the_paying_past_fails_on_four_whole_days` computes which clause of `PastPays`
+fails at each, and adds a fourth day for the fourth clause.  Every row of it has exactly one
+`false`, so no clause of the four is implied by the other three and none is a checker nothing
+can fail (AGENTS §9.2's *"a check no input can fail"*).  The fourth day is
+`PlannerWit.theOverBudgetRequest`, **built for the `budget` clause** because nothing in the
+witness set reached it — AGENTS §9.2 again, and D40's own rule that a mutation nothing fails
+is fixed by building the witness rather than recorded.
+
+**What this is not.**  It is not a step towards §6.2's fold induction and it does not touch
+it: every theorem here holds *because* §8.2 step 5's Block and Batch rows are absent from the
+day (`Planner.dayRows`' own doc comment), which is the same sentence as `hblk`'s with the
+opposite sign.  And it moves no census number: `PastPays` is a hypothesis, not a checker, and
+`subjectOf` does not read it. -/
+
+/-- **The day's replayed half** — the rows `withoutPast` drops, and nothing else touched.
+
+This is `withoutPast`'s complement over the **same** `keepFromNow`, so the two cannot drift
+apart and no second reading of *"has this row already started"* enters the module
+(AGENTS §5.3).  It exists so that the one clause of `PastPays` that is a **sum** can be
+weighed with `Planner.blockSeconds`, the day's own meter, rather than with a second one
+written over the log. -/
+def pastHalf (r : PlanReq) (d : DayPlan) : DayPlan :=
+  { d with segments := d.segments.filter (fun s => !keepFromNow r s) }
+
+theorem pastHalf_segments (r : PlanReq) (d : DayPlan) :
+    (pastHalf r d).segments = d.segments.filter (fun s => !keepFromNow r s) := rfl
+
+/-- **Under the lift's own R10 hypothesis the forcing is the identity on every replayed row.**
+`Planner.pastRows` ends each row it produces at `now` and starts it at or after `day_start`,
+and `hnowcal` puts `now` inside the calendar, so `Planner.segOf`'s clamp has nothing to do.
+This is what lets a clause written over the log be read off the row the day actually holds. -/
+theorem segOf_replayed (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (t : Seg) (ht : t ∈ pastRows r) : (segOf t).val = t := by
+  obtain ⟨-, hlt, hstop⟩ := pastRows_end_at_now r t ht
+  refine segOf_is_the_row_inside_the_calendar t (Nat.le_of_lt hlt) ?_
+  simp only [LogStamp.yearEnd] at *
+  omega
+
+/-- **A Block row that is not §8.2 choice 5b's reservation has already started**, at every
+request and with nothing assumed about the log — `a_block_row_from_now_is_the_reservation`
+read the other way round.  It is what makes `withoutActive`'s Block rows a sub-filter of
+`pastHalf`'s, which is the whole of the `overbook` clause's reduction. -/
+theorem a_block_row_that_is_not_the_reservation_has_started (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
+    (hna : isActive r s = false) : keepFromNow r s = false := by
+  cases hkeep : keepFromNow r s with
+  | false => rfl
+  | true =>
+    have hmem : s ∈ (withoutPast r (dayPlan r)).segments := by
+      rw [withoutPast_segments]; exact List.mem_filter.2 ⟨hs, hkeep⟩
+    have hw : s.val.kind.isWork = true := by rw [hk]; rfl
+    exact absurd ((withoutPast_work_rows_are_the_reservation r s hmem hw).symm.trans hna)
+      (by simp)
+
+/-- **A sum over a filtered list only grows when the filter admits more.**  `Planner.block
+Seconds` is a `foldl` of `+` over one filter of the day's rows, so this is the whole of what a
+comparison between two of its filters needs — no permutation, no sort, and no second walk. -/
+theorem foldl_add_filter_le {α : Type} (g : α → Nat) (p q : α → Bool) :
+    ∀ (l : List α), (∀ x ∈ l, p x = true → q x = true) →
+      ∀ a b : Nat, a ≤ b →
+        (l.filter p).foldl (fun n x => n + g x) a ≤ (l.filter q).foldl (fun n x => n + g x) b := by
+  intro l
+  induction l with
+  | nil => intro _ a b hab; simpa using hab
+  | cons x l ih =>
+    intro h a b hab
+    have htail : ∀ y ∈ l, p y = true → q y = true := fun y hy => h y (List.mem_cons_of_mem _ hy)
+    cases hp : p x with
+    | true =>
+      have hq : q x = true := h x (by simp) hp
+      rw [List.filter_cons_of_pos hp, List.filter_cons_of_pos hq]
+      simpa using ih htail (a + g x) (b + g x) (by omega)
+    | false =>
+      rw [List.filter_cons_of_neg (by simp [hp])]
+      cases hq : q x with
+      | true =>
+        rw [List.filter_cons_of_pos hq]
+        simpa using ih htail a (b + g x) (by omega)
+      | false =>
+        rw [List.filter_cons_of_neg (by simp [hq])]
+        exact ih htail a b hab
+
+/-- **The Blocks `overbook` weighs are a sub-filter of the ones the log replayed**, at every
+request.  `withoutActive` removes the reservation, and every other Block row of the day has
+already started (`a_block_row_that_is_not_the_reservation_has_started`), so `pastHalf` holds
+all of them — and possibly more, because a replayed Block of the *running* item is dropped by
+`withoutActive` and kept by `pastHalf`. -/
+theorem blockSeconds_withoutActive_le_pastHalf (r : PlanReq) :
+    blockSeconds (withoutActive r (dayPlan r)) ≤ blockSeconds (pastHalf r (dayPlan r)) := by
+  have hstep : ∀ x ∈ (dayPlan r).segments,
+      (decide (x.val.kind = SegKind.block) && (!isActive r x)) = true →
+        (decide (x.val.kind = SegKind.block) && (!keepFromNow r x)) = true := by
+    intro x hx hxx
+    simp only [Bool.and_eq_true, Bool.not_eq_true', decide_eq_true_eq] at hxx ⊢
+    exact ⟨hxx.1, by rw [a_block_row_that_is_not_the_reservation_has_started r x hx hxx.1 hxx.2]⟩
+  have e1 : blockSeconds (withoutActive r (dayPlan r))
+      = ((dayPlan r).segments.filter
+          (fun s => decide (s.val.kind = SegKind.block) && (!isActive r s))).foldl
+            (fun a s => a + (s.val.stop - s.val.start)) 0 := by
+    unfold blockSeconds
+    rw [withoutActive_segments, List.filter_filter]
+  have e2 : blockSeconds (pastHalf r (dayPlan r))
+      = ((dayPlan r).segments.filter
+          (fun s => decide (s.val.kind = SegKind.block) && (!keepFromNow r s))).foldl
+            (fun a s => a + (s.val.stop - s.val.start)) 0 := by
+    unfold blockSeconds
+    rw [pastHalf_segments, List.filter_filter]
+  rw [e1, e2]
+  exact foldl_add_filter_le (fun s : WfSeg => s.val.stop - s.val.start) _ _
+    (dayPlan r).segments hstep 0 0 (Nat.le_refl 0)
+
+/-- **What the replayed past owes §6.1's seven, clause by clause.**
+
+`dayPlan_ok_core`'s `hnopast` — *the log holds no Block for today* — discharges all four at
+once, by emptying their subject, and is false of every day whose morning worked something
+(`PastPays_of_no_past_block` is that implication, and
+`PlannerWit.the_paying_past_holds_where_hnopast_does_not` is a request where the weaker one
+holds and the stronger does not).
+
+Three clauses are about the rows the replay wrote; the fourth is the day's own `Planner.
+blockSeconds` over `pastHalf`, for the reason the section header gives.  `energyFilterOk`,
+`noDemandingAfterWindDown` and `wallsUnmoved` are absent because they owe the log nothing. -/
+structure PastPays (r : PlanReq) : Prop where
+  /-- `oneBlock`: no Block the log replays runs longer than one block. -/
+  oneBlock : ∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60
+  /-- `overWall`: no Block the log replays overlaps a span the day's walls blocked out.
+  `Planner.blockedByWalls` is the index `Planner.a_wall_row_sits_in_a_blocked_span` places
+  every Wall row inside, so this clause is about the plan's calendar and the log, and about
+  no row of the produced day. -/
+  offWall : ∀ t ∈ pastRows r, t.kind = SegKind.block →
+    ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start
+  /-- `overBreak`: no Block the log replays covers a break the log replays.  Both sides are
+  the log's (`Planner.a_break_row_is_a_replayed_row`), which is why the clause needs no third
+  quantifier over the day. -/
+  offBreak : ∀ t ∈ pastRows r, ∀ u ∈ pastRows r,
+    t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start
+  /-- `overbook`: the Blocks already worked fit the day's budget. -/
+  budget : blockSeconds (pastHalf r (dayPlan r)) ≤
+    (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60
+
+/-- **`hnopast` pays all four**, which is what makes the lift below strictly more general than
+`dayPlan_ok_core` rather than a second incomparable one: a day whose log holds no Block
+satisfies `PastPays` with three clauses vacuous and the fourth `0 ≤ _`. -/
+theorem PastPays_of_no_past_block (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) : PastPays r where
+  oneBlock t ht hk := absurd hk (hnopast t ht)
+  offWall t ht hk := absurd hk (hnopast t ht)
+  offBreak t ht _ _ hk _ := absurd hk (hnopast t ht)
+  budget := by
+    have hnb : (pastHalf r (dayPlan r)).segments.any
+        (fun s => s.val.kind == SegKind.block) = false := by
+      refine Bool.eq_false_iff.2 (fun h => ?_)
+      simp only [List.any_eq_true, beq_iff_eq] at h
+      obtain ⟨s, hs, hk⟩ := h
+      rw [pastHalf_segments] at hs
+      obtain ⟨hs', hkeep⟩ := List.mem_filter.1 hs
+      obtain ⟨t, ht, rfl⟩ := dayPlan_block_rows_are_the_reservation r hnopast s hs' hk
+      obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+      obtain ⟨e1, -, -, -⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+      have hkf : keepFromNow r (segOf t) = true := by
+        unfold keepFromNow; rw [e1]; simp
+      rw [hkf] at hkeep
+      simp at hkeep
+    rw [blockSeconds_of_no_block _ hnb]
+    exact Nat.zero_le _
+
+
+/-- **§6.1's seven on the WHOLE day, with `hnopast` replaced by what the log actually owes.**
+
+Same seven checkers, same conjunction, same request-side hypotheses as `dayPlan_ok_core` —
+and in place of *"the log holds no Block for today"*, the four clauses of `PastPays`, each a
+statement about the rows the replay wrote rather than an assumption that there are none.
+
+**Three of the seven take no clause at all.**  `energyFilterOk` and
+`noDemandingAfterWindDown` are discharged by `energyFilterOk_is_true_because_its_subject_is
+_empty` and `noDemandingAfterWindDown_is_true_because_its_subject_is_empty`, which hold at
+every request; `wallsUnmoved` is P1's `Planner.plan_never_moves_a_wall` over the Wall rows and
+never reads a Block.  That is why `PastPays` has four fields and not six.
+
+**What it is worth, and what it is not.**  `PastPays_of_no_past_block` makes `dayPlan_ok_core`
+a corollary of this, and `PlannerWit.the_paying_past_holds_where_hnopast_does_not` exhibits a
+request where this fires and that one cannot — so the whole-day lift now reaches days whose
+morning worked something, which is every real day.  It is **not** a step towards §6.2's fold
+induction: every clause below is discharged by a row that is either replayed or is §8.2
+choice 5b's reservation, and §8.2 step 5's own Block rows are still absent from
+`Planner.dayRows`. -/
+theorem dayPlan_ok_core_of_a_paying_past (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hpast : PastPays r) :
+    planOkCore r (dayPlan r) = true := by
+  -- **Every Block row of the day is a replayed row or the reservation**, unconditionally —
+  -- `dayPlan_ok_core`'s `hblk` with the case `hnopast` used to close left open.
+  have hres : ∀ s ∈ (dayPlan r).segments, s.val.kind = SegKind.block →
+      (∃ t ∈ pastRows r, s.val = t) ∨
+      (∃ q, r.activeRun = some q ∧ s.val.start = r.now.sec ∧ r.now.sec < s.val.stop ∧
+        s.val.stop ≤ q.stop ∧ s.val.stop < LogStamp.yearEnd) := by
+    intro s hs hk
+    rcases dayPlan_block_rows_are_replayed_or_reserved r s hs hk with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+    · exact Or.inl ⟨t, ht, segOf_replayed r hnowcal t ht⟩
+    · obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
+      obtain ⟨e1, e2, e3, e4⟩ := the_reservation_row_is_exact r q hq hnowcal t ht
+      exact Or.inr ⟨q, hq, e1, e2, e3, e4⟩
+  have h1 : noOverbook r (dayPlan r) = true :=
+    (noOverbook_iff r _).mpr
+      (Nat.le_trans (blockSeconds_withoutActive_le_pastHalf r) hpast.budget)
+  have h2 : oneBlockAtATime r (dayPlan r) = true := by
+    refine (oneBlockAtATime_iff r _).mpr (fun s hs hk => ?_)
+    have hbm : (dayPlan r).blockMin = r.blockMin := rfl
+    rcases hres s hs hk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, -⟩
+    · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hk
+      have := hpast.oneBlock t ht hkt
+      rw [hbm, hst]
+      exact this
+    · have hone := r.the_reservation_is_at_most_one_block q hactive (r.blockMin_pos hday) hq
+      obtain ⟨-, -, -, -, hs0, -⟩ := r.activeRun_spec q hq
+      rw [hbm]
+      omega
+  have h3 : energyFilterOk r (dayPlan r) = true :=
+    energyFilterOk_is_true_because_its_subject_is_empty r
+  have h4 : noBlockOverAWall r (dayPlan r) = true := by
+    refine (noBlockOverAWall_iff r _).mpr (fun b hb w hw hbk hwk => ?_)
+    obtain ⟨v, hv, hvlt, hv1, hv2⟩ :=
+      a_wall_row_sits_in_a_blocked_span r w (dayPlan_segments r ▸ hw) hwk
+    rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, e4⟩
+    · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
+      obtain ⟨-, -, hstop⟩ := pastRows_end_at_now r t ht
+      have hd := hpast.offWall t ht hkt v hv
+      rw [hst]
+      simp only [clampSec, LogStamp.yearEnd] at hv1 hnowcal
+      omega
+    · obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+      have hfree : ∀ u, r.now.sec ≤ u → u < q.stop → ¬ (v.1 ≤ u ∧ u < v.2) := by
+        intro u hu1 hu2
+        have hq1 : q.start ≤ u := by omega
+        exact r.the_reservation_is_free_of_every_wall q hq hv hq1 hu2
+      have hdisj : q.stop ≤ v.1 ∨ v.2 ≤ r.now.sec := by
+        rcases Nat.lt_or_ge v.1 q.stop with hlt1 | hge1
+        · rcases Nat.lt_or_ge r.now.sec v.2 with hlt2 | hge2
+          · exact absurd (⟨by omega, by omega⟩ :
+              v.1 ≤ max r.now.sec v.1 ∧ max r.now.sec v.1 < v.2)
+              (hfree (max r.now.sec v.1) (by omega) (by omega))
+          · exact Or.inr hge2
+        · exact Or.inl hge1
+      simp only [clampSec, LogStamp.yearEnd] at hv1
+      simp only [LogStamp.yearEnd] at e4
+      rcases hdisj with h | h
+      · left; omega
+      · right; omega
+  have h5 : noBlockOverABreak r (dayPlan r) = true := by
+    refine (noBlockOverABreak_iff r _).mpr (fun b hb k hk hbk hkk => ?_)
+    obtain ⟨u, hu, rfl⟩ := a_break_row_is_a_replayed_row r k (dayPlan_segments r ▸ hk) hkk
+    have hsu : (segOf u).val = u := segOf_replayed r hnowcal u hu
+    have hku : u.kind = SegKind.brk := by rw [← hsu]; exact hkk
+    obtain ⟨-, -, hustop⟩ := pastRows_end_at_now r u hu
+    rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, -, -, -⟩
+    · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
+      have hd := hpast.offBreak t ht u hu hkt hku
+      rw [hst, hsu]
+      exact hd
+    · right
+      rw [hsu, e1]
+      exact hustop
+  have h6 : noDemandingAfterWindDown r (dayPlan r) = true :=
+    noDemandingAfterWindDown_is_true_because_its_subject_is_empty r hnowcal
+  have h7 : wallsUnmoved r (dayPlan r) = true := by
+    refine (wallsUnmoved_iff r _).mpr (fun s hs i e a b hi hget hsh hk => ?_)
+    obtain ⟨hnbuf, hin, hout, hfwd, hcal⟩ := hplain i e a b hget hsh
+    exact plan_never_moves_a_wall r s i e a b hagree hs hk hi hget hsh hnbuf hin hout hfwd hcal
+  simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true,
+    h1, h2, h3, h4, h5, h6, h7]
+
+/-- **The whole battery on the whole day, from a paying past** — `dayPlan_ok_is_the_core_seven`
+composed with the theorem above, which is the form a later step will call: §6.1's eleven, on
+the whole day, at every `FromNowAnchored` eligibility, for every request whose log pays.
+
+Both bounds W-23 left are now named rather than assumed: the eligibility one by
+`FromNowAnchored`, the log one by `PastPays`. -/
+theorem dayPlan_ok_on_the_whole_day {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true) (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hpast : PastPays r) : planOk el r (dayPlan r) = true :=
+  dayPlan_ok_of_the_core_seven hfn r
+    (dayPlan_ok_core_of_a_paying_past r hagree hactive hday hnowcal hplain hpast)
+
+
 end PlanCheck
 end Tm
