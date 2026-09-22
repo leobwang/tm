@@ -50667,7 +50667,9 @@ are CLOSED** by this step; gap **1196** is moved from 65 to 54 and stays open;
 gaps **1193, 1194, 1195, 1197, 1199 and 1200** are untouched and whole. Highest
 cheat: **218**, unchanged — no cheat was taken and `Negative.lean` was not
 touched. **New parity entry: P37**, the first since P36; the next free is
-**P38**. No predicate or assertion was weakened, no memory bound raised, no
+**P39** — this sentence read **P38** until the W-24 repair step, which is gap
+**1417**: P38 was taken by gap 402's block and four later blocks called it free.
+No predicate or assertion was weakened, no memory bound raised, no
 snapshot, fixture, latency band or corpus re-blessed.
 
 ### 12. One process breach, disclosed rather than corrected
@@ -51452,7 +51454,9 @@ block). Gaps **1105**, **1194**'s wire third, **1195**, **1196** (at 32),
 stay open and whole; **1104**, **1109**, **1197**, **1198**, **1201** and
 **1202** were closed by their tracks and this step closes none.
 **Highest gap in the file: 1301.** Highest cheat: **218**, unchanged.
-Parity entries: track A added **P37**; the next free is **P38**. No predicate or
+Parity entries: track A added **P37**; the next free is **P39**, not P38 — gap
+402's block took P38 and this sentence could not see it (gap **1417**, repaired
+at the W-24 repair step). No predicate or
 assertion weakened, no memory bound raised, nothing re-blessed.
 
 **Worktrees.** `.claude/worktrees/w23-a` and `.claude/worktrees/w23-g` were both
@@ -51781,7 +51785,9 @@ unchangeable by it: it is gap 1195's wire and gap 1197's by-position index.
 **check 8 still does not sweep Rust `///` prose** (gap **1313** item 3), the
 declared blind spot. **Re-measured here, and this number has never been printed
 before**: running `citations.py`'s own `SPAN`/`CITED`/`declared()` over every
-`///` and `//!` line of `RUST_DIRS` gives **6,500 citations, 1,992 distinct, 179
+`///` and `//!` line of the seven Rust directories then swept (the name
+RUST_DIRS, replaced by `RUST_FILES` -- the property-based walk -- at the W-24
+repair step) gives **6,500 citations, 1,992 distinct, 179
 distinct unresolved (538 occurrences), 162 of them not in the kernel
 allow-list**. Most are `std` and third-party names (Clone, FixedOffset, HashMap, TestBackend — std and third-party, none of them ours), which is why the class needs an allow-list before it
 can be a gate and not a sweep.
@@ -52655,7 +52661,7 @@ by the gate it was building.** The name is `liveHeading`.
 | "both proptest assertions bite" | the same fold, with the normalisation already removed: `set_state_and_tag_and_priority` and `add_flag_and_remove_parent_keep_flags` both go red on their pinned seeds | 60,000 cases × 3 runs is a sample. `line()` always emits a title BEFORE its tokens, so the shape in gap 1360 is **outside the generator** and no number of cases reaches it |
 | "D47's blast radius is zero" | the automaton re-implemented in Python and run over **379 files** under `kernel/corpus/`, `tm/tests/` and `tm-core/tests/`: 0 items in comments, 0 unterminated comments. Then the whole workspace suite, three times, unmoved | a fixture that lives **inside a Rust string literal** and is indented in the source: the file scan sees neither the opener nor the item at column 0. The suite run is what covers that, and it is a test of today's fixtures, not of the class |
 | "three comment readers became one" | `grep -rn '<!--' --include=*.rs` over both `src` trees, then reading each of the 9 sites | a reader that spells the marker differently (`"<!"`, a byte compare) would not be in that grep. Nothing else in the two trees tracks comment state |
-| "check 8 sees the class it now claims" | the SAME plant — a backticked w24_module_comment_plant inside a `//!` at `tm-core/src/emit.rs:1` — leaves **HEAD's `citations.py` byte-identical** and is named by this one; likewise plants in `///`, `//` and a nested `/* */`. A plant inside a **string literal** is correctly invisible to both halves | a comment in a `.rs` file **outside `RUST_DIRS`** — `tm/build.rs` and `kernel/tm-kernel-ffi/build.rs` are outside it — and a `#[doc = "…"]` attribute, which is a string literal and is blanked |
+| "check 8 sees the class it now claims" | the SAME plant — a backticked w24_module_comment_plant inside a `//!` at `tm-core/src/emit.rs:1` — leaves **HEAD's `citations.py` byte-identical** and is named by this one; likewise plants in `///`, `//` and a nested `/* */`. A plant inside a **string literal** is correctly invisible to both halves | a comment in a `.rs` file **outside the seven directories then swept** — this cell named `tm/build.rs` and `kernel/tm-kernel-ffi/build.rs`, and **did not name `tm/examples`**, which was outside the list too and holds live prose: gap **1418**, closed at the W-24 repair step by `leanfiles.rust_files`, a property-based whole-repository walk — and a `#[doc = "…"]` attribute, which is a string literal and is blanked |
 | "30 adjudications, not 162" | `citations.py`'s own `is_citation`, `declared`, `core_declared` and `allow_list`, imported rather than re-implemented | the figure is predicate-relative and that is the whole correction: under a span test that also takes `::` spans the population is 8,425 / 2,781 / 243, and under "every backticked span" it is 14,920 / 5,117 / 2,409. None of six readings reproduces the W-23 numbers exactly |
 | "1,404 / 0 / 9, and the seeds stayed clean" | **SIX** capped `cargo test --workspace` runs (D46's own rule, applied to itself) — three on the code, three more after the comment-only repairs put fresh bytes in four `.rs` files — each followed by `git status --porcelain -- '*.proptest-regressions'` | six runs is still a sample, and it is the point of the rule rather than an exception to it. It is also 6 draws of a generator whose `line()` cannot produce gap 1360's shape at all |
 | "`tm check` agrees with the kernel now" | the shipped binary on a `tm init` tree, both directions: commented → `no problems`, exit 0; the same three lines uncommented → 5 errors including the kernel's own `dupId`, exit 2 | one tree, two shapes. The TUI half of the drive is the one no agent can run (AGENTS §5.13) |
@@ -52667,7 +52673,7 @@ comparand, so it diverges from fork `4748911` and needs an entry.
 
 | | case | this branch | fork `4748911` | why | where |
 |---|---|---|---|---|---|
-| **P38** | a column-zero `- [ ] … ^id` line between a `<!--` opener (after leading spaces) and the first line containing `-->` | **prose**, verbatim: not an item, not a section if it is a heading, not checked, not planned, not moved, not closed | an **item**, indistinguishable from a live one | owner **D47**, README gap 1317. The kernel has read it this way since stage 3 (`Plan.lean`, `commentAfter`); the host is the half that moved | **recorded; the oracle does not reach it** — `run-oracle.sh`'s grammar arm is a `String → String` comparison per item LINE (is it an item, does it come back unchanged, what id, what does `tm edit est=` give), and this is a whole-FILE property. `parse_line` is **untouched**, so every frozen fork answer and every oracle arm is unmoved. Asserted in-tree instead, in both directions, by `tm-core/tests/comment_is_prose.rs` |
+| **P39** | a column-zero `- [ ] … ^id` line between a `<!--` opener (after leading spaces) and the first line containing `-->` | **prose**, verbatim: not an item, not a section if it is a heading, not checked, not planned, not moved, not closed | an **item**, indistinguishable from a live one | owner **D47**, README gap 1317. The kernel has read it this way since stage 3 (`Plan.lean`, `commentAfter`); the host is the half that moved | **recorded; the oracle does not reach it** — `run-oracle.sh`'s grammar arm is a `String → String` comparison per item LINE (is it an item, does it come back unchanged, what id, what does `tm edit est=` give), and this is a whole-FILE property. `parse_line` is **untouched**, so every frozen fork answer and every oracle arm is unmoved. Asserted in-tree instead, in both directions, by `tm-core/tests/comment_is_prose.rs` |
 
 That "recorded, not measured by the oracle" is **P17**'s shape and **P37**'s,
 and it is not a weakening: the divergence needs an input the comparison does not
@@ -52701,7 +52707,9 @@ take, and there are **zero** such inputs in `kernel/corpus/` (§4).
    bytes on disk for `tm edit ci=`, `tm edit parent=`, `tm tag -`, `tm done` on
    a ci-keyed line and every other path through `ItemLine`'s removals.
 5. **`check.sh` check 8 reads Rust comments.** A stale backticked name in a
-   `///`, `//!`, `//` or `/* */` anywhere under `RUST_DIRS` now fails the gate.
+   `///`, `//!`, `//` or `/* */` anywhere under the seven directories then
+   swept now fails the gate. (`RUST_FILES` since gap **1418**: every `.rs` file
+   in the repository, by `leanfiles.rust_files`.)
    The cost is declared in `citations-allow.txt`'s new section 9: an enum
    variant or a `let` binding cited from prose needs an entry until gap 1362
    closes.
@@ -52809,8 +52817,10 @@ the tracked-file question — is answered by **D46** and written into AGENTS §7
 **1317** is **closed**. `Negative.lean` untouched — **no cheat taken**; highest
 cheat **218**, unchanged. **No Lean was edited**, so check 3's 4,910 theorems,
 check 7's burn-down of 9 and check 9's 118 rostered / 32 bare pin sites are all
-unmoved, and **no goal was added, discharged or deleted**. Parity: **P38** is
-this step's; the next free is **P39**.
+unmoved, and **no goal was added, discharged or deleted**. Parity: **P39** is
+this step's; the next free is **P40**. *(It was written **P38** and renumbered at
+the W-24 repair step: gap 402's block had taken P38 at `Parity P38 taken`, and
+four later blocks said "P38 still free" — README gap **1417**.)*
 
 **Acceptance, all capped.** `check.sh` **9/9, exit 0** — audit **4,910
 theorems**, check 5 **93 tests**, corpus **29/37 files and 4/5 whole plans**,
@@ -53641,7 +53651,8 @@ designed — the host's own `bad-value` diagnostic would double the kernel's on 
    landed before this step; this is the drive that shows it.
 2. **A column-zero item line inside an `<!-- … -->` comment is prose to every
    reader in the binary** (§7.5) — `tm check`, `tm triage`, the TUI inbox and
-   the kernel. Owner **D47**; parity **P38**; it diverges from fork 4748911
+   the kernel. Owner **D47**; parity **P39** (written P38; gap **1417**); it
+   diverges from fork 4748911
    deliberately. Blast radius re-measured at zero (§5).
 3. **`set_state_with_ci` round-trips a line whose `ci:` token is followed by two
    spaces** — track A's, the bug D46's lucky seed found.
@@ -53757,3 +53768,591 @@ weakened; no snapshot, fixture, latency band or corpus was re-blessed; no new
 dependency; `lean-toolchain` and `kernel/corpus/` untouched. Every plant made to
 drive a gate was reverted in the same command that made it, and `git status` was
 checked clean afterwards.
+
+<!-- =====================================================================
+     APPENDED 2026-09-22: stage 6 (the planner), run **W-24**, the **REPAIR
+     step** — the defects W-24's two independent auditors found.  Worked in the
+     main checkout on `rebuild-on-lean`; no worktree.  This block's gap range is
+     **1415-1429**; it takes **1415-1422** and leaves **1423-1429** free.
+     Whoever merges renumbers (AGENTS §6.4).
+     ===================================================================== -->
+
+## Stage 6 W-24 — the repair step
+
+**Eight findings arrived: four from the audit, three from the reuse critic, and
+one this step found while fixing another.** Every one reproduced. None was
+refuted. Seven are **fixed**; one is a latch plus a recorded gap, because the
+real fix rewrites every row of `mutations.txt`.
+
+**Two of the eight are the same defect in two instruments, found in one run and
+at the same character.** `kernel/citations.py`'s `rust_code` learned Rust's
+char-literal rule and `rust_prose`, written in the same commit, did not.
+`tm/tests/one_padder.rs`'s `code_lines` learned it at W-23 and
+`tm/tests/one_renderer.rs`'s copy of `code_lines` did not. A `'` that opens no
+literal is a lifetime; in both cases the copy without the rule opened a quote
+that never closed and swallowed the prose behind it. **Both are AGENTS §5.3 —
+two definitions of one concept — inside the checkers built to enforce §5.3.**
+Both are repaired by deleting one of the two, not by teaching it the rule.
+
+### 1. The blocker: five wire `Id`s with no bound (gap 1415)
+
+The audit named **three** unbounded strings in `EmitWire.lean`'s new `plan`
+section — a segment's `item`, a priority record's `id`, and a `batch`'s members.
+**There are five.** `readNote` reads two more, and neither auditor named them:
+`Note.noPosition`'s id and `Note.bufferBefore`'s, both through a bare
+`strAtP v "id" r`.
+
+DRIVEN before the fix, in the built checkout (`lean` under
+`MemoryMax=8G`, `-DmaxRecDepth=100000`), five `#eval`s at 5,000 characters:
+
+```
+some (some 5000)      -- readSeg's item
+some 5000             -- readPrio's id
+some [5000]           -- a batch member, through Planner.mkBatch?
+some 5000             -- readNote noPosition's id
+some 5000             -- readNote bufferBefore's id
+```
+
+The audit's reading of *why* is confirmed exactly: `Planner.SegErr` has two
+constructors (`inverted`, `pastTheHorizon`), so `Seg.wf` says nothing about the
+item string, and `mkBatch?` bounds the **count** at `Planner.maxBatch` and never
+a member's length.
+
+**The fix follows the precedent the audit named**, and declares no new number:
+`EmitWire.idWithin` is the smart constructor and `CapWire.maxCandId` — the same
+1,024 `Boundary.readCand` puts on a candidate's own id — is the bound. Five call
+sites, one constructor. R10's table in the module header gains four rows and the
+header's false sentence (*"Every value is decoded by a constructor that already
+exists"*) now says so in its own words.
+
+**Eight theorems, both directions** (AGENTS §5.8), all in `Check.lean` under
+this step's banner: `idWithin_refuses_a_long_id`, `idWithin_accepts_at_the_bound`,
+`idWithin_refuses_1025_and_accepts_1024` (the non-vacuity witness, closed by
+the length lemma for `List.replicate` rather than by `rfl`, so the kernel never walks a
+thousand cons cells), and one refusal per reader —
+`readSeg_refuses_a_long_item`, `readPrio_refuses_a_long_id`,
+`readKind_refuses_a_long_batch_member`,
+`readNote_refuses_a_long_no_position_id`,
+`readNote_refuses_a_long_buffer_before_id`.
+
+DRIVEN after the fix, the same five at 1,025 and at 1,024:
+
+```
+false / true      readSeg's item
+false / true      readPrio's id
+false / true      a batch member
+false             readNote noPosition's id
+false / true      readNote bufferBefore's id
+"badPriority 0"   the refusal readPrio names
+"badSegment 0 note"  the refusal readNote names
+```
+
+**D40**: `idWithin` is **PINNED** — folded to `default` the build fails inside
+`readPrio_accepts_seven`. It is in `mutations.txt` with that pin site.
+
+### 2. check 8's Rust-prose sweep was blind to 51,508 characters (gap 1416)
+
+Reproduced byte-for-byte. The auditor's two plants three lines apart at
+`tm-core/src/emit.rs:41`, with `fn w24_lifetime_probe(x: &'static str)` between
+them, gave on HEAD's checker:
+
+```
+1 unresolved:
+  ../tm-core/src/emit.rs:41  w24_ghost_needle_one  (resolves to nothing)
+```
+
+— the second plant invisible. The auditor's arithmetic on `tm-core/src/check.rs`
+reproduces to the character: **40,476 = 19,639 + 11,209, lost 9,628**.
+
+**The fix is not the rule; it is deleting the second scanner.** `rust_split` is
+one walk returning `(code, prose)`; `rust_code` and `rust_prose` select from it.
+`rust_code`'s output is **byte-identical on all 144 files** it swept before, and
+the prose half recovers exactly **51,508** non-space comment characters across
+**53** files — the auditor's own number, and their worst-five list
+(`kernel/tm-kernel-ffi/tests/kernel.rs` 5,233, `tm-core/src/check.rs` 4,176,
+`tm-core/src/grammar.rs` 3,568, `tm/src/cli/kernel_log.rs` 3,035) reproduces.
+
+**WIDER THAN REPORTED, by one independent shape.** A ten-plant battery run
+against HEAD's checker and against the repaired one, each plant a comment
+following a construct:
+
+| shape | HEAD | repaired |
+|---|---|---|
+| `&'static` lifetime | **GREEN** | CAUGHT |
+| `'outer:` loop label | CAUGHT | CAUGHT |
+| **raw string holding a backslash** — `const W24B: &str = r"C:\";` | **GREEN** | CAUGHT |
+| raw string holding a quote (no lifetime) | CAUGHT | CAUGHT |
+| string ending in `\\` (no lifetime) | CAUGHT | CAUGHT |
+| char literal `'\\'`, byte char `b'\''` | CAUGHT | CAUGHT |
+| nested `/* /* */ */` | CAUGHT | CAUGHT |
+| string holding `//` or `/*` | CAUGHT | CAUGHT |
+| an apostrophe inside a comment | CAUGHT | CAUGHT |
+
+The raw-string case is not the apostrophe: `rust_prose` treated `\` as an escape
+inside a raw string, where Rust has none, and desynced. It is fixed because the
+raw-string branch is now shared, which is the argument for one scanner rather
+than one more rule.
+
+**The auditor's "no live escape" holds and is now the shipped number**: no new
+unresolved name. Check 8 went **32,676 → 32,776** citations on the tree it
+landed against.
+
+### 3. Parity P38 was issued twice (gap 1417)
+
+Reproduced. `README.md`'s gap-402 block says `**Parity P38 taken**` with its own
+four-part justification (*"P38 and not P37, because the register's last two
+statements disagree about P37"*), and W-24 track A took **P38** again for D47's
+comment-is-prose divergence. The rot is visible in between: four later blocks
+say *"P38 still free"* or *"the next free number is still P38"*, and track A
+acted on those.
+
+**Track A's entry is renumbered to P39** — the later block moves, the way AGENTS
+§6.2 moves a cheat — at its register row, at its own §7 closing line, at the
+observable-behaviour list and at the two W-24 statements that computed "next
+free" from the wrong base. **The next free parity number is P40.**
+
+**AGENTS §6.5 gains item 7**, which is where the merge could have caught it and
+did not: the checklist reconciled `Negative.lean`, the gap sequence,
+`Check.lean`, `Goals.lean`, the imports and `check.sh`, and **not** parity. It
+carries the reconciliation command. DRIVEN both ways:
+
+```
+$ grep -noE '\*\*Parity P[0-9]+ taken\*\*|^\| \*\*P[0-9]+\*\* \|' README.md   # at HEAD
+DUPLICATE at HEAD: P38
+$ ... # after the repair
+(no output)
+```
+
+**It is a command and not a gate, and the reason is written down** rather than
+left to be rediscovered: `P<n>` in this repository is also a stage-6 **step**
+name (P1–P5, and track P itself), so no regex over `P<n>` can tell an issuance
+from a step reference. Gap 226 — *"the parity list has no single home and no
+check, and P32 was issued twice"* — is therefore still open, and this is the
+second time it has cost a duplicate. See gap 1417 for the shape the gate needs.
+
+### 4. check 8's Rust walk was a hard-coded name list (gap 1418)
+
+Reproduced exactly. The critic's plant — `//! plant
+\`w24_critic_no_such_name_at_all\` here.` — prepended to each file in turn:
+
+```
+tm/examples/windowbench.rs                 GREEN  (32676/31020/1656/0, byte-identical)
+tm/examples/tzprobe.rs                     GREEN
+tm/build.rs                                GREEN  (declared)
+kernel/tm-kernel-ffi/build.rs              GREEN  (declared)
+tm/src/main.rs                             FAILED, named
+kernel/tm-kernel-ffi/examples/oneshot.rs   FAILED, named
+```
+
+**The fix is the one the critic's own evidence argues for**: the Rust side is
+now property-based like the Lean side. `leanfiles.source_files(root, suffix)` is
+`lean_files`' walk with the suffix as an argument; `leanfiles.rust_files(root)`
+is the Rust caller; `citations.py`'s `RUST_FILES` is `rust_files(ROOT)`. **The
+prune rule is the same one** — a dot-prefixed directory, or one holding a cache-directory
+tag file — so `target/` and `.claude/`'s worktrees are pruned and a bare
+`find` over this repository's 291 `.rs` files becomes **148**.
+
+All three of the sentence's declared holes close with it, and so does the one it
+could not see. All six plants above are now named, including
+`kernel/tm-kernel-ffi/examples/oracle/src/main.rs`, a sub-crate.
+
+**ONE CORRECTION TO THE CRITIC, and it is in the cheap direction.** The cost was
+predicted as "+17 declared names, leaving exactly ONE needing an allow entry
+(`VmHWM`)". `VmHWM` is **already** an uncounted vocabulary entry at
+`citations-allow.txt:498`, under the comment naming it as *Linux's `/proc`
+field*. **`citations-allow.txt` is byte-identical after this repair**: the hole
+closed for **zero** new exemptions.
+
+### 5. one_padder guarded the pad and not the truncation (gap 1420)
+
+Reproduced with no plant. `tm/src/cli/lifecycle.rs:980` holds
+`let short: String = text.chars().take(72).collect();` — a cut to a fixed count
+with a second measurement rule (`char`s, not `emit`'s East-Asian table), outside
+`HOME`, under no reserved name — and `cargo test -p tm --test one_padder` was
+**`8 passed; 0 failed`** with it there.
+
+`text_cut` is the shape, in three parts, each measured over the `src` trees
+before it was taken: a character walk stopping at a count (`ENUMERATIONS` ×
+`CUT_VERBS`); a byte prefix bounded by a number (`[..` with `.min(`, which is
+`&s[..s.len().min(80)]` — a truncation with no verb in it); and a `truncate`
+call, which `RESERVED` cannot see because `RESERVED` reads declarations.
+`TRUNC_ALLOW` costs **four** adjudicated sites, every one a diagnostic quote or
+a `#[cfg(test)]` fixture. `Iterator::take_while` is deliberately excluded — it
+stops at a predicate, not a length — and a plain `&s[..n]` is too: **20** of
+those are in the two trees and every one indexes a parse.
+
+DRIVEN both ways, which is what the pad half's own history asks for:
+
+* a plant — `fn w24_fit_title(s: &str, w: usize) -> String { s.chars().take(w).collect() }`
+  appended to `tm/src/tui/queue.rs` — goes **RED**, named at `queue.rs:1329`;
+* folding `text_cut` to `false`, its exact pre-repair behaviour, fails **two**
+  assertions (the needle's own drive, and `TRUNC_ALLOW`'s unused-entry ratchet).
+
+`one_padder` is **9 passed; 0 failed**.
+
+### 6. The two guards' walk was two walks, and they had DIVERGED (gap 1419)
+
+The critic reported `sources()` written twice with only one copy carrying the
+blind-spot sentence, and named `kernel/tm-kernel-ffi/src` as missing from both.
+Both reproduce. **`code_lines()` is the half nobody reported, and it is the live
+one**: `one_renderer.rs`'s copy never got W-23's char-literal rule (gap 1201).
+
+DRIVEN in the real tree, one line appended to `tm/src/cli/day.rs`:
+
+```rust
+fn w24_probe(x: &'static str) -> usize { x.len() } // SegKind::Break is "break" in prose
+```
+
+```
+one_padder:   8 passed; 0 failed
+one_renderer: no_second_set_of_row_words ... FAILED
+  tm/src/cli/day.rs:1363: fn w24_probe(x: &'static str) -> usize { x.len() } // SegKind::Break is "break" in prose
+```
+
+A guard RED on a pure comment is AGENTS §5.8's **trapdoor**. `sources`,
+`code_lines` and `is_char_literal` now live in `tm/tests/support/srcwalk.rs` and
+both guards import it; the module header carries the transcript and the
+blind-spot sentence that only one copy used to have.
+`kernel/tm-kernel-ffi/src` is a third root — it is linked into the binary — and
+it changes no verdict today, which is the critic's own measurement and what the
+sentence costs rather than what the code costs.
+
+### 7. check 9 never constant-folded an `instance` (gap 1421)
+
+Reproduced: `mutate.py`'s `HEAD` pattern matched `def|abbrev` only, and `owed`
+is computed over what `declarations()` returns, so an `instance` was neither
+rostered nor owed. The critic's measurement of the hole as **empty today** also
+reproduces, and their figure of *"20 instance declarations"* is the naive
+grep's: **12** of those lines are declarations and **8** are sentences beginning
+with the word. None of the 12 is in a file changed since the baseline.
+
+The fix has three parts, and the second is the one the naive fix misses:
+
+1. `instance` joins `HEAD`.
+2. **All twelve of the library's instances are ANONYMOUS** (`instance : LT
+   Instant := …`), and the pattern needs a name. `anon_instance_name` derives one from the
+   instance's **class** plus a six-character digest of its normalised header —
+   stable across line moves, which a line number would not be. The digest is not
+   decoration: `Cal.lean` declares `Decidable (a < b)` and `Decidable (a ≤ b)`
+   on consecutive lines and both reduce to `Decidableab` once the non-identifier
+   characters go.
+3. **The declaration match is now inside `declarations()`' block-comment
+   tracker.** Gap 1308 closed this hole in `decl_spans` and left it open here,
+   because `def` does not start English sentences and `instance` does — and it
+   is load-bearing rather than defensive: **five** column-zero prose lines in
+   the library begin with the word *instance* followed by a word
+   (`Boundary.lean`, `Json.lean`, `Planner.lean`, `PlannerWit.lean` ×2), and
+   without the tracker each would have declared a definition called `of`, `is`,
+   `takes`, `would` or `at` — gap 1308's exact defect arriving through a new
+   door. Three more prose lines start with the word and a punctuation mark, and
+   those the pattern refuses on its own; the twenty a naive `grep '^instance'`
+   returns are **12** declarations and **8** sentences.
+
+DRIVEN, two plants (one anonymous, one named) appended to `EmitWire.lean`:
+
+```
+HEAD's mutate.py:  154 new or changed since 86c4dc6, 154 rostered …, 0 owed   rc=0
+this one:          156 new or changed, 154 rostered, 2 OWED A MUTATION
+    EmitWire.lean:inst_InhabitedRowKey_7fafc4  := default  UNFOLDABLE  no Inhabited (Inhabited RowKey)
+    EmitWire.lean:w24ProbeNamed                := default  UNFOLDABLE  no Inhabited (Inhabited RowRefusal)
+```
+
+Both land as UNFOLDABLE and are **counted on the "pinned by nothing" line**,
+which is the honest verdict and not a free pass: `Inhabited (Inhabited X)` does
+not exist, so D40's constant does not exist for it. The declaration set over the
+whole library goes **2,952 → 2,964** and **nothing is removed**, so the comment
+tracker costs no existing row. `mutate.py --gate` is unchanged at **154
+rostered, 0 owed**.
+
+### 8. FOUND HERE: two definitions of one short name in one file (gap 1422)
+
+Adding `instance` surfaced a defect neither auditor reported. `mutations.txt` is
+keyed on `(file, SHORT name)` and `roster()` reads a repeated key as a
+deliberate **re-audit**. **Six pairs are live in the library today**:
+`Boundary.lean`'s `readTz` and `readStep` (each declared in two namespaces),
+`Line.lean`'s `setEst` and `keyOf`, `Replay.lean`'s `get` and `alter` (`KMap`
+and `HMap`). It is the same class as check 3's multiset reconciliation, which
+exists because 24 short names are declared in more than one namespace.
+
+None of the twelve is currently new or changed, so this is a **latch**, not a
+repair of live code: `mutate.py --gate` now names a colliding pair and fails
+rather than handing one of the two a row the other will overwrite. DRIVEN with
+two `def w24Twin` in two namespaces of one file:
+
+```
+1 short name(s) declared TWICE in one file -- the roster is keyed on (file, name)
+and cannot hold both (README gap 1422):
+  TmKernel/TmKernel/EmitWire.lean w24Twin
+```
+
+The real fix is a **qualified** key, which rewrites every row in
+`mutations.txt` and re-verifies them; that is the gap, not this step's work.
+
+### 9. Method, and what each method cannot see
+
+| claim | how | what it cannot see |
+|---|---|---|
+| "five ids, not three" | read `EmitWire.lean`'s five `strAtP`/`optStrAtP` call sites against `Planner.Id`, then `#eval`ed each at 5,000 characters through the built library | it is about **strings**. The section's naked `Nat`s (`durMin`, `lo`, `hi`, `blocksDone`, `planned`, `total`, `leftMin` inside `readNote`) carry no stated width either; R10 asks for one and this step did not take it — **gap 1423** |
+| "`rust_code` is byte-identical" | both scanners imported into one process and their outputs compared over all 144 previously-swept files | it compares the two **implementations**, not either against Rust. A construct neither handles is invisible to the comparison |
+| "51,508 characters recovered" | the same import, counting non-space characters of `rust_prose`'s output before and after | it counts **comment** bytes. String contents are in neither half by design, which is why the naive three-way arithmetic over the whole tree gives 492,064 and is the wrong number to quote |
+| "ten shapes, one still-blind class" | a battery that plants a comment after each construct and diffs HEAD's verdict against the repaired one | ten shapes is not a grammar. A `#[doc = "…"]` attribute is still a string literal and is still blanked — the declared hole, unchanged |
+| "the parity duplicate is gone" | the §6.5 command, run against HEAD's README and against this one | it reads **two spellings** of an issuance. A block that issues a parity entry a third way is invisible to it, and 39 numbers are in use while the register's rows account for 22 |
+| "zero new allow entries" | `diff` of `citations-allow.txt` against `HEAD:kernel/citations-allow.txt` | it says the file did not change. It does not say the **cap** discipline is unchanged: `VmHWM` is uncounted vocabulary, so its citations rose from 14 to 16 with nothing to adjudicate |
+| "`tm/examples` was the hole" | six plants, one file at a time, each reverted in the same command | a plant tests the **walk**, not the allow-list. A stale name that resolves to something wrong is invisible to any plant |
+| "the truncation needle is not decoration" | a plant in `tui/queue.rs` **and** a fold of `text_cut` to `false` | it reads one line at a time. A cut spread over two lines, a cut through a named constant, and a cut in a `tests/` or `examples/` file are all outside it |
+| "`code_lines` had diverged" | ran both guards against one planted line in `tm/src/cli/day.rs` | it shows the trapdoor direction. Whether the old copy also had an **under**-fire was reasoned about (its string state is per-line) and not driven |
+| "the instance hole is empty" | `git diff 86c4dc6 HEAD` for column-zero `instance` in the library; then the declaration-set diff, 2,952 → 2,964, 0 removed | it is a claim about **this** baseline. It says nothing about the 12 instances that predate it, none of which has ever been folded |
+| "check.sh 9/9, workspace green" | the capped commands below | see gap 1412: a green workspace run is a sample |
+
+### 10. Gaps
+
+**Gap 1415 — the `plan` section's `Nat`s still carry no stated width. FIXED for the ids, OPEN for the numbers.**
+1. *What is not done.* `readNote` reads `durMin`, `lo`, `hi`, `blocksDone`,
+   `planned`, `total` and `leftMin` as bare `natAtP`, with no bound and no
+   rejection theorem. The five `Id`s are closed by `idWithin`; these are not.
+2. *Why.* The audit named the strings and this step fixed the strings and the
+   two strings the audit missed. Bounding the numbers needs an owner's number
+   for each (minutes? seconds? a count?), and inventing seven would be seven new
+   names for bounds `Look.maxPlanMinutes` and `Cal.Instant.wf` may already own —
+   AGENTS §5.3, which is the rule that made `idWithin` re-use `maxCandId`.
+3. *What it costs.* R10's "every integer crossing gets a stated width" is met by
+   `start`, `stop`, `planned`, `energy`, `p` and `bed` on this wire and not by
+   the note's seven. Practical exposure is the same as gap 1321's: no shipped
+   verb sends a `plan` section yet.
+4. *Which stage.* Stage 6, with R3, or whoever next edits `EmitWire.readNote`.
+
+**Gap 1416 — `rust_split`'s partition is one walk now, and it is still not a Rust parser. FIXED as reported; the residue is named.**
+1. *What is not done.* The scanner does not know `r#"…"#` nesting depth beyond
+   the `#` count, macro token trees, or `#[doc = "…"]`, which is a string
+   literal and is read by neither half.
+2. *Why.* A parser is a dependency (R7) and a hand-written one is a third
+   scanner. One walk plus a named residue is the trade this step took.
+3. *What it costs.* A stale citation inside a `#[doc]` attribute is invisible to
+   check 8. Measured at W-24 track A and unchanged here.
+4. *Which stage.* Whoever needs `#[doc]` prose swept; it is an allow-list-free
+   widening of `rust_split`'s string branch, not a new scanner.
+
+**Gap 1417 — the parity register still has no gate, and this is the SECOND duplicate. NOT FIXED.**
+1. *What is not done.* AGENTS gap 226 recorded that the parity list has no
+   single home and no check, after **P32** was issued twice. **P38** has now been
+   issued twice for the same reason. §6.5 item 7 gives the merge a command; it
+   is not a gate, and it reads only the two spellings blocks have used to issue
+   one.
+2. *Why.* A `P<n>` in this repository is also a stage-6 **step** name (P1–P5,
+   and track P), so a regex over `P<n>` cannot tell an issuance from a
+   reference. A gate needs a **canonical issuance line** every block carries —
+   a convention for future blocks, not something retrofittable over 53,000 lines.
+3. *What it costs.* **39** numbers are in use. A `| **P<n>** |` register row
+   exists for **21** of them — P1, P14–P21, P23–P27, P30, P32–P35, P37, P39 —
+   and P38 is issued in prose with no row at all. The other **17** (P2–P13,
+   P22, P28, P29, P31, P36) are recorded somewhere in 54,000 lines and this
+   step could not locate them mechanically. Until an index exists, "the next
+   free number" is read off whichever sentence a step happens to find, which is
+   exactly how both duplicates happened.
+4. *Which stage.* Whoever imposes the canonical line — one sentence in AGENTS
+   §6.4 and a `parity.py` that greps for it, with the index as its input.
+
+**Gap 1418 — the Rust walk is property-based now; the property is not the same one `cargo` uses. FIXED as reported.**
+1. *What is not done.* `rust_files` reads every `.rs` file outside a
+   dot-directory or one carrying a cache-directory tag file. `cargo` reads the files a target's
+   manifest names, which is a strictly smaller set.
+2. *Why.* Over-reading is the safe direction (`leanfiles.py`'s header says so
+   for the Lean side, and this borrows the argument): a gate that sweeps a
+   generated file fails loudly, where a gate that misses a source file is
+   silent. Parsing the workspace's manifests is a second enumeration.
+3. *What it costs.* A vendored or generated `.rs` under the repository, in a
+   build directory that is neither dot-prefixed nor tagged, would be read as
+   source. **Zero** such files today: 148 files walked, all tracked.
+4. *Which stage.* None planned; it is stated so a future layout change is a
+   decision rather than a surprise.
+
+**Gap 1419 — the two guards read the `src` trees only. FIXED as reported; the hole is one sentence, now in one place.**
+1. *What is not done.* `srcwalk::sources` reads `tm/src`, `tm-core/src` and
+   `kernel/tm-kernel-ffi/src`. A padder or a renderer in a `tests/`,
+   `examples/`, `benches/` or `build.rs` file is invisible.
+2. *Why.* A test **should** be able to write a pad — several do, to build the
+   expected output they compare against — so sweeping `tests/` costs an
+   allow-list of real exemptions rather than closing a hole. `examples/` is the
+   arguable one: `tm/examples` holds two compiled targets and neither pads.
+3. *What it costs.* A stand-in renderer that ships only through an example
+   binary is outside D43's guard. `tm/examples` is 2 files and 615 lines today.
+4. *Which stage.* Whoever adds a third `--example`; the roots are a list in one
+   file now, which is the whole of gap 1419's repair.
+
+**Gap 1420 — `RESERVED` is still a vocabulary, and `text_cut` is still one line at a time. FIXED for the class that was live.**
+1. *What is not done.* `RESERVED`'s seven names are still a vocabulary and are
+   still one rename away from useless; `text_cut` and `space_fill` are the
+   shapes beside it, and neither reads across a line boundary.
+2. *Why.* A two-line shape needs a parser or a window, and every needle in this
+   file was taken only after being measured to zero or to an exact, adjudicated
+   count on the real tree. A window has no such measurement yet.
+3. *What it costs.* `let n = title.chars().count();` on one line and
+   `title.chars().take(n.min(w))` three lines later is one truncation this
+   cannot see, and the same is true of a fill.
+4. *Which stage.* Whoever next finds one by planting it — which is how gaps
+   1193, 1201, 1310, 1311 and this one were all found.
+
+**Gap 1421 — the 12 instances that PREDATE the baseline have never been folded. NOT FIXED.**
+1. *What is not done.* `instance` is rostered and mutated from now on, but check
+   9 is scoped to definitions new or changed since `86c4dc6` (D40 scoped it
+   there), so the library's existing 12 instances — two `Decidable` orderings on
+   `Cal.Instant`, `Grain`'s `Decidable Closed`, two `DecidableEq`, and
+   `Replay`'s five `KeyHash` — have never had a constant put through them.
+2. *Why.* The same decline D40 took for the 2,810 existing definitions: a full
+   sweep produces a backlog rather than preventing new instances.
+3. *What it costs.* A `KeyHash` instance that hashes everything to `0` is
+   correct-by-typechecking and would pass every gate; the hash is load-bearing
+   for `HMap`'s performance and for nothing else, so nothing would fail. That is
+   a real instance of D40's class sitting under the exemption.
+4. *Which stage.* Whoever edits `Replay.lean`'s `KeyHash` block — the rows
+   become owed the moment the file changes.
+
+**Gap 1422 — `mutations.txt` is keyed on the SHORT name. LATCHED, not fixed.**
+1. *What is not done.* The roster key is `(file, short name)`, and `roster()`
+   reads a repeated key as a deliberate re-audit, so two definitions of one
+   short name in one file cannot both hold a row. Six pairs exist today.
+2. *Why.* The fix is a qualified key, which changes the third column of all 154
+   rows and needs every one re-verified (`--verify --write`, one kernel build
+   per constant). That is a step's work, not a repair step's.
+3. *What it costs.* Until then, a step that edits `Boundary.lean`, `Line.lean`
+   or `Replay.lean` in a way that touches one of the six pairs fails check 9 by
+   name and cannot satisfy it — which is loud, and is the point of the latch,
+   but it is a **stop** rather than a workflow.
+4. *Which stage.* Whoever pays the re-verification; it pairs naturally with
+   closing the 32 bare pin sites, which needs the same run.
+
+**New gaps start at 1423** (1423-1429 are this step's remaining range).
+
+### 11. Measurements, all re-measured here
+
+| | at HEAD (`20fa027`) | after this step |
+|---|---|---|
+| `check.sh` | 9/9 | 9/9 |
+| axiom audit | 4,971 theorems | **4,979** (+8, gap 1415's) |
+| check 5 | 93 tests | 93 |
+| corpus | 29/37 files, 4/5 whole plans | unchanged |
+| burn-down | 9, all stage 6 | **9**, all stage 6 — no goal added, discharged or deleted |
+| check 8 | 32,676 citations, 31,020 resolved, 1,656 allowed (134 vocabulary, 351 counted), 0 unused | **32,986 / 31,322 / 1,664** (134 / 351), 0 unused |
+| check 9 | 153 rostered, 40 unfoldable, 21 witness fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare pin sites | **154** rostered (+`idWithin`), 40 / 21 / 8 / 1, 0 owed, 32 |
+| `one_padder` | 8 passed | **9 passed** (+`nothing_outside_the_home_file_cuts_text_short`) |
+| `citations-allow.txt` | — | **byte-identical** |
+| Rust files swept by check 8 | 144 | **148** |
+
+**check 8's +310 is split three ways**, and the first two were measured on a
+scratch copy of HEAD so that "the checker widened" and "this step wrote prose"
+are two numbers and not one:
+
+* **+100** from `rust_split` recovering comment text that a lifetime or a
+  raw-string backslash had blanked — 32,676 → 32,776 with nothing else changed
+  (gap 1416);
+* **+10** from the property-based walk and the three sentences that cited the
+  vanished name — 32,776 → 32,786 (gap 1418);
+* **+200** this step's own new prose, in `EmitWire.lean`, `citations.py`,
+  `leanfiles.py`, `mutate.py`, `one_padder.rs`, `one_renderer.rs`,
+  `srcwalk.rs`, `AGENTS.md` and this block.
+
+`1,656 → 1,664` is **+4 from the checker** (two comment citations of
+uncounted vocabulary that the lifetime had swallowed, and **+2 on `VmHWM`**,
+already a vocabulary entry, arriving with `tm/examples`) and +4 from this
+step's prose. **No counted cap moved**, which is why `0 allow entries unused`
+still holds and why `citations-allow.txt` is byte-identical.
+
+**Check 9's re-verification was real, not a re-blessing.** Inserting ~130 lines
+into `EmitWire.lean` drifted the pin sites of 31 rows — check 9 said so and
+**failed**, which is gap 1190's repair doing its job. `mutate.py --verify --write
+--only EmitWire.lean` re-ran all 32 of that file's rows against real kernel
+builds: **0 failed re-verification, 9 unfoldable, 24 rows whose recorded verdict
+or pin site had drifted (rewritten), 59 s**. `mutations.txt`'s diff is **27 rows
+replaced and one appended** — the 24 drifted, plus the readers whose bodies this
+step changed, plus `idWithin`. **No pin site was edited by hand**; every line in
+that diff came out of a build that was watched to fail.
+
+**Cheats, parity, goals.** `Negative.lean` **untouched** — no cheat taken;
+highest cheat **218**, unchanged. Parity: **no new entry**; track A's is
+renumbered **P38 → P39** and the next free is **P40**. `Goals.lean` untouched:
+burn-down **9**, all stage 6.
+
+### 12. `cli_latency` — gap 1333 is not a 1-in-6 flake, it is a LOAD THRESHOLD
+
+**This step's most useful accident.** Partway through acceptance an unrelated,
+heavy workload started on this shared machine (an Isaac Sim run in another
+session; one-minute load average **222**, 119 of 123 GB resident). Under it
+`cargo test -p tm --test cli_latency` went **0 passed / 5 failed**, and it did so
+on **four consecutive runs with nothing else running of mine** — `tm drop ^a1`
+and `tm drop ^z2` each still running after the 5 s limit at
+`cli_latency.rs:162`.
+
+**It is not this step's.** DRIVEN with the control an auditor would ask for:
+`git stash push -u`, `lake build TmKernel:static` at HEAD, the same command —
+**0 passed / 5 failed**, the identical five, the identical message. The working
+tree was then restored (`git stash pop`) and `check.sh` re-run 9/9. This step
+changes **no** shipped Rust at all: `git status` over the whole repository lists
+`tm/tests/one_padder.rs`, `tm/tests/one_renderer.rs` and the new
+`tm/tests/support/srcwalk.rs` and nothing under any `src/`.
+
+**What it corrects in the ledger.** Gap **1333** and gap **1412** both describe
+this as a flake with *"a rate near 1/6"*, and gap 1412 says six green runs and
+five-of-six *"do not distinguish the flake is fixed from the flake has a rate
+near 1/6 and this machine was quieter"*. **The machine being quieter is the whole
+variable.** Below some load the bands hold on every run of this step's first
+three; above it they fail on every run of four. A 1-in-6 rate is the wrong model
+and it makes the right repair look optional: gap 1333's two named repairs —
+say in `cli_latency.rs`'s header that the bounds hold on an idle machine, or
+serialise the test against everything else — are both about **load**, and the
+second is the only one that makes the suite's verdict independent of what else
+the machine is doing. Recorded here rather than edited into gap 1333, which is
+track P's paragraph.
+
+**Nothing was re-blessed.** The bands are untouched (D18, and AGENTS' standing
+rule); the test is untouched; the finding is the record.
+
+### 13. Acceptance
+
+`check.sh` **9/9**, three times across the step and once on the exact committed
+tree. The suites:
+
+| suite | result |
+|---|---|
+| `cargo test --workspace` | **83 binaries, 1,431 tests** — see the run table below |
+| FFI (`kernel/tm-kernel-ffi`, both binaries) | 93 tests, via check 5 |
+| corpus | 29/37 files, 4/5 whole plans, via check 6 |
+| `one_padder` | 9 passed, 0 failed |
+| `one_renderer` | green |
+| `cli_latency` | **see §12** — it fails on every run above a load threshold and does so identically at HEAD |
+| `.proptest-regressions` | `git status --porcelain -- '*.proptest-regressions'` **empty after every run** (D46). No seed line was added, and none would have been reverted if it had been |
+
+**How many runs (D46), and what each one was run under.** Four, plus one control
+and three of `cli_latency` alone. The load average is quoted with every row,
+because §12 is what this step learned about that column:
+
+| run | one-minute load | result |
+|---|---|---|
+| workspace 1 | idle — before the foreign workload started | 83 binaries, **1,431 passed, 0 failed**, 9 ignored |
+| workspace 2 | idle | **1,431 / 0 / 9** |
+| workspace 3 | idle | **1,431 / 0 / 9** |
+| workspace 4, `--no-fail-fast`, on the exact committed tree | **128** | 83 binaries, **1,428 passed, 3 failed**, 9 ignored — **all three in `cli_latency`**, and 1,428 + 3 = the 1,431 above, so every other binary is green under the load too |
+| `cli_latency` alone, ×3 | 200+ | 0 passed, 5 failed, each time |
+| `cli_latency` alone at **HEAD**, work stashed, kernel rebuilt | 200+ | 0 passed, 5 failed — **the identical five** |
+
+Runs 1–3 were made before the last edits, which are **comment-only** in one
+compiled file (`tm/tests/support/srcwalk.rs`) and otherwise in `README.md`,
+`AGENTS.md`, `mutate.py` and `citations.py`, none of which a test binary links.
+Run 4 is on the committed bytes. The load did not fall back below 12 before this
+block was written — the foreign job was still running — so a fourth *idle* run
+was waited for and **not obtained**, and that is said here rather than implied
+by its absence. **Three green runs and one green-but-for-1333 run is still a
+sample** — that is gap 1412 and it is not fixed here; what §12
+adds is that the sample's variance has a **name**, and it is the machine's load.
+
+Every `cargo`, `check.sh`, `lake`, `lean` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for
+the suites and `check.sh`, 16G for `lake build` and `mutate.py`, 8G with
+`timeout 300` for the `#eval` probes. **No memory bound was raised.**
+
+No predicate or assertion was weakened; no gate was narrowed to make it pass
+(three of them were widened and each was then driven on its own class); no
+snapshot, fixture, latency band or corpus was re-blessed; no new dependency;
+`lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`,
+`partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.
+Every plant made to drive a gate was reverted in the same command that made it
+and `git status` was checked clean afterwards.

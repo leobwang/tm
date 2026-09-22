@@ -6348,3 +6348,18 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_replayed_half_is_a_strict_part_of_the_day
 #print axioms Tm.PlannerWit.every_refuted_day_refutes_its_own_clause
 #print axioms Tm.PlannerWit.the_census_at_every_request_the_prose_quotes
+
+-- APPENDED 2026-09-22: stage 6 W-24, the REPAIR step (AGENTS §6.3).  README gap
+-- 1415's eight: `EmitWire.idWithin` is the smart constructor the section's five
+-- `Id`s now go through, and these are its bound's rejection theorems and their
+-- acceptances.  Three of the five were named by the audit (`item`, a priority
+-- record's `id`, a batch member) and two were not (`Note.noPosition`'s and
+-- `Note.bufferBefore`'s, both read by `readNote`).
+#print axioms Tm.EmitWire.idWithin_refuses_a_long_id
+#print axioms Tm.EmitWire.idWithin_accepts_at_the_bound
+#print axioms Tm.EmitWire.idWithin_refuses_1025_and_accepts_1024
+#print axioms Tm.EmitWire.readSeg_refuses_a_long_item
+#print axioms Tm.EmitWire.readPrio_refuses_a_long_id
+#print axioms Tm.EmitWire.readKind_refuses_a_long_batch_member
+#print axioms Tm.EmitWire.readNote_refuses_a_long_no_position_id
+#print axioms Tm.EmitWire.readNote_refuses_a_long_buffer_before_id

@@ -56,14 +56,27 @@
 //! cell plus a format string" cannot be the rule. What stops the hole widening
 //! is `one_padder.rs`: a stand-in that lays out *columns* has to measure and
 //! pad, and nothing outside `emit.rs` may.
+//!
+//! # The walk this file reads with was a SECOND COPY, and it had diverged
+//!
+//! `sources` and `code_lines` lived here and in `one_padder.rs` — one walk
+//! written twice, inside the two guards that exist to enforce AGENTS §5.3 —
+//! and the copies were **not equivalent**: this one never got README gap
+//! 1201's char-literal rule, so a `&'static str` opened a quote that never
+//! closed and the `//` comment behind it was scanned as code. DRIVEN at the
+//! W-24 repair step: one line appended to `tm/src/cli/day.rs` put
+//! [`no_second_set_of_row_words`] RED on a comment while `one_padder` stayed
+//! green. Both now import `tests/support/srcwalk.rs`, whose header carries the
+//! transcript and the blind-spot sentence this file used to carry alone
+//! (README gap **1419**).
 
 mod cli_common;
+#[path = "support/srcwalk.rs"]
+mod srcwalk;
 mod tui_common;
 
-use std::fs;
-use std::path::{Path, PathBuf};
-
 use cli_common::Tm;
+use srcwalk::{code_lines, sources};
 
 // ---------------------------------------------------------------------------
 // The four surfaces
@@ -366,93 +379,6 @@ const CELLS: &[&str] = &[
     "underused_note",
     "hot_note",
 ];
-
-/// Every `.rs` file of the two crates the binary is built from.
-///
-/// The same walk `one_padder.rs` uses, and with the same blind spot: a renderer
-/// written in a `tests/`, `examples/` or `build.rs` file is invisible to it.
-fn sources() -> Vec<(String, String)> {
-    fn walk(label: &str, root: &Path, dir: &Path, acc: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).expect("read_dir").flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(label, root, &path, acc);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                let rel = path.strip_prefix(root).expect("under src").display().to_string();
-                acc.push((
-                    format!("{label}/{rel}"),
-                    fs::read_to_string(&path).expect("read source"),
-                ));
-            }
-        }
-    }
-    let tm = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = tm.parent().expect("workspace root").to_path_buf();
-    let mut acc = Vec::new();
-    for (label, dir) in [
-        ("tm/src", tm.join("src")),
-        ("tm-core/src", workspace.join("tm-core").join("src")),
-    ] {
-        walk(label, &dir, &dir, &mut acc);
-    }
-    acc.sort();
-    assert!(
-        acc.len() > 20,
-        "the walk found {} files; it is not reading the tree",
-        acc.len()
-    );
-    acc
-}
-
-/// Each line's **code**, comments and their contents stripped — `one_padder.rs`'s
-/// `code_lines`, which an auditor drove RED before it tracked block-comment and
-/// string state (a guard that cannot tell a comment from a call fails on its own
-/// explanation of itself, and the old one dropped every line starting `*`, which
-/// is ordinary Rust).
-fn code_lines(text: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    let mut in_block = false;
-    for (i, line) in text.lines().enumerate() {
-        let mut code = String::new();
-        let mut chars = line.chars().peekable();
-        let mut in_str: Option<char> = None;
-        let mut escaped = false;
-        while let Some(c) = chars.next() {
-            if in_block {
-                if c == '*' && chars.peek() == Some(&'/') {
-                    chars.next();
-                    in_block = false;
-                }
-                continue;
-            }
-            if let Some(quote) = in_str {
-                code.push(c);
-                if escaped {
-                    escaped = false;
-                } else if c == '\\' {
-                    escaped = true;
-                } else if c == quote {
-                    in_str = None;
-                }
-                continue;
-            }
-            match c {
-                '"' | '\'' => {
-                    in_str = Some(c);
-                    code.push(c);
-                }
-                '/' if chars.peek() == Some(&'/') => break,
-                '/' if chars.peek() == Some(&'*') => {
-                    chars.next();
-                    in_block = true;
-                }
-                _ => code.push(c),
-            }
-        }
-        out.push((i + 1, code));
-    }
-    out
-}
 
 /// `(function name, first line, its code lines)` for each `fn` in a file.
 ///

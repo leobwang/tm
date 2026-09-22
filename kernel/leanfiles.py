@@ -58,14 +58,22 @@ def is_build_dir(path):
     return path.name.startswith(".") or (path / CACHE_TAG).is_file()
 
 
-def lean_files(root):
-    """Every .lean file under `root`, recursively, sorted, build dirs pruned.
+def source_files(root, suffix):
+    """Every `suffix` file under `root`, recursively, sorted, build dirs pruned.
 
     `root` is a pathlib.Path or a string; the results are pathlib.Path objects
     under it, so a caller that wants relative or absolute strings converts.
     The walk is explicit rather than a glob because pruning has to stop the
     DESCENT: a glob that filters its results still reads every file name under
-    a build directory."""
+    a build directory.
+
+    THE SUFFIX IS AN ARGUMENT SINCE README GAP 1418, and that is the whole of
+    the Rust side's repair: `citations.py` enumerated the Rust with a hard-coded
+    list of seven directory names, which is the exact shape this file's header
+    says cannot work, and `tm/examples` was not on it -- two compiled
+    `--example` targets of a crate whose `src` and `tests` ARE swept, holding
+    live prose, invisible to check 8.  One walk, one prune rule, both
+    languages."""
     root = pathlib.Path(root)
     out = []
     stack = [root]
@@ -79,9 +87,35 @@ def lean_files(root):
             if entry.is_dir():
                 if not is_build_dir(entry):
                     stack.append(entry)
-            elif entry.suffix == ".lean":
+            elif entry.suffix == suffix:
                 out.append(entry)
     return sorted(out)
+
+
+def lean_files(root):
+    """Every .lean file under `root` (`source_files`, at this kernel's suffix)."""
+    return source_files(root, ".lean")
+
+
+def rust_files(root):
+    """Every .rs file under `root`, by the same walk and the same prune rule.
+
+    check 8's Rust sweep was a NAME LIST -- seven directories, written out --
+    and the list's own blind-spot sentence named only the two `build.rs` files
+    and "a future crate".  `tm/examples` was neither, and was unswept: README
+    gap 1418, the fifth enumeration disagreement of this campaign and the first
+    on the Rust side.  DRIVEN at the W-24 repair step, in a scratch copy: the
+    same `//! plant` prepended to tm/examples/windowbench.rs and to
+    tm/examples/tzprobe.rs left check 8 GREEN with byte-identical counts, while
+    the identical plant in tm/src/main.rs and in
+    kernel/tm-kernel-ffi/examples/oneshot.rs was named.
+
+    WHAT IT CANNOT SEE, and it is the same sentence as `lean_files`': a build
+    directory that is neither dot-prefixed nor CACHEDIR.TAG-marked is walked and
+    a .rs file inside it is read as a source.  `target/` carries the tag and
+    `.claude/`'s worktrees are dot-prefixed, which is why a whole-repository
+    walk is 146 files here and not the 291 a bare `find` returns."""
+    return source_files(root, ".rs")
 
 
 def library_files(pkg):

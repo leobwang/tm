@@ -28,7 +28,11 @@ not plan (README gap 1320).
 
 ## Nothing here re-reads a shape the boundary already reads (AGENTS §5.3)
 
-Every value is decoded by a constructor that already exists.  The segments' bound is
+Every value is decoded by a constructor that already exists, and the one this module declares
+(`idWithin`) re-uses a bound that does rather than inventing a number: **this sentence was
+false when it was written**, and README gap **1415** is the audit that said so — three of the
+section's `Id`s reached the kernel with no bound at all, and two more inside `readNote` that
+the audit did not name.  The segments' bound is
 `Planner.Capped` — **the wire's own candidate cap**.  (`CapWire.maxCandidates` is the same
 number under a second name, which is README gap **1330**, found here and not fixed here.) the priorities go through `Priority.yesterdayOf?` (the one reader of a
 stored `p`), the multiplier through `CapWire.multiplierOfWire` (the one bounded-rational
@@ -47,7 +51,11 @@ says it cannot turn an answer into a refusal.
 |---|---|---|---|
 | a segment | `Seg.wf` — forwards, and inside the calendar | `Planner.mkSeg?` | `readSeg_refuses_an_inverted_segment`, `readSeg_refuses_past_the_horizon` |
 | the segment list | `Planner.maxCands` | `Planner.Capped.ofList?` | `readSegs_refuses_past_the_cap` |
-| a batch's members | `Planner.maxBatch` | `Planner.mkBatch?` | `readKind_refuses_a_batch_past_the_cap` |
+| a batch's members, in number | `Planner.maxBatch` | `Planner.mkBatch?` | `readKind_refuses_a_batch_past_the_cap` |
+| a batch member's own id | `CapWire.maxCandId` | `idWithin` | `readKind_refuses_a_long_batch_member` |
+| a segment's `item` | `CapWire.maxCandId` | `idWithin` | `readSeg_refuses_a_long_item` |
+| a priority record's `id` | `CapWire.maxCandId` | `idWithin` | `readPrio_refuses_a_long_id` |
+| a replayed note's two ids | `CapWire.maxCandId` | `idWithin` | `readNote_refuses_a_long_no_position_id`, `readNote_refuses_a_long_buffer_before_id` |
 | a slot energy | `Fin 6` | `levelOf?` | `readSeg_refuses_an_energy_past_five` |
 | `planned` | `CapWire.maxRemaining` (`Look.maxPlanMinutes`) | a guard in `readSeg` | `readSeg_refuses_a_planned_past_the_bound` |
 | the multiplier | `maxMultiplier` over `maxPairDen` | `CapWire.multiplierOfWire` | `readSeg_refuses_a_zero_denominator` |
@@ -203,6 +211,24 @@ def optStrAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (Opti
   | .ok (some (.str s)) => .ok (some s)
   | .ok (some _) => .error r
 
+/-- **The bound on an id crossing this section's wire** (R10), and the smart constructor the
+five readers of one actually use.
+
+`CapWire.maxCandId` is the number and it is **not a second one**: 1,024 characters is what the
+candidate section already puts on a candidate's own id (`Boundary.readCand`'s
+`within (decide (id.length ≤ maxCandId))`), `Lookahead.lean` names it as the rule for the same
+reason, and two names for one bound is the defect this kernel exists to remove (AGENTS §5.3).
+
+**Five `Id`s cross here and none was bounded** until README gap **1415**: the segment's `item`,
+a priority record's `id`, every member of a `batch`, and the two ids `readNote` plays back
+(`Note.noPosition`'s and `Note.bufferBefore`'s — the two the audit did not name).  Neither
+constructor below them can supply it: `Planner.mkSeg?`'s `Planner.SegErr` has exactly two
+constructors (`inverted`, `pastTheHorizon`) so `Seg.wf` says nothing about the item string, and
+`Planner.mkBatch?` bounds the batch's **count** at `Planner.maxBatch` and never a member's
+length. -/
+def idWithin (r : RowRefusal) (id : Id) : Except RowRefusal Id :=
+  if id.length ≤ CapWire.maxCandId then .ok id else .error r
+
 /-! ## `Note` — the eleven names, read back
 
 `Planner.Note` carries the *name* and its arguments and `Emit.noteText` holds the words, which
@@ -226,7 +252,7 @@ def readNote (i : Nat) (v : JVal) : Except RowRefusal Note := do
   else if nm = "paused".toList then pure .paused
   else if nm = "interruption".toList then pure .interruption
   else if nm = "noPosition".toList then do
-    let id ← strAtP v "id" r
+    let id ← idWithin r (← strAtP v "id" r)
     let d ← natAtP v "durMin" r
     let lo ← natAtP v "lo" r
     let hi ← natAtP v "hi" r
@@ -239,7 +265,7 @@ def readNote (i : Nat) (v : JVal) : Except RowRefusal Note := do
     let b ← natAtP v "total" r
     pure (.plannedOf a b)
   else if nm = "bufferBefore".toList then do
-    let id ← strAtP v "id" r
+    let id ← idWithin r (← strAtP v "id" r)
     pure (.bufferBefore id)
   else if nm = "runningLeft".toList then do
     let n ← natAtP v "leftMin" r
@@ -289,7 +315,7 @@ def readKind (i : Nat) (v : JVal) : Except RowRefusal SegKind := do
     let xs ← arrAtP v "batch" (.badSegment i .batch)
     let ids ← xs.mapM (fun x =>
       match x with
-      | .str s => pure s
+      | .str s => idWithin (.badSegment i .batch) s
       | _ => throw (.badSegment i .batch))
     match Planner.mkBatch? ids with
     | some b => pure (.batch b)
@@ -324,7 +350,9 @@ def readSeg (i : Nat) (v : JVal) : Except RowRefusal WfSeg := do
     | some n => match levelOf? n with
                 | some c => pure (some c)
                 | none => throw (.badSegment i .energy)
-  let item ← optStrAtP v "item" (.badSegment i .item)
+  let item ← match ← optStrAtP v "item" (.badSegment i .item) with
+    | none => pure none
+    | some s => (idWithin (.badSegment i .item) s).map some
   let flags ← readFlags i v
   let pl ← optNatAtP v "planned" (.badSegment i .planned)
   let planned ← match pl with
@@ -364,8 +392,11 @@ def readPrio (i : Nat) (v : JVal) : Except RowRefusal (Id × Fin 8) :=
   | _, .error e => .error e
   | .ok id, .ok n =>
     match yesterdayOf? n with
-    | some k => .ok (id, k)
     | none => .error (.badPriority i)
+    | some k =>
+      match idWithin (.badPriority i) id with
+      | .error e => .error e
+      | .ok id' => .ok (id', k)
 
 /-- §7's answers for the day's keys, at the same cap. -/
 def readPrios (xs : List JVal) : Except RowRefusal (Capped (Id × Fin 8)) :=
@@ -752,6 +783,87 @@ theorem readSeg_accepts_a_block (i : Nat) :
 theorem readRowSection_refuses_a_bad_bed :
     readRowSection (.obj [("bed".toList, .str "24:99".toList),
       ("segments".toList, .arr [])]) = .error (.bad .bed) := by
+  rfl
+
+/-! ### The five ids, bounded (README gap 1415)
+
+`idWithin` is the constructor and `CapWire.maxCandId` is the bound; each theorem below is the
+wire reaching it, and each has an acceptance beside it because a bound nothing can pass is a
+trapdoor and a bound nothing can fail is decoration (AGENTS §5.8). -/
+
+/-- **An id past `CapWire.maxCandId` is refused**, whatever the refusal is named. -/
+theorem idWithin_refuses_a_long_id (r : RowRefusal) (id : Id)
+    (h : CapWire.maxCandId < id.length) : idWithin r id = .error r := by
+  unfold idWithin
+  rw [if_neg (by omega)]
+
+/-- And an id at the bound is accepted, so the guard is where it says it is. -/
+theorem idWithin_accepts_at_the_bound (r : RowRefusal) (id : Id)
+    (h : id.length ≤ CapWire.maxCandId) : idWithin r id = .ok id := by
+  unfold idWithin
+  rw [if_pos h]
+
+/-- **Both are inhabited**: 1,025 characters is over and 1,024 is not, so neither theorem above
+is vacuous.  Stated with `List.replicate` and closed by its length lemma rather than by `rfl`,
+which would make the kernel walk a thousand cons cells for nothing. -/
+theorem idWithin_refuses_1025_and_accepts_1024 (r : RowRefusal) :
+    idWithin r (List.replicate (CapWire.maxCandId + 1) 'x') = .error r ∧
+    idWithin r (List.replicate CapWire.maxCandId 'x')
+      = .ok (List.replicate CapWire.maxCandId 'x') :=
+  ⟨idWithin_refuses_a_long_id r _ (by simp), idWithin_accepts_at_the_bound r _ (by simp)⟩
+
+/-- **A segment's `item` past the bound is refused.**  Stated over whatever the reader returns,
+so it is a fact about the decoder and not about one JSON object. -/
+theorem readSeg_refuses_a_long_item (i : Nat) (v : JVal) (id : Id)
+    (hs : natAtP v "start" (.badSegment i .start) = .ok 0)
+    (hp : natAtP v "stop" (.badSegment i .stop) = .ok 0)
+    (hk : readKind i v = .ok .block)
+    (he : optNatAtP v "energy" (.badSegment i .energy) = .ok none)
+    (hi : optStrAtP v "item" (.badSegment i .item) = .ok (some id))
+    (h : CapWire.maxCandId < id.length) :
+    readSeg i v = .error (.badSegment i .item) := by
+  simp only [readSeg, hs, hp, hk, he, hi, bind, Except.bind, pure, Except.pure,
+    idWithin_refuses_a_long_id (RowRefusal.badSegment i RowKey.item) id h, Except.map]
+
+/-- **A priority record's `id` past the bound is refused**, through the same constructor. -/
+theorem readPrio_refuses_a_long_id (i : Nat) (v : JVal) (id : Id) (n : Nat) (k : Fin 8)
+    (hid : strAtP v "id" (.badPriority i) = .ok id)
+    (hn : natAtP v "p" (.badPriority i) = .ok n) (hk : yesterdayOf? n = some k)
+    (h : CapWire.maxCandId < id.length) :
+    readPrio i v = .error (.badPriority i) := by
+  simp only [readPrio, hid, hn, hk,
+    idWithin_refuses_a_long_id (RowRefusal.badPriority i) id h]
+
+/-- **A batch member past the bound is refused**, so `mkBatch?`'s count bound is no longer the
+only thing standing between the wire and a `BatchIds`. -/
+theorem readKind_refuses_a_long_batch_member (i : Nat) (v : JVal) (id : Id)
+    (hk : strAtP v "kind" (.badSegment i .kind) = .ok "batch".toList)
+    (hb : arrAtP v "batch" (.badSegment i .batch) = .ok [.str id])
+    (h : CapWire.maxCandId < id.length) :
+    readKind i v = .error (.badSegment i .batch) := by
+  simp only [readKind, hk, hb, bind, Except.bind, pure, Except.pure, List.mapM,
+    List.mapM.loop, idWithin_refuses_a_long_id (RowRefusal.badSegment i RowKey.batch) id h]
+  rfl
+
+/-- **A replayed `noPosition`'s id past the bound is refused** — the first of the two ids
+`readNote` reads back, and neither was named by the audit that opened gap 1415. -/
+theorem readNote_refuses_a_long_no_position_id (i : Nat) (v : JVal) (id : Id)
+    (hn : strAtP v "name" (.badSegment i .note) = .ok "noPosition".toList)
+    (hid : strAtP v "id" (.badSegment i .note) = .ok id)
+    (h : CapWire.maxCandId < id.length) :
+    readNote i v = .error (.badSegment i .note) := by
+  simp only [readNote, hn, hid, bind, Except.bind, pure, Except.pure,
+    idWithin_refuses_a_long_id (RowRefusal.badSegment i RowKey.note) id h]
+  rfl
+
+/-- **And a `bufferBefore`'s**, which is the id a `buffer:` puts in front of a wall. -/
+theorem readNote_refuses_a_long_buffer_before_id (i : Nat) (v : JVal) (id : Id)
+    (hn : strAtP v "name" (.badSegment i .note) = .ok "bufferBefore".toList)
+    (hid : strAtP v "id" (.badSegment i .note) = .ok id)
+    (h : CapWire.maxCandId < id.length) :
+    readNote i v = .error (.badSegment i .note) := by
+  simp only [readNote, hn, hid, bind, Except.bind, pure, Except.pure,
+    idWithin_refuses_a_long_id (RowRefusal.badSegment i RowKey.note) id h]
   rfl
 
 /-- The empty day reads, so the section's own refusals are not the only outcome. -/

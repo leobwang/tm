@@ -263,11 +263,22 @@ nothing else; do not quote these, RE-MEASURE.
     saying they were invented), calendar_date and entry_json (past-tense
     removals still in backticks) and HotFlag (a class name beside the live
     variant `Overdue`).  WHAT IT STILL CANNOT SEE: a `let` binding cited from
-    prose needs an allow-list entry (measured and declined above); a
-    `#[doc = "..."]` attribute is a string literal and is blanked; and a Rust
-    comment under a directory outside RUST_DIRS is unswept -- tm/build.rs and
-    kernel/tm-kernel-ffi/build.rs are OUTSIDE it, a future crate would be too.
-    Check 9 has the same edge (README gap 936).
+    prose needs an allow-list entry (measured and declined above); and a
+    `#[doc = "..."]` attribute is a string literal and is blanked.
+
+    THE FOURTH BULLET HERE USED TO BE THE DIRECTORY LIST, and it under-reported
+    itself exactly the way check 3's roster grep did: it named tm/build.rs,
+    kernel/tm-kernel-ffi/build.rs and "a future crate" as the unswept cases,
+    while tm/examples -- two compiled `--example` targets of a crate whose src
+    and tests ARE swept -- was none of the three and was unswept (README gap
+    1418).  `RUST_FILES` is `leanfiles.rust_files(ROOT)` since the W-24 repair
+    step, the SAME property-based walk and prune rule the Lean side has used
+    since W-22, so there is no list to be missing from: a .rs file anywhere in
+    the repository outside a dot-directory or a CACHEDIR.TAG'd build directory
+    is swept.  What REPLACES the bullet is that walk's own blind spot, stated
+    in `leanfiles.rust_files`: an undeclared build directory is walked and its
+    generated .rs read as a source.  Check 9 still has the old edge on the Lean
+    side (README gap 936).
     kernel/check.sh, kernel/mutations.txt and
     kernel/*.py ARE swept as prose since the W-20 repair step, which is where
     check.sh's own specification of D41's widening was found citing a
@@ -342,9 +353,17 @@ CHECKERS = [os.path.join(HERE, "check.sh"),
             os.path.join(HERE, "mutations.txt")] + \
            sorted(glob.glob(os.path.join(HERE, "*.py")))
 TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
-RUST_DIRS = ["tm/src", "tm-core/src", "tm/tests", "tm-core/tests",
-             "kernel/tm-kernel-ffi/src", "kernel/tm-kernel-ffi/tests",
-             "kernel/tm-kernel-ffi/examples"]
+# THE RUST SOURCES, BY THE SAME PROPERTY-BASED WALK THE LEAN USES.  This was a
+# hard-coded list of seven directory names until README gap 1418 -- the exact
+# shape leanfiles.py's own header says cannot work -- and `tm/examples` was not
+# on it: two compiled `--example` targets of the `tm` crate whose `src` and
+# `tests` ARE swept, holding 17 backticked spans of live prose about
+# `kernel_log::ReplayCache`, and check 8 was GREEN on a plant in either of them.
+# The list's blind-spot sentence named only `tm/build.rs`,
+# `kernel/tm-kernel-ffi/build.rs` and "a future crate", so it could not see it.
+# The walk now starts at the repository ROOT and prunes by property, which
+# closes all three of those named holes as well.
+RUST_FILES = [str(p) for p in leanfiles.rust_files(ROOT)]
 
 # A Rust FUNCTION PARAMETER, read out of `rust_code` so a comment cannot
 # declare one.  `(name:` or `, name:`, with `mut` allowed -- deliberately the
@@ -479,66 +498,133 @@ def lean_code(text):
     return "\n".join(out)
 
 
-def rust_prose(text):
-    """The exact COMPLEMENT of `rust_code`: comment text only, lines preserved.
+def rust_split(text):
+    """ONE walk, BOTH halves: `(code, prose)`, lines preserved in each.
 
-    `rust_code` blanks comments and string contents and keeps the code; this
-    keeps the comments and blanks everything else, INCLUDING the `//`, `///`,
-    `//!` and `/* */` markers themselves, so a swept line is ordinary prose and
-    the wrap carry cannot pick a marker up as part of a name.  Every byte of a
-    `.rs` file is therefore read by exactly one of the two, which is what makes
-    "prose does not declare" (gap 1312) and "prose is cited from" (gap 1313
-    item 3) the same partition seen from its two sides.
+    `rust_code` and `rust_prose` were two scanners of one grammar, and AGENTS
+    5.3 is what happened next: `rust_code` grew a CHAR-LITERAL rule -- a `'`
+    that opens no literal is a lifetime or a loop label and is ordinary code
+    (one_padder.rs's `is_char_literal`, README gap 1201) -- and `rust_prose`,
+    written in the same commit, did not.  It opened a quote span at every `'`
+    and blanked everything to the next apostrophe, COMMENTS INCLUDED, so a
+    `&'static str` anywhere in a file swallowed the prose behind it.  Driven at
+    the W-24 repair step, in a scratch copy: two plants three lines apart at
+    tm-core/src/emit.rs, with `fn w24_lifetime_probe(x: &'static str)` between
+    them, and only the FIRST was reported -- check 8 green on a needle it was
+    built to see.  README gap 1416.
+
+    So there is one scanner now and the two functions below select from it.
+    The docstrings' claim -- "the exact complement", "every byte of a `.rs`
+    file is read by exactly one of the two" -- is a property of this walk
+    rather than of two walks agreeing, and a rule added to either half cannot
+    be added to only one.  The claim is still not "every byte is READ": a
+    string's CONTENTS are deliberately in neither half (a string that is
+    exactly an identifier declares it, `STRING_LIT`, and that runs over the raw
+    text); what the partition covers is which side of the code/comment line
+    each byte falls on.
     """
-    out, i, n, depth = [], 0, len(text), 0
+    def blank(chunk):
+        return "".join("\n" if c == "\n" else " " for c in chunk)
+
+    code, prose = [], []
+    i, n, depth = 0, len(text), 0
     while i < n:
         c = text[i]
         if depth:
             # `/* */` NESTS in Rust, unlike C.
             if text.startswith("*/", i):
                 depth, i = depth - 1, i + 2
-                out.append("  ")
+                prose.append("  ")
             elif text.startswith("/*", i):
                 depth, i = depth + 1, i + 2
-                out.append("  ")
+                prose.append("  ")
             else:
-                out.append(c)
+                code.append("\n" if c == "\n" else " ")
+                prose.append(c)
                 i += 1
             continue
         if text.startswith("//", i):
             j = text.find("\n", i)
             j = n if j < 0 else j
             run = text[i:j]
+            # The `//`, `///` and `//!` markers are blanked too, so a swept
+            # line is ordinary prose and the wrap carry cannot pick a marker
+            # up as part of a name.
             k = 2
             while k < len(run) and run[k] in "/!":
                 k += 1
-            out.append(" " * k + run[k:])
+            code.append(" " * len(run))
+            prose.append(" " * k + run[k:])
             i = j
             continue
         if text.startswith("/*", i):
             depth, i = 1, i + 2
-            out.append("  ")
+            code.append("  ")
+            prose.append("  ")
             continue
-        if c == '"' or c == "'":
-            q, i = c, i + 1
-            out.append(" ")
-            while i < n and text[i] != q:
-                if text[i] == "\\":
-                    out.append("  ")
-                    i += 2
-                    continue
-                out.append("\n" if text[i] == "\n" else " ")
-                i += 1
-            out.append(" ")
-            i += 1
+        # A RAW string: `r"..."`, `br##"..."##`.  Its body has no escapes, so
+        # the terminator is the quote followed by as many `#` as opened it.
+        raw = RAW_OPEN.match(text, i)
+        if raw:
+            close = '"' + "#" * raw.group(0).count("#")
+            j = text.find(close, raw.end())
+            j = n if j < 0 else j + len(close)
+            code.append(raw.group(0)[:-1] + '"' + blank(text[raw.end():j]))
+            prose.append(blank(text[i:j]))
+            i = j
             continue
-        out.append("\n" if c == "\n" else " ")
+        if c == '"' or (c == "b" and text.startswith('b"', i)):
+            k = i + (2 if c == "b" else 1)
+            if c == "b":
+                code.append("b")
+            j = k
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            code.append('"' + blank(text[k:j]) + ('"' if j < n else ""))
+            stop = min(j + 1, n)
+            prose.append(blank(text[i:stop]))
+            i = stop
+            continue
+        # A CHAR literal, which may hold a quote: `'"'`.  A `'` that is not one
+        # is a lifetime or a loop label and is ordinary code (one_padder.rs's
+        # `is_char_literal`, README gap 1201, in Python).  BOTH halves get this
+        # rule because there is only one of it; that is gap 1416's whole fix.
+        if c == "'" or (c == "b" and text.startswith("b'", i)):
+            k = i + (2 if c == "b" else 1)
+            if k < n and text[k] == "\\":
+                j = text.find("'", k + 2)
+            elif k + 1 < n and text[k + 1] == "'":
+                j = k + 1
+            else:
+                j = -1
+            if j >= 0:
+                code.append(text[i:k] + blank(text[k:j]) + "'")
+                prose.append(blank(text[i:j + 1]))
+                i = j + 1
+                continue
+        code.append(c)
+        prose.append("\n" if c == "\n" else " ")
         i += 1
-    return "".join(out)
+    return "".join(code), "".join(prose)
+
+
+def rust_prose(text):
+    """The COMMENT half of `rust_split`: comment text only, lines preserved.
+
+    `rust_code` keeps the code and blanks comments; this keeps the comments and
+    blanks everything else, INCLUDING the `//`, `///`, `//!` and `/* */`
+    markers themselves.  Every byte of a `.rs` file falls on exactly one side
+    of that line, which is what makes "prose does not declare" (gap 1312) and
+    "prose is cited from" (gap 1313 item 3) the same partition seen from its
+    two sides -- and since gap 1416 it is ONE walk that draws the line, so the
+    two sides cannot disagree about where it is.
+    """
+    return rust_split(text)[1]
 
 
 def rust_code(text):
-    """`text` with `//` and `/* */` comments and string/char CONTENTS blanked.
+    """The CODE half of `rust_split`: `//` and `/* */` comments and string/char
+    CONTENTS blanked.
 
     **PROSE DOES NOT DECLARE** (README gap 1312).  `RUST_DECL` has no anchor
     and ran over whole file text, so `// The old fn foo is gone.` declared
@@ -554,71 +640,7 @@ def rust_code(text):
 
     Lines are preserved so nothing else in this file has to care.
     """
-    def blank(chunk):
-        return "".join("\n" if c == "\n" else " " for c in chunk)
-
-    out = []
-    i, n, depth = 0, len(text), 0
-    while i < n:
-        c = text[i]
-        if depth:
-            # `/* */` NESTS in Rust, unlike C.
-            if text.startswith("*/", i):
-                depth, i = depth - 1, i + 2
-            elif text.startswith("/*", i):
-                depth, i = depth + 1, i + 2
-            else:
-                out.append("\n" if c == "\n" else " ")
-                i += 1
-            continue
-        if text.startswith("//", i):
-            j = text.find("\n", i)
-            j = n if j < 0 else j
-            out.append(" " * (j - i))
-            i = j
-            continue
-        if text.startswith("/*", i):
-            depth, i = 1, i + 2
-            out.append("  ")
-            continue
-        # A RAW string: `r"..."`, `br##"..."##`.  Its body has no escapes, so
-        # the terminator is the quote followed by as many `#` as opened it.
-        raw = RAW_OPEN.match(text, i)
-        if raw:
-            close = '"' + "#" * raw.group(0).count("#")
-            j = text.find(close, raw.end())
-            j = n if j < 0 else j + len(close)
-            out.append(raw.group(0)[:-1] + '"' + blank(text[raw.end():j]))
-            i = j
-            continue
-        if c == '"' or (c == "b" and text.startswith('b"', i)):
-            k = i + (2 if c == "b" else 1)
-            if c == "b":
-                out.append("b")
-            j = k
-            while j < n and text[j] != '"':
-                j += 2 if text[j] == "\\" else 1
-            out.append('"' + blank(text[k:j]) + ('"' if j < n else ""))
-            i = min(j + 1, n)
-            continue
-        # A CHAR literal, which may hold a quote: `'"'`.  A `'` that is not one
-        # is a lifetime or a loop label and is ordinary code (one_padder.rs's
-        # `is_char_literal`, README gap 1201, in Python).
-        if c == "'" or (c == "b" and text.startswith("b'", i)):
-            k = i + (2 if c == "b" else 1)
-            if k < n and text[k] == "\\":
-                j = text.find("'", k + 2)
-            elif k + 1 < n and text[k + 1] == "'":
-                j = k + 1
-            else:
-                j = -1
-            if j >= 0:
-                out.append(text[i:k] + blank(text[k:j]) + "'")
-                i = j + 1
-                continue
-        out.append(c)
-        i += 1
-    return "".join(out)
+    return rust_split(text)[0]
 
 
 def declared():
@@ -647,8 +669,7 @@ def declared():
                     names.add(field.group(1))
             else:
                 names.update(LEAN_CTOR.findall(line))
-    for rel in RUST_DIRS:
-        for path in sorted(glob.glob(os.path.join(ROOT, rel, "**", "*.rs"), recursive=True)):
+    for path in RUST_FILES:
             text = read(path)
             code = rust_code(text)
             names.update(RUST_DECL.findall(code))
@@ -711,9 +732,8 @@ def cited():
     # THE RUST COMMENTS (W-24).  Read through `rust_prose`, the complement of
     # the `rust_code` that `declared()` reads, so neither half of a `.rs` file
     # can stand in for the other.
-    for rel in RUST_DIRS:
-        for p in sorted(glob.glob(os.path.join(ROOT, rel, "**", "*.rs"), recursive=True)):
-            sources.append((p, rust_prose(read(p))))
+    for p in RUST_FILES:
+        sources.append((p, rust_prose(read(p))))
     for path, text in sources:
         fenced = path.endswith(".md")
         inside = False

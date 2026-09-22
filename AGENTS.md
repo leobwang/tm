@@ -142,13 +142,21 @@ not a flaky run: never retry it uncapped. (The macOS machine the earlier stamps
 were taken on has no `systemd-run`; there, cap by other means or keep every
 `decide` small, §5.10a.)
 
-**Seven** checks, exit 0, warm wall time 1.1 s (four consecutive capped runs at
-`bf7cc63`: 1.13, 1.11, 1.10, 1.10 s; `c8f3a38`'s were 1.15, 1.14, 1.11 s). It is
+**Nine** checks, exit 0. *(This paragraph said **seven** until the W-24 repair
+step, and so did §6.5 and §7.1's heading: check 8 — the prose citations — landed
+at W-19 and check 9 — every new definition constant-folded — at W-20, and the
+number here never moved. §5.11 applies to this file, which is the lesson the
+correction carries.)* The wall time below is the seven-check stamp and is stale
+with it: warm 1.1 s (four consecutive capped runs at
+`bf7cc63`: 1.13, 1.11, 1.10, 1.10 s; `c8f3a38`'s were 1.15, 1.14, 1.11 s); at
+nine it is ~8 s on the machine that measured it, and `check.sh`'s own check-9
+comment carries that number. It is
 the kernel's acceptance script, it is short, and you should read it before
 claiming any of its checks — and since 2026-09-12 it is **not the whole
 acceptance**: `cargo test --workspace` stands beside it (§7.5). Note it is `set -uo pipefail`
-and **not** `-e`: all seven run regardless, so one failure does not hide the
-others. §7 says what each one proves.
+and **not** `-e`: all nine run regardless, so one failure does not hide the
+others. §7 says what each one proves — checks 1–7 in §7.1, and checks 8 and 9 in
+their own scripts' headers and in `check.sh`'s comments above them.
 
 The seventh is the one stages 3–6 care about most: it elaborates
 `kernel/TmKernel/Goals.lean`, which holds the outstanding goals of stages 3–6 as
@@ -1110,14 +1118,49 @@ banner which range is yours and fix it at the merge (§6.5).
 4. Delete from `Goals.lean` every goal the branches discharged, and check that
    check 7's number went **down** by exactly that many (§3.2).
 5. Confirm every new module is imported in `TmKernel/TmKernel.lean` (§2.3).
-6. Run `check.sh`, capped (§2.1). All **seven** checks, exit 0 — and
-   `cargo test --workspace` green beside it (§7.5).
+6. Run `check.sh`, capped (§2.1). All **nine** checks, exit 0 — and
+   `cargo test --workspace` green beside it (§7.5). *(This line said "seven"
+   until the W-24 repair step; checks 8 and 9 landed at W-19 and W-20. §2.1 and
+   §7.1 said it too and are repaired with it.)*
+7. **Reconcile the PARITY register, the way item 1 reconciles the cheats.** A
+   parity entry is a recorded divergence from the fork (D21/D22), and the
+   register has no single home and no gate — README **gap 226** said so when
+   **P32 was issued twice**, and **P38 was issued twice** at W-24 for exactly
+   the same reason (README gap **1417**): gap 402's block took P38, four later
+   blocks wrote "P38 still free", and W-24 track A believed the later ones.
+   This checklist is where the merge could have caught it and did not, because
+   it reconciled everything except this. The reconciliation is:
+
+   ```bash
+   cd /Users/psixyzt/code/planner/kernel
+   grep -noE '\*\*Parity P[0-9]+ taken\*\*|^\| \*\*P[0-9]+\*\* \|' README.md
+   ```
+
+   Every number it prints must appear **once**. It is a command and not a
+   check, and the reason is written down rather than left to be rediscovered: a
+   `P<n>` in this repository is also a stage-6 **step** name (P1–P5, and track P
+   itself), so a regex over `P<n>` cannot tell an issuance from a step
+   reference, and the two idioms above are the only ones a block has ever used
+   to *issue* one. A block that issues a parity entry in a third spelling is
+   invisible to it. **The gate this wants** is a canonical issuance line that
+   every block must carry, checked for uniqueness — which is a convention to
+   impose on future blocks, not something that can be retrofitted over 53,000
+   lines of ledger.
 
 ---
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks, and what each one proves
+### 7.1 The seven checks this section documents — and `check.sh` runs NINE
+
+**This heading said "the seven checks" while `check.sh` ran nine**, and the
+number is repaired here rather than the section: checks **8** (the prose
+citations, W-19, owner D39/D41) and **9** (every new definition constant-folded,
+W-20, owner D40) are specified by their own scripts' headers —
+`kernel/citations.py` and `kernel/mutate.py` — and by `check.sh`'s comments
+above each, which are long and are the specification. What is written out below
+is checks 1–7. Do not read "seven" here as the size of the acceptance; §2.1 and
+§6.5 carry that number and both said "seven" too until the W-24 repair step.
 
 Run them together with `kernel/check.sh`. Each also runs alone. **Every command
 in this section runs under the memory cap** — prefix it with

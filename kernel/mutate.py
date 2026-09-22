@@ -259,10 +259,37 @@ DECL_KW = ("theorem", "lemma", "def", "abbrev", "structure", "inductive",
 
 BODY_KW = ("termination_by", "decreasing_by")
 
+# **`instance` IS A DEFINITION** (README gap 1421).  It carries computational
+# content -- a `Decidable` instance decides, a `KeyHash` instance hashes -- and
+# this pattern read `def|abbrev` only, so an instance was neither rostered nor
+# OWED: `owed` is `[d for d in decls if d not in rostered]` over what this
+# returns, so a declaration this cannot see is a declaration the gate reports
+# `0 owed` about.  The hole was EMPTY when it was found (0 instances added since
+# the baseline, verified by `git diff`), and it is the shape the obvious fix for
+# README gap 1332's `pinned by nothing` rows would ADD: a hand-written
+# `instance : Inhabited X := <a chosen default>` is a default constructor for a
+# sum type entering the kernel through the one gate built to catch new
+# definitions.
+#
+# AN ANONYMOUS INSTANCE HAS NO NAME TO ROSTER, and ALL TWELVE of the library's
+# instances are anonymous (measured at the W-24 repair step; the five lines a
+# naive grep calls a named instance are prose beginning with the word), so
+# `ANON_INSTANCE` gives each one a name derived from its TYPE -- stable across
+# line moves, which a line number would not be -- and the roster row is keyed on
+# it like any other.
 HEAD = re.compile(
     r"^(?:@\[[^\]]*\][ \t]*)?"
     r"(?:(?:private|protected|noncomputable|partial|unsafe|scoped|local)[ \t]+)*"
-    r"(def|abbrev)[ \t]+([^\s(){}\[\],:]+)")
+    r"(def|abbrev|instance)[ \t]+([^\s(){}\[\],:]+)")
+
+# `instance : C T := ...` and `instance (a b : T) : C T := ...` -- the forms
+# with no name at all.  The synthesised name is an inst_ prefix plus the identifier
+# characters of everything between the last depth-zero `:` of the header and
+# the `:=`, which is the CLASS the instance is for.
+ANON_INSTANCE = re.compile(
+    r"^(?:@\[[^\]]*\][ \t]*)?"
+    r"(?:(?:private|protected|noncomputable|partial|unsafe|scoped|local)[ \t]+)*"
+    r"instance[ \t]*(?=[:({\[])")
 
 # The same header INDENTED.  Lean accepts it and this file's extent rule does
 # not: `starts_declaration` answers False for any line beginning with a space,
@@ -528,8 +555,43 @@ def split_header(text, start):
     return None, None, None
 
 
+def anon_instance_name(line):
+    """A stable roster name for an anonymous `instance`, off its CLASS.
+
+    `instance : LT Instant := ...` is inst_LTInstant; `instance (a b :
+    Instant) : Decidable (a < b) := ...` is inst_Decidableab.  It is derived
+    from the header's text rather than from the line number because a roster
+    key that moves when a comment is inserted is a roster key that rots -- which
+    is README gap 1190, the defect the fifth column already carries.
+
+    THE CLASS TEXT ALONE IS NOT UNIQUE, and the library proves it: `Cal.lean`
+    declares `instance (a b : Instant) : Decidable (a < b)` and `Decidable (a
+    \u2264 b)` on consecutive lines, and both reduce to `Decidableab` once the
+    non-identifier characters go -- one roster key for two declarations, which
+    the `(file, name)` dictionary would have swallowed in silence.  So a short
+    digest of the whole normalised header goes on the end.  It is stable across
+    line moves and across everything except an edit to the header itself, and an
+    edit to the header IS a new declaration for this gate's purposes."""
+    head = line.split(":=", 1)[0]
+    body = head.split("instance", 1)[1]
+    # Everything after the LAST top-level `:` is the class; a binder's own `:`
+    # is inside brackets and is skipped.
+    depth, cut = 0, None
+    for i, c in enumerate(body):
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif c == ":" and depth == 0:
+            cut = i
+    cls = body[cut + 1:] if cut is not None else body
+    ident = "".join(c for c in cls if c.isalnum() or c == "_")
+    tag = hashlib.sha1(" ".join(head.split()).encode("utf-8")).hexdigest()[:6]
+    return "inst_%s_%s" % (ident or "anonymous", tag)
+
+
 def declarations(text, path):
-    """Every `def`/`abbrev` in one file: name, body text, char span, type."""
+    """Every `def`, `abbrev` and `instance` in one file: name, body, span, type."""
     out = []
     lines = text.split("\n")
     starts = []
@@ -538,9 +600,16 @@ def declarations(text, path):
     # UNPARSED and would fail the gate for a sentence.
     comment = 0
     for n, line in enumerate(lines):
-        m = HEAD.match(line)
+        m = HEAD.match(line) if comment == 0 else None
+        # **PROSE IS NOT A DECLARATION** here either (README gap 1308 closed the
+        # same hole in `decl_spans` and left this one open, because `def` and
+        # `abbrev` do not start English sentences and `instance` does -- eleven
+        # phantom spans were measured from exactly that word).  The tracker
+        # below already ran for `INDENTED`; it now runs for `HEAD` too.
         if m:
             starts.append((n, m.group(2)))
+        elif comment == 0 and ANON_INSTANCE.match(line):
+            starts.append((n, anon_instance_name(line)))
         elif comment == 0 and INDENTED.match(line):
             out.append({"name": INDENTED.match(line).group(2), "file": path,
                         "line": n + 1, "last": n + 1, "body": None,
@@ -1589,6 +1658,32 @@ def main(argv):
         print("WITNESS_MODULES is not what it claims:")
         for why in violations:
             print("  %s" % why)
+        return 1
+
+    # **TWO DECLARATIONS OF ONE SHORT NAME IN ONE FILE ARE A COLLISION**
+    # (README gap 1422, found at the W-24 repair step while `instance` was being
+    # added).  The roster is keyed on `(file, SHORT name)`, and `roster()` reads
+    # a repeated key as a deliberate RE-AUDIT -- so two DIFFERENT definitions
+    # sharing a short name in one file are indistinguishable from one definition
+    # audited twice, and only one of the two can ever match its row's sha.  It
+    # is the same class as check 3's multiset reconciliation, which exists
+    # because 24 short names are declared in more than one namespace.
+    #
+    # SIX PAIRS ARE LIVE IN THE LIBRARY TODAY and none is currently new or
+    # changed, so this is a latch rather than a repair: Boundary.lean `readTz`
+    # and `readStep` (each in two namespaces), Line.lean `setEst` and `keyOf`,
+    # Replay.lean `get` and `alter` (`KMap` and `HMap`).  A step that edits one
+    # of those files fails HERE, by name, instead of being told `0 owed` about a
+    # definition the roster cannot hold.  The real fix is a qualified key, which
+    # rewrites every row in mutations.txt and re-verifies them; that is the gap.
+    seen = collections.Counter((d["file"], d["name"]) for d in decls)
+    clash = sorted(k for k, n in seen.items() if n > 1)
+    if clash:
+        print("%d short name(s) declared TWICE in one file -- the roster is "
+              "keyed on (file, name) and cannot hold both (README gap 1422):"
+              % len(clash))
+        for path, name in clash:
+            print("  %s %s" % (path, name))
         return 1
 
     # **THE RECORDED PIN SITE IS RE-RESOLVED, on every run and without a build**

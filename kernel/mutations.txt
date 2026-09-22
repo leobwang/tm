@@ -245,36 +245,37 @@ c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean fromNowWorkRows fun____=>true,fun
 2dbe82e792af TmKernel/TmKernel/PlannerWit.lean theIdleQueuedRequest unfoldable no Inhabited PlanReq
 afa7ffea0abb TmKernel/TmKernel/Emit.lean batchNames default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 fe83490ffd51 TmKernel/TmKernel/EmitWire.lean asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except RowRefusal α)
-ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean natAtP default EmitWire.lean:655 readPrio_refuses_eight
-24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean strAtP default EmitWire.lean:599 readOptNote_of_a_present_note
-a0819f473922 TmKernel/TmKernel/EmitWire.lean arrAtP default EmitWire.lean:689 readKind_refuses_a_batch_past_the_cap
-8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean optAtP default EmitWire.lean:599 readOptNote_of_a_present_note
-21f2cd76331f TmKernel/TmKernel/EmitWire.lean flagAtP default EmitWire.lean:749 readSeg_accepts_a_block
-7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean optNatAtP default EmitWire.lean:703 readSeg_refuses_an_energy_past_five
-f618837e678a TmKernel/TmKernel/EmitWire.lean optStrAtP default EmitWire.lean:749 readSeg_accepts_a_block
-9f9af029585b TmKernel/TmKernel/EmitWire.lean maxNoteText 0,1,literal EmitWire.lean:675 readNote_accepts_a_short_text; EmitWire.lean:675 readNote_accepts_a_short_text; the body IS the constant `200`
-ddd4b691d709 TmKernel/TmKernel/EmitWire.lean readNote unfoldable no Inhabited (Except RowRefusal Note)
-7fc89083b6fb TmKernel/TmKernel/EmitWire.lean readKind unfoldable no Inhabited (Except RowRefusal SegKind)
+ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean natAtP default EmitWire.lean:686 readPrio_refuses_eight
+24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean strAtP default EmitWire.lean:630 readOptNote_of_a_present_note
+a0819f473922 TmKernel/TmKernel/EmitWire.lean arrAtP default EmitWire.lean:720 readKind_refuses_a_batch_past_the_cap
+8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean optAtP default EmitWire.lean:630 readOptNote_of_a_present_note
+21f2cd76331f TmKernel/TmKernel/EmitWire.lean flagAtP default EmitWire.lean:780 readSeg_accepts_a_block
+7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean optNatAtP default EmitWire.lean:734 readSeg_refuses_an_energy_past_five
+f618837e678a TmKernel/TmKernel/EmitWire.lean optStrAtP default EmitWire.lean:780 readSeg_accepts_a_block
+9f9af029585b TmKernel/TmKernel/EmitWire.lean maxNoteText 0,1,literal EmitWire.lean:706 readNote_accepts_a_short_text; EmitWire.lean:706 readNote_accepts_a_short_text; the body IS the constant `200`
+3294cc1ab6ea TmKernel/TmKernel/EmitWire.lean readNote unfoldable no Inhabited (Except RowRefusal Note)
+902fe5358e45 TmKernel/TmKernel/EmitWire.lean readKind unfoldable no Inhabited (Except RowRefusal SegKind)
 d24f39c2963f TmKernel/TmKernel/EmitWire.lean readFlags unfoldable no Inhabited (Except RowRefusal SegFlags)
-7b1b7bc14185 TmKernel/TmKernel/EmitWire.lean readSeg unfoldable no Inhabited (Except RowRefusal WfSeg)
+3b57932a622a TmKernel/TmKernel/EmitWire.lean readSeg unfoldable no Inhabited (Except RowRefusal WfSeg)
 07d646a02b76 TmKernel/TmKernel/EmitWire.lean readSegs unfoldable no Inhabited (Except RowRefusal (Capped WfSeg))
-7b0e5fab078c TmKernel/TmKernel/EmitWire.lean readPrio default EmitWire.lean:648 readPrio_refuses_a_priority_past_seven
+bfead27b6d14 TmKernel/TmKernel/EmitWire.lean readPrio default EmitWire.lean:679 readPrio_refuses_a_priority_past_seven
 77d1a8697145 TmKernel/TmKernel/EmitWire.lean readPrios unfoldable no Inhabited (Except RowRefusal (Capped (Id × Fin 8)))
 2b5346c9759a TmKernel/TmKernel/EmitWire.lean readRowSection unfoldable no Inhabited (Except RowRefusal RowReq)
-e39010fefdef TmKernel/TmKernel/EmitWire.lean rowsOfReq default,[] EmitWire.lean:544 rowsJson_length; EmitWire.lean:544 rowsJson_length
-f4321fbac201 TmKernel/TmKernel/EmitWire.lean rowJson default EmitWire.lean:534 rowJson_is_the_nine_cells_in_order
-a9da31d400a1 TmKernel/TmKernel/EmitWire.lean rowsJson default EmitWire.lean:545 rowsJson_length
-27f32fe96684 TmKernel/TmKernel/EmitWire.lean runRows default EmitWire.lean:506 runRows_without_a_plan_section_is_runCap
-5773ccd10884 TmKernel/TmKernel/EmitWire.lean respondRows default EmitWire.lean:515 callRows_without_a_plan_section_is_callCap
-cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean callRows default,input EmitWire.lean:515 callRows_without_a_plan_section_is_callCap; EmitWire.lean:515 callRows_without_a_plan_section_is_callCap
-5814c1a4b26c TmKernel/TmKernel/EmitWire.lean callExport default,input EmitWire.lean:526 callExport_is_callRows; EmitWire.lean:526 callExport_is_callRows
-f63ef86b1aee TmKernel/TmKernel/EmitWire.lean rowKeys default,[] EmitWire.lean:534 rowJson_is_the_nine_cells_in_order; EmitWire.lean:534 rowJson_is_the_nine_cells_in_order
-6ec5716805b1 TmKernel/TmKernel/EmitWire.lean RowKey.name default EmitWire.lean:562 rowKey_names_are_the_wire_keys
-cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean segErrName default EmitWire.lean:572 segErrName_names_the_two
-5d1caeea5345 TmKernel/TmKernel/EmitWire.lean RowRefusal.text default EmitWire.lean:576 the_refusals_spell_themselves
-82a8b7054cee TmKernel/TmKernel/EmitWire.lean rowRefusalJson default EmitWire.lean:588 rowRefusalJson_is_the_err_plan_shape
-b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean readOptNote default EmitWire.lean:599 readOptNote_of_a_present_note
-91604f05f269 TmKernel/TmKernel/EmitWire.lean batchNamesOf default,[] EmitWire.lean:609 batchNamesOf_of_a_batch; EmitWire.lean:609 batchNamesOf_of_a_batch
-b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:618 withPlan_appends_the_plan_key; EmitWire.lean:618 withPlan_appends_the_plan_key
+e39010fefdef TmKernel/TmKernel/EmitWire.lean rowsOfReq default,[] EmitWire.lean:575 rowsJson_length; EmitWire.lean:575 rowsJson_length
+f4321fbac201 TmKernel/TmKernel/EmitWire.lean rowJson default EmitWire.lean:565 rowJson_is_the_nine_cells_in_order
+a9da31d400a1 TmKernel/TmKernel/EmitWire.lean rowsJson default EmitWire.lean:576 rowsJson_length
+27f32fe96684 TmKernel/TmKernel/EmitWire.lean runRows default EmitWire.lean:537 runRows_without_a_plan_section_is_runCap
+5773ccd10884 TmKernel/TmKernel/EmitWire.lean respondRows default EmitWire.lean:546 callRows_without_a_plan_section_is_callCap
+cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean callRows default,input EmitWire.lean:546 callRows_without_a_plan_section_is_callCap; EmitWire.lean:546 callRows_without_a_plan_section_is_callCap
+5814c1a4b26c TmKernel/TmKernel/EmitWire.lean callExport default,input EmitWire.lean:557 callExport_is_callRows; EmitWire.lean:557 callExport_is_callRows
+f63ef86b1aee TmKernel/TmKernel/EmitWire.lean rowKeys default,[] EmitWire.lean:565 rowJson_is_the_nine_cells_in_order; EmitWire.lean:565 rowJson_is_the_nine_cells_in_order
+6ec5716805b1 TmKernel/TmKernel/EmitWire.lean RowKey.name default EmitWire.lean:593 rowKey_names_are_the_wire_keys
+cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean segErrName default EmitWire.lean:603 segErrName_names_the_two
+5d1caeea5345 TmKernel/TmKernel/EmitWire.lean RowRefusal.text default EmitWire.lean:607 the_refusals_spell_themselves
+82a8b7054cee TmKernel/TmKernel/EmitWire.lean rowRefusalJson default EmitWire.lean:619 rowRefusalJson_is_the_err_plan_shape
+b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean readOptNote default EmitWire.lean:630 readOptNote_of_a_present_note
+91604f05f269 TmKernel/TmKernel/EmitWire.lean batchNamesOf default,[] EmitWire.lean:640 batchNamesOf_of_a_batch; EmitWire.lean:640 batchNamesOf_of_a_batch
+b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:649 withPlan_appends_the_plan_key; EmitWire.lean:649 withPlan_appends_the_plan_key
 24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
 d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean theOverBudgetRequest unfoldable no Inhabited PlanReq
+a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean idWithin default EmitWire.lean:692 readPrio_accepts_seven

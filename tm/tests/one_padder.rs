@@ -47,7 +47,27 @@
 //! since `'` opened a string that never closed. [`is_char_literal`] is Rust's
 //! actual rule.
 //!
-//! **What it still cannot see**, re-stated at W-23. It reads the two `src`
+//! **A fifth shape, and it is the OTHER half of [`HOME`]'s charter** (README
+//! gap **1420**). [`HOME`] is "the one file allowed to hold a width table, **a
+//! truncation** or a pad", and until W-24 the truncation half had only
+//! [`RESERVED`] behind it — a *vocabulary*, which this file's own doc calls
+//! "one rename away from useless". No plant was needed: `tm/src/cli/lifecycle.rs`
+//! held `let short: String = text.chars().take(72).collect();`, a cut to a fixed
+//! count with a **second measurement rule** (`char`s, not emit's East-Asian
+//! table), outside [`HOME`], under no reserved name, with no `.width()`, no hex
+//! code point, no space fill and no format spec — and `one_padder` was `8
+//! passed; 0 failed` with it in the tree. [`text_cut`] is the shape, and
+//! [`TRUNC_ALLOW`] is what it costs: **four** adjudicated sites, every one a
+//! diagnostic quote or a fixture and none of them a terminal cell.
+//!
+//! **And the walk itself was two walks** (README gap **1419**). [`sources`],
+//! [`code_lines`] and [`is_char_literal`] now live in `tests/support/srcwalk.rs`
+//! and both guards import them, because the two copies had **diverged**:
+//! `one_renderer.rs`'s `code_lines` never got gap 1201's char-literal rule and
+//! goes RED on a comment that follows a `&'static str`. Driven; the module's
+//! header has the transcript.
+//!
+//! **What it still cannot see**, re-stated at W-24. It reads the three `src`
 //! trees as text, so a padder written in a `tests/`, `examples/` or `build.rs`
 //! file is invisible, and so is one that reaches a width through a dependency
 //! this file does not name (ratatui's `Span::width`, `unicode-width` and
@@ -61,8 +81,10 @@
 //! report columns, not cells, and README gap **1251** is where that class is
 //! written down rather than swept into an allow-list nobody would re-read.
 
-use std::fs;
-use std::path::{Path, PathBuf};
+#[path = "support/srcwalk.rs"]
+mod srcwalk;
+
+use srcwalk::{code_lines, is_char_literal, sources};
 
 /// The one file allowed to hold a width table, a truncation or a pad.
 const HOME: &str = "tm-core/src/emit.rs";
@@ -132,26 +154,6 @@ fn hex_codepoint(line: &str) -> bool {
         }
     }
     false
-}
-
-/// Is the `'` at the head of `rest` opening a **char literal** rather than a
-/// lifetime or a loop label? (README gap **1201**.)
-///
-/// `'\n'`, `'\u{2007}'` and `'x'` are literals; `'static`, `'a` and `'outer`
-/// are not. The rule is the whole of Rust's: a literal is either an escape
-/// (`'\`) or exactly one character closed by a second `'`. Nothing else can
-/// be, because a lifetime is an identifier and an identifier of one character
-/// followed by `'` would be a literal anyway.
-fn is_char_literal(rest: &str) -> bool {
-    let mut cs = rest.chars();
-    if cs.next() != Some('\'') {
-        return false;
-    }
-    match cs.next() {
-        Some('\\') => true,
-        Some(_) => cs.next() == Some('\''),
-        None => false,
-    }
 }
 
 /// A **format-spec pad**: `format!("{s:<w$}")` and its family.
@@ -231,36 +233,6 @@ fn dynamic_space_width(spec: &[char]) -> bool {
     i > start && spec.get(i) == Some(&'$') && fill == ' '
 }
 
-/// Every `.rs` file of the two crates the binary is built from.
-fn sources() -> Vec<(String, String)> {
-    fn walk(label: &str, root: &Path, dir: &Path, acc: &mut Vec<(String, String)>) {
-        for entry in fs::read_dir(dir).expect("read_dir").flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                walk(label, root, &path, acc);
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                let rel = path.strip_prefix(root).expect("under src").display().to_string();
-                acc.push((
-                    format!("{label}/{rel}"),
-                    fs::read_to_string(&path).expect("read source"),
-                ));
-            }
-        }
-    }
-    let tm = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace = tm.parent().expect("workspace root").to_path_buf();
-    let mut acc = Vec::new();
-    for (label, dir) in [
-        ("tm/src", tm.join("src")),
-        ("tm-core/src", workspace.join("tm-core").join("src")),
-    ] {
-        walk(label, &dir, &dir, &mut acc);
-    }
-    acc.sort();
-    assert!(acc.len() > 20, "the walk found {} files; it is not reading the tree", acc.len());
-    acc
-}
-
 /// The function names a file declares, at any indentation.
 fn declared_fns(text: &str) -> Vec<String> {
     text.lines()
@@ -277,78 +249,6 @@ fn declared_fns(text: &str) -> Vec<String> {
             )
         })
         .collect()
-}
-
-/// Lines that are code rather than prose: `//` comments name the functions
-/// that were deleted, and a guard that could not tell a comment from a call
-/// would fail on its own explanation of itself.
-///
-/// **It strips comments; it does not guess from the first character** (the W-22
-/// repair step). The old rule dropped every line whose first non-space
-/// character was `*`, so that a `/* … */` block's continuation lines would not
-/// be read as code — and `*acc += ratatui::text::Span::raw(s).width();` is a
-/// deref-assign, ordinary Rust, dropped with them. An auditor planted exactly
-/// that and the guard reported `6 passed; 0 failed`. So the block-comment state
-/// is tracked, string literals are respected (a `"//"` inside one is not a
-/// comment), and what comes back is each line's **code**, which may be empty.
-fn code_lines(text: &str) -> Vec<(usize, String)> {
-    let mut out = Vec::new();
-    let mut in_block = false;
-    for (i, line) in text.lines().enumerate() {
-        let mut code = String::new();
-        let mut chars = line.char_indices().peekable();
-        let mut in_str: Option<char> = None;
-        let mut escaped = false;
-        while let Some((i, c)) = chars.next() {
-            if in_block {
-                if c == '*' && chars.peek().is_some_and(|(_, n)| *n == '/') {
-                    chars.next();
-                    in_block = false;
-                }
-                continue;
-            }
-            if let Some(quote) = in_str {
-                code.push(c);
-                if escaped {
-                    escaped = false;
-                } else if c == '\\' {
-                    escaped = true;
-                } else if c == quote {
-                    in_str = None;
-                }
-                continue;
-            }
-            match c {
-                '"' => {
-                    in_str = Some(c);
-                    code.push(c);
-                }
-                // **README gap 1201, closed here.** `'` used to open a string
-                // unconditionally, so `&'static str` opened a quote that never
-                // closed and everything after it on that line — a trailing
-                // `//` comment included — was scanned as string content. The
-                // gap called that harmless because it can only produce a FALSE
-                // POSITIVE; it was driven at W-23 and it does:
-                // `fn f(s: &'static str) -> usize { s.len() } // … .width() …`
-                // failed the measurement guard on its own comment. A `'` opens
-                // a **char literal** only when it is one — an escape, or a
-                // single character closed by a second `'` — and is otherwise a
-                // lifetime or a loop label, which is ordinary code.
-                '\'' if is_char_literal(&line[i..]) => {
-                    in_str = Some(c);
-                    code.push(c);
-                }
-                '/' if chars.peek().is_some_and(|(_, n)| *n == '/') => break,
-                '/' if chars.peek().is_some_and(|(_, n)| *n == '*') => {
-                    chars.next();
-                    in_block = true;
-                }
-                _ => code.push(c),
-            }
-        }
-        out.push((i + 1, code));
-    }
-    out
 }
 
 /// **The guard's own needles, driven on the lines they were planted with.**
@@ -439,6 +339,31 @@ fn the_guard_recognises_the_shapes_it_was_driven_with() {
         assert!(!space_fill(keep), "not a space fill, and the needle must stay off it: {keep}");
     }
     assert!(word("a.repeat(3)", "repeat") && !word("let repeated = x;", "repeat"));
+
+    // **The truncation half of [`HOME`]'s charter** (README gap 1420). The
+    // first three are the shapes the tree actually holds — the needle found
+    // them with no plant, which is why [`TRUNC_ALLOW`] exists — and the last
+    // two are the cell truncation this guard is written against.
+    for cut in [
+        "let short: String = text.chars().take(72).collect();",
+        r#"format!("a record without its day: {}", &raw[..raw.len().min(80)])"#,
+        "lines.truncate(60);",
+        "let head: String = title.chars().take(w).collect();",
+        "let cell = s.char_indices().take(w).map(|(_, c)| c).collect::<String>();",
+    ] {
+        assert!(text_cut(cut), "a text cut the guard must see: {cut}");
+    }
+    // And what it must NOT match, each for its own reason.
+    for keep in [
+        "let hashes = line.bytes().take_while(|b| *b == b'#').count();", // a predicate
+        "let torn = &lines[3][..lines[3].len() / 2];",                   // a plain slice
+        "if short.chars().count() < text.chars().count() {",             // measuring only
+        "let (int, frac) = padded.split_at(padded.len() - places);",     // no character walk
+        "out.push_str(title);",                                          // no cut at all
+        "let truncated_flag = flags.contains(&Flag::Cut);",              // a longer word
+    ] {
+        assert!(!text_cut(keep), "not a text cut, and the needle must stay off it: {keep}");
+    }
 
     // **The two measurement shapes that were live or declared-blind**
     // (README gaps 1309, 1310).
@@ -636,6 +561,134 @@ fn nothing_outside_the_home_file_composes_a_pad() {
     assert!(
         unused.is_empty(),
         "PAD_ALLOW entries nobody needs any more — delete them rather than \
+         leave a free exemption open (check 8's rule):\n  {}",
+        unused.join("\n  ")
+    );
+}
+
+/// The verbs that CUT a sequence short **at a count** — Rust's vocabulary for
+/// "keep the first n and discard the rest".
+///
+/// `Iterator::take_while` is deliberately NOT here: it stops at a **predicate**, not at a
+/// length, so it is a scan and not a truncation, and including it would put the
+/// needle on `line.bytes().take_while(|b| *b == b'#').count()` in two files for
+/// nothing. A cut that stops at a predicate is this needle's declared hole.
+const CUT_VERBS: &[&str] = &["take", "truncate", "split_at"];
+
+/// The ways a line reaches the **characters** of a string. A cut that walks a
+/// string is a cut that measures it, which is the thing [`HOME`] owns.
+const ENUMERATIONS: &[&str] = &["chars()", "char_indices()", "bytes()", "graphemes("];
+
+/// **Cutting text short, as a shape rather than as two reserved words** (README
+/// gap **1420**).
+///
+/// [`RESERVED`] holds `truncate` and `clip`, and a reserved name only catches a
+/// **declaration**: `fn fill_cell` walked through the pad half of that same
+/// vocabulary at W-22 and a char-walk under no name walks through this half.
+/// Three shapes, each measured over the `src` trees before it was taken:
+///
+/// 1. **A character walk that stops at a count** — [`ENUMERATIONS`] ×
+///    [`CUT_VERBS`] on one line of code. One site: `lifecycle.rs`'s
+///    `text.chars().take(72)`.
+/// 2. **A byte prefix bounded by a number** — `[..` together with `.min(`,
+///    which is `&s[..s.len().min(80)]`, a truncation with no verb in it at all.
+///    Two sites, both in `kernel_log.rs`, both quoting a bad record.
+/// 3. **`String::truncate` under std's own name** — a call, which [`RESERVED`]
+///    cannot see because it reads declarations. One site, in a test fixture.
+///
+/// **What it deliberately does not match**, declared rather than discovered: a
+/// plain `&s[..n]` slice (**20** of those in the two trees, every one an index
+/// into a parse and not a display cut — matching them would be a repair and not
+/// a guard); a cut that stops at a predicate (`Iterator::take_while`); a cut spread over
+/// two lines; and a length compared and then acted on somewhere else.
+fn text_cut(line: &str) -> bool {
+    (ENUMERATIONS.iter().any(|e| line.contains(e)) && CUT_VERBS.iter().any(|v| word(line, v)))
+        || (line.contains("[..") && line.contains(".min("))
+        || word(line, "truncate")
+}
+
+/// The text cuts outside [`HOME`] that are **not** a display truncation —
+/// exact lines, never a pattern, each with its adjudication, and every entry
+/// must still be found or the test fails (check 8's "0 allow entries unused").
+const TRUNC_ALLOW: &[(&str, &str, &str)] = &[
+    (
+        "tm/src/cli/lifecycle.rs",
+        r#"let short: String = text.chars().take(72).collect();"#,
+        "`tm check`'s quote of a malformed LOG LINE in a diagnostic. It is \
+         bytes on a report line, not a terminal cell: nothing pads it, nothing \
+         lays it out in a column, and 72 is a readability cap on an error \
+         message. It is the live instance the needle was written for, and it \
+         is adjudicated rather than moved because moving a diagnostic quote \
+         into emit's width table would make emit the owner of something that \
+         is not a cell.",
+    ),
+    (
+        "tm/src/cli/kernel_log.rs",
+        r#"v.get(0).and_then(Value::as_u64).ok_or_else(|| format!("a record without its day: {}", &raw[..raw.len().min(80)]))"#,
+        "the same class: a bad kernel record quoted into an error string, cut \
+         so the message stays readable. Not a column.",
+    ),
+    (
+        "tm/src/cli/kernel_log.rs",
+        r#".ok_or_else(|| format!("no emit answer: {}", &resp[..resp.len().min(200)]))?;"#,
+        "the same again, quoting a kernel answer that carried no `emit` key.",
+    ),
+    (
+        "tm/src/cli/ctx.rs",
+        r#"lines.truncate(60);"#,
+        "a `Vec<&str>` of generated log lines cut to 60 inside a #[cfg(test)] \
+         fixture builder. Not text and not a cell — the needle cannot tell a \
+         Vec truncate from a String one, and this is what that costs.",
+    ),
+];
+
+/// **One truncation.** Nothing outside [`HOME`] cuts text to a bounded length,
+/// except the sites adjudicated in [`TRUNC_ALLOW`].
+///
+/// This is the test [`exactly_one_thing_pads_a_cell`] should have been for the
+/// **truncation** half of [`HOME`]'s charter, and it is the same move
+/// [`nothing_outside_the_home_file_composes_a_pad`] was for the pad half: the
+/// shape, not the vocabulary.
+#[test]
+fn nothing_outside_the_home_file_cuts_text_short() {
+    let mut hits: Vec<(String, String, usize)> = Vec::new();
+    for (name, text) in sources() {
+        if name == HOME {
+            continue;
+        }
+        for (n, line) in code_lines(&text) {
+            if text_cut(&line) {
+                hits.push((name.clone(), line.trim().to_string(), n));
+            }
+        }
+    }
+    let mut strays = Vec::new();
+    let mut used = vec![0usize; TRUNC_ALLOW.len()];
+    for (file, code, n) in &hits {
+        match TRUNC_ALLOW
+            .iter()
+            .position(|(f, c, _)| *f == file.as_str() && *c == code.as_str())
+        {
+            Some(i) => used[i] += 1,
+            None => strays.push(format!("{file}:{n}: {code}")),
+        }
+    }
+    assert!(
+        strays.is_empty(),
+        "a second truncation (D43 — there is one, and it is `{HOME}`'s `clip` \
+         and `truncate`; if this is a diagnostic quote and not a cell, \
+         adjudicate it into TRUNC_ALLOW by its exact line and say why):\n  {}",
+        strays.join("\n  ")
+    );
+    let unused: Vec<&str> = TRUNC_ALLOW
+        .iter()
+        .zip(&used)
+        .filter(|(_, n)| **n == 0)
+        .map(|((_, c, _), _)| *c)
+        .collect();
+    assert!(
+        unused.is_empty(),
+        "TRUNC_ALLOW entries nobody needs any more — delete them rather than \
          leave a free exemption open (check 8's rule):\n  {}",
         unused.join("\n  ")
     );
