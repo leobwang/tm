@@ -52001,7 +52001,7 @@ a byte. NOT FIXED, and not fixable here.**
 
 <!-- ===================================================================
      Stage 6, run W-24, track G.  APPENDED 2026-09-22.
-     GAPS 1390-1398 — track G's pre-allocated range for this run
+     GAPS 1390-1399 — track G's pre-allocated range for this run
      (P 1320-1359, A 1360-1389, G 1390-1409, Land 1410-1414).  The README's
      own "new gaps start at" line reads 1319; the three tracks of this run
      were given disjoint ranges instead, so 1319-1389 is a hole this run
@@ -52178,8 +52178,13 @@ weakening any one of them now breaks a statement.
   (gap 1394).
 - **No decidable form of `PastPays` was written** (gap 1390), because it would
   have no caller — W-23's own refusal, and the defect this campaign is about.
+- **`mutate.py --verify` was run on `PlanCheck.lean` and NOT on `PlannerWit.lean`**
+  (gap 1399), which is the one thing in the brief's item 5 this step did not
+  finish — 37 kernel builds, ≈ 81 minutes, and `--only` is per file. The
+  measurement is in that gap, together with a finding this step drafted and then
+  **refuted against `kernel/mutate.py`'s own code**.
 
-<!-- GAPS 1390-1398 — track G, run W-24.  Whoever merges renumbers (AGENTS §6.4). -->
+<!-- GAPS 1390-1399 — track G, run W-24.  Whoever merges renumbers (AGENTS §6.4). -->
 
 **Gap 1390 — `PlanCheck.PastPays` has no decidable form and no caller outside the witness module. NOT FIXED, deliberately.**
 1. *What is not done.* There is no `pastPays : PlanReq → Bool`, no reflection
@@ -52296,5 +52301,48 @@ weakening any one of them now breaks a statement.
    it.
 4. *Which stage.* R2, when the proptest is aimed through the FFI.
 
-**New gaps start at 1399** (track G's range runs to 1409; tracks P and A hold
+**Gap 1399 — `mutate.py --verify` on `PlannerWit.lean` does not fit in a step: 37 kernel builds, ≈ 81 minutes. NOT RUN.**
+1. *What is not done.* `mutate.py --verify --only
+   TmKernel/TmKernel/PlannerWit.lean --write` was **not** run to completion this
+   step, so gap **1196**'s instruction to run it on any file you touch was met
+   for `PlanCheck.lean` — 0 of 8 rows failed re-verification, one pin site
+   rewritten (`FromNowAnchored` 3217 → 3223), 29 s — and **not** for
+   `PlannerWit.lean`.
+2. *Why, measured.* That file has **37** rostered mutations and each is a full
+   kernel build with `PlannerWit.lean` last: **5 mutations in 11 minutes** on the
+   second attempt, ≈ 2.2 min each, ≈ **81 min** for the file. The first attempt
+   ran a full `timeout 3600` and was killed at 60 minutes, exit **143**.
+   `--only` is per **file**, so there is no way to ask for the one row this step
+   added; check 9's own steady state is 0.09-0.10 s, four orders of magnitude
+   below it.
+3. *What it costs.* The 36 pre-existing rows of a witness module went
+   un-re-verified. All 36 are check 9 **FIXTURE** rows — exempt by
+   `WITNESS_MODULES`, which is checked on every run — so the gate's verdict does
+   not rest on them; what is unproven is that each still fails the build it is
+   recorded as failing. The one row this step added
+   (`PlannerWit.theOverBudgetRequest`) **was** mutated and audited, by
+   `mutate.py --write` and by check 9 on every run since: UNFOLDABLE, no
+   `Inhabited PlanReq`, witness fixture.
+4. *Which stage.* Any, with a `--only`-per-definition flag so an auditor can
+   re-verify one row instead of a file.
+
+*(**A stronger claim was drafted here and is REFUTED; the draft is kept because
+the observation was real.** Both interruptions left a mutated definition in the
+working tree — `theQuietCensusRequest := default` after the first,
+`routineIns := default` after the second — and this entry first said
+`mutate.py` "installs no signal handler" and that a step could therefore commit
+`:= default` into a witness module. **It cannot.** `mutate.py`'s
+`restore_in_flight` writes the original bytes to a `.mutate-in-flight` sidecar
+**before** the file is written and every run begins by putting back whatever it
+finds; `check.sh` check 9 runs `mutate.py`, acceptance runs `check.sh` before
+every commit, and this run watched it happen — check 9 printed *"mutate.py:
+restored TmKernel/TmKernel/PlannerWit.lean from a killed run"* on the next run.
+The draft was written from two `git diff`s and not from reading
+`kernel/mutate.py`, which is the class of error this campaign keeps catching in
+other people's prose. What survives is one narrow hazard: a live sidecar is
+restored **unconditionally**, so an edit made to that file between a killed run
+and the next `mutate.py` is silently reverted to the sidecar's bytes. Here the
+two agreed and the restore was a no-op.)*
+
+**New gaps start at 1400** (track G's range runs to 1409; tracks P and A hold
 1320-1389, the Land step 1410-1414 — see the banner above).
