@@ -6270,3 +6270,47 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five
 #print axioms Tm.PlannerWit.five_is_the_ceiling_and_it_is_reached
 #print axioms Tm.PlannerWit.the_core_seven_is_false_on_three_whole_days
+
+-- APPENDED 2026-09-22 (stage 6, W-24, track P): the `plan` section of the wire — an `Emit.Row`
+-- reaches the FFI entry at last (README gaps 1105/1318).  `EmitWire.lean` is the new module;
+-- `Emit.batchTitle_is_the_frame_over_batchNames` is the one theorem added to `Emit.lean`, where
+-- the batch members were split out of the joined title so the Rust fitter can reach them.
+#print axioms Tm.Emit.batchTitle_is_the_frame_over_batchNames
+#print axioms Tm.EmitWire.asPlan_keeps_the_value
+#print axioms Tm.EmitWire.asPlan_renames_a_refusal
+#print axioms Tm.EmitWire.runRows_without_a_plan_section_is_runCap
+#print axioms Tm.EmitWire.callRows_without_a_plan_section_is_callCap
+#print axioms Tm.EmitWire.callExport_is_callRows
+#print axioms Tm.EmitWire.runRows_refuses_a_plan_section_with_commands
+#print axioms Tm.EmitWire.rowJson_is_the_nine_cells_in_order
+#print axioms Tm.EmitWire.rowsJson_length
+#print axioms Tm.EmitWire.rowsOfReq_eq
+#print axioms Tm.EmitWire.readSegs_refuses_past_the_cap
+#print axioms Tm.EmitWire.readPrios_refuses_past_the_cap
+#print axioms Tm.EmitWire.readSegs_of_nil
+#print axioms Tm.EmitWire.readPrios_of_nil
+#print axioms Tm.EmitWire.readPrio_refuses_a_priority_past_seven
+#print axioms Tm.EmitWire.readPrio_refuses_eight
+#print axioms Tm.EmitWire.readPrio_accepts_seven
+#print axioms Tm.EmitWire.readNote_refuses_a_long_text
+#print axioms Tm.EmitWire.readNote_accepts_a_short_text
+#print axioms Tm.EmitWire.readKind_refuses_an_unknown_kind
+#print axioms Tm.EmitWire.readKind_refuses_a_batch_past_the_cap
+#print axioms Tm.EmitWire.readKind_accepts_a_batch_at_the_cap
+#print axioms Tm.EmitWire.readSeg_refuses_an_energy_past_five
+#print axioms Tm.EmitWire.readSeg_refuses_an_inverted_segment
+#print axioms Tm.EmitWire.readSeg_refuses_past_the_horizon
+#print axioms Tm.EmitWire.readSeg_refuses_a_planned_past_the_bound
+#print axioms Tm.EmitWire.readSeg_refuses_a_zero_denominator
+#print axioms Tm.EmitWire.readSeg_accepts_a_block
+#print axioms Tm.EmitWire.readRowSection_refuses_a_bad_bed
+#print axioms Tm.EmitWire.readRowSection_accepts_an_empty_day
+#print axioms Tm.EmitWire.rowKey_names_are_the_wire_keys
+#print axioms Tm.EmitWire.segErrName_names_the_two
+#print axioms Tm.EmitWire.the_refusals_spell_themselves
+#print axioms Tm.EmitWire.rowRefusalJson_is_the_err_plan_shape
+#print axioms Tm.EmitWire.readOptNote_of_an_absent_note
+#print axioms Tm.EmitWire.readOptNote_of_a_present_note
+#print axioms Tm.EmitWire.batchNamesOf_of_a_batch
+#print axioms Tm.EmitWire.batchNamesOf_of_a_block
+#print axioms Tm.EmitWire.withPlan_appends_the_plan_key

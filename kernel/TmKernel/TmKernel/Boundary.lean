@@ -10643,8 +10643,16 @@ def respondCap (input : List Char) : JVal :=
 /-- What the FFI runs: `call` over `respondCap`. -/
 def callCap (input : String) : String := String.ofList (jemit (respondCap input.toList))
 
-/-- **The one export** (R9), moved here from `call`'s definition at step L6. -/
-@[export tm_kernel_call]
+/-- **The response for a request with no `plan` section**, and what `tm_kernel_call` reached
+until stage 6 W-24.
+
+**The `@[export]` moved to `EmitWire.callExport`** and this definition did not: R9 is one
+symbol and one shim function, so the export has to sit at the END of the pipeline, and the
+pipeline gained a section — the day's rows, which are `Emit.Row`s and therefore cannot be built
+in this module (`Emit.lean` imports `Planner.lean`, which this module does not).  Nothing else
+changed: `EmitWire.callRows` is this function on every request that carries no `plan` section
+(`EmitWire.callRows_without_a_plan_section_is_callCap`), and the theorem below still says what
+it said about a request with no `capacity` section. -/
 def callExport (input : String) : String := callCap input
 
 /-! ### The laws: the bridge to `run`, what an answered request satisfies, and the response -/

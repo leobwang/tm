@@ -202,17 +202,17 @@ a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1
 e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2529 noOverbook_of_no_subject; PlanCheck.lean:2529 noOverbook_of_no_subject
 d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2689 planOk_of_no_subject; PlanCheck.lean:2689 planOk_of_no_subject
 4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored; PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored
-63bdb67f1035 TmKernel/TmKernel/Emit.lean Row.cells default,[] Emit.lean:374 cells_are_the_nine_in_order; Emit.lean:374 cells_are_the_nine_in_order
+63bdb67f1035 TmKernel/TmKernel/Emit.lean Row.cells default,[] Emit.lean:393 cells_are_the_nine_in_order; Emit.lean:393 cells_are_the_nine_in_order
 f7e41c6eb99b TmKernel/TmKernel/Emit.lean clockOfLocal default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-332d3148bb73 TmKernel/TmKernel/Emit.lean timeCell default,[] Emit.lean:383 timeCell_length; Emit.lean:383 timeCell_length
-3bfce0f0810f TmKernel/TmKernel/Emit.lean showsScale true,false Emit.lean:433 the_three_quiet_kinds_are_off_the_scale; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-876ee83e17d3 TmKernel/TmKernel/Emit.lean glyphOf default Emit.lean:396 glyphOf_mem
-a0db4b98f8a0 TmKernel/TmKernel/Emit.lean markChar default Emit.lean:390 markChar_mem
-9ae97a6d460e TmKernel/TmKernel/Emit.lean markCell default,[] Emit.lean:385 markCell_length; Emit.lean:385 markCell_length
-12f306db652c TmKernel/TmKernel/Emit.lean ciCell default,[] Emit.lean:412 ciCell_is_the_glyph_off_the_scale; Emit.lean:412 ciCell_is_the_glyph_off_the_scale
+332d3148bb73 TmKernel/TmKernel/Emit.lean timeCell default,[] Emit.lean:402 timeCell_length; Emit.lean:402 timeCell_length
+3bfce0f0810f TmKernel/TmKernel/Emit.lean showsScale true,false Emit.lean:452 the_three_quiet_kinds_are_off_the_scale; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+876ee83e17d3 TmKernel/TmKernel/Emit.lean glyphOf default Emit.lean:415 glyphOf_mem
+a0db4b98f8a0 TmKernel/TmKernel/Emit.lean markChar default Emit.lean:409 markChar_mem
+9ae97a6d460e TmKernel/TmKernel/Emit.lean markCell default,[] Emit.lean:404 markCell_length; Emit.lean:404 markCell_length
+12f306db652c TmKernel/TmKernel/Emit.lean ciCell default,[] Emit.lean:431 ciCell_is_the_glyph_off_the_scale; Emit.lean:431 ciCell_is_the_glyph_off_the_scale
 f767dfd6e9e1 TmKernel/TmKernel/Emit.lean keyId default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-0013d526bdaa TmKernel/TmKernel/Emit.lean pCell default,[] Emit.lean:418 pCell_is_empty_off_the_scale; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-4ef2d4b52b6f TmKernel/TmKernel/Emit.lean actualCell default,[] Emit.lean:422 actualCell_of_not_done; Emit.lean:501 actualCell_no_newline
+0013d526bdaa TmKernel/TmKernel/Emit.lean pCell default,[] Emit.lean:437 pCell_is_empty_off_the_scale; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+4ef2d4b52b6f TmKernel/TmKernel/Emit.lean actualCell default,[] Emit.lean:441 actualCell_of_not_done; Emit.lean:520 actualCell_no_newline
 3845805dd962 TmKernel/TmKernel/Emit.lean canonDur default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
 2e9e8c543069 TmKernel/TmKernel/Emit.lean durCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
 4000c6435730 TmKernel/TmKernel/Emit.lean tenths default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
@@ -223,7 +223,7 @@ c7fd6fb0edd8 TmKernel/TmKernel/Emit.lean multCell default,[] PlannerWit.lean:456
 f4e3c2bd162d TmKernel/TmKernel/Emit.lean itemCiOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 0e55f6fdd37f TmKernel/TmKernel/Emit.lean itemEstOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 c496a0b4c8df TmKernel/TmKernel/Emit.lean nameOr default,fallback,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-fc55c87277aa TmKernel/TmKernel/Emit.lean batchTitle default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+68cf50caac2d TmKernel/TmKernel/Emit.lean batchTitle default,[] Emit.lean:255 batchTitle_is_the_frame_over_batchNames; Emit.lean:255 batchTitle_is_the_frame_over_batchNames
 88bd1acd9ff9 TmKernel/TmKernel/Emit.lean titleCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
 030df9ebf670 TmKernel/TmKernel/Emit.lean parentCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 9fdea03f6db1 TmKernel/TmKernel/Emit.lean showsEst true,false PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
@@ -232,7 +232,7 @@ d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4547
 77c84d8612e7 TmKernel/TmKernel/Emit.lean underusedCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 795ce604b676 TmKernel/TmKernel/Emit.lean noteCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 89d6ae89fd1c TmKernel/TmKernel/Emit.lean rowOf default,⟨[],[],[],[],[],[],[],[],[]⟩ PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-697078736f86 TmKernel/TmKernel/Emit.lean rowsOf default,[] Emit.lean:438 rowsOf_length; Emit.lean:438 rowsOf_length
+697078736f86 TmKernel/TmKernel/Emit.lean rowsOf default,[] Emit.lean:457 rowsOf_length; Emit.lean:457 rowsOf_length
 0c31dfe7342e TmKernel/TmKernel/PlannerWit.lean emitSegs default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 67967006f216 TmKernel/TmKernel/PlannerWit.lean emitPrios default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
 7b44d4d525d8 TmKernel/TmKernel/PlannerWit.lean emitNotes default,[] PlannerWit.lean:4584 the_eleven_notes_are_these_sentences; PlannerWit.lean:4584 the_eleven_notes_are_these_sentences
@@ -243,3 +243,36 @@ e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean FromNowAnchored True,False PlanChe
 c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean fromNowWorkRows fun____=>true,fun____=>false PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored; PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored
 279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean witReqInIdleQueued unfoldable no Inhabited PlanReqIn
 2dbe82e792af TmKernel/TmKernel/PlannerWit.lean theIdleQueuedRequest unfoldable no Inhabited PlanReq
+afa7ffea0abb TmKernel/TmKernel/Emit.lean batchNames default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+fe83490ffd51 TmKernel/TmKernel/EmitWire.lean asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except RowRefusal α)
+ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean natAtP default EmitWire.lean:655 readPrio_refuses_eight
+24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean strAtP default EmitWire.lean:599 readOptNote_of_a_present_note
+a0819f473922 TmKernel/TmKernel/EmitWire.lean arrAtP default EmitWire.lean:689 readKind_refuses_a_batch_past_the_cap
+8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean optAtP default EmitWire.lean:599 readOptNote_of_a_present_note
+21f2cd76331f TmKernel/TmKernel/EmitWire.lean flagAtP default EmitWire.lean:749 readSeg_accepts_a_block
+7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean optNatAtP default EmitWire.lean:703 readSeg_refuses_an_energy_past_five
+f618837e678a TmKernel/TmKernel/EmitWire.lean optStrAtP default EmitWire.lean:749 readSeg_accepts_a_block
+9f9af029585b TmKernel/TmKernel/EmitWire.lean maxNoteText 0,1,literal EmitWire.lean:675 readNote_accepts_a_short_text; EmitWire.lean:675 readNote_accepts_a_short_text; the body IS the constant `200`
+ddd4b691d709 TmKernel/TmKernel/EmitWire.lean readNote unfoldable no Inhabited (Except RowRefusal Note)
+7fc89083b6fb TmKernel/TmKernel/EmitWire.lean readKind unfoldable no Inhabited (Except RowRefusal SegKind)
+d24f39c2963f TmKernel/TmKernel/EmitWire.lean readFlags unfoldable no Inhabited (Except RowRefusal SegFlags)
+7b1b7bc14185 TmKernel/TmKernel/EmitWire.lean readSeg unfoldable no Inhabited (Except RowRefusal WfSeg)
+07d646a02b76 TmKernel/TmKernel/EmitWire.lean readSegs unfoldable no Inhabited (Except RowRefusal (Capped WfSeg))
+7b0e5fab078c TmKernel/TmKernel/EmitWire.lean readPrio default EmitWire.lean:648 readPrio_refuses_a_priority_past_seven
+77d1a8697145 TmKernel/TmKernel/EmitWire.lean readPrios unfoldable no Inhabited (Except RowRefusal (Capped (Id × Fin 8)))
+2b5346c9759a TmKernel/TmKernel/EmitWire.lean readRowSection unfoldable no Inhabited (Except RowRefusal RowReq)
+e39010fefdef TmKernel/TmKernel/EmitWire.lean rowsOfReq default,[] EmitWire.lean:544 rowsJson_length; EmitWire.lean:544 rowsJson_length
+f4321fbac201 TmKernel/TmKernel/EmitWire.lean rowJson default EmitWire.lean:534 rowJson_is_the_nine_cells_in_order
+a9da31d400a1 TmKernel/TmKernel/EmitWire.lean rowsJson default EmitWire.lean:545 rowsJson_length
+27f32fe96684 TmKernel/TmKernel/EmitWire.lean runRows default EmitWire.lean:506 runRows_without_a_plan_section_is_runCap
+5773ccd10884 TmKernel/TmKernel/EmitWire.lean respondRows default EmitWire.lean:515 callRows_without_a_plan_section_is_callCap
+cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean callRows default,input EmitWire.lean:515 callRows_without_a_plan_section_is_callCap; EmitWire.lean:515 callRows_without_a_plan_section_is_callCap
+5814c1a4b26c TmKernel/TmKernel/EmitWire.lean callExport default,input EmitWire.lean:526 callExport_is_callRows; EmitWire.lean:526 callExport_is_callRows
+f63ef86b1aee TmKernel/TmKernel/EmitWire.lean rowKeys default,[] EmitWire.lean:534 rowJson_is_the_nine_cells_in_order; EmitWire.lean:534 rowJson_is_the_nine_cells_in_order
+6ec5716805b1 TmKernel/TmKernel/EmitWire.lean RowKey.name default EmitWire.lean:562 rowKey_names_are_the_wire_keys
+cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean segErrName default EmitWire.lean:572 segErrName_names_the_two
+5d1caeea5345 TmKernel/TmKernel/EmitWire.lean RowRefusal.text default EmitWire.lean:576 the_refusals_spell_themselves
+82a8b7054cee TmKernel/TmKernel/EmitWire.lean rowRefusalJson default EmitWire.lean:588 rowRefusalJson_is_the_err_plan_shape
+b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean readOptNote default EmitWire.lean:599 readOptNote_of_a_present_note
+91604f05f269 TmKernel/TmKernel/EmitWire.lean batchNamesOf default,[] EmitWire.lean:609 batchNamesOf_of_a_batch; EmitWire.lean:609 batchNamesOf_of_a_batch
+b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:618 withPlan_appends_the_plan_key; EmitWire.lean:618 withPlan_appends_the_plan_key

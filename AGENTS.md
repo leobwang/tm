@@ -305,6 +305,21 @@ section's refusals are `{"err":{"log":…}}` (`tzAbsent`, `badTz`, `tooManyLines
 `renderNotInTail`). A request with neither key is read as before. String escapes are
 **serde_json's** since B4 (`\b`, `\t`, `\f` short; other controls a lowercase quad).
 
+*Stage 6 W-24 (2026-09-22; kernel/README.md "Stage 6 — W-24, track P" is the record).* The
+request may carry a `plan` section — `{"bed":"HH:MM","priorities":[{"id","p"}],"segments":[…]}` —
+and the `ok` object then gains `plan` **after** `lookahead`, carrying `rows` and nothing else:
+one object per segment sent, with §4.3's nine cells (`time ci p mark title parent est actual
+note`) plus `batchNames`, the member list the Rust fitter needs. A segment is
+`{start,stop,kind,batch?,energy,item,planned,mult,flags,note}` on the kernel's absolute seconds
+(from 0001-01-01, not the Unix epoch); `kind` is `kind_label`'s word, so `break` and `wind-down`
+and not the Lean constructor names. The section's refusals are `{"err":{"plan":…}}` —
+`badSegment <i> <key>`, `segmentRefused <i> inverted|pastTheHorizon`, `badPriority <i>`,
+`tooManySegments`, `tooManyPriorities`, `rowsWithCommands` (a `plan` section on a request that
+also edits the documents, gap 109's stance one section along), and `tzAbsent`/`blockMinAbsent`
+for the two request-level values every cell needs. A request with no `plan` key is answered
+exactly as before. The reader is `EmitWire.lean`, a new module importing `Boundary` and `Emit`,
+which also carries the package's single `@[export]`.
+
 ```jsonc
 // request
 {"now":"2026-09-12","blockMin":50,     // both optional; required by close/autoClose (stage 4 step 5)

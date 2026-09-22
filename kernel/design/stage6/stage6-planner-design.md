@@ -977,6 +977,19 @@ reason the seam and the vocabulary are the stage's first two steps.
 `rows` is Q6 (a)'s cells. §8.4's "the `report` shape is inherited, not invented here" holds: the
 `report` half is unchanged and `plan` is a new sibling, so nothing stage 4 settled is reopened.
 
+**WHAT ACTUALLY LANDED AT W-24, and how it differs from the two blocks above** (README gaps
+1105/1318, `kernel/TmKernel/TmKernel/EmitWire.lean`). The `plan` **request** section carries the
+day's ROWS — `bed`, `priorities` and `segments` — and not §10.1's planner inputs (`day`,
+`curves`, `allowHome`, `overrides`), because the shipped binary's planner is still the fork's
+until R3 (D34) and the kernel therefore cannot be asked for the day the binary renders. The
+`plan` **response** key carries `rows` alone; `day`, `window`, `budgetBlocks`, `segments`,
+`diagnostics`, `priorities` and `hash` are the planner's and land with it. Each `rows[i]` is
+§4.3's nine cells plus `batchNames`, the member list `emit::fit_batch` needs and the joined
+title cannot give back. The two key sets are disjoint, so R3 adds its keys to the same object
+rather than replacing this one. The refusal family is `EmitWire.RowRefusal` and **not**
+§10.3's planRefusal, whose names this section does not use — README "Stage 6 — W-24, track P"
+§6 says why.
+
 ### 10.3 Refusals
 
 Every refusal is named (§5.7). The new families: `planRefusal.*` (`badState`, `badWindow`,

@@ -233,12 +233,31 @@ def itemEstOf (p : PlanCore) (i : Id) : Option Dur :=
 def nameOr (p : PlanCore) (s : Seg) (fallback : List Char) : List Char :=
   (s.item.bind (titleText p)).getD fallback
 
+/-- **Fork `batch_names`**: the titles a batch names, in the order it was assigned (§7.5), each
+falling back to the member's own id when the tree does not know it or it has none.
+
+It is a *separate* definition from the frame below because the Rust padder needs the **members**
+and not the joined string: `emit::fit_batch` shares the title column out between them and cuts
+each one, and a caller handed only `batchTitle`'s output would have to split it back apart on
+` · ` — which a title containing that separator would break.  So the members cross the wire
+beside the nine cells (`EmitWire.rowJson`'s `batchNames`), and `batchTitle` is this list with
+§7.5's frame around it — one reader of the member names, not two. -/
+def batchNames (p : PlanCore) (ids : List Id) : List (List Char) :=
+  ids.map (fun i => (titleText p i).getD i)
+
 /-- Fork `batch_names` and §7.5's frame: `batch: package · insurance · bank (3)`, whole.
 Shortening it to a column is `fit_batch`'s, in Rust, where the widths are. -/
 def batchTitle (p : PlanCore) (ids : List Id) : List Char :=
-  let names := ids.map (fun i => (titleText p i).getD i)
+  let names := batchNames p ids
   "batch: ".toList ++ (names.intersperse " · ".toList).flatten ++
     " (".toList ++ digitsOf names.length ++ [')']
+
+/-- **The frame is the only thing `batchTitle` adds to the members** — `fit_batch`'s `full`, on
+the Rust side of the wire, is this string with the same members in it. -/
+theorem batchTitle_is_the_frame_over_batchNames (p : PlanCore) (ids : List Id) :
+    batchTitle p ids =
+      "batch: ".toList ++ ((batchNames p ids).intersperse " · ".toList).flatten ++
+        " (".toList ++ digitsOf (batchNames p ids).length ++ [')'] := rfl
 
 /-- Fork `title_cell`.  `planned` is the minutes the planner set aside, else the row's own
 length — the fork's `planned_min.unwrap_or_else(|| seg.minutes())`. -/

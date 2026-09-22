@@ -51998,3 +51998,541 @@ a byte. NOT FIXED, and not fixable here.**
 4. *Which stage.* Stage 6, gap 1195.
 
 **New gaps start at 1319.**
+
+<!-- ===================================================================
+     APPENDED 2026-09-22: stage 6 (the planner), run **W-24**, **track P**,
+     on `rebuild-on-lean`.  Gap 1105/1318: `Emit.lean` gets a caller and its
+     cells are compared to the shipped bytes by a machine for the first time.
+     Gap range **1320-1359**; this step takes **1320-1333**.  **1319 is still
+     free** — W-23's repair block left it and nothing has taken it.
+     No cheat taken; `Negative.lean` untouched.  No goal added, discharged or
+     deleted: **burn-down stays 9, all stage 6**.  `check.sh` **9/9**.
+     Highest gap in the file after this block: **1333**.
+     =================================================================== -->
+
+## Stage 6 — W-24, track P: a `Row` crosses the wire, and the kernel's cells meet the shipped bytes
+
+Baseline for this step is `596b56d`. The hole this run exists to close is
+README gap **1105**, in its own words: *"the cells are proved consistent with
+themselves and checked against the fork **by reading**"* — and gap **1318**,
+which says the same thing from the module's side: *"`Boundary.lean` does not
+import `TmKernel.Emit` … the only machine evidence for the module is 19
+`#print axioms` lines."* Both are answered here, one of them in substance
+rather than in its letter (§8 below, gap 1327). Every build, test and probe
+was run under AGENTS §2.1's cap.
+
+### 1. What crosses, and why it is the ROWS and not the planner's inputs
+
+Design §10.1's `plan` request section is the *planner's* input — `blockMin`,
+`day`, `curves`, `allowHome`, `overrides` — and it belongs with step **R3**,
+where `tm-core/src/planner.rs` dies (D34). The shipped binary's planner is
+still the fork's, so the kernel cannot be asked for the day it renders, and a
+comparison of two different days would say nothing about a cell.
+
+What D30 Q6 (a) actually settles is separable from that: *"the kernel emits
+cells; one Rust function pads."* So the host sends **the segments its planner
+produced** and the kernel answers `Emit.rowOf` for each — reading the titles,
+the `ci`, the estimates and the parents out of **its own** parse of the same
+markdown. The four cells that need the plan are therefore two independent
+parsers' answers about one tree, which is the comparison a reader cannot do
+and the one gap 1105 asks for.
+
+`kernel/TmKernel/TmKernel/EmitWire.lean` (765 lines, 32 `def`s, 38 theorems) is the new
+module:
+
+```
+request   "plan": { "bed": "22:00",
+                    "priorities": [ {"id": …, "p": …}, … ],
+                    "segments":   [ {start, stop, kind, batch?, energy, item,
+                                     planned, mult, flags{7}, note}, … ] }
+response  "plan": { "rows": [ { time ci p mark title parent est actual note,
+                                batchNames: [ … ] }, … ] }
+```
+
+* the section is read **after** `runCap`, so every refusal that came first
+  before this step still comes first and in the same order;
+* a request with **no** `plan` section is answered byte for byte as before —
+  `EmitWire.runRows_without_a_plan_section_is_runCap` and
+  `callRows_without_a_plan_section_is_callCap` in the tree,
+  `a_request_without_a_plan_section_is_unchanged` on the host's side;
+* the kind words are `tm_core::planner::kind_label`'s (`break`, `wind-down`),
+  **not** the Lean constructor names (`brk`, `windDown`), because this
+  repository's wire already spells a kind and a second spelling is AGENTS
+  §5.3's own defect;
+* **a `plan` section on a request that also carries commands is REFUSED**,
+  `rowsWithCommands`, by name. The rows are rendered against the plan as
+  `runLoad` read it and the documents come back as the commands left them, so
+  answering both would put two states in one response. That is gap 109's
+  stance on `capacityWithCommands` one section along, and it is a refusal and
+  not a gap because a wrong answer here would be silent. Nothing in the task
+  asked for it; the shape was found while reading `runRows` back.
+* `batchNames` is **not** a tenth cell. `emit::fit_batch` shares the title
+  column out between a batch's members and cuts each one, and the joined
+  title cannot give them back — splitting on ` · ` comes apart on a title
+  that contains the separator. `Emit.batchNames` was split out of
+  `Emit.batchTitle` so there is still **one** reader of the member list, and
+  `Emit.batchTitle_is_the_frame_over_batchNames` says the frame is all the
+  title adds.
+
+### 2. The Rust: `render_row` takes cells
+
+`tm-core/src/emit.rs` gained `RowCells` (the nine, plus the batch members) and
+split the old `render_row` in two:
+
+| was | is |
+|---|---|
+| `fn render_row(seg, plan, tree, cfg, prios, layout) -> String` | `pub fn row_cells(seg, plan, tree, cfg, prios) -> RowCells` **and** `pub fn render_row(cells: &RowCells, layout) -> String` |
+
+`render_row` no longer knows what a segment is: it pads, truncates and fits,
+and that is all it does. `plan_rows` composes the two, so **no shipped byte
+moves** — the whole workspace is green with no snapshot touched. The cells can
+now come from either side of the wire, which is what makes the comparison
+below possible.
+
+### 3. The machine comparison, and the two disagreements it found
+
+`tm/tests/kernel_row_cells.rs` (752 lines, 9 tests) is the machine. It renders
+one day twice — Rust `row_cells` over the fork's `Tree`, Lean `Emit.rowOf`
+over the kernel's own parse — and compares cell by cell, then pads the
+**kernel's** cells with the **one** padder and compares the bytes.
+
+It found two disagreements on its first green run, and **both are already in
+this ledger**:
+
+| row | cell | fork | kernel | gap |
+|---|---|---|---|---|
+| `Pick up package` | `note` | `due today` | *(empty)* | **1102** — `note_cell`'s `⚠` branch needs `effective_due`, of which this kernel has no view |
+| `Exercises 5.3–5.5` | `est` | `2b×1.6` | `1b×1.6` | **1101** — the fork reads `est_original` first; `Core.est` is `est:` then the leading estimate |
+
+The fixture line is `- [>] 4 2b Exercises 5.3–5.5  @m1 est:1b ^t3`: it carries
+**both** estimates, so the two readers pick different numbers. That is gap
+1101 exactly, and it had never been *seen* by anything but a reader.
+
+`DECLARED_HOLES` names those two by row title and cell, asserts each fires
+**exactly once**, and compares every other cell of those two rows exactly. A
+hole that CLOSES fails this test as loudly as a hole that widens.
+
+The byte test substitutes those two cells and nothing else before padding, so
+on every other row of the day **every byte the file gets came out of the
+kernel**.
+
+Beyond the fixture day, which has four of the ten kinds:
+
+* `the_kernel_and_the_fork_agree_on_every_kind_of_row` places **all ten**
+  kinds twice, with an item and without, and they agree on every cell. This is
+  what witnesses `Emit.titleCell`'s `rest`/`lost`/`sleep`/`wind-down` branches,
+  which no fixture in this repository places.
+* `the_kernel_and_the_fork_agree_on_a_batch_row` compares a batch's cells, its
+  member list and its **fitted** bytes at three title widths, one of which
+  forces `fit_batch` to cut.
+* `the_kernel_writes_the_forks_note_sentences` sends all **eleven** `Note`
+  names and compares `Emit.noteText`'s sentence against the fork's. This one
+  is the weaker of the two directions and says so in its own doc comment: the
+  right-hand sides are **transcribed** from `planner.rs`'s `format!` strings
+  rather than produced by running its planner into each of the eleven
+  conditions, so a transcription error would agree with itself.
+* `the_wire_refuses_a_bad_row_by_name` drives five R10 refusals through the
+  FFI and asserts the unmodified request is accepted, so they are not one
+  request being refused for another reason.
+* `a_plan_section_with_commands_is_refused` drives `rowsWithCommands` and then
+  sends the **same command without the `plan` section** and watches it apply,
+  so the refusal is the pairing and not the command.
+
+### 4. The guard was DRIVEN, red and green, before it was kept
+
+Four probes, each planted in the tree, built capped and run:
+
+| probe | expected | result |
+|---|---|---|
+| `Emit.titleCell`'s `.rest` branch drops its duration | RED | **the kernel would not build** — two `decide` witnesses in `PlannerWit.lean` catch it first, `the_day_section_of_the_routine_day_is_these_cells` among them. A finding in its own right: `titleCell` is pinned in Lean, so this probe could not reach the Rust guard |
+| `EmitWire.batchNamesOf` answers `[]` for a batch | RED | **caught** — `the_kernel_and_the_fork_agree_on_a_batch_row`. The kernel built green: no theorem or witness constrains it |
+| `EmitWire.rowsJson` drops the priorities | RED | **caught by all four** comparisons. The kernel built green |
+| `EmitWire.readFlags` drops `mandatory`, `deferred` and `open` | ? | **GREEN. 25 passed; 0 failed.** The guard cannot see it |
+
+The last one is the declared hole and it is gap **1324**: three of the seven
+marks cross the wire and **no §4.3 cell reads any of them**, so a decoder that
+threw them away is invisible to a comparison of cells. Nothing here is a claim
+that the wire carries them correctly; it is a claim that the *cells* agree.
+
+### 5. R10's table for the new section
+
+Every bounded value, its bound, the constructor that enforces it and the
+theorem that says so. Nothing is re-bounded: every bound named below already
+existed on this wire.
+
+| wire value | bound | constructor | rejection theorem |
+|---|---|---|---|
+| a segment | `Seg.wf` | `Planner.mkSeg?` | `readSeg_refuses_an_inverted_segment`, `readSeg_refuses_past_the_horizon` |
+| the segment list | `Planner.maxCands` | `Planner.Capped.ofList?` | `readSegs_refuses_past_the_cap` |
+| a batch's members | `Planner.maxBatch` | `Planner.mkBatch?` | `readKind_refuses_a_batch_past_the_cap` (and `readKind_accepts_a_batch_at_the_cap`) |
+| a slot energy | `Fin 6` | `levelOf?` | `readSeg_refuses_an_energy_past_five` |
+| `planned` | `CapWire.maxRemaining` | `within` | `readSeg_refuses_a_planned_past_the_bound` |
+| the multiplier | `maxMultiplier` / `maxPairDen` | `CapWire.multiplierOfWire` | `readSeg_refuses_a_zero_denominator` |
+| a priority | `Fin 8` | `Priority.yesterdayOf?` | `readPrio_refuses_a_priority_past_seven`, `readPrio_refuses_eight` |
+| the priority list | `Planner.maxCands` | `Planner.Capped.ofList?` | `readPrios_refuses_past_the_cap` |
+| a replayed note's text | `maxNoteText` (**the one new bound**) | `within` | `readNote_refuses_a_long_text` |
+| `bed` | `Fin 1440` | `Field.parseClock` | the clock grammar's own |
+| `blockMin` | `BlockMin` | `BlockMin.ofNat?` | the request clock's own (`badBlockMin`) |
+| a kind word | the eleven names | `readKind` | `readKind_refuses_an_unknown_kind` |
+
+Each refusal has an **accepting** twin beside it (`readSegs_of_nil`,
+`readPrios_of_nil`, `readNote_accepts_a_short_text`, `readSeg_accepts_a_block`,
+`readRowSection_accepts_an_empty_day`, `readPrio_accepts_seven`), because a
+constructor that refused everything would satisfy the left column alone.
+
+### 6. The refusal type is **not** called PlanRefusal, deliberately
+
+Design §10.3 reserves planRefusal.* for the *planner* section's family
+(badState, badWindow, badBudget, badActive, …), and four sentences in
+this file plus `Planner.dayPlan`'s own header cite PlanRefusal as a type that
+**does not exist**, because `dayPlan` is total and keeps its total signature
+(D28). Naming this type PlanRefusal would have made all five read as though
+`dayPlan` had grown an error path — and would have made `citations-allow.txt`'s
+counted PlanRefusal entry silently unused, which is how check 8 found it. It is
+`EmitWire.RowRefusal`; its names (`badSegment`, `segmentRefused`,
+`tooManySegments`, …) are disjoint from §10.3's list, and the two families will
+share one `plan` object when R3 brings the planner's keys to it.
+
+### 7. `citations-allow.txt`: one counted entry moved, deliberately
+
+`1 tm_kernel_call` → `4 tm_kernel_call`. The C export symbol is a real name and
+not a Lean declaration; the three new citations are `Boundary.callExport`'s note
+saying where the `@[export]` went, `EmitWire.lean`'s header saying it arrived,
+and gap 1327's own sentence. This is the file's own "open it and look" move, not a bump to silence
+a failure — the failure it silences is `4 citations, 1 allowed`, and the
+sentences are in this diff.
+
+### 8. What this step did NOT do, by name
+
+* **`Boundary.lean` does not import `TmKernel.Emit`.** The task's letter asked
+  for that; this step put the section in a new module that imports both
+  `Boundary` and `Emit` and moved the single `@[export tm_kernel_call]` there.
+  The reason is measured, not aesthetic: one edit to `Boundary.lean` costs
+  **142 s** of kernel rebuild on this machine (Boundary plus `PlannerWit`),
+  and check 9 charges **one kernel build per constant** for every definition a
+  step adds — so this module's **32** `def`s inside `Boundary.lean` would have
+  been on the order of **two hours of builds for the roster alone**, plus 142 s
+  per iteration while writing them. In `EmitWire.lean`, a leaf nothing imports,
+  a rebuild is **0.3-0.7 s**. The substance of gap 1318 — an `Emit.Row` reaches
+  the FFI entry — is met; the letter is not, and that is gap **1327**.
+* **`Emit.rowsOf` still has no caller** (gap **1320**). It is `dayPlan`'s rows
+  and `dayPlan` is the kernel's planner, which is not the planner the host
+  runs. `Emit.rowOf` — every cell function in the module — now has one.
+* **The production path does not route through the kernel** (gap **1321**).
+  `emit.rs` is in `tm-core`, which does not depend on `tm-kernel-ffi`; only
+  `tm` does. So `plan_rows` still calls `row_cells`, and the kernel's cells
+  reach `render_row` in the **test**. Making `tm-core` link the kernel is R3's,
+  not this step's.
+* **Gap 1306 — the second arrival — is NOT done** (gap **1329**). It is
+  `Replay.lean`'s `DayAcc`, a 28→29 positional tuple, `kernel_log.rs`, a
+  sealed-cache version bump and a parity entry; `Replay.lean` sits under the
+  whole `Seal*` chain and `Boundary.lean`, and this step spent its build budget
+  on the wire. Gap 1306 stands unaltered and is restated below by name.
+* **It did not touch `Goals.lean`, `Negative.lean`, `kernel/corpus/`,
+  `lean-toolchain`, any fixture, any snapshot or any `.proptest-regressions`
+  file.** No cheat taken; no goal moved; nothing re-blessed. `git status` is
+  clean of them.
+* **It did not drive the TUI** (gap 182): `tm tui` needs a tty. The TUI's
+  Timeline goes through `emit::day_lines` → `plan_rows` → the split
+  `render_row`, and `one_renderer.rs`'s `the_tui_timeline_is_the_day_files_lines`
+  plus the `tui_today_*` snapshots are the evidence, which is not a drive.
+* **It did not rebuild the fork oracle** and did not set `TM_ORACLE`.
+* **It did not run `mutate.py --verify` over the whole roster** — only
+  `Emit.lean`'s 31 rows, which this step's own edit had drifted, and the new
+  definitions. The other rows are trusted on a matching body sha1, which is
+  gap 1190's standing trust.
+
+### 9. Measured
+
+| | baseline `596b56d` | here | why it moved |
+|---|---|---|---|
+| `check.sh` | 9/9 | 9/9 | — |
+| axiom audit | 4,910 theorems | **4,949** | +39: 38 in `EmitWire.lean`, 1 in `Emit.lean` (`batchTitle_is_the_frame_over_batchNames`). Every one has a `#print axioms` line under this step's banner (§6.3) |
+| check 5, the FFI | 93 tests | 93 | — |
+| check 8, citations | **29,349** cited, 0 allow entries unused | **29,792** cited, **0** unused | the two new files' prose and this block's; `4 tm_kernel_call` (§7). *The 29,347 this campaign's brief carries for `596b56d` does not reproduce: the tree at that commit measures 29,349, and §5.11 applies to a brief too.* |
+| check 9 | 118 rostered (30 unfoldable, 20 fixtures, **0 pinned by nothing**, 0 literal), 0 owed, 32 bare pin sites | **151 rostered (38 unfoldable, 20 fixtures, 8 pinned by nothing, 1 literal), 0 owed, 32 bare** | +33 definitions (`EmitWire.lean`'s 32 and `Emit.batchNames`); `Emit.lean`'s 31 rows and `EmitWire.lean`'s 25 re-verified and their pin sites rewritten. **The `pinned by nothing` line went 0 → 8** and that is gap **1332** |
+| corpus | 29/37 files, 4/5 whole plans | 29/37, 4/5 | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | nothing added, nothing discharged |
+| `cargo test --workspace` | 1,396 / 0 / 9 over 81 binaries, **one** run | **1,422 / 0 / 9 over 82 binaries, FIVE of SIX runs** | +1 binary (`kernel_row_cells`), +26 tests: 9 of this file's own and 17 `tui_common` unit tests the new binary links. **The fifth run is gap 1333** |
+
+**D46: six runs, and one of them was RED.** `cargo test --workspace` was run
+**six** times. Five reported `1422 passed; 0 failed; 9 ignored` across 82
+result lines. **The first did not**: `cli_latency` failed two tests —
+`a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` and
+`tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail` —
+on the run that started while `cargo` was still compiling and linking the
+workspace. Run on its own afterwards, `cli_latency` is **5 passed / 0 failed /
+1 ignored, five times out of five**, in 15.7-18.3 s. The band was **not**
+widened: gap **1333** records it, because `cli_latency.rs`'s own header claims
+*"a busy machine does not flake them"* and this machine, busy, flaked them.
+D46's point stands and cost nothing to demonstrate: one run would have said
+1,422 / 0 / 9 and meant less than it looked like.
+
+No `.proptest-regressions` file gained a line; `git status` lists neither.
+
+Named suites, each run on its own after the workspace runs: T5
+`kernel_replay_parity` 29/0/4, the door suite `kernel_log_door` 23/0/0,
+`cli_switch_acceptance` 16/0/0, `cli_latency` 5/0/1 (×5), `kernel_call_counts`
+2/0/0, `one_padder` 8/0/0, `one_renderer` 25/0/0, `cli_plan` 16/0/0,
+`emit_planner` 9/0/0, `kernel_row_cells` 26/0/0 (9 of them this file's, the
+rest `tui_common`'s).
+
+**And the shipped binary was driven** (AGENTS §5.13's CLI half; the TUI needs a
+tty, gap 182). A fresh `tm init` tree, `tm wake`, `tm arrive`, two backlog
+lines, `tm plan` at `2026-09-22T10:42:00-05:00`: the day file's
+`<!-- tm:plan -->` block is eleven rows and `tm plan --json`'s `segments[].text`
+is the same ten, with `18:42  ───    window ends 18:42` the one line the file
+has and the JSON does not — D30 Q5 (a)'s shape, unmoved by the `render_row`
+split. `tm now` prints the current row and the next three.
+
+**Elaboration, probed under AGENTS §5.10a's cap**: `EmitWire.lean` elaborates
+in **1.16 s** under `MemoryMax=8G` with `timeout 120`, with no warning and no
+`decide` in it — every witness in the module is `rfl` on a concrete wire object,
+and the two that need `set_option maxRecDepth 20000` (a 201-character note text
+and one accepted segment) are named at their `set_option`.
+
+**Build costs measured on this machine**, because they decided §8's first
+bullet: a one-line edit to `Boundary.lean` and a rebuild of
+`TmKernel:static` is **142 s**; the same for `Emit.lean` is **137 s** (both
+rebuild `PlannerWit.lean`); an edit to `EmitWire.lean`, which nothing imports,
+is **0.3-0.7 s**.
+
+<!-- GAPS 1320-1333 — track P, run W-24.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1105 — `Emit.lean` has no caller. CLOSED.**
+1. *What was not done.* Nothing on the wire carried a `Row`; `emit::render_row`
+   built its cells from the Rust `Segment`; no byte comparison had ever been run.
+2. *Cleared.* Here. `EmitWire.lean` puts the nine cells on the wire,
+   `emit::render_row` is a padder over `RowCells` that the kernel can fill, and
+   `tm/tests/kernel_row_cells.rs` runs the byte comparison over one whole day,
+   all ten kinds and a batch. What remains of the sentence is narrower and is
+   gaps **1320**, **1321** and **1327** below.
+
+**Gap 1318 — `Emit.lean` has no caller and its cells have never been compared to
+a byte. CLOSED in substance, and gap 1327 is what is left of its letter.**
+
+**Gap 1194 — D30 Q5 is two-thirds met.** Unchanged by this step in its own
+terms: the three *surfaces* were made one at W-23 and this step adds a fourth
+producer of the same row rather than a fourth surface. The `window ends` row
+the JSON still lacks is untouched.
+
+**Gap 1101 and gap 1102 — now PINNED BY A MACHINE, still open.** Both stand
+exactly as written; what changed is that each is asserted to fire **exactly
+once** on the fixture day by `DECLARED_HOLES`, so neither can widen or close
+without a test failing and naming it.
+
+**Gap 1320 — `Emit.rowsOf` still has no caller.**
+1. *What is not done.* `rowsOf` is `List.map` of `rowOf` over `dayPlan r`'s
+   segments, and `dayPlan` is the kernel's planner. Nothing calls it.
+2. *Why.* The host's planner is the fork's until R3 (D34), so the kernel cannot
+   be asked for the day the binary renders; asking it for a different day would
+   compare two days and say nothing about a cell.
+3. *What it costs.* `rowsOf` and its two laws (`rowsOf_length`, `rowsOf_eq`) are
+   still checked only by the Lean compiler. Every cell function below it now has
+   a caller and a byte comparison.
+4. *Which step clears it.* R3.
+
+**Gap 1321 — the kernel's cells reach `render_row` only in a test.**
+1. *What is not done.* `plan_rows` still calls `row_cells`. The production day
+   file's cells are the Rust's.
+2. *Why.* `emit.rs` lives in `tm-core`, which does not depend on
+   `tm-kernel-ffi`; only the `tm` binary does, and making `tm-core` link the
+   Lean runtime would put `lake` on the critical path of every `cargo` build in
+   the workspace. The structural half — `render_row` taking cells — is done, so
+   the swap is a wiring change and not a rewrite.
+3. *What it costs.* D30 Q6 (a)'s *"the kernel emits cells"* is true of the wire
+   and of the comparison, and not yet of the shipped path. G1 is dead as an
+   architecture row (one renderer, one padder, one cell producer per side); it
+   is not yet true that the kernel **owns** the generated block.
+4. *Which step clears it.* R3, with the planner.
+
+**Gap 1322 — the `ghost` kind has no fork cell to compare against.**
+1. *What is not done.* `Planner.SegKind.ghost` is the kernel's eleventh kind;
+   the fork carries the ghost row as a `SegFlags` bit, so `emit::row_cells`
+   never produces a ghost row and there is nothing to compare the kernel's
+   against. Ten of the eleven kinds are compared, twice each.
+2. *Why.* The two representations differ by design (`Planner.SegKind`'s header
+   says why), and inventing a fork-side ghost cell to compare against would be
+   inventing the comparand.
+3. *What it costs.* `Emit.titleCell`, `ciCell` and `estCell` on a ghost row are
+   checked by the Lean compiler and by nothing else.
+4. *Which stage.* Stage 6, when §12.1's ghost row crosses — or never, if the
+   day bar stays Rust (design §8.2 says it does).
+
+**Gap 1323 — `EPOCH_FROM_CE` is written out three times.**
+1. *What is not done.* `62_135_596_800` is declared in
+   `tm/src/cli/kernel_log.rs`, in `tm/tests/kernel_replay_parity.rs` and now in
+   `tm/tests/kernel_row_cells.rs`.
+2. *Why.* `tm` is a binary crate, so an integration test cannot `use tm::…`;
+   the two test-side copies are the established workaround in this repository
+   and the third follows it rather than inventing a fourth mechanism.
+3. *What it costs.* AGENTS §5.3's class, at the smallest possible scale — a
+   constant, not a reader. It is not silent: a wrong value moves **every**
+   `time` cell and `the_kernel_and_the_fork_write_the_same_cells` fails naming
+   both clocks, which is how the value was found on this test's first run.
+4. *Which stage.* Whenever `tm`'s testable surface moves to a library crate.
+
+**Gap 1324 — three of the seven marks cross the wire and no cell reads them.**
+1. *What is not done.* `SegFlags.mandatory`, `.deferred` and `.isOpen` are
+   decoded and carried and reach no §4.3 cell, so no comparison of cells can see
+   a decoder that drops them.
+2. *Why.* They are the planner's marks, not the renderer's: §8.3's stability law
+   turns on `isOpen` and §5.2's on `mandatory`, and neither is printed.
+3. *What it costs.* **DRIVEN, and it is the declared hole:** `readFlags` was
+   edited to return `false` for all three, the kernel built green and
+   `kernel_row_cells` reported `25 passed; 0 failed`. A wire fault in those
+   three fields is invisible to this file.
+4. *Which step clears it.* The step that gives those three marks a reader —
+   P3's running block for `isOpen`, §5.2's window instances for `mandatory`.
+
+**Gap 1325 — `runRows` loads the documents twice.**
+1. *What is not done.* On a request carrying a `plan` section, `runLoad` runs
+   once inside `runCap` and once in `runRows`.
+2. *Why.* `runCap`'s answer is an opaque `JVal` by the time `runRows` has it,
+   and threading the loaded plan out of it would reopen `runCap`'s shape for
+   every caller. One `runLoad`, called twice — not two loaders (AGENTS §5.3 is
+   about two definitions).
+3. *What it costs.* A `plan` request pays the document load twice. No shipped
+   verb sends one (gap 1321), so nothing user-visible pays it today, and
+   `cli_latency` is unchanged at 5/0/1.
+4. *Which step clears it.* R3, when the `plan` section is read where the plan is
+   already in hand.
+
+**Gap 1326 — the eleven note sentences are compared against a TRANSCRIPTION.**
+1. *What is not done.* `the_kernel_writes_the_forks_note_sentences` compares
+   `Emit.noteText` against strings copied out of `tm-core/src/planner.rs`'s
+   `format!` sites, not against the fork's planner run into each of the eleven
+   conditions.
+2. *Why.* Reaching all eleven through `planner::plan` means eleven fixtures and
+   eleven days; the transcription covers all eleven constructors today, which no
+   fixture day does (the fixture reaches none of them).
+3. *What it costs.* A transcription error agrees with itself. What the test does
+   catch is `Emit.noteText` drifting from the sentence recorded beside it.
+4. *Which step clears it.* R3, where the fork's planner produces the notes the
+   kernel is answering for.
+
+**Gap 1327 — `Boundary.lean` still does not import `TmKernel.Emit`.**
+1. *What is not done.* The `plan` section lives in `EmitWire.lean`, a new module
+   importing `Boundary` and `Emit`, which now carries the single
+   `@[export tm_kernel_call]`. `Boundary.lean`'s own edit is the attribute's
+   removal and a note saying where it went; `Boundary.callExport` keeps its body
+   and its theorem.
+2. *Why.* Measured, in §8: 142 s per `Boundary.lean` rebuild against 0.3-0.7 s
+   for the leaf, and check 9 charges one kernel build per constant for every
+   definition a step adds.
+3. *What it costs.* Gap 1318's first sentence is still literally true. Its
+   substance is not: an `Emit.Row` reaches `tm_kernel_call` and its bytes are
+   compared to the day file's. Anyone auditing by grepping `Boundary.lean` for
+   `import TmKernel.Emit` will find nothing and should read `EmitWire.lean`.
+4. *Which step clears it.* Whichever step next has a reason to pay a
+   `Boundary.lean` rebuild per constant — R3's own wire, most likely.
+
+**Gap 1328 — nothing compares the kernel's cells on a day the KERNEL planned.**
+1. *What is not done.* Both sides of every comparison here are fed the same
+   segment list, which the fork's planner (or this test) produced. The kernel's
+   `dayPlan` is never the source.
+2. *Why.* Gap 1320's reason: two planners produce two days.
+3. *What it costs.* The comparison is of the **emitter** and not of the
+   **planner**. A cell that is right for a segment the kernel would never place
+   is still right here.
+4. *Which step clears it.* R3.
+
+**Gap 1329 — gap 1306, the second arrival, is still not done.**
+1. *What is not done.* Exactly what gap 1306 says: `Replay.lean`'s `DayAcc`
+   gains no last-arrive field, the day record's positional tuple is still 28,
+   `kernel_log.rs::decode_facts`'s `d_tuple(rec, 28, …)` is unchanged, the
+   sealed month-record format is unversioned and the fork parity entry is not
+   written.
+2. *Why.* This step's build budget went to the wire. `Replay.lean` sits under
+   the whole `Seal*` chain and `Boundary.lean`, so a change to it rebuilds most
+   of the package; that is a step of its own and not a tail on this one.
+3. *What it costs.* Precisely gap 1306's cost, unchanged: on a day with two or
+   more arrivals the rebuilt `window` and `budget` come from `Ctx::arrival_window`
+   against today's walls, and the recomputation stays LOUD.
+4. *Which step clears it.* The next track-P step, or whichever step next opens
+   the day record's shape.
+
+**Gap 1330 — `maxCands` and `maxCandidates` are two names for one number.**
+1. *What is not done.* `Planner.maxCands := 1024` and `CapWire.maxCandidates :=
+   1024` are the same bound on the same wire, declared twice. Found while
+   reusing the cap for the segment list: this step's `readSegs` guards on
+   `Planner.maxCands` and `readCands` guards on `CapWire.maxCandidates`, and
+   nothing says they agree.
+2. *Why it is not fixed here.* Deleting either one edits `Boundary.lean` or
+   `Planner.lean`, which is 142 s a build and a mutation per constant (§8);
+   this step's budget went to the wire. It is pre-existing — neither name is
+   this step's — and naming it is the point (AGENTS §5.12).
+3. *What it costs.* AGENTS §5.3's class at the cheapest scale: a raised cap in
+   one place would silently not raise the other, and the segment list and the
+   candidate list would then disagree about how long a wire list may be.
+   `CapWire.maxRemaining`'s own doc comment already says a number with two
+   names is this defect, three lines below `maxCandidates`.
+4. *Which step clears it.* Any step that already pays a `Boundary.lean` or
+   `Planner.lean` rebuild.
+
+**Gap 1331 — gap 1318's count of `Emit.lean`'s audit lines does not reproduce.**
+1. *What is wrong.* Gap 1318 says *"the only machine evidence for the module is
+   19 `#print axioms` lines"*. At `596b56d` `Emit.lean` declares **21**
+   theorems and `Check.lean` carries **21** `Tm.Emit.` lines. Re-measure:
+   `git show 596b56d:kernel/TmKernel/TmKernel/Emit.lean | grep -cE '^theorem '`.
+2. *Why it matters.* AGENTS §5.11's class, inside a gap written one run ago and
+   about the module this step is opening — the fifth time this campaign a
+   quoted number has failed to reproduce.
+3. *What it costs.* Nothing in the tree. It costs the ledger the trust §5.11 is
+   about, which is why it is written down instead of quietly corrected.
+4. *Cleared.* Here, by saying so; gap 1318's own sentence is left as it was
+   written, because rewriting a closed gap's evidence is how a ledger stops
+   being a record.
+
+**Gap 1332 — check 9's `pinned by nothing` line went 0 → 8, all of one shape.**
+1. *What is not done.* Eight of `EmitWire.lean`'s readers — `asPlan`,
+   `readNote`, `readKind`, `readFlags`, `readSeg`, `readSegs`, `readPrios`,
+   `readRowSection` — return `Except RowRefusal α` for an `α` with no
+   `Inhabited` instance (`SegKind`, `SegFlags`, `WfSeg`, `Capped WfSeg`,
+   `RowReq`), so **D40's constant does not exist for them**: no constant of the
+   type, no identity on an accumulator (none takes an argument of its own
+   result type) and no synthesised nullary or structure literal. The gate
+   counts them and does not fail.
+2. *Why it is not fixed.* The obvious fix — `deriving Inhabited` on `SegKind`
+   and the rest so the fold has something to fold to — is inventing a default
+   `SegKind` to satisfy a gate, and a default constructor for a sum type is the
+   thing that hides a missing branch. `WfSeg` is a `Subtype` and has no
+   `Inhabited` at any price (AGENTS §5.1's own shape), so the class cannot be
+   emptied that way in any case.
+3. *What it costs.* It costs the gate's reach and **not** the module's
+   witnesses: every one of the eight is pinned by theorems in the tree —
+   `readSeg_refuses_an_inverted_segment`, `readKind_refuses_an_unknown_kind`,
+   `readSegs_refuses_past_the_cap`, `readRowSection_refuses_a_bad_bed` and
+   their accepting twins — and by `tm/tests/kernel_row_cells.rs`, which drives
+   five of them through the FFI. What is true is the narrower sentence: the
+   **constant fold** says nothing about them. This is README gap **980**'s
+   recorded tension (`Bool` + `Subtype` types deliberately have no default),
+   eight rows wider, and the line the gate's own prose says must not grow has
+   grown; it is written here rather than left to a reader of the number.
+4. *Which step clears it.* The owner's call on gap 980, or a mutation the gate
+   does not yet have (the refusal-preserving fold: replace the body with
+   `.error <some refusal>`, which exists for every one of the eight).
+
+**Gap 1333 — `cli_latency` flaked under load, and its header says it does not.**
+1. *What happened.* One of **six** `cargo test --workspace` runs failed, on
+   `cli_latency`'s `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second`
+   and `tm_log_on_three_years_of_log_stays_a_later_verb_and_returns_its_whole_tail`.
+   It was the run that started while `cargo` was still compiling and linking
+   the workspace. Run on its own five times afterwards: `5 passed; 0 failed;
+   1 ignored` every time, 15.7-18.3 s, and the five later workspace runs were
+   green.
+2. *Why it is a finding and not a flake to shrug at.* `cli_latency.rs`'s own
+   header says the bounds are *"8x"* and *"20x"* the measured verbs *"so a busy
+   machine does not flake them"*. This machine, busy, flaked them — so the
+   sentence is false as written, which is README gap 871's class (a checker's
+   prose disagreeing with the measurement beside it).
+3. *What it costs.* A `cargo test --workspace` run can be red for a reason that
+   is not a defect, which is exactly the noise D46 exists to make visible. The
+   band was **NOT** widened: re-blessing a latency band to make a test pass is
+   what AGENTS §3 forbids, and 5/6 plus 5/5 standalone is the honest record.
+4. *Which step clears it.* Either the header's sentence is corrected to say
+   what it means (the bounds hold on an idle machine), or the two tests are
+   serialised against the workspace's own compilation — neither of which is
+   this step's, and both of which are behaviour changes to a gate.
+
+**New gaps start at 1334** (1319 is still free, and has been since W-23).

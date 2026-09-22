@@ -842,7 +842,7 @@ pub fn plan_rows(plan: &DayPlan, tree: &Tree, cfg: &Config, layout: &Layout) -> 
     let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
     plan.segments
         .iter()
-        .map(|seg| render_row(seg, plan, tree, cfg, &prios, layout))
+        .map(|seg| render_row(&row_cells(seg, plan, tree, cfg, &prios), layout))
         .collect()
 }
 
@@ -954,15 +954,72 @@ fn divider_row(at: &DateTime<Tz>, window_end: &DateTime<Tz>) -> String {
     row
 }
 
-/// One timeline row (§4.3).
-fn render_row(
+/// **§4.3's nine cells, before anything measures a column** — the Lean
+/// kernel's `Emit.Row`, on this side of the wire (D30 Q6 (a): *"the kernel
+/// emits cells; one Rust function pads"*).
+///
+/// The nine are `time ci p mark title parent est actual note`, in that order,
+/// and [`cells`](RowCells::cells) is that order as data: a field reordered here
+/// breaks it, the way a field reordered in `Emit.Row` breaks
+/// `Emit.cells_are_the_nine_in_order`.
+///
+/// `batch_names` is **not** a tenth cell. It is the member list a batch row's
+/// title is built from, which [`fit_batch`] needs and the joined title cannot
+/// give back: splitting `title` on ` · ` would come apart on a title that
+/// contains the separator. `None` on every other kind.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RowCells {
+    /// `HH:MM` — the segment's start in `cfg.tz`.
+    pub time: String,
+    /// The slot energy and `↓`, or the kind's glyph.
+    pub ci: String,
+    /// `p3`, on a row that is on §7's scale.
+    pub p: String,
+    /// One of `✓ ▶ ⚠` or a space — and never a glyph.
+    pub mark: String,
+    /// The item's title, or the row's own words. **Unfitted.**
+    pub title: String,
+    /// `@m3`.
+    pub parent: String,
+    /// `2b`, `2b×1.6`, `30m`.
+    pub est: String,
+    /// `(67m)` on a row the log closed.
+    pub actual: String,
+    /// The trailing note column.
+    pub note: String,
+    /// A batch's members, whole; `None` on every other kind.
+    pub batch_names: Option<Vec<String>>,
+}
+
+impl RowCells {
+    /// The nine, in §4.3's order.
+    pub fn cells(&self) -> [&str; 9] {
+        [
+            &self.time,
+            &self.ci,
+            &self.p,
+            &self.mark,
+            &self.title,
+            &self.parent,
+            &self.est,
+            &self.actual,
+            &self.note,
+        ]
+    }
+}
+
+/// **The cells of one row, measured by nothing.**
+///
+/// Everything [`render_row`] prints comes from here, and the Lean kernel's
+/// `Emit.rowOf` answers the same nine for the same segment —
+/// `tm/tests/kernel_row_cells.rs` is the machine that compares them.
+pub fn row_cells(
     seg: &Segment,
     plan: &DayPlan,
     tree: &Tree,
     cfg: &Config,
     prios: &HashMap<&Id, u8>,
-    layout: &Layout,
-) -> String {
+) -> RowCells {
     let item = seg.item.as_ref().and_then(|id| tree.get(id));
     let work = shows_scale(seg);
 
@@ -991,35 +1048,62 @@ fn render_row(
         String::new()
     };
 
-    let title = match &seg.kind {
-        // A batch keeps its member list and its `(n)` (§7.5): the frame is
-        // fitted, not truncated away.
-        SegKind::Batch(ids) => fit_batch(&batch_names(ids, tree), layout.title_w),
-        _ => truncate(&title_cell(seg, tree, cfg), layout.title_w),
-    };
     let actual = if seg.flags.done && !matches!(seg.kind, SegKind::Rest) {
         format!("({}m)", seg.minutes())
     } else {
         String::new()
     };
 
+    RowCells {
+        time: fmt_clock(seg.start),
+        ci: ci_cell,
+        p: p_cell,
+        mark: mark_of(seg).to_string(),
+        title: title_cell(seg, tree, cfg),
+        parent: parent_cell(seg, tree),
+        est: est_cell(seg, tree, cfg),
+        actual,
+        note: note_cell(seg, tree, plan),
+        batch_names: match &seg.kind {
+            SegKind::Batch(ids) => Some(batch_names(ids, tree)),
+            _ => None,
+        },
+    }
+}
+
+/// **One timeline row (§4.3): the padder, and nothing else.**
+///
+/// It takes cells and lays them out; it does not know what a segment is. That
+/// split is D30 Q6 (a) made structural — the cells can come from
+/// [`row_cells`] or from the Lean kernel's `Emit.rowOf` over the wire, and the
+/// bytes are the same bytes either way (`tm/tests/kernel_row_cells.rs`).
+///
+/// It is still the **one padder** (D43): `pad`, [`truncate`] and [`fit_batch`]
+/// are here, because this is where the terminal's columns are.
+pub fn render_row(cells: &RowCells, layout: &Layout) -> String {
+    let title = match &cells.batch_names {
+        // A batch keeps its member list and its `(n)` (§7.5): the frame is
+        // fitted, not truncated away.
+        Some(names) => fit_batch(names, layout.title_w),
+        None => truncate(&cells.title, layout.title_w),
+    };
     let mut row = String::with_capacity(80);
-    row.push_str(&pad(&fmt_clock(seg.start), TIME_W));
+    row.push_str(&pad(&cells.time, TIME_W));
     row.push_str("  ");
-    row.push_str(&pad(&ci_cell, CI_W));
-    row.push_str(&pad(&p_cell, P_W));
+    row.push_str(&pad(&cells.ci, CI_W));
+    row.push_str(&pad(&cells.p, P_W));
     row.push(' ');
-    row.push(mark_of(seg));
+    row.push_str(&cells.mark);
     row.push(' ');
     row.push_str(&pad(&title, layout.title_w));
     row.push_str("  ");
-    row.push_str(&pad(&parent_cell(seg, tree), PARENT_W));
+    row.push_str(&pad(&cells.parent, PARENT_W));
     row.push_str("  ");
-    row.push_str(&pad(&est_cell(seg, tree, cfg), EST_W));
+    row.push_str(&pad(&cells.est, EST_W));
     row.push_str("  ");
-    row.push_str(&pad(&actual, ACTUAL_W));
+    row.push_str(&pad(&cells.actual, ACTUAL_W));
     row.push_str("  ");
-    row.push_str(&note_cell(seg, tree, plan));
+    row.push_str(&cells.note);
     row.trim_end().to_string()
 }
 
