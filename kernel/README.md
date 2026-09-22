@@ -51998,3 +51998,303 @@ a byte. NOT FIXED, and not fixable here.**
 4. *Which stage.* Stage 6, gap 1195.
 
 **New gaps start at 1319.**
+
+<!-- ===================================================================
+     Stage 6, run W-24, track G.  APPENDED 2026-09-22.
+     GAPS 1390-1398 — track G's pre-allocated range for this run
+     (P 1320-1359, A 1360-1389, G 1390-1409, Land 1410-1414).  The README's
+     own "new gaps start at" line reads 1319; the three tracks of this run
+     were given disjoint ranges instead, so 1319-1389 is a hole this run
+     leaves deliberately.  WHOEVER MERGES RENUMBERS (AGENTS §6.4, §6.5).
+     =================================================================== -->
+
+## Stage 6, W-24 track G, 2026-09-22: the LOG axis closes the way the eligibility axis did, and the nine are listed
+
+**Commits.** One (`kernel:`), on branch `w24-g`. Files: `PlanCheck.lean`
+(**+337/−0**), `PlannerWit.lean` (**+284/−0**), `Check.lean` (**+34/−0**: two
+banners and **22** `#print axioms` lines), `Goals.lean` (**+71/−0**, **prose
+only** — zero declaration lines, and `grep -c '^theorem '` is **9** before and
+after), this file (**+298/−0**) and `kernel/mutations.txt` (**+3/−1**: check 9's
+two roster rows, and one pin site that had drifted by six lines).
+`Planner.lean`, `Emit.lean`, `Negative.lean`, `check.sh`, `citations.py`,
+`mutate.py`, `citations-allow.txt`, `corpus/`, every fixture and every line of
+Rust are **untouched**.
+
+**Twenty-five declarations — 22 theorems, 2 `def`s and 1 `structure`.** The
+axiom audit rises by exactly 22, 4,910 → **4,932**.
+
+### 1. What the brief asked, and what moved
+
+W-23 closed the **eligibility** axis of design §6.1's whole-day lift and named
+the residue in one word: *the log*. This step is that word, in four clauses.
+
+`PlanCheck.PastPays` is what the replayed past owes §6.1's seven —
+`oneBlock`, `offWall`, `offBreak`, `budget` — and
+`PlanCheck.dayPlan_ok_core_of_a_paying_past` is `PlanCheck.dayPlan_ok_core` with
+`hnopast` **gone**. `PlanCheck.dayPlan_ok_on_the_whole_day` composes it with
+W-23's `PlanCheck.dayPlan_ok_is_the_core_seven`, so §6.1's **eleven** now holds
+on the **whole day** with both of W-23's bounds discharged by named hypotheses
+rather than assumed away.
+
+**Three of the seven owe the log nothing**, and saying which is half the answer:
+`energyFilterOk` and `noDemandingAfterWindDown` are vacuous at every request
+(`PlanCheck.energyFilter_has_no_subject`, `PlanCheck.windDown_has_no_subject`)
+and `wallsUnmoved` never reads a Block row. That is why `PastPays` has four
+fields and not six.
+
+### 2. The evidence, in both directions
+
+**It reaches a real day.** `hnopast` is *"the log holds no Block for today"*,
+which `PlanCheck.dayPlan_ok_core`'s own doc comment calls false of every day
+after the first block is worked.
+`PlannerWit.the_log_at_the_census_request_holds_a_block` computes that it **is**
+false at `PlannerWit.theCensusRequest` — the §4.3 Wednesday, whose log replays
+**two** Block rows and a break — and
+`PlannerWit.the_paying_past_at_the_census_request` computes that
+`PastPays` holds there anyway.
+`PlannerWit.the_eleven_hold_on_the_whole_day_of_a_worked_morning` is §6.1's eleven
+fired on that day, **by the lift and not by a `decide` on the battery**.
+`PlanCheck.PastPays_of_no_past_block` is the other half of the strictness claim:
+`hnopast` pays all four clauses, so `dayPlan_ok_core` is a corollary of the new
+lift and the two are not merely incomparable.
+
+**Every clause is necessary, and a fourth day was built to prove it.**
+`PlannerWit.the_paying_past_fails_on_four_whole_days` computes the four clause
+verdicts at four requests; each row has exactly one `false`, so no clause is
+implied by the other three and none is AGENTS §9.2's *"a check no input can
+fail"*. Three of the four days already existed — `theShortBlockRequest`,
+`theMorningWallRequest`, `theMidBreakRequest`, one per recorded refutation of a
+goal that quantified over the replayed past. **The fourth did not.** Nothing in
+the witness set refuted the `budget` clause (`theSpentBudgetRequest` reaches
+7 200 s against a 7 200 s cap — equal, not over), so
+`PlannerWit.theOverBudgetRequest` was built: the same Wednesday with `tm arrive`'s
+budget written as **one** block against a morning whose log closed **two**. D40's
+own rule, applied to a clause instead of a definition: a mutation nothing fails is
+fixed by building the witness, not recorded.
+
+### 3. A refutation that is NOT the one the design recorded
+
+`Goals.plan_does_not_overbook` is **false as written**, and the fourth day is the
+witness: `PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted`.
+
+**The design's reason is not this one.** Design §6.3 row 1 says the law fails
+because §8.2 choice 5b *"gives the running block its minutes whatever the budget
+says"*. **Nothing is running at `theOverBudgetRequest`.** The day is over budget
+because the *log* worked two blocks against a budget of one — `PlanCheck`'s
+finding 1 (gap 385) reaching its **fourth** checker, after the wall law, E1 and
+the break law. And design §6.3 row 1's own proposed restatement — Σ over the
+blocks that are not the Active reservation, which is exactly
+`PlanCheck.noOverbook` — is refuted by the same request
+(`PlannerWit.the_designs_restatement_of_the_overbooking_law_is_refuted_too`),
+because `PlanCheck.withoutActive` removes nothing when nothing is running.
+
+**The goal stays, and the burn-down stays 9.** The restriction that survives is
+`PlanCheck.withoutPast`'s day, where `PlanCheck.overbook_has_no_subject_from_now`
+proves the law **vacuous**. Discharging it would be AGENTS §5.2's theorem that
+compiles and means nothing — W-19's call at the two comparisons, at a third goal.
+
+### 4. The list nobody had written: which of the nine are reachable, and on what
+
+It is in `Goals.lean`'s `# STAGE 6` header in full, one line per goal. The
+summary:
+
+| goal | waits on | why it is not reachable today |
+|---|---|---|
+| `plan_does_not_overbook` | **P5** | refuted above; the surviving restriction is vacuous |
+| `plan_respects_the_energy_filter` | **P5** | no Block row carries a slot energy, at any request |
+| `plan_places_no_demanding_block_after_wind_down` | **P5** | no Block row reaches the wind-down |
+| `plan_is_monotone_in_rank` | **P5** | refuted at W-19; needs eligibleAt |
+| `plan_puts_hot_before_the_queue` | **P5** | refuted at W-19; needs eligibleAt |
+| `plan_never_drops_an_impossible_item` | **P8** | `Planner.dayDiagnostics` never fills `impossible` (gap 1065) |
+| `plan_never_batches_past_an_equal_ci_candidate` | **P5** | the day has no Batch row |
+| `plan_tail_drop` | **G2** ← G1 ← P5 | relational; D5 |
+| `plan_is_stable_across_a_replan` | **G3** ← G1 ← P5 | relational; D5 |
+
+**Six of the nine wait on one edit, and it is not a proof.**
+`Planner.PlanReq.assignFold`, `Planner.PlanReq.finalAssign`,
+`Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow` are all built and
+proved; `Planner.dayRows` is
+`sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++
+restRows).map segOf)` and holds **no row of step 5's**. That is D19's
+switch-shaped change. Planner.eligibleAt is declared **nowhere** in this tree — the name is
+un-backticked here because check 8 is right to ask, and
+`grep -rn 'def eligibleAt' kernel/TmKernel/TmKernel/*.lean` returns nothing; the
+two hits for it are doc comments in `Planner.lean` saying that
+`Planner.Ranked.gatherable` is its *slot* half.
+
+**And "before R1" is behind the tree** (a correction to the brief). R1 — design
+§14.4's one-renderer step — **landed at `6b05f50`**, `tm/tests/one_renderer.rs`
+beside it. The design carries **two** things called G1, which is §3.4's own
+finding about "F3" at a second name: the *defect* G1 is the renderer and is dead;
+the *step* G1 is track G's lift and has not landed.
+
+### 5. The ratio: seven, at one named request, and now with a computed comparand
+
+**Every live prose statement of the subject census in the repo agrees**, and this
+run did not have to change one. `PlannerWit.the_census_at_every_request_the_prose
+_quotes` is the new thing: one theorem holding the number at each of the five
+requests the prose names, in the three shapes it uses.
+
+| request | all eleven, whole day | `checksCore`, whole day | `checksCore`, `withoutPast`'s day |
+|---|---:|---:|---:|
+| `theCensusRequest` | **7** | 5 | 4 |
+| `theStoredRequest` | 5 | 3 | — |
+| `theRunningRequest` | 4 | 4 | 3 |
+| `theQueuedRequest` | 5 | — | — |
+| `theQuietCensusRequest` | 2 | — | — |
+
+**The headline is unchanged and it is SEVEN** — `theCensusRequest`, whole day,
+every eligibility, ceiling proved by `PlanCheck.the_census_ceiling_is_seven`.
+`PlannerWit.the_log_axis_moves_no_census_number` says the log axis moved nothing:
+`PastPays` is a hypothesis, not a twelfth checker, and `PlanCheck.subjectOf` does
+not read it.
+
+### 6. Gap 877, and the one it had in this run's own material
+
+**Gap 877 is closed** (W-20; W-21, W-22 and W-23 each said so) and nothing was
+owed. Its *shape* — a conjunct with a computed subject and no consumer — was
+looked for in this run's own new material and **found once**:
+`PlannerWit.the_over_budget_request_is_over_budget` computed the day's two meters
+and the refutation beside it re-`decide`d them. The refutation now reads the
+theorem's conjuncts. A second instance was inherited:
+`PlannerWit.the_core_seven_is_false_on_three_whole_days` (W-23) had three
+conjuncts and no reader;
+`PlannerWit.every_refuted_day_refutes_its_own_clause` reads all three, so
+weakening any one of them now breaks a statement.
+
+### 7. What this step did NOT do, by name
+
+- **No goal was discharged and none was added.** Check 7 reads **9 outstanding,
+  all stage 6**, before and after. §3 says why one of the nine is refuted and
+  still standing.
+- **No line of design §6.2's fold induction is claimed.** Every theorem here
+  holds *because* §8.2 step 5's Block and Batch rows are absent from
+  `Planner.dayRows`; `PlanCheck.dayPlan_ok_core`'s `hblk` and "the fold has its
+  subject" are the same sentence with opposite signs.
+- **`Negative.lean` was not touched.** The brief scoped this track to
+  `PlanCheck.lean`, `PlannerWit.lean`, `Goals.lean` and `Check.lean`, so the four
+  clause refutations are witnesses and not cheats. A cheat asserting
+  `PlanCheck.PastPays` at `theOverBudgetRequest` is one line and is **owed**
+  (gap 1394).
+- **No decidable form of `PastPays` was written** (gap 1390), because it would
+  have no caller — W-23's own refusal, and the defect this campaign is about.
+
+<!-- GAPS 1390-1398 — track G, run W-24.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1390 — `PlanCheck.PastPays` has no decidable form and no caller outside the witness module. NOT FIXED, deliberately.**
+1. *What is not done.* There is no `pastPays : PlanReq → Bool`, no reflection
+   lemma, and nothing in `Boundary.lean` establishes the four clauses. Every
+   firing of `PlanCheck.dayPlan_ok_core_of_a_paying_past` in the tree supplies
+   them by `decide` at a witness request.
+2. *Why.* All four clauses are computable — `Planner.pastRows` and
+   `Planner.blockedByWalls` are lists and `Planner.blockSeconds` is a `Nat` — so
+   a `Bool` form is short. It was declined for W-23 track P's stated reason:
+   another thing with no reader is the defect this campaign is about.
+3. *What it costs.* The whole-day lift cannot be fired from the boundary, so
+   *"§6.1's eleven hold on the day this call produced"* is not a sentence the
+   kernel can say about an arbitrary request; it is a sentence about four named
+   ones.
+4. *Which stage.* P5, or the request decoder (gap **346**) — whichever first
+   needs the answer on the wire.
+
+**Gap 1391 — `PlanCheck.dayPlan_ok_on_the_whole_day` carries two hypotheses no shipped code establishes.**
+1. *What is not done.* Its `PlanCheck.FromNowAnchored` and `PlanCheck.PastPays`
+   are discharged in this tree only by `PlannerWit.fromNowWorkRows` and by
+   witness-request `decide`s. Neither is discharged for Planner.eligibleAt (see
+   §4 for why the name is un-backticked), which does not exist.
+2. *Why.* P5 owes three lines on the eligibility side (gaps **1061**, **1170**,
+   **1281**) and the log side is gap 1390.
+3. *What it costs.* The theorem is the strongest form of §6.1's lift in the tree
+   and it has no consumer outside `PlannerWit.lean`.
+4. *Which stage.* P5, then G1.
+
+**Gap 1392 — design §6.3 row 1's restatement of the overbooking law is refuted, and the design is not corrected.**
+1. *What is not done.* `kernel/design/stage6/stage6-planner-design.md` §6.3 row 1
+   still gives *"Σ over blocks that are not the Active reservation"* as the
+   restatement of `plan_does_not_overbook`.
+   `PlannerWit.the_designs_restatement_of_the_overbooking_law_is_refuted_too`
+   refutes it, for a cause the row does not mention.
+2. *Why.* The design is a track-wide input document and this track owns four
+   files; editing it here would collide with tracks P and A.
+3. *What it costs.* A step that ports §6.3's table verbatim ships a restatement
+   the tree already refutes.
+4. *Which stage.* P5, in the step that ports §6.3's table.
+
+**Gap 1393 — `plan_does_not_overbook` is refuted and standing, and the restriction that survives it is vacuous.**
+1. *What is not done.* The goal is not discharged, not renamed and not restated.
+2. *Why.* AGENTS §5.2: `PlanCheck.overbook_has_no_subject_from_now` proves the
+   surviving restriction (`PlanCheck.withoutPast`'s day) empty at every request,
+   so the restatement would mean nothing. W-19 made the same call for the two
+   comparisons.
+3. *What it costs.* Check 7 reads 9 where a reader counting refuted goals would
+   read 8; the refutation is in `PlannerWit.lean` and `Check.lean` and not in the
+   burn-down.
+4. *Which stage.* P5.
+
+**Gap 1394 — the four clause refutations are witnesses and not `Negative.lean` cheats.**
+1. *What is not done.* No `/- CHEAT` block asserts `PlanCheck.PastPays` at
+   `PlannerWit.theOverBudgetRequest`, or the whole-day lift without its log
+   clause.
+2. *Why.* This track's brief names four files and `Negative.lean` is not one of
+   them; appending there would have collided with tracks P and A at the same
+   cheat number, which is what happened in three consecutive runs (gaps 671, 872).
+3. *What it costs.* Check 4 does not guard the new clauses from the other side;
+   only check 3 and the witnesses do.
+4. *Which stage.* The next track that owns `Negative.lean`. Cheats start above
+   **218** (`grep -n '^/- CHEAT' Negative.lean | tail -1` at `596b56d`).
+
+**Gap 1395 — `PlanCheck.PastPays.budget` is measured on the day, not on the log.**
+1. *What is not done.* Three clauses quantify over `Planner.pastRows r`, the rows
+   as the replay wrote them; the fourth weighs `Planner.blockSeconds` over
+   `PlanCheck.pastHalf`, a filter of the produced day.
+2. *Why.* `Planner.blockSeconds` is the day's own meter and re-summing the log
+   beside it would be a second reader of one number (AGENTS §5.3). The reduction
+   that makes it work is `PlanCheck.blockSeconds_withoutActive_le_pastHalf`, which
+   needs both filters over one list.
+3. *What it costs.* A host cannot check the `budget` clause from the log alone;
+   it has to produce the day first. The other three it can check from the log.
+4. *Which stage.* With gap 1390, if a `Bool` form is ever wanted.
+
+**Gap 1396 — the `foldl` accumulator-shift lemma is written FIVE times, monomorphically.**
+1. *What is not done.* `Capacity.lean:1313`, `Lookahead.lean:2672`,
+   `Lookahead.lean:2820`, `Close.lean:1617` and `Tree.lean:275` each prove
+   `l.foldl f a = a + l.foldl f 0` for their own `f` and element type. No general
+   lemma exists and none of the five cites another.
+2. *Why.* Found by a body-shape search this run ran for a different lemma
+   (`PlanCheck.foldl_add_filter_le`, which is a *monotonicity* lemma and not a
+   sixth copy). Four of the five fit one statement over `g : α → Nat`;
+   `Tree.lean`'s is `optAdd` and does not.
+3. *What it costs.* Nothing is wrong today. It is the shape W-19's capMin?
+   (un-backticked, being dead), W-22's clip/truncate and W-23's nine HH:MM
+   renderers had before somebody
+   looked, and no gate in this repository can see it — check 9 mutates
+   definitions, not proofs.
+4. *Which stage.* Whichever step next touches two of the four; not worth a step
+   of its own.
+
+**Gap 1397 — the ratio comparand covers the requests the prose names and no others.**
+1. *What is not done.* `PlannerWit.the_census_at_every_request_the_prose_quotes`
+   holds the census at **five** requests. `PlannerWit.lean` builds more than
+   thirty, and a sentence written later about one of the others has nothing to
+   check itself against.
+2. *Why.* A theorem over every request would be a `decide` per request and this
+   one is already at `maxRecDepth 400000`.
+3. *What it costs.* The sixth disagreeing ratio is still possible; it is merely
+   cheaper to catch. Check 8 cannot read a number.
+4. *Which stage.* Any; add the row when a sentence needs it.
+
+**Gap 1398 — nothing compares `PlanCheck.PastPays` to the fork.**
+1. *What is not done.* The fork's `past_segments` has no notion of *"the
+   replayed past pays the invariants"*; `planner_invariants.rs` restricts to
+   `assigned_set(day, w.now)` instead, which is `PlanCheck.withoutPast`'s
+   restriction and not this one. There is no parity entry for `PastPays`.
+2. *Why.* It is a hypothesis of a Lean lift, not a value on the wire, so D21/D22
+   do not obviously bite.
+3. *What it costs.* If the fork would refuse a day this lift accepts, or the
+   reverse, nothing would say so. The four clauses are read off the fork's own
+   failure modes by **reading** `planner_invariants.rs`'s header, not by running
+   it.
+4. *Which stage.* R2, when the proptest is aimed through the FFI.
+
+**New gaps start at 1399** (track G's range runs to 1409; tracks P and A hold
+1320-1389, the Land step 1410-1414 — see the banner above).

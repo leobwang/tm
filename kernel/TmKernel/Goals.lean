@@ -829,6 +829,77 @@ not have moved the census whatever it emitted.  What P8 was owed by name is a di
 sentence and it is **not** paid: `plan_never_drops_an_impossible_item` still needs
 `Planner.Diagnostics.impossible` filled from §7.3's grants (README gap 1065), and
 `Planner.dayDiagnostics` still leaves that field at `Planner.Diagnostics.empty`'s value.
+
+**W-24 (track G) closed the LOG axis the same way, and the burn-down still did not move.**
+`PlanCheck.PastPays` is what the replayed past owes §6.1's seven, in **four** named clauses —
+no replayed Block longer than one block, none over a span the walls blocked, none over a
+break the log records, and the Blocks already worked inside the budget — and
+`PlanCheck.dayPlan_ok_core_of_a_paying_past` is the whole-day lift with `hnopast` **gone**.
+Three of the seven owe the log nothing at all, which is why `PastPays` has four fields and not
+six.  `PlanCheck.PastPays_of_no_past_block` makes `PlanCheck.dayPlan_ok_core` a corollary and
+`PlannerWit.the_paying_past_holds_where_hnopast_does_not` is the request where the new lift
+fires and the old one cannot — the §4.3 Wednesday, whose morning worked two blocks, so the
+whole-day lift now reaches a real day for the first time
+(`PlannerWit.the_eleven_hold_on_the_whole_day_of_a_worked_morning`, eleven of eleven, by the
+lift and not by a `decide`).  The bound in the other direction is four days, one per clause
+(`PlannerWit.every_refuted_day_refutes_its_own_clause`), the fourth built here because nothing
+in the witness set reached the `budget` clause.
+
+**One of the nine below was REFUTED by that fourth day, and it stays.**
+`plan_does_not_overbook` is **false as written** —
+`PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` at
+`PlannerWit.theOverBudgetRequest`, a day with **nothing running** whose log worked two blocks
+against a budget of one — which is *not* the reason design §6.3 row 1 records, and that row's
+own restatement is refuted with it
+(`PlannerWit.the_designs_restatement_of_the_overbooking_law_is_refuted_too`).  It stays for
+W-19's reason at the two comparisons: the restriction that survives is
+`PlanCheck.withoutPast`'s day, where `PlanCheck.overbook_has_no_subject_from_now` proves the
+law **vacuous**, so a discharge would be AGENTS §5.2's theorem that compiles and means
+nothing.  README gaps 1390-1393.
+
+**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Four runs have discharged none
+and said so honestly; nobody has written the list.  **None of the nine is reachable today**,
+and the reasons are two steps and one edit:
+
+1. `plan_does_not_overbook` — **P5**.  Refuted above; reachable when step 5's fold puts Block
+   rows at or after `now` into the day, which is what gives the surviving restriction a
+   subject.
+2. `plan_respects_the_energy_filter` — **P5**.  Provable today and **vacuous**
+   (`PlanCheck.energyFilter_has_no_subject`, every request): it wants a Block row carrying a
+   slot energy, which only an assignment into an energised slot produces.
+3. `plan_places_no_demanding_block_after_wind_down` — **P5**.  Same, with `hnowcal`
+   (`PlanCheck.windDown_has_no_subject`): it wants a Block row at or after the wind-down, and
+   step 7's three kinds are not Blocks.
+4. `plan_is_monotone_in_rank` — **P5**.  Refuted at W-19; the restatement needs
+   Planner.eligibleAt, which **is declared nowhere in this tree** — `Planner.Ranked.gatherable`
+   is its slot half and the item half does not exist.
+5. `plan_puts_hot_before_the_queue` — **P5**.  Same refutation, same missing predicate; P5 also
+   owes the one line that Planner.eligibleAt is `PlanCheck.FromNowAnchored`.
+6. `plan_never_drops_an_impossible_item` — **P8**.  `Planner.dayDiagnostics` still leaves
+   `Planner.Diagnostics.impossible` at `Planner.Diagnostics.empty`'s value, so §7.3's grants
+   have never been written into it (README gap 1065).  It is the only one of the nine that is
+   **not** P5's.
+7. `plan_never_batches_past_an_equal_ci_candidate` — **P5**.  Provable today and vacuous
+   (`PlanCheck.batch_has_no_subject`): it wants a Batch row, which is step 5's batch split.
+8. `plan_tail_drop` — **G2**, which waits on G1, which waits on P5.
+9. `plan_is_stable_across_a_replan` — **G3**, the same chain.
+
+**Six of the nine wait on ONE edit, and it is not a proof.**  `Planner.PlanReq.assignFold`,
+`Planner.PlanReq.finalAssign`, `Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow`
+are all built and proved; `Planner.dayRows` is
+`sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++ restRows).map
+segOf)` and holds **no row of step 5's**.  That is D19's switch-shaped change, it is what
+makes `PlanCheck`'s four emptiness theorems false and takes `PlanCheck.dayPlan_ok_core`'s
+`hblk` with them, and until it is made every one of the six is a statement about an empty
+quantifier.  **The fold induction design §6.2 prices at ≈ 4,500 lines still has no subject in
+this tree and no line of it is claimed by any run so far.**
+
+**And "before R1" is behind the tree.**  R1 — design §14.4's one-renderer step, which kills
+the *defect* G1 — **landed at `6b05f50`**, with `tm/tests/one_renderer.rs` beside it.  The two
+G1s of this design are different things (design §3.4's finding about "F3", at a second name):
+the *step* G1 is track G's lift and has not landed, and nothing below waits on the Rust
+retirement.
+
 ############################################################################ -/
 
 open Planner

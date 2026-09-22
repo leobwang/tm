@@ -6270,3 +6270,37 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five
 #print axioms Tm.PlannerWit.five_is_the_ceiling_and_it_is_reached
 #print axioms Tm.PlannerWit.the_core_seven_is_false_on_three_whole_days
+/-! ############################################################################
+## Stage 6, W-24, track G: the LOG axis, one named clause at a time
+##
+## `PlanCheck.PastPays` is the four clauses the replayed past owes §6.1's seven — three of the
+## seven owe it nothing at all — and `PlanCheck.dayPlan_ok_core_of_a_paying_past` is the
+## whole-day lift with `hnopast` gone.  `PlanCheck.PastPays_of_no_past_block` makes
+## `PlanCheck.dayPlan_ok_core` a corollary of it, and
+## `PlannerWit.the_paying_past_holds_where_hnopast_does_not` is the request where the new one
+## fires and the old one cannot.  `PlannerWit.the_paying_past_fails_on_four_whole_days` is the
+## other bound: one refuting day per clause, no clause implied by the other three.
+############################################################################ -/
+
+#print axioms Tm.PlanCheck.pastHalf_segments
+#print axioms Tm.PlanCheck.segOf_replayed
+#print axioms Tm.PlanCheck.a_block_row_that_is_not_the_reservation_has_started
+#print axioms Tm.PlanCheck.foldl_add_filter_le
+#print axioms Tm.PlanCheck.blockSeconds_withoutActive_le_pastHalf
+#print axioms Tm.PlanCheck.PastPays_of_no_past_block
+#print axioms Tm.PlanCheck.dayPlan_ok_core_of_a_paying_past
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day
+#print axioms Tm.PlannerWit.the_over_budget_request_is_over_budget
+#print axioms Tm.PlannerWit.the_log_at_the_census_request_holds_a_block
+#print axioms Tm.PlannerWit.the_paying_past_at_the_census_request
+#print axioms Tm.PlannerWit.the_paying_past_holds_where_hnopast_does_not
+#print axioms Tm.PlannerWit.the_core_seven_hold_on_the_whole_day_of_a_worked_morning
+#print axioms Tm.PlannerWit.the_eleven_hold_on_the_whole_day_of_a_worked_morning
+#print axioms Tm.PlannerWit.the_paying_past_fails_on_four_whole_days
+#print axioms Tm.PlannerWit.the_core_seven_is_false_on_the_over_budget_day
+#print axioms Tm.PlannerWit.the_log_axis_moves_no_census_number
+#print axioms Tm.PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_designs_restatement_of_the_overbooking_law_is_refuted_too
+#print axioms Tm.PlannerWit.the_replayed_half_is_a_strict_part_of_the_day
+#print axioms Tm.PlannerWit.every_refuted_day_refutes_its_own_clause
+#print axioms Tm.PlannerWit.the_census_at_every_request_the_prose_quotes
