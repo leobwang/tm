@@ -8,6 +8,14 @@
 # where that decline is written down: 86c4dc6 is W-19's closing commit, so the grandfathered
 # set is the whole kernel as stage 6 W-19 left it.
 #
+# THE THIRD COLUMN IS THE QUALIFIED NAME since W-25 track A -- `Tm.EmitWire.u32Within`,
+# not `u32Within` (README gap 1422).  The key used to be the SHORT name, and two
+# definitions in one file can share one: 38 pairs do, and the roster could hold only one
+# of each.  Rewriting the column needed no kernel build, because a row is trusted on its
+# body's sha1 and the bodies did not move; what it needed was a namespace stack in
+# `declarations()`, and `#check @<name>` over all 2,960 library names in one build to show
+# the new keys are the constants Lean knows.
+#
 # A step that adds or changes a definition runs
 #
 #     python3 mutate.py --since <the baseline> --write
@@ -125,157 +133,159 @@ baseline 86c4dc6
 #   9c3a8b1e4f20 TmKernel/TmKernel/Planner.lean Ranked.gatherable true,false PlannerWit.lean:2539; PlannerWit.lean:2391
 #
 # (The sha1 above is illustrative.  `mutate.py --write` computes it; do not copy it.)
-0b1f9f39194a TmKernel/TmKernel/PlanCheck.lean OwesSomething True,False PlanCheck.lean:2133 assignStart_owes; PlanCheck.lean:2133 assignStart_owes
-34911c82d0c8 TmKernel/TmKernel/Planner.lean routineRows default,[] Planner.lean:2635 routineRows_kinds; Planner.lean:2635 routineRows_kinds
-f18d3551771b TmKernel/TmKernel/Planner.lean stepTwoSegs default,[] Planner.lean:2654 stepTwoSegs_kinds; Planner.lean:2654 stepTwoSegs_kinds
-b138b425f1c9 TmKernel/TmKernel/Planner.lean leastBy default,none Planner.lean:4786 leastBy_spec; Planner.lean:4786 leastBy_spec
-f7b172dd243d TmKernel/TmKernel/Planner.lean PlanReq.lowestFree default,none Planner.lean:4856 PlanReq.lowestFree_from_a_stretch; Planner.lean:4856 PlanReq.lowestFree_from_a_stretch
-6ff639dbc20f TmKernel/TmKernel/Planner.lean PlanReq.assignedSpans default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
-d7d5884af56b TmKernel/TmKernel/Planner.lean PlanReq.occupiedNow default,[] PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position; PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position
-5c11c3770fc6 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaks default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
-fda83246caf1 TmKernel/TmKernel/Planner.lean PlanReq.keptBreaksToday default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
-a40dbf02369a TmKernel/TmKernel/Planner.lean unspend default,gs,[] Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group
-9b21bc0fe500 TmKernel/TmKernel/Planner.lean PlanReq.victimSlot default,none Planner.lean:4961 PlanReq.victimSlot_spec; Planner.lean:4961 PlanReq.victimSlot_spec
-08f9f450c670 TmKernel/TmKernel/Planner.lean PlanReq.finalRoutines default,[] Planner.lean:5340 a_deferred_routine_is_inside_its_window; Planner.lean:5340 a_deferred_routine_is_inside_its_window
-ac97bc74a566 TmKernel/TmKernel/Planner.lean PlanReq.noPositionNotes default PlannerWit.lean:3362
-68a4ddb27390 TmKernel/TmKernel/Planner.lean dayRoutineSegs default Planner.lean:5437
-7590ec19b538 TmKernel/TmKernel/PlannerWit.lean routineWitness default,[] PlannerWit.lean:3265 the_routine_witness_holds_three_routines_and_the_wall; PlannerWit.lean:3265 the_routine_witness_holds_three_routines_and_the_wall
-f7ba963417f6 TmKernel/TmKernel/PlannerWit.lean routinesOk true,false PlannerWit.lean:3289 routineCap; PlannerWit.lean:3283 the_routine_instances_are_accepted
-d27484c1223a TmKernel/TmKernel/PlannerWit.lean routineIns default,[] PlannerWit.lean:3305 the_mandatory_routine_is_placed_and_the_other_is_deferred; PlannerWit.lean:3305 the_mandatory_routine_is_placed_and_the_other_is_deferred
-321e7929ab49 TmKernel/TmKernel/PlannerWit.lean crowdedIns default,[] PlannerWit.lean:3408 an_instance_with_no_room_is_named_in_the_notes; PlannerWit.lean:3408 an_instance_with_no_room_is_named_in_the_notes
-5cb3a44a68f4 TmKernel/TmKernel/PlannerWit.lean lapsedIns default,[] PlannerWit.lean:3449 an_instance_whose_window_has_closed_is_passed_over_and_not_reported; PlannerWit.lean:3449 an_instance_whose_window_has_closed_is_passed_over_and_not_reported
-4b27cf5721a7 TmKernel/TmKernel/PlannerWit.lean busyIns default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
-cf4b8a3d2ee5 TmKernel/TmKernel/Planner.lean PlanReq.deferFold unfoldable,([],⟨[],[],0⟩) no Inhabited (List Placed × Assign); Planner.lean:5340
-66cda41c7ccb TmKernel/TmKernel/Planner.lean PlanReq.finalAssign unfoldable,⟨[],[],0⟩ no Inhabited Assign; Planner.lean:5348
-b103560cc1f8 TmKernel/TmKernel/PlannerWit.lean routinePlan unfoldable no Inhabited WfPlan
-2d15d5671852 TmKernel/TmKernel/PlannerWit.lean routineCap unfoldable no Inhabited (Capped RoutineIn)
-635608372772 TmKernel/TmKernel/PlannerWit.lean theRoutineRequest unfoldable no Inhabited PlanReq
-e311a8bc7ea8 TmKernel/TmKernel/PlannerWit.lean crowdedCap unfoldable no Inhabited (Capped RoutineIn)
-320e2c4842c5 TmKernel/TmKernel/PlannerWit.lean theCrowdedRequest unfoldable no Inhabited PlanReq
-f9f65378bc1b TmKernel/TmKernel/PlannerWit.lean lapsedCap unfoldable no Inhabited (Capped RoutineIn)
-ddf7e0f45229 TmKernel/TmKernel/PlannerWit.lean theLapsedRequest unfoldable no Inhabited PlanReq
-c9a72af4a8dd TmKernel/TmKernel/PlannerWit.lean theFullDay unfoldable,⟨[],[],0⟩ no Inhabited Assign; PlannerWit.lean:3487 the_victim_is_the_lowest_energy_slot_and_the_latest_of_those
-bf7e1beca255 TmKernel/TmKernel/PlannerWit.lean busyCap unfoldable no Inhabited (Capped RoutineIn)
-72994f183669 TmKernel/TmKernel/PlannerWit.lean busyCands unfoldable no Inhabited (Capped (Look.Cand × Option Look.Floor))
-62a73cbd8dca TmKernel/TmKernel/PlannerWit.lean theBusyRequest unfoldable no Inhabited PlanReq
-59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean aBareInstance unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩ no Inhabited Placed; PlannerWit.lean:3641 the_displacement_frees_one_slot_and_gives_its_minutes_back
-deafde65c398 TmKernel/TmKernel/PlannerWit.lean theSecondSlot unfoldable no Inhabited Look.Slot
-b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean witReqInQuietCensus unfoldable no Inhabited PlanReqIn
-7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean theQuietCensusRequest unfoldable no Inhabited PlanReq
-98d34e4c6f85 TmKernel/TmKernel/Planner.lean posLt fun__=>true,fun__=>false Planner.lean:4796; Planner.lean:4796
-e4326514ea1f TmKernel/TmKernel/Planner.lean victimLt fun__=>true,fun__=>false Planner.lean:4811; Planner.lean:4811
-6747992d36f2 TmKernel/TmKernel/Planner.lean PlanReq.blocksDone 0,1 PlannerWit.lean:2641; PlannerWit.lean:2641
-c3cea089034e TmKernel/TmKernel/Planner.lean remainingBudget 0,1 Planner.lean:1258; Planner.lean:1255
-d795d852500b TmKernel/TmKernel/Planner.lean PlanReq.emitKeptBreaks default Planner.lean:5412
-6c968fdb4c99 TmKernel/TmKernel/Planner.lean PlanReq.optionalOccupied default PlannerWit.lean:4103
-9854a1777083 TmKernel/TmKernel/Planner.lean PlanReq.optionalFree default Planner.lean:5638
-31d274c494b7 TmKernel/TmKernel/Planner.lean optionalWant 0,1 Planner.lean:5454; Planner.lean:5454
-c37c2f1b288f TmKernel/TmKernel/Planner.lean PlanReq.optionalCands default Planner.lean:5479
-6beacc8e867e TmKernel/TmKernel/Planner.lean placeOptional default Planner.lean:5510
-ade00af332f2 TmKernel/TmKernel/Planner.lean optionalStep default Planner.lean:5611
-c95878a2fda0 TmKernel/TmKernel/Planner.lean PlanReq.optionalFold default Planner.lean:5638
-79162ac6ef40 TmKernel/TmKernel/Planner.lean FreeOk True,False Planner.lean:5570; Planner.lean:5570
-f5608b759d6b TmKernel/TmKernel/Planner.lean PlanReq.optionalRows default Planner.lean:5661
-530a2cd01243 TmKernel/TmKernel/Planner.lean PlanReq.optionalSpans default PlannerWit.lean:4012
-1ed7ace7dabe TmKernel/TmKernel/Planner.lean PlanReq.restTaken default PlannerWit.lean:4055
-68fc778f1fe6 TmKernel/TmKernel/Planner.lean PlanReq.restRows default Planner.lean:5686
-ebcccca33a6d TmKernel/TmKernel/Planner.lean PlanReq.restHighMin 0,1 PlannerWit.lean:4130; PlannerWit.lean:4130
-433556cf4950 TmKernel/TmKernel/Planner.lean PlanReq.aCapacityLost 0,1 Planner.lean:5749; Planner.lean:5749
-b9a6c9bd8c10 TmKernel/TmKernel/Planner.lean PlanReq.budgetSpentNotes default Planner.lean:5771
-231bfa683480 TmKernel/TmKernel/PlannerWit.lean oFacts unfoldable no Inhabited Look.PlanFacts
-d41489d3cf84 TmKernel/TmKernel/PlannerWit.lean oCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
-d6f25f44caff TmKernel/TmKernel/PlannerWit.lean witOptionalCands default,[] PlannerWit.lean:4055 an_optional_asks_for_what_its_cap_leaves; PlannerWit.lean:4055 an_optional_asks_for_what_its_cap_leaves
-451f7cccd65c TmKernel/TmKernel/PlannerWit.lean theOptionalRequest unfoldable no Inhabited PlanReq
-e579eb40790c TmKernel/TmKernel/PlannerWit.lean theHighRestRequest unfoldable no Inhabited PlanReq
-d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean theSpentBudgetRequest unfoldable no Inhabited PlanReq
-05bbb5008b07 TmKernel/TmKernel/Planner.lean dayRows default Planner.lean:5842
-d932b39765bc TmKernel/TmKernel/Planner.lean dayDiagnostics unfoldable,Diagnostics.empty no Inhabited Diagnostics; PlannerWit.lean:3704
-daaa2458af08 TmKernel/TmKernel/Planner.lean dayAssigned default Planner.lean:5911
-4a9c27a3e4bb TmKernel/TmKernel/Planner.lean PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
-7eac768f6f2d TmKernel/TmKernel/Planner.lean placeAt unfoldable,q no Inhabited Placed; Planner.lean:5169
-6a2d87dbb5ac TmKernel/TmKernel/Planner.lean PlanReq.displaceInto unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5183
-2273f641d70a TmKernel/TmKernel/Planner.lean PlanReq.deferOne unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5095
-a08b9aec4a2a TmKernel/TmKernel/Planner.lean PlanReq.deferWalk unfoldable,funa0a1_=>(a0,a1) no Inhabited (List Placed → Assign → List Placed → List Placed × Assign); Planner.lean:5284
-6669d324687e TmKernel/TmKernel/PlanCheck.lean WorkAnchored True,False PlanCheck.lean:2344 eligibleSomewhere_of_no_work_row; PlanCheck.lean:2344 eligibleSomewhere_of_no_work_row
-5d10d44756f4 TmKernel/TmKernel/PlanCheck.lean rankSubjects default,[] PlanCheck.lean:2587 mem_rankSubjects; PlanCheck.lean:2587 mem_rankSubjects
-9c51fca1e1da TmKernel/TmKernel/PlanCheck.lean hotSubjects default,[] PlanCheck.lean:2598 mem_hotSubjects; PlanCheck.lean:2598 mem_hotSubjects
-e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean subjectOf true,false PlanCheck.lean:2529 noOverbook_of_no_subject; PlanCheck.lean:2529 noOverbook_of_no_subject
-d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean subjectCount 0,1 PlanCheck.lean:2689 planOk_of_no_subject; PlanCheck.lean:2689 planOk_of_no_subject
-4822cba67478 TmKernel/TmKernel/PlannerWit.lean onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored; PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored
-63bdb67f1035 TmKernel/TmKernel/Emit.lean Row.cells default,[] Emit.lean:393 cells_are_the_nine_in_order; Emit.lean:393 cells_are_the_nine_in_order
-f7e41c6eb99b TmKernel/TmKernel/Emit.lean clockOfLocal default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-332d3148bb73 TmKernel/TmKernel/Emit.lean timeCell default,[] Emit.lean:402 timeCell_length; Emit.lean:402 timeCell_length
-3bfce0f0810f TmKernel/TmKernel/Emit.lean showsScale true,false Emit.lean:452 the_three_quiet_kinds_are_off_the_scale; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-876ee83e17d3 TmKernel/TmKernel/Emit.lean glyphOf default Emit.lean:415 glyphOf_mem
-a0db4b98f8a0 TmKernel/TmKernel/Emit.lean markChar default Emit.lean:409 markChar_mem
-9ae97a6d460e TmKernel/TmKernel/Emit.lean markCell default,[] Emit.lean:404 markCell_length; Emit.lean:404 markCell_length
-12f306db652c TmKernel/TmKernel/Emit.lean ciCell default,[] Emit.lean:431 ciCell_is_the_glyph_off_the_scale; Emit.lean:431 ciCell_is_the_glyph_off_the_scale
-f767dfd6e9e1 TmKernel/TmKernel/Emit.lean keyId default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-0013d526bdaa TmKernel/TmKernel/Emit.lean pCell default,[] Emit.lean:437 pCell_is_empty_off_the_scale; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-4ef2d4b52b6f TmKernel/TmKernel/Emit.lean actualCell default,[] Emit.lean:441 actualCell_of_not_done; Emit.lean:520 actualCell_no_newline
-3845805dd962 TmKernel/TmKernel/Emit.lean canonDur default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-2e9e8c543069 TmKernel/TmKernel/Emit.lean durCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-4000c6435730 TmKernel/TmKernel/Emit.lean tenths default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-5bf7922e541b TmKernel/TmKernel/Emit.lean blocksCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-c7fd6fb0edd8 TmKernel/TmKernel/Emit.lean multCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-812620962a1f TmKernel/TmKernel/Emit.lean multShown true,false PlannerWit.lean:4609 the_emit_numerals; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-116e27498e7d TmKernel/TmKernel/Emit.lean titleText default,none PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-f4e3c2bd162d TmKernel/TmKernel/Emit.lean itemCiOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-0e55f6fdd37f TmKernel/TmKernel/Emit.lean itemEstOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-c496a0b4c8df TmKernel/TmKernel/Emit.lean nameOr default,fallback,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-68cf50caac2d TmKernel/TmKernel/Emit.lean batchTitle default,[] Emit.lean:255 batchTitle_is_the_frame_over_batchNames; Emit.lean:255 batchTitle_is_the_frame_over_batchNames
-88bd1acd9ff9 TmKernel/TmKernel/Emit.lean titleCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-030df9ebf670 TmKernel/TmKernel/Emit.lean parentCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-9fdea03f6db1 TmKernel/TmKernel/Emit.lean showsEst true,false PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-d769b67161dd TmKernel/TmKernel/Emit.lean estCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-43df21a2e6c6 TmKernel/TmKernel/Emit.lean noteText default,fun_=>[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-77c84d8612e7 TmKernel/TmKernel/Emit.lean underusedCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-795ce604b676 TmKernel/TmKernel/Emit.lean noteCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-89d6ae89fd1c TmKernel/TmKernel/Emit.lean rowOf default,⟨[],[],[],[],[],[],[],[],[]⟩ PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
-697078736f86 TmKernel/TmKernel/Emit.lean rowsOf default,[] Emit.lean:457 rowsOf_length; Emit.lean:457 rowsOf_length
-0c31dfe7342e TmKernel/TmKernel/PlannerWit.lean emitSegs default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-67967006f216 TmKernel/TmKernel/PlannerWit.lean emitPrios default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-7b44d4d525d8 TmKernel/TmKernel/PlannerWit.lean emitNotes default,[] PlannerWit.lean:4584 the_eleven_notes_are_these_sentences; PlannerWit.lean:4584 the_eleven_notes_are_these_sentences
-fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean emitBed default PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-dee5ba118680 TmKernel/TmKernel/PlanCheck.lean SlotAnchored True,False PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation; PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation
-8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored; PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored
-e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean FromNowAnchored True,False PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now; PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now
-c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean fromNowWorkRows fun____=>true,fun____=>false PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored; PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored
-279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean witReqInIdleQueued unfoldable no Inhabited PlanReqIn
-2dbe82e792af TmKernel/TmKernel/PlannerWit.lean theIdleQueuedRequest unfoldable no Inhabited PlanReq
-afa7ffea0abb TmKernel/TmKernel/Emit.lean batchNames default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-fe83490ffd51 TmKernel/TmKernel/EmitWire.lean asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except RowRefusal α)
-ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean natAtP default EmitWire.lean:686 readPrio_refuses_eight
-24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean strAtP default EmitWire.lean:630 readOptNote_of_a_present_note
-a0819f473922 TmKernel/TmKernel/EmitWire.lean arrAtP default EmitWire.lean:720 readKind_refuses_a_batch_past_the_cap
-8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean optAtP default EmitWire.lean:630 readOptNote_of_a_present_note
-21f2cd76331f TmKernel/TmKernel/EmitWire.lean flagAtP default EmitWire.lean:780 readSeg_accepts_a_block
-7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean optNatAtP default EmitWire.lean:734 readSeg_refuses_an_energy_past_five
-f618837e678a TmKernel/TmKernel/EmitWire.lean optStrAtP default EmitWire.lean:780 readSeg_accepts_a_block
-9f9af029585b TmKernel/TmKernel/EmitWire.lean maxNoteText 0,1,literal EmitWire.lean:706 readNote_accepts_a_short_text; EmitWire.lean:706 readNote_accepts_a_short_text; the body IS the constant `200`
-3294cc1ab6ea TmKernel/TmKernel/EmitWire.lean readNote unfoldable no Inhabited (Except RowRefusal Note)
-902fe5358e45 TmKernel/TmKernel/EmitWire.lean readKind unfoldable no Inhabited (Except RowRefusal SegKind)
-d24f39c2963f TmKernel/TmKernel/EmitWire.lean readFlags unfoldable no Inhabited (Except RowRefusal SegFlags)
-3b57932a622a TmKernel/TmKernel/EmitWire.lean readSeg unfoldable no Inhabited (Except RowRefusal WfSeg)
-07d646a02b76 TmKernel/TmKernel/EmitWire.lean readSegs unfoldable no Inhabited (Except RowRefusal (Capped WfSeg))
-bfead27b6d14 TmKernel/TmKernel/EmitWire.lean readPrio default EmitWire.lean:679 readPrio_refuses_a_priority_past_seven
-77d1a8697145 TmKernel/TmKernel/EmitWire.lean readPrios unfoldable no Inhabited (Except RowRefusal (Capped (Id × Fin 8)))
-2b5346c9759a TmKernel/TmKernel/EmitWire.lean readRowSection unfoldable no Inhabited (Except RowRefusal RowReq)
-e39010fefdef TmKernel/TmKernel/EmitWire.lean rowsOfReq default,[] EmitWire.lean:575 rowsJson_length; EmitWire.lean:575 rowsJson_length
-f4321fbac201 TmKernel/TmKernel/EmitWire.lean rowJson default EmitWire.lean:565 rowJson_is_the_nine_cells_in_order
-a9da31d400a1 TmKernel/TmKernel/EmitWire.lean rowsJson default EmitWire.lean:576 rowsJson_length
-27f32fe96684 TmKernel/TmKernel/EmitWire.lean runRows default EmitWire.lean:537 runRows_without_a_plan_section_is_runCap
-5773ccd10884 TmKernel/TmKernel/EmitWire.lean respondRows default EmitWire.lean:546 callRows_without_a_plan_section_is_callCap
-cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean callRows default,input EmitWire.lean:546 callRows_without_a_plan_section_is_callCap; EmitWire.lean:546 callRows_without_a_plan_section_is_callCap
-5814c1a4b26c TmKernel/TmKernel/EmitWire.lean callExport default,input EmitWire.lean:557 callExport_is_callRows; EmitWire.lean:557 callExport_is_callRows
-f63ef86b1aee TmKernel/TmKernel/EmitWire.lean rowKeys default,[] EmitWire.lean:565 rowJson_is_the_nine_cells_in_order; EmitWire.lean:565 rowJson_is_the_nine_cells_in_order
-6ec5716805b1 TmKernel/TmKernel/EmitWire.lean RowKey.name default EmitWire.lean:593 rowKey_names_are_the_wire_keys
-cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean segErrName default EmitWire.lean:603 segErrName_names_the_two
-5d1caeea5345 TmKernel/TmKernel/EmitWire.lean RowRefusal.text default EmitWire.lean:607 the_refusals_spell_themselves
-82a8b7054cee TmKernel/TmKernel/EmitWire.lean rowRefusalJson default EmitWire.lean:619 rowRefusalJson_is_the_err_plan_shape
-b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean readOptNote default EmitWire.lean:630 readOptNote_of_a_present_note
-91604f05f269 TmKernel/TmKernel/EmitWire.lean batchNamesOf default,[] EmitWire.lean:640 batchNamesOf_of_a_batch; EmitWire.lean:640 batchNamesOf_of_a_batch
-b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:649 withPlan_appends_the_plan_key; EmitWire.lean:649 withPlan_appends_the_plan_key
-24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
-d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean theOverBudgetRequest unfoldable no Inhabited PlanReq
-a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean idWithin default EmitWire.lean:692 readPrio_accepts_seven
+0b1f9f39194a TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.OwesSomething True,False PlanCheck.lean:2133 assignStart_owes; PlanCheck.lean:2133 assignStart_owes
+34911c82d0c8 TmKernel/TmKernel/Planner.lean Tm.Planner.routineRows default,[] Planner.lean:2635 routineRows_kinds; Planner.lean:2635 routineRows_kinds
+f18d3551771b TmKernel/TmKernel/Planner.lean Tm.Planner.stepTwoSegs default,[] Planner.lean:2654 stepTwoSegs_kinds; Planner.lean:2654 stepTwoSegs_kinds
+b138b425f1c9 TmKernel/TmKernel/Planner.lean Tm.Planner.leastBy default,none Planner.lean:4786 leastBy_spec; Planner.lean:4786 leastBy_spec
+f7b172dd243d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.lowestFree default,none Planner.lean:4856 PlanReq.lowestFree_from_a_stretch; Planner.lean:4856 PlanReq.lowestFree_from_a_stretch
+6ff639dbc20f TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.assignedSpans default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+d7d5884af56b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.occupiedNow default,[] PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position; PlannerWit.lean:3373 the_deferred_routine_takes_the_lowest_energy_position
+5c11c3770fc6 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.keptBreaks default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+fda83246caf1 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.keptBreaksToday default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+a40dbf02369a TmKernel/TmKernel/Planner.lean Tm.Planner.unspend default,gs,[] Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group; Planner.lean:4923 unspend_keeps_the_group
+9b21bc0fe500 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.victimSlot default,none Planner.lean:4961 PlanReq.victimSlot_spec; Planner.lean:4961 PlanReq.victimSlot_spec
+08f9f450c670 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.finalRoutines default,[] Planner.lean:5340 a_deferred_routine_is_inside_its_window; Planner.lean:5340 a_deferred_routine_is_inside_its_window
+ac97bc74a566 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.noPositionNotes default PlannerWit.lean:3362
+68a4ddb27390 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRoutineSegs default Planner.lean:5437
+7590ec19b538 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routineWitness default,[] PlannerWit.lean:3265 the_routine_witness_holds_three_routines_and_the_wall; PlannerWit.lean:3265 the_routine_witness_holds_three_routines_and_the_wall
+f7ba963417f6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routinesOk true,false PlannerWit.lean:3289 routineCap; PlannerWit.lean:3283 the_routine_instances_are_accepted
+d27484c1223a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routineIns default,[] PlannerWit.lean:3305 the_mandatory_routine_is_placed_and_the_other_is_deferred; PlannerWit.lean:3305 the_mandatory_routine_is_placed_and_the_other_is_deferred
+321e7929ab49 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.crowdedIns default,[] PlannerWit.lean:3408 an_instance_with_no_room_is_named_in_the_notes; PlannerWit.lean:3408 an_instance_with_no_room_is_named_in_the_notes
+5cb3a44a68f4 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.lapsedIns default,[] PlannerWit.lean:3449 an_instance_whose_window_has_closed_is_passed_over_and_not_reported; PlannerWit.lean:3449 an_instance_whose_window_has_closed_is_passed_over_and_not_reported
+4b27cf5721a7 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.busyIns default,[] PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+cf4b8a3d2ee5 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.deferFold unfoldable,([],⟨[],[],0⟩) no Inhabited (List Placed × Assign); Planner.lean:5340
+66cda41c7ccb TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.finalAssign unfoldable,⟨[],[],0⟩ no Inhabited Assign; Planner.lean:5348
+b103560cc1f8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routinePlan unfoldable no Inhabited WfPlan
+2d15d5671852 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routineCap unfoldable no Inhabited (Capped RoutineIn)
+635608372772 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theRoutineRequest unfoldable no Inhabited PlanReq
+e311a8bc7ea8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.crowdedCap unfoldable no Inhabited (Capped RoutineIn)
+320e2c4842c5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theCrowdedRequest unfoldable no Inhabited PlanReq
+f9f65378bc1b TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.lapsedCap unfoldable no Inhabited (Capped RoutineIn)
+ddf7e0f45229 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLapsedRequest unfoldable no Inhabited PlanReq
+c9a72af4a8dd TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theFullDay unfoldable,⟨[],[],0⟩ no Inhabited Assign; PlannerWit.lean:3487 the_victim_is_the_lowest_energy_slot_and_the_latest_of_those
+bf7e1beca255 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.busyCap unfoldable no Inhabited (Capped RoutineIn)
+72994f183669 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.busyCands unfoldable no Inhabited (Capped (Look.Cand × Option Look.Floor))
+62a73cbd8dca TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theBusyRequest unfoldable no Inhabited PlanReq
+59cbbf6d2e0e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.aBareInstance unfoldable,⟨⟨[],none,0,0,0,true⟩,(0,0),none,true⟩ no Inhabited Placed; PlannerWit.lean:3641 the_displacement_frees_one_slot_and_gives_its_minutes_back
+deafde65c398 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSecondSlot unfoldable no Inhabited Look.Slot
+b52ddcbedd22 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witReqInQuietCensus unfoldable no Inhabited PlanReqIn
+7db8eede1e54 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theQuietCensusRequest unfoldable no Inhabited PlanReq
+98d34e4c6f85 TmKernel/TmKernel/Planner.lean Tm.Planner.posLt fun__=>true,fun__=>false Planner.lean:4796; Planner.lean:4796
+e4326514ea1f TmKernel/TmKernel/Planner.lean Tm.Planner.victimLt fun__=>true,fun__=>false Planner.lean:4811; Planner.lean:4811
+6747992d36f2 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.blocksDone 0,1 PlannerWit.lean:2701 the_cursor_requests_day_is_four_slots; PlannerWit.lean:2701 the_cursor_requests_day_is_four_slots
+c3cea089034e TmKernel/TmKernel/Planner.lean Tm.Planner.remainingBudget 0,1 Planner.lean:1258; Planner.lean:1255
+d795d852500b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.emitKeptBreaks default Planner.lean:5412
+6c968fdb4c99 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalOccupied default PlannerWit.lean:4103
+9854a1777083 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalFree default Planner.lean:5638
+31d274c494b7 TmKernel/TmKernel/Planner.lean Tm.Planner.optionalWant 0,1 Planner.lean:5454; Planner.lean:5454
+c37c2f1b288f TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalCands default Planner.lean:5479
+6beacc8e867e TmKernel/TmKernel/Planner.lean Tm.Planner.placeOptional default Planner.lean:5510
+ade00af332f2 TmKernel/TmKernel/Planner.lean Tm.Planner.optionalStep default Planner.lean:5611
+c95878a2fda0 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalFold default Planner.lean:5638
+79162ac6ef40 TmKernel/TmKernel/Planner.lean Tm.Planner.FreeOk True,False Planner.lean:5570; Planner.lean:5570
+f5608b759d6b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalRows default Planner.lean:5661
+530a2cd01243 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.optionalSpans default PlannerWit.lean:4012
+1ed7ace7dabe TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.restTaken default PlannerWit.lean:4055
+68fc778f1fe6 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.restRows default Planner.lean:5686
+ebcccca33a6d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.restHighMin 0,1 PlannerWit.lean:4130; PlannerWit.lean:4130
+433556cf4950 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.aCapacityLost 0,1 Planner.lean:5749; Planner.lean:5749
+b9a6c9bd8c10 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.budgetSpentNotes default Planner.lean:5771
+231bfa683480 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oFacts unfoldable no Inhabited Look.PlanFacts
+d41489d3cf84 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+d6f25f44caff TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witOptionalCands default,[] PlannerWit.lean:4055 an_optional_asks_for_what_its_cap_leaves; PlannerWit.lean:4055 an_optional_asks_for_what_its_cap_leaves
+451f7cccd65c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOptionalRequest unfoldable no Inhabited PlanReq
+e579eb40790c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHighRestRequest unfoldable no Inhabited PlanReq
+d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSpentBudgetRequest unfoldable no Inhabited PlanReq
+05bbb5008b07 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default Planner.lean:5842
+d932b39765bc TmKernel/TmKernel/Planner.lean Tm.Planner.dayDiagnostics unfoldable,Diagnostics.empty no Inhabited Diagnostics; PlannerWit.lean:3704
+daaa2458af08 TmKernel/TmKernel/Planner.lean Tm.Planner.dayAssigned default Planner.lean:5911
+4a9c27a3e4bb TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
+7eac768f6f2d TmKernel/TmKernel/Planner.lean Tm.Planner.placeAt unfoldable,q no Inhabited Placed; Planner.lean:5169
+6a2d87dbb5ac TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.displaceInto unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5183
+2273f641d70a TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.deferOne unfoldable,(q,a) no Inhabited (Placed × Assign); Planner.lean:5095
+a08b9aec4a2a TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.deferWalk unfoldable,funa0a1_=>(a0,a1) no Inhabited (List Placed → Assign → List Placed → List Placed × Assign); Planner.lean:5284
+6669d324687e TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.WorkAnchored True,False PlanCheck.lean:2344 eligibleSomewhere_of_no_work_row; PlanCheck.lean:2344 eligibleSomewhere_of_no_work_row
+5d10d44756f4 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.rankSubjects default,[] PlanCheck.lean:2587 mem_rankSubjects; PlanCheck.lean:2587 mem_rankSubjects
+9c51fca1e1da TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.hotSubjects default,[] PlanCheck.lean:2598 mem_hotSubjects; PlanCheck.lean:2598 mem_hotSubjects
+e02fda1e9bfb TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.subjectOf true,false PlanCheck.lean:2529 noOverbook_of_no_subject; PlanCheck.lean:2529 noOverbook_of_no_subject
+d7379a8b9101 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.subjectCount 0,1 PlanCheck.lean:2689 planOk_of_no_subject; PlanCheck.lean:2689 planOk_of_no_subject
+4822cba67478 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.onlyOnWorkRows fun____=>true,fun____=>false PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored; PlannerWit.lean:4347 onlyOnWorkRows_is_work_anchored
+63bdb67f1035 TmKernel/TmKernel/Emit.lean Tm.Emit.Row.cells default,[] Emit.lean:393 cells_are_the_nine_in_order; Emit.lean:393 cells_are_the_nine_in_order
+f7e41c6eb99b TmKernel/TmKernel/Emit.lean Tm.Emit.clockOfLocal default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+332d3148bb73 TmKernel/TmKernel/Emit.lean Tm.Emit.timeCell default,[] Emit.lean:402 timeCell_length; Emit.lean:402 timeCell_length
+3bfce0f0810f TmKernel/TmKernel/Emit.lean Tm.Emit.showsScale true,false Emit.lean:452 the_three_quiet_kinds_are_off_the_scale; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+876ee83e17d3 TmKernel/TmKernel/Emit.lean Tm.Emit.glyphOf default Emit.lean:415 glyphOf_mem
+a0db4b98f8a0 TmKernel/TmKernel/Emit.lean Tm.Emit.markChar default Emit.lean:409 markChar_mem
+9ae97a6d460e TmKernel/TmKernel/Emit.lean Tm.Emit.markCell default,[] Emit.lean:404 markCell_length; Emit.lean:404 markCell_length
+12f306db652c TmKernel/TmKernel/Emit.lean Tm.Emit.ciCell default,[] Emit.lean:431 ciCell_is_the_glyph_off_the_scale; Emit.lean:431 ciCell_is_the_glyph_off_the_scale
+f767dfd6e9e1 TmKernel/TmKernel/Emit.lean Tm.Emit.keyId default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+0013d526bdaa TmKernel/TmKernel/Emit.lean Tm.Emit.pCell default,[] Emit.lean:437 pCell_is_empty_off_the_scale; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+4ef2d4b52b6f TmKernel/TmKernel/Emit.lean Tm.Emit.actualCell default,[] Emit.lean:441 actualCell_of_not_done; Emit.lean:520 actualCell_no_newline
+3845805dd962 TmKernel/TmKernel/Emit.lean Tm.Emit.canonDur default PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+2e9e8c543069 TmKernel/TmKernel/Emit.lean Tm.Emit.durCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+4000c6435730 TmKernel/TmKernel/Emit.lean Tm.Emit.tenths default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+5bf7922e541b TmKernel/TmKernel/Emit.lean Tm.Emit.blocksCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+c7fd6fb0edd8 TmKernel/TmKernel/Emit.lean Tm.Emit.multCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+812620962a1f TmKernel/TmKernel/Emit.lean Tm.Emit.multShown true,false PlannerWit.lean:4609 the_emit_numerals; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+116e27498e7d TmKernel/TmKernel/Emit.lean Tm.Emit.titleText default,none PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+f4e3c2bd162d TmKernel/TmKernel/Emit.lean Tm.Emit.itemCiOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+0e55f6fdd37f TmKernel/TmKernel/Emit.lean Tm.Emit.itemEstOf default,none PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+c496a0b4c8df TmKernel/TmKernel/Emit.lean Tm.Emit.nameOr default,fallback,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+68cf50caac2d TmKernel/TmKernel/Emit.lean Tm.Emit.batchTitle default,[] Emit.lean:255 batchTitle_is_the_frame_over_batchNames; Emit.lean:255 batchTitle_is_the_frame_over_batchNames
+88bd1acd9ff9 TmKernel/TmKernel/Emit.lean Tm.Emit.titleCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+030df9ebf670 TmKernel/TmKernel/Emit.lean Tm.Emit.parentCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+9fdea03f6db1 TmKernel/TmKernel/Emit.lean Tm.Emit.showsEst true,false PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+d769b67161dd TmKernel/TmKernel/Emit.lean Tm.Emit.estCell default,[] PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+43df21a2e6c6 TmKernel/TmKernel/Emit.lean Tm.Emit.noteText default,fun_=>[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+77c84d8612e7 TmKernel/TmKernel/Emit.lean Tm.Emit.underusedCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+795ce604b676 TmKernel/TmKernel/Emit.lean Tm.Emit.noteCell default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+89d6ae89fd1c TmKernel/TmKernel/Emit.lean Tm.Emit.rowOf default,⟨[],[],[],[],[],[],[],[],[]⟩ PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells; PlannerWit.lean:4547 the_day_section_of_the_routine_day_is_these_cells
+697078736f86 TmKernel/TmKernel/Emit.lean Tm.Emit.rowsOf default,[] Emit.lean:457 rowsOf_length; Emit.lean:457 rowsOf_length
+0c31dfe7342e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.emitSegs default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+67967006f216 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.emitPrios default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+7b44d4d525d8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.emitNotes default,[] PlannerWit.lean:4584 the_eleven_notes_are_these_sentences; PlannerWit.lean:4584 the_eleven_notes_are_these_sentences
+fe2c454c94a6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.emitBed default PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+dee5ba118680 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.SlotAnchored True,False PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation; PlanCheck.lean:2930 eligibleSomewhere_of_only_the_reservation
+8cd91a22b783 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.onlyOnFreeWorkRows fun____=>true,fun____=>false PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored; PlannerWit.lean:4648 onlyOnFreeWorkRows_is_slot_anchored
+e21cd0e6b1b2 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.FromNowAnchored True,False PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now; PlanCheck.lean:3223 eligibleSomewhere_of_nothing_from_now
+c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.fromNowWorkRows fun____=>true,fun____=>false PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored; PlannerWit.lean:4835 fromNowWorkRows_is_from_now_anchored
+279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witReqInIdleQueued unfoldable no Inhabited PlanReqIn
+2dbe82e792af TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theIdleQueuedRequest unfoldable no Inhabited PlanReq
+afa7ffea0abb TmKernel/TmKernel/Emit.lean Tm.Emit.batchNames default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+fe83490ffd51 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except RowRefusal α)
+ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.natAtP default EmitWire.lean:740 readPrio_refuses_eight
+24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.strAtP default EmitWire.lean:684 readOptNote_of_a_present_note
+a0819f473922 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.arrAtP default EmitWire.lean:774 readKind_refuses_a_batch_past_the_cap
+8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optAtP default EmitWire.lean:684 readOptNote_of_a_present_note
+21f2cd76331f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.flagAtP default EmitWire.lean:834 readSeg_accepts_a_block
+7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optNatAtP default EmitWire.lean:788 readSeg_refuses_an_energy_past_five
+f618837e678a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optStrAtP default EmitWire.lean:834 readSeg_accepts_a_block
+9f9af029585b TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.maxNoteText 0,1,literal EmitWire.lean:760 readNote_accepts_a_short_text; EmitWire.lean:760 readNote_accepts_a_short_text; the body IS the constant `200`
+84696affb411 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readNote unfoldable no Inhabited (Except RowRefusal Note)
+902fe5358e45 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readKind unfoldable no Inhabited (Except RowRefusal SegKind)
+d24f39c2963f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readFlags unfoldable no Inhabited (Except RowRefusal SegFlags)
+b8109f228b60 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readSeg unfoldable no Inhabited (Except RowRefusal WfSeg)
+07d646a02b76 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readSegs unfoldable no Inhabited (Except RowRefusal (Capped WfSeg))
+bfead27b6d14 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readPrio default EmitWire.lean:733 readPrio_refuses_a_priority_past_seven
+77d1a8697145 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readPrios unfoldable no Inhabited (Except RowRefusal (Capped (Id × Fin 8)))
+2b5346c9759a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readRowSection unfoldable no Inhabited (Except RowRefusal RowReq)
+e39010fefdef TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsOfReq default,[] EmitWire.lean:629 rowsJson_length; EmitWire.lean:629 rowsJson_length
+f4321fbac201 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowJson default EmitWire.lean:619 rowJson_is_the_nine_cells_in_order
+a9da31d400a1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsJson default EmitWire.lean:630 rowsJson_length
+27f32fe96684 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.runRows default EmitWire.lean:591 runRows_without_a_plan_section_is_runCap
+5773ccd10884 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.respondRows default EmitWire.lean:600 callRows_without_a_plan_section_is_callCap
+cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callRows default,input EmitWire.lean:600 callRows_without_a_plan_section_is_callCap; EmitWire.lean:600 callRows_without_a_plan_section_is_callCap
+5814c1a4b26c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callExport default,input EmitWire.lean:611 callExport_is_callRows; EmitWire.lean:611 callExport_is_callRows
+f63ef86b1aee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowKeys default,[] EmitWire.lean:619 rowJson_is_the_nine_cells_in_order; EmitWire.lean:619 rowJson_is_the_nine_cells_in_order
+6ec5716805b1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowKey.name default EmitWire.lean:647 rowKey_names_are_the_wire_keys
+cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.segErrName default EmitWire.lean:657 segErrName_names_the_two
+5d1caeea5345 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowRefusal.text default EmitWire.lean:661 the_refusals_spell_themselves
+82a8b7054cee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowRefusalJson default EmitWire.lean:673 rowRefusalJson_is_the_err_plan_shape
+b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readOptNote default EmitWire.lean:684 readOptNote_of_a_present_note
+91604f05f269 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.batchNamesOf default,[] EmitWire.lean:694 batchNamesOf_of_a_batch; EmitWire.lean:694 batchNamesOf_of_a_batch
+b09e66e46c76 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.withPlan default,r EmitWire.lean:703 withPlan_appends_the_plan_key; EmitWire.lean:703 withPlan_appends_the_plan_key
+24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
+d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOverBudgetRequest unfoldable no Inhabited PlanReq
+a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.idWithin default EmitWire.lean:746 readPrio_accepts_seven
+411bbcad52ad TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.u32Within default EmitWire.lean:812 readSeg_refuses_a_planned_past_the_bound
+71fd8cbaca96 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.secWithin default EmitWire.lean:969 secWithin_refuses_past_the_calendar

@@ -429,4 +429,62 @@ else
   printf '%s\n' "$out" | head -20
 fi
 
+# 10. The PARITY register has one home, and no number is issued twice.
+#
+#     A parity entry is a recorded divergence from the fork point 4748911
+#     (owner D21/D22), and the list is stage 5's own acceptance artifact:
+#     "every disagreement must be on the list with the decision behind it".
+#     It had no single home and no check, and it cost a DUPLICATE TWICE --
+#     P32 (README gap 226) and P38 (README gap 1417), five months apart, for
+#     the same reason both times: there was no way to read the next free
+#     number except off whichever sentence a step happened to find.
+#
+#     AGENTS 6.5 item 7 gave the MERGE a command after the second one, and
+#     said in the same breath why it could not be a gate: a `P<n>` here is
+#     also a stage-6 STEP name (P0-P8, and track P), so no regex over `P<n>`
+#     tells an issuance from a reference.  That argument is right and it is
+#     an argument for an INDEX, not for nothing.  `parity.txt` is the index --
+#     one row per number naming the file and LINE where the entry lives --
+#     and `parity.py` re-resolves every anchor with no build, the way
+#     mutate.py's `stale_sites` re-resolves a pin site.
+#
+#     WHAT THE COMMAND IN 6.5 COULD NOT SEE, measured before this existed:
+#     it required the row to be BOLD and the first twelve are not, so 12 of
+#     the 39 numbers in use were invisible to the reconciliation written to
+#     find them; it counted the P38 issuance QUOTED INSIDE BACKTICKS in the
+#     repair block that fixed P38, so it reported the duplicate on the
+#     repaired tree; and it read README.md alone, while P13, P22, P28, P29
+#     and P31 live only in design 17's table and P36 lives only in a comment
+#     in Replay.lean.  Gap 1417 concluded 17 numbers were "not locatable
+#     mechanically".  All 39 are located and anchored now; what was missing
+#     was a list of where to look.
+#
+#     FIVE PLANTS, in a scratch copy, each reverted: a second `**Parity P38
+#     taken**` (caught), an unregistered `**Parity P41 taken**` (caught), two
+#     index rows for P20 (caught), P20 deleted from the index (caught by the
+#     CONTIGUITY rule, which is what stops an index going quietly short), and
+#     an anchor moved by one line (caught).  A sixth -- the same issuance
+#     line QUOTED in backticks -- stays green, which is the false positive
+#     6.5's command had.  A SEVENTH WENT GREEN and is why the row half of the
+#     check exists: `| **P41** |` appended with no issuance line and no index
+#     row passed until it was added.  An EIGHTH still goes green and is
+#     recorded, not claimed away: the same row in a file the index does not
+#     name (README gap 1470).
+#
+#     THE COST IS 0.06-0.07 s, measured on its own three times at W-25
+#     (`/usr/bin/time python3 parity.py`), because it builds nothing and reads
+#     three files.  The whole script measured 13.70, 13.84 and 14.54 s at ten
+#     checks on THIS machine at load ~3.5, against 12.84 s at nine on the same
+#     checkout at load 2.3 -- a gap the load explains and this check does not
+#     fill; its own number is the 0.06 s, not the difference between two runs
+#     of a ten-second script on a shared machine.  §5.11: re-measure, do not
+#     quote.
+out=$( python3 parity.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "parity register" "ok  (${out:-no count reported})"
+else
+  say "parity register" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
 exit $fail

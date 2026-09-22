@@ -28,11 +28,15 @@ not plan (README gap 1320).
 
 ## Nothing here re-reads a shape the boundary already reads (AGENTS §5.3)
 
-Every value is decoded by a constructor that already exists, and the one this module declares
-(`idWithin`) re-uses a bound that does rather than inventing a number: **this sentence was
-false when it was written**, and README gap **1415** is the audit that said so — three of the
-section's `Id`s reached the kernel with no bound at all, and two more inside `readNote` that
-the audit did not name.  The segments' bound is
+Every value is decoded by a constructor that already exists, and the three this module declares
+(`idWithin`, `u32Within`, `secWithin`) re-use bounds that do rather than inventing numbers:
+**this sentence was false when it was written**, and README gap **1415** is the audit that said
+so — three of the section's `Id`s reached the kernel with no bound at all, two more inside
+`readNote` that the audit did not name, and **seven bare `Nat`s that W-24's repair left open and
+W-25 track A closed**.  None of the three declares a number of its own: `CapWire.maxCandId`,
+`CapWire.maxRemaining` and `Cal.Instant.wf` are all older than this module, and
+`u32Within_is_the_logs_u32_width` and `secWithin_is_the_clause_Seg_wf_puts_on_a_stop` are the
+two "not a second bound" claims stated as theorems instead of as prose.  The segments' bound is
 `Planner.Capped` — **the wire's own candidate cap**.  (`CapWire.maxCandidates` is the same
 number under a second name, which is README gap **1330**, found here and not fixed here.) the priorities go through `Priority.yesterdayOf?` (the one reader of a
 stored `p`), the multiplier through `CapWire.multiplierOfWire` (the one bounded-rational
@@ -57,7 +61,12 @@ says it cannot turn an answer into a refusal.
 | a priority record's `id` | `CapWire.maxCandId` | `idWithin` | `readPrio_refuses_a_long_id` |
 | a replayed note's two ids | `CapWire.maxCandId` | `idWithin` | `readNote_refuses_a_long_no_position_id`, `readNote_refuses_a_long_buffer_before_id` |
 | a slot energy | `Fin 6` | `levelOf?` | `readSeg_refuses_an_energy_past_five` |
-| `planned` | `CapWire.maxRemaining` (`Look.maxPlanMinutes`) | a guard in `readSeg` | `readSeg_refuses_a_planned_past_the_bound` |
+| `planned` | `CapWire.maxRemaining` (`Look.maxPlanMinutes`) | `u32Within` | `readSeg_refuses_a_planned_past_the_bound` |
+| a note's `durMin` | `CapWire.maxRemaining` — fork `u32` (`planner.rs:743`) | `u32Within` | `readNote_refuses_a_long_duration` |
+| a note's `blocksDone` | `CapWire.maxRemaining` — fork `u32` (`planner.rs:810`) | `u32Within` | `readNote_refuses_a_blocks_done_past_the_width` |
+| a note's `planned`, `total` | `CapWire.maxRemaining` — fork `u32` (`floor_minutes` into `f64::from`) | `u32Within` | `readNote_refuses_a_planned_past_the_width`, `readNote_refuses_a_total_past_the_width` |
+| a note's `leftMin` | `CapWire.maxRemaining` — fork `u32` (`planner.rs:760`) | `u32Within` | `readNote_refuses_a_left_min_past_the_width` |
+| a note's `lo`, `hi` | `Cal.Instant.wf` — `Seg.wf`'s own clause on a `stop` | `secWithin` (`Cal.mkInstant?`) | `readNote_refuses_a_low_past_the_calendar`, `readNote_refuses_a_high_past_the_calendar` |
 | the multiplier | `maxMultiplier` over `maxPairDen` | `CapWire.multiplierOfWire` | `readSeg_refuses_a_zero_denominator` |
 | a priority | `Fin 8` | `Priority.yesterdayOf?` | `readPrio_refuses_a_priority_past_seven` |
 | the priority list | `Planner.maxCands` | `Planner.Capped.ofList?` | `readPrios_refuses_past_the_cap` |
@@ -229,6 +238,52 @@ length. -/
 def idWithin (r : RowRefusal) (id : Id) : Except RowRefusal Id :=
   if id.length ≤ CapWire.maxCandId then .ok id else .error r
 
+/-! ### The seven bare numbers — gap 1415's other half
+
+**`readNote` read seven `Nat`s with no stated width**: `durMin`, `lo`, `hi`, `blocksDone`,
+`planned`, `total` and `leftMin`.  R10's *every integer crossing gets a stated width* was met
+by `start`, `stop`, `planned`, `energy`, `p` and `bed` and by none of these.
+
+**No new number is invented for any of the seven, and no new name either.**  Five of them are
+the fork's `u32` and take the bound this wire already carries for a `u32`; the other two are
+absolute seconds and take the bound `Planner.Seg.wf` already carries for a segment's own
+`stop`.  Two functions is the whole of it, and the second of them *removes* a guard rather
+than adding one: `readSeg`'s `planned` comparison was this same `≤ CapWire.maxRemaining`
+written out by hand and is now the one function (AGENTS §5.3 — reuse a BOUND, not just a
+function, which is what `idWithin` did with `CapWire.maxCandId`). -/
+
+/-- **The fork's `u32`, which this wire already owns.**  `CapWire.maxRemaining` is
+`Look.maxPlanMinutes` is 4,294,967,295, and *that definition's own header says* `fork u32` —
+the **width**, not a minute count, which is why a count of blocks may stand under it and why
+naming a second bound for one would be the defect this kernel exists to remove.  All five are
+`u32` in `tm-core/src/planner.rs`: `dur_min` (`planner.rs:743`), `left_min` (`:760`),
+`blocks_done` (`:810`), and `planned`/`total`, which are `capacity::floor_minutes` results the
+fork hands to `f64::from` — a conversion that exists for `u32` and not for `u64`.
+
+It is **not a second bound**, and `u32Within_is_the_logs_u32_width` is that sentence
+as a theorem rather than as prose: the guard admits exactly the `Nat`s that are values
+of `Log.U32`, which is the kernel's other reader of a fork `u32`.  *(Two lines of this
+paragraph are reflowed.  Written flush at the margin, one of them began `theorem
+rather` — and check 3's declaration roster is a `grep` anchored at column zero, so it
+demanded an audit line for something called `rather` and the check FAILED.  README gap
+1308 repaired `mutate.py`'s `decl_spans` for that class and left check 3's own grep
+with it; AGENTS §6.3 records the same trap under the name `whose`.)* -/
+def u32Within (r : RowRefusal) (n : Nat) : Except RowRefusal Nat :=
+  if n ≤ CapWire.maxRemaining then .ok n else .error r
+
+/-- **An absolute second, through the constructor `Seg.wf` already uses.**  `Note.noPosition`'s
+`lo` and `hi` are *"absolute seconds, like every other instant here"* — `Planner.Note`'s own
+doc comment — and `Emit.noteText` renders them through `Emit.timeCell`, which is
+`Field.renderClock` of `Cal.localSec` of an `Instant`.  So the bound is `Cal.Instant.wf`'s,
+reached through `Cal.mkInstant?`, the smart constructor R10 asks a decoder to *use* rather
+than to restate; `secWithin_is_the_clause_Seg_wf_puts_on_a_stop` says it is the same clause
+`Planner.Seg.wf` puts on a segment's own `stop` and not a second one.  At `ns = 0` the
+leap-second disjunct is vacuous, so the guard is exactly `sec < 315537897600`. -/
+def secWithin (r : RowRefusal) (sec : Nat) : Except RowRefusal Nat :=
+  match Cal.mkInstant? sec 0 with
+  | some i => .ok i.val.sec
+  | none => .error r
+
 /-! ## `Note` — the eleven names, read back
 
 `Planner.Note` carries the *name* and its arguments and `Emit.noteText` holds the words, which
@@ -253,22 +308,22 @@ def readNote (i : Nat) (v : JVal) : Except RowRefusal Note := do
   else if nm = "interruption".toList then pure .interruption
   else if nm = "noPosition".toList then do
     let id ← idWithin r (← strAtP v "id" r)
-    let d ← natAtP v "durMin" r
-    let lo ← natAtP v "lo" r
-    let hi ← natAtP v "hi" r
+    let d ← u32Within r (← natAtP v "durMin" r)
+    let lo ← secWithin r (← natAtP v "lo" r)
+    let hi ← secWithin r (← natAtP v "hi" r)
     pure (.noPosition id d lo hi)
   else if nm = "budgetSpent".toList then do
-    let n ← natAtP v "blocksDone" r
+    let n ← u32Within r (← natAtP v "blocksDone" r)
     pure (.budgetSpent n)
   else if nm = "plannedOf".toList then do
-    let a ← natAtP v "planned" r
-    let b ← natAtP v "total" r
+    let a ← u32Within r (← natAtP v "planned" r)
+    let b ← u32Within r (← natAtP v "total" r)
     pure (.plannedOf a b)
   else if nm = "bufferBefore".toList then do
     let id ← idWithin r (← strAtP v "id" r)
     pure (.bufferBefore id)
   else if nm = "runningLeft".toList then do
-    let n ← natAtP v "leftMin" r
+    let n ← u32Within r (← natAtP v "leftMin" r)
     pure (.runningLeft n)
   else if nm = "breakWhere".toList then do
     let t ← strAtP v "text" r
@@ -357,8 +412,7 @@ def readSeg (i : Nat) (v : JVal) : Except RowRefusal WfSeg := do
   let pl ← optNatAtP v "planned" (.badSegment i .planned)
   let planned ← match pl with
     | none => pure none
-    | some n => if n ≤ CapWire.maxRemaining then pure (some n)
-                else throw (.badSegment i .planned)
+    | some n => (u32Within (.badSegment i .planned) n).map some
   let mv ← optAtP v "mult" (.badSegment i .mult)
   let mult ← match mv with
     | none => pure none
@@ -865,6 +919,157 @@ theorem readNote_refuses_a_long_buffer_before_id (i : Nat) (v : JVal) (id : Id)
   simp only [readNote, hn, hid, bind, Except.bind, pure, Except.pure,
     idWithin_refuses_a_long_id (RowRefusal.badSegment i RowKey.note) id h]
   rfl
+
+/-! ### The seven bare numbers, bounded (README gap 1415's other half)
+
+`u32Within` and `secWithin` are the two constructors and `CapWire.maxRemaining` and
+`Cal.Instant.wf` are the two bounds — **both of them already here**.  Each guard gets both
+directions (AGENTS §5.8) and each of the seven fields gets the wire reaching it, because a
+bound stated once and wired six times is a bound wired five times and stated six. -/
+
+/-- **A number past the fork's `u32` is refused**, whatever the refusal is named. -/
+theorem u32Within_refuses_past_the_width (r : RowRefusal) (n : Nat)
+    (h : CapWire.maxRemaining < n) : u32Within r n = .error r := by
+  unfold u32Within
+  rw [if_neg (by omega)]
+
+/-- And a number at the width is accepted, so the guard is where it says it is. -/
+theorem u32Within_accepts_at_the_width (r : RowRefusal) (n : Nat)
+    (h : n ≤ CapWire.maxRemaining) : u32Within r n = .ok n := by
+  unfold u32Within
+  rw [if_pos h]
+
+/-- **Both are inhabited**: 4,294,967,296 is over and 4,294,967,295 is not. -/
+theorem u32Within_refuses_the_width_plus_one (r : RowRefusal) :
+    u32Within r (CapWire.maxRemaining + 1) = .error r ∧
+    u32Within r CapWire.maxRemaining = .ok CapWire.maxRemaining :=
+  ⟨u32Within_refuses_past_the_width r _ (by omega),
+   u32Within_accepts_at_the_width r _ (by omega)⟩
+
+/-- **It is NOT a second bound.**  The guard admits exactly the `Nat`s that are values of
+`Log.U32` — the kernel's other reader of a fork `u32`, `Log.readF _ .u32`'s own type — so
+"the same width" is checked here and not asserted.  Stated without either number written
+down, so it cannot be satisfied by copying a literal from one side to the other. -/
+theorem u32Within_is_the_logs_u32_width (r : RowRefusal) (n : Nat) :
+    u32Within r n = .ok n ↔ ∃ k : Log.U32, k.val = n := by
+  have hb : CapWire.maxRemaining = 4294967295 := rfl
+  constructor
+  · intro h
+    rcases Nat.lt_or_ge n 4294967296 with hlt | hge
+    · exact ⟨⟨n, hlt⟩, rfl⟩
+    · rw [u32Within_refuses_past_the_width r n (by omega)] at h
+      simp at h
+  · rintro ⟨k, rfl⟩
+    exact u32Within_accepts_at_the_width r _ (by have := k.isLt; omega)
+
+/-- **A second past the calendar is refused**, through `Cal.mkInstant?` and not through a
+restatement of its bound. -/
+theorem secWithin_refuses_past_the_calendar (r : RowRefusal) (sec : Nat)
+    (h : Cal.Instant.wf ⟨sec, 0⟩ = false) : secWithin r sec = .error r := by
+  unfold secWithin Cal.mkInstant?
+  rw [dif_neg (by rw [h]; exact Bool.false_ne_true)]
+
+/-- And a representable second is accepted, and comes back unchanged. -/
+theorem secWithin_accepts_a_representable_second (r : RowRefusal) (sec : Nat)
+    (h : Cal.Instant.wf ⟨sec, 0⟩ = true) : secWithin r sec = .ok sec := by
+  unfold secWithin Cal.mkInstant?
+  rw [dif_pos h]
+
+/-- **Both are inhabited at the edge**: 315,537,897,600 is the first second outside chrono's
+years and 315,537,897,599 is the last one inside. -/
+theorem secWithin_refuses_the_first_second_past_the_years (r : RowRefusal) :
+    secWithin r 315537897600 = .error r ∧ secWithin r 315537897599 = .ok 315537897599 :=
+  ⟨secWithin_refuses_past_the_calendar r _ (by decide),
+   secWithin_accepts_a_representable_second r _ (by decide)⟩
+
+/-- **It is the clause `Seg.wf` puts on a segment's `stop`**, not a second one: a second this
+guard accepts is exactly a second that closes a zero-length segment at the same instant. -/
+theorem secWithin_is_the_clause_Seg_wf_puts_on_a_stop (r : RowRefusal) (sec : Nat) :
+    secWithin r sec = .ok sec ↔
+      Planner.Seg.wf ⟨sec, sec, .block, none, none, none, {}, none, none, none⟩ = true := by
+  have hw : Planner.Seg.wf ⟨sec, sec, .block, none, none, none, {}, none, none, none⟩
+      = Cal.Instant.wf ⟨sec, 0⟩ := by
+    unfold Planner.Seg.wf
+    simp
+  rw [hw]
+  cases hb : Cal.Instant.wf ⟨sec, 0⟩ with
+  | false =>
+    rw [secWithin_refuses_past_the_calendar r sec hb]
+    simp
+  | true =>
+    rw [secWithin_accepts_a_representable_second r sec hb]
+    simp
+
+/-- **`durMin` past the width is refused** — the first of `noPosition`'s three numbers. -/
+theorem readNote_refuses_a_long_duration (i : Nat) :
+    readNote i (.obj [("name".toList, .str "noPosition".toList),
+      ("id".toList, .str "a1".toList),
+      ("durMin".toList, .num (CapWire.maxRemaining + 1)),
+      ("lo".toList, .num 0), ("hi".toList, .num 60)])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **`lo` past the calendar is refused.** -/
+theorem readNote_refuses_a_low_past_the_calendar (i : Nat) :
+    readNote i (.obj [("name".toList, .str "noPosition".toList),
+      ("id".toList, .str "a1".toList), ("durMin".toList, .num 30),
+      ("lo".toList, .num 315537897600), ("hi".toList, .num 60)])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **And `hi`**, which is the other half of the window the fork prints. -/
+theorem readNote_refuses_a_high_past_the_calendar (i : Nat) :
+    readNote i (.obj [("name".toList, .str "noPosition".toList),
+      ("id".toList, .str "a1".toList), ("durMin".toList, .num 30),
+      ("lo".toList, .num 0), ("hi".toList, .num 315537897600)])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **`blocksDone` past the width is refused** — the count the fork keeps in a `u32`. -/
+theorem readNote_refuses_a_blocks_done_past_the_width (i : Nat) :
+    readNote i (.obj [("name".toList, .str "budgetSpent".toList),
+      ("blocksDone".toList, .num (CapWire.maxRemaining + 1))])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **`planned` past the width is refused** — `plannedOf`'s numerator. -/
+theorem readNote_refuses_a_planned_past_the_width (i : Nat) :
+    readNote i (.obj [("name".toList, .str "plannedOf".toList),
+      ("planned".toList, .num (CapWire.maxRemaining + 1)), ("total".toList, .num 480)])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **And `total`**, its denominator, which `Emit.noteText` divides by. -/
+theorem readNote_refuses_a_total_past_the_width (i : Nat) :
+    readNote i (.obj [("name".toList, .str "plannedOf".toList),
+      ("planned".toList, .num 60), ("total".toList, .num (CapWire.maxRemaining + 1))])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **`leftMin` past the width is refused** — the running block's reservation. -/
+theorem readNote_refuses_a_left_min_past_the_width (i : Nat) :
+    readNote i (.obj [("name".toList, .str "runningLeft".toList),
+      ("leftMin".toList, .num (CapWire.maxRemaining + 1))])
+      = .error (.badSegment i .note) := by
+  rfl
+
+/-- **None of the seven refusals is the only outcome**: each field at a value inside its bound
+reads back the note the fork would have printed, so no guard above is a trapdoor. -/
+theorem readNote_accepts_the_seven_inside_their_bounds (i : Nat) :
+    readNote i (.obj [("name".toList, .str "noPosition".toList),
+      ("id".toList, .str "a1".toList), ("durMin".toList, .num 30),
+      ("lo".toList, .num 315537897599), ("hi".toList, .num 315537897599)])
+      = .ok (.noPosition "a1".toList 30 315537897599 315537897599) ∧
+    readNote i (.obj [("name".toList, .str "budgetSpent".toList),
+      ("blocksDone".toList, .num CapWire.maxRemaining)])
+      = .ok (.budgetSpent CapWire.maxRemaining) ∧
+    readNote i (.obj [("name".toList, .str "plannedOf".toList),
+      ("planned".toList, .num 60), ("total".toList, .num CapWire.maxRemaining)])
+      = .ok (.plannedOf 60 CapWire.maxRemaining) ∧
+    readNote i (.obj [("name".toList, .str "runningLeft".toList),
+      ("leftMin".toList, .num CapWire.maxRemaining)])
+      = .ok (.runningLeft CapWire.maxRemaining) := by
+  refine ⟨rfl, rfl, rfl, rfl⟩
 
 /-- The empty day reads, so the section's own refusals are not the only outcome. -/
 theorem readRowSection_accepts_an_empty_day :
