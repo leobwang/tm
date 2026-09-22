@@ -53190,4 +53190,570 @@ and the next `mutate.py` is silently reverted to the sidecar's bytes. Here the
 two agreed and the restore was a no-op.)*
 
 **New gaps start at 1400** (track G's range runs to 1409; tracks P and A hold
-1320-1389, the Land step 1410-1414 — see the banner above).
+1320-1389, the Land step 1410-1414 — see the banner above). *(The land step
+took 1410-1412; the sequence's live answer is the LAST block's, below.)*
+
+<!-- ===================================================================
+     STAGE 6 — W-24, THE LAND STEP.  APPENDED 2026-09-22 on `rebuild-on-lean`.
+     `w24-a` and `w24-g` merged; track P was already on the branch.  Both
+     w24 worktrees removed; `.claude/worktrees/stage5-lookahead` untouched.
+     GAPS **1410-1412** are this step's (range 1410-1414; 1413-1414 free).
+     THE SEQUENCE AFTER THIS RUN: 1319 free, 1320-1333 track P, 1334-1359
+     free, 1360-1365 track A, 1366-1389 free, 1390-1399 track G, 1400-1409
+     free, 1410-1412 the land step.  **New gaps start at 1413**, and 1319,
+     1334-1359, 1366-1389 and 1400-1409 are free holes the run's disjoint
+     ranges left deliberately — not lost paragraphs.
+     No cheat taken; `Negative.lean` untouched by either branch.  No goal
+     added, discharged or deleted: **burn-down stays 9, every one stage 6**.
+     `check.sh` **9/9**.  Highest gap in the file after this block: **1412**.
+     =================================================================== -->
+
+## Stage 6 — W-24, the land step: one reading of a comment, one paying past, and a gate that went green on my own repair
+
+### 1. What was merged, and what the merge itself found
+
+| commit | what |
+|---|---|
+| `365b952` | merge of `w24-a` (`83297f8`, off `596b56d`) — D46's real bug, D47's comment reading, AGENTS' acceptance denominator, and the Rust comments swept |
+| `1549276` | merge of `w24-g` (`3789431`, off `596b56d`) — the LOG axis: `PlanCheck.PastPays`, `dayPlan_ok_core_of_a_paying_past`, and nine gaps listed |
+| this one | the ledger, the drive, and AGENTS §6.3's numbers |
+
+Track **P** needed no merge: `755f237` and `5d3251a` were already on
+`rebuild-on-lean` when this step started.
+
+**Five conflicts, all of one shape** — two branches appending at one file's end
+— and every one resolved by keeping both sides in track order, P then A then G:
+`kernel/README.md` (twice), `kernel/TmKernel/Check.lean`, `kernel/mutations.txt`,
+and `kernel/citations-allow.txt`.
+
+The allow-list conflict was the only one that needed a decision rather than an
+ordering. Three **counted** entries had been moved by both tracks in opposite
+directions, and a counted entry is exact in both directions (§check 8's header:
+*"FEWER fails too"*), so neither branch's number could be right in the merged
+tree. Re-resolved against the merged tree and then driven — written here
+without backticks, because these are allow-list ENTRIES and a counted entry
+named in a backtick is one more citation of itself, which is the trap W-19
+found by inverting its own repair: tm_kernel_call **4**, to_string **2**,
+to_string_pretty **6**. Each was verified to bite in the FEWER direction too
+(tightening to_string's cap to 3 fails with *"3 allowed, 2 live — tighten the
+cap to 2"*).
+
+**And one defect neither track could see alone, which is what a merge is for.**
+Track A widened check 8's sweep to **Rust comments**; track P added
+`tm/tests/kernel_row_cells.rs`. Together they made check 8 fail:
+
+```
+prose citations                                FAILED
+1 unresolved:
+  ../tm/tests/kernel_row_cells.rs:442  WindDown  (resolves to nothing)
+```
+
+The bare name is a real variant — `SegKind::WindDown`, declared at
+`tm-core/src/planner.rs:376` — and `RUST_DECL` reads no enum variants — which is **gap 1362**, opened by track A in
+this same run, three hours before the thing it predicted happened. The citation
+is spelled `SegKind::WindDown` now, with the three variants beside it qualified
+to match, as `one_renderer.rs:550` and `planner.rs:2510` already spell it.
+
+**That repair is itself a finding, and it is gap 1410.** Driven both ways on the
+merged tree, each plant reverted immediately after:
+
+| planted in `kernel_row_cells.rs`'s doc comment | check 8 |
+|---|---|
+| NoSuchKind, backticked, bare, declared nowhere | **FAILED**, `resolves to nothing` |
+| `SegKind::NoSuchKind`, backticked, qualified, declared nowhere | **ok**, 0 allow entries unused |
+
+*(The first cell is written without backticks here for the same reason the plant
+worked: check 8 sweeps this ledger, and a backticked NoSuchKind in this table
+would fail the very check the table is about. The second cell keeps its
+backticks and costs nothing — which is the finding.)*
+
+**And check 8 then failed on this very block, five ways at once**, which is
+worth recording because it is the gate working on the ledger rather than on the
+code. Two were the names above (bare WindDown and bare NoSuchKind, backticked in
+prose *about* them). Three were counted entries — tm_kernel_call at 5 against a
+cap of 4, to_string at 3 against 2, to_string_pretty at 7 against 6 — because
+the sentence two paragraphs up reported the resolved caps *in backticks*, and a
+counted name named in a backtick is one more citation of itself. That is W-19's
+lesson reached from the other side: it found the three names it had just
+corrected backticked in the correcting sentence, which would have let the very
+citations it repaired come back with the check still green. **All five were
+fixed by fixing the sentence; not one cap was bumped.**
+
+So the qualified form is not exempted, it is **unswept**: a span containing `::`
+is refused by `CITED` and never seen. Gap 1362 states the cost as *"a new doc
+comment citing an enum variant fails check 8 until someone adds a fourth
+[allow entry]"* — a tax on correct prose. The `::` route is the other half and
+the worse one, because it is silent, and this step's own repair took it.
+
+**The widening was measured and declined, not skipped.** A brace-tracking pass
+over every `enum` body in the 144 swept `.rs` files, top level only, finds 295
+variant names of which **219 are not declared anywhere else** — on a base of
+14,475, and including `All`, `Any`, `Add`, `Bool`, `Body`, `Active`, `Blocked`,
+`Blocks`, `Dates`. Since resolution is on the LAST dotted segment, each of those
+would resolve a stale citation of any Lean constructor or `def` sharing the
+short name. Track A's parameters widening cost +119 names and bought eleven
+correct sentences; this costs **+219** and buys one. That is the same
+calculation `citations.py`'s header records for `let` bindings (+896 for 2) and
+it comes out the same way. The script is in the report, not in the tree.
+
+**What keeps the residue narrow, driven.** `one_renderer.rs`'s `WORD_ALLOW`
+pins the exact line `SegKind::WindDown => "wind-down",` in `planner.rs`, and
+every entry must still be found. Renaming the variant everywhere **except** that
+table:
+
+```
+test no_second_set_of_row_words ... FAILED
+thread 'no_second_set_of_row_words' panicked at tm/tests/one_renderer.rs:588:5:
+a second renderer of the title cell (G1 — `tm-core/src/emit.rs`'s `title_cell` is the one; ...)
+test result: FAILED. 24 passed; 1 failed; 0 ignored
+```
+
+So a machine does go red on a rename — just not check 8.
+
+### 2. What the merge owes (AGENTS §6.5), checked rather than asserted
+
+1. **`Negative.lean`** — untouched by either branch (`git diff --stat 596b56d
+   HEAD -- kernel/TmKernel/Negative.lean` is empty). No cheat renumbering owed.
+2. **One gap sequence** — the three tracks were given disjoint ranges by the
+   brief, so the sequence has holes rather than collisions. The banner above
+   lists every range and every hole; no cross-reference moved.
+3. **`Check.lean`** — the §6.3 reconciliation run by hand on the merged tree:
+   **4,971** audit lines, **4,971** distinct names, **4,969** theorem
+   declarations over **84** modules, `comm -23` **empty**.
+4. **`Goals.lean`** — no branch discharged a goal, so check 7's number must not
+   move, and it does not: **9**, every one stage 6. Track G's `+71/−0` is prose.
+5. **Every module imported** — all **84** files under `TmKernel/TmKernel/` have
+   an `import TmKernel.<name>` line in `TmKernel/TmKernel.lean`, checked by loop,
+   not by eye.
+6. **`check.sh` capped, 9/9, and `cargo test --workspace` beside it** — §3.
+
+### 3. Acceptance, capped, every figure against the brief's baseline at `596b56d`
+
+| check | baseline | merged | delta |
+|---|---|---|---|
+| 1 `lake build TmKernel:static` | ok | ok | — |
+| 2 totality | ok | ok | — |
+| 3 axiom audit | 4,910 theorems | **4,971** | +61 — track P's 39 (`EmitWire` 38, `Emit` 1) and track G's 22, every one under its own banner |
+| 4 `Negative.lean` rejected | ok | ok | — |
+| 5 FFI (Rust → C shim → Lean) | 93 tests | **93** | — |
+| 6 corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | — — **D47 moved nothing**, and §5 says how that was measured rather than repeated |
+| 7 stage goals | 9, all stage 6 | **9, all stage 6** | — |
+| 8 prose citations | 29,347 citations, 0 allow entries unused | **32,676 citations, 31,020 resolved, 1,656 allowed (134 vocabulary, 351 counted), 0 unused** | +3,329 citations: the Rust comments are swept now (track A) and four README blocks were added |
+| 9 new definitions mutated | 118 rostered, 30 unfoldable, 20 witness fixtures, 0 pinned by nothing, 0 owed, 32 bare pin sites | **153 rostered, 40 unfoldable, 21 witness fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare** | +35 — track P's 33 (gap **1332** is the 0 → 8) and track G's 2 (`PlanCheck.pastHalf`, `PlannerWit.theOverBudgetRequest`) |
+
+`check.sh` cold on the merged tree: **2m44s** (10.3 s warm, second run).
+
+**`cargo test --workspace`, and how many runs (D46).** **SIX** runs on the
+merged tree — three at `1549276` and three on the tree this commit lands, which
+is the same Rust (this commit touches `kernel/README.md`, `AGENTS.md` and one
+doc comment) — all six **1,430 passed / 0 failed / 9 ignored across 83 result
+lines**. Baseline 1,396 / 81: +2 binaries (`kernel_row_cells`, track P's;
+`comment_is_prose`, track A's) and +34 tests. **SIX runs is still a
+probabilistic claim** — track P made six too and **one of its six was red** (gap
+**1333**, `cli_latency`'s bands under workspace compilation load). None of these
+six was, which is evidence and not a proof; gap **1412** says what it is worth.
+
+The three tracked `.proptest-regressions` files — `grammar_proptest`,
+`kernel_log_grammar`, `planner_invariants` — gained no seed line across the
+six runs. Per **D46** that is a report, not a clean tree to congratulate.
+
+**The named suites, on the merged tree**: T5 `kernel_replay_parity` 29/0/4 · the
+door suite `kernel_log_door` 23/0 · `cli_switch_acceptance` 16/0 ·
+`kernel_call_counts` 2/0 · `one_padder` 8/0 · `one_renderer` 25/0 ·
+`kernel_row_cells` 26/0 · `comment_is_prose` 7/0 · `cli_latency` **5/0/1
+standalone**.
+
+**`cli_latency`, as ranges (T11 is noisy and the rule says so).** Later verb
+**66–167 ms**; first verb (genesis) **0.80–3.01 s**, rising with the log;
+gated host-only write (D35) **71–177 ms**; `tm log` variants on the 3-year log
+(66,169 lines, 6.9 MB) **101–268 ms**; a 30-day-old hand undo **2.16 s**, and
+the two verbs after it **187 ms** and **172 ms**. Plan with a due 3 years out
+(1,097 lookahead days) **111 ms**, 10 years out (3,652 days) **167 ms**. **No
+band was widened.**
+
+### 4. What earlier stages bought, re-measured here and not quoted
+
+* **The kernel is the only WRITER (D16).** Two `append_text(LOG_PATH, …)` call
+  sites in the whole tree. `tm/src/cli/ctx.rs:1305` is preceded by
+  `kernel_log::render_one(entry)`, unconditionally. `tm-core/src/horizon.rs:525`
+  is preceded by the installed `LineWriter` — the Lean kernel in the shipped
+  binary — falling back to `LogEntry::to_json` only with no writer installed,
+  which its own doc comment calls *"now only a test oracle"*.
+* **The kernel is the only READER, and §12's grep is at its floor.** The door
+  guard's own thirteen needles (`support/fork.rs:471`), over `tm-core` and `tm`:
+  **79** hits, **13** of them under `tm-core/src` or `tm/src`, and **0** of those
+  13 on a non-comment line. Run at **`596b56d`, at `5d3251a` and at HEAD from
+  three `git archive` extractions**: identical at all three. No track
+  reintroduced an in-tree reader — including track A, which edited six files
+  under `tm/src/cli/` and `tm/src/tui/`.
+* **The comparand is still fork 4748911 at full precision.** The four
+  `tm/tests/fixtures/fork-4748911-*` files are untouched by the whole run
+  (`git diff --stat 596b56d HEAD -- tm/tests/fixtures/` is empty);
+  `float_roundtrip` is still pinned in the workspace `Cargo.toml` with the
+  comment naming parity P25; `fork_arm` is still unconditional, counting a
+  missing frozen answer as `skipped` and never as agreement. T5's own tally:
+  **20 inputs compared against a frozen fork answer inside `cargo test
+  --workspace`**, 6 kernel-only, **0 skipped**, 458 reachable only under
+  `TM_ORACLE` (gap 150).
+
+### 5. D47 did not move the corpus, and here is why rather than that
+
+Track A measured the blast radius at zero. This step re-measured it
+**independently** — a fresh implementation of `Plan.lean`'s automaton written
+from `comment_is_prose.rs`'s statement of it, not from track A's code: a comment
+opens on a line whose first non-**SPACE** characters are `<!--` (so a TAB opens
+nothing), closes on the first line containing `-->` **including the opening
+line**, and the state consulted for a line is the state **before** it. Over
+`kernel/corpus/**`, `tm/tests/**` and `tm-core/tests/**`: **75 markdown files,
+0 column-zero item lines inside a comment** — on `^- \[` and again on the wider
+`^- `, since D46's own minimal input (`- 0 A A ci:0  a @A @a`) carries no
+checkbox. That is why check 6 reads 29/37 and 4/5 unmoved.
+
+**What that scan cannot see**, said plainly: it reads `.md` files only, so a
+fixture built inside a Rust string literal is invisible to it (track A's
+`comment_is_prose.rs` builds its own inputs that way, deliberately), and it
+models the comment automaton rather than calling `grammar::comment_after`, so an
+agreement between the two is evidence and not a proof.
+
+### 6. Does `Emit.lean` have a caller, and does a machine compare its cells to the shipped bytes?
+
+**Yes to both, and the sentence has a third clause that is still No.**
+
+1. **`Emit.lean` has a caller.** `TmKernel/EmitWire.lean:2` is `import
+   TmKernel.Emit`, and `EmitWire.rowsOfReq` calls `Emit.rowOf` over the segments
+   the host sent (`EmitWire.lean:409`). `EmitWire` owns the one export (R9),
+   moved there from `Boundary.callExport`. Track P's claim reproduces.
+2. **A machine compares its cells to the shipped bytes.**
+   `tm/tests/kernel_row_cells.rs::the_kernels_cells_padded_are_the_day_files_bytes`
+   calls `tm_kernel_ffi::call` — the real FFI, not a mock — reads `ok.plan.rows`,
+   pads the kernel's nine cells with `emit::render_row` (the one padder, D43),
+   and asserts the result equals `emit::plan_rows`'s bytes row by row. Two cells
+   are substituted before padding and **both are named by gap number in the
+   test's own table** (`DECLARED_HOLES`: gap 1102's `note` on *Pick up package*,
+   gap 1101's `est` on *Exercises 5.3–5.5*), and the test fails if a declared
+   hole stops firing. Eight more tests in that file compare all ten kinds, a
+   batch row, the note sentences and the refusals. **26 passed, 0 failed.**
+3. **What is still No: the shipped bytes do not come from the kernel.**
+   `tm plan`, `tm now` and the TUI all reach `emit::plan_rows`, which calls
+   `emit::row_cells` — the **Rust**. No call site under `tm/src` asks the kernel
+   for rows; the only `tm_kernel_ffi::call` with a plan section outside the test
+   is `kernel_capacity.rs`, which asks for something else. So the honest sentence
+   is *"the kernel's cells are compared to the shipped bytes on a fixture day,
+   by a machine, through the real FFI"* — not *"the shipped bytes are the
+   kernel's"*. That is gap **1321**, track P's, open and unaltered, and the
+   comparison being on one fixture day is gap **1328**.
+
+`Boundary.lean` still does not `import TmKernel.Emit` — gap **1327**, literally
+true, and now genuinely only a letter: the import that matters is `EmitWire`'s.
+
+### 7. The drive, unabridged
+
+Debug binary built from the merged tree, fresh copies of
+`kernel/corpus/plan-basic` in a scratch directory, every invocation capped at
+`MemoryMax=16G`. **The TUI half is not driven and cannot be** (AGENTS §5.13,
+gap 182: `tm tui` exits by name when stdout is not a tty).
+
+#### 7.1 A normal day
+
+```
+$ tm --now 2026-09-09T07:30:00-05:00 wake
+wake 07:30 · slept 0m
+$ tm --now 2026-09-09T07:45:00-05:00 arrive lounge
+arrive lounge 07:45 · window 07:45–17:05 · budget 6 blocks
+$ tm --now 2026-09-09T07:46:00-05:00 energy 4
+energy 4 (pred 3) at 07:46 · replanned
+$ tm --now 2026-09-09T07:50:00-05:00 plan
+2026-09-09 · window 07:45–17:05 · budget 6 blocks
+07:50  ·      breakfast 30m
+08:20  4 p3   Exercises 5.3–5.5            @m1  2b
+09:00  ·      laundry 30m
+09:30  5 p3   Finish ch.5 exercises        @O1  6b
+10:30  5 p3   Finish ch.5 exercises        @O1  6b
+11:30  ·      lunch 30m
+12:00  5 p3   Finish ch.5 exercises        @O1  6b
+13:00  3 p3   Claude Code drafts tests     @m2  1b
+14:00  ·      break 20m
+14:20  3 p5   Pick winter courses          @O3  2b
+15:00  ⏰     CS 234 lecture                    1h20m
+16:20  ·      workout 1h
+17:05  ───    window ends 17:05
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ·      shower 20m
+19:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· plan honesty 1.67 — planned above a realistic budget
+· t5 blocked by t4
+· waiting: a4
+· dropped: m3 · t1 · m2 · d1 · d2 · x2 · p1 · a1 · c2
+```
+
+Byte-identical to W-23's transcript of the same day at `7e2c8c9`. The merge
+changed no plan.
+
+#### 7.2 The day file, `tm now` and `tm plan --json` side by side
+
+```
+$ tm --now 2026-09-09T07:50:00-05:00 now
+nothing running
+07:50  ·      breakfast 30m
+  07:50–08:20 · elapsed 0m · left 30m
+next
+08:20  4 p3   Exercises 5.3–5.5            @m1  2b
+09:00  ·      laundry 30m
+09:30  5 p3   Finish ch.5 exercises        @O1  6b
+0/6 blocks
+```
+
+Compared by a script, not by eye — the `<!-- tm:plan start … -->` block of
+`day/2026-09-09.md`, `tm plan --json`'s `segments[].text`, and `tm now`'s
+plan-shaped lines:
+
+```
+file rows: 19   json rows: 18
+in file, not in json: ['17:05  ───    window ends 17:05']
+in json, not in file: []
+shared rows, all byte-equal: 18 / 18
+tm now plan-shaped rows: 4 byte-equal to the file: 4
+```
+
+**This is the one place the drive shows a behaviour change from track P's half
+of G1.** W-23's block recorded `tm now` as *"a second renderer, and its rows are
+a different shape"*. `render_now_with` is deleted and `emit::now_rows` is a
+**selection** over `plan_rows`: all four of `tm now`'s plan rows are now
+byte-equal to the day file's. The file's one extra row is still the
+`window ends` divider, which is rendered into the file and is not a `segments`
+entry — the whole of the remaining disagreement, and there is still no row the
+JSON has that the file has not.
+
+#### 7.3 A two-arrival day, then `rm -r .tm/cache` (gap 1306)
+
+```
+$ tm --now 2026-09-09T07:30:00-05:00 wake
+wake 07:30 · slept 0m
+$ tm --now 2026-09-09T07:45:00-05:00 arrive lounge
+arrive lounge 07:45 · window 07:45–17:05 · budget 6 blocks
+$ tm --now 2026-09-09T09:00:00-05:00 start t4
+▶ ^t4 Claude Code drafts tests · 09:00 · pred 4
+$ tm --now 2026-09-09T10:00:00-05:00 stop
+stopped ^t4 after 60m · 5m left
+$ tm --now 2026-09-09T13:00:00-05:00 arrive library
+arrive library 13:00 · window 13:00–20:20 · budget 6 blocks
+$ rm -r .tm/cache
+$ tm --now 2026-09-09T13:05:00-05:00 now
+nothing running
+13:05  ·      laundry 30m
+  13:05–13:35 · elapsed 0m · left 30m
+next
+13:35  2 p5   Pick winter courses          @O3  2b
+15:00  ⏰     CS 234 lecture                    1h20m
+16:20  ·      workout 1h
+0/6 blocks
+```
+
+`--json now` before and after the wipe is **byte-identical**, field for field.
+The replay cache is a cache: losing it costs time and no answer. Gap 1306 does
+not live here.
+
+#### 7.4 Gap 1306 is on the `.tm/state.json` path, and it is LOUD
+
+Same tree, two arrivals, `^m4` running:
+
+```
+$ tm --now 2026-09-09T13:40:00-05:00 start m4
+▶ ^m4 Pick winter courses · 13:40 · pred 2
+$ rm .tm/state.json
+$ tm --now 2026-09-09T13:55:00-05:00 now
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42) — ^m4 is running, started 13:40
+tm: GONE, and the log cannot answer for it: `break` — a running break is logged only when it ends, so one that was running left no line to rebuild from — and if one was running, the `active.paused` it had set is gone with it and the block is running again.
+tm: RECOMPUTED rather than restored: `active.est_min` is 120m — recomputed by `Ctx::planned_block` from the item's line — no `start` event carries an estimate — so a `tm extend` that ran before the file was deleted is not in it.
+tm: RECOMPUTED rather than restored: `window` and `budget` — the day has 2 arrivals and the log's facts carry only the first one's payload, so these are 13:00–20:20 recomputed from TODAY's walls and config; a calendar item added since the arrival moves them.
+tm: RESET, both deliberately: `priorities_yesterday` (§7.4's hysteresis map, and no event carries a `p`) and `closed` (`swept` is a fact about a sweep, not an event, and its absence makes the automatic close sweep run once more, which is the safe direction).
+▶ ^m4 Pick winter courses · started 13:40 · 15m of 120m
+13:55  2 p5 ▶ Pick winter courses          @O3  2b     running · 105m left
+  13:55–14:40 · elapsed 0m · left 45m
+next
+15:00  ⏰     CS 234 lecture                    1h20m
+16:20  ·      workout 1h
+17:30  ·      dinner 30m
+0/6 blocks
+```
+
+Both drives the brief asks for, in one: the block was running, and the day had
+two arrivals. **Gap 1306's notice fires and names exactly what the gap says it
+owes** — both fields (`window` and `budget`), the arrival count (**2**), the
+recomputed value (`13:00–20:20`) and the thing that could move it.
+
+**And the rebuilt `.tm/state.json` is byte-identical to the one deleted**, every
+field including `last_plan_hash` and `closed`. That is not the gap closing: the
+window was *recomputed* and happened to agree, because nothing on this tree
+changed between the arrival and the deletion. The notice is loud precisely
+because the code cannot know that. `closed` appearing populated in the rebuilt
+file is the notice's own last clause working — it is reset, the automatic sweep
+runs once more, and writes the same answer back.
+
+#### 7.5 D47 — a hand-written item line inside an HTML comment, both directions
+
+Appended to `backlog.md` by hand:
+
+```
+## D47
+
+- [ ] 3 1b A live backlog item ^z1
+<!-- an example for the docs, and a line commented out
+- [ ] 3 1b A commented twin ^z1
+- [ ] 3 1b A commented orphan @nope ^z2
+-->
+```
+
+```
+$ tm --now 2026-09-09T07:30:00-05:00 check
+no problems
+```
+
+The same three lines with the two comment markers deleted and **nothing else
+changed**:
+
+```
+$ tm --now 2026-09-09T07:30:00-05:00 check
+backlog.md:16: error[dup-id]: duplicate id ^z1; also at backlog.md:17
+backlog.md:16: error[kernel-load]: kernel refusal: dupId — backlog.md:16 and backlog.md:17 are two lines in one file that resolve to the store key `z1` (a line with no `^id` is keyed by its title, and that key is never written into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+backlog.md:17: error[dup-id]: duplicate id ^z1; also at backlog.md:16
+backlog.md:17: error[kernel-load]: kernel refusal: dupId — backlog.md:16 and backlog.md:17 are two lines in one file that resolve to the store key `z1` (a line with no `^id` is keyed by its title, and that key is never written into a file, so the two positions above are where it is); the kernel refuses a tree it cannot load whole
+backlog.md:18: error[dangling-parent]: parent @nope does not exist
+5 errors, 0 warnings
+```
+
+Both directions, so this cannot pass by the host having stopped reading items
+(§5.8). The second run is the part that matters for **D47**: the **kernel's own
+refusal** (`kernel-load: dupId`) is in the uncommented output and absent from
+the commented one, so the host and `Plan.lean` agree about what a comment is on
+the same bytes, in the shipped binary. Track A's `comment_is_prose.rs` proves it
+at the unit level; this is the binary agreeing. Gap **1364** is visible here as
+designed — the host's own `bad-value` diagnostic would double the kernel's on an
+*unterminated* comment; this comment is terminated, so it does not fire.
+
+### 8. Observable behaviour changes
+
+1. **`tm now`'s plan rows are byte-equal to the day file's** (§7.2). Track P's,
+   landed before this step; this is the drive that shows it.
+2. **A column-zero item line inside an `<!-- … -->` comment is prose to every
+   reader in the binary** (§7.5) — `tm check`, `tm triage`, the TUI inbox and
+   the kernel. Owner **D47**; parity **P38**; it diverges from fork 4748911
+   deliberately. Blast radius re-measured at zero (§5).
+3. **`set_state_with_ci` round-trips a line whose `ci:` token is followed by two
+   spaces** — track A's, the bug D46's lucky seed found.
+4. Nothing this land step added changes a shipped byte: the merge commits are
+   both pure merges, and this commit touches `kernel/README.md`, `AGENTS.md` and
+   one Rust **doc comment** (`kernel_row_cells.rs`).
+
+### 9. AGENTS §6.3 was stale in five numbers and wrong in a sentence
+
+Re-measured on the merged tree by §6.3's own pipeline and corrected in place:
+audit lines **3993 → 4971**, distinct names **3993 → 4971**, theorem
+declarations **3992 → 4969**, modules **78 → 84**, short names in more than one
+namespace **23 → 24**, `APPENDED` banners **66 → 92**.
+
+**And the sentence.** §6.3 read *"**Plus one non-theorem** in the audit:
+`Tm.WfPlan` … That is the **last** instance of the pattern the repair removed …
+do not let it breed."* It bred. `Tm.effectiveScope`, a `def`, has been audited
+at `Check.lean:5038` since `f2225ec` — stage 5, long before this run — and the
+bullet warning against exactly that could not see it, because check 3's
+reconciliation is deliberately one-directional and **nothing counts the other
+direction**. Both are named now, with their line numbers. This is not a defect
+in the kernel; it is the §5.11 failure the same file warns about, in the file
+that warns about it.
+
+### 10. The burn-down, and which commit discharged a goal
+
+**None did.** `Goals.lean` is at **9**, every one stage 6, unchanged from the
+brief's baseline at `596b56d` and from stage 6's opening. Track G proved
+twenty-two new theorems in `PlanCheck.lean` and `PlannerWit.lean` and none of
+them is a `Goals.lean` statement; track P proved thirty-nine and none of them is
+either; track A proved none. The number did not rise, so no new debt was
+admitted. **9 outstanding, all stage 6.**
+
+<!-- GAPS 1410-1412 — the land step, run W-24.  1413-1414 free. -->
+
+**Gap 1410 — a `::`-qualified citation is UNSWEPT, and this step's own repair
+took that route. NOT FIXED, deliberately, with the number.**
+1. *What is not done.* Check 8 refuses any backticked span containing `::`
+   (`CITED` allows letters, digits, `_ ' ? !` and dots, and nothing else), so
+   `SegKind::WindDown` is neither resolved nor exempted — it is not seen. The
+   merge repair in §1 moved a live citation from the swept population into that
+   silent one. Driven both ways: a backticked, bare NoSuchKind FAILS check 8;
+   the backticked, qualified `SegKind::NoSuchKind` is **green** on a name
+   declared nowhere.
+2. *Why.* The alternative is reading Rust enum variants as declarations —
+   gap **1362**, opened by track A in this same run. Measured here rather than
+   guessed: a brace-tracking pass over every `enum` body in the 144 swept `.rs`
+   files finds 295 variants, **219 of them declared nowhere else**, on a base of
+   14,475, and they include `All`, `Any`, `Add`, `Bool`, `Body`, `Active`,
+   `Blocked`, `Blocks` and `Dates`. Resolution is on the LAST dotted segment, so
+   every one of those would resolve a stale citation of any Lean constructor or
+   `def` sharing its short name. Track A's parameter widening cost +119 names
+   for eleven correct sentences; this costs +219 for one. Declined on the number,
+   as `citations.py`'s header declined `let` bindings (+896 for 2).
+3. *What it costs.* One live citation today — `kernel_row_cells.rs:441-442`'s
+   four `SegKind::` spans. A rename of the variant leaves that comment stale with
+   check 8 green. It is **not** invisible to every machine:
+   `one_renderer.rs`'s `WORD_ALLOW` pins the exact line
+   `SegKind::WindDown => "wind-down",` in `planner.rs` and goes red on a rename
+   (driven in §1). The residue is the narrower case where a rename updates
+   `WORD_ALLOW` and not the comment.
+4. *Which stage.* With gap **1362** and gap **989** (the `::` population, 67
+   distinct names / 111 citations to adjudicate) — one decision, not three.
+   Whoever next touches `citations.py`.
+
+**Gap 1411 — nothing counts the audit's non-theorems, so §6.3's "last instance"
+could not be checked. FIXED IN PROSE ONLY.**
+1. *What is not done.* Check 3's reconciliation is one-directional by design:
+   `comm -23` must be empty and `comm -13` is read by nobody. The two `def`s it
+   returns today (`Tm.WfPlan`, `Tm.effectiveScope`) are now named in AGENTS §6.3
+   (§9 above), but **nothing fails when a third appears**, which is exactly how
+   the second one arrived unremarked at `f2225ec` and survived every audit since.
+2. *Why.* Auditing more than the theorems is genuinely not a defect, so the
+   check must not fail on it; what is wanted is a *count* that has to be updated
+   deliberately — the shape `one_padder`'s and `one_renderer`'s allow tables
+   already have, and the shape check 8's counted entries have.
+3. *What it costs.* A `def`, `structure` or `abbrev` can enter the audit and be
+   reported by `#print axioms` as *"does not depend on any axioms"* — a normal-
+   looking line about a thing that is not a theorem — with every count healthy.
+   That is the trap §6.3's own paragraph describes, and it is un-instrumented.
+4. *Which stage.* Whoever next touches `check.sh` check 3. A one-line counted
+   assertion (`comm -13 | wc -l` equals a number in the script) is the whole fix.
+
+**Gap 1412 — six `cargo test --workspace` runs are still a probabilistic claim,
+and this step made exactly six. NOT FIXED.**
+1. *What is not done.* D46 replaced "0 failed" with "0 failed, and say how many
+   runs". This step says **six**, all green. Track P also said **six**, and **one
+   of them was red** — `cli_latency`'s bands under workspace compilation load,
+   gap **1333**. Six green runs against P's five-of-six do not distinguish "the
+   flake is fixed" from "the flake has a rate near 1/6 and this machine was
+   quieter"; the two samples are 1 red in 12 between them.
+2. *Why.* The honest denominator is bounded by what a step can afford; each run
+   is ~40 s warm and the flake is load-dependent, so runs made back-to-back on an
+   otherwise idle machine are **not independent samples** of the condition that
+   produces it.
+3. *What it costs.* The acceptance sentence every block in this ledger ends with
+   is weaker than it reads, and D46 made that visible without making it false.
+   Gap 1333's two repairs — correct `cli_latency`'s header to say the bounds hold
+   on an idle machine, or serialise it against the workspace — are what close it;
+   until then the number of runs is the only honest instrument and it must keep
+   being quoted.
+4. *Which stage.* With gap **1333**, whoever next touches `cli_latency.rs`.
+
+**New gaps start at 1413** (1413-1414 are the land step's remaining range;
+1319, 1334-1359, 1366-1389 and 1400-1409 are the free holes this run's disjoint
+track ranges left — see the banner).
+
+Every `cargo`, `check.sh`, `tm`, `lake` and `python3` invocation in this step ran
+under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet`
+(40G for the suites and `check.sh`, 16G for the measurement scripts and the
+binary drive). No memory bound was raised. No predicate or assertion was
+weakened; no snapshot, fixture, latency band or corpus was re-blessed; no new
+dependency; `lean-toolchain` and `kernel/corpus/` untouched. Every plant made to
+drive a gate was reverted in the same command that made it, and `git status` was
+checked clean afterwards.

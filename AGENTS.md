@@ -1017,9 +1017,9 @@ demonstrably lost names:
 
 ```bash
 cd /Users/psixyzt/code/planner/kernel/TmKernel
-grep -c '^#print axioms' Check.lean                                     # 3993 (1299 at bf7cc63, 1006 at c8f3a38)
-grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 3993
-grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 3992
+grep -c '^#print axioms' Check.lean                                     # 4971 (3993 at e7b816c, 1299 at bf7cc63, 1006 at c8f3a38)
+grep '^#print axioms' Check.lean | awk '{print $3}' | sort -u | wc -l   # 4971
+grep -hcE '^(@\[[^]]*\][[:space:]]*)?theorem ' TmKernel/*.lean | awk '{s+=$1} END {print s}'   # 4969
 ```
 
 **These told an inconsistent story and were repaired at `e7b816c`; the trap that
@@ -1041,11 +1041,11 @@ grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
   | sed 's/.*theorem //' | sed 's/.*\.//' | sort > /tmp/decl
 grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort > /tmp/aud
 comm -23 /tmp/decl /tmp/aud   # MUST BE EMPTY — check 3 fails if it is not
-comm -13 /tmp/decl /tmp/aud   # `WfPlan` — the `def` below
+comm -13 /tmp/decl /tmp/aud   # `WfPlan` and `effectiveScope` — the two `def`s below
 ```
 
-- 3993 audit lines, 3993 **distinct** names: no name is audited twice.
-- Every theorem declared in the 78 modules is audited, and `comm -23` is now
+- 4971 audit lines, 4971 **distinct** names: no name is audited twice.
+- Every theorem declared in the 84 modules is audited, and `comm -23` is now
   **empty** — that is the direction `check.sh` check 3 enforces. `^theorem`
   alone misses the declared `@[simp] theorem`s, which is why the grep allows an
   attribute prefix.
@@ -1053,23 +1053,29 @@ comm -13 /tmp/decl /tmp/aud   # `WfPlan` — the `def` below
   line — `Cmd.lean`'s header contained *"theorem whose command argument was
   unused"* at column 0 — so the two off-by-ones cancelled and the three counts
   looked equal while the diff was non-trivial. That comment is reflowed
-  (`Cmd.lean:29-33`, which says why), so the third number is now **3992 real
+  (`Cmd.lean:29-33`, which says why), so the third number is now **4969 real
   declarations** with nothing to subtract. Distinct short names are fewer still,
-  because **23** short names are declared in more than one namespace; that is why
+  because **24** short names are declared in more than one namespace; that is why
   the reconciliation is a multiset diff and not a count comparison. *(This bullet
   read "3790 … 144" from W-10 until stage 5's close, and neither figure
   reproduces by the pipeline above — a reminder that §5.11 applies to this file
   too.)*
-- **Plus one non-theorem** in the audit: `Tm.WfPlan`, a `def`, is still audited,
-  now at `Check.lean:472`. That is the last instance of the pattern the repair
-  removed, and it is why check 3's reconciliation is **one-directional**:
-  auditing more than the theorems is not a defect. Leave it or delete it
-  deliberately; do not let it breed.
-- The file carries **66** `APPENDED …` banners (65 at `5ab24bf`, sixteen at `bf7cc63`).
+- **Plus TWO non-theorems** in the audit: `Tm.WfPlan` at `Check.lean:472` and
+  `Tm.effectiveScope` at `Check.lean:5038`, both `def`s, are still audited. This
+  bullet read *"Plus one non-theorem"* and named only the first from `e7b816c`
+  until W-24's land step, while `Tm.effectiveScope` had been audited since
+  `f2225ec` — so the pattern the repair removed **did** breed, once, and the
+  sentence warning against it could not see it. It is why check 3's
+  reconciliation is **one-directional**: auditing more than the theorems is not
+  a defect, and that is exactly why nothing counts them. Leave them or delete
+  them deliberately.
+- The file carries **92** `APPENDED …` banners (66 at stage 5's close, 65 at `5ab24bf`, sixteen at `bf7cc63`).
 
-So the honest sentence is *"every theorem in the 78 modules is audited, and the
-audit names one definition as well"* — not *"every theorem"* with nothing after
-it. (It read "the ten modules" until 2026-09-16; ten was stage one's count.) `check.sh` reports the audit size by grepping its own output, so its printed
+So the honest sentence is *"every theorem in the 84 modules is audited, and the
+audit names two definitions as well"* — not *"every theorem"* with nothing after
+it. (It read "the ten modules" until 2026-09-16 and "the 78 modules … one
+definition" until W-24's land step; ten was stage one's count, and one was a
+count of the definitions somebody had looked for rather than of the ones there.) `check.sh` reports the audit size by grepping its own output, so its printed
 number is the audit's, not the package's.
 
 ### 6.4 `kernel/README.md` — append a block, and keep the gap list a single sequence
