@@ -38951,6 +38951,25 @@ tenth was added *because* inversion II falsified this step's own prediction (§5
 All ten have `#print axioms` lines under this step's banner in `Check.lean`, and
 the audit count closes exactly: 4,539 + 10 = **4,549**.
 
+### 7a. D43's letter, gap 1195: answered, and the answer is "still only the former"
+
+The step's own question — *"say whether `render_row` is now the only renderer
+AND the only padder, or still only the former"* — measured at this commit:
+
+| | count | where |
+|---|---|---|
+| composers of a §4.3 day row | **1** | `emit::render_row`, called from `emit::plan_rows` and from nowhere else (`one_renderer.rs`'s grep guard is the ratchet) |
+| entry points that measure or pad a column | **3** | `emit::render_row`, `emit::pad_to` (11 call sites outside `emit.rs`), `emit::clip` (34 call sites across four TUI panes) |
+
+So: **still only the former**, and this step did not change that number.
+`render_row` is now a *padder over cells* rather than a renderer that also
+padded, which is the structural half D30 Q6 (a) asks for — but a Queue column
+and a Necessities gutter are not day rows, and gap **1195**'s own paragraph
+says that is why "the TUI calls `render_row`" is only achievable for the
+surfaces that print day rows. **Gap 1195 stays open, unaltered**, exactly as
+D43 says it should; what moved is that `render_row`'s input is now a value the
+kernel can produce, which is the part gap 1195 said was downstream of gap 1194.
+
 ### 8. What this step did NOT do, by name
 
 * **No planner code.** P5b's assign fold is where track P left it. No candidate
@@ -52249,7 +52268,7 @@ sentences are in this diff.
 | `check.sh` | 9/9 | 9/9 | — |
 | axiom audit | 4,910 theorems | **4,949** | +39: 38 in `EmitWire.lean`, 1 in `Emit.lean` (`batchTitle_is_the_frame_over_batchNames`). Every one has a `#print axioms` line under this step's banner (§6.3) |
 | check 5, the FFI | 93 tests | 93 | — |
-| check 8, citations | **29,349** cited, 0 allow entries unused | **29,792** cited, **0** unused | the two new files' prose and this block's; `4 tm_kernel_call` (§7). *The 29,347 this campaign's brief carries for `596b56d` does not reproduce: the tree at that commit measures 29,349, and §5.11 applies to a brief too.* |
+| check 8, citations | **29,349** cited, 0 allow entries unused | **29,797** cited, **0** unused | the two new files' prose and this block's; `4 tm_kernel_call` (§7). *The 29,347 this campaign's brief carries for `596b56d` does not reproduce: the tree at that commit measures 29,349, and §5.11 applies to a brief too.* |
 | check 9 | 118 rostered (30 unfoldable, 20 fixtures, **0 pinned by nothing**, 0 literal), 0 owed, 32 bare pin sites | **151 rostered (38 unfoldable, 20 fixtures, 8 pinned by nothing, 1 literal), 0 owed, 32 bare** | +33 definitions (`EmitWire.lean`'s 32 and `Emit.batchNames`); `Emit.lean`'s 31 rows and `EmitWire.lean`'s 25 re-verified and their pin sites rewritten. **The `pinned by nothing` line went 0 → 8** and that is gap **1332** |
 | corpus | 29/37 files, 4/5 whole plans | 29/37, 4/5 | — |
 | burn-down | 9, all stage 6 | **9, all stage 6** | nothing added, nothing discharged |
