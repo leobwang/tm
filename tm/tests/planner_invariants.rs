@@ -42,11 +42,19 @@
 #[allow(dead_code)]
 mod chokepoint;
 
+/// **The `plan` section's wire**, shared with `tm/tests/kernel_row_cells.rs`
+/// since stage 6 W-25 (step R2): one encoder, two callers (AGENTS §5.3).
+#[allow(dead_code)]
+#[path = "support/rowwire.rs"]
+mod rowwire;
+
 use std::collections::BTreeSet;
+use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use proptest::prelude::*;
+use serde_json::{json, Value};
 use tm_core::capacity::{self, local_dt};
 use tm_core::config::Config;
 use tm_core::energy::Model;
@@ -365,6 +373,11 @@ struct World {
     model: Model,
     now: DateTime<Tz>,
     state: RuntimeState,
+    /// **The four generated files, kept as bytes** (stage 6 W-25, step R2).
+    /// `Tree::from_texts` consumes them and hands back the fork's reading; the
+    /// kernel is given the same bytes and does its own, which is the whole
+    /// point of [`the_kernel_reads_every_day_the_fork_planned`].
+    docs: Vec<(String, String)>,
 }
 
 fn build(case: &Case) -> World {
@@ -374,15 +387,14 @@ fn build(case: &Case) -> World {
     let cal = calendar_text(case);
     let routines = routines_text(case);
     let optionals = if case.optionals { OPTIONALS } else { "" };
-    let tree = Tree::from_texts(
-        &[
-            ("week/2026-W37.md", week.as_str()),
-            ("calendar/2026-W37.md", cal.as_str()),
-            ("routines.md", routines.as_str()),
-            ("optional.md", optionals),
-        ],
-        &cfg,
-    );
+    let files = [
+        ("week/2026-W37.md", week.as_str()),
+        ("calendar/2026-W37.md", cal.as_str()),
+        ("routines.md", routines.as_str()),
+        ("optional.md", optionals),
+    ];
+    let tree = Tree::from_texts(&files, &cfg);
+    let docs = files.iter().map(|(p, t)| ((*p).to_string(), (*t).to_string())).collect();
     let replay = chokepoint::replay_of_text(&log_text(case, tz), tz);
     let now = case.now(tz);
     let arrival = NaiveTime::from_hms_opt(case.arrival_hour(), 0, 0).expect("time");
@@ -426,6 +438,7 @@ fn build(case: &Case) -> World {
         model: Model::default(),
         now,
         state,
+        docs,
     }
 }
 
@@ -439,6 +452,13 @@ impl World {
             state,
             now,
         )
+    }
+    /// The generated files as the wire carries them.
+    fn docs_json(&self) -> Vec<Value> {
+        self.docs
+            .iter()
+            .map(|(path, text)| json!({"path": path, "lines": text.lines().collect::<Vec<_>>()}))
+            .collect()
     }
     fn candidates(&self) -> Vec<Candidate> {
         priority::collect_candidates(
@@ -480,6 +500,40 @@ fn layout(day: &DayPlan) -> Vec<(DateTime<Tz>, Vec<Id>)> {
         .map(|s| (s.start, s.items()))
         .collect()
 }
+
+/// **The cells the kernel is allowed to disagree with the fork about on a
+/// GENERATED day, with the gap that records why.**
+///
+/// The same two holes `tm/tests/kernel_row_cells.rs` declares on its fixture
+/// day, and no others — a third name appearing here would be a finding, not a
+/// widening:
+///
+/// * **`note`** (gap **1102**, and the `note: null` decision in `seg_json`) —
+///   `SegFlags::note` is a `String` the fork's planner wrote as prose and
+///   `Planner.Note` is eleven names with their arguments, so a host whose
+///   planner produced text has nothing to send. The kernel **derives** the
+///   column and cannot derive the `⚠` branch, which needs the fork's
+///   `effective_due`.
+/// * **`est`** (gap **1101**) — the fork's `est_cell` reads `est_original`
+///   first and this kernel has one estimate view, `Core.est`, which is `est:`
+///   then the leading estimate. A line carrying both makes the two readers pick
+///   different numbers.
+///
+/// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
+/// and `batchNames` — is compared **exactly**, on every row of every case.
+const CELL_HOLES: [&str; 2] = ["note", "est"];
+
+/// `(rows compared, cases compared, note-hole firings, est-hole firings)` —
+/// what [`the_kernel_reads_every_day_the_fork_planned`] actually looked at.
+///
+/// A proptest case body returns only a verdict, so the census is a side
+/// channel — but it is read **inside the arm that fills it**, on every case,
+/// and not by a separate `#[test]`. A separate test would race the arm in
+/// cargo's default parallel run and pass by seeing nothing, which is the very
+/// defect it exists to catch: "every cell of every row agreed" is a sentence a
+/// fuzz comparing **no** rows also produces — AGENTS §9.2's "a check no input
+/// can fail", which this campaign has met at five different levels.
+static CENSUS: Mutex<[u64; 4]> = Mutex::new([0; 4]);
 
 fn overlaps(a: &Segment, b: &Segment) -> bool {
     a.start < b.end && b.start < a.end
@@ -880,3 +934,113 @@ proptest! {
 
 
 
+
+// ===========================================================================
+// STEP R2 (stage 6 W-25): the generated days go through the KERNEL.
+//
+// §14.4's R2 says this file must exercise "the kernel's `dayPlan` through the
+// FFI".  It cannot: `dayPlan` is not reachable through the FFI, because the
+// `plan` REQUEST section carries the day's rows and not the planner's inputs,
+// and `EmitWire.lean`'s own header assigns that section to step R3 (README gap
+// **1431**, which prices what R3 now needs, field by field).
+//
+// What IS reachable, and what this arm does instead, said plainly so the
+// remainder is not mistaken for the whole: every day this file's generators
+// produce — 40 random items, five routines, calendar walls, a random log, a
+// running block, an open interruption, a late day — is handed to the kernel's
+// `plan` section, and the kernel's nine cells for every row are compared
+// against `emit::row_cells`'s.  Before W-25 that comparison existed on ONE
+// hand-built fixture day (`tm/tests/kernel_row_cells.rs`); this makes it
+// thousands of generated ones, and the two files share the encoder.
+//
+// It is NOT the tail-drop or stability half of R2: those are about a plan the
+// kernel made, and the kernel has not made one yet.
+// ===========================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        // Each case is an FFI call over a whole generated tree, so the count is
+        // its own: `TM_PROPTEST_CASES` raises it and W-25's README block records
+        // what it was run at (D46 — one run of a randomised test is a weak
+        // claim).
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel reads every day the fork planned, and writes the fork's
+    /// cells for it.**
+    ///
+    /// Two claims, and the first is the one nothing else makes:
+    ///
+    /// 1. **No day the fork's planner produces is refused by the wire.** Every
+    ///    `R10` bound the `plan` section carries — `Planner.maxCands` on the
+    ///    segment list, `CapWire.maxCandId` on every id, `Look.maxPlanMinutes`
+    ///    on `planned`, `Fin 6` on the energy, `maxBatch` on a batch — is a
+    ///    number a real day could exceed, and a bound that is too tight refuses
+    ///    a legitimate plan. `kernel_rows` returns the refusal instead of
+    ///    panicking so this can be asserted rather than assumed.
+    /// 2. **Cell for cell, row for row**, against `emit::row_cells`, with
+    ///    [`CELL_HOLES`]'s two declared exceptions and no others. The kernel is
+    ///    told no title, no `ci`, no estimate and no parent: those four come
+    ///    from its own parse of the same generated bytes.
+    #[test]
+    fn the_kernel_reads_every_day_the_fork_planned(case in case_strategy()) {
+        let w = build(&case);
+        let day = planner::plan(&w.input(&w.state, w.now));
+        let lean = match rowwire::kernel_rows(w.docs_json(), &day, &w.cfg) {
+            Ok(rows) => rows,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the wire refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let fork = rowwire::fork_cells(&day, &w.tree, &w.cfg);
+        prop_assert_eq!(
+            lean.len(), fork.len(),
+            "the kernel answered {} rows for {} segments (`Emit.rowsOf_length`'s wire half)",
+            lean.len(), fork.len()
+        );
+        let mut seen = [0u64; 4];
+        seen[0] = fork.len() as u64;
+        seen[1] = 1;
+        for (i, (f, l)) in fork.iter().zip(&lean).enumerate() {
+            for (cell, forked, kernelled) in rowwire::differences(f, l) {
+                prop_assert!(
+                    CELL_HOLES.contains(&cell),
+                    "row {i}: the two readers disagree on an UNDECLARED cell {cell:?} \
+                     — fork {forked:?}, kernel {kernelled:?}"
+                );
+                if cell == "note" {
+                    seen[2] += 1;
+                } else {
+                    seen[3] += 1;
+                }
+            }
+        }
+        // **The fuzz compared something, asserted inside the fuzz.**
+        //
+        // A proptest arm runs its cases in sequence, so a cumulative claim here
+        // is deterministic — where a separate `#[test]` reading the same census
+        // would race the arm that fills it and pass by seeing nothing. "Every
+        // cell agreed" is a sentence a fuzz comparing NO rows also produces
+        // (AGENTS §9.2's "a check no input can fail"), and a declared hole that
+        // has stopped firing is a claim that has changed (gaps 1101, 1102).
+        let [rows, cases, notes, ests] = {
+            let mut c = CENSUS.lock().expect("census");
+            for (a, b) in c.iter_mut().zip(seen) {
+                *a += b;
+            }
+            *c
+        };
+        prop_assert!(rows >= 4 * cases, "only {rows} rows over {cases} cases");
+        if cases >= 32 {
+            prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
+            prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
+        }
+    }
+}

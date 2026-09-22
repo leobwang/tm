@@ -54614,3 +54614,146 @@ this block was re-appended from a heredoc. Nothing was committed in between and 
 other file was touched. The lesson is the repository's own: a patch script that
 locates its target by a string ten other blocks also contain is not locating
 anything.
+
+---
+
+## Stage 6 — W-25, track P (step R2, second half): the invariants' generated days go through the kernel
+
+**Range:** gaps **1430–1469** (track P's). **Taken here: 1437–1440**, after
+1430–1436 in the block above. Parity: **none issued** (P40 still free).
+
+### 1. What R2's first half asks for, and what was possible
+
+§14.4 says `tm/tests/planner_invariants.rs` must exercise **the kernel's
+`dayPlan` through the FFI**. The block above records why that cannot be done
+today (gap **1431**): `dayPlan` is not reachable through the FFI at all, the
+`plan` request section carries the day's **rows** rather than the planner's
+inputs, and `EmitWire.lean`'s own header assigns the planner's section to step
+**R3**. So §14.5's graph has a cycle, and the honest remainder of R2 is what the
+*existing* wire can carry.
+
+**What it can carry is the whole tree and the whole day.** Every day this file's
+generators produce — up to 40 random items with random `ci`, `!k`, estimate,
+deadline, dependency, `loc:` and `atomic`; a random subset of the five §4.3
+routines; up to two calendar walls; a random log; optionally a **running block**,
+an **open interruption**, a **late day** — is now handed to the kernel's `plan`
+section, and the kernel's nine cells for every row are compared against
+`emit::row_cells`'s. Before this, that comparison existed on **one hand-built
+fixture day** (`tm/tests/kernel_row_cells.rs`, W-24).
+
+### 2. What landed
+
+* **`tm/tests/support/rowwire.rs`** (new) — the `plan` section's encoder and the
+  cell comparison, moved out of `kernel_row_cells.rs` **unchanged**:
+  `kernel_sec`, `decimal_pair`, `seg_json`, `request`, `kernel_cells`,
+  `fork_cells`, `differences`. Two callers, one encoder (AGENTS §5.3). `request`
+  now takes the caller's documents, because the two callers hold their trees
+  differently — one reads the fixture off disk, the other generates four files in
+  memory — and **the documents are the whole point**: the kernel reads the title,
+  `ci`, estimate and parent out of its own parse of those bytes and is told none
+  of them.
+* **`kernel_rows`** (new, beside `kernel_cells`) — the same call with a
+  **refusal returned rather than panicked**, so the fuzz can *assert* that no day
+  the fork's planner produces is refused by the wire.
+* **`the_kernel_reads_every_day_the_fork_planned`** in `planner_invariants.rs`,
+  with `World` keeping the four generated texts as bytes.
+
+Two claims, and the first is one nothing else in the tree makes:
+
+1. **No day the fork's planner produces is refused by the wire.** Every R10
+   bound the `plan` section carries — `Planner.maxCands` on the segment list,
+   `CapWire.maxCandId` on every id, `Look.maxPlanMinutes` on `planned`, `Fin 6`
+   on the energy, `maxBatch` on a batch — is a number a real day could exceed,
+   and a bound that is too tight refuses a legitimate plan. Nothing was
+   measuring that.
+2. **Cell for cell, row for row**, with two declared holes and no others.
+
+### 3. The two declared holes, and the assertion that they are still holes
+
+`CELL_HOLES` is `["note", "est"]` — the same two `kernel_row_cells.rs` declares
+on its fixture day, for the same recorded reasons (gap **1102**: the kernel
+derives the note column and cannot derive the `⚠` branch, which needs the fork's
+`effective_due`; gap **1101**: the fork's `est_cell` reads `est_original` first
+and this kernel has one estimate view). A third name is a **failure**, not a
+widening.
+
+The holes are not taken on trust. The arm keeps a cumulative census and asserts,
+**inside the arm on every case**:
+
+* `rows >= 4 * cases` — "every cell of every row agreed" is a sentence a fuzz
+  comparing **no** rows also produces (§9.2's "a check no input can fail");
+* after 32 cases, **both holes have fired at least once** — a declared hole that
+  has stopped firing is a claim that has changed.
+
+The census is read inside the arm rather than by a separate `#[test]` **on
+purpose**: cargo runs a binary's tests in parallel threads, so a separate test
+would race the arm that fills it and pass by seeing nothing. That is the same
+defect the assertion exists to catch, and the block above records the weaker
+shape it left in `kernel_item_grammar.rs` as gap **1434**.
+
+**Measured, at 1,024 cases:** `1,035 cases, 11,611 rows compared, note-hole
+2,311, est-hole 571`. Eleven thousand rows × ten cells is **116,110 cell
+comparisons, of which 2,882 (2.5%) were the declared holes** — so **97.5% of
+cells were compared exactly**, against the fixture day's single digit-count of
+rows before this.
+
+### 4. Method, and what each method cannot see
+
+| claim | method | what it cannot see |
+|---|---|---|
+| "the kernel writes the fork's cells on any day" | **1,024 cases × 2 green runs**, plus 64 (default) × many, 256, and a 1,024-case census run | **it is not `dayPlan`.** The kernel is given the fork's segments and asked for their cells. Whether the kernel would have *planned* that day is R2's other half and gap **1431** |
+| "no day is refused by the wire" | the same runs, `kernel_rows` returning the refusal | only the shapes the generator draws. A day with 1,025 segments, or an id of 1,025 characters, is outside it — the **plant** below shows the assertion is live, not that the generator reaches the bound |
+| "only `note` and `est` differ" | `differences` over all nine cells plus `batchNames`, on every row | a cell both readers get wrong the same way |
+| "the holes are still holes" | the cumulative census, asserted in-arm after 32 cases | a hole that fires for a *new* reason — the census counts firings, not causes (gap **1439**) |
+| the whole fuzz | one config, `Config::default()` | a non-default `block_min`, `bed`, zone or curve. The fixture test covers one other configuration and neither sweeps them (gap **1440**) |
+
+**Plants, all run, all reverted in the same edit, `git status` checked after:**
+
+| plant | verdict, verbatim |
+|---|---|
+| `"note"` removed from `CELL_HOLES` | **FAILED** — *"row 0: the two readers disagree on an UNDECLARED cell `"note"` — fork `"due tomorrow"`, kernel `""`"* |
+| every segment sent as a `rest` row (`seg_json`'s `kind`) | **FAILED** — *"row 0: … UNDECLARED cell `"ci"` — fork `"4↓"`, kernel `"·"`"* |
+| every `item` id lengthened by 200 characters | **FAILED**, but on a **cell**, not a refusal — `CapWire.maxCandId` is **1,024**, so 200 extra characters is inside it. Recorded rather than dropped: the first plant of the refusal path did not reach the bound it was aimed at |
+| every `item` id lengthened by 1,200 characters | **FAILED on the refusal path** — *"the wire refused a day the fork planned: `{"err":{"plan":"badSegment 0 item"}}`"*. Claim 1 is live |
+
+### 5. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1437** | the fuzz compares the kernel's cells for **the fork's** segments; it does not and cannot compare a day the **kernel** planned | `tm/tests/planner_invariants.rs` | R2's first half is still owed — this is gap 1431's consequence, recorded where the test lives so a reader of the test learns it |
+| **1438** | each case is a whole-tree FFI call, so **1,024 cases take ~180 s**; the default is **64** and the higher counts are run by hand | same file | a nightly that runs the default sees 6% of what this block measured |
+| **1439** | the hole census counts **firings, not causes** | same file | a hole that begins firing for a new reason still satisfies "the hole fired" |
+| **1440** | one `Config::default()`; `block_min`, `bed`, the zone and the curves are never varied | same file and `kernel_row_cells.rs` | the cells' agreement is asserted at one configuration |
+
+### 6. Acceptance
+
+| gate | previous commit (`63d0fc6`) | here | delta |
+|---|---|---|---|
+| `check.sh` | 9/9 | **9/9** | — |
+| axiom audit | 4,979 | **4,979** | — no Lean touched |
+| check 5 | 93 | **93** | — |
+| check 8 | 33,138 citations, 0 unused | **33,194**, 0 unused | **+56**: this step's prose and this block's. It also **caught a stale name**: the doc comment still cited a `zz_…` test this step had just deleted, and check 8 failed until it was corrected |
+| check 9 | unchanged | **unchanged** | — no definition added |
+| corpus | 29/37, 4/5 | **29/37, 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — |
+| `cargo test --workspace` | 1,437 / 0 / 9 across 84 | **1,438 / 0 / 9 across 84**, **three runs, all `--no-fail-fast`** | **+1**: the new arm |
+| FFI crate | 101 | **101** | — |
+| `kernel_row_cells` | 26 | **26** | — unchanged by the encoder move, which is the point |
+| T5 / door / switch / call counts / padder / renderer | 29 / 23 / 16 / 2 / 9 / 25 | **identical** | — |
+
+**Proptest counts, said out loud (D46).** `planner_invariants` was run at its
+default **64** many times during development, at **256** once, and at **1,024**
+**three times** (two full-binary, one single-threaded census run) — all green.
+`cargo test --workspace` was run **three** times for this commit and **eleven**
+times in the session.
+
+### 7. Capping and the hard rules
+
+Every invocation ran under `systemd-run --user --scope -p MemoryMax=…
+-p MemorySwapMax=0 --quiet`, 40G for the suites and `check.sh`. **No memory bound
+was raised.** No Lean was touched. No predicate or assertion was weakened; the
+cell comparison was **widened** from one fixture day to thousands of generated
+ones and then driven on its own class four times; no snapshot, fixture, latency
+band or corpus was re-blessed; no generator was narrowed; no new dependency;
+`lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`,
+`partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.

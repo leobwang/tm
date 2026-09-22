@@ -56,20 +56,17 @@
 mod tui_common;
 
 #[allow(dead_code)]
-#[path = "../src/cli/tz_table.rs"]
-mod tz_table;
+#[path = "support/rowwire.rs"]
+mod rowwire;
 
-use std::collections::HashMap;
 use std::fs;
 
-use chrono::{Datelike, Timelike};
+use chrono::Datelike;
 use serde_json::{json, Value};
 
-use tm_core::config::Config;
-use tm_core::emit::{self, Layout, RowCells};
+use tm_core::emit::{self, Layout};
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, SegKind, Segment};
-use tm_core::tree::Tree;
+use tm_core::planner::{self, DayPlan, SegKind};
 
 /// **Every cell the kernel is allowed to disagree with the fork about on this
 /// day, with the gap that records why** — `(row title, cell, fork, kernel, gap)`.
@@ -91,27 +88,11 @@ const DECLARED_HOLES: &[(&str, &str, &str, &str, u32)] = &[
     ("Pick up package", "note", "due today", "", 1102),
     ("Exercises 5.3–5.5", "est", "2b×1.6", "1b×1.6", 1101),
 ];
-
-/// Seconds from `0001-01-01T00:00:00Z` to the Unix epoch: the kernel counts
-/// instants from the former and `chrono` from the latter.
-///
-/// The **third** copy of this number in the tree — `tm/src/cli/kernel_log.rs`'s
-/// `EPOCH_FROM_CE` is the binary's and `tm/tests/kernel_replay_parity.rs` has
-/// the other test-side one; a test crate cannot `use tm::…` (binary crate), so
-/// the constant is retyped rather than shared (README gap **1323**). A wrong
-/// value here is not a silent one: every `time` cell below would be off by the
-/// whole difference and [`the_kernel_and_the_fork_write_the_same_cells`] fails
-/// naming both clocks — which is how this was found on the first run.
-const EPOCH_FROM_CE: i64 = 62_135_596_800;
-
-/// A `chrono` instant as the kernel's absolute second.
-fn kernel_sec(t: chrono::DateTime<chrono_tz::Tz>) -> i64 {
-    t.timestamp() + EPOCH_FROM_CE
-}
-
-// ---------------------------------------------------------------------------
-// The request
-// ---------------------------------------------------------------------------
+/// **The `plan` section's wire lives in `support/rowwire.rs` since stage 6
+/// W-25 (step R2)**, because `tm/tests/planner_invariants.rs` now sends its
+/// generated days through the same encoder. Nothing about it changed in the
+/// move; what changed is that there is one of it (AGENTS §5.3).
+use rowwire::{differences, fork_cells, kernel_cells, kernel_sec, request};
 
 /// The fixture's documents, as the wire carries them.
 fn docs() -> Vec<Value> {
@@ -136,141 +117,6 @@ fn docs() -> Vec<Value> {
         .collect()
 }
 
-/// An exact decimal as the wire's `{num, den}` pair.
-///
-/// The fork's multiplier is an `f64` and this kernel has no float (AGENTS §4),
-/// so the test does the conversion the host will do at R3: six places, which is
-/// `energy::fmt_multiplier`'s two with room to spare, over `10^6` — inside
-/// `CapWire.maxPairDen`. An `f64` that is not a six-place decimal would be
-/// rounded here, and the fixture's 1.6 is not one of those.
-fn decimal_pair(x: f64) -> Value {
-    let scaled = (x * 1_000_000.0).round() as u64;
-    json!({"num": scaled, "den": 1_000_000u64})
-}
-
-/// One segment, as the `plan` section carries it.
-///
-/// `instance` is not sent: no cell reads it (`Emit.rowOf` takes a `Seg` and
-/// never looks at `inst`). `flags.ghost` is not sent either — the kernel makes
-/// the ghost row a *kind* and the fork makes it a flag, and the fixture has no
-/// ghost row.
-fn seg_json(seg: &Segment) -> Value {
-    let mut o = json!({
-        "start": kernel_sec(seg.start),
-        "stop": kernel_sec(seg.end),
-        "kind": planner::kind_label(&seg.kind),
-        "energy": seg.energy,
-        "item": seg.item.as_ref().map(|i| i.to_string()),
-        "planned": seg.flags.planned_min,
-        "flags": {
-            "done": seg.flags.done,
-            "current": seg.flags.current,
-            "underused": seg.flags.underused,
-            "hot": seg.flags.hot,
-            "mandatory": seg.flags.mandatory,
-            "deferred": seg.flags.deferred,
-            "open": seg.flags.open,
-        },
-        // **Deliberately null**: see the module header. The fork's planner wrote
-        // this column as prose and the kernel's `Note` is a name, so there is
-        // nothing to send and the kernel derives what it can.
-        "note": Value::Null,
-    });
-    if let SegKind::Batch(ids) = &seg.kind {
-        o["batch"] = json!(ids.iter().map(|i| i.to_string()).collect::<Vec<_>>());
-    }
-    if let Some(m) = seg.flags.multiplier {
-        o["mult"] = decimal_pair(m);
-    }
-    o
-}
-
-/// The whole request: the documents, the zone, the clock, and the `plan`
-/// section's rows.
-fn request(plan: &DayPlan, cfg: &Config) -> Value {
-    let prios: Vec<Value> = plan
-        .priorities
-        .iter()
-        .map(|(id, p)| json!({"id": id.to_string(), "p": p.p}))
-        .collect();
-    json!({
-        "docs": docs(),
-        "now": plan.date.to_string(),
-        "blockMin": cfg.block_min(),
-        "tz": tz_table::wire_for(None, cfg.tz),
-        "plan": {
-            "bed": format!("{:02}:{:02}", cfg.day.bed.hour(), cfg.day.bed.minute()),
-            "priorities": prios,
-            "segments": plan.segments.iter().map(seg_json).collect::<Vec<_>>(),
-        }
-    })
-}
-
-/// The kernel's rows for a day, as [`RowCells`].
-fn kernel_cells(plan: &DayPlan, cfg: &Config) -> Vec<RowCells> {
-    let req = request(plan, cfg);
-    let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
-    let resp: Value = serde_json::from_str(&raw).expect("the response is json");
-    let rows = resp["ok"]["plan"]["rows"]
-        .as_array()
-        .unwrap_or_else(|| panic!("no plan.rows in the response:\n{raw}"));
-    rows.iter()
-        .map(|r| {
-            let s = |k: &str| r[k].as_str().unwrap_or_else(|| panic!("{k} in {r}")).to_string();
-            RowCells {
-                time: s("time"),
-                ci: s("ci"),
-                p: s("p"),
-                mark: s("mark"),
-                title: s("title"),
-                parent: s("parent"),
-                est: s("est"),
-                actual: s("actual"),
-                note: s("note"),
-                batch_names: r["batchNames"].as_array().and_then(|xs| {
-                    if xs.is_empty() {
-                        None
-                    } else {
-                        Some(xs.iter().map(|x| x.as_str().unwrap_or_default().to_string()).collect())
-                    }
-                }),
-            }
-        })
-        .collect()
-}
-
-/// The fork's cells for the same day.
-fn fork_cells(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<RowCells> {
-    let prios: HashMap<&Id, u8> = plan.priorities.iter().map(|(id, p)| (id, p.p)).collect();
-    plan.segments
-        .iter()
-        .map(|seg| emit::row_cells(seg, plan, tree, cfg, &prios))
-        .collect()
-}
-
-/// `(cell name, fork, kernel)` for every cell of a row that differs.
-///
-/// The nine cells **and** `batchNames`, which is not a cell but is carried
-/// beside them and would otherwise be compared only by the batch test.
-fn differences(a: &RowCells, b: &RowCells) -> Vec<(&'static str, String, String)> {
-    const NAMES: [&str; 9] = [
-        "time", "ci", "p", "mark", "title", "parent", "est", "actual", "note",
-    ];
-    let mut out: Vec<(&'static str, String, String)> = NAMES
-        .iter()
-        .zip(a.cells().iter().zip(b.cells()))
-        .filter(|(_, (x, y))| *x != y)
-        .map(|(n, (x, y))| (*n, (*x).to_string(), y.to_string()))
-        .collect();
-    if a.batch_names != b.batch_names {
-        out.push((
-            "batchNames",
-            format!("{:?}", a.batch_names),
-            format!("{:?}", b.batch_names),
-        ));
-    }
-    out
-}
 
 // ---------------------------------------------------------------------------
 // The comparisons
@@ -289,7 +135,7 @@ fn the_kernel_and_the_fork_write_the_same_cells() {
     let plan = tui_common::day_plan(&cfg);
 
     let fork = fork_cells(&plan, &tree, &cfg);
-    let lean = kernel_cells(&plan, &cfg);
+    let lean = kernel_cells(docs(), &plan, &cfg);
     assert_eq!(
         lean.len(),
         fork.len(),
@@ -341,7 +187,7 @@ fn the_kernels_cells_padded_are_the_day_files_bytes() {
 
     let shipped = emit::plan_rows(&plan, &tree, &cfg, &layout);
     let fork = fork_cells(&plan, &tree, &cfg);
-    let lean = kernel_cells(&plan, &cfg);
+    let lean = kernel_cells(docs(), &plan, &cfg);
     assert_eq!(shipped.len(), lean.len());
 
     let mut patched = 0usize;
@@ -412,7 +258,7 @@ fn the_kernel_and_the_fork_agree_on_a_batch_row() {
     plan.segments = vec![seg];
 
     let fork = fork_cells(&plan, &tree, &cfg);
-    let lean = kernel_cells(&plan, &cfg);
+    let lean = kernel_cells(docs(), &plan, &cfg);
     assert_eq!(lean.len(), 1);
     assert_eq!(differences(&fork[0], &lean[0]), vec![], "the batch row's cells");
     assert_eq!(
@@ -495,7 +341,7 @@ fn the_kernel_and_the_fork_agree_on_every_kind_of_row() {
     plan.segments = segments;
 
     let fork = fork_cells(&plan, &tree, &cfg);
-    let lean = kernel_cells(&plan, &cfg);
+    let lean = kernel_cells(docs(), &plan, &cfg);
     assert_eq!(lean.len(), kinds.len() * 2);
     for (i, (f, k)) in fork.iter().zip(&lean).enumerate() {
         let kind = planner::kind_label(&plan.segments[i].kind);
@@ -584,7 +430,7 @@ fn the_kernel_writes_the_forks_note_sentences() {
         .clone();
     plan.segments = vec![proto; cases.len()];
 
-    let mut req = request(&plan, &cfg);
+    let mut req = request(docs(), &plan, &cfg);
     // `noPosition`'s two instants are the plan window's, so the expected text
     // can be built from the same two clocks the kernel renders.
     let lo = kernel_sec(base.window.0);
@@ -628,7 +474,7 @@ fn the_kernel_writes_the_forks_note_sentences() {
 fn the_wire_refuses_a_bad_row_by_name() {
     let cfg = tui_common::config();
     let plan = tui_common::day_plan(&cfg);
-    let base = request(&plan, &cfg);
+    let base = request(docs(), &plan, &cfg);
 
     let cases: Vec<(&str, Value, &str)> = vec![
         ("an unknown kind", json!("nosuchkind"), "badSegment 0 kind"),
@@ -691,7 +537,7 @@ fn the_wire_refuses_a_bad_row_by_name() {
 fn a_plan_section_with_commands_is_refused() {
     let cfg = tui_common::config();
     let plan = tui_common::day_plan(&cfg);
-    let mut req = request(&plan, &cfg);
+    let mut req = request(docs(), &plan, &cfg);
     req["cmds"] = json!([{"op": "drop", "id": "t4"}]);
 
     let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
@@ -713,7 +559,7 @@ fn a_plan_section_with_commands_is_refused() {
 fn a_request_without_a_plan_section_is_unchanged() {
     let cfg = tui_common::config();
     let plan = tui_common::day_plan(&cfg);
-    let mut req = request(&plan, &cfg);
+    let mut req = request(docs(), &plan, &cfg);
     req.as_object_mut().expect("an object").remove("plan");
 
     let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
