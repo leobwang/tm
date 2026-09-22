@@ -1524,6 +1524,31 @@ rebuilds the kernel it links (`tm/build.rs` only adds the toolchain `lib/` rpath
 `check.sh` with the workspace unrun is half an acceptance; say which half in
 the commit if it is all you have.
 
+**"0 failed" from ONE run is a probabilistic claim, so say how many runs you
+made** (owner **D46**, 2026-09-22; README gaps 1316 and 1360). Four of the
+workspace's suites are `proptest`s, and a `proptest` draws fresh cases from the
+clock on every run: the number above is *this* run's verdict on *these* draws,
+not a property. An auditor ran the suite three times instead of once at W-23's
+close, **one of the three failed**, and the fresh seed had found a real
+pre-existing round-trip bug in `ItemLine::set_state_with_ci` that six stages of
+single runs had never drawn. So the acceptance line a block quotes now names its
+denominator — "1,397 passed / 0 failed across 81 binaries, **three runs**" — and
+a step that made one run says one. Three is the working minimum for a commit
+that touches parsing, editing, the planner or the log reader; one is enough for
+a documentation-only commit, said out loud.
+
+**A new line in a `.proptest-regressions` file is a FINDING to report and fix —
+never a dirty tree to revert** (same decision). Those files are **tracked**, and
+proptest appends the failing seed to the one beside the test. So a red run hands
+you a modified tracked file through no edit of your own, and the reflex that
+keeps a tree clean — `git checkout --` on the "unexpected" modification — throws
+away the only cheap evidence the bug exists. Commit the new seed with the fix:
+that turns a case drawn once into a case that runs every time, which is the same
+move as check 8's allow-list and check 9's roster — **the gate remembers what an
+auditor found by hand.** If the seed is genuinely not reproducible against the
+fixed code, say so and delete it deliberately, in the commit message; do not
+revert it silently.
+
 ---
 
 ## 8. The remaining stages

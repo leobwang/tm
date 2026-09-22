@@ -799,7 +799,7 @@ struct Tally {
     named: usize,
     replay_warnings: usize,
     /// C4: instances whose last record in file order is stamped before an earlier-logged
-    /// record of the same instance (quirk Q6(b) showing; [`q6b_separations`]).
+    /// record of the same instance (quirk Q6(b) showing).
     retro_instances: usize,
     /// C4: `(name, id?)` keys whose latest by instant is not their latest by date (carried note 3 showing).
     clock_back_keys: usize,
@@ -818,9 +818,9 @@ struct Tally {
     longest_leaks: usize,
     unknown: u64,
     energy_events: usize,
-    /// C5: energy observations whose sleep is a wake logged after them (late binding showing; [`day_separations`]).
+    /// C5: energy observations whose sleep is a wake logged after them (late binding showing).
     late_sleeps: usize,
-    /// C5: idle records on a day other than their own entry's (a gap on the day it began; [`day_separations`]).
+    /// C5: idle records on a day other than their own entry's (a gap on the day it began).
     early_gaps: usize,
     /// C6: seams, the days whose since-break anchor is a break's end (not a start), the idle marks by kind
     /// (pause, interrupt, unpause, resume, break), the view rows and the cancelled ones.

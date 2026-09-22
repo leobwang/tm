@@ -678,7 +678,7 @@ const ENTRY_DEPTH: usize = 2;
 /// names. So the fragment is indented here, by [`reindent`], exactly as
 /// serde_json's own `PrettyFormatter` would have indented the same value at
 /// [`ENTRY_DEPTH`].
-// (`entry_json`, which took a parsed `LogEntry` and re-serialised it with the
+// (entry_json, which took a parsed `LogEntry` and re-serialised it with the
 // writer, went at S with `Ctx::entries_at`'s old body: the kernel's `render`
 // hands back the bytes, so there is nothing left to re-serialise. The seam
 // below is the one that survived, unchanged, which is the point of it.)

@@ -325,7 +325,7 @@ can_fail
 1 Machine.last_cut
 1 NO_LOG
 1 Nat.not_le.mpr
-2 O_APPEND
+4 O_APPEND
 3 PlanCheck.dayPlan_block_rows_come_from_the_log
 1 Planner.dayPlan_spends_no_minutes_yet
 2 Planner.mem_stepOneRows
@@ -337,8 +337,8 @@ can_fail
 1 TM_FORK
 1 Tm.routine_lines_are_open
 1 UInt32.toNat_inj
-1 a_catch_up_sweep_leaves_one_archive_copy_per_id
-1 a_dangling_reference_is_a_warning_not_a_refusal
+2 a_catch_up_sweep_leaves_one_archive_copy_per_id
+2 a_dangling_reference_is_a_warning_not_a_refusal
 4 a_demoted_section_is_a_month_section
 1 a_line_dated_next_year_changes_no_fact_about_today
 4 a_pinned_section_is_a_day_section
@@ -351,10 +351,10 @@ can_fail
 1 append_repairs_a_missing_trailing_newline
 1 as_u64
 2 assert_eq!
-1 auto_close_catch_up_is_capped
-1 auto_close_catches_up_on_every_skipped_period
-1 auto_close_runs_each_period_once
-1 auto_close_without_history_catches_up_over_the_window
+2 auto_close_catch_up_is_capped
+2 auto_close_catches_up_on_every_skipped_period
+2 auto_close_runs_each_period_once
+2 auto_close_without_history_catches_up_over_the_window
 1 blockMinutes_empty
 1 by_contra
 1 cli_items__readopt_json
@@ -370,13 +370,13 @@ can_fail
 1 div_euclid
 1 dupId_carries_both_placements
 6 events_for
-8 events_named
+10 events_named
 7 every_scope_is_the_whole_replay_before_the_switch
 1 every_transform_keeps_lines_le_two
-1 field_error
-5 fit_replay
+2 field_error
+6 fit_replay
 1 fixture_log_serializes_back_byte_identically_and_is_snapshotted
-1 fork_read
+2 fork_read
 1 from_entries
 1 genesis_in_chunks_equals_one_call
 1 hard_link
@@ -406,11 +406,9 @@ can_fail
 1 logOp_eq_logOpFast
 5 log_len
 1 log_narrowed_facts
-7 log_replay__three_days_replay.snap
 1 log_warnings
 1 lp_TmKernel_Tm_Look_lookahead
 1 malformed_lines_are_warnings_not_errors
-2 max_places
 2 mem_stepOneRows
 1 mergeSort_cons
 1 move_to_a_day_pins_the_line
@@ -421,16 +419,16 @@ can_fail
 2 overflowing_add_signed
 1 pastRows_are_not_batch
 1 pending_closes
-1 pending_closes_names_what_auto_close_would_run
+2 pending_closes_names_what_auto_close_would_run
 1 period_str
 1 plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted
-3 preserve_order
+7 preserve_order
 1 range_keeps_only_the_requested_days
 4 raw_value
 7 read_log
-1 read_to_string
+2 read_to_string
 1 read_tolerates_a_line_that_is_not_utf8
-2 reader_tests
+3 reader_tests
 1 refuses_a_break_longer_than_a_day
 1 refuses_a_non_hex_digit
 1 refuses_a_priority_past_seven
@@ -447,7 +445,7 @@ can_fail
 1 resume_equals_genesis_at_fifty_cuts
 6 runCap_without_capacity_is_runWithLog
 2 rust_facts
-4 saturating_add
+6 saturating_add
 1 set_len
 1 set_var
 6 shipped_call_sites
@@ -457,14 +455,14 @@ can_fail
 3 the_log_op_answers_every_entrys_day
 1 the_response_run_emits_parses_back
 4 tm_kernel_call
-1 to_string
-4 to_string_pretty
+2 to_string
+6 to_string_pretty
 1 too_big
 1 trim_end_matches
 2 try_from
 2 var_os
 4 withFloor_is_the_floor_pass
-1 write_all
+2 write_all
 
 
 # ======== 5. VOCABULARY, camelCase (uncounted) -- D41, W-20 ========
@@ -545,7 +543,7 @@ unknownIdentifier
 1 Planner.pickFrom
 1 Planner.stepOneDiagnostics
 2 Planner.stepOneRows
-19 badDay0
+20 badDay0
 2 day0Wf
 3 blockMinutes
 2 capMin?
@@ -553,7 +551,7 @@ unknownIdentifier
 6 dayPlan?
 1 demoteTarget
 2 endMin
-1 entitiesOfDoc
+2 entitiesOfDoc
 1 findDoc
 1 horizonSec
 5 logOpFast
@@ -613,19 +611,19 @@ unknownIdentifier
 1 GlobalDelta
 2 LogEvent
 1 NamedEvent
-3 NotFinite
-1 NotUtf8
+4 NotFinite
+2 NotUtf8
 1 NumberOutOfRange
 6 PErr.notAnItem
 1 Plan.keysWf
-14 ReachTooFar
+16 ReachTooFar
 1 Scope.openEnded
 1 SilentVerbUndo
 2 String.utf8BytePos
 1 TmKernel.olean
 1 TooManyPlaces
 2 Tree.effectiveDue
-1 UndoMask
+2 UndoMask
 3 blockJson
 3 completionJson
 2 dayBlockJson
@@ -654,3 +652,77 @@ unknownIdentifier
 1 splitKey
 2 targetStep
 1 winOutJson
+
+# ======== 9. THE RUST COMMENTS (W-24, README gap 1313 item 3) ========
+#
+# Rust prose became a swept SOURCE at W-24, and these are the names it cites that none of
+# the seven declaration sets answers.  The sweep's own yield is NOT here: the six live
+# stale citations it found -- q6b_separations and day_separations (rustdoc links to
+# nothing), energy_mae and energy_bias (backticked inside the sentence saying they were
+# invented), calendar_date and entry_json (past-tense removals) -- were REPAIRED in the
+# prose, and a seventh, sectionOf, was a citation of a `Plan.lean` definition that has
+# never existed, written in this very step and caught by the gate it was building.
+# Eleven more resolved by widening source 3 with function PARAMETERS, which is where a
+# doc comment naming its own `fn`'s argument should resolve.
+#
+# UNCOUNTED, because every one is a real referent this repository does not declare and
+# the citation is correct prose: std (FromStr, unwrap_or, include_str!, RUST_MIN_STACK),
+# chrono (num_days_from_ce, with_minute), serde (deny_unknown_fields, to_value), clap
+# (allow_hyphen_values, subcommand_help_heading, subcommand_value_name), crossterm
+# (EnableMouseCapture), Linux (clear_refs, a /proc file), two named algorithms
+# (civil_from_days, init_by_array), the FORK's own struct (InstanceExt), a Claude Code
+# hook payload key (file_path), a spec timeline column (pN, tm-spec-v1.md:377) and a
+# naming convention (snake_case).
+EnableMouseCapture
+FromStr
+InstanceExt
+RUST_MIN_STACK
+allow_hyphen_values
+civil_from_days
+clear_refs
+deny_unknown_fields
+file_path
+include_str!
+init_by_array
+num_days_from_ce
+pN
+snake_case
+subcommand_help_heading
+subcommand_value_name
+to_value
+unwrap_or
+with_minute
+#
+# COUNTED, and the two categories are this sweep's own declared blind spots.
+#
+#   * RUST ENUM VARIANTS.  `RUST_DECL` reads fn/struct/enum/const/static/type/trait/mod/
+#     union and fields; it does NOT read the variants of an `enum`, where source 1 DOES
+#     read the constructors of a Lean `inductive`.  So `PrioClass::HotFlag`
+#     (priority.rs:752), `CloseFold::CopyMergingFolding`'s CopyMerging and DuplicateId
+#     are declarations of this repository that the checker cannot see.  Counted, not
+#     uncounted, because the entry is standing in for a missing declaration source and a
+#     variant that is genuinely DELETED later should still land in a diff.  The cost is
+#     declared: a NEW doc comment citing an enum variant fails this check until it is
+#     adjudicated here.  Three names today; README gap 1362 prices closing it properly.
+#     The caps carry the README block that RECORDS them, which is the tax arriving
+#     immediately and is why the gap is open: these three sentences are correct prose
+#     about live variants, and each one had to be counted before this file would pass.
+4 HotFlag
+2 CopyMerging
+2 DuplicateId
+#
+#   * TWO ENTRIES LEFT THIS FILE at the same step, and the two reasons are opposite.
+#     `max_places` x2 was exempt because nothing declared it; it is a PARAMETER of
+#     `kernel_capacity.rs`'s own function and source 3 now resolves it correctly, so the
+#     exemption is gone and the citation is checked.  `log_replay__three_days_replay.snap`
+#     x7 now resolves INCORRECTLY -- on its LAST dotted segment, `snap`, against some
+#     parameter of that name -- which is the blind spot citations.py's header names
+#     first and largest, here with a live instance for the first time (README gap 1363).
+#     It is removed rather than kept as a dead entry, because an exemption that exempts
+#     nothing is the check reporting green about a name it is no longer reading.
+#
+#   * A `let` BINDING cited from prose.  Measured and declined at the same step: reading
+#     `let` names into source 3 adds 896 distinct short names for two resolutions, which
+#     is a large laundering surface bought for nothing.  Two names today.
+1 ghost_y
+2 max_energy

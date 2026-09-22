@@ -441,11 +441,12 @@ fn the_kernel_and_the_fork_agree_on_a_batch_row() {
 /// **One row of every kind the fork can produce**, because the fixture day has
 /// four of ten.
 ///
-/// `Rest`, `Lost`, `Sleep` and `WindDown` are the kinds whose *title* carries a
-/// duration (`rest 20m`, `lost 20m`, `sleep 8h`, `wind-down · bed 22:00`), and
-/// the fixture never places one; without this, `Emit.titleCell`'s four
-/// corresponding branches are unwitnessed by any machine and a change to them
-/// leaves every other test in this repository green.
+/// `SegKind::Rest`, `SegKind::Lost`, `SegKind::Sleep` and `SegKind::WindDown`
+/// are the kinds whose *title* carries a duration (`rest 20m`, `lost 20m`,
+/// `sleep 8h`, `wind-down · bed 22:00`), and the fixture never places one;
+/// without this, `Emit.titleCell`'s four corresponding branches are unwitnessed
+/// by any machine and a change to them leaves every other test in this
+/// repository green.
 ///
 /// Each kind is placed twice — once with an item of the fixture tree and once
 /// without — because `title_cell`'s fallback (`—`, `routine`, `sleep`) only
