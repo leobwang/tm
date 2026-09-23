@@ -51,7 +51,7 @@ mod rowwire;
 use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
+use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
@@ -398,6 +398,11 @@ struct World {
     model: Model,
     now: DateTime<Tz>,
     state: RuntimeState,
+    /// **The generated log, kept as bytes** (stage 6 W-28, step R2's response
+    /// half): `Planner.PlanReq.run` is this call's own replay through D24's
+    /// seam, so the kernel is handed the same lines the fork's `Replay` was
+    /// built from and resumes them itself.
+    log: String,
     /// **The four generated files, kept as bytes** (stage 6 W-25, step R2).
     /// `Tree::from_texts` consumes them and hands back the fork's reading; the
     /// kernel is given the same bytes and does its own, which is the whole
@@ -420,7 +425,8 @@ fn build(case: &Case) -> World {
     ];
     let tree = Tree::from_texts(&files, &cfg);
     let docs = files.iter().map(|(p, t)| ((*p).to_string(), (*t).to_string())).collect();
-    let replay = chokepoint::replay_of_text(&log_text(case, tz), tz);
+    let log = log_text(case, tz);
+    let replay = chokepoint::replay_of_text(&log, tz);
     let now = case.now(tz);
     let arrival = NaiveTime::from_hms_opt(case.arrival_hour(), 0, 0).expect("time");
     let state = RuntimeState {
@@ -459,6 +465,7 @@ fn build(case: &Case) -> World {
     World {
         tree,
         cfg,
+        log,
         replay,
         model: Model::default(),
         now,
@@ -1134,6 +1141,269 @@ proptest! {
         eprintln!(
             "planner_invariants census: {cases} cases, {rows} rows compared, \
              note-hole {notes}, est-hole {ests}, parent-cells {parents}"
+        );
+    }
+}
+
+// ===========================================================================
+// **THE KERNEL PLANS THE DAY** — stage 6 W-28, step R2's RESPONSE half (D48).
+//
+// The arm above sends the FORK's day through the `plan` section and compares
+// the kernel's rendering of it. This one asks the kernel to **plan**, through
+// `PlanWire.callExport`, and compares two planners.
+//
+// **What is compared, and why not everything, measured rather than assumed.**
+// `Planner.dayRows` is §8.2 steps 1 and 2 and nothing else; steps 3 to 7 are
+// P3..P7 and unwritten, and README gap **1670** records that the kernel's day
+// therefore holds no step-5 assignment at all. Asserting segment-for-segment
+// equality would be asserting something untrue of a half-built planner, and
+// narrowing the generator until it came out true is what **D46** forbids. So
+// this compares the answers the kernel is *complete* for:
+//
+//   * `plan.day`, the date it planned;
+//   * `plan.window`, §8.1's working window — `Look.day0Window` on one side and
+//     `Planner::window_and_budget` on the other, two readers README gap **320**
+//     says can disagree, so a disagreement here is a **finding owed a parity
+//     number** and not a hole to widen;
+//   * `plan.budgetBlocks`;
+//   * and **the walls**, the one row class step 1 completes, which §8.3's own
+//     "walls are never moved" invariant is about — compared to the minute, both
+//     ways, so a wall the kernel invents fails as loudly as one it drops.
+//
+// Everything else the kernel places (the routine rows, the replayed past, the
+// rest/wind-down/sleep filler) is COUNTED and reported and asserted on only
+// through the refusal claim, because the fork's day for those rows is the
+// output of steps this kernel has not written.
+//
+// **The `routines` key is sent EMPTY on purpose.** Which occurrences are due
+// today is F2's recurrence expansion (track K3, not built) and D34 forbids
+// doing D27 early, so a host collects them; this arm has no honest collector
+// and sending a guess would compare the kernel against a list the fork never
+// saw. The kernel therefore places no step-2 routine row here, which is why the
+// comparison is stated over walls.
+// ===========================================================================
+
+/// `(cases, walls compared, kernel rows seen, window disagreements,
+/// budget disagreements)`.
+static PLAN_CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+
+/// A `NaiveTime` as the wire's `HH:MM`.
+fn hhmm(t: NaiveTime) -> String {
+    format!("{:02}:{:02}", t.hour(), t.minute())
+}
+
+/// The absolute second of a local time on [`DAY`].
+fn day_sec(tz: Tz, t: NaiveTime) -> i64 {
+    rowwire::kernel_sec(local_dt(tz, date(), t))
+}
+
+impl World {
+    /// **The whole request the kernel plans from**: the generated documents,
+    /// the generated log through D24's seam, the capacity section over
+    /// `Config::default()`, and the `planner` section §9's runtime rows live in.
+    ///
+    /// The lookahead's own inputs — `pLounge`, `arrival`, `prior`, `homeMaxCi`,
+    /// `posterior`, `sleep`, `priority` and `days` — are the shipped defaults
+    /// spelled here rather than read off `Config`, and **none of them reaches
+    /// what this arm compares**: §8.1's window is `[day]`, the stored window and
+    /// the walls, and the walls are the documents'. They are here because the
+    /// capacity section must decode for the planner section to be read at all.
+    fn plan_request(&self) -> Value {
+        let tz = self.cfg.tz;
+        let week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        let p_config: serde_json::Map<String, Value> = week
+            .iter()
+            .map(|k| ((*k).to_string(), json!({"num": "1000000", "den": "1000000"})))
+            .collect();
+        let arrival_tbl: serde_json::Map<String, Value> = week
+            .iter()
+            .map(|k| ((*k).to_string(), json!(hhmm(self.state.arrival.unwrap_or_default()))))
+            .collect();
+        let step = |from: u64, to: Option<u64>, level: u8| {
+            json!({"from": {"num": from, "den": 1},
+                   "to": to.map(|t| json!({"num": t, "den": 1})), "level": level})
+        };
+        let d = &self.cfg.day;
+        let capacity = json!({
+            "pLounge": {"config": p_config},
+            "arrival": {"config": arrival_tbl},
+            "prior": {
+                "lounge": [step(0, Some(4), 5), step(4, Some(8), 3), step(8, None, 1)],
+                "home": [step(0, Some(6), 3), step(6, None, 2)]},
+            "homeMaxCi": 3,
+            "day": {"breakMin": d.break_min, "breakAfterBlocks": d.break_after_blocks,
+                    "minLastBlockMin": d.min_last_block_min,
+                    "windowHours": {"num": 8, "den": 1}, "windowCap": hhmm(d.window_cap),
+                    "budgetRatio": {"num": 3, "den": 4},
+                    "windDown": hhmm(d.wind_down), "bed": hhmm(d.bed)},
+            "priority": {"bins": [{"num": 1, "den": 2}, {"num": 1, "den": 4},
+                                  {"num": 1, "den": 10}],
+                         "safety": {"num": 13, "den": 10}, "defaultPriority": 3,
+                         "batchMaxMin": 20},
+            "days": 7,
+            "at": self.now.to_rfc3339(),
+            "state": {
+                "date": self.state.date.map(|x| x.to_string()),
+                "window": self.state.window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
+                "budget": self.state.budget,
+                "arrival": self.state.arrival.map(hhmm),
+                "loc": self.state.loc,
+                "allowHome": false},
+            "posterior": {"fullHours": {"num": 3, "den": 1}, "zeroHours": {"num": 6, "den": 1}},
+            "sleep": {"shiftModel": null, "shiftConfig": {"neg": false, "num": 1, "den": 1},
+                      "underHours": {"num": 7, "den": 1}},
+            "candidates": {"hysteresis": false, "items": []},
+        });
+        let mut runtime = serde_json::Map::new();
+        if let Some(a) = &self.state.active {
+            runtime.insert(
+                "active".to_string(),
+                json!({"id": a.id.to_string(), "started": day_sec(tz, a.started),
+                       "estMin": a.est_min, "paused": a.paused}),
+            );
+        }
+        if let Some(i) = &self.state.interrupt {
+            if let Some(started) = i.started {
+                runtime.insert(
+                    "interrupt".to_string(),
+                    json!({"started": day_sec(tz, started),
+                           "id": i.id.as_ref().map(ToString::to_string)}),
+                );
+            }
+        }
+        json!({
+            "docs": self.docs_json(),
+            "now": DAY,
+            "blockMin": self.cfg.block_min(),
+            "tz": rowwire::tz_table::wire_for(None, tz),
+            "log": {"ckpt": null, "from": 1,
+                    "lines": self.log.lines().collect::<Vec<_>>(),
+                    "terminated": true, "reseal": null,
+                    "want": {"facts": true, "headersFrom": null, "render": []},
+                    "sealed": null},
+            "capacity": capacity,
+            "planner": {"state": Value::Object(runtime), "routines": []},
+        })
+    }
+}
+
+/// The kernel's own day for a request, or the refusal it answered.
+fn kernel_plan(req: &Value) -> Result<Value, String> {
+    let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
+    let resp: Value = serde_json::from_str(&raw).expect("the response is json");
+    if resp["ok"]["plan"]["day"].is_null() {
+        return Err(raw);
+    }
+    Ok(resp["ok"]["plan"].clone())
+}
+
+/// `(start, stop)` of every Wall row of a kernel day, in the day's order.
+fn kernel_walls(plan: &Value) -> Vec<(i64, i64)> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| s["kind"] == "wall")
+        .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1)))
+        .collect()
+}
+
+/// The same, off the fork's day.
+fn fork_walls(day: &DayPlan) -> Vec<(i64, i64)> {
+    day.segments
+        .iter()
+        .filter(|s| matches!(s.kind, SegKind::Wall))
+        .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end)))
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel plans the same day the fork plans**, as far as the kernel
+    /// is built to plan it — see this section's header for exactly how far, and
+    /// why the line is where it is.
+    #[test]
+    fn the_kernel_plans_the_day_the_fork_plans(case in case_strategy()) {
+        let w = build(&case);
+        let fork = planner::plan(&w.input(&w.state, w.now));
+        let req = w.plan_request();
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+
+        // **The date.**
+        let fork_date = fork.date.to_string();
+        prop_assert_eq!(
+            plan["day"].as_str(), Some(fork_date.as_str()),
+            "the two planners planned different days"
+        );
+
+        // **§8.1's window and budget**, the two readers README gap 320 is about.
+        let (klo, khi) = (
+            plan["window"]["lo"].as_i64().unwrap_or(-1),
+            plan["window"]["hi"].as_i64().unwrap_or(-1),
+        );
+        let (flo, fhi) = (
+            rowwire::kernel_sec(fork.window.0),
+            rowwire::kernel_sec(fork.window.1),
+        );
+        let window_differs = (klo, khi) != (flo, fhi);
+        let budget_differs =
+            plan["budgetBlocks"].as_u64() != Some(u64::from(fork.budget_blocks));
+
+        // **The walls, to the minute, both ways.**
+        let kw = kernel_walls(&plan);
+        let fw = fork_walls(&fork);
+        prop_assert_eq!(
+            &kw, &fw,
+            "the two planners disagree about §8.2 step 1's walls \
+             (kernel {:?}, fork {:?})", kw, fw
+        );
+
+        let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
+        let [cases, walls, seen, wdiff, bdiff] = {
+            let mut c = PLAN_CENSUS.lock().expect("census");
+            c[0] += 1;
+            c[1] += kw.len() as u64;
+            c[2] += rows;
+            c[3] += u64::from(window_differs);
+            c[4] += u64::from(budget_differs);
+            *c
+        };
+        // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
+        // that planned nothing on either side produces "every wall agreed" too
+        // (AGENTS §9.2).
+        if cases >= 32 {
+            prop_assert!(walls > 0, "no wall was compared in {cases} cases");
+            prop_assert!(seen >= cases, "the kernel answered {seen} rows over {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants plan census: {cases} cases, {walls} walls compared, \
+             {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}"
+        );
+        // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a
+        // budget that differs is a finding: README gap 320's two readers, one of
+        // them wrong, and the parity register is where a deliberate divergence
+        // goes (check 10 says the next free number). They are asserted LAST so
+        // the wall comparison above is reached on every case.
+        prop_assert!(!window_differs, "§8.1's window: kernel ({klo}, {khi}), fork ({flo}, {fhi})");
+        prop_assert!(
+            !budget_differs,
+            "§8.1's budget: kernel {:?}, fork {}", plan["budgetBlocks"], fork.budget_blocks
         );
     }
 }

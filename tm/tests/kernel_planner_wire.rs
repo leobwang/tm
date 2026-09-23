@@ -14,11 +14,11 @@
 //! off the response. A decoder whose refusals no caller can reach is the defect
 //! `Emit.lean`'s own header records from W-22 (README gap 1331).
 //!
-//! **What it does NOT show.** The response half of D48 is owed (README gap
-//! 1667): a `planner` section that *decodes* leaves the answer byte for byte
-//! what `EmitWire.runRows` gave, and
-//! [`a_readable_planner_section_changes_no_byte`] is that stated as a test so
-//! the step that builds the response half is the step that deletes it.
+//! **And since W-28 the call ANSWERS** (D48's response half, README gap 1667):
+//! a `planner` section that decodes puts `Planner.dayPlan`'s seven keys into
+//! the same `plan` object `EmitWire.withPlan` writes `rows` into, so the
+//! refusals below are now refusals to build a request the kernel would
+//! otherwise have planned.
 
 #[allow(dead_code)]
 #[path = "../src/cli/tz_table.rs"]
@@ -100,8 +100,16 @@ fn capacity(batch: Option<Value>, with_at: bool) -> Value {
 /// `kernel_unit_reserve.rs` splices it (the checkpoint's keys are read in build
 /// order, so nothing about that section may go through `serde_json::Value`).
 fn request_with(planner: Option<Value>, cap: Option<Value>) -> String {
+    request_with_docs(planner, cap, json!([]))
+}
+
+/// The same, over documents the kernel parses itself — what a request needs
+/// before `Planner.mkRoutines?` can accept a window instance, since
+/// `Planner.mkRoutine?` refuses an id the plan does not hold and an item that
+/// declares no window (README gap 285).
+fn request_with_docs(planner: Option<Value>, cap: Option<Value>, docs: Value) -> String {
     let mut body = json!({
-        "docs": [], "now": TODAY, "blockMin": 60,
+        "docs": docs, "now": TODAY, "blockMin": 60,
         "tz": tz_table::probe(chrono_tz::UTC).to_wire()});
     if let Some(c) = cap {
         body["capacity"] = c;
@@ -127,6 +135,13 @@ fn call(req: &str) -> Value {
 /// `{"err":{"planner":"<text>"}}`, or `None` when the call was answered.
 fn planner_err(resp: &Value) -> Option<String> {
     resp["err"]["planner"].as_str().map(str::to_string)
+}
+
+/// Two routine items the plan holds, each declaring a window (§4.3).
+fn routine_docs() -> Value {
+    json!([{"path": "routines.md",
+            "lines": ["- lunch      win:11:30-13:30 dur:30m  every:day",
+                      "- shower     win:07:00-23:00 dur:20m  every:day"]}])
 }
 
 /// A `state` section wrapped as the whole planner section.
@@ -155,20 +170,67 @@ fn a_request_without_a_planner_section_is_answered_as_before() {
     );
 }
 
-/// **A readable section changes no byte of the answer.**
+/// **A readable section ANSWERS THE DAY** — D48's response half, README gap
+/// **1667**, landed at W-28.
 ///
-/// This is the shape of the debt, not of the feature: D48's response half —
-/// `plan.day`, `plan.window`, `plan.budgetBlocks`, `plan.segments`,
-/// `plan.diagnostics`, `plan.priorities` and `plan.hash` — is README gap
-/// **1667** and is not built. When it is, this assertion is the one that has to
-/// change, and it says so here rather than in a comment somewhere else.
+/// This replaces a_readable_planner_section_changes_no_byte, which W-27 wrote
+/// as the shape of the debt rather than of the feature and said in its own
+/// doc comment that the step building the response would be the step changing
+/// it. Both names are written without backticks because neither exists.
 #[test]
-fn a_readable_planner_section_changes_no_byte() {
-    let bare = tm_kernel_ffi::call(&request(None)).expect("call");
-    let with_section = tm_kernel_ffi::call(&request(Some(json!({})))).expect("call");
+fn a_readable_planner_section_answers_the_day() {
+    let bare = call(&request(None));
+    let with_section = call(&request(Some(json!({}))));
+    assert!(
+        bare["ok"]["plan"].is_null(),
+        "a request with no planner section answered a plan object: {bare}"
+    );
+    let plan = &with_section["ok"]["plan"];
+    assert!(
+        !plan.is_null(),
+        "a readable planner section answered no plan: {with_section}"
+    );
+    for k in [
+        "day",
+        "window",
+        "budgetBlocks",
+        "segments",
+        "diagnostics",
+        "priorities",
+        "hash",
+    ] {
+        assert!(!plan[k].is_null(), "no plan.{k} in {with_section}");
+    }
+    assert_eq!(plan["day"].as_str(), Some(TODAY), "{with_section}");
     assert_eq!(
-        bare, with_section,
-        "an empty planner section moved a byte of the answer"
+        plan["hash"].as_str().map(str::len),
+        Some(16),
+        "the hash is not sixteen hex digits: {with_section}"
+    );
+    assert!(
+        plan["window"]["lo"].as_i64().unwrap_or(0) < plan["window"]["hi"].as_i64().unwrap_or(0),
+        "the window does not run forwards: {with_section}"
+    );
+}
+
+/// **The two writers of the `plan` key share one object** — `rows` is
+/// `EmitWire.withPlan`'s and the seven above are `PlanWire.planJson`'s, and
+/// `PlanWire.the_plan_objects_keys_are_disjoint` says they cannot collide.
+/// Driven here because a Lean theorem cannot see which object the linked
+/// archive actually writes into.
+#[test]
+fn the_rows_and_the_day_share_one_plan_object() {
+    let mut body: Value =
+        serde_json::from_str(&request(Some(json!({})))).expect("the request is json");
+    body["plan"] = json!({"bed": "22:00", "priorities": [], "segments": []});
+    let resp = call(&body.to_string());
+    let plan = &resp["ok"]["plan"];
+    assert!(plan["rows"].is_array(), "no plan.rows beside the day: {resp}");
+    assert!(!plan["day"].is_null(), "no plan.day beside the rows: {resp}");
+    assert_eq!(
+        plan["rows"].as_array().map(Vec::len),
+        Some(0),
+        "an empty `plan` section rendered rows: {resp}"
     );
 }
 
@@ -392,7 +454,7 @@ fn an_override_estimate_past_the_forks_u32_is_refused() {
 /// same section, with every record inside its bound, is answered.
 #[test]
 fn a_day_with_everything_running_is_accepted() {
-    let resp = call(&request(Some(json!({
+    let resp = call(&request_with_docs(Some(json!({
         "state": {
             "active": {"id": "m2", "started": NOW - 900, "estMin": 60, "paused": false},
             "break": {"started": NOW - 300, "plannedMin": 10, "place": "walk"},
@@ -410,10 +472,80 @@ fn a_day_with_everything_running_is_accepted() {
             "extra": [{"id": "m2", "min": 30}],
             "drop": ["m3"]
         }
-    }))));
+    })), Some(capacity(Some(json!(20)), true)), routine_docs()));
     assert_eq!(
         planner_err(&resp),
         None,
         "a day inside every bound was refused: {resp}"
+    );
+    // **And the day it answers is a day, not an empty one.** Without this the
+    // test above is satisfied by any response at all (AGENTS §9.2's "a check no
+    // input can fail"): §8.2 step 2 places the mandatory instance and step 1
+    // replays the open interruption, so both rows are here by name.
+    let segs = resp["ok"]["plan"]["segments"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no plan.segments: {resp}"));
+    let kinds: Vec<&str> = segs.iter().filter_map(|s| s["kind"].as_str()).collect();
+    assert!(
+        kinds.contains(&"routine"),
+        "the mandatory window instance was not placed: {kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"lost"),
+        "§9's running interruption did not reach the day: {kinds:?}"
+    );
+    assert!(
+        segs.iter()
+            .any(|s| s["kind"] == "routine" && s["item"] == "shower" && s["planned"] == 20),
+        "the routine row is not the instance the request sent: {resp}"
+    );
+}
+
+/// **A window instance the plan does not hold is refused BY ITS ID.**
+///
+/// The request half decoded `routines` without a plan; the response half
+/// assembles `Planner.PlanReq`, so `Planner.mkRoutine?`'s own rules — an
+/// unknown item, and README gap 285's "declares no window" — are now reachable
+/// from a host, with the id in the text so the caller can tell which of the
+/// instances it sent was refused.
+#[test]
+fn a_routine_the_plan_does_not_hold_is_refused_by_its_id() {
+    let resp = call(&request_with_docs(
+        Some(json!({"routines": [{"id": "lunch", "winLo": NOW, "winHi": NOW + 3600,
+                                  "durMin": 30}]})),
+        Some(capacity(Some(json!(20)), true)),
+        json!([]),
+    ));
+    assert_eq!(
+        planner_err(&resp).as_deref(),
+        Some("routineRefused unknownItem lunch"),
+        "{resp}"
+    );
+}
+
+/// **The seam's replay is the CAPACITY section's demand first** — so
+/// `PlannerRefusal.runAbsent` is a branch no host reaches today, and this test
+/// asserts the ordering that makes it unreachable rather than a refusal
+/// nothing can produce (AGENTS §9.2; the shape README gap 1672 established and
+/// W-28 reuses for the same reason one field along).
+///
+/// `Planner.PlanReq.run` is this call's own replay (D9, D24) and the seam
+/// carries a `Seal.Run` on exactly the requests it carries facts for
+/// (`Boundary.LogReq.seamRun`, and
+/// `PlanWire.the_seam_carries_its_run_exactly_when_it_carries_its_facts`). A
+/// request that asks for no facts never gets past `CapWire.Section.today0`,
+/// which refuses `day0WithoutLog` before the planner section is read. README
+/// gap **1783**.
+#[test]
+fn the_seams_replay_is_demanded_by_the_capacity_section_first() {
+    let body = request_with_docs(Some(json!({})), Some(capacity(Some(json!(20)), true)), json!([]));
+    let no_facts = body.replace(r#""facts":true"#, r#""facts":false"#);
+    assert_ne!(body, no_facts, "the log section's `facts` key moved");
+    let resp = call(&no_facts);
+    assert_eq!(planner_err(&resp), None, "the planner section answered: {resp}");
+    assert_eq!(
+        resp["err"]["capacity"].as_str(),
+        Some("day0WithoutLog"),
+        "{resp}"
     );
 }

@@ -56970,9 +56970,11 @@ decode refuses the call by its own name. A decoder whose refusals no caller can 
 `Emit.lean` landed as at W-22 (gap 1331) and this step does not repeat it.
 
 **A section that DOES decode leaves the answer byte for byte what `EmitWire.runRows` gave.**
-`runPlanner_with_a_readable_section_answers_as_runRows` is that as a theorem and
-`a_readable_planner_section_changes_no_byte` as a test, so the step that builds the response
+runPlanner_with_a_readable_section_answers_as_runRows is that as a theorem and
+a_readable_planner_section_changes_no_byte as a test, so the step that builds the response
 half is the step that deletes them. **The response half is gap 1667 and §6 prices it.**
+*(Both names are unbackticked as of **W-28**, which is that step: it deleted them and neither
+exists. The sentence is kept as written because it is the debt this campaign paid.)*
 
 `now` is the **capacity section's `at`** through `CapWire.readAt` — §9's three records are `wf`
 against an *instant*, and the request's top-level `now` is a `Day` through `Field.parseDate`;
@@ -58393,3 +58395,218 @@ and `kernel/corpus/` untouched; no memory bound raised — every `lake`, `lean`,
 MemorySwapMax=0`. Every plant was made in a `git archive HEAD` clone under `/tmp/claude-1000/`;
 `git status --porcelain` on the shared tree was checked before and after each and never held a
 perturbation. No parity number issued — the fork is unchanged by any of this; **next free P41**.
+
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-28**, **track P**.
+     Written per AGENTS §6.4: one block appended at the end, the gap list one
+     sequence, and every number below re-measured in this run.
+
+## Stage 6 — W-28, track P (step R2's RESPONSE half, D48): the kernel answers for a day, and two planners are compared
+
+**Range:** gaps **1780–1819** (track P's). **Taken here: 1780–1791.** Parity: **none issued**
+(P41 still free). Files: `kernel/TmKernel/TmKernel/PlanWire.lean`, `Boundary.lean`, `EmitWire.lean`,
+`SealWire.lean`, `kernel/TmKernel/Check.lean`, `kernel/citations-allow.txt`,
+`tm/tests/kernel_planner_wire.rs`, `tm/tests/planner_invariants.rs` and this file.
+
+### 1. R2 is complete: the response carries `Planner.dayPlan`
+
+`PlanWire.planJson` writes design §10.2's seven keys — `day`, `window`, `budgetBlocks`,
+`segments`, `diagnostics`, `priorities`, `hash` — into the **same `plan` object**
+`EmitWire.withPlan` writes `rows` into. The keys are disjoint
+(`the_plan_objects_keys_are_disjoint`, by `decide`), `intoPlan` walks past every key that is not
+`plan` and appends inside the one that is, and both shapes are stated concretely
+(`withPlanner_shares_the_plan_object`, `withPlanner_makes_the_plan_object`). Driven: a request
+carrying both sections comes back with `plan.rows` **and** `plan.day`
+(`the_rows_and_the_day_share_one_plan_object`).
+
+**Nothing is recomputed.** `planJson_of_a_planned_day_is_the_requests_own_views` is `rfl` and
+says every key is a view `Planner.PlanReq` already had: `r.today`, `Look.day0Window r.look`,
+`r.budgetBlocks`, `Planner.dayRows r`, `dayDiagnostics r`, `dayPriorities r`, and the hash. It
+is the theorem that makes "the kernel answers for the day it planned" checkable rather than
+asserted, and three of this run's four plants died on it or on its neighbours.
+
+**No bound is minted** (gap 1330). The response emits; the only new *numbers* on the wire are
+`Planner.hashHexLen`'s sixteen digits, through `Json.hexChar`, this kernel's one hex writer
+(`hashHex_length`, `hashHex_of_zero_reads_back`). `EmitWire.readKind` reads back every kind
+`kindName` writes, all eleven, so the section that reads a segment and the key that writes one
+are **one table** (`readKind_reads_back_every_kind_it_writes`).
+
+### 2. The two theorems that said the kernel answers nothing are DELETED
+
+W-27 proved runPlanner_with_a_readable_section_answers_as_runRows and wrote
+a_readable_planner_section_changes_no_byte deliberately, so that the step which built the
+response would be the step which deleted them. **This is that step**, and both are gone (written
+without backticks above because neither exists; `citations-allow.txt` gains nothing — the
+convention in its own header is that a dead name loses its backticks).
+
+**This is not a weakened law (D5).** The old Lean statement said the response *equals*
+`EmitWire.runRows`'; its replacement `runPlanner_answers_the_day` says the response is
+`EmitWire.runRows`' **with the day's seven keys added**. The old statement is not weaker than the
+new one — it is **false of the new definition**, which is the only way a debt-shaped theorem can
+be discharged. The Rust twin is replaced by `a_readable_planner_section_answers_the_day`, which
+asserts all seven keys are present, that `plan.day` is the day requested, that the hash is
+sixteen digits and that the window runs forwards.
+
+**A third theorem went with them and was NOT replaced**:
+runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at, README gap **1672**'s
+unreachable branch. `Boundary.CapParts` hands the decoded instant out, so `runPlanner` no longer
+calls `CapWire.readAt` a second time and the branch does not exist to be documented. **Gap 1672
+is CLOSED, and so is gap 1671** (*"one reader, called twice"*): `now` is
+`parts.cap.look.today0.now`, which is the value `readAt` produced.
+
+### 3. What made it possible — the seam carries the RUN (gaps 1668 and 1669, both CLOSED)
+
+W-27 priced two obstacles and both are gone rather than worked around.
+
+**Gap 1668** said `PlannerWit.mkPlanReq?` is the only `PlanReq` assembler and lives in a module
+`mutate.py`'s `WITNESS_MODULES` requires to be a **leaf**. Nothing moved and nothing was
+re-implemented: `PlanWire.planReqOf` hands over values this call's own readers already produced,
+where `mkPlanReq?` decodes raw parts. Calling `loadPlan`, `Look.mkInput?` and `Seal.resumeRun` a
+second time is the defect gap 1325 records; the one obligation `mkPlanReq?` discharges that
+`planReqOf` must too is the **walls agreement** (gap 346), and it is checked by name,
+`wallsDisagree`.
+
+**Gap 1669** said `Boundary.runLoad` builds its `List ReqDoc` and hands out only the `WfPlan`. It
+is answered from the other side. `Boundary.CapParts` is what a capacity request decoded — the
+section's own bytes, the loaded `WfPlan`, the `ReqClock`, the `LogAnswer`, the `CapReq` and the
+`CandReq` — and `runCapZ` is now `(runCapZP …).map Prod.fst`, so there is **one match tree with
+two readers** (`runCapZ_is_runCapZP_bytes` is `rfl`; `runCapP_bytes` and
+`EmitWire.runRowsP_bytes` carry it up the pipeline). No document is read twice and nothing needs
+`ReqDoc` at all.
+
+**And `Planner.PlanReq.run` is a `Seal.Run`, which the seam did not carry.** D24's `LogAnswer`
+held the merged `Seal.Answer` the capacity reader wants and not the run the planner wants, so
+`LogAnswer` gains `run : Option Seal.Run` through `LogReq.seamRun`, guarded by `r.facts` exactly
+as `seamFacts` is. **That guard is load-bearing and was measured, not guessed**: the compiled op
+(`logOpZFast`) hands out `Seal.trimRun r.facts …`, and `Seal.trimRun_of_wanted_facts` is the new
+lemma saying a run whose answer was wanted is not trimmed at all — both fields `trimRun` touches
+are guarded by `wa`. Without the guard, `logOpZ_eq_logOpZFast`'s `h5` is **false** and W4's twin
+breaks; with it, the specification's run and the compiled run are the same value on exactly the
+requests the seam answers.
+
+### 4. `tm/tests/planner_invariants.rs` ASKS THE KERNEL FOR THE DAY
+
+`the_kernel_plans_the_day_the_fork_plans` builds the whole request from a generated world — the
+four documents, the generated log through D24's seam (`want.facts: true`), the capacity section
+over `Config::default()`'s `[day]`, and the `planner` section §9's runtime rows live in — calls
+`tm_kernel_call`, and compares `Planner.dayPlan`'s answer against `planner::plan`'s.
+
+**What it compares, and the line is where gap 1670 puts it.** `Planner.dayRows` is §8.2 steps 1
+and 2 and nothing else; steps 3–7 are P3..P7 and gap **1670** records that the kernel's day holds
+no step-5 assignment at all. Segment-for-segment equality would be asserting something untrue of
+a half-built planner, and narrowing the generator until it came out true is what **D46** forbids.
+So the arm compares the answers the kernel is **complete** for — `plan.day`, `plan.window`,
+`plan.budgetBlocks` — and **the walls**, the one row class step 1 completes and the one §8.3's
+own *walls are never moved* invariant is about, to the second and **both ways**.
+
+**Measured, from the committed harness** (`cargo test --test planner_invariants -- --nocapture
+the_kernel_plans_the_day`, the census printed on every case):
+
+```
+planner_invariants plan census: 76 cases, 122 walls compared, 600 kernel rows,
+                                window-differs 0, budget-differs 0
+```
+
+**Disagreements: none, and here is which of the two that is.** README gap **320** records that
+`Look.day0Window` and fork `Planner::window_and_budget` read §8.1's window from three different
+inputs, so a disagreement was the expected finding; across 76 generated days — late days whose
+window is pushed past the wind-down by a six-hour evening wall included — there were **zero**,
+on both the window and the budget. The arm is **reaching** the values: plant 2 below changes a
+wall by sixty seconds in the kernel and the arm fails naming both lists. Every plant aimed at the
+day, the window or the budget is caught by a Lean `rfl` **first** — they are pinned to
+`dayPlan`'s fields, which are pinned to the request's views — so the honest statement is that
+those three comparisons are backed by proofs and the Rust arm is the sentence that says the
+proofs are about the shipped archive.
+
+### 5. Driven — four plants in a clone, and which gate caught each
+
+`git archive HEAD | tar -x` into the scratch directory with the working tree's modified files
+copied over and `.lake`/`target` hard-linked in. `git status --porcelain` on the shared tree was
+read before the first plant and after the last and was **identical** — the eight files this run
+edits and nothing else; `grep -rn 'W-28 PLANT' kernel/ tm/` is empty in the shared tree and
+non-empty in the clone.
+
+| plant | verdict |
+|---|---|
+| `Planner.wallRows`' event row ends 60 s late | **Lean FAILED** at four sites in `Planner.lean` (1294, 1323, 6149, 6192) |
+| `PlanWire.segJson` emits `stop + 60` | **Lean stayed GREEN** (174 jobs, *Build completed successfully*); `the_kernel_plans_the_day_the_fork_plans` **FAILED**: *"the two planners disagree about §8.2 step 1's walls (kernel [(63924408000, 63924429660)], fork [(63924408000, 63924429600)])"* |
+| `PlanWire.planJson` emits `day + 1` | **Lean FAILED** at `planJson_of_a_planned_day_is_the_requests_own_views` |
+| `Look.day0Window`'s stored branch ends 60 s late | **Lean FAILED** at `Lookahead.lean:4220`, a stage-5 `decide` |
+
+The second is the one that says what the Rust arm is for: three of the four plants break a proof
+before any binary is linked, so the proofs are the tighter gate — but **a proof cannot see which
+definition the linked archive exports**, and the second plant is invisible to all of them.
+
+### 6. What R3 needs, and what now stands in its way
+
+**Nothing but the deletion.** R3 deletes `tm-core/src/planner.rs` with its last caller, kills gap
+94's two reserves, closes or records gap 116, and unblocks D27 (gaps 113/114/116). Every
+structural obstacle W-27 and W-25 named is discharged:
+
+* the planner's **inputs** cross the wire — W-27;
+* the planner's **outputs** cross the wire — this run;
+* `Planner.dayPlan` is reachable from `tm_kernel_call` and a Rust property test calls it — this
+  run, driven;
+* gaps **1667**, **1668**, **1669**, **1671** and **1672** are closed.
+
+**What R3 will find, said now so it is not a surprise.** `tm-core/src/planner.rs`'s last callers
+are the shipped verbs, and they need every row class §8.2 builds — steps 3 to 7 — which this
+kernel does not have (gap **1670**). So R3 as *the deletion of the file* is unblocked only if
+D48's reading holds that R3 deletes the **fork's planner as a comparand**, not as the binary's
+planner; if the binary must plan with the kernel on the day R3 lands, **P3–P7 are R3's true
+precondition** and no wire work removes them. That is a decision the owner has and this run does
+not; it is gap **1790** and it is the one sentence the next brief needs.
+
+### 7. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1780** | `planReqOf`'s `candsPastCap` branch is **unreachable and kept**: `readCands` guards at `CapWire.maxCandidates` and `Capped.ofList?` at `Planner.maxCands`, which `the_two_candidate_caps_are_one_number` proves are one number — but no lemma carries `readCands`' *length* guard to the constructor | `PlanWire.planReqOf` | a reader takes the branch for a reachable one; the honest removal is a `Capped`-returning `readCands`, or a length lemma, about ten lines |
+| **1781** | **nothing states a law about `CapParts`' contents.** The eight `runCap_*` laws quantify over the bytes; that `parts.cap.look.today0.now` is `CapWire.readAt`'s answer — the sentence gap 1672's closure rests on — is a `rfl` nobody wrote | `Boundary.runCapZP` | the closure of 1671/1672 is argued in prose where it could be a theorem |
+| **1782** | `plan.hash` is `PlanHash.zero` on **every** day (`Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`), so the wire carries sixteen zeros and `planner_invariants.rs` cannot compare it to `DayPlan::hash` | `PlanWire.planJson` | P8 must delete the placeholder *and* the sentence here; a host comparing `state.last_plan_hash` against it would replan every minute |
+| **1783** | `PlannerRefusal.runAbsent` is **unreachable**: `CapWire.Section.today0` refuses `day0WithoutLog` when the seam carries no facts, and by `the_seam_carries_its_run_exactly_when_it_carries_its_facts` the run is absent exactly then | `PlanWire.planReqOf` | same class as 1672 before it closed; `kernel_planner_wire.rs` asserts the **ordering** rather than a refusal no host can produce. The honest removal is `CapParts` carrying `Seal.Run` non-optionally, which needs `readCapacityZ` to hand out the answer it already required |
+| **1784** | the new arm sends **`routines: []`**, so the kernel places no §8.2 step-2 row in it and the row comparison is stated over walls alone | `planner_invariants.rs` | which occurrences are due today is F2's (track K3) and D34 forbids doing D27 early; until a host-side collector exists, step 2 is compared only by `kernel_planner_wire.rs`'s one hand-built day |
+| **1785** | gap **1670** re-measured and unchanged: `Planner.dayRows` holds no §8.2 step-5 row, so no proptest can compare a kernel-planned day's **assignments** | `Planner.lean`'s `dayRows` | the new arm compares three day-level answers and the walls; the assignment half waits on P5 |
+| **1786** | `segJson` emits `inst` and `EmitWire.readSeg` builds every segment with `inst := none`, so a day the response emits does **not** round-trip through the `plan` section in that one field | `PlanWire.segJson` | a host that feeds a kernel-planned day back for rendering loses the `(item, inst)` pair; no cell reads it today |
+| **1787** | the new arm spells the lookahead's inputs (`pLounge`, `arrival`, `prior`, `homeMaxCi`, `posterior`, `sleep`, `priority`, `days`) as **literals** rather than reading `Config` | `planner_invariants.rs` | a `Config::default()` change moves the fork's day and not the kernel's, and the arm would report a disagreement that is the test's |
+| **1788** | **`mutate.py` leaves a live mutation in the shared tree when it is killed.** Observed this run: a `--verify --write` run was killed and `Emit.lean` was left with `pCell := []` committed-looking in `git status`. `restore_in_flight()` heals it on the *next* invocation, so a run that commits in between commits a plant | `kernel/mutate.py` | exactly W-26's failure mode, reachable without any agent error. Restored by hand here (`git checkout --`) and verified with `git status --porcelain` |
+| **1789** | the new arm compares neither `plan.priorities` nor `plan.diagnostics` | `planner_invariants.rs` | §7's ranking and §8.2 step 8 have a wire and no differential; `priorities` needs `capacity.candidates` from the same generated world, which is the next cheap widening |
+| **1790** | **R3's true precondition is undecided**: whether R3 deletes the fork's planner as a *comparand* (unblocked now) or as the *binary's* planner (which needs P3–P7) | `tm-core/src/planner.rs`, §14.5 | the next brief cannot be written without it; §6 above states both readings |
+| **1791** | `LogAnswer` lost its `deriving Repr` — `Seal.Run` carries `slept : Nat → Option Nat` and has none | `Boundary.lean` | nothing used it; a future `#eval` on a `LogAnswer` will not print |
+
+### 8. Acceptance, against the brief's baseline at `8e219c2`
+
+| gate | baseline | here | delta |
+|---|---|---|---|
+| `check.sh` | 10/10 | **10/10** | — |
+| axiom audit | 5,104 theorems | **5,129** | **+25**: this step's, all audited |
+| check 5 (FFI through the shim) | 93 | **93** | — |
+| check 8 | 38,048 citations, 264 files, 340 excluded by 15 rules, 0 unused | **38,364**, 264 files, 340 by 15 rules, 0 unused | **+316** — this block and the module prose. **No allow entry was added for a deleted name**: both lost their backticks in W-27's own sentence instead, which is `citations-allow.txt`'s own convention. One counted entry moved — the export symbol's, 6 → **8** — for the two sentences in §4 and §6 below that name it |
+| check 9 | 199 rostered, 0 owed | **228 rostered, 0 owed**, 31 bare pin sites | **+29**: 19 new, 10 re-audited after the theorems below |
+| check 10 | 40 registered (P1–P40), next free P41 | **identical**, P40's row re-anchored 57230 → 57232 (this block un-backticked two names two lines up) | — |
+| corpus | 29/37 and 4/5 | **29/37, 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — no goal discharged and none added |
+| `cargo test --workspace` | 1,459 / 0 / 9 across 86 binaries | **1,475 passed / 0 failed / 9 ignored across 86 binaries**, `--no-fail-fast`, **six runs, all identical** (D46) | **+16** |
+| the named suites | — | `cli_switch_acceptance` 16, `cli_latency` 5 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` **21**, `planner_invariants` **8**, `kernel_log_door` 23, `kernel_replay_parity` 29 (T5), `log_replay` 10 — **0 failed in every one** | — |
+
+`cli_latency` was run at load average 1.4 (gap 1333's threshold is another session's heavy
+load); `kernel_item_grammar`'s gap 1673 flake did not fire in any of the five runs.
+
+### 9. `mutate.py` found ten emitters pinned by NOTHING, and that is this step's own finding
+
+The first audit of this step's definitions came back **10 SURVIVED**: `routineErrName`, `optNum`,
+`optStr`, `pairJson`, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson`
+each survived `:= default` with `lake build TmKernel:static` reporting *Build completed
+successfully* — because every theorem written first was about the **shape of `planJson`** and
+none about the bytes any one emitter writes. A `planJson` whose `segments` key holds `null` on
+every row would have passed all of them.
+
+That is W-27's finding one module along (five optional readers, three theorems) and it is the
+second time this campaign has met it. Seven theorems answer it, each a concrete witness:
+`segJson_writes_every_field_of_a_segment` (every optional field present, which pins five
+emitters at once), `segJson_writes_null_for_every_absent_field`, `noteJson_names_the_eleven`,
+`diagJson_of_an_untroubled_day`, `diagJson_carries_its_lists`,
+`priosJson_is_the_id_and_the_priority` and `the_routine_errors_spell_themselves`. All ten
+re-audited **PINNED**.
+
+**The rule this adds to the campaign's own list**: a theorem about the *shape* of a response is
+not a theorem about its *values*, and `mutate.py` is the only thing that tells them apart.
