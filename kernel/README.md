@@ -58393,3 +58393,415 @@ and `kernel/corpus/` untouched; no memory bound raised — every `lake`, `lean`,
 MemorySwapMax=0`. Every plant was made in a `git archive HEAD` clone under `/tmp/claude-1000/`;
 `git status --porcelain` on the shared tree was checked before and after each and never held a
 perturbation. No parity number issued — the fork is unchanged by any of this; **next free P41**.
+
+<!-- =====================================================================
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-28**, **track G**.
+     This block's gap range is **1850-1869**; it takes **1850-1853** and
+     leaves **1854-1869** free.  Parity: **none issued** — `python3
+     parity.py` prints `next free P41`, and nothing here diverges from the
+     fork.
+     ===================================================================== -->
+
+## Stage 6, W-28 track G, 2026-09-23: the nine are re-verified against W-27, the DECODER axis gets its second payer, and the hole property loses two of its three blind spots
+
+**Commits.** One (`kernel:`), on branch `w28-g`. Files: `PlanCheck.lean`, `PlannerWit.lean`,
+`Goals.lean` (**prose only** — `grep -c '^theorem '` is **9** before and after), `Check.lean`,
+`kernel/mutations.txt` and this file. `Planner.lean`, `Emit.lean`, `EmitWire.lean`,
+`PlanWire.lean`, `Negative.lean`, `check.sh`, `citations.py`, `mutate.py`,
+`citations-allow.txt`, `corpus/`, every fixture and every line of Rust are **untouched**.
+
+### 1. The brief's item 1: THE NINE, re-verified against what W-27 changed
+
+The list exists — W-24 wrote it, W-25 and W-26 re-verified it, W-26 added the R3 column. This
+run re-checked **every row against the tree**, by the command in its last column, after W-27's
+three landings (D48's request half, D49's one writer, the totality scanner). **No entry moved,
+and the R3 column is still the same for all nine.**
+
+| # | goal | waits on | R3 | re-checked how, at `8e219c2` |
+|---|---|---|---|---|
+| 1 | `plan_does_not_overbook` | **P5** | before | `grep -c 'theorem overbook_has_no_subject_from_now'` → **1** |
+| 2 | `plan_respects_the_energy_filter` | **P5** | before | `grep -c 'theorem energyFilter_has_no_subject'` → **2** |
+| 3 | `plan_places_no_demanding_block_after_wind_down` | **P5** | before | `grep -c 'theorem windDown_has_no_subject'` → **2** |
+| 4 | `plan_is_monotone_in_rank` | **P5** | before | `grep -rnE '(def\|abbrev)[[:space:]]+eligibleAt'` over the library, the package root, `Check.lean`, `Negative.lean` and `Goals.lean`: **0 hits**, against **37** mentions of the name, every one prose |
+| 5 | `plan_puts_hot_before_the_queue` | **P5** | before | same grep |
+| 6 | `plan_never_drops_an_impossible_item` | **P8** | before | `Planner.dayDiagnostics`' body read: it sets `conflicts`, `aCapacityLost` and `notes` over `Diagnostics.empty` and **never `impossible`** (gap 1065) |
+| 7 | `plan_never_batches_past_an_equal_ci_candidate` | **P5** | before | `grep -c 'theorem batch_has_no_subject'` → **2** |
+| 8 | `plan_tail_drop` | **G2 ← G1 ← P5** | before | only the refutation is in the tree; no restatement, no cheat |
+| 9 | `plan_is_stable_across_a_replan` | **G3 ← G1 ← P5** | before | same, and an_open_segment_only_extends (un-backticked for check 8's reason) is still declared nowhere |
+
+**The one edit six of them wait on is still unmade**, and that was checked rather than assumed:
+`Planner.dayRows` is still
+`sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.optionalRows ++
+r.restRows).map segOf)` — no row of step 5's in it.
+
+**W-27 did not make `Planner.dayPlan` reachable, and here is the sweep rather than the claim:**
+
+```
+$ grep -rn '\bdayPlan\b' TmKernel/*.lean TmKernel.lean | grep -v 'PlanCheck\|PlannerWit\|Planner.lean'
+TmKernel/Emit.lean:388:  let d := dayPlan r                        <-- the ONE call
+TmKernel/Emit.lean:457,462,463                                     (rowsOf's own two theorems)
+TmKernel/PlanWire.lean:8,68,69,71,89,890                           (prose, six lines)
+TmKernel/EmitWire.lean:25,115  TmKernel/Lookahead.lean:27,572,1425,2343   (prose)
+
+$ grep -rn 'Emit\.rowsOf' TmKernel/*.lean
+TmKernel/EmitWire.lean:24,627   TmKernel/PlannerWit.lean:4471,4530          (prose)
+TmKernel/PlannerWit.lean:4535:    (Emit.rowsOf theRoutineRequest).map (fun r => r.cells)
+```
+
+`Emit.rowsOf` is still the library's only caller of `dayPlan`; no wire function calls
+`Emit.rowsOf`; and `PlanWire`'s six mentions of `dayPlan` are every one of them prose. The
+kernel's own statement of the same fact is
+`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows` — **a `planner` section that
+decodes changes no byte of the answer**. So R2 as landed, *both halves*, moved no entry above.
+
+**What R3's brief should take from this list is still one sentence.** R3 deletes the fork's
+planner in Rust with its last caller; it adds no row to `Planner.dayRows`, fills no field of
+`Planner.Diagnostics` and declares no predicate. **Not one of the nine is downstream of it, and
+not one is made reachable by it.** What R3 *is* owed is not a goal but a statement, and §3 below
+is where that statement now stands.
+
+### 2. The brief's item 2: WHICH AXIS IS LAST — and the answer is that the fourth was
+
+**There is no fifth axis, and that is checkable rather than a reading.**
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` has exactly **four** hypotheses and
+each is one of the four named bounds: `PlanCheck.FromNowAnchored` (W-23, eligibility),
+`PlanCheck.PastPays` (W-24, the log), `PlanCheck.WallsArePlain` (W-25, the walls),
+`PlanCheck.DecoderPays` (W-26, the request). Nothing else in it is a `∀` over anything.
+
+**And that lift had no caller.** W-26 stated it and proved its fourth axis inhabited; both
+whole-day witnesses in the tree still went through the older forms with the four clauses spelled
+out. `PlannerWit.the_eleven_hold_with_every_axis_named` fires it — §6.1's eleven on the whole
+day of `theCensusRequest`, with every axis discharged **by name** — so the form a later step
+should call now has a caller and is not decorative.
+
+**So what is left is not a fifth axis. It is the four axes' PAYERS, and W-27 landed one.**
+W-26 measured `DecoderPays` at **one of four** paid and proved that a second one *provably could
+not* be paid by the builder in this tree: `PlannerWit.mkPlanReq?_ignores_state` shows
+`PlannerWit.mkPlanReq?` never reads `Planner.RuntimeIn` at all, so
+`PlannerWit.the_builder_accepts_a_running_block_it_never_checked` holds at **every** request it
+accepts. W-27 landed a **different decoder**, and that decoder pays the clause:
+
+* `PlanWire.readActive` ends at `Planner.mkActive?` — the smart constructor
+  `Planner.PlanReq.activeAgrees` is *defined against* — so
+  `PlannerWit.readActive_answers_only_a_block_mkActive_built` is R10's *"a smart constructor its
+  decoder actually uses"* at the one field that had no user.
+* Through `PlanWire.readOptActive` and `PlanWire.readState` (the `readState_reads_active` step is
+  named separately so the last theorem is a composition and not a second walk over six binds),
+  `PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause` discharges
+  `PlanCheck.DecoderPays`' `active` field from the wire.
+
+**The decoder census is two of four, and the other two are named rather than rounded up.**
+
+| clause | paid? | by what |
+|---|---|---|
+| `walls` | **yes** | `PlannerWit.mkPlanReq?_ok_wallsAgree` (W-26) |
+| `active` | **yes, W-28** | `PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause` |
+| `day` | **no** | nothing calls `Look.mkDayCfg?`; the evidence is still a reading of `Look.mkInput?`'s body (gap 1623) |
+| `nowCal` | **no, and SHORT BY ONE SECOND** | see below |
+
+**`nowCal` is not unchecked — it is one second short, and that is a theorem.**
+`PlannerWit.an_at_the_wire_accepted_is_inside_the_calendar` derives `now.sec < LogStamp.yearEnd`
+from `CapWire.readAt`'s own `Cal.VInstant`, through the constructor and not through a comparison
+written here. `PlanCheck.DecoderPays`' clause wants `now.sec + 1 < LogStamp.yearEnd`.
+`PlannerWit.the_instant_bound_is_one_second_wider_than_the_now_clause` exhibits the single
+instant between them — `315537897599`, which `Cal.Instant.wf` admits and the clause refuses. A
+host whose `at` lands there decodes and the lift does not apply to it. README gap **1851**.
+
+**And the honest limit of all of it.** `PlanWire.runPlanner` decodes the section and then
+**discards it**: the theorem that says so is `PlanWire.runPlanner_with_a_readable_section_answers
+_as_runRows`, and building a `Planner.PlanReq` from the decoded values is D48's RESPONSE half
+(gap 1667). So the payer's hypothesis — *this request's `state` is what the wire read* — has **no
+caller in this tree yet**. It is a payer in waiting, and the waiting is one step, not one proof.
+README gap **1850**.
+
+### 3. The brief's item 3: gap 1529 is stated, and W-28 takes two of its three blind spots
+
+`PlanCheck.holeFree` was stated at W-26 with both carve-outs the brief named
+(`the_last_row_is_never_a_holes_subject` for the tail,
+`an_uncovered_instant_between_two_rows_is_a_hole` for the inter-slot break nothing emitted) and
+**three** recorded blind spots. Two of the three need no decision nobody has taken:
+
+| blind spot | W-26 | W-28 |
+|---|---|---|
+| the time **before** the first row | `PlannerWit.the_hole_property_is_blind_to_a_leading_remainder` — a real day, two hours | **closed** by `PlanCheck.coveredAt` at `r.now`, and `PlannerWit.the_leading_guard_catches_the_leading_remainder` computes it on that same day |
+| a day with **no rows** | `PlanCheck.holeFree_of_no_rows` — it passes | **closed** by the same clause: `PlanCheck.coveredAt_of_no_rows`, hence `PlanCheck.holeFreeFrom_of_no_rows` |
+| the **tail** | `the_last_row_is_never_a_holes_subject` | **kept, deliberately** — gap 1529's own carve-out; `PlannerWit.the_leading_guard_keeps_the_tail_carve_out` computes a day that passes with 30,000 seconds of the census day's span after its last row |
+
+**Why the start of the window needed no decision and the end still does.** Gap 1620 priced the
+coverage property as *"a coverage property needs a window to cover, and which window is a
+decision nobody has taken"*. The property is stated over `PlanCheck.futureHalf`, whose own filter
+is `r.now.sec ≤ s.val.start` — so the window's **start** was chosen the moment that filter was:
+it is `r.now`, E1's restriction and the fork's `assigned_set` bound. Only the **end** is
+undecided. `PlanCheck.holeFreeFrom` is `PlanCheck.coveredAt r.now.sec d && PlanCheck.holeFree r d`
+and it mints no bound: it reuses `holeFree`'s own cover clause verbatim, which is why
+`PlanCheck.a_zero_length_row_cannot_cover_an_instant` applies to it unchanged.
+
+**Nothing is weakened (D5) and nothing is enabled.**
+`PlanCheck.holeFreeFrom_implies_holeFree` is the new implying the old, and
+`PlannerWit.the_leading_guard_is_not_a_constant` is the other direction — a day the old passes
+and the new refuses. Neither is in `PlanCheck.checksOf`:
+`PlannerWit.the_leading_guard_is_not_one_of_the_eleven` computes that the battery is still
+**eleven** and that the day this kernel produces fails the stronger statement as it failed the
+weaker one. **R3 is what enables either** (gap 1621), because the emission rule that would make
+them true lives in `tm-core/src/planner.rs`.
+
+### 4. The brief's item 4: the ratio is SEVEN, and again no prose had to be edited
+
+The sweep, re-run here and not quoted from W-26:
+`grep -rnoE '(seven|five|four|six|nine|ten|eleven|three|two|one|twelve) of (the )?eleven'` over
+`kernel/TmKernel/**/*.lean`, `README.md`, `kernel/README.md`, `AGENTS.md` and `kernel/design/`,
+then the subset that also names `theCensusRequest`. **Every headline says seven**
+(`PlannerWit.lean:1346`, `:1950`, `Planner.lean:6050`, `kernel/README.md` × 6); the **three** that
+say *nine* beside that name are the one W-21/W-22 sentence that distinguishes the *proved* count
+from the *subject* count by name (`PlanCheck.lean:2399`, `PlannerWit.lean:4327`,
+`kernel/README.md:45285`), which is exactly the reading W-26 recorded. The authority is
+`PlanCheck.lean`'s W-22 table of the three questions a *"N of the eleven"* can answer, and it is
+unchanged. **No prose needed editing**, and this run added no checker, which
+`PlannerWit.the_leading_guard_is_not_one_of_the_eleven` proves rather than asserts.
+
+### 5. The brief's item 5: D40, and what check 9 does and does not say here
+
+`mutate.py` audited this run's **two** new definitions — `PlanCheck.coveredAt` and
+`PlanCheck.holeFreeFrom` — at `true` and at `false`: **2 PINNED, 0 SURVIVED, 0 unfoldable, 0
+pinned by nothing, 0 literal.** The roster goes 199 → **201**.
+
+**And both PINNED verdicts are worth less than they look, for README gap 1504's reason, which is
+why the measurement is beside them.** Each is pinned at its own reflection lemma
+(`PlanCheck.coveredAt_iff`, `PlanCheck.holeFreeFrom_iff`) and a reflection lemma breaks for
+**any** constant body whether or not a witness exists. W-25 drove that class and it is inherited,
+not re-driven. What does the work instead:
+
+| definition | the statement that makes it a measurement |
+|---|---|
+| `PlanCheck.coveredAt` | `PlannerWit.the_leading_guard_is_not_a_constant`, conjuncts 1–2 — `true` on `theTailRemainderDay`, `false` on `theLateStartDay`, in one theorem |
+| `PlanCheck.holeFreeFrom` | the same theorem's conjuncts 3–4, on the same two days |
+
+**`python3 mutate.py --verify --only PlanCheck.lean --write` ran to completion**: PlanCheck's 13
+rostered rows re-verified in **46 s** — 0 failed, 2 unfoldable, **0 drifted**.
+
+**`--verify --only PlannerWit.lean --write` was STARTED TWICE AND ABANDONED, and the price is
+measured rather than estimated.** It reached **9 of ~96 constants in ~26 minutes**; the single-row
+probes below put the cost at **~80 s a constant**, so the full re-run is **≈ 2.1 hours** with the
+tree frozen. That is README gap 1624's price, re-measured. Both abandoned runs were killed and
+the tree restored from `mutate.py`'s own sidecar (`mutate.py: restored … from a killed run`), and
+`git status --porcelain` was **clean of any `.lean` perturbation** afterwards — checked both times.
+
+**What stands in its place is four facts and two probes, not an assurance.**
+
+1. **No recorded pin site moved.** `PlannerWit.lean` needed one new line — `import
+   TmKernel.PlanWire` — and 34 roster rows defined in `Emit.lean` (23) and `Planner.lean` (11)
+   record their pin site as a `PlannerWit.lean:<line>`. So the import was added **and one stale
+   line of the header was removed in the same edit** (the paragraph that said `dayPlan` has no
+   planner op on the wire, false since W-27, and a `64 audit lines` count that is really **292**).
+   The file is **byte-identical from line 33 to line 5859** against `8e219c2` — `diff` over that
+   range is empty — and the highest recorded `PlannerWit.lean` pin site is **5765**.
+2. **No verdict can have weakened.** This step deletes no theorem and no witness; it appends. A
+   mutation that broke before still breaks.
+3. **No row can have newly acquired a pin.** `awk '$2=="…/PlannerWit.lean"' mutations.txt | grep
+   -c nothing` is **0** — not one PlannerWit row is "pinned by nothing" — so there is no row whose
+   evidence column this step's theorems could have filled in.
+4. **The definitions this step's theorems use cannot drift.** Of the six,
+   `PlannerWit.theCensusRequest` and `PlannerWit.permissive` have no roster row at all;
+   `PlannerWit.theFutureHalfOfTheCensusDay`, `PlannerWit.theTailRemainderDay` and
+   `PlannerWit.theLateStartDay` are **UNFOLDABLE** (`no Inhabited DayPlan`) and carry no pin site;
+   and `PlannerWit.fromNowWorkRows` pins at `PlannerWit.lean:4835`, below 5859 and unmoved.
+
+**And the one risk those four do not cover was probed rather than argued.** The new import moves
+`PlannerWit` **later in the build order** (it now imports `PlanWire`), so a definition used by
+both `PlannerWit` and `EmitWire` could have had its recorded break move to the earlier module.
+**Two rows were re-verified for exactly that, one per defining file**, and both **re-derived
+their recorded site unchanged**:
+
+```
+$ python3 mutate.py --verify --only Tm.Emit.pCell                    # 2m40s, 2 constants
+  := default  PINNED  Emit.lean:437 pCell_is_empty_off_the_scale
+  := []       PINNED  PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
+0 rostered definition(s) failed re-verification, 0 unfoldable, 0 row(s) ... had drifted
+
+$ python3 mutate.py --verify --only Tm.Planner.PlanReq.assignedSpans  # 4m58s, 2 constants
+  := default  PINNED  PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+  := []       PINNED  PlannerWit.lean:3579 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
+0 rostered definition(s) failed re-verification, 0 unfoldable, 0 row(s) ... had drifted
+```
+
+That is **2 of the 34 re-derived and 32 inferred**, and README gap **1853** says so by name.
+
+### 6. Method, and what each method cannot see
+
+**(a) "No entry of the nine moved."** *Method:* the per-row commands in §1's last column, run
+against the tree at `8e219c2`, plus the `dayRows` body read. *What it cannot see:* a goal that
+became reachable for a reason no row names — the list's blockers are steps (P5, P8, G1–G3) and
+one edit, and a run that lands part of a step without landing the step would not show up in any
+grep here.
+
+**(b) "W-27 did not make `Planner.dayPlan` reachable."** *Method:* the two greps in §1, quoted in
+full rather than summarised. *What it cannot see:* a caller reached through a `@[csimp]`
+replacement or a second `@[export]`; and it is a statement about **this** tree only — D48's
+response half is written precisely to make it false.
+
+**(c) "The wire pays `DecoderPays.active`."** *Method:* three theorems, each proved by walking
+`PlanWire.readActive`'s and `PlanWire.readState`'s own do-blocks — no `decide`, no witness, no
+appeal to a comment. *What it cannot see, and it matters:* the theorem is about a `PlanReq` whose
+`state` field **equals** what `PlanWire.readState` answered. Nothing in this tree builds such a
+request (gap 1850), and nothing here proves that the *future* builder will use `readState`'s
+answer rather than re-decoding. It is a payer that is correct and unexercised.
+
+**(d) "`nowCal` is one second short."** *Method:* one derivation from `CapWire.readAt`'s own
+constructor, and one computed instant. *What it cannot see:* whether that second is **reachable**
+through `LogStamp.parseStamp` from a stamp string a host can write. The bound is exhibited at the
+type level; no request was built at it.
+
+**(e) "Two of the three blind spots are closed."** *Method:* one theorem per blind spot, and the
+two closures are computed on the **same named days W-26 used**, not on new ones. *What it cannot
+see:* `holeFreeFrom` is still a predicate evaluated at four named days. No day was drawn at
+random and the kernel's planner has never been fuzzed against it; **shape 3 of W-26's list — a
+coverage question about the window's end — is exactly what is still open**, and §3's table says so
+in the row that is not closed.
+
+**(f) The ratio sweep.** *Method:* §4's two greps. *What it cannot see:* a ratio written in
+digits, one spelled across a line break, and `kernel/design/**` beyond the grep's own reach.
+
+### 7. What this step did NOT do, by name
+
+- **No goal was discharged and none was added.** Check 7 reads **9 outstanding, all stage 6**
+  before and after; `grep -c '^theorem '` on `Goals.lean` is **9** both times, and that file's
+  diff is prose only.
+- **`PlanCheck.holeFreeFrom` is NOT enabled.** It is not in `PlanCheck.checksOf`, no lift
+  mentions it, and `planner_invariants.rs` is untouched — gap **1621**, unchanged, because the
+  emission rule lives in the Rust planner R3 deletes.
+- **The coverage half is still open at the window's END** (gap **1852**), which is the one of
+  W-26's three blind spots this run did not take.
+- **`DecoderPays.day` was not paid** — gap **1623** is unchanged and this run adds nothing to it.
+- **The `Planner.dayRows` edit was not made.** It is track P's and D19's.
+- **No Rust, no `Planner.lean`, no `Emit.lean`, no `EmitWire.lean`, no `PlanWire.lean`, no
+  `Negative.lean`, no checker and no fixture was touched.** Track P's and track A's files are as
+  they were.
+
+### 8. Gaps (1850-1869; this block takes **1850-1853** and leaves **1854-1869** free)
+
+1. **Gap 1850.** *What is not done.* The clause `PlanCheck.DecoderPays.active` now has a payer
+   (`PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause`) whose **hypothesis
+   has no caller**: `PlanWire.runPlanner` decodes the `planner` section and discards it
+   (`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows`), so no `Planner.PlanReq` in
+   this tree carries a `state` the wire read. *Why not done here.* Building the request from the
+   decoded values is D48's RESPONSE half, README gap 1667, and it is track P's file. *What it
+   costs.* The decoder census reads *"two of four"* on a payer nothing exercises; if the response
+   half decodes `state` a second way, the theorem is about a path the kernel does not take. *Which
+   stage clears it.* R2's response half.
+2. **Gap 1851.** *What is not done.* `PlanCheck.DecoderPays.nowCal` wants
+   `now.sec + 1 < LogStamp.yearEnd`; every instant the wire can produce carries `Cal.Instant.wf`,
+   which is `sec < LogStamp.yearEnd`. The two differ at exactly one representable instant
+   (`PlannerWit.the_instant_bound_is_one_second_wider_than_the_now_clause`). *Why not done here.*
+   Both repairs are outside this track: a second guard belongs in `PlanWire.lean`, and restating
+   `nowCal` the other way would **weaken** a hypothesis three lifts depend on. *What it costs.* A
+   request whose `at` is the last second of the calendar decodes and §6.1's lift does not apply to
+   it; nothing tells the reader which of the two bounds is wrong. *Which stage clears it.*
+   Whichever decides whether `nowCal` is the decoder's obligation or `PlanCheck.segOf_replayed`'s.
+3. **Gap 1852.** *What is not done.* `PlanCheck.holeFreeFrom` is **contiguity from `now`**, not
+   **coverage of a window**: the leading remainder and the empty day are closed, and the **tail**
+   is not (`PlannerWit.the_leading_guard_keeps_the_tail_carve_out` computes a day that passes with
+   30,000 s unplanned after its last row). *Why not done here.* The tail carve-out is gap 1529's
+   own instruction; closing it needs the window's **end**, and which end — arrival to wind-down,
+   `PlanReq.dayStart` to `dayEnd`, or the budget's — is still a decision nobody has taken. *What it
+   costs.* A day that plans nothing after noon passes the statement R3 will enable. *Which stage
+   clears it.* R3, or the step that answers which window is the subject.
+4. **Gap 1853.** *What is not done.* `mutate.py --verify --only PlannerWit.lean --write` was not
+   completed — 48 rows, ~96 constants, **≈ 2.1 h measured** — and 32 of the 34 rows whose pin site
+   is a `PlannerWit.lean:<line>` were **inferred** rather than re-derived (§5 lists the four facts
+   and the two probes that stand in their place). *Why not done here.* The price is README gap
+   1624's, re-measured on this machine: a `PlannerWit` mutation forces a full `PlannerWit` build
+   (151 s) plus its `decide` witnesses, and `--only` narrows by the **defining** file, not by the
+   pin site, so paying the other 32 means `--verify --only Emit.lean --write` (32 rows) and
+   `--only Planner.lean --write` (43 rows) on top. *What it costs.* This run's own evidence column
+   rests on line arithmetic plus two probes; and the **next** run that adds or removes a line
+   above line 5859 of `PlannerWit.lean` drifts all 34 silently, so `--verify` will then fail for a
+   reason that has nothing to do with that run's work. *Which stage clears it.* Any run that can
+   afford the three `--verify --only … --write` invocations, or the step that makes the pin site a
+   declaration name alone — the bare line numbers check 9 still counts are the same defect one
+   step earlier.
+
+### 9. Acceptance, measured on the final tree
+
+```
+$ ./check.sh                                 # all TEN, under MemoryMax=40G
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (5121 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (38314 citations, 36494 resolved, 1820 allowed (191 vocabulary,
+                                                    349 counted), 0 allow entries unused, 264 files swept,
+                                                    340 excluded by 15 rule(s))
+new definitions mutated                        ok  (201 new or changed since 86c4dc6, 201 rostered (60 unfoldable,
+                                                    30 witness fixtures, 17 pinned by nothing; 1 literal), 0 owed,
+                                                    31 pin site(s) still a bare line number)
+parity register                                ok  (40 registered (P1-P40), 40 anchor(s) re-resolved in 3 file(s),
+                                                    595 file(s) swept for 54 register row(s), next free P41)
+
+$ cargo test --workspace                     # TWO runs, identical, tree clean after each (D46)
+result lines: 86 passed: 1471 failed: 0 ignored: 9
+result lines: 86 passed: 1471 failed: 0 ignored: 9
+
+$ cargo test -p tm --test …                  # the named suites, on their own
+cli_latency              5 passed; 0 failed; 1 ignored   (at load average 5.31)
+cli_switch_acceptance   16 passed; 0 failed
+kernel_call_counts       2 passed; 0 failed
+kernel_item_grammar      6 passed; 0 failed
+kernel_log_door         23 passed; 0 failed        (the door suite)
+kernel_planner_wire     18 passed; 0 failed
+kernel_replay_parity    29 passed; 0 failed; 4 ignored   (T5)
+kernel_row_cells        26 passed; 0 failed
+one_generator            2 passed; 0 failed
+one_padder               9 passed; 0 failed
+one_renderer            25 passed; 0 failed
+planner_invariants       7 passed; 0 failed
+
+$ cd kernel/tm-kernel-ffi && cargo test      # the FFI crate: 8 + 86 + 7 = 101, 0 failed
+```
+
+**Check 8's figure is moved by the block that quotes it** (AGENTS §5.11), which is why two
+measurements are kept: **38,135** with every code change in and this block NOT yet written, and
+**38,314** with the whole block including this section on disk — 179 citations of this block's own
+prose. The first is kept in this sentence so both are one measurement each, and the transcript
+above is the second.
+
+**Deltas against the brief's `8e219c2` baseline, every one explained.** Audit **5,104 → 5,121**
+theorems: this step's 17, and nothing else. Check 8 **38,048 → 38,314**: 87 from the Lean and
+`Goals.lean` prose, 179 from this block; its allow counts move **1,818 → 1,820** with **0 entries
+unused** throughout. Check 9 **199 → 201 rostered**: `PlanCheck.coveredAt` and
+`PlanCheck.holeFreeFrom`, both PINNED, 0 owed; the **31 bare pin sites are unchanged** and this
+step added none. Burn-down **9, all stage 6**, unchanged. Corpus 29/37 and 4/5, check 5's 93 and
+check 10's 40 registered: all unchanged. `cargo test --workspace` reads **1,471 passed**; **the
+baseline number for it was not measured**, because the one `--workspace` run made at `8e219c2`
+before any edit **aborted at `cli_latency`** — two tests over 5 s at load average 9.63, immediately
+after the worktree's cold full-workspace compile. That is gap **1333**'s known load threshold and
+not a finding: re-run alone on the idle machine at the same commit, `cli_latency` was **5 passed,
+0 failed, 1 ignored**, and it is green in both `--workspace` runs above.
+
+**A cold `target/` was built in this worktree** rather than shared with the main checkout, so the
+Rust numbers here are this tree's own. `kernel/TmKernel/.lake` was copied from the main checkout
+at the same commit to avoid a from-scratch Lean build; every subsequent build was incremental in
+the worktree.
+
+### 10. Discipline
+
+`check.sh` **10/10** and `cargo test --workspace` **0 failed, run twice** end to end on the final
+tree (D46), plus the twelve named suites and the FFI crate on their own. No `sorry`, `axiom`,
+`partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor, `.toOption` or
+`native_decide` added. **No predicate, assertion, law or gate was weakened**: `PlanCheck.holeFree`
+is untouched and `PlanCheck.holeFreeFrom` is strictly stronger
+(`PlanCheck.holeFreeFrom_implies_holeFree`, D5), `PlanCheck.checksOf` is still eleven, and no
+hypothesis of any lift was dropped or loosened. **No bound was minted**: `coveredAt` reuses
+`holeFree`'s own cover clause, `holeFreeFrom` reuses `futureHalf`'s `r.now`, and the wire theorems
+reuse `Planner.mkActive?` and `Cal.Instant.wf` rather than restating either. No generator narrowed
+and no seed drawn; `.proptest-regressions` untouched. No snapshot, fixture, latency band or corpus
+re-blessed. No goal deleted and none added. No new dependency; `Cargo.toml` and `Cargo.lock`
+untouched; `lean-toolchain` and `kernel/corpus/` untouched; **no memory bound raised** — every
+`lake`, `lean`, `cargo`, `check.sh`, `python3` and `mutate.py` invocation ran under `systemd-run
+--user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`. **No plant was made in any shared
+tree**: this step drove no gate by perturbation; the only files ever modified in place were
+`mutate.py`'s own transient mutations inside this isolated worktree, and after each killed run the
+sidecar restored them and `git status --porcelain` was checked and held no `.lean` perturbation.
+No parity number issued — nothing here diverges from fork `4748911`; **next free P41**.

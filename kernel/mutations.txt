@@ -332,3 +332,5 @@ d77e2a36c100 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readDropIds default Pla
 007a4c3270cb TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.respondPlanner default PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows
 5f4687fadb88 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callPlanner default,input PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows; PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows
 35058b27751f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callExport default,input PlanWire.lean:1020 callExport_is_callPlanner; PlanWire.lean:1020 callExport_is_callPlanner
+53b1ea5fd38f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.coveredAt true,false PlanCheck.lean:3901 coveredAt_iff; PlanCheck.lean:3901 coveredAt_iff
+84966629ecd5 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.holeFreeFrom true,false PlanCheck.lean:3930 holeFreeFrom_iff; PlanCheck.lean:3930 holeFreeFrom_iff
