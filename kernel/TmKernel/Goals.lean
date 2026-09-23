@@ -958,29 +958,37 @@ which `PlanCheck.holeFree` states and `PlanCheck.holeFreeFrom` states with its l
 spot closed, and which is deliberately not in `PlanCheck.checksOf` because the emission rule
 that would make it true lives in the Rust planner R3 deletes (gap 1621).
 
-**What R2 changed, checked rather than assumed, at BOTH of its landed halves.**  R2's first
+**What R2 changed, checked rather than assumed, at ALL THREE of its landed halves — and the
+third landed DURING W-28, so this paragraph is the LAND STEP's, not a track's.**  R2's first
 half put the kernel's *cells* on the wire (`EmitWire.rowsOfReq`, `tm/tests/kernel_row_cells.rs`)
 and its item-line generators behind one reader.  W-27's second half (D48) put the planner's
 **inputs** on it: `PlanWire.readPlannerSection` decodes `state`, `routines` and `overrides`,
 `PlanWire.readBatchMaxMin` decodes §16's fifth `[priority]` key, and `PlanWire.callExport` is
-now the package's one export.  **Neither half reaches `Planner.dayPlan`**, and the W-28 sweep
-says so by name: `Emit.rowsOf` is still the library's only caller of `dayPlan`; no wire function
-calls `Emit.rowsOf`; and `PlanWire`'s own ten mentions of `dayPlan` are every one of them prose.
-`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows` is the kernel's own statement
-of the same fact — a section that decodes changes no byte of the answer.  So R2 as landed,
-**both halves**, moved no entry above, and the sentence below about `Planner.dayRows` is
-unchanged at W-28: its body is still
-`sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++ restRows).map
-segOf)`, with no row of step 5's in it.
+now the package's one export.  **W-28's third half — D48's RESPONSE half — reaches
+`Planner.dayPlan`, and R2 IS COMPLETE.**  The sentence that stood here until this merge said
+neither half reached it, and cited runPlanner_with_a_readable_section_answers_as_runRows —
+spelled without backticks because the response half **deleted** it, the statement being false of
+the definition now.  Re-swept at the land step: `Planner.dayPlan` has **two** code callers,
+`Emit.rowsOf` (Emit.lean:388) and `PlanWire.runPlanner` (PlanWire.lean:1181), the second across
+the FFI; no wire function calls `Emit.rowsOf`; and of `PlanWire`'s fourteen mentions of
+`dayPlan` **two are code** and the rest prose.
 
-**What D48's REMAINING half will change, and it is about the ORDER of the edit, not about any
-of the nine.**  The RESPONSE half (README gap **1667**) builds a `Planner.PlanReq` from the
-decoded values and emits `dayPlan`'s seven keys.  The moment it lands, `Planner.dayPlan` has a
-caller across the FFI and the `Planner.dayRows` edit below stops being unobserved — the
-invariants suite compares the kernel's day to the fork's.  The six entries that wait on that
-edit become reachable when the edit is made, wire or no wire; what the wire decides is whether
-making it is instrumented or blind, and this campaign's own evidence (D19, and the stage-5
-switch that took four runs) is the argument for instrumented.
+**And none of that moves an entry above, which is the point of saying it here.**  What R2's
+third half bought is *observation*, not emission: `tm/tests/planner_invariants.rs` now compares
+the kernel's day to the fork's, so the `Planner.dayRows` edit below stops being unobserved the
+moment it is made.  The edit itself is **not made**, and the sentence below about
+`Planner.dayRows` is unchanged at W-28: its body is still
+`sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++ restRows).map
+segOf)`, with no row of step 5's in it.  The six entries that wait on that edit wait on it
+still; what has changed is only that making it is now instrumented rather than blind.
+
+**D48 HAS NO REMAINING HALF, and what stands between here and R3 is the DELETION and nothing
+else.**  The RESPONSE half (README gap **1667**, CLOSED at W-28) builds a `Planner.PlanReq` from
+the decoded values and emits `dayPlan`'s seven keys, and the argument for landing it before the
+`Planner.dayRows` edit — this campaign's own evidence, D19 and the stage-5 switch that took four
+runs — has been discharged rather than restated: the edit will be instrumented when it is made.
+What R3 still owes is `tm-core/src/planner.rs` and its last caller, gap 94's two reserves, and
+gap 116 closed or deliberately recorded; none of those is an entry above either.
 
 **A tenth thing the lift waits on, and it is not a goal — and W-28 moved it.**  W-26 named
 §6.1's fourth and last axis: `PlanCheck.DecoderPays`, the request decoder's four clauses, three

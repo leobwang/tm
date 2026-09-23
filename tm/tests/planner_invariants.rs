@@ -999,14 +999,22 @@ proptest! {
 // STEP R2 (stage 6 W-25): the generated days go through the KERNEL.
 //
 // §14.4's R2 says this file must exercise "the kernel's `dayPlan` through the
-// FFI".  It cannot: `dayPlan` is not reachable through the FFI, because the
-// `plan` REQUEST section carries the day's rows and not the planner's inputs,
-// and `EmitWire.lean`'s own header assigns that section to step R3 (README gap
-// **1431**, which prices what R3 now needs, field by field).
+// FFI".  **When this arm was written at W-25 it could not**: `dayPlan` was not
+// reachable through the FFI, because the `plan` REQUEST section carried the
+// day's rows and not the planner's inputs, and `EmitWire.lean`'s own header
+// assigned that section to step R3 (README gap **1431**, which priced what R3
+// then needed, field by field).
 //
-// What IS reachable, and what this arm does instead, said plainly so the
-// remainder is not mistaken for the whole: every day this file's generators
-// produce — 40 random items, five routines, calendar walls, a random log, a
+// **THAT IS NO LONGER TRUE, AND THIS PARAGRAPH IS THE LAND STEP'S.**  D48 moved
+// the wire into R2, W-27 landed its REQUEST half and W-28 its RESPONSE half, so
+// `Planner.dayPlan` IS reachable through the FFI now and the section at the
+// **THE KERNEL PLANS THE DAY** banner below exercises it.  This arm is kept
+// because it is a *different* claim, not a superseded one: it sends the FORK's
+// day in and checks the kernel's RENDERING of it, where the arm below asks the
+// kernel to PLAN.  Read the two banners together; neither is the whole.
+//
+// What this arm covers, said plainly so the remainder is not mistaken for the
+// whole: every day this file's generators produce — 40 random items, five routines, calendar walls, a random log, a
 // running block, an open interruption, a late day — is handed to the kernel's
 // `plan` section, and the kernel's nine cells for every row are compared
 // against `emit::row_cells`'s.  Before W-25 that comparison existed on ONE
@@ -1014,7 +1022,10 @@ proptest! {
 // thousands of generated ones, and the two files share the encoder.
 //
 // It is NOT the tail-drop or stability half of R2: those are about a plan the
-// kernel made, and the kernel has not made one yet.
+// kernel made.  The kernel DOES make one now (the banner below), but only §8.2
+// steps 1 and 2 of it, so those two halves are still unclaimed — README gap
+// **1670**, and the land step re-read this sentence rather than leaving it to
+// read as though nothing had changed.
 // ===========================================================================
 
 proptest! {

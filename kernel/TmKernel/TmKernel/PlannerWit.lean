@@ -5873,13 +5873,17 @@ reads `state.active` **through `Planner.mkActive?`** — the smart constructor
 `PlanCheck.DecoderPays`' `active` field discharged from the wire rather than assumed.  The
 decoder census is **two of four**, not one.
 
-**What that does NOT mean, said here rather than found later.**  `PlanWire.runPlanner` decodes
-the section and then **discards it**: `PlanWire.runPlanner_with_a_readable_section_answers_as
-_runRows` is the theorem that says the answer is unchanged, and D48's RESPONSE half (README gap
-1667) is what builds a `Planner.PlanReq` from these values.  So the hypothesis of the theorem
-below — *this request's `state` is what the wire read* — has **no caller in this tree yet**, and
-becomes live the moment that half lands.  It is a payer in waiting, and the waiting is one
-step, not one proof.
+**What that does NOT mean, said here rather than found later, and RE-STATED AT THE MERGE.**
+This section was written against `8e219c2`, where `PlanWire.runPlanner` decoded the section and
+then discarded it — runPlanner_with_a_readable_section_answers_as_runRows, spelled here without
+backticks because D48's RESPONSE half **deleted** it — so the hypothesis of the theorem below,
+*this request's `state` is what the wire read*, had no caller at all.  **W-28's track P landed
+that half in the same run**, and `PlanWire.planReqOf` now puts the decoded `q.state` into the
+`Planner.PlanReq` it returns, which `PlanWire.runPlanner_answers_the_day` hands to
+`Planner.dayPlan`.  So the *path* exists, and what is still missing is the one lemma joining
+them: nothing yet states that the `req` `planReqOf` returns satisfies `req.state = q.state`, so
+the payer below is still applied by hand and not by a caller.  That lemma is README gap **1870**,
+recorded at the W-28 land step, and it is one proof now rather than one step.
 
 This module now imports `TmKernel.PlanWire`.  It is still a leaf: `grep -l 'import
 TmKernel.PlannerWit' TmKernel/TmKernel/*.lean` is empty, which is the property its header

@@ -58848,9 +58848,12 @@ TmKernel/PlannerWit.lean:4535:    (Emit.rowsOf theRoutineRequest).map (fun r => 
 
 `Emit.rowsOf` is still the library's only caller of `dayPlan`; no wire function calls
 `Emit.rowsOf`; and `PlanWire`'s six mentions of `dayPlan` are every one of them prose. The
-kernel's own statement of the same fact is
-`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows` — **a `planner` section that
+kernel's own statement of the same fact was
+runPlanner_with_a_readable_section_answers_as_runRows — **a `planner` section that
 decodes changes no byte of the answer**. So R2 as landed, *both halves*, moved no entry above.
+*(Written against `8e219c2`. Track P landed D48's RESPONSE half in this same run and DELETED that
+theorem; un-backticked at the land step so a sentence recording a dead name does not revive it.
+What is true of HEAD is in the W-28 LAND block, gap 1870.)*
 
 **What R3's brief should take from this list is still one sentence.** R3 deletes the fork's
 planner in Rust with its last caller; it adds no row to `Planner.dayRows`, fills no field of
@@ -58905,10 +58908,12 @@ written here. `PlanCheck.DecoderPays`' clause wants `now.sec + 1 < LogStamp.year
 instant between them — `315537897599`, which `Cal.Instant.wf` admits and the clause refuses. A
 host whose `at` lands there decodes and the lift does not apply to it. README gap **1851**.
 
-**And the honest limit of all of it.** `PlanWire.runPlanner` decodes the section and then
-**discards it**: the theorem that says so is `PlanWire.runPlanner_with_a_readable_section_answers
-_as_runRows`, and building a `Planner.PlanReq` from the decoded values is D48's RESPONSE half
-(gap 1667). So the payer's hypothesis — *this request's `state` is what the wire read* — has **no
+**And the honest limit of all of it — SUPERSEDED AT THE LAND STEP, see gap 1870.** At `8e219c2`
+`PlanWire.runPlanner` decoded the section and then **discarded it**: the theorem that said so was
+runPlanner_with_a_readable_section_answers_as_runRows,
+and building a `Planner.PlanReq` from the decoded values is D48's RESPONSE half
+(gap 1667), which track P landed in this same run. So the payer's hypothesis — *this request's
+`state` is what the wire read* — had, at this block's parent, **no
 caller in this tree yet**. It is a payer in waiting, and the waiting is one step, not one proof.
 README gap **1850**.
 
@@ -59079,9 +59084,10 @@ digits, one spelled across a line break, and `kernel/design/**` beyond the grep'
 
 1. **Gap 1850.** *What is not done.* The clause `PlanCheck.DecoderPays.active` now has a payer
    (`PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause`) whose **hypothesis
-   has no caller**: `PlanWire.runPlanner` decodes the `planner` section and discards it
-   (`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows`), so no `Planner.PlanReq` in
-   this tree carries a `state` the wire read. *Why not done here.* Building the request from the
+   has no caller** at this block's parent `8e219c2`: `PlanWire.runPlanner` decoded the `planner`
+   section and discarded it (runPlanner_with_a_readable_section_answers_as_runRows, deleted by
+   track P in this same run), so no `Planner.PlanReq` in that tree carried a `state` the wire
+   read.  **The land step re-measured this and it is no longer true of HEAD — gap 1870.** *Why not done here.* Building the request from the
    decoded values is D48's RESPONSE half, README gap 1667, and it is track P's file. *What it
    costs.* The decoder census reads *"two of four"* on a payer nothing exercises; if the response
    half decodes `state` a second way, the theorem is about a path the kernel does not take. *Which
@@ -59203,3 +59209,340 @@ tree**: this step drove no gate by perturbation; the only files ever modified in
 `mutate.py`'s own transient mutations inside this isolated worktree, and after each killed run the
 sidecar restored them and `git status --porcelain` was checked and held no `.lean` perturbation.
 No parity number issued — nothing here diverges from fork `4748911`; **next free P41**.
+
+---
+
+<!-- =====================================================================
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-28**, the **LAND
+     step**.  Merges `w28-a` and `w28-g` into `rebuild-on-lean` (track P
+     landed on the branch directly), runs the full acceptance, drives the
+     merged binary, and says where R2 stands.  This block's gap range is
+     **1870-1874**; it takes **1870-1873** and leaves **1874** free.
+     Parity: **none issued** — `next free P41`, unmoved by any of this.
+     ===================================================================== -->
+
+## Stage 6 — W-28, the land step: R2 IS COMPLETE, and the only thing between HEAD and R3 is the deletion
+
+### 1. What was merged, and what was already in
+
+Three tracks ran. **Track P committed straight onto `rebuild-on-lean`** (`ae44332`, `73961e2`,
+`305dc26`) and needed no merge. The other two were on branches and are merged here:
+
+| branch | commit | merge commit |
+|---|---|---|
+| `w28-a` | `1b747c9` (the roster is a keyword TOKEN, check 8's owner test gets both separators, D49 over the key SET) | **`182d57d`** |
+| `w28-g` | `66c4ab6` (the nine re-verified, the decoder axis's second payer, two blind spots of gap 1620 closed) | **`074eda3`** |
+
+Both branched from `8e219c2`; `rebuild-on-lean` had moved to `305dc26` under them, so both are
+real three-way merges. **Neither track reported nothing and neither was skipped** — the brief's
+warning about W-26's unmerged branch was checked first, with `git log w28-a`, `git log w28-g` and
+both README blocks, before anything was merged. Both worktrees are removed and both branches
+deleted; `.claude/worktrees/stage5-lookahead` is untouched.
+
+**Four conflicts, every one in a file two tracks append to:**
+
+1. `kernel/README.md`, twice — P's block, A's block and G's block are all appended at the end.
+   All three kept, in track order (P, A, G).
+2. `kernel/TmKernel/Check.lean` — both tracks append `#print axioms` lines at the same tail.
+   **Both lists kept whole**: P's four (`Seal.trimRun_of_wanted_facts`, `runCapP_bytes`,
+   `runCapZ_is_runCapZP_bytes`, `EmitWire.runRowsP_bytes`) and G's seventeen.
+3. `kernel/mutations.txt` — both tracks re-rostered `runPlanner`, `respondPlanner`,
+   `callPlanner` and `callExport`. **P's four rows win on the MERGED tree and G's are dropped as
+   STALE, which is a measurement and not a preference**: G's rows carry `PlanWire.lean:951/960/
+   1020` and its `runPlanner` hash `1bc8b8fff546`, all taken against `8e219c2`, where P's file
+   has since grown; P's rows carry `1205/1214/1488` and hash `0fcea70259c5`. G's two genuinely
+   new rows — `PlanCheck.coveredAt` and `PlanCheck.holeFreeFrom`, in a file P never touched —
+   are appended and keep their own line numbers. Check 9 re-runs green at **230 rostered, 0
+   owed**, which is what says the pick was right.
+4. `kernel/citations-allow.txt` merged clean (git resolved it): P's two cap bumps
+   (the kernel-call export 6→8, the absent dayPlan-with-a-question-mark 6→7, both spelled
+   here without backticks because each cap is EXACT and a mention would break it) and A's 50 new
+   lines are all in.
+
+**No track's README prose was dropped, and that is measured, not assumed.** Of the **152**
+distinct lines `w28-a` adds to `kernel/README.md`, **152** are in the merged file. Of the **344**
+`w28-g` adds, **335** are — and the **nine** that are not are nine lines of three sentences this
+step deliberately corrected, every one for the same reason. §2.
+
+### 2. THE MERGE BROKE A GATE, AND IT WAS A CROSS-TRACK FALSEHOOD, NOT A TEXTUAL CLASH
+
+Both merges resolved, tree clean, and `check.sh` was **9/10**:
+
+```
+prose citations                                FAILED
+1 unresolved:
+  TmKernel/Goals.lean:969  PlanWire.runPlanner_with_a_readable_section_answers_as_runRows  (resolves to nothing)
+```
+
+Neither track's own acceptance could have caught this, and neither track was wrong. Track P
+**deleted** runPlanner_with_a_readable_section_answers_as_runRows on purpose — W-27 proved it
+so that the step building the response would be the step deleting it (gap 1667), and P spelled
+its name without backticks afterwards so a sentence recording a dead name would not revive it.
+Track G, working from `8e219c2` where the theorem was alive and the fact it stated was true,
+**cited it in three live sentences**. Merge the two and the citation resolves to nothing.
+
+**The gate caught one site of five, and the un-caught four are the interesting part.** Check 8
+aggregates by NAME and reports one location, so the one failing line named `Goals.lean:969` and
+was silent about `PlannerWit.lean:5877` (a backticked span wrapped over two lines, which the
+W-27 wrap rule does join and count) and three more in `README.md`. All five were found by
+grepping the name rather than by the gate, and all five are repaired:
+
+| site | what it claimed | what was done |
+|---|---|---|
+| `Goals.lean:969` | "**Neither half reaches `Planner.dayPlan`**… `Emit.rowsOf` is still the library's only caller" | **REWRITTEN.** Re-swept at the land step: `dayPlan` has **two** code callers, `Emit.lean:388` and `PlanWire.lean:1181`, the second across the FFI, and of `PlanWire`'s **fourteen** mentions two are code |
+| `Goals.lean`, next paragraph | "What D48's **REMAINING** half will change" | **REWRITTEN.** D48 has no remaining half |
+| `PlannerWit.lean:5877` | "`PlanWire.runPlanner` decodes the section and then **discards it**" | **REWRITTEN**, and it points at gap 1870 |
+| `README.md` ×3 (track G's block) | the same claim, three times | **un-backticked** so a dead name is not revived, each with a one-sentence land-step note saying the sentence was written against `8e219c2` and what is true of HEAD |
+
+**And one more, which NO gate saw at all.** `tm/tests/planner_invariants.rs:999` still carried
+W-25's header: *"§14.4's R2 says this file must exercise the kernel's `dayPlan` through the FFI.
+It cannot: `dayPlan` is not reachable through the FFI."* Track P added a section to **the same
+file**, 150 lines below, whose banner reads **THE KERNEL PLANS THE DAY** and whose test calls
+`PlanWire.callExport`. One file, two banners, flatly contradicting each other, and check 8
+cannot see it because the sentence cites no dead NAME — it makes a false claim in ordinary
+prose. Rewritten to say when it was true and which banner supersedes it. **That is gap 1871**,
+and it is the honest reading of this step: the gate found the cross-track defect whose shape was
+a dangling citation, and the one whose shape was a false sentence was found by reading.
+
+### 3. Acceptance, on the merged tree, capped, every figure re-measured here
+
+`check.sh` **10/10**, by name:
+
+| # | check | figure |
+|---|---|---|
+| 1 | `lake build TmKernel:static` | ok |
+| 2 | totality check | ok |
+| 3 | axiom audit | **5,146 theorems** (5,104 at `8e219c2`) |
+| 4 | `Negative.lean` rejected | ok |
+| 5 | cargo test (Rust → C shim → Lean) | **93 tests** |
+| 6 | corpus round trip | **29/37 files and 4/5 whole plans**, byte-identical — not below the floor |
+| 7 | stage goals | **9 outstanding, ALL stage 6** — unchanged; the ninth consecutive run to discharge none |
+| 8 | prose citations | **38,750 citations, 36,891 resolved, 1,859 allowed** (196 vocabulary, 355 counted), **0 allow entries unused**, **264 files swept**, 340 excluded by **15** rules — measured on the tree that carries this block, so the count includes it |
+| 9 | new definitions mutated | **230 new or changed since `86c4dc6`, 230 rostered** (66 unfoldable, 30 witness fixtures, 23 pinned by nothing, 1 literal), **0 owed**, 31 pin sites still a bare line number |
+| 10 | parity register | **40 registered (P1–P40)**, 40 anchors re-resolved in 3 files, 596 files swept, **next free P41** |
+
+**`cargo test --workspace`: NINE runs, every one 0 failed** (D46 — "0 failed" from one run is a
+probabilistic claim). Six were made on the merged tree before this block's own prose edits —
+three grep-tabulated, three counted mechanically at **86 suites, 1,475 passed, 0 FAILED, 9
+ignored** — and **three more on the FINAL tree, after the last edit**, at the same
+86/1,475/0/9. The distinction is made rather than glossed: the runs a claim rests on have to be
+runs of the tree that is committed, and the first six were not. The named suites, each on its own:
+
+| suite | result |
+|---|---|
+| FFI crate (`kernel/tm-kernel-ffi`, excluded from the workspace) | **101 passed, 0 failed** — 86 `kernel` + 7 `stack` + 8 `corpus`, D36's full count |
+| T5 (`kernel_replay_parity`) | 29 passed, 0 failed, 4 ignored |
+| the door suite (`kernel_log_door`) | 23 passed, 0 failed |
+| `cli_switch_acceptance` | 16 passed, 0 failed |
+| `cli_latency` | 5 passed, 0 failed, 1 ignored — **ranges below** |
+| `kernel_call_counts` | 2 | 
+| `one_padder` | 9 |
+| `one_renderer` | 25 |
+| `kernel_row_cells` | 26 |
+| `kernel_item_grammar` | 6 |
+| `kernel_planner_wire` | 21 |
+| `planner_invariants` | **13 runs, 8 passed / 0 failed every time** |
+
+`planner_invariants` is the suite track P pointed at the kernel, so it was run **thirteen** times
+rather than once, at the default 64 cases each: 832 generated days through the FFI per arm.
+**No new `.proptest-regressions` seed was written** — `git status --porcelain` after the twelfth
+run held only this step's own three prose files, and the two seed files are byte-unchanged. That
+is the D46 report: no disagreement was found, and no generator was narrowed to avoid one.
+
+`cli_latency`, measured under load average 2.15 (checked first — gap 1333 makes this a load
+threshold, not a flake): plan with a due 3 y out **96 ms**, 10 y out **167 ms**; first verb
+**709 ms** (226 files, 2,959 lines), later verb **66 ms**; on a 1 y log (22,180 lines) first
+**1.20 s**, later **106 ms**; on the T11 3 y log (66,169 lines, 6.9 MB) first **2.23 s**, later
+**157 ms**, `tm log --tail 200` **243 ms**, `--since 7d` **86 ms**, review week **299 ms**, a
+30-day-old hand undo **1.33 s**, 10 stalled days worst **546 ms**. All inside their bands; the
+first verb on three years is the one that grows with log length and it is well under its 5 s
+bound.
+
+### 4. What the earlier stages bought is still bought
+
+* **The kernel is still the binary's only READER and only WRITER of the log.** Re-measured, not
+  quoted: `tm-core/src/log.rs` is **1,806 lines and declares no reader at all** — its only public
+  functions are `fmt_timestamp`, `physical_line_count` (which counts newlines) and
+  `hours_since_wake`. The one place in the shipped binary that opens `.tm/log.jsonl` as bytes is
+  `lifecycle.rs:959`, and the next statement hands those bytes to `kernel_log::line_warnings` —
+  D18(i)'s "every line the kernel refuses", adjudicated by the kernel, exactly as designed.
+  `tm/src/cli/kernel_log.rs` is **2,300 lines** (2,202 at stage 5's close).
+* **The comparand is still fork `4748911`, at full precision** — and see §7 for the one thing
+  that sentence does NOT mean. Check 10 re-resolved all 40 anchors; no divergence was issued.
+  Full precision is visible in the drive below: `plan --json`'s `priorities` carry
+  `avail_min_exact`, `allocation_min_exact` and `shortfall_min_exact` as `{num, den}` rationals
+  beside the floored minutes, which is D23's "exact units, floors only on screen".
+* **The corpus is not below its floor**: 29/37 and 4/5, the same numbers as `8e219c2`.
+
+### 5. The merged binary, driven
+
+Built from the merged tree, run in a throwaway `tm init` tree under `/tmp/claude-1000/`.
+
+**A normal day.** `wake 07:00 · slept 0m` → `arrive home 07:30 · window 07:30–15:30 · budget 6
+blocks` → three items added to the week → `plan`:
+
+```
+2026-09-23 · window 07:30–15:30 · budget 6 blocks
+08:00  3 p5   write the land block              45m
+09:00  3 p5   re-read the two track head…       45m
+10:00  ·      break 20m
+…
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+· 0 underused · 0 ci-5 lost
+· dropped: 7515
+```
+
+`start ^3101` → `▶ ^3101 write the land block · 08:05 · pred 3`; `done` → `✓ ^3101 write the
+land block · 45m/45m`; `check` → `no problems`.
+
+**`tm edit`, one key vs two — D49 HOLDS, driven on the merged binary:**
+
+| command | the line afterwards | log |
+|---|---|---|
+| `tm edit ^3101 est=2b` | `… est:120m ci:4 ^3101` | one `edit` line |
+| `tm edit ^2568 cap=3h/d` | `… est:45m ci:3 max:3h/d ^2568` | one `edit` line |
+| `tm edit ^7515 est=2b cap=3h/d` | `… est:120m ci:5 max:3h/d ^7515` | **both keys, one file write** |
+| `tm edit ^3101 est=45m ci=2` | `… est:45m ci:2 ^3101` | both keys, one file write |
+| `tm edit ^2568 est=1b title="a retitled line"` | **UNCHANGED** | **no log line at all** |
+
+The refusal, verbatim, and it names the pair, the consequence and the remedy:
+
+```
+tm: one edit has one writer: `est=1b` is written by the kernel and `title=a retitled line` is
+not (a positional slot of §4.1's line grammar, and no `Field.Key` at all), so this command
+would write `est=1b` twice over. Run them as separate edits.
+```
+
+`rc=1`, and `.tm/log.jsonl` holds **no line for it** — the refusal is upstream of the writer,
+which is the half of D49 a passing test can most easily miss.
+
+**The day file, `tm now` and `tm plan --json`, together.** The `<!-- tm:plan start 08:00 -->`
+block of `day/2026-09-23.md`, the rows `tm now` prints, and every `segments[].text` of
+`plan --json` are **the same bytes** — one renderer, D30(Q5), observed rather than asserted.
+`plan --json` adds what the text cannot carry: `hash` `bb56f7751abd337c` (the same hash the
+`plan` log line records), `blocks_done`, the ten segments with `kind`/`energy`/`item`, the
+`diagnostics` object with `dropped_tail: ["7515"]` and `plan_honesty: 0.25`, and the three
+`priorities` with their exact rationals.
+
+**And the drive shows §8.3's segment-free hole in the SHIPPED binary**, which no test in this
+repository asserts: `plan --json`'s segments run `11:20–12:20`, then `12:40–13:40`, then
+`13:40–14:40`, then `15:00–15:30`. **12:20–12:40 and 14:40–15:00 are inside the window and in no
+segment at all**, and the text rendering has the same two holes. That is README gap 1529's
+subject, the statement `PlanCheck.holeFree` makes and `checksOf` deliberately does not carry,
+seen for the first time as output rather than as a theorem. Gap **1873**.
+
+### 6. WHERE R2 STANDS, PLAINLY
+
+**R2 IS COMPLETE.** All three halves are in the tree:
+
+| half | what it put on the wire | landed |
+|---|---|---|
+| R2's first | the kernel's row **CELLS** (`EmitWire.rowsOfReq`) and the item-line generators behind one reader | W-24/W-25 |
+| D48's REQUEST half | `state`, `routines`, `overrides`, `prio.batchMaxMin`; `callExport` the one export | W-27 (`779ca7b`) |
+| D48's RESPONSE half | `Planner.dayPlan`'s seven keys into the same `plan` object `rows` is in | **W-28, `ae44332`** |
+
+Checked rather than asserted, on the merged tree: `PlanWire.lean:1181` calls
+`Planner.dayPlan`; `PlanWire.runPlanner_answers_the_day` states it; the kernel's one export
+reaches it
+through `PlanWire.callExport`; and `tm/tests/planner_invariants.rs`'s
+`the_kernel_plans_the_day_the_fork_plans` drives it 832 times a run against the fork's planner,
+comparing `day`, `window`, `budgetBlocks` and every wall to the minute, both ways.
+
+**And NOTHING BUT THE DELETION stands between HEAD and R3.** R3 is `tm-core/src/planner.rs`
+deleted with its last caller, gap 94's two reserves killed, gap 116 closed or deliberately
+recorded, and D27 unblocked (gaps 113/114/116). None of that waits on a wire, a proof or a
+gate: the wire is built, the instrument that watches the deletion is built and green thirteen
+times over, and the four gaps this step leaves (§8) are every one of them a *statement* about
+code that already exists, not a piece of code that has to be written first. The one caveat
+worth naming is not a blocker: the kernel's `dayPlan` is §8.2 steps 1 and 2 only, so R3's
+deletion removes a planner that does more than its replacement does — which is gap **1670**, was
+gap 1670 before this step, and is R3's own brief to price.
+
+### 7. What this step's numbers CANNOT see
+
+* **"The comparand is fork `4748911` at full precision" is true of the PRECISION and not of the
+  BYTES, and the brief's phrasing invites the stronger reading.** `tm-core/src/planner.rs` is
+  **not** byte-identical to `4748911`: it differs by **104 added and 51 removed** lines across
+  four named commits (`114ab46` the planner handed the replay alone, `09d38fa` exact units,
+  `23b06e2` L8's capacity path, `6b05f50` one renderer). Those re-plumbed the comparand's
+  **inputs** — `Log` → `Replay`, `DayCapacity` → `UnitCapacity` with `CAP_DEN` — and that
+  re-plumbing *is* what "full precision" names. Its **decisions** are the fork's, and the 40
+  parity entries are the register of every place they are not. Said here because a future run
+  reading "at full precision" as "untouched" would be wrong, and `git diff 4748911 HEAD --
+  tm-core/src/planner.rs` is a one-line way to check.
+* **The "no line dropped" measurement is set-based.** It says every distinct line of each track's
+  README addition is *somewhere* in the merged file; it does not check order, and a line
+  duplicated in one track and present once in the merge counts as kept.
+* **The drive is ONE tree and ONE day.** It shows D49 holding on five commands and the three
+  surfaces agreeing on ten segments. It is not a proptest and does not stand in for one.
+* **Check 8 aggregates by NAME**, so a dead name cited at five sites fails once and names one
+  site. §2 found the other four by grep; nothing in the acceptance would have.
+* **No gate reads a track's prose for truth against the merged tree.** Gap 1871.
+
+### 8. Gaps (1870-1874; this block takes **1870-1873** and leaves **1874** free)
+
+1. **Gap 1870.** *What is not done.* `PlannerWit.a_request_whose_state_the_wire_read_pays_the_
+   active_clause` — track G's payer for `PlanCheck.DecoderPays.active` — **still has no caller**,
+   but no longer for track G's reason. `PlanWire.planReqOf` now puts the decoded `q.state` into
+   the `Planner.PlanReq` it returns (`PlanWire.lean:1142`), so the path exists; what is missing
+   is the one lemma joining them: **nothing states that the `req` `planReqOf` returns satisfies
+   `req.state = q.state`.** *Why not done here.* The land step merges and measures; writing a new
+   lemma into `PlanWire.lean` is a track's work and this step touched no proof. *What it costs.*
+   The decoder census still reads "two of four" on a payer nothing exercises, and track G's
+   gap 1850 now records a cause that has gone — a reader who fixes 1850 as written will fix
+   nothing. *Which stage clears it.* Any stage-6 track; it is ~10 lines and needs no decision.
+2. **Gap 1871.** *What is not done.* **No gate reads a track's prose for truth against the merged
+   tree.** Check 8 catches a dead NAME; it cannot catch a true-when-written sentence that the
+   other track falsified — `planner_invariants.rs`'s W-25 banner said `dayPlan` is unreachable
+   through the FFI while a banner 150 lines below in the same file exercised it, and the whole
+   acceptance was green. *Why not done here.* Every mechanical shape this step could think of is
+   a heuristic: "a comment naming a deleted symbol" is check 8 already, and "two banners that
+   disagree" is not a property. *What it costs.* This is the **third** consecutive land step to
+   repair cross-track prose (W-27's gap 1760 was the same class in
+   `kernel_item_grammar.rs`), so the rate is one to three sites per run and the finder is a
+   human reading. *Which stage clears it.* A repair step willing to state a property rather than
+   grep a list — and if none can be stated, that answer recorded once so the next three runs stop
+   re-deriving it.
+3. **Gap 1872.** *What is not done.* `kernel/mutations.txt` was resolved by **picking** track P's
+   four rows over track G's, on the argument that P's line numbers and hash match the merged
+   file. It was not **re-derived**: `mutate.py` was not run, because it drives `lake build` and
+   the roster check (9) passes at 230/230/0 owed either way. *Why not done here.* Re-deriving the
+   whole roster is ~2 h of capped builds for a file check 9 already validates. *What it costs.*
+   If a row of P's were itself stale, check 9 would still pass — it checks that every new
+   definition is rostered, not that a rostered row's line number still points at its pin. **31
+   pin sites are already a bare line number**, which is the same weakness one step further on.
+   *Which stage clears it.* Whichever step makes a pin site a name rather than a number.
+4. **Gap 1873.** *What is not done.* §8.3's segment-free hole is **visible in the shipped
+   binary** and asserted by nothing: the drive above plans `12:20–12:40` and `14:40–15:00` into
+   no segment at all, inside the window, in both the text and `--json`. *Why not done here.*
+   `PlanCheck.holeFree` states it and `checksOf` deliberately omits it (gap 1621), because the
+   emission rule that would make it true lives in the Rust planner R3 deletes; asserting it in a
+   Rust test today would be asserting something false of the shipped planner. *What it costs.* A
+   user's day file has unexplained twenty-minute gaps, and the campaign has carried the statement
+   since gap 1529 without once looking at the output. *Which stage clears it.* R3, and the gap
+   that has waited for it should now be read as a **defect with a witness** rather than as a
+   pending theorem.
+
+### 9. Discipline
+
+`check.sh` **10/10** and `cargo test --workspace` **0 failed**, the workspace run **nine times**
+end to end (three of them on the final tree, §3) and `planner_invariants` **thirteen**, plus
+every named suite on its own. **No Lean proof, definition, checker, fixture, snapshot, generator or bound was
+written, changed or deleted by this step** — its only non-merge edits are four prose sites
+(`Goals.lean`, `PlannerWit.lean`, `planner_invariants.rs`'s banner, and three un-backticked
+sentences in track G's README block) and this block. No `sorry`, `axiom`, `partial def`,
+`unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor or `.toOption` added. **No predicate
+or assertion weakened, and none widened either**: check 8 was made to pass by deleting a false
+claim, not by an allow-list entry — the honest alternative was one counted "adjudicated dead
+name" row, declined because the campaign's own rule is to state a property rather than lengthen a
+list, and because the sentences citing the dead name were false as well as dangling. No generator
+narrowed, no seed removed or added, no snapshot re-blessed, no latency band or corpus touched. No
+goal deleted and none discharged — **burn-down 9, all stage 6, before and after**. No new
+dependency; `Cargo.toml`, `Cargo.lock`, `lean-toolchain` and `kernel/corpus/` untouched; no
+memory bound raised — every `lake`, `lean`, `cargo`, `check.sh`, `tm` and `python3` invocation ran
+under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`. **No plant was
+made anywhere**: this step drove no gate by perturbation, and `git status --porcelain` on the
+shared checkout was checked before the merge (empty), after both worktree removals (empty), and
+after every measurement — it never held anything but this step's own four files. No parity number
+issued; **next free P41**.
