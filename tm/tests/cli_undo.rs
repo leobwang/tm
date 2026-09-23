@@ -98,7 +98,10 @@ fn undo_add_removes_the_line() {
 fn undo_edit_restores_every_field_and_cancels_every_event() {
     let tm = Tm::new();
     let before = tm.line("backlog.md", "a1");
-    tm.ok(&["edit", "^a1", "ci=3", "est=45m"]);
+    // Two changes ONE writer owns — `ci=` on this line's positional digit is
+    // not on the wire, and D49's repair refuses a command that mixes the two
+    // rather than letting the host write the kernel's key (W-27).
+    tm.ok(&["edit", "^a1", "est=45m", "loc=out"]);
     assert_ne!(tm.line("backlog.md", "a1"), before);
 
     tm.ok_at("2026-09-07T09:05:00-05:00", &["undo"]);

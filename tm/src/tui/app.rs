@@ -1511,10 +1511,18 @@ impl App {
         let extras = review::DayExtras {
             plan_at_arrival: self.arrival_blocks(),
             underused: self.plan.diagnostics.underused.len(),
-            budget: self.state.budget,
-            // The same fact §12.4's Review screen's sibling surfaces quote
-            // (README gap 1530); unfiltered, exactly as `budget` beside it is.
-            window: self.state.window,
+            // **FILTERED TO THE DAY BEING REVIEWED**, exactly as
+            // `cli::lifecycle::day_extras` filters both of these (README gap
+            // 1530, and the W-27 repair step for this third surface). The
+            // runtime state is about ONE date: `self.today` is what the
+            // reviews below are computed for, and on a day the state file is
+            // not about — one left from a previous date, or before the day's
+            // first `arrive` — an unfiltered `window` made the TUI Review
+            // screen quote another day's window while `tm review day` fell
+            // back to the replay's. Two surfaces disagreeing about one day is
+            // the shape gap 1530 exists to close, and `budget` had it too.
+            budget: self.state.budget.filter(|_| self.state.date == Some(self.today)),
+            window: self.state.window.filter(|_| self.state.date == Some(self.today)),
             ..review::DayExtras::default()
         };
         review_screen::Reviews {

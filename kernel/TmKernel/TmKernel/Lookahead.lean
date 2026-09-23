@@ -122,7 +122,7 @@ inductive WErr where
   | weightPrecision
 deriving DecidableEq, Repr
 
-private theorem scaled_le {n d : Nat} (hn : n ≤ d) (hp : capDen % d = 0) :
+theorem scaled_le {n d : Nat} (hn : n ≤ d) (hp : capDen % d = 0) :
     n * (capDen / d) ≤ capDen := by
   have h1 : n * (capDen / d) ≤ d * (capDen / d) := Nat.mul_le_mul_right _ hn
   have h2 : d * (capDen / d) = capDen := Nat.mul_div_cancel' (Nat.dvd_of_mod_eq_zero hp)
@@ -225,7 +225,7 @@ def ofHist (d : Day) (h : Hist) : DayCapacity := ⟨d, fun l => capDen * h l⟩
 /-- A histogram from six levels, level `0` first (missing levels are `0`). -/
 def histOf (ns : List Nat) : Hist := fun l => ns.getD l.val 0
 
-private theorem convex_between (c w a b : Nat) (hw : w ≤ c) :
+theorem convex_between (c w a b : Nat) (hw : w ≤ c) :
     c * min a b ≤ w * a + (c - w) * b ∧ w * a + (c - w) * b ≤ c * max a b := by
   have hc : c = w + (c - w) := by omega
   constructor
@@ -343,7 +343,7 @@ theorem limitHist_keeps_the_min (B : Nat) (h : Hist) :
   simp only [limitHist, dayOut] at *
   omega
 
-private theorem dayLeft_scale (k : Nat) (ci : Fin 6) (f : Hist) (left : Nat) :
+theorem dayLeft_scale (k : Nat) (ci : Fin 6) (f : Hist) (left : Nat) :
     ∀ n, dayLeft ci (fun l => k * f l) (k * left) n = k * dayLeft ci f left n := by
   intro n
   induction n with

@@ -4689,6 +4689,15 @@ open Tm
 #print axioms Tm.Arith.halfUpQ_of_zero_num
 #print axioms Tm.Arith.roundAway_withinOne_aux
 #print axioms Tm.Arith.roundAway_mono_aux
+
+-- W-27's repair step: four `private theorem`s and one INDENTED theorem were
+-- declared in the library and audited by nobody, because `check.sh`'s check-3
+-- roster grep anchored `theorem` at column zero with at most one attribute in
+-- front of it.  The enumeration hole had moved from the WALK (W-21), to the
+-- LIBRARY ROOT (W-23), to the DECLARATION SHAPE.  The grep is a shape now, and
+-- `private` is off these four so that this file can name them: a lemma nothing
+-- else may cite is still a lemma the audit must see.
+#print axioms Tm.Arith.cancelR
 #print axioms Tm.Look.keepsIt_le
 #print axioms Tm.Look.latestBefore_nil
 #print axioms Tm.Look.latestBefore_go
@@ -5688,6 +5697,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.CapWire.multiplierOfWire_ok
 #print axioms Tm.Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states
 #print axioms Tm.Look.PlanFacts.eligible_iff_without_the_free_component
+#print axioms Tm.Look.scaled_le
+#print axioms Tm.Look.convex_between
+#print axioms Tm.Look.dayLeft_scale
 
 -- ===========================================================================
 -- APPENDED 2026-09-18 (stage 6, run **W-19**, track P, step **P5b** -- the

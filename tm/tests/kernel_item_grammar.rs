@@ -224,13 +224,22 @@ static COMPARED: Mutex<Option<BTreeMap<&'static str, [u64; 3]>>> = Mutex::new(No
 /// Record one case of `arm`, and return that arm's running totals.
 ///
 /// `reached` is how far the case got: 0 drawn only, 1 addressable, 2 compared.
+///
+/// `TM_PROPTEST_TRACE=1` prints the running row every case, which is how the
+/// numbers in [`floor_holds`]'s comment were DERIVED rather than quoted (§5.11).
+/// Without it nobody could see that the prefix of a run and the whole of a run
+/// have different distributions, which is the W-27 repair below.
 fn note_case(arm: &'static str, reached: usize) -> [u64; 3] {
     let mut g = COMPARED.lock().expect("census");
     let row = g.get_or_insert_with(BTreeMap::new).entry(arm).or_insert([0; 3]);
     for slot in row.iter_mut().take(reached + 1) {
         *slot += 1;
     }
-    *row
+    let row = *row;
+    if std::env::var("TM_PROPTEST_TRACE").is_ok() {
+        eprintln!("trace {arm} {row:?}");
+    }
+    row
 }
 
 /// **The floor, asserted inside the arm.** Once an arm has drawn `FLOOR_AFTER`
@@ -252,7 +261,31 @@ fn note_case(arm: &'static str, reached: usize) -> [u64; 3] {
 /// the floor — about half the lowest measured rate: loose enough that a
 /// generator reweighting does not turn this into a flake, tight enough that an
 /// arm which has stopped comparing fails. §5.11: re-measure, do not quote.
-const FLOOR_AFTER: u64 = 64;
+///
+/// **AND `FLOOR_AFTER` WAS MEASURED IN THE WRONG PLACE** (README gaps 1673,
+/// 1735, 1761; the W-27 repair step). The rate above is a WHOLE-RUN rate and
+/// the assertion was made on a PREFIX, from the 64th draw — and the first
+/// hundred draws of a run are not a sample of it. Two reasons, both measured
+/// with `TM_PROPTEST_TRACE=1`:
+///
+/// * proptest replays every persisted `.proptest-regressions` seed FIRST, and
+///   those are SHRUNK minima (`"- A"`, `"- [ ] a"`) — addressable and
+///   box-less by construction, so they land in the refusal branch and count as
+///   drawn without comparing. There are two dozen of them against a
+///   `FLOOR_AFTER` of 64, and **every new failure appends another**, so the
+///   flake amplified itself under D46's keep-the-seed rule.
+/// * early draws are short: `[97, 71, 6]` is 73% addressable and 6% compared,
+///   against a whole-run `[538, 277, 102]` — 51% and 19%.
+///
+/// DRIVEN on a clean tree at `ef52e3d`: ten consecutive runs of this binary,
+/// three FAILED, every one of them at `drawn` between 81 and 101 — just past
+/// the old threshold — and none later. The traced running ratio for
+/// `drawn >= 256` over six full runs was 0.154 to 0.195, never below the
+/// floor; for `drawn >= 64` it dipped to 0.135 on a run that passed. So the
+/// RATE is unchanged and the threshold moves to where the rate was measured.
+/// An arm that has stopped comparing still fails, 256 draws into a run that
+/// draws 520-570.
+const FLOOR_AFTER: u64 = 256;
 const FLOOR_NUM: u64 = 1;
 const FLOOR_DEN: u64 = 10;
 
@@ -617,13 +650,13 @@ proptest! {
     /// which is D49's one writer. What survives is narrower and is gap **1700**:
     /// the routing is all-or-nothing, so a command mixing a wired pair with an
     /// unwired FORM — `--set`, `title`/`p`/`state`, `--unset ci`/`--unset p`,
-    /// `demoted`, an id-less line — still takes the host path whole and still
-    /// writes the **leading** estimate, §3.1's `est_original` rather than
-    /// §4.1's remaining one. That residue is asserted, not assumed, by
-    /// `a_command_mixing_an_unwired_form_still_takes_the_host_path`. `ci` is
-    /// excluded here for the reason `kernel_edit_cmds` excludes it: on a line
+    /// `demoted`, an id-less line — is REFUSED whole (W-27's repair of D49),
+    /// so the host can no longer write the **leading** estimate for a command
+    /// that also carries a wired key. That is asserted, not assumed, by
+    /// `cli_items::a_command_mixing_an_unwired_form_is_refused`. `ci` is
+    /// excluded here for the reason `unwired_reason` excludes it: on a line
     /// whose ci is the positional digit the kernel's write would populate both
-    /// slots.
+    /// slots and `tm check` would say `ci given twice`.
     #[test]
     fn the_two_editors_write_the_same_keyed_edit(
         (text, _stateful) in line(),

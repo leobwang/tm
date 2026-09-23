@@ -564,12 +564,32 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     // `--unset ci`/`--unset p` (positional-slot surgery the wire does not
     // carry — gap 41), `demoted` (excluded from the wire by the kernel's own
     // policy, gap 40 and CHEAT 45), and a `ci=` on a line whose ci is the
-    // positional digit (gap 41 again — see [`kernel_edit_cmds`]). **A
-    // command mixing one of those with a wired pair still takes the old path
-    // whole**, which is README gap 1700.
-    if item.has_id() && args.set.is_empty() {
-        if let Some(cmds) = kernel_edit_cmds(&ctx, &id, args)? {
-            return edit_kernel(&mut ctx, &id, &item, args, cmds);
+    // positional digit (gap 41 again — see [`unwired_reason`]).
+    //
+    // **AND A COMMAND MIXING ONE OF THOSE WITH A WIRED PAIR IS REFUSED** —
+    // README gap 1700, closed at the W-27 repair step. It used to take the old
+    // path WHOLE, which is precisely how the host stayed a second writer of a
+    // key the kernel owns: `tm edit ^a1 cap=3h/d` wrote `max:3h/d` and
+    // `tm edit ^a1 cap=3h/d ci=4` wrote `cap:3h/d`, and `est=2b ci=4` rewrote
+    // §3.1's LEADING estimate instead of adding §4.1's `est:` key. Routing
+    // gap 48's eight keys made that harder to reach and could not make it
+    // unreachable, because `ci=`, `--set`, `title=` and an unknown spelling
+    // are all one keystroke away. [`edit_route`] answers three ways now.
+    if item.has_id() {
+        match edit_route(&ctx, &id, args)? {
+            EditRoute::Kernel(cmds) => return edit_kernel(&mut ctx, &id, &item, args, cmds),
+            EditRoute::Mixed {
+                wired,
+                unwired,
+                why,
+            } => {
+                return Err(CliError::msg(format!(
+                    "one edit has one writer: `{wired}` is written by the kernel and `{unwired}` \
+                     is not ({why}), so this command would write `{wired}` twice over. \
+                     Run them as separate edits."
+                )));
+            }
+            EditRoute::Host => {}
         }
     }
     kernel_bridge::gate(&ctx, "edit")?;
@@ -689,7 +709,7 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
 /// has ONE writer and it is the kernel's.** `Cmd.keyEditable` has carried
 /// `due at win every on-event after loc waiting` since gap 40's bridges
 /// (`bf7cc63`) while this list carried nine, so `tm edit ^id due=…` went down
-/// the old Rust path — and, because [`kernel_edit_cmds`] routes only when
+/// the old Rust path — and, because [`edit_route`] routes only when
 /// **every** pair is wired, so did every command that merely *mentioned* one
 /// of them. That is the mechanism that made `tm edit ^a1 cap=3h/d` and
 /// `tm edit ^a1 cap=3h/d due=2026-10-01` write different bytes for the same
@@ -708,38 +728,136 @@ const KERNEL_EDIT_KEYS: &[&str] = &[
     "at", "win", "every", "on-event", "after", "loc", "waiting",
 ];
 
-/// The wire commands for a `tm edit` invocation, when **every** requested
-/// change is one the kernel path carries — else `None`, and the old Rust
-/// path takes the whole edit. An `est=` pair is sent as the `est` op in
-/// canonical minutes (the CLI's own `Dur` grammar still reads the value, so
-/// `est=2b` keeps its block arithmetic and `est=zzz` its old message; the
-/// kernel proves the op *is* the keyed est edit). Every other wired pair
-/// rides raw — the kernel's field grammar is the one reader — and an empty
-/// value (or `--unset <key>`) is the wire's unset form.
-fn kernel_edit_cmds(
-    ctx: &Ctx,
-    id: &Id,
-    args: &super::EditArgs,
-) -> Result<Option<Vec<KCmd>>, CliError> {
-    let line = ctx.line(id)?;
-    // `ci=` rides the wire only when the line's ci already lives in the
-    // `ci:` key slot — the kernel writes that slot, and on a line whose ci
-    // is the positional digit the write would leave both slots populated
-    // (`tm check`: "ci given twice"). The positional digit is §4.1 line
-    // surgery the wire does not carry (gap 41's recorded stance), so those
-    // edits stay on the old Rust path.
-    let wired_set = |k: &str| {
-        KERNEL_EDIT_KEYS.contains(&k) && (k != "ci" || line.get("ci").is_some())
-    };
-    let wired_unset = |k: &str| KERNEL_EDIT_KEYS.contains(&k) && k != "ci";
-    for pair in &args.pairs {
-        let (k, v) = split_pair(pair)?;
-        if !(if v.is_empty() { wired_unset(k) } else { wired_set(k) }) {
-            return Ok(None);
+/// How one `tm edit` invocation is routed -- and it is a THREE-way answer,
+/// not a two-way one, which is the W-27 repair step's correction to D49.
+///
+/// It used to be `Option<Vec<KCmd>>`: every change wired, or the whole edit on
+/// the old Rust path. The second branch is what kept a SECOND WRITER alive.
+/// DRIVEN on the merged binary, against a copy of `plan-basic` whose line is
+/// `- [ ] 2 30m Insurance claim for the bike  ^a1` (a leading estimate, no
+/// `est:` key):
+///
+/// ```text
+/// tm edit ^a1 cap=3h/d        ->  .. bike max:3h/d  ^a1      (kernel)
+/// tm edit ^a1 cap=3h/d ci=4   ->  .. bike cap:3h/d  ^a1      (host: the ALIAS)
+/// tm edit ^a1 est=2b          ->  .. bike est:120m  ^a1      (kernel)
+/// tm edit ^a1 est=2b ci=4     ->  - [ ] 4 2b Insurance ..    (host: the SLOT
+///                                  and the RENDERING -- §3.1's leading
+///                                  `est_original`, which §11 calibrates
+///                                  actual/est against, rewritten in place)
+/// ```
+///
+/// Those are verbatim the three axes D49 names, on one keystroke, and `due=`
+/// reproduced them the same way before W-27 routed it. Routing gap 48's eight
+/// keys shortened the list of second keys that do it; it could not empty the
+/// list, because some forms are genuinely NOT on the wire and are named below.
+///
+/// So a MIXED command is refused. One invocation now has one writer by
+/// construction rather than by which keys happen to be routed: the kernel's
+/// bytes, the host's bytes, or a refusal that names the form that is not on
+/// the wire. Nothing silently writes the other one's answer.
+enum EditRoute {
+    /// Every change is on the kernel's wire: the one proven setter writes.
+    Kernel(Vec<KCmd>),
+    /// No change is: the old Rust path writes, and no wired key rides along.
+    Host,
+    /// Some are and some are not.
+    Mixed {
+        /// A wired change, by the spelling the user typed.
+        wired: String,
+        /// An unwired one.
+        unwired: String,
+        /// Why it is not on the wire -- a property of the WIRE or of the
+        /// LINE, never "this host declined to route it".
+        why: &'static str,
+    },
+}
+
+/// Why `key` is not on the kernel's edit wire for `line`, or `None` if it is.
+///
+/// Every arm is a form the wire does not CARRY. That is the whole difference
+/// between this function and the list it replaces: `due at win every on-event
+/// after loc waiting` were unrouted for eight steps because a second name list
+/// had not been updated, and that is the defect D49 closed. What is left is
+/// structural, and each one says which README gap records the stance.
+fn unwired_reason(line: &ItemLine, key: &str, unset: bool) -> Option<&'static str> {
+    if !KERNEL_EDIT_KEYS.contains(&key) {
+        return Some(match key {
+            "title" | "p" | "state" => {
+                "a positional slot of §4.1's line grammar, and no `Field.Key` at all"
+            }
+            "demoted" => "kept off the wire by the kernel's own policy (`keyNotWired demoted`, \
+                          Negative.lean CHEAT 45, gap 40)",
+            _ => "not a key the kernel's field grammar spells (the kernel refuses it by name, \
+                  `unknownKey`; `--set` is the documented way to write a raw token)",
+        });
+    }
+    if key == "ci" {
+        if unset {
+            return Some("a complete unset clears the positional digit too, which is §4.1 line \
+                         surgery the wire does not carry (gap 41)");
+        }
+        if line.get("ci").is_none() {
+            return Some("this line's ci is the positional digit, and the wire writes the `ci:` \
+                         key slot, which would leave `tm check` saying `ci given twice` (gap 41)");
         }
     }
-    if !args.unset.iter().all(|k| wired_unset(k)) {
-        return Ok(None);
+    None
+}
+
+/// The wire commands for a `tm edit` invocation, when **every** requested
+/// change is one the kernel path carries -- else [`EditRoute::Mixed`] if any
+/// change is wired and any is not, and [`EditRoute::Host`] if none is. An
+/// `est=` pair is sent as the `est` op in canonical minutes (the CLI's own
+/// `Dur` grammar still reads the value, so `est=2b` keeps its block arithmetic
+/// and `est=zzz` its old message; the kernel proves the op *is* the keyed est
+/// edit). Every other wired pair rides raw -- the kernel's field grammar is the
+/// one reader -- and an empty value (or `--unset <key>`) is the wire's unset
+/// form.
+///
+/// `--set` is counted as unwired here rather than gating the whole call, for
+/// the same reason: `tm edit ^a1 cap=3h/d --set zz=1` wrote the host's `cap:`
+/// alias before this, and now refuses.
+fn edit_route(ctx: &Ctx, id: &Id, args: &super::EditArgs) -> Result<EditRoute, CliError> {
+    let line = ctx.line(id)?;
+    let mut wired: Vec<String> = Vec::new();
+    let mut unwired: Option<(String, &'static str)> = None;
+    let mut note = |w: Option<(String, &'static str)>, spelling: String| match w {
+        Some((_, why)) => {
+            if unwired.is_none() {
+                unwired = Some((spelling, why));
+            }
+        }
+        None => wired.push(spelling),
+    };
+    for pair in &args.pairs {
+        let (k, v) = split_pair(pair)?;
+        let why = unwired_reason(&line, k, v.is_empty());
+        note(why.map(|w| (pair.clone(), w)), pair.clone());
+    }
+    for k in &args.unset {
+        let why = unwired_reason(&line, k, true);
+        note(why.map(|w| (format!("--unset {k}"), w)), format!("--unset {k}"));
+    }
+    for pair in &args.set {
+        note(
+            Some((
+                format!("--set {pair}"),
+                "a raw verbatim `key:value` token by its own contract, which the kernel would \
+                 canonicalize",
+            )),
+            format!("--set {pair}"),
+        );
+    }
+    if let Some((unwired, why)) = unwired {
+        return Ok(match wired.first() {
+            Some(w) => EditRoute::Mixed {
+                wired: w.clone(),
+                unwired,
+                why,
+            },
+            None => EditRoute::Host,
+        });
     }
     let mut cmds = Vec::new();
     for pair in &args.pairs {
@@ -764,7 +882,7 @@ fn kernel_edit_cmds(
             value: String::new(),
         });
     }
-    Ok(Some(cmds))
+    Ok(EditRoute::Kernel(cmds))
 }
 
 /// The kernel-backed keyed edit: every wired `k=v` and `--unset k` of one
@@ -1838,7 +1956,7 @@ mod tests {
     ///    so it is unroutable rather than unrouted, but this test does not
     ///    say so and cannot.
     /// 2. It asks whether the key is on the WIRE, not whether
-    ///    [`kernel_edit_cmds`] routes a given *invocation*: `ci` is on the
+    ///    [`edit_route`] routes a given *invocation*: `ci` is on the
     ///    list and is deliberately held back on a line whose ci is the
     ///    positional digit, and `--unset ci` is never routed (gap 41). The
     ///    list and the predicate are different facts and only the first is

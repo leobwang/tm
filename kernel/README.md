@@ -54419,7 +54419,7 @@ reachable is reported rather than quietly kept.
 
 ### 3. FINDING, DRIVEN ON THE SHIPPED BINARY (gap 1430): `tm edit` has two paths and they write different bytes
 
-`tm/src/cli/items.rs`'s `kernel_edit_cmds` sends an edit to the kernel only when
+`tm/src/cli/items.rs`'s `edit_route` (named kernel_edit_cmds when this was written) sends an edit to the kernel only when
 **every** pair in it is wired (`KERNEL_EDIT_KEYS`); one unwired pair and the whole
 edit takes the old Rust path. The two paths do not write the same thing. Driven,
 on a scratch tree, with the built binary:
@@ -54495,7 +54495,7 @@ a demonstration that a bug would have been caught.
 
 | gap | what | where it bites | cost of leaving it |
 |---|---|---|---|
-| **1430** | **`tm edit` writes different bytes through its two paths** — `cap:`/`max:`, `est:`'s rendering, and `est:` key versus the leading estimate | `tm/src/cli/items.rs`'s `kernel_edit_cmds` / `apply_pair`; `kernel/TmKernel/TmKernel/Cmd.lean` | a user's file depends on which *other* pair was in the command. The `est` half rewrites the wrong field — history instead of remaining |
+| **1430** | **`tm edit` writes different bytes through its two paths** — `cap:`/`max:`, `est:`'s rendering, and `est:` key versus the leading estimate | `tm/src/cli/items.rs`'s `edit_route` (kernel_edit_cmds then) / `apply_pair`; `kernel/TmKernel/TmKernel/Cmd.lean` | a user's file depends on which *other* pair was in the command. The `est` half rewrites the wrong field — history instead of remaining |
 | **1431** | **§14.4's R2 cannot be finished as written, and §14.5's graph has a cycle** — see §8 | `kernel/design/stage6/stage6-planner-design.md` §14.4/§14.5 | the next run repeats this discovery instead of doing the work |
 | **1432** | the item-ness arm cannot see a **tabbed** line, for two reasons at once | `tm/tests/kernel_item_grammar.rs` | cheat 122's boundary is asserted on untabbed lines only |
 | **1433** | `kernel_reads_as_item` is a **second statement** of `Line.parseBody`'s rule, in Rust | same file | a rule both statements get wrong together is invisible; §5.3's own hazard, taken deliberately and said out loud |
@@ -57136,7 +57136,7 @@ fourth row rewrote §3.1's `est_original`, the *leading* estimate the §11 histo
 actual/est against, instead of §4.1's remaining estimate in the `est:` key. Which field
 `tm edit est=` moved depended on how many keys were passed to one verb.
 
-**The mechanism, which is what the fix is.** `kernel_edit_cmds` routes to the kernel only when
+**The mechanism, which is what the fix is.** `edit_route` (kernel_edit_cmds then) routes to the kernel only when
 **every** pair of the invocation is wired, so one unwired pair sent the whole edit down the old
 Rust path (`apply_pair`). `KERNEL_EDIT_KEYS` listed nine keys; `Cmd.lean`'s `keyEditable` has
 carried **seventeen** since gap 40's bridges (`bf7cc63`) — every `Field.Key` but `demoted`. So
@@ -57145,13 +57145,13 @@ carried **seventeen** since gap 40's bridges (`bf7cc63`) — every `Field.Key` b
 
 The assertion that pins this is written as an **equality between two invocations**, not against
 a literal, because neither answer was wrong on its own
-(`edit_writes_the_same_bytes_however_many_keys_the_command_carries`, `tm/tests/cli_items.rs`).
+(`edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries`, `tm/tests/cli_items.rs`).
 
 ### 2. The routing table is DERIVED now, in both directions
 
 `KERNEL_EDIT_KEYS` was a name list that nothing compared against, which is how eight keys sat
 unrouted for nineteen weekly runs while the ledger recorded them as wired. It is still a list —
-it is what `kernel_edit_cmds` reads — but it is now **checked against the kernel's own answer**,
+it is what `edit_route` (kernel_edit_cmds then) reads — but it is now **checked against the kernel's own answer**,
 key by key, over `tm_core::grammar::KEYS`:
 
 ```
@@ -57182,7 +57182,7 @@ reason is in the function.
 | claim | method | what the method cannot see |
 |---|---|---|
 | "these are all the keys" | `tm_core::grammar::KEYS`, the list `parse_line` itself uses to decide a token is a key and not an `extra` — not a list written for this test | **it is still a hand-written vocabulary** (§5.2). A nineteenth spelling the KERNEL learns and the loader does not is invisible: the host could not read such a token back, so it is unroutable rather than unrouted, but nothing here says so |
-| "the host routes what the kernel wires" | one FFI call per key, both directions asserted | it asks whether the key is **on the wire**, not whether `kernel_edit_cmds` routes a given invocation. `ci` is on the list and is deliberately held back on a line whose ci is the positional digit; `--unset ci` is never routed (gap 41). The list and the predicate are different facts and only the first is checked |
+| "the host routes what the kernel wires" | one FFI call per key, both directions asserted | it asks whether the key is **on the wire**, not whether `edit_route` (kernel_edit_cmds then) routes a given invocation. `ci` is on the list and is deliberately held back on a line whose ci is the positional digit; `--unset ci` is never routed (gap 41). The list and the predicate are different facts and only the first is checked |
 | the same | one `inbox.md` probe line | a key whose acceptance depends on the file kind or the item's shape. `due`/`at`/`win` on a month outcome answer `badHorizon` (gap 50) and are still counted CARRIED — the right answer for routing, and nothing about the refusal the user meets |
 | "no other spelling reaches `tm edit`" | — | `--set k=v` writes a **raw** token under any spelling at all, by its own documented contract. It is on no wire and this test does not look at it (gap **1700**) |
 
@@ -57292,7 +57292,7 @@ this step's edits applied and the built `.lake` copied in, **never in the workin
 | plant | test | verdict |
 |---|---|---|
 | `"due"` dropped from `KERNEL_EDIT_KEYS` | `the_host_routes_every_key_the_kernel_wires` | **FAILED** (1 failed) |
-| the same | `edit_writes_the_same_bytes_however_many_keys_the_command_carries` | **FAILED** |
+| the same | `edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries` (renamed at the W-27 repair step; same assertion, quantified) | **FAILED** |
 | the same | `edit_refuses_by_name_where_the_host_wrote_or_said_nothing` | **FAILED** |
 | `"demoted"` added to `KERNEL_EDIT_KEYS` | `the_host_routes_every_key_the_kernel_wires` | **FAILED** |
 | the same | `demoted_is_refused_by_the_kernel_and_unrouted_by_the_host` | **FAILED** |
@@ -57317,11 +57317,12 @@ kernel bug would have been caught.
    whole. *Why.* Splitting one invocation into a kernel phase and a host phase is two writes and
    two undo records where there is one now, and a failure between them leaves a half-edited
    tree — the atomicity `tm edit` has today is worth more than the last mixture. *What it costs,
-   driven:* `tm edit ^a1 cap=3h/d --set foo=bar` still writes `cap:3h/d`, and
-   `tm edit ^a1 est=2b title=Renamed` still writes the **leading** `2b` — §1's three divergences
-   survive for exactly those mixtures, and `a_command_mixing_an_unwired_form_still_takes_the_host_path`
-   asserts it so the residue is a recorded cost and not a surprise. *Which step clears it.* One
-   that can make the two phases one transaction, or one that wires `title`/`p`/`state` — which
+   driven:* `tm edit ^a1 cap=3h/d --set foo=bar` wrote `cap:3h/d`, and
+   `tm edit ^a1 est=2b title=Renamed` wrote the **leading** `2b` — §1's three divergences
+   survived for exactly those mixtures. **CLOSED at the W-27 repair step**: a mixed command is
+   REFUSED, by the form that is not on the wire, and `a_command_mixing_an_unwired_form_is_refused`
+   asserts that instead. *What a later step may still do.* Make the two phases one transaction, or
+   wire `title`/`p`/`state` — which
    is a kernel decision about the positional slots, not a host list.
 2. **Gap 1701.** *What is not done.* `reject_new_problems` no longer runs for the seventeen
    routed keys, so the fork grammar's `problems` vocabulary is no longer an editor-side gate for
@@ -57336,9 +57337,9 @@ kernel bug would have been caught.
    the kernel's `itemsWf` conjuncts, which is a comparison nothing in the tree performs today.
 3. **Gap 1702.** *What is not done.* `the_host_routes_every_key_the_kernel_wires` enumerates
    `tm_core::grammar::KEYS`, which is a hand-written vocabulary, and asks about the **wire**
-   rather than about `kernel_edit_cmds`'s predicates. §2's table is the full statement. *What it
+   rather than about `edit_route` (kernel_edit_cmds then)'s predicates. §2's table is the full statement. *What it
    costs.* A key the kernel gains under a spelling the loader does not know is invisible; and a
-   key on the list that `kernel_edit_cmds` refuses to route for a *line-shaped* reason (`ci` on a
+   key on the list that `edit_route` (kernel_edit_cmds then) refuses to route for a *line-shaped* reason (`ci` on a
    positional-ci line) reads as routed here. *Which step clears it.* One that can ask the kernel
    to enumerate its own `Field.Key` names on the wire — which is a wire field that does not
    exist, not a test that was not written.
@@ -58156,3 +58157,239 @@ invocation capped at 40G with swap off. The two `w27` worktrees were removed aft
 were green and clean; `.claude/worktrees/stage5-lookahead` was left alone. The one edit this
 step made to a track's file is the doc-comment correction gap 1760 describes, and it changes no
 assertion and no behaviour.
+
+## Stage 6 — W-27, the repair step: the totality check gets a scanner, the roster gets a shape, and `tm edit`'s last second writer is refused
+
+Twelve findings from two independent auditors and nine from the reuse critic. **Every one was
+reproduced before it was touched**; one was refuted in half and one in most of its mechanism, and
+both are left standing with the evidence. All plants were made in `git archive HEAD` clones under
+`/tmp/claude-1000/`; `git status --porcelain` on the shared tree was empty before the first and
+held only this step's own edits after the last.
+
+### 1. The blocker: check 2 was green on a `partial def` split across a newline
+
+`totality.py`'s rules were applied **per line**, to text a `line.split("--")[0]` had already cut.
+Three holes followed from that one sentence, and all three were driven in a clone whose
+`lake build TmKernel:static` said *Build completed successfully* with the plant in `Emit.lean`:
+
+| plant | before | after |
+|---|---|---|
+| `partial` ⏎ `def critLoopA (n : Nat) : Nat := critLoopA n` | rc=0, silent | `Emit.lean:531: banned: partial def` |
+| `def critBangB (xs : List Nat) : Nat := ("a--b").length + xs.head!` | rc=0 | `banned: `!`-accessor (R4)` |
+| `def w27PlantM : String := "/-"` … `xs.head!` … `def w27PlantO : String := "-/"` | rc=0 | named |
+| `def w27PlantK : String × Nat := ("--", (([] : List Nat)).head!)` | rc=0 | named |
+| `axiom w27PlantH : Nat` | rc=0, and check 3 ok at 5,100 | `banned: axiom (HARD RULE: no new axiom)` |
+| `s!"{xs.head!}"` (a control for the fix, not a prior hole) | — | named |
+
+The fix is a **scanner**, `leanfiles.strip_comments`, that knows what a string literal is: nesting
+`/- -/`, line comments, string bodies blanked, `{…}` interpolation passed through as the code it
+is, character literals (`'"'`, 60-odd of them in `Boundary.lean`) matched with the same `CHAR_LIT`
+shape and left alone. The rules then run over the **whole file**, with the line number taken from
+the match offset. `axiom` is a new row: R2 said *"read the diff"* of `Check.lean`, and an UNUSED
+axiom reaches no `#print axioms` line at all, so R2 was mechanised by nothing. AGENTS R2 and R4
+both now say what is true.
+
+### 2. `Goals.lean` was exempt **in the library**, because the exemption was keyed per root
+
+`EXEMPT = {"Goals.lean"}` applied wherever `p.parent == root` for **any** directory on the command
+line, and `check.sh` passes two: `TmKernel/TmKernel` and `TmKernel`. So
+`kernel/TmKernel/TmKernel/Goals.lean` — a real module, imported by the 85-import library root and
+compiled by lake — was exempt from every rule in the file. Driven: `partial def` and `unsafe def`
+there gave rc=0 and no output; the identical file named `Probe.lean` was named on both lines. The
+file's own header claimed the opposite. Same class as gap 1314 — *the walk was shared, the
+exemption was not*. The exemption is **one path now**, resolved against `totality.py`'s own
+directory, and does not depend on how a caller spells its arguments.
+
+### 3. check 3's roster was a grep, and the hole had moved to the DECLARATION SHAPE
+
+The walk was repaired at W-21, the library root at W-23, and the roster still asked bash for
+`theorem` at column zero with at most one attribute in front. Four live library theorems were
+outside it and carried no audit line while check 3 said ok: `Arith.cancelR`, `Look.scaled_le`,
+`Look.convex_between`, `Look.dayLeft_scale`, all `private`.
+
+**The other half of that finding is REFUTED.** The audit's fifth name,
+`Planner.plan_reserves_one_block_at_a_time` at `Planner.lean:6333`, is **not a declaration**: it is
+inside a ```` ```lean ```` fence inside a `/-! -/` module docstring, quoting the §8.3 goal the
+block goes on to refute. A column-zero grep missed it by luck; the widened grep demanded an audit
+line for a theorem that does not exist, which is how the refutation was found. So the roster is
+**not a grep** any more: `leanfiles.py --theorems` comment-strips with the same scanner §1's ban
+uses and then matches the shape. Driven in a clone: `theorem` indented inside `section … end`,
+`private theorem`, `nonrec theorem` and a two-attribute-block theorem are each rostered; the same
+text inside a docstring fence is not. The four are no longer `private` — `#print axioms` cannot
+name a private constant from another file, and exempting them is how a roster becomes a list
+again — and they have audit lines. **5,104 theorems audited, up from 5,100.**
+
+### 4. `tm edit` still had two writers, and `ci=` was the keystroke
+
+D49 routed gap 48's eight keys and left the mechanism: `edit_route` sends an edit to the kernel
+only when **every** change is wired, so one unwired form sent the whole command down the host
+path. Driven on HEAD's own binary against copies of `tm-core/tests/fixtures/plan-basic`, whose
+`^a1` is `- [ ] 2 30m Insurance claim for the bike  ^a1` — a leading estimate and no `est:` key:
+
+```text
+tm edit ^a1 cap=3h/d        ->  … bike max:3h/d  ^a1
+tm edit ^a1 cap=3h/d ci=4   ->  … bike cap:3h/d  ^a1      the ALIAS
+tm edit ^a1 est=2b          ->  … bike est:120m  ^a1
+tm edit ^a1 est=2b ci=4     ->  - [ ] 4 2b Insurance …    the SLOT and the RENDERING
+tm edit ^a1 est=2b unknownkey=zz -> - [ ] 2 2b … unknownkey:zz
+tm edit ^a1 cap=3h/d --unset ci  -> … bike cap:3h/d  ^a1
+```
+
+Verbatim the three axes D49 names. **`ci` cannot simply be routed**, and that was checked rather
+than assumed: the wire writes the `ci:` key slot, and with the positional digit still there
+`tm check` says `backlog.md:2: warning[bad-value]: ci given twice (ci: wins)`. So the routing
+answer is **three-way**: `EditRoute::Kernel`, `EditRoute::Host`, and `EditRoute::Mixed`, which is
+**refused** and names the form that is not on the wire and why (`unwired_reason`). One invocation
+now has one writer by construction, not by which keys happen to be routed. Gap **1700** is closed.
+
+And the property that was supposed to catch this is fixed too, because it was **the eighth
+enumeration hole in the run that closed the seventh**: the old `edit_writes_the_same_bytes_…`
+property iterated a literal three-element list whose every second key was routed.
+It is now `edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries`, quantified
+over **all nineteen** of `tm_core::grammar::KEYS` (with a value table asserted total over that set,
+so a twentieth key fails the file rather than being skipped) × **seven** structurally unwired
+forms, and the statement is *one edit writes what its parts write, or is refused having written
+nothing*. 133 invocations, and an assertion that the refusal branch was reached at all.
+
+Two tests pinned the old behaviour and are rewritten, not re-blessed:
+`a_command_mixing_an_unwired_form_is_refused`, and
+`edit_changes_fields_byte_faithfully_and_logs_each_one`, whose command
+(`ci=3 est=45m --set loc=out`) **was the divergence itself** — it asserted that the host had
+written §3.1's leading estimate, the "commented side" D49 overrides. The edit_json snapshot is
+**deleted**, and two new ones — one per writer — take its place.
+
+### 5. `kernel_item_grammar` failed 2 runs in 10, and the seeds were feeding it
+
+Reproduced: ten runs on the clean tree, **three failed**, every one of them
+`the_two_editors_write_the_same_drop compared [drawn, addressable, compared]` with `drawn` between
+81 and 101 — just past `FLOOR_AFTER = 64` — and none later. The floor's **rate** was measured over
+whole runs and **asserted over a prefix**, and the prefix is not a sample of the run: proptest
+replays every persisted `.proptest-regressions` seed first and those are SHRUNK minima (`"- A"`,
+`"- [ ] a"`), addressable and box-less by construction, so they count as drawn and never compare.
+There are two dozen of them against a threshold of 64, and **every failure appends another**, so
+the flake amplified itself under D46's keep-the-seed rule.
+
+Measured with a new `TM_PROPTEST_TRACE=1` trace, which is how the numbers below were derived rather
+than quoted: `[97, 71, 6]` early against `[538, 277, 102]` whole-run — 73% and 6% against 51% and
+19%. The running ratio for `drawn >= 256` over six full runs was **0.154 to 0.195**, never below
+the floor; for `drawn >= 64` it dipped to 0.135 on a run that passed. **The rate is unchanged** —
+`FLOOR_NUM/FLOOR_DEN` is still one in ten — and the threshold moves to where the rate was measured.
+**Twelve consecutive runs green after the change, against three failures in ten before.** The seed
+the audit's own runs drew is kept (D46): `cc 17f8691…`, appended, never reverted.
+
+### 6. check 8 laundered a `::` citation whose owner does not exist — and it was not the variant rule
+
+Reproduced in a git-initialised clone: ZzzNoSuchEnum::Done and Quux::All appended to
+`mutations.txt` left check 8 at rc=0 with the counts two higher, while the plain owner-less name
+beside them was named at once. **The mechanism in the finding is refuted.** It is not
+`rust_variants`: `Done` is one of 14,828 declared `names`, so the FIRST rule (`last in names`)
+resolved the first plant, and `All` is a `tm-core` name, so the SECOND (`last in core`) resolved the
+second. `citations-allow.txt`'s sentence about the variant set — *"scoped to `::` spans, so it
+launders nothing"* — is exonerated as written; the hole was wider than the sentence it was filed
+against. A `::` path must now resolve an **owner** as well as a last segment (`owner_resolves`,
+every segment but the last, because a test is owned through a module chain). Four foreign paths
+went from silently-resolved to named and are in the allow file with the rest of the library and
+fork names: `File::create`, `OpenOptions::new`, `scan::nanosecond`, `UndoMask::dangling`.
+
+### 7. check 7 could not tell a discharged goal from a deleted one
+
+`goals=$(grep -c '^theorem ')` plus "it elaborates" — so `sed -i /theorem …/d` lowers the burn-down
+and keeps the check green, and AGENTS §3.2's discipline was enforced by nobody. The deletion is now
+reconciled against git: every goal name in `HEAD`'s `Goals.lean` that the tree no longer states must
+appear on a `#print axioms` LINE of `Check.lean`. Against HEAD and not a campaign base, measured:
+14 of the 42 goals discharged since `d61fece` were restated under a DIFFERENT name, so a fixed base
+would be red for work done correctly. Driven in a clone: deleting `plan_respects_the_energy_filter`
+is caught; deleting `plan_tail_drop` is not, because its refutation's audit line contains its name.
+That blind spot is measured, not guessed — 5 of the 9 open goals are in it — and is gap 1770.
+
+### 8. The TUI's Review screen quoted another day's window
+
+`cli::lifecycle::day_extras` filters both runtime facts to the day being reviewed (gap 1530);
+`tui/app.rs`'s `reviews()` passed `window` and `budget` **unfiltered** while always reviewing
+`self.today`, so on a day the state file is not about the third surface disagreed with the other
+two. Both are filtered now, with the same predicate.
+
+### 9. Left standing, by name
+
+1. **Gap 1765.** *What is not done.* **R2/D48's RESPONSE half: the kernel still cannot be ASKED for
+   a plan.** `PlanWire.lean` decodes the four unwired request fields and `callPlanner_without_a_
+   planner_section_is_callRows` asserts a `planner` section moves no byte. *Why.* It is a build
+   step, not a repair step, and gap 1670 records that `Planner.dayRows` holds no §8.2 step-5 row,
+   so the comparison R2 exists to enable waits on P5 and not on the wire. *What it costs.*
+   `planner_invariants.rs`'s own banner still reads *"it cannot"*, and R3 — §14.4's last structural
+   step — stays blocked. *Which step clears it.* The one that lands the response half.
+2. **Gap 1766.** *What is not done.* **check 8 goes silent inside a fenced code block.** Declared in
+   `citations.py` §234 and re-driven here: a dead backticked name in prose, in an HTML comment and
+   in a four-space block are each named; inside a ``` fence, rc=0 with byte-identical counts.
+   *Which step clears it.* One that strips fences the way §1's scanner strips comments — the two
+   are the same shape and the second is now written.
+3. **Gap 1767.** *What is not done.* **`PlannerRefusal` has no reachability census.**
+   `kernel_item_grammar::zz_the_declared_refusals_are_all_reachable` gates that every declared
+   item-grammar refusal still fires; the seven §10.3 names have 18 host tests and no equivalent, so
+   a constructor that stops being reachable would be silent. Two branches are already recorded
+   unreachable as gaps 1664 and 1672.
+4. **Gap 1768.** *What is not done.* **check 10 is blind inside a pruned directory.** `parity.py`
+   walks through `leanfiles.source_files`, which prunes any dot-prefixed directory or one holding a
+   CACHEDIR.TAG; a `**Parity P41 taken**` line in `.hidden/n.md` or beside a tag gives rc=0.
+   *Why it is not patched here.* Un-pruning dot directories sweeps `.git`, `.lake` and `.claude`'s
+   **worktrees** — whole second copies of this repository — and that is a worse gate, not a better
+   one. *Which step clears it.* One that separates "a build directory" from "a directory holding
+   real prose": `.claude/API-NOTES.md` is 265 citations with 6 unresolved that checks 2, 8, 9 and
+   10 all decline to read.
+5. **Gap 1769.** *What is not done.* **Three surfaces of one day disagree about an open break and
+   an open interruption.** Re-driven: arrive 08:00, `tm break 20m --where walk` 09:15, `tm interrupt`
+   09:30; `.tm/state.json` carries both; at 09:45 `tm now` prints *"nothing running"* and a work
+   block as `current`, `--json now` has `active: null` and neither record anywhere; `tm plan` prints
+   `09:30 · lost 15m interruption` and `tm review day` prints `lost 0`. *Why it is not patched
+   here.* Which of `lost 15m` and `lost 0` is right for an OPEN interruption is a §12 semantic call
+   and not a repair step's to invent. *Which step clears it.* One that decides that, and then
+   closes the same class gap 1530 closed for `window` across all three surfaces at once.
+6. **Gap 1770.** *What is not done.* **The burn-down has a roster and not a ledger.** §7 above
+   catches a goal deleted outright; a goal whose name already appears inside a longer audit line —
+   5 of the 9 open ones — still passes. *Which step clears it.* One that records, goal by goal,
+   WHICH theorem discharged it, so "discharged" is a link and not a substring.
+7. **Gap 1771.** *What is not done.* **Two decoders of one `{"id": …, "p": …}` object**:
+   `EmitWire.readPrio/readPrios` and `PlanWire.readYesterdayPair/readYesterday`. *And the finding as
+   filed is refuted in its mechanism.* `readPrios` does **not** open-code `Planner.mkYesterday?`:
+   its `mapM` body is `readPrio`, which names `badPriority i` for the offending INDEX, and routing
+   it through `mkYesterday?` would collapse an indexed named refusal into a nameless `none` — the
+   loss `RowRefusal` exists to prevent, and `RowRefusal` is deliberately not `PlannerRefusal`
+   (§10.3, D28). The bounds and the readers ARE shared: `Planner.maxCands`, `Capped.ofList?` and
+   `yesterdayOf?`, and no number is minted on either side. What is genuinely duplicated is the
+   object-shape read. *Which step clears it.* One that generalises the PAIR reader over the refusal
+   type `{ρ : Type}`, the way this run's eight `…AtP` helpers already are.
+8. **Gap 1772.** *What is not done.* **A `::` path's owner and last segment resolve independently.**
+   §6 requires both to exist; nothing requires them to belong together, so `SegKind::Done` and
+   `PErr::Done` resolve alike. Gap 1731's remaining half. *Which step clears it.* One that reads a
+   type's members, which is a type checker and not a grep.
+9. **Gap 1773.** *What is not done.* **The floor's denominator still counts replayed seeds.** §5
+   moved the threshold to where the rate was measured; it did not teach `note_case` to tell a
+   `.proptest-regressions` replay from a fresh draw. *Which step clears it.* One that counts the two
+   separately — which also answers gap 1761's *"a seed that reproduces from one that no longer
+   does"*.
+10. **Gap 1774.** *What is not done.* **A mixed `tm edit` is refused, not transacted.**
+    `tm edit ^a1 est=2b title=Renamed` was silently wrong and is now an error; a user who wants both
+    runs two commands. *Which step clears it.* One that makes the two phases one transaction, or one
+    that wires `title`/`p`/`state` — §4.1 positional slots, which is a wire question and not a
+    routing one.
+
+**Not repaired because there is nothing to repair:** the red commit `0d7cc7b`, made while check 10
+was failing, is disclosed in `7a525f9` and left in history deliberately. Acceptance-before-every-
+commit was violated once in eight commits of W-27 and this step did not repeat it.
+
+### 10. Discipline
+
+Both suites green before the commit: `check.sh` **10/10** and `cargo test --workspace` **0 failed**,
+**run twice** end to end on the final tree (D46), plus the named suites run on their own. No
+`sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor or
+`.toOption` added — and four of those are mechanised for the first time by this step. No predicate
+or assertion weakened: the D49 property is strictly wider, the roster is strictly wider, the `::`
+rule is strictly tighter, and the one threshold that moved kept its rate and moved to the sample it
+was measured on. No generator narrowed; the seed drawn during the audit is kept. One snapshot
+deleted with its subject and two written for new assertions; no snapshot re-blessed to make a test
+pass. No goal deleted. No new dependency; `Cargo.toml` and `Cargo.lock` untouched; `lean-toolchain`
+and `kernel/corpus/` untouched; no memory bound raised — every `lake`, `lean`, `cargo`, `check.sh`,
+`tm` and `python` invocation capped with `systemd-run --user --scope -p MemoryMax=… -p
+MemorySwapMax=0`. Every plant was made in a `git archive HEAD` clone under `/tmp/claude-1000/`;
+`git status --porcelain` on the shared tree was checked before and after each and never held a
+perturbation. No parity number issued — the fork is unchanged by any of this; **next free P41**.

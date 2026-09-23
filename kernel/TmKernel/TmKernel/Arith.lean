@@ -174,7 +174,7 @@ theorem Q.le_of {a b : Q} (h : a.num * b.den ≤ b.num * a.den) : Q.le a b = tru
 theorem Q.le_elim {a b : Q} (h : Q.le a b = true) : a.num * b.den ≤ b.num * a.den :=
   of_decide_eq_true h
 
-private theorem cancelR {a b c : Nat} (hc : 0 < c) (h : a * c ≤ b * c) : a ≤ b :=
+theorem cancelR {a b c : Nat} (hc : 0 < c) (h : a * c ≤ b * c) : a ≤ b :=
   Nat.le_of_mul_le_mul_left (by rw [Nat.mul_comm c a, Nat.mul_comm c b]; exact h) hc
 
 theorem Q.lt_iff_not_le (a b : Q) : Q.lt a b = ! Q.le b a := by

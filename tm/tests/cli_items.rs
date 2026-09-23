@@ -115,20 +115,28 @@ fn editing_a_demoted_item_rewrites_the_line_it_read() {
 
 #[test]
 fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
+    // THE COMMAND THIS TEST USED TO DRIVE WAS THE D49 DIVERGENCE ITSELF:
+    // `ci=3 est=45m --set loc=out` mixed two unwired forms with a wired
+    // `est=`, so the host wrote §3.1's LEADING estimate (`- [ ] 3 45m …`) and
+    // this file asserted that it had — the "commented side" D49 names, against
+    // the kernel's proved `est:45m`. The mixed command is refused now, so the
+    // logging property is driven on each writer's own commands instead, and
+    // the old edit_json snapshot is deleted rather than re-blessed: its
+    // subject no longer exists.
     let tm = Tm::new();
     let before = tm.line("backlog.md", "a1");
-    let json = tm.json(&["edit", "^a1", "ci=3", "est=45m", "--set", "loc=out"]);
+    let json = tm.json(&["edit", "^a1", "est=45m", "loc=out", "due=2026-10-01"]);
     assert_eq!(json["changes"].as_array().map(Vec::len), Some(3));
 
     let after = tm.line("backlog.md", "a1");
     assert_ne!(before, after);
-    // §4.1: `est=` is the item's estimate — the *leading* one. `est:` is the
-    // tool-written remainder (`tm stop`, a partial `tm done`), so a hand edit
-    // must not land there: §6.4's `progress` divides by the leading value and
-    // the §4.3 timeline prints it.
-    assert!(after.starts_with("- [ ] 3 45m Insurance claim"), "{after}");
-    assert!(!after.contains("est:"), "{after}");
+    // §4.1 through the one proven setter: the `est:` key is the remaining
+    // estimate and the leading `30m` is §3.1's `est_original`, which the §11
+    // history calibrates actual/est against and which an edit never rewrites.
+    assert!(after.starts_with("- [ ] 2 30m Insurance claim"), "{after}");
+    assert!(after.contains("est:45m"), "{after}");
     assert!(after.contains("loc:out"), "{after}");
+    assert!(after.contains("due:2026-10-01"), "{after}");
 
     let edits: Vec<_> = tm
         .log()
@@ -136,13 +144,31 @@ fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
         .filter(|e| e["ev"] == "edit")
         .collect();
     assert_eq!(edits.len(), 3);
+    assert_eq!(edits[0]["field"], "est");
+    // The `est` edit reports the estimate it replaced, not "".
+    assert_eq!(edits[0]["from"], "30m");
+    assert_eq!(edits[1]["field"], "loc");
+    assert_eq!(edits[2]["field"], "due");
+    insta::assert_json_snapshot!("edit_json_kernel_path", json);
+}
+
+/// The same property on the OTHER writer, so "one edit has one writer" is
+/// pinned on both sides and not only on the kernel's: three changes no wire
+/// carries, logged one event each by the old Rust path.
+#[test]
+fn a_host_path_edit_logs_each_field_too() {
+    let tm = Tm::new();
+    let json = tm.json(&["edit", "^a1", "ci=3", "title=Renamed", "--set", "loc=out"]);
+    assert_eq!(json["changes"].as_array().map(Vec::len), Some(3));
+    let after = tm.line("backlog.md", "a1");
+    assert!(after.starts_with("- [ ] 3 30m Renamed"), "{after}");
+    assert!(after.contains("loc:out"), "{after}");
+    let edits: Vec<_> = tm.log().into_iter().filter(|e| e["ev"] == "edit").collect();
+    assert_eq!(edits.len(), 3);
     assert_eq!(edits[0]["field"], "ci");
     assert_eq!(edits[0]["from"], "2");
     assert_eq!(edits[0]["to"], "3");
-    // The `est` edit reports the estimate it replaced, not "".
-    assert_eq!(edits[1]["field"], "est");
-    assert_eq!(edits[1]["from"], "30m");
-    insta::assert_json_snapshot!("edit_json", json);
+    insta::assert_json_snapshot!("edit_json_host_path", json);
 }
 
 #[test]
@@ -1567,70 +1593,177 @@ fn dropping_by_id_says_nothing_about_boxing() {
 // D49 — `tm edit` has ONE writer and it is the kernel's (README gaps 48, 1430)
 // ---------------------------------------------------------------------------
 
-/// **The three divergences D49 was decided on, closed** — driven on the shipped
-/// binary before the repair and pinned here after it.
+/// A value every key of `tm_core::grammar::KEYS` accepts, so that the property
+/// below can be quantified over the KEY SET instead of over a hand-picked few.
 ///
-/// `kernel_edit_cmds` routes to the kernel only when **every** pair of the
-/// command is wired, and the host wired nine of the kernel's eighteen keys, so
-/// one unwired pair sent the whole edit down the old Rust path. Adding one
-/// `due=` to a command therefore changed three independent things about what
-/// the *other* pair wrote — measured on `plan-basic` at `bf7cc63`..`22db972`:
+/// The table is asserted **total** over `KEYS` by the property, so a
+/// nineteenth key added to the grammar fails this file rather than being
+/// silently skipped — which is the difference between a derived set and the
+/// three-element list this replaced.
+fn a_value_for(key: &str) -> &'static str {
+    match key {
+        "due" => "2026-10-01",
+        "at" => "2026-09-07T10:00/11:00",
+        "win" => "11:30-13:30",
+        "dur" => "45m",
+        "pref" => "12:00",
+        "every" => "daily",
+        "after-done" => "3d",
+        "on-event" => "x",
+        "on-miss" => "persist",
+        "min" => "1h/w",
+        "max" => "3h/d",
+        "after" => "^m4",
+        "loc" => "out",
+        "est" => "2b",
+        "demoted" => "W37",
+        "waiting" => "2026-09-05",
+        "buffer" => "10m",
+        "cap" => "3h/d",
+        "ci" => "4",
+        _ => "",
+    }
+}
+
+/// **D49, quantified over the INVOCATION and not over three examples** — the
+/// W-27 repair step.
 ///
-/// | `tm edit ^a1 …` | before D49 | after |
+/// The defect D49 was decided on is that adding a second change to a `tm edit`
+/// moved the whole command off the kernel's path, so the *first* pair wrote
+/// different bytes. Measured on `plan-basic`, whose `^a1` line is
+/// `- [ ] 2 30m Insurance claim for the bike  ^a1` — a leading estimate and no
+/// `est:` key:
+///
+/// | `tm edit ^a1 …` | before | after |
 /// |---|---|---|
 /// | `cap=3h/d` | `max:3h/d` | `max:3h/d` |
 /// | `cap=3h/d due=2026-10-01` | **`cap:3h/d`** | `max:3h/d` |
+/// | `cap=3h/d ci=4` | **`cap:3h/d`** | refused |
 /// | `est=2b` | `est:120m` | `est:120m` |
-/// | `est=2b due=2026-10-01` | **leading `2b`, no `est:`** | `est:120m` |
+/// | `est=2b ci=4` | **leading `2b`, no `est:`** | refused |
+/// | `est=2b unknownkey=zz` | **leading `2b`**, and `unknownkey:zz` written | refused |
 ///
 /// The alias, the rendering and the **slot** — §4.1's remaining estimate
 /// against §3.1's `est_original`, the history §11 calibrates actual/est
-/// against. The assertion is written as an *equality between the two
-/// invocations* rather than against a literal, because the defect was never
-/// that either answer was wrong on its own: it was that a diff depended on how
-/// many keys were passed to one verb.
+/// against. Routing gap 48's eight keys closed the `due=` row and left the
+/// others, because the shape of the old assertion was a LIST: it named three
+/// invocation pairs, and every second key it named happened to be routed.
+///
+/// So the property now quantifies both sides. Every key `tm_core::grammar::KEYS`
+/// carries is tried ALONE, and then paired with every structurally unwired
+/// FORM there is, and the answer must be the kernel's bytes or a refusal that
+/// wrote nothing. No arm of it is allowed to be a no-op: the counters at the
+/// end are what stop this from passing by trying nothing.
 #[test]
-fn edit_writes_the_same_bytes_however_many_keys_the_command_carries() {
-    for (alone, combined) in [
-        (vec!["cap=3h/d"], vec!["cap=3h/d", "due=2026-10-01"]),
-        (vec!["est=2b"], vec!["est=2b", "due=2026-10-01"]),
-        (vec!["min=1h/w"], vec!["min=1h/w", "loc=out", "waiting=2026-09-05"]),
-    ] {
-        let one = {
-            let tm = Tm::new();
-            tm.ok(&[&["edit", "^a1"][..], &alone[..]].concat());
-            tm.line("backlog.md", "a1")
-        };
-        let many = {
-            let tm = Tm::new();
-            tm.ok(&[&["edit", "^a1"][..], &combined[..]].concat());
-            tm.line("backlog.md", "a1")
-        };
-        // The pair they share must have written the same token in both.
-        let shared = alone[0].replace('=', ":");
-        let shared = shared.split_once(':').expect("k=v").0;
-        let tok = |line: &str| -> String {
-            line.split_whitespace()
-                .find(|w| w.starts_with(&format!("{shared}:")) || w.starts_with("max:"))
-                .unwrap_or("<none>")
-                .to_string()
-        };
-        assert_eq!(
-            tok(&one),
-            tok(&many),
-            "`{}` and `{}` wrote different bytes for the pair they share (D49):\n  {one}\n  {many}",
-            alone.join(" "),
-            combined.join(" "),
+fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
+    // The forms that are NOT on the wire, each a property of the wire or of
+    // this line — see `items::unwired_reason`, which is where the reasons are
+    // written out. `ci=4` is here because `^a1`'s ci is the POSITIONAL digit
+    // (gap 41); on a line already carrying a `ci:` key it is wired, and
+    // `edit_routes_a_ci_key_line` below drives that direction.
+    let unwired: &[&[&str]] = &[
+        &["ci=4"],
+        &["--unset", "ci"],
+        &["title=Renamed"],
+        &["p=2"],
+        &["demoted=W37"],
+        &["zzznotakey=1"],
+        &["--set", "zz=1"],
+    ];
+    let mut keys = 0usize;
+    let mut checked = 0usize;
+    let mut refused = 0usize;
+    let untouched = {
+        let tm = Tm::new();
+        tm.line("backlog.md", "a1")
+    };
+    for key in tm_core::grammar::KEYS {
+        let value = a_value_for(key);
+        assert!(
+            !value.is_empty(),
+            "`a_value_for` has no value for `{key}`: the table must stay total over \
+             `grammar::KEYS`, or this property silently stops testing a key"
         );
+        let pair = format!("{key}={value}");
+        keys += 1;
+        for extra in unwired {
+            // What the two changes write as TWO commands: each one written by
+            // whichever writer owns it, which is the answer D49 fixes as
+            // correct. `--unset ci` after a `ci=`-less edit is the same edit.
+            let split = {
+                let tm = Tm::new();
+                let a = tm.run(&["edit", "^a1", &pair]);
+                let mut argv = vec!["edit", "^a1"];
+                argv.extend_from_slice(extra);
+                let b = tm.run(&argv);
+                (a.code == 0 && b.code == 0).then(|| tm.line("backlog.md", "a1"))
+            };
+            let tm = Tm::new();
+            let mut argv = vec!["edit", "^a1", &pair];
+            argv.extend_from_slice(extra);
+            let out = tm.run(&argv);
+            let after = tm.line("backlog.md", "a1");
+            checked += 1;
+            if out.code != 0 {
+                refused += 1;
+                assert_eq!(
+                    after, untouched,
+                    "`tm edit ^a1 {pair} {}` was refused and still wrote the line (D49)",
+                    extra.join(" "),
+                );
+                continue;
+            }
+            let Some(split) = split else {
+                panic!(
+                    "`tm edit ^a1 {pair} {}` succeeded as one command and one of its halves \
+                     failed on its own — a combined edit did something neither writer will do",
+                    extra.join(" "),
+                );
+            };
+            assert_eq!(
+                after, split,
+                "one edit is not what its parts write (D49):\n  together: {after}\n  \
+                 separately: {split}",
+            );
+        }
     }
+    assert_eq!(keys, tm_core::grammar::KEYS.len());
+    assert_eq!(checked, keys * unwired.len(), "the inner loop skipped a form");
+    assert!(
+        refused > 0,
+        "nothing was refused: the mixed-command branch was never reached"
+    );
+}
 
-    // The slot, named on its own: the leading estimate is §3.1's
-    // `est_original` and an `est=` edit must never rewrite it (§4.1).
+/// The other direction of gap 41, so the refusal above is about the LINE and
+/// not about the key: on a line whose ci already lives in the `ci:` key slot,
+/// `ci=` **is** on the wire and rides beside another key.
+#[test]
+fn edit_routes_a_ci_key_line() {
+    // `^a1`'s ci is positional, so clear the digit and write the key the way a
+    // hand-edited file would carry one — two host edits, then a kernel one.
+    let tm = Tm::new();
+    tm.ok(&["edit", "^a1", "--unset", "ci"]);
+    tm.ok(&["edit", "^a1", "--set", "ci=4"]);
+    let out = tm.run(&["edit", "^a1", "ci=5", "cap=3h/d"]);
+    assert_eq!(out.code, 0, "{}", out.stderr);
+    let line = tm.line("backlog.md", "a1");
+    assert!(line.contains("ci:5"), "{line}");
+    assert!(line.contains("max:3h/d"), "the kernel's alias, beside a wired ci: {line}");
+}
+
+/// The slot, named on its own: the leading estimate is §3.1's `est_original`
+/// and an `est=` edit must never rewrite it (§4.1).
+#[test]
+fn edit_never_rewrites_the_leading_estimate() {
     let tm = Tm::new();
     tm.ok(&["edit", "^a1", "est=2b", "due=2026-10-01"]);
     let after = tm.line("backlog.md", "a1");
     assert!(after.contains("est:120m"), "{after}");
-    assert!(after.contains("] 2 30m Insurance"), "the leading estimate moved: {after}");
+    assert!(
+        after.contains("] 2 30m Insurance"),
+        "the leading estimate moved: {after}"
+    );
 }
 
 /// **The spellings routing moved**, each one a byte a hand-edited file now
@@ -1721,17 +1854,27 @@ fn edit_refuses_by_name_where_the_host_wrote_or_said_nothing() {
 /// divergences above **survive for exactly those mixtures** — with `cap:` for
 /// `max:` and the leading estimate for `est:` once more.
 #[test]
-fn a_command_mixing_an_unwired_form_still_takes_the_host_path() {
-    let tm = Tm::new();
-    tm.ok(&["edit", "^a1", "cap=3h/d", "--set", "foo=bar"]);
-    let line = tm.line("backlog.md", "a1");
-    assert!(line.contains("cap:3h/d"), "gap 1700 has closed; rewrite this test: {line}");
-
-    let tm = Tm::new();
-    tm.ok(&["edit", "^a1", "est=2b", "title=Renamed"]);
-    let line = tm.line("backlog.md", "a1");
-    assert!(!line.contains("est:"), "gap 1700 has closed; rewrite this test: {line}");
-    assert!(line.contains("] 2 2b Renamed"), "{line}");
+fn a_command_mixing_an_unwired_form_is_refused() {
+    // Gap 1700 as W-27 filed it — "a command mixing an unwired form with a
+    // wired pair takes the old path WHOLE" — was the LAST way `tm edit` had two
+    // writers, and this test used to pin it: `cap=3h/d --set foo=bar` wrote the
+    // host's `cap:` alias, `est=2b title=Renamed` rewrote §3.1's leading
+    // estimate. Both are refused now, by the form that is not on the wire.
+    for (argv, named) in [
+        (vec!["edit", "^a1", "cap=3h/d", "--set", "foo=bar"], "--set foo=bar"),
+        (vec!["edit", "^a1", "est=2b", "title=Renamed"], "title=Renamed"),
+    ] {
+        let tm = Tm::new();
+        let before = tm.line("backlog.md", "a1");
+        let out = tm.run(&argv);
+        assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+        assert!(
+            out.stderr.contains(named),
+            "the refusal must name the form that is not on the wire: {}",
+            out.stderr
+        );
+        assert_eq!(tm.line("backlog.md", "a1"), before, "a refusal wrote the line");
+    }
 }
 
 /// **Parity P40 — the one line the kernel writes that the old editor refused.**

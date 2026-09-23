@@ -22,3 +22,7 @@ cc 7420e7f6e3701de0fa5bcde0012de8cc00e9552e0c6ce257324ba8244e23bc67 # shrinks to
 cc d1a5fd1cd2f4497e4e13de93796c61473c349a6a3dbed2d25f36c2fbcc46b34f # shrinks to (text, _stateful) = ("- [x]  0 6h43m\tZ dt-3 ci:1 win:2026-05-17T03:29/10:54 dur:55b", true)
 cc 56fb2c6f517fbbdcef9a2bba9b697591356bff005c07d12c6298f5d93ca3314a # shrinks to (text, _stateful) = ("- [ ]    a win:20:32-12:47 dur:3h21m win:22:18-20:40 dur:2h52m", true)
 cc 88657962e31de5d20474aec5469ba5034bb90ae3bb1d2fa88b9fc23e84943fc0 # shrinks to (text, _stateful) = ("- A", false)
+cc 17f869166c4dcb1c75a241eb54dca5204e9b5e01e6c423853c430acaddef13b9 # shrinks to (text, _stateful) = ("- [ ]    A\tdur:5h @Vh dur:2h\tmax:7m/m    win:2026-03-26T22:04/21:20 dur:8b ", true)
+cc 49b6fe6b552d0cdda365e6a1cb8d443e5c823323feb414bc9fd6b8031dcd79b3 # shrinks to (text, _stateful) = ("- A", false)
+cc 4fb1add435406d509f5e497a5cba33428a97f9d5cace100d9ed1f05d8c0c7a8b # shrinks to (text, _stateful) = ("- [ ] a    zz:898 due:2026-06-23T16:24", true)
+cc a2b9bc712e7388f2fbbdd31eeaea461863eafef4ce0a7aef8b11bcd4813d6b8c # shrinks to (text, _stateful) = ("- a", false)

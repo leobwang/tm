@@ -42,7 +42,7 @@ a directory named on the command line; a `Sub/Goals.lean` is scanned like any
 other file.  Without that test the recursion would have widened the one
 exemption into a directory anybody could create.
 """
-import re, sys, pathlib
+import bisect, re, sys, pathlib
 
 import leanfiles
 
@@ -56,8 +56,22 @@ import leanfiles
 # reach a proved theorem.  `check.sh`'s axiom audit is what enforces that -- a
 # `sorryAx` in `Check.lean` means this file leaked.
 #
-# Listed by name so that a `sorry` in any real module is still caught.
-EXEMPT = {"Goals.lean"}
+# NAMED BY PATH, NOT BY NAME-AT-A-ROOT (the W-27 repair step).  The test used to
+# be "called `Goals.lean` AND sitting at the root of some directory on the
+# command line", and `check.sh` names TWO roots -- `TmKernel/TmKernel` and
+# `TmKernel` -- so the library directory was *also* a root and
+# `TmKernel/TmKernel/Goals.lean`, a real compiled library module, was exempt
+# from every rule in this file.  DRIVEN in a `git archive HEAD` clone: that path
+# holding `partial def` and `unsafe def`, imported by `TmKernel.lean` and built
+# by `lake build TmKernel:static`, gave rc=0 and no output; the identical file
+# named `Probe.lean` was named on both lines.  The header above claimed the
+# opposite ("without that test the recursion would have widened the one
+# exemption into a directory anybody could create") -- the SECOND ROOT was that
+# widening.  Same class as gap 1314: the walk was shared, the exemption was not.
+#
+# So the exemption is now ONE PATH, resolved against this file's own directory,
+# and it does not depend on how a caller spells its arguments.
+EXEMPT_PATHS = {(pathlib.Path(__file__).resolve().parent / "TmKernel" / "Goals.lean")}
 
 # A CHARACTER LITERAL AND AN INTERPOLATION PREFIX ARE THE TWO PLACES A `!` IS
 # NOT PART OF A NAME, and both are blanked before the scan so that the ban below
@@ -75,7 +89,7 @@ EXEMPT = {"Goals.lean"}
 # used.  A `!`-accessor written flush against a string (`xs.get!"k"`) is three
 # letters, not one, so it is still caught -- which is the whole reason the test
 # counts letters instead of listing `s`.
-CHAR_LIT = re.compile(r"'(?:\\.|[^'\\])'")
+CHAR_LIT = leanfiles.CHAR_LIT  # defined beside `strip_comments`, its other caller
 INTERP = re.compile(r"(?<![A-Za-z0-9_'])([a-z])!(?=\")")
 
 # WHAT IS BANNED, AND THE HALF OF R4 THAT WAS NEVER MECHANISED.
@@ -111,7 +125,8 @@ INTERP = re.compile(r"(?<![A-Za-z0-9_'])([a-z])!(?=\")")
 # cause a MISSED SECOND REPORT of a line the row above already catches, never a
 # missed line: if it went wrong, `panic!` still fires.
 BANNED = [
-    (r"partial\s+def", "partial def"),
+    (r"\bpartial\s+def\b", "partial def"),
+    (r"\baxiom\b", "axiom (HARD RULE: no new axiom)"),
     (r"panic!", "panic!"),
     (r"native_decide", "native_decide"),
     (r"\bsorry\b", "sorry"),
@@ -136,28 +151,31 @@ BANNED = [
 # file) and never a name.
 
 bad = 0
-# path -> is it at the ROOT of any directory named on the command line.  A dict
-# and not a set of pairs: `check.sh` passes `TmKernel/TmKernel` AND `TmKernel`,
-# so with the recursion every library file is reached twice -- at the root of
-# the first and one level down from the second -- and a set of (path, at_root)
-# pairs holds both, which scans every library file twice and double-counts
-# every banned line it finds.
-files = {}
+# `check.sh` passes `TmKernel/TmKernel` AND `TmKernel`, so with the recursion
+# every library file is reached twice; a SET is what keeps it scanned once.  It
+# is a set and no longer a path->at-a-root dict because the exemption above is a
+# PATH now and does not care which argument reached the file.
+files = set()
 for d in sys.argv[1:]:
-    root = pathlib.Path(d)
-    for p in leanfiles.lean_files(root):
-        files[p] = files.get(p, False) or p.parent == root
+    files.update(leanfiles.lean_files(pathlib.Path(d)))
 for p in sorted(files):
-    if files[p] and p.name in EXEMPT:
+    if p.resolve() in EXEMPT_PATHS:
         continue
-    src = p.read_text()
-    src = re.sub(r"/-.*?-/", lambda m: "\n" * m.group(0).count("\n"), src, flags=re.S)
-    for n, line in enumerate(src.splitlines(), 1):
-        code = line.split("--")[0]
-        code = CHAR_LIT.sub("''", code)
-        code = INTERP.sub(lambda m: m.group(1) + " ", code)
-        for pat, name in BANNED:
-            if re.search(pat, code):
-                print(f"{p}:{n}: banned: {name}")
-                bad += 1
+    code = leanfiles.strip_comments(p.read_text())
+    code = CHAR_LIT.sub("''", code)
+    code = INTERP.sub(lambda m: m.group(1) + " ", code)
+    # WHOLE-FILE, not line by line.  `partial\s+def` can only cross a newline if
+    # the text it is matched against holds one: DRIVEN in a clone, `partial` and
+    # `def critLoopA ..` on two lines built (`Build completed successfully`) and
+    # left this file at rc=0, while the same body on one line was named.  The
+    # rule was written for exactly that construct.  Line numbers come from the
+    # match offset instead of from the loop.
+    nl = [i for i, ch in enumerate(code) if ch == "\n"]
+    hits = set()
+    for pat, name in BANNED:
+        for m in re.finditer(pat, code):
+            hits.add((bisect.bisect_right(nl, m.start()) + 1, name))
+    for n, name in sorted(hits):
+        print(f"{p}:{n}: banned: {name}")
+        bad += 1
 sys.exit(1 if bad else 0)

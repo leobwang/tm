@@ -84,12 +84,37 @@ fi
 #    Emit.lean named itself.  `leanfiles.py --library TmKernel` names the root,
 #    once, so a fifth disagreement needs someone to write a second walk OR a
 #    second root.
+#
+#    AND THE THIRD PLACE THE ENUMERATION WAS WRONG WAS THE DECLARATION SHAPE
+#    (the W-27 repair step).  The walk was right and the root was right, and the
+#    grep still asked for `theorem` at COLUMN ZERO with at most ONE attribute in
+#    front of it, so `private theorem`, `protected theorem`, `nonrec theorem`, a
+#    second attribute block and any theorem INDENTED inside a `section` were all
+#    outside the roster -- declared, compiled, cited, and never required to
+#    carry a `#print axioms` line.  This was live, not hypothetical: FOUR
+#    private theorems (`Arith.cancelR`, `Look.scaled_le`, `Look.convex_between`,
+#    `Look.dayLeft_scale`) and one indented one
+#    (`Planner.plan_reserves_one_block_at_a_time`, which had an audit line only
+#    because somebody wrote one by hand) were unaudited while this check said
+#    ok.  DRIVEN in a scratch copy: a probe theorem at column zero was named, the
+#    identical theorem indented inside `section .. end` left `unaudited: []`.
+#    The four are no longer `private` -- `#print axioms` cannot name a private
+#    constant from another file, so the choice was to expose them or to exempt
+#    them, and exempting is how a roster becomes a list again.
+#
+#    AND THE ROSTER IS NO LONGER A GREP, because widening the grep is wrong in
+#    the OTHER direction: `Planner.lean` 6333 writes an indented `theorem
+#    plan_reserves_one_block_at_a_time ..` inside a ```lean fence inside a
+#    module DOCSTRING, quoting the §8.3 goal it goes on to refute.  Column zero
+#    missed that by luck; any indented grep demands an audit line for a theorem
+#    that does not exist.  So `leanfiles.py --theorems` comment-strips first,
+#    with the same scanner `totality.py`'s ban uses -- one walk, one stripper,
+#    one roster, which is the shape the last three repairs of this class each
+#    reached for one layer at a time.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
 unaudited=$( comm -23 \
-  <( python3 leanfiles.py --library TmKernel \
-       | xargs -r grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' \
-       | sed 's/.*theorem //' | sed 's/.*\.//' | sort ) \
+  <( python3 leanfiles.py --theorems TmKernel | sed 's/.*\.//' | sort ) \
   <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
@@ -206,9 +231,51 @@ fi
 #
 #    Nothing imports Goals.lean, so its `sorry`s cannot reach a proved theorem;
 #    check 3 above is what enforces that -- a sorryAx there means it leaked.
+#
+#    AND UNTIL W-27 THIS CHECK COULD NOT TELL A DISCHARGED GOAL FROM A DELETED
+#    ONE.  "The number drops" was a count and nothing else: `sed -i /theorem
+#    plan_tail_drop/d` lowers the burn-down, keeps this check green, and AGENTS
+#    3.2's discipline -- prove it in a real module, append `#print axioms
+#    Tm.<name>` to Check.lean, THEN delete from Goals.lean -- was enforced by
+#    nobody at all.  So the deletion is reconciled against git, the way check 8
+#    reconciles its residue: every goal name in HEAD's Goals.lean that this
+#    tree no longer states must be NAMED IN Check.lean.
+#
+#    The comparison is against HEAD and not against a campaign base on purpose.
+#    A goal is often discharged under a DIFFERENT name -- restated over the
+#    real definitions, or refuted with a witness -- and 14 of the 42 goals
+#    discharged since `d61fece` are in that class, so a fixed base would make
+#    this red for work that was done correctly years of steps ago.  Against
+#    HEAD it is exactly "did THIS step delete a goal", which is the moment the
+#    discipline applies, and acceptance runs before every commit.  The escape
+#    The escape for a restatement is deliberate: the old name has to appear on a
+#    `#print axioms` LINE of Check.lean, which is where a refutation names it
+#    (`plan_tail_drop` -> `PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_
+#    refuted_by_the_run_it_does_not_pin`).  PROSE does not count -- the first
+#    cut of this rule grepped the whole file and a deletion of any goal two
+#    comments mention would have gone green.
+#
+#    WHAT IT CANNOT SEE, measured here rather than guessed: 5 of the 9 goals
+#    outstanding today (`plan_does_not_overbook`, `plan_is_monotone_in_rank`,
+#    `plan_puts_hot_before_the_queue`, `plan_tail_drop`,
+#    `plan_is_stable_across_a_replan`) ALREADY have an audit line whose name
+#    contains theirs -- a partial restatement or a refutation of the form
+#    stage 6 wrote -- so deleting one of those five outright still passes.  The
+#    other four are caught.  Closing the remaining half needs the burn-down to
+#    record, goal by goal, WHICH theorem discharged it; this check has a roster
+#    and not a ledger, and that is README gap 1770.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Goals.lean 2>&1 )
 rc=$?
 goals=$( grep -c '^theorem ' TmKernel/Goals.lean )
+gone=""
+if git rev-parse --verify -q HEAD >/dev/null; then
+  for name in $( comm -23 \
+      <( git show HEAD:kernel/TmKernel/Goals.lean 2>/dev/null \
+           | grep -oE '^theorem [^ (){}:]+' | sed 's/^theorem //' | sort -u ) \
+      <( grep -oE '^theorem [^ (){}:]+' TmKernel/Goals.lean | sed 's/^theorem //' | sort -u ) ); do
+    grep '^#print axioms' TmKernel/Check.lean | grep -q "$name" || gone="$gone $name"
+  done
+fi
 # The stage mix is MEASURED, not spelled.  This line used to print a literal
 # "stages 3-6" beside a counted $goals, and by W-11 all thirteen outstanding
 # goals were stage 6's -- a number quoted from a stale measurement, which is
@@ -227,7 +294,10 @@ stages=$( awk '
     if (loose) line = line ", " loose " above every header"
     print line
   }' TmKernel/Goals.lean )
-if [ $rc -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'error'; then
+if [ -n "$gone" ]; then
+  say "stage goals ($goals outstanding)" "FAILED (goal deleted, never audited)"; fail=1
+  for name in $gone; do echo "  gone from Goals.lean and not named in Check.lean: $name"; done
+elif [ $rc -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'error'; then
   say "stage goals" "ok  ($goals outstanding, $stages)"
 else
   say "stage goals" "FAILED"; fail=1

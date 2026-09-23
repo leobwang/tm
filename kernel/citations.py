@@ -1061,6 +1061,37 @@ def allow_list(path):
     return vocabulary, capped
 
 
+def owner_resolves(segs, names, core, variants):
+    """Does the OWNER of a `::`-spelled path exist, and not only its last segment?
+
+    W-27 turned the :: spans on (README gap 989) and resolved them on the LAST
+    SEGMENT ALONE.  So a path whose owner does not exist went green: plant
+    "ZzzNoSuchEnum" + "::Done" and "Quux" + "::All" in `mutations.txt` of a
+    git-initialised clone of HEAD and check 8 stayed rc=0 with the counts merely
+    two higher, while a plain owner-less name planted beside them was named at
+    once.  `Done` is one of 14,828 declared names and `All` is a
+    `tm-core` one, so neither owner ever had to be real.
+
+    AND IT WAS NOT THE VARIANT RULE THAT DID IT, which is why this is a
+    separate test rather than a tighter `rust_variants`.  The allow-list's
+    sentence about that set -- "scoped to :: spans, so it launders nothing" --
+    is true of the SCOPE; the laundering was the first rule, `last in names`,
+    and the second, `last in core`.  All three are now subject to this.
+
+    Every segment but the last is tried, not just `segs[-2]`, because a test is
+    owned through a module chain (`cli::ctx::tests::every_scope_is_..`) whose
+    inner segments are not declared names: ONE real owner in the path is the
+    claim, and a stale rename breaks it.
+
+    WHAT IT CANNOT SEE: the PAIRING.  `SegKind::Done` and `PErr::Done` resolve
+    alike once both names exist somewhere -- this file has no type checker, and
+    README gap 1731 stays open for that half.  Four foreign paths went from
+    silently-resolved to named by this and are in `citations-allow.txt` where
+    every other library and fork name is: two Rust `std`, one chrono, one fork.
+    """
+    return any(seg in names or seg in core or seg in variants for seg in segs[:-1])
+
+
 def main():
     allow_path = sys.argv[1] if len(sys.argv) > 1 else os.path.join(HERE, "citations-allow.txt")
     vocabulary, capped = allow_list(allow_path)
@@ -1086,12 +1117,16 @@ def main():
 
     bad, used = [], set()
     for name, count in sorted(hits.items()):
-        last = SEG.split(name)[-1]
-        if last in names:
-            continue
-        if "_" not in name and last in core:
-            continue
-        if "::" in name and last in variants:
+        segs = SEG.split(name)
+        last = segs[-1]
+        ok = (
+            last in names
+            or ("_" not in name and last in core)
+            or ("::" in name and last in variants)
+        )
+        if ok and "::" in name and not owner_resolves(segs, names, core, variants):
+            ok = False
+        if ok:
             continue
         if name in vocabulary:
             used.add(name)

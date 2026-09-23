@@ -44,6 +44,7 @@ the W-22 repair step: 0 .lean files live under any pruned directory of this
 repository today, so pruning changes nothing here and exists for a future
 layout.
 """
+import re
 import pathlib
 import sys
 
@@ -158,6 +159,120 @@ def library_files(pkg):
     return sorted(out)
 
 
+# STRIPPING COMMENTS IS A SCAN, NOT TWO REGEXES (the W-27 repair step).
+# It lives HERE, beside the walk, because it has TWO callers: `totality.py`'s
+# ban and `check.sh`'s check-3 roster.  Both used to strip comments with their
+# own regex -- or, in the roster's case, with nothing at all -- and both were
+# wrong in their own direction.
+#
+# The old stripper was `line.split("--")[0]` per line plus a non-greedy
+# `/-.*?-/` over the file, and BOTH were blind to string literals, so a `--` or
+# a `/-` inside a STRING silently discarded the rest of the line (or of the
+# file) before any rule ran.  DRIVEN, and both plants elaborate against the
+# pinned toolchain:
+#
+#     def critBangB (xs : List Nat) : Nat := ("a--b").length + xs.head!   -- rc=0
+#     def w27PlantM : String := "/-"  /  def w27PlantN .. := xs.head!     -- rc=0
+#
+# `xs.head!` alone is named.  So "every `!`-accessor" was true of the regex and
+# false of the scanner feeding it -- the same shape as the name-list holes this
+# campaign keeps finding, one layer lower down.
+#
+# `strip` walks the text once, tracking three states Lean itself distinguishes:
+# a NESTING block comment (`/- /- -/ -/` is one comment, which the non-greedy
+# regex also got wrong, in the over-stripping direction), a line comment, and a
+# string literal.  Comment bytes become spaces and newlines stay newlines, so
+# line numbers survive.  STRING BODIES become spaces too -- prose is not code --
+# EXCEPT inside `{...}` interpolation, which IS code and is passed through, so
+# `s!"{xs.head!}"` is still caught.  Character literals are matched with the
+# same `CHAR_LIT` shape as before and passed through whole, because `'"'` is a
+# char literal and there are 60-odd of them in `Boundary.lean`; blanking them
+# for the `!` rule happens afterwards, as it always did.
+#
+# WHAT IT CANNOT SEE: a string literal nested inside an interpolation brace
+# (`s!"{f "a"}"`) is scanned as code with its inner quotes intact, which can
+# shift the string/code boundary for the rest of that line; and Lean's raw
+# string syntax `r#"..."#` is not modelled (the library uses none -- grepped).
+# Lean's character literal -- one character, or one backslash escape, between
+# apostrophes.  The apostrophe matters because `'` is an identifier character in
+# Lean (`h'`, `foo'`), which is why the two `'`s must be exactly two characters
+# apart.  `strip_comments` needs it because `'"'` is a char literal and
+# `Boundary.lean` writes sixty-odd of them; `totality.py` needs the same shape
+# to blank `'!'` before its `!`-accessor rule, and imports this one.
+CHAR_LIT = re.compile(r"'(?:\\.|[^'\\])'")
+
+
+def strip_comments(src: str) -> str:
+    out, i, n, depth = [], 0, len(src), 0
+    while i < n:
+        c = src[i]
+        if depth:
+            if src.startswith("/-", i):
+                depth += 1; out.append("  "); i += 2; continue
+            if src.startswith("-/", i):
+                depth -= 1; out.append("  "); i += 2; continue
+            out.append("\n" if c == "\n" else " "); i += 1; continue
+        if src.startswith("/-", i):
+            depth = 1; out.append("  "); i += 2; continue
+        if src.startswith("--", i):
+            while i < n and src[i] != "\n":
+                out.append(" "); i += 1
+            continue
+        if c == "'":
+            m = CHAR_LIT.match(src, i)
+            if m:
+                out.append(m.group(0)); i = m.end(); continue
+        if c == '"':
+            out.append('"'); i += 1
+            braces = 0
+            while i < n:
+                d = src[i]
+                if d == "\\":
+                    out.append("  " if braces == 0 else src[i:i + 2]); i += 2; continue
+                if braces == 0:
+                    if d == '"':
+                        out.append('"'); i += 1; break
+                    if d == "{":
+                        braces = 1; out.append("{"); i += 1; continue
+                    out.append("\n" if d == "\n" else " "); i += 1; continue
+                if d == "{": braces += 1
+                elif d == "}": braces -= 1
+                out.append(d); i += 1
+            continue
+        out.append(c); i += 1
+    return "".join(out)
+
+
+THEOREM = re.compile(
+    r"^[ \t]*(?:@\[[^\]]*\][ \t\r\n]*)*"
+    r"(?:(?:private|protected|nonrec)[ \t]+)*theorem[ \t]+([^\s(){}:]+)",
+    re.M)
+
+
+def theorem_names(path):
+    """Every theorem DECLARED in `path`, as written (`Foo.bar` keeps its prefix).
+
+    THE SHAPE IS THE THIRD PLACE THIS CAMPAIGN'S ENUMERATION WAS WRONG.  The
+    walk was fixed at W-21, the library ROOT at W-23, and `check.sh`'s roster
+    still asked bash for `theorem` at COLUMN ZERO with at most ONE attribute in
+    front of it.  `private theorem` (four live: `Arith.cancelR`,
+    `Look.scaled_le`, `Look.convex_between`, `Look.dayLeft_scale`), `protected`,
+    `nonrec`, a second attribute block and anything INDENTED inside a `section`
+    were all outside it -- declared, compiled and audited by nobody.
+
+    AND WIDENING THE GREP ALONE WOULD HAVE BEEN WRONG IN THE OTHER DIRECTION,
+    which is why this is a function and not a longer regex.  `Planner.lean` 6333
+    writes an indented `theorem plan_reserves_one_block_at_a_time ..` inside a
+    ```lean fence inside a `/-! -/` module docstring -- PROSE, quoting the goal
+    it goes on to refute.  A column-zero grep missed it by luck; an indented
+    grep would have demanded an audit line for a theorem that does not exist.
+    So the source is comment-stripped first, by the same scanner the ban uses.
+
+    WHAT IT CANNOT SEE: `theorem` produced by a macro or a `syntax` extension
+    (the kernel defines none), and the blind spots `strip_comments` lists."""
+    return THEOREM.findall(strip_comments(pathlib.Path(path).read_text()))
+
+
 def main(argv):
     """Print every .lean file under each directory named, one per line.
 
@@ -166,10 +281,19 @@ def main(argv):
     remove.
 
     `--library <pkg>` prints the library target of `pkg` -- its module
-    directory AND its root module (`library_files`)."""
+    directory AND its root module (`library_files`).
+
+    `--theorems <pkg>` prints the check-3 ROSTER of that library: every theorem
+    declared in it, comment-stripped, one per line (`theorem_names`)."""
     if not argv:
-        print("usage: leanfiles.py [--library] <dir> [<dir> ...]", file=sys.stderr)
+        print("usage: leanfiles.py [--library|--theorems] <dir> [<dir> ...]", file=sys.stderr)
         return 2
+    if argv[0] == "--theorems":
+        for name in argv[1:]:
+            for path in library_files(name):
+                for thm in theorem_names(path):
+                    print(thm)
+        return 0
     library = argv[0] == "--library"
     argv = argv[1:] if library else argv
     seen = set()

@@ -1,0 +1,25 @@
+---
+source: tm/tests/cli_items.rs
+expression: json
+---
+{
+  "changes": [
+    {
+      "field": "ci",
+      "from": "2",
+      "to": "3"
+    },
+    {
+      "field": "title",
+      "from": "Insurance claim for the bike",
+      "to": "Renamed"
+    },
+    {
+      "field": "loc",
+      "from": "",
+      "to": "out"
+    }
+  ],
+  "id": "a1",
+  "line": "- [ ] 3 30m Renamed loc:out  ^a1"
+}

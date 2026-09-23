@@ -140,6 +140,11 @@ u32::saturating_add
 i64::rem_euclid
 fs::read_to_string
 std::fs::create_dir_all
+# Named by the W-27 repair step's owner test: `File` and `OpenOptions` are `std::fs`
+# types, and `kernel/README.md`'s own §2 table names both where it records which
+# `std::fs` call the kernel's writer does NOT make.
+File::create
+OpenOptions::new
 char::from_u32
 char::is_whitespace
 str::trim_start
@@ -168,6 +173,8 @@ Item::Numeric
 format::parse::parse_internal
 format::parse::parse_rfc3339
 chrono_tz::IANA_TZDB_VERSION
+# `Stamp.lean` 153 names chrono's subsecond scanner while recording what it ports.
+scan::nanosecond
 
 # serde_json 1.0.151, toml and tempfile.
 serde_json::Map
@@ -192,6 +199,9 @@ DayIndex::last_wake_before
 energy::fit_replay
 Known::field_error
 State::Deferred
+# `Replay.lean` 326 names the fork's undo mask where it records which reader the kernel
+# ports; the owner is the fork's type and is not in this tree.
+UndoMask::dangling
 
 # A git config key, in the repository ROOT README.md's contributing note.
 core.hooksPath
