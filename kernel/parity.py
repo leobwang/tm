@@ -49,18 +49,59 @@ THE THREE IDIOMS, an ALLOW-LIST and not a pattern (check 8's discipline):
 A row names which idiom to expect, so a line that drifts FAILS rather than
 resolving to something else.
 
-WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
-  * A NUMBER NOBODY INDEXED, IN A FILE THE INDEX DOES NOT NAME.  The files read
-    are README.md plus whatever the index anchors point into -- three today.  A
-    register row or an issuance line in a fourth file is invisible, and that is
-    why the two SUPERSEDED draft numberings in `design/stage5/` are named in
-    `parity.txt`'s header rather than left to be rediscovered.  Inside the files
-    it does read, an unindexed number is caught in both spellings: a planted
-    `| **P41** |` row with no issuance line and no index row went GREEN until
-    the row half of the check below was added.  What stops the index going quietly
-    short is `--gate`'s CONTIGUITY check: the rows must cover P1..Pmax with no
-    gap unless the gap carries a `hole P<n> <why>` line of its own.  An index
-    17 numbers short cannot pass, which is exactly what gap 1417 describes.
+WHAT THE W-25 REPAIR STEP FOUND, and what it changed.  Every one of these went
+GREEN on the tree that shipped this file, and every one was DRIVEN:
+
+  * **THE FILE SET WAS "README.md plus whatever the index anchors point into"
+    -- three files.**  An issuance line in a fourth was invisible (README gap
+    1470, filed narrower than the hole: it named a ROW, and the canonical
+    ISSUANCE line went green the same way).  That is a NAME LIST, which is the
+    shape `leanfiles.py`'s header says cannot work and which this campaign has
+    now paid for six times.  The sweep is a property-based WALK: every `.md`,
+    file in the repository, `leanfiles.source_files`' own prune rule, the same
+    enumeration checks 2, 3, 8 and 9 use.  A three-SUFFIX draft of this repair
+    was itself a name list and four plants walked through it (`notes.txt`,
+    `notes.org`, `mutations.txt`, `check.sh`), so the walk takes every file.
+  * **THE THIRD IDIOM WAS DECLARED AND NOT SWEPT.**  Three idioms are named
+    below and the unregistered-number sweep matched two.  `parity entry P40` in
+    README.md left the gate green with "next free P40" -- gap 1417's own
+    failure, reached through the one spelling P36 is anchored by.  All three
+    are swept now.
+  * **EVERY ANCHOR WAS COLUMN ZERO.**  `  | **P41** |`, `|**P41**|` and
+    `   **Parity P41 taken**` all went green.  Every gap block in
+    `kernel/README.md` is a numbered list whose continuation lines are indented
+    three spaces, so an entry written inside one carries the indent BY DEFAULT,
+    and the canonical issuance line is the only duplicate detector there is.
+    Leading whitespace and pipe spacing are tolerated now.
+  * **`P0` IS NOT A PARITY NUMBER** and was read as one.  The register is
+    P1..Pmax, so the number pattern is `[1-9][0-9]*`; that is a property, not
+    an exemption, and it is what lets the sweep read
+    `stage6-planner-design.md` §14.2 at all.
+  * **A DECLARED HOLE ABOVE THE TOP ROW WAS IGNORED BY "next free".**
+    `hole P40 retired by the owner` gave "39 registered (P1-P39, 1 declared
+    hole(s)) ... next free P40" -- the gate handing the next block the number
+    the index itself retires.  `top` is over the rows AND the holes now.
+
+WHAT THIS STILL CANNOT SEE.  Measured or argued, never guessed:
+  * A REGISTER ROW IN A FILE WHOSE `| P<n> |` MEANS SOMETHING ELSE.  Five files
+    carry `| P<n> |` rows that are not register rows -- four SUPERSEDED draft
+    numberings in `design/stage5/` (`design-lookahead` §7.2, `design-migration`
+    §12.3, `design-proof`, `design-latency`) and `design/stage6/`'s §14.2 STEP
+    table -- and each carries a `not-row <path>  <why>` line in `parity.txt`.
+    Their rows are skipped; a register row genuinely recorded in one of them is
+    invisible.  `parity.txt`'s header named TWO of the five in prose; the other
+    three were found by running the widened walk, which is why the exclusion is
+    a line the gate reads rather than a sentence a reader is asked to honour.
+    The `taken` and `cite` idioms are swept in those files regardless, because
+    neither is ambiguous: gap 1470's shape is closed even there.
+  * THE SUPERSEDED DRAFTS' NUMBERS RESOLVE ANYWAY.  `design-migration`'s P9 is
+    this register's P13.  The sweep reads the number and not the meaning, so a
+    draft row naming a number that IS registered would have been green either
+    way -- which is the second reason those files are excluded by name.
+  * What stops the index going quietly short is the CONTIGUITY check below,
+    which runs unconditionally: the rows must cover P1..Pmax with no gap unless
+    the gap carries a `hole P<n> <why>` line of its own.  An index 17 numbers
+    short cannot pass, which is exactly what gap 1417 describes.
   * A LINE ANCHOR DRIFTS.  README.md is append-only (AGENTS 6.4) so its numbers
     are stable, but a design doc edited above an anchor moves it.  That FAILS
     here, by name, and the fix is to re-anchor the row -- it is never silent.
@@ -77,27 +118,59 @@ import os
 import re
 import sys
 
+import leanfiles
+
 HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
 INDEX = os.path.join(HERE, "parity.txt")
 
+# **THE NUMBER**, and it is a property rather than an exemption.  The register
+# is P1..Pmax, so `P0` is not a parity number at all -- which is what lets this
+# read `design/stage6/stage6-planner-design.md` §14.2's `| P0 |` STEP table
+# without an entry naming it.  A leading zero is not a number here either.
+N = r"[1-9][0-9]*"
+# **LEADING WHITESPACE AND PIPE SPACING ARE TOLERATED.**  Every gap block in
+# kernel/README.md is a numbered list whose continuation lines are indented
+# three spaces, so an entry written inside `1. *What is not done.*` carries the
+# indent by default; `  | **P41** |`, `|**P41**|` and `   **Parity P41 taken**`
+# all went GREEN before this, and the issuance line is the only duplicate
+# detector the register has.
+PAD = r"^[ \t]*"
+
 IDIOMS = {
-    "taken": lambda n: re.compile(r"^\*\*Parity P%d taken\*\*" % n),
-    "row": lambda n: re.compile(r"^\| \*{0,2}P%d(?: \(refined\))?\*{0,2} \|" % n),
+    "taken": lambda n: re.compile(PAD + r"\*\*Parity P%d taken\*\*" % n),
+    "row": lambda n: re.compile(
+        PAD + r"\|\s*\*{0,2}P%d(?: \(refined\))?\*{0,2}\s*\|" % n),
     "cite": lambda n: re.compile(r"[Pp]arity (?:entry |entries )?\*{0,2}P%d\b" % n),
 }
 
 # The canonical issuance line, for ANY number: what a new block writes, and the
 # one spelling a duplicate is checked over.
-TAKEN = re.compile(r"^\*\*Parity P(\d+) taken\*\*")
+TAKEN = re.compile(PAD + r"\*\*Parity P(%s) taken\*\*" % N)
 
 # Any register-table row, for the "no unregistered number" half.
-ANY_ROW = re.compile(r"^\| \*{0,2}P(\d+)(?: \(refined\))?\*{0,2} \|")
+ANY_ROW = re.compile(PAD + r"\|\s*\*{0,2}P(%s)(?: \(refined\))?\*{0,2}\s*\|" % N)
+
+# **THE THIRD IDIOM, swept since the W-25 repair step.**  It was declared
+# legitimate here and in `parity.txt`, it is the only anchor P36 has, and the
+# unregistered-number sweep matched the other two only: `parity entry P40`
+# appended to README.md left the gate green and still printing "next free P40".
+ANY_CITE = re.compile(r"[Pp]arity (?:entry |entries )?\*{0,2}P(%s)\b" % N)
 
 INLINE_CODE = re.compile(r"`[^`]*`")
 
 
+
 def read(path):
     with io.open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def read_lossy(path):
+    """For the SWEEP only.  The walk is over every file, so it reaches `.pyc`
+    and `.snap`; an anchor file is still read strictly, because a register row
+    that has become undecodable is a finding and not a line to skip."""
+    with io.open(path, encoding="utf-8", errors="replace") as handle:
         return handle.read()
 
 
@@ -108,8 +181,14 @@ def strip_code(line):
 
 
 def index():
-    """([(n, idiom, file, line, text)], {n: why}) from parity.txt."""
-    rows, holes = [], {}
+    """([(n, idiom, file, line, text)], {n: why}, {path: why}) from parity.txt.
+
+    Three kinds of line: a row, a `hole P<n> <why>`, and a `not-row <path>
+    <why>` -- the last naming a file whose `| P<n> |` rows are NOT register
+    rows.  `parity.txt`'s header named two such files in PROSE and the widened
+    walk found five, which is the difference between a declaration a reader is
+    asked to honour and one the gate reads."""
+    rows, holes, notrow = [], {}, {}
     for raw in read(INDEX).split("\n"):
         line = raw.split("#", 1)[0].strip() if raw.startswith("#") else raw.rstrip()
         if not line.strip():
@@ -118,17 +197,34 @@ def index():
         if fields[0] == "hole":
             holes[int(fields[1][1:])] = fields[2] if len(fields) > 2 else ""
             continue
+        if fields[0] == "not-row":
+            notrow[fields[1]] = fields[2] if len(fields) > 2 else ""
+            continue
         if not re.match(r"^P\d+$", fields[0]):
             continue
         n = int(fields[0][1:])
         idiom = fields[1]
         where, _, at = fields[2].rpartition(":")
         rows.append((n, idiom, where, int(at), fields[3] if len(fields) > 3 else ""))
-    return rows, holes
+    return rows, holes, notrow
+
+
+def swept():
+    """Every file the unregistered-number sweep reads: a property-based WALK.
+
+    It was README.md plus whatever the index anchors pointed into -- a NAME LIST
+    of three, and README gap 1470 is the hole that shape always has.  This is
+    `leanfiles.source_files`, the same enumeration and the same prune rule
+    checks 2, 3, 8 and 9 use, over EVERY file it reaches.  It walked three
+    SUFFIXES for one draft of this repair, and the same plant in
+    `design/stage6/notes.txt`, in `notes.org`, in `mutations.txt` and in
+    `check.sh` went green through all three: a suffix list is a name list."""
+    return sorted(os.path.relpath(str(path), HERE)
+                  for path in leanfiles.source_files(ROOT, None))
 
 
 def main(argv):
-    rows, holes = index()
+    rows, holes, notrow = index()
     bad = []
 
     seen = {}
@@ -140,8 +236,18 @@ def main(argv):
         if idiom not in IDIOMS:
             bad.append("P%d names an idiom this file does not know: %r" % (n, idiom))
 
+    for path in notrow:
+        if not os.path.exists(os.path.join(HERE, path)):
+            bad.append("a not-row line names %s, which does not exist" % path)
+
     # **CONTIGUITY**: the index is a closed enumeration or it is decoration.
-    top = max(seen) if seen else 0
+    #
+    # `top` is over the rows AND THE DECLARED HOLES.  It was `max(seen)` -- the
+    # rows only -- so `hole P40 retired by the owner` printed "next free P40",
+    # handing the next block the number the index itself retires.  Driven at the
+    # W-25 repair step; the contiguity loop was already right, it was the number
+    # this file HANDS OUT that was wrong.
+    top = max(list(seen) + list(holes)) if (seen or holes) else 0
     for n in range(1, top + 1):
         if n not in seen and n not in holes:
             bad.append("P%d is in neither the index nor the declared holes -- "
@@ -179,12 +285,14 @@ def main(argv):
     # coverage table rather than a register row -- both are numbers the index
     # already holds, so neither has to be exempted by name.
     issued = {}
-    rows_seen = 0
-    for where in sorted(files | {"README.md"}):
+    rows_seen = cites_seen = 0
+    walked = swept()
+    for where in walked:
         path = os.path.join(HERE, where)
         if not os.path.exists(path):
             continue
-        for i, line in enumerate(read(path).split("\n"), 1):
+        rows_here = where not in notrow
+        for i, line in enumerate(read_lossy(path).split("\n"), 1):
             clean = strip_code(line)
             m = TAKEN.match(clean)
             if m:
@@ -197,12 +305,23 @@ def main(argv):
                     bad.append("P%d is taken at %s:%d and has NO index row"
                                % (n, where, i))
             m = ANY_ROW.match(clean)
-            if m:
+            if m and rows_here:
                 rows_seen += 1
                 n = int(m.group(1))
                 if n not in seen and n not in holes:
                     bad.append("%s:%d carries a register row for P%d and the "
                                "index has none" % (where, i, n))
+            # **THE THIRD IDIOM.**  Declared legitimate and unswept until W-25:
+            # `parity entry P40` in README.md left this green with "next free
+            # P40".  It is swept in EVERY walked file, `not-row` included --
+            # `parity ... P<n>` is unambiguous where `| P<n> |` is not, and it
+            # is the only anchor P36 has.
+            for m in ANY_CITE.finditer(clean):
+                cites_seen += 1
+                n = int(m.group(1))
+                if n not in seen and n not in holes:
+                    bad.append("%s:%d cites parity P%d and the index has none"
+                               % (where, i, n))
 
     if bad:
         print("%d parity register problem(s):" % len(bad))
@@ -213,12 +332,12 @@ def main(argv):
     for _, idiom, _, _, _ in rows:
         by[idiom] = by.get(idiom, 0) + 1
     print("%d registered (P1-P%d%s), %d anchor(s) re-resolved in %d file(s) "
-          "(%s), %d register row(s) and %d canonical issuance line(s) read, "
-          "next free P%d"
+          "(%s), %d file(s) swept for %d register row(s) (%d not-row), %d "
+          "citation(s) and %d canonical issuance line(s), next free P%d"
           % (len(rows), top, "" if not holes else ", %d declared hole(s)" % len(holes),
              len(rows), len(files),
              ", ".join("%d %s" % (v, k) for k, v in sorted(by.items())),
-             rows_seen, len(issued), top + 1))
+             len(walked), rows_seen, len(notrow), cites_seen, len(issued), top + 1))
     return 0
 
 

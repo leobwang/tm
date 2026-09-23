@@ -349,8 +349,38 @@ AGENTS = os.path.join(ROOT, "AGENTS.md")
 # register_builtin_error core does not declare -- was found by running this
 # file's resolver over it by hand, and repaired; doing that by hand is what the
 # file gets instead of the sweep.
+#
+# **AND `parity.txt` WAS THE SIXTH ENUMERATION HOLE.**  This list is a hard-coded
+# NAME LIST -- the shape `leanfiles.py`'s own header says cannot work -- and it
+# was repaired for the Lean (gap 1314, the library root) and for the Rust (gap
+# 1418, `tm/examples`) and never for the CHECKERS' OWN DATA FILES.  W-25 track A
+# then added one: `kernel/parity.txt`, check 10's index, 77 lines carrying 40+
+# backticked spans, landed beside `mutations.txt` and not added here.  DRIVEN at
+# the W-25 repair step in a scratch `git archive HEAD` copy: a plant citing a
+# name that resolves to nothing, appended to `parity.txt`, left this check at
+# 33738/32073/1665, rc 0, byte-identical; the same line in `mutations.txt` was
+# named at `mutations.txt:301` and in `check.sh` at `check.sh:491`.  Ten other
+# plants across the Rust, the Lean, `parity.py`, `kernel/README.md` and
+# `AGENTS.md` were ALL caught, so `parity.txt` was the one gap.
+#
+# AND IT ALREADY CARRIED TWO LIVE OVER-CAP CITATIONS.  Adding it put
+# `read_to_string` at 3 against a cap of 2 and `saturating_add` at 7 against 6 --
+# two citations nobody had counted.  Both are adjudicated in
+# `citations-allow.txt` at this step, by the move that file's own header
+# prescribes, and neither was a defect: they name Rust `std` functions of the
+# fork, which is what section 1's `std` block is for and where `saturating_sub`
+# already sat.
+#
+# THE SHAPE OF THE HOLE IS STILL HERE and is declared rather than repaired: this
+# is a name list, so a checker data file added tomorrow beside these three is
+# unswept again.  `kernel/*.py` is a glob; `check.sh`, `mutations.txt` and
+# `parity.txt` are typed out.  What a property-based rule would need is a
+# statement of what makes a file a CHECKER's data, and there is none -- a `.txt`
+# under `kernel/` is `citations-allow.txt` (deliberately excluded, above) as
+# easily as it is `mutations.txt`.  README gap 1525.
 CHECKERS = [os.path.join(HERE, "check.sh"),
-            os.path.join(HERE, "mutations.txt")] + \
+            os.path.join(HERE, "mutations.txt"),
+            os.path.join(HERE, "parity.txt")] + \
            sorted(glob.glob(os.path.join(HERE, "*.py")))
 TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 # THE RUST SOURCES, BY THE SAME PROPERTY-BASED WALK THE LEAN USES.  This was a

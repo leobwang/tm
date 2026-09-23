@@ -88,6 +88,20 @@ num_minutes
 num_seconds
 rem_euclid
 saturating_sub
+# `saturating_add` and `read_to_string` were GRANDFATHERED at 6 and 2 in section 4 until the
+# W-25 repair step, and they came up because check 8 had never swept `kernel/parity.txt` --
+# the sixth enumeration hole.  Sweeping it put each ONE over its cap.  OPENED, which is the
+# move this file's header prescribes: both name Rust `std` functions of the FORK, exactly what
+# this block is for, and `saturating_sub` was already sitting in it one line up.  Every citing
+# sentence was read: README P5/P17, design §17's and three superseded drafts' rows, parity.txt's
+# own P5 and P13 rows, `tm/tests/support/replay.rs`, `tm/tests/log_regressions.rs`,
+# `tm/tests/cli_check_log.rs` and `kernel/design/stage5/inventory.md` -- every one names what
+# the fork does where the kernel refuses by name.  None was stale.  THE COST, declared: the
+# ratchet on these two names is gone, and a stale citation of either is now invisible; the
+# alternative was a cap bumped by one, which this file's header calls the way it stops being
+# worth reading.
+saturating_add
+read_to_string
 partition_point
 or_insert
 sort_by_key
@@ -426,7 +440,6 @@ can_fail
 1 range_keeps_only_the_requested_days
 4 raw_value
 7 read_log
-2 read_to_string
 1 read_tolerates_a_line_that_is_not_utf8
 3 reader_tests
 1 refuses_a_break_longer_than_a_day
@@ -445,7 +458,6 @@ can_fail
 1 resume_equals_genesis_at_fifty_cuts
 6 runCap_without_capacity_is_runWithLog
 2 rust_facts
-6 saturating_add
 1 set_len
 1 set_var
 6 shipped_call_sites

@@ -17,9 +17,16 @@
 #     row     `| P<n> |` or `| **P<n>** |` -- a register table row in a block or a design.
 #     cite    `parity ... P<n>` in prose or in a source comment.
 #
-# A number that is retired rather than used gets a `hole P<n> <why>` line instead, because
-# `--gate` requires P1..Pmax to be CONTIGUOUS: an index that is quietly 17 numbers short is
-# what gap 1417 measured, and contiguity is what stops it happening again.
+# A number that is retired rather than used gets a `hole P<n> <why>` line instead, because the
+# gate requires P1..Pmax to be CONTIGUOUS: an index that is quietly 17 numbers short is what
+# gap 1417 measured, and contiguity is what stops it happening again.  (This sentence and
+# `parity.py`'s named a `--gate` FLAG until the W-25 repair step.  There has never been one:
+# `main(argv)` never reads `argv`, and `python3 parity.py --no-such-flag-at-all` prints the
+# same line and exits 0 as `python3 parity.py --gate` does.  The behaviour was right -- the
+# contiguity check has always run unconditionally -- and the flag name resolved to nothing,
+# which is the emitRefused class check 8's sweep of kernel/*.py was opened for (the dead name
+# is unbackticked on purpose: citations-allow.txt's own convention), in the one file beside
+# `mutations.txt` that check 8 did not sweep.  Both are repaired together.)
 #
 # TAKING THE NEXT NUMBER: `python3 parity.py` prints it.  Write the canonical issuance line
 # in your block, add the row here, and the gate checks both.
@@ -29,13 +36,22 @@
 # edited above an anchor moves it, and the gate FAILS by name rather than resolving to
 # whatever now sits on the line.
 #
-# NOT THE REGISTER, and named here so the exclusion is a decision and not an oversight:
-# `design/stage5/design-lookahead.md` §7.2 (P1, P7-P10) and `design/stage5/design-migration.md`
-# §12.3 (P7-P17) are SUPERSEDED DRAFT NUMBERINGS whose numbers mean different things from the
-# ones below -- design-migration's P9 is this register's P13, its P13 is this P16, and
-# design-lookahead's P7 is this P28.  `design/stage6/stage6-planner-design.md` §14.2 and
-# `design/stage5/design-latency.md` carry `| **P0** |`-style rows that are stage-6 STEP names,
-# not parity numbers, which is the ambiguity AGENTS §6.5 names.  None is anchored here.
+# NOT THE REGISTER.  A `not-row <path>  <why>` line says a file's `| P<n> |` rows are not
+# register rows, and the gate SKIPS them there.  This was six lines of prose asking a reader
+# to honour it and it named TWO files; the W-25 repair step widened the sweep from three files
+# to a property-based walk of every `.md`, `.lean` and `.rs` in the repository, and the walk
+# found FIVE.  The `taken` and `cite` idioms are still swept in all five, because neither is
+# ambiguous -- so an entry genuinely ISSUED in one of them is caught, which is README gap
+# 1470's own shape.  What stays invisible is a register ROW recorded in one of these five, and
+# so does a draft row naming a number that happens to be registered here (design-migration's
+# P9 IS this register's P13, its P13 is this P16, design-lookahead's P7 is this P28): the
+# sweep reads the number, never the meaning, which is the second reason for excluding by name.
+
+not-row  design/stage5/design-lookahead.md          §7.2's P1, P7-P10: a SUPERSEDED draft numbering
+not-row  design/stage5/design-migration.md          §12.3's P7-P17: a SUPERSEDED draft numbering
+not-row  design/stage5/design-proof.md              P7-P16: a SUPERSEDED draft numbering (not named before W-25)
+not-row  design/stage5/design-latency.md            P7-P15 and `| **P0** |`: a draft numbering and STEP names (only the P0 half was named before W-25)
+not-row  design/stage6/stage6-planner-design.md     §14.2's P1-P8 are stage-6 STEP names, the ambiguity AGENTS §6.5 names
 
 P1   row    README.md:8831                                 future-day capacity and everything downstream: exact `w·L + (capDen−w)·H` over `capDen` against `capacity::lookahead`'s `f64`
 P2   row    README.md:7837                                 `u` at need 0 over capacity 0 is HOT here; the fork's `f64` division is not

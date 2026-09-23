@@ -61,6 +61,13 @@ def is_build_dir(path):
 def source_files(root, suffix):
     """Every `suffix` file under `root`, recursively, sorted, build dirs pruned.
 
+    `suffix=None` means EVERY file, which is what check 10's parity sweep asks
+    for: a suffix list is itself a name list, and at the W-25 repair step a
+    `**Parity P41 taken**` line planted in `design/stage6/notes.txt`, in
+    `notes.org`, in `mutations.txt` and in `check.sh` went GREEN through a
+    three-suffix walk.  The prune rule is unchanged; the caller decodes with
+    `errors="replace"`, because a whole-file walk reaches `.pyc` and `.snap`.
+
     `root` is a pathlib.Path or a string; the results are pathlib.Path objects
     under it, so a caller that wants relative or absolute strings converts.
     The walk is explicit rather than a glob because pruning has to stop the
@@ -87,7 +94,7 @@ def source_files(root, suffix):
             if entry.is_dir():
                 if not is_build_dir(entry):
                     stack.append(entry)
-            elif entry.suffix == suffix:
+            elif suffix is None or entry.suffix == suffix:
                 out.append(entry)
     return sorted(out)
 

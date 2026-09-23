@@ -459,25 +459,47 @@ fi
 #     mechanically".  All 39 are located and anchored now; what was missing
 #     was a list of where to look.
 #
-#     FIVE PLANTS, in a scratch copy, each reverted: a second `**Parity P38
-#     taken**` (caught), an unregistered `**Parity P41 taken**` (caught), two
-#     index rows for P20 (caught), P20 deleted from the index (caught by the
-#     CONTIGUITY rule, which is what stops an index going quietly short), and
-#     an anchor moved by one line (caught).  A sixth -- the same issuance
+#     FIVE PLANTS, in a scratch copy, each reverted: a second canonical
+#     issuance line for P38 (caught), an unregistered one for P41 (caught),
+#     two index rows for P20 (caught), P20 deleted from the index (caught by
+#     the CONTIGUITY rule, which is what stops an index going quietly short),
+#     and an anchor moved by one line (caught).  A sixth -- the same issuance
 #     line QUOTED in backticks -- stays green, which is the false positive
 #     6.5's command had.  A SEVENTH WENT GREEN and is why the row half of the
-#     check exists: `| **P41** |` appended with no issuance line and no index
-#     row passed until it was added.  An EIGHTH still goes green and is
-#     recorded, not claimed away: the same row in a file the index does not
-#     name (README gap 1470).
+#     check exists: a bold register row for P41 appended with no issuance line
+#     and no index row passed until it was added.
 #
-#     THE COST IS 0.06-0.07 s, measured on its own three times at W-25
-#     (`/usr/bin/time python3 parity.py`), because it builds nothing and reads
-#     three files.  The whole script measured 13.70, 13.84 and 14.54 s at ten
-#     checks on THIS machine at load ~3.5, against 12.84 s at nine on the same
-#     checkout at load 2.3 -- a gap the load explains and this check does not
-#     fill; its own number is the 0.06 s, not the difference between two runs
-#     of a ten-second script on a shared machine.  §5.11: re-measure, do not
+#     SIX MORE WENT GREEN AND WERE REPAIRED AT THE W-25 REPAIR STEP, all six
+#     driven in a scratch copy and all six now rc=1.  They are recorded in
+#     `parity.py`'s own docstring at length; in one line each:
+#
+#       * the file set was a NAME LIST of three (README gap 1470, and filed
+#         narrower than the hole: the canonical ISSUANCE line went green in a
+#         fourth file too, not only a row).  It is a property-based walk of
+#         every file in the repository now -- and a THREE-SUFFIX draft of that
+#         repair was itself a name list, with plants in design/stage6/notes.txt,
+#         notes.org, mutations.txt and this file walking through it;
+#       * the THIRD IDIOM was declared and not swept: `parity entry P40` left
+#         the gate green and still printing "next free P40";
+#       * every anchor was COLUMN ZERO, so an indented row, a row with no
+#         spaces round its pipes, and an indented issuance all passed -- and an
+#         indented numbered list is this ledger's own gap-block shape;
+#       * P0 was read as a parity number, which is what made §14.2's step table
+#         need an exclusion at all;
+#       * a declared hole ABOVE the top row was left out of "next free", so the
+#         gate would have handed out a number the index retires.
+#
+#     WHAT STILL GOES GREEN, recorded and not claimed away: a register ROW in
+#     one of the five files carrying a `not-row` line (their draft numberings
+#     mean different things), and an issuance quoted inside backticks.  A
+#     backtick span that WRAPS A LINE is the false positive in the other
+#     direction -- inline code cannot cross a newline, so half a quoted
+#     issuance reads as a citation -- which is why this comment names the
+#     idioms in prose instead of quoting them.
+#
+#     THE COST WAS 0.06-0.07 s at W-25 track A, reading three files; it is
+#     0.29 s here, reading 591.  Measured on its own with `/usr/bin/time
+#     python3 parity.py`; it still builds nothing.  §5.11: re-measure, do not
 #     quote.
 out=$( python3 parity.py 2>&1 )
 if [ $? -eq 0 ]; then
