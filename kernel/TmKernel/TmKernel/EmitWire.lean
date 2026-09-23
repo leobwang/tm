@@ -542,14 +542,14 @@ recorded as README gap 1325 with the number it costs.
 rendered against the plan as `runLoad` read it and the documents come back as the commands left
 them, so answering both would put two states in one response.  That is gap 109's stance on
 `capacityWithCommands`, applied to the same shape one section along. -/
-def runRows (j : JVal) : Except JVal JVal :=
+def runRowsP (j : JVal) : Except JVal (JVal × Option CapParts) :=
   match jget j "plan" with
   | .error e => .error (jsonErr e)
-  | .ok none => runCap j
+  | .ok none => runCapP j
   | .ok (some sec) =>
-    match runCap j with
+    match runCapP j with
     | .error e => .error e
-    | .ok r =>
+    | .ok (r, parts) =>
       match zoneOf j with
       | .error e => .error e
       | .ok none => .error (rowRefusalJson .tzAbsent)
@@ -565,7 +565,12 @@ def runRows (j : JVal) : Except JVal JVal :=
           | some bm =>
             match readRowSection sec with
             | .error x => .error (rowRefusalJson x)
-            | .ok q => .ok (withPlan r (rowsJson p.val z bm.val q))
+            | .ok q => .ok (withPlan r (rowsJson p.val z bm.val q), parts)
+
+/-- **The bytes of it** — what every law below this point is about, and byte for byte what
+`runRows` was before W-28 widened the seam (`Boundary.CapParts`).  One match tree, two readers
+(AGENTS §5.3). -/
+def runRows (j : JVal) : Except JVal JVal := (runRowsP j).map Prod.fst
 
 /-- **The response value for a request's bytes**, `respondCap`'s shape over `runRows`. -/
 def respondRows (input : List Char) : JVal :=
@@ -596,7 +601,8 @@ def callExport (input : String) : String := callRows input
 /-- **A request with no `plan` section is answered exactly as before.** -/
 theorem runRows_without_a_plan_section_is_runCap (j : JVal) (h : jget j "plan" = .ok none) :
     runRows j = runCap j := by
-  simp [runRows, h]
+  simp only [runRows, runRowsP, h]
+  exact runCapP_bytes j
 
 /-- And its bytes are `callCap`'s. -/
 theorem callRows_without_a_plan_section_is_callCap (input : String)
@@ -613,7 +619,16 @@ theorem runRows_refuses_a_plan_section_with_commands (j sec r : JVal) (z : Cal.T
     (hp : jget j "plan" = .ok (some sec)) (hcap : runCap j = .ok r)
     (hz : zoneOf j = .ok (some z)) (hl : runLoad j = .ok (pl, c :: cs, clock)) :
     runRows j = .error (rowRefusalJson .rowsWithCommands) := by
-  simp only [runRows, hp, hcap, hz, hl]
+  have hcp : (runCapP j).map Prod.fst = .ok r := by rw [runCapP_bytes]; exact hcap
+  cases hq : runCapP j with
+  | error e => rw [hq] at hcp; cases hcp
+  | ok rp =>
+    rw [hq] at hcp
+    simp only [Except.map, Except.ok.injEq] at hcp
+    simp only [runRows, runRowsP, hp, hq, hz, hl, hcp, Except.map]
+
+/-- **The parts a request's capacity section decoded, on the bytes `runRows` answers.** -/
+theorem runRowsP_bytes (j : JVal) : (runRowsP j).map Prod.fst = runRows j := rfl
 
 /-- **The export is `callRows`.** -/
 theorem callExport_is_callRows (input : String) : callExport input = callRows input := rfl

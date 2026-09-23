@@ -3382,10 +3382,19 @@ structure LogAnswer where
   wire  : JVal
   /-- the replay the answer was rendered from, merged as the answer merged it -/
   facts : Option Seal.Answer
-deriving Repr
+  /-- **The run itself** (stage 6 W-28, README gap 1669): `Planner.PlanReq.run` is a `Seal.Run`
+  and `facts` is a `Seal.Answer`, so the capacity section's consumer could be served by the
+  second and the planner's cannot.  `some` under exactly the condition `facts` is `some` — the
+  request resumed and asked for facts — because `Seal.trimRun` is the identity on a run whose
+  answer was wanted (`trimRun_of_wanted_facts`) and is *not* the identity otherwise, and the
+  compiled op (`logOpZFast`) hands out the trimmed one.  A consumer handed `none` must refuse by
+  name; it must never read a blank as a fact, which is D24's own rule for the wake. -/
+  run   : Option Seal.Run
 
-/-- The seam's value from its two halves, `facts` first so it partially applies over a `Except.map`. -/
-def LogAnswer.of (f : Option Seal.Answer) (v : JVal) : LogAnswer := ⟨v, f⟩
+/-- The seam's value from its three halves, the replay first so it partially applies over a
+`Except.map`. -/
+def LogAnswer.of (f : Option Seal.Answer) (rn : Option Seal.Run) (v : JVal) : LogAnswer :=
+  ⟨v, f, rn⟩
 
 /-- **The replay the seam carries** (D24): the answer this request rendered, `LogReq.merged` exactly
 as `LogReq.resumed` merges it, when the request asked for facts; `none` when it did not, because
@@ -3393,9 +3402,18 @@ then no answer was built (`Seal.trimRun`). -/
 def LogReq.seamFacts (r : LogReq) (run : Seal.Run) : Option Seal.Answer :=
   if r.facts then some (r.merged run.answer) else none
 
+/-- **The run the seam carries** (stage 6 W-28, gap 1669), on exactly `seamFacts`' condition and
+for the same reason one step further in: the planner's request needs the `Seal.Run`, not the
+merged `Seal.Answer`, and the compiled op trims the run it built (`Seal.trimRun`) on precisely
+the requests that did not ask for facts.  Guarding on `r.facts` is what makes the specification's
+run and the compiled run the same value (`logOpZ_eq_logOpZFast`'s `h5`). -/
+def LogReq.seamRun (r : LogReq) (run : Seal.Run) : Option Seal.Run :=
+  if r.facts then some run else none
+
 /-- Law 13's check, carrying the seam's replay past it: a refusal drops it, an answer keeps it. -/
-def within53A (f : Option Seal.Answer) (v : JVal) : Except LogRefusal LogAnswer :=
-  (within53 v).map (LogAnswer.of f)
+def within53A (f : Option Seal.Answer) (rn : Option Seal.Run) (v : JVal) :
+    Except LogRefusal LogAnswer :=
+  (within53 v).map (LogAnswer.of f rn)
 
 /-- **The `log` op, with its seam** (§9.3–§9.4, §10; D24).  A request that only reads its lines is
 answered without a replay.  A resume checks G0 (the zone, then the cut: `from` must be the
@@ -3405,7 +3423,7 @@ refuse (`Seal.Resealed.fault`), and answers through law 13's check — carrying 
 bytes (`LogReq.seamFacts`). -/
 def logOpZ (r : VLogReq) : Except LogRefusal LogAnswer :=
   let q := r.val
-  if !q.resumes then within53A none (logBody q .null [] .null)
+  if !q.resumes then within53A none none (logBody q .null [] .null)
   else
     let K := q.start
     if K.tzKey ≠ q.tz.val.key then .error (.seal .zone)
@@ -3417,7 +3435,7 @@ def logOpZ (r : VLogReq) : Except LogRefusal LogAnswer :=
         let rs := q.reseal.bind (fun p => Seal.resealOf q.tz (q.now.getD 0) K (logLines q) q.terminated p run)
         match rs.bind Seal.Resealed.fault with
         | some f => .error (.seal (.counterOverflow f))
-        | none => within53A (q.seamFacts run) (q.resumed run rs)
+        | none => within53A (q.seamFacts run) (q.seamRun run) (q.resumed run rs)
 
 /-- **The `log` op** — the bytes half of the seam, and the only half every law below this point
 reads.  It is a *view* of `logOpZ`, not a second definition (AGENTS §5.3): every theorem stated
@@ -3429,8 +3447,8 @@ def logOp (r : VLogReq) : Except LogRefusal JVal := (logOpZ r).map LogAnswer.wir
 
 /-- `within53A` is `within53` on the bytes: the seam's replay rides beside law 13's check, never
 through it. -/
-theorem within53A_wire (f : Option Seal.Answer) (v : JVal) :
-    (within53A f v).map LogAnswer.wire = within53 v := by
+theorem within53A_wire (f : Option Seal.Answer) (rn : Option Seal.Run) (v : JVal) :
+    (within53A f rn v).map LogAnswer.wire = within53 v := by
   unfold within53A; cases within53 v <;> rfl
 
 /-! ### The `log` op reading each line once (stage 5 D9 W4)
@@ -3474,9 +3492,10 @@ def LogReq.resumedV (r : LogReq) (vs : List Log.Verdict) (run : Seal.Run) (rs : 
 
 /-- The log op with its resume, reseal, seam and answer given. -/
 def logOpCore (q : LogReq) (res : Except Seal.Refusal Seal.Run) (rsf : Seal.Policy → Seal.Run → Option Seal.Resealed)
-    (fac : Seal.Run → Option Seal.Answer) (body : Seal.Run → Option Seal.Resealed → JVal) :
+    (fac : Seal.Run → Option Seal.Answer) (rn : Seal.Run → Option Seal.Run)
+    (body : Seal.Run → Option Seal.Resealed → JVal) :
     Except LogRefusal LogAnswer :=
-  if !q.resumes then within53A none (logBody q .null [] .null)
+  if !q.resumes then within53A none none (logBody q .null [] .null)
   else
     let K := q.start
     if K.tzKey ≠ q.tz.val.key then .error (.seal .zone)
@@ -3488,18 +3507,21 @@ def logOpCore (q : LogReq) (res : Except Seal.Refusal Seal.Run) (rsf : Seal.Poli
         let rs := q.reseal.bind (fun p => rsf p run)
         match rs.bind Seal.Resealed.fault with
         | some f => .error (.seal (.counterOverflow f))
-        | none => within53A (fac run) (body run rs)
+        | none => within53A (fac run) (rn run) (body run rs)
 
 theorem logOpZ_core (r : VLogReq) :
     logOpZ r = logOpCore r.val (Seal.resumeRun r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val))
       (fun p run => Seal.resealOf r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val) r.val.terminated p run)
-      (fun run => r.val.seamFacts run) (fun run rs => r.val.resumed run rs) := rfl
+      (fun run => r.val.seamFacts run) (fun run => r.val.seamRun run)
+      (fun run rs => r.val.resumed run rs) := rfl
 
 /-- A resume's run mapped is the run read through the map — the seam's replay included. -/
 theorem logOpCore_map (q : LogReq) (res : Except Seal.Refusal Seal.Run) (rsf : Seal.Policy → Seal.Run → Option Seal.Resealed)
-    (fac : Seal.Run → Option Seal.Answer) (body : Seal.Run → Option Seal.Resealed → JVal) (g : Seal.Run → Seal.Run) :
-    logOpCore q (res.map g) rsf fac body
-      = logOpCore q res (fun p run => rsf p (g run)) (fun run => fac (g run)) (fun run rs => body (g run) rs) := by
+    (fac : Seal.Run → Option Seal.Answer) (rn : Seal.Run → Option Seal.Run)
+    (body : Seal.Run → Option Seal.Resealed → JVal) (g : Seal.Run → Seal.Run) :
+    logOpCore q (res.map g) rsf fac rn body
+      = logOpCore q res (fun p run => rsf p (g run)) (fun run => fac (g run)) (fun run => rn (g run))
+          (fun run rs => body (g run) rs) := by
   cases res <;> rfl
 
 /-- **The `log` op with its seam, compiled (W4)**: the resume builds its answer and headers only when the request wants them
@@ -3509,7 +3531,7 @@ four times: `logVerdicts` for the answer, and `Log.lineEntries` and `Log.lineWar
 reseal (W4's third profile: `readLine` was 34% of a genesis). -/
 def logOpZFast (r : VLogReq) : Except LogRefusal LogAnswer :=
   let q := r.val
-  if !q.resumes then within53A none (logBody q .null [] .null)
+  if !q.resumes then within53A none none (logBody q .null [] .null)
   else
     let K := q.start
     if K.tzKey ≠ q.tz.val.key then .error (.seal .zone)
@@ -3524,7 +3546,7 @@ def logOpZFast (r : VLogReq) : Except LogRefusal LogAnswer :=
         let rs := q.reseal.bind (fun p => Seal.resealOfV q.tz (q.now.getD 0) K ls ws q.terminated p run)
         match rs.bind Seal.Resealed.fault with
         | some f => .error (.seal (.counterOverflow f))
-        | none => within53A (q.seamFacts run) (q.resumedV vs run rs)
+        | none => within53A (q.seamFacts run) (q.seamRun run) (q.resumedV vs run rs)
 
 theorem logOpZFast_core (r : VLogReq) :
     logOpZFast r = logOpCore r.val
@@ -3533,7 +3555,7 @@ theorem logOpZFast_core (r : VLogReq) :
         (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn))
       (fun p run => Seal.resealOfV r.val.tz (r.val.now.getD 0) r.val.start (logLines r.val)
         (((logLines r.val).map Log.Line.verdict).filterMap verdictWarn) r.val.terminated p run)
-      (fun run => r.val.seamFacts run)
+      (fun run => r.val.seamFacts run) (fun run => r.val.seamRun run)
       (fun run rs => r.val.resumedV ((logLines r.val).map Log.Line.verdict) run rs) := rfl
 
 /-- **The op reading each line once is the op** (`@[csimp]`).  D24 added the seam's fourth
@@ -3564,7 +3586,14 @@ exactly the replay the specification does. -/
     funext run
     unfold LogReq.seamFacts
     cases hf : r.val.facts <;> simp [Seal.trimRun, hf]
-  rw [logOpZ_core, logOpZFast_core, Seal.resumeRunW_eq, logOpCore_map, h1, h2, h3, h4]
+  have h5 : (fun run => r.val.seamRun (Seal.trimRun r.val.facts r.val.headersFrom.isSome run))
+      = (fun run => r.val.seamRun run) := by
+    funext run
+    unfold LogReq.seamRun
+    cases hf : r.val.facts
+    · simp [hf]
+    · simp [hf, Seal.trimRun_of_wanted_facts]
+  rw [logOpZ_core, logOpZFast_core, Seal.resumeRunW_eq, logOpCore_map, h1, h2, h3, h4, h5]
 
 /-- The op's result as a plain value, for decided witnesses (`Except` has no decidable equality). -/
 def logAnswered : Except LogRefusal JVal → Sum LogRefusal JVal
@@ -10587,13 +10616,42 @@ def logSectionWith (j : JVal) (zo : Option Cal.Tz) : Except JVal (Option LogAnsw
     | some z => logAnswerOf z (nowOf j) l
   | .error _ => .error (LogRefusal.badLogReq .log).json
 
+/-- **What a capacity request decoded, kept** (stage 6 W-28, README gaps 1669, 1671 and 1672).
+
+`runCapZ` answered bytes and dropped every value it had built, so the next section that needed one
+— the planner's, whose `Planner.PlanReq` wants the loaded plan, this call's replay, the decoded
+`Look.Input`, §7's configuration and the candidates — had no way to reach it but to decode the
+request a second time.  Gap **1671** named the honest removal (*"`runCapZ` handing its `CapReq`
+out"*); this is it, four fields wider, and gap **1672**'s unreachable `readAt` branch goes with it:
+the instant §9's records are `wf` against is `cap.look.today0.now`, the value `CapWire.readAt`
+already produced, so the planner section no longer calls that reader at all.
+
+**This is not a second decoding.**  `runCapZ` is this function's bytes and nothing else
+(`runCapZ_is_runCapZP_bytes`, `rfl`): one match tree, two readers. -/
+structure CapParts where
+  /-- the `capacity` section as the request sent it — the bytes these parts were read from, so a
+  later section that needs a key of it (§16's `[priority] batch_max_min`) reads that key and not
+  the request again -/
+  sec   : JVal
+  /-- the plan `runLoad` loaded, whole-tree -/
+  plan  : WfPlan
+  /-- the request's clock (`now`, `blockMin`) -/
+  clock : ReqClock
+  /-- the `log` section's answer, the seam's replay and run inside it -/
+  lg    : Option LogAnswer
+  /-- the capacity section decoded: L5's input and §7's three configured values -/
+  cap   : CapWire.CapReq
+  /-- `capacity.candidates`, when the request sent any -/
+  cands : Option CapWire.CandReq
+
 open CapWire in
-/-- **A capacity request, after its one zone reading**: the `log` section over that zone, the
-documents (`runLoad`), the capacity section over that zone (`readCapacityZ`), the candidates
-(`readCands`), then **no commands** (gap 109: the walls are the documents as sent, so a request that
-also edits them is refused by name, `capacityWithCommands`), and the answer: `run`'s documents and
-report, `log` when asked, then `lookahead` with its grants when candidates were sent. -/
-def runCapZ (j cap : JVal) (zo : Option Cal.Tz) : Except JVal JVal :=
+/-- **A capacity request, after its one zone reading, with what it decoded**: the `log` section
+over that zone, the documents (`runLoad`), the capacity section over that zone (`readCapacityZ`),
+the candidates (`readCands`), then **no commands** (gap 109: the walls are the documents as sent,
+so a request that also edits them is refused by name, `capacityWithCommands`), and the answer:
+`run`'s documents and report, `log` when asked, then `lookahead` with its grants when candidates
+were sent — beside the `CapParts` every one of those readings produced. -/
+def runCapZP (j cap : JVal) (zo : Option Cal.Tz) : Except JVal (JVal × CapParts) :=
   match logSectionWith j zo with
   | .error e => .error e
   | .ok lg =>
@@ -10611,7 +10669,12 @@ def runCapZ (j cap : JVal) (zo : Option Cal.Tz) : Except JVal JVal :=
         | [] =>
           match runPlan plan [] with
           | .error e => .error e
-          | .ok r => .ok (withLookahead (logInto lg r) (lookaheadJsonWith c q))
+          | .ok r => .ok (withLookahead (logInto lg r) (lookaheadJsonWith c q),
+              ⟨cap, plan, clock, lg, c, q⟩)
+
+/-- **The bytes of it**, which is what every law below this point is about. -/
+def runCapZ (j cap : JVal) (zo : Option Cal.Tz) : Except JVal JVal :=
+  (runCapZP j cap zo).map Prod.fst
 
 open CapWire in
 /-- **The request, with its capacity section**: without `capacity`, B4's `runWithLog`
@@ -10630,6 +10693,42 @@ def runCap (j : JVal) : Except JVal JVal :=
     match zoneOf j with
     | .error e => .error e
     | .ok zo => runCapZ j cap zo
+
+/-- **`runCap` with what it decoded** (W-28): `none` on a request that carried no `capacity`
+section, because then nothing decoded it and there is nothing to hand out.  `runCapP_bytes` is the
+`rfl` that says the bytes are `runCap`'s. -/
+def runCapP (j : JVal) : Except JVal (JVal × Option CapParts) :=
+  match jget j "capacity" with
+  | .error e => .error (jsonErr e)
+  | .ok none =>
+    match runWithEmit j with
+    | .error e => .error e
+    | .ok v => .ok (v, none)
+  | .ok (some cap) =>
+    match zoneOf j with
+    | .error e => .error e
+    | .ok zo =>
+      match runCapZP j cap zo with
+      | .error e => .error e
+      | .ok (v, p) => .ok (v, some p)
+
+theorem runCapP_bytes (j : JVal) : (runCapP j).map Prod.fst = runCap j := by
+  unfold runCapP runCap runCapZ
+  cases hc : jget j "capacity" with
+  | error e => rfl
+  | ok c =>
+    cases c with
+    | none => cases hw : runWithEmit j <;> rfl
+    | some cap =>
+      cases hz : zoneOf j with
+      | error e => rfl
+      | ok zo =>
+        cases hp : runCapZP j cap zo with
+        | error e => simp [hp, Except.map]
+        | ok vp => obtain ⟨v, p⟩ := vp; simp [hp, Except.map]
+
+theorem runCapZ_is_runCapZP_bytes (j cap : JVal) (zo : Option Cal.Tz) :
+    (runCapZP j cap zo).map Prod.fst = runCapZ j cap zo := rfl
 
 /-- **The response value for a request's bytes**, `respond` over `runCap`. -/
 def respondCap (input : List Char) : JVal :=
@@ -10783,7 +10882,7 @@ theorem runCap_answers_with_the_lookahead_and_grants {j cap : JVal} {lg : Option
   obtain ⟨zo, hz, hlw⟩ := zoneOf_of_readLogSection hc hg
   rw [(the_zone_is_read_once_and_feeds_both_sections hz).2] at hr
   rw [runCap_with_capacity_reads_the_zone_once hc, hz]
-  simp only [runCapZ, hlw, hl, hr, hq, hp]
+  simp only [runCapZ, runCapZP, Except.map, hlw, hl, hr, hq, hp]
 
 /-- **With `capacity`**: the documents load, the section is read, and the answer is `run`'s with
 `lookahead` after its keys.  Stage 5 D10 L8 added the two hypotheses the new wire needs: no
@@ -10808,7 +10907,7 @@ theorem runCap_refuses_a_log_section_first {j cap e : JVal} (hc : jget j "capaci
   rw [readLogSection_is_zoneOf_then_logSectionWith] at hg
   cases hz : zoneOf (.obj kvs) with
   | error e' => rw [hz] at hg; simp only [Except.error.injEq] at hg ⊢; exact hg
-  | ok zo => rw [hz] at hg; simp only at hg ⊢; simp only [runCapZ, hg]
+  | ok zo => rw [hz] at hg; simp only at hg ⊢; simp only [runCapZ, runCapZP, Except.map, hg]
 
 /-- **A refused section refuses the request by its name**, whatever the commands. -/
 theorem runCap_refuses_what_the_section_refuses {j cap : JVal} {lg : Option LogAnswer} {plan : WfPlan}
@@ -10819,7 +10918,7 @@ theorem runCap_refuses_what_the_section_refuses {j cap : JVal} {lg : Option LogA
   obtain ⟨zo, hz, hlw⟩ := zoneOf_of_readLogSection hc hg
   rw [(the_zone_is_read_once_and_feeds_both_sections hz).2] at hr
   rw [runCap_with_capacity_reads_the_zone_once hc, hz]
-  simp only [runCapZ, hlw, hl, hr]
+  simp only [runCapZ, runCapZP, Except.map, hlw, hl, hr]
 
 /-- **A refused candidate refuses the request by its name** (stage 5 D10 L8), whatever the commands. -/
 theorem runCap_refuses_what_the_candidates_refuse {j cap : JVal} {lg : Option LogAnswer} {plan : WfPlan}
@@ -10831,7 +10930,7 @@ theorem runCap_refuses_what_the_candidates_refuse {j cap : JVal} {lg : Option Lo
   obtain ⟨zo, hz, hlw⟩ := zoneOf_of_readLogSection hc hg
   rw [(the_zone_is_read_once_and_feeds_both_sections hz).2] at hr
   rw [runCap_with_capacity_reads_the_zone_once hc, hz]
-  simp only [runCapZ, hlw, hl, hr, hq]
+  simp only [runCapZ, runCapZP, Except.map, hlw, hl, hr, hq]
 
 /-- **Gap 109's rule, as a refusal** (stage 5 D10 L8): the lookahead's walls are the documents as sent,
 so a capacity request that also carries commands is refused by name, `capacityWithCommands`, once its
@@ -10845,7 +10944,7 @@ theorem runCap_refuses_commands_beside_capacity {j cap : JVal} {lg : Option LogA
   obtain ⟨zo, hz, hlw⟩ := zoneOf_of_readLogSection hc hg
   rw [(the_zone_is_read_once_and_feeds_both_sections hz).2] at hr
   rw [runCap_with_capacity_reads_the_zone_once hc, hz]
-  simp only [runCapZ, hlw, hl, hr, hq]
+  simp only [runCapZ, runCapZP, Except.map, hlw, hl, hr, hq]
 
 /-- **Gap 109's rule, as a theorem** (stage 5 D10 L8): every answered capacity request carried no
 commands, so the lookahead and its grants are always of the documents the response returns. -/
@@ -10857,7 +10956,7 @@ theorem an_answered_capacity_request_has_no_commands {j cap a : JVal} {plan : Wf
   | error e => rw [hz] at ha; cases ha
   | ok zo =>
     rw [hz] at ha
-    simp only [runCapZ, hl] at ha
+    simp only [runCapZ, runCapZP, Except.map, hl] at ha
     cases hlw : logSectionWith j zo with
     | error e => rw [hlw] at ha; cases ha
     | ok lg =>
@@ -10914,7 +11013,7 @@ theorem the_capacity_section_reads_the_log_sections_own_replay {j cap : JVal} {z
       CapWire.readCapacityZ plan.val clock zo (lg.bind LogAnswer.facts) cap = .ok c ∧
       CapWire.readCands cap = .ok q ∧ cmds = [] ∧ runPlan plan [] = .ok r ∧
       v = CapWire.withLookahead (logInto lg r) (CapWire.lookaheadJsonWith c q) := by
-  unfold runCapZ at ha
+  unfold runCapZ runCapZP at ha
   cases hlw : logSectionWith j zo with
   | error e => rw [hlw] at ha; cases ha
   | ok lg =>
@@ -12552,7 +12651,7 @@ theorem logOp_answers_through_the_resume (r : VLogReq) (v : JVal) (h : logOp r =
 theorem logOp_reads_without_a_replay (r : VLogReq) (hres : r.val.resumes = false) :
     logOp r = within53 (logBody r.val .null [] .null) := by
   simp only [logOp, logOpZ, hres, Bool.not_false, ↓reduceIte]
-  exact within53A_wire _ _
+  exact within53A_wire _ _ _
 
 /-! ### Law 13 (CRIT 14): every numeral the op emits is below `2^53`, or the op refuses `counterOverflow` -/
 
@@ -12596,7 +12695,7 @@ theorem the_log_op_checks_every_numeral (r : VLogReq) (hres : r.val.resumes = tr
   simp only [logOp, logOpZ, hres, Bool.not_true, Bool.false_eq_true, ↓reduceIte, hz, ne_eq,
     not_true_eq_false, hc, hrun]
   simp only [hf]
-  exact within53A_wire _ _
+  exact within53A_wire _ _ _
 
 /-- **§10.4's last paragraph**: every checkpoint and record the op emits reads back through its own decoder. -/
 theorem the_log_op_emits_only_what_its_readers_read_back (r : VLogReq) (v : JVal) (h : logOp r = .ok v)

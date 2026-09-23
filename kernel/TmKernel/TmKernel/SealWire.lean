@@ -169,6 +169,14 @@ def blankAnswer : Answer := ⟨0, 0, [], [], [], [], [], none, none, none, none,
 def trimRun (wa wh : Bool) (r : Run) : Run :=
   { r with headers := if wa || wh then r.headers else [], answer := if wa then r.answer else blankAnswer }
 
+/-- **A run whose answer was wanted is not trimmed at all** (stage 6 W-28, README gap 1669).
+Both fields this touches are guarded by `wa`: the headers by `wa || wh`, which `wa` already
+settles, and the answer by `wa` itself.  This is what lets `Boundary.LogReq.seamRun` hand the
+planner's request the run the *specification* built while the compiled op (`logOpZFast`) hands out
+the trimmed one — they are the same value on exactly the requests the seam answers. -/
+theorem trimRun_of_wanted_facts (wh : Bool) (r : Run) : trimRun true wh r = r := by
+  unfold trimRun; simp
+
 /-- **The resume building its answer only when facts are wanted (`wa`), and its headers only when headers or facts are
 (`wh`)**: a genesis chunk asks neither, and the answer and headers of every chunk but the last were built and dropped (W4's
 fourth profile: `resumedAnswer` and the resume's `tailHeaders`, about 8% of a genesis). -/

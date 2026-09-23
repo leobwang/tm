@@ -252,9 +252,9 @@ c7a237ab0bf7 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.fromNowWorkRows fun
 279ccdecd0c8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witReqInIdleQueued unfoldable no Inhabited PlanReqIn
 2dbe82e792af TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theIdleQueuedRequest unfoldable no Inhabited PlanReq
 afa7ffea0abb TmKernel/TmKernel/Emit.lean Tm.Emit.batchNames default,[] PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells; PlannerWit.lean:4569 the_emit_witness_rows_are_these_cells
-fe83490ffd51 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except RowRefusal α)
-21f2cd76331f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.flagAtP default EmitWire.lean:834 readSeg_accepts_a_block
-f618837e678a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optStrAtP default EmitWire.lean:834 readSeg_accepts_a_block
+fe83490ffd51 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.asPlan unfoldable no Inhabited (Except CapWire.Refusal α → Except ρ α)
+21f2cd76331f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.flagAtP default EmitWire.lean:856 readSeg_accepts_a_block
+f618837e678a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optStrAtP default EmitWire.lean:856 readSeg_accepts_a_block
 84696affb411 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readNote unfoldable no Inhabited (Except RowRefusal Note)
 902fe5358e45 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readKind unfoldable no Inhabited (Except RowRefusal SegKind)
 d24f39c2963f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readFlags unfoldable no Inhabited (Except RowRefusal SegFlags)
@@ -264,7 +264,7 @@ b8109f228b60 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readSeg unfoldable no I
 2b5346c9759a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readRowSection unfoldable no Inhabited (Except RowRefusal RowReq)
 24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
 d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOverBudgetRequest unfoldable no Inhabited PlanReq
-411bbcad52ad TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.u32Within default EmitWire.lean:812 readSeg_refuses_a_planned_past_the_bound
+411bbcad52ad TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.u32Within default EmitWire.lean:834 readSeg_refuses_a_planned_past_the_bound
 ce9b0efcab4b TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.PlainStore True,False PlanCheck.lean:3551 WallsArePlain_of_a_plain_store; PlanCheck.lean:3551 WallsArePlain_of_a_plain_store
 55b459dce7e1 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.WallsArePlain True,False PlanCheck.lean:3551 WallsArePlain_of_a_plain_store; PlanCheck.lean:3551 WallsArePlain_of_a_plain_store
 29c006e55e65 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoWallWitness default,[] PlannerWit.lean:5404 tomorrows_meeting_is_not_one_of_todays_walls; PlannerWit.lean:5404 tomorrows_meeting_is_not_one_of_todays_walls
@@ -280,55 +280,84 @@ cf36fa502a1e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.aBlockStartedAfterN
 0e5bb041c418 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theFutureHalfOfTheCensusDay unfoldable no Inhabited DayPlan
 ac5d05dd9c8e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTailRemainderDay unfoldable no Inhabited DayPlan
 6dadc3a3e2ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLateStartDay unfoldable no Inhabited DayPlan
-6ec5716805b1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowKey.name default EmitWire.lean:654 rowKey_names_are_the_wire_keys
-cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.segErrName default EmitWire.lean:664 segErrName_names_the_two
-5d1caeea5345 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowRefusal.text default EmitWire.lean:668 the_refusals_spell_themselves
-82a8b7054cee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowRefusalJson default EmitWire.lean:680 rowRefusalJson_is_the_err_plan_shape
-ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.natAtP default EmitWire.lean:747 readPrio_refuses_eight
-24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.strAtP default EmitWire.lean:691 readOptNote_of_a_present_note
-a0819f473922 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.arrAtP default EmitWire.lean:781 readKind_refuses_a_batch_past_the_cap
-8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optAtP default EmitWire.lean:691 readOptNote_of_a_present_note
-7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optNatAtP default EmitWire.lean:795 readSeg_refuses_an_energy_past_five
-a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.idWithin default EmitWire.lean:753 readPrio_accepts_seven
-71fd8cbaca96 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.secWithin default EmitWire.lean:976 secWithin_refuses_past_the_calendar
-9f9af029585b TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.maxNoteText 0,1,literal EmitWire.lean:767 readNote_accepts_a_short_text; EmitWire.lean:767 readNote_accepts_a_short_text; the body IS the constant `200`
-b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readOptNote default EmitWire.lean:691 readOptNote_of_a_present_note
-bfead27b6d14 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readPrio default EmitWire.lean:740 readPrio_refuses_a_priority_past_seven
-e39010fefdef TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsOfReq default,[] EmitWire.lean:636 rowsJson_length; EmitWire.lean:636 rowsJson_length
-91604f05f269 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.batchNamesOf default,[] EmitWire.lean:701 batchNamesOf_of_a_batch; EmitWire.lean:701 batchNamesOf_of_a_batch
-f4321fbac201 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowJson default EmitWire.lean:626 rowJson_is_the_nine_cells_in_order
-a9da31d400a1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsJson default EmitWire.lean:637 rowsJson_length
-b09e66e46c76 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.withPlan default,r EmitWire.lean:710 withPlan_appends_the_plan_key; EmitWire.lean:710 withPlan_appends_the_plan_key
-27f32fe96684 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.runRows default EmitWire.lean:598 runRows_without_a_plan_section_is_runCap
-5773ccd10884 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.respondRows default EmitWire.lean:607 callRows_without_a_plan_section_is_callCap
-cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callRows default,input EmitWire.lean:607 callRows_without_a_plan_section_is_callCap; EmitWire.lean:607 callRows_without_a_plan_section_is_callCap
-5814c1a4b26c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callExport default,input EmitWire.lean:618 callExport_is_callRows; EmitWire.lean:618 callExport_is_callRows
-f63ef86b1aee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowKeys default,[] EmitWire.lean:626 rowJson_is_the_nine_cells_in_order; EmitWire.lean:626 rowJson_is_the_nine_cells_in_order
-3657e79e077d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.PlanKey.name default PlanWire.lean:459 planKey_names_are_the_wire_keys
-715a04675f1a TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.PlannerRefusal.text default PlanWire.lean:477 the_refusals_spell_themselves
-1593a7383c5c TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.plannerRefusalJson default PlanWire.lean:492 plannerRefusalJson_is_the_err_planner_shape
-56b45589e1ab TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.instantWithin unfoldable,unavailable no Inhabited (Except ρ Cal.Instant); PlanWire.lean:199 instantWithin -- the synthesised constant does not elaborate here
+6ec5716805b1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowKey.name default EmitWire.lean:669 rowKey_names_are_the_wire_keys
+cd50c7f2f2aa TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.segErrName default EmitWire.lean:679 segErrName_names_the_two
+5d1caeea5345 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.RowRefusal.text default EmitWire.lean:683 the_refusals_spell_themselves
+82a8b7054cee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowRefusalJson default EmitWire.lean:695 rowRefusalJson_is_the_err_plan_shape
+ab0da2c2ed9a TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.natAtP default EmitWire.lean:762 readPrio_refuses_eight
+24f0cf8313c2 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.strAtP default EmitWire.lean:706 readOptNote_of_a_present_note
+a0819f473922 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.arrAtP default EmitWire.lean:796 readKind_refuses_a_batch_past_the_cap
+8f8126ffb1ac TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optAtP default EmitWire.lean:706 readOptNote_of_a_present_note
+7b08eda3f7c3 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.optNatAtP default EmitWire.lean:810 readSeg_refuses_an_energy_past_five
+a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.idWithin default EmitWire.lean:768 readPrio_accepts_seven
+71fd8cbaca96 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.secWithin default EmitWire.lean:991 secWithin_refuses_past_the_calendar
+9f9af029585b TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.maxNoteText 0,1,literal EmitWire.lean:782 readNote_accepts_a_short_text; EmitWire.lean:782 readNote_accepts_a_short_text; the body IS the constant `200`
+b3c674c5abf7 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readOptNote default EmitWire.lean:706 readOptNote_of_a_present_note
+bfead27b6d14 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.readPrio default EmitWire.lean:755 readPrio_refuses_a_priority_past_seven
+e39010fefdef TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsOfReq default,[] EmitWire.lean:651 rowsJson_length; EmitWire.lean:651 rowsJson_length
+91604f05f269 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.batchNamesOf default,[] EmitWire.lean:716 batchNamesOf_of_a_batch; EmitWire.lean:716 batchNamesOf_of_a_batch
+f4321fbac201 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowJson default EmitWire.lean:641 rowJson_is_the_nine_cells_in_order
+a9da31d400a1 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowsJson default EmitWire.lean:652 rowsJson_length
+b09e66e46c76 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.withPlan default,r EmitWire.lean:725 withPlan_appends_the_plan_key; EmitWire.lean:725 withPlan_appends_the_plan_key
+b2654d9ad766 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.runRows default EmitWire.lean:605 runRows_without_a_plan_section_is_runCap
+5773ccd10884 TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.respondRows default EmitWire.lean:613 callRows_without_a_plan_section_is_callCap
+cf8dbc6af57c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callRows default,input EmitWire.lean:613 callRows_without_a_plan_section_is_callCap; EmitWire.lean:613 callRows_without_a_plan_section_is_callCap
+5814c1a4b26c TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.callExport default,input EmitWire.lean:633 callExport_is_callRows; EmitWire.lean:633 callExport_is_callRows
+f63ef86b1aee TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.rowKeys default,[] EmitWire.lean:641 rowJson_is_the_nine_cells_in_order; EmitWire.lean:641 rowJson_is_the_nine_cells_in_order
+3657e79e077d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.PlanKey.name default PlanWire.lean:497 planKey_names_are_the_wire_keys
+419988f12074 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.PlannerRefusal.text default PlanWire.lean:515 the_refusals_spell_themselves
+1593a7383c5c TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.plannerRefusalJson default PlanWire.lean:530 plannerRefusalJson_is_the_err_planner_shape
+56b45589e1ab TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.instantWithin unfoldable,unavailable no Inhabited (Except ρ Cal.Instant); PlanWire.lean:237 instantWithin -- the synthesised constant does not elaborate here
 3d0ce8479fcf TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readActive unfoldable no Inhabited (Except PlannerRefusal ActiveBlock)
-e890fbeb2d7d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptActive default PlanWire.lean:694 readState_accepts_a_running_day
-f8320c617dd6 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.placeOf? default,none PlanWire.lean:595 the_four_break_places_read; PlanWire.lean:595 the_four_break_places_read
+e890fbeb2d7d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptActive default PlanWire.lean:732 readState_accepts_a_running_day
+f8320c617dd6 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.placeOf? default,none PlanWire.lean:633 the_four_break_places_read; PlanWire.lean:633 the_four_break_places_read
 5b91da798c84 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readBreak unfoldable no Inhabited (Except PlannerRefusal BreakState)
-acfdf192092d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptBreak default PlanWire.lean:694 readState_accepts_a_running_day
+acfdf192092d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptBreak default PlanWire.lean:732 readState_accepts_a_running_day
 b4f94625ab47 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readInterrupt unfoldable no Inhabited (Except PlannerRefusal InterruptState)
-d2f0eabdf1d8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptInterrupt default PlanWire.lean:694 readState_accepts_a_running_day
-1d9c3eee2e71 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readHash default PlanWire.lean:636 readHash_refuses_a_short_digest
-4182256002ff TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readYesterdayPair default PlanWire.lean:650 readYesterday_refuses_a_priority_past_seven
+d2f0eabdf1d8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptInterrupt default PlanWire.lean:732 readState_accepts_a_running_day
+1d9c3eee2e71 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readHash default PlanWire.lean:674 readHash_refuses_a_short_digest
+4182256002ff TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readYesterdayPair default PlanWire.lean:688 readYesterday_refuses_a_priority_past_seven
 76d8adf366e3 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readYesterday unfoldable no Inhabited (Except PlannerRefusal (Capped (Id × Fin 8)))
 359f8612f8e2 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readState unfoldable no Inhabited (Except PlannerRefusal RuntimeIn)
 b0f2ae5cc691 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readRoutine unfoldable no Inhabited (Except PlannerRefusal RoutineIn)
-e4db781c6a28 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readRoutines default PlanWire.lean:757 readRoutines_accepts_two_instances
-b6188bf355e8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOverridePair default PlanWire.lean:765 readOverrides_refuses_an_estimate_past_the_width
-f27a67001915 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOverrideList default PlanWire.lean:765 readOverrides_refuses_an_estimate_past_the_width
-d77e2a36c100 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readDropIds default PlanWire.lean:770 readOverrides_refuses_a_drop_that_is_not_an_id
+e4db781c6a28 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readRoutines default PlanWire.lean:795 readRoutines_accepts_two_instances
+b6188bf355e8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOverridePair default PlanWire.lean:803 readOverrides_refuses_an_estimate_past_the_width
+f27a67001915 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOverrideList default PlanWire.lean:803 readOverrides_refuses_an_estimate_past_the_width
+d77e2a36c100 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readDropIds default PlanWire.lean:808 readOverrides_refuses_a_drop_that_is_not_an_id
 77db3815b47e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOverrides unfoldable no Inhabited (Except PlannerRefusal PlanOverrides)
-2a30da89b2e6 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptOverrides default PlanWire.lean:832 readOptOverrides_accepts_a_what_if
-120c3860d98a TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readBatchMaxMin default PlanWire.lean:843 readBatchMaxMin_refuses_past_the_width
+2a30da89b2e6 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readOptOverrides default PlanWire.lean:870 readOptOverrides_accepts_a_what_if
+120c3860d98a TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readBatchMaxMin default PlanWire.lean:881 readBatchMaxMin_refuses_past_the_width
 98c85b7d486d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readPlannerSection unfoldable no Inhabited (Except PlannerRefusal PlannerIn)
-1bc8b8fff546 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.runPlanner default PlanWire.lean:951 runPlanner_without_a_planner_section_is_runRows
-007a4c3270cb TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.respondPlanner default PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows
-5f4687fadb88 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callPlanner default,input PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows; PlanWire.lean:960 callPlanner_without_a_planner_section_is_callRows
-35058b27751f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callExport default,input PlanWire.lean:1020 callExport_is_callPlanner; PlanWire.lean:1020 callExport_is_callPlanner
+0fcea70259c5 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.runPlanner default PlanWire.lean:1205 runPlanner_without_a_planner_section_is_runRows
+007a4c3270cb TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.respondPlanner default PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows
+5f4687fadb88 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callPlanner default,input PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows; PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows
+35058b27751f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callExport default,input PlanWire.lean:1488 callExport_is_callPlanner; PlanWire.lean:1488 callExport_is_callPlanner
+2a7a26a6e354 TmKernel/TmKernel/Boundary.lean Tm.LogAnswer.of unfoldable no Inhabited LogAnswer
+76886a760659 TmKernel/TmKernel/Boundary.lean Tm.LogReq.seamRun default,none PlanWire.lean:1454 the_seam_carries_its_run_exactly_when_it_carries_its_facts; PlanWire.lean:1454 the_seam_carries_its_run_exactly_when_it_carries_its_facts
+b13f6a87cf97 TmKernel/TmKernel/Boundary.lean Tm.within53A unfoldable no Inhabited (Except LogRefusal LogAnswer)
+e959bfb17d36 TmKernel/TmKernel/Boundary.lean Tm.logOpZ unfoldable no Inhabited (Except LogRefusal LogAnswer)
+2900dae725d7 TmKernel/TmKernel/Boundary.lean Tm.logOpCore unfoldable no Inhabited (Except LogRefusal LogAnswer)
+2fc071a4818f TmKernel/TmKernel/Boundary.lean Tm.logOpZFast unfoldable no Inhabited (Except LogRefusal LogAnswer)
+229ee2664b4f TmKernel/TmKernel/Boundary.lean Tm.runCapZP default Boundary.lean:10880 runCap_answers_with_the_lookahead_and_grants
+43e5857276f5 TmKernel/TmKernel/Boundary.lean Tm.runCapZ default Boundary.lean:10727 runCapP_bytes
+dd1e068d3a37 TmKernel/TmKernel/Boundary.lean Tm.runCapP default Boundary.lean:10718 runCapP_bytes
+4bf33d15401f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.runRowsP default EmitWire.lean:605 runRows_without_a_plan_section_is_runCap
+051b8c1dea15 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planKeys default,[] PlanWire.lean:1378 planJson_writes_the_seven_keys; PlanWire.lean:1378 planJson_writes_the_seven_keys
+cbfc499cb80e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindName default,fun_=>[] PlanWire.lean:1283 segJson_writes_every_field_of_a_segment; PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+4b6c7d772588 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.batchOf default,fun_=>[] PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes; PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes
+4871d63b61f8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindJson default PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes
+ef03b951981d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.hashHex default,[] PlanWire.lean:1463 hashHex_length; PlanWire.lean:1463 hashHex_length
+2eacb4715282 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planJson default,[] PlanWire.lean:1378 planJson_writes_the_seven_keys; PlanWire.lean:1378 planJson_writes_the_seven_keys
+f52e537f4d5e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.intoPlan default,funa0_=>a0,fun__=>[] PlanWire.lean:1413 intoPlan_skips_another_key; PlanWire.lean:1413 intoPlan_skips_another_key; PlanWire.lean:1413 intoPlan_skips_another_key
+fed751c2a1ad TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.withPlanner default,r PlanWire.lean:1433 withPlanner_shares_the_plan_object; PlanWire.lean:1433 withPlanner_shares_the_plan_object
+fe31b1e760b3 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planReqOf unfoldable no Inhabited (Except PlannerRefusal Planner.PlanReq)
+ba51cf359896 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.routineErrName default PlanWire.lean:1370 the_routine_errors_spell_themselves
+57096a007aa8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.optNum default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+b29beecd45d2 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.optStr default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+541b450fcf16 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.pairJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+b4f1338db242 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.flagsJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+befa4149ef75 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.noteJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+38e39e2b0797 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.segJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
+e184ce9a3ec8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.idsJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
+1c38f6a51fa9 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.diagJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
+ae0de0f2010f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.priosJson default PlanWire.lean:1363 priosJson_is_the_id_and_the_priority

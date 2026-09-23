@@ -166,7 +166,41 @@ inductive PlannerRefusal
   it and `prio`'s five values are its `priority` object's, so a planner request without one
   could not be assembled whatever else it carried. -/
   | capacityAbsent
+  /-- **The section needs this call's own replay** (D9, D24): `Planner.PlanReq.run` is a
+  `Seal.Run`, and the seam carries one only on a request whose `log` section **resumed and asked
+  for facts** (`Boundary.LogReq.seamRun`).  A request that sent no `log` section, or sent one
+  that asked for no facts, is refused by name rather than planned against a blank — D24's own
+  rule for the wake (`wakeWithoutLog`), one section along. -/
+  | runAbsent
+  /-- **The wall index the capacity section decoded is not this plan's** (README gap 346, from
+  the wire's side).  `PlannerWit.mkPlanReq?` refuses the same disagreement as `.walls`; here it
+  is checked rather than assumed, because `Planner.PlanReq` has no invariant that carries it. -/
+  | wallsDisagree
+  /-- **More candidates than `Planner.maxCands`** — and this is deliberately **not** §10.3's
+  tooManyCands, which is the *capacity* section's and is refused as
+  `Boundary.CapWire.Refusal.tooManyCandidates` before this section is read at all.  This is the
+  **assembler's** cap: `Capped.ofList?` is `PlanReq.cands`' one constructor and it refuses past
+  `Planner.maxCands`, while the section that produced the list guarded at
+  `CapWire.maxCandidates`.  README gap **1330** records that those are one number under two
+  names; `the_two_candidate_caps_are_one_number` below is the first place anything states it, and
+  until a lemma carries `readCands`' guard to this constructor the branch stays. -/
+  | candsPastCap
+  /-- **A window instance `Planner.mkRoutine?` refuses**, carrying its name out (AGENTS §5.3:
+  the rule is the planner's and this constructor does not restate it). -/
+  | routineRefused (e : Planner.RoutineErr)
 deriving DecidableEq, Repr
+
+/-- `Planner.RoutineErr`'s six names, spelled where the wire can read them, **each with the id
+it is about** — five of the six are about one window instance and a host told only the rule
+cannot tell which instance it sent was refused.  The rule that produces each is
+`Planner.mkRoutine?`'s; this only names it (AGENTS §5.3). -/
+def routineErrName : Planner.RoutineErr → String
+  | .unknownItem id => s!"unknownItem {String.ofList id}"
+  | .undeclaredWindow id => s!"undeclaredWindow {String.ofList id}"
+  | .emptyWindow id => s!"emptyWindow {String.ofList id}"
+  | .pastTheHorizon id => s!"pastTheHorizon {String.ofList id}"
+  | .noMinutes id => s!"noMinutes {String.ofList id}"
+  | .tooManyRoutines => "tooManyRoutines"
 
 def PlannerRefusal.text : PlannerRefusal → String
   | .shape => "shape"
@@ -182,6 +216,10 @@ def PlannerRefusal.text : PlannerRefusal → String
   | .tooManyOverrides => "tooManyOverrides"
   | .badBatchMaxMin => "badBatchMaxMin"
   | .capacityAbsent => "capacityAbsent"
+  | .runAbsent => "runAbsent"
+  | .wallsDisagree => "wallsDisagree"
+  | .candsPastCap => "candsPastCap"
+  | .routineRefused e => s!"routineRefused {routineErrName e}"
 
 /-- The refusal on the wire: `{"err": {"planner": "<name> <key>"}}` — `EmitWire`'s shape under
 this section's own key, so a host tells the two families apart by the key and not by the text. -/
@@ -884,47 +922,263 @@ with none and its own header says what that cost; this section will not repeat i
 `planner` section is **read on every call that carries one**, and a section that does not decode
 refuses the call by name — through the FFI, today, before anything consumes the values.
 
-**What it does NOT do yet, said plainly.**  A section that *does* decode leaves the response
-byte-for-byte what `EmitWire.runRows` answered: `runPlanner_with_a_readable_section_answers_as
-_runRows` is that as a theorem rather than as prose.  Building `Planner.PlanReq` from these
-values and emitting `Planner.dayPlan`'s seven keys is the other half of D48 and is **not here** —
-README gap **1667**, with the two obstacles gaps **1668** and **1669** name.  What this half
-buys is R10: every bound in the table at the top of this file is now on a path a host can reach,
-and `tm/tests/kernel_planner_wire.rs` reaches it.
+**And since W-28 the call ANSWERS**: `Planner.dayPlan` is built from these values and its seven
+keys go out beside `rows` (README gap **1667**, D48's response half).  The two obstacles W-27
+priced are gone rather than worked around — gap **1668** (`PlannerWit.mkPlanReq?` is a witness
+module's and cannot be imported) because nothing needs to import it: `planReqOf` hands over
+values this call's own readers already produced, where `mkPlanReq?` decodes raw parts; and gap
+**1669** (`Boundary.runLoad` drops its `List ReqDoc`) because `Boundary.CapParts` hands out the
+loaded `WfPlan` itself and no document is read twice.
+-/
 
-**`now` is the capacity section's `at`, through `CapWire.readAt`** — the kernel's one reader of
-that key, and the instant `Look.Today.now` itself is built from at step L9.  It is **not** the
-request's top-level `now`: `Boundary.parseClock` reads that as a `Day` through
-`Field.parseDate`, and §9's three records are `wf` against an *instant*, so taking the day
-number for an instant would be a unit error the types happen not to catch (both are `Nat`).
-Reading `at` here is one more *call* of one decoder, not a second decoding of one value — and
-its refusal branch is unreachable for that reason, which is README gap **1672** and is stated
-as a theorem below rather than left to be found. -/
+/-! ## The response — design §10.2's `plan` keys (D48's RESPONSE half, README gap 1667)
+
+`EmitWire.withPlan` writes one key into the `plan` object: `rows`, the day's rendered rows for
+the segments a host sent.  The seven below are `Planner.dayPlan`'s own answer for a day the
+**kernel** planned, and they share that object: the keys are disjoint
+(`the_plan_objects_keys_are_disjoint`), so a response can carry both and a reader tells them
+apart by name.  This is what makes `tm/tests/planner_invariants.rs` able to ask the kernel for a
+day instead of asking it to render the fork's.
+
+**Every value is a field or a view of `Planner.DayPlan`** and nothing here recomputes one: the
+seven theorems named `planJson_*_is_the_days` are each `rfl`.
+-/
+
+/-- The seven keys, in design §10.2's order. -/
+def planKeys : List (List Char) :=
+  ["day".toList, "window".toList, "budgetBlocks".toList, "segments".toList,
+   "diagnostics".toList, "priorities".toList, "hash".toList]
+
+/-- `SegKind`'s eleven names — **`EmitWire.readKind`'s own**, so the section that reads a
+segment and the key that writes one spell every kind the same way
+(`readKind_reads_back_every_kind_it_writes`). -/
+def kindName : Planner.SegKind → List Char
+  | .block => "block".toList
+  | .batch _ => "batch".toList
+  | .brk => "break".toList
+  | .routine => "routine".toList
+  | .wall => "wall".toList
+  | .rest => "rest".toList
+  | .optional => "optional".toList
+  | .windDown => "wind-down".toList
+  | .sleep => "sleep".toList
+  | .lost => "lost".toList
+  | .ghost => "ghost".toList
+
+/-- A batch's members; every other kind has none. -/
+def batchOf : Planner.SegKind → List JVal
+  | .batch ids => ids.val.map JVal.str
+  | _ => []
+
+/-- A kind, as the `plan` section's segment object carries it: the name, and the members a
+batch has.  `EmitWire.readKind` reads exactly these two keys. -/
+def kindJson (k : Planner.SegKind) : JVal :=
+  .obj [("kind".toList, .str (kindName k)), ("batch".toList, .arr (batchOf k))]
+
+/-- A `Nat` that may be absent. -/
+def optNum : Option Nat → JVal
+  | none => .null
+  | some n => .num n
+
+/-- An id that may be absent. -/
+def optStr : Option Id → JVal
+  | none => .null
+  | some s => .str s
+
+/-- An exact multiplier, in `CapWire.pairWith`'s own `{num, den}` shape. -/
+def pairJson : Option Arith.Pos → JVal
+  | none => .null
+  | some q => .obj [("num".toList, .num q.val.num), ("den".toList, .num q.val.den)]
+
+/-- The seven marks, in `EmitWire.readFlags`' order and under its keys. -/
+def flagsJson (f : Planner.SegFlags) : JVal :=
+  .obj [("done".toList, .bool f.done), ("current".toList, .bool f.current),
+    ("underused".toList, .bool f.underused), ("hot".toList, .bool f.hot),
+    ("mandatory".toList, .bool f.mandatory), ("deferred".toList, .bool f.deferred),
+    ("open".toList, .bool f.isOpen)]
+
+/-- **A note, named** (AGENTS §5.7).  `Planner.Note`'s eleven constructors each answer an object
+whose `note` key is the constructor's own name and whose other keys are its fields — the prose
+stays where the terminal is (D30 Q6) and the wire carries the name and the numbers. -/
+def noteJson : Planner.Note → JVal
+  | .travelDay => .obj [("note".toList, .str "travelDay".toList)]
+  | .noPosition id durMin lo hi =>
+      .obj [("note".toList, .str "noPosition".toList), ("id".toList, .str id),
+        ("durMin".toList, .num durMin), ("lo".toList, .num lo), ("hi".toList, .num hi)]
+  | .budgetSpent n =>
+      .obj [("note".toList, .str "budgetSpent".toList), ("blocksDone".toList, .num n)]
+  | .plannedOf a b =>
+      .obj [("note".toList, .str "plannedOf".toList), ("planned".toList, .num a),
+        ("total".toList, .num b)]
+  | .bufferBefore id =>
+      .obj [("note".toList, .str "bufferBefore".toList), ("id".toList, .str id)]
+  | .travelDayWall => .obj [("note".toList, .str "travelDayWall".toList)]
+  | .paused => .obj [("note".toList, .str "paused".toList)]
+  | .interruption => .obj [("note".toList, .str "interruption".toList)]
+  | .breakWhere t =>
+      .obj [("note".toList, .str "breakWhere".toList), ("text".toList, .str t)]
+  | .idleAttributed t =>
+      .obj [("note".toList, .str "idleAttributed".toList), ("text".toList, .str t)]
+  | .runningLeft m =>
+      .obj [("note".toList, .str "runningLeft".toList), ("leftMin".toList, .num m)]
+
+/-- **One row of the day**, in the shape `EmitWire.readSeg` reads — `start`, `stop`, `kind`,
+`batch`, `energy`, `item`, `flags`, `planned`, `mult`, `note` — plus `inst`, the one field
+`readSeg` does **not** read (it builds every segment with `inst := none`, because no cell of a
+row is about it).  So a day this key emits goes back through the `plan` section unchanged except
+for that field, which `tm/tests/planner_invariants.rs` drives rather than assumes. -/
+def segJson (s : Planner.WfSeg) : JVal :=
+  .obj [("start".toList, .num s.val.start), ("stop".toList, .num s.val.stop),
+    ("kind".toList, .str (kindName s.val.kind)),
+    ("batch".toList, .arr (batchOf s.val.kind)),
+    ("energy".toList, optNum (s.val.energy.map Fin.val)),
+    ("item".toList, optStr s.val.item),
+    ("inst".toList, match s.val.inst with
+      | none => .null
+      | some p => .obj [("id".toList, .str p.1), ("inst".toList, .str p.2)]),
+    ("flags".toList, flagsJson s.val.flags),
+    ("planned".toList, optNum s.val.planned),
+    ("mult".toList, pairJson s.val.mult),
+    ("note".toList, match s.val.note with | none => .null | some n => noteJson n)]
+
+/-- An `IdList`, whole. -/
+def idsJson (c : Planner.IdList) : JVal := .arr (c.val.map JVal.str)
+
+/-- §8.2 step 8's twelve fields, each under its own name. -/
+def diagJson (d : Planner.Diagnostics) : JVal :=
+  .obj [("underused".toList, idsJson d.underused),
+    ("aCapacityLost".toList, .num d.aCapacityLost),
+    ("hot".toList, idsJson d.hot),
+    ("impossible".toList,
+      .arr (d.impossible.val.map (fun p =>
+        .obj [("id".toList, .str p.1), ("shortMin".toList, .num p.2)]))),
+    ("conflicts".toList,
+      .arr (d.conflicts.val.map (fun p =>
+        .obj [("a".toList, .str p.1), ("b".toList, .str p.2)]))),
+    ("blocked".toList, idsJson d.blocked),
+    ("deferred".toList, idsJson d.deferred),
+    ("waiting".toList, idsJson d.waiting),
+    ("notes".toList, .arr (d.notes.val.map noteJson)),
+    ("droppedTail".toList, idsJson d.droppedTail),
+    ("planHonesty".toList,
+      .obj [("planned".toList, .num d.planHonesty.1), ("total".toList, .num d.planHonesty.2)]),
+    ("restDebtMin".toList, .num d.restDebtMin)]
+
+/-- §7's answers, in `EmitWire.readPrio`'s own `{id, p}` shape. -/
+def priosJson (c : Planner.Capped (Id × Fin 8)) : JVal :=
+  .arr (c.val.map (fun p => .obj [("id".toList, .str p.1), ("p".toList, .num p.2.val)]))
+
+/-- `state.last_plan_hash`'s sixteen lowercase hex digits, big-endian — the digits
+`Planner.mkHash?` reads (`hashHex_of_zero_reads_back`), through `Json.hexChar`, which is this kernel's
+one hex writer. -/
+def hashHex (h : Planner.PlanHash) : List Char :=
+  (List.range Planner.hashHexLen).map
+    (fun i => hexChar (h.val / 16 ^ (Planner.hashHexLen - 1 - i) % 16))
+
+/-- **The day, as §10.2's seven keys.**  Every one is a projection of `Planner.dayPlan r` and
+nothing is recomputed. -/
+def planJson (d : Planner.DayPlan) : List (List Char × JVal) :=
+  [("day".toList, .str (Field.renderDate d.day)),
+   ("window".toList, .obj [("lo".toList, .num d.window.1), ("hi".toList, .num d.window.2)]),
+   ("budgetBlocks".toList, .num d.budgetBlocks),
+   ("segments".toList, .arr (d.segments.map segJson)),
+   ("diagnostics".toList, diagJson d.diagnostics),
+   ("priorities".toList, priosJson d.priorities),
+   ("hash".toList, .str (hashHex d.planHash))]
+
+/-- **Into the `plan` object, beside `rows`.**  A `plan` key already written (by
+`EmitWire.withPlan`, the only writer of it) gains these pairs; a response with no `plan` key yet
+gains one holding them.  The keys are disjoint, so neither writer can overwrite the other. -/
+def intoPlan : List (List Char × JVal) → List (List Char × JVal) → List (List Char × JVal)
+  | [], xs => [("plan".toList, .obj xs)]
+  | (k, v) :: rest, xs =>
+    if k == "plan".toList then
+      match v with
+      | .obj ys => (k, .obj (ys ++ xs)) :: rest
+      /- A `plan` key that is not an object: walked past, never overwritten.  `EmitWire.withPlan`
+         is the only writer of that key and `jone` is always an object, so nothing reaches this. -/
+      | _ => (k, v) :: intoPlan rest xs
+    else (k, v) :: intoPlan rest xs
+
+/-- The response's `ok` object, with the planner's keys in its `plan` object.  The shape guard
+is `EmitWire.withPlan`'s own: a response that is not `{"ok": {…}}` is returned unchanged. -/
+def withPlanner (r : JVal) (xs : List (List Char × JVal)) : JVal :=
+  match r with
+  | .obj [(k, .obj kvs)] => .obj [(k, .obj (intoPlan kvs xs))]
+  | _ => r
+
+/-! ## The request, assembled from what the call already decoded -/
+
+/-- **`Planner.PlanReq`, from the values this call's own readers produced** — README gaps 1667,
+1668 and 1669.
+
+Gap **1668** said `PlannerWit.mkPlanReq?` is the only assembler and cannot be called from the
+wire, because `mutate.py`'s `WITNESS_MODULES` requires `PlannerWit.lean` to be a leaf and checks
+it.  **Nothing moves and nothing is re-implemented**: the eight fields are decoded values handed
+over, not decoded again.  `mkPlanReq?` runs `loadPlan`, `Look.mkInput?` and `Seal.resumeRun`
+because a *witness* starts from raw parts; a request that has already been through
+`Boundary.runCapP` starts from the answers, and calling those three a second time is the defect
+gap 1325 records.  What `mkPlanReq?` obliges and this must too is the **walls agreement** (gap
+346) — checked here by name, `wallsDisagree`.
+
+Gap **1669** said `runLoad` builds its `List ReqDoc` and hands out only the `WfPlan`.  It is
+answered from the other side: `Boundary.CapParts` hands out the `WfPlan` itself, so no document
+is read twice and nothing needs `ReqDoc` at all. -/
+def planReqOf (parts : CapParts) (bm : Nat) (q : PlannerIn) :
+    Except PlannerRefusal Planner.PlanReq :=
+  match parts.lg.bind LogAnswer.run with
+  | none => .error PlannerRefusal.runAbsent
+  | some run =>
+    match Capped.ofList? (match parts.cands with | none => [] | some c => c.items) with
+    | none => .error PlannerRefusal.candsPastCap
+    | some cs =>
+      match Planner.mkRoutines? parts.plan.val q.routines with
+      | .error e => .error (PlannerRefusal.routineRefused e)
+      | .ok rs =>
+        if parts.cap.look.walls ≠
+            Look.wallIndex parts.cap.look.tz parts.cap.look.day.cut.blockMin parts.plan.val then
+          .error PlannerRefusal.wallsDisagree
+        else
+          .ok ⟨parts.plan, run, parts.cap.look, q.state, cs,
+            ⟨parts.cap.bins, parts.cap.safety, parts.cap.dflt,
+              (match parts.cands with | none => false | some c => c.hysteresis), bm⟩,
+            rs, q.overrides⟩
 
 /-- **The request, with its `planner` section.**  Without one this is `EmitWire.runRows`, byte
 for byte.  With one: `runRows` answers first, so every refusal that stood before this step still
-comes first and in the same order; then the request's `now`, then the section. -/
+comes first and in the same order; then the section, then §16's `batchMaxMin`, then the request,
+then **the day** — `Planner.dayPlan`'s seven keys, into the same `plan` object `rows` is in.
+
+**`now` is the capacity section's `at`, and is not read again** (README gap 1672, CLOSED).  W-27
+called `CapWire.readAt` a second time here and recorded that its refusal branch was unreachable
+because `runCap` had already accepted the same key.  `Boundary.CapParts` hands the decoded value
+out instead: `parts.cap.look.today0.now` *is* what `readAt` produced (`Section.today0` puts
+`s.atNow` there and `Look.mkInput?` carries it through), so the second call and its unreachable
+branch are both gone rather than documented.
+
+**`Planner.dayPlan` is total and stays total** (D28): there is no `dayPlan?` and no planner
+refusal family.  Every refusal below is a refusal to *build the request* — a section the decoder
+rejects, a `batchMaxMin` past the fork's `u32`, a missing capacity section, a missing replay, a
+wall index that is not this plan's, a window instance `mkRoutine?` rejects.  Once a `PlanReq`
+exists the kernel answers, always. -/
 def runPlanner (j : JVal) : Except JVal JVal :=
   match jget j "planner" with
   | .error e => .error (jsonErr e)
   | .ok none => EmitWire.runRows j
   | .ok (some sec) =>
-    match EmitWire.runRows j with
+    match EmitWire.runRowsP j with
     | .error e => .error e
-    | .ok r =>
-      match jget j "capacity" with
-      | .error _ => .error (plannerRefusalJson PlannerRefusal.capacityAbsent)
-      | .ok none => .error (plannerRefusalJson PlannerRefusal.capacityAbsent)
-      | .ok (some cap) =>
-        match CapWire.readAt cap with
-        | .error e => .error (CapWire.refusalJson e)
-        | .ok now =>
-          match readPlannerSection now sec with
+    | .ok (_, none) => .error (plannerRefusalJson PlannerRefusal.capacityAbsent)
+    | .ok (r, some parts) =>
+      match readPlannerSection parts.cap.look.today0.now sec with
+      | .error x => .error (plannerRefusalJson x)
+      | .ok q =>
+        match readBatchMaxMin parts.sec with
+        | .error x => .error (plannerRefusalJson x)
+        | .ok bm =>
+          match planReqOf parts bm q with
           | .error x => .error (plannerRefusalJson x)
-          | .ok _ =>
-            match readBatchMaxMin cap with
-            | .error x => .error (plannerRefusalJson x)
-            | .ok _ => .ok r
+          | .ok req => .ok (withPlanner r (planJson (Planner.dayPlan req)))
 
 /-- **The response value for a request's bytes**, `EmitWire.respondRows`' shape over
 `runPlanner`. -/
@@ -959,63 +1213,277 @@ theorem callPlanner_without_a_planner_section_is_callRows (input : String)
     runPlanner_without_a_planner_section_is_runRows j h]
   rfl
 
-/-- **A readable `planner` section changes no byte of the answer** — the response half of D48 is
-owed (README gap **1667**) and this is that owed-ness as a theorem, so a later step deleting it
-is the step that pays. -/
-theorem runPlanner_with_a_readable_section_answers_as_runRows (j sec cap r : JVal) (b : Nat)
-    (now : Cal.Instant) (q : PlannerIn)
-    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRows j = .ok r)
-    (hc : jget j "capacity" = .ok (some cap)) (hn : CapWire.readAt cap = .ok now)
-    (hs : readPlannerSection now sec = .ok q) (hb : readBatchMaxMin cap = .ok b) :
-    runPlanner j = .ok r := by
-  simp only [runPlanner, hp, hr, hn, hs, hc, hb]
+/-- **A readable `planner` section ANSWERS THE DAY.**
 
-/-- **An unreadable `at` keeps the capacity section's OWN name**, not a second one —
-`CapWire.readAt` is the one reader of that key and `CapWire.refusalJson` is the shape its
-refusals already go out in.
-
-**And this branch is unreachable through `runPlanner`**, said here rather than discovered
-later: `EmitWire.runRows` answers first, `runCap` inside it runs `readCapacityZ`, and
-`readCapacityZ` calls this same `readAt` and refuses `badAt` — so a request that reaches the
-line below has a capacity section the kernel already accepted.  It is `runLoad`'s situation one
-section along (README gap **1325**: *"a cost and not a second reading — one `runLoad`, called
-twice"*), and the honest removal is `runCapZ` handing its decoded `CapReq` out rather than only
-its bytes.  README gap **1672**; `tm/tests/kernel_planner_wire.rs` asserts the ordering that
-makes it unreachable rather than asserting a refusal no host can produce (AGENTS §9.2). -/
-theorem runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at
-    (j sec cap r : JVal) (e : CapWire.Refusal)
-    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRows j = .ok r)
-    (hc : jget j "capacity" = .ok (some cap)) (hn : CapWire.readAt cap = .error e) :
-    runPlanner j = .error (CapWire.refusalJson e) := by
-  simp only [runPlanner, hp, hr, hc, hn]
+This replaces the two theorems W-27 proved on purpose so that the step building the response
+would be the step deleting them (README gap 1667) — runPlanner_with_a_readable_section_answers
+_as_runRows and its Rust twin a_readable_planner_section_changes_no_byte, both **deleted here**
+and both written without backticks because neither exists any more.  Deleting them is not
+weakening a law (D5): the old statement said the response *equals* `EmitWire.runRows`', this one
+says it is that **with the day's seven keys added**, and the old statement is false of this
+definition exactly because the kernel now answers. -/
+theorem runPlanner_answers_the_day (j sec r : JVal) (b : Nat) (parts : CapParts)
+    (q : PlannerIn) (req : Planner.PlanReq)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
+    (hs : readPlannerSection parts.cap.look.today0.now sec = .ok q)
+    (hb : readBatchMaxMin parts.sec = .ok b) (hq : planReqOf parts b q = .ok req) :
+    runPlanner j = .ok (withPlanner r (planJson (Planner.dayPlan req))) := by
+  simp only [runPlanner, hp, hr, hs, hb, hq]
 
 /-- **And a section that does not decode refuses the whole call, by its own name** — the sentence
 that makes every bound in this module reachable from the FFI. -/
-theorem runPlanner_refuses_a_section_the_decoder_refuses (j sec cap r : JVal)
-    (now : Cal.Instant) (x : PlannerRefusal)
-    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRows j = .ok r)
-    (hc : jget j "capacity" = .ok (some cap)) (hn : CapWire.readAt cap = .ok now)
-    (hs : readPlannerSection now sec = .error x) :
+theorem runPlanner_refuses_a_section_the_decoder_refuses (j sec r : JVal) (parts : CapParts)
+    (x : PlannerRefusal)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
+    (hs : readPlannerSection parts.cap.look.today0.now sec = .error x) :
     runPlanner j = .error (plannerRefusalJson x) := by
-  simp only [runPlanner, hp, hr, hc, hn, hs]
+  simp only [runPlanner, hp, hr, hs]
 
 /-- **A `planner` section without a `capacity` section is refused by name** — `PlanReq.look`
-and `prio`'s five values are the capacity section's, so the request could not be assembled. -/
+and `prio`'s five values are the capacity section's, so the request could not be assembled.
+`Boundary.runCapP` answers `none` for the parts on exactly those requests. -/
 theorem runPlanner_refuses_a_planner_section_without_a_capacity (j sec r : JVal)
-    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRows j = .ok r)
-    (hc : jget j "capacity" = .ok none) :
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, none)) :
     runPlanner j = .error (plannerRefusalJson PlannerRefusal.capacityAbsent) := by
-  simp only [runPlanner, hp, hr, hc]
+  simp only [runPlanner, hp, hr]
 
 /-- **And a `batchMaxMin` the decoder refuses refuses the call** — README gap 801's value with a
 caller, which is what makes its bound more than a definition. -/
-theorem runPlanner_refuses_a_batch_max_min_the_decoder_refuses (j sec cap r : JVal)
-    (now : Cal.Instant) (q : PlannerIn) (x : PlannerRefusal)
-    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRows j = .ok r)
-    (hc : jget j "capacity" = .ok (some cap)) (hn : CapWire.readAt cap = .ok now)
-    (hs : readPlannerSection now sec = .ok q) (hb : readBatchMaxMin cap = .error x) :
+theorem runPlanner_refuses_a_batch_max_min_the_decoder_refuses (j sec r : JVal)
+    (parts : CapParts) (q : PlannerIn) (x : PlannerRefusal)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
+    (hs : readPlannerSection parts.cap.look.today0.now sec = .ok q)
+    (hb : readBatchMaxMin parts.sec = .error x) :
     runPlanner j = .error (plannerRefusalJson x) := by
-  simp only [runPlanner, hp, hr, hc, hn, hs, hb]
+  simp only [runPlanner, hp, hr, hs, hb]
+
+/-- **A request the assembler cannot build is refused by name** — the seam's absent replay, a
+wall index that is not the plan's (README gap 346), a candidate list past `Planner.maxCands`, a
+window instance `mkRoutine?` rejects. -/
+theorem runPlanner_refuses_a_request_the_assembler_refuses (j sec r : JVal) (b : Nat)
+    (parts : CapParts) (q : PlannerIn) (x : PlannerRefusal)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
+    (hs : readPlannerSection parts.cap.look.today0.now sec = .ok q)
+    (hb : readBatchMaxMin parts.sec = .ok b) (hq : planReqOf parts b q = .error x) :
+    runPlanner j = .error (plannerRefusalJson x) := by
+  simp only [runPlanner, hp, hr, hs, hb, hq]
+
+/-! ### The response's laws -/
+
+/-! ### The emitters, pinned
+
+**`mutate.py` found ten of them pinned by NOTHING** — `routineErrName`, `optNum`, `optStr`,
+`pairJson`, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson` each
+survived `:= default` with a green `lake build TmKernel:static`, because every theorem above
+is about the *shape* of `planJson` and none about the bytes any one emitter writes.  That is
+W-27's finding one module along (five optional readers, three theorems) and these are the
+theorems that answer it: each is a concrete witness, so a `default` in any of them moves a
+value a `rfl` names. -/
+
+/-- **Every field of a segment, at a value** — the eleven keys, in order, with `energy`, `item`,
+`inst`, `planned`, `mult` and `note` all present, so `optNum`, `optStr`, `pairJson`, `noteJson`
+and `flagsJson` are each pinned at a non-default by this one sentence. -/
+theorem segJson_writes_every_field_of_a_segment :
+    segJson ⟨⟨0, 60, .block, some 3, some ['a'], some (['a'], ['b']),
+        ⟨true, true, true, true, true, true, true⟩, some 25, some ⟨⟨3, 2⟩, by decide⟩,
+        some (.noPosition ['a'] 30 100 200)⟩, by decide⟩
+      = .obj [("start".toList, .num 0), ("stop".toList, .num 60),
+          ("kind".toList, .str "block".toList), ("batch".toList, .arr []),
+          ("energy".toList, .num 3), ("item".toList, .str ['a']),
+          ("inst".toList, .obj [("id".toList, .str ['a']), ("inst".toList, .str ['b'])]),
+          ("flags".toList, .obj [("done".toList, .bool true), ("current".toList, .bool true),
+            ("underused".toList, .bool true), ("hot".toList, .bool true),
+            ("mandatory".toList, .bool true), ("deferred".toList, .bool true),
+            ("open".toList, .bool true)]),
+          ("planned".toList, .num 25),
+          ("mult".toList, .obj [("num".toList, .num 3), ("den".toList, .num 2)]),
+          ("note".toList, .obj [("note".toList, .str "noPosition".toList),
+            ("id".toList, .str ['a']), ("durMin".toList, .num 30), ("lo".toList, .num 100),
+            ("hi".toList, .num 200)])] := rfl
+
+/-- **And every absent field is `null`, never dropped and never defaulted** — a reader counts
+the same eleven keys on every row. -/
+theorem segJson_writes_null_for_every_absent_field :
+    segJson ⟨⟨0, 0, .rest, none, none, none, {}, none, none, none⟩, by decide⟩
+      = .obj [("start".toList, .num 0), ("stop".toList, .num 0),
+          ("kind".toList, .str "rest".toList), ("batch".toList, .arr []),
+          ("energy".toList, .null), ("item".toList, .null), ("inst".toList, .null),
+          ("flags".toList, .obj [("done".toList, .bool false), ("current".toList, .bool false),
+            ("underused".toList, .bool false), ("hot".toList, .bool false),
+            ("mandatory".toList, .bool false), ("deferred".toList, .bool false),
+            ("open".toList, .bool false)]),
+          ("planned".toList, .null), ("mult".toList, .null), ("note".toList, .null)] := rfl
+
+/-- **`Planner.Note`'s eleven constructors each spell their own name** (AGENTS §5.7), so a note
+renamed here moves a key a host reads. -/
+theorem noteJson_names_the_eleven :
+    ([Planner.Note.travelDay, .noPosition ['a'] 1 2 3, .budgetSpent 1, .plannedOf 1 2,
+      .bufferBefore ['a'], .travelDayWall, .paused, .interruption, .breakWhere ['x'],
+      .idleAttributed ['x'], .runningLeft 5].map
+        (fun n => match noteJson n with
+          | .obj ((_, .str t) :: _) => t
+          | _ => []))
+      = [ "travelDay".toList, "noPosition".toList, "budgetSpent".toList, "plannedOf".toList,
+          "bufferBefore".toList, "travelDayWall".toList, "paused".toList, "interruption".toList,
+          "breakWhere".toList, "idleAttributed".toList, "runningLeft".toList] := rfl
+
+/-- **§8.2 step 8's twelve fields, on a day with nothing wrong with it** — which is what
+`Planner.dayPlan` answers today, so this is the object every response actually carries. -/
+theorem diagJson_of_an_untroubled_day :
+    diagJson Planner.Diagnostics.empty
+      = .obj [("underused".toList, .arr []), ("aCapacityLost".toList, .num 0),
+          ("hot".toList, .arr []), ("impossible".toList, .arr []),
+          ("conflicts".toList, .arr []), ("blocked".toList, .arr []),
+          ("deferred".toList, .arr []), ("waiting".toList, .arr []), ("notes".toList, .arr []),
+          ("droppedTail".toList, .arr []),
+          ("planHonesty".toList, .obj [("planned".toList, .num 0), ("total".toList, .num 0)]),
+          ("restDebtMin".toList, .num 0)] := rfl
+
+/-- **And with something wrong with it**, so the three list shapes and `idsJson` are pinned at a
+value and not only at the empty list. -/
+theorem diagJson_carries_its_lists :
+    diagJson { Planner.Diagnostics.empty with
+        hot := ⟨[['a']], by decide⟩,
+        impossible := ⟨[(['b'], 30)], by decide⟩,
+        conflicts := ⟨[(['c'], ['d'])], by decide⟩,
+        notes := ⟨[.paused], by decide⟩,
+        aCapacityLost := 7, restDebtMin := 12, planHonesty := (2, 5) }
+      = .obj [("underused".toList, .arr []), ("aCapacityLost".toList, .num 7),
+          ("hot".toList, .arr [.str ['a']]),
+          ("impossible".toList,
+            .arr [.obj [("id".toList, .str ['b']), ("shortMin".toList, .num 30)]]),
+          ("conflicts".toList,
+            .arr [.obj [("a".toList, .str ['c']), ("b".toList, .str ['d'])]]),
+          ("blocked".toList, .arr []), ("deferred".toList, .arr []), ("waiting".toList, .arr []),
+          ("notes".toList, .arr [.obj [("note".toList, .str "paused".toList)]]),
+          ("droppedTail".toList, .arr []),
+          ("planHonesty".toList, .obj [("planned".toList, .num 2), ("total".toList, .num 5)]),
+          ("restDebtMin".toList, .num 12)] := rfl
+
+/-- **§7's answers go out in `EmitWire.readPrio`'s own `{id, p}` shape**, which is what lets a
+host send back the day it was given. -/
+theorem priosJson_is_the_id_and_the_priority :
+    priosJson ⟨[(['a'], (3 : Fin 8)), (['b'], (0 : Fin 8))], by decide⟩
+      = .arr [.obj [("id".toList, .str ['a']), ("p".toList, .num 3)],
+              .obj [("id".toList, .str ['b']), ("p".toList, .num 0)]] := rfl
+
+/-- **`Planner.RoutineErr`'s six names spell themselves, each with its id.** -/
+theorem the_routine_errors_spell_themselves :
+    (routineErrName (.unknownItem ['a']), routineErrName (.undeclaredWindow ['a']),
+     routineErrName (.emptyWindow ['a']), routineErrName (.pastTheHorizon ['a']),
+     routineErrName (.noMinutes ['a']), routineErrName .tooManyRoutines)
+      = ("unknownItem a", "undeclaredWindow a", "emptyWindow a", "pastTheHorizon a",
+         "noMinutes a", "tooManyRoutines") := rfl
+
+/-- **The seven keys the day writes are design §10.2's, in its order.** -/
+theorem planJson_writes_the_seven_keys (d : Planner.DayPlan) :
+    (planJson d).map Prod.fst = planKeys := rfl
+
+/-- **They are DISJOINT from the key `EmitWire.withPlan` already writes**, which is what lets one
+`plan` object carry both a day the kernel planned and the rows a host asked it to render. -/
+theorem the_plan_objects_keys_are_disjoint : planKeys.all (fun k => k ≠ "rows".toList) := by
+  decide
+
+/-- **Nothing in the response is recomputed**: every key is a view `Planner.PlanReq` already
+had — the request's own day, `Look.day0Window`'s window, §8.1's budget, `dayRows`, `dayDiagnostics`,
+`dayPriorities` and the hash — and this is `rfl`. -/
+theorem planJson_of_a_planned_day_is_the_requests_own_views (r : Planner.PlanReq) :
+    planJson (Planner.dayPlan r)
+      = [("day".toList, .str (Field.renderDate r.today)),
+         ("window".toList, .obj [("lo".toList, .num (Look.day0Window r.look).1),
+            ("hi".toList, .num (Look.day0Window r.look).2)]),
+         ("budgetBlocks".toList, .num r.budgetBlocks),
+         ("segments".toList, .arr ((Planner.dayRows r).map segJson)),
+         ("diagnostics".toList, diagJson (Planner.dayDiagnostics r)),
+         ("priorities".toList, priosJson (Planner.dayPriorities r)),
+         ("hash".toList, .str (hashHex Planner.PlanHash.zero))] := rfl
+
+/-- **The day's rows and the emitted segments are the same list, of the same length.** -/
+theorem planJson_segments_length (d : Planner.DayPlan) :
+    (d.segments.map segJson).length = d.segments.length := by simp
+
+/-- **`intoPlan` walks past every key that is not `plan`**, so the object it writes into is the
+one `EmitWire.withPlan` wrote and never a new one beside it. -/
+theorem intoPlan_skips_another_key (k : List Char) (v : JVal)
+    (rest xs : List (List Char × JVal)) (h : (k == "plan".toList) = false) :
+    intoPlan ((k, v) :: rest) xs = (k, v) :: intoPlan rest xs := by
+  have hk : ¬ (k = "plan".toList) := by
+    intro hc; rw [hc] at h; simp at h
+  simp only [intoPlan]
+  rw [h]
+  simp
+
+/-- **And appends into the `plan` object when it reaches one.** -/
+theorem intoPlan_into_the_plan_object (ys xs rest : List (List Char × JVal)) :
+    intoPlan (("plan".toList, .obj ys) :: rest) xs
+      = ("plan".toList, .obj (ys ++ xs)) :: rest := by simp [intoPlan]
+
+/-- **And makes one when there is none.** -/
+theorem intoPlan_makes_a_plan_object (xs : List (List Char × JVal)) :
+    intoPlan [] xs = [("plan".toList, .obj xs)] := rfl
+
+/-- **The response's real shape, concretely**: a request that carried both sections gets one
+`plan` object holding `rows` and then the day's seven keys — `EmitWire.withPlan`'s key first
+because it was written first, and neither writer overwriting the other. -/
+theorem withPlanner_shares_the_plan_object (docs report rows : JVal)
+    (xs : List (List Char × JVal)) :
+    withPlanner (.obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report),
+        ("plan".toList, .obj [("rows".toList, rows)])])]) xs
+      = .obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report),
+          ("plan".toList, .obj (("rows".toList, rows) :: xs))])] := by
+  simp [withPlanner, intoPlan]
+
+/-- **And a request that carried only a `planner` section gets a `plan` object of its own.** -/
+theorem withPlanner_makes_the_plan_object (docs report : JVal)
+    (xs : List (List Char × JVal)) :
+    withPlanner (.obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report)])]) xs
+      = .obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report),
+          ("plan".toList, .obj xs)])] := by
+  simp [withPlanner, intoPlan]
+
+/-- **The seam carries its run exactly when it carries its facts** (README gaps 1669 and 1783).
+
+`Boundary.LogReq.seamFacts` and `seamRun` are guarded by the same `r.facts`, so a `LogAnswer`
+cannot hold one without the other.  That is what makes `PlannerRefusal.runAbsent` a branch no
+host reaches today: `CapWire.Section.today0` refuses `day0WithoutLog` when the facts are absent,
+and it runs first — the ordering `tm/tests/kernel_planner_wire.rs` asserts rather than asserting
+a refusal nothing can produce (AGENTS §9.2, the shape gap 1672 established). -/
+theorem the_seam_carries_its_run_exactly_when_it_carries_its_facts (q : LogReq) (run : Seal.Run) :
+    (q.seamFacts run).isSome = (q.seamRun run).isSome := by
+  unfold LogReq.seamFacts LogReq.seamRun
+  cases q.facts <;> rfl
+
+/-- **`CapWire.maxCandidates` and `Planner.maxCands` are one number** — README gap **1330**'s
+warning, stated for the first time.  It is `rfl`, so a diff that moves either has to move both or
+fail here. -/
+theorem the_two_candidate_caps_are_one_number :
+    CapWire.maxCandidates = Planner.maxCands := rfl
+
+/-- **The hash is sixteen digits**, which is the length `Planner.mkHash?` requires. -/
+theorem hashHex_length (h : Planner.PlanHash) : (hashHex h).length = Planner.hashHexLen := by
+  simp [hashHex]
+
+/-- **And it reads back through the kernel's own reader** at the value every day carries today
+(`Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`; P7 is what makes it something else). -/
+theorem hashHex_of_zero_reads_back :
+    Planner.mkHash? (hashHex Planner.PlanHash.zero) = some Planner.PlanHash.zero := by decide
+
+/-- **`EmitWire.readKind` reads back every kind `kindName` writes** — the eleven names are one
+table, not two, so a kind renamed on one side fails here rather than on a host. -/
+theorem readKind_reads_back_every_kind_it_writes (i : Nat) :
+    EmitWire.readKind i (kindJson .block) = .ok .block ∧
+    EmitWire.readKind i (kindJson .brk) = .ok .brk ∧
+    EmitWire.readKind i (kindJson .routine) = .ok .routine ∧
+    EmitWire.readKind i (kindJson .wall) = .ok .wall ∧
+    EmitWire.readKind i (kindJson .rest) = .ok .rest ∧
+    EmitWire.readKind i (kindJson .optional) = .ok .optional ∧
+    EmitWire.readKind i (kindJson .windDown) = .ok .windDown ∧
+    EmitWire.readKind i (kindJson .sleep) = .ok .sleep ∧
+    EmitWire.readKind i (kindJson .lost) = .ok .lost ∧
+    EmitWire.readKind i (kindJson .ghost) = .ok .ghost ∧
+    EmitWire.readKind i (kindJson (.batch ⟨[['a'], ['b']], by decide⟩))
+      = .ok (.batch ⟨[['a'], ['b']], by decide⟩) :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-- **The export is `callPlanner`.** -/
 theorem callExport_is_callPlanner (input : String) : callExport input = callPlanner input := rfl

@@ -6543,9 +6543,43 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.readPlannerSection_refuses_a_routines_that_is_not_an_array
 #print axioms Tm.PlanWire.runPlanner_without_a_planner_section_is_runRows
 #print axioms Tm.PlanWire.callPlanner_without_a_planner_section_is_callRows
-#print axioms Tm.PlanWire.runPlanner_with_a_readable_section_answers_as_runRows
-#print axioms Tm.PlanWire.runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at
+-- W-28 (D48's RESPONSE half, README gap 1667): the two theorems W-27 proved so that the step
+-- which builds the response would be the step which deletes them are GONE --
+-- runPlanner_with_a_readable_section_answers_as_runRows (the call answers the day now, so the
+-- statement is false of this definition) and
+-- runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at (gap 1672's unreachable
+-- branch: `Boundary.CapParts` hands the decoded instant out and the second `readAt` is gone).
+#print axioms Tm.PlanWire.runPlanner_answers_the_day
 #print axioms Tm.PlanWire.runPlanner_refuses_a_section_the_decoder_refuses
 #print axioms Tm.PlanWire.runPlanner_refuses_a_planner_section_without_a_capacity
 #print axioms Tm.PlanWire.runPlanner_refuses_a_batch_max_min_the_decoder_refuses
+#print axioms Tm.PlanWire.runPlanner_refuses_a_request_the_assembler_refuses
+#print axioms Tm.PlanWire.segJson_writes_every_field_of_a_segment
+#print axioms Tm.PlanWire.segJson_writes_null_for_every_absent_field
+#print axioms Tm.PlanWire.noteJson_names_the_eleven
+#print axioms Tm.PlanWire.diagJson_of_an_untroubled_day
+#print axioms Tm.PlanWire.diagJson_carries_its_lists
+#print axioms Tm.PlanWire.priosJson_is_the_id_and_the_priority
+#print axioms Tm.PlanWire.the_routine_errors_spell_themselves
+#print axioms Tm.PlanWire.planJson_writes_the_seven_keys
+#print axioms Tm.PlanWire.the_plan_objects_keys_are_disjoint
+#print axioms Tm.PlanWire.planJson_of_a_planned_day_is_the_requests_own_views
+#print axioms Tm.PlanWire.planJson_segments_length
+#print axioms Tm.PlanWire.intoPlan_skips_another_key
+#print axioms Tm.PlanWire.intoPlan_into_the_plan_object
+#print axioms Tm.PlanWire.intoPlan_makes_a_plan_object
+#print axioms Tm.PlanWire.withPlanner_shares_the_plan_object
+#print axioms Tm.PlanWire.withPlanner_makes_the_plan_object
+#print axioms Tm.PlanWire.the_seam_carries_its_run_exactly_when_it_carries_its_facts
+#print axioms Tm.PlanWire.the_two_candidate_caps_are_one_number
+#print axioms Tm.PlanWire.hashHex_length
+#print axioms Tm.PlanWire.hashHex_of_zero_reads_back
+#print axioms Tm.PlanWire.readKind_reads_back_every_kind_it_writes
 #print axioms Tm.PlanWire.callExport_is_callPlanner
+
+-- W-28: the seam carries the RUN, not only the merged answer (README gap 1669), and the
+-- capacity request hands out what it decoded (gaps 1671 and 1672).
+#print axioms Tm.Seal.trimRun_of_wanted_facts
+#print axioms Tm.runCapP_bytes
+#print axioms Tm.runCapZ_is_runCapZP_bytes
+#print axioms Tm.EmitWire.runRowsP_bytes
