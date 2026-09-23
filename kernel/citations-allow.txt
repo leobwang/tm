@@ -57,6 +57,10 @@ implemented_by
 # records what serde_json does NOT do.
 Subtype.val
 JSON.stringify
+# W-28: a CONSTRUCTOR of Lean core's `ConstantInfo`, named in gap 1822's remedy.  Same blind
+# spot as `Subtype.val` above -- source 6 reads the toolchain's declaration lines, and a
+# constructor is not one.
+thmInfo
 # Adjudicated at the W-19 MERGE, not on track A's branch: check 8 could not see track P's
 # or track G's prose until the tracks were merged, so their vocabulary is a merge-time
 # obligation (README gap 870).  `List.getElem?_eq_some_iff` is used one line below the
@@ -108,6 +112,32 @@ sort_by_key
 # W-19 merge: `out.sort_by` in Planner.lean's GroupKey note is Rust `slice::sort_by`, the
 # STABLE sort, at tm-core/src/planner.rs:1472 inside the fork's `build_groups`.
 out.sort_by
+
+# ============ W-28 track A: the OWNER of a DOTTED path, adjudicated ============
+#
+# W-27's owner test was scoped to a `::` span, so the same hole was open one separator over
+# (README gap 933): a dotted citation resolved on its LAST segment, and `rs`, `md`, `lean`,
+# `snap`, `a`, `toml` and `sh` are all declared names of this repository -- so every
+# filename citation in the tree resolved on its EXTENSION.  Ten names fell out when the
+# test was widened to every qualified span.  Four of them are real referents this
+# repository does not HOLD, and they are here, uncounted, with the rest of section 1; the
+# other six are files that do not exist and are in section 3.
+#
+# The linkable archive `lake build TmKernel:static` writes, under .lake/build/lib -- derived
+# output, so not a tracked file and not a stem of one.
+libTmKernel_TmKernel.a
+# The file `tm init` WRITES into a new tree, at .claude/skills/<name>/SKILL.md
+# (tm/src/init/mod.rs's `skill_file`).  The repository holds the eight templates under
+# tm/templates/skills/, none of them named this.
+SKILL.md
+# A Lean `set_option` key, named in AGENTS R4's row about Json.lean's one suppression.
+# `linter` is an option namespace and no declaration of any kind, here or in the toolchain.
+linter.unusedSimpArgs
+# The FORK's field, at tm-core/src/planner.rs:884, cited by Planner.lean's note on
+# `remainingBudget`.  `blocks_done` is declared; `self` is a RECEIVER, and resolving a
+# receiver needs a type checker this file does not have -- so the unresolvable class fails
+# and is adjudicated here by name rather than passing silently (README gap 1731).
+self.blocks_done
 
 # ================= W-27 track X: the `::`-SPELLED PATHS, adjudicated =================
 #
@@ -413,6 +443,26 @@ can_fail
 3 the_log_op_answers_the_block_facts
 2 witCaps_eq
 1 witCaps_ok
+
+# W-28 track A, by the same widening: SIX FILES THAT DO NOT EXIST, every one named by a
+# sentence that is a record rather than a claim.  They resolved until this run because their
+# EXTENSION is a declared name.
+#
+# On the DISCARDED `main` branch (AGENTS 1 says the quotation is historical).
+7 invariant_exhaustive.rs
+# `tm/tests/log_narrowed_facts.rs`, 292 lines, DELETED at 2b26be3 ("the kernel is the only
+# reader of the log -- the switch").  The README's file arithmetic at 21198 still counts it.
+# THE ONE LIVE FIND of the dotted widening: the file is gone and the sentence is a count
+# taken while it existed, so it is adjudicated here rather than rewritten.
+3 log_narrowed_facts.rs
+# Named at README 35635 as an OPTION for cutting parallel steps -- "either a per-track
+# witness module or the append-only banner discipline" -- and the option was not taken.
+1 PlannerWitP.lean
+1 PlannerWitG.lean
+# The two scratch probe files a drive used, and the sentence citing them (README 56701)
+# says in the same breath that both were deleted before the commit.
+1 Probe26.lean
+1 Probe26b.lean
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

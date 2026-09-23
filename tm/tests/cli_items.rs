@@ -1654,6 +1654,20 @@ fn a_value_for(key: &str) -> &'static str {
 /// FORM there is, and the answer must be the kernel's bytes or a refusal that
 /// wrote nothing. No arm of it is allowed to be a no-op: the counters at the
 /// end are what stop this from passing by trying nothing.
+///
+/// **AND THE SECOND HALF WAS STILL A LIST** — the W-28 repair step. W-27
+/// quantified the FIRST change over the key set and left the second one a
+/// seven-entry table of unwired forms, so the case D49 was actually decided on
+/// — *two routed keys in one command*, `cap=3h/d due=2026-10-01`, row two of
+/// the table above — was covered by three hand-written examples further down
+/// this file and by no property at all. An auditor called it the eighth
+/// enumeration hole in test form, and the shape is the campaign's: a set you
+/// must be ADDED to in order to be COVERED.
+///
+/// The second change now ranges over **the key set as well**: every ordered
+/// pair `(k1, k2)` of routed keys, `k1 == k2` included, beside every unwired
+/// form. 19 × (19 + 7) = 494 invocations, and adding a twentieth key to the
+/// grammar adds 39 of them without anybody editing this test.
 #[test]
 fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
     // The forms that are NOT on the wire, each a property of the wire or of
@@ -1670,13 +1684,11 @@ fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
         &["zzznotakey=1"],
         &["--set", "zz=1"],
     ];
-    let mut keys = 0usize;
-    let mut checked = 0usize;
-    let mut refused = 0usize;
-    let untouched = {
-        let tm = Tm::new();
-        tm.line("backlog.md", "a1")
-    };
+    // THE SECOND CHANGE, derived and not listed: every routed key, then every
+    // unwired form. A key that joins `grammar::KEYS` joins both sides of the
+    // quantifier here, which is the whole difference between this and the
+    // table it replaced.
+    let mut seconds: Vec<Vec<String>> = Vec::new();
     for key in tm_core::grammar::KEYS {
         let value = a_value_for(key);
         assert!(
@@ -1684,23 +1696,34 @@ fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
             "`a_value_for` has no value for `{key}`: the table must stay total over \
              `grammar::KEYS`, or this property silently stops testing a key"
         );
-        let pair = format!("{key}={value}");
+        seconds.push(vec![format!("{key}={value}")]);
+    }
+    let routed_seconds = seconds.len();
+    for form in unwired {
+        seconds.push(form.iter().map(|s| (*s).to_string()).collect());
+    }
+    let mut keys = 0usize;
+    let mut checked = 0usize;
+    let mut refused = 0usize;
+    let mut agreed = 0usize;
+    let mut agreed_on_two_routed_keys = 0usize;
+    let untouched = {
+        let tm = Tm::new();
+        tm.line("backlog.md", "a1")
+    };
+    for key in tm_core::grammar::KEYS {
+        // Totality over `KEYS` is asserted where `seconds` is built, which is
+        // the same table and runs first.
+        let pair = format!("{key}={}", a_value_for(key));
         keys += 1;
-        for extra in unwired {
-            // What the two changes write as TWO commands: each one written by
-            // whichever writer owns it, which is the answer D49 fixes as
-            // correct. `--unset ci` after a `ci=`-less edit is the same edit.
-            let split = {
-                let tm = Tm::new();
-                let a = tm.run(&["edit", "^a1", &pair]);
-                let mut argv = vec!["edit", "^a1"];
-                argv.extend_from_slice(extra);
-                let b = tm.run(&argv);
-                (a.code == 0 && b.code == 0).then(|| tm.line("backlog.md", "a1"))
-            };
+        for (i, extra) in seconds.iter().enumerate() {
+            let extra: Vec<&str> = extra.iter().map(String::as_str).collect();
+            // The COMBINED command first, so that a refusal costs one run
+            // rather than three — the pair arm quadrupled the invocations and
+            // this is what pays for it.
             let tm = Tm::new();
             let mut argv = vec!["edit", "^a1", &pair];
-            argv.extend_from_slice(extra);
+            argv.extend_from_slice(&extra);
             let out = tm.run(&argv);
             let after = tm.line("backlog.md", "a1");
             checked += 1;
@@ -1713,6 +1736,17 @@ fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
                 );
                 continue;
             }
+            // What the two changes write as TWO commands: each one written by
+            // whichever writer owns it, which is the answer D49 fixes as
+            // correct. `--unset ci` after a `ci=`-less edit is the same edit.
+            let split = {
+                let tm = Tm::new();
+                let a = tm.run(&["edit", "^a1", &pair]);
+                let mut argv = vec!["edit", "^a1"];
+                argv.extend_from_slice(&extra);
+                let b = tm.run(&argv);
+                (a.code == 0 && b.code == 0).then(|| tm.line("backlog.md", "a1"))
+            };
             let Some(split) = split else {
                 panic!(
                     "`tm edit ^a1 {pair} {}` succeeded as one command and one of its halves \
@@ -1722,16 +1756,36 @@ fn edit_writes_the_same_bytes_or_refuses_whatever_else_the_command_carries() {
             };
             assert_eq!(
                 after, split,
-                "one edit is not what its parts write (D49):\n  together: {after}\n  \
-                 separately: {split}",
+                "one edit is not what its parts write (D49):\n  \
+                 `tm edit ^a1 {pair} {}`\n  together: {after}\n  separately: {split}",
+                extra.join(" "),
             );
+            agreed += 1;
+            if i < routed_seconds {
+                agreed_on_two_routed_keys += 1;
+            }
         }
     }
     assert_eq!(keys, tm_core::grammar::KEYS.len());
-    assert_eq!(checked, keys * unwired.len(), "the inner loop skipped a form");
+    assert_eq!(routed_seconds, keys, "the second change lost a routed key");
+    assert_eq!(
+        checked,
+        keys * (keys + unwired.len()),
+        "the inner loop skipped a second change"
+    );
     assert!(
         refused > 0,
         "nothing was refused: the mixed-command branch was never reached"
+    );
+    assert!(
+        agreed > 0,
+        "nothing agreed: every case refused, so the byte comparison never ran"
+    );
+    // The arm D49 was decided on. Without this the pair loop could pass by
+    // refusing every two-key edit, which is not the answer D49 takes.
+    assert!(
+        agreed_on_two_routed_keys > 0,
+        "no two-routed-key edit succeeded: the D49 case itself was never compared"
     );
 }
 

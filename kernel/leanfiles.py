@@ -243,10 +243,41 @@ def strip_comments(src: str) -> str:
     return "".join(out)
 
 
-THEOREM = re.compile(
-    r"^[ \t]*(?:@\[[^\]]*\][ \t\r\n]*)*"
-    r"(?:(?:private|protected|nonrec)[ \t]+)*theorem[ \t]+([^\s(){}:]+)",
-    re.M)
+# THE ROSTER IS A KEYWORD TOKEN AND NOT A LINE SHAPE (the W-28 repair step).
+#
+# W-27 widened this from a bash grep to a Python pattern and the widening was a
+# LONGER LIST OF PREFIXES -- attributes, then `private|protected|nonrec`, then
+# indentation -- each one a spelling somebody had thought of.  A list of
+# spellings is the pattern this campaign has now broken eight times, and it was
+# still wrong one layer up: the pattern was anchored at `^`, so it saw only a
+# `theorem` whose LINE it started.  Lean's `in` combinators put a declaration
+# after a term on the same line, and the library writes three of them --
+# `set_option maxRecDepth 20000 in` (EmitWire.lean twice, Json.lean's
+# `linter.unusedSimpArgs` once).  Each is on its own line today; written on ONE
+# line, which elaborates identically, the theorem left the roster.  DRIVEN in a
+# `git archive HEAD` clone: `set_option maxRecDepth 400 in theorem w28_.. :=
+# trivial` and `open Nat in theorem w28_.. := trivial` appended to Emit.lean
+# both ELABORATE (lake build rc=0) and both left `unaudited` EMPTY, while the
+# same two theorems written on two lines were named at once.
+#
+# SO THE RULE IS A PROPERTY OF THE TOKEN, not of the line it sits on.  `theorem`
+# is a RESERVED keyword in Lean 4 -- it cannot be part of any identifier -- so
+# in source that has been comment- and string-stripped, EVERY occurrence of it
+# as a token declares a theorem, wherever on the line it falls and whatever
+# stands in front of it.  Nothing has to be added to this pattern for
+# `noncomputable theorem`, for a fourth attribute block, for a modifier Lean
+# gains in a later toolchain, or for an `in` combinator nobody has written yet.
+# Measured over the library at the repair step: the old pattern and this one
+# agree EXACTLY, 5,102 names each, no name in either difference.
+#
+# WHAT IT CANNOT SEE: a `theorem` produced by a macro or a `syntax` extension
+# (the kernel defines none); a guillemet-quoted identifier that SPELLS the word
+# with a space in front of it (`«a theorem»` -- the library's seven guillemet
+# identifiers are `«matches»` and `«meta»`, greppable and neither); and the
+# blind spots `strip_comments` lists.  The lookbehind is the identifier
+# alphabet -- a word character, `'`, `?`, `!`, `.` or `«` -- so a name that ENDS
+# in the word (free_theorem) and one that is qualified by it are not tokens of it.
+THEOREM = re.compile(r"(?<![\w'?!.\u00AB])theorem[ \t\r\n]+([^\s(){}:]+)")
 
 
 def theorem_names(path):
@@ -268,8 +299,12 @@ def theorem_names(path):
     grep would have demanded an audit line for a theorem that does not exist.
     So the source is comment-stripped first, by the same scanner the ban uses.
 
-    WHAT IT CANNOT SEE: `theorem` produced by a macro or a `syntax` extension
-    (the kernel defines none), and the blind spots `strip_comments` lists."""
+    AND W-27'S FIX WAS STILL A LIST OF PREFIXES, which is the W-28 repair step:
+    the pattern was anchored at the line head, so a `theorem` that does not
+    START its line -- `open Nat in theorem ..`, `set_option .. in theorem ..`,
+    both of which elaborate and both of which this library writes on two lines
+    today -- was outside the roster.  `THEOREM` above is now the KEYWORD TOKEN
+    and its blind spots are listed there."""
     return THEOREM.findall(strip_comments(pathlib.Path(path).read_text()))
 
 

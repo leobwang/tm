@@ -1053,18 +1053,28 @@ declared short names against audited last segments — not the two `sort -u`
 counts, which cannot see a name declared in two namespaces:
 
 ```bash
-grep -hoE '^(@\[[^]]*\][[:space:]]*)?theorem [^ (){}:]+' TmKernel/*.lean \
-  | sed 's/.*theorem //' | sed 's/.*\.//' | sort > /tmp/decl
-grep '^#print axioms' Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort > /tmp/aud
+cd kernel   # not kernel/TmKernel: the one roster lives beside the package
+python3 leanfiles.py --theorems TmKernel | sed 's/.*\.//' | sort > /tmp/decl
+grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort > /tmp/aud
 comm -23 /tmp/decl /tmp/aud   # MUST BE EMPTY — check 3 fails if it is not
 comm -13 /tmp/decl /tmp/aud   # `WfPlan` and `effectiveScope` — the two `def`s below
 ```
 
+**The first line used to be a `grep` over `TmKernel/*.lean` and re-deriving that
+way is how this reconciliation gets a wrong answer.** Four repairs have moved
+the roster since: the walk went recursive (W-21), the prune list became a
+property (W-22), the library ROOT module joined it (W-23, gap 1314), and the
+declaration SHAPE stopped being a list of prefixes — attributes, `private`,
+`nonrec`, indentation, and finally the line anchor itself, so that
+`set_option … in theorem` counts (W-27, W-28). `leanfiles.py --theorems` is the
+one roster `check.sh` uses; re-deriving it by hand re-derives the hole.
+
 - 4971 audit lines, 4971 **distinct** names: no name is audited twice.
 - Every theorem declared in the 84 modules is audited, and `comm -23` is now
   **empty** — that is the direction `check.sh` check 3 enforces. `^theorem`
-  alone misses the declared `@[simp] theorem`s, which is why the grep allows an
-  attribute prefix.
+  alone misses the declared `@[simp] theorem`s, which is why the grep allowed an
+  attribute prefix — and allowing prefixes one at a time is the pattern W-28
+  replaced with a keyword-token rule; see `leanfiles.THEOREM`.
 - **The `whose` off-by-one is gone.** The third number used to count one prose
   line — `Cmd.lean`'s header contained *"theorem whose command argument was
   unused"* at column 0 — so the two off-by-ones cancelled and the three counts

@@ -58610,3 +58610,184 @@ re-audited **PINNED**.
 
 **The rule this adds to the campaign's own list**: a theorem about the *shape* of a response is
 not a theorem about its *values*, and `mutate.py` is the only thing that tells them apart.
+
+## Stage 6 — W-28, track A: the roster is a keyword TOKEN, check 8's owner test gets BOTH separators, and D49 is a property over the key SET
+
+Three findings W-27's auditors left, every one reproduced in a `git archive HEAD` clone under
+`/tmp/claude-1000/` before it was touched, and one of the three **refuted in its stated mechanism
+and re-driven one separator over**. Each fix states a property; none of the three lengthens a list,
+and the two that replaced a list say which list they replaced. `git status --porcelain` on the
+shared checkout was checked before and after every plant; the only entries it ever held were
+another track's own edits, never one of these.
+
+### 1. The finding as filed is refuted; the class it names is live on the other separator
+
+*Filed:* "check 8 is green on a stale `::` citation whose owner does not exist — `rust_variants`
+resolves on the LAST SEGMENT." **That was closed at W-27.** Driven, one line appended to
+`mutations.txt` in a git-initialised clone of `8e219c2`:
+
+| planted span | check 8 at `8e219c2` |
+|---|---|
+| a `::`-spelled path under a nonexistent owner | **named**, `resolves to nothing` |
+| the same path spelled with a DOT | green, silent |
+| a dotted `Zzz.`-owned kernel name | green, silent |
+| an owner-less control beside them | **named** |
+
+So the weakness is real and it is the one the finding's own second sentence points at — gap 933's
+last-segment resolution — living on `.` because W-27 wrote the owner test as `"::" in name`. **A
+rule that holds for one separator and not the other is not a property; it is a list with two
+entries.** The dotted half was the larger one: 9,127 citations over 1,983 dotted spans with a
+capitalised head, 824 more over 192 with a lowercase one, every one resolved on its last segment
+alone. And it was at its worst on FILENAMES, because `rs`, `md`, `lean`, `snap`, `a`, `toml` and
+`sh` are all declared names of this repository — **every filename citation in this tree resolved on
+its extension.**
+
+`owner_resolves` now runs on every QUALIFIED span, either separator: *a qualified citation resolves
+only if its last segment resolves AND some earlier segment names something declared.* Widening it
+needed two sets widened with it, because **an owner is not a leaf**:
+
+* **Source 5 is `tracked()`** — the repository's own account of its files, which is the population
+  the residue rule already uses. It was a walk of THREE DIRECTORY NAMES written out (`tm`,
+  `tm-core`, `kernel`), the shape `leanfiles.py`'s header says cannot work, and the repository
+  ROOT was not on it. Measured: the walk gives 470 stems, git gives 472; the only two lost are
+  `__pycache__` bytecode stems, and the four gained are `AGENTS`, `API-NOTES`, `PLAN-lean-kernel`
+  and `tm-spec-v1` — four files this repository holds and did not declare. A filename citation now
+  resolves because **the file exists**.
+* **`core_namespaces`, owner-only.** `core_declared` reads the toolchain's declaration lines and no
+  `namespace`, so `Classical` was declared nowhere and `Classical.choice` resolved on `choice`. 920
+  namespace names, 378 of them new; as a LAST-segment set those 378 could each launder a deleted
+  kernel constant, and as an OWNER set they can launder nothing — an owner never resolves a
+  citation by itself.
+
+**Cost: ten adjudications, and eight of them are files that do not exist.** Four are real referents
+this repository does not HOLD and went to section 1 uncounted (the linkable archive `lake` writes;
+the `SKILL.md` `tm init` writes into a new tree; a Lean `set_option` key whose head is an option
+namespace; and the fork's `self.blocks_done`, a RECEIVER — resolving one needs a type checker this
+file does not have, so **the unresolvable class fails and is named** rather than passing silently).
+Six went to section 3 counted, 14 citations: a file on the discarded `main`, two prospective witness
+modules named as an option not taken, two scratch probes the citing sentence says were deleted —
+and **one live find**: the README's test arithmetic still counts a 292-line test file deleted at
+`2b26be3` with the log switch. An eleventh entry is this block's own — `thmInfo`, a Lean core
+CONSTRUCTOR named in gap 1822's remedy, which source 6 does not read (the same blind spot
+`Subtype.val` sits under). Check 8 after, on the final tree: **38091 citations, 36239 resolved,
+1852 allowed (196 vocabulary, 355 counted), 0 allow entries unused, 264 files swept, 340 excluded
+by 15 rules** — against **38048 / 36230 / 1818 (191, 349)** at `8e219c2`; the citation count rises
+because this block is swept prose.
+
+*Driven after, in the same clone:* the dotted stale path, the `::` one, a bare `Zzz.`-owned name and
+a citation of a `.rs` file that does not exist are **all four named**; `Arith.ramp` and
+`cli_latency.rs`, planted in the same line as false-positive controls, still resolve.
+
+### 2. The roster's shape was still a LIST OF PREFIXES, one layer up
+
+*Filed:* "check 3's roster is blind to an indented theorem, and one live kernel theorem is
+indented." **The indentation was closed at W-27** — measured on `8e219c2`, the roster and an
+independent token scan of the same stripped source agree exactly, 5,102 names each, and the one
+indented `theorem` in the library is the §8.3 goal quoted inside a `Planner.lean` docstring, which
+is prose and is correctly absent. **But the fix W-27 made was a longer list of prefixes** —
+attributes, then `private|protected|nonrec`, then indentation, each a spelling somebody thought of
+— anchored at the LINE HEAD. So a `theorem` that does not *start* its line was outside the roster.
+Lean's `in` combinators put one there, and this library writes three of them (`set_option
+maxRecDepth 20000 in` twice in `EmitWire.lean`, one `linter.unusedSimpArgs` suppression in
+`Json.lean`) — each on its own line today, each one newline from being invisible.
+
+DRIVEN in a `git archive HEAD` clone with a warm `.lake`, both plants appended to the library ROOT
+module and both ELABORATING (`lake build TmKernel:static` rc=0):
+
+| plant | check 3 at `8e219c2` | check 3 after |
+|---|---|---|
+| `set_option maxRecDepth 400 in theorem … := trivial` | **`ok (5104 theorems)`**, `unaudited` empty | `FAILED (2 declared, never audited)`, named |
+| `open Nat in theorem … := trivial` | same | named |
+| the same theorem written on TWO lines (control) | named | named |
+
+The roster is now the **keyword token**: `theorem` is reserved in Lean 4, so in comment- and
+string-stripped source every occurrence of it as a token declares one, wherever on the line it
+falls and whatever stands in front of it. Nothing has to be added for a fourth attribute block, for
+`noncomputable`, for a modifier a later toolchain adds, or for an `in` combinator nobody has
+written yet. The two patterns agree exactly on today's library, so the change is behaviour-
+preserving here and strictly wider on the class.
+
+**And the hole was written down in AGENTS §6.3 as an instruction.** Its
+"re-derive by diffing the two multisets" recipe still spelled the roster as a
+column-zero `grep` over `TmKernel/*.lean` — non-recursive, no library root, one
+attribute prefix — which is four repairs stale and is the exact shape check 3
+stopped using at W-22. A reader following it reproduces the hole instead of the
+number. The recipe now calls `leanfiles.py --theorems`, the one roster, and was
+RUN as written: `comm -23` empty, `comm -13` exactly `effectiveScope` and
+`WfPlan`, the two `def`s §6.3 says are audited on purpose.
+
+### 3. D49 was a property over ONE side of the pair
+
+*Filed:* the D49 property is asserted over three hand-picked invocation pairs. **Half refuted:** W-27
+already quantified the FIRST change over `grammar::KEYS`. What it left a list was the SECOND —
+seven unwired forms — so **the case D49 was actually decided on, two ROUTED keys in one command,
+was covered by four hand-written examples and by no property at all.** Same shape as the rest: a
+set you must be ADDED to in order to be COVERED.
+
+The second change now ranges over the key set as well: every ordered pair `(k1, k2)` of routed keys,
+`k1 == k2` included, beside every unwired form. **19 × (19 + 7) = 494 invocations**, up from 133, and
+a twentieth key adds 39 of them without anybody editing the test. Two new counters make the pair arm
+non-vacuous — `agreed_on_two_routed_keys > 0` is the arm D49 itself is about, and without it the
+loop could pass by refusing every two-key edit.
+
+**The regression, planted in a clone with a warm target dir:** D49's defect restored in its
+*original* shape — a SECOND NAME LIST inside `edit_route`, so that a wired key outside
+`due/est/cap/ci/loc` moves the whole command off the kernel's path the moment it rides beside
+another. Those five names are exactly the ones this repository's hand-written examples pair up.
+
+| tree | result |
+|---|---|
+| `8e219c2` + plant, `cargo test --test cli_items` | **65 passed, 0 failed** |
+| `8e219c2` + plant, `cargo test --workspace` | **1471 passed, 0 failed, 86 result lines, rc=0** |
+| + this step's property | **FAILED**: `tm edit ^a1 due=2026-10-01 every=daily` — together `every:daily`, separately `every:day` |
+
+The whole repository was green on D49's own defect. The property names it in 1.8 s.
+
+*Declared cost:* the test goes from 28.5 s to 84.9 s. The combined command is run FIRST now and the
+two-command comparison only when it succeeded, which is what keeps the quadrupled invocation count
+under three times the wall clock.
+
+### 4. Each gate, on its own class
+
+Every one of the three was re-driven after its fix and reports GREEN on its own class — the table
+rows above are that drive. Two of the three replaced a list with a property and say which list
+(`"::" in name`, and the line anchor); the third replaced a hard-coded three-directory walk with
+`tracked()`. What each still cannot see is written where the rule is: `leanfiles.THEOREM` names the
+macro, the `syntax` extension and the guillemet identifier; `owner_resolves` names the PAIRING
+(gap 1731) and the receiver; `citations.py`'s header names the rest.
+
+### 5. Gaps opened
+
+1. **Gap 1820.** *What is not done.* **The D49 property is depth 2.** It quantifies over one change
+   and a second; a defect that needs THREE changes to show — and the repository drives a triple by
+   example, `est=45m loc=out due=…` — is outside it. *Why it is not closed here.* 19³ is 6,859
+   invocations at ~70 ms each. *Which step clears it.* One that either drives depth 3 on a sampled
+   diagonal with the seed recorded, or proves the router's decision is pairwise by construction.
+2. **Gap 1821.** *What is not done.* **One value per key, on one line of one fixture.**
+   `a_value_for` gives each key a single accepted value and the property runs only on `^a1` of
+   `plan-basic`. A divergence that needs a *second* value of the same key, or a line of another
+   shape (a routine, an archived line, a line already carrying the key), is not covered. *Which
+   step clears it.* One that draws the value from the grammar's own accepted set and the line from
+   the fixture corpus, which is `grammar_proptest`'s machinery pointed at `tm edit`.
+3. **Gap 1822.** *What is not done.* **The roster is a source scan, not Lean's environment.** The
+   token rule ends the class of *spellings*, and a theorem Lean records that no `theorem` token
+   spells — produced by a macro, a `syntax` extension or a `deriving` handler — is still invisible.
+   The kernel defines none (grepped), so this is a property that holds today and is not enforced.
+   *Which step clears it.* One that reads the compiled environment for `thmInfo` constants whose
+   module is a library module, which is the roster no source scan can be wrong about.
+
+### 6. Discipline
+
+`check.sh` **10/10** and `cargo test --workspace` **0 failed**, plus the named suites on their own.
+No `sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor or
+`.toOption` added; no Lean file touched at all — this step is three checkers, one allow-list, one
+test and this block. **No predicate or assertion weakened:** check 8's rule is strictly tighter (a
+qualified span now has to satisfy one more condition), the roster is strictly wider, the D49
+property is strictly wider, and the two declaration sets that grew are the ones that keep the
+tighter rule from failing on correct prose — one of them owner-only, where it can launder nothing.
+No generator narrowed, no seed removed, no snapshot re-blessed, no fixture or latency band touched.
+No goal deleted, no bound minted. No new dependency; `Cargo.toml`, `Cargo.lock`, `lean-toolchain`
+and `kernel/corpus/` untouched; no memory bound raised — every `lake`, `lean`, `cargo`, `check.sh`,
+`tm` and `python3` invocation capped with `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0`. Every plant was made in a `git archive HEAD` clone under `/tmp/claude-1000/`. No
+parity number issued — the fork is untouched by any of this; **next free P41**.
