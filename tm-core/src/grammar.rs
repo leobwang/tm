@@ -616,11 +616,38 @@ impl ItemLine {
     /// Remove `key:…`; returns whether it was present. Fails (leaving the
     /// line unchanged) only when the key was the last token keeping a flag
     /// out of the title and there is no `^id` to move the flag after.
+    ///
+    /// Removes the FIRST occurrence, because [`ItemLine::key_index`] reports
+    /// the first match. A line may carry the same key twice — the parser
+    /// accepts it and records `duplicate key \`ci:0\`` as a problem — so a
+    /// caller that means *the fact*, not *the token*, wants
+    /// [`ItemLine::remove_all_tokens`]. README gap **1520**.
     pub fn remove_token(&mut self, key: &str) -> Result<bool, EditError> {
         match self.key_index(key) {
             Some(i) => self.edit_keeping_flags(|l| l.remove_at(i)).map(|_| true),
             None => Ok(false),
         }
+    }
+
+    /// Remove EVERY `key:…`, and return how many went; all or nothing, so a
+    /// refused removal leaves the line exactly as it was.
+    ///
+    /// The one definition of "the fact is gone", for the callers whose own
+    /// documentation already says *any* (AGENTS §5.3: the second one would be
+    /// the bug). [`ItemLine::remove_token`] alone leaves a duplicate standing,
+    /// and a surviving `ci:` is not inert — it keeps
+    /// [`ItemLine::set_ci`]'s keyed branch alive, so the positional digit is
+    /// never inserted and the title's leading word is read as the ci on the
+    /// next parse. A seed drew `("- 0 ci:0 ci:0", false)` at W-25's land step
+    /// and title `0` came back `""`. README gap **1520**, owner **D46**.
+    pub fn remove_all_tokens(&mut self, key: &str) -> Result<usize, EditError> {
+        let mut edited = self.clone();
+        let mut gone = 0usize;
+        while edited.remove_token(key)? {
+            gone += 1;
+        }
+        *self = edited;
+        Ok(gone)
     }
 
     // -- positional edits -------------------------------------------------
@@ -642,14 +669,16 @@ impl ItemLine {
         Ok(())
     }
 
-    /// Set the state and a positional ci together (folding any `ci:` key
-    /// into the positional slot), so a state can be added to a line whose
+    /// Set the state and a positional ci together (folding EVERY `ci:` key
+    /// into the positional slot — a duplicate is representable and one
+    /// survivor loses the title, README gap **1520**), so a state can be
+    /// added to a line whose
     /// title starts with a digit. Still refused when the title starts with a
     /// duration and the line has no leading estimate (`- 30m walk` cannot
     /// carry a state without one).
     pub fn set_state_with_ci(&mut self, state: State, ci: u8) -> Result<(), EditError> {
         Self::guard_title(self.title_segment(), true, true, self.has(&TokenKind::Est))?;
-        self.remove_token("ci")?;
+        self.remove_all_tokens("ci")?;
         match self.index_of(&TokenKind::State) {
             Some(i) => self.tokens[i].text = state.as_str().to_string(),
             None => self.insert_at(1, TokenKind::State, state.as_str()),
@@ -679,13 +708,13 @@ impl ItemLine {
         }
     }
 
-    /// Remove the positional ci and any `ci:` key. Refused when the title
+    /// Remove the positional ci and EVERY `ci:` key (gap **1520**). Refused when the title
     /// would then be read as a ci digit (`- [ ] 3 5 things` → `5` is the ci).
     pub fn remove_ci(&mut self) -> Result<(), EditError> {
         if self.has(&TokenKind::Ci) {
             Self::guard_title(self.title_segment(), true, false, self.has(&TokenKind::Est))?;
         }
-        self.remove_token("ci")?;
+        self.remove_all_tokens("ci")?;
         if let Some(i) = self.index_of(&TokenKind::Ci) {
             self.remove_at(i);
         }
@@ -2437,6 +2466,51 @@ mod tests {
         l.remove_token("ci").unwrap();
         assert_eq!(l.to_string(), "- [ ]  a");
         assert_eq!(l.title(), "a");
+    }
+
+    /// A key is representable TWICE — the parser accepts it and records
+    /// `duplicate key` as a problem — and an edit that means *the fact* must
+    /// take every occurrence. `remove_token` takes the first, which is the
+    /// whole of the defect a W-25 seed drew: with a `ci:` left standing,
+    /// `set_ci`'s keyed branch fires, the positional digit is never inserted,
+    /// and the title's leading word is read as the ci on the next parse.
+    /// README gap **1520**, owner **D46**.
+    #[test]
+    fn a_duplicated_key_is_removed_in_full_and_the_count_is_reported() {
+        // The count is the fact's multiplicity, not "it was there".
+        let mut l = ItemLine::parse("- [ ] hi est:1b est:2b est:3b").unwrap();
+        assert_eq!(l.remove_all_tokens("est"), Ok(3));
+        assert_eq!(l.to_string(), "- [ ] hi");
+        let mut l = ItemLine::parse("- [ ] hi est:1b").unwrap();
+        assert_eq!(l.remove_all_tokens("est"), Ok(1));
+        assert_eq!(l.to_string(), "- [ ] hi");
+        let mut l = ItemLine::parse("- [ ] hi").unwrap();
+        assert_eq!(l.remove_all_tokens("est"), Ok(0));
+        assert_eq!(l.to_string(), "- [ ] hi");
+
+        // `remove_ci` promises "the positional ci and EVERY `ci:` key". One
+        // survivor means the ci is still 0 after a clear.
+        let mut l = ItemLine::parse("- [ ] 3 ci:0 ci:0").unwrap();
+        l.remove_ci().unwrap();
+        assert_eq!(l.to_string(), "- [ ]");
+        assert_eq!(l.get("ci"), None);
+        let mut l = ItemLine::parse("- [ ] 3 hi ci:0 ci:1").unwrap();
+        l.remove_ci().unwrap();
+        assert_eq!(l.to_string(), "- [ ] hi");
+        assert_eq!(l.get("ci"), None);
+        // The single-key case is unchanged, which is what says the fix is a
+        // widening and not a different edit.
+        let mut l = ItemLine::parse("- [ ] 3 hi ci:0").unwrap();
+        l.remove_ci().unwrap();
+        assert_eq!(l.to_string(), "- [ ] hi");
+
+        // And the seed itself, as a named case rather than only as a pinned
+        // proptest regression.
+        let mut l = ItemLine::parse("- 0 ci:0 ci:0").unwrap();
+        l.set_state_with_ci(State::Done, 0).unwrap();
+        assert_eq!(l.to_string(), "- [x] 0 0");
+        let again = ItemLine::parse(&l.to_string()).unwrap();
+        assert_eq!(again.title(), "0");
     }
 
     #[test]
