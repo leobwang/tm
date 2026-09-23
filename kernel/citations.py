@@ -675,6 +675,40 @@ def core_declared():
 
     A missing toolchain source tree is a HARD ERROR, never a silent loss of a
     declaration set."""
+    return _core_scan()[0]
+
+
+def core_namespaces():
+    """Source 6's NAMESPACES, read ONLY as the OWNER of a qualified citation.
+
+    `core_declared` reads the toolchain's `LEAN_DECL` lines, which is every
+    `def`/`theorem`/`structure`/... and no `namespace` -- so `Classical` was
+    declared nowhere, `Classical.choice` resolved on `choice` alone, and 16
+    citations of Lean's own choice axiom would have had to be exempted by hand
+    the moment the owner test below reached the dotted spans.  Source 1 has
+    always read `namespace` for THIS repository (`Tm.LogStamp` is declared by
+    `namespace LogStamp`); this is the same rule applied to the toolchain, and
+    it is the set the owner test needs, because an owner is a namespace far more
+    often than it is a declaration.
+
+    IT IS OWNER-ONLY, and that is the whole of its scope discipline -- the same
+    one source 7 uses (consulted only for a citation with no underscore) and
+    `rust_variants` uses (only for a `::` span).  920 namespace names, 378 of
+    them not already in `core_declared`; as a LAST-segment set those 378 could
+    each launder a deleted kernel constant that shared the name, and as an OWNER
+    set they can launder nothing at all -- an owner never resolves a citation by
+    itself, it only stops one from failing on its owner."""
+    return _core_scan()[1]
+
+
+# (decls, namespaces), read once.  Two consumers, one 0.2 s walk of the pinned
+# toolchain's sources: `core_declared` and `core_namespaces` above.
+_CORE_SCAN = []
+
+
+def _core_scan():
+    if _CORE_SCAN:
+        return _CORE_SCAN[0]
     with open(TOOLCHAIN, encoding="utf-8") as handle:
         pin = handle.read().strip()
     if ":" not in pin:
@@ -686,11 +720,15 @@ def core_declared():
     if not paths:
         raise SystemExit("citations.py: no toolchain sources under %s "
                          "(source 6 of 6 would be silently empty)" % src)
-    names = set()
+    names, spaces = set(), set()
     for path in paths:
-        for m in LEAN_DECL.finditer(read(path)):
+        text = read(path)
+        for m in LEAN_DECL.finditer(text):
             names.add(m.group(1).split(".")[-1])
-    return names
+        for m in LEAN_NS.finditer(text):
+            spaces.update(m.group(1).split("."))
+    _CORE_SCAN.append((names, spaces))
+    return _CORE_SCAN[0]
 
 
 def lean_code(text):
@@ -911,11 +949,21 @@ def declared():
     for path in sorted(glob.glob(os.path.join(HERE, "*.py"))):
         for m in PY_DECL.finditer(read(path)):
             names.add(m.group(1) or m.group(2))
-    for rel in ("tm", "tm-core", "kernel"):
-        for base, dirs, files in os.walk(os.path.join(ROOT, rel)):
-            dirs[:] = [d for d in dirs if d not in ("target", ".lake", ".git")]
-            for name in files:
-                names.add(os.path.splitext(name)[0])
+    # SOURCE 5 IS `tracked()`, THE SAME POPULATION THE RESIDUE RULE USES (the
+    # W-28 repair step).  It was a walk of THREE DIRECTORY NAMES, written out --
+    # `tm`, `tm-core`, `kernel` -- which is the shape `leanfiles.py`'s header
+    # says cannot work, and the repository ROOT was not on it: `AGENTS.md`,
+    # `PLAN-lean-kernel.md`, `tm-spec-v1.md` and `.claude/API-NOTES.md` were
+    # files this repository holds whose stems it did not declare.  That cost
+    # nothing while a citation resolved on its last segment -- `AGENTS.md`
+    # resolved because `md` is a declared name -- and it is the difference
+    # between a green check and 72 hand-written exemptions once the owner test
+    # below reaches a dotted span.  Measured at the repair step: the walk gave
+    # 470 stems and git gives 472; the only two it loses are `__pycache__`
+    # bytecode stems (`citations.cpython-312`, `leanfiles.cpython-312`), which
+    # are derived output and were never declarations of anything.
+    for rel in tracked():
+        names.add(os.path.splitext(os.path.basename(rel))[0])
     return names
 
 
@@ -1061,8 +1109,8 @@ def allow_list(path):
     return vocabulary, capped
 
 
-def owner_resolves(segs, names, core, variants):
-    """Does the OWNER of a `::`-spelled path exist, and not only its last segment?
+def owner_resolves(segs, names, core, spaces, variants):
+    """Does the OWNER of a QUALIFIED path exist, and not only its last segment?
 
     W-27 turned the :: spans on (README gap 989) and resolved them on the LAST
     SEGMENT ALONE.  So a path whose owner does not exist went green: plant
@@ -1072,6 +1120,28 @@ def owner_resolves(segs, names, core, variants):
     once.  `Done` is one of 14,828 declared names and `All` is a
     `tm-core` one, so neither owner ever had to be real.
 
+    AND IT WAS SCOPED TO `::` AND THAT WAS THE SAME HOLE ONE SEPARATOR OVER (the
+    W-28 repair step, README gap 933).  `::` is how RUST spells a path and `.`
+    is how LEAN spells one; a rule that holds for one separator and not the
+    other is not a property, it is a list with two entries.  DRIVEN in a
+    git-initialised clone of HEAD, one line appended to `mutations.txt`: this
+    file at W-27 NAMED the `::`-spelled ZzzNoSuchOwner path and was SILENT on
+    the dotted one, and on Zzz.ramp beside it.  The dotted half
+    was the larger one -- 9,127 citations over 1,983 dotted names with a
+    capitalised head, and 824 more over 192 with a lowercase one -- and it was
+    at its worst on FILENAMES, because `rs`, `md`, `lean`, `snap`, `a`, `toml`
+    and `sh` are all declared names of this repository: every one of this tree's
+    `somename.rs` citations resolved on its EXTENSION.  It now resolves because
+    the FILE exists (`declared()`'s source 5, which is `tracked()` since the
+    same step), and the one LIVE FIND of the widening is a test file the
+    README's arithmetic still counts and the tree has not held since 2b26be3
+    (log_narrowed_facts.rs, deleted with the log switch, un-backticked here so
+    that a sentence recording a dead name does not revive it).
+
+    THE PROPERTY: a qualified citation resolves only if its last segment
+    resolves AND some EARLIER segment names something declared.  One rule for
+    both separators, and nothing to add to it for a third.
+
     AND IT WAS NOT THE VARIANT RULE THAT DID IT, which is why this is a
     separate test rather than a tighter `rust_variants`.  The allow-list's
     sentence about that set -- "scoped to :: spans, so it launders nothing" --
@@ -1080,16 +1150,29 @@ def owner_resolves(segs, names, core, variants):
 
     Every segment but the last is tried, not just `segs[-2]`, because a test is
     owned through a module chain (`cli::ctx::tests::every_scope_is_..`) whose
-    inner segments are not declared names: ONE real owner in the path is the
-    claim, and a stale rename breaks it.
+    inner segments are not declared names, and because a Lean projection chain
+    (`sj.val.kind.isWork`) is owned through its FIELDS: ONE real owner in the
+    path is the claim, and a stale rename breaks it.
+
+    THE OWNER SET IS WIDER THAN THE LEAF SET, on purpose and in the only
+    direction that is safe.  `core_namespaces` is read here and nowhere else,
+    because an owner is a namespace (`Classical.choice`) far more often than it
+    is a declaration; an owner cannot resolve a citation by itself, so widening
+    it cannot launder a leaf.
 
     WHAT IT CANNOT SEE: the PAIRING.  `SegKind::Done` and `PErr::Done` resolve
     alike once both names exist somewhere -- this file has no type checker, and
-    README gap 1731 stays open for that half.  Four foreign paths went from
-    silently-resolved to named by this and are in `citations-allow.txt` where
-    every other library and fork name is: two Rust `std`, one chrono, one fork.
+    README gap 1731 stays open for that half.  And a RECEIVER is not an owner:
+    `self.blocks_done` names a field of a fork struct through a binder this
+    file cannot resolve, so the unresolvable class FAILS and is adjudicated by
+    name in `citations-allow.txt` rather than passing silently.  Four foreign
+    paths went from silently-resolved to named by the `::` half and are in that
+    file where every other library and fork name is: two Rust `std`, one chrono,
+    one fork; the dotted half added ten more, eight of them files that do not
+    exist.
     """
-    return any(seg in names or seg in core or seg in variants for seg in segs[:-1])
+    return any(seg in names or seg in core or seg in spaces or seg in variants
+               for seg in segs[:-1])
 
 
 def main():
@@ -1112,6 +1195,7 @@ def main():
         return 1
     names = declared()
     core = core_declared()
+    spaces = core_namespaces()
     variants = rust_variants()
     hits, where = cited()
 
@@ -1124,7 +1208,9 @@ def main():
             or ("_" not in name and last in core)
             or ("::" in name and last in variants)
         )
-        if ok and "::" in name and not owner_resolves(segs, names, core, variants):
+        # THE OWNER TEST, FOR EITHER SEPARATOR (W-28).  It was `"::" in name`,
+        # which made it a rule about a SPELLING rather than about a path.
+        if ok and len(segs) > 1 and not owner_resolves(segs, names, core, spaces, variants):
             ok = False
         if ok:
             continue

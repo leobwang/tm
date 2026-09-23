@@ -111,6 +111,28 @@ fi
 #    with the same scanner `totality.py`'s ban uses -- one walk, one stripper,
 #    one roster, which is the shape the last three repairs of this class each
 #    reached for one layer at a time.
+#
+#    AND W-27'S FIX WAS A LONGER LIST OF PREFIXES, which is the FIFTH place this
+#    enumeration was wrong and the W-28 repair step.  The pattern was anchored at
+#    the LINE HEAD -- attributes, then `private|protected|nonrec`, then
+#    indentation, each a spelling somebody thought of -- so a `theorem` that does
+#    not START its line was outside the roster.  Lean's `in` combinators put one
+#    there, and this library writes three of them (`set_option maxRecDepth 20000
+#    in` twice in EmitWire.lean, `set_option linter.unusedSimpArgs false in` in
+#    Json.lean), each on its own line TODAY and each one newline from being
+#    invisible.  DRIVEN in a `git archive HEAD` clone with a warm .lake:
+#    `set_option maxRecDepth 400 in theorem .. := trivial` and `open Nat in
+#    theorem .. := trivial` appended to the library ROOT module both ELABORATE
+#    (lake build rc=0) and this check said `ok (5104 theorems)` with both
+#    unaudited; the same two theorems written on TWO lines were named at once,
+#    and with `leanfiles.py`'s W-28 pattern the one-line pair is named too.
+#    The roster is now the KEYWORD TOKEN -- `theorem` is reserved in Lean 4, so
+#    in comment- and string-stripped source every occurrence of it declares one,
+#    wherever on the line it falls.  Nothing has to be added for a fourth
+#    attribute block, a modifier a later toolchain adds, or an `in` combinator
+#    nobody has written yet.  Measured: the two patterns agree EXACTLY on this
+#    library, 5,102 names each, and `leanfiles.py` states what the token cannot
+#    see.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
 unaudited=$( comm -23 \
@@ -400,6 +422,25 @@ fi
 #    STRING literal is correctly seen by neither half.  It cost 30 adjudications
 #    (not the 162 W-23 predicted from a wider span test) and found SIX live
 #    stale citations plus a seventh written while building it.
+#
+#    W-28 GAVE THE OWNER TEST BOTH SEPARATORS (README gap 933).  W-27 turned the
+#    `::` spans on and checked that a path's OWNER exists; the test was written
+#    `"::" in name`, which is a rule about a SPELLING and not about a path, so
+#    the same hole stayed open on `.` -- 9,127 citations over 1,983 dotted names
+#    with a capitalised head and 824 more over 192 with a lowercase one, every
+#    one of them resolved on its LAST segment alone.  It was at its worst on
+#    FILENAMES: `rs`, `md`, `lean`, `snap`, `a`, `toml` and `sh` are all declared
+#    names of this repository, so every filename citation in the tree resolved on
+#    its EXTENSION.  DRIVEN in a git-initialised clone, one line in
+#    `mutations.txt`: check 8 at W-27 NAMED the `::`-spelled stale path and was
+#    SILENT on the dotted one beside it.  It costs ten adjudications, EIGHT of
+#    them files that do not exist, and one of those eight is a live find -- the
+#    README's test arithmetic still counts a 292-line file deleted at 2b26be3.
+#    Two sets were widened with it, because an owner is not a leaf: source 5's
+#    file stems are now `tracked()`, the repository's own account of its files
+#    (it was a walk of THREE DIRECTORY NAMES and the repository ROOT was not on
+#    it), and `core_namespaces` reads the pinned toolchain's `namespace` lines
+#    OWNER-ONLY, so `Classical.choice` resolves through a real owner.
 #
 #    THE ALLOW-LIST IS THE WORK, and it is exact names, never patterns: a regex
 #    that silenced a class is how this check would get quietly useless, because
