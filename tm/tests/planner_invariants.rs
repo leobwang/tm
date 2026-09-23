@@ -100,6 +100,18 @@ struct Spec {
     dep: Option<usize>,
     loc_home: bool,
     atomic: bool,
+    /// **The item's written `@parent`** (stage 6 W-27), an index taken modulo
+    /// the item's own position so the link always names an item **earlier** in
+    /// the one generated file: never dangling, never a cycle, never itself.
+    ///
+    /// It is here because the generated corpus carried **no `@` token at all**
+    /// and so the `parent` cell of every row was the empty string on both
+    /// sides. `the_kernel_reads_every_day_the_fork_planned` compares that cell
+    /// — and an auditor perturbed `Emit.parentCell` and watched the arm stay
+    /// **green** while `kernel_row_cells` (whose fixture day has parents)
+    /// failed. A cell compared only at its default value is a check no input
+    /// can fail (AGENTS §9.2). README gap 1437's neighbour.
+    parent: Option<usize>,
 }
 
 /// One generated wall.
@@ -182,8 +194,11 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         prop::option::of(0usize..MAX_ITEMS),
         any::<bool>(),
         any::<bool>(),
+        // Half the items are written under a parent, so the `parent` cell is
+        // compared at a real value on most rows rather than only at `""`.
+        prop_oneof![1 => Just(None), 1 => prop::option::of(0usize..MAX_ITEMS)],
     )
-        .prop_map(|(ci, k, est_b, small, due_in, dep, loc_home, atomic)| Spec {
+        .prop_map(|(ci, k, est_b, small, due_in, dep, loc_home, atomic, parent)| Spec {
             // Small items cluster on two `ci` levels so that §7.5 really does
             // group them (batching needs an equal `ci`).
             ci: if small.is_some() { 2 + ci % 2 } else { ci },
@@ -194,6 +209,7 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
             dep,
             loc_home,
             atomic,
+            parent,
         })
 }
 
@@ -259,6 +275,15 @@ fn week_text(case: &Case) -> String {
             None => format!("{}b", sp.est_b),
         };
         let mut line = format!("- [ ] {} {est} Item{i} !{}", sp.ci, sp.k);
+        // **The written parent** (W-27). `% i` keeps the link pointing at an
+        // earlier line of this same file, so `Tree::dangling_parents` and
+        // `Tree::parent_cycles` are both empty by construction and the case is
+        // a tree the fork loads rather than one it rejects.
+        if let Some(par) = sp.parent {
+            if i > 0 {
+                line.push_str(&format!(" @{}", id_of('z', par % i)));
+            }
+        }
         if let Some(d) = sp.due_in {
             let due = date() + Duration::days(i64::from(d));
             line.push_str(&format!(" due:{due}T23:59"));
@@ -521,10 +546,23 @@ fn layout(day: &DayPlan) -> Vec<(DateTime<Tz>, Vec<Id>)> {
 ///
 /// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
 /// and `batchNames` — is compared **exactly**, on every row of every case.
+///
+/// **And `parent` is now compared at a value** (W-27). It was in this list
+/// before, and the list was true and empty of content for that one cell: the
+/// generated corpus had no `@` token, so both readers wrote `""` on every row
+/// and the cell asserted nothing. [`CENSUS`]'s fifth counter and the
+/// `parents > 0` assertion are what make the membership load-bearing.
 const CELL_HOLES: [&str; 2] = ["note", "est"];
 
-/// `(rows compared, cases compared, note-hole firings, est-hole firings)` —
-/// what [`the_kernel_reads_every_day_the_fork_planned`] actually looked at.
+/// `(rows compared, cases compared, note-hole firings, est-hole firings,
+/// rows whose `parent` cell was NON-EMPTY)` — what
+/// [`the_kernel_reads_every_day_the_fork_planned`] actually looked at.
+///
+/// **The fifth number is W-27's** and it is the one that makes the `parent`
+/// comparison mean something. Until this run the generated corpus carried no
+/// `@` token, so every row's `parent` cell was `""` on both sides and the
+/// comparison could not fail whatever the kernel wrote; the arm is now asserted
+/// to have seen the cell at a real value.
 ///
 /// A proptest case body returns only a verdict, so the census is a side
 /// channel — but it is read **inside the arm that fills it**, on every case,
@@ -533,7 +571,7 @@ const CELL_HOLES: [&str; 2] = ["note", "est"];
 /// defect it exists to catch: "every cell of every row agreed" is a sentence a
 /// fuzz comparing **no** rows also produces — AGENTS §9.2's "a check no input
 /// can fail", which this campaign has met at five different levels.
-static CENSUS: Mutex<[u64; 4]> = Mutex::new([0; 4]);
+static CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
 
 fn overlaps(a: &Segment, b: &Segment) -> bool {
     a.start < b.end && b.start < a.end
@@ -677,8 +715,22 @@ proptest! {
             .max()
             .unwrap_or(0);
 
-        // Monotone rank: equal p and ci → the earlier line is never the one
-        // left out. The running item is excepted: §9 gave it its slot.
+        // Monotone rank: equal p and ci → the higher-ranked of the two is never
+        // the one left out. The running item is excepted: §9 gave it its slot.
+        //
+        // **"Higher-ranked" is `(root_order, own_order)`, not `own_order`**
+        // (stage 6 W-27). §7.4's key is `priority::sort_key = (p, root_order,
+        // own_order)` — the item's ROOT first, its own line second — so a child
+        // of an early root outranks an unrelated item written on an earlier
+        // line. This loop compared `own_order` alone, which is the same
+        // relation **exactly when every item is its own root**, and until this
+        // run the generated corpus had no `@parent` token, so it always was.
+        // With parents drawn the two relations part company and the fork was
+        // failing an invariant the spec does not state: six runs of 256 cases
+        // failed here and six of the pre-parent generator passed. The fork is
+        // right; this line was wrong. Seed `80a3875…` in
+        // `planner_invariants.proptest-regressions` is the one that found it
+        // (D46: a new seed is a finding and it stays). README gap 1661.
         let active_id = w.state.active.as_ref().map(|a| a.id.clone());
         for (i, a) in cands.iter().enumerate() {
             if !comparable(a) || Some(&a.id) == active_id.as_ref() {
@@ -691,7 +743,8 @@ proptest! {
                 if Some(&b.id) == active_id.as_ref() {
                     continue;
                 }
-                let (first, second) = if a.own_order <= b.own_order { (a, b) } else { (b, a) };
+                let rank = |c: &Candidate| (c.root_order, c.own_order);
+                let (first, second) = if rank(a) <= rank(b) { (a, b) } else { (b, a) };
                 if done.contains(&second.id) {
                     prop_assert!(
                         done.contains(&first.id),
@@ -1005,10 +1058,17 @@ proptest! {
             "the kernel answered {} rows for {} segments (`Emit.rowsOf_length`'s wire half)",
             lean.len(), fork.len()
         );
-        let mut seen = [0u64; 4];
+        let mut seen = [0u64; 5];
         seen[0] = fork.len() as u64;
         seen[1] = 1;
         for (i, (f, l)) in fork.iter().zip(&lean).enumerate() {
+            // **The `parent` cell, counted where it is not the default** (W-27).
+            // Counted off the FORK's cell: the kernel's is the value under
+            // test, and a census read off the value under test would report
+            // whatever a broken kernel wrote.
+            if !f.parent.is_empty() {
+                seen[4] += 1;
+            }
             for (cell, forked, kernelled) in rowwire::differences(f, l) {
                 prop_assert!(
                     CELL_HOLES.contains(&cell),
@@ -1030,7 +1090,7 @@ proptest! {
         // cell agreed" is a sentence a fuzz comparing NO rows also produces
         // (AGENTS §9.2's "a check no input can fail"), and a declared hole that
         // has stopped firing is a claim that has changed (gaps 1101, 1102).
-        let [rows, cases, notes, ests] = {
+        let [rows, cases, notes, ests, parents] = {
             let mut c = CENSUS.lock().expect("census");
             for (a, b) in c.iter_mut().zip(seen) {
                 *a += b;
@@ -1041,6 +1101,17 @@ proptest! {
         if cases >= 32 {
             prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
             prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
+            // **The `parent` cell was compared at a real value** (W-27). Without
+            // this the cell is in `differences`' nine and still asserts nothing:
+            // `"" == ""` on every row of every case is the shape AGENTS §9.2
+            // calls a check no input can fail, and an auditor's perturbation of
+            // `Emit.parentCell` passed through it. A generator that stops
+            // drawing parents now fails here instead of going quietly green.
+            prop_assert!(
+                parents > 0,
+                "no row's `parent` cell was non-empty in {cases} cases — the `parent` \
+                 comparison is vacuous (gap 1437's neighbour)"
+            );
         }
         // **THE CENSUS IS PRINTED, so the README's figure can be RE-DERIVED.**
         //
@@ -1062,7 +1133,7 @@ proptest! {
         //       the_kernel_reads_every_day_the_fork_planned
         eprintln!(
             "planner_invariants census: {cases} cases, {rows} rows compared, \
-             note-hole {notes}, est-hole {ests}"
+             note-hole {notes}, est-hole {ests}, parent-cells {parents}"
         );
     }
 }

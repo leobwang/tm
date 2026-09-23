@@ -56734,3 +56734,143 @@ request does not wait for the right hour.
 The example tree's own files were written and read (22 files, `tm init` and two `tm plan` runs
 agreeing with each other); nothing was written inside the repository, and the scratch directory
 is outside it.
+
+---
+
+## Stage 6 — W-27, track P (step R2, the audit's blind cell): the generated day grows parents, and §7.4's rank key is not `own_order`
+
+**Range:** gaps **1660–1699** (track P's). **Taken here: 1660–1663.** Parity: **none issued**
+(P40 still free). Files: `tm/tests/planner_invariants.rs`,
+`tm/tests/planner_invariants.proptest-regressions` and this file. **No Lean was touched.**
+
+### 1. The blind cell the W-26 audit found, and why it was blind
+
+`the_kernel_reads_every_day_the_fork_planned` compares nine cells of every row, and its own
+doc comment lists `parent` among the seven compared **exactly**. That sentence was true and
+empty: the generator emitted `- [ ] {ci} {est} Item{i} !{k} [due:…] [after:^…] [loc:home]
+[atomic] ^{id}` and **no `@` token anywhere**, so `Emit.parentCell` answered `[]` and
+`emit::parent_cell` answered `""` on every row of every case and the comparison could not fail
+whatever the kernel wrote. The W-26 auditor perturbed `Emit.parentCell`, watched
+`kernel_row_cells` fail **3** on its fixture day (which has `@O1` and `@O2`) and watched this
+arm stay **green at 7 passed**. That is AGENTS §9.2's "a check no input can fail", one cell
+wide.
+
+`Spec.parent` draws one, at `prop_oneof![1 => None, 1 => Some(0..40)]`, written as `@z<xx>`
+with the index taken **modulo the item's own position**, so the link always names an earlier
+line of the same file: `Tree::dangling_parents` and `Tree::parent_cycles` stay empty by
+construction and the case is a tree the fork loads rather than one it rejects.
+
+**And the widening is asserted, not assumed.** `CENSUS` gains a fifth counter — rows whose
+**fork** cell is non-empty, counted off the fork because a census read off the value under test
+would report whatever a broken kernel wrote — and the arm asserts `parents > 0` after 32 cases,
+beside the two hole assertions. A generator that stops drawing parents now fails here instead
+of going quietly green. Measured on one 75-case run: **844 rows compared, 82 with a non-empty
+`parent` cell** (9.7%), all agreeing.
+
+### 2. The plant, in a clone, and the blindness shown rather than asserted
+
+`git archive HEAD | tar -x` into the scratch directory, `.lake` copied in so only `Emit.lean`
+and its dependants rebuild; `git status --porcelain` in the working tree was ` M
+tm/tests/planner_invariants.rs` before the plant and unchanged after, and the clone was
+restored (`git show HEAD:… >`) with `grep -rn 'W-27 AUDIT PERTURBATION' kernel/` empty
+afterwards.
+
+**Plant:** `Emit.parentCell`'s `| some j => '@' :: j` → `| some _ => []`.
+
+| what was run against the planted kernel | verdict |
+|---|---|
+| `lake build TmKernel:static` | **FAILED** before any Rust ran — `PlannerWit.the_emit_witness_rows_are_these_cells`, `decide` proved the negation. The Lean witness already sees this cell; the clone's expected `"@O2"`/`"@O1"` were changed to `""` **in the clone** so the archive would link and the Rust question could be asked at all |
+| **this run's** generator | **FAILED** — *"row 0: the two readers disagree on an UNDECLARED cell `"parent"` — fork `"@zaa"`, kernel `""`"* |
+| **HEAD's** generator, same planted archive, same binary | **ok. 1 passed** — 75 cases, 827 rows compared. **The blindness, shown** |
+
+One plant, two generators, one kernel: the arm did not gain a cell, it gained an input that can
+move it.
+
+### 3. The disagreement the widening found, and what it is (D46)
+
+The first `cargo test --workspace` after the widening failed
+`day_plan_satisfies_every_invariant`: *"zak (later line) is assigned while zai is not"*. It is
+**not** a flake and it is **not** the kernel: run six times each, in the clone, same binary
+shape —
+
+| generator | `day_plan_satisfies_every_invariant`, 256 cases × 6 |
+|---|---|
+| HEAD's (no `@`) | **6 green** |
+| this run's (parents drawn) | **6 red**, six different pairs |
+
+**It is the third of D46's three kinds: a test asserting something untrue.** §7.4's rank is
+`priority::sort_key(prio, cand) = (p, root_order, own_order)` — `Candidate::root_order` is
+"`(file index, line)` of the item's **root**", the **first** rank key, and `own_order` the
+second. The monotone-rank loop chose its "earlier" of the pair with
+
+```rust
+let (first, second) = if a.own_order <= b.own_order { (a, b) } else { (b, a) };
+```
+
+which is the same relation **exactly when every item is its own root** — and with no `@` token
+in the corpus, it always was. With parents drawn, a child of an early root legitimately
+outranks an unrelated item written on an earlier line, and the fork was being failed for
+obeying §7.4. The repair is the full key, `(root_order, own_order)`, and it is a **correction,
+not a widening or a narrowing**: on every parent-free input the two orders coincide exactly, so
+nothing the old form asserted is given up. The generator was **not** touched to make the red go
+away. The seed proptest persisted (`cc 80a3875…`) stays in the tracked regressions file and now
+passes.
+
+**The same defect is in the Lean goal** and is recorded rather than fixed — gap **1661**.
+
+### 4. Method, and what each method cannot see
+
+| claim | method | what it cannot see |
+|---|---|---|
+| "the `parent` cell is now compared at a value" | the in-arm census, `parents > 0` after 32 cases; 82 non-empty cells in 844 rows | **which** parent. A kernel that wrote the *root* instead of the written parent is caught only where the chain is longer than one link, and the generator draws chains but does not measure their depth |
+| "the arm sees a corrupted `parent`" | the plant above, the same plant green on HEAD's generator | one perturbation. `parentCell` returning a **different** id, rather than none, was not planted |
+| "this is a test defect, not a fork bug" | `priority.rs:1104` read (`sort_key`) and `priority.rs:264` (`root_order` is the first rank key); 6 red / 6 green | it does not prove the fork's *assignment* is right, only that the ranking the test asserted is not §7.4's |
+| "no kernel bug was found" | 7 green arms, six repeat runs after the repair | the kernel still does not **plan**; §8.2 step 5's rows are absent from `Planner.dayRows` (§5) |
+
+### 5. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1660** | the drawn `@parent` never **dangles**, never **cycles** and never **crosses a file** — three shapes `Tree::dangling_parents`, `Tree::parent_cycles` and `root_order`'s file index all have code for | `tm/tests/planner_invariants.rs` | the fuzz exercises the happy parent only; a cross-file root is what makes `root_order`'s *first* component move, and it never moves |
+| **1661** | **`Goals.plan_is_monotone_in_rank` has the defect §3 just repaired in Rust** — `hdoc : e.val.live.doc = f.val.live.doc` with `hlt : e.val.live.rank < f.val.live.rank` is `own_order` inside one document and names no root | `kernel/TmKernel/Goals.lean:1061` | it is refuted and P5 owes the restatement (gaps 365, 851). Restated verbatim it will be **false again for a new reason**, and a restatement that is false is not a weakening anyone will notice |
+| **1662** | the census counts parent **firings, not depths**: a one-link chain and a five-link chain are one number | same file | gap 1439's shape, for the new counter |
+| **1663** | `@parent` changes the **`est` rollup** (`Tree::remaining`'s Σ-over-children branch) only when the parent has **no own estimate**, and every generated item has one | same file | §6.4's rollup is still never exercised by this fuzz, so the `est` hole's *cause* is unchanged and untested |
+
+### 6. Acceptance, against the brief's baseline at `22db972`
+
+| gate | baseline | here | delta |
+|---|---|---|---|
+| `check.sh` | 10/10 | **10/10** | — |
+| axiom audit | 5,040 theorems | **5,040** | — no Lean touched |
+| check 5 (FFI through the shim) | 93 | **93** | — |
+| check 8 | 34,033 citations, 0 allow entries unused | **34,069**, 0 unused | **+36**: this step's Rust prose (+6) and this block (+30) |
+| check 9 | 171 rostered, 0 owed, 31 bare pin sites | **identical** | — no definition added |
+| check 10 | 39 registered (P1–P39), next free P40 | **identical** | — |
+| corpus | 29/37 and 4/5 | **29/37, 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — |
+| `cargo test --workspace` | — | **1,441 / 0 across 85 binaries**, `--no-fail-fast` | the counts below |
+| FFI crate (D36's 101) | 101 | **101** | — |
+| T5 `kernel_replay_parity` | 29 / 4 ignored | **29 / 4** | — |
+| door `kernel_log_door` | 23 | **23** | — |
+| `cli_switch_acceptance` | 16 | **16** | — |
+| `kernel_call_counts` / `one_padder` / `one_renderer` | 2 / 9 / 25 | **2 / 9 / 25** | — |
+| `kernel_row_cells` / `kernel_item_grammar` | 26 / 6 | **26 / 6** | — |
+| `planner_invariants` | 7 | **7** | — same seven arms, one of them no longer blind |
+| `cli_latency` | — | **5 passed, 1 ignored**, at load average **8.79** (gap 1333) | — |
+
+**Run counts, said out loud (D46).** `cargo test --workspace` was run **twice** for this commit
+(the first, before the repair, is the red in §3 and is counted). `planner_invariants` was run
+at its default 256 **six** times after the repair, all green, plus the twelve clone runs of §3
+and four runs of the kernel-reads arm at 64. `check.sh` was run **once**.
+
+### 7. Capping and the hard rules
+
+Every `cargo`, `lake`, `check.sh` and binary invocation ran under `systemd-run --user --scope
+-p MemoryMax=40G -p MemorySwapMax=0 --quiet` (16G for the FFI crate). **No memory bound was
+raised.** No Lean was touched in the working tree. No predicate or assertion was weakened — the
+monotone-rank comparison was made **more** faithful to §7.4 and the parent cell was given an
+input that can move it; no generator was narrowed to make a disagreement go away; no snapshot,
+fixture, latency band or corpus was re-blessed; the persisted regression seed was kept; no new
+dependency; `lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`, `partial
+def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added. Every plant was made in
+a clone under the scratch directory and `git status --porcelain` was read before and after.
