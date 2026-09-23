@@ -7,10 +7,24 @@
 //! would have made "the kernel sees what the fork's proptest sees" a claim about
 //! two files that drift; this module makes it a fact about one.
 //!
+//! **THREE readers, not two, and the sentence above was false when it was
+//! written** (W-25 repair step).  `kernel/tm-kernel-ffi/examples/oracle/src/main.rs`
+//! — the D21/D22 comparand, built outside this tree against the fork point
+//! `4748911` — held a THIRD copy of these ten strategies, byte-identical but for
+//! one comment line, and both of the comments pointing at it named
+//! `grammar_proptest.rs`, which by then held no strategy at all.  Nothing had
+//! diverged; what was gone was the trail that would have made a divergence
+//! visible.  That copy is deleted: `build-oracle.sh` copies THIS file into the
+//! fork-point checkout and fails if it is not there, and the oracle's output is
+//! byte-identical across the change.  `tm/tests/one_generator.rs` is what stops
+//! a fourth copy — it walks every `.rs` file in the repository and asserts that
+//! one of them defines these names.
+//!
 //! It lives under `tests/grammar_common/` rather than `tests/` so cargo does not
 //! build it as a test binary of its own, and `tm/tests/kernel_item_grammar.rs`
 //! reaches it by `#[path]` across the two crates — `tm` cannot see `tm-core`'s
-//! test binaries, but it can see this file.
+//! test binaries, but it can see this file.  The oracle reaches it by a `cp`,
+//! because the fork-point workspace it is compiled in predates it.
 //!
 //! Nothing here asserts.  Every property that reads these lines states its own,
 //! and the two readers state **different** ones: the fork test asks whether

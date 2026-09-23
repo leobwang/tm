@@ -77,6 +77,49 @@ pub fn sources() -> Vec<(String, String)> {
     acc
 }
 
+/// **Every `.rs` file in the repository**, as `(label, text)` sorted by label,
+/// where the label is the path relative to the workspace root.
+///
+/// [`sources()`] above is a three-entry ROOT LIST on purpose — it answers "what
+/// is linked into the shipped binary" — and its own blind-spot sentence says a
+/// `tests/`, `examples/` or `build.rs` file is invisible to it. That is the
+/// wrong set for a guard about a TEST GENERATOR, and a fourth root typed in
+/// beside the three would be the name list this campaign has now paid for six
+/// times (`kernel/leanfiles.py`'s header is the record). So this is a walk with
+/// a PRUNE RULE, and the rule is `leanfiles.py`'s own, ported rather than
+/// invented: a directory is derived output if its name starts with `.` or it
+/// holds a CACHEDIR.TAG. Nothing else is skipped.
+///
+/// What it cannot see is what a text walk never can: a strategy assembled by a
+/// macro, or one in a crate outside this checkout.
+#[allow(dead_code)]
+pub fn every_rust_file() -> Vec<(String, String)> {
+    fn derived(dir: &Path) -> bool {
+        dir.file_name().is_some_and(|n| n.to_string_lossy().starts_with('.'))
+            || dir.join("CACHEDIR.TAG").is_file()
+    }
+    fn walk(root: &Path, dir: &Path, acc: &mut Vec<(String, String)>) {
+        for entry in fs::read_dir(dir).expect("read_dir").flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                if !derived(&path) {
+                    walk(root, &path, acc);
+                }
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let rel = path.strip_prefix(root).expect("under root").display().to_string();
+                acc.push((rel, fs::read_to_string(&path).expect("read source")));
+            }
+        }
+    }
+    let tm = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let workspace = tm.parent().expect("workspace root").to_path_buf();
+    let mut acc = Vec::new();
+    walk(&workspace, &workspace, &mut acc);
+    acc.sort();
+    assert!(acc.len() > 100, "the walk found {} files; it is not reading the tree", acc.len());
+    acc
+}
+
 /// Is the `'` at the head of `rest` opening a **char literal** rather than a
 /// lifetime or a loop label? (README gap **1201**.)
 ///

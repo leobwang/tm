@@ -1042,5 +1042,27 @@ proptest! {
             prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
             prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
         }
+        // **THE CENSUS IS PRINTED, so the README's figure can be RE-DERIVED.**
+        //
+        // It was write-only: asserted on and never shown, while the W-25 block
+        // quoted "1,035 cases, 11,611 rows compared, note-hole 2,311, est-hole
+        // 571" as a MEASUREMENT that no command in the committed tree produced
+        // — it can only have come from a temporary print. AGENTS §5.11's own
+        // rule is one measurement per number, from the committed harness.
+        //
+        // It prints on EVERY case, to stderr, and that is deliberate: this is
+        // the one place the census can be read without racing the arm that
+        // fills it (the sibling file's
+        // `zz_the_declared_refusals_are_all_reachable` shape needs `--test-threads=1`, and this
+        // arm's own comment above says why a separate `#[test]` would pass by
+        // seeing nothing). Every line is a running prefix and the LAST is the
+        // total. libtest captures it, so a green run is silent; read it with
+        //
+        //     cargo test --test planner_invariants -- --nocapture \
+        //       the_kernel_reads_every_day_the_fork_planned
+        eprintln!(
+            "planner_invariants census: {cases} cases, {rows} rows compared, \
+             note-hole {notes}, est-hole {ests}"
+        );
     }
 }

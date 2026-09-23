@@ -198,6 +198,69 @@ fn note_refusal(what: &str) {
     *g.get_or_insert_with(BTreeMap::new).entry(what.to_string()).or_insert(0) += 1;
 }
 
+/// **The DENOMINATOR: per arm, how many cases actually compared bytes.**
+///
+/// `[drawn, addressable, compared]`. Three of the arms open with
+///
+/// ```ignore
+/// let Some((addressed, id)) = addressable(&text) else { return Ok(()) };
+/// ```
+///
+/// which is a silent **pass** and not a `prop_assume!`, so it is charged to
+/// neither `max_global_rejects` nor any count; and every arm's
+/// `Kernel::Refused(name) => prop_assert!(declared(&name))` branch passes
+/// without comparing a byte. "Every cell agreed" is a sentence a fuzz comparing
+/// NOTHING also produces — AGENTS §9.2's "a check no input can fail" — and the
+/// refusal census below is per **class**, not per arm, so it could not answer
+/// how many cases of any one arm reached a comparison. The sibling file
+/// `tm/tests/planner_invariants.rs` grew the same floor for the same reason.
+///
+/// It is read **inside the arm that fills it**, on every case, and not by a
+/// separate `#[test]`: a separate test would race the arms in cargo's default
+/// parallel run and pass by seeing nothing, which is the very defect it exists
+/// to catch.
+static COMPARED: Mutex<Option<BTreeMap<&'static str, [u64; 3]>>> = Mutex::new(None);
+
+/// Record one case of `arm`, and return that arm's running totals.
+///
+/// `reached` is how far the case got: 0 drawn only, 1 addressable, 2 compared.
+fn note_case(arm: &'static str, reached: usize) -> [u64; 3] {
+    let mut g = COMPARED.lock().expect("census");
+    let row = g.get_or_insert_with(BTreeMap::new).entry(arm).or_insert([0; 3]);
+    for slot in row.iter_mut().take(reached + 1) {
+        *slot += 1;
+    }
+    *row
+}
+
+/// **The floor, asserted inside the arm.** Once an arm has drawn `FLOOR_AFTER`
+/// cases it must have compared at least `FLOOR_NUM/FLOOR_DEN` of them.
+///
+/// The rate is not a guess: the generator puts `""`, `" "` or `"\t"` between the
+/// bullet and the box with equal weight, so two draws in three are cheat
+/// 122/123's class and the editing arms assume them away. MEASURED at
+/// `TM_PROPTEST_CASES=4096`, `--test-threads=1 --nocapture`, from the census
+/// this file prints — `[drawn, addressable, compared]`:
+///
+/// ```text
+/// the_two_editors_write_the_same_drop            [8176, 4104, 1561]   19.1%
+/// the_two_editors_write_the_same_keyed_edit      [8344, 4104, 2064]   24.7%
+/// the_two_readers_agree_on_which_lines_are_items [9924, 4104, 3656]   36.8%
+/// ```
+///
+/// `drawn` exceeds `cases` because a rejected case is re-drawn. One in ten is
+/// the floor — about half the lowest measured rate: loose enough that a
+/// generator reweighting does not turn this into a flake, tight enough that an
+/// arm which has stopped comparing fails. §5.11: re-measure, do not quote.
+const FLOOR_AFTER: u64 = 64;
+const FLOOR_NUM: u64 = 1;
+const FLOOR_DEN: u64 = 10;
+
+fn floor_holds(row: [u64; 3]) -> bool {
+    let [drawn, _, compared] = row;
+    drawn < FLOOR_AFTER || compared * FLOOR_DEN >= drawn * FLOOR_NUM
+}
+
 /// **The refusal, flattened to the name the kernel chose.**
 ///
 /// `{"err":{"itemCheck":"danglingDep"}}` is `danglingDep`;
@@ -424,7 +487,11 @@ proptest! {
     /// items fails it as loudly as one that reads fewer.
     #[test]
     fn the_two_readers_agree_on_which_lines_are_items((text, _stateful) in line()) {
-        let Some((addressed, id)) = addressable(&text) else { return Ok(()); };
+        const ARM: &str = "the_two_readers_agree_on_which_lines_are_items";
+        let Some((addressed, id)) = addressable(&text) else {
+            note_case(ARM, 0);
+            return Ok(());
+        };
         // **A tab hides the answer, in two ways at once, and both are recorded.**
         // Gap 32's `Cmd.editE` guard refuses a tabbed line by name before
         // item-ness is ever reached; and cheat 122 — the kernel's separator is a
@@ -432,6 +499,9 @@ proptest! {
         // which is not an id word — makes the KEY tab-dependent as well, so
         // `noSuchId` there means "a different key", not "prose". The round-trip
         // arm above still reads every tabbed line; this one cannot.
+        if addressed.contains('\t') {
+            note_case(ARM, 0);
+        }
         prop_assume!(!addressed.contains('\t'));
         // Appending the id cannot change item-ness, and this says so rather
         // than assuming it.
@@ -441,21 +511,33 @@ proptest! {
         );
         let (key, value, _) = WIRED_EDITS[0];
         let cmds = json!([{"op": "edit", "id": id, "key": key, "value": value}]);
+        // `reached` is the DENOMINATOR (see `COMPARED`): 2 means the kernel's
+        // answer was adjudicated against `kernel_reads_as_item`, which is the
+        // only branch that says anything. The third branch checks a name.
+        let mut reached = 1;
         match kernel(&addressed, cmds) {
-            Kernel::Lines(_) => prop_assert!(
-                kernel_reads_as_item(&addressed),
-                "the kernel edited {:?}, which this file says it reads as prose", addressed
-            ),
-            Kernel::Refused(name) if name == "noSuchId" => prop_assert!(
-                !kernel_reads_as_item(&addressed),
-                "the kernel says noSuchId on {:?}, which this file says it reads as an item",
-                addressed
-            ),
+            Kernel::Lines(_) => {
+                reached = 2;
+                prop_assert!(
+                    kernel_reads_as_item(&addressed),
+                    "the kernel edited {:?}, which this file says it reads as prose", addressed
+                );
+            }
+            Kernel::Refused(name) if name == "noSuchId" => {
+                reached = 2;
+                prop_assert!(
+                    !kernel_reads_as_item(&addressed),
+                    "the kernel says noSuchId on {:?}, which this file says it reads as an item",
+                    addressed
+                );
+            }
             Kernel::Refused(name) => prop_assert!(
                 declared(&name),
                 "UNDECLARED refusal {:?} on {:?}", name, addressed
             ),
         }
+        let row = note_case(ARM, reached);
+        prop_assert!(floor_holds(row), "{ARM} compared {row:?} — [drawn, addressable, compared]");
     }
 
     /// **`tm drop`'s two halves write the same bytes** — the kernel's `drop` op
@@ -465,12 +547,23 @@ proptest! {
     /// refuses `badHorizon` (D31/K3a); that branch is asserted, not skipped.
     #[test]
     fn the_two_editors_write_the_same_drop((text, _stateful) in line()) {
-        let Some((addressed, id)) = addressable(&text) else { return Ok(()); };
+        const ARM: &str = "the_two_editors_write_the_same_drop";
+        let Some((addressed, id)) = addressable(&text) else {
+            note_case(ARM, 0);
+            return Ok(());
+        };
+        if !kernel_reads_as_item(&addressed) {
+            note_case(ARM, 0);
+        }
         prop_assume!(kernel_reads_as_item(&addressed));
         let mut fork = ItemLine::parse(&addressed).expect("the fork tokenises");
         let forked = fork.set_state(State::Dropped).ok().map(|()| fork.to_string());
+        // `reached` is the DENOMINATOR (see `COMPARED`): 2 is the branch that
+        // compares BYTES. The refusal branches check a class and a box.
+        let mut reached = 1;
         match (kernel(&addressed, json!([{"op": "drop", "id": id}])), forked) {
             (Kernel::Lines(ls), Some(want)) => {
+                reached = 2;
                 prop_assert!(
                     fork_boxed(&addressed),
                     "the kernel dropped the BOX-LESS line {:?}; D31/K3a says it refuses", addressed
@@ -509,6 +602,8 @@ proptest! {
                 }
             }
         }
+        let row = note_case(ARM, reached);
+        prop_assert!(floor_holds(row), "{ARM} compared {row:?} — [drawn, addressable, compared]");
     }
 
     /// **The keyed edit's two halves write the same bytes**, over the keys
@@ -527,7 +622,14 @@ proptest! {
         (text, _stateful) in line(),
         which in 0usize..WIRED_EDITS.len(),
     ) {
-        let Some((addressed, id)) = addressable(&text) else { return Ok(()); };
+        const ARM: &str = "the_two_editors_write_the_same_keyed_edit";
+        let Some((addressed, id)) = addressable(&text) else {
+            note_case(ARM, 0);
+            return Ok(());
+        };
+        if !kernel_reads_as_item(&addressed) {
+            note_case(ARM, 0);
+        }
         prop_assume!(kernel_reads_as_item(&addressed));
         let (key, value, fork_key) = WIRED_EDITS[which];
         let mut fork = ItemLine::parse(&addressed).expect("the fork tokenises");
@@ -535,16 +637,24 @@ proptest! {
         let want =
             if fork_key == "max" { canonical_budget_key(&fork) } else { fork.to_string() };
         let cmds = json!([{"op": "edit", "id": id, "key": key, "value": value}]);
+        // `reached` is the DENOMINATOR (see `COMPARED`): 2 is the branch that
+        // compares BYTES; the refusal branch checks a class.
+        let mut reached = 1;
         match kernel(&addressed, cmds) {
-            Kernel::Lines(ls) => prop_assert_eq!(
-                answered(&addressed, &ls), &want,
-                "the two editors disagree on {}={} in {:?}", key, value, addressed
-            ),
+            Kernel::Lines(ls) => {
+                reached = 2;
+                prop_assert_eq!(
+                    answered(&addressed, &ls), &want,
+                    "the two editors disagree on {}={} in {:?}", key, value, addressed
+                );
+            }
             Kernel::Refused(name) => prop_assert!(
                 declared(&name),
                 "UNDECLARED refusal {:?} on {}={} in {:?}", name, key, value, addressed
             ),
         }
+        let row = note_case(ARM, reached);
+        prop_assert!(floor_holds(row), "{ARM} compared {row:?} — [drawn, addressable, compared]");
     }
 
     /// **The `arbitrary_lines_never_panic` arm, aimed at the kernel.**
@@ -633,4 +743,16 @@ fn zz_the_declared_refusals_are_all_reachable() {
     let undeclared: Vec<_> = seen.keys().filter(|k| !declared(k)).collect();
     assert!(undeclared.is_empty(), "refusals nothing declared: {undeclared:?} (census {seen:?})");
     eprintln!("kernel_item_grammar refusal census: {seen:?}");
+
+    // **THE DENOMINATOR, printed.** The floor above is asserted inside each arm
+    // on every case and is what actually guards the claim; this print is so the
+    // number can be RE-DERIVED from the committed tree rather than quoted from a
+    // temporary `eprintln!` nobody kept. It needs `--test-threads=1` (so this
+    // [`zz_the_declared_refusals_are_all_reachable`] runs last) and `--nocapture`,
+    // the same two flags the refusal
+    // census above needs, and under cargo's default parallel run it reports
+    // whatever had accumulated when it ran — which is why it PRINTS and does not
+    // assert.
+    let compared = COMPARED.lock().expect("census").clone().unwrap_or_default();
+    eprintln!("kernel_item_grammar comparison census [drawn, addressable, compared]: {compared:?}");
 }

@@ -120,6 +120,10 @@ parse_exponent_overflow
 parse_number
 skip_serializing_if
 define_events!
+# proptest 1.x's own macros, named where a test's doc comment says which control-flow it is
+# NOT using: a silent `return Ok(())` is not a `prop_assume!`, and the difference is whether
+# the case is counted against `max_global_rejects` (W-25 repair step, tm/tests/kernel_item_grammar.rs).
+prop_assume!
 
 # The FORK's own vocabulary that is NOT in-tree.  tm-core/src/{planner,log,priority}.rs are
 # in-tree and resolve by themselves (source 3); these are functions, fields, tests and constants

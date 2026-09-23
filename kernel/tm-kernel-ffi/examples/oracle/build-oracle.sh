@@ -44,6 +44,23 @@ fi
 mkdir -p "$out/tm-oracle"
 cp -R "$here/Cargo.toml" "$here/src" "$out/tm-oracle/"
 
+# THE GENERATOR IS ONE DEFINITION, and this is the line that makes it one.
+#
+# `src/main.rs` held 186 lines copied out of the fork's own proptest, with two
+# comments naming the file they came from; W-25 moved those strategies to
+# `tm-core/tests/grammar_common/mod.rs` so that `tm/tests/kernel_item_grammar.rs`
+# and `tm-core/tests/grammar_proptest.rs` would draw the SAME lines, and left
+# this third copy behind pointing at a file that no longer held one.  The
+# fork-point checkout extracted above predates that module, so the oracle cannot
+# reach it from there: it is copied in, and a missing one is a HARD ERROR rather
+# than a build that quietly samples something else.
+common="$repo/tm-core/tests/grammar_common/mod.rs"
+if [ ! -f "$common" ]; then
+  echo "build-oracle.sh: $common is missing -- the oracle's generator lives there" >&2
+  exit 1
+fi
+cp "$common" "$out/tm-oracle/src/grammar_common.rs"
+
 # add it to the fork's workspace if it is not a member yet.  Written through a
 # temp file: `sed -i` spells its backup suffix differently on GNU and BSD.
 if ! grep -q '"tm-oracle"' "$out/Cargo.toml"; then
