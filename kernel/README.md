@@ -58585,7 +58585,7 @@ not; it is gap **1790** and it is the one sentence the next brief needs.
 | check 10 | 40 registered (P1–P40), next free P41 | **identical**, P40's row re-anchored 57230 → 57232 (this block un-backticked two names two lines up) | — |
 | corpus | 29/37 and 4/5 | **29/37, 4/5** | — |
 | burn-down | 9, all stage 6 | **9, all stage 6** | — no goal discharged and none added |
-| `cargo test --workspace` | 1,459 / 0 / 9 across 86 binaries | **1,475 passed / 0 failed / 9 ignored across 86 binaries**, `--no-fail-fast`, **six runs, all identical** (D46) | **+16** |
+| `cargo test --workspace` | 1,459 / 0 / 9 across 86 binaries | **1,475 passed / 0 failed / 9 ignored across 86 binaries**, `--no-fail-fast`, **six TABULATED runs, all identical** (D46 — a seventh, the first, was filtered for failures only and had none; it is not counted here because its totals were not summed, and AGENTS §5.11 is one measurement per number) | **+16** |
 | the named suites | — | `cli_switch_acceptance` 16, `cli_latency` 5 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` **21**, `planner_invariants` **8**, `kernel_log_door` 23, `kernel_replay_parity` 29 (T5), `log_replay` 10 — **0 failed in every one** | — |
 
 `cli_latency` was run at load average 1.4 (gap 1333's threshold is another session's heavy
