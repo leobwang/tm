@@ -342,10 +342,7 @@ pub fn status_line(
         budget: budget_of(day, runtime, cfg),
         leak_min: leak(day, cfg).total_min,
         adherence_pct: adherence.started_pct,
-        window_end: runtime
-            .window
-            .map(|(_, end)| end)
-            .or_else(|| day.and_then(window_of).map(|(_, end)| end)),
+        window_end: window_now(day, runtime.window).map(|(_, end)| end),
         lost_min: day.map_or(0, |d| d.lost_min),
         rest_debt_min: rest_debt(day, cfg),
         load: day.map_or(0.0, |d| d.load()),
@@ -512,6 +509,36 @@ fn budget_of(day: Option<&DayReplay>, runtime: &RuntimeState, cfg: &Config) -> u
 fn window_of(day: &DayReplay) -> Option<(NaiveTime, NaiveTime)> {
     let w = day.window.as_ref()?;
     Some((parse_time(&w[0]).ok()?, parse_time(&w[1]).ok()?))
+}
+
+/// **The day's working window, and there is ONE of them** (README gap
+/// **1530**; D9's direction, the owner's **D45**).
+///
+/// Two rules existed and no surface said which it quoted. The runtime state's
+/// window is the day's **LAST** `arrive` — that is what `tm arrive` writes,
+/// what `Ctx::derived_state` rebuilds, and what `tm plan` and the day file
+/// print. `DayReplay::window` is the day's **FIRST** `arrive`: the fork's
+/// derivation, which `Replay.lean`'s
+/// `a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan`
+/// proves and T5 compares key for key, so it does not move (D45 corrects the
+/// *reader*, not the kernel's C5). [`status_line`] already preferred the
+/// runtime's; `day_review` read the replay's alone, and on a day whose
+/// arrivals are out of timestamp order the two answered hours apart.
+///
+/// Driven before the repair, on a fresh `plan-basic` at 2026-09-07 with
+/// `tm arrive home --at 16:00` then `tm arrive home --at 08:00`: the cache,
+/// `tm plan --json` and `day/2026-09-07.md` all said `08:00..17:00` while
+/// `tm review day` said `window 16:00–19:00`.
+///
+/// The fallback is the replay's, not a formula: on a day the runtime is not
+/// about — every past date a review can be asked for — the first arrival's
+/// payload is the only window the log carries, and it is the answer this
+/// function gave before the runtime half existed.
+fn window_now(
+    day: Option<&DayReplay>,
+    runtime: Option<(NaiveTime, NaiveTime)>,
+) -> Option<(NaiveTime, NaiveTime)> {
+    runtime.or_else(|| day.and_then(window_of))
 }
 
 // ---------------------------------------------------------------------------
@@ -781,6 +808,17 @@ pub struct DayExtras {
     pub lost_note: Option<String>,
     /// The block budget, when the day has no `arrive` event.
     pub budget: Option<u32>,
+    /// **The runtime state's working window, when it is THIS day's** — the
+    /// LAST `arrive` of the day (the owner's **D45**), which is what
+    /// `tm plan` and the day file quote. `None` for any other day, and the
+    /// review then falls back to the replay's (see [`window_now`]).
+    ///
+    /// The exact twin of [`DayExtras::budget`] above, filled by the same
+    /// `ctx.state.<f>.filter(|_| ctx.state.date == Some(date))` in the CLI,
+    /// and for the same reason: `day_review` has no `RuntimeState` argument,
+    /// and inventing a second window rule inside it is what README gap
+    /// **1530** was.
+    pub window: Option<(NaiveTime, NaiveTime)>,
 }
 
 /// Everything the §12.4 Review screen shows for one day.
@@ -928,7 +966,7 @@ pub fn day_review(
         plan_honesty: (!extras.plan_at_arrival.is_empty() && budget > 0)
             .then(|| round2(extras.plan_at_arrival.len() as f64 / budget as f64)),
         block_min: day.map_or(0, |d| d.block_min),
-        window: day.and_then(window_of),
+        window: window_now(day, extras.window),
         lost_min: day.map_or(0, |d| d.lost_min),
         lost_note: extras.lost_note.clone(),
         leak: leak(day, cfg),

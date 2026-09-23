@@ -300,6 +300,12 @@ pub struct ReviewOut {
 fn day_extras(ctx: &Ctx, date: NaiveDate) -> Result<core_review::DayExtras, CliError> {
     let mut extras = core_review::DayExtras {
         budget: ctx.state.budget.filter(|_| ctx.state.date == Some(date)),
+        // **The window `tm plan` and the day file quote** — the LAST `arrive`
+        // of the day (D45), so the two surfaces cannot disagree about one day
+        // after an out-of-order arrival (README gap **1530**). The same filter
+        // as `budget` above: the runtime is about one date, and a review of any
+        // other falls back to the replay's inside `window_now`.
+        window: ctx.state.window.filter(|_| ctx.state.date == Some(date)),
         // §12.4's `lost 55m (call)` names what the day was lost *to*, which
         // §10.1's `interrupt` event does not record (it carries the
         // interrupted item, not the reason). Left unset rather than guessed.

@@ -1562,3 +1562,202 @@ fn dropping_by_id_says_nothing_about_boxing() {
     let out = tm.ok(&["drop", "^m4"]);
     assert_eq!(out.stdout.trim(), "dropped ^m4", "{}", out.stdout);
 }
+
+// ---------------------------------------------------------------------------
+// D49 — `tm edit` has ONE writer and it is the kernel's (README gaps 48, 1430)
+// ---------------------------------------------------------------------------
+
+/// **The three divergences D49 was decided on, closed** — driven on the shipped
+/// binary before the repair and pinned here after it.
+///
+/// `kernel_edit_cmds` routes to the kernel only when **every** pair of the
+/// command is wired, and the host wired nine of the kernel's eighteen keys, so
+/// one unwired pair sent the whole edit down the old Rust path. Adding one
+/// `due=` to a command therefore changed three independent things about what
+/// the *other* pair wrote — measured on `plan-basic` at `bf7cc63`..`22db972`:
+///
+/// | `tm edit ^a1 …` | before D49 | after |
+/// |---|---|---|
+/// | `cap=3h/d` | `max:3h/d` | `max:3h/d` |
+/// | `cap=3h/d due=2026-10-01` | **`cap:3h/d`** | `max:3h/d` |
+/// | `est=2b` | `est:120m` | `est:120m` |
+/// | `est=2b due=2026-10-01` | **leading `2b`, no `est:`** | `est:120m` |
+///
+/// The alias, the rendering and the **slot** — §4.1's remaining estimate
+/// against §3.1's `est_original`, the history §11 calibrates actual/est
+/// against. The assertion is written as an *equality between the two
+/// invocations* rather than against a literal, because the defect was never
+/// that either answer was wrong on its own: it was that a diff depended on how
+/// many keys were passed to one verb.
+#[test]
+fn edit_writes_the_same_bytes_however_many_keys_the_command_carries() {
+    for (alone, combined) in [
+        (vec!["cap=3h/d"], vec!["cap=3h/d", "due=2026-10-01"]),
+        (vec!["est=2b"], vec!["est=2b", "due=2026-10-01"]),
+        (vec!["min=1h/w"], vec!["min=1h/w", "loc=out", "waiting=2026-09-05"]),
+    ] {
+        let one = {
+            let tm = Tm::new();
+            tm.ok(&[&["edit", "^a1"][..], &alone[..]].concat());
+            tm.line("backlog.md", "a1")
+        };
+        let many = {
+            let tm = Tm::new();
+            tm.ok(&[&["edit", "^a1"][..], &combined[..]].concat());
+            tm.line("backlog.md", "a1")
+        };
+        // The pair they share must have written the same token in both.
+        let shared = alone[0].replace('=', ":");
+        let shared = shared.split_once(':').expect("k=v").0;
+        let tok = |line: &str| -> String {
+            line.split_whitespace()
+                .find(|w| w.starts_with(&format!("{shared}:")) || w.starts_with("max:"))
+                .unwrap_or("<none>")
+                .to_string()
+        };
+        assert_eq!(
+            tok(&one),
+            tok(&many),
+            "`{}` and `{}` wrote different bytes for the pair they share (D49):\n  {one}\n  {many}",
+            alone.join(" "),
+            combined.join(" "),
+        );
+    }
+
+    // The slot, named on its own: the leading estimate is §3.1's
+    // `est_original` and an `est=` edit must never rewrite it (§4.1).
+    let tm = Tm::new();
+    tm.ok(&["edit", "^a1", "est=2b", "due=2026-10-01"]);
+    let after = tm.line("backlog.md", "a1");
+    assert!(after.contains("est:120m"), "{after}");
+    assert!(after.contains("] 2 30m Insurance"), "the leading estimate moved: {after}");
+}
+
+/// **The spellings routing moved**, each one a byte a hand-edited file now
+/// carries differently (README gap 48's own item 2 named both).
+#[test]
+fn edit_writes_the_kernels_spelling_for_the_keys_routing_moved() {
+    // `every=daily` — one rule, one written form.
+    let tm = Tm::new();
+    tm.ok(&["edit", "^t1", "every=daily"]);
+    let line = tm.line("week/2026-W37.md", "t1");
+    assert!(line.contains("every:day"), "{line}");
+    assert!(!line.contains("every:daily"), "{line}");
+
+    // A same-day interval's end is written short.
+    let tm = Tm::new();
+    tm.ok(&["edit", "^t1", "at=2026-09-07T10:00/2026-09-07T12:00"]);
+    let line = tm.line("week/2026-W37.md", "t1");
+    assert!(line.contains("at:2026-09-07T10:00/12:00"), "{line}");
+
+    // …and a value already canonical is written back unchanged, so the row
+    // above is a canonicalisation and not a mangling.
+    let tm = Tm::new();
+    tm.ok(&["edit", "^t1", "due=2026-09-11T23:59"]);
+    assert!(tm.line("week/2026-W37.md", "t1").contains("due:2026-09-11T23:59"));
+    assert_eq!(tm.run(&["check"]).code, 0);
+}
+
+/// **The refusals routing brings — each by name, and two of them were a tree
+/// the CLI's own `tm check` rejected.**
+///
+/// §14 makes the CLI the sanctioned writer and §1.3 says it must never produce
+/// a tree its own `tm check` fails on. On the old host path
+/// `tm edit ^t1 after=^zz` exited **0**, wrote `after:^zz`, and the next
+/// `tm check` exited **2** (`itemCheck … danglingDep`); `tm edit ^O1
+/// due=2026-09-11` exited 0 on a month outcome and `tm check` exited 2
+/// (`fileKindShape`). Both are refused before anything is written now, which
+/// is README gap **50**'s cost gone as well as gap 48's.
+#[test]
+fn edit_refuses_by_name_where_the_host_wrote_or_said_nothing() {
+    // (id, args, the refusal's name, the file the line lives in)
+    let cases: &[(&str, &[&str], &str, &str)] = &[
+        ("^t1", &["due=notadate"], "badValue", "week/2026-W37.md"),
+        ("^t1", &["win=99:99-10:00"], "badValue", "week/2026-W37.md"),
+        ("^a4", &["waiting=2026-02-30"], "badValue", "backlog.md"),
+        ("^t3", &["--unset", "loc"], "keyAbsent", "week/2026-W37.md"),
+        ("^t1", &["after=^zz"], "danglingDep", "week/2026-W37.md"),
+        ("^O1", &["due=2026-09-11"], "badHorizon", "month/2026-09.md"),
+    ];
+    for (id, args, name, file) in cases {
+        let tm = Tm::new();
+        let key = id.trim_start_matches('^');
+        let before = tm.line(file, key);
+        let out = tm.run(&[&["edit", id][..], args].concat());
+        assert_eq!(out.code, 1, "`tm edit {id} {}` was not refused: {}{}", args.join(" "), out.stdout, out.stderr);
+        assert!(
+            out.stderr.contains(name),
+            "`tm edit {id} {}` was not refused by name ({name}): {}",
+            args.join(" "),
+            out.stderr
+        );
+        assert_eq!(tm.line(file, key), before, "the refused edit wrote anyway");
+        // The whole point of the two tree-level ones: the tree the CLI leaves
+        // behind still loads.
+        assert_eq!(tm.run(&["check"]).code, 0, "`tm check` after a refused edit");
+    }
+
+    // `tabbedLine` needs a line that already carries a tab (gap 32), which no
+    // fixture does: the old path wrote `loc:out` onto it and exited 0.
+    let tm = Tm::new();
+    let backlog = tm.read("backlog.md");
+    fs::write(tm.plan.join("backlog.md"), format!("{backlog}- [ ] 3\t1b Tabbed line ^tb1\n"))
+        .expect("write backlog.md");
+    let out = tm.run(&["edit", "^tb1", "loc=out"]);
+    assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
+    assert!(out.stderr.contains("tabbedLine"), "{}", out.stderr);
+    assert!(!tm.read("backlog.md").contains("loc:out"), "the tabbed line was written");
+}
+
+/// **What routing does NOT reach, pinned so it is a recorded cost and not a
+/// surprise** (README gap **1700**).
+///
+/// The routing is still all-or-nothing, and five forms are on no wire at all:
+/// `--set` (a raw verbatim token by its own documented contract), the typed
+/// non-key edits `title`/`p`/`state` (three positional slots, no `Field.Key`),
+/// `--unset ci`/`--unset p` (gap 41), `demoted` (the kernel's own
+/// `keyNotWired`, CHEAT 45) and an id-less line (gap 5). A command mixing one
+/// of those with a wired pair takes the old path whole, so the three
+/// divergences above **survive for exactly those mixtures** — with `cap:` for
+/// `max:` and the leading estimate for `est:` once more.
+#[test]
+fn a_command_mixing_an_unwired_form_still_takes_the_host_path() {
+    let tm = Tm::new();
+    tm.ok(&["edit", "^a1", "cap=3h/d", "--set", "foo=bar"]);
+    let line = tm.line("backlog.md", "a1");
+    assert!(line.contains("cap:3h/d"), "gap 1700 has closed; rewrite this test: {line}");
+
+    let tm = Tm::new();
+    tm.ok(&["edit", "^a1", "est=2b", "title=Renamed"]);
+    let line = tm.line("backlog.md", "a1");
+    assert!(!line.contains("est:"), "gap 1700 has closed; rewrite this test: {line}");
+    assert!(line.contains("] 2 2b Renamed"), "{line}");
+}
+
+/// **Parity P40 — the one line the kernel writes that the old editor refused.**
+///
+/// `reject_new_problems` refuses any problem the line did not already have, and
+/// the fork grammar calls a second shape key a problem (`conflicting shape keys
+/// (at: wins)`), so `tm edit ^a3 at=…` on a line already carrying `win:` exited
+/// **1** and wrote nothing. The kernel's `itemsWf` permits it — §4.1 defines the
+/// precedence rather than forbidding the pair — so the edit now lands and `tm
+/// check` reports it as a **warning**, exit 0. Nothing is silent and nothing is
+/// misread; the editor is one class **looser** than it was, and this row is
+/// where that is written down rather than discovered.
+#[test]
+fn a_second_shape_key_is_the_kernels_answer_now_and_the_loader_still_warns() {
+    let tm = Tm::new();
+    let out = tm.run(&["edit", "^a3", "at=2026-09-07T10:00/2026-09-07T12:00"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let line = tm.line("backlog.md", "a3");
+    assert!(line.contains("win:"), "{line}");
+    assert!(line.contains("at:2026-09-07T10:00/12:00"), "{line}");
+
+    let check = tm.run(&["check"]);
+    assert_eq!(check.code, 0, "a warning is not a rejection: {}{}", check.stdout, check.stderr);
+    assert!(
+        check.stdout.contains("conflicting shape keys"),
+        "the loader stopped warning, which is the half that made this acceptable: {}",
+        check.stdout
+    );
+}

@@ -16,3 +16,5 @@ cc 96a71c29f0fd49178768bd453c9ff9f1621e45c276a6b4aa48b1b93737f0c37c # shrinks to
 cc eb4b38e14d114fb020e1488bf75c13ae0774ba7dd4d475dadf6a701a4c037ef6 # shrinks to (text, _stateful) = ("- A", false), which = 0
 cc 7b6cb59dc008743ddd6c968c129166facd8acedb7dcaa3496340762762584c63 # shrinks to (text, _stateful) = ("- A", false)
 cc 57a671e9b284771fb382078cbb87660deffd15d81ffe71cc75a9552bd3a13517 # shrinks to (text, _stateful) = ("- a", false)
+cc 071e550ff3c388d98727475b14351ce445770a6a5d3e1b4a4da08ffc49bfdf3c # shrinks to (text, _stateful) = ("- A", false)
+cc b446d3a56d6521ebda36d11ac3d91b9fed44b13a9bcf16948e2a92b95de3c64f # shrinks to (text, _stateful) = ("- A", false)
