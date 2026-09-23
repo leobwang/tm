@@ -609,7 +609,7 @@ fn deleting_the_runtime_state_keeps_the_last_arrival_of_the_day() {
 /// start"*. `tm wake` has always honoured it (`LogEntry::new(ctx.at(time), …)`); `tm arrive`
 /// stamped `Ctx::now`, so `--at` survived only inside `window[0]` and every reader that took the
 /// header for the arrival — `Ctx::last_arrival`, `DayReplay::arrival`,
-/// `DayReplay::wake_to_arrival_min` — read the clock instead of the verb. The repair is in the
+/// DayReplay::wake_to_arrival_min — read the clock instead of the verb. The repair is in the
 /// **writer**, so there is one fact and not two (AGENTS §5.3).
 ///
 /// **The bite is asserted before the deletion**: the last arrival's logged `t` must BE 09:00, and

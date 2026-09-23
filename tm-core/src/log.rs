@@ -12,7 +12,7 @@
 //!   value-lossless but not byte-identical for a line written with unsorted
 //!   keys. Unknown *extra* keys on a **known** event are dropped on
 //!   re-serialization; nothing rewrites `log.jsonl` (§10.1 is append-only),
-//!   so this only affects [`Log::to_jsonl`]. A known name with a bad payload
+//!   so this only affects Log::to_jsonl, which went at S. A known name with a bad payload
 //!   is a parse error naming the field, never an `Unknown`.
 //!   [`Event::name`] is the `ev` tag, [`Event::primary_id`] the item/instance
 //!   id an event is about, [`Event::is_state_change`] says whether `tm undo`

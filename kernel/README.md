@@ -6366,7 +6366,7 @@ merge.  Tests, through the binary:
   its own bytes; one `demote` event for `^m2`; `state.closed.week` = `2026-W37`,
   swept; `tm check` clean; and the next `tm now` with `TM_KERNEL_FAULT_PROBE=1` exits
   0 with every plan byte unchanged — the kernel is not called.
-- **changed** `cli_items.rs::demote_with_a_standing_record_is_refused_by_name` →
+- **changed** cli_items.rs::demote_with_a_standing_record_is_refused_by_name →
   `demote_with_a_standing_record_merges_into_it` (gap 53): `tm demote ^m2` on the
   fixture exits 0, one `^m2` record in September, `demoted:W37`, the week line `[-]`.
 - **changed** `cli_close_kernel.rs::a_refused_close_is_named_and_writes_nothing`
@@ -13358,7 +13358,7 @@ disagreement 2 still open), R13 (scopes; clears gap 112, which gates W1; every s
   `log.push(entry)` became the text plus `text_of(&[entry])`; `horizon_*`'s `log_events` read
   `headers_of_text`. `planner_common::Fixture` loses its unread `log: Log` field, and
   `review_common::read_log() -> Log` became `log_text() -> String`.
-- **tm:** `tui_common::app_with` became **`app_with_log_text(now, state, &str)`**; `tui_common::log`
+- **tm:** tui_common::app_with became **`app_with_log_text(now, state, &str)`**; `tui_common::log`
   and `log_plus` return the log's text (`log_entries` keeps the entries); `tui_today_prompts.rs` passes
   text (`""` for the empty log). `tui_queue_common::world_with` calls `replay_of_entries`.
 - **Tests of the reader's own internals moved beside it, verbatim**, into a new `#[cfg(test)] mod
@@ -14317,7 +14317,7 @@ Committed: `Lookahead.lean` elaborates in **3.36 s at 880 MB** (L8 kernel half: 
    it `tm plan`'s day would be ranked by the planner's own `priority::compute` beside the kernel's (the
    pre-existing `build` kept the planner's `plan.priorities` over `Ctx::priorities`').
 7. **T16 runs through the capacity wire**, not a harness op, with floor probes reading the remaining units.
-8. **The TUI test harnesses stand in for the kernel's ranking with the fork's** (`tui_common::app_with`: the
+8. **The TUI test harnesses stand in for the kernel's ranking with the fork's** (tui_common::app_with: the
    planner's candidates, priorities and first days at `now`; `tui_queue_common`: its whole-minute days in
    units), since the TUI modules are included by path without the kernel; the screens' arithmetic is what they
    pin.
@@ -19968,7 +19968,7 @@ line's own header (with one narrowing, **gap 133** below).
 **3. The consumers, repointed** — the reshape is not a rename, so every reader moved with
 it, and each moved *towards* §11.4 rather than around it:
 
-- `Replay::events_named` and `Replay::events_for` are **deleted**; `named(name)`,
+- Replay::events_named and Replay::events_for are **deleted**; `named(name)`,
   `event_names()`, `latest_named(name, id, tz)` and `event_occurred(name, since, id)` stay
   and are re-expressed over the narrowed records. `latest_named` merges the `(name, None)`
   and `(name, Some(id))` keys — a maximum over a union is the maximum of the maxima, which
@@ -21698,7 +21698,7 @@ pre-switch, and S turns them around:
 | failing test | why |
 |---|---|
 | `no_verb_makes_a_kernel_log_call_before_the_switch` | `tm arrive` makes **4** kernel `log` calls. This is the half-switch guard doing its job, and S replaces `expected_log_calls` with the measured table |
-| `cli::ctx::tests::every_scope_is_the_whole_replay_before_the_switch` | fails at `Dates{2026-09-01..2026-09-07}`, because `Dates` now really narrows |
+| cli::ctx::tests::every_scope_is_the_whole_replay_before_the_switch | fails at `Dates{2026-09-01..2026-09-07}`, because `Dates` now really narrows |
 | `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` | `assert_eq!(cache_files(&tm), 0, "the unswitched binary wrote a replay cache")` — the cache now holds **39** files. **This is gap 140 clearing exactly as gap 140 predicted.** Its four sibling assertions (`cli_latency.rs` lines 441, 459, 478, 496) stop being vacuous at the same moment |
 
 The fourth, `tm_log_is_byte_identical_on_the_corpus`, is a real finding and is gap 144.
@@ -51543,7 +51543,7 @@ always honoured it — `LogEntry::new(ctx.at(time), Event::Wake{…})`,
 `day.rs:274` — and `tm arrive` did not: it called `ctx.append_event`, which
 stamps `Ctx::now`. So `--at` survived only inside `window[0]`, and every reader
 that takes the header for the arrival — `Ctx::last_arrival`,
-`DayReplay::arrival`, `DayReplay::wake_to_arrival_min` — read the **clock**
+`DayReplay::arrival`, DayReplay::wake_to_arrival_min — read the **clock**
 instead of the **verb**. Two definitions of one fact, and the one that moved was
 the reader's (AGENTS §5.3). The repair is four lines in `day.rs::arrive`.
 
@@ -53270,12 +53270,15 @@ merged tree, each plant reverted immediately after:
 | planted in `kernel_row_cells.rs`'s doc comment | check 8 |
 |---|---|
 | NoSuchKind, backticked, bare, declared nowhere | **FAILED**, `resolves to nothing` |
-| `SegKind::NoSuchKind`, backticked, qualified, declared nowhere | **ok**, 0 allow entries unused |
+| SegKind::NoSuchKind, backticked, qualified, declared nowhere | **ok**, 0 allow entries unused |
 
-*(The first cell is written without backticks here for the same reason the plant
-worked: check 8 sweeps this ledger, and a backticked NoSuchKind in this table
-would fail the very check the table is about. The second cell keeps its
-backticks and costs nothing — which is the finding.)*
+*(Neither cell is written with backticks. The first never was, for the same
+reason the plant worked: check 8 sweeps this ledger, and a backticked NoSuchKind
+in this table would fail the very check the table is about. The second kept its
+backticks and cost nothing — which was the finding, and which W-27 track X
+ended: `::` is swept now, so the second row's verdict is **FAILED** on today's
+gate and the backticks came off to match. The table stands as the record of what
+was true when it was written.)*
 
 **And check 8 then failed on this very block, five ways at once**, which is
 worth recording because it is the gate working on the ledger rather than on the
@@ -53531,7 +53534,7 @@ tm now plan-shaped rows: 4 byte-equal to the file: 4
 
 **This is the one place the drive shows a behaviour change from track P's half
 of G1.** W-23's block recorded `tm now` as *"a second renderer, and its rows are
-a different shape"*. `render_now_with` is deleted and `emit::now_rows` is a
+a different shape"*. `render_now_with` is deleted and emit::now_rows is a
 **selection** over `plan_rows`: all four of `tm now`'s plan rows are now
 byte-equal to the day file's. The file's one extra row is still the
 `window ends` divider, which is rendered into the file and is not a `segments`
@@ -53695,8 +53698,10 @@ took that route. NOT FIXED, deliberately, with the number.**
    `SegKind::WindDown` is neither resolved nor exempted — it is not seen. The
    merge repair in §1 moved a live citation from the swept population into that
    silent one. Driven both ways: a backticked, bare NoSuchKind FAILS check 8;
-   the backticked, qualified `SegKind::NoSuchKind` is **green** on a name
-   declared nowhere.
+   the backticked, qualified SegKind::NoSuchKind is **green** on a name
+   declared nowhere. ***CLOSED at W-27 track X**: `CITED` takes `::` as a
+   separator, and the variant half of item 2 below landed with it — scoped so
+   that it costs the 0 laundering item 2 priced at 219 names.*
 2. *Why.* The alternative is reading Rust enum variants as declarations —
    gap **1362**, opened by track A in this same run. Measured here rather than
    guessed: a brace-tracking pass over every `enum` body in the 144 swept `.rs`
@@ -56734,3 +56739,351 @@ request does not wait for the right hour.
 The example tree's own files were written and read (22 files, `tm init` and two `tm plan` runs
 agreeing with each other); nothing was written inside the repository, and the scratch directory
 is outside it.
+
+---
+
+## Stage 6 W-27, track X — the gate's own blind spots
+
+**Three blockers, three landed.** Check 2 now bans the `!`-accessors as a class
+and performs the three R4 "audit items" that had never once been performed;
+check 8 sweeps `::`-spelled paths and found ten live stale citations doing it;
+and the enumeration hole that has been found seven times has a **rule** now
+instead of an eighth name on a list.
+
+**The shape of all three is one shape, and it is worth saying before the
+detail.** Each was a checker whose *specification* was wider than its *code*,
+with the gap written down in the specification itself. R4's row said
+`!`-accessors and listed two of them. R4's row said `unsafe`, `opaque` and
+`@[implemented_by]` were "audit items" and named no audit. `citations.py`'s
+header said a `::` span "is refused the same way" and priced the fix. None of
+the three was hidden; each was *declared and left*, and a declaration nobody
+acts on is indistinguishable from a hole after two runs.
+
+### 1. Check 2 did not catch its own class (CLOSED)
+
+`totality.py`'s `BANNED` was seven regexes. AGENTS R4 bans six things; the list
+implemented four of them, and the two it did implement for `!`-accessors were
+**the two examples R4's own sentence gives**, `.get!` and `xs[i]!`.
+
+**DRIVEN in a `git archive HEAD` clone, never in a working tree.** Each plant
+was appended alone to `Emit.lean`, run against the pre-W-27 `totality.py` and
+against this one, and reverted. `git status` was checked in the shared checkout
+and in this worktree before and after the run and neither moved.
+
+| plant | elaborates? | before | after |
+|---|---|---|---|
+| `xs.head!` | yes | **rc=0** | `banned: `!`-accessor (R4)` |
+| `xs.getLast!` | yes | **rc=0** | named |
+| `xs.back!` (`Array`) | yes | **rc=0** | named |
+| `xs.tail!` | yes | **rc=0** | named |
+| `xs.set! 0 1` (`Array`) | yes | **rc=0** | named |
+| `s.toNat!` (`String`) | yes | **rc=0** | named |
+| `unsafe def` | yes | **rc=0** | `banned: unsafe (R4)` |
+| `opaque w : Nat` | yes | **rc=0** | `banned: opaque (R4)` |
+| `@[implemented_by f] def` | yes | **rc=0** | `banned: @[implemented_by] (R4)` |
+| `panic!` (control) | yes | rc=1 | rc=1, still under its own name |
+| `xs[0]!` (control) | yes | rc=1 | rc=1, under the class name |
+| `o.get!` (control) | yes | rc=1 | rc=1, under the class name |
+| `['!', 'a']` (control) | yes | rc=0 | **rc=0** |
+| `s!"n is {n}"` (control) | yes | rc=0 | **rc=0** |
+| `a != b` (control) | yes | rc=0 | **rc=0** |
+
+**The three green controls are the point.** A rule that reads any `!` after an
+identifier character fails on 58 live lines — 33 `'!'` character literals in
+`renderPrio` and 25 `s!"…"` interpolations — and a rule that fails on correct
+code gets narrowed back into a name list by the next person who hits it. Both
+exemptions are **shapes**: a character literal is blanked, and an interpolation
+prefix is ONE letter with no identifier character in front of it and a string
+literal immediately after, so `xs.get!"k"` — three letters — is still caught.
+`!=` is excluded exactly, not approximately: Lean tokenises `a!=b` as `a`, `!=`,
+`b`, so a `!`-accessor can never be immediately followed by `=`. Measured over
+the scanned files: **509** `!` characters in code, 33 character literals, 25
+interpolation prefixes, **451** prefix `not` or `!=`, **0** accessors.
+
+**And a brief correction, because it is the same class of error this block is
+about.** W-27's own task text said `.head!`, `.getLast!`, `.back!` and `.find!`
+"all compile". `List.find!` **does not exist** in the pinned toolchain —
+`error: The environment does not contain List.find!` — and neither does
+`Array.get!`. Three of the four named compile; the fourth was the right *class*
+and the wrong *member*, which is exactly why the fix is a class. `.tail!`,
+`.set!` and `.toNat!` were found by trying, and are in the table above.
+
+### 2. Check 8 counted no `::`-spelled path (gap 989, gap 1410 — CLOSED)
+
+`CITED` allowed letters, digits, `_ ' ? !` and dots. A span holding `::` was not
+citation-shaped at all — refused the way a span holding a *space* is — so it was
+neither resolved nor exempted nor counted.
+
+| | before | after |
+|---|---|---|
+| citations | 34,033 | **37,275** |
+| resolved | 32,354 | 35,476 |
+| vocabulary entries | 137 | 187 |
+| files swept | (unstated) | **262**, 339 excluded by 15 rules |
+
+The `::` population itself: **3,116 citations, 1,025 distinct**, of which 121
+distinct resolved to nothing. *(The W-20 repair step measured this at 1,574 / 505
+/ 67 and priced the widening at "67 adjudications". That number was not wrong
+when it was taken; W-24's Rust-prose sweep then tripled the prose being read.
+§5.11 again: re-measure, do not quote.)*
+
+**62 of the 121 are this repository's own enum variants**, and gap 1410 declined
+reading them at W-24 on exactly the right number: +219 short names, each able to
+launder a stale citation of any Lean constructor sharing it. That cost is **not
+paid here**. `rust_variants` is a set of its own and is consulted **only for a
+span holding `::`**, the way source 7 is consulted only for a span with no
+underscore — so a bare `Blocked` still resolves against nothing but the seven
+sets, and the widening costs **0** laundering on the 34,000 citations that were
+already swept. It is also read by a different rule than gap 1410 measured: a
+capitalised word at the head of a line in `rust_code`, because `tm-core`'s
+`Event` is declared inside a macro and its **26** variants exist in no
+brace-matched `enum` body at all.
+
+**Ten live stale citations**, every one a name declared nowhere and backticked
+as though alive:
+
+| name | where | what it is |
+|---|---|---|
+| Log::to_jsonl | `tm-core/src/log.rs:15` | a rustdoc intra-doc link to a method that went at S |
+| out::ErrorDoc ×2 | `tm/tests/cli_json_matrix.rs:14,135` | the live type is `out::ErrorOut` — **repaired to the right name**, not un-backticked |
+| emit::now_rows | README.md:53534 | declared nowhere |
+| tui_common::app_with ×2 | README.md:13361, 14320 | the sentence itself says it "became" something else |
+| Replay::events_named, Replay::events_for | README.md:19971 | the sentence itself says they "are **deleted**" |
+| DayReplay::wake_to_arrival_min ×2 | README.md:51546, `cli_switch_acceptance.rs:612` | declared nowhere |
+| cli_items.rs::demote_with_a_standing_record_is_refused_by_name | README.md:6369 | a **changed** row naming its own old name |
+| cli::ctx::tests::every_scope_is_the_whole_replay_before_the_switch | README.md:21701 | a test the switch deleted |
+| SegKind::NoSuchKind ×2 | README.md:53273, 53698 | **the W-24 ledger's own record of this hole**, going green on the gate it documented |
+
+The last one is the one to keep. W-24 planted SegKind::NoSuchKind to *show*
+that a qualified span was unswept, wrote the green verdict into a table, and
+left the backticks on because they "cost nothing — which is the finding". They
+cost something now. The table and gap 1410's item 1 are corrected in place
+rather than rewritten: what was true when it was written is still written down,
+with the date the verdict flipped.
+
+The other 49 are `std`, chrono, chrono-tz, serde_json, toml, tempfile or **the
+fork's** — `DayIndex::bounds`, `DayIndex::wake_of`, `DayIndex::last_wake_before`,
+`energy::fit_replay`, `Known::field_error`, `State::Deferred` — and are
+adjudicated into section 1 of the allow-list, uncounted, with the reason each
+block already uses for fork functions.
+
+### 3. The eighth level, and it is not a property of a file
+
+Gap 1525 asked for *"a rule that distinguishes a checker's data file from
+`citations-allow.txt`"* and concluded there is none. **There is none. That is
+not the question.**
+
+Seven holes, one shape:
+
+| | hole | fixed by |
+|---|---|---|
+| 1 | the Lean walk was one level deep (W-21) | making the list longer |
+| 2 | the prune list held the *name* `target` (W-22) | a property |
+| 3 | check 3's roster grep was never made recursive (W-22) | making the list longer |
+| 4 | the library ROOT module `TmKernel.lean` (W-23, gap 1314) | making the list longer |
+| 5 | `tm/examples` (W-24, gap 1418) | a property |
+| 6 | `kernel/parity.txt`, a checker's own data (W-25, gap 1525) | making the list longer |
+| 7 | the `::` span (W-27, §2 above) | a property |
+
+Every one is a file, or a kind of file, that had to be **added to a list in
+order to be covered**. That is the shape, and it is not about checkers' data
+files:
+
+> An enumeration a new file must be added to in order to be **covered** is
+> unsound: the file missing from it is silent and nobody is told. An enumeration
+> a new file must be added to in order to be **exempt** is sound: the file
+> missing from it is swept, and if it should not have been, the gate fails
+> loudly on the next run and a human writes one line.
+
+So the default is inverted. The population is `git ls-files` plus `--others
+--exclude-standard` — the repository's own account of its files, and `--others`
+because acceptance runs **before** the commit and W-25's case was a data file
+added in the same step as the sentence citing it. `EXCLUDED` is the only list,
+**15 entries, each with a reason**, in three forms with no glob language
+(directory prefix, basename suffix, exact path). The residue must be **empty**;
+a file whose extension has no reader **fails check 8 by name**; and an exclusion
+matching nothing fails it too, which is the counted allow-list's stale-entry
+ratchet applied to files.
+
+**It also reconciles the two property-based walks against git.** `LEAN_FILES`
+and `RUST_FILES` stay filesystem walks — they must, because a module is swept
+before it is committed — but a tracked `.lean` or `.rs` the walk does not reach
+is now a named failure. That is holes 1, 2, 3 and 4 turned from silence into a
+message.
+
+**What it cost: one adjudication.** Eleven files came in, measured first:
+the repository ROOT `README.md` (47 citations, **one** unresolved — `core.hooksPath`,
+a git config key), `tm/DORMANT.md` (3, none), `kernel/tm-kernel-ffi/shim.c` (2,
+none — R9's own 66 lines, and the first C read by this sweep), six
+cargo/lake manifests (3, none; the root one carries D22's raw_value paragraph,
+which put that counted entry at 6 against a cap of 4) and the oracle's two shell
+scripts (1, none). Two whole file types — `.c` and `.toml` — for one name.
+
+**What it costs going forward, declared:** every new *kind* of file needs a line,
+an exclusion with a reason or a reader. A new `.md`, `.rs`, `.lean`, `.py`,
+`.txt`, `.toml`, `.sh` or `.c` needs nothing. And check 8 now runs `git`; a
+repository `git ls-files` cannot read is a hard error here, never a silently
+smaller population, the same rule `core_declared` uses for a missing toolchain.
+
+**Nine plants, in a `git init`ed clone of `git archive HEAD`, each reverted.**
+Every one left the pre-W-27 checker at **rc=0 with byte-identical counts**
+(`34033 citations, 32354 resolved, 1679 allowed (137 vocabulary, 349 counted), 0
+allow entries unused`) — the signature of a silent hole:
+
+| plant | after |
+|---|---|
+| a `::` span resolving to nothing, in a Lean doc comment | `Emit.lean:532 Ctx::w27_no_such_method (resolves to nothing)` |
+| a NEW `kernel/*.txt` checker data file — gap 1525's own shape | `newgate.txt:1 Look.w27_zzz_no_such_thing` |
+| a new file whose extension has no reader | `kernel/newgate.yaml (no reader for this extension and no exclusion)` |
+| a `.lean` the `LEAN_FILES` walk cannot reach | `Probe.lean (tracked .lean the LEAN_FILES walk did not reach)` |
+| a comment in `shim.c` | `shim.c:68 tm_kernel_w27_no_such_symbol` |
+| a line in the repository ROOT `README.md` | `../README.md:2338 Look.w27_root_readme_plant` |
+| a comment in the root `Cargo.toml` | `../Cargo.toml:47 Look.w27_manifest_plant` |
+| a comment in `run-oracle.sh` | `run-oracle.sh:83 Look.w27_oracle_plant` |
+| an `EXCLUDED` entry covering nothing | `kernel/w27-no-such-dir/ (excluded, but no file of this repository matches it)` |
+
+### 4. Acceptance
+
+`check.sh` **10/10** in this worktree: audit **5,040** theorems; check 5 **93**;
+check 8 **37,275 citations, 35,476 resolved, 1,799 allowed (187 vocabulary, 349
+counted), 0 allow entries unused, 262 files swept, 339 excluded by 15 rules** —
+the figure is the run that saw this block, not the one before it (gap 871);
+check 9 **171 rostered, 0 owed, 31 bare pin sites**; check 10 **39 registered
+(P1–P39), next free P40**; corpus **29/37 and 4/5**; burn-down **9, all stage 6**.
+
+`cargo test --workspace` **five runs** (D46) — one at the unmodified worktree
+and four with the change in the tree. Four green at **1,441 passed / 0 failed /
+9 ignored across 85 binaries**; **run 2 FAILED**, and §5's gap 1735 is what it
+was. Plus 12 further runs of `kernel_item_grammar` alone and 5 of the failing
+arm, all green, which is where gap 1735's 1-in-16 comes from. FFI crate **101 / 0 / 0 across 5 binaries**. Named suites, one run
+each, all rc=0: `kernel_replay_parity` (T5) 29/4 ignored, `kernel_log_door` 23,
+`cli_switch_acceptance` 16, `cli_latency` 5/1 ignored (at load average 5.4 —
+gap 1333's threshold was not reached), `kernel_call_counts` 2, `one_padder` 9,
+`one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6,
+`planner_invariants` 7.
+
+**The cost, re-measured on this machine and this tree rather than quoted.**
+Check 8 reads 262 files where it read about 150, and 37,275 citations where it
+read 34,033, and it is **faster**:
+
+| | s (three runs, load average ≈ 5) |
+|---|---|
+| `citations.py` before W-27 | 1.78 / 1.78 / 1.81 |
+| `citations.py` after, no cache | 2.42 / 2.46 / 2.54 |
+| `citations.py` as it ships | **1.35 / 1.35 / 1.32** |
+| `totality.py` as it ships | 0.43 / 0.43 / 0.42 |
+
+`rust_split` is a character-at-a-time scanner and every `.rs` file went through
+it **three** times — `declared` wants the code half, `rust_variants` wants it
+again, `cited` wants the prose half. `rust_split_cached` is the whole of the
+difference, and it pays for the widening twice over. *(check.sh's own check-8
+comment says 0.52 s against a 7.91–8.01 s wall. That was a quieter machine and a
+smaller tree; the whole script is 11.2–12.1 s here at this load. §5.11: these
+numbers are this machine's, re-measure yours.)*
+
+### 5. Gaps
+
+1. **Gap 1730.** *What is not done.* `Ctx::replay_of` is backticked at **63**
+   sites — 41 in this ledger, the rest in `AGENTS.md`, four `.rs` files, the
+   oracle and two design drafts — and `Ctx` declares only `replay_with`. The
+   method was added at `bdf53be` and deleted at `2b26be3`. Not repaired here.
+   *Why.* It is prose in files this track does not own, and `tm/src/cli/ctx.rs`
+   is in the switch's path. The un-backtick convention is one edit per site and
+   belongs with whoever next owns those sentences. *What it costs.* 63 sentences
+   name a method that does not exist, and **check 8 does not see it even with
+   `::` on**: resolution is on the last segment and five free `fn replay_of`
+   test helpers in `tm/tests` resolve it. *Which stage clears it.* Any step that
+   touches the switch prose; gap 1731 is the other half.
+   **The task text for W-27 said this name was cited at 12 sites and that
+   `grep -rn "fn replay_of"` was empty. Both are wrong** — 63 sites, and seven
+   `fn replay_of*` declarations. The *conclusion* was right, which is why this
+   gap exists; the supporting facts were not, which is why it says so.
+2. **Gap 1731.** *What is not done.* A `::` citation resolves on its LAST
+   segment, like every other citation, so an `Owner`-qualified span resolves against any
+   `member` anywhere. *Why.* Measured at W-27, not guessed: a prototype
+   resolving the owner-and-member PAIR against `impl`, `enum`, `trait` and `mod`
+   bodies reports 59 distinct / 313 citations, and hand-checking the top rows
+   shows most are the PROTOTYPE's errors — an `impl` with a lifetime parameter
+   reads its owner as the lifetime, and `tm-core`'s `Event` has 26 variants that
+   exist only inside a macro. A resolver wrong about an owner fails a sentence
+   that is right, which is gap 933's argument on the Lean side. *What it costs.*
+   Gap 1730's 63 citations, and every future qualified span whose last segment exists
+   somewhere else. *Which stage clears it.* One that is willing to adjudicate 59
+   rows and own a Rust path resolver; it is a scope decision, not a repair.
+3. **Gap 1732.** *What is not done.* R4 does not name `@[extern]`, and nothing
+   checks for it. *Why.* The kernel has none today (`grep -rn '@\[extern'` over
+   the library is empty), so there was nothing to mechanise. *What it costs.* It
+   is the same trust hole as `@[implemented_by]`, which R4 does ban and which is
+   mechanised in this step: an `@[extern]` declaration hands the compiled
+   program to C that no theorem relates to the definition. `@[csimp]` is
+   deliberately **not** in this class — a `csimp` lemma is a proved equality
+   between two total functions, which is `Fast.lean`'s and `SealTwin.lean`'s
+   whole device. *Which stage clears it.* The owner, by adding a word to R4 or
+   declining with a reason.
+4. **Gap 1733.** *What is not done.* The residue rule — every repository file is
+   swept or excluded, and the walks are reconciled against `git ls-files` — is
+   **check 8's only**. `totality.py`, `mutate.py`, `parity.py` and check 3's
+   roster grep still each answer "which files" for themselves. *Why.* Check 8 is
+   where the class was found seven times and where the population is widest;
+   inverting four enumerations in one step would have made the plant drive
+   unreadable. *What it costs.* Check 8 now reconciles `.lean` and `.rs` against
+   git, so holes 1–4's exact shape is caught for those two extensions in all
+   four walks by proxy. What is **not** caught is a file only one of the other
+   three should read — `parity.py` walks 593 files by its own rule, and a file
+   that rule misses is silent again. *Which stage clears it.* Whichever one
+   widens a second checker; the rule is written down now, so it is a line and
+   not a decision.
+5. **Gap 1734.** *What is not done.* Check 8 reads whether a backticked name
+   RESOLVES, never whether the sentence around it is true. *Why.* It is a
+   resolver, not a reader. *What it costs.* Found while repairing this step's
+   own list: README.md:53534 says *"`render_now_with` is deleted"* and
+   `render_now_with` is at `tm-core/src/emit.rs:1863`. The dead half of that
+   sentence (emit::now_rows) is repaired; the live-but-false half resolves and
+   is invisible. This is the class D39 was opened against, one level up.
+   *Which stage clears it.* None mechanically. It is what an auditor is for, and
+   saying so is the point.
+6. **Gap 1735.** *What is not done.* `kernel_item_grammar.rs`'s coverage floor
+   fails a clean run. `floor_holds` is asserted **inside the arm, on every
+   case**, from `drawn = 64` onward, against counters accumulated across the
+   run — so a 256-case run tests the floor about 130 times, each against the
+   prefix so far. *Why it is not a bug in `tm drop`.* Run 2 of this step's four
+   failed with `compared [76, 46, 7] — [drawn, addressable, compared]`: 7 × 10 =
+   70, one short of 76. The arm's own census puts its true rate at **19.1%** and
+   the floor at 10%. Simulated at 20,000 trials: asserted per case, an arm at
+   19.1% fires on **4.30%** of runs with nothing wrong (24.7% → 0.21%, 36.8% →
+   0.00%); asserted **once at the end of the run**, 0.000% for all three.
+   Observed here: 1 failure in 16 runs of that binary. *And the seed cannot
+   record it.* D46's mechanism — "tracking the seed makes a bug found once a
+   deterministic regression test forever" — holds for a per-input
+   counterexample and **does not hold for a run-level floor**. The line run 2
+   wrote, `cc 7420e7f6… # shrinks to (text, _stateful) = ("- [ ] A\tci:0\t@Ojyx
+   ", true)`, replays **green, 5 of 5**, and names an input that is not the
+   cause. It is **kept**, because D46 says a new seed is never a dirty tree to
+   revert, and it is recorded here as a false record so that the next reader
+   does not chase a tabbed line. *What it costs.* About one acceptance run in
+   twenty-three fails on nothing, and D46's own rule — say how many runs — is
+   what turns that from a mystery into a measurement. *Which stage clears it.*
+   Track A's: the file is `tm edit`'s test file this run and the fix is a choice
+   between two shapes (raise `FLOOR_AFTER` so the sample is large, or assert the
+   floor once after the run), which is that track's to make. **Do not raise the
+   floor's numerator** — that is narrowing the instrument to fit the draw, which
+   is D46's other half.
+7. **Gap 1736.** *What is not done.* `EXCLUDED`'s reasons carry measurements —
+   "tm-spec-v1.md would cost 0 today", "API-NOTES.md is 265 citations, 6
+   unresolved" — and the gate checks only that each entry MATCHES a file.
+   *Why.* Checking a reason would mean sweeping the excluded file, which is what
+   the entry exists to avoid. *What it costs.* A decline that has stopped being
+   true reads as though it were still measured. The three D41 entries are the
+   ones to watch: `tm-spec-v1.md` costs nothing today and is excluded only
+   because reversing an owner's scope decision is the owner's to do.
+   *Which stage clears it.* The owner, by taking or refusing the three files
+   once; after that the reasons are stable.
+
+### 6. What this step did NOT do
+
+It did not touch the planner wire (track P's D48) or `tm edit` (track A's D49);
+`tm-core/src/log.rs`, `tm/tests/cli_json_matrix.rs` and
+`tm/tests/cli_switch_acceptance.rs` are **comment-only** edits, three stale
+citations and nothing else. No Lean changed. No gate was weakened, no snapshot,
+fixture, latency band or corpus re-blessed, and the one proptest seed drawn was
+kept, not reverted.

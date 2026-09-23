@@ -16,6 +16,26 @@ say() { printf '%-46s %s\n' "$1" "$2"; }
 #    Both directories: the library, and the package root, which holds Check.lean,
 #    Negative.lean and Goals.lean.  Goals.lean is the one exemption and
 #    totality.py names it explicitly; see the comment there.
+#
+#    THIS CHECK DID NOT CATCH ITS OWN CLASS UNTIL W-27, and both halves of the
+#    hole were in AGENTS R4's own "checked by" column, in plain sight.
+#
+#    The FIRST half was a NAME LIST.  R4 bans `!`-ACCESSORS and gives `.get!`
+#    and `xs[i]!` as EXAMPLES; `totality.py`'s `BANNED` held exactly those two
+#    examples, so every other member of the class passed.  DRIVEN in a
+#    `git archive HEAD` clone: `.head!`, `.getLast!`, `.back!`, `.tail!`,
+#    `.set!` and `.toNat!`, each planted alone in `Emit.lean`, each ELABORATING
+#    against the pinned toolchain, gave rc=0.  It is a class now -- a `!` that
+#    ends a name -- and the two examples are caught by it rather than beside it.
+#
+#    The SECOND half was DECLARED, not hidden, which is why it lasted longer:
+#    R4's row said `unsafe`, `opaque` and `@[implemented_by]` were "audit
+#    items", and the audit appears nowhere in this script.  It was never
+#    performed.  All three are mechanised now and R4's row says `totality.py`
+#    for the whole rule.  Nine plants in all, every one rc=0 before and named
+#    after; three false-positive controls -- `'!'`, `s!"..."` and `a != b`, 58
+#    live lines between them -- stay green, which is what makes the class rule
+#    a rule and not a wider net.
 if python3 totality.py TmKernel/TmKernel TmKernel; then
   say "totality check" "ok"
 else
@@ -223,6 +243,20 @@ fi
 #    own comment; check 4 reads `/- CHEAT` headers.  Nothing read the prose, so
 #    the single largest recurring defect class in this campaign's ledger was
 #    invisible to the gate by construction.
+#
+#    THE FILE POPULATION IS INVERTED SINCE W-27 (README gap 1525).  The list
+#    below is the history of what this check grew to read, one hole at a time:
+#    the Lean recursion (W-21), the prune list and check 3's roster (W-22), the
+#    library ROOT module (W-23), `tm/examples` (W-24), `kernel/parity.txt`
+#    (W-25).  Every one of those is a file that had to be ADDED to a list to be
+#    covered, which is why each was found only after it had gone wrong.  The
+#    enumeration is now `git ls-files` (plus `--others`), `EXCLUDED` is the only
+#    list, and the residue must be EMPTY -- so the NEXT one fails this check
+#    instead of being silent.  It cost one adjudication and brought in the
+#    repository ROOT README.md, `tm/DORMANT.md`, the FFI shim's C, six manifests
+#    and two shell scripts.  And `::`-SPELLED SPANS ARE SWEPT, which is gap 989
+#    closed and ten live stale citations found; `citations.py`'s header has the
+#    numbers and the blind spot that is left.
 #
 #    So: every backticked identifier in TmKernel/**.lean -- RECURSIVELY since
 #    the W-21 repair step, which is where this line stopped overstating the

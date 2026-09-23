@@ -8,37 +8,56 @@ no check in check.sh reads a doc comment.  Check 3 reads `#print axioms` lines
 and says so in its own comment; check 4 reads `/- CHEAT` headers.  Nothing read
 the sentences.  That is README gap 779, and this is the check that ends it.
 
-WHAT IS SWEPT.  Every backticked span -- on one line, or wrapped across two
-(`wrapped`) -- of
+WHAT IS SWEPT -- AND SINCE W-27 THE DEFAULT POINTS THE OTHER WAY.  Every
+backticked span, on one line or wrapped across two (`wrapped`), of EVERY FILE OF
+THIS REPOSITORY except the ones `EXCLUDED` names with a reason.  The population
+is `git ls-files` plus `--others --exclude-standard`; the residue -- a file that
+is neither swept nor excluded -- must be EMPTY, and a file whose extension has
+no reader FAILS this check by name.  `EXCLUDED`'s own comment is where that rule
+is argued; it is the answer to README gap 1525, and every hole below is an
+instance of the default having pointed the other way.
 
-    kernel/TmKernel/**/*.lean         the library AND the package root, and
-                                      RECURSIVELY (the W-21 repair step: a
-                                      module in a SUBDIRECTORY was invisible
-                                      here, in totality.py and in mutate.py at
-                                      once, while check.sh line 204 already
-                                      said `TmKernel/**.lean`)
-    kernel/README.md                  the ledger
-    AGENTS.md                         the process authority (D41, W-20)
-    kernel/check.sh, kernel/*.py,     the gate's own prose (W-20 repair step;
-    kernel/mutations.txt              `CHECKERS`, and why the allow-list is not)
-    tm/src, tm-core/src, tm/tests,    THE RUST COMMENTS (W-24, README gap 1313
-    tm-core/tests, kernel/            item 3).  `//!`, `///`, `//` and `/* */`
-    tm-kernel-ffi/{src,tests,         only -- `rust_prose` is the exact
-    examples}  **/*.rs                complement of `rust_code`, so what the one
-                                      blanks the other reads and no byte of
-                                      either file is read as both code and
-                                      prose.  String and char CONTENTS are
-                                      blanked in both: a "fn foo" literal
-                                      declares nothing and cites nothing.
+    .lean     `LEAN_FILES`, the library AND the package root, RECURSIVELY (the
+              W-21 repair step: a module in a SUBDIRECTORY was invisible here,
+              in totality.py and in mutate.py at once).  A tracked `.lean` this
+              walk does not reach is a named failure since W-27.
+    .rs       `RUST_FILES`, THE RUST COMMENTS (W-24, README gap 1313 item 3).
+              `//!`, `///`, `//` and `/* */` only -- `rust_prose` is the exact
+              complement of `rust_code`, so what the one blanks the other reads
+              and no byte of either file is read as both code and prose.  String
+              and char CONTENTS are blanked in both: a "fn foo" literal declares
+              nothing and cites nothing.  A tracked `.rs` the walk does not
+              reach is a named failure too.
+    .c        `C_FILES`, read with the same scanner: C's comment grammar is a
+              SUBSET of Rust's.  The FFI shim, R9's own 66 lines (W-27).
+    .md .txt  raw text.  The ledger, AGENTS.md (D41, W-20), the gate's own prose
+    .sh .py   (the W-20 repair step), `mutations.txt` and `parity.txt` (W-25),
+    .toml     and since W-27 the repository ROOT README.md, `tm/DORMANT.md`, the
+              six cargo/lake manifests and the oracle's shell scripts.
 
-whose content is an identifier that is ANY OF THREE THINGS: snake_case (an
+whose content is an identifier that is ANY OF FOUR THINGS: snake_case (an
 underscore anywhere -- the shape this kernel's theorem names have), camelCase (a
 lowercase letter OR A DIGIT immediately followed by an uppercase one, anywhere
-in the span -- the shape its `def`s, fields and constructors have), or QUALIFIED
+in the span -- the shape its `def`s, fields and constructors have), QUALIFIED
 (two or more dotted segments with a capitalised head -- the shape a declaration
-has at a use site in another namespace).  D39 swept snake_case only; D41 added
-camelCase; the W-21 repair step added the digit and the dotted test, and
-`is_citation` is the whole of the predicate.
+has at a use site in another namespace), or `::`-SPELLED (the shape a Rust path
+has, W-27).  D39 swept snake_case only; D41 added camelCase; the W-21 repair
+step added the digit and the dotted test; W-27 added `::`, and `is_citation` is
+the whole of the predicate.
+
+THE `::` TEST HAS NO HEAD-CASE RULE and the dotted one does, deliberately.  A
+dotted span with a lowercase head is a projection (`a.val`), a filename
+(`mutate.py`) or a `set_option` key, never a kernel name.  A `::` span with a
+lowercase head is a MODULE path -- `fs::read_to_string`, `serde_json::Map` --
+and is exactly as much a name as `Ctx::replay_of`.  Measured at W-27 over the
+swept files: 3,116 citations, 1,025 distinct, of which 121 distinct resolved to
+nothing; 62 of those are this repository's own enum variants (`rust_variants`),
+49 are library or fork names now in the allow-list, and TEN WERE LIVE STALE
+CITATIONS -- Log::to_jsonl, out::ErrorDoc (the live type is `out::ErrorOut`),
+emit::now_rows, tui_common::app_with, Replay::events_named, Replay::events_for,
+DayReplay::wake_to_arrival_min, two renamed test names, and SegKind::NoSuchKind,
+which is the W-24 ledger's own record of this hole going green on the gate it
+documented.
 
 WHY THAT IS THE CAMEL TEST, and not "has a capital in it".  The population
 inside the camel blind spot was measured at W-19 (gap 880) and is mostly tactic,
@@ -80,8 +99,9 @@ against it cannot launder one stale sentence with another.
        JSON field name are declared by the literal that spells them, and
        `"cap_done_min"` in Boundary.lean is that declaration.
     3. Rust declarations -- fn/struct/enum/const/static/type/trait/mod/union,
-       struct fields AND FUNCTION PARAMETERS -- in tm/src, tm-core/src,
-       tm/tests, tm-core/tests and kernel/tm-kernel-ffi/{src,tests,examples}.
+       struct fields AND FUNCTION PARAMETERS -- in every `.rs` file of the
+       repository (`RUST_FILES`).  ENUM VARIANTS are source 3's too but are kept
+       in `rust_variants` and consulted only for a `::` span; see below.
        The FORK's planner is in-tree (tm-core/src/planner.rs), so
        `place_mandatory_and_pref` and `active_run` resolve here and need no
        exemption.
@@ -129,7 +149,13 @@ against it cannot launder one stale sentence with another.
        would otherwise each need an allow-list entry (`List.mapTR`, `zipIdx`,
        `filterMap`, `mergeSort`, `mapM`, `DecidableEq`, `sorryAx`, `findIdx?`).
 
-A citation resolves if its LAST dotted segment is in any of the seven.
+A citation resolves if its LAST segment -- under `.` OR `::` -- is in any of
+the seven.  There is an EIGHTH set and it is not consulted for every citation:
+`rust_variants`, this repository's Rust enum variants, is read only for a span
+holding `::`, the way source 7 is read only for a span with no underscore.  Gap
+1410 declined the variants at W-24 on the right number (+219 short names, each
+able to launder a stale citation of any Lean constructor sharing it); scoping
+them to `::` spans pays 0 of that and resolves 62 citations.
 
 THE ALLOW-LIST IS MATCHED ON THE WHOLE SPAN, not on the last segment, and the
 two rules are deliberately different.  `energy.sort_by_key` and `out.sort_by`
@@ -222,15 +248,26 @@ nothing else; do not quote these, RE-MEASURE.
     refused by `CITED`, and the dead name inside it is never seen: `planOk
     Planner.eligibleAt` at README.md:28120 was exactly that and is repaired.
     There are 19,779 such spans (7,157 distinct) -- backticked code fragments,
-    commands and phrases.  A span containing `::` is refused the same way and is
-    a DIFFERENT population, measured at the W-20 repair step: 1,574 citations
-    (505 distinct) are otherwise identifier-shaped, and 67 distinct / 111
-    citations have a last segment declared nowhere this file reads.  Almost all
-    are Rust `std`, chrono, serde or ENUM VARIANTS, which `RUST_DECL` does not
-    capture (`u32::MAX` x11, `EditError::Ambiguous` x4) -- but at least one was
-    an in-repo rename the ledger itself recorded, tm_kernel_ffi::trace_kind,
-    repaired here.  Turning `::` on costs 67 adjudications and is a scope
-    decision, not a repair; README gap 989.
+    commands and phrases.  A span containing `::` WAS refused the same way, for
+    four runs after the W-20 repair step measured it and two after gap 1410
+    named it; that is README gap 989 and it is CLOSED at W-27.  What the old
+    measurement got wrong is worth keeping: it priced the widening at "67
+    adjudications" over a 1,574-citation population, and the real numbers on the
+    tree it landed against are 3,116 citations and 121 unresolved, because the
+    W-24 Rust-prose sweep had since tripled the prose being read.  RE-MEASURE,
+    do not quote.
+  * WHAT THE `::` SWEEP STILL CANNOT SEE, and it is the namespace blind spot
+    above wearing Rust's clothes: resolution is on the LAST segment, so
+    Ctx::replay_of -- deleted at `2b26be3`, backticked at 63 sites, and no
+    method of `Ctx`, which declares only `replay_with` -- RESOLVES, against five
+    free `fn replay_of` test helpers in `tm/tests`.  Measured at W-27: a
+    prototype that resolves the owner-and-member PAIR against `impl`, `enum` and
+    `mod` bodies reports 59 distinct / 313 citations, and hand-checking the top
+    rows shows most of them are the PROTOTYPE's errors, not the prose's -- an
+    `impl` with a lifetime parameter reads its owner as the lifetime, and
+    `Event`'s 26 variants come out of a macro no static parse expands.  A
+    resolver that is wrong about an owner fails a sentence that is right, which
+    is why gap 933 declined the same move on the Lean side.  README gap 1731.
   * A SPAN WRAPPED MID-WORD.  A span wrapped over TWO lines is swept -- see
     `wrapped` -- and so is one wrapped over more, since the W-21 repair step;
     joining it is what found two
@@ -247,8 +284,12 @@ nothing else; do not quote these, RE-MEASURE.
     the design is a prospective specification whose unresolved names are work to
     do (mkStateDay? and refuses_an_inverted_window sit in a column headed
     "bound, constructor, rejection theorem" for a record that has no such field
-    yet).  tm-spec-v1.md 26 citations / 20 distinct / 0 unresolved;
-    PLAN-lean-kernel.md 83 / 65 / 9.
+    yet).  They are three `EXCLUDED` entries since W-27, which is the same
+    decline said where a reader can see it and where a stale one fails.
+    RE-MEASURED there: tm-spec-v1.md is 35 citations / 28 distinct / 0
+    unresolved and would cost nothing today; PLAN-lean-kernel.md is 134 / 100 /
+    8.  Reversing an owner's scope decision is the owner's to do, so neither was
+    swept and both numbers are on the record instead.
   * RUST PROSE IS SWEPT SINCE W-24 and this bullet is its record.  It read, for
     four runs: "not one of the seven sets is read as PROSE for Rust; a stale
     citation inside a `///` doc comment in tm/src is not swept at all".  Turning
@@ -282,8 +323,8 @@ nothing else; do not quote these, RE-MEASURE.
     kernel/check.sh, kernel/mutations.txt and
     kernel/*.py ARE swept as prose since the W-20 repair step, which is where
     check.sh's own specification of D41's widening was found citing a
-    backticked emitRefused; citations-allow.txt is not, and `CHECKERS` says
-    why.
+    backticked emitRefused; citations-allow.txt is not, and its `EXCLUDED`
+    entry says why.
   * The allow-list itself.  At W-20 it holds 110 uncounted VOCABULARY names and
     352 counted ones.  Sections 4 and 8 are SEEDED BASELINES nobody has opened
     -- 160 snake (gap 833) and 50 camel (gap 934) -- and may hide stale
@@ -331,57 +372,164 @@ ROOT = os.path.dirname(HERE)
 # 28699/27174/1525/0, byte-identical again.  `leanfiles.is_build_dir` prunes on a
 # property a build directory has, never on a name.
 LEAN_FILES = [str(p) for p in leanfiles.lean_files(os.path.join(HERE, "TmKernel"))]
-README = os.path.join(HERE, "README.md")
-AGENTS = os.path.join(ROOT, "AGENTS.md")
-# The gate's OWN files, swept as PROSE at the W-20 repair step.  They were the
-# last unswept prose in kernel/, and check.sh line 215 -- the sentence that
-# specifies D41's camelCase widening -- carried a backticked emitRefused, which
-# is the dead name that widening exists because of.  kernel/*.py is already a
-# DECLARATION source (source 7); reading the same files as prose is a different
-# question and was not being asked.
+# **THE EIGHTH LEVEL OF THE ENUMERATION HOLE, AND THE RULE THAT ENDS THE CLASS**
+# (README gap 1525, answered at W-27).
 #
-# citations-allow.txt IS DELIBERATELY NOT HERE, and the reason is mechanical:
-# an allow-list entry's own comment has to spell the name it exempts, so
-# sweeping this file charges every COUNTED entry one extra citation against its
-# own cap.  Measured at the repair step: 16 counted entries went over by
-# exactly one, every one of them because the allow-list quotes itself, and none
-# of the 16 was a defect.  The one real defect in that file -- a
-# register_builtin_error core does not declare -- was found by running this
-# file's resolver over it by hand, and repaired; doing that by hand is what the
-# file gets instead of the sweep.
+# SEVEN times this campaign a checker has been found not to read something it
+# claimed to read, and each fix made a list longer: the Lean walk (W-21), the
+# prune list (W-22), check 3's roster grep (W-22), the library ROOT module
+# (W-23, gap 1314), `tm/examples` (W-24, gap 1418), `kernel/parity.txt` (W-25,
+# gap 1525) and, here, the `::`-spelled path `is_citation` refused.  Gap 1525
+# asked for the property that tells a checker's data file from
+# `citations-allow.txt` and concluded there is none.  **There is none, and that
+# is not the question.**  The question is which way round the DEFAULT points.
 #
-# **AND `parity.txt` WAS THE SIXTH ENUMERATION HOLE.**  This list is a hard-coded
-# NAME LIST -- the shape `leanfiles.py`'s own header says cannot work -- and it
-# was repaired for the Lean (gap 1314, the library root) and for the Rust (gap
-# 1418, `tm/examples`) and never for the CHECKERS' OWN DATA FILES.  W-25 track A
-# then added one: `kernel/parity.txt`, check 10's index, 77 lines carrying 40+
-# backticked spans, landed beside `mutations.txt` and not added here.  DRIVEN at
-# the W-25 repair step in a scratch `git archive HEAD` copy: a plant citing a
-# name that resolves to nothing, appended to `parity.txt`, left this check at
-# 33738/32073/1665, rc 0, byte-identical; the same line in `mutations.txt` was
-# named at `mutations.txt:301` and in `check.sh` at `check.sh:491`.  Ten other
-# plants across the Rust, the Lean, `parity.py`, `kernel/README.md` and
-# `AGENTS.md` were ALL caught, so `parity.txt` was the one gap.
+#   An enumeration a new file must be ADDED to in order to be COVERED is
+#   unsound: the file that is missing from it is silent, and nobody is told.
+#   An enumeration a new file must be ADDED to in order to be EXEMPT is sound:
+#   the file that is missing from it is SWEPT, and if it should not have been,
+#   the gate fails loudly on the next run and a human writes one line.
 #
-# AND IT ALREADY CARRIED TWO LIVE OVER-CAP CITATIONS.  Adding it put
-# `read_to_string` at 3 against a cap of 2 and `saturating_add` at 7 against 6 --
-# two citations nobody had counted.  Both are adjudicated in
-# `citations-allow.txt` at this step, by the move that file's own header
-# prescribes, and neither was a defect: they name Rust `std` functions of the
-# fork, which is what section 1's `std` block is for and where `saturating_sub`
-# already sat.
+# All seven holes are the first shape.  So the enumeration is inverted here: the
+# repository's own list of its files -- `git ls-files`, plus `--others
+# --exclude-standard` so a file added and not yet committed counts, because
+# acceptance runs BEFORE the commit -- is the population, `EXCLUDED` below is the
+# only list, and the residue must be EMPTY.  A file whose extension has no reader
+# and no exclusion FAILS this check by name.  `parity.txt` could not have been
+# missed under this rule; nor can the ninth one.
 #
-# THE SHAPE OF THE HOLE IS STILL HERE and is declared rather than repaired: this
-# is a name list, so a checker data file added tomorrow beside these three is
-# unswept again.  `kernel/*.py` is a glob; `check.sh`, `mutations.txt` and
-# `parity.txt` are typed out.  What a property-based rule would need is a
-# statement of what makes a file a CHECKER's data, and there is none -- a `.txt`
-# under `kernel/` is `citations-allow.txt` (deliberately excluded, above) as
-# easily as it is `mutations.txt`.  README gap 1525.
-CHECKERS = [os.path.join(HERE, "check.sh"),
-            os.path.join(HERE, "mutations.txt"),
-            os.path.join(HERE, "parity.txt")] + \
-           sorted(glob.glob(os.path.join(HERE, "*.py")))
+# WHAT IT COSTS, declared and not hidden.  Every new KIND of file needs a line --
+# an exclusion with a reason, or a reader.  A new `.md`, `.rs`, `.lean`, `.py`,
+# `.txt`, `.toml`, `.sh` or `.c` needs nothing, because those already have
+# readers.  And the gate now depends on `git`; a repository `git ls-files` cannot
+# read is a HARD ERROR here, never a silently smaller population, the way a
+# missing toolchain source tree is in `core_declared`.
+#
+# AND IT RECONCILES THE TWO PROPERTY-BASED WALKS AGAINST GIT.  `LEAN_FILES` and
+# `RUST_FILES` are filesystem walks (they must be: a new module is swept before
+# it is added, which `git ls-files` alone cannot do).  A tracked `.lean` or `.rs`
+# the walk did not reach is the W-21/W-22/W-23 class exactly, and it is now a
+# named failure rather than a silence.
+#
+# WHAT WENT IN WHEN THE DEFAULT FLIPPED, all measured first: the repository ROOT
+# `README.md` (47 citations, ONE unresolved -- `core.hooksPath`, a git config
+# key), `tm/DORMANT.md` (3, none), `kernel/tm-kernel-ffi/shim.c` (2, none -- R9's
+# own 66 lines, and the first C in this sweep), the six `Cargo.toml`/`lakefile.toml`
+# manifests (3, none; the root one carries D22's `raw_value` and `float_roundtrip`
+# paragraph) and the oracle's two `.sh` scripts (1, none).  One adjudication for
+# six files and two whole file types.
+EXCLUDED = (
+    # (pattern, why).  THREE FORMS AND NO GLOB LANGUAGE, so that reading an
+    # entry cannot be wrong about what it covers: a pattern ending in `/` is a
+    # directory PREFIX, one beginning with `*` is a basename SUFFIX (a KIND of
+    # file), and anything else is an EXACT repository-relative path.
+    ("kernel/corpus/", "stage 2's fixture DOCUMENTS -- a user's plan tree, not "
+                       "prose about this repository, and AGENTS forbids touching them"),
+    ("kernel/design/", "D41 DECLINED the design: 144 unresolved names that are a "
+                       "prospective specification's work to do (re-measured at W-27: "
+                       "8 tracked files)"),
+    ("tm-spec-v1.md", "D41's decline.  RE-MEASURED at W-27 and it would cost NOTHING "
+                      "today: 35 citations, 28 distinct, 0 unresolved.  Left out because "
+                      "reversing an owner's scope decision is the owner's to do"),
+    ("PLAN-lean-kernel.md", "D41's decline.  Re-measured at W-27: 134 citations, 100 "
+                            "distinct, 8 unresolved"),
+    ("kernel/citations-allow.txt", "an allow-list entry's comment has to SPELL the name "
+                                   "it exempts, so sweeping this file charges every "
+                                   "COUNTED entry one extra citation against its own cap "
+                                   "-- measured at the W-20 repair step: 16 entries went "
+                                   "over by exactly one and none was a defect.  It gets "
+                                   "read by hand instead"),
+    (".claude/", "the agent harness's own directory, pruned by the same leading-dot "
+                 "property `leanfiles.is_build_dir` uses.  Measured: API-NOTES.md is "
+                 "265 citations, 6 unresolved"),
+    ("tm/templates/", "the documents `tm init` writes into a NEW tree: fixture text, "
+                      "the same class as corpus/"),
+    ("tm/tests/fixtures/", "recorded input and output, the same class as a fenced block"),
+    ("tm-core/tests/fixtures/", "recorded input and output"),
+    ("*.snap", "an insta SNAPSHOT is a RECORD of what a command printed at a commit that "
+              "has gone; demanding it resolve against today's tree is demanding a "
+              "re-bless, which AGENTS forbids"),
+    ("*.proptest-regressions", "D46's seed lines.  Data, and not one byte of prose"),
+    ("*Cargo.lock", "cargo resolver output -- three of them, one per workspace root"),
+    ("kernel/TmKernel/lake-manifest.json", "lake resolver output"),
+    ("kernel/TmKernel/lean-toolchain", "the R8 pin, one line, no prose"),
+    ("*.gitignore", "no prose"),
+)
+
+# extension -> which reader.  `rust` is `rust_prose`; `lean` and `plain` are the
+# raw text.  `.c` reads with the Rust scanner because C's comment grammar is a
+# SUBSET of Rust's (`//` and `/* */`, and Rust's nesting rule only ever ends a
+# comment later, never earlier), so no byte of a `.c` file is read as code.
+READERS = {".lean": "lean", ".rs": "rust", ".c": "rust", ".md": "plain",
+           ".txt": "plain", ".sh": "plain", ".py": "plain", ".toml": "plain"}
+
+
+def tracked():
+    """Every file of this repository, by the repository's own account.
+
+    Tracked, plus added-but-not-committed (`--others --exclude-standard`),
+    because acceptance runs BEFORE the commit and a checker data file added in
+    the same step as the sentence that cites it is exactly the W-25 case.
+    """
+    import subprocess
+    out = []
+    for args in (["ls-files", "-z"], ["ls-files", "-z", "--others", "--exclude-standard"]):
+        r = subprocess.run(["git"] + args, cwd=ROOT, capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit("citations.py: `git %s` failed in %s -- the file "
+                             "population would be silently smaller" % (args[0], ROOT))
+        out += [p for p in r.stdout.split("\0") if p]
+    return sorted(set(out))
+
+
+def excluded_by(rel):
+    """The index of the EXCLUDED entry that covers `rel`, or None."""
+    for i, (pat, _why) in enumerate(EXCLUDED):
+        if pat.endswith("/"):
+            if rel.startswith(pat):
+                return i
+        elif pat.startswith("*"):
+            if rel.endswith(pat[1:]):
+                return i
+        elif rel == pat:
+            return i
+    return None
+
+
+def partition():
+    """(plain paths, C paths, unaccounted, unused exclusions, counts).
+
+    The residue rule: a repository file that is neither swept nor excluded is
+    UNACCOUNTED and fails the check.  An EXCLUDED entry that covers nothing is
+    stale and fails it too, by the same ratchet the counted allow-list uses.
+    """
+    lean = {os.path.relpath(p, ROOT) for p in LEAN_FILES}
+    rust = {os.path.relpath(p, ROOT) for p in RUST_FILES}
+    plain, cfiles, unaccounted, used = [], [], [], set()
+    for rel in tracked():
+        i = excluded_by(rel)
+        if i is not None:
+            used.add(i)
+            continue
+        kind = READERS.get(os.path.splitext(rel)[1])
+        if kind == "lean":
+            if rel not in lean:
+                unaccounted.append((rel, "tracked .lean the LEAN_FILES walk did not reach"))
+            continue
+        if kind == "rust" and rel.endswith(".rs"):
+            if rel not in rust:
+                unaccounted.append((rel, "tracked .rs the RUST_FILES walk did not reach"))
+            continue
+        if kind == "rust":
+            cfiles.append(os.path.join(ROOT, rel))
+        elif kind == "plain":
+            plain.append(os.path.join(ROOT, rel))
+        else:
+            unaccounted.append((rel, "no reader for this extension and no exclusion"))
+    unused = [EXCLUDED[i][0] for i in range(len(EXCLUDED)) if i not in used]
+    return sorted(plain), sorted(cfiles), unaccounted, unused
+
+
 TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 # THE RUST SOURCES, BY THE SAME PROPERTY-BASED WALK THE LEAN USES.  This was a
 # hard-coded list of seven directory names until README gap 1418 -- the exact
@@ -394,6 +542,16 @@ TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 # The walk now starts at the repository ROOT and prunes by property, which
 # closes all three of those named holes as well.
 RUST_FILES = [str(p) for p in leanfiles.rust_files(ROOT)]
+
+# The partition above needs both walks, so it is taken here.
+# Four separate bindings and not one tuple unpack, so that each is a source-6
+# declaration: `PY_DECL` reads `NAME =` at a line head and a tuple target is
+# not one, which left this file's own prose citing an undeclared `C_FILES`.
+_PARTITION = partition()
+PLAIN_FILES = _PARTITION[0]
+C_FILES = _PARTITION[1]
+UNACCOUNTED = _PARTITION[2]
+UNUSED_EXCLUSIONS = _PARTITION[3]
 
 # A Rust FUNCTION PARAMETER, read out of `rust_code` so a comment cannot
 # declare one.  `(name:` or `, name:`, with `mut` allowed -- deliberately the
@@ -413,6 +571,25 @@ LEAN_CTOR = re.compile(r"\|[ \t]*([A-Za-z_][A-Za-z0-9_']*)")
 RAW_OPEN = re.compile(r'b?r#*"')
 RUST_DECL = re.compile(r"\b(?:fn|struct|enum|const|static|type|trait|mod|union)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
 RUST_FIELD = re.compile(r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?([a-z_][a-z0-9_]*)[ \t]*:[ \t]*[^=]", re.M)
+# A RUST ENUM VARIANT (source 3, W-27), and it is source 1's `LEAN_CTOR` seen in
+# the other language: an `inductive`'s constructors are a declaration set there
+# and an `enum`'s variants are one here.  Turning `::` on without this would put
+# 62 distinct names in front of an adjudicator that are declarations of this
+# repository -- `Event::Arrive`, `StoreError::Conflict`, `SegKind::WindDown` --
+# and the allow-list is for names this kernel does NOT declare.
+#
+# WHY IT IS NOT READ OUT OF THE `enum` BLOCK, which is where it looks like it
+# should live: `tm-core/src/log.rs` declares `Event` inside a macro, so its 26
+# variants exist only at that macro's CALL site and no brace-matched `enum` body
+# holds them.  The shape read instead is a CAPITALISED
+# word at the head of a line in `rust_code`, followed by `,` `{` `(` `=>` or a
+# single `=`.  That is a variant DECLARATION (`Arrive,`, `Arrive { .. }`,
+# `Arrive => "arrive" {`) or a match arm / struct literal naming one, and the
+# second is as good as the first by this file's own rule: a match arm is CODE,
+# not prose, and it only compiles because the variant exists.  It is not the
+# whole story -- a variant declared and used NOWHERE at a line head is still
+# missed -- and that is the blind spot, not a name list.
+RUST_VARIANT = re.compile(r"^[ \t]*([A-Z][A-Za-z0-9_]*)[ \t]*(?:,|\{|\(|=>|=[^=])", re.M)
 STRING_LIT = re.compile(r'"([A-Za-z_][A-Za-z0-9_]*)"')
 # Source 7: the checkers' own Python.  `def f(` / `class C(` / `class C:` and
 # module-level ALL_CAPS constants.  The `[(:]` is load-bearing: without it the
@@ -422,7 +599,14 @@ PY_DECL = re.compile(r"^(?:def|class)[ \t]+([A-Za-z_][A-Za-z0-9_]*)[ \t]*[(:]"
                      r"|^([A-Z][A-Z0-9_]*)[ \t]*=", re.M)
 
 SPAN = re.compile(r"`([^`\n]+)`")
-CITED = re.compile(r"^[A-Za-z][A-Za-z0-9_'?!]*(?:\.[A-Za-z0-9_'?!]+)*$")
+# `::` IS A SEPARATOR HERE SINCE W-27, and it is the SEVENTH enumeration hole
+# (README gap 989, open since the W-20 repair step).  A span holding `::` was
+# not citation-shaped at all -- refused by this pattern the way a span holding a
+# SPACE is -- so `Ctx::replay_of`, `Event::Arrive` and `u32::MAX` were three of
+# 3,116 citations (1,025 distinct) that no rule in this file ever looked at.
+CITED = re.compile(r"^[A-Za-z][A-Za-z0-9_'?!]*(?:(?:\.|::)[A-Za-z0-9_'?!]+)*$")
+# The LAST segment of a citation, under either separator.
+SEG = re.compile(r"\.|::")
 # A lower-to-upper transition, OR A DIGIT-TO-UPPER ONE (the W-21 repair step).
 # `[a-z][A-Z]` alone does not match gap22Parent or day0Wf: the character in
 # front of the capital is a digit, so both were unswept, and gap22Parent --
@@ -465,7 +649,8 @@ def is_citation(name):
     declaration.  That is the blind spot this test keeps; see the header.
     """
     return bool(CITED.match(name)) and (
-        "_" in name or CAMEL.search(name) is not None or QUAL.match(name) is not None)
+        "_" in name or CAMEL.search(name) is not None
+        or QUAL.match(name) is not None or "::" in name)
 
 
 def read(path):
@@ -638,6 +823,23 @@ def rust_split(text):
     return "".join(code), "".join(prose)
 
 
+# ONE SPLIT PER FILE.  `rust_split` is a character-at-a-time Python scanner and
+# every `.rs` file goes through it three times -- `declared` wants the code half,
+# `rust_variants` wants it again, `cited` wants the prose half -- which is 2/3 of
+# this file's added cost for nothing.  Keyed on the TEXT, so a caller that
+# synthesises a string (the tests in this file's own plants) still gets the right
+# answer and the cache cannot go stale against a file read twice.
+_SPLIT = {}
+
+
+def rust_split_cached(text):
+    """`rust_split(text)`, remembered."""
+    got = _SPLIT.get(text)
+    if got is None:
+        got = _SPLIT[text] = rust_split(text)
+    return got
+
+
 def rust_prose(text):
     """The COMMENT half of `rust_split`: comment text only, lines preserved.
 
@@ -649,7 +851,7 @@ def rust_prose(text):
     two sides -- and since gap 1416 it is ONE walk that draws the line, so the
     two sides cannot disagree about where it is.
     """
-    return rust_split(text)[1]
+    return rust_split_cached(text)[1]
 
 
 def rust_code(text):
@@ -670,7 +872,7 @@ def rust_code(text):
 
     Lines are preserved so nothing else in this file has to care.
     """
-    return rust_split(text)[0]
+    return rust_split_cached(text)[0]
 
 
 def declared():
@@ -717,6 +919,30 @@ def declared():
     return names
 
 
+def rust_variants():
+    """Source 3's variant half, CONSULTED ONLY FOR A `::`-SPELLED CITATION.
+
+    Gap 1410 declined this widening at W-24 on exactly the right number: +219
+    short names that, resolved on the LAST segment like everything else, would
+    each launder a stale citation of any Lean constructor or `def` sharing the
+    name -- `All`, `Any`, `Add`, `Bool`, `Body`, `Active`, `Blocked`, `Dates`.
+    That cost is real and it is not paid here, because these names are kept OUT
+    of `declared()` and consulted only when the span holds `::`.  A variant is
+    cited under its enum, never bare; a bare `Blocked` still resolves against nothing
+    but the seven sets.  It is the same discipline source 7 uses -- the
+    toolchain is consulted only for a citation with no underscore -- and it is
+    why turning `::` on costs 0 new laundering on the 34,000 citations that were
+    already swept.
+
+    Re-measured at W-27 under this file's own span rule: 481 variant-shaped
+    names, 224 of them declared nowhere else, and they resolve 62 of the 121
+    `::` citations that would otherwise each need an allow-list entry."""
+    names = set()
+    for path in RUST_FILES:
+        names.update(RUST_VARIANT.findall(rust_code(read(path))))
+    return names
+
+
 def wrapped(prefix, suffix):
     """The name a span that WRAPPED spells, or None.
 
@@ -758,11 +984,12 @@ def cited():
     """Every backticked snake_case citation, with count and first location."""
     hits = collections.Counter()
     where = {}
-    sources = [(p, read(p)) for p in LEAN_FILES + [README, AGENTS] + CHECKERS]
+    sources = [(p, read(p)) for p in LEAN_FILES + PLAIN_FILES]
     # THE RUST COMMENTS (W-24).  Read through `rust_prose`, the complement of
     # the `rust_code` that `declared()` reads, so neither half of a `.rs` file
-    # can stand in for the other.
-    for p in RUST_FILES:
+    # can stand in for the other.  `C_FILES` -- the FFI shim, W-27 -- reads the
+    # same way and for the same reason.
+    for p in RUST_FILES + C_FILES:
         sources.append((p, rust_prose(read(p))))
     for path, text in sources:
         fenced = path.endswith(".md")
@@ -839,16 +1066,32 @@ def main():
     vocabulary, capped = allow_list(allow_path)
     if vocabulary is None:
         return 2
+    # THE RESIDUE RULE (the eighth level).  A repository file that is neither
+    # swept nor excluded, and an exclusion that covers nothing, are both
+    # failures -- the first is the enumeration hole this campaign has found
+    # seven times, the second is the counted allow-list's stale-entry ratchet
+    # applied to files.
+    if UNACCOUNTED or UNUSED_EXCLUSIONS:
+        print("%d unaccounted file(s), %d exclusion(s) covering nothing:"
+              % (len(UNACCOUNTED), len(UNUSED_EXCLUSIONS)))
+        for rel, why in UNACCOUNTED[:20]:
+            print("  %s  (%s)" % (rel, why))
+        for pat in UNUSED_EXCLUSIONS:
+            print("  %s  (excluded, but no file of this repository matches it)" % pat)
+        return 1
     names = declared()
     core = core_declared()
+    variants = rust_variants()
     hits, where = cited()
 
     bad, used = [], set()
     for name, count in sorted(hits.items()):
-        last = name.split(".")[-1]
+        last = SEG.split(name)[-1]
         if last in names:
             continue
         if "_" not in name and last in core:
+            continue
+        if "::" in name and last in variants:
             continue
         if name in vocabulary:
             used.add(name)
@@ -889,9 +1132,12 @@ def main():
             print("  %s  %s  (%s)" % (loc, name, why))
         return 1
     print("%d citations, %d resolved, %d allowed (%d vocabulary, %d counted), "
-          "%d allow entries unused"
+          "%d allow entries unused, %d files swept, %d excluded by %d rule(s)"
           % (sum(hits.values()), sum(hits.values()) - sum(hits[n] for n in used),
-             sum(hits[n] for n in used), len(vocabulary), len(capped), len(stale)))
+             sum(hits[n] for n in used), len(vocabulary), len(capped), len(stale),
+             len(LEAN_FILES) + len(PLAIN_FILES) + len(RUST_FILES) + len(C_FILES),
+             len(tracked()) - len(LEAN_FILES) - len(PLAIN_FILES) - len(RUST_FILES)
+             - len(C_FILES), len(EXCLUDED)))
     return 0
 
 

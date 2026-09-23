@@ -59,13 +59,66 @@ import leanfiles
 # Listed by name so that a `sorry` in any real module is still caught.
 EXEMPT = {"Goals.lean"}
 
+# A CHARACTER LITERAL AND AN INTERPOLATION PREFIX ARE THE TWO PLACES A `!` IS
+# NOT PART OF A NAME, and both are blanked before the scan so that the ban below
+# can be a CLASS instead of a list.  `renderPrio` in `Line.lean` writes `'!'` (33
+# occurrences) and 25 lines write `s!"..."`; under a rule that reads any `!`
+# after an identifier character those 58 lines are false positives, and a false
+# positive is how a class-shaped rule gets narrowed back into a name list.
+#
+# Both tests are SHAPES, not letters.  `CHAR_LIT` is Lean's character literal --
+# one character, or one backslash escape, between apostrophes -- and the
+# apostrophe matters because `'` is also an identifier character in Lean
+# (`h'`, `foo'`), which is why the two `'`s must be exactly two characters apart.
+# `INTERP` is a ONE-LETTER prefix with no identifier character in front of it and
+# a string literal immediately after: `s!"`, and `m!"` and `f!"` if they are ever
+# used.  A `!`-accessor written flush against a string (`xs.get!"k"`) is three
+# letters, not one, so it is still caught -- which is the whole reason the test
+# counts letters instead of listing `s`.
+CHAR_LIT = re.compile(r"'(?:\\.|[^'\\])'")
+INTERP = re.compile(r"(?<![A-Za-z0-9_'])([a-z])!(?=\")")
+
+# WHAT IS BANNED, AND THE HALF OF R4 THAT WAS NEVER MECHANISED.
+#
+# AGENTS R4 bans `partial def`, `unsafe`, `opaque`, `@[implemented_by]`, `panic!`
+# and `!`-ACCESSORS.  Until W-27 this list held seven regexes and R4's own row in
+# AGENTS 3 said, in the "checked by" column, that `unsafe`, `opaque` and
+# `@[implemented_by]` were "audit items" -- an audit that appears nowhere in
+# `check.sh` and that no step of this campaign has ever performed.  They are
+# mechanised here; the row now says `totality.py` for the whole of R4.
+#
+# AND THE `!`-ACCESSORS WERE A NAME LIST, which is the shape this campaign has
+# now found wrong eight times.  R4 bans the CLASS and says `.get!` and `xs[i]!`
+# as EXAMPLES; the list held exactly those two examples, so `.head!`,
+# `.getLast!`, `.back!`, `.find!`, `.getD!` and every other member of the class
+# compiled and gave this file rc=0.  DRIVEN in a `git archive HEAD` clone at
+# W-27: `.head!`, `.getLast!`, `.back!` and `.find!` each planted alone in
+# `Emit.lean` left this file at rc=0 and are each named by it now.
+#
+# THE CLASS IS A `!` THAT ENDS A NAME: preceded by an identifier character or by
+# the `]` of an index, and not followed by `=` (`a != b` is `BEq` negation, and
+# Lean tokenises `a!=b` as `a`, `!=`, `b`, so a `!`-accessor can never be
+# immediately followed by `=` -- the exclusion is exact, not a hole).  Prefix
+# `!` (Boolean `not`) has a space, a bracket or nothing in front of it and is
+# untouched.  MEASURED over the scanned files at W-27: 509 `!` characters in
+# code, of which 33 are character literals, 25 are `s!` prefixes and the
+# remaining 451 are prefix `not` or the `!=` of `BEq` negation.  None is an
+# accessor, which is why this widening lands green.
+#
+# `panic!` KEEPS ITS OWN ROW because it is separately named in R4 and in this
+# file's own header, and the class rule excludes it by a lookbehind so that a
+# `panic!` is reported once under its own name.  The lookbehind can only ever
+# cause a MISSED SECOND REPORT of a line the row above already catches, never a
+# missed line: if it went wrong, `panic!` still fires.
 BANNED = [
     (r"partial\s+def", "partial def"),
     (r"panic!", "panic!"),
     (r"native_decide", "native_decide"),
     (r"\bsorry\b", "sorry"),
-    (r"\]!", "list index `[..]!`"),
-    (r"\.get!", ".get!"),
+    (r"(?<=[A-Za-z0-9_'\]])(?<!panic)!(?!=)", "`!`-accessor (R4)"),
+    (r"\bunsafe\b", "unsafe (R4)"),
+    (r"\bopaque\b", "opaque (R4)"),
+    (r"\bimplemented_by\b", "@[implemented_by] (R4)"),
     (r"\.toOption", ".toOption"),
 ]
 
@@ -101,6 +154,8 @@ for p in sorted(files):
     src = re.sub(r"/-.*?-/", lambda m: "\n" * m.group(0).count("\n"), src, flags=re.S)
     for n, line in enumerate(src.splitlines(), 1):
         code = line.split("--")[0]
+        code = CHAR_LIT.sub("''", code)
+        code = INTERP.sub(lambda m: m.group(1) + " ", code)
         for pat, name in BANNED:
             if re.search(pat, code):
                 print(f"{p}:{n}: banned: {name}")

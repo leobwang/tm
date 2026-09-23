@@ -11,7 +11,7 @@
 //!   human line `tm: …` on stderr;
 //! * **error/json** — the same exit code and stderr is one JSON document
 //!   carrying the documented error keys (`ok:false`, `kind`, `message`,
-//!   `exit_code`) — `out::ErrorDoc`'s shape, the one `cli_errors.rs` pins
+//!   `exit_code`) — `out::ErrorOut`'s shape, the one `cli_errors.rs` pins
 //!   field-by-field for a sample; this matrix pins that *every verb's*
 //!   failure reaches it.
 //!
@@ -132,7 +132,7 @@ const CASES: &[Case] = &[
     Case { verb: "tui", ok: &[], err: &["tui"], ..C },
 ];
 
-/// stderr parsed as the one JSON error document `out::ErrorDoc` emits.
+/// stderr parsed as the one JSON error document `out::ErrorOut` emits.
 fn err_doc(verb: &str, stderr: &str) -> Value {
     serde_json::from_str(stderr).unwrap_or_else(|e| {
         panic!("[{verb}] --json error is not one JSON document ({e}): {stderr:?}")
