@@ -55979,3 +55979,359 @@ dependency; `lean-toolchain` and `kernel/corpus/` untouched; no `sorry`,
 a saved copy in the same command sequence and `git diff --stat` was checked
 empty afterwards. Both `w25-a` and `w25-g` worktrees are removed;
 `.claude/worktrees/stage5-lookahead` is untouched.
+
+<!-- =====================================================================
+     APPENDED 2026-09-22: stage 6 (the planner), run **W-25**, the **REPAIR
+     step**.  Fixes what W-25's two independent auditors found.  This block's
+     gap range is **1525-1539**; it takes **1525-1533** and leaves
+     **1534-1539** free.  Parity: **none issued** — `python3 parity.py`
+     prints `next free P40`, and nothing here diverges from the fork.
+     ===================================================================== -->
+
+## Stage 6 — W-25, the repair step: both of this run's new gates were blind to their own class
+
+Nine findings were filed, six by the reuse critic and five by the audit (two are
+the same defect seen from two sides). Every one was reproduced before it was
+touched. **Six are fixed, one is fixed WIDER than filed, one is REFUTED in its
+explanatory half and kept in its factual half, and two are recorded by name.**
+
+### 1. What landed
+
+| commit | what |
+|---|---|
+| `cf985ef` | check 8's sixth enumeration hole, and six shapes check 10 went green on |
+| `d4e1513` | the oracle's third copy of the generator deleted; three fuzz arms get a denominator; one census printed |
+| this one | the ledger |
+
+### 2. The sixth level of the enumeration hole — and it is a CHECKER DATA FILE
+
+`kernel/citations.py`'s `CHECKERS` is a hard-coded name list. It was repaired
+for the Lean at gap **1314** (the library root) and for the Rust at gap **1418**
+(`tm/examples`) and never for the checkers' own data. W-25 track A then added
+one — `kernel/parity.txt`, check 10's index, 77 lines carrying 40+ backticked
+spans — beside `mutations.txt`, and did not add it here.
+
+DRIVEN, in a `git archive HEAD` scratch copy:
+
+```text
+$ printf '# A sentence about `Look.zzz_no_such_thing`.\n' >> kernel/parity.txt
+$ python3 citations.py
+33738 citations, 32073 resolved, 1665 allowed (134 vocabulary, 351 counted), 0 allow entries unused   rc=0
+
+$ # the byte-identical line in mutations.txt:
+  mutations.txt:301  Look.zzz_no_such_thing  (resolves to nothing)                                    rc=1
+```
+
+**And the file already carried two live over-cap citations.** Adding it put
+`read_to_string` at 3 against a cap of 2 and `saturating_add` at 7 against 6 —
+two citations nobody had counted, at `citations-allow.txt`'s section 4
+(GRANDFATHERED). Both are **opened**, which is the move that file's own header
+prescribes, and neither was a defect: each names a Rust `std` function of the
+FORK — section 1's own subject, where `saturating_sub` was already sitting one
+line up. Every citing sentence was read (README's P5/P17 rows, design §17's
+table and three superseded drafts, `parity.txt`'s own P5 and P13,
+`tm/tests/support/replay.rs`, `tm/tests/log_regressions.rs`,
+`tm/tests/cli_check_log.rs`, `kernel/design/stage5/inventory.md`); none was
+stale. **The cost is declared in the file**: the ratchet on those two names is
+gone, and the alternative — a cap bumped by one — is what that header calls the
+way it stops being worth reading.
+
+The dead `--gate` citation the audit found in `parity.txt`'s header is real and
+is repaired with it: `parity.py`'s `main(argv)` never reads `argv`, and
+`python3 parity.py --no-such-flag-at-all` prints the same line and exits 0.
+Check 8 could never have caught it — `CITED` requires a letter at the head, so a
+`--flag` is not a citation, which is a blind spot of check 8 that this instance
+makes concrete.
+
+After: `parity.txt:95  Look.zzz_no_such_thing` rc=1; the same plant in
+`citations-allow.txt` stays green, by the decision `citations.py`'s header
+already declares.
+
+### 3. Check 10 went green on SIX shapes, all driven, all now rc=1
+
+The parity gate landed at W-25 track A. Its own docstring names three idioms and
+three blind spots. Six more were found by planting against it:
+
+| shape | before | after |
+|---|---|---|
+| `parity entry P40` in README.md — the **third idiom**, declared legitimate and never swept | green, `next free P40` | `README.md:55982 cites parity P40 and the index has none` |
+| `  \| **P41** \|` (two-space indent) | green | caught |
+| `\|**P41**\|` (no spaces round the pipes) | green | caught |
+| `   **Parity P41 taken**` (indented issuance) | green | caught |
+| `**Parity P41 taken**` in a file the index does not name | green (gap **1470**, and filed narrower than the hole: it named a ROW) | caught in `design/stage6/…`, in `AGENTS.md`, in `mutations.txt`, in `check.sh`, in a `.txt` and in a `.org` file |
+| `hole P40 retired by the owner` | `next free P40` — the number the index RETIRES | `next free P41` |
+
+The third idiom is the one that matters most: it is gap 1417's own failure
+(taking a number already in use), reached through the one spelling **P36** is
+anchored by. The indentation one is the one this ledger's prose actually
+produces — every gap block is a numbered list whose continuation lines are
+indented three spaces.
+
+**The file set is a WALK now, not a name list**: `leanfiles.source_files` over
+every file in the repository, 591 of them, the same enumeration and prune rule
+checks 2, 3, 8 and 9 use. A **three-suffix draft of that repair was itself a
+name list** and four plants walked straight through it —
+`design/stage6/notes.txt`, `notes.org`, `mutations.txt` and `check.sh`. That is
+recorded because it is the seventh time this campaign has met the shape, in the
+repair for the sixth.
+
+`P0` is no longer a parity number (`[1-9][0-9]*`), which is what lets the walk
+read §14.2's step table at all; and the five files whose `| P<n> |` rows mean
+something else now carry a `not-row <path>  <why>` line the gate reads. **Two of
+those five were named in prose and the walk found five**: `design-proof.md` and
+`design-latency.md`'s row tables were not on the list. `taken` and `cite` are
+swept in all five regardless.
+
+### 4. The oracle held a THIRD copy of the item-line generator
+
+`tm-core/tests/grammar_common/mod.rs` says the W-25 move makes *"the kernel sees
+what the fork's proptest sees"* **a fact about one file rather than a claim
+about two that drift**. It was false as written.
+`kernel/tm-kernel-ffi/examples/oracle/src/main.rs` carried the same ten
+strategies — diffed with `pub ` and comments stripped, they differed by **one
+comment line and nothing else** — and both comments pointing at that copy
+(`main.rs`'s Modes list and the banner over it) named
+`grammar_proptest.rs`, which by then held no strategy at all. That copy is the
+**D21/D22 comparand's own generator**, `gen <n> <seed>`, T5's oracle. Nothing
+had diverged; what was gone was the trail.
+
+**Deleted, not guarded.** `build-oracle.sh` copies the shared module into the
+fork-point checkout (which predates it, so the oracle cannot reach it from
+there) and **fails by name** if it is missing. The code under test stays
+`4748911`'s; only the SAMPLER is shared, which is what makes the three readers
+comparable at all.
+
+```text
+before:  tm-oracle gen 5 1    11fb871ad4d5491cfbe3c44ad6db6c56
+         tm-oracle gen 512 7  6603caf8e00f2a462555135abc98a35b
+after:   tm-oracle gen 5 1    11fb871ad4d5491cfbe3c44ad6db6c56
+         tm-oracle gen 512 7  6603caf8e00f2a462555135abc98a35b
+```
+
+`tm/tests/one_generator.rs` is what stops a fourth. It walks **every** `.rs`
+file in the repository — `srcwalk::every_rust_file`, `leanfiles.py`'s prune rule
+ported rather than invented, instead of a fourth root typed in beside
+`sources()`' three — and asserts one file defines the ten names, in both
+directions (a rename empties the needle and fails). Six plants, each recorded in
+the file's own header: four caught, one green **on prose and meant to be**, and
+**one went green on my first draft** — deleting the `cp` line left
+`script.contains(HOME)` matching the *comment above the command*. The script is
+read as code now. That is W-24 track P's gap 1324 shape, met again in the same
+kind of place.
+
+### 5. Three fuzz arms had two silent-pass channels and no denominator
+
+`tm/tests/kernel_item_grammar.rs`' three editing arms opened with
+
+```rust
+let Some((addressed, id)) = addressable(&text) else { return Ok(()) };
+```
+
+which is a silent **pass**, not a `prop_assume!`, so it was charged neither to
+`max_global_rejects` nor to any count; and every arm's `Kernel::Refused(name) =>
+prop_assert!(declared(&name))` branch passes without comparing a byte. The
+refusal census is per **class**, not per arm, so it could not answer how many
+cases of any one arm reached a comparison — and this README's own block states
+the arm compares *"byte for byte"* at 100,000 cases × 4.
+
+Each arm now counts `[drawn, addressable, compared]`, asserts a floor **inside
+the arm** (race-free — the shape `planner_invariants.rs` grew for this exact
+reason) and prints the census. MEASURED at `TM_PROPTEST_CASES=4096`,
+`--test-threads=1 --nocapture`:
+
+```text
+the_two_editors_write_the_same_drop             [8176, 4104, 1561]   19.1%
+the_two_editors_write_the_same_keyed_edit       [8344, 4104, 2064]   24.7%
+the_two_readers_agree_on_which_lines_are_items  [9924, 4104, 3656]   36.8%
+```
+
+`drawn` exceeds `cases` because a rejected case is re-drawn. The floor is one in
+ten — about half the lowest rate. **Driven red**: forcing one arm never to reach
+its comparison gave `the_two_editors_write_the_same_keyed_edit compared [84, 53,
+0]`, 1 failed.
+
+`tm/tests/planner_invariants.rs`' census was **write-only** — asserted on, never
+printed — while W-25's track P block quotes four numbers from it as MEASURED. It
+prints from inside the arm now (the one place it can be read without racing the
+arm that fills it), so a command in the committed tree reproduces them:
+
+```text
+$ TM_PROPTEST_CASES=1024 cargo test --test planner_invariants -- --nocapture \
+    the_kernel_reads_every_day_the_fork_planned
+planner_invariants census: 1035 cases, 11477 rows compared, note-hole 2312, est-hole 540
+```
+
+against the block's 1,035 / 11,611 / 2,311 / 571. **The case count is exact**
+(1,024 plus the eleven tracked regression seeds); the other three are a
+run-to-run band, because proptest seeds each run afresh. Gap **1532**.
+
+### 6. What is REFUTED, and what is recorded rather than fixed
+
+**REFUTED in its explanatory half — `tm review day`'s rule is not unknown, it is
+proved.** The audit reports three readers of one log picking the arrive "by
+three different rules (physical order, timestamp order, and whatever review
+does)". Reproduced on the shipped binary, and the fact half stands: after the
+same sweep of back-dated `tm arrive lounge --at`, `day/2026-09-22.md` and `tm
+plan` say `window 21:06–21:06` (the physical tail) while `tm review day` says
+`window 08:00–16:00`. But review is not doing "whatever": 08:00 is the **first**
+arrive, and first-arrive-wins is the kernel's stated C5 rule
+(`Replay.lean`, *"the first `arrive` sets the arrival, location, window and
+budget; every one changes the location"*) with a theorem beside it,
+`a_day_keeps_its_first_arrival_its_highest_replans_and_its_last_plan`. The audit
+also reported review showing the *second-to-last* arrive's window; that is not
+what it does. What survives is real and is gap **1530**: the runtime state
+(last-write-wins) and the replay (first-arrive-wins) are two deliberate rules,
+and no surface says which one it is quoting.
+
+**Recorded, not fixed — the segment-free hole.** Reproduced on the shipped
+binary at a fresh `tm init --example`: `tm plan --json` walks
+`21:06-21:26 routine`, then `GAP 21:26 -> 21:30`, then `21:30-22:00 wind-down`,
+and the rendered plan shows the same two rows with nothing between them.
+`tm/tests/planner_invariants.rs` has `fn overlaps` and **no contiguity or
+coverage property at all**, and §8.3's list asserts no OVERLAP and says nothing
+about a HOLE, so the class is invisible to the fuzz and to the kernel
+comparison alike (the kernel is handed the segments the fork produced, holes and
+all). **The audit's asymmetry half was NOT reproduced and is NOT refuted**: its
+case is a `break_min` gap between two REST slots that would be a row between two
+BLOCKS, and this example tree at today's date drops every candidate, so no rest
+slot could be reached. Gap **1529**.
+
+**Recorded — the two R2 commit subjects overstate.** `grep -c tm_kernel_ffi
+tm-core/tests/grammar_proptest.rs` is **0**, and `63d0fc6`'s subject is *"the
+grammar proptest reads both parsers — R2"*; what it did was move the generators
+and add `tm/tests/kernel_item_grammar.rs`, which is where the FFI calls are.
+`c1dd68b` — *"the invariants' generated days go through the kernel — R2"* —
+reaches the kernel's EMIT ROWS, never its planner. Both files' own headers say
+so at length and name gap 1431; the defect is only in the subject lines, which a
+later reader greps before reading a header. A commit message cannot be rewritten
+on a shared branch, so this is the correction. Gap **1528**.
+
+### 7. Gaps
+
+1. **Gap 1525.** *What is not done.* `citations.py`'s `CHECKERS` is still a name
+   list — `check.sh`, `mutations.txt`, `parity.txt` typed out plus a
+   `kernel/*.py` glob. *Why.* There is no property that says what makes a file a
+   checker's data: a `.txt` under `kernel/` is `citations-allow.txt`
+   (deliberately excluded, for the reason its header gives) as easily as it is
+   `mutations.txt`. *What it costs.* A checker data file added tomorrow beside
+   these three is unswept, which is exactly how this one was found. *Which stage
+   clears it.* Whichever writes the fourth one; the fix is a rule, not a line.
+2. **Gap 1526.** *What is not done.* Check 10 still goes green on a register ROW
+   inside one of the five `not-row` files, and on an issuance quoted inside
+   backticks. And it has a false positive in the safe direction: inline code
+   cannot cross a newline, so a backtick span WRAPPING a line leaves half a
+   quoted issuance reading as a citation — `check.sh`'s own check-10 comment hit
+   this and was reworded rather than exempted. *What it costs.* A genuine entry
+   recorded in a superseded-draft file is invisible. *Which stage clears it.*
+   None; the draft files are the reason, and deleting them is the real fix.
+3. **Gap 1527.** *What is not done.* `one_generator.rs` cannot see a strategy
+   assembled by a macro, one under an eleventh name (its list is a vocabulary,
+   AGENTS §5.2), or one in a dot-directory — `pub fn ws()` planted under
+   `.claude/` went green, by the prune rule, which is how a worktree stays out
+   of the tree's own guards. *Which stage clears it.* None planned.
+4. **Gap 1528.** The two R2 commit subjects. §6 above; the correction is the
+   deliverable.
+5. **Gap 1529.** *What is not done.* The planned day can contain a segment-free
+   hole and nothing forbids one: `planner_invariants.rs` has `overlaps` and no
+   contiguity or coverage property. *Why not fixed here.* Adding the property
+   turns the suite RED on `tm init --example` alone, and the emission rule that
+   would close it lives in `tm-core/src/planner.rs`, which **R3 deletes** (D34;
+   gaps 113/114/116 stay open and whole). *What it costs.* A reader of the day
+   file sees minutes unaccounted for, and no gate can tell a legitimate leftover
+   from a break emitted by nothing. *Which stage clears it.* R3, with the
+   planner — the property belongs in §8.3's list beside "no overlap", and its
+   statement must distinguish a tail remainder from an inter-slot break.
+6. **Gap 1530.** *What is not done.* The day file and `tm plan` report the
+   runtime state's window (last arrive wins); `tm review day` reports the
+   replay's (first arrive wins, kernel C5, proved). Neither surface says which.
+   *What it costs.* On a log whose physical order and timestamp order differ —
+   `--at`, §13's own flag — two surfaces of one day disagree by hours and a
+   reader cannot tell which is the answer. This is the **P18/P19 class** in a
+   third reader. *Which stage clears it.* Whichever makes the window a named
+   fact of one reader (D9's own direction).
+7. **Gap 1531.** *What is not done.* `tm/tests/kernel_item_grammar.proptest-regressions`
+   gained `cc eb4b38e… # shrinks to (text, _stateful) = ("- A", false), which = 0`.
+   **It is KEPT (D46) and it is NOT a kernel-vs-fork disagreement**: it was drawn
+   by the deliberately sabotaged arm while the new floor was driven red. It
+   costs one extra case per run. Recorded so a later reader does not chase it.
+8. **Gap 1532.** *What is not done.* `planner_invariants`' four census figures
+   are a run-to-run band, not a reproducible number; only the case count is
+   exact. Quote them as a range (AGENTS §5.11, and the T11 convention). *Which
+   stage clears it.* One that pins the arm's seed — which trades D46's point
+   away, so it is a decision, not a fix.
+9. **Gap 1533.** *What is not done.* `srcwalk::sources()` is still a three-root
+   name list. *Why.* It answers a different question — what is linked into the
+   shipped binary — and widening it would change `one_padder` and `one_renderer`
+   semantics. *What it costs.* Its own blind-spot sentence is the only record
+   that a padder or renderer in a `tests/` or `examples/` file is invisible to
+   those two guards. `every_rust_file()` is beside it now for guards that want
+   the whole tree.
+
+### 8. Acceptance
+
+```text
+$ cd kernel && ./check.sh                    # capped, all ten
+lake build TmKernel:static                     ok
+totality check                                 ok
+axiom audit (5022 theorems)                    ok
+Negative.lean rejected                         ok
+cargo test (Rust -> C shim -> Lean)            ok  (93 tests)
+corpus round trip                              ok  (29/37 files and 4/5 whole plans round-trip byte-identically)
+stage goals                                    ok  (9 outstanding, all stage 6)
+prose citations                                ok  (33793 citations, 32115 resolved, 1678 allowed (137 vocabulary, 349 counted), 0 allow entries unused)
+new definitions mutated                        ok  (165 new or changed since 86c4dc6, 165 rostered (46 unfoldable, 27 witness fixtures, 8 pinned by nothing; 1 literal), 0 owed, 31 pin site(s) still a bare line number)
+parity register                                ok  (39 registered (P1-P39), 39 anchor(s) re-resolved in 3 file(s) (1 cite, 37 row, 1 taken), 592 file(s) swept for 54 register row(s) (5 not-row), 285 citation(s) and 1 canonical issuance line(s), next free P40)
+
+$ cargo test --workspace                     # FOUR runs, identical, tree clean after each
+result lines: 85 passed: 1441 failed: 0 ignored: 9
+result lines: 85 passed: 1441 failed: 0 ignored: 9
+result lines: 85 passed: 1441 failed: 0 ignored: 9
+result lines: 85 passed: 1441 failed: 0 ignored: 9    # the fourth, before this block was committed
+
+$ cargo test -p tm --test cli_switch_acceptance --test cli_latency --test kernel_call_counts \
+      --test one_padder --test one_renderer --test kernel_row_cells --test one_generator
+cli_latency              5 passed; 0 failed; 1 ignored      (at load average 3.98 — gap 1333's threshold not met)
+cli_switch_acceptance   16 passed; 0 failed
+kernel_call_counts       2 passed; 0 failed
+kernel_row_cells        26 passed; 0 failed
+one_generator            2 passed; 0 failed
+one_padder               9 passed; 0 failed
+one_renderer            25 passed; 0 failed
+```
+
+**Check 8's figure is moved by the block that quotes it**, which W-25 track A
+recorded at `e96d79e` and which happens again here: 33,771 was the count with
+every code change in and this block NOT yet written, and 33,793 is the count
+with the block on disk — 22 citations of this section's own prose. The line
+above is the second, re-run after the append; the first is kept in this sentence
+so both are one measurement each (AGENTS §5.11).
+
+**Deltas against the brief's `d6e514c` baseline, every one explained.** The
+baseline is two merges and four commits behind HEAD, so most of the movement is
+W-25's own landed work and not this step's: audit **4,979 → 5,022** theorems and
+corpus 29/37 + 4/5 unchanged are the merges'; burn-down **9, all stage 6**,
+unchanged. Check 8 **32,986 → 33,793** citations: the merges, plus this step's
+own prose, plus `parity.txt` entering the sweep. Its allow counts move
+**134 → 137 vocabulary** (`saturating_add`, `read_to_string`, `prop_assume!`)
+and **351 → 349 counted** (the first two leaving section 4), with **0 entries
+unused** throughout. Check 9 is identical to HEAD's (165 rostered, 0 owed, 31
+bare pin sites) — this step adds no Lean definition. Check 10 reads **592 files
+instead of 3** and prints the same 54 register rows. `cargo test --workspace`
+**1,431 → 1,441**: the merges, plus `one_generator`'s 2.
+
+**The burn-down is 9, all stage 6, and nothing here touched `Goals.lean`.** No
+Lean file changed in this step at all; §14.4's **R3** is still the critical
+path and **D27 stays blocked** (gaps 113, 114, 116 and gap 301's item 1 are
+open and whole, and nothing here claims any).
+
+Every `cargo`, `check.sh`, `python3`, `parity.py`, `citations.py` and `tm`
+invocation ran under `systemd-run --user --scope -p MemoryMax=40G -p
+MemorySwapMax=0 --quiet`, and `build-oracle.sh` under the same with 16G. No
+predicate, assertion, law or gate was weakened; **a gate was widened six times
+and a cap was never bumped**; no snapshot, fixture, latency band or corpus was
+re-blessed; no new dependency; `lean-toolchain` and `kernel/corpus/` untouched;
+no `sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor
+or `.toOption` added. Every plant made to drive a gate was reverted from a saved
+copy or a scratch archive in the same command sequence, and `git status` was
+checked clean afterwards — except the `.proptest-regressions` line, which D46
+says is a finding and is kept (gap 1531).
