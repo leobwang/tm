@@ -892,12 +892,12 @@ running).  So the design's restatement, ported verbatim, would exclude the inter
 keep the row it was written to exclude.  README gaps 1500-1503.
 
 
-**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Seven runs have discharged none
-and said so honestly.  The list was written at W-24, re-verified at W-25 and **re-verified
-again at W-26**, item by item, against the tree rather than against the previous run's prose;
-no entry moved this time, and every blocker below was re-checked by the command the W-26
-README block records.  **None of the nine is reachable today**, and the reasons are two steps
-and one edit:
+**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Eight runs have discharged none
+and said so honestly.  The list was written at W-24, re-verified at W-25 and W-26, and
+**re-verified again at W-28 against what W-27 changed** — item by item, against the tree rather
+than against the previous run's prose; **no entry moved**, and every blocker below was
+re-checked by the command the W-28 README block records.  **None of the nine is reachable
+today**, and the reasons are two steps and one edit:
 
 1. `plan_does_not_overbook` — **P5**.  Refuted above; reachable when step 5's fold puts Block
    rows at or after `now` into the day, which is what gives the surviving restriction a
@@ -944,35 +944,63 @@ and one edit:
    this tree can build, over the three rows that had settled, and it holds.
 
 **AND THE R3 AXIS, WHICH IS THE ONE THE LIST DID NOT CARRY** (W-26, asked for by R3's own
-brief).  **Not one of the nine is downstream of R3.**  Step R3 deletes the fork's planner in
-Rust with its last caller; it adds no row to `Planner.dayRows`, fills no field of
-`Planner.Diagnostics`, and declares no predicate.  So every entry above is *reachable before
-R3* — the blocker is the same one edit and the same two steps whether R3 has happened or not —
-and **none of them is made reachable by R3**.  A run planning R3 should take nothing from this
-list except that it is not waiting on it.
+brief; **re-verified at W-28**).  **Not one of the nine is downstream of R3.**  Step R3 deletes
+the fork's planner in Rust with its last caller; it adds no row to `Planner.dayRows`, fills no
+field of `Planner.Diagnostics`, and declares no predicate.  So every entry above is *reachable
+before R3* — the blocker is the same one edit and the same two steps whether R3 has happened or
+not — and **none of them is made reachable by R3**.  A run planning R3 should take nothing from
+this list except that it is not waiting on it.
 
-**What R2 changed, checked rather than assumed.**  R2's landed half put the kernel's *cells* on
-the wire (`EmitWire.callExport`, `tm/tests/kernel_row_cells.rs`) and its item-line generators
-behind one reader.  Neither reaches `Planner.dayPlan`: `Emit.rowsOf` is the library's only
-caller of it and no wire function calls `Emit.rowsOf` — `EmitWire.rowsOfReq` renders the
-segments the **host** sent.  So R2 as landed moved no entry above, and the sentence below about
-`Planner.dayRows` is unchanged at W-26.
+**D48 did not move that column either, and W-28 checked rather than assumed it.**  The wire R3
+used to own is R2's now, and W-27 landed its REQUEST half; R3 is purely the deletion.  What R3
+*is* owed is not a goal above but a **statement**: §8.3's segment-free hole (README gap 1529),
+which `PlanCheck.holeFree` states and `PlanCheck.holeFreeFrom` states with its leading blind
+spot closed, and which is deliberately not in `PlanCheck.checksOf` because the emission rule
+that would make it true lives in the Rust planner R3 deletes (gap 1621).
 
-**What D48's other half will change, and it is about the ORDER of the edit, not about any of
-the nine.**  D48 moves the planner's wire into R2.  The moment it lands, `Planner.dayPlan` has
-a caller across the FFI and the `Planner.dayRows` edit below stops being unobserved — the
+**What R2 changed, checked rather than assumed, at BOTH of its landed halves.**  R2's first
+half put the kernel's *cells* on the wire (`EmitWire.rowsOfReq`, `tm/tests/kernel_row_cells.rs`)
+and its item-line generators behind one reader.  W-27's second half (D48) put the planner's
+**inputs** on it: `PlanWire.readPlannerSection` decodes `state`, `routines` and `overrides`,
+`PlanWire.readBatchMaxMin` decodes §16's fifth `[priority]` key, and `PlanWire.callExport` is
+now the package's one export.  **Neither half reaches `Planner.dayPlan`**, and the W-28 sweep
+says so by name: `Emit.rowsOf` is still the library's only caller of `dayPlan`; no wire function
+calls `Emit.rowsOf`; and `PlanWire`'s own ten mentions of `dayPlan` are every one of them prose.
+`PlanWire.runPlanner_with_a_readable_section_answers_as_runRows` is the kernel's own statement
+of the same fact — a section that decodes changes no byte of the answer.  So R2 as landed,
+**both halves**, moved no entry above, and the sentence below about `Planner.dayRows` is
+unchanged at W-28: its body is still
+`sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++ restRows).map
+segOf)`, with no row of step 5's in it.
+
+**What D48's REMAINING half will change, and it is about the ORDER of the edit, not about any
+of the nine.**  The RESPONSE half (README gap **1667**) builds a `Planner.PlanReq` from the
+decoded values and emits `dayPlan`'s seven keys.  The moment it lands, `Planner.dayPlan` has a
+caller across the FFI and the `Planner.dayRows` edit below stops being unobserved — the
 invariants suite compares the kernel's day to the fork's.  The six entries that wait on that
 edit become reachable when the edit is made, wire or no wire; what the wire decides is whether
 making it is instrumented or blind, and this campaign's own evidence (D19, and the stage-5
 switch that took four runs) is the argument for instrumented.
 
-**A tenth thing the lift now waits on, and it is not a goal.**  W-26 named §6.1's fourth and
-last axis: `PlanCheck.DecoderPays`, the request decoder's four clauses, three decidable `Bool`s
-and one `Nat` comparison (README gap 346).  Exactly one of the four has a caller
-(`PlannerWit.mkPlanReq?_ok_wallsAgree`); `PlannerWit.the_builder_accepts_a_running_block_it
-_never_checked` proves that a second one provably cannot, at **every** request the builder
-accepts, because `PlannerWit.mkPlanReq?_ignores_state` shows it never reads the field.  D48
-puts that same field on the wire in R2, so the axis and the wire are one obligation.
+**A tenth thing the lift waits on, and it is not a goal — and W-28 moved it.**  W-26 named
+§6.1's fourth and last axis: `PlanCheck.DecoderPays`, the request decoder's four clauses, three
+decidable `Bool`s and one `Nat` comparison (README gap 346), and measured **one of the four**
+with a payer (`PlannerWit.mkPlanReq?_ok_wallsAgree`).  **There is no fifth axis**:
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` has exactly four hypotheses, one per
+axis, and `PlannerWit.the_eleven_hold_with_every_axis_named` fires it at `theCensusRequest`.
+
+W-27's wire pays a **second** clause.  `PlanWire.readActive` reads `state.active` through
+`Planner.mkActive?` — the constructor `Planner.PlanReq.activeAgrees` is defined against — so
+`PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause` discharges the clause
+`PlannerWit.the_builder_accepts_a_running_block_it_never_checked` proves the *builder* never
+can.  The decoder census is **two of four**.  Of the other two: `day` is unpaid because nothing
+calls `Look.mkDayCfg?` (README gap 1623), and `nowCal` is **one second short rather than
+unchecked** — `PlannerWit.an_at_the_wire_accepted_is_inside_the_calendar` gives
+`now.sec < LogStamp.yearEnd` from the wire's own constructor, the clause wants
+`now.sec + 1 < LogStamp.yearEnd`, and
+`PlannerWit.the_instant_bound_is_one_second_wider_than_the_now_clause` exhibits the single
+instant between them.  The `active` payer's hypothesis has **no caller** until D48's RESPONSE
+half builds a `PlanReq` from the wire's values, so the axis and that half are one obligation.
 
 **Six of the nine wait on ONE edit, and it is not a proof.**  `Planner.PlanReq.assignFold`,
 `Planner.PlanReq.finalAssign`, `Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow`

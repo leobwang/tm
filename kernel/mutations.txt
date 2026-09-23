@@ -361,3 +361,5 @@ befa4149ef75 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.noteJson default PlanWi
 e184ce9a3ec8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.idsJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
 1c38f6a51fa9 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.diagJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
 ae0de0f2010f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.priosJson default PlanWire.lean:1363 priosJson_is_the_id_and_the_priority
+53b1ea5fd38f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.coveredAt true,false PlanCheck.lean:3901 coveredAt_iff; PlanCheck.lean:3901 coveredAt_iff
+84966629ecd5 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.holeFreeFrom true,false PlanCheck.lean:3930 holeFreeFrom_iff; PlanCheck.lean:3930 holeFreeFrom_iff

@@ -2,6 +2,7 @@ import TmKernel.Boundary
 import TmKernel.PlanCheck
 import TmKernel.Emit
 import TmKernel.Recur
+import TmKernel.PlanWire
 /-!
 # A `PlanReq` that can be written down, and the four witnesses it unblocks
 
@@ -9,16 +10,15 @@ Stage 6, track W (run W-15).  README **gap 348**: *"no `PlanReq` can be built in
 `Planner.lean`, so the wall laws have no end-to-end witness"* — and the W-14 repair step made
 that gap the blocker for three others (366, 393's witness half, 396).  This module is gap 348
 item 4's second option, taken by name: *"a small `PlannerWit.lean` importing `Boundary` and
-`Planner`"*.  It imports `Boundary` for `loadPlan` and `PlanCheck` for the battery.
+`Planner`"*.  `Boundary` for `loadPlan`, `PlanCheck` for the battery, `PlanWire` since W-28.
 
 **What imports it, measured (W-17, track G).**  The sentence that stood here said *"nothing
 imports it, so no shipped path grows"*, and the first clause is **false as written**:
 `TmKernel/TmKernel.lean:82` carries `import TmKernel.PlannerWit`, put there in the same commit
 that created this module (`3096320`) because AGENTS §9.2 lists *"a new module that is never
 imported into `TmKernel/TmKernel.lean`"* among the disguised gaps — it would look built and
-check 1 would agree.  `Check.lean`, `Negative.lean` and `Goals.lean` reach it from there
-through `import TmKernel`, which is what puts its 64 audit lines under check 3 and its
-`decide` witnesses under check 1.
+check 1 would agree.  `Check.lean`, `Negative.lean` and `Goals.lean` reach it through
+`import TmKernel`, which puts its 292 audit lines and `decide` witnesses under checks 3 and 1.
 
 What is true, and is what the sentence meant, is that **no library module imports it**:
 `grep -l 'import TmKernel.PlannerWit' TmKernel/TmKernel/*.lean` is empty, so it is a leaf of
@@ -28,8 +28,8 @@ exists to *evaluate* the planner on concrete requests, so anything that imported
 importing 40 000-`maxRecDepth` witnesses into its own elaboration.  A module nothing imports
 is weaker evidence than a driven verb (AGENTS §5.6) — and the honest reading of that rule here
 is that these witnesses are evidence about the **kernel's own output**, not about the binary:
-`dayPlan` has no shipped caller at all yet (README gap 501's sibling — there is no planner op
-on the wire), so no witness in this file can be driven from `tm` until the wire carries one.
+`Planner.dayPlan` has no shipped caller yet — W-27 put the planner's *inputs* on the wire and
+left the answer `EmitWire.runRows`' (gap 1667) — so none can be driven from `tm` until R2 ends.
 
 ## Why a module and not a witness inside `Planner.lean`
 
@@ -5855,6 +5855,193 @@ theorem the_hole_property_is_not_one_of_the_eleven :
       PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 ∧
       PlanCheck.holeFree theCensusRequest (dayPlan theCensusRequest) = false :=
   ⟨rfl, by decide, by decide⟩
+
+
+/-! ############################################################################
+## 26. W-28: the DECODER axis's second clause acquires a payer, and it is the WIRE's
+############################################################################
+
+W-26 named §6.1's fourth and last axis (`PlanCheck.DecoderPays`) and measured it: of its four
+clauses **exactly one** had a payer (`mkPlanReq?_ok_wallsAgree`), and a second *provably could
+not* have one from the builder in this tree, because `mkPlanReq?_ignores_state` shows that
+builder never reads `Planner.RuntimeIn` at all.
+
+**W-27 landed a different decoder and it pays that second clause.**  `PlanWire.readActive`
+reads `state.active` **through `Planner.mkActive?`** — the smart constructor
+`Planner.PlanReq.activeAgrees` is defined against — so a block the wire accepts is one
+`mkActive?` built, and `a_request_whose_state_the_wire_read_pays_the_active_clause` is
+`PlanCheck.DecoderPays`' `active` field discharged from the wire rather than assumed.  The
+decoder census is **two of four**, not one.
+
+**What that does NOT mean, said here rather than found later.**  `PlanWire.runPlanner` decodes
+the section and then **discards it**: `PlanWire.runPlanner_with_a_readable_section_answers_as
+_runRows` is the theorem that says the answer is unchanged, and D48's RESPONSE half (README gap
+1667) is what builds a `Planner.PlanReq` from these values.  So the hypothesis of the theorem
+below — *this request's `state` is what the wire read* — has **no caller in this tree yet**, and
+becomes live the moment that half lands.  It is a payer in waiting, and the waiting is one
+step, not one proof.
+
+This module now imports `TmKernel.PlanWire`.  It is still a leaf: `grep -l 'import
+TmKernel.PlannerWit' TmKernel/TmKernel/*.lean` is empty, which is the property its header
+claims, and importing one more module does not touch it. -/
+
+/-- **A block the wire accepts is one `Planner.mkActive?` built.**  Every successful path of
+`PlanWire.readActive` ends at that constructor, so its answer carries `Planner.ActiveBlock.wf`
+whether or not anyone checks it again. -/
+theorem readActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v : JVal)
+    (a : ActiveBlock) (h : PlanWire.readActive now v = .ok a) :
+    ActiveBlock.wf now a = true := by
+  unfold PlanWire.readActive at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  repeat' split at h
+  all_goals first
+    | (rename_i w _; exact (Except.ok.inj h) ▸ w.property)
+    | exact absurd h (by simp)
+
+/-- The same through the optional reader: an absent `active` is nothing running, and a present
+one went through `PlanWire.readActive`. -/
+theorem readOptActive_answers_only_a_block_mkActive_built (now : Cal.Instant) (v : JVal)
+    (a : ActiveBlock) (h : PlanWire.readOptActive now v = .ok (some a)) :
+    ActiveBlock.wf now a = true := by
+  unfold PlanWire.readOptActive at h
+  split at h
+  · exact absurd h (by simp)
+  · exact absurd h (by simp)
+  · rename_i w _
+    cases hr : PlanWire.readActive now w with
+    | error e => rw [hr] at h; exact absurd h (by simp [Except.map])
+    | ok b =>
+      rw [hr] at h
+      have hb : b = a := by
+        have hm : (Except.ok b : Except PlanWire.PlannerRefusal ActiveBlock).map some
+            = Except.ok (some b) := rfl
+        rw [hm] at h; simpa using h
+      exact hb ▸ readActive_answers_only_a_block_mkActive_built now w b hr
+
+/-- **The `state` section's `active` field is the optional reader's answer** — the one step of
+the do-block this run needs, stated separately so the theorem below is a composition and not a
+second walk over six binds. -/
+theorem readState_reads_active (now : Cal.Instant) (sec : JVal) (st : RuntimeIn)
+    (h : PlanWire.readState now sec = .ok st) :
+    PlanWire.readOptActive now sec = .ok st.active := by
+  unfold PlanWire.readState at h
+  simp only [bind, Except.bind, pure, Except.pure] at h
+  repeat' split at h
+  all_goals first
+    | (rw [← Except.ok.inj h]; assumption)
+    | exact absurd h (by simp)
+
+/-- **A `state` the wire read carries only blocks `Planner.mkActive?` built.** -/
+theorem readState_answers_only_a_block_mkActive_built (now : Cal.Instant) (sec : JVal)
+    (st : RuntimeIn) (h : PlanWire.readState now sec = .ok st)
+    (a : ActiveBlock) (ha : st.active = some a) : ActiveBlock.wf now a = true :=
+  readOptActive_answers_only_a_block_mkActive_built now sec a (ha ▸ readState_reads_active now sec st h)
+
+/-- **`PlanCheck.DecoderPays`' second clause, paid by the wire** — the clause W-26 proved the
+*builder* can never pay (`the_builder_accepts_a_running_block_it_never_checked`).  Nothing is
+re-checked here: the obligation is met by the constructor `PlanWire.readActive` already calls,
+which is R10's *"a smart constructor its decoder actually uses"* at the one field that had no
+user. -/
+theorem a_request_whose_state_the_wire_read_pays_the_active_clause (r : PlanReq) (v : JVal)
+    (h : PlanWire.readState r.now v = .ok r.state) : r.activeAgrees = true := by
+  unfold PlanReq.activeAgrees
+  cases ha : r.state.active with
+  | none => rfl
+  | some a => exact readState_answers_only_a_block_mkActive_built r.now v r.state h a ha
+
+/-! ### And the FOURTH clause is one second short — not unchecked, short
+
+`PlanCheck.DecoderPays`' `nowCal` wants `r.now.sec + 1 < LogStamp.yearEnd`.  The wire's `now` is
+`CapWire.readAt`'s, which is a `Cal.VInstant`, so it carries `Cal.Instant.wf` — and that bound
+is `sec < LogStamp.yearEnd`, one second **wider**.  The gap is a single instant and it is
+representable, so this is not a clause the wire forgot; it is a clause the wire misses by one
+second at the very end of the calendar. -/
+
+/-- **An `at` the capacity section accepted is inside the calendar**, through the constructor
+and not through a comparison written here. -/
+theorem an_at_the_wire_accepted_is_inside_the_calendar (v : JVal) (now : Cal.Instant)
+    (h : CapWire.readAt v = .ok now) : now.sec < LogStamp.yearEnd := by
+  unfold CapWire.readAt at h
+  repeat' split at h
+  all_goals first
+    | (rename_i i _ _
+       have hw := i.property
+       unfold Cal.Instant.wf at hw
+       simp only [Bool.and_eq_true, decide_eq_true_eq] at hw
+       rw [← Except.ok.inj h]
+       unfold LogStamp.yearEnd
+       exact hw.2)
+    | exact absurd h (by simp)
+
+/-- **The two bounds differ at exactly one second, and that second is representable.**  The last
+instant `Cal.Instant.wf` admits fails `PlanCheck.DecoderPays`' `nowCal`, so a host whose `at`
+lands there decodes and the lift does not apply to it. -/
+theorem the_instant_bound_is_one_second_wider_than_the_now_clause :
+    Cal.Instant.wf ⟨LogStamp.yearEnd - 1, 0⟩ = true
+      ∧ ¬ ((⟨LogStamp.yearEnd - 1, 0⟩ : Cal.Instant).sec + 1 < LogStamp.yearEnd) :=
+  ⟨by decide, by decide⟩
+
+/-! ### §6.1's lift with all FOUR axes named, fired
+
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` had **no caller**: W-26 stated it
+and proved its fourth axis inhabited, and the two whole-day witnesses in this module still went
+through the older forms with the four clauses spelled out.  This is the same day and the same
+eleven, reached through the form whose hypotheses are four names. -/
+
+/-- **§6.1's ELEVEN on the whole day, with every axis named**: `PlanCheck.FromNowAnchored`
+(W-23), `PlanCheck.PastPays` (W-24), `PlanCheck.WallsArePlain` (W-25), `PlanCheck.DecoderPays`
+(W-26).  `the_eleven_hold_on_the_whole_day_of_a_worked_morning` is the same conclusion through
+the older, clause-by-clause form; this one is the lift a later step should call, and it now has
+a caller. -/
+theorem the_eleven_hold_with_every_axis_named :
+    PlanCheck.planOk fromNowWorkRows theCensusRequest (dayPlan theCensusRequest) = true :=
+  PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder fromNowWorkRows_is_from_now_anchored
+    theCensusRequest the_census_request_pays_the_decoder
+    (PlanCheck.WallsArePlain_of_a_plain_store theCensusRequest (dayPlan theCensusRequest)
+      the_census_request_has_a_plain_store)
+    the_paying_past_at_the_census_request
+
+/-! ### The LEADING half of gap 1620, computed on the same four days -/
+
+set_option maxRecDepth 400000 in
+/-- **The leading remainder is exactly what the new clause catches.**  `theLateStartDay` is the
+day W-26 recorded as `PlanCheck.holeFree`'s first blind spot — every row two hours after `now` —
+and it passes the old statement and fails the new one. -/
+theorem the_leading_guard_catches_the_leading_remainder :
+    PlanCheck.holeFree theCensusRequest theLateStartDay = true ∧
+      PlanCheck.holeFreeFrom theCensusRequest theLateStartDay = false := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **And the tail carve-out survives it**, which is what gap 1529's brief asked to be kept: the
+first two future rows run back to back from `now` and then the day stops, and the clause passes
+with **8 h 20 min** of the census day's own span after them — a row of the produced day stops
+30,000 seconds past this day's last row. -/
+theorem the_leading_guard_keeps_the_tail_carve_out :
+    PlanCheck.holeFreeFrom theCensusRequest theTailRemainderDay = true ∧
+      (∀ s ∈ theTailRemainderDay.segments, s.val.stop ≤ 63924583200) ∧
+      (∃ s ∈ (dayPlan theCensusRequest).segments, 63924583200 + 30000 ≤ s.val.stop) := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **D40 as a statement rather than as a gate verdict**, the form W-25 asked a later step to
+copy and W-26 copied: one day where each new definition holds and one where it does not, in one
+theorem.  No constant body of either satisfies both conjuncts, in any proof style. -/
+theorem the_leading_guard_is_not_a_constant :
+    PlanCheck.coveredAt theCensusRequest.now.sec theTailRemainderDay = true ∧
+      PlanCheck.coveredAt theCensusRequest.now.sec theLateStartDay = false ∧
+      PlanCheck.holeFreeFrom theCensusRequest theTailRemainderDay = true ∧
+      PlanCheck.holeFreeFrom theCensusRequest theLateStartDay = false := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **And the twelfth property is still not one of the eleven, with the guard on.**  The battery
+is eleven, the census is seven, and the day this kernel produces fails the stronger statement as
+it failed the weaker one — R3 is what enables either (README gap 1621). -/
+theorem the_leading_guard_is_not_one_of_the_eleven :
+    (PlanCheck.checksOf permissive).length = 11 ∧
+      PlanCheck.holeFreeFrom theCensusRequest theFutureHalfOfTheCensusDay = false := by
+  refine ⟨rfl, by decide⟩
 
 
 end PlannerWit

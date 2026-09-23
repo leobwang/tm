@@ -3864,5 +3864,83 @@ theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
     hdec.nowCal hwalls hpast
 
 
+/-! ############################################################################
+## W-28 (track G): the LEADING half of gap 1620, closed at the instant `futureHalf` already names
+############################################################################
+
+W-26 stated §8.3's twelfth property (`holeFree`) and recorded **three** things it cannot see:
+the time before the first row (`PlannerWit.the_hole_property_is_blind_to_a_leading_remainder`,
+two hours at a real request), a day with no rows at all (`holeFree_of_no_rows`), and the tail
+(`the_last_row_is_never_a_holes_subject`).  README gap **1620** priced closing them as *"a
+coverage property needs a **window** to cover, and which window is a decision nobody has
+taken"*.
+
+**Two of the three need no such decision, and this section takes them.**  The property is
+stated over `futureHalf`, whose own filter is `r.now.sec ≤ s.val.start`; so the window's
+**start** is not an open question — it is `r.now`, already chosen, already the fork's
+`assigned_set` bound.  Only the window's **end** is undecided, and the tail is gap 1529's own
+deliberate carve-out rather than an oversight.  So `coveredAt` closes the leading remainder at
+`r.now` and, in the same clause, the empty day — `List.any` over no rows is `false` — and gap
+1620 shrinks from three blind spots to one.
+
+**Nothing is weakened and nothing is enabled.**  `holeFreeFrom` is `holeFree` conjoined with one
+more clause, `holeFreeFrom_implies_holeFree` is D5's "the new implies the old", and neither is in
+`checksOf`: the battery is still eleven
+(`PlannerWit.the_hole_property_is_not_one_of_the_eleven`), and both are still false on the day
+this kernel produces.  R3 is what enables them. -/
+
+/-- **Some row covers the instant `t`** — the cover clause `holeFree` already writes at
+`a.val.stop`, at a named instant instead.  It is not a second notion of covering: the
+conjunction is the same `c.val.start ≤ t ∧ t < c.val.stop`, which is why
+`a_zero_length_row_cannot_cover_an_instant` applies to this one unchanged. -/
+def coveredAt (t : Nat) (d : DayPlan) : Bool :=
+  d.segments.any (fun c => decide (c.val.start ≤ t ∧ t < c.val.stop))
+
+/-- The reflection lemma. -/
+theorem coveredAt_iff (t : Nat) (d : DayPlan) :
+    coveredAt t d = true ↔ ∃ c ∈ d.segments, c.val.start ≤ t ∧ t < c.val.stop := by
+  simp only [coveredAt, List.any_eq_true, decide_eq_true_eq]
+
+/-- **A day with no rows covers no instant**, which is the half of W-26's second blind spot
+this clause closes: `holeFree_of_no_rows` passes such a day and `coveredAt` refuses it. -/
+theorem coveredAt_of_no_rows (t : Nat) (d : DayPlan) (h : d.segments = []) :
+    coveredAt t d = false := by simp [coveredAt, h]
+
+/-- **§8.3's twelfth property with its LEADING blind spot closed** — contiguity from `now`
+onward, which is one clause more than `holeFree` and one clause less than coverage of a window
+whose end nobody has chosen (README gap 1620).
+
+The instant is `r.now.sec` and not a new bound: it is `futureHalf`'s own filter, E1's
+restriction and the fork's `assigned_set` window, the same second three checkers already use.
+
+**And the TAIL stays out of scope**, inherited rather than repaired: neither conjunct mentions
+the day's end.  The second is `holeFree`, whose clause at the last row is vacuous
+(`the_last_row_is_never_a_holes_subject`); the first is read at `r.now` alone.  So a day whose
+rows run back to back from `now` and then stop passes with its whole remainder unplanned, and
+`PlannerWit.the_leading_guard_keeps_the_tail_carve_out` computes such a day rather than leaving
+that sentence an assurance.  It is the ONE blind spot gap 1620 has left, and it is the one gap
+1529's brief asked to be kept. -/
+def holeFreeFrom (r : PlanReq) (d : DayPlan) : Bool :=
+  coveredAt r.now.sec d && holeFree r d
+
+theorem holeFreeFrom_iff (r : PlanReq) (d : DayPlan) :
+    holeFreeFrom r d = true ↔
+      (∃ c ∈ d.segments, c.val.start ≤ r.now.sec ∧ r.now.sec < c.val.stop) ∧
+      ∀ a ∈ d.segments, (∃ b ∈ d.segments, a.val.stop < b.val.start) →
+        ∃ c ∈ d.segments, c.val.start ≤ a.val.stop ∧ a.val.stop < c.val.stop := by
+  simp only [holeFreeFrom, Bool.and_eq_true, coveredAt_iff, holeFree_iff]
+
+/-- **The new implies the old** (D5): nothing `holeFree` forbade is permitted here, and the
+pair is not two incomparable statements.  `PlannerWit.the_leading_guard_is_not_a_constant` is
+the other direction — a day the old one passes and this one refuses. -/
+theorem holeFreeFrom_implies_holeFree (r : PlanReq) (d : DayPlan)
+    (h : holeFreeFrom r d = true) : holeFree r d = true := by
+  simp only [holeFreeFrom, Bool.and_eq_true] at h; exact h.2
+
+/-- **And the empty day is refused**, where `holeFree_of_no_rows` passes it. -/
+theorem holeFreeFrom_of_no_rows (r : PlanReq) (d : DayPlan) (h : d.segments = []) :
+    holeFreeFrom r d = false := by
+  simp only [holeFreeFrom, coveredAt_of_no_rows r.now.sec d h, Bool.false_and]
+
 end PlanCheck
 end Tm

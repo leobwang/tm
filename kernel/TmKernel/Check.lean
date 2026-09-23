@@ -6583,3 +6583,22 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.runCapP_bytes
 #print axioms Tm.runCapZ_is_runCapZP_bytes
 #print axioms Tm.EmitWire.runRowsP_bytes
+
+-- W-28 (track G): the leading half of README gap 1620, and the decoder axis's second payer.
+#print axioms Tm.PlanCheck.coveredAt_iff
+#print axioms Tm.PlanCheck.coveredAt_of_no_rows
+#print axioms Tm.PlanCheck.holeFreeFrom_iff
+#print axioms Tm.PlanCheck.holeFreeFrom_implies_holeFree
+#print axioms Tm.PlanCheck.holeFreeFrom_of_no_rows
+#print axioms Tm.PlannerWit.readActive_answers_only_a_block_mkActive_built
+#print axioms Tm.PlannerWit.readOptActive_answers_only_a_block_mkActive_built
+#print axioms Tm.PlannerWit.readState_reads_active
+#print axioms Tm.PlannerWit.readState_answers_only_a_block_mkActive_built
+#print axioms Tm.PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause
+#print axioms Tm.PlannerWit.an_at_the_wire_accepted_is_inside_the_calendar
+#print axioms Tm.PlannerWit.the_instant_bound_is_one_second_wider_than_the_now_clause
+#print axioms Tm.PlannerWit.the_eleven_hold_with_every_axis_named
+#print axioms Tm.PlannerWit.the_leading_guard_catches_the_leading_remainder
+#print axioms Tm.PlannerWit.the_leading_guard_keeps_the_tail_carve_out
+#print axioms Tm.PlannerWit.the_leading_guard_is_not_a_constant
+#print axioms Tm.PlannerWit.the_leading_guard_is_not_one_of_the_eleven
