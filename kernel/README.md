@@ -54356,3 +54356,430 @@ snapshot, fixture, latency band or corpus was re-blessed; no new dependency;
 `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.
 Every plant made to drive a gate was reverted in the same command that made it
 and `git status` was checked clean afterwards.
+
+## Stage 6, W-25 track G, 2026-09-22: the WALL axis closes, G3 is refuted by the field its hypotheses forgot, and the `open` bit has one writer
+
+**Commits.** One (`kernel:`), on branch `w25-g`. Files: `PlanCheck.lean`, `PlannerWit.lean`,
+`Goals.lean` (**prose only** — `grep -c '^theorem '` is **9** before and after), `Check.lean`,
+`kernel/mutations.txt` and this file. `Planner.lean`, `Emit.lean`, `EmitWire.lean`,
+`Negative.lean`, `check.sh`, `citations.py`, `mutate.py`, `citations-allow.txt`, `corpus/`,
+every fixture and every line of Rust are **untouched**.
+
+**Twenty-five theorems and nine `def`s.** The axiom audit rises by exactly 25.
+
+### 1. The brief's item 1, answered first: are G2 and G3 in the tree?
+
+**NEITHER IS, and they are not in the same state.** Track P and R2 should plan on this:
+
+| | in the tree? | what is there | what it still owes |
+|---|---|---|---|
+| **G2** (`plan_tail_drop`, L24) | **no** | the refutation (`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`, W-15), `erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`, and the blocker as a theorem (`the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands`) | one hypothesis (`r'.run = r.run`) before D29's restatement can be *written*; then **P5**, because the budget cannot reach `assignedOf` until the fold spends it. A restatement discharged today would be vacuous |
+| **G3** (`plan_is_stable_across_a_replan`, L25) | **no** | **as of this commit**, the refutation and the refutation of design §6.3 row 3's own restatement — before today, *nothing*: README gap 368 (W-14) recorded all three of design §15's G3 declarations as absent and that was still true at `d6e514c` | three repairs, §3 below; and the `open` restriction the design proposes **cannot work in this kernel as it stands** (§4) |
+
+**Can R2 proceed without them?** §14.4 lists R2 as depending on P8, G2 and G3. On the evidence
+in this tree the G2/G3 edge is **not** what blocks it and waiting for them would be waiting for
+the wrong thing:
+
+* `tm/tests/planner_invariants.rs` checks *stability* and *tail-drop* as **properties of a
+  produced day**. Nothing in that file needs a Lean proof to exist; the Lean proofs and the
+  proptest are two readings of one law, and D21/D22 make the proptest a **comparand**, not a
+  consumer.
+* What R2 does need is a kernel day with §8.2 step 5's rows in it. `Planner.dayRows` is
+  `sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++
+  restRows).map segOf)` — **no row of step 5** — and `Planner.the_day_assigns_nothing_after_now
+  _but_the_running_block` is that, proved for every request. A proptest aimed at the kernel
+  today compares the fork's assignments against **the empty set** on every case that assigns
+  anything.
+* So R2's real predecessor is **P5**, exactly as G2's and G3's is. The useful half of R2 that
+  *is* available now is the half gap 1398 named: nothing compares `PlanCheck.PastPays` — or
+  `PlanCheck.WallsArePlain`, added here — to the fork, and both are read off
+  `planner_invariants.rs`'s **header** by a human, not by running anything.
+
+### 2. The wall axis: the lift's last `∀` over the request, and it was false of a real week file
+
+W-23 named the whole-day lift's **eligibility** bound (`PlanCheck.FromNowAnchored`); W-24 named
+its **log** bound (`PlanCheck.PastPays`). What was left was an unnamed blanket:
+
+> every interval-shaped entity of the plan carries no `buffer:`, lies inside the day being
+> planned, runs forwards, and ends inside the calendar
+
+discharged in this tree by exactly two proofs, each a case split over a store holding **one**
+`at:` event. `PlanCheck.PlainStore` names it. `PlanCheck.WallsArePlain` is what the seven
+actually need — the same five clauses at the entities a **Wall row of the produced day** names
+— read off the one consumer, `h7`, which applies the blanket with `hs`, `hk` and `hi` already
+in scope. `PlanCheck.dayPlan_ok_core_of_plain_walls` and
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls` are §6.1's seven and eleven from the
+restriction; the two blanket forms keep their statements and are now **corollaries**
+(`PlanCheck.WallsArePlain_of_a_plain_store`), so no existing caller changed.
+
+**The blanket is false of an ordinary week file, and the witness is one line of calendar.**
+`PlannerWit.theOffDayRequest` is the §4.3 census Wednesday with a second calendar line —
+Thursday's standup. `the_blanket_plainness_is_false_at_the_off_day_request` refutes
+`PlainStore` there (the third clause: `^g2` ends after tonight's midnight);
+`the_off_day_request_has_plain_walls` proves the restriction; and
+`the_eleven_hold_where_the_blanket_fails` is §6.1's **eleven** on that whole day, by the lift
+and not by a `decide` on the battery. `tomorrows_meeting_is_not_one_of_todays_walls` is why the
+day itself is unchanged: `Look.wallIxOn` — the one selection rule the window, the cut and the
+rows all read — answers the same list at both requests.
+
+**Both directions are witnessed, which is D40 applied to a hypothesis rather than a
+definition.** `the_census_request_has_a_plain_store` is `PlainStore` where it **holds** (a
+reuse of `the_census_request_is_plain`, not a second proof), and `the_wall_axis_can_fail`
+refutes `WallsArePlain` on `theRelabelledWallDay` — this day with tomorrow's standup written
+onto today's Wall row, the `theMovedWallDay` idiom at a different field. Without that second
+one, `WallsArePlain` would be AGENTS §9.2's *"a check no input can fail"*.
+
+**What the lift's hypotheses are now.** Three named bounds — eligibility, log, walls — plus
+three decidable `Bool`s the decoder owes (`wallsAgree`, `activeAgrees`, `dayAgrees`; gap 346)
+and one `Nat` comparison (`hnowcal`). **There is no unnamed `∀` over the request left.**
+
+### 3. G3: refuted, and not for the reason the design gives
+
+Design §6.3 row 3 says `Goals.plan_is_stable_across_a_replan` is false because *"the running
+block and the running interruption **grow** rather than move (`SegFlags::open`)"*, and gives
+the restatement — *over segments that are `end ≤ now` **and not `open`*** — to G3.
+
+**That is not why it is false here.** Its hypotheses pin `plan`, `window`, `blockMin` and
+`budgetBlocks` and leave **`run`** free, exactly as `plan_tail_drop`'s do (W-15's finding at a
+second goal). `PlannerWit.theRequest` and `PlannerWit.theQuietRequest` differ in that one
+field, satisfy every hypothesis, and disagree about the day's whole past half:
+`plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`.
+
+**And design §6.3 row 3's own restatement is refuted by the same pair.** The witness row is a
+settled Block carrying `isOpen = false`, so adding `not open` to the hypotheses admits it and
+changes nothing: `the_designs_restatement_of_the_stability_law_is_refuted_too`. That is W-24's
+finding at a second row of the same table (gap 1392 was row 1).
+
+**What G3 owes, in three parts, of which only the first has a counterexample:**
+
+1. **pin the run** — `r'.run = r.run`, or the law over one run;
+2. **drop or restate `hwin`** — on this request the day's window *starts at `now`*
+   (`Look.day0Window` through `Look.day0Cut`'s `max w.1 I.today0.now.sec`), so moving `now`
+   moves `window` and `r'.window = r.window` is **false of every genuine replan-later pair**:
+   `an_hour_later_changes_one_field_and_moves_the_window`;
+3. **tie the instant the law quantifies over to `r.now`** — left free, its `s.val.stop ≤ _`
+   clause admits *every* row, so the law as written says the two days are equal up to
+   inclusion rather than agreeing on the settled past.
+
+**The law's actual content is not refuted.** At the one genuine replan pair this tree can build
+— same plan, same run, `now` an hour on — **every row that had settled is still there**:
+`an_hour_later_keeps_every_row_that_had_settled`, over the three rows
+`three_rows_had_settled_when_the_witness_planned` counts, so it is not a statement about an
+empty quantifier.
+
+### 4. The `open` bit has exactly one writer, and it is not the row that grows
+
+`Planner.SegFlags.isOpen`'s own doc comment names two subjects — *"the running interruption
+(§9) **and the worked stretch of the running block**"* — and ends *"G3's restatement turns on
+this bit"*. **The kernel writes it for one of the two.**
+
+* `Planner.interruptRows` sets `isOpen := true` (`Planner.interruptRows_are_open_lost_time`).
+* `Planner.PlanReq.activeRow` — §8.2 choice 5b's reservation, which is the row that *grows* —
+  sets `current := true` and leaves `isOpen` at its default:
+  `PlannerWit.the_reservation_row_is_not_marked_open`, proved for **every** request.
+* `PlannerWit.no_row_of_the_days_this_tree_builds_is_open` is the computed half at four
+  requests, two of them with a block running, with the four day lengths in the statement so the
+  four `all`s cannot pass over an empty list.
+
+So the design's restatement, ported verbatim, would exclude the interruption and **keep** the
+running block. README gap **1500**, and it corrects gap **1324** item 4, which assigned this to
+*"P3's running block for `isOpen`"* — **P3 has landed and the flag is still unset**.
+
+**The method, and what it cannot see.** Every `flags :=` construction site in the library was
+enumerated (`grep -n 'flags :=' TmKernel/TmKernel/*.lean`, 14 hits in `Planner.lean`, one in
+`PlanCheck.lean`, none elsewhere); `isOpen := true` appears at **one**. What the grep cannot
+see is a row that inherits its flags from another `Seg` — `Planner.segOf` does exactly that —
+so the claim is about the **leaf constructors**, which is where a mark can be born, and the
+theorem above is about the reservation specifically.
+
+### 5. The nine, re-verified rather than re-quoted
+
+W-24 wrote the list; this run checked it item by item against the tree, not against the
+previous block. It is in `Goals.lean`'s `# STAGE 6` header in full. What was checked and what
+moved:
+
+| goal | waits on | verified how |
+|---|---|---|
+| `plan_does_not_overbook` | P5 | `PlanCheck.overbook_has_no_subject_from_now` present; the W-24 refutation stands |
+| `plan_respects_the_energy_filter` | P5 | `PlanCheck.energyFilter_has_no_subject` present |
+| `plan_places_no_demanding_block_after_wind_down` | P5 | `PlanCheck.windDown_has_no_subject` present |
+| `plan_is_monotone_in_rank` | P5 | `grep -rn 'def eligibleAt'` over the library returns **nothing**; the only hits are doc comments |
+| `plan_puts_hot_before_the_queue` | P5 | same |
+| `plan_never_drops_an_impossible_item` | P8 | `Planner.dayDiagnostics` read: it sets `conflicts`, `aCapacityLost` and `notes` and **not** `impossible` (gap 1065) |
+| `plan_never_batches_past_an_equal_ci_candidate` | P5 | `PlanCheck.batch_has_no_subject` present |
+| **`plan_tail_drop`** | **G2 ← P5** | **moved**: the entry now says what G2 owes and that discharging it today would be vacuous |
+| **`plan_is_stable_across_a_replan`** | **G3 ← P5** | **moved**: refuted here, with §3's three repairs and §4's reason the design's own restatement cannot be used |
+
+**Six of the nine still wait on one edit and it is not a proof** — `Planner.dayRows` holding a
+row of step 5. That sentence is re-checked here and is unchanged.
+
+### 6. The ratio: SEVEN, and this axis moved nothing
+
+`PlannerWit.the_wall_axis_moves_no_census_number` is the counterpart of W-24's
+`the_log_axis_moves_no_census_number`: `PlanCheck.WallsArePlain` is a **hypothesis of a lift**,
+not a twelfth checker — neither `PlanCheck.checksOf` nor `PlanCheck.subjectOf` reads it — and
+the day at `theOffDayRequest` is the census day. The headline is **SEVEN**, at
+`theCensusRequest`, whole day, every eligibility, and it is seven at the new request too. Every
+prose statement of the census in the repo agrees and none had to be changed; the new request's
+row is added, which is gap **1397**'s instruction followed rather than deferred.
+
+### 7. D40, and the drive that says what check 9's verdict is worth
+
+`mutate.py --write` audited this run's **nine** new definitions: **3 PINNED, 6 UNFOLDABLE, 6 of
+them witness fixtures, 0 pinned by nothing, 0 literal — and `0 SURVIVED`.** No row was fixed by
+recording it; nothing needed a new witness afterwards.
+
+**But two of the three PINNED verdicts are worth less than they look, and this was DRIVEN.**
+`PlanCheck.PlainStore` and `PlanCheck.WallsArePlain` are both pinned at
+`PlanCheck.lean:3551 WallsArePlain_of_a_plain_store` — the one term-mode lemma that bridges
+them — and a bridging lemma breaks for **any** constant body whether or not a witness exists.
+Planted in this tree and reverted in the same command:
+
+```
+def w25ProbeUnwitnessed (r : PlanReq) : Prop := r.blockMin = 60
+theorem w25ProbeBridge (r : PlanReq) (h : w25ProbeUnwitnessed r) : r.blockMin = 60 := h
+```
+
+nothing else in the package mentions either, and `python3 mutate.py --only w25ProbeUnwitnessed`
+printed **`:= True PINNED PlanCheck.lean:3720 w25ProbeBridge`** and **`:= False PINNED`**, with
+`1 definition(s) audited (1 pinned … 0 pinned by nothing)` and **rc 0**. So check 9 reports a
+definition with no witness anywhere exactly as it reports these two. README gap **1504**.
+
+**The witnesses are real, and they were driven too.** Four plants, each the constant body plus
+a `sorry`ed bridge so that `PlanCheck.lean` still compiles and `PlannerWit.lean` is reached —
+reverted after each, `PlanCheck.lean` byte-compared to its original afterwards:
+
+| plant | `PlannerWit.lean` declarations that then FAIL |
+|---|---|
+| `PlainStore := True` | `the_blanket_plainness_is_false_at_the_off_day_request`, `the_census_request_has_a_plain_store`, and W-24's `the_core_seven_hold_on_the_whole_day_of_a_worked_morning` / `the_eleven_hold_on_the_whole_day_of_a_worked_morning` |
+| `PlainStore := False` | the same four |
+| `WallsArePlain := True` | `the_off_day_request_has_plain_walls`, `the_wall_axis_can_fail` |
+| `WallsArePlain := False` | the same two |
+
+**And the honest reading of that table.** Those failures are `intro`/application failures,
+which *any* `Prop`-valued definition with binders would produce — so the table shows the
+witnesses are exercised, not that they discriminate. What discriminates is
+`PlannerWit.the_wall_axis_definitions_are_not_constants`: one request where each definition
+**holds** and one where it **does not**, in one theorem. **No constant body of either can
+satisfy both conjuncts, in any proof style.** That is D40's question answered as a statement
+instead of as a line number, and it is the form a later step should copy.
+
+### 8. What this step did NOT do, by name
+
+- **No goal was discharged and none was added.** Check 7 reads **9 outstanding, all stage 6**,
+  before and after. One of the nine (`plan_is_stable_across_a_replan`) was **refuted** here and
+  stays, for W-19's and W-24's reason: the restatement is not writable yet (§3), and a
+  restatement without its refutation is a weakening (AGENTS §3.1 item 3).
+- **G2 was not discharged, and it could have been — vacuously.** Adding `r'.run = r.run` to
+  `plan_tail_drop` would make it provable today, because
+  `the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` proves the budget
+  cannot reach `assignedOf` at all: the two assigned sets are the *same list*, so `n = length`
+  closes it. That is AGENTS §5.2's theorem that compiles and means nothing and it is **not
+  taken**. Gap **1507**.
+- **No line of design §6.2's fold induction is claimed.** Everything here holds *because*
+  §8.2 step 5's rows are absent from `Planner.dayRows`.
+- **`Negative.lean` was not touched** — this track's brief names four files and it is not one.
+  The cheats this run's material would earn are owed: gap **1508**.
+- **`Planner.lean` was not touched**, so the `open` flag is not fixed here (gap 1500); it is
+  track P's file this run.
+- **No decidable `Bool` form of `WallsArePlain`** (gap 1502), for W-23's and W-24's stated
+  reason: it would have no caller, which is the defect this campaign is about.
+- **`mutate.py --verify` was run on neither file.** `--write` audited the nine new rows (real
+  kernel builds, watched); `--verify` re-runs **every** row of a file and gap 1399 measured
+  `PlannerWit.lean` at ≈ 81 minutes. Gap **1505**.
+
+<!-- GAPS 1500-1519 — track G, run W-25.  Whoever merges renumbers (AGENTS §6.4). -->
+
+**Gap 1500 — `Planner.SegFlags.isOpen` has ONE writer and it is not the row that grows. NOT FIXED (not this track's file).**
+1. *What is not done.* `Planner.PlanReq.activeRow` — §8.2 choice 5b's reservation — sets
+   `current := true` and leaves `isOpen` at its default, while `SegFlags.isOpen`'s own doc
+   comment names *"the worked stretch of the running block"* as one of its two subjects and
+   design §6.3 row 3 builds G3's restatement on the bit.  `Planner.interruptRows` is the only
+   construction site in the library that sets it.
+2. *Why.* `Planner.lean` is track P's file this run; the repair is one field in one record
+   literal and its law beside it.  Gap **1324** item 4 assigned this to *"P3's running block
+   for `isOpen`"* and **P3 has landed**, which is why this is recorded again rather than
+   assumed in flight.
+3. *What it costs.* G3's restatement cannot use the `open` bit until it is written: ported
+   verbatim it would exclude the interruption and keep the running block.  Nothing shipped is
+   wrong — no cell reads the mark (gap 1324) — so no test can see it.
+4. *Which stage.* P5, or whichever step next edits `Planner.PlanReq.activeRow`.  A third law
+   is owed with it: *the reservation's `stop` is at or after `now`*, which is the fork's own
+   `open: w.end >= self.now` rule.
+
+**Gap 1501 — two of design §15's three G3 declarations are still unwritten, and one has no subject.**
+1. *What is not done.* The refutation is written here; `plan_is_stable_across_a_replan`
+   restated, and an_open_segment_only_extends, are not.
+2. *Why.* The restatement owes three repairs (§3) and only the first has a counterexample;
+   and an_open_segment_only_extends has **no subject** in this tree —
+   `no_row_of_the_days_this_tree_builds_is_open` computes that no day it can build carries the
+   bit, and gap 1500 is why.
+3. *What it costs.* G3 stays at 0 of 3 landed and the burn-down's last two entries stay
+   paired.  This supersedes README gap **368**, which recorded all three as absent.
+4. *Which stage.* G3, after gap 1500 and after P5.
+
+**Gap 1502 — `PlanCheck.WallsArePlain` has no decidable form and no caller outside the witness module. NOT FIXED, deliberately.**
+1. *What is not done.* There is no `wallsArePlain : PlanReq → DayPlan → Bool`, no reflection
+   lemma, and nothing in `Boundary.lean` establishes it.  Every firing in the tree supplies it
+   by the proof at one named request.
+2. *Why.* Gap **1390**'s reason at a second hypothesis: a `Bool` form would have no reader, and
+   another thing with no reader is the defect this campaign is about.  All the parts are
+   computable — the segments are a list and the store lookup is a function — so it is short
+   when someone needs it.
+3. *What it costs.* *"§6.1's eleven hold on the day this call produced"* is still a sentence
+   about named requests and not about an arbitrary one.
+4. *Which stage.* P5, or the request decoder (gap **346**), with gap 1390.
+
+**Gap 1503 — design §6.3 row 3's restatement is refuted and the design is not corrected.**
+1. *What is not done.* `kernel/design/stage6/stage6-planner-design.md` §6.3 row 3 still gives
+   *"over segments that are `end ≤ now` and not `open`"* as the restatement of
+   `plan_is_stable_across_a_replan`.
+   `PlannerWit.the_designs_restatement_of_the_stability_law_is_refuted_too` refutes it, and
+   gap 1500 is why it could not have worked.
+2. *Why.* The design is a track-wide input document and this track owns four files; editing it
+   here would collide with tracks P and A.  This is gap **1392**'s situation at row 3 of the
+   same table — **two of §6.3's seven rows now carry a refuted restatement**.
+3. *What it costs.* A step that ports §6.3's table verbatim ships two restatements the tree
+   already refutes.
+4. *Which stage.* G3 and P5, in the steps that port those rows.
+
+**Gap 1504 — check 9's PINNED verdict cannot tell a witnessed definition from an unwitnessed one. DRIVEN, not fixed.**
+1. *What is not done.* `mutate.py` records where the build first broke.  A definition whose
+   only mention is a term-mode lemma *about* it is PINNED at that lemma, for both constants,
+   with no witness anywhere.
+2. *Why, driven.* `def w25ProbeUnwitnessed (r : PlanReq) : Prop := r.blockMin = 60` with
+   `theorem w25ProbeBridge (r : PlanReq) (h : w25ProbeUnwitnessed r) : r.blockMin = 60 := h`,
+   planted and reverted in one command: `mutate.py --only w25ProbeUnwitnessed` printed `:= True
+   PINNED PlanCheck.lean:3720 w25ProbeBridge`, `:= False PINNED`, *"1 pinned … 0 pinned by
+   nothing"*, rc **0**.  This run's own `PlainStore` and `WallsArePlain` are pinned exactly
+   that way.
+3. *What it costs.* D40's promise — *"something must FAIL, and if nothing does the definition
+   is unwitnessed"* — is weaker than its wording for any definition that has a lemma stating
+   its relation to another.  Nothing in the roster distinguishes the two cases, and `0 pinned
+   by nothing` counts the wrong thing.
+4. *Which stage.* Whoever pays it.  The cheap half is a convention, not code:
+   `PlannerWit.the_wall_axis_definitions_are_not_constants` is the shape — *holds here, fails
+   there, in one theorem* — and a roster column naming such a theorem would be checkable.
+
+**Gap 1505 — `mutate.py --verify` was run on neither file this step. NOT RUN (inherited from gap 1399).**
+1. *What is not done.* `--write` audited the **nine new rows** against real kernel builds
+   (measured: ≈ 20 min for the nine, plus a second ≈ 20 min inside `check.sh`'s own check 9
+   before the rows existed).  `--verify` re-runs **every** row of a file; gap 1399 measured
+   `PlannerWit.lean` at 37 rows and ≈ 81 min.
+2. *Why.* It does not fit in a step, and `--only` narrows a verify to a **file**, not a row.
+3. *What it costs.* The 37 pre-existing `PlannerWit.lean` rows and the 8 `PlanCheck.lean` rows
+   went un-re-verified.  No pin site drifted — every edit this run is an **append** past the
+   highest pinned line in each file (4835 in `PlannerWit.lean`, 3358 in `PlanCheck.lean`), and
+   `stale_sites` ran green on every `check.sh` run.
+4. *Which stage.* Any, with a `--only`-per-definition flag.
+
+**Gap 1506 — nothing compares the wall axis, or `theOffDayRequest`, to the fork.**
+1. *What is not done.* No parity entry for `PlanCheck.WallsArePlain`; `theOffDayRequest`'s
+   documents are not in `kernel/corpus/`; the fork has never been run on a calendar holding
+   two days' events for this purpose.
+2. *Why.* `WallsArePlain` is a hypothesis of a Lean lift, not a value on the wire, so D21/D22
+   do not obviously bite — gap **1398**'s reason at a second hypothesis.
+3. *What it costs.* If the fork placed a Wall row for an entity this hypothesis excludes,
+   nothing would say so.  The claim *"a real week file has events on other days"* is read off
+   the format, not measured against a corpus file.
+4. *Which stage.* R2, with gap 1398.
+
+**Gap 1507 — `plan_tail_drop` is one hypothesis from a VACUOUS discharge and this step did not take it.**
+1. *What is not done.* Adding `r'.run = r.run` makes the goal provable today: with the run
+   pinned and the budget unable to reach `assignedOf`
+   (`PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands`), the
+   two assigned sets are the same list and `n = length` closes it.
+2. *Why.* AGENTS §5.2 — it would be a theorem that compiles and means nothing, and the
+   burn-down would read 8 for a law nobody proved.  W-19 made this call at the two
+   comparisons and W-24 at `plan_does_not_overbook`.
+3. *What it costs.* Check 7 reads 9 where a reader counting *stateable* goals would read 7.
+   A later run that does not know this is here may take the cheap discharge.
+4. *Which stage.* G2, after P5, with the restatement and the refutation in one commit.
+
+**Gap 1508 — this run's refutations are witnesses and not `Negative.lean` cheats.**
+1. *What is not done.* No `/- CHEAT` block asserts `PlanCheck.PlainStore` at
+   `PlannerWit.theOffDayRequest`, `PlanCheck.WallsArePlain` at `theRelabelledWallDay`, or the
+   stability law without its run hypothesis.
+2. *Why.* This track's brief names four files and `Negative.lean` is not one of them;
+   appending there collided with tracks P and A at the same cheat number in three consecutive
+   runs (gaps 671, 872).  Gap **1394** recorded the same omission at W-24 and it is still open.
+3. *What it costs.* Check 4 does not guard the new statements from the other side; only check
+   3 and the witnesses do.
+4. *Which stage.* The next track that owns `Negative.lean`.  Cheats start above **218**.
+
+**New gaps start at 1509** (track G's range runs to 1519).
+
+### 9. Measurements, all re-measured here
+
+| | at HEAD (`d6e514c`) | after this step |
+|---|---|---|
+| `check.sh` | 9/9 | **9/9**, 11.017 s warm — see §10 for what that number does and does not compare against |
+| axiom audit | 4,979 theorems | **5,006** (+27, every theorem this step declares) |
+| check 5 | 93 tests | 93 |
+| corpus | 29/37 files, 4/5 whole plans | unchanged |
+| burn-down | 9, all stage 6 | **9**, all stage 6 — no goal added, discharged or deleted |
+| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,283 / 31,619 / 1,664** (134 / 351), 0 unused |
+| check 9 | 154 rostered, 40 unfoldable, 21 witness fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare pin sites | **163** rostered (+9), **46** unfoldable (+6), **27** witness fixtures (+6), 8, 1, **0 owed**, 32 |
+| `citations-allow.txt` | — | **byte-identical** |
+| new declarations | — | **27 theorems, 9 `def`s** |
+
+**check 8's +297 is all this step's own prose and none of it is a checker widening**, measured
+in two halves so the two causes are two numbers: **+125** from `Goals.lean`, `PlanCheck.lean`,
+`PlannerWit.lean` and `Check.lean` (32,986 → 33,111, with this block not yet written) and
+**+172** from this block (33,111 → 33,283). No allow entry moved and no counted cap moved,
+which is why `0 allow entries unused` still holds.
+
+**Check 8 bit, twice, and the fix was prose and not an allow entry.** The first draft cited
+an_open_segment_only_extends — a declaration design §15 names and **nobody has written** — and
+nowSec, a binder of `Goals.plan_is_stable_across_a_replan` cited from *other* declarations' doc
+comments, which is not what `citations-allow.txt`'s section 7 exempts (*"cited by that
+declaration's OWN doc comment"*). Both were **un-backticked**, which is what W-24 did for
+Planner.eligibleAt; raising the caps from 4 and 1 would have silenced a checker that was
+right.
+
+### 10. Acceptance, in full
+
+| suite | result |
+|---|---|
+| `check.sh` | **9/9**, `real 0m11.017s` warm on the committed tree (12.088 s on the run before the last prose edits) |
+| `cargo test --workspace` | **83 binaries, 1,431 passed, 0 failed, 9 ignored** |
+| FFI (`cargo test -p tm-kernel-ffi`) | 0 + 8 + 86 + 7 + 0 = **101 passed, 0 failed** |
+| T5 (`kernel_replay_parity`) | 29 passed, 0 failed, 4 ignored |
+| the door suite (`kernel_log_door`) | 23 passed, 0 failed |
+| `cli_switch_acceptance` | 16 passed, 0 failed |
+| `kernel_call_counts` | 2 passed, 0 failed |
+| `one_padder` | 9 passed, 0 failed |
+| `one_renderer` | 25 passed, 0 failed |
+| `kernel_row_cells` | 26 passed, 0 failed |
+| `kernel_log_grammar` | 16 passed, 0 failed, 2 ignored |
+| `planner_invariants` | 6 passed, 0 failed |
+| `cli_latency` | **5 passed, 0 failed, 1 ignored** — green, at one-minute load **7.9** |
+| `.proptest-regressions` | `git status --porcelain` shows none after any of the three workspace runs (D46). No seed line was drawn, and none would have been reverted if it had been |
+
+**How many runs (D46): THREE of `cargo test --workspace`, and all three are identical** —
+83 binaries, 1,431 / 0 / 9 each, at one-minute loads of **5.62, 7.50 and 8.40**, on a machine
+shared with another session. The count matches HEAD's exactly, which is the expected result:
+this step adds no Rust and no fixture.
+
+**`cli_latency`'s T11 rows, as single measurements under load 7.9 and NOT as a band** (the
+brief's own instruction, gap 1333): later verb **156.94 ms**, gated host-only write 171.84 ms,
+the verb after a windowable hand undo 156.98 ms, the verb after that one 156.81 ms, a routine
+for a 3-day-old instance **166.89 ms**, `review week` **298.63 ms**, `--now +1 day` (a reseal)
+**227.41 ms**. Every one is **above** the band the brief quotes (reseal 197.5-212.6, routine
+121.6-136.8, `review week` 248.1-253.3, later verb 146.66-147.01) and the test is **green**, so
+the bands in the brief are narrower than the assertions in the file. Nothing here was
+re-blessed: `cli_latency.rs` is untouched and this step compiles no Rust.
+
+**Memory.** Every `lake`, `lean`, `cargo`, `check.sh`, `python3` and `mutate.py` invocation ran
+under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for the
+suites and `check.sh`, 16G for `lake build` and `mutate.py`, 8G with `timeout` for the
+scratch-module probes. **No memory bound was raised.**
+
+No predicate or assertion was weakened — `dayPlan_ok_core_of_a_paying_past` and
+`dayPlan_ok_on_the_whole_day` keep their statements and the new siblings take a **weaker**
+hypothesis, which strengthens them. No gate was narrowed; no snapshot, fixture, latency band or
+corpus was re-blessed; no new dependency; `lean-toolchain` and `kernel/corpus/` untouched; no
+`sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption`
+added. The five plants made to drive check 9 (one unwitnessed probe, four constant bodies with
+a `sorry`ed bridge) were each reverted in the same command that made them and
+`PlanCheck.lean` was **byte-compared** to its original afterwards, five times.

@@ -6363,3 +6363,52 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.EmitWire.readKind_refuses_a_long_batch_member
 #print axioms Tm.EmitWire.readNote_refuses_a_long_no_position_id
 #print axioms Tm.EmitWire.readNote_refuses_a_long_buffer_before_id
+
+-- ===================================================================
+-- APPENDED 2026-09-22: stage 6, W-25, track G (AGENTS §6.3).  Two things.
+--
+-- (1) THE WALL AXIS, the third and last `∀` over the request in §6.1's
+--     whole-day lift.  W-23 named the eligibility bound (`FromNowAnchored`)
+--     and W-24 the log bound (`PastPays`); the one left was an unnamed
+--     store-wide plainness hypothesis that is FALSE of a calendar holding a
+--     meeting tomorrow.  `PlanCheck.PlainStore` names it, `WallsArePlain`
+--     restricts it to the entities a Wall row of the produced day actually
+--     names, and `PlannerWit.theOffDayRequest` is the census Wednesday with
+--     one Thursday line added: the blanket is false there, the restriction
+--     holds, and §6.1's eleven hold on the whole day through the new lift.
+--
+-- (2) G3.  `Goals.plan_is_stable_across_a_replan` is refuted, and NOT for
+--     design §6.3 row 3's reason: the hypotheses leave `run` free, exactly as
+--     `plan_tail_drop`'s do, and the design's own restatement (`not open`) is
+--     refuted by the same pair.  It cannot bite because `Planner.SegFlags.
+--     isOpen` is set at ONE construction site in this kernel — the running
+--     interruption — and §8.2 choice 5b's reservation, the row that grows,
+--     is not it.  No goal is discharged: the burn-down stays 9.
+-- ===================================================================
+#print axioms Tm.PlanCheck.WallsArePlain_of_a_plain_store
+#print axioms Tm.PlanCheck.dayPlan_ok_core_of_plain_walls
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls
+#print axioms Tm.PlannerWit.the_two_wall_witness_loads
+#print axioms Tm.PlannerWit.the_off_day_request_agrees
+#print axioms Tm.PlannerWit.the_off_day_request_is_inside_the_calendar
+#print axioms Tm.PlannerWit.tomorrows_meeting_is_not_one_of_todays_walls
+#print axioms Tm.PlannerWit.the_off_day_walls_name_the_meeting
+#print axioms Tm.PlannerWit.the_off_day_request_has_plain_walls
+#print axioms Tm.PlannerWit.the_blanket_plainness_is_false_at_the_off_day_request
+#print axioms Tm.PlannerWit.the_off_day_past_pays
+#print axioms Tm.PlannerWit.the_core_seven_hold_where_the_blanket_fails
+#print axioms Tm.PlannerWit.the_eleven_hold_where_the_blanket_fails
+#print axioms Tm.PlannerWit.the_census_request_has_a_plain_store
+#print axioms Tm.PlannerWit.the_relabelled_day_holds_tomorrows_meeting
+#print axioms Tm.PlannerWit.the_wall_axis_can_fail
+#print axioms Tm.PlannerWit.the_witness_day_holds_a_settled_block_no_replan_may_drop
+#print axioms Tm.PlannerWit.plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin
+#print axioms Tm.PlannerWit.the_designs_restatement_of_the_stability_law_is_refuted_too
+#print axioms Tm.PlannerWit.the_reservation_row_is_not_marked_open
+#print axioms Tm.PlannerWit.no_row_of_the_days_this_tree_builds_is_open
+#print axioms Tm.PlannerWit.an_hour_later_changes_one_field_and_moves_the_window
+#print axioms Tm.PlannerWit.an_hour_later_keeps_every_row_that_had_settled
+#print axioms Tm.PlannerWit.three_rows_had_settled_when_the_witness_planned
+#print axioms Tm.PlannerWit.the_wall_axis_moves_no_census_number
+#print axioms Tm.PlannerWit.the_wall_axis_definitions_are_not_constants
+#print axioms Tm.PlannerWit.the_open_sweep_and_the_replan_both_had_a_subject

@@ -3499,7 +3499,59 @@ theorem PastPays_of_no_past_block (r : PlanReq)
     exact Nat.zero_le _
 
 
-/-- **§6.1's seven on the WHOLE day, with `hnopast` replaced by what the log actually owes.**
+/-! ### The third axis: what the WALL law needs, and what the lift was asking for
+
+W-23 named the eligibility bound (`FromNowAnchored`) and W-24 named the log bound
+(`PastPays`).  The lift's remaining unnamed hypothesis is the one below, and it had the shape
+the other two had before somebody looked: a blanket `∀` over the request, discharged in this
+tree only by a `decide` at a witness, and **false of an ordinary week file**.
+
+`PlainStore` is that blanket, named so it can be refuted rather than only assumed.  It ranges
+over **every** entity of the plan, so a plan holding one `at:` event on **another day** fails
+it — and a week file with an event on another day is the ordinary case, not an edge one.
+`PlannerWit.theOffDayRequest` is a request where it is false and §6.1's seven hold anyway.
+
+`WallsArePlain` is what the seven actually need, read off the one consumer:
+`dayPlan_ok_core_of_plain_walls`'s `h7` applies the blanket under `hs`, `hk` and `hi`, so the
+entities it reaches are exactly the ones a **Wall row of the produced day** names.  No other
+checker of the seven mentions `buffer:` or the day's two ends. -/
+
+/-- **The lift's blanket plainness hypothesis, named.**  Every interval-shaped entity of the
+plan carries no `buffer:`, lies inside the day being planned, runs forwards, and ends inside
+the calendar.  Quantified over the **store**, so one `at:` event on another day refutes it
+(`PlannerWit.the_blanket_plainness_is_false_at_the_off_day_request`). -/
+def PlainStore (r : PlanReq) : Prop :=
+  ∀ (i : Id) (e : Entity) (a b : Field.DT),
+    r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
+    e.val.buffer = none ∧
+      r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+      (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+      (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+      (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd
+
+/-- **The same five clauses, restricted to the entities a Wall row of `d` names.**  This is
+what `wallsUnmoved` reads and it is all of it: `Planner.plan_never_moves_a_wall` is fired once
+per Wall row, on the item that row carries.  An entity the day never places a Wall for is not
+this law's business, and `PlainStore` was asking about it anyway. -/
+def WallsArePlain (r : PlanReq) (d : DayPlan) : Prop :=
+  ∀ s ∈ d.segments, s.val.kind = SegKind.wall →
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      s.val.item = some i → r.plan.val.store.get i = some e →
+      e.val.shape = Shape.interval a b →
+      e.val.buffer = none ∧
+        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd
+
+/-- **The blanket pays the restriction**, on every day — which is what makes the lift below
+strictly more general than the one it replaces rather than a second incomparable one, exactly
+as `PastPays_of_no_past_block` does for the log axis. -/
+theorem WallsArePlain_of_a_plain_store (r : PlanReq) (d : DayPlan) (h : PlainStore r) :
+    WallsArePlain r d := fun _ _ _ i e a b _ hget hsh => h i e a b hget hsh
+
+
+/-- **§6.1's seven on the WHOLE day, from a paying past and from plain WALLS.**
 
 Same seven checkers, same conjunction, same request-side hypotheses as `dayPlan_ok_core` —
 and in place of *"the log holds no Block for today"*, the four clauses of `PastPays`, each a
@@ -3518,18 +3570,12 @@ morning worked something, which is every real day.  It is **not** a step towards
 induction: every clause below is discharged by a row that is either replayed or is §8.2
 choice 5b's reservation, and §8.2 step 5's own Block rows are still absent from
 `Planner.dayRows`. -/
-theorem dayPlan_ok_core_of_a_paying_past (r : PlanReq)
+theorem dayPlan_ok_core_of_plain_walls (r : PlanReq)
     (hagree : r.wallsAgree = true)
     (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
-      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
-      e.val.buffer = none ∧
-        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
-        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hwalls : WallsArePlain r (dayPlan r))
     (hpast : PastPays r) :
     planOkCore r (dayPlan r) = true := by
   -- **Every Block row of the day is a replayed row or the reservation**, unconditionally —
@@ -3608,10 +3654,29 @@ theorem dayPlan_ok_core_of_a_paying_past (r : PlanReq)
     noDemandingAfterWindDown_is_true_because_its_subject_is_empty r hnowcal
   have h7 : wallsUnmoved r (dayPlan r) = true := by
     refine (wallsUnmoved_iff r _).mpr (fun s hs i e a b hi hget hsh hk => ?_)
-    obtain ⟨hnbuf, hin, hout, hfwd, hcal⟩ := hplain i e a b hget hsh
+    obtain ⟨hnbuf, hin, hout, hfwd, hcal⟩ := hwalls s hs hk i e a b hi hget hsh
     exact plan_never_moves_a_wall r s i e a b hagree hs hk hi hget hsh hnbuf hin hout hfwd hcal
   simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true,
     h1, h2, h3, h4, h5, h6, h7]
+
+/-- **The blanket form, now a corollary.**  The statement is unchanged from before the wall
+axis was named and its proof is one application of `WallsArePlain_of_a_plain_store`, so every
+caller holding the store-wide hypothesis keeps working and none has to produce the restricted
+one.
+
+**`PlannerWit.the_off_day_request_has_plain_walls` is the other half of the strictness claim**:
+a request where `PlainStore` is false, `WallsArePlain` holds, and the seven hold with it. -/
+theorem dayPlan_ok_core_of_a_paying_past (r : PlanReq)
+    (hagree : r.wallsAgree = true)
+    (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hplain : PlainStore r)
+    (hpast : PastPays r) :
+    planOkCore r (dayPlan r) = true :=
+  dayPlan_ok_core_of_plain_walls r hagree hactive hday hnowcal
+    (WallsArePlain_of_a_plain_store r _ hplain) hpast
+
 
 /-- **The whole battery on the whole day, from a paying past** — `dayPlan_ok_is_the_core_seven`
 composed with the theorem above, which is the form a later step will call: §6.1's eleven, on
@@ -3622,16 +3687,30 @@ Both bounds W-23 left are now named rather than assumed: the eligibility one by
 theorem dayPlan_ok_on_the_whole_day {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true) (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
-      r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
-      e.val.buffer = none ∧
-        r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
-        (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hplain : PlainStore r)
     (hpast : PastPays r) : planOk el r (dayPlan r) = true :=
   dayPlan_ok_of_the_core_seven hfn r
     (dayPlan_ok_core_of_a_paying_past r hagree hactive hday hnowcal hplain hpast)
+
+
+/-- **The whole battery on the whole day, from a paying past and plain walls** — the strongest
+form of §6.1's lift in this tree, and the one a later step should call.
+
+Three bounds, three names: the eligibility one by `FromNowAnchored` (W-23), the log one by
+`PastPays` (W-24), the wall one by `WallsArePlain` (here).  Nothing else in the hypotheses is
+a `∀` over the request: `wallsAgree`, `activeAgrees` and `dayAgrees` are decidable `Bool`s the
+decoder owes (gap 346) and `hnowcal` is one `Nat` comparison.
+
+`dayPlan_ok_on_the_whole_day` is the same statement with the blanket `PlainStore` in place of
+`WallsArePlain`, kept because every existing caller has the blanket. -/
+theorem dayPlan_ok_on_the_whole_day_of_plain_walls {el : Eligible} (hfn : FromNowAnchored el)
+    (r : PlanReq)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true) (hday : r.dayAgrees = true)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hwalls : WallsArePlain r (dayPlan r))
+    (hpast : PastPays r) : planOk el r (dayPlan r) = true :=
+  dayPlan_ok_of_the_core_seven hfn r
+    (dayPlan_ok_core_of_plain_walls r hagree hactive hday hnowcal hwalls hpast)
 
 
 end PlanCheck

@@ -279,3 +279,12 @@ b09e66e46c76 TmKernel/TmKernel/EmitWire.lean withPlan default,r EmitWire.lean:64
 24548a6dc6ec TmKernel/TmKernel/PlanCheck.lean pastHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3358 pastHalf_segments
 d7fb41bd5254 TmKernel/TmKernel/PlannerWit.lean theOverBudgetRequest unfoldable no Inhabited PlanReq
 a1d1b3e18cea TmKernel/TmKernel/EmitWire.lean idWithin default EmitWire.lean:692 readPrio_accepts_seven
+ce9b0efcab4b TmKernel/TmKernel/PlanCheck.lean PlainStore True,False PlanCheck.lean:3551 WallsArePlain_of_a_plain_store; PlanCheck.lean:3551 WallsArePlain_of_a_plain_store
+55b459dce7e1 TmKernel/TmKernel/PlanCheck.lean WallsArePlain True,False PlanCheck.lean:3551 WallsArePlain_of_a_plain_store; PlanCheck.lean:3551 WallsArePlain_of_a_plain_store
+29c006e55e65 TmKernel/TmKernel/PlannerWit.lean twoWallWitness default,[] PlannerWit.lean:5404 tomorrows_meeting_is_not_one_of_todays_walls; PlannerWit.lean:5404 tomorrows_meeting_is_not_one_of_todays_walls
+53d3ab55da00 TmKernel/TmKernel/PlannerWit.lean twoWallPlan unfoldable no Inhabited WfPlan
+0a2b244a1e58 TmKernel/TmKernel/PlannerWit.lean twoWallInput unfoldable no Inhabited Look.Input
+9cc338cd78eb TmKernel/TmKernel/PlannerWit.lean theOffDayRequest unfoldable no Inhabited PlanReq
+3c66d0810d56 TmKernel/TmKernel/PlannerWit.lean toTomorrowsMeeting unfoldable no Inhabited WfSeg
+1721de03aaa6 TmKernel/TmKernel/PlannerWit.lean theRelabelledWallDay unfoldable no Inhabited DayPlan
+8e73160e95f0 TmKernel/TmKernel/PlannerWit.lean theHourLaterRequest unfoldable no Inhabited PlanReq
