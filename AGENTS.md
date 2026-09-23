@@ -142,10 +142,12 @@ not a flaky run: never retry it uncapped. (The macOS machine the earlier stamps
 were taken on has no `systemd-run`; there, cap by other means or keep every
 `decide` small, §5.10a.)
 
-**Nine** checks, exit 0. *(This paragraph said **seven** until the W-24 repair
-step, and so did §6.5 and §7.1's heading: check 8 — the prose citations — landed
-at W-19 and check 9 — every new definition constant-folded — at W-20, and the
-number here never moved. §5.11 applies to this file, which is the lesson the
+**Ten** checks, exit 0. *(This paragraph said **seven** until the W-24 repair
+step and **nine** until W-25 track A, and so did §6.5 and §7.1's heading: check 8
+— the prose citations — landed at W-19, check 9 — every new definition
+constant-folded — at W-20, and check 10 — the parity register has one home and no
+number is issued twice, `parity.py` over `parity.txt` — at W-25. The number here
+has now gone stale twice. §5.11 applies to this file, which is the lesson the
 correction carries.)* The wall time below is the seven-check stamp and is stale
 with it: warm 1.1 s (four consecutive capped runs at
 `bf7cc63`: 1.13, 1.11, 1.10, 1.10 s; `c8f3a38`'s were 1.15, 1.14, 1.11 s); at
@@ -1118,10 +1120,11 @@ banner which range is yours and fix it at the merge (§6.5).
 4. Delete from `Goals.lean` every goal the branches discharged, and check that
    check 7's number went **down** by exactly that many (§3.2).
 5. Confirm every new module is imported in `TmKernel/TmKernel.lean` (§2.3).
-6. Run `check.sh`, capped (§2.1). All **nine** checks, exit 0 — and
+6. Run `check.sh`, capped (§2.1). All **ten** checks, exit 0 — and
    `cargo test --workspace` green beside it (§7.5). *(This line said "seven"
-   until the W-24 repair step; checks 8 and 9 landed at W-19 and W-20. §2.1 and
-   §7.1 said it too and are repaired with it.)*
+   until the W-24 repair step and "nine" until W-25 track A; checks 8, 9 and 10
+   landed at W-19, W-20 and W-25. §2.1 and §7.1 said it too and are repaired
+   with it, both times.)*
 7. **Reconcile the PARITY register, the way item 1 reconciles the cheats.** A
    parity entry is a recorded divergence from the fork (D21/D22), and the
    register has no single home and no gate — README **gap 226** said so when
@@ -1147,11 +1150,40 @@ banner which range is yours and fix it at the merge (§6.5).
    impose on future blocks, not something that can be retrofitted over 53,000
    lines of ledger.
 
+   **BUILT AT W-25 TRACK A as check 10, and the retrofit was not the hard
+   part.** `kernel/parity.txt` is the index — one row per number, naming the
+   file and **line** where the entry is recorded — and `kernel/parity.py`
+   re-resolves every anchor with no build. **This item is therefore a command
+   that fails**, not a command that prints:
+
+   ```bash
+   cd /Users/psixyzt/code/planner/kernel && python3 parity.py
+   ```
+
+   The canonical issuance line, at column zero, is
+
+   ```
+   **Parity P<n> taken**: <what diverges, and from what>
+   ```
+
+   and `parity.py` prints the next free number rather than leaving it to be read
+   off whichever sentence a step happens to find — which is how both duplicates
+   happened. **Three things the command above could not see, each measured at
+   W-25:** it required the register row to be **bold** and the first twelve
+   (`| P1 |`–`| P12 |`) are not, so twelve of the thirty-nine numbers in use were
+   invisible to the reconciliation written to find them; it counted the P38
+   issuance **quoted inside backticks** by the W-24 block that repaired P38, so
+   it reported the duplicate on the repaired tree; and it read `README.md`
+   alone, while P13, P22, P28, P29 and P31 live only in design §17's table and
+   **P36 lives only in a comment in `Replay.lean`**. Gap 1417 concluded that 17
+   numbers were "not locatable mechanically"; all 39 are located and anchored,
+   and what was missing was a list of where to look.
+
 ---
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks this section documents — and `check.sh` runs NINE
+### 7.1 The seven checks this section documents — and `check.sh` runs TEN
 
 **This heading said "the seven checks" while `check.sh` ran nine**, and the
 number is repaired here rather than the section: checks **8** (the prose

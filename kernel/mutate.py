@@ -143,8 +143,14 @@ W-20 land block puts that to the owner as a decision to confirm or reverse
 `mutate_one` and the gate fails again on all 23.
 
 THE ROSTER.  `mutations.txt` holds the baseline commit and one row per audited
-definition: the body's sha1, the file, the name, the constants tried, and the
-first error the build reported for each.  check.sh's check 9 RUNS the mutation
+definition: the body's sha1, the file, the QUALIFIED name, the constants tried,
+and the first error the build reported for each.  The key is `(file, qualified
+name)` since W-25 track A; it was the SHORT name, which two definitions in one
+file could share (README gap 1422, and 38 pairs do).  The qualified names are
+not a guess: all 2,960 in the library were put through `#check @<name>` in one
+kernel build at that step, and 2,957 resolved -- the three that did not are
+`Plan.lean`'s `private def`s (`orientCore`, `orientDocs`, `orientPlan`), whose
+constants Lean mangles and which no module outside can name.  check.sh's check 9 RUNS the mutation
 for any new-or-changed definition with no matching row, and TRUSTS a row whose
 sha1 matches -- otherwise every run of check.sh would re-build the kernel once
 per audited definition forever, and the steady-state cost has to be ~0.
@@ -590,11 +596,75 @@ def anon_instance_name(line):
     return "inst_%s_%s" % (ident or "anonymous", tag)
 
 
+NAMESPACE = re.compile(r"^namespace[ \t]+([A-Za-z_][^\s]*)")
+SECTION = re.compile(r"^section(?:[ \t]+([A-Za-z_][^\s]*))?[ \t]*$")
+END = re.compile(r"^end(?:[ \t]+([A-Za-z_][^\s]*))?[ \t]*$")
+
+
+def scope_step(stack, line):
+    """Track Lean's namespace stack across one column-zero line (README gap 1422).
+
+    THE KEY USED TO BE THE SHORT NAME, and `roster()` reads a repeated key as a
+    deliberate re-audit -- so two DIFFERENT definitions sharing a short name in
+    one file were indistinguishable from one definition audited twice, and only
+    one of the two could ever match its row's sha.  Six pairs were live when the
+    W-24 repair step found it, and the latch it left said so and stopped.
+
+    `namespace A.B` pushes, `section` and `section foo` push an anonymous
+    scope, `end A.B` pops back through whatever it names and a bare `end` pops
+    one.  `open X in` is NOT a scope and does not appear here.
+
+    WHAT THIS CANNOT SEE, and why the collision check below is kept rather than
+    deleted: this is a textual tracker, not Lean's elaborator.  A `namespace`
+    inside a `mutual` block, a scope opened on a line this regex spells
+    differently, or an `end` that names a prefix of two open scopes would give a
+    name Lean does not know.  The check that catches that is not here -- it is
+    that every rostered name must be a constant Lean can `#check`, which the
+    W-25 track A block records as one kernel build over all 154 rows."""
+    m = NAMESPACE.match(line)
+    if m:
+        stack.append(("ns", m.group(1)))
+        return
+    if SECTION.match(line):
+        stack.append(("sec", SECTION.match(line).group(1)))
+        return
+    if line.rstrip() == "mutual":
+        # `mutual ... end` is a scope too, and MISSING IT WAS NOT SILENT: the
+        # bare `end` that closes one popped `namespace Tm` instead, and 153 of
+        # the library's definitions came back with no namespace at all.  That is
+        # the shape of the whole gap -- a key that is not the name Lean knows.
+        stack.append(("sec", None))
+        return
+    m = END.match(line)
+    if not m:
+        return
+    want = m.group(1)
+    if want is None:
+        if stack:
+            stack.pop()
+        return
+    for i in range(len(stack) - 1, -1, -1):
+        if stack[i][1] == want:
+            del stack[i:]
+            return
+    if stack:
+        stack.pop()
+
+
+def qualify(stack, name):
+    """`Tm.EmitWire.u32Within` from the open namespaces and the declared name."""
+    parts = [n for kind, n in stack if kind == "ns" and n]
+    return ".".join(parts + [name]) if parts else name
+
+
 def declarations(text, path):
-    """Every `def`, `abbrev` and `instance` in one file: name, body, span, type."""
+    """Every `def`, `abbrev` and `instance` in one file: name, body, span, type.
+
+    `name` is the QUALIFIED name -- the roster's key since W-25 track A."""
     out = []
     lines = text.split("\n")
     starts = []
+    stack = []
     # `/- ... -/` nests in Lean, and a doc comment's continuation lines are
     # indented: without this tracker a commented-out `def` would be reported
     # UNPARSED and would fail the gate for a sentence.
@@ -607,20 +677,24 @@ def declarations(text, path):
         # phantom spans were measured from exactly that word).  The tracker
         # below already ran for `INDENTED`; it now runs for `HEAD` too.
         if m:
-            starts.append((n, m.group(2)))
+            starts.append((n, qualify(stack, m.group(2)), m.group(2)))
         elif comment == 0 and ANON_INSTANCE.match(line):
-            starts.append((n, anon_instance_name(line)))
+            nm = anon_instance_name(line)
+            starts.append((n, qualify(stack, nm), nm))
         elif comment == 0 and INDENTED.match(line):
-            out.append({"name": INDENTED.match(line).group(2), "file": path,
+            out.append({"name": qualify(stack, INDENTED.match(line).group(2)),
+                        "file": path,
                         "line": n + 1, "last": n + 1, "body": None,
                         "type": None, "at": None, "stop": None, "lead": "",
                         "indented": True})
+        elif comment == 0:
+            scope_step(stack, line)
         comment += line.count("/-") - line.count("-/")
         comment = max(comment, 0)
     offsets = [0]
     for line in lines:
         offsets.append(offsets[-1] + len(line) + 1)
-    for n, name in starts:
+    for n, name, raw in starts:
         end = len(lines)
         for j in range(n + 1, len(lines)):
             line = lines[j]
@@ -634,11 +708,12 @@ def declarations(text, path):
         if body_at is not None and body_at < 0:
             body_at, lead = -body_at, ":= "
         if body_at is None or body_at > stop:
-            out.append({"name": name, "file": path, "line": n + 1,
+            out.append({"name": name, "raw": raw, "file": path, "line": n + 1,
                         "last": end, "body": None, "type": None,
                         "at": None, "stop": stop, "lead": "", "header": header})
             continue
-        out.append({"name": name, "file": path, "line": n + 1, "last": end,
+        out.append({"name": name, "raw": raw, "file": path, "line": n + 1,
+                    "last": end,
                     "body": text[body_at:stop], "type": kind.strip(),
                     "at": body_at, "stop": stop, "lead": lead,
                     "header": header})
@@ -1660,28 +1735,35 @@ def main(argv):
             print("  %s" % why)
         return 1
 
-    # **TWO DECLARATIONS OF ONE SHORT NAME IN ONE FILE ARE A COLLISION**
-    # (README gap 1422, found at the W-24 repair step while `instance` was being
-    # added).  The roster is keyed on `(file, SHORT name)`, and `roster()` reads
-    # a repeated key as a deliberate RE-AUDIT -- so two DIFFERENT definitions
-    # sharing a short name in one file are indistinguishable from one definition
-    # audited twice, and only one of the two can ever match its row's sha.  It
-    # is the same class as check 3's multiset reconciliation, which exists
-    # because 24 short names are declared in more than one namespace.
+    # **THE KEY IS THE QUALIFIED NAME** (README gap 1422, CLOSED at W-25 track
+    # A).  It was the SHORT name, and `roster()` reads a repeated key as a
+    # deliberate RE-AUDIT -- so two DIFFERENT definitions sharing a short name
+    # in one file were indistinguishable from one definition audited twice, and
+    # only one of the two could ever match its row's sha.  The W-24 repair step
+    # found it while adding `instance`, latched it as a STOP, and reported SIX
+    # live pairs.
     #
-    # SIX PAIRS ARE LIVE IN THE LIBRARY TODAY and none is currently new or
-    # changed, so this is a latch rather than a repair: Boundary.lean `readTz`
-    # and `readStep` (each in two namespaces), Line.lean `setEst` and `keyOf`,
-    # Replay.lean `get` and `alter` (`KMap` and `HMap`).  A step that edits one
-    # of those files fails HERE, by name, instead of being told `0 owed` about a
-    # definition the roster cannot hold.  The real fix is a qualified key, which
-    # rewrites every row in mutations.txt and re-verifies them; that is the gap.
+    # **THERE ARE 38, NOT SIX**, measured over the whole library once the
+    # namespace stack existed: the six named (Boundary `readTz`/`readStep`,
+    # Line `setEst`/`keyOf`, Replay `get`/`alter`) plus `wf` in FIVE files
+    # (Cal, Line, Lookahead, Planner, Seal), `empty`, `finish` and `name` in
+    # two each, `Json.go`, `Log.tag`, `Close.bump`, `Lookahead.view` and
+    # nineteen more, across TEN files rather than three.  The latch was a stop
+    # for three files and silence for the other six, because the count was
+    # taken over the step's own diff and written down as a fact about the
+    # library.
+    #
+    # THE CHECK STAYS, AND ITS MEANING CHANGES.  Lean cannot hold two
+    # declarations of one QUALIFIED name, so a collision here is no longer a
+    # limitation of the roster -- it is `scope_step` disagreeing with Lean's
+    # elaborator, which is the one way the new key can be wrong and the one
+    # thing nothing else below the gate would notice.
     seen = collections.Counter((d["file"], d["name"]) for d in decls)
     clash = sorted(k for k, n in seen.items() if n > 1)
     if clash:
-        print("%d short name(s) declared TWICE in one file -- the roster is "
-              "keyed on (file, name) and cannot hold both (README gap 1422):"
-              % len(clash))
+        print("%d QUALIFIED name(s) declared twice in one file -- Lean cannot "
+              "hold that, so `scope_step` has the namespace stack wrong "
+              "(README gap 1422):" % len(clash))
         for path, name in clash:
             print("  %s %s" % (path, name))
         return 1

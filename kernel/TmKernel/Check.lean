@@ -6363,3 +6363,29 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.EmitWire.readKind_refuses_a_long_batch_member
 #print axioms Tm.EmitWire.readNote_refuses_a_long_no_position_id
 #print axioms Tm.EmitWire.readNote_refuses_a_long_buffer_before_id
+
+-- APPENDED 2026-09-22: stage 6 W-25, track A (AGENTS §6.3).  README gap 1415's
+-- OTHER HALF: the seven bare `Nat`s `EmitWire.readNote` read with no stated
+-- width.  `u32Within` and `secWithin` are the two constructors and NEITHER
+-- declares a bound: the five counts take `CapWire.maxRemaining`
+-- (`Look.maxPlanMinutes`, whose own header says *fork `u32`*) and the two
+-- absolute seconds take `Cal.Instant.wf` through `Cal.mkInstant?`, which is the
+-- clause `Planner.Seg.wf` already puts on a segment's `stop`.  The two
+-- `_is_the_` theorems are AGENTS §5.3's "not a second bound" as a theorem
+-- rather than as a sentence.
+#print axioms Tm.EmitWire.u32Within_refuses_past_the_width
+#print axioms Tm.EmitWire.u32Within_accepts_at_the_width
+#print axioms Tm.EmitWire.u32Within_refuses_the_width_plus_one
+#print axioms Tm.EmitWire.u32Within_is_the_logs_u32_width
+#print axioms Tm.EmitWire.secWithin_refuses_past_the_calendar
+#print axioms Tm.EmitWire.secWithin_accepts_a_representable_second
+#print axioms Tm.EmitWire.secWithin_refuses_the_first_second_past_the_years
+#print axioms Tm.EmitWire.secWithin_is_the_clause_Seg_wf_puts_on_a_stop
+#print axioms Tm.EmitWire.readNote_refuses_a_long_duration
+#print axioms Tm.EmitWire.readNote_refuses_a_low_past_the_calendar
+#print axioms Tm.EmitWire.readNote_refuses_a_high_past_the_calendar
+#print axioms Tm.EmitWire.readNote_refuses_a_blocks_done_past_the_width
+#print axioms Tm.EmitWire.readNote_refuses_a_planned_past_the_width
+#print axioms Tm.EmitWire.readNote_refuses_a_total_past_the_width
+#print axioms Tm.EmitWire.readNote_refuses_a_left_min_past_the_width
+#print axioms Tm.EmitWire.readNote_accepts_the_seven_inside_their_bounds

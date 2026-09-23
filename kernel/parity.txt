@@ -1,0 +1,78 @@
+# check.sh check 10's index: the PARITY register (README gaps 226 and 1417).
+# `parity.py`'s module docstring is the specification; this file is the register.
+#
+# A parity entry is a recorded divergence from the fork point `4748911` (owner D21/D22).
+# Until W-25 track A the list had no single home and no gate, and that cost a duplicate
+# twice -- **P32** (gap 226) and **P38** (gap 1417).  This file is the home.
+#
+# ONE ROW PER NUMBER, whitespace-delimited:
+#
+#     P<n>  <idiom>  <file>:<line>  <the divergence, in one line>
+#
+# `<idiom>` is which spelling the anchor line carries, and `parity.py` re-resolves it on
+# every check.sh run at no cost:
+#
+#     taken   `**Parity P<n> taken**` at column zero -- THE CANONICAL ISSUANCE LINE.
+#             A block that takes a number writes this and nothing else takes one.
+#     row     `| P<n> |` or `| **P<n>** |` -- a register table row in a block or a design.
+#     cite    `parity ... P<n>` in prose or in a source comment.
+#
+# A number that is retired rather than used gets a `hole P<n> <why>` line instead, because
+# `--gate` requires P1..Pmax to be CONTIGUOUS: an index that is quietly 17 numbers short is
+# what gap 1417 measured, and contiguity is what stops it happening again.
+#
+# TAKING THE NEXT NUMBER: `python3 parity.py` prints it.  Write the canonical issuance line
+# in your block, add the row here, and the gate checks both.
+#
+# The `<file>:<line>` anchors below were resolved at W-25 track A, at `d6e514c` plus this
+# step.  README.md is append-only (AGENTS §6.4) so its numbers are stable; a design doc
+# edited above an anchor moves it, and the gate FAILS by name rather than resolving to
+# whatever now sits on the line.
+#
+# NOT THE REGISTER, and named here so the exclusion is a decision and not an oversight:
+# `design/stage5/design-lookahead.md` §7.2 (P1, P7-P10) and `design/stage5/design-migration.md`
+# §12.3 (P7-P17) are SUPERSEDED DRAFT NUMBERINGS whose numbers mean different things from the
+# ones below -- design-migration's P9 is this register's P13, its P13 is this P16, and
+# design-lookahead's P7 is this P28.  `design/stage6/stage6-planner-design.md` §14.2 and
+# `design/stage5/design-latency.md` carry `| **P0** |`-style rows that are stage-6 STEP names,
+# not parity numbers, which is the ambiguity AGENTS §6.5 names.  None is anchored here.
+
+P1   row    README.md:8831                                 future-day capacity and everything downstream: exact `w·L + (capDen−w)·H` over `capDen` against `capacity::lookahead`'s `f64`
+P2   row    README.md:7837                                 `u` at need 0 over capacity 0 is HOT here; the fork's `f64` division is not
+P3   row    README.md:7838                                 `need_min` is the ceiling of `remaining × safety`; the fork rounds
+P4   row    README.md:7839                                 a series head is per document; the fork pools same-named sections across files
+P5   row    README.md:7840                                 `remaining` above `2^32 − 1` minutes is a `Nat`; the fork `saturating_add`s
+P6   row    README.md:7841                                 a child linked by `@label` is not a child; the fork resolves the label
+P7   row    README.md:8168                                 the bin's need is the exact `remaining × safety` in the cross-multiplication; the fork rounds first
+P8   row    README.md:8169                                 configured priority values outside the stated domain are refused by name; the fork accepts them
+P9   row    README.md:8170                                 a stored yesterday above 7 is refused; the fork clamps
+P10  row    README.md:8475                                 capacity days out of date order are refused; the fork's two filters can disagree
+P11  row    README.md:8476                                 availability above `2^32 − 1` minutes is a `Nat`; the fork wraps or panics
+P12  row    README.md:8477                                 two deadlines on one date keep line order; the fork orders by time
+P13  row    design/stage5/stage5-D9-D10-design.md:2852     a log line that is not UTF-8 is a per-line `invalidUtf8` warning; the fork's `read_to_string` fails the whole command
+P14  row    README.md:10808                                a line over 65,536 characters or nested past 64 levels is refused by name; serde parses it to its own limit
+P15  row    README.md:10809                                a line warning's text and its class when a line has two defects; serde's message, first defect in stream order
+P16  row    README.md:9490                                 an instant outside [1900, 2200) takes the table's edge offset; chrono-tz has its own value
+P17  row    README.md:15424                                a day's or an item's minute and count sums above `2^32 − 1` are refused by name; the fork saturates
+P18  row    README.md:12871                                `tm undo`'s recorded events after a malformed line are physical line numbers; the fork's two counters disagree
+P19  row    README.md:13227                                an append after a torn last line starts a new line; the fork's concatenation corrupts both
+P20  row    README.md:11092                                `tm log --json` bytes for lines the Rust writer wrote; serde's re-serialisation is the comparand
+P21  row    README.md:13150                                `DayReview.load_blocks` at a tie: exact fifths divided once, against an accumulated `f64` sum
+P22  row    design/stage5/stage5-D9-D10-design.md:2861     OWNER Q7's unread replay facts; under D14 the kernel derives them, so P22 is NOT TAKEN as a deletion
+P23  row    README.md:10635                                a `"t"` instant outside `Cal.Day`'s years is refused; chrono reads it
+P24  row    README.md:10810                                numeric and duplicate-key edges at a known field; serde's verdict is the comparand
+P25  row    README.md:10811                                a numeral in serde's float band, anywhere in a line; serde's algorithm ported exactly
+P26  row    README.md:11741                                a weight or capacity value outside the exact domain is refused by name; the fork accepts it
+P27  row    README.md:9784                                 `window_hours × 60` not whole: `halfUpQ` on the exact pair against the fork's `f64::round`
+P28  row    design/stage5/stage5-D9-D10-design.md:2867     CONDITIONAL: a window or wall spanning a DST transition counts civil minutes; the fork counts real ones
+P29  row    design/stage5/stage5-D9-D10-design.md:2868     a hand-appended unknown event's non-canonical numeral prints as written; serde re-serialises it
+P30  row    README.md:11742                                a `due:` more than 3,660 days ahead sees only the first 3,660 days' capacity
+P31  row    design/stage5/stage5-D9-D10-design.md:2870     a hand-edited line no rebuild can window is the named fault `reachTooFar`; the fork replays it
+P32  row    README.md:13905                                the candidate section's bounds -- count, `ci`, `!k`, `remaining`, id length -- refused by name
+P33  row    README.md:15697                                a routine `done` whose `inst` names a date before 0001-01-01 is not a date here; chrono parses it
+P34  row    README.md:16001                                an `idle` gap or a routine `done`'s minutes reaching before the origin saturate at it
+P35  row    README.md:19158                                the `of` a silent verb's compensating undo writes is `verb:<name>`, which matches no event tag
+P36  cite   TmKernel/TmKernel/Replay.lean:7215             a close's primary id: the fork writes `null`, the kernel writes the id (renumbered from P32 at stage 5's close)
+P37  row    README.md:50415                                an emoji ZWJ sequence or modifier is one cluster's base width here; the fork sums code points
+P38  taken  README.md:29742                                the kernel reads a store key where the fork's `ItemLine::id()` reads none -- the title key
+P39  row    README.md:52676                                a column-zero item line inside an HTML comment is prose here and an item in the fork (owner D47)

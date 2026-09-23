@@ -54831,3 +54831,398 @@ run count from memory. The fix is not "remember better": it is that a count
 worth quoting is worth **keeping a list of while it accumulates**, the way the
 proptest case counts in §3 were kept. That is a note to the next run's author,
 and this block is the correction it would otherwise have had to make.
+
+---
+
+<!-- =====================================================================
+     APPENDED 2026-09-22: stage 6 (the planner), run **W-25**, **track A** —
+     the wire's remaining bounds, the parity register, and the roster key.
+     Worked in an isolated worktree, `.claude/worktrees/w25-a` on branch
+     `w25-a`; the Land step merges it.  This block's gap range is
+     **1470-1499**; it takes **1470-1476** and leaves **1477-1499** free.
+     Whoever merges renumbers (AGENTS §6.4).
+     ===================================================================== -->
+
+## Stage 6 W-25, track A
+
+**Three tasks, three landed.** Gap 1415's other half is closed and invented no
+name; the parity register has a home, a gate and all thirty-nine of its numbers
+anchored; and the roster key is the qualified name, which cost **no kernel
+build at all** — the thing the gap said it would cost.
+
+**The recurring shape of this step was a count taken over a diff and written
+down as a fact about the library.** W-24's latch reported **six** pairs of
+definitions sharing a short name in one file; there are **38**, in **ten**
+files. Gap 1417 reported **17** parity numbers "not locatable mechanically";
+all 17 are locatable, and what was missing was a list of where to look — five
+of them live in design §17's table and **P36 has never had a row anywhere**,
+only a comment in `Replay.lean`. Neither earlier number was wrong about what
+its author had looked at. Both were wrong about the library.
+
+### 1. Gap 1415's other half: the seven bare `Nat`s (CLOSED)
+
+`EmitWire.readNote` read `durMin`, `lo`, `hi`, `blocksDone`, `planned`, `total`
+and `leftMin` as bare `natAtP`. W-24's repair declined to invent seven names and
+was right to; **§5.3 says reuse a BOUND, and all seven already had one.**
+
+| the seven | what it is | the bound it belongs under | why that one |
+|---|---|---|---|
+| `durMin` | minutes | `CapWire.maxRemaining` | fork `dur_min: u32`, `planner.rs:743` |
+| `leftMin` | minutes | `CapWire.maxRemaining` | fork `left_min: u32`, `planner.rs:760` |
+| `planned`, `total` | minutes | `CapWire.maxRemaining` | fork `capacity::floor_minutes` into `f64::from`, which exists for `u32` |
+| `blocksDone` | a count of blocks | `CapWire.maxRemaining` | fork `blocks_done: u32`, `planner.rs:810` |
+| `lo`, `hi` | absolute seconds | `Cal.Instant.wf`, via `Cal.mkInstant?` | `Planner.Note`'s own doc comment says so, `Emit.timeCell` renders them, and it is the clause `Seg.wf` puts on a `stop` |
+
+**Not one of the five counts is a minute count in the sense the bound's name
+suggests, and that is deliberate.** `Look.maxPlanMinutes`'s own header says
+*fork `u32`* — the **width**, not a quantity — and `Boundary.maxRemaining` is
+defined as it precisely so the number has one owner. A block count standing
+under it is the width being reused; a second name would be the defect.
+
+**Two functions, and one of them deletes a guard.** `u32Within` and `secWithin`
+are the whole change, and `readSeg`'s `planned` comparison — which was
+`if n ≤ CapWire.maxRemaining` written out by hand — is now `u32Within` too. One
+guard, not two.
+
+**"It is not a second bound" is a theorem here, not a sentence.**
+`u32Within_is_the_logs_u32_width` says the guard admits exactly the `Nat`s that
+are values of `Log.U32` — the kernel's other reader of a fork `u32` — and is
+stated with **neither number written down**, so it cannot be satisfied by
+copying a literal from one side to the other.
+`secWithin_is_the_clause_Seg_wf_puts_on_a_stop` does the same for the seconds
+against `Planner.Seg.wf`.
+
+**Sixteen theorems, each with its acceptance beside it** (§5.8): two directions
+and an inhabited pair for each guard, the two identifications, one refusal per
+field, and `readNote_accepts_the_seven_inside_their_bounds`, which reads all
+four note shapes back at values inside their bounds so that no guard above is a
+trapdoor. All sixteen are in `Check.lean` under a W-25 banner.
+
+**D40**: `u32Within` and `secWithin` were constant-folded. Both **PINNED**, at
+`readSeg_refuses_a_planned_past_the_bound` and
+`secWithin_refuses_past_the_calendar`. **0 SURVIVED, and the method's limit is
+that `Except RowRefusal Nat` has exactly one constant** — `default` — so this is
+one mutation each and not two; the `Bool`/`Nat` pair that gives both directions
+does not exist for this type.
+
+**`EmitWire.lean` elaborates in 1.76 s under an 8 GB cap with `timeout 120`,
+0 errors** (§5.10a), so every new `rfl` and `decide` witness is small.
+
+### 2. Gap 1417: the parity register gets a home and a gate (CLOSED)
+
+`kernel/parity.txt` is the index — **one row per number, naming the file and
+LINE where the entry is recorded** — and `kernel/parity.py` is **check 10**,
+which re-resolves every anchor with no build, the way `mutate.py`'s
+`stale_sites` re-resolves a pin site. AGENTS §6.5 item 7 and §2.1, §7.1's
+heading are updated: **check.sh runs TEN.**
+
+**The canonical issuance line**, at column zero, is
+
+```
+**Parity P<n> taken**: <what diverges, and from what>
+```
+
+and `python3 parity.py` prints the next free number instead of leaving it to be
+read off whichever sentence a step happens to find — which is how **both**
+duplicates happened.
+
+**What §6.5's command could not see, and this ran before claiming anything:**
+
+| the command's rule | what it missed | measured |
+|---|---|---|
+| the register row must be **bold** | the first **twelve** are not: `\| P1 \|`–`\| P12 \|` at `README.md:7836-8477` | **12 of the 39** numbers in use were invisible to the reconciliation written to find them |
+| a `**Parity P<n> taken**` anywhere is an issuance | the W-24 repair block **quotes** the P38 issuance inside backticks | it reports P38 **twice on the repaired tree**. Inline code is stripped here before anything is matched |
+| `README.md` is the register | P13, P22, P28, P29, P31 live only in design §17's table; **P36 lives only in a comment in `Replay.lean`** and has never had a row anywhere | all **39** are located and anchored: **37 `row`, 1 `cite`, 1 `taken`**, across **3** files |
+
+**Gap 1417's "17 not locatable mechanically" does not reproduce as a property of
+the ledger.** It reproduces as a property of *looking in one file with one
+regex*. Gap 226 had already named the code as one of the three places; the later
+measurement dropped that place.
+
+**A fourth place, found here and not filed before:**
+`design/stage5/design-lookahead.md` §7.2 and `design/stage5/design-migration.md`
+§12.3 carry **superseded draft numberings** whose numbers mean different things
+from the register's — design-migration's **P9** is the register's **P13**, its
+**P13** is the register's **P16**, and design-lookahead's **P7** is the
+register's **P28**. A reader who greps `P13` in the designs gets two unrelated
+exceptions. They are named in `parity.txt`'s header as *not the register* rather
+than left to be rediscovered; annotating the two design files is gap **1475**.
+
+**EIGHT PLANTS AGAINST THIS GATE, in a scratch copy, each reverted in the same
+command.** Five caught, one deliberately green, **one green that closed a hole**,
+one green that is recorded:
+
+| plant | verdict |
+|---|---|
+| a second `**Parity P38 taken**` at column zero | **caught** — "P38 is TAKEN twice: README.md:29742 and README.md:54360" |
+| `**Parity P41 taken**`, no index row | **caught** — "P41 is taken … and has NO index row" |
+| two index rows for P20 | **caught** |
+| P20's row deleted from the index | **caught by CONTIGUITY** — "the register is short, which is README gap 1417's own shape". This is the rule that stops an index going quietly 17 numbers short |
+| P16's anchor moved one line | **caught** — "no longer carries a `row` for it — re-anchor" |
+| the same issuance line **quoted in backticks** | **green, correctly** — that is the false positive §6.5's command had |
+| `\| **P41** \|` appended to README with no issuance line and no index row | **GREEN.** The gate read issuance lines and not register rows. The row half of the check exists because this went green, and it is caught now |
+| the same row in a file the index does not name | **GREEN, and recorded as gap 1470** — not claimed away |
+
+### 3. Gap 1422: the roster key is the qualified name (CLOSED)
+
+`mutations.txt`'s third column is `Tm.EmitWire.u32Within`, not `u32Within`.
+`declarations()` gained a namespace stack (`scope_step`, `qualify`): `namespace`,
+`section` and **`mutual`** push, `end` pops.
+
+**The gap priced this at "one kernel build per constant" over all 154 rows. It
+cost none.** A row is trusted on its **body's sha1**, and the bodies did not
+move; only the key did. All **154** rows rewrote mechanically — **0 with no
+declaration found, 0 ambiguous** — and check 9 came back `154 rostered, 0 owed`
+with every other number unchanged.
+
+**The new keys are not a claim.** All **2,960** distinct library names were put
+through `#check @<name>` in **one** kernel build: **2,957 resolve**. The three
+that do not are `Plan.lean`'s `private def`s — `orientCore`, `orientDocs`,
+`orientPlan` — whose constants Lean mangles and which no module outside can
+name. That is the check, and it is recorded rather than folded into the gate,
+because it needs a build (gap 1476).
+
+**`mutual` was not optional, and missing it was not silent.** Before it was
+tracked, the bare `end` that closes a `mutual` block popped `namespace Tm`
+instead, and **153 of the library's definitions came back with no namespace at
+all** — which is the whole gap in miniature, a key that is not the name Lean
+knows.
+
+**The collision check stays and changes meaning.** Lean cannot hold two
+declarations of one qualified name, so a collision is no longer a limitation of
+the roster: it is `scope_step` disagreeing with Lean's elaborator, which is the
+one way the new key can be wrong and the one thing nothing else below the gate
+would notice.
+
+**W-24's "six pairs" is corrected to 38, wider than filed** (AGENTS §5.12): the
+six named, plus `wf` in **five** files (`Cal`, `Line`, `Lookahead`, `Planner`,
+`Seal`), `empty`, `finish` and `name` in two each, `Json.go`, `Log.tag`,
+`Close.bump`, `Lookahead.view` and nineteen more, across **ten** files rather
+than three. The latch was a stop for three files and silence for the other
+seven.
+
+### 4. The 32 bare pin sites: ONE paid, 31 declined WITH THE NUMBER
+
+The gap said this pairs with the key change. **It does not**: the key change
+needed no build and this needs 48 of them.
+
+- **All 32 are `Planner.lean` rows**, carrying **56 constants**, of which **48
+  build** (8 are `unfoldable`/`unavailable` labels that do not).
+- **One `Planner.lean` row with two constants took 4 m 31 s**, measured
+  (`mutate.py --verify --only Tm.Planner.PlanReq.blocksDone`) — **~135 s per
+  kernel build**, because `Planner.lean` is early in the chain and everything
+  downstream rebuilds. `EmitWire.lean`'s 33 rows, at the end of the chain, took
+  **78 s for all of them**.
+- So the 31 remaining cost **≈ 1 h 45 m** of capped kernel builds. **Declined
+  here, with the number, as gap 1472.**
+- **The one that was paid was STALE**, which is the finding that makes the rest
+  worth paying: `Tm.Planner.PlanReq.blocksDone`'s site was `PlannerWit.lean:2641`
+  and the mutation now errors at `PlannerWit.lean:2701` — **60 lines off**, and a
+  bare site cannot show that. Check 9's bare-site count is **32 → 31**.
+
+### 5. Found while fixing: check 3 reads prose as a declaration (gap 1471)
+
+A doc-comment line of `EmitWire.lean` wrapped so that `theorem rather than as
+prose:` began at column zero. **Check 3 FAILED**: *"1 declared, never audited —
+no #print axioms for: `rather`."* Its declaration roster is a `grep` anchored at
+column zero and cannot tell a sentence from a `theorem`. README gap **1308**
+repaired exactly this class in `mutate.py`'s `decl_spans` and left check 3's own
+grep with it; AGENTS §6.3 records the same trap under the name `whose`. Fixed by
+reflowing — **and the first reflow reproduced it**, putting `theorem named
+\`rather\`.` at column zero inside the sentence explaining the trap. Both lines
+are reflowed and no line of the file now reads as a declaration.
+
+### 6. What this step did NOT do, by name
+
+- **No parity number was taken. P40 is still free**, and check 10 says so on
+  every run rather than a sentence saying so. Nothing observable changed: the
+  new guards refuse values the fork's own `u32` fields cannot hold, no shipped
+  verb sends a `plan` section (gap 1321), and `cargo test --workspace` is
+  **1,431 / 0 / 9**, unmoved.
+- **`Goals.lean` untouched.** Burn-down **9**, all stage 6 — none added,
+  discharged or deleted.
+- **`Negative.lean` untouched**; no cheat number taken.
+- **`Log.U32` and `Look.maxPlanMinutes` were not unified** (gap 1473).
+- **The proptests, `PlanCheck.lean` and `Goals.lean` were not touched** — they
+  are tracks P and G's.
+
+### 7. Gaps
+
+**Gap 1470 — check 10 reads only the files the index names, and a planted row in a fourth file went GREEN.**
+1. *What is not done.* `parity.py` scans `README.md` plus whatever files the
+   index's anchors point into — three today. A register row or a canonical
+   issuance line in a fourth file is invisible. **Driven**: `| **P41** |`
+   appended to `design/stage6/stage6-planner-design.md` passes.
+2. *Why.* The alternative is scanning every tracked file, and the two
+   superseded draft numberings plus the stage-6 **step** tables (`| **P0** |` …
+   `| **P8** |`) would make that a false-positive machine — which is the exact
+   ambiguity AGENTS §6.5 names as the reason a regex cannot do this.
+3. *What it costs.* A block that records a divergence in a design document and
+   nowhere else is outside the register and outside the gate. The contiguity
+   rule limits the damage — the number cannot silently go missing once it is
+   indexed — but it cannot make an unindexed number appear.
+4. *Which stage.* Whoever adds a fourth home: it is one row in `parity.txt`,
+   because the file list is derived from the anchors.
+
+**Gap 1471 — check 3's declaration roster is a column-zero grep and reads prose as a theorem.**
+1. *What is not done.* `check.sh`'s check 3 greps
+   `^(@\[[^]]*\][[:space:]]*)?theorem ` over the library and takes the next word
+   as a theorem name. A doc comment whose text wraps onto a line beginning
+   `theorem <word>` makes the check demand an audit line for `<word>`.
+2. *Why.* Not fixed here because check 3's enumeration is shared with three
+   other checkers and a repair belongs with whoever owns that walk, not with a
+   track whose own prose tripped it.
+3. *What it costs.* A false failure, which is the safe direction, and it cost
+   this step one check.sh run. The *other* direction — AGENTS §6.3's `whose` —
+   is a false PASS and is already recorded there.
+4. *Which stage.* Whoever next touches check 3; `mutate.py`'s `decl_spans` has
+   the block-comment tracker the fix needs, already written (gap 1308).
+
+**Gap 1472 — 31 roster rows still carry a bare pin site, and the cost is now measured.**
+1. *What is not done.* 31 of 156 rows record `file:line` with no declaration
+   name, so `stale_sites` cannot check them. All 31 are `Planner.lean` rows.
+2. *Why.* **48 kernel builds at ~135 s each ≈ 1 h 45 m**, measured here rather
+   than estimated: one two-constant `Planner.lean` row took 4 m 31 s.
+   Upgrading a bare site *without* a build would resolve today's line against
+   today's file, which is a gate green on its own class.
+3. *What it costs.* A drift that a named site would catch is invisible for
+   those 31 — **and it is not hypothetical**: the one row paid here had drifted
+   **60 lines**.
+4. *Which stage.* Whoever next edits `Planner.lean` — `mutate.py --verify --only
+   Planner.lean --write` does all 43 of its rows in one run.
+
+**Gap 1473 — `Log.U32` and `Look.maxPlanMinutes` are two spellings of one number.**
+1. *What is not done.* `Log.U32 := Fin 4294967296` and
+   `Look.maxPlanMinutes := 4294967295` are the same set of `Nat`s under two
+   names, and `Boundary.maxRemaining` is a third name for the second.
+2. *Why.* Unifying them rewrites `Log.lean` or `Lookahead.lean`, both early in
+   the chain, and owes a mutation row plus a full rebuild for a change with no
+   behaviour in it. `u32Within_is_the_logs_u32_width` ties them instead, so the
+   identity is checked on every build.
+3. *What it costs.* AGENTS §5.3's own defect class, live, in the bound
+   vocabulary — the thing `maxRemaining`'s doc comment was written to prevent.
+   A future third spelling would be caught by nothing.
+4. *Which stage.* Whoever next edits `Log.lean`'s field widths.
+
+**Gap 1474 — `parity.txt`'s statement column is prose and nothing checks it.**
+1. *What is not done.* The fourth field of each row is a one-line description
+   of the divergence. Nothing compares it to the anchored text.
+2. *Why.* The same reason `mutations.txt`'s fifth column is a claim until
+   `--verify` re-runs it: the evidence a human reads cannot be machine-derived
+   without becoming a copy of what it describes.
+3. *What it costs.* A row whose sentence has gone stale reads as current. The
+   anchor still resolves, so the reader can always go and look.
+4. *Which stage.* None planned; it is stated so the index's own limit is a
+   decision.
+
+**Gap 1475 — the two superseded draft parity numberings are named in one file and annotated in neither.**
+1. *What is not done.* `design/stage5/design-lookahead.md` §7.2 and
+   `design/stage5/design-migration.md` §12.3 still present P1–P17 tables whose
+   numbers conflict with the register. `parity.txt`'s header says so; the two
+   documents do not.
+2. *Why.* They are dated design documents and AGENTS §6.4's convention is that
+   committed blocks stay as written; a header note is an edit to a document
+   this track does not own.
+3. *What it costs.* A reader grepping `P13` in `design/` finds two unrelated
+   exceptions and no marker saying which is live.
+4. *Which stage.* Whoever next edits either design; one sentence at the head of
+   each table.
+
+**Gap 1476 — `scope_step` is textual, and the `#check` that validates it is not in the gate.**
+1. *What is not done.* The namespace stack is a regex over column-zero lines,
+   not Lean's elaborator. A `namespace` inside a `mutual`, a scope opened in a
+   spelling the regex does not match, or an `end` naming a prefix of two open
+   scopes would give a key Lean does not know.
+2. *Why.* The check that catches it — `#check @<name>` over every rostered
+   name — needs a kernel build, and check 9's steady state is ~0.1 s by design.
+   It was run once here, over all 2,960 library names.
+3. *What it costs.* Between runs of that probe, a wrong key looks like a
+   definition with no row: check 9 would report it **owed** and re-mutate it,
+   which is loud rather than silent, but it is not the error it would name.
+4. *Which stage.* Whoever adds a `--check-names` mode; the probe file is four
+   lines of `mutate.py` away.
+
+**New gaps start at 1477** (1477-1499 are this track's remaining range).
+
+### 8. Measurements, all re-measured here
+
+| | at `d6e514c` | after this step |
+|---|---|---|
+| `check.sh` | 9/9 | **10/10** (check 10 is new) |
+| axiom audit | 4,979 theorems | **4,995** (+16, this step's) |
+| check 5 | 93 tests | 93 |
+| corpus | 29/37 files, 4/5 whole plans | unchanged |
+| burn-down | 9, all stage 6 | **9**, all stage 6 — none added, discharged or deleted |
+| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,182 / 31,518 / 1,664** (134 / 351), 0 unused — **this table's own block moves the figure**, so it is the one `check.sh` printed at the commit that carries it, not the one measured before the block was written (§5.11) |
+| check 9 | 154 rostered, 40 unfoldable, 21 fixtures, 8 pinned by nothing, 1 literal, 0 owed, **32** bare pin sites | **156** rostered (+`u32Within`, +`secWithin`), 40 / 21 / 8 / 1, 0 owed, **31** bare |
+| check 10 | — | **39 registered (P1–P39), 39 anchors re-resolved in 3 files (37 row, 1 cite, 1 taken), 54 register rows and 1 issuance line read, next free P40** |
+| `citations-allow.txt` | — | **byte-identical** (`git diff --stat` empty) |
+| `cargo test --workspace` | 1,431 / 0 / 9 across 83 | **1,431 / 0 / 9 across 83 — FIVE runs, identical** |
+| `one_renderer` | — | 25 passed |
+| `one_padder` | — | 9 passed |
+| `kernel_row_cells` | — | 26 passed |
+| `kernel_call_counts` | — | 2 passed |
+| `cli_switch_acceptance` | — | 16 passed |
+| `cli_latency` | — | 5 passed, 1 ignored (load 6.5; **no 1333 failure**) |
+| `kernel_log_door` | — | 23 passed |
+| T5 `kernel_replay_parity` | — | 29 passed, 4 ignored |
+| FFI crate | — | 7 passed |
+| `check.sh` wall, this machine | 12.84 s at nine (load 2.3) | 13.70 / 13.84 / 14.54 s at ten (load 3.5) |
+| `parity.py` alone | — | **0.06 / 0.06 / 0.07 s** |
+
+**`cargo test --workspace` was run FIVE times** (D46) — one to build, three in a
+row after the last Lean edit, and one more at the final commit — every number
+identical, and the tree was clean after each. `.proptest-regressions` drew no new seed —
+this track touched no proptest, which is track P's.
+
+### 9. Method, and what each method cannot see
+
+| claim | how it was driven | what it cannot see |
+|---|---|---|
+| "the seven have existing bounds" | each field traced to the fork's own declaration by name (`planner.rs:743`, `:760`, `:810`, `f64::from`) and to the kernel's renderer (`Emit.noteText`, `Emit.timeCell`, `Emit.blocksCell`) | it is a reading of the FORK's widths. If the fork's `u32` is itself too wide for a field, this inherits that |
+| "not a second bound" | two theorems, stated without either literal — `u32Within_is_the_logs_u32_width` against `Log.U32`, `secWithin_is_the_clause_Seg_wf_puts_on_a_stop` against `Planner.Seg.wf` | they tie THIS wire to TWO other readers. A fourth spelling of the u32 width elsewhere is untouched — that is gap 1473 |
+| "D40: both new definitions pinned" | `mutate.py --write`, watched, rows committed | `Except RowRefusal Nat` has **one** constant, so this is one mutation each. A `u32Within` that compared against the wrong side of the bound is not a constant and is not caught by D40 |
+| "all 39 parity numbers located" | three idioms over three files, every anchor re-resolved on every check.sh run | gap 1470: a number in a fourth file. And the idioms are an allow-list — a fourth spelling of an issuance is invisible until it is added |
+| "the gate bites" | **eight plants** in a scratch copy, each reverted in the same command; five caught, one correctly green, one green that closed a hole, one green and recorded | a plant tests the RULE, not the register's contents. A row whose statement is wrong passes every one (gap 1474) |
+| "154 rows rewrote with no build" | the rewrite reported 0 missing and 0 ambiguous; check 9 then printed `154 rostered, 0 owed` with every other number unchanged | it shows the KEYS match the scanner. That the keys are the names **Lean** knows is the separate `#check` probe below |
+| "the qualified names are Lean's" | `#check @<name>` over **2,960** names, one kernel build: **2,957** resolve | the three that do not are `private def`s, which is privacy and not a wrong key — and it is a one-off probe, not a gate (gap 1476) |
+| "31 bare sites cost ~1 h 45 m" | one row timed end to end at **4 m 31 s** for two constants, and the 48 building constants counted from the roster | one row's build time on one machine at one load, multiplied. The real run would be one `--verify --only Planner.lean`, which shares no work between constants but does share the process |
+| "check.sh 10/10, workspace green" | the capped commands; `check.sh` ran green at commit-time acceptance and **failed twice mid-step** — check 3's `rather` and check 9's EmitWire drift, both above — and the workspace ran **five** times | gap 1412: a green workspace run is a sample. Load was 2.3–7.8 throughout and `cli_latency` did not fire gap **1333**. A count of check.sh runs is left out on purpose: writing it down here changes it |
+
+### 10. What the merge owes, beyond AGENTS §6.5
+
+**`mutations.txt`'s key changed on this branch and nowhere else.** Every row
+here is `(file, QUALIFIED name)`; a row another track appended while this ran is
+`(file, SHORT name)`. A textual merge produces a **mixed** file, and check 9's
+symptom is loud but misleading: the short-keyed rows will be reported **OWED A
+MUTATION**, because `declarations()` now yields qualified names and no row
+matches. **The fix is not to re-run those mutations.** It is to re-run the
+column rewrite — find each row's declaration by `(file, last segment)`, take its
+qualified name — which needs no build, and then confirm check 9 prints `0 owed`
+with the rostered count equal to the number of rows. The rewrite is fifteen
+lines of `mutate.py`'s own `declarations()` plus `digest()`; the W-25 run that
+did it reported **0 with no declaration found, 0 ambiguous** over 154 rows.
+
+**`check.sh` gained check 10 at the end of the file**, before `exit $fail`,
+which is the append convention; **AGENTS §2.1, §6.5 item 7 and §7.1's heading
+now say TEN.** A track that merges after also saying "nine" reopens exactly the
+staleness the W-24 repair step fixed once and this one fixed again.
+
+**`parity.txt`'s anchors are line numbers.** `README.md` is append-only so a
+merge that appends blocks does not move them; a merge that **edits** an existing
+block above `README.md:52676` does, and check 10 will name the row. Re-anchor,
+do not delete.
+
+Every `cargo`, `check.sh`, `lake`, `lean`, `mutate.py`, `parity.py` and `python3`
+invocation ran under `systemd-run --user --scope -p MemoryMax=… -p
+MemorySwapMax=0 --quiet` — 40G for the suites, `check.sh` and the mutation runs,
+16G for `lake build`, 8G with `timeout 120` for the `EmitWire.lean` witness
+probe. **No memory bound was raised.**
+
+No predicate or assertion was weakened; **one gate was widened** (check 10 gained
+its register-row half after a plant went green) and none was narrowed; no
+snapshot, fixture, latency band or corpus was re-blessed; no new dependency;
+`lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`,
+`partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added.
+Every plant made to drive a gate was made in a scratch copy outside the
+worktree and `git status` was checked clean afterwards.
