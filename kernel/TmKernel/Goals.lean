@@ -892,11 +892,12 @@ running).  So the design's restatement, ported verbatim, would exclude the inter
 keep the row it was written to exclude.  README gaps 1500-1503.
 
 
-**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Six runs have discharged none
-and said so honestly.  The list was written at W-24 and is **re-verified at W-25**, item by
-item, against the tree rather than against the previous run's prose; the two entries that
-moved are 8 and 9, and both moved because the law was refuted, not because it came closer.
-**None of the nine is reachable today**, and the reasons are two steps and one edit:
+**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Seven runs have discharged none
+and said so honestly.  The list was written at W-24, re-verified at W-25 and **re-verified
+again at W-26**, item by item, against the tree rather than against the previous run's prose;
+no entry moved this time, and every blocker below was re-checked by the command the W-26
+README block records.  **None of the nine is reachable today**, and the reasons are two steps
+and one edit:
 
 1. `plan_does_not_overbook` — **P5**.  Refuted above; reachable when step 5's fold puts Block
    rows at or after `now` into the day, which is what gives the surviving restriction a
@@ -941,6 +942,37 @@ moved are 8 and 9, and both moved because the law was refuted, not because it ca
    the law then says the two days are equal up to inclusion.  What the law is actually about is **not** refuted:
    `PlannerWit.an_hour_later_keeps_every_row_that_had_settled` is the one genuine replan pair
    this tree can build, over the three rows that had settled, and it holds.
+
+**AND THE R3 AXIS, WHICH IS THE ONE THE LIST DID NOT CARRY** (W-26, asked for by R3's own
+brief).  **Not one of the nine is downstream of R3.**  Step R3 deletes the fork's planner in
+Rust with its last caller; it adds no row to `Planner.dayRows`, fills no field of
+`Planner.Diagnostics`, and declares no predicate.  So every entry above is *reachable before
+R3* — the blocker is the same one edit and the same two steps whether R3 has happened or not —
+and **none of them is made reachable by R3**.  A run planning R3 should take nothing from this
+list except that it is not waiting on it.
+
+**What R2 changed, checked rather than assumed.**  R2's landed half put the kernel's *cells* on
+the wire (`EmitWire.callExport`, `tm/tests/kernel_row_cells.rs`) and its item-line generators
+behind one reader.  Neither reaches `Planner.dayPlan`: `Emit.rowsOf` is the library's only
+caller of it and no wire function calls `Emit.rowsOf` — `EmitWire.rowsOfReq` renders the
+segments the **host** sent.  So R2 as landed moved no entry above, and the sentence below about
+`Planner.dayRows` is unchanged at W-26.
+
+**What D48's other half will change, and it is about the ORDER of the edit, not about any of
+the nine.**  D48 moves the planner's wire into R2.  The moment it lands, `Planner.dayPlan` has
+a caller across the FFI and the `Planner.dayRows` edit below stops being unobserved — the
+invariants suite compares the kernel's day to the fork's.  The six entries that wait on that
+edit become reachable when the edit is made, wire or no wire; what the wire decides is whether
+making it is instrumented or blind, and this campaign's own evidence (D19, and the stage-5
+switch that took four runs) is the argument for instrumented.
+
+**A tenth thing the lift now waits on, and it is not a goal.**  W-26 named §6.1's fourth and
+last axis: `PlanCheck.DecoderPays`, the request decoder's four clauses, three decidable `Bool`s
+and one `Nat` comparison (README gap 346).  Exactly one of the four has a caller
+(`PlannerWit.mkPlanReq?_ok_wallsAgree`); `PlannerWit.the_builder_accepts_a_running_block_it
+_never_checked` proves that a second one provably cannot, at **every** request the builder
+accepts, because `PlannerWit.mkPlanReq?_ignores_state` shows it never reads the field.  D48
+puts that same field on the wire in R2, so the axis and the wire are one obligation.
 
 **Six of the nine wait on ONE edit, and it is not a proof.**  `Planner.PlanReq.assignFold`,
 `Planner.PlanReq.finalAssign`, `Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow`

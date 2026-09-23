@@ -5713,5 +5713,149 @@ theorem the_open_sweep_and_the_replan_both_had_a_subject :
     rw [h] at hl
     simp at hl
 
+/-! ############################################################################
+## W-26 (track G): the builder never reads `state`, and the hole is in the kernel's own day
+############################################################################ -/
+
+/-- **The builder never looks at `Planner.RuntimeIn`.**  Six decoders run in `mkPlanReq?` and
+`state` is not one of their inputs: it is copied out of `PlanReqIn` untouched
+(`mkPlanReq?_ok_parts` says so field by field; this says the stronger thing, that *changing*
+it changes nothing but itself).
+
+This is what makes `PlanCheck.DecoderPays`'s `active` clause a counterexample below rather
+than a hope, and it is the sentence D48's wire step inherits: `state` is one of the four
+request fields going onto the wire in R2, and nothing in this tree checks it today. -/
+theorem mkPlanReq?_ignores_state (x : PlanReqIn) (s : RuntimeIn) :
+    mkPlanReq? { x with state := s } =
+      (mkPlanReq? x).map (fun r => { r with state := s }) := by
+  unfold mkPlanReq?
+  rcases hp : loadPlan x.docs with e | p
+  · simp [Except.map]
+  · rcases hI : Look.mkInput? x.input with e | I
+    · simp [hI, Except.map]
+    · by_cases hw : I.walls ≠ Look.wallIndex I.tz I.day.cut.blockMin p.val
+      · simp [hI, hw, Except.map]
+      · rcases hr : Seal.resumeRun I.tz I.today (Seal.Ckpt.empty I.tz) x.lines with e | run
+        · simp [hI, hw, hr, Except.map]
+        · rcases hc : Capped.ofList? x.cands with _ | cs
+          · simp [hI, hw, hr, hc, Except.map]
+          · rcases hrs : mkRoutines? p.val x.routines with e | rs
+            · simp [hI, hw, hr, hc, hrs, Except.map]
+            · simp [hI, hw, hr, hc, hrs, Except.map]
+
+/-- A running block that started one second after `now` — the shape `Planner.mkActive?` refuses
+by name (`Planner.mkActive?_refuses_a_start_after_now`). -/
+def aBlockStartedAfterNow (r : PlanReq) : ActiveBlock := ⟨[], ⟨r.now.sec + 1, 0⟩, 0, false⟩
+
+/-- **Every request this builder accepts has a sibling it also accepts whose running block the
+lift refuses.**  Not at one witness — at *every* accepted request, because the builder does
+not read the field.  So of `PlanCheck.DecoderPays`'s four clauses, `walls` has a caller
+(`mkPlanReq?_ok_wallsAgree`) and `active` provably cannot have one until something decodes
+`Planner.RuntimeIn`. -/
+theorem the_builder_accepts_a_running_block_it_never_checked (x : PlanReqIn) (r : PlanReq)
+    (h : mkPlanReq? x = .ok r) :
+    mkPlanReq? { x with state := { r.state with active := some (aBlockStartedAfterNow r) } }
+        = .ok { r with state := { r.state with active := some (aBlockStartedAfterNow r) } }
+      ∧ ({ r with state := { r.state with active := some (aBlockStartedAfterNow r) } } :
+           PlanReq).activeAgrees = false := by
+  constructor
+  · rw [mkPlanReq?_ignores_state, h]; rfl
+  · simp only [PlanReq.activeAgrees, aBlockStartedAfterNow, ActiveBlock.wf, PlanReq.now,
+      Bool.and_eq_false_iff]
+    exact Or.inl (decide_eq_false (by omega))
+
+/-- **The fourth axis is inhabited**, which is what keeps `dayPlan_ok_on_the_whole_day_of_a
+_paying_decoder` from being AGENTS §5.2's theorem about an empty hypothesis.  Every clause is
+an existing theorem: nothing is re-proved here, and the `walls` one comes from the builder
+rather than from a `decide`. -/
+theorem the_census_request_pays_the_decoder : PlanCheck.DecoderPays theCensusRequest where
+  walls  := theCensusRequest_wallsAgree
+  active := the_census_request_agrees.1
+  day    := the_census_request_agrees.2
+  nowCal := the_census_request_is_inside_the_calendar
+
+/-! ### The segment-free hole, computed on the day this kernel produces (README gap 1529) -/
+
+/-- The census day's rows at or after `now` — the half §8.3's missing invariant is about. -/
+def theFutureHalfOfTheCensusDay : DayPlan :=
+  PlanCheck.futureHalf theCensusRequest (dayPlan theCensusRequest)
+
+/-- **The same rows, truncated after the second.**  Its two rows run back to back and then the
+day stops, so everything after them is a *tail remainder* — the case
+`PlanCheck.the_last_row_is_never_a_holes_subject` says is not a hole, exhibited rather than
+argued. -/
+def theTailRemainderDay : DayPlan :=
+  { theFutureHalfOfTheCensusDay with
+      segments := theFutureHalfOfTheCensusDay.segments.take 2 }
+
+set_option maxRecDepth 400000 in
+/-- **The hole is in the kernel's own produced day, not only in the fork's.**  README gap 1529
+reproduced it on the shipped binary at `tm init --example`; this is the Lean half, on the
+census Wednesday's future rows. -/
+theorem the_census_days_future_half_has_a_hole :
+    PlanCheck.holeFree theCensusRequest theFutureHalfOfTheCensusDay = false := by decide
+
+set_option maxRecDepth 400000 in
+/-- **A tail remainder is not a hole**, computed. -/
+theorem the_tail_remainder_day_has_no_hole :
+    PlanCheck.holeFree theCensusRequest theTailRemainderDay = true := by decide
+
+set_option maxRecDepth 400000 in
+/-- **And the tail is real** — both rows end before the day does, so the day this holds of has
+genuinely unplanned time left in it and the theorem above is not about a full day. -/
+theorem the_tail_remainder_day_really_has_a_tail :
+    (∀ s ∈ theTailRemainderDay.segments, s.val.stop < theCensusRequest.dayEnd) ∧
+      theTailRemainderDay.segments.length = 2 := by decide
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.futureHalf` is neither the identity nor the empty filter**, at a real request:
+seven rows of the census day's eleven start at or after `now`.  Its `check.sh` check-9 pin is
+`PlanCheck.futureHalf_segments`, a `rfl` reflection lemma that would pin any body, so this is
+the figure that makes the definition a measurement (README gap 1504's lesson). -/
+theorem the_future_half_is_not_the_whole_day :
+    theFutureHalfOfTheCensusDay.segments.length = 7 ∧
+      (dayPlan theCensusRequest).segments.length = 11 := by
+  refine ⟨by decide, by decide⟩
+
+/-- The census day's future rows three and four — contiguous with each other, and starting two
+hours after `now`. -/
+def theLateStartDay : DayPlan :=
+  { theFutureHalfOfTheCensusDay with
+      segments := (theFutureHalfOfTheCensusDay.segments.drop 2).take 2 }
+
+set_option maxRecDepth 400000 in
+/-- **WHAT THE HOLE PROPERTY CANNOT SEE, as a theorem rather than as a sentence.**  A day whose
+every row begins more than an hour after `now` — two hours, here — passes it.  The *leading*
+remainder is not a hole by construction, exactly as the *tail* remainder is not
+(`PlanCheck.the_last_row_is_never_a_holes_subject`), and both carve-outs are deliberate; what
+they cost is that `PlanCheck.holeFree` is a **contiguity** property and not a **coverage** one.
+A step that wants coverage of the planning window owes a second statement, and
+`PlanCheck.holeFree_of_no_rows` is the third case it would have to handle. -/
+theorem the_hole_property_is_blind_to_a_leading_remainder :
+    PlanCheck.holeFree theCensusRequest theLateStartDay = true ∧
+      (∀ s ∈ theLateStartDay.segments, theCensusRequest.now.sec + 3600 < s.val.start) := by
+  refine ⟨by decide, by decide⟩
+
+/-- **D40 as a statement rather than as a gate verdict** (the form W-25 asked a later step to
+copy): one day where `PlanCheck.holeFree` holds and one where it does not, in one theorem.  No
+constant body of it can satisfy both conjuncts, in any proof style. -/
+theorem the_hole_property_is_not_a_constant :
+    PlanCheck.holeFree theCensusRequest theTailRemainderDay = true ∧
+      PlanCheck.holeFree theCensusRequest theFutureHalfOfTheCensusDay = false :=
+  ⟨the_tail_remainder_day_has_no_hole, the_census_days_future_half_has_a_hole⟩
+
+set_option maxRecDepth 400000 in
+/-- **The day where the census is seven has a hole the eleven cannot see.**  `PlanCheck.holeFree`
+is deliberately not in `PlanCheck.checksOf`: the battery is still eleven, the subject census is
+still **seven** at `theCensusRequest`, and the twelfth property is false on that very day.  That
+is the whole content of gap 1529 stated where a proof can reach it, and it is why adding it to
+the battery today would turn every lift in `PlanCheck.lean` red for a defect no lift is about. -/
+theorem the_hole_property_is_not_one_of_the_eleven :
+    (PlanCheck.checksOf permissive).length = 11 ∧
+      PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 ∧
+      PlanCheck.holeFree theCensusRequest (dayPlan theCensusRequest) = false :=
+  ⟨rfl, by decide, by decide⟩
+
+
 end PlannerWit
 end Tm
