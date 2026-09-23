@@ -56737,8 +56737,8 @@ is outside it.
 
 <!-- =====================================================================
      APPENDED 2026-09-23: stage 6 (the planner), run **W-27**, **track A**.
-     This block's gap range is **1700-1729**; it takes **1700-1705** and
-     leaves **1706-1729** free.  Parity: **P40 issued here** (`python3
+     This block's gap range is **1700-1729**; it takes **1700-1706** and
+     leaves **1707-1729** free.  Parity: **P40 issued here** (`python3
      parity.py` printed `next free P40` at the start of this run; whoever
      merges reconciles if another W-27 track also took it, AGENTS §6.5
      item 7).
@@ -57019,6 +57019,19 @@ kernel bug would have been caught.
    the arm's census rather than on every case, or raise `FLOOR_AFTER` past what 256 cases can
    draw. Neither is a change to what the arm compares.
 
+7. **Gap 1706.** *What is not done.* `parity.txt`'s anchors are **line numbers**, so any edit
+   above an issuance line silently invalidates the register, and nothing warns until the next
+   `check.sh`. It caught this step (§8's disclosure) the way it is designed to — the
+   re-resolution is not a formality — but the failure mode is "a prose edit somewhere else",
+   which is the same class as check 9's own *31 pin site(s) still a bare line number*. *Why not
+   fixed here.* `parity.py` is a checker and checkers are not this step's files; and the fix is
+   a decision about what a stable anchor is — the issuance line's own text, a heading, or an
+   id — not a patch. *What it costs.* Every block that appends prose above an existing
+   issuance must re-anchor, and the only thing that tells it so is running the gate again after
+   its last edit. *Which step clears it.* One that owns `parity.py`: anchor on the issuance
+   line's **text** (it is unique by construction — `**Parity P<n> taken**`) and let the line
+   number be advisory, which is what the re-resolution already computes.
+
 ### 8. Acceptance, measured on this tree
 
 `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` on every command
@@ -57035,13 +57048,13 @@ kernel bug would have been caught.
 | check 9, new definitions mutated | **171 rostered, 0 owed, 31 bare pin sites**, unchanged |
 | check 10, the parity register | **40 registered (P1–P40)**, next free P41 |
 
-**`cargo test --workspace --no-fail-fast`: EIGHT runs** (AGENTS D46 — say how many), plus **32** runs of the one arm below on its own to measure its rate.
+**`cargo test --workspace --no-fail-fast`: NINE runs** (AGENTS D46 — say how many), plus **32** runs of the one arm below on its own to measure its rate.
 
 | run | result |
 |---|---|
 | 1 | **not reportable.** Its output was piped through `tail -30` and the failure list, if any, was lost. Gap **1436** is the same mistake and this block will not restate it as a pass |
 | 2, 6 | **1,449 passed / 1 failed / 9 ignored across 85 binaries** — `the_two_editors_write_the_same_drop`, and see below |
-| 3, 4, 5, 7, 8 | **1,450 passed / 0 failed / 9 ignored across 85 binaries**, each captured whole to a file |
+| 3, 4, 5, 7, 8, 9 | **1,450 passed / 0 failed / 9 ignored across 85 binaries**, each captured whole to a file (run 9 is on the committed tree, after §8's disclosed breach was repaired) |
 
 **The baseline, measured in the same worktree** by `git stash`-ing this step and running the
 same command: **1,441 passed / 0 failed / 9 ignored across 85 binaries**. The difference is
@@ -57065,6 +57078,17 @@ So it is not this step's, and the two seeds this run appended did not make it wo
 runs — both of them are comparable cases, which raise the numerator. **The seeds are kept and
 committed** (D46: a new seed is a finding, and the file stays tracked); the generator was not
 narrowed, and `FLOOR_AFTER` / `FLOOR_NUM` were not touched. Gap **1705** has the mechanism.
+
+**A PROCESS BREACH, disclosed rather than amended away.** The first commit of this step was
+made with `check.sh` exiting **1**: the last prose edit before it added one line to this block's
+header, which pushed §4's `**Parity P40 taken**` line down by one, and `parity.txt`'s anchor is
+a **line number**. Check 10 said so precisely — *"P40: README.md:56869 no longer carries a
+`taken` for it — re-anchor the row"* — and the `check.sh` run that said it was the one whose
+exit code went unread, because it was run in the same command as the commit. The anchor is
+re-resolved and the tree is green; the red commit is **left in the history** with this
+paragraph and gap **1706** beside it rather than rewritten, because the lesson is the
+sequencing and not the line number. **Run the gate after the LAST edit, and read its exit code
+before `git commit`, not beside it.**
 
 **The named suites, each run on its own** after the workspace runs:
 
