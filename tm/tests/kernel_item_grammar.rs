@@ -609,14 +609,21 @@ proptest! {
     /// **The keyed edit's two halves write the same bytes**, over the keys
     /// `tm edit` sends to the kernel today (`items.rs`'s `KERNEL_EDIT_KEYS`).
     ///
-    /// `est` is **not** among them and the omission is recorded, not silent.
-    /// `tm edit ^id est=2b` writes `est:120m` when the whole edit is wired and
-    /// the **leading** estimate `2b` when any pair in it is not — two different
-    /// fields, one of which §4.1 calls the remaining estimate and the other the
-    /// history §11 calibrates against. README gap **1430**, driven on the
-    /// shipped binary, found from this file and NOT fixed here. `ci` is excluded
-    /// for the reason `kernel_edit_cmds` excludes it: on a line whose ci is the
-    /// positional digit the kernel's write would populate both slots.
+    /// **Corrected at the W-27 land step**, because the sentence that stood here
+    /// was measured before track A landed and the merge made it false. `est`
+    /// **is** on the wire now, with the whole of `KERNEL_EDIT_KEYS` (seventeen
+    /// keys and the `cap` alias), and README gap **1430** is closed: a command
+    /// every pair of which is wired writes `est:120m` whatever else it carries,
+    /// which is D49's one writer. What survives is narrower and is gap **1700**:
+    /// the routing is all-or-nothing, so a command mixing a wired pair with an
+    /// unwired FORM — `--set`, `title`/`p`/`state`, `--unset ci`/`--unset p`,
+    /// `demoted`, an id-less line — still takes the host path whole and still
+    /// writes the **leading** estimate, §3.1's `est_original` rather than
+    /// §4.1's remaining one. That residue is asserted, not assumed, by
+    /// `a_command_mixing_an_unwired_form_still_takes_the_host_path`. `ci` is
+    /// excluded here for the reason `kernel_edit_cmds` excludes it: on a line
+    /// whose ci is the positional digit the kernel's write would populate both
+    /// slots.
     #[test]
     fn the_two_editors_write_the_same_keyed_edit(
         (text, _stateful) in line(),

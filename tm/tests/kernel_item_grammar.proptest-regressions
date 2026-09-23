@@ -19,3 +19,6 @@ cc 57a671e9b284771fb382078cbb87660deffd15d81ffe71cc75a9552bd3a13517 # shrinks to
 cc 071e550ff3c388d98727475b14351ce445770a6a5d3e1b4a4da08ffc49bfdf3c # shrinks to (text, _stateful) = ("- A", false)
 cc b446d3a56d6521ebda36d11ac3d91b9fed44b13a9bcf16948e2a92b95de3c64f # shrinks to (text, _stateful) = ("- A", false)
 cc 7420e7f6e3701de0fa5bcde0012de8cc00e9552e0c6ce257324ba8244e23bc67 # shrinks to (text, _stateful) = ("- [ ] A\tci:0\t@Ojyx ", true)
+cc d1a5fd1cd2f4497e4e13de93796c61473c349a6a3dbed2d25f36c2fbcc46b34f # shrinks to (text, _stateful) = ("- [x]  0 6h43m\tZ dt-3 ci:1 win:2026-05-17T03:29/10:54 dur:55b", true)
+cc 56fb2c6f517fbbdcef9a2bba9b697591356bff005c07d12c6298f5d93ca3314a # shrinks to (text, _stateful) = ("- [ ]    a win:20:32-12:47 dur:3h21m win:22:18-20:40 dur:2h52m", true)
+cc 88657962e31de5d20474aec5469ba5034bb90ae3bb1d2fa88b9fc23e84943fc0 # shrinks to (text, _stateful) = ("- A", false)
