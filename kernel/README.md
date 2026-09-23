@@ -54718,15 +54718,15 @@ instead of as a line number, and it is the form a later step should copy.
 | check 5 | 93 tests | 93 |
 | corpus | 29/37 files, 4/5 whole plans | unchanged |
 | burn-down | 9, all stage 6 | **9**, all stage 6 — no goal added, discharged or deleted |
-| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,283 / 31,619 / 1,664** (134 / 351), 0 unused |
+| check 8 | 32,986 citations, 31,322 resolved, 1,664 allowed (134 vocabulary, 351 counted), 0 unused | **33,284 / 31,620 / 1,664** (134 / 351), 0 unused |
 | check 9 | 154 rostered, 40 unfoldable, 21 witness fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare pin sites | **163** rostered (+9), **46** unfoldable (+6), **27** witness fixtures (+6), 8, 1, **0 owed**, 32 |
 | `citations-allow.txt` | — | **byte-identical** |
 | new declarations | — | **27 theorems, 9 `def`s** |
 
-**check 8's +297 is all this step's own prose and none of it is a checker widening**, measured
+**check 8's +298 is all this step's own prose and none of it is a checker widening**, measured
 in two halves so the two causes are two numbers: **+125** from `Goals.lean`, `PlanCheck.lean`,
 `PlannerWit.lean` and `Check.lean` (32,986 → 33,111, with this block not yet written) and
-**+172** from this block (33,111 → 33,283). No allow entry moved and no counted cap moved,
+**+173** from this block (33,111 → 33,284). No allow entry moved and no counted cap moved,
 which is why `0 allow entries unused` still holds.
 
 **Check 8 bit, twice, and the fix was prose and not an allow entry.** The first draft cited
@@ -54741,7 +54741,7 @@ right.
 
 | suite | result |
 |---|---|
-| `check.sh` | **9/9**, `real 0m11.017s` warm on the committed tree (12.088 s on the run before the last prose edits) |
+| `check.sh` | **9/9**, warm: 11.017 s, 12.167 s, 10.996 s, 10.766 s on the committed tree |
 | `cargo test --workspace` | **83 binaries, 1,431 passed, 0 failed, 9 ignored** |
 | FFI (`cargo test -p tm-kernel-ffi`) | 0 + 8 + 86 + 7 + 0 = **101 passed, 0 failed** |
 | T5 (`kernel_replay_parity`) | 29 passed, 0 failed, 4 ignored |
@@ -54769,6 +54769,17 @@ for a 3-day-old instance **166.89 ms**, `review week` **298.63 ms**, `--now +1 d
 121.6-136.8, `review week` 248.1-253.3, later verb 146.66-147.01) and the test is **green**, so
 the bands in the brief are narrower than the assertions in the file. Nothing here was
 re-blessed: `cli_latency.rs` is untouched and this step compiles no Rust.
+
+**The 10% wall-time budget (design §14.0 item 4), MEASURED against HEAD and not assumed.**
+The comparand was taken the only honest way available: `git checkout d6e514c` in this worktree,
+a full `lake build`, two `check.sh` runs — **10.941 s and 10.426 s** — then back to the branch,
+a full rebuild, and two more — **12.167 s and 10.996 s**, beside the 11.017 s already taken.
+Mean **10.68 s → 11.39 s, +6.7%**, inside the budget, and the spread *within* each side (0.5 s
+and 1.2 s) is comparable to the difference between them on a machine carrying another session's
+load, so the honest reading is **no measurable rise**, not a measured 6.7% one. What this
+cannot see: `check.sh` check 1 is an incremental `lake build`, so none of these numbers
+includes the 159 s `PlannerWit.lean` now costs from cold — that cost is real, it is paid by
+whoever builds this module fresh, and no gate measures it.
 
 **Memory.** Every `lake`, `lean`, `cargo`, `check.sh`, `python3` and `mutate.py` invocation ran
 under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for the
