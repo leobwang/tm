@@ -82,3 +82,4 @@ import TmKernel.Report
 import TmKernel.Boundary
 import TmKernel.PlannerWit
 import TmKernel.EmitWire
+import TmKernel.PlanWire

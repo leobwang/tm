@@ -470,7 +470,7 @@ can_fail
 2 stepSkel_stamps
 3 the_log_op_answers_every_entrys_day
 1 the_response_run_emits_parses_back
-4 tm_kernel_call
+6 tm_kernel_call
 2 to_string
 6 to_string_pretty
 1 too_big
@@ -552,7 +552,7 @@ unknownIdentifier
 1 ClosedPeriod
 1 DocRegion
 1 Goals.blockMinutes
-5 PlanRefusal
+8 PlanRefusal
 2 Planner.blockMinutes
 4 Planner.capMin?
 4 Planner.horizonSec

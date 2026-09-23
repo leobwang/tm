@@ -56874,3 +56874,218 @@ fixture, latency band or corpus was re-blessed; the persisted regression seed wa
 dependency; `lean-toolchain` and `kernel/corpus/` untouched; no `sorry`, `axiom`, `partial
 def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or `.toOption` added. Every plant was made in
 a clone under the scratch directory and `git status --porcelain` was read before and after.
+
+---
+
+## Stage 6 — W-27, track P (step R2, D48): the planner's INPUTS cross the wire, and gap 801 is discharged
+
+**Range:** gaps **1660–1699** (track P's). **Taken here: 1664–1673**, after 1660–1663 in the
+block above. Parity: **none issued** (P40 still free). Files: `kernel/TmKernel/TmKernel/
+PlanWire.lean` (**new**), `EmitWire.lean`, `TmKernel.lean`, `Check.lean`, `mutations.txt`,
+`citations-allow.txt`, `tm/tests/kernel_planner_wire.rs` (**new**) and this file.
+
+### 1. What D48 asked for, and what landed
+
+D48 moved the planner's wire out of R3 and into R2, and priced it field by field.
+`Planner.PlanReq` has eight fields; **four were already carried** and this step reads none of
+them a second time:
+
+| `PlanReq` field | already on the wire as | read by |
+|---|---|---|
+| `plan` | the request's `docs` | `Boundary.runLoad` → `Boundary.loadPlan` |
+| `run` | the `log` section, since K1's seam (D24) | `Boundary.readLogReq` → `Boundary.logLines` |
+| `look` | the `capacity` section | `CapWire.readCapacityZ` → `Look.mkInput?` |
+| `cands` | `capacity.candidates.items` | `Boundary.readCandFloor` |
+
+and `prio`'s first four are `CapReq.bins`/`safety`/`dflt` and `CandReq.hysteresis`. **The four
+that were on no wire at all are now decoded**, each through the constructor that already owns
+it and under a bound this wire already carried:
+
+* **`state`** — §9's `RuntimeIn`: `active` through `Planner.mkActive?`, `break` through
+  `mkBreak?`, `interrupt` through `mkInterrupt?`, `lastHash` through `mkHash?`, `yesterday`
+  through `mkYesterday?` (the one reader of a stored `p`);
+* **`routines`** — `RoutineIn` per instance, the list left **uncapped here** because
+  `Planner.mkRoutines?` refuses past `Planner.maxCands` before its map runs and a second cap
+  would be the second statement of one bound;
+* **`overrides`** — §9.1's what-if, the three lists capped by `Planner.mkOverrides?`;
+* **`prio.batchMaxMin`** — **README gap 801, discharged.**
+
+**No number is minted.** `CapWire.maxCandId` on every id, `CapWire.maxRemaining` (the fork
+`u32`) on every minute count, `Cal.Instant.wf` on every instant, `Look.maxDayMin` on the running
+block and the break through their own `wf`, `Planner.maxCands` on every list. Gap **1330**'s
+warning — `CapWire.maxCandidates` is `Planner.maxCands` under a second name — is quoted in the
+module header so a third name is a diff someone has to defend.
+
+**Gap 801 takes the fork's `u32` and not the day's 1,440.** `config.rs:361` declares `pub
+batch_max_min: u32`. A tighter bound would be a divergence from the comparand (D21/D22/D23)
+owing a parity number; the width is what the fork can hold. `EmitWire.u32Within` is the guard,
+`CapWire.maxRemaining` is `Look.maxPlanMinutes` is that width, and
+`readBatchMaxMin_is_the_forks_u32_width` pins both ends (4,294,967,295 reads, 4,294,967,296 does
+not). It is read off **`capacity.priority`**, §16's own home, where `CapWire.readPriority`
+already reads the other three keys of the same object with no default and a named refusal each.
+
+### 2. The reuse that made it possible, and why it is not a widening
+
+`EmitWire`'s eight JSON readers (`natAtP`, `strAtP`, `arrAtP`, `optAtP`, `flagAtP`,
+`optNatAtP`, `optStrAtP`, over `asPlan`) and its three guards (`idWithin`, `u32Within`,
+`secWithin`) were typed to `RowRefusal`. They are now **polymorphic in the refusal**
+(`{ρ : Type}`) — 13 definitions and 11 theorems, no body changed. Every existing call site
+still elaborates with `ρ = RowRefusal`; 14 dotted constructors in existing theorem statements
+were spelled out (`RowRefusal.badSegment i RowKey.item` for `.badSegment i .item`) because the
+expected type is no longer fixed. `asPlan_keeps_the_value` and `asPlan_renames_a_refusal` are
+now **∀ ρ** and so imply the statements they replace (D5). The alternative was a second copy of
+nine JSON shapes and three bounds one module along, which is the defect this kernel is named
+after.
+
+### 3. The name that is NOT `PlanRefusal`, caught by check 8
+
+The obvious name for §10.3's family is `PlanRefusal`. **Declaring it would have made five
+committed sentences false**: `citations-allow.txt` carries `PlanRefusal` under *"names D28 says
+do NOT exist"* with five counted citations, because `Planner.dayPlan` is total and has no error
+type. Check 8 found it the only way it could — the allow entry went **unused**, so the gate got
+*quieter*, not louder. The type is `PlannerRefusal`, the wire key is `planner`, `dayPlan` is
+still total (D28) and PlanRefusal still does not exist.
+
+**Two of §10.3's nine names are deliberately absent, and a third was removed after it was
+written.** badWindow and badBudget have no subject: `PlanReq.window` is `Look.day0Window r.look`
+and `PlanReq.budgetBlocks` is the stored budget or `Look.budgetOf`, both **views**, so there is
+nothing on the wire for either to be about (gap **1664**). tooManyCands is the candidate
+section's, refused as `Boundary.Refusal.tooManyCandidates` before this section is read. And
+`nowAbsent` **was declared, and then deleted**: the Rust gate showed a request with an
+unreadable `capacity.at` comes back `{"err":{"capacity":"badAt at"}}` — `runCap` answers first —
+so no host could ever reach it. That is AGENTS §9.2's disguised gap, found by driving rather
+than by reading, in the one place R10 exists to prevent it.
+
+### 4. The entry, and what it does not do
+
+`PlanWire.callExport` takes the `@[export tm_kernel_call]` from `EmitWire.callExport`, which
+keeps its body and loses only the attribute — W-24's move from `Boundary`, one section along.
+**A `planner` section is read on every call that carries one**, and a section that does not
+decode refuses the call by its own name. A decoder whose refusals no caller can reach is what
+`Emit.lean` landed as at W-22 (gap 1331) and this step does not repeat it.
+
+**A section that DOES decode leaves the answer byte for byte what `EmitWire.runRows` gave.**
+`runPlanner_with_a_readable_section_answers_as_runRows` is that as a theorem and
+`a_readable_planner_section_changes_no_byte` as a test, so the step that builds the response
+half is the step that deletes them. **The response half is gap 1667 and §6 prices it.**
+
+`now` is the **capacity section's `at`** through `CapWire.readAt` — §9's three records are `wf`
+against an *instant*, and the request's top-level `now` is a `Day` through `Field.parseDate`;
+taking one for the other is a unit error the types do not catch, since both are `Nat`.
+
+### 5. Driven — four plants in a clone, and what each showed
+
+`git archive HEAD | tar -x` into the scratch directory with the working tree's files copied over
+and `.lake` copied in. `git status --porcelain` in the working tree was read before and after
+every plant and never changed; `grep -rn 'W-27 PLANT' kernel/` is empty in both trees.
+
+| plant | verdict |
+|---|---|
+| `readBatchMaxMin`'s absent branch answers §16's 20 instead of refusing | **Lean FAILED** at `readBatchMaxMin_refuses_an_absent_priority` and nowhere else |
+| `readOptActive` answers `none` for a present `active` (the `:= default` `mutate.py` called SURVIVED) | **Lean FAILED** at `readState_accepts_a_running_day` — the theorem that verdict forced |
+| `readBatchMaxMin` bounded by `Look.maxDayMin` instead of the fork's `u32` | **Lean FAILED** at `readBatchMaxMin_refuses_past_the_width` **and** `readBatchMaxMin_is_the_forks_u32_width` |
+| **the `@[export]` put back on `EmitWire.callExport`** | **Lean stayed GREEN (0 errors); `kernel_planner_wire` FAILED 14 of 18** |
+
+The fourth is the one that says what the Rust file is for: every other plant breaks a proof, so
+the proofs are the tighter gate — but a proof cannot see which definition the linked archive
+exports, and that plant is invisible to all 60 of them.
+
+**And `mutate.py` audited all 24 new definitions** with real kernel builds: 15 PINNED (one by a
+synthesised constant), 9 UNFOLDABLE (`Except PlannerRefusal _` has no `Inhabited`), **0
+SURVIVED**. Five came back SURVIVED first — `readOptActive`, `readOptBreak`,
+`readOptInterrupt`, `readRoutines`, `readOptOverrides` — because an optional reader's `default`
+*is* the absence, and every theorem about them tested an absence. Three theorems were added and
+they are the only reason those five are pinned.
+
+### 6. What the response half needs — the next brief (gap 1667)
+
+Three obstacles, each measured rather than guessed:
+
+1. **`PlannerWit.mkPlanReq?` is the only assembler and it cannot be called from the wire.**
+   `mutate.py`'s `WITNESS_MODULES` requires `PlannerWit.lean` to be a **leaf** and CHECKS it:
+   an `import TmKernel.PlannerWit` in `PlanWire.lean` failed check 9 with *"imports the witness
+   module … so TmKernel/TmKernel/PlannerWit.lean is no longer a leaf and its definitions are
+   reachable"*. So `mkPlanReq?` and `PlanReqIn` must **move** to a non-witness module before the
+   wire can use them — and re-implementing them beside the wire is AGENTS §5.3. Gap **1668**.
+2. **`Boundary.runLoad` builds `List ReqDoc` and does not return it**, and `mkPlanReq?` takes
+   documents rather than a loaded `WfPlan`. Either `runLoad` gains a sibling that hands out what
+   it already built, or the assembler is factored as `loadPlan` then a `WfPlan`-taking half. Gap
+   **1669**.
+3. **The emitters** — `plan.day`, `window`, `budgetBlocks`, `segments`, `diagnostics`,
+   `priorities`, `hash` — are new: `Diagnostics` has twelve fields and `Planner.Note` eleven
+   constructors, and §10.2's keys must be **appended** to the object `EmitWire.withPlan` already
+   writes `rows` into, not replace it.
+
+**And the brief's item 3 CANNOT be done after any of that, for a reason the brief does not
+state.** `Planner.dayRows` is `sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++
+optionalRows ++ restRows).map segOf)` — **no row of §8.2 step 5**. W-25 track G's block says so
+(*"a proptest aimed at the kernel today compares the fork's assignments against the empty set on
+every case that assigns anything"*) and it is re-checked here and unchanged. Aiming
+`planner_invariants.rs`'s `plan()` at `dayPlan` today would fail every case that assigns work,
+and narrowing the generator to hide that is exactly what D46 forbids. **R2's remaining half is
+the response wire; the comparison it exists to enable waits on P5.** Gap **1670**.
+
+### 7. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1664** | §10.3's badWindow and badBudget are **not declared**, because `PlanReq` has no window or budget field — both are views | `PlanWire.lean`'s `PlannerRefusal` | a reader of design §10.3 expects nine names and finds seven; the reason is in the module header and nowhere else |
+| **1665** | `Planner.mkActive?`, `mkBreak?` and `mkInterrupt?` answer `Option`, not a named error, so the wire says **which record** the planner could not hold and never **which clause** — `badActive wf` covers both of `ActiveBlock.wf`'s conjuncts | same | a host told `badActive wf` cannot tell "started after now" from "estimate past the day" |
+| **1666** | `mutate.py`'s pin-site recorder **stops at a `?`** in a declaration name: the roster read placeOf where the theorem was placeOf?_reads_the_four — both spelled without backticks, the first because nothing declares it and the second because the rename this gap forced means nothing does now either — and check 9 FAILED on a drift that was not one | `kernel/mutate.py` | every `mk…?_refuses_…` theorem in `Planner.lean` is that shape; the day one becomes a recorded pin site, check 9 fails for no reason. Worked around here by renaming the theorem |
+| **1667** | **the response half of D48 is not built**: `plan` still carries `rows` alone | `PlanWire.lean` | R2 is not finished, and §6 is what finishing it costs |
+| **1668** | `PlannerWit.mkPlanReq?` is the only `PlanReq` assembler and lives in the module check 9 requires to be a **leaf** | `PlannerWit.lean`, `mutate.py` | the wire cannot reuse the one assembler; §6 item 1 |
+| **1669** | `Boundary.runLoad` builds `List ReqDoc` and returns only the `WfPlan` | `Boundary.lean:2787` | §6 item 2 |
+| **1670** | `Planner.dayRows` holds **no §8.2 step-5 row**, so no proptest can compare a kernel-planned day's assignments | `Planner.lean:5835` | the brief's item 3 is P5's, not R2's; a run that tried it would narrow a generator or turn a suite red |
+| **1671** | `runPlanner` **re-reads** `capacity.at` and `capacity.priority` that `runCap` already decoded, so its `readAt` error branch is unreachable | `PlanWire.lean`'s `runPlanner` | gap 1325's shape one section along: one reader, called twice. The honest removal is `runCapZ` handing its `CapReq` out — the same edit gap 1669 wants |
+| **1672** | that unreachable branch is **recorded, not removed**: it keeps `CapWire.refusalJson`'s shape so it cannot invent a name, and `kernel_planner_wire.rs` asserts the **ordering** that makes it unreachable rather than a refusal no host can produce | same | a later reader may take the branch for a reachable one |
+| **1673** | **`kernel_item_grammar::the_two_editors_write_the_same_drop` flakes on its own denominator** — `floor_holds` is asserted on **every** case from the 64th, so a running proportion that dips below 10% once fails the run even though the measured rate is 19.1%. Observed at `[97, 61, 6]` — *"compared [97, 61, 6] — [drawn, addressable, compared]"* | `tm/tests/kernel_item_grammar.rs:606` | **NOT FIXED — not this track's file.** Two of ten `cargo test --workspace` runs failed on it this session; the two seeds proptest persisted are kept (D46) and replay green |
+
+### 8. Acceptance, against the brief's baseline at `22db972`
+
+| gate | baseline | here | delta |
+|---|---|---|---|
+| `check.sh` | 10/10 | **10/10** | — |
+| axiom audit | 5,040 theorems | **5,100** | **+60**: this module's, all audited |
+| check 5 (FFI through the shim) | 93 | **93** | — |
+| check 8 | 34,033 citations, 0 unused | **34,482**, 0 unused | **+449**; the export symbol's allow count 4 → **6** and PlanRefusal's 5 → **8**, both for prose this block and the module header add |
+| check 9 | 171 rostered, 0 owed, 31 bare pin sites | **199 rostered, 0 owed, 31 bare pin sites** | **+28**: 24 new and 4 re-audited |
+| check 10 | 39 registered (P1–P39), next free P40 | **identical** | — |
+| corpus | 29/37 and 4/5 | **29/37, 4/5** | — |
+| burn-down | 9, all stage 6 | **9, all stage 6** | — no goal discharged and none added |
+| `cargo test --workspace` | — | **1,459 / 0 / 9 across 86 binaries**, `--no-fail-fast` | **+18**: `kernel_planner_wire` |
+| FFI crate (D36's 101) | 101 | **101** | — |
+| T5 / door / switch / call counts / padder / renderer | 29 / 23 / 16 / 2 / 9 / 25 | **identical** | — |
+| `kernel_row_cells` / `kernel_item_grammar` / `planner_invariants` | 26 / 6 / 7 | **26 / 6 / 7** | — |
+| `kernel_planner_wire` | — | **18** | new |
+| `cli_latency` | — | **5 passed, 1 ignored**, at load average **2.38** | — |
+
+**Run counts, said out loud (D46).** `cargo test --workspace` was run **ten** times for this
+commit (runs 3–12 of the session's twelve), of which **two were red and both were gap 1673** —
+run 3's name was not captured because the output was filtered to `test result:` lines, and run
+9's was, which is what turned a flake into a diagnosis. The last two runs, on the committed
+tree, were **1,459 / 0 / 9 across 86**. `check.sh` was run **eleven** times across
+the session and **once** on the committed tree. `mutate.py --write` was run **six** times
+(twice to clear the roster after a rename, three times to chase pin-site drift, once clean);
+`mutate.py` read-only **four** more. `kernel_item_grammar` was run **eight** times alone, all
+green. `kernel_planner_wire` was run **six** times, and **once in a clone under plant E**, where
+it failed 14 of 18.
+
+**Pin-site drift, measured.** Adding a doc comment to `EmitWire.callExport` moved **23** of
+that file's rostered pin sites, because check 9 records a pin site as a **bare line number** and
+31 of them still are. All 23 were re-audited (real kernel builds) and all 23 came back with the
+same verdict. That is the standing "31 pin site(s) still a bare line number" made concrete: the
+cost of an edit above a pin site is a full re-audit of everything below it.
+
+### 9. Capping and the hard rules
+
+Every `lake`, `lean`, `cargo`, `check.sh`, `mutate.py`, `citations.py` and binary invocation ran
+under `systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet` — 40G for the
+suites, `check.sh` and `mutate.py` (which runs `lake build`), 16G for the FFI crate and
+`citations.py`. **No memory bound was raised.** No `decide` needed probing: every `decide` in
+the new module is over a small closed term and the file elaborates in seconds. No predicate or
+assertion was weakened; no generator was narrowed; no snapshot, fixture, latency band or corpus
+was re-blessed; both persisted regression seeds were kept; no new dependency; `lean-toolchain`
+and `kernel/corpus/` untouched; no `sorry`, `axiom`, `partial def`, `unsafe`, `opaque`,
+`implemented_by`, `panic!`, `!`-accessor or `.toOption` added — `Goals.lean` was not opened and
+the burn-down is 9 before and after. Every plant was made in a clone under the scratch directory
+and `git status --porcelain` was read before and after each.

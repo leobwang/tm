@@ -167,41 +167,41 @@ whatever it is, and `asPlan_renames_a_refusal` says so for every value of it, so
 kernel is named after (AGENTS §5.3). -/
 
 /-- A `CapWire` reading under this section's names. -/
-def asPlan {α : Type} (r : RowRefusal) : Except CapWire.Refusal α → Except RowRefusal α
+def asPlan {ρ α : Type} (r : ρ) : Except CapWire.Refusal α → Except ρ α
   | .ok a => .ok a
   | .error _ => .error r
 
 /-- **The adapter renames and nothing else.** -/
-theorem asPlan_keeps_the_value {α : Type} (r : RowRefusal) (x : Except CapWire.Refusal α)
+theorem asPlan_keeps_the_value {ρ α : Type} (r : ρ) (x : Except CapWire.Refusal α)
     (a : α) (h : x = .ok a) : asPlan r x = .ok a := by
   subst h; rfl
 
 /-- And a refusal stays a refusal, under this section's name. -/
-theorem asPlan_renames_a_refusal {α : Type} (r : RowRefusal) (x : Except CapWire.Refusal α)
+theorem asPlan_renames_a_refusal {ρ α : Type} (r : ρ) (x : Except CapWire.Refusal α)
     (e : CapWire.Refusal) (h : x = .error e) : asPlan r x = .error r := by
   subst h; rfl
 
 /-- A JSON natural at `k`. -/
-def natAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal Nat :=
+def natAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ Nat :=
   asPlan r (CapWire.natAt v k .nowAbsent)
 
 /-- A JSON string at `k`. -/
-def strAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (List Char) :=
+def strAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ (List Char) :=
   asPlan r (CapWire.strAt v k .nowAbsent)
 
 /-- A JSON array at `k`. -/
-def arrAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (List JVal) :=
+def arrAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ (List JVal) :=
   asPlan r (CapWire.arrAt v k .nowAbsent)
 
 /-- An optional key: absent or `null` is `none`. -/
-def optAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (Option JVal) :=
+def optAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ (Option JVal) :=
   asPlan r (CapWire.opt v k .nowAbsent)
 
 /-- A mark: **absent is `false`**, which is `SegFlags`' own default, so a host that sends only
 the marks it set gets `SegFlags.none` for the rest.  `CapWire.boolAt` is the *required* reading
 and is the wrong one here — a `flags` object naming the two marks a row carries is the normal
 case, not a malformed one. -/
-def flagAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal Bool :=
+def flagAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ Bool :=
   match optAtP v k r with
   | .error e => .error e
   | .ok none => .ok false
@@ -209,11 +209,11 @@ def flagAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal Bool :=
   | .ok (some _) => .error r
 
 /-- An optional natural at `k`. -/
-def optNatAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (Option Nat) :=
+def optNatAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ (Option Nat) :=
   asPlan r (CapWire.optNatAt v k .nowAbsent)
 
 /-- An optional string at `k`. -/
-def optStrAtP (v : JVal) (k : String) (r : RowRefusal) : Except RowRefusal (Option (List Char)) :=
+def optStrAtP {ρ : Type} (v : JVal) (k : String) (r : ρ) : Except ρ (Option (List Char)) :=
   match optAtP v k r with
   | .error e => .error e
   | .ok none => .ok none
@@ -235,7 +235,7 @@ constructor below them can supply it: `Planner.mkSeg?`'s `Planner.SegErr` has ex
 constructors (`inverted`, `pastTheHorizon`) so `Seg.wf` says nothing about the item string, and
 `Planner.mkBatch?` bounds the batch's **count** at `Planner.maxBatch` and never a member's
 length. -/
-def idWithin (r : RowRefusal) (id : Id) : Except RowRefusal Id :=
+def idWithin {ρ : Type} (r : ρ) (id : Id) : Except ρ Id :=
   if id.length ≤ CapWire.maxCandId then .ok id else .error r
 
 /-! ### The seven bare numbers — gap 1415's other half
@@ -268,7 +268,7 @@ rather` — and check 3's declaration roster is a `grep` anchored at column zero
 demanded an audit line for something called `rather` and the check FAILED.  README gap
 1308 repaired `mutate.py`'s `decl_spans` for that class and left check 3's own grep
 with it; AGENTS §6.3 records the same trap under the name `whose`.)* -/
-def u32Within (r : RowRefusal) (n : Nat) : Except RowRefusal Nat :=
+def u32Within {ρ : Type} (r : ρ) (n : Nat) : Except ρ Nat :=
   if n ≤ CapWire.maxRemaining then .ok n else .error r
 
 /-- **An absolute second, through the constructor `Seg.wf` already uses.**  `Note.noPosition`'s
@@ -279,7 +279,7 @@ reached through `Cal.mkInstant?`, the smart constructor R10 asks a decoder to *u
 than to restate; `secWithin_is_the_clause_Seg_wf_puts_on_a_stop` says it is the same clause
 `Planner.Seg.wf` puts on a segment's own `stop` and not a second one.  At `ns = 0` the
 leap-second disjunct is vacuous, so the guard is exactly `sec < 315537897600`. -/
-def secWithin (r : RowRefusal) (sec : Nat) : Except RowRefusal Nat :=
+def secWithin {ρ : Type} (r : ρ) (sec : Nat) : Except ρ Nat :=
   match Cal.mkInstant? sec 0 with
   | some i => .ok i.val.sec
   | none => .error r
@@ -579,9 +579,16 @@ def respondRows (input : List Char) : JVal :=
 /-- What the FFI runs. -/
 def callRows (input : String) : String := String.ofList (jemit (respondRows input.toList))
 
-/-- **The one export** (R9), moved here from `Boundary.callExport` so that an `Emit.Row` can
-reach it.  The symbol, the shim and the `String → String` signature are unchanged. -/
-@[export tm_kernel_call]
+/-- **The response for a request with no `planner` section**, and what `tm_kernel_call` reached
+between stage 6 W-24 and W-27.
+
+**The `@[export]` moved on to `PlanWire.callExport`** (D48) and this definition did not, for
+the reason it moved here from `Boundary.callExport` in the first place: R9 is one symbol and one
+shim function, so the export sits at the END of the pipeline, and the pipeline gained a section
+— the planner's own inputs, whose decoders live in a module that imports this one.  Nothing else
+changed: `PlanWire.callPlanner` is this function on every request that carries no `planner`
+section (`PlanWire.callPlanner_without_a_planner_section_is_callRows`), and the theorem below
+still says what it said about a request with no `plan` section. -/
 def callExport (input : String) : String := callRows input
 
 /-! ## The laws -/
@@ -728,8 +735,8 @@ theorem readPrios_of_nil : (readPrios []).map (fun c => c.val) = .ok [] := rfl
 Stated over *whatever* the two readers return, so it is a fact about the decoder and not about
 one JSON object; `readPrio_refuses_eight` is the object that exercises it. -/
 theorem readPrio_refuses_a_priority_past_seven (i : Nat) (v : JVal) (id : Id) (n : Nat)
-    (hid : strAtP v "id" (.badPriority i) = .ok id)
-    (hn : natAtP v "p" (.badPriority i) = .ok n) (h : 8 ≤ n) :
+    (hid : strAtP v "id" (RowRefusal.badPriority i) = .ok id)
+    (hn : natAtP v "p" (RowRefusal.badPriority i) = .ok n) (h : 8 ≤ n) :
     readPrio i v = .error (.badPriority i) := by
   simp only [readPrio, hid, hn, yesterdayOf?_refuses_eight n h]
 
@@ -846,13 +853,13 @@ wire reaching it, and each has an acceptance beside it because a bound nothing c
 trapdoor and a bound nothing can fail is decoration (AGENTS §5.8). -/
 
 /-- **An id past `CapWire.maxCandId` is refused**, whatever the refusal is named. -/
-theorem idWithin_refuses_a_long_id (r : RowRefusal) (id : Id)
+theorem idWithin_refuses_a_long_id {ρ : Type} (r : ρ) (id : Id)
     (h : CapWire.maxCandId < id.length) : idWithin r id = .error r := by
   unfold idWithin
   rw [if_neg (by omega)]
 
 /-- And an id at the bound is accepted, so the guard is where it says it is. -/
-theorem idWithin_accepts_at_the_bound (r : RowRefusal) (id : Id)
+theorem idWithin_accepts_at_the_bound {ρ : Type} (r : ρ) (id : Id)
     (h : id.length ≤ CapWire.maxCandId) : idWithin r id = .ok id := by
   unfold idWithin
   rw [if_pos h]
@@ -860,7 +867,7 @@ theorem idWithin_accepts_at_the_bound (r : RowRefusal) (id : Id)
 /-- **Both are inhabited**: 1,025 characters is over and 1,024 is not, so neither theorem above
 is vacuous.  Stated with `List.replicate` and closed by its length lemma rather than by `rfl`,
 which would make the kernel walk a thousand cons cells for nothing. -/
-theorem idWithin_refuses_1025_and_accepts_1024 (r : RowRefusal) :
+theorem idWithin_refuses_1025_and_accepts_1024 {ρ : Type} (r : ρ) :
     idWithin r (List.replicate (CapWire.maxCandId + 1) 'x') = .error r ∧
     idWithin r (List.replicate CapWire.maxCandId 'x')
       = .ok (List.replicate CapWire.maxCandId 'x') :=
@@ -869,11 +876,11 @@ theorem idWithin_refuses_1025_and_accepts_1024 (r : RowRefusal) :
 /-- **A segment's `item` past the bound is refused.**  Stated over whatever the reader returns,
 so it is a fact about the decoder and not about one JSON object. -/
 theorem readSeg_refuses_a_long_item (i : Nat) (v : JVal) (id : Id)
-    (hs : natAtP v "start" (.badSegment i .start) = .ok 0)
-    (hp : natAtP v "stop" (.badSegment i .stop) = .ok 0)
+    (hs : natAtP v "start" (RowRefusal.badSegment i RowKey.start) = .ok 0)
+    (hp : natAtP v "stop" (RowRefusal.badSegment i RowKey.stop) = .ok 0)
     (hk : readKind i v = .ok .block)
-    (he : optNatAtP v "energy" (.badSegment i .energy) = .ok none)
-    (hi : optStrAtP v "item" (.badSegment i .item) = .ok (some id))
+    (he : optNatAtP v "energy" (RowRefusal.badSegment i RowKey.energy) = .ok none)
+    (hi : optStrAtP v "item" (RowRefusal.badSegment i RowKey.item) = .ok (some id))
     (h : CapWire.maxCandId < id.length) :
     readSeg i v = .error (.badSegment i .item) := by
   simp only [readSeg, hs, hp, hk, he, hi, bind, Except.bind, pure, Except.pure,
@@ -881,8 +888,8 @@ theorem readSeg_refuses_a_long_item (i : Nat) (v : JVal) (id : Id)
 
 /-- **A priority record's `id` past the bound is refused**, through the same constructor. -/
 theorem readPrio_refuses_a_long_id (i : Nat) (v : JVal) (id : Id) (n : Nat) (k : Fin 8)
-    (hid : strAtP v "id" (.badPriority i) = .ok id)
-    (hn : natAtP v "p" (.badPriority i) = .ok n) (hk : yesterdayOf? n = some k)
+    (hid : strAtP v "id" (RowRefusal.badPriority i) = .ok id)
+    (hn : natAtP v "p" (RowRefusal.badPriority i) = .ok n) (hk : yesterdayOf? n = some k)
     (h : CapWire.maxCandId < id.length) :
     readPrio i v = .error (.badPriority i) := by
   simp only [readPrio, hid, hn, hk,
@@ -891,8 +898,8 @@ theorem readPrio_refuses_a_long_id (i : Nat) (v : JVal) (id : Id) (n : Nat) (k :
 /-- **A batch member past the bound is refused**, so `mkBatch?`'s count bound is no longer the
 only thing standing between the wire and a `BatchIds`. -/
 theorem readKind_refuses_a_long_batch_member (i : Nat) (v : JVal) (id : Id)
-    (hk : strAtP v "kind" (.badSegment i .kind) = .ok "batch".toList)
-    (hb : arrAtP v "batch" (.badSegment i .batch) = .ok [.str id])
+    (hk : strAtP v "kind" (RowRefusal.badSegment i RowKey.kind) = .ok "batch".toList)
+    (hb : arrAtP v "batch" (RowRefusal.badSegment i RowKey.batch) = .ok [.str id])
     (h : CapWire.maxCandId < id.length) :
     readKind i v = .error (.badSegment i .batch) := by
   simp only [readKind, hk, hb, bind, Except.bind, pure, Except.pure, List.mapM,
@@ -902,8 +909,8 @@ theorem readKind_refuses_a_long_batch_member (i : Nat) (v : JVal) (id : Id)
 /-- **A replayed `noPosition`'s id past the bound is refused** — the first of the two ids
 `readNote` reads back, and neither was named by the audit that opened gap 1415. -/
 theorem readNote_refuses_a_long_no_position_id (i : Nat) (v : JVal) (id : Id)
-    (hn : strAtP v "name" (.badSegment i .note) = .ok "noPosition".toList)
-    (hid : strAtP v "id" (.badSegment i .note) = .ok id)
+    (hn : strAtP v "name" (RowRefusal.badSegment i RowKey.note) = .ok "noPosition".toList)
+    (hid : strAtP v "id" (RowRefusal.badSegment i RowKey.note) = .ok id)
     (h : CapWire.maxCandId < id.length) :
     readNote i v = .error (.badSegment i .note) := by
   simp only [readNote, hn, hid, bind, Except.bind, pure, Except.pure,
@@ -912,8 +919,8 @@ theorem readNote_refuses_a_long_no_position_id (i : Nat) (v : JVal) (id : Id)
 
 /-- **And a `bufferBefore`'s**, which is the id a `buffer:` puts in front of a wall. -/
 theorem readNote_refuses_a_long_buffer_before_id (i : Nat) (v : JVal) (id : Id)
-    (hn : strAtP v "name" (.badSegment i .note) = .ok "bufferBefore".toList)
-    (hid : strAtP v "id" (.badSegment i .note) = .ok id)
+    (hn : strAtP v "name" (RowRefusal.badSegment i RowKey.note) = .ok "bufferBefore".toList)
+    (hid : strAtP v "id" (RowRefusal.badSegment i RowKey.note) = .ok id)
     (h : CapWire.maxCandId < id.length) :
     readNote i v = .error (.badSegment i .note) := by
   simp only [readNote, hn, hid, bind, Except.bind, pure, Except.pure,
@@ -928,19 +935,19 @@ directions (AGENTS §5.8) and each of the seven fields gets the wire reaching it
 bound stated once and wired six times is a bound wired five times and stated six. -/
 
 /-- **A number past the fork's `u32` is refused**, whatever the refusal is named. -/
-theorem u32Within_refuses_past_the_width (r : RowRefusal) (n : Nat)
+theorem u32Within_refuses_past_the_width {ρ : Type} (r : ρ) (n : Nat)
     (h : CapWire.maxRemaining < n) : u32Within r n = .error r := by
   unfold u32Within
   rw [if_neg (by omega)]
 
 /-- And a number at the width is accepted, so the guard is where it says it is. -/
-theorem u32Within_accepts_at_the_width (r : RowRefusal) (n : Nat)
+theorem u32Within_accepts_at_the_width {ρ : Type} (r : ρ) (n : Nat)
     (h : n ≤ CapWire.maxRemaining) : u32Within r n = .ok n := by
   unfold u32Within
   rw [if_pos h]
 
 /-- **Both are inhabited**: 4,294,967,296 is over and 4,294,967,295 is not. -/
-theorem u32Within_refuses_the_width_plus_one (r : RowRefusal) :
+theorem u32Within_refuses_the_width_plus_one {ρ : Type} (r : ρ) :
     u32Within r (CapWire.maxRemaining + 1) = .error r ∧
     u32Within r CapWire.maxRemaining = .ok CapWire.maxRemaining :=
   ⟨u32Within_refuses_past_the_width r _ (by omega),
@@ -950,7 +957,7 @@ theorem u32Within_refuses_the_width_plus_one (r : RowRefusal) :
 `Log.U32` — the kernel's other reader of a fork `u32`, `Log.readF _ .u32`'s own type — so
 "the same width" is checked here and not asserted.  Stated without either number written
 down, so it cannot be satisfied by copying a literal from one side to the other. -/
-theorem u32Within_is_the_logs_u32_width (r : RowRefusal) (n : Nat) :
+theorem u32Within_is_the_logs_u32_width {ρ : Type} (r : ρ) (n : Nat) :
     u32Within r n = .ok n ↔ ∃ k : Log.U32, k.val = n := by
   have hb : CapWire.maxRemaining = 4294967295 := rfl
   constructor
@@ -964,27 +971,27 @@ theorem u32Within_is_the_logs_u32_width (r : RowRefusal) (n : Nat) :
 
 /-- **A second past the calendar is refused**, through `Cal.mkInstant?` and not through a
 restatement of its bound. -/
-theorem secWithin_refuses_past_the_calendar (r : RowRefusal) (sec : Nat)
+theorem secWithin_refuses_past_the_calendar {ρ : Type} (r : ρ) (sec : Nat)
     (h : Cal.Instant.wf ⟨sec, 0⟩ = false) : secWithin r sec = .error r := by
   unfold secWithin Cal.mkInstant?
   rw [dif_neg (by rw [h]; exact Bool.false_ne_true)]
 
 /-- And a representable second is accepted, and comes back unchanged. -/
-theorem secWithin_accepts_a_representable_second (r : RowRefusal) (sec : Nat)
+theorem secWithin_accepts_a_representable_second {ρ : Type} (r : ρ) (sec : Nat)
     (h : Cal.Instant.wf ⟨sec, 0⟩ = true) : secWithin r sec = .ok sec := by
   unfold secWithin Cal.mkInstant?
   rw [dif_pos h]
 
 /-- **Both are inhabited at the edge**: 315,537,897,600 is the first second outside chrono's
 years and 315,537,897,599 is the last one inside. -/
-theorem secWithin_refuses_the_first_second_past_the_years (r : RowRefusal) :
+theorem secWithin_refuses_the_first_second_past_the_years {ρ : Type} (r : ρ) :
     secWithin r 315537897600 = .error r ∧ secWithin r 315537897599 = .ok 315537897599 :=
   ⟨secWithin_refuses_past_the_calendar r _ (by decide),
    secWithin_accepts_a_representable_second r _ (by decide)⟩
 
 /-- **It is the clause `Seg.wf` puts on a segment's `stop`**, not a second one: a second this
 guard accepts is exactly a second that closes a zero-length segment at the same instant. -/
-theorem secWithin_is_the_clause_Seg_wf_puts_on_a_stop (r : RowRefusal) (sec : Nat) :
+theorem secWithin_is_the_clause_Seg_wf_puts_on_a_stop {ρ : Type} (r : ρ) (sec : Nat) :
     secWithin r sec = .ok sec ↔
       Planner.Seg.wf ⟨sec, sec, .block, none, none, none, {}, none, none, none⟩ = true := by
   have hw : Planner.Seg.wf ⟨sec, sec, .block, none, none, none, {}, none, none, none⟩

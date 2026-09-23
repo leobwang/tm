@@ -6466,3 +6466,74 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_census_request_pays_the_decoder
 #print axioms Tm.PlannerWit.the_future_half_is_not_the_whole_day
 #print axioms Tm.PlannerWit.the_hole_property_is_blind_to_a_leading_remainder
+
+-- ===================================================================
+-- Stage 6 W-27, track P (step R2, D48): the PLANNER's inputs cross the
+-- wire.  `PlanWire.lean` -- the four values `Planner.PlanReq` needed and
+-- no section carried: `state` (SS9's RuntimeIn), `routines`, `overrides`
+-- and `prio.batchMaxMin` (SS16's [priority] batch_max_min, README gap 801).
+-- Every bound is one this wire already had: CapWire.maxCandId,
+-- CapWire.maxRemaining (the fork u32), Cal.Instant.wf, Look.maxDayMin and
+-- Planner.maxCands, each through the constructor that already owns it.
+-- No goal is discharged: the burn-down stays 9.
+-- ===================================================================
+#print axioms Tm.PlanWire.instantWithin_is_secWithin_at_the_zero_nanosecond
+#print axioms Tm.PlanWire.instantWithin_refuses_past_the_calendar
+#print axioms Tm.PlanWire.instantWithin_accepts_a_representable_second
+#print axioms Tm.PlanWire.instantWithin_refuses_the_first_second_past_the_years
+#print axioms Tm.PlanWire.planKey_names_are_the_wire_keys
+#print axioms Tm.PlanWire.planKey_record_names_are_the_wire_keys
+#print axioms Tm.PlanWire.the_refusals_spell_themselves
+#print axioms Tm.PlanWire.plannerRefusalJson_is_the_err_planner_shape
+#print axioms Tm.PlanWire.the_two_refusal_families_do_not_share_a_key
+#print axioms Tm.PlanWire.readActive_refuses_a_long_id
+#print axioms Tm.PlanWire.readActive_refuses_a_start_past_the_calendar
+#print axioms Tm.PlanWire.readActive_refuses_a_start_after_now
+#print axioms Tm.PlanWire.readActive_refuses_an_estimate_past_the_day
+#print axioms Tm.PlanWire.readActive_accepts_a_running_block
+#print axioms Tm.PlanWire.readBreak_refuses_a_break_longer_than_a_day
+#print axioms Tm.PlanWire.readBreak_refuses_an_unknown_place
+#print axioms Tm.PlanWire.the_four_break_places_read
+#print axioms Tm.PlanWire.readBreak_refuses_a_start_after_now
+#print axioms Tm.PlanWire.readBreak_accepts_a_running_break
+#print axioms Tm.PlanWire.readInterrupt_refuses_a_start_after_now
+#print axioms Tm.PlanWire.readInterrupt_refuses_a_long_id
+#print axioms Tm.PlanWire.readInterrupt_accepts_an_open_interruption
+#print axioms Tm.PlanWire.readHash_refuses_a_short_digest
+#print axioms Tm.PlanWire.readHash_accepts_sixteen_hex_digits
+#print axioms Tm.PlanWire.readHash_of_an_absent_hash
+#print axioms Tm.PlanWire.readYesterday_refuses_a_priority_past_seven
+#print axioms Tm.PlanWire.readYesterday_accepts_seven
+#print axioms Tm.PlanWire.readYesterday_refuses_past_the_cap
+#print axioms Tm.PlanWire.readYesterday_of_nil
+#print axioms Tm.PlanWire.readState_of_an_empty_object
+#print axioms Tm.PlanWire.readState_accepts_a_running_day
+#print axioms Tm.PlanWire.readRoutine_refuses_a_long_id
+#print axioms Tm.PlanWire.readRoutine_refuses_a_window_past_the_calendar
+#print axioms Tm.PlanWire.readRoutine_refuses_a_duration_past_the_width
+#print axioms Tm.PlanWire.readRoutine_accepts_an_instance
+#print axioms Tm.PlanWire.readRoutine_mandatory_is_absent_is_false
+#print axioms Tm.PlanWire.readRoutines_of_nil
+#print axioms Tm.PlanWire.readRoutines_accepts_two_instances
+#print axioms Tm.PlanWire.readOverrides_refuses_an_estimate_past_the_width
+#print axioms Tm.PlanWire.readOverrides_refuses_a_drop_that_is_not_an_id
+#print axioms Tm.PlanWire.readOverrides_refuses_a_long_drop_id
+#print axioms Tm.PlanWire.readOverrides_refuses_too_many_estimates
+#print axioms Tm.PlanWire.readOverrides_refuses_too_many_drops
+#print axioms Tm.PlanWire.readOverrides_of_an_empty_object
+#print axioms Tm.PlanWire.readOptOverrides_of_an_absent_key
+#print axioms Tm.PlanWire.readOptOverrides_accepts_a_what_if
+#print axioms Tm.PlanWire.readBatchMaxMin_refuses_past_the_width
+#print axioms Tm.PlanWire.readBatchMaxMin_refuses_an_absent_priority
+#print axioms Tm.PlanWire.readBatchMaxMin_accepts_the_shipped_default
+#print axioms Tm.PlanWire.readBatchMaxMin_is_the_forks_u32_width
+#print axioms Tm.PlanWire.readPlannerSection_of_an_empty_object
+#print axioms Tm.PlanWire.readPlannerSection_refuses_a_routines_that_is_not_an_array
+#print axioms Tm.PlanWire.runPlanner_without_a_planner_section_is_runRows
+#print axioms Tm.PlanWire.callPlanner_without_a_planner_section_is_callRows
+#print axioms Tm.PlanWire.runPlanner_with_a_readable_section_answers_as_runRows
+#print axioms Tm.PlanWire.runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at
+#print axioms Tm.PlanWire.runPlanner_refuses_a_section_the_decoder_refuses
+#print axioms Tm.PlanWire.runPlanner_refuses_a_planner_section_without_a_capacity
+#print axioms Tm.PlanWire.runPlanner_refuses_a_batch_max_min_the_decoder_refuses
+#print axioms Tm.PlanWire.callExport_is_callPlanner
