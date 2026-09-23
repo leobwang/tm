@@ -857,9 +857,46 @@ W-19's reason at the two comparisons: the restriction that survives is
 law **vacuous**, so a discharge would be AGENTS §5.2's theorem that compiles and means
 nothing.  README gaps 1390-1393.
 
-**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Four runs have discharged none
-and said so honestly; nobody has written the list.  **None of the nine is reachable today**,
-and the reasons are two steps and one edit:
+**W-25 (track G) closed the WALL axis, the third and last `∀` over the request, and the
+burn-down still did not move.**  `PlanCheck.PlainStore` names what the lift had been asking —
+*every* interval-shaped entity of the plan carries no `buffer:` and lies inside the day being
+planned — and `PlanCheck.WallsArePlain` is what `wallsUnmoved` actually needs: the same five
+clauses at the entities a **Wall row of the produced day** names.
+`PlanCheck.dayPlan_ok_core_of_plain_walls` and
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls` are §6.1's seven and eleven from the
+restriction; the blanket forms are kept and are now corollaries
+(`PlanCheck.WallsArePlain_of_a_plain_store`).  **The blanket was false of an ordinary week
+file**: `PlannerWit.theOffDayRequest` is the census Wednesday with one Thursday line added to
+its calendar document, `PlannerWit.the_blanket_plainness_is_false_at_the_off_day_request`
+refutes it there, and `PlannerWit.the_eleven_hold_where_the_blanket_fails` is §6.1's eleven on
+that whole day.  All three bounds of the lift are now named and all three are witnessed in
+both directions; what is left in its hypotheses is three decidable `Bool`s the decoder owes
+(README gap 346) and one `Nat` comparison.
+
+**TWO OF THE NINE BELOW WERE REFUTED THAT WEEK AND BOTH STAY.**  W-24 refuted
+`plan_does_not_overbook`; W-25 refuted `plan_is_stable_across_a_replan`, and again **not** for
+the reason design §6.3 records.
+`PlannerWit.plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does
+_not_pin` is `plan_tail_drop`'s hole at a second goal: the hypotheses pin `plan`, `window`,
+`blockMin` and the budget and leave **`run`** free, so `PlannerWit.theRequest` and
+`PlannerWit.theQuietRequest` satisfy every one of them and disagree about the day's whole past
+half.  Design §6.3 row 3's own restatement — *over segments that are `end ≤ now` and **not
+`open`*** — is refuted by the same pair
+(`PlannerWit.the_designs_restatement_of_the_stability_law_is_refuted_too`), because the witness
+row carries `isOpen = false`.  **And it could not have helped**:
+`Planner.SegFlags.isOpen` is set at exactly **one** construction site in this kernel,
+`Planner.interruptRows`, while §8.2 choice 5b's reservation — the row that *grows* — leaves it
+at its default (`PlannerWit.the_reservation_row_is_not_marked_open`, every request;
+`PlannerWit.no_row_of_the_days_this_tree_builds_is_open`, four days including two with a block
+running).  So the design's restatement, ported verbatim, would exclude the interruption and
+keep the row it was written to exclude.  README gaps 1500-1503.
+
+
+**WHICH OF THE NINE ARE REACHABLE, AND WHAT EACH WAITS ON.**  Six runs have discharged none
+and said so honestly.  The list was written at W-24 and is **re-verified at W-25**, item by
+item, against the tree rather than against the previous run's prose; the two entries that
+moved are 8 and 9, and both moved because the law was refuted, not because it came closer.
+**None of the nine is reachable today**, and the reasons are two steps and one edit:
 
 1. `plan_does_not_overbook` — **P5**.  Refuted above; reachable when step 5's fold puts Block
    rows at or after `now` into the day, which is what gives the surviving restriction a
@@ -881,8 +918,29 @@ and the reasons are two steps and one edit:
    **not** P5's.
 7. `plan_never_batches_past_an_equal_ci_candidate` — **P5**.  Provable today and vacuous
    (`PlanCheck.batch_has_no_subject`): it wants a Batch row, which is step 5's batch split.
-8. `plan_tail_drop` — **G2**, which waits on G1, which waits on P5.
-9. `plan_is_stable_across_a_replan` — **G3**, the same chain.
+8. `plan_tail_drop` — **G2**, which waits on G1, which waits on P5.  Re-verified at W-25:
+   it is **refuted** (`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it
+   _does_not_pin`, W-15) and it owes a hypothesis before D29's restatement can be written —
+   `r'.run = r.run`, or the law over one run.  Its *other* half, §8.2 choice 5b's prefix
+   failure, is unreachable until P5:
+   `PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` proves
+   the budget cannot reach `assignedOf` at all.  **G2 is NOT in the tree** — no restatement,
+   no `Negative.lean` cheat — and a run that only pins the run would discharge it **vacuously**
+   for the same reason, which is W-19's call and AGENTS §5.2's.
+9. `plan_is_stable_across_a_replan` — **G3**, the same chain, and **refuted at W-25** for the
+   same unpinned field, with design §6.3 row 3's own restatement refuted beside it (see the
+   W-25 paragraph above).  **G3 is NOT in the tree either**: of design §15's three G3
+   declarations, the refutation is now written and the restatement and
+   an_open_segment_only_extends are not — and that second one has **no subject** (the names
+   are un-backticked because check 8 is right to ask: neither is declared anywhere), because
+   the reservation is not marked `open` and no witness request has an interruption.  G3 owes
+   three repairs and only the first has a counterexample: pin the run; drop or restate `hwin`,
+   which is false of every genuine replan-later pair
+   (`PlannerWit.an_hour_later_changes_one_field_and_moves_the_window`); and tie the free
+   second-argument bound of the law below to `r.now`, because free it admits *every* row and
+   the law then says the two days are equal up to inclusion.  What the law is actually about is **not** refuted:
+   `PlannerWit.an_hour_later_keeps_every_row_that_had_settled` is the one genuine replan pair
+   this tree can build, over the three rows that had settled, and it holds.
 
 **Six of the nine wait on ONE edit, and it is not a proof.**  `Planner.PlanReq.assignFold`,
 `Planner.PlanReq.finalAssign`, `Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow`

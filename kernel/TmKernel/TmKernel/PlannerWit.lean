@@ -5335,5 +5335,383 @@ theorem the_census_at_every_request_the_prose_quotes :
   refine ⟨by decide, by decide, by decide, by decide, by decide⟩
 
 
+/-! ############################################################################
+## 19. The WALL axis: a request whose store the lift's blanket hypothesis refuses
+############################################################################
+
+W-23 named the whole-day lift's **eligibility** bound and W-24 named its **log** bound.  What
+was left was `PlanCheck.PlainStore` — *"every interval-shaped entity of the plan carries no
+`buffer:` and lies inside the day"* — an unnamed `∀` over the store, discharged in this tree
+only by `the_running_request_is_plain` and `the_census_request_is_plain`, each a case split
+over a store holding **one** `at:` event.
+
+**It is false of an ordinary week file.**  A calendar with a meeting tomorrow in it refutes
+it, because `r.dayEnd` is tonight's midnight and tomorrow's event ends after that.  Nothing
+here is an edge case: every real `calendar/*.md` holds more than one day.
+
+`theOffDayRequest` is `theCensusRequest` with **one line added to the calendar document** — a
+Thursday standup, on the Wednesday being planned.  `PlanCheck.PlainStore` is false at it,
+`PlanCheck.WallsArePlain` holds, and §6.1's eleven hold on its whole day through
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls`.  That pair is the same pair
+`the_paying_past_holds_where_hnopast_does_not` is for the log axis: the new hypothesis is
+**strictly** weaker, not merely a different one. -/
+
+/-- `censusWitness` with a second calendar line — Thursday's standup.  Nothing else changes:
+the week document and the month document are the census witness's own. -/
+def twoWallWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList,
+      "- [ ] 3 Standup tomorrow     at:2026-09-10T09:00/09:30 loc:zoom ^g2".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1 hot".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 40000 in
+theorem the_two_wall_witness_loads : loadsOk twoWallWitness = true := by decide
+
+def twoWallPlan : WfPlan :=
+  match h : loadPlan twoWallWitness with
+  | .ok p => p
+  | .error _ => absurd the_two_wall_witness_loads (by simp [loadsOk, h])
+
+/-- The wall index is **computed from the plan**, not respelled as a literal, so
+`PlanReq.wallsAgree` is true here by construction rather than by a list nobody re-derives
+(AGENTS §5.3: the second spelling is the bug). -/
+def twoWallInput : Look.Input :=
+  { witInput with walls := Look.wallIndex witInput.tz witInput.day.cut.blockMin twoWallPlan.val }
+
+/-- **The census Wednesday with tomorrow's standup in the calendar.**  Same log, same running
+block, same configuration; one more entity in the store, and it is an `at:` event the day
+being planned never places. -/
+def theOffDayRequest : PlanReq :=
+  ⟨twoWallPlan, censusRun, twoWallInput, theRunningState, Capped.nil, witPrio, Capped.nil, none⟩
+
+theorem the_off_day_request_agrees :
+    theOffDayRequest.wallsAgree = true ∧ theOffDayRequest.activeAgrees = true ∧
+      theOffDayRequest.dayAgrees = true := by decide
+
+theorem the_off_day_request_is_inside_the_calendar :
+    theOffDayRequest.now.sec + 1 < LogStamp.yearEnd := by decide
+
+set_option maxRecDepth 40000 in
+/-- **Tomorrow's standup is not one of today's walls.**  `Look.wallIxOn` is the one selection
+rule the window, the cut and the rows all read (`Look.wallIxOn`'s own doc comment), and it
+answers the same list here as at `theCensusRequest` — which is why the extra entity changes
+nothing the day does and everything the blanket hypothesis says. -/
+theorem tomorrows_meeting_is_not_one_of_todays_walls :
+    Look.wallIxOn theOffDayRequest.look.walls theOffDayRequest.today
+      = Look.wallIxOn theCensusRequest.look.walls theCensusRequest.today := by decide
+
+set_option maxRecDepth 100000 in
+/-- Every Wall row of this day carries `^g1`.  This is what makes the restricted hypothesis
+provable here without a case split over the store: the day names one item. -/
+theorem the_off_day_walls_name_the_meeting :
+    ∀ s ∈ (dayPlan theOffDayRequest).segments, s.val.kind = SegKind.wall →
+      s.val.item = some (['g','1'] : Id) := by decide
+
+set_option maxRecDepth 100000 in
+/-- **`PlanCheck.WallsArePlain` holds.**  The argument is `the_census_request_is_plain`'s `g1`
+branch and nothing else — the two other branches that proof needs are gone, because the
+restriction never asks about an entity the day places no Wall for. -/
+theorem the_off_day_request_has_plain_walls :
+    PlanCheck.WallsArePlain theOffDayRequest (dayPlan theOffDayRequest) := by
+  intro s hs hk i e a b hi hget hsh
+  have hid : i = (['g','1'] : Id) := by
+    have h := the_off_day_walls_name_the_meeting s hs hk
+    rw [hi] at h; exact Option.some.inj h
+  subst hid
+  have hg : (twoWallPlan.val.store.get ['g','1']).map (fun x => (x.val.shape, x.val.buffer))
+      = some (Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩,
+              none) := by decide
+  rw [show twoWallPlan.val.store.get ['g','1']
+        = theOffDayRequest.plan.val.store.get ['g','1'] from rfl, hget, Option.map_some] at hg
+  have he := Option.some.inj hg
+  have hsh0 : e.val.shape
+      = Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩ :=
+    congrArg Prod.fst he
+  have hbuf : e.val.buffer = none := congrArg Prod.snd he
+  rw [hsh0] at hsh
+  injection hsh with ha hb
+  subst ha
+  subst hb
+  exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
+
+/-- **And the blanket is FALSE.**  `^g2` ends at Thursday 09:30, which is after `r.dayEnd`, so
+the third of `PlanCheck.PlainStore`'s five clauses fails on it.  The day is untouched; only
+the hypothesis is. -/
+theorem the_blanket_plainness_is_false_at_the_off_day_request :
+    ¬ PlanCheck.PlainStore theOffDayRequest := by
+  intro h
+  have hg : (twoWallPlan.val.store.get ['g','2']).map (fun x => x.val.shape)
+      = some (Field.Shape.interval ⟨739868, ⟨540, by decide⟩⟩
+              ⟨739868, ⟨570, by decide⟩⟩) := by decide
+  obtain ⟨e, hget, hsh⟩ := Option.map_eq_some_iff.1 hg
+  exact absurd (h ['g','2'] e _ _ hget hsh).2.2.1 (by decide)
+
+set_option maxRecDepth 100000 in
+/-- The log pays here exactly as it pays at `theCensusRequest` — same run, same day. -/
+theorem the_off_day_past_pays : PlanCheck.PastPays theOffDayRequest where
+  oneBlock := by decide
+  offWall := by decide
+  offBreak := by decide
+  budget := by decide
+
+/-- **§6.1's seven on a day the old lift could not reach**, by the lift and not by a `decide`
+on the battery. -/
+theorem the_core_seven_hold_where_the_blanket_fails :
+    PlanCheck.planOkCore theOffDayRequest (dayPlan theOffDayRequest) = true :=
+  PlanCheck.dayPlan_ok_core_of_plain_walls theOffDayRequest the_off_day_request_agrees.1
+    the_off_day_request_agrees.2.1 the_off_day_request_agrees.2.2
+    the_off_day_request_is_inside_the_calendar the_off_day_request_has_plain_walls
+    the_off_day_past_pays
+
+/-- **§6.1's ELEVEN on the whole day of a request the blanket refuses** — all three bounds
+named: eligibility by `fromNowWorkRows_is_from_now_anchored`, the log by
+`the_off_day_past_pays`, the walls by `the_off_day_request_has_plain_walls`. -/
+theorem the_eleven_hold_where_the_blanket_fails :
+    PlanCheck.planOk fromNowWorkRows theOffDayRequest (dayPlan theOffDayRequest) = true :=
+  PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls fromNowWorkRows_is_from_now_anchored
+    theOffDayRequest the_off_day_request_agrees.1 the_off_day_request_agrees.2.1
+    the_off_day_request_agrees.2.2 the_off_day_request_is_inside_the_calendar
+    the_off_day_request_has_plain_walls the_off_day_past_pays
+
+/-- `PlanCheck.PlainStore` at a request where it **holds**, so that D40's `:= False` mutation
+of it has something to break.  `the_census_request_is_plain` is that statement unfolded; this
+line is the one that names it, and it is a reuse, not a second proof. -/
+theorem the_census_request_has_a_plain_store : PlanCheck.PlainStore theCensusRequest :=
+  the_census_request_is_plain
+
+/-! ### And `WallsArePlain` can fail, on a day one relabelling away from this one
+
+AGENTS §9.2: a check no input can fail is not a check.  `PlanCheck.WallsArePlain` is false as
+soon as a Wall row of the day names an entity the blanket would also have refused — here, by
+writing tomorrow's standup onto today's Wall row, which is the `theMovedWallDay` idiom of §5
+at a different field. -/
+
+def toTomorrowsMeeting (s : WfSeg) : WfSeg :=
+  if s.val.kind = SegKind.wall then Planner.segOf { s.val with item := some (['g','2'] : Id) }
+  else s
+
+def theRelabelledWallDay : DayPlan :=
+  { dayPlan theOffDayRequest with
+    segments := (dayPlan theOffDayRequest).segments.map toTomorrowsMeeting }
+
+set_option maxRecDepth 100000 in
+theorem the_relabelled_day_holds_tomorrows_meeting :
+    ∃ s ∈ theRelabelledWallDay.segments,
+      s.val.kind = SegKind.wall ∧ s.val.item = some (['g','2'] : Id) := by decide
+
+theorem the_wall_axis_can_fail :
+    ¬ PlanCheck.WallsArePlain theOffDayRequest theRelabelledWallDay := by
+  intro h
+  obtain ⟨s, hs, hk, hi⟩ := the_relabelled_day_holds_tomorrows_meeting
+  have hg : (twoWallPlan.val.store.get ['g','2']).map (fun x => x.val.shape)
+      = some (Field.Shape.interval ⟨739868, ⟨540, by decide⟩⟩
+              ⟨739868, ⟨570, by decide⟩⟩) := by decide
+  obtain ⟨e, hget, hsh⟩ := Option.map_eq_some_iff.1 hg
+  exact absurd (h s hs hk ['g','2'] e _ _ hi hget hsh).2.2.1 (by decide)
+
+/-! ############################################################################
+## 20. G3: `plan_is_stable_across_a_replan` refuted, for a reason the design does not give
+############################################################################
+
+Design §6.3 row 3 records `Goals.plan_is_stable_across_a_replan` as false because *"the
+running block and the running interruption **grow** rather than move (`SegFlags::open`)"*, and
+gives the restatement — *over segments that are `end ≤ now` **and not `open`***  — to step G3.
+
+**That is not why it is false in this tree, and the design's restatement is false here too.**
+The goal's hypotheses pin `plan`, `window`, `blockMin` and the budget and leave **`run`**
+free, exactly as `plan_tail_drop`'s do (§6, W-15): since D24's seam put the day's past half
+inside `PlanReq.run`, two requests satisfying every hypothesis can disagree about the whole
+past half of the day.  `theRequest` and `theQuietRequest` are that pair again, and the row
+they disagree about is a **settled, not-open** Block — so adding `isOpen = false` to the
+hypotheses repairs nothing.
+
+**Why the `open` restriction cannot bite here** is §20's second half:
+`Planner.SegFlags.isOpen` is set at exactly **one** construction site in this kernel,
+`Planner.interruptRows`, and `Planner.PlanReq.activeRow` — §8.2 choice 5b's reservation, which
+is the row that grows — leaves it `false`.  `the_reservation_row_is_not_marked_open` is that,
+proved for every request.  So the design's restatement, ported verbatim, would exclude the
+interruption and **keep** the running block, which is the row it was written to exclude. -/
+
+set_option maxRecDepth 40000 in
+/-- The row the refutation turns on: `^m1`'s first replayed Block, which ended before `now`
+and carries no `open` mark. -/
+theorem the_witness_day_holds_a_settled_block_no_replan_may_drop :
+    ∃ s ∈ (dayPlan theRequest).segments,
+      s.val.kind = SegKind.block ∧ s.val.item = some (['m','1'] : Id) ∧
+        s.val.stop ≤ theRequest.now.sec ∧ s.val.flags.isOpen = false := by decide
+
+set_option maxRecDepth 40000 in
+/-- **`plan_is_stable_across_a_replan` as stage 6 wrote it is REFUTED** (AGENTS §3.1 item 3,
+D5), by the field its hypotheses do not pin.
+
+`theRequest` replays a morning of two Blocks and `theQuietRequest` replays an empty log; they
+agree on `plan`, `window`, `blockMin` and `budgetBlocks`, and the instant the law quantifies
+over is free, so every hypothesis holds.  A settled Block of the first day is not a row of the second — if it were,
+`^m1` would be in `assignedOf (dayPlan theQuietRequest)`, which
+`the_quiet_day_assigns_nothing` computes to be `[]`.
+
+This is `plan_tail_drop`'s hole at a second goal, and the owner is owed the same repair:
+`r'.run = r.run`, or the law stated over one run. -/
+theorem plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin :
+    ¬ (∀ (r r' : PlanReq) (nowSec : Nat) (s : WfSeg),
+        r'.plan = r.plan → r'.window = r.window → r'.blockMin = r.blockMin →
+        r'.budgetBlocks = r.budgetBlocks →
+        s ∈ (dayPlan r).segments → s.val.stop ≤ nowSec →
+        s ∈ (dayPlan r').segments) := by
+  intro h
+  obtain ⟨s, hs, hk, hi, hstop, -⟩ := the_witness_day_holds_a_settled_block_no_replan_may_drop
+  have hq := h theRequest theQuietRequest theRequest.now.sec s rfl rfl rfl rfl hs hstop
+  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan theQuietRequest) :=
+    (mem_assignedOf _ _).2 ⟨s, hq, by rw [hk]; rfl, by simp [segItems, Seg.items, hk, hi]⟩
+  rw [the_quiet_day_assigns_nothing] at hmem
+  exact absurd hmem (by simp)
+
+set_option maxRecDepth 40000 in
+/-- **And design §6.3 row 3's restatement is refuted by the same pair** — the counterpart of
+W-24's `the_designs_restatement_of_the_overbooking_law_is_refuted_too`, at a second row of
+that table.  The witness row carries `isOpen = false`, so the `not open` restriction admits
+it and the conclusion is the same one that fails. -/
+theorem the_designs_restatement_of_the_stability_law_is_refuted_too :
+    ¬ (∀ (r r' : PlanReq) (nowSec : Nat) (s : WfSeg),
+        r'.plan = r.plan → r'.window = r.window → r'.blockMin = r.blockMin →
+        r'.budgetBlocks = r.budgetBlocks →
+        s ∈ (dayPlan r).segments → s.val.stop ≤ nowSec → s.val.flags.isOpen = false →
+        s ∈ (dayPlan r').segments) := by
+  intro h
+  obtain ⟨s, hs, hk, hi, hstop, hopen⟩ :=
+    the_witness_day_holds_a_settled_block_no_replan_may_drop
+  have hq := h theRequest theQuietRequest theRequest.now.sec s rfl rfl rfl rfl hs hstop hopen
+  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan theQuietRequest) :=
+    (mem_assignedOf _ _).2 ⟨s, hq, by rw [hk]; rfl, by simp [segItems, Seg.items, hk, hi]⟩
+  rw [the_quiet_day_assigns_nothing] at hmem
+  exact absurd hmem (by simp)
+
+/-- **§8.2 choice 5b's reservation is marked `▶`, not `open`** — at every request.
+
+`Planner.SegFlags.isOpen`'s own doc comment names two subjects, *"the running interruption
+(§9) **and the worked stretch of the running block**"*, and
+`Planner.interruptRows_are_open_lost_time` is the first of them.  This is the second one, and
+it says the opposite: `Planner.PlanReq.activeRow` sets `current` and leaves `isOpen` at its
+default.  The pair is what makes design §6.3 row 3's restatement unusable in this tree
+(README gap 1500) — it would exclude the interruption and keep the row that grows. -/
+theorem the_reservation_row_is_not_marked_open (r : PlanReq) (t : Seg)
+    (h : t ∈ r.activeRow) : t.flags.current = true ∧ t.flags.isOpen = false := by
+  unfold PlanReq.activeRow at h
+  split at h
+  · exact absurd h (by simp)
+  · simp only [List.mem_singleton] at h
+    subst h
+    exact ⟨rfl, rfl⟩
+
+set_option maxRecDepth 200000 in
+/-- **No row of any day this tree can build carries `open`** — including the two whose
+`RuntimeIn` has a block running, whose reservation row is in the list.  The lengths are in the
+statement so that the four `all`s cannot be AGENTS §9.2's *"check no input can fail"* read
+over an empty day. -/
+theorem no_row_of_the_days_this_tree_builds_is_open :
+    (dayPlan theRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
+      (dayPlan theCensusRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
+      (dayPlan theRunningRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
+      (dayPlan theQuietRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
+      ((dayPlan theRequest).segments.length, (dayPlan theCensusRequest).segments.length,
+        (dayPlan theRunningRequest).segments.length,
+        (dayPlan theQuietRequest).segments.length) = (9, 11, 10, 7) := by
+  decide
+
+/-! ### What the law is actually about, and the hypothesis that excludes it
+
+§8.3's stability bullet is about *a replan an hour later*.  The goal cannot say that: on this
+request the day's window **starts at `now`** (`Look.day0Window` through `Look.day0Cut`'s
+`max w.1 I.today0.now.sec`), so moving `now` moves `window`, and `hwin : r'.window = r.window`
+is false of every genuine replan-later pair.
+
+And the law's content is not what fails.  At the one pair that *is* a replan — same plan, same
+run, `now` an hour on — **every row that had settled is still there**.  So G3's restatement
+owes three things and only the first has a counterexample: pin the run, drop or restate `hwin`,
+and tie the instant it quantifies over to `r.now` instead of leaving it free — free, the
+`s.val.stop ≤ _` clause admits *every* row, which makes the law say the two days are equal up
+to inclusion. -/
+
+/-- `theRequest` replanned one hour later: one field of `Look.Today` moves. -/
+def theHourLaterRequest : PlanReq :=
+  { theRequest with
+    look := { theRequest.look with
+      today0 := { theRequest.look.today0 with now := ⟨theRequest.now.sec + 3600, 0⟩ } } }
+
+set_option maxRecDepth 40000 in
+theorem an_hour_later_changes_one_field_and_moves_the_window :
+    theHourLaterRequest.plan = theRequest.plan ∧
+      theHourLaterRequest.run = theRequest.run ∧
+      theHourLaterRequest.blockMin = theRequest.blockMin ∧
+      theHourLaterRequest.budgetBlocks = theRequest.budgetBlocks ∧
+      theHourLaterRequest.window ≠ theRequest.window := by
+  refine ⟨rfl, rfl, rfl, rfl, ?_⟩
+  decide
+
+set_option maxRecDepth 200000 in
+/-- **The replan keeps everything that had settled**, at the pair the law is written about.
+Its subject is the three rows `three_rows_had_settled_when_the_witness_planned` counts, so
+this is not a statement about an empty quantifier. -/
+theorem an_hour_later_keeps_every_row_that_had_settled :
+    ∀ s ∈ (dayPlan theRequest).segments, s.val.stop ≤ theRequest.now.sec →
+      s ∈ (dayPlan theHourLaterRequest).segments := by decide
+
+set_option maxRecDepth 200000 in
+theorem three_rows_had_settled_when_the_witness_planned :
+    ((dayPlan theRequest).segments.filter
+      (fun s => decide (s.val.stop ≤ theRequest.now.sec))).length = 3 := by decide
+
+
+set_option maxRecDepth 400000 in
+/-- **The wall axis moves no census number** — the counterpart of
+`the_log_axis_moves_no_census_number`, and gap 1397's row for the request this run adds.
+
+`PlanCheck.WallsArePlain` is a **hypothesis of a lift**, not a twelfth checker:
+`PlanCheck.checksOf` does not read it, `PlanCheck.subjectOf` does not read it, and the day at
+`theOffDayRequest` is the census day (`tomorrows_meeting_is_not_one_of_todays_walls` is why).
+So the headline census is **SEVEN**, unchanged, and it is seven at the new request too. -/
+theorem the_wall_axis_moves_no_census_number :
+    PlanCheck.subjectCount permissive theOffDayRequest (dayPlan theOffDayRequest) = 7 ∧
+      PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 := by
+  refine ⟨by decide, by decide⟩
+
+/-! ### D40, as a statement rather than as a gate verdict
+
+`check.sh` check 9 reports `PlanCheck.PlainStore` and `PlanCheck.WallsArePlain` PINNED in both
+directions, and **that verdict is worth less than it looks**: both are pinned at
+`PlanCheck.WallsArePlain_of_a_plain_store`, the term-mode lemma that bridges them, which would
+break for a definition with no witness anywhere (README gap 1504 drove exactly that).  What
+does distinguish them from a constant is the pair of theorems below: one request where each
+holds and one where it does not.  No constant body of either can satisfy both conjuncts, for
+any proof style, which is what D40 is actually asking. -/
+
+theorem the_wall_axis_definitions_are_not_constants :
+    (PlanCheck.WallsArePlain theOffDayRequest (dayPlan theOffDayRequest) ∧
+        ¬ PlanCheck.WallsArePlain theOffDayRequest theRelabelledWallDay) ∧
+      (PlanCheck.PlainStore theCensusRequest ∧ ¬ PlanCheck.PlainStore theOffDayRequest) :=
+  ⟨⟨the_off_day_request_has_plain_walls, the_wall_axis_can_fail⟩,
+   ⟨the_census_request_has_a_plain_store, the_blanket_plainness_is_false_at_the_off_day_request⟩⟩
+
+/-- **The two counting conjuncts above have a reader** (README gap 877's shape, looked for in
+this run's own material): `no_row_of_the_days_this_tree_builds_is_open`'s four lengths and
+`three_rows_had_settled_when_the_witness_planned`'s three are what stop the `all` and the `∀`
+beside them from being AGENTS §9.2's check no input can fail, and this is what reads them. -/
+theorem the_open_sweep_and_the_replan_both_had_a_subject :
+    (dayPlan theCensusRequest).segments ≠ [] ∧
+      ((dayPlan theRequest).segments.filter
+        (fun s => decide (s.val.stop ≤ theRequest.now.sec))) ≠ [] := by
+  constructor
+  · intro h
+    have hl := no_row_of_the_days_this_tree_builds_is_open.2.2.2.2
+    rw [h] at hl
+    simp at hl
+  · intro h
+    have hl := three_rows_had_settled_when_the_witness_planned
+    rw [h] at hl
+    simp at hl
+
 end PlannerWit
 end Tm
