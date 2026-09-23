@@ -3713,5 +3713,156 @@ theorem dayPlan_ok_on_the_whole_day_of_plain_walls {el : Eligible} (hfn : FromNo
     (dayPlan_ok_core_of_plain_walls r hagree hactive hday hnowcal hwalls hpast)
 
 
+/-! ############################################################################
+## W-26 (track G): the FOURTH and LAST axis of the lift, and the twelfth property
+############################################################################
+
+**Three axes are closed and the fourth is not a proof.**  W-23 named the eligibility axis
+(`FromNowAnchored`), W-24 the log axis (`PastPays`), W-25 the wall axis (`WallsArePlain`).
+`dayPlan_ok_on_the_whole_day_of_plain_walls`'s own doc comment says what is left, and this
+section gives it the name the other three have: `wallsAgree`, `activeAgrees` and `dayAgrees`
+are decidable `Bool`s and `hnowcal` is one `Nat` comparison, and **all four are the request
+DECODER's obligation** (README gap 346), not the planner's and not a `∀` over anything.
+`DecoderPays` is that axis, and `dayPlan_ok_on_the_whole_day_of_a_paying_decoder` is §6.1's
+lift with no loose hypothesis left in it.
+
+**What naming it buys is a question with an answer.**  `PlannerWit.mkPlanReq?_ignores_state`
+proves the one builder in this tree never reads `Planner.RuntimeIn` at all, so
+`PlannerWit.the_builder_accepts_a_running_block_it_never_checked` turns a clause of this
+structure into a counterexample rather than a hope: of the four, exactly **one**
+(`PlannerWit.mkPlanReq?_ok_wallsAgree`) has a caller today.  D48 moves `state` onto the wire
+in R2, and this is what that wire's decoder owes on arrival.
+
+**And the twelfth property, which is NOT one of the eleven** (README gap 1529).  The day
+this kernel produces can hold a **segment-free hole** — an instant inside the planned span
+that no row covers — and nothing in `checksOf` forbids one: §8.3's list asserts no *overlap*
+and says nothing about a *gap*.  `holeFree` is the statement, stated now so that the step
+which deletes the fork's planner can land it, and it is deliberately **not** added to
+`checksCore` or `checksEligible`: it is false today, on the day where the census is seven
+(`PlannerWit.the_hole_property_is_not_one_of_the_eleven`), so adding it to the battery would
+turn every lift in this file red for a defect no lift is about.
+
+**Two legitimate cases the statement must not flag, and the second was found by computing.**
+(1) A **tail remainder** — the unplanned time after the last row — is not a hole, and
+`the_last_row_is_never_a_holes_subject` is why: the clause is guarded by *"some row starts
+after this one stops"*, so the row with the greatest stop is never its subject.
+(2) The **replayed past** is out of scope.  An instant nobody worked is genuinely unplanned
+and the log, not the planner, decides it; the census day's own morning holds a 45-minute
+such gap between a replayed break and the next replayed block.  So the property is stated
+over `futureHalf`, the rows at or after `now` — E1's own restriction, the fork's
+`assigned_set` window, which `plan_places_no_block_over_a_wall` and
+`plan_places_no_block_over_a_break` already use.  `keepFromNow` is **not** that filter and is
+not reused for it: `keepFromNow` keeps every non-work row whatever its instant, which is
+right for the six block-side checks and wrong here, where a Rest row before `now` is exactly
+the row whose absence would read as a gap. -/
+
+/-- **The rows at or after `now`, all kinds.**  `withoutActive` above is the pattern: hand a
+checker a shorter segment list rather than write a second checker.  It is **not**
+`withoutPast`, which keeps a non-work row whatever its instant — see the section header. -/
+def futureHalf (r : PlanReq) (d : DayPlan) : DayPlan :=
+  { d with segments := d.segments.filter (fun s => decide (r.now.sec ≤ s.val.start)) }
+
+theorem futureHalf_segments (r : PlanReq) (d : DayPlan) :
+    (futureHalf r d).segments =
+      d.segments.filter (fun s => decide (r.now.sec ≤ s.val.start)) := rfl
+
+/-- A row of `futureHalf` is a row of the day, and it starts at or after `now`. -/
+theorem mem_futureHalf (r : PlanReq) (d : DayPlan) (s : WfSeg)
+    (h : s ∈ (futureHalf r d).segments) : s ∈ d.segments ∧ r.now.sec ≤ s.val.start := by
+  rw [futureHalf_segments] at h
+  obtain ⟨h1, h2⟩ := List.mem_filter.1 h
+  exact ⟨h1, of_decide_eq_true h2⟩
+
+/-- **§8.3's missing invariant, beside "no overlap"** (README gap 1529): no instant between
+two rows is left uncovered.
+
+Read it at one row `a`: *if* any row starts strictly after `a` stops, *then* some row covers
+the instant `a.stop` itself.  A chain of such clauses closes every interior gap — if the
+instant after `a` is covered by `c`, the same clause at `c` carries the argument forward —
+while a **tail** (no row starts after `a`) satisfies it vacuously.
+
+**D9-21**: `d.segments.all` over `d.segments.any`, quadratic in the segment list, the same
+class as the four nested checkers the module header names.  Nothing on the shipped path
+evaluates it. -/
+def holeFree (_r : PlanReq) (d : DayPlan) : Bool :=
+  d.segments.all (fun a =>
+    decide ((∃ b ∈ d.segments, a.val.stop < b.val.start) →
+            (∃ c ∈ d.segments, c.val.start ≤ a.val.stop ∧ a.val.stop < c.val.stop)))
+
+theorem holeFree_iff (r : PlanReq) (d : DayPlan) :
+    holeFree r d = true ↔
+      ∀ a ∈ d.segments, (∃ b ∈ d.segments, a.val.stop < b.val.start) →
+        ∃ c ∈ d.segments, c.val.start ≤ a.val.stop ∧ a.val.stop < c.val.stop := by
+  simp only [holeFree, List.all_eq_true, decide_eq_true_eq]
+
+/-- **A tail remainder is not a hole, and this is the reason rather than an assurance.**  The
+row with the greatest stop has no row starting after it, so `holeFree`'s clause at that row
+is vacuous whatever the day's end is — the statement mentions neither `PlanReq.dayEnd` nor
+`DayPlan.budgetBlocks`. -/
+theorem the_last_row_is_never_a_holes_subject (d : DayPlan) (a : WfSeg)
+    (hmax : ∀ b ∈ d.segments, b.val.start ≤ a.val.stop) :
+    ¬ ∃ b ∈ d.segments, a.val.stop < b.val.start := by
+  rintro ⟨b, hb, hlt⟩
+  exact absurd (hmax b hb) (Nat.not_le.2 hlt)
+
+/-- **The other direction** (AGENTS §5.8): an inter-row break that nothing emitted makes this
+check answer `false`, by name.  This is the shape a failure takes — two rows with a gap
+between them and no third row covering the first one's stop. -/
+theorem an_uncovered_instant_between_two_rows_is_a_hole (r : PlanReq) (d : DayPlan)
+    (a b : WfSeg) (ha : a ∈ d.segments) (hb : b ∈ d.segments)
+    (hgap : a.val.stop < b.val.start)
+    (hunc : ∀ c ∈ d.segments, ¬ (c.val.start ≤ a.val.stop ∧ a.val.stop < c.val.stop)) :
+    holeFree r d = false := by
+  rcases h : holeFree r d with _ | _
+  · rfl
+  · exact absurd ((holeFree_iff r d).1 h a ha ⟨b, hb, hgap⟩)
+      (by rintro ⟨c, hc, h1, h2⟩; exact hunc c hc ⟨h1, h2⟩)
+
+/-- **A zero-length row cannot launder a hole**, which is the one way this statement could
+have been gamed: `Planner.Seg.wf` is `start ≤ stop`, so a row of no duration is constructible,
+and it covers no instant at all because the cover clause needs `t < c.stop`. -/
+theorem a_zero_length_row_cannot_cover_an_instant (c : WfSeg) (hz : c.val.start = c.val.stop)
+    (t : Nat) : ¬ (c.val.start ≤ t ∧ t < c.val.stop) := by
+  rintro ⟨h1, h2⟩; omega
+
+/-- **A day with no rows passes**, stated rather than left to be discovered.  `holeFree` is a
+`List.all` over the rows, so it says nothing whatever about a day that has none — and nothing
+about the time before the first row either (`PlannerWit.the_hole_property_is_blind_to_a
+_leading_remainder` is that second blind spot as a theorem).  Coverage of the planning window
+is a **different** property and this one is not it. -/
+theorem holeFree_of_no_rows (r : PlanReq) (d : DayPlan) (h : d.segments = []) :
+    holeFree r d = true := by simp [holeFree, h]
+
+/-- **What the request DECODER owes §6.1's lift** — the fourth axis, named the way `PastPays`
+and `WallsArePlain` name theirs.  Four clauses, none of them a `∀` over the request: three
+decidable `Bool`s and one `Nat` comparison.  README gap **346** is the gap that closes it, and
+`PlannerWit.mkPlanReq?_ok_wallsAgree` is the only one of the four with a caller today. -/
+structure DecoderPays (r : PlanReq) : Prop where
+  /-- The request's wall index is its own plan's (`PlanReq.wallsAgree`). -/
+  walls  : r.wallsAgree = true
+  /-- A running block the request carries is one `Planner.mkActive?` would have built
+  (`PlanReq.activeAgrees`). -/
+  active : r.activeAgrees = true
+  /-- The `[day]` the request carries is one `Look.mkDayCfg?` would have built
+  (`PlanReq.dayAgrees`). -/
+  day    : r.dayAgrees = true
+  /-- `now` is inside the calendar, which is what lets a clause written over the log be read
+  off the row the day holds (`segOf_replayed`). -/
+  nowCal : r.now.sec + 1 < LogStamp.yearEnd
+
+/-- **§6.1's eleven on the whole day, with every axis named and no loose hypothesis left.**
+
+Four bounds, four names: the eligibility one by `FromNowAnchored` (W-23), the log one by
+`PastPays` (W-24), the wall one by `WallsArePlain` (W-25), the request one by `DecoderPays`
+(here).  `dayPlan_ok_on_the_whole_day_of_plain_walls` is the same statement with the four
+clauses spelled out, kept because every existing caller spells them. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
+    (hfn : FromNowAnchored el) (r : PlanReq) (hdec : DecoderPays r)
+    (hwalls : WallsArePlain r (dayPlan r)) (hpast : PastPays r) :
+    planOk el r (dayPlan r) = true :=
+  dayPlan_ok_on_the_whole_day_of_plain_walls hfn r hdec.walls hdec.active hdec.day
+    hdec.nowCal hwalls hpast
+
+
 end PlanCheck
 end Tm

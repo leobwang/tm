@@ -6437,3 +6437,32 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_wall_axis_moves_no_census_number
 #print axioms Tm.PlannerWit.the_wall_axis_definitions_are_not_constants
 #print axioms Tm.PlannerWit.the_open_sweep_and_the_replan_both_had_a_subject
+
+-- ===================================================================
+-- W-26 (track G).  The fourth and last axis of §6.1's lift is named —
+--     `PlanCheck.DecoderPays`, the request decoder's four clauses — and
+--     the builder is shown to pay exactly one of them, at EVERY request
+--     it accepts, because it never reads `Planner.RuntimeIn` at all.
+--     And §8.3's missing invariant is stated: `PlanCheck.holeFree`, the
+--     segment-free hole of README gap 1529, computed FALSE on the day
+--     where the subject census is seven.  It is NOT one of the eleven.
+--     No goal is discharged: the burn-down stays 9.
+-- ===================================================================
+#print axioms Tm.PlanCheck.futureHalf_segments
+#print axioms Tm.PlanCheck.mem_futureHalf
+#print axioms Tm.PlanCheck.holeFree_iff
+#print axioms Tm.PlanCheck.the_last_row_is_never_a_holes_subject
+#print axioms Tm.PlanCheck.an_uncovered_instant_between_two_rows_is_a_hole
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+#print axioms Tm.PlannerWit.mkPlanReq?_ignores_state
+#print axioms Tm.PlannerWit.the_builder_accepts_a_running_block_it_never_checked
+#print axioms Tm.PlannerWit.the_census_days_future_half_has_a_hole
+#print axioms Tm.PlannerWit.the_tail_remainder_day_has_no_hole
+#print axioms Tm.PlannerWit.the_tail_remainder_day_really_has_a_tail
+#print axioms Tm.PlannerWit.the_hole_property_is_not_a_constant
+#print axioms Tm.PlannerWit.the_hole_property_is_not_one_of_the_eleven
+#print axioms Tm.PlanCheck.a_zero_length_row_cannot_cover_an_instant
+#print axioms Tm.PlanCheck.holeFree_of_no_rows
+#print axioms Tm.PlannerWit.the_census_request_pays_the_decoder
+#print axioms Tm.PlannerWit.the_future_half_is_not_the_whole_day
+#print axioms Tm.PlannerWit.the_hole_property_is_blind_to_a_leading_remainder

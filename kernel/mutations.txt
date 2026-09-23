@@ -298,3 +298,9 @@ ce9b0efcab4b TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.PlainStore True,False
 3c66d0810d56 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.toTomorrowsMeeting unfoldable no Inhabited WfSeg
 1721de03aaa6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theRelabelledWallDay unfoldable no Inhabited DayPlan
 8e73160e95f0 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHourLaterRequest unfoldable no Inhabited PlanReq
+c248aef20e9f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.futureHalf unfoldable,d no Inhabited DayPlan; PlanCheck.lean:3765 futureHalf_segments
+a3dd7bd04942 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.holeFree true,false PlanCheck.lean:3795 holeFree_iff; PlanCheck.lean:3795 holeFree_iff
+cf36fa502a1e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.aBlockStartedAfterNow unfoldable,⟨[],⟨0,0⟩,0,true⟩ no Inhabited ActiveBlock; PlannerWit.lean:5765 the_builder_accepts_a_running_block_it_never_checked
+0e5bb041c418 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theFutureHalfOfTheCensusDay unfoldable no Inhabited DayPlan
+ac5d05dd9c8e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTailRemainderDay unfoldable no Inhabited DayPlan
+6dadc3a3e2ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLateStartDay unfoldable no Inhabited DayPlan
