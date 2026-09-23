@@ -713,3 +713,92 @@ fn a_refused_tree_stops_the_writing_verbs_before_they_write() {
         assert!(tm.state()["interrupt"].is_null(), "the interruption is closed once fixed");
     }
 }
+
+/// **One day has ONE window** — the owner's **D45**, README gap **1530**,
+/// D9's "a named fact of one reader".
+///
+/// Two rules existed. The runtime state's window is the day's **last**
+/// `arrive` (`tm arrive` overwrites it, and `Ctx::derived_state` rebuilds it
+/// that way); `DayReplay::window` is the day's **first**, which is the fork's
+/// derivation and `Replay.lean`'s proved C5. `tm plan` and the day file quoted
+/// the former, `tm review day` the latter, and **no surface said which**.
+///
+/// `--at` is §13's own flag and exists precisely so an arrival can be logged
+/// out of order. Driven on the shipped binary before the repair, on this
+/// fixture: `tm arrive home --at 16:00` then `tm arrive home --at 08:00` left
+/// `.tm/state.json`, `tm plan --json` and `day/2026-09-07.md` all saying
+/// `08:00..17:00` while `tm review day` said `window 16:00–19:00` — two
+/// surfaces of one day, eight hours apart, with nothing to tell a reader which
+/// was the answer.
+///
+/// The bite is asserted first: the two arrivals must disagree, or every line
+/// below holds for the wrong reason.
+#[test]
+fn every_surface_of_one_day_quotes_the_same_window() {
+    let tm = Tm::new();
+    tm.ok(&["arrive", "home", "--at", "16:00"]);
+    tm.ok(&["arrive", "home", "--at", "08:00"]);
+
+    let arrivals: Vec<_> = tm
+        .log()
+        .into_iter()
+        .filter(|e| e["ev"] == "arrive")
+        .map(|e| e["window"][0].as_str().unwrap_or_default().to_string())
+        .collect();
+    assert_eq!(arrivals, vec!["16:00".to_string(), "08:00".to_string()],
+        "the two arrivals no longer differ, so this test proves nothing");
+
+    let state = tm.state();
+    let want = ["08:00", "17:00"];
+    assert_eq!(state["window"][0], want[0], "the cache is not the LAST arrival (D45)");
+    assert_eq!(state["window"][1], want[1]);
+
+    let plan = tm.json(&["plan"]);
+    assert_eq!(plan["window"][0], want[0], "`tm plan` disagrees with the cache");
+    assert_eq!(plan["window"][1], want[1]);
+
+    assert!(
+        tm.read("day/2026-09-07.md").contains(&format!("window: {}..{}", want[0], want[1])),
+        "the day file disagrees: {}",
+        tm.read("day/2026-09-07.md")
+    );
+
+    // The one that moved. `DayReview::window` is `NaiveTime`, so `--json`
+    // spells it with seconds.
+    let review = tm.json(&["review", "day"]);
+    assert_eq!(
+        review["review"]["window"][0], format!("{}:00", want[0]),
+        "`tm review day` quotes a different window from `tm plan` (README gap 1530)"
+    );
+    assert_eq!(review["review"]["window"][1], format!("{}:00", want[1]));
+    assert!(
+        tm.run(&["review", "day"]).stdout.contains(&format!("window {}–{}", want[0], want[1])),
+        "the rendered review disagrees with its own `--json`"
+    );
+}
+
+/// The fallback half, so the repair above is not a rule that only ever reads
+/// the cache: a review of a day the runtime is **not** about still answers from
+/// the replay's own payload, which is the only window the log carries for it.
+#[test]
+fn a_review_of_another_day_still_reads_the_logs_own_window() {
+    let tm = Tm::new();
+    tm.ok(&["arrive", "home", "--at", "08:00"]);
+    // **Asked on the NEXT day**, where `roll_day` has cleared the runtime's
+    // window and `DayExtras::window` is therefore `None`: the answer has to
+    // come from `DayReplay::window`, the only window the log carries for a day
+    // that is over. A `window_now` that read the runtime alone answers `null`
+    // here and loses the field.
+    let review = tm.json_at(
+        "2026-09-08T09:00:00-05:00",
+        &["review", "day", "--date", "2026-09-07"],
+    );
+    assert_eq!(
+        review["review"]["window"][0], "08:00:00",
+        "a past day lost its window: {}", review["review"]["window"]
+    );
+    // And a day the log knows nothing about still has none, so the line above
+    // is the fallback firing and not a default.
+    let none = tm.json_at(NOW, &["review", "day", "--date", "2026-09-05"]);
+    assert!(none["review"]["window"].is_null(), "{}", none["review"]["window"]);
+}

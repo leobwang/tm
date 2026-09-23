@@ -79,6 +79,10 @@ fn extras() -> DayExtras {
         optional: None,
         lost_note: Some("call".to_string()),
         budget: None,
+        // Named rather than `..Default::default()`-ed on purpose: this literal
+        // is exhaustive so that a new `DayExtras` field has to be considered
+        // here, and gap 1530's `window` is one.
+        window: None,
     }
 }
 

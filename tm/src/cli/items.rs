@@ -543,20 +543,30 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
     if args.pairs.is_empty() && args.set.is_empty() && args.unset.is_empty() {
         return Err(CliError::msg("nothing to change (try `tm edit ^id ci=4`)"));
     }
-    // The keyed edit — kernel-backed for the nine wired keys
+    // The keyed edit — kernel-backed for **every** key the kernel wires
     // (kernel/README.md, 2026-09-12 "rank, add and the keyed edit" block,
     // superseding the est-only routing of "the five lifecycle verbs"): the
     // kernel parses the value with the key's own field grammar, writes it
     // through the one proven setter, and refuses by name (`badValue`,
-    // `keyAbsent`, `tabbedLine`). What stays on the old Rust path, by name:
-    // id-less lines (gap 5), `--set` (documented as a raw verbatim token,
-    // which the kernel would canonicalize), the typed non-key edits
-    // (`title`, `p`, `state`), `--unset ci`/`--unset p` (positional-slot
-    // surgery the wire does not carry — gap 41), `demoted` (excluded from
-    // the wire by policy, gap 40), and the eight keys the kernel wires since
-    // gap 40's bridges (`due at win every on-event after loc waiting`) but
-    // this host does not route yet — kernel/README.md's step-5 paragraph
-    // names that as the host's remaining half.
+    // `keyAbsent`, `tabbedLine`). **README gap 48's eight — `due at win
+    // every on-event after loc waiting` — joined at W-27 under the owner's
+    // D49**; the host's remaining half is closed and the kernel is the one
+    // writer of every KEYED edit the wire carries. (`--set` still writes a
+    // raw token under any spelling at all, by its own contract — it is in
+    // the list below, not an exception to this sentence.)
+    //
+    // What stays on the old Rust path, by name — each one a key or a form
+    // the WIRE does not carry, not a spelling this host declined to route:
+    // id-less lines (gap 5: the wire addresses an `^id`), `--set`
+    // (documented as a raw verbatim token, which the kernel would
+    // canonicalize), the typed non-key edits (`title`, `p`, `state` — three
+    // positional slots of §4.1's line grammar, and no `Field.Key` at all),
+    // `--unset ci`/`--unset p` (positional-slot surgery the wire does not
+    // carry — gap 41), `demoted` (excluded from the wire by the kernel's own
+    // policy, gap 40 and CHEAT 45), and a `ci=` on a line whose ci is the
+    // positional digit (gap 41 again — see [`kernel_edit_cmds`]). **A
+    // command mixing one of those with a wired pair still takes the old path
+    // whole**, which is README gap 1700.
     if item.has_id() && args.set.is_empty() {
         if let Some(cmds) = kernel_edit_cmds(&ctx, &id, args)? {
             return edit_kernel(&mut ctx, &id, &item, args, cmds);
@@ -674,8 +684,28 @@ pub fn edit(g: &Globals, args: &super::EditArgs) -> Result<i32, CliError> {
 /// key). `ci` sets ride the wire; `--unset ci` does not — the wire clears
 /// the `ci:` key slot only, and a complete unset has to clear the positional
 /// digit too (gap 41), which stays the old path's line surgery.
+///
+/// **The eight of README gap 48 joined at W-27 — the owner's D49, `tm edit`
+/// has ONE writer and it is the kernel's.** `Cmd.keyEditable` has carried
+/// `due at win every on-event after loc waiting` since gap 40's bridges
+/// (`bf7cc63`) while this list carried nine, so `tm edit ^id due=…` went down
+/// the old Rust path — and, because [`kernel_edit_cmds`] routes only when
+/// **every** pair is wired, so did every command that merely *mentioned* one
+/// of them. That is the mechanism that made `tm edit ^a1 cap=3h/d` and
+/// `tm edit ^a1 cap=3h/d due=2026-10-01` write different bytes for the same
+/// pair: the alias (`max:` against `cap:`), the rendering (`est:120m` against
+/// `2b`) and the slot (the `est:` key against the leading estimate).
+///
+/// **Seventeen of the kernel's eighteen keys, plus the `cap` alias.**
+/// `demoted` is out by the *kernel's* policy (`keyNotWired demoted`,
+/// `Negative.lean` CHEAT 45), not by this list, and
+/// [`tests::the_host_routes_every_key_the_kernel_wires`] asserts exactly that
+/// — in both directions, against `tm_core::grammar::KEYS` and the kernel's
+/// own answer, so this stays a derived table and not a second name list
+/// (§5.3). Its blind spots are written out beside it.
 const KERNEL_EDIT_KEYS: &[&str] = &[
-    "est", "dur", "buffer", "pref", "on-miss", "after-done", "min", "max", "cap", "ci",
+    "est", "dur", "buffer", "pref", "on-miss", "after-done", "min", "max", "cap", "ci", "due",
+    "at", "win", "every", "on-event", "after", "loc", "waiting",
 ];
 
 /// The wire commands for a `tm edit` invocation, when **every** requested
@@ -1747,4 +1777,106 @@ pub fn triage(g: &Globals) -> Result<i32, CliError> {
         &out,
     )?;
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::KERNEL_EDIT_KEYS;
+
+    /// The kernel's own verdict on one `k:` spelling, asked through the FFI:
+    /// `true` when the wire's `edit` op carries the key at all.
+    ///
+    /// `Boundary.lean`'s `edit` arm answers `unknownKey <k>` for a spelling
+    /// `Field.Key.ofName?` does not know and `keyNotWired <k>` for a key the
+    /// edit path excludes (`demoted` alone since gap 40's bridges); every
+    /// other answer — `ok`, or a `badValue <k>` from the key's own field
+    /// grammar — means the key IS carried. So the probe value need not be a
+    /// legal value for the key, and deliberately is not: one value for all
+    /// eighteen keeps this a question about ROUTING and not about grammars.
+    fn kernel_carries_key(key: &str) -> bool {
+        let req = json!({
+            "docs": [{"path": "inbox.md", "lines": ["- [ ] 1 30m probe ^p1"]}],
+            "cmds": [{"op": "edit", "id": "p1", "key": key, "value": "probe"}],
+        });
+        let raw = tm_kernel_ffi::call(&req.to_string()).expect("the kernel answered nothing");
+        let resp: serde_json::Value =
+            serde_json::from_str(&raw).unwrap_or_else(|e| panic!("not JSON ({e}): {raw}"));
+        // **The refusal's two shapes, and the probe must read both.** A
+        // request the kernel cannot DECODE answers with a bare string
+        // (`{"err":"keyNotWired demoted"}`) — the edit arm of `parseCmd` runs
+        // before any document is loaded — while a refusal from the loaded
+        // plan answers with the object form (`{"err":{"kernel":…}}`). Reading
+        // only the object form reported `demoted` as CARRIED, which is how
+        // this comment came to exist.
+        let err = match resp.get("err") {
+            Some(serde_json::Value::String(s)) => s.clone(),
+            Some(e) => e.get("kernel").and_then(|k| k.as_str()).unwrap_or_default().to_string(),
+            None => String::new(),
+        };
+        !(err.starts_with("unknownKey") || err.starts_with("keyNotWired"))
+    }
+
+    /// **The routing table is derived, in both directions** (the owner's
+    /// **D49**; README gap 48 was open from stage 3 to W-27).
+    ///
+    /// For every `key:` spelling the *loader* knows — `tm_core::grammar::KEYS`,
+    /// the same list `parse_line` uses to decide a key is a key and not an
+    /// `extra` — the host routes it to the kernel exactly when the kernel
+    /// carries it. A key the kernel gains and this host does not route turns
+    /// this red, which is the half that stayed silent for nineteen weeks: the
+    /// kernel wired eight keys at `bf7cc63` and `KERNEL_EDIT_KEYS` was a name
+    /// list nothing compared against.
+    ///
+    /// **Three things it cannot see**, and they are the reason this comment is
+    /// longer than the test:
+    ///
+    /// 1. `grammar::KEYS` is itself a hand-written vocabulary (AGENTS §5.2).
+    ///    A nineteenth spelling the KERNEL learns and the loader does not is
+    ///    invisible here — the host could not read such a token back anyway,
+    ///    so it is unroutable rather than unrouted, but this test does not
+    ///    say so and cannot.
+    /// 2. It asks whether the key is on the WIRE, not whether
+    ///    [`kernel_edit_cmds`] routes a given *invocation*: `ci` is on the
+    ///    list and is deliberately held back on a line whose ci is the
+    ///    positional digit, and `--unset ci` is never routed (gap 41). The
+    ///    list and the predicate are different facts and only the first is
+    ///    checked here.
+    /// 3. It drives one `inbox.md` line. A key whose acceptance depends on
+    ///    the file kind or the item's shape — `due`/`at`/`win` on a month
+    ///    outcome answer `badHorizon` (gap 50) — is counted as CARRIED, which
+    ///    is the right answer for routing and says nothing about the refusal
+    ///    the user meets.
+    #[test]
+    fn the_host_routes_every_key_the_kernel_wires() {
+        let mut wrong = Vec::new();
+        for key in tm_core::grammar::KEYS {
+            let kernel = kernel_carries_key(key);
+            let host = KERNEL_EDIT_KEYS.contains(key);
+            if kernel != host {
+                wrong.push(format!(
+                    "{key}: the kernel {} it, KERNEL_EDIT_KEYS {} it",
+                    if kernel { "carries" } else { "refuses" },
+                    if host { "routes" } else { "does not route" },
+                ));
+            }
+        }
+        assert!(
+            wrong.is_empty(),
+            "the host's routing table and the kernel's wire disagree (D49, README gap 48):\n  {}",
+            wrong.join("\n  ")
+        );
+    }
+
+    /// The one key on neither side, named so the count above cannot drift into
+    /// agreeing about nothing: `demoted` is excluded by the **kernel** and the
+    /// host follows, and `tm_core::grammar::KEYS` does carry it, so the loop
+    /// above really does visit a key it expects both to refuse.
+    #[test]
+    fn demoted_is_refused_by_the_kernel_and_unrouted_by_the_host() {
+        assert!(tm_core::grammar::KEYS.contains(&"demoted"));
+        assert!(!kernel_carries_key("demoted"));
+        assert!(!KERNEL_EDIT_KEYS.contains(&"demoted"));
+    }
 }

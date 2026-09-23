@@ -1512,6 +1512,9 @@ impl App {
             plan_at_arrival: self.arrival_blocks(),
             underused: self.plan.diagnostics.underused.len(),
             budget: self.state.budget,
+            // The same fact §12.4's Review screen's sibling surfaces quote
+            // (README gap 1530); unfiltered, exactly as `budget` beside it is.
+            window: self.state.window,
             ..review::DayExtras::default()
         };
         review_screen::Reviews {
