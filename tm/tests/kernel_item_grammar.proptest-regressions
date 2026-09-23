@@ -18,3 +18,4 @@ cc 7b6cb59dc008743ddd6c968c129166facd8acedb7dcaa3496340762762584c63 # shrinks to
 cc 57a671e9b284771fb382078cbb87660deffd15d81ffe71cc75a9552bd3a13517 # shrinks to (text, _stateful) = ("- a", false)
 cc 071e550ff3c388d98727475b14351ce445770a6a5d3e1b4a4da08ffc49bfdf3c # shrinks to (text, _stateful) = ("- A", false)
 cc b446d3a56d6521ebda36d11ac3d91b9fed44b13a9bcf16948e2a92b95de3c64f # shrinks to (text, _stateful) = ("- A", false)
+cc 7420e7f6e3701de0fa5bcde0012de8cc00e9552e0c6ce257324ba8244e23bc67 # shrinks to (text, _stateful) = ("- [ ] A\tci:0\t@Ojyx ", true)

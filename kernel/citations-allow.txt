@@ -108,6 +108,93 @@ sort_by_key
 # W-19 merge: `out.sort_by` in Planner.lean's GroupKey note is Rust `slice::sort_by`, the
 # STABLE sort, at tm-core/src/planner.rs:1472 inside the fork's `build_groups`.
 out.sort_by
+
+# ================= W-27 track X: the `::`-SPELLED PATHS, adjudicated =================
+#
+# `CITED` refused any span holding `::` until W-27 (README gap 989, gap 1410) -- the SEVENTH
+# enumeration hole, and the largest: 3,116 citations, 1,025 distinct, seen by no rule in
+# citations.py.  Turning it on left 121 distinct unresolved; 62 of those are this
+# repository's own Rust ENUM VARIANTS and `rust_variants` resolves them (scoped to `::`
+# spans, so it launders nothing).  Ten were LIVE STALE and were repaired in the prose, not
+# here -- Log::to_jsonl, out::ErrorDoc (the live type is `out::ErrorOut`), emit::now_rows,
+# tui_common::app_with, Replay::events_named, Replay::events_for, DayReplay::wake_to_arrival_min,
+# cli_items.rs::demote_with_a_standing_record_is_refused_by_name,
+# cli::ctx::tests::every_scope_is_the_whole_replay_before_the_switch, and SegKind::NoSuchKind,
+# which is the W-24 ledger's own record of this hole going green on it.
+#
+# What is left is this block: 49 names that are Rust `std`, chrono, chrono-tz, serde_json,
+# toml or tempfile items, or the FORK's, cited where the Lean and the ledger record exactly
+# what each one does.  Every one was opened.  Uncounted, like the rest of section 1: these
+# are real referents of real libraries and a sentence may name them as often as it likes.
+#
+# THE ONE ENTRY THAT IS NOT A LIBRARY NAME is `core.hooksPath`, a git config key, in the
+# repository ROOT README.md -- a file check 8 did not sweep until this run.
+
+# Rust `std`.
+u32::MAX
+u64::MAX
+i32::MAX
+f64::MAX
+f64::INFINITY
+u32::saturating_add
+i64::rem_euclid
+fs::read_to_string
+std::fs::create_dir_all
+char::from_u32
+char::is_whitespace
+str::trim_start
+str::eq_ignore_ascii_case
+slice::sort_by
+Iterator::take_while
+Iterator::max_by_key
+ErrorKind::InvalidData
+Stderr::write_all
+fmt::Display
+
+# chrono 0.4.45 and chrono-tz, named where `Stamp.lean`, `Cal.lean`, `Log.lean` and
+# `Recur.lean` record which function each one ports.
+NaiveDate::MAX
+NaiveDate::from_ymd_opt
+NaiveDate::parse_from_str
+NaiveDateTime::signed_duration_since
+NaiveTime::signed_duration_since
+NaiveTime::overflowing_add_signed
+DateTime::parse_from_rfc3339
+TimeDelta::num_seconds
+FixedOffset::east_opt
+SecondsFormat::Secs
+Parsed::set_year
+Item::Numeric
+format::parse::parse_internal
+format::parse::parse_rfc3339
+chrono_tz::IANA_TZDB_VERSION
+
+# serde_json 1.0.151, toml and tempfile.
+serde_json::Map
+serde_json::Number
+serde_json::json!
+serde_json::to_string
+serde_json::to_string_pretty
+serde_json::value::RawValue
+Deserializer::f64_from_parts
+toml::Spanned
+tempfile::TempDir
+
+# THE FORK at 4748911, outside the tree (D21/D22).  `DayIndex::bounds`, `wake_of` and
+# `last_wake_before` are named in `Replay.lean` as the fork readers the kernel did or did not
+# port; `energy::fit_replay` is what the oracle's `fit` subcommand runs; `Known::field_error`
+# is the fork's private decode mirror, which `Log.lean`'s FR.pair note is about; and
+# `State::Deferred` is the fork point's own state, named where P4 records that the kernel
+# differs.  Section 1's existing `std` block already carries fork functions for this reason.
+DayIndex::bounds
+DayIndex::wake_of
+DayIndex::last_wake_before
+energy::fit_replay
+Known::field_error
+State::Deferred
+
+# A git config key, in the repository ROOT README.md's contributing note.
+core.hooksPath
 dedup_by
 float_roundtrip
 f64_from_parts
@@ -442,7 +529,12 @@ can_fail
 1 plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted
 7 preserve_order
 1 range_keeps_only_the_requested_days
-4 raw_value
+# 4 -> 6 at W-27 track X.  NOT a bumped cap in the sense this file's header warns about: the
+# two new citations are the SAME sentences that were always there, in the repository ROOT
+# `Cargo.toml`'s D22 paragraph, which check 8 did not read until the file population was
+# inverted this run.  Both were opened: they name serde_json's feature flag where the manifest
+# records why it is on.  No new prose reaches for the name.
+6 raw_value
 7 read_log
 1 read_tolerates_a_line_that_is_not_utf8
 3 reader_tests

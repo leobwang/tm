@@ -425,7 +425,7 @@ taste.
 | R1 | No `sorry` in any module of the library or in `Check.lean`/`Negative.lean` — not even temporarily on a branch you intend to fix. **`Goals.lean` is the single named exemption and the only place a `sorry` may appear** (§3.2) | `totality.py`, which exempts by filename, not by pattern; the axiom audit fails on `sorryAx` |
 | R2 | No new `axiom` declarations. The only axioms the package may reach are `propext`, `Quot.sound`, `Classical.choice` | `Check.lean` prints every theorem's axiom set; read the diff |
 | R3 | No `native_decide`. It discharges a goal by trusting the compiler and the linked C, which is exactly the layer the kernel exists to distrust. `decide` is the workhorse; give it budget instead (§5.10) | `totality.py` |
-| R4 | No `partial def`, no `unsafe`, no `opaque`, no `@[implemented_by]`, no `panic!`, no `!`-accessors (`.get!`, `xs[i]!`) | `totality.py` bans `partial def`, `panic!`, `native_decide`, `sorry`, `]!`, `.get!`, `.toOption`; the rest are audit items |
+| R4 | No `partial def`, no `unsafe`, no `opaque`, no `@[implemented_by]`, no `panic!`, no `!`-accessors (`.get!`, `xs[i]!`) | `totality.py`, **all of it since W-27**. The `!`-accessors are matched as a CLASS — a `!` that ends a name — and not as the two examples this row gives, which is what `.head!`, `.getLast!`, `.back!`, `.tail!`, `.set!` and `.toNat!` walked through for six stages. `unsafe`, `opaque` and `@[implemented_by]` said **"audit items"** here and the audit existed nowhere in `check.sh` and was never once performed; they are mechanised. Driven: nine plants, each `rc=0` before and named after |
 | R5 | No `.toOption`. `Except` all the way through the boundary | `totality.py` |
 | R6 | No Mathlib. Core toolchain only (`Fin`, `Nat`, `Option`, `Except`, `Subtype`, `List`, `omega`, `decide`, `simp`, `Lean.Data.Json`) | absence from `lakefile.toml`; and needing it is a **stop condition**, not a decision you take (§9) |
 | R7 | No new dependencies of any kind, Lean or Rust | `lake-manifest.json`, `Cargo.toml` |
@@ -435,11 +435,15 @@ taste.
 | R11 | A field's setter is not exported without its `view ∘ set = id` proof | audit; `Negative.lean` CHEAT 5 |
 | R12 | `Negative.lean` must fail to compile | `check.sh` check 4, which inverts the exit code |
 
-`totality.py` takes **one or more directories** and scans each one level deep,
-non-recursively. `check.sh` passes **two**:
+`totality.py` takes **one or more directories** and scans each **recursively**,
+pruning build directories by a property (`leanfiles.lean_files`). *(This
+paragraph said "one level deep, non-recursively" for six stages after the W-21
+and W-22 repair steps made it recursive — the process authority describing a
+checker it had stopped describing. Corrected at W-27 track X, beside the R4 row
+above.)* `check.sh` passes **two**:
 
 ```bash
-cd /Users/psixyzt/code/planner/kernel && python3 totality.py TmKernel/TmKernel TmKernel
+cd <repo>/kernel && python3 totality.py TmKernel/TmKernel TmKernel
 ```
 
 So the library *and* the package root are scanned, which means `Check.lean` and
