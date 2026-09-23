@@ -1120,7 +1120,12 @@ appears — and it is already spent.
    door suite; `cli_switch_acceptance`; `cli_latency`'s seven T11 rows — **three of which are
    noisy across sessions and must never be quoted as single numbers** (reseal 197.5–212.6 ms,
    3-day-old routine 121.6–136.8 ms, `review week` 248.1–253.3 ms; the **later verb** row spans
-   146.66–147.01 ms and is the reliable baseline, gap 240); and `kernel_call_counts`. A step that
+   146.66–147.01 ms and is the reliable baseline, gap 240). **ALL FOUR OF THOSE BANDS ARE STALE
+   AND MEASURED SO — README gap 1522**: W-25's land step read 217.5–217.6, 162.0–166.9,
+   293.7–299.0 and 151.8–156.8 over two standalone runs at load 2.1 and 3.2, every one ABOVE its
+   band and consistent across both loads, so load does not explain it. The test's own bands are
+   wider and green; it is these printed numbers that no longer reproduce. **Re-measure, do not
+   quote** (AGENTS §5.11), and do not widen a band in the test to match; and `kernel_call_counts`. A step that
    adds a module adds its `import` line in `TmKernel.lean` **in the same commit** and the block
    says so.
 7. **Rules for goals.** A goal enters `Goals.lean` in the step whose definitions let it elaborate.

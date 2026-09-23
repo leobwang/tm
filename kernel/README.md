@@ -55666,3 +55666,316 @@ corpus was re-blessed; no new dependency; `lean-toolchain` and `kernel/corpus/` 
 added. The five plants made to drive check 9 (one unwitnessed probe, four constant bodies with
 a `sorry`ed bridge) were each reverted in the same command that made them and
 `PlanCheck.lean` was **byte-compared** to its original afterwards, five times.
+
+---
+
+<!-- =====================================================================
+     APPENDED 2026-09-22: stage 6 (the planner), run **W-25**, the **LAND
+     step**.  Merges `w25-a` and `w25-g` into `rebuild-on-lean`, runs the
+     full acceptance, and drives the merged binary.  This block's gap range
+     is **1520-1524**; it takes **1520-1522** and leaves **1523-1524** free.
+     ===================================================================== -->
+
+## Stage 6 — W-25, the land step: two merges, a roster key that changed under one of them, and a seed the sweep drew on the sixth run
+
+### 1. What was merged
+
+| commit | what |
+|---|---|
+| `a0aeb4c` | merge of `w25-a` (`ab1e25b`, off `d6e514c`) — gap 1415's numbers half, the parity register and its gate, the qualified roster key |
+| `b900cdb` | merge of `w25-g` (`172ec4d`, off `d6e514c`) — the WALL axis closes, G3 refuted |
+| `69a31e7` | **not a merge**: the bug under the seed the acceptance sweep drew (§4) |
+| this one | the ledger and the drive |
+
+Track **P** needed no merge — `63d0fc6`, `c1dd68b` and `c100b9d` were already on
+`rebuild-on-lean` when this step started.
+
+**Four conflicts. Three were the usual shape and one was not.**
+`kernel/README.md` (twice), `kernel/TmKernel/Check.lean` — two tracks appending
+at one file's end, each resolved by keeping both sides in track order, P then A
+then G.
+
+**`kernel/mutations.txt` was not an append collision, and track A's own last
+commit predicted it in writing.** Track A rewrote all 156 keys from the short
+name to the QUALIFIED name (gap 1422); track G, off the same base, appended 9
+SHORT-keyed rows. A textual merge keeps both spellings of everything — 320 data
+rows where 165 belong — and check 9's symptom is loud and misleading: it reports
+the short-keyed rows **OWED A MUTATION**, because `declarations()` now yields
+qualified names and no row matches.
+
+The wrong fix is to re-run those mutations, at one kernel build each. **The right
+one is to re-run the column rewrite, which builds nothing**: find each row's
+declaration by `(file, last segment)` through `mutate.py`'s own `declarations()`
+and take its qualified name. Driven here, and its self-check is the point:
+
+```
+rows: 156 already qualified, 9 rewritten, 0 with no declaration found, 0 ambiguous
+```
+
+Track A's 156 rows came through **byte-identical** — `diff` against the merge's
+stage-2 blob shows only the nine added lines — and check 9 then printed **165
+rostered, 0 owed**. A merge that had kept both sides here would have looked
+like nine missing mutations and cost nine builds to "fix".
+
+### 2. What the merge owes (AGENTS §6.5), checked rather than asserted
+
+1. **`Negative.lean`** — untouched by either branch. No cheat renumbering owed.
+2. **One gap sequence** — the four ranges were disjoint by the brief, so the
+   sequence has holes and no collisions. Track P took 1430-1440, A 1470-1476,
+   G 1500-1508, this block 1520-1522.
+3. **`Check.lean`** — the §6.3 reconciliation run by hand on the merged tree:
+   **5,022** audit lines, **5,022** distinct names, **5,020** theorem
+   declarations over **84** modules, `comm -23` **EMPTY**, `comm -13` the two
+   known `def`s (`Tm.WfPlan`, `Tm.effectiveScope`).
+4. **`Goals.lean`** — no branch discharged a goal, so check 7 must not move, and
+   it does not: **9**, every one stage 6. Track G's edit there is prose;
+   `grep -c '^theorem '` is 9 before and after.
+5. **Every module imported** — all **84** files under `TmKernel/TmKernel/` have
+   an `import TmKernel.<name>` line, checked by loop.
+6. **`check.sh` capped, and the workspace beside it** — §3. It is **TEN** checks
+   now, not nine.
+7. **The parity register** — item 7's outstanding obligation is DISCHARGED by
+   track A, and this merge is the first that did not have to run the command:
+   `kernel/parity.py` is check 10, and it re-resolved **39 anchors in 3 files**
+   on the merged tree. Every anchor points below `README.md:54360`, so the
+   blocks this run appended moved none of them. Next free is **P40**; none was
+   taken here.
+
+### 3. Acceptance, capped, every figure against the brief's baseline at `d6e514c`
+
+| check | baseline | merged | delta |
+|---|---|---|---|
+| 1 `lake build TmKernel:static` | ok | ok | — |
+| 2 totality | ok | ok | — |
+| 3 axiom audit | 4,979 theorems | **5,022** | +43 — track A's 16, track G's 27, each under its own banner |
+| 4 `Negative.lean` rejected | ok | ok | — |
+| 5 FFI (Rust → C shim → Lean) | 93 tests | **93** | — |
+| 6 corpus round trip | 29/37 files, 4/5 whole plans | **29/37, 4/5** | — not below the floor |
+| 7 stage goals | 9, all stage 6 | **9, all stage 6** | — **no commit this run discharged a goal** |
+| 8 prose citations | 32,986 citations, 0 allow entries unused | **33,738 / 32,073 / 1,665** (134 vocabulary, 351 counted), 0 unused — **this table's own block moves the figure**, so it is the one `check.sh` printed at the commit that carries it, not the one measured before the block was written (§5.11, and track A hit this three times in one step) | +752: four README blocks, this one, and one doc comment |
+| 9 new definitions mutated | 154 rostered, 40 unfoldable, 21 fixtures, 8 pinned by nothing, 1 literal, 0 owed, 32 bare | **165 rostered**, 46 / 27 / 8 / 1, **0 owed**, **31** bare | +11 — A's 2, G's 9; the one bare site A paid stays paid |
+| 10 parity register | — (did not exist) | **39 registered (P1-P39), 39 anchors re-resolved in 3 files, next free P40** | track A's |
+
+`check.sh` on the merged tree: **3m14s cold, 10.96-14.04 s warm**, at load 2.3-7.2.
+
+**`cargo test --workspace --no-fail-fast`, and how many runs (D46).** **ELEVEN**
+on merged trees: 2 at the A merge, 3 at the G merge (1,438 / 0 / 9 across 84),
+3 at `69a31e7`'s tree and **3 more at the tree this block lands** (docs only on
+top of it, so the same Rust) — the last six all **1,439 passed / 0 failed / 9
+ignored across 84 result lines**, identical, `git status` clean after each. +8 tests and +1
+binary on the baseline's 1,431 / 83: track P's `kernel_item_grammar` is the
+binary, and §4's witness is the eighth test. **`--no-fail-fast` on every run**,
+which is track P's gap **1436** answered rather than repeated: a failure would
+have printed its own `failures:` list, and none did.
+
+**The named suites, on the merged tree**: T5 `kernel_replay_parity` 29/0/4 · the
+door suite `kernel_log_door` 23/0 · `cli_switch_acceptance` 16/0 ·
+`kernel_call_counts` 2/0 · `one_padder` 9/0 · `one_renderer` 25/0 ·
+`kernel_row_cells` 26/0 · `kernel_item_grammar` 6/0 · `kernel_log_grammar`
+16/0/2 · `planner_invariants` 7/0 · `grammar_proptest` 8/0 · the FFI crate
+**101** (kernel 86, corpus 8, stack 7, D36) · `cli_latency` **5/0/1 standalone,
+twice**.
+
+**`cli_latency` as ranges, and a figure that no longer reproduces.** Two
+standalone runs at load 2.1 and 3.2. Later verb (3-year log) **151.8-156.8 ms**;
+a 3-day-old routine **162.0-166.9 ms**; `review week` **293.7-299.0 ms**; a
+reseal **217.5-217.6 ms**; first verb (genesis) **0.73-2.26 s**; `tm log`
+variants on the 3-year log **86-253 ms**; a 30-day-old hand undo **1.33 s**.
+**Gap 1333 did not fire**, at either load. **But all four of AGENTS §14.0 item
+6's quoted bands are now too low** — reseal 197.5-212.6, routine 121.6-136.8,
+`review week` 248.1-253.3, and the *later verb* row that item calls "the
+reliable baseline" at 146.66-147.01. Every one of this run's numbers is above
+its band, at two different loads, consistently. The test's own bands are wider
+and it passes; it is the **prose** that is stale. **No band was widened** —
+§5.11's answer is to re-measure, and that is gap **1522**.
+
+**The proptests, run many times.** Ten runs each of `planner_invariants`,
+`kernel_item_grammar` and `grammar_proptest`. `planner_invariants` and
+`kernel_item_grammar` drew nothing across all ten. **`grammar_proptest` drew a
+new seed on the SIXTH run** — §4.
+
+### 4. The seed, and the bug under it (gap 1520, CLOSED by `69a31e7`)
+
+```
+cc 5c8f69b8… # shrinks to (text, stateful) = ("- 0 ci:0 ci:0", false)
+set_state_and_tag_and_priority: left `""`, right `"0"` — the title is GONE
+```
+
+Kept, never reverted (D46). **The mechanism, driven.** `ItemLine::key_index`
+reports the FIRST match, and every edit built on it inherited the assumption
+that a key occurs at most once. The parser does not enforce that — it accepts
+`ci:0 ci:0` and records `duplicate key` as a problem — so a hand-edited line can
+carry one. `set_state_with_ci` removed ONE `ci:`; the survivor kept
+`ItemLine::set_ci`'s keyed branch alive, the positional digit was never
+inserted, and `- 0 ci:0 ci:0` became `- [x] 0 ci:0`, whose leading `0` is read as
+the ci on the next parse. **A silent data-losing edit, on `tm done`.**
+
+**Wider than the seed filed**, all four measured:
+
+| edit | line | before | after |
+|---|---|---|---|
+| `set_state_with_ci` | `- 0 ci:0 ci:0` | title `0` | title empty — **LOST** |
+| `set_state_with_ci` | `- 0 A ci:0 ci:0` | title `0 A` | title `A` — **LOST** |
+| `ItemLine::remove_ci` | `- [ ] 3 ci:0 ci:0` | ci 0 | `- [ ] ci:0` — **the ci is still 0** |
+| `ItemLine::remove_token` | `- [ ] hi est:1b est:2b` | est 1b | est **2b** — not removed, CHANGED |
+
+**One definition, not a second one** (§5.3): `ItemLine::remove_all_tokens` is
+"the fact is gone", all-or-nothing, called by the two sites whose own doc
+comments ALREADY said *any* `ci:` key — so the code was wrong, not the prose.
+`remove_token` keeps first-match and now says so.
+
+**This is W-24's precedent in the same file**: gap 1316 was fixed by fixing the
+edit, not by normalising the assertion. W-24's recorded blind spot was "a
+removal path that does not go through `edit_keeping_flags`"; **this is one that
+goes through it ONCE**.
+
+**NOT this merge's doing and NOT R2's.** `git diff --stat d6e514c..HEAD --
+tm-core/src tm/src` is EMPTY and the `token()` generator is byte-identical to
+`d6e514c`'s, so the code under the property and the draws that reach it are the
+same as at the baseline: **the probe above IS the probe at `d6e514c`**. Latent
+and pre-existing; ten extra executions drew it. No parity number taken — the
+fork's own edit is not a comparand of this test.
+
+**Five folds, and the two survivors were fixed by building the witness** (D40's
+discipline on the Rust). `while`→`if`, the write-back dropped, and
+`set_state_with_ci` reverted each failed at once. **The returned count and
+`remove_ci`'s call site both went GREEN**, because nothing read either.
+`a_duplicated_key_is_removed_in_full_and_the_count_is_reported` is the witness.
+**All five folds now fail; no survivors.**
+
+### 5. What earlier stages bought, re-measured here and not quoted
+
+* **The kernel is the only WRITER (D16).** Two `append_text(LOG_PATH, …)` call
+  sites in the whole tree, both unchanged: `tm/src/cli/ctx.rs:1305` and
+  `tm-core/src/horizon.rs:525`.
+* **The kernel is the only READER, and §12's grep is at its floor.** The door
+  guard's own thirteen needles (`tm/tests/support/fork.rs:471`) over `tm-core`
+  and `tm`: **79 hits, 13 under `tm-core/src` or `tm/src`, 0 of those 13 on a
+  non-comment line** — identical at `d6e514c`, at the merge `b900cdb` and at
+  HEAD, from three `git archive` extractions. No track reintroduced a reader.
+* **The comparand is still fork 4748911 at full precision.** The four
+  `tm/tests/fixtures/fork-4748911-*` files are untouched by the whole run;
+  `float_roundtrip` is still pinned in the workspace `Cargo.toml` with the
+  comment naming parity P25; `fork_arm` is still unconditional, and its only
+  early return counts the input as **skipped**. T5's own tally on this tree:
+  **20 frozen inputs** (7 corpus logs, 1 generated month, 12 zone cases),
+  **0 skipped**, 1 reachable only under the oracle.
+* **The corpus is not below its floor**: 29/37 files, 4/5 whole plans.
+
+### 6. The drive (AGENTS §5.13), on the merged binary
+
+**A normal day.** `tm init` · `wake 07:10` · `arrive lounge` → `window
+08:00–16:00 · budget 6 blocks` · `plan`. The tree's first two attempts were
+**refused by the kernel**, correctly and by name — `itemCheck …
+danglingParent`, because the items I wrote pointed at outcomes I had not
+written — and the refusal named the invariant and told me to run `tm check`.
+That is the boundary working.
+
+**The day file, `tm now` and `tm plan --json` side by side, machine-compared.**
+Of the day file's 11 rows, **9 are byte-identical to the `text` of the 10 JSON
+segments**, in order. The other two are the offset from the
+`───  window ends 16:00` divider, which `tm-core/src/emit.rs:852` says in as
+many words **belongs to no segment** and which `one_renderer.rs:296` covers by
+asserting exactly that on a `None` segment. **Not a finding** — checked before
+filing, and refuted.
+
+**A commented-out item line, at column zero (D47, parity P39).** Adding
+`- [ ] 5 2b A commented-out item, at column zero   @O1 ^cz1` inside `<!-- -->`
+in the week file: `tm check` says **no problems** (so `@O1` inside it is not a
+link and `^cz1` is not an id), `plan` neither schedules it nor lists it as
+dropped, and `grep -c cz1` over `plan --json` is **0**. Prose, on every surface.
+
+**A two-arrival day, then `rm -r .tm/cache`.** `arrive lounge 08:00` then
+`arrive home 12:30` → the window re-cut to `12:30–19:00`, the day file's
+front matter `loc: home`, and both arrivals in the day's `## Log`. Then all four
+surfaces frozen, `.tm/cache` deleted (7 files → 5), and the same four asked
+again: **`plan --json`, `now`, `tm --json log --tail 50` and the day file are
+every one IDENTICAL**, and the cache rebuilds itself. The deletion moves no
+answer.
+
+**One finding of my own, REFUTED.** The first run of that experiment DID move an
+answer — `now` went from a plan to `itemCheck … sectionDiscipline`. It was my
+artifact: I had frozen the four answers *inside the plan tree*, and a stray
+`.md` at the tree root is read as a backlog file whose day-file body fails
+section discipline. Re-run with the copies outside the tree, nothing moves.
+Recorded because a finding that does not reproduce is worth the sentence.
+
+### 7. The gaps this step opens (1520-1524; **1523-1524 free**)
+
+**1520 — an edit that means the fact took only the first occurrence of the key.
+CLOSED by `69a31e7`.** §4 is the whole record.
+
+**1521 — a break that falls between two Rest segments consumes clock time and is
+emitted as no segment and no row, so the printed day does not account for its
+own window. DRIVEN, NOT FIXED.**
+*What it is.* On two independently built trees, five break placements: the three
+with a Block on at least one side are emitted as a `break 20m` row; **the two
+whose neighbours are both `SegKind::Rest` are not emitted at all**, in the day
+file and in `plan --json` alike, while the clock still advances by exactly
+`break_min`. Tree 1: rows at `11:25 rest 1h` then `12:45 rest 1h` — a 20-minute
+hole at 12:25 with no row. Tree 2: `13:40 rest 1h` then `15:00 rest 1h` — the
+same hole at 14:40. The arithmetic closes only when the holes are counted:
+60+60+20+60+60+60+60+55 = 435, plus two 20-minute holes, plus the 5 minutes
+before the first row, is 480 — the window exactly.
+*Why it is not fixed here.* It is in `tm-core/src/planner.rs`, which is **track
+R's R3 file and nobody else's**, and R3 deletes it. Fixing it in the fork's
+planner now is work thrown away if R3 lands and a divergence to record if it
+does not; which of those is right is R3's call, not the land step's.
+*What it costs to leave.* A reader of a day file cannot tell what happens in
+those twenty minutes, and `plan --json`'s `segments` is not a partition of the
+window. Nothing downstream sums segment minutes today — checked — so no number
+is currently wrong because of it.
+*What would close it.* Either the planner emits the break it charges for, or
+`SegKind::Rest` absorbs it and the clock stops advancing; and a test that the
+segments' minutes plus the pre-first-row lead equal the window.
+
+**1522 — four of `cli_latency`'s prose bands in AGENTS §14.0 item 6 no longer
+reproduce, including the one that section calls reliable. MEASURED, NOT
+RE-BLESSED.**
+*What it is.* Reseal 217.5-217.6 ms against a quoted 197.5-212.6; a 3-day-old
+routine 162.0-166.9 against 121.6-136.8; `review week` 293.7-299.0 against
+248.1-253.3; and the *later verb* row, called "the reliable baseline, gap 240",
+151.8-156.8 against 146.66-147.01. Two standalone runs at load 2.1 and 3.2, both
+above every band, consistently — so load does not explain it and gap 1333 did
+not fire.
+*Why it is not fixed here.* The test's own bands are wider and green; only the
+prose is stale, and AGENTS is not this step's file to re-baseline on two runs.
+*What it costs to leave.* §5.11's exact failure mode: a number in a process
+document that a reader will quote instead of re-measuring.
+*What would close it.* A re-measurement of all seven T11 rows on a quiet
+machine, written back into §14.0 item 6 as ranges with their load recorded.
+
+### 8. R2 and R3, plainly
+
+**R2 DID NOT LAND. Its second half did and its first half did not.** Landed:
+`grammar_proptest` reads both parsers through `grammar_common/` (`63d0fc6`), and
+the invariants' generated days go through the kernel (`c1dd68b`). Not landed,
+and **BLOCKED rather than skipped**: `planner_invariants.rs`'s `plan()` call
+becoming a kernel call. Track P's gap **1431** is the reason and it is
+structural — the kernel's `dayPlan` is not reachable through the FFI, the wire
+section it needs is the one W-24 assigned to **R3**, and **§14.5's dependency
+graph therefore has a CYCLE**: R2 needs R3's wire, R3 needs R2.
+
+**What R3 now needs, in order.** (1) The planner's wire section moved OUT of R3
+into a step of its own, which is the only thing that breaks the cycle — gap 1431
+prices it field by field. (2) That step lands, and R2's first half lands behind
+it. (3) Owner **Q8** answered (§14.0 item 8 gates R3 on it alone). (4) Then R3:
+`tm-core/src/planner.rs` deleted with its last caller, gap **94**'s two reserves
+die, gap **116** closes or is recorded as deliberate — and **D27 unblocks**
+(gaps 113, 114, 116 and gap 301's item 1, which stay OPEN AND WHOLE under D34
+and which nothing in this run claims).
+
+**The burn-down is 9, all stage 6, and no commit of this run discharged a
+goal.** Track G refuted G3 rather than proving it, which is a statement removed
+from contention and not a goal removed from `Goals.lean`.
+
+Every `cargo`, `check.sh`, `lake`, `lean`, `mutate.py`, `parity.py`, `python3`
+and `tm` invocation in this step ran under `systemd-run --user --scope -p
+MemoryMax=40G -p MemorySwapMax=0 --quiet`. No predicate or assertion was
+weakened; no snapshot, fixture, latency band or corpus was re-blessed; no new
+dependency; `lean-toolchain` and `kernel/corpus/` untouched; no `sorry`,
+`axiom`, `partial def`, `unsafe`, `opaque`, `panic!`, `!`-accessor or
+`.toOption` added. Every mutation planted to fold a definition was reverted from
+a saved copy in the same command sequence and `git diff --stat` was checked
+empty afterwards. Both `w25-a` and `w25-g` worktrees are removed;
+`.claude/worktrees/stage5-lookahead` is untouched.
