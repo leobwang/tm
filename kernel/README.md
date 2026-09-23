@@ -54960,7 +54960,7 @@ one green that is recorded:
 | plant | verdict |
 |---|---|
 | a second `**Parity P38 taken**` at column zero | **caught** — "P38 is TAKEN twice: README.md:29742 and README.md:54360" |
-| `**Parity P41 taken**`, no index row | **caught** — "P41 is taken … and has NO index row" |
+| `**Parity P41 taken**`, no index row | **caught** — "`P41` is taken … and has NO index row" |
 | two index rows for P20 | **caught** |
 | P20's row deleted from the index | **caught by CONTIGUITY** — "the register is short, which is README gap 1417's own shape". This is the rule that stops an index going quietly 17 numbers short |
 | P16's anchor moved one line | **caught** — "no longer carries a `row` for it — re-anchor" |
@@ -58528,13 +58528,24 @@ non-empty in the clone.
 | plant | verdict |
 |---|---|
 | `Planner.wallRows`' event row ends 60 s late | **Lean FAILED** at four sites in `Planner.lean` (1294, 1323, 6149, 6192) |
-| `PlanWire.segJson` emits `stop + 60` | **Lean stayed GREEN** (174 jobs, *Build completed successfully*); `the_kernel_plans_the_day_the_fork_plans` **FAILED**: *"the two planners disagree about §8.2 step 1's walls (kernel [(63924408000, 63924429660)], fork [(63924408000, 63924429600)])"* |
+| `PlanWire.segJson` emits `stop + 60` | **STALE — corrected at the W-28 repair step, gap 1886.** This row records a plant measured BEFORE §9 of this same block added `segJson_writes_every_field_of_a_segment` and `segJson_writes_null_for_every_absent_field`, and the row does not say so. RE-DRIVEN at the merged HEAD in a `git archive` clone with a warm `.lake`, capped: the identical plant gives `lake build TmKernel:static` **rc=1** with four errors — `PlanWire.lean:1283:0` *Not a definitional equality*, `:1302:42` *Type mismatch*, `:1304:0`, `:1315:88` — i.e. both of those witnesses. The Rust arm's failure below is unchanged and still true: `the_kernel_plans_the_day_the_fork_plans` **FAILED**: *"the two planners disagree about §8.2 step 1's walls (kernel [(63924408000, 63924429660)], fork [(63924408000, 63924429600)])"* |
 | `PlanWire.planJson` emits `day + 1` | **Lean FAILED** at `planJson_of_a_planned_day_is_the_requests_own_views` |
 | `Look.day0Window`'s stored branch ends 60 s late | **Lean FAILED** at `Lookahead.lean:4220`, a stage-5 `decide` |
 
 The second is the one that says what the Rust arm is for: three of the four plants break a proof
 before any binary is linked, so the proofs are the tighter gate — but **a proof cannot see which
 definition the linked archive exports**, and the second plant is invisible to all of them.
+*(CORRECTED at the W-28 repair step, gap 1886: the last clause is false of the tree this block
+shipped. The second plant is caught by two proofs §9 of this block added after it was measured
+— re-driven above. The SENTENCE the plant was written to support survives, and the repair step
+re-established it with a plant that is genuinely proof-invisible: `segJson`'s `stop` written as
+`.num (if s.val.stop ≤ 60 then s.val.stop else s.val.stop + 60)` agrees with BOTH witnesses,
+which use `stop = 60` and `stop = 0`, and built Lean-GREEN — “✔ [174/174] Built
+TmKernel:static … Build completed successfully (174 jobs)”, `lake` rc=0 — while
+`cargo test --test planner_invariants` in the same clone gave rc=101, *"7 passed; 1 failed"*,
+`the_kernel_plans_the_day_the_fork_plans`, naming the same two walls. Two POINTS do not pin a
+function; the repair step's answer is §“The emitters, pinned as FUNCTIONS” in `PlanWire.lean`
+and the same perturbation now gives `lake` rc=1 at `segJson_is_its_eleven_keys`.)*
 
 ### 6. What R3 needs, and what now stands in its way
 
@@ -58593,8 +58604,10 @@ load); `kernel_item_grammar`'s gap 1673 flake did not fire in any of the five ru
 
 ### 9. `mutate.py` found ten emitters pinned by NOTHING, and that is this step's own finding
 
-The first audit of this step's definitions came back **10 SURVIVED**: `routineErrName`, `optNum`,
-`optStr`, `pairJson`, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson`
+The first audit of this step's definitions came back **10 SURVIVED**: `routineErrName`, optNum,
+`optStr`, pairJson, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson`
+(optNum and pairJson are un-backticked because the W-28 repair step deleted them as duplicates of
+`CapWire.optNatJson` and `minutesJson` — gap 1888 — and a dead name is not cited here)
 each survived `:= default` with `lake build TmKernel:static` reporting *Build completed
 successfully* — because every theorem written first was about the **shape of `planJson`** and
 none about the bytes any one emitter writes. A `planJson` whose `segments` key holds `null` on
@@ -59446,18 +59459,41 @@ Checked rather than asserted, on the merged tree: `PlanWire.lean:1181` calls
 `Planner.dayPlan`; `PlanWire.runPlanner_answers_the_day` states it; the kernel's one export
 reaches it
 through `PlanWire.callExport`; and `tm/tests/planner_invariants.rs`'s
-`the_kernel_plans_the_day_the_fork_plans` drives it 832 times a run against the fork's planner,
+`the_kernel_plans_the_day_the_fork_plans` drives it **76 times a run** against the fork's planner
+(**CORRECTED at the W-28 repair step, gap 1884**: this line said 832, which is 64×13 — a
+CROSS-RUN total, the same block's “green thirteen times over”, relabelled as per-run.
+Re-measured twice from the committed harness, `cargo test --test planner_invariants --
+--nocapture the_kernel_plans_the_day`, whose last census line is the total: **76 cases, 112
+walls compared, 626 kernel rows, window-differs 0, budget-differs 0**. Track P's own block
+quotes 76. D46's whole point is that the number of runs is part of the claim),
 comparing `day`, `window`, `budgetBlocks` and every wall to the minute, both ways.
 
-**And NOTHING BUT THE DELETION stands between HEAD and R3.** R3 is `tm-core/src/planner.rs`
+**And nothing but the deletion stands between HEAD and R3 — ON ONE READING OF R3, AND THE
+READING IS UNDECIDED.** *(CORRECTED at the W-28 repair step, gap 1885. This heading said
+“NOTHING BUT THE DELETION” flatly, substituted the softer gap 1670 for the one that actually
+records the question, and called the caveat “not a blocker” — while track P's own block, in
+this file, says the opposite conditionally and files it as gap **1790**: “R3 as the deletion of
+the file is unblocked only if D48's reading holds that R3 deletes the fork's planner as a
+comparand, not as the binary's planner; if the binary must plan with the kernel on the day R3
+lands, P3–P7 are R3's true precondition and no wire work removes them.” Checked against the
+code at the repair step: `tm-core/src/planner.rs` is reached by **33 `planner::` occurrences across 9
+files under `tm/src`** — `cli/planning.rs` is the `tm plan` verb and calls `planner::plan`;
+`tui/app.rs` calls `planner::plan`, `planner::overtime_drops` and `planner::diff`; also
+`cli/render.rs`, `cli/day.rs`, `cli/lifecycle.rs`, `cli/ghost.rs`, `tui/today.rs`,
+`tui/queue.rs` — plus 14 test files, and `Planner.dayPlan` is §8.2 steps 1–2 only. So on the
+second reading the shipped binary would stop being able to plan assigned step-5 blocks the day
+the file goes. **Gap 1790 is the blocker, and it is an owner decision, not work.**)* R3 is `tm-core/src/planner.rs`
 deleted with its last caller, gap 94's two reserves killed, gap 116 closed or deliberately
 recorded, and D27 unblocked (gaps 113/114/116). None of that waits on a wire, a proof or a
 gate: the wire is built, the instrument that watches the deletion is built and green thirteen
 times over, and the four gaps this step leaves (§8) are every one of them a *statement* about
 code that already exists, not a piece of code that has to be written first. The one caveat
-worth naming is not a blocker: the kernel's `dayPlan` is §8.2 steps 1 and 2 only, so R3's
-deletion removes a planner that does more than its replacement does — which is gap **1670**, was
-gap 1670 before this step, and is R3's own brief to price.
+worth naming **is a blocker under one of the two readings above**: the kernel's `dayPlan` is
+§8.2 steps 1 and 2 only, so R3's deletion removes a planner that does more than its replacement
+does — which is gap **1670** for the *capability* and gap **1790** for the *decision*. Gap 1790
+was open before this step and is open now; **1670 is R3's brief to price and 1790 is the owner's
+to settle.** *(The clause “is not a blocker” and the omission of 1790 are corrected at the W-28
+repair step, gap 1885.)*
 
 ### 7. What this step's numbers CANNOT see
 
@@ -59546,3 +59582,325 @@ made anywhere**: this step drove no gate by perturbation, and `git status --porc
 shared checkout was checked before the merge (empty), after both worktree removals (empty), and
 after every measurement — it never held anything but this step's own four files. No parity number
 issued; **next free P41**.
+
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-28**, the **REPAIR** step.
+     Written per AGENTS §6.4: one block appended at the end, the gap list one
+     sequence, and every number below re-measured in this run.
+
+## Stage 6 — W-28, repair: three gates get a property where they had a list, the emitters are pinned as functions, and four false sentences are corrected
+
+**Range:** gaps **1875–1889** (the repair step's). **Taken here: 1875–1889.** Parity: **none
+issued** (`next free P41`). Files: `kernel/totality.py`, `kernel/citations.py`,
+`kernel/citations-allow.txt`, `kernel/parity.py`, `kernel/mutate.py`, `kernel/mutations.txt`,
+`kernel/check.sh`, `kernel/TmKernel/TmKernel/PlanWire.lean`,
+`kernel/TmKernel/TmKernel/Boundary.lean`, `kernel/TmKernel/Check.lean`,
+`kernel/TmKernel/Goals.lean` and this file.
+
+Two independent auditors and a reuse critic filed seventeen findings against W-28's three tracks
+and its land step. **Sixteen were reproduced or re-measured before they were touched** — a
+finding that two definitions are character-for-character identical is reproduced by reading them,
+and a figure is reproduced by re-measuring it. **The seventeenth was not**: gap 1873's
+re-confirmation needs the auditor's own plan tree, it is a re-confirmation of an already-open gap
+rather than a new defect, and §11 says so rather than borrowing the evidence. Two findings
+reproduced *at HEAD and not at the tree the filing block measured* are recorded below as
+corrections to that block rather than as repairs to the code.
+
+### 1. `totality.py` banned ONE SPELLING of R4's class, and `@[extern]` walked through it
+
+**Reproduced first.** In a `git archive HEAD` clone,
+`@[extern "tm_evil_probe"] def w28ExternProbe (n : Nat) : Nat := n` appended to `Emit.lean` left
+`python3 totality.py TmKernel/TmKernel TmKernel` at **rc=0, no output**. R4 bans *the compiled
+implementation is not the Lean definition* and `BANNED` held the single spelling
+`@[implemented_by]`; `@[extern]` has exactly that effect — pointed at a symbol the linked archive
+already defines (`shim.c`'s `tm_kernel_call_c`, or any `lean_*` runtime symbol) it links and runs
+while every proof and every `#print axioms` sees the Lean body. That is W-27's finding — the proof
+layer cannot see WHICH definition the archive exports — reached on the BODY.
+
+**A longer ban list would have been the ninth instance of the shape this campaign keeps paying
+for.** The fix inverts the enumeration: `ALLOWED_ATTRS` is the four attributes this kernel uses,
+each with a sentence, and **any other attribute is reported by name**. `simp` (20 live) and
+`reducible` (2) cannot change a definition; `export` (1, R9's symbol) exposes the Lean body rather
+than replacing it; `csimp` (84) is the one that touches the compiled body and is the one that is
+safe, because `@[csimp] theorem f_eq : f = fFast` is a **proved** equality. The cost is declared:
+a harmless new attribute fails until somebody adds it with a reason. Blind spots stated in the
+file: the `attribute [..] name` command (0 occurrences in stripped library source — grepped) and
+`deriving`.
+
+**Driven in the clone, four plants, each alone in `Emit.lean`, each restored:**
+
+| plant | before | after |
+|---|---|---|
+| `@[extern "tm_evil_probe"] def w28ExternProbe` | **rc=0, silent** | rc=1, `Emit.lean:532: banned: @[extern] — not in ALLOWED_ATTRS` |
+| `@[implemented_by w28Other] def w28ImplProbe` | rc=1 (its own row) | rc=1, named **twice** — its row and the class |
+| `@[inline] def w28InlineProbe` | rc=0 | rc=1, named |
+| `@[never_extract] def w28NeverProbe` | rc=0 | rc=1, named |
+
+`python3 totality.py TmKernel/TmKernel TmKernel` on the repaired tree: **rc=0**.
+
+### 2. check 8's population was `git ls-files`, so `.gitignore` was a second EXCLUDED list
+
+**Reproduced first**, the same one-line file in two places in a git-initialised clone:
+`kernel/w28probe.md` holding a backticked dead name gave **rc=1** and named it;
+`kernel/target/w28probe.md`, byte-identical, gave **rc=0 with byte-identical counts**.
+`citations.py`'s header claims the population is *every file of this repository except the ones
+`EXCLUDED` names with a reason*; it was `git ls-files` plus `--others --exclude-standard`, and
+`.gitignore`'s `**/target` is a bare directory NAME matching at any depth — **the W-22 hole,
+reached one layer over.** `EXCLUDED`'s fifteen entries each carry a reason and a stale-entry
+ratchet; `.gitignore`'s six patterns carry neither.
+
+**The population is now the union of two enumerations and neither can shrink it alone**:
+`leanfiles.source_files(ROOT, None)` — the property-based walk checks 2, 3, 9 and 10 already
+share, whose prune rule is a property a build directory *has* (a leading dot, or the
+cache-directory marker file cargo writes) — **union** `git ls-files` plus `--others --exclude-standard`, because acceptance
+runs before the commit and because the walk prunes dot-directories holding tracked files
+(`kernel/corpus/*/.tm/`, `tm-core/tests/fixtures/*/.tm/`, `.claude/API-NOTES.md` — 11 files).
+Measured: walk **596**, git **604**, union **607**; the walk's three additions are
+`kernel/__pycache__/*.pyc` and `EXCLUDED` now names them with a reason, as an **exact path
+prefix** and not a bare directory name. On the repaired tree the same probe under
+`kernel/target/` is **named**: `target/w28probe.md:1 Tm.Zzz.no_such_theorem_w28 (resolves to
+nothing)`, rc=1.
+
+### 3. check 8's owner test was "one entry is enough" at depth three
+
+**Reproduced first**, one backticked line appended to `mutations.txt` each in a git-initialised
+clone: the two-segment ZzzNoSuchOwnerW28.ramp was **named**, and the three- and four-segment paths
+Tm.ZzzNoSuchOwnerW28.ramp, Tm.Planner.ZzzGoneW28.dayPlan and Cal.ZzzGoneW28.mkInstant? (written
+here without backticks, by check 8's own convention for a name that does not exist) were all
+**GREEN**. `owner_resolves` was `any(...)` over the owner segments, so a path of three or more
+segments needed **one** earlier segment to resolve — and `Tm`, `Cal`, `Planner`, `PlanWire`, `EmitWire` and
+`Boundary` all do, while nearly every Lean citation in this repository is three segments or more
+headed by a real namespace. **The same "join the enumeration to be EXEMPT" shape one level down.**
+
+**The property**: a qualified citation resolves only if its last segment resolves **and its owner
+chain resolves from its first resolving segment onward**. The segments before that first one are a
+RECEIVER — a binder (`sj`, `p`) this file has no type checker for, which is the exception its
+header already stated — and everything from the first real name to the leaf's owner is a PATH
+every step of which must exist. A FILE is one unit, not two segments: `mutate.py::stale_sites`
+splits into `mutate`, `py`, `stale_sites`, `py` is an extension rather than a namespace, and the
+six live citations of that shape are why the chain is walked over units where a consecutive
+`base`, `ext` pair whose join is a repository file name counts once.
+
+Measured over 38,750 citations: the anchor rule newly refuses **exactly one** name `any`
+accepted, and it is not stale — `p.val.docs.zipIdx` is a live projection chain in `Boundary.lean`
+whose only unresolvable step is `Subtype.val`, declared in the pinned toolchain but a structure
+FIELD, which `_core_scan` does not read. It is adjudicated by name and **counted** in
+`citations-allow.txt`; the real fix is source 6 reading core's structure fields and that is gap
+**1877**. On the repaired tree all three planted middle renames are named at once.
+
+### 4. check 10's three idioms were an allow-list and a fourth spelling walked through
+
+**Reproduced first**: one sentence appended to this file, reading
+`Divergence P41 is recorded here, and **P42** is its refinement.`
+— left `parity.py` at **rc=0**, still printing `next free P41`: the gate handing the
+next block a number the tree already spells, which is gap 1417's own failure.
+
+`parity.py:41` states the choice and its reason: a bare `P<n>` is also a stage-6 STEP name
+(P0–P8), so no regex can tell an issuance from a reference. **That reason is true for small n and
+only for small n.** There is no step `P41`. Above `top` — the largest number the index or its
+declared holes hold — a `P<n>` outside inline code is either an entry nobody registered or a
+sentence about a number that is still free, and the second is an idiom the file can state: `next
+free P<n>`, or `P<n> still free`. Anything else above the top is **named**; a quotation goes in
+backticks, which `strip_code` already removes and which this file already calls the difference
+between citing a number and issuing one.
+
+Fourteen live `P41` mentions were measured before the rule went in. Eleven are the declared free
+idiom and pass untouched; **three were quotations and are now backticked** — one cell of this
+file's own W-25 plant table, and `check.sh`'s two comment lines describing its own probes. Driven on the repaired tree: the plant gives **two** findings (`P41` and `P42`); the
+control `The next free P41 is still free.` stays **green**.
+
+### 5. The seven emitter-pinning theorems pinned two POINTS, not the function
+
+**Reproduced first, at pristine HEAD, in a clone with a warm `.lake`, capped**: `segJson`'s `stop`
+written as `.num (if s.val.stop ≤ 60 then s.val.stop else s.val.stop + 60)` agrees with BOTH
+witnesses — they use `stop = 60` and `stop = 0` — and gave `lake build TmKernel:static` **rc=0**,
+*"✔ [174/174] Built TmKernel:static … Build completed successfully (174 jobs)"*. Only the Rust arm
+saw it. `mutate.py` asks one question — *does anything tell this body from a CONSTANT* — and every
+theorem answered it, which is what earned the ten of them `PINNED`. It is not the same question as
+*is this body the one the design says*, and **the answer is not a third point.**
+
+**So each emitter gets one law over its whole domain.** Nine new `rfl` theorems in `PlanWire.lean`
+— `segJson_is_its_eleven_keys`, `flagsJson_is_its_seven_marks`,
+`kindJson_is_the_name_and_the_batch`, `idsJson_is_the_list`, `optStr_is_null_or_the_id`,
+`priosJson_is_the_id_and_the_priority_of_every_pair`, `diagJson_is_its_twelve_fields`,
+`noteJson_writes_every_field` and `routineErrName_spells_every_id` — each naming every key and
+every field in terms of the argument, so a body that differs at ANY input fails to elaborate. The
+witnesses stay: they say the keys carry the values a *reader* expects at a value, and these say
+the function is the function. `planJson_of_a_planned_day_is_the_requests_own_views` was already
+this shape. **Driven**: the identical perturbation on the repaired tree gives `lake` **rc=1**,
+`PlanWire.lean:1411:0 Not a definitional equality` at `segJson_is_its_eleven_keys`.
+
+### 6. AGENTS §5.3: two emitters were character-for-character copies, a guard was a third, and a roster row can now outlive its subject
+
+`PlanWire`'s optNum, of type `Option Nat → JVal`, was `CapWire.optNatJson`; its pairJson, of type
+`Option Arith.Pos → JVal`, was `minutesJson`, and its own doc comment named a THIRD spelling of the shape,
+the reader `CapWire.pairWith`. W-28 track P checked that no BOUND was minted — correctly — and
+nothing checked the ENCODERS, which is §5.3's actual subject. **Both are deleted**; `segJson`
+calls the existing two, which were already reachable from `namespace Tm.PlanWire`. And
+`withPlanner` repeated `withLookahead`'s `.obj [(k, .obj kvs)]` guard verbatim: the guard is one
+definition now, `CapWire.intoOk`, and the difference is the argument. All three changed
+definitions were re-audited by check 9 and all three are **PINNED**:
+`Tm.CapWire.intoOk`, `Tm.CapWire.withLookahead` and `Tm.PlanWire.withPlanner` each at
+`:= default` and at the identity on their accumulator, plus `Tm.PlanWire.segJson` at `:= default`.
+
+**And deleting them found a hole in check 9.** `roster()` is a dict keyed on `(file, name)`, so a
+row whose declaration is deleted or moved to another file is never consulted again — not re-run,
+not re-verified, not reported. **The same free exemption `citations.py`'s unused-allow-entry
+ratchet closes, one gate over.** Measured when the ratchet went in: **230 rows, 3,039
+declarations, and the only two orphans in the file were the two this step had just deleted.** They
+are deleted with their subjects, in this diff, and an orphan row FAILS check 9 from now on.
+
+### 7. A deleted D5 law had no Lean replacement, and one sentence in `Goals.lean` contradicted itself
+
+`runPlanner`'s `| .error e => .error e` branch was covered by **no law** — all five `runPlanner_*`
+laws hypothesise `EmitWire.runRowsP j = .ok (…)` — and only one Rust test drove one instance of
+it. `runPlanner_passes_a_rows_refusal_through` is one line and D5's own rule.
+
+`Goals.lean` said the `active` payer's hypothesis "has **no caller** until D48's RESPONSE half
+builds a `PlanReq` from the wire's values, so the axis and that half are one obligation". The
+RESPONSE half landed in the same tree (`PlanWire.planReqOf`) and the payer still has no caller, so
+the sentence named the landed condition as the missing thing and a reader took the opposite
+conclusion from the one gap 1870 draws. Corrected, with the reason: `planReqOf` hands the eight
+fields over without going through `PlannerWit.mkPlanReq?`, the constructor the payer is stated
+against.
+
+### 8. A killed `mutate.py` left a live mutation — gap 1788, reproduced from the other side
+
+An auditor appended a new `def` to a clone's `Emit.lean`, ran `python3 mutate.py --gate` and
+killed it; the file was left with the body `0`. `restore_in_flight` heals it on the *next*
+invocation, and the window between is a window in which a constant-folded kernel looks like a
+commit. **Two halves**: `mutate.py` now handles SIGTERM, SIGINT and SIGHUP — restore, then
+re-raise with the default disposition so the exit status still says killed — and `check.sh`'s
+check 9 **FAILS on the sidecar** rather than repairing it quietly. **Driven in the clone**: before
+`kill -TERM`, `Emit.lean` ended `def w28RepairProbeNewDef (n : Nat) : Nat := 0`; after it,
+`… := n + 1`, the sidecar gone, and the log carrying `mutate.py: restored
+TmKernel/TmKernel/Emit.lean from a killed run`. With a sidecar present, `check.sh` reports check 9
+**FAILED** with the remedy, and check 8 names the sidecar as an unaccounted file — both, which is
+the residue rule working.
+
+### 9. Four sentences that were false of the tree they shipped on
+
+* **832 → 76.** The LAND block said `the_kernel_plans_the_day_the_fork_plans` "drives it 832 times
+  a run". Measured twice on HEAD from the committed harness: the last census line is the total,
+  **76 cases, 112 walls compared, 626 kernel rows, window-differs 0, budget-differs 0**. 832 is
+  64×13 — a cross-run total, the same block's "green thirteen times over", relabelled as per-run.
+  Track P's own block quotes 76. Gap **1884**.
+* **R3's headline.** "And NOTHING BUT THE DELETION stands between HEAD and R3" contradicts track
+  P's own block, which says the opposite *conditionally* and files it as gap **1790**; the LAND
+  block never mentioned 1790, substituted the softer 1670, and called the caveat "not a blocker".
+  Re-measured: `tm-core/src/planner.rs` is reached by **33 `planner::` occurrences across 9 files
+  under `tm/src`** plus 14 test files, and `Planner.dayPlan` is §8.2 steps 1–2 only. Corrected in
+  place, both sentences, with 1790 named. Gap **1885**.
+* **The plant table.** Row 2 recorded `segJson` emitting `stop + 60` as *Lean stayed GREEN*. That
+  measurement predates §9 of the same block, which added the two `segJson` witnesses, and the row
+  does not say so. **Re-driven at HEAD**: `lake` **rc=1**, four errors — `PlanWire.lean:1283:0`
+  *Not a definitional equality*, `:1302:42` *Type mismatch*, `:1304:0`, `:1315:88`. The SENTENCE
+  the plant supported survives and §5 above re-established it with a plant that is genuinely
+  proof-invisible. Gap **1886**.
+* **`mutate.py`'s module docstring**, which `mutations.txt`:2 calls *the specification*, said
+  "`structure`, `inductive` and `instance` are not mutated" while `HEAD` matches
+  `(def|abbrev|instance)` and `ANON_INSTANCE` synthesises roster names for anonymous ones.
+  Check 9's specification was stale about check 9's own scope, and nothing could catch it — check 8
+  does not sweep `kernel/*.py` as prose and its own header records that blind spot. Gap **1880**.
+
+### 10. A dead VOCABULARY entry now fails, and `example` is banned
+
+`citations.py` computed `stale = (vocabulary | set(capped)) - used` and only **printed** it. A
+counted entry that goes dead fails through the slack rule; an uncounted vocabulary entry that
+exempts nothing was reported and never failed — the same free exemption the slack rule was added
+to close, one section over in the same file. It fails now. **0 unused at the repair step**, so this
+is a ratchet and not a repair of a live defect.
+
+And `leanfiles.THEOREM` is the keyword token `theorem` — **one declaration keyword**. `#print
+axioms` works on `def`, `abbrev`, `instance` and `example` too; `Check.lean` deliberately audits
+two non-theorems, and the library declares 18 instances. The half that is closeable here is closed:
+`example` is an **unauditable** proof — it has no name to reconcile — and is banned outright (0
+live). The other half, a `def` whose TYPE is a Prop, needs the library ELABORATED to decide which
+types are Props and is gap **1883**.
+
+### 11. Two findings reproduced and NOT repaired, recorded by name
+
+* **A break taken with no block running is in no segment and surfaced by nothing.**
+  **Re-driven here** on a freshly `tm init`-ed tree with the binary built from this step's own
+  workspace: `tm break 25m --where bed` → **rc=0**, *"break 25m (bed)"*; `.tm/state.json` then
+  holds `{"break": {"started": "09:38", "planned_min": 25, "where": "bed"}}`; `tm now` answers
+  **"nothing running"** and lists `09:38 · rest 1h`; `tm plan --json`'s `segments[0]` is
+  `kind='rest'` over the very minutes of the break, with `item: None` and no `breakWhere` text;
+  `tm check` says **"no problems"**, rc=0. The auditor's own drive had a block running at the
+  same instant and saw the same hole with `kind='block'` — **the segment kind differs with the
+  tree, the invisibility does not.** §5.13's own class: a plausible keystroke accepted and then
+  invisible. **Not repaired here**: the fix changes what one of the two planners answers, every
+  divergence between them is a registered parity number (D21/D22), and issuing one in a repair
+  step is the owner's call. Gap **1889**.
+* **Gap 1873 was re-confirmed by an auditor** on a plan tree this step did not build —
+  `tm plan --json` leaving 11:56–12:16 and 14:14–14:34 inside the window and in no segment, in
+  both renderings. **This step did not re-drive it**: the finding is filed as a re-confirmation
+  rather than as a new defect, the gap is already open, and reproducing it needs the auditor's own
+  tree. 1873 stays open and unchanged, and its evidence is theirs.
+
+### 12. Discipline
+
+`check.sh` **10/10** and `cargo test --workspace` **0 failed** — the workspace run **three
+times** end to end on the final tree, 86 suites and **1,475 tests** each time, plus every named
+suite on its own. **No predicate, assertion or law was weakened, and none was narrowed to make a
+gate pass**: every change to a gate in this step WIDENS it, and each widening states a PROPERTY —
+`ALLOWED_ATTRS` is a residue rule, the citation population is a walk unioned with git, the owner
+test is a chain rather than an `any`, and check 10's above-the-top rule is a property with one
+declared idiom. **No law narrowed (D5)**: one law was ADDED
+(`runPlanner_passes_a_rows_refusal_through`) and nine more
+(`segJson_is_its_eleven_keys` and its eight siblings); nothing was deleted. **No candidate fact
+derived in the kernel (D34)**; `Planner.dayPlan` stays TOTAL and no planner refusal family was
+invented (D28); `tm edit` keeps one writer (D49); the comparand is still fork `4748911` at full
+precision and **no parity number was issued** — `next free P41`.
+
+Two library `def`s were **deleted** — optNum and pairJson — and both were character-for-character
+duplicates of definitions that stay (§6); one `def` was added, `CapWire.intoOk`, and it is the
+guard two definitions used to write out separately. `mutations.txt`'s pin sites were
+**re-anchored, not re-blessed**: an edit above a row moves the same bytes to a new line, the
+recorded DECLARATION is unchanged, and `mutate.py`'s own `stale_sites` — which re-resolves every
+site without a build — is what says the re-anchor is right.
+
+No `sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor,
+`.toOption`, `example` or new external dependency added. No generator narrowed, no
+`.proptest-regressions` line removed, no snapshot re-blessed, no latency band or corpus touched.
+**No goal deleted and none discharged — burn-down 9, all stage 6, before and after.**
+`Cargo.toml`, `Cargo.lock`, `lean-toolchain` and `kernel/corpus/` untouched; **no memory bound
+raised** — every `lake`, `lean`, `cargo`, `check.sh`, `tm` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet`.
+
+**Named suites, each on its own, on the final tree**: FFI (`tm-kernel-ffi`, 5 binaries, 0
+failed), T5 `kernel_replay_parity` 29, the door suite `kernel_log_door` 23,
+`cli_switch_acceptance` 16, `cli_latency` 5 (1 ignored; the machine's load average was 0.43 when
+it ran — gap 1333's threshold is checked, not assumed), `kernel_call_counts` 2, `one_padder` 9,
+`one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 21 and
+`planner_invariants` 8. **0 failed in every one.**
+
+**Every plant was made in a clone** (`git archive HEAD | tar -x -C /tmp/claude-1000/…`), never in
+the shared checkout: ten in all — four attribute plants, two citation-population probes, three
+owner-chain probes and one parity probe in `/tmp/claude-1000/w28r`, plus the two `segJson`
+perturbations and the `mutate.py` kill test, the first two at pristine HEAD in
+`/tmp/claude-1000/w28head` and `/tmp/claude-1000/w28head2`. `git status --porcelain` on
+`/home/leobwang/code/projects/tm` was read before the first plant and after the last and held
+only this step's own files each time.
+
+### 13. Gaps
+
+**Closed here, each with the drive above**: **1875** (`@[extern]` and R4's class),
+**1876** (check 8's owner test at depth three), **1878** (a dead vocabulary entry never failed),
+**1879** (check 10's fourth spelling), **1880** (`mutate.py`'s stale specification),
+**1881** (the emitters pinned at two points), **1882** (no law for a rows refusal),
+**1884**, **1885** and **1886** (three false sentences, corrected in place), **1887** (check 8's
+population), **1888** (§5.3's two duplicate emitters and the duplicate guard), and **1788**,
+which this step's two halves close from both sides.
+
+**Open, and each is a decision or a piece of work rather than an oversight:**
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1877** | `citations.py`'s source 6 reads the pinned toolchain's DECLARATIONS and not its structure **fields**, so `Subtype.val` does not resolve and a projection chain through `.val` cannot have its owner checked | `citations.py`'s `_core_scan` | one live citation is adjudicated by name and counted in `citations-allow.txt` instead of resolving; a second of the same shape lands in a diff, which is the ratchet working, but the entry is an exemption nobody should have had to write |
+| **1883** | **the roster is one declaration keyword.** `leanfiles.THEOREM` is the token `theorem`; `#print axioms` accepts `def`, `abbrev` and `instance` too, `Check.lean` deliberately audits two of them, and the library declares 18 instances. `example` — the unauditable member — is banned here; the rest is open | `leanfiles.theorem_names`, `check.sh` check 3 | a proof-carrying `def` whose TYPE is a Prop is outside check 3's reconciliation by construction. Nothing leaks today because the bare token `sorry` is banned in every file but `Goals.lean`. The fix needs the library ELABORATED to decide which types are Props — a Lean-side query, not a Python regex |
+| **1889** | **a break taken with no block running is recorded in state and surfaced by nothing.** Re-driven here: `tm break 25m --where bed` → rc=0, the break in `.tm/state.json`, `tm now` "nothing running", `tm plan --json`'s first segment a `rest` over the break's own minutes with no `breakWhere` text, `tm check` "no problems" | `tm-core/src/planner.rs` and `PlanWire`'s §8.2 step-2 rows | §5.13's own class — a plausible keystroke accepted and then invisible. Not repaired here because the fix changes what one of the two planners answers, every divergence between them is a registered parity number (D21/D22), and issuing one is the owner's call |
+
+**Re-confirmed by an auditor and unchanged**: gap **1873** — `tm plan --json` leaving
+11:56–12:16 and 14:14–14:34 inside the window and in no segment, in both the text rendering and
+`--json`. A re-confirmation of an open gap, not a new one, and not re-driven here. Gap **1790**
+stays open and is now named in the LAND block, which is the whole of correction 1885.

@@ -975,20 +975,20 @@ batch has.  `EmitWire.readKind` reads exactly these two keys. -/
 def kindJson (k : Planner.SegKind) : JVal :=
   .obj [("kind".toList, .str (kindName k)), ("batch".toList, .arr (batchOf k))]
 
-/-- A `Nat` that may be absent. -/
-def optNum : Option Nat → JVal
-  | none => .null
-  | some n => .num n
-
 /-- An id that may be absent. -/
 def optStr : Option Id → JVal
   | none => .null
   | some s => .str s
 
-/-- An exact multiplier, in `CapWire.pairWith`'s own `{num, den}` shape. -/
-def pairJson : Option Arith.Pos → JVal
-  | none => .null
-  | some q => .obj [("num".toList, .num q.val.num), ("den".toList, .num q.val.den)]
+/-! **Two emitters this file used to declare are gone, and it declares none in their place**
+(AGENTS §5.3, the W-28 repair step).  optNum, of type `Option Nat → JVal`, was character for
+character `CapWire.optNatJson`, and pairJson, of type `Option Arith.Pos → JVal`, was character
+for character `minutesJson` — and pairJson's own doc comment named a THIRD spelling of the shape, the
+reader `CapWire.pairWith`.  The W-28 track-P block checked that no BOUND was minted and
+checked nothing about the ENCODERS, which is §5.3's actual subject: two definitions of one
+concept is the bug, and a wire key emitted by two functions is exactly that.  `segJson` below
+calls `CapWire.optNatJson` and `minutesJson`; both were already reachable from this namespace
+and neither moved. -/
 
 /-- The seven marks, in `EmitWire.readFlags`' order and under its keys. -/
 def flagsJson (f : Planner.SegFlags) : JVal :=
@@ -1031,14 +1031,14 @@ def segJson (s : Planner.WfSeg) : JVal :=
   .obj [("start".toList, .num s.val.start), ("stop".toList, .num s.val.stop),
     ("kind".toList, .str (kindName s.val.kind)),
     ("batch".toList, .arr (batchOf s.val.kind)),
-    ("energy".toList, optNum (s.val.energy.map Fin.val)),
+    ("energy".toList, CapWire.optNatJson (s.val.energy.map Fin.val)),
     ("item".toList, optStr s.val.item),
     ("inst".toList, match s.val.inst with
       | none => .null
       | some p => .obj [("id".toList, .str p.1), ("inst".toList, .str p.2)]),
     ("flags".toList, flagsJson s.val.flags),
-    ("planned".toList, optNum s.val.planned),
-    ("mult".toList, pairJson s.val.mult),
+    ("planned".toList, CapWire.optNatJson s.val.planned),
+    ("mult".toList, minutesJson s.val.mult),
     ("note".toList, match s.val.note with | none => .null | some n => noteJson n)]
 
 /-- An `IdList`, whole. -/
@@ -1101,11 +1101,11 @@ def intoPlan : List (List Char × JVal) → List (List Char × JVal) → List (L
     else (k, v) :: intoPlan rest xs
 
 /-- The response's `ok` object, with the planner's keys in its `plan` object.  The shape guard
-is `EmitWire.withPlan`'s own: a response that is not `{"ok": {…}}` is returned unchanged. -/
+is `EmitWire.withPlan`'s own and is written ONCE, in `CapWire.intoOk`: a response that is not
+`{"ok": {…}}` is returned unchanged.  It was this file's own copy of `CapWire.withLookahead`'s
+`match` until the W-28 repair step (AGENTS §5.3). -/
 def withPlanner (r : JVal) (xs : List (List Char × JVal)) : JVal :=
-  match r with
-  | .obj [(k, .obj kvs)] => .obj [(k, .obj (intoPlan kvs xs))]
-  | _ => r
+  CapWire.intoOk r (fun kvs => intoPlan kvs xs)
 
 /-! ## The request, assembled from what the call already decoded -/
 
@@ -1230,6 +1230,17 @@ theorem runPlanner_answers_the_day (j sec r : JVal) (b : Nat) (parts : CapParts)
     runPlanner j = .ok (withPlanner r (planJson (Planner.dayPlan req))) := by
   simp only [runPlanner, hp, hr, hs, hb, hq]
 
+/-- **A refusal `EmitWire.runRowsP` makes reaches the host unchanged.**  Every law below
+hypothesises `runRowsP j = .ok (…)`, so `runPlanner`'s own `| .error e => .error e` branch was
+covered by NO law — only `tm/tests/kernel_planner_wire.rs` drove one instance of it (README gap
+1882, the W-28 repair step).  D5 keeps relational laws proved rather than driven, and this is
+the one that was missing: the wire adds nothing to a rows refusal and subtracts nothing from
+it. -/
+theorem runPlanner_passes_a_rows_refusal_through (j sec e : JVal)
+    (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .error e) :
+    runPlanner j = .error e := by
+  simp only [runPlanner, hp, hr]
+
 /-- **And a section that does not decode refuses the whole call, by its own name** — the sentence
 that makes every bound in this module reachable from the FFI. -/
 theorem runPlanner_refuses_a_section_the_decoder_refuses (j sec r : JVal) (parts : CapParts)
@@ -1272,8 +1283,8 @@ theorem runPlanner_refuses_a_request_the_assembler_refuses (j sec r : JVal) (b :
 
 /-! ### The emitters, pinned
 
-**`mutate.py` found ten of them pinned by NOTHING** — `routineErrName`, `optNum`, `optStr`,
-`pairJson`, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson` each
+**`mutate.py` found ten of them pinned by NOTHING** — `routineErrName`, optNum, `optStr`,
+pairJson, `flagsJson`, `noteJson`, `segJson`, `idsJson`, `diagJson` and `priosJson` each
 survived `:= default` with a green `lake build TmKernel:static`, because every theorem above
 is about the *shape* of `planJson` and none about the bytes any one emitter writes.  That is
 W-27's finding one module along (five optional readers, three theorems) and these are the
@@ -1281,8 +1292,10 @@ theorems that answer it: each is a concrete witness, so a `default` in any of th
 value a `rfl` names. -/
 
 /-- **Every field of a segment, at a value** — the eleven keys, in order, with `energy`, `item`,
-`inst`, `planned`, `mult` and `note` all present, so `optNum`, `optStr`, `pairJson`, `noteJson`
-and `flagsJson` are each pinned at a non-default by this one sentence. -/
+`inst`, `planned`, `mult` and `note` all present, so `CapWire.optNatJson`, `optStr`,
+`minutesJson`, `noteJson` and `flagsJson` are each pinned at a non-default by this one
+sentence.  (Two of those names were this file's own optNum and pairJson until the W-28 repair
+step deleted them as duplicates; §5.3's note above `optStr` says why.) -/
 theorem segJson_writes_every_field_of_a_segment :
     segJson ⟨⟨0, 60, .block, some 3, some ['a'], some (['a'], ['b']),
         ⟨true, true, true, true, true, true, true⟩, some 25, some ⟨⟨3, 2⟩, by decide⟩,
@@ -1375,6 +1388,120 @@ theorem the_routine_errors_spell_themselves :
       = ("unknownItem a", "undeclaredWindow a", "emptyWindow a", "pastTheHorizon a",
          "noMinutes a", "tooManyRoutines") := rfl
 
+/-! ### The emitters, pinned as FUNCTIONS and not at two points
+
+**THE WITNESSES ABOVE ARE POINTS, AND A PERTURBATION THAT AGREES AT THEM IS INVISIBLE TO
+LEAN** (the W-28 repair step, README gap 1881).  `mutate.py` asks one question — does anything
+tell this body from a CONSTANT — and every theorem above answers it, which is what earned the
+ten of them `PINNED`.  It is not the same question as "is this body the one the design says".
+DRIVEN by an independent auditor in a clone: `segJson`'s `stop` written as
+`.num (if s.val.stop ≤ 60 then s.val.stop else s.val.stop + 60)` agrees with BOTH witnesses
+below — they use `stop = 60` and `stop = 0` — and `lake build TmKernel:static` was GREEN,
+174 of 174 jobs; only `tm/tests/planner_invariants.rs` saw it, and named the two walls that
+differed.  Two points cannot pin a function, and the answer is not a third point.
+
+**SO EACH EMITTER GETS ONE LAW OVER ITS WHOLE DOMAIN.**  Each is `rfl`, each names every key
+and every field in terms of the argument, and a body that differs from the one written here at
+ANY input fails to elaborate — a value-dependent perturbation included.  The witnesses above
+stay: they are what says the keys carry the values a READER expects at a value, and this says
+the function is the function.  `planJson_of_a_planned_day_is_the_requests_own_views` below is
+the same shape and was already written that way. -/
+
+/-- **`segJson` is these eleven keys, for every segment.** -/
+theorem segJson_is_its_eleven_keys (s : Planner.WfSeg) :
+    segJson s
+      = .obj [("start".toList, .num s.val.start), ("stop".toList, .num s.val.stop),
+          ("kind".toList, .str (kindName s.val.kind)),
+          ("batch".toList, .arr (batchOf s.val.kind)),
+          ("energy".toList, CapWire.optNatJson (s.val.energy.map Fin.val)),
+          ("item".toList, optStr s.val.item),
+          ("inst".toList, match s.val.inst with
+            | none => .null
+            | some p => .obj [("id".toList, .str p.1), ("inst".toList, .str p.2)]),
+          ("flags".toList, flagsJson s.val.flags),
+          ("planned".toList, CapWire.optNatJson s.val.planned),
+          ("mult".toList, minutesJson s.val.mult),
+          ("note".toList, match s.val.note with | none => .null | some n => noteJson n)] := rfl
+
+/-- **`flagsJson` is these seven marks, for every `SegFlags`.** -/
+theorem flagsJson_is_its_seven_marks (f : Planner.SegFlags) :
+    flagsJson f
+      = .obj [("done".toList, .bool f.done), ("current".toList, .bool f.current),
+          ("underused".toList, .bool f.underused), ("hot".toList, .bool f.hot),
+          ("mandatory".toList, .bool f.mandatory), ("deferred".toList, .bool f.deferred),
+          ("open".toList, .bool f.isOpen)] := rfl
+
+/-- **`kindJson` is the name and the batch, for every kind.** -/
+theorem kindJson_is_the_name_and_the_batch (k : Planner.SegKind) :
+    kindJson k = .obj [("kind".toList, .str (kindName k)), ("batch".toList, .arr (batchOf k))] :=
+  rfl
+
+/-- **`idsJson` is the list, for every `IdList`.** -/
+theorem idsJson_is_the_list (c : Planner.IdList) : idsJson c = .arr (c.val.map JVal.str) := rfl
+
+/-- **`optStr` is `null` or the id, for every argument.** -/
+theorem optStr_is_null_or_the_id (o : Option Id) :
+    optStr o = match o with | none => .null | some i => .str i := rfl
+
+/-- **`priosJson` is the `{id, p}` pairs, for every capped list.** -/
+theorem priosJson_is_the_id_and_the_priority_of_every_pair (c : Planner.Capped (Id × Fin 8)) :
+    priosJson c
+      = .arr (c.val.map (fun p => .obj [("id".toList, .str p.1), ("p".toList, .num p.2.val)])) :=
+  rfl
+
+/-- **`diagJson` is these twelve fields, for every `Diagnostics`.** -/
+theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
+    diagJson d
+      = .obj [("underused".toList, idsJson d.underused),
+          ("aCapacityLost".toList, .num d.aCapacityLost),
+          ("hot".toList, idsJson d.hot),
+          ("impossible".toList,
+            .arr (d.impossible.val.map (fun p =>
+              .obj [("id".toList, .str p.1), ("shortMin".toList, .num p.2)]))),
+          ("conflicts".toList,
+            .arr (d.conflicts.val.map (fun p =>
+              .obj [("a".toList, .str p.1), ("b".toList, .str p.2)]))),
+          ("blocked".toList, idsJson d.blocked),
+          ("deferred".toList, idsJson d.deferred),
+          ("waiting".toList, idsJson d.waiting),
+          ("notes".toList, .arr (d.notes.val.map noteJson)),
+          ("droppedTail".toList, idsJson d.droppedTail),
+          ("planHonesty".toList,
+            .obj [("planned".toList, .num d.planHonesty.1),
+              ("total".toList, .num d.planHonesty.2)]),
+          ("restDebtMin".toList, .num d.restDebtMin)] := rfl
+
+/-- **`noteJson` writes every FIELD of every constructor, and not only the name.**
+`noteJson_names_the_eleven` pins the eleven names at eleven points; this pins the numbers and
+the ids they carry, at every value they can take. -/
+theorem noteJson_writes_every_field (id t : List Char) (durMin lo hi a b m : Nat) :
+    (noteJson .travelDay, noteJson (.noPosition id durMin lo hi), noteJson (.budgetSpent a),
+     noteJson (.plannedOf a b), noteJson (.bufferBefore id), noteJson .travelDayWall,
+     noteJson .paused, noteJson .interruption, noteJson (.breakWhere t),
+     noteJson (.idleAttributed t), noteJson (.runningLeft m))
+      = (.obj [("note".toList, .str "travelDay".toList)],
+         .obj [("note".toList, .str "noPosition".toList), ("id".toList, .str id),
+           ("durMin".toList, .num durMin), ("lo".toList, .num lo), ("hi".toList, .num hi)],
+         .obj [("note".toList, .str "budgetSpent".toList), ("blocksDone".toList, .num a)],
+         .obj [("note".toList, .str "plannedOf".toList), ("planned".toList, .num a),
+           ("total".toList, .num b)],
+         .obj [("note".toList, .str "bufferBefore".toList), ("id".toList, .str id)],
+         .obj [("note".toList, .str "travelDayWall".toList)],
+         .obj [("note".toList, .str "paused".toList)],
+         .obj [("note".toList, .str "interruption".toList)],
+         .obj [("note".toList, .str "breakWhere".toList), ("text".toList, .str t)],
+         .obj [("note".toList, .str "idleAttributed".toList), ("text".toList, .str t)],
+         .obj [("note".toList, .str "runningLeft".toList), ("leftMin".toList, .num m)]) := rfl
+
+/-- **`routineErrName` spells the name AND the id, for every id.** -/
+theorem routineErrName_spells_every_id (id : Id) :
+    (routineErrName (.unknownItem id), routineErrName (.undeclaredWindow id),
+     routineErrName (.emptyWindow id), routineErrName (.pastTheHorizon id),
+     routineErrName (.noMinutes id), routineErrName .tooManyRoutines)
+      = (s!"unknownItem {String.ofList id}", s!"undeclaredWindow {String.ofList id}",
+         s!"emptyWindow {String.ofList id}", s!"pastTheHorizon {String.ofList id}",
+         s!"noMinutes {String.ofList id}", "tooManyRoutines") := rfl
+
 /-- **The seven keys the day writes are design §10.2's, in its order.** -/
 theorem planJson_writes_the_seven_keys (d : Planner.DayPlan) :
     (planJson d).map Prod.fst = planKeys := rfl
@@ -1431,7 +1558,7 @@ theorem withPlanner_shares_the_plan_object (docs report rows : JVal)
         ("plan".toList, .obj [("rows".toList, rows)])])]) xs
       = .obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report),
           ("plan".toList, .obj (("rows".toList, rows) :: xs))])] := by
-  simp [withPlanner, intoPlan]
+  simp [withPlanner, CapWire.intoOk, intoPlan]
 
 /-- **And a request that carried only a `planner` section gets a `plan` object of its own.** -/
 theorem withPlanner_makes_the_plan_object (docs report : JVal)
@@ -1439,7 +1566,7 @@ theorem withPlanner_makes_the_plan_object (docs report : JVal)
     withPlanner (.obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report)])]) xs
       = .obj [("ok".toList, .obj [("docs".toList, docs), ("report".toList, report),
           ("plan".toList, .obj xs)])] := by
-  simp [withPlanner, intoPlan]
+  simp [withPlanner, CapWire.intoOk, intoPlan]
 
 /-- **The seam carries its run exactly when it carries its facts** (README gaps 1669 and 1783).
 

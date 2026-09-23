@@ -1007,8 +1007,14 @@ unchecked** — `PlannerWit.an_at_the_wire_accepted_is_inside_the_calendar` give
 `now.sec < LogStamp.yearEnd` from the wire's own constructor, the clause wants
 `now.sec + 1 < LogStamp.yearEnd`, and
 `PlannerWit.the_instant_bound_is_one_second_wider_than_the_now_clause` exhibits the single
-instant between them.  The `active` payer's hypothesis has **no caller** until D48's RESPONSE
-half builds a `PlanReq` from the wire's values, so the axis and that half are one obligation.
+instant between them.  The `active` payer's hypothesis **still has no caller, and the condition
+this sentence used to name as the missing one has landed** (the W-28 repair step, README gap
+1871's own class).  D48's
+RESPONSE half is built — `PlanWire.planReqOf` assembles a `PlanReq` from the wire's values in
+the same tree as this file — and the payer is *still* uncalled, because `planReqOf` hands the
+eight fields over without going through `PlannerWit.mkPlanReq?`, which is the constructor the
+payer is stated against.  So the axis and that half are **not** one obligation; the remaining
+one is a caller for the payer, and it is README gap 1870.
 
 **Six of the nine wait on ONE edit, and it is not a proof.**  `Planner.PlanReq.assignFold`,
 `Planner.PlanReq.finalAssign`, `Planner.PlanReq.keptBreaks` and `Planner.PlanReq.occupiedNow`

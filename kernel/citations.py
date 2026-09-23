@@ -11,7 +11,9 @@ the sentences.  That is README gap 779, and this is the check that ends it.
 WHAT IS SWEPT -- AND SINCE W-27 THE DEFAULT POINTS THE OTHER WAY.  Every
 backticked span, on one line or wrapped across two (`wrapped`), of EVERY FILE OF
 THIS REPOSITORY except the ones `EXCLUDED` names with a reason.  The population
-is `git ls-files` plus `--others --exclude-standard`; the residue -- a file that
+is the property-based WALK union `git ls-files` plus `--others
+--exclude-standard` (W-28: it was git alone, which made `.gitignore` a second
+exclusion list with no reason and no ratchet -- see `tracked`); the residue -- a file that
 is neither swept nor excluded -- must be EMPTY, and a file whose extension has
 no reader FAILS this check by name.  `EXCLUDED`'s own comment is where that rule
 is argued; it is the answer to README gap 1525, and every hole below is an
@@ -454,6 +456,12 @@ EXCLUDED = (
     ("kernel/TmKernel/lake-manifest.json", "lake resolver output"),
     ("kernel/TmKernel/lean-toolchain", "the R8 pin, one line, no prose"),
     ("*.gitignore", "no prose"),
+    ("kernel/__pycache__/", "CPython bytecode, derived output.  It is reachable since "
+                            "the W-28 repair step made the population a WALK: the walk's "
+                            "prune rule is `leanfiles.is_build_dir`, and __pycache__ is "
+                            "neither dot-prefixed nor CACHEDIR.TAG-marked.  An exact "
+                            "path prefix and not a bare directory NAME, because a name "
+                            "that matches at any depth is the W-22 hole"),
 )
 
 # extension -> which reader.  `rust` is `rust_prose`; `lean` and `plain` are the
@@ -465,12 +473,40 @@ READERS = {".lean": "lean", ".rs": "rust", ".c": "rust", ".md": "plain",
 
 
 def tracked():
-    """Every file of this repository, by the repository's own account.
+    """Every file of this repository: the WALK, plus what git knows (W-28).
 
-    Tracked, plus added-but-not-committed (`--others --exclude-standard`),
-    because acceptance runs BEFORE the commit and a checker data file added in
-    the same step as the sentence that cites it is exactly the W-25 case.
+    IT WAS `git ls-files` ALONE, AND THAT MADE `.gitignore` A SECOND EXCLUDED
+    LIST -- one with no reason beside each entry and no stale-entry ratchet,
+    which is the whole discipline `EXCLUDED` exists to impose.  DRIVEN at the
+    W-28 repair step, the SAME one-line file in two places: `kernel/w28probe.md`
+    holding a dead name gave rc=1 and named it; `kernel/target/w28probe.md`,
+    byte-identical, gave rc=0 with byte-identical counts, because `.gitignore`
+    carries `**/target` and a bare directory NAME that matches at any depth is
+    the W-22 hole reached one layer over.
+
+    So the population is the union of two enumerations, and neither can shrink
+    it alone:
+
+      * `leanfiles.source_files(ROOT, None)` -- the property-based WALK checks
+        2, 3, 9 and 10 already share.  Its prune rule is a property a build
+        directory HAS (a leading dot, or a CACHEDIR.TAG file), so `target/` and
+        `kernel/tm-kernel-ffi/target/` are pruned for a REASON that is in the
+        directory rather than in a pattern file, and a `target/` that is not a
+        build directory is swept.
+      * `git ls-files`, tracked plus added-but-not-committed
+        (`--others --exclude-standard`) -- because acceptance runs BEFORE the
+        commit, and because the walk PRUNES dot-directories that hold tracked
+        files (`kernel/corpus/*/.tm/`, `tm-core/tests/fixtures/*/.tm/`,
+        `.claude/API-NOTES.md` -- 11 files here today).
+
+    MEASURED at the repair step: walk 596, git 604, union 607; the walk's three
+    additions are `kernel/__pycache__/*.pyc`, which `EXCLUDED` now names with a
+    reason.  A file that is in neither enumeration does not exist; a file in
+    either is swept or `EXCLUDED` names it, and the residue rule is unchanged.
     """
+    global _TRACKED
+    if _TRACKED is not None:
+        return _TRACKED
     import subprocess
     out = []
     for args in (["ls-files", "-z"], ["ls-files", "-z", "--others", "--exclude-standard"]):
@@ -479,7 +515,29 @@ def tracked():
             raise SystemExit("citations.py: `git %s` failed in %s -- the file "
                              "population would be silently smaller" % (args[0], ROOT))
         out += [p for p in r.stdout.split("\0") if p]
-    return sorted(set(out))
+    out += [os.path.relpath(str(q), ROOT)
+            for q in leanfiles.source_files(ROOT, None)]
+    _TRACKED = sorted(set(out))
+    return _TRACKED
+
+
+# The population is walked and `git`-listed ONCE: `tracked()` has five callers
+# and the walk is the whole repository.
+_TRACKED = None
+_FILE_NAMES = None
+
+
+def FILE_NAMES_():
+    """Every repository file's BASENAME, extension included (`mutate.py`).
+
+    `owner_resolves` needs it because `SEG` splits on `.` and an extension is
+    not a namespace; `declared()`'s source 5 adds the basename WITHOUT its
+    extension, which is the name a sentence uses for a module and not the one it
+    uses for a path."""
+    global _FILE_NAMES
+    if _FILE_NAMES is None:
+        _FILE_NAMES = {os.path.basename(rel) for rel in tracked()}
+    return _FILE_NAMES
 
 
 def excluded_by(rel):
@@ -1138,9 +1196,37 @@ def owner_resolves(segs, names, core, spaces, variants):
     (log_narrowed_facts.rs, deleted with the log switch, un-backticked here so
     that a sentence recording a dead name does not revive it).
 
+    AND "SOME EARLIER SEGMENT" WAS `any`, WHICH IS "ONE ENTRY IS ENOUGH" AT
+    DEPTH THREE (the W-28 repair step, README gap 1876).  Nearly every Lean
+    citation in this repository is three segments or more headed by a real
+    namespace, so a RENAMED MIDDLE segment was invisible: DRIVEN in a
+    git-initialised clone of HEAD, one line appended to `mutations.txt` each,
+    Tm.ZzzNoSuchOwnerW28.ramp, Tm.Planner.ZzzGoneW28.dayPlan and
+    Cal.ZzzGoneW28.mkInstant? were all GREEN (un-backticked here, by this
+    check's own convention for a name that does not exist), while the
+    two-segment ZzzNoSuchOwnerW28.ramp was named.  That is the same "join the enumeration
+    to be EXEMPT" shape one level down -- one real segment exempted the whole
+    path.
+
     THE PROPERTY: a qualified citation resolves only if its last segment
-    resolves AND some EARLIER segment names something declared.  One rule for
-    both separators, and nothing to add to it for a third.
+    resolves AND ITS OWNER CHAIN RESOLVES FROM ITS FIRST RESOLVING SEGMENT
+    ONWARD.  The segments BEFORE that first one are a RECEIVER -- a binder
+    (`sj`, `p`) this file has no type checker for, which is the exception the
+    paragraph below already states -- and everything from the first real name to
+    the owner of the leaf is a PATH, every step of which must exist.  One rule
+    for both separators, nothing to add to it for a third, and nothing to add to
+    it for a fourth depth.
+
+    A FILE IS ONE UNIT, not two segments.  `mutate.py::stale_sites` splits into
+    `mutate`, `py`, `stale_sites`, and `py` is an extension rather than a
+    namespace; the six live citations of that shape are why the chain is walked
+    over UNITS, where a consecutive `base`, `ext` pair whose join is a
+    repository file name counts once, and resolves because the file exists.
+    Measured at the repair step: over 38,750 citations the anchor rule newly
+    refuses exactly ONE that `any` accepted, `p.val.docs.zipIdx`, and it is in
+    `citations-allow.txt` by name with its reason (`Subtype.val` is declared in
+    the pinned toolchain and `_core_scan` does not see a structure FIELD --
+    README gap 1877).
 
     AND IT WAS NOT THE VARIANT RULE THAT DID IT, which is why this is a
     separate test rather than a tighter `rust_variants`.  The allow-list's
@@ -1171,8 +1257,21 @@ def owner_resolves(segs, names, core, spaces, variants):
     one fork; the dotted half added ten more, eight of them files that do not
     exist.
     """
-    return any(seg in names or seg in core or seg in spaces or seg in variants
-               for seg in segs[:-1])
+    def resolves(seg):
+        return seg in names or seg in core or seg in spaces or seg in variants
+
+    units = []
+    i = 0
+    while i < len(segs) - 1:
+        if i + 1 < len(segs) - 1 and (segs[i] + "." + segs[i + 1]) in FILE_NAMES_():
+            units.append(True)
+            i += 2
+            continue
+        units.append(resolves(segs[i]))
+        i += 1
+    if True not in units:
+        return False
+    return all(units[units.index(True):])
 
 
 def main():
@@ -1246,7 +1345,19 @@ def main():
             bad.append((name, where.get(name, "citations-allow.txt"),
                         "%d allowed, %d live -- tighten the cap to %d"
                         % (cap, live, live)))
+    # **A DEAD ALLOW ENTRY FAILS, AND USED ONLY TO BE PRINTED** (the W-28 repair
+    # step, README gap 1878).  A COUNTED entry that goes dead already fails
+    # through the slack rule above -- `live < cap` -- but an UNCOUNTED
+    # VOCABULARY entry that no longer exempts anything was reported in the
+    # summary line and never failed, which is the same free-exemption the slack
+    # rule was added to close, one section over in this file.  It opens by
+    # itself the moment prose citing a vocabulary name is deleted, exactly as
+    # the slack hole does.  0 unused at the repair step, so this is a ratchet
+    # and not a repair of a live defect.
     stale = (vocabulary | set(capped)) - used
+    for name in sorted(stale):
+        bad.append((name, "citations-allow.txt",
+                    "allow entry exempts nothing -- delete it"))
     if bad:
         print("%d unresolved:" % len(bad))
         for name, loc, why in bad:

@@ -193,10 +193,18 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
     `def` is not reducible, and a constant written at the unfolded type would
     fail to elaborate); a type built by a function (`Capped n`) is not either.
     Those keep `default`, which is the old behaviour and not a regression.
-  * ONLY `def` and `abbrev`, and only in the library.  `theorem` has no body to
-    fold (its "constant" is a different proof of the same statement, which is
-    not this defect class); `structure`, `inductive` and `instance` are not
-    mutated; `Check.lean`, `Negative.lean` and `Goals.lean` are outside the
+  * ONLY `def`, `abbrev` AND `instance`, and only in the library.  `theorem` has
+    no body to fold (its "constant" is a different proof of the same statement,
+    which is not this defect class); `structure` and `inductive` are not
+    mutated.  `instance` WAS OUTSIDE THIS SENTENCE AND INSIDE THE CODE, and
+    `mutations.txt`:2 calls this docstring the specification -- so check 9's
+    specification was stale about check 9's own scope (the W-28 repair step,
+    README gap 1880).  `HEAD` matches `(def|abbrev|instance)` and
+    `ANON_INSTANCE` synthesises a roster name for an anonymous one; the argument
+    for it is at `HEAD`'s own comment, which is that an instance IS a definition
+    with a body that can be folded.  Nothing could catch the drift: check 8 does
+    not sweep this file as PROSE, and its header records that blind spot.
+    `Check.lean`, `Negative.lean` and `Goals.lean` are outside the
     scope, and so is every line of Rust -- a constant-folded `fn` in
     `tm-core/src/planner.rs` is invisible to this (README gap 936).
   * A CONSTANT IS NOT AN INVERSION.  `gatherable := true` is caught here;
@@ -889,6 +897,37 @@ def restore_in_flight():
         handle.write(text)
     os.remove(SIDECAR)
     print("mutate.py: restored %s from a killed run" % rel, flush=True)
+
+
+def arm_signals():
+    """Restore on a SIGNAL, not only on an exception (README gap 1788).
+
+    `mutate_one`'s `finally` covers an exception; it does not cover a signal
+    that terminates the process, and DRIVEN by an independent auditor at W-28 a
+    killed `--gate` run left a library definition with the body `0` in the tree.
+    The sidecar made that RECOVERABLE -- the next run puts it back -- but the
+    window between the kill and that run is a window in which a constant-folded
+    kernel looks like a commit, and `check.sh` now FAILS on the sidecar rather
+    than repairing it quietly.
+
+    The three signals a kill actually sends are handled here: SIGTERM (what
+    `kill` sends by default), SIGINT (Ctrl-C) and SIGHUP (a closed terminal).
+    Each restores and then re-raises with the default disposition, so the exit
+    status still says the process was killed.  SIGKILL cannot be handled by
+    anything, which is why the sidecar and `check.sh`'s test both stay."""
+    import signal
+
+    def handler(signum, _frame):
+        try:
+            restore_in_flight()
+        finally:
+            signal.signal(signum, signal.SIG_DFL)
+            os.kill(os.getpid(), signum)
+
+    for name in ("SIGTERM", "SIGINT", "SIGHUP"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            signal.signal(sig, handler)
 
 
 # ---------------------------------------------------------------------------
@@ -1596,6 +1635,7 @@ def main(argv):
             return 2
         skip = arg in ("--only", "--since")
     restore_in_flight()
+    arm_signals()
     base, rows = roster()
     if rows is None:
         return 2
@@ -1765,6 +1805,26 @@ def main(argv):
               "hold that, so `scope_step` has the namespace stack wrong "
               "(README gap 1422):" % len(clash))
         for path, name in clash:
+            print("  %s %s" % (path, name))
+        return 1
+
+    # **AND A ROW WHOSE DECLARATION HAS GONE IS A CLAIM ABOUT NOTHING** (the
+    # W-28 repair step, README gap 1888).  `roster()` is a dict keyed on
+    # (file, name), so a row whose declaration was deleted or moved to another
+    # file is never consulted again: it is not re-run, not re-verified, and not
+    # reported -- the same free exemption `citations.py`'s unused-allow-entry
+    # ratchet closes, one gate over.  Measured when this went in: 230 rows, 3,039
+    # declarations, and the only two orphans were the two duplicate emitters the
+    # same step deleted.  A row is a claim that SOMETHING was watched to fail;
+    # when its subject goes, the row goes with it, in the same diff.
+    live = {(d["file"], d["name"]) for path in lib_files()
+            for d in declarations(read(os.path.join(HERE, path)), path)}
+    orphan = sorted(k for k in rows if k not in live)
+    if orphan:
+        print("%d roster row(s) naming a declaration this library no longer "
+              "holds -- delete the row with its subject, or say which file the "
+              "declaration moved to:" % len(orphan))
+        for path, name in orphan:
             print("  %s %s" % (path, name))
         return 1
 

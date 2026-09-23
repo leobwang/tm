@@ -894,3 +894,17 @@ with_minute
 #     is a large laundering surface bought for nothing.  Two names today.
 1 ghost_y
 2 max_energy
+#
+#   * THE ANCHOR RULE'S ONE LIVE COST (the W-28 repair step, README gap 1877).  `owner_resolves`
+#     used to accept a qualified path when ONE earlier segment resolved, so a renamed MIDDLE
+#     segment was invisible at depth three or more; it now requires the owner chain to resolve
+#     from its FIRST resolving segment onward.  Over 38,750 citations that newly refuses exactly
+#     one name, and the name is not stale: `p.val.docs.zipIdx` is a live projection chain in
+#     `Boundary.lean`'s prose, and it fails only because `Subtype.val` -- declared in the pinned
+#     toolchain -- is a structure FIELD, which `_core_scan` does not read.  Adjudicated here by
+#     name and COUNTED, so a second sentence of the shape lands in a diff; the shape the real
+#     fix takes is source 6 reading core's structure fields, and that is README gap 1877.
+#     THREE live, and each is a different KIND of sentence: the projection chain itself in
+#     `Boundary.lean`'s prose, `owner_resolves`' docstring naming what the rule costs, and the
+#     W-28 repair block recording the adjudication.  A FOURTH is a new sentence and fails here.
+3 p.val.docs.zipIdx

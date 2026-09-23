@@ -566,12 +566,33 @@ fi
 #    measured it -- min to min +6.2%, max to max +5.2%; the "+5.1%" that stood
 #    here followed from neither pair.  This machine's quiet wall is 7.91-8.01 s
 #    at nine.
+#
+#    AND A KILLED RUN IS A FINDING HERE, NOT A SILENT REPAIR (README gap 1788,
+#    the W-28 repair step).  `mutate.py` writes the original bytes to
+#    `.mutate-in-flight` BEFORE it mutates and puts them back in a `finally`,
+#    and `restore_in_flight` puts back whatever it finds AT THE START OF THE
+#    NEXT RUN.  That left a window nothing watched: between a killed run and the
+#    next `mutate.py`, the tree holds a CONSTANT-FOLDED library file that looks
+#    like a commit, and every other check here would pass over it.  DRIVEN by an
+#    independent auditor at W-28, in a clone: a `--gate` run killed mid-build
+#    left `Emit.lean`'s probe definition with the body `0`.  So the sidecar is
+#    tested BEFORE the gate runs and its presence FAILS -- `mutate.py` restores
+#    it, and a gate that quietly repaired the tree and then reported ok is the
+#    shape this campaign has already paid for.  `mutate.py` also handles SIGINT,
+#    SIGTERM and SIGHUP now, so only a SIGKILL or a power cut reaches this.
+if [ -e .mutate-in-flight ]; then
+  say "new definitions mutated" "FAILED"; fail=1
+  echo "  a killed mutate.py left .mutate-in-flight: the library holds a"
+  echo "  constant-folded definition.  Run \`python3 mutate.py --gate\` to"
+  echo "  restore it, then re-run this script."
+else
 out=$( python3 mutate.py --gate 2>&1 )
 if [ $? -eq 0 ]; then
   say "new definitions mutated" "ok  (${out:-no count reported})"
 else
   say "new definitions mutated" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20
+fi
 fi
 
 # 10. The PARITY register has one home, and no number is issued twice.
@@ -605,13 +626,13 @@ fi
 #     was a list of where to look.
 #
 #     FIVE PLANTS, in a scratch copy, each reverted: a second canonical
-#     issuance line for P38 (caught), an unregistered one for P41 (caught),
+#     issuance line for P38 (caught), an unregistered one for `P41` (caught),
 #     two index rows for P20 (caught), P20 deleted from the index (caught by
 #     the CONTIGUITY rule, which is what stops an index going quietly short),
 #     and an anchor moved by one line (caught).  A sixth -- the same issuance
 #     line QUOTED in backticks -- stays green, which is the false positive
 #     6.5's command had.  A SEVENTH WENT GREEN and is why the row half of the
-#     check exists: a bold register row for P41 appended with no issuance line
+#     check exists: a bold register row for `P41` appended with no issuance line
 #     and no index row passed until it was added.
 #
 #     SIX MORE WENT GREEN AND WERE REPAIRED AT THE W-25 REPAIR STEP, all six

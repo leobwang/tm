@@ -6549,6 +6549,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- statement is false of this definition) and
 -- runPlanner_keeps_the_capacity_sections_name_for_an_unreadable_at (gap 1672's unreachable
 -- branch: `Boundary.CapParts` hands the decoded instant out and the second `readAt` is gone).
+#print axioms Tm.PlanWire.runPlanner_passes_a_rows_refusal_through
 #print axioms Tm.PlanWire.runPlanner_answers_the_day
 #print axioms Tm.PlanWire.runPlanner_refuses_a_section_the_decoder_refuses
 #print axioms Tm.PlanWire.runPlanner_refuses_a_planner_section_without_a_capacity
@@ -6561,6 +6562,16 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.diagJson_carries_its_lists
 #print axioms Tm.PlanWire.priosJson_is_the_id_and_the_priority
 #print axioms Tm.PlanWire.the_routine_errors_spell_themselves
+-- W-28 repair: the emitters pinned as FUNCTIONS and not at two points (README gap 1881).
+#print axioms Tm.PlanWire.segJson_is_its_eleven_keys
+#print axioms Tm.PlanWire.flagsJson_is_its_seven_marks
+#print axioms Tm.PlanWire.kindJson_is_the_name_and_the_batch
+#print axioms Tm.PlanWire.idsJson_is_the_list
+#print axioms Tm.PlanWire.optStr_is_null_or_the_id
+#print axioms Tm.PlanWire.priosJson_is_the_id_and_the_priority_of_every_pair
+#print axioms Tm.PlanWire.diagJson_is_its_twelve_fields
+#print axioms Tm.PlanWire.noteJson_writes_every_field
+#print axioms Tm.PlanWire.routineErrName_spells_every_id
 #print axioms Tm.PlanWire.planJson_writes_the_seven_keys
 #print axioms Tm.PlanWire.the_plan_objects_keys_are_disjoint
 #print axioms Tm.PlanWire.planJson_of_a_planned_day_is_the_requests_own_views

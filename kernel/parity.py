@@ -157,6 +157,33 @@ ANY_ROW = re.compile(PAD + r"\|\s*\*{0,2}P(%s)(?: \(refined\))?\*{0,2}\s*\|" % N
 # appended to README.md left the gate green and still printing "next free P40".
 ANY_CITE = re.compile(r"[Pp]arity (?:entry |entries )?\*{0,2}P(%s)\b" % N)
 
+# **ABOVE THE REGISTER'S TOP, ANY `P<n>` IS A FINDING** (the W-28 repair step,
+# README gap 1879).  The three idioms above are an ALLOW-LIST, and a fourth
+# spelling of an unregistered number walked straight through all three: DRIVEN
+# at the repair step, one sentence appended to `kernel/README.md` -- it read
+# `Divergence P41 is recorded here` and `**P42** is its refinement` -- left rc=0 still
+# printing `next free P41` -- the gate handing the next block a number the tree
+# already spells, which is README gap 1417's own failure.
+#
+# THE ALLOW-LIST'S REASON DOES NOT REACH ABOVE THE TOP.  Line 41 of this file
+# says why the three idioms are an allow-list rather than a pattern: a bare
+# `P<n>` is also a stage-6 STEP name, P0-P8, and no regex can tell an issuance
+# from a reference.  That is true FOR SMALL n and only for small n.  There is no
+# step `P41`; above `top` -- the largest number the index or its declared holes
+# hold -- a `P<n>` outside inline code is either an entry nobody registered or a
+# sentence about a number that is still FREE, and the second is an idiom this
+# file can state:
+#
+#     next free P41        a block saying which number the next one gets
+#     P41 still free       the same claim, the other way round
+#
+# Anything else above the top is named.  A QUOTATION goes in backticks, which
+# `strip_code` already removes and which this file already calls the difference
+# between citing a number and issuing one.
+ABOVE = re.compile(r"(?<![\w])P(%s)\b" % N)
+FREE = (re.compile(r"next free \*{0,2}P(%s)\b" % N),
+        re.compile(r"\*{0,2}P(%s)\*{0,2}[ ,]+(?:is |are |remains )?still free" % N))
+
 INLINE_CODE = re.compile(r"`[^`]*`")
 
 
@@ -285,7 +312,7 @@ def main(argv):
     # coverage table rather than a register row -- both are numbers the index
     # already holds, so neither has to be exempted by name.
     issued = {}
-    rows_seen = cites_seen = 0
+    rows_seen = cites_seen = above_seen = 0
     walked = swept()
     for where in walked:
         path = os.path.join(HERE, where)
@@ -322,6 +349,21 @@ def main(argv):
                 if n not in seen and n not in holes:
                     bad.append("%s:%d cites parity P%d and the index has none"
                                % (where, i, n))
+            # **AND ANY `P<n>` ABOVE THE TOP**, whatever idiom it is in.
+            free = set()
+            for pat in FREE:
+                free.update(int(g) for g in pat.findall(clean))
+            for m in ABOVE.finditer(clean):
+                n = int(m.group(1))
+                if n <= top or n in seen or n in holes or n in free:
+                    continue
+                above_seen += 1
+                bad.append("%s:%d spells P%d, above the register's top (P%d), "
+                           "and it is neither registered nor declared free -- "
+                           "either take it with a `**Parity P%d taken**` line "
+                           "and an index row, or write it as `next free P%d`, "
+                           "or put the quotation in backticks"
+                           % (where, i, n, top, n, n))
 
     if bad:
         print("%d parity register problem(s):" % len(bad))

@@ -10519,11 +10519,21 @@ def maxEmittedDays : Nat := 7
 def lookaheadJson (cs : List DayCapacity) : JVal :=
   .obj [("den".toList, unitsJson capDen), ("days".toList, .arr ((cs.take maxEmittedDays).map dayCapJson))]
 
+/-- **The `{"ok": {…}}` shape guard, once** (AGENTS §5.3, the W-28 repair step).  A response this
+kernel adds a key to is an object with ONE key whose value is an object; anything else is
+returned unchanged, because `EmitWire.withPlan` is the only writer of the inner object and a
+response that is not that shape is not one this kernel built.  `withLookahead` here and
+`PlanWire.withPlanner` both wrote that `match` out, character for character, and differed only
+in what they did to `kvs` — which is two definitions of one concept, which is §5.3's bug.  It is
+one definition now, and the difference is the argument. -/
+def intoOk (r : JVal) (f : List (List Char × JVal) → List (List Char × JVal)) : JVal :=
+  match r with
+  | .obj [(k, .obj kvs)] => .obj [(k, .obj (f kvs))]
+  | _ => r
+
 /-- The `ok` object with `lookahead` after its keys. -/
 def withLookahead (r v : JVal) : JVal :=
-  match r with
-  | .obj [(k, .obj kvs)] => .obj [(k, .obj (kvs ++ [("lookahead".toList, v)]))]
-  | _ => r
+  intoOk r (fun kvs => kvs ++ [("lookahead".toList, v)])
 
 /-- An optional natural: `null` when absent. -/
 def optNatJson : Option Nat → JVal

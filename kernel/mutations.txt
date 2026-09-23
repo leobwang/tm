@@ -331,35 +331,35 @@ d77e2a36c100 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.readDropIds default Pla
 0fcea70259c5 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.runPlanner default PlanWire.lean:1205 runPlanner_without_a_planner_section_is_runRows
 007a4c3270cb TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.respondPlanner default PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows
 5f4687fadb88 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callPlanner default,input PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows; PlanWire.lean:1214 callPlanner_without_a_planner_section_is_callRows
-35058b27751f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callExport default,input PlanWire.lean:1488 callExport_is_callPlanner; PlanWire.lean:1488 callExport_is_callPlanner
+35058b27751f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.callExport default,input PlanWire.lean:1615 callExport_is_callPlanner; PlanWire.lean:1615 callExport_is_callPlanner
 2a7a26a6e354 TmKernel/TmKernel/Boundary.lean Tm.LogAnswer.of unfoldable no Inhabited LogAnswer
-76886a760659 TmKernel/TmKernel/Boundary.lean Tm.LogReq.seamRun default,none PlanWire.lean:1454 the_seam_carries_its_run_exactly_when_it_carries_its_facts; PlanWire.lean:1454 the_seam_carries_its_run_exactly_when_it_carries_its_facts
+76886a760659 TmKernel/TmKernel/Boundary.lean Tm.LogReq.seamRun default,none PlanWire.lean:1581 the_seam_carries_its_run_exactly_when_it_carries_its_facts; PlanWire.lean:1581 the_seam_carries_its_run_exactly_when_it_carries_its_facts
 b13f6a87cf97 TmKernel/TmKernel/Boundary.lean Tm.within53A unfoldable no Inhabited (Except LogRefusal LogAnswer)
 e959bfb17d36 TmKernel/TmKernel/Boundary.lean Tm.logOpZ unfoldable no Inhabited (Except LogRefusal LogAnswer)
 2900dae725d7 TmKernel/TmKernel/Boundary.lean Tm.logOpCore unfoldable no Inhabited (Except LogRefusal LogAnswer)
 2fc071a4818f TmKernel/TmKernel/Boundary.lean Tm.logOpZFast unfoldable no Inhabited (Except LogRefusal LogAnswer)
-229ee2664b4f TmKernel/TmKernel/Boundary.lean Tm.runCapZP default Boundary.lean:10880 runCap_answers_with_the_lookahead_and_grants
-43e5857276f5 TmKernel/TmKernel/Boundary.lean Tm.runCapZ default Boundary.lean:10727 runCapP_bytes
-dd1e068d3a37 TmKernel/TmKernel/Boundary.lean Tm.runCapP default Boundary.lean:10718 runCapP_bytes
+229ee2664b4f TmKernel/TmKernel/Boundary.lean Tm.runCapZP default Boundary.lean:10890 runCap_answers_with_the_lookahead_and_grants
+43e5857276f5 TmKernel/TmKernel/Boundary.lean Tm.runCapZ default Boundary.lean:10737 runCapP_bytes
+dd1e068d3a37 TmKernel/TmKernel/Boundary.lean Tm.runCapP default Boundary.lean:10728 runCapP_bytes
 4bf33d15401f TmKernel/TmKernel/EmitWire.lean Tm.EmitWire.runRowsP default EmitWire.lean:605 runRows_without_a_plan_section_is_runCap
-051b8c1dea15 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planKeys default,[] PlanWire.lean:1378 planJson_writes_the_seven_keys; PlanWire.lean:1378 planJson_writes_the_seven_keys
-cbfc499cb80e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindName default,fun_=>[] PlanWire.lean:1283 segJson_writes_every_field_of_a_segment; PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-4b6c7d772588 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.batchOf default,fun_=>[] PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes; PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes
-4871d63b61f8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindJson default PlanWire.lean:1486 readKind_reads_back_every_kind_it_writes
-ef03b951981d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.hashHex default,[] PlanWire.lean:1463 hashHex_length; PlanWire.lean:1463 hashHex_length
-2eacb4715282 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planJson default,[] PlanWire.lean:1378 planJson_writes_the_seven_keys; PlanWire.lean:1378 planJson_writes_the_seven_keys
-f52e537f4d5e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.intoPlan default,funa0_=>a0,fun__=>[] PlanWire.lean:1413 intoPlan_skips_another_key; PlanWire.lean:1413 intoPlan_skips_another_key; PlanWire.lean:1413 intoPlan_skips_another_key
-fed751c2a1ad TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.withPlanner default,r PlanWire.lean:1433 withPlanner_shares_the_plan_object; PlanWire.lean:1433 withPlanner_shares_the_plan_object
+051b8c1dea15 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planKeys default,[] PlanWire.lean:1505 planJson_writes_the_seven_keys; PlanWire.lean:1505 planJson_writes_the_seven_keys
+cbfc499cb80e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindName default,fun_=>[] PlanWire.lean:1294 segJson_writes_every_field_of_a_segment; PlanWire.lean:1294 segJson_writes_every_field_of_a_segment
+4b6c7d772588 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.batchOf default,fun_=>[] PlanWire.lean:1613 readKind_reads_back_every_kind_it_writes; PlanWire.lean:1613 readKind_reads_back_every_kind_it_writes
+4871d63b61f8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.kindJson default PlanWire.lean:1613 readKind_reads_back_every_kind_it_writes
+ef03b951981d TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.hashHex default,[] PlanWire.lean:1590 hashHex_length; PlanWire.lean:1590 hashHex_length
+2eacb4715282 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planJson default,[] PlanWire.lean:1505 planJson_writes_the_seven_keys; PlanWire.lean:1505 planJson_writes_the_seven_keys
+f52e537f4d5e TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.intoPlan default,funa0_=>a0,fun__=>[] PlanWire.lean:1540 intoPlan_skips_another_key; PlanWire.lean:1540 intoPlan_skips_another_key; PlanWire.lean:1540 intoPlan_skips_another_key
+c79267e85135 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.withPlanner default,r PlanWire.lean:1560 withPlanner_shares_the_plan_object; PlanWire.lean:1560 withPlanner_shares_the_plan_object
 fe31b1e760b3 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.planReqOf unfoldable no Inhabited (Except PlannerRefusal Planner.PlanReq)
-ba51cf359896 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.routineErrName default PlanWire.lean:1370 the_routine_errors_spell_themselves
-57096a007aa8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.optNum default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-b29beecd45d2 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.optStr default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-541b450fcf16 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.pairJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-b4f1338db242 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.flagsJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-befa4149ef75 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.noteJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-38e39e2b0797 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.segJson default PlanWire.lean:1283 segJson_writes_every_field_of_a_segment
-e184ce9a3ec8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.idsJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
-1c38f6a51fa9 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.diagJson default PlanWire.lean:1330 diagJson_of_an_untroubled_day
-ae0de0f2010f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.priosJson default PlanWire.lean:1363 priosJson_is_the_id_and_the_priority
+ba51cf359896 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.routineErrName default PlanWire.lean:1383 the_routine_errors_spell_themselves
+b29beecd45d2 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.optStr default PlanWire.lean:1294 segJson_writes_every_field_of_a_segment
+b4f1338db242 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.flagsJson default PlanWire.lean:1294 segJson_writes_every_field_of_a_segment
+befa4149ef75 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.noteJson default PlanWire.lean:1294 segJson_writes_every_field_of_a_segment
+a9664a78aaff TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.segJson default PlanWire.lean:1294 segJson_writes_every_field_of_a_segment
+e184ce9a3ec8 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.idsJson default PlanWire.lean:1343 diagJson_of_an_untroubled_day
+1c38f6a51fa9 TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.diagJson default PlanWire.lean:1343 diagJson_of_an_untroubled_day
+ae0de0f2010f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.priosJson default PlanWire.lean:1376 priosJson_is_the_id_and_the_priority
 53b1ea5fd38f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.coveredAt true,false PlanCheck.lean:3901 coveredAt_iff; PlanCheck.lean:3901 coveredAt_iff
 84966629ecd5 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.holeFreeFrom true,false PlanCheck.lean:3930 holeFreeFrom_iff; PlanCheck.lean:3930 holeFreeFrom_iff
+0684dbc07ea5 TmKernel/TmKernel/Boundary.lean Tm.CapWire.intoOk default,r Boundary.lean:11101 runCap_answers_docs_report_lookahead; Boundary.lean:11101 runCap_answers_docs_report_lookahead
+998f6233a910 TmKernel/TmKernel/Boundary.lean Tm.CapWire.withLookahead default,r Boundary.lean:11101 runCap_answers_docs_report_lookahead; Boundary.lean:11101 runCap_answers_docs_report_lookahead

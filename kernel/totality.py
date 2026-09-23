@@ -124,6 +124,51 @@ INTERP = re.compile(r"(?<![A-Za-z0-9_'])([a-z])!(?=\")")
 # `panic!` is reported once under its own name.  The lookbehind can only ever
 # cause a MISSED SECOND REPORT of a line the row above already catches, never a
 # missed line: if it went wrong, `panic!` still fires.
+# **AND `@[implemented_by]` WAS ONE SPELLING OF A CLASS** (the W-28 repair step,
+# README gap 1875).  R4 bans "the compiled implementation is not the Lean
+# definition" and gave `@[implemented_by]` as its spelling, so the list held
+# exactly that spelling.  `@[extern "sym"] def f .. := <lean body>` has exactly
+# the same effect -- every proof and every `#print axioms` sees the Lean body
+# while the linked archive runs the C symbol -- and it was UNBANNED.  DRIVEN in
+# a `git archive HEAD` clone: `@[extern "tm_evil_probe"] def w28ExternProbe
+# (n : Nat) : Nat := n` appended to `Emit.lean` left this file at rc=0.  Pointed
+# at a symbol the archive already defines it links and runs.  That is W-27's
+# finding -- the proof layer cannot see WHICH definition the archive exports --
+# reached on the BODY, and R4's own row records the precedent: the `!`-accessors
+# were a two-example list and six members of the class walked through it.
+#
+# SO THE ATTRIBUTES ARE AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT ONE YOU JOIN
+# TO BE BANNED.  A longer ban list would be the ninth instance of the shape this
+# campaign keeps paying for: it would need a row for `@[extern]`, then for
+# `@[init]`, `@[builtin_init]`, `@[never_extract]`, `@[macro_inline]` and for
+# whatever a later toolchain adds.  `ALLOWED_ATTRS` below is the whole set this
+# kernel uses, and ANY OTHER attribute is reported BY NAME.
+#
+#   simp       a rewrite-rule tag.  It cannot change a definition; it changes
+#              what `simp` tries.  20 live.
+#   csimp      a COMPILER simp lemma -- and it is the one entry that touches
+#              the compiled body, which is why it is safe: `@[csimp] theorem
+#              f_eq : f = fFast` is a PROVED equality, so the body the archive
+#              runs is provably the Lean definition.  84 live.
+#   reducible  a unfolding-transparency tag.  2 live.
+#   export     R9's one symbol -- it EXPOSES the Lean body under a C name; it
+#              does not replace it.  1 live, and `PlanWire.callExport` is it.
+#
+# THE COST IS DECLARED, and it is the cost every residue rule in this gate has:
+# an attribute that is HARMLESS but new -- `@[inline]`, `@[specialize]` -- fails
+# this check until somebody adds it above with a sentence saying why it cannot
+# change what the archive runs.  That is one line and a reason, and the
+# alternative is a ban list that is complete only against the members somebody
+# has already thought of.
+#
+# WHAT IT CANNOT SEE: an attribute applied by the `attribute [..] name` COMMAND
+# rather than in an `@[..]` block (the library writes none -- grepped at the
+# repair step, 0 occurrences of the `attribute` keyword in stripped source), and
+# a `deriving` clause, which is a different grammar and instantiates rather than
+# replaces.
+ALLOWED_ATTRS = {"simp", "csimp", "reducible", "export"}
+ATTR_BLOCK = re.compile(r"@\[([^\]]*)\]")
+
 BANNED = [
     (r"\bpartial\s+def\b", "partial def"),
     (r"\baxiom\b", "axiom (HARD RULE: no new axiom)"),
@@ -135,6 +180,20 @@ BANNED = [
     (r"\bopaque\b", "opaque (R4)"),
     (r"\bimplemented_by\b", "@[implemented_by] (R4)"),
     (r"\.toOption", ".toOption"),
+    # **AN UNAUDITABLE PROOF** (the W-28 repair step, README gap 1883).  check 3
+    # reconciles the DECLARED theorems against the `#print axioms` lines, and
+    # `leanfiles.THEOREM` is the keyword token `theorem` -- one declaration
+    # keyword.  `example` is the member of the proof-carrying class that can
+    # never be reconciled, because it has no name to audit: an `example` whose
+    # proof depended on `sorryAx` would be invisible to check 3 by
+    # construction.  0 live in this library, so banning it costs nothing and
+    # closes the half of gap 1883 that is closeable here.  The OTHER half --
+    # a `def`, `abbrev` or `instance` whose TYPE is a Prop, which `#print
+    # axioms` accepts and the roster does not demand -- needs the library
+    # ELABORATED to decide which types are Props, and that is gap 1883's own
+    # shape.  Nothing leaks today because the bare token `sorry` is banned
+    # above, in every file but `Goals.lean`.
+    (r"(?<![\w'?!.\u00AB])example(?![\w'?!])", "example (an unauditable proof, R4/check 3)"),
 ]
 
 # THE ENUMERATION IS `leanfiles.lean_files`, and it is not this file's any more
@@ -175,6 +234,20 @@ for p in sorted(files):
     for pat, name in BANNED:
         for m in re.finditer(pat, code):
             hits.add((bisect.bisect_right(nl, m.start()) + 1, name))
+    # THE ATTRIBUTE RULE, and it is a residue and not a list: every attribute
+    # this kernel uses is in `ALLOWED_ATTRS` with a sentence, and anything else
+    # is named here.  A block may hold several (`@[simp, csimp]`); the leading
+    # token of each comma-separated entry is the attribute's NAME and the rest
+    # is its argument (`export tm_kernel_call`, `extern "sym"`).
+    for m in ATTR_BLOCK.finditer(code):
+        for entry in m.group(1).split(","):
+            word = entry.split()
+            if not word:
+                continue
+            if word[0] not in ALLOWED_ATTRS:
+                hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                          "@[%s] -- not in ALLOWED_ATTRS (R4: the compiled "
+                          "implementation must be the Lean definition)" % word[0]))
     for n, name in sorted(hits):
         print(f"{p}:{n}: banned: {name}")
         bad += 1
