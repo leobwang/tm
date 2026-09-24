@@ -5826,6 +5826,16 @@ theorem the_builder_accepts_a_running_block_it_never_checked (x : PlanReqIn) (r 
       Bool.and_eq_false_iff]
     exact Or.inl (decide_eq_false (by omega))
 
+/-- **`PlanCheck.DecoderPays`' fifth clause and its R10 bound, at the census request** (W-30
+repair, README gap 2133).  The census request carries no candidates at all, so `candsAgree`
+holds of it for nothing (`PlanCheck.candsAgree_of_no_cands`) — which is exactly why this witness
+is *not* what makes the fifth clause non-vacuous.  `the_paying_request_pays_the_decoder`
+is; this one only keeps the census witness compiling against the widened structure. -/
+theorem the_census_request_pays_the_fifth_clause :
+    PlanCheck.candsAgree theCensusRequest = true ∧
+      theCensusRequest.windDownSec < LogStamp.yearEnd := by
+  refine ⟨by decide, by decide⟩
+
 /-- **The fourth axis is inhabited**, which is what keeps `dayPlan_ok_on_the_whole_day_of_a
 _paying_decoder_on_an_unassigned_day` from being AGENTS §5.2's theorem about an empty hypothesis.  Every clause is
 an existing theorem: nothing is re-proved here, and the `walls` one comes from the builder
@@ -5835,6 +5845,8 @@ theorem the_census_request_pays_the_decoder : PlanCheck.DecoderPays theCensusReq
   active := the_census_request_agrees.1
   day    := the_census_request_agrees.2
   nowCal := the_census_request_is_inside_the_calendar
+  cands  := the_census_request_pays_the_fifth_clause.1
+  windDownCal := the_census_request_pays_the_fifth_clause.2
 
 /-! ### The segment-free hole, computed on the day this kernel produces (README gap 1529) -/
 
@@ -6384,6 +6396,21 @@ theorem the_paying_request_is_plain :
     subst hb
     exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
 
+/-- **The fourth axis is inhabited AT A DAY THAT ASSIGNS, fifth clause and all** (W-30 repair,
+README gap 2133).  `the_census_request_pays_the_decoder` pays `candsAgree` for nothing — the
+census request carries no candidates — so before this witness the widened `PlanCheck.DecoderPays`
+would have been AGENTS §5.2's structure with one vacuous field.  `thePayingRequest` carries a
+candidate, fills a slot, and pays every one of the five; the lift below is now stated through
+the axis rather than through five loose hypotheses, which is the composition the whole of W-30
+turned on. -/
+theorem the_paying_request_pays_the_decoder : PlanCheck.DecoderPays thePayingRequest where
+  walls  := thePayingRequest_wallsAgree
+  active := the_paying_request_agrees.1
+  day    := the_paying_request_agrees.2.1
+  nowCal := the_paying_request_agrees.2.2.1
+  cands  := the_paying_request_assigns_and_the_battery_passes.1
+  windDownCal := the_paying_request_agrees.2.2.2
+
 set_option maxRecDepth 400000 in
 /-- **§6.1's lift, fired at a day that ASSIGNS.**  Every hypothesis of
 `PlanCheck.dayPlan_ok_core_given_the_budget` is supplied by a theorem above and `hpay` comes
@@ -6393,12 +6420,9 @@ non-vacuous (AGENTS §7.4 item 2): before W-30 its domain was the days the fold 
 a day the fold left alone has no row for five of its seven conjuncts to be about. -/
 theorem the_lift_applies_at_the_paying_request :
     PlanCheck.planOkCore thePayingRequest (dayPlan thePayingRequest) = true :=
-  PlanCheck.dayPlan_ok_core_given_the_budget thePayingRequest
-    thePayingRequest_wallsAgree the_paying_request_agrees.1 the_paying_request_agrees.2.1
-    the_paying_request_agrees.2.2.1
+  PlanCheck.dayPlan_ok_core_of_a_paying_decoder thePayingRequest
+    the_paying_request_pays_the_decoder
     (by rw [the_paying_request_is_quiet]; simp)
-    (PlanCheck.AssignedRowsPay_of_a_paying_decoder thePayingRequest
-      the_paying_request_assigns_and_the_battery_passes.1 the_paying_request_agrees.2.2.2)
     the_paying_request_assigns_and_the_battery_passes.2.2.2.2.2.2.1
     the_paying_request_is_plain
 

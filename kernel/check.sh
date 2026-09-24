@@ -701,15 +701,28 @@ fi
 #     differ only in the wire key they spell one body), and a group under one
 #     key survives only if neither of these answers it:
 #
-#       * the definition is NULLARY -- a named value, and two names for one
-#         value are two fixture roles or two bounds, not two concepts;
-#       * the compiler EMITS DIFFERENT CODE for the two.  That is the exemption
-#         the five `@[csimp]` pairs needed and that nobody had ever checked: a
-#         `@[csimp]` lemma rewrites the callees of every definition compiled
-#         AFTER it, so `edfFast` -- character-identical to `edf` -- compiles to
-#         a call to `edfCapsFast` while `edf` keeps `edfCaps`, and deleting the
-#         copy would silently deoptimise the original.  Read out of `lake`'s own
-#         `.lake/build/ir`, which is why this check runs after check 1.
+#       * the definition is NULLARY *and not a function* -- a named value, and
+#         two names for one value are two fixture roles or two bounds, not two
+#         concepts.  "Nullary" was the SPELLING `sig.startswith(":")` until the
+#         W-30 repair, under which `def f : A -> B := fun ..` was a named value;
+#         it is now the type and the body (gap 2128);
+#       * the compiler EMITS DIFFERENT CODE for the two AND THE EXPORT REACHES
+#         ONE OF THEM.  That is the exemption the `@[csimp]` pairs needed, and
+#         **only its first half had ever been checked** (gap 2126): this comment
+#         said "deleting the copy would silently deoptimise the original" and
+#         named `edf` and its twin, and rooted at the export NEITHER is among
+#         the 2,092 reachable of 11,949 emitted C functions -- there was no call
+#         to deoptimise.  `twins.py` now walks the emitted call graph, the three
+#         pairs where the fast twin IS reached keep the exemption, and edfFast
+#         and edfGrantsFast were DELETED with their two `rfl` lemmas rather
+#         than exempted.  Read out of `lake`'s own `.lake/build/ir`, which is
+#         why this check runs after check 1.
+#
+#     AND THE POPULATION IS EVERY `def`, not every `def` spelled with a `:=`
+#     (gap 2127).  `bodies()` dropped the 400 declarations written with match
+#     arms -- 13% of the library's 3,044 -- on a silent `continue`, and printed
+#     "2644 def bodies" with no residue beside it.  A declaration this key
+#     cannot split is now COUNTED and FAILS the check.
 #
 #     It found ONE group that nothing answers, and it was a live duplicate
 #     README gap 1956 had already named and not taken: Tm.isDemotedRecord
@@ -717,10 +730,14 @@ fi
 #     (Plan.lean), D8's rule written twice in two modules.  The Close copy is deleted and its three
 #     sites read the Plan definition.
 #
-#     THE COST IS DECLARED AND MEASURED, NOT QUOTED.  0.75-0.76 s (three runs,
-#     this machine) inside a 13.26-15.03 s eleven-check wall (FOUR runs, warm
-#     tree, same session; the 15.03 followed a python run and the other three
-#     were back to back) -- 5.3-6.1% of the ten-check wall it is added to,
+#     THE COST IS DECLARED AND MEASURED, NOT QUOTED, AND IT WENT UP.  It was
+#     0.75-0.76 s; the reachability walk reads the whole of `.lake/build/ir`
+#     once and cached, and three runs at the W-30 repair measure **1.45, 1.46
+#     and 1.50 s** -- about +0.7 s on a 13.26-15.03 s eleven-check wall (FOUR
+#     runs, warm tree, same session; the 15.03 followed a python run and the
+#     other three were back to back), so ~5% more wall for the half of E2 that
+#     had never been checked.  Re-measure it, do not quote it (5.11).
+#     The older figure was 5.3-6.1% of the ten-check wall it was added to,
 #     inside design 14.0 item 4's 10%-per-step rule.  (A first draft of this comment
 #     said "about 12%", computed against the 7.91-8.01 s wall check 9's comment
 #     records for an older machine.  That is README gap 871's class -- a

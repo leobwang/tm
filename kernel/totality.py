@@ -354,14 +354,51 @@ def command_positions(code):
 # SO THE INDENTED RULE ASKS LEAN'S OWN GRAMMAR.  A word at a MAY-begin position
 # is refused when it is a word Lean declares a command by -- and that set is
 # READ OUT OF THE PINNED TOOLCHAIN'S PARSER SOURCES, not written here.  Nothing
-# has to be added for `macro_rules`, for `register_builtin_option`, or for a
-# command a later toolchain invents: the set comes from the toolchain that
-# compiles this kernel, and a toolchain that adds a command adds it here.
+# has to be added for `macro_rules` or for a command a later toolchain invents:
+# the set comes from the toolchain that compiles this kernel, and a toolchain
+# that adds a command adds it here.
 #
-# THE DERIVATION, and it is three sentences of Lean's own convention:
+# **AND THAT SENTENCE NAMED `register_builtin_option` AND WAS FALSE OF IT**
+# (W-30 repair, README gap 2125).  The derivation read ONE of Lean's two ways of
+# declaring a command -- a `def` carrying `@[builtin_command_parser]` -- and
+# `register_builtin_option` is declared the other way, `macro (name :=
+# registerBuiltinOption) .. : command` at `Lean/Data/Options.lean:228`.  So the
+# file written to close "a claim of having checked that was never made" made
+# one, about the very keyword it named.  MEASURED: the parser-`def` derivation
+# yields 52 keywords and the `: command` SYNTAX CATEGORY yields 66, of which 66
+# are new -- 118 in the union.  Among the 66: `run_cmd`, `run_elab`, `run_meta`,
+# `seal`, `unseal`, `test_extern`, `reprove`, `register_builtin_option`.
+#
+# THE FIRST THREE ELABORATE ARBITRARY METACODE, AND THAT IS A NEW AXIOM PAST
+# EVERY GATE.  DRIVEN in a `git archive HEAD` clone against the built library
+# (`LEAN_PATH=kernel/TmKernel/.lake/build/lib/lean`, 8G, timeout 300): a file
+# whose `section` holds an INDENTED `run_cmd liftCoreM <| Lean.addDecl
+# (Lean.Declaration.axiomDecl { name := w30Planted, .. type := mkConst ``False
+# .. })` elaborates at rc=0 and prints that the planted name depends on an axiom
+# of its own, and the same for a `theorem w30Anything : (1:Nat) = 2` proved from
+# it.  The word `axiom` never appears, so the
+# `axiom` token row below never fires; check 3 fails on `sorryAx` and the
+# planted axiom is not `sorryAx`.  Before this repair `totality.py
+# TmKernel/TmKernel TmKernel` gave rc=0 and NO OUTPUT on that file; with
+# `run_cmd` moved to COLUMN ZERO it gave rc=1.  The escape was the indentation
+# -- exactly the hole W-30 track A opened (gap 2091), closed for seven commands
+# and left open for this one because the KEYWORD SET, not the position, was
+# short.  After this repair the same file is named at rc=1 indented.
+#
+# THE FIX IS THE SECOND DERIVATION, NOT EIGHT MORE NAMES.  A command keyword is
+# a word a `syntax`/`macro`/`elab` declaration in the `command` CATEGORY
+# consumes first, as much as it is one a `@[builtin_command_parser] def`
+# consumes first, and both are read out of the pin.
+#
+# THE DERIVATION, and it is four sentences of Lean's own convention:
 #
 #   * a command parser is a `def` carrying `@[builtin_command_parser]` (or
 #     `@[command_parser]`).  FOUR files of `src/lean` declare one.
+#   * a command is ALSO declared by a `syntax`, `macro` or `elab` whose
+#     declaration head ends `: command` (before its `=>`, and with string
+#     literals masked so the ` " : " ` inside `register_builtin_option`'s own
+#     head is not read as the category).  Its keyword is the first string
+#     literal of that head.
 #   * its KEYWORD is the parser's «»-escaped name where it has one -- Lean
 #     escapes exactly the names that are reserved words -- and otherwise the
 #     first string literal of its body, which is the token it consumes first.
@@ -409,6 +446,46 @@ KEYWORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
 # not one of these and not a parser this scan saw is simply ignored, so the list
 # only ever costs a keyword it cannot reach -- never a false one.
 CORE_COMB = {"leading_parser", "trailing_parser"}
+# A SYNTAX DECLARATION's head: the declaring command, through its modifiers and
+# its attribute block.  `scoped`/`local`/`builtin`/`private`/`protected` are the
+# modifiers this toolchain spells in front of one.
+CORE_SYNTAX = re.compile(
+    r"(?m)^[ \t]*(?:@\[[^\]]*\][ \t\r\n]*)?"
+    r"(?:(?:scoped|local|private|protected|builtin)[ \t]+)*"
+    r"(?:syntax|macro|elab)(?![\w'!?])")
+# A string literal, ESCAPES INCLUDED -- the masking below must not stop inside
+# one, or a head holding `" := "` would be cut in the wrong place.
+CORE_STRQ = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+# The category a syntax declaration declares INTO, at the end of its head.
+CORE_CAT = re.compile(r":[ \t]*command[ \t]*$")
+
+
+def _syntax_head(text, start):
+    """The declaration head at `start`: its own line and indented continuations,
+    cut at the `=>` that ends it, with string literals MASKED."""
+    rest = text[start:start + 4000]
+    masked = CORE_STRQ.sub(lambda m: '"' + "@" * (len(m.group(0)) - 2) + '"', rest)
+    acc = ""
+    for k, line in enumerate(masked.split("\n")):
+        if k and (line[:1] not in (" ", "\t") or "=>" in acc):
+            break
+        acc = line if not k else acc + "\n" + line
+    if "=>" in acc:
+        acc = acc[:acc.index("=>")]
+    return acc, rest
+
+
+def _syntax_command_keywords(text):
+    """Every keyword a `: command` syntax declaration in `text` consumes first."""
+    for m in CORE_SYNTAX.finditer(text):
+        head, rest = _syntax_head(text, m.end())
+        if not CORE_CAT.search(head.rstrip()):
+            continue
+        lit = CORE_STRQ.search(rest[:len(head)])
+        if lit:
+            word = lit.group(0)[1:-1].strip()
+            if KEYWORD.match(word):
+                yield word
 
 
 def command_keywords():
@@ -421,10 +498,13 @@ def command_keywords():
     if _KEYWORDS:
         return _KEYWORDS[0]
     src = leanfiles.toolchain_src()
-    parsers, commands = {}, []
+    parsers, commands, from_syntax = {}, [], set()
     for path in sorted(src.rglob("*.lean")):
         text = path.read_text(encoding="utf-8", errors="replace")
-        if "command_parser" not in text:
+        has_parser = "command_parser" in text
+        if ": command" in text or ":command" in text:
+            from_syntax.update(_syntax_command_keywords(text))
+        if not has_parser:
             continue
         for m in CORE_DEF.finditer(text):
             attr, name, body = m.group(1) or "", m.group(2), m.group(3)
@@ -452,19 +532,34 @@ def command_keywords():
                 for lit in CORE_STR.finditer(parsers[ref.group(1)]):
                     if KEYWORD.match(lit.group(1).strip()):
                         kws.add(lit.group(1).strip())
-    # THE FLOOR.  Not a second list of what is banned -- these are the seven
-    # commands W-29 and W-30 each DROVE an escape with, plus the declaration
-    # keywords every Lean file spells, so a derivation that has stopped working
-    # says so here instead of reporting a clean library.
-    floor = {"macro", "macro_rules", "syntax", "elab", "notation", "initialize",
-             "builtin_initialize", "attribute", "theorem", "abbrev", "instance",
-             "namespace", "section", "end", "open", "set_option"}
-    if not floor <= kws or len(kws) < 40:
-        raise SystemExit(
-            "totality.py: the command-keyword derivation no longer reads %s -- "
-            "%d keywords, missing %s.  The residue below would be silent."
-            % (src, len(kws), sorted(floor - kws)))
-    _KEYWORDS.append(frozenset(kws))
+    # THE FLOOR, AND IT IS ONE PER DERIVATION (W-30 repair, gap 2125).  Not a
+    # second list of what is banned -- these are the commands W-29 and W-30 each
+    # DROVE an escape with, plus the declaration keywords every Lean file
+    # spells.  Asserting the union would let EITHER derivation rot silently
+    # while the other carried the floor, which is how the parser-`def` half came
+    # to be the only half: each floor is checked against its OWN source, so a
+    # derivation that has stopped working says so here instead of reporting a
+    # clean library.
+    parser_floor = {"macro", "macro_rules", "syntax", "elab", "notation",
+                    "initialize", "builtin_initialize", "attribute", "theorem",
+                    "abbrev", "instance", "namespace", "section", "end", "open",
+                    "set_option"}
+    # Declared `syntax .. : command` (the first four) and `macro .. : command`
+    # (`register_builtin_option`, which this file's own header used to name as
+    # covered and was not).  `run_cmd`, `run_elab` and `run_meta` each elaborate
+    # arbitrary `CommandElabM`, which is how a NEW AXIOM was driven past every
+    # gate in this tree.
+    syntax_floor = {"run_cmd", "run_elab", "run_meta", "unseal", "seal",
+                    "test_extern", "reprove", "register_builtin_option"}
+    for what, got, floor, least in (
+            ("@[builtin_command_parser] def", kws, parser_floor, 40),
+            ("a `: command` syntax declaration", from_syntax, syntax_floor, 50)):
+        if not floor <= got or len(got) < least:
+            raise SystemExit(
+                "totality.py: the command-keyword derivation no longer reads %s "
+                "out of %s -- %d keywords, missing %s.  The residue below would "
+                "be silent." % (what, src, len(got), sorted(floor - got)))
+    _KEYWORDS.append(frozenset(kws | from_syntax))
     return _KEYWORDS[0]
 
 BANNED = [

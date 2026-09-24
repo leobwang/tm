@@ -318,6 +318,16 @@ set_option
 termination_by
 decreasing_by
 
+# The ONE EXPORT'S C SYMBOL.  `tm_kernel_call` is the argument of an `@[export]` attribute, not
+# a Lean declaration: no `def` declares it, source 6 cannot resolve it, and every citation of
+# it names the real thing the host dials.  It stood as a counted entry (8) in section 4 until
+# the W-30 repair step rooted `twins.py`'s reachability walk at it -- E2's exemption is now
+# "the emitted bytes differ AND the export reaches one of them", so the prose that states that
+# property, in `twins.py`, in `check.sh`, in `Capacity.lean` and in `README.md`, names the root
+# every time it states it.  OPENED, not bumped: the header says the honest move for a name
+# cited once more is to move it up here with a reason, and being the call graph's root is one.
+tm_kernel_call
+
 # Three more keywords, adjudicated at the W-29 track-A step, where `totality.py`'s command
 # residue had to NAME the commands it refuses.  `partial_fixpoint` is Lean 4.33's second way
 # of writing a definition whose recursion it did not have to justify -- the member of R4's
@@ -327,6 +337,18 @@ decreasing_by
 partial_fixpoint
 macro_rules
 builtin_initialize
+
+# Four more KEYWORDS, adjudicated at the W-30 repair step for the same reason and by the same
+# rule: `totality.py`'s command residue derived its keyword set from ONE of Lean's two ways of
+# declaring a command and missed the other, and the sentence recording that has to name the
+# commands that escaped.  All four are declared `syntax .. : command` in the pinned toolchain,
+# none is a declaration, and no `def` declares them.  `run_cmd`, `run_elab` and `run_meta`
+# elaborate arbitrary metacode, which is how a new axiom was driven past every gate in a clone;
+# `test_extern` is the fourth the derivation names in its own measurement.
+run_cmd
+run_elab
+run_meta
+test_extern
 
 # A naming CONVENTION, not one declaration: `can_fail` is the suffix eleven real checker
 # witnesses carry (`noOverbook_can_fail`, `monotoneInRank_can_fail`, …) and the sentence names
@@ -638,7 +660,6 @@ can_fail
 2 stepSkel_stamps
 3 the_log_op_answers_every_entrys_day
 1 the_response_run_emits_parses_back
-8 tm_kernel_call
 2 to_string
 6 to_string_pretty
 1 too_big

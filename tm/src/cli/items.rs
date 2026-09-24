@@ -322,7 +322,27 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     let mut line = ItemLine::parse(&text).map_err(|e| CliError::msg(e.to_string()))?;
     let mut id = line.id().unwrap_or_default();
     let mut taken = ctx.taken_ids();
-    if id.is_empty() && !horizon.allows_missing_state() {
+    // **AN ID IS OWED BY THE LINE, NOT BY THE FILE** (W-30 repair, README gap
+    // 2132). This read `!horizon.allows_missing_state()`, which is §17.2's rule
+    // about the STATE — `routines.md`, `optional.md` and `inbox.md` lines may be
+    // bare — and used it as the rule about the ID. They are different rules, and
+    // the kernel enforces the second one everywhere: a line that carries a state
+    // BOX must carry an `^id` or the whole tree refuses to load (`Tm.PErr.noId`).
+    // DRIVEN on the binary built from 0e5d1da, in a fresh `tm init` tree: `tm add
+    // "- [ ] write the audit report est:2b ci:3"` wrote that text verbatim to
+    // `inbox.md:11` at **rc=0**, and every following verb then refused the whole
+    // tree — `tm add` and `tm plan` at rc=1 with `badLine — inbox.md:11 looks
+    // like an item but does not parse (Tm.PErr.noId)`, `tm check` at rc=2. That
+    // is §5.13's stated failure class: a plausible keystroke that neither works
+    // nor says so at the time. (`tm undo` did restore it exactly, and the refusal
+    // named that recovery, so nothing was ever lost — but the tree was bricked
+    // until the operator read the next verb's output.) So the test is the LINE's
+    // own state token: a bare inbox capture still gets no id, and a boxed one
+    // gets the id the kernel demands, from the same generator as every other
+    // target. `tm add --to week` had always assigned one; this makes the inbox
+    // agree with it instead of writing a line the kernel cannot read.
+    let boxed = line.index_of(&grammar::TokenKind::State).is_some();
+    if id.is_empty() && (!horizon.allows_missing_state() || boxed) {
         let mut gen = id_gen(&ctx, raw);
         id = gen.next_id(&mut taken);
         line.append_id(&id);

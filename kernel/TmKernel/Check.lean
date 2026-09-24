@@ -3154,8 +3154,6 @@ open Tm
 #print axioms Tm.edfCaps_eq_edfCapsFast
 #print axioms Tm.reserveRest_eq_reserveRestFast
 #print axioms Tm.reserveOut_eq_reserveOutFast
-#print axioms Tm.edf_eq_edfFast
-#print axioms Tm.edfGrants_eq_edfGrantsFast
 #print axioms Tm.Look.enterOf_eq_some
 #print axioms Tm.Look.mem_entering
 #print axioms Tm.Look.insertDueIx_snd
@@ -6475,6 +6473,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.a_zero_length_row_cannot_cover_an_instant
 #print axioms Tm.PlanCheck.holeFree_of_no_rows
 #print axioms Tm.PlannerWit.the_census_request_pays_the_decoder
+#print axioms Tm.PlannerWit.the_census_request_pays_the_fifth_clause
 #print axioms Tm.PlannerWit.the_future_half_is_not_the_whole_day
 #print axioms Tm.PlannerWit.the_hole_property_is_blind_to_a_leading_remainder
 
@@ -6748,6 +6747,10 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.an_assigned_members_ci_is_under_its_slots_energy
 #print axioms Tm.PlanCheck.an_assigned_members_ci_after_the_wind_down
 #print axioms Tm.PlanCheck.AssignedRowsPay_of_a_paying_decoder
+-- W-30 repair (gap 2133): the fourth axis carries the fifth clause, and these two
+-- lifts discharge `hpay` from it over a day that ASSIGNS.
+#print axioms Tm.PlanCheck.dayPlan_ok_core_of_a_paying_decoder
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_of_a_paying_decoder
 -- and the property the hypothesis was replaced by, audited the way `Tm.WfPlan` is (6.3).
 #print axioms Tm.PlanCheck.AssignedRowsPay
 -- W-30 (track G): the witness the lift needed and nine runs did not have -- a request that
@@ -6760,6 +6763,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.thePayingRequest_wallsAgree
 #print axioms Tm.PlannerWit.the_paying_request_is_quiet
 #print axioms Tm.PlannerWit.the_paying_request_is_plain
+#print axioms Tm.PlannerWit.the_paying_request_pays_the_decoder
 #print axioms Tm.PlannerWit.the_lift_applies_at_the_paying_request
 #print axioms Tm.PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted
 -- W-30 (track G): and the correction of W-29's own count -- "theBusyRequest is the only

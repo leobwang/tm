@@ -43,8 +43,8 @@ enters as `need · den` numerator units.  Why one denominator:
 * **What the compiled code runs** (stage 5 D10 L8, gap 106): proved `@[csimp]` twins at the end of
   the file, a `foldl` over the deadlines and an accumulator over the days that holds each reserved
   day's six numerators once (`edfGrantsGo_eq_edfGrantsGoFast`, `edfCaps_eq_edfCapsFast`,
-  `reserveRest_eq_reserveRestFast`, `availUntil_eq_availUntilFast`, `reserveOut_eq_reserveOutFast`,
-  `edf_eq_edfFast`, `edfGrants_eq_edfGrantsFast`).  Every theorem here is about the definitions.
+  `reserveRest_eq_reserveRestFast`, `availUntil_eq_availUntilFast`, `reserveOut_eq_reserveOutFast`).
+  Every theorem here is about the definitions; `edf`/`edfGrants` have no twin (gap 2126).
 
 ## Not here, by name
 
@@ -1279,8 +1279,8 @@ compiled program is that definition (the stage-4 `Fast.lean` device).
 * `edfStepFast`: one deadline's grant and reservation; `edfGrantsGoFast` and `edfCapsFast` are one
   `foldl` over the deadlines.
 
-`edf`, `edfGrants`, `availUntil`, `reserveRest` and `reserveOut` were compiled before these lemmas, so
-each gets a twin compiled after them, with a `csimp` lemma of its own. -/
+`availUntil`, `reserveRest` and `reserveOut` were compiled before these lemmas, so each gets a twin
+compiled after them, with a `csimp` lemma of its own.  `edf`/`edfGrants` do NOT: nothing calls them (gap 2126). -/
 
 /-- Six numerators, held: a `DayCapacity`'s `numAt` is a function, so a level read re-runs what
 built it; `NumSix` is built once and read in constant time. -/
@@ -1404,16 +1404,16 @@ def reserveOutFast (due : Day) (ci : Fin 6) (caps : List DayCapacity) (left : Na
   rw [reserveOut_eq, availUntil_eq_availUntilFast]
   rfl
 
-/-- `edf`, compiled after `edfCaps_eq_edfCapsFast`. -/
-def edfFast (den : Den) (caps : List DayCapacity) (ds : List Deadline) : List DayCapacity :=
-  edfCaps den.val caps (sortDue ds)
-
-@[csimp] theorem edf_eq_edfFast : @edf = @edfFast := rfl
-
-/-- `edfGrants`, compiled after `edfGrantsGo_eq_edfGrantsGoFast`. -/
-def edfGrantsFast (den : Den) (caps : List DayCapacity) (ds : List Deadline) : List Grant :=
-  edfGrantsGo den.val caps (sortDue ds)
-
-@[csimp] theorem edfGrants_eq_edfGrantsFast : @edfGrants = @edfGrantsFast := rfl
+/-! **`edf` AND `edfGrants` GOT NO TWIN, AND THE TWINS THEY HAD WERE DEAD CODE** (W-30 repair,
+README gap 2126).  edfFast and edfGrantsFast stood here with `@[csimp]` lemmas proved by `rfl`,
+justified -- in `twins.py`, in `check.sh` and in this file's own header -- by "deleting the copy
+would silently deoptimise the original".  There was no call to deoptimise: rooted at
+`tm_kernel_call`, NEITHER `Tm.edf` NOR its deleted twin is among the 2,092 reachable emitted functions,
+and each symbol occurs three times in `.lake/build/ir` -- a prototype, its own body and its own
+`___boxed` wrapper.  What the export reaches is `edfCapsFast` (through `Look.passLeft`) and
+`edfStepFast`; `edf` and `edfGrants` survive as the SPEC those are proved equal to, in
+`Lookahead.passLeft_is_edf` and its neighbours.  So the two twins and their two lemmas are deleted
+rather than exempted, and `twins.py` now asks whether the export reaches a twin before it believes
+that deleting one would cost anything. -/
 
 end Tm

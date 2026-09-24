@@ -4225,38 +4225,38 @@ is a **different** property and this one is not it. -/
 theorem holeFree_of_no_rows (r : PlanReq) (d : DayPlan) (h : d.segments = []) :
     holeFree r d = true := by simp [holeFree, h]
 
-/-- **What the request DECODER owes §6.1's lift** — the fourth axis, named the way `PastPays`
-and `WallsArePlain` name theirs.  Four clauses, none of them a `∀` over the request: three
-decidable `Bool`s and one `Nat` comparison.  README gap **346** is the gap that closes it, and
-`PlannerWit.mkPlanReq?_ok_wallsAgree` is the only one of the four with a caller today. -/
-structure DecoderPays (r : PlanReq) : Prop where
-  /-- The request's wall index is its own plan's (`PlanReq.wallsAgree`). -/
-  walls  : r.wallsAgree = true
-  /-- A running block the request carries is one `Planner.mkActive?` would have built
-  (`PlanReq.activeAgrees`). -/
-  active : r.activeAgrees = true
-  /-- The `[day]` the request carries is one `Look.mkDayCfg?` would have built
-  (`PlanReq.dayAgrees`). -/
-  day    : r.dayAgrees = true
-  /-- `now` is inside the calendar, which is what lets a clause written over the log be read
-  off the row the day holds (`segOf_replayed`). -/
-  nowCal : r.now.sec + 1 < LogStamp.yearEnd
+/-! ### `DecoderPays` IS DECLARED AT THE END OF THIS FILE, WITH `candsAgree`
 
-/-- **§6.1's eleven on the whole day, with every axis named and no loose hypothesis left.**
+It stood HERE with FOUR fields, and its own doc comment said *"Four clauses, none of them a `∀`
+over the request"*.  The fifth obligation W-30 introduced — `candsAgree`, the clause
+`AssignedRowsPay_of_a_paying_decoder` consumes and the one the whole composition step turns on
+— was in none of them, and was threaded by hand through `energyFilterOk_of_a_day_that_pays`,
+`noDemandingAfterWindDown_of_a_day_that_pays` and `plan_respects_the_energy_filter` instead.
+So the axis that exists to say what the REQUEST owes did not say the thing the request was made
+to owe (W-30 repair, README gap 2133).
 
-Four bounds, four names: the eligibility one by `FromNowAnchored` (W-23), the log one by
-`PastPays` (W-24), the wall one by `WallsArePlain` (W-25), the request one by `DecoderPays`
-(here).  `dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day` is the same statement with the four
-clauses spelled out, kept because every existing caller spells them. -/
-theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day {el : Eligible}
-    (hfn : FromNowAnchored el) (r : PlanReq) (hnoassign : r.assignedRows = [])
-    (hdec : DecoderPays r)
-    (hwalls : WallsArePlain r (dayPlan r)) (hpast : PastPays r) :
-    planOk el r (dayPlan r) = true :=
-  dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day hfn r hnoassign hdec.walls
-    hdec.active hdec.day
-    hdec.nowCal hwalls hpast
+**The rule that put the four there was never "these four".**  It is *every value the battery
+reads off the request rather than off the day*, which is the sentence the section above
+`candsAgree` states and applies.  Read that way the enumeration was short, and it was short by
+the one the composition needed: this campaign's list-where-the-rule-is-a-class shape, inside
+the four NAMES that were written to replace a list.
 
+The structure moved rather than `candsAgree` moving up, because `candsAgree` is 460 lines below
+here and is stated over `candPlanView`, `PlanReq.cands` and `Planner.Group`, none of which is
+in scope at this point in the file.  What is left here is this pointer, so a reader who comes
+to the fourth axis where three runs of prose say it lives is sent to it.
+
+**What the move bought**: `dayPlan_ok_core_of_a_paying_decoder` and
+`dayPlan_ok_core_from_now_of_a_paying_decoder`, beside the structure, discharge `hpay` FROM THE
+DECODER over a day that ASSIGNS — neither carries `r.assignedRows = []` at all — and
+`PlannerWit.the_lift_applies_at_the_paying_request` is restated through the axis instead of
+through five loose hypotheses, with `PlannerWit.the_paying_request_pays_the_decoder` as the
+witness that keeps the fifth field from being AGENTS §5.2's vacuous one.
+
+The ELEVEN-check lift below is untouched and still carries `hnoassign`.  That restriction is
+structurally real — `dayPlan_ok_is_the_core_seven_on_an_unassigned_day` needs the eligibility
+comparison to have no subject, which the fold falsifies the moment it places a work row — and
+it waits on the eligibility site README gap 365 names. -/
 
 /-! ############################################################################
 ## W-28 (track G): the LEADING half of gap 1620, closed at the instant `futureHalf` already names
@@ -4923,5 +4923,90 @@ theorem AssignedRowsPay_of_a_paying_decoder (r : PlanReq) (hca : candsAgree r = 
     have hb := an_assigned_members_ci_after_the_wind_down r hca vi gi hsl e sl hes hwd g hg m hm
     rw [hmid] at hb
     exact hb
+
+/-! ### The fourth axis, with the fifth clause IN it
+
+**AND THE FOURTH AXIS WAS SHORT BY THE CLAUSE THE RUN TURNED ON** (W-30 repair, README gap
+2133).  `FromNowAnchored` (eligibility), `PastPays` (log), `WallsArePlain` (walls) and
+`DecoderPays` (request) are the four names §6.1's lift is stated over, and `DecoderPays` had
+FOUR fields while its own doc comment said *"Four clauses, none of them a `∀` over the
+request"*.  `candsAgree` — the clause `AssignedRowsPay_of_a_paying_decoder` consumes, and the
+one the composition step needs — was in none of them, so the axis that exists to say what the
+REQUEST owes did not say the thing the request was actually made to owe.  That is this
+campaign's list-versus-class shape inside the four names written to replace a list: the rule
+is *every value the battery reads off the request rather than off the day*, and read that way
+the enumeration was short.
+
+The structure is declared here, below `candsAgree`, with FIVE clauses and the R10 bound
+`AssignedRowsPay_of_a_paying_decoder`'s `hwdcal` asks for.  `dayPlan_ok_core_of_a_paying_decoder`
+is what the fifth clause buys: a lift that discharges `hpay` FROM THE DECODER, over a day that
+ASSIGNS -- no `r.assignedRows = []` anywhere in it. -/
+
+/-- **What the request DECODER owes §6.1's lift** — the fourth axis, named the way `PastPays`
+and `WallsArePlain` name theirs.  Five clauses, none of them a `∀` over the request: four
+decidable `Bool`s or `Prop`s and two `Nat` comparisons.  README gap **346** is the gap that
+closes it, and `PlannerWit.mkPlanReq?_ok_wallsAgree` is the only one with a caller today. -/
+structure DecoderPays (r : PlanReq) : Prop where
+  /-- The request's wall index is its own plan's (`PlanReq.wallsAgree`). -/
+  walls  : r.wallsAgree = true
+  /-- A running block the request carries is one `Planner.mkActive?` would have built
+  (`PlanReq.activeAgrees`). -/
+  active : r.activeAgrees = true
+  /-- The `[day]` the request carries is one `Look.mkDayCfg?` would have built
+  (`PlanReq.dayAgrees`). -/
+  day    : r.dayAgrees = true
+  /-- `now` is inside the calendar, which is what lets a clause written over the log be read
+  off the row the day holds (`segOf_replayed`). -/
+  nowCal : r.now.sec + 1 < LogStamp.yearEnd
+  /-- **The fifth**: every candidate the request carries reads the same `ci`, `rootPrio` and
+  `hot` off the plan that §8.2 step 5's fold reads off the `Look.Cand` (`candsAgree`).  It is
+  what `AssignedRowsPay_of_a_paying_decoder` turns into `AssignedRowsPay`. -/
+  cands  : candsAgree r = true
+  /-- The wind-down is inside the calendar — the same R10 obligation `nowCal` is, for the
+  second instant `Planner.segOf`'s forcing compares against. -/
+  windDownCal : r.windDownSec < LogStamp.yearEnd
+
+/-- **§6.1's eleven on the whole day, with every axis named and no loose hypothesis left.**
+
+Four bounds, four names: the eligibility one by `FromNowAnchored` (W-23), the log one by
+`PastPays` (W-24), the wall one by `WallsArePlain` (W-25), the request one by `DecoderPays`
+(here).  `dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day` is the same statement with the four
+clauses spelled out, kept because every existing caller spells them.
+
+It still carries `hnoassign`, and that is not this repair's to remove: `dayPlan_ok_is_the_core
+_seven_on_an_unassigned_day` needs `eligibleSomewhere el r (dayPlan r) i = false` at every `i`,
+which the fold falsifies the moment it places a work row, and that waits on the eligibility
+site README gap 365 names.  `dayPlan_ok_core_of_a_paying_decoder` below is the form with no `hnoassign`
+at all, and it is the SEVEN rather than the eleven. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day {el : Eligible}
+    (hfn : FromNowAnchored el) (r : PlanReq) (hnoassign : r.assignedRows = [])
+    (hdec : DecoderPays r)
+    (hwalls : WallsArePlain r (dayPlan r)) (hpast : PastPays r) :
+    planOk el r (dayPlan r) = true :=
+  dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day hfn r hnoassign hdec.walls
+    hdec.active hdec.day
+    hdec.nowCal hwalls hpast
+
+/-- **§6.1's SEVEN on the whole day, from the decoder alone, on a day that ASSIGNS.**
+
+`hpay` is not a hypothesis here: it is the decoder's fifth clause and its R10 bound through
+`AssignedRowsPay_of_a_paying_decoder`.  That is the whole point of the fifth field — before it,
+`AssignedRowsPay` was a loose hypothesis every caller carried by hand, and the axis named after
+the request did not name it. -/
+theorem dayPlan_ok_core_of_a_paying_decoder (r : PlanReq) (hdec : DecoderPays r)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
+    planOkCore r (dayPlan r) = true :=
+  dayPlan_ok_core_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal hnopast
+    (AssignedRowsPay_of_a_paying_decoder r hdec.cands hdec.windDownCal) hbudget hplain
+
+/-- **The same, from `now`** — `dayPlan_ok_core_from_now_given_the_budget`'s domain, which needs
+no `hnopast` at all, with `hpay` discharged from the decoder. -/
+theorem dayPlan_ok_core_from_now_of_a_paying_decoder (r : PlanReq) (hdec : DecoderPays r)
+    (hbudget : noOverbook r (withoutPast r (dayPlan r)) = true) (hplain : PlainStore r) :
+    planOkCore r (withoutPast r (dayPlan r)) = true :=
+  dayPlan_ok_core_from_now_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal
+    (AssignedRowsPay_of_a_paying_decoder r hdec.cands hdec.windDownCal) hbudget hplain
+
 end PlanCheck
 end Tm

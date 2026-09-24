@@ -13714,7 +13714,7 @@ module is still about the definition; none was restated (D5).
 | `reserveRest` (one closure per reservation per day) | `reserveRestFast` = `reserveRestAcc … []`: an accumulator that stops at a request of nothing (fork `reserve`'s `left == 0` break; `reserveRest_zero`) and holds each reserved day's six numerators once (`NumSix`, `NumSix.get_of`) | `reserveRest_eq_reserveRestFast` (`reserveRestAcc_eq`) |
 | `reserveOut` | `reserveOutFast = left − availUntilFast` | `reserveOut_eq_reserveOutFast` (`reserveOut_eq`) |
 | `edfGrantsGo`, `edfCaps` (non-tail recursion over the deadlines) | one `foldl` of `edfStepFast` (a grant `⟨d, a, want − (want − a)⟩` and the reservation) | `edfGrantsGo_eq_edfGrantsGoFast`, `edfCaps_eq_edfCapsFast` (`edfStepFast_foldl`) |
-| `edf`, `edfGrants` (compiled before the lemmas above) | bodies compiled after them | `edf_eq_edfFast`, `edfGrants_eq_edfGrantsFast` (`rfl`) |
+| `edf`, `edfGrants` (compiled before the lemmas above) | NO twin -- `tm_kernel_call` reaches neither, so there was no call to deoptimise; both twins and their two `rfl` lemmas were deleted at the W-30 repair | gap 2126 |
 
 **Measured through the wire** (`stack.rs`, `grants_over_a_3660_day_lookahead_run_on_a_2mib_thread`: the
 T0 (c) capacity section without a calendar, 3,660 days, `n` candidates at `ci` 3 with 600 minutes
@@ -61849,17 +61849,20 @@ wire key they spell (`capacity`, `plan`, `planner`), were ONE body, and so was e
 fixture in `Boundary.lean` whose only content is text. The stripper is offset-preserving, so the
 quote positions it leaves index straight back into the source; the literals are read from there.
 
-**E2 COMPILED: the compiler emits different code for the two.** This is the property the five
-`@[csimp]` pairs needed and **that nobody had ever checked**. A `@[csimp]` lemma rewrites the
-callees of every definition compiled AFTER it, so a twin declared below the lemma gets the fast
-callee while the original keeps the slow one — *the sources are character-identical and the
-compiled code is not, and that difference is the whole reason the twin exists.* **MEASURED** in
-`lake`'s own `.lake/build/ir`: the emitted `Tm.edf` calls the emitted `Tm.edfCaps`, and the
-emitted `Tm.edfFast` calls `Tm.edfCapsFast`; the twin of `Tm.planWf` is REACHED from the emitted
-Close and Cmd modules and the twins of `Tm.Seal.daysIn` and `Tm.Seal.daysFrom` from SealWire's.
-**Deleting them would have silently deoptimised the `close` path and the resume — the two places
-D9/W4 put the twins for.** This is W-28's lesson in the other direction: a claim about a
-definition's SHAPE pins nothing about its BYTES, so the bytes are what the gate reads.
+**E2 COMPILED: the compiler emits different code for the two, AND THE EXPORT REACHES ONE OF
+THEM.** A `@[csimp]` lemma rewrites the callees of every definition compiled AFTER it, so a twin
+declared below the lemma gets the fast callee while the original keeps the slow one — *the
+sources are character-identical and the compiled code is not.* **Only the first half of that was
+ever checked, and the W-30 repair drove the second half and found it false** (gap **2126**): this
+paragraph said the emitted `Tm.edf` and its twin called different auxiliaries and that deleting
+either would deoptimise the other, and rooted at `tm_kernel_call` **neither is among the 2,092
+reachable of 11,945 emitted C functions**. There was no call to deoptimise. `twins.py` now walks
+the emitted call graph; the twins of `Tm.planWf`, `Tm.Seal.daysIn` and `Tm.Seal.daysFrom` ARE
+reached and keep the exemption — in each the FAST twin is what runs and the original is the spec
+it is proved equal to — and edfFast and edfGrantsFast were deleted with their two `rfl` lemmas
+rather than exempted. This is W-28's lesson in both directions: a claim about a definition's
+SHAPE pins nothing about its BYTES, and a claim about its BYTES pins nothing about whether
+anything CALLS it.
 
 **E3 VALUE: the definition is nullary.** Two bounds that share a number (`maxCands`/`maxBatch`)
 and one `Region` under two fixture roles (`closeW35`/`staleW35`, each inside a witness family
@@ -62191,3 +62194,204 @@ and 2096 are each driven or discharged above by name**: 2018 re-driven on the me
 corrected by 2120, 2062 still open with its seed, 2064 the reason §4(b) goes through the arm, and
 2096 **paid in full at `8f3fa6c`** — its prediction was right, the cost was five rows, and the
 classifier it asked for is what made the conflict readable.
+
+## Stage 6 — W-30, repair: a NEW AXIOM walked past every gate because the command residue's keyword set read one of Lean's two grammars, and check 11's exemption was justified by a call that does not exist
+
+**Ten defects, two auditors, one shape between them.** W-30's independent auditors and the reuse
+critic found nine things wrong with the run that had just landed at `0e5d1da`, and eight of the
+nine are one sentence: *a claim of having checked, that was never made* — this time inside the
+two files W-30 wrote to close exactly that. Every claim below was re-driven before it was
+repaired, and one was left standing because it reproduced and is not fixable here.
+
+### 1. A NEW AXIOM, DECLARED PAST EVERY GATE — gap 2125, closed
+
+`totality.py`'s command residue derives the words Lean declares a command by **out of the pinned
+toolchain**, and W-30 wrote that derivation to close the seven commands that had escaped by being
+indented (gap 2091). It read one of Lean's **two** ways of declaring a command — a `def` carrying
+`@[builtin_command_parser]` — and missed the other, `syntax`/`macro`/`elab` into the `command`
+CATEGORY. **Reproduced**, in a `git archive HEAD` clone against the built library
+(`LEAN_PATH=kernel/TmKernel/.lake/build/lib/lean`, 8G, timeout 300): a file whose `section` holds
+an indented `run_cmd liftCoreM <| Lean.addDecl (Lean.Declaration.axiomDecl ..)` elaborates at
+**rc=0**, declares an axiom, and proves `(1:Nat) = 2` from it — and `python3 totality.py
+TmKernel/TmKernel TmKernel` gave **rc=0 with no output**. With `run_cmd` at column zero it gave
+rc=1. The escape was the indentation, and the reason the indented half did not catch it was that
+the keyword set was short. The word `axiom` never appears, so R4's `axiom` token row never fires;
+check 3 fails on `sorryAx`, and a planted axiom is not `sorryAx`.
+
+**And the gate's own comment stated a false claim about the very case it named**: *"Nothing has to
+be added for `macro_rules`, for `register_builtin_option`, or for a command a later toolchain
+invents."* `register_builtin_option` was **not** in the derived set — it is declared `macro (name
+:= registerBuiltinOption) … : command` at `Lean/Data/Options.lean:228`, not by a parser `def`.
+
+**The fix is the second derivation, not eight more names.** `command_keywords()` now reads the
+`: command` syntax category as well as the parser attribute: a declaration head is taken through
+its modifiers and its attribute block, cut at its `=>`, with string literals MASKED so that the
+` " : " ` inside `register_builtin_option`'s own head is not read as the category, and its first
+string literal is the keyword. **MEASURED**: 52 keywords from parser `def`s, **66** from the
+syntax category, **118** in the union. Among the 66: `run_cmd`, `run_elab`, `run_meta`, `seal`,
+`unseal`, `test_extern`, `reprove`, `register_builtin_option`. **And the floor is now one per
+derivation** — asserting the union would let either half rot while the other carried it, which is
+how the parser half came to be the only half. Cost: 1.53-1.54 s → 1.56-1.57 s (three runs each).
+Over the whole library the widened rule still fires **zero** times, and both `run_cmd` and
+`run_elab` are named at rc=1 indented, driven in the clone.
+
+### 2. Check 11's E2 exemption was justified by a call that does not exist — gap 2126, closed
+
+`twins.py` and `check.sh` both justified E2 with *"a `@[csimp]` lemma rewrites the callees of every
+definition compiled AFTER it, so edfFast … compiles to a call to `edfCapsFast` while `edf` keeps
+`edfCaps`, and deleting the copy would silently deoptimise the original."* **The bytes refute it.**
+Rooted at `tm_kernel_call` over `.lake/build/ir/**/*.c`, **2,092 of 11,949** emitted functions were
+reachable and **none of `Tm.edf`, its twin, `Tm.edfGrants` or its twin** was among them; each symbol
+occurred exactly three times in the whole emitted tree — a prototype, its own body, its own
+`___boxed` wrapper — with zero call sites. There was no deoptimisation to fear because there was no
+call. Two of the five E2 groups were exempt on a consequence that does not exist.
+
+**The exemption is now the whole sentence, checked**: the emitted C differs **and the export
+reaches at least one of the two**. `twins.py` walks the emitted call graph (brace-balance each
+exported C body, read its identifiers as edges, BFS from `tm_kernel_call`) and prints the
+measurement on every run. Three groups pass it — `Tm.planWf`/`planWfFast`, `Tm.Seal.daysIn`/`daysInT`
+and `daysFrom`/`daysFromT`, in each of which the FAST twin is what runs and the original is the spec
+it is proved equal to. The two that did not were **not exempted: they were deleted.** edfFast and
+edfGrantsFast are gone with their two `rfl` `@[csimp]` lemmas, their two `#print axioms` lines and
+the three sentences that described them. Rooting matters and is recorded in the file: the export is
+`tm_kernel_call`, **not** `Tm.callExport`, whose own emitted function nothing reaches — a walk from
+the wrong root reports almost everything dead, which is W-27's lesson again.
+
+### 3. Check 11 silently dropped 400 of the library's 3,044 `def`s — gap 2127, closed
+
+`bodies()` read `head, sep, tail = chunk.partition(":=")` and `continue`d when there was no `:=`.
+**Measured**: 3,044 `def` tokens, 2,644 partition on a `:=`, **400 do not** — every declaration
+written with match arms — and they were keyed by nothing while the summary line printed "2644 def
+bodies" with no residue beside it. Worst hit: `Boundary.lean` 61, `Json.lean` 50, `Line.lean` 45,
+`Replay.lean` 37, `Log.lean` 36. That is this campaign's list-versus-class shape **in the gate
+added to enforce it**: the population was "definitions spelled with `:=`", not definitions.
+
+The separator is now Lean's `declVal` — `:=` or the arms' first `|` (a `||` is Boolean or) — which
+covers 3,044 of 3,044; a declaration the key cannot split is **counted and FAILS**, never skipped,
+and the summary prints the residue. Swept under the widened key the 400 add **no** group: 16 before,
+16 after. **And E3 was a spelling** (gap **2128**): `sig.startswith(":")` exempted `def f : A -> B
+:= fun ..` as "a named value". Nullary is now the type and the body — no binder, no top-level arrow,
+no `fun` — and all 11 E3 groups are unmoved.
+
+### 4. What the reachability walk found that no gate asks — gaps 2129 and 2130, OPEN
+
+The walk above is the first instrument in this tree that asks whether a definition is **reached**.
+It was built for E2 and it immediately names two things nothing else can see, both recorded rather
+than fixed, because the rule needs a POPULATION and a bare count is not one.
+
+### 5. The fourth axis was short by the clause the run turned on — gap 2133, closed
+
+`PlanCheck.DecoderPays` had FOUR fields and its own doc comment said *"Four clauses"*, while
+`candsAgree` — the clause `AssignedRowsPay_of_a_paying_decoder` consumes and the one W-30's whole
+composition turns on — was threaded by hand through three theorems. `grep -rn candsAgree` showed no
+caller outside `PlanCheck`/`PlannerWit`/`Check`. The structure is **moved below `candsAgree`** (it
+had to be: the definition is 460 lines further down) and carries five clauses plus the R10 bound
+`hwdcal` asks for. Two new lifts, `dayPlan_ok_core_of_a_paying_decoder` and
+`dayPlan_ok_core_from_now_of_a_paying_decoder`, discharge `hpay` **from the decoder** over a day that
+ASSIGNS — **no `r.assignedRows = []` in either**. `PlannerWit.the_lift_applies_at_the_paying_request`
+is restated through the axis instead of through five loose hypotheses, and
+`the_paying_request_pays_the_decoder` is the witness that keeps the fifth field from being AGENTS
+§5.2's vacuous one: the census request pays `candsAgree` for nothing (it carries no candidates),
+`thePayingRequest` carries one, fills a slot and pays all five.
+
+### 6. `tm add` wrote a line the kernel cannot read, at rc=0 — gap 2132, closed
+
+**Reproduced** on the binary built from `0e5d1da`, in a fresh `tm init` tree: `tm add "- [ ] write
+the audit report est:2b ci:3"` wrote that text **verbatim** to `plan/inbox.md:11` with no `^id` at
+**rc=0**, and every following verb then refused the whole tree — `tm add` and `tm plan` at rc=1
+(`badLine — inbox.md:11 looks like an item but does not parse (Tm.PErr.noId)`), `tm check` at rc=2.
+`tm add --to week` with the same text was fine. The cause is one test: `if id.is_empty() &&
+!horizon.allows_missing_state()`, which is §17.2's rule about the **state** used as the rule about
+the **id**. They are different rules, and the kernel enforces the second everywhere: a line carrying
+a state BOX owes an `^id`. The test is now the LINE's own state token. Driven after: the boxed add
+gets `^s5yv`, the next add and `tm check` are clean, a bare capture is still bare, and `tm undo`
+still takes it back.
+
+### 7. The census label repaired by gap 2123 still contradicted its subject — gap 2131, closed
+
+The item counter requires that the slots AGREE: it is the **complement** of the slot counter, not a subset of
+it, and the label read "of those". This run printed `slots differ … 1, of those … ITEMS differ 3`,
+and 3 cannot be a subset of 1. The antecedent is the NON-EXEMPT days. Fifth counter in this campaign
+whose label and subject disagreed, and the first to be found **inside the repair that named the
+class**.
+
+### 8. Reproduced and LEFT: the headline, and gap 2022's population
+
+Two findings reproduced exactly and are recorded rather than repaired.
+
+**The merge titles overstate the battery.** `0e5d1da` reads *"the lift covers the day it plans"* and
+`b49a2b8` *"the lift covers a day that assigns — the domain restored"*. What the ELEVEN-check
+`planOk` lifts cover is still the unassigned day: **all six** carry `r.assignedRows = []`, up to and
+including `dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day`. What was restored is
+the **seven**, and §5 above adds two more forms of it. The restriction is structurally real —
+`dayPlan_ok_is_the_core_seven_on_an_unassigned_day` needs `eligibleSomewhere el r (dayPlan r) i =
+false` at every `i`, which the fold falsifies the moment it places a work row, and that waits on
+README gap 365 — so this is a headline/body mismatch and not an undisclosed hole. The sentence a
+reader of the log alone needs is here, and `PlanCheck.lean`'s own doc comment now says which battery.
+
+**Gap 2120's correction widened a NAME PREFIX, not the property** (gap **2135**). Re-measured over
+`PlanCheck.lean` by splitting each `^theorem` at its conclusion: **42** statements carry
+`r.assignedRows = []`, of which **6** conclude `planOkCore` and **9** conclude `planOk` — not the two
+gap 2022 named nor the three gap 2120 corrected it to. Eleventh counted instance of the shape, and
+the gap that named the tenth is the one that has it.
+
+### 9. Acceptance
+
+**`check.sh` ELEVEN of ELEVEN**, capped at 40G with no swap. `lake build TmKernel:static` ok ·
+totality ok · **axiom audit 5,260 theorems** (5,258 before this block's four new audit lines and
+two deleted ones — the two `rfl` `@[csimp]` lemmas went with their subjects) ·
+`Negative.lean` rejected ok · FFI 93 tests ok · **corpus 29/37 and 4/5** · **stage goals 8
+outstanding, all stage 6** · prose citations 40,487 citations, 38,527 resolved, 1,960 allowed,
+**0 allow entries unused** · mutation roster 247 rostered, **0 owed** · parity register P1-P41,
+next free **P42** · **check 11: 3,042 def bodies (0 unsplit), 14 groups (3 compiled, 11 value),
+0 UNANSWERED; 2,092 of 11,945 emitted C functions reachable from `tm_kernel_call`.**
+
+**`cargo test --workspace`: THREE runs**, 40G capped, **1,476 passed / 0 failed / 9 ignored
+across 87 binaries** every time — byte-for-byte the baseline's figure, so nothing this block
+touched moved a test. The third run was `-- --nocapture`, to read the repaired census label back:
+`… NON-exempt days whose slots differ from the fork's OWN-§7 day 1, of the NON-EXEMPT days, whose
+slots agree and whose ITEMS differ 3 …`. The arithmetic now reads. **No new
+`.proptest-regressions` line** appeared in any of the three.
+
+The two new `by decide`s were probed alone at **8G with timeout 120** against the built library:
+**0.14 s**. `totality.py` 1.56-1.57 s (three runs, 1.53-1.54 before). `twins.py` 1.45-1.50 s
+(three runs, 0.75-0.76 before — the reachability walk reads the whole IR tree once, cached).
+
+**One process cost, recorded rather than hidden** (gap 2136). Three of this block's edits were
+written LINE-NEUTRAL on purpose — `Capacity.lean`'s two doc paragraphs, and the 32-line pointer
+that replaces `DecoderPays` where it used to stand. The first draft was not, and check 9 then
+reported **98 roster rows whose recorded pin site had drifted**, none of them wrong: a pin site
+is a `file:line` plus the declaration the line falls inside, and inserting ten lines at
+`PlannerWit.lean:2054` moved four thousand lines of pin sites below it. `mutate.py --verify
+--write` is one kernel build per constant and was still running after 20 minutes on the first
+90 of them, so it was killed (the lock and `Boundary.lean` were restored by hand) and the edits
+were rewritten to sit where they cost nothing. **That is a workaround, not a property**, and it
+is exactly the kind of thing that silently shapes what a step is willing to write.
+
+
+
+### 10. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2125** | **CLOSED here.** The command residue's keyword set read ONE of Lean's two command grammars; an indented `run_cmd` declared a new axiom and proved `1 = 2` from it at rc=0, past every gate | `kernel/totality.py` | closed by a second derivation over the `: command` syntax category, with a floor per derivation. What stays open is the class the file names: a command a MACRO produces, and a keyword that is also a tactic word (a loud false positive, measured at zero here) |
+| **2126** | **CLOSED here.** Check 11's E2 exemption was justified by "deleting the copy would deoptimise the original" about a pair the export does not reach — 2,092 of 11,949 emitted functions reachable, neither edf nor its twin among them | `kernel/twins.py`, `kernel/check.sh`, `Capacity.lean` | closed: E2 now requires reachability and the two dead twins were deleted. Check 11 costs 0.75 s → 1.45-1.50 s for the walk |
+| **2127** | **CLOSED here.** `bodies()` dropped 400 of 3,044 `def`s — every match-arm declaration — on a silent `continue`, and printed "2644 def bodies" with no residue | `kernel/twins.py` | closed: the population is Lean's `declVal`, the residue is counted and FAILS. 0 groups hide in the 400 today, which is the measurement the header owed and did not make |
+| **2128** | **CLOSED here.** E3 tested nullary by the SPELLING `sig.startswith(":")`, so `def f : A -> B := fun ..` was "a named value" | `kernel/twins.py` | closed: no binder, no top-level arrow, no `fun`. No live misfire existed; the property was stated over a spelling, which is the class |
+| **2129** | **`Tree.lean` is built, proved and composed into nothing, and no gap carried it.** All ten emitted definitions of §6.4's `remaining` and §5.4's series head are unreachable from `tm_kernel_call`; the emitted symbol for `Tm.remainingMin` occurs exactly TWICE in `.lake/build/ir` — its prototype and its own body, no `___boxed` wrapper, no call site. Every reference outside the module is inside a `theorem` in `Boundary.lean`. The next link, `Capacity.Deadline.ofRemaining`, is unreachable too, so the whole `remaining → Deadline → §7` chain reaches no answer a caller sees; the shipped answer gets its remaining minutes from the Rust side over the wire | `kernel/TmKernel/TmKernel/Tree.lean`, `Capacity.lean:151` | D50's composition shape at whole-module scale. `Recur.lean` has carried gap 501 for the same reason for many runs and `Emit.lean` had 1105/1318/1320; Tree.lean had nothing. It is not unsound — 37 theorems about it are true — it is 10 definitions and 37 theorems of proved work the day does not use |
+| **2130** | **nothing below the gate asks whether a definition REACHES the export**, and that is the layer D50, gap 501 and gap 2129 all live in. Every other instrument reads the SOURCE or the theorem set: check 9 pins a body against a constant, check 11 pins uniqueness, check 3 pins the axiom set, check 8 pins a citation — a definition can be pinned, unique, audited and cited and still be called by nothing. `Tm.remainingMin` is all five | `kernel/check.sh`, `kernel/twins.py` | **half closed here**: the walk exists and runs on every check-11 run, rooted at `tm_kernel_call` (not `Tm.callExport`, whose own emitted function nothing reaches — rooting there reports almost everything dead, silently). What is open is the GATE, and it needs a POPULATION: 2,092 of 11,945 reachable is mostly witness and proof-side modules that are correctly unreachable, so the rule has to be stated over the ALGORITHM modules or over the set check 9 already rosters, and a bare count is exactly the list-shaped answer this campaign keeps finding wrong |
+| **2131** | **CLOSED here.** The item counter requires that the slots AGREE — the complement of the slot counter, not a subset of it — and the census label read "of those". This run printed `slots differ … 1, of those … ITEMS differ 3` | `tm/tests/planner_invariants.rs:1910` | closed in the string and in a comment beside the expression. The CLASS is gap 2123's and is still open: nothing gates a census label against the expression it formats, and this is the fifth counter to disagree with its own subject — the first found inside the repair that named the class |
+| **2132** | **CLOSED here.** `tm add` wrote an item-shaped line with no `^id` into `inbox.md` at rc=0 and left the tree unloadable for every later verb | `tm/src/cli/items.rs` | closed: an id is owed by the LINE's state box, not by the file's horizon, which is what the kernel enforces. §5.13's failure class — a plausible keystroke that neither works nor says so at the time — and the recovery (`tm undo`) was always there and always named |
+| **2133** | **CLOSED here.** `PlanCheck.DecoderPays` had four fields while the fifth obligation the run turned on, `candsAgree`, was threaded by hand through three theorems; the four named axes were asymmetric and no `_of_a_paying_decoder` form discharged `hpay` | `PlanCheck.lean`, `PlannerWit.lean` | closed: five clauses plus the R10 bound, two lifts that discharge `hpay` from the decoder over a day that ASSIGNS, and a witness that pays all five at a request that fills a slot. What stays open is gap 1984 — no `mkPlanReq?` establishes `candsAgree` from the wire |
+| **2134** | **the merge titles say more than the battery does.** `0e5d1da` reads "the lift covers the day it plans"; all six ELEVEN-check `planOk` lifts still carry `r.assignedRows = []`. What is covered is the SEVEN, and now four of its forms | this file's own block titles, and `git log` | nothing unsound — the blocks name gaps 2022 and 2120 — but a reader of the log alone takes §6.1's eleven to be covered. The rule a title owes: name the battery, not the day |
+| **2136** | **the mutation roster's pin site is a LINE, so an insertion anywhere above one costs a full re-verification.** Inserting ten lines at `PlannerWit.lean:2054` drifted **98** rows whose definitions are in `Emit.lean` and whose pin sites are in `PlannerWit.lean`; `mutate.py --verify --write` is one kernel build per constant — the file's own header prices a full pass at hours — so this step rewrote its edits to be line-neutral instead | `kernel/mutate.py`, `kernel/mutations.txt` | nothing unsound: the drift is DETECTED and the run FAILS, which is gap 1190's repair working. The cost is that the gate's price is paid in where a step is willing to put a sentence. The site is already `line + enclosing declaration`; the declaration alone, plus an offset within it, would drift only when the declaration itself changes |
+| **2135** | **gap 2120's correction widened a NAME PREFIX, not the property.** Re-measured: **42** statements in `PlanCheck.lean` carry `r.assignedRows = []`, **6** concluding `planOkCore` and **9** concluding `planOk`. Gap 2022 named two, gap 2120 named three | `kernel/README.md` gaps 2022 and 2120, `PlanCheck.lean` | nothing unsound: the general forms exist and the specialisations derive through `an_unassigned_day_pays_the_lift`. Eleventh counted instance of the list-where-the-rule-is-a-class shape, found in the gap that named the tenth. The property is gap 2120's own sentence applied to the whole file rather than to a prefix of a name |
+
+**Gaps 2125-2136 are taken by this step**; 2137-2139 are free in the repair range. Gaps 113/114/116,
+301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105, 1318, 1320, 1333, 1529, 1620, 1621,
+1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904, 1906, 1956, 1957, 1984-1988, 1990,
+2000-2007, 2016-2018, 2020-2024, 2062, 2064, 2093-2096 and 2120-2124 are untouched by this step,
+except **2123, 2091 and 2017, each of whose repair is where a defect above was found** — which is
+the only sentence in this block that matters for the next step: **the three defects this run's
+auditors ranked highest were all inside the three gates the previous two runs wrote to close this
+campaign's recurring shape.** A gate is not evidence that the thing it gates is checked.

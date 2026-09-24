@@ -1908,6 +1908,13 @@ proptest! {
         // 0 on most runs, so the step that settles it sees the number and the
         // seed replays on every run from here.
         let slots_differ = !exempt && kslots != fslots;
+        // **AND THE ITEM COUNTER IS THE COMPLEMENT OF THE SLOT ONE, NOT A SUBSET
+        // OF IT** — it requires that the slots AGREE — so the census label read "of
+        // those" said the opposite of what it counted, exactly like the two labels
+        // gap 2123 repaired one line of prose earlier. This run printed `slots
+        // differ .. 1, of those .. ITEMS differ 3`, and 3 cannot be a subset of 1.
+        // The antecedent is the NON-EXEMPT days, which is what both counters are
+        // taken over; README gap 2131 (W-30 repair) carries the correction.
         let ids_differ = !exempt && !slots_differ && ka != fa;
         // The second fork day: the same request, ranked by the KERNEL's §7 answer.
         let cvec = w.candidates();
@@ -2024,7 +2031,7 @@ proptest! {
              assigned-rows compared {acmp}, cases exempt {aexempt}, \
              cases whose §7 answers differ {pdiff}, \
              NON-exempt days whose slots differ from the fork's OWN-§7 day {sdiff}, \
-             of those, whose slots agree and whose ITEMS differ {iddiff}, \
+             of the NON-EXEMPT days, whose slots agree and whose ITEMS differ {iddiff}, \
              §7 rows compared {grows}, capacity differs to TODAY (P41) {gday0}, \
              beyond today (P1) {gdays}, rows unkeyable {gdups}, \
              days whose assignment was ASSERTED against the kernel-ranked fork {gsame}, \

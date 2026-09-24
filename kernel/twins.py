@@ -23,23 +23,44 @@ are not a duplicate and never were: `obsLe (a b : EnergyObs)` and `obsLineLe
 terms of the other.  A group of more than one name under one key is two
 definitions of one concept unless one of these holds:
 
-  E2 COMPILED   the compiler emits DIFFERENT code for them.  This is the
-                exemption the five `@[csimp]` pairs above needed and NOBODY HAD
-                CHECKED: their sources are character-identical and their emitted
-                C is not, because a `@[csimp]` lemma rewrites the callees of
-                every definition compiled AFTER it, so the twin declared below
-                the lemma gets the fast callee and the original keeps the slow
-                one.  Deleting the copy would silently deoptimise the original.
-                DRIVEN at W-30, in the emitted C under .lake/build/ir: the
-                function for `Tm.edf` calls the one for `Tm.edfCaps`, and the
-                function for its character-identical twin `Tm.edfFast` calls the
-                one for `Tm.edfCapsFast`.  The twin of `Tm.planWf` is REACHED,
-                from the emitted Close and Cmd modules; the twins of
-                `Tm.Seal.daysIn` and `Tm.Seal.daysFrom` from SealWire's.  This is W-28's lesson in the other
-                direction: a claim about a definition's SHAPE pins nothing about
-                its BYTES, so the bytes are what this reads.
-  E3 VALUE      the definition takes NO ARGUMENTS, so its body is a value and
-                not a rule.  `maxCands : Nat := 1024` and `maxBatch : Nat := 16`
+  E2 COMPILED   the compiler emits DIFFERENT code for them AND A CALLER RUNS
+                ONE OF THEM.  A `@[csimp]` lemma rewrites the callees of every
+                definition compiled AFTER it, so the twin declared below the
+                lemma gets the fast callee and the original keeps the slow one;
+                the pair is then a SPEC and the body the export actually runs,
+                and deleting either would change what runs or what is proved.
+
+                **AND THE SECOND HALF OF THAT SENTENCE WAS NEVER CHECKED**
+                (W-30 repair, README gap 2126).  This file said "deleting the
+                copy would silently deoptimise the original" and offered
+                `Tm.edf` and its twin as the driven example.  The bytes refute
+                it: rooted at `tm_kernel_call` (`PlanWire.lean:1198`) over
+                `.lake/build/ir/**/*.c`, 2,092 of 11,949 emitted functions are
+                reachable and NEITHER `Tm.edf` nor its twin is among them --
+                each symbol occurs
+                three times in the emitted tree -- a prototype, a body and a
+                `___boxed` wrapper, and no call site.  There was no
+                deoptimisation to fear because there was no call.  So the
+                exemption is now the WHOLE sentence: the bytes differ, and the
+                export REACHES at least one of them.  `Tm.planWf`/`planWfFast`,
+                `Tm.Seal.daysIn`/`daysInT` and `daysFrom`/`daysFromT` each pass
+                it -- in all three the FAST twin is reached and the original is
+                the spec it is proved equal to.  edfFast and edfGrantsFast
+                answered nothing, and the W-30 repair DELETED them with their
+                two `rfl` `@[csimp]` lemmas rather than exempt them.
+
+                This is W-28's lesson in both directions: a claim about a
+                definition's SHAPE pins nothing about its BYTES, and a claim
+                about its BYTES pins nothing about whether anything CALLS it.
+  E3 VALUE      the definition takes NO ARGUMENTS AND IS NOT A FUNCTION, so its
+                body is a value and not a rule.  Nullary was a SPELLING until
+                the W-30 repair (README gap 2128) -- "the signature begins with
+                `:`" -- under which `def f : A -> B := fun ..` is a rule wearing
+                a value's spelling.  The property is now three tests: no binder
+                group, no top-level `->` or `→` in the declared type, and a body
+                that is not a `fun`.  All 11 groups E3 answers here are `Nat` or
+                `Region` constants and none moves, so the widening costs
+                nothing and the rule is no longer about where a `:` stands.  `maxCands : Nat := 1024` and `maxBatch : Nat := 16`
                 are two bounds that happen to share a number; `closeW35` and
                 `staleW35` are one `Region` under two FIXTURE ROLES, in two
                 witness families a hundred lines apart, each family naming its
@@ -57,10 +78,12 @@ and no list at all.
 WHAT IT CANNOT SEE, and the list matters because the hand sweep's own declared
 blind spot is where four of the five csimp pairs hid:
 
-  * a duplicate that reaches its own auxiliary BY NAME (`edf` calls `edfCaps`,
-    `edfFast` calls `edfCapsFast`) -- the bodies differ in one identifier, so
-    this file reports the AUXILIARIES as the twins and not the callers.  It is
-    still named, one level down.
+  * a duplicate that reaches its own auxiliary BY NAME -- `Tm.reserveOut` calls
+    `Tm.availUntil` and `Tm.reserveOutFast` calls `Tm.availUntilFast`, so the
+    bodies differ in one identifier and this file reports the AUXILIARIES as the
+    twins and not the callers.  It is still named, one level down.  (The
+    example this bullet used to give was edf and its twin, which the W-30 repair
+    deleted: nothing called either.)
   * a duplicate whose bodies differ by a `let` hoist or an argument order
     (`Tm.sitesInRange` / `sitesInRangeFast` hoists `let n := p.docs.length`) --
     NOT character-identical, and a `@[csimp]`-proved-by-`rfl` grep alone is not
@@ -75,6 +98,15 @@ blind spot is where four of the five csimp pairs hid:
     written twice under two names -- is exempt by E3 and this gate cannot see
     it.  That is the price of the fixture roles E3 exists for, it is paid on 11
     of the 17 groups here, and README gap 2094 carries it.
+  * a `def` whose declaration this key cannot SPLIT into a signature and a
+    body.  Lean's `declVal` is `:= <term>`, match arms, or a `where` structure
+    instance; this reads the first two, which is 3,044 of the library's 3,044
+    `def`s (2,644 `:=` and 400 arms).  A third form is not skipped -- it is
+    COUNTED and the run FAILS, because the hole this closes was exactly a silent
+    `continue` (W-30 repair, README gap 2127: 400 `def`s were dropped by `if not
+    sep: continue` and the summary printed "2644 def bodies" with no residue, so
+    nothing said the population was short by 13%).  Swept under the widened key
+    the 400 add no group: the count is 16 before and after.
   * a duplicate spelled as a `theorem`, an `abbrev` or an `instance`.  `def` is
     the population this run's finding is about; widening it is the next step's.
     README gap 1956's other ELEVEN groups are all `theorem`s in `Line.lean` --
@@ -107,6 +139,26 @@ LITERAL = re.compile(r"^(?:fun[ \t][^=]*=>[ \t]*)?"
                      r"(true|false|True|False|[0-9]+|\"[^\"]*\"|'.')$")
 # One emitted function: its header, then its brace-balanced body.
 EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(]*\b(?:l|lp_TmKernel)_(\w+)\([^\n]*\{")
+# ANY emitted function, by its own C symbol -- the reachability walk's population,
+# which includes the export itself (`tm_kernel_call`, whose C symbol carries
+# neither of the code generator's two name prefixes).
+ANY_EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(;]*?\b(\w+)\([^\n]*\{")
+# An identifier in an emitted body.  A C body names its callees and nothing else
+# that can collide with an exported symbol, so a reference is a call edge.
+C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
+# THE ROOT OF THE CALL GRAPH: the one symbol the host dials (R9, `@[export
+# tm_kernel_call]` at PlanWire.lean:1198).  Rooting at `Tm.callExport` instead --
+# the Lean definition that CARRIES the attribute -- is how this probe fails
+# silently: the exported C wrapper is `tm_kernel_call`, and the emitted function for
+# Tm.callExport is reached from nothing, so a walk from it reports almost everything dead.
+EXPORT_ROOT = "tm_kernel_call"
+# A separator between a `def`'s SIGNATURE and its BODY.  Lean's `declVal` is
+# `:= <term>` or match arms (`| pat => ..`); a `|` that is `||` is Boolean or.
+DECL_SEP = re.compile(r":=|(?<!\|)\|(?!\|)")
+# A top-level arrow in a declared TYPE, so that E3's "takes no arguments" is a
+# property of the type and not of where the `:` stands.
+ARROW = re.compile(r"->|\u2192")
+_REACH = {}
 # The code generator's own variable numbering, which differs between
 # any two functions and says nothing about what they do.
 CVAR = re.compile(r"\bv_([A-Za-z0-9_]*?)_\d+_")
@@ -134,18 +186,27 @@ def literals(src, stripped, start, stop):
 
 
 def bodies(path):
-    """`(name, signature, body, literals)` for every `def` declared in `path`."""
+    """`(name, signature, body, literals)` for every `def` declared in `path`.
+
+    A `def` this cannot split yields a body of `None`, which `main` COUNTS and
+    fails on.  It used to `continue`, and 400 of the library's 3,044 `def`s --
+    every one spelled with match arms rather than `:=` -- were keyed by nothing
+    while the summary line said "2644 def bodies" (W-30 repair, gap 2127)."""
     src = pathlib.Path(path).read_text()
     code = leanfiles.strip_comments(src)
     for m in DEF.finditer(code):
         stop = NEXT_COMMAND.search(code, m.end())
         end = stop.start() if stop else len(code)
         chunk = code[m.end():end]
-        head, sep, tail = chunk.partition(":=")
-        if not sep:
-            continue  # a `def .. where` or a pattern match: no single body
-        at = m.end() + len(head) + len(sep)
-        yield (m.group(1), "".join(head.split()), "".join(tail.split()),
+        sep = DECL_SEP.search(chunk)
+        if sep is None:
+            yield (m.group(1), "".join(chunk.split()), None, ())
+            continue
+        # The separator stays with the BODY: it is what tells `:= e` from the
+        # arms `| p => e`, and two definitions written the two ways are not one.
+        at = m.end() + sep.start()
+        yield (m.group(1), "".join(chunk[:sep.start()].split()),
+               "".join(chunk[sep.start():].split()),
                tuple(literals(src, code, at, end)))
 
 
@@ -157,15 +218,7 @@ def emitted(path, name):
     the header, so the function's own NAME -- which always differs -- is not part
     of what is compared, and the generator's variable numbering is normalised
     away for the same reason."""
-    ir = None
-    for parent in pathlib.Path(path).resolve().parents:
-        cand = parent / ".lake" / "build" / "ir"
-        if cand.is_dir():
-            ir = cand
-            break
-    if ir is None:
-        raise SystemExit("twins.py: no .lake/build/ir above %s -- E2 reads the "
-                         "EMITTED code and there is none; run `lake build` first" % path)
+    ir = ir_root(path)
     mangled = "Tm_" + name.replace(".", "_") if not name.startswith("Tm") else name.replace(".", "_")
     for c in sorted(ir.rglob(pathlib.Path(path).stem + ".c")):
         text = c.read_text(errors="replace")
@@ -195,6 +248,64 @@ def emitted(path, name):
     return None
 
 
+def ir_root(path):
+    """`.lake/build/ir` above `path`, or a hard error: E2 reads the EMITTED code."""
+    for parent in pathlib.Path(path).resolve().parents:
+        cand = parent / ".lake" / "build" / "ir"
+        if cand.is_dir():
+            return cand
+    raise SystemExit("twins.py: no .lake/build/ir above %s -- E2 reads the "
+                     "EMITTED code and there is none; run `lake build` first" % path)
+
+
+def reachable(ir):
+    """Every emitted C function the export reaches, and how many there are.
+
+    Returns `(reached, emitted)`.  The walk brace-balances each `LEAN_EXPORT ..
+    name(..){` body, reads its identifiers as call edges, and BFSs from
+    `EXPORT_ROOT`.  It is what tells a twin the callers run from a twin nothing
+    calls, and the difference is the whole of E2 (README gap 2126)."""
+    key = str(ir)
+    if key in _REACH:
+        return _REACH[key]
+    funcs = {}
+    for c in sorted(ir.rglob("*.c")):
+        text = c.read_text(errors="replace")
+        for m in ANY_EMITTED.finditer(text):
+            i, depth = m.end() - 1, 0
+            while i < len(text):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                i += 1
+            funcs.setdefault(m.group(1), []).append(text[m.end():i])
+    if EXPORT_ROOT not in funcs:
+        raise SystemExit("twins.py: `%s` is not an emitted function under %s -- "
+                         "the call graph has no root and every twin would look "
+                         "dead" % (EXPORT_ROOT, ir))
+    seen, stack = set(), [EXPORT_ROOT]
+    while stack:
+        n = stack.pop()
+        if n in seen:
+            continue
+        seen.add(n)
+        for body in funcs.get(n, ()):
+            for r in C_IDENT.finditer(body):
+                if r.group(0) in funcs and r.group(0) not in seen:
+                    stack.append(r.group(0))
+    _REACH[key] = (seen & set(funcs), set(funcs))
+    return _REACH[key]
+
+
+def symbol(path, name):
+    """The C symbol the code generator gives the Lean definition `name`."""
+    mangled = "Tm_" + name.replace(".", "_") if not name.startswith("Tm") else name.replace(".", "_")
+    return "lp_TmKernel_" + mangled
+
+
 def qualified(path, name):
     """`name` under the namespace its file opens, which is what the C is keyed on."""
     stack = []
@@ -215,18 +326,27 @@ def explain(group):
     The signature is part of the KEY, so a group here already agrees on it and
     there is no "the types differ" exemption to apply."""
     body, sig = group[0][3], group[0][2]
-    if not sig or sig.startswith(":"):
+    # E3 IS A PROPERTY OF THE TYPE, NOT OF WHERE THE `:` STANDS (gap 2128): no
+    # binder group, no arrow in the declared type, and a body that is not a
+    # `fun`.  `def f : A -> B := fun ..` used to be read as "a named value".
+    if not sig or (sig.startswith(":") and not ARROW.search(sig)
+                   and not body.lstrip(":=").startswith("fun")):
         return ("E3 VALUE    -- nullary: `%s` is a value, and two names for one "
                 "value are two roles" % body[:40])
-    seen = {}
+    seen, live = {}, []
     for path, name, _sig, _body, _lits in group:
         seen["%s:%s" % (path, name)] = emitted(path, qualified(path, name))
+        if symbol(path, qualified(path, name)) in reachable(ir_root(path))[0]:
+            live.append(name)
     if None in seen.values():
         return None  # unemitted is not an exemption
-    if len(set(seen.values())) > 1:
-        return ("E2 COMPILED -- the emitted C differs (%s), so the copy is what "
-                "the callers run" % ", ".join("%s %d chars" % (k.rsplit("/", 1)[-1], len(v))
-                                              for k, v in sorted(seen.items())))
+    if len(set(seen.values())) > 1 and live:
+        # AND THE EXPORT REACHES ONE OF THEM (gap 2126).  Without `live` this
+        # said "the copy is what the callers run" about a pair with no caller.
+        return ("E2 COMPILED -- the emitted C differs (%s) and `tm_kernel_call` "
+                "reaches %s, so the copy is what the callers run"
+                % (", ".join("%s %d chars" % (k.rsplit("/", 1)[-1], len(v))
+                             for k, v in sorted(seen.items())), ", ".join(sorted(live))))
     return None
 
 
@@ -236,9 +356,12 @@ def main(argv):
     files = set()
     for d in roots:
         files.update(leanfiles.lean_files(pathlib.Path(d)))
+    unsplit = []
     for p in sorted(files):
         for name, sig, body, lits in bodies(p):
-            if body:
+            if body is None:
+                unsplit.append((p, name))
+            elif body:
                 groups[(sig, body, lits)].append((p, name, sig, body, lits))
     twins = {k: v for k, v in groups.items() if len(v) > 1}
     answered, bad = collections.Counter(), []
@@ -253,11 +376,17 @@ def main(argv):
         print("    signature %s := %s" % (key[0] or "(none)", key[1][:60]))
         for path, name, _s, _b, _l in group:
             print("    %s:%s" % (path, name))
-    print("%d file(s) swept, %d def bodies, %d group(s) of two or more names "
-          "(%d compiled, %d value), %d UNANSWERED"
-          % (len(files), sum(len(v) for v in groups.values()), len(twins),
-             answered["E2"], answered["E3"], len(bad)))
-    return 1 if bad else 0
+    for path, name in unsplit:
+        print("UNSPLIT: `%s` in %s -- a `declVal` this key cannot split into a "
+              "signature and a body, so it is keyed by nothing" % (name, path))
+    reached, emits = reachable(ir_root(sorted(files)[0]))
+    print("%d file(s) swept, %d def bodies (%d unsplit), %d group(s) of two or "
+          "more names (%d compiled, %d value), %d UNANSWERED; %d of %d emitted "
+          "C functions reachable from %s"
+          % (len(files), sum(len(v) for v in groups.values()), len(unsplit),
+             len(twins), answered["E2"], answered["E3"], len(bad),
+             len(reached), len(emits), EXPORT_ROOT))
+    return 1 if bad or unsplit else 0
 
 
 if __name__ == "__main__":
