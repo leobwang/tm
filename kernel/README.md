@@ -8830,7 +8830,7 @@ writes it; the harness that checks it is L7's:
 |---|---|---|---|---|---|
 | **P1 (refined)** | future-day capacity **and everything downstream**: each dated candidate's `avail`, `allocation`, `shortfall`, `u`, bin, `p`, HOT/IMPOSSIBLE class, the floor pass's availability, the week grid | `w·L + (capDen − w)·H` numerators over `capDen = 10^18`, mixed **after** each location's budget limit (`mix`, `limitHist`), the weight decoded exactly or refused by name | `capacity::lookahead`: `lounge` iff `model.p_lounge_on(wd, cfg) >= 0.5`, that one location's `u32` minutes; `f64` `u` | D10, D17; checked through the threshold twin (`twin_is_the_forks_location`, `twin_is_the_forks_threshold`), with `mix_between_the_locations` as the bounds on the real run | L1 (recorded), L7 (measured) |
 
-Nothing on the wire calls the mixture yet, so P1's refinement is not observable.
+**CORRECTED AT W-30 (gap 2060): this said the mixture was not observable; it is — see W-30 track P §2(c).**
 
 ### Both directions, decided witnesses, and the cheats
 
@@ -61126,3 +61126,252 @@ twins.py                    30 groups over 2,639 def bodies in 89 files
 1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904,
 1906, 1956, 1957, 1984-1988, 1990 and 2000-2004 are untouched; **1905 is closed** by item 1 and
 **2001**'s narrowing is what made it cheap enough to close.
+
+<!-- =====================================================================
+     APPENDED 2026-09-24: stage 6 (the planner), run **W-30**, **track P**.
+     The disagreements the live assigned-row comparison found, CLASSIFIED —
+     two of them the arm's own defects, one already-registered divergence
+     whose README said it was not observable, and one new divergence taken
+     here.  Gap range **2060-2089**; **2060-2065 taken**, 2066 and above
+     free.  Parity: **P41 ISSUED** (§4).
+     ===================================================================== -->
+
+## Stage 6 — W-30, track P: the comparison disagreed because it was asking two questions, and the item in the slot is asserted now
+
+**Baseline `552566d`, branch `w30-p`, worktree `.claude/worktrees/w30-p`.** The W-29 repair step
+made §8.2 step 5's assigned-row comparison RUN and it disagreed. This step classified every
+disagreement it found, fixed the two that were this arm's own, registered the one that is a real
+divergence, and replaced the counter an auditor's perturbation walked past with an assertion that
+fails on it.
+
+### 1. The census this step started from, measured here and not copied
+
+`cargo test --test planner_invariants -- --nocapture the_kernel_plans_the_day_the_fork_plans`
+on `552566d`, four consecutive runs, the last census line of each:
+
+```
+78 cases, 107 walls compared, 674 kernel rows, window-differs 0, budget-differs 0,
+assigned-rows compared 41, cases exempt 54,
+cases whose §7 answers differ 61, whose SLOTS differ 1,
+whose slots agree and whose ITEMS differ 2
+```
+
+**61 of 78 cases disagreed about §7**, on `p` alone — the only field the W-29 comparison read.
+That is the number this step is about; the two item disagreements are downstream of it.
+
+### 2. THE CLASSIFICATION, one of the brief's three kinds for each
+
+**(a) `days: 7` — a TEST asserting something untrue.** The request spelled a literal 7 where the
+shipped encoder sends the fork's own answer: `tm/src/cli/kernel_capacity.rs:1066` is
+`let want = priority::lookahead_days(cands, ctx.today);`, and that file's own header says it
+gives *"the fork's `priority::lookahead_days` to both"*. The generator draws deadlines up to
+**nine** days out, so `lookahead_days` is 7, 8, 9 or 10 and the arm asked the kernel for seven
+days of capacity while the fork looked at up to ten. **DRIVEN**: sending
+`priority::lookahead_days(&self.candidates(), date())` dropped the §7 disagreement from **61 of
+78** to **50 of 78** in one edit. W-27's third kind, the same shape as its `own_order` rank key.
+
+**(b) `wake` never crossed at all — a TEST asserting something untrue, and it was INVISIBLE.**
+`kernel_capacity::request` sends `"wake": {"sec", "ns"}` when `state.wake` is set and
+`"wake": "log"` otherwise. This arm sent **neither key**, so `Boundary.readWake` answered
+`.absent` — a legal value, no refusal, no warning — and the kernel measured §8.5's `hsw` from
+the weekday's expected arrival while the fork measured it from the day's own `wake` (6:30, or
+9:30 on a late day). Every slot's energy level rides on `hsw`. **DRIVEN** on a fixed one-item
+probe: day 0's capacity moved from `[0,0,0,60,180,240]` to `[0,0,0,60,240,180]` — the same 480
+minutes, redistributed across two levels, which is exactly what §8.2 step 5's energy filter
+reads. **This defect was in no audit**, and it is the W-29 repair step's own lesson reached from
+the other side: that step found three *lookahead* tables spelled instead of read off `Config`;
+this one is a whole key the arm never sent.
+
+**(c) FUTURE-DAY CAPACITY — a DIVERGENCE, and it is ALREADY REGISTERED as P1, so no number was
+issued for it.** With (a) and (b) fixed, the kernel's day 1..6 capacities and a fork-side
+`capacity::lookahead` recomputation still disagree on **every** case, identically:
+
+```
+W30 LADAY i=1 day=2026-09-08 kernel [0,0,0,36,108,216]  fork [0,0,0,0,180,180]
+W30 LADAY i=4 day=2026-09-11 kernel [0,0,0,72,96,192]   fork [0,0,0,0,180,180]
+W30 LADAY i=6 day=2026-09-13 kernel [0,0,36,204,72,48]  fork [0,0,0,360,0,0]
+```
+
+Same **360** minutes every time, on different levels. That is D10's mixture: the kernel computes
+`w·L + (capDen − w)·H` over both locations' priors and the fork picks ONE location at
+`model.p_lounge_on(wd, cfg) >= 0.5` (`capacity.rs:856`). Register row **P1 (refined)** already
+says *"future-day capacity **and everything downstream**: each dated candidate's `avail`,
+`allocation`, `shortfall`, `u`, bin, `p`, HOT/IMPOSSIBLE class"*.
+
+**AND THE SENTENCE UNDER THAT ROW IS NOW FALSE.** README:8838 reads *"Nothing on the wire calls
+the mixture yet, so P1's refinement is not observable."* It is observable: this arm calls it, and
+it accounts for **1,361 of 3,670** compared §7 rows in a 143-case run. Corrected at the row, gap
+**2060**.
+
+### 3. (d) DAY 0's CAPACITY — a DIVERGENCE, and it is NEW
+
+The remaining disagreement is day 0's, and it is not the mixture: a candidate whose `until` is
+TODAY sums day 0 alone. **DRIVEN by a one-item probe matrix**, thirteen cases, each one feature
+turned on alone, comparing the kernel's `avail` with the fork's for the single candidate:
+
+```
+base        la0 kernel [0,0,0,60,240,180] sum 480 | avail-diffs 0
+report      la0 kernel [0,0,0,60,420,0]   sum 480 | avail-diffs 0
+home        la0 kernel [0,0,60,420,0,0]   sum 480 | avail-diffs 0
+wall        la0 kernel [0,0,0,60,180,120] sum 360 | avail-diffs 0
+now2        la0 kernel [0,0,0,60,120,120] sum 300 | avail-diffs 0
+interrupt   la0 kernel [0,0,0,60,120,120] sum 300 | avail-diffs 0
+optionals   la0 kernel [0,0,0,60,240,180] sum 480 | avail-diffs 0
+late        la0 kernel [0,0,180,0,0,220]  sum 400 | avail-diffs 1  kernel 400, fork 220
+routines-1  la0 kernel [0,0,0,60,240,180] sum 480 | avail-diffs 1  kernel 480, fork 460
+routines-31 la0 kernel [0,0,0,60,240,180] sum 480 | avail-diffs 1  kernel 480, fork 440
+done2       la0 kernel [0,0,0,40,180,0]   sum 220 | avail-diffs 1  kernel 220, fork 180
+active      la0 kernel [0,0,0,60,120,120] sum 300 | avail-diffs 1  kernel 300, fork 290
+manyitems   la0 kernel [0,0,0,60,240,180] sum 480 | avail-diffs 5  (multi-day, P1)
+```
+
+The five that disagree are exactly the five that put something in the day the capacity wire does
+not carry, and **the kernel's figure is the larger one every time**. The cause is one sentence:
+**the fork point's §7 reads day 0 off §8.2 step 3's cut** — `planner.rs:945-954`, `slot_blocked`
+= the walls PLUS the running block PLUS the night, `rests` = today's placed routines, breaks
+positioned by `blocks_since_break` — **and the kernel's §7 reads it off the capacity section's
+own window cut**, because step L9 (D24, gap 93) settled that **no §9 row crosses that wire**:
+this repository's own design table says *"`active`, `break`, `interrupt`, `last_plan_hash` never
+cross the wire"*, and L9's acceptance compared the kernel's day 0 against `Ctx::today_slots` —
+the day BEFORE the planner cuts it — at 92 comparisons with 0 disagreements. Both sides are
+doing what they were built to do. Nothing had ever compared the two §7 answers on a day with a
+routine, a running block or a finished block in it, so the difference had never been seen.
+
+   **Parity P41 taken**
+
+| # | site | the kernel | the fork point | authority | step |
+|---|---|---|---|---|---|
+| **P41** | **§7's DAY-0 capacity, and everything downstream of it** — `avail`, `allocation`, `shortfall`, the bin, `p`, the HOT/IMPOSSIBLE class, for every candidate whose `until` is today | day 0 is the capacity section's own window cut (`Lookahead.day0Window` → `cutSlots`), which carries the walls and `now` and **no §9 row** | `capacity::lookahead`'s day 0 is `DayCapacity::from_slots(today_slots)`, and `today_slots` is §8.2 step 3's cut: walls, the running block, the night, today's placed routines, breaks at `blocks_since_break` | D24 / step L9 (gap 93), whose acceptance compared day 0 against `Ctx::today_slots` **exactly**; measured here by `tm/tests/planner_invariants.rs`'s probe matrix | W-30 track P (recorded and measured) |
+
+**It is a divergence and NOT a kernel bug, and the reason is the ordering the binary ships**: the
+shipped `tm plan` calls `kernel_capacity::rank` BEFORE the planner runs, so the kernel's §7
+answer cannot see a cut that does not exist yet, and the fork planner is then handed that answer
+(`PlanInput::with_ranking`) and never runs its own pass. The fork point's §7 is reachable only by
+a library caller. **What a later step could do** — and it is not this step's to decide — is put
+the day's routines and §9 rows on the capacity wire, which is gap **2005**'s collector plus the
+three §9 rows D24 deliberately kept off it.
+
+### 4. WHAT IS ASSERTED NOW, and the proof that it bites
+
+**§7's whole answer, row by row, and the capacity told apart from everything downstream.** The
+comparison read `(id, p)` and could say only *that* the two disagreed. It reads the ten fields
+`Look.FloorOut` carries now — `class`, `k`, `need`, `avail`, `until`, `allocation`, `shortfall`,
+`bin`, `p`, `rawP` — off `ok.lookahead.grants`, and **asserts a property**: a field downstream of
+the capacity may differ only where the capacity differs. Over 143 cases that is **3,670 rows**
+compared with **zero** failures, and it is P1's own register row (*"and everything downstream"*)
+turned from a sentence into a test. Neither P1 nor P41 can reach it; a change to §7's arithmetic
+on either side fails it, naming the field.
+
+**§8.2 step 5's assignment, against the fork ranked by the kernel.** `ka != fa` was never a
+step-5 statement: the fork it compared had run its own §7 pass, so every P1 and P41 difference
+arrived as a different rank order. Measured: the number of days on which the whole §7 answer
+agreed row for row is **four in 527**. An assertion gated on that is an assertion that does not
+run — this arm's own defect for a whole run (gap 2005). So the fork is asked the kernel's
+question: `PlanInput::with_ranking(cands, kernel_prios)`, which is
+`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank` → `with_ranking`, the
+shipped path. **The two then agree exactly** — over three 512-case runs, 167/167, 167/167 and
+168/168 non-exempt days, every assigned row, slot AND item — and 46 of 143 days in a default run.
+`prop_assert!(gsame > 0, …)` floors the population.
+
+**THE PROOF IT BITES, driven in a clone** (`git archive HEAD | tar -x`, this run's own changes
+copied in, `git status --porcelain` on the worktree read before and after and holding only this
+step's two files both times; the shared checkout was never written to):
+
+```
+PLANT   tm-core/src/planner.rs:1840, emit_segments' slot -> group map REVERSED
+        (the W-29 reuse critic's own perturbation, README gap 2007's last paragraph)
+
+WITH THE ASSERTION      test result: FAILED. 6 passed; 2 failed
+  the_kernel_plans_the_day_the_fork_plans
+    §8.2 step 5 assigned differently from the fork ranked by the kernel's own §7 answer
+    (kernel [(…393600, …397200, ["zac"]), (…397200, …400800, ["zab"]),
+             (…402000, …405600, ["zab"]), (…405600, …408000, ["zab"])],
+     fork   [(…393600, …397200, ["zab"]), (…397200, …400800, ["zab"]),
+             (…402000, …405600, ["zab"]), (…405600, …408000, ["zac"])])
+
+CONTROL, same plant, the new assertion alone disabled
+  the_kernel_plans_the_day_the_fork_plans   test result: ok. 1 passed; 0 failed
+```
+
+**The control is the W-29 auditor's result reproduced**, and it is why this is an assertion and
+not another number in the census line.
+
+### 5. The case count raised, and what it found
+
+The arm's generated count is **128**, raised from 64 — the SEARCH, not the generator (D46 forbids
+narrowing a generator to lose a disagreement; widening the search is the opposite move). The
+whole file costs **23.4 s** against 18.5 s, measured on the committed tree.
+
+**A 512-case run found a disagreement 64 never had.** The slot GEOMETRY was asserted after three
+512-case runs counted zero disagreements; the fourth failed, and the seed is kept (D46):
+`3a39ad72…` in `planner_invariants.proptest-regressions` — three items (an `atomic` four-block
+one, a plain one, a batchable) on a LATE day at home with one wall and the workout routine, where
+the kernel assigns **two** consecutive hours and the fork assigns **one**. It is one more slot
+taken, not a different cut, so the subject is step 5's own budget-and-commitment walk. The
+assertion was withdrawn to a counter and the case is gap **2062**. **It is not swallowed by an
+exemption and the generator was not touched**: the seed replays on every run from here.
+
+Also raised, and worth its sentence: **the fork assigned 184-209 rows the kernel had no candidate
+for** is gap 1905's figure from W-29, and it is now **zero** — the arm sends the fork's own
+candidates, and `rows unkeyable` is 0 over 143 cases, so no id names two rows on one side.
+
+### 6. What R3 still needs — unchanged by this step, and re-measured here
+
+`grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l` is **35**, across ten files.
+`planner::overtime_drops`, `planner::diff` and `planner::active_run` have **no kernel answer at
+all**. `planner::fmt_clock` and `planner::kind_label` have never been compared with
+`Emit.timeCell`. `DayPlan::hash` is still P8's FNV-1a placeholder
+(`the_plan_hash_is_a_placeholder_until_the_emitter_lands`). **R3 is not reachable**, and this step
+moved none of it: what it moved is the instrument that will say whether a deletion is safe.
+
+### 7. Acceptance, capped, on the committed tree
+
+```
+check.sh                    ALL TEN, rc=0 — build ok · totality ok · axiom audit 5,220
+                            theorems · Negative.lean rejected · check 5 93 tests · corpus
+                            29/37 files and 4/5 whole plans · stage goals 9 outstanding, all
+                            stage 6 · citations 39,841 citations, 37,926 resolved, 0 allow
+                            entries unused, 266 files swept, 340 excluded by 15 rules ·
+                            check 9 6 definitions audited, 6 PINNED · check 10 41 registered
+                            (P1-P41), 606 files swept, 47 rows skipped, next free P42
+cargo test --workspace      THREE runs (D46), 1,476 passed / 0 failed / 9 ignored across
+                            87 binaries, identical each time; first two at load average
+                            5.82 and 7.88, the third on the final tree
+planner_invariants          EIGHT standalone runs at the raised count, 8 passed / 0 failed
+                            every time; one NEW seed kept (D46, §5)
+FFI (tm-kernel-ffi)         101 passed / 0 failed over 5 binaries
+T5 kernel_replay_parity     29 passed / 0 failed / 4 ignored
+the door suite              kernel_log_door 23 passed / 0 failed
+cli_switch_acceptance       16 · kernel_call_counts 2 · one_padder 9 · one_renderer 25 ·
+                            kernel_row_cells 26 · kernel_item_grammar 6 ·
+                            kernel_planner_wire 21 — 0 failed in each
+cli_latency                 5 passed / 1 ignored, in band, at load average 5.80 — read
+                            before the run, because gap 1333 makes the load part of
+                            believing that suite
+burn-down                   9, all stage 6 — UNMOVED (no goal touched, no proof written)
+```
+
+Every `lake`, `cargo`, `check.sh` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet`; no memory bound raised.
+**Nothing but a test and this prose was written.** No proof, definition, checker, fixture,
+snapshot, latency band, corpus entry or bound was added, changed or deleted; no generator was
+narrowed and no exemption widened; `lean-toolchain`, `Cargo.toml`, `Cargo.lock` and
+`kernel/corpus/` untouched.
+
+### 8. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2060** | **CORRECTED HERE.** README:8833 said *"Nothing on the wire calls the mixture yet, so P1's refinement is not observable"*; it is observable and accounts for 1,361 of 3,670 compared §7 rows | `kernel/README.md`, P1's row | a register row whose "not observable" note is stale is a row a reader will not think to check |
+| **2061** | **`kernel_capacity::parse` now has a THIRD spelling** (`kernel_prios`), beside `cand_json`/`plan_json`/`send_order`'s second one (gap 2006). `tm` is a `[[bin]]` with no library target | `tm/src/cli/kernel_capacity.rs`, `tm/tests/planner_invariants.rs` | §5.3's own bug, declared. A change to the grant wire must now be made in three places; the move is into `tm-core`, or out with R3 |
+| **2062** | **step 5 takes ONE MORE SLOT than the fork on one case in ~2,000.** Seed `3a39ad72…`, kept: an `atomic` four-block item, a plain item and a batchable, on a late day at home with a wall and the workout routine — kernel two consecutive hours, fork one. Not a different cut: one more slot assigned | `Planner.assignFold`'s budget-and-commitment walk; `planner.rs` `pick`/`contiguous_fits` | it is the one slot-geometry disagreement the two fixed questions did NOT remove, so it is a real step-5 subject and not an arm defect. Until it is settled the geometry is counted, not asserted |
+| **2063** | **the arm runs the fork TWICE per case** — once with its own §7 pass (for the §7 comparison) and once ranked by the kernel (for step 5). The default run costs 23.4 s | `tm/tests/planner_invariants.rs` | declared, not hidden. It is the price of comparing two things that are compared for different reasons; one run cannot do both while P1 and P41 stand |
+| **2064** | **P41's day-0 divergence is UNOBSERVABLE in the shipped binary and observable here**, because the binary hands the fork the kernel's §7 answer and never runs the fork point's pass. So the divergence is registered off a comparison no verb performs | `kernel/parity.txt`, `tm/src/cli/planning.rs` | a registered divergence nothing ships is still a divergence a library caller meets, and §17.2's "the tests are the specification" is the reason to register it. The step that ends it is gap 2005's routine collector plus the three §9 rows D24 kept off the capacity wire |
+| **2065** | **the day-0 probe matrix is a TEST HELPER that was deleted rather than kept.** Thirteen one-feature cases, each isolating a day-0 capacity cause, written and driven at this step and removed before the commit because a `#[ignore]` drive is not a gate | `tm/tests/planner_invariants.rs` | the measurement in §3 is reproducible only by rewriting it. The gate it wants is one that asserts which features may move day 0 — a property, not the thirteen cases |
+
+**Gaps 2066 and above are free.** Gaps 113/114/116, 301, 346, 365, 435, 551, 577, 803, 876, 1006,
+1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904, 1906,
+1956, 1957, 1984-1988, 1990, 2000-2004 and 2016-2018 are untouched. Gaps **2005** and **2007** are
+not closed and are narrowed: 2005's exemption still fires on 97 of 143 cases, and 2007's three
+statements are answered — the SEQUENCE and the MULTISET both agree once the fork is ranked by the
+kernel, and the SLOT GEOMETRY is gap 2062's single case.
