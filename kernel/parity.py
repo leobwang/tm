@@ -237,17 +237,31 @@ def index():
 
 
 def swept():
-    """Every file the unregistered-number sweep reads: a property-based WALK.
+    """Every file the unregistered-number sweep reads: check 8's OWN population.
 
     It was README.md plus whatever the index anchors pointed into -- a NAME LIST
-    of three, and README gap 1470 is the hole that shape always has.  This is
-    `leanfiles.source_files`, the same enumeration and the same prune rule
-    checks 2, 3, 8 and 9 use, over EVERY file it reaches.  It walked three
-    SUFFIXES for one draft of this repair, and the same plant in
-    `design/stage6/notes.txt`, in `notes.org`, in `mutations.txt` and in
-    `check.sh` went green through all three: a suffix list is a name list."""
-    return sorted(os.path.relpath(str(path), HERE)
-                  for path in leanfiles.source_files(ROOT, None))
+    of three, and README gap 1470 is the hole that shape always has.  W-25 made
+    it `leanfiles.source_files`, the property-based walk, over EVERY file it
+    reaches; it walked three SUFFIXES for one draft of that repair, and the same
+    plant in `design/stage6/notes.txt`, in `notes.org`, in `mutations.txt` and
+    in `check.sh` went green through all three, because a suffix list is a name
+    list.
+
+    **AND THE WALK WAS STILL ONLY HALF THE POPULATION** (W-29, README gap 1955).
+    check 8's is the walk UNION `git ls-files` since W-28 -- a walk alone cannot
+    see a tracked file under a pruned dot-directory, and this repository tracks
+    eleven of them.  DRIVEN in a clone: `**Parity P41 taken**` appended to
+    `.claude/API-NOTES.md` left this gate at **rc=0**, still printing
+    `next free P41`, so the register would have handed the next block a number
+    the tree already takes -- README gap 1417's own failure, reached through the
+    population instead of through the idioms.  Two gates asking which files this
+    repository holds and answering differently is AGENTS §5.3 exactly, so the
+    answer is `leanfiles.repo_files` and there is one of it.
+
+    Paths come back relative to this directory, which is how `parity.txt`'s
+    anchors and its `not-row` lines are spelled."""
+    return sorted(os.path.relpath(os.path.join(ROOT, rel), HERE)
+                  for rel in leanfiles.repo_files(ROOT))
 
 
 def main(argv):
@@ -313,6 +327,17 @@ def main(argv):
     # already holds, so neither has to be exempted by name.
     issued = {}
     rows_seen = cites_seen = above_seen = 0
+    # **AN EXCLUSION THAT COVERS NOTHING IS A DEAD EXCLUSION** (W-29, README gap
+    # 1958).  `not-row` is this gate's only exclusion list, and it had the half
+    # of the residue discipline that is easy to forget: a line whose file no
+    # longer exists was named, and a line whose file no longer carries a single
+    # `| P<n> |` row was SILENT -- the exclusion outliving its reason, which is
+    # exactly what `citations.py` reports as "N exclusion(s) covering nothing"
+    # and what the W-28 repair step made a dead VOCABULARY entry do.  MEASURED
+    # here when the ratchet went in: the five lines skip 5, 11, 10, 9 and 12
+    # rows, so none is dead today and the cost is a line somebody deletes when a
+    # design doc's draft numbering finally goes.
+    skipped = dict.fromkeys(notrow, 0)
     walked = swept()
     for where in walked:
         path = os.path.join(HERE, where)
@@ -332,6 +357,8 @@ def main(argv):
                     bad.append("P%d is taken at %s:%d and has NO index row"
                                % (n, where, i))
             m = ANY_ROW.match(clean)
+            if m and not rows_here:
+                skipped[where] += 1
             if m and rows_here:
                 rows_seen += 1
                 n = int(m.group(1))
@@ -365,6 +392,12 @@ def main(argv):
                            "or put the quotation in backticks"
                            % (where, i, n, top, n, n))
 
+    for path in sorted(notrow):
+        if not skipped[path]:
+            bad.append("the not-row line for %s skipped no register-shaped row: "
+                       "the exclusion has outlived its reason and is a line "
+                       "nobody can now check -- delete it" % path)
+
     if bad:
         print("%d parity register problem(s):" % len(bad))
         for why in bad:
@@ -375,11 +408,13 @@ def main(argv):
         by[idiom] = by.get(idiom, 0) + 1
     print("%d registered (P1-P%d%s), %d anchor(s) re-resolved in %d file(s) "
           "(%s), %d file(s) swept for %d register row(s) (%d not-row), %d "
-          "citation(s) and %d canonical issuance line(s), next free P%d"
+          "citation(s) and %d canonical issuance line(s), %d row(s) skipped by "
+          "a not-row line, next free P%d"
           % (len(rows), top, "" if not holes else ", %d declared hole(s)" % len(holes),
              len(rows), len(files),
              ", ".join("%d %s" % (v, k) for k, v in sorted(by.items())),
-             len(walked), rows_seen, len(notrow), cites_seen, len(issued), top + 1))
+             len(walked), rows_seen, len(notrow), cites_seen, len(issued),
+             sum(skipped.values()), top + 1))
     return 0
 
 

@@ -133,6 +133,12 @@ SKILL.md
 # A Lean `set_option` key, named in AGENTS R4's row about Json.lean's one suppression.
 # `linter` is an option namespace and no declaration of any kind, here or in the toolchain.
 linter.unusedSimpArgs
+
+# One more `set_option` key, named by `totality.py`'s option residue (W-29):
+# `debug.skipKernelTC` is the option that gate refuses -- the switch that turns the kernel
+# typechecker off, driven green in a clone before the residue existed.  An option namespace,
+# not a declaration.
+debug.skipKernelTC
 # The FORK's field, at tm-core/src/planner.rs:884, cited by Planner.lean's note on
 # `remainingBudget`.  `blocks_done` is declared; `self` is a RECEIVER, and resolving a
 # receiver needs a type checker this file does not have -- so the unresolvable class fails
@@ -311,6 +317,16 @@ register_builtin_option
 set_option
 termination_by
 decreasing_by
+
+# Three more keywords, adjudicated at the W-29 track-A step, where `totality.py`'s command
+# residue had to NAME the commands it refuses.  `partial_fixpoint` is Lean 4.33's second way
+# of writing a definition whose recursion it did not have to justify -- the member of R4's
+# class the ban list missed, driven green in a clone; `macro_rules` and `builtin_initialize`
+# are the two commands that gate's own drive used as probes.  None is a declaration and no
+# `def` declares them.
+partial_fixpoint
+macro_rules
+builtin_initialize
 
 # A naming CONVENTION, not one declaration: `can_fail` is the suffix eleven real checker
 # witnesses carry (`noOverbook_can_fail`, `monotoneInRank_can_fail`, …) and the sentence names

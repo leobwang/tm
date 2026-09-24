@@ -35,6 +35,12 @@ directory HAS and a Lean module directory does not:
     its target directory (and which rustc, Bazel and others write too).  A
     directory holding one is declaring itself derived output.
 
+AND SINCE W-29 IT IS ASKED OF EVERY ENTRY AND NOT ONLY OF DIRECTORIES, because
+a leading dot is a property of a NAME: in a linked worktree `.git` is a FILE,
+the walk returned it, and check 8 -- whose population is this walk union git
+since W-28 -- failed on it in every worktree this campaign tells a track to use.
+`is_derived` carries the drive.
+
 WHAT IT CANNOT SEE.  A build directory that is neither dot-prefixed nor tagged
 is walked, and a .lean file inside it is read as a source.  That direction is
 the safe one -- a gate scanning too much fails loudly on a generated file rather
@@ -44,8 +50,10 @@ the W-22 repair step: 0 .lean files live under any pruned directory of this
 repository today, so pruning changes nothing here and exists for a future
 layout.
 """
+import os
 import re
 import pathlib
+import subprocess
 import sys
 
 # The cache-directory marker.  Its content is a fixed signature line; this
@@ -54,9 +62,29 @@ import sys
 CACHE_TAG = "CACHEDIR.TAG"
 
 
-def is_build_dir(path):
-    """Is this directory derived output rather than source?"""
-    return path.name.startswith(".") or (path / CACHE_TAG).is_file()
+def is_derived(path):
+    """Is this entry the tooling's rather than the repository's?
+
+    **IT WAS NAMED FOR DIRECTORIES AND ASKED ONLY OF DIRECTORIES**
+    (W-29, README gap 1953).  `source_files` asked it about a directory and
+    never about a file, and in a LINKED WORKTREE -- the checkout every track of
+    this campaign is told to work in -- `.git` is a FILE holding one `gitdir:`
+    line, not a directory.  So the walk returned it, check 8's population is the
+    walk union git since W-28, `git ls-files` does not list it, and no reader
+    claims the extension: **check.sh was 9/10 in every worktree**, reporting
+    `1 unaccounted file(s): .git  (no reader for this extension and no
+    exclusion)`.  DRIVEN by running `check.sh` in `.claude/worktrees/w29-a`
+    before the repair, and the walk measured at 595 files with `.git` and
+    `.gitignore` in it.
+
+    A LEADING DOT IS A PROPERTY OF A NAME, not of a directory, so the test is
+    the entry's and the CACHEDIR.TAG half stays the directory's (a file cannot
+    hold a marker file).  Pruning a dot-named FILE cannot lose anything the
+    repository tracks: `repo_files` unions this walk with `git ls-files`, and a
+    dot-named path git tracks -- `.gitignore`, `.claude/API-NOTES.md`,
+    `kernel/corpus/*/.tm/state.json` -- comes back through git with its
+    exclusion and its reason in the gate that excludes it."""
+    return path.name.startswith(".") or (path.is_dir() and (path / CACHE_TAG).is_file())
 
 
 def source_files(root, suffix):
@@ -92,12 +120,59 @@ def source_files(root, suffix):
         except (FileNotFoundError, NotADirectoryError, PermissionError):
             continue
         for entry in entries:
+            # ONE TEST FOR BOTH KINDS OF ENTRY (W-29).  It used to be asked of
+            # directories only, and `.git` is a FILE in a linked worktree.
+            if is_derived(entry):
+                continue
             if entry.is_dir():
-                if not is_build_dir(entry):
-                    stack.append(entry)
+                stack.append(entry)
             elif suffix is None or entry.suffix == suffix:
                 out.append(entry)
     return sorted(out)
+
+
+def repo_files(root):
+    """Every file THIS REPOSITORY holds: the WALK union what git knows.
+
+    **ONE POPULATION, TWO GATES** (W-29, README gap 1954).  check 8 and check 10
+    both have to answer "which files are this repository", and they answered it
+    separately: `citations.py`'s `tracked` was this union since W-28, and
+    `parity.py`'s `swept` was the WALK ALONE.  The walk prunes dot-directories,
+    and eleven files this repository TRACKS live under one -- `.claude/API-
+    NOTES.md` and the six `.tm/` fixture directories.  DRIVEN in a clone before
+    the repair: `**Parity P41 taken**` appended to `.claude/API-NOTES.md`, a
+    tracked file, left `python3 parity.py` at **rc=0** still printing
+    `next free P41` -- the register handing the next block a number the tree
+    already spells, which is README gap 1417's own failure reached through the
+    POPULATION instead of through the idioms.  That is this file's own header
+    (§5.3: two definitions of one concept is the bug) one gate over, and the
+    W-21/W-22 repairs are the same shape in the other direction.
+
+    Neither enumeration may shrink the population alone:
+
+      * the WALK reaches a file that is not added yet, because acceptance runs
+        BEFORE the commit and a new module must be swept the moment it exists;
+      * `git ls-files` (tracked, plus `--others --exclude-standard` for the
+        added-but-not-committed) reaches what the walk's prune property hides,
+        which is every tracked path under a dot-directory.
+
+    `git` is a DEPENDENCY of this walk and a failing `git` is a HARD ERROR --
+    never a silently smaller population.  A `git archive` clone used for a plant
+    therefore needs a `git init && git add -A` before either gate will run in
+    it; that is the cost check 8 took at W-28 and check 10 takes now.
+
+    Returns repository-relative paths, sorted and deduplicated."""
+    root = pathlib.Path(root)
+    out = []
+    for args in (["ls-files", "-z"], ["ls-files", "-z", "--others", "--exclude-standard"]):
+        r = subprocess.run(["git"] + args, cwd=str(root), capture_output=True, text=True)
+        if r.returncode != 0:
+            raise SystemExit("leanfiles.repo_files: `git %s` failed in %s -- the "
+                             "file population would be silently smaller"
+                             % (args[0], root))
+        out += [p for p in r.stdout.split("\0") if p]
+    out += [os.path.relpath(str(q), str(root)) for q in source_files(root, None)]
+    return sorted(set(out))
 
 
 def lean_files(root):

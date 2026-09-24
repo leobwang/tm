@@ -9641,8 +9641,14 @@ def optDateAt (v : JVal) (k : String) (r : Refusal) : Except Refusal (Option Nat
   | .ok (some (.str d)) => (orErr (Field.parseDate d) r).map some
   | .ok (some _) => .error r
 
-/-- A required boolean at `k`. -/
-def boolReq (v : JVal) (k : String) (r : Refusal) : Except Refusal Bool :=
+/-- A JSON boolean at `k`, or `r`.
+
+**It was written twice** (AGENTS §5.3, W-29): a boolReq stood here and `boolAt` 600 lines below,
+character for character the same reader under two names and two sentences, one of them read once
+and the other eleven times.  Found by SHAPE — every declaration in the library normalised to its
+own name and hashed — and not by either name; the dead name is written above without backticks,
+which is this repository's convention for a name a sentence records as gone. -/
+def boolAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Bool :=
   match need v k r with
   | .ok (.bool b) => .ok b
   | _ => .error r
@@ -10060,7 +10066,7 @@ def readState (sec : JVal) :
   let budget ← optNatAt v "budget" (.badState .budget)
   let arr ← optClockAt v "arrival" (.badState .arrival)
   let loc ← strAt v "loc" (.badState .loc)
-  let ah ← boolReq v "allowHome" (.badState .allowHome)
+  let ah ← boolAt v "allowHome" (.badState .allowHome)
   if maxLocName < loc.length then .error (.badState .loc)
   else return (date, w, budget, arr, loc, ah)
 
@@ -10253,12 +10259,6 @@ each fork `priority::Candidate`'s §7 inputs as the host collected them (gap 113
 (`badCandidate <i> <key>`): `ci` above 5 (`levelOf?`), `rootPrio` outside `1..4` (`defaultPrioOf?`),
 `remaining` above `2^32 − 1` (fork `u32`), a `due` that is not a date (`Field.parseDate`), `yesterday`
 above 7 (`yesterdayOf?`), an `id` over 1,024 characters, or a key of the wrong JSON type. -/
-
-/-- A JSON boolean at `k`, or `r`. -/
-def boolAt (v : JVal) (k : String) (r : Refusal) : Except Refusal Bool :=
-  match need v k r with
-  | .ok (.bool b) => .ok b
-  | _ => .error r
 
 /-- An optional natural at `k` through its decoder: absent or `null` is `none`. -/
 def optNatWith {α : Type} (v : JVal) (k : String) (r : Refusal) (dec : Nat → Option α) :

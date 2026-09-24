@@ -11,7 +11,9 @@ So the kernel is total instead, and this enforces it.
 spike silently turned `est: -3` into `est: null`.
 
 Usage: `totality.py <dir> [<dir> ...]`.  Each directory is scanned
-RECURSIVELY, with `.lake`, `target` and `.git` pruned.  `check.sh` passes both
+RECURSIVELY, with build and tooling entries pruned on the PROPERTY
+`leanfiles.is_derived` states and never on a name (the sentence here said
+".lake, target and .git" until W-29, which is the name list W-22 deleted).  `check.sh` passes both
 `TmKernel/TmKernel` (the library) and `TmKernel` (the package root, which holds
 `Check.lean`, `Negative.lean` and `Goals.lean`), so the exemption below is
 load-bearing rather than decorative.
@@ -161,16 +163,125 @@ INTERP = re.compile(r"(?<![A-Za-z0-9_'])([a-z])!(?=\")")
 # alternative is a ban list that is complete only against the members somebody
 # has already thought of.
 #
-# WHAT IT CANNOT SEE: an attribute applied by the `attribute [..] name` COMMAND
-# rather than in an `@[..]` block (the library writes none -- grepped at the
-# repair step, 0 occurrences of the `attribute` keyword in stripped source), and
-# a `deriving` clause, which is a different grammar and instantiates rather than
-# replaces.
+# **AND THE RESIDUE READ ONE OF LEAN'S TWO SPELLINGS** (W-29, README gap 1950).
+# The sentence that used to stand here said, as a declared blind spot, that an
+# attribute applied by the `attribute [..] name` COMMAND was not seen -- and
+# argued it away because the library writes none.  W-27's own second half is the
+# precedent for what a declared-and-unmechanised audit is worth: it is never
+# performed.  DRIVEN in a `git archive HEAD` clone at W-29:
+#
+#     def w29ExternProbe (n : Nat) : Nat := n
+#     attribute [extern "tm_kernel_call_c"] w29ExternProbe
+#
+# appended to `Emit.lean` BUILT (`lake build TmKernel:static`, "Build completed
+# successfully") and left this file at **rc=0, no output** -- while the SAME
+# attribute on the SAME declaration, written `@[extern "tm_kernel_call_c"] def
+# w29ExternProbe ..`, is named.  One rule, two spellings, one of them read: that
+# is gap 1875's own shape reached through the syntax rather than through the
+# attribute list, and `@[implemented_by]`'s command spelling was caught only by
+# the unrelated bare-token row below, never by this residue.
+#
+# So an ATTRIBUTE APPLICATION is the class, and `ATTR_SPELLINGS` is every way
+# Lean has of writing one.  MEASURED at W-29 and declared rather than argued:
+# the command form does NOT redirect code generation in this toolchain --
+# the generated C under .lake still carries the probe's own Lean body after the
+# plant, and so does the `implemented_by` form --
+# so the plant is a GATE hole and this file does not claim it landed an escape.
+# The gate bans the class because the gate cannot know which spelling a later
+# toolchain wires up, and because `attribute [instance]` and `attribute [simp]`
+# change what later elaboration sees whatever the compiler does.
+#
+# WHAT IT STILL CANNOT SEE: an `attribute` command whose brackets are built by a
+# macro (the kernel defines none -- `macro`, `macro_rules`, `elab` and `syntax`
+# are all refused by `ALLOWED_COMMANDS` below); a `deriving` clause, which is a
+# different grammar and instantiates rather than replaces; and the word
+# `attribute` inside a string literal, which `strip_comments` blanks -- so the
+# false positive it could cause cannot happen and a true one cannot hide.
 ALLOWED_ATTRS = {"simp", "csimp", "reducible", "export"}
-ATTR_BLOCK = re.compile(r"@\[([^\]]*)\]")
+# The two spellings, ONE rule.  `@[a, b]` is the declaration block; `attribute
+# [a, b] name` is the command.  The lookbehind is the identifier alphabet, so a
+# name that ENDS in the word is not a token of it.
+ATTR_SPELLINGS = (re.compile(r"@\[([^\]]*)\]"),
+                  re.compile(r"(?<![\w'?!.«])attribute\s*\[([^\]]*)\]"))
+
+# **AN OPTION IS AN ESCAPE HATCH TOO** (W-29, README gap 1951).  `set_option` was
+# unbanned and its ARGUMENT unread, and the option namespace holds
+# `debug.skipKernelTC` -- the switch that turns the kernel typechecker OFF, which
+# is every `#print axioms` line in `Check.lean` and the whole of check 3 read
+# through a check that no longer runs.  DRIVEN in a clone:
+#
+#     set_option debug.skipKernelTC true in
+#     theorem w29SkipTC : (1 : Nat) + 1 = 2 := rfl
+#
+# appended to `Emit.lean` BUILT and left this file at **rc=0**.  (What the plant
+# shows is the HOLE: no term the elaborator accepts and the kernel rejects was
+# constructed here, so no unsound proof is claimed to have landed.)
+#
+# A BAN LIST WOULD BE THE NEXT LENGTHENING: it would need a row for
+# `debug.skipKernelTC`, then for `compiler.*`, `debug.*`, `backward.*` and for
+# whatever a later toolchain adds.  So the options are a RESIDUE, the same shape
+# `ALLOWED_ATTRS` is: these four are every option this kernel sets, each with the
+# sentence that says why it cannot change what is PROVED or what RUNS, and any
+# other option is named.
+#
+#   maxRecDepth            an elaboration resource bound.  Exceeding it is an
+#                          ERROR, never a silent acceptance.  314 live.
+#   maxHeartbeats          the same, in time rather than in stack.  1 live.
+#   linter.unusedSimpArgs  a LINT -- it changes what is reported, and a linter
+#                          has never been what accepts a proof.  1 live.
+#   exponentiation.threshold  a guard on how large a literal exponent the
+#                          elaborator will evaluate; a bound, like the first two.
+#                          1 live.
+ALLOWED_OPTIONS = {"maxRecDepth", "maxHeartbeats", "linter.unusedSimpArgs",
+                   "exponentiation.threshold"}
+SET_OPTION = re.compile(r"(?<![\w'?!.«])set_option\s+([A-Za-z_][A-Za-z0-9_.']*)")
+
+# **AND THE COMMANDS THEMSELVES ARE A RESIDUE** (W-29, README gap 1952).  Every
+# row of `BANNED` below is one member of one class -- `partial def`, `unsafe`,
+# `opaque`, `axiom`, `example` are all *commands or modifiers somebody thought
+# of*, and the campaign has now watched that shape fail nine times.  DRIVEN in a
+# clone: `def w29Diverge (n : Nat) : Option Nat := w29Diverge (n + 1)` with
+# `partial_fixpoint` on the next line BUILT and left this file at **rc=0** -- a
+# definition Lean never had to justify the recursion of, spelled without the
+# `partial` keyword the list holds.
+#
+# MEASURED over the library at W-29: TWENTY-TWO distinct words begin a
+# column-zero line in stripped source, and every one of them is a command or a
+# declaration keyword this kernel uses.  That is small, it is stable, and it is
+# the enumeration to invert: a command must JOIN this set to be allowed, so
+# `partial`, `unsafe`, `opaque`, `axiom`, `example`, `attribute`, `initialize`,
+# `builtin_initialize`, `macro`, `macro_rules`, `elab`, `syntax`, `notation`,
+# `register_builtin_option` and whatever a later toolchain adds are all refused
+# BY NAME without this file learning their names.
+#
+# WHAT IT CANNOT SEE, and it is the blind spot W-28's roster repair named: a
+# command written MID-LINE after an `in` combinator (`open Nat in unsafe def
+# ..`).  Every member of the class this campaign knows about is ALSO caught by
+# its own token row below, which is why those rows stay: the residue is the net
+# under the members nobody has thought of, and the rows are the net under the
+# spelling this one cannot reach.
+ALLOWED_COMMANDS = {
+    "abbrev", "class", "decreasing_by", "def", "deriving", "end", "import",
+    "include", "inductive", "instance", "mutual", "namespace", "omit", "open",
+    "private", "section", "set_option", "structure", "termination_by",
+    "theorem", "variable", "where",
+}
+COMMAND_WORD = re.compile(r"(?m)^([A-Za-z_][A-Za-z0-9_'.]*)")
 
 BANNED = [
-    (r"\bpartial\s+def\b", "partial def"),
+    # **THE KEYWORD IS A STEM, NOT A WORD** (W-29, README gap 1952).  This row
+    # was `partial\s+def`, and `partial_fixpoint` -- Lean 4.33's other way of
+    # writing a definition whose recursion it did not have to justify -- is not
+    # `partial` followed by `def`, nor even `\bpartial\b`, because `_` is a word
+    # character.  The rule is the token `partial` with anything but a LETTER
+    # after it: `partial def`, `partial_fixpoint`, and any `partial_*` a later
+    # toolchain adds.  The one identifier in the library that begins with the
+    # word -- `partialDoneAt`, 11 occurrences -- continues in a letter and is
+    # not a token of it; the cost is declared: a THEOREM named `partial_...`
+    # would fail here and have to be renamed or allowed.
+    (r"(?<![\w'])partial(?![A-Za-z])",
+     "partial (R4: `partial def` and `partial_fixpoint` -- a definition Lean "
+     "did not have to justify the recursion of)"),
     (r"\baxiom\b", "axiom (HARD RULE: no new axiom)"),
     (r"panic!", "panic!"),
     (r"native_decide", "native_decide"),
@@ -239,15 +350,37 @@ for p in sorted(files):
     # is named here.  A block may hold several (`@[simp, csimp]`); the leading
     # token of each comma-separated entry is the attribute's NAME and the rest
     # is its argument (`export tm_kernel_call`, `extern "sym"`).
-    for m in ATTR_BLOCK.finditer(code):
-        for entry in m.group(1).split(","):
-            word = entry.split()
-            if not word:
-                continue
-            if word[0] not in ALLOWED_ATTRS:
-                hits.add((bisect.bisect_right(nl, m.start()) + 1,
-                          "@[%s] -- not in ALLOWED_ATTRS (R4: the compiled "
-                          "implementation must be the Lean definition)" % word[0]))
+    #
+    # BOTH SPELLINGS, ONE LOOP (W-29).  `ATTR_SPELLINGS` is the `@[..]` block and
+    # the `attribute [..] name` command, and writing the rule twice would be the
+    # §5.3 defect this gate exists to catch in the library.
+    for spelling in ATTR_SPELLINGS:
+        for m in spelling.finditer(code):
+            for entry in m.group(1).split(","):
+                word = entry.split()
+                if not word:
+                    continue
+                if word[0] not in ALLOWED_ATTRS:
+                    hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                              "@[%s] -- not in ALLOWED_ATTRS (R4: the compiled "
+                              "implementation must be the Lean definition)" % word[0]))
+    # THE OPTION RULE (W-29): `set_option <name>` names an option or it is named
+    # here.  `debug.skipKernelTC` is the member that reads every `#print axioms`
+    # line in `Check.lean` through a check that no longer runs.
+    for m in SET_OPTION.finditer(code):
+        if m.group(1) not in ALLOWED_OPTIONS:
+            hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                      "set_option %s -- not in ALLOWED_OPTIONS (R4: an option "
+                      "may not change what is proved or what runs)" % m.group(1)))
+    # THE COMMAND RULE (W-29): the word that begins a column-zero line is a
+    # command this kernel uses, or it is named here.  It is the net under the
+    # members of R4's class nobody has thought of yet -- `partial_fixpoint` was
+    # one, and it went green under a list of five spellings.
+    for m in COMMAND_WORD.finditer(code):
+        if m.group(1) not in ALLOWED_COMMANDS:
+            hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                      "`%s` begins a line and is not in ALLOWED_COMMANDS (R4: a "
+                      "command this kernel does not use)" % m.group(1)))
     for n, name in sorted(hits):
         print(f"{p}:{n}: banned: {name}")
         bad += 1

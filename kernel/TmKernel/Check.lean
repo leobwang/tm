@@ -421,7 +421,6 @@ open Tm
 #print axioms Tm.find_setEstIn
 #print axioms Tm.find_insertBeforeId
 #print axioms Tm.tok_wf_iff
-#print axioms Tm.digitsOf_no_space
 #print axioms Tm.estWord_ne_nil
 #print axioms Tm.estWord_no_space
 #print axioms Tm.estWord_not_id

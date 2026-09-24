@@ -59904,3 +59904,293 @@ which this step's two halves close from both sides.
 11:56–12:16 and 14:14–14:34 inside the window and in no segment, in both the text rendering and
 `--json`. A re-confirmation of an open gap, not a new one, and not re-driven here. Gap **1790**
 stays open and is now named in the LAND block, which is the whole of correction 1885.
+
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-29**, **track A** (the
+     gates).  Written per AGENTS §6.4: one block appended at the end, the gap
+     list one sequence, and every number below re-measured in this run.
+
+## Stage 6 — W-29 track A: an attribute has two spellings and the gate read one, an option is an escape hatch, a command is a residue, and one population answers for two checks
+
+**Range:** gaps **1950–1979** (track A's). **Taken here: 1950–1958.** Parity: **none issued**
+(`next free P41`). Files: `kernel/totality.py`, `kernel/leanfiles.py`, `kernel/citations.py`,
+`kernel/citations-allow.txt`, `kernel/parity.py`, `kernel/TmKernel/TmKernel/Boundary.lean`,
+`kernel/TmKernel/TmKernel/Line.lean`, `kernel/TmKernel/Check.lean`, `AGENTS.md` and this file.
+
+**Five of the six findings below were DRIVEN by a plant before they were touched** — each plant
+alone, each in a `git archive HEAD` clone under `/tmp/claude-1000/…`, never in the shared
+checkout — and the sixth is a measurement over the library, which is how a finding that two
+declarations are character-for-character identical is reproduced. **This step adds five more
+instances of the class an auditor has now counted nine times**, and three of the five have a
+sharper shape than "a list where the rule is a class": *W-28 inverted an enumeration and then
+applied the inverted rule to half its domain* — one of Lean's two attribute spellings (finding
+1), one of the two kinds of entry a walk meets (finding 4), one of the two gates that ask which
+files this repository holds (finding 5). Inverting an enumeration does not finish the job if the
+residue is then asked about half the cases.
+
+### 1. `totality.py`'s attribute residue read ONE of Lean's two spellings — gap 1950
+
+W-28 replaced `BANNED`'s `@[implemented_by]` row with `ALLOWED_ATTRS`, a residue: an attribute
+joins a four-name set with a sentence or it is named. The residue was matched against `@[..]`
+blocks only, and the file's own "WHAT IT CANNOT SEE" paragraph said so — an attribute applied by
+the `attribute [..] name` COMMAND — and argued it away because the library writes none. **That
+is exactly the shape W-27 found in R4's own row**: an audit that is declared and not mechanised
+is never performed.
+
+**DRIVEN.** In a clone, appended to `Emit.lean`:
+
+```lean
+def w29ExternProbe (n : Nat) : Nat := n
+attribute [extern "tm_kernel_call_c"] w29ExternProbe
+```
+
+`lake build TmKernel:static` → `Build completed successfully (174 jobs)`;
+`python3 totality.py TmKernel/TmKernel TmKernel` → **rc=0, no output**. The same attribute on the
+same declaration written `@[extern "tm_kernel_call_c"] def w29ExternProbe …` is named — one rule,
+two spellings, one of them read. The same command spelling applied to an
+implemented_by attribute was caught, but by the unrelated bare-token `implemented_by` row and
+never by the residue.
+
+**MEASURED and declared rather than argued:** the command form does *not* redirect code
+generation in this toolchain — after both plants the generated C under `.lake/build/ir/` still
+carries the probe's own Lean body. So the plant is a GATE hole and **no landed escape is
+claimed**. The rule is banned as a class anyway, because the gate cannot know which spelling a
+later toolchain wires up and because `attribute [instance]` changes what later elaboration sees
+whatever the compiler does.
+
+**Repaired**: `ATTR_SPELLINGS` is the two spellings and the residue loop runs over both — one
+rule, not two copies of it (§5.3 applied to the gate). After: the plant is named twice, once by
+`ALLOWED_ATTRS` and once by finding 3's command residue.
+
+### 2. `set_option` was unbanned and its argument was never read — gap 1951
+
+Nothing in `check.sh` looked at an option. The option namespace holds **`debug.skipKernelTC`**,
+which turns the kernel typechecker off: `Check.lean`'s 5,156 `#print axioms` lines and the whole
+of check 3 are then read through a check that no longer runs.
+
+**DRIVEN.** In a clone, appended to `Emit.lean`:
+
+```lean
+set_option debug.skipKernelTC true in
+theorem w29SkipTC : (1 : Nat) + 1 = 2 := rfl
+```
+
+built, and `totality.py` → **rc=0**. *What the plant shows is the hole*: no term the elaborator
+accepts and the kernel rejects was constructed here, so no unsound proof is claimed to have
+landed.
+
+**Repaired as a residue, not as a ban list.** MEASURED over the library: this kernel sets
+**four** options — `maxRecDepth` (314), `maxHeartbeats` (1), `linter.unusedSimpArgs` (1),
+`exponentiation.threshold` (1) — and `ALLOWED_OPTIONS` is those four, each with the sentence that
+says why it cannot change what is proved or what runs (the first three are resource bounds whose
+breach is an ERROR, the fourth is a lint). Any other option is named. A ban list would have
+needed a row for `debug.*`, then `compiler.*`, then `backward.*`.
+
+### 3. `partial_fixpoint` — a member of R4's class the ban list never held — gap 1952
+
+R4 bans `partial def`. Lean 4.33.1 has a second way of writing a definition whose recursion it
+never had to justify, and it does not use the `partial` keyword as a word.
+
+**DRIVEN.** In a clone, appended to `Emit.lean`:
+
+```lean
+def w29Diverge (n : Nat) : Option Nat := w29Diverge (n + 1)
+  partial_fixpoint
+```
+
+built, and `totality.py` → **rc=0**. `\bpartial\s+def\b` cannot see it; neither can `\bpartial\b`,
+because `_` is a word character.
+
+**Repaired twice over, and the second half is the property.**
+
+* the row is the keyword **STEM** now — the token `partial` with anything but a LETTER after it,
+  which is `partial def`, `partial_fixpoint` and any `partial_*` a later toolchain adds. The one
+  identifier in the library that begins with the word, `partialDoneAt` (11 occurrences),
+  continues in a letter and is not a token of it. The cost is declared: a theorem named
+  `partial_…` would fail and have to be renamed or allowed.
+* **`ALLOWED_COMMANDS`**, the residue that makes this the last time the list has to learn a name.
+  MEASURED over the library: **22** distinct words begin a column-zero line in stripped source,
+  and every one is a command this kernel uses. A command JOINS that set to be allowed, so
+  `partial`, `unsafe`, `opaque`, `axiom`, `example`, `attribute`, `initialize`,
+  `builtin_initialize`, `macro`, `macro_rules`, `elab`, `syntax`, `notation` and
+  `register_builtin_option` are refused BY NAME without this file learning any of them. Driven
+  after the repair: `initialize` and `macro_rules` are each named on their own plant.
+
+### 4. check 8 was **9/10 in every worktree**, and the property was the reason — gap 1953
+
+W-28 made check 8's population the property-based WALK union `git ls-files`. The walk's prune
+rule — a leading dot, or a CACHEDIR.TAG file — was asked **only of directories**, and in a
+LINKED WORKTREE `.git` is a FILE holding one `gitdir:` line. `git ls-files` does not list it, no
+reader claims the extension, and the residue rule fails on it.
+
+**DRIVEN** by running `check.sh` in `.claude/worktrees/w29-a` — the worktree this campaign tells
+every track to work in — at pristine `89c747f`:
+
+```
+prose citations                                FAILED
+1 unaccounted file(s), 0 exclusion(s) covering nothing:
+  .git  (no reader for this extension and no exclusion)
+```
+
+and the walk measured at 595 files with `.git` and `.gitignore` in it. The defect dates from
+`1df7ecb` — the commit that made the population a union — so it bites **every track that works in
+a linked worktree from that commit onward**, which is what W-29's three tracks were told to do.
+A gate that fails 9/10 the moment it is run where the campaign says to run it is a gate people
+learn to read past, which is the failure mode §11 is about.
+
+**Repaired**: the predicate is `leanfiles.is_derived` now — the dead name is written here
+without backticks, is_build_dir — and the test is asked of every entry, because a
+leading dot is a property of a NAME and not of a directory. Pruning a dot-named FILE loses
+nothing the repository tracks: the population is a union with `git ls-files`, so `.gitignore`,
+`.claude/API-NOTES.md` and the six `.tm/` fixture directories come back through git with their
+reasons in the gate that excludes them.
+
+### 5. Two gates, two answers to "which files are this repository" — gaps 1954 and 1955
+
+check 8's population is the walk union git. **check 10's sweep was the walk ALONE**, and the walk
+prunes dot-directories that hold **eleven tracked files**.
+
+**DRIVEN.** In a clone, one line appended to `.claude/API-NOTES.md` — a tracked file —
+`**Parity P41 taken**`: `python3 parity.py` → **rc=0**, still printing `next free P41`. The
+register would have handed the next block a number the tree already takes, which is README gap
+1417's own failure reached through the POPULATION instead of through the idioms, one run after
+W-28 closed the idiom half.
+
+**Repaired**: the union is `leanfiles.repo_files`, once, and both gates import it —
+AGENTS §5.3 (two definitions of one concept is the bug) applied to the gate layer, which is where
+this file's own `leanfiles.py` header says the W-21 and W-22 holes came from. After: the plant is
+named three times over. The sweep grew from **594** files to **605**, and to 606 on the run this block
+ships with, and stayed green — the last file being a `.pyc` CPython had just written. The cost
+is declared: check 10 now depends on `git` the way check 8 has since W-28, so a `git archive`
+clone needs a `git init && git add -A` before either gate runs in it.
+
+### 5b. check 10's only exclusion list had no stale-entry ratchet — gap 1958
+
+`not-row <path> <why>` is the one exclusion this gate has, and it had the half of the residue
+discipline that is easy to forget. A line whose FILE has gone was named; a line whose file no
+longer carries a single `| P<n> |` row was **silent** — an exclusion outliving its reason, which
+is what `citations.py` reports as "N exclusion(s) covering nothing" and what the W-28 repair step
+made a dead vocabulary entry do. **DRIVEN** in a clone: `not-row  mutations.txt` — a real file
+with zero register-shaped rows — left `parity.py` at rc=0 before the ratchet and is named after
+it. MEASURED when it went in: the five live lines skip **5, 11, 10, 9 and 12** rows, 47 in all,
+so none is dead today and the count is printed on every run.
+
+### 6. §5.3 by SHAPE: seventeen groups of identical declarations, two consumed — gap 1956
+
+W-28 found the emitters optNum and pairJson to be character-for-character copies by reading them. The same
+question asked mechanically — every `def`, `abbrev`, `theorem` and `instance` in the library
+normalised to its own name, whitespace collapsed, comments stripped with string contents
+**preserved**, and hashed — answers **17 groups**.
+
+Two are consumed here, each chosen because the copy has no prose citation to strand:
+
+* **Tm.digitsOf_no_space (Line.lean) and `Tm.digitsOf_noSpace` (Text.lean)** — the same
+  statement about the same `Tm.digitsOf`, in the same namespace, with the same six-line proof, in
+  two modules, and `Line.lean` imports `TmKernel.Text`. The downstream copy is deleted, its one
+  use reads the original, and the roster row goes with the declaration.
+* **CapWire.boolReq and `CapWire.boolAt` (Boundary.lean)** — the same reader under two names and
+  two doc comments, 600 lines apart in one namespace, read once and eleven times. `boolAt` is the
+  name the prose uses (`EmitWire`, `Lookahead`, and the README), so it survives and moves up to
+  the earlier site; the one boolReq call site reads it.
+
+**The other fifteen are OPEN and listed by name in gap 1956**, and ELEVEN of them are one
+family: `Line.lean` proves eleven `by decide` facts twice, once under a
+rule_/rate_/stamps_/moment_ name and once under a row_ name. Deleting a theorem edits
+`Check.lean`'s roster, which another track of this run is holding open, so the eleven are filed
+rather than taken. **Two of the fifteen are NOT duplicates** and are named in the gap so that
+nobody re-finds them: `jemitObjAcc`/`jemitOTailAcc` and `jemitArrAcc`/`jemitTailAcc` each call
+their OWN `.go`, which the normaliser cannot see because it rewrites a declaration's own name.
+That is this detector's own blind spot, measured rather than argued: run once with string
+contents BLANKED it reported 27 groups, and the extra twelve are fixtures that differ only in
+their text.
+
+### 7. What these gates still cannot see — measured or argued, never guessed
+
+* **A command written MID-LINE after an `in` combinator** (`open Nat in unsafe def …`) is outside
+  `ALLOWED_COMMANDS`, which is a LINE rule; W-28's roster repair names that blind spot for the
+  same reason. Every member of the class this campaign knows about is also caught by its own
+  token row, which is why those rows stay.
+* **The rule I could not state in Python is "a definition Lean accepted without justifying its
+  recursion"** — gap 1957. `partial`, `unsafe` and `partial_fixpoint` are keywords, and to a
+  regex a keyword is indistinguishable from an identifier: the library's indented single-word
+  lines are 33 distinct words and 15 of them are declared NAMES, so a residue over them would
+  fail a proof that ends in a lemma name. The question is decidable in Lean over the elaborated
+  environment (`ConstantInfo`'s definition safety, and the fixpoint constant a `partial_fixpoint`
+  leaves in its value) and that is where the rule belongs. What is in place instead is the stem
+  rule plus the column-zero residue, which fail the spellings this toolchain has.
+* **An `attribute` command whose brackets are built by a macro.** The kernel defines none, and
+  `macro`, `macro_rules`, `elab` and `syntax` are all refused by `ALLOWED_COMMANDS`.
+* **An option set by a tactic or by `lakefile.toml`** rather than by a `set_option` command in a
+  scanned file. the lakefile's own leanOptions key is not swept by this gate; the lakefile is swept by
+  check 8 as prose only.
+* **The duplicate detector is textual.** Two declarations that say the same thing in two different
+  ways — the shape W-28's `withPlanner`/`withLookahead` guard was — are invisible to it; it finds
+  copies, not synonyms.
+
+### 8. Acceptance, capped, on the tree this block ships with
+
+`check.sh` **ALL TEN**, in the `w29-a` worktree, on the tree this block ships with: the axiom
+audit reads **5,155** theorems (one fewer than at `89c747f` — the duplicate theorem deleted in
+§6), the corpus round trip is unchanged at **29/37 files and 4/5 whole plans**, the stage goals
+are **9 outstanding, all stage 6**, check 9 audits the one definition this step changed
+(`CapWire.readState`, whose body now reads `boolAt`) and finds it PINNED, and check 10 sweeps
+**606** files for 54 register rows, 289 citations, 2 canonical issuance lines and **47 rows
+skipped by a not-row line**, `next free P41`.  That file count moves by one or two between runs
+and the reason is worth knowing: CPython writes a `.pyc` into `kernel/__pycache__/` as one gate
+imports another, the walk reaches that directory (it is neither dot-named nor CACHEDIR.TAG-marked)
+and check 8 is the gate that names it with a reason.  606 here, 605 an hour earlier, same tree.
+
+`cargo test --workspace` was run **THREE times end to end** — 22:33, 22:39 and 22:41 — and each
+run was **86 binaries, 1,475 passed, 0 failed, 9 ignored**. Runs 2 and 3 are on the exact tree
+this block ships with; run 1 predates one doc-comment rewrap in `Boundary.lean` and nothing else.
+
+**Every named suite on its own, 0 failed in every one**: FFI (`tm-kernel-ffi`, 5 binaries, 101
+tests), T5 `kernel_replay_parity` 29 (4 ignored), the door suite `kernel_log_door` 23,
+`cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25,
+`kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 21, `planner_invariants` 8,
+and `cli_latency` 5 (1 ignored) — **the machine's load average was 5.96 when `cli_latency` ran**,
+read and not assumed, because gap 1333 makes a load threshold part of believing that suite.
+
+No `sorry`, `axiom`, `partial def`, `partial_fixpoint`, `unsafe`, `opaque`, `implemented_by`,
+`extern`, `panic!`, `!`-accessor, `.toOption`, `example` or new external dependency added — and
+three of those are refusable here for the first time. No generator narrowed, no
+`.proptest-regressions` line removed, no snapshot re-blessed, no latency band or corpus touched.
+**No goal deleted and none discharged — burn-down 9, all stage 6, before and after.**
+`Cargo.toml`, `Cargo.lock`, `lean-toolchain` and `kernel/corpus/` untouched; **no memory bound
+raised** — every `lake`, `lean`, `cargo`, `check.sh` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet`, 40G for builds and 8G for
+every Python gate.
+
+**Every plant was made in a clone.** `git archive HEAD | tar -x` into
+`/tmp/claude-1000/…/scratchpad/clone-a`, then `git init && git add -A` in the clone, because
+check 8 and (since this step) check 10 need `git` to answer for the population. Eleven plants in
+all: `attribute [extern]`, `attribute [implemented_by]`, `set_option debug.skipKernelTC`,
+`partial_fixpoint`, `initialize`, `macro_rules`, an `@[extern]` block-form regression, a
+`.head!` regression, the `.claude/API-NOTES.md` parity issuance, the `kernel/target/w29probe.md`
+citation regression, and the worktree `.git` drive, which needed no plant at all — it is what
+`check.sh` says in a worktree at pristine HEAD. `git status --porcelain` on
+`/home/leobwang/code/projects/tm` was read before and after every one of them and **never held a
+file of this step's**: this step's own work is in the `w29-a` worktree and its plants are in the
+clone. What the shared checkout DID hold, from 22:01 onward, is six files belonging to the other
+two tracks of this run — `Planner.lean` (track P) and `Check.lean`, `Goals.lean`,
+`Negative.lean`, `PlanCheck.lean`, `PlannerWit.lean` (track G) — recorded here because a
+concurrent track editing the SHARED tree is what gap 1788 is about from the other side, and
+because this step deliberately left them alone.
+
+### 9. Gaps
+
+**Closed here, each with the drive above**: **1950** (the attribute's second spelling),
+**1951** (`set_option` and the option residue), **1952** (`partial_fixpoint`, the stem and the
+command residue), **1953** (the prune property asked only of directories, and check 8 failing in
+every worktree), **1954** (two gates, two populations), **1955** (check 10's sweep missing eleven
+tracked files), **1958** (a `not-row` exclusion that covers nothing).
+
+**Open, and each is a decision or a piece of work rather than an oversight:**
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **1956** | **thirteen groups of character-identical declarations remain** (fifteen reported, two of them refuted below). ELEVEN are `Line.lean` proving one `by decide` fact twice, under a rule_/rate_/stamps_/moment_ name and under a row_ name: `rule_mwf`/`row_every_mwf`, `rule_2w_sun`/`row_every_2w_sun`, `rule_month_15`/`row_every_month_15`, `rule_weekday`/`row_every_weekday`, `rule_week`/`row_every_week`, `rule_3d`/`row_every_3d`, `rule_day`/`row_every_day`, `rate_4h_w`/`row_cap_4h_w`, `rate_6b_w`/`row_min_6b_w`, `stamps_W36_W37`/`row_demoted_stamps`, `moment_date_form`/`row_due_date`. One is `Tm.isDemotedRecord` (`Close.lean`) and `Tm.demotedRecordPlacement` (`Plan.lean`) — D8's rule written twice in two modules, read four times and fourteen. One is `closeW35`/`staleW35`, one Region value under two fixture roles, which §5.6 may well justify and which is therefore an adjudication rather than a defect. **REFUTED, and named so nobody re-finds them**: `jemitObjAcc`/`jemitOTailAcc` and `jemitArrAcc`/`jemitTailAcc` each call their OWN `.go` | `Line.lean`, `Close.lean`, `Plan.lean`, `Boundary.lean` | every theorem deletion edits `Check.lean`'s roster, which another track of this run holds open, so taking the eleven here would be a merge conflict rather than a repair. The detector is textual: it finds copies, not synonyms, and it cannot see a duplicate that reaches its own auxiliary by name |
+| **1957** | **the rule that could not be stated in Python: "a definition Lean accepted without justifying its recursion".** `partial`, `unsafe` and `partial_fixpoint` are keywords, and to a regex a keyword is an identifier. Measured here: the library's indented single-word lines are 33 distinct words, 15 of them declared NAMES, so a residue over them would fail a proof that ends in a lemma name | `totality.py` | the stem rule and the column-zero residue fail every spelling this toolchain has, but a `partial_fixpoint` written mid-line after an `in` combinator is outside both. The rule is decidable in Lean over the elaborated environment — definition safety, and the fixpoint constant the clause leaves in the value — which is the same shape gap 1883 needs and could be one Lean query for both |
+
+**Not repaired and not mine to repair**: the shared checkout held six files of the other two
+tracks of this run while this step ran (§8). Nothing was done to them, and this block records the
+fact rather than the diff.

@@ -660,13 +660,6 @@ theorem tok_wf_iff (t : Tok) : t.wf = true ↔
     (t.sep.all isSp = true ∧ t.word.isEmpty = false ∧ t.word.all (fun c => !isSp c) = true) := by
   simp [Tok.wf, and_assoc]
 
-theorem digitsOf_no_space (v : Nat) : ∀ c ∈ digitsOf v, isSp c = false := by
-  intro c hc
-  have hd := digitsOf_all_digits v c hc
-  by_cases h : c = ' '
-  · subst h; simp [charDigit] at hd
-  · simpa [isSp] using h
-
 theorem estWord_ne_nil (v : Nat) : (estWord v).isEmpty = false := by simp [estWord]
 
 theorem estWord_no_space (v : Nat) : (estWord v).all (fun c => !isSp c) = true := by
@@ -676,7 +669,7 @@ theorem estWord_no_space (v : Nat) : (estWord v).all (fun c => !isSp c) = true :
   · rcases List.mem_append.1 h with h1 | h1
     · simp only [List.mem_cons, List.not_mem_nil, or_false] at h1
       rcases h1 with rfl | rfl | rfl | rfl <;> rfl
-    · simp [digitsOf_no_space v c h1]
+    · simp [digitsOf_noSpace v c h1]
   · simp only [List.mem_cons, List.not_mem_nil, or_false] at h
     subst h; rfl
 
