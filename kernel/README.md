@@ -60732,3 +60732,214 @@ worktree, and gap **1788** did not fire: `git status --porcelain` in
 `/home/leobwang/code/projects/tm/.claude/worktrees/w29-g` held only this step's five files
 before and after each `check.sh`, and `/home/leobwang/code/projects/tm` — the shared checkout —
 was never written to by this track and holds only track P's own files.
+
+<!-- =====================================================================
+     APPENDED 2026-09-24: stage 6 (the planner), run **W-29**, the **LAND
+     step**.  Merges `w29-a` and `w29-g` onto `rebuild-on-lean` beside track
+     P's own two commits, drives the merged binary, and answers the brief's
+     two questions without softening either.  Gap range **2000-2004**;
+     **2000-2002 taken**, 2003 and 2004 free.  Parity: **none issued** —
+     `next free P41`.
+     ===================================================================== -->
+
+## Stage 6 — W-29 land: the day carries assigned work, the rows appear when a candidate does, and they do NOT agree yet
+
+### 1. What was merged, and what it cost
+
+Track P committed straight onto `rebuild-on-lean` (`2374820` P9, `2bf69a6` the arm). `w29-a` is
+merged at `49091f0` and `w29-g` at `c658379`, both real three-way merges from `89c747f`. Both
+W-29 worktrees removed, both branches deleted, `stage5-lookahead` untouched, and
+`git status --porcelain` **empty** before a single figure below was measured.
+
+Three conflicts, all resolved by keeping every track's work: `kernel/README.md` (three blocks
+appended in track order, and track A's block given back the `<!-- … -->` delimiters every other
+block carries — without them its five-space lead-in renders as a code block), and
+`kernel/TmKernel/Check.lean` twice (P's 31 `#print axioms` lines and G's 32, both rosters whole).
+`Goals.lean`, `PlanCheck.lean`, `PlannerWit.lean`, `Boundary.lean` and `Line.lean` auto-merged.
+
+**THE MERGE BROKE A GATE AND IT WAS THE SAME CROSS-TRACK FALSEHOOD W-28 MET.** Eleven prose
+citations, every one in track G's writing, every one naming a declaration track P deleted or
+renamed **on the same day**. Track G branched from `89c747f` and wrote in the future tense —
+*"TWO ∀-THEOREMS ARE BUILD-TIME TRIPWIRES P9 MUST DELETE OR REFUTE"* — and P9 landed and did
+exactly that, so the prediction sat in a tree where it had already come true. Check 8 named all
+eleven at three sites: `Goals.lean`'s stage-6 header, one `PlannerWit.lean` doc comment, and
+track G's own README block. **All eleven repaired by fixing the CLAIM** — no allow-list entry, no
+checker touched, no predicate weakened. The two deleted tripwires are written without backticks
+now, which is this repository's idiom for a name that no longer resolves (track P's own deletion
+table uses it); the four emptiness theorems and the census ceiling were **not** deleted but
+restated on the `hnoassign : r.assignedRows = []` subdomain, and the prose says so and names gap
+**1902**.
+
+**AND ONE FALSEHOOD NO GATE CAN SEE** — gap 1871's class, found by reading. Track G called seven
+*"the one number in this repository that P9 must move"* and wrote
+`PlannerWit.the_census_ratio_is_still_seven` so that the move would show in the composing run's
+own diff. **IT DID NOT MOVE.** The theorem is green at seven on the merged tree. The reason is
+the fact both tracks measured independently and neither joined up: `theCensusRequest` sends **no
+candidate**, so the fold fills no slot and a `filterMap` over `Planner.Assign.slotOf` adds no row
+to that day. Corrected at three sites and filed as gap **2000**.
+
+Two further merge corrections, neither gate-visible: **gaps 1903 and 1984 are one defect found
+from two sides** — the wire's `ci` against the plan's `effectiveCi` — and track G **stated** it
+(`PlanCheck.candsAgree`, as a property, with `PlanCheck.candPlanView` answering `none` so a
+candidate must JOIN the agreement to be exempt), so 1903 is now *"nothing **pays** it"*, not
+*"nothing states it"*; and track G's gap **1989** (check 8 red in every linked worktree) was
+closed by track A in the same run as gap **1953**.
+
+### 2. THE DRIVE: the kernel's day beside the fork's, for the same request
+
+`tm plan` on a fresh tree with four items, at `2026-09-24T09:00:00-05:00`, merged binary:
+
+```
+2026-09-24 · window 09:00–17:00 · budget 6 blocks
+09:00  4 p5   Finish the merge report           2b
+10:00  4 p5   Finish the merge report           2b
+11:00  ·      break 20m
+11:20  3 p5   Read the assignment proof         2b
+...
+· plan honesty 1.17 — planned above a realistic budget
+· dropped: w3
+```
+
+That is the **fork's** planner: `cli/planning.rs` calls `planner::plan`.
+
+**The differential arm, on the merged tree, over a full 76-case run:**
+
+```
+planner_invariants plan census: 76 cases, 107 walls compared, 649 kernel rows,
+window-differs 0, budget-differs 0, assigned-rows compared 0, cases exempt 76,
+fork assigned rows the kernel had no candidate for 222,
+energy-less work rows from now: kernel 14, fork 14
+```
+
+**Assigned rows compared: ZERO.** Every case is exempt, because every case sends
+`capacity.candidates.items: []`.
+
+**So the arm was driven with candidates on it, in a clone, to answer the brief's question rather
+than infer it.** One fixed case, the candidates encoded field-for-field the way shipped
+`tm/src/cli/kernel_capacity.rs`'s `cand_json`/`plan_json` encodes them, three orderings tried:
+
+```
+DRIVE 1  kernel assigned, cands=[] : []
+DRIVE 2  encoded 4 candidate(s) onto the planner request
+DRIVE 3  kernel assigned, cands>0 : [(…379200, …382800, ["zac"]), (…382800, …386400, ["zad"]),
+                                     (…387600, …391200, ["zad"]), (…391200, …394800, ["zad"]),
+                                     (…396000, …399600, ["zaa"]), (…399600, …403200, ["zaa"])]
+DRIVE 4  fork   assigned          : [(…379200, …382800, ["zad"]), (…382800, …386400, ["zad"]),
+                                     (…387600, …391200, ["zad"]), (…391200, …394800, ["zac"]),
+                                     (…396000, …399600, ["zaa"]), (…399600, …403200, ["zaa"])]
+DRIVE 5  AGREE? false
+```
+
+**DO THE ASSIGNED BLOCKS NOW APPEAR? YES** — six of them, where every predecessor of P9 drew
+none, and the arm is connected: the rows arrive exactly when a candidate does.
+
+**DO THEY AGREE? NO.** In all three orderings the **slot geometry is identical** — the same six
+`(start, stop)` pairs as the fork's, to the second — and the **item-to-slot assignment is not**,
+and it **changes with the order the candidates are sent in**: `collect_candidates` order and
+`kernel_capacity::send_order` both give one disagreeing row, and the fork's own
+`priority::sorted_candidates` service order gives four. **No divergence between the two planners
+is claimed from this**: the drive's encoder sends `floor`, `cap`, `yesterday` as null and
+`blockedBy` empty, and any of those could be the cause. What IS claimed, and is driven: the
+encoder gap **1905** names is not a field-mapping paragraph, because the **order** is a live and
+undetermined degree of freedom — which is track G's gap **1990** (rank is carried by list
+position on the wire and by a field on the store side) confirmed by computation. Gap **2002**.
+
+### 3. SAID PLAINLY: is the kernel's day whole, and does anything but the deletion stand?
+
+**The kernel's day is whole FOR ASSIGNMENT and is NOT whole.** `Planner.dayRows` carries §8.2
+step 5's Block and Batch rows now, and §2 drove them out of the FFI rather than reading it off a
+report. But *whole* is not what R3 needs, and three separate things say so:
+
+1. **Three shipped behaviours have no kernel answer at all** — `planner::overtime_drops`,
+   `planner::diff`, and `planner::active_run` as an export. Two text helpers
+   (`planner::fmt_clock`, `planner::kind_label`) have never been compared with `Emit.timeCell`,
+   and `DayPlan::hash` is still P8's placeholder.
+2. **§6.1's lift no longer holds for every request.** Nineteen statements carry
+   `hnoassign : r.assignedRows = []`. The lift's domain **shrank** on `2374820`, and that is gap
+   **1902**, not a rounding error.
+3. **The two planners do not agree on the assignment yet** (§2), and nothing on the Rust side
+   puts a candidate on a planner-day request, so no gate would catch it if they did not.
+
+**DOES ANYTHING BUT THE DELETION STAND BETWEEN HEAD AND R3? YES, and here is the measure**, re-run
+at this commit and not copied: `grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l`
+is **35**, across **TEN** files — `tm-core/src/emit.rs`, `tm/src/cli/ctx.rs`, `day.rs`,
+`ghost.rs`, `lifecycle.rs`, `planning.rs`, `render.rs`, `tm/src/tui/app.rs`, `prompts.rs`,
+`today.rs`. Track P's block says nine files; the tenth is real and this is the correction. By
+symbol: `fmt_clock` 6, `SegKind` 5, `plan` 5, bare `planner::` 5, `overtime_drops` 4,
+`kind_label` 3, `DayPlan` 2, `active_run` 2, `Segment` 1, `SegFlags` 1, `diff` 1.
+
+**Track P's own conditional answer is not softened here**: its §8 says *"the deletion is still not
+the only thing between HEAD and R3"*, and this block says the same thing with one more file in
+the count and the disagreement of §2 added to the list. W-28's land block said the opposite about
+R2 and an auditor caught it; this one does not repeat that.
+
+### 4. Burn-down, and which commit discharged a goal
+
+**Burn-down 9, all stage 6 — unmoved, and NO commit of this run discharged a goal.** Not
+`2374820`, not `2bf69a6`, not `61a7ad9`, not `3c5f21e`, not either merge. D50 expected P9 to move
+it; track P says plainly why it did not (the L26 goals are ∀-statements over §6.1's lift, and P9
+put that lift on a subdomain rather than widening it) and prices the rest as gap **1902**. Track
+G's nine-against-P9 audit is the map of which of the nine P9 moved and how far, and it is in
+`Goals.lean`'s stage-6 header where the previous eight lists live.
+
+### 5. What earlier stages bought, re-confirmed at this commit
+
+* **The kernel is still the only READER and only WRITER of the log.** The door suite
+  (`kernel_log_door`, 23 tests) is green, `no_reader_reference_escapes_the_deletion_region` and
+  `the_doors_writer_writes_the_lines_the_door_reads` among them.
+* **The comparand is still fork `4748911` at full precision.** `cli_switch_acceptance`'s
+  `model_fit_is_the_fork_points_on_the_corpus` is green, and
+  `tm/tests/fixtures/fork-4748911-log-lines.jsonl` (8,280 lines) is untouched at `f1b1727`.
+* **The corpus is not below its floor**: **29/37 files and 4/5 whole plans**, byte-identical.
+* **No parity number issued** — 40 registered, `next free P41`.
+
+### 6. Acceptance, capped, on the committed tree
+
+`check.sh` **ALL TEN**, every one by name: build ok · totality ok · axiom audit ok
+(**5,220 theorems**) · `Negative.lean` rejected · check 5 **93 tests** · corpus **29/37 and 4/5**
+· stage goals **9 outstanding, all stage 6** · citations **39,684 citations, 37,776 resolved, 0 allow
+entries unused, 264 files swept, 344 excluded by 16 rules** · check 9 **6 definitions audited, 6 PINNED, 0 owed** · check 10
+**40 registered (P1–P40), 608 files swept, 47 rows skipped by a not-row line, next free P41**.
+
+`cargo test --workspace` **THREE runs end to end on the committed tree** (D46), 01:32, 01:35 and
+01:37, each **86 binaries / 1,475 passed / 0 failed / 9 ignored**, `rc=0`, at load average 1.53,
+4.06 and 2.24. **NINE workspace runs in this session in all** (D46, said rather than implied):
+two at the `w29-a` merge point, one at the `w29-g` merge point, three on the merged tree before
+this block was written, and these three after it — every one of the nine 86 / 1,475 / 0 / 9.
+
+Every named suite on its own, 0 failed in each: FFI (`tm-kernel-ffi`, **101** tests over 5
+binaries) · T5 `kernel_replay_parity` **29** (4 ignored) · the door suite `kernel_log_door` **23**
+· `cli_switch_acceptance` **16** · `kernel_call_counts` **2** · `one_padder` **9** ·
+`one_renderer` **25** · `kernel_row_cells` **26** · `kernel_item_grammar` **6** ·
+`kernel_planner_wire` **21** · `planner_invariants` **TWELVE standalone runs, 8/0 every time, no
+new seed** — plus the nine inside the workspace runs, twenty-one in all — and
+`.proptest-regressions` is untouched (D46: a new seed would be a finding, and there was none) ·
+`cli_latency` **5 passed / 1 ignored** in band, at
+load average **2.37**, read before the run because gap 1333 makes the load part of believing that
+suite (first verb 2.23 s, later verbs ~157 ms, worst stalled day 552 ms).
+
+**Every drive was in a clone** — `git archive HEAD | tar -x` into
+`/tmp/claude-1000/…/scratchpad/clone-land` — and `git status --porcelain` on
+`/home/leobwang/code/projects/tm` was read **before and after** and was **empty both times**.
+`mutate.py` ran only inside `check.sh`; gap 1788 did not fire. No memory bound raised: every
+`lake`, `cargo`, `check.sh`, `tm` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=… -p MemorySwapMax=0 --quiet`.
+
+**Nothing but prose was written at this merge.** No proof, definition, checker, fixture,
+snapshot, generator, latency band, corpus entry or bound was added, changed or deleted; no
+`sorry`, `axiom`, `partial def`, `unsafe`, `opaque`, `implemented_by`, `panic!`, `!`-accessor,
+`.toOption` or new dependency; `lean-toolchain`, `Cargo.toml`, `Cargo.lock` and `kernel/corpus/`
+untouched.
+
+### 7. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2000** | **a prediction written into a theorem name was falsified by the merge.** Track G called seven *"the one number in this repository that P9 must move"*; `PlannerWit.the_census_ratio_is_still_seven` is green at seven beside a composed `Planner.dayRows`, because `theCensusRequest` sends no candidate | `PlannerWit.lean`, `Goals.lean`'s stage-6 header, README §6 of track G's block — all three corrected here | the census is a **tripwire that did not trip**, so it is not yet the instrument it was built to be. It becomes one at the step that puts a candidate on a witness request; until then it measures a day with no work in it |
+| **2001** | **gap 1905 is filed WIDER than the truth and the correction makes it cheaper.** It says *"No arm on the Rust side encodes a `Look.Cand`"*. `tm/src/cli/kernel_capacity.rs`'s `cand_json` and `plan_json` ARE that encoder — every field `Boundary.readCand` and `readPlanFacts` read, pinned by `the_candidate_facts_cross_the_wire_as_the_host_computed_them`, and **called on every `tm plan`** (`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank`). What is true is narrower: **no arm puts candidates on a PLANNER-DAY request** | `tm/tests/planner_invariants.rs`, `tm/tests/kernel_planner_wire.rs` | the step 1905 describes was priced as *"twelve `Cand` fields plus `WfPlanFacts`, each an R10 bound"*. Most of that is written and tested. What is actually owed is the wiring and gap 2002's order rule — a smaller step than filed, and a reader who believes 1905 as written will plan the wrong one |
+| **2002** | **the order candidates are sent in is an undetermined degree of freedom, and it changes the answer.** Driven in a clone at one fixed case: the kernel's day carries six assigned rows whose `(start, stop)` pairs match the fork's exactly, and whose item-to-slot assignment does not — one disagreeing row under `collect_candidates` order and under `kernel_capacity::send_order`, **four** under the fork's own `priority::sorted_candidates` service order | `Planner.PlanReq.assignFold`'s reading of rank; `kernel_capacity::send_order` | this is track G's gap **1990** confirmed by computation instead of argued: rank is carried by **position** on the wire and by a **field** on the store side, so an encoder cannot be written until the campaign decides which order §8.2 step 5 is entitled to. **No divergence between the two planners is claimed**: the drive's encoder sends `floor`, `cap` and `yesterday` null and `blockedBy` empty, any of which could be the cause. The step that writes the real encoder must re-drive this with those four carried |
+
+**Nothing else opened, and nothing else closed.** Gaps 113/114/116, 301, 346, 365, 435, 551, 577,
+803, 876, 1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900,
+1902–1906, 1956, 1957, 1984–1988 and 1990 are untouched by this merge. Gaps **2003** and **2004**
+are free.
