@@ -684,4 +684,54 @@ else
   printf '%s\n' "$out" | head -20
 fi
 
+# 11. TWO NAMES FOR ONE DEFINITION.  AGENTS §5.3 -- two definitions of one
+#     concept is the bug -- is the rule this kernel is named after, and until
+#     W-30 NOTHING BELOW THE GATE READ IT.  It was swept by hand at several
+#     steps, and W-29's audit measured what hand-sweeping is worth: that run
+#     reported "seventeen groups, all seventeen accounted for", and FIVE
+#     character-identical `def` pairs were in none of them.
+#
+#     W-29 wrote `twins.py` so the number could be re-measured instead of
+#     believed, and left it a SWEEP -- it printed thirty groups, exited 0, and
+#     argued that a GATE would need an exemption LIST, which is the shape this
+#     campaign keeps finding wrong.  README gap 2017 carried that.  It needs no
+#     list: it needs a sharper KEY and two PROPERTIES, and the file's header is
+#     the specification.  The key is the SIGNATURE and the BODY WITH ITS STRING
+#     LITERALS (W-29's key blanked the strings, which made three emitters that
+#     differ only in the wire key they spell one body), and a group under one
+#     key survives only if neither of these answers it:
+#
+#       * the definition is NULLARY -- a named value, and two names for one
+#         value are two fixture roles or two bounds, not two concepts;
+#       * the compiler EMITS DIFFERENT CODE for the two.  That is the exemption
+#         the five `@[csimp]` pairs needed and that nobody had ever checked: a
+#         `@[csimp]` lemma rewrites the callees of every definition compiled
+#         AFTER it, so `edfFast` -- character-identical to `edf` -- compiles to
+#         a call to `edfCapsFast` while `edf` keeps `edfCaps`, and deleting the
+#         copy would silently deoptimise the original.  Read out of `lake`'s own
+#         `.lake/build/ir`, which is why this check runs after check 1.
+#
+#     It found ONE group that nothing answers, and it was a live duplicate
+#     README gap 1956 had already named and not taken: Tm.isDemotedRecord
+#     (Close.lean, the name that is now gone) and `Tm.demotedRecordPlacement`
+#     (Plan.lean), D8's rule written twice in two modules.  The Close copy is deleted and its three
+#     sites read the Plan definition.
+#
+#     THE COST IS DECLARED AND MEASURED, NOT QUOTED.  0.75-0.76 s (three runs,
+#     this machine) inside a 13.26-15.03 s eleven-check wall (FOUR runs, warm
+#     tree, same session; the 15.03 followed a python run and the other three
+#     were back to back) -- 5.3-6.1% of the ten-check wall it is added to,
+#     inside design 14.0 item 4's 10%-per-step rule.  (A first draft of this comment
+#     said "about 12%", computed against the 7.91-8.01 s wall check 9's comment
+#     records for an older machine.  That is README gap 871's class -- a
+#     checker's prose misquoting the measurement beside it -- and §5.11 says
+#     re-measure, do not quote.)
+out=$( python3 twins.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "no two names for one definition" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+else
+  say "no two names for one definition" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
 exit $fail

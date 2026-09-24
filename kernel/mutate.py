@@ -1656,6 +1656,52 @@ def run(decls, write, verbose=True):
     return bad, soft, pinned, by, rows
 
 
+# **"OWED" WAS ONE WORD OVER THREE CLAIMS** (W-30 track A, README gap 2090).
+# `owed` is `[d for d in decls if d not in rostered]` and `rostered` asks for a
+# row whose sha IS the body's, so a definition lands in it for three reasons
+# that a reader has to tell apart and the word did not:
+#
+#   ABSENT    no row names this definition at all.  NOTHING HAS EVER WATCHED IT
+#             FAIL -- the claim check 9 exists to make has not been made.
+#   STALE     a row names it, and its sha is another body's.  It WAS audited,
+#             at a body this tree no longer holds; the audit is real and it is
+#             about something else.
+#   UNPARSED  the header parsed and the body did not, so `digest` has nothing
+#             to key on.  No constant can be folded into it and no row can be
+#             written for it: the gate cannot speak about this definition at
+#             all, which is neither of the first two.
+#
+# The three are NOT interchangeable and the fix for each is different -- run the
+# audit, re-run it, or repair `split_header`.  MEASURED when this went in: the
+# tree at 552566d carried SIX owed rows and all six were ABSENT, added by W-29
+# without `--write`, so check.sh re-audited them live on EVERY run -- six kernel
+# builds a run, ~10 minutes, for six rows that pin.  The gate said `6 OWED A
+# MUTATION` and a reader could not tell that from six rows gone stale, which
+# would have cost nothing and meant something else entirely.
+#
+# This is not a verdict about the definition's WORTH: an UNPARSED definition is
+# a defect in this file, not in the kernel, and it is the one of the three that
+# `--write` cannot clear.
+def owed_because(decl, rows):
+    """Why `decl` is owed: the class, spelled, with the evidence."""
+    row = rows.get((decl["file"], decl["name"]))
+    if decl["sha"] is None:
+        return ("UNPARSED   -- no body this file can digest, so no row can be "
+                "written and no constant folded")
+    if row is None:
+        return "ABSENT     -- no row: nothing has ever watched this definition fail"
+    return ("STALE      -- row holds %s, this body is %s: audited at a body "
+            "this tree no longer holds" % (row.get("sha", "?")[:12], decl["sha"][:12]))
+
+
+def owed_reasons(owed, rows):
+    """`3 absent, 1 stale` -- the counts behind the one number, in one line."""
+    kinds = collections.Counter(owed_because(d, rows).split()[0].lower()
+                                for d in owed)
+    return ", ".join("%d %s" % (kinds[k], k)
+                     for k in ("absent", "stale", "unparsed") if kinds[k])
+
+
 FLAGS = ("--gate", "--write", "--verify", "--only", "--since")
 
 
@@ -1893,8 +1939,13 @@ def main(argv):
                   % (len(decls), base[:7], len(rostered), unfold,
                      fixture_rows, mute_rows, lit, shadow, unnamed))
             return 0
-        print("%d new or changed since %s, %d rostered, %d OWED A MUTATION"
-              % (len(decls), base[:7], len(rostered), len(owed)))
+        print("%d new or changed since %s, %d rostered, %d OWED A MUTATION "
+              "(%s)"
+              % (len(decls), base[:7], len(rostered), len(owed),
+                 owed_reasons(owed, rows)))
+        for d in owed:
+            print("  %-58s %s" % ("%s:%s" % (d["file"], d["name"]),
+                                  owed_because(d, rows)))
     bad, soft, pinned, by, _ = run(owed, write)
     if soft:
         print("%d definition(s) the fold cannot speak about -- "

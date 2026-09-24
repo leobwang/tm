@@ -291,7 +291,10 @@ ALLOWED_COMMANDS = {
     "private", "section", "set_option", "structure", "termination_by",
     "theorem", "variable", "where",
 }
-COMMAND_WORD = re.compile(r"(?m)^([A-Za-z_][A-Za-z0-9_'.]*)")
+# THE FIRST WORD OF EVERY LINE, indented or not (W-30).  It was anchored at
+# column zero, which is the hole `command_keywords` exists to close; the two
+# populations are told apart by whether the leading-space group is empty.
+COMMAND_WORD = re.compile(r"(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_'.]*)")
 # The `in` combinator and the `for` binder that is not one, as TOKENS.
 IN_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])in(?![\w'?!])")
 FOR_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])for(?![\w'?!])")
@@ -304,11 +307,13 @@ WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
 def command_positions(code):
     """Every offset in stripped `code` at which a Lean COMMAND may begin.
 
-    The start of each line, and the word after each `in` that is a command
-    combinator rather than a `for` loop's binder.  Yields `(offset, word)`.
+    Yields `(offset, word, certain)`.  `certain` is True where a command MUST
+    begin -- column zero, and the word after a command combinator's `in` -- and
+    False where one MAY begin, which is every other line head.  The two carry
+    different rules below, and the second is W-30's (README gap 2091).
     """
     for m in COMMAND_WORD.finditer(code):
-        yield m.start(), m.group(1)
+        yield m.start(2), m.group(2), not m.group(1)
     fors = [m.start() for m in FOR_TOKEN.finditer(code)]
     ins = [m for m in IN_TOKEN.finditer(code)]
     for k, m in enumerate(ins):
@@ -319,7 +324,148 @@ def command_positions(code):
         j = LEADING.match(code, m.end()).end()
         w = WORD.match(code, j)
         if w:
-            yield w.start(), w.group(0)
+            yield w.start(), w.group(0), True
+
+
+# **AND THE COMMAND RESIDUE WAS ANCHORED AT COLUMN ZERO** (W-30 track A, README
+# gap 2091).  W-29 made the commands a residue and gave the `in` combinator its
+# own position, and left the LINE HEAD at column zero -- so `macro`, `syntax`,
+# `elab`, `notation`, `initialize`, `macro_rules` and `builtin_initialize`, the
+# seven commands with no `BANNED` row of their own, escaped by being INDENTED.
+# Lean does not care: a command may begin at any column, and this library writes
+# `section .. end` in eleven files, which is where an indented command looks
+# like it belongs.  DRIVEN in a `git archive HEAD` clone with a warmed `.lake`:
+# two spaces in front of `macro "w30mac" : term => `(0)` and of `initialize
+# w30Ref : IO.Ref Nat <- IO.mkRef 0`, appended to `Emit.lean` inside a
+# `section`, BUILT and left this file at rc=0 with no output; at column zero
+# both are named.  That is W-29's own finding -- one rule, one spelling read --
+# reached through the COLUMN instead of through the syntax, and it is the tenth
+# time this campaign has found a rule stated over a spelling somebody thought of.
+#
+# WIDENING THE POPULATION IS NOT ENOUGH, AND IT IS WHY THIS TOOK A KEYWORD SET.
+# The residue's rule is "the word here is in ALLOWED_COMMANDS or it is named",
+# and at an INDENTED line head that rule is false of correct Lean: a proof step,
+# a `match` arm, a structure field and a `let` all begin lines, and none of them
+# is a command.  MEASURED over this library: 22 distinct words begin a
+# column-zero line and 1,133 begin an indented one.  A residue over 1,133 words
+# is a list again -- the ninth instance of the shape, written by the file whose
+# header says it costs the campaign a finding a run.
+#
+# SO THE INDENTED RULE ASKS LEAN'S OWN GRAMMAR.  A word at a MAY-begin position
+# is refused when it is a word Lean declares a command by -- and that set is
+# READ OUT OF THE PINNED TOOLCHAIN'S PARSER SOURCES, not written here.  Nothing
+# has to be added for `macro_rules`, for `register_builtin_option`, or for a
+# command a later toolchain invents: the set comes from the toolchain that
+# compiles this kernel, and a toolchain that adds a command adds it here.
+#
+# THE DERIVATION, and it is three sentences of Lean's own convention:
+#
+#   * a command parser is a `def` carrying `@[builtin_command_parser]` (or
+#     `@[command_parser]`).  FOUR files of `src/lean` declare one.
+#   * its KEYWORD is the parser's «»-escaped name where it has one -- Lean
+#     escapes exactly the names that are reserved words -- and otherwise the
+#     first string literal of its body, which is the token it consumes first.
+#     A `<|>` of named parsers (`declaration`) names its alternatives in `«»`
+#     too, and each of those is a keyword.
+#   * a parser whose body is NOTHING BUT string literals contributes all of
+#     them: `initializeKeyword := leading_parser "initialize " <|>
+#     "builtin_initialize "` is the one in this toolchain, and it is how
+#     `builtin_initialize` -- named in W-29's own comment as an escapee -- gets
+#     into the set at all.
+#
+# MEASURED at W-30: 52 keywords, of which 35 are outside ALLOWED_COMMANDS; the
+# derivation is 0.046 s once per run and cached, against this file's 1.48 s
+# (three runs each, before and after, and the two are the same to the hundredth
+# -- 1.47-1.49 before, 1.48 after).  Over the whole library, every indented line
+# head, the widened rule fires ZERO times.  So it closes the hole and costs nothing here, which is the
+# evidence that it is a rule about COMMANDS and not a wider net.
+#
+# WHAT IT CANNOT SEE, measured rather than argued:
+#
+#   * a DECLARATION MODIFIER reached only through a multi-parser helper --
+#     `private`, `protected`, `noncomputable`, `partial`, `unsafe`, `nonrec`
+#     live in `declModifiers`, which is not a pure token parser, so they are not
+#     in the set.  `partial`, `unsafe`, `opaque`, `axiom` and `example` have
+#     `BANNED` rows of their own that are TOKEN rules at any column, so the
+#     class R4 bans is covered; the rest are ALLOWED_COMMANDS members anyway.
+#   * a command a MACRO produces (the kernel defines none -- `macro`,
+#     `macro_rules`, `elab` and `syntax` are all refused here).
+#   * a command keyword that is ALSO a term or tactic word would be a FALSE
+#     POSITIVE at an indented line head, which is the loud direction and is
+#     measured at zero on this library today.
+#   * the blind spots `strip_comments` lists.
+_KEYWORDS = []
+# A `def` in the toolchain's parser sources: its attribute block, its name
+# (possibly «»-escaped) and its body, up to the next command.
+CORE_DEF = re.compile(
+    r"(?m)^(?:@\[([^\]]*)\][ \t\r\n]*)?def[ \t]+"
+    r"(«[^»]+»|[A-Za-z_][A-Za-z0-9_'.]*)[ \t]*(?::[^\n]*)?:="
+    r"([\s\S]*?)(?=\n(?:@\[|def |/-|namespace |end |\Z))")
+CORE_STR = re.compile(r'"([^"\\\n]*)"')
+CORE_ESC = re.compile(r"«([^»]+)»")
+CORE_REF = re.compile(r"(?<![\w'?!.])([A-Za-z_][A-Za-z0-9_'.]*)")
+KEYWORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
+# The parser combinators, which are references and not keywords.  A name that is
+# not one of these and not a parser this scan saw is simply ignored, so the list
+# only ever costs a keyword it cannot reach -- never a false one.
+CORE_COMB = {"leading_parser", "trailing_parser"}
+
+
+def command_keywords():
+    """Every word Lean's own grammar declares a COMMAND by, from the pin.
+
+    A hard error rather than an empty set: a residue over no keywords reports
+    nothing, and a gate that reports nothing is how this campaign's defects have
+    always looked from the outside.  The floor below is the assertion that the
+    derivation still works against the toolchain it is pointed at."""
+    if _KEYWORDS:
+        return _KEYWORDS[0]
+    src = leanfiles.toolchain_src()
+    parsers, commands = {}, []
+    for path in sorted(src.rglob("*.lean")):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if "command_parser" not in text:
+            continue
+        for m in CORE_DEF.finditer(text):
+            attr, name, body = m.group(1) or "", m.group(2), m.group(3)
+            parsers[name.strip("«»")] = body
+            if "command_parser" in attr:
+                commands.append((name, body))
+    # A parser that is nothing but tokens: every literal in it is a keyword.
+    tokens = {name for name, body in parsers.items()
+              if CORE_STR.search(body)
+              and not ({r.group(1) for r in CORE_REF.finditer(CORE_STR.sub(" ", body))}
+                       - CORE_COMB)}
+    kws = set()
+    for name, body in commands:
+        bare = name.strip("«»")
+        if name.startswith("«") and KEYWORD.match(bare):
+            kws.add(bare)
+        first = CORE_STR.search(body)
+        if first and KEYWORD.match(first.group(1).strip()):
+            kws.add(first.group(1).strip())
+        for alt in CORE_ESC.finditer(body):
+            if KEYWORD.match(alt.group(1)):
+                kws.add(alt.group(1))
+        for ref in CORE_REF.finditer(CORE_STR.sub(" ", body)):
+            if ref.group(1) in tokens:
+                for lit in CORE_STR.finditer(parsers[ref.group(1)]):
+                    if KEYWORD.match(lit.group(1).strip()):
+                        kws.add(lit.group(1).strip())
+    # THE FLOOR.  Not a second list of what is banned -- these are the seven
+    # commands W-29 and W-30 each DROVE an escape with, plus the declaration
+    # keywords every Lean file spells, so a derivation that has stopped working
+    # says so here instead of reporting a clean library.
+    floor = {"macro", "macro_rules", "syntax", "elab", "notation", "initialize",
+             "builtin_initialize", "attribute", "theorem", "abbrev", "instance",
+             "namespace", "section", "end", "open", "set_option"}
+    if not floor <= kws or len(kws) < 40:
+        raise SystemExit(
+            "totality.py: the command-keyword derivation no longer reads %s -- "
+            "%d keywords, missing %s.  The residue below would be silent."
+            % (src, len(kws), sorted(floor - kws)))
+    _KEYWORDS.append(frozenset(kws))
+    return _KEYWORDS[0]
 
 BANNED = [
     # **THE KEYWORD IS A STEM, NOT A WORD** (W-29, README gap 1952).  This row
@@ -429,12 +575,23 @@ for p in sorted(files):
     # kernel uses, or it is named here.  It is the net under the members of R4's
     # class nobody has thought of yet -- `partial_fixpoint` was one, and it went
     # green under a list of five spellings.
-    for off, word in command_positions(code):
-        if word not in ALLOWED_COMMANDS:
+    for off, word, certain in command_positions(code):
+        if word in ALLOWED_COMMANDS:
+            continue
+        if certain:
             hits.add((bisect.bisect_right(nl, off) + 1,
                       "`%s` stands where a command begins and is not in "
                       "ALLOWED_COMMANDS (R4: a command this kernel does not "
                       "use)" % word))
+        elif word in command_keywords():
+            # THE INDENTED HALF (W-30).  Lean lets a command begin at any
+            # column; this position may be a proof step instead, so the rule is
+            # not "in ALLOWED_COMMANDS" but "not a command Lean declares".
+            hits.add((bisect.bisect_right(nl, off) + 1,
+                      "`%s` is a COMMAND keyword of the pinned toolchain "
+                      "standing at an indented command position, and is not in "
+                      "ALLOWED_COMMANDS (R4: a command this kernel does not "
+                      "use, spelled with a leading space)" % word))
     for n, name in sorted(hits):
         print(f"{p}:{n}: banned: {name}")
         bad += 1

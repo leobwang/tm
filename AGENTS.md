@@ -695,6 +695,17 @@ stamp to a slot beside the line while `renderCore` prints *the line*, so the
 stamp reached no file at all (and §6.3's month review cuts on "≥ 2 stamps"); and
 a lone `[-]` was rejected outright.
 
+**CHECKED BY `kernel/twins.py`, check 11, since W-30 track A.** This rule was
+enforced by hand sweeps until then, and the last hand sweep reported "seventeen
+groups, all seventeen accounted for" while five character-identical `def` pairs
+were in none of them. The gate keys every `def` on its signature and its body
+WITH its string literals and demands a property for each group that survives:
+the definition is nullary (a named value, not a rule), or the compiler emits
+different code for the two (which is what the `@[csimp]` fast/slow shells are
+FOR — their sources are identical and their compiled callees are not). Anything
+else is named. It found one live duplicate on its first run and the blind spots
+it keeps are in its own header and in README gaps 2093-2094.
+
 **Two live exceptions, both recorded rather than hidden.** `parent` is still a
 stored slot and is always `none` (gap 22). And two readers of `est:`
 still coexist on the command path (gap 4), which the README labels *"a
@@ -1200,16 +1211,18 @@ banner which range is yours and fix it at the merge (§6.5).
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks this section documents — and `check.sh` runs TEN
+### 7.1 The seven checks this section documents — and `check.sh` runs ELEVEN
 
 **This heading said "the seven checks" while `check.sh` ran nine**, and the
 number is repaired here rather than the section: checks **8** (the prose
-citations, W-19, owner D39/D41) and **9** (every new definition constant-folded,
-W-20, owner D40) are specified by their own scripts' headers —
-`kernel/citations.py` and `kernel/mutate.py` — and by `check.sh`'s comments
-above each, which are long and are the specification. What is written out below
-is checks 1–7. Do not read "seven" here as the size of the acceptance; §2.1 and
-§6.5 carry that number and both said "seven" too until the W-24 repair step.
+citations, W-19, owner D39/D41), **9** (every new definition constant-folded,
+W-20, owner D40), **10** (the parity register, W-25) and **11** (§5.3: no two
+names for one definition, W-30 track A) are specified by their own scripts'
+headers — `kernel/citations.py`, `kernel/mutate.py`, `kernel/parity.py` and
+`kernel/twins.py` — and by `check.sh`'s comments above each, which are long and
+are the specification. What is written out below is checks 1–7. Do not read
+"seven" here as the size of the acceptance; §2.1 and §6.5 carry that number and
+both said "seven" too until the W-24 repair step.
 
 Run them together with `kernel/check.sh`. Each also runs alone. **Every command
 in this section runs under the memory cap** — prefix it with

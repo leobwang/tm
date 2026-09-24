@@ -367,3 +367,10 @@ ec308e256065 TmKernel/TmKernel/Planner.lean Tm.Planner.batchIdsOf unfoldable no 
 a29904c4ed12 TmKernel/TmKernel/Planner.lean Tm.Planner.Group.ids default,[] PlannerWit.lean:3720 the_assigned_set_is_not_the_reservations_alone; PlannerWit.lean:3720 the_assigned_set_is_not_the_reservations_alone
 f587a8c620bd TmKernel/TmKernel/Planner.lean Tm.Planner.assignedSeg unfoldable no Inhabited Seg
 065c259fabd7 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.assignedRows default,[] Planner.lean:6042 PlanReq.mem_assignedRows; Planner.lean:6042 PlanReq.mem_assignedRows
+d1d44e5ac9dc TmKernel/TmKernel/Boundary.lean Tm.CapWire.readState default Boundary.lean:11853 the_capacity_section_reads_the_corpus_model
+d1441c32d7aa TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.KeepsTheFilterFields True,False PlanCheck.lean:4126 KeepsTheFilterFields_refl; PlanCheck.lean:4126 KeepsTheFilterFields_refl
+5343d684ac08 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.CarriesBuiltGroups True,False PlanCheck.lean:4354 CarriesBuiltGroups_of_keeps; PlanCheck.lean:4354 CarriesBuiltGroups_of_keeps
+3eeffcd97be9 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.candPlanView default,none PlanCheck.lean:4463 a_candidates_ci_is_its_items_ci; PlanCheck.lean:4463 a_candidates_ci_is_its_items_ci
+c9eab6701384 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.candWireView default PlanCheck.lean:4467 a_candidates_ci_is_its_items_ci
+f6b71897a270 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.candsAgree true,false PlanCheck.lean:4446 candsAgree_iff; PlanCheck.lean:4446 candsAgree_iff
+6b7739920485 TmKernel/TmKernel/Close.lean Tm.hasAStrayTomb true,false Close.lean:2506 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb; Close.lean:2508 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb

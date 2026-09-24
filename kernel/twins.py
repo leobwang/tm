@@ -1,32 +1,61 @@
 #!/usr/bin/env python3
-"""Two names for ONE definition: the §5.3 sweep, as a SCRIPT.
+"""Two names for ONE definition: the §5.3 sweep, as a GATE.
 
 AGENTS §5.3 is the rule this kernel is named after -- two definitions of one
 concept is the bug -- and track A has swept for it by hand at several steps.
 W-29's audit found the cost of hand-sweeping: the run reported *"seventeen
 groups, all seventeen accounted for"*, and **five character-identical `def`
 pairs were in none of them**, each pair joined by a `@[csimp]` proved by a bare
-`rfl`:
+`rfl`.  W-29 wrote this file so that the number could be re-measured instead of
+believed, and left it a SWEEP: it printed thirty groups, exited 0, and said a
+gate would need an exemption LIST.
 
-    Tm.planWf      (Plan.lean)     / Tm.planWfFast      (Fast.lean)
-    Tm.edf         (Capacity.lean) / Tm.edfFast         (Capacity.lean)
-    Tm.edfGrants   (Capacity.lean) / Tm.edfGrantsFast   (Capacity.lean)
-    Tm.daysIn      (Seal.lean)     / Tm.daysInT         (SealTwin.lean)
-    Tm.daysFrom    (Seal.lean)     / Tm.daysFromT       (SealTwin.lean)
+IT DOES NOT (W-30 track A, README gap 2017 closed).  It needs a KEY and TWO
+properties, each checked on every run rather than asserted, and what is left
+over is the finding.
 
-**The sweep was hand-run and no script was committed, so the number could not be
-re-measured.**  That is the defect this file removes: the sweep is a program, it
-is in the repository, and the next step runs it instead of believing a sentence.
+WHAT IT IS.  Every `def` of the library, keyed on its SIGNATURE and its BODY --
+the body normalised to its non-space characters WITH its string literals, which
+is the half W-29's key threw away.  The signature is in the key rather than in
+an exemption, because two functions of DIFFERENT types that share an expression
+are not a duplicate and never were: `obsLe (a b : EnergyObs)` and `obsLineLe
+(a b : Obs)` are both `decide (a.line <= b.line)` and neither can be written in
+terms of the other.  A group of more than one name under one key is two
+definitions of one concept unless one of these holds:
 
-WHAT IT IS.  Every `def` of the library, its BODY normalised to its non-space
-characters, grouped by that body.  A group of more than one is two names for one
-definition -- the exact shape §5.3 bans -- and it is printed with its members.
-The body is everything from the `:=` that opens it to the start of the next
-command position, which is `totality.py`'s own rule imported rather than
-restated.
+  E2 COMPILED   the compiler emits DIFFERENT code for them.  This is the
+                exemption the five `@[csimp]` pairs above needed and NOBODY HAD
+                CHECKED: their sources are character-identical and their emitted
+                C is not, because a `@[csimp]` lemma rewrites the callees of
+                every definition compiled AFTER it, so the twin declared below
+                the lemma gets the fast callee and the original keeps the slow
+                one.  Deleting the copy would silently deoptimise the original.
+                DRIVEN at W-30, in the emitted C under .lake/build/ir: the
+                function for `Tm.edf` calls the one for `Tm.edfCaps`, and the
+                function for its character-identical twin `Tm.edfFast` calls the
+                one for `Tm.edfCapsFast`.  The twin of `Tm.planWf` is REACHED,
+                from the emitted Close and Cmd modules; the twins of
+                `Tm.Seal.daysIn` and `Tm.Seal.daysFrom` from SealWire's.  This is W-28's lesson in the other
+                direction: a claim about a definition's SHAPE pins nothing about
+                its BYTES, so the bytes are what this reads.
+  E3 VALUE      the definition takes NO ARGUMENTS, so its body is a value and
+                not a rule.  `maxCands : Nat := 1024` and `maxBatch : Nat := 16`
+                are two bounds that happen to share a number; `closeW35` and
+                `staleW35` are one `Region` under two FIXTURE ROLES, in two
+                witness families a hundred lines apart, each family naming its
+                own (`staleNow`, `staleW24`, `staleW35`, `staleW37`, ...).
+                §5.3 bans two definitions of one CONCEPT, and a named value is
+                not one: `mutate.py` draws the same line under the name LITERAL,
+                for the same reason, one gate over.  README gap 1956 had already
+                adjudicated `closeW35`/`staleW35` exactly this way and this is
+                that adjudication mechanised instead of repeated.
+
+A group that neither answers FAILS this check by name.  That is the gate W-29
+said would need an exemption list: it needs a sharper key and two properties,
+and no list at all.
 
 WHAT IT CANNOT SEE, and the list matters because the hand sweep's own declared
-blind spot is where four of the five above hid:
+blind spot is where four of the five csimp pairs hid:
 
   * a duplicate that reaches its own auxiliary BY NAME (`edf` calls `edfCaps`,
     `edfFast` calls `edfCapsFast`) -- the bodies differ in one identifier, so
@@ -36,16 +65,31 @@ blind spot is where four of the five above hid:
     (`Tm.sitesInRange` / `sitesInRangeFast` hoists `let n := p.docs.length`) --
     NOT character-identical, and a `@[csimp]`-proved-by-`rfl` grep alone is not
     the rule either.
+  * a MONOMORPHIC COPY of a polymorphic definition.  `Replay.ciSum (m : KMap Id
+    Nat)` and `Replay.vsum (m : KMap κ Nat)` are both `(m.map Prod.snd).sum` and
+    the first is the second at `κ := Id` -- a real §5.3 duplicate that the KEY
+    separates, because a signature comparison cannot tell an instance of a type
+    from an unrelated one.  README gap 2093 carries it; `vsum` is declared 137 lines
+    BELOW `ciSum`'s only caller, so consuming it is a move and not a rename.
+  * a NULLARY duplicate that IS one concept -- one bound, or one default,
+    written twice under two names -- is exempt by E3 and this gate cannot see
+    it.  That is the price of the fixture roles E3 exists for, it is paid on 11
+    of the 17 groups here, and README gap 2094 carries it.
   * a duplicate spelled as a `theorem`, an `abbrev` or an `instance`.  `def` is
     the population this run's finding is about; widening it is the next step's.
+    README gap 1956's other ELEVEN groups are all `theorem`s in `Line.lean` --
+    one `by decide` fact proved twice under a rule_ and a row_ name -- and
+    they are outside this population by construction, not by accident.
   * a duplicate across the Rust and the Lean sides.
+  * E2 answers with the EMITTED code, so it can only answer for a definition the
+    compiler emits.  A definition with no `lp_TmKernel_*` function in the module
+    it was declared in is UNEMITTED, and unemitted is not an exemption: the
+    group is reported, which is the loud direction.
 
-USAGE: `twins.py [<dir> ...]` (default: the library).  It PRINTS and exits 0;
-it is a sweep, not a gate -- several of the pairs above are deliberate
-`@[csimp]` fast/slow shells whose bodies have converged, and turning this into a
-check would need an exemption LIST, which is the shape this campaign keeps
-finding wrong.  The gate it should become is one that states why a pair is
-allowed to exist; README gap 2017 carries that.
+USAGE: `twins.py [<dir> ...]` (default: the library).  It exits 1 on a group no
+property answers.  The emitted C it reads is `lake build`'s own output under
+`.lake/build/ir`, so check.sh runs it after check 1 and a missing IR tree is a
+hard error rather than a silent pass.
 """
 import collections
 import pathlib
@@ -58,18 +102,132 @@ import leanfiles
 DEF = re.compile(r"(?<![\w'?!.«])def[ \t\r\n]+([^\s(){}:]+)")
 # Where a command begins again: a non-space character in column zero.
 NEXT_COMMAND = re.compile(r"(?m)^\S")
+# A body that IS a value (`mutate.py`'s LITERAL, same rule and same reason).
+LITERAL = re.compile(r"^(?:fun[ \t][^=]*=>[ \t]*)?"
+                     r"(true|false|True|False|[0-9]+|\"[^\"]*\"|'.')$")
+# One emitted function: its header, then its brace-balanced body.
+EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(]*\b(?:l|lp_TmKernel)_(\w+)\([^\n]*\{")
+# The code generator's own variable numbering, which differs between
+# any two functions and says nothing about what they do.
+CVAR = re.compile(r"\bv_([A-Za-z0-9_]*?)_\d+_")
+
+
+def literals(src, stripped, start, stop):
+    """The ORIGINAL text of every string literal in `stripped[start:stop]`.
+
+    `leanfiles.strip_comments` blanks a string's CONTENT and keeps its quotes,
+    and it is offset-preserving, so the quote positions it leaves index straight
+    back into the source.  W-29's key was the stripped body alone, which made
+    `refusalJson`, `rowRefusalJson` and `plannerRefusalJson` -- three emitters
+    that differ ONLY in the wire key they spell -- one body, and the same for
+    every witness fixture in `Boundary.lean`."""
+    out, i = [], start
+    while True:
+        a = stripped.find('"', i)
+        if a < 0 or a >= stop:
+            return out
+        b = stripped.find('"', a + 1)
+        if b < 0 or b >= stop:
+            return out
+        out.append(src[a + 1:b])
+        i = b + 1
 
 
 def bodies(path):
-    """`(name, normalised body)` for every `def` declared in `path`."""
-    code = leanfiles.strip_comments(pathlib.Path(path).read_text())
+    """`(name, signature, body, literals)` for every `def` declared in `path`."""
+    src = pathlib.Path(path).read_text()
+    code = leanfiles.strip_comments(src)
     for m in DEF.finditer(code):
         stop = NEXT_COMMAND.search(code, m.end())
-        chunk = code[m.end():stop.start() if stop else len(code)]
+        end = stop.start() if stop else len(code)
+        chunk = code[m.end():end]
         head, sep, tail = chunk.partition(":=")
         if not sep:
             continue  # a `def .. where` or a pattern match: no single body
-        yield m.group(1), "".join(tail.split())
+        at = m.end() + len(head) + len(sep)
+        yield (m.group(1), "".join(head.split()), "".join(tail.split()),
+               tuple(literals(src, code, at, end)))
+
+
+def emitted(path, name):
+    """The normalised BODY of `name`'s emitted C, or None if it is not emitted.
+
+    `path` is the .lean module; the code generator writes its C beside the build
+    at `.lake/build/ir/<pkg>/<Module>.c`.  The body is taken brace-balanced from
+    the header, so the function's own NAME -- which always differs -- is not part
+    of what is compared, and the generator's variable numbering is normalised
+    away for the same reason."""
+    ir = None
+    for parent in pathlib.Path(path).resolve().parents:
+        cand = parent / ".lake" / "build" / "ir"
+        if cand.is_dir():
+            ir = cand
+            break
+    if ir is None:
+        raise SystemExit("twins.py: no .lake/build/ir above %s -- E2 reads the "
+                         "EMITTED code and there is none; run `lake build` first" % path)
+    mangled = "Tm_" + name.replace(".", "_") if not name.startswith("Tm") else name.replace(".", "_")
+    for c in sorted(ir.rglob(pathlib.Path(path).stem + ".c")):
+        text = c.read_text(errors="replace")
+        for m in EMITTED.finditer(text):
+            if m.group(1) != mangled:
+                continue
+            i, depth = m.end() - 1, 0
+            while i < len(text):
+                if text[i] == "{":
+                    depth += 1
+                elif text[i] == "}":
+                    depth -= 1
+                    if depth == 0:
+                        body = text[m.end():i]
+                        # **AND A HOISTED CONSTANT IS NAMED AFTER ITS PARENT**,
+                        # which made E2 exempt a REAL duplicate on its first run
+                        # (W-30).  A ___closed__0 constant carrying each of the
+                        # two definitions' own names was the ONLY symbol
+                        # separating two byte-identical bodies, so the
+                        # property answered "the emitted code differs" about a
+                        # difference that is the function's own name.  The
+                        # function's mangled name is normalised to SELF, which
+                        # is the only name in a body that cannot be evidence.
+                        body = body.replace(mangled, "SELF")
+                        return "".join(CVAR.sub(r"v_\1_", body).split())
+                i += 1
+    return None
+
+
+def qualified(path, name):
+    """`name` under the namespace its file opens, which is what the C is keyed on."""
+    stack = []
+    for line in leanfiles.strip_comments(pathlib.Path(path).read_text()).split("\n"):
+        words = line.split()
+        if words and words[0] == "namespace":
+            stack.append(words[1])
+        elif words and words[0] == "end" and len(words) > 1 and stack and words[1] == stack[-1]:
+            stack.pop()
+        elif words and words[0] == "def" and len(words) > 1 and words[1] == name:
+            break
+    return ".".join(stack + [name]) if stack else name
+
+
+def explain(group):
+    """Which property answers for this group, or None if none does.
+
+    The signature is part of the KEY, so a group here already agrees on it and
+    there is no "the types differ" exemption to apply."""
+    body, sig = group[0][3], group[0][2]
+    if not sig or sig.startswith(":"):
+        return ("E3 VALUE    -- nullary: `%s` is a value, and two names for one "
+                "value are two roles" % body[:40])
+    seen = {}
+    for path, name, _sig, _body, _lits in group:
+        seen["%s:%s" % (path, name)] = emitted(path, qualified(path, name))
+    if None in seen.values():
+        return None  # unemitted is not an exemption
+    if len(set(seen.values())) > 1:
+        return ("E2 COMPILED -- the emitted C differs (%s), so the copy is what "
+                "the callers run" % ", ".join("%s %d chars" % (k.rsplit("/", 1)[-1], len(v))
+                                              for k, v in sorted(seen.items())))
+    return None
 
 
 def main(argv):
@@ -79,17 +237,27 @@ def main(argv):
     for d in roots:
         files.update(leanfiles.lean_files(pathlib.Path(d)))
     for p in sorted(files):
-        for name, body in bodies(p):
+        for name, sig, body, lits in bodies(p):
             if body:
-                groups[body].append("%s:%s" % (p, name))
-    twins = {b: ns for b, ns in groups.items() if len(ns) > 1}
-    for body in sorted(twins, key=lambda b: (-len(twins[b]), b)):
-        print("twin body (%d chars): %s" % (len(body), body[:70]))
-        for n in twins[body]:
-            print("    %s" % n)
-    print("%d file(s) swept, %d def bodies, %d group(s) of two or more names"
-          % (len(files), sum(len(v) for v in groups.values()), len(twins)))
-    return 0
+                groups[(sig, body, lits)].append((p, name, sig, body, lits))
+    twins = {k: v for k, v in groups.items() if len(v) > 1}
+    answered, bad = collections.Counter(), []
+    for key in sorted(twins, key=lambda k: (-len(twins[k]), str(k))):
+        why = explain(twins[key])
+        if why is None:
+            bad.append((key, twins[key]))
+        else:
+            answered[why.split()[0]] += 1
+    for key, group in bad:
+        print("TWIN: one signature, one body, and no property says why:")
+        print("    signature %s := %s" % (key[0] or "(none)", key[1][:60]))
+        for path, name, _s, _b, _l in group:
+            print("    %s:%s" % (path, name))
+    print("%d file(s) swept, %d def bodies, %d group(s) of two or more names "
+          "(%d compiled, %d value), %d UNANSWERED"
+          % (len(files), sum(len(v) for v in groups.values()), len(twins),
+             answered["E2"], answered["E3"], len(bad)))
+    return 1 if bad else 0
 
 
 if __name__ == "__main__":
