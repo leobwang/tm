@@ -2,3 +2,4 @@ TmKernel/.lake/
 tm-kernel-ffi/target/
 __pycache__/
 .mutate-in-flight
+.mutate-lock

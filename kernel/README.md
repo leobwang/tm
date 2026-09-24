@@ -60032,6 +60032,13 @@ encoder for `Look.Cand` on the Rust side, in any arm — `kernel_planner_wire.rs
 []` too. The brief's item 3 expected disagreements from this arm and there are none to have:
 the arm cannot reach the rows yet. What it can do — and now does — is refuse to go quietly.
 
+> **W-29 REPAIR STEP, two corrections to this paragraph.** (1) The **186** is one proptest
+> draw reported as a constant; three consecutive runs gave 209, 201 and 184 (gap **2014**).
+> (2) "The arm cannot reach the rows yet" was true of the arm and not of the repository:
+> `kernel_capacity::cand_json` is the encoder and it ships. The arm reaches the rows now —
+> `World::candidate_items` — and the disagreements item 3 expected are there after all
+> (gaps **2005**, **2007**).
+
 ### 5. The finding: `energyFilter` is FALSE on a day this kernel produces, and the reason is two readings of one number
 
 `PlannerWit.theBusyRequest` is the **only** request in `PlannerWit.lean` whose cursor fills a
@@ -60111,18 +60118,25 @@ by PLANT B.
 
 ### 8. What stands between HEAD and R3 — the brief's item 6
 
-`planner::` in **shipped source** (not tests): **35 sites across 9 files**, measured with
-`grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l`.
+`planner::` in **shipped source** (not tests): **35 sites across 10 files**, measured with
+`grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l` for the sites and
+`grep -rlo` for the files. **CORRECTED AT THE W-29 REPAIR STEP (gap 2012):** this sentence
+said *nine* files and the rows below summed to 30 of the 35. The tenth file is
+`tm-core/src/emit.rs` (`planner::{DayPlan, …}` at 119, `planner::SegFlags::note` at 710) — the
+nine were inherited from D50's own baseline sentence and never re-measured — and the five
+unaccounted sites are the type imports the last row now counts. The ten are
+`tm/src/cli/{planning,render,day,lifecycle,ctx,ghost}.rs` (6, 5, 4, 3, 2, 1),
+`tm/src/tui/{app,prompts,today}.rs` (10, 1, 1) and `tm-core/src/emit.rs` (2).
 
 | symbol | sites | can the kernel answer for it? |
 |---|---|---|
-| `planner::plan` | 5 (`cli/planning.rs` 2, `tui/app.rs` 3) | **shape yes, assignment no** — `PlanWire.planJson` writes the day, and the day's assigned rows are empty unless the caller puts candidates on the wire. Gap **1905** is the encoder; gap **1903** is the agreement obligation that makes the answer checkable |
+| `planner::plan` | 5 (`cli/planning.rs` 2, `tui/app.rs` 3) | **shape yes, assignment partly** — `PlanWire.planJson` writes the day, and since the W-29 repair step `tm/tests/planner_invariants.rs` puts the fork's own candidates on the wire, so the kernel's day carries assigned rows and they are compared. Gap **1905**'s encoder half is closed (gap **2005**); what is still owed is the §7 ranking and §10.2's `routines`, which is gaps **2007** and **2005**'s exemption |
 | `planner::fmt_clock` | 6 | text — `Emit.timeCell` is the kernel's, and the two have never been compared |
 | `planner::kind_label` | 3 | text — no kernel equivalent is exported |
 | `planner::overtime_drops` | 4 (`tui/app.rs` 3, `tui/prompts.rs` 1) | **no** — nothing in the kernel computes it |
 | `planner::active_run` | 2 (`tui/app.rs`) | `PlanReq.activeRun` is the rule, and it is not exported across the wire |
 | `planner::diff` | 1 (`tui/app.rs`) | **no** |
-| `planner::Segment`, `SegKind`, `SegFlags::note`, `DayPlan`, `DayPlan::hash` | 9 | **types, not behaviour** — R3 must replace the type every one of these names, and `DayPlan::hash` is P8's FNV-1a, still a placeholder (`the_plan_hash_is_a_placeholder_until_the_emitter_lands`) |
+| `planner::Segment`, `SegKind` (and its four variants), `SegFlags::note`, `DayPlan`, `DayPlan::hash`, and the five import spellings (`planner::{self, …}` ×3, `planner::{DayPlan, …}` ×2) | 14 | **types, not behaviour** — R3 must replace the type every one of these names, and `DayPlan::hash` is P8's FNV-1a, still a placeholder (`the_plan_hash_is_a_placeholder_until_the_emitter_lands`). **The five import spellings are the five sites the W-29 audit found unaccounted**; they carry no behaviour and they are still sites R3 must delete |
 
 **So the deletion is still not the only thing between HEAD and R3**, and the list above is R3's
 brief: three behaviours with no kernel answer (`overtime_drops`, `diff`, `active_run` as an
@@ -60159,8 +60173,14 @@ put that lift on a subdomain rather than widening it. Gap **1902** is where the 
    sixteen members would silently name fewer items than it plans. *Which stage clears it.*
    Whichever writes the group chain; `PlanReq.assignStep_keeps_the_group` and
    `unspend_keeps_the_group` are two of its four links and already exist.
-2. **Gap 1902.** *What is not done.* §6.1's lift over a day that **assigns**. Nineteen
-   statements now carry `hnoassign : r.assignedRows = []`. *Why not done here.* Three of the six
+2. **Gap 1902.** *What is not done.* §6.1's lift over a day that **assigns**. **Forty-two**
+   statements now carry `hnoassign : r.assignedRows = []`
+   (`grep -c '(hnoassign :' kernel/TmKernel/TmKernel/PlanCheck.lean`; 37 declarations in that
+   file are NAMED `*_on_an_unassigned_day`, 39 across the library).
+   **CORRECTED AT THE W-29 REPAIR STEP (gap 2013):** this said *Nineteen*, and it was 42 at
+   every one of the run's four commits — 2374820, 2bf69a6, c658379 and 25ecbbc — so the figure
+   was never true rather than stale. It is the number that prices §6.1's shrunk domain, and it
+   understated the cost of P9's subdomain retreat by 2.2×. *Why not done here.* Three of the six
    core conjuncts were provable over the new rows and are proved; `noOverbook` needs a counting
    argument, `noDemandingAfterWindDown` needs the clamp's edge, and `energyFilterOk` is **false**
    until gap 1903 is settled. *What it costs.* The lift's domain shrank on this commit: it used
@@ -60189,11 +60209,22 @@ put that lift on a subdomain rather than widening it. Gap **1902** is where the 
    still has no witness in this tree. *What it costs.* README gap 366's half is open again and
    the reason is no longer "there is nothing to spend". *Which stage clears it.* Whichever
    settles what `remainingBudget` reads on a request like this one.
-5. **Gap 1905.** *What is not done.* No arm on the Rust side encodes a `Look.Cand`; every one
-   sends `capacity.candidates.items: []`. *What it costs.* **186 fork assigned rows over 76
-   cases** that the kernel was never given a candidate for, and an assigned-row comparison that
-   compares zero. *Which stage clears it.* The step that writes the encoder — twelve `Cand`
-   fields plus `WfPlanFacts`, each an R10 bound, which is why it is a step and not a paragraph.
+5. **Gap 1905 — CLOSED AT THE W-29 REPAIR STEP, and the figure below was never a constant.**
+   *What was not done.* No arm on the Rust side put a `Look.Cand` on a PLANNER-DAY request;
+   every one sent `capacity.candidates.items: []`. (`tm/src/cli/kernel_capacity.rs`'s
+   `cand_json` always was that encoder — gap **2001** narrowed this entry at the merge.)
+   *What it cost.* An assigned-row comparison that compared **zero**, over a census of fork
+   assigned rows the kernel was never given a candidate for. **This entry quoted that census as
+   "186 fork assigned rows over 76 cases", and it is a DRAWN NUMBER, not a measurement**: the
+   arm takes a fresh proptest seed each run and an auditor measured 209, 201 and 184 over three
+   consecutive runs. The stable halves were "compared 0" and "exempt 76", and those were the
+   finding. **Corrected at the repair step (gap 2014)**: a seed-dependent census figure is
+   quoted with its range and its run count or not at all — D46's own discipline, one column
+   over. *What closed it.* `World::candidate_items` (W-29 repair): the fork's own
+   `collect_candidates` records, in `send_order`'s order, with §8.2 step 5's nine beside §7's
+   twelve. `cands` is now non-zero on every case with a tree, the exemption is §10.2's
+   `routines` (gap **2005**), and the census reads `assigned-rows compared 38, cases exempt 56,
+   cases whose §7 answers differ 59, cases whose ids were compared 4` on the repair step's run.
 6. **Gap 1906.** *What is not done.* Nothing states where the two planners put §8.2 choice 5b's
    reservation row. The kernel's starts at `now` (`the_reservation_row_is_exact`); the fork
    pushes `start: run.start`. *What is known.* The clock-based subject caught the kernel's
@@ -60854,11 +60885,15 @@ report. But *whole* is not what R3 needs, and three separate things say so:
    `planner::diff`, and `planner::active_run` as an export. Two text helpers
    (`planner::fmt_clock`, `planner::kind_label`) have never been compared with `Emit.timeCell`,
    and `DayPlan::hash` is still P8's placeholder.
-2. **§6.1's lift no longer holds for every request.** Nineteen statements carry
-   `hnoassign : r.assignedRows = []`. The lift's domain **shrank** on `2374820`, and that is gap
+2. **§6.1's lift no longer holds for every request.** **Forty-two** statements carry
+   `hnoassign : r.assignedRows = []` (this said *Nineteen*; corrected at the W-29 repair step,
+   gap **2013**). The lift's domain **shrank** on `2374820`, and that is gap
    **1902**, not a rounding error.
 3. **The two planners do not agree on the assignment yet** (§2), and nothing on the Rust side
    puts a candidate on a planner-day request, so no gate would catch it if they did not.
+   **AS OF THE W-29 REPAIR STEP the second half is fixed and the first is now MEASURED**: the
+   arm sends the fork's candidates, asserts §8.2 step 5's slots on every day the fork placed no
+   routine row, and asserts the ids wherever the two §7 answers agree (gaps **2005**, **2007**).
 
 **DOES ANYTHING BUT THE DELETION STAND BETWEEN HEAD AND R3? YES, and here is the measure**, re-run
 at this commit and not copied: `grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l`
@@ -60943,3 +60978,151 @@ untouched.
 803, 876, 1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900,
 1902–1906, 1956, 1957, 1984–1988 and 1990 are untouched by this merge. Gaps **2003** and **2004**
 are free.
+
+## Stage 6 — W-29, repair: the assigned-row comparison is made to RUN, the axiom audit is reconciled by the name `lean` prints, and three walks get the property they were missing
+
+**Baseline `25ecbbc`.** Seven defects were filed by W-29's two independent auditors — one
+blocker filed twice, three major, five minor. **All seven reproduced.** Nothing was refuted;
+two were found **wider than filed** and are recorded that way.
+
+### 1. The blocker: the fork comparison of assigned rows compared ZERO — and turning it on found that the two planners disagree
+
+**Reproduced first.** `tm/tests/planner_invariants.rs:1267` hard-coded
+`"candidates": {"hysteresis": false, "items": []}` on every generated request, so `cands` was
+0, `exempt` was true in **76 of 76** cases, and `prop_assert_eq!(&ka, &fa, …)` was unreachable.
+The exempt branch's own `prop_assert!(ka.is_empty())` is not a test either: `rankedCands.length
+≤ cands.length`, so `rawGroups` is empty and `assignedRows`' `groups[gi]?` can never return a
+row. Both auditors drove it; the reuse critic's perturbation — reversing `emit_segments`'
+slot→group map at `tm-core/src/planner.rs:1841` — left the arm **ok**.
+
+**What was landed, and it is three repairs, not one.**
+
+1. **`World::candidate_items`** — the arm sends the FORK's own candidates:
+   `priority::collect_candidates`, ordered by `kernel_capacity::send_order`'s
+   `(effective_due, own_order, index)`, each record carrying §7's twelve and §8.2 step 5's
+   nine. Gap **1905**'s encoder half is closed. It is that encoder's **second spelling** and
+   this block says so: `tm` is a `[[bin]]` with no library target, so an integration test
+   cannot link `cand_json`; gap **2006** records the move.
+2. **The capacity section is READ OFF `Config`, not spelled.** The arm's `prior`, `pLounge`
+   and `arrival` tables were literals described in their own comment as "the shipped
+   defaults". **They were not.** `Config::default()`'s lounge prior is
+   `0-1:4, 1-5:5, 5-8:4, 8-10:3, 10+:2`; the literal said `0-4:5, 4-8:3, 8+:1`. `p_lounge` is
+   0.9/0.8/0.5/0.4; the literal said 1.0 everywhere. The expected arrival is 07:00 (10:00 at
+   the weekend); the literal sent `state.arrival`, which is **00:00** when unset. Nothing had
+   ever read them, because §8.1's window is `[day]` and the walls and the ENERGY FILTER — the
+   prior's one reader — was never compared. **DRIVEN**: with the literals, 2 of 19 routine-free
+   cases cut the day into different assigned slots; read off `Config`, **26 of 26** agree.
+   This defect was in neither audit.
+3. **`kernel_assigned` read a key the kernel has never written.** It took a Batch row's members
+   from `s["ids"]`; `PlanWire.segJson` writes `batch`. Every Batch row read as EMPTY.
+   **DRIVEN**: a fresh seed produced `kernel [.., (…, [])]` against `fork [.., ["zai", "zaf"]]`.
+   The reader of a comparison that does not run is not a tested reader. Gap **2015**.
+
+**And then the comparison was turned on, and the two planners disagree.** The exemption is now
+§10.2's `routines` key — a property of the FORK's own day, counted, and satisfied by roughly
+two cases in three rather than by all of them. What the arm ASSERTS is that it is not vacuous:
+`aexempt < cases` and `acmp > 0` once the generated phase has run, which is exactly the
+assertion whose absence let the arm ship green. What it COUNTS is the disagreement:
+
+```
+planner_invariants plan census: 77 cases, 104 walls compared, 677 kernel rows,
+window-differs 0, budget-differs 0, assigned-rows compared 43, cases exempt 54,
+cases whose §7 answers differ 56, whose SLOTS differ 1,
+whose slots agree and whose ITEMS differ 2,
+energy-less work rows from now: kernel 12, fork 12
+```
+
+over three runs: **43 / 39 / 33** rows compared, **54 / 55 / 55** exempt, **1 / 4 / 1** slot
+disagreements and **2 / 2 / 2** item disagreements. Three shapes were each written as an
+assertion, driven, and found **FALSE on this tree** — the sequence, the multiset, and the slot
+geometry — so none is asserted and gap **2007** carries all three with the case that shows it.
+**The cost is declared**: the reuse critic's slot→group plant is not caught by what remains.
+
+### 2. The other six
+
+* **`totality.py`'s command residue was anchored at column zero** (gap **2009**). Reproduced:
+  `open Nat in macro "w29mac" : term => `(0)` and `open Nat in initialize w29Ref2 : IO.Ref Nat
+  <- IO.mkRef 0` both BUILT and left the file at rc=0. The rule is a POSITION now and not a
+  column: a command begins the source, and begins again after the `in` of a command
+  combinator, told apart from a `for` loop's binder by its own binder. **MEASURED**: 362 `in`
+  tokens, 359 at end of line, 3 `for` binders, residue unchanged at rc=0. **DRIVEN after**:
+  `macro`, `initialize`, `syntax`, `elab`, `notation`, `macro_rules`, `builtin_initialize`,
+  `register_builtin_option` and `noncomputable` are each named mid-line now.
+* **check 3 reconciled by SHORT name** (gap **2008**). Reproduced: a second copy of
+  `Tm.EmitWire.the_refusals_spell_themselves` standing in for
+  `Tm.PlanWire.the_refusals_spell_themselves` gave `unaudited = []`. `leanfiles.py --theorems`
+  prints the QUALIFIED name now — a `namespace`/`section`/`mutual`/`end` scanner on the same
+  token discipline — and both `sed 's/.*\.//'` are gone. **MEASURED**: roster 5,215, audit
+  lines 5,220, **0** declared-never-audited, and the five extra lines are the five `def`s the
+  file audits on purpose. **DRIVEN after**: the swap is named.
+* **`mutate.py` mutates the SHARED tree with no lock** (gap **2011**), observed live racing a
+  concurrent `cargo test`. Two halves: an exclusive `flock` for the whole run (a second run is
+  refused by name; **driven**), and `tm/tests/mutation_in_flight.rs`, which FAILS when
+  `kernel/.mutate-in-flight` exists — so a workspace suite that overlaps the gate reports a
+  failure instead of a `0 failed` about a kernel nobody committed (**driven**, both ways).
+* **The file walk's prune rule was not the repository's own** (gap **2010**).
+  `leanfiles.ignored_paths` asks git which paths the repository declares derived
+  (`--others --ignored --exclude-standard --directory`), which prunes the DESCENT. `repo_files`
+  is 604 in the tree and in a clone; `citations.py`'s `kernel/__pycache__/` exclusion is
+  **deleted**, and its own stale-entry ratchet is what named it.
+* **The `planner::` caller table miscounted its population** (gap **2012**): 10 files, not 9 —
+  `tm-core/src/emit.rs` was the tenth — and the rows now account for all 35 sites.
+* **Gap 1902 was priced at "Nineteen" and is 42** (gap **2013**), at every commit of W-29, so
+  never true rather than stale. **Gap 1905 quoted a drawn proptest seed as a constant** (gap
+  **2014**): 186 was one draw of a figure an auditor measured at 209, 201 and 184.
+* **The §5.3 twin sweep had no script** (gap **2017**). `kernel/twins.py` is that sweep now:
+  every `def` body of the library, normalised and grouped. It reports **30 groups over 2,639
+  `def` bodies in 89 files**, the hand sweep's 17 among them and the five
+  character-identical `@[csimp]` pairs the audit found with them.
+
+### 3. A breach, disclosed
+
+Three probe builds were run in clones with CARGO_TARGET_DIR pointed at the shared tree's
+`target/`, one of them on a clone carrying the slot→group plant. The shared tree's next
+`cargo test --workspace` then failed `cli_day__arrive_json` with the plant's own signature.
+**The source tree was never touched** (`grep -rn 'W-29 PLANT' tm-core/src/planner.rs` empty,
+`git status --porcelain` showing only the intended files), and `cargo clean -p tm -p tm-core`
+repaired it. **A clone must not share the shared tree's target directory**, and this run is why.
+
+### 4. Acceptance
+
+```
+check.sh                    10/10
+cargo test --workspace      1,476 passed / 0 failed / 9 ignored across 87 binaries,
+                            THREE runs (D46), identical each time
+planner_invariants          three further runs of the repaired arm, all green
+corpus                      29/37 files and 4/5 whole plans
+burn-down                   9, all stage 6 — UNMOVED (no goal touched)
+axiom audit                 5,220 theorems, reconciled by QUALIFIED name
+citations                   39,773 citations, 37,859 resolved, 0 allow entries unused,
+                            266 files swept, 340 excluded by 15 rules
+mutate roster               234 rows, 6 new definitions audited (6 PINNED)
+parity register             40 registered, 606 files swept, next free P41 — none issued
+cli_latency                 5 passed / 1 ignored, in band, at load average 2.06 (gap 1333)
+twins.py                    30 groups over 2,639 def bodies in 89 files
+.proptest-regressions       ONE new line kept (D46: a drawn seed is a FINDING)
+```
+
+### 5. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2005** | **the assigned-row comparison now runs and the two planners disagree.** The exemption is §10.2's `routines`, which this arm cannot send: `Planner.collect_routines` is private to the fork's run struct, and re-deriving it here would compare the kernel against a list the fork never saw | `tm/tests/planner_invariants.rs` | 54 of 77 cases are exempt. The number falls the day a host collector for `RoutineIn` exists — `RoutineIn` is the fork's `RoutineInst` minus `pref`, and `pref` the kernel reads off the DOCUMENTS (`Planner.lean:2032`), so the shape is encodable today |
+| **2006** | **`kernel_capacity::cand_json`, `plan_json`, `send_order` and `written_pair` have a second spelling in a test**, because `tm` is a `[[bin]]` and an integration test cannot link them | `tm/src/cli/kernel_capacity.rs`, `tm/tests/planner_invariants.rs` | §5.3's own bug, declared. The move is into `tm-core` or out with R3; until then a change to one spelling must be made to both |
+| **2007** | **which item §8.2 step 5 assigns, and where.** Three statements driven and each FALSE: the sequence (`zaj`/`zal` swapped between adjacent equal-length slots at identical `p`), the multiset (`zan` where the fork assigns `zao`), and the slot geometry (a row cut at 63924429600..63924431400 against 63924405600..63924408000) | `Planner.assignFold`, `PlanReq.rankedCands` | this is gap **2002**'s order rule reached by computation. Until it is settled the audit's own slot→group plant is not caught by any assertion of this arm — the census counts it and nothing fails |
+| **2008** | **CLOSED** — check 3 reconciles by qualified name | | |
+| **2009** | **CLOSED** — `totality.py` reads command POSITIONS | | |
+| **2010** | **CLOSED** — the walk prunes what git declares ignored | | |
+| **2011** | **CLOSED** — `mutate.py` holds an exclusive lock and the suite refuses a live mutation | | |
+| **2012** | **CLOSED** — the `planner::` table counts 10 files and all 35 sites | | |
+| **2013** | **CLOSED** — gap 1902 reads 42 | | |
+| **2014** | **CLOSED** — gap 1905's census is quoted with its range | | |
+| **2015** | **CLOSED** — `kernel_assigned` reads `batch` | | |
+| **2016** | **the arm's non-vacuity floors are PREFIX floors.** `walls > 0` fired at 32 cases and the census counts proptest's persisted-regression replays first, which are shrunk cases and carry no wall by construction; D46 makes that list grow, and the 19th entry pushed the wall-less prefix past 32. Raised to the generated-case count | `tm/tests/planner_invariants.rs` | a floor that depends on how many seeds D46 has kept is a floor that will fail again. The statement it wants is about a whole run, and proptest has no end hook |
+| **2017** | **`twins.py` is a sweep, not a gate.** Making it one needs a rule that says why a pair of identical `def` bodies is ALLOWED — several are `@[csimp]` fast/slow shells whose bodies converged — and an exemption LIST is the shape this campaign keeps finding wrong | `kernel/twins.py`, `kernel/check.sh` | 30 groups stand unjudged. The gate is the step that states the rule |
+| **2018** | **`tm plan` prints `0 ci-5 lost` in exactly the case where the ci-5 loss is worst.** DRIVEN **by W-29's auditor**, not re-driven here — the CAUSE was re-read and confirmed at this commit instead, and `git diff --stat 89c747f..HEAD -- tm-core/ tm/src/` re-run here is **empty**, so no shipped planner byte moved in this run. The auditor's drive, on a fresh tree with the release binary: one ci-3, one ci-4 and four ci-5 items, budget 6 blocks — the verb plans the ci-4 and the ci-3 and prints `· 0 underused · 0 ci-5 lost` directly above `· dropped: a3 · a4 · a5 · a6`, all four dropped items being ci 5. With only the ci-5 item present it correctly prints `120m ci-5 lost`. `tm-core/src/planner.rs:2140-2151`: `a_capacity_lost` sums **Rest** minutes at energy ≥ 4 only | `tm-core/src/planner.rs`, and the same rule in `PlannerWit.the_a_capacity_lost_is_the_high_rest_a_ci_5_item_could_not_have` | **NOT a divergence and not introduced here** — both planners agree and the kernel proves the same rule. It is a spec-wording finding on a surface R3 deletes, recorded because only a drive surfaces it |
+
+**Gaps 2019 and above are free.** Gaps 113/114/116, 301, 346, 365, 435, 551, 577, 803, 876,
+1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904,
+1906, 1956, 1957, 1984-1988, 1990 and 2000-2004 are untouched; **1905 is closed** by item 1 and
+**2001**'s narrowing is what made it cheap enough to close.

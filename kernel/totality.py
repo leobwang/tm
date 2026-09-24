@@ -254,12 +254,37 @@ SET_OPTION = re.compile(r"(?<![\w'?!.«])set_option\s+([A-Za-z_][A-Za-z0-9_.']*)
 # `register_builtin_option` and whatever a later toolchain adds are all refused
 # BY NAME without this file learning their names.
 #
-# WHAT IT CANNOT SEE, and it is the blind spot W-28's roster repair named: a
-# command written MID-LINE after an `in` combinator (`open Nat in unsafe def
-# ..`).  Every member of the class this campaign knows about is ALSO caught by
-# its own token row below, which is why those rows stay: the residue is the net
-# under the members nobody has thought of, and the rows are the net under the
-# spelling this one cannot reach.
+# **AND A COMMAND IS A TOKEN, NOT A COLUMN** (the W-29 repair step, README gap
+# 2009).  This residue used to be anchored at column zero, and it said so in its
+# own blind-spot paragraph -- which is W-27's lesson (a declared-and-unmechanised
+# audit is never performed) written about itself.  DRIVEN in a clone whose
+# `.lake` was warmed from the shared tree: `open Nat in macro "w29mac" : term =>
+# `(0)` and `open Nat in initialize w29Ref2 : IO.Ref Nat <- IO.mkRef 0`, each on
+# ONE line appended to `Emit.lean`, both BUILT (`Build completed successfully`)
+# and left this file at rc=0 with NO output; the same two commands at column zero
+# were both named.  `macro`, `syntax`, `elab`, `notation`, `initialize`,
+# `macro_rules`, `builtin_initialize` and `register_builtin_option` are exactly
+# the escapees, because they are the commands with no token row of their own.
+#
+# THE RULE IS LEAN'S OWN: a command begins the source, and a command begins
+# again after the `in` of a command combinator (`open X in ..`, `set_option ..
+# in ..`, `variable .. in ..`).  So `command_positions` below reads the word at
+# the start of every line AND the word after every `in` token, and both are put
+# through the same residue.  The one `in` that is NOT a combinator is the `in`
+# of a `for` loop, and it is told apart by its own binder rather than by a list
+# of words: an `in` whose nearest preceding token among {`for`, `in`} is `for`
+# binds a loop variable (3 live, all in `Boundary.lean`'s `for .. in .. do`).
+#
+# MEASURED over the library at the repair step: 362 `in` tokens, 359 of them at
+# end of line (the command is on the next line and was already read), 3 of them
+# `for`-loop binders, and the residue is UNCHANGED at rc=0 -- so the rule costs
+# nothing here and closes the hole.
+#
+# WHAT IT CANNOT SEE: a command produced by a macro (the kernel defines none);
+# a binder form spelled `x in e` that this library does not write, whose
+# following word would be read as a command and NAMED -- a failing gate, which
+# is the loud direction, and the cost is declared rather than silent; and the
+# blind spots `strip_comments` lists.
 ALLOWED_COMMANDS = {
     "abbrev", "class", "decreasing_by", "def", "deriving", "end", "import",
     "include", "inductive", "instance", "mutual", "namespace", "omit", "open",
@@ -267,6 +292,34 @@ ALLOWED_COMMANDS = {
     "theorem", "variable", "where",
 }
 COMMAND_WORD = re.compile(r"(?m)^([A-Za-z_][A-Za-z0-9_'.]*)")
+# The `in` combinator and the `for` binder that is not one, as TOKENS.
+IN_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])in(?![\w'?!])")
+FOR_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])for(?![\w'?!])")
+# What may stand between a command position and the command's own word: layout,
+# and the attribute blocks `ALLOWED_ATTRS` already answers for.
+LEADING = re.compile(r"(?:\s|@\[[^\]]*\])*")
+WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
+
+
+def command_positions(code):
+    """Every offset in stripped `code` at which a Lean COMMAND may begin.
+
+    The start of each line, and the word after each `in` that is a command
+    combinator rather than a `for` loop's binder.  Yields `(offset, word)`.
+    """
+    for m in COMMAND_WORD.finditer(code):
+        yield m.start(), m.group(1)
+    fors = [m.start() for m in FOR_TOKEN.finditer(code)]
+    ins = [m for m in IN_TOKEN.finditer(code)]
+    for k, m in enumerate(ins):
+        prev_in = ins[k - 1].start() if k else -1
+        prev_for = max([f for f in fors if f < m.start()], default=-1)
+        if prev_for > prev_in:
+            continue  # `for x in xs` -- a binder, not a combinator
+        j = LEADING.match(code, m.end()).end()
+        w = WORD.match(code, j)
+        if w:
+            yield w.start(), w.group(0)
 
 BANNED = [
     # **THE KEYWORD IS A STEM, NOT A WORD** (W-29, README gap 1952).  This row
@@ -372,15 +425,16 @@ for p in sorted(files):
             hits.add((bisect.bisect_right(nl, m.start()) + 1,
                       "set_option %s -- not in ALLOWED_OPTIONS (R4: an option "
                       "may not change what is proved or what runs)" % m.group(1)))
-    # THE COMMAND RULE (W-29): the word that begins a column-zero line is a
-    # command this kernel uses, or it is named here.  It is the net under the
-    # members of R4's class nobody has thought of yet -- `partial_fixpoint` was
-    # one, and it went green under a list of five spellings.
-    for m in COMMAND_WORD.finditer(code):
-        if m.group(1) not in ALLOWED_COMMANDS:
-            hits.add((bisect.bisect_right(nl, m.start()) + 1,
-                      "`%s` begins a line and is not in ALLOWED_COMMANDS (R4: a "
-                      "command this kernel does not use)" % m.group(1)))
+    # THE COMMAND RULE (W-29): the word at a COMMAND POSITION is a command this
+    # kernel uses, or it is named here.  It is the net under the members of R4's
+    # class nobody has thought of yet -- `partial_fixpoint` was one, and it went
+    # green under a list of five spellings.
+    for off, word in command_positions(code):
+        if word not in ALLOWED_COMMANDS:
+            hits.add((bisect.bisect_right(nl, off) + 1,
+                      "`%s` stands where a command begins and is not in "
+                      "ALLOWED_COMMANDS (R4: a command this kernel does not "
+                      "use)" % word))
     for n, name in sorted(hits):
         print(f"{p}:{n}: banned: {name}")
         bad += 1

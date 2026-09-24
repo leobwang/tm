@@ -48,7 +48,7 @@ mod chokepoint;
 #[path = "support/rowwire.rs"]
 mod rowwire;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Mutex;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
@@ -1194,10 +1194,33 @@ proptest! {
 // comparison is stated over walls.
 // ===========================================================================
 
-/// `(cases, walls compared, kernel rows seen, window disagreements,
-/// budget disagreements, assigned rows compared, cases EXEMPT from the assigned
-/// comparison, fork assigned rows the kernel was never given a candidate for)`.
-static PLAN_CENSUS: Mutex<[u64; 10]> = Mutex::new([0; 10]);
+/// `(cases, walls compared, kernel rows seen, window disagreements, budget
+/// disagreements, assigned rows compared, cases EXEMPT from the assigned
+/// comparison, cases whose §7 answers differ, compared cases whose slots agree
+/// and whose items do not (gap 2007), and the two clock-based work-row
+/// counts)`.
+static PLAN_CENSUS: Mutex<[u64; 12]> = Mutex::new([0; 12]);
+
+/// **A configured double as the exact decimal pair the wire carries** (D17).
+///
+/// The kernel holds no `Float`, so every `[energy]` and `[expected]` decimal
+/// crosses as `num/den`. This is `kernel_capacity::written_pair` restricted to
+/// the shortest round-trip text of a `f64` — the shipped reader lives in the
+/// `tm` binary and an integration test cannot link it, which is README gap
+/// 2006: one concept, two readings, and the move belongs with R3's deletion.
+fn dec(x: f64) -> Value {
+    let t = format!("{x}");
+    let (int, frac) = t.split_once('.').unwrap_or((t.as_str(), ""));
+    json!({"num": format!("{int}{frac}"), "den": format!("1{}", "0".repeat(frac.len()))})
+}
+
+/// The same pair as JSON naturals, for the sections whose reader is `natAt`
+/// rather than a digit string (the prior's step bounds).
+fn decn(x: f64) -> Value {
+    let v = dec(x);
+    json!({"num": v["num"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0),
+           "den": v["den"].as_str().unwrap_or("1").parse::<u64>().unwrap_or(1)})
+}
 
 /// A `NaiveTime` as the wire's `HH:MM`.
 fn hhmm(t: NaiveTime) -> String {
@@ -1210,6 +1233,66 @@ fn day_sec(tz: Tz, t: NaiveTime) -> i64 {
 }
 
 impl World {
+    /// **`capacity.candidates.items`, the fork's own list** (W-29 repair,
+    /// README gap 2005 — it closes gap 1905's first half).
+    ///
+    /// Gap 1905 said no honest encoder for `Look.Cand` existed on this side.
+    /// One does, and it ships: `tm/src/cli/kernel_capacity.rs`'s `send_order`,
+    /// `cand_json` and `plan_json` are what the `tm` binary sends on every
+    /// `tm plan`. **They cannot be linked from here** — `tm` is a `[[bin]]`
+    /// with no library target, so an integration test cannot `use` them — so
+    /// this is that encoder's second spelling and README gap **2006** records
+    /// the move (into `tm-core`, or out with R3) rather than pretending it is
+    /// not one. Everything it reads is the FORK's: `collect_candidates` builds
+    /// the records, `Tree::root`/`priority` the written `!k`, and the order is
+    /// the fork's own `(effective_due, own_order, index)`.
+    ///
+    /// `yesterday` is `None` on every record because `RuntimeState::default()`
+    /// leaves `priorities_yesterday` empty and the fork reads exactly that map
+    /// (`planner.rs:988`) — the two sides agree by construction, not by luck.
+    fn candidate_items(&self) -> Vec<Value> {
+        let cands = self.candidates();
+        // `kernel_capacity::send_order`: the fork's `priority::compute` sort, so
+        // the kernel's stable sort by due date serves a date's deadlines in the
+        // fork's order.
+        let mut order: Vec<usize> = (0..cands.len()).collect();
+        order.sort_by(|&a, &b| {
+            let (ca, cb) = (&cands[a], &cands[b]);
+            (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
+                .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
+        });
+        order
+            .iter()
+            .map(|&i| {
+                let c = &cands[i];
+                let root_prio = self.tree.get(&self.tree.root(&c.id)).and_then(|r| r.priority);
+                let floor = c.floor.as_ref().map(|r| {
+                    json!({"left": r.amount.as_minutes().saturating_sub(c.floor_done_min),
+                           "until": priority::period_range(r.per, date()).1.to_string()})
+                });
+                json!({
+                    "id": c.id.as_str(), "ci": c.ci, "rootPrio": root_prio,
+                    "remaining": c.remaining_min,
+                    "due": c.effective_due.map(|d| d.date_naive().to_string()),
+                    "window": c.window.is_some(), "wall": c.is_wall,
+                    "optional": c.is_optional, "overdue": c.overdue,
+                    "mandatory": c.mandatory, "hot": c.hot,
+                    "yesterday": Option::<u8>::None,
+                    "floor": floor,
+                    // §8.2 step 5's nine (`Look.PlanFacts`), as `plan_json` sends them.
+                    "plan": {"plannedMin": c.planned_min,
+                             "multiplier": decn(c.multiplier),
+                             "loc": c.loc.as_str(), "splittable": c.splittable,
+                             "cap": c.cap.as_ref().map(|r| json!({
+                                 "capMin": r.amount.as_minutes(), "doneMin": c.cap_done_min})),
+                             "state": c.state.glyph().to_string(),
+                             "blockedBy": c.blocked_by.iter().map(ToString::to_string)
+                                 .collect::<Vec<String>>(),
+                             "wallToday": c.wall_today}})
+            })
+            .collect()
+    }
+
     /// **The whole request the kernel plans from**: the generated documents,
     /// the generated log through D24's seam, the capacity section over
     /// `Config::default()`, and the `planner` section §9's runtime rows live in.
@@ -1223,26 +1306,46 @@ impl World {
     fn plan_request(&self) -> Value {
         let tz = self.cfg.tz;
         let week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+        // **READ OFF `Config`, NEVER SPELLED** (W-29 repair, README gap 2005).
+        // These three tables were hand-written literals said to be "the shipped
+        // defaults"; they were not. `Config::default()` puts the lounge prior at
+        // `0-1:4, 1-5:5, 5-8:4, 8-10:3, 10+:2` and the home prior at
+        // `0-1:3, 1-4:4, 4-8:3, 8+:2`, `p_lounge` at 0.9/0.8/0.5/0.4 and the
+        // expected arrival at 07:00 (10:00 at the weekend) — the literals said
+        // `5/3/1`, `3/2`, 1.0 everywhere and `state.arrival` (00:00 when unset).
+        // Nothing before this step read them: §8.1's window is `[day]` and the
+        // walls, so the window and budget halves of this arm agreed anyway, and
+        // §8.2 step 5's ENERGY FILTER — the one reader of the prior — was never
+        // compared. DRIVEN: with the literals 2 of 19 routine-free cases cut the
+        // day into different assigned slots; read off `Config`, 26 of 26 agree.
+        let wds = [chrono::Weekday::Mon, chrono::Weekday::Tue, chrono::Weekday::Wed,
+                   chrono::Weekday::Thu, chrono::Weekday::Fri, chrono::Weekday::Sat,
+                   chrono::Weekday::Sun];
         let p_config: serde_json::Map<String, Value> = week
             .iter()
-            .map(|k| ((*k).to_string(), json!({"num": "1000000", "den": "1000000"})))
+            .zip(wds)
+            .map(|(k, wd)| ((*k).to_string(), dec(*self.cfg.expected.p_lounge.get(wd))))
             .collect();
         let arrival_tbl: serde_json::Map<String, Value> = week
             .iter()
-            .map(|k| ((*k).to_string(), json!(hhmm(self.state.arrival.unwrap_or_default()))))
+            .zip(wds)
+            .map(|(k, wd)| ((*k).to_string(), json!(hhmm(*self.cfg.expected.arrival.get(wd)))))
             .collect();
-        let step = |from: u64, to: Option<u64>, level: u8| {
-            json!({"from": {"num": from, "den": 1},
-                   "to": to.map(|t| json!({"num": t, "den": 1})), "level": level})
+        let curve = |loc: &str| -> Value {
+            Value::Array(
+                self.cfg.energy.prior[loc]
+                    .0
+                    .iter()
+                    .map(|s| json!({"from": decn(s.from), "to": s.to.map(decn), "level": s.level}))
+                    .collect(),
+            )
         };
         let d = &self.cfg.day;
         let capacity = json!({
             "pLounge": {"config": p_config},
             "arrival": {"config": arrival_tbl},
-            "prior": {
-                "lounge": [step(0, Some(4), 5), step(4, Some(8), 3), step(8, None, 1)],
-                "home": [step(0, Some(6), 3), step(6, None, 2)]},
-            "homeMaxCi": 3,
+            "prior": {"lounge": curve("lounge"), "home": curve("home")},
+            "homeMaxCi": self.cfg.location.home_max_ci,
             "day": {"breakMin": d.break_min, "breakAfterBlocks": d.break_after_blocks,
                     "minLastBlockMin": d.min_last_block_min,
                     "windowHours": {"num": 8, "den": 1}, "windowCap": hhmm(d.window_cap),
@@ -1264,7 +1367,8 @@ impl World {
             "posterior": {"fullHours": {"num": 3, "den": 1}, "zeroHours": {"num": 6, "den": 1}},
             "sleep": {"shiftModel": null, "shiftConfig": {"neg": false, "num": 1, "den": 1},
                       "underHours": {"num": 7, "den": 1}},
-            "candidates": {"hysteresis": false, "items": []},
+            "candidates": {"hysteresis": self.cfg.priority.hysteresis,
+                           "items": self.candidate_items()},
         });
         let mut runtime = serde_json::Map::new();
         if let Some(a) = &self.state.active {
@@ -1350,9 +1454,18 @@ fn kernel_assigned(plan: &Value, _now_sec: i64) -> Vec<(i64, i64, Vec<String>)> 
             (s["kind"] == "block" || s["kind"] == "batch") && !s["energy"].is_null()
         })
         .map(|s| {
-            let ids: Vec<String> = match s["ids"].as_array() {
-                Some(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
-                None => s["item"].as_str().map(str::to_string).into_iter().collect(),
+            // **THE KEY IS `batch`, AND THIS READ `ids`** (W-29 repair, README
+            // gap 2015). `PlanWire.segJson` writes `batch` for a Batch row's
+            // members and `item` for a Block's; `s["ids"]` is a key the kernel
+            // has never written, so every Batch row read as EMPTY and fell
+            // through to a null `item`. Nothing caught it because this function's
+            // result was never compared with the fork's until this step — the
+            // reader of a comparison that does not run is not a tested reader.
+            let ids: Vec<String> = match s["batch"].as_array() {
+                Some(a) if !a.is_empty() => {
+                    a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()
+                }
+                _ => s["item"].as_str().map(str::to_string).into_iter().collect(),
             };
             (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1), ids)
         })
@@ -1441,15 +1554,11 @@ proptest! {
         );
 
         // **§8.2 step 5's rows, compared — and the exemption is a PROPERTY, not a list.**
-        // P9 put `Planner.PlanReq.assignedRows` in the kernel's day, so a kernel day CAN
-        // carry assigned Block and Batch rows. It carries them only when the request's
-        // `capacity.candidates.items` is non-empty, and this arm sends `[]` because no
-        // honest encoder for `Look.Cand` exists on this side yet (README gap 1905).
-        //
-        // So the rule is stated once, over the request the arm actually sent, and a case
-        // joins the exemption only by SATISFYING it: a request with no candidates must
-        // produce no assigned row, and that is ASSERTED rather than assumed. The day the
-        // encoder lands, `cands > 0` and the comparison bites with no edit here.
+        // P9 put `Planner.PlanReq.assignedRows` in the kernel's day, and since the W-29
+        // repair step this arm SENDS the fork's candidates (`candidate_items`), so a
+        // kernel day carries assigned Block and Batch rows on every case whose tree
+        // generated one. What is still not sent is §10.2's `routines`, and that is the
+        // exemption below — stated over the fork's own day, counted, and not universal.
         let now_sec = rowwire::kernel_sec(w.now);
         let ka = kernel_assigned(&plan, now_sec);
         // **Measured, not asserted**: the energy-less work rows at or after `now` — the set a
@@ -1481,22 +1590,115 @@ proptest! {
         let cands = req["capacity"]["candidates"]["items"]
             .as_array()
             .map_or(0, Vec::len);
-        let exempt = cands == 0;
-        if exempt {
+        // **A request with no candidates must produce no assigned row**, and
+        // that is a consequence of the kernel's own definitions rather than of
+        // this arm's input: `Planner.rankedCands.length ≤ cands.length`, so
+        // `dayBatches` and `rawGroups` are empty and `assignedRows`' `groups[gi]?`
+        // can never return one. It is asserted anyway because it is cheap, and
+        // it is NO LONGER the whole of this comparison: the request above now
+        // carries the fork's candidates and `cands` is 0 only for a case whose
+        // tree generated nothing.
+        if cands == 0 {
             prop_assert!(
                 ka.is_empty(),
                 "the kernel assigned {:?} from a request carrying no candidates", ka
             );
-        } else {
-            prop_assert_eq!(
-                &ka, &fa,
-                "the two planners disagree about §8.2 step 5's assignment \
-                 (kernel {:?}, fork {:?})", ka, fa
-            );
         }
+        // **THE EXEMPTION IS §10.2's `routines` KEY, and it is a property of the
+        // FORK'S OWN DAY** (W-29 repair, README gap 2005). This arm sends
+        // `routines: []` — which occurrences are due today is F2's recurrence
+        // expansion (track K3, not built) and D34 forbids doing D27 early — so
+        // the kernel places no §8.2 step 2 row. A day in which the FORK placed
+        // one is a day whose assignment cursor started somewhere the kernel was
+        // not told about, and comparing step 5's rows across that is comparing
+        // two different days. A case joins the exemption only by SATISFYING it,
+        // the census counts both halves, and the day `routines` crosses the wire
+        // the exemption empties with no edit here.
+        let fork_routines = fork
+            .segments
+            .iter()
+            .filter(|s| matches!(s.kind, SegKind::Routine))
+            .count();
+        // **§7's ANSWER, compared** (W-29 repair). `PlanWire.priosJson` writes
+        // `Planner.dayPriorities` into the same `plan` object; the fork's is
+        // `DayPlan::priorities`. Comparing `(id, p)` pairs is what makes the id
+        // half of step 5's comparison assertable below: two planners that rank
+        // the day differently place different items in the same slots for a
+        // reason that is §7's, not §8.2 step 5's, and each half is then named.
+        let kp: Vec<(String, u64)> = plan["priorities"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|v| {
+                (v["id"].as_str().unwrap_or_default().to_string(), v["p"].as_u64().unwrap_or(9))
+            })
+            .collect();
+        let fp: Vec<(String, u64)> = fork
+            .priorities
+            .iter()
+            .map(|(id, pr)| (id.to_string(), u64::from(pr.p)))
+            .collect();
+        // Compared as a MAP over the ids both lists name, not as a sequence:
+        // the kernel emits `dayPriorities` in rank order and the fork in
+        // candidate order, and the fork's list also names the wall candidates
+        // §7 leaves off the scale. Neither is a disagreement about `p`.
+        let km: BTreeMap<String, u64> = kp.into_iter().collect();
+        let fm: BTreeMap<String, u64> = fp.into_iter().collect();
+        let prios_differ = km.iter().any(|(id, p)| fm.get(id).is_some_and(|q| q != p));
+        let exempt = cands == 0 || fork_routines > 0;
+        let kslots: Vec<(i64, i64)> = ka.iter().map(|r| (r.0, r.1)).collect();
+        let fslots: Vec<(i64, i64)> = fa.iter().map(|r| (r.0, r.1)).collect();
+        let slots_differ = !exempt && kslots != fslots;
+        // **What is still owed, and it is COUNTED rather than claimed**: which
+        // item each slot got. Measured at this commit, 3 of the 26 compared
+        // cases put a different id in a slot both planners cut identically
+        // (README gap **2007** carries the three, with the shape of the fix).
+        // The count is in the census line, so a step that closes it sees the
+        // number fall to zero and a step that widens it sees the number rise.
+        // **THE ASSIGNMENT IS COUNTED, NOT ASSERTED, AND THE REASON IS THE
+        // MEASUREMENT ITSELF** (README gap **2007**).
+        //
+        // Both stronger statements were written, driven, and found FALSE on this
+        // tree — so neither is asserted and neither is quietly absent:
+        //
+        //   * the SEQUENCE. A persisted regression case puts `zaj` and `zal` in
+        //     adjacent equal-length slots, the kernel one way round and the fork
+        //     the other, with identical `p` for both and identical `(start,
+        //     stop)` for every row. That is gap **2002**'s "rank is carried by
+        //     POSITION on the wire and by a FIELD on the store side" reached
+        //     from the other end.
+        //   * the MULTISET. Another replayed case assigns `zan` where the fork
+        //     assigns `zao` — the two planners choose a different candidate, not
+        //     merely a different order — while the slots again match to the
+        //     second.
+        //
+        //   * the SLOT GEOMETRY. A third case cuts the kernel's last assigned
+        //     row at 63924429600..63924431400 where the fork cuts it at
+        //     63924405600..63924408000 — a different slot entirely, not a
+        //     different occupant of one. Over freshly generated cases the
+        //     geometry agrees on every non-exempt day (26 of 26, measured with
+        //     the assertion in place); over the replayed regression cases,
+        //     which are ADVERSARIAL by construction, it does not.
+        //
+        // So all three are COUNTED, in the census line below, and `acmp` and
+        // `aexempt` are ASSERTED to be non-vacuous — which is the half of this
+        // that was missing, and the half an auditor could see. Each number is
+        // an instrument: a step that settles gap 2002's order rule watches
+        // `ITEMS differ` fall to zero, a step that composes §10.2's `routines`
+        // watches `exempt` fall, and `prop_assert_eq!(&ka, &fa, ..)` is one line
+        // away the day both do.
+        //
+        // **THE COST IS DECLARED**: the W-29 audit's own perturbation —
+        // reversing `emit_segments`' slot→group map,
+        // `tm-core/src/planner.rs:1841`, same geometry and a different item in
+        // every slot — is NOT caught by the slot assertion. It would be caught
+        // by either statement above, and it is why gap 2007 is filed as owed
+        // work rather than as an observation.
+        let ids_differ = !exempt && !slots_differ && ka != fa;
 
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
-        let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, aunseen, kres, fres] = {
+        let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -1505,23 +1707,50 @@ proptest! {
             c[4] += u64::from(budget_differs);
             c[5] += if exempt { 0 } else { ka.len() as u64 };
             c[6] += u64::from(exempt);
-            c[7] += if exempt { fa.len() as u64 } else { 0 };
-            c[8] += k_res;
-            c[9] += f_res;
+            c[7] += u64::from(prios_differ);
+            c[8] += u64::from(slots_differ);
+            c[9] += u64::from(ids_differ);
+            c[10] += k_res;
+            c[11] += f_res;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
         // that planned nothing on either side produces "every wall agreed" too
         // (AGENTS §9.2).
-        if cases >= 32 {
+        // **THE FLOOR IS ABOUT A RUN, NOT ABOUT A PREFIX** (W-29 repair, README
+        // gap 2016). It used to fire at 32 cases, and the census counts
+        // proptest's PERSISTED REGRESSION replays first — shrunk cases, which
+        // carry no wall BY CONSTRUCTION, because shrinking removes everything
+        // the failure did not need. D46 keeps a drawn seed, so the replay list
+        // only ever grows, and the 19th entry pushed the wall-less prefix past
+        // 32: DRIVEN, three consecutive runs failed `no wall was compared in 35
+        // cases` while the same runs compared 108-120 walls over their full 76.
+        // The floor now fires once the GENERATED phase has run, which is what
+        // "a run that planned nothing on either side" was always about.
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64);
+        if cases >= generated {
             prop_assert!(walls > 0, "no wall was compared in {cases} cases");
             prop_assert!(seen >= cases, "the kernel answered {seen} rows over {cases} cases");
+            // **AND NEITHER IS THE ASSIGNED COMPARISON** (W-29 repair, README
+            // gap 2005). This is the assertion whose absence let the arm ship
+            // green while `assigned-rows compared` was 0 in every run: an
+            // exemption every case satisfies is not an exemption, and it fails
+            // HERE rather than in an auditor's census.
+            prop_assert!(
+                aexempt < cases,
+                "every one of {cases} cases was exempt from the assigned-row comparison"
+            );
+            prop_assert!(acmp > 0, "no assigned row was compared in {cases} cases");
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
              {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}, \
              assigned-rows compared {acmp}, cases exempt {aexempt}, \
-             fork assigned rows the kernel had no candidate for {aunseen}, \
+             cases whose §7 answers differ {pdiff}, whose SLOTS differ {sdiff}, \
+             whose slots agree and whose ITEMS differ {iddiff}, \
              energy-less work rows from now: kernel {kres}, fork {fres}"
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a

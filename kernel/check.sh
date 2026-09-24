@@ -135,9 +135,18 @@ fi
 #    see.
 out=$( cd TmKernel && LEAN_PATH=.lake/build/lib/lean "$LEAN" Check.lean 2>&1 )
 n=$( printf '%s' "$out" | grep -c 'axioms' )
+# **RECONCILED BY THE FULL NAME** (W-29 repair step, README gap 2008).  Both
+# sides used to be put through `sed 's/.*\.//'`, which made this a multiset over
+# SHORT names: it saw a name that had been LOST and could NOT see one that had
+# been SWAPPED for another namespace's same-short-name theorem.  DRIVEN before
+# the repair: a second copy of `Tm.EmitWire.the_refusals_spell_themselves`
+# standing in for `Tm.PlanWire.the_refusals_spell_themselves` left this check
+# saying `ok` with the PlanWire theorem audited zero times.  `leanfiles.py
+# --theorems` now prints the name `lean` itself prints, so the two sides are
+# compared on the key the audit is actually about.
 unaudited=$( comm -23 \
-  <( python3 leanfiles.py --theorems TmKernel | sed 's/.*\.//' | sort ) \
-  <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' | sort ) )
+  <( python3 leanfiles.py --theorems TmKernel | sort ) \
+  <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sort ) )
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
 elif bad=$( printf '%s\n' "$out" | grep -E '^Check\.lean:[0-9]+:[0-9]+: error' | head -3 ); [ -n "$bad" ]; then

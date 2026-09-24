@@ -456,12 +456,13 @@ EXCLUDED = (
     ("kernel/TmKernel/lake-manifest.json", "lake resolver output"),
     ("kernel/TmKernel/lean-toolchain", "the R8 pin, one line, no prose"),
     ("*.gitignore", "no prose"),
-    ("kernel/__pycache__/", "CPython bytecode, derived output.  It is reachable since "
-                            "the W-28 repair step made the population a WALK: the walk's "
-                            "prune rule is `leanfiles.is_derived`, and __pycache__ is "
-                            "neither dot-prefixed nor CACHEDIR.TAG-marked.  An exact "
-                            "path prefix and not a bare directory NAME, because a name "
-                            "that matches at any depth is the W-22 hole"),
+    # `kernel/__pycache__/` was an entry here from W-28 until W-29.  It is gone
+    # because the WALK no longer reaches it: `leanfiles.source_files` prunes on
+    # git's own `--ignored --exclude-standard` answer as well as on the name
+    # property, and `kernel/.gitignore` declares `__pycache__/` derived output.
+    # The ratchet below is what said so -- "1 exclusion covering nothing" -- and
+    # it is why a repair that moves a file out of this list cannot forget the
+    # list.  README gap 2010.
 )
 
 # extension -> which reader.  `rust` is `rust_prose`; `lean` and `plain` are the
@@ -499,9 +500,12 @@ def tracked():
         files (`kernel/corpus/*/.tm/`, `tm-core/tests/fixtures/*/.tm/`,
         `.claude/API-NOTES.md` -- 11 files here today).
 
-    MEASURED at the repair step: walk 596, git 604, union 607; the walk's three
-    additions are `kernel/__pycache__/*.pyc`, which `EXCLUDED` now names with a
-    reason.  A file that is in neither enumeration does not exist; a file in
+    MEASURED at the W-28 repair step: walk 596, git 604, union 607; the walk's
+    three additions were `kernel/__pycache__/*.pyc`.  Since the W-29 repair step
+    the walk prunes them too -- `leanfiles.ignored_paths` asks git which paths
+    the repository itself declares derived -- so the union is 604 and is the
+    SAME in a `git archive HEAD` clone as in a working checkout, which the two
+    published counts were not.  A file that is in neither enumeration does not exist; a file in
     either is swept or `EXCLUDED` names it, and the residue rule is unchanged.
 
     **AND THE UNION IS NOT THIS FILE'S ANY MORE** (W-29).  check 10's sweep

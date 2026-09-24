@@ -879,6 +879,46 @@ INHAB = re.compile(r"failed to synthesize[^\n]*\n\s*Inhabited ([^\n]+)")
 
 
 SIDECAR = os.path.join(HERE, ".mutate-in-flight")
+LOCK = os.path.join(HERE, ".mutate-lock")
+
+
+def take_the_tree(argv):
+    """Hold the SHARED WORKING TREE for this run, exclusively.
+
+    **THIS GATE MUTATES THE TREE EVERY OTHER PROCESS IS READING** (W-29 repair
+    step, README gap 2011).  `restore_in_flight` and `arm_signals` closed gap
+    1788's KILL case; neither is about CONCURRENCY, and there was no lock.
+    OBSERVED LIVE by an auditor at 01:50 in the shared checkout: `git status`
+    showed ` M kernel/TmKernel/TmKernel/Boundary.lean` with a constant-folded
+    `readState` planted, while `ps` showed `python3 mutate.py --gate` beside a
+    `lean Boundary.lean` whose parent chain was `lake build TmKernel:static` <-
+    `cargo test -p tm --test planner_invariants` -- another session's acceptance
+    run compiling the mutated source.  Its `0 failed` was not a fact about HEAD
+    and nothing said so.
+
+    The lock is `flock` on a file of this directory, held for the whole run and
+    released by the kernel when the process dies however it dies -- so a KILLED
+    run leaves no stale lock, which a pid file would.  A second mutate run is
+    refused BY NAME with the pid that holds the tree.
+
+    The other half of the class -- an acceptance run started by a DIFFERENT tool
+    while a mutation is live -- is answered where it can be seen:
+    `tm/tests/mutation_in_flight.rs` fails when the sidecar exists, so a
+    `cargo test --workspace` that overlaps this gate reports a FAILURE instead of
+    a `0 failed` about a kernel nobody committed."""
+    import fcntl
+
+    handle = open(LOCK, "w", encoding="utf-8")
+    try:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        print("mutate.py: another mutate run holds %s -- this gate mutates the "
+              "SHARED working tree and two of them would interleave plants. "
+              "Wait for it, or run in a clone." % os.path.relpath(HERE))
+        return None
+    handle.write("%d %s\n" % (os.getpid(), " ".join(argv)))
+    handle.flush()
+    return handle
 
 
 def restore_in_flight():
@@ -1634,6 +1674,9 @@ def main(argv):
                   % (arg, " ".join(FLAGS)))
             return 2
         skip = arg in ("--only", "--since")
+    held = take_the_tree(argv)
+    if held is None:
+        return 2
     restore_in_flight()
     arm_signals()
     base, rows = roster()

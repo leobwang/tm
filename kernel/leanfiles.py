@@ -87,7 +87,43 @@ def is_derived(path):
     return path.name.startswith(".") or (path.is_dir() and (path / CACHE_TAG).is_file())
 
 
-def source_files(root, suffix):
+def ignored_paths(root):
+    """The paths GIT ITSELF declares derived output, relative to `root`.
+
+    **THE PRUNE RULE WAS A PROPERTY, BUT NOT THIS REPOSITORY'S** (W-29 repair
+    step, README gap 2010).  `is_derived` prunes a dot-named entry and a
+    CACHEDIR.TAG directory; `kernel/.gitignore` line 3 declares `__pycache__/`
+    derived output and `is_derived(pathlib.Path("kernel/__pycache__"))` is
+    False, so the walk swept it.  MEASURED before the repair:
+    `repo_files(".")` was **608** in the shared tree and **605** in a `git
+    archive HEAD` clone, the three extra being
+    `kernel/__pycache__/{citations,mutate,parity}.cpython-312.pyc` -- so
+    `citations.py`'s "264 files swept, 344 excluded" and check 10's "608 files
+    swept" were counts of the *checkout's* state and were not reproducible from
+    the committed tree.  Neither gate broke (a `.pyc` carries no citation and no
+    parity row), which is why it stayed invisible: a counts-drift, and a class
+    miss.
+
+    The property that states it is GIT'S OWN, and `repo_files` was already
+    relying on half of it: `--others --exclude-standard` distinguishes
+    not-yet-added from ignored.  This is the other half, asked of the walk.
+    `--directory` collapses a wholly ignored directory to one entry, so the
+    DESCENT is pruned rather than the results filtered.
+
+    Returns a set of `root`-relative paths, directories WITHOUT their trailing
+    slash.  A `git` that cannot answer returns the EMPTY set, which prunes
+    nothing extra: a gate scanning too much fails loudly on a generated file
+    rather than falling silent on a real one, and `repo_files` -- the caller
+    that publishes counts -- hard-errors on `git` before it ever gets here."""
+    r = subprocess.run(
+        ["git", "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
+        cwd=str(root), capture_output=True, text=True)
+    if r.returncode != 0:
+        return set()
+    return {q.rstrip("/") for q in r.stdout.split("\0") if q}
+
+
+def source_files(root, suffix, ignored=None):
     """Every `suffix` file under `root`, recursively, sorted, build dirs pruned.
 
     `suffix=None` means EVERY file, which is what check 10's parity sweep asks
@@ -96,6 +132,11 @@ def source_files(root, suffix):
     `notes.org`, in `mutations.txt` and in `check.sh` went GREEN through a
     three-suffix walk.  The prune rule is unchanged; the caller decodes with
     `errors="replace"`, because a whole-file walk reaches `.pyc` and `.snap`.
+
+    THE PRUNE RULE IS TWO PROPERTIES SINCE W-29: the NAME property `is_derived`
+    states, and the REPOSITORY'S OWN -- a path `git` declares ignored, which
+    `ignored_paths` asks git for once per walk.  `ignored` may be passed in by a
+    caller that has already asked.
 
     `root` is a pathlib.Path or a string; the results are pathlib.Path objects
     under it, so a caller that wants relative or absolute strings converts.
@@ -111,6 +152,8 @@ def source_files(root, suffix):
     live prose, invisible to check 8.  One walk, one prune rule, both
     languages."""
     root = pathlib.Path(root)
+    if ignored is None:
+        ignored = ignored_paths(root)
     out = []
     stack = [root]
     while stack:
@@ -122,7 +165,7 @@ def source_files(root, suffix):
         for entry in entries:
             # ONE TEST FOR BOTH KINDS OF ENTRY (W-29).  It used to be asked of
             # directories only, and `.git` is a FILE in a linked worktree.
-            if is_derived(entry):
+            if is_derived(entry) or str(entry.relative_to(root)) in ignored:
                 continue
             if entry.is_dir():
                 stack.append(entry)
@@ -383,6 +426,78 @@ def theorem_names(path):
     return THEOREM.findall(strip_comments(pathlib.Path(path).read_text()))
 
 
+# **THE RECONCILIATION'S KEY IS THE FULL NAME, NOT THE SHORT ONE** (W-29 repair
+# step, README gap 2008).  check 3 reconciled `theorem_names` against
+# `Check.lean`'s `#print axioms` lines with BOTH sides put through
+# `sed 's/.*\.//'`, so the comparison was a multiset over SHORT names: it saw a
+# name that had been LOST and could not see a name that had been SWAPPED.
+# DRIVEN in a clone before the repair: `Check.lean`'s
+# `#print axioms Tm.PlanWire.the_refusals_spell_themselves` replaced by a second
+# copy of `Tm.EmitWire.the_refusals_spell_themselves` left `lean Check.lean` at
+# rc=0 with 5,220 axioms lines and check 3 saying `ok`, while
+# `Tm.PlanWire.the_refusals_spell_themselves` was audited ZERO times.  25 short
+# names are declared in more than one namespace at HEAD and 57 theorems sit on
+# them, so the exposure was real and latent.
+#
+# The scanner below is the same token discipline one level up: `namespace`,
+# `section`, `mutual` and `end` are keyword tokens in stripped source, and a
+# declaration's full name is the `namespace` stack that encloses it, dotted,
+# with the name AS WRITTEN after it.  `section` and `mutual` push a frame that
+# contributes nothing and `end` pops one, which is exactly Lean's own rule.
+#
+# **The argument of `end`/`namespace` is read ON ITS OWN LINE**, never across a
+# newline: `end` alone followed by a `theorem` on the next line would otherwise
+# swallow the word `theorem` as the frame's name and lose the declaration.  The
+# `theorem` name itself IS read across a newline, because `THEOREM` above does.
+#
+# MEASURED at the repair step: the qualified roster is 5,215 names, `Check.lean`
+# holds 5,220 `#print axioms` lines, every roster name is audited at least once,
+# and the five extra lines are the five `def`s the file audits deliberately.
+#
+# WHAT IT CANNOT SEE: a namespace opened by a macro; `end` in a construct this
+# library does not write that is closed by `end` and is neither a namespace, a
+# section nor a `mutual` block (the stack would be popped once too often, which
+# makes a name SHORTER and so UNAUDITED -- the loud direction); and the blind
+# spots `strip_comments` and `THEOREM` list.  A leftover frame at end of file is
+# reported by `--theorems` rather than silently dropped.
+SCOPE_KW = re.compile(r"(?<![\w'?!.\u00AB])(namespace|section|mutual|end|theorem)(?![\w'?!])")
+SCOPE_ARG = re.compile(r"[ \t]*([^\s(){}:]*)")
+THEOREM_ARG = re.compile(r"[ \t\r\n]*([^\s(){}:]+)")
+
+
+def qualified_theorem_names(path):
+    """Every theorem declared in `path`, as `lean` names it (namespaces dotted on).
+
+    Returns `(names, leftover)` -- `leftover` is the namespace stack still open
+    at end of file, which is a malformed source this walk must not answer for.
+    """
+    code = strip_comments(pathlib.Path(path).read_text())
+    stack, out, i = [], [], 0
+    while True:
+        m = SCOPE_KW.search(code, i)
+        if not m:
+            return out, [f for f in stack if f]
+        kw, i = m.group(1), m.end()
+        if kw == "theorem":
+            n = THEOREM_ARG.match(code, i)
+            if not n:
+                continue
+            i = n.end()
+            prefix = ".".join(f for f in stack if f)
+            out.append(f"{prefix}.{n.group(1)}" if prefix else n.group(1))
+        else:
+            n = SCOPE_ARG.match(code, i)
+            i = n.end()
+            if kw == "namespace":
+                stack.append(n.group(1))
+            elif kw in ("section", "mutual"):
+                stack.append("")
+            elif stack:
+                stack.pop()
+            else:
+                out.append("<end without a scope in %s>" % path)
+
+
 def main(argv):
     """Print every .lean file under each directory named, one per line.
 
@@ -394,14 +509,21 @@ def main(argv):
     directory AND its root module (`library_files`).
 
     `--theorems <pkg>` prints the check-3 ROSTER of that library: every theorem
-    declared in it, comment-stripped, one per line (`theorem_names`)."""
+    declared in it, comment-stripped, one per line, QUALIFIED by the namespace
+    that encloses it (`qualified_theorem_names`) -- so check 3 reconciles by the
+    name `lean` prints, and a SWAPPED audit line cannot hide behind a short name
+    another namespace also spells."""
     if not argv:
         print("usage: leanfiles.py [--library|--theorems] <dir> [<dir> ...]", file=sys.stderr)
         return 2
     if argv[0] == "--theorems":
         for name in argv[1:]:
             for path in library_files(name):
-                for thm in theorem_names(path):
+                names, leftover = qualified_theorem_names(path)
+                if leftover:
+                    raise SystemExit("leanfiles: %s leaves %r open -- the roster would be "
+                                     "qualified by the wrong namespace" % (path, leftover))
+                for thm in names:
                     print(thm)
         return 0
     library = argv[0] == "--library"
