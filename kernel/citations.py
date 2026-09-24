@@ -371,7 +371,7 @@ ROOT = os.path.dirname(HERE)
 # the hard-coded name `target`, which is a legal Lean module path component, so a
 # module under `kernel/TmKernel/TmKernel/target/` was invisible here, in
 # `totality.py` and in `mutate.py` at once.  Driven: it left this file at
-# 28699/27174/1525/0, byte-identical again.  `leanfiles.is_build_dir` prunes on a
+# 28699/27174/1525/0, byte-identical again.  `leanfiles.is_derived` prunes on a
 # property a build directory has, never on a name.
 LEAN_FILES = [str(p) for p in leanfiles.lean_files(os.path.join(HERE, "TmKernel"))]
 # **THE EIGHTH LEVEL OF THE ENUMERATION HOLE, AND THE RULE THAT ENDS THE CLASS**
@@ -442,7 +442,7 @@ EXCLUDED = (
                                    "over by exactly one and none was a defect.  It gets "
                                    "read by hand instead"),
     (".claude/", "the agent harness's own directory, pruned by the same leading-dot "
-                 "property `leanfiles.is_build_dir` uses.  Measured: API-NOTES.md is "
+                 "property `leanfiles.is_derived` uses.  Measured: API-NOTES.md is "
                  "265 citations, 6 unresolved"),
     ("tm/templates/", "the documents `tm init` writes into a NEW tree: fixture text, "
                       "the same class as corpus/"),
@@ -458,7 +458,7 @@ EXCLUDED = (
     ("*.gitignore", "no prose"),
     ("kernel/__pycache__/", "CPython bytecode, derived output.  It is reachable since "
                             "the W-28 repair step made the population a WALK: the walk's "
-                            "prune rule is `leanfiles.is_build_dir`, and __pycache__ is "
+                            "prune rule is `leanfiles.is_derived`, and __pycache__ is "
                             "neither dot-prefixed nor CACHEDIR.TAG-marked.  An exact "
                             "path prefix and not a bare directory NAME, because a name "
                             "that matches at any depth is the W-22 hole"),
@@ -503,21 +503,16 @@ def tracked():
     additions are `kernel/__pycache__/*.pyc`, which `EXCLUDED` now names with a
     reason.  A file that is in neither enumeration does not exist; a file in
     either is swept or `EXCLUDED` names it, and the residue rule is unchanged.
+
+    **AND THE UNION IS NOT THIS FILE'S ANY MORE** (W-29).  check 10's sweep
+    answered the same question with the WALK ALONE and eleven tracked files were
+    invisible to it; the union lives in `leanfiles.repo_files` now, once, and
+    both gates import it.  A future disagreement between two checkers about
+    which files this repository holds needs someone to write a second union.
     """
     global _TRACKED
-    if _TRACKED is not None:
-        return _TRACKED
-    import subprocess
-    out = []
-    for args in (["ls-files", "-z"], ["ls-files", "-z", "--others", "--exclude-standard"]):
-        r = subprocess.run(["git"] + args, cwd=ROOT, capture_output=True, text=True)
-        if r.returncode != 0:
-            raise SystemExit("citations.py: `git %s` failed in %s -- the file "
-                             "population would be silently smaller" % (args[0], ROOT))
-        out += [p for p in r.stdout.split("\0") if p]
-    out += [os.path.relpath(str(q), ROOT)
-            for q in leanfiles.source_files(ROOT, None)]
-    _TRACKED = sorted(set(out))
+    if _TRACKED is None:
+        _TRACKED = leanfiles.repo_files(ROOT)
     return _TRACKED
 
 
