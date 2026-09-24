@@ -1195,8 +1195,9 @@ proptest! {
 // ===========================================================================
 
 /// `(cases, walls compared, kernel rows seen, window disagreements,
-/// budget disagreements)`.
-static PLAN_CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+/// budget disagreements, assigned rows compared, cases EXEMPT from the assigned
+/// comparison, fork assigned rows the kernel was never given a candidate for)`.
+static PLAN_CENSUS: Mutex<[u64; 10]> = Mutex::new([0; 10]);
 
 /// A `NaiveTime` as the wire's `HH:MM`.
 fn hhmm(t: NaiveTime) -> String {
@@ -1320,6 +1321,60 @@ fn kernel_walls(plan: &Value) -> Vec<(i64, i64)> {
         .collect()
 }
 
+/// **(start, stop, items) of every row §8.2 step 5 ASSIGNED**, on both sides, by the property
+/// that distinguishes them and not by a list of the rows that are not them: a step-5 row is a
+/// work row (Block or Batch) that carries a **slot energy**.
+///
+/// The three other sources of a work row each carry `energy: None` and each does so for a
+/// reason a reader can check: §8.2 choice 5b's reservation *"is a reservation, not a slot, so
+/// it carries no slot energy"* (fork `emit_segments`; kernel
+/// `Planner.PlanReq.activeRow_is_an_energyless_block`), and the replayed past is played back
+/// off the log, which has no slots in it (`Planner.pastRows`). Only the assign fold puts a row
+/// in an energised slot, on either side.
+///
+/// **This was a `start >= now` restriction for one run of this arm and the clock was the wrong
+/// subject** — driven: the arm failed with *"the kernel assigned [(63924379200, 63924380760,
+/// [\"zaa\"])] from a request carrying no candidates"*, and with no candidates on the wire the
+/// only work row the kernel can draw at or after `now` is §8.2 choice 5b's reservation. The
+/// energy property names step 5's rows; the clock names "whatever has not started yet", which
+/// is a different set. **No asymmetry between the two planners is claimed from that failure**
+/// — the census counts the clock-based set on both sides, and it is 25 and 25. README gap
+/// 1906.
+fn kernel_assigned(plan: &Value, _now_sec: i64) -> Vec<(i64, i64, Vec<String>)> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| {
+            (s["kind"] == "block" || s["kind"] == "batch") && !s["energy"].is_null()
+        })
+        .map(|s| {
+            let ids: Vec<String> = match s["ids"].as_array() {
+                Some(a) => a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect(),
+                None => s["item"].as_str().map(str::to_string).into_iter().collect(),
+            };
+            (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1), ids)
+        })
+        .collect()
+}
+
+/// The same, off the fork's day, by the same property.
+fn fork_assigned(day: &DayPlan, _from: DateTime<Tz>) -> Vec<(i64, i64, Vec<String>)> {
+    day.segments
+        .iter()
+        .filter(|s| matches!(s.kind, SegKind::Block | SegKind::Batch(_)))
+        .filter(|s| s.energy.is_some())
+        .map(|s| {
+            let ids: Vec<String> = match &s.kind {
+                SegKind::Batch(ids) => ids.iter().map(ToString::to_string).collect(),
+                _ => s.item.iter().map(ToString::to_string).collect(),
+            };
+            (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end), ids)
+        })
+        .collect()
+}
+
 /// The same, off the fork's day.
 fn fork_walls(day: &DayPlan) -> Vec<(i64, i64)> {
     day.segments
@@ -1385,14 +1440,74 @@ proptest! {
              (kernel {:?}, fork {:?})", kw, fw
         );
 
+        // **§8.2 step 5's rows, compared — and the exemption is a PROPERTY, not a list.**
+        // P9 put `Planner.PlanReq.assignedRows` in the kernel's day, so a kernel day CAN
+        // carry assigned Block and Batch rows. It carries them only when the request's
+        // `capacity.candidates.items` is non-empty, and this arm sends `[]` because no
+        // honest encoder for `Look.Cand` exists on this side yet (README gap 1905).
+        //
+        // So the rule is stated once, over the request the arm actually sent, and a case
+        // joins the exemption only by SATISFYING it: a request with no candidates must
+        // produce no assigned row, and that is ASSERTED rather than assumed. The day the
+        // encoder lands, `cands > 0` and the comparison bites with no edit here.
+        let now_sec = rowwire::kernel_sec(w.now);
+        let ka = kernel_assigned(&plan, now_sec);
+        // **Measured, not asserted**: the energy-less work rows at or after `now` — the set a
+        // clock-based subject would have called "assigned". It is here because the first
+        // version of this comparison used that subject and caught the reservation with it;
+        // the counter is what says whether the two planners' clock-based sets even have the
+        // same size, rather than a sentence claiming they do not. README gap 1906.
+        let k_res = plan["segments"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter(|s| {
+                (s["kind"] == "block" || s["kind"] == "batch")
+                    && s["energy"].is_null()
+                    && s["start"].as_i64().unwrap_or(-1) >= now_sec
+            })
+            .count() as u64;
+        let f_res = fork
+            .segments
+            .iter()
+            .filter(|s| {
+                matches!(s.kind, SegKind::Block | SegKind::Batch(_))
+                    && s.energy.is_none()
+                    && s.start >= w.now
+            })
+            .count() as u64;
+        let fa = fork_assigned(&fork, w.now);
+        let cands = req["capacity"]["candidates"]["items"]
+            .as_array()
+            .map_or(0, Vec::len);
+        let exempt = cands == 0;
+        if exempt {
+            prop_assert!(
+                ka.is_empty(),
+                "the kernel assigned {:?} from a request carrying no candidates", ka
+            );
+        } else {
+            prop_assert_eq!(
+                &ka, &fa,
+                "the two planners disagree about §8.2 step 5's assignment \
+                 (kernel {:?}, fork {:?})", ka, fa
+            );
+        }
+
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
-        let [cases, walls, seen, wdiff, bdiff] = {
+        let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, aunseen, kres, fres] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
             c[2] += rows;
             c[3] += u64::from(window_differs);
             c[4] += u64::from(budget_differs);
+            c[5] += if exempt { 0 } else { ka.len() as u64 };
+            c[6] += u64::from(exempt);
+            c[7] += if exempt { fa.len() as u64 } else { 0 };
+            c[8] += k_res;
+            c[9] += f_res;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -1404,7 +1519,10 @@ proptest! {
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
-             {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}"
+             {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}, \
+             assigned-rows compared {acmp}, cases exempt {aexempt}, \
+             fork assigned rows the kernel had no candidate for {aunseen}, \
+             energy-less work rows from now: kernel {kres}, fork {fres}"
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a
         // budget that differs is a finding: README gap 320's two readers, one of
