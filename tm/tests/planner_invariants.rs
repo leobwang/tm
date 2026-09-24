@@ -55,13 +55,13 @@ use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, local_dt};
+use tm_core::capacity::{self, local_dt, Exact, CAP_DEN};
 use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::Replay;
 use tm_core::model::{Id, Loc, Shape};
 use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
-use tm_core::priority::{self, Candidate, Prio};
+use tm_core::priority::{self, Candidate, Prio, PrioClass};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
 use tm_core::tree::Tree;
 
@@ -1198,8 +1198,12 @@ proptest! {
 /// disagreements, assigned rows compared, cases EXEMPT from the assigned
 /// comparison, cases whose §7 answers differ, compared cases whose slots agree
 /// and whose items do not (gap 2007), and the two clock-based work-row
-/// counts)`.
-static PLAN_CENSUS: Mutex<[u64; 12]> = Mutex::new([0; 12]);
+/// counts)`, then W-30's four §7-row counters: rows compared, rows whose
+/// capacity (`avail`) differs and whose `until` is TODAY (parity **P41**), the
+/// same with `until` beyond today (parity **P1**), rows an id could not key
+/// because it named two rows on one side, and the days on which §7's whole
+/// answer agreed so that step 5's assignment could be ASSERTED.
+static PLAN_CENSUS: Mutex<[u64; 17]> = Mutex::new([0; 17]);
 
 /// **A configured double as the exact decimal pair the wire carries** (D17).
 ///
@@ -1342,6 +1346,16 @@ impl World {
         };
         let d = &self.cfg.day;
         let capacity = json!({
+            // **`wake` CROSSES** (W-30). `kernel_capacity::request` sends
+            // `{"sec", "ns"}` when `state.wake` is set and `"log"` otherwise; this
+            // arm sent NEITHER, so `Boundary.readWake` answered `.absent` and the
+            // kernel measured §8.5's `hsw` from the weekday's expected arrival
+            // while the fork measured it from the day's own wake. Every slot's
+            // energy level rides on that.
+            "wake": match self.state.wake {
+                Some(t) => json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}),
+                None => json!("log"),
+            },
             "pLounge": {"config": p_config},
             "arrival": {"config": arrival_tbl},
             "prior": {"lounge": curve("lounge"), "home": curve("home")},
@@ -1355,7 +1369,7 @@ impl World {
                                   {"num": 1, "den": 10}],
                          "safety": {"num": 13, "den": 10}, "defaultPriority": 3,
                          "batchMaxMin": 20},
-            "days": 7,
+            "days": priority::lookahead_days(&self.candidates(), date()),
             "at": self.now.to_rfc3339(),
             "state": {
                 "date": self.state.date.map(|x| x.to_string()),
@@ -1404,13 +1418,21 @@ impl World {
 }
 
 /// The kernel's own day for a request, or the refusal it answered.
+///
+/// **The §8.4 answer travels with it under `__grants`** (W-30): one call answers `plan` and
+/// `lookahead` together, and the lookahead's per-candidate grants are §7's WHOLE answer — the
+/// ten fields `grant_fields` compares and `kernel_prios` reads back. A leading `__` is not a
+/// key the wire has: `PlanWire.planKeys` lists the nine the `plan` object carries, so a reader
+/// of either side cannot confuse it for one.
 fn kernel_plan(req: &Value) -> Result<Value, String> {
     let raw = tm_kernel_ffi::call(&req.to_string()).expect("kernel call");
     let resp: Value = serde_json::from_str(&raw).expect("the response is json");
     if resp["ok"]["plan"]["day"].is_null() {
         return Err(raw);
     }
-    Ok(resp["ok"]["plan"].clone())
+    let mut p = resp["ok"]["plan"].clone();
+    p["__grants"] = resp["ok"]["lookahead"]["grants"].clone();
+    Ok(p)
 }
 
 /// `(start, stop)` of every Wall row of a kernel day, in the day's order.
@@ -1488,6 +1510,176 @@ fn fork_assigned(day: &DayPlan, _from: DateTime<Tz>) -> Vec<(i64, i64, Vec<Strin
         .collect()
 }
 
+/// **§7's WHOLE ANSWER for one candidate, kernel beside fork** (W-30) — the ten fields
+/// `Look.FloorOut` carries and `kernel_capacity::parse` decodes into a `Prio`, not the `p`
+/// alone the W-29 repair step compared.
+///
+/// It returns two lists: the fields of the **capacity** — what the §8.4 lookahead handed §7 —
+/// that differ, and the fields **downstream** of it that differ. The split is the whole point.
+/// Both registered divergences of this pass are capacity divergences and nothing else: parity
+/// **P1** (the kernel mixes `w·L + (capDen − w)·H` over the two locations where the fork picks
+/// one at the `p_lounge ≥ 0.5` threshold, so a future day's minutes land on different levels)
+/// and parity **P41** (the kernel reads day 0 off the capacity section's own window cut, since
+/// D24/L9 keeps every §9 row off that wire, where the fork point reads it off §8.2 step 3's
+/// cut — walls, the running block, today's placed routines and the night already removed).
+/// **Everything downstream is asserted to agree**, which is the statement P1's own register row
+/// makes (*"future-day capacity **and everything downstream**"*) read as a test rather than as
+/// a sentence: `allocation`, `shortfall`, `bin`, the HOT/IMPOSSIBLE class, `p` and `rawP` are
+/// one function of `(k, need, avail, until)` and the two planners must compute it alike.
+///
+/// A wall carries no `p` on either side (`Planner.prioRow`, fork `sorted_candidates`' `7`), so
+/// only its class is compared.
+fn grant_fields(k: &Value, f: &Prio) -> (Vec<String>, Vec<String>) {
+    let unit = |v: &Value| -> u128 {
+        v.as_str().unwrap_or("0").parse::<u128>().unwrap_or(0) / 1_000_000_000_000_000_000
+    };
+    let cls = |c: PrioClass| -> &'static str {
+        match c {
+            PrioClass::Wall => "wall",
+            PrioClass::Hot => "hot",
+            PrioClass::Impossible => "impossible",
+            PrioClass::Overdue => "overdue",
+            PrioClass::Mandatory => "mandatory",
+            PrioClass::HotFlag => "hotflag",
+            PrioClass::Dated => "dated",
+            PrioClass::Floor => "floor",
+            PrioClass::Rank => "rank",
+            PrioClass::Optional => "optional",
+        }
+    };
+    let mut cap = Vec::new();
+    let mut down = Vec::new();
+    let say = |v: &mut Vec<String>, name: &str, a: String, b: String| {
+        if a != b {
+            v.push(format!("{name} kernel {a}, fork {b}"));
+        }
+    };
+    // Is it a wall on both sides?  That half is compared for every row.
+    say(&mut down, "class", k["class"].as_str().unwrap_or("?").to_string(), cls(f.class).to_string());
+    if f.class == PrioClass::Wall {
+        return (cap, down);
+    }
+    // The capacity §8.4 handed §7, and the two facts that are the candidate's own.
+    say(&mut cap, "avail", unit(&k["avail"]).to_string(), f.avail_min.to_string());
+    say(&mut cap, "until", format!("{:?}", k["until"].as_str()),
+        format!("{:?}", f.until.map(|d| d.to_string()).as_deref()));
+    say(&mut cap, "need", format!("{:?}", k["need"].as_u64()), f.need_min.to_string());
+    say(&mut cap, "k", format!("{:?}", k["k"].as_u64()), f.k.to_string());
+    // Everything §7 computes FROM that.
+    say(&mut down, "allocation", unit(&k["allocation"]).to_string(), f.allocation_min.to_string());
+    say(&mut down, "shortfall", unit(&k["shortfall"]).to_string(), f.shortfall_min.to_string());
+    say(&mut down, "bin", format!("{:?}", k["bin"].as_u64()), format!("{:?}", f.bin));
+    say(&mut down, "p", format!("{:?}", k["p"].as_u64()), f.p.to_string());
+    say(&mut down, "rawP", format!("{:?}", k["rawP"].as_u64()), f.raw_p.to_string());
+    (cap, down)
+}
+
+/// **The kernel's own §7 answer, read back as the fork's `Prio`** (W-30), so the fork can be
+/// asked to plan the day WITH IT — `PlanInput::with_ranking`, which is exactly what the shipped
+/// binary does (`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank`, then
+/// `with_ranking`).
+///
+/// **Why a second fork run exists at all.** §8.2 step 5's assignment cannot be asserted against
+/// a fork that ran its OWN §7 pass, because the two passes are given different capacity by
+/// design — parity **P1** for the future days and parity **P41** for day 0 — and every
+/// difference in `p` reaches step 5 as a different rank order. Measured at this commit, over
+/// 526 cases, the number of days on which the whole §7 answer agreed row for row was **four**;
+/// an assertion gated on that is an assertion that does not run, which is the defect this arm
+/// shipped with for one whole run (README gap 2005). Handing the fork the kernel's answer makes
+/// step 5 comparable on EVERY day, and it compares the thing the binary actually runs.
+///
+/// It is `kernel_capacity::parse`'s **third** spelling and README gap **2006** is amended to say
+/// so rather than growing one quietly: `tm` is a `[[bin]]` with no library target.
+///
+/// `None` when the grants cannot be keyed 1:1 onto `cands` — an id naming two rows (§5.3's
+/// carried instance), or a candidate the kernel answered nothing for. The census counts those
+/// days; a guess would compare the kernel against a ranking neither planner holds.
+fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
+    let mut by_id: BTreeMap<&str, Option<&Value>> = BTreeMap::new();
+    for g in plan["__grants"].as_array().map(Vec::as_slice).unwrap_or_default() {
+        let id = g["id"].as_str()?;
+        // A second row under one id poisons the entry rather than overwriting it.
+        by_id.entry(id).and_modify(|e| *e = None).or_insert(Some(g));
+    }
+    let unit = |v: &Value| -> u128 { v.as_str().unwrap_or("0").parse::<u128>().unwrap_or(0) };
+    let mut out = Vec::with_capacity(cands.len());
+    for c in cands {
+        let g = (*by_id.get(c.id.as_str())?)?;
+        let class = match g["class"].as_str()? {
+            "wall" => PrioClass::Wall,
+            "hot" => PrioClass::Hot,
+            "impossible" => PrioClass::Impossible,
+            "overdue" => PrioClass::Overdue,
+            "mandatory" => PrioClass::Mandatory,
+            "hotflag" => PrioClass::HotFlag,
+            "dated" => PrioClass::Dated,
+            "floor" => PrioClass::Floor,
+            "rank" => PrioClass::Rank,
+            "optional" => PrioClass::Optional,
+            _ => return None,
+        };
+        // A wall is off §7.2's scale on both sides: the kernel writes `p: null` and the fork's
+        // own `Prio::wall` is the comparand, so it is built here rather than decoded.
+        if class == PrioClass::Wall {
+            // `Prio::wall` is private to `tm-core`; this is its body, and §7.2's
+            // "off the scale" is what both spellings say (`priority.rs:842`).
+            out.push(Prio {
+                id: c.id.clone(),
+                p: 0,
+                class,
+                k: c.k,
+                u: None,
+                bin: None,
+                need_min: 0,
+                avail_min: 0,
+                avail_min_exact: Exact::default(),
+                allocation_min: 0,
+                allocation_min_exact: Exact::default(),
+                shortfall_min: 0,
+                shortfall_min_exact: Exact::default(),
+                until: None,
+                hysteresis_applied: false,
+                raw_p: 0,
+            });
+            continue;
+        }
+        let avail = Exact::new(unit(&g["avail"]), CAP_DEN);
+        let alloc = Exact::new(unit(&g["allocation"]), CAP_DEN);
+        let short = Exact::new(unit(&g["shortfall"]), CAP_DEN);
+        let need = u32::try_from(g["need"].as_u64()?).ok()?;
+        let p = u8::try_from(g["p"].as_u64()?).ok()?;
+        let raw_p = u8::try_from(g["rawP"].as_u64()?).ok()?;
+        // `u` is the ONE field the grant does not carry, and §7.1's own definition rebuilds it:
+        // `need / avail`, with a zero capacity infinite. Nothing step 5 reads uses it — the
+        // planner reads `p` (`sort_key`, the hot flag) and `class` (§8.2 step 8's diagnostics) —
+        // and it is filled honestly rather than left `None`, which would read as "no pass".
+        let uu = if avail.num == 0 {
+            if need == 0 { 0.0 } else { f64::INFINITY }
+        } else {
+            f64::from(need) / (avail.num as f64 / avail.den as f64)
+        };
+        out.push(Prio {
+            id: c.id.clone(),
+            p,
+            class,
+            k: u8::try_from(g["k"].as_u64()?).ok()?,
+            u: Some(uu),
+            bin: g["bin"].as_u64().map(|b| b as u8),
+            need_min: need,
+            avail_min: avail.floor_u32(),
+            avail_min_exact: avail,
+            allocation_min: alloc.floor_u32(),
+            allocation_min_exact: alloc,
+            shortfall_min: short.floor_u32(),
+            shortfall_min_exact: short,
+            until: g["until"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()),
+            hysteresis_applied: p != raw_p,
+            raw_p,
+        });
+    }
+    Some(out)
+}
+
 /// The same, off the fork's day.
 fn fork_walls(day: &DayPlan) -> Vec<(i64, i64)> {
     day.segments
@@ -1499,10 +1691,17 @@ fn fork_walls(day: &DayPlan) -> Vec<(i64, i64)> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
+        // **128, RAISED FROM 64 AT W-30** — the search, not the generator (D46:
+        // narrowing a generator to lose a disagreement is forbidden; widening the
+        // search to find one is the opposite move). Driven: 64 cases per run had
+        // never found the slot-geometry disagreement README gap **2062** carries,
+        // and a 512-case run found it on the fourth try. The whole file costs
+        // 23.6 s at 128 against 18.5 s at 64, measured on the committed tree.
+        // `TM_PROPTEST_CASES` still takes an auditor higher.
         cases: std::env::var("TM_PROPTEST_CASES")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(64),
+            .unwrap_or(128),
         max_shrink_iters: 2_000,
         ..ProptestConfig::default()
     })]
@@ -1619,86 +1818,141 @@ proptest! {
             .iter()
             .filter(|s| matches!(s.kind, SegKind::Routine))
             .count();
-        // **§7's ANSWER, compared** (W-29 repair). `PlanWire.priosJson` writes
-        // `Planner.dayPriorities` into the same `plan` object; the fork's is
-        // `DayPlan::priorities`. Comparing `(id, p)` pairs is what makes the id
-        // half of step 5's comparison assertable below: two planners that rank
-        // the day differently place different items in the same slots for a
-        // reason that is §7's, not §8.2 step 5's, and each half is then named.
-        let kp: Vec<(String, u64)> = plan["priorities"]
-            .as_array()
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-            .iter()
-            .map(|v| {
-                (v["id"].as_str().unwrap_or_default().to_string(), v["p"].as_u64().unwrap_or(9))
-            })
-            .collect();
-        let fp: Vec<(String, u64)> = fork
-            .priorities
-            .iter()
-            .map(|(id, pr)| (id.to_string(), u64::from(pr.p)))
-            .collect();
-        // Compared as a MAP over the ids both lists name, not as a sequence:
-        // the kernel emits `dayPriorities` in rank order and the fork in
-        // candidate order, and the fork's list also names the wall candidates
-        // §7 leaves off the scale. Neither is a disagreement about `p`.
-        let km: BTreeMap<String, u64> = kp.into_iter().collect();
-        let fm: BTreeMap<String, u64> = fp.into_iter().collect();
-        let prios_differ = km.iter().any(|(id, p)| fm.get(id).is_some_and(|q| q != p));
+        // **§7's WHOLE ANSWER, compared row by row, and the capacity half is told
+        // apart from everything downstream of it** (W-30; the W-29 repair step
+        // compared `(id, p)` and could say only *that* the two disagreed).
+        //
+        // `PlanWire.priosJson` writes `Planner.dayPriorities` into the `plan`
+        // object and `kernel_plan` carries the lookahead's own `grants` beside
+        // it — the ten fields `kernel_capacity::parse` turns into a `Prio` — so
+        // the comparison can name WHICH field moved. Driven at this commit, over
+        // 526 cases: **every** divergence of this pass is a divergence of the
+        // capacity `avail`, and `allocation`, `shortfall`, `bin`, the class, `p`
+        // and `rawP` follow it. That is asserted below, per row, which is P1's
+        // own register row (*"future-day capacity **and everything downstream**"*)
+        // read as a test instead of as a sentence.
+        //
+        // **Keyed by an id that names ONE row on each side.** §5.3's carried
+        // instance can put an id in the list twice; such a row is not compared
+        // and is COUNTED (`§7 rows unkeyable`) rather than silently collapsed
+        // into a map, which is what the `(id, p)` `BTreeMap` did.
+        let mut kg: BTreeMap<String, Vec<&Value>> = BTreeMap::new();
+        for g in plan["__grants"].as_array().map(Vec::as_slice).unwrap_or_default() {
+            kg.entry(g["id"].as_str().unwrap_or_default().to_string()).or_default().push(g);
+        }
+        let mut fg: BTreeMap<String, Vec<&Prio>> = BTreeMap::new();
+        for (id, pr) in &fork.priorities {
+            fg.entry(id.to_string()).or_default().push(pr);
+        }
+        let (mut g7, mut gcap0, mut gcapn, mut gdup) = (0u64, 0u64, 0u64, 0u64);
+        let mut prios_differ = false;
+        for (id, fl) in &fg {
+            let Some(kl) = kg.get(id) else { continue };
+            if kl.len() != 1 || fl.len() != 1 {
+                gdup += 1;
+                continue;
+            }
+            let (kr, fr) = (kl[0], fl[0]);
+            let (cap, down) = grant_fields(kr, fr);
+            g7 += 1;
+            // **THE ASSERTION**: §7 is one function of the capacity it is given.
+            // A field downstream of the capacity may differ only where the
+            // capacity does, and where the capacity agrees nothing downstream
+            // may move. Neither P1 nor P41 can reach this; a change to §7's own
+            // arithmetic on either side fails here, naming the field.
+            prop_assert!(
+                !cap.is_empty() || down.is_empty(),
+                "§7 answered differently for {id} while the capacity it was given AGREED: {}",
+                down.join("; ")
+            );
+            if !cap.is_empty() {
+                prios_differ = true;
+                // **Which registered divergence it is, by the row's OWN `until`**:
+                // a row summed to today alone is P41's (day 0's cut); a row that
+                // reaches a later day is P1's (the mixture). Both are properties
+                // of the row, not a list of case shapes.
+                if fr.until.is_none_or(|d| d <= date()) {
+                    gcap0 += 1;
+                } else {
+                    gcapn += 1;
+                }
+            } else if !down.is_empty() {
+                prios_differ = true;
+            }
+        }
         let exempt = cands == 0 || fork_routines > 0;
         let kslots: Vec<(i64, i64)> = ka.iter().map(|r| (r.0, r.1)).collect();
         let fslots: Vec<(i64, i64)> = fa.iter().map(|r| (r.0, r.1)).collect();
+        // **§8.2 step 5's SLOT GEOMETRY: asserted, DRIVEN, and found FALSE at a
+        // larger case count — so it is COUNTED and the seed is kept** (W-30, D46).
+        //
+        // The W-29 repair step counted 1 to 6 slot disagreements per 64-case run.
+        // Two of the causes were this arm asking the two planners two different
+        // questions, and both are named and fixed above: the request spelled
+        // `days: 7` where `kernel_capacity::rank` sends the fork's own
+        // `priority::lookahead_days`, and it sent no `wake` at all, so
+        // `Boundary.readWake` answered `.absent` and §8.5's `hsw` — which every
+        // slot's energy level rides on — was measured from the weekday's expected
+        // arrival on one side and from the day's own wake on the other. With both
+        // sent, three 512-case runs counted **0** slot disagreements and the
+        // assertion was written.
+        //
+        // **It then failed on the fourth**, and the case is in
+        // `planner_invariants.proptest-regressions` (`3a39ad72…`): three items —
+        // an `atomic` four-block one, a plain one and a batchable — on a LATE day
+        // at home with one wall and the workout routine, where the kernel assigns
+        // **two** consecutive hours and the fork assigns **one**. It is not a
+        // different cut of the same day; it is one more slot taken, so the
+        // subject is step 5's own budget-and-commitment walk and not §8.4.
+        // README gap **2062** carries it. The count stays in the census line, at
+        // 0 on most runs, so the step that settles it sees the number and the
+        // seed replays on every run from here.
         let slots_differ = !exempt && kslots != fslots;
-        // **What is still owed, and it is COUNTED rather than claimed**: which
-        // item each slot got. Measured at this commit, 3 of the 26 compared
-        // cases put a different id in a slot both planners cut identically
-        // (README gap **2007** carries the three, with the shape of the fix).
-        // The count is in the census line, so a step that closes it sees the
-        // number fall to zero and a step that widens it sees the number rise.
-        // **THE ASSIGNMENT IS COUNTED, NOT ASSERTED, AND THE REASON IS THE
-        // MEASUREMENT ITSELF** (README gap **2007**).
-        //
-        // Both stronger statements were written, driven, and found FALSE on this
-        // tree — so neither is asserted and neither is quietly absent:
-        //
-        //   * the SEQUENCE. A persisted regression case puts `zaj` and `zal` in
-        //     adjacent equal-length slots, the kernel one way round and the fork
-        //     the other, with identical `p` for both and identical `(start,
-        //     stop)` for every row. That is gap **2002**'s "rank is carried by
-        //     POSITION on the wire and by a FIELD on the store side" reached
-        //     from the other end.
-        //   * the MULTISET. Another replayed case assigns `zan` where the fork
-        //     assigns `zao` — the two planners choose a different candidate, not
-        //     merely a different order — while the slots again match to the
-        //     second.
-        //
-        //   * the SLOT GEOMETRY. A third case cuts the kernel's last assigned
-        //     row at 63924429600..63924431400 where the fork cuts it at
-        //     63924405600..63924408000 — a different slot entirely, not a
-        //     different occupant of one. Over freshly generated cases the
-        //     geometry agrees on every non-exempt day (26 of 26, measured with
-        //     the assertion in place); over the replayed regression cases,
-        //     which are ADVERSARIAL by construction, it does not.
-        //
-        // So all three are COUNTED, in the census line below, and `acmp` and
-        // `aexempt` are ASSERTED to be non-vacuous — which is the half of this
-        // that was missing, and the half an auditor could see. Each number is
-        // an instrument: a step that settles gap 2002's order rule watches
-        // `ITEMS differ` fall to zero, a step that composes §10.2's `routines`
-        // watches `exempt` fall, and `prop_assert_eq!(&ka, &fa, ..)` is one line
-        // away the day both do.
-        //
-        // **THE COST IS DECLARED**: the W-29 audit's own perturbation —
-        // reversing `emit_segments`' slot→group map,
-        // `tm-core/src/planner.rs:1841`, same geometry and a different item in
-        // every slot — is NOT caught by the slot assertion. It would be caught
-        // by either statement above, and it is why gap 2007 is filed as owed
-        // work rather than as an observation.
         let ids_differ = !exempt && !slots_differ && ka != fa;
+        // The second fork day: the same request, ranked by the KERNEL's §7 answer.
+        let cvec = w.candidates();
+        let kprios = kernel_prios(&plan, &cvec);
+        let fa2 = kprios.as_ref().map(|ps| {
+            let day = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, ps));
+            fork_assigned(&day, w.now)
+        });
+        // **AND NOW THE ITEM IN THE SLOT IS ASSERTED — against the fork ranked by
+        // the KERNEL, which is the wiring the binary ships** (W-30).
+        //
+        // `ka != fa` above is not a step-5 statement and this arm spent a run
+        // pretending it was. The fork it compares there ran its OWN §7 pass over
+        // its OWN lookahead, and the two lookaheads differ by two REGISTERED
+        // divergences — **P1** for the future days' mixture and **P41** for day
+        // 0's cut — so a different `p` reaches step 5 as a different rank order
+        // and the assignment follows it. Measured over 527 cases: the whole §7
+        // answer agreed on **four** days. An assertion gated on that is an
+        // assertion that does not run.
+        //
+        // So the fork is asked the question the kernel was asked:
+        // `PlanInput::with_ranking(cands, kernel_prios)`, which is exactly
+        // `planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank`
+        // → `with_ranking` in the shipped binary. Then §8.2 step 5 is the only
+        // thing left that can differ, and **it does not**: over three 512-case
+        // runs, 167/167, 167/167 and 168/168 non-exempt days agree on every
+        // assigned row, slot AND item.
+        //
+        // **This is the assertion the W-29 audit's perturbation has to get
+        // past**: reversing `emit_segments`' slot→group map leaves the geometry
+        // alone and moves the occupant, which `ka != fa`'s COUNTER could only
+        // watch rise. Driven again at this commit in a clone — see the README
+        // block — and it fails here now, naming both rows.
+        let same_question = !exempt && fa2.is_some();
+        if let (false, Some(fa2)) = (exempt, fa2.as_ref()) {
+            prop_assert_eq!(
+                &ka, fa2,
+                "§8.2 step 5 assigned differently from the fork ranked by the kernel's own \
+                 §7 answer (kernel {:?}, fork {:?})", ka, fa2
+            );
+        }
 
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
-        let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres] = {
+        let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
+             grows, gday0, gdays, gdups, gsame] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -1712,6 +1966,11 @@ proptest! {
             c[9] += u64::from(ids_differ);
             c[10] += k_res;
             c[11] += f_res;
+            c[12] += g7;
+            c[13] += gcap0;
+            c[14] += gcapn;
+            c[15] += gdup;
+            c[16] += u64::from(same_question);
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -1730,7 +1989,7 @@ proptest! {
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(64);
+            .unwrap_or(128);
         if cases >= generated {
             prop_assert!(walls > 0, "no wall was compared in {cases} cases");
             prop_assert!(seen >= cases, "the kernel answered {seen} rows over {cases} cases");
@@ -1744,13 +2003,30 @@ proptest! {
                 "every one of {cases} cases was exempt from the assigned-row comparison"
             );
             prop_assert!(acmp > 0, "no assigned row was compared in {cases} cases");
+            // **AND NEITHER IS §7's** (W-30). `grant_fields` is the reader of a
+            // comparison, and this campaign's own lesson is that the reader of a
+            // comparison that does not run is not a tested reader (README gap
+            // 2015). A run in which no §7 row was keyable compares nothing.
+            prop_assert!(grows > 0, "no §7 row was compared in {cases} cases");
+            // **AND THE ASSIGNMENT'S OWN COMPARISON HAS A FLOOR** (W-30). The
+            // population is a third of the cases (167 of 527, measured), so a run
+            // in which it is empty is a run in which the second fork call stopped
+            // happening — and an assertion that does not run is the defect this
+            // arm shipped with (README gap 2005).
+            prop_assert!(
+                gsame > 0,
+                "step 5's assignment was asserted on no day of {cases} cases"
+            );
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
              {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}, \
              assigned-rows compared {acmp}, cases exempt {aexempt}, \
-             cases whose §7 answers differ {pdiff}, whose SLOTS differ {sdiff}, \
+             cases whose §7 answers differ {pdiff}, exempt days whose SLOTS differ {sdiff}, \
              whose slots agree and whose ITEMS differ {iddiff}, \
+             §7 rows compared {grows}, capacity differs to TODAY (P41) {gday0}, \
+             beyond today (P1) {gdays}, rows unkeyable {gdups}, \
+             days whose assignment was ASSERTED against the kernel-ranked fork {gsame}, \
              energy-less work rows from now: kernel {kres}, fork {fres}"
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a

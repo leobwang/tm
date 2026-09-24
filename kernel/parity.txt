@@ -93,3 +93,4 @@ P37  row    README.md:50415                                an emoji ZWJ sequence
 P38  taken  README.md:29742                                the kernel reads a store key where the fork's `ItemLine::id()` reads none -- the title key
 P39  row    README.md:52676                                a column-zero item line inside an HTML comment is prose here and an item in the fork (owner D47)
 P40  taken  README.md:57232                                    a second shape key on one line: the fork's editor refuses it, the kernel writes it and the loader warns (owner D49's routing)
+P41  taken  README.md:61565                                a candidate whose deadline is TODAY: day 0's capacity is the capacity section's own window cut (no §9 row crosses that wire, D24/L9); the fork point sums §8.2 step 3's cut, with the running block, the night and today's placed routines already out of it
