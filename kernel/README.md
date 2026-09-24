@@ -59904,3 +59904,214 @@ which this step's two halves close from both sides.
 11:56–12:16 and 14:14–14:34 inside the window and in no segment, in both the text rendering and
 `--json`. A re-confirmation of an open gap, not a new one, and not re-driven here. Gap **1790**
 stays open and is now named in the LAND block, which is the whole of correction 1885.
+
+<!-- =====================================================================
+     APPENDED 2026-09-23: stage 6 (the planner), run **W-29**, **track G**
+     (branch `w29-g`, isolated worktree).  Answers the nine against step
+     **P9**, lands the invariant a composed Block row reads, and names the
+     fifth clause the request decoder owes.  This block's gap range is
+     **1980-1999**; it takes **1984-1990** and leaves **1980-1983** and
+     **1991-1999** free.
+     Whoever merges renumbers (AGENTS 6.4).
+     Parity: **none issued** — `next free P41`, unmoved by any of this.
+     ===================================================================== -->
+
+## Stage 6 — W-29, track G: step 6 keeps the filter, the decoder owes a fifth clause, and gap 1529 is not P9's
+
+### 1. The question this run put to the nine, and why the answer is not "no" nine times
+
+Eight runs asked *"is this goal reachable **today**"* and answered no nine times, honestly.
+D50 names the edit that changes the answer — step **P9**, which composes §8.2 step 5's Block
+and Batch rows into `Planner.dayRows` — so this run asked *"what does **P9** do to this
+entry"*, one entry at a time, against the tree. **Three entries moved**, and the item-by-item
+answer lives in `Goals.lean`'s stage-6 header where the previous eight lists live. In short:
+
+| goal | what P9 does to it |
+|---|---|
+| `plan_does_not_overbook` | gives it a **subject**, not a proof — the seconds-from-blocks step is still owed (gap **1985**) |
+| `plan_respects_the_energy_filter` | makes it **provable**, and the proof landed here — *and* makes it **FALSE** without the fifth decoder clause (gap **1984**) |
+| `plan_places_no_demanding_block_after_wind_down` | the same, one bridge further |
+| `plan_is_monotone_in_rank` | **nothing** — and the W-19 refutation survives, checked rather than assumed |
+| `plan_puts_hot_before_the_queue` | **nothing**, same request, same reason |
+| `plan_never_drops_an_impossible_item` | **nothing** — P8's, `Diagnostics.impossible` still empty |
+| `plan_never_batches_past_an_equal_ci_candidate` | gives it a **subject**; its conclusion still owes a restatement (gap **1986**) |
+| `plan_tail_drop` | **unblocks it** — the only one of the nine P9 unblocks outright |
+| `plan_is_stable_across_a_replan` | **nothing** — G3's three repairs are none of them about an assigned block |
+
+**The burn-down stays 9 and no goal was added.** Nothing here discharges one, because P9 has
+not landed on this branch and a discharge over an empty quantifier is AGENTS §5.2's theorem
+that compiles and means nothing — the call W-18 through W-28 each made and this run makes
+again.
+
+### 2. What landed: the invariant a composed row reads
+
+**`PlanCheck.finalAssign_ok`.** A composed Block row is read off `Planner.PlanReq.finalAssign`
+— step **6**'s answer, as `Planner.PlanReq.restRows` already is, because fork `run()` calls
+`place_deferred` (`planner.rs:1032`) and then hands `emit_segments` the same `&assign`
+(`planner.rs:1071`). `Planner.PlanReq.assignFold_ok` is §8.2 step 5's three filter clauses —
+the energy filter, the `loc:` filter and the wind-down rule — at step **5**'s answer.
+`deferWalk` carried `PlacedOk`, two lengths and `used`, and **not** `AssignOk`: grep for
+the `deferWalk` lemmas before this commit and the roster is three. So the two goals that read those
+clauses would have acquired a subject at P9 with no invariant to reach for.
+
+It is a **repair and not a finding**: step 6 only frees a slot
+(`Planner.PlanReq.displaceInto`) and re-places through `Planner.PlanReq.assignStep`, §8.2 step
+5's own body, so the clauses do survive. Proved through one relation rather than one function
+— `PlanCheck.KeepsTheFilterFields` names *the fields a restore may not move* (`ci`, `loc:`,
+`members`), `Planner.unspend` and `Planner.PlanReq.assignStep` are two instances of it, and the
+same relation carries the group **provenance** (`PlanCheck.CarriesBuiltGroups_finalAssign`) so
+that `PlanCheck.a_member_of_an_assigned_group_carries_its_ci` reaches every member of a group a
+slot went to and not only the head.
+
+`PlanCheck.an_assigned_member_is_under_its_slots_energy` and
+`PlanCheck.an_assigned_member_after_the_wind_down_is_not_demanding` are then the **contents of
+two of the nine**, proved at the assignment before a single row exists.
+
+### 3. What was found: the FIFTH clause the request decoder owes (gap **1984**)
+
+`PlanCheck.DecoderPays` has four clauses. The rule that put them there is not *"these four"* —
+it is **every value the battery reads off the request rather than off the day**. Read that way
+the list was short by one, and it is the one the composition step needs.
+
+Every clause `AssignOk` carries is stated over `Planner.Group.ci`, which `Planner.groupOf`
+reads off `Look.Cand.ci` — the **wire's** reading of an item's `ci`. Every checker of the
+battery that asks about an item's `ci` reads `Tm.effectiveCi r.plan.val i` — the **plan's**
+§3.2 inheritance walk — and `Tm.effectiveCi` of an id the store does not hold answers `3`
+rather than refusing. Nothing in this tree says the two agree. **That is E8's shape** — two
+readers of an item's `ci` disagreeing about eligibility — which is the defect
+`plan_respects_the_energy_filter`'s own doc comment says it rules out, sitting in the seam
+between the wire and the plan rather than inside the planner.
+
+**And the rule is wider than this clause, which is gap 1990 rather than a silence.**
+`PlanCheck.candsAgree` compares the three values `Look.Cand` carries. The battery also reads
+`e.val.live.rank` off the store, and the fold reads rank from the candidate list's **order** —
+a second disagreement axis, with no field on the wire side to compare against, which bites
+`plan_is_monotone_in_rank`'s restatement and is P5's.
+
+**Stated as a property, not as a fifth name on a list.** `PlanCheck.candPlanView` answers
+`none` for an id the plan does not hold, so `PlanCheck.candsAgree` is an enumeration a
+candidate must **join to be exempt**: a candidate that is not an item of its own plan fails the
+clause by name instead of being passed on a default. There is no allow-list.
+
+**And it is false on a request this tree already builds.**
+`PlannerWit.the_wire_ci_and_the_plan_ci_disagree_at_the_busy_request`: `theBusyRequest`'s four
+candidates `^c1`–`^c4` are not items of its plan at all, so the wire says `ci = 3, 3, 5, 2` and
+`Tm.effectiveCi` says `3` for every one of them. The cursor fills all four slots, group 3 is
+`^c4` at wire `ci = 2`, and two of the slots it takes are at energy **2**
+(`PlannerWit.the_filter_passed_a_slot_the_battery_reads_differently`). So a Block row there
+would carry `energy := some 2` and an item the battery reads at `ci = 3`, and
+`PlanCheck.energyFilterOk` would answer **false** on a day the planner produced. **P9 must
+land the clause, or land red at a witness that is already here.**
+
+**Why nine runs of `∀`-lifts never met it**: every request those lifts fire at sends **no
+candidate** — computed at **nine** of them in
+`PlannerWit.the_lifts_own_request_pays_the_fifth_clause_for_nothing`, and `theBusyRequest` with
+its cursor siblings are the only requests in that module that send any — and
+`PlanCheck.candsAgree_of_no_cands` passes those for nothing. Nothing is weakened:
+`PlanCheck.DecoderPays` is unchanged and
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` still has four hypotheses.
+
+### 4. Gap **1529**: asked, computed, answered **NO**
+
+§8.3's segment-free hole was stated *"for the moment the day carries assigned blocks"*, and the
+reading behind that was `Planner.PlanReq.restRows`' own filter — a slot the cursor filled gets
+**no** Rest row, and today no Block row either, so an assigned slot is a hole the composition
+would plug. That reading is right about one *class* of hole and wrong about the property.
+
+`PlannerWit.the_hole_survives_where_the_composition_adds_no_row` settles it by computing: at
+`PlannerWit.theRequest` the cursor fills **no** slot, so rows read off `Planner.Assign.slotOf`
+by a `filterMap` are nothing on that day — and the day fails `PlanCheck.holeFree` **and**
+`PlanCheck.holeFreeFrom`, on the whole day and on `PlanCheck.futureHalf`'s rows alike. The
+holes there are between rows the day already has. Driven, listing the clause's subjects at
+`theRequest`: five uncovered instants, two of them at or after `now` — `63924585600`→`63924586800`
+(20 minutes between two cut slots) and `63924594000`→`63924604200` (2 h 50 m between the last
+slot and the wind-down). Neither is an assigned slot's.
+
+So gap 1529 stays where W-28 left it — **R3** enables it, not P9 — and `PlanCheck.holeFree` and
+`PlanCheck.holeFreeFrom` stay out of `PlanCheck.checksOf`. Gap **1988** records the answer so
+the next run does not re-ask it.
+
+### 5. §6.1's lift (D28): which axis is last
+
+Four axes, four names: eligibility (`FromNowAnchored`, W-23), the log (`PastPays`, W-24), the
+walls (`WallsArePlain`, W-25), the request (`DecoderPays`, W-26/W-28). **The decoder axis is
+the last one**, and what is left of it is *callers*, not clauses: of its four, `walls` has a
+payer with callers, `active` has a payer whose hypothesis still has none (gap 1870), `day` has
+no payer at all (gap 1623, nothing calls `Look.mkDayCfg?`) and `nowCal` is one second short
+rather than unchecked. This run does not close one of those four; it finds that the axis's own
+membership rule admits a **fifth** clause and states it (§3 above). That is a widening of the
+axis, and the four-clause lift is left exactly as it was.
+
+### 6. The ratio, re-computed
+
+**Seven of the eleven** have a subject on the day `PlannerWit.theCensusRequest` produces.
+`PlannerWit.the_census_ratio_is_still_seven` computes it again at W-29 beside
+`PlannerWit.the_census_ratio`, so that the run which changes `Planner.dayRows` sees this number
+move in its own diff — **it is the one number in this repository that P9 must move.** Every
+prose sentence in `PlanCheck.lean`, `PlannerWit.lean`, `Goals.lean`, `Check.lean` and this file
+that gives an *"N of the eleven"* was re-read against it; the ones that give other numbers
+(five at `theStoredRequest`, four of seven at `theRunningRequest`, four on `withoutPast`'s day)
+each name their own request and population, and are W-18's and W-19's dated corrections rather
+than live disagreements.
+
+### 7. Two build-time tripwires P9 must delete or refute
+
+Both are `∀`-theorems over **every** request, so the composition cannot land green beside them:
+
+* `PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` — the
+  budget cannot reach `assignedOf` at all. P9 makes it false, which is exactly why it unblocks
+  `plan_tail_drop`.
+* `Planner.the_day_assigns_nothing_after_now_but_the_running_block` — P3 already restated this
+  one once for the same reason.
+
+And the four emptiness theorems (`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`,
+`PlanCheck.no_block_row_of_the_day_reaches_the_wind_down`, `PlanCheck.the_day_has_no_batch_row`,
+and the census corollaries `PlanCheck.energyFilter_has_no_subject`,
+`PlanCheck.windDown_has_no_subject`, `PlanCheck.batch_has_no_subject`) fall with them, and
+`PlanCheck.the_census_ceiling_is_seven` falls with those.
+
+### 8. Gaps
+
+**Closed here**: **1529's question** — *does the composition step enable it* — answered NO with
+a computation (gap 1529 itself stays open and is R3's, unchanged).
+
+**Opened here, this block's range 1980-1989:**
+
+| gap | what is not done | why | what it costs | which step clears it |
+|---|---|---|---|---|
+| **1984** | **nothing says the wire's `ci`, `rootPrio` and `hot` for a candidate are its plan item's.** `PlanCheck.candsAgree` states it; no decoder pays it and `PlanCheck.DecoderPays` does not carry it | the value arrives on the wire and §8.2 step 5 filters on it, while every checker reads the plan — E8's shape in the seam | `plan_respects_the_energy_filter` is not merely unproved at P9, it is **FALSE** at `PlannerWit.theBusyRequest`; so is the whole battery's `energyFilterOk` on a day the planner produced | **P9**, beside the composition, or the decoder that builds `cands` |
+| **1985** | `plan_does_not_overbook` has no **seconds-from-blocks** step: `Planner.the_deferred_pass_stays_inside_the_budget` bounds the number of blocks and `Look.SlotShape` bounds one slot's seconds, and nothing joins them | `AssignOk`'s own doc comment gives `g.live` and the atomic run to "the step that emits rows" | the goal acquires a subject at P9 and stays unproved; design §6.3's restatement over `remainingBudget` rather than `DayPlan.budgetBlocks` is owed with it | **P9** / P5's restatement |
+| **1986** | `plan_never_batches_past_an_equal_ci_candidate`'s **conclusion** is unreachable, not only its antecedent. `Planner.gatherBatch_fst_is_a_prefix_of_its_ci` gives the half it rests on; the conclusion is that the skipped candidate is in `assignedOf`, and a candidate that becomes a group of its own is assigned only if the cursor finds it a slot inside the budget | the goal was written about gathering and states a conclusion about assignment | a Batch row at P9 gives it a subject and the goal is still false as written; it owes a restatement, not only a step | **P9** / P5 |
+| **1987** | **`AssignOk` reaches a group's members and not a row's item.** `PlanCheck.an_assigned_member_is_under_its_slots_energy` is stated at a `Planner.Ranked` of a group; a composed row carries an `Id`, and the step from the row back to the member is the emitter's own equation | the emitter does not exist on this branch | the two proofs of §2 are one `rw` from the goals and that `rw` cannot be written here | **P9**, in the commit that writes the emitter |
+| **1988** | gap **1529** is **not** enableable by P9 — recorded so it is not re-asked | computed, not reasoned: `PlannerWit.the_hole_survives_where_the_composition_adds_no_row` | nothing; this closes a question, not a hole | **R3**, which is where gap 1529 already sat |
+| **1990** | **`PlanCheck.candsAgree` is the rule restricted to the fields `Look.Cand` carries, and there is a SECOND disagreement axis it does not reach.** The battery reads `e.val.live.rank` and `e.val.live.doc` off the store (`monotoneInRank`, `batchDoesNotReachPast`); `Look.Cand` has no rank field — §7.4's key is built from the candidate list's **order** | a clause can only compare two readings of a value that both sides carry, and rank is carried by position on one side and by a field on the other | `plan_is_monotone_in_rank`'s eventual restatement compares a rank the fold never reads; gap 1984 pays the energy goals and not that one | **P5**, with Planner.eligibleAt, which is where that goal's restatement already sits |
+| **1989** | **check 8 fails in every linked worktree, and passes at the repository root.** `citations.py`'s population is `git ls-files` ∪ `leanfiles.source_files`, and the walk's prune rule is *"a **directory** with a leading dot, or a CACHEDIR.TAG file"*. In a `git worktree add` checkout `.git` is a **file**, so it is not pruned, has no reader, and the residue rule fails it by name | the prune property was stated of directories; the thing it is about is the leading dot on a path component, whichever kind of entry it is | every track works in a worktree, so check 8 is red for all of them for a reason that is not theirs — and the temptation is to add `.git` to `EXCLUDED`, which is the list this gate stopped being at W-27 | **track A**; `citations.py` is theirs. DRIVEN in THREE environments at this block's own commit: this worktree `1 unaccounted file(s): .git`, **9/10**; the same tree copied into a plain `git init` directory, check 8 `ok` (39198 citations, 0 allow entries unused) and check 9 red only because that copy has no history; and a real `git clone --no-local --branch w29-g`, where `.git` is a directory — **all TEN ok** |
+
+
+### 9. Acceptance, and the one thing that could not be made green in place
+
+**`check.sh` — all TEN ok**, at this block's own commit, in a
+`git clone --no-local --branch w29-g`
+under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`. In the **worktree** the
+same commit is **9/10**: check 8 alone is red, on `.git`, for the reason gap **1989** gives, and
+that is disclosed rather than worked around — no file was excluded and no checker was touched.
+
+**`cargo test --workspace` — FOUR runs** (D46): three at the tree this block's proofs landed
+on and a fourth at the final tree after the prose amendments, each **1,475 passed / 0 failed /
+9 ignored across 86 binaries**, `rc=0` every time. Load average during the runs was ≈ 6 on 32 cores, well
+under gap 1333's threshold, and `cli_latency` passed in all three (5 passed, 1 ignored, 15.5 s).
+The named suites, from run 1: FFI and T5 through check 5's 93 tests; `kernel_log_door` 23,
+`cli_switch_acceptance` 16, `cli_latency` 5, `kernel_call_counts` 2, `one_padder` 9,
+`one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 21,
+`planner_invariants` 8 — all `ok`, 0 failed.
+
+**D40**: check 9 reports **5 definitions audited, 5 PINNED** — every `def` this block adds
+(`PlanCheck.KeepsTheFilterFields`, `PlanCheck.CarriesBuiltGroups`, `PlanCheck.candPlanView`,
+`PlanCheck.candWireView`, `PlanCheck.candsAgree`), at nine mutations between them, each named by
+the theorem that kills it. None survived.
+
+**No plant was made anywhere.** `mutate.py` ran only inside `check.sh`, only in this run's own
+worktree, and gap **1788** did not fire: `git status --porcelain` in
+`/home/leobwang/code/projects/tm/.claude/worktrees/w29-g` held only this step's five files
+before and after each `check.sh`, and `/home/leobwang/code/projects/tm` — the shared checkout —
+was never written to by this track and holds only track P's own files.

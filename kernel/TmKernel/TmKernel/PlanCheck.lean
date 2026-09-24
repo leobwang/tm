@@ -3942,5 +3942,434 @@ theorem holeFreeFrom_of_no_rows (r : PlanReq) (d : DayPlan) (h : d.segments = []
     holeFreeFrom r d = false := by
   simp only [holeFreeFrom, coveredAt_of_no_rows r.now.sec d h, Bool.false_and]
 
+/-! ############################################################################
+## W-29 (track G): what STEP 6 keeps, and the FIFTH thing the request decoder owes
+############################################################################
+
+**Both halves of this section are about the rows step P9 composes into the day, and neither
+is about a row.**  `Planner.PlanReq.assignFold` is §8.2 step 5's assignment and
+`Planner.PlanReq.assignFold_ok` is the three filter clauses it satisfies — the energy filter,
+the `loc:` filter and the wind-down rule.  The rows a composition step emits are **not** read
+off it: they are read off `Planner.PlanReq.finalAssign`, step **6**'s answer, exactly as
+`Planner.PlanReq.restRows` already is, because fork `run()` calls `place_deferred` and then
+hands `emit_segments` the same `&assign` (`planner.rs:1032`, `:1071`).
+
+**`AssignOk` was proved for the fold and never for step 6's answer** — `deferWalk` carried
+`PlacedOk`, the two lengths and `used`, and not this — so the two goals
+`plan_respects_the_energy_filter` and `plan_places_no_demanding_block_after_wind_down` would
+have acquired a subject at the composition and had no proof to reach for.
+`finalAssign_ok` below is that proof, landed before the rows rather than after them.  It is a
+**repair and not a finding**: step 6 frees a slot and re-places the displaced group through
+`Planner.PlanReq.assignStep`, §8.2 step 5's own body, so the clauses survive — but surviving
+and being *proved to* survive are the two things AGENTS §5.2 keeps apart.
+
+**And the second half is a finding.**  The clauses `assignFold_ok` carries are stated over
+`Planner.Group.ci`, which `Planner.groupOf` reads off `Look.Cand.ci` — the **wire's** reading
+of an item's `ci`.  Every checker of this battery that asks about an item's `ci` reads
+`Tm.effectiveCi r.plan.val i` — the **plan's** §3.2 inheritance walk.  Nothing in this tree
+says those two agree, and `DecoderPays` does not have a clause for it.  That is E8's shape —
+*two readers of an item's `ci` disagreeing about eligibility* — which is the defect
+`plan_respects_the_energy_filter`'s own doc comment says it rules out, sitting in the seam
+between the wire and the plan rather than inside the planner.  `candsAgree` states it, and
+`PlannerWit.the_wire_ci_and_the_plan_ci_disagree_at_the_busy_request` is a request already in
+this tree where it is **false**.
+-/
+
+/-- **What `AssignOk` reads of a group, as a relation between two group lists** — the fields
+step 6's restore may not move.  Stated this way rather than over `Planner.unspend` by name so
+that the preservation proof below is about the *rule* and not about one function: any list of
+the same length whose every entry keeps the `ci` and the `loc:` of the entry it replaces will
+do, and `Planner.unspend_keeps_the_group` is one such list. -/
+def KeepsTheFilterFields (gs gs' : List Planner.Group) : Prop :=
+  gs'.length = gs.length ∧
+    ∀ (n : Nat) (g' : Planner.Group), gs'[n]? = some g' →
+      ∃ g : Planner.Group, gs[n]? = some g ∧ g.ci = g'.ci ∧ g.loc = g'.loc ∧
+        g.members = g'.members
+
+theorem KeepsTheFilterFields_refl (gs : List Planner.Group) : KeepsTheFilterFields gs gs := by
+  refine ⟨rfl, fun n g' h => ⟨g', h, rfl, rfl, rfl⟩⟩
+
+/-- `Planner.unspend` keeps them, which is the one instance this section needs. -/
+theorem KeepsTheFilterFields_unspend (gi mins : Nat) (gs : List Planner.Group) :
+    KeepsTheFilterFields gs (unspend gi mins gs) := by
+  refine ⟨unspend_length gi mins gs, fun n g' h => ?_⟩
+  obtain ⟨g, hg, -, hmem, hci, hloc, -, -, -⟩ := unspend_keeps_the_group gi mins gs n g' h
+  exact ⟨g, hg, hci, hloc, hmem⟩
+
+/-- **Freeing a slot and restoring its group's minutes keeps `AssignOk`.**  Fork
+`place_deferred`'s displacement (`planner.rs:1684-1704`) does exactly these two things to the
+assignment before it re-places, and the clause at every *other* slot is the old clause read
+through the restored group. -/
+theorem AssignOk_of_freed (r : PlanReq) (a : Assign) (vi u : Nat) (gs : List Planner.Group)
+    (hk : KeepsTheFilterFields a.groups gs) (h : r.AssignOk a) :
+    r.AssignOk ⟨a.slotOf.set vi Option.none, gs, u⟩ := by
+  obtain ⟨hlen, hcl⟩ := h
+  obtain ⟨hglen, hkeep⟩ := hk
+  refine ⟨by simpa using hlen, ?_⟩
+  intro i gi hi
+  simp only at hi
+  by_cases hiv : i = vi
+  · subst hiv
+    by_cases hlt : i < a.slotOf.length
+    · rw [List.getElem?_set_self hlt] at hi; exact absurd hi (by simp)
+    · rw [List.getElem?_eq_none (by simpa using Nat.le_of_not_lt hlt)] at hi
+      exact absurd hi (by simp)
+  · rw [List.getElem?_set_ne (by omega)] at hi
+    obtain ⟨e, s, g, he, hg, h1, h2, h3⟩ := hcl i gi hi
+    have hglt : gi < gs.length := by
+      rw [hglen]; exact lt_of_getElem?_some hg
+    obtain ⟨g2, hg2⟩ : ∃ g2 : Planner.Group, gs[gi]? = some g2 :=
+      ⟨gs[gi]'hglt, List.getElem?_eq_getElem hglt⟩
+    obtain ⟨g0, hg0, hci, hloc, -⟩ := hkeep gi g2 hg2
+    rw [hg] at hg0
+    have hgg : g = g0 := Option.some.inj hg0
+    subst hgg
+    refine ⟨e, s, g2, he, hg2, ?_, ?_, ?_⟩
+    · rw [← hci]; exact h1
+    · rw [← hloc]; exact h2
+    · rw [← hci]; exact h3
+
+/-- **Step 6's re-placement keeps the three clauses**, because it *is* §8.2 step 5's own loop
+body: `Planner.PlanReq.rePlaceWalk` calls `Planner.PlanReq.assignStep` with the same
+`todaySlots`, and `Planner.PlanReq.assignStep_ok` is already the one-step law.  Nothing is
+re-derived here (AGENTS §5.3); this is the induction that the fold has and the walk did not. -/
+theorem rePlaceWalk_keeps_AssignOk (r : PlanReq) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)),
+      (∀ x ∈ l, r.energisedSlots[x.2]? = some x.1) →
+      ∀ a : Assign, r.AssignOk a → r.AssignOk (r.rePlaceWalk budget a l) := by
+  intro l
+  induction l with
+  | nil => intro _ a ha; exact ha
+  | cons x xs ih =>
+    intro hl a ha
+    have hstep := PlanReq.assignStep_ok r r.todayBreaks budget a x
+      (hl x (List.mem_cons_self ..)) ha
+    have key : r.rePlaceWalk budget a (x :: xs)
+        = if (r.assignStep r.todaySlots r.todayBreaks budget a x).used = a.used
+          then r.rePlaceWalk budget (r.assignStep r.todaySlots r.todayBreaks budget a x) xs
+          else r.assignStep r.todaySlots r.todayBreaks budget a x := rfl
+    rw [key]
+    split
+    · exact ih (fun y hy => hl y (List.mem_cons_of_mem _ hy)) _ hstep
+    · exact hstep
+
+/-- **And so does the displacement that calls it** — the slot goes back to being free, the
+group gets its minutes back, and the clause at every other slot is untouched. -/
+theorem displaceInto_keeps_AssignOk (r : PlanReq) (budget : Nat) (a : Assign) (q : Placed)
+    (vi : Nat) (s : Look.Slot) (ha : r.AssignOk a) :
+    r.AssignOk (r.displaceInto budget a q vi s).2 := by
+  unfold PlanReq.displaceInto
+  refine rePlaceWalk_keeps_AssignOk r budget _
+    (fun y hy => List.mem_zipIdx_iff_getElem?.mp (List.mem_of_mem_drop hy)) _ ?_
+  refine AssignOk_of_freed r a vi _ _ ?_ ha
+  cases h : (a.slotOf[vi]?).join with
+  | none => simp only [h]; exact KeepsTheFilterFields_refl a.groups
+  | some gi => simp only [h]; exact KeepsTheFilterFields_unspend gi s.minutes a.groups
+
+/-- **One instance of step 6 keeps them**: four of `Planner.PlanReq.deferOne`'s five outcomes
+hand the assignment back unchanged, and the fifth is the displacement above. -/
+theorem deferOne_keeps_AssignOk (r : PlanReq) (budget : Nat) (qs : List Placed) (a : Assign)
+    (q : Placed) (ha : r.AssignOk a) : r.AssignOk (r.deferOne budget qs a q).2 := by
+  unfold PlanReq.deferOne
+  repeat' split
+  all_goals first
+    | exact ha
+    | exact displaceInto_keeps_AssignOk r budget a q _ _ ha
+
+/-- **And so does the whole walk.** -/
+theorem deferWalk_keeps_AssignOk (r : PlanReq) (budget : Nat) :
+    ∀ (post pre : List Placed) (a : Assign),
+      r.AssignOk a → r.AssignOk (r.deferWalk budget pre a post).2 := by
+  intro post
+  induction post with
+  | nil => intro pre a ha; exact ha
+  | cons q rest ih =>
+    intro pre a ha
+    unfold PlanReq.deferWalk
+    exact ih _ _ (deferOne_keeps_AssignOk r budget _ a q ha)
+
+/-- **§8.2 step 5's energy filter, `loc:` filter and wind-down rule hold of STEP 6's
+assignment** — the one `Planner.PlanReq.restRows` reads and the one a composition step's rows
+must read, for the reason `restRows`' doc comment gives (fork `run()` calls `place_deferred`
+and then hands `emit_segments` the same `&assign`).
+
+`Planner.PlanReq.assignFold_ok` is this at step 5's answer; this is the same three clauses one
+step later.  **It is the proof `plan_respects_the_energy_filter` and
+`plan_places_no_demanding_block_after_wind_down` reach for once a slot emits a row**, and it is
+here before the rows are, so that the composition step lands against a proved invariant rather
+than acquiring a subject and an obligation in the same commit. -/
+theorem finalAssign_ok (r : PlanReq) : r.AssignOk r.finalAssign := by
+  unfold PlanReq.finalAssign PlanReq.deferFold
+  exact deferWalk_keeps_AssignOk r _ r.placedRoutines [] r.assignFold (PlanReq.assignFold_ok r)
+
+/-- **The clause at one slot, spelled out** — what a Block row at slot `i` may assume about the
+group that holds it, with no `Planner.Assign` in the statement. -/
+theorem an_assigned_slot_is_under_its_slots_energy (r : PlanReq) (i gi : Nat)
+    (h : r.finalAssign.slotOf[i]? = some (some gi)) (e : Fin 6) (s : Look.Slot)
+    (hes : r.energisedSlots[i]? = some (e, s)) (g : Planner.Group)
+    (hg : r.finalAssign.groups[gi]? = some g) :
+    g.ci.val ≤ e.val ∧ ¬ (r.windDownSec ≤ s.start ∧ 4 ≤ g.ci.val) := by
+  obtain ⟨-, hcl⟩ := finalAssign_ok r
+  obtain ⟨e', s', g', he', hg', h1, -, h3⟩ := hcl i gi h
+  rw [hes] at he'
+  have hp : (e, s) = (e', s') := Option.some.inj he'
+  rw [Prod.mk.injEq] at hp
+  obtain ⟨rfl, rfl⟩ := hp
+  rw [hg] at hg'
+  have hgg : g = g' := Option.some.inj hg'
+  subst hgg
+  exact ⟨h1, h3⟩
+
+/-! ### The group a filled slot names, one step later
+
+`Planner.PlanReq.an_assigned_slot_names_a_group` is this at §8.2 step 5's answer.  Step 6 is
+two more ways a group list can change — `Planner.PlanReq.assignStep` again, and
+`Planner.unspend` — and both of them keep exactly the fields `KeepsTheFilterFields` names, so
+the provenance is carried by transitivity rather than by a third induction over the fork's
+loop body. -/
+
+theorem KeepsTheFilterFields_trans {gs gs' gs'' : List Planner.Group}
+    (h1 : KeepsTheFilterFields gs gs') (h2 : KeepsTheFilterFields gs' gs'') :
+    KeepsTheFilterFields gs gs'' := by
+  refine ⟨h2.1.trans h1.1, fun n g'' h => ?_⟩
+  obtain ⟨g', hg', hc, hl, hm⟩ := h2.2 n g'' h
+  obtain ⟨g, hg, hc2, hl2, hm2⟩ := h1.2 n g' hg'
+  exact ⟨g, hg, hc2.trans hc, hl2.trans hl, hm2.trans hm⟩
+
+theorem KeepsTheFilterFields_assignStep (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) :
+    KeepsTheFilterFields a.groups (r.assignStep slots breaks budget a x).groups := by
+  refine ⟨(PlanReq.assignStep_lengths r slots breaks budget a x).2, fun n g' h => ?_⟩
+  obtain ⟨g, hg, -, hm, hc, hl, -, -⟩ :=
+    PlanReq.assignStep_keeps_the_group r slots breaks budget a x n g' h
+  exact ⟨g, hg, hc, hl, hm⟩
+
+theorem KeepsTheFilterFields_rePlaceWalk (r : PlanReq) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign),
+      KeepsTheFilterFields a.groups (r.rePlaceWalk budget a l).groups := by
+  intro l
+  induction l with
+  | nil => intro a; exact KeepsTheFilterFields_refl a.groups
+  | cons x xs ih =>
+    intro a
+    have key : r.rePlaceWalk budget a (x :: xs)
+        = if (r.assignStep r.todaySlots r.todayBreaks budget a x).used = a.used
+          then r.rePlaceWalk budget (r.assignStep r.todaySlots r.todayBreaks budget a x) xs
+          else r.assignStep r.todaySlots r.todayBreaks budget a x := rfl
+    rw [key]
+    split
+    · exact KeepsTheFilterFields_trans
+        (KeepsTheFilterFields_assignStep r r.todaySlots r.todayBreaks budget a x) (ih _)
+    · exact KeepsTheFilterFields_assignStep r r.todaySlots r.todayBreaks budget a x
+
+theorem KeepsTheFilterFields_displaceInto (r : PlanReq) (budget : Nat) (a : Assign)
+    (q : Placed) (vi : Nat) (s : Look.Slot) :
+    KeepsTheFilterFields a.groups (r.displaceInto budget a q vi s).2.groups := by
+  unfold PlanReq.displaceInto
+  refine KeepsTheFilterFields_trans ?_ (KeepsTheFilterFields_rePlaceWalk r budget _ _)
+  cases h : (a.slotOf[vi]?).join with
+  | none => simp only [h]; exact KeepsTheFilterFields_refl a.groups
+  | some gi => simp only [h]; exact KeepsTheFilterFields_unspend gi s.minutes a.groups
+
+theorem KeepsTheFilterFields_deferOne (r : PlanReq) (budget : Nat) (qs : List Placed)
+    (a : Assign) (q : Placed) :
+    KeepsTheFilterFields a.groups (r.deferOne budget qs a q).2.groups := by
+  unfold PlanReq.deferOne
+  repeat' split
+  all_goals first
+    | exact KeepsTheFilterFields_refl a.groups
+    | exact KeepsTheFilterFields_displaceInto r budget a q _ _
+
+theorem KeepsTheFilterFields_deferWalk (r : PlanReq) (budget : Nat) :
+    ∀ (post pre : List Placed) (a : Assign),
+      KeepsTheFilterFields a.groups (r.deferWalk budget pre a post).2.groups := by
+  intro post
+  induction post with
+  | nil => intro pre a; exact KeepsTheFilterFields_refl a.groups
+  | cons q rest ih =>
+    intro pre a
+    unfold PlanReq.deferWalk
+    exact KeepsTheFilterFields_trans (KeepsTheFilterFields_deferOne r budget _ a q) (ih _ _)
+
+theorem KeepsTheFilterFields_foldl_assignStep (r : PlanReq) (breaks : List (Nat × Nat))
+    (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign),
+      KeepsTheFilterFields a.groups
+        (l.foldl (r.assignStep r.todaySlots breaks budget) a).groups := by
+  intro l
+  induction l with
+  | nil => intro a; exact KeepsTheFilterFields_refl a.groups
+  | cons x xs ih =>
+    intro a
+    simp only [List.foldl_cons]
+    exact KeepsTheFilterFields_trans
+      (KeepsTheFilterFields_assignStep r r.todaySlots breaks budget a x) (ih _)
+
+/-- **Every group of the day's own assignment carries the members and the `ci` of a group
+`build_groups` built.**  Stated as a property of the group *list* so that the one proof serves
+both walks. -/
+def CarriesBuiltGroups (r : PlanReq) (gs : List Planner.Group) : Prop :=
+  ∀ (n : Nat) (g : Planner.Group), gs[n]? = some g →
+    ∃ g₀ ∈ r.buildGroups, g₀.members = g.members ∧ g₀.ci = g.ci
+
+theorem CarriesBuiltGroups_of_keeps (r : PlanReq) (gs gs' : List Planner.Group)
+    (hk : KeepsTheFilterFields gs gs') (h : CarriesBuiltGroups r gs) :
+    CarriesBuiltGroups r gs' := by
+  intro n g' hg'
+  obtain ⟨g, hg, hc, -, hm⟩ := hk.2 n g' hg'
+  obtain ⟨g₀, h0, m0, c0⟩ := h n g hg
+  exact ⟨g₀, h0, m0.trans hm, c0.trans hc⟩
+
+theorem CarriesBuiltGroups_startGroups (r : PlanReq) : CarriesBuiltGroups r r.startGroups := by
+  intro n g hg
+  obtain ⟨g₀, h0, -, hm, hc, -, -, -⟩ :=
+    PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? hg)
+  exact ⟨g₀, h0, hm.symm, hc.symm⟩
+
+/-- **And step 6's answer carries them too** — the fold and the walk composed. -/
+theorem CarriesBuiltGroups_finalAssign (r : PlanReq) :
+    CarriesBuiltGroups r r.finalAssign.groups := by
+  have h1 : KeepsTheFilterFields r.startGroups r.assignFold.groups := by
+    unfold PlanReq.assignFold
+    exact KeepsTheFilterFields_foldl_assignStep r r.todayBreaks (remainingBudget r) _
+      r.assignStart
+  have h2 : KeepsTheFilterFields r.assignFold.groups r.finalAssign.groups := by
+    unfold PlanReq.finalAssign PlanReq.deferFold
+    exact KeepsTheFilterFields_deferWalk r _ r.placedRoutines [] r.assignFold
+  exact CarriesBuiltGroups_of_keeps r _ _ h2
+    (CarriesBuiltGroups_of_keeps r _ _ h1 (CarriesBuiltGroups_startGroups r))
+
+/-- **A member of a group that holds a slot carries that group's `ci`** — §7.5's batching
+gathers by equal `ci` and `Planner.splitGroups` does not change it, so `Planner.Group.ci` is a
+bound over the members and not just the head's value.  This is the step-6 form of
+`Planner.PlanReq.a_group_member_carries_the_groups_ci`. -/
+theorem a_member_of_an_assigned_group_carries_its_ci (r : PlanReq) (gi : Nat)
+    (g : Planner.Group) (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked)
+    (hm : m ∈ g.members) : m.cand.ci = g.ci := by
+  obtain ⟨g₀, h0, hmem, hci⟩ := CarriesBuiltGroups_finalAssign r gi g hg
+  rw [← hci]
+  exact PlanReq.a_group_member_carries_the_groups_ci h0 (hmem ▸ hm)
+
+/-! ### The FIFTH thing the request decoder owes, and it is not a fifth item on a list
+
+`DecoderPays` has four clauses because four *values* of a `Planner.PlanReq` reach §6.1's lift
+without anything having checked them.  The rule that put them there is not "these four": it is
+**every value the battery reads off the request rather than off the day**.  Read that way the
+list was short, and what it was missing is the one the composition step needs.
+
+**The rule, applied.**  Grep this file for `r.plan.val` and every hit is a checker reading an
+item's facts out of the *plan*: `Tm.effectiveCi` (`energyFilterOk`, `noDemandingAfterWindDown`,
+`monotoneInRank`, `batchDoesNotReachPast`), `Tm.rootPrio` (`monotoneInRank`), the `hot` flag
+(`hotBeforeQueue`), `Field.Shape.interval` (`wallsUnmoved`).  §8.2 step 5's fold reads the same
+item's facts out of `Look.Cand` — `Planner.groupOf` takes `x.cand.ci` for the group's `ci`,
+§7.4's key is built on `Look.Cand.rootPrio`, §7.2's `hot` is `Look.Cand.hot`.  **Nothing in
+this tree says the two readings agree**, and `Tm.effectiveCi` of an id the store does not hold
+answers `3` rather than refusing, so a candidate that is not an item of its own plan is
+silently given the default.
+
+**That is E8's shape** — *two readers of an item's `ci` disagreeing about eligibility* — which
+is the defect `plan_respects_the_energy_filter`'s own doc comment says it rules out, sitting in
+the seam between the wire and the plan rather than inside the planner.
+
+**`candsAgree` is an enumeration a candidate must JOIN to be exempt** (W-27's shape, and the
+one this campaign is now required to take): `candPlanView` answers `none` for an id the store
+does not hold, `none = some _` is false, and the clause therefore **fails by name** on such a
+candidate rather than passing it on a default.  There is no allow-list. -/
+
+/-- **The plan's reading of a candidate**: the three values this battery reads off the store
+when it asks about an item.  `none` when the store does not hold the id at all. -/
+def candPlanView (r : PlanReq) (i : Id) : Option (Fin 6 × Option (Fin 4) × Bool) :=
+  match r.plan.val.store.get i with
+  | none => none
+  | some e => some (effectiveCi r.plan.val i, rootPrio r.plan.val i,
+      decide (Flag.hot ∈ e.val.flags))
+
+/-- **The wire's reading of the same three**, as `Look.Cand` carries them and §8.2 step 5's
+fold reads them. -/
+def candWireView (c : Look.Cand) : Fin 6 × Option (Fin 4) × Bool := (c.ci, c.rootPrio, c.hot)
+
+/-- **The fifth clause of the decoder axis** (README gap **1984**): every candidate the request
+carries is an item of the request's own plan, and its wire-side `ci`, `rootPrio` and `hot` are
+that item's.
+
+**WHAT THIS DOES NOT COVER, said here rather than found later** (README gap **1990**).  The
+rule is *every value the battery reads off the request rather than off the day*, and this
+clause is that rule restricted to the values `Look.Cand` **carries**.  The battery also reads
+`e.val.live.doc` and `e.val.live.rank` off the store — `monotoneInRank` and
+`batchDoesNotReachPast` both do — and `Look.Cand` has no rank field at all: §7.4's key is built
+from the candidate list's **order**.  So a second disagreement axis exists, between the store's
+`live.rank` and the wire list's position, and no clause here states it.  It is not this
+clause's business and it is not `WallsArePlain`'s either; it is a sixth thing the decoder owes,
+and it bites `plan_is_monotone_in_rank`'s restatement rather than
+`plan_respects_the_energy_filter`. -/
+def candsAgree (r : PlanReq) : Bool :=
+  r.cands.val.all (fun p => decide (candPlanView r p.1.id = some (candWireView p.1)))
+
+theorem candsAgree_iff (r : PlanReq) :
+    candsAgree r = true ↔
+      ∀ p ∈ r.cands.val, candPlanView r p.1.id = some (candWireView p.1) := by
+  simp only [candsAgree, List.all_eq_true, decide_eq_true_eq]
+
+/-- **A request with no candidate pays it for nothing**, which is why nine runs of witnesses
+never met it: every request whose day the eleven have been lifted over sends candidates the
+fold cannot place, or none at all. -/
+theorem candsAgree_of_no_cands (r : PlanReq) (h : r.cands.val = []) : candsAgree r = true := by
+  simp [candsAgree, h]
+
+/-- **What the clause buys, at one candidate**: the `ci` §8.2 step 5's filter compared against
+the slot's energy *is* the `ci` `energyFilterOk` reads. -/
+theorem a_candidates_ci_is_its_items_ci (r : PlanReq) (h : candsAgree r = true)
+    (c : Look.Cand) (f : Option Look.Floor) (hc : (c, f) ∈ r.cands.val) :
+    effectiveCi r.plan.val c.id = c.ci := by
+  have hv := (candsAgree_iff r).1 h (c, f) hc
+  unfold candPlanView at hv
+  cases hs : r.plan.val.store.get c.id with
+  | none => rw [hs] at hv; exact absurd hv (by simp)
+  | some e =>
+    rw [hs] at hv
+    simp only [Option.some.injEq, candWireView, Prod.mk.injEq] at hv
+    exact hv.1
+
+/-- **And the other direction** (AGENTS §5.8): one candidate whose two readings differ makes
+the clause `false`, by name. -/
+theorem a_candidate_whose_two_readings_differ_breaks_the_clause (r : PlanReq)
+    (c : Look.Cand) (f : Option Look.Floor) (hc : (c, f) ∈ r.cands.val)
+    (hne : effectiveCi r.plan.val c.id ≠ c.ci) : candsAgree r = false := by
+  cases h : candsAgree r with
+  | false => rfl
+  | true => exact absurd (a_candidates_ci_is_its_items_ci r h c f hc) hne
+
+/-- **§8.2 step 5's energy filter, at the `ci` the battery reads** — the content of
+`plan_respects_the_energy_filter`, proved at the assignment before any row exists.
+
+Three facts compose: `finalAssign_ok` (step 6 keeps the filter),
+`a_member_of_an_assigned_group_carries_its_ci` (the group's `ci` bounds every member) and the
+fifth decoder clause (the member's wire `ci` is its item's).  **The last is the only one that
+is not a theorem about this kernel**, which is exactly why it belongs beside `DecoderPays`'
+other four and not inside the planner. -/
+theorem an_assigned_member_is_under_its_slots_energy (r : PlanReq) (hca : candsAgree r = true)
+    (i gi : Nat) (h : r.finalAssign.slotOf[i]? = some (some gi)) (e : Fin 6) (s : Look.Slot)
+    (hes : r.energisedSlots[i]? = some (e, s)) (g : Planner.Group)
+    (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked) (hm : m ∈ g.members)
+    (f : Option Look.Floor) (hmc : (m.cand, f) ∈ r.cands.val) :
+    (effectiveCi r.plan.val m.cand.id).val ≤ e.val := by
+  rw [a_candidates_ci_is_its_items_ci r hca m.cand f hmc,
+    a_member_of_an_assigned_group_carries_its_ci r gi g hg m hm]
+  exact (an_assigned_slot_is_under_its_slots_energy r i gi h e s hes g hg).1
+
+/-- **And §8.2 step 5's wind-down rule at the same `ci`** — the content of
+`plan_places_no_demanding_block_after_wind_down`, on the same three facts. -/
+theorem an_assigned_member_after_the_wind_down_is_not_demanding (r : PlanReq)
+    (hca : candsAgree r = true) (i gi : Nat)
+    (h : r.finalAssign.slotOf[i]? = some (some gi)) (e : Fin 6) (s : Look.Slot)
+    (hes : r.energisedSlots[i]? = some (e, s)) (hwd : r.windDownSec ≤ s.start)
+    (g : Planner.Group) (hg : r.finalAssign.groups[gi]? = some g) (m : Ranked)
+    (hm : m ∈ g.members) (f : Option Look.Floor) (hmc : (m.cand, f) ∈ r.cands.val) :
+    (effectiveCi r.plan.val m.cand.id).val < 4 := by
+  rw [a_candidates_ci_is_its_items_ci r hca m.cand f hmc,
+    a_member_of_an_assigned_group_carries_its_ci r gi g hg m hm]
+  have h3 := (an_assigned_slot_is_under_its_slots_energy r i gi h e s hes g hg).2
+  omega
+
 end PlanCheck
 end Tm
