@@ -379,3 +379,4 @@ ae059bf51266 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingPlan unfoldab
 250776183489 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 db17f2adf839 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingCands default,[] PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes; PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes
 b8ad630aaa78 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingRequest unfoldable no Inhabited PlanReq
+6b7739920485 TmKernel/TmKernel/Close.lean Tm.hasAStrayTomb true,false Close.lean:2506 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb; Close.lean:2508 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb

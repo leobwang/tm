@@ -647,16 +647,11 @@ without a word.  The kernel holds one tombstone per item, so it cannot keep that
 line *and* file a fresh record; the close refuses the item by the name it had
 before README gap 53 closed, `alreadyDemoted`, and writes nothing. -/
 
-/-- A placement that is an item's `# Demoted` record: a month file, under a
-`# Demoted` heading. -/
-def isDemotedRecord (p : PlanCore) (s : Site) : Bool :=
-  decide (docKindAt p s.doc = .month) && decide (sectionKindAt p s = some .demoted)
-
 /-- The item carries a tombstone that is not its `# Demoted` record. -/
 def hasAStrayTomb (p : PlanCore) (e : Entity) : Bool :=
   match e.val.archive with
   | none   => false
-  | some t => !isDemotedRecord p t.site
+  | some t => !demotedRecordPlacement p t.site
 
 /-- The week row's copy over an item with a stray tombstone: refused. -/
 def copiesOverAStrayTomb (g : Grain) (p : PlanCore) (e : Entity) : Bool :=
@@ -2459,7 +2454,7 @@ an item whose tombstone is not its `# Demoted` record. -/
 theorem closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb {g : Grain} {now : Day}
     {x : FoldFx} {i : Id} {p : WfPlan} (h : closeOne g now x i p = .error .alreadyDemoted) :
     (closePolicy g).disposition = .copy ∧ ∃ e t, p.val.store.get i = some e ∧
-      e.val.archive = some t ∧ isDemotedRecord p.val t.site = false := by
+      e.val.archive = some t ∧ demotedRecordPlacement p.val t.site = false := by
   unfold closeOne at h
   split at h
   · simp at h
@@ -2540,7 +2535,7 @@ does, the record is not merged and the tombstone is not deleted. -/
 theorem closeOne_never_merges_into_a_stray_tomb {g : Grain} {now : Day} {x : FoldFx} {i : Id}
     {p q : WfPlan} {e : Entity} {t : Tomb} (hget : p.val.store.get i = some e)
     (hcopy : (closePolicy g).disposition = .copy) (harch : e.val.archive = some t)
-    (hrec : isDemotedRecord p.val t.site = false) {r : Region}
+    (hrec : demotedRecordPlacement p.val t.site = false) {r : Region}
     (hact : closeAct g now p.val e.val.skel = .file r) (hx : x.isDrop = false) :
     closeOne g now x i p ≠ .ok q := by
   intro h

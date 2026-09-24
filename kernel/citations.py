@@ -471,6 +471,17 @@ EXCLUDED = (
 # comment later, never earlier), so no byte of a `.c` file is read as code.
 READERS = {".lean": "lean", ".rs": "rust", ".c": "rust", ".md": "plain",
            ".txt": "plain", ".sh": "plain", ".py": "plain", ".toml": "plain"}
+# **ONE ANSWER TO "WHICH EXTENSIONS DOES A GATE READ"** (W-30).  The WALK needs
+# it too -- an ignored file is pruned only when no reader claims it -- so the
+# set lives in `leanfiles` and this reconciliation is what stops the two from
+# drifting apart in silence.  A reader added here without a line there would
+# quietly shrink the walk that feeds this check.
+if set(READERS) != leanfiles.READ_SUFFIXES:
+    raise SystemExit(
+        "citations.py: READERS and leanfiles.READ_SUFFIXES disagree (%s) -- the "
+        "walk prunes ignored files by that set, so a reader here that is not "
+        "there is a file this check would never be handed"
+        % sorted(set(READERS) ^ set(leanfiles.READ_SUFFIXES)))
 
 
 def tracked():
@@ -587,7 +598,6 @@ def partition():
     return sorted(plain), sorted(cfiles), unaccounted, unused
 
 
-TOOLCHAIN = os.path.join(HERE, "TmKernel", "lean-toolchain")
 # THE RUST SOURCES, BY THE SAME PROPERTY-BASED WALK THE LEAN USES.  This was a
 # hard-coded list of seven directory names until README gap 1418 -- the exact
 # shape leanfiles.py's own header says cannot work -- and `tm/examples` was not
@@ -766,13 +776,10 @@ _CORE_SCAN = []
 def _core_scan():
     if _CORE_SCAN:
         return _CORE_SCAN[0]
-    with open(TOOLCHAIN, encoding="utf-8") as handle:
-        pin = handle.read().strip()
-    if ":" not in pin:
-        raise SystemExit("citations.py: unreadable lean-toolchain: %s" % pin)
-    channel, version = pin.split(":", 1)
-    src = os.path.expanduser(os.path.join(
-        "~/.elan/toolchains", channel.replace("/", "--") + "---" + version, "src", "lean"))
+    # WHERE THE PINNED TOOLCHAIN'S SOURCES ARE is `leanfiles.toolchain_src`
+    # since W-30 -- one resolution, two readers (this and `totality.py`'s
+    # command residue).  It raises rather than returning an empty tree.
+    src = str(leanfiles.toolchain_src())
     paths = glob.glob(os.path.join(src, "**", "*.lean"), recursive=True)
     if not paths:
         raise SystemExit("citations.py: no toolchain sources under %s "

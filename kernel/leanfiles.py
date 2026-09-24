@@ -107,8 +107,34 @@ def ignored_paths(root):
     The property that states it is GIT'S OWN, and `repo_files` was already
     relying on half of it: `--others --exclude-standard` distinguishes
     not-yet-added from ignored.  This is the other half, asked of the walk.
-    `--directory` collapses a wholly ignored directory to one entry, so the
-    DESCENT is pruned rather than the results filtered.
+    `--directory` collapses a wholly ignored directory to one entry, which is
+    why `is_ignored` walks a path's ANCESTORS rather than looking it up.
+
+    **AND IT PRUNED THE DESCENT, WHICH MADE `.gitignore` A SECOND EXCLUDED LIST
+    AGAIN** (W-30 track A, README gap 2092).  That is the whole of W-28's own
+    finding -- `tracked()` carries it -- reached through this function nine days
+    later: `.gitignore` carries `**/target`, a bare directory NAME matching at
+    any depth, and pruning the descent on it put back in front of all five gates
+    exactly the name list the W-22 repair deleted.  DRIVEN in a `git
+    archive HEAD` clone, three one-line plants, before the repair:
+
+      * `kernel/w30probe.md` citing a dead name -- check 8 rc=1, NAMED;
+      * `kernel/target/w30probe.md`, byte-identical -- check 8 **rc=0**;
+      * `kernel/TmKernel/TmKernel/target/Probe.lean` holding `partial def`, a
+        HARD RULE -- check 2 **rc=0, no output**.
+
+    So the ignore answer no longer prunes a DIRECTORY at all.  It prunes an
+    ignored FILE, and only one whose extension no gate reads (`READ_SUFFIXES`):
+    a `.pyc` is derived output nothing can be stale in, and gap 2010 stays
+    closed, while an ignored `.md`, `.lean` or `.rs` is SWEPT and `EXCLUDED`
+    -- the adjudicated list, with a reason beside each entry -- is again the
+    only thing that can exempt one.
+
+    WHAT IT COSTS, declared: an ignored directory that is neither dot-named nor
+    CACHEDIR.TAG-marked is now DESCENDED.  Measured here today that is
+    `kernel/__pycache__` and nothing else (3 files); `target/` and
+    `kernel/tm-kernel-ffi/target/` both carry the tag and are pruned by the
+    property, so the 19 GB this machine holds under them is not walked.
 
     Returns a set of `root`-relative paths, directories WITHOUT their trailing
     slash.  A `git` that cannot answer returns the EMPTY set, which prunes
@@ -121,6 +147,32 @@ def ignored_paths(root):
     if r.returncode != 0:
         return set()
     return {q.rstrip("/") for q in r.stdout.split("\0") if q}
+
+
+# THE EXTENSIONS SOME GATE READS.  An ignored file with one of these is SWEPT;
+# an ignored file without one is derived output nothing can be stale in.  It
+# lives here rather than in `citations.py` for this file's own reason -- two
+# definitions of one concept is the bug -- and `citations.READERS` is reconciled
+# against it on every run, so a reader added there without a line here fails
+# loudly instead of quietly shrinking this walk.
+READ_SUFFIXES = frozenset({".lean", ".rs", ".c", ".md", ".txt", ".sh", ".py", ".toml"})
+
+
+def is_ignored(rel, ignored):
+    """Does `ignored` cover this `root`-relative path, or a directory above it?
+
+    `ignored_paths` asks git with `--directory`, which COLLAPSES a wholly
+    ignored directory to one entry, so a file inside one is not listed by name.
+    The ancestor walk is what reads that answer correctly."""
+    here = rel
+    while here:
+        if here in ignored:
+            return True
+        cut = here.rfind("/")
+        if cut < 0:
+            return False
+        here = here[:cut]
+    return False
 
 
 def source_files(root, suffix, ignored=None):
@@ -165,10 +217,18 @@ def source_files(root, suffix, ignored=None):
         for entry in entries:
             # ONE TEST FOR BOTH KINDS OF ENTRY (W-29).  It used to be asked of
             # directories only, and `.git` is a FILE in a linked worktree.
-            if is_derived(entry) or str(entry.relative_to(root)) in ignored:
+            if is_derived(entry):
                 continue
+            rel = str(entry.relative_to(root))
             if entry.is_dir():
+                # **A DIRECTORY IS PRUNED BY THE PROPERTY AND NOT BY THE PATTERN
+                # FILE** (W-30, README gap 2092).  `.gitignore` used to prune
+                # the DESCENT here, which put the name `target` back in front of
+                # this walk -- the exact name list the W-22 repair deleted, one
+                # layer over.  The descent is now the property's alone.
                 stack.append(entry)
+            elif is_ignored(rel, ignored) and entry.suffix not in READ_SUFFIXES:
+                continue  # derived output no gate reads: pruned, and counted by nobody
             elif suffix is None or entry.suffix == suffix:
                 out.append(entry)
     return sorted(out)
@@ -275,6 +335,39 @@ def library_files(pkg):
     if root.is_file():
         out.append(root)
     return sorted(out)
+
+
+# The R8 pin, and the sources elan unpacks beside it.  ONE resolution and TWO
+# readers since W-30: `citations.py`'s source 7 (`_core_scan`, every declaration
+# and namespace the core library spells) and `totality.py`'s command residue
+# (`command_keywords`, every keyword Lean's own grammar declares a command by).
+# It is here rather than in either of them for this file's own reason: two
+# definitions of one concept is the bug, and "where the pinned toolchain's
+# sources are" is one concept.
+TOOLCHAIN = pathlib.Path(__file__).resolve().parent / "TmKernel" / "lean-toolchain"
+
+
+def toolchain_src():
+    """The `src/lean` tree of the PINNED toolchain, as a pathlib.Path.
+
+    The pin is `kernel/TmKernel/lean-toolchain` (R8 forbids moving it) and elan
+    unpacks `leanprover/lean4:v4.33.1` at
+    `~/.elan/toolchains/leanprover--lean4---v4.33.1`.  A pin this cannot read,
+    or a toolchain whose sources are not unpacked, is a HARD ERROR and never a
+    silently empty answer: both readers here are residues, and a residue over an
+    empty declaration set reports everything, while a residue over an empty
+    KEYWORD set reports nothing at all.  The second is the direction that goes
+    quiet, which is the failure this campaign keeps paying for."""
+    pin = TOOLCHAIN.read_text(encoding="utf-8").strip()
+    if ":" not in pin:
+        raise SystemExit("leanfiles.toolchain_src: unreadable lean-toolchain: %s" % pin)
+    channel, version = pin.split(":", 1)
+    src = pathlib.Path(os.path.expanduser("~/.elan/toolchains")) / (
+        channel.replace("/", "--") + "---" + version) / "src" / "lean"
+    if not src.is_dir():
+        raise SystemExit("leanfiles.toolchain_src: no toolchain sources under %s "
+                         "-- the readers of this tree would be silently empty" % src)
+    return src
 
 
 # STRIPPING COMMENTS IS A SCAN, NOT TWO REGEXES (the W-27 repair step).

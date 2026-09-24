@@ -6504,7 +6504,7 @@ file whose horizon is `Horizon::Month`, in `# Demoted`.  A `[-]` left in a week 
 an archive, not a record.  Step 2's `refile` cannot see placements, and nothing above it
 checked.
 
-**The fix.**  `isDemotedRecord p s` — the placement's document is a month file and its
+**The fix.**  `demotedRecordPlacement p s` — the placement's document is a month file and its
 section kind is `demoted` — and `copiesOverAStrayTomb g p e` — the row copies and the
 item's tombstone is not such a record (Close.lean).  `closeOne` passes its landing
 through `guardStray`: a landing the kernel refuses keeps its own refusal (so
@@ -60527,7 +60527,7 @@ tracked files), **1958** (a `not-row` exclusion that covers nothing).
 
 | gap | what | where it bites | cost of leaving it |
 |---|---|---|---|
-| **1956** | **thirteen groups of character-identical declarations remain** (fifteen reported, two of them refuted below). ELEVEN are `Line.lean` proving one `by decide` fact twice, under a rule_/rate_/stamps_/moment_ name and under a row_ name: `rule_mwf`/`row_every_mwf`, `rule_2w_sun`/`row_every_2w_sun`, `rule_month_15`/`row_every_month_15`, `rule_weekday`/`row_every_weekday`, `rule_week`/`row_every_week`, `rule_3d`/`row_every_3d`, `rule_day`/`row_every_day`, `rate_4h_w`/`row_cap_4h_w`, `rate_6b_w`/`row_min_6b_w`, `stamps_W36_W37`/`row_demoted_stamps`, `moment_date_form`/`row_due_date`. One is `Tm.isDemotedRecord` (`Close.lean`) and `Tm.demotedRecordPlacement` (`Plan.lean`) — D8's rule written twice in two modules, read four times and fourteen. One is `closeW35`/`staleW35`, one Region value under two fixture roles, which §5.6 may well justify and which is therefore an adjudication rather than a defect. **REFUTED, and named so nobody re-finds them**: `jemitObjAcc`/`jemitOTailAcc` and `jemitArrAcc`/`jemitTailAcc` each call their OWN `.go` | `Line.lean`, `Close.lean`, `Plan.lean`, `Boundary.lean` | every theorem deletion edits `Check.lean`'s roster, which another track of this run holds open, so taking the eleven here would be a merge conflict rather than a repair. The detector is textual: it finds copies, not synonyms, and it cannot see a duplicate that reaches its own auxiliary by name |
+| **1956** | **thirteen groups of character-identical declarations remain** (fifteen reported, two of them refuted below). ELEVEN are `Line.lean` proving one `by decide` fact twice, under a rule_/rate_/stamps_/moment_ name and under a row_ name: `rule_mwf`/`row_every_mwf`, `rule_2w_sun`/`row_every_2w_sun`, `rule_month_15`/`row_every_month_15`, `rule_weekday`/`row_every_weekday`, `rule_week`/`row_every_week`, `rule_3d`/`row_every_3d`, `rule_day`/`row_every_day`, `rate_4h_w`/`row_cap_4h_w`, `rate_6b_w`/`row_min_6b_w`, `stamps_W36_W37`/`row_demoted_stamps`, `moment_date_form`/`row_due_date`. One was Tm.isDemotedRecord (`Close.lean`) and `Tm.demotedRecordPlacement` (`Plan.lean`) — D8's rule written twice in two modules, read four times and fourteen; **TAKEN at W-30 track A**: the `Close.lean` copy is deleted and its three sites read `demotedRecordPlacement`, which `twins.py` reported as the ONE group of seventeen that no property answers. One is `closeW35`/`staleW35`, one Region value under two fixture roles, which §5.6 may well justify and which is therefore an adjudication rather than a defect. **REFUTED, and named so nobody re-finds them**: `jemitObjAcc`/`jemitOTailAcc` and `jemitArrAcc`/`jemitTailAcc` each call their OWN `.go` | `Line.lean`, `Close.lean`, `Plan.lean`, `Boundary.lean` | every theorem deletion edits `Check.lean`'s roster, which another track of this run holds open, so taking the eleven here would be a merge conflict rather than a repair. The detector is textual: it finds copies, not synonyms, and it cannot see a duplicate that reaches its own auxiliary by name |
 | **1957** | **the rule that could not be stated in Python: "a definition Lean accepted without justifying its recursion".** `partial`, `unsafe` and `partial_fixpoint` are keywords, and to a regex a keyword is an identifier. Measured here: the library's indented single-word lines are 33 distinct words, 15 of them declared NAMES, so a residue over them would fail a proof that ends in a lemma name | `totality.py` | the stem rule and the column-zero residue fail every spelling this toolchain has, but a `partial_fixpoint` written mid-line after an `in` combinator is outside both. The rule is decidable in Lean over the elaborated environment — definition safety, and the fixpoint constant the clause leaves in the value — which is the same shape gap 1883 needs and could be one Lean query for both |
 
 **Not repaired and not mine to repair**: the shared checkout held six files of the other two
@@ -61700,3 +61700,195 @@ narrowed and no exemption widened; `lean-toolchain`, `Cargo.toml`, `Cargo.lock` 
 not closed and are narrowed: 2005's exemption still fires on 97 of 143 cases, and 2007's three
 statements are answered — the SEQUENCE and the MULTISET both agree once the fork is ranked by the
 kernel, and the SLOT GEOMETRY is gap 2062's single case.
+
+<!-- =====================================================================
+     APPENDED 2026-09-24: stage 6 (the planner), run **W-30**, **track A**.
+     Baseline `552566d`, branch `w30-a`, worktree `.claude/worktrees/w30-a`.
+     Gap range **2090-2119**; **2090-2096 taken**, 2097-2119 free.  Parity:
+     **none issued**.  check.sh has **ELEVEN** checks after this block.
+     ===================================================================== -->
+
+## Stage 6 — W-30 track A: "owed" was one word over three claims, the command residue was anchored at a COLUMN, `.gitignore` was a second EXCLUDED list again, and §5.3 gets a gate
+
+**Range:** gaps **2090–2119** (track A's). **Taken here: 2090–2096.** Parity: **none issued**
+(`next free P41`). Files: `kernel/mutate.py`, `kernel/mutations.txt`, `kernel/totality.py`,
+`kernel/leanfiles.py`, `kernel/citations.py`, `kernel/twins.py`, `kernel/check.sh`,
+`kernel/TmKernel/TmKernel/Close.lean` and this file.
+
+**Every finding below was DRIVEN before it was touched** — each plant alone, each in a
+`git archive HEAD` clone under `/tmp/claude-1000/…` with a warmed `.lake`, never in the shared
+checkout — except the one that is a MEASUREMENT over the emitted C, which is how a claim about
+what the compiler does is reproduced. **check.sh has ELEVEN checks after this step**, not ten:
+the §5.3 sweep W-29 committed as a script is a gate now, and the Land step's wording needs the
+new number. Its wall is **13.26–15.03 s** (four runs, warm tree, this machine — the
+high one followed a `citations.py` run, the other three were back to back); the ten-check wall
+is that less check 11's own **0.75–0.76 s** (three runs), i.e. **5.3–6.1%** added, by
+subtraction rather than by its own measurement.
+
+**The sharpest thing in this step is a REFUSAL.** The step was told to delete five
+character-identical `def` twins. They are not duplicates, and the evidence is in `lake`'s own
+output rather than in anybody's reading of the source — see item 4.
+
+### 1. The roster was stale, and check 9 paid six kernel builds A RUN for it — gap 2090
+
+W-29 added six definitions and never ran `mutate.py --write`, so `mutate.py --gate` reported
+`234 rostered, 6 OWED A MUTATION` and then **audited those six live on every single run** —
+six kernel builds, about ten minutes, inside a check whose own comment says it is "~0 at a
+settled tree". Nothing was unaudited (all six pin), so no gate was red; the cost was simply
+paid, every run, by everybody.
+
+`mutate.py --write` here: **6 rows appended, 6 PINNED**, 0 unfoldable, 0 pinned by nothing. The
+gate is back to `0 owed` and check 9 is 0.1 s.
+
+**And the word "owed" was one word over THREE claims**, which is why nobody could see from the
+line which of them applied. `owed` is `[d for d in decls if d not in rostered]`, and a
+definition lands in it because **no row names it** (nothing has ever watched it fail), because
+**a row names it at another body** (it WAS audited, at a body this tree no longer holds), or
+because **it has no digestible body at all** (`split_header` cannot parse it, and no row can
+ever be written). The fix for each is different — run the audit, re-run it, repair the parser —
+and the gate now prints the counts and one line per definition saying which.
+
+**DRIVEN, both live classes, in this worktree with the row restored afterwards and
+`git status --porcelain` identical before and after:**
+
+```
+241 new or changed since 86c4dc6, 240 rostered, 1 OWED A MUTATION (1 absent)
+  TmKernel/TmKernel/Close.lean:Tm.hasAStrayTomb              ABSENT     -- no row: nothing has ever watched this definition fail
+
+241 new or changed since 86c4dc6, 240 rostered, 1 OWED A MUTATION (1 stale)
+  TmKernel/TmKernel/Planner.lean:Tm.Planner.dayRows          STALE      -- row holds 000000000000, this body is 5a98924465e2: audited at a body this tree no longer holds
+```
+
+### 2. The command residue was anchored at a COLUMN — gap 2091
+
+W-29 made the commands a residue (`ALLOWED_COMMANDS`: a command joins the set or it is named)
+and gave the `in` combinator its own position. It left the LINE HEAD at column zero, so the
+seven commands with no `BANNED` row of their own — `macro`, `macro_rules`, `syntax`, `elab`,
+`notation`, `initialize`, `builtin_initialize` — escaped **by being indented**. This library
+writes `section … end` in eleven files, which is exactly where an indented command looks like it
+belongs.
+
+**DRIVEN.** Appended to `Emit.lean` in a clone:
+
+```lean
+section
+  macro "w30mac" : term => `(0)
+  initialize w30Ref : IO.Ref Nat <- IO.mkRef 0
+end
+```
+
+`lake build TmKernel:static` → **"Build completed successfully (174 jobs)"**, and
+`totality.py TmKernel/TmKernel TmKernel` → **rc=0, no output**. The same two commands at column
+zero are both named. That is W-29's own finding — one rule, one spelling read — reached through
+the COLUMN instead of through the syntax.
+
+**Widening the population is not enough, and that is why this took a keyword set.** At an
+INDENTED line head "the word is in `ALLOWED_COMMANDS`" is false of correct Lean: a proof step, a
+`match` arm, a structure field and a `let` all begin lines. **Measured over the library's 89
+files: 22 distinct words begin a column-zero line and 2,944 begin an indented one.** A residue
+over 2,944 words is a list again.
+
+So the indented rule asks **Lean's own grammar**: a word at a may-begin position is refused when
+it is a word the PINNED TOOLCHAIN declares a command by, and that set is read out of
+`src/lean`'s four command-parser files rather than written down here — a `@[builtin_command_parser]`
+`def`'s «»-escaped name, the first string literal of its body, the «»-named alternatives of an
+alternation, and the literals of any parser whose body is nothing but tokens (which is how
+`builtin_initialize` — named in W-29's own comment as an escapee — gets in at all). Nothing has
+to be added for a command a later toolchain invents.
+
+**Measured:** 52 keywords, 35 of them outside `ALLOWED_COMMANDS`; the derivation is 0.046 s once
+per run and cached; `totality.py` is **1.48 s** after against **1.47–1.49 s** before (three runs
+each), and the widened rule fires **zero** times on the library. A floor assertion fails the
+check loudly if the derivation ever stops reading the toolchain, because a residue over an empty
+keyword set reports nothing at all, and a gate that reports nothing is what this campaign's
+defects look like from the outside.
+
+### 3. `.gitignore` was a second EXCLUDED list again — gap 2092
+
+W-28 found that `git ls-files` alone made `.gitignore` a second `EXCLUDED` list — one with no
+reason beside each entry and no stale-entry ratchet — and repaired it by making the population
+the WALK union git. **W-29's gap-2010 repair then put the ignore answer back in front of the
+WALK**, to prune `kernel/__pycache__`, and with it put back the bare directory name `**/target`
+— *the exact name list the W-22 repair deleted*, now arriving through git instead of through a
+hard-coded list.
+
+**DRIVEN**, three one-line plants in one clone, before the repair:
+
+| plant | before | after |
+|---|---|---|
+| `kernel/w30probe.md` citing a dead name | check 8 **rc=1**, named | rc=1, named |
+| `kernel/target/w30probe.md`, byte-identical | check 8 **rc=0** | **rc=1, named** |
+| `kernel/TmKernel/TmKernel/target/Probe.lean` holding `partial def` (a HARD RULE) | check 2 **rc=0, no output** | **rc=1, named twice** |
+
+**The repair is a split, not a switch.** A DIRECTORY is pruned by the property `is_derived`
+states and by nothing else, so the descent is never pruned by a pattern file. An ignored FILE is
+pruned only when **no gate reads its extension** — `leanfiles.READ_SUFFIXES`, which
+`citations.READERS` is reconciled against on every run, so a reader added in one place and not
+the other fails loudly instead of quietly shrinking the walk. A `.pyc` is derived output nothing
+can be stale in and gap 2010 stays closed; an ignored `.md`, `.lean` or `.rs` is SWEPT, and
+`EXCLUDED` — adjudicated, with a reason beside each entry — is again the only thing that can
+exempt one.
+
+**Measured, on identical trees:** citations 266 files swept / 340 excluded before and after,
+**1.46–1.51 s** both (three runs each); `parity.py` reports **606 files swept** in the working
+checkout AND in a `git archive` clone, which is the reproducibility gap 2010 was about. The cost
+declared: an ignored directory that is neither dot-named nor CACHEDIR.TAG-marked is now
+descended — today that is `kernel/__pycache__` (3 files) and nothing else, because both `target/`
+trees carry the tag and the 19 GB under them is not walked.
+
+### 4. §5.3 gets a gate — and the five twins it was sent to delete are NOT duplicates (gap 2017 CLOSED, gap 1956 half taken)
+
+W-29 committed `twins.py` so that the §5.3 sweep could be re-measured instead of believed, and
+left it a SWEEP: it printed thirty groups, exited 0, and argued that a GATE would need an
+exemption LIST. It needs no list. It needs a sharper KEY and two properties.
+
+**The KEY is the SIGNATURE and the BODY WITH ITS STRING LITERALS.** W-29's key was the
+comment-stripped body alone, and `leanfiles.strip_comments` BLANKS a string's content — so
+`refusalJson`, `rowRefusalJson` and `plannerRefusalJson`, three emitters that differ only in the
+wire key they spell (`capacity`, `plan`, `planner`), were ONE body, and so was every witness
+fixture in `Boundary.lean` whose only content is text. The stripper is offset-preserving, so the
+quote positions it leaves index straight back into the source; the literals are read from there.
+
+**E2 COMPILED: the compiler emits different code for the two.** This is the property the five
+`@[csimp]` pairs needed and **that nobody had ever checked**. A `@[csimp]` lemma rewrites the
+callees of every definition compiled AFTER it, so a twin declared below the lemma gets the fast
+callee while the original keeps the slow one — *the sources are character-identical and the
+compiled code is not, and that difference is the whole reason the twin exists.* **MEASURED** in
+`lake`'s own `.lake/build/ir`: the emitted `Tm.edf` calls the emitted `Tm.edfCaps`, and the
+emitted `Tm.edfFast` calls `Tm.edfCapsFast`; the twin of `Tm.planWf` is REACHED from the emitted
+Close and Cmd modules and the twins of `Tm.Seal.daysIn` and `Tm.Seal.daysFrom` from SealWire's.
+**Deleting them would have silently deoptimised the `close` path and the resume — the two places
+D9/W4 put the twins for.** This is W-28's lesson in the other direction: a claim about a
+definition's SHAPE pins nothing about its BYTES, so the bytes are what the gate reads.
+
+**E3 VALUE: the definition is nullary.** Two bounds that share a number (`maxCands`/`maxBatch`)
+and one `Region` under two fixture roles (`closeW35`/`staleW35`, each inside a witness family
+that names its own — `staleNow`, `staleW24`, `staleW35`, `staleW37`) are two names for a VALUE,
+and §5.3 bans two definitions of one CONCEPT. `mutate.py` draws the same line under the name
+LITERAL for the same reason. Gap 1956 had already adjudicated `closeW35`/`staleW35` exactly this
+way; this is that adjudication mechanised instead of repeated.
+
+**E2's first cut exempted a REAL duplicate, and the drive is why it does not now.** The emitted
+bodies of Tm.isDemotedRecord and `Tm.demotedRecordPlacement` differed by seven bytes, and the
+only symbols separating them were a `___closed__0` constant carrying each definition's OWN name.
+A function's own name is the one name in its body that cannot be evidence, so it is normalised
+to `SELF` before the comparison — after which the pair is UNANSWERED, which is what it is.
+
+**The residue was ONE group, and it was a live duplicate README gap 1956 had already named and
+not taken**: `Tm.demotedRecordPlacement` (Plan.lean) and Tm.isDemotedRecord (Close.lean) — D8's
+rule written twice in two modules. The Close copy is **deleted**; its three sites (one caller,
+two theorem statements) read the Plan definition; `Tm.hasAStrayTomb`, whose body changed with
+them, was re-audited and PINNED. `twins.py` now reports **16 groups (5 compiled, 11 value), 0
+UNANSWERED**, and it is **check 11**.
+
+### What this step did NOT close
+
+| gap | what | where | why it is still open |
+|---|---|---|---|
+| **2093** | **a MONOMORPHIC COPY of a polymorphic definition is invisible to check 11.** `Replay.ciSum (m : KMap Id Nat)` and `Replay.vsum (m : KMap κ Nat)` are both `(m.map Prod.snd).sum`, and the first is the second at `κ := Id` — a real §5.3 duplicate the KEY separates, because comparing signatures cannot tell an instance of a type from an unrelated one | `kernel/twins.py`, `kernel/TmKernel/TmKernel/Replay.lean` | `vsum` is declared 137 lines BELOW `ciSum`'s only caller, so consuming it is a MOVE of a definition out of its `variable` block and not a rename. Two live uses of `ciSum` |
+| **2094** | **check 11's E3 exempts a genuinely duplicated nullary CONSTANT.** One bound, or one default, written twice under two names is a §5.3 defect and E3 calls it two roles | `kernel/twins.py` | It is the price of the fixture roles E3 exists for, and it is paid on 11 of the 16 groups. Telling a fixture from a constant needs a property nobody has stated |
+| **2095** | **check 11's cost is 6.0% and the first draft of its own comment said 12%.** The 12% was computed against the 7.91–8.01 s wall check 9's comment records for an older machine, not against the wall measured here — README gap 871's class, a checker's prose misquoting the measurement beside it, inside the block that adds the checker. Corrected before the commit; **measured: 0.75–0.76 s (three runs) inside a 13.26–15.03 s eleven-check wall (four runs, warm tree), 5.3–6.1%**, which is inside design 14.0 item 4's 10%-per-step rule | `kernel/check.sh`, `kernel/twins.py` | The number is right now. What is open is that nothing MECHANISES §5.11 — every "the cost is X%" sentence in this repository is a hand computation against a hand-chosen baseline, and this one was wrong for the same reason the four before it were |
+| **2096** | **five of the six roster rows this step wrote are `PlanCheck.lean`'s**, which track G holds open in the same run. If track G changes any of those five bodies, its row goes STALE at the merge and the Land step owes one mutation audit per changed body | `kernel/mutations.txt` | The step was told to write the roster and the roster is the shared file; the classification added in item 1 is what makes the merge cost READABLE (`N stale`) instead of a bare number |
+| **1956** | **eleven `theorem` twins in `Line.lean` stand**, one `by decide` fact proved twice under a rule_ and a row_ name | `kernel/TmKernel/TmKernel/Line.lean`, `kernel/TmKernel/Check.lean` | Check 11's population is `def`, by construction and not by accident. Every theorem deletion edits `Check.lean`'s roster, which the other two tracks of this run hold open |
+
+**Gaps 2097 and above are free** in track A's range.
