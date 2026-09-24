@@ -1561,7 +1561,7 @@ which never calls `loc_ok`).  A routine is furniture: it happens where you are.
   `SegKind.block` row, and the day's first Block makes four of `PlanCheck`'s six block-side
   checks non-vacuous — `noDemandingAfterWindDown` among them, and that one has **no Active
   exception** and needs one (README gap **437**).  Landing it therefore drags in the
-  restatement `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s own comment assigns to **P5**.  Until it lands a
+  restatement `PlanCheck.dayPlan_ok_core_given_the_budget`'s own comment assigns to **P5**.  Until it lands a
   routine may be placed over the running block (README gap 434).
 * **`diagnostics.notes`' un-placed note** (`planner.rs:1055`) is **P6**'s: a deferred routine is
   only *finally* un-placed once step 6 has tried the lowest-energy position.  `Note.noPosition`
@@ -5455,7 +5455,7 @@ step 2's own.  There is no second break rule and no second overlap test.
 
 **What step 7 does NOT emit, and why.**  The Block and Batch rows of §8.2 step 5 are still
 owed (README gap **803** item 4): they are the switch-shaped change (D19) that makes four
-`PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s
+`PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_given_the_budget`'s
 `hblk` — *"every Block row of this day is the reservation"* — with them, which is **G1**'s
 lift.  Rest, Optional and Break rows are none of those kinds, so they land without touching it.
 The **Break rows** themselves are gap **551**'s and stay with the Block rows they are between:
@@ -6109,7 +6109,7 @@ fork's order — `emit_segments` renders the optionals and then the Rest slots
 **The Block and Batch rows of §8.2 step 5 ARE here now** (D50, README gaps **803** item 4 and
 **1790**): `PlanReq.assignedRows` is the composition step, and it is the switch-shaped change
 (D19) — four `PlanCheck` emptiness theorems became false on this commit and
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hblk` went with them.  Every one of the five is restated rather
+`PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` went with them.  Every one of the five is restated rather
 than deleted, and each restatement carries a computed refutation of the old form beside it
 (AGENTS §3.1 item 3). -/
 def dayRows (r : PlanReq) : List WfSeg :=
@@ -6750,5 +6750,20 @@ theorem the_evening_is_closed_to_a_routine :
     earliestFree 72000 79200 1800 [(75600, 165600)] = some 72000 ∧
     earliestFree 76000 79200 1800 [(75600, 165600)] = none := by decide
 
+/-- **Every assigned row starts at or after `now`** — the clause that lets a row §8.2 step 5
+placed join the set all three of §8.3's block-side comparisons are already stated over
+(`plan_reserves_one_block_at_a_time`'s `hnow`, and `PlanCheck`'s two).
+
+It is a fact about **step 3's cut** and not about the fold: `PlanReq.cutFrom` is
+`min (max now window.1) window.2`, `PlanReq.a_slot_is_inside_the_window` puts every slot at or
+after it, and a slot that is not empty cannot begin at the window's own end — so the `min` can
+only be the `max`, and the `max` is at least `now`.  W-30, README gap **2021**. -/
+theorem PlanReq.an_assigned_row_starts_at_or_after_now (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) : r.now.sec ≤ t.start := by
+  obtain ⟨e, s, hs, hst, -, -⟩ := r.an_assigned_row_is_a_slot_of_the_day t h
+  obtain ⟨h1, h2, h3⟩ := r.a_slot_is_inside_the_window s (r.energised_slot_is_a_slot hs)
+  unfold PlanReq.cutFrom at h1
+  rw [hst]
+  omega
 end Planner
 end Tm

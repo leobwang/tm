@@ -27844,7 +27844,7 @@ constructors), `Check`, the eleven checkers, `checksCore` / `checksEligible` /
 `checksOf`, `planOkCore` / `planOk`, `checks_all` and `checksCore_all`. Each
 checker has its **reflection lemma** and each goal has a **bridge** — the
 one-line discharge §6.1 item 3 describes, written once so the P step that owes
-it writes `<bridge> r (dayPlan r) (dayPlan_ok_core_on_an_unassigned_day r) …` and nothing else.
+it writes `<bridge> r (dayPlan r) (dayPlan_ok_core_given_the_budget r) …` and nothing else.
 
 | § 8.3 goal | checker | reflection lemma | provable *now*? |
 |---|---|---|---|
@@ -27874,7 +27874,7 @@ type, where `check.sh` and a reader can both see it. **Gap 365.**
 **2. `dayPlan_ok` — half proved, half not stateable, and the proved half is the
 more useful shape.**
 
-* `PlanCheck.dayPlan_ok_core_on_an_unassigned_day (r : PlanReq) : planOkCore r (dayPlan r) = true` is
+* `PlanCheck.dayPlan_ok_core_given_the_budget (r : PlanReq) : planOkCore r (dayPlan r) = true` is
   **proved**, in a shipped module, over the **seven** eligibility-free checks.
   Today its proof is one line — `planOkCore_of_no_segments` applied to
   `Planner.the_day_has_no_segments_until_the_first_step_lands` — because P0's
@@ -27939,7 +27939,7 @@ false half from the other side. G2's remaining work is to instantiate this at a
 This is the reportable decision of the step, so it is stated plainly rather than
 left to be inferred from an unchanged number.
 
-With `dayPlan_ok_core_on_an_unassigned_day` proved and the eleven bridges written, discharging
+With `dayPlan_ok_core_given_the_budget` proved and the eleven bridges written, discharging
 `plan_places_no_block_over_a_wall` and six others is **one line each**, right
 now, and check 7 would print **2 outstanding** by tonight. Every one of those
 discharges would be about a planner that places nothing. `Goals.lean`'s stage-6
@@ -27951,7 +27951,7 @@ that is the honest reading.** Design §14.3's "burn-down 8 → 2" for G1 is stil
 owed and still belongs to the step that makes `dayPlan` place something.
 
 `Goals.lean` gained two prose edits saying this, and no `theorem` and no `sorry`:
-the stage-6 banner now points at `PlanCheck.lean` and at `dayPlan_ok_core_on_an_unassigned_day`, and
+the stage-6 banner now points at `PlanCheck.lean` and at `dayPlan_ok_core_given_the_budget`, and
 the "not stateable yet" list gained the eligibleAt entry.
 
 ### Non-vacuity (AGENTS §5.2) — every checker refuses something
@@ -28146,7 +28146,7 @@ is new machinery, not a repair.
    `PlanCheck.a_replayed_block_is_assigned` (proved at the repair) shows that a
    Block today's log holds is work, is a row of the day, and **is** in
    `assignedOf`. `dayPlan_block_rows_come_from_the_log` is unconditional and
-   `dayPlan_ok_core_on_an_unassigned_day`'s `hnopast` hypothesis exists for exactly that reason. What
+   `dayPlan_ok_core_given_the_budget`'s `hnopast` hypothesis exists for exactly that reason. What
    *is* empty is `Planner.assignedFrom … now`, the set §8.3's laws are about, and
    `Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands` is the
    tripwire that says so.
@@ -28264,7 +28264,7 @@ door's 23) ran green inside `cargo test --workspace` against the frozen
 
 **Branch `rebuild-on-lean`**, merging `w14-g` (`48f89b4`) into `6a1f960`. The two
 tracks D26 split apart came back together here, and **the merge was not a
-formality**: track G shipped `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` as a deliberate
+formality**: track G shipped `PlanCheck.dayPlan_ok_core_given_the_budget` as a deliberate
 build-time tripwire — "the moment P1 places a segment its one-line proof stops
 compiling and `check.sh` check 1 fails" — and the tripwire fired. Re-proving it
 is this step's real content and it produced two findings. Both are recorded as
@@ -28287,7 +28287,7 @@ gap **385**.
   that no longer exists, elaborating to `unknown constant`, printing no `axioms`
   line. Check 3 fails on any error in `Check.lean` now, so it would have been
   caught; it was removed instead.
-* **`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`, re-proved over the day step P1 produces.** This
+* **`PlanCheck.dayPlan_ok_core_given_the_budget`, re-proved over the day step P1 produces.** This
   is the substance. See the next section.
 * **Two theorems added beside it**, both in `PlanCheck.lean`:
   `dayPlan_block_rows_come_from_the_log` (unconditional: every `SegKind.block`
@@ -28346,7 +28346,7 @@ precisely what P1 did to `plan_never_moves_a_wall` itself, and what AGENTS §3.1
 item 3 and D5 ask for:
 
 ```
-theorem dayPlan_ok_core_on_an_unassigned_day (r : PlanReq)
+theorem dayPlan_ok_core_given_the_budget (r : PlanReq)
     (hagree  : r.wallsAgree = true)
     (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
     (hplain  : ∀ i e a b, r.plan.val.store.get i = some e →
@@ -28385,7 +28385,7 @@ P5's too, with the `buffer:` row and the clip named the way P1 named them.
   rather than implied.
 * **APPENDED AT THE W-14 REPAIR STEP (gap 396): it did not add independent
   detection, and "tripwire" at the head of this block should be read narrowly.**
-  Six of `dayPlan_ok_core_on_an_unassigned_day`'s seven checks are vacuous under `hnopast`; the
+  Six of `dayPlan_ok_core_given_the_budget`'s seven checks are vacuous under `hnopast`; the
   seventh, `wallsUnmoved`, is discharged by *applying*
   `Planner.plan_never_moves_a_wall` through `wallsUnmoved_iff`. Nothing in
   `PlanCheck.lean` re-derives a wall endpoint, so the battery cannot disagree
@@ -28496,7 +28496,7 @@ thing.
    including the ones `Planner.pastRows` replays from the log, which the planner
    did not place and no replan may move; and `wallsUnmoved` demands a Wall row's
    two ends be its interval's two ends, which `buffer:` and the local-midnight
-   clip both break. `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` therefore carries `hnopast`,
+   clip both break. `PlanCheck.dayPlan_ok_core_given_the_budget` therefore carries `hnopast`,
    `hagree` and `hplain` instead of being unconditional.
 2. **Why not now.** The correct restriction is the one §8.2 step 5's assign fold
    uses — the fork writes it as `assigned_set(day, w.now)` — and it has to be the
@@ -28506,7 +28506,7 @@ thing.
    against `d.budgetBlocks`, the spec words the law with `remaining_budget`, and
    P1's `dayPlan_budgetBlocks` already records that the two disagree on a day
    with blocks already done. Both are step **P5**'s, in one restatement.
-3. **What it costs.** Until then `dayPlan_ok_core_on_an_unassigned_day` is a theorem about a day whose
+3. **What it costs.** Until then `dayPlan_ok_core_given_the_budget` is a theorem about a day whose
    log holds no Block and whose dated items are written buffer-free inside the
    day — which is a real day and not an empty one, but not every day. A P step
    that reads the lift must discharge three hypotheses, and a reader who does not
@@ -28609,7 +28609,7 @@ And the claim is false, not merely unsupported. P1's own replacement says so in
 as many words (`Planner.lean`: the tripwire is stated over `assignedFrom … now`
 and **not** over `assignedOf`, "because a replayed past Block *is* work and *is*
 in `assignedOf` — the fork counts it too"), `dayPlan_block_rows_come_from_the_log`
-is unconditional, and `dayPlan_ok_core_on_an_unassigned_day` carries `hnopast` precisely because
+is unconditional, and `dayPlan_ok_core_given_the_budget` carries `hnopast` precisely because
 today's log **can** hold a Block.
 
 > **RENAMED at W-16 (track P's P3, `da1acd9`): it is now
@@ -28824,7 +28824,7 @@ identical one now.
 ### 7. Gap 396 — the battery adds no independent detection, and the land block is corrected rather than the battery
 
 **Reproduced by reading the proof, which settles it without the mutation.**
-`dayPlan_ok_core_on_an_unassigned_day` discharges six of its seven checks from `hnopast` through
+`dayPlan_ok_core_given_the_budget` discharges six of its seven checks from `hnopast` through
 `dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned` — vacuously, because step P1 places no Block. The
 seventh is
 
@@ -28921,7 +28921,7 @@ fork-anchored arm, and the two frozen arms are the ones that would have caught o
 > wall move. Neither worse option was taken.
 
 1. **What is not done.** `PlanCheck` gives no independent opinion on wall
-   placement. `dayPlan_ok_core_on_an_unassigned_day`'s seventh check is `plan_never_moves_a_wall`
+   placement. `dayPlan_ok_core_given_the_budget`'s seventh check is `plan_never_moves_a_wall`
    applied through `wallsUnmoved_iff`; the other six are vacuous under `hnopast`.
 2. **Why.** The two alternatives are a second copy of the placement rule inside
    `PlanCheck` (AGENTS §5.3, the defect the land block refuses two bullets above
@@ -29355,7 +29355,7 @@ was not re-blessed.**
   land in this step. *Why*: two reasons, and the second is the one that matters.
   P2's own scope — the input type, the five refusals, the placement fold and its
   invariant, the evening rows, and re-proving P1's four laws and
-  `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` over a day with a fourth source of rows — filled the
+  `PlanCheck.dayPlan_ok_core_given_the_budget` over a day with a fourth source of rows — filled the
   step. **And P3's two choices are not separable**: choice 5b's Active reservation
   is the day's first `SegKind.block` row, which makes four of `PlanCheck`'s six
   block-side checks non-vacuous and makes one of them **false** (gap 437), so
@@ -29394,10 +29394,10 @@ was not re-blessed.**
   `if now < wind_down { min(wind_down, day_end) } else { day_end }`, so on a day
   replanned *after* the wind-down the reservation runs in the evening, and its item
   may carry `ci ≥ 4`; `windDownOk` has no escape for it and refuses the day.
-  *What it costs*: `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` becomes **false** the day choice 5b
+  *What it costs*: `PlanCheck.dayPlan_ok_core_given_the_budget` becomes **false** the day choice 5b
   lands, so choice 5b cannot land before the restatement — which is why gaps 433 and
   434 read as they do. *Which step clears it*: **P5**, which
-  `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s own comment already names as the owner of the
+  `PlanCheck.dayPlan_ok_core_given_the_budget`'s own comment already names as the owner of the
   block-side restatement; design §6.3's list of "which of the eleven are false as
   written" gains a row when the owner confirms.
 
@@ -29430,7 +29430,7 @@ the seam's **260**, **262**, the merge's **270**, and the performance levers
   a second caller. *(Proved at W-16's repair step; gap 394 is closed and both callers
   have their twins.)*
 * **It did not weaken a checker or a goal.** All eleven of `PlanCheck`'s are exactly
-  as track G wrote them; `dayPlan_ok_core_on_an_unassigned_day` was **re-proved** over the new body with
+  as track G wrote them; `dayPlan_ok_core_given_the_budget` was **re-proved** over the new body with
   its hypotheses unchanged, through the four new "no row step 2 places is a Wall /
   a Block / work" lemmas.
 * **It did not re-bless anything**: no fixture, no snapshot, nothing under
@@ -29824,7 +29824,7 @@ restates turns out to be false for a *second* reason nobody had recorded.
   `mkPlanReq?_ok_parts`, which says the parts come back out unchanged.
 * **`mkPlanReq?_ok_wallsAgree` — gap 346's hypothesis gets a caller.**  Every
   request the builder accepts satisfies `PlanReq.wallsAgree`, so
-  `Planner.plan_never_moves_a_wall`'s and `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hagree`
+  `Planner.plan_never_moves_a_wall`'s and `PlanCheck.dayPlan_ok_core_given_the_budget`'s `hagree`
   is discharged at any built request (`theRequest_wallsAgree`).  Gap 346 does
   **not** close — the wire decoder is still unwritten and the type still permits
   a disagreeing pair (gap **451**) — but the hypothesis is no longer a promise
@@ -29873,7 +29873,7 @@ a request — **P5 must delete both**.
 
 ### Gap 396: the battery gives a second opinion, and it bites
 
-The W-14 repair reproduced gap 396 by reading the proof: `dayPlan_ok_core_on_an_unassigned_day`
+The W-14 repair reproduced gap 396 by reading the proof: `dayPlan_ok_core_given_the_budget`
 discharges six of seven checks vacuously under `hnopast` and the seventh applies
 `Planner.plan_never_moves_a_wall` through `wallsUnmoved_iff`, so *"for its one
 non-vacuous check the battery is a restatement, not a second opinion"*.  Its item
@@ -29885,9 +29885,9 @@ above."*  That is what landed, and neither of the two worse options was taken
 
 * `the_battery_passes_at_the_witness : PlanCheck.planOkCore theRequest (dayPlan theRequest) = true`
   — **computed**, not derived.  Nothing in its proof mentions
-  `plan_never_moves_a_wall` or `dayPlan_ok_core_on_an_unassigned_day`.
+  `plan_never_moves_a_wall` or `dayPlan_ok_core_given_the_budget`.
 * `the_witness_defeats_the_lifts_hypothesis` — and it is not the lift in
-  disguise, because `dayPlan_ok_core_on_an_unassigned_day`'s `hnopast` is **false** at this request:
+  disguise, because `dayPlan_ok_core_given_the_budget`'s `hnopast` is **false** at this request:
   the log holds two Blocks, so the six block-side checks run over real Block rows
   and the lift is unavailable.
 * `the_battery_bites_at_the_witness` — six computed refusals over three
@@ -29946,7 +29946,7 @@ stands untouched, and nothing here supersedes it.
 
 ### The four equations are build-time walls, and P2/P3/P5 will break them
 
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day` was written over step P0's empty day and stopped
+`PlanCheck.dayPlan_ok_core_given_the_budget` was written over step P0's empty day and stopped
 compiling the moment P1 placed a row; that is how the W-14 merge found two
 findings at merge time instead of at P5.  The same is deliberately true here.
 `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening`,
@@ -32254,7 +32254,7 @@ against the fork point that a frozen answer does not already cover).
    `PlanReq.the_reservation_never_runs_under_a_wind_down_row` is the theorem.  **No checker was
    weakened and none gained an exception**: `PlanCheck`'s eleven are still exactly as track G
    wrote them.
-6. **`PlanCheck.dayPlan_ok_core_on_an_unassigned_day` re-proved over the day with the reservation in it**, with the
+6. **`PlanCheck.dayPlan_ok_core_given_the_budget` re-proved over the day with the reservation in it**, with the
    six block-side checks discharged **about that row** and not vacuously.  Three hypotheses were
    added and each is an R10 decoder obligation in `PlanReq.wallsAgree`'s shape — `activeAgrees`
    (the running block is one `mkActive?` would have built), `dayAgrees` (the `[day]` is one
@@ -32579,7 +32579,7 @@ on this branch after this step: gap **556**, cheat **180**, parity **P38**.
 3. *What it costs.*  A day whose block is running shows the reservation from `now` forward but
    not the stretch already worked, so the row `tm now` draws as *"Nm so far"* has no kernel
    source.  It is also a **second** Block row the planner would place, which is why
-   `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` will need re-proving again when it lands.
+   `PlanCheck.dayPlan_ok_core_given_the_budget` will need re-proving again when it lands.
 4. *Which step clears it.*  **P5** or a P1 top-up, whichever reaches `Replay.Facts.openBlock`
    first; the input is already in the request.
 
@@ -32595,7 +32595,7 @@ on this branch after this step: gap **556**, cheat **180**, parity **P38**.
 **Gap 556 — three new request-level hypotheses have no decoder.**
 1. *What is not done.*  `PlanReq.activeAgrees`, `PlanReq.dayAgrees` and the horizon hypothesis
    `r.now.sec + 1 < LogStamp.yearEnd` are carried by `Planner.plan_reserves_one_block_at_a_time`
-   and `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` and are established by **nothing on the wire**.
+   and `PlanCheck.dayPlan_ok_core_given_the_budget` and are established by **nothing on the wire**.
 2. *Why.*  It is gap 346's class exactly: `PlanReq` has no boundary decoder, so `wallsAgree` had
    the same status until `PlannerWit.mkPlanReq?` discharged it for one request.
    `PlannerWit.the_running_request_agrees` does the same here, so neither is a hypothesis nothing
@@ -34700,14 +34700,14 @@ theorem.
 rows that start **at or after `now`** — `Planner.assignedFrom`'s restriction, the
 fork's own `assigned_set(day, w.now)` (`planner_invariants.rs:470`), and the one
 step P3 used for E1. It carries `hnowcal` (the instant being planned is inside the
-calendar), which is an R10 hypothesis `dayPlan_ok_core_on_an_unassigned_day` already carried.
+calendar), which is an R10 hypothesis `dayPlan_ok_core_given_the_budget` already carried.
 **It is not vacuous**: §8.2 choice 5b's reservation is such a row, and
 `PlannerWit.the_reserved_day_assigns_the_running_block` exhibits one.
 **P5 must re-prove it** when the assign fold puts Blocks of its own in that set.
 
-### 2. §6.1's lift loses `hnopast` — `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day`
+### 2. §6.1's lift loses `hnopast` — `PlanCheck.dayPlan_ok_core_from_now_given_the_budget`
 
-`dayPlan_ok_core_on_an_unassigned_day` carries six hypotheses and one of them is not about the planner
+`dayPlan_ok_core_given_the_budget` carries six hypotheses and one of them is not about the planner
 at all: `hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block` — *the log holds no
 Block for today*, which is false of every real day after the first block is
 worked. Its own doc comment says where it goes: *"**P5 is where this hypothesis
@@ -34724,12 +34724,12 @@ def withoutPast (r : PlanReq) (d : DayPlan) : DayPlan :=
   { d with segments := d.segments.filter (keepFromNow r) }
 ```
 
-— and `dayPlan_ok_core_from_now_on_an_unassigned_day` is **the same conjunction over the same seven
+— and `dayPlan_ok_core_from_now_given_the_budget` is **the same conjunction over the same seven
 checkers**, with five hypotheses, every one an R10 or decoder obligation and none
 about the log's contents:
 
 ```lean
-theorem dayPlan_ok_core_from_now_on_an_unassigned_day (r : PlanReq)
+theorem dayPlan_ok_core_from_now_given_the_budget (r : PlanReq)
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : …) : planOkCore r (withoutPast r (dayPlan r)) = true
@@ -34744,7 +34744,7 @@ wind-down and the sleep row are **kept**: they are the comparands §8.3's laws p
 Blocks beside, not the subjects of them.
 
 **Both lifts are kept, and that is deliberate.** They are **incomparable** — this
-one drops a hypothesis and shrinks the day, `dayPlan_ok_core_on_an_unassigned_day` keeps the whole day
+one drops a hypothesis and shrinks the day, `dayPlan_ok_core_given_the_budget` keeps the whole day
 and pays for it with `hnopast` — so keeping both weakens nothing (D5) and each
 says something the other does not. Cheat **189** (written 185) asserts the hypothesis-free lift
 over the *whole* day at a request whose log holds a Block under a wall; `decide`
@@ -34887,7 +34887,7 @@ by grepping the host path from `main` down — and then driven.
 
 | rule | shipped callers, by grep | driven |
 |---|---|---|
-| `PlanCheck.withoutPast` / `keepFromNow` / `plan_places_no_block_over_a_wall` / `dayPlan_ok_core_from_now_on_an_unassigned_day`, and every `PlannerWit` witness | **none.** `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing: there is still no planner op on the wire, so `dayPlan` has no shipped caller and neither does anything stated about it. `grep -rn 'withoutPast\|keepFromNow\|dayPlan_ok_core_from_now_on_an_unassigned_day\|theStoredRequest\|theMorningWallRequest' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0** | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — the §6.3 auto-close's read, its apply, the emits, the capacity call and D16's writer — and **no planner call**. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` + the day, exit 0; `tm triage` → three rows, exit 0 |
+| `PlanCheck.withoutPast` / `keepFromNow` / `plan_places_no_block_over_a_wall` / `dayPlan_ok_core_from_now_given_the_budget`, and every `PlannerWit` witness | **none.** `grep -rn 'dayPlan\|"plan"' tm/src/cli/kernel*.rs` and `grep -n '"plan"\|dayPlan' Boundary.lean` both return nothing: there is still no planner op on the wire, so `dayPlan` has no shipped caller and neither does anything stated about it. `grep -rn 'withoutPast\|keepFromNow\|dayPlan_ok_core_from_now_given_the_budget\|theStoredRequest\|theMorningWallRequest' tm tm-core kernel/tm-kernel-ffi --include=*.rs` returns **0** | `TM_TRACE_KERNEL_CALLS=1 tm plan` on a fresh `tm init --example` tree, release binary, `MemoryMax=16G`, prints **`log`, `apply`, `emit`×10, `log`, `apply`, `emit`, `log`, `capacity+log`, `emit`** — the §6.3 auto-close's read, its apply, the emits, the capacity call and D16's writer — and **no planner call**. `tm check` → `no problems`, exit 0; `tm now` → `nothing running` + the day, exit 0; `tm triage` → three rows, exit 0 |
 
 **The honest sentence this table is for:** this step's Lean *is* linked into the
 `tm` binary (`tm` depends on `tm-kernel-ffi` by path, which links the Lean
@@ -35050,7 +35050,7 @@ free.
   is no such thing.** No gate was added; the battery is still the object a theorem
   is **about**.
 * **D5, nothing narrowed.** No existing theorem's statement changed. The eleven
-  checkers are byte-identical to W-14's. `dayPlan_ok_core_on_an_unassigned_day` is **kept** beside the
+  checkers are byte-identical to W-14's. `dayPlan_ok_core_given_the_budget` is **kept** beside the
   new lift rather than replaced. The goal that left was **refuted first**.
 * **D9, ONE reader.** §12's post-switch one-reader grep
   (`fn replay\b|undo_mask|DayIndex|parse_bytes|LogEntry::parse|Log::parse|Log::new|Machine\b|iter_day|effective()|parse_timestamp`)
@@ -35107,17 +35107,17 @@ their measurements beside them.*
    `Planner.edfNumbers`.)* Writing a witness that *fabricates* one would be a
    hand-built day, which is what `PlanCheck`'s `wDay` witnesses already are, and
    it would not be about `dayPlan`.
-3. **What it costs.** *(Corrected: this said "`dayPlan_ok_core_on_an_unassigned_day` and
-   `dayPlan_ok_core_from_now_on_an_unassigned_day` each discharge **five of their seven** conjuncts
+3. **What it costs.** *(Corrected: this said "`dayPlan_ok_core_given_the_budget` and
+   `dayPlan_ok_core_from_now_given_the_budget` each discharge **five of their seven** conjuncts
    by an empty quantifier", and two of the five it named —* `impossibleKept`
    *and* `batchDoesNotReachPast` *— live in `PlanCheck.checksEligible` and are
    **conjuncts of neither lift**: both lifts conclude `planOkCore`, which is
    `checksCore`'s seven, and neither takes an `Eligible`. The real number is
    request-dependent, which "each … five of their seven" cannot say.)*
    Measured by `the_battery_census_at_the_reserved_day` at `theRunningRequest`:
-   `dayPlan_ok_core_on_an_unassigned_day` discharges **three of its seven** by an empty quantifier
+   `dayPlan_ok_core_given_the_budget` discharges **three of its seven** by an empty quantifier
    (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) and
-   `dayPlan_ok_core_from_now_on_an_unassigned_day` **four** (those three and `noOverbook`, whose only
+   `dayPlan_ok_core_from_now_given_the_budget` **four** (those three and `noOverbook`, whose only
    surviving Block *is* the Active reservation that `withoutActive` removes).
    Over the whole eleven at `theStoredRequest` it is **six of eleven**.
    *(**Superseded — corrected at W-18, gaps 678/679, annotated here at W-19's
@@ -35146,7 +35146,7 @@ their measurements beside them.*
    day its step puts the row in the day, and the two census theorems are the
    `decide`s that will stop reducing and say so.
 
-#### Gap 651 (new; label W17G-b) — `dayPlan_ok_core_from_now_on_an_unassigned_day`'s six block-side conjuncts are all about the reservation, and P5 must re-prove every one
+#### Gap 651 (new; label W17G-b) — `dayPlan_ok_core_from_now_given_the_budget`'s six block-side conjuncts are all about the reservation, and P5 must re-prove every one
 
 1. **What is not done.** The lift holds for every request, but its six block-side
    proofs each go through `a_block_row_from_now_is_reserved_or_assigned`: the only
@@ -35157,7 +35157,7 @@ their measurements beside them.*
    _running_block_and_what_step_five_chose` is the tripwire that proves it, and
    P5 must delete it.
 3. **What it costs.** The commit that makes `dayPlan` assign a Block breaks
-   `dayPlan_ok_core_on_an_unassigned_day`, `dayPlan_ok_core_from_now_on_an_unassigned_day`,
+   `dayPlan_ok_core_given_the_budget`, `dayPlan_ok_core_from_now_given_the_budget`,
    `PlanCheck.plan_places_no_block_over_a_wall` and every `decide` in
    `PlannerWit` that names a produced day — **by design** (AGENTS §3.1 item 1: a
    green theorem in a shipped module is a build-time wall). It is priced here so
@@ -35269,7 +35269,7 @@ parity P38** — and track P, track A and the land step hold 600-629, 630-649 an
 
 ### Second commit: the new lift's five hypotheses, discharged at a request
 
-`dayPlan_ok_core_from_now_on_an_unassigned_day` drops `hnopast` and keeps five hypotheses, and **AGENTS §7.4
+`dayPlan_ok_core_from_now_given_the_budget` drops `hnopast` and keeps five hypotheses, and **AGENTS §7.4
 item 2 asks whether they are jointly satisfiable** — *"a precondition nothing can satisfy,
 so the conclusion never fires"* is on §9.2's disguised-gap list, and it *"stayed invisible
 for a whole stage once"* (`shapeWfFor .calendar`). A lift with five hypotheses and no
@@ -35966,8 +35966,8 @@ quantifier"* named `impossibleKept` and `batchDoesNotReachPast` among the five;
 both live in `PlanCheck.checksEligible`, both lifts conclude `planOkCore` (which
 is `checksCore`'s seven) and neither takes an `Eligible`, so neither is a
 conjunct of either. Restated with the measured, request-dependent numbers: three
-of seven for `dayPlan_ok_core_on_an_unassigned_day` at `theRunningRequest`, four for
-`dayPlan_ok_core_from_now_on_an_unassigned_day`.
+of seven for `dayPlan_ok_core_given_the_budget` at `theRunningRequest`, four for
+`dayPlan_ok_core_from_now_given_the_budget`.
 
 ### 4. One verdict for bytes that are not text (gap 676) — larger than reported
 
@@ -37272,7 +37272,7 @@ and the same four in the battery's own terms —
 `noDemandingAfterWindDown_is_true_because_its_subject_is_empty_on_an_unassigned_day` (`hnowcal` only),
 `batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day` and
 `impossibleKept_is_true_because_its_subject_is_empty` (both at **every**
-eligibility). Three of those are *strengthenings* of `dayPlan_ok_core_on_an_unassigned_day`'s own
+eligibility). Three of those are *strengthenings* of `dayPlan_ok_core_given_the_budget`'s own
 conjuncts, which discharge the same `true` under `hnopast`; nothing was narrowed
 (D5), both lifts keep their statements, and what the four add is the word
 **because**.
@@ -37378,7 +37378,7 @@ eleven**, at every eligibility, over `withoutPast`'s day — and the honest
 accounting of the nine is the point of putting them in one statement, because
 gap 684 is the record of getting that arithmetic wrong by hand:
 
-* **seven** are `planOkCore`'s, from W-17's `dayPlan_ok_core_from_now_on_an_unassigned_day`, unchanged;
+* **seven** are `planOkCore`'s, from W-17's `dayPlan_ok_core_from_now_given_the_budget`, unchanged;
 * **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`, and
   both hold **because their subject is empty at every request** — §1's theorems,
   not a measurement;
@@ -37603,7 +37603,7 @@ it found:
 **all eleven checkers unchanged**, all eleven reflection lemmas, `planOk`,
 `planOkCore`, `checksCore`, `withoutActive`, `withoutPast`, `mem_withoutPast`,
 `a_block_row_from_now_is_reserved_or_assigned`,
-`dayPlan_block_rows_are_replayed_reserved_or_assigned`, `dayPlan_ok_core_from_now_on_an_unassigned_day`,
+`dayPlan_block_rows_are_replayed_reserved_or_assigned`, `dayPlan_ok_core_from_now_given_the_budget`,
 `mem_dom_of_get`. From `PlannerWit.lean`: `mkPlanReq?`,
 `mkPlanReq?_ok_wallsAgree`, `witLines`, `witInput`, `witInputIn`, `witInput_fields`,
 `witPrio`, `witReqIn`, `runOk`, `theRunningState`, `permissive`. From
@@ -37654,7 +37654,7 @@ character lists (the module header's rule).
 * **D5, nothing narrowed.** No existing theorem's statement changed. The eleven
   checkers are byte-identical to W-14's; both lifts are kept; the goal that left
   was **refuted first**; three of §1's four theorems are strictly stronger than
-  the conjunct `dayPlan_ok_core_on_an_unassigned_day` proves under `hnopast`, and the old view is a
+  the conjunct `dayPlan_ok_core_given_the_budget` proves under `hnopast`, and the old view is a
   projection of each.
 * **D34 honoured.** Nothing here derives a candidate fact inside the kernel; gaps
   113, 114, 116 and 301's item 1 are untouched and whole.
@@ -39324,7 +39324,7 @@ it a run-split.**
    `no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`,
    `no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`, `the_day_has_no_batch_row_on_an_unassigned_day`
    and `the_day_assigns_after_now_the_running_block_and_what_step_five_chose` — each of which
-   must be deleted with its record, and `dayPlan_ok_core_on_an_unassigned_day`'s battery re-proved over
+   must be deleted with its record, and `dayPlan_ok_core_given_the_budget`'s battery re-proved over
    a day that has Block and Batch rows in it. That did not fit beside the fold,
    and design §14.6's instruction is to land the green part and name the rest.
 3. *What it costs.* **None of the six §6.4 goals P5 owns can be discharged**, and
@@ -42597,11 +42597,11 @@ Land step merges.
 W-19 left §6.1's lift at **nine of eleven, at every eligibility, over
 `PlanCheck.withoutPast`'s day**, with the two comparisons proved false.  That is
 one axis.  The other — the **whole** day, which is what design §6.1's lift is
-actually about — had nothing but `dayPlan_ok_core_on_an_unassigned_day`'s seven.
+actually about — had nothing but `dayPlan_ok_core_given_the_budget`'s seven.
 
 `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot` is **ten of the eleven, over the
 whole day, at every eligibility**, for a class named in its hypotheses: a request
-whose log holds no Block for today (`hnopast`, which `dayPlan_ok_core_on_an_unassigned_day` already
+whose log holds no Block for today (`hnopast`, which `dayPlan_ok_core_given_the_budget` already
 carried) and whose runtime holds no reservation (`hnorun`, new).  The step that
 makes it work is one theorem:
 
@@ -42921,7 +42921,7 @@ both are this step's own prose.
 AGENTS's W-17 lesson 1, applied to every completeness claim above.
 
 1. **"Ten of the eleven hold on every quiet day."** *Method:* one theorem,
-   `dayPlan_ok_on_a_quiet_unassigned_day_except_hot`, assembled from `dayPlan_ok_core_on_an_unassigned_day` and
+   `dayPlan_ok_on_a_quiet_unassigned_day_except_hot`, assembled from `dayPlan_ok_core_given_the_budget` and
    three conjunct lemmas, with `dayPlan_ok_on_a_quiet_unassigned_day_given_hot` handing the
    eleven-way arithmetic to the compiler.  *Blind spot:* the tenth conjunct is
    **vacuous** — proved by proving its quantifier empty — so the statement is
@@ -44216,9 +44216,9 @@ thirteen computed witnesses are restated over the day that now has Rest in it.
   moment it was cheapest to fix. README gap **1001**.
 * **The Block and Batch rows are still not emitted, and this step does not change that.** README
   gap **803** item 4 stands: emission is the switch-shaped change (D19) that makes four
-  `PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s
+  `PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_given_the_budget`'s
   `hblk` — *"every Block row of this day is the reservation"* — with it, which is **G1**'s lift.
-  Step 7's three kinds are none of those, so they land beside it and `dayPlan_ok_core_on_an_unassigned_day` is
+  Step 7's three kinds are none of those, so they land beside it and `dayPlan_ok_core_given_the_budget` is
   re-proved unchanged. The day now shows its free afternoon as Rest and its assigned slots as
   nothing. Gap **1000**.
 
@@ -44499,7 +44499,7 @@ AGENTS's W-17 lesson, applied to every completeness claim above.
    witness requests: every pair agreed, and `assignedOf` agreed at eight. That is why the
    thirteen restated witnesses were patched in **one** pass rather than iterated.
    *Blind spot:* twelve requests are not every request — the ∀-theorems are what cover the
-   rest, and `dayPlan_ok_core_on_an_unassigned_day`'s proof is re-proved, not re-measured.
+   rest, and `dayPlan_ok_core_given_the_budget`'s proof is re-proved, not re-measured.
 ### Gaps taken: 1000-1007 (track P's range is 1000-1029; 1008-1029 free)
 
 **Gap 1000 — §8.2 step 5's Block and Batch rows are still not emitted, so the day shows Rest
@@ -44513,10 +44513,10 @@ where work will be.**
    `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`,
    `PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day` and
    `Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose` false on one commit, and
-   `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s whole proof rests on its `hblk` — *"every Block row of this day
+   `PlanCheck.dayPlan_ok_core_given_the_budget`'s whole proof rests on its `hblk` — *"every Block row of this day
    is the reservation"* — which is exactly what stops being true. Re-proving the seven checkers
    over a day with assigned Blocks on it is **G1**'s lift, not a step-7 edit. Step 7's three
-   kinds are **not** Block rows, which is why they land beside it and `dayPlan_ok_core_on_an_unassigned_day` is
+   kinds are **not** Block rows, which is why they land beside it and `dayPlan_ok_core_given_the_budget` is
    re-proved unchanged.
 3. *What it costs.* A reader of the day sees Rest where the cursor put work. Nothing is false:
    every Rest row is a piece of a slot `PlanReq.finalAssign.slotOf` really left empty
@@ -44571,7 +44571,7 @@ is what said so.**
 1. *What is not done.* `Planner.PlanReq.emitKeptBreaks` computes the breaks the day keeps and
    **no `SegKind.brk` row is produced from them**. The day's only Break rows are the log's.
 2. *Why.* A planner-placed Break row makes `Planner.a_break_row_is_a_replayed_row` false, and
-   that theorem is how `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `noBlockOverABreak` conjunct is discharged.
+   that theorem is how `PlanCheck.dayPlan_ok_core_given_the_budget`'s `noBlockOverABreak` conjunct is discharged.
    Re-proving it needs `Look.cutSlots_breaks_avoid_the_walls` at the reservation's own span —
    small, and it belongs with the Block rows the breaks sit *between* (README gap **551**), not
    in front of them.
@@ -45523,7 +45523,7 @@ AGENTS's W-17 lesson 1, applied to every completeness claim above.
 
 1. **"Eleven of eleven on the quiet class, at every `WorkAnchored` eligibility."**
    *Method:* one theorem, `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day`, assembling
-   `PlanCheck.planOk` over `checksOf`'s own list from `dayPlan_ok_core_on_an_unassigned_day`'s seven
+   `PlanCheck.planOk` over `checksOf`'s own list from `dayPlan_ok_core_given_the_budget`'s seven
    plus four vacuity lemmas; fired at two requests with every hypothesis a
    theorem.  *Blind spot:* **all four eligibility-dependent conjuncts are
    vacuous** on that class, so this is proof coverage and not subject coverage —
@@ -48019,7 +48019,7 @@ one is exactly one clause about where step 5 may assign.
 not.  D5: both kept, incomparable (this one drops a hypothesis on the request and
 pays `SlotAnchored` for `WorkAnchored`).  It is honest about its own limit:
 `hnopast` is *"false of every real day after the first block is worked"*
-(`dayPlan_ok_core_from_now_on_an_unassigned_day`'s own doc comment), and it is false at six of the
+(`dayPlan_ok_core_from_now_given_the_budget`'s own doc comment), and it is false at six of the
 seven witness requests.
 
 ### 2. THE RATIO — the honest headline named, and every sentence made to say which question it answers
@@ -48129,13 +48129,13 @@ claimed.**
 
 **And G1's fold induction is not available to consume it, for a reason the brief
 has backwards.**  The brief says *"P8 adds no Block row — W-21 confirmed
-`dayPlan_ok_core_on_an_unassigned_day`'s `hblk` still holds.  So the fold induction now has its full
+`dayPlan_ok_core_given_the_budget`'s `hblk` still holds.  So the fold induction now has its full
 subject."*  `hblk` holding is evidence of the **opposite**.  `Planner.dayRows`'
 own doc comment is the record:
 
 > **The Block and Batch rows of §8.2 step 5 are still not here** (README gap
 > **803** item 4): they are the switch-shaped change (D19) that makes four
-> `PlanCheck` emptiness theorems false and takes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s
+> `PlanCheck` emptiness theorems false and takes `PlanCheck.dayPlan_ok_core_given_the_budget`'s
 > `hblk` with them.
 
 `Planner.assignedOf_dayPlan_is_step_one_the_reservation_and_step_five` is the same fact as a
@@ -48406,7 +48406,7 @@ is itself a lower bound, so neither is a bound on the honest count.  The two
 `*_can_fail` witnesses in `PlanCheck.lean` are the halves.
 
 **Gap 1172 — the whole-day lift still has no request-free form, and `hnopast` is false at six of seven witness requests.**
-*What is not done:* `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` and
+*What is not done:* `PlanCheck.dayPlan_ok_core_given_the_budget` and
 `PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day` carry `hnopast` — *the log
 holds no Block for today* — and `PlannerWit.the_census_requests_are_not_quiet`
 computes it **false** at three of the four requests it names.
@@ -49505,7 +49505,7 @@ has a `fn fit` of a different kind — and fit_cell (a plant, never a declaratio
 so it carries no backticks) walked through the one word
 the sentence added and the code had dropped.
 
-### 8. Gaps taken — 1195-1202
+### 9. Gaps taken — 1195-1202
 
 **Gap 1195 — D43's letter is met only when P8's other half lands.**
 1. *What is not done.* D43 says *"`emit::render_row` becomes genuinely the only
@@ -52885,7 +52885,7 @@ the residue in one word: *the log*. This step is that word, in four clauses.
 
 `PlanCheck.PastPays` is what the replayed past owes §6.1's seven —
 `oneBlock`, `offWall`, `offBreak`, `budget` — and
-`PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` with
+`PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is `PlanCheck.dayPlan_ok_core_given_the_budget` with
 `hnopast` **gone**. `PlanCheck.dayPlan_ok_on_the_whole_day_on_an_unassigned_day` composes it with
 W-23's `PlanCheck.dayPlan_ok_is_the_core_seven_on_an_unassigned_day`, so §6.1's **eleven** now holds
 on the **whole day** with both of W-23's bounds discharged by named hypotheses
@@ -52900,7 +52900,7 @@ fields and not six.
 ### 2. The evidence, in both directions
 
 **It reaches a real day.** `hnopast` is *"the log holds no Block for today"*,
-which `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s own doc comment calls false of every day
+which `PlanCheck.dayPlan_ok_core_given_the_budget`'s own doc comment calls false of every day
 after the first block is worked.
 `PlannerWit.the_log_at_the_census_request_holds_a_block` computes that it **is**
 false at `PlannerWit.theCensusRequest` — the §4.3 Wednesday, whose log replays
@@ -52910,7 +52910,7 @@ false at `PlannerWit.theCensusRequest` — the §4.3 Wednesday, whose log replay
 `PlannerWit.the_eleven_hold_on_the_whole_day_of_a_worked_morning` is §6.1's eleven
 fired on that day, **by the lift and not by a `decide` on the battery**.
 `PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` is the other half of the strictness claim:
-`hnopast` pays all four clauses, so `dayPlan_ok_core_on_an_unassigned_day` is a corollary of the new
+`hnopast` pays all four clauses, so `dayPlan_ok_core_given_the_budget` is a corollary of the new
 lift and the two are not merely incomparable.
 
 **Every clause is necessary, and a fourth day was built to prove it.**
@@ -53024,7 +53024,7 @@ weakening any one of them now breaks a statement.
   still standing.
 - **No line of design §6.2's fold induction is claimed.** Every theorem here
   holds *because* §8.2 step 5's Block and Batch rows are absent from
-  `Planner.dayRows`; `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hblk` and "the fold has its
+  `Planner.dayRows`; `PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` and "the fold has its
   subject" are the same sentence with opposite signs.
 - **`Negative.lean` was not touched.** The brief scoped this track to
   `PlanCheck.lean`, `PlannerWit.lean`, `Goals.lean` and `Check.lean`, so the four
@@ -56582,7 +56582,7 @@ whole day**, and until now nothing in the tree said so.
 - **No Rust, no `Planner.lean`, no `Emit.lean`, no `EmitWire.lean`, no `Negative.lean`, no
   checker and no fixture was touched.** Track P's and track A's files are as they were.
 
-### 8. Gaps (1620-1639; this block takes **1620-1624** and leaves **1625-1639** free)
+### 9. Gaps (1620-1639; this block takes **1620-1624** and leaves **1625-1639** free)
 
 1. **Gap 1620.** *What is not done.* `PlanCheck.holeFree` is a **contiguity** property, not a
    **coverage** one: it is blind to the time before the first row
@@ -59093,7 +59093,7 @@ digits, one spelled across a line break, and `kernel/design/**` beyond the grep'
   `Negative.lean`, no checker and no fixture was touched.** Track P's and track A's files are as
   they were.
 
-### 8. Gaps (1850-1869; this block takes **1850-1853** and leaves **1854-1869** free)
+### 9. Gaps (1850-1869; this block takes **1850-1853** and leaves **1854-1869** free)
 
 1. **Gap 1850.** *What is not done.* The clause `PlanCheck.DecoderPays.active` now has a payer
    (`PlannerWit.a_request_whose_state_the_wire_read_pays_the_active_clause`) whose **hypothesis
@@ -59516,7 +59516,7 @@ repair step, gap 1885.)*
   site. §2 found the other four by grep; nothing in the acceptance would have.
 * **No gate reads a track's prose for truth against the merged tree.** Gap 1871.
 
-### 8. Gaps (1870-1874; this block takes **1870-1873** and leaves **1874** free)
+### 9. Gaps (1870-1874; this block takes **1870-1873** and leaves **1874** free)
 
 1. **Gap 1870.** *What is not done.* `PlannerWit.a_request_whose_state_the_wire_read_pays_the_
    active_clause` — track G's payer for `PlanCheck.DecoderPays.active` — **still has no caller**,
@@ -59967,7 +59967,7 @@ the honest accounting is by conjunct of §6.1's lift:
 
 So PlanCheck.dayPlan_ok_core and the nineteen lifts built on it are **restated on a named
 subdomain** (AGENTS §3.1 item 4): each gained `hnoassign : r.assignedRows = []` and each was
-renamed to say so — `dayPlan_ok_core_on_an_unassigned_day`,
+renamed to say so — `dayPlan_ok_core_given_the_budget`,
 `dayPlan_ok_on_a_quiet_unassigned_day`, `the_day_has_no_batch_row_on_an_unassigned_day`, and so
 on. **That is a real loss and it is written in the names**: before this step the lift held for
 every request because no request could assign; it now holds for the requests that assign
@@ -60045,6 +60045,15 @@ the arm cannot reach the rows yet. What it can do — and now does — is refuse
 slot. Measured over twenty-one named requests by `#eval` on
 `(PlanReq.assignedRows _).length`: `theBusyRequest` **4**, every other one **0** — which is why
 six stages of witnesses never noticed that step 5's rules reached no day.
+
+> **W-30 (track G): the sentence above is FALSE and its shape is a list where the rule is a
+> class.** The twenty-one were a hand-picked roster and it left out exactly the requests that
+> assign — the cursor family, the batching and `theGather*` family, the cap family, the atomic
+> one. Re-measured over **every** `PlanReq` this module defines: **19 of 43** assign at least
+> one row. `PlannerWit.the_cursor_family_assigns_and_none_of_it_pays` computes four of them.
+> What the sentence was reaching for survives, and is the sharper statement: not one of those
+> nineteen pays `PlanCheck.candsAgree`, so before W-30 no request both assigned and paid.
+> README gap **2025**.
 
 On that day the battery is **ten of eleven**, computed:
 
@@ -60718,7 +60727,7 @@ subdomain, so the six names this paragraph gave are
 `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` — each carrying
 `hnoassign : r.assignedRows = []`, which is gap **1902**.
 
-### 8. Gaps
+### 9. Gaps
 
 **Closed here**: **1529's question** — *does the composition step enable it* — answered NO with
 a computation (gap 1529 itself stays open and is R3's, unchanged).
@@ -61126,3 +61135,319 @@ twins.py                    30 groups over 2,639 def bodies in 89 files
 1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904,
 1906, 1956, 1957, 1984-1988, 1990 and 2000-2004 are untouched; **1905 is closed** by item 1 and
 **2001**'s narrowing is what made it cheap enough to close.
+
+<!-- =====================================================================
+     APPENDED 2026-09-24: stage 6 (the planner), run **W-30**, **track G**.
+     Baseline `552566d`, tree clean, worked in the shared checkout.  Gap
+     range **2020-2059**; **2020-2025 taken**, 2026-2059 free.  Parity:
+     **none issued** — `next free P41`.
+     ===================================================================== -->
+
+## Stage 6 — W-30, track G: the lift covers a day that assigns — the domain restored
+
+### 1. The problem, and what the number 42 actually counted
+
+W-29's P9 composed §8.2 step 5's Block and Batch rows into `Planner.dayRows` and disclosed the
+cost honestly: *"the lift's domain shrank on this commit"*. Before P9 the hypothesis
+`hnoassign : r.assignedRows = []` was **vacuously true** — the kernel produced no assigned rows,
+so the lift covered every day it could make. After P9 the kernel can assign, and the hypothesis
+excludes exactly the days §8.2 step 5 is about: the set of produced days grew while the set of
+proved days shrank. That is AGENTS §5.2's failure mode read literally, and it is the shape
+**D29** declined for `plan_tail_drop`.
+
+**The count was 42 and it was a LIST, not a rule.** The rule is stated here for the first time
+and it has two clauses. A statement in `PlanCheck.lean` needs `r.assignedRows = []` exactly
+when
+
+* its **conclusion asserts the absence** of a row the fold makes — *"the day has no Batch row"*,
+  *"no Block row carries a slot energy"*, *"this checker's subject is empty"*. Those statements
+  are **FALSE** on a day that assigns, and the hypothesis is the correct subdomain, not a
+  defect; or
+* it reaches `batchDoesNotReachPast`, `impossibleKept`, `monotoneInRank` or `hotBeforeQueue` at
+  an **arbitrary eligibility**. No proof can discharge those over a Batch row the fold placed
+  until Planner.eligibleAt exists (README gap 365), so the emptiness is what carries them.
+
+Classified by that rule — by hand, against the list, and the three buckets add to 42 — of the
+42: **26** are emptiness, census or row-source statements whose conclusion is false on a day
+that assigns; **12** are `∀ el` lifts that reach the second clause; and **four** were §5.2's
+failure mode — the four `planOkCore` lifts, which quantify over nothing an eligibility can reach
+and had no reason to exclude the fold's rows. **Two of the four are fixed here**; the other two (`dayPlan_ok_core_of_plain_walls
+_on_an_unassigned_day`, `dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day`) are gap **2022**.
+
+**Measured, by a script over declaration signatures rather than by `grep -c`** (the file's prose
+now contains the string too): **42 at `552566d`, and 42 here.** The number did not move, and
+saying why is the useful part.
+
+**The hypothesis is CONSERVED under this refactor, and only one thing destroys it.** A lift that
+sheds `r.assignedRows = []` has to get `noOverbook` from somewhere, and until gap **2020** is
+proved the only place it can come from is the emptiness — so the hypothesis moves from the lift
+to whoever supplies the budget rather than disappearing. The arithmetic is exactly that:
+dayPlan_ok_core_on_an_unassigned_day is **gone** (−1), the `withoutPast` one is **kept as a
+corollary** of its own general form (±0, and §7 says why), and
+`PlanCheck.an_unassigned_day_pays_the_lift` is the one theorem where the old hypothesis now does
+its work (+1). It does that work **for `noOverbook` alone**: its first component is vacuous.
+
+**So the count is the wrong instrument here, and the right one is the shape of the four.** Of
+the four `planOkCore` lifts that were §5.2's failure mode at `552566d`, **two now have a general
+form that covers days the fold filled** — `PlanCheck.dayPlan_ok_core_given_the_budget` and
+`PlanCheck.dayPlan_ok_core_from_now_given_the_budget` — and **two do not** (gap 2022).
+`PlannerWit.the_lift_applies_at_the_paying_request` fires the first of them at a day that really
+assigns, which is the thing no statement in this file could do before this run.
+
+### 2. §6.1's six block-side checks: five proved, one named
+
+P9 proved three of the six over the fold's rows. This run proves the other two that can be
+proved and says exactly what the sixth needs.
+
+| check | status after W-30 | what it cost |
+|---|---|---|
+| `oneBlockAtATime` | **proved** (P9, re-used) | nothing — `Look.cutSlots` cuts no slot longer than `block_min` |
+| `noBlockOverAWall` | **proved** (P9, re-used) | nothing — L3 cuts no slot under a wall |
+| `noBlockOverABreak` | **proved** (P9, re-used) | nothing — every Break row is replayed and ends at `now` |
+| `energyFilterOk` | **proved here** | the **fifth decoder clause** (`PlanCheck.candsAgree`), and a four-lemma chain from a row to a candidate |
+| `noDemandingAfterWindDown` | **proved here** | the same clause, plus `r.windDownSec < LogStamp.yearEnd` — the R10 obligation `Planner.the_wind_down_row_runs_to_bed` already carries by name |
+| `noOverbook` | **NOT proved** — named as a hypothesis | a **count**: gap **2020** |
+
+**Three of the five cost one lemma between them, and it is not a lemma about the fold.** Each of
+§8.3's three block-side comparisons is already stated over the rows that start at or after
+`now` — `Planner.plan_reserves_one_block_at_a_time`, `PlanCheck.plan_places_no_block_over_a
+_wall`, `PlanCheck.plan_places_no_block_over_a_break`. A row of the fold only has to **join
+that set**, and `Planner.PlanReq.an_assigned_row_starts_at_or_after_now` is what puts it there:
+`PlanReq.cutFrom` is `min (max now window.1) window.2`, every slot lies at or after it, and a
+slot that is not empty cannot begin at the window's own end — so the `min` can only be the
+`max`. Five lines, and it is a fact about step **3's cut**, not about step 5.
+
+**The two that cost something cost the decoder, and the chain from an assignment to a ROW is
+four lemmas nobody had written.** W-29 proved
+`PlanCheck.an_assigned_member_is_under_its_slots_energy` at a *member* of a group at a *slot
+index*; the battery reads neither. It reads a `Seg` of the day and asks about that row's `item`
+and `energy`. The four:
+
+1. `PlanCheck.mem_assignedRows_at_a_slot` — the row's own slot index, which
+   `Planner.PlanReq.mem_assignedRows` discarded into a `zip` membership;
+2. `PlanCheck.an_assigned_row_names_a_member` — `Planner.assignedSeg`'s `item` is `some i`
+   exactly when the group has one id, and `Planner.Group.ids` is its members' ids;
+3. `PlanCheck.a_ranked_candidate_is_a_candidate` — **a member of a group is a candidate the
+   request sent**. `candsAgree` quantifies over `PlanReq.cands` and nothing in this tree said a
+   group's members were in it, so without this the fifth clause reaches no row at all. It goes
+   member → §7.4's order → §8.2 step 4's answers → the request, and the last step needed
+   `PlanCheck.an_answer_of_the_pass_names_its_candidate`: `Look.withFloor` rebuilds the answer
+   around `o.cand` in both branches, so an answer names the candidate at its own index;
+4. `PlanCheck.AssignedRowsPay_of_a_paying_decoder` — the three above composed into the property
+   the lift takes.
+
+### 3. The hypothesis is replaced by a PROPERTY, not by a longer list of exempt days
+
+`PlanCheck.AssignedRowsPay` says what the battery needs of the rows the fold placed — the energy
+filter and the wind-down rule, at the **row** rather than at the assignment. Two facts establish
+it and they have nothing in common: a day the fold assigned nothing to has no such row
+(`PlanCheck.an_unassigned_day_pays_the_lift`), and a request whose decoder pays the fifth clause
+has the obligation at every row it did place (`PlanCheck.AssignedRowsPay_of_a_paying_decoder`).
+So the restated lift is a **strict generalisation** of the one it replaces rather than something
+incomparable with it (D5), and `Check.lean` records the one deleted name — the `withoutPast`
+one is kept as a corollary, §7.
+
+This is W-27's shape, taken deliberately: the answer to *"which days are exempt"* is a rule
+about rows, not an enumeration of requests.
+
+### 4. `energyFilterOk` on `theBusyRequest`: the answer is NO, and that is the finding
+
+W-29's repair added `candPlanView`, `candWireView`, `candsAgree` and
+`a_candidates_ci_is_its_items_ci`, and the brief asked whether `energyFilterOk` is now TRUE on
+`theBusyRequest` — which the brief calls *"the one witness of 21 that assigns anything"*, and
+§5 re-measures as one of **nineteen**.
+
+**It is not, and it cannot be.** `PlannerWit.the_busy_request_does_not_pay_the_fifth_decoder
+_clause` computes `PlanCheck.candsAgree theBusyRequest = false`: that request's four candidates
+`^c1`–`^c4` are **not items of its plan at all**, so `Tm.effectiveCi` answers §3.1's default `3`
+for every one while the wire says `3, 3, 5, 2`.
+`PlannerWit.the_battery_passes_where_step_six_filled_and_fails_where_step_five_did` still
+computes `PlanCheck.energyFilterOk theBusyRequest (dayPlan theBusyRequest) = false`, unchanged
+by this run and unchanged by W-29's.
+
+**And it is not one witness but nineteen, none of which pays** (§5). A lift proved over days
+that assign, with no witness that both assigns and satisfies the lift's own hypothesis, is the
+campaign's recurring defect — a claim of having checked that no run makes. That is what §5 is
+for.
+
+### 5. The witness the lift needed, and the count of days that assign
+
+`PlannerWit.thePayingRequest` is the quiet census Wednesday with **one character changed**:
+`censusWitness`' second task is written `ci:5` and this one writes it `ci:2`. Everything else —
+the calendar, the wall, the month file, the ranks, `^m1`'s `hot` — is the census witness's own,
+so the wall index does not move and `PlanReq.wallsAgree` is still true
+(`the_paying_witness_indexes_the_calendars_one_wall`).
+
+Its two candidates carry the **store's** `ci`, the store's `rootPrio` and the store's `hot`,
+which is what `candsAgree` asks and what `cCand` could not express: `cCand` writes
+`rootPrio := some 0`, and **no item of any witness plan in this module has a root priority at
+all** (`the_paying_witness_holds_the_wall_and_two_tasks` computes `none` for all three). That is
+why nine runs of witnesses never met the clause and could not have.
+
+What comes out, all by `decide` in
+`PlannerWit.the_paying_request_assigns_and_the_battery_passes`:
+
+* `PlanCheck.candsAgree thePayingRequest = true`;
+* `finalAssign.slotOf = [some 1, none, none, none]` — `^m2` at `ci:2` takes slot 0 at energy 4,
+  and `^m1` at `ci:5` takes nothing, because no slot this Wednesday cuts is that good;
+* `assignedRows.length = 1`, and the day holds **one Block row with a slot energy** — the first
+  row in this kernel that the *planner* placed, that carries an energy, and that names an item
+  the store holds;
+* `assignedOf (dayPlan thePayingRequest) = [['m','2']]`;
+* `energyFilterOk = true` **with a subject**, `noOverbook = true`, `planOkCore = true`.
+
+And `PlannerWit.the_lift_applies_at_the_paying_request` derives that last `true` a **second
+way** — from `dayPlan_ok_core_given_the_budget`, with every hypothesis supplied by a theorem and
+`hpay` by the fifth decoder clause. The two together cross-check the lift, not the day.
+
+**Witnesses that assign: 19 of 43, and exactly one of them pays.** This is the brief's
+question — *"say how many of the 21 now do"* — answered by re-measuring rather than by
+inheriting the number. **The 21 was a list and it left out the requests that assign.** `#eval`
+over every `PlanReq` `PlannerWit.lean` defines, at this commit: 19 of 43 have
+`assignedRows.length > 0` — `theBusyRequest` 4, the five cursor requests 1–4, the six
+`theGather*` requests 1–2, `theBatchRequest`, `theIdleBatchRequest`, `theRunBatchRequest`,
+`theCapRequest`, `theCapSlackRequest`, `theAtomicRequest` 2 each, and `thePayingRequest` 1.
+`PlannerWit.the_cursor_family_assigns_and_none_of_it_pays` turns four of them into a theorem.
+
+**And the number that matters is one.** Of those nineteen, `PlanCheck.candsAgree` is `true` at
+**exactly one** — `thePayingRequest`, built here — because every other one sends candidates
+that are not items of its own plan (`theRequest`'s store holds `^g1` and nothing else). So
+before this run the count of requests that both assign and pay was **zero**, which is the
+honest form of the brief's "1 of 21" and the reason `energyFilterOk` had no true instance on a
+day the fold filled.
+
+### 6. Burn-down 9 → 8: `plan_respects_the_energy_filter` is refuted and restated
+
+W-29 track G predicted this entry would move — *"makes it **provable**, and the proof landed
+here — and makes it **FALSE** without the fifth decoder clause"* — and it is the only one of the
+nine this run reaches.
+
+The goal as stage 6 wrote it quantifies over **every** Block row of the day with an item and an
+energy, with no hypothesis at all. At `theBusyRequest` the cursor gives slots 2 and 3 to group
+3, whose one member is `^c4` at wire `ci = 2`; those slots are at energy **2**; the plan does not
+hold `^c4`, so `Tm.effectiveCi` answers **3**. The goal asks `3 ≤ 2`.
+`PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted` is that, computed.
+It is **E8's shape** — two readers of an item's `ci` disagreeing about eligibility — which is
+exactly what the goal's own doc comment said it ruled out; what ruled it out was nothing.
+
+`PlanCheck.plan_respects_the_energy_filter` is the restatement, and it ships in the same commit
+(AGENTS §3.1 item 3). Its two hypotheses are `hnopast` (finding 1, README gap 385) and
+`AssignedRowsPay` — neither of them a restriction of the day, and neither of them
+`r.assignedRows = []`.
+
+**The other eight were re-read against this commit and none of them moves.**
+`plan_does_not_overbook` is gap **2020** itself. `plan_places_no_demanding_block_after_wind_down`
+is *provable* in the same shape as the one discharged — `PlanCheck.noDemandingAfterWindDown_of_a
+_day_that_pays` is the content — but §3.1 item 3 needs its refutation and this run has no
+witness that puts a `ci ≥ 4` Block after a wind-down: `Planner.PlanReq.no_slot_reaches_the
+_evening` says the cut makes none and
+`Planner.PlanReq.the_reservation_never_runs_under_a_wind_down_row` says the reservation makes
+none, so whether the goal is false at all is an open question and gap **2023** is it. The
+remaining six are W-19's and W-29's and unchanged.
+
+### 7. Why the `withoutPast` lift keeps its restricted form, and what that cost
+
+`PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` is **kept**, as a one-line corollary
+of `dayPlan_ok_core_from_now_given_the_budget`, and the whole-day one is not. Two reasons.
+
+(a) **D5.** Its call sites — in `PlanCheck` and at two `PlannerWit` requests — carry
+`r.assignedRows = []` for their own reasons anyway (`batchDoesNotReachPast` over a Batch row the
+fold placed is nobody's theorem until Planner.eligibleAt exists), so making each of them rebuild
+`an_unassigned_day_pays_the_lift`'s two arguments by hand buys nothing and costs four lines
+apiece.
+
+(b) **A cost this run measured rather than guessed, and it is gap 2024.** `mutations.txt`' fifth
+column is a `file:line` **inside** the declaration the mutated build errored in, and `check.sh`
+check 9 re-resolves it on every run. Moving lines in `PlannerWit.lean` therefore drifts the pin
+site of **every** row pinned there — 23 of `Emit.lean`'s 32, and 18 of `PlannerWit.lean`'s own —
+and each re-run is a full downstream build, because an `Emit` mutation has to reach
+`PlannerWit` before it errors. **Measured, both ways.** The first shape of this step moved ten
+lines in `PlannerWit.lean` and drifted **115 rows**; `mutate.py --verify --write --only
+Emit.lean` ran for **46 minutes without finishing `Emit.lean`'s 43 definitions** against a cold
+build cache and was stopped (its plant restored from git, tree checked clean). The repair was to
+leave the two call sites' text exactly as it was, which took the drift to **30 rows and then
+16** — and those 16 re-verified in **7 minutes**, every one of them re-deriving its recorded
+verdict. `Planner.lean`'s own addition moved to the end of the file for the same reason, which
+put `Planner.lean:6119 mem_dayRows` back where the roster says it is.
+
+Nothing here is a soundness argument — every drifted row re-derives the same verdict. It is a
+cost note, and the gate would not have it if the column recorded the declaration alone.
+
+### 8. Method, and what it cannot see
+
+**The method.** Every check was taken one at a time against the row's **source** — the replayed
+past, §8.2 choice 5b's reservation, and §8.2 step 5's own rows — using
+`PlanCheck.dayPlan_block_rows_are_reserved_or_assigned`, which is
+`dayPlan_block_rows_are_replayed_reserved_or_assigned` with the replayed source ruled out by the
+hypothesis that was already there. Nothing was proved "about the day"; everything was proved
+about a row and where it came from.
+
+**Reuse rather than a second copy.** Three proofs that stood twice now stand once:
+`the_reservation_row_clears_a_wall_row` (twenty lines that were in
+`plan_places_no_block_over_a_wall` and would have been in the lift as well),
+`an_assigned_block_row_clears_a_wall_row`, and `a_block_row_from_now_clears_a_break_row`, which
+shrank `plan_places_no_block_over_a_break` to one line.
+
+**What it cannot see.** (a) It is blind to `noOverbook`, which is not a row-by-row obligation
+but an arithmetic one, and no case split on sources reaches it. (b) It is blind to anything the
+**batch** rows of the fold do: `Planner.assignedSeg` emits `SegKind.batch` for a group of more
+than one id, and every block-side checker tests `kind = SegKind.block`, so a Batch row passes
+all six by not being their subject — `PlanCheck.batchDoesNotReachPast` is the checker that is
+about them and it is the one no proof reaches. (c) The `decide`d witness is **one day with one
+assigned row**; the lift is a ∀ and the witness is not, so what the witness shows is
+non-vacuity, not coverage. (d) `candsAgree` covers the three values `Look.Cand` carries and
+**not** `live.rank` — README gap 1990, unchanged and still bitten by
+`plan_is_monotone_in_rank`'s restatement rather than by this one.
+
+### 9. Acceptance, and the four plants
+
+`check.sh` **10/10** at the committed tree: axiom audit **5,258 theorems** (5,220 at
+`552566d`), `Negative.lean` rejected, corpus **29/37 files and 4/5 whole plans**, stage goals
+**8 outstanding, all stage 6**, prose citations 40,119 with 0 unresolved, check 9 **246 of 246
+rostered, 0 owed**, parity register 40 rows and `next free P41`.
+`cargo test --workspace`: **1,476 passed / 0 failed / 9 ignored across 87 binaries**, run
+**twice** at the committed tree (D46) and once at `552566d` before a line was changed — three
+workspace runs in all, every one identical. `planner_invariants` 5 passed / 1 ignored,
+`cli_switch_acceptance` 16, `cli_latency` 2, `kernel_call_counts` 6, `one_padder` 21,
+`one_renderer` 26, `kernel_row_cells` 9, `kernel_item_grammar` 25, `kernel_planner_wire` 8,
+`kernel_log_door` 23, `kernel_log_grammar` 16/2, `kernel_replay_parity` 4,
+`kernel_lookahead_parity` 29/4, FFI 101 across four binaries — all green, and
+**`.proptest-regressions` gained no seed** (D46: a new seed is a finding, and there is none).
+
+**§5.10a's probe**: `PlannerWit.lean` — which carries every new `decide` witness this run adds
+— rebuilds from cold **under an 8 GiB cap**, in 2 m 49 s. No memory bound was raised anywhere.
+
+**Four plants, in a clone** (`git archive HEAD | tar -x -C /tmp/claude-1000/w30g`, with the
+step's own files copied in), and the shared checkout's `git status --porcelain` held only this
+step's eight files before and after each. Every one was caught:
+
+| plant | what broke |
+|---|---|
+| `Planner.PlanReq.cutFrom` drops `max r.now.sec`, leaving `min window.1 window.2` | `Planner.lean:6767` — `an_assigned_row_starts_at_or_after_now`'s `omega`. That lemma reads the `max` and nothing else in this tree does |
+| `AssignedRowsPay`'s wind-down bound `< 4` → `< 5` | `noDemandingAfterWindDown_of_a_day_that_pays`, `dayPlan_ok_core_from_now_given_the_budget` and `AssignedRowsPay_of_a_paying_decoder` — the clause is exactly what the checker asks for, not one more |
+| `AssignedRowsPay`'s energy bound `≤ lvl` → `≤ lvl + 1` | `energyFilterOk_of_a_day_that_pays`, `PlanCheck.plan_respects_the_energy_filter`, `dayPlan_ok_core_from_now_given_the_budget` and `AssignedRowsPay_of_a_paying_decoder` |
+| `Planner.dayRows` drops `r.assignedRows` — P9's composition undone | `Planner.mem_dayRows` and `Planner.mem_dayRows_of_mem`, **before** any witness is reached. Recorded as a negative result: the composition is pinned by Planner's own row-source laws and by check 9's `Tm.Planner.dayRows := []` row, **not** by this run's new witness |
+
+D40: **12 definitions folded** — 9 PINNED, 3 UNFOLDABLE (all three witness fixtures in the leaf
+module), **0 SURVIVED**; the roster goes 234 to 246. `AssignedRowsPay := True` and `:= False`
+are both pinned by `energyFilterOk_of_a_day_that_pays`, which is the honest test of a `Prop` a
+lift consumes: a `True` body gives the lift nothing to use.
+
+### 10. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2020** | **`noOverbook` over a day that assigns is a COUNT this tree does not have.** `withoutActive` removes the reservation and not the fold's rows, so the sum is over §8.2 step 5's Block rows; each is at most one block (`Planner.PlanReq.a_slot_is_at_most_one_block`) and `Planner.the_deferred_pass_stays_inside_the_budget` bounds `Planner.PlanReq.finalAssign`'s `used` by the budget — but **nothing relates the number of occupied entries of `Planner.Assign.slotOf` to `used`**. The missing invariant is *activeSeed + (the occupied entries of `slotOf`) ≤ `used`*, threaded through `assignStep`, `rePlaceWalk`, `displaceInto`, `deferOne` and `deferWalk` in the exact shape `Planner.PlanReq.deferWalk_used` already has, plus two list lemmas (the `set` bound `countP` moves by at most one, and the strict decrease when the entry replaced was `some`) | `PlanCheck.dayPlan_ok_core_given_the_budget` and `PlanCheck.dayPlan_ok_core_from_now_given_the_budget` take it as `hbudget`; `Goals.plan_does_not_overbook` is the same obligation | it is the ONLY thing between this file and "seven of seven over a day that assigns", and `PlanCheck.an_unassigned_day_pays_the_lift` — the last statement here where `r.assignedRows = []` buys a lift anything — goes with it |
+| **2021** | **`PlanReq.cutFrom`'s bound is used and not stated over the window's own end.** `an_assigned_row_starts_at_or_after_now` derives `now ≤ s.start` from `cutFrom ≤ s.start`, `s.start < s.stop` and `s.stop ≤ window.2` by `omega` — which is right, and it means the lemma is silently about a window whose end is past its start. A degenerate `Look.day0Window` with `window.2 ≤ window.1` makes `PlanReq.a_slot_is_inside_the_window` unsatisfiable rather than false, so the lemma is vacuous there and nothing says so | `Planner.PlanReq.an_assigned_row_starts_at_or_after_now` | nothing today — the cut cannot produce a slot in that case. It is recorded because the proof's own `omega` is where the fact lives and no theorem states it |
+| **2022** | **the other two `planOkCore` lifts still carry `r.assignedRows = []`**: `dayPlan_ok_core_of_plain_walls_on_an_unassigned_day` and `dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day`. They are the `PastPays` axis — the whole day with the replayed past **paid for** rather than assumed empty — and generalising them needs three things this run did not do: the three-way source split (replayed / reservation / assigned) instead of the two-way one, a replayed-and-reservation-only form of `no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`, and gap 2020's budget | `PlanCheck.lean`, and the four `∀ el` lifts above them | the axis that reaches a **real** day — one whose morning worked something — is the one still restricted to days the fold left alone. It is the same repair as this one at a different set of hypotheses |
+| **2023** | **is `Goals.plan_places_no_demanding_block_after_wind_down` false as written?** It is the sibling of the goal discharged here and `PlanCheck.noDemandingAfterWindDown_of_a_day_that_pays` is its content, but AGENTS §3.1 item 3 needs a refutation and this run could not build one: `Planner.PlanReq.no_slot_reaches_the_evening` says step 3 cuts no slot into the evening and `Planner.PlanReq.the_reservation_never_runs_under_a_wind_down_row` says choice 5b's row stops at it, so the only `ci ≥ 4` Block after a wind-down would have to be a **replayed** one — which needs a log that worked past the wind-down | `Goals.lean` (burn-down 8) | the goal may be TRUE as written and provable outright, in which case this is a discharge nobody has to restate. Until it is driven, the entry sits at "not reached" for a reason nobody has checked |
+| **2024** | **the roster's fifth column is a LINE, so a step that edits `PlannerWit.lean` pays `Emit.lean`'s whole roster to re-run.** Measured here: the first shape of this step moved ten lines in `PlannerWit.lean` and drifted **115 rows**; an `Emit.lean` mutation takes **~5 minutes** because it has to reach `PlannerWit` before it errors, against ~1.5 minutes for a `PlanCheck.lean` one, so those 115 rows were **four hours** of machine time to move two line numbers. The step was restructured to keep `PlannerWit.lean` and `Planner.lean` line-neutral (§7); the 16 rows that were left re-verified in 7 minutes | `kernel/mutations.txt`, `kernel/check.sh` check 9 | nothing unsound — every re-run row re-derived its verdict. It is a **design** cost: a column that recorded the declaration alone, without the line, would not drift at all and would lose nothing a reader uses. The alternative that was NOT taken is re-pointing the line by hand, which is the one thing that would make the column unauditable |
+
+| **2025** | **W-29's "twenty-one named requests" was a LIST and the list omitted the requests that assign.** It reported `theBusyRequest` as the only one whose cursor fills a slot; re-measured over every `PlanReq` `PlannerWit.lean` defines, **19 of 43** assign. The rule the list was reaching for is *"a request that sends candidates the cursor can place"*, and by that rule the cursor, batching, `theGather*`, cap and atomic families all qualify and were all left out | `kernel/README.md` W-29's block (corrected in place, by name), and every sentence that inherited the count | **closed here as a correction, not left open** — `PlannerWit.the_cursor_family_assigns_and_none_of_it_pays` computes four of the nineteen and the decoder verdict beside each, so the claim is now a theorem rather than an `#eval` in a paragraph. What the old sentence was reaching for is TRUE and sharper: not one of the nineteen pays the fifth clause |
+
+**Gaps 2026 and above are free.** Gaps 113/114/116, 301, 346, 365, 435, 551, 577, 803, 876,
+1006, 1065, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904,
+1906, 1956, 1957, 1984-1988, 1990 and 2000-2018 are untouched except **1902** and **1903**,
+which are what this run is about: **1903 is closed** — `candsAgree` is the clause `energyFilterOk`
+was missing and the lift now uses it — and **1902 is partly closed**, two of its four lifts
+restored.

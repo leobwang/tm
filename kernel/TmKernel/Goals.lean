@@ -103,7 +103,7 @@ stage then has to fight.
   eleven checkers, their reflection lemmas, `planOk`, `checks_all` and the
   eleven one-line bridges are built and proved in `PlanCheck.lean`, and the
   **eligibility-free half of the lift is a theorem there**, not a goal:
-  `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`, re-proved at the W-14 land step over the day step
+  `PlanCheck.dayPlan_ok_core_given_the_budget`, re-proved at the W-14 land step over the day step
   P1 produces and carrying the two hypotheses that day makes necessary (README
   gap 385).  The other four checks compare
   two candidates and have to be restricted to comparable ones (design §6.3),
@@ -610,6 +610,27 @@ with the restatement `Planner.plan_reserves_one_block_at_a_time` beside it
 reservation is such a row, and `PlannerWit.the_reserved_day_assigns_the_running
 _block` computes one.
 
+`plan_respects_the_energy_filter` **is gone from this file as of W-30 (track
+G)**, and unlike the three below it the reason is not `PlanCheck`'s finding 1.
+The goal reads an item's `ci` with `Tm.effectiveCi`, out of the **plan store**;
+§8.2 step 5's own filter reads it off `Look.Cand.ci`, the **capacity wire**; and
+nothing in this tree made the two agree.  At
+`PlannerWit.theBusyRequest` the plan does not hold `^c4` at all, so the store
+answers §3.1's default `3` while the cursor placed the group at a slot of energy
+`2` — the goal asks `3 ≤ 2`.  That is **E8's shape**, two readers of an item's
+`ci` disagreeing about eligibility, which is exactly what this goal's own doc
+comment said it ruled out; what ruled it out was nothing.  So the goal is **false
+as it was written here** and it left the way the three below left:
+`PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted` with
+the restatement `PlanCheck.plan_respects_the_energy_filter` beside it (AGENTS
+§3.1 item 3, D5).  The restatement carries two hypotheses and neither is a
+restriction of the day: `hnopast` is finding 1, and `hpay` is
+`PlanCheck.AssignedRowsPay`, which `PlanCheck.AssignedRowsPay_of_a_paying
+_decoder` discharges from the fifth decoder clause.  It is **not vacuous**:
+`PlannerWit.the_paying_request_assigns_and_the_battery_passes` is a request whose
+cursor fills a slot, whose Block row carries a slot energy and names an item the
+store holds, and whose decoder pays — the first such row in this kernel.
+
 `plan_places_no_block_over_a_break` **is gone from this file as of W-18 (track
 G)**, and the sentence that stood here — *"it stays, for the reason P1's and P2's
 goals stayed: step 3 cuts the breaks but places no Break row"* — was true about
@@ -665,15 +686,15 @@ can produce, which are clipped at `min stop now`.  `Planner.blockMinutes` is
 `PlanCheck.lean`, design §6): eleven decidable checkers, eleven reflection
 lemmas, `planOk`/`planOkCore`, `checks_all`, and one bridge per goal, so each
 discharge below is one line the day its step lands.  What landed with it is
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`, the lift over the seven eligibility-free checks,
+`PlanCheck.dayPlan_ok_core_given_the_budget`, the lift over the seven eligibility-free checks,
 as a **theorem in a shipped module** rather than a goal — track G wrote it over
 P0's empty day, and this run's merge is where P1's own body had to re-prove it
 (README gap 385).  A goal below is still not dischargeable from it directly:
 the six block-side checks it discharges are about the rows the log replays and
 the one row choice 5b reserves, and nothing else.
 
-**W-17 (track G) took two things out of that.**  `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day`
-is the same conjunction over the same seven checkers with `dayPlan_ok_core_on_an_unassigned_day`'s
+**W-17 (track G) took two things out of that.**  `PlanCheck.dayPlan_ok_core_from_now_given_the_budget`
+is the same conjunction over the same seven checkers with `dayPlan_ok_core_given_the_budget`'s
 `hnopast` — *the log holds no Block for today* — **gone**: `PlanCheck.withoutPast`
 names the restriction §8.3 is about rather than assuming it away, and the lift
 then holds for every request, whatever the log holds.  Both lifts are kept; they
@@ -802,7 +823,7 @@ rule stands unchanged: `plan_respects_the_energy_filter`,
 restatements; and `plan_tail_drop` and `plan_is_stable_across_a_replan` are G2 and G3.
 
 **The one sentence a later step must not inherit backwards.**  It is tempting to read
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hblk` — *every Block row of the day is the reservation* — as
+`PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` — *every Block row of the day is the reservation* — as
 evidence that §8.2 step 5's fold is now under the battery.  It is evidence of the **opposite**:
 `Planner.dayRows`' own doc comment records that step 5's Block and Batch rows are **not in the
 day**, and `hblk` holds *because* they are absent.  The fold induction design §6.2 prices at
@@ -836,7 +857,7 @@ no replayed Block longer than one block, none over a span the walls blocked, non
 break the log records, and the Blocks already worked inside the budget — and
 `PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is the whole-day lift with `hnopast` **gone**.
 Three of the seven owe the log nothing at all, which is why `PastPays` has four fields and not
-six.  `PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` makes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` a corollary and
+six.  `PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` makes `PlanCheck.dayPlan_ok_core_given_the_budget` a corollary and
 `PlannerWit.the_paying_past_holds_where_hnopast_does_not` is the request where the new lift
 fires and the old one cannot — the §4.3 Wednesday, whose morning worked two blocks, so the
 whole-day lift now reaches a real day for the first time
@@ -1023,7 +1044,7 @@ one is a caller for the payer, and it is README gap 1870.
 are all built and proved; `Planner.dayRows` is
 `sortRows ((stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ optionalRows ++ restRows).map
 segOf)` and holds **no row of step 5's**.  That is D19's switch-shaped change, it is what
-makes `PlanCheck`'s four emptiness theorems false and takes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s
+makes `PlanCheck`'s four emptiness theorems false and takes `PlanCheck.dayPlan_ok_core_given_the_budget`'s
 `hblk` with them, and until it is made every one of the six is a statement about an empty
 quantifier.  **The fold induction design §6.2 prices at ≈ 4,500 lines still has no subject in
 this tree and no line of it is claimed by any run so far.**
@@ -1190,15 +1211,6 @@ sub-minute overrun, so the port had quietly made the obligation weaker; seconds
 on both sides is the faithful one.  See `Planner.blockSeconds`. -/
 theorem plan_does_not_overbook (r : PlanReq) :
     blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := sorry
-
-/-- **L26 / §8.3 "energy filter" (P\*), stage 6.**  Every block has
-`item.ci ≤ slot.energy`.  `effectiveCi` (Plan.lean) is §3.2's inheritance walk,
-already proved — this is the planner honouring it.  Rules out E8's shape: two
-readers of an item's `ci` disagreeing about eligibility. -/
-theorem plan_respects_the_energy_filter (r : PlanReq) (s : WfSeg) (i : Id) (lvl : Fin 6)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
-    (hi : s.val.item = some i) (he : s.val.energy = some lvl) :
-    (effectiveCi r.plan.val i).val ≤ lvl.val := sorry
 
 /-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
 2: "sleep and wind-down define the hard end of the day".

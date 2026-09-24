@@ -2032,7 +2032,7 @@ theorem anOverlapFilled :
 /- CHEAT 171 — the battery cannot refuse a day.  This is AGENTS §9.2's own
    disguised gap, written out: *"a check no input can fail"*.  A checker battery
    that is true of every `(r, d)` proves nothing about `dayPlan`, and the whole
-   value of `dayPlan_ok_core_on_an_unassigned_day` rests on `planOkCore` being falsifiable.  It is —
+   value of `dayPlan_ok_core_given_the_budget` rests on `planOkCore` being falsifiable.  It is —
    `PlanCheck.planOkCore_can_fail` exhibits the day it refuses — so the claim
    below does not close. -/
 theorem theBatteryCannotRefuseADay (r : Planner.PlanReq) (d : Planner.DayPlan) :
@@ -2324,8 +2324,8 @@ theorem theReplayedPastIsNeverUnderAWall :
       (Planner.dayPlan PlannerWit.theMorningWallRequest) = true := by decide
 
 /- CHEAT 189 — §6.1's lift over the whole day rather than over the rows §8.3 is
-   about.  `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` needs `hnopast` (the log holds no Block
-   today) for exactly this reason, and `dayPlan_ok_core_from_now_on_an_unassigned_day` drops the
+   about.  `PlanCheck.dayPlan_ok_core_given_the_budget` needs `hnopast` (the log holds no Block
+   today) for exactly this reason, and `dayPlan_ok_core_from_now_given_the_budget` drops the
    hypothesis by restricting the day with `PlanCheck.withoutPast` instead.  This
    block claims the unrestricted conjunction holds at a request whose log DOES
    hold a Block and whose calendar moved onto it — the hypothesis-free lift

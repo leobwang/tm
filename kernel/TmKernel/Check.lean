@@ -4863,7 +4863,7 @@ open Tm
 -- (AGENTS §5.2 — a battery that cannot refuse means nothing), and the list
 -- arithmetic D29's refutation will apply.
 --
--- ONE of them was a TRIPWIRE and IT FIRED.  `dayPlan_ok_core_on_an_unassigned_day` is §6.1's lift
+-- ONE of them was a TRIPWIRE and IT FIRED.  `dayPlan_ok_core_given_the_budget` is §6.1's lift
 -- over the seven eligibility-free checks; track G proved it in one line over
 -- P0's empty day, from
 -- `Planner.the_day_has_no_segments_until_the_first_step_lands`.  P1 deleted that
@@ -4922,7 +4922,7 @@ open Tm
 #print axioms Tm.PlanCheck.a_replayed_row_is_a_row_of_the_day
 #print axioms Tm.PlanCheck.a_replayed_block_is_assigned
 #print axioms Tm.PlanCheck.dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned
-#print axioms Tm.PlanCheck.dayPlan_ok_core_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_core_given_the_budget
 #print axioms Tm.PlanCheck.all_eq_false_of_mem
 #print axioms Tm.PlanCheck.wSeg_wf
 #print axioms Tm.PlanCheck.horizonOk
@@ -5388,8 +5388,8 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --    here", which was and remains true of step P1's body, and is no longer the
 --    whole story.
 --
--- 2. **`PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` -- §6.1's lift without `hnopast`.**
---    `dayPlan_ok_core_on_an_unassigned_day` carries "the log holds no Block for today", which is
+-- 2. **`PlanCheck.dayPlan_ok_core_from_now_given_the_budget` -- §6.1's lift without `hnopast`.**
+--    `dayPlan_ok_core_given_the_budget` carries "the log holds no Block for today", which is
 --    false of every real day after breakfast and is not a fact about the
 --    planner.  `withoutPast` names the restriction §8.3 is about instead of
 --    assuming it away, and the same conjunction over the same seven checkers
@@ -5407,7 +5407,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.mem_withoutPast
 #print axioms Tm.PlanCheck.a_block_row_from_now_is_reserved_or_assigned
 #print axioms Tm.PlanCheck.plan_places_no_block_over_a_wall
-#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_given_the_budget
 #print axioms Tm.PlannerWit.the_morning_wall_day_lays_a_block_across_a_wall
 #print axioms Tm.PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_stored_witness_loads
@@ -5424,7 +5424,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- AGENTS 7.4 item 2: *"Is every hypothesis satisfiable?  Exhibit a witness if
 -- it is not obvious.  A precondition nothing satisfies makes the conclusion
 -- vacuous, and it stayed invisible for a whole stage once."*
--- `dayPlan_ok_core_from_now_on_an_unassigned_day` keeps five hypotheses after dropping `hnopast`, so
+-- `dayPlan_ok_core_from_now_given_the_budget` keeps five hypotheses after dropping `hnopast`, so
 -- all five are supplied here at `theRunningRequest` and the lift is APPLIED.
 -- `the_running_request_is_plain` is the one that needed an argument rather than
 -- a `decide` -- it quantifies over every `Id`, and `PlanCheck.mem_dom_of_get`
@@ -6331,7 +6331,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 ## `PlanCheck.PastPays` is the four clauses the replayed past owes §6.1's seven — three of the
 ## seven owe it nothing at all — and `PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is the
 ## whole-day lift with `hnopast` gone.  `PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` makes
-## `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` a corollary of it, and
+## `PlanCheck.dayPlan_ok_core_given_the_budget` a corollary of it, and
 ## `PlannerWit.the_paying_past_holds_where_hnopast_does_not` is the request where the new one
 ## fires and the old one cannot.  `PlannerWit.the_paying_past_fails_on_four_whole_days` is the
 ## other bound: one refuting day per clause, no clause implied by the other three.
@@ -6695,3 +6695,74 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_filter_passed_a_slot_the_battery_reads_differently
 #print axioms Tm.PlannerWit.the_hole_survives_where_the_composition_adds_no_row
 #print axioms Tm.PlannerWit.the_census_ratio_is_still_seven
+
+-- ############################################################################
+-- W-30 (track G): THE LIFT'S DOMAIN, RESTORED.  P9 composed 8.2 step 5's rows into
+-- `Planner.dayRows` and the two `planOkCore` lifts kept their proofs by taking
+-- `r.assignedRows = []` -- a precondition that excludes exactly the days step 5 is about,
+-- which is AGENTS 5.2's failure mode and the shape D29 declined for `plan_tail_drop`.  Six
+-- of the seven core checks are proved over a day that assigns here; the seventh
+-- (`noOverbook`) is a COUNT this tree does not have and is named as a hypothesis rather
+-- than assumed silently (README gap 2020).
+--
+-- ONE AUDIT LINE WAS RENAMED WITH ITS THEOREM, not deleted: PlanCheck.dayPlan_ok_core
+-- _on_an_unassigned_day -> `PlanCheck.dayPlan_ok_core_given_the_budget`.  It is a strict
+-- generalisation: `PlanCheck.an_unassigned_day_pays_the_lift` turns the old hypothesis into the
+-- two new arguments in one line, so every instance of the old statement is an instance of the
+-- new one (D5, AGENTS 5.2).  `PlanCheck.dayPlan_ok_core_from_now_given_the_budget` is the same
+-- generalisation of the `withoutPast` lift, and there
+-- `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` is KEPT as a corollary of it, for
+-- the callers that really are about a day the fold left alone.
+--
+-- ONE AUDIT LINE IS NEW BECAUSE A GOAL LEFT `Goals.lean`:
+-- `PlanCheck.plan_respects_the_energy_filter`, with
+-- `PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted` beside it
+-- (AGENTS 3.1 item 3).  Burn-down 9 -> 8.
+
+-- The row-level facts a Block row the FOLD placed brings to the battery.
+#print axioms Tm.Planner.PlanReq.an_assigned_row_starts_at_or_after_now
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_reserved_or_assigned
+#print axioms Tm.PlanCheck.a_block_row_of_a_logless_day_starts_at_or_after_now
+#print axioms Tm.PlanCheck.an_assigned_block_row_is_at_most_one_block
+#print axioms Tm.PlanCheck.an_assigned_block_row_clears_a_wall_row
+#print axioms Tm.PlanCheck.a_block_row_from_now_clears_a_break_row
+#print axioms Tm.PlanCheck.the_reservation_row_clears_a_wall_row
+-- The six block-side checks, each with the hypotheses it needs and no others.
+#print axioms Tm.PlanCheck.oneBlockAtATime_of_a_logless_day
+#print axioms Tm.PlanCheck.noBlockOverAWall_of_a_logless_day
+#print axioms Tm.PlanCheck.noBlockOverABreak_of_a_logless_day
+#print axioms Tm.PlanCheck.energyFilterOk_of_a_day_that_pays
+#print axioms Tm.PlanCheck.plan_respects_the_energy_filter
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_of_a_day_that_pays
+#print axioms Tm.PlanCheck.noOverbook_when_only_the_reservation_is_a_block
+#print axioms Tm.PlanCheck.a_reserved_block_row_is_active
+#print axioms Tm.PlanCheck.an_unassigned_day_pays_the_lift
+#print axioms Tm.PlanCheck.withoutPast_block_rows_are_reserved_or_assigned
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day
+-- The chain that carries the FIFTH decoder clause from an assignment to a ROW.
+#print axioms Tm.PlanCheck.mem_assignedRows_at_a_slot
+#print axioms Tm.PlanCheck.an_assigned_row_names_a_member
+#print axioms Tm.PlanCheck.an_answer_of_the_pass_names_its_candidate
+#print axioms Tm.PlanCheck.a_ranked_candidate_is_a_candidate
+#print axioms Tm.PlanCheck.a_member_of_an_assigned_group_is_a_candidate
+#print axioms Tm.PlanCheck.an_assigned_members_ci_is_under_its_slots_energy
+#print axioms Tm.PlanCheck.an_assigned_members_ci_after_the_wind_down
+#print axioms Tm.PlanCheck.AssignedRowsPay_of_a_paying_decoder
+-- and the property the hypothesis was replaced by, audited the way `Tm.WfPlan` is (6.3).
+#print axioms Tm.PlanCheck.AssignedRowsPay
+-- W-30 (track G): the witness the lift needed and nine runs did not have -- a request that
+-- ASSIGNS and whose decoder PAYS, and the refutation of the goal that left `Goals.lean`.
+#print axioms Tm.PlannerWit.the_paying_witness_loads
+#print axioms Tm.PlannerWit.the_paying_witness_holds_the_wall_and_two_tasks
+#print axioms Tm.PlannerWit.the_paying_witness_indexes_the_calendars_one_wall
+#print axioms Tm.PlannerWit.the_paying_request_assigns_and_the_battery_passes
+#print axioms Tm.PlannerWit.the_paying_request_agrees
+#print axioms Tm.PlannerWit.thePayingRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_paying_request_is_quiet
+#print axioms Tm.PlannerWit.the_paying_request_is_plain
+#print axioms Tm.PlannerWit.the_lift_applies_at_the_paying_request
+#print axioms Tm.PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted
+-- W-30 (track G): and the correction of W-29's own count -- "theBusyRequest is the only
+-- request whose cursor fills a slot" is FALSE; 19 of this module's 43 requests assign, and
+-- exactly one of the nineteen pays the fifth decoder clause (README gap 2025).
+#print axioms Tm.PlannerWit.the_cursor_family_assigns_and_none_of_it_pays

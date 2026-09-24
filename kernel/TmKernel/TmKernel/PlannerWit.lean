@@ -86,7 +86,7 @@ line spelled `['{','"','t','"',…]` decides in **0.21 s**.  `Boundary.logWitnes
 ## These `decide`s are build-time walls, and the steps that fill the day will break them
 
 Every theorem below that names `dayPlan theRequest` is an equation about the day **step P1**
-produces.  `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` was written the same way over step P0's empty day and
+produces.  `PlanCheck.dayPlan_ok_core_given_the_budget` was written the same way over step P0's empty day and
 stopped compiling the moment P1 placed a row — which is how the W-14 merge found two findings
 at merge time instead of at P5, and is AGENTS §3.1 item 1 taken rather than described.  The
 same thing will happen here: **P2 (routines), P3 (slots) and P5 (assign) each add rows, and
@@ -429,7 +429,7 @@ theorem witBuilds : mkPlanReq? witReqIn = .ok theRequest := by
   simp only [Capped.ofList?_nil, mkRoutines?_of_none]
 
 /-- **`hagree` is discharged for this request** — the hypothesis README gap 346 says has no
-caller, and the hypothesis `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` and `Planner.plan_never_moves_a_wall`
+caller, and the hypothesis `PlanCheck.dayPlan_ok_core_given_the_budget` and `Planner.plan_never_moves_a_wall`
 both carry. -/
 theorem theRequest_wallsAgree : theRequest.wallsAgree = true :=
   mkPlanReq?_ok_wallsAgree witReqIn theRequest witBuilds
@@ -529,14 +529,14 @@ set_option maxRecDepth 400000 in
 /-- **The battery passes at a request whose day has real Block rows**, computed.
 
 README gap 396: *"`PlanCheck` gives no independent opinion on wall placement …
-`dayPlan_ok_core_on_an_unassigned_day`'s seventh check is `plan_never_moves_a_wall` applied through
+`dayPlan_ok_core_given_the_budget`'s seventh check is `plan_never_moves_a_wall` applied through
 `wallsUnmoved_iff`; the other six are vacuous under `hnopast`."*  Both halves are answered
 here, and neither is answered by a second copy of a placement rule (which the W-14 land step
 refused, AGENTS §5.3):
 
 * the six block-side checks are **not vacuous** at this request — `hnopast` is false of it,
   because the log holds two Blocks (`the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening`),
-  so `dayPlan_ok_core_on_an_unassigned_day` does not apply and this is not a restatement of it;
+  so `dayPlan_ok_core_given_the_budget` does not apply and this is not a restatement of it;
 * the seventh, `wallsUnmoved`, recomputes **both** wall endpoints from the plan's own `at:`
   through `Cal.instantOf` and compares them with the row the planner placed.  Nothing in this
   proof mentions `Planner.plan_never_moves_a_wall`; it is the evaluator's answer, so a change
@@ -548,7 +548,7 @@ theorem the_battery_passes_at_the_witness :
 
 set_option maxRecDepth 400000 in
 /-- The clause that makes the theorem above a second opinion rather than a restatement:
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hnopast` is **false** at this request, so the lift it proves is
+`PlanCheck.dayPlan_ok_core_given_the_budget`'s `hnopast` is **false** at this request, so the lift it proves is
 not available here and nothing above was borrowed from it. -/
 theorem the_witness_replays_a_block :
     (pastRows theRequest).any (fun t => t.kind == SegKind.block) = true := by
@@ -820,7 +820,7 @@ Why it matters, in one line each:
   `Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose` — without it both are
   statements about an empty set (AGENTS §5.2);
 * it makes six of `PlanCheck`'s seven eligibility-free checks bite on a row the planner placed,
-  where `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` used to discharge them under `hnopast` alone (README gap
+  where `PlanCheck.dayPlan_ok_core_given_the_budget` used to discharge them under `hnopast` alone (README gap
   **396**, the half W-14 left open);
 * the reservation it computes is **clipped by `current_block_end`** — 70 minutes are still
   owed and the row is 40 — which is the fork rule E1 turns on, run rather than argued.
@@ -852,7 +852,7 @@ theorem witBuildsRun : mkPlanReq? witReqInRun = .ok theRunningRequest := by
   simp only [Capped.ofList?_nil, mkRoutines?_of_none]
 
 /-- **The request agrees with `mkActive?` and with `mkDayCfg?`** — the two R10 hypotheses
-`Planner.plan_reserves_one_block_at_a_time` and `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` carry, discharged
+`Planner.plan_reserves_one_block_at_a_time` and `PlanCheck.dayPlan_ok_core_given_the_budget` carry, discharged
 at a request the builder accepts (README gap 346's shape). -/
 theorem the_running_request_agrees :
     theRunningRequest.activeAgrees = true ∧ theRunningRequest.dayAgrees = true := by decide
@@ -920,7 +920,7 @@ set_option maxRecDepth 400000 in
 This is the half of README gap **396** the W-14 land step left open.  `the_battery_passes_at
 _the_witness` above answers it for the replayed past; this answers it for §8.2 choice 5b, and
 the difference matters: six of the seven checks were discharged by
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hnopast` *and* by the day having no planner-placed Block at all,
+`PlanCheck.dayPlan_ok_core_given_the_budget`'s `hnopast` *and* by the day having no planner-placed Block at all,
 so nothing in the stage had yet shown a checker meeting a row the planner is responsible for.
 Here `oneBlockAtATime` compares the reservation against `block_min`, `noBlockOverAWall` puts it
 beside the calendar's meeting, `noOverbook` runs its `withoutActive` filter on a row that
@@ -1550,7 +1550,7 @@ theorem the_whole_battery_refuses_each_mutation :
 ## 12. The new lift's five hypotheses, discharged at a request (W-17, track G)
 ############################################################################
 
-`PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` drops `dayPlan_ok_core_on_an_unassigned_day`'s `hnopast` and keeps five
+`PlanCheck.dayPlan_ok_core_from_now_given_the_budget` drops `dayPlan_ok_core_given_the_budget`'s `hnopast` and keeps five
 hypotheses.  **AGENTS §7.4 item 2 asks whether they are jointly satisfiable, and a theorem
 whose hypotheses nothing can satisfy is §9.2's own disguised gap** — *"a precondition nothing
 can satisfy, so the conclusion never fires"*.  It stayed invisible for a whole stage once.
@@ -1650,7 +1650,7 @@ theorem the_restricted_day_keeps_the_reservation_and_the_wall :
   decide
 
 set_option maxRecDepth 400000 in
-/-- **The lift, fired.**  Every hypothesis of `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` is supplied
+/-- **The lift, fired.**  Every hypothesis of `PlanCheck.dayPlan_ok_core_from_now_given_the_budget` is supplied
 by a theorem above, so the five are jointly satisfiable and the conclusion is not vacuous
 (AGENTS §7.4 item 2).  Nothing here is a `decide`: it is the general lift applied. -/
 theorem the_lift_applies_at_the_running_request :
@@ -1718,7 +1718,7 @@ which the two orders **disagree**, and `the_root_order_decides_before_the_items_
 from a day nobody had counted.**  `the_battery_census_at_the_reserved_day` counts the same
 populations over `dayPlan theRunningRequest` and over the `PlanCheck.withoutPast` day the new
 lift is about, so both lifts' vacuity is a computed fact at the request their own doc comments
-cite.  It is what `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day`'s *"measured rather than asserted"*
+cite.  It is what `PlanCheck.dayPlan_ok_core_from_now_given_the_budget`'s *"measured rather than asserted"*
 paragraph names; that paragraph cited `the_battery_census_at_the_reserved_day` before
 the theorem existed.  (Reflowed by W-18's land step so that `theorem` does not begin a
 line: check 3's declaration grep is `^(@[...])?theorem ` and counted this prose as a
@@ -1840,7 +1840,7 @@ theorem exchanging_the_parents_exchanges_the_order :
 set_option maxRecDepth 400000 in
 /-- **The census at the day the two lifts are about**, over `theRunningRequest` — the §4.3
 Wednesday at 14:00 with `m1` running, which is the request
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s and `PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day`'s doc comments both
+`PlanCheck.dayPlan_ok_core_given_the_budget`'s and `PlanCheck.dayPlan_ok_core_from_now_given_the_budget`'s doc comments both
 cite.  `the_battery_census_over_a_produced_day` does this at `theStoredRequest`; this does it
 at the reserved day, which is the one those two paragraphs were written about.
 
@@ -2141,7 +2141,7 @@ theorem the_battery_census_at_the_census_request :
   decide
 
 /-- **The new lift, fired at the census request.**  Every hypothesis of
-`PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` is supplied by a theorem above; nothing here is a
+`PlanCheck.dayPlan_ok_core_from_now_given_the_budget` is supplied by a theorem above; nothing here is a
 `decide`.  `the_running_request_is_plain`'s argument does not carry over — this store holds
 three ids, not one — so `hplain` is re-proved below at this request. -/
 theorem the_census_request_is_plain :
@@ -3695,8 +3695,8 @@ a `rfl`: `Planner.dayRows` held no row that read `remainingBudget`.  It does now
 re-claimed here**; README gap **1904** records that whether the stored budget can move the
 assignment is an open question with exactly one witness answering it.
 
-What is computed is that witness: at `theBusyRequest` — the only request in this file whose
-cursor fills a slot — the day assigns **four** rows, and setting `state.budget` to zero leaves
+What is computed is that witness: at `theBusyRequest` — one of NINETEEN requests here whose
+cursor fills a slot (W-30, gap 2025) — the day assigns **four**, and zeroing the budget leaves
 **four**.  So §8.2 choice 5b's counterexample still has no witness in this tree, and the reason
 is no longer "there is nothing to spend".  The name moved with the statement (AGENTS §5.2) and
 `Check.lean` records the deletion. -/
@@ -3845,7 +3845,7 @@ theorem witBuildsQuietCensus : mkPlanReq? witReqInQuietCensus = .ok theQuietCens
 
 set_option maxRecDepth 400000 in
 /-- **It is quiet, computed**: nothing replayed and nothing running — the two hypotheses
-`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot` adds to `dayPlan_ok_core_on_an_unassigned_day`'s five. -/
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot` adds to `dayPlan_ok_core_given_the_budget`'s five. -/
 theorem the_quiet_census_request_is_quiet :
     pastRows theQuietCensusRequest = [] ∧ theQuietCensusRequest.activeRun = none := by decide
 
@@ -5114,7 +5114,7 @@ APPENDED 2026-09-22 (stage 6, run **W-24**, track G).
 
 W-23 left §6.1's whole-day lift bounded on two axes and only one of them named: the
 eligibility one was `PlanCheck.FromNowAnchored`, and the log one was `hnopast` — *the log
-holds no Block for today* — which `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s own doc comment calls false of
+holds no Block for today* — which `PlanCheck.dayPlan_ok_core_given_the_budget`'s own doc comment calls false of
 every real day.  `PlanCheck.PastPays` names the second, and this section is its evidence, in
 the shape §18 and §22 used for the first.
 
@@ -5150,7 +5150,7 @@ theorem the_over_budget_request_is_over_budget :
 
 set_option maxRecDepth 400000 in
 /-- **`hnopast` is FALSE at the census request** — the §4.3 Wednesday's morning worked `m1`
-twice, so `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` does not apply to it and never applies to a real day
+twice, so `PlanCheck.dayPlan_ok_core_given_the_budget` does not apply to it and never applies to a real day
 after the first block is closed.  This is the fact `PlanCheck.PastPays` exists to get past. -/
 theorem the_log_at_the_census_request_holds_a_block :
     ¬ ∀ t ∈ pastRows theCensusRequest, t.kind ≠ SegKind.block := by decide
@@ -5159,7 +5159,7 @@ set_option maxRecDepth 400000 in
 /-- **And `PlanCheck.PastPays` holds there anyway.**  The pair is the statement: the weaker
 hypothesis is satisfied at a request where the stronger one is refuted, so
 `PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is strictly more general than
-`PlanCheck.dayPlan_ok_core_on_an_unassigned_day` and not merely incomparable to it
+`PlanCheck.dayPlan_ok_core_given_the_budget` and not merely incomparable to it
 (`PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` is the other half). -/
 theorem the_paying_past_at_the_census_request : PlanCheck.PastPays theCensusRequest where
   oneBlock := by decide
@@ -6220,6 +6220,246 @@ theorem the_census_ratio_is_still_seven :
     PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 ∧
       (PlanCheck.checksOf permissive).length = 11 := by
   refine ⟨by decide, rfl⟩
+
+/-! ############################################################################
+## 26. A request that ASSIGNS and whose decoder PAYS — W-30
+############################################################################
+
+**The problem this section exists for, stated as a count.**  After P9 composed §8.2 step 5's
+rows into the day, exactly **one** of this module's requests assigned anything —
+`theBusyRequest` — and that one does **not** pay the fifth decoder clause: its four candidates
+are not items of its plan at all, so `PlanCheck.candsAgree` is `false` there and
+`PlanCheck.energyFilterOk` is `false` on the day it produces
+(`the_battery_passes_where_step_six_filled_and_fails_where_step_five_did`).  A lift proved over
+days that assign, witnessed by one day that assigns and cannot satisfy the lift's own
+hypothesis, is AGENTS §5.2's theorem that compiles and means nothing.
+
+**What is different here, and it is one line of one document.**  `censusWitness`' second task
+is written `ci:5`; this one writes it `ci:2`.  Everything else — the calendar, the wall, the
+month file, the ranks, the `hot` flag on `^m1` — is the census witness's own, so the wall index
+does not move and `PlanReq.wallsAgree` is still true.  The two candidates carry the **store's**
+`ci`, the store's `rootPrio` (`none` for every item of this plan) and the store's `hot`, which
+is what `PlanCheck.candsAgree` asks and what `cCand` could not express: `cCand` writes
+`rootPrio := some 0`, and no item of any witness plan here has a root priority at all.
+
+**The day that comes out**: `^m2` takes the first slot at energy 4 and `^m1` takes none,
+because `ci 5` is above every slot this Wednesday cuts.  So the day has a Block row the
+**planner** placed, carrying a slot energy and naming an item the store holds — the first such
+row in this module — and `PlanCheck.energyFilterOk` has a subject and returns `true`. -/
+
+/-- The census documents with one character changed: `^m2` is `ci:2`, which is a level the
+day's slots reach. -/
+def payingWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1 hot".toList,
+       "- [ ] 2 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_paying_witness_loads : loadsOk payingWitness = true := by decide
+
+/-- The loaded plan.  Total by `the_paying_witness_loads`: the error branch is refuted, not
+defaulted. -/
+def payingPlan : WfPlan :=
+  match h : loadPlan payingWitness with
+  | .ok p => p
+  | .error _ => absurd the_paying_witness_loads (by simp [loadsOk, h])
+
+set_option maxRecDepth 400000 in
+/-- **What the store holds, computed** — the same three ids in the same order as the census
+store, with `^m2` at `ci:2` instead of `ci:5`.  `rootPrio` is `none` for every item of this
+plan, which is the value the candidates below have to carry. -/
+theorem the_paying_witness_holds_the_wall_and_two_tasks :
+    payingPlan.val.store.dom = [['m','2'], ['m','1'], ['g','1']] ∧
+      (effectiveCi payingPlan.val ['m','1']).val = 5 ∧
+      (effectiveCi payingPlan.val ['m','2']).val = 2 ∧
+      (effectiveCi payingPlan.val ['g','1']).val = 3 ∧
+      rootPrio payingPlan.val ['m','1'] = none ∧
+      rootPrio payingPlan.val ['m','2'] = none ∧
+      (payingPlan.val.store.get ['m','1']).map (fun e => e.val.flags) = some [Field.Flag.hot] ∧
+      (payingPlan.val.store.get ['m','2']).map (fun e => e.val.flags) = some [] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **Changing one `ci` moves no wall**, so this request's `PlanReq.wallsAgree` is the census
+request's. -/
+theorem the_paying_witness_indexes_the_calendars_one_wall :
+    Look.wallIndex Cal.chicago 60 payingPlan.val = Look.wednesdayWall := by decide
+
+/-- One candidate that **is an item of its own plan**: `rootPrio` `none` and a settable `hot`,
+which is what `PlanCheck.candPlanView` reads off the store and `cCand` cannot match. -/
+def pCand (id : List Char) (ci : Fin 6) (hot : Bool) (pm : Nat) (l : Field.Loc) (sp : Bool)
+    (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
+    Look.Cand × Option Look.Floor :=
+  (⟨id, ci, none, 50, none, false, false, false, false, false, hot, none,
+     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+
+/-- `^m1` at the store's `ci:5` and the store's `hot`; `^m2` at the store's `ci:2`. -/
+def payingCands : List (Look.Cand × Option Look.Floor) :=
+  [pCand ['m','1'] 5 true  60 .any true (by decide),
+   pCand ['m','2'] 2 false 60 .any true (by decide)]
+
+/-- **The quiet census Wednesday with two candidates the cursor can read.** -/
+def thePayingRequest : PlanReq :=
+  { theQuietCensusRequest with plan := payingPlan, cands := ⟨payingCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The fifth decoder clause is TRUE here, the cursor fills a slot, and the battery passes.**
+
+Five facts, and the third is the one nine runs of witnesses could not produce: a Block row the
+**planner** placed that carries a slot energy and names an item the plan holds.  `^m2` at
+`ci:2` takes slot 0 at energy 4; `^m1` at `ci:5` takes nothing, because no slot this Wednesday
+cuts is that good — which is `witCursorCands`' `^c3` again, this time with a store behind it.
+
+`PlanCheck.energyFilterOk` therefore returns `true` **with a subject**, and it is the same
+checker that returns `false` at `theBusyRequest` — so the difference between the two requests
+is the clause and not the checker. -/
+theorem the_paying_request_assigns_and_the_battery_passes :
+    PlanCheck.candsAgree thePayingRequest = true ∧
+    thePayingRequest.finalAssign.slotOf = [some 1, Option.none, Option.none, Option.none] ∧
+    thePayingRequest.assignedRows.length = 1 ∧
+    ((dayPlan thePayingRequest).segments.filter (fun s =>
+        decide (s.val.kind = SegKind.block) && s.val.energy.isSome)).length = 1 ∧
+    assignedOf (dayPlan thePayingRequest) = [['m','2']] ∧
+    PlanCheck.energyFilterOk thePayingRequest (dayPlan thePayingRequest) = true ∧
+    PlanCheck.noOverbook thePayingRequest (dayPlan thePayingRequest) = true ∧
+    PlanCheck.planOkCore thePayingRequest (dayPlan thePayingRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- `hactive`, `hday` and `hnowcal`, the three R10 hypotheses the lift carries. -/
+theorem the_paying_request_agrees :
+    thePayingRequest.activeAgrees = true ∧ thePayingRequest.dayAgrees = true ∧
+      thePayingRequest.now.sec + 1 < LogStamp.yearEnd ∧
+      thePayingRequest.windDownSec < LogStamp.yearEnd := by decide
+
+set_option maxRecDepth 400000 in
+theorem thePayingRequest_wallsAgree : thePayingRequest.wallsAgree = true := by decide
+
+set_option maxRecDepth 400000 in
+/-- `hnopast`: the log is empty, so the day replays nothing. -/
+theorem the_paying_request_is_quiet : pastRows thePayingRequest = [] := by decide
+
+/-- `hplain`.  The store holds three ids and only `^g1` has an `at:`; that one is the census
+witness's own meeting, unchanged, so this is `the_census_request_is_plain`'s argument at the
+one document that did not move. -/
+theorem the_paying_request_is_plain :
+    ∀ (i : Id) (e : Entity) (a b : Field.DT),
+      thePayingRequest.plan.val.store.get i = some e →
+      e.val.shape = Field.Shape.interval a b →
+      e.val.buffer = none ∧
+        thePayingRequest.dayStart ≤ (Cal.instantOf thePayingRequest.tz a.day a.time).sec ∧
+        (Cal.instantOf thePayingRequest.tz b.day b.time).sec ≤ thePayingRequest.dayEnd ∧
+        (Cal.instantOf thePayingRequest.tz a.day a.time).sec
+          < (Cal.instantOf thePayingRequest.tz b.day b.time).sec ∧
+        (Cal.instantOf thePayingRequest.tz b.day b.time).sec < LogStamp.yearEnd := by
+  intro i e a b hget0 hsh
+  have hget : payingPlan.val.store.get i = some e := hget0
+  have hmem : i ∈ payingPlan.val.store.dom := PlanCheck.mem_dom_of_get _ i e hget
+  rw [the_paying_witness_holds_the_wall_and_two_tasks.1] at hmem
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
+  rcases hmem with rfl | rfl | rfl
+  · have h2 : (payingPlan.val.store.get ['m','2']).map (fun x => x.val.shape)
+        = some Field.Shape.none := by decide
+    rw [hget, Option.map_some] at h2
+    exact absurd ((Option.some.inj h2).symm.trans hsh) (by simp)
+  · have h1 : (payingPlan.val.store.get ['m','1']).map (fun x => x.val.shape)
+        = some Field.Shape.none := by decide
+    rw [hget, Option.map_some] at h1
+    exact absurd ((Option.some.inj h1).symm.trans hsh) (by simp)
+  · have hg : (payingPlan.val.store.get ['g','1']).map (fun x => (x.val.shape, x.val.buffer))
+        = some (Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩,
+                none) := by decide
+    rw [hget, Option.map_some] at hg
+    have he := Option.some.inj hg
+    have hsh0 : e.val.shape
+        = Field.Shape.interval ⟨739867, ⟨770, by decide⟩⟩ ⟨739867, ⟨830, by decide⟩⟩ :=
+      congrArg Prod.fst he
+    have hbuf : e.val.buffer = none := congrArg Prod.snd he
+    rw [hsh0] at hsh
+    injection hsh with ha hb
+    subst ha
+    subst hb
+    exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **§6.1's lift, fired at a day that ASSIGNS.**  Every hypothesis of
+`PlanCheck.dayPlan_ok_core_given_the_budget` is supplied by a theorem above and `hpay` comes
+from `PlanCheck.AssignedRowsPay_of_a_paying_decoder` — the fifth decoder clause, at the first
+request in this tree that both pays it and fills a slot.  This is what makes the restated lift
+non-vacuous (AGENTS §7.4 item 2): before W-30 its domain was the days the fold left alone, and
+a day the fold left alone has no row for five of its seven conjuncts to be about. -/
+theorem the_lift_applies_at_the_paying_request :
+    PlanCheck.planOkCore thePayingRequest (dayPlan thePayingRequest) = true :=
+  PlanCheck.dayPlan_ok_core_given_the_budget thePayingRequest
+    thePayingRequest_wallsAgree the_paying_request_agrees.1 the_paying_request_agrees.2.1
+    the_paying_request_agrees.2.2.1
+    (by rw [the_paying_request_is_quiet]; simp)
+    (PlanCheck.AssignedRowsPay_of_a_paying_decoder thePayingRequest
+      the_paying_request_assigns_and_the_battery_passes.1 the_paying_request_agrees.2.2.2)
+    the_paying_request_assigns_and_the_battery_passes.2.2.2.2.2.2.1
+    the_paying_request_is_plain
+
+set_option maxRecDepth 400000 in
+/-- **`Goals.plan_respects_the_energy_filter` is FALSE as stage 6 wrote it**, and the witness is
+a request this tree has held since P6.  `theBusyRequest`'s cursor gives slots 2 and 3 to group
+3, whose one member is `^c4` at wire `ci = 2`; those slots are at energy **2**; and the plan
+does not hold `^c4` at all, so `Tm.effectiveCi` answers §3.1's default **3**.  The goal asks
+`3 ≤ 2`.
+
+It is E8's shape — two readers of an item's `ci` disagreeing — which is the defect the goal's
+own doc comment says it rules out, and `PlanCheck.candsAgree` is the clause that rules it out
+for real.  `PlanCheck.plan_respects_the_energy_filter` is the restatement and ships in the same
+commit (AGENTS §3.1 item 3). -/
+theorem plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (s : WfSeg) (i : Id) (lvl : Fin 6),
+        s ∈ (dayPlan r).segments → s.val.kind = SegKind.block → s.val.item = some i →
+        s.val.energy = some lvl → (effectiveCi r.plan.val i).val ≤ lvl.val) := by
+  intro h
+  have hw : ((dayPlan theBusyRequest).segments.any (fun s =>
+      decide (s.val.kind = SegKind.block) &&
+        (match s.val.item, s.val.energy with
+         | some i, some lvl => decide (lvl.val < (effectiveCi theBusyRequest.plan.val i).val)
+         | _, _ => false))) = true := by decide
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 hw
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
+  obtain ⟨hk, hm⟩ := hp
+  cases hi : s.val.item with
+  | none => rw [hi] at hm; exact absurd hm (by simp)
+  | some i =>
+    cases he : s.val.energy with
+    | none => rw [hi, he] at hm; exact absurd hm (by simp)
+    | some lvl =>
+      rw [hi, he] at hm
+      simp only [decide_eq_true_eq] at hm
+      exact absurd (h theBusyRequest s i lvl hs hk hi he) (by omega)
+
+set_option maxRecDepth 400000 in
+/-- **"`theBusyRequest` is the only request whose cursor fills a slot" is FALSE, and the shape
+of the error is the one this campaign keeps finding.**  W-29 measured
+*"twenty-one named requests"* by `#eval` and reported `theBusyRequest` **4** and every other one
+**0**.  The roster was a **list**, and the list left out exactly the requests that assign: the
+cursor family (`theCursorRequest` and its four siblings), the batching family
+(`theBatchRequest`, the six `theGather*` requests), the cap family and the atomic one — every
+request in this module built by giving `theRequest` a `cCand`/`bCand` candidate list.
+
+**Re-measured over every `PlanReq` this module defines, by `#eval` at this commit: 19 of 43
+assign at least one row.**  Four of them are computed here, and the number that matters is the
+second column: **not one of the eighteen pays `PlanCheck.candsAgree`**, because every one of
+them sends candidates that are not items of its own plan — `theRequest`'s store holds `^g1` and
+nothing else.  `thePayingRequest` is the nineteenth and the only one that pays.
+
+So the sentence W-29 wrote is corrected by name (README gap **2025**), and what it was reaching
+for survives: before this run **no** request both assigned and paid, which is why
+`energyFilterOk` had no true instance on a day the fold filled. -/
+theorem the_cursor_family_assigns_and_none_of_it_pays :
+    [theCursorRequest, theBatchRequest, theGatherRequest, theAtomicRequest].map
+        (fun r => (r.assignedRows.length, PlanCheck.candsAgree r))
+      = [(4, false), (2, false), (1, false), (2, false)] ∧
+    (thePayingRequest.assignedRows.length, PlanCheck.candsAgree thePayingRequest) = (1, true) := by
+  refine ⟨by decide, by decide⟩
 
 end PlannerWit
 end Tm
