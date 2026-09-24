@@ -6654,3 +6654,44 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.PlanReq.an_assigned_row_carries_its_group
 #print axioms Tm.PlannerWit.the_assigned_set_is_not_the_reservations_alone
 #print axioms Tm.PlannerWit.the_assigned_day_has_a_block_row_that_is_not_the_reservation
+-- W-29 (track G): what STEP 6 keeps (`finalAssign_ok`, the invariant a composed Block row
+-- reads), the group provenance that carries it to a group's members, and the FIFTH clause the
+-- request decoder owes -- the wire's `ci` against the plan's `effectiveCi`, README gap 1984.
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_refl
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_unspend
+#print axioms Tm.PlanCheck.AssignOk_of_freed
+#print axioms Tm.PlanCheck.rePlaceWalk_keeps_AssignOk
+#print axioms Tm.PlanCheck.displaceInto_keeps_AssignOk
+#print axioms Tm.PlanCheck.deferOne_keeps_AssignOk
+#print axioms Tm.PlanCheck.deferWalk_keeps_AssignOk
+#print axioms Tm.PlanCheck.finalAssign_ok
+#print axioms Tm.PlanCheck.an_assigned_slot_is_under_its_slots_energy
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_trans
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_assignStep
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_rePlaceWalk
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_displaceInto
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_deferOne
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_deferWalk
+#print axioms Tm.PlanCheck.KeepsTheFilterFields_foldl_assignStep
+#print axioms Tm.PlanCheck.CarriesBuiltGroups_of_keeps
+#print axioms Tm.PlanCheck.CarriesBuiltGroups_startGroups
+#print axioms Tm.PlanCheck.CarriesBuiltGroups_finalAssign
+#print axioms Tm.PlanCheck.a_member_of_an_assigned_group_carries_its_ci
+#print axioms Tm.PlanCheck.candsAgree_iff
+#print axioms Tm.PlanCheck.candsAgree_of_no_cands
+#print axioms Tm.PlanCheck.a_candidates_ci_is_its_items_ci
+#print axioms Tm.PlanCheck.a_candidate_whose_two_readings_differ_breaks_the_clause
+#print axioms Tm.PlanCheck.an_assigned_member_is_under_its_slots_energy
+#print axioms Tm.PlanCheck.an_assigned_member_after_the_wind_down_is_not_demanding
+-- and the three definitions the clause is stated over, audited the way `Tm.WfPlan` is (6.3).
+#print axioms Tm.PlanCheck.candPlanView
+#print axioms Tm.PlanCheck.candWireView
+#print axioms Tm.PlanCheck.candsAgree
+-- W-29 (track G): the seam computed at a request this tree already builds, and the settling
+-- answer to "does the composition step make README gap 1529 enableable" -- it does not.
+#print axioms Tm.PlannerWit.the_wire_ci_and_the_plan_ci_disagree_at_the_busy_request
+#print axioms Tm.PlannerWit.the_busy_request_does_not_pay_the_fifth_decoder_clause
+#print axioms Tm.PlannerWit.the_lifts_own_request_pays_the_fifth_clause_for_nothing
+#print axioms Tm.PlannerWit.the_filter_passed_a_slot_the_battery_reads_differently
+#print axioms Tm.PlannerWit.the_hole_survives_where_the_composition_adds_no_row
+#print axioms Tm.PlannerWit.the_census_ratio_is_still_seven

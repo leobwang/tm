@@ -6112,6 +6112,115 @@ theorem the_leading_guard_is_not_one_of_the_eleven :
   refine ⟨rfl, by decide⟩
 
 
+/-! ############################################################################
+## 27. W-29: the seam the composition step lands on, and the hole it does not close
+############################################################################
+
+Two questions this run was asked, and both are answered by computing on requests this module
+already builds rather than by reading the composition step's diff.
+
+**One: what does a Block row of §8.2 step 5 cost the battery?**  `PlanCheck.energyFilterOk`
+reads an item's `ci` with `Tm.effectiveCi` off `r.plan`'s store; §8.2 step 5's filter reads it
+off `Look.Cand.ci`, the wire's record.  `theBusyRequest` is the request where those two
+disagree, and it has been in this tree since P6: its four candidates `^c1`–`^c4` are **not
+items of its plan at all**, so `Tm.effectiveCi` answers §3.1's default `3` for every one of
+them while the wire says `3, 3, 5, 2`.  The cursor fills all four slots
+(`the_rest_rows_are_the_slots_no_group_took`), group 3 is `^c4` at wire `ci = 2`, and two of
+the slots it takes are at energy **2** — so a Block row there carries `energy := some 2` and an
+item the battery reads at `ci = 3`.  `PlanCheck.candsAgree` is the clause that rules it out and
+`theBusyRequest` does not pay it.
+
+**Two: does the composition make §8.3's segment-free hole (README gap 1529) enableable?**  No,
+and `the_hole_survives_where_the_composition_adds_no_row` is why: `theRequest`'s cursor fills
+**no** slot, so a composition whose rows are a `filterMap` over `slotOf` adds no row to that
+day whatever — and that day already fails `PlanCheck.holeFree`, on the whole day and on
+`PlanCheck.futureHalf`'s.  The hole is between the rows the day already has. -/
+
+set_option maxRecDepth 400000 in
+/-- **The wire's `ci` and the plan's `ci`, at one request, side by side.**  Four candidates,
+four wire levels, one plan level — because the plan does not hold them. -/
+theorem the_wire_ci_and_the_plan_ci_disagree_at_the_busy_request :
+    theBusyRequest.cands.val.map (fun p => (p.1.ci.val,
+        (Tm.effectiveCi theBusyRequest.plan.val p.1.id).val))
+      = [(3, 3), (3, 3), (5, 3), (2, 3)] ∧
+    theBusyRequest.plan.val.store.get ['c','4'] = none ∧
+    PlanCheck.candPlanView theBusyRequest ['c','4'] = none := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **And so the fifth decoder clause is `false` there**, at two of this module's requests. -/
+theorem the_busy_request_does_not_pay_the_fifth_decoder_clause :
+    PlanCheck.candsAgree theBusyRequest = false ∧
+      PlanCheck.candsAgree theCursorRequest = false := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The reason nine runs of witnesses never met it, computed at NINE requests**: every
+request §6.1's lift has been fired at sends **no candidate** — `theBusyRequest` and its cursor
+siblings are the only ones in this module that send any — and
+`PlanCheck.candsAgree_of_no_cands` passes a request with none for nothing.  The clause is not a
+new bound on the lift — `PlanCheck.DecoderPays` does not carry it and its four hypotheses are
+untouched — it is what the *rows* of a composition step need.  **The composition step landed in
+the same run** (P9, `2374820`), and it restated the lift on a named subdomain rather than
+widening it: the theorem this sentence named is
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day` now and
+carries `hnoassign : r.assignedRows = []` (README gap **1902**). -/
+theorem the_lifts_own_request_pays_the_fifth_clause_for_nothing :
+    [theRequest.cands.val.length, theCensusRequest.cands.val.length,
+      theQuietCensusRequest.cands.val.length, theOffDayRequest.cands.val.length,
+      theMidBreakRequest.cands.val.length, theOverBudgetRequest.cands.val.length,
+      theQueuedRequest.cands.val.length, theRunningRequest.cands.val.length,
+      theStoredRequest.cands.val.length] = [0, 0, 0, 0, 0, 0, 0, 0, 0] ∧
+    [PlanCheck.candsAgree theRequest, PlanCheck.candsAgree theCensusRequest,
+      PlanCheck.candsAgree theQuietCensusRequest, PlanCheck.candsAgree theOffDayRequest,
+      PlanCheck.candsAgree theMidBreakRequest, PlanCheck.candsAgree theOverBudgetRequest,
+      PlanCheck.candsAgree theQueuedRequest] = [true, true, true, true, true, true, true] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The slot the filter passed and the battery would refuse.**  Group 3 holds slots 2 and 3;
+those slots are at energy `2`; the group's `ci` is `2`, so §8.2 step 5's filter passed it; and
+`Tm.effectiveCi` of its one member is `3`.  `PlanCheck.an_assigned_member_is_under_its_slots
+_energy` is the theorem this request cannot satisfy, and `PlanCheck.candsAgree` is the
+hypothesis it fails. -/
+theorem the_filter_passed_a_slot_the_battery_reads_differently :
+    theBusyRequest.energisedSlots.map (fun p => p.1.val) = [3, 3, 2, 2] ∧
+    theBusyRequest.finalAssign.slotOf = [some 0, some 3, some 3, some 3] ∧
+    theBusyRequest.finalAssign.groups.map (fun g => g.ci.val) = [3, 3, 5, 2] ∧
+    (theBusyRequest.finalAssign.groups[3]?).map (fun g => g.members.map (fun m => m.cand.id))
+      = some [['c','4']] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **Gap 1529 is NOT enableable by the composition step, and this is the request that settles
+it.**  `theRequest`'s cursor fills no slot — rows read off `Planner.Assign.slotOf` by a
+`filterMap`, as `Planner.PlanReq.restRows` already reads it, are **nothing** on this day — and
+the day already
+fails `PlanCheck.holeFree` and `PlanCheck.holeFreeFrom`, on the whole day and on the rows at or
+after `now` alike.  Whatever closes gap 1529, it is not this step. -/
+theorem the_hole_survives_where_the_composition_adds_no_row :
+    theRequest.finalAssign.slotOf = [Option.none, Option.none, Option.none, Option.none] ∧
+    PlanCheck.holeFree theRequest (dayPlan theRequest) = false ∧
+    PlanCheck.holeFreeFrom theRequest (dayPlan theRequest) = false ∧
+    PlanCheck.holeFree theRequest
+      (PlanCheck.futureHalf theRequest (dayPlan theRequest)) = false := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **THE RATIO, re-computed at W-29 over the one named request.**  Seven of the eleven have a
+subject on the day `theCensusRequest` produces;
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` is why no request that assigns
+nothing can beat it, and `the_census_ratio` is the same number stated where W-18 settled it.
+Restated here so that a run which changes `Planner.dayRows` sees this number move in its own
+diff.  **W-29's merge is that run and the number did NOT move**: P9 (`2374820`) composed §8.2
+step 5's rows into `Planner.dayRows` and this still computes seven, because `theCensusRequest`
+sends no candidate, so the cursor fills no slot and a `filterMap` over `Planner.Assign.slotOf`
+adds no row to its day.  README gap **2000**. -/
+theorem the_census_ratio_is_still_seven :
+    PlanCheck.subjectCount permissive theCensusRequest (dayPlan theCensusRequest) = 7 ∧
+      (PlanCheck.checksOf permissive).length = 11 := by
+  refine ⟨by decide, rfl⟩
+
 end PlannerWit
 end Tm
 
