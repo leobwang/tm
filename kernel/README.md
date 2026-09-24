@@ -61892,3 +61892,302 @@ UNANSWERED**, and it is **check 11**.
 | **1956** | **eleven `theorem` twins in `Line.lean` stand**, one `by decide` fact proved twice under a rule_ and a row_ name | `kernel/TmKernel/TmKernel/Line.lean`, `kernel/TmKernel/Check.lean` | Check 11's population is `def`, by construction and not by accident. Every theorem deletion edits `Check.lean`'s roster, which the other two tracks of this run hold open |
 
 **Gaps 2097 and above are free** in track A's range.
+
+<!-- =====================================================================
+     APPENDED 2026-09-24: stage 6 (the planner), run **W-30**, the **LAND**
+     step.  Merges `022567b` (track P) and `8f3fa6c` (track A); track G had
+     already landed at `b49a2b8`.  Gap range **2120-2124**; **2120-2123
+     taken**, 2125-2139 are the repair step's.  Parity: **none issued**.
+     ===================================================================== -->
+
+## Stage 6 — W-30, land: merge the comparison and gate tracks — the lift covers the day it plans
+
+**Merges, in order.** Track G committed straight onto `rebuild-on-lean` (`b49a2b8`). `w30-p` is
+merged at **`022567b`** and `w30-a` at **`8f3fa6c`**, both real three-way merges from `552566d`.
+Both W-30 worktrees removed, both branches deleted (`w30-p` was `eb2cfe6`, `w30-a` was `dad6876`),
+`stage5-lookahead` untouched, and `git status --porcelain` **empty before anything was measured**.
+
+### 1. The merge cost two things, and both were CAUGHT rather than noticed
+
+**(a) A parity anchor below an APPEND point is not stable across a merge.** Track P issued **P41**
+and anchored its canonical `taken` line at `README.md:61240`. Putting track G's 314-line block
+above it in the conflict resolution moved that line to `61565`, and `parity.py` failed by name:
+
+```
+1 parity register problem(s):
+  P41: README.md:61240 no longer carries a `taken` for it -- re-anchor the row
+```
+
+The row was re-anchored; the gate was not widened. Track P's own block had corrected README:8833
+in place *"to keep every parity anchor below it stable"* — true for an EDIT, false for a MERGE,
+because a merge inserts a block above the append point rather than below it. Gap **2121**.
+
+**(b) The roster conflict was gap 2096 arriving exactly on schedule.** Track A opened 2096
+predicting that five of its six roster rows are `PlanCheck.lean`'s and track G holds that file
+open. It happened: both parents rostered the **same five bodies** — identical sha1
+(`d1441c32d7aa`, `5343d684ac08`, `3eeffcd97be9`, `c9eab6701384`, `f6b71897a270`) — differing only
+in the fifth column, the pin site. Track A measured `PlanCheck.lean:4126/4354/4463/4467/4446`
+against the pre-G file; track G measured `4384/4612/4721/4725/4704` against the post-G one.
+Resolved as a **union keyed on the body sha1**, keeping track G's line numbers because the merged
+`PlanCheck.lean` IS track G's, plus track A's one `Close.lean` row (`6b7739920485
+Tm.hasAStrayTomb`). Eleven rows, not seventeen.
+
+**That choice is DRIVEN, not asserted.** In a clone (`git clone --local --no-hardlinks`,
+`git status --porcelain` empty before and after the revert), track A's five line numbers were
+planted back and check 9 was run with no build:
+
+```
+=== control: unplanted check 9 ===
+247 new or changed since 86c4dc6, 247 rostered (71 unfoldable, 33 witness fixtures,
+25 pinned by nothing; 1 literal), 0 owed, 30 pin site(s) still a bare line number
+
+=== PLANTED check 9 ===
+9 roster row(s) whose recorded pin site has drifted -- `mutate.py --verify --write` re-runs and rewrites them:
+  … Tm.PlanCheck.CarriesBuiltGroups: roster says `PlanCheck.lean:4354 CarriesBuiltGroups_of_keeps`,
+    PlanCheck.lean:4354 is now in `holeFreeFrom_of_no_rows`
+  … Tm.PlanCheck.KeepsTheFilterFields: roster says `PlanCheck.lean:4126 KeepsTheFilterFields_refl`,
+    PlanCheck.lean:4126 is now in `dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day`
+  … Tm.PlanCheck.candPlanView: roster says `PlanCheck.lean:4463 a_candidates_ci_is_its_items_ci`,
+    PlanCheck.lean:4463 is now in `deferOne_keeps_AssignOk`
+  … Tm.PlanCheck.candWireView: roster says `PlanCheck.lean:4467 a_candidates_ci_is_its_items_ci`,
+    PlanCheck.lean:4467 is now in `deferOne_keeps_AssignOk`
+  … Tm.PlanCheck.candsAgree: roster says `PlanCheck.lean:4446 candsAgree_iff`,
+    PlanCheck.lean:4446 is now in `rePlaceWalk_keeps_AssignOk`
+mutate.py --gate rc=1
+new definitions mutated                        FAILED
+```
+
+**What the plant does NOT reach, and it is gap 2122.** Check 9 re-resolves a pin site that carries
+a declaration name, so the merge's *column* choice is gated. Nothing gates the merge's *row*
+choice: had the resolution kept a stale BODY under a live sha1 — two parents rostering two
+different bodies under one name — check 9 would have re-resolved the name and passed. The union
+key was chosen by hand and is trusted by hand.
+
+### 2. THE TWO NUMBERS
+
+**`r.assignedRows = []` — 42, and it did not move.** Measured by a script over declaration
+signatures (`grep -c` cannot do it: the file's own prose now carries the string), run over
+`552566d`, `b49a2b8` and this commit:
+
+```
+552566d: 44  (PlanCheck.lean 42, PlannerWit.lean 2)
+b49a2b8: 44  (PlanCheck.lean 42, PlannerWit.lean 2)
+merged : 44  (PlanCheck.lean 42, PlannerWit.lean 2)
+```
+
+Track G said *"42 at 552566d, and 42 here"* and that is confirmed independently. **What the count
+hides, and the set diff shows: exactly one statement left and exactly one joined.**
+
+```
+GONE  since 552566d: dayPlan_ok_core_on_an_unassigned_day
+ADDED since 552566d: an_unassigned_day_pays_the_lift
+```
+
+So the restricted population is not 42 of the same statements: track G deleted one restricted lift
+and added the bridge that pays for the general one. **Track G's own gap 2022 is short by one**,
+and that is gap **2120**: it names `dayPlan_ok_core_of_plain_walls_on_an_unassigned_day` and
+`dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` as *"the other two"*, but
+`dayPlan_ok_core_from_now_on_an_unassigned_day` **also still carries the hypothesis**. It is
+harmless — read at `PlanCheck.lean:1826` it is now a **corollary** of
+`dayPlan_ok_core_from_now_given_the_budget` through `an_unassigned_day_pays_the_lift`, a kept
+specialisation and not a restriction. But gap 2022 is a LIST of two where the tree holds three,
+and the campaign has now counted that shape ten times.
+
+**Assigned rows compared — 59 to 97 per run. THE BASELINE THIS WAS TO BE COMPARED AGAINST IS NOT
+WHAT THE RECORD HOLDS, and correcting it changes the reading.** This step was briefed to report
+the figure against **6**; **there is no 6 in this file.** W-29's land block records
+**43 / 39 / 33** rows compared over three runs of **77** cases, W-29's repair block records
+**38**, and track P measured **41** at `552566d`. Gap **2124**. EIGHT runs of
+`planner_invariants` (five before the §3 relabel, three after), final census line of each; all
+eight `8 passed; 0 failed`:
+
+| run | cases | assigned-rows compared | cases exempt | days ASSERTED vs the kernel-ranked fork |
+|---|---|---|---|---|
+| 1 | 143 | **86** | 96 | 47 |
+| 2 | 143 | **70** | 104 | 39 |
+| 3 | 143 | **73** | 98 | 45 |
+| 4 | 143 | **90** | 99 | 44 |
+| 5 | 143 | **75** | 95 | 48 |
+| 6 | 143 | **59** | 110 | 33 |
+| 7 | 143 | **71** | 104 | 39 |
+| 8 | 143 | **97** | 98 | 45 |
+
+**Read against the real baseline, the row count is NOT the thing that moved.** W-29 compared
+33-43 rows over 77 cases; this tree compares 59-97 over **143**, because D46's kept-seed list
+only grows and the replay phase is longer. Per case that is ~0.49 rows then against ~0.53 now,
+and the exempt fraction is 70% then against 66-77% now — both essentially unchanged. Quoting
+"6 → 86" would have been a fourfold improvement invented out of a wrong baseline.
+
+**What actually moved is a counter that did not exist at W-29: `days whose assignment was
+ASSERTED against the kernel-ranked fork`, 33 to 48 per run.** W-29 could only COUNT its
+disagreements — its census carried `whose SLOTS differ` and `whose ITEMS differ` and no
+assertion behind them. Track P's step turned that population into `prop_assert_eq!(&ka, fa2)`.
+So the honest sentence is not "more rows are compared"; it is **"tens of days per run now FAIL
+if step 5 assigns differently, where none did before"**, which is the claim §4(b) drives.
+
+**The track's own conditional answer is NOT softened.** Gap 2005's exemption still fires on
+**95 to 110 of 143 cases** — that is the majority of them, and track P narrowed it rather than
+closing it. Gap 2062 is open: step 5 still takes one more slot than the fork on roughly one case
+in 2,000, seed `3a39ad72…` is kept and replays every run.
+
+### 3. A CENSUS COUNTER THAT SAID THE OPPOSITE OF WHAT IT COUNTED — repaired here
+
+The census line read `exempt days whose SLOTS differ {sdiff}`, and `sdiff` is
+`slots_differ = !exempt && kslots != fslots` — the **non-exempt** days, the exact complement of
+its own label. The same for the counter beside it. This is not a reading: the land drive with
+**one** case printed
+
+```
+planner_invariants plan census: 1 cases, … cases exempt 0, … exempt days whose SLOTS differ 1, …
+```
+
+— one exempt-day disagreement on a run with zero exempt days. It matters because it made the
+disagreement look **confined to the population the arm is not comparing**: a reader taking the
+census at its word reads 1–2 slot disagreements per run as living inside gap 2005's routines
+exemption, when they are on the days the arm compares, and they are the P1/P41 consequence (a
+different `p` reaches step 5 as a different rank order). The labels now name the population:
+`NON-exempt days whose slots differ from the fork's OWN-§7 day` and `of those, whose slots agree
+and whose ITEMS differ`. **No assertion, predicate or population was touched** — only the two
+strings. Gap **2123** is what is left: nothing gates a census label against the expression it
+formats, and this is the fourth counter in this campaign whose label and subject disagreed.
+
+### 4. THE DRIVE, unabridged
+
+**(a) A normal day, merged release binary, a real tree.**
+
+```
+$ tm --dir …/plan wake 07:10
+wake 07:10 · slept 0m
+$ tm --dir …/plan arrive office
+arrive office 07:43 · window 07:43–15:43 · budget 6 blocks
+$ tm --dir …/plan plan
+2026-09-24 · window 07:43–15:43 · budget 6 blocks
+07:43  2 p5   File the gaps                @m1  1b
+08:43  3 p5   Read the two census lines    @m1  1b
+09:43  ·      break 20m
+10:03  ·      rest 1h
+11:03  ·      rest 1h
+12:23  ·      rest 1h
+13:23  ·      rest 1h
+14:43  ·      rest 59m
+15:43  ───    window ends 15:43
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+· 0 underused · 0 ci-5 lost
+· dropped: m1 · t1 · t2 · t5
+```
+
+The week held one ci-5 4b milestone and five tasks at ci 5, 4, 3, 2 and 5. **This is README gap
+2018 reproduced live on the merged binary**, not re-read: four items are dropped, `m1`, `t1` and
+`t5` are ci **5**, and the verb prints `0 ci-5 lost` directly above them. The cause is unchanged —
+`tm-core/src/planner.rs` `a_capacity_lost` sums Rest minutes at energy ≥ 4 only, and these five
+rest hours are the post-wake low-energy stretch. Both planners agree and the kernel proves the
+same rule; it is a spec-wording finding on a surface R3 deletes. Gap 2018 stays open and is now
+driven at this commit as well as at W-29's audit.
+
+**(b) The kernel's day beside the fork's, same request.** No shipped verb produces the kernel's
+own day — `tm plan` hands the fork the kernel's §7 answer and never runs the fork's own pass,
+which is gap **2064** — so this is driven through the arm's wire, in the clone, reverted after
+(`git status --porcelain` empty before and after):
+
+```
+---- W-30 land drive: one request, three days ----
+now = 2026-09-07 11:00:00 CDT  cands = 32  fork routines = 0
+KERNEL  dayPlan r.assignedRows          : [(63924393600, 63924397200, ["zah"]), (63924404400, 63924408000, ["zaf"])]
+FORK    its own §7 pass                 : [(63924393600, 63924397200, ["zaf"])]
+FORK    ranked by the KERNEL's §7 answer: [(63924393600, 63924397200, ["zah"]), (63924404400, 63924408000, ["zaf"])]
+kernel == fork(own §7)?        false
+kernel == fork(kernel-ranked)? true
+§7 rows compared 32, capacity differs to TODAY (P41) 17, beyond today (P1) 12
+--------------------------------------------------
+---- W-30 land drive: one request, three days ----
+now = 2026-09-07 11:00:00 CDT  cands = 31  fork routines = 0
+KERNEL  dayPlan r.assignedRows          : [(63924397200, 63924400800, ["zas"]), (63924400800, 63924404400, ["zau"]), (63924405600, 63924408000, ["zav"])]
+FORK    its own §7 pass                 : [(63924397200, 63924400800, ["zas"]), (63924400800, 63924404400, ["zau"]), (63924405600, 63924408000, ["zav"])]
+FORK    ranked by the KERNEL's §7 answer: [(63924397200, 63924400800, ["zas"]), (63924400800, 63924404400, ["zau"]), (63924405600, 63924408000, ["zav"])]
+kernel == fork(own §7)?        true
+kernel == fork(kernel-ranked)? true
+§7 rows compared 31, capacity differs to TODAY (P41) 13, beyond today (P1) 15
+--------------------------------------------------
+```
+
+**The first case is track P's whole step in six lines.** The kernel assigns two rows; the fork
+running its own §7 pass assigns **one**, and puts a different item (`zaf`, not `zah`) in the one
+slot they share. Handed the kernel's §7 answer — which is what the shipped binary does — the fork
+assigns **exactly the kernel's two rows, slot and item**. So the disagreement was §7 (17 rows P41,
+12 rows P1 on this case alone), not §8.2 step 5. That is the composition P9 made observable and
+the question track P separated.
+
+### 5. Acceptance on the merged tree, capped at 40G with no swap
+
+**`check.sh` is ELEVEN checks after track A's merge, not ten.** All eleven green, first pass, no
+cross-track breakage — which is the class W-29's land met and this one did not:
+
+| # | check | figure |
+|---|---|---|
+| 1 | lake build TmKernel:static | ok |
+| 2 | totality check | ok |
+| 3 | axiom audit | ok, **5,258 theorems** |
+| 4 | Negative.lean rejected | ok |
+| 5 | cargo test (Rust → C shim → Lean), the FFI | ok, **93 tests** |
+| 6 | corpus round trip | ok, **29/37 files and 4/5 whole plans** byte-identical |
+| 7 | stage goals | ok, **8 outstanding, all stage 6** |
+| 8 | prose citations | ok, **40,338 citations, 38,414 resolved**, 1,924 allowed (200 vocabulary, 356 counted), **0 allow entries unused**, 266 files swept, 340 excluded by 15 rules. (This block is itself swept, so its own citations are in the total: the merge commit it describes read 40,303 and 38,379.) |
+| 9 | new definitions mutated | ok, **247 new or changed since `86c4dc6`, 247 rostered** (71 unfoldable, 33 witness fixtures, 25 pinned by nothing; 1 literal), **0 owed**, 30 pin sites still a bare line number |
+| 10 | parity register | ok, **41 registered (P1–P41)**, 41 anchors re-resolved in 3 files, 606 files swept for 55 register rows, **next free P42** |
+| 11 | no two names for one definition | ok, **89 files, 2,644 def bodies, 16 groups** (5 compiled, 11 value), **0 UNANSWERED** |
+
+Wall: **5m32s** cold after the merge, **12.1 s** warm.
+
+**`cargo test --workspace` THREE runs (D46):** `1,476 passed / 0 failed / 9 ignored across 87
+binaries`, **identical all three times**.
+
+| suite | result |
+|---|---|
+| T5 (`kernel_replay_parity --include-ignored`) | **33 passed**, 6.18 s |
+| the door suite (`kernel_log_door --include-ignored`) | **23 passed** |
+| `cli_switch_acceptance --include-ignored` | **16 passed** |
+| `cli_latency --include-ignored` | **6 passed**, 16.97 s, in band, at load average **2.24** (gap 1333) |
+| `kernel_call_counts` | **2 passed** |
+| `one_padder` | **9 passed** |
+| `one_renderer` | **25 passed** |
+| `kernel_row_cells` | **26 passed** |
+| `kernel_item_grammar` | **6 passed** |
+| `kernel_planner_wire` | **21 passed** |
+| `planner_invariants` | **8 passed**, EIGHT runs, censuses in §2 |
+
+### 6. Burn-down, and the goal this run discharged
+
+**Burn-down 8, all stage 6** — down from 9. **`b49a2b8` (track G) discharged
+`Goals.plan_respects_the_energy_filter`** (L26, §8.3's energy filter), and it left the way AGENTS
+§3.1 item 3 requires rather than by proof: the goal reads an item's `ci` with `Tm.effectiveCi` out
+of the **plan store** while step 5's filter reads `Look.Cand.ci`, and nothing in the tree made the
+two agree — so it is **false as stage 6 wrote it**, refuted by
+`PlannerWit.plan_respects_the_energy_filter_as_stage_6_wrote_it_is_refuted` and restated as
+`PlanCheck.plan_respects_the_energy_filter`, both audited in `Check.lean`.
+
+The eight left: `plan_does_not_overbook`, `plan_places_no_demanding_block_after_wind_down`,
+`plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_item`,
+`plan_never_batches_past_an_equal_ci_candidate`, `plan_tail_drop`, `plan_is_stable_across_a_replan`.
+Gap **2020** (the `noOverbook` count over a day that assigns) is still the only thing between
+`PlanCheck.lean` and seven of seven over a day the fold touched.
+
+### 7. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2120** | **gap 2022's list is short by one.** It names two `planOkCore` lifts as still carrying `r.assignedRows = []`; the tree holds **three** — `dayPlan_ok_core_from_now_on_an_unassigned_day` as well. That one is a derived corollary of the general form and so is harmless, which is exactly why the list did not notice it | `kernel/README.md` gap 2022, `PlanCheck.lean:1826` | nothing unsound. It is the campaign's list-where-the-rule-is-a-class shape for the **tenth** counted time, and the rule is stateable in one line: *a statement needs the hypothesis when it is not derivable from a general form* |
+| **2121** | **a parity anchor below an APPEND point is not stable across a merge**, and nothing warns the track that issues one. Track P anchored P41 at `README.md:61240`; track G's block went in above it and moved it 325 lines | `kernel/parity.txt`, `kernel/parity.py` | check 10 CAUGHT it, by name, with no build — so the cost is one re-anchor per merge and never a silent wrong row. What is open is that the register's anchor is a LINE in a file every track appends to, and the index could key on the block's own banner instead |
+| **2122** | **the roster merge's UNION KEY is chosen by hand and gated on only half of itself.** Check 9 re-resolves a pin site carrying a declaration name, so a merge that kept the wrong COLUMN fails (driven above). A merge that kept the wrong BODY — two parents rostering two different bodies under one name — re-resolves and passes | `kernel/mutations.txt`, `kernel/mutate.py` | it did not happen here (all five sha1s were byte-identical across both parents, which is checkable and was checked). The gate that would catch it is one that refuses a roster holding two rows for one `(file, name)` |
+| **2124** | **the figure this step was briefed to compare against does not exist in this file.** The brief said the comparison had compared **6** assigned rows; the record holds 38 (W-29 repair), 41 (track P at the baseline) and 43/39/33 (W-29 land, over 77 cases). Had it been quoted, this block would have reported a fourfold improvement that did not happen | every step's own brief, and every "it was N" sentence in this file | it cost nothing here because the baseline was re-read before it was quoted. The class is README gap 871's and gap 2095's — a number carried forward from a neighbouring paragraph rather than re-measured — and §5.11's re-measure rule still has no gate (gap 2095) |
+| **2123** | **nothing gates a census label against the expression it formats.** `exempt days whose SLOTS differ` counted `!exempt && …` — the complement of its own label — and it printed `cases exempt 0, exempt days whose SLOTS differ 1` without anything failing. Repaired here, in the string only | `tm/tests/planner_invariants.rs` | the label is right now. What is open is the class: this is the fourth counter in this campaign whose label and subject disagreed, and a census is what every step of this campaign reads a track's work through. A mislabelled counter is a **claim of having checked that was never made**, printed once per case |
+
+**Gap 2124 is taken** (the baseline misquote above, recorded so the next reader does not inherit
+it: any sentence of the form "it was N" about this census must name the block it came from,
+because four blocks carry four different N). Gaps 2125 and above are free in this range. Gaps 113/114/116, 301, 346, 365, 435, 551, 577, 803, 876, 1006, 1065, 1333,
+1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1904, 1906, 1956, 1957,
+1984-1988, 1990, 2000-2007 and 2016-2018 are untouched by this step, and **2018, 2022, 2062, 2064
+and 2096 are each driven or discharged above by name**: 2018 re-driven on the merged binary, 2022
+corrected by 2120, 2062 still open with its seed, 2064 the reason §4(b) goes through the arm, and
+2096 **paid in full at `8f3fa6c`** — its prediction was right, the cost was five rows, and the
+classifier it asked for is what made the conflict readable.

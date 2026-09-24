@@ -2022,8 +2022,9 @@ proptest! {
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
              {seen} kernel rows, window-differs {wdiff}, budget-differs {bdiff}, \
              assigned-rows compared {acmp}, cases exempt {aexempt}, \
-             cases whose §7 answers differ {pdiff}, exempt days whose SLOTS differ {sdiff}, \
-             whose slots agree and whose ITEMS differ {iddiff}, \
+             cases whose §7 answers differ {pdiff}, \
+             NON-exempt days whose slots differ from the fork's OWN-§7 day {sdiff}, \
+             of those, whose slots agree and whose ITEMS differ {iddiff}, \
              §7 rows compared {grows}, capacity differs to TODAY (P41) {gday0}, \
              beyond today (P1) {gdays}, rows unkeyable {gdups}, \
              days whose assignment was ASSERTED against the kernel-ranked fork {gsame}, \
