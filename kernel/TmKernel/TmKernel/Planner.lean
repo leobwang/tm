@@ -195,6 +195,33 @@ theorem mkBatch?_accepts (ids : List Id) (h : ids.length ≤ maxBatch) :
   rw [dif_pos h]
   rfl
 
+/-- **The total constructor a row builder needs**, in `Capped.ofListTake`'s own shape: a
+`SegKind.batch` is built inside `dayRows`, where there is no `Except` to refuse into and D28
+forbids a refusal family, so the bound is taken rather than checked.  `mkBatch?` stays and is
+still the decoder's: a wire value that is too long is *refused*, and a group the planner built
+is *truncated* — two different questions about the same bound, which is why there are two
+constructors and not one with two readings (AGENTS §5.6).
+
+**The truncation is not known to be unreachable on a produced day**, which is README gap
+**1900**; `batchIdsOf_of_bounded` below is the subdomain form (AGENTS §3.1 item 4) and
+`PlanReq.a_group_is_a_bounded_batch` is the fact that would discharge it for
+`buildGroups`. -/
+def batchIdsOf (ids : List Id) : BatchIds :=
+  ⟨ids.take maxBatch, by
+    rw [List.length_take]; omega⟩
+
+/-- **And it is the identity on a list the bound already fits** — so a batch row of a group
+`PlanReq.a_group_is_a_bounded_batch` covers carries its members and nothing less. -/
+theorem batchIdsOf_of_bounded (ids : List Id) (h : ids.length ≤ maxBatch) :
+    (batchIdsOf ids).val = ids := by
+  show ids.take maxBatch = ids
+  exact List.take_of_length_le h
+
+/-- **A truncation loses only the tail** — the half that is true whether or not the bound
+fires, and the one `Seg.items` needs. -/
+theorem batchIdsOf_is_a_prefix (ids : List Id) : (batchIdsOf ids).val <+: ids :=
+  List.take_prefix _ _
+
 /-- **Fork `planner::SegKind`, and §12.1's ghost row.**  Ten of the eleven are the fork's;
 `ghost` is the arrival plan the day bar draws behind today's (`.tm/arrival_plan.json`), which
 the fork carries as a `SegFlags` bit and which is a *kind* of row, not a mark on one. -/
@@ -990,6 +1017,24 @@ theorem the_horizon_is_cal_instants_own_bound :
     Cal.Instant.wf ⟨LogStamp.yearEnd, 0⟩ = false := by
   simp [Cal.Instant.wf, LogStamp.yearEnd]
 
+/-- **Every row the day holds ends inside the calendar** — the `Seg.wf` bit read back, which is
+what lets a comparison against a `clampSec`ed instant be decided rather than assumed. -/
+theorem WfSeg.stop_lt_yearEnd (s : WfSeg) : s.val.stop < LogStamp.yearEnd := by
+  have h := s.property
+  unfold Seg.wf at h
+  simp only [Bool.and_eq_true] at h
+  have h2 := h.2
+  simp only [Cal.Instant.wf, Bool.and_eq_true, decide_eq_true_eq] at h2
+  simp only [LogStamp.yearEnd]
+  omega
+
+/-- **And it runs forwards**, the other half of the same bit. -/
+theorem WfSeg.start_le_stop (s : WfSeg) : s.val.start ≤ s.val.stop := by
+  have h := s.property
+  unfold Seg.wf at h
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at h
+  exact h.1
+
 theorem Seg.wf_of (s : Seg) (h1 : s.start ≤ s.stop) (h2 : s.stop < LogStamp.yearEnd) :
     Seg.wf s = true := by
   simp [Seg.wf, instant_wf_of_sec _ h2, h1]
@@ -1018,6 +1063,10 @@ theorem segOf_is_the_row_inside_the_calendar (s : Seg) (h1 : s.start ≤ s.stop)
 
 theorem segOf_kind (s : Seg) : (segOf s).val.kind = s.kind := rfl
 theorem segOf_item (s : Seg) : (segOf s).val.item = s.item := rfl
+
+/-- **And its items**, which is `kind` and `item` together and so is forced too — the lemma
+that lets a law about the ids a *placed* row names be read off the row the planner wrote. -/
+theorem segOf_items (s : Seg) : (segOf s).val.items = s.items := rfl
 
 /-- **The forcing only ever shrinks a row**, so every second the placed row covers is a second
 the written row covered.  This is what lets a law about `[t.start, t.stop)` be read off the
@@ -1512,7 +1561,7 @@ which never calls `loc_ok`).  A routine is furniture: it happens where you are.
   `SegKind.block` row, and the day's first Block makes four of `PlanCheck`'s six block-side
   checks non-vacuous — `noDemandingAfterWindDown` among them, and that one has **no Active
   exception** and needs one (README gap **437**).  Landing it therefore drags in the
-  restatement `PlanCheck.dayPlan_ok_core`'s own comment assigns to **P5**.  Until it lands a
+  restatement `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s own comment assigns to **P5**.  Until it lands a
   routine may be placed over the running block (README gap 434).
 * **`diagnostics.notes`' un-placed note** (`planner.rs:1055`) is **P6**'s: a deferred routine is
   only *finally* un-placed once step 6 has tried the lowest-energy position.  `Note.noPosition`
@@ -1890,7 +1939,7 @@ definition that takes the whole `PlanReq` and recurses, so it is the one place w
 requests that agree on every field a step-two row can see are still not *definitionally* equal
 — every other link in the chain (`routineInstances`, `bedSec`, `blockedByWalls`, `night`,
 `placeStep`, `routineRow`) reduces on its own.  Found at W-15's land step, which needed
-`PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` re-proved
+`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` re-proved
 over P2's day (D5). -/
 theorem splitSleep_congr {r r' : PlanReq}
     (h : PlanReq.isSleepInstance r' = PlanReq.isSleepInstance r) :
@@ -2664,7 +2713,7 @@ theorem stepTwoSegs_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ stepTwoSegs
 
 /-- **No routine row is a Block**, so every block-side check of the battery is about the
 replayed past and §8.2 choice 5b's reservation and nothing else
-(`PlanCheck.dayPlan_block_rows_are_replayed_or_reserved`). -/
+(`PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned`). -/
 theorem routineRows_are_not_blocks (r : PlanReq) (qs : List Placed) (t : Seg)
     (h : t ∈ routineRows r qs) : t.kind ≠ SegKind.block := by
   rcases routineRows_kinds r qs t h with h1 | h1 | h1 <;> rw [h1] <;> intro hc <;> cases hc
@@ -2812,6 +2861,33 @@ theorem PlanReq.no_slot_touches_the_running_block (r : PlanReq) (q : ActiveRes)
     refine foldl_placeStep_grows_the_blocked r r.blockedBeforeRoutines _ _ (fun w hw => hw) _ ?_
     unfold PlanReq.blockedBeforeRoutines PlanReq.reservedSpan
     rw [hq]; simp
+  exact r.a_slot_touches_nothing_blocked s h hmem h1 h2
+
+/-- **A slot is never empty** — `Look.SlotShape`'s own first conjunct, read off L3's spec at
+the planner's arguments.  It is what makes "the slot is free of every wall" an argument about a
+real instant: an empty span touches nothing and would say nothing. -/
+theorem PlanReq.a_slot_is_not_empty (r : PlanReq) (s : Look.Slot) (h : s ∈ r.todaySlots) :
+    s.start < s.stop := by
+  unfold PlanReq.todaySlots PlanReq.todayCut at h
+  obtain ⟨-, -, -, h4, -, -, -, -⟩ :=
+    Look.cutSlots_spec r.look.day.cut r.cutFrom r.window.2 r.slotBlocked r.restsToday r.sinceBreak
+  exact (h4 s h).1.1
+
+/-- **No slot is cut under a wall.**  `blockedByWalls` is inside `blockedBeforeRoutines`, which
+is where step 2's fold starts and which it only ever grows
+(`foldl_placeStep_grows_the_blocked`) — the same three lines
+`no_slot_touches_the_running_block` takes for the reservation.  It is the half §8.2 step 5's
+Block rows need: a row that spans a slot cannot overlap a Wall row, because the slot does not. -/
+theorem PlanReq.no_slot_touches_a_wall (r : PlanReq) {v : Nat × Nat}
+    (hv : v ∈ blockedByWalls r) (s : Look.Slot) (h : s ∈ r.todaySlots) {t : Nat}
+    (h1 : s.start ≤ t) (h2 : t < s.stop) : ¬ (v.1 ≤ t ∧ t < v.2) := by
+  have hmem : v ∈ r.slotBlocked ++ r.restsToday := by
+    refine List.mem_append_left _ ?_
+    unfold PlanReq.slotBlocked
+    refine List.mem_cons_of_mem _ ?_
+    refine foldl_placeStep_grows_the_blocked r r.blockedBeforeRoutines _ _ (fun w hw => hw) _ ?_
+    unfold PlanReq.blockedBeforeRoutines
+    exact List.mem_append_left _ hv
   exact r.a_slot_touches_nothing_blocked s h hmem h1 h2
 
 /-- **The evening is not cut** — `night()` is in the blocked list, so no slot reaches the
@@ -5379,7 +5455,7 @@ step 2's own.  There is no second break rule and no second overlap test.
 
 **What step 7 does NOT emit, and why.**  The Block and Batch rows of §8.2 step 5 are still
 owed (README gap **803** item 4): they are the switch-shaped change (D19) that makes four
-`PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core`'s
+`PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s
 `hblk` — *"every Block row of this day is the reservation"* — with them, which is **G1**'s
 lift.  Rest, Optional and Break rows are none of those kinds, so they land without touching it.
 The **Break rows** themselves are gap **551**'s and stay with the Block rows they are between:
@@ -5823,21 +5899,225 @@ still has none (`a_deferred_routine_has_no_row`).  `stepTwoSegs` is the same ren
 2's list and stays, because step 2's own laws are about step 2's list. -/
 def dayRoutineSegs (r : PlanReq) : List Seg := routineRows r r.finalRoutines
 
+/-! ### §8.2 step 5's rows — the work the day assigns
+
+**Fork `emit_segments`' Block/Batch loop** (`planner.rs:1836-1866`).  Every step up to here had
+its rule and its laws and emitted nothing: `assignFold` and `finalAssign` were built, proved and
+read seventeen times inside this file, and **their rows reached no day** — D50 and README gap
+**1790**.  This is the composition, and it is the only thing between the kernel's day and the
+fork's that is not a deletion.
+
+**It reads `finalAssign` and not `assignFold`**, for the reason `restRows` does: fork
+`run()` calls `place_deferred` (`planner.rs:1032`) and *then* `emit_segments`
+(`planner.rs:1071`) with the same `&assign`, so a slot step 6 freed carries no Block row and a
+slot step 6 re-filled does.  `emitKeptBreaks` is the one place the fork keeps step **5**'s
+answer, and it says so where it is.
+
+**The four fields that are not the slot's.**  `planned` is the group's commitment and not the
+slot's minutes (fork `planned_min: Some(g.commit_min)`); `mult` is the group's exact multiplier
+(there is no `Float` here, AGENTS §4); `underused` is fork `gap >= 2` on `slot.energy
+.saturating_sub(g.ci)`, which is `Nat` subtraction and needs no `saturating_` spelling; and
+`hot` is §7.2's `p = 0` over the **members**, the priority and not the `hot` key.
+
+**`note` is `none` and that is the design, not an omission.**  Fork's row carries
+`note: (gap >= 2).then(|| format!("↓ slot {}, item {}", …))`; `Emit.underusedCell` derives
+exactly that text from the row's own `energy` and the item's `ci` when `flags.underused` is
+set, and `Emit.noteCell` gives an explicit note precedence over it.  A `Note` constructor here
+would be a second writer of one sentence (D49's shape, AGENTS §5.3). -/
+def Group.ids (g : Group) : List Id := g.members.map (fun m => m.cand.id)
+
+/-- **One assigned row** — fork `emit_segments`' `out.push(Segment { … })` for the slot `i`
+that `assign[i]` gave to `groups[gi]`, as a function of the three things the fork reads: the
+slot's energy, the slot, and the group.  Named and separate because every law below is a `rfl`
+about *this* record, which is what W-28's ten survivors taught: a theorem about the SHAPE of a
+row pins nothing about the FIELDS it writes. -/
+def assignedSeg (e : Fin 6) (s : Look.Slot) (g : Group) : Seg :=
+  { start := s.start, stop := s.stop,
+    kind := if 1 < g.ids.length then SegKind.batch (batchIdsOf g.ids) else SegKind.block,
+    energy := some e,
+    item := match g.ids with | [i] => some i | _ => Option.none,
+    inst := Option.none,
+    flags := { SegFlags.none with
+                 underused := decide (2 ≤ e.val - g.ci.val),
+                 hot := g.members.any (fun m => m.key.p == 0) },
+    planned := some g.commitMin, mult := some g.mult, note := Option.none }
+
+/-- **§8.2 step 5's rows, at this request's own assignment.** -/
+def PlanReq.assignedRows (r : PlanReq) : List Seg :=
+  (r.energisedSlots.zip r.finalAssign.slotOf).filterMap (fun p =>
+    match p.2 with
+    | Option.none => Option.none
+    | some gi =>
+      match r.finalAssign.groups[gi]? with
+      | Option.none => Option.none
+      | some g => some (assignedSeg p.1.1 p.1.2 g))
+
+/-! ### What §8.2 step 5's rows say
+
+Eight `rfl`s and two statements.  The `rfl`s are the fields the fork writes, pinned one by one
+— `assignedSeg_note` included, because *not* writing a note is a decision `Emit.noteCell`
+depends on. -/
+
+theorem assignedSeg_start (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).start = s.start := rfl
+
+theorem assignedSeg_stop (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).stop = s.stop := rfl
+
+theorem assignedSeg_energy (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).energy = some e := rfl
+
+theorem assignedSeg_planned (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).planned = some g.commitMin := rfl
+
+theorem assignedSeg_mult (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).mult = some g.mult := rfl
+
+theorem assignedSeg_inst (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).inst = Option.none := rfl
+
+/-- **The `↓` mark is the slot's gap over the group**, fork `underused: gap >= 2` on
+`slot.energy.saturating_sub(g.ci)` — `Nat` subtraction *is* the saturating one, so the fork's
+spelling has no counterpart here. -/
+theorem assignedSeg_underused (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).flags.underused = decide (2 ≤ e.val - g.ci.val) := rfl
+
+/-- **And the `⚠` is §7.2's `p = 0` over the members** — the priority, not the `hot` key. -/
+theorem assignedSeg_hot (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).flags.hot = g.members.any (fun m => m.key.p == 0) := rfl
+
+/-- **The row carries no `Note`, and that is the design.**  Fork's row carries
+`note: (gap >= 2).then(|| format!("↓ slot {}, item {}", …))`; `Emit.underusedCell` derives
+exactly that text from the row's own `energy` and the item's `ci` whenever `flags.underused`
+is set, and `Emit.noteCell` gives an explicit note precedence over it.  A `Note` constructor
+here would be a **second writer of one sentence** — D49's shape, AGENTS §5.3. -/
+theorem assignedSeg_note (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).note = Option.none := rfl
+
+/-- **An assigned row is a Block or a Batch — never anything else.**  The clause every "these
+rows cannot reach that set" law is built on, and the one that makes `dayAssigned` reach
+something the planner chose for the first time. -/
+theorem assignedSeg_is_work (e : Fin 6) (s : Look.Slot) (g : Group) :
+    (assignedSeg e s g).kind.isWork = true := by
+  unfold assignedSeg SegKind.isWork
+  by_cases h : 1 < g.ids.length
+  · simp only [if_pos h]
+  · simp only [if_neg h]
+
+/-- A one-or-zero-member list is what the `item` field's `match` is for.  Stated over an
+arbitrary list because that is all it is about. -/
+theorem shortListIsItsHead (l : List Id) (h : l.length ≤ 1) :
+    (match l with | [i] => some i | _ => (Option.none : Option Id)).toList = l := by
+  match l, h with
+  | [], _ => rfl
+  | [i], _ => rfl
+  | i :: j :: rest, hl => exact absurd hl (by simp)
+
+/-- **A Batch row names its group's members and a Block row names the one member it has** —
+fork `item: (ids.len() == 1).then(|| ids[0].clone())` beside `SegKind::Batch(ids)`, so
+`Seg.items` is the group's ids either way and the day's assigned set is the groups' members.
+
+**Stated on the subdomain the bound fits** (AGENTS §3.1 item 4): `batchIdsOf` truncates at
+`maxBatch`, and that the truncation never fires on a produced day needs a group chain
+`assignFold` and `deferWalk` do not yet carry — README gap **1900**.
+`PlanReq.a_group_is_a_bounded_batch` is that fact for `buildGroups`; the missing half is
+that a group of `finalAssign` is one of them. -/
+theorem assignedSeg_items_when_the_group_fits_the_batch_bound (e : Fin 6) (s : Look.Slot)
+    (g : Group) (hb : g.ids.length ≤ maxBatch) : (assignedSeg e s g).items = g.ids := by
+  unfold Seg.items assignedSeg
+  by_cases hlt : 1 < g.ids.length
+  · simp only [if_pos hlt]
+    exact batchIdsOf_of_bounded _ hb
+  · simp only [if_neg hlt]
+    exact shortListIsItsHead g.ids (by omega)
+
+/-- **Every assigned row is `assignedSeg` at a slot of this day and the group that slot went
+to** — a `filterMap` over the zip, so a row exists only where `slotOf` says a group holds that
+slot, and every law above applies to it. -/
+theorem PlanReq.mem_assignedRows {r : PlanReq} {t : Seg} (h : t ∈ r.assignedRows) :
+    ∃ (e : Fin 6) (s : Look.Slot) (gi : Nat) (g : Group),
+      ((e, s), some gi) ∈ r.energisedSlots.zip r.finalAssign.slotOf ∧
+        r.finalAssign.groups[gi]? = some g ∧ t = assignedSeg e s g := by
+  unfold PlanReq.assignedRows at h
+  obtain ⟨p, hp, hq⟩ := List.mem_filterMap.1 h
+  cases hgi : p.2 with
+  | none => simp only [hgi] at hq; exact absurd hq (by simp)
+  | some gi =>
+    cases hg : r.finalAssign.groups[gi]? with
+    | none => simp only [hgi, hg] at hq; exact absurd hq (by simp)
+    | some g =>
+      simp only [hgi, hg, Option.some.injEq] at hq
+      refine ⟨p.1.1, p.1.2, gi, g, ?_, hg, hq.symm⟩
+      have hpe : ((p.1.1, p.1.2), some gi) = p := by rw [← hgi]
+      rw [hpe]; exact hp
+
+/-- **Every assigned row is work.** -/
+theorem PlanReq.assignedRows_are_work (r : PlanReq) (t : Seg) (h : t ∈ r.assignedRows) :
+    t.kind.isWork = true := by
+  obtain ⟨e, s, -, g, -, -, heq⟩ := r.mem_assignedRows h
+  rw [heq]; exact assignedSeg_is_work e s g
+
+/-- **A kind that is work is none of the seven that are not** — stated once as the class it is,
+rather than four times as a list of names (the shape every widening takes since W-27).  The
+four corollaries below are this lemma at the four kinds the day's case analyses ask about. -/
+theorem PlanReq.a_work_row_is_not (r : PlanReq) (t : Seg) (h : t ∈ r.assignedRows)
+    (k : SegKind) (hk : k.isWork = false) : t.kind ≠ k := by
+  intro hc
+  have hw := r.assignedRows_are_work t h
+  rw [hc, hk] at hw
+  exact absurd hw (by simp)
+
+theorem PlanReq.assignedRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ r.assignedRows) :
+    t.kind ≠ SegKind.wall := r.a_work_row_is_not t h _ rfl
+
+theorem PlanReq.assignedRows_are_not_breaks (r : PlanReq) (t : Seg) (h : t ∈ r.assignedRows) :
+    t.kind ≠ SegKind.brk := r.a_work_row_is_not t h _ rfl
+
+theorem PlanReq.assignedRows_are_not_wind_down (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) : t.kind ≠ SegKind.windDown := r.a_work_row_is_not t h _ rfl
+
+theorem PlanReq.assignedRows_are_not_rest (r : PlanReq) (t : Seg) (h : t ∈ r.assignedRows) :
+    t.kind ≠ SegKind.rest := r.a_work_row_is_not t h _ rfl
+
+/-- **And it spans exactly the slot it was given** — fork `start: slot.start, end: slot.end`,
+so §8.2 step 5 invents no interval of its own and `Look`'s cut is the only thing that says
+where a Block of this day may be.  This is the hinge every wall, break and overlap obligation
+about an assigned row will hang on. -/
+theorem PlanReq.an_assigned_row_is_a_slot_of_the_day (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) :
+    ∃ (e : Fin 6) (s : Look.Slot), (e, s) ∈ r.energisedSlots ∧
+      t.start = s.start ∧ t.stop = s.stop ∧ t.energy = some e := by
+  obtain ⟨e, s, _gi, g, hz, -, heq⟩ := r.mem_assignedRows h
+  subst heq
+  exact ⟨e, s, (List.of_mem_zip hz).1, assignedSeg_start e s g, assignedSeg_stop e s g,
+    assignedSeg_energy e s g⟩
+
+/-- **The row's group is the assignment's own** — the half that lets a law about
+`finalAssign.groups` become a law about a row of the day. -/
+theorem PlanReq.an_assigned_row_carries_its_group (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) :
+    ∃ (gi : Nat) (g : Group), r.finalAssign.groups[gi]? = some g ∧
+      t.planned = some g.commitMin ∧ t.mult = some g.mult ∧ t.note = Option.none := by
+  obtain ⟨e, s, gi, g, -, hgp, heq⟩ := r.mem_assignedRows h
+  subst heq
+  exact ⟨gi, g, hgp, assignedSeg_planned e s g, assignedSeg_mult e s g, assignedSeg_note e s g⟩
+
 /-- **The day's rows**: steps 1, 2, 6 and **7**, and §8.2 choice 5b's reservation, in the
 fork's order — `emit_segments` renders the optionals and then the Rest slots
 (`planner.rs:1900-1957`), and the sort puts every row where its start says.
 
-**The Block and Batch rows of §8.2 step 5 are still not here** (README gap **803** item 4):
-they are the switch-shaped change (D19) that makes four `PlanCheck` emptiness theorems false
-and takes `PlanCheck.dayPlan_ok_core`'s `hblk` with them.  Step 7's three kinds are not Block
-rows and land without touching it — which is why this list can gain two entries and
-`dayPlan_ok_core` is re-proved unchanged. -/
+**The Block and Batch rows of §8.2 step 5 ARE here now** (D50, README gaps **803** item 4 and
+**1790**): `PlanReq.assignedRows` is the composition step, and it is the switch-shaped change
+(D19) — four `PlanCheck` emptiness theorems became false on this commit and
+`PlanCheck.dayPlan_ok_core_on_an_unassigned_day`'s `hblk` went with them.  Every one of the five is restated rather
+than deleted, and each restatement carries a computed refutation of the old form beside it
+(AGENTS §3.1 item 3). -/
 def dayRows (r : PlanReq) : List WfSeg :=
-  sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+  sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
     r.optionalRows ++ r.restRows).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
-    ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+    ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.optionalRows ++ r.restRows, s = segOf t := by
   have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
@@ -5845,7 +6125,7 @@ theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
 /-- **A row the planner places is a row of the day** — the converse `dayRows` owes, used to
 show the reservation really reaches `dayPlan`. -/
 theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
-    (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++
+    (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
   mem_sortRows.2 (List.mem_map.2 ⟨t, h, rfl⟩)
 
@@ -5920,15 +6200,21 @@ as the number. -/
 theorem assignedOf_dayPlan_is_dayAssigned (r : PlanReq) :
     assignedOf (dayPlan r) = dayAssigned r := rfl
 
-/-- **The day's assigned set never sees a routine row.**  `assignedOf` keeps the rows
-`SegKind.isWork` accepts — Block and Batch and nothing else — a Routine, WindDown or Sleep row
-is none of those (`routineRows_are_not_work`), and `sortRows_filter` lets the filter run
-*before* the sort.  So the rows §8.2 steps 2 and 6 place can neither enter the assigned set nor
-reorder it, and every law about `assignedOf` is about step 1 and §8.2 choice 5b's reservation
-alone until the assign fold emits a row (README gap 803). -/
-theorem assignedOf_dayPlan_drops_the_routine_rows (r : PlanReq) :
+/-- **The day's assigned set is step 1, the reservation and §8.2 step 5 — and nothing else.**
+`assignedOf` keeps the rows `SegKind.isWork` accepts — Block and Batch and nothing else — a
+Routine, WindDown, Sleep, Optional or Rest row is none of those, and `sortRows_filter` lets the
+filter run *before* the sort.  So the rows §8.2 steps 2, 6 and 7 place can neither enter the
+assigned set nor reorder it.
+
+**RESTATED AT P9, and the old form is FALSE** (AGENTS §3.1 item 3, D50).  It read
+`= … ((stepOneSegs r ++ reservationSegs r).map segOf) …` and was named
+`assignedOf_dayPlan_is_step_one_the_reservation_and_step_five`; the assign fold emits rows now (README gap 803
+item 4 closed, gap 1790), and `PlannerWit.the_assigned_set_is_not_the_reservations_alone` is
+the computed day on which the two sides of the old equation differ.  The name moved with the
+statement (AGENTS §5.2) and `Check.lean` records the deletion. -/
+theorem assignedOf_dayPlan_is_step_one_the_reservation_and_step_five (r : PlanReq) :
     assignedOf (dayPlan r)
-      = (sortRows (((stepOneSegs r ++ reservationSegs r).map segOf).filter
+      = (sortRows (((stepOneSegs r ++ reservationSegs r ++ r.assignedRows).map segOf).filter
           (fun s => s.val.kind.isWork))).flatMap segItems := by
   unfold assignedOf
   rw [dayPlan_segments]
@@ -5949,9 +6235,9 @@ theorem assignedOf_dayPlan_drops_the_routine_rows (r : PlanReq) :
     obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
     rw [segOf_kind, r.restRows_are_not_work t ht]
     simp
-  have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.optionalRows ++
-      r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
-        = ((stepOneSegs r ++ reservationSegs r).map segOf).filter
+  have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
+      r.optionalRows ++ r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
+        = ((stepOneSegs r ++ reservationSegs r ++ r.assignedRows).map segOf).filter
           (fun s => s.val.kind.isWork) := by
     simp only [List.map_append, List.filter_append, hnil, hnilo, hnilr, List.append_nil,
       List.nil_append]
@@ -5998,13 +6284,14 @@ the statement (AGENTS §5.2) and `Check.lean` records the deletion.
 It is stated over `assignedFrom … now` and **not** over `assignedOf`, because a replayed past
 Block *is* work and *is* in `assignedOf` — the fork counts it too (`DayPlan::assigned`), and a
 tripwire that claimed otherwise would be false the moment the seam had anything to replay. -/
-theorem the_day_assigns_nothing_after_now_but_the_running_block (r : PlanReq) (i : Id)
-    (h : i ∈ assignedFrom (dayPlan r) r.now.sec) : r.activeRun.map (·.id) = some i := by
+theorem the_day_assigns_after_now_the_running_block_and_what_step_five_chose (r : PlanReq)
+    (i : Id) (h : i ∈ assignedFrom (dayPlan r) r.now.sec) :
+    r.activeRun.map (·.id) = some i ∨ ∃ t ∈ r.assignedRows, i ∈ t.items := by
   obtain ⟨s, hs, hwk, hge, hi⟩ := (mem_assignedFrom _ _ i).1 h
   rw [dayPlan_segments] at hs
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · obtain ⟨_, h2, h3⟩ := pastRows_end_at_now r t ht
     have : (segOf t).val.start < r.now.sec := by
       show clampSec t.start < r.now.sec
@@ -6021,11 +6308,13 @@ theorem the_day_assigns_nothing_after_now_but_the_running_block (r : PlanReq) (i
   · rw [segOf_kind, routineRows_are_not_work r _ t ht] at hwk
     exact absurd hwk (by simp)
   · obtain ⟨q, hq, -, -, hkd, -, -, hit⟩ := r.mem_activeRow t ht
+    refine Or.inl ?_
     rw [hq]
     unfold segItems Seg.items at hi
     rw [segOf_kind, hkd] at hi
     simp only [segOf_item, hit, Option.toList_some, List.mem_singleton] at hi
     simp [hi]
+  · exact Or.inr ⟨t, ht, by unfold segItems at hi; rwa [segOf_items] at hi⟩
   · rw [segOf_kind, r.optionalRows_are_not_work t ht] at hwk
     exact absurd hwk (by simp)
   · rw [segOf_kind, r.restRows_are_not_work t ht] at hwk
@@ -6049,8 +6338,8 @@ a produced day"* until W-18's repair, and matched no reading of the census under
 two questions the repo keeps apart are *at one request* — `PlannerWit`'s section 14 computes
 **seven of eleven** with a subject at `theCensusRequest`, so four without — and *over every
 `PlanReq`*, which is gap 650's four and is what this sentence is about.  The four are
-`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy`,
-`no_block_row_of_the_day_reaches_the_wind_down`, `the_day_has_no_batch_row` and
+`PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`,
+`no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`, `the_day_has_no_batch_row_on_an_unassigned_day` and
 `the_day_names_no_impossible_item`.)  (Banner owed by README gap 653, paid at the
 W-17 land step.)
 
@@ -6107,7 +6396,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6156,6 +6445,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       omega
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.assignedRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
@@ -6174,7 +6464,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
           (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (pastRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6192,6 +6482,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
       · simp only [List.mem_singleton] at hr; subst hr; exact Or.inr ⟨rfl, rfl⟩
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.assignedRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
@@ -6210,7 +6501,7 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.wall := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (pastRows_are_not_walls r t ht)
   · exact absurd htk (interruptRows_are_not_walls r t ht)
   · simp only [List.mem_flatMap] at ht
@@ -6240,6 +6531,7 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
       simp only [clampSec]; omega
   · exact absurd htk (routineRows_are_not_walls r _ t ht)
   · exact absurd htk (reservationSegs_are_not_walls r t ht)
+  · exact absurd htk (r.assignedRows_are_not_walls t ht)
   · exact absurd htk (r.optionalRows_are_not_walls t ht)
   · exact absurd htk (r.restRows_are_not_walls t ht)
 
@@ -6265,7 +6557,7 @@ theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.brk := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6274,6 +6566,7 @@ theorem a_break_row_is_a_replayed_row (r : PlanReq) (s : WfSeg)
     cases htk
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · exact absurd htk (r.assignedRows_are_not_breaks t ht)
   · exact absurd htk (r.optionalRows_are_not_breaks t ht)
   · exact absurd htk (r.restRows_are_not_breaks t ht)
 
@@ -6285,7 +6578,7 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.windDown := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (pastRows_are_not_wind_down r t ht)
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6294,6 +6587,7 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
   · obtain ⟨h1, -, heq⟩ := a_wind_down_row_is_the_evenings r _ t ht htk
     exact ⟨h1, by show clampSec t.start = _; rw [heq]; rfl⟩
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · exact absurd htk (r.assignedRows_are_not_wind_down t ht)
   · exact absurd htk (r.optionalRows_are_not_wind_down t ht)
   · exact absurd htk (r.restRows_are_not_wind_down t ht)
 
@@ -6307,13 +6601,14 @@ and this is the row-level half of it.
 `∃ t ∈ pastRows r, s = segOf t` and was named `a_block_row_is_a_replayed_row`; choice 5b's
 reservation is a Block row the *planner* places, and
 `PlannerWit.the_reserved_day_is_the_witness_day_and_the_running_block` exhibits one.  The old name is deleted and `Check.lean` records it. -/
-theorem a_block_row_is_replayed_or_reserved (r : PlanReq) (s : WfSeg)
+theorem a_block_row_is_replayed_reserved_or_assigned (r : PlanReq) (s : WfSeg)
     (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.block) :
-    (∃ t ∈ pastRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) := by
+    (∃ t ∈ pastRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) ∨
+      (∃ t ∈ r.assignedRows, s = segOf t) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((ht | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact Or.inl ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
@@ -6321,7 +6616,8 @@ theorem a_block_row_is_replayed_or_reserved (r : PlanReq) (s : WfSeg)
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
     cases htk
   · exact absurd htk (routineRows_are_not_blocks r _ t ht)
-  · exact Or.inr ⟨t, ht, rfl⟩
+  · exact Or.inr (Or.inl ⟨t, ht, rfl⟩)
+  · exact Or.inr (Or.inr ⟨t, ht, rfl⟩)
   · exact absurd htk (r.optionalRows_are_not_blocks t ht)
   · exact absurd htk (r.restRows_are_not_blocks t ht)
 
@@ -6347,7 +6643,7 @@ request the builder accepts.
 **Restated** the way the fork's own proptest restricts §8.3 (`planner_invariants.rs:470`:
 `assigned_set(day, w.now)`, *"the planner's doing"*): over the Block rows that start **at or
 after `now`**, which is exactly `Planner.assignedFrom`'s restriction and exactly the set
-`the_day_assigns_nothing_after_now_but_the_running_block` describes.  Two R10 hypotheses come
+`the_day_assigns_after_now_the_running_block_and_what_step_five_chose` describes.  Two R10 hypotheses come
 with it and both are decoder obligations, in `PlanReq.wallsAgree`'s shape: the running block is
 one `mkActive?` would have built, and the `[day]` is one `mkDayCfg?` would have built.
 
@@ -6361,7 +6657,8 @@ theorem plan_reserves_one_block_at_a_time (r : PlanReq) (hact : r.activeAgrees =
     (hk : s.val.kind = SegKind.block) (hnow : r.now.sec ≤ s.val.start) :
     s.val.stop - s.val.start ≤ (dayPlan r).blockMin * 60 := by
   rw [dayPlan_segments] at hs
-  rcases a_block_row_is_replayed_or_reserved r s hs hk with ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  rcases a_block_row_is_replayed_reserved_or_assigned r s hs hk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
   · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
     have hlt : (segOf t).val.start < r.now.sec := by
       show clampSec t.start < r.now.sec
@@ -6379,6 +6676,17 @@ theorem plan_reserves_one_block_at_a_time (r : PlanReq) (hact : r.activeAgrees =
     rw [hstart] at hnow
     simp only [clampSec, LogStamp.yearEnd] at hnow ⊢
     omega
+  · -- **§8.2 step 5's own rows**: a Block row spans its slot, and no slot is wider than one
+    -- block (`PlanReq.a_slot_is_at_most_one_block`).  This case is what P9 added, and E1 is
+    -- discharged over it rather than around it.
+    obtain ⟨e, sl, hsl, hst, hsp, -⟩ := r.an_assigned_row_is_a_slot_of_the_day t ht
+    have hbnd := r.a_slot_is_at_most_one_block sl (r.energised_slot_is_a_slot hsl)
+    have hbm : (dayPlan r).blockMin = r.blockMin := rfl
+    have hstart : (segOf t).val.start = clampSec t.start := rfl
+    have hstop : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+    rw [hbm, hstart, hstop, hst, hsp]
+    simp only [clampSec, LogStamp.yearEnd]
+    omega
 
 /-! ### The wind-down goal is NOT discharged here, and the reason is P1's
 
@@ -6389,7 +6697,7 @@ the statement is still vacuous over `dayPlan` and a discharge would be AGENTS §
 that compiles and means nothing.  What P2 owes it is the other half of its subject, and that is
 what landed; the goal becomes real at **P5** (README gap 430).
 
-The tripwire is `the_day_assigns_nothing_after_now_but_the_running_block` above, which P5
+The tripwire is `the_day_assigns_after_now_the_running_block_and_what_step_five_chose` above, which P5
 must delete, plus the theorem below — the WindDown row now *exists*, so the half of the law that
 is about the evening can be stated and proved outright. -/
 
@@ -6411,7 +6719,8 @@ theorem the_wind_down_row_runs_to_bed (r : PlanReq)
   · rw [dayPlan_segments]
     exact mem_sortRows.2
       (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_left _
-        (List.mem_append_left _ (List.mem_append_right _ hseg))), rfl⟩)
+        (List.mem_append_left _ (List.mem_append_left _
+          (List.mem_append_right _ hseg)))), rfl⟩)
   · show clampSec r.windDownSec = _
     exact clampSec_id _ h3
   · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _

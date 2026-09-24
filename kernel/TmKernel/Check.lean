@@ -4864,7 +4864,7 @@ open Tm
 -- (AGENTS §5.2 — a battery that cannot refuse means nothing), and the list
 -- arithmetic D29's refutation will apply.
 --
--- ONE of them was a TRIPWIRE and IT FIRED.  `dayPlan_ok_core` is §6.1's lift
+-- ONE of them was a TRIPWIRE and IT FIRED.  `dayPlan_ok_core_on_an_unassigned_day` is §6.1's lift
 -- over the seven eligibility-free checks; track G proved it in one line over
 -- P0's empty day, from
 -- `Planner.the_day_has_no_segments_until_the_first_step_lands`.  P1 deleted that
@@ -4876,7 +4876,7 @@ open Tm
 -- named hypotheses (`hnopast`, `hagree`/`hplain`), exactly as P1 carried them on
 -- `plan_never_moves_a_wall`.  Gap 385 is the record, and two theorems were added
 -- beside the lift (`dayPlan_block_rows_come_from_the_log`, unconditional, and
--- `dayPlan_has_no_block_row`).
+-- `dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned`).
 --
 -- `dayPlan_ok_at_every_eligibility_while_the_day_is_empty` is GONE, and its name
 -- is why: it was stated about a day with no segments and P1's day has some.  It
@@ -4922,8 +4922,8 @@ open Tm
 #print axioms Tm.PlanCheck.planOk_of_no_segments
 #print axioms Tm.PlanCheck.a_replayed_row_is_a_row_of_the_day
 #print axioms Tm.PlanCheck.a_replayed_block_is_assigned
-#print axioms Tm.PlanCheck.dayPlan_has_no_block_row
-#print axioms Tm.PlanCheck.dayPlan_ok_core
+#print axioms Tm.PlanCheck.dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned
+#print axioms Tm.PlanCheck.dayPlan_ok_core_on_an_unassigned_day
 #print axioms Tm.PlanCheck.all_eq_false_of_mem
 #print axioms Tm.PlanCheck.wSeg_wf
 #print axioms Tm.PlanCheck.horizonOk
@@ -5081,7 +5081,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.witRun0_resumes
 #print axioms Tm.PlannerWit.witBuilds0
 #print axioms Tm.PlannerWit.the_quiet_day_assigns_nothing
-#print axioms Tm.PlannerWit.the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands
+#print axioms Tm.PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
 
 #print axioms Tm.PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin
 #print axioms Tm.PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free
@@ -5184,11 +5184,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- THREE AUDIT LINES WERE DELETED BY THIS STEP, and each is a theorem the
 -- reservation made FALSE, restated in the same commit (AGENTS §3.1 item 3, D5):
 --   Tm.Planner.a_block_row_is_a_replayed_row
---       -> Tm.Planner.a_block_row_is_replayed_or_reserved
+--       -> Tm.Planner.a_block_row_is_replayed_reserved_or_assigned
 --   Tm.Planner.the_day_assigns_nothing_after_now_until_the_assign_step_lands
---       -> Tm.Planner.the_day_assigns_nothing_after_now_but_the_running_block
+--       -> Tm.Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose
 --   Tm.PlanCheck.dayPlan_block_rows_come_from_the_log
---       -> Tm.PlanCheck.dayPlan_block_rows_are_replayed_or_reserved
+--       -> Tm.PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned
 -- All three were grepped repo-wide, prose included, before the rename.
 --
 -- ONE GOAL LEFT Goals.lean: plan_reserves_one_block_at_a_time, restated over
@@ -5232,14 +5232,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.the_reservation_row_is_exact
 #print axioms Tm.Planner.mem_dayRows_of_mem
 #print axioms Tm.Planner.mem_assignedFrom
-#print axioms Tm.Planner.the_day_assigns_nothing_after_now_but_the_running_block
+#print axioms Tm.Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose
 #print axioms Tm.Planner.a_wall_row_sits_in_a_blocked_span
 #print axioms Tm.Planner.a_break_row_is_a_replayed_row
 #print axioms Tm.Planner.a_wind_down_row_of_the_day
-#print axioms Tm.Planner.a_block_row_is_replayed_or_reserved
+#print axioms Tm.Planner.a_block_row_is_replayed_reserved_or_assigned
 #print axioms Tm.Planner.plan_reserves_one_block_at_a_time
-#print axioms Tm.PlanCheck.dayPlan_block_rows_are_replayed_or_reserved
-#print axioms Tm.PlanCheck.dayPlan_block_rows_are_the_reservation
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_the_reservation_on_an_unassigned_day
 #print axioms Tm.PlannerWit.witBuildsRun
 #print axioms Tm.PlannerWit.the_running_request_agrees
 #print axioms Tm.PlannerWit.the_reservation_is_clipped_to_the_block_it_is_in
@@ -5389,8 +5389,8 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --    here", which was and remains true of step P1's body, and is no longer the
 --    whole story.
 --
--- 2. **`PlanCheck.dayPlan_ok_core_from_now` -- §6.1's lift without `hnopast`.**
---    `dayPlan_ok_core` carries "the log holds no Block for today", which is
+-- 2. **`PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day` -- §6.1's lift without `hnopast`.**
+--    `dayPlan_ok_core_on_an_unassigned_day` carries "the log holds no Block for today", which is
 --    false of every real day after breakfast and is not a fact about the
 --    planner.  `withoutPast` names the restriction §8.3 is about instead of
 --    assuming it away, and the same conjunction over the same seven checkers
@@ -5406,9 +5406,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- ===========================================================================
 #print axioms Tm.PlanCheck.withoutPast_segments
 #print axioms Tm.PlanCheck.mem_withoutPast
-#print axioms Tm.PlanCheck.a_block_row_from_now_is_the_reservation
+#print axioms Tm.PlanCheck.a_block_row_from_now_is_reserved_or_assigned
 #print axioms Tm.PlanCheck.plan_places_no_block_over_a_wall
-#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_morning_wall_day_lays_a_block_across_a_wall
 #print axioms Tm.PlannerWit.plan_places_no_block_over_a_wall_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_stored_witness_loads
@@ -5425,7 +5425,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- AGENTS 7.4 item 2: *"Is every hypothesis satisfiable?  Exhibit a witness if
 -- it is not obvious.  A precondition nothing satisfies makes the conclusion
 -- vacuous, and it stayed invisible for a whole stage once."*
--- `dayPlan_ok_core_from_now` keeps five hypotheses after dropping `hnopast`, so
+-- `dayPlan_ok_core_from_now_on_an_unassigned_day` keeps five hypotheses after dropping `hnopast`, so
 -- all five are supplied here at `theRunningRequest` and the lift is APPLIED.
 -- `the_running_request_is_plain` is the one that needed an argument rather than
 -- a `decide` -- it quantifies over every `Id`, and `PlanCheck.mem_dom_of_get`
@@ -5621,23 +5621,23 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- `the_break_law_applies_at_the_census_request` showing it is not vacuous.
 -- Burn-down 10 -> 9.
 --
--- `dayPlan_ok_from_now_except_the_two_comparisons` is how far design §6.1's
+-- `dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day` is how far design §6.1's
 -- lift has come: NINE of the eleven at every eligibility, two of those nine
 -- true only because they are empty, and the missing two are `monotoneInRank`
 -- and `hotBeforeQueue`, which wait on Planner.eligibleAt (gap 365).
 -- ===========================================================================
-#print axioms Tm.PlanCheck.the_day_has_no_batch_row
-#print axioms Tm.PlanCheck.no_block_row_of_the_day_carries_a_slot_energy
-#print axioms Tm.PlanCheck.no_block_row_of_the_day_reaches_the_wind_down
+#print axioms Tm.PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day
+#print axioms Tm.PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day
+#print axioms Tm.PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day
 #print axioms Tm.PlanCheck.the_day_names_no_impossible_item
 #print axioms Tm.PlanCheck.batchDoesNotReachPast_of_no_batch_row
 #print axioms Tm.PlanCheck.impossibleKept_of_no_impossible
-#print axioms Tm.PlanCheck.energyFilterOk_is_true_because_its_subject_is_empty
-#print axioms Tm.PlanCheck.noDemandingAfterWindDown_is_true_because_its_subject_is_empty
-#print axioms Tm.PlanCheck.batchDoesNotReachPast_is_true_because_its_subject_is_empty
+#print axioms Tm.PlanCheck.energyFilterOk_is_true_because_its_subject_is_empty_on_an_unassigned_day
+#print axioms Tm.PlanCheck.noDemandingAfterWindDown_is_true_because_its_subject_is_empty_on_an_unassigned_day
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day
 #print axioms Tm.PlanCheck.impossibleKept_is_true_because_its_subject_is_empty
 #print axioms Tm.PlanCheck.plan_places_no_block_over_a_break
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
 #print axioms Tm.PlannerWit.censusRun_resumes_ok
 #print axioms Tm.PlannerWit.censusRun_resumes
 #print axioms Tm.PlannerWit.the_census_witness_loads
@@ -5843,7 +5843,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- Seventeen theorems, and what they settle is a question the two numbers this
 -- module already prints could not answer between them.  Section 14 of
 -- `PlannerWit.lean` measures SEVEN of the eleven checkers with a subject at
--- `theCensusRequest`; `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons`
+-- `theCensusRequest`; `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`
 -- proves NINE of the eleven at every eligibility.  Neither says whether the
 -- other two are unproved or FALSE.
 --
@@ -5866,11 +5866,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --     its refutation is a weakening -- `Goals.plan_tail_drop`'s situation
 --     exactly.  The burn-down is 9, unchanged.  README gap 851.
 --
--- `dayPlan_ok_from_now_given_the_two_comparisons` assembles design 6.1's own
+-- `dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day` assembles design 6.1's own
 -- `planOk` from the nine plus the two, so that "nine of eleven" is the
 -- compiler's arithmetic and not a reader's (README gap 684's class).
 -- ===========================================================================
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
 #print axioms Tm.PlannerWit.queuedRun_resumes_ok
 #print axioms Tm.PlannerWit.queuedRun_resumes
 #print axioms Tm.PlannerWit.witBuildsQueued
@@ -5905,7 +5905,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   README gap 875.
 --   `the_two_comparisons_hold_at_the_reserved_day` and
 --   `the_two_comparison_lift_applies_at_the_reserved_day` give
---   `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons` the computed
+--   `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day` the computed
 --   instance it shipped without.  README gap 879.
 #print axioms Tm.PlannerWit.the_gather_predicate_refuses_on_each_clause
 #print axioms Tm.PlannerWit.the_gather_reads_each_of_its_five_clauses
@@ -6008,11 +6008,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- is generalised the same way (D5: re-proved over the new shape, never
 -- weakened).
 --
--- `assignedOf_dayPlan_drops_the_routine_rows` is what makes the move safe:
+-- `assignedOf_dayPlan_is_step_one_the_reservation_and_step_five` is what makes the move safe:
 -- `assignedOf` keeps only `SegKind.isWork` rows, and `sortRows_filter` --
 -- `Seal.insSort_filter` at `rowLe` -- lets the filter run before the sort, so
 -- neither step 2's rows nor step 6's can enter the assigned set OR reorder it.
--- `the_budget_does_not_reach_the_assigned_set_until_the_assign_fold_lands` is
+-- `the_budget_does_not_move_the_assigned_set_at_the_busy_request` is
 -- re-proved through it: the budget now reaches `assignFold` and therefore
 -- reaches which routine rows exist, and that theorem's `rfl` proof was true
 -- only while it did not.
@@ -6023,19 +6023,19 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.routineRows_are_not_walls
 #print axioms Tm.Planner.routineRows_are_not_blocks
 #print axioms Tm.Planner.routineRows_are_not_work
-#print axioms Tm.Planner.assignedOf_dayPlan_drops_the_routine_rows
+#print axioms Tm.Planner.assignedOf_dayPlan_is_step_one_the_reservation_and_step_five
 #print axioms Tm.PlannerWit.the_day_carries_the_deferred_routines_row
 #print axioms Tm.PlannerWit.the_day_with_no_room_carries_the_note_instead
-#print axioms Tm.PlannerWit.the_battery_passes_on_the_day_step_six_filled
+#print axioms Tm.PlannerWit.the_battery_passes_where_step_six_filled_and_fails_where_step_five_did
 
 -- APPENDED 2026-09-19 (stage 6, run **W-20**, track G -- the quiet day, README
 -- gap 960, and the two clauses README gap 806 left unpinned).
 --
---   `dayPlan_ok_on_a_quiet_day_except_hot` is **TEN of §6.1's eleven**, over the
+--   `dayPlan_ok_on_a_quiet_unassigned_day_except_hot` is **TEN of §6.1's eleven**, over the
 --   WHOLE day and at every eligibility, for the class of requests whose log
 --   holds no Block and whose runtime holds no reservation.  W-19's ceiling was
 --   nine, over `withoutPast`'s day.  `monotoneInRank` is the tenth and
---   `dayPlan_assigns_nothing_on_a_quiet_day` is why.
+--   `dayPlan_assigns_nothing_on_a_quiet_unassigned_day` is why.
 --   `hotBeforeQueue_is_false_on_a_quiet_day` and
 --   `a_quiet_day_does_not_pass_the_whole_battery` are the matching ceiling:
 --   the eleventh fails on a day with no Block row at all, so neither the fold
@@ -6047,10 +6047,10 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   witnesses.  `the_cursor_skips_no_group_that_fits` is README gap 877's
 --   consumer for `pickedGroup_is_the_first_that_fits`' second conjunct.
 --   `assignFold_owes` is the same first clause lifted over the whole walk.
-#print axioms Tm.PlanCheck.dayPlan_assigns_nothing_on_a_quiet_day
+#print axioms Tm.PlanCheck.dayPlan_assigns_nothing_on_a_quiet_unassigned_day
 #print axioms Tm.PlanCheck.monotoneInRank_of_nothing_assigned
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day_except_hot
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day_given_hot
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot
 #print axioms Tm.PlanCheck.the_cursor_refuses_a_group_that_owes_nothing
 #print axioms Tm.PlanCheck.the_cursor_refuses_an_atomic_group_whose_run_is_broken
 #print axioms Tm.PlanCheck.the_cursor_skips_no_group_that_fits
@@ -6127,7 +6127,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   W-19's "nine is a ceiling" was that argument in prose.
 --
 --   `WorkAnchored` is the other half: an `el` that admits a candidate only at a
---   row §8.2 step 5 could assign into.  `dayPlan_ok_on_a_quiet_day` is design
+--   row §8.2 step 5 could assign into.  `dayPlan_ok_on_a_quiet_unassigned_day` is design
 --   §6.1's dayPlan_ok at **ELEVEN of eleven** for every quiet request and
 --   every such `el` -- the class W-20 left at ten with the eleventh refuted
 --   (README gap 960).  `the_whole_battery_passes_on_the_quiet_census_day` is it
@@ -6138,7 +6138,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   compiler's arithmetic and not a reader's over a table.
 --   `a_check_with_no_subject_is_a_free_pass` is what makes it a measurement;
 --   `planOk_of_no_subject` says what an empty census is worth.
---   `the_census_ceiling_is_seven` proves SEVEN is a ceiling over every request,
+--   `the_census_ceiling_is_seven_on_an_unassigned_day` proves SEVEN is a ceiling over every request,
 --   and `PlannerWit.the_census_ratio` reaches it at `theCensusRequest`.
 --   `PlannerWit.the_quiet_eleven_is_one_checker_biting` is the honest price of
 --   the eleven: one checker has a subject there.
@@ -6149,12 +6149,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.batchDoesNotReachPast_antitone
 #print axioms Tm.PlanCheck.planOk_antitone
 #print axioms Tm.PlanCheck.planOk_at_every_eligibility
-#print axioms Tm.PlanCheck.dayPlan_has_no_work_row
+#print axioms Tm.PlanCheck.dayPlan_has_no_work_row_on_an_unassigned_day
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_no_work_row
 #print axioms Tm.PlanCheck.monotoneInRank_of_nothing_eligible
 #print axioms Tm.PlanCheck.hotBeforeQueue_of_nothing_eligible
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_eligible
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_day
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day
 #print axioms Tm.PlanCheck.false_of_any_eq_false
 #print axioms Tm.PlanCheck.blockSeconds_of_no_block
 #print axioms Tm.PlanCheck.noOverbook_of_no_subject
@@ -6173,11 +6173,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.a_check_with_no_subject_is_a_free_pass
 #print axioms Tm.PlanCheck.planOk_of_no_subject
 #print axioms Tm.PlanCheck.subjectCount_le_eleven
-#print axioms Tm.PlanCheck.energyFilter_has_no_subject
-#print axioms Tm.PlanCheck.windDown_has_no_subject
-#print axioms Tm.PlanCheck.batch_has_no_subject
+#print axioms Tm.PlanCheck.energyFilter_has_no_subject_on_an_unassigned_day
+#print axioms Tm.PlanCheck.windDown_has_no_subject_on_an_unassigned_day
+#print axioms Tm.PlanCheck.batch_has_no_subject_on_an_unassigned_day
 #print axioms Tm.PlanCheck.impossible_has_no_subject
-#print axioms Tm.PlanCheck.the_census_ceiling_is_seven
+#print axioms Tm.PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day
 #print axioms Tm.PlannerWit.onlyOnWorkRows_is_work_anchored
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_census_day
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_day
@@ -6219,29 +6219,29 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 ## Stage 6, W-22, track G: §6.1's lift off the quiet class, and the census on the
 ## rows §8.3 is about
 ##
-## `PlanCheck.dayPlan_ok_from_now` is design §6.1's `planOk` at ELEVEN of eleven over
+## `PlanCheck.dayPlan_ok_from_now_on_an_unassigned_day` is design §6.1's `planOk` at ELEVEN of eleven over
 ## `PlanCheck.withoutPast`'s day, for EVERY request and every `PlanCheck.SlotAnchored`
 ## eligibility — W-19 left that day at nine with the two comparisons refuted, and W-20/W-21
-## reached eleven only on the quiet class.  `PlanCheck.the_census_ceiling_from_now_is_four`
+## reached eleven only on the quiet class.  `PlanCheck.the_census_ceiling_from_now_is_four_on_an_unassigned_day`
 ## is what it is worth: at most four of the eleven can have a subject there, at any request.
 ############################################################################ -/
 
-#print axioms Tm.PlanCheck.withoutPast_work_rows_are_the_reservation
-#print axioms Tm.PlanCheck.dayPlan_work_rows_are_the_reservation
+#print axioms Tm.PlanCheck.withoutPast_work_rows_are_the_reservation_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_work_rows_are_the_reservation_on_an_unassigned_day
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_only_the_reservation
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day
 #print axioms Tm.PlanCheck.any_filter_of_any_eq_false
-#print axioms Tm.PlanCheck.overbook_has_no_subject_from_now
-#print axioms Tm.PlanCheck.energyFilter_has_no_subject_from_now
-#print axioms Tm.PlanCheck.windDown_has_no_subject_from_now
-#print axioms Tm.PlanCheck.batch_has_no_subject_from_now
+#print axioms Tm.PlanCheck.overbook_has_no_subject_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.energyFilter_has_no_subject_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.windDown_has_no_subject_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.batch_has_no_subject_from_now_on_an_unassigned_day
 #print axioms Tm.PlanCheck.impossible_has_no_subject_from_now
 #print axioms Tm.PlanCheck.rankSubjects_of_nothing_eligible
 #print axioms Tm.PlanCheck.hotSubjects_of_nothing_eligible
 #print axioms Tm.PlanCheck.rank_has_no_subject_of_nothing_eligible
 #print axioms Tm.PlanCheck.hot_has_no_subject_of_nothing_eligible
-#print axioms Tm.PlanCheck.the_census_ceiling_from_now_is_four
+#print axioms Tm.PlanCheck.the_census_ceiling_from_now_is_four_on_an_unassigned_day
 #print axioms Tm.PlannerWit.onlyOnFreeWorkRows_is_slot_anchored
 #print axioms Tm.PlannerWit.the_whole_battery_passes_from_now_at_the_census_request
 #print axioms Tm.PlannerWit.the_whole_battery_passes_from_now_at_the_queued_request
@@ -6249,13 +6249,13 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_eleven_from_now_is_four_checkers_biting
 #print axioms Tm.PlannerWit.the_census_requests_are_not_quiet
 #print axioms Tm.PlannerWit.step_seven_gave_no_checker_a_subject
-#print axioms Tm.PlannerWit.four_is_the_ceiling_and_it_is_reached
+#print axioms Tm.PlannerWit.four_is_the_ceiling_and_it_is_reached_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_slot_anchoring_is_the_whole_residue
 /-! ############################################################################
 ## Stage 6, W-23, track G: the eligibility axis closes on the WHOLE day, and the
 ## day that proves one clause of it cannot be dropped
 ##
-## `PlanCheck.dayPlan_ok_is_the_core_seven` says §6.1's eleven over the whole day IS §6.1's
+## `PlanCheck.dayPlan_ok_is_the_core_seven_on_an_unassigned_day` says §6.1's eleven over the whole day IS §6.1's
 ## seven, at every request and every `PlanCheck.FromNowAnchored` eligibility — a `Bool`
 ## equality, nothing assumed about the log.  `PlannerWit.dayPlan_ok_at_every_slot_anchored_
 ## eligibility_on_the_whole_day_is_refuted` is why the third clause is a hypothesis and not a
@@ -6263,10 +6263,10 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 ## leaves: the replayed past, on three days this kernel already builds.
 ############################################################################ -/
 
-#print axioms Tm.PlanCheck.eligibleSomewhere_of_nothing_from_now
-#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven
-#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven
-#print axioms Tm.PlanCheck.the_census_ceiling_on_the_whole_day_is_five
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_nothing_from_now_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven_on_an_unassigned_day
+#print axioms Tm.PlanCheck.the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day
 #print axioms Tm.PlannerWit.fromNowWorkRows_is_from_now_anchored
 #print axioms Tm.PlannerWit.the_from_now_eligibility_reads_all_three_of_its_clauses
 #print axioms Tm.PlannerWit.onlyOnFreeWorkRows_is_not_from_now_anchored
@@ -6280,7 +6280,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.dayPlan_ok_at_every_slot_anchored_eligibility_on_the_whole_day_is_refuted
 #print axioms Tm.PlannerWit.the_from_now_lift_holds_where_the_slot_anchored_one_is_refuted
 #print axioms Tm.PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five
-#print axioms Tm.PlannerWit.five_is_the_ceiling_and_it_is_reached
+#print axioms Tm.PlannerWit.five_is_the_ceiling_and_it_is_reached_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_core_seven_is_false_on_three_whole_days
 
 -- APPENDED 2026-09-22 (stage 6, W-24, track P): the `plan` section of the wire — an `Emit.Row`
@@ -6330,9 +6330,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 ## Stage 6, W-24, track G: the LOG axis, one named clause at a time
 ##
 ## `PlanCheck.PastPays` is the four clauses the replayed past owes §6.1's seven — three of the
-## seven owe it nothing at all — and `PlanCheck.dayPlan_ok_core_of_a_paying_past` is the
-## whole-day lift with `hnopast` gone.  `PlanCheck.PastPays_of_no_past_block` makes
-## `PlanCheck.dayPlan_ok_core` a corollary of it, and
+## seven owe it nothing at all — and `PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day` is the
+## whole-day lift with `hnopast` gone.  `PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` makes
+## `PlanCheck.dayPlan_ok_core_on_an_unassigned_day` a corollary of it, and
 ## `PlannerWit.the_paying_past_holds_where_hnopast_does_not` is the request where the new one
 ## fires and the old one cannot.  `PlannerWit.the_paying_past_fails_on_four_whole_days` is the
 ## other bound: one refuting day per clause, no clause implied by the other three.
@@ -6340,12 +6340,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 
 #print axioms Tm.PlanCheck.pastHalf_segments
 #print axioms Tm.PlanCheck.segOf_replayed
-#print axioms Tm.PlanCheck.a_block_row_that_is_not_the_reservation_has_started
+#print axioms Tm.PlanCheck.a_block_row_that_is_not_the_reservation_has_started_on_an_unassigned_day
 #print axioms Tm.PlanCheck.foldl_add_filter_le
-#print axioms Tm.PlanCheck.blockSeconds_withoutActive_le_pastHalf
-#print axioms Tm.PlanCheck.PastPays_of_no_past_block
-#print axioms Tm.PlanCheck.dayPlan_ok_core_of_a_paying_past
-#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day
+#print axioms Tm.PlanCheck.blockSeconds_withoutActive_le_pastHalf_on_an_unassigned_day
+#print axioms Tm.PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_over_budget_request_is_over_budget
 #print axioms Tm.PlannerWit.the_log_at_the_census_request_holds_a_block
 #print axioms Tm.PlannerWit.the_paying_past_at_the_census_request
@@ -6423,8 +6423,8 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --     is not it.  No goal is discharged: the burn-down stays 9.
 -- ===================================================================
 #print axioms Tm.PlanCheck.WallsArePlain_of_a_plain_store
-#print axioms Tm.PlanCheck.dayPlan_ok_core_of_plain_walls
-#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls
+#print axioms Tm.PlanCheck.dayPlan_ok_core_of_plain_walls_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_two_wall_witness_loads
 #print axioms Tm.PlannerWit.the_off_day_request_agrees
 #print axioms Tm.PlannerWit.the_off_day_request_is_inside_the_calendar
@@ -6465,7 +6465,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.holeFree_iff
 #print axioms Tm.PlanCheck.the_last_row_is_never_a_holes_subject
 #print axioms Tm.PlanCheck.an_uncovered_instant_between_two_rows_is_a_hole
-#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day
 #print axioms Tm.PlannerWit.mkPlanReq?_ignores_state
 #print axioms Tm.PlannerWit.the_builder_accepts_a_running_block_it_never_checked
 #print axioms Tm.PlannerWit.the_census_days_future_half_has_a_hole
@@ -6613,3 +6613,45 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_leading_guard_keeps_the_tail_carve_out
 #print axioms Tm.PlannerWit.the_leading_guard_is_not_a_constant
 #print axioms Tm.PlannerWit.the_leading_guard_is_not_one_of_the_eleven
+
+-- W-29 (P9): §8.2 step 5's rows reach the day.  `Planner.PlanReq.assignedRows` is in
+-- `Planner.dayRows`, so the composition D50 named is done; `assignedSeg`'s ten field laws are
+-- what pin the BYTES a row writes rather than its shape (W-28's ten survivors), and the four
+-- "is not" corollaries are one class lemma (`a_work_row_is_not`) at four kinds.
+--
+-- DELETED HERE, each restated with its refutation beside it: Planner.a_block_row_is_replayed
+-- _or_reserved; Planner.assignedOf_dayPlan_drops_the_routine_rows; Planner.the_day_assigns
+-- _nothing_after_now_but_the_running_block; PlanCheck.dayPlan_block_rows_are_replayed_or
+-- _reserved and the nineteen lifts that carried `hblk`, each renamed to name the subdomain it
+-- is now proved on (AGENTS §3.1 item 4); PlannerWit.the_budget_does_not_reach_the_assigned
+-- _set_until_the_assign_fold_lands and the_battery_passes_on_the_day_step_six_filled.
+#print axioms Tm.Planner.batchIdsOf_of_bounded
+#print axioms Tm.Planner.batchIdsOf_is_a_prefix
+#print axioms Tm.Planner.WfSeg.stop_lt_yearEnd
+#print axioms Tm.Planner.WfSeg.start_le_stop
+#print axioms Tm.Planner.segOf_items
+#print axioms Tm.Planner.PlanReq.a_slot_is_not_empty
+#print axioms Tm.Planner.PlanReq.no_slot_touches_a_wall
+#print axioms Tm.Planner.assignedSeg_start
+#print axioms Tm.Planner.assignedSeg_stop
+#print axioms Tm.Planner.assignedSeg_energy
+#print axioms Tm.Planner.assignedSeg_planned
+#print axioms Tm.Planner.assignedSeg_mult
+#print axioms Tm.Planner.assignedSeg_inst
+#print axioms Tm.Planner.assignedSeg_underused
+#print axioms Tm.Planner.assignedSeg_hot
+#print axioms Tm.Planner.assignedSeg_note
+#print axioms Tm.Planner.assignedSeg_is_work
+#print axioms Tm.Planner.shortListIsItsHead
+#print axioms Tm.Planner.assignedSeg_items_when_the_group_fits_the_batch_bound
+#print axioms Tm.Planner.PlanReq.mem_assignedRows
+#print axioms Tm.Planner.PlanReq.assignedRows_are_work
+#print axioms Tm.Planner.PlanReq.a_work_row_is_not
+#print axioms Tm.Planner.PlanReq.assignedRows_are_not_walls
+#print axioms Tm.Planner.PlanReq.assignedRows_are_not_breaks
+#print axioms Tm.Planner.PlanReq.assignedRows_are_not_wind_down
+#print axioms Tm.Planner.PlanReq.assignedRows_are_not_rest
+#print axioms Tm.Planner.PlanReq.an_assigned_row_is_a_slot_of_the_day
+#print axioms Tm.Planner.PlanReq.an_assigned_row_carries_its_group
+#print axioms Tm.PlannerWit.the_assigned_set_is_not_the_reservations_alone
+#print axioms Tm.PlannerWit.the_assigned_day_has_a_block_row_that_is_not_the_reservation
