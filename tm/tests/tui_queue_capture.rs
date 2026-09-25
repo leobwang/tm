@@ -94,6 +94,33 @@ fn preview_matches_tm_add() {
         }
         args.push("--");
         args.push(cap.line.as_str());
+
+        // **AND ONE OF THESE CAPTURES BRICKED THE TREE, AND THIS TEST SAID SO
+        // AND ASSERTED SUCCESS ANYWAY** (W-31 repair, kernel/README.md gap
+        // 2263).  `plan-basic/inbox.md:2` already holds `- ask Kun about the
+        // dinner place`, and a bare line is keyed by its TITLE (§4.1), so
+        // writing the capture verbatim puts two lines with one store key in one
+        // file.  DRIVEN on the binary built from the commit before the repair:
+        // `tm add --to inbox.md -- "- ask Kun about the dinner place"` printed
+        // the line and exited **0**, and `tm check` then exited 2, `tm review
+        // day` 1 and `tm plan` 1 — the whole tree refused for every reading
+        // verb.  `tm add` now asks the kernel about the TREE after it writes
+        // and puts the file back, so the same capture is refused by name and
+        // the file is byte-identical.  The case stays in CASES: it is the one
+        // that shows a preview can be a correct §4.1 line and still not be a
+        // legal write, which is a thing the queue has to know.
+        let before = std::fs::read_to_string(tm.plan.join(&cap.target.file)).expect("read target");
+        let raw = tm.run(&args);
+        if raw.code != 0 {
+            assert!(
+                raw.stderr.contains("dupId"),
+                "{input:?} was refused for something other than the duplicate key: {}",
+                raw.stderr
+            );
+            let after = std::fs::read_to_string(tm.plan.join(&cap.target.file)).expect("read target");
+            assert_eq!(before, after, "a refused `tm add` must leave {} alone", cap.target.file);
+            continue;
+        }
         let out = tm.json(&args);
 
         let written = out["line"].as_str().expect("line");

@@ -978,6 +978,14 @@ pub trait Store {
     }
     /// Write a whole file (atomically on disk; parent directories created).
     fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError>;
+    /// Delete a file.  A file that is not there is not an error.
+    ///
+    /// The primitive a WRITE THAT MUST BE UNDONE needs (W-31 repair,
+    /// kernel/README.md gap 2263).  A verb that writes, reloads and finds the
+    /// kernel refusing the tree has to put back exactly what it found — which
+    /// for a file the verb itself created means removing it, and `write_file`
+    /// of some plausible initial text is not the same thing.
+    fn delete_file(&self, rel: &str) -> Result<(), StoreError>;
     /// True when the file exists.
     fn exists(&self, rel: &str) -> bool;
     /// The absolute path of a file, when the store is on disk.
@@ -1685,6 +1693,15 @@ impl Store for FsStore {
         write().map_err(|e| io_err(rel, e))
     }
 
+    fn delete_file(&self, rel: &str) -> Result<(), StoreError> {
+        let path = self.abs(rel)?;
+        match fs::remove_file(&path) {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(io_err(rel, e)),
+        }
+    }
+
     fn exists(&self, rel: &str) -> bool {
         self.abs(rel).is_ok_and(|p| p.is_file())
     }
@@ -1931,6 +1948,12 @@ impl Store for MemStore {
     fn write_file(&self, rel: &str, text: &str) -> Result<(), StoreError> {
         check_rel(rel)?;
         self.insert(rel, text);
+        Ok(())
+    }
+
+    fn delete_file(&self, rel: &str) -> Result<(), StoreError> {
+        check_rel(rel)?;
+        self.remove(rel);
         Ok(())
     }
 

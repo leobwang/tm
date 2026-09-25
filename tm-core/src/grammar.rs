@@ -274,6 +274,20 @@ fn skip_ws(text: &str, from: usize) -> usize {
         .unwrap_or(text.len())
 }
 
+/// Does `text` OPEN with a §4.1 state marker?
+///
+/// The one answer to "is a `[c]` marker written here", for the writers that
+/// have to decide whether to supply one.  `tm add` used to ask the question
+/// itself and ask it as `starts_with("- ")` — the HYPHEN, one spelling of a
+/// four-spelling class — so a pasted `[ ] write the notes`, which carries the
+/// state and not the bullet, fell to the branch that prepends a whole prefix
+/// and became `- [ ] [ ] write the notes`, title and all (W-31 repair, README
+/// gap 2262).  The marker class is `State::from_glyph`'s and lives here; a
+/// caller that spells it again is spelling a subset of it.
+pub fn opens_with_state(text: &str) -> bool {
+    state_at(text, 0)
+}
+
 /// `[c]` at byte offset `i`, followed by whitespace or end of line.
 fn state_at(text: &str, i: usize) -> bool {
     let b = text.as_bytes();

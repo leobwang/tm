@@ -83,6 +83,53 @@ fn add_accepts_a_line_with_its_grammar_prefix() {
     assert_eq!(tm.run(&["check"]).code, 0);
 }
 
+/// **THE OPTIONAL PREFIX IS A CLASS OF FOUR SPELLINGS, NOT ONE** (W-31 repair,
+/// kernel/README.md gap 2262).  `mod.rs` documents "the `- [ ] ` prefix is
+/// optional"; `tm add` tested `starts_with("- ")` — the HYPHEN — so a line
+/// carrying the STATE and not the bullet fell to the branch that supplies a
+/// whole prefix.  DRIVEN before the repair: `[ ] beta` became `- [ ] [ ] beta`
+/// and `[x] gamma` became `- [ ] [x] gamma`, on week, backlog AND month; the
+/// item's §4.1 title was then literally `[ ] beta`, `tm check` reported no
+/// problems, and `tm plan` rendered the doubled marker in the shipped output.
+/// `inbox` was correct only by accident, through `allows_missing_state`.
+///
+/// The assertion is over the CLASS: for each of the four spellings and each
+/// horizon, the written line carries exactly one bullet and at most one state
+/// marker, and the TITLE is the one the user typed.
+#[test]
+fn add_supplies_only_the_prefix_part_that_is_missing() {
+    for horizon in ["week", "backlog", "month"] {
+        for (line, title) in [
+            ("- [ ] alpha est:1b", "alpha"),
+            ("[ ] beta est:1b", "beta"),
+            ("[x] gamma est:1b", "gamma"),
+            ("delta est:1b", "delta"),
+        ] {
+            let tm = Tm::new();
+            let out = tm.run(&["add", line, "--to", horizon]);
+            assert_eq!(out.code, 0, "`{line}` -> {}{}", out.stdout, out.stderr);
+            let written = out.stdout.trim();
+            assert!(!written.contains("[ ] ["), "doubled marker: `{line}` -> `{written}`");
+            assert_eq!(
+                written.matches("- ").count(),
+                1,
+                "one bullet only: `{line}` -> `{written}`"
+            );
+            let body = written.trim_start_matches("- ");
+            let body = body
+                .strip_prefix("[ ] ")
+                .or_else(|| body.strip_prefix("[x] "))
+                .unwrap_or(body);
+            assert!(
+                body.starts_with(title),
+                "the title is the one the user typed: `{line}` -> `{written}`"
+            );
+            let check = tm.run(&["check"]);
+            assert_eq!(check.code, 0, "`{line}` left: {}{}", check.stdout, check.stderr);
+        }
+    }
+}
+
 /// §1.3 + §6.3: after a demotion the id names two `[-]` lines — the archive
 /// in the week file and the stamped copy under `month/…# Demoted`. `tm edit`
 /// read one and wrote its text over the other, so the week archive silently

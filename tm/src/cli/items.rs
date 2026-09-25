@@ -278,9 +278,30 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     let path = target_path(&ctx, args.to.as_deref())?;
     let horizon = Horizon::from_path(&path).unwrap_or(Horizon::Backlog);
 
+    // **THE PREFIX THIS SUPPLIES IS THE PART THAT IS MISSING** (W-31 repair,
+    // README gap 2262).  `mod.rs` documents a CLASS — "the `- [ ] ` prefix is
+    // optional" — and this read one spelling of it, `starts_with("- ")`.  A
+    // line that carries the STATE and not the bullet has no hyphen and fell to
+    // the last branch, so `tm add --to week "[ ] write the notes"` wrote `- [ ]
+    // [ ] write the notes`, whose §4.1 TITLE is literally `[ ] write the
+    // notes`; `tm check` then said "no problems" and `tm plan` rendered the
+    // doubled checkbox in the shipped output beside a clean row.  DRIVEN over
+    // four spellings and four horizons before the repair: the two carrying a
+    // bare marker DOUBLED on week, backlog and month, and `inbox` was right
+    // only by accident, because `allows_missing_state` took the other branch.
+    //
+    // The two prefix parts are now asked for separately, and the marker
+    // question is `grammar::opens_with_state` — the grammar's own answer, the
+    // one `ItemLine::parse` uses — rather than a second spelling of `[ ]`.
     let raw = args.line.trim();
-    let mut text = if raw.starts_with("- ") {
+    let (bullet, body) = match raw.strip_prefix("- ") {
+        Some(rest) => (true, rest.trim_start()),
+        None => (false, raw),
+    };
+    let mut text = if bullet {
         raw.to_string()
+    } else if grammar::opens_with_state(body) {
+        format!("- {body}")
     } else if horizon.allows_missing_state() {
         format!("- {raw}")
     } else {
@@ -359,7 +380,38 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
                 .unwrap_or_default()
         )));
     }
+    // **A WRITE THAT LEAVES THE TREE UNLOADABLE IS NOT A SUCCESS** (W-31
+    // repair, kernel/README.md gap 2263).  §5.7 was honoured on the READ side
+    // and not on the write side: `tm add` validated the LINE against the §4.1
+    // grammar, wrote it, and returned 0, and every reading verb then refused
+    // the whole tree by name.  DRIVEN on the binary built from 74771aa, in a
+    // fresh `tm init` tree: `tm add --to routines "[ ] 0700 stretch est:15m
+    // every:day"` printed the line and exited **0**, after which `tm review
+    // day`, `tm sync-cal` and `tm close week` all exited 1 with `itemCheck —
+    // the tree fails the kernel's item invariant (fileKindShape)` and `tm
+    // check` exited 2 naming `routines.md:15: a routine needs a window (`win:`
+    // + `dur:`) or `after-done:``.  Reproduced a second time on `optional`,
+    // three consecutive adds each leaving the tree refusing.
+    //
+    // The line parses and the tree does not, so the question has to be asked of
+    // the TREE — which is `kernel_bridge::gate`, the same door every writing
+    // verb already goes through BEFORE it writes, asked again AFTER.  The write
+    // is put back exactly: the file's own bytes, or the file removed when this
+    // add is what created it (`Store::delete_file`, added for this).  Nothing
+    // has reached the log at this point and the recorder has pushed nothing, so
+    // restoring the one file restores the tree.
+    let existed = ctx.store.exists(&path);
+    let before = ctx.store.read_text(&path).ok();
     let section = insert(&ctx, &path, args.section.as_deref(), &text)?;
+    ctx.reload()?;
+    if let Err(refusal) = kernel_bridge::gate(&ctx, "add") {
+        match (existed, &before) {
+            (true, Some(t)) => ctx.store.write_file(&path, t)?,
+            _ => ctx.store.delete_file(&path)?,
+        }
+        ctx.reload()?;
+        return Err(refusal);
+    }
     let key = if id.is_empty() {
         Id::new(
             grammar::parse_line(&text, &pctx)
