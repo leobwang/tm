@@ -805,18 +805,27 @@ fi
 #     `dayRows`, `dayPlan`, `dayAssigned` and `keptBreaksToday` are all REACHED,
 #     which is D50's P9 composition seen in the emitted C and not in the source.
 #
-#     THE COST IS MEASURED, NOT QUOTED (5.11): three runs at 1.65, 1.63 and
-#     1.63 s, at load average 4.6-6.6 with another session on the machine (gap
+#     THE COST IS MEASURED, NOT QUOTED (5.11): three runs at 1.65, 1.66 and
+#     1.62 s, at load average 3.3-7.0 with another session on the machine (gap
 #     1333).  Where it goes, timed INSIDE one run so the parts sum to the whole:
-#     0.86-0.88 s to read 11,945 emitted function bodies and 6,655 constant
-#     initialisers out of `.lake/build/ir` in ONE pass, 0.08-0.09 to walk them
-#     and measure the load-time class, 0.63-0.65 to take 3,042 qualified `def`
-#     names out of the source, and 0.00 for the exemption file.  On a
-#     twelve-check wall of 16.46-17.11 s (four runs) that is 10%, and the
-#     eleven-check wall it was added to measured 14.43 s: design 14.0 item 4
-#     prices a step at 10% and this one is AT it, which is recorded here rather
-#     than rounded down.  Check 11 pays the same IR read in its own process --
-#     two processes, two reads, and sharing them would need one process.
+#     0.63-0.64 s to take 3,042 qualified `def` names out of the source, 0.66 to
+#     read 11,945 emitted function bodies out of `.lake/build/ir`, 0.06 to walk
+#     them, 0.25 for the second pass that measures the load-time class, and 0.00
+#     for the exemption file.  On a twelve-check wall of 16.34-17.11 s (five
+#     runs) that is 10%, and the eleven-check wall it was added to measured
+#     14.43 s: design 14.0 item 4 prices a step at 10% and this one is AT it,
+#     which is recorded here rather than rounded down.
+#
+#     AND THE SECOND PASS IS DELIBERATE.  Folding it into the first reads the
+#     45 MB tree once instead of twice and costs 0.65 s -> 0.88-0.94, because
+#     6,655 initialiser bodies have to be brace-balanced too; check 12's wall is
+#     the same either way, and CHECK 11 DOES NOT ASK THAT QUESTION -- the
+#     one-read version was measured spending a quarter second of check 11's
+#     budget on a measurement check 11 has no use for (1.64-1.68 s against its
+#     1.42-1.45 s now, which is where W-30 left it).  A gate paying for another
+#     gate's question is a cost that shows up as nobody's line item.  Check 11
+#     reads the tree again in its own process; sharing that would need one
+#     process.
 out=$( python3 reach.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "every emitted definition is reached" "ok  ($( printf '%s\n' "$out" | tail -1 ))"

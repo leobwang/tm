@@ -142,13 +142,20 @@ not a flaky run: never retry it uncapped. (The macOS machine the earlier stamps
 were taken on has no `systemd-run`; there, cap by other means or keep every
 `decide` small, §5.10a.)
 
-**Ten** checks, exit 0. *(This paragraph said **seven** until the W-24 repair
-step and **nine** until W-25 track A, and so did §6.5 and §7.1's heading: check 8
-— the prose citations — landed at W-19, check 9 — every new definition
-constant-folded — at W-20, and check 10 — the parity register has one home and no
-number is issued twice, `parity.py` over `parity.txt` — at W-25. The number here
-has now gone stale twice. §5.11 applies to this file, which is the lesson the
-correction carries.)* The wall time below is the seven-check stamp and is stale
+**Every** check, exit 0 — and the number of them is written in exactly one
+place, §7.1, on purpose. *(This paragraph said **seven** until the W-24 repair
+step, **nine** until W-25 track A and **ten** until W-31, and so did §6.5 and
+§7.1's heading: check 8 — the prose citations — landed at W-19, check 9 — every
+new definition constant-folded — at W-20, check 10 — the parity register has one
+home and no number is issued twice — at W-25, check 11 — no two names for one
+definition — at W-30, and check 12 — a definition the compiler emits must be
+REACHED — at W-31. **The number went stale here THREE times**, twice while the
+paragraph beside it recorded that it had gone stale twice, because one fact was
+written down in three paragraphs and a new check only ever reached one of them.
+So the count has been taken out of this paragraph and out of §6.5's checklist
+rather than corrected in both again: §5.11's rule is that a number lives where
+it is measured, and this one is measured by counting the lines `check.sh`
+prints.)* The wall time below is the seven-check stamp and is stale
 with it: warm 1.1 s (four consecutive capped runs at
 `bf7cc63`: 1.13, 1.11, 1.10, 1.10 s; `c8f3a38`'s were 1.15, 1.14, 1.11 s); at
 nine it is ~8 s on the machine that measured it, and `check.sh`'s own check-9
@@ -156,9 +163,9 @@ comment carries that number. It is
 the kernel's acceptance script, it is short, and you should read it before
 claiming any of its checks — and since 2026-09-12 it is **not the whole
 acceptance**: `cargo test --workspace` stands beside it (§7.5). Note it is `set -uo pipefail`
-and **not** `-e`: all nine run regardless, so one failure does not hide the
-others. §7 says what each one proves — checks 1–7 in §7.1, and checks 8 and 9 in
-their own scripts' headers and in `check.sh`'s comments above them.
+and **not** `-e`: **all of them** run regardless, so one failure does not hide
+the others. §7 says what each one proves — checks 1–7 in §7.1, and checks 8
+onward in their own scripts' headers and in `check.sh`'s comments above them.
 
 The seventh is the one stages 3–6 care about most: it elaborates
 `kernel/TmKernel/Goals.lean`, which holds the outstanding goals of stages 3–6 as
@@ -1153,11 +1160,11 @@ banner which range is yours and fix it at the merge (§6.5).
 4. Delete from `Goals.lean` every goal the branches discharged, and check that
    check 7's number went **down** by exactly that many (§3.2).
 5. Confirm every new module is imported in `TmKernel/TmKernel.lean` (§2.3).
-6. Run `check.sh`, capped (§2.1). All **ten** checks, exit 0 — and
+6. Run `check.sh`, capped (§2.1). **Every** check, exit 0 — and
    `cargo test --workspace` green beside it (§7.5). *(This line said "seven"
-   until the W-24 repair step and "nine" until W-25 track A; checks 8, 9 and 10
-   landed at W-19, W-20 and W-25. §2.1 and §7.1 said it too and are repaired
-   with it, both times.)*
+   until the W-24 repair step, "nine" until W-25 track A and "ten" until W-31,
+   while checks 8-12 landed at W-19, W-20, W-25, W-30 and W-31. It no longer
+   carries the number: §7.1 does, once, and README gap 2148 is why.)*
 7. **Reconcile the PARITY register, the way item 1 reconciles the cheats.** A
    parity entry is a recorded divergence from the fork (D21/D22), and the
    register has no single home and no gate — README **gap 226** said so when

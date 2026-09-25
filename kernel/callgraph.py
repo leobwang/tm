@@ -181,33 +181,30 @@ def _body(text, at):
     return text[at:i]
 
 
-def read_tree(ir):
-    """`({symbol: [body, ..]}, [initialiser body, ..])`, in ONE read of the tree.
+def functions(ir):
+    """`{C symbol: [body, ..]}` for every `LEAN_EXPORT ..` function under `ir`.
 
-    Both halves come off the same text because the tree is 45 MB and reading it
-    twice for two questions about it cost 0.25 s of check 12's 1.6 -- the
-    exported functions, which are the graph's nodes, and the hoisted closed
-    constants' initialisers, which are NOT nodes and are the graph's declared
-    blind spot.  The body is taken brace-balanced from the header, so a
-    function's own name -- which always differs -- is not part of what a caller
-    compares."""
+    The body is taken brace-balanced from the header, so a function's own name
+    -- which always differs -- is not part of what a caller compares.
+
+    THE INITIALISERS ARE A SECOND PASS AND NOT THIS ONE, measured: folding
+    `closed_users`' scan into this loop reads the 45 MB tree once instead of
+    twice and costs 0.65 s -> 0.88-0.94, because the 6,655 initialiser bodies
+    have to be brace-balanced too.  Check 12's own wall is the same either way
+    (1.63-1.65 s), and check 11 does not ask the initialiser question at all --
+    so the one-read version spent a quarter of a second of check 11's budget on
+    a measurement check 11 has no use for.  A gate paying for another gate's
+    question is the kind of cost that never shows up as anyone's line item."""
     key = str(ir)
     if key in _FUNCS:
         return _FUNCS[key]
-    funcs, inits = {}, []
+    funcs = {}
     for c in sorted(ir.rglob("*.c")):
         text = c.read_text(errors="replace")
         for m in ANY_EMITTED.finditer(text):
             funcs.setdefault(m.group(1), []).append(_body(text, m.end()))
-        for m in INIT_FN.finditer(text):
-            inits.append(_body(text, m.end()))
-    _FUNCS[key] = (funcs, inits)
-    return _FUNCS[key]
-
-
-def functions(ir):
-    """`{C symbol: [body, ..]}` for every `LEAN_EXPORT ..` function under `ir`."""
-    return read_tree(ir)[0]
+    _FUNCS[key] = funcs
+    return funcs
 
 
 def reachable(ir):
@@ -251,11 +248,13 @@ def closed_users(ir):
     key = str(ir)
     if key in _CLOSED:
         return _CLOSED[key]
-    funcs, inits = read_tree(ir)
+    funcs = functions(ir)
     users = set()
-    for body in inits:
-        for r in C_IDENT.finditer(body):
-            if r.group(0) in funcs:
-                users.add(r.group(0))
+    for c in sorted(ir.rglob("*.c")):
+        text = c.read_text(errors="replace")
+        for m in INIT_FN.finditer(text):
+            for r in C_IDENT.finditer(_body(text, m.end())):
+                if r.group(0) in funcs:
+                    users.add(r.group(0))
     _CLOSED[key] = users
     return users

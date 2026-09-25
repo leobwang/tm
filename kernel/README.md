@@ -62516,6 +62516,13 @@ hand-written allow entry of that shape — `lp_TmKernel_Tm_Look_lookahead`, from
 the W-2x lookahead block — **went stale the moment it landed and was deleted**,
 which is the ratchet working in the direction it was built for.
 
+**(a2) The acceptance's own size was written in three paragraphs of `AGENTS.md`
+and W-30 updated one — gap 2148.** §2.1 said *ten checks* while the parenthesis
+beside it recorded that the number had gone stale twice; §6.5's merge checklist
+said ten as well; §7.1's heading said eleven. The repair is not a third
+correction: the count now lives in §7.1 alone and the other two say *every*
+check.
+
 **(b) Check 11's C symbol was `name.replace(".", "_")` — gap 2140.** The real
 rule is `String.mangleAux` and `Name.mangleAux` of the PINNED toolchain: a letter
 or digit stands, **`_` DOUBLES**, and anything else becomes `_x`/`_u`/`_U` plus
@@ -62557,14 +62564,23 @@ still reached by nothing.
 
 ### 7. Cost
 
-Check 12 is **1.65, 1.63 and 1.63 s** (three runs, load average 4.6-6.6 with
+Check 12 is **1.65, 1.66 and 1.62 s** (three runs, load average 3.3-7.0 with
 another session on the machine — gap 1333). Timed inside one run so the parts sum
-to the whole: **0.86-0.88 s** to read 11,945 emitted function bodies and 6,655
-constant initialisers out of the 45 MB IR tree in ONE pass, **0.08-0.09** to walk
-them and measure the load-time class, **0.63-0.65** to take 3,042 qualified `def`
-names out of the source, **0.00** for the exemption file. The twelve-check wall
-is **16.46, 16.47, 16.65 and 17.11 s** (four runs, the last after this block was
-written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
+to the whole: **0.63-0.64 s** to take 3,042 qualified `def` names out of the
+source, **0.66** to read 11,945 emitted function bodies out of the 45 MB IR tree,
+**0.06** to walk them, **0.25** for the second pass that measures the load-time
+class, **0.00** for the exemption file.
+
+**That second pass is deliberate and was measured both ways.** Folding it into
+the first reads the tree once instead of twice and costs 0.65 s → 0.88-0.94,
+because 6,655 initialiser bodies must be brace-balanced too. Check 12's wall is
+the same either way — and **check 11 does not ask that question**: the one-read
+version was measured spending a quarter of a second of check 11's budget on a
+measurement check 11 has no use for (1.64-1.68 s against 1.42-1.45 s now, which
+is where W-30 left it). A gate paying for another gate's question is a cost that
+shows up as nobody's line item. The twelve-check wall
+is **16.46, 16.47, 16.65, 17.11 and 16.34 s** (five runs, the last two after this
+block was written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
 is exactly design 14.0 item 4's per-step price, recorded here rather than rounded
 down (gap 2146).
 
@@ -62581,10 +62597,10 @@ compiled, 11 value), 0 UNANSWERED** · **check 12: 3,042 def(s), 2,365 emitted,
 1,413 reachable from `tm_kernel_call`, 952 exempt in 45 sections (32 of them run
 at load), 0 UNANSWERED.**
 
-**`cargo test --workspace`: FIVE runs**, 40G capped, and the four that were
+**`cargo test --workspace`: SIX runs**, 40G capped, and the five that were
 totalled are **1,476 passed / 0 failed / 9 ignored across 87 binaries** every
 time — byte for byte the baseline's figure, which is what a run that touches no
-Rust and no Lean owes. The fifth ran after this block and `AGENTS.md` were
+Rust and no Lean owes. Two of them ran after this block and `AGENTS.md` were
 written, because a docs edit is what made the baseline red (§5a). T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.80 s ·
 the door suite `kernel_log_door --include-ignored` **23 passed** ·
 `cli_switch_acceptance --include-ignored` **16 passed** · `cli_latency
@@ -62606,10 +62622,12 @@ unchanged at **8** and the goals line reads the same as the baseline's.
 | **2143** | **check 12's declared blind spot: a definition that runs only at LOAD.** The generator hoists a closed subterm into `static .. _init_..()` and calls it from the module initializer; neither is an exported function, so neither is a node of the graph. 108 symbols are called that way and **32 of them are exempt entries** | `kernel/callgraph.py`, `kernel/reach-exempt.txt` | nothing silent: `closed_users` measures the class on every run, the summary line prints the count and every affected entry carries the note. What is open is that the property is stated over the export, so a NEW definition of that class fails and must join the file with that reason |
 | **2144** | **`Tm.edf` and `Tm.edfGrants` are emitted, proved and reached by nothing** — the live residue of gap 2126, which deleted their fast twins and left the originals. Both are in the exemption file with that reason | `TmKernel/TmKernel/Capacity.lean`, `kernel/reach-exempt.txt` | not unsound — §7.3's laws about them hold — but it is D50's composition shape again, one definition down from the module level: the EDF reservation pass answers no caller. It is the first entry the ratchet should take |
 | **2145** | **952 exemptions, and most of them are not adjudications.** The file records what was unreachable on the day the gate landed, by module, with each module's reach ratio; 45 sections carry a reason and three carry a *finding* | `kernel/reach-exempt.txt` | this is the gate working as designed — the alternative was a threshold, which is the list-shaped answer eleven times refused — but the number only means something once it starts falling. A run that wires a module and does not shrink this file has not finished |
-| **2146** | **check 12 costs 10% of `check.sh`'s wall, and half of that is a second read of the same 45 MB.** Checks 11 and 12 read `.lake/build/ir` in separate processes; `callgraph.py` caches within a process and cannot across two | `kernel/check.sh`, `kernel/callgraph.py` | 1.63-1.65 s of a 16.46-17.11 s wall, at design 14.0 item 4's per-step price rather than under it. One process running both checks, or a cache file keyed on the IR tree's mtimes, would pay it back; a cache file is a new failure mode and was declined here |
+| **2146** | **check 12 costs 10% of `check.sh`'s wall, and half of that is a second read of the same 45 MB.** Checks 11 and 12 read `.lake/build/ir` in separate processes; `callgraph.py` caches within a process and cannot across two | `kernel/check.sh`, `kernel/callgraph.py` | 1.62-1.66 s of a 16.34-17.11 s wall, at design 14.0 item 4's per-step price rather than under it. Check 12 reads the tree twice itself, deliberately (§7), and check 11 reads it again in its own process. One process running both checks, or a cache file keyed on the IR tree's mtimes, would pay it back; a cache file is a new failure mode and was declined here |
 | **2147** | **the population is `def` only.** 4,006 base symbols under the code generator's package prefix are emitted and **2,365 are claimed by a `def`**; the other 1,641 are `abbrev`s, instances, structure projections, the eliminator and constructor-index helpers the generator invents, and specialisations — none of them gated by check 12 | `kernel/reach.py` | the same shape as check 11's own last blind spot (`def` is its population too, and gap 1956's other eleven groups are `theorem`s). An `abbrev` composed into nothing is exactly as dead as a `def`; widening is the next step's, and the count is here so it starts from a measurement |
 
-**Gaps 2140-2147 are taken by this step**; 2148-2189 are free in track A's range.
+| **2148** | **CLOSED here, and it is the ledger-rot class in the process authority itself.** `AGENTS.md` wrote the acceptance's SIZE in three paragraphs — §2.1, §6.5 item 6 and §7.1's heading — and W-30, which added check 11, updated one of the three. §2.1 still said **ten** while its own parenthesis recorded that the number had gone stale twice, and §6.5 said ten too | `AGENTS.md` §2.1, §6.5, §7.1 | closed by REMOVING the number from two of the three rather than correcting it in three: §7.1 carries it, §2.1 and §6.5 say *every* check. One fact, one place, which is §5.11 applied to a count instead of to a timing |
+
+**Gaps 2140-2148 are taken by this step**; 2149-2189 are free in track A's range.
 Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
 1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889,
 1900, 1902-1904, 1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018,
