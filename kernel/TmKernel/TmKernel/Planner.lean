@@ -6178,13 +6178,29 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
 (G1), not gated behind a refusal.
 
-**What it does today (steps P1 and P2).**  §8.2 step 1: the day's walls, placed where the plan's
-own index puts them; §9's running interruption as an ad-hoc wall; the past half replayed from
-this call's own run; the overlapping pairs named and unresolved; and a `travel-day` wall's
-zeroing of the remaining budget.  §8.2 step 2: today's window instances placed mandatory-first
-inside their own windows or at a free `pref:` anchor, the rest deferred to step 6, and the
-wind-down and sleep rows that close the day.  Steps 3 to 7 are P3..P7 and none of them is
-written here. -/
+**What it does today — §8.2 steps 1 to 7, and three of step 8's twelve fields.**  Its segments
+are `dayRows` (`:6138`), the sort of six row lists: step 1's walls (`stepOneSegs`, `:1543`), placed where
+the plan's own index puts them, §9's running interruption as an ad-hoc wall, the past half
+replayed from this call's own run, and a `travel-day` wall's zeroing of the remaining budget;
+step 2's routine instances placed mandatory-first inside their own windows or at a free `pref:`
+anchor (`placeStep`, `:2391`; `placedRoutines`, `:2428`), the rest deferred to step 6; step 3's slots,
+cut and energised on stage 5's own `Look.cutSlots` and `Look.energizeToday` (`todaySlots`,
+`:2826`; `energisedSlots`, `:2835`); step 5's groups walked over the slots (`buildGroups`, `:4238`;
+`assignStep`; `assignFold`, `:4577`; `assignedRows`); step 6's placing of what step 2 deferred
+(`deferOne`, `:5115`; `deferWalk`, `deferFold`, with `finalRoutines` and `finalAssign` its two
+projections and `dayRoutineSegs`, `:5923`, the rows it leaves); and step 7's `optionalRows` and
+`restRows`, with the wind-down and sleep rows that close the day.  Its diagnostics are
+`dayDiagnostics` (`:6169`), which fills `conflicts`, `aCapacityLost` and `notes` and leaves the
+other nine of `Diagnostics`' twelve fields at `Diagnostics.empty` (README gap 2403; check 13
+names them until each is written).  Step 4 is not here by design (D34: no candidate fact is
+derived in the kernel — the request carries §7's answers).
+
+*(W-33 track A, README gap 2223, the THIRD time the sentence "steps 3 to 7 are not written
+here" stood in this file while false: the module header said it and W-15 repaired it; it said
+it again and W-32's track P repaired it; and this docstring, four lines below that repair, said
+"Steps 3 to 7 are P3..P7 and none of them is written here" from the day P3 landed until now.
+The line numbers above are of this commit and move with the file; re-derive them rather than
+copy them, AGENTS §5.11.)* -/
 def dayPlan (r : PlanReq) : DayPlan :=
   { DayPlan.empty r.today r.window r.blockMin r.budgetBlocks with
     segments := dayRows r

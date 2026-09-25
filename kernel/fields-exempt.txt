@@ -1,0 +1,28 @@
+# check.sh check 13's exemptions -- W-33 track A, README gap 2403.
+#
+# `fields.py`'s header is the specification.  THE PROPERTY it gates: every key the
+# planner wire emits under `diagnostics` projects a field of `Planner.Diagnostics`
+# that a definition `Planner.dayPlan` REACHES assigns by name.  This file is the
+# exceptions -- W-27's shape, an enumeration you join to be EXEMPT, not to be
+# COVERED -- and it may only SHRINK: a field listed here that is written FAILS
+# check 13 as STALE and must be deleted in the same edit, which is how the nine
+# fields below leave, one step at a time, with the ratchet doing the bookkeeping.
+#
+# AN ENTRY is `<Type.field> -- <reason>`, and a reason carries the ISO date it
+# was written on and names its EXIT: which step writes the field, and what
+# happens to this line when it does.  A `#` line is prose.
+#
+# THE NINE, on 2026-09-25.  `dayDiagnostics` (`Planner.lean`) fills `conflicts`,
+# `aCapacityLost` and `notes`; the shipped fork fills all twelve, and W-32 read
+# them off `--json plan` with values in them (`dropped_tail`, `plan_honesty`).
+# Each line below is one field the wire carries and the day never fills.
+
+Planner.Diagnostics.underused -- 2026-09-25: fork `underused_note`'s id list, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.hot -- 2026-09-25: the hot items step 8 reports; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.impossible -- 2026-09-25: §7.3's impossible items with their shortfall; nothing writes it, which is why `PlanCheck.impossibleKept` is provably empty (README gaps 2321 and 2419). EXIT: W-33 track P writes it; at the merge this line goes STALE and is deleted.
+Planner.Diagnostics.blocked -- 2026-09-25: the items blocked behind a dependency, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.deferred -- 2026-09-25: the ids step 8 reports as deferred (`Placed.deferred` is a different field of a different record, and writing THAT is not writing this). EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.waiting -- 2026-09-25: the items waiting on a date, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.droppedTail -- 2026-09-25: §9's dropped tail; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.planHonesty -- 2026-09-25: §11's ratio as a pair; nothing in the kernel's day writes it, so the wire carries `(0, 0)`. EXIT: P8 writes it, and this line goes STALE the day it does.
+Planner.Diagnostics.restDebtMin -- 2026-09-25: §11's rest debt; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.

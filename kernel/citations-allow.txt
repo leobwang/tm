@@ -139,11 +139,14 @@ linter.unusedSimpArgs
 # typechecker off, driven green in a clone before the residue existed.  An option namespace,
 # not a declaration.
 debug.skipKernelTC
-# The FORK's field, at tm-core/src/planner.rs:884, cited by Planner.lean's note on
-# `remainingBudget`.  `blocks_done` is declared; `self` is a RECEIVER, and resolving a
-# receiver needs a type checker this file does not have -- so the unresolvable class fails
-# and is adjudicated here by name rather than passing silently (README gap 1731).
-self.blocks_done
+# `self.blocks_done` -- the FORK's field at tm-core/src/planner.rs:884, cited by
+# Planner.lean's note on `remainingBudget` -- stood here from README gap 1731 until W-33,
+# because `self` is a Rust RECEIVER and no declaration set spelled it.  One does now:
+# `State.lean`'s one-line `inductive Scope | self | world`, whose constructors check 8's
+# walk skipped until `leanfiles.constructors` read them (W-33 track A).  The owner half of
+# that citation resolves on a Lean constructor that happens to be spelled `self`, which is
+# a laundering surface of exactly one word, declared here so the next reader does not
+# rediscover it; the `blocks_done` half still fails the day the fork's field goes.
 
 # ================= W-27 track X: the `::`-SPELLED PATHS, adjudicated =================
 #
@@ -726,8 +729,13 @@ unknownIdentifier
 #   * names D28 says do NOT exist: dayPlan?, PlanRefusal, planCheckFailed.
 #   * design names never shipped: mkWindow?, mkStateDay?, splitByFilters.
 #   * older removals: badDay0, childFoldB3, stage5OnMiss, statusOfGlyphDemoted, DocRegion,
-#     findDoc, demoteTarget, resolveHorizon, entitiesOfDoc, witCaps, logOpFast, ClosedPeriod,
-#     openEnded.
+#     findDoc, demoteTarget, resolveHorizon, entitiesOfDoc, witCaps, logOpFast, ClosedPeriod.
+#   * LEAN_CTOR, check 8's own constructor regex until W-33 track A, when the scan moved to
+#     `leanfiles.constructors` (one scanner for checks 8 and 11); the W-24 ledger's sentence
+#     about what it matched stays as history and is its one citation.
+#     (`openEnded` was listed here as a removal until W-33 and never was one: it is a live
+#     constructor of `Line.lean`'s one-line `inductive Flag`, which check 8's block walk
+#     could not read -- it matched the head line and stepped past the constructors on it.)
 #   * day0Wf, FOUND AT THE W-21 REPAIR STEP by the digit-to-upper half of the camel test:
 #     `[a-z][A-Z]` does not match a capital with a digit in front of it, so this name was
 #     unswept the whole time badDay0 -- its own refusal, removed in the same step -- was
@@ -759,10 +767,10 @@ unknownIdentifier
 1 findDoc
 1 horizonSec
 5 logOpFast
+2 LEAN_CTOR
 1 maxTrans
 1 mkStateDay?
 3 mkWindow?
-1 openEnded
 3 pickFrom
 2 planCheckFailed
 3 readInstantText
@@ -818,10 +826,8 @@ unknownIdentifier
 4 NotFinite
 2 NotUtf8
 1 NumberOutOfRange
-6 PErr.notAnItem
 1 Plan.keysWf
 16 ReachTooFar
-1 Scope.openEnded
 1 SilentVerbUndo
 2 String.utf8BytePos
 1 TmKernel.olean

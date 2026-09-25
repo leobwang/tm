@@ -264,8 +264,14 @@ def emitted_globals(ir):
     return globs
 
 
-def reachable(ir, cuts=None):
-    """`(reached, emitted)`: what the export reaches, and what was emitted.
+def reachable(ir, cuts=None, root=None):
+    """`(reached, emitted)`: what `root` reaches, and what was emitted.
+
+    `root` is the export, `EXPORT_ROOT`, unless a reader names another symbol
+    -- check 13 (`fields.py`) walks from `Tm.Planner.dayPlan` to ask which
+    definitions the day BUILDER reaches, which is a different question from
+    which ones the door does (W-33 track A).  A root that is not an emitted
+    function is a hard error here, never a quiet empty answer.
 
     The BFS starts at `EXPORT_ROOT` and follows every identifier in a body that
     is itself an emitted function OR an emitted global.  It is what tells a
@@ -285,18 +291,19 @@ def reachable(ir, cuts=None):
     contributes exactly the callees given instead of everything its body
     mentions.  `None` -- the default, and what checks 8 and 11 pass -- is the
     walk as it was, so their answers do not move."""
-    key = (str(ir), None if cuts is None else
+    root = EXPORT_ROOT if root is None else root
+    key = (str(ir), root, None if cuts is None else
            tuple(sorted((k, tuple(sorted(v))) for k, v in cuts.items())))
     if key in _REACH:
         return _REACH[key]
     funcs = functions(ir)
     globs = emitted_globals(ir)
-    if EXPORT_ROOT not in funcs:
+    if root not in funcs:
         raise SystemExit("callgraph.py: `%s` is not an emitted function under "
                          "%s -- the call graph has no root and every definition "
-                         "would look dead" % (EXPORT_ROOT, ir))
+                         "would look dead" % (root, ir))
     node = set(funcs) | globs
-    seen, stack = set(), [EXPORT_ROOT]
+    seen, stack = set(), [root]
     while stack:
         n = stack.pop()
         if n in seen:

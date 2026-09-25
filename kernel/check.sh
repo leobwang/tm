@@ -808,6 +808,38 @@ fi
 #     (Plan.lean), D8's rule written twice in two modules.  The Close copy is deleted and its three
 #     sites read the Plan definition.
 #
+#     AND THE KEY IS TWO KEYS SINCE W-33 (track A, README gap 2418).  The exact
+#     key above cannot see a GENERALISATION -- a definition that is another's
+#     body with a literal turned into a parameter -- and W-32's repair found
+#     four in one module (`PlannerWit.pCand`, `pCandDue`, `pCandSmall`,
+#     `bCand`) with this check green at 14 groups: a LIST where the rule is a
+#     CLASS, the thirteenth counted instance, inside the gate named after §5.3.
+#     The SECOND key puts two `def`s in one group when their result types and
+#     bodies are identical once every parameter and every literal is a hole
+#     (a constructor over holes is a literal; constructors are what the
+#     library and `Init/Prelude.lean` DECLARE, read by `leanfiles.constructors`,
+#     the one scanner check 8 also reads).  A group that is one exact-key group
+#     is the exact key's; every other climbs a ladder of properties -- E3 a
+#     fixture value, ALPHA two names for one body (fails unless E2), E5 a
+#     wrapper, E4 wire-named -- and what no rung answers must have a SENTENCE
+#     in `twins-exempt.txt`: ONE CONCEPT, naming the carrier and an EXIT, or
+#     NOT ONE CONCEPT, saying why; dated either way.  W-27's shape.  Measured
+#     at `8702132`: 60 generalisation groups beyond the exact ones, 35 fixture
+#     values, 2 wrappers, 7 wire-named, 16 adjudged (9 owed, 7 not one), and
+#     the ALPHA rung's first catch was `closeTo`/`targetContaining`, one body
+#     under two parameter names that E2 had been answering for because the
+#     generator's C locals carry the parameter's NAME (repaired: `CVAR`
+#     erases it).  DRIVEN in a clone, four plants, each rc=0 before and rc=1
+#     named after: a surrogate test with its lower bound made a parameter,
+#     `pairScalar` with its base made a parameter, a `WfSeg` fixture with its
+#     `SegKind` made a parameter, and `natLt` again under other names.
+#     WHAT IT CANNOT SEE is the file's header: a generalisation across a delta
+#     step or a structure eta (gap 2417's family is two groups here and one
+#     definition), a closed term that is not a literal, a renamed body-local
+#     binder.  The cost: 1.57/1.59/1.56 s before against 2.07/2.08 s after,
+#     interleaved under the same load (one 3.15 s outlier as the load rose to
+#     8), about +0.5 s.
+#
 #     THE COST IS DECLARED AND MEASURED, NOT QUOTED, AND IT WENT UP.  It was
 #     0.75-0.76 s; the reachability walk reads the whole of `.lake/build/ir`
 #     once and cached, and three runs at the W-30 repair measure **1.45, 1.46
@@ -1033,6 +1065,61 @@ if [ $? -eq 0 ]; then
   say "every emitted definition is reached" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
 else
   say "every emitted definition is reached" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
+# 13. A FIELD THE WIRE EMITS MUST HAVE A WRITER THE DAY REACHES.  README gap
+#     2403 (W-32's land step): the shipped binary's `--json plan` prints
+#     twelve diagnostic fields with values in them, the kernel's
+#     `Planner.Diagnostics` carries all twelve, `PlanWire.diagJson` emits all
+#     twelve -- and `Planner.dayDiagnostics` writes THREE, leaving nine at
+#     `Diagnostics.empty`.  The fourth composition gap of this campaign and
+#     the fourth found BY HAND, because every gate measured the parts: a type
+#     that matches the fork's shape pins nothing about the fork's values.  Gap
+#     2419 is the same fact from the proof side -- `PlanCheck.impossibleKept`
+#     is provably empty at every request because nothing writes `impossible`.
+#
+#     THE PROPERTY (`fields.py`, W-33 track A): for every key the planner wire
+#     emits under `diagnostics`, the field it projects is assigned BY NAME
+#     inside a definition that `Planner.dayPlan` REACHES in the emitted call
+#     graph -- `callgraph.py`'s walk, rooted at the day builder instead of at
+#     the door -- or it is named in `fields-exempt.txt` under a dated reason
+#     with an EXIT.  Both directions of the wire beside it (5.8): every field
+#     of the structure is emitted under some key, every key projects a field.
+#     The emitter is found by the KEY, not by name; the writer's SUBJECT must
+#     be of the structure's type as the source declares it, because
+#     `SegFlags` has `underused`, `hot` and `deferred` too and the first run
+#     counted `assignedSeg` as a writer of the diagnostics -- the gate was
+#     green on its own class for one run and its author caught it.  The
+#     exemptions are W-27's shape and may only SHRINK: a field listed there
+#     that is written FAILS as STALE, which is how the nine leave one step at
+#     a time -- W-33 track P writes `impossible`, and at that merge its line
+#     goes STALE and is deleted.
+#
+#     DRIVEN in a clone, five plants, control rc=0 between each: `hot :=
+#     Capped.nil` added to `dayDiagnostics` (STALE, the exemption of a
+#     written field); `notes :=` removed from it (UNWRITTEN by name); the
+#     `"waiting"` pair removed from `diagJson` (NOT EMITTED); `d.blocket`
+#     (NO SUCH FIELD); and a `PlannerWit` fixture building `{ Diagnostics.empty
+#     with hot := .. }` (still UNWRITTEN: a witness is not the day).
+#
+#     WHAT IT CANNOT SEE is `fields.py`'s header: a positional constructor
+#     (`Diagnostics.empty` is one, rightly counted as no write), a write that
+#     copies a field, a writer the generator inlined, and a field written with
+#     a value that is always the empty one -- written is a floor under
+#     populated, and the witness that a field is POPULATED is a `PlannerWit`
+#     request at which it is not `Diagnostics.empty`'s, which is check 9's to
+#     demand of the step that writes it.
+#
+#     THE COST, MEASURED: 1.53, 1.57 and 1.52 s, three runs at load 9-10 with
+#     this step's own cargo runs on the box, almost all of it the read of
+#     `.lake/build/ir` that checks 11 and 12 also pay, each in its own process
+#     (5.11: re-measure, do not quote).
+out=$( python3 fields.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+else
+  say "every emitted field has a writer" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20
 fi
 

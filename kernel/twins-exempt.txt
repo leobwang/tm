@@ -1,0 +1,66 @@
+# check.sh check 11's SECOND KEY: the generalisation groups no property answers,
+# adjudged by name -- W-33 track A, README gap 2418.
+#
+# `twins.py`'s header is the specification.  The second key puts two `def`s in
+# one group when their result types and bodies are identical once every
+# PARAMETER and every LITERAL is a hole, so a definition that is another's body
+# with a literal turned into a parameter can no longer pass the gate unseen.
+# A group that is one exact-key group is the exact key's; every other group is
+# answered by a property -- E3 a fixture value, ALPHA two names for one body,
+# E5 a wrapper, E4 wire-named -- or it is answered HERE, by a sentence.  This is
+# W-27's shape: an enumeration you join to be EXEMPT, not to be COVERED.
+#
+# AN ENTRY is one line: the group's members, ALL of them, qualified as `lean`
+# names them, space-separated, then ` -- ` and the verdict; a line that begins
+# with whitespace continues the verdict above it.  A verdict begins `ONE
+# CONCEPT` -- a true generalisation: it names the definition that should carry
+# the rest, the gap that owes it, and an EXIT, what lands the carrier and
+# dissolves the group -- or `NOT ONE CONCEPT`, with the sentence that says why
+# two definitions of one shape are not two definitions of one concept.  Every
+# verdict carries the ISO date it was written on.
+#
+# THE RATCHET.  A group with no entry FAILS check 11.  An entry whose group the
+# key does not form FAILS as STALE, which is how a ONE CONCEPT debt is paid: the
+# carrier lands, the group dissolves, the line is deleted.  An entry for a group
+# a property answers FAILS as a sentence nothing needs.  A verdict that was ONE
+# CONCEPT at HEAD may not be rewritten NOT ONE CONCEPT -- the debt leaves when
+# the group does, never when the sentence changes (D46's rule about withdrawal).
+# A fifth member joining a four-member group is a NEW group with no sentence,
+# so a plant into an adjudged family fails by name.
+#
+# WHAT A SENTENCE CANNOT MAKE TRUE, declared: whether NOT ONE CONCEPT is the
+# right verdict is a reader's judgement, dated and signed by the line.  What the
+# gate buys is that the judgement is written where the next reader will meet it,
+# and that a group cannot grow past it in silence.
+
+Tm.PlanCheck.aBatchSeg Tm.PlanCheck.aBlockFor Tm.PlanCheck.aBlockOfAnHour Tm.PlanCheck.aBreakAcross Tm.PlanCheck.aLateBlock Tm.PlanCheck.aMovedWall Tm.PlanCheck.aWallAcross Tm.PlanCheck.aWindDown Tm.PlanCheck.anUnderpoweredBlock -- ONE CONCEPT (2026-09-25): nine `WfSeg` fixtures of `PlanCheck.lean` are one builder, `⟨wSeg start stop kind item energy, wSeg_wf ..⟩`, at nine literal choices -- a block of an hour, the same block underpowered, late, or for `j`, a wall, a break, a wind-down, a moved wall, a batch -- and each spells the builder again with its own `by omega`. The carrier is one `def` over the start, the stop, the `SegKind`, the item, the energy and the proof, and the nine become its instances: E3 values or E5 wrappers. README gap 2441. EXIT: when the carrier lands in `PlanCheck.lean` (tracks G and P hold it in W-33), this group dissolves and this line goes STALE.
+
+Tm.PlannerWit.cCand Tm.PlannerWit.pCand Tm.PlannerWit.pCandDue -- ONE CONCEPT (2026-09-25): README gap 2417's family, first half. `pCand` is `(⟨id, ci, none, 50, none, false, false, false, false, false, hot, none, ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)`; `pCandDue` is that body with `rem` for `50` and `some due` for `none`; `cCand` is it with `some 0` for `none` and `false` for `hot`. One `def` over the id, the ci, the root priority, the remaining minutes, the due date, the hot flag, the planned minutes, the location, the split flag and the proof carries all three. The second half is `bCand`/`pCandSmall` on the line below: the SAME value spelled `wfPlanFacts pm l h`, which this key cannot see through -- a delta step and a structure eta, `{ planFacts pm l with splittable := (planFacts pm l).splittable }` being `planFacts pm l` -- and `bCandCap` is the fifth, generalising along `cap` instead, in no group here. One carrier carries all five. EXIT: when the carrier lands in `PlannerWit.lean` (track G holds it in W-33), this group dissolves and this line goes STALE.
+
+Tm.PlannerWit.bCand Tm.PlannerWit.pCandSmall -- ONE CONCEPT (2026-09-25): README gap 2417's family, second half: `bCand` is `pCandSmall` with `ci` for the literal `2`, `some 0` for `none` and `10` for `rem`, both over `wfPlanFacts pm l h`. The bridge to the first half is on the line above. EXIT: the same carrier; this group dissolves with it and this line goes STALE.
+
+Tm.isHighSurrogate Tm.isLowSurrogate -- NOT ONE CONCEPT (2026-09-25): a UTF-16 surrogate half IS its code-point range -- `0xd800..0xdbff` and `0xdc00..0xdfff` are what the two words mean -- and a carrier over two bounds would move the four numbers to the call sites and leave two names for nothing. Two ranges, two concepts, one shape.
+
+Tm.Arith.isImpossible Tm.Seal.natLt -- NOT ONE CONCEPT (2026-09-25): both are core's decidable `<` on `Nat` read as a `Bool`, at opposite argument orders -- `isImpossible need avail` is §7.3's test that the minutes available fall short of the minutes needed, `natLt` is a comparator handed to a sort. The concept each names is its reading, and the body is one core operation that needs no third name.
+
+Tm.Field.isLowerC Tm.Field.isUpperC -- NOT ONE CONCEPT (2026-09-25): ASCII's two letter ranges, `97..122` and `65..90`, are what lower and upper case MEAN to the tokeniser and to `charDigit`'s bridge beside them -- the same argument as the surrogate halves: the numbers are the definitions, not parameters of one.
+
+Tm.closeCheat Tm.setEstFoldE -- NOT ONE CONCEPT (2026-09-25): `closeCheat` is `Negative.lean`'s CHEAT 4 -- a close that zeroes the estimate it just measured, written so that `close_conserves` is not dischargeable -- and it is `Cmd.setEstFoldE` at `0` by construction, because a counter-example to a rule's obligation has to BE that rule at the value that breaks it. AGENTS §6.2: a cheat block is never edited once written, and this one predates `setEstFoldE`.
+
+Tm.Arith.plannedMin Tm.Look.windowMinOf -- NOT ONE CONCEPT (2026-09-25): both are the one half-up rounding of a scaled quantity, `halfUpQ (scale ..)`, and that rule is already one definition in each of its two parts; `plannedMin mult est` is an estimate under §7's multiplier, `windowMinOf wh` a window in hours made minutes at `60`. Writing the second as `plannedMin wh 60` would say that a window is a planned estimate, which is a sentence this kernel should not utter.
+
+Tm.levelOf? Tm.yesterdayOf? -- ONE CONCEPT (2026-09-25): `if h : n < k then some ⟨n, h⟩ else none` at `k := 6` (an energy level) and at `k := 8` (a stored `p`) -- one bounding of a `Nat` into a `Fin`, written twice. The carrier is a `def` over the bound and the number, `Option (Fin k)` its answer, and both become its instances. README gap 2444. EXIT: when the carrier lands in a module both `Capacity.lean` and `Priority.lean` import, this group dissolves and this line goes STALE.
+
+Tm.findDocIx Tm.overdueTarget -- ONE CONCEPT (2026-09-25): `overdueTarget p` is `findDocIx p .backlog` with the region test at `none` where `findDocIx` tests `some r` -- one finder whose region is an `Option Region`, written twice because the parameter was typed `Region`. The carrier takes the `Option`, and `findDocIx p k r` becomes it at `some r`. README gap 2445. EXIT: when `Close.lean` carries it, this group dissolves and this line goes STALE.
+
+Tm.closeTo Tm.targetContaining -- ONE CONCEPT (2026-09-25): two names for one body, `regionOf (coarsen g) d`, one parameter called now and the other closedDay -- the ALPHA rung's first catch, and the reason E2 no longer reads a parameter's name inside the generator's variable names as a compiled difference. The names are not idle: `Grain.lean`'s theorems (`impl_day_rule_disagrees`, `containing_can_target_a_closed_region`) hold the two CALLING CONVENTIONS apart, the fork's rule at the closed day against the kernel's at now, and `closeTo` is reached from the export while `targetContaining` is not. README gap 2440. EXIT: `targetContaining g d := closeTo g d` -- one body, the second name kept as the wrapper E5 answers -- dissolves this group and this line goes STALE.
+
+Tm.Replay.obsLe Tm.Replay.obsLineLe -- NOT ONE CONCEPT (2026-09-25): `decide (a.line ≤ b.line)` over `EnergyObs` and over `Obs`, two types that share a field and nothing else, so neither can be written in terms of the other. This is the exact key's own rule -- it puts the signature in its key for exactly this pair -- applied to the second key by sentence: no "the types differ" property was added, because `ciSum`/`vsum` below is where it would lie.
+
+Tm.Planner.candKeyLe Tm.Planner.groupKeyLe -- NOT ONE CONCEPT (2026-09-25): `natsLe a.nums b.nums` over `CandKey` and over `GroupKey`, the two lexicographic keys §8.2 step 5 sorts by. The order is one definition, `natsLe`, and each of these is its name at one key type; typed apart, as `obsLe`/`obsLineLe` above.
+
+Tm.Skel.stamps Tm.Core.stamps -- ONE CONCEPT (2026-09-25): `(Field.viewDemoted x.line).getD []` off a `Skel` and off a `Core`, and `Core.skel_stamps` proves them equal by `rfl` -- one reader of one field written twice and tied by a theorem instead of being one. The carrier reads the LINE, `Field.viewDemoted l |>.getD []` under one name, and both become it at `.line`, wrappers E5 answers. README gap 2442. EXIT: when `Line.lean` carries it, this group dissolves and this line goes STALE.
+
+Tm.Replay.ciSum Tm.Replay.KMap.vsum -- ONE CONCEPT (2026-09-25): README gap 2093 -- `ciSum (m : KMap Id Nat)` is `vsum (m : KMap κ Nat)` at `κ := Id`, a monomorphic copy of a polymorphic definition that the exact key separates by signature and this key forms. `vsum` is declared at `Replay.lean:3526`, below `ciSum`'s only caller at `:3393`, so consuming it is a move and not a rename. EXIT: when `ciSum` is gone, this group dissolves and this line goes STALE.
+
+Tm.idHash Tm.Replay.keyHash -- ONE CONCEPT (2026-09-25): the same rolling hash, `foldl (fun h c => (h * 31 + c.toNat) % 4294967291) 7`, over `Id` and over `List Char` (which `Id` is), and `keyHash`'s own docstring says so: "the loader's `idHash` function, restated here so this module does not import the plan". An import-order copy is still a copy. The carrier is the one hash in a module both `Fast.lean` and `Replay.lean` import. README gap 2443. EXIT: when it moves, this group dissolves and this line goes STALE.

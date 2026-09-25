@@ -64048,7 +64048,7 @@ gap **2194**, which already named the paying batch witness this run would have m
 which this run **closes**; 2328-2359 are free in track G's range. Gaps 113/114/116, 301, 346, 365, 435, 437, 501, 551, 577, 803,
 806, 850, 876, 960, 1006, 1065, 1190, 1318, 1320, 1333, 1500, 1529, 1770, 1790, 1902, 1984-1990,
 2020, 2025, 2130, 2136, 2190-2193, 2195-2199 and 2255-2265 are untouched by this step, except
-**2194** (**CLOSED**: the paying set is 47/23/23/**6**, and the two requests §5 adds give
+**2194** (**CLOSED**: the paying set is 48/24/24/**6** [W-33 track A, gap 2401: this line said 47/23/23/6 while §5 of the same block, the measured sentence, says 48/24/24/6; the census is **48** — `grep -cE '^def the[A-Za-z0-9_]* : PlanReq' PlannerWit.lean` — and the 24s are §5's `#eval` figures], and the two requests §5 adds give
 `batchDoesNotReachPast` its first subject — the blocker was the store, not the fold), **2198** (a goal refuted but not dischargeable — measured
 at all six rather than at two) and **2199** (whose proposed route is **corrected** by 2325).
 
@@ -64681,3 +64681,272 @@ clean afterwards, plus one good line still written at rc=0. The citation figures
 `9d7fad2` were re-measured on their own checkouts inside the clone. `git status --porcelain` on
 `/home/leobwang/code/projects/tm` was **empty** before the first plant and **empty** after the
 last; every clone plant was reverted with `git checkout --` and the control re-run to rc=0.
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-33**, **track A**,
+     on the main checkout at `8702132`.  Gap range **2440-2479**; **2440-2451
+     taken**, 2452-2479 free.  Parity: NONE ISSUED.  Whoever merges keeps the
+     one sequence (§6.4).
+     ===================================================================== -->
+
+## Stage 6 — W-33 track A: check 11 sees a generalisation, check 13 sees a field nobody writes, and the gate residue is driven
+
+**The thirteenth counted instance of a LIST where the rule is a CLASS was inside the gate named after
+§5.3, and it is closed the way W-27 closed the first: a KEY that forms the class, PROPERTIES that
+answer what can be answered, and an enumeration you join to be EXEMPT, not to be COVERED.** Check 11
+keyed every `def` on its signature and its body with its literals, exactly, so a definition that is
+another's body with a literal turned into a parameter was never a twin, and W-32's repair found four in
+one module with the gate green (gap 2418). The SECOND key lands here; it forms **60** generalisation
+groups across the library beyond the exact ones, answers **44** by property, and **16** by a dated
+sentence in `kernel/twins-exempt.txt` — nine of them ONE CONCEPT, a debt with an EXIT each. Its first
+run also found, on its own, **two names for one definition** the exact key had let through for three
+runs. Beside it, gap 2403's gate half is a **check 13**: every field the planner wire emits under
+`diagnostics` must have a writer the day builder reaches, and nine of twelve do not — the number that
+was a hand-finding is a ratchet. The gate residue is driven: gap 2400 closes on a drive, gap 2401 on a
+one-second `#eval`, gap 2223's last false sentence is rewritten against the file, and the fork's own
+§7 pass gets the gap D53 said it would.
+
+### 0. The brief, measured (the report's brief-corrections field)
+
+| the brief said | measured at `8702132` |
+|---|---|
+| *"`Planner.lean:27` still says 'Steps 3 to 7 are not written here'"* | **False.** `:25-37` is W-32 track P's correction QUOTING that sentence as the thing it repaired (`It read **"Steps 3 to 7 ..."**`). The live false sentence was `dayPlan`'s own docstring at `:6186`, four lines below, and that one is now rewritten (§5) |
+| *"`bCandCap` at `:2347` may be a fifth"* | **Not under this key.** `bCandCap` generalises along `cap` (`{ planFacts pm .any with cap := some ⟨60, d⟩ }`) where the others vary `splittable`; it is in no group and is the family's fifth only across the same delta/eta bridge, said so in the sentence |
+| *"gap 2417's family MUST fall out of this key"* | **Two groups, not one** — {`cCand`, `pCand`, `pCandDue`} and {`bCand`, `pCandSmall`} — because `wfPlanFacts pm l h` and `⟨{ planFacts pm l with splittable := sp }, h⟩` are one value under two spellings (a delta step and a structure eta), which no source key sees. Both are adjudged ONE CONCEPT owed to 2417, the bridge written in the sentence, the blind spot in the header |
+| *"the census is 48"* | **Confirmed**, and the other two numbers with it: a scratch `#eval` over every `PlanReq` in `PlannerWit.lean` returns `(48, 24, 24, 6)` in one second (§4) |
+| gap 2400: *"`reach.py` checks only that the declared count equals the entry count"* | **False when written.** The HEAD-comparand ratchet has stood since W-31's repair (gap 2259); the 1,748 → 1,756 growth at the W-32 merge went through it as two dated sections. The property 2400 asks for is the STALE arm, and the drive in §3 shows it biting |
+| *"check 8 ... 41,761 citations after `8702132`"* | **Confirmed** at HEAD in the clone: `41761 citations, 39761 resolved, 2000 allowed`, 2.18 s |
+| *"check 11: 3,061 def bodies, 14 groups, 0 UNANSWERED"* | **Confirmed**, and the wall with it: **1.50, 1.53, 1.53 s** at load 0.2 — the baseline this block's cost is measured against |
+
+### 1. The second key — gap 2418 closed
+
+**The property.** Two `def`s are in one generalisation group when their result types and bodies are
+identical once every PARAMETER and every LITERAL is a hole. A parameter is a name the signature binds,
+erased where it heads a token (`r.text.toList` is `_.text.toList`). A literal is a numeral, a string, a
+character, or a CONSTRUCTOR over holes — `none`, `some _`, `.any`, `⟨_, _⟩`, `[_]`, `(_, _)`, a
+structure instance whose every field is a hole — where a constructor is a name an `inductive` or a
+`structure` DECLARES, in this library or in the pinned toolchain's `Init/Prelude.lean`, matched on its
+last segment with the arity its declaration gives it. A constructor in a pattern is structure and
+stays; a body that is one hole carries no rule and is not keyed. The key is COARSER than the relation
+it gates, on purpose: every pair one of which is the other at a closed value shares it, and some pairs
+that merely share a shape do too. **Three keys were measured before one was chosen** (§1 of the
+scratch): collapsing EVERY all-hole application — a global head over holes — formed **87** groups and
+put `_ . _` five ways and `_ . isSome` four ways across unrelated modules, a parenthesisation and not
+a concept; constructor-only collapse formed **71** on the first cut and **60** once three precision
+defects were fixed (below). The whole `Init` tree as the constructor source was measured and declined:
+190 short names against Prelude's 47, and the 143 it adds — `line`, `text`, `node`, `day`, and `/--`
+out of an unstripped comment — are English words a projection or a field spells.
+
+**Three defects the first cut exposed, each fixed before a sentence was written.** (i) `twins.py`'s
+separator was a flat regex for the first `:=`, and `pCand`'s binder `(h : Look.PlanFacts.wf { planFacts
+pm l with splittable := sp } = true)` holds one, so four `def`s of `PlannerWit.lean` were keyed on
+garbage — consistently, so the exact key never misfired, and the second key could not be built on it.
+`decl_sep` takes the first `:=` or arm bar at bracket depth zero now. (ii) A projection chain
+(`o.day`) and a structure-update field name (`cap :=`) collapsed as constructors because `day` is a
+`DocKind` and `cap` is a fact key; a dotted token with a lowercase head is a projection now, and a name
+followed by `:=` is a field. (iii) E4's first form ignored the signature and demanded nothing, so
+`obsLe`/`obsLineLe` — identical bodies, different types, nothing named differing — were "wire-named";
+E4 requires a name-literal to actually differ.
+
+**The ladder**, in order, for every group that is not an exact-key group: **E3** per member (a nullary
+non-function is a fixture role and drops out; fewer than two rule members left is answered — 35
+groups); **ALPHA** (two rule members identical once parameters are numbered — same binder types, body
+and literals — are two names for one definition and FAIL unless E2 answers them); **E5 WRAPPER** (one
+head over holes: `_ / _`, `_.fault.isNone` — 2 groups); **E4 WIRE-NAMED** (the rule members differ only
+in a string, a character or a nullary constructor — the tokens that NAME, never a numeral that MEASURES:
+`viewMin`/`viewMax` at `.floor`/`.cap`, the three refusal emitters, `isIdWord`/`isHeading`/`atWord` at
+`'^'`/`'#'`/`'@'` — 7 groups); and **a SENTENCE** (16 groups). `twins-exempt.txt` names ALL of a
+group's members, so a fifth member joining an adjudged family is a group with no sentence; a sentence
+whose group dissolved is STALE; one for a group a property answers is a sentence nothing needs; and a
+ONE CONCEPT verdict at HEAD cannot be rewritten NOT ONE CONCEPT — the debt leaves when the group does,
+D46's rule about withdrawal.
+
+**What the sentences say.** Nine ONE CONCEPT, each a carrier named and an EXIT: the two halves of gap
+2417's family; `PlanCheck.lean`'s nine `WfSeg` fixtures, one builder at nine literal choices (**gap
+2441**); `Skel.stamps`/`Core.stamps`, one reader of one field written twice and tied by `rfl` (**gap
+2442**); `idHash`/`keyHash`, an import-order copy whose docstring says so (**gap 2443**);
+`levelOf?`/`yesterdayOf?`, one `Fin` bounding at 6 and at 8 (**gap 2444**); `findDocIx`/`overdueTarget`,
+one finder with the region lifted to an `Option` (**gap 2445**); `ciSum`/`vsum`, gap 2093's monomorphic
+copy, FORMED here because binder types are not in this key — the loud direction the exact key could not
+take — and no "the types differ" property was added, because that pair is where it would lie; and
+`closeTo`/`targetContaining` (§2). Seven NOT ONE CONCEPT, each with its reason: the two UTF-16 halves
+and ASCII's two cases (the ranges ARE the concepts), `isImpossible`/`natLt` (core's `<` at two argument
+orders), `plannedMin`/`windowMinOf` (one rounding of two quantities), `obsLe`/`obsLineLe` and
+`candKeyLe`/`groupKeyLe` (typed apart, the exact key's own rule by sentence), and `closeCheat`, which is
+`Negative.lean`'s CHEAT 4 and `setEstFoldE` at `0` by construction (AGENTS §6.2: a cheat is never
+edited).
+
+**The class is caught, driven in a `git clone --local` whose `.lake` is a symlink to the shared build,
+control rc=0 before and after each, `git status --porcelain` on the shared tree identical before and
+after** (§6): `def w33planta (lo v : Nat) : Bool := lo ≤ v && v ≤ 0xdbff` beside `isHighSurrogate`
+joined its group and check 11 printed `GENERALISATION: … Json.lean:360 Tm.w33planta (2 params)` and
+`STALE: twins-exempt.txt:42 adjudges a group the second key does not form`, rc=1; `pairScalar` with its
+base made a parameter formed a NEW group of two, named, rc=1; a `WfSeg` fixture with its `SegKind`
+literal made a parameter joined the nine and the sentence went STALE, rc=1; `natLt` again under other
+names printed `ALPHA: two names for one definition once its parameters are renamed`, rc=1.
+
+**The cost.** Old and new interleaved under the same load (6-8, another session building): **1.57, 1.59,
+1.56 s** against **2.07, 2.08 s** and one **3.15 s** outlier as the load rose to 8 — about **+0.5 s**,
+some 2-3% of a warm thirteen-check wall (21 s at `8702132`'s build), and where it went was profiled rather than guessed: the first cut
+stripped every module twice (+1.5 s) and re-stripped 27 of them a third time in `qualified_names`; each
+module is stripped once now and `leanfiles.qualified_names` takes the stripped text.
+
+### 2. The ALPHA rung's first catch, and the hole in E2 it exposed — gap 2440, gap 2447
+
+`closeTo (g : Grain) (now : Day) := regionOf (coarsen g) now` and `targetContaining (g : Grain)
+(closedDay : Day) := regionOf (coarsen g) closedDay` are one body under two parameter names, and the
+exact key never met them because two identical bodies name their parameters identically. E2 then
+answered for them — *"the emitted C differs and the export reaches one"* — and the C did differ, in
+exactly one place: the generator names its locals after the source parameter, so the byte-diff was
+the local named after now against the local named after closedDay. `CVAR` erased the counter and kept the name; it erases both now, and
+the three exact-key E2 groups (`planWf`/`planWfFast`, `daysIn`/`daysInT`, `daysFrom`/`daysFromT`) still
+differ, in their callees. **Gap 2447** closes here. The pair is adjudged ONE CONCEPT (**gap 2440**): the
+names are not idle — `Grain.lean`'s theorems (`impl_day_rule_disagrees`,
+`containing_can_target_a_closed_region`) hold the two CALLING CONVENTIONS apart, the fork's rule at the
+closed day against the kernel's at now, and `closeTo` is reached from the export while
+`targetContaining` is not — so the EXIT keeps both names and one body: `targetContaining g d := closeTo
+g d`, a wrapper E5 answers. `Grain.lean` is not a doc edit, so it is owed.
+
+### 3. Gap 2400 closed on a drive, and the premise corrected
+
+The property gap 2400 wants — *no entry is added for a definition a shipped caller could reach* — is
+`reach.py`'s STALE arm, and it has stood since W-31's repair; what the land block wrote about the gate
+("checks only that the declared count equals the entry count") was false of the tree it was written on.
+Driven, four ways. **(a)** In the symlink clone: `Tm.EmitWire.runRows`, REACHED, added under a new dated
+section with an EXIT — `STALE: Tm.EmitWire.runRows (EmitWire.lean) is REACHED now -- delete this entry,
+the file may only shrink`, `1 UNANSWERED`, rc=1. **(b)** In a second clone with its OWN copy of the
+build tree (`cp -a`, 279 MB), `def w33plantorphan (n : Nat) : Nat := n + 7` appended to the leaf module
+`SealInStep.lean`, `lake build TmKernel:static` capped at 16G, rc=0, only `SealInStep.c` differing from
+the shared tree: (b-i) unexempt, `NOT EXEMPT: w33plantorphan (SealInStep.lean) is emitted and no request
+the shipped binary can build reaches it`, rc=1; (b-ii) under a new dated section with NO exit,
+`RATCHET: … names no EXIT`, rc=1; (b-iii) with an EXIT, **rc=0** — an honestly unreachable definition
+is admitted at the price of a heading, a date and an exit, which is D51 as written. **(b-iv)** A
+re-parenting — `Tm.Cal.Instant.nanos`, an entry that exists at HEAD, moved to a new dated section that
+names no exit — produced no complaint: a move is not growth by D51's letter, it costs a date and not an
+exit, and that is recorded as **gap 2450** rather than widened into a rule this run.
+
+### 4. Gap 2401 closed, on a measurement and not a choice
+
+The two sentences were §5 of track G's W-32 block (*"48 requests; 24 assign at least one row; 24 pay
+`PlanCheck.candsAgree`; six do both"*) and the closing paragraph's gap-2194 line (*"the paying set is
+47/23/23/6"*). The census is 48 by `grep -cE '^def the[A-Za-z0-9_]* : PlanReq' PlannerWit.lean`; the
+other two were re-measured rather than inferred, by a scratch file importing `TmKernel.PlannerWit` with
+one `#eval` over all 48 (`!r.assignedRows.isEmpty`, `PlanCheck.candsAgree r`), run with `lean` against
+the clone's `.olean`s at 16G: **`(48, 24, 24, 6)`** in one second. The closing paragraph's line is
+corrected in place at `kernel/README.md:64051`, the correction and its method written into it; §5 was
+right and is untouched.
+
+### 5. Gap 2223's third false sentence, and the fork's own §7 pass — gap 2446
+
+`dayPlan`'s docstring (`Planner.lean:6177`) said *"Steps 3 to 7 are P3..P7 and none of them is written
+here"* from the day P3 landed until now — four lines below the header W-32's track P repaired for the
+same sentence, which W-15 had repaired before that. It now says what the file does, step by step with
+the line each step's definition is declared at — re-derived from the file, after a first draft copied
+W-32's header numbers and was caught by the very `grep` that measured them (§5.11, in the paragraph
+that cites §5.11) — and says in its own words that this is the THIRD time the sentence stood here false.
+The header at `:25` was NOT false: it quotes the sentence as the thing it repaired.
+
+**Gap 2446.** D53 settled that every shipped `planner::plan` site is fed `with_ranking` —
+`planning.rs:167` behind `ctx.priorities()` → `kernel_capacity::rank` (`ctx.rs:1521`), and the TUI's
+`app.rs:687` and `:1237` from `data_with` (`tui/mod.rs:176`) — so the `_ =>` arm of `Planner::run`'s
+step 4 (`tm-core/src/planner.rs:975-1001`: `priority::lookahead_days`, `capacity::lookahead`,
+`priority::compute`) is shipped code reached by no shipped path: gap 2229's shape on the fork's side. R3
+deletes it; per D53 it is recorded and not tested.
+
+### 6. Check 13: a field the wire emits must have a writer the day reaches — gap 2403's gate half
+
+**It is checkable cheaply and it is landed.** The witness side and the wire side are both in the tree:
+`PlanWire.diagJson` emits twelve keys, each a projection `d.<field>` of `Planner.Diagnostics`, and
+`Planner.dayDiagnostics` writes three. `kernel/fields.py` finds the emitter by the KEY (the definition
+applied to the day's `.diagnostics` under `"diagnostics"`, read off the raw text at the stripper's
+preserved offsets, because the stripper blanks string contents), reads the structure's fields off
+`structure Diagnostics`, checks both directions of the wire (§5.8), and asks of every field whether a
+definition that **`Tm.Planner.dayPlan` reaches in the emitted call graph** — `callgraph.reachable` with a
+`root`, the walk check 12 already reads — assigns it by name on a subject of the structure's type.
+**Its first run counted six writers and was wrong**: `assignedSeg` writes `underused` and `hot` on
+`SegFlags`, and `placeStep`, `placeAt` and `routineRow` write `deferred` on `Placed`; a field name is
+shared across structures, and the test now asks the subject's type as the source declares it (the def's
+result type, a parameter's declared type, or a base whose head is the structure's own, `Diagnostics.empty`)
+— **gap 2449**, found by its author on the gate's own class and closed before it landed. Measured: **12
+fields, 12 emitted under 12 keys by `diagJson`, 3 written, 9 exempt, 0 UNANSWERED**; the nine are
+`kernel/fields-exempt.txt`, each dated with its EXIT — P8 for eight, and for `impossible` W-33 track P,
+**whose merge will turn that line STALE; the land step deletes it, and that is the ratchet working**.
+Driven in the clones, five plants, control rc=0 between each: `hot := Capped.nil` added to
+`dayDiagnostics` → `STALE: fields-exempt.txt:21 Planner.Diagnostics.hot is WRITTEN now`; `notes :=`
+removed → `UNWRITTEN: Planner.Diagnostics.notes`; the `"waiting"` pair removed from `diagJson` → `NOT
+EMITTED`; `d.blocket` → `NO SUCH FIELD`; a `PlannerWit` fixture building `{ Diagnostics.empty with hot :=
+.. }` → still exempt, rc=0, because a witness is not the day. What it cannot see is in its header, and
+the sharpest is that WRITTEN is a floor under POPULATED: a writer of the empty value passes it, and the
+proof that a field is populated is a `PlannerWit` request at which it is not `Diagnostics.empty`'s,
+which is check 9's to demand of the step that writes it. Its cost: **1.53, 1.57, 1.52 s** at load
+9-10, almost all of it the IR read checks 11 and 12 also pay, each in its own process.
+
+### 7. Two scanners of one declaration set, and what the union found — gap 2448
+
+The second key needs to know which names are constructors, and check 8 already read them — with a
+regex of its own, inside a block walk that matched the head line first and stepped past the
+constructors written ON it. Two walks of one declaration set would be §5.3's defect inside the two gates
+that catch it, so `leanfiles.constructors` is the one scanner now, and both read it. The union, measured
+against the old walk over the library: **35 names added, 0 gone**, every one a real constructor — the
+five one-line inductives (`Weekday`, `DocKind`, `SecKind`, `PErr`, `Flag`) plus `Scope`, `Loc` and
+`BreakPlace`, and every structure's `mk`. Check 8's allow list then called **four** of its own entries
+dead: `openEnded`, listed as an "older removal" and never one (a live `Flag` constructor the walk could
+not see), `Scope.openEnded` and `PErr.notAnItem` likewise, and `self.blocks_done`, whose owner `self`
+now resolves on `Scope`'s constructor of that name — a laundering surface of exactly one word, recorded
+in the allow list's own prose (**gap 2451**). All four deleted; LEAN_CTOR, the deleted regex, joins the allow list as
+the removed name history cites twice. Check 8 after: **42,046 citations / 40,055 resolved / 1,991 allowed** (204 vocabulary, 352 counted), 0 allow entries unused, 273 files swept, this block included.
+
+### 8. Gaps this step takes, closes, and leaves — 2440-2451
+
+| gap | what | where | state |
+|---|---|---|---|
+| **2440** | `closeTo`/`targetContaining` are one body under two parameter names (§2) | `Grain.lean:127,138`, `twins-exempt.txt` | **owed**; EXIT in the sentence |
+| **2441** | nine `WfSeg` fixtures of `PlanCheck.lean` are one builder at nine literal choices | `PlanCheck.lean:1323-1494` | **owed** to whoever holds `PlanCheck.lean` |
+| **2442** | `Skel.stamps`/`Core.stamps`: one reader of one field, twice, tied by `rfl` | `Close.lean:322`, `State.lean:479` | **owed**; carrier a reader of the line |
+| **2443** | `idHash`/`keyHash`: an import-order copy of one hash | `Fast.lean:264`, `Replay.lean:582` | **owed**; carrier in a module both import |
+| **2444** | `levelOf?`/`yesterdayOf?`: one `Fin` bounding written at 6 and at 8 | `Capacity.lean:83`, `Priority.lean:524` | **owed** |
+| **2445** | `findDocIx`/`overdueTarget`: one finder with its region lifted to an `Option` | `Close.lean:436,453` | **owed** |
+| **2446** | the fork's own §7 priority pass is shipped code no shipped path reaches (§5) | `tm-core/src/planner.rs:975-1001` | **recorded**; R3 deletes it (D53) |
+| **2447** | E2 read a parameter's name in the generator's locals as a compiled difference | `twins.py` `CVAR` | **closed here** |
+| **2448** | check 8's block walk skipped the constructors of a one-line `inductive` | `citations.py`, `leanfiles.constructors` | **closed here** |
+| **2449** | check 13's first run counted writers of other structures' same-named fields | `fields.py` `writers` | **closed here**, before landing |
+| **2450** | a reach exemption re-parented under a new dated section costs no EXIT (§3) | `reach.py` | **recorded**, by D51's letter |
+| **2451** | the owner half of a Rust receiver citation resolves on `Scope.self` | `citations-allow.txt` prose | **recorded**, one word |
+
+**Closed by this step:** 2418 (the second key), 2400 (the drive, premise corrected), 2401 (the
+census), 2223 (the docstring), and gap 2403's GATE half (check 13; the nine fields themselves stay
+2403's and P8's). Gaps 2417 and 2093 are carried as ONE CONCEPT sentences, unchanged in substance.
+Gaps 2419, 2321 and every other gap of 2280-2439 are as their own blocks leave them. **No predicate was
+weakened, no law narrowed, no theorem statement changed, no generator narrowed, no exemption widened —
+`reach-exempt.txt` is `EXEMPT 1756` before and after; `twins-exempt.txt` and `fields-exempt.txt` are
+born here, dated, with their EXITs, and may only shrink — no snapshot, fixture, latency band or corpus
+re-blessed, no memory bound raised, no external dependency added, no `sorry` outside `Goals.lean`, no
+new axiom, no `.lean` under `TmKernel/TmKernel/` touched but `Planner.lean`'s one docstring, and `dayPlan`
+is still total.** LIST-OR-PROPERTY, for every gate touched: check 11's second key is a PROPERTY (the
+key) with four PROPERTY rungs and one enumeration joined to be EXEMPT; check 13's rule is a PROPERTY over
+the structure's fields and the emitted graph, its nine exemptions joined to be EXEMPT; check 8's
+constructor scan is a PROPERTY over declarations where it was a regex that missed a spelling; check 12
+was driven, not changed.
+
+### 9. Acceptance, capped at 40G, on this tree
+
+`check.sh` **13/13 by name**, once at the tree committed here and once before the README block was
+appended: `lake build TmKernel:static` ok · totality ok · **axiom audit 5,307 theorems** (Classical.choice 2,579, Quot.sound 3,965, propext 4,923; 381 of 5,307 depend on none) ·
+`Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans** · **stage goals 6
+outstanding, all stage 6** · prose citations **42,046 / 40,055 resolved / 1,991
+allowed**, 0 allow entries unused, 273 files swept · new definitions mutated **266 new or changed since `86c4dc6`, 266 rostered, 0 owed** ·
+parity register **42 registered (P1-P42), next free P43** · no two names for one definition **3,061 def bodies, 14 groups (3 compiled, 11 value), 0 UNANSWERED; second key: 60 generalisation groups (35 value, 2 wrapper, 7 wire-named, 16 adjudged: 9 one concept owed, 7 not one), 0 UNANSWERED** · every emitted
+definition is reached **3,150 def/abbrevs in 86 modules, 2,934 emitted (562 as a global), 1,178 reachable over the 8 sections `tm/src` sends (2 cut), 1,756 exempt in 87 sections, 0 UNANSWERED** · **every emitted field has a writer 12 fields of `Planner.Diagnostics`, 12 emitted under 12 keys by `diagJson`, 3 written by a definition `Planner.dayPlan` reaches, 9 exempt, 0 UNANSWERED**.
+
+**`cargo test --workspace` THREE TIMES (D46): **1,478 passed / 0 failed / 9 ignored across 87 result lines, rc=0, identical on all three runs** (13:19, 13:23 and 13:27, at load 5.8-8.6 with other sessions building) — the baseline W-32 left, unmoved by a step that changed one docstring.** Named suites, each once at 40G, the
+load average read first (gap 1333): `kernel_replay_parity` (T5) 29 passed / 0 failed / 4 ignored · `kernel_log_door` (the door suite) 23 / 0 · `cli_switch_acceptance` 16 / 0 · `cli_latency` 5 / 0 / 1 ignored **at load 6.9**, inside its band · `kernel_call_counts` 2 / 0 · `one_padder` 9 / 0 · `one_renderer` 25 / 0 · `kernel_row_cells` 26 / 0 · `kernel_item_grammar` 6 / 0 · `kernel_planner_wire` 21 / 0 · `planner_invariants` 9 / 0 (62.9 s).
+
+**The plants and the shared tree.** Every plant of this step ran in one of two clones under the
+scratchpad — `git clone --local` with `.lake` a symlink to the shared build for the source-level
+plants, and a second clone with its own `cp -a` copy of the build tree for the one plant that had to
+be compiled — with a control at rc=0 immediately before and after each; the shared tree was never
+planted in, its `.lake` was never written by a clone (the one `lake build` in the main checkout was
+this step's own, for its docstring), and `git status --porcelain` on
+`/home/leobwang/code/projects/tm` held exactly this step's own modified files before the first plant
+and after the last, listed in §1 and §6 of the transcript. The two clones are the scratchpad's and
+are not part of the tree.

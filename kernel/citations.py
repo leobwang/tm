@@ -128,7 +128,7 @@ against it cannot launder one stale sentence with another.
     6. THE CHECKERS' OWN PYTHON (W-20).  `def`s, `class`es and module-level
        ALL_CAPS constants in `kernel/*.py` -- 53 names, of which 46 are not
        declared anywhere else.  `citations.py`'s and `mutate.py`'s own headers
-       and the README blocks about them cite `LEAN_CTOR`, `core_declared` and
+       and the README blocks about them cite `leanfiles.constructors`, `core_declared` and
        `new_or_changed`, which are declarations of this repository in exactly
        the sense a Rust `fn` is.  The W-20 block's first run failed on those
        three, which is how this set was found.  It carries source 3's risk in
@@ -651,11 +651,10 @@ LEAN_DECL = re.compile(
 LEAN_NS = re.compile(r"^[ \t]*namespace[ \t]+([A-Za-z_][A-Za-z0-9_.']*)", re.M)
 LEAN_BLOCK = re.compile(r"^[ \t]*(?:@\[[^\]]*\][ \t]*)*(?:private[ \t]+|protected[ \t]+)*(structure|inductive)\b")
 LEAN_FIELD = re.compile(r"^[ \t]+([A-Za-z_][A-Za-z0-9_']*)[ \t]*:[^=]")
-LEAN_CTOR = re.compile(r"\|[ \t]*([A-Za-z_][A-Za-z0-9_']*)")
 RAW_OPEN = re.compile(r'b?r#*"')
 RUST_DECL = re.compile(r"\b(?:fn|struct|enum|const|static|type|trait|mod|union)[ \t]+([A-Za-z_][A-Za-z0-9_]*)")
 RUST_FIELD = re.compile(r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?([a-z_][a-z0-9_]*)[ \t]*:[ \t]*[^=]", re.M)
-# A RUST ENUM VARIANT (source 3, W-27), and it is source 1's `LEAN_CTOR` seen in
+# A RUST ENUM VARIANT (source 3, W-27), and it is source 1's constructor scan seen in
 # the other language: an `inductive`'s constructors are a declaration set there
 # and an `enum`'s variants are one here.  Turning `::` on without this would put
 # 62 distinct names in front of an adjudicator that are declarations of this
@@ -1004,6 +1003,16 @@ def declared():
         for m in LEAN_NS.finditer(text):
             names.update(m.group(1).split("."))
         names.update(STRING_LIT.findall(text))
+        # THE CONSTRUCTORS ARE `leanfiles.constructors` SINCE W-33 -- one
+        # scanner, read here as a declaration set and by check 11's second key
+        # as the set of names that collapse to a hole.  This walk read them
+        # with a regex of its own and matched the HEAD line first, so the
+        # constructors of a one-line `inductive Weekday | monday | tuesday ..`
+        # were declared by nothing here: five of the library's inductives are
+        # written that way (`Weekday`, `DocKind`, `SecKind`, `PErr`, `Flag`).
+        # The walk below keeps the structure FIELDS, which are not constructors.
+        ctors, _ = leanfiles.constructors(text)
+        names.update(ctors)
         block = None
         for line in text.split("\n"):
             head = LEAN_BLOCK.match(line)
@@ -1018,8 +1027,6 @@ def declared():
                 field = LEAN_FIELD.match(line)
                 if field:
                     names.add(field.group(1))
-            else:
-                names.update(LEAN_CTOR.findall(line))
     for path in RUST_FILES:
             text = read(path)
             code = rust_code(text)

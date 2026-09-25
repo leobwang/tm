@@ -578,7 +578,7 @@ SCOPE_ARG = re.compile(r"[ \t]*([^\s(){}:]*)")
 THEOREM_ARG = re.compile(r"[ \t\r\n]*([^\s(){}:]+)")
 
 
-def qualified_names(path, kw):
+def qualified_names(path, kw, code=None):
     """Every `kw` declaration in `path`, as `(written, as lean names it)` pairs.
 
     Returns `(pairs, leftover)` -- `leftover` is the namespace stack still open
@@ -587,8 +587,13 @@ def qualified_names(path, kw):
     which is the key a reader that found the declaration by its own regex has;
     the second is what `lean` calls it, which is what an axiom audit reconciles
     against and what a C symbol is computed from.
-    """
-    code = strip_comments(pathlib.Path(path).read_text())
+
+    `code` is the file's comment-stripped text when the caller already holds
+    it (`twins.py` strips every module once and reads three things off the
+    result); stripping is a character walk and was a third of check 11's wall
+    when done twice per file (W-33)."""
+    if code is None:
+        code = strip_comments(pathlib.Path(path).read_text())
     stack, out, i = [], [], 0
     pat = scope_kw(kw)
     while True:
@@ -616,6 +621,152 @@ def qualified_names(path, kw):
             else:
                 out.append(("<end without a scope in %s>" % path,
                             "<end without a scope in %s>" % path))
+
+
+# Where a command begins again: a non-space character in column zero.  ONE
+# spelling, read by `twins.py`'s body scanner and by `constructors` below.
+NEXT_COMMAND = re.compile(r"(?m)^\S")
+# A declaration that OPENS a block of constructors or fields, with any
+# attributes and modifiers in front of it.  `class` without `inductive` is a
+# structure and has a constructor too.
+BLOCK_HEAD = re.compile(
+    r"(?m)^[ \t]*(?:@\[[^\]]*\][ \t]*)*(?:private[ \t]+|protected[ \t]+|noncomputable[ \t]+"
+    r"|unsafe[ \t]+)*(structure|class[ \t]+inductive|inductive|class)\b[ \t]*([^\s(){}:]*)")
+# A structure's own constructor name, `mk ::` or `intro ::` on its own line;
+# without one the constructor is `mk`.
+STRUCT_CTOR = re.compile(r"(?m)^[ \t]+([A-Za-z_][A-Za-z0-9_'!?]*)[ \t]*::")
+# One field of a structure: `name : T` at the field indentation.
+STRUCT_FIELD = re.compile(r"(?m)^[ \t]+([A-Za-z_][A-Za-z0-9_'!?]*)[ \t]*:[^=:]")
+_OPENERS, _CLOSERS = "([{⟨⦃", ")]}⟩⦄"
+
+
+def _depth0_bars(text):
+    """The offsets of every `|` at bracket depth zero of `text` that is not `||`."""
+    out, depth = [], 0
+    for i, c in enumerate(text):
+        if c in _OPENERS:
+            depth += 1
+        elif c in _CLOSERS:
+            depth -= 1
+        elif c == "|" and depth <= 0 and text[i - 1:i] != "|" and text[i + 1:i + 2] != "|":
+            out.append(i)
+    return out
+
+
+def _ctor_arity(arm):
+    """`(name, explicit arity)` of one constructor arm, `name (a b : T) {c} : X -> Y`.
+
+    The explicit arity is what an APPLICATION of the constructor spells: every
+    name in a `(..)` binder group, plus every depth-zero arrow in the declared
+    type.  Implicit and instance groups are not spelled by an application."""
+    m = re.match(r"\s*([^\s(){}:|]+)", arm)
+    if not m:
+        return None, 0
+    name, i, n, arity, depth = m.group(1), m.end(), len(arm), 0, 0
+    while i < n:
+        c = arm[i]
+        if depth == 0 and c in "({[⦃":
+            close = _CLOSERS[_OPENERS.index(c)]
+            d, j = 0, i
+            while j < n:
+                if arm[j] in _OPENERS:
+                    d += 1
+                elif arm[j] in _CLOSERS:
+                    d -= 1
+                    if d == 0:
+                        break
+                j += 1
+            if c == "(":
+                group = arm[i + 1:j]
+                names = group.split(":", 1)[0] if ":" in group else group
+                arity += sum(1 for t in names.split() if t)
+            i = j + 1
+            continue
+        if depth == 0 and c == ":":
+            rest = arm[i + 1:]
+            d = 0
+            k = 0
+            while k < len(rest):
+                ch = rest[k]
+                if ch in _OPENERS:
+                    d += 1
+                elif ch in _CLOSERS:
+                    d -= 1
+                elif d == 0 and (ch == "→" or rest.startswith("->", k)):
+                    arity += 1
+                k += 1
+            break
+        if c in _OPENERS:
+            depth += 1
+        elif c in _CLOSERS:
+            depth -= 1
+        i += 1
+    return name, arity
+
+
+def constructors(text, stripped=True):
+    """Every constructor `text` declares, as a pair of tables.
+
+    The first is {constructor short name: {explicit arities}} and the second is
+    {(type short name, constructor): {arities}}, over every
+    `inductive`, `class inductive`, `structure` and `class` in `text` -- the
+    multi-line form (`| name` under the head) AND the one-line form
+    (`inductive Weekday | monday | tuesday ..`), which check 8's block walk
+    skipped: it matched the head line and `continue`d past the constructors
+    written on it.  A structure's constructor is its `name ::` line or `mk`,
+    with one explicit argument per field it declares itself (`extends` parents
+    are not counted, which under-counts and so never collapses too much).
+
+    THIS IS THE ONE SCANNER OF THAT CONCEPT (W-33 track A): check 11's second
+    key reads it to know which names are constructors, and check 8's source 1
+    reads it to know which names are declared.  Two walks of one declaration
+    set would be AGENTS 5.3's defect inside the two gates that exist to catch
+    it."""
+    code = strip_comments(text) if stripped else text
+    by_short, by_qual = {}, {}
+    for m in BLOCK_HEAD.finditer(code):
+        kind, tname = m.group(1), m.group(2).split(".")[-1]
+        stop = NEXT_COMMAND.search(code, m.end())
+        chunk = code[m.end():stop.start() if stop else len(code)]
+        if kind in ("structure", "class"):
+            mm = STRUCT_CTOR.search(chunk)
+            name = mm.group(1) if mm else "mk"
+            arity = len(STRUCT_FIELD.findall(chunk))
+            by_short.setdefault(name, set()).add(arity)
+            by_qual.setdefault((tname, name), set()).add(arity)
+            continue
+        bars = _depth0_bars(chunk)
+        for k, at in enumerate(bars):
+            arm = chunk[at + 1:bars[k + 1] if k + 1 < len(bars) else len(chunk)]
+            name, arity = _ctor_arity(arm)
+            if name:
+                by_short.setdefault(name, set()).add(arity)
+                by_qual.setdefault((tname, name), set()).add(arity)
+    return by_short, by_qual
+
+
+# The pinned toolchain's PRELUDE, read once: `Init/Prelude.lean` is the module
+# every Lean file has before its first line, and it is where every core
+# constructor this library spells by name is declared -- measured (W-33):
+# Option's some and none, Except's ok and error, List's cons, Prod's mk, Or's
+# inl and inr, And's intro, and bare some, none, true and false.  The whole
+# `Init` tree was measured too and declined: 190 constructor short names
+# against Prelude's 47, and the 143 it adds -- `line`, `text`, `node`, `day`,
+# and `/--` out of an unstripped comment -- are English words a projection or
+# a field spells, so a key that collapsed them would erase structure.
+_CORE_CTORS = []
+
+
+def core_constructors():
+    """The two constructor tables of the pinned toolchain's `Init/Prelude.lean`."""
+    if _CORE_CTORS:
+        return _CORE_CTORS[0]
+    path = toolchain_src() / "Init" / "Prelude.lean"
+    if not path.is_file():
+        raise SystemExit("leanfiles.core_constructors: no %s -- the constructor set "
+                         "would be silently empty" % path)
+    _CORE_CTORS.append(constructors(path.read_text(encoding="utf-8", errors="replace")))
+    return _CORE_CTORS[0]
 
 
 def qualified_theorem_names(path):

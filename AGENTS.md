@@ -720,6 +720,27 @@ exempted had no caller at all to deoptimise (gap 2126); both twins were deleted
 rather than exempted. Anything else is named. It found one live duplicate on its first run and the blind spots
 it keeps are in its own header and in README gaps 2093-2094.
 
+**AND SINCE W-33 TRACK A IT HAS A SECOND KEY (README gap 2418), because the exact key
+cannot see a GENERALISATION.** A definition that is another's body with a literal turned
+into a parameter was never a twin under it, and W-32's repair found four such in one module
+(`PlannerWit.pCand`, `pCandDue`, `pCandSmall`, `bCand`) with check 11 green — a LIST where
+the rule is a CLASS, inside the gate named after this section. The second key puts two
+`def`s in one group when their result types and bodies are identical once every parameter
+and every literal is a hole (a constructor over holes is a literal, and constructors are
+what the library and the pinned `Init/Prelude.lean` DECLARE — `leanfiles.constructors`,
+the one scanner check 8 also reads). Every group that is not an exact-key group climbs a
+ladder: E3 a fixture value; ALPHA, two names for one body once parameters are renamed,
+which FAILS unless E2 answers — its first catch was `closeTo`/`targetContaining`; E5 a
+wrapper, one head over holes; E4 wire-named, the members differing only in a string, a
+character or a nullary constructor. What no rung answers must carry a SENTENCE in
+`kernel/twins-exempt.txt`: `ONE CONCEPT`, naming the carrier and an EXIT, or `NOT ONE
+CONCEPT`, saying why — dated either way, W-27's shape. A group with no sentence fails; a
+sentence whose group dissolved fails as STALE; a ONE CONCEPT verdict at HEAD cannot be
+rewritten NOT ONE CONCEPT. Measured at `8702132`: 60 generalisation groups, 16 of them
+adjudged, 9 of those owed. What the second key cannot see is in `twins.py`'s header: a
+generalisation across a delta step or a structure eta (gap 2417's family is two groups
+there and one definition), a closed term that is not a literal, a renamed body-local binder.
+
 **Two live exceptions, both recorded rather than hidden.** `parent` is still a
 stored slot and is always `none` (gap 22). And two readers of `est:`
 still coexist on the command path (gap 4), which the README labels *"a
@@ -1165,8 +1186,8 @@ banner which range is yours and fix it at the merge (§6.5).
 6. Run `check.sh`, capped (§2.1). **Every** check, exit 0 — and
    `cargo test --workspace` green beside it (§7.5). *(This line said "seven"
    until the W-24 repair step, "nine" until W-25 track A and "ten" until W-31,
-   while checks 8-12 landed at W-19, W-20, W-25, W-30 and W-31. It no longer
-   carries the number: §7.1 does, once, and README gap 2148 is why.)*
+   while checks 8-13 landed at W-19, W-20, W-25, W-30, W-31 and W-33. It no
+   longer carries the number: §7.1 does, once, and README gap 2148 is why.)*
 7. **Reconcile the PARITY register, the way item 1 reconciles the cheats.** A
    parity entry is a recorded divergence from the fork (D21/D22), and the
    register has no single home and no gate — README **gap 226** said so when
@@ -1225,21 +1246,27 @@ banner which range is yours and fix it at the merge (§6.5).
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks this section documents — and `check.sh` runs TWELVE
+### 7.1 The seven checks this section documents — and `check.sh` runs THIRTEEN
 
 **This heading said "the seven checks" while `check.sh` ran nine**, and the
 number is repaired here rather than the section: checks **8** (the prose
 citations, W-19, owner D39/D41), **9** (every new definition constant-folded,
 W-20, owner D40), **10** (the parity register, W-25), **11** (§5.3: no two
-names for one definition, W-30 track A) and **12** (a definition the compiler
-emits must be REACHED from `tm_kernel_call`, W-31 track A, owner D51) are
-specified by their own scripts' headers — `kernel/citations.py`,
-`kernel/mutate.py`, `kernel/parity.py`, `kernel/twins.py` and `kernel/reach.py`
-— and by `check.sh`'s comments above each, which are long and are the
-specification. Check 12's exemptions are `kernel/reach-exempt.txt`, which may
-only shrink, and the call graph all three of 8, 11 and 12 read is
-`kernel/callgraph.py`, which none of them owns. What is written out below is
-checks 1–7. Do not read
+names for one definition, W-30 track A; a second key for a GENERALISATION
+since W-33 track A), **12** (a definition the compiler emits must be REACHED
+from `tm_kernel_call`, W-31 track A, owner D51) and **13** (a field the
+planner wire emits must have a WRITER the day builder reaches, W-33 track A,
+README gap 2403) are specified by their own scripts' headers —
+`kernel/citations.py`, `kernel/mutate.py`, `kernel/parity.py`,
+`kernel/twins.py`, `kernel/reach.py` and `kernel/fields.py` — and by
+`check.sh`'s comments above each, which are long and are the specification.
+The exemptions are `kernel/reach-exempt.txt` (check 12), `kernel/twins-exempt.txt`
+(check 11's second key, one dated sentence per adjudged group) and
+`kernel/fields-exempt.txt` (check 13, one dated line per unwritten field with
+its EXIT); each may only shrink, and each is W-27's shape — an enumeration you
+join to be EXEMPT, not to be COVERED. The call graph checks 8, 11, 12 and 13
+read is `kernel/callgraph.py`, which none of them owns. What is written out
+below is checks 1–7. Do not read
 "seven" here as the size of the acceptance; §2.1 and §6.5 carry that number and
 both said "seven" too until the W-24 repair step.
 
