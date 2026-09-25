@@ -333,9 +333,16 @@ def main(argv):
         print("UNSPLIT: `%s` in %s -- a `declVal` this key cannot split into a "
               "signature and a body, so it is keyed by nothing" % (name, path))
     reached, emits = callgraph.reachable(callgraph.ir_root(sorted(files)[0]))
+    # THE TWO "REACHABLE" COUNTS ANSWER DIFFERENT QUESTIONS (README gap 2252,
+    # and the caption is W-31's repair of it).  This one is over EMITTED C
+    # SYMBOLS -- every function the generator wrote, closures and
+    # specialisations included, plus the globals it emits for nullary
+    # definitions -- and check 12's is over the library's own `def`s and
+    # `abbrev`s.  11,939 functions and 1,244 globals here; 2,926 definitions
+    # there.  A brief read the first as the second once.
     print("%d file(s) swept, %d def bodies (%d unsplit), %d group(s) of two or "
           "more names (%d compiled, %d value), %d UNANSWERED; %d of %d emitted "
-          "C functions reachable from %s"
+          "C symbols (functions and globals) reachable from %s"
           % (len(files), sum(len(v) for v in groups.values()), len(unsplit),
              len(twins), answered["E2"], answered["E3"], len(bad),
              len(reached), len(emits), callgraph.EXPORT_ROOT))

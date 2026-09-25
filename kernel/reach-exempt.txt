@@ -1,22 +1,39 @@
 # check.sh check 12's exemption file -- the owner's D51, README gap 2130.
 #
-# `reach.py`'s header is the specification.  THE PROPERTY it gates: every `def` of the
-# library for which the compiler EMITS a C function must be reachable from
-# `tm_kernel_call`, the one symbol the host dials.  This file is the exceptions, and it
-# is W-27's shape -- AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT TO BE COVERED.
+# `reach.py`'s header is the specification.  THE PROPERTY it gates: every `def` and
+# `abbrev` of the library for which the compiler EMITS code -- a C function, or a
+# `LEAN_EXPORT lean_object* <sym>;` GLOBAL, which is how it writes a nullary definition whose body is a
+# closed constant -- must be reachable from `tm_kernel_call`, the one symbol the host
+# dials.  This file is the exceptions, and it is W-27's shape -- AN ENUMERATION YOU
+# JOIN TO BE EXEMPT, NOT TO BE COVERED.
 #
-# THE RATCHET.  It may only SHRINK.  An entry whose definition becomes reachable, stops
-# being emitted or stops existing FAILS check 12 and must be deleted in the same edit;
-# a definition that becomes unreachable and is not named here fails it too.  The
-# `EXEMPT` line below declares the size, so growth is a number in a diff and not a side
-# effect -- a new entry costs a line, a section that says why, and a reader's attention.
+# THE RATCHET, AND IT IS A GATE NOW AND NOT THIS PARAGRAPH (W-31 repair, gap 2259).
+# It may only SHRINK.  An entry whose definition becomes reachable, stops being emitted
+# or stops existing FAILS check 12 and must be deleted in the same edit; a definition
+# that becomes unreachable and is not named here fails it too.  What was missing until
+# the repair is the comparand: `reach.py` checked only that the `EXEMPT` line equalled
+# the entry count -- a number held against ITSELF -- so this file went 952 -> 953 in the
+# very run that landed it, by one line appended to an existing section with the count
+# bumped beside it, and every gate stayed green.  The comparand is now the file as
+# COMMITTED AT HEAD: a new entry must sit under a section heading that is new too, and a
+# new heading's reason must carry an ISO DATE.  Adding a line to an existing section
+# FAILS.  Growth is a dated section in the diff, not a digit in it.  What no gate can
+# read is whether a new section's reason is TRUE; that is still a reader's job, and what
+# the ratchet buys is that growth costs a heading and a date instead of a character.
 #
 # WHAT THE SECTIONS ARE.  A `## <Module.lean> -- <reason>` line opens one, and every
 # entry under it inherits its reason; an entry may add a note of its own after a `#`.
-# A section without a reason, and an entry under no section, both FAIL.
+# A section without a reason, an entry under no section, and a section holding no entry
+# all FAIL.  A module may have MORE THAN ONE section -- which is how a gate WIDENING
+# grandfathers a module that already has one -- and an entry inherits the reason of the
+# heading it stands under and of no other.  It used not to: the parser kept one reason
+# per MODULE and every later heading silently overwrote it, so a second `## Emit.lean`
+# heading anywhere in the file rewrote the reason all four of Emit.lean's entries
+# carried, with no complaint and no change to the section count (driven; gap 2259).
 #
 # WHAT THIS FILE IS HONEST ABOUT.  The entries here are a GRANDFATHERED SET -- the
-# definitions that were unreachable on 2026-09-25, when the gate landed at W-31 -- and
+# definitions that were unreachable on 2026-09-25, when the gate landed at W-31 and
+# when the same day's repair widened its population from 2,365 to 2,926 -- and
 # most of them have not been adjudicated one by one; the sections say which have.  That is the whole point of the
 # ratchet: the file is the list of definitions nobody has yet had to justify, and it can
 # only get shorter.  Three of its sections are findings this campaign already carries by
@@ -29,7 +46,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 953
+EXEMPT 1459
 
 ## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Arith.Bin.ix
@@ -1073,3 +1090,561 @@ Tm.remainingOpt
 Tm.remainingStep
 Tm.seriesHead
 Tm.seriesOpen
+
+## Arith.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 1 of this module's 7 emitted globals are read by a function the export reaches; the 6 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Arith.budgetRatio
+Tm.Arith.defaultBins
+Tm.Arith.defaultShift
+Tm.Arith.log2Bins
+Tm.Arith.planRatio
+Tm.Arith.safety
+
+## Boundary.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 111 emitted globals are read by a function the export reaches; the 111 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.CapWire.a1J
+Tm.CapWire.a1Out
+Tm.CapWire.corpusRequestWithACommandJ
+Tm.CapWire.corpusSectionJ
+Tm.CapWire.fallJ
+Tm.CapWire.loudFacts
+Tm.CapWire.loudFactsInverted
+Tm.CapWire.loudPlanInvertedJ
+Tm.CapWire.loudPlanJ
+Tm.CapWire.maxBins
+Tm.CapWire.maxCandId
+Tm.CapWire.maxCandidates
+Tm.CapWire.maxDigits
+Tm.CapWire.maxEmittedDays
+Tm.CapWire.maxLocName
+Tm.CapWire.maxMultiplier
+Tm.CapWire.maxPairDen
+Tm.CapWire.maxRatioDen
+Tm.CapWire.maxRatioNum
+Tm.CapWire.maxRemaining
+Tm.CapWire.plainPlanJ
+Tm.CapWire.rFloorOut
+Tm.CapWire.sep8J
+Tm.CapWire.shippedBinsJ
+Tm.CapWire.shippedDayJ
+Tm.CapWire.shippedPriorJ
+Tm.CapWire.springJ
+Tm.CapWire.wallOut
+Tm.CapWire.weekdays
+Tm.blockMin50
+Tm.clockAbsent
+Tm.clockBoth
+Tm.clockNowOnly
+Tm.closeCommutePlan
+Tm.closeCommuteWitness
+Tm.closeDatedWitness
+Tm.closeDayWitness
+Tm.closeFoldPlan
+Tm.closeFoldWitness
+Tm.closeHmWitness
+Tm.closeM08
+Tm.closeM09
+Tm.closeMergePlan
+Tm.closeMergeWitness
+Tm.closeMonthWitness
+Tm.closeNoDemotedWitness
+Tm.closeNoLiveWeekWitness
+Tm.closeNoMonthWitness
+Tm.closeNow
+Tm.closeOrderDayWitness
+Tm.closeOrderMonthWitness
+Tm.closeOrderSectionsWitness
+Tm.closeOrderWeekWitness
+Tm.closeOverdueNoSectionWitness
+Tm.closeOverduePlan
+Tm.closeOverdueWitness
+Tm.closePreClosePairWitness
+Tm.closeStrayTombPlan
+Tm.closeStrayTombWitness
+Tm.closeW35
+Tm.closeW36
+Tm.closeW37
+Tm.closeWeekPlan
+Tm.closeWeekWitness
+Tm.commentedRequest
+Tm.commentedWeekDoc
+Tm.datedOutcomeWitness
+Tm.datedRecordPlan
+Tm.datedRecordWitness
+Tm.demoteNoSectionWitness
+Tm.demoteSectionWitness
+Tm.depWitnessRequest
+Tm.emptyStore
+Tm.exampleNow
+Tm.exampleW38
+Tm.exampleWeekWitness
+Tm.grainCount
+Tm.logLineBound
+Tm.logWitnessAnswer
+Tm.logWitnessLine
+Tm.logWitnessRequest
+Tm.lookWallPlan
+Tm.lookWallWitness
+Tm.maxEmitItems
+Tm.maxLogLines
+Tm.maxRenderLines
+Tm.parentCycleWitness
+Tm.parentTreePlan
+Tm.parentTreeWitness
+Tm.parentTypoWitness
+Tm.sampleRequest
+Tm.sampleWeekDoc
+Tm.specDemotionRequest
+Tm.specMonthDoc
+Tm.specPairEntity
+Tm.specWeekDoc
+Tm.staleM06
+Tm.staleM09
+Tm.staleNow
+Tm.stalePlan
+Tm.staleW24
+Tm.staleW35
+Tm.staleW37
+Tm.staleWitness
+Tm.tabbedWitnessDoc
+Tm.treePlan
+Tm.treeWitness
+Tm.uncommentedRequest
+Tm.undoWitnessPlan
+Tm.undoWitnessRequest
+Tm.utcTzJson
+
+## Cal.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 1 of this module's 5 emitted globals are read by a function the export reaches; the 4 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Cal.chicago
+Tm.Cal.chicago2026
+Tm.Cal.originShift
+Tm.Cal.unixEpoch
+
+## Capacity.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 9 emitted globals are read by a function the export reaches; the 9 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Den.one
+Tm.deepCaps
+Tm.deepDeadlines
+Tm.edfExampleCaps
+Tm.edfExampleDeadlines
+Tm.flooredCaps
+Tm.halfDen
+Tm.mixtureCaps
+Tm.rustTestCaps
+
+## EmitWire.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 2 emitted globals are read by a function the export reaches; the 2 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.EmitWire.maxNoteText
+Tm.EmitWire.rowKeys
+
+## Grain.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 1 of this module's 3 emitted globals are read by a function the export reaches; the 2 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.day
+Tm.month
+
+## Json.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 9 emitted globals are read by a function the export reaches; the 9 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.bsChar
+Tm.demoDoc
+Tm.demoEscLine
+Tm.demoJVal
+Tm.demoRequest
+Tm.demoRequestBytes
+Tm.demoResponse
+Tm.demoResponseBytes
+Tm.ffChar
+
+## Line.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 2 of this module's 9 emitted globals are read by a function the export reaches; the 7 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Field.demoFields
+Tm.Field.flagAfterIdLine
+Tm.Field.flagInTitleLine
+Tm.Field.junkItem
+Tm.Field.junkLine
+Tm.Field.specItem
+Tm.Field.specLine
+
+## Log.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 4 of this module's 35 emitted globals are read by a function the export reaches; the 31 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Log.Num.zero
+Tm.Log.at0605
+Tm.Log.at0800
+Tm.Log.at0900
+Tm.Log.cdt
+Tm.Log.i32Max
+Tm.Log.malformedEntry1
+Tm.Log.malformedEntry11
+Tm.Log.malformedEntry9
+Tm.Log.malformedLine1
+Tm.Log.malformedLine10
+Tm.Log.malformedLine11
+Tm.Log.malformedLine2
+Tm.Log.malformedLine3
+Tm.Log.malformedLine4
+Tm.Log.malformedLine5
+Tm.Log.malformedLine5Act
+Tm.Log.malformedLine5Ci
+Tm.Log.malformedLine5Est
+Tm.Log.malformedLine5Ev
+Tm.Log.malformedLine5Id
+Tm.Log.malformedLine5T
+Tm.Log.malformedLine6
+Tm.Log.malformedLine7
+Tm.Log.malformedLine8
+Tm.Log.malformedLine9
+Tm.Log.malformedValue5
+Tm.Log.maxLineChars
+Tm.Log.maxLineDepth
+Tm.Log.moodOutOfRange
+Tm.Log.u64Max
+
+## Lookahead.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 3 of this module's 39 emitted globals are read by a function the export reaches; the 36 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Look.Curves.fixture
+Tm.Look.Curves.shipped
+Tm.Look.CutCfg.shipped
+Tm.Look.DayCfg.shipped
+Tm.Look.PlanFacts.unconstrained
+Tm.Look.Weight.home
+Tm.Look.Weight.lounge
+Tm.Look.capDen
+Tm.Look.capDenD
+Tm.Look.defaultBinsV
+Tm.Look.fixtureEnergy
+Tm.Look.halfWeight
+Tm.Look.maxBreakAfter
+Tm.Look.maxCurveKey
+Tm.Look.maxCurveSteps
+Tm.Look.maxCurves
+Tm.Look.maxDayMin
+Tm.Look.maxDepToken
+Tm.Look.maxDeps
+Tm.Look.maxKeyDen
+Tm.Look.maxLookaheadDays
+Tm.Look.maxPlanMinutes
+Tm.Look.mondayWall
+Tm.Look.shippedHome
+Tm.Look.shippedLounge
+Tm.Look.shippedPrior
+Tm.Look.specIn
+Tm.Look.specInput
+Tm.Look.specToday
+Tm.Look.specWalled
+Tm.Look.wednesdayWall
+Tm.Look.wfUnconstrained
+Tm.Look.witnessCands
+Tm.Look.witnessCaps
+Tm.Look.witnessFloorCaps
+Tm.Look.witnessFloors
+
+## PlanCheck.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 9 emitted globals are read by a function the export reaches; the 9 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.PlanCheck.aBlockOfAnHour
+Tm.PlanCheck.aBreakAcross
+Tm.PlanCheck.aWallAcross
+Tm.PlanCheck.aWindDown
+Tm.PlanCheck.checksCore
+Tm.PlanCheck.theBlockOverABreakDay
+Tm.PlanCheck.theBlockOverAWallDay
+Tm.PlanCheck.theOverbookedDay
+Tm.PlanCheck.theOverlongBlockDay
+
+## PlanWire.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 1 emitted globals are read by a function the export reaches; the 1 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.PlanWire.planKeys
+
+## Planner.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 3 of this module's 13 emitted globals are read by a function the export reaches; the 10 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Planner.PlanHash.zero
+Tm.Planner.PlanOverrides.empty
+Tm.Planner.bufferedMondayWall
+Tm.Planner.hashBound
+Tm.Planner.hashHexLen
+Tm.Planner.maxBatch
+Tm.Planner.maxBudget
+Tm.Planner.maxCands
+Tm.Planner.secondMondayWall
+Tm.Planner.sleepMinMinutes
+
+## PlannerWit.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 152 emitted globals are read by a function the export reaches; the 152 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.PlannerWit.aBareInstance
+Tm.PlannerWit.blockedFacts
+Tm.PlannerWit.busyCands
+Tm.PlannerWit.busyCap
+Tm.PlannerWit.busyIns
+Tm.PlannerWit.capLeftFacts
+Tm.PlannerWit.capReachedFacts
+Tm.PlannerWit.censusBreakLine
+Tm.PlannerWit.censusLines
+Tm.PlannerWit.censusPlan
+Tm.PlannerWit.censusRun
+Tm.PlannerWit.censusWitness
+Tm.PlannerWit.crowdedCap
+Tm.PlannerWit.crowdedIns
+Tm.PlannerWit.doneFacts
+Tm.PlannerWit.emitBed
+Tm.PlannerWit.emitNotes
+Tm.PlannerWit.emitPrios
+Tm.PlannerWit.emitSegs
+Tm.PlannerWit.emptyFacts
+Tm.PlannerWit.lapsedCap
+Tm.PlannerWit.lapsedIns
+Tm.PlannerWit.midBreakLine
+Tm.PlannerWit.midBreakLines
+Tm.PlannerWit.midBreakRun
+Tm.PlannerWit.mirrorCands
+Tm.PlannerWit.mirrorPlan
+Tm.PlannerWit.mirrorWitness
+Tm.PlannerWit.payingCands
+Tm.PlannerWit.payingPlan
+Tm.PlannerWit.payingWitness
+Tm.PlannerWit.persistPlan
+Tm.PlannerWit.persistWitness
+Tm.PlannerWit.queuedLines
+Tm.PlannerWit.queuedRun
+Tm.PlannerWit.recurDay
+Tm.PlannerWit.recurPlan
+Tm.PlannerWit.recurWitness
+Tm.PlannerWit.rootedCands
+Tm.PlannerWit.rootedPlan
+Tm.PlannerWit.rootedPlanSwapped
+Tm.PlannerWit.rootedWitness
+Tm.PlannerWit.rootedWitnessSwapped
+Tm.PlannerWit.routineCap
+Tm.PlannerWit.routineIns
+Tm.PlannerWit.routinePlan
+Tm.PlannerWit.routineWitness
+Tm.PlannerWit.storedPlan
+Tm.PlannerWit.storedWitness
+Tm.PlannerWit.theAtomicRequest
+Tm.PlannerWit.theBatchRequest
+Tm.PlannerWit.theBatchedDay
+Tm.PlannerWit.theBrokenDay
+Tm.PlannerWit.theBusyRequest
+Tm.PlannerWit.theCapRequest
+Tm.PlannerWit.theCapSlackRequest
+Tm.PlannerWit.theCensusRequest
+Tm.PlannerWit.theClashingDay
+Tm.PlannerWit.theCrowdedRequest
+Tm.PlannerWit.theCursorAtomicFitRequest
+Tm.PlannerWit.theCursorAtomicRequest
+Tm.PlannerWit.theCursorCiRequest
+Tm.PlannerWit.theCursorLocRequest
+Tm.PlannerWit.theCursorRequest
+Tm.PlannerWit.theDimDay
+Tm.PlannerWit.theDroppedFirstDay
+Tm.PlannerWit.theFullDay
+Tm.PlannerWit.theFutureHalfOfTheCensusDay
+Tm.PlannerWit.theGatherBigRequest
+Tm.PlannerWit.theGatherOptionalRequest
+Tm.PlannerWit.theGatherRequest
+Tm.PlannerWit.theGatherWallRequest
+Tm.PlannerWit.theGatherWindowRequest
+Tm.PlannerWit.theGatherZeroRequest
+Tm.PlannerWit.theHighRestRequest
+Tm.PlannerWit.theHourLaterRequest
+Tm.PlannerWit.theIdleBatchRequest
+Tm.PlannerWit.theIdleQueuedRequest
+Tm.PlannerWit.theLapsedRequest
+Tm.PlannerWit.theLateDay
+Tm.PlannerWit.theLateStartDay
+Tm.PlannerWit.theMidBreakRequest
+Tm.PlannerWit.theMirrorPayingRequest
+Tm.PlannerWit.theMorningWallRequest
+Tm.PlannerWit.theMovedWallDay
+Tm.PlannerWit.theOffDayRequest
+Tm.PlannerWit.theOptionalRequest
+Tm.PlannerWit.theOverBudgetRequest
+Tm.PlannerWit.theOverlongDay
+Tm.PlannerWit.theOverrunDay
+Tm.PlannerWit.thePayingRequest
+Tm.PlannerWit.theQueuedBlock
+Tm.PlannerWit.theQueuedRequest
+Tm.PlannerWit.theQueuedState
+Tm.PlannerWit.theQuietCensusRequest
+Tm.PlannerWit.theQuietRequest
+Tm.PlannerWit.theRankingRequest
+Tm.PlannerWit.theRelabelledWallDay
+Tm.PlannerWit.theRequest
+Tm.PlannerWit.theRootedRequest
+Tm.PlannerWit.theRoutineRequest
+Tm.PlannerWit.theRunBatchRequest
+Tm.PlannerWit.theRunningBlock
+Tm.PlannerWit.theRunningRequest
+Tm.PlannerWit.theRunningState
+Tm.PlannerWit.theSecondSlot
+Tm.PlannerWit.theShortBlockRequest
+Tm.PlannerWit.theSilentlyDroppedDay
+Tm.PlannerWit.theSpentBudgetRequest
+Tm.PlannerWit.theSpentDay
+Tm.PlannerWit.theStoredRequest
+Tm.PlannerWit.theSwappedRootRequest
+Tm.PlannerWit.theTailRemainderDay
+Tm.PlannerWit.theTwoPayingRequest
+Tm.PlannerWit.theZeroRequest
+Tm.PlannerWit.todaysWallFacts
+Tm.PlannerWit.twoCands
+Tm.PlannerWit.twoPlan
+Tm.PlannerWit.twoWallInput
+Tm.PlannerWit.twoWallPlan
+Tm.PlannerWit.twoWallWitness
+Tm.PlannerWit.twoWitness
+Tm.PlannerWit.waitingFacts
+Tm.PlannerWit.witAtomicCands
+Tm.PlannerWit.witBatchCands
+Tm.PlannerWit.witCands
+Tm.PlannerWit.witCandsSwapped
+Tm.PlannerWit.witCapCands
+Tm.PlannerWit.witCapSlackCands
+Tm.PlannerWit.witCursorAtomicCands
+Tm.PlannerWit.witCursorAtomicFitCands
+Tm.PlannerWit.witCursorCands
+Tm.PlannerWit.witCursorCiCands
+Tm.PlannerWit.witCursorLocCands
+Tm.PlannerWit.witInput
+Tm.PlannerWit.witInputIn
+Tm.PlannerWit.witLines
+Tm.PlannerWit.witOptionalCands
+Tm.PlannerWit.witPrio
+Tm.PlannerWit.witReqIn
+Tm.PlannerWit.witReqIn0
+Tm.PlannerWit.witReqInCands
+Tm.PlannerWit.witReqInCensus
+Tm.PlannerWit.witReqInIdleQueued
+Tm.PlannerWit.witReqInQueued
+Tm.PlannerWit.witReqInQuietCensus
+Tm.PlannerWit.witReqInRun
+Tm.PlannerWit.witRun
+Tm.PlannerWit.witRun0
+Tm.PlannerWit.witRunBatchCands
+Tm.PlannerWit.witToday
+Tm.PlannerWit.witZeroCands
+
+## Priority.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 1 emitted globals are read by a function the export reaches; the 1 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.specDefaultPrio
+
+## Recur.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 3 emitted globals are read by a function the export reaches; the 3 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Recur.carryLookbackDays
+Tm.Recur.phaseEpoch
+Tm.Recur.weekEpoch
+
+## Replay.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 3 of this module's 13 emitted globals are read by a function the export reaches; the 10 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Replay.Ci6.zero
+Tm.Replay.DayOut.empty
+Tm.Replay.ItemOut.empty
+Tm.Replay.WinOut.empty
+Tm.Replay.arrivalsAndPlans
+Tm.Replay.foldZone
+Tm.Replay.portedMask
+Tm.Replay.undoOffset
+Tm.Replay.undoStamp
+Tm.Replay.utcZone
+
+## Report.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 1 emitted globals are read by a function the export reaches; the 1 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Report.empty
+
+## Seal.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 32 of this module's 120 emitted globals are read by a function the export reaches; the 88 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Seal.autoCloseCatchup
+Tm.Seal.cAt
+Tm.Seal.cBlock
+Tm.Seal.cBreakRec
+Tm.Seal.cChar
+Tm.Seal.cCi6
+Tm.Seal.cCloseRec
+Tm.Seal.cCloses
+Tm.Seal.cCut
+Tm.Seal.cDayAcc
+Tm.Seal.cDemotion
+Tm.Seal.cDemotions
+Tm.Seal.cDoneIds
+Tm.Seal.cDurationObs
+Tm.Seal.cDurations
+Tm.Seal.cEnergies
+Tm.Seal.cEnergyObs
+Tm.Seal.cHeaderRec
+Tm.Seal.cHeaders
+Tm.Seal.cIdleMark
+Tm.Seal.cIdleRec
+Tm.Seal.cInstOther
+Tm.Seal.cInstRec
+Tm.Seal.cInsts
+Tm.Seal.cInterruption
+Tm.Seal.cInterrupts
+Tm.Seal.cItemAcc
+Tm.Seal.cItemMins
+Tm.Seal.cItems
+Tm.Seal.cJErr
+Tm.Seal.cJEsc
+Tm.Seal.cLWarn
+Tm.Seal.cLeakRec
+Tm.Seal.cNamed
+Tm.Seal.cNamedRec
+Tm.Seal.cNum
+Tm.Seal.cOpenDay
+Tm.Seal.cOpenDays
+Tm.Seal.cOpenInt
+Tm.Seal.cOptAt
+Tm.Seal.cOptDayAcc
+Tm.Seal.cOptInstant
+Tm.Seal.cOptLeak
+Tm.Seal.cOptNat
+Tm.Seal.cOptSeam
+Tm.Seal.cOptStr
+Tm.Seal.cOptU8
+Tm.Seal.cRWarn
+Tm.Seal.cRWarns
+Tm.Seal.cSeamAcc
+Tm.Seal.cSegKind
+Tm.Seal.cSegment
+Tm.Seal.cSettled
+Tm.Seal.cSlept
+Tm.Seal.cStamp
+Tm.Seal.cStampErr
+Tm.Seal.cStartRec
+Tm.Seal.cStatus
+Tm.Seal.cStrs
+Tm.Seal.cTagLast
+Tm.Seal.cU8
+Tm.Seal.cVInstant
+Tm.Seal.cVOffset
+Tm.Seal.cWakes
+Tm.Seal.cWarnings
+Tm.Seal.cWindow
+Tm.Seal.cWindowRecord
+Tm.Seal.ckptVersion
+Tm.Seal.maxDemotions
+Tm.Seal.maxHeaders
+Tm.Seal.maxItems
+Tm.Seal.maxKeepDays
+Tm.Seal.maxList
+Tm.Seal.maxNamed
+Tm.Seal.maxObs
+Tm.Seal.maxOpenDays
+Tm.Seal.maxSettled
+Tm.Seal.maxStr
+Tm.Seal.maxTagChars
+Tm.Seal.maxTags
+Tm.Seal.maxTzKey
+Tm.Seal.maxUnknownTags
+Tm.Seal.maxWakes
+Tm.Seal.maxWarnings
+Tm.Seal.maxWindow
+Tm.Seal.tNil
+Tm.Seal.twoDoneDays
+Tm.Seal.twoDoneQueries
+
+## SealInStep.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 2 emitted globals are read by a function the export reaches; the 2 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Seal.flipZone
+Tm.Seal.oneDoneOnTheHorizon
+
+## SealResume.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 0 of this module's 1 emitted globals are read by a function the export reaches; the 1 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Seal.fenceSec
+
+## SealWire.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 1 of this module's 6 emitted globals are read by a function the export reaches; the 5 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.Seal.cOpenBlock
+Tm.Seal.cOptInterruption
+Tm.Seal.cOptOpenBlock
+Tm.Seal.maxSealedIn
+Tm.Seal.numeralBound
+
+## Stamp.lean -- W-31 repair, 2026-09-25 (README gap 2257): a nullary `def` whose body is a closed constant is emitted as `LEAN_EXPORT lean_object* <sym>;` and never as a C function, so check 12's population -- `ANY_EMITTED`, which required a function -- did not hold one of these at all. 2 of this module's 4 emitted globals are read by a function the export reaches; the 2 below are not, and are grandfathered at the WIDENING by measurement on that date, not adjudicated one at a time. This section may only shrink.
+Tm.LogStamp.utc
+Tm.LogStamp.yearEnd
+
+## Json.lean -- W-31 repair, 2026-09-25 (README gap 2258): an `abbrev`, which check 12's population read as the single keyword `def`. Lean compiles one and the generator emits it, while every caller inlines the reducible definition, so the symbol stands with nothing naming it. Grandfathered at the widening by measurement on that date. This section may only shrink.
+Tm.jrenderNat
+
+## Planner.lean -- W-31 repair, 2026-09-25 (README gap 2258): an `abbrev`, which check 12's population read as the single keyword `def`. Lean compiles one and the generator emits it, while every caller inlines the reducible definition, so the symbol stands with nothing naming it. Grandfathered at the widening by measurement on that date. This section may only shrink.
+Tm.Planner.posLt
+Tm.Planner.victimLt
+
+## PlannerWit.lean -- W-31 repair, 2026-09-25 (README gap 2258): an `abbrev`, which check 12's population read as the single keyword `def`. Lean compiles one and the generator emits it, while every caller inlines the reducible definition, so the symbol stands with nothing naming it. Grandfathered at the widening by measurement on that date. This section may only shrink.
+Tm.PlannerWit.permissive

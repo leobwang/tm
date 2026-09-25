@@ -23,8 +23,9 @@ a definition it DOES emit is code the program either runs or carries dead.
 
 WHY THAT ANTECEDENT AND NOT A SOURCE-SIDE ONE.  "Used solely within proofs"
 reads like a question about references, and it was measured as one before this
-file was written: of the 2,365 emitted `def`s, 260 are referenced by at least
-one `theorem` and by no `def` at all.  Exempting those 260 by that property
+file was written: of the 2,365 emitted `def`s of the FUNCTION-only population
+this gate started with, 260 were referenced by at least one `theorem` and by no
+`def` at all.  Exempting those 260 by that property
 would have been the wrong rule TWICE OVER.  It swallows `Tm.edf` and
 `Tm.edfGrants` -- §7's EDF grant machine, whose fast twins the W-30 repair
 deleted as dead (gap 2126) and whose originals nothing has called since -- and
@@ -35,9 +36,12 @@ the antecedent is the compiler's, the exemptions are NAMED, and the reason each
 one carries is readable and dated instead of inferred.
 
 THE EXEMPTION FILE IS W-27'S SHAPE: AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT
-TO BE COVERED.  `reach-exempt.txt` grandfathers the 952 definitions that were
-unreachable on 2026-09-25, each under a section naming its module and its
-reason, and it may only SHRINK: an entry that becomes reachable, stops being
+TO BE COVERED.  `reach-exempt.txt` grandfathers the definitions that were
+unreachable on 2026-09-25 -- 952 when the gate landed, 1,459 after the same
+day's repair widened the population by the 524 `def`s and `abbrev`s the
+compiler emits as a GLOBAL and not as a function (gaps 2257/2258) -- each under
+a section naming its module, its reason and, where the section GREW the file,
+its date; and it may only SHRINK: an entry that becomes reachable, stops being
 emitted or stops existing FAILS this check and must be deleted, and a
 definition that becomes unreachable and is not in the file FAILS it too.  A
 bare threshold -- "no more than N unreachable" -- would have been the
@@ -62,11 +66,14 @@ WHAT IT CANNOT SEE, beyond `callgraph.py`'s own declared blind spots:
     reachable function is a call; a definition reached only from a refusal path
     nothing takes is reachable here.  Reachability is a floor under
     composition, never a proof of it.
-  * A definition the compiler emits nothing for -- 677 of the library's 3,042
-    `def`s, every one of them a `Prop`, a type-level abbreviation or a
-    declaration in the package root, which `lake` does not compile into the
-    library at all.  `--audit` prints that population so the number is
-    re-measured rather than believed.
+  * A definition the compiler emits nothing for -- 216 of the library's 3,142
+    `def`s and `abbrev`s.  The sentence here used to read "677 of 3,042 `def`s,
+    every one of them a `Prop`, a type-level abbreviation or a declaration in
+    the package root, which `lake` does not compile into the library at all",
+    and it was FALSE BY 524: those 524 ARE compiled into the library, as
+    `LEAN_EXPORT lean_object* <sym>;` globals, and the sentence was this gate's
+    own header asserting its blind spot was empty (W-31 repair, gap 2257).
+    `--audit` prints the population so the number is re-measured, not believed.
   * The Rust side, which is R3's business and not a Lean symbol's.
   * Two library modules whose file STEMS collide -- the comparison below is by
     stem, because that is how the code generator names its output, and the
@@ -91,12 +98,26 @@ regenerate is not a ratchet.
 """
 import collections
 import pathlib
+import re
 import sys
 
 import callgraph
 import leanfiles
 
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "reach-exempt.txt"
+# THE POPULATION IS A KEYWORD CLASS AND NOT THE ONE WORD `def` (W-31 repair,
+# README gap 2258).  This read `qualified_names(p, "def")` and said nothing
+# about the others, while `mutate.py` had read `(def|abbrev|instance)` since
+# W-24 and `twins.py` at least DECLARED the gap.  MEASURED on the committed
+# tree: four library `abbrev`s had an emitted C FUNCTION, were unreachable, and
+# were named in no exemption -- `Tm.jrenderNat`, `Tm.Planner.posLt`,
+# `Tm.Planner.victimLt`, `Tm.PlannerWit.permissive` -- and with the global half
+# of the emitted population (gap 2257) the `abbrev` count is 36.  `instance` is
+# NOT here and the omission is declared: an instance is emitted, but it is
+# reached through typeclass dispatch the generator resolves at the CALL SITE,
+# so an unreached instance symbol is not the same finding and would need its
+# own adjudication -- README gap 2260.
+KEYWORDS = ("def", "abbrev")
 
 
 def library_defs(roots):
@@ -112,29 +133,49 @@ def library_defs(roots):
     files = sorted(files)
     out = []
     for p in files:
-        pairs, leftover = leanfiles.qualified_names(p, "def")
-        if leftover:
-            raise SystemExit("reach.py: %s leaves %s open at end of file -- the "
-                             "qualified name of every declaration below it is "
-                             "wrong" % (p, leftover))
-        for written, qualified in pairs:
-            out.append((pathlib.Path(p).name, written, qualified,
-                        callgraph.symbol(qualified)))
+        for kw in KEYWORDS:
+            pairs, leftover = leanfiles.qualified_names(p, kw)
+            if leftover:
+                raise SystemExit("reach.py: %s leaves %s open at end of file -- "
+                                 "the qualified name of every declaration below "
+                                 "it is wrong" % (p, leftover))
+            for written, qualified in pairs:
+                out.append((pathlib.Path(p).name, written, qualified,
+                            callgraph.symbol(qualified)))
     return out, files
 
 
-def read_exemptions(path):
+# An ISO date in a section's reason.  Growth must be DATED (gap 2259).
+SECTION_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
+
+
+def read_exemptions(path, text=None):
     """`(entries, sections, complaints)` from the exemption file.
 
-    `entries` is `{(module, name): note}`, `sections` is `{module: reason}`.
-    A `##` line opens a section and carries the reason every entry under it
-    inherits; a `#` line is prose; anything else is an entry, with an optional
-    `#` note of its own.  A `EXEMPT <n>` line declares the size, which must
-    match exactly -- the count is in the diff so that GROWTH is a deliberate
-    edit and not a side effect."""
-    entries, sections, complaints = {}, {}, []
-    module, declared = None, None
-    for lineno, raw in enumerate(path.read_text().splitlines(), 1):
+    `sections` is a LIST of `(module, reason, lineno)` in file order and
+    `entries` is `{(module, name): (note, section index)}`.  A `##` line opens a
+    section and carries the reason every entry under it inherits; a `#` line is
+    prose; anything else is an entry, with an optional `#` note of its own.  A
+    `EXEMPT <n>` line declares the size, which must match exactly.
+
+    **AND THE REASON AN ENTRY CARRIED WAS NOT THE ONE WRITTEN ABOVE IT**
+    (W-31 repair, README gap 2259).  `sections` was `{module: reason}` and every
+    `##` line OVERWROTE its module's reason, while `entries` was keyed by
+    `(module, name)`: so a SECOND heading for a module the file already sectioned
+    silently rewrote the reason inherited by every pre-existing entry of that
+    module, and nothing complained -- the count did not move either, because the
+    dict had one key for both.  DRIVEN before this repair: a second `##
+    Emit.lean -- AUDIT DRIVE: an entirely made-up reason that no human ever
+    read.` appended at the end of the file left `sections["Emit.lean"]` holding
+    the made-up reason for all four of Emit.lean's entries, `complaints` empty,
+    and the summary still saying "45 section(s)".  The reason is attached to the
+    ENTRY now, at the line it was read on, so a second heading is a second
+    section and inherits nothing backwards -- which is also what lets a gate
+    WIDENING grandfather a module that already has a section (gap 2257)."""
+    entries, sections, complaints = {}, [], []
+    cur, declared = None, None
+    for lineno, raw in enumerate((path.read_text() if text is None
+                                  else text).splitlines(), 1):
         line = raw.strip()
         if not line:
             continue
@@ -145,9 +186,10 @@ def read_exemptions(path):
             if not module.endswith(".lean") or not reason:
                 complaints.append("%s:%d  a section is `## <Module.lean> -- <reason>` "
                                   "and this one is `%s`" % (path.name, lineno, head))
-                module = None
+                cur = None
             else:
-                sections[module] = reason
+                sections.append((module, reason, lineno))
+                cur = len(sections) - 1
             continue
         if line.startswith("#"):
             continue
@@ -156,15 +198,21 @@ def read_exemptions(path):
             continue
         name, _, note = line.partition("#")
         name, note = name.strip(), note.strip()
-        if module is None:
+        if cur is None:
             complaints.append("%s:%d  `%s` sits under no section, so it carries no "
                               "reason" % (path.name, lineno, name))
             continue
+        module = sections[cur][0]
         if (module, name) in entries:
             complaints.append("%s:%d  `%s` is listed twice under %s"
                               % (path.name, lineno, name, module))
             continue
-        entries[(module, name)] = note
+        entries[(module, name)] = (note, cur)
+    used = {c for _, c in entries.values()}
+    for k, (module, reason, lineno) in enumerate(sections):
+        if k not in used:
+            complaints.append("%s:%d  the `## %s` section holds no entry -- a "
+                              "reason nothing carries" % (path.name, lineno, module))
     if declared is None or not declared.isdigit():
         complaints.append("%s  has no `EXEMPT <n>` line, so its size is not declared"
                           % path.name)
@@ -173,6 +221,38 @@ def read_exemptions(path):
                           "is the ratchet, so correct it in the same edit"
                           % (path.name, declared, len(entries)))
     return entries, sections, complaints
+
+
+def committed_exemptions(path):
+    """The exemption file's text as `git` has it at HEAD, or `None`.
+
+    **THE RATCHET WAS A COMMENT** (W-31 repair, README gap 2259).  D51 asked for
+    a file that may only SHRINK; the file's own header says so and `reach.py`'s
+    teaching line forty lines away told the next track to "add it to
+    reach-exempt.txt .. AND raise the EXEMPT count in the same edit".  Both
+    shipped in the same commit, and the only mechanical rule was `int(declared)
+    == len(entries)` -- a number held against ITSELF.  The file went EXEMPT 952
+    -> 953 in the run that landed it and every gate stayed green.
+
+    So the comparand is the COMMITTED file, which is the only thing in this tree
+    that a working copy cannot edit.  `main` holds the new entry set against it:
+    an entry that is not in the committed file must sit under a section heading
+    that is not in the committed file EITHER, and that heading's reason must
+    carry an ISO DATE.  Adding a line to an existing section -- which is exactly
+    what W-31 track G did -- FAILS.  Growth is then a dated section in the diff
+    rather than a digit in it.
+
+    WHAT IT STILL CANNOT SEE, declared: whether a new section's reason is TRUE.
+    No gate can read a sentence.  What it can do is make growth cost a heading
+    and a date instead of a character, and make the diff say so."""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "-C", str(path.parent), "show",
+                              "HEAD:./" + path.name],
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return out.stdout if out.returncode == 0 else None
 
 
 def main(argv):
@@ -198,7 +278,7 @@ def main(argv):
 
     population = [d for d in defs if d[3] in emitted]
     if not population:
-        raise SystemExit("reach.py: not one of %d `def`s matches an emitted C symbol "
+        raise SystemExit("reach.py: not one of %d `def`/`abbrev`s matches an emitted C symbol "
                          "-- the mangling or the `%s` prefix has moved and this check "
                          "would gate nothing" % (len(defs), callgraph.PREFIX))
     live = [d for d in population if d[3] in reached]
@@ -229,11 +309,31 @@ def main(argv):
             bad.append("STALE: %s (%s) is REACHED now -- delete this entry, the file "
                        "may only shrink" % (key[1], key[0]))
         else:
-            bad.append("STALE: %s (%s) is not an emitted `def` of that module any "
-                       "more -- delete this entry" % (key[1], key[0]))
-    for module in sorted({m for m, _ in entries}):
-        if module not in sections:
-            bad.append("SECTION: %s has entries under no `##` heading" % module)
+            bad.append("STALE: %s (%s) is not an emitted `def`/`abbrev` of that "
+                       "module any more -- delete this entry" % (key[1], key[0]))
+    # THE RATCHET, against the file as COMMITTED and not against itself
+    # (gap 2259).  A new entry must sit under a section heading that is new too,
+    # and a new heading must carry a date.
+    prev = committed_exemptions(EXEMPT_FILE)
+    if prev is None:
+        bad.append("RATCHET UNCHECKED: `git show HEAD:./%s` gave nothing, so the "
+                   "only comparand this file has is itself -- which is the state "
+                   "D51's ratchet was in before W-31's repair" % EXEMPT_FILE.name)
+    else:
+        prev_entries, prev_sections, _ = read_exemptions(EXEMPT_FILE, prev)
+        prev_heads = {(m, r) for m, r, _ in prev_sections}
+        for key in sorted(set(entries) - set(prev_entries)):
+            module, reason, lineno = sections[entries[key][1]]
+            if (module, reason) in prev_heads:
+                bad.append("RATCHET: %s (%s) is a NEW exemption under a section "
+                           "that already existed at HEAD -- this file may only "
+                           "SHRINK (D51), and growth is a NEW DATED SECTION or it "
+                           "is not growth, it is a line in a diff" % (key[1], module))
+            elif not SECTION_DATE.search(reason):
+                bad.append("RATCHET: %s:%d  the new `## %s` section grandfathers "
+                           "%s and its reason carries no ISO date -- growth is "
+                           "dated here or it is not made"
+                           % (EXEMPT_FILE.name, lineno, module, key[1]))
 
     if audit:
         per = collections.Counter(m for m, _ in dead)
@@ -254,12 +354,16 @@ def main(argv):
     # becomes something to route around.
     if any(b.startswith("NOT EXEMPT") for b in bad):
         print("  -- either give it a caller the export reaches, or add it to %s "
-              "under its module's `##` section with a reason AND raise the "
-              "EXEMPT count in the same edit" % EXEMPT_FILE.name)
-    print("%d def(s) in %d library module(s), %d emitted, %d reachable from %s, "
-          "%d exempt in %d section(s) (%d of them run at load), %d UNANSWERED"
-          % (len(defs), len(library), len(population), len(live),
-             callgraph.EXPORT_ROOT, len(entries), len(sections),
+              "under a NEW `## <Module.lean> -- <reason carrying an ISO "
+              "date>` section AND raise the EXEMPT count in the same edit -- an "
+              "entry added under a section that already exists at HEAD fails "
+              "the ratchet" % EXEMPT_FILE.name)
+    print("%d def/abbrev(s) in %d library module(s), %d emitted (%d as a global), "
+          "%d reachable from %s, %d exempt in %d section(s) (%d of them run at "
+          "load), %d UNANSWERED"
+          % (len(defs), len(library), len(population),
+             sum(1 for d in population if d[3] in callgraph.emitted_globals(ir)),
+             len(live), callgraph.EXPORT_ROOT, len(entries), len(sections),
              sum(1 for d in dead.values() if d[3] in closed), len(bad)))
     return 1 if bad else 0
 

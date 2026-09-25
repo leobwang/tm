@@ -71,6 +71,37 @@ PREFIX = "lp_TmKernel_"
 # includes the export itself (`tm_kernel_call` carries neither of the code
 # generator's two name prefixes).
 ANY_EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(;]*?\b(\w+)\([^\n]*\{")
+# AND A DEFINITION THE GENERATOR EMITS AS A GLOBAL AND NOT AS A FUNCTION
+# (W-31 repair, README gap 2257).  `ANY_EMITTED` recognises a definition only
+# where the code generator gave it a C FUNCTION.  A `def` with no parameters
+# whose body is a closed constant -- every witness fixture, every codec
+# `abbrev`, every table -- is emitted as `LEAN_EXPORT lean_object* <sym>;` plus
+# `static .. _init_<sym>___closed__N()` initialisers assigned by the module
+# initializer, and NEVER as a function.  MEASURED on the committed tree: 1,244
+# such globals, 524 of them a library `def` or `abbrev`, 470 of those named by
+# no function the export reaches -- exactly the shape check 12 exists for, and
+# all of it outside check 12's population.  `reach.py`'s own header asserted the
+# non-emitting remainder was "every one of them a `Prop`, a type-level
+# abbreviation or a declaration in the package root"; it was false by 524.
+#
+# A GLOBAL IS A LEAF OF THE WALK, not a node with a body: it is REACHED when a
+# body the export reaches names it, and it calls nothing itself.  The two
+# populations do not overlap (measured: 0 symbols in both).
+#
+# **AND THE GENERATOR WRITES A GLOBAL TWO WAYS** -- which this pattern read as
+# one until a plant caught it, in the repair that was written to close exactly
+# this shape.  `LEAN_EXPORT lean_object* <sym>;` is the global the MODULE
+# INITIALIZER assigns, and `LEAN_EXPORT const lean_object* <sym> = (const
+# lean_object*)&<sym>___closed__N_value;` is the one the C file initialises
+# statically; both are the same definition and neither is a function.  DRIVEN in
+# a `git clone --local` with its own build tree: `def w31CriticOrphanConst :
+# List Nat := [3,1,4,1,5,9,2,6]` planted in `SealInStep.lean`, reached by
+# nothing, emitted at `SealInStep.c:94` as the SECOND spelling -- and a pattern
+# anchored on `;` left the emitted count unmoved at 2,880 and this check green,
+# while the `abbrev` planted beside it was named.  So the test is what does NOT
+# follow the symbol: an emitted definition whose name is followed by `(` is a
+# function and everything else is data.
+ANY_GLOBAL = re.compile(r"(?m)^LEAN_EXPORT\s[^\n(;=]*?\b(\w+)\s*(?:;|=)")
 # An identifier in an emitted body.  A C body names its callees and nothing
 # else that can collide with an exported symbol, so a reference is a call edge.
 C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
@@ -78,6 +109,7 @@ C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
 # function and so is not a node of the graph: `static lean_object* _init_.. ()`.
 INIT_FN = re.compile(r"(?m)^static[^\n(;]*?\b(_init_\w+)\([^\n]*\{")
 _FUNCS = {}
+_GLOBALS = {}
 _REACH = {}
 _CLOSED = {}
 
@@ -189,7 +221,7 @@ def functions(ir):
 
     THE INITIALISERS ARE A SECOND PASS AND NOT THIS ONE, measured: folding
     `closed_users`' scan into this loop reads the 45 MB tree once instead of
-    twice and costs 0.65 s -> 0.88-0.94, because the 6,655 initialiser bodies
+    twice and costs 0.65 s -> 0.88-0.94, because the 6,679 initialiser bodies
     have to be brace-balanced too.  Check 12's own wall is the same either way
     (1.63-1.65 s), and check 11 does not ask the initialiser question at all --
     so the one-read version spent a quarter of a second of check 11's budget on
@@ -207,21 +239,48 @@ def functions(ir):
     return funcs
 
 
+def emitted_globals(ir):
+    """Every `LEAN_EXPORT <type> <sym>;` global under `ir`, by its C symbol.
+
+    The second half of the emitted population (W-31 repair, gap 2257).  It is a
+    separate scan and not a second group in `ANY_EMITTED` because the two
+    shapes are told apart by what follows the symbol -- `(` for a function, `;`
+    for a global -- and folding them into one pattern makes the distinction the
+    walk needs (a body, or none) depend on a regex alternation instead of on
+    which dictionary the symbol came out of."""
+    key = str(ir)
+    if key in _GLOBALS:
+        return _GLOBALS[key]
+    globs = set()
+    for c in sorted(ir.rglob("*.c")):
+        globs.update(ANY_GLOBAL.findall(c.read_text(errors="replace")))
+    _GLOBALS[key] = globs
+    return globs
+
+
 def reachable(ir):
     """`(reached, emitted)`: what the export reaches, and what was emitted.
 
     The BFS starts at `EXPORT_ROOT` and follows every identifier in a body that
-    is itself an emitted function.  It is what tells a definition the callers
-    run from a definition nothing calls, and no other instrument in this tree
-    can tell them apart."""
+    is itself an emitted function OR an emitted global.  It is what tells a
+    definition the callers run from a definition nothing calls, and no other
+    instrument in this tree can tell them apart.
+
+    A GLOBAL HAS NO BODY, so it is a leaf: reaching one adds nothing to the
+    stack.  Its module initializer assigns it and no initializer is reachable
+    from the export, so a global is reached exactly when a function the export
+    reaches READS it -- which is the question the emitted-function walk asks of
+    a function, asked of data."""
     key = str(ir)
     if key in _REACH:
         return _REACH[key]
     funcs = functions(ir)
+    globs = emitted_globals(ir)
     if EXPORT_ROOT not in funcs:
         raise SystemExit("callgraph.py: `%s` is not an emitted function under "
                          "%s -- the call graph has no root and every definition "
                          "would look dead" % (EXPORT_ROOT, ir))
+    node = set(funcs) | globs
     seen, stack = set(), [EXPORT_ROOT]
     while stack:
         n = stack.pop()
@@ -230,9 +289,9 @@ def reachable(ir):
         seen.add(n)
         for body in funcs.get(n, ()):
             for r in C_IDENT.finditer(body):
-                if r.group(0) in funcs and r.group(0) not in seen:
+                if r.group(0) in node and r.group(0) not in seen:
                     stack.append(r.group(0))
-    _REACH[key] = (seen & set(funcs), set(funcs))
+    _REACH[key] = (seen & node, node)
     return _REACH[key]
 
 
