@@ -6797,21 +6797,22 @@ seen from seven directions.  README gap **2320** is that finding.  Measured, che
   `PlanCheck.impossibleKept`.  **No subject at any
   request and any eligibility**, unconditionally — `PlanCheck.impossible_has_no_subject`.
 * `Goals.plan_never_batches_past_an_equal_ci_candidate` → `PlanCheck.batchDoesNotReachPast`.  No
-  subject: four days here carry a Batch row and no store holds the ids it gathered.
+  subject at the 45 — until §29 builds the store that gives it one, and refutes the law there.
 * `Goals.plan_tail_drop` and `Goals.plan_is_stable_across_a_replan` are the two relational ones,
   refuted in §6 and §20 by the field their hypotheses do not pin.
 
 **Measured by `#eval` at this commit, over every `PlanReq` this module defines** (the roster is a
-LIST, and gap **2025** is the last time that bit): **45 requests; 21 assign at least one row; 21
-pay `PlanCheck.candsAgree`; and the intersection was THREE.**  It is **four** below.  The 21 and
-the 21 barely overlap because the 18 that pay without assigning carry no candidates at all
+LIST, and gap **2025** is the last time that bit): at the baseline **45 requests; 21 assign at
+least one row; 21 pay `PlanCheck.candsAgree`; and the intersection was THREE.**  This section adds
+one and §29 two, so at this commit it is **48, 24, 24 and SIX**.  The two columns
+barely overlap because the 18 that pay without assigning carry no candidates at all
 (`PlanCheck.candsAgree_of_no_cands`) and the 18 that assign without paying send candidates that
 are not items of their own plan.
 
-**And the subject counts, the same way**: of the 45, `.windDown`, `.impossible` and `.batch` have
-**zero** subjects at both `permissive` and `freeSlotRows`; `.rank` has 9 and `.hot` has 10 at
-`permissive` and **zero and zero** at `freeSlotRows`.  Three of §6.1's eleven have never had a
-subject in this tree, and two more have one only at an eligibility the lift cannot use.
+**And the subject counts, the same way**: at the baseline `.windDown`, `.impossible` and `.batch`
+had **zero** subjects at both `permissive` and `freeSlotRows`; `.rank` had 9 and `.hot` 10 at
+`permissive` and **zero and zero** at `freeSlotRows`.  At this commit `.rank` and `.hot` are 11 and
+11, and `.batch` is **2** — the two days §29 adds, and nothing else moved.
 
 **What is new here and what was already known.**
 `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` already said that four of the
@@ -7035,7 +7036,11 @@ where `hot` is false on every one of the four while `rank` is true on the one da
 (`theTwoPayingRequest`, whose two siblings are at equal `ci` and both assigned).
 
 This is the measurement behind the section header: the remaining burn-down is not seven proofs, it
-is one missing eligibility and two unwritten steps.  README gap **2323**. -/
+is one missing eligibility and two unwritten steps.  README gap **2323**.
+
+**§29 moves the third conjunct**: `PlanCheck.batchDoesNotReachPast` has a subject at the two days
+that section adds, so `.batch` is no longer empty *in the tree* — only on these four days.  What
+does not move is `windDown` and `impossible`, which are empty everywhere. -/
 theorem the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays :
     [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest].map
         (fun r => (PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.windDown r (dayPlan r),
@@ -7062,7 +7067,7 @@ needs both ids in the store, so the checker ranges over the empty set.
 
 README gap **2194** already names the request that would fix it — *"a paying request whose group
 has two members"* — and this is that gap's missing half: the reason no such request exists is the
-STORE, not the fold.  Nothing is minted for it here. -/
+STORE, not the fold.  **§29 builds it**, so gap 2194 is closed rather than restated. -/
 theorem the_batch_rows_this_tree_builds_belong_to_no_store :
     [theBatchRequest, theCapRequest, theAtomicRequest, theGatherRequest].map
         (fun r => ((dayPlan r).segments.filter (fun s =>
@@ -7131,6 +7136,228 @@ theorem an_assigned_row_inside_the_horizon_is_before_the_wind_down (r : PlanReq)
   unfold PlanReq.night at hb
   have hnot : ¬ (min r.windDownSec r.dayEnd ≤ t.start) := fun hle => hb ⟨hle, hhz⟩
   exact Nat.lt_of_lt_of_le (Nat.not_le.1 hnot) (Nat.min_le_left _ _)
+
+/-! ############################################################################
+## 29. W-32 (track G): the BATCH check gets its first subject, and design §6.3's own `loc:`
+      skip refutes two goals at a day that assigns and pays
+############################################################################
+
+**README gap 2194 asked for this request and §28 could not build it**: *"a paying request whose
+group has two members"*.  Four days in this module carry a Batch row — `theBatchRequest`,
+`theCapRequest`, `theAtomicRequest`, `theGatherRequest` — and the plan behind all four is
+`Boundary.lookWallPlan`, whose store holds `^g1` and nothing else, so
+`PlanCheck.batchPairOk`'s antecedent (both ids in the store) is unsatisfiable and
+`PlanCheck.batchDoesNotReachPast` has ranged over the empty set at every request in this tree.
+`the_batch_rows_this_tree_builds_belong_to_no_store` is that, measured.
+
+**The witness is three siblings of ONE document at ONE `ci`, in an order the document and the
+gather disagree about.**  `^t3` is written first (`live.rank` 1) and is too big to share a block
+(`Planner.Ranked.gatherable` reads `Look.Cand.remaining` against §7's batch bound, which is 20
+here); `^t1` and `^t2` are small and share one.  So the day carries a Block row for `^t3` and a
+**Batch** row for `[^t1, ^t2]`, the batch's members rank *behind* the item it left out, and
+`PlanCheck.batchDoesNotReachPast` has a subject for the first time.
+
+**And one character decides whether the law holds.**  At `thePayingBatchRequest` every candidate
+is `loc:`-free, `^t3` gets its own Block row, and the check answers `true`.  At
+`theSkippedBatchRequest` — the same store, the same two small candidates, `^t3` carrying
+`loc:out` on a day at the lounge — §8.2 step 5 places the batch and places **nothing** for `^t3`,
+and the check answers `false`.  That is design §6.3's own sentence, computed at last: *"step 5
+skips a `loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3 invariant is
+about"*.  It refutes **two** goals in one day, and the pair either side of the `loc:` is also
+what keeps the checker from being a constant (D40's question, asked of a checker). -/
+
+/-- Three siblings of one document at one `ci`, written `^t3`, `^t1`, `^t2` — so the document's
+own order disagrees with the order §7.4's key will put them in. -/
+def batchStoreWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 2 6b Third task ^t3".toList,
+       "- [ ] 2 6b First task ^t1".toList,
+       "- [ ] 2 6b Second task ^t2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_batch_store_witness_loads : loadsOk batchStoreWitness = true := by decide
+
+/-- The loaded plan.  Total by `the_batch_store_witness_loads`: the error branch is refuted, not
+defaulted. -/
+def batchStorePlan : WfPlan :=
+  match h : loadPlan batchStoreWitness with
+  | .ok p => p
+  | .error _ => absurd the_batch_store_witness_loads (by simp [loadsOk, h])
+
+/-- A candidate of that store: `ci:2` and no `rootPrio`, which is what a plain line carries, so
+`PlanCheck.candsAgree` holds.  `rem` is what `Planner.Ranked.gatherable` reads and `pm` is what
+the gather's total is counted in — the two are separate fields and this is the witness that
+needs them separate. -/
+def pCandSmall (id : List Char) (rem pm : Nat) (l : Field.Loc)
+    (h : Look.PlanFacts.wf (planFacts pm l) = true) : Look.Cand × Option Look.Floor :=
+  (⟨id, 2, none, rem, none, false, false, false, false, false, false, none,
+     wfPlanFacts pm l h⟩, none)
+
+/-- **The batch day**: `^t1` and `^t2` small enough to share a block, `^t3` too big and
+unconstrained. -/
+def thePayingBatchRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨[pCandSmall ['t','1'] 10 10 .any (by decide), pCandSmall ['t','2'] 10 10 .any (by decide), pCandSmall ['t','3'] 50 50 .any (by decide)], by decide⟩ }
+
+/-- **The same day with one character changed**: `^t3` carries `loc:out` and the day is at the
+lounge, so §8.2 step 5 has nowhere to put it. -/
+def theSkippedBatchRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨[pCandSmall ['t','1'] 10 10 .any (by decide), pCandSmall ['t','2'] 10 10 .any (by decide), pCandSmall ['t','3'] 50 50 .out (by decide)], by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **What the store holds, computed**: three siblings of document 1 at `ci:2` with no
+`rootPrio` and no flags, ranked `^t3` 1, `^t1` 2, `^t2` 3.  Every antecedent
+`PlanCheck.rankPairOk` and `PlanCheck.batchPairOk` share is in this list. -/
+theorem the_batch_store_holds_three_siblings_at_one_ci :
+    batchStorePlan.val.store.dom = [['t','2'], ['t','1'], ['t','3'], ['g','1']] ∧
+      (effectiveCi batchStorePlan.val ['t','1']).val = 2 ∧
+      (effectiveCi batchStorePlan.val ['t','2']).val = 2 ∧
+      (effectiveCi batchStorePlan.val ['t','3']).val = 2 ∧
+      rootPrio batchStorePlan.val ['t','1'] = none ∧
+      rootPrio batchStorePlan.val ['t','3'] = none ∧
+      (batchStorePlan.val.store.get ['t','1']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 2, []) ∧
+      (batchStorePlan.val.store.get ['t','2']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 3, []) ∧
+      (batchStorePlan.val.store.get ['t','3']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 1, []) := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **Both requests assign and pay, both days carry a Batch row, and the `loc:` is the only
+difference in what they assign.**  The second table is the point: `PlanCheck.batchDoesNotReachPast`
+has a subject at both — the first time in this tree — and answers `true` at one and `false` at the
+other, while `PlanCheck.planOk` at `freeSlotRows` stays `true` at both because the subject is
+empty *there*. -/
+theorem the_two_batch_requests_assign_and_pay :
+    [thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.candsAgree r, batchIds r, assignedOf (dayPlan r)))
+      = [(true, [[['t','3']], [['t','1'], ['t','2']]], [['t','3'], ['t','1'], ['t','2']]),
+         (true, [[['t','3']], [['t','1'], ['t','2']]], [['t','1'], ['t','2']])] ∧
+    [thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.subjectOf permissive PlanCheck.CheckName.batch r (dayPlan r),
+                   PlanCheck.batchDoesNotReachPast permissive r (dayPlan r),
+                   PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.batch r (dayPlan r),
+                   PlanCheck.planOk freeSlotRows r (dayPlan r)))
+      = [(true, true, false, true), (true, false, false, true)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- The Batch row the two refutations turn on: it holds `^t1` and not `^t3`, and the day it is on
+assigns `^t1` and `^t2` and nothing else. -/
+theorem the_skipped_day_batches_past_the_sibling_that_ranks_ahead :
+    ((dayPlan theSkippedBatchRequest).segments.any (fun s =>
+        match s.val.kind with
+        | SegKind.batch ids => decide (['t','1'] ∈ ids.val) && decide (['t','3'] ∉ ids.val)
+        | _ => false)) = true ∧
+    assignedOf (dayPlan theSkippedBatchRequest) = [['t','1'], ['t','2']] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **E2 — Goals.plan_never_batches_past_an_equal_ci_candidate — is REFUTED**, at a day that
+assigns and pays, by the only mechanism design §6.3 ever named for it.
+
+The batch holds `^t1` (`live.rank` 2) and not `^t3` (`live.rank` 1); the two are siblings of one
+document at one `ci`; and `^t3` is not in the day's assigned set at all.  The goal asks that it
+be.  E2's own doc comment says the effect *"is invisible in the output: the batch looks correct
+and the skipped item simply never appears"* — which is exactly what this day renders. -/
+theorem plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day :
+    ¬ (∀ (r : PlanReq) (s : WfSeg) (ids : BatchIds) (i j : Id) (e f : Entity),
+        s ∈ (dayPlan r).segments → s.val.kind = SegKind.batch ids →
+        i ∈ ids.val → j ∉ ids.val →
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
+        e.val.live.doc = f.val.live.doc →
+        f.val.live.rank < e.val.live.rank →
+        j ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨hany, hass⟩ := the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 hany
+  cases hk : s.val.kind with
+  | batch ids =>
+      rw [hk] at hp
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
+      cases h1 : batchStorePlan.val.store.get ['t','1'] with
+      | none => exact absurd h1 (by decide)
+      | some e =>
+        cases h3 : batchStorePlan.val.store.get ['t','3'] with
+        | none => exact absurd h3 (by decide)
+        | some f =>
+          have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
+          rw [h1, Option.map_some] at q1
+          have q3 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.2
+          rw [h3, Option.map_some] at q3
+          have e1 := Option.some.inj q1
+          have e3 := Option.some.inj q3
+          simp only [Prod.mk.injEq] at e1 e3
+          have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e3.1]
+          have hr : f.val.live.rank < e.val.live.rank := by rw [e1.2.1, e3.2.1]; decide
+          have hmem := h theSkippedBatchRequest s ids ['t','1'] ['t','3'] e f hs hk hp.1 hp.2
+            h1 h3 (by decide) hd hr
+          rw [hass] at hmem
+          exact absurd hmem (by simp)
+  | _ => rw [hk] at hp; exact absurd hp (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **And the SAME day refutes Goals.plan_is_monotone_in_rank**, which W-19 could only refute by
+pointing at a fold that did not exist yet.
+
+`^t3` and `^t1` are siblings of one document at equal `rootPrio` (`none` on both) and equal `ci`,
+`^t3` is written first, the day assigns `^t1` and the day does not assign `^t3`.  The reason is
+design §6.3's `loc:` — not W-19's *"there is no assign fold yet"*, which P9 has made false. So
+the goal's restatement `PlanCheck.monotoneInRank` needs an eligibility that refuses a candidate
+whose `loc:` the day cannot satisfy, which is the second concrete line this run owes gap 365
+(README gap **2322**); the first was the slot energies. -/
+theorem plan_is_monotone_in_rank_is_refuted_at_a_paying_day :
+    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity),
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        rootPrio r.plan.val i = rootPrio r.plan.val j →
+        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
+        e.val.live.doc = f.val.live.doc →
+        e.val.live.rank < f.val.live.rank →
+        j ∈ assignedOf (dayPlan r) →
+        i ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨-, hass⟩ := the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+  cases h1 : batchStorePlan.val.store.get ['t','1'] with
+  | none => exact absurd h1 (by decide)
+  | some f =>
+    cases h3 : batchStorePlan.val.store.get ['t','3'] with
+    | none => exact absurd h3 (by decide)
+    | some e =>
+      have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
+      rw [h1, Option.map_some] at q1
+      have q3 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.2
+      rw [h3, Option.map_some] at q3
+      have e1 := Option.some.inj q1
+      have e3 := Option.some.inj q3
+      simp only [Prod.mk.injEq] at e1 e3
+      have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e3.1]
+      have hr : e.val.live.rank < f.val.live.rank := by rw [e1.2.1, e3.2.1]; decide
+      have hj : (['t','1'] : Id) ∈ assignedOf (dayPlan theSkippedBatchRequest) := by
+        rw [hass]; simp
+      have hmem := h theSkippedBatchRequest ['t','3'] ['t','1'] e f h3 h1 (by decide) (by decide)
+        hd hr hj
+      rw [hass] at hmem
+      exact absurd hmem (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The paying set is SIX**, and `four_requests_now_assign_and_pay` in §28 is the count before
+this section.  The last column is the one that moves: `PlanCheck.batchDoesNotReachPast` has a
+subject at the two new days and at none of the other four, which is
+`the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays`'s third conjunct stopping
+being true of the tree as a whole. -/
+theorem the_paying_set_is_six_and_the_batch_check_has_a_subject :
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest,
+     thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.candsAgree r, !r.assignedRows.isEmpty,
+          PlanCheck.subjectOf permissive PlanCheck.CheckName.batch r (dayPlan r),
+          PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.windDown r (dayPlan r)))
+      = [(true, true, false, false), (true, true, false, false), (true, true, false, false),
+         (true, true, false, false), (true, true, true, false), (true, true, true, false)] := by
+  decide
 
 end PlannerWit
 end Tm

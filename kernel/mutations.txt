@@ -392,5 +392,10 @@ ad5ca8a8b294 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theMirrorPayingRequ
 d65cee3509a8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoCands default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
 f36496c2ca0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwoPayingRequest unfoldable no Inhabited PlanReq
 e5432145c79b TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandDue unfoldable no Inhabited (Look.Cand × Option Look.Floor)
-a69074597926 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impCands default,[] PlannerWit.lean:6866 the_first_impossible_candidate_this_tree_has_had; PlannerWit.lean:6866 the_first_impossible_candidate_this_tree_has_had
+a69074597926 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impCands default,[] PlannerWit.lean:6877 the_first_impossible_candidate_this_tree_has_had; PlannerWit.lean:6877 the_first_impossible_candidate_this_tree_has_had
 ea95b0154055 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theImpossibleRequest unfoldable no Inhabited PlanReq
+e9e2e7e20c79 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.batchStoreWitness default,[] PlannerWit.lean:7226 the_batch_store_holds_three_siblings_at_one_ci; PlannerWit.lean:7226 the_batch_store_holds_three_siblings_at_one_ci
+2caf71ff57be TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.batchStorePlan unfoldable no Inhabited WfPlan
+fe1c957e8b27 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandSmall unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+dc53df2c64d5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingBatchRequest unfoldable no Inhabited PlanReq
+c4ca86b72097 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSkippedBatchRequest unfoldable no Inhabited PlanReq

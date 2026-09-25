@@ -63630,8 +63630,12 @@ on every day this tree can build**. The remaining burn-down is not seven proofs 
 composition gap — parts built, proved, never joined — seen from seven directions. README gap
 **2320**.
 
-**And one of the seven is gone.** Goals.plan_never_drops_an_impossible_item is **refuted** and has
-left `Goals.lean`: burn-down **7 → 6**. The refutation needed a candidate §7.3 calls IMPOSSIBLE, and
+**And one of the seven is gone, and two more are refuted at days that assign and pay.**
+Goals.plan_never_drops_an_impossible_item is **refuted** and has left `Goals.lean`: burn-down
+**7 → 6**. `plan_puts_hot_before_the_queue`, `plan_is_monotone_in_rank` and
+`plan_never_batches_past_an_equal_ci_candidate` are refuted here too — each for the first time at a
+day the fold FILLED and a request that PAYS — and each stays, because its restatement is one of the
+eleven and that restatement is either vacuous or false. The refutation needed a candidate §7.3 calls IMPOSSIBLE, and
 **this tree had never held one** — every candidate of all 45 witness requests carries `due = none`,
 so `Look.Cand.enters` refuses it, `Planner.PlanReq.grantFor` is `none`, and
 `Planner.edfNumbers_without_a_grant` gives the `(0, 0)` pair whose `Arith.isImpossible` is `false`.
@@ -63649,10 +63653,11 @@ eleven are actually proved at:
 | `rank` | monotone rank | 9 of 45 | **0 of 45** | `false` at 2 of the 9 |
 | `hot` | hot before queue | 10 of 45 | **0 of 45** | **`false` at all four days that assign and pay** |
 | `impossible` | impossible never dropped | **0, as a theorem** | **0, as a theorem** | — |
-| `batch` | batch does not reach past | **0 of 45** | **0 of 45** | — |
+| `batch` | batch does not reach past | **0 of 45**, and **2 of 48** once §5 below builds the store | **0 of 48** | **`false`** at the skipped-`loc:` day |
 
-Three of §6.1's eleven have **never** had a subject in this tree, and two more have one only at an
-eligibility the lift cannot use. `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` already
+Three of §6.1's eleven had **never** had a subject in this tree, and two more have one only at an
+eligibility the lift cannot use. §5 below gives one of the three — `batch` — its first subject, and
+the law it restates is **false** there. `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` already
 said four were empty on a day the fold left alone and named the steps that would end it — *"P5's
 fold ends it for `energyFilter` and `batch`, P5/P7 for `windDown`, P8 for `impossible`"*. **P9 is
 that fold and it ended it for `energyFilter` alone**, which
@@ -63726,40 +63731,75 @@ horizon**, so the `candsAgree` that discharges it pays for nothing. Gaps **2325*
 cut from four slots to one, ending exactly at the wind-down. `Look.the_evening_keys_do_not_move_the_cut` is
 why that is the night and not the window.)*
 
-### 5. The paying set is FOUR, and it widened along a new axis
+### 5. The BATCH check's first subject, and one `loc:` refuting two goals at once
 
-`PlannerWit.four_requests_now_assign_and_pay`. W-30 had one, W-31 three — and all three varied the
-same thing, a `ci` in a document. `PlannerWit.theImpossibleRequest` is the only request in this tree
-carrying a candidate §7.3 **enters**, so it widens the set along the axis `Planner.edfNumbers` is
-about. Re-measured by `#eval` over every `PlanReq` this module defines: **45 requests; 21 assign at
-least one row; 21 pay `PlanCheck.candsAgree`; four do both** (gap 2194's 45/21/3, moved). The two 21s
-barely overlap: the 18 that pay without assigning carry no candidates at all
+**Gap 2194 asked for a paying request whose group has two members and said the fold was the
+blocker. It is the STORE.** Four days in this module carry a Batch row — `theBatchRequest`,
+`theCapRequest`, `theAtomicRequest`, `theGatherRequest` — and the plan behind all four is
+`Boundary.lookWallPlan`, whose store holds `^g1` and nothing else, so `PlanCheck.batchPairOk`'s
+antecedent (both ids in the store) is unsatisfiable.
+`PlannerWit.the_batch_rows_this_tree_builds_belong_to_no_store` is that, measured; gap 2194 is
+**closed** by the witness rather than restated.
+
+`PlannerWit.batchStoreWitness` is three siblings of one document at one `ci`, written `^t3`, `^t1`,
+`^t2`, so the document's own order disagrees with the order §7.4's key puts them in. `^t3` is too big
+to share a block — `Planner.Ranked.gatherable` reads `Look.Cand.remaining` against §7's batch bound,
+20 here — and `^t1`, `^t2` are small, so the day carries a Block row for `^t3` and a **Batch** row for
+`[^t1, ^t2]` whose members rank *behind* the item it left out.
+
+**And one character decides whether the law holds.** At `PlannerWit.thePayingBatchRequest` every
+candidate is `loc:`-free, `^t3` gets its own Block row, and `PlanCheck.batchDoesNotReachPast` answers
+`true`. At `PlannerWit.theSkippedBatchRequest` — same store, same two small candidates, `^t3` carrying
+`loc:out` on a day at the lounge — §8.2 step 5 places the batch and places **nothing** for `^t3`, and
+the check answers **`false`**. That is design §6.3's own sentence computed at last: *"step 5 skips a
+`loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3 invariant is about"*.
+
+It refutes **two** goals on one day.
+`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day` is E2, whose own
+doc comment says the effect *"is invisible in the output: the batch looks correct and the skipped item
+simply never appears"* — which is what this day renders.
+`PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day` is the rank law, which W-19 could only
+refute by pointing at a fold that did not exist yet: P9 wrote the fold and the law is still false, for
+design §6.3's reason rather than W-19's.
+
+**The paying set is SIX** (`PlannerWit.the_paying_set_is_six_and_the_batch_check_has_a_subject`). W-30
+had one, W-31 three, §2 above four — and every one of the first four varies the same thing, a `ci` or a
+due date. Re-measured by `#eval` over every `PlanReq` this module defines: **48 requests; 24 assign at
+least one row; 24 pay `PlanCheck.candsAgree`; six do both** (gap 2194's 45/21/3, moved twice). The two
+24s barely overlap: the 18 that pay without assigning carry no candidates at all
 (`PlanCheck.candsAgree_of_no_cands`) and the 18 that assign without paying send candidates that are
 not items of their own plan.
+
+And the subject counts move with them: `.rank` and `.hot` go 9 and 10 to **11 and 11** at
+`permissive` (still **0 and 0** at `freeSlotRows`), `.batch` goes **0 to 2**, and `.windDown` and
+`.impossible` stay at **0**.
 
 ### 6. Acceptance
 
 `check.sh` **12/12**, capped at 40G, in the worktree at this commit. `lake build TmKernel:static` ok ·
-totality ok · **axiom audit 5,300 theorems** (Classical.choice 2,572, Quot.sound 3,958, propext 4,916;
-381 of 5,300 depend on none — the baseline's 5,290 plus this run's ten audit lines) · `Negative.lean`
-rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans**, unchanged · stage
-goals **6 outstanding, all stage 6** — the burn-down moved **7 → 6** · prose citations **41,185
-citations, 39,208 resolved, 1,977 allowed, 0 allow entries unused, 269 files swept** · mutation roster
-**261 rostered, 0 owed** (3 rows appended: **1 PINNED**, 2 unfoldable witness fixtures) · parity
-register **P1–P42, next free P43, none issued** · check 11 **3,056 def bodies (0 unsplit), 14 groups,
-0 UNANSWERED** · check 12 **3,145 def(s), 2,929 emitted, 1,467 reachable from `tm_kernel_call`, 1,462
-exempt in 72 sections, 0 UNANSWERED** — `EXEMPT` 1,459 → 1,462 under a NEW dated section, which is
-what D51's ratchet costs.
+totality ok · **axiom audit 5,307 theorems** (Classical.choice 2,579, Quot.sound 3,965, propext 4,923;
+381 of 5,307 depend on none — the baseline's 5,290 plus this run's seventeen audit lines) ·
+`Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans**,
+unchanged · stage goals **6 outstanding, all stage 6** — the burn-down moved **7 → 6** · prose
+citations **41,332 citations, 39,353 resolved, 1,979 allowed, 0 allow entries unused, 269 files
+swept** · mutation roster **266 rostered, 0 owed** (8 rows appended: **2 PINNED**, 6 unfoldable
+witness fixtures; and **one row re-pinned**, `impCands`, whose line had drifted by eleven when this
+run's own prose grew above it — gap 2136's shape, caught by `--verify --only` rather than by the
+land step) · parity register **P1–P42, next free P43, none issued** · check 11 **3,061 def bodies
+(0 unsplit), 14 groups, 0 UNANSWERED** · check 12 **3,150 def(s), 2,934 emitted, 1,467 reachable
+from `tm_kernel_call`, 1,467 exempt in 73 sections, 0 UNANSWERED** — `EXEMPT` 1,459 → 1,467 under
+TWO new dated sections, which is what D51's ratchet costs.
 
 **`cargo test --workspace`: THREE runs** (D46), 40G capped — **1,477 passed / 0 failed / 9 ignored
 across 87 result lines** on every one, and `.proptest-regressions` gained no seed line. No Rust byte
-moved in this run.
+moved in this run. The baseline was re-measured in the **clean main tree** at `471a7ff` and is the
+same figure, which is why the brief's 1,476 is corrected in §7.
 
-T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.25 s · the door suite `kernel_log_door
---include-ignored` **23 passed**, 1.59 s · `cli_switch_acceptance --include-ignored` **16 passed**,
-1.56 s · `cli_latency --include-ignored` **6 passed**, 17.49 s, in band, at load average **1.90**
+T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.32 s · the door suite `kernel_log_door
+--include-ignored` **23 passed**, 1.56 s · `cli_switch_acceptance --include-ignored` **16 passed**,
+1.52 s · `cli_latency --include-ignored` **6 passed**, 17.25 s, in band, at load average **1.79**
 (gap 1333) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 · `kernel_row_cells` 26 ·
-`kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` **8 passed**, 64.56 s.
+`kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` **8 passed**, 64.62 s.
 
 ### 7. Three sentences in this run's brief are false, measured
 
@@ -63784,17 +63824,17 @@ T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.25 s · the door su
 |---|---|---|---|
 | **2320** | **The burn-down of seven was ONE blocker counted seven times.** Each remaining goal's restatement is already written and proved as one of §6.1's eleven, and each of those is empty or false on every day this tree builds. The number cannot say that | `TmKernel/Goals.lean`, `kernel/check.sh` check 7 | gap 2198 said this of *two* goals from their doc comments; measured, it is **all** of them. A burn-down that recorded, per goal, WHICH theorem restates it and whether that theorem has a SUBJECT would make the remaining six one line instead of six |
 | **2321** | **`Planner.Diagnostics.impossible` is written by nothing**, so `PlanCheck.impossibleKept` — the restatement of the goal this run refuted — ranges over the empty list at every request and every eligibility | `TmKernel/TmKernel/Planner.lean`, `PlanCheck.lean` | it is **P8**'s step and it is now the only thing between the refutation and a live check. `Planner.edfNumbers` is the input and `PlannerWit.theImpossibleRequest` is the first request that would put a row in the list |
-| **2322** | **Gap 365 is owed a FOURTH line, and it is about the SLOT ENERGIES.** Planner.eligibleAt must admit a pair the day has rows for *and* refuse an item whose `ci` no free slot's energy reaches; `permissive` does the first and not the second (`hotBeforeQueue` = `false`), `freeSlotRows` does the second and not the first (no subject) | `TmKernel/TmKernel/PlanCheck.lean`, gaps 365, 850, 960, 2193 | until it exists, §6.1's `hot` check is false or vacuous and nothing in between, so `plan_puts_hot_before_the_queue` cannot be discharged however many times it is refuted. This is the first statement of what the predicate must DO rather than of what it is called |
-| **2323** | **`batch`, `windDown` and `impossible` have no subject on the days the FOLD FILLS.** `the_census_ceiling_is_seven_on_an_unassigned_day` predicted P5's fold would end it for `batch` too; it did not | `TmKernel/TmKernel/PlannerWit.lean`, `PlanCheck.lean` | the census ceiling is still seven on a day that assigns, one run after the fold that was supposed to raise it. Each of the three has its own blocker — 2194 (the store), 2325/2326 (the cut), 2321 (P8) — and none is the fold |
+| **2322** | **Gap 365 is owed a FOURTH line, and this run found TWO clauses of it.** Planner.eligibleAt must admit a pair the day has rows for *and* refuse (a) an item whose `ci` no free slot's energy reaches — `hot` at `thePayingRequest` — and (b) an item whose `loc:` the day cannot satisfy — `rank` and `batch` at `theSkippedBatchRequest`. `permissive` does neither refusal, `freeSlotRows` does neither admission | `TmKernel/TmKernel/PlanCheck.lean`, gaps 365, 850, 960, 2193 | until it exists, three of §6.1's eleven are false or vacuous and nothing in between, so `plan_puts_hot_before_the_queue`, `plan_is_monotone_in_rank` and `plan_never_batches_past_an_equal_ci_candidate` cannot be discharged however many times they are refuted. This is the first statement of what the predicate must DO rather than of what it is called, and design §6.3's own `loc:`/`atomic`/`max:` list is clause (b)'s roster |
+| **2323** | **`windDown` and `impossible` have no subject on ANY day, and `batch` had none until this run.** `the_census_ceiling_is_seven_on_an_unassigned_day` predicted P5's fold would end it for `batch`; the fold was not what was missing — the STORE was, and §5's witness supplies it | `TmKernel/TmKernel/PlannerWit.lean`, `PlanCheck.lean` | `batch` is answered (gap 2194, closed). The other two are not, and neither blocker is the fold: `windDown` is the cut (2325/2326) and `impossible` is P8 (2321). The census ceiling is EIGHT on the two days §5 adds and seven everywhere else |
 | **2325** | **Gap 2199's proposed refutation cannot be built**, and the gap says it can. A day whose `now` is past its own wind-down has no WindDown row at all, so there is nothing for a Block row to be after | `kernel/README.md` gap 2199, `TmKernel/TmKernel/Planner.lean` | a future run would spend the session building the 22:00 request the gap asks for and find the day empty of the row it needs. The correction is here; the gap text itself is history and is left standing |
 | **2326** | **`PlanCheck.AssignedRowsPay`'s second clause has an unsatisfiable antecedent inside the horizon**, so the `candsAgree` that discharges it buys nothing there — and the one thing the proof cannot close is that `Look.day0Window`'s end is at most `r.dayEnd + 86400`, which **nothing in this tree bounds** | `TmKernel/TmKernel/PlanCheck.lean`, `Lookahead.lean` | the clause is not wrong and deleting it would be a weakening; what is owed is the window bound, after which `PlanCheck.an_assigned_members_ci_after_the_wind_down` can be retired as vacuous rather than carried as a hypothesis the decoder pays for |
 | **2327** | **`mutate.py --write` SILENTLY REVERTED three source edits made while it ran.** It saves each file before planting a constant and restores it after; an edit made in between is written over with no error and no diff. Three doc-comment edits and one theorem deletion were lost this way and were found only by check 3 | `kernel/mutate.py`, `kernel/check.sh` | gap 2191 records the READER side of this (a concurrent `lake` sees a folded library); this is the WRITER side and it is worse, because the reader gets a wrong answer and the editor gets no signal at all. The lock the tool already holds is the place to say so — a refusal to restore a file whose mtime moved would have caught it |
 
 **Gaps 2320-2323 and 2325-2327 are taken by this step**; 2324 was drafted and **withdrawn** in favour of
-gap **2194**, which already names the paying batch witness this run would have minted a number for;
-2328-2359 are free in track G's range. Gaps 113/114/116, 301, 346, 365, 435, 437, 501, 551, 577, 803,
+gap **2194**, which already named the paying batch witness this run would have minted a number for and
+which this run **closes**; 2328-2359 are free in track G's range. Gaps 113/114/116, 301, 346, 365, 435, 437, 501, 551, 577, 803,
 806, 850, 876, 960, 1006, 1065, 1190, 1318, 1320, 1333, 1500, 1529, 1770, 1790, 1902, 1984-1990,
 2020, 2025, 2130, 2136, 2190-2193, 2195-2199 and 2255-2265 are untouched by this step, except
-**2194** (the paying set — **45/21/3 becomes 45/21/21/4**, and its missing half is named: the Batch
-rows this tree builds belong to no store), **2198** (a goal refuted but not dischargeable — measured
+**2194** (**CLOSED**: the paying set is 47/23/23/**6**, and the two requests §5 adds give
+`batchDoesNotReachPast` its first subject — the blocker was the store, not the fold), **2198** (a goal refuted but not dischargeable — measured
 at all six rather than at two) and **2199** (whose proposed route is **corrected** by 2325).

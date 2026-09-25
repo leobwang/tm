@@ -46,7 +46,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 1462
+EXEMPT 1467
 
 ## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Arith.Bin.ix
@@ -1653,3 +1653,10 @@ Tm.PlannerWit.permissive
 Tm.PlannerWit.pCandDue
 Tm.PlannerWit.impCands
 Tm.PlannerWit.theImpossibleRequest
+
+## PlannerWit.lean -- W-32 track G section 29, 2026-09-25 (README gap 2194, closed): the five definitions that carry the first PAYING BATCH request -- a store whose own items are the ids §7.5's gather batches, which no witness in this tree had. `batchStoreWitness` is the three sibling lines, `batchStorePlan` the plan they load to, `pCandSmall` the candidate builder, and the two requests differ in one `loc:`. All five are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink.
+Tm.PlannerWit.batchStoreWitness
+Tm.PlannerWit.batchStorePlan
+Tm.PlannerWit.pCandSmall
+Tm.PlannerWit.thePayingBatchRequest
+Tm.PlannerWit.theSkippedBatchRequest

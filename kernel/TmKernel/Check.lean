@@ -6869,3 +6869,17 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- has said the slot half since P3; this is the step onto the ROWS that nobody had taken.
 #print axioms Tm.PlannerWit.an_assigned_row_starts_outside_the_evening
 #print axioms Tm.PlannerWit.an_assigned_row_inside_the_horizon_is_before_the_wind_down
+-- W-32 (track G) §29: the BATCH check's FIRST SUBJECT, and design §6.3's own `loc:` skip
+-- refuting two goals at one day that assigns and pays.  Gap 2194 asked for a paying
+-- request whose group has two members; the reason none existed was the STORE, not the
+-- fold -- `the_batch_rows_this_tree_builds_belong_to_no_store` above is that measured.
+#print axioms Tm.PlannerWit.the_batch_store_witness_loads
+#print axioms Tm.PlannerWit.the_batch_store_holds_three_siblings_at_one_ci
+#print axioms Tm.PlannerWit.the_two_batch_requests_assign_and_pay
+#print axioms Tm.PlannerWit.the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+#print axioms Tm.PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day
+-- and the same day refutes the rank law, which W-19 could only refute by pointing at a
+-- fold that did not exist yet.  P9 wrote it and the law is still false.
+#print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day
+-- the paying set: FOUR at §28, SIX here.
+#print axioms Tm.PlannerWit.the_paying_set_is_six_and_the_batch_check_has_a_subject
