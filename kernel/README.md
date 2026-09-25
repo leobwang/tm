@@ -64302,3 +64302,157 @@ for the module this one measures. Gaps 113/114/116, 301, 346, 365, 435, 501, 551
 1889, 1900, 1902-1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018, 2020-2025, 2060-2065,
 2090-2096, 2120-2149, 2190-2222, 2225, 2229, 2250-2254, 2255-2269 are untouched by this step.
 **Gaps 2367-2399 are free.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-32**, the LAND step.
+     Tracks A, G and P merged onto `rebuild-on-lean`.  Gap range
+     **2400-2409**; 2400-2403 taken, 2404-2409 free.
+     ================================================================== -->
+
+## Stage 6 — W-32, the land block: the gate is rooted where the binary enters, the kernel's step 6 is composed, and the twelve-field diagnostic fills three
+
+Three tracks, three commits merged, **twelve checks green**, the merged binary driven end to end.
+Baseline `471a7ff`; the trunk already carried track A at `c7a9bc2`; `8f6f263` merges track G and
+`bafe689` merges track P.  Both W-32 worktrees are removed and both branches deleted;
+`stage5-lookahead` is untouched.  `git status --porcelain` was **empty** before each merge and is
+empty now.
+
+### 1. The merge itself, and what conflicted
+
+Two files conflicted, both resolved by **keeping every track's work** and re-measuring rather than
+by arithmetic.
+
+`kernel/reach-exempt.txt` was the real one.  Track A rewrote the whole file under check 12's new
+root and left `EXEMPT 1748`; track G appended two witness-fixture sections, eight entries, against
+the **old** root and left `EXEMPT 1467`.  Neither number is the merged number and neither is a sum
+anyone should trust: the count is `EXEMPT 1756`, which is what `reach.py` reports on the merged
+tree.  `kernel/README.md` conflicted twice, both times two appended run blocks at the tail, and
+both times both were kept in track order.
+
+`kernel/TmKernel/TmKernel/Planner.lean` **auto-merged**, and it is worth saying why it could.
+Track G's edit repoints one doc comment at the theorem that replaced a goal which left
+`Goals.lean` this run, and it is net **zero** lines; track P's edit adds twenty-three lines to the
+module header, above it.  So every anchor track P re-derived still resolves, and check 8 confirms
+it at **41,643 citations, 39,644 resolved, 0 unresolved**.
+
+### 2. The five numbers this step was asked for, measured on the merged tree
+
+| asked | measured | how |
+|---|---|---|
+| **the burn-down I leave** | **6**, all stage 6 | `check.sh` check 7, `stage goals ok (6 outstanding, all stage 6)`.  It was **7**.  Track G's refute-and-rename took the seventh |
+| **check 12's reachable / exempt under its NEW root** | **1,178 reachable**, **1,756 exempt** in **87** sections (37 of them run at load), of **2,934** emitted out of **3,150** `def`/`abbrev`s in **86** library modules, **0 UNANSWERED** | `check.sh` check 12 |
+| **is the §8.2 planner still unreached by the binary** | **yes** | measured twice, below |
+| **is step 6 COMPOSED into `dayRows` or merely built** | **composed**, through **both** projections | read on the merged tree, below |
+| **how many `PlannerWit` requests pay** | **six** | `PlannerWit.the_paying_set_is_six_and_the_batch_check_has_a_subject`, a `decide` |
+
+### 3. The §8.2 planner is still a room nobody enters, and now it is mechanised
+
+Two independent measurements on the merged tree agree.
+
+`grep -rn '"planner"' tm/src` is **empty** — the same hand check W-31's track P made, still empty
+after three commits.  And `sections.py`, driven directly, names both sides:
+
+```
+SENT   blockMin  closing.rs:693, kernel_bridge.rs:1892, kernel_capacity.rs:881
+SENT   capacity  kernel_capacity.rs:881
+SENT   cmds      closing.rs:693, items.rs:1989, kernel_bridge.rs:797
+SENT   docs      closing.rs:693, items.rs:1989, kernel_bridge.rs:797
+SENT   emit      kernel_log.rs:2084
+SENT   log       kernel_bridge.rs:1803, kernel_log.rs:402
+SENT   now       closing.rs:693, kernel_bridge.rs:1892, kernel_capacity.rs:881
+SENT   tz        kernel_bridge.rs:1805, kernel_capacity.rs:881, kernel_log.rs:400
+UNSENT plan      cut at Tm.EmitWire.runRowsP (EmitWire.lean), 2 live callee(s)
+UNSENT planner   cut at Tm.PlanWire.runPlanner (PlanWire.lean), 2 live callee(s)
+```
+
+**Eight sections sent, two cut.**  This is the difference the whole of track A is: at `471a7ff`
+the same gate passed with `tm_kernel_call` as an assumed root and counted the room behind those
+two doors as reached.  It is not reached, it is 289 definitions, and it is now a **cut in the
+gate** rather than a sentence in a run report.  The exit is R3 either way; what changed is that
+the ratchet does the bookkeeping.
+
+### 4. Step 6 is composed, not merely built — and this is the answer the merge title carries
+
+Track P's finding was that the kernel has had a step 6 since `0d52a4d` and that the brief which
+sent it was wrong to say otherwise.  **Composed** is a stronger claim than **built**, so it is
+read off the merged tree rather than carried over:
+
+`PlanReq.deferFold` is `deferWalk (remainingBudget r) [] r.assignFold r.placedRoutines`.  Its two
+projections are `PlanReq.finalRoutines` and `PlanReq.finalAssign`, and **both reach the day**:
+`dayRoutineSegs r` is `routineRows r r.finalRoutines`, `PlanReq.assignedRows` zips
+`r.energisedSlots` against `r.finalAssign.slotOf`, and `dayRows` is the sort of
+`stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ assignedRows ++ optionalRows ++ restRows`.
+Neither projection dead-ends.  That is what the merge title says, and it says nothing more.
+
+### 5. What the driven binary added that no track could see — gap 2403
+
+The binary was driven on a fresh tree: `init`, `add` (three inbox lines and three ranked week
+tasks), `triage`, `wake`, `arrive`, `plan`, `now`, `start`, `energy`, `done`, `log`, `check`,
+`review day`, `undo`, `stop`, and `--json now` / `--json plan`.  Every verb returned 0 and every
+answer was sensible; `tm check` said `no problems`; `tm undo` restored two files with ten left.
+
+**And `--json plan`'s diagnostics object printed twelve fields with real values in them** —
+`dropped_tail: ["t3"]`, `plan_honesty: 0.497`, `a_capacity_lost: 0`, and nine more.  The kernel's
+`Diagnostics` structure has **all twelve** of those fields, in the same order, with the same
+meanings.  `dayDiagnostics` fills **three** of them — `conflicts`, `aCapacityLost` and `notes` —
+and leaves the other nine at whatever `Diagnostics.empty` put there.
+
+This is the campaign's third shape a fourth time, and it was found the way the first three were:
+**by hand, while doing something else.**  A type that matches the fork's shape pins nothing about
+the fork's values, which is D40's lesson at the level of a record instead of a byte.  Track P
+named it in one clause — *"Step 8's twelve diagnostic fields and P8's emitter are what is still
+owed"* — and driving the binary is what turned that clause into a count.
+
+### 6. Acceptance, capped at 40G, on the merged tree
+
+`check.sh` **12/12 by name**: `lake build TmKernel:static` ok · totality ok · **axiom audit 5,307
+theorems** (Classical.choice 2,579, Quot.sound 3,965, propext 4,923; 381 of 5,307 depend on none)
+· `Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans** ·
+**stage goals 6 outstanding** · prose citations **41,643 / 39,644 resolved / 1,999 allowed**, 0
+allow entries unused, 270 files swept · new definitions mutated **266 new or changed since
+`86c4dc6`, 266 rostered, 0 owed** · parity register **42 registered (P1-P42), next free P43** ·
+no two names for one definition **3,061 def bodies, 14 groups, 0 UNANSWERED** · every emitted
+definition is reached **1,178 / 1,756 / 0 UNANSWERED**.
+
+**`cargo test --workspace` THREE TIMES (D46): 1,478 passed / 0 failed / 9 ignored across 87
+binaries, identical on all three runs.**  The baseline was 1,476; track G added one test and track
+P added one.  Check 12's own figures were read from **two** full `check.sh` runs, one on the
+G merge and one on the P merge, and they agree.
+
+Named suites, each once: `kernel_replay_parity` (T5) 29 passed / 0 failed / 4 ignored ·
+`kernel_log_door` (the door suite) 23 / 0 · `cli_switch_acceptance` 16 / 0 · `cli_latency`
+5 / 0 / 1 ignored **at load average 1.05** (gap 1333's precondition checked before believing the
+result: first verb 724ms, review week 299ms, worst stalled day 557ms, all in band) ·
+`kernel_call_counts` 2 / 0 · `one_padder` 9 / 0 · `one_renderer` 25 / 0 · `kernel_row_cells`
+26 / 0 · `kernel_item_grammar` 6 / 0 · `kernel_planner_wire` 21 / 0.
+
+**`planner_invariants` FIVE TIMES, 9 passed / 0 failed each, the census read every run.**  272
+cases every run; 2,588-2,647 kernel rows; **window-differs 0, budget-differs 0, rows unkeyable 0,
+fork-assigned ids with no kernel candidate 0, with no kernel §7 grant 0** on all five.  The line
+that matters to P42:
+
+> AGAINST THE KERNEL-RANKED FORK, WHICH IS WHAT IS ASSERTED: it placed 317 / 327 / 296 / 306 /
+> 310, on BOTH sides the same, **only the kernel 0, only the fork 0** — five runs out of five.
+
+Against the fork's **own**-§7 day the old record is still there — step-2 rows only the fork placed
+**1, 2, 1, 1, 2** — beside **114-129** fork routine rows that day deferred to step 6.  That is
+exactly the distinction track P drew and exactly what P42's row now states, and this block does
+not soften it: the divergence is zero against the comparand the harness asserts and non-zero
+against a comparand it does not.
+
+### 7. Gaps this step takes
+
+| gap | what | where | why it is not closed here |
+|---|---|---|---|
+| **2400** | **the exemption file grew in the run that landed its new root, and `reach.py` still cannot tell.** D51 asks for a file that may only SHRINK. Track A's rewrite left `EXEMPT 1748`; the merge leaves **1,756**, eight more, because track G's eight witness fixtures are genuinely unreachable and genuinely had to be declared. `reach.py` checks only that the declared count equals the entry count, so it was as green at 1,756 as at 1,748 | `kernel/reach.py`, `kernel/reach-exempt.txt` | **the second instance of gap 2250, in the very next run.** The rule the file wants is not "the number never rises" — a new leaf witness module would break that honestly — it is *"no entry is added for a definition a shipped caller could reach"*, which is a **property** and is not yet checked. A number that only a human compares is a list with one element |
+| **2401** | **track G's block states its census twice and the two statements disagree.** §5 reads *"48 requests; 24 assign at least one row; 24 pay `PlanCheck.candsAgree`; six do both"*; the closing paragraph of the same block reads *"the paying set is 47/23/23/6"*. Measured on the merged tree: `PlannerWit.lean` defines **48** `PlanReq`s whose names begin `the`, so 47 is the wrong one | `kernel/README.md`, track G's W-32 block | the **six** is machine-checked and both statements agree on it, so nothing green depends on the difference — which is why it survived. Left open rather than silently edited, because deciding which of a track's own two numbers to keep is the track's call and not the land step's |
+| **2402** | **an untouched-list is written against a track's own parent and merged verbatim.** Track P's block lists gap **2229** among the gaps *"untouched by this step"*. True of `w32-p`, whose parent is `471a7ff`. False of the trunk it merged into, where track A **closed** 2229 at `c7a9bc2` | `kernel/README.md`, track P's W-32 block | it is not an error in track P's work — it is a statement about a branch, kept honest by leaving it where it was made. What is open is the **class**: every parallel track's untouched-list is stale at the merge by construction, and nothing in `check.sh` reads one |
+| **2403** | **the twelve-field diagnostic fills three.** `Diagnostics` carries all twelve of the fork's fields with the fork's meanings; the shipped binary's `--json plan` prints all twelve with values (`dropped_tail`, `plan_honesty` 0.497 and nine more on the day driven here); `dayDiagnostics` fills `conflicts`, `aCapacityLost` and `notes` and leaves nine at `Diagnostics.empty` | `TmKernel/TmKernel/Planner.lean`, and P8 | **found by DRIVING, not by any gate** — the fourth composition gap in this campaign and the fourth found by hand. Nothing is wrong and nothing is weakened: the type is right and the three that are filled are filled correctly. What is owed is the other nine, and a check that can tell a field which is empty because the day was clean from a field which is empty because nobody wrote it |
+
+Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105, 1318, 1320, 1333,
+1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1906, 1956, 1957, 1984-1988,
+1990, 2000-2007, 2016-2018, 2020-2025, 2060-2065, 2090-2096, 2120-2149, 2190-2228, 2250-2269 and
+2280-2399 are as their own blocks leave them: **the land step merged, measured and drove, and
+changed no predicate, no law, no generator and no exemption.** No snapshot, fixture, latency band
+or corpus was re-blessed, no memory bound raised, no external dependency added, no `sorry` outside
+`Goals.lean`, no new axiom, and `dayPlan` is still total.
