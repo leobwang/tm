@@ -46,7 +46,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 1459
+EXEMPT 1462
 
 ## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Arith.Bin.ix
@@ -1648,3 +1648,8 @@ Tm.Planner.victimLt
 
 ## PlannerWit.lean -- W-31 repair, 2026-09-25 (README gap 2258): an `abbrev`, which check 12's population read as the single keyword `def`. Lean compiles one and the generator emits it, while every caller inlines the reducible definition, so the symbol stands with nothing naming it. Grandfathered at the widening by measurement on that date. This section may only shrink.
 Tm.PlannerWit.permissive
+
+## PlannerWit.lean -- W-32 track G, 2026-09-25 (README gap 2320): the three definitions that carry this run's first IMPOSSIBLE candidate. `pCandDue` builds a `Look.Cand` with a due date so that §7.3's pass enters it, `impCands` is the two-candidate list it goes in, and `theImpossibleRequest` is the `PlanReq` that holds them. All three are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink.
+Tm.PlannerWit.pCandDue
+Tm.PlannerWit.impCands
+Tm.PlannerWit.theImpossibleRequest

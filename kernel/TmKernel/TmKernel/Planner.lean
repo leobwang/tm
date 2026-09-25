@@ -3140,10 +3140,10 @@ theorem PlanReq.candAnswers_capped (r : PlanReq) : r.candAnswers.length ≤ maxC
 /-! ### §7.3's two numbers for one item — `edfNumbers`, which was a `sorry` in `Goals.lean` -/
 
 /-- The answer for an id, if the request sent one.  **First by id**, which is the shape
-`Goals.plan_never_drops_an_impossible_item` states its hypothesis in; §5.3's carried instance
+`PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted` states its
+hypothesis in (the goal it was written for left `Goals.lean` at W-32); §5.3's carried instance
 and today's fresh one share an id, and the fork pairs by *index* (`priority::prio_at`) for
-exactly that reason, so an id that names two candidates is answered here by the first.  The
-index-keyed pairing is `candAnswers[i]?` and `rankedCands` uses it. -/
+exactly that reason, so an id that names two is answered here by the first. -/
 def PlanReq.answerFor (r : PlanReq) (i : Id) : Option Look.FloorOut :=
   r.candAnswers.find? (fun o => o.out.cand.id == i)
 

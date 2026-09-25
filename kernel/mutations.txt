@@ -391,3 +391,6 @@ ad5ca8a8b294 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theMirrorPayingRequ
 3a60b6562560 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoPlan unfoldable no Inhabited WfPlan
 d65cee3509a8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoCands default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
 f36496c2ca0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwoPayingRequest unfoldable no Inhabited PlanReq
+e5432145c79b TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandDue unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+a69074597926 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impCands default,[] PlannerWit.lean:6866 the_first_impossible_candidate_this_tree_has_had; PlannerWit.lean:6866 the_first_impossible_candidate_this_tree_has_had
+ea95b0154055 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theImpossibleRequest unfoldable no Inhabited PlanReq

@@ -8543,7 +8543,7 @@ later eligible days.  It was corrected against `#eval` and re-probed.
     passes a window instance would reserve a placement range as a deadline and double-count
     the day.  (4) Stage 6's candidate collection, with the D9/D10 tranche.
 81. **Stage 6's provisional `edfNumbers : Nat × Nat` assumes whole-minute availability.**
-    (1) `Goals.lean`'s `plan_never_drops_an_impossible_item` reads
+    (1) `Goals.lean`'s plan_never_drops_an_impossible_item reads
     `Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2` over two `Nat`s.  Under D10
     the availability is `Grant.avail` over the lookahead's `den`, and IMPOSSIBLE is
     `Grant.impossible` (`avail < need · den`).  (2) Not a decision: D10 settled it.
@@ -25194,7 +25194,7 @@ each has a gap number below.
    `max:`-capped item for reasons no §8.3 invariant is about. The design's §6.3
    is the table: plan_does_not_overbook, `plan_is_stable_across_a_replan`,
    `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`,
-   `plan_never_drops_an_impossible_item` and
+   plan_never_drops_an_impossible_item and
    `plan_never_batches_past_an_equal_ci_candidate` are restated, each with its
    refutation in the same commit (the E7 shape), and
    `plan_respects_the_energy_filter` gains the hypothesis that makes it say
@@ -28184,7 +28184,7 @@ is new machinery, not a repair.
 
 #### Gap 367 (new; label W14G-c) — `impossibleKept` is stated over `Diagnostics.impossible`, and the bridge to §7.3's EDF numbers is P4's
 
-1. **What is not done.** `plan_never_drops_an_impossible_item` is stated in
+1. **What is not done.** plan_never_drops_an_impossible_item is stated in
    `Goals.lean` over `Goals.edfNumbers` — still a provisional `def … := sorry`
    — while `PlanCheck.impossibleKept` is stated over
    `DayPlan.diagnostics.impossible`, the plan's own `(id, shortfall)` list. The
@@ -33755,7 +33755,7 @@ fires for a small plan and not a large one is a worse answer than one that never
 
 **FINDING (gap 601).**  Design §5.5 gives `edfNumbers` as `(g.deadline.need, g.avail)` from
 `Cap.grantOf`.  `Grant.avail` is a **numerator over the pass's denominator** (`Grant.availQ g den`
-is `avail/den`) and `Deadline.need` is **whole minutes**, and `Goals.plan_never_drops_an_impossible_item`
+is `avail/den`) and `Deadline.need` is **whole minutes**, and Goals.plan_never_drops_an_impossible_item
 feeds the pair straight to `Arith.isImpossible need avail = decide (avail < need)`.  On the design's
 pair that asks whether a 10^18-scaled number is smaller than a count of minutes, and answers `false`
 for every candidate with any capacity at all — the goal would have been **vacuous at every input**,
@@ -34010,7 +34010,7 @@ Range **600-629** is track P's for this run.  **Seven taken, 600-606; 607-629 fr
    `Planner.edfNumbers` scales the need and `edfNumbers_is_the_grants_own_impossibility` proves the
    result is `Grant.impossible capDenD`; cheat 184 refuses the design's form.
 3. *What it costs.*  A reader of design §5.5 will write a `def` that makes
-   `plan_never_drops_an_impossible_item` vacuous at every input.
+   plan_never_drops_an_impossible_item vacuous at every input.
 4. *Which step clears it.*  The design's own §5.5 when the owner confirms; AGENTS §10.2's stale list
    meanwhile.
 
@@ -34126,7 +34126,7 @@ decoder) are untouched.  **285**, **346**, **347**, **365** (eligibleAt), **393*
 * **It did not rebuild the fork oracle** and did not run `TM_ORACLE`.
 * **It did not weaken a checker or a goal.**  `PlanCheck`'s eleven are exactly as track G wrote them;
   `Goals.lean`'s eleven theorems are word for word what they were, and the only statement whose
-  *meaning* changed is `plan_never_drops_an_impossible_item`, which went from resting on a `sorry`ed
+  *meaning* changed is plan_never_drops_an_impossible_item, which went from resting on a `sorry`ed
   `def` to resting on a real one — a strengthening, and gap 601 is why it is not the design's.
 
 ### Numbering
@@ -35463,7 +35463,7 @@ no stage-3, -4 or -5 obligation and has not since stage 4 final step 4. They are
 plan_does_not_overbook, `plan_respects_the_energy_filter`,
 `plan_places_no_block_over_a_break`, `plan_places_no_demanding_block_after_wind_down`,
 `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`,
-`plan_never_drops_an_impossible_item`, `plan_never_batches_past_an_equal_ci_candidate`,
+plan_never_drops_an_impossible_item, `plan_never_batches_past_an_equal_ci_candidate`,
 `plan_tail_drop` and `plan_is_stable_across_a_replan`.
 
 **The one this run discharged is `plan_places_no_block_over_a_wall`, at track G's
@@ -37714,7 +37714,7 @@ below — and gap **551**'s third item is corrected in place.
 3. **What it costs.** Check 7 would print **7** instead of 9 and two of the three
    would be lies. It also means the burn-down is **not** a measure of how much of
    §8.3 is established: three of the nine remaining goals
-   (these two and `plan_never_drops_an_impossible_item`) turn on rows no step has
+   (these two and plan_never_drops_an_impossible_item) turn on rows no step has
    placed, which the number cannot show.
 4. **Which step clears it.** **P5**, which places the energised Block and the
    Batch row and must then prove both properly — and which will find §1's two
@@ -38085,7 +38085,7 @@ this step did not measure a cause for it, which is said rather than guessed.
 no stage-3, -4 or -5 obligation and has not since stage 4 final step 4:
 plan_does_not_overbook, `plan_respects_the_energy_filter`,
 `plan_places_no_demanding_block_after_wind_down`, `plan_is_monotone_in_rank`,
-`plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_item`,
+`plan_puts_hot_before_the_queue`, plan_never_drops_an_impossible_item,
 `plan_never_batches_past_an_equal_ci_candidate`, `plan_tail_drop` and
 `plan_is_stable_across_a_replan`.
 
@@ -39338,8 +39338,8 @@ it a run-split.**
 1. *What is not done.* Design §6.3 gives **P5** five refutations and two
    sharpenings — plan_does_not_overbook (the Active reservation excluded),
    `plan_respects_the_energy_filter` (a `hactive` hypothesis), `plan_is_monotone_
-   in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_
-   item` (all three restricted to *comparable* candidates) and
+   in_rank`, `plan_puts_hot_before_the_queue`, plan_never_drops_an_impossible_item
+   (all three restricted to *comparable* candidates) and
    `plan_never_batches_past_an_equal_ci_candidate` (same split group). **None is
    written**, and `Goals.lean` holds all six as stage 6 first wrote them.
 2. *Why.* Each restatement's hypothesis is `eligibleAt (r) (d) (s : Seg) (i : Id)`
@@ -40064,7 +40064,7 @@ a reader who takes it as "9 things left to prove" is over-counting by two.
 _candidate` are each one `exact absurd …` away and were refused at W-18 as gap
 **751** (a discharge whose subject is empty is AGENTS §5.2's theorem that
 compiles and means nothing) — **that refusal stands unchanged**;
-`plan_never_drops_an_impossible_item` waits on **P8**; and the two above are
+plan_never_drops_an_impossible_item waits on **P8**; and the two above are
 refuted. `plan_places_no_demanding_block_after_wind_down` (P2's row, gap 430) is
 in the same position as the first two except that its `Goals.lean` statement
 carries no `hnowcal`, so even the empty-subject discharge is not available to it.
@@ -45696,9 +45696,9 @@ a fact about **every** eligibility and does not say so, which is the kind of
 under-statement AGENTS §5.2 is about — from the other side.
 *Which step clears it:* any run that owns `PlannerWit.lean`.
 
-**Gap 1065 — `impossibleKept`'s subject and `plan_never_drops_an_impossible_item`'s hypothesis are different things.**
+**Gap 1065 — `impossibleKept`'s subject and plan_never_drops_an_impossible_item's hypothesis are different things.**
 *What is not done:* `PlanCheck.impossible_has_no_subject` proves the checker's
-quantifier empty at every request, but `Goals.plan_never_drops_an_impossible_item`
+quantifier empty at every request, but Goals.plan_never_drops_an_impossible_item
 is stated over `Planner.edfNumbers`, not over `Planner.Diagnostics.impossible`:
 its hypothesis is satisfiable by a real candidate and its conclusion is about
 `Planner.assignedOf`.  The checker's vacuity therefore says **nothing** about
@@ -48108,7 +48108,7 @@ moves the burn-down by zero to say:
 | `plan_places_no_demanding_block_after_wind_down` | same, plus `hnowcal` (`PlanCheck.windDown_has_no_subject_on_an_unassigned_day`) | P5/P7 — and **P7 did not clear it**: step 7 places no Block row |
 | `plan_is_monotone_in_rank` | **refuted** at W-19; the restatement needs Planner.eligibleAt | P5 |
 | `plan_puts_hot_before_the_queue` | **refuted** at W-19; likewise | P5 |
-| `plan_never_drops_an_impossible_item` | the checker's vacuity says nothing about it — the goal is stated over `Planner.edfNumbers`, not `Planner.Diagnostics.impossible` (gap 1065) | P8 |
+| plan_never_drops_an_impossible_item | the checker's vacuity says nothing about it — the goal is stated over `Planner.edfNumbers`, not `Planner.Diagnostics.impossible` (gap 1065) | P8 |
 | `plan_never_batches_past_an_equal_ci_candidate` | provable and empty (`PlanCheck.batch_has_no_subject_on_an_unassigned_day`) | P5 |
 | `plan_tail_drop` | refuted at W-15, standing; needs owner Q4 | G2 |
 | `plan_is_stable_across_a_replan` | the `open` exception (design §6.3 row 3) | G3 |
@@ -50897,7 +50897,7 @@ re-read against this tree, with the one row this step changes marked.
 | `plan_places_no_demanding_block_after_wind_down` | same, plus `hnowcal` (`PlanCheck.windDown_has_no_subject_on_an_unassigned_day`) | P5/P7 |
 | `plan_is_monotone_in_rank` | **refuted** at W-19; the restatement needs Planner.eligibleAt | P5 |
 | `plan_puts_hot_before_the_queue` | **refuted** at W-19; likewise | P5 |
-| `plan_never_drops_an_impossible_item` | the checker's vacuity says nothing about it (gap 1065) — **and P8's rule half landed without the bridge**, which neither half of P8 contains (gap **1284**) | P8's remainder, or P5 — **unsettled** |
+| plan_never_drops_an_impossible_item | the checker's vacuity says nothing about it (gap 1065) — **and P8's rule half landed without the bridge**, which neither half of P8 contains (gap **1284**) | P8's remainder, or P5 — **unsettled** |
 | `plan_never_batches_past_an_equal_ci_candidate` | provable and empty (`PlanCheck.batch_has_no_subject_on_an_unassigned_day`) | P5 |
 | `plan_tail_drop` | refuted at W-15, standing; needs owner Q4 | G2 |
 | `plan_is_stable_across_a_replan` | the `open` exception (design §6.3 row 3) | G3 |
@@ -51131,7 +51131,7 @@ the class; this one now names the day it shares with the refutation.
 4. *Which step clears it.* Whoever closes gap 1060 closes all three at once.
 
 **Gap 1284 — the `Diagnostics.impossible` bridge is in neither half of P8.**
-1. *What is not done.* Design §6.4 gives `plan_never_drops_an_impossible_item` to
+1. *What is not done.* Design §6.4 gives plan_never_drops_an_impossible_item to
    **P8**, and gap 1065 names the bridge exactly: fill
    `Planner.Diagnostics.impossible` from §7.3's grants.  P8's rule half has landed
    — `Emit.lean` is in the tree — and `Planner.dayDiagnostics` still leaves that
@@ -52960,7 +52960,7 @@ summary:
 | `plan_places_no_demanding_block_after_wind_down` | **P5** | no Block row reaches the wind-down |
 | `plan_is_monotone_in_rank` | **P5** | refuted at W-19; needs eligibleAt |
 | `plan_puts_hot_before_the_queue` | **P5** | refuted at W-19; needs eligibleAt |
-| `plan_never_drops_an_impossible_item` | **P8** | `Planner.dayDiagnostics` never fills `impossible` (gap 1065) |
+| plan_never_drops_an_impossible_item | **P8** | `Planner.dayDiagnostics` never fills `impossible` (gap 1065) |
 | `plan_never_batches_past_an_equal_ci_candidate` | **P5** | the day has no Batch row |
 | `plan_tail_drop` | **G2** ← G1 ← P5 | relational; D5 |
 | `plan_is_stable_across_a_replan` | **G3** ← G1 ← P5 | relational; D5 |
@@ -55382,7 +55382,7 @@ moved:
 | `plan_places_no_demanding_block_after_wind_down` | P5 | `PlanCheck.windDown_has_no_subject_on_an_unassigned_day` present |
 | `plan_is_monotone_in_rank` | P5 | `grep -rn 'def eligibleAt'` over the library returns **nothing**; the only hits are doc comments |
 | `plan_puts_hot_before_the_queue` | P5 | same |
-| `plan_never_drops_an_impossible_item` | P8 | `Planner.dayDiagnostics` read: it sets `conflicts`, `aCapacityLost` and `notes` and **not** `impossible` (gap 1065) |
+| plan_never_drops_an_impossible_item | P8 | `Planner.dayDiagnostics` read: it sets `conflicts`, `aCapacityLost` and `notes` and **not** `impossible` (gap 1065) |
 | `plan_never_batches_past_an_equal_ci_candidate` | P5 | `PlanCheck.batch_has_no_subject_on_an_unassigned_day` present |
 | **`plan_tail_drop`** | **G2 ← P5** | **moved**: the entry now says what G2 owes and that discharging it today would be vacuous |
 | **`plan_is_stable_across_a_replan`** | **G3 ← P5** | **moved**: refuted here, with §3's three repairs and §4's reason the design's own restatement cannot be used |
@@ -56371,7 +56371,7 @@ the previous run's prose. **No entry moved.**
 | 3 | `plan_places_no_demanding_block_after_wind_down` | **P5** | before | `PlanCheck.windDown_has_no_subject_on_an_unassigned_day` present |
 | 4 | `plan_is_monotone_in_rank` | **P5** | before | `grep -rnE 'def eligibleAt\|abbrev eligibleAt'` over the library **and** the package root: **no hit** |
 | 5 | `plan_puts_hot_before_the_queue` | **P5** | before | same grep |
-| 6 | `plan_never_drops_an_impossible_item` | **P8** | before | `Planner.dayDiagnostics` read: it sets `conflicts`, `aCapacityLost` and `notes` and **not** `impossible` (gap 1065) |
+| 6 | plan_never_drops_an_impossible_item | **P8** | before | `Planner.dayDiagnostics` read: it sets `conflicts`, `aCapacityLost` and `notes` and **not** `impossible` (gap 1065) |
 | 7 | `plan_never_batches_past_an_equal_ci_candidate` | **P5** | before | `PlanCheck.batch_has_no_subject_on_an_unassigned_day` present |
 | 8 | `plan_tail_drop` | **G2 ← G1 ← P5** | before | only the refutation is in the tree; no restatement, no cheat |
 | 9 | `plan_is_stable_across_a_replan` | **G3 ← G1 ← P5** | before | same |
@@ -58835,7 +58835,7 @@ and the R3 column is still the same for all nine.**
 | 3 | `plan_places_no_demanding_block_after_wind_down` | **P5** | before | `grep -c 'theorem windDown_has_no_subject_on_an_unassigned_day'` → **2** |
 | 4 | `plan_is_monotone_in_rank` | **P5** | before | `grep -rnE '(def\|abbrev)[[:space:]]+eligibleAt'` over the library, the package root, `Check.lean`, `Negative.lean` and `Goals.lean`: **0 hits**, against **37** mentions of the name, every one prose |
 | 5 | `plan_puts_hot_before_the_queue` | **P5** | before | same grep |
-| 6 | `plan_never_drops_an_impossible_item` | **P8** | before | `Planner.dayDiagnostics`' body read: it sets `conflicts`, `aCapacityLost` and `notes` over `Diagnostics.empty` and **never `impossible`** (gap 1065) |
+| 6 | plan_never_drops_an_impossible_item | **P8** | before | `Planner.dayDiagnostics`' body read: it sets `conflicts`, `aCapacityLost` and `notes` over `Diagnostics.empty` and **never `impossible`** (gap 1065) |
 | 7 | `plan_never_batches_past_an_equal_ci_candidate` | **P5** | before | `grep -c 'theorem batch_has_no_subject_on_an_unassigned_day'` → **2** |
 | 8 | `plan_tail_drop` | **G2 ← G1 ← P5** | before | only the refutation is in the tree; no restatement, no cheat |
 | 9 | `plan_is_stable_across_a_replan` | **G3 ← G1 ← P5** | before | same, and an_open_segment_only_extends (un-backticked for check 8's reason) is still declared nowhere |
@@ -60561,7 +60561,7 @@ answer lives in `Goals.lean`'s stage-6 header where the previous eight lists liv
 | `plan_places_no_demanding_block_after_wind_down` | the same, one bridge further |
 | `plan_is_monotone_in_rank` | **nothing** — and the W-19 refutation survives, checked rather than assumed |
 | `plan_puts_hot_before_the_queue` | **nothing**, same request, same reason |
-| `plan_never_drops_an_impossible_item` | **nothing** — P8's, `Diagnostics.impossible` still empty |
+| plan_never_drops_an_impossible_item | **nothing** — P8's, `Diagnostics.impossible` still empty |
 | `plan_never_batches_past_an_equal_ci_candidate` | gives it a **subject**; its conclusion still owes a restatement (gap **1986**) |
 | `plan_tail_drop` | **unblocks it** — the only one of the nine P9 unblocks outright |
 | `plan_is_stable_across_a_replan` | **nothing** — G3's three repairs are none of them about an assigned block |
@@ -62170,7 +62170,7 @@ two agree — so it is **false as stage 6 wrote it**, refuted by
 `PlanCheck.plan_respects_the_energy_filter`, both audited in `Check.lean`.
 
 The eight left: plan_does_not_overbook, `plan_places_no_demanding_block_after_wind_down`,
-`plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_item`,
+`plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, plan_never_drops_an_impossible_item,
 `plan_never_batches_past_an_equal_ci_candidate`, `plan_tail_drop`, `plan_is_stable_across_a_replan`.
 Gap **2020** (the `noOverbook` count over a day that assigns) is still the only thing between
 `PlanCheck.lean` and seven of seven over a day the fold touched.
@@ -62787,7 +62787,7 @@ Measured over the 45 requests named above, not surveyed.
 | `plan_places_no_demanding_block_after_wind_down` | **restatement proved, refutation IMPOSSIBLE here** | `noDemandingAfterWindDown_of_a_day_that_pays` is proved. But `PlannerWit.the_witness_module_plans_one_instant` computes that **every** request but `theHourLaterRequest` carries the same `now` (14:00) and the same wind-down (21:30), so **no day in this tree holds a WindDown row with a Block at or after it** and the checker answers `true` at all 45 for want of a subject. A restatement without its refutation is a weakening (§3.1 item 3). Gap **2199**: a request that plans an instant past its own wind-down |
 | `plan_is_monotone_in_rank` | no | refuted at W-19; the restatement is §6.3's and needs Planner.eligibleAt (gap 365). §2 above says what that now means |
 | `plan_puts_hot_before_the_queue` | no | refuted twice (W-19, W-20); same |
-| `plan_never_drops_an_impossible_item` | no | swept all 45 requests x every id of each store: **no** request holds an id that `Arith.isImpossible` accepts and `assignedOf` omits, so there is no refutation here either, and `Diagnostics.impossible` is `[]` on every day (`the_day_names_no_impossible_item`). P8's, gap 1065 |
+| plan_never_drops_an_impossible_item | no | swept all 45 requests x every id of each store: **no** request holds an id that `Arith.isImpossible` accepts and `assignedOf` omits, so there is no refutation here either, and `Diagnostics.impossible` is `[]` on every day (`the_day_names_no_impossible_item`). P8's, gap 1065 |
 | `plan_never_batches_past_an_equal_ci_candidate` | no | needs a Batch row the fold placed at a request that also pays; **none of the three paying requests produces one** — every paying group is a singleton |
 | `plan_tail_drop`, `plan_is_stable_across_a_replan` | no | G2/G3, the two relational laws (plan §6.2.4) |
 
@@ -63609,3 +63609,192 @@ Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
 2254 are untouched: no predicate was weakened, no law narrowed, no generator narrowed, no exemption
 widened to remove a disagreement, no snapshot, fixture, latency band or corpus re-blessed, no
 memory bound raised, no external dependency added, and `dayPlan` is still total.
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-32**, **track G**.
+     Baseline `471a7ff`, branch `w32-g`, worktree `.claude/worktrees/w32-g`.
+     The burn-down of seven is ONE blocker counted seven times; the first
+     IMPOSSIBLE candidate this tree has ever held refutes one of them and
+     it LEAVES `Goals.lean` (7 -> 6).  Gap range **2320-2359**;
+     **2320-2327 taken**, 2328-2359 free.  Parity: **NONE ISSUED** — no
+     comparison against the fork was run in this track (next free P43).
+     ===================================================================== -->
+
+## Stage 6 — W-32, track G: the burn-down of seven is ONE blocker counted seven times, and the first impossible candidate takes one of them out
+
+**The headline.** The brief said all seven remaining goals are about `Planner.assignedOf
+(Planner.dayPlan r)` and that P9 had made them statable at last. They are statable. What they are
+not is **separable**: every one of the seven already has its restatement written and proved in
+`PlanCheck.lean`, as one of §6.1's eleven, and **every one of those restatements is empty or false
+on every day this tree can build**. The remaining burn-down is not seven proofs owed; it is one
+composition gap — parts built, proved, never joined — seen from seven directions. README gap
+**2320**.
+
+**And one of the seven is gone.** Goals.plan_never_drops_an_impossible_item is **refuted** and has
+left `Goals.lean`: burn-down **7 → 6**. The refutation needed a candidate §7.3 calls IMPOSSIBLE, and
+**this tree had never held one** — every candidate of all 45 witness requests carries `due = none`,
+so `Look.Cand.enters` refuses it, `Planner.PlanReq.grantFor` is `none`, and
+`Planner.edfNumbers_without_a_grant` gives the `(0, 0)` pair whose `Arith.isImpossible` is `false`.
+The goal's *hypothesis* was the empty one, which is AGENTS §5.2 from the other end.
+
+### 1. What each of the seven is waiting for, measured
+
+`PlanCheck.subjectOf` at every one of the 45 `PlanReq` constants `PlannerWit.lean` defines, at both
+eligibilities this tree has — `PlannerWit.permissive` and `PlannerWit.freeSlotRows`, the one §6.1's
+eleven are actually proved at:
+
+| §6.1 check | goal it restates | subject at `permissive` | subject at `freeSlotRows` | value where it has one |
+|---|---|---|---|---|
+| `windDown` | wind-down | **0 of 45** | **0 of 45** | — |
+| `rank` | monotone rank | 9 of 45 | **0 of 45** | `false` at 2 of the 9 |
+| `hot` | hot before queue | 10 of 45 | **0 of 45** | **`false` at all four days that assign and pay** |
+| `impossible` | impossible never dropped | **0, as a theorem** | **0, as a theorem** | — |
+| `batch` | batch does not reach past | **0 of 45** | **0 of 45** | — |
+
+Three of §6.1's eleven have **never** had a subject in this tree, and two more have one only at an
+eligibility the lift cannot use. `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` already
+said four were empty on a day the fold left alone and named the steps that would end it — *"P5's
+fold ends it for `energyFilter` and `batch`, P5/P7 for `windDown`, P8 for `impossible`"*. **P9 is
+that fold and it ended it for `energyFilter` alone**, which
+`PlannerWit.the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays` measures at the four
+days that assign and pay.
+
+### 2. The first impossible candidate, and the goal it refutes
+
+`PlannerWit.pCandDue` is `PlannerWit.pCand` with §7.3's two extra facts set — a due date, so
+`Look.Cand.enters` admits the candidate, and the minutes it still needs. `PlannerWit.impCands` gives
+`^m1` a due date of **today** and 100 000 minutes to do, and
+`PlannerWit.theImpossibleRequest` is the quiet census Wednesday carrying it.
+`PlannerWit.the_first_impossible_candidate_this_tree_has_had` computes the pair at
+**(130 000 000 000 000 000 000 000, 0)** — the need scaled by `Look.capDen` against an availability
+of nothing — and `Arith.isImpossible` answers **`true`** for the first time about a request. `^m2`,
+which carries no due date, keeps `(0, 0)`: the difference between the two rows is the field, not the
+request.
+
+**And the day does not place `^m1`.** Not because it is impossible — nothing in §8.2 step 5 reads the
+grant — but because `^m1` is `ci:5` and no slot this Wednesday cuts is that good.
+`PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted` is that, and §7.3's
+promise (*"IMPOSSIBLE items are still scheduled with everything available"*) is about **capacity**
+while the planner drops this one on **energy**. The restatement is `PlanCheck.impossibleKept`, which
+is already one of the eleven and already proved; its subject is empty at every request and every
+eligibility, which `PlanCheck.impossible_has_no_subject` has said unconditionally since before this
+run. Filling `Planner.Diagnostics.impossible` from `Planner.edfNumbers` is **P8**'s step — gap **2321**.
+
+### 3. `plan_puts_hot_before_the_queue`, refuted a THIRD time — and both repairs fail
+
+W-19 refuted it at `PlannerWit.theQueuedRequest` and W-20 again at a quiet day, and **both
+refutations have been overtaken by P9**: each said, in its own doc comment, that the cause was that
+§8.2 step 5 was unwritten. It is written.
+`PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays` is at
+`PlannerWit.thePayingRequest` — a day the fold **filled**, at a request that **pays**
+`PlanCheck.candsAgree`, with the hot item one of the two candidates it sent — and the two repairs
+gaps 850 and 960 offered P5 are already applied:
+
+* **W-20's repair** (`sj.val.kind.isWork = true`) is *in the refuted statement*, and the row it uses
+  is a Block row §8.2 step 5 placed carrying a slot energy. It is not the Wall row W-20 complained
+  about, so the refuted statement is strictly weaker than the goal.
+* **Gap 850's repair** (an eligibility on the hot item) is priced by
+  `PlannerWit.the_hot_check_is_false_where_it_has_a_subject_and_empty_where_it_is_proved`: at
+  `permissive` the check has a subject and answers **`false`**; at `freeSlotRows` the same day gives
+  it **no subject** and it answers `true` for want of one.
+
+So gap 365 is owed a **fourth** line and this is what it says: Planner.eligibleAt must admit a pair
+the day has rows for *and* refuse an item whose `ci` no free slot's energy reaches. Neither
+eligibility in this tree does both, and no eligibility that ignores the slot energies can. Gap
+**2322**.
+
+### 4. Gap 2199's route to the wind-down refutation does not exist, and the CUT is why
+
+Gap 2199 offered *"one request planning at, say, 22:00 with a log that worked a `ci:5` item"*. **There
+is no such day**, and the reason is structural:
+
+1. a day whose `now` is at or past its own wind-down has **no WindDown row at all** —
+   `Planner.a_wind_down_row_of_the_day` reads `r.now.sec < r.windDownSec` off the row's existence;
+2. §8.2 choice 5b's reservation **starts at `now`** (`Planner.PlanReq.activeRow_is_an_energyless_block`),
+   which bullet 1 has already put before the wind-down;
+3. and **no slot §8.2 step 5 can fill starts inside the evening** —
+   `Planner.PlanReq.no_slot_reaches_the_evening` has said since P3 that `Planner.PlanReq.night` is in
+   the list the cut avoids, and the night begins at `min r.windDownSec r.dayEnd`.
+
+**Bullet 3 had never been carried the one step onto the ROWS.**
+`PlannerWit.an_assigned_row_starts_outside_the_evening` and
+`PlannerWit.an_assigned_row_inside_the_horizon_is_before_the_wind_down` carry it, and what they buy is
+that `PlanCheck.AssignedRowsPay`'s second clause — and the hypothesis of
+`PlanCheck.an_assigned_members_ci_after_the_wind_down` — is **unsatisfiable on any day inside the
+horizon**, so the `candsAgree` that discharges it pays for nothing. Gaps **2325** and **2326**.
+*(Driven, not argued: moving `[day] wind_down` from 21:30 to 15:00 on the census Wednesday takes the
+cut from four slots to one, ending exactly at the wind-down. `Look.the_evening_keys_do_not_move_the_cut` is
+why that is the night and not the window.)*
+
+### 5. The paying set is FOUR, and it widened along a new axis
+
+`PlannerWit.four_requests_now_assign_and_pay`. W-30 had one, W-31 three — and all three varied the
+same thing, a `ci` in a document. `PlannerWit.theImpossibleRequest` is the only request in this tree
+carrying a candidate §7.3 **enters**, so it widens the set along the axis `Planner.edfNumbers` is
+about. Re-measured by `#eval` over every `PlanReq` this module defines: **45 requests; 21 assign at
+least one row; 21 pay `PlanCheck.candsAgree`; four do both** (gap 2194's 45/21/3, moved). The two 21s
+barely overlap: the 18 that pay without assigning carry no candidates at all
+(`PlanCheck.candsAgree_of_no_cands`) and the 18 that assign without paying send candidates that are
+not items of their own plan.
+
+### 6. Acceptance
+
+`check.sh` **12/12**, capped at 40G, in the worktree at this commit. `lake build TmKernel:static` ok ·
+totality ok · **axiom audit 5,300 theorems** (Classical.choice 2,572, Quot.sound 3,958, propext 4,916;
+381 of 5,300 depend on none — the baseline's 5,290 plus this run's ten audit lines) · `Negative.lean`
+rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans**, unchanged · stage
+goals **6 outstanding, all stage 6** — the burn-down moved **7 → 6** · prose citations **41,185
+citations, 39,208 resolved, 1,977 allowed, 0 allow entries unused, 269 files swept** · mutation roster
+**261 rostered, 0 owed** (3 rows appended: **1 PINNED**, 2 unfoldable witness fixtures) · parity
+register **P1–P42, next free P43, none issued** · check 11 **3,056 def bodies (0 unsplit), 14 groups,
+0 UNANSWERED** · check 12 **3,145 def(s), 2,929 emitted, 1,467 reachable from `tm_kernel_call`, 1,462
+exempt in 72 sections, 0 UNANSWERED** — `EXEMPT` 1,459 → 1,462 under a NEW dated section, which is
+what D51's ratchet costs.
+
+**`cargo test --workspace`: THREE runs** (D46), 40G capped — **1,477 passed / 0 failed / 9 ignored
+across 87 result lines** on every one, and `.proptest-regressions` gained no seed line. No Rust byte
+moved in this run.
+
+T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.25 s · the door suite `kernel_log_door
+--include-ignored` **23 passed**, 1.59 s · `cli_switch_acceptance --include-ignored` **16 passed**,
+1.56 s · `cli_latency --include-ignored` **6 passed**, 17.49 s, in band, at load average **1.90**
+(gap 1333) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 · `kernel_row_cells` 26 ·
+`kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` **8 passed**, 64.56 s.
+
+### 7. Three sentences in this run's brief are false, measured
+
+1. *"ALL SEVEN REMAINING GOALS ARE ABOUT `assignedOf (dayPlan r)`."* **Four of the seven are**
+   (`plan_is_monotone_in_rank`, `plan_never_batches_past_an_equal_ci_candidate`, `plan_tail_drop`, and
+   the impossibility goal that left this run). The other three —
+   `plan_places_no_demanding_block_after_wind_down`, `plan_puts_hot_before_the_queue` and
+   `plan_is_stable_across_a_replan` — quantify over `(dayPlan r).segments` and never mention
+   `Planner.assignedOf`. It matters: the three that do not are the three whose restatements are about
+   ROWS, and rows are what the eligibility gates.
+2. *"cargo test --workspace 1,476 passed."* Re-measured at the baseline `471a7ff` in the **clean main
+   tree**: **1,477 passed / 0 failed / 9 ignored across 87 result lines**, which is also this run's
+   figure.
+3. *"check 12 — 3,042 defs, 2,365 emitted, 1,413 reachable, 952 exempt in 45 reasoned sections."*
+   Re-measured at `471a7ff` in a clean worktree: **3,142 def/abbrev(s), 2,926 emitted, 1,467 reachable,
+   1,459 exempt in 71 sections**. The W-31 repair commits moved all five numbers and the brief quotes
+   the pre-repair set.
+
+### 8. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2320** | **The burn-down of seven was ONE blocker counted seven times.** Each remaining goal's restatement is already written and proved as one of §6.1's eleven, and each of those is empty or false on every day this tree builds. The number cannot say that | `TmKernel/Goals.lean`, `kernel/check.sh` check 7 | gap 2198 said this of *two* goals from their doc comments; measured, it is **all** of them. A burn-down that recorded, per goal, WHICH theorem restates it and whether that theorem has a SUBJECT would make the remaining six one line instead of six |
+| **2321** | **`Planner.Diagnostics.impossible` is written by nothing**, so `PlanCheck.impossibleKept` — the restatement of the goal this run refuted — ranges over the empty list at every request and every eligibility | `TmKernel/TmKernel/Planner.lean`, `PlanCheck.lean` | it is **P8**'s step and it is now the only thing between the refutation and a live check. `Planner.edfNumbers` is the input and `PlannerWit.theImpossibleRequest` is the first request that would put a row in the list |
+| **2322** | **Gap 365 is owed a FOURTH line, and it is about the SLOT ENERGIES.** Planner.eligibleAt must admit a pair the day has rows for *and* refuse an item whose `ci` no free slot's energy reaches; `permissive` does the first and not the second (`hotBeforeQueue` = `false`), `freeSlotRows` does the second and not the first (no subject) | `TmKernel/TmKernel/PlanCheck.lean`, gaps 365, 850, 960, 2193 | until it exists, §6.1's `hot` check is false or vacuous and nothing in between, so `plan_puts_hot_before_the_queue` cannot be discharged however many times it is refuted. This is the first statement of what the predicate must DO rather than of what it is called |
+| **2323** | **`batch`, `windDown` and `impossible` have no subject on the days the FOLD FILLS.** `the_census_ceiling_is_seven_on_an_unassigned_day` predicted P5's fold would end it for `batch` too; it did not | `TmKernel/TmKernel/PlannerWit.lean`, `PlanCheck.lean` | the census ceiling is still seven on a day that assigns, one run after the fold that was supposed to raise it. Each of the three has its own blocker — 2194 (the store), 2325/2326 (the cut), 2321 (P8) — and none is the fold |
+| **2325** | **Gap 2199's proposed refutation cannot be built**, and the gap says it can. A day whose `now` is past its own wind-down has no WindDown row at all, so there is nothing for a Block row to be after | `kernel/README.md` gap 2199, `TmKernel/TmKernel/Planner.lean` | a future run would spend the session building the 22:00 request the gap asks for and find the day empty of the row it needs. The correction is here; the gap text itself is history and is left standing |
+| **2326** | **`PlanCheck.AssignedRowsPay`'s second clause has an unsatisfiable antecedent inside the horizon**, so the `candsAgree` that discharges it buys nothing there — and the one thing the proof cannot close is that `Look.day0Window`'s end is at most `r.dayEnd + 86400`, which **nothing in this tree bounds** | `TmKernel/TmKernel/PlanCheck.lean`, `Lookahead.lean` | the clause is not wrong and deleting it would be a weakening; what is owed is the window bound, after which `PlanCheck.an_assigned_members_ci_after_the_wind_down` can be retired as vacuous rather than carried as a hypothesis the decoder pays for |
+| **2327** | **`mutate.py --write` SILENTLY REVERTED three source edits made while it ran.** It saves each file before planting a constant and restores it after; an edit made in between is written over with no error and no diff. Three doc-comment edits and one theorem deletion were lost this way and were found only by check 3 | `kernel/mutate.py`, `kernel/check.sh` | gap 2191 records the READER side of this (a concurrent `lake` sees a folded library); this is the WRITER side and it is worse, because the reader gets a wrong answer and the editor gets no signal at all. The lock the tool already holds is the place to say so — a refusal to restore a file whose mtime moved would have caught it |
+
+**Gaps 2320-2323 and 2325-2327 are taken by this step**; 2324 was drafted and **withdrawn** in favour of
+gap **2194**, which already names the paying batch witness this run would have minted a number for;
+2328-2359 are free in track G's range. Gaps 113/114/116, 301, 346, 365, 435, 437, 501, 551, 577, 803,
+806, 850, 876, 960, 1006, 1065, 1190, 1318, 1320, 1333, 1500, 1529, 1770, 1790, 1902, 1984-1990,
+2020, 2025, 2130, 2136, 2190-2193, 2195-2199 and 2255-2265 are untouched by this step, except
+**2194** (the paying set — **45/21/3 becomes 45/21/21/4**, and its missing half is named: the Batch
+rows this tree builds belong to no store), **2198** (a goal refuted but not dischargeable — measured
+at all six rather than at two) and **2199** (whose proposed route is **corrected** by 2325).

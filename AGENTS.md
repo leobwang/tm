@@ -2855,7 +2855,7 @@ plan_does_not_overbook, `plan_reserves_one_block_at_a_time`,
 `plan_places_no_block_over_a_break`,
 `plan_places_no_demanding_block_after_wind_down`, `plan_never_moves_a_wall`,
 `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`,
-`plan_never_drops_an_impossible_item`,
+plan_never_drops_an_impossible_item,
 `plan_never_batches_past_an_equal_ci_candidate` (these eleven are L26's
 single-run checks), `the_window_end_solves_the_equation` and
 `the_window_end_is_the_least_solution` (E7, *gone to stage 5, above*), and `plan_tail_drop` /
