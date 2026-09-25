@@ -8,14 +8,31 @@ Fork-point `tm-core/src/planner.rs` is the oracle, read by type and function nam
 `planner::DayPlan`, `planner::PlanInput`, `planner::PlanOverrides`,
 `planner::Planner::window_and_budget`, and `store::RuntimeState` beside them.
 
-This module holds the planner's **types and their laws**, and — since P1 and P2 — §8.2's
-**first two steps**.  `dayPlan` is no longer the fork's `DayPlan::empty`: it is that day
-with `dayRows` for its segments and `dayDiagnostics` for its diagnostics, so the day it
-answers has rows in it.  Step one places today's walls (`wallsToday`, `wallRows`,
+This module holds the planner's **types and their laws**, and — since P1, P2, P3, P5, P6 and
+P7 — §8.2's **steps one to seven**.  `dayPlan` is no longer the fork's `DayPlan::empty`: it is
+that day with `dayRows` for its segments and `dayDiagnostics` for its diagnostics, so the day
+it answers has rows in it.  Step one places today's walls (`wallsToday`, `wallRows`,
 `stepOneSegs`, on stage 5's own `Look.wallIxOn`); step two places today's routine instances
 and closes the day with §16's wind-down and sleep (`placeStep`, `placedRoutines`,
-`routineRow`, `stepTwoSegs`).  **Steps 3 to 7 are not written here**: nothing in this module
-cuts a slot, assigns a block, or fills a batch.
+`routineRow`, `stepTwoSegs`); step three cuts the slots and gives them their energy
+(`todaySlots`, `energisedSlots`, argument lists for stage 5's `Look.cutSlots` and
+`Look.energizeToday` and not a second cut); step five builds the groups and walks the slots
+(`buildGroups`, `assignStep`, `assignFold`, `assignedRows`); **step six places what step two
+deferred** (`deferOne`, `deferWalk`, `deferFold`, with `finalRoutines` and `finalAssign` its
+two projections, and `dayRoutineSegs` the rows it leaves); and step seven fills what is left
+(`optionalRows`, `restRows`).  `dayRows` is the composition of all of them.
+
+*(W-32 repair, README gap **2223** — the SECOND time this paragraph has been false in the way
+W-15 repaired it for, and the rot class W-14 opened as gap 393.  It read **"Steps 3 to 7 are
+not written here: nothing in this module cuts a slot, assigns a block, or fills a batch"**,
+and all three clauses were refuted by this file: at THIS commit `:2825` is "The slots step 5
+will assign into", `:4232` is "§8.2 step 5's groups — the batching, the split and one `Group`
+per bucket", `:4576` is "§8.2 step 5's assignment", and `:6138`'s `dayRows` composes
+`assignedRows`, `optionalRows` and `restRows`.  (Gap 2223 quoted `:2802`, `:4209`, `:4553`
+and `:6115`, all four true of `471a7ff`; this header is twenty-three lines longer, so
+every anchor below it moved by that, and re-deriving them rather than copying them is AGENTS §5.11.)
+Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8's twelve diagnostic fields and
+P8's emitter are what is still owed.)*
 
 *A tripwire, and the one that already fired.*  P0 left two theorems whose job was to stop
 compiling on the day they became false.  **P1 took the first**:
@@ -78,9 +95,15 @@ for a stored `p`.  Five of §9's twelve rows are already `Look.Today`'s and are 
 ## D9-21, the recursion rule
 
 `Capped.ofList?`, `mkYesterday?` and `mkOverrides?` recurse over lists the wire can make
-large, and each is a `List.length` test plus core's own `List` operations — no new recursion
-is written here.  `Seg.items` is core `Subtype.val`/`Option.toList`.  `dayPlan` folds over
-nothing: its segment list is `[]`.
+large, and each is a `List.length` test plus core's own `List` operations.  `Seg.items` is
+core `Subtype.val`/`Option.toList`.
+
+*(W-32 repair, the same gap 2223: this paragraph closed **"`dayPlan` folds over nothing: its
+segment list is `[]`"**, which P1 made false and P5 and P6 made false twice over.  `dayPlan`'s
+segment list is `dayRows`, and the folds it runs are `placementFold` over the sorted routine
+instances, `assignFold` over the energised slots and `deferWalk` over the instances step two
+deferred — each bounded by `maxCands` or by the day's own slot count, which is what D9-21
+asks of them.)*
 -/
 
 namespace Tm

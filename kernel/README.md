@@ -64051,3 +64051,254 @@ which this run **closes**; 2328-2359 are free in track G's range. Gaps 113/114/1
 **2194** (**CLOSED**: the paying set is 47/23/23/**6**, and the two requests §5 adds give
 `batchDoesNotReachPast` its first subject — the blocker was the store, not the fold), **2198** (a goal refuted but not dischargeable — measured
 at all six rather than at two) and **2199** (whose proposed route is **corrected** by 2325).
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-32**, **track P**,
+     on branch `w32-p` off `471a7ff`.  Gap range **2360-2399**; **2360-2366
+     taken**.  Parity: **NONE ISSUED** — this step's finding REMOVES a
+     divergence rather than adding one; next free **P43** stands untaken.
+     ===================================================================== -->
+
+## Stage 6 — W-32, track P: the kernel has had a step 6 for six days, and gap 2224 was the wrong comparand
+
+**THE BRIEF'S HEADLINE IS FALSE AND THE MEASUREMENT IS THE FIRST THING IN THIS BLOCK.** The step
+was *"THE KERNEL HAS NO STEP 6 — give it one."* The kernel has had one since **`0d52a4d`,
+2026-09-19**, committed as *"kernel: a routine that missed its window still gets a place — P6"*,
+six days before this run's baseline: `PlanReq.deferOne` (`Planner.lean:5114` at this commit), `deferWalk` (`:5140`),
+`deferFold` (`:5148`), with `finalRoutines` and `finalAssign` its two projections. **It is composed, not
+orphaned** — `dayRoutineSegs r = routineRows r r.finalRoutines` and `dayRows` reads it, and
+`assignedRows` and `restRows` read `finalAssign`. `git merge-base --is-ancestor 0d52a4d HEAD`
+answers yes. That is the **third** time a track has refuted a factual claim of a brief, and the
+brief itself asked for it.
+
+The false sentence has three homes and this step reaches one of them: the W-31 track-P block
+(*"the fork then places it at §8.2 step 6, which the kernel has not written"*), the gap 2224 row,
+and `tm/tests/planner_invariants.rs` — both in a comment and **in the census line the test prints
+on every run**. The file is repaired; this README is append-only (AGENTS §6.4), so the other two
+are corrected here.
+
+### 1. What step 6 actually does on the kept seed — driven, not read
+
+`af6b8c79…` replayed as a named case in a clone (four items, LATE day, `lunch` + `shower`, `now =
+11:00`), printing both planners' whole segment lists:
+
+```
+FORK   block 11:00..11:30 zab · routine 11:30..12:00 lunch · block 12:00..13:00 zab
+       block 13:00..14:00 zab · break 14:00..14:20 · block 14:20..15:00 zac
+       wall 15:00..21:00 wev · routine 21:00..21:20 shower (deferred) · rest 21:20..21:30
+       wind-down 21:30..22:00 · sleep 22:00..00:00
+KERN   block 11:00..11:30 zad · routine 11:30..12:00 lunch · block 12:00..13:00 zad
+       block 13:00..14:00 zab ·                     block 14:20..15:00 zab
+       wall 15:00..21:00 wev · block 21:00..21:30 zab
+       wind-down 21:30..22:00 · sleep 22:00..00:00
+KERNEL NOTES [{"note":"noPosition","id":"shower","durMin":20,"lo":…11:00,"hi":…23:00}]
+```
+
+**The kernel's step 6 RAN.** `Note.noPosition` is written by `PlanReq.noPositionNotes`, which
+folds over `finalRoutines` — `deferFold`'s output — and nothing else in the module can produce
+it. What it reports is true: by the time step 6 looked, the only free stretch left in
+11:00–21:30 was the 20-minute break at 14:00, which `keptBreaksToday` occupies, and 21:30 is
+`night`. **The kernel placed a fifth work block at 21:00–21:30 and the fork did not**, so the
+fork still had that half-hour free for `shower` and the kernel did not.
+
+### 2. THE COMPARAND WAS THE WRONG DAY — gap 2224 settled, and no parity number survives it
+
+The third day in that clone is the one that settles it: the fork asked **the question the kernel
+was asked**, `PlanInput::with_ranking(cands, kernel_prios)` — which is the shipped
+`planning::build_ranked` → `Ctx::priorities` → `kernel_capacity::rank` wiring:
+
+```
+FORK2  block 11:00..11:30 zad · routine 11:30..12:00 lunch · block 12:00..13:00 zad
+       block 13:00..14:00 zab · break 14:00..14:20 · block 14:20..15:00 zab
+       wall 15:00..21:00 wev · block 21:00..21:30 zab
+       wind-down 21:30..22:00 · sleep 22:00..00:00
+```
+
+**No `shower` row, and the same block at 21:00.** Row for row the kernel's.
+
+`frout` read the fork day ranked by the FORK's own §7 pass, and the two §7 passes differ by two
+**registered** divergences — **P1** (the future days' mixture) and **P41** (day 0's cut) — which
+the arm's own assigned-row section names in capital letters: *"`ka != fa` above is not a step-5
+statement and this arm spent a run pretending it was."* The routine rows were added one run
+after that repair and never given its comparand. **Measured over 272 cases, one run each:**
+
+**Two standalone runs, 272 cases each** — the counts are a SAMPLE and the last row is the BOUND
+(gap 2267's lesson, applied to this step's own figures):
+
+| | against the fork's OWN-§7 day | against the KERNEL-RANKED fork |
+|---|---|---|
+| rows the kernel placed | 292 · 306 | 292 · 306 |
+| rows the fork placed | **293 · 307** | **292 · 306** |
+| on BOTH sides | 292 · 306 | **292 · 306** |
+| only the kernel / only the fork | 0 / **1** on both runs (gap 2224) | **0 / 0 on both runs** |
+
+So the answer to the brief's question 3 is neither of the two it offered: the disagreement **goes
+away**, and not because a kernel hole was filled — because the comparison was asking the two
+planners two different questions. **This arm has now met that signature three times**: the
+`days: 7` / `wake` pair (W-30), `ka != fa` (W-30), and this.
+
+**The assertion W-31 withdrew is RESTORED**, strict and both ways, in timeline order, against the
+kernel-ranked day — and with it the coverage W-31 said was lost: *"a perturbation that renames
+step 2's rows without moving their minutes ... is caught by nothing."*
+
+**P42 IS NOT RETIRED HERE AND CANNOT BE.** Its canonical issuance line, `**Parity P42 taken**`,
+is at `README.md:63489` in a file AGENTS §6.4 makes append-only, and `parity.py` requires
+`P1..Pmax` contiguous, so a `hole P42` line would contradict a line that cannot be deleted. What
+this step does is make the register true: P42's **row text** in `kernel/parity.txt` now says what
+was measured and points here. Whether the number stays issued, is holed, or grows a `subsumed by
+P1/P41` idiom is the owner's, and it is **gap 2362**.
+
+### 3. §8.2 step 2's ORDERING half, drawn at last — gap 2226
+
+`ROUTINES`' five entries have pairwise-disjoint placeable windows, which is why W-31's plant 3
+(reverse `collect_routines`' sort) **passed**. A sixth is added — `- teatime win:11:00-12:00
+dur:1h every:day`, mandatory, a 60-minute job in a 60-minute window that overlaps `lunch`'s
+11:30–13:30 — and `two_routines_contend_for_one_position` draws it beside `lunch`. Under the sort
+both are placed, `teatime` 11:00–12:00 then `lunch` 12:00–12:30; under **any** other order
+`lunch` takes 11:30 first and `teatime` never fits, at step 2 or at step 6. **The placement is
+the ordering**, so asserting the two rows asserts the comparator without spelling it a second
+time (AGENTS §5.3).
+
+**`case_strategy`'s `routines: 0u8..32` is NOT widened, on purpose and at a stated cost.**
+proptest's stored regressions are SEEDS, not values: widening the range re-maps all **sixteen**
+entries of `planner_invariants.proptest-regressions` — `af6b8c79…` among them, which D46 says
+replays on every run — onto different cases. So the fuzz still cannot draw contention; that half
+of gap 2226 stays open as **gap 2363** with the price named.
+
+### 4. Four plants, in clones, with two controls — `git status --porcelain` read before and after every one
+
+`git archive HEAD | tar -x` into the scratch directory with its own `target/` and `.lake`. The
+worktree held only this step's own files each time; **the shared checkout held ANOTHER TRACK's
+work throughout** (`kernel/README.md`, `callgraph.py`, `check.sh`, `reach.py`, `reach-exempt.txt`
+and an untracked `sections.py`) and **nothing of this step's was ever planted in either**.
+
+| # | plant | result |
+|---|---|---|
+| **4** | the critic's own: `emit_segments` RENAMES every step-2 row, minutes identical | **FAILS, naming both rows**: `kernel [(…,"lunch")], fork [(…,"lunchX")]`. W-31's repair measured the same plant against the baseline as caught by the `rboth` FLOOR alone, which names no row; this is not re-driven here |
+| **A** | `collect_routines`' sort REVERSED (the fork's) | **FAILS** on the new test: kernel `[teatime 11:00-12:00, lunch 12:00-12:30]`, fork `[lunch 11:30-12:00]`. **W-31's plant 3, which passed, now fails** |
+| **B** | the kernel's `routineLe` REVERSED | **DOES NOT COMPILE** — `routineLe_trans`/`routineLe_total` break at `Planner.lean:1989` and `:2007-2013` **of `471a7ff`**, which is what the clone holds. The kernel's comparator is pinned by its own algebra at build time, before any test runs |
+| **B′** | the kernel's step-2 fold no longer SORTS (`sortRoutines` dropped from `placementFold`) | `Build completed successfully (174 jobs)`, and **the new test FAILS**: kernel `[lunch 11:30-12:00]` against `[teatime …, lunch …]` |
+| control | **B′ against the 256-case fuzz** | **PASSES, rc=0.** The fuzz is blind to the kernel's step-2 sort being removed entirely |
+
+The control is gap 2226's claim, measured on the kernel side as well as the fork side, and it is
+what the new test buys.
+
+### 5. `kind_label` against the kernel's own word — gap 2227, and the gap was half wrong
+
+**The READER was already pinned and the gap did not say so.** `kernel_row_cells.rs`'s
+`the_kernel_and_the_fork_agree_on_every_kind_of_row` builds twenty segments — all ten fork kinds,
+with and without an item — encodes each through `rowwire::seg_json` (which IS `kind_label`) and
+compares **nine cells and `batchNames`** against `emit::row_cells`. That is a comparison whose
+answer depends on `EmitWire.readKind` reading the fork's word as the right kind, over all ten
+arms, and it has been in the tree since W-24.
+
+**The WRITER was not.** `PlanWire.kindName` is what the `planner` section emits, and this arm read
+`s["kind"]` against exactly one string literal, `"routine"`. Now every kernel row is keyed by
+`(start, stop, item)` against the kernel-ranked fork day, and a key naming one row on each side
+has its two kind words compared. **Measured over 272 cases: 2,673 rows compared, 0 unkeyable, 0
+disagreements, over 9 distinct words.** The tenth, `lost`, needs an interruption that has ended
+and this generator does not draw one; `ghost` is the kernel's alone (the fork carries it as a
+`SegFlags` bit) and has no fork word to compare — README gap 1322's residue, now **gap 2364**.
+
+**The table is spelled nowhere in the test.** One side comes out of `kind_label`, the other out of
+the kernel; a third copy would be the defect the comparison exists for. Coverage is therefore a
+`BTreeSet<String>` that grows and the floor is on its SIZE, stated **below** the observed number
+because it is a floor and not a band (gap 2267's lesson).
+
+### 6. `Planner.lean`'s module header was false again — gap 2223 closed, and a second false sentence beside it
+
+*"**Steps 3 to 7 are not written here**: nothing in this module cuts a slot, assigns a block, or
+fills a batch"* — refuted at this commit by `:2825`, `:4232`, `:4576` and `:6138` of the same
+file. Gap 2223 had it; what gap 2223 did not have is the **second** false sentence, four
+paragraphs down, closing D9-21's: *"`dayPlan` folds over nothing: its segment list is `[]`."*
+`dayPlan`'s segment list is `dayRows`, and it runs three folds. Both are restated against the
+code, each carrying what it replaced.
+
+**AND THE REPAIR PRICED ITSELF — gap 2365, this step's own finding.** The header grew by 22 lines
+and `check 9` went **RED**: *"19 roster row(s) whose recorded pin site has drifted."*
+
+* **The drift check is a property of NAMED pins only.** It reads the recorded line and asks which
+  declaration encloses it, so a pin written `Planner.lean:5437 some_theorem` is checkable and a
+  pin written `Planner.lean:5437` is not.
+* **All 30 of `Planner.lean`'s bare-number pins drifted silently in the same edit.** Measured:
+  `Tm.Planner.dayRoutineSegs`'s pin `Planner.lean:5437` fell inside
+  `the_deferred_pass_stays_inside_the_budget` at `471a7ff` and falls inside
+  `a_deferred_routine_is_inside_its_window` here, while `dayRoutineSegs` itself is at `:5923`
+  and the mutation that earned the pin errors nowhere near either. Nothing failed.
+  That is this campaign's shape (2) in the evidence column of the gate built to stop shape (1):
+  the rule is a class, the coverage is a list.
+* **Nothing was hand-edited.** Every drifted row was RE-RUN (`mutate.py --verify --write --only
+  <name>`, capped at 16G) and the numbers rewritten from the build that produced them; a
+  hand-corrected pin would be a claim of having watched a mutation fail that nobody made.
+
+### 7. What this step did NOT do, plainly
+
+* **It did not build a step 6.** There was one. What it built is the comparison that was missing
+  around it, which is the same campaign shape from the other side: not a part unjoined, but a
+  part joined to the wrong thing.
+* **It did not widen `case_strategy`.** The fuzz still cannot draw two contending routines
+  (gap 2363), and the reason is stated where it is paid.
+* **It did not re-verify `Planner.lean`'s 30 bare-number pins.** A full
+  `mutate.py --verify --write --only Planner.lean` was started and stopped: measured **17
+  constants in 13 minutes**, because every row pinned inside `PlannerWit.lean` costs a rebuild of
+  a 6,778-line module. The nine rows `check 9` names were each re-run individually and rewritten
+  (7 s apiece, `--only <name>`); the other thirty are gap **2365**'s owed work. The stop was a
+  SIGTERM and it worked as documented: *"mutate.py: restored
+  TmKernel/TmKernel/Planner.lean from a killed run"*, no sidecar left, `git status --porcelain`
+  holding exactly this step's three files.
+* **It did not touch `PlanCheck.lean`, `Goals.lean`, `Check.lean`, `PlannerWit.lean` or any
+  checker.** The burn-down is **7**, unmoved: no goal was touched and no proof written.
+* **It issued no parity number** and holed none.
+
+### 8. Acceptance, capped at 40G with no swap (16G for `mutate.py` and the arm), on the committed tree
+
+* **check.sh TWELVE**: lake build ok · totality ok · axiom audit **5,290 theorems**
+  (`Classical.choice 2562, Quot.sound 3948, propext 4906; 381 of 5290 depend on none`) ·
+  Negative rejected · FFI 93 tests · corpus **29/37 and 4/5** · stage goals **7 outstanding, all
+  stage 6** · citations ok · mutation ok · parity **42 registered (P1-P42), next free P43** ·
+  check 11 **2,202 of 13,183** · check 12 **3,142 def/abbrev in 86 modules, 2,926 emitted (556 as
+  a global), 1,467 reachable, 1,459 exempt in 71 sections, 0 UNANSWERED**.
+* **cargo test --workspace**: **1,478 passed / 0 failed / 9 ignored across 87 binaries** — 1,477
+  at the baseline plus this step's `two_routines_contend_for_one_position`.
+* **How many runs (D46)**: `check.sh` **SEVEN** — one at the baseline before any edit (12/12),
+  **two red** on the same defect (check 9, this step's own 23-line header edit — §6's finding),
+  and four green after, the last of them on this exact tree, this sentence included.
+  `cargo test --workspace` **TWO** — the baseline (1,477 passed / 0 failed / 9 ignored over 87
+  binaries) and the final tree (1,478 / 0 / 9 over 87). `planner_invariants` alone **eight**
+  more: two 272-case measurement runs in the worktree, one for the kept seed, one for the new
+  test, and four in clones (plant 4, plant A, plant B′, and plant B′'s fuzz control).
+* **The named suites**, all inside the workspace run, 0 failed in each: `cli_switch_acceptance`
+  16 · `cli_latency` 5 passed / 1 ignored, in band, at load average **5.57-7.60** — read before
+  believing a failure (gap 1333) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 ·
+  `kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 ·
+  `planner_invariants` **9** (8 at the baseline plus this step's new case) · `kernel_log_door`
+  23 · `kernel_replay_parity` (T5) 29 passed / 4 ignored · FFI 93 through `check.sh`.
+
+**No memory bound was raised, no generator narrowed, no exemption widened, no predicate
+weakened, no law narrowed, no snapshot, fixture, latency band or corpus re-blessed, no external
+dependency added; `lean-toolchain`, `Cargo.toml`, `Cargo.lock` and `kernel/corpus/` untouched;
+`dayPlan` is still total.** One assertion was RESTORED and none withdrawn.
+
+### 9. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2360** | **CLOSED HERE, in the one place a gate can reach.** *"The kernel has no §8.2 step 6"* is false and was carried by this run's brief, by the W-31 track-P block, by gap 2224's row and by `planner_invariants.rs` — in a comment **and in the census line the test prints on every run**. `deferOne`/`deferWalk`/`deferFold` landed at `0d52a4d`, 2026-09-19, and `dayRoutineSegs` reads `finalRoutines` | `tm/tests/planner_invariants.rs` | closed: the file says what the code does. The README's two copies are append-only and are corrected here instead |
+| **2361** | **gap 2224 CLOSED: the comparand was the wrong day.** Against the fork ranked by the kernel's own §7 — the shipped `with_ranking` wiring — the step-2 routine rows agree **exactly**, 0 only the kernel and 0 only the fork on two 272-case runs. The assertion W-31 withdrew is restored strict and both ways | `tm/tests/planner_invariants.rs` | closed, and plant 4 is caught by an assertion that names both rows again instead of by a floor that names none |
+| **2362** | **P42 registers a divergence this step measured to 0, and the register cannot withdraw it.** Its canonical issuance line is at `README.md:63489` in an append-only file, and `parity.py` requires `P1..Pmax` contiguous, so `hole P42` would contradict a line that cannot be deleted. The row text now says what was measured | `kernel/parity.txt`, `kernel/parity.py` | the register has no idiom for *subsumed by another number*, so a divergence that turns out to be a downstream view of P1/P41 stays counted as a third. The owner's call, and a small `parity.py` feature if the answer is the idiom |
+| **2363** | **the FUZZ still never draws two contending routines.** `case_strategy`'s `routines: 0u8..32` is deliberately unchanged: proptest regressions are SEEDS, so widening the range re-maps all sixteen stored entries, `af6b8c79…` included, onto different cases | `tm/tests/planner_invariants.rs` | the ORDERING half is now pinned by one named case and by nothing randomised. The move that costs nothing is a SECOND strategy with the wider range and its own regressions file; the move that costs the seeds is widening this one |
+| **2364** | **`kind_label`'s tenth arm and the kernel's eleventh are compared by nothing.** The population comparison added here covers **9 of 10** words over 2,673 rows; `lost` needs an interruption that has ended, which this generator does not draw, and `ghost` is the kernel's alone (gap 1322) | `tm/tests/planner_invariants.rs` | 9 of 10 is measured and printed rather than claimed. `lost` wants one generated case with a closed interruption; `ghost` wants a decision, not a test |
+| **2365** | **check 9's pin-drift check is a property of NAMED pins and a LIST everywhere else.** All 30 of `Planner.lean`'s bare-number pins drifted silently under this step's 23-line header edit — `Tm.Planner.dayRoutineSegs` still says `Planner.lean:5437`, which at `471a7ff` fell inside `the_deferred_pass_stays_inside_the_budget` and at this commit falls inside `a_deferred_routine_is_inside_its_window`, while `dayRoutineSegs` itself is at `:5923`. **And the rot predates this step**: `Tm.Planner.PlanReq.assignedSpans`' NAMED pin re-ran at `PlannerWit.lean:3558` against a roster saying `:3531`, 27 lines stale at the baseline, and the name check passed because both lines fall inside the same theorem | `kernel/mutate.py`, `kernel/mutations.txt` | the evidence column is the only human-readable proof a mutation was watched to fail, and a third of `Planner.lean`'s rows cannot be audited by reading. The fix is a pin that carries a NAME always — which means `mutate.py` naming the enclosing declaration even when the build error lands in an unnamed context |
+| **2366** | **`Planner.lean`'s module header was false a SECOND time, and a second false sentence sat four paragraphs below it** — *"`dayPlan` folds over nothing: its segment list is `[]`"*, which P1, P5 and P6 each falsified. Both repaired here. **Nothing gates a module header against its own module** | `kernel/TmKernel/TmKernel/Planner.lean` | gap 393's rot class has now been repaired in this one paragraph twice and found a third sentence beside it. check 8 resolves the NAMES a doc comment cites and reads none of its claims; what would catch this is a gate on the step numbers a header claims against the §8.2 step comments the file carries |
+
+**Gaps 2223, 2224, 2226 and 2228's sentence are closed by this step; 2227 is closed for the
+reader and narrowed for the writer (gap 2364).** Gap **2229** is untouched *by this step* and is
+the finding everything above rests on — `Planner.dayPlan` is reached by no shipped caller, so
+every measurement in this block comes from one test file. **Track A landed `c7a9bc2` ("gate:
+check 12 rooted where the binary actually enters — gap 2229") on `rebuild-on-lean` while this
+branch was open**; read that block beside this one, because it changes what "reachable" means
+for the module this one measures. Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876,
+1006, 1065, 1105, 1318, 1320, 1322, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873,
+1889, 1900, 1902-1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018, 2020-2025, 2060-2065,
+2090-2096, 2120-2149, 2190-2222, 2225, 2229, 2250-2254, 2255-2269 are untouched by this step.
+**Gaps 2367-2399 are free.**

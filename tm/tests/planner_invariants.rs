@@ -70,12 +70,35 @@ const MAX_ITEMS: usize = 40;
 
 /// The five §4.3 routines a case may switch on, and the evening wall the late
 /// day carries.
-const ROUTINES: [&str; 5] = [
+const ROUTINES: [&str; 6] = [
     "- lunch      win:11:30-13:30 dur:30m  every:day",
     "- workout    win:16:00-19:00 dur:1h   every:Mon,Wed,Fri",
     "- shower     win:07:00-23:00 dur:20m  after-done:2d~1d",
     "- breakfast  win:06:00-09:00 dur:30m  every:day pref:wake+10m",
     "- sleep      win:22:00-08:00 dur:8h30m every:day ci:0",
+    // **THE SIXTH CONTENDS WITH `lunch` FOR ONE POSITION** (W-32, README gap
+    // 2226). The five above have pairwise-disjoint placeable windows, so §8.2
+    // step 2's ORDERING half — "mandatory first, then the moment the window
+    // closes; the tightest window claims its position first" — was asserted by
+    // nothing: an auditor reversed `collect_routines`' sort and no row of any
+    // case moved. `teatime` is mandatory, its window is 11:00-12:00 and it needs
+    // the whole hour, so it has EXACTLY ONE feasible position and it overlaps
+    // `lunch`'s 11:30-13:30. Sorted by the window's close it takes 11:00-12:00
+    // and `lunch` follows at 12:00; sorted any other way — by id, by the window's
+    // OPEN, or reversed — `lunch` takes 11:30-12:00 first and `teatime` is left
+    // with 30 free minutes for a 60-minute job and goes unplaced, which step 6
+    // cannot repair either (its window holds no free hour and no assigned slot
+    // an hour long to displace). So the placement is the ordering: the two rows
+    // below cannot both exist under any other order.
+    //
+    // **IT IS NOT IN `case_strategy`'s RANGE, ON PURPOSE.** `routines` is drawn
+    // `0u8..32` and stays there: proptest's stored regressions are SEEDS, not
+    // values, so widening the range re-maps every one of the sixteen entries in
+    // `planner_invariants.proptest-regressions` — including `af6b8c79…`, which
+    // D46 says replays on every run — onto different cases. The draw is made by
+    // `two_routines_contend_for_one_position` below instead, which costs nothing
+    // and keeps them. README gap 2226 records what that leaves open.
+    "- teatime    win:11:00-12:00 dur:1h   every:day",
 ];
 const OPTIONALS: &str = "- Watch something  dur:1h\n- Play something   dur:2h max:4h/w\n";
 const EVENING_WALL: &str = "- [ ] 3 Long evening at:2026-09-07T15:00/21:00 ^wev\n";
@@ -1214,7 +1237,25 @@ proptest! {
 /// counters README gap **2222** is about — fork-assigned row ids the kernel was
 /// sent no candidate for, and fork-assigned row ids the kernel returned no §7
 /// grant for.
-static PLAN_CENSUS: Mutex<[u64; 26]> = Mutex::new([0; 26]);
+static PLAN_CENSUS: Mutex<[u64; 32]> = Mutex::new([0; 32]);
+
+/// **The `SegKind` words this run actually compared** — README gap **2227**.
+///
+/// `planner::kind_label` and `PlanWire.kindName` are two spellings of one table
+/// (the kernel's carries an eleventh arm, `ghost`, which the fork keeps as a
+/// `SegFlags` bit). `kernel_row_cells.rs`'s
+/// `the_kernel_and_the_fork_agree_on_every_kind_of_row` sweeps all ten words
+/// through the kernel's **reader** (`EmitWire.readKind`) and compares nine
+/// rendered cells, so the reader is pinned. The **writer** was not: this arm
+/// read `s["kind"]` against one string literal, `"routine"`, and against nothing
+/// else in the file. Here the kernel's own word for a row is compared to
+/// `kind_label`'s for the fork row at the same minutes carrying the same item.
+///
+/// **The table is never spelled here.** The words come out of `kind_label` on
+/// one side and out of the kernel on the other; a third copy in this file would
+/// be the very defect the comparison is for (AGENTS §5.3). Coverage is therefore
+/// a SET that grows, not a checklist, and the floor is on its size.
+static KIND_WORDS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 /// **A configured double as the exact decimal pair the wire carries** (D17).
 ///
@@ -1984,54 +2025,78 @@ proptest! {
                 prios_differ = true;
             }
         }
-        // **§8.2 STEP 2's ROWS, COMPARED TO THE SECOND AND BOTH WAYS** (W-31).
-        // The kernel places these now, and a row it places that nothing compares
-        // is this campaign's third shape — a part built correctly and never
-        // joined to the thing it is part of (D50, gap 501, `Tree.lean`). So they
-        // are asserted, not counted: start, end and item, in timeline order,
-        // which is the same statement the walls have had since W-29 and which a
-        // routine the kernel invents or drops fails as loudly as one placed at
-        // the wrong minute.
+        // **§8.2 STEP 2's ROWS, COMPARED TO THE SECOND AND BOTH WAYS** (W-31),
+        // **AGAINST THE DAY THE KERNEL WAS ASKED ABOUT** (W-32, README gap 2224
+        // settled). The kernel places these, and a row it places that nothing
+        // compares is this campaign's third shape — a part built correctly and
+        // never joined to the thing it is part of (D50, gap 501, `Tree.lean`). So
+        // they are asserted: start, end and item, in timeline order, which is the
+        // same statement the walls have had since W-29 and which a routine the
+        // kernel invents or drops fails as loudly as one placed at the wrong
+        // minute.
         //
-        // **THE STATEMENT WAS FIRST WRITTEN OVER ALL THE FORK'S ROUTINE ROWS AND
-        // THAT WAS FALSE — REFUTED AND RESTATED HERE** (§3.2's rule, applied to
-        // a test). Written strict it held on 163 rows a side over 143 cases and
-        // 527 a side over 517, and then a 512-case draw refuted it: seed
-        // `af6b8c79…`, kept (D46), four items on a LATE day with `lunch` and
-        // `shower` switched on, where the fork places `shower` at 21:00 and the
-        // kernel places nothing. **It is not a kernel bug and not a fork quirk.**
-        // `shower` is `after-done:2d~1d` with no `pref:`, so it is neither
-        // mandatory nor anchored, and BOTH planners defer it at step 2 —
-        // `Planner.placeStep`'s third branch and `place_mandatory_and_pref`'s
-        // final `r.deferred = true` are the same rule. The fork then places it at
-        // **§8.2 step 6**, which the kernel has not written.
+        // **W-31 WITHDREW THIS ASSERTION TO A COUNTER AND THE REASON IT GAVE WAS
+        // FALSE IN BOTH HALVES.** The reason on record was: seed `af6b8c79…`
+        // (kept, D46) places `shower` at 21:00 on the fork and nowhere on the
+        // kernel, because *"the fork then places it at §8.2 step 6, which the
+        // kernel has not written"*.
         //
-        // **AND THE FIRST RESTATEMENT WAS WORSE THAN THE STATEMENT IT REPLACED,
-        // WHICH IS WHY THE MEASUREMENT IS QUOTED AND NOT THE INTENTION.** Telling
-        // a step-2 row from a step-6 row by the fork's own `deferred` flag — set
-        // by all three of step 6's branches (`planner.rs:1657`, `:1673`, `:1694`)
-        // and left false by step 2's — is a true split, and comparing the kernel
-        // against the fork's NON-deferred rows alone makes **107 of 301** rows
-        // differ: what the fork defers to step 6 the kernel places at step 2, and
-        // the two land in the same minute anyway most of the time, because step
-        // 6's lowest-energy free position is usually step 2's earliest free one.
-        // A 35% disagreement rate is the signature of the wrong comparand. So the
-        // comparison is the WHOLE routine row list on both sides — the statement
-        // that nearly holds — and the fork's deferred count rides beside it as
-        // its own census figure.
+        //   * **The kernel has had a step 6 since `0d52a4d`** (2026-09-19, step
+        //     P6): `Planner.PlanReq.deferOne` / `deferWalk` / `deferFold`, with
+        //     `finalRoutines` and `finalAssign` its two projections, and
+        //     `dayRows` reads `dayRoutineSegs` = `routineRows r r.finalRoutines`.
+        //     It is composed, not orphaned. Driven on the kept seed: the kernel's
+        //     step 6 RAN and reported `{"note":"noPosition","id":"shower"}` in
+        //     `diagnostics.notes`, which only `PlanReq.noPositionNotes` over
+        //     `finalRoutines` can write.
+        //   * **The comparand was the wrong day.** `frout` below reads the fork
+        //     day ranked by the FORK's own §7 pass. Two registered divergences —
+        //     **P1** (the future days' mixture) and **P41** (day 0's cut) — put a
+        //     different `p` into step 5, so that day assigns different slots; on
+        //     the kept seed it leaves 21:00–21:30 free and the kernel's step 5
+        //     fills it, after which the kernel's step 6 correctly finds no
+        //     20-minute position anywhere in 11:00–21:30 and says so. Asked the
+        //     question the kernel was asked — `with_ranking(cands, kernel_prios)`,
+        //     the shipped `planning::build_ranked` wiring — the fork ALSO leaves
+        //     `shower` unplaced and ALSO fills 21:00–21:30.
         //
-        // **IT IS A COUNTER AND NOT AN ASSERTION**, which is W-30's own move for
-        // README gap 2062 and for the same reason: the strict statement held on
-        // 163 rows a side over 143 cases and 527 a side over 517, and then failed,
-        // so it is not a law of these two planners. It is **not swallowed by an
-        // exemption** — "the fork deferred nothing today" would cover every case
-        // seen here and is exactly the widening D46 forbids — and **the generator
-        // was not touched**. Both directions are counted, the seed replays on
-        // every run from here, and README gap **2224** carries it. The price is
-        // stated where it is paid: a perturbation that renames step 2's rows
-        // without moving their minutes was caught by the assertion and by nothing
-        // else in the file (driven, see the README block), and with the assertion
-        // withdrawn it is caught by nothing.
+        // This is the same defect the assigned-row comparison below names in
+        // capital letters (*"`ka != fa` above is not a step-5 statement and this
+        // arm spent a run pretending it was"*), one section up, in rows added
+        // after that repair and never given its comparand. Measured over 272
+        // cases: against the fork's OWN-§7 day, only the fork placed **1** of
+        // 293; against the kernel-ranked fork, **292 rows on both sides, 0 only
+        // the kernel, 0 only the fork**. So the statement is restored as an
+        // assertion, the old pair of counters stays in the census as gap 2224's
+        // record, and the perturbation W-31 said was caught by nothing — a step-2
+        // rename at identical minutes — is caught again.
+        //
+        // **The first restatement of all, kept because the measurement and not
+        // the intention is what settles it**: telling a step-2 row from a step-6
+        // row by the fork's own `deferred` flag — set by all three of step 6's
+        // branches (`planner.rs:1657`, `:1673`, `:1694`) and left false by step
+        // 2's — is a true split, and comparing the kernel against the fork's
+        // NON-deferred rows alone made **107 of 301** rows differ, because what
+        // the fork defers to step 6 the kernel may place at step 2 and the two
+        // land on the same minute anyway. A 35% disagreement rate is the
+        // signature of the wrong comparand; so is 1 in 293, and this arm has now
+        // met that signature three times (the `days: 7` / `wake` pair, `ka != fa`,
+        // and this). The comparison is the WHOLE routine row list on both sides.
+        // **THE SECOND FORK DAY, THE SAME REQUEST RANKED BY THE KERNEL'S OWN §7
+        // ANSWER** — hoisted here at W-32 because the routine rows below need it
+        // as much as the assigned rows do (README gap 2224).
+        let cvec = w.candidates();
+        let kprios = kernel_prios(&plan, &cvec);
+        let day2 = kprios
+            .as_ref()
+            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, ps)));
+        let routine_rows = |segs: &[Segment]| -> Vec<(i64, i64, String)> {
+            segs.iter()
+                .filter(|s| matches!(s.kind, SegKind::Routine))
+                .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
+                          s.item.as_ref().map(ToString::to_string).unwrap_or_default()))
+                .collect()
+        };
         let krout: Vec<(i64, i64, String)> = plan["segments"]
             .as_array().map(Vec::as_slice).unwrap_or_default().iter()
             .filter(|s| s["kind"] == "routine")
@@ -2041,13 +2106,60 @@ proptest! {
         let fdefer = fork.segments.iter()
             .filter(|s| matches!(s.kind, SegKind::Routine) && s.flags.deferred)
             .count() as u64;
-        let frout: Vec<(i64, i64, String)> = fork.segments.iter()
-            .filter(|s| matches!(s.kind, SegKind::Routine))
-            .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
-                      s.item.as_ref().map(ToString::to_string).unwrap_or_default()))
-            .collect();
+        let frout: Vec<(i64, i64, String)> = routine_rows(&fork.segments);
         let ronly = krout.iter().filter(|r| !frout.contains(r)).count() as u64;
         let fonly = frout.iter().filter(|r| !krout.contains(r)).count() as u64;
+        // **W-32 DRIVE**: the same two counters against the day the kernel was
+        // asked about.
+        let (mut kindcmp, mut kindskip) = (0u64, 0u64);
+        let frout2: Vec<(i64, i64, String)> =
+            day2.as_ref().map(|d| routine_rows(&d.segments)).unwrap_or_default();
+        let ronly2 = krout.iter().filter(|r| !frout2.contains(r)).count() as u64;
+        let fonly2 = frout2.iter().filter(|r| !krout.contains(r)).count() as u64;
+        // **THE KERNEL'S OWN `SegKind` WORD, AGAINST `kind_label`'s** (W-32,
+        // README gap 2227). Every row of the kernel-ranked fork day is keyed by
+        // `(start, stop, item)`; a key that names one row on each side is a row
+        // the two planners agree is there, and its two kind words must be the
+        // same word. A key that names two rows on one side is not compared and
+        // is counted as unkeyable, the shape §7's row comparison already uses.
+        if let Some(d) = day2.as_ref() {
+            let mut fkinds: BTreeMap<(i64, i64, String), Vec<&'static str>> = BTreeMap::new();
+            for seg in &d.segments {
+                fkinds
+                    .entry((rowwire::kernel_sec(seg.start), rowwire::kernel_sec(seg.end),
+                            seg.item.as_ref().map(ToString::to_string).unwrap_or_default()))
+                    .or_default()
+                    .push(planner::kind_label(&seg.kind));
+            }
+            let mut kkinds: BTreeMap<(i64, i64, String), Vec<String>> = BTreeMap::new();
+            for seg in plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default() {
+                kkinds
+                    .entry((seg["start"].as_i64().unwrap_or(-1), seg["stop"].as_i64().unwrap_or(-2),
+                            seg["item"].as_str().unwrap_or_default().to_string()))
+                    .or_default()
+                    .push(seg["kind"].as_str().unwrap_or_default().to_string());
+            }
+            for (key, ks) in &kkinds {
+                let Some(fs) = fkinds.get(key) else { continue };
+                if ks.len() != 1 || fs.len() != 1 {
+                    kindskip += 1;
+                    continue;
+                }
+                prop_assert_eq!(
+                    ks[0].as_str(), fs[0],
+                    "the kernel and the fork name one row's kind differently at {:?}", key
+                );
+                kindcmp += 1;
+                KIND_WORDS.lock().expect("kinds").insert(ks[0].clone());
+            }
+        }
+        if day2.is_some() {
+            prop_assert_eq!(
+                &krout, &frout2,
+                "§8.2 step 2's routine rows differ from the fork ranked by the kernel's own \
+                 §7 answer (kernel {:?}, fork {:?})", krout, frout2
+            );
+        }
 
         // **AND EVERY ROW THE FORK ASSIGNED IS A ROW THE KERNEL ANSWERED FOR**
         // (W-31, README gap 2222). W-29 measured *"the fork assigned 184-209
@@ -2122,12 +2234,7 @@ proptest! {
         // taken over; README gap 2131 (W-30 repair) carries the correction.
         let ids_differ = !exempt && !slots_differ && ka != fa;
         // The second fork day: the same request, ranked by the KERNEL's §7 answer.
-        let cvec = w.candidates();
-        let kprios = kernel_prios(&plan, &cvec);
-        let fa2 = kprios.as_ref().map(|ps| {
-            let day = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, ps));
-            fork_assigned(&day, w.now)
-        });
+        let fa2 = day2.as_ref().map(|day| fork_assigned(day, w.now));
         // **AND NOW THE ITEM IN THE SLOT IS ASSERTED — against the fork ranked by
         // the KERNEL, which is the wiring the binary ships** (W-30).
         //
@@ -2165,7 +2272,7 @@ proptest! {
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
         let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
              grows, gday0, gdays, gdups, gsame, frdays, krows, funcand, fungrant, rdefer, ronlyc,
-             fonlyc, frows, rboth] = {
+             fonlyc, frows, rboth, ronlyc2, fonlyc2, frows2, rboth2, kindc, kindsk] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -2193,6 +2300,12 @@ proptest! {
             c[23] += fonly;
             c[24] += frout.len() as u64;
             c[25] += krout.iter().filter(|r| frout.contains(r)).count() as u64;
+            c[26] += ronly2;
+            c[27] += fonly2;
+            c[28] += frout2.len() as u64;
+            c[29] += krout.iter().filter(|r| frout2.contains(r)).count() as u64;
+            c[30] += kindcmp;
+            c[31] += kindskip;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -2258,13 +2371,43 @@ proptest! {
             // The floor is `rboth`, because a run in which the `routines` key
             // silently stopped decoding gives `krows > 0` on the kernel side and
             // agrees with nothing (AGENTS §5.2's vacuous theorem, one layer in).
-            // Three floors and not one: either of the others alone would let the
+            // Four floors and not one: any one of the others alone would let the
             // rest rot.
+            //
+            // **W-32 ADDS THE FOURTH, AND IT IS THE ONE THE ASSERTION NEEDS.**
+            // `rboth` counts rows the kernel and the fork's OWN-§7 day share, and
+            // the restored equality is against the KERNEL-RANKED day, so `rboth`
+            // could stay positive while the asserted comparison ran on nothing —
+            // `day2` is `None` on a case with no kernel `p` answers, and an
+            // assertion inside `if day2.is_some()` is an assertion that can be
+            // skipped for every case in the run. `rboth2` is the rows the
+            // assertion actually compared.
             prop_assert!(krows > 0, "the kernel placed no §8.2 step 2 routine row in {cases} cases");
             prop_assert!(
                 rboth > 0,
                 "not one §8.2 step 2 routine row agreed with the fork's in {cases} cases, \
                  so the comparison the counters below report is over two disjoint lists"
+            );
+            prop_assert!(
+                rboth2 > 0,
+                "not one §8.2 step 2 routine row was compared against the kernel-ranked fork \
+                 in {cases} cases, so the equality asserted above ran on nothing"
+            );
+            // **AND THE KIND-WORD COMPARISON HAS ITS OWN FLOOR, ON THE SET AND
+            // NOT ON THE COUNT** (gap 2227). A run that compared ten thousand
+            // `block` rows and nothing else would satisfy any count; what makes
+            // the comparison a comparison of a TABLE is how many of its arms it
+            // reached. Six is what this generator draws — `block`, `routine`,
+            // `wall`, `rest`, `sleep`, `wind-down`, and `batch`, `break` and
+            // `optional` when the draw has them; `lost` needs an interruption
+            // that ended and `ghost` is the kernel's alone. The floor is stated
+            // below the observed number on purpose: it is a floor, not a band
+            // (README gap 2267).
+            let words = KIND_WORDS.lock().expect("kinds").len();
+            prop_assert!(
+                words >= 5,
+                "only {words} distinct `SegKind` words were compared in {cases} cases, \
+                 so `kind_label` and the kernel's own table were checked on almost no arm"
             );
             prop_assert!(
                 frdays > 0,
@@ -2286,10 +2429,16 @@ proptest! {
              {frows}, on BOTH sides {rboth}, on {frdays} days the fork \
              placed one, fork-assigned ids with no kernel CANDIDATE {funcand} \
              (0 by construction), with no kernel §7 GRANT {fungrant}, \
-             fork routine rows the fork DEFERRED to §8.2 step 6, which the kernel \
-             has not written {rdefer}, step-2 rows only the kernel placed {ronlyc}, \
-             only the fork placed {fonlyc} (gap 2224), \
-             energy-less work rows from now: kernel {kres}, fork {fres}"
+             fork routine rows the fork's OWN-§7 day DEFERRED to §8.2 step 6 \
+             {rdefer}, against that day step-2 rows only the kernel placed \
+             {ronlyc}, only the fork placed {fonlyc} (gap 2224's record), \
+             AGAINST THE KERNEL-RANKED FORK, WHICH IS WHAT IS ASSERTED: it \
+             placed {frows2}, on BOTH sides {rboth2}, only the kernel {ronlyc2}, \
+             only the fork {fonlyc2}, \
+             `SegKind` words compared against `kind_label` {kindc} over {} \
+             distinct words, rows unkeyable for that comparison {kindsk}, \
+             energy-less work rows from now: kernel {kres}, fork {fres}",
+            KIND_WORDS.lock().expect("kinds").len()
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a
         // budget that differs is a finding: README gap 320's two readers, one of
@@ -2302,4 +2451,81 @@ proptest! {
             "§8.1's budget: kernel {:?}, fork {}", plan["budgetBlocks"], fork.budget_blocks
         );
     }
+}
+
+/// **§8.2 step 2's ORDERING half, drawn** — README gap **2226**.
+///
+/// The fuzz above cannot reach this case: `ROUTINES`' first five have
+/// pairwise-disjoint placeable windows, so the sort `collect_routines` and
+/// `Planner.sortRoutines` both perform — mandatory first, then by the moment the
+/// window closes, then by id — permutes a list whose placement does not depend
+/// on its order. An auditor reversed it at W-31 and **no row of any case moved**
+/// (W-31's plant 3).
+///
+/// Here two mandatory instances contend for one position. `teatime` is a
+/// 60-minute job in a 60-minute window, so it has exactly one feasible start;
+/// `lunch` is a 30-minute job in a two-hour window that overlaps it. Under the
+/// sort the tightest window claims first and **both** are placed, back to back.
+/// Under any other order — by id (`lunch` < `teatime`), by the window's OPEN
+/// (11:00 < 11:30 is the same order, but reversed it is not), or reversed —
+/// `lunch` takes 11:30 and `teatime` never fits: step 2 defers it, and step 6
+/// cannot repair it either, because its window holds no free hour and no
+/// assigned slot an hour long inside it to displace. So **asserting the two rows
+/// asserts the order**, without a second spelling of the comparator here.
+///
+/// The two rows are compared to the fork's, ranked as the kernel ranked it —
+/// the comparand W-32 gave the fuzz's routine rows (gap 2224).
+#[test]
+fn two_routines_contend_for_one_position() {
+    let case = Case {
+        items: vec![Spec {
+            ci: 0, k: 1, est_b: 2, small: None, due_in: Some(0), dep: None,
+            loc_home: false, atomic: false, parent: None,
+        }],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        // `lunch` (bit 0) and `teatime` (bit 5), and nothing else.
+        routines: 1 | 32,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let w = build(&case);
+    let req = w.plan_request();
+    let plan = kernel_plan(&req).expect("the kernel plans the day");
+    let krout: Vec<(i64, i64, String)> = plan["segments"]
+        .as_array().map(Vec::as_slice).unwrap_or_default().iter()
+        .filter(|s| s["kind"] == "routine")
+        .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                  s["item"].as_str().unwrap_or_default().to_string()))
+        .collect();
+    let day = date();
+    let tz = w.cfg.tz;
+    let sec = |h: u32, m: u32| {
+        rowwire::kernel_sec(local_dt(tz, day, NaiveTime::from_hms_opt(h, m, 0).expect("time")))
+    };
+    // **THE PLACEMENT IS THE ORDER.** `teatime` first because its window closes
+    // first, then `lunch` in the next free minute of its own window.
+    assert_eq!(
+        krout,
+        vec![
+            (sec(11, 0), sec(12, 0), "teatime".to_string()),
+            (sec(12, 0), sec(12, 30), "lunch".to_string()),
+        ],
+        "§8.2 step 2 placed the contending routines in the wrong order or dropped one"
+    );
+    // And the fork, asked the question the kernel was asked, agrees row for row.
+    let cvec = w.candidates();
+    let kprios = kernel_prios(&plan, &cvec).expect("the kernel answers §7 for this day");
+    let fork = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &kprios));
+    let frout: Vec<(i64, i64, String)> = fork.segments.iter()
+        .filter(|s| matches!(s.kind, SegKind::Routine))
+        .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
+                  s.item.as_ref().map(ToString::to_string).unwrap_or_default()))
+        .collect();
+    assert_eq!(krout, frout, "the two planners ordered the contending routines differently");
 }
