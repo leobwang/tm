@@ -376,7 +376,7 @@ c9eab6701384 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.candWireView default 
 f6b71897a270 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.candsAgree true,false PlanCheck.lean:4704 candsAgree_iff; PlanCheck.lean:4704 candsAgree_iff
 54bdba0ff70e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingWitness default,[] PlannerWit.lean:6283 the_paying_witness_holds_the_wall_and_two_tasks; PlannerWit.lean:6283 the_paying_witness_holds_the_wall_and_two_tasks
 ae059bf51266 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingPlan unfoldable no Inhabited WfPlan
-250776183489 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+c2eb0be2764d TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 db17f2adf839 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingCands default,[] PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes; PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes
 b8ad630aaa78 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingRequest unfoldable no Inhabited PlanReq
 6b7739920485 TmKernel/TmKernel/Close.lean Tm.hasAStrayTomb true,false Close.lean:2506 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb; Close.lean:2508 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb
@@ -391,11 +391,16 @@ ad5ca8a8b294 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theMirrorPayingRequ
 3a60b6562560 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoPlan unfoldable no Inhabited WfPlan
 d65cee3509a8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoCands default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
 f36496c2ca0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwoPayingRequest unfoldable no Inhabited PlanReq
-e5432145c79b TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandDue unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+102ac74fa606 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandDue unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 a69074597926 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impCands default,[] PlannerWit.lean:6877 the_first_impossible_candidate_this_tree_has_had; PlannerWit.lean:6877 the_first_impossible_candidate_this_tree_has_had
 ea95b0154055 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theImpossibleRequest unfoldable no Inhabited PlanReq
 e9e2e7e20c79 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.batchStoreWitness default,[] PlannerWit.lean:7226 the_batch_store_holds_three_siblings_at_one_ci; PlannerWit.lean:7226 the_batch_store_holds_three_siblings_at_one_ci
 2caf71ff57be TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.batchStorePlan unfoldable no Inhabited WfPlan
-fe1c957e8b27 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandSmall unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+afaae3e85ea1 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandSmall unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 dc53df2c64d5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingBatchRequest unfoldable no Inhabited PlanReq
 c4ca86b72097 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSkippedBatchRequest unfoldable no Inhabited PlanReq
+5ecc7d45ba0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oneCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+e6435ef522e3 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+83a86239826c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCandCap unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+bc65c85c7a9e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witAtomicCands default,[] PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic; PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic
+fd3902292b48 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.cCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
