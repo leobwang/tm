@@ -63143,3 +63143,213 @@ changed or deleted; **no generator was narrowed and no exemption widened** — o
 exemption is **gone** (its `cands == 0` residue fires on 0 of 272 cases), and 2063's double fork
 run is unchanged but now pays for a comparison that runs on every day instead of on a third of
 them.
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-31**, the **LAND**
+     step.  Three tracks merged onto `c674142`; both W-31 worktrees removed
+     and both branches deleted (`w31-g` was `a0170da`, `w31-p` was
+     `36fe82d`).  `stage5-lookahead` untouched.  Gap range **2250-2254**;
+     **2250-2254 taken**.  Parity: **NONE ISSUED** — track P's one live
+     disagreement is still unclassified, and next free P42 stands untaken.
+     ===================================================================== -->
+
+## Stage 6 — W-31, land: merge the lift and comparison tracks — the gate reads the call graph
+
+**The burn-down is SEVEN, and `a0170da` is the commit that discharged the goal.**
+plan_does_not_overbook left `Goals.lean` by §3.2's **refute-and-rename**: the refutation
+`PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` has been in the tree since
+W-24, the restatements are `PlanCheck.plan_does_not_overbook_where_nothing_runs` and
+`PlanCheck.plan_does_not_overbook_from_now_where_nothing_runs`, and `Check.lean` holds the
+`#print axioms` lines for all three.  `Goals.lean` now holds **7** `theorem` lines.  It moved
+for the second consecutive run, having not moved for the eight before W-30.
+
+### 1. The merge
+
+Two merge commits, both `--no-ff`, on a tree that was clean before each and after each.
+
+| commit | what |
+|---|---|
+| `da20647` | track G's `a0170da` (which already carried track A's `1618827` as a fast-forward) |
+| `c7953e6` | track P's `36fe82d` — **one conflict**, resolved as a union |
+
+**The one conflict was two run blocks appended at the same anchor**, and the resolution was
+verified as a union rather than asserted: `diff` of the merged file against the HEAD side
+removes **0** lines and adds **237** (track P's block); against track P's side it removes
+**22**, and all 22 are track G's deliberate **un-backticking of the discharged goal's name** in
+prose — the goal left the tree, and check 8 holds a backticked name to the tree, so a backtick
+on a name nothing defines is now a RED baseline (that is track A's gap 2142, met again here at
+merge time and resolved in track G's favour by taking its side of those 22 lines).
+
+### 2. Acceptance on the merged tree, capped at 40G with no swap
+
+**`check.sh` is TWELVE, and it was driven EIGHT times in this step** — once on the merged
+working tree before the land commit, once on the committed clean tree afterwards (identical),
+and six more while this block was written, because this block is itself prose two of the gates
+read.  **THREE of those eight were RED, and all three were this block.**  The figures below are
+the last run's.
+
+| # | check | figure |
+|---|---|---|
+| 1 | lake build TmKernel:static | ok |
+| 2 | totality check | ok |
+| 3 | axiom audit | ok, **5,289 theorems** (the brief's baseline was 5,260) |
+| 4 | Negative.lean rejected | ok |
+| 5 | cargo test (Rust → C shim → Lean), the FFI | ok, **93 tests** |
+| 6 | corpus round trip | ok, **29/37 files and 4/5 whole plans** byte-identically |
+| 7 | stage goals | ok, **7 outstanding**, all stage 6 |
+| 8 | prose citations | ok, **40,996 citations, 39,025 resolved**, 1,971 allowed (205 vocabulary, 354 counted), **0 allow entries unused**, 269 files swept, 340 excluded by 15 rule(s) — measured WITH this block in the file, which is why it is 28 citations above the 40,968 the merge commit was green at |
+| 9 | new definitions mutated | ok, 258 new or changed since `86c4dc6`, 258 rostered (75 unfoldable, 37 witness fixtures, 25 pinned by nothing; 1 literal), **0 owed**, 30 pin site(s) still a bare line number |
+| 10 | parity register | ok, **41 registered (P1-P41)**, 41 anchors re-resolved, 295 citations, **next free P42** |
+| 11 | no two names for one definition | ok, 89 files, 3,053 def bodies, 14 group(s), **0 UNANSWERED**; **2,092 of 11,939** emitted C functions reachable from `tm_kernel_call` |
+| 12 | every emitted definition is reached | ok, 3,053 def(s) in 86 library modules, **2,366 emitted, 1,413 reachable**, **953 exempt in 45 section(s)** (32 of them run at load), **0 UNANSWERED** |
+
+**Check 8 and check 10 caught THIS block on its first pass**, which is the only reason they are
+worth quoting here.  Three defects, all mine, all the classes this campaign is named after: a
+backticked spelling of the discharged goal in the first paragraph of §1 — the goal this very block
+reports as discharged, cited by a name the tree no longer holds, which is gap 2142 committed
+live by the step announcing it; the same name again inside a sentence *about* un-backticking it;
+and two spellings of the next parity number that the register reads as an issuance rather than
+as a declaration of what is free (the form it wants is the literal `next free P42`).  The block was fixed, not the gates — and then the paragraph you are reading, whose
+whole subject is those three defects, committed two of them again on its own first pass and was
+caught a third time.  That is the finding, not the anecdote: the gate is the only thing in this
+repository that has ever noticed this class, including when the author was looking straight at
+it.
+
+**`cargo test --workspace` was driven THREE times and reported three times (D46):
+1,476 passed / 0 failed / 9 ignored across 87 binaries, all three identical.**  It was in fact
+driven **six** times: the first three runs' totals were destroyed by a `head -20` in the
+aggregation and are not reported as measurements, because a number this step could not
+re-derive is a number this step did not measure.
+
+Named, each once, all green: FFI (`tm-kernel-ffi`, 8 + 86 + 7 tests); T5 (15 passed, 2 ignored);
+the door suite (12 passed); `cli_switch_acceptance` 16; `kernel_call_counts` 2; `one_padder` 9;
+`one_renderer` 25; `kernel_row_cells` 26; `kernel_item_grammar` 6; `kernel_planner_wire` 21.
+`cli_latency` 5 passed / 1 ignored with load average 0.24 at the start of the step (gap 1333:
+the load was checked BEFORE believing a failure, and there was no failure to believe).
+
+`planner_invariants` was driven **five** times standalone with `--nocapture` for its census, and
+a sixth through each of the three workspace runs — **8 passed / 0 failed** every time.
+
+### 3. The four numbers the land step was told to report, as measured and not as briefed
+
+**(a) Eleven-check lifts still carrying `r.assignedRows = []` — the brief said "all six did",
+and the population is SEVEN.**  Measured with one instrument over two trees (the baseline
+`01d4894` in a `git archive` clone, and the merged tree), counting theorems whose CONCLUSION is
+`planOk el r (dayPlan r) = true`:
+
+| | baseline `01d4894` | merged `c7953e6` |
+|---|---|---|
+| lifts concluding the eleven on the whole day | 7 | 10 |
+| of those, carrying `hnoassign` | **7** | **7**, plus the bridge |
+| of those, FREE of it | 0 | **2** |
+| the same lifts FROM NOW (`withoutPast`) | 2, both carrying it | 2, both carrying it |
+| all declarations taking `hnoassign` | 42 | 44 |
+
+**Not one of the seven old lifts was freed.**  `dayPlan_ok_of_the_core_seven` and
+`dayPlan_ok_on_the_whole_day_of_a_paying_decoder` are NEW and stand beside them, and
+`the_unassigned_eleven_is_an_instance_of_the_paying_eleven` carries `hnoassign` by design,
+because being the bridge is its whole job.  **This is track G's own answer and it is not
+softened here**: gap 1902 is MOVED, not closed.  The merge title says *the gate reads the call
+graph* and not *the lift covers the day it assigns*, because W-30's land block overstated
+exactly this and was caught.
+
+**(b) Assigned rows compared: 696, 702, 710, 724, 728** over the five standalone runs, against
+the brief's **78-80** and track P's reported **691** — track P's figure is in family with all
+five.  **Cases exempt from the comparison: 0 of 272**, every run, against 102 of 143.  **Days
+on which step 5's assignment was ASSERTED: 272 of 272**, against 41 of 143.
+
+**(c) PlannerWit requests that PAY: the brief's "one of nineteen" is W-30's figure and it moved
+to THREE.**  `Check.lean`'s own comment still reads *"19 of this module's 43 requests assign,
+and exactly one of the nineteen pays"* — true of `PlannerWit.the_cursor_family_assigns_and_none_of_it_pays` and stale as a module
+census — while `PlannerWit.three_requests_now_assign_and_pay` is a `by decide` theorem in the
+build.  `PlannerWit.lean` holds **53** `def … : PlanReq` (51 at the baseline, +2 = the two new
+paying witnesses); track G's block counts the census population at **45**.  Two counts of one
+population, neither gated: gap **2254**.
+
+**(d) Check 12's exemption count is 953, not 2,092.**  2,092 is check **ELEVEN**'s figure — C
+functions reachable from `tm_kernel_call`, out of 11,939.  Check 12 counts a different
+population: 2,366 emitted `def`s, 1,413 reachable, **953 exempt**.  Gap **2252**.
+
+### 4. What this step found: the ratchet is a comment, and it grew in the run it landed
+
+D51 asked for *"a dated shrinking exemption file"*.  What landed declares its size and checks
+that the declaration matches the entry count — and **nothing compares that count to a previous
+one**.  `reach-exempt.txt`'s header says *"THE RATCHET.  It may only SHRINK"*; `reach.py`'s own
+teaching line, forty lines below in the same repository, tells the next track to *"add it to
+reach-exempt.txt under its module's `##` section with a reason AND raise the EXEMPT count in
+the same edit"*.  Both sentences shipped in `1618827`.
+
+**The file grew in this run.**  Track A landed it at `EXEMPT 952`; track G added
+`Tm.PlannerWit.freeSlotRows` — the eligibility its freed lift asks for — and the merged tree
+declares **`EXEMPT 953`**.  Check 12 is green, because 953 entries and a line saying 953 is all
+it asks.  This is the campaign's defect class (2) inside the gate written to close class (3):
+the growth is *"a number in a diff"*, and a number in a diff is read by a reader, not by a gate.
+
+### 5. THE DRIVE, unabridged
+
+Release binary built from the merged tree (`cargo build --release --bin tm`, 5.34 s), a scratch
+tree under the session scratchpad, `git status --porcelain` **empty before and after** — nothing
+was planted in the shared tree at any point in this step.
+
+```
+$ tm --dir …/plan wake 07:10
+tm: the automatic close (§6.3) was refused, so no period was closed and nothing was written; it runs again on the next command. kernel refusal: itemCheck — the tree fails the kernel's item invariant (danglingParent) — an `@parent` names an id no line of the tree carries (a typo, or a parent whose line is gone); fix or remove the link; the kernel refuses a tree it cannot load whole (run `tm check`: it names the file and the line)
+tm: the automatic close's refusal above is this command's too, so nothing was written
+```
+
+**The first verb refused, and the refusal is D-strict-parents working on a hand-written tree**:
+the week named `@O1` and the month held no `^O1`.  It is reported here rather than edited out
+because a drive that only shows the path the author intended is the claim-of-having-checked this
+campaign is named after.  The month outcome was added, `tm check` returned `no problems`, and:
+
+```
+$ tm --dir …/plan wake 07:10
+wake 07:10 · slept 0m
+
+$ tm --dir …/plan --now 2026-09-25T07:43:00-05:00 arrive office
+arrive office 07:43 · window 07:43–15:43 · budget 6 blocks
+
+$ tm --dir …/plan --now 2026-09-25T07:45:00-05:00 plan
+2026-09-25 · window 07:43–15:43 · budget 6 blocks
+07:45  2 p3   Tidy the exemption file      @m2  1b
+08:45  3 p3   Re-measure the assign/pay…   @m2  1b
+09:45  ·      break 20m
+10:05  ·      rest 1h
+11:30  ·      lunch 30m
+12:00  ·      rest 1h
+13:00  ·      rest 1h
+14:20  ·      rest 1h
+15:43  ───    window ends 15:43
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 2h
+· 0 underused · 0 ci-5 lost
+· dropped: m1 · m2 · t1 · t2
+```
+
+**`11:30 · lunch 30m` is track P's whole step on the shipped surface.**  That row is a §8.2
+step-2 routine instance; until `36fe82d` the `routines` key did not cross the wire and every day
+holding one was EXEMPT from the assigned-row comparison.  It is compared now, on this day and on
+272 of 272 cases.
+
+**And gap 2018 reproduces live on the merged binary**, exactly as it did at W-30's land: the
+verb prints `· 0 ci-5 lost` directly above `dropped: m1 · m2 · t1 · t2`, and `m1` and `t1` are ci
+**5**.  Unchanged cause (`tm-core/src/planner.rs`'s `a_capacity_lost` sums Rest minutes at
+energy ≥ 4 only), unchanged verdict: a spec-wording finding on a surface R3 deletes.  It is now
+driven at this commit as well as at `0e5d1da`.
+
+### 6. Gaps
+
+| # | what | where | why it is not closed here |
+|---|---|---|---|
+| **2250** | **D51's ratchet is a comment, not a gate, and the file GREW in the run it landed** — 952 at `1618827`, **953** at `c7953e6`. `reach.py` checks only that the `EXEMPT <n>` line equals the entry count; nothing holds it against a previous value, so "may only shrink" is enforced by a reader | `kernel/reach.py`, `kernel/reach-exempt.txt` | the fix is a comparison against the committed count, and the committed count is what the gate would have to read — which is the check-11-pays-for-check-12 cost §5 of track A's block already prices. It is a gate change and this is the land step |
+| **2251** | **three numbers for the eleven-check-lift population, and nothing gates any of them.** `Check.lean`'s W-31 comment says *"THE SIX ELEVEN-CHECK LIFTS"*, the run brief says six, and a conclusion-shaped count over the baseline tree says **seven** | `kernel/TmKernel/Check.lean`, this campaign's briefs | the count is prose about a theorem population; check 8 resolves NAMES and check 11 groups BODIES, and neither counts a conclusion shape. Same class as 2148 — a number written in prose in more than one place |
+| **2252** | **two gates print "reachable" over two different populations and nothing relates them**: check 11 says 2,092 of 11,939 (emitted C functions, closures and specialisations included), check 12 says 1,413 of 2,366 (emitted `def`s). The brief read the first as the second | `kernel/twins.py`, `kernel/reach.py`, `kernel/check.sh` | both are correct and they answer different questions; what is missing is a sentence in one place saying which is which, which is §5.11 applied to a pair of counts |
+| **2253** | **gap 2224's disagreement fires in BOTH directions on every run**: step-2 rows only the kernel placed 0-1, only the fork placed 1-2, out of 313-338 compared, across five runs. **NO parity number is issued here** and next free P42 stands untaken — issuing one asserts *fork quirk*, and track P said it had not shown that | `tm/tests/planner_invariants.rs`, seed `af6b8c79…` kept and replaying | track P's own conditional answer, carried forward unsoftened. D46: the seed stays, a new one is a FINDING, and neither the generator nor an exemption is narrowed to make it go away |
+| **2254** | **two counts of the PlannerWit request population**: 53 `def … : PlanReq` by the text, 45 by track G's census | `kernel/TmKernel/TmKernel/PlannerWit.lean` | plausibly a census LIST against a definition COUNT, which would make both right — but nobody has shown that, and a figure this campaign quotes should not rest on a plausible reading |
+
+**Gaps 2255-2269 are free in the repair range.**  Gaps 113/114/116, 301, 346, 365, 435, 501,
+551, 577, 803, 876, 1006, 1065, 1105, 1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790,
+1870, 1871, 1873, 1889, 1900, 1902-1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018,
+2020-2025, 2060-2065, 2090-2096, 2120-2149 and 2190-2229 are untouched by this step: it merged,
+measured and drove, and it changed no predicate, no assertion, no fixture and no band.  The one
+thing it changed is this file.
