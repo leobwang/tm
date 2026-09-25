@@ -6774,5 +6774,590 @@ theorem the_witness_module_plans_one_instant :
       = false := by
   refine ⟨by decide, by decide⟩
 
+/-! ############################################################################
+## 28. W-32 (track G): the burn-down of seven is ONE blocker, counted seven times
+############################################################################
+
+**What this run went looking for and what it found.**  The brief said all seven remaining goals
+are about `Planner.assignedOf (Planner.dayPlan r)` and that P9 had made them statable at last.
+They are statable.  What they are not is *separable*: **every one of the seven already has its
+restatement written and proved in `PlanCheck.lean`**, as one of §6.1's eleven, and **every one
+of those restatements is empty or false on every day this tree can build**.  The burn-down of
+seven is not seven proofs owed; it is one composition gap — parts built, proved, never joined —
+seen from seven directions.  README gap **2320** is that finding.  Measured, check by check:
+
+* `Goals.plan_places_no_demanding_block_after_wind_down` → `PlanCheck.noDemandingAfterWindDown`,
+  proved as `PlanCheck.noDemandingAfterWindDown_of_a_day_that_pays`.  **No subject at any of the
+  45 requests**, at either eligibility.
+* `Goals.plan_is_monotone_in_rank` → `PlanCheck.monotoneInRank`.  **No subject at any request at
+  `freeSlotRows`**, the eligibility the eleven are proved at.
+* `Goals.plan_puts_hot_before_the_queue` → `PlanCheck.hotBeforeQueue`.  Same, and worse: where it
+  *does* have a subject it is **false** — see `the_hot_check_is_false_where_it_has_a_subject_and_empty_where_it_is_proved`.
+* Goals.plan_never_drops_an_impossible_item (LEFT `Goals.lean` in this run) →
+  `PlanCheck.impossibleKept`.  **No subject at any
+  request and any eligibility**, unconditionally — `PlanCheck.impossible_has_no_subject`.
+* `Goals.plan_never_batches_past_an_equal_ci_candidate` → `PlanCheck.batchDoesNotReachPast`.  No
+  subject at the 45 — until §29 builds the store that gives it one, and refutes the law there.
+* `Goals.plan_tail_drop` and `Goals.plan_is_stable_across_a_replan` are the two relational ones,
+  refuted in §6 and §20 by the field their hypotheses do not pin.
+
+**Measured by `#eval` at this commit, over every `PlanReq` this module defines** (the roster is a
+LIST, and gap **2025** is the last time that bit): at the baseline **45 requests; 21 assign at
+least one row; 21 pay `PlanCheck.candsAgree`; and the intersection was THREE.**  This section adds
+one and §29 two, so at this commit it is **48, 24, 24 and SIX**.  The two columns
+barely overlap because the 18 that pay without assigning carry no candidates at all
+(`PlanCheck.candsAgree_of_no_cands`) and the 18 that assign without paying send candidates that
+are not items of their own plan.
+
+**And the subject counts, the same way**: at the baseline `.windDown`, `.impossible` and `.batch`
+had **zero** subjects at both `permissive` and `freeSlotRows`; `.rank` had 9 and `.hot` 10 at
+`permissive` and **zero and zero** at `freeSlotRows`.  At this commit `.rank` and `.hot` are 11 and
+11, and `.batch` is **2** — the two days §29 adds, and nothing else moved.
+
+**What is new here and what was already known.**
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` already said that four of the
+eleven are empty on a day the fold left alone, and named the steps that would end it — *"P5's fold
+ends it for `energyFilter` and `batch`, P5/P7 for `windDown`, P8 for `impossible`"*.  **P9 is that
+fold, and it ended it for `energyFilter` alone.**  `batch`, `windDown` and `impossible` are still
+empty on the days the fold FILLS, and `the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays`
+is that measured at the four days that assign and pay.  The prediction was right about one of its
+four and this is which. -/
+
+/-! ### The first candidate §7.3 calls IMPOSSIBLE, and what the day does with it
+
+`Planner.edfNumbers` has been in the tree since P4 and `Arith.isImpossible` since stage 5, and
+**neither had ever answered `true` about a request**: every candidate of all 45 requests carries
+`due = none`, so `Look.Cand.enters` refuses it, `Planner.PlanReq.grantFor` is `none`, and
+`Planner.edfNumbers_without_a_grant` gives the `(0, 0)` pair whose impossibility test is `false`.
+Goals.plan_never_drops_an_impossible_item was therefore a goal whose **hypothesis** nothing in
+this tree could satisfy — AGENTS §5.2's theorem that compiles and means nothing, from the other
+end.  This is the request that satisfies it. -/
+
+/-- `pCand` with §7.3's two extra facts set: a due date, so the candidate **enters** the EDF
+pass (`Look.Cand.enters`), and the minutes it still needs.  Everything `PlanCheck.candsAgree`
+reads — `ci`, `rootPrio`, `hot` — is `pCand`'s, so a candidate built here agrees with its store
+exactly as one built there does. -/
+def pCandDue (id : List Char) (ci : Fin 6) (hot : Bool) (rem : Nat) (due : Day)
+    (pm : Nat) (l : Field.Loc) (sp : Bool)
+    (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
+    Look.Cand × Option Look.Floor :=
+  (⟨id, ci, none, rem, some due, false, false, false, false, false, hot, none,
+     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+
+/-- `payingCands` with `^m1` given a due date of **today** and 100 000 minutes still to do.
+`^m2` is unchanged, so the only thing that separates this request from `thePayingRequest` is the
+pair §7.3 reads. -/
+def impCands : List (Look.Cand × Option Look.Floor) :=
+  [pCandDue ['m','1'] 5 true 100000 739867 60 .any true (by decide),
+   pCand ['m','2'] 2 false 60 .any true (by decide)]
+
+/-- **The quiet census Wednesday with an impossible candidate on it.** -/
+def theImpossibleRequest : PlanReq :=
+  { theQuietCensusRequest with plan := payingPlan, cands := ⟨impCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **§7.3's two numbers, non-trivial for the first time.**  `^m1` needs 100 000 minutes by the
+end of today and today has none left to give it, so `Planner.edfNumbers` answers
+`(130 000 000 000 000 000 000 000, 0)` — the need scaled by `Look.capDen`, against an availability
+of nothing — and `Arith.isImpossible` answers **`true`**.  `^m2` carries no due date and keeps the
+`(0, 0)` pair, which is the control: the difference between the two rows is the field, not the
+request.
+
+And the day **does not place `^m1`**.  Not because it is impossible — nothing in §8.2 step 5 reads
+the grant — but because `^m1` is `ci:5` and no slot this Wednesday cuts is that good, which is
+`the_paying_request_assigns_and_the_battery_passes`' own reason at the same store. -/
+theorem the_first_impossible_candidate_this_tree_has_had :
+    edfNumbers theImpossibleRequest ['m','1'] = (130000000000000000000000, 0) ∧
+    Arith.isImpossible (edfNumbers theImpossibleRequest ['m','1']).1
+      (edfNumbers theImpossibleRequest ['m','1']).2 = true ∧
+    edfNumbers theImpossibleRequest ['m','2'] = (0, 0) ∧
+    Arith.isImpossible (edfNumbers theImpossibleRequest ['m','2']).1
+      (edfNumbers theImpossibleRequest ['m','2']).2 = false ∧
+    assignedOf (dayPlan theImpossibleRequest) = [['m','2']] := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **Goals.plan_never_drops_an_impossible_item as stage 6 wrote it is REFUTED** (AGENTS §3.1
+item 3, §3.2), at a day that **assigns and pays**, by the first request in this tree whose
+hypothesis is satisfiable at all.
+
+`^m1` is an item of the request's own plan, its EDF pair is impossible, and it is not in
+`Planner.assignedOf (Planner.dayPlan theImpossibleRequest)`.  §7.3's *"IMPOSSIBLE items are still
+scheduled with everything available"* is a claim about **capacity**, and the planner drops this
+one on **energy** — so the goal as written asks the fold for a guarantee no filter in it makes.
+
+The restatement is `PlanCheck.impossibleKept`, which is already one of §6.1's eleven and already
+proved: it reads the day's **own** `Planner.Diagnostics.impossible` list rather than recomputing
+the numbers, exactly as design §6.1 requires a check over a produced `DayPlan` to.  What it has
+no subject is a separate fact and it is the theorem below. -/
+theorem plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted :
+    ¬ (∀ (r : PlanReq) (i : Id) (e : Entity),
+        r.plan.val.store.get i = some e →
+        Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true →
+        i ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨-, himp, -, -, hass⟩ := the_first_impossible_candidate_this_tree_has_had
+  cases hm1 : payingPlan.val.store.get ['m','1'] with
+  | none => exact absurd hm1 (by decide)
+  | some e =>
+    have hmem := h theImpossibleRequest ['m','1'] e hm1 himp
+    rw [hass] at hmem
+    exact absurd hmem (by simp)
+
+/-! **And the restatement's subject is empty at EVERY request and EVERY eligibility — and that
+theorem was already here.**  `PlanCheck.impossible_has_no_subject` says it, unconditionally, at
+every request and every eligibility, and `PlanCheck.the_day_names_no_impossible_item` is why:
+`PlanCheck.subjectOf`'s `.impossible` arm reads `d.diagnostics.impossible`, and
+`Planner.dayDiagnostics` writes three fields of `Planner.Diagnostics.empty` and never that one.
+This run wrote a second copy of that statement before finding the first, which is AGENTS §5.3 at
+its own author; the copy is deleted and the existing name is what the departure note in
+`Goals.lean` cites.  Filling the list from `Planner.edfNumbers` is **P8**'s step and README gap
+**2321** is the residue. -/
+
+/-! ### `Goals.plan_puts_hot_before_the_queue`, refuted a THIRD time — and both repairs fail
+
+W-19 refuted it at `theQueuedRequest` and W-20 again at a quiet day, and **both refutations have
+been overtaken**: each said, in its own doc comment, that the cause was that §8.2 step 5 was
+unwritten.  P9 wrote it.  The refutation below is at a day the fold **filled**, at a request whose
+decoder **pays** `PlanCheck.candsAgree`, with the hot item a candidate of that very request — and
+the two repairs README gaps 850 and 960 offered P5 are both already applied to the statement it
+refutes:
+
+* `sj.val.kind.isWork = true` is W-20's repair, and the row the refutation uses is a Block row
+  §8.2 step 5 placed, carrying a slot energy.  It is not the Wall row W-20 complained about.
+* an eligibility on the hot item is gap 850's repair, and
+  `the_hot_check_is_false_where_it_has_a_subject_and_empty_where_it_is_proved` is what it buys:
+  at the only eligibility in this tree that gives the check a subject on this day, the check is
+  **false**.
+
+The cause is neither: `^m1` is `ci:5` and no slot of this Wednesday is that good, so the day
+carries no row for it at all while `^m2` gets one.  A hot item the day has nowhere to put is not
+a defect in the ranking, and that is precisely what §8.3's bullet, read as written, denies. -/
+
+set_option maxRecDepth 400000 in
+/-- The two rows the refutation turns on, computed: a **work** row of the paying day carrying
+`^m2` with a slot energy, and no row of that day carrying `^m1` at all.  The third and fourth
+conjuncts are what make it a statement about the planner rather than about a mismatched request:
+the decoder pays, and `^m1` is one of the two candidates it sent. -/
+theorem the_paying_day_carries_the_queue_and_never_the_hot_item :
+    ((dayPlan thePayingRequest).segments.any (fun s =>
+        decide (s.val.item = some ['m','2']) && decide (s.val.kind = SegKind.block)
+          && s.val.energy.isSome && s.val.kind.isWork)) = true ∧
+    ((dayPlan thePayingRequest).segments.all (fun s =>
+        decide (s.val.item ≠ some ['m','1']))) = true ∧
+    PlanCheck.candsAgree thePayingRequest = true ∧
+    thePayingRequest.cands.val.map (fun p => p.1.id) = [['m','1'], ['m','2']] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The law is false even with W-20's repair in it**, at a day that assigns and pays.  The
+statement below is `Goals.plan_puts_hot_before_the_queue` **plus** `sj.val.kind.isWork = true`, so
+it is strictly weaker than the goal and refuting it refutes the goal. -/
+theorem plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays :
+    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg),
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        Field.Flag.hot ∈ e.val.flags → Field.Flag.hot ∉ f.val.flags →
+        sj ∈ (dayPlan r).segments → sj.val.item = some j →
+        sj.val.kind.isWork = true →
+        ∃ si ∈ (dayPlan r).segments, si.val.item = some i ∧
+          si.val.start ≤ sj.val.start) := by
+  intro h
+  obtain ⟨hany, hall, -, -⟩ := the_paying_day_carries_the_queue_and_never_the_hot_item
+  cases hm1 : payingPlan.val.store.get ['m','1'] with
+  | none => exact absurd hm1 (by decide)
+  | some e =>
+    cases hm2 : payingPlan.val.store.get ['m','2'] with
+    | none => exact absurd hm2 (by decide)
+    | some f =>
+      have h1 : (payingPlan.val.store.get ['m','1']).map (fun x => x.val.flags)
+          = some [Field.Flag.hot] := by decide
+      rw [hm1, Option.map_some] at h1
+      have h2 : (payingPlan.val.store.get ['m','2']).map (fun x => x.val.flags)
+          = some [] := by decide
+      rw [hm2, Option.map_some] at h2
+      have hhot : Field.Flag.hot ∈ e.val.flags := by rw [Option.some.inj h1]; simp
+      have hnot : Field.Flag.hot ∉ f.val.flags := by rw [Option.some.inj h2]; simp
+      obtain ⟨sj, hsj, hp⟩ := List.any_eq_true.1 hany
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
+      obtain ⟨si, hsi, hii, -⟩ :=
+        h thePayingRequest ['m','1'] ['m','2'] e f sj hm1 hm2 hhot hnot hsj hp.1.1.1 hp.2
+      have := List.all_eq_true.1 hall si hsi
+      simp [hii] at this
+
+set_option maxRecDepth 400000 in
+/-- **GAP 365, PRICED BY A COMPUTATION rather than by prose.**  §6.1's `hot` check is, on the day
+that assigns and pays, either empty or false, and which of the two it is is decided entirely by
+the eligibility:
+
+* at `permissive` — no clause at all — `PlanCheck.hotSubjects` is non-empty and
+  `PlanCheck.hotBeforeQueue` answers **`false`**;
+* at `freeSlotRows` — the eligibility §6.1's eleven are actually proved at
+  (`the_eleven_applies_at_the_paying_request`) — the same day gives it **no subject**, and it
+  answers `true` for want of one.
+
+So Planner.eligibleAt is owed a fourth line, and this is what it says: it must admit a pair the
+day has rows for and refuse an item whose `ci` no free slot's energy reaches.  Neither
+`permissive` nor `freeSlotRows` does both, and no eligibility that ignores the slot energies can.
+README gap **2322**. -/
+theorem the_hot_check_is_false_where_it_has_a_subject_and_empty_where_it_is_proved :
+    PlanCheck.subjectOf permissive PlanCheck.CheckName.hot thePayingRequest
+        (dayPlan thePayingRequest) = true ∧
+    PlanCheck.hotBeforeQueue permissive thePayingRequest (dayPlan thePayingRequest) = false ∧
+    PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.hot thePayingRequest
+        (dayPlan thePayingRequest) = false ∧
+    PlanCheck.hotBeforeQueue freeSlotRows thePayingRequest (dayPlan thePayingRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-! ### The paying set, widened again — and the three empty checks at every day in it -/
+
+set_option maxRecDepth 400000 in
+/-- **FOUR requests pay the fifth decoder clause and assign**, where W-31 left three and W-30 left
+one.  The new one is the only request in this tree that carries a candidate §7.3 **enters**, so
+it widens the paying set along the axis `Planner.edfNumbers` is about rather than along the `ci`
+axis the other three vary. -/
+theorem four_requests_now_assign_and_pay :
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest].map
+        (fun r => (PlanCheck.candsAgree r, r.assignedRows.length,
+          ((dayPlan r).segments.filter (fun s =>
+            decide (s.val.kind = SegKind.block) && s.val.energy.isSome)).length))
+      = [(true, 1, 1), (true, 1, 1), (true, 2, 2), (true, 1, 1)] ∧
+    assignedOf (dayPlan theImpossibleRequest) = [['m','2']] ∧
+    pastRows theImpossibleRequest = [] ∧
+    theImpossibleRequest.activeRun = none ∧
+    PlanCheck.planOkCore theImpossibleRequest (dayPlan theImpossibleRequest) = true ∧
+    PlanCheck.planOk freeSlotRows theImpossibleRequest (dayPlan theImpossibleRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The four checks the remaining single-run goals restate, at the four days that assign and
+pay.**  The first table is the eligibility the eleven are proved at: all four checks are empty on
+all four days.  The second is `permissive`, and it is where the two comparisons come alive — and
+where `hot` is false on every one of the four while `rank` is true on the one day it has a subject
+(`theTwoPayingRequest`, whose two siblings are at equal `ci` and both assigned).
+
+This is the measurement behind the section header: the remaining burn-down is not seven proofs, it
+is one missing eligibility and two unwritten steps.  README gap **2323**.
+
+**§29 moves the third conjunct**: `PlanCheck.batchDoesNotReachPast` has a subject at the two days
+that section adds, so `.batch` is no longer empty *in the tree* — only on these four days.  What
+does not move is `windDown` and `impossible`, which are empty everywhere. -/
+theorem the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays :
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest].map
+        (fun r => (PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.windDown r (dayPlan r),
+                   PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.rank r (dayPlan r),
+                   PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.hot r (dayPlan r),
+                   PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.batch r (dayPlan r)))
+      = [(false, false, false, false), (false, false, false, false),
+         (false, false, false, false), (false, false, false, false)] ∧
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest].map
+        (fun r => (PlanCheck.subjectOf permissive PlanCheck.CheckName.rank r (dayPlan r),
+                   PlanCheck.subjectOf permissive PlanCheck.CheckName.hot r (dayPlan r),
+                   PlanCheck.monotoneInRank permissive r (dayPlan r),
+                   PlanCheck.hotBeforeQueue permissive r (dayPlan r)))
+      = [(false, true, true, false), (false, true, true, false),
+         (true, true, true, false), (false, true, true, false)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **And the Batch rows this tree builds belong to no store**, which is why
+`PlanCheck.batchDoesNotReachPast` has no subject anywhere: `theBatchRequest`, `theCapRequest`,
+`theAtomicRequest` and `theGatherRequest` each carry one Batch row, and the plan behind all four
+is `lookWallPlan`, whose store holds `^g1` and nothing else.  `PlanCheck.batchPairOk`'s antecedent
+needs both ids in the store, so the checker ranges over the empty set.
+
+README gap **2194** already names the request that would fix it — *"a paying request whose group
+has two members"* — and this is that gap's missing half: the reason no such request exists is the
+STORE, not the fold.  **§29 builds it**, so gap 2194 is closed rather than restated. -/
+theorem the_batch_rows_this_tree_builds_belong_to_no_store :
+    [theBatchRequest, theCapRequest, theAtomicRequest, theGatherRequest].map
+        (fun r => ((dayPlan r).segments.filter (fun s =>
+          match s.val.kind with | SegKind.batch _ => true | _ => false)).length)
+      = [1, 1, 1, 1] ∧
+    [theBatchRequest, theCapRequest, theAtomicRequest, theGatherRequest].map
+        (fun r => (r.plan.val.store.dom,
+          PlanCheck.subjectOf permissive PlanCheck.CheckName.batch r (dayPlan r)))
+      = [([['g','1']], false), ([['g','1']], false), ([['g','1']], false),
+         ([['g','1']], false)] := by
+  refine ⟨by decide, by decide⟩
+
+/-! ### Gap 2199's route to the wind-down refutation does not exist, and the CUT is why
+
+Gap 2199 offered *"one request planning at, say, 22:00 with a log that worked a `ci:5` item"* as
+the refutation `Goals.plan_places_no_demanding_block_after_wind_down` is waiting for.  **There is
+no such day**, and the reason is structural rather than a want of witnesses.  Three sources can
+put a Block row on a day and the wind-down is above all three:
+
+1. **A day whose `now` is at or past its own wind-down has no WindDown row at all** for a Block to
+   be after.  `Planner.a_wind_down_row_of_the_day` reads `r.now.sec < r.windDownSec` off the row's
+   own existence, because `Planner.PlanReq.eveningRows` places `Planner.PlanReq.windDownSeg` only
+   inside that guard.  So the 22:00 request has nothing to fail.
+2. **§8.2 choice 5b's reservation starts at `now`** —
+   `Planner.PlanReq.activeRow_is_an_energyless_block` — which bullet 1 has already put before the
+   wind-down.  That is `Planner.PlanReq.the_reservation_never_runs_under_a_wind_down_row`
+   (README gap 437, refuted) approached from the other end.
+3. **And no slot §8.2 step 5 can fill starts inside the evening.**
+   `Planner.PlanReq.no_slot_reaches_the_evening` has said since step P3 that
+   `Planner.PlanReq.night` is in the list the cut avoids, and the night begins at
+   `min r.windDownSec r.dayEnd`.
+
+**Bullet 3 had never been carried the one step onto the ROWS**, which is the composition this
+campaign keeps finding missing, and the two theorems below carry it.  What they buy is that
+`PlanCheck.AssignedRowsPay`'s second clause — and with it the hypothesis of
+`PlanCheck.an_assigned_members_ci_after_the_wind_down` — is **unsatisfiable on any day inside the
+horizon**, so the `candsAgree` that discharges it is paying for nothing.  README gap **2325** is
+the correction to gap 2199; README gap **2326** is that vacuity. -/
+
+/-- **No row §8.2 step 5 places starts inside the evening** — `no_slot_reaches_the_evening` at the
+row rather than at the slot.  The bridge is `Planner.PlanReq.energised_slot_is_a_slot`, and the
+instant the blocked span is tested at is the row's own start, which
+`Planner.PlanReq.a_slot_is_not_empty` puts strictly inside the slot. -/
+theorem an_assigned_row_starts_outside_the_evening (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) : ¬ (r.night.1 ≤ t.start ∧ t.start < r.night.2) := by
+  obtain ⟨e, s, hes, hst, -, -⟩ := r.an_assigned_row_is_a_slot_of_the_day t h
+  have hsl : s ∈ r.todaySlots := r.energised_slot_is_a_slot hes
+  have hne : s.start < s.stop := r.a_slot_is_not_empty s hsl
+  rw [hst]
+  exact r.no_slot_reaches_the_evening s hsl (Nat.le_refl _) hne
+
+/-- **And therefore no row §8.2 step 5 places starts at or after the wind-down**, which is the
+antecedent `PlanCheck.AssignedRowsPay`'s second clause and
+`PlanCheck.an_assigned_members_ci_after_the_wind_down` are both written about.
+
+`hhz` is the one thing this costs and it is NAMED rather than assumed away (AGENTS §5.2, §5.12):
+the row starts before the end of *tomorrow*, which is where `Planner.PlanReq.night` ends.  Every
+row of every day this tree builds satisfies it — a slot lies inside `Planner.PlanReq.window`, and
+§8.1's wall extension is the only thing that can push that window past midnight — but **nothing in
+this tree bounds `Look.day0Window`'s end by `r.dayEnd + 86400`**, so it cannot be discharged here
+and pretending otherwise would be the failure mode §5.2 is about.  That bound is README gap
+**2326**'s second half. -/
+theorem an_assigned_row_inside_the_horizon_is_before_the_wind_down (r : PlanReq) (t : Seg)
+    (h : t ∈ r.assignedRows) (hhz : t.start < r.dayEnd + 86400) : t.start < r.windDownSec := by
+  have hb := an_assigned_row_starts_outside_the_evening r t h
+  unfold PlanReq.night at hb
+  have hnot : ¬ (min r.windDownSec r.dayEnd ≤ t.start) := fun hle => hb ⟨hle, hhz⟩
+  exact Nat.lt_of_lt_of_le (Nat.not_le.1 hnot) (Nat.min_le_left _ _)
+
+/-! ############################################################################
+## 29. W-32 (track G): the BATCH check gets its first subject, and design §6.3's own `loc:`
+      skip refutes two goals at a day that assigns and pays
+############################################################################
+
+**README gap 2194 asked for this request and §28 could not build it**: *"a paying request whose
+group has two members"*.  Four days in this module carry a Batch row — `theBatchRequest`,
+`theCapRequest`, `theAtomicRequest`, `theGatherRequest` — and the plan behind all four is
+`Boundary.lookWallPlan`, whose store holds `^g1` and nothing else, so
+`PlanCheck.batchPairOk`'s antecedent (both ids in the store) is unsatisfiable and
+`PlanCheck.batchDoesNotReachPast` has ranged over the empty set at every request in this tree.
+`the_batch_rows_this_tree_builds_belong_to_no_store` is that, measured.
+
+**The witness is three siblings of ONE document at ONE `ci`, in an order the document and the
+gather disagree about.**  `^t3` is written first (`live.rank` 1) and is too big to share a block
+(`Planner.Ranked.gatherable` reads `Look.Cand.remaining` against §7's batch bound, which is 20
+here); `^t1` and `^t2` are small and share one.  So the day carries a Block row for `^t3` and a
+**Batch** row for `[^t1, ^t2]`, the batch's members rank *behind* the item it left out, and
+`PlanCheck.batchDoesNotReachPast` has a subject for the first time.
+
+**And one character decides whether the law holds.**  At `thePayingBatchRequest` every candidate
+is `loc:`-free, `^t3` gets its own Block row, and the check answers `true`.  At
+`theSkippedBatchRequest` — the same store, the same two small candidates, `^t3` carrying
+`loc:out` on a day at the lounge — §8.2 step 5 places the batch and places **nothing** for `^t3`,
+and the check answers `false`.  That is design §6.3's own sentence, computed at last: *"step 5
+skips a `loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3 invariant is
+about"*.  It refutes **two** goals in one day, and the pair either side of the `loc:` is also
+what keeps the checker from being a constant (D40's question, asked of a checker). -/
+
+/-- Three siblings of one document at one `ci`, written `^t3`, `^t1`, `^t2` — so the document's
+own order disagrees with the order §7.4's key will put them in. -/
+def batchStoreWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 2 6b Third task ^t3".toList,
+       "- [ ] 2 6b First task ^t1".toList,
+       "- [ ] 2 6b Second task ^t2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_batch_store_witness_loads : loadsOk batchStoreWitness = true := by decide
+
+/-- The loaded plan.  Total by `the_batch_store_witness_loads`: the error branch is refuted, not
+defaulted. -/
+def batchStorePlan : WfPlan :=
+  match h : loadPlan batchStoreWitness with
+  | .ok p => p
+  | .error _ => absurd the_batch_store_witness_loads (by simp [loadsOk, h])
+
+/-- A candidate of that store: `ci:2` and no `rootPrio`, which is what a plain line carries, so
+`PlanCheck.candsAgree` holds.  `rem` is what `Planner.Ranked.gatherable` reads and `pm` is what
+the gather's total is counted in — the two are separate fields and this is the witness that
+needs them separate. -/
+def pCandSmall (id : List Char) (rem pm : Nat) (l : Field.Loc)
+    (h : Look.PlanFacts.wf (planFacts pm l) = true) : Look.Cand × Option Look.Floor :=
+  (⟨id, 2, none, rem, none, false, false, false, false, false, false, none,
+     wfPlanFacts pm l h⟩, none)
+
+/-- **The batch day**: `^t1` and `^t2` small enough to share a block, `^t3` too big and
+unconstrained. -/
+def thePayingBatchRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨[pCandSmall ['t','1'] 10 10 .any (by decide), pCandSmall ['t','2'] 10 10 .any (by decide), pCandSmall ['t','3'] 50 50 .any (by decide)], by decide⟩ }
+
+/-- **The same day with one character changed**: `^t3` carries `loc:out` and the day is at the
+lounge, so §8.2 step 5 has nowhere to put it. -/
+def theSkippedBatchRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨[pCandSmall ['t','1'] 10 10 .any (by decide), pCandSmall ['t','2'] 10 10 .any (by decide), pCandSmall ['t','3'] 50 50 .out (by decide)], by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **What the store holds, computed**: three siblings of document 1 at `ci:2` with no
+`rootPrio` and no flags, ranked `^t3` 1, `^t1` 2, `^t2` 3.  Every antecedent
+`PlanCheck.rankPairOk` and `PlanCheck.batchPairOk` share is in this list. -/
+theorem the_batch_store_holds_three_siblings_at_one_ci :
+    batchStorePlan.val.store.dom = [['t','2'], ['t','1'], ['t','3'], ['g','1']] ∧
+      (effectiveCi batchStorePlan.val ['t','1']).val = 2 ∧
+      (effectiveCi batchStorePlan.val ['t','2']).val = 2 ∧
+      (effectiveCi batchStorePlan.val ['t','3']).val = 2 ∧
+      rootPrio batchStorePlan.val ['t','1'] = none ∧
+      rootPrio batchStorePlan.val ['t','3'] = none ∧
+      (batchStorePlan.val.store.get ['t','1']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 2, []) ∧
+      (batchStorePlan.val.store.get ['t','2']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 3, []) ∧
+      (batchStorePlan.val.store.get ['t','3']).map
+          (fun e => (e.val.live.doc, e.val.live.rank, e.val.flags)) = some (1, 1, []) := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **Both requests assign and pay, both days carry a Batch row, and the `loc:` is the only
+difference in what they assign.**  The second table is the point: `PlanCheck.batchDoesNotReachPast`
+has a subject at both — the first time in this tree — and answers `true` at one and `false` at the
+other, while `PlanCheck.planOk` at `freeSlotRows` stays `true` at both because the subject is
+empty *there*. -/
+theorem the_two_batch_requests_assign_and_pay :
+    [thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.candsAgree r, batchIds r, assignedOf (dayPlan r)))
+      = [(true, [[['t','3']], [['t','1'], ['t','2']]], [['t','3'], ['t','1'], ['t','2']]),
+         (true, [[['t','3']], [['t','1'], ['t','2']]], [['t','1'], ['t','2']])] ∧
+    [thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.subjectOf permissive PlanCheck.CheckName.batch r (dayPlan r),
+                   PlanCheck.batchDoesNotReachPast permissive r (dayPlan r),
+                   PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.batch r (dayPlan r),
+                   PlanCheck.planOk freeSlotRows r (dayPlan r)))
+      = [(true, true, false, true), (true, false, false, true)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- The Batch row the two refutations turn on: it holds `^t1` and not `^t3`, and the day it is on
+assigns `^t1` and `^t2` and nothing else. -/
+theorem the_skipped_day_batches_past_the_sibling_that_ranks_ahead :
+    ((dayPlan theSkippedBatchRequest).segments.any (fun s =>
+        match s.val.kind with
+        | SegKind.batch ids => decide (['t','1'] ∈ ids.val) && decide (['t','3'] ∉ ids.val)
+        | _ => false)) = true ∧
+    assignedOf (dayPlan theSkippedBatchRequest) = [['t','1'], ['t','2']] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **E2 — Goals.plan_never_batches_past_an_equal_ci_candidate — is REFUTED**, at a day that
+assigns and pays, by the only mechanism design §6.3 ever named for it.
+
+The batch holds `^t1` (`live.rank` 2) and not `^t3` (`live.rank` 1); the two are siblings of one
+document at one `ci`; and `^t3` is not in the day's assigned set at all.  The goal asks that it
+be.  E2's own doc comment says the effect *"is invisible in the output: the batch looks correct
+and the skipped item simply never appears"* — which is exactly what this day renders. -/
+theorem plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day :
+    ¬ (∀ (r : PlanReq) (s : WfSeg) (ids : BatchIds) (i j : Id) (e f : Entity),
+        s ∈ (dayPlan r).segments → s.val.kind = SegKind.batch ids →
+        i ∈ ids.val → j ∉ ids.val →
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
+        e.val.live.doc = f.val.live.doc →
+        f.val.live.rank < e.val.live.rank →
+        j ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨hany, hass⟩ := the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+  obtain ⟨s, hs, hp⟩ := List.any_eq_true.1 hany
+  cases hk : s.val.kind with
+  | batch ids =>
+      rw [hk] at hp
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
+      cases h1 : batchStorePlan.val.store.get ['t','1'] with
+      | none => exact absurd h1 (by decide)
+      | some e =>
+        cases h3 : batchStorePlan.val.store.get ['t','3'] with
+        | none => exact absurd h3 (by decide)
+        | some f =>
+          have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
+          rw [h1, Option.map_some] at q1
+          have q3 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.2
+          rw [h3, Option.map_some] at q3
+          have e1 := Option.some.inj q1
+          have e3 := Option.some.inj q3
+          simp only [Prod.mk.injEq] at e1 e3
+          have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e3.1]
+          have hr : f.val.live.rank < e.val.live.rank := by rw [e1.2.1, e3.2.1]; decide
+          have hmem := h theSkippedBatchRequest s ids ['t','1'] ['t','3'] e f hs hk hp.1 hp.2
+            h1 h3 (by decide) hd hr
+          rw [hass] at hmem
+          exact absurd hmem (by simp)
+  | _ => rw [hk] at hp; exact absurd hp (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **And the SAME day refutes Goals.plan_is_monotone_in_rank**, which W-19 could only refute by
+pointing at a fold that did not exist yet.
+
+`^t3` and `^t1` are siblings of one document at equal `rootPrio` (`none` on both) and equal `ci`,
+`^t3` is written first, the day assigns `^t1` and the day does not assign `^t3`.  The reason is
+design §6.3's `loc:` — not W-19's *"there is no assign fold yet"*, which P9 has made false. So
+the goal's restatement `PlanCheck.monotoneInRank` needs an eligibility that refuses a candidate
+whose `loc:` the day cannot satisfy, which is the second concrete line this run owes gap 365
+(README gap **2322**); the first was the slot energies. -/
+theorem plan_is_monotone_in_rank_is_refuted_at_a_paying_day :
+    ¬ (∀ (r : PlanReq) (i j : Id) (e f : Entity),
+        r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
+        rootPrio r.plan.val i = rootPrio r.plan.val j →
+        effectiveCi r.plan.val i = effectiveCi r.plan.val j →
+        e.val.live.doc = f.val.live.doc →
+        e.val.live.rank < f.val.live.rank →
+        j ∈ assignedOf (dayPlan r) →
+        i ∈ assignedOf (dayPlan r)) := by
+  intro h
+  obtain ⟨-, hass⟩ := the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+  cases h1 : batchStorePlan.val.store.get ['t','1'] with
+  | none => exact absurd h1 (by decide)
+  | some f =>
+    cases h3 : batchStorePlan.val.store.get ['t','3'] with
+    | none => exact absurd h3 (by decide)
+    | some e =>
+      have q1 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.1
+      rw [h1, Option.map_some] at q1
+      have q3 := the_batch_store_holds_three_siblings_at_one_ci.2.2.2.2.2.2.2.2
+      rw [h3, Option.map_some] at q3
+      have e1 := Option.some.inj q1
+      have e3 := Option.some.inj q3
+      simp only [Prod.mk.injEq] at e1 e3
+      have hd : e.val.live.doc = f.val.live.doc := by rw [e1.1, e3.1]
+      have hr : e.val.live.rank < f.val.live.rank := by rw [e1.2.1, e3.2.1]; decide
+      have hj : (['t','1'] : Id) ∈ assignedOf (dayPlan theSkippedBatchRequest) := by
+        rw [hass]; simp
+      have hmem := h theSkippedBatchRequest ['t','3'] ['t','1'] e f h3 h1 (by decide) (by decide)
+        hd hr hj
+      rw [hass] at hmem
+      exact absurd hmem (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The paying set is SIX**, and `four_requests_now_assign_and_pay` in §28 is the count before
+this section.  The last column is the one that moves: `PlanCheck.batchDoesNotReachPast` has a
+subject at the two new days and at none of the other four, which is
+`the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays`'s third conjunct stopping
+being true of the tree as a whole. -/
+theorem the_paying_set_is_six_and_the_batch_check_has_a_subject :
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest,
+     thePayingBatchRequest, theSkippedBatchRequest].map
+        (fun r => (PlanCheck.candsAgree r, !r.assignedRows.isEmpty,
+          PlanCheck.subjectOf permissive PlanCheck.CheckName.batch r (dayPlan r),
+          PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.windDown r (dayPlan r)))
+      = [(true, true, false, false), (true, true, false, false), (true, true, false, false),
+         (true, true, false, false), (true, true, true, false), (true, true, true, false)] := by
+  decide
+
 end PlannerWit
 end Tm

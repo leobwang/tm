@@ -768,7 +768,7 @@ stay until P5 and P5/P7 give them a subject.
 **The fourth is a finding rather than an application of that rule.**
 `PlanCheck.impossibleKept`'s subject is `Planner.Diagnostics.impossible` and
 `PlanCheck.impossible_has_no_subject` proves it empty at every request — but
-`plan_never_drops_an_impossible_item` below is **not** stated over that list.
+the impossibility goal that stood below was **not** stated over that list.
 It is stated over `Planner.edfNumbers`, whose hypothesis a real candidate can
 satisfy, with a conclusion about `Planner.assignedOf`.  So the checker being
 vacuous does not make the goal provable and the two are not the same statement;
@@ -818,8 +818,8 @@ request whose day carries Optional rows, is **equal to** `PlannerWit.theRequest`
 rule stands unchanged: `plan_respects_the_energy_filter`,
 `plan_never_batches_past_an_equal_ci_candidate` and
 `plan_places_no_demanding_block_after_wind_down` are provable and would each be AGENTS
-§5.2's statement that compiles and means nothing; `plan_never_drops_an_impossible_item` is P8's
-(README gap 1065); the two comparisons need their P5
+§5.2's statement that compiles and means nothing; the impossibility goal is P8's
+(README gap 1065) and LEFT this file at W-32, refuted; the two comparisons need their P5
 restatement and plan_does_not_overbook got its own at W-31 (refuted, then
 `PlanCheck.plan_does_not_overbook_where_nothing_runs`); and `plan_tail_drop` and `plan_is_stable_across_a_replan` are G2 and G3.
 
@@ -848,7 +848,7 @@ form of W-21's and W-22's answers.  `PlanCheck.lean` imports `TmKernel.Planner` 
 `TmKernel.Emit`; `Emit.lean` is that module's sibling, downstream of the battery.  So no
 checker of the eleven can read a cell, no row text can be any checker's subject, and P8 could
 not have moved the census whatever it emitted.  What P8 was owed by name is a different
-sentence and it is **not** paid: `plan_never_drops_an_impossible_item` still needs
+sentence and it is **not** paid: the impossibility goal (refuted and gone at W-32) still needed
 `Planner.Diagnostics.impossible` filled from §7.3's grants (README gap 1065), and
 `Planner.dayDiagnostics` still leaves that field at `Planner.Diagnostics.empty`'s value.
 
@@ -937,7 +937,7 @@ item 9 is where each entry's answer now lives)*:
    is its slot half and the item half does not exist.
 5. `plan_puts_hot_before_the_queue` — **P5**.  Same refutation, same missing predicate; P5 also
    owes the one line that Planner.eligibleAt is `PlanCheck.FromNowAnchored`.
-6. `plan_never_drops_an_impossible_item` — **P8**.  `Planner.dayDiagnostics` still leaves
+6. plan_never_drops_an_impossible_item — **P8**.  `Planner.dayDiagnostics` still leaves
    `Planner.Diagnostics.impossible` at `Planner.Diagnostics.empty`'s value, so §7.3's grants
    have never been written into it (README gap 1065).  It is the only one of the nine that is
    **not** P5's.
@@ -1126,7 +1126,7 @@ is **not** the same for all nine.  Three kinds, and the list below says which ea
    sends **no candidate**, so its cursor fills no slot and a composition whose rows are a
    `filterMap` over `slotOf` adds no row to that day.
 5. `plan_puts_hot_before_the_queue` — **the same, for the same reason and at the same request.**
-6. `plan_never_drops_an_impossible_item` — **P9 changes nothing; it is P8's.**
+6. plan_never_drops_an_impossible_item — **P9 changes nothing; it is P8's.**
    `Planner.dayDiagnostics` still leaves `Planner.Diagnostics.impossible` at
    `Planner.Diagnostics.empty`'s value (README gap 1065).  P9 populates `assignedOf`, which is
    this goal's *conclusion*, and leaves its *hypothesis* — `Arith.isImpossible` over
@@ -1327,17 +1327,40 @@ scales the need (`need * Look.capDen`), and
 `Planner.edfNumbers_is_the_grants_own_impossibility` is the theorem that the
 hypothesis below now says what `Grant.impossible` says. -/
 
-/-- **L26 / §8.3 "impossible never dropped" (P\*), stage 6.**  §7.3: "IMPOSSIBLE
-items are still scheduled with everything available; the banner names the item
-and the shortfall".  Rules out the failure that silently looks like success —
-an item the day cannot fit vanishing from the plan instead of appearing with a
-shortfall.  `Arith.isImpossible` and `Arith.impossible_imp_hot` are proved
-already; what is owed is that the planner acts on them.  Design §6.3 gives its
-restatement and refutation to **P5**. -/
-theorem plan_never_drops_an_impossible_item (r : PlanReq) (i : Id) (e : Entity)
-    (hget : r.plan.val.store.get i = some e)
-    (himp : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
-    i ∈ assignedOf (dayPlan r) := sorry
+/-! **plan_never_drops_an_impossible_item has LEFT this file** (stage 6, run **W-32**, track G).
+It read
+
+    theorem plan_never_drops_an_impossible_item (r : PlanReq) (i : Id) (e : Entity)
+      (hget : r.plan.val.store.get i = some e)
+      (himp : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
+      i ∈ assignedOf (dayPlan r)
+
+— L26 / §8.3's "impossible never dropped", §7.3's *"IMPOSSIBLE items are still scheduled with
+everything available; the banner names the item and the shortfall"*.
+
+**It is FALSE, and it went by refute-and-rename** (AGENTS §3.2, §3.1 item 3).  The refutation is
+`PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted` and ships in the
+same commit, at `PlannerWit.theImpossibleRequest` — a day that **assigns and pays**, whose `^m1`
+is an item of its own plan, needs 100 000 minutes by the end of today, has no capacity left to it
+and is not in `Planner.assignedOf (Planner.dayPlan …)`.  §7.3's promise is about **capacity** and
+the planner drops that item on **energy**: it is `ci:5` and no slot this Wednesday cuts is that
+good.  So the goal asked §8.2 step 5 for a guarantee no filter in it makes.
+
+**Why it could be written down at all only now.**  Until this run **no request in this tree could
+satisfy its hypothesis**: every candidate of all 45 carries `due = none`, so `Look.Cand.enters`
+refuses it, `Planner.PlanReq.grantFor` is `none`, and `Planner.edfNumbers_without_a_grant` gives
+the `(0, 0)` pair whose `Arith.isImpossible` is `false`.
+`PlannerWit.the_first_impossible_candidate_this_tree_has_had` is the first `true` the test has
+ever answered about a request, and `PlannerWit.pCandDue` is the candidate that produces it.
+
+The restatement is `PlanCheck.impossibleKept`, which is **already** one of §6.1's eleven and
+already proved inside `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`: it reads the
+day's own `Planner.Diagnostics.impossible` — the id and its exact shortfall — rather than
+recomputing the numbers, which is what design §6.1 requires of a check over a produced `DayPlan`.
+**Its subject is empty at every request and every eligibility**, which
+`PlanCheck.impossible_has_no_subject` has said unconditionally since before this run, because
+`Planner.dayDiagnostics` never writes that field.  Filling it from `Planner.edfNumbers` is **P8**'s
+step and README gap **2321** is the residue. -/
 
 /-- **E2 (P\*), stage 6, §7.5.**  Batching gathers in key order and does not
 reach past an equal-`ci` candidate that ranks ahead of it.  The shipped bug did

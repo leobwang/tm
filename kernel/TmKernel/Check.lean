@@ -6837,3 +6837,49 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- plans ONE INSTANT, so no day in it holds a WindDown row with a Block at or after
 -- it, and the refutation that goal needs cannot be computed here (gap 2199).
 #print axioms Tm.PlannerWit.the_witness_module_plans_one_instant
+-- W-32 (track G): the burn-down of seven is ONE blocker counted seven times.
+-- Goals.plan_never_drops_an_impossible_item LEFT `Goals.lean`: refuted here, at the
+-- first request in this tree whose hypothesis is satisfiable at all.  Every candidate
+-- of all 45 requests carried `due = none` before this one, so `Arith.isImpossible`
+-- had never answered `true` about a request and the goal's hypothesis was empty.
+#print axioms Tm.PlannerWit.the_first_impossible_candidate_this_tree_has_had
+#print axioms Tm.PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted
+-- Its restatement's subject is empty at every request and every eligibility, and that
+-- theorem was ALREADY here -- `PlanCheck.impossible_has_no_subject`, audited above.  A
+-- second copy of it was written and deleted in this run (AGENTS 5.3).  Filling the list
+-- `PlanCheck.impossibleKept` reads is P8's step (gap 2321).
+-- Goals.plan_puts_hot_before_the_queue, refuted a THIRD time -- this time at a day the
+-- fold FILLED, at a request that PAYS, with W-20's own repair (`sj` is a work row)
+-- already in the statement.  The two earlier refutations both blamed the unwritten
+-- fold; P9 wrote it and the law is still false.
+#print axioms Tm.PlannerWit.the_paying_day_carries_the_queue_and_never_the_hot_item
+#print axioms Tm.PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays
+-- GAP 365 PRICED: §6.1's `hot` check is false where it has a subject and empty where it
+-- is proved, and which of the two is decided by the eligibility alone.
+#print axioms Tm.PlannerWit.the_hot_check_is_false_where_it_has_a_subject_and_empty_where_it_is_proved
+-- The paying set, widened from THREE to FOUR, along the axis `Planner.edfNumbers` is
+-- about; and the four checks the remaining single-run goals restate, measured empty on
+-- every one of the four days that assign and pay.
+#print axioms Tm.PlannerWit.four_requests_now_assign_and_pay
+#print axioms Tm.PlannerWit.the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays
+#print axioms Tm.PlannerWit.the_batch_rows_this_tree_builds_belong_to_no_store
+-- Gap 2199's route to the wind-down refutation does not exist: no row §8.2 step 5
+-- places starts inside the evening, so `PlanCheck.AssignedRowsPay`'s second clause has
+-- an unsatisfiable antecedent on any day inside the horizon.  `no_slot_reaches_the_evening`
+-- has said the slot half since P3; this is the step onto the ROWS that nobody had taken.
+#print axioms Tm.PlannerWit.an_assigned_row_starts_outside_the_evening
+#print axioms Tm.PlannerWit.an_assigned_row_inside_the_horizon_is_before_the_wind_down
+-- W-32 (track G) §29: the BATCH check's FIRST SUBJECT, and design §6.3's own `loc:` skip
+-- refuting two goals at one day that assigns and pays.  Gap 2194 asked for a paying
+-- request whose group has two members; the reason none existed was the STORE, not the
+-- fold -- `the_batch_rows_this_tree_builds_belong_to_no_store` above is that measured.
+#print axioms Tm.PlannerWit.the_batch_store_witness_loads
+#print axioms Tm.PlannerWit.the_batch_store_holds_three_siblings_at_one_ci
+#print axioms Tm.PlannerWit.the_two_batch_requests_assign_and_pay
+#print axioms Tm.PlannerWit.the_skipped_day_batches_past_the_sibling_that_ranks_ahead
+#print axioms Tm.PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day
+-- and the same day refutes the rank law, which W-19 could only refute by pointing at a
+-- fold that did not exist yet.  P9 wrote it and the law is still false.
+#print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day
+-- the paying set: FOUR at §28, SIX here.
+#print axioms Tm.PlannerWit.the_paying_set_is_six_and_the_batch_check_has_a_subject
