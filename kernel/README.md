@@ -62906,3 +62906,240 @@ carrying `hnoassign` at the baseline, 46 here, the two added being the bridges t
 statements instances of the new; 2192 is its residue), **2020** (`noOverbook`'s count — still the one arithmetic
 residue, now the ONLY use of `hnoassign` left in a lift), **2025** (W-30's corrected count —
 re-measured here at 45/21/3) and **2142** (whose consequence is 2190).
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-31**, **track P**.
+     Baseline `01d4894`, branch `w31-p`, worktree `.claude/worktrees/w31-p`.
+     `routines` crosses the wire, the exemption that removed 71% of the
+     population is DELETED, and §8.2 step 5's assignment is asserted on
+     EVERY day.  Gap range **2220-2249**; **2220-2229 taken**, 2230-2249
+     free.  Parity: **NONE ISSUED** — the one live disagreement is not
+     classified yet, and a number for it would be a guess (next free P42).
+     ===================================================================== -->
+
+## Stage 6 — W-31, track P: the exemption's own comment said when to delete it, and that day was this one
+
+**The sentence that ran this step was already in the file.** §8.2 step 5's assigned-row
+comparison exempted every day on which the fork placed a routine, and the clause's comment
+ended *"the day `routines` crosses the wire the exemption empties with no edit here."* The
+reason given for it never crossing was *"this arm has no honest collector"* — and that was
+false. `Planner::collect_routines` (`planner.rs:1277`) reads the candidate list and the item's
+own `shape`, and this arm has built and sent that candidate list since the W-29 repair. The
+recurrence expansion D34 keeps for D27 had already happened, in `priority::collect_candidates`,
+before the list existed.
+
+### 1. What the wire change bought, measured before and after
+
+`cargo test --test planner_invariants -- --nocapture the_kernel_plans_the_day_the_fork_plans`,
+last census line, on the committed tree at each state:
+
+| | baseline `01d4894` | `routines` sent, exemption kept | exemption deleted | at 256 | at 512 |
+|---|---|---|---|---|---|
+| cases | 143 | 143 | 143 | 272 | 527 |
+| **assigned rows compared** | **84** | 63 | **390** | **691** | **1,369** |
+| **cases EXEMPT** | **102 of 143** | 105 | **0** | **0** | **0** |
+| days whose assignment was ASSERTED | 41 | 38 | **143** | **272** | **527** |
+| kernel rows in the day | 1,246 | 1,410 | 1,397 | 2,656 | 5,060 |
+
+**The exemption was firing on 71% of the population and taking step 5's whole comparison with
+it.** What is left of it is `cands == 0`, a property of the REQUEST and not of the fork's day;
+it fired on **0** of 272 cases, so the `prop_assert!(aexempt < cases)` floor is now satisfied
+trivially and the floors that do the work are the three below it.
+
+**Nothing was weakened to get there.** The collector sends `{id, inst, winLo, winHi, durMin,
+mandatory}` off `World::candidates()` — the same list `candidate_items` already sends — with
+`span` computed by `collect_routines`' own three branches and `daily_window`'s `Shape::Window`
+read. `pref:` is **not** sent: `Planner.PlanReq.anchorOf` reads it out of the store, which is
+already in the request, and a second reader would be §5.3's bug. Sleep is **not** split here:
+`Planner.splitSleep` does it kernel-side. It is `collect_routines`' **second spelling** and gap
+**2221** records it beside gap 2061's three spellings of the grant wire.
+
+### 2. THE CLASSIFICATION, and the one that is not classified
+
+**(a) §8.2 step 2's routine rows — a KERNEL/FORK disagreement, UNCLASSIFIED, gap 2224.** With
+routines on the wire the kernel places step-2 rows and nothing compared them, which is this
+campaign's third shape — a part built correctly and never joined to what it is part of. So they
+were compared. **Strict, both ways, in timeline order: 163 rows a side over 143 cases and 527 a
+side over 517, zero disagreements** — and it was written as an assertion. **A 512-case draw then
+refuted it** (seed `af6b8c79…`, kept, D46): four items on a LATE day with `lunch` and `shower`,
+where the fork places `shower` at 21:00 and the kernel places nothing. `shower` is
+`after-done:2d~1d` with no `pref:`, so both planners defer it at step 2 — `Planner.placeStep`'s
+third branch and `place_mandatory_and_pref`'s final `r.deferred = true` are one rule — and the
+fork then places it at **§8.2 step 6, which the kernel has not written**. Replayed under a
+restatement it shrinks to the OPPOSITE direction: the kernel places `shower` at 08:00 and the
+fork's step 2 places nothing.
+
+**It is not classified as a kernel bug, a fork quirk or an untrue test, and NO PARITY NUMBER WAS
+ISSUED**, because a number is a claim to have decided which of the three it is. The final
+measurement is **316 rows compared over 272 cases, 0 only the kernel placed, 1 only the fork** —
+so the statement is true of 315 of 316 rows and is not a law of these two planners. It is
+**withdrawn to a counter**, which is W-30's own move for gap 2062 and for the same reason; the
+seed replays on every run; the generator was not touched; and **no exemption was widened to
+swallow it** — "the fork deferred nothing today" would cover every case seen here and is exactly
+what D46 forbids.
+
+**(b) And the first restatement was WORSE than the statement it replaced — quoted because the
+measurement, not the intention, is what settles it.** Telling a step-2 row from a step-6 row by
+the fork's own `deferred` flag is a TRUE split (all three of step 6's branches set it,
+`planner.rs:1657`, `:1673`, `:1694`; step 2's leave it false). Comparing the kernel against the
+fork's non-deferred rows alone made **107 of 301** rows differ: what the fork defers to step 6
+the kernel places at step 2, and the two land on the same minute anyway most of the time, because
+step 6's lowest-energy free position is usually step 2's earliest free one. **A 35% disagreement
+rate is the signature of the wrong comparand**, and the restatement was reverted to the whole
+row list on both sides. The fork's deferred count rides beside it as its own census figure: **119
+rows over 272 cases** are placed by a step the kernel does not have.
+
+**(c) `days: 7`, `wake`, the mixture, day 0** — W-30's four, unchanged and unre-litigated. P1 and
+P41 still account for every §7 capacity divergence: 4,125 rows to today and 2,381 beyond it over
+272 cases, with the downstream-agreement property still passing on every one.
+
+### 3. The comparison still bites — four plants, in a CLONE, with two controls
+
+`git archive HEAD | tar -x` into the scratch directory, this run's test file copied in.
+`git status --porcelain` read on the shared checkout and on the worktree before and after every
+plant: the shared checkout held only **another track's** check-12 files (`kernel/reach.py`,
+`kernel/callgraph.py`, `kernel/reach-exempt.txt`, and edits to `leanfiles.py`, `citations.py`,
+`twins.py`, `citations-allow.txt`, `check.sh`) and the worktree held only this step's one file,
+both times. **Nothing was ever planted in either.**
+
+| # | plant | with the arm as committed | control |
+|---|---|---|---|
+| **1** | `emit_segments`' slot → group map REVERSED (the W-29 reuse critic's own perturbation) | **FAILS**, naming both rows: kernel `…(zab),(zab),(zab),(zab),(zac),(zaa)` vs fork `…(zaa),(zac),(zab),(zab),(zab),(zab)` | — |
+| **2** | step 2 places the mandatory routine **5 minutes late** (`r.placed` shifted) | **FAILS** on the routine rows, naming the 300-second shift on all three | with the step-2 comparison disabled, **step 5 also fails** — this plant is caught twice |
+| **3** | step 2's routine **sort reversed** (the tightest window no longer claims its position first) | **PASSES** — and that is a finding, gap **2226**: the generator never draws two routines that contend for one position, so step 2's ordering half is not exercised | — |
+| **4** | `emit_segments` **renames** each step-2 row, minutes identical | **FAILS**, naming the swap: kernel `(…,"lunch"),(…,"workout")` vs fork `(…,"workout"),(…,"lunch")` | with the step-2 comparison disabled, **PASSES — nothing else in the file sees it** |
+
+**Plant 4's control is the price of §2(a)'s withdrawal, and it is stated where it is paid**: the
+only assertion that caught a step-2 rename is the one the refutation withdrew, so that
+perturbation is now caught by nothing. That is the cost of not yet knowing which of D46's three
+kinds gap 2224 is, and it is a reason to settle it rather than a reason to have kept a false
+assertion.
+
+### 4. Gap 1905's figure, measured by the quantity its sentence is about — gap 2222
+
+W-29 measured *"the fork assigned 184-209 rows the kernel had no candidate for"* and W-30
+reported it closed. **The measurement W-30 offered for that was `rows unkeyable`**, which counts a
+§7 row an id could not KEY because it named two rows on one side — a different quantity. This
+campaign's commonest shape is a claim of having checked that was never made, and it appeared here
+inside the sentence that closed it.
+
+So the quantity is measured. **Fork-assigned row ids with no kernel CANDIDATE on the wire: 0. With
+no kernel §7 GRANT: 0.** Both over 272 cases and 691 compared rows.
+
+**The candidate half is 0 BY CONSTRUCTION and is therefore COUNTED and not asserted**, and saying
+so is the point of printing it: `fork_assigned` reads ids off the fork's own day and
+`candidate_items` sends the fork's own candidate list, so the first is a subset of the second and
+no draw can make it otherwise. **A counter that cannot move is not an instrument.** The GRANT half
+can move — the kernel may answer nothing for a candidate the capacity section refused, or for one
+dropped past `Planner.maxCands` — so that half is **asserted**, and it names the id.
+
+### 5. R3, priced caller by caller — the table three runs have asked for
+
+`grep -rno 'planner::' --include=*.rs tm/src tm-core/src | wc -l` is **35**, unchanged. **It is
+not 35 pieces of work.** Classified by whether the site is code, prose or an import:
+
+**17 are CODE · 13 are DOC COMMENTS · 5 are `use` brace imports.**
+
+| what | code sites | the kernel's answer today | could it | what R3 needs |
+|---|---|---|---|---|
+| `planner::plan` | **4** (`planning.rs:172`, `app.rs:692`, `:1221`, `:1227`) | `Planner.dayPlan`, whose `dayRows` is `stepOneSegs ++ dayRoutineSegs ++ reservationSegs ++ assignedRows ++ optionalRows ++ restRows` — **steps 1, 2, 3, 5 and 7** | yes, for the rows | **step 6** (gap 2224's subject) and §8.2 step 8's twelve diagnostic fields |
+| `DayPlan::hash` | **5** (`day.rs:479`, `:507`, `planning.rs:205`, `:323`, `:375`) | **none.** `Planner.mkHash?` is a *reader* — it validates `state.lastHash` — and there is no producer. `the_plan_hash_is_a_placeholder_until_the_emitter_lands` still stands | no | **a new step: P8, the emitter.** Five callers, more than any verb in this table |
+| `planner::fmt_clock` | **3** (`day.rs:48`, `planning.rs:145`, `render.rs:59`) | `Emit.timeCell` — **and it IS compared**, contrary to the brief: `emit::row_cells` writes `time: fmt_clock(seg.start)` (`emit.rs:1058`), `rowwire::differences` compares the `time` cell against the kernel's on every row, `kernel_row_cells` 26 tests and this arm's own row census | **already does** | nothing but the caller move |
+| `planner::kind_label` | **2** (`planning.rs:213`, `render.rs:81`) | `PlanWire.kindName` — **ELEVEN arms to `kind_label`'s ten** (`ghost` is the extra); the ten agree character for character | yes | **one comparison, and it is cheap.** Today `kind_label` is used in the tests as an ENCODER and never as a comparand: §5.3's two-definitions shape, gap **2227** |
+| `planner::overtime_drops` | **1** (`app.rs:1219`) — the other 3 sites are doc comments | the what-if INPUT crosses (`PlanWire.readOptOverrides`); the verb itself is `plan` twice plus `diff` | yes, once `diff` exists | a new step, but a small one: two `dayPlan` calls and a diff |
+| `planner::diff` | **1** (`app.rs:1240`) | **none** | yes — it is ~30 lines and pure | a new step |
+| `planner::active_run` | **0** | — | — | **nothing.** Both sites are doc comments, and `active_run` is a **private method** (`planner.rs:1497`), so `planner::active_run` resolves to no path at all. The kernel already places the reservation (`reservationSegs`) |
+| the types (`DayPlan`, `SegKind`, `Segment`, `SegFlags`, `Diagnostics`, `PlanInput`, `PlanOverrides`) | **6** + 5 brace imports | all present (`Planner.SegKind`, `Planner.Seg`, `Planner.Diagnostics`, `PlanWire`'s readers) | — | not work; the type moves R3 does last |
+
+**The brief's "`overtime_drops` (4 sites), `diff` (1) and `active_run` (2) have no kernel answer at
+all" is, counted as code, "1, 1 and 0".** Gap **2228** carries the re-count.
+
+**And the sharpest thing the pricing found: `Planner.dayPlan` is reached by NO shipped caller.**
+`grep -rn '"planner"' tm/src` returns nothing — the binary builds only the **capacity** section
+(`kernel_capacity.rs`'s `plan_json` is a candidate encoder, not a day request). The kernel's whole
+§8.2 planner is exercised by `planner_invariants` and by nothing the user can run. That is D51's
+reachability blind spot on the Rust side, and it is gap **2229**.
+
+### 6. Two defects found while reading, neither this step's to repair
+
+**Gap 2223 — `Planner.lean`'s module header is FALSE, in the paragraph W-15 repaired for being
+false.** It reads: *"**Steps 3 to 7 are not written here**: nothing in this module cuts a slot,
+assigns a block, or fills a batch."* All three clauses are refuted by the same file:
+`Planner.lean:2802` is *"The slots step 5 will assign into"* (it cuts a slot), `:4209` is *"§8.2
+step 5's groups — the batching, the split and one `Group` per bucket"* (it fills a batch), `:4553`
+is *"**§8.2 step 5's assignment**"* (it assigns a block), and `:6115`'s `dayRows` composes
+`assignedRows`, `optionalRows` and `restRows` into the day. The paragraph's own parenthetical says
+*"(W-15 repair: every clause of this paragraph but the last was false of the code it heads — the
+rot class W-14 opened as gap 393, in the stage's central module.)"* **It is false again, the same
+way, in the same paragraph.** Not repaired here: `Planner.lean` is a module another track may hold
+open this run, and a doc-only edit to it is a merge conflict rather than a repair.
+
+**Gap 2225 — check 8 FAILS AT THE BASELINE, and the baseline commit is what broke it.**
+`./check.sh` on `01d4894` with nothing but this step's test file changed reports *"prose citations
+FAILED — 1 unresolved: ../AGENTS.md:628 `lp_TmKernel_Tm_remainingMin` (resolves to nothing)"*.
+`git log -S` puts the token in **`01d4894`**, the commit that added D51 and D52; the citation is a
+C symbol and the resolver reads Lean names. **The brief's "check.sh 11/11" is not true of the
+baseline.** This step did not fix it: the token is in the owner's §4 decision record and
+`citations.py`/`citations-allow.txt` are both open in another track's hands this run, so either
+edit conflicts. **One citation of this step's own was unresolvable and IS fixed**: a comment cited a
+smart constructor for candidates under a name no module defines, and it now cites
+`Planner.maxCands` and `Planner.PlanReq.rankedCands`, which do.
+
+### 7. Acceptance, capped, on the committed tree
+
+```
+check.sh                    TEN of ELEVEN, rc=1 — build ok · totality ok · axiom audit 5,260
+                            theorems · Negative.lean rejected · check 5 93 tests · corpus
+                            29/37 files and 4/5 whole plans · stage goals 8 outstanding, all
+                            stage 6 · PROSE CITATIONS **FAILED**, 1 unresolved, at
+                            AGENTS.md:628, PRE-EXISTING AT `01d4894` AND NOT THIS STEP'S
+                            (gap 2225; this step's own bad citation was fixed) · check 9
+                            247 rostered, 0 owed · check 10 41 registered (P1-P41),
+                            next free P42 · check 11 3,042 def bodies, 0 UNANSWERED,
+                            2,092 of 11,935 emitted C functions reachable
+cargo test --workspace      THREE runs on the FINAL tree (D46), 1,476 passed / 0 failed /
+                            9 ignored across 87 binaries, identical each time; THREE more
+                            on the mid-run tree, same figures — SIX in all
+planner_invariants          THREE standalone runs at the raised count, 8 passed / 0 failed
+                            each (65.8 s, 72.3 s, 74.5 s); plus 512-case hunts, one of which
+                            found the seed §2(a) keeps
+FFI (tm-kernel-ffi)         101 passed / 0 failed over 5 binaries
+T5 kernel_replay_parity     29 passed / 0 failed / 4 ignored
+the door suite              kernel_log_door 23 passed / 0 failed
+cli_switch_acceptance       16 · kernel_call_counts 2 · one_padder 9 · one_renderer 25 ·
+                            kernel_row_cells 26 · kernel_item_grammar 6 ·
+                            kernel_planner_wire 21 — 0 failed in each
+cli_latency                 5 passed / 1 ignored, in band, at load average 5.02 — read
+                            before the run (gap 1333)
+burn-down                   8, all stage 6 — UNMOVED (no goal touched, no proof written)
+```
+
+Every `lake`, `cargo`, `check.sh` and `python3` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0 --quiet` (16G for the patch
+scripts); **no memory bound was raised**. **Nothing but one test file and this prose was written.**
+No proof, definition, checker, fixture, snapshot, latency band, corpus entry or bound was added,
+changed or deleted; **no generator was narrowed and no exemption widened** — one was DELETED;
+`lean-toolchain`, `Cargo.toml`, `Cargo.lock` and `kernel/corpus/` untouched.
+
+### 8. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2220** | **CLOSED HERE.** §10.2's `routines` key crossed the wire empty for this arm's whole life on the stated ground that no honest collector existed; `collect_routines` reads only the candidate list and the item `shape`, both of which this arm held | `tm/tests/planner_invariants.rs` | closed: the exemption it justified is deleted, `cases exempt` is 0 of 272, and step 5's assignment is asserted on every day |
+| **2221** | **`collect_routines` now has a SECOND spelling**, beside `kernel_capacity::parse`'s three (gap 2061). `tm` is a `[[bin]]` with no library target and `RoutineInst` is private to `tm-core::planner` besides | `tm/tests/planner_invariants.rs` | §5.3's own bug, declared. The move is into `tm-core`, or out with R3 |
+| **2222** | **gap 1905's figure was reported closed on a measurement of a different quantity.** Measured properly: 0 fork-assigned ids with no kernel candidate (0 **by construction**, so not an instrument) and 0 with no kernel §7 grant (asserted) | `kernel/README.md` W-30 §5 | the sentence is now true AND measured by what it says. The counter that cannot move is printed with that fact beside it |
+| **2223** | **`Planner.lean`'s module header is false again** — *"Steps 3 to 7 are not written here: nothing in this module cuts a slot, assigns a block, or fills a batch"* — refuted by `:2802`, `:4209`, `:4553` and `:6115` of the same file. Gap 393's rot class, in the paragraph W-15 repaired for exactly this | `kernel/TmKernel/TmKernel/Planner.lean:10-19` | a reader takes the stage's central module to be four steps smaller than it is, and the R3 pricing in §5 had to be read off `dayRows` rather than off the header. Not repaired here: another track may hold the module open |
+| **2224** | **§8.2 step 2's routine rows disagree on 1 of 316, in BOTH directions, and the kind is not settled.** Seed `af6b8c79…` kept: `shower` (`after-done:2d~1d`, no `pref:`) placed by the fork at 21:00 and by the kernel not at all, and on shrinking the reverse. The fork's step 6 places what step 2 defers; **the kernel has no step 6** | `Planner.placeStep`, `planner.rs` `place_mandatory_and_pref` / step 6 | it is a real step-2/step-6 subject, not an arm defect, so it is counted and not asserted and **no parity number was issued** — a number would claim the classification this step could not make. Until it is settled, plant 4's perturbation (a step-2 rename at identical minutes) is caught by nothing |
+| **2225** | **check 8 FAILS at the baseline `01d4894`**, on `lp_TmKernel_Tm_remainingMin` at `AGENTS.md:628` — a C symbol in D52's evidence, read by a resolver that knows Lean names. `git log -S` attributes it to `01d4894` itself | `kernel/citations.py`, `AGENTS.md:628` | every run from here reports ten of eleven and has to re-derive that the eleventh is not its own. The fix is the resolver learning emitted-C symbols, or D52's sentence dropping the backticks — **not** an allow entry, which would be a widening |
+| **2226** | **the generator never draws two routines that contend for one position**, so §8.2 step 2's ORDERING half is unexercised: reversing `collect_routines`' sort changes no row of any case | `tm/tests/planner_invariants.rs`'s `ROUTINES` and `case_strategy` | step 2's "mandatory first, then by the moment the window closes" is asserted by nothing. Two routines with overlapping windows and one feasible slot between them is the draw that would |
+| **2227** | **`kind_label` and `PlanWire.kindName` are two spellings of one ten-word table and nothing compares them** — the kernel's carries an eleventh arm (`ghost`). `kind_label`'s own doc says *"until then there is one of it here"*; there are two | `tm-core/src/planner.rs:2501`, `PlanWire.lean:955` | §5.3's shape, and the cheapest thing in the R3 table: one comparison over the ten arms |
+| **2228** | **R3's "35 `planner::` sites" over-prices the work by more than half**: 17 are code, 13 are doc comments, 5 are `use` brace imports, and `planner::active_run` — 2 of the 35 — names a **private method**, so the path does not exist | `kernel/README.md`, three runs' briefs | three runs have carried a number that reads as 35 deletions. §5 prices it caller by caller instead |
+| **2229** | **`Planner.dayPlan` is reached by no shipped caller.** The binary builds only the capacity section; no `tm` verb sends a `planner` section at all | `tm/src/cli/`, `kernel/TmKernel/TmKernel/Planner.lean` | D51's reachability finding on the Rust side: the stage's largest module is exercised by one test file and by nothing a user can run, so every claim about it rests on that file alone |
+
+**Gaps 2230-2249 are free.** Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006,
+1065, 1105, 1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900,
+1902-1904, 1906, 1956, 1957, 1984-1988, 1990, 2000-2004, 2016-2018, 2020-2024, 2060-2065,
+2090-2096, 2120-2136 are untouched by this step. Gaps **2005** and **2063** are narrowed: 2005's
+exemption is **gone** (its `cands == 0` residue fires on 0 of 272 cases), and 2063's double fork
+run is unchanged but now pays for a comparison that runs on every day instead of on a third of
+them.
