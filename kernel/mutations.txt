@@ -134,17 +134,17 @@ baseline 86c4dc6
 #
 # (The sha1 above is illustrative.  `mutate.py --write` computes it; do not copy it.)
 0b1f9f39194a TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.OwesSomething True,False PlanCheck.lean:2466 assignStart_owes; PlanCheck.lean:2466 assignStart_owes
-34911c82d0c8 TmKernel/TmKernel/Planner.lean Tm.Planner.routineRows default,[] Planner.lean:2680 routineRows_kinds; Planner.lean:2680 routineRows_kinds
-f18d3551771b TmKernel/TmKernel/Planner.lean Tm.Planner.stepTwoSegs default,[] Planner.lean:2701 stepTwoSegs_kinds; Planner.lean:2701 stepTwoSegs_kinds
-b138b425f1c9 TmKernel/TmKernel/Planner.lean Tm.Planner.leastBy default,none Planner.lean:4858 leastBy_spec; Planner.lean:4858 leastBy_spec
-f7b172dd243d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.lowestFree default,none Planner.lean:4925 PlanReq.lowestFree_from_a_stretch; Planner.lean:4925 PlanReq.lowestFree_from_a_stretch
+34911c82d0c8 TmKernel/TmKernel/Planner.lean Tm.Planner.routineRows default,[] Planner.lean:2707 routineRows_kinds; Planner.lean:2707 routineRows_kinds
+f18d3551771b TmKernel/TmKernel/Planner.lean Tm.Planner.stepTwoSegs default,[] Planner.lean:2726 stepTwoSegs_kinds; Planner.lean:2726 stepTwoSegs_kinds
+b138b425f1c9 TmKernel/TmKernel/Planner.lean Tm.Planner.leastBy default,none Planner.lean:4885 leastBy_spec; Planner.lean:4885 leastBy_spec
+f7b172dd243d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.lowestFree default,none Planner.lean:4955 PlanReq.lowestFree_from_a_stretch; Planner.lean:4955 PlanReq.lowestFree_from_a_stretch
 6ff639dbc20f TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.assignedSpans default,[] PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
 d7d5884af56b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.occupiedNow default,[] PlannerWit.lean:3343 the_deferred_routine_takes_the_lowest_energy_position; PlannerWit.lean:3343 the_deferred_routine_takes_the_lowest_energy_position
 5c11c3770fc6 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.keptBreaks default,[] PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
 fda83246caf1 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.keptBreaksToday default,[] PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go; PlannerWit.lean:3531 a_day_the_cursor_filled_leaves_the_routine_nowhere_to_go
-a40dbf02369a TmKernel/TmKernel/Planner.lean Tm.Planner.unspend default,gs,[] Planner.lean:4992 unspend_keeps_the_group; Planner.lean:4992 unspend_keeps_the_group; Planner.lean:4992 unspend_keeps_the_group
-9b21bc0fe500 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.victimSlot default,none Planner.lean:5027 PlanReq.victimSlot_spec; Planner.lean:5027 PlanReq.victimSlot_spec
-08f9f450c670 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.finalRoutines default,[] Planner.lean:5412 a_deferred_routine_is_inside_its_window; Planner.lean:5412 a_deferred_routine_is_inside_its_window
+a40dbf02369a TmKernel/TmKernel/Planner.lean Tm.Planner.unspend default,gs,[] Planner.lean:5022 unspend_keeps_the_group; Planner.lean:5022 unspend_keeps_the_group; Planner.lean:5022 unspend_keeps_the_group
+9b21bc0fe500 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.victimSlot default,none Planner.lean:5060 PlanReq.victimSlot_spec; Planner.lean:5060 PlanReq.victimSlot_spec
+08f9f450c670 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.finalRoutines default,[] Planner.lean:5439 a_deferred_routine_is_inside_its_window; Planner.lean:5439 a_deferred_routine_is_inside_its_window
 ac97bc74a566 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.noPositionNotes default PlannerWit.lean:3362
 68a4ddb27390 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRoutineSegs default Planner.lean:5437
 7590ec19b538 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.routineWitness default,[] PlannerWit.lean:3239 the_routine_witness_holds_three_routines_and_the_wall; PlannerWit.lean:3239 the_routine_witness_holds_three_routines_and_the_wall
@@ -196,7 +196,7 @@ d6f25f44caff TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witOptionalCands de
 451f7cccd65c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOptionalRequest unfoldable no Inhabited PlanReq
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHighRestRequest unfoldable no Inhabited PlanReq
 d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSpentBudgetRequest unfoldable no Inhabited PlanReq
-5a98924465e2 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default,[] Planner.lean:6122 mem_dayRows; Planner.lean:6122 mem_dayRows
+5a98924465e2 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default,[] Planner.lean:6145 mem_dayRows; Planner.lean:6145 mem_dayRows
 d932b39765bc TmKernel/TmKernel/Planner.lean Tm.Planner.dayDiagnostics unfoldable,Diagnostics.empty no Inhabited Diagnostics; PlannerWit.lean:3704
 daaa2458af08 TmKernel/TmKernel/Planner.lean Tm.Planner.dayAssigned default Planner.lean:5911
 4a9c27a3e4bb TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
@@ -366,7 +366,7 @@ ae0de0f2010f TmKernel/TmKernel/PlanWire.lean Tm.PlanWire.priosJson default PlanW
 ec308e256065 TmKernel/TmKernel/Planner.lean Tm.Planner.batchIdsOf unfoldable no Inhabited BatchIds
 a29904c4ed12 TmKernel/TmKernel/Planner.lean Tm.Planner.Group.ids default,[] PlannerWit.lean:3720 the_assigned_set_is_not_the_reservations_alone; PlannerWit.lean:3720 the_assigned_set_is_not_the_reservations_alone
 f587a8c620bd TmKernel/TmKernel/Planner.lean Tm.Planner.assignedSeg unfoldable no Inhabited Seg
-065c259fabd7 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.assignedRows default,[] Planner.lean:6042 PlanReq.mem_assignedRows; Planner.lean:6042 PlanReq.mem_assignedRows
+065c259fabd7 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.assignedRows default,[] Planner.lean:6065 PlanReq.mem_assignedRows; Planner.lean:6065 PlanReq.mem_assignedRows
 d1d44e5ac9dc TmKernel/TmKernel/Boundary.lean Tm.CapWire.readState default Boundary.lean:11853 the_capacity_section_reads_the_corpus_model
 0a172d66b02a TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.AssignedRowsPay True,False PlanCheck.lean:1037 energyFilterOk_of_a_day_that_pays; PlanCheck.lean:1037 energyFilterOk_of_a_day_that_pays
 d1441c32d7aa TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.KeepsTheFilterFields True,False PlanCheck.lean:4384 KeepsTheFilterFields_refl; PlanCheck.lean:4384 KeepsTheFilterFields_refl
