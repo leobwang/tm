@@ -51,7 +51,13 @@ WHAT IT CANNOT SEE, declared rather than discovered later:
     the caller's body and so IS an edge here; a pointer that arrives from
     outside the emitted tree is not.
   * The Rust side.  `tm_kernel_call` is the only symbol the shim dials (R9) and
-    a second `@[export]` would need adding here as a second root.
+    a second `@[export]` would need adding here as a second root.  WHICH
+    REQUESTS THE RUST DIALS IT WITH is a different question and this walk
+    cannot ask it either: the export is a door, and a section nothing sends is
+    a room nobody enters.  `sections.py` measures that, `reachable`'s `cuts`
+    argument is where its answer enters, and README gap 2229 is the finding --
+    289 definitions were reachable from this root and from no request the
+    shipped binary can build.
   * A name spelled with a guillemet component that holds a `.` -- this splits a
     dotted name on `.` before mangling it.  The library's guillemet identifiers
     are `«matches»` and `«meta»`, neither of which does.
@@ -258,7 +264,7 @@ def emitted_globals(ir):
     return globs
 
 
-def reachable(ir):
+def reachable(ir, cuts=None):
     """`(reached, emitted)`: what the export reaches, and what was emitted.
 
     The BFS starts at `EXPORT_ROOT` and follows every identifier in a body that
@@ -270,8 +276,17 @@ def reachable(ir):
     stack.  Its module initializer assigns it and no initializer is reachable
     from the export, so a global is reached exactly when a function the export
     reaches READS it -- which is the question the emitted-function walk asks of
-    a function, asked of data."""
-    key = str(ir)
+    a function, asked of data.
+
+    `cuts` is `{symbol: set of symbols}` and is how the export stops being an
+    ASSUMED root (`sections.py`, README gap 2229).  The export is a door, not a
+    caller: what comes through it is a request, and a dispatcher for a section
+    `tm/src` never sends runs only its absent arms.  A symbol named in `cuts`
+    contributes exactly the callees given instead of everything its body
+    mentions.  `None` -- the default, and what checks 8 and 11 pass -- is the
+    walk as it was, so their answers do not move."""
+    key = (str(ir), None if cuts is None else
+           tuple(sorted((k, tuple(sorted(v))) for k, v in cuts.items())))
     if key in _REACH:
         return _REACH[key]
     funcs = functions(ir)
@@ -287,6 +302,11 @@ def reachable(ir):
         if n in seen:
             continue
         seen.add(n)
+        if cuts and n in cuts:
+            for m in cuts[n]:
+                if m in node and m not in seen:
+                    stack.append(m)
+            continue
         for body in funcs.get(n, ()):
             for r in C_IDENT.finditer(body):
                 if r.group(0) in node and r.group(0) not in seen:

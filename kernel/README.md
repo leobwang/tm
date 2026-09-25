@@ -63609,3 +63609,216 @@ Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
 2254 are untouched: no predicate was weakened, no law narrowed, no generator narrowed, no exemption
 widened to remove a disagreement, no snapshot, fixture, latency band or corpus re-blessed, no
 memory bound raised, no external dependency added, and `dayPlan` is still total.
+
+## Stage 6 — W-32 track A: check 12's root was an assumption, and the room behind it holds 289 definitions
+
+**The gate passed because it was asked the wrong question.** Check 12 asks *is this definition
+reachable from `tm_kernel_call`*, and at `471a7ff` it answered yes for 1,467 of the library's 2,926
+emitted definitions. `tm_kernel_call` is the `@[export]` — a DOOR, not a caller. What comes through
+it is a REQUEST, whose top-level keys choose which of the kernel's sections runs, and **a section
+nothing sends is a door into a room nobody enters.** W-31's track P found the consequence by hand,
+while pricing R3, and this step measured it: **1,467 became 1,178.**
+
+That is the fourth finding of this exact shape and the fourth found BY HAND while doing something
+else — D50's `assignFold`, gap 501's `Recur.lean`, `Tree.lean`, and now the root of the gate that
+was built to catch the first three.
+
+### 1. The root, measured on both sides — gap 2229
+
+`kernel/sections.py` is new and reads the SOURCE, both languages.
+
+**The kernel's top-level sections, walked from the export.** `spine` starts at the `@[export]`
+definition and follows exactly one edge — a callee applied to the REQUEST value — so `readTz`,
+which is applied to the `tz` object, is never mistaken for a reader of the request, and neither are
+the ten field readers under `log`. Every `jget`/`getArr` of a literal key inside a spine definition
+is a top-level section; where that read is the scrutinee of a `match .. with`, the definition is
+that section's DISPATCHER. Measured: **ten sections** — `docs`, `cmds`, `now`, `blockMin`, `tz`,
+`log`, `capacity`, `emit`, `plan`, `planner` — over a spine of 22 definitions ending at `Tm.run`,
+which is the floor (a walk that loses the request reaches no base and fails by name).
+
+**What `tm/src` sends, read as JSON.** `sent_sections` takes the keys at brace depth 1 of every
+`json!(..)` block and every string literal, and calls a region a REQUEST when its depth-1 keys are
+all sections of the kernel AND it either carries `docs` or is a FRAGMENT — a literal that does not
+open its own object, because `kernel_log.rs` builds its request by `push_str` and `,"tz":` and
+`,"log":` arrive one piece at a time. Measured: **eight sections sent**, from `closing.rs:693`,
+`items.rs:1989`, `kernel_bridge.rs:797`, `kernel_capacity.rs:881`, `kernel_log.rs:398-402` and
+`kernel_log.rs:2084`.
+
+**The two that are not sent are `planner` and `plan`.** `grep -rn '"planner"' tm/src` returns
+nothing at all; the only senders in this repository are `tm/tests/planner_invariants.rs:1508` and
+`tm/tests/kernel_planner_wire.rs:118`, two harnesses no user can run. `"plan"` occurs three times
+in `tm/src` and all three are a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`
+(707, and the two test fixtures at 1159 and 1208) — which is why the region test is depth-1 keys
+and a subset, and not a grep: the candidate object carries eleven keys no section has.
+
+**The number.** 1,467 reachable from the export; **1,178 from the measured root**; 289 in between,
+attributed by cutting one section at a time:
+
+| behind | defs | where |
+|---|---|---|
+| `planner` alone | 228 | Planner.lean 176, PlanWire.lean 38, Lookahead.lean 8, Plan.lean 4, Line.lean 1, State.lean 1 |
+| `plan` alone | 53 | Emit.lean 30, EmitWire.lean 18, Planner.lean 3, State.lean 2 |
+| the two together | 8 | Line.lean 4, Planner.lean 2, Priority.lean 1, State.lean 1 |
+
+`Tm.Planner.dayPlan` is in the first row, which is gap 2229 stated as a measurement instead of a
+sentence.
+
+### 2. The cut is an ARM, and the first attempt at it wrote three false reasons
+
+A walk rooted at the section readers loses the plumbing every request runs — `jparse`, `jemit`, the
+loader — and reports it dead. So the root stays `tm_kernel_call` and `callgraph.reachable` gains a
+`cuts` argument: a dispatcher for an unsent section contributes only the callees of its ABSENT
+arms. `Tm.PlanWire.runPlanner` gives `Tm.jsonErr` and `Tm.EmitWire.runRows`; its `.ok (some sec)`
+arm — `Tm.PlanWire.readPlannerSection`, `Tm.PlanWire.planReqOf`, `Tm.PlanWire.planJson`,
+`Tm.Planner.dayPlan` — gives nothing, because no request the binary can build takes it.
+
+**The cut is taken where the PROGRAM branches, not where the PROOF does.** The first design read
+the pair off the kernel's own absence laws, which state exactly this absence and are proved:
+`runPlanner_without_a_planner_section_is_runRows` and `runRows_without_a_plan_section_is_runCap`.
+The second is EXTENSIONAL. It says `Tm.EmitWire.runRows` and `Tm.runCap` compute the same value —
+its proof is `exact runCapP_bytes j`, not a reduction — while `Tm.EmitWire.runRowsP` and
+`Tm.runCapP` both still RUN. Cutting there would have put `Tm.EmitWire.runRowsP`, `Tm.runCapP` and
+`Tm.runCap` into the exemption file under a reason that is FALSE. An exemption's reason has to be
+true, so the cut is at `Tm.EmitWire.runRowsP`, where the `match jget j "plan" with` is.
+
+The same rule bit once more, smaller, and was measured rather than argued: resolving an arm's bare
+`none` by name SUFFIX alone found `Tm.Planner.SegFlags.none` and kept one definition alive that
+nothing names. Resolution walks the enclosing namespaces and the library's `open`s now, and there
+is no wider fallback — a dropped edge FAILS this check by name and a human adjudicates it, while a
+spurious one is a definition nothing calls, called reachable. 288 became 289.
+
+### 3. The 289 are a declared, dated exemption named for R3 — not a narrower root and not a deleted check
+
+`reach-exempt.txt` goes **1,459 → 1,748** under **fourteen new dated sections**, three per kind of
+answer: `planner`, `plan`, and the two together. Every section carries its module, the measured
+count, the date, and its EXIT CONDITION, which is the same one: **R3.** When the shipped binary
+sends `planner`, `sections.py` sees the key, the cut goes, every entry under those sections becomes
+REACHED, and check 12 fails on each as STALE until it is deleted — the ratchet doing R3's
+bookkeeping instead of R3 having to remember it. The file's own ratchet forced the shape: a new
+entry under a section that already existed at HEAD fails, so growth cost fourteen headings and a
+date rather than fourteen characters.
+
+### 4. A gate that cannot fail on the thing it was built for is not a gate
+
+Driven in a `git clone --local` whose `.lake` is a SYMLINK to the shared build — `reach.py` reads
+that tree and never writes it, and no `lake` ran in the clone. The shared tree's `git status
+--porcelain` held only this step's own four files before and after every plant.
+
+| plant | sections | reachable | named |
+|---|---|---|---|
+| control | 8 | 1,178 | rc=0 |
+| `"emit"` → `"items"` at `kernel_log.rs:2084` | 7 | 1,172 | **6**: `Tm.emitStep`, `Tm.readEmitAt`, `Tm.readEmitItem`, `Tm.EmitRefusal.json`, `Tm.Log.emitEvent`, `Tm.Log.emitLine` — D16's log WRITER, whole |
+| reverted | 8 | 1,178 | rc=0 |
+| `"capacity"` → `"cap"` at `kernel_capacity.rs:886` | 7 | 893 | **285**: Lookahead 123, Boundary 94, Capacity 17, Arith 17, Priority 15, Cal 10, Line 6, Plan 2, State 1 — D10's whole capacity machine |
+| reverted | 8 | 1,178 | rc=0 |
+
+The second plant is also the proof that the region rule is not a grep: `"capacity"` still occurs 30
+times in `tm/src` after it, in `kernel_bridge.rs`'s refusal fixtures — which open their own object
+and carry no `docs`, so they are not read as requests.
+
+### 5. W-31's two repairs, re-driven by an auditor who did not write them
+
+`e89a2c0` and `5d9aba5` both landed after their auditors had finished, so both classes were planted
+again, in a second clone with its OWN build tree (`rsync -a --exclude target/`, 1.5 GB). Control
+green before each, green again after each revert.
+
+| plant | gate | verdict |
+|---|---|---|
+| `#eval show .. addDecl (Declaration.axiomDecl ..)` at column zero | check 2 | rc=1, "`#eval` stands where a command begins" |
+| the same `#eval` INDENTED inside `section W32Critic .. end` | check 2 | rc=1, "a COMMAND keyword .. at an indented command position" |
+| `run_cmd ..` indented inside a section (W-30's own escape) | check 2 | rc=1, same rule |
+| `theorem w32_critic_native : (1000 : Nat) < 2000 := by native_decide` | check 3 | rc=1, `A NEW AXIOM: w32_critic_native._native.native_decide.ax_1_1, 1 use(s)` |
+| `def w32CriticOrphanGlobal : List Nat := [2, 7, 1, 8, 2, 8, 1, 8]` | check 12 | rc=1, `NOT EXEMPT: w32CriticOrphanGlobal (SealInStep.lean)` |
+
+**Both bite.** The fourth plant is the sharp one: `lake build TmKernel:static` rc=0, `Check.lean`
+reported ZERO errors, **`grep -c sorryAx` was 0** — so the single-name arm check 3 replaced would
+have printed `ok` — and `lean` printed `'w32_critic_native' depends on axioms:
+[w32_critic_native._native.native_decide.ax_1_1]`. The subset test named it. (`native_decide` is
+also caught by check 2's ban, so the class is closed twice; check 3's arm was driven on the same
+plant because `check.sh` is `set -uo pipefail` and every check runs regardless of the ones above.)
+The fifth confirms the global half: the generator wrote it at `SealInStep.c:94` as `LEAN_EXPORT
+const lean_object* .. = (const lean_object*)&..`, the SECOND of the two global spellings and the
+one a pattern anchored on `;` misses; the population went 2,926 → 2,927 and the check named it.
+
+### 6. One layer further out: is there a definition the binary reaches whose result no answer carries?
+
+Asked and answered at the KEY layer, and the answer is **no, today**. The response keys the kernel
+emits under the measured root are `docs`, `report`, `log`, `emit` and `lookahead`, and `tm/src`
+reads every one: `kernel_bridge.rs:810` and `:816`, `kernel_log.rs:426` and `:2092`,
+`kernel_capacity.rs:1003`. One level down is the same: `lookahead` emits `den` and `days` with
+`day`/`numAt` (all read at `kernel_capacity.rs:1003-1019`) and `grants` with eleven keys, all
+eleven read by `prio_of` at `kernel_capacity.rs:957-968`. The candidate for a dead key was
+`report.closes[].min`, the exact rational the D3 report carries — it is read at
+`kernel_bridge.rs:521` and spent at `closing.rs:396`. **A preliminary reading of this file that
+stopped 30 lines short said it was dead; it is not, and the correction is here because the run made
+it.** The DEFINITION-level form of the question — a definition that RUNS and whose value is
+discarded — is not answerable by a call graph and is gap 2282.
+
+### 7. What this brief asserted that is not true of this tree
+
+* **"1,413 reachable, 952 exempt in 45 reasoned sections."** Measured at `471a7ff`: **1,467
+  reachable, 1,459 exempt in 71 sections**. 1,413/952 is the figure check 12 landed with, before
+  the same day's repair (gaps 2257/2258) widened its population from 2,365 to 2,926; `reach.py`'s
+  own header carries both numbers.
+* **"cargo test --workspace 1,476 passed."** Measured: **1,477 passed / 0 failed / 9 ignored across
+  87 binaries**, which is what the W-31 repair block's own acceptance section already says.
+
+### 8. Acceptance, capped at 40G with no swap, on the committed tree
+
+* **check.sh TWELVE**: `lake build` ok · totality ok · axiom audit **5,290 theorems**,
+  `Classical.choice 2562, Quot.sound 3948, propext 4906; 381 of 5290 depend on none` · Negative
+  rejected · FFI ok (93 tests) · corpus **29/37 and 4/5** · stage goals **7 outstanding** ·
+  citations **41,206 resolved of 41,206, 270 files swept** · mutation **258 rostered, 0 owed** ·
+  parity **42 registered (P1-P42), next free P43** · check 11 **2,202 of 13,183** · check 12
+  **3,142 def/abbrev in 86 modules, 2,926 emitted (556 as a global), 1,178 reachable over the 8
+  sections tm/src sends (2 cut), 1,748 exempt in 85 sections, 0 UNANSWERED**.
+* **cargo test --workspace**: **1,477 passed / 0 failed / 9 ignored across 87 binaries**. The named
+  suites all run inside it, with their own counts from the same run: `cli_switch_acceptance` 16,
+  `cli_latency` 5 (1 ignored), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25,
+  `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 21, `planner_invariants` 8,
+  T5 (`kernel_replay_parity`) 29 (4 ignored) and the door suite (`kernel_log_door`) 23. FFI is
+  check.sh's fifth, 93 tests.
+* **How many runs (D46)**: **check.sh SEVEN** in the shared tree — one baseline at `471a7ff`, one
+  after the gate change, three after the prose, and TWO on the COMMITTED tree, which are the runs
+  that matter for this step because committing moves check 12's own ratchet comparand (`git show
+  HEAD:./reach-exempt.txt`) from 1,459 entries to 1,748 — all seven green, all twelve by name.
+  This bullet's own last edit is prose, read by check 8 alone, and check 8 was re-run on it (rc=0,
+  41,265 citations): a run count that counts the run it triggers does not terminate, and saying so
+  is cheaper than another sweep of the whole script. **`cargo test
+  --workspace` TWO**, both 1,477 / 0 / 9. `reach.py` alone **twenty-two**: eleven in the shared tree
+  (six of them timing runs), eight in the symlink clone (control, the `emit` plant, revert, the
+  `capacity` plant, revert, and three HEAD-baseline timing runs) and three in the build clone.
+  `totality.py` **five** in the build clone, `lean Check.lean` **two** there, `lake build
+  TmKernel:static` **four**.
+* **The wall, measured against HEAD's own `reach.py` re-run in the same clone in the same minute**:
+  check 12 **2.67, 2.67, 2.69 s** with the measured root; **2.57, 2.39, 2.36 s** without it. The
+  section walk costs **0.30 s** — 86 library modules indexed by definition head and six of them
+  stripped, plus `tm/src`'s 29 Rust files read once. The first draft cost 1.7 s, because it
+  stripped every module to read a spine of 22 definitions and asked `leanfiles.qualified_names`
+  for a map check 12 had already built; the map is handed in now and the bodies are lazy. A gate
+  paying for a question it does not ask is check 12's own comment, applied to check 12.
+* **And this step found §5.11 happening to §5.11's paragraph**: check 12's cost comment still read
+  "1.65, 1.66 and 1.62 s ... 3,042 qualified `def` names", measured before the same day's repair
+  widened the population to 2,926 and the roster to 3,142. The repair moved the numbers the check
+  PRINTS and not the numbers its comment quotes — because only the first are measured where they
+  are read. Corrected in the same edit.
+
+### 9. Gaps
+
+| # | what | where | why it is not closed here |
+|---|---|---|---|
+| **2280** | **289 definitions are exempt, not deleted, and the exemption is R3's to spend.** §8.2's day planner, W-24's row renderer and their decoders are built, proved and entered by no request the shipped binary can build. Deleting them would throw away what R3 is for; wiring them is R3 | `kernel/reach-exempt.txt`, `kernel/TmKernel/TmKernel/Planner.lean` | R3 is a step of its own and D50 orders it after P9. The fourteen sections name the exit and the ratchet enforces it: the day the binary sends `planner`, every one of those entries fails as STALE |
+| **2281** | **`sections.py` cannot tell a `#[cfg(test)]` fixture in `tm/src` from a shipped send.** `tz` and `log` are named in `kernel_bridge.rs:1803` and `:1805`, inside a test module; both are also sent by shipped code (`kernel_log.rs:398-402`), so nothing rests on it TODAY | `kernel/sections.py` | it is the quiet direction — it can only judge MORE sections sent, never fewer — and reading Rust's `cfg` attributes is a second parser. `--audit` prints the file and line of every region accepted, so the adjudication is readable |
+| **2282** | **A definition can be reached by a real request and still have its result discarded.** §6 answers the KEY layer (no dead answer key today); the definition layer is open. A call graph cannot see a value that is computed and dropped | `kernel/reach.py`, `kernel/callgraph.py` | it needs a different instrument — a backward walk from the response encoders over DATA flow, which the emitted C does not carry. Reachability is a floor under composition, never a proof of it, and this is the next layer of that sentence |
+| **2283** | **Checks 8 and 11 still read the ASSUMED root.** `callgraph.reachable` defaults to no cuts, so check 11's "2,202 of 13,183 emitted C symbols reachable from `tm_kernel_call`" is the export's number and not the binary's, and check 8 resolves prose against the same graph | `kernel/twins.py`, `kernel/citations.py` | check 11's exemption rule and check 8's resolution both quote that figure, and moving it is a change to two gates' answers inside a step that was one gate's. The default is explicit and declared rather than inherited |
+| **2284** | **A request assembled from a variable is invisible to the region scan.** A section key built by `format!` interpolation or returned whole by a helper is not a literal and is not read; the floor is that `docs` must come out SENT and at least one region must be accepted | `kernel/sections.py` | the exact rule would be data flow through the Rust, which is the same instrument gap 2282 needs. The floor fails loudly instead of gating nothing, which is the shape this campaign settled on |
+
+**Gap 2229 is closed by this step** — the root is measured, the consequence is 289 definitions, and
+they are named, dated and under the ratchet. Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577,
+803, 876, 1006, 1065, 1105, 1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871,
+1873, 1889, 1900, 1902-1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018, 2020-2025,
+2060-2065, 2090-2096, 2120-2149, 2190-2228, 2250-2254, 2260, 2264, 2266, 2267 and 2269 are
+untouched: no predicate was weakened, no law narrowed, no generator narrowed, no exemption widened
+to remove a disagreement, no snapshot, fixture, latency band or corpus re-blessed, no memory bound
+raised, no external dependency added, no `sorry` outside Goals.lean, no new axiom, and `dayPlan` is
+still total. **Gaps 2285-2319 are free in track A's range.**

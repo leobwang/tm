@@ -21,6 +21,21 @@ is what decides the antecedent and it decides it the only way that cannot be
 talked round -- a definition it emits no code for is one nothing can call, and
 a definition it DOES emit is code the program either runs or carries dead.
 
+AND THE ROOT IS MEASURED NOW, NOT ASSUMED (W-32, README gap 2229).  The
+sentence above was true and the walk that implemented it was rooted at an
+ASSUMPTION: that everything `tm_kernel_call` can answer is something a caller
+can ask for.  `tm_kernel_call` is a door, not a caller -- what comes through it
+is a REQUEST whose top-level keys choose which section runs -- and W-31's track
+P found the consequence by hand while pricing R3: `Planner.dayPlan`, §8.2's
+whole day planner, is reached from this root and from NO shipped caller,
+because `grep -rn '"planner"' tm/src` is empty.  So `sections.py` measures both
+sides -- the kernel's own top-level sections, walked from the `@[export]`, and
+the requests `tm/src` actually builds -- and a dispatcher for a section nothing
+sends contributes only the callees of its absent arms.  289 definitions moved
+from reachable to unreachable at that root: the `planner` section's 228, the
+`plan` section's 53, and 8 the two share.  The number a gate prints is the
+number it can defend, and 1,467 was not it.
+
 WHY THAT ANTECEDENT AND NOT A SOURCE-SIDE ONE.  "Used solely within proofs"
 reads like a question about references, and it was measured as one before this
 file was written: of the 2,365 emitted `def`s of the FUNCTION-only population
@@ -103,8 +118,13 @@ import sys
 
 import callgraph
 import leanfiles
+import sections as reqsec
 
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "reach-exempt.txt"
+# The shipped binary's source.  The walk's root is derived from the requests
+# `tm/src` builds, never assumed to be everything the export can answer
+# (`sections.py`, README gap 2229).
+RUST_SRC = pathlib.Path(__file__).resolve().parent.parent / "tm" / "src"
 # THE POPULATION IS A KEYWORD CLASS AND NOT THE ONE WORD `def` (W-31 repair,
 # README gap 2258).  This read `qualified_names(p, "def")` and said nothing
 # about the others, while `mutate.py` had read `(def|abbrev|instance)` since
@@ -266,12 +286,23 @@ def main(argv):
     # FILE of the library and never from the directory named on the command
     # line -- `.lake/build/ir` sits inside that directory, not above it.
     ir = callgraph.ir_root(files[0])
-    reached, emitted = callgraph.reachable(ir)
     # THE TREE THIS READS MUST BE THE SOURCE'S, BOTH WAYS (W-31, gap 2149).
     # `.lake/build/ir` is where the package builds, so the package is two
     # levels above it, and its LIBRARY is `leanfiles.library_files` -- the
     # enumeration that names the root module as well as the directory.
     pkg = ir.parents[2]
+    # THE ROOT IS MEASURED AND NOT ASSUMED (W-32, README gap 2229).  The export
+    # is a door: a section `tm/src` never sends is a room nobody enters, and
+    # `sections.py` reads both sides -- the kernel's own top-level sections,
+    # walked from the `@[export]`, and the requests the shipped binary builds --
+    # to cut the arms no request takes.
+    # `defs` is handed in rather than rebuilt: it is already every `(module,
+    # written, qualified)` of the library, and asking `leanfiles.qualified_names`
+    # for it a second time cost 1.16 s on a check whose wall was 1.6 s.
+    cuts, wire, wirebad = reqsec.cuts(pkg, RUST_SRC, defs)
+    reached, emitted = callgraph.reachable(
+        ir, {callgraph.symbol(k): {callgraph.symbol(v) for v in vs}
+             for k, vs in cuts.items()})
     library = {p.stem: p for p in leanfiles.library_files(pkg)}
     compiled = {c.stem for c in ir.rglob("*.c")}
     closed = callgraph.closed_users(ir)
@@ -285,6 +316,7 @@ def main(argv):
     dead = {(d[0], d[2]): d for d in population if d[3] not in reached}
 
     entries, sections, bad = read_exemptions(EXEMPT_FILE)
+    bad.extend(wirebad)
     for stem in sorted(set(library) - compiled):
         bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
                    "for it -- nothing imports it (AGENTS 2.3), so this check and "
@@ -297,10 +329,11 @@ def main(argv):
     for key in sorted(dead):
         if key not in entries:
             d = dead[key]
-            bad.append("NOT EXEMPT: %s (%s) is emitted and nothing reaches it from "
-                       "%s%s" % (d[2], d[0], callgraph.EXPORT_ROOT,
-                                 " -- it does run at load, from a hoisted closed "
-                                 "constant" if d[3] in closed else ""))
+            bad.append("NOT EXEMPT: %s (%s) is emitted and no request the shipped "
+                       "binary can build reaches it from %s%s"
+                       % (d[2], d[0], callgraph.EXPORT_ROOT,
+                          " -- it does run at load, from a hoisted closed "
+                          "constant" if d[3] in closed else ""))
     known = {(d[0], d[2]) for d in population}
     for key in sorted(entries):
         if key in dead:
@@ -336,6 +369,8 @@ def main(argv):
                            % (EXEMPT_FILE.name, lineno, module, key[1]))
 
     if audit:
+        for line in wire:
+            print(line)
         per = collections.Counter(m for m, _ in dead)
         print("%-24s %6s %6s %6s %6s" % ("module", "emit", "reach", "unreach", "load"))
         for module in sorted(per):
@@ -359,11 +394,13 @@ def main(argv):
               "entry added under a section that already exists at HEAD fails "
               "the ratchet" % EXEMPT_FILE.name)
     print("%d def/abbrev(s) in %d library module(s), %d emitted (%d as a global), "
-          "%d reachable from %s, %d exempt in %d section(s) (%d of them run at "
-          "load), %d UNANSWERED"
+          "%d reachable from %s over the %d section(s) tm/src sends (%d cut), "
+          "%d exempt in %d section(s) (%d of them run at load), %d UNANSWERED"
           % (len(defs), len(library), len(population),
              sum(1 for d in population if d[3] in callgraph.emitted_globals(ir)),
-             len(live), callgraph.EXPORT_ROOT, len(entries), len(sections),
+             len(live), callgraph.EXPORT_ROOT,
+             sum(1 for line in wire if line.startswith("  SENT")), len(cuts),
+             len(entries), len(sections),
              sum(1 for d in dead.values() if d[3] in closed), len(bad)))
     return 1 if bad else 0
 

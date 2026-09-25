@@ -4,8 +4,17 @@
 # `abbrev` of the library for which the compiler EMITS code -- a C function, or a
 # `LEAN_EXPORT lean_object* <sym>;` GLOBAL, which is how it writes a nullary definition whose body is a
 # closed constant -- must be reachable from `tm_kernel_call`, the one symbol the host
-# dials.  This file is the exceptions, and it is W-27's shape -- AN ENUMERATION YOU
-# JOIN TO BE EXEMPT, NOT TO BE COVERED.
+# dials, OVER THE SECTIONS `tm/src` ACTUALLY SENDS.  This file is the exceptions, and it
+# is W-27's shape -- AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT TO BE COVERED.
+#
+# THE ROOT WAS ASSUMED UNTIL W-32 (README gap 2229), and the last five words of that
+# property are the repair.  `tm_kernel_call` is a DOOR, not a caller: what comes through
+# it is a request whose top-level keys choose which of the kernel's sections runs, and a
+# section nothing sends is a door into a room nobody enters.  `sections.py` measures
+# both sides and cuts the arms no request takes; 289 definitions that this file did not
+# name on 2026-09-25 -- the whole of §8.2's day planner, W-24's row renderer, and their
+# decoders -- moved from reachable to unreachable when the root stopped being assumed,
+# and they are the fourteen dated sections at the end of this file.
 #
 # THE RATCHET, AND IT IS A GATE NOW AND NOT THIS PARAGRAPH (W-31 repair, gap 2259).
 # It may only SHRINK.  An entry whose definition becomes reachable, stops being emitted
@@ -46,7 +55,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 1459
+EXEMPT 1748
 
 ## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Arith.Bin.ix
@@ -1648,3 +1657,320 @@ Tm.Planner.victimLt
 
 ## PlannerWit.lean -- W-31 repair, 2026-09-25 (README gap 2258): an `abbrev`, which check 12's population read as the single keyword `def`. Lean compiles one and the generator emits it, while every caller inlines the reducible definition, so the symbol stands with nothing naming it. Grandfathered at the widening by measurement on that date. This section may only shrink.
 Tm.PlannerWit.permissive
+
+## Line.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 1 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.Field.viewPref
+
+## Lookahead.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 8 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.Look.MaxCap.leftMin
+Tm.Look.PlanFacts.capLeftMin
+Tm.Look.PlanFacts.capOk
+Tm.Look.PlanFacts.eligible
+Tm.Look.PlanFacts.isOpen
+Tm.Look.PlanFacts.waiting
+Tm.Look.Today.storedBudget
+Tm.Look.wallIxOn
+
+## Plan.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 4 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.climb
+Tm.effectiveCi
+Tm.effectiveCiAux
+Tm.rootOf
+
+## PlanWire.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 38 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.PlanWire.PlanKey.name
+Tm.PlanWire.PlannerRefusal.text
+Tm.PlanWire.batchOf
+Tm.PlanWire.diagJson
+Tm.PlanWire.flagsJson
+Tm.PlanWire.hashHex
+Tm.PlanWire.idsJson
+Tm.PlanWire.intoPlan
+Tm.PlanWire.kindName
+Tm.PlanWire.noteJson
+Tm.PlanWire.optStr
+Tm.PlanWire.placeOf?
+Tm.PlanWire.planJson
+Tm.PlanWire.planReqOf
+Tm.PlanWire.plannerRefusalJson
+Tm.PlanWire.priosJson
+Tm.PlanWire.readActive
+Tm.PlanWire.readBatchMaxMin
+Tm.PlanWire.readBreak
+Tm.PlanWire.readDropIds
+Tm.PlanWire.readHash
+Tm.PlanWire.readInterrupt
+Tm.PlanWire.readOptActive
+Tm.PlanWire.readOptBreak
+Tm.PlanWire.readOptInterrupt
+Tm.PlanWire.readOptOverrides
+Tm.PlanWire.readOverrideList
+Tm.PlanWire.readOverridePair
+Tm.PlanWire.readOverrides
+Tm.PlanWire.readPlannerSection
+Tm.PlanWire.readRoutine
+Tm.PlanWire.readRoutines
+Tm.PlanWire.readState
+Tm.PlanWire.readYesterday
+Tm.PlanWire.readYesterdayPair
+Tm.PlanWire.routineErrName
+Tm.PlanWire.segJson
+Tm.PlanWire.withPlanner
+
+## Planner.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 176 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.Planner.ActiveBlock.wf
+Tm.Planner.BreakState.wf
+Tm.Planner.DayPlan.empty
+Tm.Planner.Diagnostics.empty
+Tm.Planner.Group.ids
+Tm.Planner.Group.leftMin
+Tm.Planner.Group.live
+Tm.Planner.GroupKey.nums
+Tm.Planner.InterruptState.wf
+Tm.Planner.PlanReq.aCapacityLost
+Tm.Planner.PlanReq.activeLeft
+Tm.Planner.PlanReq.activeLimit
+Tm.Planner.PlanReq.activeRow
+Tm.Planner.PlanReq.activeRun
+Tm.Planner.PlanReq.activeSeed
+Tm.Planner.PlanReq.activeStop
+Tm.Planner.PlanReq.activeWorked
+Tm.Planner.PlanReq.anchorOf
+Tm.Planner.PlanReq.assignFold
+Tm.Planner.PlanReq.assignStart
+Tm.Planner.PlanReq.assignStep
+Tm.Planner.PlanReq.assignedRows
+Tm.Planner.PlanReq.assignedSpans
+Tm.Planner.PlanReq.bedSec
+Tm.Planner.PlanReq.blockMin
+Tm.Planner.PlanReq.blockedBeforeRoutines
+Tm.Planner.PlanReq.blocksDone
+Tm.Planner.PlanReq.budgetBlocks
+Tm.Planner.PlanReq.budgetSpentNotes
+Tm.Planner.PlanReq.buildGroups
+Tm.Planner.PlanReq.candAnswers
+Tm.Planner.PlanReq.curLoc
+Tm.Planner.PlanReq.currentBlockEnd
+Tm.Planner.PlanReq.cutFrom
+Tm.Planner.PlanReq.dailyWindow
+Tm.Planner.PlanReq.dayBatches
+Tm.Planner.PlanReq.dayEnd
+Tm.Planner.PlanReq.dayStart
+Tm.Planner.PlanReq.deferFold
+Tm.Planner.PlanReq.deferOne
+Tm.Planner.PlanReq.deferWalk
+Tm.Planner.PlanReq.displaceInto
+Tm.Planner.PlanReq.edfDays
+Tm.Planner.PlanReq.emitKeptBreaks
+Tm.Planner.PlanReq.energisedSlots
+Tm.Planner.PlanReq.eveningRows
+Tm.Planner.PlanReq.finalAssign
+Tm.Planner.PlanReq.finalRoutines
+Tm.Planner.PlanReq.groupFitsSlot
+Tm.Planner.PlanReq.instanceOf?
+Tm.Planner.PlanReq.isFurniture
+Tm.Planner.PlanReq.isSleepInstance
+Tm.Planner.PlanReq.isTravelDay
+Tm.Planner.PlanReq.keptBreaks
+Tm.Planner.PlanReq.keptBreaksToday
+Tm.Planner.PlanReq.keyOf
+Tm.Planner.PlanReq.loc
+Tm.Planner.PlanReq.lowestFree
+Tm.Planner.PlanReq.night
+Tm.Planner.PlanReq.noPositionNotes
+Tm.Planner.PlanReq.now
+Tm.Planner.PlanReq.occupiedNow
+Tm.Planner.PlanReq.optionalCands
+Tm.Planner.PlanReq.optionalFold
+Tm.Planner.PlanReq.optionalFree
+Tm.Planner.PlanReq.optionalOccupied
+Tm.Planner.PlanReq.optionalRows
+Tm.Planner.PlanReq.optionalSpans
+Tm.Planner.PlanReq.ownSite
+Tm.Planner.PlanReq.placedRoutines
+Tm.Planner.PlanReq.placementFold
+Tm.Planner.PlanReq.rankedCands
+Tm.Planner.PlanReq.rawGroups
+Tm.Planner.PlanReq.rePlaceWalk
+Tm.Planner.PlanReq.reservedSpan
+Tm.Planner.PlanReq.restHighMin
+Tm.Planner.PlanReq.restRows
+Tm.Planner.PlanReq.restTaken
+Tm.Planner.PlanReq.restsToday
+Tm.Planner.PlanReq.rootSite
+Tm.Planner.PlanReq.routineEnergy
+Tm.Planner.PlanReq.routineInstances
+Tm.Planner.PlanReq.routineRow
+Tm.Planner.PlanReq.routineSpan
+Tm.Planner.PlanReq.sinceBreak
+Tm.Planner.PlanReq.sleepInstance
+Tm.Planner.PlanReq.sleepSeg
+Tm.Planner.PlanReq.slotBlocked
+Tm.Planner.PlanReq.startGroups
+Tm.Planner.PlanReq.today
+Tm.Planner.PlanReq.todayBreaks
+Tm.Planner.PlanReq.todayCut
+Tm.Planner.PlanReq.todayRecord
+Tm.Planner.PlanReq.todaySlots
+Tm.Planner.PlanReq.tz
+Tm.Planner.PlanReq.victimSlot
+Tm.Planner.PlanReq.windDownSec
+Tm.Planner.PlanReq.windDownSeg
+Tm.Planner.PlanReq.window
+Tm.Planner.Ranked.cand
+Tm.Planner.Ranked.facts
+Tm.Planner.Ranked.gatherable
+Tm.Planner.RuntimeIn.empty
+Tm.Planner.Seg.items
+Tm.Planner.SegFlags.none
+Tm.Planner.asciiLower
+Tm.Planner.assignedSeg
+Tm.Planner.batchIdsOf
+Tm.Planner.batchLoop
+Tm.Planner.batchMembers
+Tm.Planner.batches
+Tm.Planner.blockBoundary
+Tm.Planner.blockedByWalls
+Tm.Planner.capLeftOf
+Tm.Planner.clampSec
+Tm.Planner.clipWall
+Tm.Planner.commitOf
+Tm.Planner.contiguousFits
+Tm.Planner.dayAssigned
+Tm.Planner.dayDiagnostics
+Tm.Planner.dayPlan
+Tm.Planner.dayPriorities
+Tm.Planner.dayRoutineSegs
+Tm.Planner.dayRows
+Tm.Planner.declaresAWindow
+Tm.Planner.earliestFree
+Tm.Planner.entersTheOrder
+Tm.Planner.fitsRun
+Tm.Planner.gatherBatch
+Tm.Planner.groupKeyLe
+Tm.Planner.groupKeyOf
+Tm.Planner.groupLocOk
+Tm.Planner.groupOf
+Tm.Planner.interruptRows
+Tm.Planner.isSleepId
+Tm.Planner.minGroupKey
+Tm.Planner.mkActive?
+Tm.Planner.mkBreak?
+Tm.Planner.mkHash?
+Tm.Planner.mkInterrupt?
+Tm.Planner.mkOverrides?
+Tm.Planner.mkRoutine?
+Tm.Planner.mkRoutines?
+Tm.Planner.mkYesterday?
+Tm.Planner.natsLe
+Tm.Planner.optionalStep
+Tm.Planner.optionalWant
+Tm.Planner.pastInst
+Tm.Planner.pastKind
+Tm.Planner.pastRows
+Tm.Planner.placeAt
+Tm.Planner.placeOptional
+Tm.Planner.placeStep
+Tm.Planner.plannedSum
+Tm.Planner.prioRow
+Tm.Planner.remainingBudget
+Tm.Planner.routineRows
+Tm.Planner.segOf
+Tm.Planner.siteNums
+Tm.Planner.sortGroupsFast
+Tm.Planner.sortRankedFast
+Tm.Planner.sortRoutinesFast
+Tm.Planner.sortRowsFast
+Tm.Planner.sortWallsFast
+Tm.Planner.spendActive
+Tm.Planner.splitGroups
+Tm.Planner.splitKeyOf
+Tm.Planner.splitPush
+Tm.Planner.splitSleep
+Tm.Planner.stepOneSegs
+Tm.Planner.travelDay
+Tm.Planner.unspend
+Tm.Planner.wallConflicts
+Tm.Planner.wallRows
+Tm.Planner.wallsOfDay
+Tm.Planner.wallsToday
+
+## State.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `planner` section, and `tm/src` sends no such key -- `grep -rn '"planner"' tm/src` is empty, and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. `tm_kernel_call` reaches these definitions; no request the shipped binary can build does. Measured, not adjudicated one at a time: 1 of this module's definitions die with that one section, and `sections.py` cuts `Tm.PlanWire.runPlanner` to the callees of its absent arms because the kernel's own `runPlanner_without_a_planner_section_is_runRows` says that is what runs. EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until they are deleted -- which is the ratchet doing the bookkeeping R3 would otherwise have to remember. This section may only shrink.
+Tm.Core.pref
+
+## Emit.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `plan` section -- W-24's rows -- and `tm/src` sends no such key. Its three `"plan":` occurrences are all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`, never a request's own top-level key, which is why `sections.py` reads a region's keys at brace depth 1 and calls it a request only when they are all sections of the kernel. Measured: 30 of this module's definitions die with that one section, and the cut is at `Tm.EmitWire.runRowsP`, where the program branches -- not at `runRows`, where `runRows_without_a_plan_section_is_runCap` proves the VALUES equal while `runRowsP` still runs. EXIT: R3, or whatever first sends `plan`; the entries below then become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Emit.actualCell
+Tm.Emit.batchNames
+Tm.Emit.batchTitle
+Tm.Emit.blocksCell
+Tm.Emit.canonDur
+Tm.Emit.ciCell
+Tm.Emit.clockOfLocal
+Tm.Emit.durCell
+Tm.Emit.estCell
+Tm.Emit.glyphOf
+Tm.Emit.itemCiOf
+Tm.Emit.itemEstOf
+Tm.Emit.keyId
+Tm.Emit.markCell
+Tm.Emit.markChar
+Tm.Emit.multCell
+Tm.Emit.multShown
+Tm.Emit.nameOr
+Tm.Emit.noteCell
+Tm.Emit.noteText
+Tm.Emit.pCell
+Tm.Emit.parentCell
+Tm.Emit.rowOf
+Tm.Emit.showsEst
+Tm.Emit.showsScale
+Tm.Emit.tenths
+Tm.Emit.timeCell
+Tm.Emit.titleCell
+Tm.Emit.titleText
+Tm.Emit.underusedCell
+
+## EmitWire.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `plan` section -- W-24's rows -- and `tm/src` sends no such key. Its three `"plan":` occurrences are all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`, never a request's own top-level key, which is why `sections.py` reads a region's keys at brace depth 1 and calls it a request only when they are all sections of the kernel. Measured: 18 of this module's definitions die with that one section, and the cut is at `Tm.EmitWire.runRowsP`, where the program branches -- not at `runRows`, where `runRows_without_a_plan_section_is_runCap` proves the VALUES equal while `runRowsP` still runs. EXIT: R3, or whatever first sends `plan`; the entries below then become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.EmitWire.RowKey.name
+Tm.EmitWire.RowRefusal.text
+Tm.EmitWire.batchNamesOf
+Tm.EmitWire.readFlags
+Tm.EmitWire.readKind
+Tm.EmitWire.readNote
+Tm.EmitWire.readOptNote
+Tm.EmitWire.readPrio
+Tm.EmitWire.readPrios
+Tm.EmitWire.readRowSection
+Tm.EmitWire.readSeg
+Tm.EmitWire.readSegs
+Tm.EmitWire.rowJson
+Tm.EmitWire.rowRefusalJson
+Tm.EmitWire.rowsJson
+Tm.EmitWire.rowsOfReq
+Tm.EmitWire.segErrName
+Tm.EmitWire.withPlan
+
+## Planner.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `plan` section -- W-24's rows -- and `tm/src` sends no such key. Its three `"plan":` occurrences are all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`, never a request's own top-level key, which is why `sections.py` reads a region's keys at brace depth 1 and calls it a request only when they are all sections of the kernel. Measured: 3 of this module's definitions die with that one section, and the cut is at `Tm.EmitWire.runRowsP`, where the program branches -- not at `runRows`, where `runRows_without_a_plan_section_is_runCap` proves the VALUES equal while `runRowsP` still runs. EXIT: R3, or whatever first sends `plan`; the entries below then become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Planner.Seg.wf
+Tm.Planner.mkBatch?
+Tm.Planner.mkSeg?
+
+## State.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export ONLY through the request's `plan` section -- W-24's rows -- and `tm/src` sends no such key. Its three `"plan":` occurrences are all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`, never a request's own top-level key, which is why `sections.py` reads a region's keys at brace depth 1 and calls it a request only when they are all sections of the kernel. Measured: 2 of this module's definitions die with that one section, and the cut is at `Tm.EmitWire.runRowsP`, where the program branches -- not at `runRows`, where `runRows_without_a_plan_section_is_runCap` proves the VALUES equal while `runRowsP` still runs. EXIT: R3, or whatever first sends `plan`; the entries below then become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Core.est
+Tm.Core.title
+
+## Line.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export through the `planner` section and the `plan` section and through nothing else, so neither cut alone kills it and both together do. `tm/src` sends neither key. These are the definitions the day planner and W-24's row renderer share -- the ci and preference views, and the roots they climb. Measured: 4 of this module's definitions are in this position. EXIT: R3; when either section reaches a shipped caller the entries below become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Field.ciSlotOf
+Tm.Field.kCi
+Tm.Field.viewCi
+Tm.Field.viewCiKey
+
+## Planner.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export through the `planner` section and the `plan` section and through nothing else, so neither cut alone kills it and both together do. `tm/src` sends neither key. These are the definitions the day planner and W-24's row renderer share -- the ci and preference views, and the roots they climb. Measured: 2 of this module's definitions are in this position. EXIT: R3; when either section reaches a shipped caller the entries below become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Planner.Seg.minutes
+Tm.Planner.SegKind.isWork
+
+## Priority.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export through the `planner` section and the `plan` section and through nothing else, so neither cut alone kills it and both together do. `tm/src` sends neither key. These are the definitions the day planner and W-24's row renderer share -- the ci and preference views, and the roots they climb. Measured: 1 of this module's definitions are in this position. EXIT: R3; when either section reaches a shipped caller the entries below become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.yesterdayOf?
+
+## State.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export through the `planner` section and the `plan` section and through nothing else, so neither cut alone kills it and both together do. `tm/src` sends neither key. These are the definitions the day planner and W-24's row renderer share -- the ci and preference views, and the roots they climb. Measured: 1 of this module's definitions are in this position. EXIT: R3; when either section reaches a shipped caller the entries below become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
+Tm.Core.ci

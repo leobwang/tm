@@ -36,6 +36,19 @@ say() { printf '%-46s %s\n' "$1" "$2"; }
 #    after; three false-positive controls -- `'!'`, `s!"..."` and `a != b`, 58
 #    live lines between them -- stay green, which is what makes the class rule
 #    a rule and not a wider net.
+#
+#    RE-DRIVEN BY AN AUDITOR WHO DID NOT WRITE IT (W-32).  `e89a2c0` landed
+#    after its auditor had finished, so its class was planted again in a `cp -a`
+#    clone with its OWN build tree, three ways, each alone: `#eval show
+#    Lean.Elab.Command.CommandElabM Unit from .. addDecl (Declaration.axiomDecl
+#    ..)` at column zero (named, "`#eval` stands where a command begins");
+#    the same `#eval` INDENTED inside `section W32Critic .. end` (named,
+#    "a COMMAND keyword .. at an indented command position"); and `run_cmd`
+#    indented inside a section, W-30's own escape (named the same way).  All
+#    three rc=1, and a fourth -- `theorem .. := by native_decide` -- is named
+#    too, which is what puts check 3's arm below on a plant this one cannot see
+#    only by DISABLING this one.  Control: rc=0 before each plant and after each
+#    revert.
 if python3 totality.py TmKernel/TmKernel TmKernel; then
   say "totality check" "ok"
 else
@@ -163,6 +176,17 @@ unaudited=$( comm -23 \
 # SO THE ARM IS A SUBSET TEST, and it is W-27's shape: an axiom joins the three
 # Lean ships to be EXEMPT.  `sorryAx` keeps its own arm above because its
 # message is the one a reader wants; it would fail here too.
+#
+# RE-DRIVEN BY AN AUDITOR WHO DID NOT WRITE IT (W-32), and with a plant check 2
+# could not have caught on its own reading of the SOURCE: `theorem
+# w32_critic_native : (1000 : Nat) < 2000 := by native_decide` appended to
+# `SealInStep.lean` in a `cp -a` clone with its own build tree, plus its
+# `#print axioms` line.  `lake build TmKernel:static` rc=0, Check.lean reported
+# ZERO errors, `grep -c sorryAx` was **0** -- so the arm this one replaced would
+# have said `ok` -- and `lean` printed `'w32_critic_native' depends on axioms:
+# [w32_critic_native._native.native_decide.ax_1_1]`.  The subset arm named it at
+# rc=1: "A NEW AXIOM: w32_critic_native._native.native_decide.ax_1_1, 1 use(s)".
+# Reverted and rebuilt, the census is the line this check prints.
 #
 # AND THE PARSER CARRIES ITS OWN FLOOR.  `lean` WRAPS a long axiom list over
 # several lines (16 of them in this library), so a line-at-a-time reader sees
@@ -830,14 +854,96 @@ fi
 #     is defined by; `Tm.remainingMin` is mentioned nine times inside its own
 #     module, exactly as `assignFold` was.
 #
+#     AND THE ROOT OF THAT PROPERTY WAS ASSUMED UNTIL W-32 (README gap 2229).
+#     "Reachable from `tm_kernel_call`" is answerable and it is not the
+#     question: `tm_kernel_call` is a DOOR, not a caller.  What comes through it
+#     is a REQUEST, whose top-level keys choose which of the kernel's sections
+#     runs, and a section nothing sends is a door into a room nobody enters.
+#     W-31's track P found the consequence BY HAND, while pricing R3 -- the same
+#     way `assignFold`, `Recur.lean` and `Tree.lean` were all found -- and it is
+#     the fourth of them: `Planner.dayPlan`, §8.2's whole day planner, is
+#     reached from this root and from NO shipped caller, because `grep -rn
+#     '"planner"' tm/src` is EMPTY.  So the root is MEASURED now, on both sides,
+#     by `sections.py`: the kernel's own top-level sections, walked from the
+#     `@[export]` definition by following the request value (so `readTz` on the
+#     `tz` object is never mistaken for a reader of the request), and the
+#     requests `tm/src` builds, read as the keys at brace depth 1 of every
+#     `json!` block and string literal that is request-shaped.  Measured
+#     2026-09-25: the kernel dispatches TEN top-level sections and `tm/src`
+#     sends EIGHT.  `planner` and `plan` -- W-24's rows -- are sent by
+#     `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs` and
+#     by nothing a user can run, and `tm/src`'s three `"plan":` occurrences are
+#     all a CANDIDATE's nested field inside `kernel_capacity.rs`'s `plan_json`.
+#     **1,467 reachable became 1,178** -- 228 behind `planner`, 53 behind
+#     `plan`, 8 behind the two together.
+#
+#     THE CUT IS AN ARM AND NOT A ROOT, and the difference was measured.
+#     Rooting the walk at the section readers loses the plumbing every request
+#     runs -- `jparse`, `jemit`, the loader -- and reports it dead, so the root
+#     stays `tm_kernel_call` and a dispatcher for an unsent section contributes
+#     only the callees of its ABSENT arms: `Tm.PlanWire.runPlanner` gives
+#     `Tm.jsonErr` and `Tm.EmitWire.runRows`, and its `.ok (some sec)` arm --
+#     `Tm.PlanWire.readPlannerSection`, `Tm.PlanWire.planReqOf`,
+#     `Tm.PlanWire.planJson`, `Tm.Planner.dayPlan` -- gives nothing.  The cut is
+#     taken where the PROGRAM branches and not where the PROOF does: the first
+#     attempt used the right-hand side of the kernel's own absence law, and
+#     `runRows_without_a_plan_section_is_runCap` is EXTENSIONAL -- it says the
+#     two compute the same value while `Tm.EmitWire.runRowsP` and `Tm.runCapP`
+#     both still RUN -- so cutting there would have written three false reasons
+#     into the exemption file.  The cut is at `Tm.EmitWire.runRowsP`.
+#
 #     THE EXEMPTIONS ARE W-27'S SHAPE -- an enumeration you join to be EXEMPT,
-#     not to be COVERED.  `reach-exempt.txt` grandfathers the 952 definitions
-#     that were unreachable on 2026-09-25 under 45 sections that each carry a
-#     reason, declares its own size so growth is a number in a diff, and MAY
+#     not to be COVERED.  `reach-exempt.txt` grandfathers the definitions that
+#     were unreachable on 2026-09-25 -- 952 when the gate landed, 1,459 after
+#     the same day's repair widened the population by the globals (gap 2257),
+#     and 1,748 after W-32 rooted the walk where the binary enters -- each under
+#     a section that carries a reason, and it declares its own size.  It MAY
 #     ONLY SHRINK: an entry that becomes reachable, stops being emitted or stops
 #     existing FAILS by name and must be deleted.  A bare threshold would have
 #     been the list-shaped answer this campaign has now got wrong eleven counted
-#     times, and gap 2130 says so itself.
+#     times, and gap 2130 says so itself.  The fourteen W-32 sections each name
+#     their EXIT: R3.  When the shipped binary sends `planner`, the cut goes,
+#     every entry under them becomes REACHED and this check fails on each as
+#     STALE until it is deleted -- the ratchet doing R3's bookkeeping instead of
+#     R3 having to remember it.
+#
+#     DRIVEN, W-32, in a `git clone --local` whose `.lake` is a SYMLINK to the
+#     shared build (reach.py reads that tree and never writes it, and no `lake`
+#     was run in the clone).  The gate has to be able to fail on the thing it
+#     was built for, so a section string was deleted from the RUST.  `"emit"`
+#     renamed to `"items"` at `kernel_log.rs:2084`, its only send: 8 sections
+#     became 7, 1,178 reachable became 1,172, rc=1, and the six named are
+#     exactly what that arm alone reached -- `Tm.emitStep`, `Tm.readEmitAt`,
+#     `Tm.readEmitItem`, `Tm.EmitRefusal.json`, `Tm.Log.emitEvent` and
+#     `Tm.Log.emitLine`, which is the whole of D16's log WRITER.  Reverted, rc=0.
+#     `"capacity"` renamed to `"cap"` at `kernel_capacity.rs:886`, its only send
+#     in a request-shaped region (the refusal fixtures in `kernel_bridge.rs` open
+#     their own object and carry no `docs`, so they are not read as requests):
+#     1,178 became 893 and 285 were named, across Lookahead.lean 123,
+#     Boundary.lean 94, Capacity.lean 17, Arith.lean 17, Priority.lean 15,
+#     Cal.lean 10, Line.lean 6, Plan.lean 2, State.lean 1 -- D10's whole
+#     capacity machine.  Reverted, rc=0.
+#
+#     AND THE GLOBAL HALF RE-DRIVEN (W-32), because `5d9aba5` also landed after
+#     its auditor had finished.  In a second clone with its OWN build tree,
+#     `def w32CriticOrphanGlobal : List Nat := [2, 7, 1, 8, 2, 8, 1, 8]`
+#     appended to `SealInStep.lean`: `lake build TmKernel:static` rc=0, the
+#     generator wrote it as `LEAN_EXPORT const lean_object*
+#     lp_TmKernel_w32CriticOrphanGlobal = (const lean_object*)&..` at
+#     `SealInStep.c:94` -- the SECOND of the two global spellings, the one a
+#     pattern anchored on `;` misses -- the population went 2,926 -> 2,927, and
+#     this check printed `NOT EXEMPT: w32CriticOrphanGlobal (SealInStep.lean)`
+#     at rc=1.  Reverted and rebuilt, rc=0.
+#
+#     WHAT THIS CHECK STILL CANNOT ASK, one layer further out and measured
+#     rather than left to be found: a definition can be reached by a real
+#     request and still have its result carried by NO response key.  Measured
+#     2026-09-25 at the KEY layer -- every key the kernel emits under the
+#     measured root (`docs`, `report`, `log`, `emit`, `lookahead`, and their
+#     entries) is read by `tm/src`, `report.closes[].min` included
+#     (`kernel_bridge.rs:521`, spent at `closing.rs:396`) -- so there is no dead
+#     answer key today.  The DEFINITION-level form of the question is open and
+#     is README gap 2282.
 #
 #     DRIVEN, in a `cp -a` clone with its own build tree, never the shared one.
 #     `Tm.PlanWire.hashHex` has exactly one caller in the emitted C; its call
@@ -859,16 +965,26 @@ fi
 #     `dayRows`, `dayPlan`, `dayAssigned` and `keptBreaksToday` are all REACHED,
 #     which is D50's P9 composition seen in the emitted C and not in the source.
 #
-#     THE COST IS MEASURED, NOT QUOTED (5.11): three runs at 1.65, 1.66 and
-#     1.62 s, at load average 3.3-7.0 with another session on the machine (gap
-#     1333).  Where it goes, timed INSIDE one run so the parts sum to the whole:
-#     0.63-0.64 s to take 3,042 qualified `def` names out of the source, 0.66 to
-#     read 11,935 emitted function bodies out of `.lake/build/ir`, 0.06 to walk
-#     them, 0.25 for the second pass that measures the load-time class, and 0.00
-#     for the exemption file.  On a twelve-check wall of 16.34-17.11 s (eight
-#     runs) that is 10%, and the eleven-check wall it was added to measured
-#     14.43 s: design 14.0 item 4 prices a step at 10% and this one is AT it,
-#     which is recorded here rather than rounded down.
+#     THE COST IS MEASURED, NOT QUOTED (5.11): three runs at 2.67, 2.67 and
+#     2.69 s, at load average 3.3-7.5 with another session's `lake` on the
+#     machine (gap 1333).  Where it goes, timed INSIDE one run so the parts sum
+#     to the whole: 1.32 s to take 3,142 qualified `def`/`abbrev` names out of
+#     the source, 0.66 to read the emitted function bodies out of
+#     `.lake/build/ir`, 0.30 for the section walk W-32 added (both languages:
+#     86 library modules indexed by definition head, six of them stripped, and
+#     `tm/src`'s 29 Rust files read once), 0.15 to walk the graph, 0.25 for the
+#     second pass that measures the load-time class, and 0.00 for the exemption
+#     file.  **The W-32 root costs 0.30 s of 2.68**, measured against HEAD's own
+#     reach.py re-run in the same clone in the same minute: 2.57, 2.39, 2.36 s.
+#
+#     AND THE FIGURE THIS PARAGRAPH USED TO CARRY WAS STALE, which is §5.11
+#     happening to §5.11's own paragraph.  It read "three runs at 1.65, 1.66 and
+#     1.62 s ... 0.63-0.64 s to take 3,042 qualified `def` names out of the
+#     source" -- measured before the same day's repair widened the population
+#     from 2,365 to 2,926 and the source roster from 3,042 to 3,142 (gaps
+#     2257/2258).  The repair moved the numbers the check PRINTS and not the
+#     numbers this comment quotes, because only the first are measured where
+#     they are read.
 #
 #     AND THE SECOND PASS IS DELIBERATE.  Folding it into the first reads the
 #     45 MB tree once instead of twice and costs 0.65 s -> 0.88-0.94, because
