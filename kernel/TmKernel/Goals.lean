@@ -1267,7 +1267,19 @@ design §6.3's `loc:`/`atomic`/`max:` list: **there is no assign fold yet**, so
 nothing can assign `m1` at all.  The goal is **not** deleted, because the
 restatement needs Planner.eligibleAt and is P5's (README gap 365), and a
 restatement without its refutation is a weakening (AGENTS §3.1 item 3) — which
-is `plan_tail_drop`'s situation below, handled the same way.  README gap 851. -/
+is `plan_tail_drop`'s situation below, handled the same way.  README gap 851.
+
+**W-32 (track G) refuted it a THIRD time, at a day that ASSIGNS, and the W-19
+cause above is now FALSE.**  `PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day`
+computes the counter-example at `PlannerWit.theSkippedBatchRequest`: `^t3` and
+`^t1` are one document's siblings at equal `rootPrio` and equal `ci`, `^t3` is
+written first, the day assigns `^t1` and does not assign `^t3`.  P9 wrote the
+assign fold, so *"there is no assign fold yet, so nothing can assign m1 at all"*
+— the sentence above, which is kept because it is what W-19 measured — no longer
+holds, and the law is false anyway.  The cause this time IS design §6.3's
+`loc:`.  So the restatement `PlanCheck.monotoneInRank` owes an eligibility that
+refuses a candidate whose `loc:` the day cannot satisfy; that is the route
+forward and it is still P5's.  README gap **2322** (W-32 repair, gap 2416). -/
 theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
@@ -1301,7 +1313,20 @@ offered P5 reaches it — there is no reservation here to refuse a candidate at,
 and `^m1` is not a candidate — so the restatement this goal is to become owes
 either an eligibility that refuses an item step 5 never queues, or the
 restriction of `sj` to `sj.val.kind.isWork`.  It is still P5's row (§6.3) and it
-is still not deleted here.  README gap 960. -/
+is still not deleted here.  README gap 960.
+
+**AND W-32 (track G) KILLED THE SECOND OF THOSE TWO ROUTES.**  The restriction of
+`sj` to `sj.val.kind.isWork` does not save the statement:
+`PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`
+is this goal PLUS `sj.val.kind.isWork = true` — strictly weaker, so refuting it
+refutes the goal — and it is refuted by computation at
+`PlannerWit.thePayingRequest`, a day that assigns and whose decoder pays, where
+`^m1` carries `hot`, is one of the two candidates sent, and the day holds **no**
+row carrying it while a work row carries `^m2`.  The route left is the FIRST one:
+an eligibility that refuses an item step 5 never queues.  A future track reading
+this file for what to do should not price the `isWork` restriction again — it is
+shipped, audited in `Check.lean`, and it fails.  README gap **2321** (W-32
+repair, gap 2416). -/
 theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg)
     (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
     (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)

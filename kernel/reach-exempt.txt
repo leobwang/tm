@@ -26,9 +26,30 @@
 # bumped beside it, and every gate stayed green.  The comparand is now the file as
 # COMMITTED AT HEAD: a new entry must sit under a section heading that is new too, and a
 # new heading's reason must carry an ISO DATE.  Adding a line to an existing section
-# FAILS.  Growth is a dated section in the diff, not a digit in it.  What no gate can
-# read is whether a new section's reason is TRUE; that is still a reader's job, and what
-# the ratchet buys is that growth costs a heading and a date instead of a character.
+# FAILS.  Growth is a dated section in the diff, not a digit in it.
+#
+# AND THE REASON ITSELF IS HELD TO THREE RULES NOW, NOT NONE (W-32 repair, README gaps
+# 2410-2412).  "What no gate can read is whether a section's reason is TRUE" stood in
+# this paragraph while three checkable halves of a reason were checked by nothing.
+#   * THE CENSUS IS RE-DERIVED.  A reason that says "N of its M emitted definitions are
+#     reached" is held against `reach.py`'s own per-module measurement, the one `--audit`
+#     prints.  Twenty-three of the twenty-seven reasons that carried a census were FALSE
+#     on the tree that landed them -- `## Planner.lean` said 178 of 221 where the
+#     measurement was 0 of 236 -- because W-32 rewrote this file under a new root and
+#     re-derived none of the headings it moved.  §5.11, inside the gate D51 is.
+#   * A REWRITE COSTS WHAT GROWTH COSTS.  The ratchet compared entry KEYS, so the reason
+#     above an entry that already existed was pinned by nothing: driven, `## Recur.lean`'s
+#     whole reason -- its gap-501 citation, its date and its exit -- was replaced with an
+#     invented sentence and check 12 printed the unchanged summary at rc=0, re-parenting
+#     all 58 of its entries onto the fabrication.  A changed reason now needs an ISO DATE.
+#   * A NEW SECTION NAMES ITS EXIT.  A reason says why these definitions are unreachable;
+#     an EXIT says what would make them reachable again and what must then happen to the
+#     section.  Sixteen sections name one and seventy-one do not; it is asked of GROWTH
+#     only, because demanding one of the seventy-one would buy seventy-one sentences
+#     written to satisfy a gate.
+# What still cannot be read is whether a DATED, EXIT-carrying, arithmetically true reason
+# is the true one.  That is a reader's job, and what the ratchet buys is that every half
+# of it a script can check is checked.
 #
 # WHAT THE SECTIONS ARE.  A `## <Module.lean> -- <reason>` line opens one, and every
 # entry under it inherits its reason; an entry may add a note of its own after a `#`.
@@ -42,7 +63,9 @@
 #
 # WHAT THIS FILE IS HONEST ABOUT.  The entries here are a GRANDFATHERED SET -- the
 # definitions that were unreachable on 2026-09-25, when the gate landed at W-31 and
-# when the same day's repair widened its population from 2,365 to 2,926 -- and
+# when the same day's repair widened its population from 2,365 to 2,926; it stood at 952
+# when the gate landed, 1,459 after that widening, 1,748 after W-32 rooted the walk where
+# the binary enters, and 1,756 after W-32 track G's eight witness entries -- and
 # most of them have not been adjudicated one by one; the sections say which have.  That is the whole point of the
 # ratchet: the file is the list of definitions nobody has yet had to justify, and it can
 # only get shorter.  Three of its sections are findings this campaign already carries by
@@ -57,7 +80,7 @@
 
 EXEMPT 1756
 
-## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Arith.lean -- The exact-arithmetic layer. 18 of its 46 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Arith.Bin.ix
 Tm.Arith.Q.defined
 Tm.Arith.Q.div
@@ -81,7 +104,7 @@ Tm.Arith.util
 Tm.Arith.utilDefined
 Tm.Arith.utilScaledGe
 
-## Boundary.lean -- the boundary (`String -> String`) and the fixtures R10's rejection theorems decide on. 217 of its 321 emitted definitions are reached; the entries below are the witness side, which a caller does not reach and a proof does.
+## Boundary.lean -- the boundary (`String -> String`) and the fixtures R10's rejection theorems decide on. 217 of its 432 emitted definitions are reached; the entries below are the witness side, which a caller does not reach and a proof does. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.CapWire.CandReq.cands
 Tm.CapWire.candJ  # (load-time)
 Tm.CapWire.capJ  # (load-time)
@@ -187,7 +210,7 @@ Tm.tzRead
 Tm.tzWith
 Tm.weekClosed
 
-## Cal.lean -- The calendar: civil dates, ISO week dates, and one named tie-break. 47 of its 58 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Cal.lean -- The calendar: civil dates, ISO week dates, and one named tie-break. 48 of its 63 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Cal.Instant.nanos
 Tm.Cal.TzTable.spans
 Tm.Cal.dateOf
@@ -200,7 +223,7 @@ Tm.Cal.spansFrom
 Tm.Cal.unambiguousAt
 Tm.Cal.yearLen
 
-## Capacity.lean -- §7.3's EDF reservation pass over given capacities (D10). 17 of its 45 emitted definitions are reached, and `Tm.edf` and `Tm.edfGrants` are among the entries below: the W-30 repair deleted their fast twins as dead (README gap 2126) and nothing has called the originals since. They are the live instance of what this file is for -- a rule, proved, that no path runs.
+## Capacity.lean -- §7.3's EDF reservation pass over given capacities (D10). 17 of its 54 emitted definitions are reached, and `Tm.edf` and `Tm.edfGrants` are among the entries below: the W-30 repair deleted their fast twins as dead (README gap 2126) and nothing has called the originals since. They are the live instance of what this file is for -- a rule, proved, that no path runs. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.DayCapacity.levels
 Tm.DayCapacity.minutesAt
 Tm.DayCapacity.ofLevels  # (load-time)
@@ -230,7 +253,7 @@ Tm.sum6
 Tm.topTake
 Tm.totalMin
 
-## Close.lean -- `close`: §6.3's lifecycle, one fold at three grains. 57 of its 73 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Close.lean -- `close`: §6.3's lifecycle, one fold at three grains. 58 of its 74 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Doc.bump
 Tm.Entity.bumpIn
 Tm.Field.Stamp.grain
@@ -265,11 +288,11 @@ Tm.recordedEst
 Tm.setEstE
 Tm.setEstFoldE
 
-## Emit.lean -- the day section is CELLS, never padded text (stage 6, step P8). 30 of its 32 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Emit.lean -- the day section is CELLS, never padded text (stage 6, step P8). 0 of its 32 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Emit.Row.cells
 Tm.Emit.rowsOf
 
-## EmitWire.lean -- an `Emit.Row` crosses the wire (stage 6, W-24, README gaps 1105/1318). 20 of its 34 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## EmitWire.lean -- an `Emit.Row` crosses the wire (stage 6, W-24, README gaps 1105/1318). 2 of its 36 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.EmitWire.arrAtP
 Tm.EmitWire.asPlan
 Tm.EmitWire.callExport
@@ -294,12 +317,12 @@ Tm.keyLe
 Tm.parentsAcyclicFast
 Tm.tableStep
 
-## Grain.lean -- The horizon order, derived rather than enumerated. 6 of its 9 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Grain.lean -- The horizon order, derived rather than enumerated. 7 of its 12 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.demoteGrain
 Tm.monthOfWeek
 Tm.targetContaining
 
-## Json.lean -- The kernel's own JSON fragment: the value, the escaping, the numerals. 53 of its 87 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Json.lean -- The kernel's own JSON fragment: the value, the escaping, the numerals. 53 of its 97 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.finChar
 Tm.jarr
 Tm.jbeq
@@ -335,7 +358,7 @@ Tm.jval
 Tm.notDigitStart
 Tm.numEnd
 
-## Line.lean -- The item line. 168 of its 240 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Line.lean -- The item line. 165 of its 249 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.CanonicalItem
 Tm.CanonicalKeyed
 Tm.Field.DT.wf
@@ -409,7 +432,7 @@ Tm.setEst
 Tm.setEstIn
 Tm.setLeadWord
 
-## Log.lean -- the typed event grammar of `.tm/log.jsonl` (stage 5, D9 track, step B3). 53 of its 74 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Log.lean -- the typed event grammar of `.tm/log.jsonl` (stage 5, D9 track, step B3). 57 of its 109 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Log.Entry.canonical
 Tm.Log.Event.canonical
 Tm.Log.Event.isStateChange
@@ -432,7 +455,7 @@ Tm.Log.stampCanonical
 Tm.Log.strsOfF
 Tm.Log.tagIn
 
-## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 128 of its 176 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 123 of its 215 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Look.Cand.enters
 Tm.Look.Cand.erasePlan
 Tm.Look.Cand.withPlan
@@ -482,7 +505,7 @@ Tm.Look.wallOverlap
 Tm.Look.wallsInside
 Tm.Look.windowEnd
 
-## Plan.lean -- The plan is one object. 49 of its 77 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Plan.lean -- The plan is one object. 45 of its 77 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Store.insertFresh
 Tm.Store.set
 Tm.anc
@@ -565,11 +588,11 @@ Tm.PlanCheck.windDownOk
 Tm.PlanCheck.withoutActive
 Tm.PlanCheck.withoutPast
 
-## PlanWire.lean -- the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801). 41 of its 43 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## PlanWire.lean -- the PLANNER's inputs cross the wire (stage 6, W-27, D48, README gaps 1431/801). 3 of its 44 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.PlanWire.instantWithin
 Tm.PlanWire.kindJson
 
-## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 178 of its 221 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 236 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Planner.CandKey.nums
 Tm.Planner.Capped.cons?
 Tm.Planner.Capped.nil
@@ -659,7 +682,7 @@ Tm.PlannerWit.wfPlanFacts
 Tm.PlannerWit.withCandAt
 Tm.PlannerWit.withFactsAt
 
-## Priority.lean -- §7.1's `p`, §7.2's rule table and §7.4's hysteresis. 16 of its 22 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Priority.lean -- §7.1's `p`, §7.2's rule table and §7.4's hysteresis. 15 of its 23 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.binOfQ
 Tm.hysteresisDays
 Tm.rootK
@@ -727,7 +750,7 @@ Tm.Recur.weekIdxMod
 Tm.Recur.wholeDays
 Tm.Recur.windowOn
 
-## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 61 of its 191 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Replay.lean -- the kernel replays `.tm/log.jsonl` (stage 5, D9 track, phase C). 64 of its 204 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Replay.Ci6.fifths
 Tm.Replay.Ci6.sum
 Tm.Replay.Ci6.toList
@@ -859,11 +882,11 @@ Tm.Replay.wWake
 Tm.Replay.warnOf
 Tm.Replay.winOuts
 
-## Report.lean -- the owner's D3, as a named per-item list. 11 of its 13 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Report.lean -- the owner's D3, as a named per-item list. 11 of its 14 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.CloseDid.ofName?
 Tm.Report.append
 
-## Seal.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 36 of its 117 emitted definitions are reached.
+## Seal.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 68 of its 237 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Log.Line.entry?
 Tm.Log.Line.warning?
 Tm.Log.contiguousFrom
@@ -996,7 +1019,7 @@ Tm.Seal.tailStepsOk
 ## SealRebind.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. all 1 of its emitted definitions are unreachable.
 Tm.Seal.Effect.rebind
 
-## SealResume.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 29 of its 45 emitted definitions are reached.
+## SealResume.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 29 of its 46 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Seal.aggMerged
 Tm.Seal.cutOk
 Tm.Seal.foldPoint
@@ -1044,7 +1067,7 @@ Tm.Seal.itemIdsFast
 Tm.Seal.mergedItems
 Tm.Seal.windowOfFast
 
-## SealWire.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 18 of its 29 emitted definitions are reached.
+## SealWire.lean -- stage 5's D9/W2 seal laws: the spec side of the checkpoint and its resume, quantified over by the theorems in the same module rather than called. 19 of its 35 emitted definitions are reached. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Seal.badKey
 Tm.Seal.cutFloorOk
 Tm.Seal.cutOkFast
@@ -1057,12 +1080,12 @@ Tm.Seal.resumeRunV
 Tm.Seal.resumeRunWith
 Tm.Seal.trimRun
 
-## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 21 of its 24 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## Stamp.lean -- the log's timestamps (stage 5, D9 track, step B2). 23 of its 28 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.LogStamp.accepted
 Tm.LogStamp.stampBefore
 Tm.LogStamp.trimWs
 
-## State.lean -- Entity versus observation. 22 of its 38 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
+## State.lean -- Entity versus observation. 18 of its 38 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Core.budget
 Tm.Core.extra
 Tm.Core.fields
@@ -1975,12 +1998,12 @@ Tm.yesterdayOf?
 ## State.lean -- W-32, 2026-09-25 (README gap 2229): reached from the export through the `planner` section and the `plan` section and through nothing else, so neither cut alone kills it and both together do. `tm/src` sends neither key. These are the definitions the day planner and W-24's row renderer share -- the ci and preference views, and the roots they climb. Measured: 1 of this module's definitions are in this position. EXIT: R3; when either section reaches a shipped caller the entries below become REACHED and FAIL this check as STALE until they are deleted. This section may only shrink.
 Tm.Core.ci
 
-## PlannerWit.lean -- W-32 track G, 2026-09-25 (README gap 2320): the three definitions that carry this run's first IMPOSSIBLE candidate. `pCandDue` builds a `Look.Cand` with a due date so that §7.3's pass enters it, `impCands` is the two-candidate list it goes in, and `theImpossibleRequest` is the `PlanReq` that holds them. All three are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink.
+## PlannerWit.lean -- W-32 track G, 2026-09-25 (README gap 2320): the three definitions that carry this run's first IMPOSSIBLE candidate. `pCandDue` builds a `Look.Cand` with a due date so that §7.3's pass enters it, `impCands` is the two-candidate list it goes in, and `theImpossibleRequest` is the `PlanReq` that holds them. All three are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink. EXIT: this class ends when `PlannerWit.lean` stops being a leaf -- when a library module imports it, or when one of these fixtures is named by a definition the export reaches, each entry here becomes REACHED and check 12 fails on it as STALE until it is deleted. It is the module's whole class and not this section's alone, and nothing in this campaign is planned to end it (gap 2412).
 Tm.PlannerWit.pCandDue
 Tm.PlannerWit.impCands
 Tm.PlannerWit.theImpossibleRequest
 
-## PlannerWit.lean -- W-32 track G section 29, 2026-09-25 (README gap 2194, closed): the five definitions that carry the first PAYING BATCH request -- a store whose own items are the ids §7.5's gather batches, which no witness in this tree had. `batchStoreWitness` is the three sibling lines, `batchStorePlan` the plan they load to, `pCandSmall` the candidate builder, and the two requests differ in one `loc:`. All five are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink.
+## PlannerWit.lean -- W-32 track G section 29, 2026-09-25 (README gap 2194, closed): the five definitions that carry the first PAYING BATCH request -- a store whose own items are the ids §7.5's gather batches, which no witness in this tree had. `batchStoreWitness` is the three sibling lines, `batchStorePlan` the plan they load to, `pCandSmall` the candidate builder, and the two requests differ in one `loc:`. All five are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink. EXIT: this class ends when `PlannerWit.lean` stops being a leaf -- when a library module imports it, or when one of these fixtures is named by a definition the export reaches, each entry here becomes REACHED and check 12 fails on it as STALE until it is deleted. It is the module's whole class and not this section's alone, and nothing in this campaign is planned to end it (gap 2412).
 Tm.PlannerWit.batchStoreWitness
 Tm.PlannerWit.batchStorePlan
 Tm.PlannerWit.pCandSmall

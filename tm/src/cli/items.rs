@@ -31,6 +31,7 @@ use std::hash::{Hash, Hasher};
 
 use serde::Serialize;
 
+use tm_core::check as validate;
 use tm_core::grammar::{self, IdGen, ItemLine, ParseCtx};
 use tm_core::horizon;
 use tm_core::log::Event;
@@ -203,6 +204,67 @@ fn kernel_addable(ctx: &Ctx, path: &str, horizon: Horizon, text: &str) -> bool {
     true
 }
 
+/// **The errors `tm check` would name about the tree as it stands**, as a
+/// fingerprint per problem (`file`, `code`, `message` — never the line, which
+/// an insertion above moves).
+///
+/// This is `tm check`'s own host-side pass, [`tm_core::check::check`], asked of
+/// the `Ctx` already loaded: one reader of "what is wrong with this tree"
+/// (AGENTS §5.3), not a second list of field rules. Warnings are left out on
+/// purpose — a warning is the tree being *suspicious*, which is not a reason to
+/// refuse a write.
+fn check_errors(ctx: &Ctx) -> Vec<String> {
+    validate::check(&ctx.files.files, &ctx.tree, &ctx.cfg)
+        .into_iter()
+        .filter(|p| p.severity.is_error())
+        .map(|p| format!("{}\u{1}{}\u{1}{}", p.file, p.code, p.message))
+        .collect()
+}
+
+/// **The errors this write ADDED**, as the first one's own `tm check` line.
+///
+/// `before` is [`check_errors`] of the tree the verb loaded and `ctx` is the
+/// tree it has just written. A problem already in `before` is consumed rather
+/// than reported, so a user inside an already-broken tree is not trapped by a
+/// fault that was there before they typed — the same reason `tm undo` and
+/// `tm check --fix-ids` are not gated on the tree they start from.
+///
+/// **THE BLIND SPOT, DECLARED.** The comparison is a MULTISET of
+/// `(file, code, message)`, so a write that adds a SECOND error identical in
+/// all three to one already present is not seen. That is the quiet direction
+/// and it is the price of not trapping the user; the loud direction — refusing
+/// every write into a tree that already has an error — is the trap.
+fn added_error(before: &[String], ctx: &Ctx) -> Option<String> {
+    let mut pool: Vec<String> = before.to_vec();
+    for p in validate::check(&ctx.files.files, &ctx.tree, &ctx.cfg) {
+        if !p.severity.is_error() {
+            continue;
+        }
+        let key = format!("{}\u{1}{}\u{1}{}", p.file, p.code, p.message);
+        match pool.iter().position(|q| *q == key) {
+            Some(k) => {
+                pool.swap_remove(k);
+            }
+            None => return Some(p.to_string()),
+        }
+    }
+    None
+}
+
+/// **The sentence a write refused for a line `tm check` calls an error takes**
+/// (W-32 repair, kernel/README.md gap 2415).
+///
+/// The kernel's own refusal has one spelling
+/// ([`kernel_bridge::gate`]); this is the host half's, and it says the same
+/// three things — what is wrong, where, and that nothing was written.
+fn bad_line_refusal(verb: &str, problem: &str) -> CliError {
+    CliError::msg(format!(
+        "{problem} — nothing was written: `tm {verb}` wrote a line `tm check` calls an error, and \
+         every verb that reads the field would ignore it in silence (the tree still loads, so no \
+         other gate would have said so)"
+    ))
+}
+
 /// The kernel-backed `tm add`: one `{"op":"add","seed":…,"doc":…,"title":…}`
 /// through the choke point. The seed comes from the same entropy source the
 /// old id generator used ([`id_gen`]'s hasher over `--now` and the text), so
@@ -216,12 +278,15 @@ fn add_kernel(
     path: &str,
     title: &str,
     raw: &str,
+    before: &[String],
 ) -> Result<i32, CliError> {
     let mut h = DefaultHasher::new();
     ctx.now.timestamp_millis().hash(&mut h);
     raw.hash(&mut h);
     // Four digits to start with, the old id length; freshId may walk past.
     let seed = 1000 + (h.finish() % 9000);
+    let existed = ctx.store.exists(path);
+    let prior = ctx.store.read_text(path).ok();
     let rec = Recorder::start(ctx, "add")?;
     let applied = kernel_bridge::apply(
         ctx,
@@ -250,6 +315,34 @@ fn add_kernel(
             .find_map(|w| w.strip_prefix('^'))
             .unwrap_or_default(),
     );
+    // **AND A WRITE THAT LEAVES A LINE `tm check` CALLS AN ERROR IS NOT A
+    // SUCCESS EITHER** (W-32 repair, kernel/README.md gap 2415). Gap 2263 put
+    // `kernel_bridge::gate` on the other side of the write, and that gate asks
+    // whether the tree LOADS — a REFERENCE question. A malformed field VALUE
+    // leaves a tree that loads perfectly, so it walked straight through on both
+    // add paths. DRIVEN on the binary built from 9d7fad2, each on its own fresh
+    // `tm init` tree whose `tm check` first said `no problems`: `tm add --to
+    // week "- [ ] 3 90m audit block max:60m"` exited **0**, `tm check` then
+    // exited 2 with ``week/2026-W39.md:22: error[bad-value]: `max:60m`: invalid
+    // rate: "60m"``, and `tm plan` exited 0 having dropped the field without a
+    // word. Six spellings did it — `max:60m`, `min:xyz`, `est:90`, `dur:7`,
+    // `due:notadate` and a bare `9` in the ci slot — while `after:^nosuch` was
+    // refused, because THAT one breaks the load. §5.13's failure class: a
+    // plausible keystroke that neither works nor says so.
+    //
+    // The question is asked of the tree this add produced, by `tm check`'s own
+    // pass, and only about what this add ADDED. Nothing has reached the log
+    // yet and the recorder has pushed nothing, so putting the one file back
+    // restores the tree exactly — the same rollback gap 2263 wrote.
+    ctx.reload()?;
+    if let Some(problem) = added_error(before, ctx) {
+        match (existed, &prior) {
+            (true, Some(text)) => ctx.store.write_file(path, text)?,
+            _ => ctx.store.delete_file(path)?,
+        }
+        ctx.reload()?;
+        return Err(bad_line_refusal("add", &problem));
+    }
     ctx.append_event(Event::Edit {
         id: id.to_string(),
         field: "add".to_string(),
@@ -330,12 +423,16 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
         }
     }
 
+    // The errors `tm check` already names about this tree, taken BEFORE either
+    // write path runs, so the two paths compare against one reading (gap 2415).
+    let before = check_errors(&ctx);
+
     // Kernel-backed when the wire can carry it (kernel/README.md, 2026-09-12
     // "rank, add and the keyed edit" block); the carve-outs stay on the old
     // Rust path, each named on [`kernel_addable`].
     if args.section.is_none() && kernel_addable(&ctx, &path, horizon, &text) {
         let title = text.strip_prefix("- [ ] ").expect("checked").to_string();
-        return add_kernel(&mut ctx, &path, &title, raw);
+        return add_kernel(&mut ctx, &path, &title, raw, &before);
     }
 
     kernel_bridge::gate(&ctx, "add")?;
@@ -401,11 +498,18 @@ pub fn add(g: &Globals, args: &super::AddArgs) -> Result<i32, CliError> {
     // has reached the log at this point and the recorder has pushed nothing, so
     // restoring the one file restores the tree.
     let existed = ctx.store.exists(&path);
-    let before = ctx.store.read_text(&path).ok();
+    let prior = ctx.store.read_text(&path).ok();
     let section = insert(&ctx, &path, args.section.as_deref(), &text)?;
     ctx.reload()?;
-    if let Err(refusal) = kernel_bridge::gate(&ctx, "add") {
-        match (existed, &before) {
+    // The tree must LOAD (gap 2263) **and** the line must not be one `tm check`
+    // calls an error (gap 2415) — two questions, one rollback. The second is
+    // the one a malformed field VALUE trips: `max:60m` leaves a tree the kernel
+    // loads and `tm plan` renders, with the field dropped in silence.
+    let verdict = kernel_bridge::gate(&ctx, "add")
+        .err()
+        .or_else(|| added_error(&before, &ctx).map(|p| bad_line_refusal("add", &p)));
+    if let Some(refusal) = verdict {
+        match (existed, &prior) {
             (true, Some(t)) => ctx.store.write_file(&path, t)?,
             _ => ctx.store.delete_file(&path)?,
         }

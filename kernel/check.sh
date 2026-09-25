@@ -896,16 +896,48 @@ fi
 #     not to be COVERED.  `reach-exempt.txt` grandfathers the definitions that
 #     were unreachable on 2026-09-25 -- 952 when the gate landed, 1,459 after
 #     the same day's repair widened the population by the globals (gap 2257),
-#     and 1,748 after W-32 rooted the walk where the binary enters -- each under
+#     1,748 after W-32 rooted the walk where the binary enters, and 1,756 after
+#     W-32 track G's eight witness entries arrived at the merge -- each under
 #     a section that carries a reason, and it declares its own size.  It MAY
 #     ONLY SHRINK: an entry that becomes reachable, stops being emitted or stops
 #     existing FAILS by name and must be deleted.  A bare threshold would have
 #     been the list-shaped answer this campaign has now got wrong eleven counted
-#     times, and gap 2130 says so itself.  The fourteen W-32 sections each name
-#     their EXIT: R3.  When the shipped binary sends `planner`, the cut goes,
-#     every entry under them becomes REACHED and this check fails on each as
-#     STALE until it is deleted -- the ratchet doing R3's bookkeeping instead of
-#     R3 having to remember it.
+#     times, and gap 2130 says so itself.  Sixteen of the sections name their
+#     EXIT; fourteen of the sixteen name R3, and when the shipped binary sends
+#     `planner` the cut goes, every entry under them becomes REACHED and this
+#     check fails on each as STALE until it is deleted -- the ratchet doing R3's
+#     bookkeeping instead of R3 having to remember it.
+#
+#     AND THE REASON IS GATED ON THREE HALVES NOW (W-32 repair, gaps
+#     2410-2412), because the reason is what 1,756 grandfathered entries are
+#     auditable BY and it was pinned by nothing.  (i) A reason that states its
+#     module's census -- "N of its M emitted definitions are reached" -- is held
+#     against `reach.py`'s own per-module measurement; TWENTY-THREE of the
+#     twenty-seven that carried one were FALSE at `9d7fad2`, `## Planner.lean`
+#     worst at "178 of its 221" where the measurement is 0 of 236, because W-32
+#     rewrote the file under the new root and re-derived none of the headings it
+#     moved.  (ii) A reason that is REWRITTEN must carry an ISO date, the same
+#     price growth pays: the ratchet compared entry KEYS, so an existing
+#     section's reason could be replaced wholesale -- driven, `## Recur.lean`'s
+#     gap-501 citation, date and exit swapped for an invented sentence, summary
+#     unchanged, rc=0 -- and the same plant is 61 named complaints at rc=1 now.
+#     (iii) A NEW section must name an EXIT beside its date, which is what the
+#     two W-32 track-G sections did not.
+#
+#     AND THE ROOT IS MEASURED BEFORE ANY VERDICT IS TAKEN FROM IT (W-32 repair,
+#     gaps 2413 and 2414).  `sections.py` DISCARDED a request region carrying a
+#     key it did not recognise, so the next dispatch arm would not fall out
+#     loudly -- it would fall out invisibly.  DRIVEN in the clone, one sibling
+#     key `"w32critic": 1` added to a shipped `json!`: at `kernel_bridge.rs:797`
+#     this check stayed GREEN with a byte-identical summary; at
+#     `kernel_log.rs:2084`, the only shipped send of `emit`, it failed with a
+#     FALSE diagnosis over D16's whole log WRITER and printed a remedy that
+#     would have grandfathered it.  Both are one named `UNREADABLE` complaint
+#     now, and `reach.py` prints NO per-definition verdict at all while the root
+#     is unmeasured.  The `#[cfg(test)]` floor is a gate too: six of the eight
+#     sent sections have a test-only site and every one still has a shipped
+#     site, so a section only a harness sends FAILS by name -- driven by making
+#     `log`'s one shipped send unreadable, which leaves its fixture alone.
 #
 #     DRIVEN, W-32, in a `git clone --local` whose `.lake` is a SYMLINK to the
 #     shared build (reach.py reads that tree and never writes it, and no `lake`

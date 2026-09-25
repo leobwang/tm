@@ -54,7 +54,9 @@ THE EXEMPTION FILE IS W-27'S SHAPE: AN ENUMERATION YOU JOIN TO BE EXEMPT, NOT
 TO BE COVERED.  `reach-exempt.txt` grandfathers the definitions that were
 unreachable on 2026-09-25 -- 952 when the gate landed, 1,459 after the same
 day's repair widened the population by the 524 `def`s and `abbrev`s the
-compiler emits as a GLOBAL and not as a function (gaps 2257/2258) -- each under
+compiler emits as a GLOBAL and not as a function (gaps 2257/2258), 1,748 after
+W-32 rooted the walk where the binary enters (gap 2229), and 1,756 after W-32
+track G's eight witness entries -- each under
 a section naming its module, its reason and, where the section GREW the file,
 its date; and it may only SHRINK: an entry that becomes reachable, stops being
 emitted or stops existing FAILS this check and must be deleted, and a
@@ -62,6 +64,16 @@ definition that becomes unreachable and is not in the file FAILS it too.  A
 bare threshold -- "no more than N unreachable" -- would have been the
 list-shaped answer this campaign has now got wrong eleven counted times, and
 gap 2130 says so itself.
+
+AND THE REASON IS NOT PROSE THIS SCRIPT ONLY PRINTS (W-32 repair, gaps
+2410-2412).  A reason is what every entry under it inherits, so it is the whole
+audit trail of 1,756 definitions -- and three halves of it are checkable.  Its
+CENSUS ("N of its M emitted definitions are reached") is re-derived against the
+table `--audit` prints, which found twenty-three of twenty-seven false at
+`9d7fad2`.  A REWRITE of a reason an existing entry already inherits costs an
+ISO date, exactly what growth costs, because the ratchet compared entry KEYS
+and a wholesale replacement of an existing section's reason was free.  And a
+NEW section names an EXIT as well as a date.
 
 WHAT THE FILE'S OWN SIZE IS FOR.  It is also the floor under the C symbol
 computation.  `callgraph.symbol` is the pinned toolchain's mangling
@@ -167,6 +179,36 @@ def library_defs(roots):
 
 # An ISO date in a section's reason.  Growth must be DATED (gap 2259).
 SECTION_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
+# The EXIT a NEW section must name (W-32 repair, README gap 2412).  A reason
+# says why the entries below it are unreachable; an EXIT says what would make
+# them reachable again, which is the only thing that turns a grandfathered set
+# into a set someone can finish.  Fourteen of this file's sections named one
+# before this rule and seventy-three did not, and nothing asked -- a brand-new
+# dated section with no exit was accepted by the ratchet, driven.  It is asked
+# of GROWTH only, exactly where the date is asked for, because demanding one of
+# the seventy-three would buy seventy-three sentences written to satisfy a gate.
+SECTION_EXIT = re.compile(r"\bEXIT\b")
+# THE NUMERIC HALF OF A REASON IS RE-DERIVED, NOT READ (W-32 repair, README gap
+# 2410).  A section's reason is what every entry under it inherits, and
+# twenty-seven of them state a census of their module -- "N of its M emitted
+# definitions are reached".  Twenty-three of the twenty-seven were FALSE on the
+# tree that landed them: `## Planner.lean` said "178 of its 221" where the
+# measurement is 0 of 236, because W-32 rewrote the file under a new root and
+# re-derived none of the headings it moved.  That half of a reason is a number
+# this script already computes, so it is checked here rather than believed --
+# §5.11's rule, applied inside the gate D51 is.  A reason that TALKS about this
+# census in any other spelling fails too: the evasion of a count you must state
+# correctly is a count you do not state, and this makes that visible.
+#
+# WHAT IT DOES NOT READ, DECLARED.  This is one spelling of ONE quantity --
+# reached-of-emitted, per module, over the whole population.  A reason stating a
+# DIFFERENT quantity (the four W-31 widening sections say "0 of this module's
+# 152 emitted globals are read by a function the export reaches", which is a
+# count of a sub-population this script does not compute per module) is not
+# re-derived and is still a reader's job.  Widening to those is a second
+# measurement, not a second regex, and it is not done on a guess.
+CENSUS = re.compile(r"(\d+) of its (\d+) emitted definitions are reached")
+CENSUS_TOPIC = re.compile(r"emitted definitions are reached")
 
 
 def read_exemptions(path, text=None):
@@ -300,6 +342,32 @@ def main(argv):
     # written, qualified)` of the library, and asking `leanfiles.qualified_names`
     # for it a second time cost 1.16 s on a check whose wall was 1.6 s.
     cuts, wire, wirebad = reqsec.cuts(pkg, RUST_SRC, defs)
+    # A ROOT THAT COULD NOT BE MEASURED IS NOT A ROOT, AND NO VERDICT IS TAKEN
+    # FROM IT (W-32 repair, README gap 2413).  `wirebad` used to be appended to
+    # the adjudication's own complaints and everything below ran anyway -- so an
+    # unreadable request printed its own true complaint *beside* six FALSE ones
+    # ("no request the shipped binary can build reaches it" about definitions a
+    # request does reach) and the teaching line then told the reader to exempt
+    # them.  DRIVEN before this: one unrecognised sibling key in
+    # `kernel_log.rs`'s only shipped send of `emit` accused the whole of D16's
+    # log WRITER of having no caller.  The two questions are ordered now: the
+    # root is measured first, and if it cannot be, this says only that.  Every
+    # check below -- the exemption adjudication, the ratchet, the census, the
+    # stale-artefact sweep -- reads a reachable set derived from the root, so
+    # none of them has an answer worth printing until the root has one.
+    if wirebad:
+        for line in wirebad:
+            print(line)
+        print("  -- check 12's root is the set of sections `tm/src` actually sends "
+              "(README gap 2229).  Until every line above is resolved, this walk "
+              "does not know what a user can reach, so it takes NO verdict about "
+              "any definition: nothing here says a definition is unreachable, and "
+              "nothing here says an exemption is stale.  Fix the root and run "
+              "again.")
+        print("ROOT NOT MEASURED: %d complaint(s) about the requests %s builds; "
+              "%d def/abbrev(s) in the library were not adjudicated"
+              % (len(wirebad), RUST_SRC, len(defs)))
+        return 1
     reached, emitted = callgraph.reachable(
         ir, {callgraph.symbol(k): {callgraph.symbol(v) for v in vs}
              for k, vs in cuts.items()})
@@ -316,7 +384,6 @@ def main(argv):
     dead = {(d[0], d[2]): d for d in population if d[3] not in reached}
 
     entries, sections, bad = read_exemptions(EXEMPT_FILE)
-    bad.extend(wirebad)
     for stem in sorted(set(library) - compiled):
         bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
                    "for it -- nothing imports it (AGENTS 2.3), so this check and "
@@ -344,6 +411,31 @@ def main(argv):
         else:
             bad.append("STALE: %s (%s) is not an emitted `def`/`abbrev` of that "
                        "module any more -- delete this entry" % (key[1], key[0]))
+    # THE NUMERIC HALF OF EVERY REASON, RE-DERIVED (W-32 repair, gap 2410).
+    # A heading's census is a second copy of a number this script computes, and
+    # twenty-three of the twenty-seven copies were wrong on the tree that landed
+    # them.  It is held against the measurement now, the way `EXEMPT <n>` is
+    # held against the entry count, so a reason cannot go stale in silence.
+    for module, reason, lineno in sections:
+        emit = sum(1 for d in population if d[0] == module)
+        reach = emit - sum(1 for k in dead if k[0] == module)
+        m = CENSUS.search(reason)
+        if m is None:
+            if CENSUS_TOPIC.search(reason):
+                bad.append("CENSUS: %s:%d  the `## %s` section's reason talks about "
+                           "its module's emitted definitions and states no `<n> of "
+                           "its <m> emitted definitions are reached` -- that is the "
+                           "one spelling this gate can re-derive, and a census it "
+                           "cannot read is a census nothing checks"
+                           % (EXEMPT_FILE.name, lineno, module))
+            continue
+        if (int(m.group(1)), int(m.group(2))) != (reach, emit):
+            bad.append("CENSUS: %s:%d  the `## %s` section's reason says %s of its "
+                       "%s emitted definitions are reached and the measurement is "
+                       "%d of %d -- every entry below inherits that reason, so "
+                       "correct it in the same edit (`--audit` prints the table)"
+                       % (EXEMPT_FILE.name, lineno, module, m.group(1), m.group(2),
+                          reach, emit))
     # THE RATCHET, against the file as COMMITTED and not against itself
     # (gap 2259).  A new entry must sit under a section heading that is new too,
     # and a new heading must carry a date.
@@ -366,6 +458,35 @@ def main(argv):
                 bad.append("RATCHET: %s:%d  the new `## %s` section grandfathers "
                            "%s and its reason carries no ISO date -- growth is "
                            "dated here or it is not made"
+                           % (EXEMPT_FILE.name, lineno, module, key[1]))
+            elif not SECTION_EXIT.search(reason):
+                bad.append("RATCHET: %s:%d  the new `## %s` section grandfathers "
+                           "%s and names no EXIT -- say what would make these "
+                           "definitions reachable again and what must happen to "
+                           "this section when it does, or the entry joins a set "
+                           "nobody can ever finish (gap 2412)"
+                           % (EXEMPT_FILE.name, lineno, module, key[1]))
+        # AND THE REASON AN ALREADY-GRANDFATHERED ENTRY CARRIES IS PINNED TOO
+        # (W-32 repair, gap 2411).  The loop above examines only entries whose
+        # KEY is new, so the reason above 1,756 entries that already existed was
+        # held by nothing: DRIVEN before this rule, `## Recur.lean`'s whole
+        # reason -- its gap-501 citation, its ISO date and its exit -- was
+        # replaced with an invented sentence and this gate printed the unchanged
+        # summary at rc=0, silently re-parenting all 58 of its entries onto the
+        # fabrication.  That is gap 2259's own class one layer out, in the file
+        # W-31 repaired it in.  A rewrite now costs exactly what growth costs:
+        # an ISO DATE in the reason it is rewritten to.  What it still cannot
+        # read is whether the new sentence is TRUE -- but the numeric half is
+        # re-derived above, and an undated rewrite fails by name.
+        for key in sorted(set(entries) & set(prev_entries)):
+            module, reason, lineno = sections[entries[key][1]]
+            was = prev_sections[prev_entries[key][1]][1]
+            if reason != was and not SECTION_DATE.search(reason):
+                bad.append("RATCHET: %s:%d  the `## %s` section's reason has been "
+                           "REWRITTEN and carries no ISO date, and %s inherits it "
+                           "-- the reason is the only thing that makes a "
+                           "grandfathered entry auditable, so changing one costs "
+                           "a date exactly as adding one does (gap 2411)"
                            % (EXEMPT_FILE.name, lineno, module, key[1]))
 
     if audit:

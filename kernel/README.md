@@ -64333,7 +64333,10 @@ both times both were kept in track order.
 Track G's edit repoints one doc comment at the theorem that replaced a goal which left
 `Goals.lean` this run, and it is net **zero** lines; track P's edit adds twenty-three lines to the
 module header, above it.  So every anchor track P re-derived still resolves, and check 8 confirms
-it at **41,643 citations, 39,644 resolved, 0 unresolved**.
+it at **41,680 citations, 39,680 resolved, 0 unresolved**.  [Corrected at the repair step: the
+figures first published here were **41,643 / 39,644**, which is this tree's PARENT `bafe689`.  Both
+numbers were re-measured in a clone, each on its own checkout, and both are exact for the commit
+they belong to; the 154 README lines of this very block moved them by +37 / +36.]
 
 ### 2. The five numbers this step was asked for, measured on the merged tree
 
@@ -64408,7 +64411,7 @@ owed"* — and driving the binary is what turned that clause into a count.
 `check.sh` **12/12 by name**: `lake build TmKernel:static` ok · totality ok · **axiom audit 5,307
 theorems** (Classical.choice 2,579, Quot.sound 3,965, propext 4,923; 381 of 5,307 depend on none)
 · `Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans** ·
-**stage goals 6 outstanding** · prose citations **41,643 / 39,644 resolved / 1,999 allowed**, 0
+**stage goals 6 outstanding** · prose citations **41,680 / 39,680 resolved / 2,000 allowed**, 0
 allow entries unused, 270 files swept · new definitions mutated **266 new or changed since
 `86c4dc6`, 266 rostered, 0 owed** · parity register **42 registered (P1-P42), next free P43** ·
 no two names for one definition **3,061 def bodies, 14 groups, 0 UNANSWERED** · every emitted
@@ -64456,3 +64459,225 @@ Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
 changed no predicate, no law, no generator and no exemption.** No snapshot, fixture, latency band
 or corpus was re-blessed, no memory bound raised, no external dependency added, no `sorry` outside
 `Goals.lean`, no new axiom, and `dayPlan` is still total.
+
+## Stage 6 — W-32, repair: the reason 1,756 entries are auditable by was pinned by nothing, an unreadable request accused the log writer, and `tm add` wrote six values `tm check` calls errors
+
+**Thirteen findings from two auditors — twelve distinct, one filed by both — and the same three
+shapes again.** Every claim was re-driven before it was repaired, in a `git clone --local` whose
+`.lake` is a SYMLINK to the shared build (`reach.py` reads that tree and never writes it, and no
+`lake` ran in the clone) or on a fresh `tm init` tree under a binary built inside that clone. The
+shared tree's `git status --porcelain` was empty before and after every plant. **Every one of the
+twelve reproduced; none failed to.** Nine are closed here and three are recorded by name with the
+shape their fix must take.
+
+### 1. Check 12's exemption reasons carried twenty-three false censuses, and the reason itself was pinned by nothing — gaps 2410, 2411, 2412, closed
+
+Three defects in one file, and they are one finding: **the REASON is the whole audit trail of
+1,756 grandfathered definitions, and no half of it was checked.**
+
+**(i) THE CENSUS — reproduced at 23 of 27, which is the reuse critic's count exactly.** A
+`## <Module.lean> -- <reason>` heading is what every entry under it inherits (`reach-exempt.txt`'s
+own *"WHAT THE SECTIONS ARE"*), and twenty-seven of them state their module's census as
+*"N of its M emitted definitions are reached"*. Re-derived all twenty-seven against
+`reach.py --audit`'s per-module table at `9d7fad2`:
+
+| heading | claimed | measured |
+|---|---|---|
+| `## Planner.lean` | 178 of 221 | **0 of 236** |
+| `## PlanWire.lean` | 41 of 43 | **3 of 44** |
+| `## Emit.lean` | 30 of 32 | **0 of 32** |
+| `## EmitWire.lean` | 20 of 34 | **2 of 36** |
+| `## Seal.lean` | 36 of 117 | **68 of 237** |
+| eighteen more | Arith 17/39, Boundary 217/321, Cal 47/58, Capacity 17/45, Close 57/73, Grain 6/9, Json 53/87, Line 168/240, Log 53/74, Lookahead 128/176, Plan 49/77, Priority 16/22, Replay 61/191, Report 11/13, SealResume 29/45, SealWire 18/29, Stamp 21/24, State 22/38 | 18/46, 217/432, 48/63, 17/54, 58/74, 7/12, 53/97, 165/249, 57/109, 123/215, 45/77, 15/23, 64/204, 11/14, 29/46, 19/35, 23/28, 18/38 |
+
+The four that were right are Cmd, Fast, SealTwin and Text. `git log -L 572,572:kernel/reach-exempt.txt`
+shows the `Planner.lean` heading was written at `1618827` (W-31) and was TRUE then; W-32 track A
+rewrote the file under the measured root and re-derived none of the headings it moved. The
+file's header asserted *"what no gate can read is whether a section's reason is TRUE; that is
+still a reader's job"* — and the NUMERIC half is mechanically checkable, which is §5.11 failing
+inside the gate D51 is. **`reach.py` re-derives it now**: a reason stating a census is held
+against this script's own measurement, and a reason that TALKS about the census in any other
+spelling fails too, so the evasion of a number you must state correctly is not a number you leave
+out. All twenty-three corrected, each with the date it was re-derived on.
+
+**(ii) THE REWRITE — driven, and it is gap 2259's own class one layer out, in the file W-31
+repaired it in.** `committed_exemptions` compares `set(entries) - set(prev_entries)` on keys, so an
+entry whose key already exists at HEAD is never re-examined and `SECTION_DATE` is applied ONLY to
+a section grandfathering a NEW entry. **DRIVEN in the clone** (control `python3 reach.py` rc=0):
+`## Recur.lean`'s whole reason replaced by *"W32 AUDIT DRIVE: an entirely made-up reason that no
+human ever read and that carries no exit condition."* — dropping its gap-501 citation, its ISO
+date and its exit — printed the unchanged summary `… 1756 exempt in 87 section(s) … 0 UNANSWERED`
+at **rc=0**, silently re-parenting all 58 of Recur.lean's entries onto the fabrication. The three
+growth arms DO work and the auditor drove all three. **After the repair the same plant is rc=1
+with 61 named complaints**, one per inheriting entry: a reason that is REWRITTEN must carry an ISO
+date, which is exactly what growth pays.
+
+**(iii) THE EXIT — reproduced at 8 of the run's 297 new entries.** Fourteen sections name an
+`EXIT` (track A's gap-2229 sections, each naming R3) and seventy-three do not; the two W-32 track-G
+`## PlannerWit.lean` sections carry a dated reason and *"This section may only shrink"* and name
+no exit, and **nothing mechanical asked** — the auditor's Plant E showed a brand-new dated section
+with no exit accepted by the ratchet. A NEW section must name one now. It is asked of GROWTH only:
+demanding one of the seventy-three would buy seventy-three sentences written to satisfy a gate.
+The two track-G sections were given theirs — the leaf-witness class ends when a library module
+imports `PlannerWit.lean` — so sixteen sections name an exit today.
+
+**What is still not checked, declared:** whether a dated, exit-carrying, arithmetically true
+reason is the TRUE one. Gap **2400**'s property — *no entry is added for a definition a shipped
+caller could reach* — is also untouched and stays open.
+
+### 2. An unreadable request accused D16's log writer of having no caller, and the floor that would have caught it did not exist — gaps 2413, 2414, closed
+
+**`sections.py` named a function that is not in this repository.** Line 105's READERS comment read
+*"A third spelling would make a section invisible, so `floors` fails when a key `tm/src` sends is
+not a section this walk found."* `grep -n floors kernel/sections.py` returned **that comment and
+nothing else**. What the code did instead was `sent_sections`'s `if not keys or not set(keys) <=
+set(known): continue` — a region carrying an unrecognised top-level key is **silently discarded**.
+
+**DRIVEN, twice, and the two plants fail in opposite directions.** Control rc=0.
+
+| plant | before | after |
+|---|---|---|
+| `tm/src/cli/kernel_bridge.rs:797` gains `"w32critic": 1` beside `docs`/`cmds` | **rc=0, summary byte-identical** (3150 / 2934 / 1178 / 1756 / 0 UNANSWERED). The only trace anywhere in `--audit` is that `docs`'s and `cmds`'s evidence moved from `:797` to `:949` | **rc=1**, `UNREADABLE: kernel_bridge.rs:797 carries `docs`, so it is a request the binary builds, and its top-level key(s) `w32critic` are no section of the kernel` |
+| `tm/src/cli/kernel_log.rs:2084` gains the same key — the ONLY shipped send of `emit` | **rc=1 with a FALSE diagnosis**: six `NOT EXEMPT` lines each reading *"is emitted and no request the shipped binary can build reaches it"* over `Tm.EmitRefusal.json`, `Tm.emitStep`, `Tm.readEmitAt`, `Tm.readEmitItem`, `Tm.Log.emitEvent`, `Tm.Log.emitLine` — which `check.sh`'s own §12 comment calls *the whole of D16's log WRITER* — and a printed remedy telling the next agent to **exempt them permanently** on the strength of a scanner miss | **rc=1 naming the plant alone**, and no verdict about any definition |
+
+**The repair is two ordered questions, not one widened complaint.** `sent_sections` READS a
+request-shaped region (one that opens its own object and carries `docs`) instead of discarding it,
+and a key in it that is no section of the kernel is an `UNREADABLE` complaint — a class that did
+not exist, which is why UNSENT and UNPARSEABLE arrived at adjudication wearing one sentence. And
+`reach.py` now measures the ROOT FIRST: if the root cannot be measured, **no verdict below it is
+printed at all** — not a `NOT EXEMPT`, not a `STALE`, not a census — because every one of them
+reads a reachable set derived from that root. The fragment arm keeps the subset test and the
+reason is declared: a fragment is any string literal in the binary, so admitting unknown keys
+there would read a log message's `"path": ` as a request.
+
+**And the declared blind spot understated itself by a factor of three.** `sections.py`'s *"WHAT
+THIS CANNOT SEE"* said a `#[cfg(test)]` fixture counts as sent *"(`tz` and `log` are named in one)"*.
+Measured by classifying every accepted site against its file's `#[cfg(test)]` brace ranges: **SIX**
+of the eight sent sections have at least one test-only site — `blockMin`, `cmds`, `docs`, `log`,
+`now` and `tz`. The FLOOR itself holds, and that is why it is a gate now and not a repair: every
+sent section has at least one non-test site (`capacity` at `kernel_capacity.rs:881`, `emit` at
+`kernel_log.rs:2084`, `log` at `kernel_log.rs:402`, and the other five beside their fixtures), so
+`cuts` FAILS by name on a section only a harness sends rather than counting it sent. The number is
+no longer quoted in prose: `--audit` marks each site `(test)` or not, which is §5.11's one place.
+**DRIVEN**: `log`'s only shipped send spelled so the scanner cannot read it leaves the
+`kernel_bridge.rs:1803` fixture as its only site, and the gate prints `TEST-ONLY: `log` … a
+harness is not a caller` at rc=1.
+
+### 3. `tm add` wrote six malformed field values at rc=0 that `tm check` then called errors — gap 2415, closed
+
+**Reproduced on the HEAD binary, seven spellings, each on its own fresh `tm init` tree whose
+`tm check` first said `no problems` at rc=0.**
+
+| line added | `tm add` | `tm check` | `tm plan` |
+|---|---|---|---|
+| `- [ ] 3 90m audit block max:60m` | **rc=0, written** | rc=2, ``error[bad-value]: `max:60m`: invalid rate: "60m"`` | rc=0, the day rendered, **the field dropped without a word** |
+| `est:90`, `dur:7`, `max:60`, `min:xyz`, `due:notadate` | **rc=0** each | rc=2 each | rc=0 each |
+| a bare `9` in the ci slot | **rc=0** | rc=2, `error[bad-ci]`, and the estimate not read either | rc=0 |
+| `after:^nosuch` | **rc=1, refused** | rc=0 | — |
+
+The seventh is the tell. W-31 added `kernel_bridge::gate` on the far side of the write for gap
+2263 — *"add now asks about the tree AFTER it writes"* — and that gate asks **does the tree LOAD**,
+which is a question about REFERENCES. A malformed field VALUE leaves a tree that loads perfectly,
+so it walked through on **both** add paths: the host path and `add_kernel`, which was driven
+separately (`- [ ] 3 90m audit block max:60m` with no `^id` takes the kernel path and was written
+at rc=0 just the same). §5.13's failure class verbatim — a plausible keystroke that neither works
+nor says so — and a LIST where the rule is a CLASS, one gate over, different in direction from
+gaps 992 and 2132 because here the tree stays loadable and only `tm check` complains.
+
+**The repair asks `tm check`'s own question, of the tree the write produced, about what the write
+ADDED.** `items::check_errors` is `tm_core::check::check` filtered to `Severity::Error` — one
+reader of *what is wrong with this tree* (§5.3), never a second list of field rules — and
+`added_error` consumes a multiset of the errors that were there before, so a user inside an
+already-broken tree is not trapped by a fault that predates their keystroke. Both paths roll the
+one file back exactly (the bytes, or the file removed when the add created it) before anything
+reaches the log, which is the rollback gap 2263 already wrote. **After: all seven refuse at rc=1
+naming the `tm check` line, `tm check` says `no problems` at rc=0 on every tree afterwards, and a
+good line (`max:60m/d`) still writes at rc=0.** THE BLIND SPOT, declared in the code: the
+comparison is a multiset of `(file, code, message)`, so a write adding a SECOND error identical in
+all three is not seen. That is the quiet direction and it is the price of not trapping the user.
+
+### 4. Four published numbers and two dead routes — gaps 2416, 2420, 2421, closed
+
+**`Goals.lean` still offered, as the route forward, a repair this run refuted (gap 2416).** The doc
+comment above `plan_puts_hot_before_the_queue` (unchanged since W-20) offered *"either an
+eligibility that refuses an item step 5 never queues, or the restriction of `sj` to
+`sj.val.kind.isWork`"* — and this run shipped
+`PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`, which is the
+goal PLUS that very restriction, refuted by computation at a paying day, with a `#print axioms`
+line in `Check.lean`. The refutation was recorded in `Check.lean` and the README and **not** in the
+file a future track reads to decide what to do. Same for `plan_is_monotone_in_rank`, whose comment
+still gave W-19's cause (*"there is no assign fold yet"*) that P9 made false. Both comments now
+carry the W-32 refutation and cross the dead route off; **no statement, hypothesis or conclusion
+was touched** and the burn-down is unmoved.
+
+**The land block's own acceptance figures were the parent's (gap 2420).** `9d7fad2` §6 published
+`prose citations 41,643 / 39,644 resolved / 1,999 allowed` and §1 repeated 41,643 / 39,644 as what
+*"check 8 confirms"*. Measured in a clone at `bafe689`: **41,643 / 39,644 / 1,999, exact** — so the
+figures were measured before the docs commit and then committed inside it, whose own 154 README
+lines moved them. An acceptance block for a commit cannot be measured before that commit exists.
+Both sites are corrected to the tree they are committed in. Both auditors found this
+independently; it is the same class as the land block's own gap 2402 and was not named there.
+
+**Two gates quoted an exemption size stale by eight (gap 2421).** `check.sh`'s check-12 comment
+stopped at *"1,748 after W-32 rooted the walk where the binary enters"* while the file declares
+`EXEMPT 1756` and the gate prints `1756 exempt in 87 section(s)`; `reach.py`'s own header was
+worse, stopping at 1,459 and naming neither W-32 figure. The land block's gap 2400 records the
+1,748 → 1,756 move and nothing re-derived the comments with it — §5.11 happening inside the two
+files that teach §5.11. Both corrected, and both now carry the three new reason rules.
+
+### 5. Gaps this step takes
+
+| gap | what | where | why it is not closed here |
+|---|---|---|---|
+| **2417** | **three of the eight definitions this run added are one definition.** `PlannerWit.pCand` is `(⟨id, ci, none, 50, none, false×5, hot, none, ⟨{planFacts pm l with splittable := sp}, h⟩⟩, none)`; `pCandDue` (NEW) is that body with `rem` for the literal `50` and `some due` for `none`; `pCandSmall` (NEW) is that body with `rem` for `50` at fixed `ci := 2` and `hot := false`; `bCand` is it again with `some 0` and `10`. One generalisation taking `(id, ci, rootPrio, rem, due, hot, pm, l, sp, h)` carries all four, and `rem` was introduced twice independently | `kernel/TmKernel/TmKernel/PlannerWit.lean:2311, :6305, :6840, :7194` | **the fix is four definitions inside a 7,600-line witness module whose proofs are `decide` at `maxRecDepth 400000`**, and the collapse turns on `{planFacts pm l with splittable := (planFacts pm l).splittable}` being defeq to `planFacts pm l` by structure eta, which is true and is not free to re-check. Landing it costs a full rebuild, a `mutate.py` roster row for the new definition, a D40 constant-fold, and a NEW DATED EXIT-CARRYING exemption section — none of it hard and none of it this run's remaining budget. The SHAPE is written above so the next track does not re-derive it |
+| **2418** | **check 11 is structurally unable to see a generalisation.** `twins.py` keys every `def` on its signature and its body WITH its string literals, an EXACT match, so a definition that is another's body with a literal turned into a parameter never becomes a twin. Check 11 passed at HEAD with 14 groups and 0 UNANSWERED and gap 2417's family is in none of them — the same sentence `AGENTS.md:707` records about the last hand sweep (*"seventeen groups, all seventeen accounted for"* while five identical pairs were in none) | `kernel/twins.py`, `AGENTS.md:708` | **a LIST where the rule is a CLASS, thirteenth counted instance, inside the gate named after §5.3.** The widening is a SECOND key — the body with every literal erased and every parameter normalised — and two defs sharing it are a generalisation group. It is not landed here because that key will form groups across the whole library and every one of them needs adjudication before check 11 can be green again, which is a track's work and not a repair step's |
+| **2419** | **the burn-down moved 7 → 6 by a departure whose named restatement is provably vacuous.** plan_never_drops_an_impossible_item left `Goals.lean` correctly — refuted by computation, refutation in a real module, `#print axioms` line present, all three verified. Its restatement is `PlanCheck.impossibleKept`, and `PlanCheck.impossible_has_no_subject` proves that check EMPTY at every request and every eligibility, because `Planner.dayDiagnostics` never writes `Diagnostics.impossible` — which gap 2403 says from the other side | `kernel/TmKernel/Goals.lean`, `kernel/TmKernel/TmKernel/PlanCheck.lean`, README gap 2321 | the run declares this in three places and hides nothing; the obligation moved intact to gap **2321**. It is recorded because **"burn-down 6" is the figure the next brief will quote**, and three of the six that remain (`plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_batches_past_an_equal_ci_candidate`) now also carry shipped refutations at a paying day and are held open only until their P5 restatements exist |
+
+Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105, 1318, 1320, 1333,
+1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1906, 1956, 1957, 1984-1988,
+1990, 2000-2007, 2016-2018, 2020-2025, 2060-2065, 2090-2096, 2120-2149, 2190-2228, 2250-2269,
+2280-2399 and 2400-2403 are as their own blocks leave them. **No predicate was weakened, no law
+narrowed, no generator narrowed, no exemption widened, no snapshot, fixture, latency band or
+corpus re-blessed, no memory bound raised, no external dependency added, no `sorry` outside
+`Goals.lean`, no new axiom, and `dayPlan` is still total.** The exemption file did not grow: it
+is `EXEMPT 1756` before and after.
+
+### 6. Acceptance, capped at 40G, on this tree
+
+`check.sh` **12/12 by name**: `lake build TmKernel:static` ok · totality ok · **axiom audit 5,307
+theorems** (Classical.choice 2,579, Quot.sound 3,965, propext 4,923; 381 of 5,307 depend on none)
+· `Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole plans** ·
+**stage goals 6 outstanding, all stage 6** · prose citations **41,753 / 39,753 resolved / 2,000
+allowed**, 0 allow entries unused, 270 files swept · new definitions mutated **266 new or changed
+since `86c4dc6`, 266 rostered, 0 owed** · parity register **42 registered (P1-P42), next free P43**
+· no two names for one definition **3,061 def bodies, 14 groups, 0 UNANSWERED** · every
+emitted definition is reached **3,150 def/abbrevs in 86 modules, 2,934 emitted (562 as a global),
+1,178 reachable over the 8 sections `tm/src` sends (2 cut), 1,756 exempt in 87 sections (37 run at
+load), 0 UNANSWERED**.
+
+**`cargo test --workspace` FOUR TIMES (D46): 1,478 passed / 0 failed / 9 ignored across 87
+binaries, identical on all four runs** — the baseline, unmoved by the `tm add` gate.
+**`check.sh` was run SIX times end to end**: once at `9d7fad2` before any edit (12/12, and every
+figure in the two auditors' reports was checked against it); once mid-repair, which **FAILED
+check 8 and check 10** on this block's own prose — two names that resolve to nothing, and a
+`next free P43` broken across a line break — both repaired; and four times green afterwards, the
+last of them on the tree committed. `reach.py` alone was run far more often than that, and every
+plant above was driven against a control immediately before and after it.
+
+Named suites, each once and each at 40G: `kernel_replay_parity` (T5) · `kernel_log_door` ·
+`cli_switch_acceptance` · `cli_latency` (**load average checked first, gap 1333**) ·
+`kernel_call_counts` · `one_padder` · `one_renderer` · `kernel_row_cells` ·
+`kernel_item_grammar` · `kernel_planner_wire` · `planner_invariants` — all inside the workspace
+run above, 0 failed.
+
+**The plants, and the shared tree.** Four plants in the clone with a control between each
+(`w32critic` at `kernel_bridge.rs:797`; the same at `kernel_log.rs:2084`; `## Recur.lean`'s reason
+replaced by a fabrication; `log`'s only shipped send spelled so the scanner cannot read it), each
+driven before AND after the repair. Fifteen `tm add` drives on fresh `tm init` trees, each tree
+used once: seven at HEAD — three on the shared tree's own binary before anything was edited and
+five more on a binary built inside the clone at `9d7fad2`, every one of the seven `add` rc=0 /
+`check` rc=2 / `plan` rc=0 — and eight after, the same seven now refused at rc=1 with `tm check`
+clean afterwards, plus one good line still written at rc=0. The citation figures of `bafe689` and
+`9d7fad2` were re-measured on their own checkouts inside the clone. `git status --porcelain` on
+`/home/leobwang/code/projects/tm` was **empty** before the first plant and **empty** after the
+last; every clone plant was reverted with `git checkout --` and the control re-run to rc=0.

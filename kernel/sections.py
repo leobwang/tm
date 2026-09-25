@@ -65,11 +65,21 @@ cut is taken where the program branches and not where the proof does.
 
 WHAT THIS CANNOT SEE, declared rather than discovered later:
 
-  * WHETHER A SENT SECTION IS SENT ON A PATH A USER TAKES.  A section named in
-    a `#[cfg(test)]` fixture inside `tm/src` counts as sent here (`tz` and `log`
-    are named in one, and both are sent by shipped code as well).  This is the
-    quiet direction -- it can only make the gate weaker -- and `--audit` prints
-    every region it accepted, with its file and line.
+  * WHETHER A SENT SECTION IS SENT ON A PATH A USER TAKES, beyond the floor
+    below.  A section named in a `#[cfg(test)]` fixture inside `tm/src` counts
+    as sent here.  This sentence used to add "(`tz` and `log` are named in one)"
+    and the measurement is SIX of the eight sent sections -- `blockMin`, `cmds`,
+    `docs`, `log`, `now` and `tz` -- which is the number a later reader would
+    have checked the floor against (W-32 repair, README gap 2414).  So the
+    number is not quoted here any more: `--audit` marks every accepted region
+    `(test)` or not, and the count lives in that one place.
+  * THE FLOOR UNDER THAT ONE IS A GATE NOW, NOT A HOPE.  A section whose every
+    accepted site is inside a `#[cfg(test)]` item is a section only a harness
+    sends, and `cuts` FAILS on it by name rather than counting it sent.  It
+    holds today at every one of the eight, which is why the check is a ratchet
+    and not a repair: `capacity` is sent from `kernel_capacity.rs:881`, `emit`
+    from `kernel_log.rs:2084`, `log` from `kernel_log.rs:402`, and the other
+    five from shipped code beside their fixtures.
   * A REQUEST THIS SCAN CANNOT READ.  A section key assembled from a variable,
     or spliced from a helper that returns a whole object, is invisible; the
     floor is that `docs` must come out SENT, since every request the kernel
@@ -102,8 +112,19 @@ EXPORT_MODULE = "PlanWire.lean"
 # guess: `docs` must come out of the walk, because every request carries it.
 REQUEST_VARS = ("input", "j")
 # The two readers that take a request and a literal key.  A third spelling would
-# make a section invisible, so `floors` fails when a key `tm/src` sends is not a
-# section this walk found.
+# make a section invisible, so `cuts` FAILS when a request the binary builds
+# carries a key that is not a section this walk found (W-32 repair, README gap
+# 2413).  That floor was promised here by name -- "`floors` fails when .." --
+# and there was no `floors` in this file or any other: the one grep for the word
+# returned this comment.  What the code did instead was `sent_sections`'s
+# `set(keys) <= set(known)`, which DISCARDS a region carrying an unrecognised
+# key in silence.  DRIVEN in a clone: one sibling key added to
+# `kernel_bridge.rs`'s shipped request left check 12 at rc=0 with a
+# byte-identical summary, and the same key added to `kernel_log.rs`'s only
+# shipped send of `emit` failed at rc=1 with the FALSE sentence "no request the
+# shipped binary can build reaches it" over the whole of D16's log writer, and
+# printed the remedy "add it to reach-exempt.txt" -- a scanner miss instructing
+# the next agent to grandfather six live definitions.
 READERS = ("jget", "getArr")
 
 DEFHEAD = re.compile(
@@ -399,27 +420,92 @@ def top_keys(body):
     return out, opens
 
 
-def sent_sections(src, known):
-    """`{key: [(file, line)]}` -- the top-level keys `src` builds requests with.
+CFG_TEST = re.compile(r"#\[cfg\(test\)\]")
 
-    A region is a REQUEST when its depth-1 keys are all sections of the kernel
-    and it either carries `docs` or is a fragment.  The first test is what keeps
-    `kernel_capacity.rs`'s candidate object out (`"plan"` sits there beside
-    eleven keys no section has); the second is what keeps a refusal fixture
-    (`json!({"capacity":"nowAbsent"})`) from standing in for a request."""
-    out = collections.defaultdict(list)
+
+def cfg_test_spans(text):
+    """The offset range of every `#[cfg(test)]` item in `text`.
+
+    Taken brace-balanced from the first `{` after the attribute, which is the
+    `mod tests {` every such item in this binary opens with.  An attribute with
+    no `{` after it contributes nothing rather than a range to the end of the
+    file: the quiet direction here is calling a test site SHIPPED, which is the
+    direction the floor below already fails on if it is wrong about all of
+    them."""
+    spans = []
+    for m in CFG_TEST.finditer(text):
+        k = text.find("{", m.end())
+        if k < 0:
+            continue
+        depth, i = 0, k
+        while i < len(text):
+            if text[i] == "{":
+                depth += 1
+            elif text[i] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+            i += 1
+        spans.append((m.start(), i))
+    return spans
+
+
+def sent_sections(src, known):
+    """`({key: [(file, line, test)]}, complaints)` -- the keys `src` sends.
+
+    A region is a REQUEST when it OPENS its own object and carries `docs`, or
+    when it is a FRAGMENT whose depth-1 keys are all sections of the kernel.
+    `docs` is what keeps `kernel_capacity.rs`'s candidate object out (`"plan"`
+    sits there beside eleven keys no section has) and what keeps a refusal
+    fixture (`json!({"capacity":"nowAbsent"})`) from standing in for a request.
+
+    **AND A REQUEST CARRYING A KEY THIS WALK DOES NOT KNOW IS A COMPLAINT, NOT A
+    DISCARD** (W-32 repair, README gap 2413).  The subset test used to gate
+    ACCEPTANCE, so one unrecognised sibling key inside a shipped `json!` deleted
+    the whole region: driven, and it took `cmds`'s and `docs`'s evidence silently
+    from one line to another at rc=0, or took `emit` out of the sent set
+    altogether and made check 12 accuse D16's log writer of having no caller.
+    The two are not the same finding and this gate could not tell them apart --
+    UNSENT and UNREADABLE arrived at adjudication wearing one sentence.  A
+    request-shaped region is now READ, and a key in it that is no section of the
+    kernel fails by name, which is the floor `READERS` above always promised.
+
+    The fragment arm keeps the subset test, and the reason is declared: a
+    fragment is any string literal in the binary, so admitting unknown keys
+    there would read `"path": ` in a log message as a request.  A section key
+    that only ever arrives by `push_str` beside an unknown one is therefore
+    still invisible."""
+    out, bad = collections.defaultdict(list), []
     for p in sorted(leanfiles.rust_files(pathlib.Path(src))):
         text = p.read_text(errors="replace")
+        spans = cfg_test_spans(text)
         for body, off in regions(text):
             keys, opens = top_keys(body)
-            if not keys or not set(keys) <= set(known):
-                continue
-            if opens and "docs" not in keys:
+            if not keys:
                 continue
             line = text.count("\n", 0, off) + 1
+            if opens:
+                if "docs" not in keys:
+                    continue
+                unknown = [k for k in dict.fromkeys(keys) if k not in known]
+                if unknown:
+                    bad.append("UNREADABLE: %s:%d  carries `docs`, so it is a request "
+                               "the binary builds, and its top-level key(s) %s are no "
+                               "section of the kernel -- the walk from `%s` found %s. "
+                               "This is NOT the same finding as a section nothing "
+                               "sends: until it is resolved every section beside it "
+                               "here is unreadable too, and check 12 would root itself "
+                               "on the rest" % (p.name, line,
+                                                ", ".join("`%s`" % k for k in unknown),
+                                                EXPORT_DEF,
+                                                ", ".join("`%s`" % k for k in sorted(known))))
+                    continue
+            elif not set(keys) <= set(known):
+                continue
+            test = any(a <= off <= b for a, b in spans)
             for k in keys:
-                out[k].append((p.name, line))
-    return out
+                out[k].append((p.name, line, test))
+    return out, bad
 
 
 def cuts(pkg, src_dir, defs=None):
@@ -434,7 +520,8 @@ def cuts(pkg, src_dir, defs=None):
         complaints.append("SPINE: the walk from %s never reached `run` -- the "
                           "request was lost and every section below it is "
                           "invisible" % EXPORT_DEF)
-    sent = sent_sections(src_dir, sections)
+    sent, unreadable = sent_sections(src_dir, sections)
+    complaints.extend(unreadable)
     if not sent:
         complaints.append("SENT: not one request region in %s -- the root would "
                           "be derived from nothing and every section would be "
@@ -447,8 +534,25 @@ def cuts(pkg, src_dir, defs=None):
     for key in sorted(sections):
         where = sent.get(key)
         if where:
+            # THE FLOOR UNDER "SENT" (W-32 repair, gap 2414).  A section every
+            # one of whose sites is inside a `#[cfg(test)]` item is sent by a
+            # harness and by nothing a user can run -- which is gap 2229's own
+            # finding arriving through the scanner instead of through a grep.
+            # It is a failure and not a cut: what to do about a section only a
+            # test sends is a reader's call, and a gate that quietly cut it
+            # would delete a subtree on the strength of a brace scan.
+            if all(w[2] for w in where):
+                complaints.append("TEST-ONLY: `%s` is sent by %s and every one of its "
+                                  "%d site(s) is inside a `#[cfg(test)]` item (%s) -- "
+                                  "a harness is not a caller, so no user can enter "
+                                  "this section and check 12 is rooted on a room "
+                                  "nobody reaches" % (key, src_dir, len(where),
+                                                      ", ".join("%s:%d" % (w[0], w[1])
+                                                                for w in sorted(set(where))[:3])))
+                continue
             report.append("  SENT   %-9s %s" % (key, ", ".join(
-                "%s:%d" % w for w in sorted(set(where))[:3])))
+                "%s:%d%s" % (w[0], w[1], " (test)" if w[2] else "")
+                for w in sorted(set(where))[:3])))
             continue
         ds = dispatchers.get(key, [])
         if not ds:
