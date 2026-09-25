@@ -62441,6 +62441,13 @@ shrink**: an entry whose definition becomes reachable, stops being emitted or
 stops existing FAILS check 12 and must be deleted in the same edit. It declares
 its own size, so growth is a number in a diff rather than a side effect.
 
+**What the next track owes it, in one sentence**: a definition added and not
+called — a witness fixture, a spec form, a step built before its caller — fails
+check 12, and the failure prints both answers, *give it a caller the export
+reaches, or add it under its module's section with a reason and raise the EXEMPT
+count in the same edit*. That is the tax, it is one line, and it is the tax the
+ratchet is made of.
+
 **What it is honest about is written in its own header**: the 952 are a
 GRANDFATHERED set, not 952 adjudications. Three sections carry a real one —
 `Tree.lean`'s ten under D52, `Recur.lean`'s 58 under gap 501, and
@@ -62591,8 +62598,8 @@ version was measured spending a quarter of a second of check 11's budget on a
 measurement check 11 has no use for (1.64-1.68 s against 1.42-1.45 s now, which
 is where W-30 left it). A gate paying for another gate's question is a cost that
 shows up as nobody's line item. The twelve-check wall
-is **16.46, 16.47, 16.65, 17.11, 16.34, 16.53, 16.52 and 16.34 s** (eight runs,
-the last four after this block was written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
+is **16.34-17.11 s over ten runs** (16.46, 16.47, 16.65, 17.11, 16.34, 16.53,
+16.52, 16.34, 16.46, 16.61; the last six after this block was written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
 is exactly design 14.0 item 4's per-step price, recorded here rather than rounded
 down (gap 2146).
 
@@ -62611,11 +62618,12 @@ reachable** · **check 12: 3,042 def(s) in 86 library modules, 2,365 emitted,
 at load), 0 UNANSWERED.** The emitted population is **11,935 and not the 11,945
 every block since W-30 has quoted**; §9's gap 2149 is why.
 
-**`cargo test --workspace`: SEVEN runs**, 40G capped, and the six that were
+**`cargo test --workspace`: EIGHT runs**, 40G capped, and the seven that were
 totalled are **1,476 passed / 0 failed / 9 ignored across 87 binaries** every
 time — byte for byte the baseline's figure, which is what a run that touches no
-Rust and no Lean owes. Two of them ran after this block and `AGENTS.md` were
-written, because a docs edit is what made the baseline red (§5a). T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.80 s ·
+Rust and no Lean owes. Five of them ran after this block and `AGENTS.md` were
+written, because a docs edit is what made the baseline red (§5a) and this block
+is a docs edit. T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.80 s ·
 the door suite `kernel_log_door --include-ignored` **23 passed** ·
 `cli_switch_acceptance --include-ignored` **16 passed** · `cli_latency
 --include-ignored` **6 passed**, 17.99 s, in band, at load average **5.92** (gap

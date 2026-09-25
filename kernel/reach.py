@@ -248,6 +248,14 @@ def main(argv):
                                     "   (load-time)" if dead[key][3] in closed else ""))
     for line in bad:
         print(line)
+    # A GATE THAT BLOCKS SHOULD ALSO TEACH.  The next track to meet this check
+    # will meet it by adding a witness fixture nothing calls, which is a normal
+    # thing to do and has two correct answers; printing neither is how a gate
+    # becomes something to route around.
+    if any(b.startswith("NOT EXEMPT") for b in bad):
+        print("  -- either give it a caller the export reaches, or add it to %s "
+              "under its module's `##` section with a reason AND raise the "
+              "EXEMPT count in the same edit" % EXEMPT_FILE.name)
     print("%d def(s) in %d library module(s), %d emitted, %d reachable from %s, "
           "%d exempt in %d section(s) (%d of them run at load), %d UNANSWERED"
           % (len(defs), len(library), len(population), len(live),
