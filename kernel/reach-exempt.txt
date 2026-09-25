@@ -29,7 +29,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 952
+EXEMPT 953
 
 ## Arith.lean -- The exact-arithmetic layer. 17 of its 39 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time.
 Tm.Arith.Bin.ix
@@ -601,6 +601,7 @@ Tm.PlannerWit.breakIt
 Tm.PlannerWit.cCand
 Tm.PlannerWit.dimIt
 Tm.PlannerWit.fitsAt
+Tm.PlannerWit.freeSlotRows  # W-31 track G: the eligibility the freed eleven-check lift asks for
 Tm.PlannerWit.fromNowWorkRows
 Tm.PlannerWit.gCand
 Tm.PlannerWit.gPlain  # (load-time)

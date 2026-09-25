@@ -6770,3 +6770,58 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- request whose cursor fills a slot" is FALSE; 19 of this module's 43 requests assign, and
 -- exactly one of the nineteen pays the fifth decoder clause (README gap 2025).
 #print axioms Tm.PlannerWit.the_cursor_family_assigns_and_none_of_it_pays
+
+-- ############################################################################
+-- W-31 (track G): §6.1's ELEVEN off `hnoassign` -- the eleven-check lifts, the
+-- `Goals.lean` entry that left by refute-and-rename, and the widened paying set.
+-- ############################################################################
+--
+-- THE HYPOTHESIS THE SIX ELEVEN-CHECK LIFTS CARRIED WAS ONE PROPERTY OF THE
+-- ELIGIBILITY SPELLED AS A DOMAIN.  `r.assignedRows = []` was being spent on
+-- `batchDoesNotReachPast` (no Batch row exists) and on the two comparisons (every
+-- work row is the reservation), and on nothing else -- `impossibleKept` never
+-- needed it.  `FoldRowsAdmitNothing` is what those three actually want, and it is
+-- W-27's shape: TWO facts establish it and they have nothing in common.
+#print axioms Tm.PlanCheck.a_batch_row_of_the_day_is_the_folds
+#print axioms Tm.PlanCheck.a_work_row_from_now_is_reserved_or_assigned
+#print axioms Tm.PlanCheck.FoldRowsAdmitNothing_of_nothing_assigned
+#print axioms Tm.PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor
+#print axioms Tm.PlanCheck.batchDoesNotReachPast_of_a_fold_that_admits_nothing
+#print axioms Tm.PlanCheck.eligibleSomewhere_of_nothing_from_now
+-- The lifts themselves: the equality, the discharge, and §6.1's eleven on the whole
+-- day of a request whose decoder pays -- with no `r.assignedRows = []` in any of them.
+#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven
+#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+-- and the generality claim as a THEOREM rather than a doc comment (D5, 3.1 item 4).
+#print axioms Tm.PlanCheck.the_unassigned_eleven_is_an_instance_of_the_paying_eleven
+-- the two properties, audited the way `Tm.WfPlan` and `AssignedRowsPay` are (6.3).
+#print axioms Tm.PlanCheck.FoldRowsAdmitNothing
+#print axioms Tm.PlanCheck.UnfilledAnchored
+-- Goals.plan_does_not_overbook LEFT `Goals.lean`: refuted at W-24, restated here.
+-- The reason it could not leave then was that the restatement had no subject; P9's
+-- rows are the subject (`the_overbooking_sum_has_a_subject_where_the_fold_filled_slots`).
+#print axioms Tm.PlanCheck.plan_does_not_overbook_where_nothing_runs
+#print axioms Tm.PlanCheck.plan_does_not_overbook_from_now_where_nothing_runs
+-- W-31 (track G), the witness side: the fourth clause P5's eligibility owes the lift,
+-- the ELEVEN fired at a day that ASSIGNS, and the census that prices it.
+#print axioms Tm.PlannerWit.freeSlotRows_is_from_now_anchored
+#print axioms Tm.PlannerWit.freeSlotRows_is_unfilled
+#print axioms Tm.PlannerWit.the_free_slot_eligibility_reads_its_fourth_clause
+#print axioms Tm.PlannerWit.the_eleven_applies_at_the_paying_request
+#print axioms Tm.PlannerWit.the_eleven_at_the_paying_day_is_five_biting
+-- The paying set, widened from ONE to THREE (W-30's own count was one of nineteen).
+#print axioms Tm.PlannerWit.the_mirror_witness_loads
+#print axioms Tm.PlannerWit.the_two_witness_loads
+#print axioms Tm.PlannerWit.three_requests_now_assign_and_pay
+#print axioms Tm.PlannerWit.the_mirrored_day_assigns_the_hot_item
+#print axioms Tm.PlannerWit.the_new_paying_days_are_quiet_and_inside_the_budget
+-- The overbooking law: the subject P9 gave it, and the two firings of the restatement.
+#print axioms Tm.PlannerWit.the_overbooking_sum_has_a_subject_where_the_fold_filled_slots
+#print axioms Tm.PlannerWit.the_over_budget_request_fails_the_checker_too
+#print axioms Tm.PlannerWit.the_overbook_restatement_fires_on_a_worked_morning
+#print axioms Tm.PlannerWit.the_overbook_restatement_fires_where_the_fold_filled_slots
+-- AND THE MEASUREMENT THAT SAYS WHY THE WIND-DOWN GOAL DID NOT MOVE: this module
+-- plans ONE INSTANT, so no day in it holds a WindDown row with a Block at or after
+-- it, and the refutation that goal needs cannot be computed here (gap 2199).
+#print axioms Tm.PlannerWit.the_witness_module_plans_one_instant

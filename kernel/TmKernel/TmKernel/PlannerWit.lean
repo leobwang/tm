@@ -5294,7 +5294,7 @@ theorem the_replayed_half_is_a_strict_part_of_the_day :
 
 
 set_option maxRecDepth 400000 in
-/-- **`Goals.plan_does_not_overbook` is FALSE as stage 6 wrote it, and NOT for the reason the
+/-- **Goals.plan_does_not_overbook is FALSE as stage 6 wrote it, and NOT for the reason the
 design recorded.**  Design §6.3 row 1 says the law fails because §8.2 choice 5b *"gives the
 running block its minutes whatever the budget says"*.  **Nothing is running at this request.**
 The day is over budget because the log worked two blocks against a budget `tm arrive` wrote as
@@ -6485,7 +6485,294 @@ theorem the_cursor_family_assigns_and_none_of_it_pays :
     (thePayingRequest.assignedRows.length, PlanCheck.candsAgree thePayingRequest) = (1, true) := by
   refine ⟨by decide, by decide⟩
 
+/-! ############################################################################
+## 27. W-31: the ELEVEN at a day that ASSIGNS, and the paying set widened
+############################################################################
+
+**Two jobs, and the second is the honest measure of the first.**
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` states §6.1's eleven over a day
+§8.2 step 5 filled; a lift over paying days witnessed by ONE paying day is AGENTS §5.2's
+theorem that compiles and means nothing, and after W-30 there was exactly one —
+`thePayingRequest`, one assigned row, one candidate placed.
+
+`freeSlotRows` is the eligibility the new lift asks for, and it is `fromNowWorkRows` with the
+fourth clause `PlanCheck.UnfilledAnchored` names: a row already carrying a slot energy is a
+slot §8.2 step 5 has already filled, and step 5 does not fill a slot twice.  All four clauses
+are read — `the_free_slot_eligibility_reads_its_fourth_clause` is the row that separates it
+from `fromNowWorkRows`, and it is a row of the paying day itself. -/
+
+/-- **W-23's eligibility with the fourth clause: not at a slot the fold already filled.**
+`Planner.segOf`'s forcing does not touch `Seg.energy`, so this reads the row it is handed. -/
+def freeSlotRows : PlanCheck.Eligible := fun r d s i =>
+  fromNowWorkRows r d s i && s.energy.isNone
+
+theorem freeSlotRows_is_from_now_anchored : PlanCheck.FromNowAnchored freeSlotRows := by
+  have hsub : ∀ (r : PlanReq) (d : DayPlan) (s : Seg) (i : Id),
+      freeSlotRows r d s i = true → fromNowWorkRows r d s i = true := by
+    intro r d s i h
+    simp only [freeSlotRows, Bool.and_eq_true] at h
+    exact h.1
+  exact ⟨⟨fun r d s i h => fromNowWorkRows_is_from_now_anchored.1.1 r d s i (hsub r d s i h),
+          fun r d s i h => fromNowWorkRows_is_from_now_anchored.1.2 r d s i (hsub r d s.val i h)⟩,
+         fun r d s i h => fromNowWorkRows_is_from_now_anchored.2 r d s i (hsub r d s.val i h)⟩
+
+theorem freeSlotRows_is_unfilled : PlanCheck.UnfilledAnchored freeSlotRows := by
+  intro r d s i h
+  simp only [freeSlotRows, Bool.and_eq_true] at h
+  exact Option.eq_none_iff_forall_ne_some.2 (fun a ha => by
+    rw [ha] at h; exact absurd h.2 (by simp))
+
+set_option maxRecDepth 400000 in
+/-- **The fourth clause is read, at a row of the paying day itself.**  The slot `^m2` took
+carries `energy = some 4`; `fromNowWorkRows` admits it and `freeSlotRows` refuses it, which is
+the whole difference between the two eligibilities and the reason the new lift is not the old
+one with a longer name. -/
+theorem the_free_slot_eligibility_reads_its_fourth_clause :
+    ((dayPlan thePayingRequest).segments.any (fun s =>
+        fromNowWorkRows thePayingRequest (dayPlan thePayingRequest) s.val ['m','2']
+          && !freeSlotRows thePayingRequest (dayPlan thePayingRequest) s.val ['m','2'])) = true ∧
+    freeSlotRows thePayingRequest (dayPlan thePayingRequest)
+        (PlanCheck.wSeg thePayingRequest.now.sec (thePayingRequest.now.sec + 3600)
+          SegKind.block none none) ['m','2'] = true ∧
+    freeSlotRows thePayingRequest (dayPlan thePayingRequest)
+        (PlanCheck.wSeg thePayingRequest.now.sec (thePayingRequest.now.sec + 3600)
+          SegKind.block none (some 4)) ['m','2'] = false := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **§6.1's ELEVEN, fired at a day that ASSIGNS.**  Before this the eleven had been proved
+only where `r.assignedRows = []`; `thePayingRequest`'s cursor fills a slot, the row is in the
+day, and the battery answers `true` on all eleven of `PlanCheck.checksOf`.
+
+Every hypothesis is a theorem above: `PlanCheck.FoldRowsAdmitNothing` comes from the
+eligibility's fourth clause and not from the request, `PlanCheck.DecoderPays` from the five
+decoder theorems, and `hbudget` is the `noOverbook` conjunct of
+`the_paying_request_assigns_and_the_battery_passes`. -/
+theorem the_eleven_applies_at_the_paying_request :
+    PlanCheck.planOk freeSlotRows thePayingRequest (dayPlan thePayingRequest) = true :=
+  PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder freeSlotRows_is_from_now_anchored
+    thePayingRequest
+    (PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor freeSlotRows_is_unfilled _)
+    the_paying_request_pays_the_decoder
+    (by rw [the_paying_request_is_quiet]; simp)
+    the_paying_request_assigns_and_the_battery_passes.2.2.2.2.2.2.1
+    the_paying_request_is_plain
+
+set_option maxRecDepth 400000 in
+/-- **What the eleven costs in SUBJECTS on the day it now covers, counted rather than
+claimed** (AGENTS §7.4 item 2).  `PlanCheck.subjectCount` at the paying day, at `freeSlotRows`
+and at `permissive`, beside the same count at the census day.
+
+**The number to read is the first: FIVE.**  The lift above proves eleven and five of them have
+anything to range over — and `energyFilter` is one of the five, which it was at no request
+before W-30.
+
+**And the second number is the price, exactly: SIX.**  At `permissive` — no clause on the
+eligibility at all — the same day puts **six** in play, and the one it loses is `hot`.  So
+`PlanCheck.FoldRowsAdmitNothing` together with `PlanCheck.FromNowAnchored` costs one subject on
+this day and buys a proof of two checkers; the clause that frees the comparisons from
+`hnoassign` is the clause that empties them.  **Gap 365 is what buys them a subject**, and this
+theorem is the measurement that says so rather than the sentence that claims it. -/
+theorem the_eleven_at_the_paying_day_is_five_biting :
+    PlanCheck.subjectCount freeSlotRows thePayingRequest (dayPlan thePayingRequest) = 5 ∧
+    PlanCheck.subjectCount permissive thePayingRequest (dayPlan thePayingRequest) = 6 ∧
+    PlanCheck.subjectOf permissive PlanCheck.CheckName.hot thePayingRequest
+      (dayPlan thePayingRequest) = true ∧
+    PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.energyFilter thePayingRequest
+      (dayPlan thePayingRequest) = true ∧
+    PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.rank thePayingRequest
+      (dayPlan thePayingRequest) = false ∧
+    PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.hot thePayingRequest
+      (dayPlan thePayingRequest) = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-! ### The paying set, widened
+
+**One paying day was the whole witness base, and one is thin.**  Two more are built here the
+way `payingWitness` was built — one character of one document changed each time — so that what
+separates them from the request they came from is a `ci` and nothing else.
+
+* `theMirrorPayingRequest` swaps the two levels: `^m1` (the **hot** one) is the task the day
+  can place and `^m2` is the one it cannot.  The assigned row therefore carries
+  `Planner.SegFlags.hot`, which no assigned row of `thePayingRequest` does.
+* `theTwoPayingRequest` puts both tasks inside the day's reach, so the fold fills **two**
+  slots and the day carries two Block rows with slot energies. -/
+
+/-- The census documents with `^m1` at `ci:2` and `^m2` at `ci:5` — `payingWitness` mirrored. -/
+def mirrorWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 2 6b Finish the report ^m1 hot".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_mirror_witness_loads : loadsOk mirrorWitness = true := by decide
+
+def mirrorPlan : WfPlan :=
+  match h : loadPlan mirrorWitness with
+  | .ok p => p
+  | .error _ => absurd the_mirror_witness_loads (by simp [loadsOk, h])
+
+def mirrorCands : List (Look.Cand × Option Look.Floor) :=
+  [pCand ['m','1'] 2 true  60 .any true (by decide),
+   pCand ['m','2'] 5 false 60 .any true (by decide)]
+
+def theMirrorPayingRequest : PlanReq :=
+  { theQuietCensusRequest with plan := mirrorPlan, cands := ⟨mirrorCands, by decide⟩ }
+
+/-- The census documents with **both** tasks at `ci:2`. -/
+def twoWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 2 6b Finish the report ^m1 hot".toList,
+       "- [ ] 2 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_two_witness_loads : loadsOk twoWitness = true := by decide
+
+def twoPlan : WfPlan :=
+  match h : loadPlan twoWitness with
+  | .ok p => p
+  | .error _ => absurd the_two_witness_loads (by simp [loadsOk, h])
+
+def twoCands : List (Look.Cand × Option Look.Floor) :=
+  [pCand ['m','1'] 2 true  60 .any true (by decide),
+   pCand ['m','2'] 2 false 60 .any true (by decide)]
+
+def theTwoPayingRequest : PlanReq :=
+  { theQuietCensusRequest with plan := twoPlan, cands := ⟨twoCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **THREE requests pay the fifth decoder clause and assign, where W-30 left one.**  The
+second column is the count of rows the fold placed and the third is the count of Block rows of
+the day that carry a slot energy — the rows five of the seven core checks are about. -/
+theorem three_requests_now_assign_and_pay :
+    [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest].map
+        (fun r => (PlanCheck.candsAgree r, r.assignedRows.length,
+          ((dayPlan r).segments.filter (fun s =>
+            decide (s.val.kind = SegKind.block) && s.val.energy.isSome)).length))
+      = [(true, 1, 1), (true, 1, 1), (true, 2, 2)] ∧
+    [assignedOf (dayPlan thePayingRequest), assignedOf (dayPlan theMirrorPayingRequest),
+     assignedOf (dayPlan theTwoPayingRequest)]
+      = [[['m','2']], [['m','1']], [['m','1'], ['m','2']]] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The mirrored day's assigned row is the HOT one**, which no row of `thePayingRequest`'s
+day is: `Planner.assignedSeg` sets `flags.hot` from its group's members' `Look.Key.p`, and
+`^m1` carries `hot` in the store and on the wire both. -/
+theorem the_mirrored_day_assigns_the_hot_item :
+    ((dayPlan theMirrorPayingRequest).segments.any (fun s =>
+        decide (s.val.kind = SegKind.block) && s.val.energy.isSome && s.val.flags.hot)) = true ∧
+    ((dayPlan thePayingRequest).segments.any (fun s =>
+        decide (s.val.kind = SegKind.block) && s.val.energy.isSome && s.val.flags.hot)) = false := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- `hnopast`, `hbudget` and the whole battery, at the two new requests. -/
+theorem the_new_paying_days_are_quiet_and_inside_the_budget :
+    pastRows theMirrorPayingRequest = [] ∧ pastRows theTwoPayingRequest = [] ∧
+    PlanCheck.noOverbook theMirrorPayingRequest (dayPlan theMirrorPayingRequest) = true ∧
+    PlanCheck.noOverbook theTwoPayingRequest (dayPlan theTwoPayingRequest) = true ∧
+    PlanCheck.planOkCore theMirrorPayingRequest (dayPlan theMirrorPayingRequest) = true ∧
+    PlanCheck.planOkCore theTwoPayingRequest (dayPlan theTwoPayingRequest) = true ∧
+    PlanCheck.planOk freeSlotRows theMirrorPayingRequest
+      (dayPlan theMirrorPayingRequest) = true ∧
+    PlanCheck.planOk freeSlotRows theTwoPayingRequest (dayPlan theTwoPayingRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-! ### Goals.plan_does_not_overbook LEAVES `Goals.lean`, and P9 is why
+
+**The refutation has been in this module since W-24 and the goal stayed anyway.**
+`plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` (§24) computes it at
+`theOverBudgetRequest` — 7 200 s of replayed Block against a 3 600 s cap, **nothing running**,
+so `PlanCheck.withoutActive` removes no row and design §6.3 row 1's own restatement falls with
+it (`the_designs_restatement_of_the_overbooking_law_is_refuted_too`).  Its doc comment says
+exactly why the goal did not leave: *"its restatement over the rows §8.3 is about is vacuous
+(`PlanCheck.overbook_has_no_subject_from_now_on_an_unassigned_day`), so shipping one would be
+AGENTS §5.2's theorem that compiles and means nothing."*
+
+**That sentence was true when it was written and P9 made it false.**  §8.2 step 5's rows are in
+the day now, they start at or after `now`, and nothing removes them: the sum the law is about
+has a subject on any day the fold filled a slot on.  The theorem below is that difference as
+two numbers, and it is what lets the goal be discharged under AGENTS §3.2 rather than carried
+for a tenth run.  README gap **2198**. -/
+
+set_option maxRecDepth 400000 in
+/-- **The overbooking sum is no longer over nothing.**  `PlanCheck.withoutPast` keeps the rows
+§8.3 is about and `PlanCheck.withoutActive` takes choice 5b's reservation out of them; at
+`theQuietCensusRequest` — a day the fold left alone — what is left is **zero seconds**, which is
+what `PlanCheck.overbook_has_no_subject_from_now_on_an_unassigned_day` says in general.  At
+`theTwoPayingRequest` the fold filled two slots and the same sum is **positive**. -/
+theorem the_overbooking_sum_has_a_subject_where_the_fold_filled_slots :
+    blockSeconds (PlanCheck.withoutActive theQuietCensusRequest
+      (PlanCheck.withoutPast theQuietCensusRequest (dayPlan theQuietCensusRequest))) = 0 ∧
+    0 < blockSeconds (PlanCheck.withoutActive theTwoPayingRequest
+      (PlanCheck.withoutPast theTwoPayingRequest (dayPlan theTwoPayingRequest))) ∧
+    0 < blockSeconds (PlanCheck.withoutActive thePayingRequest
+      (PlanCheck.withoutPast thePayingRequest (dayPlan thePayingRequest))) := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The refutation is the LOG's and not §8.2 choice 5b's**, which is the half a reader would
+otherwise supply from design §6.3 and get wrong.  Nothing is running at `theOverBudgetRequest`,
+so `PlanCheck.withoutActive` removes no row and the checker fails with the raw sum. -/
+theorem the_over_budget_request_fails_the_checker_too :
+    theOverBudgetRequest.state.activeId = none ∧
+    PlanCheck.noOverbook theOverBudgetRequest (dayPlan theOverBudgetRequest) = false ∧
+    (PlanCheck.withoutActive theOverBudgetRequest (dayPlan theOverBudgetRequest)).segments.length
+      = (dayPlan theOverBudgetRequest).segments.length := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The restatement fires on a day whose log worked a block**, where the goal's own witness
+fails: `theIdleQueuedRequest` replays `^m2`'s morning, nothing runs, and
+`PlanCheck.plan_does_not_overbook_where_nothing_runs` bounds the whole day's Block seconds. -/
+theorem the_overbook_restatement_fires_on_a_worked_morning :
+    blockSeconds (dayPlan theIdleQueuedRequest) ≤
+      (dayPlan theIdleQueuedRequest).budgetBlocks * (dayPlan theIdleQueuedRequest).blockMin
+        * 60 :=
+  PlanCheck.plan_does_not_overbook_where_nothing_runs theIdleQueuedRequest (by decide)
+    (by decide)
+
+/-- **And on a day the FOLD filled**, which is the instance that was not available before P9:
+`theTwoPayingRequest` assigns two rows, and the bound is read off
+`the_new_paying_days_are_quiet_and_inside_the_budget` rather than re-decided. -/
+theorem the_overbook_restatement_fires_where_the_fold_filled_slots :
+    blockSeconds (dayPlan theTwoPayingRequest) ≤
+      (dayPlan theTwoPayingRequest).budgetBlocks * (dayPlan theTwoPayingRequest).blockMin
+        * 60 :=
+  PlanCheck.plan_does_not_overbook_where_nothing_runs theTwoPayingRequest (by decide)
+    the_new_paying_days_are_quiet_and_inside_the_budget.2.2.2.1
+
+set_option maxRecDepth 400000 in
+/-- **THE WITNESS MODULE PLANS ONE INSTANT, and that is why one of the remaining goals cannot
+be refuted here.**  Every `PlanReq` this module defines but `theHourLaterRequest` carries the
+same `now` and the same wind-down — 14:00 and 21:30 on the §4.3 Wednesday, seven and a half
+hours apart — so **no day in this tree holds a WindDown row with a Block row at or after it**,
+and `PlanCheck.noDemandingAfterWindDown` answers `true` at all 45 of them for want of a subject
+rather than for want of a defect.
+
+`Goals.plan_places_no_demanding_block_after_wind_down` therefore stays in `Goals.lean`: the
+restatement is `PlanCheck.noDemandingAfterWindDown_of_a_day_that_pays` and is proved, but a
+restatement shipped **without** its refutation is a weakening (AGENTS §3.1 item 3) and this
+module cannot produce the refutation until a request plans an instant past its own wind-down.
+README gap **2199** is that request. -/
+theorem the_witness_module_plans_one_instant :
+    ([theRequest, theCensusRequest, theBusyRequest, theQueuedRequest, theOverBudgetRequest,
+      theIdleQueuedRequest, thePayingRequest, theMirrorPayingRequest,
+      theTwoPayingRequest].map (fun r => (r.now.sec, r.windDownSec))).eraseDups
+      = [(63924577200, 63924604200)] ∧
+    ((dayPlan theCensusRequest).segments.any (fun w =>
+        decide (w.val.kind = SegKind.windDown) &&
+          (dayPlan theCensusRequest).segments.any (fun b =>
+            decide (b.val.kind = SegKind.block) && decide (w.val.start ≤ b.val.start))))
+      = false := by
+  refine ⟨by decide, by decide⟩
+
 end PlannerWit
 end Tm
-
-

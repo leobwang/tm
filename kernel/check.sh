@@ -287,7 +287,7 @@ fi
 #    comments mention would have gone green.
 #
 #    WHAT IT CANNOT SEE, measured here rather than guessed: 5 of the 9 goals
-#    outstanding today (`plan_does_not_overbook`, `plan_is_monotone_in_rank`,
+#    outstanding today (plan_does_not_overbook, `plan_is_monotone_in_rank`,
 #    `plan_puts_hot_before_the_queue`, `plan_tail_drop`,
 #    `plan_is_stable_across_a_replan`) ALREADY have an audit line whose name
 #    contains theirs -- a partial restatement or a refutation of the form

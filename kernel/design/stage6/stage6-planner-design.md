@@ -763,7 +763,7 @@ stage 5 used for E7.
 
 | goal | why it is false against the fork | restated as | owner |
 |---|---|---|---|
-| `plan_does_not_overbook` | §8.2 choice 5b: "the running block excepted — §9 gives it its minutes whatever the budget says". A day whose Active block runs long has Σ block minutes > budget × block_min | Σ over blocks **that are not the Active reservation** | **P5** |
+| plan_does_not_overbook | §8.2 choice 5b: "the running block excepted — §9 gives it its minutes whatever the budget says". A day whose Active block runs long has Σ block minutes > budget × block_min | Σ over blocks **that are not the Active reservation** | **P5** |
 | `plan_respects_the_energy_filter` | the Active block "takes no slot at all" and carries no slot energy. **Survives as written** because `he : s.energy = some lvl` never fires for it — but only by accident, and the restatement makes the reason a hypothesis rather than luck | unchanged in force; a `hactive : s.item ≠ r.state.activeId` hypothesis added so the statement says what it means (§5.2) | **P5** |
 | `plan_is_stable_across_a_replan` | the running block and the running interruption **grow** rather than move (`SegFlags::open`), so a segment with `end ≤ now` in run 1 is present but **not equal** in run 2 | over segments that are `end ≤ now` **and not `open`**; open segments get their own law — they only ever extend | **G3** |
 | `plan_is_monotone_in_rank` | §8.2 step 5 skips a `loc:`-constrained, `atomic` or `max:`-capped item "for reasons the invariant is not about" | the two candidates are additionally **comparable**: same `loc:` eligibility, neither `atomic`-blocked, neither `max:`-exhausted | **P5** |
@@ -793,7 +793,7 @@ A goal is provable when the step that establishes its invariant has landed, not 
 | **P1** | `plan_places_no_block_over_a_wall`, `plan_never_moves_a_wall` |
 | **P2** | `plan_places_no_demanding_block_after_wind_down` |
 | **P3** | `plan_places_no_block_over_a_break`, `plan_reserves_one_block_at_a_time` |
-| **P5** | `plan_does_not_overbook`, `plan_respects_the_energy_filter`, `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_item`, `plan_never_batches_past_an_equal_ci_candidate` |
+| **P5** | plan_does_not_overbook, `plan_respects_the_energy_filter`, `plan_is_monotone_in_rank`, `plan_puts_hot_before_the_queue`, `plan_never_drops_an_impossible_item`, `plan_never_batches_past_an_equal_ci_candidate` |
 
 Six of the eleven land in one step, which is why **P5** and **G1** are the stage's two largest
 rows and why G1 may be split across commits along §6.4's own boundary if it will not fit.
