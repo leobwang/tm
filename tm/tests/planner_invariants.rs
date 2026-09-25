@@ -59,7 +59,7 @@ use tm_core::capacity::{self, local_dt, Exact, CAP_DEN};
 use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::Replay;
-use tm_core::model::{Id, Loc, Shape};
+use tm_core::model::{Id, Loc, Shape, WindowRange};
 use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
 use tm_core::priority::{self, Candidate, Prio, PrioClass};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
@@ -1186,12 +1186,15 @@ proptest! {
 // through the refusal claim, because the fork's day for those rows is the
 // output of steps this kernel has not written.
 //
-// **The `routines` key is sent EMPTY on purpose.** Which occurrences are due
-// today is F2's recurrence expansion (track K3, not built) and D34 forbids
-// doing D27 early, so a host collects them; this arm has no honest collector
-// and sending a guess would compare the kernel against a list the fork never
-// saw. The kernel therefore places no step-2 routine row here, which is why the
-// comparison is stated over walls.
+// **The `routines` key CARRIES THE FORK'S OWN INSTANCES SINCE W-31**, and the
+// sentence that stood here — "this arm has no honest collector" — was false.
+// `Planner::collect_routines` reads the candidate list and the item's `shape`
+// and nothing else, and both were already in this arm's hands; see
+// [`World::routine_items`] and README gap **2220**. F2's recurrence expansion
+// is still not built and D27 is still not done early: the expansion happened in
+// `priority::collect_candidates` before the list existed. So the kernel places
+// §8.2 step 2's rows here now, they are compared to the second, both ways, and
+// the assigned-row comparison no longer exempts a day for holding one.
 // ===========================================================================
 
 /// `(cases, walls compared, kernel rows seen, window disagreements, budget
@@ -1203,7 +1206,15 @@ proptest! {
 /// same with `until` beyond today (parity **P1**), rows an id could not key
 /// because it named two rows on one side, and the days on which §7's whole
 /// answer agreed so that step 5's assignment could be ASSERTED.
-static PLAN_CENSUS: Mutex<[u64; 17]> = Mutex::new([0; 17]);
+///
+/// **W-31 adds four**: the days on which the FORK placed a §8.2 step-2 routine
+/// row (the population the old exemption removed from the assigned-row
+/// comparison, kept as a counter so a run that stopped drawing routines is
+/// visible), the step-2 routine rows COMPARED, and the two candidate-set
+/// counters README gap **2222** is about — fork-assigned row ids the kernel was
+/// sent no candidate for, and fork-assigned row ids the kernel returned no §7
+/// grant for.
+static PLAN_CENSUS: Mutex<[u64; 24]> = Mutex::new([0; 24]);
 
 /// **A configured double as the exact decimal pair the wire carries** (D17).
 ///
@@ -1295,6 +1306,88 @@ impl World {
                              "wallToday": c.wall_today}})
             })
             .collect()
+    }
+
+    /// **§8.2 step 2's instances, `collect_routines` read off the candidates
+    /// ALREADY ON THE WIRE** (W-31, README gap 2220).
+    ///
+    /// The `routines` key was sent EMPTY for the whole of this arm's life, and
+    /// the reason given was that "which occurrences are due today is F2's
+    /// recurrence expansion (track K3, not built) and D34 forbids doing D27
+    /// early, so a host collects them; this arm has no honest collector".
+    /// **The first half is true and the second was false.** `Planner::
+    /// collect_routines` (`planner.rs:1277`) reads NOTHING but the candidate
+    /// list and the item's own `shape` — `c.window`, `c.remaining_min`,
+    /// `c.mandatory`, `c.instance` and `daily_window`, which is `Shape::Window`
+    /// with a `Daily` range — and this arm already builds that candidate list
+    /// and already sends it (`candidate_items`). The recurrence expansion is
+    /// `priority::collect_candidates`' and it has already run by the time the
+    /// list exists. So the collector is the fork's own, on the fork's own
+    /// input, and it is not a guess: it is the same move that closed gap
+    /// 1905's first half one run earlier, applied to the other key.
+    ///
+    /// **`pref:` is NOT sent, on purpose**: `Planner.PlanReq.anchorOf` reads it
+    /// out of the store (`e.val.pref`) and the store is the documents already
+    /// in the request, so a `pref` on the wire would be §5.3's second reader of
+    /// one fact. `RoutineIn` has no such field for the same reason.
+    ///
+    /// **Sleep is NOT split here**: `Planner.splitSleep` does it kernel-side
+    /// off the same rule (the id `sleep`, or an overnight window of at least
+    /// `SLEEP_MIN_MINUTES`), so the list goes over whole and the kernel's own
+    /// splitter runs. A split here would be that rule's second spelling.
+    ///
+    /// This is `collect_routines`' **second spelling** and README gap **2221**
+    /// records it beside gap 2061's three spellings of the grant wire: `tm` is
+    /// a `[[bin]]` with no library target, and `RoutineInst` is private to
+    /// `tm-core::planner` besides.
+    fn routine_items(&self) -> Vec<Value> {
+        let tz = self.cfg.tz;
+        let day_start = local_dt(tz, date(), NaiveTime::MIN);
+        let day_end = day_start + chrono::Duration::days(1);
+        let mut out = Vec::new();
+        for c in self.candidates() {
+            if c.is_wall || c.is_optional || !c.eligible() {
+                continue;
+            }
+            let Some((ws, we)) = c.window else { continue };
+            if c.remaining_min == 0 {
+                continue;
+            }
+            // `Planner::daily_window`: `Shape::Window` with a `Daily` range,
+            // on today's date, rolled over midnight when it closes before it
+            // opens.
+            let hours = self.tree.get(&c.id).and_then(|i| match i.shape {
+                Shape::Window { range: WindowRange::Daily { from, to }, .. } => {
+                    let a = local_dt(tz, date(), from);
+                    let mut b = local_dt(tz, date(), to);
+                    if b <= a {
+                        b += chrono::Duration::days(1);
+                    }
+                    Some((a, b))
+                }
+                _ => None,
+            });
+            let span = if we <= self.now {
+                let (a, b) = hours.unwrap_or((day_start, day_end));
+                (a.max(self.now).max(day_start), b.max(self.now))
+            } else {
+                let (mut a, mut b) = (ws.max(day_start), we.min(day_end));
+                if let Some((ha, hb)) = hours {
+                    a = a.max(ha);
+                    b = b.min(hb);
+                }
+                (a, b)
+            };
+            out.push(json!({
+                "id": c.id.as_str(),
+                "inst": c.instance.map(|k| k.to_string()),
+                "winLo": rowwire::kernel_sec(span.0),
+                "winHi": rowwire::kernel_sec(span.1),
+                "durMin": c.remaining_min,
+                "mandatory": c.mandatory,
+            }));
+        }
+        out
     }
 
     /// **The whole request the kernel plans from**: the generated documents,
@@ -1412,7 +1505,7 @@ impl World {
                     "want": {"facts": true, "headersFrom": null, "render": []},
                     "sealed": null},
             "capacity": capacity,
-            "planner": {"state": Value::Object(runtime), "routines": []},
+            "planner": {"state": Value::Object(runtime), "routines": self.routine_items()},
         })
     }
 }
@@ -1691,17 +1784,25 @@ fn fork_walls(day: &DayPlan) -> Vec<(i64, i64)> {
 
 proptest! {
     #![proptest_config(ProptestConfig {
-        // **128, RAISED FROM 64 AT W-30** — the search, not the generator (D46:
-        // narrowing a generator to lose a disagreement is forbidden; widening the
-        // search to find one is the opposite move). Driven: 64 cases per run had
-        // never found the slot-geometry disagreement README gap **2062** carries,
-        // and a 512-case run found it on the fourth try. The whole file costs
-        // 23.6 s at 128 against 18.5 s at 64, measured on the committed tree.
+        // **256, RAISED FROM 128 AT W-31** (128 from 64 at W-30) — the search,
+        // not the generator (D46: narrowing a generator to lose a disagreement
+        // is forbidden; widening the search to find one is the opposite move).
+        // W-30 raised it because 64 cases had never found the slot-geometry
+        // disagreement README gap **2062** carries and a 512-case run found it
+        // on the fourth try. W-31 raises it because the population the run
+        // compares grew by 4.6x in the same edit — `routines` crossing the wire
+        // took `cases exempt` from 102 of 143 to 0 and `assigned-rows compared`
+        // from 84 to 390 — so a case is worth more than it was, and the two
+        // step-2 floors below want a count that reliably draws a routine.
+        // Measured on this tree: the whole file costs 67.6 s at 256. The
+        // comparison test alone costs 35.9 s at 128 with `routines` on the wire
+        // against 24.2 s at the 128 W-30 shipped without them, so the key is
+        // half again as expensive per case and the raise is the other half.
         // `TM_PROPTEST_CASES` still takes an auditor higher.
         cases: std::env::var("TM_PROPTEST_CASES")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(128),
+            .unwrap_or(256),
         max_shrink_iters: 2_000,
         ..ProptestConfig::default()
     })]
@@ -1803,16 +1904,19 @@ proptest! {
                 "the kernel assigned {:?} from a request carrying no candidates", ka
             );
         }
-        // **THE EXEMPTION IS §10.2's `routines` KEY, and it is a property of the
-        // FORK'S OWN DAY** (W-29 repair, README gap 2005). This arm sends
-        // `routines: []` — which occurrences are due today is F2's recurrence
-        // expansion (track K3, not built) and D34 forbids doing D27 early — so
-        // the kernel places no §8.2 step 2 row. A day in which the FORK placed
-        // one is a day whose assignment cursor started somewhere the kernel was
-        // not told about, and comparing step 5's rows across that is comparing
-        // two different days. A case joins the exemption only by SATISFYING it,
-        // the census counts both halves, and the day `routines` crosses the wire
-        // the exemption empties with no edit here.
+        // **THE EXEMPTION'S `routines` HALF IS GONE, BECAUSE THE KEY CROSSES THE
+        // WIRE** (W-31, README gap 2220). The clause read `fork_routines > 0`
+        // and its own comment ended *"the day `routines` crosses the wire the
+        // exemption empties with no edit here"* — that day is this one, and the
+        // edit is the clause's deletion. It was firing on **102 of 143** cases,
+        // which is 71% of the population, and it took §8.2 step 5's whole
+        // assignment comparison with it: `assigned-rows compared` was 84 of the
+        // 368 rows the kernel drew.
+        //
+        // What is left is `cands == 0`, and that is a property of the REQUEST,
+        // not of the fork's day. The count is kept as a census figure so that a
+        // run which stopped drawing routines — and therefore stopped exercising
+        // step 2 at all — is visible rather than silently green.
         let fork_routines = fork
             .segments
             .iter()
@@ -1880,7 +1984,108 @@ proptest! {
                 prios_differ = true;
             }
         }
-        let exempt = cands == 0 || fork_routines > 0;
+        // **§8.2 STEP 2's ROWS, COMPARED TO THE SECOND AND BOTH WAYS** (W-31).
+        // The kernel places these now, and a row it places that nothing compares
+        // is this campaign's third shape — a part built correctly and never
+        // joined to the thing it is part of (D50, gap 501, `Tree.lean`). So they
+        // are asserted, not counted: start, end and item, in timeline order,
+        // which is the same statement the walls have had since W-29 and which a
+        // routine the kernel invents or drops fails as loudly as one placed at
+        // the wrong minute.
+        //
+        // **THE STATEMENT WAS FIRST WRITTEN OVER ALL THE FORK'S ROUTINE ROWS AND
+        // THAT WAS FALSE — REFUTED AND RESTATED HERE** (§3.2's rule, applied to
+        // a test). Written strict it held on 163 rows a side over 143 cases and
+        // 527 a side over 517, and then a 512-case draw refuted it: seed
+        // `af6b8c79…`, kept (D46), four items on a LATE day with `lunch` and
+        // `shower` switched on, where the fork places `shower` at 21:00 and the
+        // kernel places nothing. **It is not a kernel bug and not a fork quirk.**
+        // `shower` is `after-done:2d~1d` with no `pref:`, so it is neither
+        // mandatory nor anchored, and BOTH planners defer it at step 2 —
+        // `Planner.placeStep`'s third branch and `place_mandatory_and_pref`'s
+        // final `r.deferred = true` are the same rule. The fork then places it at
+        // **§8.2 step 6**, which the kernel has not written.
+        //
+        // **AND THE FIRST RESTATEMENT WAS WORSE THAN THE STATEMENT IT REPLACED,
+        // WHICH IS WHY THE MEASUREMENT IS QUOTED AND NOT THE INTENTION.** Telling
+        // a step-2 row from a step-6 row by the fork's own `deferred` flag — set
+        // by all three of step 6's branches (`planner.rs:1657`, `:1673`, `:1694`)
+        // and left false by step 2's — is a true split, and comparing the kernel
+        // against the fork's NON-deferred rows alone makes **107 of 301** rows
+        // differ: what the fork defers to step 6 the kernel places at step 2, and
+        // the two land in the same minute anyway most of the time, because step
+        // 6's lowest-energy free position is usually step 2's earliest free one.
+        // A 35% disagreement rate is the signature of the wrong comparand. So the
+        // comparison is the WHOLE routine row list on both sides — the statement
+        // that nearly holds — and the fork's deferred count rides beside it as
+        // its own census figure.
+        //
+        // **IT IS A COUNTER AND NOT AN ASSERTION**, which is W-30's own move for
+        // README gap 2062 and for the same reason: the strict statement held on
+        // 163 rows a side over 143 cases and 527 a side over 517, and then failed,
+        // so it is not a law of these two planners. It is **not swallowed by an
+        // exemption** — "the fork deferred nothing today" would cover every case
+        // seen here and is exactly the widening D46 forbids — and **the generator
+        // was not touched**. Both directions are counted, the seed replays on
+        // every run from here, and README gap **2224** carries it. The price is
+        // stated where it is paid: a perturbation that renames step 2's rows
+        // without moving their minutes was caught by the assertion and by nothing
+        // else in the file (driven, see the README block), and with the assertion
+        // withdrawn it is caught by nothing.
+        let krout: Vec<(i64, i64, String)> = plan["segments"]
+            .as_array().map(Vec::as_slice).unwrap_or_default().iter()
+            .filter(|s| s["kind"] == "routine")
+            .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                      s["item"].as_str().unwrap_or_default().to_string()))
+            .collect();
+        let fdefer = fork.segments.iter()
+            .filter(|s| matches!(s.kind, SegKind::Routine) && s.flags.deferred)
+            .count() as u64;
+        let frout: Vec<(i64, i64, String)> = fork.segments.iter()
+            .filter(|s| matches!(s.kind, SegKind::Routine))
+            .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
+                      s.item.as_ref().map(ToString::to_string).unwrap_or_default()))
+            .collect();
+        let ronly = krout.iter().filter(|r| !frout.contains(r)).count() as u64;
+        let fonly = frout.iter().filter(|r| !krout.contains(r)).count() as u64;
+
+        // **AND EVERY ROW THE FORK ASSIGNED IS A ROW THE KERNEL ANSWERED FOR**
+        // (W-31, README gap 2222). W-29 measured *"the fork assigned 184-209
+        // rows the kernel had no candidate for"* (gap 1905) and W-30 reported
+        // the figure closed — but the measurement it offered for that was
+        // `rows unkeyable`, which counts a §7 row an id could not KEY because it
+        // named two rows on one side. That is a different quantity, and this
+        // campaign's commonest shape is a claim of having checked that was never
+        // made. So the quantity the sentence is about is measured here.
+        //
+        // **The candidate half is 0 BY CONSTRUCTION and is therefore counted,
+        // not asserted**: `fork_assigned` reads ids off the fork's own day and
+        // `candidate_items` sends the fork's own candidate list, so the first is
+        // a subset of the second and no draw can make it otherwise. A counter
+        // that cannot move is not an instrument, and saying so is the point of
+        // printing it.
+        //
+        // **The GRANT half can move and is asserted.** The kernel may answer
+        // nothing for a candidate the capacity section refused by name, or for
+        // one dropped past `Planner.maxCands` — `Planner.PlanReq.rankedCands`
+        // is bounded by the candidate list's own length and nothing makes it
+        // meet it. A day on which either happened would be a day where the two
+        // planners were handed different work, which is exactly what gap 1905's
+        // sentence warned bounds any comparison. It names the id.
+        let wire_ids: BTreeSet<&str> = req["capacity"]["candidates"]["items"]
+            .as_array().map(Vec::as_slice).unwrap_or_default().iter()
+            .filter_map(|c| c["id"].as_str()).collect();
+        let f_uncand = fa.iter().flat_map(|r| r.2.iter())
+            .filter(|id| !wire_ids.contains(id.as_str())).count() as u64;
+        let ungranted: Vec<&String> = fa.iter().flat_map(|r| r.2.iter())
+            .filter(|id| !kg.contains_key(id.as_str())).collect();
+        prop_assert!(
+            ungranted.is_empty(),
+            "the fork assigned {:?}, which the kernel's §7 answered nothing for",
+            ungranted
+        );
+
+        let exempt = cands == 0;
         let kslots: Vec<(i64, i64)> = ka.iter().map(|r| (r.0, r.1)).collect();
         let fslots: Vec<(i64, i64)> = fa.iter().map(|r| (r.0, r.1)).collect();
         // **§8.2 step 5's SLOT GEOMETRY: asserted, DRIVEN, and found FALSE at a
@@ -1959,7 +2164,7 @@ proptest! {
 
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
         let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
-             grows, gday0, gdays, gdups, gsame] = {
+             grows, gday0, gdays, gdups, gsame, frdays, rrows, funcand, fungrant, rdefer, ronlyc, fonlyc] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -1978,6 +2183,13 @@ proptest! {
             c[14] += gcapn;
             c[15] += gdup;
             c[16] += u64::from(same_question);
+            c[17] += u64::from(fork_routines > 0);
+            c[18] += krout.len() as u64;
+            c[19] += f_uncand;
+            c[20] += ungranted.len() as u64;
+            c[21] += fdefer;
+            c[22] += ronly;
+            c[23] += fonly;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -1996,7 +2208,7 @@ proptest! {
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(128);
+            .unwrap_or(256);
         if cases >= generated {
             prop_assert!(walls > 0, "no wall was compared in {cases} cases");
             prop_assert!(seen >= cases, "the kernel answered {seen} rows over {cases} cases");
@@ -2024,6 +2236,20 @@ proptest! {
                 gsame > 0,
                 "step 5's assignment was asserted on no day of {cases} cases"
             );
+            // **AND STEP 2 HAS ITS OWN TWO FLOORS** (W-31). The routine rows are
+            // asserted equal above, and an equality over two empty lists is
+            // AGENTS §5.2's vacuous theorem: it holds on every case of a run in
+            // which the `routines` key silently stopped decoding. So a run must
+            // compare some, and — separately — the FORK must have placed some,
+            // which is the half that says the generator still draws the days the
+            // old exemption used to remove. Two floors and not one: either
+            // alone would let the other rot.
+            prop_assert!(rrows > 0, "no §8.2 step 2 routine row was compared in {cases} cases");
+            prop_assert!(
+                frdays > 0,
+                "the fork placed no routine on any of {cases} cases, so the days the \
+                 `routines` exemption used to remove are not being drawn"
+            );
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
@@ -2035,6 +2261,12 @@ proptest! {
              §7 rows compared {grows}, capacity differs to TODAY (P41) {gday0}, \
              beyond today (P1) {gdays}, rows unkeyable {gdups}, \
              days whose assignment was ASSERTED against the kernel-ranked fork {gsame}, \
+             §8.2 step 2 routine rows compared {rrows} on {frdays} days the fork \
+             placed one, fork-assigned ids with no kernel CANDIDATE {funcand} \
+             (0 by construction), with no kernel §7 GRANT {fungrant}, \
+             fork routine rows the fork DEFERRED to §8.2 step 6, which the kernel \
+             has not written {rdefer}, step-2 rows only the kernel placed {ronlyc}, \
+             only the fork placed {fonlyc} (gap 2224), \
              energy-less work rows from now: kernel {kres}, fork {fres}"
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a
