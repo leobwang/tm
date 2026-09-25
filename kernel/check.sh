@@ -809,9 +809,9 @@ fi
 #     1.62 s, at load average 3.3-7.0 with another session on the machine (gap
 #     1333).  Where it goes, timed INSIDE one run so the parts sum to the whole:
 #     0.63-0.64 s to take 3,042 qualified `def` names out of the source, 0.66 to
-#     read 11,945 emitted function bodies out of `.lake/build/ir`, 0.06 to walk
+#     read 11,935 emitted function bodies out of `.lake/build/ir`, 0.06 to walk
 #     them, 0.25 for the second pass that measures the load-time class, and 0.00
-#     for the exemption file.  On a twelve-check wall of 16.34-17.11 s (five
+#     for the exemption file.  On a twelve-check wall of 16.34-17.11 s (eight
 #     runs) that is 10%, and the eleven-check wall it was added to measured
 #     14.43 s: design 14.0 item 4 prices a step at 10% and this one is AT it,
 #     which is recorded here rather than rounded down.

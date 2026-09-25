@@ -68,6 +68,20 @@ WHAT IT CANNOT SEE, beyond `callgraph.py`'s own declared blind spots:
     library at all.  `--audit` prints that population so the number is
     re-measured rather than believed.
   * The Rust side, which is R3's business and not a Lean symbol's.
+  * Two library modules whose file STEMS collide -- the comparison below is by
+    stem, because that is how the code generator names its output, and the
+    library is flat today.
+
+AND IT CHECKS THE TREE IT READS, BOTH WAYS (README gap 2149).  A gate that reads
+a build answers for the source only if the two agree: every library module must
+have emitted C, which is AGENTS 2.3's rule that an unimported module is compiled
+by nothing and gated by nothing -- check 1's own comment says it "proves nothing
+about a module nobody imports" -- and every emitted C file must have a library
+module, because `lake` does NOT delete the artefacts of a module you delete.
+Two were found on the first run: ProbeLeaf.c and W21Audit.c, left by probes
+deleted on 2026-09-22 and 2026-09-19, 10 emitted functions between them, none
+reachable, and they had been inflating the emitted population every gate quoted
+(11,945; it is 11,935).
 
 USAGE: `reach.py [--audit] [<dir> ..]` (default: the library).  It exits 1 on a
 definition no section answers for and on a stale entry.  `--audit` prints the
@@ -173,6 +187,13 @@ def main(argv):
     # line -- `.lake/build/ir` sits inside that directory, not above it.
     ir = callgraph.ir_root(files[0])
     reached, emitted = callgraph.reachable(ir)
+    # THE TREE THIS READS MUST BE THE SOURCE'S, BOTH WAYS (W-31, gap 2149).
+    # `.lake/build/ir` is where the package builds, so the package is two
+    # levels above it, and its LIBRARY is `leanfiles.library_files` -- the
+    # enumeration that names the root module as well as the directory.
+    pkg = ir.parents[2]
+    library = {p.stem: p for p in leanfiles.library_files(pkg)}
+    compiled = {c.stem for c in ir.rglob("*.c")}
     closed = callgraph.closed_users(ir)
 
     population = [d for d in defs if d[3] in emitted]
@@ -184,6 +205,15 @@ def main(argv):
     dead = {(d[0], d[2]): d for d in population if d[3] not in reached}
 
     entries, sections, bad = read_exemptions(EXEMPT_FILE)
+    for stem in sorted(set(library) - compiled):
+        bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
+                   "for it -- nothing imports it (AGENTS 2.3), so this check and "
+                   "every other one that reads the build is silent about every "
+                   "definition in it" % library[stem])
+    for stem in sorted(compiled - set(library)):
+        bad.append("STALE ARTEFACT: %s has no library module -- it is what a "
+                   "DELETED module left behind, and this walk reads its functions "
+                   "as if they were emitted; delete it" % (ir / "TmKernel" / (stem + ".c")))
     for key in sorted(dead):
         if key not in entries:
             d = dead[key]
@@ -218,10 +248,10 @@ def main(argv):
                                     "   (load-time)" if dead[key][3] in closed else ""))
     for line in bad:
         print(line)
-    print("%d def(s), %d emitted, %d reachable from %s, %d exempt in %d section(s) "
-          "(%d of them run at load), %d UNANSWERED"
-          % (len(defs), len(population), len(live), callgraph.EXPORT_ROOT,
-             len(entries), len(sections),
+    print("%d def(s) in %d library module(s), %d emitted, %d reachable from %s, "
+          "%d exempt in %d section(s) (%d of them run at load), %d UNANSWERED"
+          % (len(defs), len(library), len(population), len(live),
+             callgraph.EXPORT_ROOT, len(entries), len(sections),
              sum(1 for d in dead.values() if d[3] in closed), len(bad)))
     return 1 if bad else 0
 

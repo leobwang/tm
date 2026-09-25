@@ -62523,6 +62523,18 @@ said ten as well; §7.1's heading said eleven. The repair is not a third
 correction: the count now lives in §7.1 alone and the other two say *every*
 check.
 
+**(a3) The build tree held two modules the source does not have — gap 2149.**
+`lake` does not delete the artefacts of a module you delete, and check 12 reads
+`.lake/build/ir` as the ground truth, so it also checks that the two agree:
+every library module must have emitted C (AGENTS §2.3's rule, which check 1's
+own comment says check 1 cannot see), and every emitted `.c` must have a library
+module. It found ProbeLeaf.c and W21Audit.c — un-backticked here, by check 8's
+own convention for a name the tree no longer holds — left by probes deleted on
+2026-09-22 and 2026-09-19, **10 emitted functions between them, none
+reachable** — so nothing was unsound and every emitted-population figure since
+W-30 was 10 too high. The 22 stale files were deleted; `lake build` did not
+regenerate them.
+
 **(b) Check 11's C symbol was `name.replace(".", "_")` — gap 2140.** The real
 rule is `String.mangleAux` and `Name.mangleAux` of the PINNED toolchain: a letter
 or digit stands, **`_` DOUBLES**, and anything else becomes `_x`/`_u`/`_U` plus
@@ -62567,7 +62579,7 @@ still reached by nothing.
 Check 12 is **1.65, 1.66 and 1.62 s** (three runs, load average 3.3-7.0 with
 another session on the machine — gap 1333). Timed inside one run so the parts sum
 to the whole: **0.63-0.64 s** to take 3,042 qualified `def` names out of the
-source, **0.66** to read 11,945 emitted function bodies out of the 45 MB IR tree,
+source, **0.66** to read 11,935 emitted function bodies out of the 45 MB IR tree,
 **0.06** to walk them, **0.25** for the second pass that measures the load-time
 class, **0.00** for the exemption file.
 
@@ -62579,8 +62591,8 @@ version was measured spending a quarter of a second of check 11's budget on a
 measurement check 11 has no use for (1.64-1.68 s against 1.42-1.45 s now, which
 is where W-30 left it). A gate paying for another gate's question is a cost that
 shows up as nobody's line item. The twelve-check wall
-is **16.46, 16.47, 16.65, 17.11 and 16.34 s** (five runs, the last two after this
-block was written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
+is **16.46, 16.47, 16.65, 17.11, 16.34, 16.53, 16.52 and 16.34 s** (eight runs,
+the last four after this block was written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
 is exactly design 14.0 item 4's per-step price, recorded here rather than rounded
 down (gap 2146).
 
@@ -62593,11 +62605,13 @@ goals **8 outstanding, all stage 6** (untouched by this run: no Lean byte moved)
 · prose citations **40,571 citations, 38,605 resolved, 1,966 allowed, 0 allow
 entries unused** · mutation roster 247 rostered, **0 owed** · parity register
 P1-P41, next free **P42** · check 11 **3,042 def bodies (0 unsplit), 14 groups (3
-compiled, 11 value), 0 UNANSWERED** · **check 12: 3,042 def(s), 2,365 emitted,
+compiled, 11 value), 0 UNANSWERED; 2,092 of 11,935 emitted C functions
+reachable** · **check 12: 3,042 def(s) in 86 library modules, 2,365 emitted,
 1,413 reachable from `tm_kernel_call`, 952 exempt in 45 sections (32 of them run
-at load), 0 UNANSWERED.**
+at load), 0 UNANSWERED.** The emitted population is **11,935 and not the 11,945
+every block since W-30 has quoted**; §9's gap 2149 is why.
 
-**`cargo test --workspace`: SIX runs**, 40G capped, and the five that were
+**`cargo test --workspace`: SEVEN runs**, 40G capped, and the six that were
 totalled are **1,476 passed / 0 failed / 9 ignored across 87 binaries** every
 time — byte for byte the baseline's figure, which is what a run that touches no
 Rust and no Lean owes. Two of them ran after this block and `AGENTS.md` were
@@ -62627,7 +62641,9 @@ unchanged at **8** and the goals line reads the same as the baseline's.
 
 | **2148** | **CLOSED here, and it is the ledger-rot class in the process authority itself.** `AGENTS.md` wrote the acceptance's SIZE in three paragraphs — §2.1, §6.5 item 6 and §7.1's heading — and W-30, which added check 11, updated one of the three. §2.1 still said **ten** while its own parenthesis recorded that the number had gone stale twice, and §6.5 said ten too | `AGENTS.md` §2.1, §6.5, §7.1 | closed by REMOVING the number from two of the three rather than correcting it in three: §7.1 carries it, §2.1 and §6.5 say *every* check. One fact, one place, which is §5.11 applied to a count instead of to a timing |
 
-**Gaps 2140-2148 are taken by this step**; 2149-2189 are free in track A's range.
+| **2149** | **CLOSED here, and it found two.** Nothing checked that the tree the gates READ is the tree the source BUILDS. `lake` does not delete the artefacts of a module you delete, and `.lake/build/ir` held ProbeLeaf.c and W21Audit.c (un-backticked, because this check's own convention is that a name the tree does not hold is not cited) — probes deleted on 2026-09-22 and 2026-09-19 — with **10 emitted functions between them, none reachable**, inflating the emitted population every gate has printed since W-30 (11,945; it is **11,935**). The other direction is AGENTS §2.3's own rule, which check 1's comment says check 1 cannot see: a module nobody imports is compiled by nothing, so every definition in it is gated by nothing | `kernel/reach.py`, `.lake/build/ir`, `AGENTS.md` §2.3 | closed by a two-way comparison between `leanfiles.library_files` and the `.c` files, driven both ways in a clone. The 22 stale files were deleted and `lake build` did not regenerate them (0.15 s, 174 jobs). Nothing was unsound — no stale symbol was reachable — but every IR figure this campaign quoted was computed over two modules that do not exist |
+
+**Gaps 2140-2149 are taken by this step**; 2150-2189 are free in track A's range.
 Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
 1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889,
 1900, 1902-1904, 1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018,
