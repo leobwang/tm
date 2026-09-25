@@ -380,3 +380,14 @@ ae059bf51266 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingPlan unfoldab
 db17f2adf839 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingCands default,[] PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes; PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes
 b8ad630aaa78 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingRequest unfoldable no Inhabited PlanReq
 6b7739920485 TmKernel/TmKernel/Close.lean Tm.hasAStrayTomb true,false Close.lean:2506 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb; Close.lean:2508 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb
+401f235f306f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.FoldRowsAdmitNothing True,False PlanCheck.lean:5131 FoldRowsAdmitNothing_of_nothing_assigned; PlanCheck.lean:5131 FoldRowsAdmitNothing_of_nothing_assigned
+9a0bb5410db6 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.UnfilledAnchored True,False PlanCheck.lean:5159 FoldRowsAdmitNothing_of_an_unfilled_anchor; PlanCheck.lean:5159 FoldRowsAdmitNothing_of_an_unfilled_anchor
+2cc83fccb522 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.freeSlotRows fun____=>true,fun____=>false PlannerWit.lean:6514 freeSlotRows_is_from_now_anchored; PlannerWit.lean:6514 freeSlotRows_is_from_now_anchored
+4baf3b078d42 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.mirrorWitness default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
+2dda478b97a8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.mirrorPlan unfoldable no Inhabited WfPlan
+12ea6d81e4e0 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.mirrorCands default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
+ad5ca8a8b294 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theMirrorPayingRequest unfoldable no Inhabited PlanReq
+0947b98272cf TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoWitness default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
+3a60b6562560 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoPlan unfoldable no Inhabited WfPlan
+d65cee3509a8 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoCands default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
+f36496c2ca0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwoPayingRequest unfoldable no Inhabited PlanReq

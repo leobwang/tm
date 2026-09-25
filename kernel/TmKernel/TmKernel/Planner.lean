@@ -793,7 +793,7 @@ theorem a_wall_is_not_work : SegKind.wall.isWork = false := rfl
 from minutes-since-midnight to absolute seconds and folded `Seg.minutes`, which *floors*:
 `Σ ⌊(stop − start)/60⌋ ≤ budget × blockMin` tolerates up to 59 s of unbudgeted work **per
 Block row**, where the minutes-since-midnight form it replaced could not express a sub-minute
-overrun at all.  That was a silent weakening of `plan_does_not_overbook` and of
+overrun at all.  That was a silent weakening of plan_does_not_overbook and of
 `plan_reserves_one_block_at_a_time`.  Summing seconds and comparing against `budget × blockMin
 × 60` is the faithful port: identical on minute-aligned rows, and strictly stronger on the
 rows `pastRows` can actually produce, which are clipped at `min stop now` — an arbitrary
@@ -4619,7 +4619,7 @@ group went to one whose `ci` the slot's energy covers, whose `loc:` fits where t
 lived, and which is not demanding work after the wind-down.  Those three read only fields the
 cursor never touches, which is what makes them survive the rest of the walk — the other two
 clauses (`g.live` and the atomic run) are about values the walk *does* move, and are
-`plan_does_not_overbook`'s and E1's business at the step that emits rows. -/
+plan_does_not_overbook's and E1's business at the step that emits rows. -/
 def PlanReq.AssignOk (r : PlanReq) (a : Assign) : Prop :=
   a.slotOf.length = r.energisedSlots.length ∧
   ∀ (i gi : Nat), a.slotOf[i]? = some (some gi) →
@@ -6178,7 +6178,7 @@ theorem dayPlan_blockMin (r : PlanReq) : (dayPlan r).blockMin = r.look.day.cut.b
 `DayPlan::empty(date, window, budget_blocks)` (`planner.rs:1065`), where `remaining_budget` is a
 *local* the assign loop and `diagnose` consume and never a field of the day.  Spec §8.3 words
 the overbooking law with `remaining_budget`; the two disagree on a day with blocks already
-done, and `plan_does_not_overbook` is §6.3's to restate at **P5** with that named. -/
+done, and plan_does_not_overbook is §6.3's to restate at **P5** with that named. -/
 theorem dayPlan_budgetBlocks (r : PlanReq) : (dayPlan r).budgetBlocks = r.budgetBlocks := rfl
 
 /-- **The remaining budget is beside the day, not inside it** — what §8.2 step 5 will spend,

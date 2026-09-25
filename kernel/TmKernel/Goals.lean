@@ -672,8 +672,8 @@ restated from `…_until_the_assign_step_lands`, because choice 5b's reservation
 made the empty-list form false — and which P5 must delete.
 
 **Two goals were stated in SECONDS after the W-14 repair** (README gap
-392): `plan_does_not_overbook` and `plan_reserves_one_block_at_a_time` (the
-second is discharged above).  P0's
+392): plan_does_not_overbook and `plan_reserves_one_block_at_a_time` (the
+second is discharged above; the first left this file at W-31, refuted).  P0's
 port to absolute seconds folded the *floored* `Seg.minutes`, which tolerates 59 s
 of unbudgeted work per Block row where the minutes-since-midnight form it
 replaced could not express a sub-minute overrun at all — a weakening of the
@@ -819,8 +819,9 @@ rule stands unchanged: `plan_respects_the_energy_filter`,
 `plan_never_batches_past_an_equal_ci_candidate` and
 `plan_places_no_demanding_block_after_wind_down` are provable and would each be AGENTS
 §5.2's statement that compiles and means nothing; `plan_never_drops_an_impossible_item` is P8's
-(README gap 1065); the two comparisons and `plan_does_not_overbook` need their P5
-restatements; and `plan_tail_drop` and `plan_is_stable_across_a_replan` are G2 and G3.
+(README gap 1065); the two comparisons need their P5
+restatement and plan_does_not_overbook got its own at W-31 (refuted, then
+`PlanCheck.plan_does_not_overbook_where_nothing_runs`); and `plan_tail_drop` and `plan_is_stable_across_a_replan` are G2 and G3.
 
 **The one sentence a later step must not inherit backwards.**  It is tempting to read
 `PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` — *every Block row of the day is the reservation* — as
@@ -867,7 +868,7 @@ lift and not by a `decide`).  The bound in the other direction is four days, one
 in the witness set reached the `budget` clause.
 
 **One of the nine below was REFUTED by that fourth day, and it stays.**
-`plan_does_not_overbook` is **false as written** —
+plan_does_not_overbook is **false as written** —
 `PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` at
 `PlannerWit.theOverBudgetRequest`, a day with **nothing running** whose log worked two blocks
 against a budget of one — which is *not* the reason design §6.3 row 1 records, and that row's
@@ -895,7 +896,7 @@ both directions; what is left in its hypotheses is three decidable `Bool`s the d
 (README gap 346) and one `Nat` comparison.
 
 **TWO OF THE NINE BELOW WERE REFUTED THAT WEEK AND BOTH STAY.**  W-24 refuted
-`plan_does_not_overbook`; W-25 refuted `plan_is_stable_across_a_replan`, and again **not** for
+plan_does_not_overbook; W-25 refuted `plan_is_stable_across_a_replan`, and again **not** for
 the reason design §6.3 records.
 `PlannerWit.plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does
 _not_pin` is `plan_tail_drop`'s hole at a second goal: the hypotheses pin `plan`, `window`,
@@ -922,7 +923,7 @@ today**, and the reasons are two steps and one edit *(the list below is W-28's, 
 written; **W-29 re-asked it against step P9 and three entries moved** — the W-29 block after
 item 9 is where each entry's answer now lives)*:
 
-1. `plan_does_not_overbook` — **P5**.  Refuted above; reachable when step 5's fold puts Block
+1. plan_does_not_overbook — **P5**.  Refuted above; reachable when step 5's fold puts Block
    rows at or after `now` into the day, which is what gives the surviving restriction a
    subject.
 2. `plan_respects_the_energy_filter` — **P5**.  Provable today and **vacuous**
@@ -1094,7 +1095,7 @@ is **not** the same for all nine.  Three kinds, and the list below says which ea
 
 **The nine, against P9.**
 
-1. `plan_does_not_overbook` — **P9 gave it a SUBJECT and not a proof.**  Refuted at W-24; the
+1. plan_does_not_overbook — **P9 gave it a SUBJECT and not a proof.**  Refuted at W-24; the
    surviving restriction is `PlanCheck.withoutPast`'s day, where
    `PlanCheck.overbook_has_no_subject_from_now_on_an_unassigned_day` proves it vacuous — and
    since P9 landed (`2374820`) that theorem carries `hnoassign : r.assignedRows = []`, so the
@@ -1194,23 +1195,41 @@ Gap 1529 stays where W-28 left it — R3 enables it, not P9 — and `PlanCheck.h
 
 open Planner
 
-/-- **L26 / §8.3 "no overbooking" (P\*), stage 6.**  Σ Block minutes ≤
-`remaining_budget × block_min`.  Decidable over the produced `DayPlan`, which is
-what L26 promises.
+/-! **plan_does_not_overbook has LEFT this file** (stage 6, run **W-31**, track G).  It read
 
-Design §6.3 records this as **false as written** against the fork (§8.2 choice
-5b gives the running block its minutes whatever the budget says); it is
-restated with the Active reservation excluded, **and its refutation, in step
-P5** — never here and never without the witness (AGENTS §3.1 item 3).
+    theorem plan_does_not_overbook (r : PlanReq) :
+      blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60
 
-**Stated in seconds** (W-14 repair, gap 392).  Until this repair it read
-`blockMinutes (dayPlan r) ≤ budget × blockMin` with `blockMinutes` folding the
-*floored* `Seg.minutes`, which tolerates 59 s of unbudgeted work per Block row.
-The minutes-since-midnight form this replaced at `c754cce` could not express a
-sub-minute overrun, so the port had quietly made the obligation weaker; seconds
-on both sides is the faithful one.  See `Planner.blockSeconds`. -/
-theorem plan_does_not_overbook (r : PlanReq) :
-    blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := sorry
+— L26 / §8.3's "no overbooking", Σ Block seconds against `remaining_budget × block_min`, in
+seconds on both sides since the W-14 repair (gap 392; the `blockMinutes` form it replaced
+floored per row and tolerated 59 s of unbudgeted work per Block).
+
+**It is FALSE, and it went by refute-and-rename** (AGENTS §3.2, §3.1 item 3).  The refutation
+is `PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` and has been in the tree
+since **W-24**: at `PlannerWit.theOverBudgetRequest` the log closed two blocks against a stored
+budget of one — 7 200 s against a 3 600 s cap — with **nothing running**, so it is not design
+§6.3 row 1's cause (§8.2 choice 5b) but `PlanCheck`'s finding 1, the replayed past.  Design
+§6.3's own proposed restatement falls to the same request
+(`PlannerWit.the_designs_restatement_of_the_overbooking_law_is_refuted_too`).
+
+**Why it stayed for six runs after its refutation, and why it moved now.**  W-24's own doc
+comment gave the reason: the restatement over the rows §8.3 is about was **vacuous** —
+`PlanCheck.overbook_has_no_subject_from_now_on_an_unassigned_day` — so shipping one would have
+been AGENTS §5.2's theorem that compiles and means nothing.  **P9 composed §8.2 step 5's rows
+into the day and that stopped being true**:
+`PlannerWit.the_overbooking_sum_has_a_subject_where_the_fold_filled_slots` computes the same
+sum at **zero** on a day the fold left alone and **positive** on two days it filled.
+
+The restatements are `PlanCheck.plan_does_not_overbook_where_nothing_runs` and
+`PlanCheck.plan_does_not_overbook_from_now_where_nothing_runs`: `PlanCheck.noOverbook` — which
+is `checksCore`'s own first checker and the `hbudget` every lift in that file carries — *is*
+the goal wherever `Planner.RuntimeIn.activeId` is `none`, because `PlanCheck.withoutActive`
+then removes no row.  They fire at `PlannerWit.the_overbook_restatement_fires_on_a_worked_morning`
+(a log that worked a block) and at
+`PlannerWit.the_overbook_restatement_fires_where_the_fold_filled_slots` (a day the fold filled
+two slots).  README gap **2020** is the residue: `noOverbook` itself on a day the fold filled
+needs the count of occupied `Planner.Assign.slotOf` entries against
+`Planner.PlanReq.finalAssign`'s `used`, and nothing in this tree relates the two. -/
 
 /-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
 2: "sleep and wind-down define the hard end of the day".

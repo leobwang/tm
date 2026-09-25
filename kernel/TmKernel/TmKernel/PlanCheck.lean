@@ -5008,5 +5008,312 @@ theorem dayPlan_ok_core_from_now_of_a_paying_decoder (r : PlanReq) (hdec : Decod
   dayPlan_ok_core_from_now_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal
     (AssignedRowsPay_of_a_paying_decoder r hdec.cands hdec.windDownCal) hbudget hplain
 
+/-! ############################################################################
+## W-31: §6.1's ELEVEN on a day that ASSIGNS — `hnoassign` replaced by a PROPERTY
+############################################################################
+
+**W-30 freed the SEVEN and left the ELEVEN where it was.**  `dayPlan_ok_core_given_the_budget`
+takes `hpay : AssignedRowsPay r` and `dayPlan_ok_core_of_a_paying_decoder` discharges it from
+the decoder, so the core lift already covers a day §8.2 step 5 filled.  Every lift whose
+conclusion is `planOk` — the ELEVEN — still read `hnoassign : r.assignedRows = []`, and the
+merge title *"the lift covers the day it plans"* overstated that by four checkers.
+
+**Where `hnoassign` was actually being spent, counted rather than asserted.**  The eleven are
+the seven of `checksCore` plus the four of `checksEligible`, and the four spend it in exactly
+three places:
+
+| checker | what the old proof used `hnoassign` for | what replaces it here |
+|---|---|---|
+| `impossibleKept` | nothing — `impossible_has_no_subject` is unconditional | nothing |
+| `batchDoesNotReachPast` | *the day holds no Batch row*, because §8.2 step 5 is the only source of one | the fold's rows admit no candidate, so `batchPairOk`'s antecedent is false at them |
+| `monotoneInRank` | *every work row is choice 5b's reservation*, which a `SlotAnchored` `el` is refused at | the same, with the fold's rows as a second refused family |
+| `hotBeforeQueue` | the same | the same |
+
+So the hypothesis was never four hypotheses: it was **one property of the eligibility at the
+rows the fold placed**, spelled as a domain.
+
+**Nothing above this section was renamed or deleted.**  The nine `planOk`-concluding lifts that
+carry `hnoassign` still carry it and still say so in their names; the lifts below stand beside
+them and `the_unassigned_eleven_is_an_instance_of_the_paying_eleven` proves the top of that
+chain is an instance of the new form.  README gap **1902** is therefore MOVED and not closed,
+and gap **2192** is the rename this section did not do.  `FoldRowsAdmitNothing` is that property, and
+`FoldRowsAdmitNothing_of_nothing_assigned` turns the old hypothesis into it in one line — so
+every instance of the old statements is an instance of these (AGENTS §3.1 item 4, D5: nothing
+is weakened, and the lifts below are strictly more general than the `_on_an_unassigned_day`
+ones they stand beside).
+
+**It has the W-27 shape and not the list shape**: two facts with nothing in common establish
+it — a day the fold assigned nothing to has no such row at all, and an eligibility that refuses
+a row already carrying a slot energy (`UnfilledAnchored`) refuses every row it did place.  It
+is an enumeration you join to be EXEMPT, not to be COVERED.
+
+**WHAT GAP 365 IS AND WHY IT IS NOT CLOSED BY THIS.**  Planner.eligibleAt is P5's own
+*"could step 5 have put this candidate here"* predicate, and §6.3's restatements of
+`monotoneInRank` and `hotBeforeQueue` are about it.  This section gives §6.1's lift a fourth
+clause on `el` beside `WorkAnchored`, `SlotAnchored`'s second and `FromNowAnchored`'s third:
+**a slot step 5 has already filled is not a slot step 5 may fill**, which is the reading that
+makes `UnfilledAnchored` a design statement rather than a trick.  What it does **not** buy is a
+subject: under it the two comparisons are proved by emptiness on a day that assigns exactly as
+they were on a day that did not, and `PlannerWit.the_eleven_at_the_paying_day_is_five_biting`
+is that said as a number.  **The four checkers acquire a subject only when `el` is allowed to
+admit a candidate at a row the fold filled — and then the comparisons are about step 5's
+ordering, which is the ≈4,500-line fold induction design §6.2 prices and gap 365 names.**  So
+gap 365 blocks the *subject*, not the *statement*, and after this section it blocks nothing
+else: the eleven are stated over the day the planner really produces.
+
+**The residue on the CORE side is `noOverbook` and it is gap 2020**, unchanged by this
+section: `an_unassigned_day_pays_the_lift` is still the only theorem here that turns
+`r.assignedRows = []` into the check, and the count it needs — occupied entries of
+`Planner.Assign.slotOf` against `Planner.PlanReq.finalAssign`'s `used` — is not in this tree.
+Every lift below carries it as a named hypothesis, which is what `dayPlan_ok_core_given_the_budget`
+has done since W-14. -/
+
+/-- **Every Batch row of the day is one §8.2 step 5 placed.**
+`the_day_has_no_batch_row_on_an_unassigned_day` is this theorem's `hnoassign` corollary and the
+two share no proof today — README gap **2196** is the fold of the weaker into this one, held
+back because moving it would drift check 9's line-pinned roster (gap 2136). -/
+theorem a_batch_row_of_the_day_is_the_folds (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (ids : BatchIds) (hk : s.val.kind = SegKind.batch ids) :
+    ∃ t ∈ r.assignedRows, s = segOf t := by
+  obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hs)
+  have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
+  simp only [stepOneSegs, List.mem_append] at ht
+  rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  · exfalso
+    unfold pastRows at ht
+    split at ht
+    · cases ht
+    · simp only [List.mem_filterMap] at ht
+      obtain ⟨g, -, hg⟩ := ht
+      split at hg
+      · cases hg
+      · have he := Option.some.inj hg
+        subst he
+        revert htk
+        cases g.kind <;> simp [pastKind]
+  · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
+  · exfalso
+    simp only [List.mem_flatMap] at ht
+    obtain ⟨x, -, hx⟩ := ht
+    rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
+  · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
+  · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
+  · exact ⟨t, ht, rfl⟩
+  · rw [r.optionalRows_kinds t ht] at htk; cases htk
+  · rw [r.restRows_kinds t ht] at htk; cases htk
+
+/-- **A WORK row of the day that starts at or after `now` is choice 5b's reservation or the
+fold's** — `a_block_row_from_now_is_reserved_or_assigned` and `a_batch_row_of_the_day_is_the_folds`
+joined over `Planner.SegKind.isWork`'s own two constructors, so nothing here enumerates the
+other nine. -/
+theorem a_work_row_from_now_is_reserved_or_assigned (r : PlanReq) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hw : s.val.kind.isWork = true)
+    (hnow : r.now.sec ≤ s.val.start) :
+    (∃ t ∈ reservationSegs r, s = segOf t) ∨ (∃ t ∈ r.assignedRows, s = segOf t) := by
+  have hbb : s.val.kind = SegKind.block ∨ ∃ ids, s.val.kind = SegKind.batch ids := by
+    revert hw; cases s.val.kind <;> simp [SegKind.isWork]
+  rcases hbb with hk | ⟨ids, hk⟩
+  · exact a_block_row_from_now_is_reserved_or_assigned r s hs hk hnow
+  · exact Or.inr (a_batch_row_of_the_day_is_the_folds r s hs ids hk)
+
+/-- **What §6.1's four eligibility checks need of the rows §8.2 step 5 placed** — that `el`
+admits no candidate at one.  A property of the request and the eligibility, not a domain.
+
+**Two facts establish it and they have nothing in common** (W-27's shape, and
+`AssignedRowsPay`'s): a day the fold assigned nothing to has no such row
+(`FoldRowsAdmitNothing_of_nothing_assigned`), and an eligibility that refuses a row already
+carrying a slot energy refuses every row the fold did place
+(`FoldRowsAdmitNothing_of_an_unfilled_anchor`). -/
+def FoldRowsAdmitNothing (r : PlanReq) (el : Eligible) : Prop :=
+  ∀ (d : DayPlan) (s : WfSeg) (i : Id), el r d s.val i = true →
+    ∀ t ∈ r.assignedRows, s ≠ segOf t
+
+/-- **The old hypothesis, turned into the new property in one line** — the twin of
+`an_unassigned_day_pays_the_lift` on the eligibility side.  This is what makes every
+`_on_an_unassigned_day` lift an instance of the lifts below rather than incomparable with
+them. -/
+theorem FoldRowsAdmitNothing_of_nothing_assigned (r : PlanReq) (el : Eligible)
+    (hnoassign : r.assignedRows = []) : FoldRowsAdmitNothing r el := by
+  intro _ _ _ _ t ht
+  rw [hnoassign] at ht
+  exact absurd ht (by simp)
+
+/-- **The fourth clause §6.1's lift asks of P5's eligibility: a slot step 5 has already
+filled is not a slot step 5 may fill.**
+
+`Planner.assignedSeg` writes `energy := some e` on every row it makes
+(`Planner.assignedSeg_energy`), and no other source of a Block row carries a slot level — the
+replayed past writes `energy := none` and choice 5b's reservation is energyless
+(`Planner.PlanReq.activeRow_is_an_energyless_block`).  So *"carries a slot energy"* and *"is a
+row the fold placed"* are the same set on a day the log holds no Block for, and this clause is
+readable off the row without asking the request anything. -/
+def UnfilledAnchored (el : Eligible) : Prop :=
+  ∀ (r : PlanReq) (d : DayPlan) (s : WfSeg) (i : Id), el r d s.val i = true →
+    s.val.energy = none
+
+theorem FoldRowsAdmitNothing_of_an_unfilled_anchor {el : Eligible} (hu : UnfilledAnchored el)
+    (r : PlanReq) : FoldRowsAdmitNothing r el := by
+  intro d s i hel t ht hst
+  obtain ⟨e, sl, -, -, -, hen⟩ := r.an_assigned_row_is_a_slot_of_the_day t ht
+  have hse : s.val.energy = some e := by rw [hst]; exact hen
+  rw [hu r d s i hel] at hse
+  exact absurd hse (by simp)
+
+/-- **`batchDoesNotReachPast` at a day that MAY hold a Batch row.**
+`batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day` proves it by
+emptying the subject; this proves it by emptying `batchPairOk`'s own antecedent, which is `el`
+at the very row the pair is read off — and every Batch row of the day is one the fold placed. -/
+theorem batchDoesNotReachPast_of_a_fold_that_admits_nothing (el : Eligible) (r : PlanReq)
+    (hfold : FoldRowsAdmitNothing r el) : batchDoesNotReachPast el r (dayPlan r) = true := by
+  refine List.all_eq_true.2 (fun s hs => ?_)
+  have key : ∀ ids, s.val.kind = SegKind.batch ids →
+      (ids.val.all (fun i => r.plan.val.store.dom.all
+        (fun j => batchPairOk el r (dayPlan r) s ids i j))) = true := by
+    intro ids hk
+    refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
+    refine (batchPairOk_iff el r _ s ids i j).2 (fun e f hn hgi hgj hel hc hdoc hr => ?_)
+    obtain ⟨t, ht, hst⟩ := a_batch_row_of_the_day_is_the_folds r s hs ids hk
+    exact absurd hst (hfold _ s j hel t ht)
+  revert key
+  cases s.val.kind <;> intro key <;> try rfl
+  exact key _ rfl
+
+/-- **A `FromNowAnchored` eligibility that refuses the fold's rows admits nothing at all on
+the WHOLE day, at every request** — `eligibleSomewhere_of_nothing_from_now_on_an_unassigned_day`
+with the domain replaced by the property.  The row it is offered is work (clause 1) and has not
+started (clause 3), so it is the reservation or the fold's
+(`a_work_row_from_now_is_reserved_or_assigned`); clause 2 refuses the first and `hfold` the
+second. -/
+theorem eligibleSomewhere_of_nothing_from_now {el : Eligible} (hfn : FromNowAnchored el)
+    (r : PlanReq) (hfold : FoldRowsAdmitNothing r el) (i : Id) :
+    eligibleSomewhere el r (dayPlan r) i = false := by
+  refine Bool.eq_false_iff.2 (fun h => ?_)
+  simp only [eligibleSomewhere, List.any_eq_true] at h
+  obtain ⟨s, hs, hel⟩ := h
+  have hw : s.val.kind.isWork = true := hfn.1.1 r (dayPlan r) s.val i hel
+  have hnow : r.now.sec ≤ s.val.start := by
+    have h2 := hfn.2 r (dayPlan r) s i hel
+    unfold keepFromNow at h2
+    rw [hw] at h2
+    simpa using h2
+  rcases a_work_row_from_now_is_reserved_or_assigned r s hs hw hnow with hres | ⟨t, ht, hst⟩
+  · exact absurd ((a_reserved_block_row_is_active r s hres).symm.trans
+      (hfn.1.2 r (dayPlan r) s i hel)) (by simp)
+  · exact absurd hst (hfold _ s i hel t ht)
+
+/-- **§6.1's ELEVEN on the whole day IS §6.1's SEVEN — on a day that ASSIGNS.**
+`dayPlan_ok_is_the_core_seven_on_an_unassigned_day` is this statement at
+`FoldRowsAdmitNothing_of_nothing_assigned`, so the equality has not moved; its **domain** has,
+and the day §8.2 step 5 fills is now inside it. -/
+theorem dayPlan_ok_is_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hfold : FoldRowsAdmitNothing r el) :
+    planOk el r (dayPlan r) = planOkCore r (dayPlan r) := by
+  have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
+    eligibleSomewhere_of_nothing_from_now hfn r hfold
+  simp only [planOk, planOkCore, checksOf, List.all_append, checksEligible, List.all_cons,
+    List.all_nil, Bool.and_true,
+    monotoneInRank_of_nothing_eligible el r _ hnone,
+    hotBeforeQueue_of_nothing_eligible el r _ hnone,
+    impossibleKept_is_true_because_its_subject_is_empty el r,
+    batchDoesNotReachPast_of_a_fold_that_admits_nothing el r hfold]
+
+/-- The discharge form: the whole battery on the whole day from the seven alone. -/
+theorem dayPlan_ok_of_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hfold : FoldRowsAdmitNothing r el) (hcore : planOkCore r (dayPlan r) = true) :
+    planOk el r (dayPlan r) = true :=
+  (dayPlan_ok_is_the_core_seven hfn r hfold).trans hcore
+
+/-- **§6.1's ELEVEN on the whole day, from the decoder, on a day that ASSIGNS — and this is
+the statement the merge title claimed a run early.**
+
+No `r.assignedRows = []` anywhere in it.  `hpay` is the decoder's fifth clause through
+`AssignedRowsPay_of_a_paying_decoder`; the four eligibility checks are `hfold`'s;
+`hbudget` is gap **2020** and is named rather than assumed silently, exactly as
+`dayPlan_ok_core_given_the_budget` names it.
+`PlannerWit.the_eleven_applies_at_the_paying_request` fires it at a request whose cursor fills
+a slot, and `dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day` is this
+theorem at a day that assigns nothing. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
+    (hfn : FromNowAnchored el) (r : PlanReq) (hfold : FoldRowsAdmitNothing r el)
+    (hdec : DecoderPays r) (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
+    planOk el r (dayPlan r) = true :=
+  dayPlan_ok_of_the_core_seven hfn r hfold
+    (dayPlan_ok_core_of_a_paying_decoder r hdec hnopast hbudget hplain)
+
+/-- **And the old whole-day lift is a COROLLARY of the new one** (D5, AGENTS §3.1 item 4).
+Stated so that the generality claim above is a theorem in the compiler and not a sentence in a
+doc comment: every request the `_on_an_unassigned_day` lift covers, this one covers. -/
+theorem the_unassigned_eleven_is_an_instance_of_the_paying_eleven {el : Eligible}
+    (hfn : FromNowAnchored el) (r : PlanReq) (hnoassign : r.assignedRows = [])
+    (hdec : DecoderPays r) (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
+    planOk el r (dayPlan r) = true :=
+  dayPlan_ok_on_the_whole_day_of_a_paying_decoder hfn r
+    (FoldRowsAdmitNothing_of_nothing_assigned r el hnoassign) hdec hnopast hbudget hplain
+
+/-! ### Goals.plan_does_not_overbook is FALSE as stage 6 wrote it, and the cause is the LOG
+
+**The goal left `Goals.lean` here** (AGENTS §3.2's burn-down protocol), and
+`PlannerWit.plan_does_not_overbook_as_stage_6_wrote_it_is_refuted` ships in the same commit
+(AGENTS §3.1 item 3: a restatement without its refutation is a weakening).
+
+**The refutation is a request this tree has held since W-24, and the reason is not the one
+design §6.3 gives.**  §6.3 records L26's "no overbooking" as false against the fork because
+*"§8.2 choice 5b gives the running block its minutes whatever the budget says"*, and that is
+why `noOverbook` above filters `withoutActive`.  `PlannerWit.theOverBudgetRequest` is a day
+whose **log** closed two blocks against a stored budget of one: 7 200 s of replayed Block
+against a 1 × 60 × 60 cap, **nothing running** (`state.activeId = none`, so `withoutActive`
+removes no row at all) and `noOverbook` itself `false` there.  So the exception the checker
+already carries is not what refutes the goal — the replayed past is, and
+`PlannerWit.the_over_budget_request_fails_the_checker_too` is that said as a computation.
+
+**Measured beside it, so the reading is not a guess** (AGENTS §5.11): over the **45** `PlanReq`
+values `PlannerWit` defines, `noOverbook` is `true` at 44 and `false` at exactly
+`theOverBudgetRequest`, and there is **no** request at which `noOverbook` holds while the raw
+sum exceeds the cap — choice 5b's exception is real in the definition and bites at none of the
+45.  README gap **2197**.
+
+**The restatement names its subdomain in its own name** (AGENTS §3.1 item 4).  What is true is
+the checker plus the one clause that makes the checker's filter a no-op: where nothing is
+running, `withoutActive` removes no row, so `noOverbook` *is* the goal.  The residue is
+`noOverbook` itself on a day the fold filled — README gap **2020**, the count of occupied
+entries of `Planner.Assign.slotOf` against `Planner.PlanReq.finalAssign`'s `used` — which is
+the same residue every lift in this file carries as `hbudget`. -/
+
+/-- **§8.3's "no overbooking", over the rows §8.3 is about and on the days where the
+reservation is not one of them.**  `PlanCheck.noOverbook` is `checksCore`'s own first checker;
+this says what it means for the raw sum when `Planner.RuntimeIn.activeId` is `none`. -/
+theorem plan_does_not_overbook_where_nothing_runs (r : PlanReq)
+    (hnorun : r.state.activeId = none)
+    (hbudget : noOverbook r (dayPlan r) = true) :
+    blockSeconds (dayPlan r) ≤ (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := by
+  have hfil : (dayPlan r).segments.filter (fun s => !isActive r s) = (dayPlan r).segments :=
+    List.filter_eq_self.2 (fun s _ => by simp [isActive, hnorun])
+  have hb : blockSeconds (withoutActive r (dayPlan r)) = blockSeconds (dayPlan r) := by
+    simp only [blockSeconds, withoutActive_segments, hfil]
+  have h := (noOverbook_iff r (dayPlan r)).1 hbudget
+  rw [hb] at h
+  exact h
+
+/-- **And the same at `PlanCheck.withoutPast`'s day**, where the replayed past — the half that
+refutes the goal — is not in the sum at all.  The pair is the honest statement of what the
+kernel promises about the budget today: the planner's own rows, at a request where nothing is
+running, stay inside it whenever `noOverbook` says so; the log's rows are the log's. -/
+theorem plan_does_not_overbook_from_now_where_nothing_runs (r : PlanReq)
+    (hnorun : r.state.activeId = none)
+    (hbudget : noOverbook r (withoutPast r (dayPlan r)) = true) :
+    blockSeconds (withoutPast r (dayPlan r)) ≤
+      (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := by
+  have hfil : (withoutPast r (dayPlan r)).segments.filter (fun s => !isActive r s)
+      = (withoutPast r (dayPlan r)).segments :=
+    List.filter_eq_self.2 (fun s _ => by simp [isActive, hnorun])
+  have hb : blockSeconds (withoutActive r (withoutPast r (dayPlan r)))
+      = blockSeconds (withoutPast r (dayPlan r)) := by
+    simp only [blockSeconds, withoutActive_segments, hfil]
+  have h := (noOverbook_iff r (withoutPast r (dayPlan r))).1 hbudget
+  rw [hb] at h
+  exact h
+
 end PlanCheck
 end Tm

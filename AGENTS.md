@@ -2843,7 +2843,7 @@ left it open, settle it before you widen it, because this stage is where it grow
 provisional `Seg`/`DayPlan`/`PlanReq`/`dayPlan` vocabulary *(13 since stage 5 D10 step L2:
 the two E7 goals moved into stage 5 under D12 and are proved in `Lookahead.lean`, restated
 to the fork's overlap semantics and refuted as written)*:
-`plan_does_not_overbook`, `plan_reserves_one_block_at_a_time`,
+plan_does_not_overbook, `plan_reserves_one_block_at_a_time`,
 `plan_respects_the_energy_filter`, `plan_places_no_block_over_a_wall`,
 `plan_places_no_block_over_a_break`,
 `plan_places_no_demanding_block_after_wind_down`, `plan_never_moves_a_wall`,
