@@ -62395,3 +62395,225 @@ except **2123, 2091 and 2017, each of whose repair is where a defect above was f
 the only sentence in this block that matters for the next step: **the three defects this run's
 auditors ranked highest were all inside the three gates the previous two runs wrote to close this
 campaign's recurring shape.** A gate is not evidence that the thing it gates is checked.
+
+---
+
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-31**, **track A** (the
+     gate). Baseline `01d4894`, and the first thing this step measured about it
+     is in §5 below.
+
+## Stage 6 — W-31 track A: the gate learns to read the call graph, and the baseline it was told was green was red
+
+**Check 12 exists and `check.sh` is TWELVE.** The owner's D51 asked for a
+reachability gate stated as a PROPERTY, with today's unreachable set
+grandfathered into a dated file that may only shrink. That landed, it is driven
+six ways, and the instrument found three more things on the way in — two defects
+in the gate the walk was borrowed from, and one in the commit this run was
+started from.
+
+### 1. The property, and why its antecedent is the compiler's
+
+*A definition not used solely within proofs must be reachable from
+`tm_kernel_call`.* Mechanically: **every `def` of the library for which the code
+generator EMITS a C function must be reached by the walk from the export**, or be
+named in `reach-exempt.txt` under a section that says why. Measured at this
+commit: **3,042 `def`s, 2,365 emitted, 1,413 reachable, 952 exempt.**
+
+The antecedent is the compiler's on purpose, and the source-side reading of
+"solely within proofs" was **measured and refused**. Of the 2,365 emitted `def`s,
+**260 are referenced by at least one `theorem` and by no `def` at all**;
+exempting those 260 by that property would have been wrong twice over. It
+swallows `Tm.edf` and `Tm.edfGrants` — §7's EDF grant machine, whose fast twins
+the W-30 repair deleted as dead (gap 2126) and whose originals **nothing has
+called since** — and it cannot see `Tm.remainingMin`, which nine of `Tree.lean`'s
+ten definitions reference from inside their own module, **exactly as `assignFold`
+did** when D50 found it by hand after eight audit runs. A rule about who
+*mentions* a name is a rule the blind spot is defined by. A refinement was tried
+too — exempt only the proof-referenced definitions that are VALUES and not
+functions, reusing check 11's own E3 property — and it exempts **2** of the 260,
+so it buys a classifier and pays for it in nothing.
+
+### 2. The exemptions are W-27's shape, and the file says what it is
+
+`reach-exempt.txt` grandfathers the **952** definitions that were unreachable on
+2026-09-25, in **45 sections** that each carry a reason, and it **may only
+shrink**: an entry whose definition becomes reachable, stops being emitted or
+stops existing FAILS check 12 and must be deleted in the same edit. It declares
+its own size, so growth is a number in a diff rather than a side effect.
+
+**What it is honest about is written in its own header**: the 952 are a
+GRANDFATHERED set, not 952 adjudications. Three sections carry a real one —
+`Tree.lean`'s ten under D52, `Recur.lean`'s 58 under gap 501, and
+`Capacity.lean`'s, which names the `Tm.edf` pair — and the rest say which module
+they are in, how much of that module IS reached, and that nobody has yet had to
+justify them. That is the work the ratchet exists to drive, and gap 2145 carries
+it.
+
+**Eighteen modules are wholly unreachable, 203 definitions between them**, and
+the sizes say which are findings and which are construction: `Recur.lean` 58
+(gap 501), `PlanCheck.lean` 51 and `PlannerWit.lean` 42 (the §6.1 battery's own
+predicates and its witnesses — unreachable by construction, since a witness is
+quantified over and never called), `SealRsDefs.lean` 14, `Tree.lean` 10 (D52),
+`SealGenesis.lean` 9, `SealReach.lean` 5, and eleven more stage-5 seal-law
+modules of one or two definitions each.
+
+### 3. Driven six ways, in a `cp -a` clone with its own build tree
+
+`git status --porcelain` was identical before and after (four modified files and
+three new ones, none of them Lean), and the clone was removed.
+
+1. **THE HEADLINE DRIVE — an orphan.** `Tm.PlanWire.hashHex` has exactly one
+   caller in the emitted C. Its call site in `planJson` was replaced by a literal
+   (and the `rfl` theorem that pins `planJson` with it), `lake build
+   TmKernel.PlanWire` rebuilt the one module in 1.2 s, and the symbol went from
+   **four occurrences in the IR to three** — prototype, body, boxed wrapper, no
+   call. Check 12 then printed `NOT EXEMPT: Tm.PlanWire.hashHex (PlanWire.lean)
+   is emitted and nothing reaches it from tm_kernel_call` at **rc=1**, and 1,413
+   reachable became 1,412. **Reverted and rebuilt in the same clone it was rc=0
+   again**, which is the control that makes the drive a drive.
+2. An entry **deleted** from the file names its definition (`Tm.remainingMin`) as
+   NOT EXEMPT.
+3. A **reached** name added under its own module (`Tm.Planner.dayPlan` under
+   `Planner.lean`) names itself STALE: *is REACHED now — delete this entry, the
+   file may only shrink*.
+4. A section whose **reason is empty** is named AND takes its ten entries down
+   with it, each *sits under no section, so it carries no reason* — 23 lines,
+   rc=1.
+5. An entry **above the first section** is named.
+6. A name **listed twice** under one section is named.
+
+All six at rc=1, and the declared-size line is a seventh: `EXEMPT 900` against
+952 entries fails with the number to correct it to.
+
+### 4. The three known instances, confirmed rather than quoted
+
+* **`Tree.lean`'s ten** are one section carrying D52's reason, due to leave the
+  file when D27 lands.
+* **`Recur.lean`'s 58** are one section carrying gap 501's.
+* **`assignFold`, `dayRows`, `dayPlan`, `dayAssigned` and `keptBreaksToday` are
+  all REACHED** — D50's P9 composition seen in the emitted C rather than in the
+  source. That is the half of D50 that was never independently checked here.
+
+### 5. What the instrument found on the way in
+
+**(a) The baseline was RED, and it is a docs commit that made it so — gap 2142.**
+`01d4894` ("docs: the gate learns to read the call graph — D51 and D52") added
+D52's row to `AGENTS.md`, and that row cites `lp_TmKernel_Tm_remainingMin`, the
+code generator's name for `Tm.remainingMin`. **Check 8 fails on it**: no
+declaration set in this repository holds a name the code generator invents.
+Driven at the baseline before anything was written this run: `prose citations
+FAILED / 1 unresolved: ../AGENTS.md:628 lp_TmKernel_Tm_remainingMin (resolves to
+nothing)`. This run's brief said *check.sh 11/11*; it was 10 of 11.
+
+The fix is a source, not an allow entry. An allow entry cannot go stale when the
+DEFINITION is renamed, which is the whole job of check 8, and the class is not
+one name — this block, `reach.py`'s header and `callgraph.py`'s cite several.
+So **citations.py gained a ninth source: the emitted C symbols**, read out of
+`.lake/build/ir` and scoped to spans beginning with the code generator's own
+package prefix, so it can launder nothing a Lean or Rust name could be spelled
+as. It is lazy (0.09 s, paid only when such a span exists), and the one
+hand-written allow entry of that shape — `lp_TmKernel_Tm_Look_lookahead`, from
+the W-2x lookahead block — **went stale the moment it landed and was deleted**,
+which is the ratchet working in the direction it was built for.
+
+**(b) Check 11's C symbol was `name.replace(".", "_")` — gap 2140.** The real
+rule is `String.mangleAux` and `Name.mangleAux` of the PINNED toolchain: a letter
+or digit stands, **`_` DOUBLES**, and anything else becomes `_x`/`_u`/`_U` plus
+its code point in lower hex. Measured: **74 of the library's 3,042 `def`s are
+spelled differently by the two rules, and 70 of those are emitted under the right
+name and absent under the old one** — every `?` name (`Tm.binsOfPairs?` is
+`lp_TmKernel_Tm_binsOfPairs_x3f`), every `!` and `'` name, and every name holding
+an underscore. In check 11 that was LATENT and loud — no twin group has a member
+with punctuation in its name, and an unfound symbol reads as "unemitted", which
+E2 reports rather than exempts. In check 12 it would have been **silent**: 70
+definitions outside the population, **24 of them unreachable**. The mangling is
+one function in `callgraph.py` now, transcribed from the toolchain file with the
+disambiguation rule it carries, and the whole exemption file is the floor under
+it — a scheme change would take hundreds of entries stale at once and fail by
+name.
+
+**(c) Check 11's qualified name was a third scanner — gap 2141.** `twins.py`
+asked for `def` as the FIRST WORD of a line, so the **three `private def`s of
+`Plan.lean` and the two `@[reducible] def`s** beside them fell through it and
+came back qualified by *the namespace stack at end of file* — a name no
+declaration has. The scanner is `leanfiles.qualified_names` now, check 3's own,
+with the keyword as a parameter: **one scanner, two populations**, where there
+were three.
+
+### 6. The brief's fifth item was already closed, and is re-driven here rather than re-done
+
+The brief said check 11's E2 exemption is justified by a claim the bytes refute
+(*"neither member of two of the five exempt groups is reachable"*) and that check
+11 drops 400 of 3,044 `def`s. **Both were closed by the W-30 repair at
+`8bde777`, which is in this run's baseline.** Re-driven at `01d4894` rather than
+believed: the two fast twins are **gone** from the tree, un-backticked here by
+this check's own convention for a name that no longer exists (one comment in
+`Capacity.lean` records their deletion); check 11 reports **3,042 def bodies, 0 unsplit**, so the
+match-arm population is in; and the exempt groups are **three, not five**, each
+with a member the export reaches — `planWfFast`, `daysInT`, `daysFromT`. What is
+left of that finding is a residue this run carries forward as **gap 2144**: the
+two ORIGINALS, `Tm.edf` and `Tm.edfGrants`, are still emitted, still proved, and
+still reached by nothing.
+
+### 7. Cost
+
+Check 12 is **1.65, 1.63 and 1.63 s** (three runs, load average 4.6-6.6 with
+another session on the machine — gap 1333). Timed inside one run so the parts sum
+to the whole: **0.86-0.88 s** to read 11,945 emitted function bodies and 6,655
+constant initialisers out of the 45 MB IR tree in ONE pass, **0.08-0.09** to walk
+them and measure the load-time class, **0.63-0.65** to take 3,042 qualified `def`
+names out of the source, **0.00** for the exemption file. The twelve-check wall
+is **16.46, 16.47, 16.65 and 17.11 s** (four runs, the last after this block was
+written) against an eleven-check 14.43 s measured at the baseline: **10%**, which
+is exactly design 14.0 item 4's per-step price, recorded here rather than rounded
+down (gap 2146).
+
+### 8. Acceptance
+
+**`check.sh` TWELVE of TWELVE**, capped at 40G with no swap, three runs. `lake
+build TmKernel:static` ok · totality ok · **axiom audit 5,260 theorems** ·
+`Negative.lean` rejected ok · FFI 93 tests ok · **corpus 29/37 and 4/5** · stage
+goals **8 outstanding, all stage 6** (untouched by this run: no Lean byte moved)
+· prose citations **40,571 citations, 38,605 resolved, 1,966 allowed, 0 allow
+entries unused** · mutation roster 247 rostered, **0 owed** · parity register
+P1-P41, next free **P42** · check 11 **3,042 def bodies (0 unsplit), 14 groups (3
+compiled, 11 value), 0 UNANSWERED** · **check 12: 3,042 def(s), 2,365 emitted,
+1,413 reachable from `tm_kernel_call`, 952 exempt in 45 sections (32 of them run
+at load), 0 UNANSWERED.**
+
+**`cargo test --workspace`: FIVE runs**, 40G capped, and the four that were
+totalled are **1,476 passed / 0 failed / 9 ignored across 87 binaries** every
+time — byte for byte the baseline's figure, which is what a run that touches no
+Rust and no Lean owes. The fifth ran after this block and `AGENTS.md` were
+written, because a docs edit is what made the baseline red (§5a). T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.80 s ·
+the door suite `kernel_log_door --include-ignored` **23 passed** ·
+`cli_switch_acceptance --include-ignored` **16 passed** · `cli_latency
+--include-ignored` **6 passed**, 17.99 s, in band, at load average **5.92** (gap
+1333) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 ·
+`kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 ·
+`planner_invariants` **8 passed**, 23.87 s.
+
+**No `.lean` file was edited in this run**, which is why the burn-down is
+unchanged at **8** and the goals line reads the same as the baseline's.
+
+### 9. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2140** | **CLOSED here.** Check 11's C symbol was `name.replace(".", "_")`, not the toolchain's mangling: 74 of 3,042 `def`s spell differently under the two rules and 70 are emitted under the right name only. Latent in check 11 (loud direction); it would have put 70 definitions, 24 of them unreachable, silently outside check 12's population | `kernel/callgraph.py`, `kernel/twins.py` | closed: one transcription of `String.mangleAux` and `Name.mangleAux` with the disambiguation rule, read once. What stays open is that it is a TRANSCRIPTION — a toolchain that moved the scheme is caught by the exemption file going stale wholesale, not by the transcription noticing |
+| **2141** | **CLOSED here.** Check 11's qualified-name walk required `def` to be the first word of its line, so three `private def`s and two `@[reducible] def`s came back named by the namespace stack at end of file | `kernel/twins.py`, `kernel/leanfiles.py` | closed: `leanfiles.qualified_names` takes the keyword as a parameter and check 3's scanner answers for both populations. Third scanner of this shape found in three runs |
+| **2142** | **CLOSED here, and its CLASS is open.** The baseline `01d4894` was RED: a docs-only commit added a prose citation of an emitted C symbol and check 8 failed on it, and this run's brief reported 11/11 | `kernel/citations.py`, and every docs commit | closed by source 9 (the emitted symbols, scoped and lazy). The class — **a commit that touches no code still has to pass the gate, and nothing makes a docs step run it** — is what let a red commit be the baseline three tracks were briefed against |
+| **2143** | **check 12's declared blind spot: a definition that runs only at LOAD.** The generator hoists a closed subterm into `static .. _init_..()` and calls it from the module initializer; neither is an exported function, so neither is a node of the graph. 108 symbols are called that way and **32 of them are exempt entries** | `kernel/callgraph.py`, `kernel/reach-exempt.txt` | nothing silent: `closed_users` measures the class on every run, the summary line prints the count and every affected entry carries the note. What is open is that the property is stated over the export, so a NEW definition of that class fails and must join the file with that reason |
+| **2144** | **`Tm.edf` and `Tm.edfGrants` are emitted, proved and reached by nothing** — the live residue of gap 2126, which deleted their fast twins and left the originals. Both are in the exemption file with that reason | `TmKernel/TmKernel/Capacity.lean`, `kernel/reach-exempt.txt` | not unsound — §7.3's laws about them hold — but it is D50's composition shape again, one definition down from the module level: the EDF reservation pass answers no caller. It is the first entry the ratchet should take |
+| **2145** | **952 exemptions, and most of them are not adjudications.** The file records what was unreachable on the day the gate landed, by module, with each module's reach ratio; 45 sections carry a reason and three carry a *finding* | `kernel/reach-exempt.txt` | this is the gate working as designed — the alternative was a threshold, which is the list-shaped answer eleven times refused — but the number only means something once it starts falling. A run that wires a module and does not shrink this file has not finished |
+| **2146** | **check 12 costs 10% of `check.sh`'s wall, and half of that is a second read of the same 45 MB.** Checks 11 and 12 read `.lake/build/ir` in separate processes; `callgraph.py` caches within a process and cannot across two | `kernel/check.sh`, `kernel/callgraph.py` | 1.63-1.65 s of a 16.46-17.11 s wall, at design 14.0 item 4's per-step price rather than under it. One process running both checks, or a cache file keyed on the IR tree's mtimes, would pay it back; a cache file is a new failure mode and was declined here |
+| **2147** | **the population is `def` only.** 4,006 base symbols under the code generator's package prefix are emitted and **2,365 are claimed by a `def`**; the other 1,641 are `abbrev`s, instances, structure projections, the eliminator and constructor-index helpers the generator invents, and specialisations — none of them gated by check 12 | `kernel/reach.py` | the same shape as check 11's own last blind spot (`def` is its population too, and gap 1956's other eleven groups are `theorem`s). An `abbrev` composed into nothing is exactly as dead as a `def`; widening is the next step's, and the count is here so it starts from a measurement |
+
+**Gaps 2140-2147 are taken by this step**; 2148-2189 are free in track A's range.
+Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105,
+1318, 1320, 1333, 1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889,
+1900, 1902-1904, 1906, 1956, 1957, 1984-1988, 1990, 2000-2007, 2016-2018,
+2020-2024, 2062, 2064, 2093-2096 and 2120-2136 are untouched by this step, except
+**501, 2126, 2129 and 2130**, each of which is named above by measurement: 2130
+is **closed** (the gate exists), 2129 and 501 are **carried into the exemption
+file as declared sections**, and 2126's residue is **2144**.

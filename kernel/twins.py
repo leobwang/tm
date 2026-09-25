@@ -52,6 +52,17 @@ definitions of one concept unless one of these holds:
                 This is W-28's lesson in both directions: a claim about a
                 definition's SHAPE pins nothing about its BYTES, and a claim
                 about its BYTES pins nothing about whether anything CALLS it.
+
+                **THE WALK MOVED TO `callgraph.py` AT W-31**, where check 12
+                reads the same graph and check 8 the same symbol inventory,
+                and two of this file's three readings of it were WRONG: the C
+                symbol was `name.replace(".", "_")` where the toolchain doubles
+                an underscore and escapes a `?` (gap 2140), and the qualified
+                name came from a line walk that could not see a `private def`
+                (gap 2141).  Neither misfired here -- no twin group has a member
+                whose name carries punctuation, and an unfound symbol reads as
+                "unemitted", which is reported rather than exempted -- and both
+                would have been silent one gate over.
   E3 VALUE      the definition takes NO ARGUMENTS AND IS NOT A FUNCTION, so its
                 body is a value and not a rule.  Nullary was a SPELLING until
                 the W-30 repair (README gap 2128) -- "the signature begins with
@@ -128,6 +139,7 @@ import pathlib
 import re
 import sys
 
+import callgraph
 import leanfiles
 
 # A `def`'s name, as a keyword TOKEN (`leanfiles.THEOREM`'s discipline).
@@ -139,26 +151,18 @@ LITERAL = re.compile(r"^(?:fun[ \t][^=]*=>[ \t]*)?"
                      r"(true|false|True|False|[0-9]+|\"[^\"]*\"|'.')$")
 # One emitted function: its header, then its brace-balanced body.
 EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(]*\b(?:l|lp_TmKernel)_(\w+)\([^\n]*\{")
-# ANY emitted function, by its own C symbol -- the reachability walk's population,
-# which includes the export itself (`tm_kernel_call`, whose C symbol carries
-# neither of the code generator's two name prefixes).
-ANY_EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(;]*?\b(\w+)\([^\n]*\{")
-# An identifier in an emitted body.  A C body names its callees and nothing else
-# that can collide with an exported symbol, so a reference is a call edge.
-C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
-# THE ROOT OF THE CALL GRAPH: the one symbol the host dials (R9, `@[export
-# tm_kernel_call]` at PlanWire.lean:1198).  Rooting at `Tm.callExport` instead --
-# the Lean definition that CARRIES the attribute -- is how this probe fails
-# silently: the exported C wrapper is `tm_kernel_call`, and the emitted function for
-# Tm.callExport is reached from nothing, so a walk from it reports almost everything dead.
-EXPORT_ROOT = "tm_kernel_call"
+# THE WALK ITSELF IS `callgraph.py` AND NOT THIS FILE'S (W-31 track A).  It was
+# written here for E2 and check 12 needs the same graph; two copies of one walk
+# would be §5.3's defect inside the two gates that exist to catch it, so the
+# root, the population, the edges and the C symbol a Lean name mangles to are
+# one module now, and this file is one of its three readers.
 # A separator between a `def`'s SIGNATURE and its BODY.  Lean's `declVal` is
 # `:= <term>` or match arms (`| pat => ..`); a `|` that is `||` is Boolean or.
 DECL_SEP = re.compile(r":=|(?<!\|)\|(?!\|)")
 # A top-level arrow in a declared TYPE, so that E3's "takes no arguments" is a
 # property of the type and not of where the `:` stands.
 ARROW = re.compile(r"->|\u2192")
-_REACH = {}
+_QUALIFIED = {}
 # The code generator's own variable numbering, which differs between
 # any two functions and says nothing about what they do.
 CVAR = re.compile(r"\bv_([A-Za-z0-9_]*?)_\d+_")
@@ -218,8 +222,8 @@ def emitted(path, name):
     the header, so the function's own NAME -- which always differs -- is not part
     of what is compared, and the generator's variable numbering is normalised
     away for the same reason."""
-    ir = ir_root(path)
-    mangled = "Tm_" + name.replace(".", "_") if not name.startswith("Tm") else name.replace(".", "_")
+    ir = callgraph.ir_root(path)
+    mangled = callgraph.mangle(name)
     for c in sorted(ir.rglob(pathlib.Path(path).stem + ".c")):
         text = c.read_text(errors="replace")
         for m in EMITTED.finditer(text):
@@ -248,76 +252,24 @@ def emitted(path, name):
     return None
 
 
-def ir_root(path):
-    """`.lake/build/ir` above `path`, or a hard error: E2 reads the EMITTED code."""
-    for parent in pathlib.Path(path).resolve().parents:
-        cand = parent / ".lake" / "build" / "ir"
-        if cand.is_dir():
-            return cand
-    raise SystemExit("twins.py: no .lake/build/ir above %s -- E2 reads the "
-                     "EMITTED code and there is none; run `lake build` first" % path)
-
-
-def reachable(ir):
-    """Every emitted C function the export reaches, and how many there are.
-
-    Returns `(reached, emitted)`.  The walk brace-balances each `LEAN_EXPORT ..
-    name(..){` body, reads its identifiers as call edges, and BFSs from
-    `EXPORT_ROOT`.  It is what tells a twin the callers run from a twin nothing
-    calls, and the difference is the whole of E2 (README gap 2126)."""
-    key = str(ir)
-    if key in _REACH:
-        return _REACH[key]
-    funcs = {}
-    for c in sorted(ir.rglob("*.c")):
-        text = c.read_text(errors="replace")
-        for m in ANY_EMITTED.finditer(text):
-            i, depth = m.end() - 1, 0
-            while i < len(text):
-                if text[i] == "{":
-                    depth += 1
-                elif text[i] == "}":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                i += 1
-            funcs.setdefault(m.group(1), []).append(text[m.end():i])
-    if EXPORT_ROOT not in funcs:
-        raise SystemExit("twins.py: `%s` is not an emitted function under %s -- "
-                         "the call graph has no root and every twin would look "
-                         "dead" % (EXPORT_ROOT, ir))
-    seen, stack = set(), [EXPORT_ROOT]
-    while stack:
-        n = stack.pop()
-        if n in seen:
-            continue
-        seen.add(n)
-        for body in funcs.get(n, ()):
-            for r in C_IDENT.finditer(body):
-                if r.group(0) in funcs and r.group(0) not in seen:
-                    stack.append(r.group(0))
-    _REACH[key] = (seen & set(funcs), set(funcs))
-    return _REACH[key]
-
-
-def symbol(path, name):
-    """The C symbol the code generator gives the Lean definition `name`."""
-    mangled = "Tm_" + name.replace(".", "_") if not name.startswith("Tm") else name.replace(".", "_")
-    return "lp_TmKernel_" + mangled
-
-
 def qualified(path, name):
-    """`name` under the namespace its file opens, which is what the C is keyed on."""
-    stack = []
-    for line in leanfiles.strip_comments(pathlib.Path(path).read_text()).split("\n"):
-        words = line.split()
-        if words and words[0] == "namespace":
-            stack.append(words[1])
-        elif words and words[0] == "end" and len(words) > 1 and stack and words[1] == stack[-1]:
-            stack.pop()
-        elif words and words[0] == "def" and len(words) > 1 and words[1] == name:
-            break
-    return ".".join(stack + [name]) if stack else name
+    """`name` under the namespace its file opens, which is what the C is keyed on.
+
+    THE SCANNER IS `leanfiles.qualified_names`, check 3's (W-31 track A).  This
+    was a line walk of its own that required `def` to be the FIRST WORD of its
+    line, so the three `private def`s of `Plan.lean` and the two `@[reducible]
+    def`s beside them fell through it and came back qualified by the namespace
+    stack AT END OF FILE -- a name no declaration has, whose C symbol is
+    therefore absent, which E2 reads as "unemitted" and reports.  The loud
+    direction, and wrong."""
+    key = str(path)
+    if key not in _QUALIFIED:
+        pairs, _leftover = leanfiles.qualified_names(path, "def")
+        table = {}
+        for written, full in pairs:
+            table.setdefault(written, full)
+        _QUALIFIED[key] = table
+    return _QUALIFIED[key].get(name, name)
 
 
 def explain(group):
@@ -336,7 +288,8 @@ def explain(group):
     seen, live = {}, []
     for path, name, _sig, _body, _lits in group:
         seen["%s:%s" % (path, name)] = emitted(path, qualified(path, name))
-        if symbol(path, qualified(path, name)) in reachable(ir_root(path))[0]:
+        if callgraph.symbol(qualified(path, name)) in callgraph.reachable(
+                callgraph.ir_root(path))[0]:
             live.append(name)
     if None in seen.values():
         return None  # unemitted is not an exemption
@@ -379,13 +332,13 @@ def main(argv):
     for path, name in unsplit:
         print("UNSPLIT: `%s` in %s -- a `declVal` this key cannot split into a "
               "signature and a body, so it is keyed by nothing" % (name, path))
-    reached, emits = reachable(ir_root(sorted(files)[0]))
+    reached, emits = callgraph.reachable(callgraph.ir_root(sorted(files)[0]))
     print("%d file(s) swept, %d def bodies (%d unsplit), %d group(s) of two or "
           "more names (%d compiled, %d value), %d UNANSWERED; %d of %d emitted "
           "C functions reachable from %s"
           % (len(files), sum(len(v) for v in groups.values()), len(unsplit),
              len(twins), answered["E2"], answered["E3"], len(bad),
-             len(reached), len(emits), EXPORT_ROOT))
+             len(reached), len(emits), callgraph.EXPORT_ROOT))
     return 1 if bad or unsplit else 0
 
 

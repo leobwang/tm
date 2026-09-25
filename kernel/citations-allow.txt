@@ -610,7 +610,6 @@ can_fail
 5 log_len
 1 log_narrowed_facts
 1 log_warnings
-1 lp_TmKernel_Tm_Look_lookahead
 1 malformed_lines_are_warnings_not_errors
 2 mem_stepOneRows
 1 mergeSort_cons

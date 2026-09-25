@@ -751,4 +751,78 @@ else
   printf '%s\n' "$out" | head -20
 fi
 
+# 12. A DEFINITION THE COMPILER EMITS MUST BE REACHED.  The owner's D51, README
+#     gap 2130, and the layer every other check in this file is blind to.
+#
+#     Checks 3, 8, 9 and 11 read the SOURCE or the THEOREM SET.  Reachability is
+#     a property of the emitted CALL GRAPH, so none of them could see it, and
+#     the auditor who built the first walk put it in one sentence: a definition
+#     can be pinned by a theorem (check 9), unique (check 11), audited (check 3)
+#     and cited (check 8) and still be called by nothing -- `Tm.remainingMin` is
+#     all five.  THREE OF THIS CAMPAIGN'S FINDINGS LIVE THERE AND EVERY ONE WAS
+#     FOUND BY HAND: D50's `assignFold` (eight audit runs), gap 501's
+#     `Recur.lean` (many runs), and `Tree.lean` -- ten definitions and
+#     thirty-seven theorems -- which nobody had found at all.
+#
+#     THE PROPERTY, NOT A COUNT.  *A definition not used solely within proofs
+#     must be reachable from `tm_kernel_call`.*  The antecedent is the
+#     COMPILER'S: a `def` it emits no code for is one nothing can call, and a
+#     `def` it does emit is code the program runs or carries dead.  The
+#     source-side reading of "solely within proofs" was measured and REFUSED
+#     (`reach.py`'s header): it exempts 260 definitions, and among them are
+#     `Tm.edf` and `Tm.edfGrants` -- §7's EDF grant machine, whose fast twins the
+#     W-30 repair deleted as dead (gap 2126) and whose originals nothing has
+#     called since.  A rule about who MENTIONS a name is a rule the blind spot
+#     is defined by; `Tm.remainingMin` is mentioned nine times inside its own
+#     module, exactly as `assignFold` was.
+#
+#     THE EXEMPTIONS ARE W-27'S SHAPE -- an enumeration you join to be EXEMPT,
+#     not to be COVERED.  `reach-exempt.txt` grandfathers the 952 definitions
+#     that were unreachable on 2026-09-25 under 45 sections that each carry a
+#     reason, declares its own size so growth is a number in a diff, and MAY
+#     ONLY SHRINK: an entry that becomes reachable, stops being emitted or stops
+#     existing FAILS by name and must be deleted.  A bare threshold would have
+#     been the list-shaped answer this campaign has now got wrong eleven counted
+#     times, and gap 2130 says so itself.
+#
+#     DRIVEN, in a `cp -a` clone with its own build tree, never the shared one.
+#     `Tm.PlanWire.hashHex` has exactly one caller in the emitted C; its call
+#     site in `planJson` was replaced by a literal (and the `rfl` theorem that
+#     pins `planJson` with it), `lake build TmKernel.PlanWire` rebuilt the one
+#     module, and the symbol went from FOUR occurrences in the IR to three --
+#     prototype, body, boxed wrapper, no call.  Check 12 then printed
+#     `NOT EXEMPT: Tm.PlanWire.hashHex (PlanWire.lean) is emitted and nothing
+#     reaches it from tm_kernel_call` at rc=1, and 1,413 reachable became 1,412.
+#     Reverted and rebuilt in the same clone it was rc=0 again.  Five more
+#     drives, no build needed: an entry deleted names its definition; a REACHED
+#     name added names itself STALE; a section with an empty reason takes its
+#     ten entries down with it; an entry above the first section is named; a
+#     name listed twice is named.  All six at rc=1.
+#
+#     THE THREE KNOWN INSTANCES, CONFIRMED HERE RATHER THAN QUOTED: `Tree.lean`'s
+#     ten are one section with D52's reason, due to leave when D27 lands;
+#     `Recur.lean`'s 58 are one section with gap 501's; and `assignFold`,
+#     `dayRows`, `dayPlan`, `dayAssigned` and `keptBreaksToday` are all REACHED,
+#     which is D50's P9 composition seen in the emitted C and not in the source.
+#
+#     THE COST IS MEASURED, NOT QUOTED (5.11): three runs at 1.65, 1.63 and
+#     1.63 s, at load average 4.6-6.6 with another session on the machine (gap
+#     1333).  Where it goes, timed INSIDE one run so the parts sum to the whole:
+#     0.86-0.88 s to read 11,945 emitted function bodies and 6,655 constant
+#     initialisers out of `.lake/build/ir` in ONE pass, 0.08-0.09 to walk them
+#     and measure the load-time class, 0.63-0.65 to take 3,042 qualified `def`
+#     names out of the source, and 0.00 for the exemption file.  On a
+#     twelve-check wall of 16.46-17.11 s (four runs) that is 10%, and the
+#     eleven-check wall it was added to measured 14.43 s: design 14.0 item 4
+#     prices a step at 10% and this one is AT it, which is recorded here rather
+#     than rounded down.  Check 11 pays the same IR read in its own process --
+#     two processes, two reads, and sharing them would need one process.
+out=$( python3 reach.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "every emitted definition is reached" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+else
+  say "every emitted definition is reached" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
 exit $fail

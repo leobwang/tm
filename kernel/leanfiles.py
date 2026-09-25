@@ -553,42 +553,75 @@ def theorem_names(path):
 # makes a name SHORTER and so UNAUDITED -- the loud direction); and the blind
 # spots `strip_comments` and `THEOREM` list.  A leftover frame at end of file is
 # reported by `--theorems` rather than silently dropped.
-SCOPE_KW = re.compile(r"(?<![\w'?!.\u00AB])(namespace|section|mutual|end|theorem)(?![\w'?!])")
+# **AND THE SCANNER TOOK THE KEYWORD `theorem` AS PART OF ITS OWN SHAPE**, which
+# made it answerable for one population out of the two that need it (W-31 track
+# A).  Check 12 asks the same question of every `def` -- what does `lean` call
+# this declaration, so that the emitted symbol can be computed from it -- and
+# `twins.py` was answering it with a THIRD scanner of its own, a line walk that
+# read `words[0] == "def"` and so could not see the three `private def`s of
+# `Plan.lean` or the two `@[reducible] def`s beside them: it returned the
+# namespace stack AT END OF FILE for each, which is a name that is not the
+# declaration's.  The keyword is a PARAMETER now and the scanner is one.
+_SCOPE_KW = {}
+
+
+def scope_kw(kw):
+    """`namespace`/`section`/`mutual`/`end` and one DECLARATION keyword, as tokens."""
+    if kw not in _SCOPE_KW:
+        _SCOPE_KW[kw] = re.compile(
+            r"(?<![\w'?!.\u00AB])(namespace|section|mutual|end|%s)(?![\w'?!])" % kw)
+    return _SCOPE_KW[kw]
+
+
+SCOPE_KW = scope_kw("theorem")
 SCOPE_ARG = re.compile(r"[ \t]*([^\s(){}:]*)")
 THEOREM_ARG = re.compile(r"[ \t\r\n]*([^\s(){}:]+)")
 
 
-def qualified_theorem_names(path):
-    """Every theorem declared in `path`, as `lean` names it (namespaces dotted on).
+def qualified_names(path, kw):
+    """Every `kw` declaration in `path`, as `(written, as lean names it)` pairs.
 
-    Returns `(names, leftover)` -- `leftover` is the namespace stack still open
+    Returns `(pairs, leftover)` -- `leftover` is the namespace stack still open
     at end of file, which is a malformed source this walk must not answer for.
+    The first half of a pair is the name AS WRITTEN (`PlanReq.assignFold`),
+    which is the key a reader that found the declaration by its own regex has;
+    the second is what `lean` calls it, which is what an axiom audit reconciles
+    against and what a C symbol is computed from.
     """
     code = strip_comments(pathlib.Path(path).read_text())
     stack, out, i = [], [], 0
+    pat = scope_kw(kw)
     while True:
-        m = SCOPE_KW.search(code, i)
+        m = pat.search(code, i)
         if not m:
             return out, [f for f in stack if f]
-        kw, i = m.group(1), m.end()
-        if kw == "theorem":
+        word, i = m.group(1), m.end()
+        if word == kw:
             n = THEOREM_ARG.match(code, i)
             if not n:
                 continue
             i = n.end()
             prefix = ".".join(f for f in stack if f)
-            out.append(f"{prefix}.{n.group(1)}" if prefix else n.group(1))
+            out.append((n.group(1),
+                        f"{prefix}.{n.group(1)}" if prefix else n.group(1)))
         else:
             n = SCOPE_ARG.match(code, i)
             i = n.end()
-            if kw == "namespace":
+            if word == "namespace":
                 stack.append(n.group(1))
-            elif kw in ("section", "mutual"):
+            elif word in ("section", "mutual"):
                 stack.append("")
             elif stack:
                 stack.pop()
             else:
-                out.append("<end without a scope in %s>" % path)
+                out.append(("<end without a scope in %s>" % path,
+                            "<end without a scope in %s>" % path))
+
+
+def qualified_theorem_names(path):
+    """Every theorem declared in `path`, as `lean` names it (namespaces dotted on)."""
+    pairs, leftover = qualified_names(path, "theorem")
+    return [q for _, q in pairs], leftover
 
 
 def main(argv):

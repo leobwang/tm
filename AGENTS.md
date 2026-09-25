@@ -703,9 +703,12 @@ groups, all seventeen accounted for" while five character-identical `def` pairs
 were in none of them. The gate keys every `def` on its signature and its body
 WITH its string literals and demands a property for each group that survives:
 the definition is nullary (a named value, not a rule), or the compiler emits
-different code for the two (which is what the `@[csimp]` fast/slow shells are
-FOR — their sources are identical and their compiled callees are not). Anything
-else is named. It found one live duplicate on its first run and the blind spots
+different code for the two **and the export REACHES one of them** (which is what
+the `@[csimp]` fast/slow shells are FOR — their sources are identical and their
+compiled callees are not). The second half of that second property was written
+here and never checked until the W-30 repair, and two of the five groups it
+exempted had no caller at all to deoptimise (gap 2126); both twins were deleted
+rather than exempted. Anything else is named. It found one live duplicate on its first run and the blind spots
 it keeps are in its own header and in README gaps 2093-2094.
 
 **Two live exceptions, both recorded rather than hidden.** `parent` is still a
@@ -1213,16 +1216,21 @@ banner which range is yours and fix it at the merge (§6.5).
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks this section documents — and `check.sh` runs ELEVEN
+### 7.1 The seven checks this section documents — and `check.sh` runs TWELVE
 
 **This heading said "the seven checks" while `check.sh` ran nine**, and the
 number is repaired here rather than the section: checks **8** (the prose
 citations, W-19, owner D39/D41), **9** (every new definition constant-folded,
-W-20, owner D40), **10** (the parity register, W-25) and **11** (§5.3: no two
-names for one definition, W-30 track A) are specified by their own scripts'
-headers — `kernel/citations.py`, `kernel/mutate.py`, `kernel/parity.py` and
-`kernel/twins.py` — and by `check.sh`'s comments above each, which are long and
-are the specification. What is written out below is checks 1–7. Do not read
+W-20, owner D40), **10** (the parity register, W-25), **11** (§5.3: no two
+names for one definition, W-30 track A) and **12** (a definition the compiler
+emits must be REACHED from `tm_kernel_call`, W-31 track A, owner D51) are
+specified by their own scripts' headers — `kernel/citations.py`,
+`kernel/mutate.py`, `kernel/parity.py`, `kernel/twins.py` and `kernel/reach.py`
+— and by `check.sh`'s comments above each, which are long and are the
+specification. Check 12's exemptions are `kernel/reach-exempt.txt`, which may
+only shrink, and the call graph all three of 8, 11 and 12 read is
+`kernel/callgraph.py`, which none of them owns. What is written out below is
+checks 1–7. Do not read
 "seven" here as the size of the acceptance; §2.1 and §6.5 carry that number and
 both said "seven" too until the W-24 repair step.
 

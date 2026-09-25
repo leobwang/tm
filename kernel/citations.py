@@ -159,6 +159,22 @@ holding `::`, the way source 7 is read only for a span with no underscore.  Gap
 able to launder a stale citation of any Lean constructor sharing it); scoping
 them to `::` spans pays 0 of that and resolves 62 citations.
 
+AND A NINTH, ADDED WITH CHECK 12 (W-31 track A): THE EMITTED C SYMBOLS.  A
+sentence about reachability names the thing that is or is not reached, and the
+thing is a C function -- `lp_TmKernel_Tm_remainingMin`, which is how the code
+generator spells `Tm.remainingMin`.  The owner's D52 cites exactly that symbol
+and this check FAILED ON IT at `01d4894`, because no source here holds a name
+the code generator invents.  An allow-list entry would have been the wrong
+answer twice: the class is not one name (check 12's own prose, this file's and
+the ledger's now cite several), and an allow entry cannot go stale when the
+DEFINITION is renamed, which is the whole job of this check.  So the symbols
+are read where they are declared -- `lake`'s own `.lake/build/ir`, through
+`callgraph.emitted` -- and a citation of a symbol the compiler no longer emits
+fails here like any other stale name.  SCOPED like sources 7 and 8: consulted
+only for a span that begins with the code generator's own package prefix, so it
+can launder nothing that a Lean or Rust name could be spelled as.  Its cost is
+0.09 s and it is paid ONLY when such a span exists.
+
 THE ALLOW-LIST IS MATCHED ON THE WHOLE SPAN, not on the last segment, and the
 two rules are deliberately different.  `energy.sort_by_key` and `out.sort_by`
 each need their own entry; an entry spelled sort_by exempts nothing.  That is the
@@ -351,6 +367,7 @@ import os
 import glob
 import collections
 
+import callgraph
 import leanfiles
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1031,6 +1048,23 @@ def declared():
     return names
 
 
+_EMITTED = []
+
+
+def emitted_symbols():
+    """Source 9: every C function name `lake` emitted, read from its own output.
+
+    Lazy, because it is the one source with a build artefact behind it: a
+    repository whose prose cites no emitted symbol never opens the IR tree.
+    `check.sh` runs this check after check 1, so the tree is there; a missing
+    one is `callgraph.ir_root`'s hard error rather than a silent empty set,
+    which would turn every symbol citation into a failure at once."""
+    if not _EMITTED:
+        ir = callgraph.ir_root(LEAN_FILES[0])
+        _EMITTED.append(set(callgraph.functions(ir)))
+    return _EMITTED[0]
+
+
 def rust_variants():
     """Source 3's variant half, CONSULTED ONLY FOR A `::`-SPELLED CITATION.
 
@@ -1312,6 +1346,9 @@ def main():
             last in names
             or ("_" not in name and last in core)
             or ("::" in name and last in variants)
+            # SOURCE 9, scoped to the code generator's own prefix: a span that
+            # names an emitted C function resolves against the emitted tree.
+            or (name.startswith(callgraph.PREFIX) and name in emitted_symbols())
         )
         # THE OWNER TEST, FOR EITHER SEPARATOR (W-28).  It was `"::" in name`,
         # which made it a rule about a SPELLING rather than about a path.
