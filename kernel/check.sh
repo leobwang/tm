@@ -147,17 +147,71 @@ n=$( printf '%s' "$out" | grep -c 'axioms' )
 unaudited=$( comm -23 \
   <( python3 leanfiles.py --theorems TmKernel | sort ) \
   <( grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sort ) )
+# **AND THE CHECK NAMED "THE AXIOM AUDIT" NEVER LOOKED AT THE AXIOM SET**
+# (W-31 repair step, README gap 2256).  This chain's first arm was `grep -q
+# sorryAx`: ONE NAME, where the hard rule is a CLASS -- *no new axiom*.  A
+# planted axiom is not `sorryAx`, so `lean` printed `'Tm.w31_one_is_two'
+# depends on axioms: [w31Planted]` and the gate read that line and said `ok`.
+# DRIVEN in a `cp -a` clone with its own build tree: `lake build
+# TmKernel:static` rc=0, this fragment "axiom audit (5290 theorems)  ok", and
+# the planted name in `$out` at line 5762.  `grep -rn 'propext|Classical.choice
+# |Quot.sound' check.sh *.py` returned only prose -- NOTHING in the tree
+# compared the printed set to the allowed one.  The twelfth counted instance of
+# a NAME LIST where the rule is a CLASS, inside the gate the rule is named
+# after.
+#
+# SO THE ARM IS A SUBSET TEST, and it is W-27's shape: an axiom joins the three
+# Lean ships to be EXEMPT.  `sorryAx` keeps its own arm above because its
+# message is the one a reader wants; it would fail here too.
+#
+# AND THE PARSER CARRIES ITS OWN FLOOR.  `lean` WRAPS a long axiom list over
+# several lines (16 of them in this library), so a line-at-a-time reader sees
+# fewer records than were printed -- and a parser that reads nothing gates
+# nothing, which is what the campaign keeps finding.  The record count must
+# equal the `axioms`-line count or this fails by name.
+axcensus=$( printf '%s\n' "$out" | python3 -c '
+import re, sys
+ALLOWED = {"propext", "Classical.choice", "Quot.sound"}
+t = sys.stdin.read()
+# The name is GREEDY to its last apostrophe and the list is a character class:
+# `Tm.Field.map_map\x27` and 23 more carry a prime, and `[^\x27\n]+` read 5,266
+# of 5,290 records on the first drive -- the floor below caught this parser
+# before it gated anything, which is what the floor is for.
+dep = re.findall(r"(?m)^\x27(.+)\x27 depends on axioms: \[([^]]*)\]", t)
+none = re.findall(r"(?m)^\x27(.+)\x27 does not depend on any axioms", t)
+printed = sum(1 for line in t.splitlines() if "axioms" in line)
+if len(dep) + len(none) != printed:
+    print("PARSED %d of %d printed audit lines -- this arm would gate nothing"
+          % (len(dep) + len(none), printed))
+    raise SystemExit(1)
+seen = {}
+for name, lst in dep:
+    for a in lst.replace("\n", " ").split(","):
+        a = a.strip()
+        if a:
+            seen.setdefault(a, []).append(name)
+extra = sorted(set(seen) - ALLOWED)
+if extra:
+    for a in extra:
+        print("A NEW AXIOM: %s, %d use(s), first `%s`" % (a, len(seen[a]), seen[a][0]))
+    raise SystemExit(1)
+print(", ".join("%s %d" % (a, len(seen.get(a, []))) for a in sorted(ALLOWED)) +
+      "; %d of %d depend on none" % (len(none), printed))
+' ); arc=$?
 if printf '%s' "$out" | grep -q sorryAx; then
   say "axiom audit ($n theorems)" "FAILED (sorryAx)"; fail=1
 elif bad=$( printf '%s\n' "$out" | grep -E '^Check\.lean:[0-9]+:[0-9]+: error' | head -3 ); [ -n "$bad" ]; then
   say "axiom audit ($n theorems)" "FAILED (Check.lean errors)"; fail=1
   printf '%s\n' "$bad"
+elif [ $arc -ne 0 ]; then
+  say "axiom audit ($n theorems)" "FAILED (an axiom outside Lean's three)"; fail=1
+  printf '%s\n' "$axcensus" | head -5 | sed 's/^/  /'
 elif [ -n "$unaudited" ]; then
   m=$( printf '%s\n' "$unaudited" | wc -l )
   say "axiom audit ($n theorems)" "FAILED ($m declared, never audited)"; fail=1
   printf '%s\n' "$unaudited" | head -5 | sed 's/^/  no #print axioms for: /'
 else
-  say "axiom audit ($n theorems)" "ok"
+  say "axiom audit ($n theorems)" "ok  ($axcensus)"
 fi
 
 # 4. The negative test MUST fail to compile.  It is the only test that checks

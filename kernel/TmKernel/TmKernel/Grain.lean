@@ -137,6 +137,17 @@ theorem closeTo_target_is_open (g : Grain) (now : Day) : ¬ Closed (closeTo g no
 horizon.rs:1323): the coarser block containing the *closed region*. -/
 def targetContaining (g : Grain) (closedDay : Day) : Region := regionOf (coarsen g) closedDay
 
+/-- **The three close rows, constant-folded** (D40).  `Check.lean` used to carry
+`#eval (closeTo day 250, closeTo week 250, closeTo month 250)` beside its audit
+lines, printing this triple for a reader; a print is not a check, and `#eval` is
+the command a new axiom walked past every gate through (W-31 repair, README gap
+2255), so the values it printed are asserted here instead.  Day 250 of the
+epoch closes into week 35, and both coarser grains close into month 8 — which is
+`coarsen_month` again, the fixed point, at a value rather than in general. -/
+theorem the_three_close_rows_at_day_250 :
+    (closeTo day 250, closeTo week 250, closeTo month 250)
+      = (⟨week, 35⟩, ⟨month, 8⟩, ⟨month, 8⟩) := by decide
+
 /-! ### The disagreement, re-checked over the real calendar
 
 The toy index made `closeTo` and `targetContaining` differ at days 6 and 7

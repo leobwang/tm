@@ -289,12 +289,34 @@ ALLOWED_COMMANDS = {
     "abbrev", "class", "decreasing_by", "def", "deriving", "end", "import",
     "include", "inductive", "instance", "mutual", "namespace", "omit", "open",
     "private", "section", "set_option", "structure", "termination_by",
-    "theorem", "variable", "where",
+    "theorem", "variable", "where", "#print",
 }
 # THE FIRST WORD OF EVERY LINE, indented or not (W-30).  It was anchored at
 # column zero, which is the hole `command_keywords` exists to close; the two
 # populations are told apart by whether the leading-space group is empty.
-COMMAND_WORD = re.compile(r"(?m)^([ \t]*)([A-Za-z_][A-Za-z0-9_'.]*)")
+#
+# **AND THE WORD CLASS WAS SHORTER THAN LEAN'S** (W-31 repair, README gap 2255).
+# W-30 closed the KEYWORD SET and left `[A-Za-z_]` standing, so a `#`-command --
+# `#eval`, `#check`, `#print`, `#reduce`, `#synth`, and the twenty-two more the
+# derivation below now reads out of the pin -- never entered `command_positions`
+# AT ALL: not indented, not at column zero.  `#eval` elaborates arbitrary
+# `CommandElabM`, which is `run_cmd` by another spelling, and `run_cmd` is the
+# construct W-30 drove a NEW AXIOM past every gate with.  DRIVEN in a `cp -a`
+# clone with its own build tree: `#eval show CommandElabM Unit from liftCoreM <|
+# Lean.addDecl (Lean.Declaration.axiomDecl { name := `Tm.w31Planted, type :=
+# mkConst ``False, .. })` appended to `Emit.lean` inside a `section`, plus
+# `theorem w31_one_is_two : (1:Nat) = 2 := (w31Planted).elim`, BUILT at rc=0
+# ("Build completed successfully (174 jobs)") and left this file at RC=0 WITH NO
+# OUTPUT.  With the `#?` below it is named at both columns.
+#
+# AND THE POSITION WAS ONLY HALF OF IT: `KEYWORD` -- the filter the derivation
+# puts its own keywords through -- carried the same short class, so `#eval` was
+# not in `command_keywords()` either and the INDENTED spelling still walked
+# past.  DRIVEN, with this line widened and `KEYWORD` left alone: the same plant
+# INDENTED inside its `section` gave rc=1 naming Check.lean's two documentation
+# `#eval`s and NOT `Emit.lean:534`.  One rule read through one spelling, twice
+# over, in the two places that had to agree -- the twelfth counted instance.
+COMMAND_WORD = re.compile(r"(?m)^([ \t]*)(#?[A-Za-z_][A-Za-z0-9_'.]*)")
 # The `in` combinator and the `for` binder that is not one, as TOKENS.
 IN_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])in(?![\w'?!])")
 FOR_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])for(?![\w'?!])")
@@ -441,7 +463,15 @@ CORE_DEF = re.compile(
 CORE_STR = re.compile(r'"([^"\\\n]*)"')
 CORE_ESC = re.compile(r"«([^»]+)»")
 CORE_REF = re.compile(r"(?<![\w'?!.])([A-Za-z_][A-Za-z0-9_'.]*)")
-KEYWORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_']*$")
+# A COMMAND KEYWORD, and the leading `#` is Lean's, not a decoration (W-31
+# repair, gap 2255).  Twenty-seven of the pinned toolchain's command keywords
+# begin with one -- thirteen from the `@[builtin_command_parser] def` half
+# (`#eval`, `#print`, `#check`, `#synth`, `#exit`, ..) and fourteen from the
+# `: command` syntax half (`#reduce`, `#guard_msgs`, ..) -- and this filter
+# dropped every one of them, which is why `COMMAND_WORD`'s widening alone left
+# the indented spelling open.  118 keywords before, 145 after; the floors below
+# name a `#` member of each half so the class cannot quietly narrow again.
+KEYWORD = re.compile(r"^#?[A-Za-z_][A-Za-z0-9_']*$")
 # The parser combinators, which are references and not keywords.  A name that is
 # not one of these and not a parser this scan saw is simply ignored, so the list
 # only ever costs a keyword it cannot reach -- never a false one.
@@ -543,14 +573,23 @@ def command_keywords():
     parser_floor = {"macro", "macro_rules", "syntax", "elab", "notation",
                     "initialize", "builtin_initialize", "attribute", "theorem",
                     "abbrev", "instance", "namespace", "section", "end", "open",
-                    "set_option"}
+                    "set_option",
+                    # W-31 repair, gap 2255.  `#eval` elaborates arbitrary
+                    # `CommandElabM` -- it is `run_cmd` by another spelling and
+                    # a NEW AXIOM was driven past every gate with it.  `#print`
+                    # is the one this kernel uses; the other three are here so
+                    # that a `KEYWORD` class that narrows back to `[A-Za-z_]`
+                    # fails loudly instead of reporting a clean library.
+                    "#eval", "#print", "#check", "#synth"}
     # Declared `syntax .. : command` (the first four) and `macro .. : command`
     # (`register_builtin_option`, which this file's own header used to name as
     # covered and was not).  `run_cmd`, `run_elab` and `run_meta` each elaborate
     # arbitrary `CommandElabM`, which is how a NEW AXIOM was driven past every
     # gate in this tree.
     syntax_floor = {"run_cmd", "run_elab", "run_meta", "unseal", "seal",
-                    "test_extern", "reprove", "register_builtin_option"}
+                    "test_extern", "reprove", "register_builtin_option",
+                    # The `#`-commands this half declares (W-31, gap 2255).
+                    "#reduce", "#guard_msgs"}
     for what, got, floor, least in (
             ("@[builtin_command_parser] def", kws, parser_floor, 40),
             ("a `: command` syntax declaration", from_syntax, syntax_floor, 50)):

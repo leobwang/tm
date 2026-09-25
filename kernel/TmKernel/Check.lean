@@ -101,10 +101,14 @@ open Tm
 #print axioms Tm.dedupIds_nodup
 #print axioms Tm.firstDupPath_none
 
--- §6.3's three close rows, generated from one rule at three grains
-#eval (closeTo day 250, closeTo week 250, closeTo month 250)
--- the rule horizon.rs:1323 uses, versus the derived one, on a Sunday closed on Monday
-#eval (targetContaining day 6, closeTo day 7)
+-- §6.3's three close rows, generated from one rule at three grains, and the rule
+-- horizon.rs:1323 uses versus the derived one on a Sunday closed on Monday.  Both
+-- stood here as `#eval` — a PRINT, read by a human and by no gate — until W-31's
+-- repair found that `#eval` is `run_cmd` by another spelling and walked a new
+-- axiom past every gate (README gap 2255).  The second was already a theorem —
+-- `impl_day_rule_disagrees`, audited at the head of this file — and the first is
+-- one now, audited here.
+#print axioms Tm.the_three_close_rows_at_day_250
 
 -- ===========================================================================
 -- APPENDED: §3.1's item fields and the rest of the plan-level tier.
