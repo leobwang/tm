@@ -63353,3 +63353,259 @@ driven at this commit as well as at `0e5d1da`.
 2020-2025, 2060-2065, 2090-2096, 2120-2149 and 2190-2229 are untouched by this step: it merged,
 measured and drove, and it changed no predicate, no assertion, no fixture and no band.  The one
 thing it changed is this file.
+
+## Stage 6 — W-31, repair: `#eval` is `run_cmd` by another spelling, the axiom audit never looked at the axiom set, and check 12 could not see a definition the compiler emits as data
+
+**Thirteen defects, two auditors, and the same three shapes.** Every claim below was re-driven
+before it was repaired, in a `cp -a` or `git clone --local` clone with its own build tree; the
+shared tree's `git status --porcelain` was empty before and after every plant. Two reproduced and
+were repaired with a finding of their own attached, one reproduced and is left standing by name,
+and none failed to reproduce.
+
+### 1. A NEW AXIOM STILL WALKS PAST EVERY GATE — gaps 2255 and 2256, closed
+
+**Reproduced, both holes, composing.** `cp -a kernel/` with its `.lake`; `import Lean` at the head
+of `Emit.lean` and, inside a `section`:
+
+```
+#eval show Lean.Elab.Command.CommandElabM Unit from
+  Lean.Elab.Command.liftCoreM <| Lean.addDecl (Lean.Declaration.axiomDecl
+    { name := `Tm.w31Planted, levelParams := [], type := Lean.mkConst ``False, isUnsafe := false })
+theorem w31_one_is_two : (1:Nat) = 2 := (w31Planted).elim
+```
+
+plus `#print axioms Tm.w31_one_is_two` in `Check.lean`. Capped at 40G:
+
+| step | before the repair | after |
+|---|---|---|
+| `lake build TmKernel:static` | rc=0, "Build completed successfully (174 jobs)" | unchanged |
+| `python3 totality.py TmKernel/TmKernel TmKernel` | **RC=0, NO OUTPUT** | rc=1, names `Emit.lean:534` |
+| check 3's own shell fragment | **"axiom audit (5290 theorems)  ok"** | FAILED, `A NEW AXIOM: w31Planted, 1 use(s), first \`Tm.w31_one_is_two\`` |
+
+and `Check.lean`'s stdout in that same run read `'Tm.w31_one_is_two' depends on axioms:
+[w31Planted]`, at line 5762. The gate read the line that names the planted axiom and called it ok.
+
+**HOLE A is a CHARACTER CLASS, and it is in TWO places, not the one the audit named.** W-30 closed
+the command KEYWORD SET and left `[A-Za-z_][A-Za-z0-9_']*` standing in `COMMAND_WORD`, so a
+`#`-command entered `command_positions` at no column at all. The audit named that line. It is not
+enough: `KEYWORD`, the filter the toolchain derivation puts its OWN keywords through, carries the
+same class, so `#eval` was not in `command_keywords()` either. **DRIVEN** with `COMMAND_WORD`
+widened and `KEYWORD` left alone: the same plant INDENTED inside its `section` gave rc=1 naming
+`Check.lean`'s two documentation `#eval`s and **not** `Emit.lean:534`. One rule read through one
+spelling, twice over, in the two places that had to agree. 118 command keywords derived before,
+**145** after — 27 of them `#`-commands, 13 from the `@[builtin_command_parser] def` half and 14
+from the `: command` syntax half — and each half's floor now names a `#` member of its own.
+
+**HOLE B is the gate named after the rule it does not enforce.** check 3's first arm was `grep -q
+sorryAx`: ONE NAME, where the hard rule is a CLASS. It is a SUBSET TEST now, W-27's shape — an
+axiom joins Lean's three to be EXEMPT — and the ok line prints the census rather than a bare ok:
+`Classical.choice 2562, Quot.sound 3948, propext 4906; 381 of 5290 depend on none`.
+
+**And the new arm carries a floor, which caught the new arm.** `lean` WRAPS a long axiom list, so a
+line-at-a-time reader sees fewer records than were printed; the arm asserts that records parsed
+equals audit lines printed. On the first drive it printed `PARSED 5266 of 5290 printed audit lines
+-- this arm would gate nothing`: 24 theorem names carry a prime and `[^']+` stopped at it. The
+floor found this repair's own short spelling before it gated anything.
+
+**`#print` joins ALLOWED_COMMANDS; `#eval` does not**, so `Check.lean`'s two documentation `#eval`s
+had to go. The second was already the theorem `impl_day_rule_disagrees`. The first is a theorem
+now — `Tm.the_three_close_rows_at_day_250`, in `Grain.lean`, constant-folded (D40) and audited.
+A print is read by a reader; an equation is read by the kernel.
+
+### 2. Check 12 was blind to 16% of the library's own definitions — gaps 2257, 2258, 2260, closed but for one
+
+**Reproduced and then measured past the audit's figure.** `callgraph.ANY_EMITTED` recognised a
+definition only where the code generator gave it a C FUNCTION. A nullary `def` whose body is a
+closed constant — every witness fixture, every table, every codec `abbrev` — is emitted as a
+`LEAN_EXPORT lean_object* <sym>;` global and never as a function. The audit measured 476 such
+`def`s, 434 of them named
+by no function the export reaches; this step measures **524 and 470**, because the generator writes
+a global **two ways** and a pattern anchored on `;` reads one of them.
+
+**The second spelling was found by this repair's own plant**, which is the whole method working:
+the critic's `def w31CriticOrphanConst : List Nat := [3,1,4,1,5,9,2,6]` in `SealInStep.lean`,
+reached by nothing, emitted at `SealInStep.c:94` as `LEAN_EXPORT const lean_object* lp_… = (const
+lean_object*)&…___closed__7_value;`. With the `;`-anchored pattern the emitted count did not move
+(2,880) and check 12 stayed green while the `abbrev` planted beside it was named. The test is what
+does NOT follow the symbol: `(` is a function, anything else is data. Both plants are then NOT
+EXEMPT at rc=1.
+
+**The population is `(def, abbrev)`** (gap 2258): four library `abbrev`s had an emitted C function,
+were unreachable and were named in no exemption — `Tm.jrenderNat`, `Tm.Planner.posLt`,
+`Tm.Planner.victimLt`, `Tm.PlannerWit.permissive` — and with the global half it is 36. `instance`
+is **declared out and left open as gap 2260**: an instance is emitted, but it is reached through
+dispatch the generator resolves at the CALL SITE, so an unreached instance symbol is not the same
+finding and wants its own adjudication.
+
+**What the widening cost, stated plainly.** Check 12's population goes 2,365 → **2,926** and
+`reach-exempt.txt` goes 953 → **1,459**, the growth entirely in **26 new dated sections** of the
+two widened classes. This is the file's founding act repeated, not the ratchet broken: nothing that
+was gated becomes ungated, and 506 definitions that were invisible to every instrument in this
+repository are now named, dated and under the ratchet. It is also, honestly, 506 definitions nobody
+has adjudicated — which is what the sections say.
+
+### 3. D51's ratchet was a comment, and a duplicate heading rewrote the reason — gap 2259, closed
+
+**Reproduced.** `git show <c>:kernel/reach-exempt.txt | grep '^EXEMPT '` over the range: 952 at
+`1618827`, `f4e5535`, `94ae928`, `c674142`; **953 from `a0170da`**, whose diff is exactly
+`+Tm.PlannerWit.freeSlotRows` under an existing section and `-EXEMPT 952 / +EXEMPT 953`. The only
+mechanical rule was `int(declared) == len(entries)` — a number held against ITSELF.
+
+**And the duplicate-heading defect reproduced against the HEAD parser**: a second `## Emit.lean --
+AUDIT DRIVE: an entirely made-up reason that no human ever read.` appended at the end of the file
+left `sections["Emit.lean"]` holding the made-up reason for **all four** of Emit.lean's entries,
+`complaints: []`, and the summary still saying "45 section(s)". With the repair the same file gives
+46 sections, the two pre-existing entries keep their own reason, and only the two new ones carry
+the made-up one.
+
+**The comparand is the file as COMMITTED AT HEAD.** A new entry must sit under a heading that is
+new too, and a new heading's reason must carry an ISO date. Four drives in a `git clone --local`
+with its own build tree, against two real dead definitions:
+
+| the edit | result |
+|---|---|
+| two entries under a section that exists at HEAD, `EXEMPT` bumped | **rc=1**, `RATCHET: … is a NEW exemption under a section that already existed at HEAD` |
+| a NEW section, made-up reason, **no date** | **rc=1**, `… its reason carries no ISO date — growth is dated here or it is not made` |
+| the same made-up reason **with** a date | rc=0 |
+| control, unplanted | rc=0, `1459 exempt in 71 section(s), 0 UNANSWERED` |
+
+**The third row is the declared limit and it is not hidden:** no gate reads whether a sentence is
+true. What the ratchet buys is that growth costs a heading and a date instead of a character, and
+shows up in the diff as a section rather than as a digit.
+
+### 4. Gap 2224's divergence now carries a number — **Parity P42 taken**
+
+**Reproduced, three standalone runs of `the_kernel_plans_the_day_the_fork_plans` capped at 16G**:
+272 cases each, `step-2 rows only the kernel placed 0, only the fork placed 1 / 1 / 2 (gap 2224)`,
+cases exempt 0, assignment ASSERTED on all 272 days. It fires on every run. D21/D22/D23 say every
+divergence from fork `4748911` is a registered parity number, and `next free P42` had stood
+untaken since track P, whose stated reason was that issuing one asserts *fork quirk*.
+
+**It does not.** The register records a divergence; its row is a description, not a verdict. P42 is
+issued here with the measurement in it and no claim about which side is right — which is what
+leaves the question open in the place a reader looks for open questions, instead of in a gap that
+`check 10` cannot see.
+
+   **Parity P42 taken**
+
+### 5. The step-2 floors guarded an assertion that does not exist, and `rrows` was published under the wrong caption — gaps 2265 and 2224's coverage, closed
+
+**Both reproduced, and the critic's plant 4 reproduced in both directions.** The floors' own
+sentence opened *"The routine rows are asserted equal above"*; two hundred lines up, in the same
+commit, that equality had been withdrawn and says so — *"IT IS A COUNTER AND NOT AN ASSERTION"*.
+And the quantity the floor tested, `c[18] += krout.len()`, is the number of routine rows **the
+kernel placed**, printed as *"routine rows compared"*.
+
+**Plant 4, the critic's own** (`emit_segments` renames every step-2 row, minutes identical), in a
+`git clone --local` with the cargo target directory outside the tree:
+
+| the arm | result |
+|---|---|
+| as committed at `9c92524` | **PASSES**, rc=0; census *"routine rows compared 313"* while *"only the kernel placed 313, only the fork placed 314"* |
+| repaired | **FAILS**: `not one §8.2 step 2 routine row agreed with the fork's in 306 cases`; census *"the kernel placed 312, the fork placed 313, on BOTH sides 0"* |
+| repaired, unplanted control | rc=0; *"the kernel placed 322, the fork placed 323, on BOTH sides 322"* |
+
+So the README's own plant table, published under *"with the arm as committed"*, was **driven
+against the assertion version and is wrong for the tree it was published with** — the correct entry
+at `74771aa` is PASSES. It is right again now, and by a floor rather than by an assertion that is
+false of these two planners: `rboth`, the rows on BOTH sides, is the only one of the three figures
+the word *compared* fits, and a run in which every row is renamed has `rboth = 0`. The caption
+names what it counts. **No law was narrowed and no withdrawn assertion was restored.**
+
+### 6. Three published numbers, re-derived
+
+**(a) The eleven-check lift population.** `Check.lean`'s W-31 banner said SIX, the brief said six,
+the land block said seven. Measured over comment-stripped source by an instrument of this step's
+own — declarations whose conclusion is `planOk _ _ = true` and whose name is `dayPlan_ok_*`, plus
+the bridge — the population is **TWELVE**: nine still carrying `r.assignedRows = []`, two free
+(`dayPlan_ok_of_the_core_seven`, `dayPlan_ok_on_the_whole_day_of_a_paying_decoder`) and
+`the_unassigned_eleven_is_an_instance_of_the_paying_eleven`, which carries it by design. That is
+**exactly** an independent auditor's count, reached by a different instrument. The comment is
+corrected; gap **2251** stays open, because no gate counts a conclusion shape.
+
+**(b) Five re-derivable numbers inside the two new gates' own specification headers** (gap 2261):
+`reach.py`'s "952 definitions" → 1,459 in two dated waves; "2,365 emitted `def`s" → the
+function-only population it started with, said so; **"677 of the library's 3,042 `def`s, every one
+of them a `Prop`, a type-level abbreviation or a declaration in the package root, which `lake` does
+not compile into the library at all"** → 216 of 3,142, and the old sentence was FALSE BY 524, which
+makes it the gate's own header asserting its blind spot was empty; `callgraph.py`'s "6,655
+initialiser bodies" → 6,679. Check 11's caption says which population it counts (gap 2252): 13,183
+emitted C SYMBOLS, functions and globals, against check 12's 2,926 definitions.
+
+**(c) The published assigned-row band.** The land block printed *"696, 702, 710, 724, 728 over the
+five standalone runs"* in a way that reads as a band. A reuse critic's independent run gave 684 and
+this step's three gave **638, 654, 654**, and a clone control gave 667: six of the seven
+independent samples fall outside all five. The test is randomised with no fixed seed and this is
+not a code defect — it is a SAMPLE LIST read as a bound, one layer up from shape (2). The figures
+worth quoting are the ones that are bounds and re-derive exactly: **cases exempt 0 of 272**, **days
+asserted 272 of 272**, and **`rboth` equal to `krows` on every unplanted run seen here**.
+
+### 7. `tm add` — gaps 2262 and 2263, closed
+
+**Gap 2262 reproduced over four spellings and four horizons** on the binary built from `74771aa`:
+`"[ ] beta est:1b"` → `- [ ] [ ] beta est:1b` and `"[x] gamma est:1b"` → `- [ ] [x] gamma est:1b`,
+on week, backlog AND month, with the item's §4.1 title becoming literally `[ ] beta`; `tm check`
+said "no problems" and `tm plan` rendered the doubled marker beside a clean row. `inbox` was right
+only by accident. `mod.rs` documents a CLASS — *"the `- [ ] ` prefix is optional"* — and `add`
+tested `starts_with("- ")`, the hyphen. The two prefix parts are asked for separately now and the
+marker question is `grammar::opens_with_state`, the grammar's own `state_at`, rather than a second
+spelling of `[ ]`. All twelve stateful rows of the same drive are correct after.
+
+**Gap 2263 reproduced, and then reproduced again inside this repository's own test suite.** `tm add
+--to routines "[ ] 0700 stretch est:15m every:day"` exited **0**, after which `tm review day`,
+`tm sync-cal` and `tm close week` exited 1 with `itemCheck (fileKindShape)` and `tm check` exited 2.
+And `plan-basic/inbox.md:2` already holds `- ask Kun about the dinner place`, so
+`tui_queue_capture`'s own third case wrote a second line with the same store key: add rc=0, then
+check 2, review 1, plan 1 — **and the test asserted that write succeeded**. §5.7 was honoured on the
+read side and not on the write side. `add` now asks `kernel_bridge::gate` about the TREE after it
+writes — the same door every writing verb already goes through before — and puts the file back
+exactly, its own bytes or the file removed when this add created it (`Store::delete_file`, added
+for this). The queue test keeps its case and asserts the named refusal and a byte-identical file.
+
+### 8. Track A's commit list — gap 2268
+
+The W-31 step report listed track A as committing `1618827`, `f4e5535` and `94ae928`. A fourth
+landed on the same track: **`c674142` "gate: check 12's failure prints both of its answers"**,
+between `94ae928` and track P's `36fe82d`. It is green and germane — it is the `-- either give it a
+caller …` teaching line, which this step rewrote for the ratchet. A reporting omission and not a
+tree defect, recorded here because a step's commit list is how the next run reconstructs what
+landed. This file is append-only (AGENTS §6.4), so the correction is here and not there.
+
+### 9. Acceptance, capped at 40G with no swap, on the committed tree
+
+* **check.sh ELEVEN — twelve**: `lake build` ok · totality ok · axiom audit **5,290 theorems**,
+  `Classical.choice 2562, Quot.sound 3948, propext 4906; 381 of 5290 depend on none` · Negative
+  rejected · FFI ok (93 tests) · corpus **29/37 and 4/5** · stage goals **7 outstanding** ·
+  citations ok · mutation ok · parity **41 registered, next free P42** before this block ·
+  check 11 **2,202 of 13,183** · check 12 **3,142 def/abbrev in 86 modules, 2,926 emitted (556 as
+  a global), 1,467 reachable, 1,459 exempt in 71 sections, 0 UNANSWERED**.
+* **cargo test --workspace**: **1,477 passed / 0 failed / 9 ignored across 87 binaries** — 1,476
+  at the baseline plus this step's new class test. The named suites all run inside it:
+  `cli_switch_acceptance`, `cli_latency`, `kernel_call_counts`, `one_padder`, `one_renderer`,
+  `kernel_row_cells`, `kernel_item_grammar`, `kernel_planner_wire`, `planner_invariants`,
+  `kernel_log_door`.
+* **How many runs**: check.sh **nine**, four red — one a bare backticked emitted-symbol keyword
+  check 8 could not resolve, and three more of the same class in drafts of this block.
+  `cargo test --workspace` **six**, one red —
+  and the red one is §7's second finding, not a flake. `planner_invariants` alone **six** more:
+  three in the tree, three in the clone (control, plant 4 repaired, plant 4 as committed).
+
+### 10. Gaps
+
+| # | what | where | why it is not closed here |
+|---|---|---|---|
+| **2260** | **`instance` is outside check 12's population** and the omission is now declared rather than silent. An instance IS emitted; it is reached through dispatch the generator resolves at the call site, so an unreached instance symbol is a different finding | `kernel/reach.py` | it needs its own adjudication — what an unreached instance symbol MEANS — and inventing one inside a repair step is how a population becomes a list |
+| **2264** | **506 definitions were grandfathered unadjudicated** by §2's widening. They are named, dated and under the ratchet, and not one of them has been asked the D50 question: is this a composition gap or a proof-side constant? | `kernel/reach-exempt.txt` | the file may only shrink, so this is the work of the runs after it; three of its sections are already findings this campaign carries by name |
+| **2266** | **§5.3: 23 copies of one witness-plan skeleton**, 12 in `Boundary.lean` and 11 in `PlannerWit.lean` — `def <X>Plan : WfPlan := match h : loadPlan <X>Witness with \| .ok p => p \| .error _ => absurd the_<X>_witness_loads (by simp [loadsOk, h])`. One bound collapses all 23: `def planOfWitness (w : List ReqDoc) (h : loadsOk w = true) : WfPlan`. Check 11 groups identical def BODIES, so a skeleton with one identifier varying is invisible to it by construction | `kernel/TmKernel/TmKernel/Boundary.lean`, `PlannerWit.lean`, `kernel/twins.py` | 23 proof sites, each a rewrite that can break a proof, inside a step whose job was thirteen defects. Stated here with the bound written out so the next run does not have to find it again |
+| **2267** | **a five-sample list published as a band.** `assigned rows compared 696-728` does not contain six of seven independent re-measurements (684, 667, 638, 654, 654 here). Nothing gates a figure a block quotes against the run that produced it | `kernel/README.md`, `tm/tests/planner_invariants.rs` | the fix is a convention, not a gate: quote the figures that are BOUNDS (cases exempt 0 of 272, days asserted 272 of 272) and mark a sample as a sample. §5.11's class, applied to a range |
+| **2269** | **the ratchet cannot read a reason.** A new section with an ISO date and a sentence no human wrote passes check 12 — driven, above. Growth is dated and visible in the diff; whether it is justified is still a reader's job | `kernel/reach.py` | no gate reads a sentence. What could be added is a rule that a new section's entries must be NEW definitions rather than old ones moved, which is a smaller hole than the one closed |
+
+**Gaps 2255-2259, 2261-2263, 2265 and 2268 are closed by this step.** Gap **2224** now carries
+**P42** and its perturbation class is caught again, by a floor rather than by the withdrawn
+assertion; gap **2251** stays open with its number corrected; gap **2252** is answered by a caption.
+Gaps 113/114/116, 301, 346, 365, 435, 501, 551, 577, 803, 876, 1006, 1065, 1105, 1318, 1320, 1333,
+1529, 1620, 1621, 1623, 1788, 1790, 1870, 1871, 1873, 1889, 1900, 1902-1906, 1956, 1957, 1984-1988,
+1990, 2000-2007, 2016-2018, 2020-2025, 2060-2065, 2090-2096, 2120-2149, 2190-2229 and 2250, 2253,
+2254 are untouched: no predicate was weakened, no law narrowed, no generator narrowed, no exemption
+widened to remove a disagreement, no snapshot, fixture, latency band or corpus re-blessed, no
+memory bound raised, no external dependency added, and `dayPlan` is still total.

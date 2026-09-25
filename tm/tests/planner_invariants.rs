@@ -1214,7 +1214,7 @@ proptest! {
 /// counters README gap **2222** is about — fork-assigned row ids the kernel was
 /// sent no candidate for, and fork-assigned row ids the kernel returned no §7
 /// grant for.
-static PLAN_CENSUS: Mutex<[u64; 24]> = Mutex::new([0; 24]);
+static PLAN_CENSUS: Mutex<[u64; 26]> = Mutex::new([0; 26]);
 
 /// **A configured double as the exact decimal pair the wire carries** (D17).
 ///
@@ -2164,7 +2164,8 @@ proptest! {
 
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
         let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
-             grows, gday0, gdays, gdups, gsame, frdays, rrows, funcand, fungrant, rdefer, ronlyc, fonlyc] = {
+             grows, gday0, gdays, gdups, gsame, frdays, krows, funcand, fungrant, rdefer, ronlyc,
+             fonlyc, frows, rboth] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -2190,6 +2191,8 @@ proptest! {
             c[21] += fdefer;
             c[22] += ronly;
             c[23] += fonly;
+            c[24] += frout.len() as u64;
+            c[25] += krout.iter().filter(|r| frout.contains(r)).count() as u64;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -2236,15 +2239,33 @@ proptest! {
                 gsame > 0,
                 "step 5's assignment was asserted on no day of {cases} cases"
             );
-            // **AND STEP 2 HAS ITS OWN TWO FLOORS** (W-31). The routine rows are
-            // asserted equal above, and an equality over two empty lists is
-            // AGENTS §5.2's vacuous theorem: it holds on every case of a run in
-            // which the `routines` key silently stopped decoding. So a run must
-            // compare some, and — separately — the FORK must have placed some,
-            // which is the half that says the generator still draws the days the
-            // old exemption used to remove. Two floors and not one: either
-            // alone would let the other rot.
-            prop_assert!(rrows > 0, "no §8.2 step 2 routine row was compared in {cases} cases");
+            // **AND STEP 2 HAS ITS OWN THREE FLOORS** (W-31, repaired W-31 —
+            // README gap 2265). The sentence here used to open "the routine rows
+            // are asserted equal above", and they are NOT: two hundred lines up,
+            // in the same commit, the equality was withdrawn to a counter and
+            // says so — "IT IS A COUNTER AND NOT AN ASSERTION". So the floors
+            // were guarding the vacuity of an assertion that does not exist.
+            //
+            // AND THE QUANTITY THEY TESTED WAS NOT THE ONE THE CAPTION NAMED.
+            // `c[18] += krout.len()` is the number of routine rows THE KERNEL
+            // placed, and the census line printed it as "routine rows compared":
+            // nothing is compared into it, and on a planted run it read 279
+            // while 279 kernel rows and 281 fork rows disagreed. The caption
+            // names what is counted now — `krows` and `frows`, one per side —
+            // and a third figure, `rboth`, is the rows that are on BOTH sides,
+            // which is the only one of the three the word "compared" fits.
+            //
+            // The floor is `rboth`, because a run in which the `routines` key
+            // silently stopped decoding gives `krows > 0` on the kernel side and
+            // agrees with nothing (AGENTS §5.2's vacuous theorem, one layer in).
+            // Three floors and not one: either of the others alone would let the
+            // rest rot.
+            prop_assert!(krows > 0, "the kernel placed no §8.2 step 2 routine row in {cases} cases");
+            prop_assert!(
+                rboth > 0,
+                "not one §8.2 step 2 routine row agreed with the fork's in {cases} cases, \
+                 so the comparison the counters below report is over two disjoint lists"
+            );
             prop_assert!(
                 frdays > 0,
                 "the fork placed no routine on any of {cases} cases, so the days the \
@@ -2261,7 +2282,8 @@ proptest! {
              §7 rows compared {grows}, capacity differs to TODAY (P41) {gday0}, \
              beyond today (P1) {gdays}, rows unkeyable {gdups}, \
              days whose assignment was ASSERTED against the kernel-ranked fork {gsame}, \
-             §8.2 step 2 routine rows compared {rrows} on {frdays} days the fork \
+             §8.2 step 2 routine rows the kernel placed {krows}, the fork placed \
+             {frows}, on BOTH sides {rboth}, on {frdays} days the fork \
              placed one, fork-assigned ids with no kernel CANDIDATE {funcand} \
              (0 by construction), with no kernel §7 GRANT {fungrant}, \
              fork routine rows the fork DEFERRED to §8.2 step 6, which the kernel \

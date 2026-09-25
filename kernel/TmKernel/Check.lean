@@ -6780,8 +6780,16 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- `Goals.lean` entry that left by refute-and-rename, and the widened paying set.
 -- ############################################################################
 --
--- THE HYPOTHESIS THE SIX ELEVEN-CHECK LIFTS CARRIED WAS ONE PROPERTY OF THE
--- ELIGIBILITY SPELLED AS A DOMAIN.  `r.assignedRows = []` was being spent on
+-- THE HYPOTHESIS THE ELEVEN-CHECK LIFTS CARRIED WAS ONE PROPERTY OF THE
+-- ELIGIBILITY SPELLED AS A DOMAIN.  This line said SIX, the run brief said six and
+-- the land block said seven; the population is TWELVE and nine of them still carry
+-- the hypothesis (W-31 repair, README gap 2251, which stays OPEN because the number
+-- is prose and no gate counts a CONCLUSION SHAPE).  MEASURED over comment-stripped
+-- source, by the declarations whose conclusion is `planOk _ _ = true` and whose name
+-- is `dayPlan_ok_*`, plus the bridge: nine carrying `r.assignedRows = []`, two free
+-- (`dayPlan_ok_of_the_core_seven`, `dayPlan_ok_on_the_whole_day_of_a_paying_decoder`)
+-- and `the_unassigned_eleven_is_an_instance_of_the_paying_eleven`, which carries it by
+-- design.  An independent auditor's count and this one agree exactly.  `r.assignedRows = []` was being spent on
 -- `batchDoesNotReachPast` (no Batch row exists) and on the two comparisons (every
 -- work row is the reservation), and on nothing else -- `impossibleKept` never
 -- needed it.  `FoldRowsAdmitNothing` is what those three actually want, and it is
