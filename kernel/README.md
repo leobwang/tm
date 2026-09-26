@@ -64950,3 +64950,207 @@ this step's own, for its docstring), and `git status --porcelain` on
 `/home/leobwang/code/projects/tm` held exactly this step's own modified files before the first plant
 and after the last, listed in §1 and §6 of the transcript. The two clones are the scratchpad's and
 are not part of the tree.
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-33**, **track G**,
+     on branch `w33-g` off `8702132`.  Gap range **2480-2509**; **2480-2482
+     taken**.  Parity: **NONE ISSUED** — nothing this step touches is a
+     divergence from the fork; next free **P43** stands untaken.
+     ===================================================================== -->
+
+## Stage 6 — W-33, track G: six candidate builders were one definition, and the file that may only shrink did not grow
+
+**The headline.** Gap 2417 said four of `PlannerWit.lean`'s candidate builders — `bCand`, `pCand`,
+`pCandDue`, `pCandSmall` — were one definition with different literals, and that `bCandCap` might
+be a fifth. Measured by BODY SHAPE, the family is **six**: `cCand` (`:2594`) is `pCand`'s body with
+`some 0` for `none` and `false` for `hot`, and the brief did not name it; `bCandCap` **is** a member
+once the builder takes the facts RECORD rather than `(pm, l, sp)`, which is also what makes the
+brief's structure-eta subtlety unnecessary. Two more builders share the thirteen-field shape and
+stay outside: `gCand` and `oCand` set `window`/`wall`/`optional`, the flags every member of the six
+leaves off. After this step the family is **one body**, `PlannerWit.oneCand` (`:2310`); the six
+names stand as its instantiations, because README, `Goals.lean:1379` and gap 2417's own row cite
+them and check 8 pins every one of those citations to a declared name. The inline constructor for
+`^b5` in `witAtomicCands` — the same shape, literal for literal — is folded with them. **Gap 2417
+is closed.**
+
+**And the exemption file did not grow.** wfPlanFacts (`:2308`, two lines, two callers, cited by
+nothing but its own entry) was `⟨planFacts pm l, h⟩` under a name; it is retired in the same edit
+and its `reach-exempt.txt` entry deleted, so `oneCand`'s new dated section costs `EXEMPT` **1,756 →
+1,756**. D51's ratchet is honoured in its letter (a new entry under a new dated section, with an
+EXIT) and in its direction.
+
+### 1. The family, measured at `8702132`
+
+`Look.Cand` has thirteen fields. Every builder below writes the anonymous constructor once, and the
+table is what each fixes (a literal) and what each takes (a parameter); `overdue`, `mandatory` and
+`yesterday` are `false`, `false`, `none` in all eight, and the pair's floor is `none` in all eight.
+
+| builder | line | `ci` | `rootPrio` | `remaining` | `due` | `window` | `wall` | `optional` | `hot` | `plan` |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `bCand` | 2313 | ci | `some 0` | `10` | `none` | `false` | `false` | `false` | `false` | `⟨planFacts pm l, h⟩` |
+| `bCandCap` | 2347 | ci | `some 0` | `10` | `none` | `false` | `false` | `false` | `false` | `⟨{planFacts pm .any with cap := some ⟨60, d⟩}, h⟩` |
+| `cCand` | 2594 | ci | `some 0` | `50` | `none` | `false` | `false` | `false` | `false` | `⟨{planFacts pm l with splittable := sp}, h⟩` |
+| `pCand` | 6305 | ci | `none` | `50` | `none` | `false` | `false` | `false` | hot | `⟨{planFacts pm l with splittable := sp}, h⟩` |
+| `pCandDue` | 6840 | ci | `none` | rem | `some due` | `false` | `false` | `false` | hot | `⟨{planFacts pm l with splittable := sp}, h⟩` |
+| `pCandSmall` | 7194 | `2` | `none` | rem | `none` | `false` | `false` | `false` | `false` | `⟨planFacts pm l, h⟩` |
+| `gCand` | 2505 | `3` | `some 0` | rem | `none` | win | w | o | `false` | `⟨gatherFacts w, h⟩` |
+| `oCand` | 4083 | `3` | `none` | rem | `none` | `false` | `false` | `true` | `false` | `⟨oFacts cap, h⟩` |
+
+The first six differ from one another in `ci`, `rootPrio`, `remaining`, `due`, `hot` and the facts
+record and in NOTHING else — one definition, six spellings, with `rem` introduced twice (gap 2417).
+The last two differ in a flag column, so a builder that carried them would have to expose three
+`Bool`s that no member of the six ever sets; they are recorded as neighbours (gap 2480), not folded.
+Family size **before: six bodies (plus one inline copy); after: one.**
+
+### 2. The one definition, and why it takes the record
+
+```lean
+def oneCand (id : List Char) (ci : Fin 6) (rp : Option (Fin 4)) (rem : Nat) (due : Option Day)
+    (hot : Bool) (f : Look.WfPlanFacts) : Look.Cand × Option Look.Floor :=
+  (⟨id, ci, rp, rem, due, false, false, false, false, false, hot, none, f⟩, none)
+```
+
+Gap 2417 wrote the generalisation over `(id, ci, rootPrio, rem, due, hot, pm, l, sp, h)` and
+said the collapse *"turns on `{planFacts pm l with splittable := (planFacts pm l).splittable}`
+being defeq to `planFacts pm l` by structure eta"*. That is true and it is not needed: the seventh
+argument is `Look.WfPlanFacts`, the field's own type (**reused, not minted** — `Look.WfPlanFacts`
+at `Lookahead.lean:4895` and `planFacts` at `PlannerWit.lean:2304` are the record and the builder
+the six already used), so each instantiation hands over exactly the term it used to write inline
+and nothing is re-checked by eta. It is also what lets `bCandCap` join: its facts carry a `cap`,
+which no `(pm, l, sp)` can spell. The six instantiations, each one line now:
+
+```lean
+bCand      id ci pm l h        := oneCand id ci (some 0) 10  none       false ⟨planFacts pm l, h⟩
+bCandCap   id ci pm d h        := oneCand id ci (some 0) 10  none       false ⟨{ planFacts pm .any with cap := some ⟨60, d⟩ }, h⟩
+cCand      id ci pm l sp h     := oneCand id ci (some 0) 50  none       false ⟨{ planFacts pm l with splittable := sp }, h⟩
+pCand      id ci hot pm l sp h := oneCand id ci none     50  none       hot   ⟨{ planFacts pm l with splittable := sp }, h⟩
+pCandDue   id ci hot rem due … := oneCand id ci none     rem (some due) hot   ⟨{ planFacts pm l with splittable := sp }, h⟩
+pCandSmall id rem pm l h       := oneCand id 2  none     rem none       false ⟨planFacts pm l, h⟩
+```
+
+Their signatures are unchanged, so all **65** application sites (`bCand` 28, `cCand` 21, `pCand` 7,
+`pCandSmall` 6, `bCandCap` 2, `pCandDue` 1 — counted as `name [` at HEAD, by script) inside **18**
+definitions (11 grandfathered at the W-19 baseline, 7 rostered) are untouched and no list they
+build changes body — which is what keeps the D40 cost to the definitions themselves (§6).
+The names stay `def`, not `abbrev`: `decide` runs in the kernel, where the two unfold alike, and
+`abbrev` would have moved six entries across check 12's population classes for nothing.
+
+### 3. Line-neutral by construction (gap 2136)
+
+Every one of the **66** roster rows pinned in `PlannerWit.lean` pins at a line **≥ 2391**, below
+the first member (`:2313`); an edit that moved one line would have drifted all 66, and `--verify
+--only PlannerWit.lean` re-verifies only the **70** rows whose DEFINITION is in the file, not the
+Emit rows pinned there. So the edit was budgeted to the line: `PlannerWit.lean` is **7,363 lines
+before and after** (`wc -l`); within `[2295, 2390]` the first block grew by two (wfPlanFacts's
+three lines paid for `oneCand`'s five), `bCandCap` shrank by one, the `^b5` line by one, net zero;
+and each later block (`cCand` six lines, `pCand` seven, `pCandDue` ten, `pCandSmall` eight) was
+rewritten at its own length, the freed constructor lines taken by the docstring that now says
+which literals the name fixes. Checked by bytes, not by belief: for each of the **39** distinct
+pin-site lines, the seven lines around it are **identical** between HEAD and the working copy
+(script in §7 of this block's `driven`). A first heuristic — "the theorem's name is declared within
+twelve lines below the pin" — flagged 18 rows, and the control against HEAD showed all 18 were the
+heuristic's (a pin is the line the build first ERRORED at, which for a `decide` theorem is the
+tactic line, not the declaration's): the same 18 flag at HEAD with no edit at all.
+
+### 4. The probe, at the bound and not above it
+
+The brief's rule: every `decide` witness that used the six must still elaborate at **8G / 120 s**.
+The whole file was elaborated under `MemoryMax=8G` with `-Dprofiler=true -Dprofiler.threshold=2000
+--json` (positions on every message): **rc 0, 189 s wall**, exactly the 16G baseline's 189 s at
+`8702132`; **43** items over two seconds in both; the slowest `decide` **3.16 s** (baseline 3.21 s)
+at `the_day_section_of_the_routine_day_is_these_cells` (`:4588`), then 2.84 s at
+`the_eleven_notes_are_these_sentences` (`:4630`) — neither reads the family. Nothing is within a
+factor of thirty of the 120 s bound, and no witness that was `decide` stopped closing. `lake build
+TmKernel:static` at 40G: **rc 0, 192 s, 174 jobs**.
+
+### 5. What the collapse did NOT do, said plainly
+
+- It did not delete a name. Deleting `pCandDue` alone would have broken `Goals.lean:1379` and the
+  gap-2417 row under check 8, and re-spelling 65 application sites would have changed the body of
+  every list they build — eleven grandfathered definitions each owing two constant-folds (§2).
+- It did not fold `gCand` or `oCand` (flags, §1) or the inline constructors outside this section
+  (gap 2480).
+- It did not touch `Planner.lean`, `PlanCheck.lean`, any `.py`, or the tail of `PlannerWit.lean`
+  where track P appends.
+
+### 6. The protocol costs, every one
+
+- **D40 / check 9.** `python3 mutate.py --write` in the worktree, 16G, **rc 0 in 1,761 s** — eight
+  definitions new or changed since the W-19 baseline, one build per constant: `witAtomicCands`
+  (its `^b5` line changed) **PINNED** by `default` and by `[]`, both at `PlannerWit.lean:2435
+  the_split_cuts_a_batch_on_atomic`; `oneCand` and the six instantiations **UNFOLDABLE** — `no
+  Inhabited (Look.Cand × Option Look.Floor)`, the type the four W-32 rows already carry — and every
+  one of the seven relabelled a **WITNESS FIXTURE** by `WITNESS_MODULES` (a leaf, checked). The
+  gate's line: *8 audited (1 pinned, 1 by a synthesised constant; 7 unfoldable, 7 witness fixtures,
+  0 pinned by nothing)*. **5 rows appended, 3 replaced in place** (`pCand`, `pCandDue`,
+  `pCandSmall`, whose bodies changed and whose old shas are superseded, not left behind). Spot
+  re-verification, because §3's pin-site claim deserves one row RUN and not only read: `python3
+  mutate.py --verify --only Tm.PlannerWit.impCands` (16G) — the row pinned at `:6877`, thirty-two
+  lines below the `pCandDue` block — re-ran **PINNED** by `default` and by `[]` at
+  `PlannerWit.lean:6877 the_first_impossible_candidate_this_tree_has_had`, *"0 row(s) whose
+  recorded verdict or pin site had drifted"*, rc 0, 418 s.
+  check 9 at acceptance: **271 new or changed since `86c4dc6`, 271 rostered (85 unfoldable, 47 witness fixtures, 25 pinned by nothing; 1 literal), 0 owed** — rostered **266 → 271**, witness fixtures **43 → 47** (the four names above; the HEAD figure is the roster's own delta, since no block quotes it after W-31's 37), pinned by nothing **25 → 25**.
+- **D51 / check 12.** Tm.PlannerWit.wfPlanFacts deleted from `## PlannerWit.lean -- the witness
+  fixtures…` (`reach-exempt.txt:681`); a NEW section `## PlannerWit.lean -- W-33 track G,
+  2026-09-25 (README gap 2417, closed)` with a reason, the date, and the EXIT the two W-32 sections
+  carry, holding `Tm.PlannerWit.oneCand`. `EXEMPT` **1,756 before, 1,756 after**; sections **87 →
+  88**. The brief allowed growth by one entry; the file grew by none.
+- **§5.3 / check 11.** `twins.py`: **3,061 def bodies (0 unsplit), 14 groups (3 compiled, 11 value), 0 UNANSWERED** — the same 3,061 as `8702132`, one body added and one retired, and the six instantiations are six keys because their signatures differ; the gate's key is exact text, so it could not have seen the family before and it does not see a family now (gap 2418 is track A's).
+- **Gap 2136.** No row drifted (§3), so `--verify --only PlannerWit.lean --write` had nothing to
+  rewrite and was not run in full — one build per constant over 70 rows is hours at four minutes
+  a build; the one-row spot check is in the D40 bullet above and the residue is gap 2482.
+
+### 7. Corrections to the brief, measured
+
+1. *"`bCand`, `pCand`, `pCandDue`, `pCandSmall` are ONE definition … `bCandCap` may be a fifth."*
+   The family by body shape is **six**, and the one the brief did not name is `cCand`; `bCandCap`
+   is a member only under a builder that takes the facts record (§2).
+2. *"The collapse turns on … structure eta."* It does not, once the builder takes
+   `Look.WfPlanFacts`; the eta identity is true and unused.
+3. *"Keep your edits to the four definitions and their call sites."* Zero call sites needed an
+   edit; the signatures are the old ones. One non-definition line changed (`witAtomicCands`'s
+   inline `^b5`), and one two-line wrapper was retired.
+4. The brief's rule *"the file must not grow by more than the one entry"* was met with room to
+   spare: it did not grow.
+
+### 8. Acceptance
+
+`check.sh` **12/12**, capped at 40G, in the worktree at this commit — the run that sweeps this block, so its
+figures are its own. `lake build TmKernel:static` ok · totality ok · **axiom audit 5,307 theorems**
+(Classical.choice 2,579, Quot.sound 3,965, propext 4,923; 381 of 5,307 depend on none — unchanged: this step
+adds no theorem) · `Negative.lean` rejected ok · FFI **93 tests** ok · **corpus 29/37 files and 4/5 whole
+plans**, unchanged · stage goals **6 outstanding, all stage 6** — the burn-down does not move in this track ·
+prose citations **41,877 citations, 39,875 resolved, 2,002 allowed (205 vocabulary, 354 counted), 0 allow entries unused, 270 files swept** (the FIRST full run of this step was **11/12**: check 8 refused one citation,
+`reach-exempt.txt:2012 wfPlanFacts (resolves to nothing)` — this step's own exemption section had cited the
+retired name in backticks; it is written bare now, as `twins.py` writes edfFast, and check 8 re-run standalone
+gave 41,782 citations, 39,781 resolved, 2,001 allowed, 0 allow entries unused, 270 files swept, rc 0, before the
+full run below) · mutation roster **271 rostered, 0 owed** (§6) · parity register **P1–P42, next free P43,
+none issued** · check 11 **3,061 def bodies (0 unsplit), 14 groups, 0 UNANSWERED** · check 12 **3,150
+def/abbrev(s), 2,934 emitted (562 as a global), 1,178 reachable from `tm_kernel_call` over the 8 sections
+`tm/src` sends (2 cut), 1,756 exempt in 88 sections (38 run at load), 0 UNANSWERED** — `EXEMPT` **1,756 →
+1,756**.
+
+**`cargo test --workspace`: THREE runs** (D46), 40G capped, in the worktree with a fresh `target/` — **1,478
+passed / 0 failed / 9 ignored across 87 result lines** on every one (run 1 with the cold build, 249 s; runs 2
+and 3, 214 s and 213 s), at load averages 6.5–7.5 from other sessions, and no `.proptest-regressions` file
+changed. No Rust byte moved in this step; the workspace links the static library `lake` built in this tree.
+
+T5 `kernel_replay_parity --include-ignored` **33 passed**, 6.73 s · the door suite `kernel_log_door
+--include-ignored` **23 passed**, 1.69 s · `cli_switch_acceptance --include-ignored` **16 passed**, 1.59 s ·
+`cli_latency --include-ignored` **6 passed**, 19.03 s, in band, at load average **6.55** (gap 1333: another
+session's load, and the band held) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 ·
+`kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` **9
+passed**, 69.62 s.
+
+### 9. Gaps
+
+| gap | what | where it bites | cost of leaving it |
+|---|---|---|---|
+| **2480** | **The thirteen-field shape is written by hand in nine more places this step did not fold**: `PlannerWit.lean:1023-1024` (`witCands`), `:1149-1150` (`witCandsSwapped`) and `:1766-1767` (`rootedCands`) — three lists above the first pin site, each grandfathered — and outside the witness module `Lookahead.lean:5415-5419` (five, `wfUnconstrained`) and four inside theorem statements in `Boundary.lean` (`:12064`, `:12219`, `:12225`, `:12277`); and `gCand`/`oCand`, which set a flag column no member of the six sets | `TmKernel/TmKernel/PlannerWit.lean`, `Lookahead.lean`, `Boundary.lean` | §5.3 is gated on DEFINITIONS (`twins.py`), and an inline constructor is a value, not a definition — no gate reads these. Folding the three PlannerWit lists is line-neutral but costs three grandfathered bodies × two constant-folds; folding `gCand`/`oCand` costs three `Bool` arguments at every one of 65 application sites. Track A's rule for gap 2418 is what decides whether a literal-in-a-list counts as a twin at all |
+| **2481** | **The fold's verdict on `oneCand` is FIXTURE, so the one definition the family collapsed INTO is audited by nothing the gate can name — and the fixture roster grew by four where the family shrank by five.** `Look.Cand × Option Look.Floor` has no `Inhabited` and no argument of the builder has its type, so D40's constant and gap 985's identity both do not exist for it; and `bCand`, `bCandCap`, `cCand` — grandfathered with no row at the W-19 baseline — are UNFOLDABLE rows now because their bodies changed. Measured: witness fixtures **43 → 47**, rostered rows **266 → 271**, and the gate's *pinned by nothing* stays at **25** only because the FIXTURE verdict takes these seven out of that bucket by module (`mutate.py` rule (a)–(c)). | `kernel/mutations.txt`, `kernel/mutate.py` | what pins `oneCand` is every `decide` witness in the module (43 of them over two seconds at 8G, and `the_split_cuts_a_batch_on_atomic` at `:2435`, which failed the moment `witAtomicCands` was folded), which is exactly what the FIXTURE verdict was written for (gap 1086) and exactly what the gate cannot say by name. README gap 980 already puts the exemption itself to the owner; this row adds four names to what that decision covers, and a §5.3 collapse that ADDS rows to an exemption is the shape to watch for |
+| **2482** | **The roster's pin sites were shown unmoved by BYTES, not by re-running the mutations.** Thirty-nine lines, seven-line neighbourhoods identical to HEAD (§3); `--verify --only PlannerWit.lean` over 70 rows was priced at hours and not run in full | `kernel/mutations.txt`, `kernel/mutate.py` | an auditor who trusts only `--verify` has to run it. One row was run — `impCands`, the pin nearest below an edited block, PINNED at the same `:6877` (§6) — which is one of 70, said as such. The byte check is the cheaper property and it is stated in §3 so it can be re-run in seconds |
+
+**Gaps 2480-2482 are taken by this step**; 2483-2509 are free in track G's range. Gap **2417** is
+**CLOSED** by this step. Gaps 2136, 2321, 2400, 2401, 2403, 2418, 2419 and 2223 are untouched by
+this step, except that 2136's line-pinning is what §3 budgets for and 2418's rule is what gap 2480
+waits on.

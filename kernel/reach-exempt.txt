@@ -678,7 +678,6 @@ Tm.PlannerWit.runOk
 Tm.PlannerWit.stretchIt
 Tm.PlannerWit.stretchTheReservation
 Tm.PlannerWit.toTomorrowsMeeting
-Tm.PlannerWit.wfPlanFacts
 Tm.PlannerWit.withCandAt
 Tm.PlannerWit.withFactsAt
 
@@ -2009,3 +2008,6 @@ Tm.PlannerWit.batchStorePlan
 Tm.PlannerWit.pCandSmall
 Tm.PlannerWit.thePayingBatchRequest
 Tm.PlannerWit.theSkippedBatchRequest
+
+## PlannerWit.lean -- W-33 track G, 2026-09-25 (README gap 2417, closed): the ONE candidate builder the six `Look.Cand` fixtures of this module were copies of. `bCand`, `bCandCap`, `cCand`, `pCand`, `pCandDue` and `pCandSmall` each wrote the thirteen-field constructor with its own literals; `oneCand` is that constructor written once, over the facts record `Look.WfPlanFacts`, and the six are its named instantiations now. It is a WITNESS FIXTURE in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name it, and `decide` is its only reader. The file does not grow by it: wfPlanFacts, the two-line wrapper only two of the six called, is retired in the same edit and its entry deleted, so `EXEMPT` stays at 1756. This section may only shrink. EXIT: this class ends when `PlannerWit.lean` stops being a leaf -- when a library module imports it, or when this builder is named by a definition the export reaches, the entry becomes REACHED and check 12 fails on it as STALE until it is deleted. It is the module's whole class and not this section's alone, and nothing in this campaign is planned to end it (gap 2412).
+Tm.PlannerWit.oneCand

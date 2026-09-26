@@ -2305,15 +2305,17 @@ sort.
 def planFacts (pm : Nat) (l : Field.Loc) : Look.PlanFacts :=
   { Look.PlanFacts.unconstrained with plannedMin := pm, loc := l }
 
-def wfPlanFacts (pm : Nat) (l : Field.Loc) (h : Look.PlanFacts.wf (planFacts pm l) = true) :
-    Look.WfPlanFacts := ⟨planFacts pm l, h⟩
+/-- THE candidate builder (gap 2417): every field its six instantiations vary, over the facts `f`.
+The five flags and `yesterday` are off, the floor is `none`; `gCand` and `oCand` set flags. -/
+def oneCand (id : List Char) (ci : Fin 6) (rp : Option (Fin 4)) (rem : Nat) (due : Option Day)
+    (hot : Bool) (f : Look.WfPlanFacts) : Look.Cand × Option Look.Floor :=
+  (⟨id, ci, rp, rem, due, false, false, false, false, false, hot, none, f⟩, none)
 
-/-- One batching candidate: no due (so §7.3's pass does not enter it), a written `!1` so every
-one of the six answers `p = 3` and the order is the request's, and the two grouping facts. -/
+/-- One batching candidate: `oneCand` at `some 0` (a written `!1`, so every one of the six answers
+`p = 3` and the order is the request's), ten minutes, no due (so §7.3's pass does not enter it). -/
 def bCand (id : List Char) (ci : Fin 6) (pm : Nat) (l : Field.Loc)
     (h : Look.PlanFacts.wf (planFacts pm l) = true) : Look.Cand × Option Look.Floor :=
-  (⟨id, ci, some 0, 10, none, false, false, false, false, false, false, none,
-     wfPlanFacts pm l h⟩, none)
+  oneCand id ci (some 0) 10 none false ⟨planFacts pm l, h⟩
 
 /-- **Six candidates aimed at §7.5's two rules.**  `blockMin` is 60 and `batch_max_min` 20, so
 every one of the six is *gatherable* and only the planned minutes and the `ci` decide.
@@ -2347,8 +2349,7 @@ def groupCommits (r : PlanReq) : List Nat := r.buildGroups.map Group.commitMin
 def bCandCap (id : List Char) (ci : Fin 6) (pm : Nat) (d : Nat)
     (h : Look.PlanFacts.wf { planFacts pm .any with cap := some ⟨60, d⟩ } = true) :
     Look.Cand × Option Look.Floor :=
-  (⟨id, ci, some 0, 10, none, false, false, false, false, false, false, none,
-     ⟨{ planFacts pm .any with cap := some ⟨60, d⟩ }, h⟩⟩, none)
+  oneCand id ci (some 0) 10 none false ⟨{ planFacts pm .any with cap := some ⟨60, d⟩ }, h⟩
 
 /-- `^b4` with forty of its sixty capped minutes spent — twenty left, which is **less** than
 the forty-five its group's estimates ask for. -/
@@ -2370,8 +2371,7 @@ def theCapSlackRequest : PlanReq := { theRequest with cands := ⟨witCapSlackCan
 def witAtomicCands : List (Look.Cand × Option Look.Floor) :=
   [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
    bCand ['b','3'] 2 10 .any (by decide), bCand ['b','4'] 3 40 .any (by decide),
-   (⟨['b','5'], 3, some 0, 10, none, false, false, false, false, false, false, none,
-      ⟨{ planFacts 5 .any with splittable := false }, by decide⟩⟩, none),
+   oneCand ['b','5'] 3 (some 0) 10 none false ⟨{ planFacts 5 .any with splittable := false }, by decide⟩,
    bCand ['b','6'] 2 10 .any (by decide)]
 
 def theAtomicRequest : PlanReq := { theRequest with cands := ⟨witAtomicCands, by decide⟩ }
@@ -2590,12 +2590,12 @@ at a slot** and nothing else.  The §4.3 Wednesday at 14:00 cuts four slots at e
 3, 3, 2, 2 and the day's remaining budget is four, so the budget never binds and every `none`
 below is a filter's doing. -/
 
-/-- One cursor candidate: `remaining` past `batch_max_min`, so it never shares a block. -/
+/-- One cursor candidate: `oneCand` at `some 0` with `remaining` 50 — past `batch_max_min`, so it
+never shares a block — no due, not hot, and `splittable` as `sp` says (`atomic` clears it). -/
 def cCand (id : List Char) (ci : Fin 6) (pm : Nat) (l : Field.Loc) (sp : Bool)
     (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
     Look.Cand × Option Look.Floor :=
-  (⟨id, ci, some 0, 50, none, false, false, false, false, false, false, none,
-     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+  oneCand id ci (some 0) 50 none false ⟨{ planFacts pm l with splittable := sp }, h⟩
 
 /-- `^c1` fits anywhere; `^c2` is an errand (`loc:out`) and the day is being lived in the
 lounge; `^c3` is `ci 5` and no slot of this day is that good; `^c4` is `ci 2`, asks for four
@@ -6300,13 +6300,13 @@ request's. -/
 theorem the_paying_witness_indexes_the_calendars_one_wall :
     Look.wallIndex Cal.chicago 60 payingPlan.val = Look.wednesdayWall := by decide
 
-/-- One candidate that **is an item of its own plan**: `rootPrio` `none` and a settable `hot`,
-which is what `PlanCheck.candPlanView` reads off the store and `cCand` cannot match. -/
+/-- One candidate that **is an item of its own plan**: `oneCand` at `rootPrio := none` and a
+settable `hot`, which is what `PlanCheck.candPlanView` reads off the store and `cCand` cannot
+match; `remaining` 50 and no due, as `cCand`, over the same facts. -/
 def pCand (id : List Char) (ci : Fin 6) (hot : Bool) (pm : Nat) (l : Field.Loc) (sp : Bool)
     (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
     Look.Cand × Option Look.Floor :=
-  (⟨id, ci, none, 50, none, false, false, false, false, false, hot, none,
-     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+  oneCand id ci none 50 none hot ⟨{ planFacts pm l with splittable := sp }, h⟩
 
 /-- `^m1` at the store's `ci:5` and the store's `hot`; `^m2` at the store's `ci:2`. -/
 def payingCands : List (Look.Cand × Option Look.Floor) :=
@@ -6836,13 +6836,13 @@ end.  This is the request that satisfies it. -/
 /-- `pCand` with §7.3's two extra facts set: a due date, so the candidate **enters** the EDF
 pass (`Look.Cand.enters`), and the minutes it still needs.  Everything `PlanCheck.candsAgree`
 reads — `ci`, `rootPrio`, `hot` — is `pCand`'s, so a candidate built here agrees with its store
-exactly as one built there does. -/
+exactly as one built there does.  Both are `oneCand`: this one passes `rem` and `some due` where
+`pCand` writes `50` and `none`, and nothing else differs (gap 2417). -/
 def pCandDue (id : List Char) (ci : Fin 6) (hot : Bool) (rem : Nat) (due : Day)
     (pm : Nat) (l : Field.Loc) (sp : Bool)
     (h : Look.PlanFacts.wf { planFacts pm l with splittable := sp } = true) :
     Look.Cand × Option Look.Floor :=
-  (⟨id, ci, none, rem, some due, false, false, false, false, false, hot, none,
-     ⟨{ planFacts pm l with splittable := sp }, h⟩⟩, none)
+  oneCand id ci none rem (some due) hot ⟨{ planFacts pm l with splittable := sp }, h⟩
 
 /-- `payingCands` with `^m1` given a due date of **today** and 100 000 minutes still to do.
 `^m2` is unchanged, so the only thing that separates this request from `thePayingRequest` is the
@@ -7190,11 +7190,11 @@ def batchStorePlan : WfPlan :=
 /-- A candidate of that store: `ci:2` and no `rootPrio`, which is what a plain line carries, so
 `PlanCheck.candsAgree` holds.  `rem` is what `Planner.Ranked.gatherable` reads and `pm` is what
 the gather's total is counted in — the two are separate fields and this is the witness that
-needs them separate. -/
+needs them separate.  It is `oneCand` at `ci := 2` and `rootPrio := none`, no due and not hot,
+over `planFacts pm l` unchanged (gap 2417). -/
 def pCandSmall (id : List Char) (rem pm : Nat) (l : Field.Loc)
     (h : Look.PlanFacts.wf (planFacts pm l) = true) : Look.Cand × Option Look.Floor :=
-  (⟨id, 2, none, rem, none, false, false, false, false, false, false, none,
-     wfPlanFacts pm l h⟩, none)
+  oneCand id 2 none rem none false ⟨planFacts pm l, h⟩
 
 /-- **The batch day**: `^t1` and `^t2` small enough to share a block, `^t3` too big and
 unconstrained. -/

@@ -225,7 +225,12 @@ after §5.3.
     family is TWO groups here, {bCand, pCandSmall} and {cCand, pCand,
     pCandDue}, and one definition in the kernel.  Both are adjudged ONE
     CONCEPT and owed to gap 2417; the bridge between them is a proof, not a
-    key, and is written in the sentences.
+    key, and is written in the sentences.  SINCE THE W-33 LAND STEP the
+    carrier exists (`PlannerWit.oneCand`, track G) and the two groups STILL
+    FORM: each member is one application of `oneCand` whose facts argument
+    names a global (`planFacts`), so it is neither a hole nor E5's one
+    application over holes.  A paid debt the key keeps counting owed --
+    README gap 2550, and the two sentences say so.
   * a closed term that is not a literal -- `Diagnostics.empty`, `planFacts 10
     .any` -- turned into a parameter.  A global name is not a hole, for the
     measured reason above.
