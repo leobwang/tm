@@ -460,9 +460,9 @@ eligibility.  The checker reads the plan's **own** account of which items are im
 produced `DayPlan`".  **P4 landed the other end of that bridge**: §7.3's EDF numbers are
 `Planner.edfNumbers` (this comment named `Goals.edfNumbers`, which was a provisional `def … :=
 sorry` and is now deleted), a projection of the grant the pass gives the candidate, with
-`edfNumbers_is_the_grants_own_impossibility` tying it to `Grant.impossible`.  What is still
-missing is the step that fills `Diagnostics.impossible` from those numbers, which is **P8**'s:
-until it does, this checker is about a list nothing writes. -/
+`edfNumbers_is_the_grants_own_impossibility` tying it to `Grant.impossible`.  **W-33 filled the field from those numbers**
+(`Planner.PlanReq.dayImpossible`), so this checker has a subject and FAILS where an eligible impossible item is dropped —
+at step 5's own energy clause on a day that pays, README gap 2510, the owner's (this said "a list nothing writes"; gap 2565). -/
 
 def impossibleKept (el : Eligible) (r : PlanReq) (d : DayPlan) : Bool :=
   d.diagnostics.impossible.val.all (fun p =>
@@ -2095,11 +2095,11 @@ in one place:
   (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) were vacuous over the
   restricted day at every request the kernel held before this step, and `noBlockOverABreak`
   is vacuous no longer (`PlannerWit.theCensusRequest`);
-* **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`, and both hold
-  **because their subject is empty at every request** — proved above, not measured.  They
-  are in this conjunction because the arithmetic of "how much of §6.1's lift is done" is
-  otherwise a matter of counting by hand, which README gap 684 is the record of getting
-  wrong;
+* **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`.  The batch check holds **because its
+  subject is empty on an unassigned day** — proved above.  `impossibleKept` did too until W-33 wrote its field; since
+  then it is FALSE there (`PlannerWit.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted`),
+  so the theorem below takes `hnoimp` and says so in its name (this bullet said "both … empty at every request"; gap 2565).
+  Both are here because §6.1's arithmetic is otherwise counted by hand, which README gap 684 records getting wrong;
 * **two** are missing, and they are the two comparisons: `monotoneInRank` and
   `hotBeforeQueue`.  Both are real obligations over the replayed past at a permissive `el`
   (see the note above `dayPlan_ok_core_given_the_budget`'s own deleted `∀ el` corollary), and both wait on P5.
@@ -2113,7 +2113,7 @@ arbitrary `el` can reach ten, and `dayPlan_ok_from_now_given_the_two_comparisons
 where the residue is named rather than counted.
 
 So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
-and owed a subject (P5's batch, P8's impossible list), **two refuted at every eligibility and
+and owed a subject (P5's batch, P8's impossible list — written at W-33, hence `hnoimp`), **two refuted at every eligibility and
 owed both Planner.eligibleAt and the fold** (README gap 850), and the fold induction design
 §6.2 prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
 theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
@@ -2158,7 +2158,7 @@ seven core checks, but Planner.eligibleAt and the assign fold that gives the two
 something honest to range over.
 
 *(Before W-19 this file asserted the second half in prose — *"the `∀ el` form is **false** of
-P1's body"*, above `dayPlan_ok_core_given_the_budget` — and nothing computed it.)* -/
+P1's body"* — and nothing computed it.)*  Without `hnoimp` it is refuted: `PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted` (gap 2516). -/
 theorem dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
@@ -2268,8 +2268,8 @@ theorem monotoneInRank_of_nothing_assigned (el : Eligible) (r : PlanReq) (d : Da
   exact absurd hmem (by simp)
 
 /-- **TEN of §6.1's eleven, over the whole day, at every eligibility.**  Seven are
-`planOkCore`'s, two hold because their subject is empty at every request, and the tenth is
-`monotoneInRank`, which this step adds.
+`planOkCore`'s, the batch check's subject is empty on an unassigned day, `impossibleKept` holds by `hnoimp` (without it:
+`PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted`; gap 2565), and the tenth is `monotoneInRank`.
 
 The eleventh is `hotBeforeQueue` and it is **refuted** on this very class —
 `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` — so this conjunction is not a waypoint
@@ -2312,7 +2312,7 @@ this is the whole-day sibling of `dayPlan_ok_from_now_given_the_two_comparisons_
 **It assumes one of the eleven and its name says so.**  What makes it worth stating is what
 stands beside it: `PlannerWit.a_quiet_day_does_not_pass_the_whole_battery` proves the
 hypothesis cannot be dropped, and `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`
-is the instance in which it holds. -/
+is the instance in which it holds.  Without `hnoimp` it is refuted: `PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted` (gap 2516). -/
 theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)

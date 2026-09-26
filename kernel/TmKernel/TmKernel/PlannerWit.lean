@@ -1929,7 +1929,7 @@ together:
   theorems about **every** `PlanReq` rather than a population at one: no Block row carries a
   slot energy, no Block row reaches the wind-down, no row is a Batch row, and
   `Diagnostics.impossible` is empty.  Those four are the honest residue, they are P5's and
-  P8's, and each is now a build-time wall that the step must delete.
+  P8's, and each is now a build-time wall that the step must delete (P8's came down at W-33, §30; gap 2565).
 
 **Seven, then, and four — and the four are proved, not counted.**
 
@@ -3890,7 +3890,7 @@ theorem hotBeforeQueue_is_false_on_a_quiet_day :
 
 set_option maxRecDepth 400000 in
 /-- **The other ten hold at that same request** — the seven of `checksCore`, `monotoneInRank`
-(this step's tenth), and the two whose subject is empty at every request.  Computed at the
+(this step's tenth), and the two whose subject is empty HERE (the impossible list's only since W-33; gap 2565).  Computed at the
 same `PlanReq` as the refutation above, so "ten of eleven" is a reading of one day and not an
 average over two. -/
 theorem the_ten_hold_where_the_eleventh_fails :
@@ -7811,8 +7811,8 @@ theorem the_day_names_its_waiting_and_blocked_candidates :
 /-- **Why `hot`, `waiting` and `droppedTail` de-duplicate with core's `List.eraseDups` and not
 with `Tm.dedupIds`** (`Boundary.lean`): the fork's `!d.xs.contains(&id)` guard keeps the FIRST
 occurrence in push order, which is `List.eraseDups`; `Tm.dedupIds` is a right fold that keeps
-the LAST.  They agree on membership and disagree on order, and `--json plan` prints the order
-the fork pushes in (AGENTS §5.3: one function reused, the other not, for a stated reason). -/
+the LAST.  They agree on membership and disagree on order; the order is the fork's rule and is TESTED BY NOTHING —
+`planner_invariants` sorts both sides, the wire orders differ, and R3 prints the kernel's (W-33 repair, README gap 2569). -/
 theorem eraseDups_keeps_the_first_where_dedupIds_keeps_the_last :
     [['a'], ['b'], ['a'], ['c'], ['b']].eraseDups = ([['a'], ['b'], ['c']] : List Id) ∧
     Tm.dedupIds [['a'], ['b'], ['a'], ['c'], ['b']] = [['a'], ['c'], ['b']] := by
@@ -7838,6 +7838,157 @@ theorem the_energy_clause_separates_the_energy_drop_from_the_contention_drop :
     PlanCheck.impossibleKept permissive theImpossibleRequest (dayPlan theImpossibleRequest)
       = false := by
   refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-! ### The two `given` lifts, refuted where their hot hypothesis HOLDS (W-33 repair, gap 2516)
+
+`PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day`
+and `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item`
+gained `hnoimp` at W-33 and nothing refuted their old forms: the only unassigned day with an
+impossible candidate above is the census Wednesday, and there `hotBeforeQueue` is `false` at
+`permissive` on both days, so the old forms' `hhot` could not be met and they stood untested
+behind it.  The request below is the §4.3 Wednesday of `theQuietRequest` -- no log, nothing
+running, the one wall -- with the impossible `^m1` as its one candidate.  Its wall carries no
+item a hot candidate could fail to precede, so `hotBeforeQueue` HOLDS there, on the whole day
+and on `PlanCheck.withoutPast`'s, and `monotoneInRank` holds on both; every other hypothesis the
+old forms ask for is `theQuietRequest`'s own (`the_running_request_is_plain` is stated over the
+store all three share).  And `planOk` is `false` on both days, at `impossibleKept` alone. -/
+
+/-- **The quiet Wednesday with one candidate, the impossible `^m1`.**  `theQuietRequest` with
+`impCands.take 1`; nothing else moves. -/
+def theQuietImpossibleRequest : PlanReq :=
+  { theQuietRequest with cands := ⟨impCands.take 1, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **Every hypothesis of both old forms holds and their conclusion is false.**  The day names
+`^m1` short 130,000 minutes, assigns nothing, and fails `impossibleKept` at `permissive` while
+`hotBeforeQueue` and `monotoneInRank` pass -- so `hnoimp` is the one hypothesis the restated
+lifts needed, measured here rather than argued. -/
+theorem a_quiet_hot_day_drops_its_eligible_impossible_item :
+    theQuietImpossibleRequest.assignedRows = [] ∧
+    theQuietImpossibleRequest.activeAgrees = true ∧ theQuietImpossibleRequest.dayAgrees = true ∧
+    theQuietImpossibleRequest.now.sec + 1 < LogStamp.yearEnd ∧
+    pastRows theQuietImpossibleRequest = [] ∧ theQuietImpossibleRequest.activeRun = none ∧
+    (dayPlan theQuietImpossibleRequest).diagnostics.impossible.val = [(['m','1'], 130000)] ∧
+    PlanCheck.hotBeforeQueue permissive theQuietImpossibleRequest
+      (dayPlan theQuietImpossibleRequest) = true ∧
+    PlanCheck.impossibleKept permissive theQuietImpossibleRequest
+      (dayPlan theQuietImpossibleRequest) = false ∧
+    PlanCheck.planOk permissive theQuietImpossibleRequest (dayPlan theQuietImpossibleRequest)
+      = false ∧
+    PlanCheck.monotoneInRank permissive theQuietImpossibleRequest
+      (PlanCheck.withoutPast theQuietImpossibleRequest (dayPlan theQuietImpossibleRequest))
+      = true ∧
+    PlanCheck.hotBeforeQueue permissive theQuietImpossibleRequest
+      (PlanCheck.withoutPast theQuietImpossibleRequest (dayPlan theQuietImpossibleRequest))
+      = true ∧
+    PlanCheck.planOk permissive theQuietImpossibleRequest
+      (PlanCheck.withoutPast theQuietImpossibleRequest (dayPlan theQuietImpossibleRequest))
+      = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- `hagree`, by the request `theQuietRequest` builds from. -/
+theorem theQuietImpossibleRequest_wallsAgree : theQuietImpossibleRequest.wallsAgree = true :=
+  theQuietRequest_wallsAgree
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot as W-20 wrote it is REFUTED**
+(AGENTS §3.1 item 3, D5): every hypothesis, `hhot` included, holds at the request above and
+`planOk` is `false`.  Its restatement carries `hnoimp` and says so in its name. -/
+theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted :
+    ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
+        r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        (∀ (i : Id) (e : Entity) (a b : Field.DT),
+          r.plan.val.store.get i = some e → e.val.shape = Field.Shape.interval a b →
+          e.val.buffer = none ∧
+            r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+            (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+            (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+            (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) →
+        PlanCheck.hotBeforeQueue el r (dayPlan r) = true →
+        PlanCheck.planOk el r (dayPlan r) = true) := by
+  intro h
+  have hq := a_quiet_hot_day_drops_its_eligible_impossible_item
+  have hc := h permissive theQuietImpossibleRequest hq.1 theQuietImpossibleRequest_wallsAgree
+    hq.2.1 hq.2.2.1 hq.2.2.2.1 (by rw [hq.2.2.2.2.1]; simp) hq.2.2.2.2.2.1
+    the_running_request_is_plain hq.2.2.2.2.2.2.2.1
+  rw [hq.2.2.2.2.2.2.2.2.2.1] at hc
+  exact absurd hc (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day as W-19
+wrote it is REFUTED** the same way, over `PlanCheck.withoutPast`'s day: `hrank` and `hhot` both
+hold there, and `planOk` is `false`. -/
+theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted :
+    ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        r.wallsAgree = true → r.activeAgrees = true → r.dayAgrees = true →
+        r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ (i : Id) (e : Entity) (a b : Field.DT),
+          r.plan.val.store.get i = some e → e.val.shape = Field.Shape.interval a b →
+          e.val.buffer = none ∧
+            r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+            (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+            (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+            (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) →
+        r.assignedRows = [] →
+        PlanCheck.monotoneInRank el r (PlanCheck.withoutPast r (dayPlan r)) = true →
+        PlanCheck.hotBeforeQueue el r (PlanCheck.withoutPast r (dayPlan r)) = true →
+        PlanCheck.planOk el r (PlanCheck.withoutPast r (dayPlan r)) = true) := by
+  intro h
+  have hq := a_quiet_hot_day_drops_its_eligible_impossible_item
+  have hc := h permissive theQuietImpossibleRequest theQuietImpossibleRequest_wallsAgree
+    hq.2.1 hq.2.2.1 hq.2.2.2.1 the_running_request_is_plain hq.1
+    hq.2.2.2.2.2.2.2.2.2.2.1 hq.2.2.2.2.2.2.2.2.2.2.2.1
+  rw [hq.2.2.2.2.2.2.2.2.2.2.2.2] at hc
+  exact absurd hc (by simp)
+
+/-! ### `conflicts` has a witness (W-33 repair, gap 2566)
+
+`Planner.dayDiagnostics` writes `conflicts := Capped.ofListTake (wallConflicts (wallsToday r))`,
+and until this section the field was EMPTY at every one of the 53 `the…Request` fixtures this file
+held — the reuse critic's census, one `#eval` over all of them — and replacing the writer with
+`Capped.ofListTake []` broke no theorem: check 13 counted `conflicts :=` as a write, check 9
+folded the whole body and not the field, and `Planner.wallConflicts` was witnessed only below
+the day.  "Written" is a floor under "populated" (`fields.py`'s own header), and this is the
+witness the floor asked for: the census Wednesday's calendar with a second call that OVERLAPS
+`^g1`, so the day's walls conflict and the day names the pair. -/
+
+/-- `twoWallWitness` with the second call moved onto today and over `^g1`'s hour. -/
+def overlapWallWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList,
+      "- [ ] 3 Overlapping call     at:2026-09-09T13:20/14:00 loc:zoom ^g2".toList]⟩,
+   ⟨"week/2026-W37.md", some ⟨week, 35⟩,
+      ["# Tasks".toList, "- [ ] 5 6b Finish the report ^m1 hot".toList,
+       "- [ ] 5 6b Write the tests ^m2".toList]⟩,
+   ⟨"month/2026-09.md", some ⟨month, 8⟩, ["# Outcomes".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_overlap_witness_loads : loadsOk overlapWallWitness = true := by decide
+
+def overlapWallPlan : WfPlan :=
+  match h : loadPlan overlapWallWitness with
+  | .ok p => p
+  | .error _ => absurd the_overlap_witness_loads (by simp [loadsOk, h])
+
+/-- The wall index is computed from the plan, as `twoWallInput`'s is. -/
+def overlapWallInput : Look.Input :=
+  { witInput with walls := Look.wallIndex witInput.tz witInput.day.cut.blockMin overlapWallPlan.val }
+
+/-- **The census Wednesday with two calls that overlap.** -/
+def theOverlapRequest : PlanReq :=
+  ⟨overlapWallPlan, censusRun, overlapWallInput, theRunningState, Capped.nil, witPrio, Capped.nil,
+   none⟩
+
+set_option maxRecDepth 400000 in
+/-- **The day names its overlapping walls**, once, both ids — `Planner.mem_wallConflicts`'s
+shape, at a day `dayPlan` really produces.  The constant `[]` writer is false here. -/
+theorem the_day_names_its_overlapping_walls :
+    theOverlapRequest.wallsAgree = true ∧
+    (dayPlan theOverlapRequest).diagnostics.conflicts.val = [(['g','1'], ['g','2'])] := by
+  refine ⟨by decide, by decide⟩
 
 end PlannerWit
 end Tm

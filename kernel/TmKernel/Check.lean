@@ -5604,7 +5604,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- carries a slot energy, no Block row reaches the wind-down, no row is a Batch
 -- row, and `Diagnostics.impossible` is empty.  The next four are the same four
 -- in the battery's own terms -- each checker returns `true` BECAUSE its subject
--- is empty -- and each is a build-time wall P5 and P8 must delete.
+-- is empty -- and each is a build-time wall P5 and P8 must delete.  (P8's came
+-- down at W-33: the impossible pair was refuted when the field was written --
+-- W-33 repair, gap 2565.)
 --
 -- Two of gap 650's four were not of that kind, and this step says which:
 -- `wallsUnmoved` wanted a store that holds the wall the day places, and
@@ -6857,11 +6859,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- had never answered `true` about a request and the goal's hypothesis was empty.
 #print axioms Tm.PlannerWit.the_first_impossible_candidate_this_tree_has_had
 #print axioms Tm.PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted
--- Its restatement's subject is empty at every request and every eligibility, and that
--- theorem was ALREADY here -- PlanCheck.impossible_has_no_subject, audited above (until W-33
--- refuted it: the field is written now).  A
--- second copy of it was written and deleted in this run (AGENTS 5.3).  Filling the list
--- `PlanCheck.impossibleKept` reads is P8's step (gap 2321).
+-- Its restatement's subject WAS empty at every request and every eligibility, and that
+-- theorem was ALREADY here -- PlanCheck.impossible_has_no_subject, audited above until W-33
+-- refuted it.  A second copy of it was written and deleted in this run (AGENTS 5.3).
+-- Filling the list `PlanCheck.impossibleKept` reads was P8's step (gap 2321); W-33 did it
+-- (`Planner.PlanReq.dayImpossible`), and the list has a subject now.  (Rewritten in the W-33
+-- repair, gap 2565: the merge patched one parenthesis and left the present tense.)
 -- Goals.plan_puts_hot_before_the_queue, refuted a THIRD time -- this time at a day the
 -- fold FILLED, at a request that PAYS, with W-20's own repair (`sj` is a work row)
 -- already in the statement.  The two earlier refutations both blamed the unwritten
@@ -6935,6 +6938,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.PlanReq.dayHot_capped
 #print axioms Tm.Planner.PlanReq.dayWaiting_capped
 #print axioms Tm.Planner.PlanReq.dayBlocked_capped
+#print axioms Tm.Planner.PlanReq.mem_dayHot
+#print axioms Tm.Planner.PlanReq.mem_dayWaiting
+#print axioms Tm.Planner.PlanReq.mem_dayBlocked
 #print axioms Tm.Planner.dayDiagnostics_impossible
 #print axioms Tm.Planner.dayDiagnostics_hot
 #print axioms Tm.Planner.dayDiagnostics_waiting
@@ -6963,6 +6969,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item
 #print axioms Tm.PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.a_quiet_hot_day_drops_its_eligible_impossible_item
+#print axioms Tm.PlannerWit.theQuietImpossibleRequest_wallsAgree
+#print axioms Tm.PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_overlap_witness_loads
+#print axioms Tm.PlannerWit.the_day_names_its_overlapping_walls
 #print axioms Tm.PlannerWit.the_census_reaches_eight_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_impossible_check_over_the_paying_set

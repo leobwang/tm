@@ -54,8 +54,10 @@ WHAT IT CANNOT SEE, declared:
 
 USAGE: `fields.py [--audit]`.  Exits 1 on an unwritten field no exemption
 names, on an exempt field that is written now (STALE -- the file may only
-shrink), on a field the wire does not emit, on a key that projects no field,
-and on an exemption line without a date or an EXIT.  `--audit` prints every
+shrink), on an exemption the file did not hold at HEAD for a field the
+structure already had there (RATCHET, W-33 repair, gap 2564), on a field the
+wire does not emit, on a key that projects no field, and on an exemption line
+without a date or an EXIT.  `--audit` prints every
 field with its writers.
 """
 import collections
@@ -66,6 +68,7 @@ import sys
 
 import callgraph
 import leanfiles
+from reach import committed_exemptions
 
 HERE = pathlib.Path(__file__).resolve().parent
 LIB = HERE / "TmKernel"
@@ -349,6 +352,39 @@ def main(argv):
     for f in set(entries) - set(fields):
         bad.append("STALE: %s:%d  `%s` is not a field of %s -- delete this line"
                    % (EXEMPT_FILE.name, entries[f][1], f, tname))
+    # THE RATCHET, against the file as COMMITTED (W-33 repair, README gap 2564).
+    # This file's header said it "may only SHRINK" and only the STALE direction
+    # was checked: driven by W-33's auditor in a clone, deleting `blocked :=`
+    # from `dayDiagnostics` and appending a dated `Planner.Diagnostics.blocked`
+    # line with an EXIT gave rc=0 -- gap 2403's own regression, a field back to
+    # unwritten, with the gate green.  The comparand is `reach.py`'s,
+    # `committed_exemptions` (one reader of HEAD, not two): a line for a field
+    # HEAD's file did not list FAILS, unless the field is not a field of the
+    # structure AT HEAD either -- a field the wire has never carried may arrive
+    # unwritten with a dated EXIT, and a field that was written may never go
+    # back.
+    prev = committed_exemptions(EXEMPT_FILE)
+    if prev is None:
+        bad.append("RATCHET UNCHECKED: `git show HEAD:./%s` gave nothing, so this file's "
+                   "only comparand is itself" % EXEMPT_FILE.name)
+    else:
+        prev_entries, _ = read_exemptions(EXEMPT_FILE, prev)
+        new = sorted(set(entries) - set(prev_entries))
+        if new:
+            head_src = committed_exemptions(pathlib.Path(spath))
+            head_fields = set()
+            if head_src is not None:
+                try:
+                    _p, head_fields = structure_fields(
+                        {spath: leanfiles.strip_comments(head_src)}, tname.split(".")[-1])
+                except SystemExit:
+                    head_fields = set()  # the structure is new at this commit
+            for f in new:
+                if head_src is None or f in head_fields:
+                    bad.append("RATCHET: %s:%d  %s.%s is a NEW exemption and the field "
+                               "existed at HEAD -- this file may only SHRINK, and a field "
+                               "that was written does not go back to unwritten (gap 2403's "
+                               "own regression)" % (EXEMPT_FILE.name, entries[f][1], tname, f))
     if audit:
         for f in fields:
             print("  %-16s %-14s %s" % (f, next((k for k, fs in keys.items() if f in fs), "-"),

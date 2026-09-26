@@ -1264,7 +1264,12 @@ The exemptions are `kernel/reach-exempt.txt` (check 12), `kernel/twins-exempt.tx
 (check 11's second key, one dated sentence per adjudged group) and
 `kernel/fields-exempt.txt` (check 13, one dated line per unwritten field with
 its EXIT); each may only shrink, and each is W-27's shape — an enumeration you
-join to be EXEMPT, not to be COVERED. The call graph checks 8, 11, 12 and 13
+join to be EXEMPT, not to be COVERED. Since the W-33 repair each file is held
+against ITSELF AT HEAD in both directions (README gaps 2560, 2563, 2564): check
+12 answers two measured classes by `CLASS` line and module rather than by name
+(a definition reached only through a declared unsent request section; a
+`mutate.WITNESS_MODULES` leaf), check 11 refuses a NEW `NOT ONE CONCEPT` line,
+and check 13 refuses a new line for a field the structure already had. The call graph checks 8, 11, 12 and 13
 read is `kernel/callgraph.py`, which none of them owns. What is written out
 below is checks 1–7. Do not read
 "seven" here as the size of the acceptance; §2.1 and §6.5 carry that number and

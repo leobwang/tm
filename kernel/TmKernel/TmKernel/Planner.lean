@@ -6218,9 +6218,6 @@ def PlanReq.dayImpossible (r : PlanReq) : List (Id × Nat) :=
       some (o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos))
     else none)
 
-theorem PlanReq.dayImpossible_capped (r : PlanReq) : r.dayImpossible.length ≤ maxCands :=
-  Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped
-
 /-- **A row is an answer whose own reported shortfall is positive, with that shortfall floored
 to minutes** — both directions, by answer (the fork's pairing). -/
 theorem PlanReq.mem_dayImpossible (r : PlanReq) (i : Id) (s : Nat) :
@@ -6239,6 +6236,13 @@ theorem PlanReq.mem_dayImpossible (r : PlanReq) (i : Id) (s : Nat) :
       exact absurd h (by simp)
   · rintro ⟨o, ho, hid, hs, rfl⟩
     exact ⟨o, ho, by simp [hs, hid]⟩
+
+/-- The cap.  **Stated AFTER `PlanReq.mem_dayImpossible` on purpose** (W-33 repair, README gap
+2567): a length bound is true of the constant `[]`, so the `[]` mutant of the writer breaks this
+proof and not this statement, and check 9 records the FIRST error as the pin.  With the
+membership law first, the pin check 9 records is a statement the constant falsifies. -/
+theorem PlanReq.dayImpossible_capped (r : PlanReq) : r.dayImpossible.length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped
 
 /-- **A granted answer is `Look.priorities`' own, unfloored, and its grant is §7.3's** —
 `Look.an_answers_grant_reserves_the_min` carried through the floor pass, whose first arm
@@ -6422,6 +6426,33 @@ def PlanReq.dayHot (r : PlanReq) : List Id :=
         (decide (o.out.bin = some Arith.Bin.hot) || decide (o.cls = Look.PClass.hotFlag))
     then some o.out.cand.id else none)).eraseDups
 
+/-- **An id is hot exactly when an answer names it, is not a wall, and is HOT by bin or by the
+hot flag** (W-33 repair, README gap 2567) — the membership law the `[]` mutant falsifies, stated
+before the cap so check 9's first error is a statement and not a proof term. -/
+theorem PlanReq.mem_dayHot (r : PlanReq) (i : Id) :
+    i ∈ r.dayHot ↔
+      ∃ o ∈ r.candAnswers, o.out.cand.id = i ∧ o.out.cand.wall = false ∧
+        (o.out.bin = some Arith.Bin.hot ∨ o.cls = Look.PClass.hotFlag) := by
+  unfold PlanReq.dayHot
+  rw [List.mem_eraseDups, List.mem_filterMap]
+  constructor
+  · rintro ⟨o, ho, h⟩
+    by_cases hc : (!o.out.cand.wall &&
+        (decide (o.out.bin = some Arith.Bin.hot) || decide (o.cls = Look.PClass.hotFlag))) = true
+    · rw [if_pos hc] at h
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true, decide_eq_true_eq] at hc
+      exact ⟨o, ho, h, hc.1, hc.2⟩
+    · rw [if_neg hc] at h
+      exact absurd h (by simp)
+  · rintro ⟨o, ho, hid, hw, hb⟩
+    refine ⟨o, ho, ?_⟩
+    have hc : (!o.out.cand.wall &&
+        (decide (o.out.bin = some Arith.Bin.hot) || decide (o.cls = Look.PClass.hotFlag))) = true := by
+      simp only [Bool.and_eq_true, Bool.not_eq_true', Bool.or_eq_true, decide_eq_true_eq]
+      exact ⟨hw, hb⟩
+    rw [if_pos hc, hid]
+
 theorem PlanReq.dayHot_capped (r : PlanReq) : r.dayHot.length ≤ maxCands :=
   Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
     (Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped)
@@ -6466,6 +6497,29 @@ def PlanReq.dayWaiting (r : PlanReq) : List Id :=
   (r.cands.val.filterMap (fun cf =>
     if !cf.1.wall && cf.1.plan.val.waiting then some cf.1.id else none)).eraseDups
 
+/-- **An id is waiting exactly when a non-wall candidate carries it with a waiting line** (W-33
+repair, README gap 2567) — before the cap, for check 9's pin. -/
+theorem PlanReq.mem_dayWaiting (r : PlanReq) (i : Id) :
+    i ∈ r.dayWaiting ↔
+      ∃ cf ∈ r.cands.val, cf.1.id = i ∧ cf.1.wall = false ∧ cf.1.plan.val.waiting = true := by
+  unfold PlanReq.dayWaiting
+  rw [List.mem_eraseDups, List.mem_filterMap]
+  constructor
+  · rintro ⟨cf, hcf, h⟩
+    by_cases hc : (!cf.1.wall && cf.1.plan.val.waiting) = true
+    · rw [if_pos hc] at h
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+      exact ⟨cf, hcf, h, hc.1, hc.2⟩
+    · rw [if_neg hc] at h
+      exact absurd h (by simp)
+  · rintro ⟨cf, hcf, hid, hw, hwt⟩
+    refine ⟨cf, hcf, ?_⟩
+    have hc : (!cf.1.wall && cf.1.plan.val.waiting) = true := by
+      simp only [Bool.and_eq_true, Bool.not_eq_true']
+      exact ⟨hw, hwt⟩
+    rw [if_pos hc, hid]
+
 theorem PlanReq.dayWaiting_capped (r : PlanReq) : r.dayWaiting.length ≤ maxCands :=
   Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
     (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
@@ -6482,6 +6536,31 @@ def PlanReq.dayBlocked (r : PlanReq) : List Id :=
   r.cands.val.filterMap (fun cf =>
     if !cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty
     then some cf.1.id else none)
+
+/-- **An id is blocked exactly when a non-wall candidate carries it with an open line and a
+non-empty `after:` residue** (W-33 repair, README gap 2567) — before the cap, for check 9's
+pin. -/
+theorem PlanReq.mem_dayBlocked (r : PlanReq) (i : Id) :
+    i ∈ r.dayBlocked ↔
+      ∃ cf ∈ r.cands.val, cf.1.id = i ∧ cf.1.wall = false ∧ cf.1.plan.val.isOpen = true ∧
+        cf.1.plan.val.blockedBy.isEmpty = false := by
+  unfold PlanReq.dayBlocked
+  rw [List.mem_filterMap]
+  constructor
+  · rintro ⟨cf, hcf, h⟩
+    by_cases hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true
+    · rw [if_pos hc] at h
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
+      exact ⟨cf, hcf, h, hc.1.1, hc.1.2, hc.2⟩
+    · rw [if_neg hc] at h
+      exact absurd h (by simp)
+  · rintro ⟨cf, hcf, hid, hw, ho, hb⟩
+    refine ⟨cf, hcf, ?_⟩
+    have hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true := by
+      simp only [Bool.and_eq_true, Bool.not_eq_true']
+      exact ⟨⟨hw, ho⟩, hb⟩
+    rw [if_pos hc, hid]
 
 theorem PlanReq.dayBlocked_capped (r : PlanReq) : r.dayBlocked.length ≤ maxCands :=
   Nat.le_trans (List.length_filterMap_le _ _) r.cands.property

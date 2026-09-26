@@ -49,6 +49,12 @@ say() { printf '%-46s %s\n' "$1" "$2"; }
 #    too, which is what puts check 3's arm below on a plant this one cannot see
 #    only by DISABLING this one.  Control: rc=0 before each plant and after each
 #    revert.
+#
+#    AND THE WORD AFTER `in` KEPT THE SHORT CLASS until the W-33 repair (README
+#    gap 2561): `open Lean Elab Command in #eval .. addDecl (.axiomDecl ..)` on
+#    ONE line passed at rc=0 while check 3 named the axiom.  Driven in a clone
+#    with HEAD's and the repaired script over the same plant: rc=0 silent, then
+#    rc=1 naming both `#eval`s.  Both position readers share one class now.
 if python3 totality.py TmKernel/TmKernel TmKernel; then
   say "totality check" "ok"
 else
@@ -838,7 +844,15 @@ fi
 #     definition), a closed term that is not a literal, a renamed body-local
 #     binder.  The cost: 1.57/1.59/1.56 s before against 2.07/2.08 s after,
 #     interleaved under the same load (one 3.15 s outlier as the load rose to
-#     8), about +0.5 s.
+#     8), about +0.5 s.  THE W-33 REPAIR (README gaps 2550, 2562, 2563): E4
+#     read EVERY nullary constructor as a wire name, so a `SegKind` sibling
+#     (`.rest` for `.windDown`) was answered WIRE-NAMED -- driven, and named
+#     now, by `WIRE_KEY_TYPES`; the header declares four more blind spots it
+#     had not (a one-hole body, a `Fin` literal, a fixture's literal made a
+#     parameter, a shared constructor short name); a NEW NOT ONE CONCEPT line
+#     FAILS as RATCHET (driven: spanPer plus a dated NOT ONE line was green);
+#     and a ONE CONCEPT line that says CARRIED BY `X` is counted carried, after
+#     the gate checks every member is headed by `X`.
 #
 #     THE COST IS DECLARED AND MEASURED, NOT QUOTED, AND IT WENT UP.  It was
 #     0.75-0.76 s; the reachability walk reads the whole of `.lake/build/ir`
@@ -939,6 +953,27 @@ fi
 #     `planner` the cut goes, every entry under them becomes REACHED and this
 #     check fails on each as STALE until it is deleted -- the ratchet doing R3's
 #     bookkeeping instead of R3 having to remember it.
+#
+#     AND TWO CLASSES LEFT THE FILE AS NAMES (W-33 repair, README gap 2560).
+#     It grew 1,756 -> 1,772 in W-33 by D51's letter, and 509 of the 1,772 were
+#     two classes this gate already measures, listed one name at a time: the
+#     definitions reached ONLY through a request section `tm/src` never sends
+#     (296, eighteen sections all saying so) and `PlannerWit.lean`'s witness
+#     fixtures (213).  They are answered by PROPERTY now -- a `CLASS unsent
+#     <key>` line per DECLARED unsent section, measured by walking the graph
+#     with those cuts lifted, and check 9's own `mutate.WITNESS_MODULES` under
+#     its own leaf test -- and the file shrank to 1,263.  A section that stops
+#     being sent is not declared, so its definitions arrive NOT EXEMPT by name;
+#     a declared key that is sent FAILS as STALE; a name listed for a definition
+#     a class answers FAILS as ANSWERED BY PROPERTY.  DRIVEN in a clone, seven
+#     plants, control rc=0 before and after: a witness name re-listed, a
+#     cut-class name re-listed, the `planner` class line deleted (235 NOT
+#     EXEMPT), a class for the SENT `docs` section, a class for no section, an
+#     undated class line, and a library module importing `PlannerWit` (213 NOT
+#     EXEMPT and the WITNESS line) all rc=1; and a dead `def` appended to
+#     `Emit.lean`, a module wholly inside the `plan` class, BUILT and was named
+#     NOT EXEMPT -- the class answers what the cut section reaches, never what
+#     nothing reaches.
 #
 #     AND THE REASON IS GATED ON THREE HALVES NOW (W-32 repair, gaps
 #     2410-2412), because the reason is what 1,756 grandfathered entries are
@@ -1094,7 +1129,10 @@ fi
 #     exemptions are W-27's shape and may only SHRINK: a field listed there
 #     that is written FAILS as STALE, which is how the nine leave one step at
 #     a time -- W-33 track P writes `impossible`, and at that merge its line
-#     goes STALE and is deleted.
+#     goes STALE and is deleted.  AND THE OTHER DIRECTION IS CHECKED SINCE THE
+#     W-33 REPAIR (README gap 2564): a line the file did not hold at HEAD, for a
+#     field the structure already had there, FAILS as RATCHET -- driven, W-33's
+#     auditor deleted `blocked :=` and added a dated line and this was green.
 #
 #     DRIVEN in a clone, five plants, control rc=0 between each: `hot :=
 #     Capped.nil` added to `dayDiagnostics` (STALE, the exemption of a

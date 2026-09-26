@@ -123,6 +123,16 @@ struct Spec {
     dep: Option<usize>,
     loc_home: bool,
     atomic: bool,
+    /// **`[?]`, `hot` and `min:` lines** (W-33 repair, README gap 2568). §8.2 step 8's
+    /// comparison below reads `waiting`, the hot-flag arm of `hot` and the FLOOR arm of
+    /// `impossible`, and this generator wrote only `- [ ]` lines with no `hot` and no
+    /// `min:` -- so `waiting` was compared as `[]` against `[]` on every day, and the two
+    /// arms were compared on none (the reuse critic's census). A field compared only at
+    /// its default value is a check no input can fail (AGENTS §9.2).
+    waiting: bool,
+    hot: bool,
+    /// `min:<n>b/d`, a per-day floor of `n` blocks.
+    floor: Option<u32>,
     /// **The item's written `@parent`** (stage 6 W-27), an index taken modulo
     /// the item's own position so the link always names an item **earlier** in
     /// the one generated file: never dangling, never a cycle, never itself.
@@ -220,8 +230,13 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
         // Half the items are written under a parent, so the `parent` cell is
         // compared at a real value on most rows rather than only at `""`.
         prop_oneof![1 => Just(None), 1 => prop::option::of(0usize..MAX_ITEMS)],
+        // A sixth of the lines wait, a sixth are flagged hot, a fifth carry a daily floor.
+        prop_oneof![5 => Just(false), 1 => Just(true)],
+        prop_oneof![5 => Just(false), 1 => Just(true)],
+        prop_oneof![4 => Just(None), 1 => prop::option::of(1u32..=12)],
     )
-        .prop_map(|(ci, k, est_b, small, due_in, dep, loc_home, atomic, parent)| Spec {
+        .prop_map(|(ci, k, est_b, small, due_in, dep, loc_home, atomic, parent, waiting, hot,
+                    floor)| Spec {
             // Small items cluster on two `ci` levels so that §7.5 really does
             // group them (batching needs an equal `ci`).
             ci: if small.is_some() { 2 + ci % 2 } else { ci },
@@ -233,6 +248,9 @@ fn spec_strategy() -> impl Strategy<Value = Spec> {
             loc_home,
             atomic,
             parent,
+            waiting,
+            hot,
+            floor,
         })
 }
 
@@ -297,7 +315,12 @@ fn week_text(case: &Case) -> String {
             Some(m) => format!("{m}m"),
             None => format!("{}b", sp.est_b),
         };
-        let mut line = format!("- [ ] {} {est} Item{i} !{}", sp.ci, sp.k);
+        let mut line = format!(
+            "- [{}] {} {est} Item{i} !{}",
+            if sp.waiting { '?' } else { ' ' },
+            sp.ci,
+            sp.k
+        );
         // **The written parent** (W-27). `% i` keeps the link pointing at an
         // earlier line of this same file, so `Tree::dangling_parents` and
         // `Tree::parent_cycles` are both empty by construction and the case is
@@ -321,6 +344,12 @@ fn week_text(case: &Case) -> String {
         }
         if sp.atomic {
             line.push_str(" atomic");
+        }
+        if let Some(n) = sp.floor {
+            line.push_str(&format!(" min:{n}b/d"));
+        }
+        if sp.hot {
+            line.push_str(" hot");
         }
         line.push_str(&format!(" ^{id}\n"));
         s.push_str(&line);
@@ -1237,7 +1266,7 @@ proptest! {
 /// counters README gap **2222** is about — fork-assigned row ids the kernel was
 /// sent no candidate for, and fork-assigned row ids the kernel returned no §7
 /// grant for.
-static PLAN_CENSUS: Mutex<[u64; 37]> = Mutex::new([0; 37]);
+static PLAN_CENSUS: Mutex<[u64; 44]> = Mutex::new([0; 44]);
 
 /// **The `SegKind` words this run actually compared** — README gap **2227**.
 ///
@@ -2189,6 +2218,16 @@ proptest! {
         // `aCapacityLost` are, since P1/P7, and are not this arm's question) and are not
         // compared here: `deferred` and `restDebtMin` are README gap 2511.
         let (mut dcmp, mut dimp, mut dhot, mut dmore, mut d554) = (0u64, 0u64, 0u64, 0u64, 0u64);
+        // **EVERY COMPARED FIELD HAS ITS OWN FLOOR** (W-33 repair, README gap 2568). The
+        // floors below were two -- `impossible` and `hot` non-empty on some day -- and the
+        // other five shared one sum, `dmore`, so `waiting` could be `[]` against `[]` on
+        // every day with the sum carried by `droppedTail`. A list of two checks where the
+        // rule is "every compared field", the fifteenth counted instance. Each field is
+        // counted alone now, and so are the two ARMS track P added to the kernel's writers:
+        // the FLOOR answers of `impossible` (`PlanReq.dayImpossible` over `candAnswers`,
+        // `PlannerWit.the_day_names_an_impossible_floor`) and the HOT-FLAG answers of `hot`.
+        let (mut dwait, mut dblock, mut dund, mut ddrop, mut dhon, mut dimpfl, mut dhotfl) =
+            (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
         if let Some(d2) = day2.as_ref() {
             let kd = &plan["diagnostics"];
             let ids_of = |v: &Value| -> Vec<String> {
@@ -2297,6 +2336,17 @@ proptest! {
             dcmp = 1;
             dimp = kimp.len() as u64;
             dhot = fhot.len() as u64;
+            dwait = fwait.len() as u64;
+            dblock = fblock.len() as u64;
+            dund = fund.len() as u64;
+            if !gap554 {
+                ddrop = fdrop.len() as u64;
+                dhon = u64::from(kratio.is_some());
+            }
+            let floored = |id: &str| cvec.iter().any(|c| c.id.as_str() == id && c.floor.is_some());
+            let flagged = |id: &str| cvec.iter().any(|c| c.id.as_str() == id && c.hot);
+            dimpfl = kimp.iter().filter(|(id, _)| floored(id)).count() as u64;
+            dhotfl = fhot.iter().filter(|id| flagged(id)).count() as u64;
             dmore = (fwait.len() + fblock.len() + fund.len()) as u64
                 + if gap554 { 0 } else { fdrop.len() as u64 + u64::from(kratio.is_some()) };
             d554 = u64::from(gap554);
@@ -2414,7 +2464,7 @@ proptest! {
         let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
              grows, gday0, gdays, gdups, gsame, frdays, krows, funcand, fungrant, rdefer, ronlyc,
              fonlyc, frows, rboth, ronlyc2, fonlyc2, frows2, rboth2, kindc, kindsk, dcmpc, dimpc,
-             dhotc, dmorec, d554c] = {
+             dhotc, dmorec, d554c, dwaitc, dblockc, dundc, ddropc, dhonc, dimpflc, dhotflc] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -2453,6 +2503,13 @@ proptest! {
             c[34] += dhot;
             c[35] += dmore;
             c[36] += d554;
+            c[37] += dwait;
+            c[38] += dblock;
+            c[39] += dund;
+            c[40] += ddrop;
+            c[41] += dhon;
+            c[42] += dimpfl;
+            c[43] += dhotfl;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -2571,6 +2628,18 @@ proptest! {
                  shortfall were checked against nothing"
             );
             prop_assert!(dhotc > 0, "no HOT id was compared in {cases} cases");
+            // W-33 repair (gap 2568): one floor per compared field, and one per arm.
+            for (n, what) in [
+                (dwaitc, "WAITING id"),
+                (dblockc, "BLOCKED id"),
+                (dundc, "UNDERUSED id"),
+                (ddropc, "DROPPED-TAIL id"),
+                (dhonc, "planHonesty ratio"),
+                (dimpflc, "IMPOSSIBLE row for a FLOOR (`min:`) candidate"),
+                (dhotflc, "HOT id for a `hot`-FLAGGED candidate"),
+            ] {
+                prop_assert!(n > 0, "no {} was compared in {} cases", what, cases);
+            }
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
@@ -2596,7 +2665,10 @@ proptest! {
              distinct words, rows unkeyable for that comparison {kindsk}, \
              energy-less work rows from now: kernel {kres}, fork {fres}, \
              §8.2 step 8 compared on {dcmpc} days: IMPOSSIBLE rows {dimpc}, HOT ids {dhotc}, \
-             waiting/blocked/droppedTail/underused ids and planHonesty ratios {dmorec}, \
+             waiting/blocked/droppedTail/underused ids and planHonesty ratios {dmorec} \
+             (waiting {dwaitc}, blocked {dblockc}, underused {dundc}, droppedTail {ddropc}, \
+             planHonesty {dhonc}; IMPOSSIBLE rows of floor candidates {dimpflc}, HOT ids of \
+             hot-flagged candidates {dhotflc}), \
              days whose `droppedTail` and `planHonesty` were COUNTED not compared because the \
              fork drew gap 554's open-block row for an item no kernel work row names {d554c}",
             KIND_WORDS.lock().expect("kinds").len()
@@ -2641,7 +2713,8 @@ fn two_routines_contend_for_one_position() {
     let case = Case {
         items: vec![Spec {
             ci: 0, k: 1, est_b: 2, small: None, due_in: Some(0), dep: None,
-            loc_home: false, atomic: false, parent: None,
+            loc_home: false, atomic: false, parent: None, waiting: false, hot: false,
+            floor: None,
         }],
         walls: vec![],
         now_idx: 0,

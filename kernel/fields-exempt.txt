@@ -12,6 +12,12 @@
 # was written on and names its EXIT: which step writes the field, and what
 # happens to this line when it does.  A `#` line is prose.
 #
+# AND "MAY ONLY SHRINK" WAS HALF-CHECKED UNTIL THE W-33 REPAIR (README gap 2564):
+# a STALE line failed, and a NEW line for a field that had been written was
+# accepted -- driven, `blocked :=` deleted from `dayDiagnostics` plus a dated line
+# here was green.  A line this file did not hold at HEAD FAILS now, unless the
+# field did not exist in the structure at HEAD either.
+#
 # THE NINE, on 2026-09-25.  `dayDiagnostics` (`Planner.lean`) fills `conflicts`,
 # `aCapacityLost` and `notes`; the shipped fork fills all twelve, and W-32 read
 # them off `--json plan` with values in them (`dropped_tail`, `plan_honesty`).

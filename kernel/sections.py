@@ -512,7 +512,10 @@ def cuts(pkg, src_dir, defs=None):
     """`(cut, report, complaints)` -- check 12's root, measured.
 
     `cut` is `{Lean name: set of Lean names}`: a dispatcher for a section
-    nothing sends, and the callees its absent arms still reach."""
+    nothing sends, and the callees its absent arms still reach.  `keyed` is
+    `{section key: set of dispatcher names}`, the same cuts by the request key
+    that makes them -- check 12 answers a class of definitions BY KEY (W-33
+    repair, README gap 2560), so the key has to survive the walk."""
     lib = Lib(pkg, defs)
     sections, dispatchers, walked = spine(lib)
     complaints, report = [], []
@@ -530,7 +533,7 @@ def cuts(pkg, src_dir, defs=None):
         complaints.append("SENT: `docs` is not sent by %s, and every request the "
                           "kernel accepts carries documents -- the scan is not "
                           "reading the requests" % src_dir)
-    cut = {}
+    cut, keyed = {}, {}
     for key in sorted(sections):
         where = sent.get(key)
         if where:
@@ -572,6 +575,7 @@ def cuts(pkg, src_dir, defs=None):
             for w in live:
                 names.update(lib.resolve(w, ns))
             cut.setdefault(qual, set()).update(names)
+            keyed.setdefault(key, set()).add(qual)
             report.append("  UNSENT %-9s cut at %s (%s), %d live callee(s)"
                           % (key, qual, mod, len(names)))
-    return cut, report, complaints
+    return cut, report, complaints, keyed

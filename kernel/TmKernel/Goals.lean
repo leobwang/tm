@@ -941,7 +941,9 @@ item 9 is where each entry's answer now lives)*:
    owes the one line that Planner.eligibleAt is `PlanCheck.FromNowAnchored`.
 6. plan_never_drops_an_impossible_item — **P8**.  `Planner.dayDiagnostics` still leaves
    `Planner.Diagnostics.impossible` at `Planner.Diagnostics.empty`'s value, so §7.3's grants
-   have never been written into it (README gap 1065).  It is the only one of the nine that is
+   have never been written into it (README gap 1065).  *(W-28's sentence, false since W-33:
+   `Planner.PlanReq.dayImpossible` writes the field, and the goal itself left this file at
+   W-32 — W-33 repair, gap 2565.)*  It is the only one of the nine that is
    **not** P5's.
 7. `plan_never_batches_past_an_equal_ci_candidate` — **P5**.  Provable today and vacuous
    (`PlanCheck.batch_has_no_subject_on_an_unassigned_day`): it wants a Batch row, which is step 5's batch split.
@@ -1130,7 +1132,8 @@ is **not** the same for all nine.  Three kinds, and the list below says which ea
 5. `plan_puts_hot_before_the_queue` — **the same, for the same reason and at the same request.**
 6. plan_never_drops_an_impossible_item — **P9 changes nothing; it is P8's.**
    `Planner.dayDiagnostics` still leaves `Planner.Diagnostics.impossible` at
-   `Planner.Diagnostics.empty`'s value (README gap 1065).  P9 populates `assignedOf`, which is
+   `Planner.Diagnostics.empty`'s value (README gap 1065).  *(W-29's sentence, false since
+   W-33, which wrote the field — W-33 repair, gap 2565.)*  P9 populates `assignedOf`, which is
    this goal's *conclusion*, and leaves its *hypothesis* — `Arith.isImpossible` over
    `Planner.edfNumbers` — with nothing acting on it.
 7. `plan_never_batches_past_an_equal_ci_candidate` — **P9 gives it a SUBJECT and not a proof**,
@@ -1384,11 +1387,14 @@ The restatement is `PlanCheck.impossibleKept`, which is **already** one of §6.1
 already proved inside `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`: it reads the
 day's own `Planner.Diagnostics.impossible` — the id and its exact shortfall — rather than
 recomputing the numbers, which is what design §6.1 requires of a check over a produced `DayPlan`.
-**Its subject is empty at every request and every eligibility**, which
-PlanCheck.impossible_has_no_subject said unconditionally (refuted at W-33, when the field was
-written), because
-`Planner.dayDiagnostics` never writes that field.  Filling it from `Planner.edfNumbers` is **P8**'s
-step and README gap **2321** is the residue. -/
+**Its subject was empty at every request and every eligibility until W-33**, which
+PlanCheck.impossible_has_no_subject said unconditionally, because `Planner.dayDiagnostics` never
+wrote that field.  W-33 filled it from `Planner.edfNumbers` (`Planner.PlanReq.dayImpossible`,
+closing README gap **2321**), refuted that theorem, and the check now has a subject and FAILS at
+`PlannerWit.theUnassignedImpossibleRequest`, `PlannerWit.theQuietImpossibleRequest` and, at
+step 5's own energy clause, `PlannerWit.theTwoImpossibleRequest` — README gap **2510**, the
+owner's question.  *(This paragraph kept the old present tense through the W-33 merge, with only
+a parenthesis added; rewritten in the W-33 repair, gap 2565.)* -/
 
 /-- **E2 (P\*), stage 6, §7.5.**  Batching gathers in key order and does not
 reach past an equal-`ci` candidate that ranks ahead of it.  The shipped bug did

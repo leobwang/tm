@@ -130,6 +130,7 @@ import sys
 
 import callgraph
 import leanfiles
+import mutate
 import sections as reqsec
 
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "reach-exempt.txt"
@@ -210,12 +211,57 @@ SECTION_EXIT = re.compile(r"\bEXIT\b")
 CENSUS = re.compile(r"(\d+) of its (\d+) emitted definitions are reached")
 CENSUS_TOPIC = re.compile(r"emitted definitions are reached")
 
+# TWO CLASSES ARE ANSWERED BY PROPERTY, NOT BY NAME (W-33 repair, README gap
+# 2560).  The file grew 1,756 -> 1,772 in W-33 and the growth was lawful by D51's
+# letter -- two new dated sections with EXITs -- and it was the wrong SHAPE: 509
+# of its 1,772 entries were two classes this script already measures, listed
+# name by name, so every definition a planner step added had to be added here
+# too, and "may only shrink" meant "grows by one dated section per step until
+# R3".  A list where the rule is a class, the fourteenth counted instance.
+# Both classes are stated where they are measured now, and the names left the
+# file:
+#
+#   * UNSENT.  A definition the export reaches ONLY through a section `tm/src`
+#     sends no request for.  `sections.py` already measures the cut; what was
+#     listed by hand was its CONSEQUENCE, 296 names in eighteen sections that
+#     all said "reached from the export ONLY through the request's `planner`
+#     section".  The class is computed by walking the graph again with the
+#     DECLARED unsent keys uncut: whatever that walk reaches and the real one
+#     does not is answered by the key's `CLASS unsent <key> -- <reason>` line in
+#     the exemption file.  Only a DECLARED key answers.  A section that stops
+#     being sent tomorrow is not in the file, so its definitions arrive as NOT
+#     EXEMPT by name -- gap 2229's finding cannot be absorbed silently.  A
+#     declared key that is SENT, or that no longer exists, FAILS as STALE.  The
+#     class line is ratcheted like a section: new at HEAD needs a date and an
+#     EXIT, and a rewrite needs a date.
+#   * WITNESS.  A definition of a module in `mutate.WITNESS_MODULES` -- check
+#     9's own enumeration of EXACT PATHS, reused rather than minted (213 names
+#     in six sections, every one `PlannerWit.lean`).  It is answered only while
+#     `mutate.witness_violations()` is empty: that is the LEAF property, checked
+#     by the same function check 9 fails on, and the moment a library module
+#     imports a witness module every one of its unreached definitions is NOT
+#     EXEMPT here by name.
+#
+# An entry the file still lists for a definition a class answers FAILS as
+# ANSWERED BY PROPERTY -- delete it -- so the two cannot both answer, and the
+# file can only get shorter by this route.  WHAT THE CLASSES CANNOT SEE, declared:
+# a definition that is reached through an unsent section FOR NO REASON -- the
+# walk's own blind spot above ("whether a reached definition is reached for a
+# reason") applies inside the cut subtree exactly as it does outside it; and a
+# witness module's definitions are exempt whatever they are, which is mutate.py's
+# conjunct (c) caveat ("the rule is about a module, not about a body") restated,
+# with the leaf property as the thing that keeps it cheap.
+CLASS_LINE = re.compile(r"^CLASS[ \t]+(unsent)[ \t]+([A-Za-z0-9_]+)[ \t]+--[ \t]+(.+)$")
+
 
 def read_exemptions(path, text=None):
     """`(entries, sections, complaints)` from the exemption file.
 
-    `sections` is a LIST of `(module, reason, lineno)` in file order and
-    `entries` is `{(module, name): (note, section index)}`.  A `##` line opens a
+    `sections` is a LIST of `(module, reason, lineno)` in file order,
+    `entries` is `{(module, name): (note, section index)}` and `classes` is
+    `{section key: (reason, lineno)}`, one per `CLASS unsent <key> -- <reason>`
+    line (W-33 repair, gap 2560: a class is answered by what the walk
+    measures, never by a name).  A `##` line opens a
     section and carries the reason every entry under it inherits; a `#` line is
     prose; anything else is an entry, with an optional `#` note of its own.  A
     `EXEMPT <n>` line declares the size, which must match exactly.
@@ -234,12 +280,25 @@ def read_exemptions(path, text=None):
     ENTRY now, at the line it was read on, so a second heading is a second
     section and inherits nothing backwards -- which is also what lets a gate
     WIDENING grandfather a module that already has a section (gap 2257)."""
-    entries, sections, complaints = {}, [], []
+    entries, sections, complaints, classes = {}, [], [], {}
     cur, declared = None, None
     for lineno, raw in enumerate((path.read_text() if text is None
                                   else text).splitlines(), 1):
         line = raw.strip()
         if not line:
+            continue
+        if line.startswith("CLASS"):
+            # A class line answers a MEASURED class, not a name (gap 2560).
+            m = CLASS_LINE.match(line)
+            if m is None:
+                complaints.append("%s:%d  a class line is `CLASS unsent <key> -- "
+                                  "<reason>` and this one is `%s`"
+                                  % (path.name, lineno, line))
+            elif m.group(2) in classes:
+                complaints.append("%s:%d  `CLASS unsent %s` is declared twice"
+                                  % (path.name, lineno, m.group(2)))
+            else:
+                classes[m.group(2)] = (m.group(3).strip(), lineno)
             continue
         if line.startswith("##"):
             head = line[2:].strip()
@@ -282,7 +341,7 @@ def read_exemptions(path, text=None):
         complaints.append("%s  declares EXEMPT %s and holds %d entries -- the count "
                           "is the ratchet, so correct it in the same edit"
                           % (path.name, declared, len(entries)))
-    return entries, sections, complaints
+    return entries, sections, complaints, classes
 
 
 def committed_exemptions(path):
@@ -341,7 +400,7 @@ def main(argv):
     # `defs` is handed in rather than rebuilt: it is already every `(module,
     # written, qualified)` of the library, and asking `leanfiles.qualified_names`
     # for it a second time cost 1.16 s on a check whose wall was 1.6 s.
-    cuts, wire, wirebad = reqsec.cuts(pkg, RUST_SRC, defs)
+    cuts, wire, wirebad, keyed = reqsec.cuts(pkg, RUST_SRC, defs)
     # A ROOT THAT COULD NOT BE MEASURED IS NOT A ROOT, AND NO VERDICT IS TAKEN
     # FROM IT (W-32 repair, README gap 2413).  `wirebad` used to be appended to
     # the adjudication's own complaints and everything below ran anyway -- so an
@@ -383,7 +442,32 @@ def main(argv):
     live = [d for d in population if d[3] in reached]
     dead = {(d[0], d[2]): d for d in population if d[3] not in reached}
 
-    entries, sections, bad = read_exemptions(EXEMPT_FILE)
+    entries, sections, bad, classes = read_exemptions(EXEMPT_FILE)
+    # THE TWO CLASSES, MEASURED (gap 2560; the declaration is above
+    # `CLASS_LINE`).  UNSENT: walk again with the DECLARED unsent keys' cuts
+    # lifted; what that walk reaches and the real one does not is the class.
+    declared_cuts = {q for k in classes for q in keyed.get(k, ())}
+    for k in sorted(classes):
+        if k not in keyed:
+            bad.append("STALE: %s:%d  `CLASS unsent %s` answers for a section "
+                       "that is %s -- delete the line; every definition it "
+                       "answered is now REACHED or NOT EXEMPT by name"
+                       % (EXEMPT_FILE.name, classes[k][1], k,
+                          "SENT by %s" % RUST_SRC if any(
+                              line.split()[:2] == ["SENT", k] for line in wire)
+                          else "not a section the walk cut"))
+    via, _ = callgraph.reachable(
+        ir, {callgraph.symbol(q): {callgraph.symbol(v) for v in vs}
+             for q, vs in cuts.items() if q not in declared_cuts})
+    unsent = {k for k, d in dead.items() if d[3] in via}
+    # WITNESS: check 9's own enumeration and check 9's own leaf test.
+    wviol = mutate.witness_violations()
+    for v in wviol:
+        bad.append("WITNESS: %s -- so no definition of it is answered by the "
+                   "witness class here either" % v)
+    wmods = set() if wviol else {pathlib.Path(m).name for m in mutate.WITNESS_MODULES}
+    witness = {k for k in dead if k[0] in wmods}
+    answered = unsent | witness
     for stem in sorted(set(library) - compiled):
         bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
                    "for it -- nothing imports it (AGENTS 2.3), so this check and "
@@ -394,7 +478,14 @@ def main(argv):
                    "DELETED module left behind, and this walk reads its functions "
                    "as if they were emitted; delete it" % (ir / "TmKernel" / (stem + ".c")))
     for key in sorted(dead):
-        if key not in entries:
+        if key in answered and key in entries:
+            bad.append("ANSWERED BY PROPERTY: %s (%s) is %s, and this file still "
+                       "names it -- delete the entry; a class and a name may not "
+                       "both answer, and the file only shrinks this way (gap 2560)"
+                       % (key[1], key[0], "a witness fixture of a leaf module"
+                          if key in witness else
+                          "reached only through a declared unsent section"))
+        if key not in entries and key not in answered:
             d = dead[key]
             bad.append("NOT EXEMPT: %s (%s) is emitted and no request the shipped "
                        "binary can build reaches it from %s%s"
@@ -445,8 +536,22 @@ def main(argv):
                    "only comparand this file has is itself -- which is the state "
                    "D51's ratchet was in before W-31's repair" % EXEMPT_FILE.name)
     else:
-        prev_entries, prev_sections, _ = read_exemptions(EXEMPT_FILE, prev)
+        prev_entries, prev_sections, _, prev_classes = read_exemptions(EXEMPT_FILE, prev)
         prev_heads = {(m, r) for m, r, _ in prev_sections}
+        # A class line is ratcheted exactly as a section is: new at HEAD needs a
+        # date and an EXIT, and a rewrite needs a date (gap 2560).
+        for k, (reason, lineno) in sorted(classes.items()):
+            if k not in prev_classes:
+                if not SECTION_DATE.search(reason) or not SECTION_EXIT.search(reason):
+                    bad.append("RATCHET: %s:%d  the new `CLASS unsent %s` line "
+                               "must carry an ISO date and name its EXIT -- a "
+                               "class answers every definition behind a section, "
+                               "so it costs at least what a section costs"
+                               % (EXEMPT_FILE.name, lineno, k))
+            elif reason != prev_classes[k][0] and not SECTION_DATE.search(reason):
+                bad.append("RATCHET: %s:%d  `CLASS unsent %s`'s reason has been "
+                           "REWRITTEN and carries no ISO date (gap 2411's rule)"
+                           % (EXEMPT_FILE.name, lineno, k))
         for key in sorted(set(entries) - set(prev_entries)):
             module, reason, lineno = sections[entries[key][1]]
             if (module, reason) in prev_heads:
@@ -516,13 +621,16 @@ def main(argv):
               "the ratchet" % EXEMPT_FILE.name)
     print("%d def/abbrev(s) in %d library module(s), %d emitted (%d as a global), "
           "%d reachable from %s over the %d section(s) tm/src sends (%d cut), "
-          "%d exempt in %d section(s) (%d of them run at load), %d UNANSWERED"
+          "%d exempt in %d section(s) (%d of them run at load), "
+          "%d answered by property (%d reached only through %d declared unsent "
+          "section(s), %d witness fixture(s)), %d UNANSWERED"
           % (len(defs), len(library), len(population),
              sum(1 for d in population if d[3] in callgraph.emitted_globals(ir)),
              len(live), callgraph.EXPORT_ROOT,
              sum(1 for line in wire if line.startswith("  SENT")), len(cuts),
              len(entries), len(sections),
-             sum(1 for d in dead.values() if d[3] in closed), len(bad)))
+             sum(1 for k, d in dead.items() if d[3] in closed and k in entries),
+             len(answered), len(unsent), len(classes), len(witness), len(bad)))
     return 1 if bad else 0
 
 

@@ -65146,7 +65146,7 @@ passed**, 69.62 s.
 
 | gap | what | where it bites | cost of leaving it |
 |---|---|---|---|
-| **2480** | **The thirteen-field shape is written by hand in nine more places this step did not fold**: `PlannerWit.lean:1023-1024` (`witCands`), `:1149-1150` (`witCandsSwapped`) and `:1766-1767` (`rootedCands`) — three lists above the first pin site, each grandfathered — and outside the witness module `Lookahead.lean:5415-5419` (five, `wfUnconstrained`) and four inside theorem statements in `Boundary.lean` (`:12064`, `:12219`, `:12225`, `:12277`); and `gCand`/`oCand`, which set a flag column no member of the six sets | `TmKernel/TmKernel/PlannerWit.lean`, `Lookahead.lean`, `Boundary.lean` | §5.3 is gated on DEFINITIONS (`twins.py`), and an inline constructor is a value, not a definition — no gate reads these. Folding the three PlannerWit lists is line-neutral but costs three grandfathered bodies × two constant-folds; folding `gCand`/`oCand` costs three `Bool` arguments at every one of 65 application sites. Track A's rule for gap 2418 is what decides whether a literal-in-a-list counts as a twin at all |
+| **2480** | **The thirteen-field shape is written by hand in nine more places this step did not fold**: `PlannerWit.lean:1023-1024` (`witCands`), `:1149-1150` (`witCandsSwapped`) and `:1766-1767` (`rootedCands`) — three lists above the first pin site, each grandfathered — and outside the witness module `Lookahead.lean:5415-5419` (five, `wfUnconstrained`) and four inside theorem statements in `Boundary.lean` (`:12064`, `:12219`, `:12225`, `:12277`); and `gCand`/`oCand`, which set a flag column no member of the six sets | `TmKernel/TmKernel/PlannerWit.lean`, `Lookahead.lean`, `Boundary.lean` | §5.3 is gated on DEFINITIONS (`twins.py`), and an inline constructor is a value, not a definition — no gate reads these. Folding the three PlannerWit lists is line-neutral but costs three grandfathered bodies × two constant-folds; folding `gCand`/`oCand` costs three `Bool` arguments at every one of 65 application sites. Track A's rule for gap 2418 is what decides whether a literal-in-a-list counts as a twin at all *(W-33 repair, gap 2574: the cost is WRONG — the 65 sites call the six builders, not `oneCand`; giving `oneCand` the three flags touches its SEVEN call sites (the six one-line builders and the inline `['b','5']` list at `PlannerWit.lean:2374`) plus `gCand`/`oCand` themselves, measured `grep -o '\boneCand\b'` = 13 occurrences, 7 of them applications)* |
 | **2481** | **The fold's verdict on `oneCand` is FIXTURE, so the one definition the family collapsed INTO is audited by nothing the gate can name — and the fixture roster grew by four where the family shrank by five.** `Look.Cand × Option Look.Floor` has no `Inhabited` and no argument of the builder has its type, so D40's constant and gap 985's identity both do not exist for it; and `bCand`, `bCandCap`, `cCand` — grandfathered with no row at the W-19 baseline — are UNFOLDABLE rows now because their bodies changed. Measured: witness fixtures **43 → 47**, rostered rows **266 → 271**, and the gate's *pinned by nothing* stays at **25** only because the FIXTURE verdict takes these seven out of that bucket by module (`mutate.py` rule (a)–(c)). | `kernel/mutations.txt`, `kernel/mutate.py` | what pins `oneCand` is every `decide` witness in the module (43 of them over two seconds at 8G, and `the_split_cuts_a_batch_on_atomic` at `:2435`, which failed the moment `witAtomicCands` was folded), which is exactly what the FIXTURE verdict was written for (gap 1086) and exactly what the gate cannot say by name. README gap 980 already puts the exemption itself to the owner; this row adds four names to what that decision covers, and a §5.3 collapse that ADDS rows to an exemption is the shape to watch for |
 | **2482** | **The roster's pin sites were shown unmoved by BYTES, not by re-running the mutations.** Thirty-nine lines, seven-line neighbourhoods identical to HEAD (§3); `--verify --only PlannerWit.lean` over 70 rows was priced at hours and not run in full | `kernel/mutations.txt`, `kernel/mutate.py` | an auditor who trusts only `--verify` has to run it. One row was run — `impCands`, the pin nearest below an edited block, PINNED at the same `:6877` (§6) — which is one of 70, said as such. The byte check is the cheaper property and it is stated in §3 so it can be re-run in seconds |
 
@@ -65443,9 +65443,9 @@ Gap **2510** is in §5 and gap **2522** below the table, both in the four-part f
 | gap | what | where | why it is not closed here |
 |---|---|---|---|
 | **2511** | two of twelve diagnostic fields are still `Diagnostics.empty`'s — `deferred`, `restDebtMin` — each with its reason (§7) | `Planner.dayDiagnostics` | `deferred` needs gap 555's flat-posterior energies; `restDebtMin`'s witness OOMs as a `decide` |
-| **2512** | the kernel's `Diagnostics.impossible` carries no `until`; the fork's tuple does (`(id, shortfall_min, until)`) | `Planner.Diagnostics`, `PlanWire.diagJson` | a field change to P0's vocabulary and its wire; nothing reads it yet |
+| **2512** | the kernel's `Diagnostics.impossible` carries no `until`; the fork's tuple does (`(id, shortfall_min, until)`) | `Planner.Diagnostics`, `PlanWire.diagJson` | a field change to P0's vocabulary and its wire; nothing reads it yet — *(W-33 repair: this re-records gap **323**, stage 6's P0 row, which already names the payloads the kernel's diagnostics drop and gives P8 their clearance; the reuse critic measured more of it — the due date in `short by DATE`, `blocked by` deps, the slot→ci pair and the banner's `need_min`/`avail_min`/`until` — and gap 323 is where it lives)* |
 | **2513** | two definitions of IMPOSSIBLE: `Grant.impossible` (R1's ceiling of the need) and the class/`is_impossible` (§7.1's exact `u`, the bin). They disagree where `rem × safety ≤ avail/capDen < ⌈rem × safety⌉`; the field follows the binary, `edfNumbers` follows the ceiling | `Capacity.lean`, `Lookahead.lean`, `Planner.edfNumbers` | recorded from the definitions: a witness needs a fractional availability inside a one-minute window |
-| **2516** | the two `given` lifts' old forms are not directly refuted: their `hhot` is false at the only unassigned day with an impossible candidate | `PlannerWit.lean` §30 | corollaries of refuted forms; a quiet day where the hot check holds and an impossible item is eligible needs one more fixture |
+| **2516** | the two `given` lifts' old forms are not directly refuted: their `hhot` is false at the only unassigned day with an impossible candidate | `PlannerWit.lean` §30 | corollaries of refuted forms; a quiet day where the hot check holds and an impossible item is eligible needs one more fixture — **CLOSED in the W-33 repair**: `PlannerWit.theQuietImpossibleRequest` and the two `…_as_W_19/W_20_wrote_it_is_refuted` theorems beside it |
 | **2517** | the by-id converse needs distinct answer ids (`an_item_the_day_names_with_a_grant_has_impossible_numbers`' `hnodup`) | `Planner.lean` | §5.3's carried instance shares an id by design; the by-answer statement is unconditional |
 | **2518** | CLOSED — `planner_invariants`' `kernel_prios` filled `u` for every grant | `tm/tests/planner_invariants.rs` | closed here (§6) |
 | **2519** | the step-8 comparison COUNTS `droppedTail`/`planHonesty` on a day carrying gap 554's open-block row: **42-55 of 273 days a run**, three runs | `tm/tests/planner_invariants.rs` | gap 554 (port `open_block_segment`) closes it; the day is defined by that row, not listed |
@@ -65502,7 +65502,8 @@ FAILING, not holding**: at `slotFitRows` (§8.2 step 5's own energy clause) on
 the eleven that is false — `PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`,
 by `decide`, in the merged build.  It also fails at `permissive` on the census Wednesday and on
 `theUnassignedImpossibleRequest`.  So the lifts that stood on the empty list were refuted and
-restated with a hypothesis: `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`,
+restated with a hypothesis *(W-33 repair: two of the five — the two `given` forms — had NO refutation
+until the repair's `PlannerWit.theQuietImpossibleRequest`, gap 2516; this sentence overclaimed)*: `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`,
 `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item`,
 `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` and
 two more (track P's block, §4).  Whether the check or the planner is wrong is **the owner's
@@ -65574,7 +65575,9 @@ number broken across a line; the fourth, with it rejoined, **13/13**), and once 
 2,623, Quot.sound 4,011, propext 4,970; 381 depend on none) · `Negative.lean` rejected ok · FFI
 **93 tests** · corpus **29/37 files and 4/5 whole plans** · stage goals **6 outstanding, all stage 6**
 · prose citations **42,606** (40,572 resolved, 2,034 allowed: 204 vocabulary, 365 counted; 0 unused;
-273 files) · mutation **287 new or changed since `86c4dc6`, 287 rostered (90 unfoldable, 52 witness
+273 files) *(W-33 repair, gap 2570: the committed tree prints **42,670 / 40,636 / 2,034** — re-run in a
+clean clone of `e9532a4` with its own build; the figure above was taken before this block's own
+prose was written)* · mutation **287 new or changed since `86c4dc6`, 287 rostered (90 unfoldable, 52 witness
 fixtures, 25 pinned by nothing; 1 literal), 0 owed, 29 bare pin sites** · parity **P1-P42, next free P43**
 · check 11 **3,077 def bodies, 14 groups, 0 UNANSWERED; second key 60 groups (35 value, 2
 wrapper, 7 wire-named, 16 adjudged: 9 one concept owed, 7 not one), 0 UNANSWERED** · check 12
@@ -65679,3 +65682,256 @@ alone.  **No predicate weakened, no law narrowed without its refutation beside i
 narrowed, no snapshot, fixture, latency band or corpus re-blessed, no memory bound raised, no
 external dependency, no `sorry` outside `Goals.lean`, no new axiom; `lean-toolchain` and
 `kernel/corpus/` untouched; no plant in the shared tree.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-33**, the REPAIR
+     step, on `rebuild-on-lean` at `e9532a4`.  Gap range **2560-2589**;
+     **2560-2578 taken**, 2579-2589 free.
+     ===================================================================== -->
+
+## Stage 6 — W-33, repair: two lifts stood without their refutation, three exemption files could grow unseen, and 509 names were a class
+
+**Eighteen findings from two auditors — the blocker filed by both, fourteen distinct others — and
+the same three shapes again.** Every claim was re-driven before it was repaired: plants in a
+`git clone --no-hardlinks` of the shared tree with the working changes applied and its OWN copy of
+`.lake` (so `lake` and `mutate.py` in the clone write only the clone), `#eval`s at 8G in scratch
+files, and one drive on a fresh `tm init` tree. The shared tree's `git status --porcelain` held
+only this step's own edits before and after every plant; no plant ever touched it. **Every
+finding that was re-driven reproduced; one — the `cp -a` hazard — was not re-driven, and §12 says
+why.** Twelve are closed here, the rest are recorded by name with the shape their fix must take.
+
+| figure | before (`e9532a4`) | after this repair |
+|---|---|---|
+| check 12 `EXEMPT` | 1,772 in 90 sections | **1,263 in 68 sections** + 509 answered by PROPERTY (296 through 2 declared unsent sections, 213 witness fixtures) |
+| check 11 second key | 16 adjudged: "9 one concept owed", 7 not one | 16 adjudged: **7 owed, 2 carried (checked)**, 7 not one |
+| check 9 pins of the four step-8 writers | their `_capped` length bounds (true of `[]`) | their **membership laws** (false of `[]`) |
+| `planner_invariants` step-8 floors | 3 (compared at all, `impossible`, `hot`) | **10** — one per compared field and one per arm |
+| `conflicts` non-empty at a `dayPlan` witness | 0 of 53 | **1** (`theOverlapRequest`) |
+| axiom audit | 5,354 | **5,363** (Classical.choice 2,632, Quot.sound 4,020, propext 4,979; 381 on none) |
+
+### 1. The blocker: two lifts gained `hnoimp` with no refutation of their old form — gap 2516, CLOSED
+
+**Reproduced.** `grep -rn 'given_hot_as_W\|given_the_two_comparisons_on_an_unassigned_day_as' TmKernel/`
+was empty at `e9532a4`, and the only unassigned day with an impossible candidate
+(`theUnassignedImpossibleRequest`) cannot refute the two `given` forms: `hotBeforeQueue` is `false`
+there. **The auditor's fixture is the fix, measured at 8G first** (0.8 s, then 2.4 s with both
+refutations): `PlannerWit.theQuietImpossibleRequest` — `theQuietRequest` with `impCands.take 1` —
+assigns nothing, has no past and nothing running, and there `hotBeforeQueue` and `monotoneInRank`
+HOLD on the whole day and on `withoutPast`'s, while `impossibleKept` and `planOk` are `false`
+(`PlannerWit.a_quiet_hot_day_drops_its_eligible_impossible_item`, thirteen `decide`s). Beside it:
+`PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted` and
+`PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted`,
+each the old statement verbatim under `¬`, discharged with `the_running_request_is_plain` for
+`hplain`. **All five `hnoimp` restatements now stand beside a computed refutation of their old
+form** (D5), and the land block's sentence that said so before it was true is annotated.
+
+**Does the new imply the old?** No — the old is false. **And §5.2's objection stands, stated:**
+`hnoimp` names out exactly the case `impossibleKept` is about, and it stays until gap 2510 (the
+owner's) says whether the check or the planner is wrong. What the repair adds is that the class it
+names out is now MEASURED at three requests, one of them a day where every other hypothesis of
+the eleven-check lift holds.
+
+### 2. Check 12 listed two classes name by name — gap 2560, CLOSED (the file shrank 1,772 → 1,263)
+
+**Reproduced exactly as the reuse critic counted it**: 509 of 1,772 entries were two classes
+`reach.py` already measures — 296 definitions the export reaches ONLY through the `planner` or
+`plan` section (eighteen sections, all saying so; by module Planner 188, PlanWire 38, Emit 30,
+EmitWire 18, Lookahead 8, Line 5, Plan 4, State 4, Priority 1) and 213 `PlannerWit.lean` witness
+fixtures (six sections) — each section wholly inside one class, none partial. Every planner step
+had to add its definitions by name until R3; W-33 track P did, lawfully by D51's letter.
+
+**The fix states them as PROPERTIES.** `CLASS unsent planner` and `CLASS unsent plan` in
+`reach-exempt.txt` — each dated, each with EXIT R3 — answer every emitted definition the walk
+reaches when THOSE DECLARED cuts are lifted and not otherwise (`sections.cuts` now also returns the
+cuts by request key). The witness class reuses check 9's own enumeration, `mutate.WITNESS_MODULES`,
+under check 9's own leaf test, `mutate.witness_violations()` — no second list. A name the file
+still carries for a definition a class answers FAILS as ANSWERED BY PROPERTY, so the file can
+only shrink by this route; a class line is ratcheted like a section.
+
+**Driven in the clone, eight plants, control rc=0 before and after each:**
+
+| plant | result |
+|---|---|
+| `Tm.PlannerWit.impCands` re-listed under a dated section | rc=1 `ANSWERED BY PROPERTY … a witness fixture of a leaf module` |
+| `Tm.Planner.PlanReq.dayHot` re-listed | rc=1 `ANSWERED BY PROPERTY … reached only through a declared unsent section` |
+| the `CLASS unsent planner` line deleted | rc=1, **235** `NOT EXEMPT` (the rest are reached through `plan` too) |
+| `CLASS unsent docs` — a section `tm/src` SENDS | rc=1 `STALE … SENT by …/tm/src` |
+| `CLASS unsent nosuch` | rc=1 `STALE … not a section the walk cut` |
+| the planner class line rewritten undated | rc=1 `RATCHET … must carry an ISO date and name its EXIT` |
+| `import TmKernel.PlannerWit` in `Emit.lean` | rc=1 `WITNESS: … no longer a leaf` and **213** `NOT EXEMPT` |
+| `def w33DeadPlant (n : Nat) : Nat := n + 7` appended to `Emit.lean` (a module wholly in the `plan` class), BUILT (3m22s) | rc=1 `NOT EXEMPT: Tm.w33DeadPlant (Emit.lean)` — **the class answers what an unsent section reaches, never what nothing reaches**; D50's class still bites |
+
+**What it cannot see, declared in `reach.py`:** whether a definition reached through an unsent
+section is reached FOR A REASON (the walk's own existing blind spot, now inside the cut subtree
+too), and a witness module's definitions are exempt whatever they are — `mutate.py`'s conjunct (c)
+caveat, with the leaf test as what keeps it cheap.
+
+### 3. Check 2 was green on its own class, one position over — gap 2561, CLOSED
+
+**Reproduced with HEAD's script and the repaired one over the same plant** (appended to the clone's
+`Emit.lean`): `open Lean Elab Command in #eval show CommandElabM Unit from do liftCoreM <| addDecl
+(Declaration.axiomDecl { .. })`, `theorem w33auditThm : True := (Tm.w33auditAx).elim`,
+`set_option maxRecDepth 100 in #eval (1 : Nat)`. HEAD `totality.py`: **rc=0, no output**. Repaired:
+**rc=1**, `Emit.lean:532` and `:534` named, `#eval stands where a command begins`. Cause exactly as
+the auditor said: `WORD`, which reads the word after `in`, lacked the `#?` W-31 gave `COMMAND_WORD`.
+Both position readers read ONE class now, `COMMAND_WORD_CLASS`.
+
+### 4. Two exemption files said "may only shrink" and could grow — gaps 2563 and 2564, CLOSED
+
+**`fields-exempt.txt` (gap 2564), reproduced with HEAD's `fields.py`:** `blocked := …` removed from
+`dayDiagnostics` plus a dated `Planner.Diagnostics.blocked` line → rc=0, "9 written … 3 exempt, 0
+UNANSWERED". Repaired: rc=1 `RATCHET: … a NEW exemption and the field existed at HEAD`. The
+comparand is `reach.committed_exemptions` — one reader of HEAD, reused — and HEAD's own structure,
+so a field the wire never carried may still arrive unwritten with a dated EXIT.
+
+**`twins-exempt.txt` (gap 2563), reproduced with HEAD's `twins.py`:** `def spanPer (lo hi k : Nat)
+: Nat := (hi - lo) / k` beside `Look.spanMinutes` plus a dated NOT ONE CONCEPT line → rc=0, "17
+adjudged". Repaired: rc=1 `RATCHET: … a NEW NOT ONE CONCEPT verdict`. The rule: a ONE CONCEPT line
+is a debt with an EXIT — D51's shape for growth — and may be added (driven: the same plant as ONE
+CONCEPT with an EXIT, rc=0); NOT ONE CONCEPT is the verdict with no exit, and new, it is growth the
+file does not allow — answer the group in code (a carrier E5 reads as wrappers) or put it to the
+owner. **A cost, said plainly:** renaming a member of an existing NOT ONE group re-keys it, and it
+must then be re-earned in code too.
+
+### 5. Check 11's second key: an enum sibling answered WIRE-NAMED, four blind spots undeclared, and a paid debt counted owed — gaps 2562 and 2550, CLOSED; residue gap 2577
+
+**Reproduced all seven of the reuse critic's plants' verdicts that concern the key**, and the
+auditor's one-hole plant. **E4 read every nullary constructor and every character as a NAME**
+(`normalise(names=True)`), while the header said "string literals": restSegLike, `windDownSeg`
+with `.rest` for `.windDown`, was answered WIRE-NAMED at HEAD (rc=0, 8 wire-named). E4 now reads
+strings, characters and the constructors of `WIRE_KEY_TYPES = ("Key",)` — the line grammar's field
+key, which is what four of the seven E4 groups really are (`viewMin`/`viewMax`, `viewDur`/
+`viewEstKey`, `setDur`/`setEst`/`setBuffer`, `setMin`/`setMax` — all still E4, measured). The plant
+is rc=1 `GENERALISATION … windDownSeg, restSegLike` now.
+
+**Gap 2550's miscount is closed by a CHECKED tag**: a ONE CONCEPT verdict that says `CARRIED BY
+`X`` counts carried, not owed, and FAILS unless every member's body is one application headed by
+`X` (driven: a false `CARRIED BY `Look.spanHours`` is rc=1). The two gap-2417 sentences carry
+`PlannerWit.oneCand`; the summary reads **7 one concept owed, 2 carried**.
+
+**Declared, not fixed (gap 2577):** a body that is ONE HOLE is not keyed (39 function `def`s,
+re-measured with the auditor's script; 0 groups hide among them), `⟨0, by decide⟩` is not a hole,
+E3 drops a fixture's literal made a parameter, and a shared constructor short name reads as a wire
+name. Each is in the header's CANNOT SEE list now; each fix changes the key and would form groups
+this repair has not adjudged.
+
+### 6. The four step-8 writers were "pinned" by a statement their `[]` mutant satisfies — gap 2567, CLOSED
+
+**Reproduced** at `mutations.txt:407, 408, 419, 420`: `PlanReq.dayWaiting_capped`,
+`dayBlocked_capped`, `dayImpossible_capped`, `dayHot_capped`, each `….length ≤ maxCands`, true of
+`[]`; the build failed on the PROOF (List.length_filterMap_le unfolds the body). Check 9 records
+the FIRST error, so a membership law must come first. `PlanReq.mem_dayImpossible` existed and stood
+AFTER its cap; the other three had none. Added `PlanReq.mem_dayHot`, `mem_dayWaiting`,
+`mem_dayBlocked` — each an iff over the writer's own filter, false of `[]` whenever the filter
+admits anything — and every cap now follows its law. **Re-verified by the gate itself** (`mutate.py
+--verify --write --only`, in the clone): all four `default,[]` rows now pin at their membership law, and
+`dayDiagnostics`' row moved only in line number (`Planner.lean:6605 dayDiagnostics_impossible`).
+The general JOB 6 item — the gate cannot tell a falsified statement from a proof that stops
+elaborating — is still open (gap 2578).
+
+### 7. `conflicts` was empty at every witness and its writer could be `[]` — gap 2566, CLOSED
+
+**Reproduced with the critic's Census.lean at 8G**: over the 53 `the…Request` fixtures (61
+`PlanReq` definitions in all), `conflicts` non-empty at **0**, `restDebtMin` 0, `deferred` 0,
+`waiting` 1, `blocked` 1. Added `PlannerWit.theOverlapRequest` — the census Wednesday with a call at
+13:20-14:00 over `^g1`'s 12:50-13:50 — and `the_day_names_its_overlapping_walls`:
+`(dayPlan theOverlapRequest).diagnostics.conflicts.val = [(g1, g2)]`, by `decide` (3.0 s at 8G).
+`Capped.ofListTake []` as the writer is false there.
+
+### 8. The fork comparison was vacuous for `waiting` and never reached two arms — gap 2568, CLOSED
+
+**Reproduced**: `planner_invariants.rs` wrote only `- [ ]` lines, no `[?]`, no ` hot`, no `min:`.
+The generator is WIDENED (never narrowed): a sixth of the lines wait, a sixth are `hot`, a fifth
+carry `min:<1..12>b/d`. And every compared field has its own floor, plus one per arm: one `--nocapture` run: step 8 compared on 273 days — IMPOSSIBLE rows 3,251, HOT ids 3,640, waiting **922**, blocked 1,830, underused 296, droppedTail 1,741, planHonesty 222, IMPOSSIBLE rows of `min:` candidates **384**, HOT ids of `hot`-flagged candidates **941** (51 days counted-not-compared for gap 554).
+**Planted in the clone**: `waiting`'s weight replaced by `Just(false)` in a third clone with its own CARGO_TARGET_DIR (`Compiling tm v0.1.0 (…/repair-w33/clone3/tm)` — gap 2571's protocol), and the arm FAILS: `Test failed: no WAITING id was compared in 315 cases`. Every compared field AGREED with the kernel-ranked fork on
+every day of every run — the widening found no divergence.
+
+### 9. False sentences — gap 2565, CLOSED
+
+`PlanCheck.lean` §10's header ("this checker is about a list nothing writes"), the nine-of-eleven
+bullet and the ten-of-eleven docstring ("two hold because their subject is empty at every request"),
+`Goals.lean`'s paragraph the land step patched with one parenthesis and its two historical list
+items, `Check.lean`'s two comment blocks, and `PlannerWit.lean`'s two present-tense residues — each
+rewritten to be true of the tree or annotated as the dated sentence it was. **The library edits are
+line-neutral**, so no check 9 pin site moved for a prose change; the new `PlannerWit` material is
+appended after the last pin site for the same reason.
+
+### 10. Recorded, with the shape the fix must take
+
+| gap | what is not done | why | what it costs | which step clears it |
+|---|---|---|---|---|
+| **2569** | the `eraseDups`-over-`dedupIds` reason ("`--json plan` prints the order the fork pushes in") is tested by nothing: `planner_invariants` sorts both sides | the wire orders differ, so order is not comparable today | a first-vs-last choice pinned by no test; the docstring now says so | R3, when the kernel's order is what `--json plan` prints: compare order there |
+| **2570** | the land block's check 8 figure (42,606 / 40,572) was not the committed tree's: **42,670 / 40,636 / 2,034**, re-run in a clean clone of `e9532a4` with its own build (the auditor's figure, reproduced) | the block's own prose added citations after the run | a published figure no run printed | CLOSED by annotation; §5.11's rule — a figure is re-run over the block that quotes it |
+| **2571** | a `cp -a` clone runs the SHARED tree's cargo artefacts: dep-info and `CARGO_MANIFEST_DIR` point home, 0 crates compile, and a bless writes shared-tree fixtures (mtime only; bytes identical) | the plant protocol says "a clone" and not which kind | earlier cargo audits in `cp -a` clones may have tested shared-tree code | the protocol: `git clone --no-hardlinks`, its own `.lake`, and cargo run only where `Compiling tm` names the clone's path |
+| **2572** | `tm edit ^id est=20b` on a line with a leading estimate and no `est:` appends `est:1200m` (driven below); the fork's `items.rs` edit set the LEADING estimate and kept the unit | since the switch the kernel serves the edit (`setEstE` → `Field.setEst`, minutes on the wire) | the day row shows `30b`, the planner uses 1,200 min; an unregistered divergence from the pre-switch behaviour | a kernel change to `setEstE` (leading slot when no `est:` token, unit kept) or a parity number — the owner's call under D53 |
+| **2573** | `PlanReq.dayBlocked` re-spells the blocked rule beside `Look.PlanFacts.eligible` | the fork's `ineligible_reason()` chain has no kernel counterpart | two definitions of one concept (the three membership laws now pin each) | a PlanFacts.ineligibleReason with `eligible` as its `none` case; it re-proves `eligible_iff` |
+| **2574** | gap 2480's cost argument was wrong (7 `oneCand` call sites, not 65); `gCand`, `oCand` and `rootedCands` still write the constructor by hand | not folded here: 9 bodies × re-mutation | the §5.3 residue stands | give `oneCand` the three flags |
+| **2575** | gap 2512 re-recorded gap 323 | — | — | annotated on 2512's row; gap 323 carries it |
+| **2576** | `dayDroppedTail` and `dayUnderused` have no `_capped` law, so `Capped.ofListTake` may truncate unseen (gap 322's shape) | the bound needs a nodup-subset length lemma (droppedTail) and a rows×items bound (underused) | a silent `take` is unexcluded | prove both or refute the cap |
+| **2577** | check 11's four declared blind spots (§5) | each changes the key | declared, not closed | a key that holes `⟨_, by _⟩` and keys one-hole bodies, adjudging what forms |
+| **2578** | check 9 cannot tell a statement the constant falsifies from a proof that stops elaborating | the gate reads the first error | fixed here for four rows by ORDER, not in general | a second pass that `sorry`s the first pinned proof and rebuilds |
+
+**Drive for gap 2572**, on a fresh tree, the binary built from this tree:
+
+```
+$ tm init --dir plan
+created 20 file(s) in plan
+[rc=0]
+$ tm add --to week - [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3
+- [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3 → week/2026-W39.md
+[rc=0]
+$ tm edit ^x3 est=20b
+- [ ] 2 30b Big migration due:2026-09-26T18:00 est:1200m ^x3
+[rc=0]
+$ tm check
+no problems
+[rc=0]
+```
+
+### 11. Acceptance
+
+**check.sh — THIRTEEN of thirteen**, capped at 40G (the Python gates at 16G), run before this block
+was written and again over it (§ figures below are the second run's where they differ): `lake build
+TmKernel:static` ok · totality ok · axiom audit **5,363 theorems** (Classical.choice 2,632,
+Quot.sound 4,020, propext 4,979; 381 on none) · `Negative.lean` rejected ok · FFI **93 tests** ·
+corpus **29/37 files and 4/5 whole plans** · stage goals **6 outstanding, all stage 6** · prose
+citations **42,763** (40,738 resolved, 2,025 allowed: 204 vocabulary, 365 counted; 0 unused; 273 files) · mutation **292 new or changed since `86c4dc6`, 292 rostered (94 unfoldable, 56
+witness fixtures, 25 pinned by nothing; 1 literal), 0 owed, 29 bare pin sites** · parity **P1-P42,
+next free P43** · check 11 **3,082 def bodies, 14 groups, 0 UNANSWERED; second key 61 groups (36
+value, 2 wrapper, 7 wire-named, 16 adjudged: 7 one concept owed, 2 carried, 7 not one), 0
+UNANSWERED** · check 12 **3,171 defs, 2,955 emitted (575 as a global), 1,178 reachable over the 8
+sections `tm/src` sends (2 cut), 1,263 exempt in 68 sections, 514 answered by property (296 through
+2 declared unsent sections, 218 witness fixtures), 0 UNANSWERED** · check 13 **12 fields, 10
+written, 2 exempt, 0 UNANSWERED**.
+
+**`cargo test --workspace`, THREE runs (D46)**: **87 binaries, 1,478 passed, 0 failed, 9 ignored —
+all three** (229 s, 221 s, 218 s; load at start 2.5, 1.6, 3.1). Inside each: `cli_switch_acceptance`
+16 · `cli_latency` 5 (1 ignored) · `kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 ·
+`kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` 9
+· T5 `kernel_replay_parity` 29 (4 ignored) · the door suite `kernel_log_door` 23. No
+`.proptest-regressions` file changed. `planner_invariants` twice more alone (once plain, 84 s; once
+`--nocapture` for the census in §8).
+
+### 12. Corrections to the brief, measured
+
+* *"check.sh all TWELVE by name"* — there are **thirteen** since `1b0569e`; all thirteen ran.
+* *"gap 2223 … `Planner.lean:27` still says 'Steps 3 to 7 are not written here'"* — false at
+  `e9532a4`: the W-32 repair rewrote that header (it now QUOTES the sentence as the history it
+  repaired, `Planner.lean:25-32`), and `:6657` is that quotation's second copy inside the
+  `dayPlan` docstring, not a live claim.
+* *"`PlanCheck.impossibleKept` … ranges over `Diagnostics.impossible`, and nothing writes that
+  field"* — false since W-33 track P (`Planner.PlanReq.dayImpossible`); the repair's defects were
+  the prose that kept saying so (§9).
+* *"check 12 … 1,756 exempt in 87 sections"* — **1,772 in 90** at `e9532a4`, **1,263 in 68** after
+  this repair (§2).
+* The audit's *"cp -a clone"* hazard (gap 2571) was **not re-driven**: reproducing it needs a
+  copy of the 21 GB `target/`, and a hard-linked copy would let a bless write through to the
+  shared tree. It is recorded on the auditor's evidence, and every cargo run of this repair in a
+  clone used a `git clone` with its own CARGO_TARGET_DIR, whose `Compiling tm` line names the
+  clone's path.
+
+**No predicate weakened, no law narrowed — five restated laws now each stand beside their
+refutation — no generator narrowed (one widened), no exemption widened (one file shrank by 509, two
+gained a ratchet), no snapshot, fixture, latency band or corpus re-blessed, no memory bound raised,
+no external dependency, no `sorry` outside `Goals.lean`, no new axiom; `dayPlan` is still total;
+`lean-toolchain` and `kernel/corpus/` untouched; no plant in the shared tree.**

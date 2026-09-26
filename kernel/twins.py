@@ -197,11 +197,19 @@ after §5.3.
                 the head is one definition already.  `weekOrdinal n := n / 7`
                 and `dateOfT t := t / 86400` are two names for division.
   E4 WIRE-NAMED the rule members are identical once parameters are numbered
-                and differ ONLY in string literals.  A string literal in this
+                and differ ONLY in the keys they spell: string and character
+                literals, and nullary constructors of a `WIRE_KEY_TYPES` type
+                (`Key`, the line grammar's field key -- `.floor`, `.cap`,
+                `.est`).  A string literal in this
                 kernel is a wire key, a field key or a refusal tag, declared
                 by the literal that spells it (check 8's source 2), and a
                 definition that spells one is that key's single point of
-                definition.  The three refusal emitters that differ only in
+                definition.  UNTIL THE W-33 REPAIR this sentence said "string
+                literals" while the comparand read EVERY nullary constructor
+                and every character as a name, so a sibling over `SegKind`
+                (`.rest` for `.windDown`) was answered here (gap 2562); four
+                of the seven E4 groups are answered on `Key` constructors,
+                and they still are.  The three refusal emitters that differ only in
                 the key they spell are the pair W-29's string-blind key
                 wrongly merged, and this is that adjudication as a property.
   A SENTENCE    `twins-exempt.txt`.  Every remaining group is named there --
@@ -216,9 +224,33 @@ after §5.3.
                 group a property answers FAILS as one nothing needs; a
                 verdict that was ONE CONCEPT at HEAD cannot be rewritten NOT
                 ONE CONCEPT -- the debt leaves when the group does, which is
-                D46's rule about withdrawal applied here.
+                D46's rule about withdrawal applied here; and a NOT ONE
+                CONCEPT verdict the file did not hold at HEAD FAILS (W-33
+                repair, gap 2563) -- growth is a ONE CONCEPT debt with an
+                EXIT or it is code, so a renamed or widened NOT ONE group is
+                re-earned in code too.  A ONE CONCEPT verdict that says
+                CARRIED BY `X` is counted carried, not owed, and FAILS unless
+                every member's body is one application headed by `X`.
 
-  WHAT THE SECOND KEY CANNOT SEE, declared:
+  WHAT THE SECOND KEY CANNOT SEE, declared (the first four bullets were added
+  by the W-33 repair, each driven by W-33's auditor or reuse critic in a clone,
+  README gap 2562):
+  * a body that is ONE HOLE -- a constructor over parameters, `⟨n, d⟩` -- is
+    not keyed at all (`gen_key` returns None: a hole carries no rule), so
+    `ofNatOver (n d : Nat) : Q := ⟨n, d⟩` beside `Arith.ofNat n := ⟨n, 1⟩`
+    passes.  39 function `def`s of the library are unkeyed this way; no group
+    hides among them today (re-measured in the W-33 repair).
+  * a `Fin` literal or any subtype literal, `⟨0, by decide⟩`: the proof is a
+    tactic block, not a hole, so `limitHistAt (i : Fin 6) .. := dayTake i h B`
+    beside `limitHist .. := dayTake ⟨0, by decide⟩ h B` forms no group.
+  * a FIXTURE's literal made a parameter: E3 drops a nullary member as a
+    fixture role, so `witPrioAt (n)` beside the nullary `witPrio` leaves one
+    rule and is answered.  That is E3's own rule ("one rule and N roles"),
+    and the finding it hides is a fixture that could be written through its
+    rule.
+  * a constructor whose short name a `WIRE_KEY_TYPES` type and another type
+    both declare, spelled in dot form, reads as a name in E4 -- the quiet
+    direction; `Key`'s constructors collide with no other type's today.
   * a generalisation across a DELTA step or a structure ETA.  `bCand` builds
     its facts as `wfPlanFacts pm l h` and `pCand` as `⟨{ planFacts pm l with
     splittable := sp }, h⟩` -- one value under two spellings -- so gap 2417's
@@ -229,8 +261,9 @@ after §5.3.
     carrier exists (`PlannerWit.oneCand`, track G) and the two groups STILL
     FORM: each member is one application of `oneCand` whose facts argument
     names a global (`planFacts`), so it is neither a hole nor E5's one
-    application over holes.  A paid debt the key keeps counting owed --
-    README gap 2550, and the two sentences say so.
+    application over holes.  README gap 2550; since the W-33 repair the two
+    sentences say CARRIED BY `PlannerWit.oneCand`, the gate checks every
+    member is headed by it, and the summary counts them carried, not owed.
   * a closed term that is not a literal -- `Diagnostics.empty`, `planFacts 10
     .any` -- turned into a parameter.  A global name is not a hole, for the
     measured reason above.
@@ -292,6 +325,12 @@ OPENERS, CLOSERS = "([{⟨⦃", ")]}⟩⦄"
 EXEMPT_FILE = pathlib.Path(__file__).resolve().parent / "twins-exempt.txt"
 ISO_DATE = re.compile(r"\b20\d\d-[01]\d-[0-3]\d\b")
 VERDICT = re.compile(r"^(NOT ONE CONCEPT|ONE CONCEPT)\b")
+# A ONE CONCEPT debt whose carrier has LANDED says so, and the claim is CHECKED
+# (W-33 repair, README gap 2550): every member's body must be one application
+# headed by the named carrier, a `def` of the library.  The summary then counts
+# the group CARRIED, not OWED -- it said "9 one concept owed" while two of the
+# nine were gap 2417's family, paid by `PlannerWit.oneCand` (reuse critic).
+CARRIED = re.compile(r"CARRIED BY `([A-Za-z_][A-Za-z0-9_.']*)`")
 SUBSCRIPTS = frozenset("₀₁₂₃₄₅₆₇₈₉"
                        "ₐₑₒₓₔₕₖₗₘₙₚₛₜ")
 
@@ -712,11 +751,38 @@ def collapse(out, ctors):
     return tuple(out)
 
 
+# THE CONSTRUCTORS E4 READS AS NAMES (W-33 repair, README gap 2562).  E4's
+# rule is "differ ONLY in the keys they spell", and a key is spelled two ways
+# in this kernel: as a string or character literal on the wire, and as a
+# constructor of the line grammar's field-key type, `Key` (`Line.lean`),
+# which `lookupKey`/`setKey` take and whose constructors ARE the `est:`,
+# `min:` .. field names.  `normalise(names=True)` used to read EVERY nullary
+# constructor as a name, so restSegLike -- `windDownSeg` with `.rest` for
+# `.windDown`, a real generalisation over `SegKind` -- was answered WIRE-NAMED
+# (driven by W-33's reuse critic in a clone).  This is W-27's shape: a type
+# joins this tuple to have its constructors read as names; nothing else does.
+WIRE_KEY_TYPES = ("Key",)
+
+
+def wire_name(t, ctors):
+    """True when token `t` is a nullary constructor of a `WIRE_KEY_TYPES`
+    type.  A dot or bare spelling asks by short name, so a constructor whose
+    short name a wire-key type and another type BOTH declare reads as a name
+    -- the quiet direction, declared in the header."""
+    if ctors is None or ctor_arity(t, ctors) != 0:
+        return False
+    (_lib_s, lib_q), _core = ctors
+    segs = t.lstrip(".").split(".")
+    if len(segs) >= 2:
+        return segs[-2] in WIRE_KEY_TYPES and (segs[-2], segs[-1]) in lib_q
+    return any((ty, segs[-1]) in lib_q for ty in WIRE_KEY_TYPES)
+
+
 def normalise(toks, params, keep, ctors=None, names=False):
     """N1 when `keep`: parameters NUMBERED and everything else kept -- the
     ALPHA comparand; with `names`, every token that NAMES rather than measures
-    (a string, a character, a nullary constructor) is one marker too -- the
-    E4 comparand.  N2 otherwise: every parameter and literal a hole and
+    (a string, a character, a nullary constructor of a `WIRE_KEY_TYPES` type)
+    is one marker too -- the E4 comparand.  N2 otherwise: every parameter and literal a hole and
     constructors collapsed -- the second key itself."""
     index = {}
     for k, p in enumerate(params):
@@ -733,11 +799,11 @@ def normalise(toks, params, keep, ctors=None, names=False):
             head, dot, rest = t.partition(".")
             if head in index:
                 out.append(("_%d" % index[head] if keep else "_") + (dot + rest if dot else ""))
-            elif names and ctor_arity(t, ctors) == 0:
+            elif names and wire_name(t, ctors):
                 out.append("#")
             else:
                 out.append(t)
-        elif kind == "ID" and names and ctor_arity(t, ctors) == 0:
+        elif kind == "ID" and names and wire_name(t, ctors):
             out.append("#")
         else:
             out.append(t)
@@ -950,7 +1016,32 @@ def main(argv):
             else:
                 used.add(names)
                 verdict = "ONE CONCEPT" if e[0].startswith("ONE CONCEPT") else "NOT ONE CONCEPT"
-                if alpha_group and verdict != "ONE CONCEPT":
+                m = CARRIED.search(e[0])
+                if m and verdict == "ONE CONCEPT":
+                    carrier = m.group(1)
+                    heads = []
+                    for d in g:
+                        toks = list(d.bodytoks)
+                        k = next((i for i in range(len(toks) - 1)
+                                  if toks[i][1] == ":" and toks[i + 1][1] == "="), None)
+                        head = toks[k + 2][1] if k is not None and k + 2 < len(toks) \
+                            and toks[k + 2][0] == "ID" else None
+                        full = _QUALIFIED.get(str(d.path), {}).get(head, head) if head else None
+                        heads.append((d, head, full))
+                    if all(full is not None and (full == carrier or full.endswith("." + carrier))
+                           and qualified(d.path, d.name) != full for d, _h, full in heads):
+                        verdict = "ONE CONCEPT CARRIED"
+                    else:
+                        bad.append("CARRIED: %s:%d says the group is CARRIED BY `%s`, and %s -- "
+                                   "a carried debt is one application of its carrier in every "
+                                   "member, or it is owed" % (
+                                       EXEMPT_FILE.name, e[1], carrier,
+                                       ", ".join("`%s` is headed by `%s`" % (d.name, h or "(no name)")
+                                                 for d, h, full in heads
+                                                 if not (full and (full == carrier or
+                                                                   full.endswith("." + carrier))))
+                                       or "a member is its own carrier"))
+                if alpha_group and not verdict.startswith("ONE CONCEPT"):
                     bad.append("ALPHA: %s:%d says NOT ONE CONCEPT of two names for one "
                                "definition -- a twin's only honest sentence is ONE CONCEPT "
                                "with an EXIT: %s" % (EXEMPT_FILE.name, e[1],
@@ -979,6 +1070,26 @@ def main(argv):
                    % EXEMPT_FILE.name)
     else:
         prev_entries, _ = read_verdicts(EXEMPT_FILE, prev)
+        # AND THE FILE COULD GROW BY THE ONE VERDICT THAT NEVER LEAVES (W-33
+        # repair, README gap 2563).  Its header said it "may only SHRINK" and
+        # only the STALE direction was checked: driven by W-33's auditor in a
+        # clone, `def spanPer (lo hi k : Nat) : Nat := (hi - lo) / k` beside
+        # `Look.spanMinutes` plus one dated NOT ONE CONCEPT line gave rc=0 and
+        # the summary moved 16 -> 17 adjudged, unflagged.  A ONE CONCEPT line is
+        # a DEBT with an EXIT -- D51's shape for growth, a dated reason that
+        # says what ends it -- and may be added.  A NOT ONE CONCEPT line has no
+        # exit: it is a permanent exemption, and a permanent exemption the file
+        # did not hold at HEAD is growth this file does not allow.  A group
+        # whose two shapes are two concepts is answered in CODE -- one member
+        # written through the other, or both through a carrier E5 then reads as
+        # wrappers -- or put to the owner; never by a new sentence.
+        for names in sorted(set(entries) - set(prev_entries), key=lambda k: entries[k][1]):
+            if entries[names][0].startswith("NOT ONE CONCEPT"):
+                bad.append("RATCHET: %s:%d is a NEW NOT ONE CONCEPT verdict -- this file "
+                           "may only SHRINK, and the one verdict with no EXIT cannot be "
+                           "added: answer the group in code (a carrier E5 reads as "
+                           "wrappers) or adjudge it ONE CONCEPT with an EXIT: %s"
+                           % (EXEMPT_FILE.name, entries[names][1], " ".join(sorted(names))))
         for names in set(entries) & set(prev_entries):
             if prev_entries[names][0].startswith("ONE CONCEPT") and \
                     entries[names][0].startswith("NOT ONE CONCEPT"):
@@ -1002,15 +1113,18 @@ def main(argv):
     print("%d file(s) swept, %d def bodies (%d unsplit), %d group(s) of two or "
           "more names (%d compiled, %d value), %d UNANSWERED; second key: %d "
           "generalisation group(s) (%d value, %d wrapper, %d wire-named, %d compiled, "
-          "%d adjudged: %d one concept owed, %d not one), %d UNANSWERED; %d of %d emitted "
+          "%d adjudged: %d one concept owed, %d carried, %d not one), %d UNANSWERED; "
+          "%d of %d emitted "
           "C symbols (functions and globals) reachable from %s"
           % (len(files), sum(len(v) for v in exact.values()), len(unsplit),
              len(twins), answered["E2"], answered["E3"],
              sum(1 for b in bad if b.startswith(("TWIN", "UNSPLIT"))),
              sum(gen_answered.values()), gen_answered["E3 VALUE"], gen_answered["E5 WRAPPER"],
              gen_answered["E4 WIRE-NAMED"], gen_answered["E2 COMPILED"],
-             gen_answered["ONE CONCEPT"] + gen_answered["NOT ONE CONCEPT"],
-             gen_answered["ONE CONCEPT"], gen_answered["NOT ONE CONCEPT"],
+             gen_answered["ONE CONCEPT"] + gen_answered["ONE CONCEPT CARRIED"]
+             + gen_answered["NOT ONE CONCEPT"],
+             gen_answered["ONE CONCEPT"], gen_answered["ONE CONCEPT CARRIED"],
+             gen_answered["NOT ONE CONCEPT"],
              sum(1 for b in bad if not b.startswith(("TWIN", "UNSPLIT"))),
              len(reached), len(emits), callgraph.EXPORT_ROOT))
     return 1 if bad or unsplit else 0

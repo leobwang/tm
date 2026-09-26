@@ -316,14 +316,26 @@ ALLOWED_COMMANDS = {
 # INDENTED inside its `section` gave rc=1 naming Check.lean's two documentation
 # `#eval`s and NOT `Emit.lean:534`.  One rule read through one spelling, twice
 # over, in the two places that had to agree -- the twelfth counted instance.
-COMMAND_WORD = re.compile(r"(?m)^([ \t]*)(#?[A-Za-z_][A-Za-z0-9_'.]*)")
+#
+# **AND THE `in` POSITION KEPT THE SHORT CLASS** (W-33 repair, README gap 2561).
+# The W-31 widening went into `COMMAND_WORD` and `KEYWORD` and not into `WORD`,
+# the class `command_positions` reads the word after a combinator's `in` with --
+# so `open Lean Elab Command in #eval show CommandElabM Unit from do ..addDecl
+# (.axiomDecl ..)` on ONE line passed this file at rc=0 with no output while
+# check 3 named the new axiom (driven by W-33's auditor in a clone: 10 of 11
+# spellings bit, this one did not).  The two POSITION readers -- the line head
+# and the word after `in` -- read ONE class now, `COMMAND_WORD_CLASS`, so the
+# next widening cannot land in one of them; `KEYWORD` below is the filter on
+# the derived keyword set, and it carries the same leading `#?`.
+COMMAND_WORD_CLASS = r"#?[A-Za-z_][A-Za-z0-9_'.]*"
+COMMAND_WORD = re.compile(r"(?m)^([ \t]*)(%s)" % COMMAND_WORD_CLASS)
 # The `in` combinator and the `for` binder that is not one, as TOKENS.
 IN_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])in(?![\w'?!])")
 FOR_TOKEN = re.compile(r"(?<![\w'?!.\u00AB])for(?![\w'?!])")
 # What may stand between a command position and the command's own word: layout,
 # and the attribute blocks `ALLOWED_ATTRS` already answers for.
 LEADING = re.compile(r"(?:\s|@\[[^\]]*\])*")
-WORD = re.compile(r"[A-Za-z_][A-Za-z0-9_'.]*")
+WORD = re.compile(COMMAND_WORD_CLASS)
 
 
 def command_positions(code):
