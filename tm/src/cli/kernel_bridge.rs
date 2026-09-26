@@ -213,8 +213,18 @@ pub enum Cmd {
     Move { id: String, to: String },
     /// `{"op":"drop","id":…}`.
     Drop { id: String },
-    /// `{"op":"est","id":…,"min":…}` — the `tm edit est=` op.
-    Est { id: String, min: u32 },
+    /// `{"op":"est","id":…,"value":…,"blockMin":…}` — the `tm edit est=` op,
+    /// carrying the value AS WRITTEN (`20b`) and what its `b` means. Since W-35
+    /// (the owner's D56, README gap 2572) the kernel reads the value with its
+    /// own duration grammar and writes the slot the view reads: a leading
+    /// estimate that is the slot is rewritten in place, as written; an `est:`
+    /// token (present, or inserted when the line has no estimate at all) gets
+    /// the canonical minutes the `min` form always wrote (`est:1200m`).
+    Est {
+        id: String,
+        value: String,
+        block_min: u32,
+    },
     /// `{"op":"demote","id":…,"doc":…,"period":…}` (week stamp).
     Demote { id: String, to: String, period: u32 },
     /// `{"op":"readopt","id":…,"doc":…}`.
@@ -778,7 +788,11 @@ pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
         .map(|c| match c {
             Cmd::Move { id, to } => json!({"op":"move","id":id,"doc":doc_ix(to)}),
             Cmd::Drop { id } => json!({"op":"drop","id":id}),
-            Cmd::Est { id, min } => json!({"op":"est","id":id,"min":min}),
+            Cmd::Est {
+                id,
+                value,
+                block_min,
+            } => json!({"op":"est","id":id,"value":value,"blockMin":block_min}),
             Cmd::Demote { id, to, period } => {
                 json!({"op":"demote","id":id,"doc":doc_ix(to),"period":period})
             }

@@ -541,6 +541,12 @@ can_fail
 # `Planner.dayDiagnostics_deferred` / `Planner.dayDiagnostics_restDebtMin`.  Cited by W-33's
 # README block and by one `PlannerWit` docstring this track may not edit (append-only there).
 2 Planner.the_day_leaves_two_diagnostic_fields_empty
+# W-35 track E: the edit-path token law described the hole the owner's D56 closed -- an est
+# edit appending an `est:` token beside a leading estimate -- and was REFUTED as
+# `setVal_writes_the_token_the_loader_reads_is_refuted`, restated on its subdomain as
+# `setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate`.  The two
+# citations left are stage 3's append-only README blocks (the edit widening and its gap-40 sequel).
+2 setVal_writes_the_token_the_loader_reads
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

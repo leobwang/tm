@@ -444,7 +444,8 @@ pub struct ActiveOut {
     pub started: String,
     /// Planned minutes.
     pub est_min: u32,
-    /// Minutes elapsed.
+    /// Minutes WORKED: the log's open block, pauses and interruptions
+    /// excluded (`Replay::active_worked_min`, README gap 2741).
     pub elapsed_min: u32,
     /// Timer paused.
     pub paused: bool,
@@ -497,7 +498,18 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
                 .unwrap_or_default(),
             started: hhmm(started),
             est_min: a.est_min,
-            elapsed_min: (ctx.now_tz - started).num_minutes().max(0) as u32,
+            // **One reading of worked minutes** (W-35, README gap 2741): the
+            // header used the wall clock since `started`, so after a
+            // 30-minute interruption it said `55m of 60m` while the `▶` row
+            // below it said `running · 35m left` — 60 less the 25 WORKED. It
+            // reads the log's open block now, through the rule the TUI shares
+            // (`Replay::active_worked_min`): the `worked_min_at` the row's
+            // `left`, `tm plan`'s `so far` and the overtime prompt read.
+            elapsed_min: ctx.replay.active_worked_min(
+                a.id.as_str(),
+                started.fixed_offset(),
+                ctx.now_tz.fixed_offset(),
+            ),
             paused: a.paused,
         }
     });

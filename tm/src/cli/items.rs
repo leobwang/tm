@@ -984,12 +984,14 @@ fn unwired_reason(line: &ItemLine, key: &str, unset: bool) -> Option<&'static st
 /// The wire commands for a `tm edit` invocation, when **every** requested
 /// change is one the kernel path carries -- else [`EditRoute::Mixed`] if any
 /// change is wired and any is not, and [`EditRoute::Host`] if none is. An
-/// `est=` pair is sent as the `est` op in canonical minutes (the CLI's own
-/// `Dur` grammar still reads the value, so `est=2b` keeps its block arithmetic
-/// and `est=zzz` its old message; the kernel proves the op *is* the keyed est
-/// edit). Every other wired pair rides raw -- the kernel's field grammar is the
-/// one reader -- and an empty value (or `--unset <key>`) is the wire's unset
-/// form.
+/// `est=` pair is sent as the `est` op with the value AS WRITTEN and the block
+/// length (the CLI's own `Dur` grammar still reads it first, so `est=zzz` keeps
+/// its old message): since W-35 (the owner's D56) the kernel writes a leading
+/// estimate that is the slot in place, as written — `30b` becomes `20b`, one
+/// estimate on the line — and an `est:` token in canonical minutes, the bytes
+/// the minutes form always wrote. Every other wired pair rides raw -- the
+/// kernel's field grammar is the one reader -- and an empty value (or
+/// `--unset <key>`) is the wire's unset form.
 ///
 /// `--set` is counted as unwired here rather than gating the whole call, for
 /// the same reason: `tm edit ^a1 cap=3h/d --set zz=1` wrote the host's `cap:`
@@ -1039,9 +1041,16 @@ fn edit_route(ctx: &Ctx, id: &Id, args: &super::EditArgs) -> Result<EditRoute, C
     for pair in &args.pairs {
         let (k, v) = split_pair(pair)?;
         cmds.push(if k == "est" && !v.is_empty() {
+            // The CLI's own `Dur` grammar still reads the value first, so
+            // `est=zzz` keeps its `invalid duration` document; the value then
+            // rides AS WRITTEN beside the block length its `b` means, and the
+            // kernel — the one writer (D49) — reads it with its own grammar and
+            // writes the slot the view reads (D56, README gap 2572).
+            Dur::parse_no_days(v, ctx.block_min())?;
             KCmd::Est {
                 id: id.to_string(),
-                min: Dur::parse_no_days(v, ctx.block_min())?.as_minutes(),
+                value: v.to_string(),
+                block_min: ctx.block_min(),
             }
         } else {
             KCmd::EditKey {
@@ -1068,8 +1077,10 @@ fn edit_route(ctx: &Ctx, id: &Id, args: &super::EditArgs) -> Result<EditRoute, C
 /// 2026-09-12 blocks: the accepted value lands as the field's **canonical
 /// rendering** (`est=045m` → `est:45m`, `cap=2b/d` → `max:…`); `ci=` writes
 /// the `ci:` key token — which both readers give precedence — instead of
-/// rewriting the positional digit; a line with no `est:` token gains one
-/// (the leading estimate is never invented or rewritten); a bad value, an
+/// rewriting the positional digit; `est=` writes the slot the view reads —
+/// since W-35 (D56) a leading estimate with no `est:` token beside it is
+/// rewritten in place as written (`30b` → `20b`), a line with no estimate
+/// gains an `est:` token, and the leading estimate is never invented; a bad value, an
 /// unset of an absent key, and a tabbed line are refused **by name**
 /// (`badValue <k>`, `keyAbsent`, `tabbedLine`) where the old path wrote
 /// silently or raised its own free text.

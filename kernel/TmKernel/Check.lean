@@ -1176,7 +1176,10 @@ open Tm
 -- (same session, edit-widening block: the keyed edit, gap 32's guard, and
 -- the est op routed through it)
 #print axioms Tm.ndDur?_is_parseDurND
-#print axioms Tm.setVal_writes_the_token_the_loader_reads
+-- DELETED AT W-35 (track E): setVal_writes_the_token_the_loader_reads said every edit lands
+-- its own key's token, which was the hole the owner's D56 closed (README gap 2572); REFUTED as
+-- setVal_writes_the_token_the_loader_reads_is_refuted and restated on its subdomain as
+-- setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate (audited below).
 #print axioms Tm.editValOf_refuses_unwired_keys
 #print axioms Tm.the_nine_wired_keys_accept_their_spec_values
 #print axioms Tm.key_of_map
@@ -7147,3 +7150,60 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_a_day
 #print axioms Tm.Planner.the_extension_disagrees_past_a_day
 #print axioms Tm.PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted
+
+-- APPENDED 2026-09-26 (stage 6, run W-35, track E; README gaps 2840-2869): D56's slot-reading
+-- est setter and its laws (gap 2572), the est op's value-as-written form, and the fork's three
+-- whole diagnostic tuples with their projection laws (gaps 2640, 2743).
+#print axioms Tm.Field.kEst_classifyWord
+#print axioms Tm.Field.findSome_kEst_phase3
+#print axioms Tm.Field.findSome_kEst_phase2
+#print axioms Tm.Field.estLeadOf_bare
+#print axioms Tm.Field.boxed_of_estLeadOf
+#print axioms Tm.Field.estLeadOf_setLead
+#print axioms Tm.Field.setLeadToks_seps
+#print axioms Tm.Field.mem_setLeadToks
+#print axioms Tm.Field.renderDur_head
+#print axioms Tm.Field.keyOf_renderDur
+#print axioms Tm.Field.isIdWord_of_digit_head
+#print axioms Tm.Field.isIdWord_renderDur
+#print axioms Tm.Field.isIdWord_of_estSlot
+#print axioms Tm.Field.lookupKey_none_of_no_keyTok
+#print axioms Tm.Field.hasKeyTok_setLead
+#print axioms Tm.Field.view_set_remaining_slot
+#print axioms Tm.Field.setRemaining_writes_no_key_over_a_leading_estimate
+#print axioms Tm.Field.setRemaining_boxed
+#print axioms Tm.Field.toksWf_head_word
+#print axioms Tm.Field.toksWf_setLeadToks
+#print axioms Tm.Field.idWords_setLeadToks
+#print axioms Tm.Field.setLead_canonical
+#print axioms Tm.Field.setRemaining_canonical
+#print axioms Tm.Field.setRemaining_line_reparses
+#print axioms Tm.Field.the_leading_estimate_is_rewritten_in_place
+#print axioms Tm.Field.a_line_without_a_leading_estimate_gets_the_key
+#print axioms Tm.setEstE_rewrites_the_leading_estimate
+#print axioms Tm.setVal_writes_the_token_the_loader_reads_is_refuted
+#print axioms Tm.setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate
+#print axioms Tm.setVal_est_rewrites_the_leading_estimate
+#print axioms Tm.the_edit_path_writes_the_minutes_it_was_given
+#print axioms Tm.parseCmd_reads_the_est_value_as_written
+#print axioms Tm.parseCmd_refuses_est_value_variants
+#print axioms Tm.Planner.PlanReq.a_short_answer_has_an_until
+#print axioms Tm.Planner.PlanReq.dayImpossible_is_the_projection
+#print axioms Tm.Planner.PlanReq.dayImpossibleUntil_capped
+#print axioms Tm.Planner.PlanReq.dayUnderused_is_the_projection
+#print axioms Tm.Planner.PlanReq.dayBlocked_is_the_projection
+#print axioms Tm.Planner.PlanReq.dayBlockedDeps_capped
+#print axioms Tm.Planner.dayDiagnostics_impossibleUntil
+#print axioms Tm.Planner.dayDiagnostics_impossible_is_the_projection
+#print axioms Tm.Planner.dayDiagnostics_blockedDeps
+#print axioms Tm.Planner.dayDiagnostics_blocked_is_the_projection
+#print axioms Tm.Planner.dayDiagnostics_underused_is_the_projection
+#print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item_with_its_date
+#print axioms Tm.PlannerWit.the_day_names_its_underused_slot_with_its_levels
+#print axioms Tm.PlannerWit.the_day_names_its_blocked_candidate_with_its_deps
+#print axioms Tm.PlanWire.the_seam_carries_the_run_it_was_given_exactly_when_asked
+#print axioms Tm.runCapP_without_a_capacity_section_hands_out_no_parts
+#print axioms Tm.PlanWire.batchOf_is_the_batchs_ids
+#print axioms Tm.PlanWire.respondPlanner_answers_an_empty_request
+#print axioms Tm.PlanWire.callPlanner_is_the_emitted_answer
+#print axioms Tm.EditVal.rendered_is_the_tokens_bytes

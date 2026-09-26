@@ -1170,16 +1170,13 @@ impl App {
     /// block may have started before midnight (§10.2).
     pub fn active_elapsed_min(&self) -> Option<u32> {
         let active = self.state.active.as_ref()?;
-        if let Some(open) = self
-            .replay
-            .open_block
-            .as_ref()
-            .filter(|b| b.id == active.id.as_str())
-        {
-            return Some(open.worked_min_at(self.now.fixed_offset()));
-        }
-        let started = self.local(active.started);
-        Some((self.now - started).num_minutes().max(0) as u32)
+        // The one rule, shared with `tm now`'s header (README gap 2741):
+        // `Replay::active_worked_min`.
+        Some(self.replay.active_worked_min(
+            active.id.as_str(),
+            self.local(active.started).fixed_offset(),
+            self.now.fixed_offset(),
+        ))
     }
 
     /// §9.1: the overtime prompt, when the timer has passed `est × r` and the

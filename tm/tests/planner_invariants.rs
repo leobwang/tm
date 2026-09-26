@@ -3466,3 +3466,262 @@ fn a_sub_second_now_moves_the_forks_day_and_not_the_kernels() {
         fractional, day2.segments.len(), placement_key(konly[0]), day2.hash()
     );
 }
+
+// ===========================================================================
+// **§8.2 STEP 8, THE REST OF IT, BY VALUE** — stage 6 W-35 track E (README
+// gaps 2723, 2640 and 2743).
+//
+// The step-8 arm above compares nine of the twelve fields and says why it does
+// not compare the other three: `conflicts`, `notes` and `aCapacityLost` "are
+// not this arm's question". They reach `--json plan` at R3, so they are this
+// block's: each against the kernel-ranked fork's (`day2`, the shipped wiring,
+// D53), by VALUE —
+//
+//   * `conflicts` as a multiset of `(a, b)` pairs;
+//   * `aCapacityLost` as the number;
+//   * `notes` IN ORDER, each kernel note rendered to the fork's own prose
+//     (`planner.rs:927`, `:1056` and `:2218`, `fmt_clock` on the zone's clock);
+//
+// and the three TUPLE COMPONENTS the kernel did not carry until this step —
+// `impossible`'s `until`, `underused`'s `(energy, ci)` and `blocked`'s deps —
+// each whole tuple as a multiset, the dates as `YYYY-MM-DD`, the deps as their
+// `after:` spelling (`Dep`'s `Display`). And on the kernel's own wire, each
+// pair/id field is the projection of its tuple field. Every comparison has its
+// own floor below, so no field passes by being empty on every day (AGENTS §9.2).
+// ===========================================================================
+
+/// cases; days compared; conflicts pairs compared; days with conflicts; notes
+/// compared; days with a note; days with `aCapacityLost > 0`; impossible tuples;
+/// underused tuples; blocked tuples; deps compared; days with no kernel §7 answer;
+/// and the notes compared BY KIND — travel day, no position, budget spent — so the
+/// census says which of the three kinds a run actually compared.
+static REST_CENSUS: Mutex<[u64; 15]> = Mutex::new([0; 15]);
+
+/// A kernel `notes` entry, in the fork's prose (`planner.rs`), `None` for a
+/// note kind the fork's `Diagnostics.notes` never carries.
+fn note_text(n: &Value, tz: Tz) -> Option<String> {
+    use chrono::TimeZone;
+    let clock = |v: &Value| -> String {
+        let t = tz
+            .timestamp_opt(v.as_i64().expect("a second") - rowwire::EPOCH_FROM_CE, 0)
+            .single()
+            .expect("an instant the zone reads");
+        planner::fmt_clock(t)
+    };
+    match n["note"].as_str()? {
+        "travelDay" => Some("travel day: no blocks planned (`travel-day` wall today)".to_string()),
+        "noPosition" => Some(format!(
+            "{}: no free {}m position in {}–{}; not planned today",
+            n["id"].as_str()?,
+            n["durMin"].as_u64()?,
+            clock(&n["lo"]),
+            clock(&n["hi"]),
+        )),
+        "budgetSpent" => Some(format!(
+            "budget spent: {} blocks done, the rest of the day is rest",
+            n["blocksDone"].as_u64()?
+        )),
+        _ => None,
+    }
+}
+
+/// **The two note kinds the generator never draws, drawn here** (a WIDENING of
+/// what this arm sees, D46; the shared generator is untouched). Measured on
+/// this block's first run: 91 notes compared on 81 of 273 days, EVERY ONE a
+/// `noPosition` — the generator writes no `travel-day` wall, and its budget of
+/// 6 is never spent by its at most 3 done blocks, so `travelDay` and
+/// `budgetSpent` were compared on no day at all. `travel` flags the first
+/// calendar wall `travel-day` (fork `Item::is_travel_day`, the kernel's
+/// `travelDay`), which zeroes the day's budget; `spent` stores a budget equal
+/// to the blocks already done on a day that has done some. Both sides read the
+/// changed world: the kernel through `docs` and `state.budget`, the fork
+/// through the tree rebuilt from the same bytes and the same `state`.
+fn widen_for_notes(w: &mut World, case: &Case, travel: bool, spent: bool) -> (bool, bool) {
+    let tz = w.cfg.tz;
+    let mut did = (false, false);
+    if travel {
+        if let Some((_, text)) = w.docs.iter_mut().find(|(p, _)| p == "calendar/2026-W37.md") {
+            if let Some(first) = text.lines().next().map(str::to_string) {
+                if !first.is_empty() {
+                    *text = text.replacen(&first, &format!("{first} travel-day"), 1);
+                    did.0 = true;
+                }
+            }
+        }
+    }
+    if spent && !case.late {
+        let done = case.done(tz);
+        if done > 0 {
+            w.state.budget = Some(done);
+            did.1 = true;
+        }
+    }
+    if did.0 {
+        let files: Vec<(&str, &str)> =
+            w.docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+        w.tree = Tree::from_texts(&files, &w.cfg);
+    }
+    did
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The rest of §8.2 step 8, by value**, against the kernel-ranked fork.
+    #[test]
+    fn the_kernel_writes_the_rest_of_step_8_as_the_fork_does(
+        case in case_strategy(),
+        travel in prop_oneof![3 => Just(false), 1 => Just(true)],
+        spent in prop_oneof![3 => Just(false), 1 => Just(true)],
+    ) {
+        let mut w = build(&case);
+        let _ = widen_for_notes(&mut w, &case, travel, spent);
+        let tz = w.cfg.tz;
+        let req = w.plan_request();
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let kd = &plan["diagnostics"];
+        let arr = |v: &Value| -> Vec<Value> { v.as_array().cloned().unwrap_or_default() };
+        let s = |v: &Value| -> String { v.as_str().unwrap_or("<not a string>").to_string() };
+
+        // **On the kernel's own wire, each pair/id field is its tuple's projection.**
+        let mut kimp_pairs: Vec<(String, u64)> = arr(&kd["impossible"]).iter()
+            .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX))).collect();
+        let mut kimp: Vec<(String, u64, String)> = arr(&kd["impossibleUntil"]).iter()
+            .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX), s(&o["until"])))
+            .collect();
+        let mut proj: Vec<(String, u64)> = kimp.iter().map(|t| (t.0.clone(), t.1)).collect();
+        kimp_pairs.sort();
+        proj.sort();
+        prop_assert_eq!(&proj, &kimp_pairs, "`impossible` is not `impossibleUntil`'s projection");
+        let mut kund: Vec<(String, u64, u64)> = arr(&kd["underusedLevels"]).iter()
+            .map(|o| (s(&o["id"]), o["energy"].as_u64().unwrap_or(99), o["ci"].as_u64().unwrap_or(99)))
+            .collect();
+        let mut kund_ids: Vec<String> = arr(&kd["underused"]).iter().map(s).collect();
+        let mut und_proj: Vec<String> = kund.iter().map(|t| t.0.clone()).collect();
+        kund_ids.sort();
+        und_proj.sort();
+        prop_assert_eq!(&und_proj, &kund_ids, "`underused` is not `underusedLevels`' projection");
+        let mut kblk: Vec<(String, Vec<String>)> = arr(&kd["blockedDeps"]).iter()
+            .map(|o| (s(&o["id"]), arr(&o["deps"]).iter().map(s).collect()))
+            .collect();
+        let mut kblk_ids: Vec<String> = arr(&kd["blocked"]).iter().map(s).collect();
+        let mut blk_proj: Vec<String> = kblk.iter().map(|t| t.0.clone()).collect();
+        kblk_ids.sort();
+        blk_proj.sort();
+        prop_assert_eq!(&blk_proj, &kblk_ids, "`blocked` is not `blockedDeps`' projection");
+
+        let cvec = w.candidates();
+        let day2 = kernel_prios(&plan, &cvec)
+            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps)));
+        let mut row = [0u64; 15];
+        row[0] = 1;
+        match day2.as_ref() {
+            None => row[11] = 1,
+            Some(d2) => {
+                row[1] = 1;
+                // `conflicts`: a multiset of pairs.
+                let mut kc: Vec<(String, String)> = arr(&kd["conflicts"]).iter()
+                    .map(|o| (s(&o["a"]), s(&o["b"]))).collect();
+                let mut fc: Vec<(String, String)> = d2.diagnostics.conflicts.iter()
+                    .map(|(a, b)| (a.to_string(), b.to_string())).collect();
+                kc.sort();
+                fc.sort();
+                prop_assert_eq!(&kc, &fc, "§8.2 step 8's `conflicts` differs from the fork's");
+                row[2] = kc.len() as u64;
+                row[3] = u64::from(!kc.is_empty());
+                // `notes`: in order, in the fork's prose.
+                let kn: Vec<Option<String>> = arr(&kd["notes"]).iter().map(|n| note_text(n, tz)).collect();
+                prop_assert!(
+                    kn.iter().all(Option::is_some),
+                    "the kernel's diagnostics carry a note kind the fork's never does: {}", kd["notes"]
+                );
+                for n in arr(&kd["notes"]) {
+                    match n["note"].as_str() {
+                        Some("travelDay") => row[12] += 1,
+                        Some("noPosition") => row[13] += 1,
+                        Some("budgetSpent") => row[14] += 1,
+                        _ => {}
+                    }
+                }
+                let kn: Vec<String> = kn.into_iter().flatten().collect();
+                prop_assert_eq!(&kn, &d2.diagnostics.notes, "§8.2 step 8's `notes` differ from the fork's");
+                row[4] = kn.len() as u64;
+                row[5] = u64::from(!kn.is_empty());
+                // `aCapacityLost`: the number.
+                prop_assert_eq!(
+                    kd["aCapacityLost"].as_u64(), Some(u64::from(d2.diagnostics.a_capacity_lost)),
+                    "§8.2 step 8's `aCapacityLost` differs from the fork's"
+                );
+                row[6] = u64::from(d2.diagnostics.a_capacity_lost > 0);
+                // The three whole tuples.
+                let mut fimp: Vec<(String, u64, String)> = d2.diagnostics.impossible.iter()
+                    .map(|(id, short, until)| (id.to_string(), u64::from(*short), until.to_string()))
+                    .collect();
+                kimp.sort();
+                fimp.sort();
+                prop_assert_eq!(&kimp, &fimp, "`impossible`'s whole tuple (with `until`) differs");
+                row[7] = kimp.len() as u64;
+                let mut fund: Vec<(String, u64, u64)> = d2.diagnostics.underused.iter()
+                    .map(|(id, e, c)| (id.to_string(), u64::from(*e), u64::from(*c))).collect();
+                kund.sort();
+                fund.sort();
+                prop_assert_eq!(&kund, &fund, "`underused`'s whole tuple (energy, ci) differs");
+                row[8] = kund.len() as u64;
+                let mut fblk: Vec<(String, Vec<String>)> = d2.diagnostics.blocked.iter()
+                    .map(|(id, deps)| (id.to_string(), deps.iter().map(ToString::to_string).collect()))
+                    .collect();
+                kblk.sort();
+                fblk.sort();
+                prop_assert_eq!(&kblk, &fblk, "`blocked`'s whole tuple (deps) differs");
+                row[9] = kblk.len() as u64;
+                row[10] = kblk.iter().map(|t| t.1.len() as u64).sum();
+            }
+        }
+        let c = {
+            let mut c = REST_CENSUS.lock().expect("census");
+            for (i, v) in row.iter().enumerate() {
+                c[i] += v;
+            }
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if c[0] >= generated {
+            // **THE FLOORS**, one per comparison (AGENTS §9.2).
+            prop_assert!(c[1] > 0, "no day was compared with the kernel-ranked fork");
+            prop_assert!(c[3] > 0, "no day carried a wall conflict: `conflicts` was compared only empty");
+            prop_assert!(c[5] > 0, "no day carried a note: `notes` was compared only empty");
+            prop_assert!(c[12] > 0, "no TRAVEL-DAY note was compared");
+            prop_assert!(c[13] > 0, "no NO-POSITION note was compared");
+            prop_assert!(c[14] > 0, "no BUDGET-SPENT note was compared");
+            prop_assert!(c[6] > 0, "no day lost A-capacity: `aCapacityLost` was compared only at 0");
+            prop_assert!(c[7] > 0, "no IMPOSSIBLE tuple was compared, so no `until`");
+            prop_assert!(c[8] > 0, "no UNDERUSED tuple was compared, so no `(energy, ci)`");
+            prop_assert!(c[10] > 0, "no BLOCKED dep was compared");
+        }
+        eprintln!(
+            "planner_invariants step-8 rest census: {} cases, {} compared with the kernel-ranked \
+             fork ({} with no kernel §7 answer); conflicts {} pairs on {} days; notes {} on {} \
+             days (by kind: travel day {}, no position {}, budget spent {}); aCapacityLost > 0 on \
+             {} days; impossible tuples {}; underused tuples {}; blocked tuples {} ({} deps)",
+            c[0], c[1], c[11], c[2], c[3], c[4], c[5], c[12], c[13], c[14], c[6], c[7], c[8], c[9],
+            c[10]
+        );
+    }
+}

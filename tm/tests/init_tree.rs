@@ -597,7 +597,12 @@ fn every_kernel_backed_verb_works_on_a_bare_init_tree() {
     let (first, second) = (format!("^{first}"), format!("^{second}"));
 
     tm.ok(&["edit", &first, "est=3b"]);
-    assert!(tm.read("week/2026-W37.md").contains("est:180m"));
+    // D56 (W-35): the line's leading `2b` is the slot, so it is rewritten in
+    // place as written — `3b`, one estimate — where `est:180m` used to be
+    // appended beside it.
+    let week = tm.read("week/2026-W37.md");
+    assert!(week.contains("- [ ] 4 3b Write the release notes"), "{week}");
+    assert!(!week.contains("est:180m"), "{week}");
     assert_eq!(tm.json(&["rank", &second, "1"])["moved"], true);
     tm.ok(&["move", &second, "backlog"]);
     assert!(tm.read("backlog.md").contains(&second));

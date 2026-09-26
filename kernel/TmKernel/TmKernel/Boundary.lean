@@ -1318,12 +1318,47 @@ def stampOf (j : JVal) (n : Nat) : Except String Field.Stamp := do
   | some (.str g) => return if g == ['d'] then .day n else .week n
   | _             => return .week n
 
+/-- The `est` op's own `blockMin`: what the value's `b` means, read through the request clock's
+smart constructor (`BlockMin.ofNat?`, which refuses `0`), `none` when the op carries none, and
+refused by the request clock's own name when present and not a positive number. -/
+def readOpBlockMin (j : JVal) : Except String (Option Nat) := do
+  match ← jget j "blockMin" with
+  | none => return none
+  | some (.num n) =>
+    match BlockMin.ofNat? n with
+    | some b => return some b.val
+    | none => throw "badBlockMin"
+  | some _ => throw "badBlockMin"
+
+/-- **D56's `est` op: the value AS WRITTEN** — `{"op":"est","id":…,"value":"20b","blockMin":60}`,
+what the host sends since W-35.  The value is read by the kernel's own duration grammar
+(`ndDur?`, which is the loader's `parseDurND`), so `tm edit est=` has one reader of its value;
+the op's `blockMin` is what the value's `b` means (`readOpBlockMin`), required only when the
+value is in blocks (`estBlockMinAbsent`) — a value in minutes or hours reads none.  The edit is
+`EditVal.estAt`: the value as written into a leading estimate that is the slot, its canonical
+minutes into an `est:` token — the bytes the `min` form always wrote there.  `min` beside
+`value` is refused (`estValueAndMin`) rather than read one way or the other (§5.6). -/
+def estAsWritten (j : JVal) (w : List Char) : Except String EditVal := do
+  if (← jget j "min").isSome then throw "estValueAndMin"
+  match ndDur? w with
+  | none => throw "badValue est"
+  | some d =>
+    let bm ← readOpBlockMin j
+    match d.val, bm with
+    | .simple _ .blocks, none => throw "estBlockMinAbsent"
+    | _, _ => return EditVal.estAt d (bm.getD 0)
+
 def parseCmd (j : JVal) : Except String ReqCmd := do
   let op ← getStr j "op"
   match String.ofList op with
   | "move" => return .move (← getStr j "id") (← getNat j "doc")
   | "drop" => return .drop (← getStr j "id")
-  | "est"  => return .est (← getStr j "id") (← getNat j "min")
+  | "est"  =>
+    let i ← getStr j "id"
+    match ← jget j "value" with
+    | none          => return .est i (← getNat j "min")
+    | some (.str w) => return .edit i (← estAsWritten j w)
+    | some _        => throw "String expected"
   | "demote" =>
     return .demote (← getStr j "id") (← getNat j "doc") (← stampOf j (← getNat j "period"))
   | "readopt" => return .readopt (← getStr j "id") (← getNat j "doc")
@@ -1583,7 +1618,7 @@ def applyCmd (c : ReqCmd) (p : WfPlan) : Except KErr WfPlan :=
     | .error k => .error k
     | .ok dd   => cmdMove i (freshRank p.val dd.ix) p dd
   | .drop i         => cmdDrop i p
-  | .est i v        => nameEditFault p i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) (cmdSetEst v i p)
+  | .est i v        => nameEditFault p i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) (cmdSetEst v i p)
   | .demote i d st =>
     match resolveDest p.val d with
     | .error k => .error k
@@ -5091,7 +5126,7 @@ refusals, `parseCmd_rejects_add_title_variants`-style. -/
 guard, one reader.  Definitional, so the two can never drift apart. -/
 theorem the_est_op_is_the_keyed_est_edit (i : Id) (v : Nat) (p : WfPlan) :
     applyCmd (.est i v) p
-      = applyCmd (.edit i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩)) p := rfl
+      = applyCmd (.edit i (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩)) p := rfl
 
 /-- **Gap 32's check bites on the wire**: a keyed edit addressed to a line
 whose raw bytes carry a tab is refused as `tabbedLine`, whatever the key and
@@ -5119,7 +5154,7 @@ theorem est_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (v : 
     (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = true) :
     applyCmd (.est i v) p = .error .tabbedLine :=
   edit_of_a_tabbed_line_is_refused p i e
-    (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) hget htab
+    (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) hget htab
 
 /-- The unset guard, on the wire. -/
 theorem unset_of_a_tabbed_line_is_refused (p : WfPlan) (i : Id) (e : Entity) (k : EditKey)
@@ -5197,9 +5232,9 @@ theorem applyCmd_edit_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : EditVal)
 theorem applyCmd_est_succeeds (p : WfPlan) (i : Id) (e : Entity) (v : Nat)
     (hget : p.val.store.get i = some e) (htab : lineHasTab e.val.line = false)
     (hrest : ∀ hs : (p.val.store.get i).isSome = true,
-      itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ : Entity) hs } = true) :
+      itemsWfButRanks { p.val with store := p.val.store.set i (⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ : Entity) hs } = true) :
     ∃ q : WfPlan, applyCmd (.est i v) p = .ok q ∧
-      q.val.store.get i = some ⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ :=
+      q.val.store.get i = some ⟨{ e.val with line := setVal (.est ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩ ⟨Field.Dur.simple v Field.DurUnit.minutes, rfl⟩) e.val.line }, e.property⟩ :=
   applyCmd_edit_succeeds p i e _ hget htab hrest
 
 /-- And the unset success form: present key, tabless line, the removal lands
@@ -5252,6 +5287,39 @@ theorem parseCmd_reads_the_keyed_edit_forms :
         ("key".toList, .str "est".toList), ("value".toList, .str "".toList)]) with
       | .ok (.unset i k) => i == "t3".toList && k.val == Field.Key.est
       | _ => false)) = true := by decide
+
+/-- **D56's `est` op reads the value as written** (W-35): `20b` at a 60-minute block is the
+edit `EditVal.estAt` — `20b` for a leading estimate, `1200m` for an `est:` token; a value in
+minutes needs no `blockMin`; and the `min` form reads as it always did. -/
+theorem parseCmd_reads_the_est_value_as_written :
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "20b".toList), ("blockMin".toList, .num 60)])
+      = .ok (.edit "x3".toList (.est ⟨.simple 20 .blocks, rfl⟩ ⟨.simple 1200 .minutes, rfl⟩)) ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "2h".toList)])
+      = .ok (.edit "x3".toList (.est ⟨.simple 2 .hours, rfl⟩ ⟨.simple 120 .minutes, rfl⟩)) ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("min".toList, .num 45)]) = .ok (.est "x3".toList 45) :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **…and refuses by name** (§5.7): a value the duration grammar refuses (`3d`: an estimate
+carries no days), a block value with no block length, a zero or non-numeric block length, a
+non-string value, and `min` beside `value`. -/
+theorem parseCmd_refuses_est_value_variants :
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "3d".toList), ("blockMin".toList, .num 60)]) = .error "badValue est" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "20b".toList)]) = .error "estBlockMinAbsent" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "20b".toList), ("blockMin".toList, .num 0)]) = .error "badBlockMin" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "45m".toList), ("blockMin".toList, .str "60".toList)])
+      = .error "badBlockMin" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .num 45)]) = .error "String expected" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "45m".toList), ("min".toList, .num 45)]) = .error "estValueAndMin" :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 /-! ## J5, the response side: `call` writes the kernel's own `JVal` with `jemit`
 
@@ -12793,5 +12861,15 @@ theorem the_log_op_merges_a_sealed_day_below_its_ledger_day :
   decide
 
 end W3
+
+/-- **`runCapP` on a request with no `capacity` section answers and hands out no parts** (W-35
+track E, README gap 2849).  Re-verifying `runCapP`'s check 9 row under the second pass (README gap
+2578) found `runCapP_bytes` ALONE: a law over every request, and with its proof sorried nothing told
+the dispatcher from a constant.  This is the dispatcher at one request, computed. -/
+theorem runCapP_without_a_capacity_section_hands_out_no_parts :
+    (match runCapP (.obj [("docs".toList, .arr [])]) with
+     | .ok (_, none) => true
+     | _ => false) = true := by
+  decide
 
 end Tm

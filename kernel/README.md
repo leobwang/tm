@@ -67461,3 +67461,397 @@ corpus re-blessed, no memory bound raised, no external dependency, no `sorry` ou
 no new axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.  Three
 exemption files are NEW (`kernel-decide-exempt.txt`, `inputs-exempt.txt`) or reasoned anew
 (`reach-exempt.txt`'s class line, text only): each grandfathers a measured set and may only shrink.**
+
+<!-- =====================================================================
+     Stage 6, run W-35, TRACK E — D56 (`tm edit est=` rewrites the leading
+     estimate), the rest of §8.2 step 8 compared by value (gap 2723), the
+     fork's three whole diagnostic tuples (gaps 2640, 2743) and one reading
+     of worked minutes on `tm now` (gap 2741).  Worktree `w35-e`, branch
+     `w35-e` from `fe49a8b`.  Gap range 2840-2869; no parity number issued
+     (two PARITY-PENDING lines below, for the Land step).
+     ===================================================================== -->
+
+## Stage 6 — W-35, track E: D56, and the diagnostics residue R3 names
+
+### 1. D56: the edit path writes the slot the view reads — the leading one included
+
+**What changed, in the kernel.**  The owner's D56 (gap 2572): on a line with a LEADING estimate and
+no `est:` token, `tm edit est=` rewrites the leading estimate IN PLACE, as written (`30b` → `20b`),
+where it appended `est:1200m` beside it.  The edit path never went through `setEstE` (it is in
+`reach-exempt.txt`): the FFI runs `applyCmd` → `cmdSetEst`/`cmdEdit` → `editE` → `setVal`, and
+`setVal`'s est arm was `Field.setEst`, the KEY setter (brief correction 1).  It is now
+`Field.setRemaining` (in `Cmd.lean`, beside the command it serves, so that a change to it rebuilds
+no module below `Cmd`): the `est:` token if the line carries one, else the leading estimate if the
+line carries one (`Field.leadIsTheSlot`), else a new `est:` token — the slot
+`viewRemainingDur` reads.  The leading rewrite is `Field.setLeadToks`, which mirrors
+`classifyPhase0`/`classifyPhase1` exactly: the first token, or the second after a positional ci,
+and only when phase 1 reads it as an estimate; every separator is kept (`Field.setLeadToks_seps`).
+
+**Two renderings of one value, stated.**  §3.1's leading estimate is "as written" and D49 settled
+the `est:` token's rendering as canonical minutes; one value cannot be both `20b` and `1200m`
+without the block length.  So `EditVal.est` carries the two renderings (`lead key : NdDur`), and
+`EditVal.estAt d bm` is the one the host sends: `d` as written for the leading slot, `d`'s minutes
+at `bm` for a token.  The wire's `est` op gained a value-as-written form,
+`{"op":"est","id":…,"value":"20b","blockMin":60}`, read by the kernel's own `ndDur?` (so `tm edit
+est=` has ONE reader of its value) with `blockMin` read through `BlockMin.ofNat?` and required only
+for a value in blocks; its refusals are named (`estBlockMinAbsent`, `badBlockMin`, `badValue est`,
+`String expected`, `estValueAndMin` for `min` beside `value`).  The `min` form is kept: its one
+value is minutes, so on a leading estimate it now writes `Nm` in place.
+
+**Laws.**  `Field.view_set_remaining_slot`: the view reads `lead` where the leading estimate is the
+slot and `key` elsewhere.  `Field.setRemaining_writes_no_key_over_a_leading_estimate` (one estimate
+per line), `Field.setRemaining_canonical` / `Field.setRemaining_line_reparses` (whatever it writes
+reparses to the same item), `Field.estLeadOf_setLead`, and `the_edit_path_writes_the_minutes_it_was_given`
+(whichever slot takes it, `Core.est` reads the minutes the host's value denotes — the "planner uses
+1,200 minutes" half).  **Re-proved (D5):** `the_edit_path_writes_what_the_field_path_reads`, its est
+arm restated over the two renderings — `a.val.est = some (if Field.leadIsTheSlot e.val.line then
+lead.val else key.val)`; the old arm is its `lead = key` case, which the `min` form and the keyed
+edit still are.  `the_command_path_writes_what_the_field_path_reads` re-proved with its statement
+unchanged (`setEstE` writes through `Field.setRemaining` too, so the unreached entity setter and the
+request path cannot disagree).  **Refuted and renamed:** setVal_writes_the_token_the_loader_reads
+said every edit lands its own key's token, which was the hole —
+`setVal_writes_the_token_the_loader_reads_is_refuted` at D56's line, restated on its subdomain as
+`setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate`, with
+`setVal_est_rewrites_the_leading_estimate` for the excluded case.  Witnesses:
+`Field.the_leading_estimate_is_rewritten_in_place`, `Field.a_line_without_a_leading_estimate_gets_the_key`,
+`setEstE_rewrites_the_leading_estimate`, `parseCmd_reads_the_est_value_as_written`,
+`parseCmd_refuses_est_value_variants`, and `EditVal.rendered_is_the_tokens_bytes` (gap 2851).
+
+**The host.**  `items::edit_route` still reads `est=` with the CLI's own `Dur` grammar first (so
+`est=zzz` keeps its `invalid duration` document, `cli_errors`), then sends the value AS WRITTEN with
+`ctx.block_min()`; `kernel_bridge::Cmd::Est` carries `value` and `block_min`.
+
+**Driven on the shipped binary** (`target/debug/tm` built from this tree, `tm init --dir plan`, the
+real clock, 2026-09-26):
+
+```
+$ tm add --to week '- [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3'
+- [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3 → week/2026-W39.md
+$ tm edit ^x3 est=20b
+- [ ] 2 20b Big migration due:2026-09-26T18:00 ^x3
+$ tm check
+no problems
+$ tm plan            (the x3 rows)
+10:56  3 p0 ⚠ Big migration                     20b     due today
+$ tm --json plan     (priorities[0])
+{'id': 'x3', …, 'need_min': 1560, …}            # ⌈1200 × 1.3⌉: remaining is 1,200 minutes
+$ tm add --to week '- [ ] 2 Big migration ^y1'  ;  tm edit ^y1 est=20b
+- [ ] 2 Big migration est:1200m ^y1
+$ tm add --to week '- [ ] 2 30b Big migration est:5b ^z1'  ;  tm edit ^z1 est=20b
+- [ ] 2 30b Big migration est:1200m ^z1
+```
+
+The same three commands on HEAD's binary (the main checkout's, built 07:11 from the W-34 tree; the
+repair commit `5d1c0b0` touched no edit path) wrote `- [ ] 2 30b Big migration due:… est:1200m ^x3`
+for `^x3` — the two estimates — and byte-identical lines for `^y1` and `^z1`.  So the line with no
+estimate and the line with an `est:` token behave as before, and the FFI test
+`edit_est_rewrites_the_leading_estimate_in_place` pins that the value form and the `min` form write
+one token there.  The edit event still records `from: 30b` (`est_original`), `to: 20b`.
+
+**Tests whose assertions pinned the old behaviour, updated to D56 (none weakened: each now asserts
+the exact line):** FFI `an_item_line_inside_a_comment_is_prose` (the live `6b` becomes `90m` in
+place); `cli_items::edit_changes_fields_byte_faithfully_and_logs_each_one` and its snapshot
+`cli_items__edit_json_kernel_path.snap`, **hand-edited in its one `line` field**
+(`- [ ] 2 30m … est:45m loc:out due:2026-10-01  ^a1` → `- [ ] 2 45m … loc:out due:2026-10-01  ^a1`),
+not re-blessed; `cli_items::edit_unset_removes_a_key`'s second half (after `--unset est` the leading
+`2b` is the slot, so `est=4b` rewrites it); `init_tree::every_kernel_backed_verb_works_on_a_bare_init_tree`
+(`4 2b Write the release notes` → `4 3b …`).  edit_never_rewrites_the_leading_estimate described
+the hole D56 closed and is **renamed** `edit_rewrites_the_leading_estimate_in_place_as_written`,
+asserting the rewrite is in place (every byte but the estimate unchanged) and `tm check` exits 0.
+
+**Behaviour row.**  `tm edit ^id est=V` on a line with a leading estimate and no `est:` token:
+before, `… 30b … est:1200m ^id` (two estimates); after, `… 20b … ^id`, one estimate, as written.
+
+**PARITY-PENDING:** `tm edit est=` on a boxed line with NO estimate inserts an `est:` token in
+canonical minutes before the `^id` (`est:1200m`), where fork 4748911's `ItemLine::set_leading_est`
+inserts a LEADING estimate as written after the ci (`20b`); and on a line carrying `est:` it rewrites
+the token in canonical minutes where the fork writes it as written (`est:20b`) — D49's settled
+rendering (W-27), which no parity number records.  D56 closed the third case by agreeing with the fork.
+
+### 2. Gap 2723 CLOSED: `conflicts`, `notes` and `aCapacityLost`, by value
+
+One appended `planner_invariants` block, `the_kernel_writes_the_rest_of_step_8_as_the_fork_does`,
+against the kernel-ranked fork (`day2`, D53): `conflicts` as a multiset of pairs, `aCapacityLost` as
+the number, `notes` IN ORDER, each kernel note rendered to the fork's prose (`planner.rs:927`,
+`:1056`, `:2218`; `planner::fmt_clock` on the zone's clock).  **Its first run compared notes of one
+kind only** — 91 notes on 81 of 273 days, every one `noPosition`: the generator writes no
+`travel-day` wall and never spends its budget of 6 — so the block WIDENS what it sees (D46; the
+shared generator is untouched): a quarter of the days flag the first wall `travel-day`, a quarter
+store a budget equal to the blocks done, both sides reading the same changed bytes and state.
+Measured, one 273-case run: **conflicts 64 pairs on 55 days; notes 201 on 136 days (travel day 57,
+no position 93, budget spent 51); `aCapacityLost > 0` on 23 days; 0 disagreements.**  Every
+comparison has its own floor, the three note kinds each their own.  Nothing to classify: the kernel
+writes what the fork writes on every field and every day drawn.
+
+### 3. Gaps 2640 and 2743 CLOSED: the fork's three whole tuples
+
+`Planner.Diagnostics` gains `impossibleUntil : Capped (Id × Nat × Nat)` (`(id, shortfall_min,
+until)`), `underusedLevels : Capped (Id × Fin 6 × Fin 6)` (`(id, slot energy, item ci)`) and
+`blockedDeps : Capped (Id × List Field.Dep)` (`(id, deps)`), written by `dayDiagnostics` from
+`PlanReq.dayImpossibleUntil` (the answer's `until`: a floor's last day, else the grant's due date —
+what `Boundary.grantJsonF` writes and the shipped `prio_of` reads), `PlanReq.dayUnderusedLevels`
+(fork `cands.iter().find(..).map_or(0, |c| c.ci)` is `PlanReq.candCi`) and `PlanReq.dayBlockedDeps`
+(the `blocked` arm of `Look.PlanFacts.ineligibleReason`, its deps).  **Why beside, not instead:**
+`impossible`, `underused` and `blocked` are read by `PlanCheck` (track K's) and by `PlannerWit`'s
+existing witnesses (append-only here), and gap 2640 said exactly that; so the old lists stay and
+are PROVED to be the tuples' projections — `PlanReq.dayImpossible_is_the_projection` (no answer
+the fork lists loses its date: `PlanReq.a_short_answer_has_an_until`),
+`PlanReq.dayUnderused_is_the_projection`, `PlanReq.dayBlocked_is_the_projection`, and at the day,
+`dayDiagnostics_impossible_is_the_projection` and its two siblings.  The wire (`PlanWire.diagJson`)
+keeps its twelve keys byte for byte and adds `impossibleUntil` (`{id, shortMin, until}`, the date
+`YYYY-MM-DD`), `underusedLevels` (`{id, energy, ci}`) and `blockedDeps` (`{id, deps}`, each dep in
+its `after:` spelling); `diagJson_of_an_untroubled_day`, `diagJson_carries_its_lists` and
+`diagJson_is_its_twelve_fields` re-proved, their statements WIDENED by the three keys (the twelve
+entries unchanged).  Witnesses at the requests that already name each list:
+`PlannerWit.the_day_names_its_first_impossible_item_with_its_date` (`(m1, 130000, 739867)`),
+`PlannerWit.the_day_names_its_underused_slot_with_its_levels` (`(m2, 4, 2)`),
+`PlannerWit.the_day_names_its_blocked_candidate_with_its_deps` (`(b1, [^m2])`).
+
+**Compared by value** in the same appended block, each whole tuple as a multiset against `day2`'s,
+and on the kernel's own wire each old list against its tuple's projection: **impossible 3,441
+tuples (with `until`), underused 183 (energy, ci), blocked 1,971 (1,971 deps); 0 disagreements.**
+(A first run without the widening: 3,438 / 291 / 1,895, also 0.)  **Check 13** sees the components
+now because they ARE fields: **15 of 15 written, 15 keys**; teaching `fields.py` to read a
+component of one field was not needed.
+
+### 4. Gap 2741 CLOSED: `tm now` prints one reading of worked minutes
+
+`tm now`'s header (and `--json`'s `active.elapsed_min`) read the wall clock since `started`.  It
+reads `Replay::active_worked_min` now — the log's open block's `OpenBlock::worked_min_at` when it is
+the running item's, the clock only for a runtime state whose block the log has no record of — and
+the TUI's `App::active_elapsed_min`, which held the same rule inline, calls the same function (one
+definition, §5.3).  **Driven**, `tm init --example`, `^t4` started 09:00, interrupted 09:10–09:40:
+
+```
+before (HEAD's binary)  ▶ ^t4 Claude Code drafts tests · started 09:00 · 55m of 60m
+                        09:55  3 p3 ▶ Claude Code drafts tests     @m2  1b     running · 35m left
+after  (this tree)      ▶ ^t4 Claude Code drafts tests · started 09:00 · 25m of 60m
+                        09:55  3 p3 ▶ Claude Code drafts tests     @m2  1b     running · 35m left
+tm plan (after)         09:40  3 p3   Claude Code drafts tests     @m2  1b     25m so far
+```
+
+`55 + 35 ≠ 60` before; `25 + 35 = 60` after.  `tm/tests/cli_now_worked.rs` pins it (header, JSON,
+the `▶` row's `left`, `tm plan`'s `so far`, the 55 gone from the screen) and that an uninterrupted
+block still reads its wall clock (`cli_plan`'s 30).
+
+**PARITY-PENDING:** after an interruption or a pause, `tm now`'s header and `--json`'s
+`active.elapsed_min` are the WORKED minutes, where fork 4748911 prints the wall clock since
+`started`.
+
+### 5. Check 9's roster pins sites by line number: 128 rows drifted
+
+`mutate.py --write` refused before mutating anything: **128 roster rows (62 definitions) whose
+recorded pin site had drifted** — 80 pin sites in `Planner.lean`, 40 in `PlanWire.lean`, 8 in
+`Boundary.lean` (32, 23 and 7 definitions) — because every definition this step added pushes the
+lines below it down, and a row's evidence is `<file>:<line> <declaration>`.  Each drifted
+definition was re-verified by name (`mutate.py --verify --write --only <file>:<name>`), in six
+`git clone --no-hardlinks` clones of `fe49a8b` carrying this step's files, run side by side (one
+per file at first — Boundary, PlanWire, Planner — then the rest from one shared queue), and the
+rewritten rows merged by `(file, name)` into one roster (no row rewritten by two clones, none
+dropped) before the new and changed definitions were rostered on the final tree.  **Five old rows came back ALONE** — `LogReq.seamRun`, `runCapP`,
+`PlanWire.batchOf`, `PlanWire.respondPlanner` and `PlanWire.callPlanner`, all written before the
+second pass existed — and each got the pin it lacked (gap 2849).  Gap 2847 records the cost.
+
+**Then the step's own twenty.**  On the merged roster (`62 rewritten, 0 added`) the gate named
+exactly the definitions this step added or changed and nothing else: `366 new or changed since
+86c4dc6, 346 rostered, 20 OWED A MUTATION (20 absent)` — at `fe49a8b` it read 346 / 346 / 0 owed.
+Each was rostered with `mutate.py --write --only <file>:<name>`, five clones pulling from one queue:
+**16 PINNED, one ALONE** — `EditVal.rendered`, whose est arm D56 changed: its one pin,
+`setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate`, sorried, left
+the package building (gap 2851), so `EditVal.rendered_is_the_tokens_bytes` was appended at the end
+of `Cmd.lean` and the row re-run PINNED, the new witness its `also` — so **17 PINNED** in all (5 by
+an identity on an accumulator, 9 by a synthesised constant), and **three the fold cannot reach**,
+rostered UNFOLDABLE and counted "pinned by nothing" (26 at `fe49a8b`, 29 now):
+`EditVal.estAt` (new: no constant of `EditVal` exists), `applyCmd` (its `est` arm changed: none of
+`Except KErr WfPlan`) and `Diagnostics.empty` (three `Capped.nil`s added: its only named nullary is
+itself).  Each was then PLANTED BY HAND in a clone with the constant the fold could not write, and
+each broke a statement: `EditVal.estAt := .est ⟨0m⟩ ⟨0m⟩` fails
+`the_edit_path_writes_the_minutes_it_was_given` (the minutes the host sent are not the planner's);
+`applyCmd := .error .noSuchId` fails `move_to_a_document_that_does_not_exist_is_rejected` first
+(and `demote_to_a_document_that_does_not_exist_is_rejected`, `cmdAdd_inserts`, `cmdAdd_rank`);
+`Diagnostics.empty` with a non-empty `impossibleUntil` builds `Planner.lean` clean and fails
+`PlanWire.diagJson_of_an_untroubled_day`, which states the empty day's fifteen keys in full.  Each
+clone's `git status --porcelain` was identical before and after, and the planted file was restored
+byte for byte.  Gap 2850 is the residue: nothing re-runs a hand plant.  The gate on the final tree,
+no build: `366 new or changed since 86c4dc6, 366 rostered (120 unfoldable, 70 witness fixtures, 29
+pinned by nothing; 1 literal), 0 owed, 29 pin site(s) still a bare line number, 181 row(s) pinned
+by one pass` — against `fe49a8b`'s `346 … 346 rostered (116 unfoldable, 70 witness fixtures, 26
+pinned by nothing; 1 literal), 0 owed, 29 … bare …, 225 … one pass`: the 44 fewer one-pass rows are
+old rows this step's drift made re-run under the second pass.
+
+### 6. Gaps (2840-2869)
+
+**Gap 2840 — the keyed est edit and the est op render an `est:` token differently.**
+1. *What.*  `{"op":"edit","key":"est","value":"20b"}` writes `est:20b` (the value as written in both
+   renderings, `EditVal.est d d`); `{"op":"est","value":"20b","blockMin":60}` writes `est:1200m`.
+2. *Why.*  The keyed route has no block length, and HEAD's keyed route already wrote as written; the
+   host sends only the est op, so the shipped bytes are one rendering.
+3. *Cost.*  Two renderings of one key on two wire forms, one of them used by no host.
+4. *Clears it.*  A `blockMin` on the keyed est edit, or its refusal of a block value, when a host
+   needs the keyed route.
+
+**Gap 2841 — `tm edit --set est=V` still writes an `est:` token beside a leading estimate.**
+1. *What.*  The host's raw `--set` path writes `est:V` verbatim, so two estimates on one line are
+   reachable by hand, and `tm check` says nothing.
+2. *Why.*  `--set` is documented as a raw verbatim token (`set_writes_a_raw_token_where_the_typed_edit_would_not`);
+   D56 speaks of `tm edit est=`.
+3. *Cost.*  §5.3's shape, one flag away.
+4. *Clears it.*  The owner: a `tm check` warning for a line with both a leading estimate and `est:`
+   that the user did not get from `tm stop`/`tm done` — or leave `--set` raw.
+
+**Gap 2842 — the est op's `blockMin` is read only by the value form.**
+1. *What.*  `{"op":"est","min":45,"blockMin":0}` is answered; the malformed `blockMin` is never read.
+2. *Why.*  Validating it in the `min` branch moves `Boundary.lean`'s lines and costs every roster row
+   pinned below (gap 2847).
+3. *Cost.*  A present, malformed field ignored because nothing read it — §5.7's shape, on a form no
+   host sends with `blockMin`.
+4. *Clears it.*  `let _ ← readOpBlockMin j` in the `min` branch, with the next edit of that region.
+
+**Gap 2843 — three diagnostics lists are stored twice.**
+1. *What.*  `impossible`/`underused`/`blocked` and `impossibleUntil`/`underusedLevels`/`blockedDeps`
+   are separate fields; the projection laws hold of `dayPlan`'s day, not of a hand-built
+   `Diagnostics` (`PlanCheck.wDay` sets `impossible` alone), and the wire emits both.
+2. *Why.*  §3: PlanCheck is track K's and PlannerWit's existing sections are append-only here.
+3. *Cost.*  Two stores of one list, pinned together by theorems for the day and by nothing for a fixture.
+4. *Clears it.*  A step that holds `PlanCheck.lean` and `PlannerWit.lean`: re-type the three fields
+   as the tuples, re-prove their readers (D5), and drop the three new keys — or R3's decoder,
+   reading the tuple keys only.
+
+**Gap 2844 — the answer's `until` has two spellings.**
+1. *What.*  `PlanReq.dayImpossibleUntil`'s match (floor's last day, else grant's due) and
+   `Boundary.grantJsonF`'s `until` are two definitions of one fact.
+2. *Why.*  `Planner` does not import `Boundary`, and one shared definition of it would change
+   `Lookahead.lean`, which this track does not hold.
+3. *Cost.*  Pinned by value (3,441 tuples, 0 disagreements), not by a theorem.
+4. *Clears it.*  One `until` of an answer in `Lookahead.lean`, beside `Look.FloorOut.shortfall`, read by both.
+
+**Gap 2845 — gap 2641's cap reaches `underusedLevels` too.**  The tuple is taken by the same
+`Capped.ofListTake` at the same bound, so a day past 1,024 underused (row, item) pairs is truncated
+in both lists alike (`dayDiagnostics_underused_is_the_projection` holds whatever the take keeps).
+Clears with gap 2641.
+
+**Gap 2846 — `tm now`'s current-row line is the SEGMENT's clock; the TUI's is the block's.**
+1. *What.*  Under the current row `tm now` prints `09:55–10:00 · elapsed 0m · left 5m` (the segment
+   `emit::render_now_with` selected); the TUI's pane prints the running block's worked minutes on
+   the same row (`App::active_elapsed_min`, gap 1315).
+2. *Why.*  `render_now_with` takes the day, the tree and the clock, not the running block; the
+   brief scoped gap 2741 to the header.
+3. *Cost.*  Two readings of "elapsed" across two surfaces for one row.
+4. *Clears it.*  `render_now_with` reading `Replay::active_worked_min` for the running item's row —
+   the one padder's output moves, so a behaviour row — or R3's host rewrite.
+
+**Gap 2847 — a line-shifting edit re-verifies every roster row pinned below it.**
+1. *What.*  `mutate.py`'s rows record `<file>:<line> <declaration>` and the gate fails on a drifted
+   site; this step's additions drifted 128 rows (62 definitions) in three files.
+2. *Why.*  The line is what lets a reader find the pin; the name alone is checked for free.
+3. *Cost.*  Measured here: `Boundary.lean` rows at 3–6 minutes each (one `Boundary` build per
+   constant), the others seconds to minutes; the step's wall time is dominated by it.
+4. *Clears it.*  A pin site keyed by the declaration NAME, with the line re-derived — a change to
+   `mutate.py`'s evidence column, the owner's call.
+
+**Gap 2848 — `cli_latency` failed once under three parallel mutation runs.**  Workspace run 1:
+`a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` — `tm drop ^z15 was still
+running after 1s` at load 15–20 (tracks E and K mutating in clones).  Gap 1333's class; the re-run
+at lower load is in §7.
+
+**Gap 2849 — re-verifying OLD roster rows under the second pass found five of them ALONE.**
+1. *What.*  Rows written before README gap 2578's second pass re-ran because this step moved
+   their pin sites, and FIVE came back ALONE — the one pin they recorded, sorried, left the package
+   building: `LogReq.seamRun` (`the_seam_carries_its_run_exactly_when_it_carries_its_facts`),
+   `runCapP` (`runCapP_bytes`), `PlanWire.batchOf` (`readKind_reads_back_every_kind_it_writes`),
+   `PlanWire.respondPlanner` and `PlanWire.callPlanner` (both
+   `callPlanner_without_a_planner_section_is_callRows`) — of the 62 drifted definitions re-run.
+2. *Why.*  Rows are re-run only when their site drifts, so the second pass reaches an old row only by
+   accident of a nearby edit.
+3. *Cost.*  How many of the other pre-W-34 rows are ALONE is unmeasured (a full `mutate.py --verify`
+   is hours); five of 62 is the only sample.
+4. *Repair taken.*  Each got the pin it lacked — four appended at the END of their files, so that
+   no other row's site moved, and one, `PlanWire.the_seam_carries_the_run_it_was_given_exactly_when_asked`
+   (the definition's whole content, both directions), beside the law it completes at line 1705
+   of PlanWire.lean, which moved every line below it by 9; every PlanWire row pinned below it was
+   among the drifted rows re-run on the final file (each recorded line is its base line + 54 =
+   the step's 45 lines above + those 9).  The other four: `runCapP_without_a_capacity_section_hands_out_no_parts`,
+   `PlanWire.batchOf_is_the_batchs_ids` and `PlanWire.respondPlanner_answers_an_empty_request`
+   (each the definition at one input, computed), and `PlanWire.callPlanner_is_the_emitted_answer`
+   — the body restated, the weakest pin there is, chosen because the value-level witness (the
+   bytes for the 11-byte request `{"docs":[]}`) was KILLED at the 8 GB cap in 7 s: a `String`
+   round trip through the kernel, §5.10a's class.  All five rows re-verified PINNED.  The residue
+   is the unmeasured rest.
+
+**Gap 2850 — three definitions this step touched are out of check 9's reach.**
+1. *What.*  `EditVal.estAt` (new), `applyCmd` (its `est` arm) and `Diagnostics.empty` (three new
+   fields) are rostered UNFOLDABLE, pinned by nothing in the gate's count (26 → 29): `mutate.py`
+   finds no constant of `EditVal`, `Except KErr WfPlan` or `Diagnostics` to fold them to.
+2. *Why.*  `type_constant` writes `[]`, `none`, products, scalars, a same-file `T.empty` and
+   structure literals; a constructor applied to constants (`.error .noSuchId`, `.est ⟨0m⟩ ⟨0m⟩`) is
+   outside it, and `Diagnostics.empty` is the named nullary it would use.
+3. *Cost.*  The gate cannot watch these three fail.  §5's hand plants did, once each, in a clone;
+   nothing re-runs them, so a later edit that stops one mattering is invisible to check 9.
+4. *Clears it.*  A constructor-over-constants term in `type_constant` (the first constructor whose
+   arguments all resolve) — a change to what check 9's green means, so its own commit (D19).
+
+**Gap 2851 — `EditVal.rendered` had one pin, and D56's restatement was it.**
+1. *What.*  `EditVal.rendered` (the token bytes of an edit value, reached by no caller — it is in
+   `reach-exempt.txt`) was told from `fun _ => []` by exactly one law, the token law's restatement;
+   with its proof sorried the package built.  `EditVal.rendered_is_the_tokens_bytes` now pins it at
+   two keys (`est` at `20b`/60 → `1200m`, `ci=3` → `3`), and the row is PINNED with it as `also`.
+2. *Why.*  The table is proof-only; every reader of it is a theorem, and before D56 the one reader
+   was the unrestricted token law.
+3. *Cost.*  Two keys of seventeen are computed; the other fifteen rows of the table are held by the
+   token law alone, which a later restatement could narrow again without check 9 noticing.
+4. *Clears it.*  The token law's converse at every key — `editValOf v.key v.rendered` reads back
+   `v` where the renderings agree — which would make the table the reader's inverse and not a list.
+
+### 7. Acceptance
+
+Every command capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`, 16G for
+`mutate.py` and the plants, 8G and `timeout 120` for the one new `decide` probe), on the tree
+committed here, in the worktree `w35-e`.
+
+**`check.sh`, fourteen checks, all ok, rc=0, 219 s** (load 2.2 at the start; the kernel rebuilt
+first, 366 s, after `EditVal.rendered_is_the_tokens_bytes` joined `Cmd.lean`):
+1. `lake build TmKernel:static` ok.  2. totality ok.
+3. axiom audit **5,532 theorems** (Classical.choice 2,750, Quot.sound 4,169, propext 5,147; 382
+   depend on none) — 5,480 at `fe49a8b`, **+52**, every one with an audit line.
+4. `Negative.lean` rejected ok.  5. FFI **95** (`kernel` 88, `stack` 7).
+6. corpus 29/37 files and 4/5 whole plans (8 tests), unchanged.
+7. stage goals **6**, all stage 6 — unchanged: no goal discharged, none admitted.
+8. citations **44,464** (42,407 resolved, 2,057 allowed, 369 counted, 0 allow entries unused);
+   re-run, with check 10, after this section was written: 0 unresolved, both rc=0.
+9. `366 new or changed since 86c4dc6, 366 rostered (120 unfoldable, 70 witness fixtures, 29 pinned
+   by nothing; 1 literal), 0 owed, 29 … bare …, 181 … one pass` (§5).
+10. parity P1–P44, next free P45 — none issued here (two PARITY-PENDING lines, §1 and §4).
+11. 3,138 bodies, 14 exact groups, 88 generalisation groups, 0 UNANSWERED.
+12. 1,185 reachable over the 8 sections `tm/src` sends, 1,262 exempt, 564 answered by property,
+    0 UNANSWERED (three census numbers re-derived, no name added).
+13. **15 of 15** `Diagnostics` fields written under 15 keys; inputs 28 of 33 read, 5 exempt.
+14. 86 modules replayed by the kernel (11 this run).
+
+**`cargo test --workspace`, THREE runs (D46), each 1,486 passed / 0 failed / 9 ignored across 88
+result lines** — 290 s, 281 s and 286 s at load 1.5–3.1; no `.proptest-regressions` file moved.
+1,486 is `fe49a8b`'s 1,483 plus `cli_now_worked`'s two and the appended `planner_invariants`
+test.  An earlier run on this branch (before the roster work, three mutation clones and track K
+building beside it, load 15–20) failed one `cli_latency` test (gap 2848); all three runs above and
+the named run below passed it.
+
+**Named, `--include-ignored`, one run:** T5 (`kernel_replay_parity`) 33, the door suite
+(`kernel_log_door`) 23, `cli_switch_acceptance` 16, `cli_latency` 6, `kernel_call_counts` 2,
+`one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6,
+`kernel_planner_wire` 23, `planner_invariants` 13 (its fourth run), `cli_now_worked` 2,
+`cli_items` 66 — 0 failed, 0 ignored.  FFI `corpus` 8 in check 6.
+
+**Re-driven on the final binary** (`target/debug/tm`, built by the first workspace run): D56's three
+lines are the three in §1 byte for byte, `tm check` says `no problems` after each, and `tm --json
+plan` gives `^x3` `need_min` 1560; §4's interruption prints `25m of 60m` beside `running · 35m
+left`, and `tm plan` `25m so far`.
+
+**Plants and the trees they ran in.**  No plant touched the shared checkout or this worktree: the
+62 re-verified definitions, the 21 owed runs and the three hand plants ran in six `git clone
+--no-hardlinks` clones under the scratchpad.  `mutate.py` ran in this worktree only as check 9's
+no-build gate; its `git status --porcelain` holds this step's own twenty-one paths — one of them
+untracked, the new `cli_now_worked.rs`; the roster joined them when the merged rows were copied in
+— and nothing else, and no planted spelling is in it.
+The shared checkout's status was empty before and after.  After its last run each clone's Lean
+files differ from this tree's only by end-of-file appends made after that clone's last sync (the
+ALONE pins, `EditVal.rendered_is_the_tokens_bytes` and their audit lines), no planted spelling is
+in any of them, and each hand plant's clone status was identical before and after (§5).
