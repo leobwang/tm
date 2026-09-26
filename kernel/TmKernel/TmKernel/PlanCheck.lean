@@ -734,7 +734,7 @@ Choice 5b's reservation is a Block row the **planner** places — the first one 
 the old form is false and both names are gone, with `Check.lean` recording the deletion. -/
 theorem dayPlan_block_rows_are_replayed_reserved_or_assigned (r : PlanReq) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
-    (∃ t ∈ pastRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) ∨
+    (∃ t ∈ replayedRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) ∨
       (∃ t ∈ r.assignedRows, s = segOf t) :=
   a_block_row_is_replayed_reserved_or_assigned r s (dayPlan_segments r ▸ hs) hk
 
@@ -748,7 +748,7 @@ puts Block rows of the planner's own in the day now, so the old form is false an
 it fails on.  The name moved with the statement (AGENTS §5.2); README gap **1902** prices the
 hypothesis's discharge, which is G1's lift and not a line of it is claimed here. -/
 theorem dayPlan_block_rows_are_the_reservation_on_an_unassigned_day (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnoassign : r.assignedRows = []) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
     ∃ t ∈ reservationSegs r, s = segOf t := by
@@ -761,7 +761,7 @@ theorem dayPlan_block_rows_are_the_reservation_on_an_unassigned_day (r : PlanReq
 /-- **Every replayed row is a row of the day** — the converse of
 `dayPlan_block_rows_are_replayed_reserved_or_assigned`, and the half that was missing when the ledger
 claimed otherwise (W-14 repair, gap 393). -/
-theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ pastRows r) :
+theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ replayedRows r) :
     segOf t ∈ (dayPlan r).segments := by
   rw [dayPlan_segments]
   refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
@@ -781,7 +781,7 @@ counts it too (`DayPlan::assigned`).  What *is* empty is the set §8.3's laws ar
 `Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose` is the tripwire that says so.
 
 `dayPlan_ok_core_given_the_budget`'s `hnopast` hypothesis exists for exactly this reason. -/
-theorem a_replayed_block_is_assigned (r : PlanReq) (t : Seg) (ht : t ∈ pastRows r)
+theorem a_replayed_block_is_assigned (r : PlanReq) (t : Seg) (ht : t ∈ replayedRows r)
     (hk : t.kind = SegKind.block) (i : Id) (hi : i ∈ t.items) :
     i ∈ assignedOf (dayPlan r) :=
   (mem_assignedOf _ i).2
@@ -791,7 +791,7 @@ theorem a_replayed_block_is_assigned (r : PlanReq) (t : Seg) (ht : t ∈ pastRow
 Block and whose runtime holds no reservation, it has none at all.  This is what
 `dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned` used to say unconditionally; step P3 added the second source. -/
 theorem dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (hnorun : r.activeRun = none)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) (hnorun : r.activeRun = none)
     (hnoassign : r.assignedRows = [])
     (s : WfSeg) (hs : s ∈ (dayPlan r).segments) : s.val.kind ≠ SegKind.block := by
   intro hk
@@ -862,7 +862,7 @@ def AssignedRowsPay (r : PlanReq) : Prop :=
 `hnopast`.  It is `dayPlan_block_rows_are_the_reservation_on_an_unassigned_day` without the
 hypothesis that the second disjunct is empty. -/
 theorem dayPlan_block_rows_are_reserved_or_assigned (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (s : WfSeg)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
     (∃ t ∈ reservationSegs r, s = segOf t) ∨ (∃ t ∈ r.assignedRows, s = segOf t) := by
   rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
@@ -871,12 +871,31 @@ theorem dayPlan_block_rows_are_reserved_or_assigned (r : PlanReq)
   · exact Or.inl h
   · exact Or.inr h
 
+/-- **Every Block row of a day whose log CLOSED no Block is the open row, the reservation or
+the fold's** (W-34) — `dayPlan_block_rows_are_replayed_reserved_or_assigned` with only the log's
+closed half ruled out.  It is what re-proves the three lifts whose statement the open row
+cannot falsify (the energy filter twice, and the wind-down rule) under the hypothesis they
+always carried, `∀ t ∈ pastRows r, …`, rather than under the wider `replayedRows` one: the open
+row carries no slot energy and ends at `now`, which is before any WindDown row starts. -/
+theorem dayPlan_block_rows_are_open_reserved_or_assigned (r : PlanReq)
+    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (s : WfSeg)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
+    (∃ t ∈ openBlockRows r, s = segOf t) ∨ (∃ t ∈ reservationSegs r, s = segOf t) ∨
+      (∃ t ∈ r.assignedRows, s = segOf t) := by
+  rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
+    ⟨t, ht, rfl⟩ | h | h
+  · rcases mem_replayedRows.1 ht with ht | ht
+    · exact absurd ((segOf_kind t).symm.trans hk) (hnopast t ht)
+    · exact Or.inl ⟨t, ht, rfl⟩
+  · exact Or.inr (Or.inl h)
+  · exact Or.inr (Or.inr h)
+
 /-- **Every Block row of such a day starts at or after `now`** — the restriction all three of
 §8.3's block-side comparisons are already written over.  The reservation starts exactly at
 `now`, and a row of the fold spans a slot of step 3's cut, which starts no earlier. -/
 theorem a_block_row_of_a_logless_day_starts_at_or_after_now (r : PlanReq)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (s : WfSeg)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block) :
     r.now.sec ≤ s.val.start := by
   rcases dayPlan_block_rows_are_reserved_or_assigned r hnopast s hs hk with
@@ -993,7 +1012,7 @@ of a day whose log holds none, because every such row starts at or after `now`. 
 rows cost this check **nothing**: `Look.cutSlots` cuts no slot longer than `block_min`. -/
 theorem oneBlockAtATime_of_a_logless_day (r : PlanReq) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) :
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) :
     oneBlockAtATime r (dayPlan r) = true :=
   (oneBlockAtATime_iff r _).mpr (fun s hs hk =>
     plan_reserves_one_block_at_a_time r hactive hday s hs hk
@@ -1003,7 +1022,7 @@ theorem oneBlockAtATime_of_a_logless_day (r : PlanReq) (hactive : r.activeAgrees
 no slot under a wall. -/
 theorem noBlockOverAWall_of_a_logless_day (r : PlanReq)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) :
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) :
     noBlockOverAWall r (dayPlan r) = true := by
   refine (noBlockOverAWall_iff r _).mpr (fun b hb w hw hbk hwk => ?_)
   rcases dayPlan_block_rows_are_reserved_or_assigned r hnopast b hb hbk with
@@ -1016,7 +1035,7 @@ reservation costs it nothing either: every Break row of the day is replayed and 
 row ends at `now`, so the one lemma answers for both sources. -/
 theorem noBlockOverABreak_of_a_logless_day (r : PlanReq)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) :
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) :
     noBlockOverABreak r (dayPlan r) = true :=
   (noBlockOverABreak_iff r _).mpr (fun b hb k hk hbk hkk =>
     a_block_row_from_now_clears_a_break_row r b k hk hkk
@@ -1029,8 +1048,11 @@ theorem energyFilterOk_of_a_day_that_pays (r : PlanReq)
     (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (hpay : AssignedRowsPay r) :
     energyFilterOk r (dayPlan r) = true := by
   refine (energyFilterOk_iff r _).mpr (fun s hs i lvl _ hk hi he => ?_)
-  rcases dayPlan_block_rows_are_reserved_or_assigned r hnopast s hs hk with
-    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  rcases dayPlan_block_rows_are_open_reserved_or_assigned r hnopast s hs hk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · rw [show (segOf t).val.energy = t.energy from rfl,
+      (openBlockRows_are_energyless_blocks r t ht).2] at he
+    exact absurd he (by simp)
   · obtain ⟨-, hen, -, -, -⟩ := r.activeRow_is_an_energyless_block t ht
     rw [show (segOf t).val.energy = t.energy from rfl, hen] at he
     exact absurd he (by simp)
@@ -1061,8 +1083,11 @@ theorem plan_respects_the_energy_filter (r : PlanReq)
     (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.block)
     (hi : s.val.item = some i) (he : s.val.energy = some lvl) :
     (effectiveCi r.plan.val i).val ≤ lvl.val := by
-  rcases dayPlan_block_rows_are_reserved_or_assigned r hnopast s hs hk with
-    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  rcases dayPlan_block_rows_are_open_reserved_or_assigned r hnopast s hs hk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · rw [show (segOf t).val.energy = t.energy from rfl,
+      (openBlockRows_are_energyless_blocks r t ht).2] at he
+    exact absurd he (by simp)
   · obtain ⟨-, hen, -, -, -⟩ := r.activeRow_is_an_energyless_block t ht
     rw [show (segOf t).val.energy = t.energy from rfl, hen] at he
     exact absurd he (by simp)
@@ -1078,8 +1103,18 @@ theorem noDemandingAfterWindDown_of_a_day_that_pays (r : PlanReq)
     noDemandingAfterWindDown r (dayPlan r) = true := by
   refine (noDemandingAfterWindDown_iff r _).mpr (fun b hb w hw i hi hbk hwk hle => ?_)
   obtain ⟨hnw, hws⟩ := a_wind_down_row_of_the_day r w (dayPlan_segments r ▸ hw) hwk
-  rcases dayPlan_block_rows_are_reserved_or_assigned r hnopast b hb hbk with
-    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  rcases dayPlan_block_rows_are_open_reserved_or_assigned r hnopast b hb hbk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · -- the open row ends at `now`, and a WindDown row exists only while `now` is before it
+    exfalso
+    obtain ⟨-, h2, h3⟩ := openBlockRows_end_at_now r t ht
+    have e1 : (segOf t).val.start = clampSec t.start := rfl
+    rw [e1, hws] at hle
+    have hcs : clampSec r.windDownSec = min r.windDownSec (LogStamp.yearEnd - 1) := rfl
+    have hct : clampSec t.start = min t.start (LogStamp.yearEnd - 1) := rfl
+    rw [hcs, hct] at hle
+    simp only [LogStamp.yearEnd] at hle hnowcal
+    omega
   · exfalso
     obtain ⟨q, hq, -, -, -, -, -, -⟩ := r.mem_activeRow t ht
     have e1 := (the_reservation_row_is_exact r q hq hnowcal t ht).1
@@ -1190,7 +1225,7 @@ theorem dayPlan_ok_core_given_the_budget (r : PlanReq)
     (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hpay : AssignedRowsPay r)
     (hbudget : noOverbook r (dayPlan r) = true)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
@@ -1207,10 +1242,11 @@ theorem dayPlan_ok_core_given_the_budget (r : PlanReq)
     exact plan_never_moves_a_wall r s i e a b hagree hs hk hi hget hsh hnbuf hin hout hfwd hcal
   simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true, hbudget,
     oneBlockAtATime_of_a_logless_day r hactive hday hnowcal hnopast,
-    energyFilterOk_of_a_day_that_pays r hnopast hpay,
+    energyFilterOk_of_a_day_that_pays r (fun t ht => hnopast t (mem_replayedRows.2 (Or.inl ht))) hpay,
     noBlockOverAWall_of_a_logless_day r hnowcal hnopast,
     noBlockOverABreak_of_a_logless_day r hnowcal hnopast,
-    noDemandingAfterWindDown_of_a_day_that_pays r hnowcal hnopast hpay, h7]
+    noDemandingAfterWindDown_of_a_day_that_pays r hnowcal
+      (fun t ht => hnopast t (mem_replayedRows.2 (Or.inl ht))) hpay, h7]
 
 /-- **§8.2 choice 5b's reservation row is the Active row, so `withoutActive` takes it out** —
 `noOverbook_when_only_the_reservation_is_a_block`'s antecedent at the one source that supplies
@@ -1647,7 +1683,7 @@ theorem a_block_row_from_now_is_reserved_or_assigned (r : PlanReq) (s : WfSeg)
     (hnow : r.now.sec ≤ s.val.start) :
     (∃ t ∈ reservationSegs r, s = segOf t) ∨ (∃ t ∈ r.assignedRows, s = segOf t) := by
   rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with ⟨t, ht, rfl⟩ | h | h
-  · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
+  · obtain ⟨-, h2, h3⟩ := replayedRows_end_at_now r t ht
     have hlt : (segOf t).val.start < r.now.sec := by
       show clampSec t.start < r.now.sec
       simp only [clampSec, LogStamp.yearEnd]; omega
@@ -1892,17 +1928,7 @@ theorem the_day_has_no_batch_row_on_an_unassigned_day (r : PlanReq) (s : WfSeg)
   have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
   rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
-  · unfold pastRows at ht
-    split at ht
-    · cases ht
-    · simp only [List.mem_filterMap] at ht
-      obtain ⟨g, -, hg⟩ := ht
-      split at hg
-      · cases hg
-      · have he := Option.some.inj hg
-        subst he
-        revert htk
-        cases g.kind <;> simp [pastKind]
+  · exact replayedRows_are_not_batches r t ids ht htk
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · simp only [List.mem_flatMap] at ht
     obtain ⟨x, -, hx⟩ := ht
@@ -1924,17 +1950,7 @@ theorem no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day
   rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
     ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, -⟩
   case inr.inr => rw [hnoassign] at ht; exact absurd ht (by simp)
-  · show t.energy = none
-    unfold pastRows at ht
-    split at ht
-    · cases ht
-    · simp only [List.mem_filterMap] at ht
-      obtain ⟨g, -, hg⟩ := ht
-      split at hg
-      · cases hg
-      · have he := Option.some.inj hg
-        subst he
-        rfl
+  · exact replayedRows_carry_no_energy r t ht
   · obtain ⟨-, hen, -, -, -⟩ := r.activeRow_is_an_energyless_block t ht
     show t.energy = none
     exact hen
@@ -1958,7 +1974,7 @@ theorem no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day
     rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r b hb hbk with
       ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, -⟩
     case inr.inr => rw [hnoassign] at ht; exact absurd ht (by simp)
-    · obtain ⟨-, h2, h3⟩ := pastRows_end_at_now r t ht
+    · obtain ⟨-, h2, h3⟩ := replayedRows_end_at_now r t ht
       show clampSec t.start ≤ r.now.sec
       simp only [clampSec, LogStamp.yearEnd]
       omega
@@ -2237,7 +2253,7 @@ day until §8.2 step 5 lands.
 This is **not** `PlannerWit.the_quiet_day_assigns_nothing`, which is one `decide` at one
 request; this is the ∀-statement that request is an instance of. -/
 theorem dayPlan_assigns_nothing_on_a_quiet_unassigned_day (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none) (hnoassign : r.assignedRows = []) :
     assignedOf (dayPlan r) = [] := by
   rw [List.eq_nil_iff_forall_not_mem]
@@ -2278,7 +2294,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_imposs
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
@@ -2317,7 +2333,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossibl
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
@@ -2656,7 +2672,7 @@ theorem planOk_at_every_eligibility (r : PlanReq) (d : DayPlan)
 `Batch` and nothing else, `dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned` kills the first and
 `the_day_has_no_batch_row_on_an_unassigned_day` the second. -/
 theorem dayPlan_has_no_work_row_on_an_unassigned_day (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none) (hnoassign : r.assignedRows = []) :
     ∀ s ∈ (dayPlan r).segments, s.val.kind.isWork = false := by
   intro s hs
@@ -2709,7 +2725,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
     (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
@@ -3249,7 +3265,7 @@ theorem withoutPast_work_rows_are_the_reservation_on_an_unassigned_day (r : Plan
 class asked for `hnorun` on top of `hnopast`; this asks only for `hnopast`, and says the work
 rows that do exist are the reservation rather than that none exists. -/
 theorem dayPlan_work_rows_are_the_reservation_on_an_unassigned_day (r : PlanReq)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) (hnoassign : r.assignedRows = [])
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) (hnoassign : r.assignedRows = [])
     (s : WfSeg)
     (hs : s ∈ (dayPlan r).segments) (hw : s.val.kind.isWork = true) : isActive r s = true := by
   have hnb : ∀ ids, s.val.kind ≠ SegKind.batch ids :=
@@ -3334,7 +3350,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
     (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true)
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
       e.val.buffer = none ∧
@@ -3739,8 +3755,8 @@ theorem pastHalf_segments (r : PlanReq) (d : DayPlan) :
 and `hnowcal` puts `now` inside the calendar, so `Planner.segOf`'s clamp has nothing to do.
 This is what lets a clause written over the log be read off the row the day actually holds. -/
 theorem segOf_replayed (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (t : Seg) (ht : t ∈ pastRows r) : (segOf t).val = t := by
-  obtain ⟨-, hlt, hstop⟩ := pastRows_end_at_now r t ht
+    (t : Seg) (ht : t ∈ replayedRows r) : (segOf t).val = t := by
+  obtain ⟨-, hlt, hstop⟩ := replayedRows_end_at_now r t ht
   refine segOf_is_the_row_inside_the_calendar t (Nat.le_of_lt hlt) ?_
   simp only [LogStamp.yearEnd] at *
   omega
@@ -3836,17 +3852,17 @@ blockSeconds` over `pastHalf`, for the reason the section header gives.  `energy
 `noDemandingAfterWindDown` and `wallsUnmoved` are absent because they owe the log nothing. -/
 structure PastPays (r : PlanReq) : Prop where
   /-- `oneBlock`: no Block the log replays runs longer than one block. -/
-  oneBlock : ∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60
+  oneBlock : ∀ t ∈ replayedRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60
   /-- `overWall`: no Block the log replays overlaps a span the day's walls blocked out.
   `Planner.blockedByWalls` is the index `Planner.a_wall_row_sits_in_a_blocked_span` places
   every Wall row inside, so this clause is about the plan's calendar and the log, and about
   no row of the produced day. -/
-  offWall : ∀ t ∈ pastRows r, t.kind = SegKind.block →
+  offWall : ∀ t ∈ replayedRows r, t.kind = SegKind.block →
     ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start
   /-- `overBreak`: no Block the log replays covers a break the log replays.  Both sides are
   the log's (`Planner.a_break_row_is_a_replayed_row`), which is why the clause needs no third
   quantifier over the day. -/
-  offBreak : ∀ t ∈ pastRows r, ∀ u ∈ pastRows r,
+  offBreak : ∀ t ∈ replayedRows r, ∀ u ∈ replayedRows r,
     t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start
   /-- `overbook`: the Blocks already worked fit the day's budget. -/
   budget : blockSeconds (pastHalf r (dayPlan r)) ≤
@@ -3858,7 +3874,7 @@ satisfies `PastPays` with three clauses vacuous and the fourth `0 ≤ _`. -/
 theorem PastPays_of_no_past_block_on_an_unassigned_day (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block) : PastPays r where
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) : PastPays r where
   oneBlock t ht hk := absurd hk (hnopast t ht)
   offWall t ht hk := absurd hk (hnopast t ht)
   offBreak t ht _ _ hk _ := absurd hk (hnopast t ht)
@@ -3965,7 +3981,7 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
   -- **Every Block row of the day is a replayed row or the reservation**, unconditionally —
   -- `dayPlan_ok_core_given_the_budget`'s `hblk` with the case `hnopast` used to close left open.
   have hres : ∀ s ∈ (dayPlan r).segments, s.val.kind = SegKind.block →
-      (∃ t ∈ pastRows r, s.val = t) ∨
+      (∃ t ∈ replayedRows r, s.val = t) ∨
       (∃ q, r.activeRun = some q ∧ s.val.start = r.now.sec ∧ r.now.sec < s.val.stop ∧
         s.val.stop ≤ q.stop ∧ s.val.stop < LogStamp.yearEnd) := by
     intro s hs hk
@@ -3999,7 +4015,7 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
       a_wall_row_sits_in_a_blocked_span r w (dayPlan_segments r ▸ hw) hwk
     rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, e2, e3, e4⟩
     · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
-      obtain ⟨-, -, hstop⟩ := pastRows_end_at_now r t ht
+      obtain ⟨-, -, hstop⟩ := replayedRows_end_at_now r t ht
       have hd := hpast.offWall t ht hkt v hv
       rw [hst]
       simp only [clampSec, LogStamp.yearEnd] at hv1 hnowcal
@@ -4024,10 +4040,11 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
       · right; omega
   have h5 : noBlockOverABreak r (dayPlan r) = true := by
     refine (noBlockOverABreak_iff r _).mpr (fun b hb k hk hbk hkk => ?_)
-    obtain ⟨u, hu, rfl⟩ := a_break_row_is_a_replayed_row r k (dayPlan_segments r ▸ hk) hkk
+    obtain ⟨u, hu0, rfl⟩ := a_break_row_is_a_replayed_row r k (dayPlan_segments r ▸ hk) hkk
+    have hu : u ∈ replayedRows r := mem_replayedRows.2 (Or.inl hu0)
     have hsu : (segOf u).val = u := segOf_replayed r hnowcal u hu
     have hku : u.kind = SegKind.brk := by rw [← hsu]; exact hkk
-    obtain ⟨-, -, hustop⟩ := pastRows_end_at_now r u hu
+    obtain ⟨-, -, hustop⟩ := replayedRows_end_at_now r u hu
     rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, -, -, -⟩
     · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
       have hd := hpast.offBreak t ht u hu hkt hku
@@ -4994,7 +5011,7 @@ theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day {el
 `AssignedRowsPay` was a loose hypothesis every caller carried by hand, and the axis named after
 the request did not name it. -/
 theorem dayPlan_ok_core_of_a_paying_decoder (r : PlanReq) (hdec : DecoderPays r)
-    (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
     planOkCore r (dayPlan r) = true :=
   dayPlan_ok_core_given_the_budget r hdec.walls hdec.active hdec.day hdec.nowCal hnopast
@@ -5079,18 +5096,7 @@ theorem a_batch_row_of_the_day_is_the_folds (r : PlanReq) (s : WfSeg)
   have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
   rcases ht with ((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht
-  · exfalso
-    unfold pastRows at ht
-    split at ht
-    · cases ht
-    · simp only [List.mem_filterMap] at ht
-      obtain ⟨g, -, hg⟩ := ht
-      split at hg
-      · cases hg
-      · have he := Option.some.inj hg
-        subst he
-        revert htk
-        cases g.kind <;> simp [pastKind]
+  · exact absurd htk (replayedRows_are_not_batches r t ids ht)
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · exfalso
     simp only [List.mem_flatMap] at ht
@@ -5235,7 +5241,7 @@ a slot, and `dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_da
 theorem at a day that assigns nothing. -/
 theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
     (hfn : FromNowAnchored el) (r : PlanReq) (hfold : FoldRowsAdmitNothing r el)
-    (hdec : DecoderPays r) (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hdec : DecoderPays r) (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
     planOk el r (dayPlan r) = true :=
   dayPlan_ok_of_the_core_seven hfn r hfold
@@ -5246,7 +5252,7 @@ Stated so that the generality claim above is a theorem in the compiler and not a
 doc comment: every request the `_on_an_unassigned_day` lift covers, this one covers. -/
 theorem the_unassigned_eleven_is_an_instance_of_the_paying_eleven {el : Eligible}
     (hfn : FromNowAnchored el) (r : PlanReq) (hnoassign : r.assignedRows = [])
-    (hdec : DecoderPays r) (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
+    (hdec : DecoderPays r) (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
     planOk el r (dayPlan r) = true :=
   dayPlan_ok_on_the_whole_day_of_a_paying_decoder hfn r

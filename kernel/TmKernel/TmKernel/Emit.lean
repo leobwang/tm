@@ -337,9 +337,9 @@ def noteText (p : PlanCore) (z : Cal.Tz) (bm : Nat) : Note → List Char
   | .travelDayWall     => "travel day".toList
   | .paused            => "paused".toList
   | .interruption      => "interruption".toList
-  | .breakWhere t      => t
-  | .idleAttributed t  => t
+  | .breakWhere t | .idleAttributed t => t
   | .runningLeft n     => "running · ".toList ++ digitsOf n ++ "m left".toList
+  | .soFar n           => digitsOf n ++ "m so far".toList
 
 /-- Fork `underused_note`'s fallback pair.  The kernel's `Diagnostics.underused` is the id list
 only, so the pair is the segment's own energy and the item's `ci` — which is the branch the

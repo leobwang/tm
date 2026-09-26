@@ -6985,3 +6985,92 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_day_names_its_waiting_and_blocked_candidates
 #print axioms Tm.PlannerWit.eraseDups_keeps_the_first_where_dedupIds_keeps_the_last
 #print axioms Tm.PlannerWit.the_energy_clause_separates_the_energy_drop_from_the_contention_drop
+
+-- APPENDED 2026-09-26 (stage 6, run W-34, track D; README gaps 2680-2719): fork
+-- `open_block_segment` composed into `Planner.dayRows` through `replayedRows` (gaps 554, 2519),
+-- the laws W-34 restated over the log's whole replayed past, the refutation of each old form at
+-- the open requests, fork `planner::diff` and `overtime_drops` (`PlanDiff.lean`, a new module,
+-- imported in `TmKernel.lean` in the same commit), and the `planner` section's `overtime` key.
+-- Restated in place and already audited under their own names: `Planner.a_block_row_is_replayed
+-- _reserved_or_assigned`, `PlanWire.runPlanner_answers_the_day` and every `PlanCheck` lift whose
+-- `hnopast`/`PastPays` now ranges over `Planner.replayedRows`.
+#print axioms Tm.Planner.openClip_le
+#print axioms Tm.Planner.openClip_le_start
+#print axioms Tm.Planner.PlanReq.openStop_le
+#print axioms Tm.Planner.mem_openBlockRows
+#print axioms Tm.Planner.openBlockRows_end_at_now
+#print axioms Tm.Planner.openBlockRows_are_energyless_blocks
+#print axioms Tm.Planner.the_open_row_is_current_exactly_when_nothing_is_reserved_or_interrupted
+#print axioms Tm.Planner.the_open_row_stops_where_a_later_interruption_starts
+#print axioms Tm.Planner.the_open_row_is_the_logs_open_block
+#print axioms Tm.Planner.openBlockRows_length_le_one
+#print axioms Tm.Planner.openBlockRows_of_an_open_block
+#print axioms Tm.Planner.mem_replayedRows
+#print axioms Tm.Planner.replayedRows_end_at_now
+#print axioms Tm.Planner.replayedRows_are_not_walls
+#print axioms Tm.Planner.replayedRows_are_not_wind_down
+#print axioms Tm.Planner.pastRows_carry_no_energy
+#print axioms Tm.Planner.pastRows_are_not_batches
+#print axioms Tm.Planner.replayedRows_carry_no_energy
+#print axioms Tm.Planner.replayedRows_are_not_batches
+#print axioms Tm.Planner.the_open_row_is_a_row_of_the_day
+#print axioms Tm.Planner.the_open_rows_item_is_assigned
+#print axioms Tm.PlanCheck.dayPlan_block_rows_are_open_reserved_or_assigned
+#print axioms Tm.Planner.mem_diffIds
+#print axioms Tm.Planner.diffIds_sorted
+#print axioms Tm.Planner.firstStart_eq_none_iff
+#print axioms Tm.Planner.firstStart_spec
+#print axioms Tm.Planner.mem_diff_removed
+#print axioms Tm.Planner.mem_diff_added
+#print axioms Tm.Planner.mem_diff_moved
+#print axioms Tm.Planner.an_item_that_keeps_its_first_start_is_not_moved
+#print axioms Tm.Planner.diff_removed_and_added_are_disjoint
+#print axioms Tm.Planner.a_moved_item_is_neither_removed_nor_added
+#print axioms Tm.Planner.diff_removed_sorted
+#print axioms Tm.Planner.diff_added_sorted
+#print axioms Tm.Planner.diff_driftMin_is_the_moved_minutes
+#print axioms Tm.Planner.diff_self
+#print axioms Tm.Planner.the_extension_moves_only_the_running_estimate_and_the_overrides
+#print axioms Tm.Planner.the_extension_grows_the_running_estimate
+#print axioms Tm.Planner.the_extension_leaves_another_items_block
+#print axioms Tm.Planner.the_extension_is_one_extra_override
+#print axioms Tm.Planner.mem_overtime_drops
+#print axioms Tm.Planner.overtime_drops_ascend_in_id_order
+#print axioms Tm.Planner.overtimeDiff_of_an_unchanged_day
+#print axioms Tm.PlanWire.runPlanner_answers_the_day_without_an_overtime
+#print axioms Tm.PlanWire.runPlanner_refuses_an_overtime_the_decoder_refuses
+#print axioms Tm.PlanWire.readOvertime_of_an_absent_key
+#print axioms Tm.PlanWire.readOvertime_accepts_an_extension
+#print axioms Tm.PlanWire.readOvertime_refuses_blocks_past_the_width
+#print axioms Tm.PlanWire.readOvertime_refuses_a_missing_id
+#print axioms Tm.PlanWire.readOvertime_refuses_a_long_id
+#print axioms Tm.PlanWire.the_overtime_refusal_spells_itself
+#print axioms Tm.PlanWire.overtimeJson_of_none
+#print axioms Tm.PlanWire.overtimeJson_answers_the_what_if
+#print axioms Tm.PlanWire.diffJson_writes_every_field
+#print axioms Tm.PlanWire.the_overtime_keys_removed_is_overtime_drops
+#print axioms Tm.PlanWire.noteJson_writes_so_far
+#print axioms Tm.PlannerWit.openRun_resumes_ok
+#print axioms Tm.PlannerWit.openBreakRun_resumes_ok
+#print axioms Tm.PlannerWit.the_open_day_is_the_worked_stretch_the_wall_and_the_reservation
+#print axioms Tm.PlannerWit.the_open_row_carries_the_forks_marks
+#print axioms Tm.PlannerWit.the_open_row_stops_at_the_interruption
+#print axioms Tm.PlannerWit.the_open_requests_agree
+#print axioms Tm.PlannerWit.the_battery_bites_on_the_open_row
+#print axioms Tm.PlannerWit.theOpenRow_is_the_open_row
+#print axioms Tm.PlannerWit.a_block_row_is_replayed_reserved_or_assigned_over_the_closed_rows_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_core_given_the_budget_over_the_closed_rows_is_refuted
+#print axioms Tm.PlannerWit.the_paying_past_lift_over_the_closed_rows_is_refuted
+#print axioms Tm.PlannerWit.noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted
+#print axioms Tm.PlannerWit.the_quiet_day_laws_over_the_closed_rows_are_refuted
+#print axioms Tm.PlannerWit.the_whole_day_lifts_over_the_closed_rows_are_refuted
+#print axioms Tm.PlannerWit.the_diff_of_two_written_days
+#print axioms Tm.PlannerWit.the_overtime_what_if_moves_the_tail
+#print axioms Tm.Planner.openWorkedMin_is_the_banked_minutes_and_the_running_stretch
+#print axioms Tm.Planner.diffRow_reads_every_kind_but_rest_and_break
+#print axioms Tm.PlannerWit.the_block_row_laws_over_the_closed_rows_are_refuted
+#print axioms Tm.PlannerWit.the_logless_day_checks_over_the_closed_rows_are_refuted
+#print axioms Tm.PlannerWit.the_remaining_lifts_over_the_closed_rows_are_refuted
+#print axioms Tm.PlannerWit.openEarlyRun_resumes_ok
+#print axioms Tm.PlannerWit.PastPays_of_no_past_block_over_the_closed_rows_is_refuted
+#print axioms Tm.PlannerWit.the_paying_past_lifts_over_the_closed_rows_are_refuted
