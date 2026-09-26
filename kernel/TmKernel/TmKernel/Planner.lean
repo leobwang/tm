@@ -32,8 +32,8 @@ per bucket", `:4576` is "§8.2 step 5's assignment", and `:6138`'s `dayRows` com
 `assignedRows`, `optionalRows` and `restRows`.  (Gap 2223 quoted `:2802`, `:4209`, `:4553`
 and `:6115`, all four true of `471a7ff`; this header is twenty-three lines longer, so
 every anchor below it moved by that, and re-deriving them rather than copying them is AGENTS §5.11.)
-Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8 fills ten of twelve fields since
-W-33 (`dayDiagnostics` names the two it does not, gap 2511); P8's emitter landed at W-34.)*
+Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8 fills all twelve fields since W-34
+(ten since W-33; gap 2511 closed), and P8's emitter, the plan hash, landed at W-34.)*
 
 *Two tripwires, and both have fired.*  P0 left two theorems whose job was to stop compiling on
 the day they became false.  **P1 took the first**: `the_day_has_no_segments_until_the_first_step_lands`
@@ -6525,17 +6525,17 @@ theorem PlanReq.dayWaiting_capped (r : PlanReq) : r.dayWaiting.length ≤ maxCan
     (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
 
 /-- **`Diagnostics.blocked`** — fork `diagnose`'s `if let Some(Ineligible::Blocked(deps)) =
-c.ineligible_reason()`, walls skipped.  `ineligible_reason` answers `Blocked` exactly when the
-line is not waiting, its state is open and its unsatisfied `after:` list is non-empty
-(`priority.rs:303-312`, in that order), and all three are the wire's facts
-(`Look.PlanFacts.isOpen`, `Look.PlanFacts.blockedBy`).  The not-waiting clause is not spelled:
-an open state is already a non-waiting one
-(`Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states`, README gap 775), so no
-witness could pin it.  The fork pushes `(id, deps)` with no guard; `IdList` carries the id. -/
+c.ineligible_reason()`, walls skipped: the `blocked` arm of `Look.PlanFacts.ineligibleReason`,
+the kernel's ONE reading of fork `ineligible_reason` (`priority.rs:303-322`), whose `none` case
+is `Look.PlanFacts.eligible`.  Until W-34 this re-spelled the rule — `isOpen && !blockedBy.isEmpty`
+beside `eligible`'s own conjuncts — and README gap 2573 named the two definitions of one concept
+(AGENTS §5.3); the rule has one body now, `mem_dayBlocked` below is re-proved over it and its
+statement did not move (D5).  The fork pushes `(id, deps)` with no guard; `IdList` carries the
+id. -/
 def PlanReq.dayBlocked (r : PlanReq) : List Id :=
   r.cands.val.filterMap (fun cf =>
-    if !cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty
-    then some cf.1.id else none)
+    match cf.1.wall, cf.1.plan.val.ineligibleReason with
+    | false, some (.blocked _) => some cf.1.id | _, _ => none)
 
 /-- **An id is blocked exactly when a non-wall candidate carries it with an open line and a
 non-empty `after:` residue** (W-33 repair, README gap 2567) — before the cap, for check 9's
@@ -6546,42 +6546,114 @@ theorem PlanReq.mem_dayBlocked (r : PlanReq) (i : Id) :
         cf.1.plan.val.blockedBy.isEmpty = false := by
   unfold PlanReq.dayBlocked
   rw [List.mem_filterMap]
+  -- RE-PROVED at W-34 (D5, README gap 2573): the statement is W-33's, word for word; the
+  -- body it is about reads the rule through `Look.PlanFacts.ineligibleReason`, and
+  -- `ineligibleReason_blocked_iff` is the bridge from that one reading back to the two facts
+  -- this statement names.
   constructor
   · rintro ⟨cf, hcf, h⟩
-    by_cases hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true
-    · rw [if_pos hc] at h
-      simp only [Option.some.injEq] at h
-      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
-      exact ⟨cf, hcf, h, hc.1.1, hc.1.2, hc.2⟩
-    · rw [if_neg hc] at h
-      exact absurd h (by simp)
+    split at h
+    · rename_i d hw hr
+      obtain ⟨ho, hb, -⟩ := (Look.PlanFacts.ineligibleReason_blocked_iff _ d).1 hr
+      exact ⟨cf, hcf, Option.some.inj h, hw, ho, hb⟩
+    · exact absurd h (by simp)
   · rintro ⟨cf, hcf, hid, hw, ho, hb⟩
     refine ⟨cf, hcf, ?_⟩
-    have hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true := by
-      simp only [Bool.and_eq_true, Bool.not_eq_true']
-      exact ⟨⟨hw, ho⟩, hb⟩
-    rw [if_pos hc, hid]
+    have hr := (Look.PlanFacts.ineligibleReason_blocked_iff _ _).2 ⟨ho, hb, rfl⟩
+    simp only [hw, hr, hid]
 
 theorem PlanReq.dayBlocked_capped (r : PlanReq) : r.dayBlocked.length ≤ maxCands :=
   Nat.le_trans (List.length_filterMap_le _ _) r.cands.property
 
-/-- §8.2 step 8's diagnostics, as far as steps 1, 2, 4, 5, 6 and 7 fill them — **TEN of the
-twelve** since W-33 (three until then, README gap **2403**).  `conflicts` (step 1), `notes`
-(steps 1, 6 and 7) and `aCapacityLost` (step 7's Rest against the ci-5 candidates) were here;
-W-33 adds `impossible` (P8's first half, README gaps **2321** and **2419**), `hot`, `waiting`,
-`blocked`, `droppedTail`, `underused` and `planHonesty`, each read off a value the request
-carried or the day already computed.
+/-- **Fork `run()`'s `raw_slots`** (`planner.rs:954-955`): §8.2 step 3's cut energised through
+`Posterior::none(cfg)` — today's `EnergyCtx` with no reports, which here is `Look.energizeToday` at a
+`today0` whose `reports` are empty, and nothing else (the wake, the sleep debt, the location and
+the home cap are the same `today0`'s).  One field of §8.2 step 8 reads it, `deferred`, and README
+gap **555** — *"`raw_slots` are not computed"* — closes with it (W-34). -/
+def PlanReq.rawSlots (r : PlanReq) : List (Fin 6 × Look.Slot) :=
+  Look.energizeToday { r.look with today0 := { r.look.today0 with reports := [] } } r.todaySlots
 
-**The two still at `Diagnostics.empty`, each with its reason** (README gap **2511**):
-* `deferred` — fork: an unassigned eligible candidate for which some slot's RAW energy (the
-  energising at a flat posterior, fork `raw_slots`) reached its `ci` while the energised
-  slot's did not.  `PlanReq.energisedSlots` is the posterior-corrected energising only; the
-  raw one is a second call of `Look.energizeToday` at a flat posterior, which this step did
-  not write.
-* `restDebtMin` — fork: Σ `planned_min − actual_or_planned()` over today's breaks, off the day
-  record `PlanReq.todayRecord` already reads.  Composable in one line; no witness log in this
-  tree carries a break with an `actual_min`, so D40's constant fold `0` survives every witness
-  and the field waits for that witness, not for a definition. -/
+/-- **`Diagnostics.deferred`** — fork `diagnose`'s "a posterior downgrade cost this item its slot"
+(`planner.rs:2172-2183`): walls skipped, a candidate the day's `assigned` does not hold, eligible
+(`Look.PlanFacts.eligible`), not an optional, with no placement window, for which SOME slot's raw
+energy reached its `ci` while the same slot's energised one did not — once each, the first
+(`List.eraseDups`, the fork's `!d.deferred.contains`).  The slot pairs are zipped ONCE, outside the
+per-candidate test (README gap 2521's lesson: a recomputation per member is quadratic). -/
+def PlanReq.dayDeferred (r : PlanReq) (assigned : List Id) : List Id :=
+  let both := r.energisedSlots.zip r.rawSlots
+  (r.cands.val.filterMap (fun cf =>
+    if !cf.1.wall && !assigned.contains cf.1.id && cf.1.plan.val.eligible && !cf.1.optional &&
+        !cf.1.window &&
+        both.any (fun p => decide (cf.1.ci ≤ p.2.1) && decide (p.1.1 < cf.1.ci))
+    then some cf.1.id else none)).eraseDups
+
+theorem PlanReq.dayDeferred_capped (r : PlanReq) (assigned : List Id) :
+    (r.dayDeferred assigned).length ≤ maxCands :=
+  Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
+    (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
+
+/-- **`Diagnostics.restDebtMin`** — fork `diagnose`'s §11 rest debt (`planner.rs:2206-2212`): Σ
+over today's logged breaks of `planned_min.saturating_sub(actual_or_planned())`, where
+`BreakRecord::actual_or_planned` is `actual_min.unwrap_or(planned_min)` and `Nat` subtraction is
+`saturating_sub`; off the day record `PlanReq.todayRecord` already reads (fork
+`self.input.replay.day(self.date)`), `0` with none. -/
+def PlanReq.dayRestDebtMin (r : PlanReq) : Nat :=
+  ((r.todayRecord.map (·.breaks)).getD []).foldl
+    (fun a b => a + (b.plannedMin - b.actualMin.getD b.plannedMin)) 0
+
+/-- **The zip pairs each slot with itself**: the raw and the energised slots are the same slots
+of the same cut, in the same order — only their levels differ — so fork `slots.iter().zip(
+raw_slots)` compares one slot's two readings and never two slots. -/
+theorem PlanReq.the_raw_and_energised_slots_are_the_same_slots (r : PlanReq) :
+    r.rawSlots.map Prod.snd = r.todaySlots ∧ r.energisedSlots.map Prod.snd = r.todaySlots := by
+  unfold PlanReq.rawSlots PlanReq.energisedSlots Look.energizeToday
+  simp [List.map_map, Function.comp_def]
+
+/-- **An id is deferred exactly when** a non-wall candidate carries it, the day does not assign
+it, it is eligible, not optional, has no window, and some slot's raw level reaches its `ci` while
+the same slot's energised level does not — before the cap, for check 9's pin. -/
+theorem PlanReq.mem_dayDeferred (r : PlanReq) (assigned : List Id) (i : Id) :
+    i ∈ r.dayDeferred assigned ↔
+      ∃ cf ∈ r.cands.val, cf.1.id = i ∧ cf.1.wall = false ∧ assigned.contains cf.1.id = false ∧
+        cf.1.plan.val.eligible = true ∧ cf.1.optional = false ∧ cf.1.window = false ∧
+        ∃ p ∈ r.energisedSlots.zip r.rawSlots, cf.1.ci ≤ p.2.1 ∧ p.1.1 < cf.1.ci := by
+  unfold PlanReq.dayDeferred
+  simp only [List.mem_eraseDups, List.mem_filterMap]
+  constructor
+  · rintro ⟨cf, hcf, h⟩
+    split at h
+    · rename_i hc
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨⟨⟨hw, ha⟩, he⟩, ho⟩, hn⟩, p, hp, hle, hlt⟩ := hc
+      exact ⟨cf, hcf, h, hw, ha, he, ho, hn, p, hp, hle, hlt⟩
+    · exact absurd h (by simp)
+  · rintro ⟨cf, hcf, hid, hw, ha, he, ho, hn, p, hp, hle, hlt⟩
+    refine ⟨cf, hcf, ?_⟩
+    rw [if_pos (by
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, decide_eq_true_eq]
+      exact ⟨⟨⟨⟨⟨hw, ha⟩, he⟩, ho⟩, hn⟩, p, hp, hle, hlt⟩), hid]
+
+/-- **The rest debt is the sum of the day's shortfalls** — each break's `planned − actual`,
+saturating, the fork's `.map(…).sum()` — stated as the sum it is. -/
+theorem PlanReq.dayRestDebtMin_is_the_sum_of_the_shortfalls (r : PlanReq) :
+    r.dayRestDebtMin = (((r.todayRecord.map (·.breaks)).getD []).map
+      (fun b => b.plannedMin - b.actualMin.getD b.plannedMin)).sum := by
+  unfold PlanReq.dayRestDebtMin
+  generalize ((r.todayRecord.map (·.breaks)).getD []) = l
+  suffices h : ∀ a, l.foldl (fun a b => a + (b.plannedMin - b.actualMin.getD b.plannedMin)) a =
+      a + (l.map (fun b => b.plannedMin - b.actualMin.getD b.plannedMin)).sum by
+    simpa using h 0
+  induction l with
+  | nil => intro a; simp
+  | cons b bs ih => intro a; simp only [List.foldl_cons, List.map_cons, List.sum_cons, ih]; omega
+
+/-- §8.2 step 8's diagnostics — **TWELVE of the twelve** since W-34 (three until W-33, ten until
+W-34; README gaps **2403** and **2511**).  Each field is read off a value the request carried or
+the day already computed: `conflicts` (step 1), `notes` (steps 1, 6 and 7), `aCapacityLost` (step
+7's Rest against the ci-5 candidates), W-33's `impossible`, `hot`, `waiting`, `blocked`,
+`droppedTail`, `underused` and `planHonesty`, and W-34's `deferred` (over `PlanReq.rawSlots`,
+README gap 555) and `restDebtMin` (the day record's breaks). -/
 def dayDiagnostics (r : PlanReq) : Diagnostics :=
   let assigned := dayAssigned r
   { Diagnostics.empty with
@@ -6590,13 +6662,15 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
     impossible := Capped.ofListTake r.dayImpossible
     conflicts := Capped.ofListTake (wallConflicts (wallsToday r))
     blocked := Capped.ofListTake r.dayBlocked
+    deferred := Capped.ofListTake (r.dayDeferred assigned)
     waiting := Capped.ofListTake r.dayWaiting
     aCapacityLost := r.aCapacityLost assigned
     notes := Capped.ofListTake
       ((if travelDay r then [Note.travelDay] else []) ++ r.noPositionNotes ++
         r.budgetSpentNotes)
     droppedTail := Capped.ofListTake (r.dayDroppedTail assigned)
-    planHonesty := r.dayPlanHonesty assigned }
+    planHonesty := r.dayPlanHonesty assigned
+    restDebtMin := r.dayRestDebtMin }
 
 /-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
 it, so `Capped.ofListTake` truncates nothing. -/
@@ -6622,13 +6696,105 @@ theorem dayDiagnostics_underused (r : PlanReq) :
 theorem dayDiagnostics_planHonesty (r : PlanReq) :
     (dayDiagnostics r).planHonesty = r.dayPlanHonesty (dayAssigned r) := rfl
 
-/-- **The two fields nobody writes yet are `Diagnostics.empty`'s**, said in the compiler so
-that the day the last of them is written this stops compiling and README gap 2511 closes with
-it — the tripwire shape the_plan_hash_is_a_placeholder_until_the_emitter_lands had. -/
-theorem the_day_leaves_two_diagnostic_fields_empty (r : PlanReq) :
-    (dayDiagnostics r).deferred = Diagnostics.empty.deferred ∧
-      (dayDiagnostics r).restDebtMin = Diagnostics.empty.restDebtMin :=
-  ⟨rfl, rfl⟩
+/-- **The day carries the whole `deferred` list** — the cap is the candidates' and the list is
+under it.  W-33's tripwire the_day_leaves_two_diagnostic_fields_empty said these two fields were
+`Diagnostics.empty`'s for every request; it FIRED at W-34, is refuted in `PlannerWit`
+(`the_day_leaves_two_diagnostic_fields_empty_is_refuted`) and is renamed to these two laws. -/
+theorem dayDiagnostics_deferred (r : PlanReq) :
+    (dayDiagnostics r).deferred.val = r.dayDeferred (dayAssigned r) :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayDeferred_capped _)
+
+theorem dayDiagnostics_restDebtMin (r : PlanReq) :
+    (dayDiagnostics r).restDebtMin = r.dayRestDebtMin := rfl
+
+/-! ### The two caps W-33 left unproved (README gap 2576)
+
+`dayDroppedTail` and `dayUnderused` reach the day through `Capped.ofListTake`, and W-33 wrote no
+law saying the take keeps them whole — gap 322's shape, a silent `take`.  **`droppedTail` truncates
+nothing**, proved below by the pigeonhole the gap named.  **`underused` is a different list**: the
+fork pushes one `(id, energy, ci)` per item per underused work row, so an item holding two
+underused slots is named twice (`PlannerWit.the_underused_list_names_an_item_once_per_slot`), and
+the per-candidate cap `IdList` carries is not a bound on it.  What does bound it is the rows and
+the batch width, `dayUnderused_length_le`; the cap can bite only past 1,024 (row, item) pairs in
+one day, and README gap 2641 records that residue with its cost. -/
+
+/-- **`eraseDups` leaves no duplicate** — the half `eraseDups_length_le` does not state, and the
+one the pigeonhole below needs. -/
+theorem nodup_eraseDups {α : Type} [BEq α] [LawfulBEq α] :
+    ∀ (n : Nat) (l : List α), l.length ≤ n → l.eraseDups.Nodup
+  | _, [], _ => by simp
+  | 0, _ :: _, h => by simp at h
+  | n + 1, a :: as, h => by
+    rw [List.eraseDups_cons]
+    refine List.nodup_cons.2 ⟨?_, ?_⟩
+    · intro ha
+      rw [List.mem_eraseDups] at ha
+      simp at ha
+    · exact nodup_eraseDups n _ (Nat.le_trans (List.length_filter_le _ _)
+        (by simp only [List.length_cons] at h; omega))
+
+/-- **`droppedTail` truncates nothing** (README gap 2576, first half): every id it names is an
+answer's — a member of a group `buildGroups` built is ranked (`PlanReq.a_group_member_is_ranked`)
+and a ranked entry is an answer (`PlanReq.a_ranked_entry_is_an_answer`) — and it names each once
+(`nodup_eraseDups`), so core's pigeonhole `List.Nodup.length_le_of_subset` bounds it by the
+answers, whose count is the candidates' and is capped. -/
+theorem PlanReq.dayDroppedTail_capped (r : PlanReq) (assigned : List Id) :
+    (r.dayDroppedTail assigned).length ≤ maxCands := by
+  have hsub : r.dayDroppedTail assigned ⊆ r.candAnswers.map (fun o => o.out.cand.id) := by
+    intro i hi
+    unfold PlanReq.dayDroppedTail at hi
+    rw [List.mem_eraseDups] at hi
+    obtain ⟨g, hg, hgi⟩ := List.mem_flatMap.1 (List.mem_filter.1 hi).1
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hgi
+    exact List.mem_map.2 ⟨y.out, List.mem_of_getElem? (PlanReq.a_ranked_entry_is_an_answer
+      (PlanReq.a_group_member_is_ranked hg hy)), rfl⟩
+  have hnd : (r.dayDroppedTail assigned).Nodup := nodup_eraseDups _ _ (Nat.le_refl _)
+  calc (r.dayDroppedTail assigned).length
+      ≤ (r.candAnswers.map (fun o => o.out.cand.id)).length := hnd.length_le_of_subset hsub
+    _ = r.candAnswers.length := List.length_map _
+    _ ≤ maxCands := r.candAnswers_capped
+
+/-- **So the day carries the whole dropped tail.** -/
+theorem dayDiagnostics_droppedTail_whole (r : PlanReq) :
+    (dayDiagnostics r).droppedTail.val = r.dayDroppedTail (dayAssigned r) :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayDroppedTail_capped _)
+
+/-- A list of lists no longer than `k` each flattens to at most `k` per list. -/
+theorem length_flatMap_le_mul {α β : Type} (f : α → List β) (k : Nat)
+    (h : ∀ x, (f x).length ≤ k) : ∀ l : List α, (l.flatMap f).length ≤ l.length * k
+  | [] => by simp
+  | x :: xs => by
+    rw [List.flatMap_cons, List.length_append, List.length_cons, Nat.succ_mul]
+    have := length_flatMap_le_mul f k h xs
+    have := h x
+    omega
+
+/-- **A row names at most `maxBatch` items** — a batch its bounded members, any other row its one
+item or none. -/
+theorem segItems_length_le (s : WfSeg) : (segItems s).length ≤ maxBatch := by
+  unfold segItems Seg.items
+  split
+  · rename_i ids _; exact ids.property
+  · cases s.val.item <;> simp [maxBatch]
+
+/-- **What does bound `underused`** (README gap 2576, second half): its underused work rows times
+the batch width — the per-(row, item) list the fork pushes, bounded by what it is made of and not
+by the candidates. -/
+theorem PlanReq.dayUnderused_length_le (r : PlanReq) :
+    r.dayUnderused.length ≤
+      ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).length *
+        maxBatch :=
+  length_flatMap_le_mul segItems maxBatch segItems_length_le _
+
+/-- **And below the cap the take keeps it whole** — the subdomain named in the theorem (AGENTS
+§3.1 item 4): at most 64 underused work rows, which a day whose remaining budget is 64 blocks or
+fewer cannot exceed with step 5's rows alone. -/
+theorem dayDiagnostics_underused_whole_below_the_cap (r : PlanReq)
+    (h : ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).length *
+        maxBatch ≤ maxCands) :
+    (dayDiagnostics r).underused.val = r.dayUnderused :=
+  Capped.ofListTake_keeps_everything_below_the_cap _
+    (Nat.le_trans r.dayUnderused_length_le h)
 
 /-! ### The plan's identity: fork `DayPlan::hash`, byte for byte (W-34 track H, P8's emitter)
 
@@ -6785,7 +6951,7 @@ def planDigest (z : Cal.Tz) (segs : List Seg) : PlanHash :=
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
 (G1), not gated behind a refusal.
 
-**What it does today — §8.2 steps 1 to 7, and ten of step 8's twelve fields.**  Its segments
+**What it does today — §8.2 steps 1 to 7, all twelve of step 8's fields, and the hash.**  Its segments
 are `dayRows` (`:6138`), the sort of six row lists: step 1's walls (`stepOneSegs`, `:1543`), placed where
 the plan's own index puts them, §9's running interruption as an ad-hoc wall, the past half
 replayed from this call's own run, and a `travel-day` wall's zeroing of the remaining budget;
@@ -6797,10 +6963,11 @@ cut and energised on stage 5's own `Look.cutSlots` and `Look.energizeToday` (`to
 (`deferOne`, `:5115`; `deferWalk`, `deferFold`, with `finalRoutines` and `finalAssign` its two
 projections and `dayRoutineSegs`, `:5923`, the rows it leaves); and step 7's `optionalRows` and
 `restRows`, with the wind-down and sleep rows that close the day.  Its diagnostics are
-`dayDiagnostics` (`:6506`), which fills ten of `Diagnostics`' twelve fields and leaves
-`deferred` and `restDebtMin` at `Diagnostics.empty` (README gap 2511, since the W-33 merge of
-track P's seven writers; check 13 names the two until each is written).  Step 4 is not here by design (D34: no candidate fact is
-derived in the kernel — the request carries §7's answers).
+`dayDiagnostics`, which fills all twelve of `Diagnostics`' fields since W-34 (ten since the W-33
+merge of track P's seven writers; README gap 2511 closed, check 13 prints 12 written), and its
+`planHash` is `planDigest` of its own rows in the request's zone — fork `DayPlan::hash`, byte for
+byte (W-34).  Step 4 is not here by design (D34: no candidate fact is derived in the kernel — the
+request carries §7's answers).
 
 *(W-33 track A, README gap 2223, the THIRD time the sentence "steps 3 to 7 are not written
 here" stood in this file while false: the module header said it and W-15 repaired it; it said

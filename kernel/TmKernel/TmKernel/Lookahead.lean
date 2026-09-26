@@ -4778,10 +4778,69 @@ theorem PlanFacts.capOk_of_a_cap (f : PlanFacts) (c : MaxCap) (h : f.cap = some 
       simp only [decide_eq_false_iff_not, Nat.not_le] at hle
       simp [Nat.sub_ne_zero_of_lt hle]
 
-/-- **Fork `Candidate::eligible()`** — the *item* half of §8.2 step 5's filter, the half
-`priority::sorted_candidates` applies: not waiting, an open state, no unsatisfied dependency,
-and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`, `loc_ok`, the wind-down, the
-atomic run) is `Planner::pick`'s and belongs to the fold, not to the wire.
+/-- **Fork `Ineligible`** (`priority.rs:168`): why a candidate may not be placed, NAMED (AGENTS
+§5.7) and in the order fork `ineligible_reason` asks — waiting, a closed state, an unsatisfied
+`after:`, a spent `max:`.  §8.2 step 8's `blocked` list is the third arm, and until W-34 it was
+a second spelling of the rule beside `PlanFacts.eligible` (README gap 2573). -/
+inductive Ineligible
+  | waiting
+  | closed (s : Status)
+  | blocked (deps : List Field.Dep)
+  | capReached (c : MaxCap)
+deriving DecidableEq, Repr
+
+/-- **Fork `Candidate::ineligible_reason()`** (`priority.rs:303-322`), the first refusal in its
+order, `none` for a candidate that may be placed.  It is the ONE reading of the rule:
+`PlanFacts.eligible` is its `none` case and `Planner.PlanReq.dayBlocked` its `blocked` case.  The
+`max:` arm reads `PlanFacts.capOk`, the conjunct `eligible` was written with, rather than
+re-spelling fork `cap_done_min >= cap.amount` a second time: `capOk` is false exactly when a cap
+is there and has nothing left (`PlanFacts.capOk_of_a_cap`), which is when the fork answers
+`CapReached`. -/
+def PlanFacts.ineligibleReason (f : PlanFacts) : Option Ineligible :=
+  if f.waiting then some .waiting
+  else if !f.isOpen then some (.closed f.state)
+  else if !f.blockedBy.isEmpty then some (.blocked f.blockedBy)
+  else if f.capOk then none
+  else f.cap.map Ineligible.capReached
+
+/-- **The `blocked` arm, both ways**: fork `ineligible_reason` answers `Blocked(deps)` exactly when
+the line is open, its unsatisfied `after:` list is not empty, and `deps` is that list — the
+`waiting` test before it can never fire on an open line
+(`PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states`, below). -/
+theorem PlanFacts.ineligibleReason_blocked_iff (f : PlanFacts) (d : List Field.Dep) :
+    f.ineligibleReason = some (.blocked d) ↔
+      f.isOpen = true ∧ f.blockedBy.isEmpty = false ∧ d = f.blockedBy := by
+  have hwo : f.waiting = true → f.isOpen = false := by
+    unfold PlanFacts.waiting PlanFacts.isOpen
+    cases f.state with
+    | settled o => simp
+    | live h => cases h <;> simp
+    | demoted => simp
+  unfold PlanFacts.ineligibleReason
+  by_cases hw : f.waiting = true
+  · simp only [hw, if_true, Option.some.injEq, reduceCtorEq, false_iff, not_and]
+    intro ho; rw [hwo hw] at ho; exact absurd ho (by decide)
+  · simp only [hw, Bool.false_eq_true, if_false]
+    by_cases ho : f.isOpen = true
+    · simp only [ho, Bool.not_true, Bool.false_eq_true, if_false, true_and]
+      by_cases hb : f.blockedBy.isEmpty = true
+      · simp only [hb, Bool.not_true, Bool.false_eq_true, if_false, Bool.true_eq_false,
+          false_and, iff_false]
+        split
+        · simp
+        · cases f.cap <;> simp
+      · simp only [Bool.not_eq_true] at hb
+        simp only [hb, Bool.not_false, if_true, Option.some.injEq, Ineligible.blocked.injEq,
+          true_and]
+        exact eq_comm
+    · simp only [Bool.not_eq_true] at ho
+      simp [ho]
+
+/-- **Fork `Candidate::eligible()`** — `self.ineligible_reason().is_none()` (`priority.rs:297`),
+which is its definition here too since W-34 (README gap 2573): the *item* half of §8.2 step 5's
+filter, the half `priority::sorted_candidates` applies: not waiting, an open state, no
+unsatisfied dependency, and a `max:` with minutes left.  The *slot* half (`ci ≤ energy`,
+`loc_ok`, the wind-down, the atomic run) is `Planner::pick`'s and belongs to the fold.
 
 This is stated here because it is the reason `state`, `blockedBy` and `cap` are on the wire at
 all.  **`Planner.entersTheOrder` applies it** — `PlanReq.rankedCands` is fork
@@ -4797,8 +4856,21 @@ docstring at all.)
 `the_waiting_conjunct_is_implied_by_the_open_states` below proves `!waiting` is a consequence
 of `isOpen`, so no `PlanFacts` can distinguish it.  It is kept because the fork writes it, and
 recorded as README gap **775** rather than deleted. -/
-def PlanFacts.eligible (f : PlanFacts) : Bool :=
-  !f.waiting && f.isOpen && f.blockedBy.isEmpty && f.capOk
+def PlanFacts.eligible (f : PlanFacts) : Bool := f.ineligibleReason.isNone
+
+/-- **The re-definition moved nothing**: `eligible` is still the four conjuncts it was written
+as until W-34 — the refusals' order decides WHICH reason is named, never WHETHER one is. -/
+theorem PlanFacts.eligible_is_the_four_conjuncts (f : PlanFacts) :
+    f.eligible = (!f.waiting && f.isOpen && f.blockedBy.isEmpty && f.capOk) := by
+  unfold PlanFacts.eligible PlanFacts.ineligibleReason
+  have hcap : f.capOk = false → f.cap.isSome = true := by
+    unfold PlanFacts.capOk PlanFacts.capLeftMin
+    cases f.cap <;> simp
+  cases hw : f.waiting <;> cases ho : f.isOpen <;> cases hb : f.blockedBy.isEmpty <;>
+    cases hc : f.capOk <;> simp [hw, ho, hb, hc] <;>
+    (cases hs : f.cap with
+     | none => rw [hs] at hcap; exact absurd (hcap hc) (by simp)
+     | some c => simp)
 
 /-- **`!waiting` is implied by `isOpen`, so `eligible`'s first conjunct can never decide the
 answer** (AGENTS §9.2; W-18's reuse critic, README gap 775).  `waiting` is
@@ -4819,8 +4891,7 @@ theorem PlanFacts.eligible_iff (f : PlanFacts) :
     f.eligible = true ↔
       f.waiting = false ∧ f.isOpen = true ∧ f.blockedBy = [] ∧
         ∀ c, f.cap = some c → c.leftMin ≠ 0 := by
-  unfold PlanFacts.eligible
-  rw [← PlanFacts.capOk_iff]
+  rw [PlanFacts.eligible_is_the_four_conjuncts, ← PlanFacts.capOk_iff]
   simp only [Bool.and_eq_true, Bool.not_eq_true', List.isEmpty_iff, and_assoc]
 
 /-- **The same answer with the free component dropped — three obligations, not four.**

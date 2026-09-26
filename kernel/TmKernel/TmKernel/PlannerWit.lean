@@ -8025,5 +8025,92 @@ theorem the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted :
   rw [the_witness_days_hash_is_the_forks] at hv
   exact absurd hv (by decide)
 
+/-! ############################################################################
+## 32. Step 8's last two fields, and the two caps (W-34 track H, README gaps 2511, 555, 2576)
+############################################################################
+
+`Planner.dayDiagnostics` writes all twelve of `Diagnostics`' fields since W-34.  The two it had
+left at `Diagnostics.empty` each get a request that FILLS them and a control that does not, and
+W-33's tripwire over the pair is refuted here.  Every value below is `decide +kernel`, probed at
+8G/120 s (the three together: 4.4 s, 1.15 GB); the log line that made the elaborator's `decide`
+of this run exhaust 8 GB at W-33 (gap 2511's second reason) checks in the kernel in 2.5 s. -/
+
+/-- **The witness day's log with a break that ran short** — planned 20 minutes, taken 5, at 11:00
+— resumed by the kernel's own reader.  The line is written in place, here and in `restRun`, so
+the step adds one fixture and not four (each is a `PlannerWit` build under check 9). -/
+theorem restRun_resumes_ok :
+    runOk Cal.chicago 739867 (witLines ++
+      [⟨7, some "{\"t\":\"2026-09-09T11:00:00-05:00\",\"ev\":\"break\",\"planned_min\":20,\"actual_min\":5}".toList⟩]) = true := by
+  decide +kernel
+
+def restRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) (witLines ++
+      [⟨7, some "{\"t\":\"2026-09-09T11:00:00-05:00\",\"ev\":\"break\",\"planned_min\":20,\"actual_min\":5}".toList⟩]) with
+  | .ok run => run
+  | .error _ => absurd restRun_resumes_ok (by rw [runOk, h]; simp)
+
+/-- **`restDebtMin` is the break's lost fifteen minutes** — fork `planned_min.saturating_sub(
+actual_or_planned())`, `20 − 5` — and the same day without the break owes nothing. -/
+theorem the_day_owes_the_rest_its_log_cut_short :
+    (dayPlan { theRequest with run := restRun }).diagnostics.restDebtMin = 15 ∧
+      (dayPlan theRequest).diagnostics.restDebtMin = 0 := by decide +kernel
+
+/-- **`deferred` names the item the posterior cost its slot, and only then** — fork `diagnose`'s
+"a posterior downgrade cost this item its slot".  One `ci:3` candidate an hour long on the
+witness Wednesday (slots at energies 3, 3, 2, 2) and an energy report at 14:00 — predicted 3,
+reported 1 — through `Look.Today.reports`, the posterior's input: no energised slot reaches `ci:3`
+while two raw ones do, so `^d1` is unassigned and named.  The control drops the report: `^d1`
+takes the first energy-3 slot and nothing is deferred.  The two levels are pinned beside it, so
+both halves of the rule (`PlanReq.rawSlots`, `PlanReq.energisedSlots`) are seen to move. -/
+theorem the_day_names_what_the_posterior_cost_a_slot :
+    let d : List (Look.Cand × Option Look.Floor) :=
+      [oneCand ['d','1'] 3 (some 0) 60 none false ⟨planFacts 60 .any, by decide⟩]
+    let reported : PlanReq :=
+      { theRequest with cands := ⟨d, by decide⟩, look := { witInput with today0 :=
+        { witInput.today0 with reports := [⟨Cal.instantOf Cal.chicago 739867 840, 3, 1⟩] } } }
+    let plain : PlanReq := { theRequest with cands := ⟨d, by decide⟩ }
+    (dayPlan reported).diagnostics.deferred.val = [['d','1']] ∧
+      reported.energisedSlots.map (·.1) = [1, 1, 0, 0] ∧
+      reported.rawSlots.map (·.1) = [3, 3, 2, 2] ∧
+      (dayPlan plain).diagnostics.deferred.val = [] ∧
+      plain.energisedSlots.map (·.1) = [3, 3, 2, 2] := by decide +kernel
+
+/-- **W-33's tripwire is REFUTED** (AGENTS §3.2): `Planner.dayDiagnostics` left `deferred` and
+`restDebtMin` at `Diagnostics.empty` for every request, and here is a request for which it does
+not.  The laws it is renamed to are `Planner.dayDiagnostics_deferred` and
+`Planner.dayDiagnostics_restDebtMin`. -/
+theorem the_day_leaves_two_diagnostic_fields_empty_is_refuted :
+    ¬ ∀ r : PlanReq, (dayDiagnostics r).deferred = Diagnostics.empty.deferred ∧
+      (dayDiagnostics r).restDebtMin = Diagnostics.empty.restDebtMin := by
+  intro h
+  have hr := (h { theRequest with run := restRun }).2
+  have hv : (dayPlan { theRequest with run := restRun }).diagnostics.restDebtMin = 15 :=
+    the_day_owes_the_rest_its_log_cut_short.1
+  exact absurd (hv.symm.trans hr) (by decide)
+
+/-- **`underused` names an item once per SLOT, not once per candidate** (README gap 2576):
+`theImpossibleRequest` with `^m2` at `ci:1` and two hours planned, so it holds the energy-4 and
+the energy-3 slot, both two or more above its `ci`, and the list names it twice — as fork
+`diagnose` pushes it, one `(id, energy, ci)` per item per underused work row.  So P0's premise
+for `IdList` — *"at most one entry per candidate"* — is false of this list, and `Capped`'s bound is
+not a bound on it; `Planner.PlanReq.dayUnderused_length_le` is. -/
+theorem the_underused_list_names_an_item_once_per_slot :
+    (dayPlan { theImpossibleRequest with cands := ⟨
+        [pCandDue ['m','1'] 5 true 100000 739867 60 .any true (by decide),
+         pCand ['m','2'] 1 false 120 .any true (by decide)], by decide⟩ }).diagnostics.underused.val
+      = [['m','2'], ['m','2']] := by
+  decide +kernel
+
+/-- **So "the underused list holds each candidate at most once" is refuted**, at a day the kernel
+really plans. -/
+theorem the_underused_list_holds_each_candidate_once_is_refuted :
+    ¬ ∀ r : PlanReq, (dayPlan r).diagnostics.underused.val.Nodup := by
+  intro h
+  have := h { theImpossibleRequest with cands := ⟨
+    [pCandDue ['m','1'] 5 true 100000 739867 60 .any true (by decide),
+     pCand ['m','2'] 1 false 120 .any true (by decide)], by decide⟩ }
+  rw [the_underused_list_names_an_item_once_per_slot] at this
+  exact absurd this (by decide)
+
 end PlannerWit
 end Tm

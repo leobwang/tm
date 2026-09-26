@@ -476,7 +476,7 @@ Tm.Log.stampCanonical
 Tm.Log.strsOfF
 Tm.Log.tagIn
 
-## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 123 of its 215 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Lookahead.lean -- D10's exact mixture over step 3's EDF (stage 5, track L). 123 of its 216 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived on 2026-09-26 at W-34 track H, when `PlanFacts.ineligibleReason` joined the module -- reached only through the declared unsent `planner` section, so not named below.
 Tm.Look.Cand.enters
 Tm.Look.Cand.erasePlan
 Tm.Look.Cand.withPlan
@@ -613,7 +613,7 @@ Tm.PlanCheck.withoutPast
 Tm.PlanWire.instantWithin
 Tm.PlanWire.kindJson
 
-## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 252 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file); and again on 2026-09-26 at W-34 track H, when the plan hash's nine joined it -- all nine reached only through the declared unsent `planner` section, so none is named below.
+## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 255 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file); and again on 2026-09-26 at W-34 track H, when the plan hash's nine and step 8's last three writers (`PlanReq.rawSlots`, `dayDeferred`, `dayRestDebtMin`) joined it -- all twelve reached only through the declared unsent `planner` section, so none is named below.
 Tm.Planner.CandKey.nums
 Tm.Planner.Capped.cons?
 Tm.Planner.Capped.nil

@@ -65935,3 +65935,317 @@ refutation — no generator narrowed (one widened), no exemption widened (one fi
 gained a ratchet), no snapshot, fixture, latency band or corpus re-blessed, no memory bound raised,
 no external dependency, no `sorry` outside `Goals.lean`, no new axiom; `dayPlan` is still total;
 `lean-toolchain` and `kernel/corpus/` untouched; no plant in the shared tree.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-34**, **track H**,
+     on branch `w34-h` from `9551d66`.  Gap range **2640-2679**; **2640-2643
+     taken**, 2644-2679 free.  Parity **P43 taken** (next free P44).
+     ===================================================================== -->
+
+## Stage 6 — W-34, track H: the plan hash is the fork's `DayPlan::hash`, byte for byte; step 8 writes all twelve fields; `ineligible_reason` has one reading
+
+**The numbers that matter, measured on this branch.**
+
+| figure | at `9551d66` | after this track | what moved it |
+|---|---|---|---|
+| `Planner.dayPlan`'s `planHash` | `PlanHash.zero` on every day | `planDigest r.tz` of its own rows — the fork's `DayPlan::hash` | §1 |
+| kernel hash = fork `DayPlan::hash` of the kernel's rows | not comparable | **273 of 273** generated days, 2,533 rows | §2 |
+| kernel hash = the kernel-ranked fork's (D53) | not comparable | **80 of 273** equal; the other 193 explained ROW BY ROW by three recorded classes (gaps 554, 550, 551), 0 rows outside them | §2 |
+| `Diagnostics`' fields written (check 13) | 10 of 12 | **12 of 12** | §3 |
+| `fields-exempt.txt` entries | 2 | **0** | §3: both went STALE and were deleted |
+| check 12 `EXEMPT` | 1,263 | **1,262** | `Recur.parseInstKey` is reached now (§1), answered by the unsent-section class |
+| parity register | P1-P42 | **P1-P43** | §6 |
+| burn-down (check 7) | 6 | **6** | no goal was discharged |
+
+### 1. The producer (brief step 1)
+
+**What fork `DayPlan::hash` digests was MEASURED before a line was written**, by a scratch crate
+over this tree's own `tm-core` (outside the repository; its `Cargo.toml` pins the lockfile's
+versions, so no dependency was added anywhere): FNV-1a/64 over the UTF-8 bytes of
+`serde_json::to_string(&Vec<Placement>)`.
+
+* `Placement` is `{start, end, kind, energy, item, instance, planned_min, multiplier}`, in that
+  order, compact, `null` for every `None`.
+* `start`/`end` are `DateTime<Tz>`: chrono 0.4.45 serialises them through
+  `write_rfc3339(naive_local, offset, SecondsFormat::AutoSi, true)` — the LOCAL clock in the
+  zone, the offset `±HH:MM` rounded to the minute, and **`Z`** for an offset of exactly zero.
+  The probe printed `"2026-09-07T09:00:00-05:00"` and, in UTC, `"2026-09-07T09:00:00Z"`.  The
+  kernel's rows are on its own absolute seconds from 0001-01-01; `Planner.instantText` converts
+  through the request's zone table (`Cal.offsetAt`) and `LogStamp`'s `localDateTod`/`clockOf`/
+  `renderOffset` — the pieces the log's stamp is written with — and never through the Unix epoch.
+  `instantText_is_renderStamp_off_utc` says it is the log's stamp away from UTC.
+* `kind`: `#[serde(rename_all = "lowercase")]` — `"block"`, `"winddown"` (not the wire's
+  `wind-down`), `{"batch":["x1","x2"]}`.
+* `instance`: externally tagged, `{"Date":"2026-09-09"}` / `{"Nth":3}`, read from a row's text by
+  `Recur.parseInstKey` — the kernel's one port of fork `parse_instance_key` — so `Planner.lean`
+  now imports `Recur` (on its own line; the header lost one line so no check 9 pin site moved).
+* `multiplier`: **serde_json 1.0.151 writes an `f64` with zmij 1.0.23, not ryu** (`Cargo.lock`;
+  `ser.rs`'s write_f64).  zmij's layout is fixed notation for a first-digit exponent in
+  `-5..=15` and otherwise `1e-6` / `1.5e+17` — the exponent's sign ALWAYS written, which ryu does
+  not do.  The probe printed fourteen doubles; `Planner.multText_is_zmijs` pins all fourteen.  The
+  kernel's multiplier is the exact decimal the host sent (D17: the double's shortest `Display`
+  digits), so only the layout is computed.
+
+**Reused, not minted**: `Planner.hashBound` for the 64-bit wrap, `PlanWire.hashHex` and
+`Planner.mkHash?` for the sixteen digits, `jemit`/`escOf` for every string (serde_json's own
+escaping since B4), `Look.capDen` for the eighteen places, core's `String.utf8EncodeChar` for the
+bytes.  The FNV constants are written in place: a nullary `def` is emitted as a C global the
+compiled step never reads, and check 12 said so (fnvOffset/fnvPrime were NOT EXEMPT on the
+first run and are gone).
+
+**`Nat` with `% hashBound`, not `UInt64`**, chosen by probe at 8G/120 s: `Nat.xor`/`Nat.mul`/
+`Nat.mod` are the kernel's GMP primitives, and the whole of `theRequest`'s day — planner and
+digest — checks by `decide +kernel` in **1.6 s at 1.1 GB**.  The elaborator's `decide` stops at
+the default `maxRecDepth` after about 64 bytes of FNV fold (probed: 32 bytes pass, 64 and 167 do
+not), and **no bound was raised**: every new byte-level witness is `decide +kernel`, each probed
+first (§5.10a — the kernel still has the heartbeat budget in 4.33.1).
+
+**The laws.** `dayPlan_planHash` (the tripwire's rename), `dayPlan_planHash_is_a_function_of_the_rows`
+(the fork's "a replan that moves nothing is not a replan"), `placementText_ignores_the_marks_and_the_note`
+(the fork's "Not hashed: … every progress or display flag"), `fnv1a_test_vectors` (the empty
+string, `"a"`, `"[]"`), `PlanWire.hashHex_reads_back` — **`mkHash? (hashHex h) = some h` for
+every `PlanHash`**, by a fold induction, where `hashHex_of_zero_reads_back` held only at zero.
+
+**The tripwire.** the_plan_hash_is_a_placeholder_until_the_emitter_lands is DELETED and REFUTED:
+`PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted` on
+`theRequest`'s day, whose digest `the_witness_days_hash_is_the_forks` pins at
+**`ace6c63d4bdc8084` — a constant the FORK printed** (the probe built the nine `planner::Segment`s
+`the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening` lists and called
+`DayPlan::hash`).  `Planner.the_placement_bytes_are_the_forks` pins **`33d70e1eb81d85ba`**, the
+fork's hash of four rows the witness day lacks: a Date-keyed routine, an Nth-keyed routine whose
+id carries a quote, a two-member batch at `1.6` and a block at `0.000001`.
+
+### 2. Compared by VALUE (brief step 2)
+
+`tm/tests/planner_invariants.rs`, appended block, `the_kernel_hashes_the_day_the_fork_hashes`
+(256 cases + 17 kept seeds = 273 days a run):
+
+1. **The emitter, unconditionally**: the kernel's `plan.hash` equals the fork's OWN
+   `DayPlan::hash` run over the KERNEL's rows (rebuilt as `planner::Segment`s). **273 of 273
+   days, 2,533 rows digested, 242 of them at a drawn multiplier** — the arm draws
+   `model.duration["_default"]` from `1.6, 0.25, 2.0, 1.125, 0.3, 1e-6, 0.00001, 0.1 + 0.2,
+   123.456` (a widening, D46), because `Model::default()` sizes everything at `1.0`.
+2. **The day, against the kernel-ranked fork (D53)**: **80 of 273** hashes equal, and on those 80
+   the rows agree AND in order (asserted).  The other **193** days are explained ROW BY ROW, by a
+   PROPERTY of the fork's row, into the three classes this kernel is recorded as not porting —
+   **gap 554** (`open_block_segment`: the row `open` marks) **154 rows**, **gap 550** (the
+   reservation's multiplier: the `current` Block whose kernel twin differs in `multiplier`
+   alone) **70**, **gap 551** (the cut's kept breaks: a Break starting at or after `now`, which the
+   log cannot have written) **136** — and **0 rows outside them**.  An enumeration a row must JOIN
+   to be exempt (W-27's shape); a row outside it fails by name, and each class is counted so the
+   day its gap closes is the day its count reaches zero.  **R3's hash therefore waits on exactly
+   gaps 550, 551 and 554** and on nothing in the digest.
+
+**Planted, in a clone (`git clone --no-hardlinks`, its own CARGO_TARGET_DIR, `Compiling tm`
+naming the clone; the shared tree's `git status --porcelain` unchanged before and after):**
+* `serdeKind .windDown` spelled `"wind-down"` (the wire's word): the Lean pin fails first
+  (`PlannerWit.lean` `the_witness_days_hash_is_the_forks`, `(kernel) application type
+  mismatch`); with that pin removed in the clone, the arm fails by name — *"the kernel's digest of
+  its own 10 rows is not the fork's `DayPlan::hash` of them — the BYTES differ, not the day"*
+  (`fb1297585b42e1c6` against `e931307397e0f805`).
+* the gap-551 class deleted from the arm's classifier: it fails naming the row — *"the fork's day
+  holds a row the kernel's does not, and it is none of the three classes the kernel is recorded
+  as not porting: ["2026-09-07T09:00:00-05:00","2026-09-07T09:20:00-05:00","break",null,null,
+  null,20,null]"*.
+* the sleep row's `planned` set to `1`: an existing witness caught it at build
+  (`the_day_section_of_the_routine_day_is_these_cells`), so this plant did not reach the arm.
+
+### 3. Step 8 complete (brief step 3): `deferred` and `restDebtMin` written; `until` NOT
+
+**Gap 555 was still true at `9551d66`** (measured: nothing computed fork `raw_slots`).
+`PlanReq.rawSlots` is `Look.energizeToday` at a `today0` whose `reports` are empty — fork
+`Posterior::none(cfg)`, the same `EnergyCtx` otherwise — and `PlanReq.dayDeferred` is fork
+`diagnose`'s posterior-downgrade test over `energisedSlots.zip rawSlots`, zipped once outside
+the per-candidate test (gap 2521's lesson).  `the_raw_and_energised_slots_are_the_same_slots`:
+the zip pairs a slot with itself.  `PlanReq.dayRestDebtMin` is Σ `planned − actual_or_planned`
+over the day record's breaks (`dayRestDebtMin_is_the_sum_of_the_shortfalls`).
+
+**Gap 2511's second reason was about the tactic, not the witness**: the log line whose `decide`
+W-33 saw killed at 8G is checked by `decide +kernel` in **2.45 s at 1.1 GB**.
+`PlannerWit.the_day_owes_the_rest_its_log_cut_short` (15 = 20 − 5, and 0 without the break) and
+`the_day_names_what_the_posterior_cost_a_slot` (an energy report at 14:00 drops the energised
+levels 3,3,2,2 → 1,1,0,0 and `^d1` is deferred; without it, nothing) pin both, and
+`the_day_leaves_two_diagnostic_fields_empty_is_refuted` refutes W-33's tripwire, renamed to
+`dayDiagnostics_deferred`/`dayDiagnostics_restDebtMin`.
+
+**Compared by value**: the arm compares both on every day — `deferred` as a set, the fork's
+open-block item (gap 554's class, which the fork's `assigned` holds) set aside from the kernel's
+list by the row's property — **273 of 273 days, 181 deferred ids, 4 open-block ids set aside;
+`restDebtMin` on 273, 5 non-zero**.  `log_text` wrote no `break`, so the arm DRAWS one (planned
+5-30, taken 0-40) after the last `done` on a day with no running block and no interruption —
+**18 days** — a widening (D46).  Floors: a deferred id compared, a break drawn, a non-zero debt.
+**Check 13: 12 of 12 written, 0 exempt.**
+
+**`until` on `impossible` is NOT written — gap 2640.**
+
+### 4. Gap 2573 CLOSED: `ineligible_reason` has one reading
+
+`Look.Ineligible` (fork `Ineligible`, named) and `Look.PlanFacts.ineligibleReason` (fork
+`ineligible_reason`, in its order); `PlanFacts.eligible` IS its `none` case and
+`Planner.PlanReq.dayBlocked` its `blocked` case.  The `max:` arm reads `capOk` — the conjunct
+`eligible` was written with — rather than re-spelling `cap_done_min >= cap.amount`; the first
+draft re-spelled it with `MaxCap.reached`, and check 12 caught `capOk` going dead (NOT EXEMPT).
+**Re-proved, statements unchanged (D5)**: `PlanFacts.eligible_iff`, `PlanReq.mem_dayBlocked`; new:
+`ineligibleReason_blocked_iff`, and `eligible_is_the_four_conjuncts` — the re-definition moved
+nothing.  The `Planner.lean` edit is line-neutral, so `mem_dayBlocked`'s pin site did not move.
+
+### 5. Gap 2576: `droppedTail` truncates nothing; `underused` is a different list
+
+**`PlanReq.dayDroppedTail_capped`, proved** by the pigeonhole the gap named: every id is an
+answer's (`a_group_member_is_ranked`, `a_ranked_entry_is_an_answer`), each once
+(`nodup_eraseDups`, new — core has no such lemma), so core's `List.Nodup.length_le_of_subset`
+bounds it by the candidates.  `dayDiagnostics_droppedTail_whole`: the day carries it whole.
+
+**`underused`: the cap's premise is REFUTED.**  The fork pushes one `(id, energy, ci)` per item
+per underused WORK ROW, so an item holding two such slots is named twice —
+`PlannerWit.the_underused_list_names_an_item_once_per_slot` (`[m2, m2]`) and
+`the_underused_list_holds_each_candidate_once_is_refuted`.  P0's premise for `IdList` ("at most
+one entry per candidate") is false of this list, and `Capped`'s 1,024 is not a bound on it.
+Proved instead: `PlanReq.dayUnderused_length_le` (≤ underused work rows × `maxBatch`) and
+`dayDiagnostics_underused_whole_below_the_cap` (whole whenever that product is ≤ 1,024).  The
+residue is gap 2641.
+
+### 6. Parity P43: a sub-second `now` (found by this track, DRIVEN)
+
+**Parity P43 taken**: a plan row the kernel anchors at `now` is on `now`'s whole second (`Seg` is `Look.Slot`'s whole seconds, gap 256), where fork `Planner` carries `now`'s sub-second part to every row and slot boundary after it — which `DayPlan::hash` digests (AutoSi fractions) and which can move the fork's slot geometry: a last slot half a second short of `min_last_block_min` is dropped by the fork and kept by the kernel
+
+`planner_invariants.rs`' `a_sub_second_now_moves_the_forks_day_and_not_the_kernels`: `now` at
+08:30:00.5 on a one-item day.  **Its first version asserted the fork's rows, truncated to the
+second, ARE the kernel's, and it failed**: the fork's cut runs `15:30:00.5`–`16:00`, 29.5 minutes,
+below `min_last_block_min`, and drops the slot the kernel keeps as a 30-minute Rest.  Restated as
+found: 6 of the fork's 8 rows carry the fraction; every fork row truncated is a kernel row; the
+kernel's one extra row is that last slot; the hashes differ (`958166dcc61e383e` against
+`87be2e0f05763cae`).  Classified as a **divergence the kernel keeps** (whole seconds is P0's
+representation, and a half second of the verb's clock deciding whether a block exists is the
+fork's quirk), not a kernel bug and not a test asserting something untrue.  The generator draws
+`now` on the minute and could never see it.  The same floor is in `Look.day0Cut`
+(`I.today0.now.sec`), which the SHIPPED binary runs — gap 2642.
+
+### 7. Gaps this track takes (2640-2643)
+
+**Gap 2640 — `Diagnostics.impossible` carries no `until` (gap 2512, which re-records gap 323).**
+1. *What is not done.*  The fork's tuple is `(id, shortfall_min, until)`; the kernel's is
+   `Capped (Id × Nat)`.  The value to write is known — the answer's `until` (a granted answer's
+   due date, a floor answer's last day), which `PlanReq.dayImpossible` already walks past.
+2. *Why.*  Widening the element type changes the STATEMENTS of seven existing
+   `PlannerWit` witnesses (`the_day_names_its_first_impossible_item`,
+   `the_impossible_request_fills_five_diagnostic_fields` and five more pin `[(['m','1'],
+   130000)]`), and this track may only APPEND to `PlannerWit.lean`.  `impossibleKept` and
+   `hnoimp` read only `p.1` and would not change text.  A parallel `until` list was declined as
+   two lists that can drift (§5.3); re-deriving it at `PlanWire.diagJson` was declined because
+   `diagJson` takes the `Diagnostics` alone.
+3. *What it costs.*  `--json plan`'s IMPOSSIBLE entries after R3 have no date; §7.3's banner
+   (`short by DATE`) must look it up again.
+4. *Which step clears it.*  One that holds `PlannerWit`'s existing sections: widen the tuple,
+   re-prove the seven witnesses with the date (D5), add `until` to `diagJson`, and compare it in
+   the arm by value.
+
+**Gap 2641 — `underused` can be truncated by a cap that is not its bound.**
+1. *What is not done.*  `Diagnostics.underused : IdList` is `Capped` at `maxCands` (1,024), and
+   the list is (row, item) pairs (§5).  No law says the take keeps it whole in general.
+2. *Why.*  The bound that holds is rows × `maxBatch`; a day at 15-minute blocks has up to 96
+   slots (`maxBudget`), so up to 1,536 pairs — past the cap only when more than 64 underused slots
+   each hold a 16-member batch (one batch group spanning 65+ slots under a large `batch_max_min`).
+3. *What it costs.*  On such a day the kernel's list is a prefix of the fork's
+   (`Capped.ofListTake_is_a_prefix`); the arm compares `underused` by multiset on every generated
+   day and would fail on one — none is drawn.
+4. *Which step clears it.*  Gap 2640's widening (to the fork's `(id, energy, ci)`), with the field
+   re-bounded by what it is made of — or R3's owner call on `IdList`.
+
+**Gap 2642 — P43's floor is also in the SHIPPED day-0 cut.**
+1. *What is not done.*  `Look.day0Cut` starts at `I.today0.now.sec`; the shipped binary sends `at`
+   from `Local::now()`, which has a fraction.  Not driven here: read off the definition.
+2. *Why.*  Out of this track's regions (`Lookahead.lean` was held for `PlanFacts` only).
+3. *What it costs.*  Day 0's capacity can hold a last slot the fork's `Ctx::today_slots` dropped
+   (§6's geometry), so §7's day-0 availability can differ at a sub-second `now`;
+   `kernel_lookahead_parity.rs` draws `now` on the minute and cannot see it.
+4. *Which step clears it.*  A drive of the capacity path at a fractional `at`, then P43's row
+   widened or a separate number — the owner's call.
+
+**Gap 2643 — a wall row carries no instance key.**
+1. *What is not done.*  `Planner.wallRows` writes `inst := none`; fork `emit_segments` writes
+   `instance: w.instance`, `Some(Date)` for a recurring Interval (a weekly meeting).
+2. *Why.*  `Look.WallIx` carries no instance key (stage 5's type).
+3. *What it costs.*  The plan hash differs from the fork's on any day with a recurring wall;
+   the generator writes one-off `at:` walls only, so the arm cannot see it.
+4. *Which step clears it.*  R3's preparation, beside gaps 550, 551 and 554 (and gap 1006, the
+   optional row's instance, the same shape).
+
+### 8. The gates
+
+* **check 9 (D40)**, run in a clone with its own build tree (gap 2520's protocol), twice — once
+  for the hash (10 definitions: 9 pinned, `dayPlan` unfoldable and pinned by nothing, as before)
+  and once for everything after it, which re-ran the nine whose pin sites the later edits moved:
+  **17 definitions, 16 PINNED, 1 UNFOLDABLE witness fixture (`PlannerWit.restRun`), 0 SURVIVED,
+  0 INVALID, 0 pinned by nothing** — every constant fails at a theorem OUTSIDE the declaration,
+  mostly in the same file (`fnvFold_lt`, `fnv1a_lt`, `multText_is_zmijs`,
+  `instantText_is_renderStamp_off_utc`, `the_placement_bytes_are_the_forks`,
+  `mem_dayBlocked`, `the_raw_and_energised_slots_are_the_same_slots`, `dayDeferred_capped`,
+  `dayRestDebtMin_is_the_sum_of_the_shortfalls`, `dayDiagnostics_impossible`,
+  `ineligibleReason_blocked_iff`, `eligible_is_the_four_conjuncts`).  `planDigest` and
+  `dayDiagnostics` have no `Inhabited` constant and are pinned by their synthesised ones
+  (`PlanHash.zero`, `Diagnostics.empty`).  Gate: **308 new or changed since `86c4dc6`, 308
+  rostered, 0 owed.**  Every edit above line 6606 of `Planner.lean` is line-neutral, so no pin
+  site older than this track moved.
+* **check 12**: `Recur.parseInstKey` left the exempt file (reached now, through the unsent
+  `planner` section — the class answers it); the `## Planner.lean` census 243 → **255** and the
+  `## Lookahead.lean` census 215 → **216**, each with its date and reason; **EXEMPT 1,263 →
+  1,262**.  The first run named two defects of this track's own and both were fixed, not exempted:
+  the FNV constants as dead globals (§1) and `capOk` gone dead under a re-spelled cap test (§4).
+* **check 13**: **12 of 12 written, 0 exempt** — both of `fields-exempt.txt`'s lines went STALE.
+* **check 8**: the two retired tripwires are written unbackticked in live prose and carry counted
+  allow entries for their dated citations (5 + 6 and 2); `CapReached` joins the fork-name
+  vocabulary.  **check 10**: P43 issued by its canonical line and indexed.
+* **check 3**: **5,363 → 5,396 theorems** (Classical.choice 2,654, Quot.sound 4,045, propext
+  5,012; 381 depend on none), two `#print axioms` lines deleted with their subjects.
+
+### 9. Acceptance
+
+**check.sh — THIRTEEN of thirteen**, capped at 40G (the Python gates at 16G), on the tree this
+block is committed with: `lake build TmKernel:static` ok · totality ok · axiom audit **5,396
+theorems** (Classical.choice 2,654, Quot.sound 4,045, propext 5,012; 381 on none) · `Negative.lean`
+rejected ok · FFI **93 tests** · corpus **29/37 files and 4/5 whole plans** · stage goals **6
+outstanding, all stage 6** · prose citations **43,095** (41,049 resolved, 2,046 allowed: 205
+vocabulary, 368 counted; 0 unused; 273 files — re-run over this block, which adds 43) · mutation **308 new or changed since `86c4dc6`, 308
+rostered (97 unfoldable, 57 witness fixtures, 26 pinned by nothing; 1 literal), 0 owed** · parity
+**P1-P43, next free P44** · check 11 **3,096 def bodies, 14 groups, 0 UNANSWERED; second key 61
+groups, 0 UNANSWERED** · check 12 **3,185 defs, 2,969 emitted (576 as a global), 1,178 reachable,
+1,262 exempt in 68 sections, 529 answered by property, 0 UNANSWERED** · check 13 **12 fields, 12
+written, 0 exempt, 0 UNANSWERED**.
+
+**`cargo test --workspace`, THREE complete runs (D46)**: **87 binaries, 1,480 passed, 0 failed, 9
+ignored — all three** (248 s, 232 s, 234 s; load at start 6.3, 7.8, 5.0).  Inside each:
+`cli_switch_acceptance` 16 · `cli_latency` 5 (1 ignored) · `kernel_call_counts` 2 · `one_padder` 9
+· `one_renderer` 25 · `kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 ·
+`planner_invariants` **11** (the two new tests; 83-87 s) · T5 `kernel_replay_parity` 29 (4 ignored)
+· the door suite `kernel_log_door` 23.  No `.proptest-regressions` file changed.  The hash commit
+before this block (`e5c83a3`) ran the same way: 1,479 / 0 / 9 in three complete runs, and a fourth
+that stopped at `cli_latency` (*"`tm drop ^z15` was still running after 1s"*) at load 10.4 — gap
+1333's flake, which passed twice alone at load 8-10 (16.2 s, 16.4 s) and in the replacement run.
+
+**Memory**: every `lake`, `lean`, `cargo`, `check.sh`, `python` and `mutate.py` invocation ran
+under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16G for `mutate.py`, the
+Python gates and the clones' cargo; 8G / `timeout 120` for every probe).  No probe was killed.
+
+### 10. Corrections to the brief, measured
+
+* *"`DayPlan::hash`, 64-bit FNV-1a over the day's placement, `planner.rs:577-600`, five shipped
+  callers"* — **true as measured** (`day.rs:479`, `:507`, `planning.rs:205`, `:323`, `:375`);
+  the digested bytes are `serde_json::to_string(&Vec<Placement>)`, and its f64s are **zmij's**,
+  which is not what the name "serde_json" alone would have led an implementer to port.
+* *"`deferred` needs gap 555's flat-posterior energies"* — **true at `9551d66`** (nothing computed
+  `raw_slots`); closed here.
+* *"`restDebtMin`'s witness OOMs as a decide"* — **true of the elaborator's `decide` and false of
+  the witness**: `decide +kernel` checks the same log line in 2.45 s at 1.1 GB.
+* *"a NEW section placed immediately AFTER `dayPlan`"* — the laws are there; the PRODUCER cannot
+  be, because `dayPlan` computes it, so it sits immediately BEFORE `dayPlan`, after the
+  `dayDiagnostics` region this track holds.
+* *"`until` on `impossible` … compare every field you add"* — not written: it cannot be without
+  editing seven existing `PlannerWit` witnesses, which the brief forbids (gap 2640).
+
+**No predicate weakened, no law narrowed — three tripwires or premises refuted each beside the
+law it is renamed to — no generator narrowed (two widened, in this track's own arm), no exemption
+widened (`fields-exempt.txt` 2 → 0, `reach-exempt.txt` 1,263 → 1,262), no snapshot, fixture,
+latency band or corpus re-blessed, no memory bound raised, no external dependency, no `sorry`
+outside `Goals.lean`, no new axiom; `hnoimp`, `impossibleKept` and `setEstE` untouched; `dayPlan`
+is still total; no plant in the shared tree.**

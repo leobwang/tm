@@ -77,6 +77,9 @@ TOO_SHORT
 White_Space
 colon_or_space
 timezone_offset
+# W-34 track H: fork `priority::Ineligible`'s fourth variant, named where
+# `Look.PlanFacts.ineligibleReason` says which arm answers it.
+CapReached
 parse_rfc3339
 parse_internal
 write_rfc3339
@@ -533,6 +536,11 @@ can_fail
 # and the W-14 banner in `Check.lean` that recorded it as standing.
 5 Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
 6 the_plan_hash_is_a_placeholder_until_the_emitter_lands
+# W-34 track H: W-33's step-8 tripwire, refuted by
+# `PlannerWit.the_day_leaves_two_diagnostic_fields_empty_is_refuted` and renamed
+# `Planner.dayDiagnostics_deferred` / `Planner.dayDiagnostics_restDebtMin`.  Cited by W-33's
+# README block and by one `PlannerWit` docstring this track may not edit (append-only there).
+2 Planner.the_day_leaves_two_diagnostic_fields_empty
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

@@ -6947,7 +6947,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.dayDiagnostics_droppedTail
 #print axioms Tm.Planner.dayDiagnostics_underused
 #print axioms Tm.Planner.dayDiagnostics_planHonesty
-#print axioms Tm.Planner.the_day_leaves_two_diagnostic_fields_empty
 #print axioms Tm.Planner.dayPlan_impossible
 #print axioms Tm.Planner.dayPlan_hot
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
@@ -7011,3 +7010,41 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.hashHex_reads_back
 #print axioms Tm.PlannerWit.the_witness_days_hash_is_the_forks
 #print axioms Tm.PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted
+
+-- ===========================================================================
+-- APPENDED 2026-09-26: stage 6, run W-34, track H — step 8's last two fields,
+-- the one reading of `ineligible_reason`, and the two caps (README gaps 2511,
+-- 555, 2573, 2576; README "Stage 6 — W-34, track H").
+--
+-- `Planner.dayDiagnostics` writes all twelve fields: `deferred` over
+-- `PlanReq.rawSlots` (the flat posterior, gap 555) and `restDebtMin` over the
+-- day record's breaks.  W-33's tripwire
+-- the_day_leaves_two_diagnostic_fields_empty is DELETED from `Planner.lean`
+-- and from this file: refuted by
+-- `PlannerWit.the_day_leaves_two_diagnostic_fields_empty_is_refuted` and
+-- renamed `Planner.dayDiagnostics_deferred` / `…_restDebtMin`.
+-- `Look.PlanFacts.eligible` is `ineligibleReason`'s `none` case and
+-- `PlanReq.dayBlocked` its `blocked` case (gap 2573; `mem_dayBlocked` and
+-- `eligible_iff` re-proved with their statements unchanged, D5).
+-- ===========================================================================
+#print axioms Tm.Look.PlanFacts.ineligibleReason_blocked_iff
+#print axioms Tm.Look.PlanFacts.eligible_is_the_four_conjuncts
+#print axioms Tm.Planner.PlanReq.dayDeferred_capped
+#print axioms Tm.Planner.dayDiagnostics_deferred
+#print axioms Tm.Planner.dayDiagnostics_restDebtMin
+#print axioms Tm.Planner.PlanReq.the_raw_and_energised_slots_are_the_same_slots
+#print axioms Tm.Planner.PlanReq.mem_dayDeferred
+#print axioms Tm.Planner.PlanReq.dayRestDebtMin_is_the_sum_of_the_shortfalls
+#print axioms Tm.Planner.nodup_eraseDups
+#print axioms Tm.Planner.PlanReq.dayDroppedTail_capped
+#print axioms Tm.Planner.dayDiagnostics_droppedTail_whole
+#print axioms Tm.Planner.length_flatMap_le_mul
+#print axioms Tm.Planner.segItems_length_le
+#print axioms Tm.Planner.PlanReq.dayUnderused_length_le
+#print axioms Tm.Planner.dayDiagnostics_underused_whole_below_the_cap
+#print axioms Tm.PlannerWit.restRun_resumes_ok
+#print axioms Tm.PlannerWit.the_day_owes_the_rest_its_log_cut_short
+#print axioms Tm.PlannerWit.the_day_names_what_the_posterior_cost_a_slot
+#print axioms Tm.PlannerWit.the_day_leaves_two_diagnostic_fields_empty_is_refuted
+#print axioms Tm.PlannerWit.the_underused_list_names_an_item_once_per_slot
+#print axioms Tm.PlannerWit.the_underused_list_holds_each_candidate_once_is_refuted

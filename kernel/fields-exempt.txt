@@ -29,5 +29,3 @@
 # failed on each by name, rc=1) and were deleted: the file shrank 9 -> 2, which
 # is the ratchet working.  The two left are README gap 2511's.
 
-Planner.Diagnostics.deferred -- 2026-09-25: the ids step 8 reports as deferred (`Placed.deferred` is a different field of a different record, and writing THAT is not writing this). EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.restDebtMin -- 2026-09-25: §11's rest debt; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
