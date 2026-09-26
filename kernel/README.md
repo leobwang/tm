@@ -65982,7 +65982,7 @@ versions, so no dependency was added anywhere): FNV-1a/64 over the UTF-8 bytes o
 * `multiplier`: **serde_json 1.0.151 writes an `f64` with zmij 1.0.23, not ryu** (`Cargo.lock`;
   `ser.rs`'s write_f64).  zmij's layout is fixed notation for a first-digit exponent in
   `-5..=15` and otherwise `1e-6` / `1.5e+17` — the exponent's sign ALWAYS written, which ryu does
-  not do.  The probe printed fourteen doubles; `Planner.multText_is_zmijs` pins all fourteen.  The
+  not do.  The probe printed eighteen doubles; `Planner.multText_is_zmijs` pins fourteen of them.  The
   kernel's multiplier is the exact decimal the host sent (D17: the double's shortest `Display`
   digits), so only the layout is computed.
 
@@ -66022,7 +66022,7 @@ id carries a quote, a two-member batch at `1.6` and a block at `0.000001`.
 
 1. **The emitter, unconditionally**: the kernel's `plan.hash` equals the fork's OWN
    `DayPlan::hash` run over the KERNEL's rows (rebuilt as `planner::Segment`s). **273 of 273
-   days, 2,533 rows digested, 242 of them at a drawn multiplier** — the arm draws
+   days, 2,533 rows digested, 242 of the 273 days at a drawn multiplier** — the arm draws
    `model.duration["_default"]` from `1.6, 0.25, 2.0, 1.125, 0.3, 1e-6, 0.00001, 0.1 + 0.2,
    123.456` (a widening, D46), because `Model::default()` sizes everything at `1.0`.
 2. **The day, against the kernel-ranked fork (D53)**: **80 of 273** hashes equal, and on those 80
@@ -66143,9 +66143,12 @@ fork's quirk), not a kernel bug and not a test asserting something untrue.  The 
 **Gap 2641 — `underused` can be truncated by a cap that is not its bound.**
 1. *What is not done.*  `Diagnostics.underused : IdList` is `Capped` at `maxCands` (1,024), and
    the list is (row, item) pairs (§5).  No law says the take keeps it whole in general.
-2. *Why.*  The bound that holds is rows × `maxBatch`; a day at 15-minute blocks has up to 96
-   slots (`maxBudget`), so up to 1,536 pairs — past the cap only when more than 64 underused slots
-   each hold a 16-member batch (one batch group spanning 65+ slots under a large `batch_max_min`).
+2. *Why.*  The bound that holds is underused rows × `maxBatch`, and underused rows are §8.2 step
+   5's, which the remaining budget stops (`the_deferred_pass_stays_inside_the_budget`: `used ≤ max activeSeed
+   remainingBudget`; that the assigned rows number at most `used` is NOT proved here).  At the
+   grammar's ceiling for a stored budget, `maxBudget` = 96 blocks, that is up to 1,536 pairs — past
+   the cap only when more than 64 underused rows each hold a 16-member batch (one batch group
+   spanning 65+ slots under a large `batch_max_min`).
 3. *What it costs.*  On such a day the kernel's list is a prefix of the fork's
    (`Capped.ofListTake_is_a_prefix`); the arm compares `underused` by multiset on every generated
    day and would fail on one — none is drawn.
@@ -66185,8 +66188,10 @@ fork's quirk), not a kernel bug and not a test asserting something untrue.  The 
   `ineligibleReason_blocked_iff`, `eligible_is_the_four_conjuncts`).  `planDigest` and
   `dayDiagnostics` have no `Inhabited` constant and are pinned by their synthesised ones
   (`PlanHash.zero`, `Diagnostics.empty`).  Gate: **308 new or changed since `86c4dc6`, 308
-  rostered, 0 owed.**  Every edit above line 6606 of `Planner.lean` is line-neutral, so no pin
-  site older than this track moved.
+  rostered, 0 owed.**  Every edit above line 6568 of `Planner.lean` is line-neutral; step 8's
+  new writers sit just below it, which moved the one older pin site after them —
+  `dayDiagnostics`' own, at `dayDiagnostics_impossible` — and that row was re-run with the
+  changed body rather than rewritten.
 * **check 12**: `Recur.parseInstKey` left the exempt file (reached now, through the unsent
   `planner` section — the class answers it); the `## Planner.lean` census 243 → **255** and the
   `## Lookahead.lean` census 215 → **216**, each with its date and reason; **EXEMPT 1,263 →
@@ -66205,8 +66210,8 @@ fork's quirk), not a kernel bug and not a test asserting something untrue.  The 
 block is committed with: `lake build TmKernel:static` ok · totality ok · axiom audit **5,396
 theorems** (Classical.choice 2,654, Quot.sound 4,045, propext 5,012; 381 on none) · `Negative.lean`
 rejected ok · FFI **93 tests** · corpus **29/37 files and 4/5 whole plans** · stage goals **6
-outstanding, all stage 6** · prose citations **43,095** (41,049 resolved, 2,046 allowed: 205
-vocabulary, 368 counted; 0 unused; 273 files — re-run over this block, which adds 43) · mutation **308 new or changed since `86c4dc6`, 308
+outstanding, all stage 6** · prose citations **43,098** (41,052 resolved, 2,046 allowed: 205
+vocabulary, 368 counted; 0 unused; 273 files — re-run over this block as committed, which adds 46) · mutation **308 new or changed since `86c4dc6`, 308
 rostered (97 unfoldable, 57 witness fixtures, 26 pinned by nothing; 1 literal), 0 owed** · parity
 **P1-P43, next free P44** · check 11 **3,096 def bodies, 14 groups, 0 UNANSWERED; second key 61
 groups, 0 UNANSWERED** · check 12 **3,185 defs, 2,969 emitted (576 as a global), 1,178 reachable,
