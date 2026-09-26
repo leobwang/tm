@@ -7327,7 +7327,7 @@ theorem multText_is_zmijs :
         (fun p : Nat × Nat => (Arith.ofPair? p.1 p.2).map multText))
       = ["1.0", "1.6", "0.25", "100.0", "1000.0", "1e-6", "0.00001", "1.5e-6", "0.0", "1e+16",
          "1.5e+17", "1e-18", "123.456", "0.30000000000000004"].map (fun t => some t.toList) := by
-  decide +kernel
+  decide
 
 /-- **Four rows, the fork's digest**: a furniture routine keyed by DATE, a scheduled routine
 keyed by ORDINAL whose id carries a quote, a two-member batch sized at `1.6` and a block sized at

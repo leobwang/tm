@@ -1694,8 +1694,8 @@ theorem callExport_is_callPlanner (input : String) : callExport input = callPlan
 longer the constant zero `hashHex_of_zero_reads_back` was about.  The law below is at EVERY
 digest: `Planner.mkHash?` — the one hex reader, `state.lastHash`'s decoder on this very wire —
 reads back exactly the `PlanHash` `hashHex` wrote.  So the value a host stores from `plan.hash`
-and hands back as `state.lastHash` is the value the kernel compares, and there is no second
-spelling of the digest (AGENTS §5.3). -/
+and hands back as `state.lastHash` reads back as it was stored (not "the value the kernel
+compares": nothing here compares it, the host does — W-34 repair, README gap 2734). -/
 
 /-- The big-endian base-16 fold `Planner.mkHash?` runs, over the digits `hashHex` writes, is the
 number: `n` digits of `h < 16^n` fold back to `h`. -/

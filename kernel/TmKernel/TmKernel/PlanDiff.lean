@@ -265,9 +265,9 @@ def PlanReq.extending (r : PlanReq) (i : Id) (m : Nat) : PlanReq :=
 /-- **Fork `planner::overtime_drops`** (`planner.rs:708`) and `App::extend_drops`' own branch
 for the running block (`app.rs:1220-1240`), whole: the day as it stands against the day with
 `blocks` more blocks on `i` (fork `blocks.saturating_mul(block_min)` minutes), as `diff` answers
-it.  **Its `removed` IS `overtime_drops`** — what the extended plan no longer has room for — and
-the other three fields ride beside it so that `diff` itself reaches the wire and can be compared
-to the fork's whole, not at one field.  There is deliberately no second definition holding
+it.  Its `removed` is NOT `overtime_drops` whole (this said it was until the W-34 repair, README
+gap 2731): `dayPlan` reads no `extraMin` (D34), so it is `App::extend_drops`' answer for the
+running item outside parity P44's days, and the empty diff for any other item.  There is deliberately no second definition holding
 `.removed` alone: it would be a projection the wire does not call, and check 12 would be right to
 call it dead (D51). -/
 def overtimeDiff (r : PlanReq) (i : Id) (blocks : Nat) : PlanDiff :=
@@ -330,6 +330,42 @@ theorem overtimeDiff_of_an_unchanged_day (r : PlanReq) (i : Id) (blocks : Nat)
     overtimeDiff r i blocks = ⟨[], [], [], 0⟩ := by
   unfold overtimeDiff
   rw [h, diff_self]
+
+/-- **The what-if stays inside the reservation law's domain when the grown estimate fits a day**
+(W-34 repair, README gap 2737).  `PlanReq.extending` sets `estMin` directly rather than through
+`mkActive?`, so it can build a request `plan_reserves_one_block_at_a_time`'s `activeAgrees`
+excludes; this names the subdomain where it does not: a request that agreed still agrees after an
+extension that keeps the running estimate within `Look.maxDayMin` (the day's own bound, reused). -/
+theorem the_extension_agrees_when_the_estimate_fits_a_day (r : PlanReq) (i : Id) (m : Nat)
+    (hok : r.activeAgrees = true)
+    (hm : ∀ a, r.state.active = some a → a.id = i → a.estMin + m ≤ Look.maxDayMin) :
+    (r.extending i m).activeAgrees = true := by
+  unfold PlanReq.activeAgrees at hok ⊢
+  unfold PlanReq.extending
+  cases ha : r.state.active with
+  | none => rfl
+  | some a =>
+    rw [ha] at hok
+    by_cases hi : a.id = i
+    · simp only [Option.map, hi, if_true]
+      have := hm a ha hi
+      unfold ActiveBlock.wf at hok ⊢
+      simp only [Bool.and_eq_true, decide_eq_true_eq] at hok ⊢
+      exact ⟨hok.1, this⟩
+    · simp only [Option.map, hi, if_false]
+      exact hok
+
+/-- **And it leaves the domain exactly when the grown estimate does not fit** — the other
+direction (AGENTS §5.8): the what-if day of an extension past `Look.maxDayMin` is still planned
+(D28), but the reservation law no longer covers it. -/
+theorem the_extension_disagrees_past_a_day (r : PlanReq) (i : Id) (m : Nat) (a : ActiveBlock)
+    (ha : r.state.active = some a) (hi : a.id = i) (hm : Look.maxDayMin < a.estMin + m) :
+    (r.extending i m).activeAgrees = false := by
+  unfold PlanReq.activeAgrees PlanReq.extending
+  simp only [ha, Option.map, hi, if_true]
+  unfold ActiveBlock.wf
+  simp only [Bool.and_eq_false_iff, decide_eq_false_iff_not]
+  exact Or.inr (by omega)
 
 end Planner
 end Tm

@@ -665,6 +665,24 @@ BANNED = [
 # is now a PROPERTY a build directory has (a leading dot, or a CACHEDIR.TAG
 # file) and never a name.
 
+PKG = pathlib.Path(__file__).resolve().parent / "TmKernel"
+IMPORT_LINE = re.compile(
+    r"(?m)^[ \t]*(?:public[ \t]+|meta[ \t]+|private[ \t]+)*import[ \t]+(?:all[ \t]+)?(\S+)")
+
+KERNEL_DECIDE = re.compile(r"\bdecide\b[ \t]*(?:\+kernel\b|\([^)]*\bkernel[ \t]*:=[ \t]*true)")
+DECL_BEFORE = re.compile(r"(?<![\w'?!.\u00AB])(?:theorem|def|abbrev|instance)[ \t\r\n]+([^\s(){}:]+)")
+KERNEL_DECIDE_FILE = pathlib.Path(__file__).resolve().parent / "kernel-decide-exempt.txt"
+
+
+def read_exempt(text):
+    return {ln.strip() for ln in text.splitlines()
+            if ln.strip() and not ln.lstrip().startswith("#")}
+
+
+kernel_decide_exempt = read_exempt(KERNEL_DECIDE_FILE.read_text()) \
+    if KERNEL_DECIDE_FILE.is_file() else set()
+seen_kernel_decide = set()
+
 bad = 0
 # `check.sh` passes `TmKernel/TmKernel` AND `TmKernel`, so with the recursion
 # every library file is reached twice; a SET is what keeps it scanned once.  It
@@ -738,7 +756,67 @@ for p in sorted(files):
                       "standing at an indented command position, and is not in "
                       "ALLOWED_COMMANDS (R4: a command this kernel does not "
                       "use, spelled with a leading space)" % word))
+    # THE IMPORT RULE (W-34 repair, README gap 2730).  A kernel file imports
+    # the kernel's own modules and nothing else -- a PROPERTY of the import
+    # line, not a list of forbidden packages.  `import Lean` put `Lean.addDecl`
+    # and withOptions in scope, and run_tac -- a TACTIC, which no command
+    # rule above reads -- used them to add `Tm.v34Bad : False` with
+    # `debug.skipKernelTC` set, so `theorem v34_one_is_two : (1:Nat) = 2`
+    # passed all thirteen checks (driven at `fb05f4e` in a clone; without the
+    # import line the same file fails at `Unknown constant
+    # Lean.Elab.Tactic.TacticM`).  Every live import is `TmKernel` or
+    # `TmKernel.<Mod>` today, so the rule costs nothing.  Check 14
+    # (`replay.py`) is the semantic half and does not care how a declaration
+    # got in.
+    for m in IMPORT_LINE.finditer(code):
+        target = m.group(1)
+        parts = target.split(".")
+        if not (parts[0] == PKG.name
+                and (len(parts) == 1 and (PKG / (PKG.name + ".lean")).is_file()
+                     or PKG.joinpath(*parts).with_suffix(".lean").is_file())):
+            hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                      "import %s -- a kernel file imports the kernel's own "
+                      "modules only (R2/R6: an outside module puts the "
+                      "metaprogramming API in scope)" % target))
+    # THE KERNEL-DECIDE RULE (W-34 repair, README gap 2732).  AGENTS §5.10a:
+    # "never reach for `decide +kernel` on a large computation -- it removes the
+    # one budget there is", and a cap kill is answered by shrinking the input or
+    # deriving the fact.  W-34 answered an 8 GB elaborator kill with exactly
+    # that tactic, over the whole planner, and nothing read the rule.  The
+    # property: a proof that switches the elaborator's decision off stands only
+    # in a declaration `kernel-decide-exempt.txt` names, and that file may only
+    # SHRINK (held against its committed self below).
+    for m in KERNEL_DECIDE.finditer(code):
+        decl = DECL_BEFORE.findall(code, 0, m.start())
+        where = "%s.%s" % (p.stem, decl[-1] if decl else "?")
+        seen_kernel_decide.add(where)
+        if where not in kernel_decide_exempt:
+            hits.add((bisect.bisect_right(nl, m.start()) + 1,
+                      "`decide +kernel` in %s -- not in kernel-decide-exempt.txt "
+                      "(AGENTS §5.10a: shrink the input or derive the fact)" % where))
     for n, name in sorted(hits):
         print(f"{p}:{n}: banned: {name}")
+        bad += 1
+# The exemption file's two directions.  A line naming no live site is STALE
+# (the file may only shrink, so a fixed site takes its line with it), and a
+# line the COMMITTED file does not hold is growth, which fails whatever it says
+# -- the ratchet `reach.py` learned at W-31 (gap 2259): a count held against
+# itself is not a ratchet.
+for where in sorted(kernel_decide_exempt - seen_kernel_decide):
+    print("%s: STALE: %s has no `decide +kernel` -- delete its line"
+          % (KERNEL_DECIDE_FILE.name, where))
+    bad += 1
+try:
+    import subprocess
+    head = subprocess.run(["git", "-C", str(KERNEL_DECIDE_FILE.parent), "show",
+                           "HEAD:./" + KERNEL_DECIDE_FILE.name],
+                          capture_output=True, text=True, timeout=60)
+    committed = read_exempt(head.stdout) if head.returncode == 0 else None
+except (OSError, subprocess.SubprocessError):
+    committed = None
+if committed is not None:
+    for where in sorted(kernel_decide_exempt - committed):
+        print("%s: GROWTH: %s is not in the committed file -- it may only shrink"
+              % (KERNEL_DECIDE_FILE.name, where))
         bad += 1
 sys.exit(1 if bad else 0)

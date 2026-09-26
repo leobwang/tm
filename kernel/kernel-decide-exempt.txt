@@ -1,0 +1,24 @@
+# kernel/kernel-decide-exempt.txt -- the declarations whose proof is `decide +kernel`.
+#
+# AGENTS §5.10a: "never reach for `decide +kernel` on a large computation -- it removes the
+# one budget there is", and a command killed at the cap is answered by shrinking the input or
+# deriving the fact.  W-34 put eight such proofs in `Planner.lean` and `PlannerWit.lean`, five of
+# them evaluating the whole planner, one of them the answer to an 8 GB elaborator kill (README
+# gap 2511's second reason).  The W-34 repair (README gap 2732) converted the two that never
+# needed it -- `multText_is_zmijs` and `the_underused_list_names_an_item_once_per_slot`, each a
+# plain `decide` at the default budgets -- and grandfathered the six below, which each stop at
+# the elaborator's default recursion depth.  totality.py (check 2) refuses a `decide +kernel`
+# outside this file, a line naming no live site (STALE), and a line the committed file does
+# not hold (GROWTH): this file may only SHRINK.
+#
+# 2026-09-26 -- W-34 repair.  EXIT for all six: derive, never evaluate.  The digest is
+# `fnv1a` of the rows' bytes; the rows of `theRequest` are already listed by a decided witness
+# (`the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening`), and
+# the fold-over-append law splits the fold into chunks a plain `decide` takes.  The log-line and
+# posterior witnesses shrink to a request whose run is built from fewer lines.
+Planner.instantText_spells_chrono
+Planner.the_placement_bytes_are_the_forks
+PlannerWit.the_witness_days_hash_is_the_forks
+PlannerWit.restRun_resumes_ok
+PlannerWit.the_day_owes_the_rest_its_log_cut_short
+PlannerWit.the_day_names_what_the_posterior_cost_a_slot

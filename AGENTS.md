@@ -1246,7 +1246,7 @@ banner which range is yours and fix it at the merge (§6.5).
 
 ## 7. How to verify your own work before an audit does
 
-### 7.1 The seven checks this section documents — and `check.sh` runs THIRTEEN
+### 7.1 The seven checks this section documents — and `check.sh` runs FOURTEEN
 
 **This heading said "the seven checks" while `check.sh` ran nine**, and the
 number is repaired here rather than the section: checks **8** (the prose
@@ -1270,8 +1270,18 @@ against ITSELF AT HEAD in both directions (README gaps 2560, 2563, 2564): check
 (a definition reached only through a declared unsent request section; a
 `mutate.WITNESS_MODULES` leaf), check 11 refuses a NEW `NOT ONE CONCEPT` line,
 and check 13 refuses a new line for a field the structure already had. The call graph checks 8, 11, 12 and 13
-read is `kernel/callgraph.py`, which none of them owns. What is written out
-below is checks 1–7. Do not read
+read is `kernel/callgraph.py`, which none of them owns.
+
+**Since the W-34 repair (README gaps 2730-2734):** check **14** (`kernel/replay.py`)
+replays every library module through the pinned toolchain's `leanchecker`, so the
+environment check 3 audits is one the KERNEL checked — a `theorem (1 : Nat) = 2`
+added through the run_tac tactic with `debug.skipKernelTC` passed checks 1–13 and is refused
+here; check 2 refuses an `import` of anything but the kernel's own modules (the
+route that plant took) and a `decide +kernel` outside `kernel/kernel-decide-exempt.txt`
+(§5.10a, may only shrink); and check 13 gained an INPUT half — every field the
+planner request decodes must be READ by a definition `Planner.dayPlan` reaches, or be
+a dated line of `kernel/inputs-exempt.txt` with an EXIT (may only shrink). What is
+written out below is checks 1–7. Do not read
 "seven" here as the size of the acceptance; §2.1 and §6.5 carry that number and
 both said "seven" too until the W-24 repair step.
 

@@ -704,7 +704,7 @@ def _ctor_arity(arm):
     return name, arity
 
 
-def constructors(text, stripped=True):
+def constructors(text, stripped=True, structures=None):
     """Every constructor `text` declares, as a pair of tables.
 
     The first is {constructor short name: {explicit arities}} and the second is
@@ -721,7 +721,12 @@ def constructors(text, stripped=True):
     key reads it to know which names are constructors, and check 8's source 1
     reads it to know which names are declared.  Two walks of one declaration
     set would be AGENTS 5.3's defect inside the two gates that exist to catch
-    it."""
+    it.
+
+    With `structures` (a set), every (type short name, constructor) a
+    `structure` or `class` declares is added to it -- the constructors an
+    anonymous `⟨..⟩` spells, which check 11 re-spells to (W-34 repair, README
+    gap 2733).  One walk still: the set is filled by the loop below."""
     code = strip_comments(text) if stripped else text
     by_short, by_qual = {}, {}
     for m in BLOCK_HEAD.finditer(code):
@@ -734,6 +739,8 @@ def constructors(text, stripped=True):
             arity = len(STRUCT_FIELD.findall(chunk))
             by_short.setdefault(name, set()).add(arity)
             by_qual.setdefault((tname, name), set()).add(arity)
+            if structures is not None:
+                structures.add((tname, name))
             continue
         bars = _depth0_bars(chunk)
         for k, at in enumerate(bars):

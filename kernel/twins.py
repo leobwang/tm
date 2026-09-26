@@ -768,6 +768,27 @@ def ctor_arity(t, ctors):
     return 0 if 0 in ar else min(ar)
 
 
+# (type short name, constructor) for every `structure` or `class` the library
+# declares -- a structure has one constructor, so its constructor is what an
+# anonymous `⟨..⟩` spells.  Filled once by `main` from `leanfiles.constructors`,
+# the one scanner of that concept.  Keyed by the STRUCTURE, not by "a type with
+# one constructor": `Arith.Q` is a structure and `Replay.Q` an inductive of
+# eighteen, and a table merged by short type name made `Q.mk` look ambiguous
+# and left the plant it exists for unkeyed (measured on the first try of this
+# repair).  An inductive with one constructor is not read, which errs toward
+# keying spellings apart -- the pre-repair behaviour -- never toward a false
+# group.
+SINGLE = set()
+# The constructor tables `main` computes, for the kept keys `alpha_key` builds
+# without them (`anon_spelling` needs an arity).
+CTORS = []
+
+
+def single_ctor(t):
+    segs = t.split(".")
+    return len(segs) >= 2 and (segs[-2], segs[-1]) in SINGLE
+
+
 def _is_name(t):
     return bool(t) and (t[0].isalpha() or t[0] in ".«")
 
@@ -833,6 +854,23 @@ def collapse(out, ctors, protect=False):
                             res.append("_")
                             i = j
                             changed = True
+                            continue
+                        # THE KEPT APPLICATION IS SPELLED ONE WAY (W-34 repair,
+                        # README gap 2733).  A single-constructor type's
+                        # constructor over k holes IS the anonymous constructor
+                        # `⟨_, .., _⟩` -- Lean elaborates the two to one term --
+                        # and `protect` kept each in its own spelling, so
+                        # `def v34Pair (x y : Nat) : Q := Q.mk x y` keyed apart
+                        # from `Arith.util`'s `⟨need, avail⟩` and formed NO
+                        # group (driven by W-34's verifier: rc=0, group count
+                        # unchanged, `--audit` silent), while the same body
+                        # spelled `⟨x, y⟩` failed ALPHA.  The property: a kept
+                        # constructor of a type with one constructor is re-spelled
+                        # anonymously, so the key does not read the spelling.
+                        if (j - i - 1 == ar and ar >= 1 and protect and i == 2 and j == n
+                                and single_ctor(t)):
+                            res.extend(["⟨"] + ["_", ","] * (ar - 1) + ["_", "⟩"])
+                            i = j
                             continue
             res.append(t)
             i += 1
@@ -1046,7 +1084,59 @@ def normalise(toks, params, keep, ctors=None, names=False, protect=False, wires=
                 out.append(t)
         else:
             out.append(t)
-    return tuple(out) if keep else collapse(out, ctors, protect)
+    return tuple(anon_spelling(out, ctors)) if keep else collapse(out, ctors, protect)
+
+
+def anon_spelling(out, ctors):
+    """A body that IS one structure constructor applied to its k fields, spelled
+    `S.mk a b`, re-spelled `⟨a, b⟩` -- Lean elaborates the two to one term.
+
+    The kept keys (ALPHA's and E4's) read the spelling, so `def v34Pair (x y :
+    Nat) : Q := Q.mk x y` beside `Arith.util (need avail : Nat) : Q := ⟨need,
+    avail⟩` was not an ALPHA twin while the same body spelled `⟨x, y⟩` was
+    (W-34's verifier; README gap 2733).  An argument is one token or one
+    bracketed group, and a parenthesised argument loses its parentheses, as it
+    does inside `⟨..⟩`.  Anything else -- a partial application, an argument
+    that is itself an application -- is left as written, which keys apart."""
+    out = list(out)
+    ctors = ctors or (CTORS[0] if CTORS else None)
+    if len(out) < 4 or out[:2] != [":", "="] or ctors is None:
+        return out
+    head = out[2]
+    if not (_is_name(head) and single_ctor(head)):
+        return out
+    ar = ctor_arity(head, ctors)
+    args, i, n = [], 3, len(out)
+    while i < n:
+        t = out[i]
+        if t in OPENERS:
+            depth, j = 0, i
+            while j < n:
+                if out[j] in OPENERS:
+                    depth += 1
+                elif out[j] in CLOSERS:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            if j >= n:
+                return out
+            grp = out[i:j + 1]
+            args.append(grp[1:-1] if grp[0] == "(" else grp)
+            i = j + 1
+        elif t in CLOSERS or t in (",", ":", "=", "|"):
+            return out
+        else:
+            args.append([t])
+            i += 1
+    if not ar or len(args) != ar:
+        return out
+    res = [":", "=", "⟨"]
+    for k, a in enumerate(args):
+        if k:
+            res.append(",")
+        res.extend(a)
+    return res + ["⟩"]
 
 
 ONE_HOLE = (":", "=", "_")
@@ -1296,6 +1386,9 @@ def main(argv):
     texts = {p: pathlib.Path(p).read_text() for p in files}
     codes = {p: leanfiles.strip_comments(texts[p]) for p in files}
     ctors = constructor_sets([codes[p] for p in files])
+    for p in files:
+        leanfiles.constructors(codes[p], stripped=False, structures=SINGLE)
+    CTORS.append(ctors)
     everything = []
     for p in files:
         fulls = qualify_all(p, codes[p], [m.group(1) for m in DEF.finditer(codes[p])])

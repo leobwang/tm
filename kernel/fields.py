@@ -401,5 +401,211 @@ def main(argv):
     return 1 if bad else 0
 
 
+# ===========================================================================
+# THE INPUT HALF (W-34 repair, README gap 2734): a field the planner request
+# DECODES must have a READER the day builder REACHES.
+#
+# THE FINDING.  W-34's reuse critic measured five decoded request fields no
+# definition of the day reads: `RuntimeIn.brk`, `.lastHash`, `.yesterday` and
+# `PlanOverrides.estMin`, `.extraMin`.  Check 13 was output-side only and check
+# 12 counts a decoder as reached, so no gate could see an INPUT with no reader
+# -- and `PlanWire.lean` said the kernel compares `state.lastHash`, which
+# nothing in the kernel does.  It is the output half's finding one wire over:
+# a type that matches the fork's shape pins nothing about what is read.
+#
+# THE PROPERTY.  Start at `PlanReq`, the record the planner section decodes.
+# Every field of it must be PROJECTED -- `x.field` on a subject whose declared
+# type is the structure -- inside a definition `Planner.dayPlan` reaches in the
+# emitted call graph, or be named in `inputs-exempt.txt` under a dated reason
+# with an EXIT.  A field that IS read and whose type is another structure the
+# planner module declares is followed, and ITS fields are asked the same; a
+# field that is not read is reported once, not with every field beneath it.
+# The class is "the records the planner request decodes into", read off the
+# declarations, never a list of names.
+#
+# HOW A SUBJECT IS TYPED, and what that cannot see (declared).  A parameter by
+# its binder; `let x := <chain>`; `fun x =>` right after `<chain>.map (` and
+# its kin; `| some x` under `match <chain> with`; and a qualified `S.field`.
+# A subject typed only by deeper inference is not seen and its reads are
+# missed -- the LOUD direction (a read field reported unread).  A reader the
+# code generator inlined has no symbol and is not reached -- loud as well.  A
+# read whose value is then IGNORED is a read here: read is a floor under used.
+# ===========================================================================
+IN_ROOT_TYPE = "PlanReq"
+IN_EXEMPT_FILE = HERE / "inputs-exempt.txt"
+LAMBDA_HOSTS = ("map", "filter", "filterMap", "any", "all", "bind", "find?", "forM",
+                "mapM", "foldl", "foldr", "attach", "getD", "elim", "isSome", "all?")
+CHAIN = r"[A-Za-z_][\w'?!]*(?:\.[A-Za-z_][\w'?!]*)+"
+
+
+def typed_fields(codes, tname):
+    """`(path, [(field, type text)])` of `structure <tname>`, from the library."""
+    pat = re.compile(r"(?m)^[ \t]*(?:@\[[^\]]*\][ \t]*)*(?:private[ \t]+|protected[ \t]+)*"
+                     r"structure[ \t]+(?:[A-Za-z_][\w.]*\.)?%s\b" % re.escape(tname))
+    for path, code in codes.items():
+        m = pat.search(code)
+        if not m:
+            continue
+        stop = leanfiles.NEXT_COMMAND.search(code, m.end())
+        block = code[m.end():stop.start() if stop else len(code)]
+        out = re.findall(r"(?m)^[ \t]+([A-Za-z_][A-Za-z0-9_'!?]*)[ \t]*:[ \t]*([^=\n][^\n]*)$",
+                         block)
+        return path, [(f, t.strip()) for f, t in out]
+    return None, []
+
+
+def core_type(ty, known):
+    """The structure a declared type is about: the first identifier in it whose
+    last segment is a structure in `known` (so `Option ActiveBlock`, `Capped
+    RoutineIn` and `Planner.PlanOverrides` all say what they hold)."""
+    for ident in re.findall(r"[A-Za-z_][\w.]*", ty):
+        if ident.split(".")[-1] in known:
+            return ident.split(".")[-1]
+    return None
+
+
+def reads_in(body, env, fields_of):
+    """`{(struct, field)}` projected in `body`, subjects typed by `env` and by
+    the bindings the body itself makes."""
+    env = dict(env)
+    known = set(fields_of)
+
+    def resolve(chain):
+        segs = chain.split(".")
+        t = env.get(segs[0])
+        got = []
+        for seg in segs[1:]:
+            if t is None:
+                break
+            fs = dict(fields_of.get(t, []))
+            if seg in fs:
+                got.append((t, seg))
+                t = core_type(fs[seg], known)
+            else:
+                break
+        return t, got
+
+    for _ in range(2):  # bindings can feed bindings; two passes reach a fixpoint here
+        for m in re.finditer(r"\blet[ \t]+([A-Za-z_][\w']*)[ \t]*(?::[^=]*)?:=[ \t]*(%s)" % CHAIN, body):
+            t, _g = resolve(m.group(2))
+            if t:
+                env[m.group(1)] = t
+        for m in re.finditer(r"(%s)\.(?:%s)[ \t]*\(?[ \t]*fun[ \t]+\(?([A-Za-z_][\w']*)"
+                             % (CHAIN, "|".join(re.escape(h) for h in LAMBDA_HOSTS)), body):
+            t, _g = resolve(m.group(1))
+            if t:
+                env[m.group(2)] = t
+        for m in re.finditer(r"\bmatch[ \t]+(?:h[\w']*[ \t]*:[ \t]*)?(%s)[ \t]+with" % CHAIN, body):
+            t, _g = resolve(m.group(1))
+            if not t:
+                continue
+            nxt = re.search(r"\bmatch\b", body[m.end():])
+            scope = body[m.end():m.end() + (nxt.start() if nxt else len(body))]
+            for x in re.findall(r"\|[ \t]*\.?some[ \t]+([A-Za-z_][\w']*)", scope):
+                env[x] = t
+    reads = set()
+    for m in re.finditer(r"(?<![\w'.])(%s)" % CHAIN, body):
+        _t, got = resolve(m.group(1))
+        reads.update(got)
+        head, _, rest = m.group(1).partition(".")
+        if head in fields_of and rest.split(".")[0] in dict(fields_of[head]):
+            reads.add((head, rest.split(".")[0]))
+    return reads
+
+
+def inputs_main(audit, files, codes):
+    root_path, _ = typed_fields(codes, IN_ROOT_TYPE)
+    if root_path is None:
+        raise SystemExit("fields.py: no `structure %s` in the library -- the input half "
+                         "would gate nothing" % IN_ROOT_TYPE)
+    # The planner module's structures: the ones declared where `PlanReq` is.
+    local = re.findall(r"(?m)^structure[ \t]+([A-Za-z_][\w']*)", codes[root_path])
+    fields_of = {t: typed_fields({root_path: codes[root_path]}, t)[1] for t in local}
+    ir = callgraph.ir_root(files[0])
+    reached = callgraph.reachable(ir, root=callgraph.symbol(ROOT_DEF))[0]
+    reads = set()
+    for path in files:
+        pairs, _ = leanfiles.qualified_names(path, "def", code=codes[path])
+        table = {}
+        for w, q in pairs:
+            table.setdefault(w, q)
+        for n, a, b in chunks(codes[path]):
+            q = table.get(n, n)
+            if callgraph.symbol(q) not in reached:
+                continue
+            chunk = codes[path][a:b]
+            if ":=" not in chunk:
+                continue
+            sig, body = chunk.split(":=", 1)
+            env = {}
+            for k, v in param_types(sig).items():
+                t = core_type(v, set(fields_of))
+                if t:
+                    env[k] = t
+            # a `PlanReq.x (r : PlanReq)` view is also reached under generalised
+            # field notation; its binder typing covers it like any parameter.
+            reads |= reads_in(body, env, fields_of)
+    todo, seen, unread = [IN_ROOT_TYPE], set(), []
+    while todo:
+        t = todo.pop(0)
+        if t in seen:
+            continue
+        seen.add(t)
+        for f, ty in fields_of.get(t, []):
+            if (t, f) in reads:
+                c = core_type(ty, set(fields_of))
+                if c and c not in seen:
+                    todo.append(c)
+            else:
+                unread.append((t, f))
+    entries, bad = {}, []
+    text = IN_EXEMPT_FILE.read_text() if IN_EXEMPT_FILE.exists() else ""
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, reason = line.partition(" -- ")
+        key = tuple(name.split(".")[-2:])
+        if not sep or len(key) != 2:
+            bad.append("%s:%d  an entry is `<Type>.<field> -- <reason>`" % (IN_EXEMPT_FILE.name, lineno))
+            continue
+        if not ISO_DATE.search(reason) or not EXIT.search(reason):
+            bad.append("%s:%d  `%s` needs an ISO date and an EXIT" % (IN_EXEMPT_FILE.name, lineno, name))
+        entries[key] = lineno
+    for t, f in unread:
+        if (t, f) not in entries:
+            bad.append("UNREAD: %s.%s is decoded from the planner request and no definition "
+                       "%s reaches projects it -- read it, or name it in %s under a dated "
+                       "reason with an EXIT" % (t, f, ROOT_DEF, IN_EXEMPT_FILE.name))
+    for key, lineno in sorted(entries.items(), key=lambda kv: kv[1]):
+        if key not in unread:
+            bad.append("STALE: %s:%d  %s.%s is %s -- delete this line, the file may only "
+                       "shrink" % (IN_EXEMPT_FILE.name, lineno, key[0], key[1],
+                                   "READ now" if key in reads else "not a field this walk asks"))
+    prev = committed_exemptions(IN_EXEMPT_FILE)
+    if prev is not None:
+        prev_keys = {tuple(ln.strip().partition(" -- ")[0].split(".")[-2:])
+                     for ln in prev.splitlines() if ln.strip() and not ln.strip().startswith("#")}
+        for key in sorted(set(entries) - prev_keys):
+            bad.append("RATCHET: %s:%d  %s.%s is a NEW exemption -- this file may only SHRINK"
+                       % (IN_EXEMPT_FILE.name, entries[key], key[0], key[1]))
+    if audit:
+        for t in sorted(seen):
+            for f, _ty in fields_of.get(t, []):
+                print("  in  %-14s %-12s %s" % (t, f, "read" if (t, f) in reads else
+                                                "exempt" if (t, f) in entries else "UNREAD"))
+    for line in bad:
+        print(line)
+    asked = sum(len(fields_of.get(t, [])) for t in seen)
+    print("inputs: %d field(s) of %d record(s) the planner request decodes, %d read by a "
+          "definition %s reaches, %d exempt, %d UNANSWERED"
+          % (asked, len(seen), asked - len(unread), ROOT_DEF, len(entries), len(bad)))
+    return 1 if bad else 0
+
+
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    out_rc = main(sys.argv[1:])
+    files_ = sorted(leanfiles.lean_files(LIB))
+    codes_ = {p_: leanfiles.strip_comments(pathlib.Path(p_).read_text()) for p_ in files_}
+    in_rc = inputs_main("--audit" in sys.argv[1:], files_, codes_)
+    sys.exit(1 if out_rc or in_rc else 0)

@@ -2855,11 +2855,15 @@ proptest! {
     /// = one block on the running item, which is `App::extend_drops`' only reachable branch
     /// (the TUI asks it of `state.active.id` and nothing else). The kernel answers
     /// `Planner.overtimeDiff` — `diff` of its day and the day with the running estimate grown
-    /// — and it is ASSERTED equal, every field, to `planner::diff` of the fork's own two days
-    /// for the same what-if. What the kernel does not model is counted, by the property that
-    /// defines it: the fork's `PlanOverrides::apply` also grows the running candidate's
-    /// `planned_min`, and on a day where that moves `diff` beyond what the estimate alone
-    /// moved, the kernel's answer is the estimate's (README gap 2680, the owner's question).
+    /// — and it is ASSERTED equal, every field, to `planner::diff` of the fork's two days AS
+    /// THE SHIPPED TUI BUILDS THEM (estimate grown and `extending` applied, D53). The one
+    /// class it is not is **parity P44**, defined by its property: the fork's
+    /// `PlanOverrides::apply` also grows the running candidate's `remaining_min`,
+    /// `planned_min` and `need_min` (a candidate fact, D34), and on a day where that moves
+    /// `diff` beyond what the estimate alone moved, the kernel's answer is ASSERTED to be the
+    /// estimate's and the day is counted as P44 (README gaps 2680, 2731). *(Until the W-34
+    /// repair this arm asserted against the estimate-only what-if on every day — a
+    /// configuration no shipped path builds — and only counted the shipped one.)*
     #[test]
     fn the_kernel_draws_the_open_block_and_answers_the_overtime_what_if_the_fork_answers(
         case in case_strategy()
@@ -2927,16 +2931,31 @@ proptest! {
             let f_full = fork_diff(&planner::diff(&base, &alt_full));
             prop_assert!(!plan["overtime"].is_null(), "the kernel did not answer `overtime`");
             let k = kernel_diff(&plan["overtime"]);
-            prop_assert_eq!(
-                &k, &f_est,
-                "the kernel's overtime `diff` differs from the fork's for the same what-if"
-            );
-            otc = 1;
-            otids = (k.0.len() + k.1.len() + k.2.len()) as u64;
-            if f_full != f_est {
+            // THE COMPARAND IS THE SHIPPED CONFIGURATION (D53; W-34 repair, README gap 2731).
+            // The shipped what-if is what `App::extend_drops` builds for the running block — the estimate
+            // grown AND `PlanOverrides::extending` applied — and until the repair this arm
+            // ASSERTED against the estimate-only what-if, which no shipped path builds, while the shipped one was only
+            // counted. The one class where the kernel answers otherwise is registered as
+            // **parity P44** and defined by its property, never by a list: the fork's
+            // `PlanOverrides::apply` grows the running candidate's `remaining_min`,
+            // `planned_min` and `need_min`, a CANDIDATE FACT the kernel may not derive (D34), so
+            // on a day where that growth moves `diff` beyond what the estimate alone moved
+            // (the two fork what-ifs differ) the kernel's answer is the estimate's — asserted, not assumed.
+            if f_full == f_est {
+                prop_assert_eq!(
+                    &k, &f_full,
+                    "the kernel's overtime `diff` differs from the shipped TUI's what-if"
+                );
+            } else {
+                prop_assert_eq!(
+                    &k, &f_est,
+                    "on a parity-P44 day the kernel's overtime `diff` is not the estimate's"
+                );
                 otextra = 1;
                 otdrops = f_full.0.len() as u64;
             }
+            otc = 1;
+            otids = (k.0.len() + k.1.len() + k.2.len()) as u64;
         } else {
             prop_assert!(
                 plan["overtime"].is_null(),
@@ -2967,9 +2986,9 @@ proptest! {
         }
         eprintln!(
             "planner_invariants W-34 census: {cases} cases, open-block rows compared {orows} on \
-             {odays} days, overtime what-ifs ASSERTED against the fork's `diff` of the same \
-             what-if {ocmp} (ids compared {oids}), days where the fork's `extra_min` override \
-             moved the answer beyond the estimate's (README gap 2680, counted) {oextra}, with \
+             {odays} days, overtime what-ifs ASSERTED against the shipped TUI's `diff` {ocmp} \
+             (ids compared {oids}), of which parity-P44 days (the fork's `extra_min` override \
+             moved the answer beyond the estimate's; asserted equal to the estimate's) {oextra}, with \
              {odrops} fork drops on them, cases with no kernel §7 answer {noprio}"
         );
     }
@@ -3003,7 +3022,11 @@ proptest! {
 //
 // The multiplier is DRAWN as well as left at the default: `Model::default()`
 // sizes every candidate at `1.0`, which would test one of zmij's spellings
-// (`1.0`) and none of its other layouts (`1.6`, `0.3`, `1e-6`, `123.456`).
+// (`1.0`) and none of its other layouts (`1.6`, `0.3`, `123.456`).  `1e-6` and
+// `1e-5` are drawn too and are NEVER DIGESTED here: a candidate sized that
+// small plans to zero minutes and no row carries it (W-34's reuse critic, 52
+// of 273 days; README gap 2742).  This comment said the arm tested `1e-6`
+// until the W-34 repair; the scientific layouts are pinned in Lean only.
 // Setting `model.duration["_default"]` is a WIDENING of what this arm sees
 // (D46); the arms above are untouched.
 // ===========================================================================
@@ -3015,8 +3038,9 @@ proptest! {
 /// (550); kept breaks (551); days a class explained; batch rows digested;
 /// days `deferred` was compared; deferred ids compared; days `deferred` was
 /// compared whole on a day carrying an open-block row; days with a drawn break;
-/// days whose rest debt was non-zero.
-static HASH_CENSUS: Mutex<[u64; 17]> = Mutex::new([0; 17]);
+/// days whose rest debt was non-zero; kernel rows digested with a multiplier other
+/// than `1.0` (W-34 repair, README gap 2742 -- a DRAW is not a DIGEST).
+static HASH_CENSUS: Mutex<[u64; 18]> = Mutex::new([0; 18]);
 
 /// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
 /// for the `inst` text a kernel row carries.
@@ -3290,7 +3314,7 @@ proptest! {
         }
         let batches = krows.iter().filter(|s| matches!(s.kind, SegKind::Batch(_))).count() as u64;
         let [cases, noprio, cmp, eq, agree, digested, drawn, n554, n550, n551, nexpl, nbatch,
-             ndefdays, ndefids, naside, nbrk, nrest] = {
+             ndefdays, ndefids, naside, nbrk, nrest, nmult] = {
             let mut c = HASH_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += 1 - compared;
@@ -3309,6 +3333,10 @@ proptest! {
             c[14] += set_aside;
             c[15] += u64::from(drew_break);
             c[16] += u64::from(rest_debt);
+            c[17] += krows
+                .iter()
+                .filter(|s| s.flags.multiplier.is_some_and(|m| m != 1.0))
+                .count() as u64;
             *c
         };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
@@ -3323,6 +3351,13 @@ proptest! {
             prop_assert!(eq > 0, "no kernel hash equalled the fork's in {cases} cases");
             prop_assert!(agree > 0, "no day's rows agreed with the fork's in {cases} cases");
             prop_assert!(drawn > 0, "no multiplier was drawn in {cases} cases");
+            // A DRAW IS NOT A DIGEST (W-34 repair, README gap 2742): W-34's reuse critic found
+            // that on every day drawing `1e-5` or `1e-6` no kernel row carried a multiplier --
+            // a candidate sized that small plans to zero minutes and is placed nowhere -- so
+            // `drawn > 0` held while zmij's scientific layout reached no digest. This floor
+            // counts what the emitter DIGESTED; the scientific layouts are pinned in Lean
+            // (`Planner.multText_is_zmijs`, `Planner.the_placement_bytes_are_the_forks`).
+            prop_assert!(nmult > 0, "no row was digested at a multiplier other than 1.0 in {cases} cases");
             prop_assert!(nbatch > 0, "no batch row was digested in {cases} cases");
             prop_assert!(ndefids > 0, "no DEFERRED id was compared in {cases} cases");
             prop_assert!(nbrk > 0, "no break was drawn in {cases} cases");
@@ -3332,7 +3367,7 @@ proptest! {
         eprintln!(
             "planner_invariants hash census: {cases} cases; the EMITTER compared on all \
              {cases} ({digested} kernel rows digested, {nbatch} of them batches, {drawn} \
-             days at a drawn multiplier); the DAY compared with the kernel-ranked fork on \
+             days at a drawn multiplier, {nmult} rows DIGESTED at a multiplier other than 1.0); the DAY compared with the kernel-ranked fork on \
              {cmp} ({noprio} with no kernel §7 answer): hashes EQUAL {eq}, rows agree {agree}, \
              days explained by a recorded class {nexpl} — reservation multipliers (gap 550) \
              {n550}, kept breaks (gap 551) {n551}; open-block rows (gap 554, NO LONGER A \

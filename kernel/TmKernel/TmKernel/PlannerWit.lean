@@ -8003,10 +8003,10 @@ batch, both instance keys, two multipliers — is `Planner.the_placement_bytes_a
 `tm/tests/planner_invariants.rs`' W-34 block makes the comparison on every generated day, against
 the fork's function over the kernel's rows and against the kernel-ranked fork day (D53).
 
-It is `decide +kernel`, and that is a measurement, not a reflex (AGENTS §5.10a): probed at
-8G/120 s, the whole of `theRequest`'s day — the planner and the digest — checks in 1.6 s at
-1.1 GB, where the elaborator's `decide` stops at the default recursion depth after about 64
-bytes of FNV fold.  No `maxRecDepth`, `maxHeartbeats` or memory bound is set for it. -/
+It is `decide +kernel` over the whole planner, which AGENTS §5.10a forbids ("a measurement, not
+a reflex", this said); it checks in 1.6 s at 1.1 GB where the elaborator stops at the default
+recursion depth.  A dated line of `kernel/kernel-decide-exempt.txt`, which may only shrink, since
+the W-34 repair (README gap 2732, where the derivation that retires it is priced). -/
 
 /-- **The witness day's digest is the fork's**: `ace6c63d4bdc8084` is fork `DayPlan::hash` of the
 nine rows `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening` lists, with
@@ -8031,9 +8031,9 @@ theorem the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted :
 
 `Planner.dayDiagnostics` writes all twelve of `Diagnostics`' fields since W-34.  The two it had
 left at `Diagnostics.empty` each get a request that FILLS them and a control that does not, and
-W-33's tripwire over the pair is refuted here.  Every value below is `decide +kernel`, probed at
-8G/120 s (the three together: 4.4 s, 1.15 GB); the log line that made the elaborator's `decide`
-of this run exhaust 8 GB at W-33 (gap 2511's second reason) checks in the kernel in 2.5 s. -/
+W-33's tripwire over the pair is refuted here.  Three values below are `decide +kernel` — the answer
+to an 8 GB elaborator kill that AGENTS §5.10a forbids — each a dated line of `kernel-decide-exempt.txt`
+since the W-34 repair (README gap 2732); the fourth never needed it and is plain `decide`. -/
 
 /-- **The witness day's log with a break that ran short** — planned 20 minutes, taken 5, at 11:00
 — resumed by the kernel's own reader.  The line is written in place, here and in `restRun`, so
@@ -8099,7 +8099,7 @@ theorem the_underused_list_names_an_item_once_per_slot :
         [pCandDue ['m','1'] 5 true 100000 739867 60 .any true (by decide),
          pCand ['m','2'] 1 false 120 .any true (by decide)], by decide⟩ }).diagnostics.underused.val
       = [['m','2'], ['m','2']] := by
-  decide +kernel
+  decide
 
 /-- **So "the underused list holds each candidate at most once" is refuted**, at a day the kernel
 really plans. -/
@@ -8834,6 +8834,37 @@ theorem the_instance_key_is_spelled_as_serde_tags_it :
       .obj [(['D','a','t','e'], .str "2026-09-09".toList)] ∧
     Planner.serdeInstance none = .null := by
   refine ⟨by decide, by decide, by decide⟩
+
+/-- **`planJson_of_a_planned_day_is_the_requests_own_views`'s pre-W-34 form is REFUTED** (W-34
+repair, README gap 2739).  Track H restated that law IN PLACE when the emitter landed — its last
+pair went from `hashHex PlanHash.zero` to `hashHex (planDigest ..)` under the same name — and the
+old statement described the placeholder hole, so D5 asks for it refuted and renamed, not
+overwritten.  Here it is, false at `theRequest`: the restated law and the old one together would
+make `hashHex` of the fork's digest equal `hashHex` of zero, and `hashHex_reads_back` says
+`hashHex` loses nothing. -/
+theorem planJson_of_a_planned_day_emits_the_zero_hash_is_refuted :
+    ¬ ∀ r : PlanReq, PlanWire.planJson (dayPlan r)
+      = [("day".toList, .str (Field.renderDate r.today)),
+         ("window".toList, .obj [("lo".toList, .num (Look.day0Window r.look).1),
+            ("hi".toList, .num (Look.day0Window r.look).2)]),
+         ("budgetBlocks".toList, .num r.budgetBlocks),
+         ("segments".toList, .arr ((dayRows r).map PlanWire.segJson)),
+         ("diagnostics".toList, PlanWire.diagJson (dayDiagnostics r)),
+         ("priorities".toList, PlanWire.priosJson (dayPriorities r)),
+         ("hash".toList, .str (PlanWire.hashHex PlanHash.zero))] := by
+  intro h
+  have h1 := h theRequest
+  rw [PlanWire.planJson_of_a_planned_day_is_the_requests_own_views] at h1
+  have h2 := congrArg (fun l => l.getLast?) h1
+  simp only [List.getLast?_cons_cons, List.getLast?_singleton, Option.some.injEq,
+    Prod.mk.injEq, JVal.str.injEq, true_and] at h2
+  have h3 := congrArg Planner.mkHash? h2
+  rw [PlanWire.hashHex_reads_back, PlanWire.hashHex_reads_back] at h3
+  have h4 : (dayPlan theRequest).planHash = PlanHash.zero := by
+    rw [dayPlan_planHash]; exact Option.some.inj h3
+  have hv := congrArg Subtype.val h4
+  rw [the_witness_days_hash_is_the_forks] at hv
+  exact absurd hv (by decide)
 
 end PlannerWit
 end Tm

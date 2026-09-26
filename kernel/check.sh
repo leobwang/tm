@@ -715,6 +715,19 @@ else
 fi
 fi
 
+#    THE BUILD THE LATER CHECKS READ IS THE SOURCE'S (W-34 repair, README gap
+#    2736).  `mutate.py` builds each constant-folded mutant and restores the
+#    SOURCE in a `finally`; it does not rebuild.  So after a pass that built
+#    anything, `.lake/build/ir` held the LAST MUTANT's C, and checks 11 and 12
+#    read that call graph.  Driven by W-34's reuse critic on a red run: checks
+#    11 and 12 failed with "`tm_kernel_call` is not an emitted function" because
+#    `PlanWire.c` was missing; had the last mutant SURVIVED, they would have
+#    read a mutant's graph and said nothing.  One rebuild here makes every
+#    check after this line read what check 1 built.  On a settled tree it is
+#    Lake's no-op.
+( cd TmKernel && "$LAKE" build TmKernel:static >/dev/null 2>&1 ) \
+  || { say "rebuild after check 9" "FAILED"; fail=1; }
+
 # 10. The PARITY register has one home, and no number is issued twice.
 #
 #     A parity entry is a recorded divergence from the fork point 4748911
@@ -1207,9 +1220,45 @@ fi
 #     (5.11: re-measure, do not quote).
 out=$( python3 fields.py 2>&1 )
 if [ $? -eq 0 ]; then
-  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -2 | head -1 ))"
+  say "every decoded field has a reader" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
 else
   say "every emitted field has a writer" "FAILED"; fail=1
+  printf '%s\n' "$out" | head -20
+fi
+
+#     AND THE INPUT HALF (W-34 repair, README gap 2734): every field the
+#     planner request DECODES must be READ by a definition `Planner.dayPlan`
+#     reaches, or be a dated line of `inputs-exempt.txt` with an EXIT, which may
+#     only shrink.  W-34's reuse critic measured five decoded fields no
+#     definition of the day reads -- `RuntimeIn.brk`, `.lastHash`, `.yesterday`,
+#     `PlanOverrides.estMin`, `.extraMin` -- which no gate could see: this check
+#     was output-side only and check 12 counts a decoder as reached.  The gate's
+#     first run found exactly those five and no other.  `fields.py`'s input
+#     header has how a subject is typed and what that cannot see.  It prints
+#     its own line below this check's, one process for both halves.
+# 14. THE ENVIRONMENT CHECK 3 READS IS ONE THE KERNEL CHECKED.  W-34 repair,
+#     README gap 2730.  `#print axioms` reads the environment and does not
+#     re-check it, so a declaration added with the kernel check switched off is
+#     audited as if it had been checked.  DRIVEN at `fb05f4e` in a clone: a
+#     module importing `Lean` whose `def .. : True := by run_tac (withOptions
+#     (skipKernelTC := true) (addDecl (thmDecl `Tm.v34Bad : False := True.intro)))`
+#     let `theorem v34_one_is_two : (1 : Nat) = 2` build, print "does not depend
+#     on any axioms", and pass checks 1-13, rc=0.  totality.py now refuses the
+#     ROUTE (an import outside the kernel), and this is the PROPERTY: every
+#     library module is replayed into the environment its imports give by the
+#     pinned toolchain's `leanchecker`, whose `Environment.replay` runs the
+#     kernel with no options to switch off.  On the plant: rc=1, "(kernel)
+#     declaration type mismatch, 'Tm.v34Bad' has type True but it is expected
+#     to have type False".  `replay.py`'s header has what it cannot see (an
+#     axiom replays clean) and why it keeps a cache (a cold run is 3 min 21 s
+#     wall at 6 jobs, 181 s of it PlannerWit; a remembered pass is keyed on the
+#     module's .olean and every import's key, and a failure is never kept).
+out=$( python3 replay.py 2>&1 )
+if [ $? -eq 0 ]; then
+  say "the kernel replays every module" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+else
+  say "the kernel replays every module" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20
 fi
 

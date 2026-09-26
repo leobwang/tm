@@ -1279,7 +1279,16 @@ def sorried(text, line):
 # A proof that IS a decision procedure run on the statement: `by decide`, or an
 # anonymous constructor every one of whose components is `by decide` (a
 # conjunction or an iff -- a component that is DATA cannot be `by decide`).
-DECIDE_PROOF = re.compile(r"^(?:by decide|(?:by (?:refine|exact) )?⟨by decide(?:, by decide)*⟩)$")
+# `decide +kernel` IS the same procedure run by the kernel, and Lean 4.33 prints
+# the same "proved that the proposition .. is false" when it fails (probed:
+# `theorem x : (1:Nat) = 2 := by decide +kernel`).  Until the W-34 repair
+# (README gap 2735) this pattern did not accept it, so a constant that
+# falsified such a witness was read as a failing PROOF and not a failing
+# STATEMENT -- `Planner.serdeInstance` came back ALONE at W-34's land step for
+# exactly that reason.  totality.py keeps the sites themselves from growing.
+DECIDE = r"by decide(?: \+kernel)?"
+DECIDE_PROOF = re.compile(r"^(?:%s|(?:by (?:refine|exact) )?⟨%s(?:, %s)*⟩)$"
+                          % (DECIDE, DECIDE, DECIDE))
 # What Lean 4.33 prints when `decide` evaluates its proposition to `false`.
 DECIDED_FALSE = "Tactic `decide` proved that the proposition"
 

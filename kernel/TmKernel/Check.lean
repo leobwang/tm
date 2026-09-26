@@ -7141,3 +7141,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- APPENDED 2026-09-26 (stage 6, run W-34, land step; README gaps 2720-2729): the witness
 -- check 9's second pass asked for when the merge moved `Planner.serdeInstance`'s pin site.
 #print axioms Tm.PlannerWit.the_instance_key_is_spelled_as_serde_tags_it
+
+-- APPENDED 2026-09-26 (stage 6, run W-34, repair step; README gaps 2730-2769): the what-if's
+-- domain, both directions (gap 2737), and the refutation of `planJson`'s pre-W-34 form (gap 2739).
+#print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_a_day
+#print axioms Tm.Planner.the_extension_disagrees_past_a_day
+#print axioms Tm.PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted

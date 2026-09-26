@@ -67230,3 +67230,234 @@ further runs, 12/12 each (§1).  `--include-ignored`: T5 `kernel_replay_parity` 
 arm) and none added, no generator narrowed, no snapshot, fixture, latency band or corpus
 re-blessed, no memory bound raised, no external dependency, no `sorry` outside `Goals.lean`, no new
 axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-34**, **REPAIR STEP**,
+     on `rebuild-on-lean` in the main checkout, over the land step's `fb05f4e`.
+     Gap range **2730-2769**; **2730-2745 taken**, 2746-2769 free.
+     Parity: **P44 issued** (below); next free P45.
+     ===================================================================== -->
+
+## Stage 6 — W-34, repair: the kernel replays what the audit reads, the what-if is compared with the TUI's, and five decoded fields are named unread
+
+W-34's two independent auditors found nine defects and the reuse critic eight.  Each was
+REPRODUCED before it was repaired, in the clone `repair-w34/plant` (never the shared tree); each
+reproduction and each gate's first failure is in the handover's `driven`.  What follows is, per
+defect, what was found, what changed, and what is left by name.
+
+### 1. A proof of `1 = 2` passed all thirteen checks (blocker) — gap 2730
+
+**Reproduced** at `fb05f4e`: a library module importing `Lean` whose `def .. : True` runs, inside
+the run_tac tactic, `withOptions (debug.skipKernelTC := true) (addDecl (thmDecl Tm.v34Bad : False
+:= True.intro))`, beside `theorem v34_one_is_two : (1 : Nat) = 2 := (Tm.v34Bad).elim`, built, and
+`#print axioms Tm.v34_one_is_two` printed "does not depend on any axioms"; totality.py rc=0.  The
+hole predates W-34: `#print axioms` reads the environment and never re-checks it, and totality.py's
+rules are spellings (`run_cmd`, `#eval`, `set_option debug.skipKernelTC`) — a TACTIC and an option
+set by a function were not among them.
+
+**Two repairs, a property and a route.**  **Check 14** (`kernel/replay.py`) replays every module
+Lake compiles into the library from its `.olean` into the environment its imports give, through
+the pinned toolchain's own `leanchecker`, whose `Environment.replay` runs the kernel with no option
+to turn off.  On the plant: rc=1, "(kernel) declaration type mismatch, 'Tm.v34Bad' has type True but
+it is expected to have type False".  It needs no list of spellings.  The route is closed in check 2:
+**a kernel file imports only the kernel's own modules** (a property of the import line; every live
+import already is one), and the same plant without `import Lean` fails to build at `Unknown constant
+Lean.Elab.Tactic.TacticM`.  Its cost, measured: a cold replay is 6 min 3 s one module at a time
+(peak 3.1 GB; PlannerWit 181 s, Boundary 125 s) and **3 min 21 s at six jobs**; a module whose
+replay PASSED is remembered under a Merkle key (its `.olean` parts, the toolchain pin, and every
+import's key), a failure never, so a settled tree replays in about a second.  The root module is not
+replayed (`leanchecker TmKernel` matches every module by prefix — 18 GB, measured by accident below)
+and is instead held to "imports and nothing else", which AGENTS §2.2 already says it is.
+
+*What it cannot see:* `Environment.replay` re-adds an AXIOM without complaint, so an axiom added by
+metaprogramming would replay clean — that route is the import rule's and the `axiom` keyword ban's.
+
+### 2. The overtime what-if was asserted against a configuration no shipped path builds — gap 2731, **P44**
+
+**Reproduced**: `App::extend_drops` (`tm/src/tui/app.rs`) grows `active.est_min` AND applies
+`PlanOverrides::extending`; `planner_invariants`' W-34 arm asserted the kernel's `overtime` against
+the fork's day with the estimate grown only, and merely counted the shipped configuration.  The
+kernel cannot model the rest without deriving a candidate fact (the fork's `apply` rewrites
+`remaining_min`, `planned_min` and `need_min`), which D34 forbids.  **Repair:** the arm now asserts
+the kernel's `diff` equal to the SHIPPED what-if on every day where the override's candidate growth
+does not move the answer, and on the days where it does — the class, by its property — asserts the
+kernel's answer equal to the estimate's and counts the day as:
+
+**Parity P44 taken**: §9.1's overtime what-if for the running block — the fork's `PlanOverrides::apply` also grows the running candidate's remaining, planned and need minutes, and on a day where that moves `diff` beyond what the grown estimate moved, the kernel (which may not derive a candidate fact, D34) answers the estimate's `diff`
+
+`Planner.overtimeDiff`'s docstring said "Its `removed` IS `overtime_drops`" and is corrected: for
+the running item it is `App::extend_drops`' answer outside P44's days, and for any other item —
+the branch where fork `overtime_drops` moves only the override — it answers the empty diff where the
+fork can drop.  **Track D's commit title (`2aa746d`) and README title say "the TUI's overtime
+what-if is the kernel's"; the TUI is unchanged** (`git diff --stat 9551d66..fb05f4e -- tm/src
+tm-core` is empty; `app.rs` still calls `planner::overtime_drops`, `planner::plan` and
+`planner::diff`).  History is not rewritten; this sentence is the correction (shape 1 of the
+campaign: a claim of a thing that was never done).  At R3 the host must send the override-grown
+candidate facts, or P44 ships in the TUI's `→ drops:` line.
+
+### 3. `decide +kernel` over the whole planner (§5.10a) — gap 2732, and mutate's reading of it — gap 2735
+
+**Reproduced**: eight proof sites at `fb05f4e` (the auditor's twelve grep lines include four
+DOCSTRING mentions), zero at `9551d66`; one of them answered an 8 GB elaborator kill with the tactic
+§5.10a forbids.  **Probed each with plain `decide` at 8G/120 s**: two never needed it —
+`Planner.multText_is_zmijs` (0.5 s) and `PlannerWit.the_underused_list_names_an_item_once_per_slot`
+(1 s) — and are plain `decide` now; the other six stop at the elaborator's DEFAULT recursion depth
+at once (no memory spent), and raising it is the other thing §5.10a forbids.  **They are
+grandfathered, not rewritten**: `kernel/kernel-decide-exempt.txt` lists them, dated, with the EXIT —
+derive the digest from the nine rows a decided witness already lists and split the FNV fold with the
+fold-over-append law into chunks a plain `decide` takes — and check 2 refuses a `decide +kernel`
+outside the file, a line naming no site (STALE) and a line the committed file does not hold
+(GROWTH): it may only shrink.  **mutate.py** read `by decide +kernel` as a failing PROOF rather than
+a failing STATEMENT (Lean 4.33 prints the same "proved that the proposition .. is false" for both,
+probed), which is why `Planner.serdeInstance` came back ALONE at the land step; `DECIDE_PROOF` now
+accepts it.
+
+### 4. Check 11's second key read the SPELLING of a structure constructor — gap 2733
+
+**Reproduced**: `def v34Pair (x y : Nat) : Q := Q.mk x y` beside `Arith.util`'s `⟨need, avail⟩`
+formed no group (rc=0, group count 88 unchanged); spelled `⟨x, y⟩` it failed ALPHA.  Two readings
+were spelling-bound: the second key kept the outermost application as written (`protect`), and the
+ALPHA key reads the body verbatim.  **Repair:** a structure's constructor applied to its k fields
+is re-spelled `⟨_, .., _⟩` in both (`twins.anon_spelling`, `twins.single_ctor`), the structures
+read by the one scanner, `leanfiles.constructors` (a new `structures` out-parameter; one walk).
+A first attempt keyed on "a type with one constructor" by SHORT type name and missed the plant,
+because `Arith.Q` is a structure and `Replay.Q` an inductive of eighteen — keyed by the structure it
+is exact.  On the plant: rc=1, "ALPHA: .. Tm.Arith.util / Tm.Arith.v34Pair".  On HEAD: 88
+generalisation groups, 0 UNANSWERED, every census figure unchanged.  *Still unseen:* a single-
+constructor INDUCTIVE spelled both ways, and a constructor applied to a compound argument.
+
+### 5. Five decoded fields are read by nothing of the day — gap 2734 (check 13's input half)
+
+**Reproduced** by the gate itself, which found exactly the reuse critic's five and no other:
+`RuntimeIn.brk`, `.lastHash`, `.yesterday`, `PlanOverrides.estMin`, `.extraMin`.  **Check 13**
+gains an input half: every field of `Planner.PlanReq`, and of every planner-module structure a READ
+field of it holds, must be PROJECTED by a definition `Planner.dayPlan` reaches, or be a dated line
+of `kernel/inputs-exempt.txt` with an EXIT (may only shrink; STALE and RATCHET both fail).  33 fields
+of 7 records asked, 28 read, 5 exempt.  Driven: a read of `PrioCfg.batchMaxMin` replaced by `20`
+gives rc=1 "UNREAD: PrioCfg.batchMaxMin"; an exemption line for it gives "RATCHET".  Two false
+sentences it exposes are corrected: `PlanWire.lean` said the kernel compares `state.lastHash` (the
+host does, `tm/src/cli/planning.rs`), and **gap 605's "hysteresis is fed from
+`RuntimeIn.yesterday`" is false** — ranking reads `Look.Cand.yesterday`, so the state copy is a
+second wire spelling of one fact (§5.3).  And check 12's `CLASS unsent planner` reason named
+`Planner.dayPlan` as its root while the walk is rooted at `runPlanner`: re-measured, **61 of the
+`planner` class's 271 members are not reached from `dayPlan`** (41 PlanWire, 13 Planner, 6 PlanDiff,
+1 Priority); the reason now names the reader, the day and the emitter.  *The critic's plant — code
+added inside `readHash`, the decoder of an unread field — still passes checks 12 and 13*: the gap it
+exposed is now a named, dated, ratcheted line, which is the most a reachability gate can say about
+code on a live path.
+
+### 6. After a red check 9, checks 11 and 12 could read a mutant's IR — gap 2736
+
+`mutate.py` restores the source and not the build.  check.sh now rebuilds after check 9 (Lake's
+no-op on a settled tree), so every later check reads what check 1 built.
+
+### 7. The what-if left the reservation law's domain unnamed — gap 2737
+
+`PlanReq.extending` sets `estMin` without `mkActive?`.  Two theorems name the subdomain, both
+directions: `Planner.the_extension_agrees_when_the_estimate_fits_a_day` and
+`Planner.the_extension_disagrees_past_a_day`.  The what-if day past a day's estimate is still
+planned (D28); the reservation law does not cover it, and now says so.
+
+### 8. The D5 table missed two restatements — gap 2739
+
+W-34's table covered 23 of 26 changed statements.  Added here: **(1)**
+`PlanWire.planJson_of_a_planned_day_is_the_requests_own_views`, whose last pair went from `hashHex
+PlanHash.zero` to `hashHex (planDigest ..)` IN PLACE — its old form described the placeholder hole,
+so it is refuted and renamed now:
+`PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted`.  **(2)**
+`PlanWire.runPlanner_answers_the_day` gained `(ho : readOvertime sec = .ok ot)` and `++ overtimeJson
+req ot`; its old form is refuted through the FFI only (gap 2686), not in Lean — recorded, not
+closed.  (3) `segOf_replayed` is a generalisation and needs nothing.
+
+### 9. Gaps recorded, not repaired
+
+**Gap 2738 — 22 restated lifts exclude every running-block day and keep their names.**
+1. *What.*  W-34 moved 22 hypotheses from `pastRows` to `replayedRows` (e.g. `hnopast` in
+   `dayPlan_ok_core_given_the_budget`), and the logged open block is a replayed row, so the whole-day
+   lifts cover no day with a running block; the names say nothing of it.
+2. *Why.*  Renaming 22 theorems moves every citation of them, including in append-only README blocks
+   check 8 resolves; the cost was not taken in a repair step.
+3. *Cost.*  §3.1 item 4 and §7.4 item 3: a reader of a name overestimates the law.  The old forms are
+   refuted (`PlannerWit.the_paying_past_lifts_over_the_closed_rows_are_refuted`) and the from-now
+   lifts are unchanged, so nothing is false — only unnamed.
+4. *Clears it.*  A rename step with a citation sweep, or the running-block day proved in.
+
+**Gap 2740 — a running break is invisible to both planners, and `tm now` names a different current
+row in overtime and across a wall.**
+1. *What.*  Driven by W-34's auditor on the shipped (fork) planner: a running break leaves `tm now`
+   saying "nothing running" and `tm plan` scheduling over it with no Break row; in overtime the header
+   says "94m of 60m" while the current row is the next item; a block running across a wall is drawn
+   across it and `tm now` names the wall current.
+2. *Why.*  Fork behaviour at 4748911; fork `planner::plan` reads no `runtime.break_`, and neither does
+   the kernel (`RuntimeIn.brk` is one of gap 2734's five).
+3. *Cost.*  The kernel ports the same rows, so R3 ships these unchanged.
+4. *Clears it.*  The owner: whether §9's break and overtime rows should differ from the fork's — a
+   behaviour change needing a parity number.
+
+**Gap 2741 — `tm now` prints two readings of worked minutes on one screen.**
+1. *What.*  After an interruption the header's "125m of 120m" is wall-clock
+   (`tm/src/cli/planning.rs`, `elapsed_min`, the same at the fork) while the row and the kernel's
+   `openWorkedMin` say 105m.
+2. *Why.*  A fork quirk; W-34 made `openWorkedMin` the kernel's one reading and the host header stayed
+   a third.  3. *Cost.*  A user sees two numbers for one fact.  4. *Clears it.*  R3's host rewrite, reading
+   the kernel's minutes, with a behaviour row.
+
+**Gap 2742 — the plan hash has never been compared on a real tree or across DST, and the drawn
+scientific multipliers are never digested.**
+1. *What.*  `tm/src` sends no `planner` section (gap 2720), so no real tree's hash is the kernel's; the
+   arm draws one ISO week with `Config::default()`.  And on every day drawing `1e-5`/`1e-6` no kernel
+   row carried a multiplier (the reuse critic, 52 of 273 days), while the arm's header said it tested
+   `1e-6`.
+2. *Repair taken.*  The header is corrected and a floor counts rows DIGESTED at a multiplier other than
+   1.0 (`nmult > 0`), not draws; the scientific layouts are pinned in Lean only.
+3. *Cost.*  A DST edge or a real tree's bytes could disagree unseen until R3.  4. *Clears it.*  R3's first
+   real-tree drive, and a zone draw in the arm.
+
+**Gap 2743 — R3's readiness list and check 13's "12 of 12 written" miss payloads the host reads.**
+1. *What.*  `Diagnostics.underused` and `.blocked` are `IdList`; the fork's carry `(Id, u8, u8)` and
+   `(Id, Vec<Dep>)`, and `tm-core/src/emit.rs` reads the dropped components.
+2. *Why.*  Gap 323 records it; the land block's R3 list named only gap 2640.  Check 13 counts field
+   NAMES and cannot see a component.
+3. *Cost.*  R3 cannot delete `planner.rs` while `emit.rs` renders those components.
+4. *Clears it.*  Widen the two fields before R3; this gap joins R3's prerequisites beside 2640.
+
+**Gap 2744 — the land block's "compared with the fork by value" (§4 table) and track D's title
+overclaim the what-if** — corrected in §2 above; nothing further owed.
+
+**Gap 2745 — this step ran one command uncapped.**  Probing `leanchecker`, `lake env leanchecker
+--help` ran without the §2.1 prefix; `--help` is not a flag it knows, so it replayed every module at
+once and reached 18 GB RSS before it was killed by hand (no OOM; 123 GB box).  It is why
+`replay.py` runs modules one per job and never the root.  Recorded because §2.1 says never.
+
+**Driven for gap 2736, in the clone:** a line-neutral new definition (a lower-casing helper appended to `Planner.lean`), called
+from `readHash`; `mutate.py --gate` rc=1 (`:= cs` SURVIVED, `:= []` PINNED), after which
+`PlanWire.c` did not exist, `Planner.c` held the `:= []` mutant's boxed wrapper, and `reach.py`
+failed "`tm_kernel_call` is not an emitted function"; after the rebuild check.sh now does,
+`PlanWire.c` is back, the mutant's wrapper is gone, and `reach.py` fails only on the census digit
+the plant really moved.
+
+### 10. Acceptance, capped, on the tree committed here
+
+`check.sh` **all fourteen `ok`** (rc=0; warm 22.5 s with check 14 remembered, 3 min 43 s with check
+14 cold): build; totality; axiom audit **5,480 theorems** (Classical.choice 2,728, Quot.sound 4,121,
+propext 5,095; 382 depend on none); `Negative.lean` rejected; FFI **93**; corpus 29/37 and 4/5; stage
+goals **6**, all stage 6; prose citations 44,165, 0 unresolved; new definitions 346 rostered, 0 owed;
+parity **P1–P44**, next free P45; twins 3,127 bodies, 14 exact groups, 88 generalisation groups, 0
+UNANSWERED; reach 3,216 defs, 1,178 reachable, 1,262 exempt, 560 answered by property, 0 UNANSWERED;
+fields 12 of 12 written, and **33 decoded fields of 7 records, 28 read, 5 exempt**; **86 modules
+replayed by the kernel**.  `cargo test --workspace` **three runs: 1,483 passed / 0 failed / 9
+ignored across 87 result lines, each**; no `.proptest-regressions` file changed.
+`planner_invariants` 12/12 with `--nocapture`: the overtime arm asserted against the shipped TUI's
+`diff` on 137 of 273 cases, **5 of them parity-P44 days** (1 fork drop on them), 45 ids compared; the
+hash arm 126 of 273 hashes equal, **435 rows digested at a multiplier other than 1.0**.
+`--include-ignored`: T5 `kernel_replay_parity` 33, the door `kernel_log_door` 23,
+`cli_switch_acceptance` 16, `cli_latency` 6 (load 2.4-2.9; later verb 76.0 ms, 3y first verb 2.22 s),
+`kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+`kernel_item_grammar` 6, `kernel_planner_wire` 23.
+
+**No predicate weakened, no law narrowed (two statements gained a refutation or a named subdomain),
+no generator narrowed (the hash arm's floor was STRENGTHENED), no snapshot, fixture, latency band or
+corpus re-blessed, no memory bound raised, no external dependency, no `sorry` outside `Goals.lean`,
+no new axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.  Three
+exemption files are NEW (`kernel-decide-exempt.txt`, `inputs-exempt.txt`) or reasoned anew
+(`reach-exempt.txt`'s class line, text only): each grandfathers a measured set and may only shrink.**
