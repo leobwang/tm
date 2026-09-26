@@ -68458,3 +68458,268 @@ external dependency, no `.proptest-regressions` change.**
 
 **Parity P49 taken**: after an interruption or a pause, `tm now`'s header and `--json`'s `active.elapsed_min` are the WORKED minutes (`Replay::active_worked_min`, the log's open block), where fork 4748911 prints the wall clock since `started` (track E's second PARITY-PENDING, §4 of its block, gap 2741).
 
+### 2. The merge, and what it owed
+
+`git merge --no-ff` of `w35-k` (`61b311b`, clean), `w35-e` (`68e357b`) and `w35-r` (`c4ca4a9`).
+Every textual conflict was an END-OF-FILE APPEND by both sides — `README.md`, `Check.lean`,
+`PlannerWit.lean`, `PlanWire.lean`, `citations-allow.txt`, `mutations.txt` and
+`planner_invariants.rs` — resolved as the union (K's text, then E's, then R's); `reach-exempt.txt`'s
+`## Planner.lean` census line counts both tracks, **267** emitted definitions (260 at `fe49a8b`, K's
+three, E's four), and check 12 re-derived that number.  `Planner.lean` auto-merged (K's `dayRows`,
+reservation and wall edits beside E's diagnostics) and built first time.  After the merge, by name:
+K's `impossibleKept`/`owedByItsGrant` present (`grep -c` 65 and 26 in `PlanCheck.lean`), K's
+`breakRows`/`pauseRows` (25 and 13 in `Planner.lean`), E's `setRemaining` (33 in `Cmd.lean`),
+`impossibleUntil`/`underusedLevels`/`blockedDeps` (6/3/6 lines in `Planner.lean`, 8 each in `PlanWire.lean`), R's
+`planwire.rs`, `dayplan.rs`, `forkday.rs`, `planreq.rs` and the frozen fixture.
+
+**The composition test failed, and that was the point of it.**  The first run of the merged
+`planner_invariants` failed two of its fifteen tests:
+
+* **Track E's step-8 arm on a track-K day** — `underused`'s whole tuple differs:
+  kernel `[("zad", 4, 0)]`, fork `[("zad", 4, 0), ("zae", 3, 0)]`, shrunk to an overtime day
+  (`active: (0, 59 min run, est 30)`).  E wrote its arm against raw `planner::plan` on the tree
+  before D57; on a P46 day the kernel keeps the running block reserved and the fork places a second
+  item at `now`, so the fork's step 5 fills a slot the kernel's does not.  Track K had re-aimed every
+  earlier arm at `w35_fork_plan` (the D57 comparand — `planner::plan`, kernel-ranked, on every day
+  that is not P46/P47); E's arm, appended in parallel, could not have been.  It now calls the same
+  comparand.  **Gap 2910.**
+* **Track K's own `n46 > 0` floor** — "no overtime day (P46) was drawn in 313 cases".  K measured
+  1 and 5 P46 days in its two runs; the generator reaches one only by accident.  The arm now lowers
+  the running block's estimate to the minutes it has run on half its no-break days (a day the
+  generator could already draw, drawn more often); no assertion, floor or shared generator changed.
+  Measured over the eight passing standalone runs: P46 days **7, 5, 5, 3, 3, 5** before the
+  1:1 weight and **6, 7** after it.  The floor is still probabilistic — see gap 2910.
+
+The two seeds the failing run wrote are KEPT in `planner_invariants.proptest-regressions` (D46)
+and pass.  Check 9 then refused the tree on drift, not on a verdict: the union held both tracks'
+rows for eleven definitions (E's re-verification rows of the BASE bodies of four that K changed —
+`PlanReq.interrupted`, `PlanReq.activeRun`, `PlanReq.openStop`, `stepOneSegs` — and seven exact
+duplicates), which were dropped for the row whose sha is the merged body's; and **18 definitions**
+(53 pin sites) whose recorded line had moved under the other track's inserts were each re-run with
+`mutate.py --verify --write --only <file>:<name>` — two in the shared tree, sixteen in four
+`git clone --no-hardlinks` clones of `c4ca4a9` sharing the built `.lake`, each clone's `git status
+--porcelain` holding `mutations.txt` alone, the rows merged by line with no row written twice.
+**All 18 PINNED**, nothing hand-edited.  Gate: `381 new or changed since 86c4dc6, 381 rostered,
+0 owed`.
+
+### 3. The numbers the brief asked for
+
+* **`hnoimp`: all five lifts still carry it** (`PlanCheck.lean`'s four `(hnoimp : ∀ p ∈ …)` binders
+  and the census lift's `(hnoimp : subjectOf el .impossible r (dayPlan r) = false)`), in the WEAKER form D55 made possible — *no eligible
+  impossible item its grant OWES* — not removed.  Track K measured why and this step does not
+  soften it: on a spent-budget day (`PlannerWit.theUnassignedImpossibleRequest`) the day-0 grant
+  ignores the budget, so an owed item is dropped with every other hypothesis true (gap 2800), and
+  on a paying day the key orders impossible items by line, not due date (gap 2801).  Both are the
+  owner's.
+* **D57: three of three behaviours reach the day the kernel answers; none reaches the day the
+  shipped binary prints.**  `breakRows`, `pauseRows`, `blockedByWalls`, `activeStop`, `interrupted`,
+  `openStop`, `restsToday` and `stepOneSegs` are in `dayPlan`'s emitted call graph (check 12), and
+  the merged W-35 arm asserted each rule on every run below.  The shipped `tm plan` still plans with
+  fork `planner::plan` until R3 (gap 2806), and the drive in §5 shows it: under a running
+  `tm break` the shipped day draws no Break row and puts `laundry` at `15:22`, inside the break.
+* **Lifts restated**: `Planner.a_break_row_is_replayed_or_the_running_break` (replaces the refuted
+  a_break_row_is_a_replayed_row), `PlanCheck.a_block_row_from_now_clears_a_break_row` (a Block row
+  OF THE DAY, plus `hnowcal`), `PlanCheck.PastPays.offWall` (STRONGER: replayed Blocks also clear
+  the running break's span) and the five `hnoimp` lifts (weaker hypothesis, D55).  **None excludes a
+  running block.**  `PastPays.offWall` excludes only break days on which a logged, closed Block lies
+  over the running break; on a request with no running break it is the old hypothesis.  Gap 2738's
+  22 old exclusions stand, untouched (gap 2807).
+* **D56 on the merged binary**: `30b` → `20b` in place, and `30m` → `20b` in place on a running
+  item; a line with no estimate gets `est:1200m` (P48).  Transcript in §5.
+* **The `planner::` test files**: of the nineteen W-34 named, **one** compares the kernel's day
+  with frozen fork answers (`planner_fixtures`, through `support/forkday.rs`, 4 days); re-measured
+  here, 13 test files still contain `planner::`, 9 of them in code (`planner_regressions` 34 lines,
+  `planner_dynamics` 30, `planner_invariants` 27, `priority_plan_basic` 7, `planner_fixtures` 5 —
+  inside its fork region —, `emit_planner` 4, `tui_common` 3, `planner_common` 2 — region —,
+  `support/forkday.rs` 1, its needle).  Six plan with the fork outside any region (gap 2872).
+* **Check 13's inputs: 32 of 36 read, 4 exempt** (28 of 33 and 5 at `fe49a8b`: `RuntimeIn.brk` and
+  its record's three fields are now read).  Fields: 15 of 15 written (12 at `fe49a8b`: E's three
+  tuples).
+
+**Measured over the passing runs of `planner_invariants` on the merged tree** — eight standalone
+`--include-ignored --nocapture` runs (six, then two after the 1:1 weight), beside the six inside
+the workspace runs of §6, whose census was not captured.  Per standalone run of the six: P45 break days **67, 87, 82, 77,
+60, 64** (the shipped fork scheduled over the break on 19, 21, 28, 17, 18, 16); P46 **7, 5, 5, 3, 3,
+5** (the shipped fork reserved nothing on every one); P47 **28, 41, 27, 42, 40, 37** (the shipped
+fork drew the open row across the wall or marked it current on 20, 26, 16, 34, 28, 24); assigned
+rows compared against the D57 comparand 483-522; step 8's rest (E's arm, now on the comparand):
+conflicts 52-65 pairs, notes 185-218, `aCapacityLost > 0` on 26-32 days, impossible tuples
+3,379-3,638, underused 221-263, blocked 1,868-2,044 — **0 disagreements on every field of every
+run**.  The day's hash against the kernel-ranked fork: **equal on 113-134 of 279**, the rest
+explained by gap 550 (65-75 days) and gap 551's kept breaks — no day unexplained.
+
+### 4. R3 readiness, re-derived on the merged tree
+
+| W-34's item | now |
+|---|---|
+| **550** — the running block's `×` factor | **OPEN**: 65-75 of 279 generated days per run |
+| **551** — the cut's kept breaks | **OPEN**: 162-194 rows per run; 3 rows on the frozen fixture days |
+| **2640** — `until` on `impossible` | **CLOSED** (track E: `impossibleUntil`, compared by value, 0 disagreements) |
+| **2680 / D58** — the grown what-if facts | **HALF**: the host builds and sends-ready `overtime.grown` (track R, 8,820 cases against `apply`); `PlanWire.readOvertime` reads `id` and `blocks` only (gap 2873) |
+| **2720** — a host encoder/decoder | **BUILT, NOT WIRED** (`tm_core::planwire`): the wiring IS R3's body swap; the shipped capacity request still lacks `priority.batchMaxMin` (gap 2875) and the decoder completes three narrow fields from host facts, a call R3 must make (gap 2877) |
+| **2721** — the day's types | **CLOSED** (`tm-core/src/dayplan.rs`; `planner.rs` re-exports until R3) |
+| **2722** — the planner's comparand | **PARTLY**: `planner_fixtures` compares against frozen answers and survives the deletion in a clone; six files still plan with the fork outside a region (2872); the frozen set holds no running-state day (2871), which K's landing now makes freezable |
+| **2723** — `conflicts`, `notes`, `aCapacityLost` | **CLOSED** (track E, by value; on the D57 comparand since this step) |
+| not on W-34's list | **2870** (gap 435: the kernel writes no routine-row `⚠`; all 4 fixture days), **2873**, **2874** (four inputs the fork tolerated become refusals — behaviour rows owed) |
+
+**R3 is not yet only the body swap and the deletion: gaps 550, 551, 2870 (435), 2871, 2872 and
+2873 remain before it, 2875 and 2877 must be decided inside it, and 2874 and 2806 are its behaviour
+rows.**
+
+### 5. The merged binary, driven (transcript unabridged)
+
+`target/debug/tm` built from `df2b16d`'s `tm/src` (the commit changed tests and ledgers only), copied
+to `land-w35/tm`, `tm init --example --dir plan`, the real clock (2026-09-26 15:22), every call under
+`systemd-run … MemoryMax=8G`:
+
+```
+$ tm start ^a1
+▶ ^a1 Insurance claim for the bike · 15:22 · pred 4
+[exit 0]
+$ tm now
+▶ ^a1 Insurance claim for the bike · started 15:22 · 0m of 30m
+15:22  2 p5 ▶ Insurance claim for the bi…       30m     running · 30m left
+  15:22–15:52 · elapsed 0m · left 30m
+next
+15:52  ·      laundry 30m
+16:22  3 p5   Call the bank about the ca…       20m
+17:30  ·      dinner 30m
+0/6 blocks
+[exit 0]
+$ tm break 15m --where walk
+break 15m (walk)
+[exit 0]
+$ tm now
+▶ ^a1 Insurance claim for the bike · started 15:22 · 0m of 30m · paused
+15:22  ·      laundry 30m
+  15:22–15:52 · elapsed 0m · left 30m
+next
+15:52  3 p5   Call the bank about the ca…       20m
+16:52  3 p5   Insurance claim for the bi…       30m
+17:30  ·      dinner 30m
+0/6 blocks
+[exit 0]
+$ tm --json now
+{"now": "15:22", "date": "2026-09-26", "blocks_done": 0, "budget_blocks": 6,
+ "active": {"id": "a1", "title": "Insurance claim for the bike", "started": "15:22",
+            "est_min": 30, "elapsed_min": 0, "paused": true},
+ "current": {"start": "15:22", "end": "15:52", "minutes": 30, "kind": "routine",
+             "energy": null, "item": "laundry", "mark": "", "text": "15:22  ·      laundry 30m"},
+ "next": [{"start": "15:52", "end": "16:52", "minutes": 60, "kind": "block", "energy": 3,
+           "item": "p1", …}, {"start": "16:52", "end": "17:30", "minutes": 37, "kind": "block",
+           "energy": 3, "item": "a1", …}, {"start": "17:30", "end": "18:00", "minutes": 30,
+           "kind": "routine", "item": "dinner", …}]}
+[exit 0]
+$ tm plan
+2026-09-26 · window 15:22–19:00 · budget 6 blocks
+15:22  2 p5 ▶ Insurance claim for the bi…       30m     0m so far
+15:22  ·      laundry 30m
+15:52  3 p5   Call the bank about the ca…       20m
+16:52  3 p5   Insurance claim for the bi…       30m
+17:30  ·      dinner 30m
+18:00  2 p5   Ask Prof. Lee about the re…       15m
+19:00  ───    window ends 19:00
+19:00  ·      groceries 45m
+19:45  ·      shower 20m
+20:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· d1 CS 234 pset 2 impossible: 7.8b short by 2026-09-11
+· hot: d1
+· dropped: d1 · d2 · c2
+IMPOSSIBLE d1 CS 234 pset 2: needs 7.8b, 0b available by 2026-09-11
+[exit 0]
+$ tm --json plan      (keys, hash, the first four segments, any Break kind)
+keys: ['date', 'window', 'budget_blocks', 'blocks_done', 'hash', 'segments', 'diagnostics',
+       'priorities', 'wrote', 'diff', 'explain']
+hash 88964fea0e6f1380
+window ['15:22', '19:00']
+{"start": "15:22", "end": "15:22", "minutes": 0, "kind": "block", "energy": null, "item": "a1", "mark": "▶", …"0m so far"}
+{"start": "15:22", "end": "15:52", "minutes": 30, "kind": "routine", "energy": null, "item": "laundry", "mark": "", …}
+{"start": "15:52", "end": "16:52", "minutes": 60, "kind": "block", "energy": 3, "item": "p1", "mark": "", …}
+{"start": "16:52", "end": "17:30", "minutes": 37, "kind": "block", "energy": 3, "item": "a1", "mark": "", …}
+any break kind: []
+$ tm add --to week '- [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3'
+- [ ] 2 30b Big migration due:2026-09-26T18:00 ^x3 → week/2026-W39.md
+[exit 0]
+$ tm edit ^x3 est=20b
+- [ ] 2 20b Big migration due:2026-09-26T18:00 ^x3
+[exit 0]
+$ grep x3 week/2026-W39.md
+7:- [ ] 2 20b Big migration due:2026-09-26T18:00 ^x3
+$ tm edit ^a1 est=20b
+- [>] 2 20b Insurance claim for the bike  ^a1
+[exit 0]
+$ grep a1 backlog.md
+2:- [>] 2 20b Insurance claim for the bike  ^a1
+$ tm add --to week '- [ ] 2 Plain line ^y1'
+- [ ] 2 Plain line ^y1 → week/2026-W39.md
+[exit 0]
+$ tm edit ^y1 est=20b
+- [ ] 2 Plain line est:1200m ^y1
+[exit 0]
+8:- [ ] 2 Plain line est:1200m ^y1
+$ tm check
+no problems
+[exit 0]
+$ tm log | tail -4
+2026-09-26 15:22 edit field="est" from="30m" id="a1" to="20b"
+2026-09-26 15:22 edit field="add" from="" id="y1" to="- [ ] 2 Plain line ^y1"
+2026-09-26 15:22 edit field="est" from="" id="y1" to="20b"
+[exit 0]
+```
+
+(The `tm --json now`/`plan` objects are re-wrapped here; the elided `…` fields are the rows'
+`text`, which the plain `tm plan` above prints.)  **Read plainly:** D56 is what the owner decided.
+D57 is not visible to a user yet, and the drive is the evidence rather than a claim: the running
+`tm break` is `paused` in `tm now`'s header, the shipped day still marks `^a1` `▶` at `15:22`, draws
+no Break row, and schedules `laundry` from `15:22` — inside the 15-minute walk.  That is P45's fork
+side exactly, and R3 is what changes it (gap 2806).  An overtime or wall-on-now drive was not run:
+the shipped binary would show the fork's day for the same reason.
+
+### 6. Acceptance, capped, on the committed tree (`df2b16d`, `git status --porcelain` empty before and after)
+
+* **`check.sh` 14 of 14 ok**, 22.8 s: build; totality; axiom audit **5,560** theorems
+  (Classical.choice 2,778, Quot.sound 4,197, propext 5,175; 382 depend on none); `Negative.lean`
+  rejected; FFI **95**; corpus **29/37** and **4/5**; stage goals **6**; prose citations 45,093
+  (0 unused allow entries); check 9 **381 rostered, 0 owed**; parity **P1-P49, next free P50**;
+  twins 3,149 bodies, 14 exact and 90 generalisation groups, 0 UNANSWERED; reach 1,185 reachable,
+  **1,263 exempt**, 574 answered by property, 0 UNANSWERED; fields **15 of 15**; inputs **32 of 36
+  read, 4 exempt**; replay **86** modules.
+* **`cargo test --workspace`, THREE runs: 1,511 passed / 0 failed / 10 ignored across 89 result
+  lines, each** (5 m 15 s, 5 m 32 s, 5 m 35 s; load 2.4-3.2).  Before the land commit, the same
+  sources but for the 1:1 weight and a comment made three more identical runs.
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16, `cli_latency`
+  **6 of 6**, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9, `planner_fixtures` 13
+  — all green; `planner_invariants` 15 of 15 on the eight standalone runs of §3 and inside all six
+  workspace runs (and failed 2 of 15 on the
+  first merged run, §2).
+* No `.lean` file edited by this step; no predicate, assertion, floor or generator weakened; no
+  snapshot, latency band or corpus re-blessed; no memory bound raised; no external dependency.
+
+### 7. Gaps (2910-2911)
+
+**Gap 2910 — two tracks' arms in one file: the second composed against the first only at the merge.**
+1. *What.*  Track E's step-8 arm compared against raw `planner::plan` and failed on the merged tree's
+   P46 days; fixed by calling `w35_fork_plan`.  Track K's `n46 > 0` floor failed on a run that drew
+   no overtime day; the arm now draws one more often, but the floor still depends on the shared
+   generator reaching a reservation (3-7 P46 days in 279 cases per run).
+2. *Why.*  Two appended arms were written against two different kernels; nothing in either track
+   could see the other's day.  A generated floor on a rare class is a probability, not a guarantee.
+3. *Cost.*  A run that draws no P46 day fails the floor — loudly, never silently — at a measured
+   rate of roughly e^-5 per run at 5 expected days.
+4. *Clears it.*  A P46 day constructed deterministically (a fixed-case test beside the arm, as
+   `PlannerWit.in_overtime_the_running_block_stays_current` is for the kernel), after which the
+   floor can count it; or a generator that draws `worked ≥ est` directly.
+
+**Gap 2911 — R3's remaining list, as measured here** (§4): 550, 551, 2870, 2871, 2872, 2873 before
+it; 2875 and 2877 inside it; 2874 and 2806 as its behaviour rows.  1. *What.*  R3 is not only the
+body swap and the deletion.  2. *Why.*  §4.  3. *Cost.*  A body swap now would change the shipped
+day on 145-166 of 279 generated days (550/551), drop the `⚠` from every scheduled window task's
+routine row (2870), and swap in D57's rows with no frozen running-state day to watch them (2871).
+4. *Clears it.*  One step per item, `planner_fixtures` the model; the owner for 2877.
+Gap 2876 is closed in `planner_invariants.rs`; its three prose sites in `Planner.lean`
+(`kernel_capacity::prio_of`, `kernel_capacity`'s `prio_of`) stand, because an edit there costs a
+kernel rebuild and a check-14 replay for three comments.
