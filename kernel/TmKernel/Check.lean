@@ -5622,7 +5622,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- `the_break_law_applies_at_the_census_request` showing it is not vacuous.
 -- Burn-down 10 -> 9.
 --
--- `dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day` is how far design §6.1's
+-- `dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item` is how far design §6.1's
 -- lift has come: NINE of the eleven at every eligibility, two of those nine
 -- true only because they are empty, and the missing two are `monotoneInRank`
 -- and `hotBeforeQueue`, which wait on Planner.eligibleAt (gap 365).
@@ -5630,15 +5630,20 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day
 #print axioms Tm.PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day
 #print axioms Tm.PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day
-#print axioms Tm.PlanCheck.the_day_names_no_impossible_item
+-- DELETED AT W-33 (track P): the_day_names_no_impossible_item, `:= rfl`, described the
+-- hole P8's first half closed; REFUTED as PlannerWit.the_day_names_no_impossible_item_is_refuted
+-- and replaced by Planner.dayPlan_impossible / Planner.PlanReq.mem_dayImpossible (audited below).
 #print axioms Tm.PlanCheck.batchDoesNotReachPast_of_no_batch_row
 #print axioms Tm.PlanCheck.impossibleKept_of_no_impossible
 #print axioms Tm.PlanCheck.energyFilterOk_is_true_because_its_subject_is_empty_on_an_unassigned_day
 #print axioms Tm.PlanCheck.noDemandingAfterWindDown_is_true_because_its_subject_is_empty_on_an_unassigned_day
 #print axioms Tm.PlanCheck.batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day
-#print axioms Tm.PlanCheck.impossibleKept_is_true_because_its_subject_is_empty
+-- DELETED AT W-33 (track P): impossibleKept_is_true_because_its_subject_is_empty -- REFUTED as
+-- PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted; the law it stood in
+-- front of is PlanCheck.impossibleKept_of_nothing_assigned_iff (audited below).
 #print axioms Tm.PlanCheck.plan_places_no_block_over_a_break
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+-- RENAMED WITH ITS THEOREM AT W-33 (not deleted): the lift takes `hnoimp`, and its name says so.
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
 #print axioms Tm.PlannerWit.censusRun_resumes_ok
 #print axioms Tm.PlannerWit.censusRun_resumes
 #print axioms Tm.PlannerWit.the_census_witness_loads
@@ -5844,7 +5849,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- Seventeen theorems, and what they settle is a question the two numbers this
 -- module already prints could not answer between them.  Section 14 of
 -- `PlannerWit.lean` measures SEVEN of the eleven checkers with a subject at
--- `theCensusRequest`; `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`
+-- `theCensusRequest`; `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`
 -- proves NINE of the eleven at every eligibility.  Neither says whether the
 -- other two are unproved or FALSE.
 --
@@ -5867,11 +5872,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --     its refutation is a weakening -- `Goals.plan_tail_drop`'s situation
 --     exactly.  The burn-down is 9, unchanged.  README gap 851.
 --
--- `dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day` assembles design 6.1's own
+-- `dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day` assembles design 6.1's own
 -- `planOk` from the nine plus the two, so that "nine of eleven" is the
 -- compiler's arithmetic and not a reader's (README gap 684's class).
 -- ===========================================================================
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+-- RENAMED WITH ITS THEOREM AT W-33 (not deleted): `hnoimp` added.
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
 #print axioms Tm.PlannerWit.queuedRun_resumes_ok
 #print axioms Tm.PlannerWit.queuedRun_resumes
 #print axioms Tm.PlannerWit.witBuildsQueued
@@ -5906,7 +5912,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   README gap 875.
 --   `the_two_comparisons_hold_at_the_reserved_day` and
 --   `the_two_comparison_lift_applies_at_the_reserved_day` give
---   `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day` the computed
+--   `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day` the computed
 --   instance it shipped without.  README gap 879.
 #print axioms Tm.PlannerWit.the_gather_predicate_refuses_on_each_clause
 #print axioms Tm.PlannerWit.the_gather_reads_each_of_its_five_clauses
@@ -6032,7 +6038,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- APPENDED 2026-09-19 (stage 6, run **W-20**, track G -- the quiet day, README
 -- gap 960, and the two clauses README gap 806 left unpinned).
 --
---   `dayPlan_ok_on_a_quiet_unassigned_day_except_hot` is **TEN of §6.1's eleven**, over the
+--   `dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item` is **TEN of §6.1's eleven**, over the
 --   WHOLE day and at every eligibility, for the class of requests whose log
 --   holds no Block and whose runtime holds no reservation.  W-19's ceiling was
 --   nine, over `withoutPast`'s day.  `monotoneInRank` is the tenth and
@@ -6050,8 +6056,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   `assignFold_owes` is the same first clause lifted over the whole walk.
 #print axioms Tm.PlanCheck.dayPlan_assigns_nothing_on_a_quiet_unassigned_day
 #print axioms Tm.PlanCheck.monotoneInRank_of_nothing_assigned
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot
+-- BOTH RENAMED WITH THEIR THEOREMS AT W-33 (not deleted): `hnoimp` added to each.
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.the_cursor_refuses_a_group_that_owes_nothing
 #print axioms Tm.PlanCheck.the_cursor_refuses_an_atomic_group_whose_run_is_broken
 #print axioms Tm.PlanCheck.the_cursor_skips_no_group_that_fits
@@ -6139,7 +6146,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 --   compiler's arithmetic and not a reader's over a table.
 --   `a_check_with_no_subject_is_a_free_pass` is what makes it a measurement;
 --   `planOk_of_no_subject` says what an empty census is worth.
---   `the_census_ceiling_is_seven_on_an_unassigned_day` proves SEVEN is a ceiling over every request,
+--   `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` proves SEVEN is a ceiling over every request,
 --   and `PlannerWit.the_census_ratio` reaches it at `theCensusRequest`.
 --   `PlannerWit.the_quiet_eleven_is_one_checker_biting` is the honest price of
 --   the eleven: one checker has a subject there.
@@ -6177,8 +6184,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.energyFilter_has_no_subject_on_an_unassigned_day
 #print axioms Tm.PlanCheck.windDown_has_no_subject_on_an_unassigned_day
 #print axioms Tm.PlanCheck.batch_has_no_subject_on_an_unassigned_day
-#print axioms Tm.PlanCheck.impossible_has_no_subject
-#print axioms Tm.PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day
+-- DELETED AT W-33 (track P): impossible_has_no_subject -- REFUTED as
+-- PlannerWit.impossible_has_no_subject_is_refuted; PlanCheck.impossible_has_no_subject_of_nothing_eligible
+-- and impossible_has_a_subject_iff_an_impossible_answer_is_eligible replace it (audited below).
+-- RENAMED WITH ITS THEOREM AT W-33 (not deleted): seven holds GIVEN no eligible impossible item;
+-- the unconditional ceiling is EIGHT now (the_census_ceiling_is_eight_on_an_unassigned_day, below).
+#print axioms Tm.PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item
 #print axioms Tm.PlannerWit.onlyOnWorkRows_is_work_anchored
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_census_day
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_day
@@ -6237,7 +6248,9 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.energyFilter_has_no_subject_from_now_on_an_unassigned_day
 #print axioms Tm.PlanCheck.windDown_has_no_subject_from_now_on_an_unassigned_day
 #print axioms Tm.PlanCheck.batch_has_no_subject_from_now_on_an_unassigned_day
-#print axioms Tm.PlanCheck.impossible_has_no_subject_from_now
+-- DELETED AT W-33 (track P): impossible_has_no_subject_from_now -- REFUTED as
+-- PlannerWit.impossible_has_no_subject_from_now_is_refuted; the four-check ceiling takes
+-- impossible_has_no_subject_of_nothing_eligible at its own `hnone`.
 #print axioms Tm.PlanCheck.rankSubjects_of_nothing_eligible
 #print axioms Tm.PlanCheck.hotSubjects_of_nothing_eligible
 #print axioms Tm.PlanCheck.rank_has_no_subject_of_nothing_eligible
@@ -6845,7 +6858,8 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_first_impossible_candidate_this_tree_has_had
 #print axioms Tm.PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted
 -- Its restatement's subject is empty at every request and every eligibility, and that
--- theorem was ALREADY here -- `PlanCheck.impossible_has_no_subject`, audited above.  A
+-- theorem was ALREADY here -- PlanCheck.impossible_has_no_subject, audited above (until W-33
+-- refuted it: the field is written now).  A
 -- second copy of it was written and deleted in this run (AGENTS 5.3).  Filling the list
 -- `PlanCheck.impossibleKept` reads is P8's step (gap 2321).
 -- Goals.plan_puts_hot_before_the_queue, refuted a THIRD time -- this time at a day the
@@ -6883,3 +6897,79 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day
 -- the paying set: FOUR at §28, SIX here.
 #print axioms Tm.PlannerWit.the_paying_set_is_six_and_the_batch_check_has_a_subject
+
+-- ===================================================================
+-- APPENDED 2026-09-25: stage 6, W-33, track P (AGENTS §6.3).
+-- `Diagnostics.impossible` IS WRITTEN -- P8's first half (README gaps 2321,
+-- 2419; gap 2403 moves from three of twelve fields to TEN).
+-- `Planner.PlanReq.dayImpossible` names every ANSWER whose own reported
+-- shortfall is positive (`Look.FloorOut.shortfall`), floored to minutes:
+-- exactly the shipped binary's `Prio::is_impossible` as `prio_of` reads the
+-- capacity op's grant (D53) -- a HOT floor that falls short included, a grant
+-- that is impossible only through R1's ceiling while its bin is not HOT
+-- excluded.  D34: the day reports its own section-7 answer; nothing derived.
+-- `hot`, `waiting`, `blocked`, `droppedTail`, `underused`, `planHonesty` are
+-- filled the same way; `deferred` and `restDebtMin` stay empty (gap 2511).
+--
+-- FOUR THEOREMS DESCRIBED THE HOLE AND ARE DELETED ABOVE, each refuted by
+-- computation in PlannerWit section 30.  FIVE lifts are RENAMED WITH THEIR
+-- THEOREMS above: four at every eligibility carry `hnoimp`, and the census
+-- ceiling of seven carries it too; the unconditional ceiling is EIGHT.
+--
+-- THE FINDING: at `slotFitRows` -- step 5's own energy clause at the rows it
+-- filled -- `impossibleKept` is FALSE at a day that PAYS with the other ten
+-- true: two impossible items contend for one day and the second, which fits
+-- every slot, gets none.  Gap 2510 is the owner question.  No goal is
+-- discharged; the burn-down stays 6.
+-- ===================================================================
+#print axioms Tm.Planner.PlanReq.dayImpossible_capped
+#print axioms Tm.Planner.PlanReq.mem_dayImpossible
+#print axioms Tm.Planner.PlanReq.a_granted_answer
+#print axioms Tm.Planner.PlanReq.a_named_grant_is_impossible_at_a_hot_bin
+#print axioms Tm.Planner.PlanReq.an_impossible_grant_at_a_hot_bin_is_short
+#print axioms Tm.Planner.PlanReq.a_named_answer_without_a_grant_is_a_short_floor
+#print axioms Tm.Planner.PlanReq.answerFor_of_mem
+#print axioms Tm.Planner.the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin
+#print axioms Tm.Planner.an_item_the_day_names_with_a_grant_has_impossible_numbers
+#print axioms Tm.Planner.eraseDups_length_le
+#print axioms Tm.Planner.PlanReq.dayHot_capped
+#print axioms Tm.Planner.PlanReq.dayWaiting_capped
+#print axioms Tm.Planner.PlanReq.dayBlocked_capped
+#print axioms Tm.Planner.dayDiagnostics_impossible
+#print axioms Tm.Planner.dayDiagnostics_hot
+#print axioms Tm.Planner.dayDiagnostics_waiting
+#print axioms Tm.Planner.dayDiagnostics_blocked
+#print axioms Tm.Planner.dayDiagnostics_droppedTail
+#print axioms Tm.Planner.dayDiagnostics_underused
+#print axioms Tm.Planner.dayDiagnostics_planHonesty
+#print axioms Tm.Planner.the_day_leaves_two_diagnostic_fields_empty
+#print axioms Tm.Planner.dayPlan_impossible
+#print axioms Tm.Planner.dayPlan_hot
+#print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
+#print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
+#print axioms Tm.PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned
+#print axioms Tm.PlanCheck.impossible_has_no_subject_of_nothing_eligible
+#print axioms Tm.PlanCheck.impossible_subject_iff
+#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible
+#print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
+#print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item
+#print axioms Tm.PlannerWit.the_day_names_no_impossible_item_is_refuted
+#print axioms Tm.PlannerWit.the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved
+#print axioms Tm.PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted
+#print axioms Tm.PlannerWit.impossible_has_no_subject_is_refuted
+#print axioms Tm.PlannerWit.impossible_has_no_subject_from_now_is_refuted
+#print axioms Tm.PlannerWit.theUnassignedImpossibleRequest_wallsAgree
+#print axioms Tm.PlannerWit.the_unassigned_impossible_request_agrees
+#print axioms Tm.PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item
+#print axioms Tm.PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_census_reaches_eight_on_an_unassigned_day
+#print axioms Tm.PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_impossible_check_over_the_paying_set
+#print axioms Tm.PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits
+#print axioms Tm.PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day
+#print axioms Tm.PlannerWit.the_day_names_an_impossible_floor
+#print axioms Tm.PlannerWit.the_impossible_request_fills_five_diagnostic_fields
+#print axioms Tm.PlannerWit.the_day_names_its_waiting_and_blocked_candidates
+#print axioms Tm.PlannerWit.eraseDups_keeps_the_first_where_dedupIds_keeps_the_last
+#print axioms Tm.PlannerWit.the_energy_clause_separates_the_energy_drop_from_the_contention_drop

@@ -7,7 +7,8 @@ diagnostics: twelve keys with values in them.  The kernel's `Planner.Diagnostics
 carries all twelve fields, with the fork's meanings and in the fork's order,
 and `PlanWire.diagJson` emits every one of them under its own key -- and
 `Planner.dayDiagnostics` writes THREE (`conflicts`, `aCapacityLost`, `notes`)
-and leaves nine at whatever `Diagnostics.empty` put there.  Found by hand,
+and leaves nine at whatever `Diagnostics.empty` put there (ten written and two
+left since the W-33 land step merged track P's seven writers).  Found by hand,
 while doing something else, the fourth composition gap of this campaign: a
 type that matches the fork's shape pins nothing about the fork's values, and no
 gate could tell a field that is empty because the day was clean from a field

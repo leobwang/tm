@@ -505,6 +505,29 @@ can_fail
 1 Probe26.lean
 1 Probe26b.lean
 
+# W-33 track P: FOUR theorems that described the hole `Diagnostics.impossible` was --
+# `the_day_names_no_impossible_item` (`:= rfl`), `impossibleKept_is_true_because_its_subject
+# _is_empty`, `impossible_has_no_subject`, `impossible_has_no_subject_from_now` -- were REFUTED
+# when P8's first half wrote the field, and FIVE lifts that stood on them were RENAMED with a
+# `_given_no_eligible_impossible_item` clause (`the_census_ceiling_is_seven_...` among them; the
+# unconditional ceiling is EIGHT now).  The counts below are the append-only README blocks of
+# W-18..W-32 citing the old spellings as they stood; every live sentence in the Lean sources
+# and in AGENTS names the successor or writes the dead name without backticks.  A later
+# sentence reaching for one of these fails here by count, which is the point.
+3 PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+1 dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+3 PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+1 dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+2 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot
+1 dayPlan_ok_on_a_quiet_unassigned_day_except_hot
+2 dayPlan_ok_on_a_quiet_unassigned_day_given_hot
+5 PlanCheck.impossible_has_no_subject
+2 impossible_has_no_subject
+8 PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day
+6 the_census_ceiling_is_seven_on_an_unassigned_day
+1 impossibleKept_is_true_because_its_subject_is_empty
+5 the_day_names_no_impossible_item
+
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
 # 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose

@@ -16,13 +16,12 @@
 # `aCapacityLost` and `notes`; the shipped fork fills all twelve, and W-32 read
 # them off `--json plan` with values in them (`dropped_tail`, `plan_honesty`).
 # Each line below is one field the wire carries and the day never fills.
+#
+# THE TWO, since the W-33 land step (2026-09-25).  Track P wrote seven of the
+# nine -- `impossible`, `hot`, `waiting`, `blocked`, `droppedTail`, `underused`
+# and `planHonesty` -- and at the merge their seven lines went STALE (check 13
+# failed on each by name, rc=1) and were deleted: the file shrank 9 -> 2, which
+# is the ratchet working.  The two left are README gap 2511's.
 
-Planner.Diagnostics.underused -- 2026-09-25: fork `underused_note`'s id list, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.hot -- 2026-09-25: the hot items step 8 reports; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.impossible -- 2026-09-25: §7.3's impossible items with their shortfall; nothing writes it, which is why `PlanCheck.impossibleKept` is provably empty (README gaps 2321 and 2419). EXIT: W-33 track P writes it; at the merge this line goes STALE and is deleted.
-Planner.Diagnostics.blocked -- 2026-09-25: the items blocked behind a dependency, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
 Planner.Diagnostics.deferred -- 2026-09-25: the ids step 8 reports as deferred (`Placed.deferred` is a different field of a different record, and writing THAT is not writing this). EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.waiting -- 2026-09-25: the items waiting on a date, step 8's; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.droppedTail -- 2026-09-25: §9's dropped tail; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.
-Planner.Diagnostics.planHonesty -- 2026-09-25: §11's ratio as a pair; nothing in the kernel's day writes it, so the wire carries `(0, 0)`. EXIT: P8 writes it, and this line goes STALE the day it does.
 Planner.Diagnostics.restDebtMin -- 2026-09-25: §11's rest debt; nothing in the kernel's day writes it. EXIT: P8 writes it, and this line goes STALE the day it does.

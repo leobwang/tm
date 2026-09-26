@@ -78,7 +78,7 @@
 # and check 12's summary line prints how many entries carry the note -- so the number
 # lives in one place, which is what §5.11 asks of every number in this repository.
 
-EXEMPT 1756
+EXEMPT 1772
 
 ## Arith.lean -- The exact-arithmetic layer. 18 of its 46 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Arith.Bin.ix
@@ -592,7 +592,7 @@ Tm.PlanCheck.withoutPast
 Tm.PlanWire.instantWithin
 Tm.PlanWire.kindJson
 
-## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 236 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 243 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file).
 Tm.Planner.CandKey.nums
 Tm.Planner.Capped.cons?
 Tm.Planner.Capped.nil
@@ -2011,3 +2011,23 @@ Tm.PlannerWit.theSkippedBatchRequest
 
 ## PlannerWit.lean -- W-33 track G, 2026-09-25 (README gap 2417, closed): the ONE candidate builder the six `Look.Cand` fixtures of this module were copies of. `bCand`, `bCandCap`, `cCand`, `pCand`, `pCandDue` and `pCandSmall` each wrote the thirteen-field constructor with its own literals; `oneCand` is that constructor written once, over the facts record `Look.WfPlanFacts`, and the six are its named instantiations now. It is a WITNESS FIXTURE in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name it, and `decide` is its only reader. The file does not grow by it: wfPlanFacts, the two-line wrapper only two of the six called, is retired in the same edit and its entry deleted, so `EXEMPT` stays at 1756. This section may only shrink. EXIT: this class ends when `PlannerWit.lean` stops being a leaf -- when a library module imports it, or when this builder is named by a definition the export reaches, the entry becomes REACHED and check 12 fails on it as STALE until it is deleted. It is the module's whole class and not this section's alone, and nothing in this campaign is planned to end it (gap 2412).
 Tm.PlannerWit.oneCand
+
+## Planner.lean -- W-33 track P, 2026-09-25 (README gaps 2321, 2403, 2419): §8.2 step 8's fields, written. `PlanReq.dayImpossible` fills `Diagnostics.impossible` with the answers the shipped binary calls impossible (P8's first half); `dayHot`, `dayWaiting`, `dayBlocked`, `dayDroppedTail`, `dayUnderused` and `dayPlanHonesty` fill six more. All seven are reached from the export ONLY through the request's `planner` section, exactly as the W-32 `## Planner.lean` section above says of the day planner they extend, and `tm/src` sends no such key. Measured: 7 of this module's definitions join that position here (the `## Planner.lean` census above is 243 with them). EXIT: R3. When the binary sends `planner`, the cut goes, every entry below becomes REACHED and check 12 FAILS on each as STALE until it is deleted. This section may only shrink.
+Tm.Planner.PlanReq.dayImpossible
+Tm.Planner.PlanReq.dayHot
+Tm.Planner.PlanReq.dayDroppedTail
+Tm.Planner.PlanReq.dayUnderused
+Tm.Planner.PlanReq.dayPlanHonesty
+Tm.Planner.PlanReq.dayWaiting
+Tm.Planner.PlanReq.dayBlocked
+
+## PlannerWit.lean -- W-33 track P, 2026-09-25 (README gaps 2510 and 2511): the nine witness fixtures section 30 of `PlannerWit.lean` adds -- the two requests with an impossible candidate on a day that assigns nothing (`theUnassignedImpossibleRequest`, which refutes the lifts that stood on the empty IMPOSSIBLE list, and `theCensusRequestWithAnImpossibleCandidate`, where the census reaches EIGHT), `slotFitRows` (the eligibility that reads §8.2 step 5's energy clause at the rows it filled) with `twoImpossibleCands` and `theTwoImpossibleRequest` (the day that pays on which `impossibleKept` is the one check of the eleven that fails), `impFloorCands` and `theImpossibleFloorRequest` (a HOT floor that falls short, named), and `waitBlockCands` and `theWaitingAndBlockedRequest` (the fixture `waiting` and `blocked` are pinned by). All are WITNESS FIXTURES in the sense `mutate.py`'s `WITNESS_MODULES` already names: `PlannerWit.lean` is a leaf no library module imports, so nothing `tm_kernel_call` reaches can name them, and `decide` is their only reader. This section may only shrink. EXIT: this class ends when `PlannerWit.lean` stops being a leaf -- when a library module imports it, or when one of these fixtures is named by a definition the export reaches, each entry here becomes REACHED and check 12 fails on it as STALE until it is deleted. It is the module's whole class and not this section's alone, and nothing in this campaign is planned to end it (gap 2412).
+Tm.PlannerWit.theUnassignedImpossibleRequest
+Tm.PlannerWit.theCensusRequestWithAnImpossibleCandidate
+Tm.PlannerWit.slotFitRows
+Tm.PlannerWit.twoImpossibleCands
+Tm.PlannerWit.theTwoImpossibleRequest
+Tm.PlannerWit.impFloorCands
+Tm.PlannerWit.theImpossibleFloorRequest
+Tm.PlannerWit.waitBlockCands
+Tm.PlannerWit.theWaitingAndBlockedRequest

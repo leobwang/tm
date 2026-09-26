@@ -1237,7 +1237,7 @@ proptest! {
 /// counters README gap **2222** is about — fork-assigned row ids the kernel was
 /// sent no candidate for, and fork-assigned row ids the kernel returned no §7
 /// grant for.
-static PLAN_CENSUS: Mutex<[u64; 32]> = Mutex::new([0; 32]);
+static PLAN_CENSUS: Mutex<[u64; 37]> = Mutex::new([0; 37]);
 
 /// **The `SegKind` words this run actually compared** — README gap **2227**.
 ///
@@ -1783,22 +1783,37 @@ fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
         let need = u32::try_from(g["need"].as_u64()?).ok()?;
         let p = u8::try_from(g["p"].as_u64()?).ok()?;
         let raw_p = u8::try_from(g["rawP"].as_u64()?).ok()?;
-        // `u` is the ONE field the grant does not carry, and §7.1's own definition rebuilds it:
-        // `need / avail`, with a zero capacity infinite. Nothing step 5 reads uses it — the
-        // planner reads `p` (`sort_key`, the hot flag) and `class` (§8.2 step 8's diagnostics) —
-        // and it is filled honestly rather than left `None`, which would read as "no pass".
-        let uu = if avail.num == 0 {
-            if need == 0 { 0.0 } else { f64::INFINITY }
-        } else {
-            f64::from(need) / (avail.num as f64 / avail.den as f64)
-        };
+        // `u` is the ONE field the grant does not carry, and the shipped reader rebuilds it:
+        // `kernel_capacity::prio_of` sets it only where the grant has an `until` and is not a
+        // wall, as the exact `need / avail` held on the kernel's side of 1 — at or above 1
+        // exactly when the grant's `bin` is `null` (HOT), below it otherwise. **W-33, README
+        // gap 2518: this spelling used to fill `need / avail` for EVERY grant, a zero capacity
+        // infinite**, so every undated candidate — no grant, `avail` 0, a positive `need` —
+        // read as HOT here and as not-HOT in the shipped binary. Nothing step 5 reads uses `u`;
+        // §8.2 step 8's `hot` and `impossible` do (`Prio::is_hot`, `Prio::is_impossible`), and
+        // this arm has compared both against the kernel since W-33, so the spelling is the
+        // shipped one now. (Walls never reach here: they are built above.)
+        let until = g["until"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
+        let bin = g["bin"].as_u64().map(|b| b as u8);
+        let units = unit(&g["avail"]);
+        let uu = until.is_some().then(|| {
+            let exact = if units == 0 {
+                f64::INFINITY
+            } else {
+                (u128::from(need) * CAP_DEN) as f64 / units as f64
+            };
+            match bin {
+                None => exact.max(1.0),
+                Some(_) => exact.min(1.0 - f64::EPSILON),
+            }
+        });
         out.push(Prio {
             id: c.id.clone(),
             p,
             class,
             k: u8::try_from(g["k"].as_u64()?).ok()?,
-            u: Some(uu),
-            bin: g["bin"].as_u64().map(|b| b as u8),
+            u: uu,
+            bin,
             need_min: need,
             avail_min: avail.floor_u32(),
             avail_min_exact: avail,
@@ -1806,7 +1821,7 @@ fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
             allocation_min_exact: alloc,
             shortfall_min: short.floor_u32(),
             shortfall_min_exact: short,
-            until: g["until"].as_str().and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok()),
+            until,
             hysteresis_applied: p != raw_p,
             raw_p,
         });
@@ -2161,6 +2176,132 @@ proptest! {
             );
         }
 
+        // **§8.2 STEP 8: THE KERNEL'S DIAGNOSTICS AGAINST THE KERNEL-RANKED FORK'S** (W-33,
+        // README gaps 2403 and 2321). Since W-33 the kernel writes seven of the twelve fields
+        // off its own answers — `impossible`, `hot`, `waiting`, `blocked`, `droppedTail`,
+        // `underused`, `planHonesty` — and the fork's `diagnose` computes all twelve for the
+        // very question the kernel was asked: `day2` is `with_ranking(cands, kernel_prios)`,
+        // the shipped wiring (D53). Each field is compared as a MULTISET, because the fork
+        // pushes in its candidate order and the kernel in the wire's and neither order is
+        // §8.2's contract; `impossible` compares the SHORTFALL too — the value, not the
+        // presence; `planHonesty` compares the ratio the fork prints, `None` at a zero budget.
+        // The other five fields are not written by this kernel yet (`conflicts`, `notes` and
+        // `aCapacityLost` are, since P1/P7, and are not this arm's question) and are not
+        // compared here: `deferred` and `restDebtMin` are README gap 2511.
+        let (mut dcmp, mut dimp, mut dhot, mut dmore, mut d554) = (0u64, 0u64, 0u64, 0u64, 0u64);
+        if let Some(d2) = day2.as_ref() {
+            let kd = &plan["diagnostics"];
+            let ids_of = |v: &Value| -> Vec<String> {
+                let mut x: Vec<String> = v
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|s| s.as_str().unwrap_or("<not a string>").to_string())
+                    .collect();
+                x.sort();
+                x
+            };
+            let sorted = |mut x: Vec<String>| -> Vec<String> {
+                x.sort();
+                x
+            };
+            let mut kimp: Vec<(String, u64)> = kd["impossible"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .map(|o| {
+                    (o["id"].as_str().unwrap_or("<no id>").to_string(),
+                     o["shortMin"].as_u64().unwrap_or(u64::MAX))
+                })
+                .collect();
+            kimp.sort();
+            let mut fimp: Vec<(String, u64)> = d2
+                .diagnostics
+                .impossible
+                .iter()
+                .map(|(id, short, _)| (id.to_string(), u64::from(*short)))
+                .collect();
+            fimp.sort();
+            prop_assert_eq!(
+                &kimp, &fimp,
+                "§8.2 step 8's `impossible` (id, shortfall minutes) differs from the \
+                 kernel-ranked fork's"
+            );
+            let fhot = sorted(d2.diagnostics.hot.iter().map(ToString::to_string).collect());
+            prop_assert_eq!(ids_of(&kd["hot"]), fhot.clone(), "§8.2 step 8's `hot` differs");
+            let fwait = sorted(d2.diagnostics.waiting.iter().map(ToString::to_string).collect());
+            prop_assert_eq!(ids_of(&kd["waiting"]), fwait.clone(), "§8.2 step 8's `waiting` differs");
+            let fblock =
+                sorted(d2.diagnostics.blocked.iter().map(|(id, _)| id.to_string()).collect());
+            prop_assert_eq!(ids_of(&kd["blocked"]), fblock.clone(), "§8.2 step 8's `blocked` differs");
+            // **`droppedTail` and `planHonesty` read the day's ASSIGNED set**, and on one class
+            // of day the two planners' sets differ for a reason README gap **554** already
+            // names: fork `open_block_segment` draws the worked stretch of the block the log
+            // holds OPEN (`[since, now)`, `SegFlags::open`), and the kernel does not port it.
+            // On most such days the reservation (§8.2 choice 5b) carries the running item into
+            // both sets anyway; where no reservation is placed (a wall covers `now`, overtime)
+            // only the fork's set holds it. Those days — and only those — are COUNTED, not
+            // compared, by the property that defines them: the fork's day carries gap 554's row
+            // for an item no kernel work row names. DRIVEN (W-33): the first run of this
+            // comparison found exactly this, `droppedTail` kernel `["zaa"]`, fork `[]`, at a
+            // running block whose `now` is a wall's start; the seed is kept (D46).
+            let kwork: BTreeSet<String> = plan["segments"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter(|s| s["kind"] == "block" || s["kind"] == "batch")
+                .flat_map(|s| {
+                    let mut ids: Vec<String> = s["batch"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or_default()
+                        .iter()
+                        .filter_map(|x| x.as_str().map(str::to_string))
+                        .collect();
+                    ids.extend(s["item"].as_str().map(str::to_string));
+                    ids
+                })
+                .collect();
+            let gap554 = d2.segments.iter().any(|s| {
+                matches!(s.kind, SegKind::Block)
+                    && s.flags.open
+                    && s.start < w.now
+                    && s.item.as_ref().is_some_and(|i| !kwork.contains(i.as_str()))
+            });
+            let fdrop =
+                sorted(d2.diagnostics.dropped_tail.iter().map(ToString::to_string).collect());
+            if !gap554 {
+                prop_assert_eq!(
+                    ids_of(&kd["droppedTail"]), fdrop.clone(),
+                    "§8.2 step 8's `droppedTail` differs"
+                );
+            }
+            let fund =
+                sorted(d2.diagnostics.underused.iter().map(|(id, _, _)| id.to_string()).collect());
+            prop_assert_eq!(
+                ids_of(&kd["underused"]), fund.clone(),
+                "§8.2 step 8's `underused` differs"
+            );
+            let planned = kd["planHonesty"]["planned"].as_u64().unwrap_or(u64::MAX);
+            let total = kd["planHonesty"]["total"].as_u64().unwrap_or(u64::MAX);
+            let kratio = (total != 0).then(|| planned as f64 / total as f64);
+            if !gap554 {
+                prop_assert_eq!(
+                    kratio, d2.diagnostics.plan_honesty,
+                    "§8.2 step 8's `planHonesty` differs (kernel {}/{})", planned, total
+                );
+            }
+            dcmp = 1;
+            dimp = kimp.len() as u64;
+            dhot = fhot.len() as u64;
+            dmore = (fwait.len() + fblock.len() + fund.len()) as u64
+                + if gap554 { 0 } else { fdrop.len() as u64 + u64::from(kratio.is_some()) };
+            d554 = u64::from(gap554);
+        }
+
         // **AND EVERY ROW THE FORK ASSIGNED IS A ROW THE KERNEL ANSWERED FOR**
         // (W-31, README gap 2222). W-29 measured *"the fork assigned 184-209
         // rows the kernel had no candidate for"* (gap 1905) and W-30 reported
@@ -2272,7 +2413,8 @@ proptest! {
         let rows = plan["segments"].as_array().map(Vec::len).unwrap_or(0) as u64;
         let [cases, walls, seen, wdiff, bdiff, acmp, aexempt, pdiff, sdiff, iddiff, kres, fres,
              grows, gday0, gdays, gdups, gsame, frdays, krows, funcand, fungrant, rdefer, ronlyc,
-             fonlyc, frows, rboth, ronlyc2, fonlyc2, frows2, rboth2, kindc, kindsk] = {
+             fonlyc, frows, rboth, ronlyc2, fonlyc2, frows2, rboth2, kindc, kindsk, dcmpc, dimpc,
+             dhotc, dmorec, d554c] = {
             let mut c = PLAN_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += kw.len() as u64;
@@ -2306,6 +2448,11 @@ proptest! {
             c[29] += krout.iter().filter(|r| frout2.contains(r)).count() as u64;
             c[30] += kindcmp;
             c[31] += kindskip;
+            c[32] += dcmp;
+            c[33] += dimp;
+            c[34] += dhot;
+            c[35] += dmore;
+            c[36] += d554;
             *c
         };
         // **THE COMPARISON IS NOT VACUOUS**, asserted inside the fuzz: a run
@@ -2414,6 +2561,16 @@ proptest! {
                 "the fork placed no routine on any of {cases} cases, so the days the \
                  `routines` exemption used to remove are not being drawn"
             );
+            // **AND §8.2 STEP 8's COMPARISON HAS ITS FLOORS** (W-33). The comparison sits
+            // inside `if let Some(d2) = day2`, which a run can skip on every case; and a run
+            // that compared seven empty lists on every day compared nothing.
+            prop_assert!(dcmpc > 0, "§8.2 step 8 was compared on no day of {cases} cases");
+            prop_assert!(
+                dimpc > 0,
+                "no IMPOSSIBLE row was compared in {cases} cases, so `impossible` and its \
+                 shortfall were checked against nothing"
+            );
+            prop_assert!(dhotc > 0, "no HOT id was compared in {cases} cases");
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
@@ -2437,7 +2594,11 @@ proptest! {
              only the fork {fonlyc2}, \
              `SegKind` words compared against `kind_label` {kindc} over {} \
              distinct words, rows unkeyable for that comparison {kindsk}, \
-             energy-less work rows from now: kernel {kres}, fork {fres}",
+             energy-less work rows from now: kernel {kres}, fork {fres}, \
+             §8.2 step 8 compared on {dcmpc} days: IMPOSSIBLE rows {dimpc}, HOT ids {dhotc}, \
+             waiting/blocked/droppedTail/underused ids and planHonesty ratios {dmorec}, \
+             days whose `droppedTail` and `planHonesty` were COUNTED not compared because the \
+             fork drew gap 554's open-block row for an item no kernel work row names {d554c}",
             KIND_WORDS.lock().expect("kinds").len()
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a

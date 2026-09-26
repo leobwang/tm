@@ -197,7 +197,7 @@ d6f25f44caff TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witOptionalCands de
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHighRestRequest unfoldable no Inhabited PlanReq
 d98fc77be0ed TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSpentBudgetRequest unfoldable no Inhabited PlanReq
 5a98924465e2 TmKernel/TmKernel/Planner.lean Tm.Planner.dayRows default,[] Planner.lean:6145 mem_dayRows; Planner.lean:6145 mem_dayRows
-d932b39765bc TmKernel/TmKernel/Planner.lean Tm.Planner.dayDiagnostics unfoldable,Diagnostics.empty no Inhabited Diagnostics; PlannerWit.lean:3704
+9e148c5077cb TmKernel/TmKernel/Planner.lean Tm.Planner.dayDiagnostics unfoldable,Tm.Planner.Diagnostics.empty no Inhabited Diagnostics; Planner.lean:6526 dayDiagnostics_impossible
 daaa2458af08 TmKernel/TmKernel/Planner.lean Tm.Planner.dayAssigned default Planner.lean:5911
 4a9c27a3e4bb TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.rePlaceWalk unfoldable,funa0_=>a0 no Inhabited (Assign → List ((Fin 6 × Look.Slot) × Nat) → Assign); Planner.lean:5214
 7eac768f6f2d TmKernel/TmKernel/Planner.lean Tm.Planner.placeAt unfoldable,q no Inhabited Placed; Planner.lean:5169
@@ -380,7 +380,7 @@ c2eb0be2764d TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCand unfoldable no
 db17f2adf839 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.payingCands default,[] PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes; PlannerWit.lean:6329 the_paying_request_assigns_and_the_battery_passes
 b8ad630aaa78 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingRequest unfoldable no Inhabited PlanReq
 6b7739920485 TmKernel/TmKernel/Close.lean Tm.hasAStrayTomb true,false Close.lean:2506 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb; Close.lean:2508 closeOne_refuses_alreadyDemoted_only_over_a_stray_tomb
-401f235f306f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.FoldRowsAdmitNothing True,False PlanCheck.lean:5131 FoldRowsAdmitNothing_of_nothing_assigned; PlanCheck.lean:5131 FoldRowsAdmitNothing_of_nothing_assigned
+401f235f306f TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.FoldRowsAdmitNothing True,False PlanCheck.lean:5137 FoldRowsAdmitNothing_of_nothing_assigned; PlanCheck.lean:5137 FoldRowsAdmitNothing_of_nothing_assigned
 9a0bb5410db6 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.UnfilledAnchored True,False PlanCheck.lean:5159 FoldRowsAdmitNothing_of_an_unfilled_anchor; PlanCheck.lean:5159 FoldRowsAdmitNothing_of_an_unfilled_anchor
 2cc83fccb522 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.freeSlotRows fun____=>true,fun____=>false PlannerWit.lean:6514 freeSlotRows_is_from_now_anchored; PlannerWit.lean:6514 freeSlotRows_is_from_now_anchored
 4baf3b078d42 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.mirrorWitness default,[] PlannerWit.lean:6662 three_requests_now_assign_and_pay; PlannerWit.lean:6662 three_requests_now_assign_and_pay
@@ -404,3 +404,19 @@ e6435ef522e3 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCand unfoldable no
 83a86239826c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCandCap unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 bc65c85c7a9e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witAtomicCands default,[] PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic; PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic
 fd3902292b48 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.cCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+08afa6f48b72 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayWaiting default,[] Planner.lean:6470 PlanReq.dayWaiting_capped; Planner.lean:6470 PlanReq.dayWaiting_capped
+78e5e097fe7b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayBlocked default,[] Planner.lean:6487 PlanReq.dayBlocked_capped; Planner.lean:6487 PlanReq.dayBlocked_capped
+69d6b2bc4d2d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayPlanHonesty default,(0,0) PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields; PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields
+ef671f6af01b TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayUnderused default,[] PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields; PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields
+cc1381856c89 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theUnassignedImpossibleRequest unfoldable no Inhabited PlanReq
+389757a8d5dc TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theCensusRequestWithAnImpossibleCandidate unfoldable no Inhabited PlanReq
+5593d8dee64f TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.twoImpossibleCands default,[] PlannerWit.lean:7723 the_planner_drops_an_impossible_item_its_own_energy_clause_admits; PlannerWit.lean:7723 the_planner_drops_an_impossible_item_its_own_energy_clause_admits
+3abdfe1e3902 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwoImpossibleRequest unfoldable no Inhabited PlanReq
+c63dbdf9c3d6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impFloorCands default,[] PlannerWit.lean:7768 the_day_names_an_impossible_floor; PlannerWit.lean:7768 the_day_names_an_impossible_floor
+3c5abff81710 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theImpossibleFloorRequest unfoldable no Inhabited PlanReq
+49ac8e80bfd3 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.waitBlockCands default,[] PlannerWit.lean:7809 the_day_names_its_waiting_and_blocked_candidates; PlannerWit.lean:7809 the_day_names_its_waiting_and_blocked_candidates
+473d81b91077 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theWaitingAndBlockedRequest unfoldable no Inhabited PlanReq
+7bcc4631ab87 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayImpossible default,[] Planner.lean:6222 PlanReq.dayImpossible_capped; Planner.lean:6222 PlanReq.dayImpossible_capped
+3537e919f1db TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayHot default,[] Planner.lean:6426 PlanReq.dayHot_capped; Planner.lean:6426 PlanReq.dayHot_capped
+737bf9204ea4 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.dayDroppedTail default,assigned,[] PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields; PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields; PlannerWit.lean:7786 the_impossible_request_fills_five_diagnostic_fields
+279ecbc892c3 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.slotFitRows fun____=>true,fun____=>false PlannerWit.lean:7840 the_energy_clause_separates_the_energy_drop_from_the_contention_drop; PlannerWit.lean:7723 the_planner_drops_an_impossible_item_its_own_energy_clause_admits

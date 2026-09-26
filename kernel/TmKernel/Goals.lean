@@ -720,13 +720,14 @@ second to P5 and that was wrong**.  The remaining **four** are not a request
 question and are no longer counted: `PlanCheck.no_block_row_of_the_day_carries_a
 _slot_energy_on_an_unassigned_day`, `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`,
 `PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day` and
-`PlanCheck.the_day_names_no_impossible_item` prove, for **every** `PlanReq`, that
+PlanCheck.the_day_names_no_impossible_item (the last refuted at W-33, when P8's first half
+wrote the field) prove, for **every** `PlanReq`, that
 no witness can give `energyFilterOk`, `noDemandingAfterWindDown`,
 `batchDoesNotReachPast` or `impossibleKept` a subject — P5's three and P8's one,
 each now a build-time wall its step must delete.
 
 **W-19 (track G) proved the nine is a CEILING, and refuted two of the thirteen
-below.**  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day` records its
+below.**  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item` records its
 two missing conjuncts — `monotoneInRank` and `hotBeforeQueue` — as *missing*.
 They are **false**: at `PlannerWit.theQueuedRequest` (the census request with
 `m1`'s two log lines removed and `m2` running) both answer `false` at the
@@ -747,7 +748,7 @@ the subject census keyed on each check's own `PlanCheck.CheckName` and filtered
 over `PlanCheck.checksOf`'s own list, so the count is the compiler's;
 `PlannerWit.the_census_ratio` computes **seven** at
 `PlannerWit.theCensusRequest`, which is exactly what W-18 settled by hand.
-`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` then proves seven is a **ceiling over
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` then proves seven is a **ceiling over
 every request**, because the four W-18 named have no subject at any of them
 (`PlanCheck.energyFilter_has_no_subject_on_an_unassigned_day` and its three siblings).
 
@@ -767,7 +768,8 @@ stay until P5 and P5/P7 give them a subject.
 
 **The fourth is a finding rather than an application of that rule.**
 `PlanCheck.impossibleKept`'s subject is `Planner.Diagnostics.impossible` and
-`PlanCheck.impossible_has_no_subject` proves it empty at every request — but
+PlanCheck.impossible_has_no_subject proved it empty at every request (refuted at W-33: the
+field is written now) — but
 the impossibility goal that stood below was **not** stated over that list.
 It is stated over `Planner.edfNumbers`, whose hypothesis a real candidate can
 satisfy, with a conclusion about `Planner.assignedOf`.  So the checker being
@@ -805,7 +807,7 @@ of the eleven can have a subject on that day at any request — and
 **Which number to quote is settled in one place and nowhere else**: `PlanCheck.lean`'s W-22
 section header carries the table of the three questions a *"N of the eleven"* can answer, and
 says which is the honest headline — the SUBJECT count, whose one figure is **seven**, the
-whole-day ceiling `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` proves and
+whole-day ceiling `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` proves and
 `PlannerWit.the_census_ratio` reaches.  Every sentence below and every sentence in
 `PlanCheck.lean`, `PlannerWit.lean`, `Check.lean` and `Negative.lean` was re-read against the
 computed census at W-22 and agrees with it; the one that named two days and gave one number
@@ -1164,7 +1166,7 @@ on a named subdomain, so they are
 `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`,
 `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`,
 `PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day` and
-`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day`, each carrying
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`, each carrying
 `hnoassign : r.assignedRows = []`.  That is a real loss of domain and it is priced as README
 gap **1902**.
 
@@ -1383,7 +1385,8 @@ already proved inside `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
 day's own `Planner.Diagnostics.impossible` — the id and its exact shortfall — rather than
 recomputing the numbers, which is what design §6.1 requires of a check over a produced `DayPlan`.
 **Its subject is empty at every request and every eligibility**, which
-`PlanCheck.impossible_has_no_subject` has said unconditionally since before this run, because
+PlanCheck.impossible_has_no_subject said unconditionally (refuted at W-33, when the field was
+written), because
 `Planner.dayDiagnostics` never writes that field.  Filling it from `Planner.edfNumbers` is **P8**'s
 step and README gap **2321** is the residue. -/
 

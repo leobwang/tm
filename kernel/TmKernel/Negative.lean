@@ -2603,7 +2603,7 @@ theorem theQueuedDayPassesTheWholeBattery :
       (Planner.dayPlan PlannerWit.theQueuedRequest) = true := by decide
 
 /- CHEAT 210 — the same claim over `PlanCheck.withoutPast`'s day, which is the
-   day `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day` is stated
+   day `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item` is stated
    over.  The plausible reading is that the restriction repairs the two
    comparisons the way it repaired the wall law and the break law — it does not,
    and it cannot: dropping the past's work rows removes `m1`'s chances of being
