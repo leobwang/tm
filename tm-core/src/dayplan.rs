@@ -10,9 +10,9 @@
 //! the shape the **renderers** read — `emit.rs` (the one padder, D43), the day
 //! file, `tm plan --json`, `.tm/last_plan.json`, the TUI's timeline, the ghost
 //! row `cli/ghost.rs` builds from recorded starts — and the shape the host
-//! decodes the kernel's `plan` answer into (README gap 2720). A day the kernel
-//! planned still has to reach those surfaces after R3, so the types had to
-//! leave the file before it could be deleted whole.
+//! decodes the kernel's `plan` answer into (`crate::planwire`, README gap
+//! 2720). A day the kernel planned still has to reach those surfaces after R3,
+//! so the types had to leave the file before it could be deleted whole.
 //!
 //! **The move is byte for byte**: every declaration below, its doc comment and
 //! its `Serialize` derive are exactly what `planner.rs` held at `fe49a8b`, so

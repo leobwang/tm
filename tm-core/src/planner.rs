@@ -277,9 +277,12 @@ impl<'a> PlanInput<'a> {
         self.overrides = Some(overrides);
         self
     }
-    /// The local date being planned: `state.date`, else `now`'s date.
+    /// The local date being planned: `state.date`, else `now`'s date — the
+    /// host codec's one statement of the rule since W-35
+    /// ([`crate::planwire::plan_date`]), so the fork and the request it is
+    /// compared with cannot resolve a start on two different days.
     pub fn date(&self) -> NaiveDate {
-        self.runtime.date.unwrap_or_else(|| self.now.date_naive())
+        crate::planwire::plan_date(self.runtime, self.now)
     }
 }
 
@@ -2326,5 +2329,64 @@ mod tests {
         assert_eq!(cands[0].planned_min, 120);
         PlanOverrides::new().dropping(&id).apply(&mut cands, &cfg);
         assert!(cands.is_empty());
+    }
+
+    /// **D58's comparand, while the fork is here to be compared with** (stage 6
+    /// W-35, README gap 2680): the host's `planwire::grown` is `apply`'s own
+    /// arithmetic on every candidate this sweep builds — the three facts
+    /// `apply` rewrites, or `None` exactly where it leaves them alone.
+    ///
+    /// 8,820 cases: seven safeties (the shipped 1.3, 1, 0, a negative and a
+    /// NaN among them — `apply` and `safety_minutes` both fall back to the
+    /// minutes), nine multipliers (0, a negative and a NaN, which
+    /// `energy::planned_minutes` sizes as the minutes), seven remainders up to
+    /// the `u32` edge, four `est` overrides and five extensions up to
+    /// `u32::MAX`. `planwire`'s own test holds the answers by value, so the
+    /// arithmetic stays pinned after this file is deleted at R3.
+    #[test]
+    fn the_host_grows_the_facts_apply_grows() {
+        let mut compared = 0usize;
+        let mut grew = 0usize;
+        for safety in [1.3, 1.0, 0.0, -2.0, f64::NAN, 1.15, 2.5] {
+            let mut cfg = Config::default();
+            cfg.priority.safety = safety;
+            for mult in [1.0, 1.6, 0.5, 0.0, -1.0, f64::NAN, 1.25, 1.3333333333333333, 2.2] {
+                for remaining in [0u32, 1, 29, 60, 123, 481, u32::MAX - 7] {
+                    for est in [None, Some(0u32), Some(30), Some(remaining)] {
+                        for extra in [0u32, 1, 60, 90, u32::MAX] {
+                            let id = Id::new("x1");
+                            let mut c = Candidate::new(id.clone(), 3, 2, remaining, &cfg);
+                            c.multiplier = mult;
+                            c.planned_min = energy::planned_minutes(remaining, mult);
+                            let mut ov = PlanOverrides::new();
+                            if let Some(e) = est {
+                                ov = ov.with_est(&id, e);
+                            }
+                            if extra > 0 {
+                                ov = ov.extending(&id, extra);
+                            }
+                            let mut cands = vec![c.clone()];
+                            ov.apply(&mut cands, &cfg);
+                            let fork = (cands[0].remaining_min, cands[0].planned_min, cands[0].need_min);
+                            let host = match crate::planwire::grown(&c, est, extra, &cfg) {
+                                Some(g) => {
+                                    grew += 1;
+                                    (g.remaining_min, g.planned_min, g.need_min)
+                                }
+                                None => (c.remaining_min, c.planned_min, c.need_min),
+                            };
+                            assert_eq!(
+                                host, fork,
+                                "safety {safety} multiplier {mult} remaining {remaining} est {est:?} extra {extra}"
+                            );
+                            compared += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(compared, 7 * 9 * 7 * 4 * 5);
+        // Both branches were taken, so neither half of the comparison is vacuous.
+        assert!(grew > 0 && grew < compared, "{grew} of {compared} grew");
     }
 }

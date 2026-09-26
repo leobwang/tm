@@ -25,12 +25,11 @@ use tm_core::model::Id;
 use tm_core::dayplan::{self, DayPlan, SegKind, Segment};
 use tm_core::tree::Tree;
 
-pub const EPOCH_FROM_CE: i64 = 62_135_596_800;
-
-/// A `chrono` instant as the kernel's absolute second.
-pub fn kernel_sec(t: chrono::DateTime<chrono_tz::Tz>) -> i64 {
-    t.timestamp() + EPOCH_FROM_CE
-}
+/// The kernel's epoch and a `chrono` instant as its absolute second — the host
+/// codec's (`tm_core::planwire`, W-35), not a copy of it. Not every crate that
+/// includes this module reads both.
+#[allow(unused_imports)]
+pub use tm_core::planwire::{kernel_sec, EPOCH_FROM_CE};
 
 // ---------------------------------------------------------------------------
 // The request

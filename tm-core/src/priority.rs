@@ -341,7 +341,10 @@ impl Candidate {
 }
 
 /// `round(minutes × config.priority.safety)` — §7.1's `need`.
-fn safety_minutes(minutes: u32, cfg: &Config) -> u32 {
+///
+/// Public since stage 6 W-35 so the host's what-if facts (D58,
+/// `crate::planwire::grown`) are this function's answer and not a copy of it.
+pub fn safety_minutes(minutes: u32, cfg: &Config) -> u32 {
     let s = cfg.priority.safety;
     if !s.is_finite() || s <= 0.0 {
         return minutes;
