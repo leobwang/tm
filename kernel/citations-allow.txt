@@ -541,6 +541,13 @@ can_fail
 # `Planner.dayDiagnostics_deferred` / `Planner.dayDiagnostics_restDebtMin`.  Cited by W-33's
 # README block and by one `PlannerWit` docstring this track may not edit (append-only there).
 2 Planner.the_day_leaves_two_diagnostic_fields_empty
+# W-35 track K (README gap 2802): the owner's D55 restated `PlanCheck.impossibleKept` to read the
+# item's OWN grant, and two W-33 laws whose statements had no owed clause are false under it --
+# REFUTED by `PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted`
+# and `PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`, and
+# renamed with the clause.  The one citation of each is W-33's append-only README table.
+1 an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned
+1 impossible_has_a_subject_iff_an_impossible_answer_is_eligible
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

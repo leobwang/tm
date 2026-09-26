@@ -67461,3 +67461,128 @@ corpus re-blessed, no memory bound raised, no external dependency, no `sorry` ou
 no new axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.  Three
 exemption files are NEW (`kernel-decide-exempt.txt`, `inputs-exempt.txt`) or reasoned anew
 (`reach-exempt.txt`'s class line, text only): each grandfathers a measured set and may only shrink.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-35**, **TRACK K**, on
+     branch `w35-k` from `fe49a8b`.  Gap range **2800-2839**; parity `P45`, `P46`,
+     `P47` pre-allocated to this track (D57's three, in that order).  Whoever
+     merges renumbers (AGENTS §6.4).
+     ===================================================================== -->
+
+## Stage 6 — W-35, track K: D55 (an impossible item is owed what ITS OWN GRANT holds) and D57 (§9's break, overtime and wall rows)
+
+### 1. D55 — the checker reads the grant, and what that does and does not buy
+
+**The restatement, in place** (`PlanCheck.lean`, line-neutral above check 9's last pin).
+`PlanCheck.owedByItsGrant r i` is `false` exactly when the request's answers name `i` impossible and
+every such answer's grant (or floor — `Look.FloorOut.view`'s availability) holds nothing
+(`PlanCheck.owedByItsGrant_eq_false_iff`); `PlanCheck.impossibleKept` now reads *an eligible
+impossible item its grant owes is assigned*, and `PlanCheck.subjectOf`'s `.impossible` arm reads the
+same predicate, so the census and the check range over one set.  An id the answers do NOT name
+impossible stays owed: a planted `Diagnostics.impossible` row with no grant evidence is held to the
+pre-D55 rule, which is why `PlannerWit.the_battery_bites_over_a_produced_day` (W-15's planted
+`theSilentlyDroppedDay`) still bites unchanged.  `PlanCheck.impossibleKept_iff_the_owed_items_are_assigned`
+is D55's case as a law: a dropped impossible item whose grant holds nothing costs the check nothing.
+
+**The check still bites** — on a planted drop of an item its grant owes
+(`PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item`, through
+`PlanCheck.impossibleKept_can_fail`, which now carries `howed`) and on a real produced day (§3 below).
+**`theTwoImpossibleRequest` now passes it**: `^t1`'s grant is `(avail 0, reserved 0)`, so it is owed
+nothing, `^t3` (owed 240 minutes) holds all four slots, and all eleven checks are `true`
+(`PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits`, restated in place).
+
+### 2. `hnoimp` CANNOT come off the five lifts — D55's row says it would (gap 2800)
+
+Measured, not argued.  A day whose budget is SPENT assigns nothing (§8.2 step 5's `while
+blocks_assigned < remaining_budget`), and §7.3's day-0 capacity never reads the budget
+(`Look.Today.storedBudget`'s own comment: *"day 0's capacity never reads the budget, and the planner
+does"*) — so an impossible item on that day is OWED today's capacity by its grant and cannot be
+assigned.  `PlannerWit.theUnassignedImpossibleRequest` is that day (the quiet census Wednesday,
+stored budget 0, one candidate `^m2`, `ci:2`, due today, 100 000 minutes: grant `(240, 240)` minutes
+over `capDen`, shortfall 129 760), and `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
+computes the check `false` there with every hypothesis of the lifts true.  So the four
+`…_as_W_19/W_20_wrote_it_is_refuted` theorems keep refuting the hypothesis-free lifts UNDER D55'S OWN
+READING, and `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`'s
+hypothesis still names a case that happens (`PlannerWit.the_census_reaches_eight_on_an_unassigned_day`,
+re-aimed below).
+
+What the lifts carry now is the WEAKER hypothesis D55 makes possible — *no eligible impossible item
+its grant owes* (`hnoimp : ∀ p ∈ …, eligibleSomewhere … = true → owedByItsGrant r p.1 = false`;
+the census lift's `subjectOf … = false` spells the same thing through the restated arm).  The old
+hypothesis implies the new one, so each lift covers every request it covered and more:
+`PlannerWit.an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes` is W-33's own
+refuting request (`^m1`, grant `avail 0`), which the lifts now cover and the check now passes.
+
+**Gap 2800.**  1. *What.*  D55's "`hnoimp` comes OFF all five lifts" is not done; the lifts carry the
+weaker `hnoimp` above.  2. *Why.*  It is false: the spent-budget day above satisfies every other
+hypothesis and fails the conclusion.  The grant is a CAPACITY reading and the budget is not in it.
+3. *Cost.*  Five lifts keep a hypothesis naming a case that happens on an ordinary day (six blocks
+done).  4. *Clears it.*  The owner: read "availability" net of the remaining budget on day 0 (a §7.3
+change, and a parity number against the fork's `DayCapacity::from_slots`), or accept the drop on a
+spent day as correct and restate §8.3's "impossible never dropped" as "never dropped while the day
+can still spend" — either makes the lifts provable without `hnoimp`.
+
+### 3. The restated check is STILL REFUTED on a paying day — gap 2801
+
+`PlannerWit.theReversedTwoImpossibleRequest` is `theTwoImpossibleRequest` with the due dates the
+other way round: `^t3` (first in §7.4's key, by line order) due TOMORROW, `^t1` due TODAY.  §7.3
+serves by DUE DATE, so `^t1` is granted today's 240 minutes and `^t3` tomorrow's 360; §8.2 step 5
+walks today's slots in KEY order and `^t3` takes all four.  `^t1`, owed today's capacity, is
+eligible at `slotFitRows` and dropped: `impossibleKept slotFitRows … = false` on a paying,
+`candsAgree` day (`PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes`).
+`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` is MOVED to the W-35
+block and re-proved there, same name and statement (W-33 proved it at `theTwoImpossibleRequest`,
+which now passes).
+
+**Gap 2801.**  1. *What.*  D55's reading is not a law of `dayPlan`: step 5 never reads the grant.
+2. *Why.*  §7.3 orders by due date and §7.4's key by `(p, root line, own line)`; all impossible items
+are `p = 0`, so among them the key is line order.  3. *Cost.*  `impossibleKept` is still one of the
+eleven no lift can discharge at a faithful eligibility.  4. *Clears it.*  The owner: should §7.4's key
+break `p = 0` ties among impossible items by due date (a planner change and a parity number), or is
+this drop correct too?
+
+### 4. What each W-33/W-34 refutation refutes now, and what was re-aimed in place (gap 2804)
+
+Section 30 of `PlannerWit.lean` was written against the pre-D55 check, and its witnesses were
+re-aimed LINE FOR LINE (no check-9 pin moved; `mutate.stale_sites` 0 stale before and after), which
+touches existing text the brief said to leave: the alternative was a file whose theorems were false.
+
+| theorem | before (W-33) | after (W-35) |
+|---|---|---|
+| `PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted` | refuted the "always true" form at `theImpossibleRequest` | same statement, re-proved at the spent day (§2): `theImpossibleRequest` passes under D55 |
+| `PlannerWit.impossible_has_no_subject_is_refuted`, `…_from_now_is_refuted` | at `theImpossibleRequest` | same, at the spent day, through `PlanCheck.impossibleKept_of_no_subject` |
+| the two `…_as_W_20/W_19_wrote_it_is_refuted` over `theUnassignedImpossibleRequest` | an eligible impossible item dropped | proofs unchanged; the REQUEST was re-aimed (§2), so they now refute the lifts without ANY `hnoimp` under D55's reading |
+| the two `…_given_hot_…/…given_the_two_comparisons…_is_refuted` over `theQuietImpossibleRequest` | as above | proofs unchanged; request re-aimed (the quiet Wednesday, budget spent, `^m2` owed 240 minutes) |
+| `PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted` | eight at the census Wednesday with `^m1` (grant empty) | proof unchanged; `theCensusRequestWithAnImpossibleCandidate`'s `^m1` is due in two days (grant 306 minutes of later level-5 capacity), still eight |
+| `PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` | at `theTwoImpossibleRequest` | moved and re-proved at the reversed day (§3) |
+| the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved | the check fails at `theImpossibleRequest` | REFUTED by D55 and renamed `PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved` (the new statement is the old one's negation, conjunct by conjunct) |
+
+Two `PlanCheck` laws had no owed clause and are false under D55 — refuted and renamed (gap 2802):
+`PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned`
+(refutation `PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted`)
+and `PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`
+(refutation `PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`).
+Their W-33 spellings stand in W-33's append-only table, allow-listed in `citations-allow.txt`
+section 3 at count 1 each.  **Gap 2803**: `reach-exempt.txt` GREW by one dated section
+(`Tm.PlanCheck.owedByItsGrant`, EXEMPT 1262 → 1263) — a proof-only predicate of the battery, which
+the module's own section says is unreachable by construction; the section names its EXIT.  D51 asks
+the file to shrink; one definition added for one owner decision is recorded here rather than hidden.
+
+
+### 5. D55's acceptance, measured before its commit
+
+`check.sh`, capped: **14 of 14 ok** — build; totality; axiom audit **5487** theorems; `Negative.lean`
+rejected; FFI **93**; corpus **29/37** files and **4/5** plans; stage goals **6**; prose citations
+44257 (0 unused allow entries); new definitions mutated **351 rostered, 0 owed** (this step's run:
+9 definitions, 4 PINNED — `PlanCheck.owedByItsGrant`, `PlanCheck.impossibleKept`, `PlanCheck.subjectOf`,
+`PlannerWit.reversedImpossibleCands` — and 5 UNFOLDABLE witness fixtures, `mutate.py --write`,
+40 min 36 s at 16G); parity **P1-P44, next free P45**; twins 0 unanswered; reach 1263 exempt;
+fields 12 of 12; inputs 28 read, 5 exempt; replay 86.  `cargo test --workspace`, capped, **three
+runs: 1,483 passed / 0 failed / 9 ignored across 87 result lines, each** — a first third run stopped
+at `cli_latency`'s three-year test (`tm drop ^z15` still running after 1 s, every T11 row 1.4-2.7×
+its baseline, load average 14.6 from two other tracks' mutation runs: gap 1333's class) and was
+re-run `--no-fail-fast`.  The named suites: T5 33, door 23, `cli_switch_acceptance` 16,
+`kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+`kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_invariants` 12 — all green;
+`cli_latency --include-ignored` 5 of 6 under the same load (the same test, gap 1333).  D55 moves no
+emitted definition the binary reaches (`PlanCheck` is proof-only), so no shipped answer moves.

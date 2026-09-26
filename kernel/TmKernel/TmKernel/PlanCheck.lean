@@ -452,26 +452,26 @@ theorem hotPairOk_iff (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) :
             simp only [decide_eq_true_eq]
             exact h e f hi hj
 
-/-! ## 10. `impossible` — an impossible item is still scheduled
+/-! ## 10. `impossible` — scheduled with what its OWN GRANT holds (the owner's D55)
 
-Design §6.3 row 6: §7.3's "still scheduled with everything available" is about capacity, not
-eligibility.  The checker reads the plan's **own** account of which items are impossible —
-`Diagnostics.impossible`, the id and its exact shortfall — because L26 is "decidable over the
-produced `DayPlan`".  **P4 landed the other end of that bridge**: §7.3's EDF numbers are
-`Planner.edfNumbers` (this comment named `Goals.edfNumbers`, which was a provisional `def … :=
-sorry` and is now deleted), a projection of the grant the pass gives the candidate, with
-`edfNumbers_is_the_grants_own_impossibility` tying it to `Grant.impossible`.  **W-33 filled the field from those numbers**
-(`Planner.PlanReq.dayImpossible`), so this checker has a subject and FAILS where an eligible impossible item is dropped —
-at step 5's own energy clause on a day that pays, README gap 2510, the owner's (this said "a list nothing writes"; gap 2565). -/
-
+§7.3's "IMPOSSIBLE items are still scheduled with everything available", read PER THE ITEM'S OWN
+GRANT (D55, README gap 2510): an eligible impossible item §7.3's pass left nothing (`avail 0`) is
+owed nothing, and dropping it is correct.  The checker reads the day's own list
+(`Diagnostics.impossible`, written by `Planner.PlanReq.dayImpossible` off the answers) and exempts
+an entry only where the grant says so: `owedByItsGrant` is `false` exactly when the answers name the id
+impossible and every such answer's grant (or floor) holds nothing (`Look.FloorOut.view`'s availability). -/
+def owedByItsGrant (r : PlanReq) (i : Id) : Bool :=
+  (r.candAnswers.filter (fun o => o.out.cand.id == i && decide (0 < o.shortfall))).isEmpty ||
+    r.candAnswers.any (fun o => o.out.cand.id == i && decide (0 < o.shortfall) &&
+      decide (0 < ((o.view.grant.map Prod.fst).getD 0)))
 def impossibleKept (el : Eligible) (r : PlanReq) (d : DayPlan) : Bool :=
   d.diagnostics.impossible.val.all (fun p =>
-    decide (eligibleSomewhere el r d p.1 = true → p.1 ∈ assignedOf d))
+    decide (eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = true → p.1 ∈ assignedOf d))
 
 theorem impossibleKept_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
     impossibleKept el r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val,
-        eligibleSomewhere el r d p.1 = true → p.1 ∈ assignedOf d := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
+        owedByItsGrant r p.1 = true → p.1 ∈ assignedOf d := by
   simp only [impossibleKept, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 11. `batch` — a batch does not reach past an equal-`ci` candidate of its own group
@@ -636,7 +636,7 @@ theorem hot_before_queue_from_the_battery (el : Eligible) (r : PlanReq) (d : Day
 theorem impossible_kept_from_the_battery (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : planOk el r d = true) :
     ∀ p ∈ d.diagnostics.impossible.val,
-      eligibleSomewhere el r d p.1 = true → p.1 ∈ assignedOf d :=
+      eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = true → p.1 ∈ assignedOf d :=
   (impossibleKept_iff el r d).mp
     (checks_all el r d h ⟨.impossible, impossibleKept el⟩ (by simp [checksOf, checksEligible]))
 
@@ -1561,10 +1561,10 @@ theorem batchDoesNotReachPast_can_fail (r : PlanReq) (ids : BatchIds) (i j : Id)
 def theDroppedImpossibleDay (i : Id) : DayPlan :=
   wDay [aBlockOfAnHour] 60 4 ⟨[(i, 30)], by simp [maxCands]⟩
 
-theorem impossibleKept_can_fail (r : PlanReq) (i : Id) :
+theorem impossibleKept_can_fail (r : PlanReq) (i : Id) (howed : owedByItsGrant r i = true) :
     impossibleKept (fun _ _ _ _ => true) r (theDroppedImpossibleDay i) = false := by
   simp [impossibleKept, theDroppedImpossibleDay, wDay, eligibleSomewhere, assignedOf,
-    segItems, aBlockOfAnHour, wSeg, Seg.items, SegKind.isWork]
+    segItems, aBlockOfAnHour, wSeg, Seg.items, SegKind.isWork, howed]
 
 /-! ### The battery itself refuses -/
 
@@ -2050,11 +2050,11 @@ theorem batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassig
   batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
     the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
 
-/-- `impossibleKept` passes where no listed item is eligible anywhere: the lifts' `hnoimp` (W-33), and
-the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`). -/
+/-- `impossibleKept` passes where no listed item eligible anywhere is owed by its grant: the lifts' `hnoimp` (W-33; D55 at W-35
+weakened it from "no listed item is eligible"), and the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`). -/
 theorem impossibleKept_of_no_eligible_impossible_item (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false) :
-    impossibleKept el r d = true := (impossibleKept_iff el r d).2 (fun p hp hel => absurd (hel.symm.trans (h p hp)) (by simp))
+    (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = false) :
+    impossibleKept el r d = true := (impossibleKept_iff el r d).2 (fun p hp hel how => absurd (how.symm.trans (h p hp hel)) (by simp))
 
 /-! ### The break law, restated over the rows §8.3 is about
 
@@ -2145,7 +2145,7 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_give
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val,
-      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = false) :
+      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = true → owedByItsGrant r p.1 = false) :
     planOkCore r (withoutPast r (dayPlan r)) = true ∧
       impossibleKept el r (withoutPast r (dayPlan r)) = true ∧
       batchDoesNotReachPast el r (withoutPast r (dayPlan r)) = true :=
@@ -2188,7 +2188,7 @@ theorem dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
     (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val,
-      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = false)
+      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = true → owedByItsGrant r p.1 = false)
     (hrank : monotoneInRank el r (withoutPast r (dayPlan r)) = true)
     (hhot : hotBeforeQueue el r (withoutPast r (dayPlan r)) = true) :
     planOk el r (withoutPast r (dayPlan r)) = true := by
@@ -2304,7 +2304,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_imposs
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val,
-      eligibleSomewhere el r (dayPlan r) p.1 = false) :
+      eligibleSomewhere el r (dayPlan r) p.1 = true → owedByItsGrant r p.1 = false) :
     planOkCore r (dayPlan r) = true ∧
       monotoneInRank el r (dayPlan r) = true ∧
       impossibleKept el r (dayPlan r) = true ∧
@@ -2343,7 +2343,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossibl
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val,
-      eligibleSomewhere el r (dayPlan r) p.1 = false)
+      eligibleSomewhere el r (dayPlan r) p.1 = true → owedByItsGrant r p.1 = false)
     (hhot : hotBeforeQueue el r (dayPlan r) = true) :
     planOk el r (dayPlan r) = true := by
   obtain ⟨hcore, hrank, himp, hbat⟩ :=
@@ -2618,8 +2618,8 @@ theorem hotBeforeQueue_antitone {a b : Eligible}
 theorem impossibleKept_antitone {a b : Eligible}
     (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
     (hb : impossibleKept b r d = true) : impossibleKept a r d = true :=
-  (impossibleKept_iff a r d).2 (fun p hp hel =>
-    (impossibleKept_iff b r d).1 hb p hp (eligibleSomewhere_mono h r d p.1 hel))
+  (impossibleKept_iff a r d).2 (fun p hp hel how =>
+    (impossibleKept_iff b r d).1 hb p hp (eligibleSomewhere_mono h r d p.1 hel) how)
 
 theorem batchDoesNotReachPast_antitone {a b : Eligible}
     (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
@@ -2708,7 +2708,7 @@ theorem hotBeforeQueue_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : Da
 
 theorem impossibleKept_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : ∀ i, eligibleSomewhere el r d i = false) : impossibleKept el r d = true :=
-  (impossibleKept_iff el r d).2 (fun p _ hel => absurd (hel.symm.trans (h p.1)) (by simp))
+  (impossibleKept_iff el r d).2 (fun p _ hel _ => absurd (hel.symm.trans (h p.1)) (by simp))
 
 /-- **ELEVEN of §6.1's eleven, over the WHOLE day, at every `WorkAnchored` eligibility.**
 Design §6.1's dayPlan_ok, for the class W-20 left at ten.  The hypotheses are W-20's quiet
@@ -2740,7 +2740,7 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
     eligibleSomewhere_of_no_work_row hwork r _
       (dayPlan_has_no_work_row_on_an_unassigned_day r hnopast hnorun hnoassign)
   refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item el r
-    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain (fun p _ => hnone p.1) ?_
+    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain (fun p _ he => absurd (he.symm.trans (hnone p.1)) (by simp)) ?_
   exact hotBeforeQueue_of_nothing_eligible el r _ hnone
 
 /-! ############################################################################
@@ -2829,7 +2829,7 @@ def subjectOf (el : Eligible) (n : CheckName) (r : PlanReq) (d : DayPlan) : Bool
                  | _ => false))
   | .rank => !(rankSubjects el r d).isEmpty
   | .hot => !(hotSubjects el r d).isEmpty
-  | .impossible => d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1)
+  | .impossible => d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1 && owedByItsGrant r p.1)
   | .batch =>
       d.segments.any (fun s =>
         match s.val.kind with
@@ -2982,9 +2982,9 @@ theorem hotBeforeQueue_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
 theorem impossibleKept_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : subjectOf el .impossible r d = false) : impossibleKept el r d = true := by
   simp only [subjectOf] at h
-  refine (impossibleKept_iff el r d).2 (fun p hp hel => ?_)
+  refine (impossibleKept_iff el r d).2 (fun p hp hel how => ?_)
   have := false_of_any_eq_false h hp
-  simp [hel] at this
+  simp [hel, how] at this
 
 theorem batchDoesNotReachPast_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : subjectOf el .batch r d = false) : batchDoesNotReachPast el r d = true := by
@@ -3112,7 +3112,7 @@ theorem batch_has_no_subject_on_an_unassigned_day (el : Eligible) (r : PlanReq)
 
 theorem impossible_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : ∀ i, eligibleSomewhere el r d i = false) : subjectOf el .impossible r d = false := by
-  simp only [subjectOf]; exact Bool.eq_false_iff.2 (fun hx => by obtain ⟨p, -, hp⟩ := List.any_eq_true.1 hx; exact absurd (hp.symm.trans (h p.1)) (by simp))
+  simp only [subjectOf]; exact Bool.eq_false_iff.2 (fun hx => by obtain ⟨p, -, hp⟩ := List.any_eq_true.1 hx; simp only [Bool.and_eq_true] at hp; exact absurd hp.1.symm (by simp [h p.1]))
 
 /-- **Seven, given no eligible impossible item** (W-33; it was UNCONDITIONAL until then, and
 `PlannerWit.the_census_reaches_eight_on_an_unassigned_day` refutes that — the unconditional
@@ -3332,7 +3332,7 @@ theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
       (fun s hs hw =>
         withoutPast_work_rows_are_the_reservation_on_an_unassigned_day r hnoassign s hs hw)
   exact dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
-    el r hagree hactive hday hnowcal hplain hnoassign (fun p _ => hnone p.1)
+    el r hagree hactive hday hnowcal hplain hnoassign (fun p _ he => absurd (he.symm.trans (hnone p.1)) (by simp))
     (monotoneInRank_of_nothing_eligible el r _ hnone)
     (hotBeforeQueue_of_nothing_eligible el r _ hnone)
 
@@ -5330,38 +5330,43 @@ sites are line numbers (README gap 2136): every in-place edit above is line-coun
 and what could not be made neutral lives here. -/
 
 /-- **On a day that assigns nothing, `impossibleKept` passes EXACTLY when it has no subject** —
-an eligible impossible item is dropped, and there is no non-vacuous pass to be had.  This
-replaces impossibleKept_is_true_because_its_subject_is_empty, which said `= true` for every
+an eligible impossible item its grant OWES is dropped, and there is no non-vacuous pass to be had.
+This replaces impossibleKept_is_true_because_its_subject_is_empty, which said `= true` for every
 request and every eligibility and was REFUTED the moment W-33 wrote the field
 (`PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted`); it was not a
-law but a description of the hole, and this is the law it stood in front of. -/
+law but a description of the hole, and this is the law it stood in front of.  **Restated at W-35
+(D55)**: the right-hand side was "no listed item is eligible", and is now "no listed item that is
+eligible is owed by its grant" — the checker's own restatement, carried through. -/
 theorem impossibleKept_of_nothing_assigned_iff (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : assignedOf d = []) :
     impossibleKept el r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
+        owedByItsGrant r p.1 = false := by
   rw [impossibleKept_iff]
   constructor
-  · intro hk p hp
-    cases he : eligibleSomewhere el r d p.1
+  · intro hk p hp he
+    cases ho : owedByItsGrant r p.1
     · rfl
-    · have := hk p hp he
+    · have := hk p hp he ho
       rw [h] at this
       exact absurd this (by simp)
-  · intro hn p hp he
-    exact absurd (he.symm.trans (hn p hp)) (by simp)
+  · intro hn p hp he ho
+    exact absurd (ho.symm.trans (hn p hp he)) (by simp)
 
 /-- **The failure, positively**: on a day that assigns nothing, an impossible item eligible
-anywhere fails the check.  `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
-is the computed instance, and `PlannerWit.the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved`
-is the same at a day that assigns. -/
-theorem an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned (el : Eligible)
-    (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
-    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleSomewhere el r d p.1 = true) :
-    impossibleKept el r d = false := by
+anywhere AND OWED BY ITS GRANT fails the check.  `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
+is the computed instance.  **Renamed at W-35 (D55)** from an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned,
+whose statement had no `howed` and is REFUTED under D55's reading
+(`PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted`):
+an item whose grant holds nothing passes. -/
+theorem an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned
+    (el : Eligible) (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
+    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleSomewhere el r d p.1 = true)
+    (howed : owedByItsGrant r p.1 = true) : impossibleKept el r d = false := by
   cases hk : impossibleKept el r d
   · rfl
-  · have := (impossibleKept_of_nothing_assigned_iff el r d h).1 hk p hp
-    rw [hel] at this
+  · have := (impossibleKept_of_nothing_assigned_iff el r d h).1 hk p hp hel
+    rw [howed] at this
     exact absurd this (by simp)
 
 /-- **`.impossible` has no subject where nothing is eligible** — stated above in three lines so
@@ -5369,41 +5374,48 @@ that it could stand exactly where impossible_has_no_subject stood (that one said
 every request and every eligibility because `Planner.dayDiagnostics` wrote nothing into the
 list; W-33 wrote it, and `PlannerWit.impossible_has_no_subject_is_refuted` is the request where
 the old statement is false).  The subject, spelled: `subjectOf`'s `.impossible` arm is the
-`any` of the list, so an empty subject is exactly the `hnoimp` the lifts above carry. -/
+`any` of the list, so an empty subject is exactly the `hnoimp` the lifts above carry.  **Restated
+at W-35 (D55)**: the arm reads `owedByItsGrant` beside the eligibility, as the checker does. -/
 theorem impossible_subject_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
     subjectOf el .impossible r d = false ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
+        owedByItsGrant r p.1 = false := by
   simp only [subjectOf]
   constructor
-  · intro h p hp
-    cases he : eligibleSomewhere el r d p.1
+  · intro h p hp he
+    cases ho : owedByItsGrant r p.1
     · rfl
-    · have hx : d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1) = true :=
-        List.any_eq_true.2 ⟨p, hp, he⟩
+    · have hx : d.diagnostics.impossible.val.any
+          (fun p => eligibleSomewhere el r d p.1 && owedByItsGrant r p.1) = true :=
+        List.any_eq_true.2 ⟨p, hp, by simp [he, ho]⟩
       rw [h] at hx
       exact absurd hx (by simp)
   · intro h
     refine Bool.eq_false_iff.2 (fun hx => ?_)
     obtain ⟨p, hp, hpe⟩ := List.any_eq_true.1 hx
-    exact absurd (hpe.symm.trans (h p hp)) (by simp)
+    simp only [Bool.and_eq_true] at hpe
+    exact absurd (hpe.2.symm.trans (h p hp hpe.1)) (by simp)
 
 /-- **`.impossible` has a subject on the produced day exactly when some answer reports a positive
 shortfall — the shipped binary's `is_impossible` — and that answer's item is eligible
-somewhere**: the census arm's content now that the list is written, through
-`Planner.PlanReq.mem_dayImpossible`. -/
-theorem impossible_has_a_subject_iff_an_impossible_answer_is_eligible (el : Eligible)
+somewhere AND owed by its grant** (D55, W-35): the census arm's content now that the list is
+written, through `Planner.PlanReq.mem_dayImpossible`.  **Renamed at W-35** from
+impossible_has_a_subject_iff_an_impossible_answer_is_eligible, which had no owed clause and is
+REFUTED under D55 (`PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`). -/
+theorem impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible (el : Eligible)
     (r : PlanReq) :
     subjectOf el .impossible r (dayPlan r) = true ↔
       ∃ o ∈ r.candAnswers, 0 < o.shortfall ∧
-        eligibleSomewhere el r (dayPlan r) o.out.cand.id = true := by
-  simp only [subjectOf, dayPlan_impossible, List.any_eq_true]
+        eligibleSomewhere el r (dayPlan r) o.out.cand.id = true ∧
+        owedByItsGrant r o.out.cand.id = true := by
+  simp only [subjectOf, dayPlan_impossible, List.any_eq_true, Bool.and_eq_true]
   constructor
-  · rintro ⟨⟨i, s⟩, hp, he⟩
+  · rintro ⟨⟨i, s⟩, hp, he, how⟩
     obtain ⟨o, ho, hid, hs, -⟩ := (r.mem_dayImpossible i s).1 hp
-    exact ⟨o, ho, hs, by rw [hid]; exact he⟩
-  · rintro ⟨o, ho, hs, he⟩
+    exact ⟨o, ho, hs, by rw [hid]; exact he, by rw [hid]; exact how⟩
+  · rintro ⟨o, ho, hs, he, how⟩
     exact ⟨(o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos)),
-      (r.mem_dayImpossible _ _).2 ⟨o, ho, rfl, hs, rfl⟩, he⟩
+      (r.mem_dayImpossible _ _).2 ⟨o, ho, rfl, hs, rfl⟩, he, how⟩
 
 /-- **Eight is the ceiling of the census on an unassigned day, for every request and every
 eligibility.**  Three of `checksOf`'s eleven have an empty subject on every day
@@ -5444,6 +5456,65 @@ theorem the_census_ceiling_is_eight_on_an_unassigned_day (el : Eligible) (r : Pl
       ⟨.impossible, impossibleKept el⟩] : List Check)
   simp only [List.length_cons, List.length_nil] at b1 b2
   omega
+
+/-! ############################################################################
+## W-35 (track K): D55 — an impossible item is owed what ITS OWN GRANT holds
+############################################################################
+
+The owner's D55 (README gap 2510) restated `impossibleKept` in place, above, to read the grant:
+an eligible impossible item §7.3's pass left `avail 0` is owed nothing.  What that reading does and
+does not buy is measured in `PlannerWit.lean`'s W-35 block, and the two facts a reader needs are:
+
+* **`theTwoImpossibleRequest` passes now** — `^t1`'s grant holds nothing, so dropping it is
+  honoured (`PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits`);
+* **`hnoimp` cannot come off the five lifts** that carry it, and the owner's D55 row says it would:
+  a day whose budget is SPENT has §7.3 availability (day 0's capacity never reads the budget,
+  `Look.Today.storedBudget`'s own comment) and assigns nothing, so an impossible item its grant
+  owes is eligible and dropped — `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`.  The
+  lifts carry the WEAKER hypothesis D55 makes possible ("no eligible impossible item its grant
+  owes"), and README gap 2800 records the rest for the owner.  And the restated check is still
+  REFUTED on a paying, `candsAgree` day where §7.3's EDF order (due date) and §7.4's key order
+  (line order) disagree (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`,
+  re-proved at W-35): step 5 never reads the grant, so a same-`p` item earlier in line order
+  spends the day an earlier-due impossible item's grant was given. -/
+
+/-- **`owedByItsGrant`, spelled** (D55): an item is owed NOTHING exactly when the answers name it
+impossible and every such answer's grant (or floor) holds no availability. -/
+theorem owedByItsGrant_eq_false_iff (r : PlanReq) (i : Id) :
+    owedByItsGrant r i = false ↔
+      (∃ o ∈ r.candAnswers, o.out.cand.id = i ∧ 0 < o.shortfall) ∧
+      ∀ o ∈ r.candAnswers, o.out.cand.id = i → 0 < o.shortfall →
+        (o.view.grant.map Prod.fst).getD 0 = 0 := by
+  unfold owedByItsGrant
+  simp only [Bool.or_eq_false_iff, List.isEmpty_eq_false_iff, List.any_eq_false,
+    Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq, not_and, Nat.not_lt, Nat.le_zero]
+  constructor
+  · rintro ⟨hne, hall⟩
+    obtain ⟨o, ho⟩ := List.exists_mem_of_ne_nil _ hne
+    obtain ⟨hom, hop⟩ := List.mem_filter.1 ho
+    simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hop
+    exact ⟨⟨o, hom, hop.1, hop.2⟩, fun o' ho' hid hs => hall o' ho' ⟨hid, hs⟩⟩
+  · rintro ⟨⟨o, hom, hid, hs⟩, hall⟩
+    refine ⟨List.ne_nil_of_mem (List.mem_filter.2 ⟨hom, by simp [hid, hs]⟩),
+      fun o' ho' h' => hall o' ho' h'.1 h'.2⟩
+
+/-- **D55's case, as a law**: an eligible impossible item that the day does not assign, and whose
+grant holds nothing, costs the check nothing — `impossibleKept` is decided by the OWED items alone. -/
+theorem impossibleKept_iff_the_owed_items_are_assigned (el : Eligible) (r : PlanReq)
+    (d : DayPlan) :
+    impossibleKept el r d = true ↔
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
+        p.1 ∉ assignedOf d → owedByItsGrant r p.1 = false := by
+  rw [impossibleKept_iff]
+  constructor
+  · intro h p hp he hn
+    cases ho : owedByItsGrant r p.1
+    · rfl
+    · exact absurd (h p hp he ho) hn
+  · intro h p hp he ho
+    by_cases hm : p.1 ∈ assignedOf d
+    · exact hm
+    · exact absurd (ho.symm.trans (h p hp he hm)) (by simp)
 
 end PlanCheck
 end Tm

@@ -6951,14 +6951,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.dayPlan_hot
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
-#print axioms Tm.PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned
+#print axioms Tm.PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned
 #print axioms Tm.PlanCheck.impossible_has_no_subject_of_nothing_eligible
 #print axioms Tm.PlanCheck.impossible_subject_iff
-#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible
+#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible
 #print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item
 #print axioms Tm.PlannerWit.the_day_names_no_impossible_item_is_refuted
-#print axioms Tm.PlannerWit.the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved
+#print axioms Tm.PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved
 #print axioms Tm.PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_from_now_is_refuted
@@ -7147,3 +7147,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_a_day
 #print axioms Tm.Planner.the_extension_disagrees_past_a_day
 #print axioms Tm.PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted
+
+-- APPENDED 2026-09-26 (stage 6, run W-35, track K; README gaps 2800-2839): D55 -- an impossible
+-- item is owed what ITS OWN GRANT holds.  Three audit lines above were RENAMED in place with the
+-- theorems they audit; the renamed-from forms are refuted in `PlannerWit.lean`'s W-35 block.
+#print axioms Tm.PlanCheck.owedByItsGrant_eq_false_iff
+#print axioms Tm.PlanCheck.impossibleKept_iff_the_owed_items_are_assigned
+#print axioms Tm.PlannerWit.an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes
+#print axioms Tm.PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted
+#print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted
+#print axioms Tm.PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item
+#print axioms Tm.PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes

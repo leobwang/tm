@@ -7372,16 +7372,16 @@ derives nothing), the four theorems that described the hole are refuted and gone
 lifts that stood on them carry one named hypothesis, and what the live check says at every
 witness is computed below.
 
-**The finding, in three sentences.**  At the row-blind eligibilities (`permissive`,
-`onlyOnFreeWorkRows`, `fromNowWorkRows`) the check FAILS at `theImpossibleRequest`, and that is
-§28's refutation again — `^m1` is dropped on ENERGY, which design §6.3 row 6 says §7.3 is not
-about.  At `freeSlotRows`, the eligibility the eleven are proved at, it is TRUE with nothing to
-range over, at every request.  And at `slotFitRows` — step 5's own energy clause at the rows it
-filled — it FAILS at a day that PAYS, with the other ten true: two impossible items contend
-for one day and the second, which fits every slot, gets none
-(`the_planner_drops_an_impossible_item_its_own_energy_clause_admits`).  Whether that is the
-check's semantics or the planner's obligation is README gap **2510**, the owner question; no
-planner behaviour is decided here and no vacuity is restored. -/
+**Since W-35 the check reads the item's OWN GRANT** — the owner's D55, README gap 2510:
+`PlanCheck.owedByItsGrant` exempts an impossible item §7.3's pass left `avail 0`, and dropping it
+is correct.  So the three findings W-33 wrote here are three different sentences now.  At
+`theImpossibleRequest` `^m1`'s grant holds nothing and the check PASSES at every eligibility
+(§28's drop is on ENERGY and costs D55 nothing).  At `theTwoImpossibleRequest`, the contention
+day W-33 found, `^t1`'s grant holds nothing and the check PASSES there too
+(`the_planner_drops_an_impossible_item_its_own_energy_clause_admits`).  And the check still FAILS
+where an item its grant OWES is dropped — on a day whose budget is spent (the three fixtures below
+were re-aimed at such days at W-35) and on a paying day where §7.3's EDF order and §7.4's key order
+disagree (`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`, W-35's block). -/
 
 set_option maxRecDepth 400000 in
 /-- **The day names its first impossible item, with the shortfall the shipped binary prints.**
@@ -7412,21 +7412,20 @@ theorem the_day_names_no_impossible_item_is_refuted :
   absurd (h theImpossibleRequest) (by rw [the_day_names_its_first_impossible_item.1]; simp)
 
 set_option maxRecDepth 400000 in
-/-- **THE FINDING, computed.**  At `theImpossibleRequest` the check fails at every eligibility
-under which `^m1` is eligible somewhere, and passes at `freeSlotRows` because it is eligible
-nowhere — `^m1` is `ci:5` and no slot this Wednesday cuts is that good, so §8.2 step 5 drops
-it on ENERGY, which design §6.3 row 6 says §7.3's *"still scheduled with everything available"*
-is not about.  `four_requests_now_assign_and_pay` already computes `planOk freeSlotRows` true
-here, and this is why the eleven's `impossibleKept` conjunct costs it nothing. -/
-theorem the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved :
+/-- **D55 at W-33's own finding.**  At `theImpossibleRequest` `^m1`'s grant holds nothing, so
+`PlanCheck.owedByItsGrant` exempts it and the check PASSES at every eligibility, with no subject
+anywhere — where W-33's the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved
+(renamed here at W-35; its old form is this theorem's negation) had it fail at the three row-blind
+ones.  `^m1` is still eligible everywhere at `permissive` and still dropped; it is owed nothing. -/
+theorem the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved :
     PlanCheck.impossibleKept permissive theImpossibleRequest (dayPlan theImpossibleRequest)
-      = false ∧
+      = true ∧
     PlanCheck.subjectOf permissive PlanCheck.CheckName.impossible theImpossibleRequest
-      (dayPlan theImpossibleRequest) = true ∧
-    PlanCheck.impossibleKept fromNowWorkRows theImpossibleRequest (dayPlan theImpossibleRequest)
-      = false ∧
-    PlanCheck.impossibleKept onlyOnFreeWorkRows theImpossibleRequest
       (dayPlan theImpossibleRequest) = false ∧
+    PlanCheck.impossibleKept fromNowWorkRows theImpossibleRequest (dayPlan theImpossibleRequest)
+      = true ∧
+    PlanCheck.impossibleKept onlyOnFreeWorkRows theImpossibleRequest
+      (dayPlan theImpossibleRequest) = true ∧
     PlanCheck.impossibleKept freeSlotRows theImpossibleRequest (dayPlan theImpossibleRequest)
       = true ∧
     PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.impossible theImpossibleRequest
@@ -7436,53 +7435,32 @@ theorem the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where
     PlanCheck.eligibleSomewhere permissive theImpossibleRequest (dayPlan theImpossibleRequest)
       ['m','1'] = true ∧
     PlanCheck.impossibleKept permissive theImpossibleRequest
-      (PlanCheck.withoutPast theImpossibleRequest (dayPlan theImpossibleRequest)) = false ∧
+      (PlanCheck.withoutPast theImpossibleRequest (dayPlan theImpossibleRequest)) = true ∧
     PlanCheck.subjectOf permissive PlanCheck.CheckName.impossible theImpossibleRequest
-      (PlanCheck.withoutPast theImpossibleRequest (dayPlan theImpossibleRequest)) = true := by
+      (PlanCheck.withoutPast theImpossibleRequest (dayPlan theImpossibleRequest)) = false ∧
+    PlanCheck.owedByItsGrant theImpossibleRequest ['m','1'] = false := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
-    by decide, by decide, by decide⟩
-
-/-- **PlanCheck.impossibleKept_is_true_because_its_subject_is_empty is REFUTED**: it said
-`impossibleKept el r (dayPlan r) = true` at every request and every eligibility.  The law it
-stood in front of is `PlanCheck.impossibleKept_of_nothing_assigned_iff`. -/
-theorem impossibleKept_is_true_because_its_subject_is_empty_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
-        PlanCheck.impossibleKept el r (dayPlan r) = true := fun h =>
-  absurd (h permissive theImpossibleRequest)
-    (by rw [the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved.1]; simp)
-
-/-- **PlanCheck.impossible_has_no_subject is REFUTED**, and its from-now sibling
-PlanCheck.impossible_has_no_subject_from_now with it: both said the census arm is `false` at
-every request and every eligibility.  The positive form is
-`PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible`. -/
-theorem impossible_has_no_subject_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
-        PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = false := fun h =>
-  absurd (h permissive theImpossibleRequest)
-    (by rw [the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved.2.1]; simp)
-
-theorem impossible_has_no_subject_from_now_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
-        PlanCheck.subjectOf el PlanCheck.CheckName.impossible r
-          (PlanCheck.withoutPast r (dayPlan r)) = false := fun h =>
-  absurd (h permissive theImpossibleRequest)
-    (by rw [the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved.2.2.2.2.2.2.2.2.2]; simp)
+    by decide, by decide, by decide, by decide⟩
 
 /-! ### The unassigned day: the lifts that stood on the hole, refuted where they stood
 
 Every `_on_an_unassigned_day` lift concluded `impossibleKept … = true` for every eligibility.
-On a day that assigns nothing, an eligible impossible item is dropped, so the conjunct is
-false the moment such a request exists — and it does: the quiet census Wednesday with ONE
-candidate, the impossible one.  `PlanCheck.impossibleKept_of_nothing_assigned_iff` is the law;
-this is its instance, and the two refutations below are the old lifts, at this request, at
-`permissive`. -/
+On a day that assigns nothing, an eligible impossible item its grant OWES is dropped, so the
+conjunct is false the moment such a request exists — and it does: the quiet census Wednesday
+whose BUDGET IS SPENT, with ONE candidate, an impossible `^m2` (W-35 re-aimed this request: its
+old `^m1` has an empty grant and D55 exempts it).  `PlanCheck.impossibleKept_of_nothing_assigned_iff`
+is the law; this is its instance, and the refutations below are the old lifts, at `permissive`. -/
 
-/-- **The quiet census Wednesday with one candidate, the impossible `^m1`.**  `theQuietCensusRequest`
-with `impCands.take 1`; nothing else moves, so every hypothesis the quiet lifts ask for is the
-census request's own (`the_census_request_is_plain` is stated over the store both share). -/
+/-- **The quiet census Wednesday with its budget spent and one candidate, an impossible `^m2`**
+(`ci:2`, due today, 100 000 minutes).  §7.3's day-0 capacity never reads the budget
+(`Look.Today.storedBudget`), so `^m2`'s grant holds today's 240 minutes while §8.2 step 5 may
+spend nothing: an item its grant owes, on a day that assigns nothing.  Every hypothesis the quiet
+lifts ask for is still the census request's own (`the_census_request_is_plain`, same store). -/
 def theUnassignedImpossibleRequest : PlanReq :=
-  { theQuietCensusRequest with cands := ⟨impCands.take 1, by decide⟩ }
-
+  { theQuietCensusRequest with
+    cands := ⟨[pCandDue ['m','2'] 2 false 100000 739867 60 .any true (by decide)], by decide⟩,
+    look := { theQuietCensusRequest.look with today0 := { theQuietCensusRequest.look.today0 with
+      date := some theQuietCensusRequest.look.today, budget := some 0 } } }
 theorem theUnassignedImpossibleRequest_wallsAgree :
     theUnassignedImpossibleRequest.wallsAgree = true := theQuietCensusRequest_wallsAgree
 
@@ -7493,15 +7471,15 @@ theorem the_unassigned_impossible_request_agrees :
   the_quiet_census_request_agrees
 
 set_option maxRecDepth 400000 in
-/-- **An unassigned day drops its eligible impossible item.**  The fold places nothing (`^m1`
-is `ci:5`), the day names `^m1` with its shortfall, `^m1` is eligible everywhere at
-`permissive`, and the check is `false` — on the whole day and on `PlanCheck.withoutPast`'s.
-The seven core checks, `monotoneInRank` and the batch check all still hold, so this is one
-conjunct failing and not the battery. -/
+/-- **An unassigned day drops its eligible impossible item — one its grant owes.**  The fold
+places nothing (the budget is spent), the day names `^m2` with its shortfall, `^m2` is eligible
+everywhere at `permissive` and owed today's 240 minutes, and the check is `false` — on the whole
+day and on `PlanCheck.withoutPast`'s.  The seven core checks, `monotoneInRank` and the batch
+check all still hold, so this is one conjunct failing and not the battery. -/
 theorem an_unassigned_day_drops_its_eligible_impossible_item :
     theUnassignedImpossibleRequest.assignedRows = [] ∧
     assignedOf (dayPlan theUnassignedImpossibleRequest) = [] ∧
-    (dayPlan theUnassignedImpossibleRequest).diagnostics.impossible.val = [(['m','1'], 130000)] ∧
+    (dayPlan theUnassignedImpossibleRequest).diagnostics.impossible.val = [(['m','2'], 129760)] ∧
     pastRows theUnassignedImpossibleRequest = [] ∧
     theUnassignedImpossibleRequest.activeRun = none ∧
     PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
@@ -7527,7 +7505,8 @@ theorem an_unassigned_day_drops_its_eligible_impossible_item :
 set_option maxRecDepth 400000 in
 /-- **PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot as W-20 wrote it is REFUTED**
 (AGENTS §3.1 item 3): every hypothesis holds at the request above and the third conjunct is
-false.  Its restatement carries `hnoimp` and says so in its name. -/
+false.  Its restatement carries `hnoimp` and says so in its name — and since W-35 this is ALSO
+why D55 could not take `hnoimp` off: the item here is one its grant owes (README gap 2800). -/
 theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted :
     ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
         r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
@@ -7579,24 +7558,54 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W
   rw [hq.2.2.2.2.2.2.1] at hc
   exact absurd hc.2.1 (by simp)
 
+/-- **PlanCheck.impossibleKept_is_true_because_its_subject_is_empty is REFUTED**: it said
+`impossibleKept el r (dayPlan r) = true` at every request and every eligibility.  The law it
+stood in front of is `PlanCheck.impossibleKept_of_nothing_assigned_iff`.  (Re-proved at W-35 at
+the spent day above: W-33's request, `theImpossibleRequest`, passes under D55.) -/
+theorem impossibleKept_is_true_because_its_subject_is_empty_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        PlanCheck.impossibleKept el r (dayPlan r) = true := fun h =>
+  absurd (h permissive theUnassignedImpossibleRequest)
+    (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.1]; simp)
+
+/-- **PlanCheck.impossible_has_no_subject is REFUTED**, and its from-now sibling
+PlanCheck.impossible_has_no_subject_from_now with it: both said the census arm is `false` at
+every request and every eligibility.  The positive form is
+`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`. -/
+theorem impossible_has_no_subject_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = false := fun h =>
+  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theUnassignedImpossibleRequest))
+    (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.1]; simp)
+
+theorem impossible_has_no_subject_from_now_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        PlanCheck.subjectOf el PlanCheck.CheckName.impossible r
+          (PlanCheck.withoutPast r (dayPlan r)) = false := fun h =>
+  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theUnassignedImpossibleRequest))
+    (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.2.1]; simp)
+
 /-! ### The census reaches EIGHT — and the check passes for a REAL reason for the first time
 
-`theCensusRequest` sends no candidate and its census is seven.  Give it the impossible `^m1`:
-the day still assigns nothing of its own, but its LOG replays `^m1` worked this morning, so
-`^m1` is in `assignedOf` (fork `DayPlan::assigned` counts a replayed Block too), the item is
-impossible AND eligible AND assigned — `impossibleKept` is true with a subject — and the
-subject census is **eight**, which the W-21 ceiling of seven said no request could reach. -/
+`theCensusRequest` sends no candidate and its census is seven.  Give it an impossible `^m1` its
+grant OWES (at W-35: due in two days, so §7.3 grants it 306 minutes of later days' level-5
+capacity, while no slot today is that good): the day still assigns nothing of its own, but its
+LOG replays `^m1` worked this morning, so `^m1` is in `assignedOf` (fork `DayPlan::assigned`
+counts a replayed Block too), the item is impossible, eligible, owed AND assigned — `impossibleKept`
+is true with a subject — and the subject census is **eight**, which the W-21 ceiling of seven said
+no request could reach. -/
 
-/-- The §4.3 census Wednesday with the impossible `^m1` as its one candidate. -/
+/-- The §4.3 census Wednesday with an impossible `^m1` (`ci:5`, due in two days) as its one
+candidate. -/
 def theCensusRequestWithAnImpossibleCandidate : PlanReq :=
-  { theCensusRequest with cands := ⟨impCands.take 1, by decide⟩ }
-
+  { theCensusRequest with
+    cands := ⟨[pCandDue ['m','1'] 5 true 100000 739869 60 .any true (by decide)], by decide⟩ }
 set_option maxRecDepth 400000 in
 theorem the_census_reaches_eight_on_an_unassigned_day :
     theCensusRequestWithAnImpossibleCandidate.assignedRows = [] ∧
     theCensusRequestWithAnImpossibleCandidate.now.sec + 1 < LogStamp.yearEnd ∧
     (dayPlan theCensusRequestWithAnImpossibleCandidate).diagnostics.impossible.val
-      = [(['m','1'], 130000)] ∧
+      = [(['m','1'], 129694)] ∧
     (['m','1'] : Id) ∈ assignedOf (dayPlan theCensusRequestWithAnImpossibleCandidate) ∧
     PlanCheck.subjectOf permissive PlanCheck.CheckName.impossible
       theCensusRequestWithAnImpossibleCandidate
@@ -7631,12 +7640,12 @@ theorem the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_ref
 /-! ### The check at every day that assigns and pays, at both eligibilities -/
 
 set_option maxRecDepth 400000 in
-/-- **Where the live check bites, over the paying set** (§29's six): at `freeSlotRows` it has
-no subject at any of the six and passes at all six; at `permissive` it has a subject at
-exactly `theImpossibleRequest` and fails there.  The eleven-check lift
-(`the_eleven_applies_at_the_paying_request`, `four_requests_now_assign_and_pay`) is proved at
-`freeSlotRows`, so its `impossibleKept` conjunct is still a free pass on every paying day —
-the sentence README gap **2510** asks the owner about. -/
+/-- **Where the live check bites, over the paying set** (§29's six): at `freeSlotRows` it has no
+subject at any of the six and passes at all six — and since W-35 (D55) so it does at `permissive`:
+`theImpossibleRequest`'s `^m1` is owed nothing by its grant, so no day of the six has a subject at
+either eligibility.  The eleven-check lift (`the_eleven_applies_at_the_paying_request`,
+`four_requests_now_assign_and_pay`) is proved at `freeSlotRows`, and README gap **2510** is the
+owner's answer (D55) to what its `impossibleKept` conjunct should mean on a paying day. -/
 theorem the_impossible_check_over_the_paying_set :
     [thePayingRequest, theMirrorPayingRequest, theTwoPayingRequest, theImpossibleRequest,
      thePayingBatchRequest, theSkippedBatchRequest].map (fun r =>
@@ -7645,22 +7654,18 @@ theorem the_impossible_check_over_the_paying_set :
          PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.impossible r (dayPlan r),
          PlanCheck.impossibleKept freeSlotRows r (dayPlan r)))
       = [(false, true, false, true), (false, true, false, true), (false, true, false, true),
-         (true, false, false, true), (false, true, false, true), (false, true, false, true)] := by
+         (false, true, false, true), (false, true, false, true), (false, true, false, true)] := by
   decide
 
 /-! ### THE FINDING at an eligibility that reads step 5's own energy clause
 
 Every eligibility above is blind to the candidate: it admits an id at a ROW, whatever the id's
-`ci`.  So `impossibleKept` failing under them at `theImpossibleRequest` says only that `^m1`
-was dropped — which §28 already refuted Goals.plan_never_drops_an_impossible_item with — and
-not that §8.2 step 5 dropped an impossible item its own filter would have admitted: `^m1` is
-`ci:5` and no slot that Wednesday is that good.  `slotFitRows` asks the question that is left.
-It admits a candidate at a row step 5 FILLED (a work row carrying a slot energy, not the
-running block's, not yet started — `fromNowWorkRows` and an energy) exactly when the
-candidate's `ci` is within that slot's energy: `Planner.PlanReq.groupFitsSlot`'s energy clause,
-at the one kind of row that has a slot energy to read.  It is a witness eligibility, not
-Planner.eligibleAt (README gap 365): it reads no `loc:`, no wind-down and no contiguity, and
-the request below needs none of them. -/
+`ci`.  `slotFitRows` asks the question that is left: it admits a candidate at a row step 5
+FILLED (a work row carrying a slot energy, not the running block's, not yet started —
+`fromNowWorkRows` and an energy) exactly when the candidate's `ci` is within that slot's energy:
+`Planner.PlanReq.groupFitsSlot`'s energy clause, at the one kind of row that has a slot energy to
+read.  It is a witness eligibility, not Planner.eligibleAt (README gap 365): it reads no `loc:`,
+no wind-down and no contiguity, and the requests below need none of them. -/
 
 /-- **An eligibility that reads §8.2 step 5's energy clause at the rows step 5 filled** — a
 work row carrying a slot energy (`fromNowWorkRows` plus `Seg.energy`), and a candidate whose
@@ -7683,23 +7688,16 @@ def theTwoImpossibleRequest : PlanReq :=
   { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨twoImpossibleCands, by decide⟩ }
 
 set_option maxRecDepth 400000 in
-/-- **THE FINDING: §8.2 step 5 drops an impossible item its own energy clause admits, on a day
-that pays, and `impossibleKept` is the ONE check of the eleven that fails there.**
-
-§7.3's pass serves `^t3` first and gives it the day's 240 minutes (shortfall 129 760); `^t1`
-gets nothing (`avail 0`, shortfall 130 000).  Both are HOT and both are named.  Step 5 walks the
-four slots — energies 4, 3, 2, 2 — and `^t3`, first in §7.4's key and owing 6 000 minutes,
-takes all four; `^t1` gets none, though `ci 2` is within every one of them.  At `slotFitRows`
-`^t1` is eligible at `^t3`'s rows and is not assigned, so the check is **false**, while the
-other ten of `PlanCheck.checksOf` are **true** and the decoder pays.  At `freeSlotRows` the check
-is true with nothing to range over, as it is at every request (the fold admits nothing there).
-
-What it is NOT: a slot-energy drop (`^t1` fits every slot), a budget drop (the budget is 6 and
-four slots are filled) or a mismatched request (`PlanCheck.candsAgree` holds).  What it IS: two
-impossible items contending for one day, and §7.3's *"still scheduled with everything
-available"* read against `^t1`'s own grant — which has NOTHING available — says that is
-honoured, while `impossibleKept`'s *"eligible somewhere ⟹ assigned"* says it is not.  Which of
-the two is §8.3's law is README gap **2510**, the owner question. -/
+/-- **W-33's FINDING, and the owner's answer to it (D55): §8.2 step 5 drops an impossible item its
+own energy clause admits, on a day that pays — and the drop is CORRECT, because that item's own
+grant holds nothing.**  §7.3's pass serves `^t3` first and gives it the day's 240 minutes
+(shortfall 129 760); `^t1` gets nothing (`avail 0`, shortfall 130 000).  Step 5 walks the four
+slots — energies 4, 3, 2, 2 — and `^t3`, first in §7.4's key, takes all four; `^t1` gets none,
+though `ci 2` is within every one of them.  Until W-35 the check was **false** here, the one of
+the eleven that failed; D55 reads §7.3's *"still scheduled with everything available"* against
+`^t1`'s OWN grant, which has nothing, so `PlanCheck.owedByItsGrant` exempts `^t1`, `^t3` (owed,
+and assigned) passes, and all eleven are **true**.  Not a slot-energy drop, a budget drop or a
+mismatched request (`PlanCheck.candsAgree` holds): two impossible items contending for one day. -/
 theorem the_planner_drops_an_impossible_item_its_own_energy_clause_admits :
     PlanCheck.candsAgree theTwoImpossibleRequest = true ∧
     theTwoImpossibleRequest.energisedSlots.map (fun p => p.1.val) = [4, 3, 2, 2] ∧
@@ -7712,27 +7710,29 @@ theorem the_planner_drops_an_impossible_item_its_own_energy_clause_admits :
     PlanCheck.eligibleSomewhere slotFitRows theTwoImpossibleRequest
       (dayPlan theTwoImpossibleRequest) ['t','1'] = true ∧
     PlanCheck.impossibleKept slotFitRows theTwoImpossibleRequest
-      (dayPlan theTwoImpossibleRequest) = false ∧
+      (dayPlan theTwoImpossibleRequest) = true ∧
     ((PlanCheck.checksOf slotFitRows).map (fun c =>
         c.run theTwoImpossibleRequest (dayPlan theTwoImpossibleRequest)))
-      = [true, true, true, true, true, true, true, true, true, false, true] ∧
+      = [true, true, true, true, true, true, true, true, true, true, true] ∧
     PlanCheck.impossibleKept freeSlotRows theTwoImpossibleRequest
       (dayPlan theTwoImpossibleRequest) = true ∧
     PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.impossible theTwoImpossibleRequest
-      (dayPlan theTwoImpossibleRequest) = false := by
+      (dayPlan theTwoImpossibleRequest) = false ∧
+    PlanCheck.owedByItsGrant theTwoImpossibleRequest ['t','1'] = false ∧
+    PlanCheck.owedByItsGrant theTwoImpossibleRequest ['t','3'] = true := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
-    by decide, by decide, by decide, by decide⟩
+    by decide, by decide, by decide, by decide, by decide, by decide⟩
 
-/-- **`PlanCheck.impossibleKept` is refuted at a faithful eligibility on a day that pays** — the
-statement the ∀-eligibility lifts' `hnoimp` exists to exclude, at an eligibility that is not
-`permissive`.  So `hnoimp` hides a case that happens, and the case is gap 2510's. -/
-theorem impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day :
-    ¬ ∀ r : PlanReq, PlanCheck.candsAgree r = true →
-        PlanCheck.impossibleKept slotFitRows r (dayPlan r) = true := fun h => by
-  have hq := the_planner_drops_an_impossible_item_its_own_energy_clause_admits
-  have := h theTwoImpossibleRequest hq.1
-  rw [hq.2.2.2.2.2.2.2.1] at this
-  exact absurd this (by simp)
+/-! `impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` stood here until W-35.  It
+was proved at the request above, where D55 makes the check pass, and it is STILL TRUE: it is
+re-proved, under the same name and statement, in the W-35 block at the end of this file, at a
+paying `candsAgree` day where §7.3's EDF order (due date) and §7.4's key order (line order)
+disagree — the item the pass gave today's capacity to is dropped for one that sorts first.
+That is the one case D55's reading still refutes on a paying day, and it is the planner's and
+not the checker's: §8.2 step 5 never reads the grant, so whether the key order should follow the
+EDF order among impossible items is a question for the owner, not a check to weaken (README gap
+2801).  The request above stays where it was, and so does every pin check 9 recorded against it
+(`twoImpossibleCands`, `slotFitRows`): each still first errors inside the theorem above. -/
 
 /-! ### A FLOOR answer is named — the arm a test of `Grant.impossible` could not see -/
 
@@ -7821,13 +7821,13 @@ theorem eraseDups_keeps_the_first_where_dedupIds_keeps_the_last :
 set_option maxRecDepth 400000 in
 /-- **`slotFitRows` reads the CANDIDATE, and so it separates the two drops `permissive` cannot.**
 At `theImpossibleRequest` `^m1` is `ci:5` and no slot that Wednesday is that good, so step 5's
-energy clause admits it nowhere and the check PASSES there with nothing to range over — the drop
-§28 refuted Goals.plan_never_drops_an_impossible_item with is an ENERGY drop, which design §6.3
-row 6 says §7.3 is not about.  At `theTwoImpossibleRequest` the same eligibility FAILS the check
-(`the_planner_drops_an_impossible_item_its_own_energy_clause_admits`): a CONTENTION drop, which
-is README gap 2510's question.  `permissive` fails at both and so tells them apart at neither.
+energy clause admits it nowhere and the check has nothing to range over — an ENERGY drop, which
+design §6.3 row 6 says §7.3 is not about.  At `theTwoImpossibleRequest` the same eligibility
+admits `^t1` at `^t3`'s rows (`the_planner_drops_an_impossible_item_its_own_energy_clause_admits`):
+a CONTENTION drop, README gap 2510's question.  Since W-35 (D55) the check PASSES at both — the
+first has no subject, the second an empty grant — and at `permissive` too (`^m1` is owed nothing).
 (Written after check 9 found `slotFitRows := fun _ _ _ _ => true` SURVIVED every other theorem:
-the constant-true eligibility agreed with this one at the contention day on all eleven checks.) -/
+the first conjunct is the one the constant-true eligibility cannot pass.) -/
 theorem the_energy_clause_separates_the_energy_drop_from_the_contention_drop :
     PlanCheck.eligibleSomewhere slotFitRows theImpossibleRequest (dayPlan theImpossibleRequest)
       ['m','1'] = false ∧
@@ -7836,31 +7836,31 @@ theorem the_energy_clause_separates_the_energy_drop_from_the_contention_drop :
     PlanCheck.subjectOf slotFitRows PlanCheck.CheckName.impossible theImpossibleRequest
       (dayPlan theImpossibleRequest) = false ∧
     PlanCheck.impossibleKept permissive theImpossibleRequest (dayPlan theImpossibleRequest)
-      = false := by
+      = true := by
   refine ⟨by decide, by decide, by decide, by decide⟩
 
 /-! ### The two `given` lifts, refuted where their hot hypothesis HOLDS (W-33 repair, gap 2516)
 
 `PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day`
 and `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item`
-gained `hnoimp` at W-33 and nothing refuted their old forms: the only unassigned day with an
-impossible candidate above is the census Wednesday, and there `hotBeforeQueue` is `false` at
-`permissive` on both days, so the old forms' `hhot` could not be met and they stood untested
-behind it.  The request below is the §4.3 Wednesday of `theQuietRequest` -- no log, nothing
-running, the one wall -- with the impossible `^m1` as its one candidate.  Its wall carries no
-item a hot candidate could fail to precede, so `hotBeforeQueue` HOLDS there, on the whole day
-and on `PlanCheck.withoutPast`'s, and `monotoneInRank` holds on both; every other hypothesis the
-old forms ask for is `theQuietRequest`'s own (`the_running_request_is_plain` is stated over the
-store all three share).  And `planOk` is `false` on both days, at `impossibleKept` alone. -/
-
-/-- **The quiet Wednesday with one candidate, the impossible `^m1`.**  `theQuietRequest` with
-`impCands.take 1`; nothing else moves. -/
+gained `hnoimp` at W-33 and nothing refuted their old forms: at the census Wednesday
+`hotBeforeQueue` is `false` at `permissive`, so the old forms' `hhot` could not be met there.
+The request below is the §4.3 Wednesday of `theQuietRequest` -- no log, nothing running, the one
+wall -- with its BUDGET SPENT and one candidate, an impossible `^m2` its grant owes today's 240
+minutes (W-35 re-aimed it: its old `^m1` had an empty grant, which D55 exempts; README gap 2800).
+Its wall carries no item a hot candidate could fail to precede, so `hotBeforeQueue` HOLDS, on the
+whole day and on `PlanCheck.withoutPast`'s; `monotoneInRank` holds on both; every other hypothesis
+is `theQuietRequest`'s own.  And `planOk` is `false` on both days, at `impossibleKept` alone. -/
+/-- **The quiet Wednesday, budget spent, with one candidate, an impossible `^m2` its grant owes.** -/
 def theQuietImpossibleRequest : PlanReq :=
-  { theQuietRequest with cands := ⟨impCands.take 1, by decide⟩ }
+  { theQuietRequest with
+    cands := ⟨[pCandDue ['m','2'] 2 false 100000 739867 60 .any true (by decide)], by decide⟩,
+    look := { theQuietRequest.look with today0 := { theQuietRequest.look.today0 with
+      date := some theQuietRequest.look.today, budget := some 0 } } }
 
 set_option maxRecDepth 400000 in
 /-- **Every hypothesis of both old forms holds and their conclusion is false.**  The day names
-`^m1` short 130,000 minutes, assigns nothing, and fails `impossibleKept` at `permissive` while
+`^m2` short 129,760 minutes, assigns nothing, and fails `impossibleKept` at `permissive` while
 `hotBeforeQueue` and `monotoneInRank` pass -- so `hnoimp` is the one hypothesis the restated
 lifts needed, measured here rather than argued. -/
 theorem a_quiet_hot_day_drops_its_eligible_impossible_item :
@@ -7868,7 +7868,7 @@ theorem a_quiet_hot_day_drops_its_eligible_impossible_item :
     theQuietImpossibleRequest.activeAgrees = true ∧ theQuietImpossibleRequest.dayAgrees = true ∧
     theQuietImpossibleRequest.now.sec + 1 < LogStamp.yearEnd ∧
     pastRows theQuietImpossibleRequest = [] ∧ theQuietImpossibleRequest.activeRun = none ∧
-    (dayPlan theQuietImpossibleRequest).diagnostics.impossible.val = [(['m','1'], 130000)] ∧
+    (dayPlan theQuietImpossibleRequest).diagnostics.impossible.val = [(['m','2'], 129760)] ∧
     PlanCheck.hotBeforeQueue permissive theQuietImpossibleRequest
       (dayPlan theQuietImpossibleRequest) = true ∧
     PlanCheck.impossibleKept permissive theQuietImpossibleRequest
@@ -8865,6 +8865,146 @@ theorem planJson_of_a_planned_day_emits_the_zero_hash_is_refuted :
   have hv := congrArg Subtype.val h4
   rw [the_witness_days_hash_is_the_forks] at hv
   exact absurd hv (by decide)
+
+/-! ############################################################################
+## W-35 (track K): D55 — an impossible item is owed what ITS OWN GRANT holds
+############################################################################
+
+The owner's D55 (README gap 2510) restated `PlanCheck.impossibleKept` to read the item's own
+grant, through `PlanCheck.owedByItsGrant`.  Section 30 above was re-aimed in place at W-35 (line
+for line, so no check-9 pin moved): its W-33 finding now PASSES, and its refutations were moved
+to requests where an item its grant OWES is dropped.  This block holds what the restatement adds:
+
+* **the old unassigned request passes** — `^m1`'s grant holds nothing, so the day that drops it
+  is honoured, and the W-33 law that said such a day fails the check is refuted;
+* **the check still bites**, on a planted drop of an item its grant owes (`PlanCheck.impossibleKept_can_fail`
+  at a request that owes `^m2`) and on a real produced day, a paying `candsAgree` day where §7.3's
+  EDF order and §7.4's key order disagree (`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`,
+  MOVED here from section 30 and re-proved: its statement is unchanged and still true).
+
+**What D55's row said and this block measures false**: that `hnoimp` comes OFF the five lifts.
+It cannot: `an_unassigned_day_drops_its_eligible_impossible_item` (section 30, re-aimed) is a day
+whose budget is spent, whose impossible `^m2` its grant OWES today's 240 minutes — §7.3's day-0
+capacity never reads the budget — and which assigns nothing.  The lifts carry the weaker
+hypothesis D55 makes possible instead (README gap 2800). -/
+
+/-- **W-33's unassigned request, kept by value**: the quiet census Wednesday with the impossible
+`^m1` (`ci:5`, due today) as its one candidate — `theUnassignedImpossibleRequest` until W-35. -/
+def theGrantlessUnassignedRequest : PlanReq :=
+  { theQuietCensusRequest with cands := ⟨impCands.take 1, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **D55 on an unassigned day**: the day assigns nothing, names `^m1` impossible and drops it,
+`^m1` is eligible everywhere at `permissive` — and its grant holds nothing (`avail 0`), so it is
+owed nothing and the check PASSES on the whole day and on `PlanCheck.withoutPast`'s. -/
+theorem an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes :
+    theGrantlessUnassignedRequest.assignedRows = [] ∧
+    assignedOf (dayPlan theGrantlessUnassignedRequest) = [] ∧
+    (dayPlan theGrantlessUnassignedRequest).diagnostics.impossible.val = [(['m','1'], 130000)] ∧
+    PlanCheck.eligibleSomewhere permissive theGrantlessUnassignedRequest
+      (dayPlan theGrantlessUnassignedRequest) ['m','1'] = true ∧
+    (theGrantlessUnassignedRequest.grantFor ['m','1']).map (fun g => g.avail) = some 0 ∧
+    PlanCheck.owedByItsGrant theGrantlessUnassignedRequest ['m','1'] = false ∧
+    PlanCheck.impossibleKept permissive theGrantlessUnassignedRequest
+      (dayPlan theGrantlessUnassignedRequest) = true ∧
+    PlanCheck.impossibleKept permissive theGrantlessUnassignedRequest
+      (PlanCheck.withoutPast theGrantlessUnassignedRequest
+        (dayPlan theGrantlessUnassignedRequest)) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned, as W-33
+wrote it (no owed clause), is REFUTED under D55** at the request above: nothing is assigned, the
+listed item is eligible, and the check passes.  Its successor carries `howed`:
+`PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned`. -/
+theorem an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), assignedOf d = [] →
+        ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleSomewhere el r d p.1 = true →
+          PlanCheck.impossibleKept el r d = false := fun h => by
+  have hq := an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes
+  have := h permissive theGrantlessUnassignedRequest _ hq.2.1 (['m','1'], 130000)
+    (by rw [hq.2.2.1]; simp) hq.2.2.2.1
+  rw [hq.2.2.2.2.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible, as W-33 wrote it,
+is REFUTED under D55** at `theImpossibleRequest`: an answer there reports a positive shortfall and
+its item is eligible at `permissive`, and the census arm has no subject, because that answer's
+grant holds nothing.  Its successor is
+`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`. -/
+theorem impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        (PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = true ↔
+          ∃ o ∈ r.candAnswers, 0 < o.shortfall ∧
+            PlanCheck.eligibleSomewhere el r (dayPlan r) o.out.cand.id = true) := fun h => by
+  have hq := the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved
+  have hr : ∃ o ∈ theImpossibleRequest.candAnswers, 0 < o.shortfall ∧
+      PlanCheck.eligibleSomewhere permissive theImpossibleRequest (dayPlan theImpossibleRequest)
+        o.out.cand.id = true := by decide
+  have := (h permissive theImpossibleRequest).2 hr
+  rw [hq.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The restated check still bites, on a planted drop — and exempts on one.**  At the spent
+day `^m2`'s grant owes it today's 240 minutes, so the planted day that drops it fails the check
+(`PlanCheck.impossibleKept_can_fail`, now carrying `howed`); at `theTwoImpossibleRequest` `^t1`'s
+grant holds nothing, so the same planted drop of `^t1` passes. -/
+theorem the_restated_check_bites_on_a_planted_drop_of_an_owed_item :
+    PlanCheck.owedByItsGrant theUnassignedImpossibleRequest ['m','2'] = true ∧
+    PlanCheck.impossibleKept (fun _ _ _ _ => true) theUnassignedImpossibleRequest
+      (PlanCheck.theDroppedImpossibleDay ['m','2']) = false ∧
+    PlanCheck.impossibleKept (fun _ _ _ _ => true) theTwoImpossibleRequest
+      (PlanCheck.theDroppedImpossibleDay ['t','1']) = true := by
+  refine ⟨by decide, PlanCheck.impossibleKept_can_fail _ _ (by decide), by decide⟩
+
+/-- **The contention day with its due dates the other way round**: `^t3`, first in §7.4's key,
+due TOMORROW; `^t1`, second, due TODAY.  Both `ci:2`, both 100 000 minutes, the store's own
+facts, so `PlanCheck.candsAgree` holds. -/
+def reversedImpossibleCands : List (Look.Cand × Option Look.Floor) :=
+  [pCandDue ['t','3'] 2 false 100000 739868 6000 .any true (by decide),
+   pCandDue ['t','1'] 2 false 100000 739867 6000 .any true (by decide)]
+
+def theReversedTwoImpossibleRequest : PlanReq :=
+  { theQuietCensusRequest with
+    plan := batchStorePlan, cands := ⟨reversedImpossibleCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **§7.3 serves by due date and §8.2 step 5 by key, and here they disagree.**  The EDF pass
+serves `^t1` (due today) first and grants it today's 240 minutes; `^t3` (due tomorrow) is granted
+tomorrow's 360.  Step 5 walks today's four slots in key order and `^t3` — first by line order at
+`p = 0` — takes all four.  So `^t1`, which its grant OWES today's capacity, is eligible at
+`slotFitRows` and dropped, and D55's reading fails the check on a paying `candsAgree` day. -/
+theorem the_reversed_day_drops_the_impossible_item_its_grant_owes :
+    PlanCheck.candsAgree theReversedTwoImpossibleRequest = true ∧
+    assignedOf (dayPlan theReversedTwoImpossibleRequest)
+      = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
+    (dayPlan theReversedTwoImpossibleRequest).diagnostics.impossible.val
+      = [(['t','3'], 129640), (['t','1'], 129760)] ∧
+    (theReversedTwoImpossibleRequest.grantFor ['t','1']).map (fun g => (g.avail, g.reserved))
+      = some (240000000000000000000, 240000000000000000000) ∧
+    (theReversedTwoImpossibleRequest.grantFor ['t','3']).map (fun g => (g.avail, g.reserved))
+      = some (360000000000000000000, 360000000000000000000) ∧
+    PlanCheck.owedByItsGrant theReversedTwoImpossibleRequest ['t','1'] = true ∧
+    PlanCheck.eligibleSomewhere slotFitRows theReversedTwoImpossibleRequest
+      (dayPlan theReversedTwoImpossibleRequest) ['t','1'] = true ∧
+    PlanCheck.impossibleKept slotFitRows theReversedTwoImpossibleRequest
+      (dayPlan theReversedTwoImpossibleRequest) = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **`PlanCheck.impossibleKept` is refuted at a faithful eligibility on a day that pays** — the
+statement the ∀-eligibility lifts' `hnoimp` exists to exclude, at an eligibility that is not
+`permissive`.  Moved here from section 30 at W-35 and re-proved at the reversed day: under D55 the
+contention day W-33 proved it at passes, and this day, where the grant OWES the dropped item,
+fails.  So `hnoimp` still hides a case that happens (README gap 2801). -/
+theorem impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day :
+    ¬ ∀ r : PlanReq, PlanCheck.candsAgree r = true →
+        PlanCheck.impossibleKept slotFitRows r (dayPlan r) = true := fun h => by
+  have hq := the_reversed_day_drops_the_impossible_item_its_grant_owes
+  have := h theReversedTwoImpossibleRequest hq.1
+  rw [hq.2.2.2.2.2.2.2] at this
+  exact absurd this (by simp)
 
 end PlannerWit
 end Tm
