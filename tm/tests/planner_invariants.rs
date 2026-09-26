@@ -2275,17 +2275,24 @@ proptest! {
             let fblock =
                 sorted(d2.diagnostics.blocked.iter().map(|(id, _)| id.to_string()).collect());
             prop_assert_eq!(ids_of(&kd["blocked"]), fblock.clone(), "§8.2 step 8's `blocked` differs");
-            // **`droppedTail` and `planHonesty` read the day's ASSIGNED set**, and on one class
-            // of day the two planners' sets differ for a reason README gap **554** already
+            // **`droppedTail` and `planHonesty` read the day's ASSIGNED set**, and until W-34 on
+            // one class of day the two planners' sets differed for the reason README gap **554**
             // names: fork `open_block_segment` draws the worked stretch of the block the log
-            // holds OPEN (`[since, now)`, `SegFlags::open`), and the kernel does not port it.
-            // On most such days the reservation (§8.2 choice 5b) carries the running item into
-            // both sets anyway; where no reservation is placed (a wall covers `now`, overtime)
-            // only the fork's set holds it. Those days — and only those — are COUNTED, not
-            // compared, by the property that defines them: the fork's day carries gap 554's row
-            // for an item no kernel work row names. DRIVEN (W-33): the first run of this
-            // comparison found exactly this, `droppedTail` kernel `["zaa"]`, fork `[]`, at a
-            // running block whose `now` is a wall's start; the seed is kept (D46).
+            // holds OPEN (`[since, now)`, `SegFlags::open`), and the kernel did not port it.
+            // Where no reservation was placed (a wall covering `now`, overtime) only the fork's
+            // set held the running item. Those days were COUNTED, not compared, by the property
+            // that defined them: the fork's day carries gap 554's row for an item no kernel work
+            // row names. DRIVEN (W-33): the first run of this comparison found exactly this,
+            // `droppedTail` kernel `["zaa"]`, fork `[]`, at a running block whose `now` is a
+            // wall's start; the seed is kept (D46).
+            //
+            // **W-34 PORTED THE ROW AND THE COUNTER IS AN ASSERTION** (README gap 2519, closed):
+            // `Planner.openBlockRows`, composed into `Planner.dayRows` through `replayedRows`. So
+            // the property that defined the exemption is asserted FALSE on every day — a fork
+            // open-block row whose item no kernel work row names is a failure by name — and
+            // both fields are compared on every day. `d554` now counts the days the fork DREW
+            // an open-block row at all, which is the population the two assertions below were
+            // exempt on, and it has a floor.
             let kwork: BTreeSet<String> = plan["segments"]
                 .as_array()
                 .map(Vec::as_slice)
@@ -2310,14 +2317,17 @@ proptest! {
                     && s.start < w.now
                     && s.item.as_ref().is_some_and(|i| !kwork.contains(i.as_str()))
             });
+            prop_assert!(
+                !gap554,
+                "the fork drew gap 554's open-block row for an item no kernel work row names \
+                 (kernel work rows name {:?})", kwork
+            );
             let fdrop =
                 sorted(d2.diagnostics.dropped_tail.iter().map(ToString::to_string).collect());
-            if !gap554 {
-                prop_assert_eq!(
-                    ids_of(&kd["droppedTail"]), fdrop.clone(),
-                    "§8.2 step 8's `droppedTail` differs"
-                );
-            }
+            prop_assert_eq!(
+                ids_of(&kd["droppedTail"]), fdrop.clone(),
+                "§8.2 step 8's `droppedTail` differs"
+            );
             let fund =
                 sorted(d2.diagnostics.underused.iter().map(|(id, _, _)| id.to_string()).collect());
             prop_assert_eq!(
@@ -2327,29 +2337,27 @@ proptest! {
             let planned = kd["planHonesty"]["planned"].as_u64().unwrap_or(u64::MAX);
             let total = kd["planHonesty"]["total"].as_u64().unwrap_or(u64::MAX);
             let kratio = (total != 0).then(|| planned as f64 / total as f64);
-            if !gap554 {
-                prop_assert_eq!(
-                    kratio, d2.diagnostics.plan_honesty,
-                    "§8.2 step 8's `planHonesty` differs (kernel {}/{})", planned, total
-                );
-            }
+            prop_assert_eq!(
+                kratio, d2.diagnostics.plan_honesty,
+                "§8.2 step 8's `planHonesty` differs (kernel {}/{})", planned, total
+            );
             dcmp = 1;
             dimp = kimp.len() as u64;
             dhot = fhot.len() as u64;
             dwait = fwait.len() as u64;
             dblock = fblock.len() as u64;
             dund = fund.len() as u64;
-            if !gap554 {
-                ddrop = fdrop.len() as u64;
-                dhon = u64::from(kratio.is_some());
-            }
+            ddrop = fdrop.len() as u64;
+            dhon = u64::from(kratio.is_some());
             let floored = |id: &str| cvec.iter().any(|c| c.id.as_str() == id && c.floor.is_some());
             let flagged = |id: &str| cvec.iter().any(|c| c.id.as_str() == id && c.hot);
             dimpfl = kimp.iter().filter(|(id, _)| floored(id)).count() as u64;
             dhotfl = fhot.iter().filter(|id| flagged(id)).count() as u64;
-            dmore = (fwait.len() + fblock.len() + fund.len()) as u64
-                + if gap554 { 0 } else { fdrop.len() as u64 + u64::from(kratio.is_some()) };
-            d554 = u64::from(gap554);
+            dmore = (fwait.len() + fblock.len() + fund.len() + fdrop.len()) as u64
+                + u64::from(kratio.is_some());
+            d554 = u64::from(d2.segments.iter().any(|s| {
+                matches!(s.kind, SegKind::Block) && s.flags.open && s.start < w.now
+            }));
         }
 
         // **AND EVERY ROW THE FORK ASSIGNED IS A ROW THE KERNEL ANSWERED FOR**
@@ -2640,6 +2648,14 @@ proptest! {
             ] {
                 prop_assert!(n > 0, "no {} was compared in {} cases", what, cases);
             }
+            // **AND THE DAYS THE EXEMPTION USED TO REMOVE ARE DRAWN** (W-34, README gap 2519):
+            // an assertion that `droppedTail` and `planHonesty` agree on the open-block days
+            // is only an assertion if such days occur.
+            prop_assert!(
+                d554c > 0,
+                "the fork drew an open-block row on none of {cases} cases, so gap 2519's \
+                 assertion ran on nothing"
+            );
         }
         eprintln!(
             "planner_invariants plan census: {cases} cases, {walls} walls compared, \
@@ -2669,8 +2685,8 @@ proptest! {
              (waiting {dwaitc}, blocked {dblockc}, underused {dundc}, droppedTail {ddropc}, \
              planHonesty {dhonc}; IMPOSSIBLE rows of floor candidates {dimpflc}, HOT ids of \
              hot-flagged candidates {dhotflc}), \
-             days whose `droppedTail` and `planHonesty` were COUNTED not compared because the \
-             fork drew gap 554's open-block row for an item no kernel work row names {d554c}",
+             days the fork drew gap 554's open-block row on, where `droppedTail` and \
+             `planHonesty` are now ASSERTED (W-34; counted and not compared until then) {d554c}",
             KIND_WORDS.lock().expect("kinds").len()
         );
         // **THE TWO DISAGREEMENTS ARE KEPT, NOT HIDDEN** (D46). A window or a
@@ -2764,6 +2780,201 @@ fn two_routines_contend_for_one_position() {
     assert_eq!(krout, frout, "the two planners ordered the contending routines differently");
 }
 
+/// **W-34's census**: `[cases, open rows compared, days with an open row, overtime days
+/// compared, overtime ids compared (removed, added and moved), overtime days where the fork's
+/// `extra_min` override moved the answer beyond the estimate's own, overtime drops on those
+/// days (fork, full what-if), cases with no kernel §7 answer]`.
+static W34_CENSUS: Mutex<[u64; 8]> = Mutex::new([0; 8]);
+
+/// The worked minutes a fork `open_block_segment` row carries in its note, `"<n>m so far"`.
+fn so_far(note: Option<&str>) -> Option<u64> {
+    note?.strip_suffix("m so far")?.parse().ok()
+}
+
+/// One `planner::PlanDiff`, on the kernel's absolute seconds: `(removed, added, moved, drift)`.
+type DiffRow = (Vec<String>, Vec<String>, Vec<(String, i64, i64)>, u64);
+
+fn fork_diff(d: &planner::PlanDiff) -> DiffRow {
+    (
+        d.removed.iter().map(ToString::to_string).collect(),
+        d.added.iter().map(ToString::to_string).collect(),
+        d.moved
+            .iter()
+            .map(|(id, a, b)| (id.to_string(), rowwire::kernel_sec(*a), rowwire::kernel_sec(*b)))
+            .collect(),
+        u64::from(d.drift_min),
+    )
+}
+
+fn kernel_diff(v: &Value) -> DiffRow {
+    let ids = |k: &str| -> Vec<String> {
+        v[k].as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|x| x.as_str().unwrap_or("<not a string>").to_string())
+            .collect()
+    };
+    (
+        ids("removed"),
+        ids("added"),
+        v["moved"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .map(|m| {
+                (m["id"].as_str().unwrap_or("<no id>").to_string(),
+                 m["from"].as_i64().unwrap_or(-1), m["to"].as_i64().unwrap_or(-1))
+            })
+            .collect(),
+        v["driftMin"].as_u64().unwrap_or(u64::MAX),
+    )
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **W-34: the open block's worked stretch and §9.1's overtime what-if, by value, against
+    /// the fork ranked as the kernel ranked it** (D53; README gaps 554, 2519, 2680-2682).
+    ///
+    /// **The open row.** Fork `open_block_segment` draws `[since, now)` for the block the log
+    /// holds open, clipped at the day's end and at an interruption that began after it, `▶`
+    /// when nothing is reserved and nothing interrupts, and `"<n>m so far"`. The kernel's
+    /// `Planner.openBlockRows` is compared row for row — start, stop, item, the `▶` and the
+    /// minutes — on every case, both ways.
+    ///
+    /// **The what-if.** On a case with a running block the request carries `planner.overtime`
+    /// = one block on the running item, which is `App::extend_drops`' only reachable branch
+    /// (the TUI asks it of `state.active.id` and nothing else). The kernel answers
+    /// `Planner.overtimeDiff` — `diff` of its day and the day with the running estimate grown
+    /// — and it is ASSERTED equal, every field, to `planner::diff` of the fork's own two days
+    /// for the same what-if. What the kernel does not model is counted, by the property that
+    /// defines it: the fork's `PlanOverrides::apply` also grows the running candidate's
+    /// `planned_min`, and on a day where that moves `diff` beyond what the estimate alone
+    /// moved, the kernel's answer is the estimate's (README gap 2680, the owner's question).
+    #[test]
+    fn the_kernel_draws_the_open_block_and_answers_the_overtime_what_if_the_fork_answers(
+        case in case_strategy()
+    ) {
+        let w = build(&case);
+        let mut req = w.plan_request();
+        let active = w.state.active.clone();
+        if let Some(a) = &active {
+            req["planner"]["overtime"] = json!({"id": a.id.to_string(), "blocks": 1});
+        }
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let cvec = w.candidates();
+        let Some(ps) = kernel_prios(&plan, &cvec) else {
+            W34_CENSUS.lock().expect("census")[7] += 1;
+            return Ok(());
+        };
+        let base = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+
+        // **The open row, by value, both ways.**
+        let kopen: Vec<(i64, i64, String, bool, Option<u64>)> = plan["segments"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter(|s| s["kind"] == "block" && s["flags"]["open"] == true)
+            .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                      s["item"].as_str().unwrap_or_default().to_string(),
+                      s["flags"]["current"].as_bool().unwrap_or(false),
+                      s["note"]["workedMin"].as_u64()))
+            .collect();
+        let fopen: Vec<(i64, i64, String, bool, Option<u64>)> = base
+            .segments
+            .iter()
+            .filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open)
+            .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
+                      s.item.as_ref().map(ToString::to_string).unwrap_or_default(),
+                      s.flags.current, so_far(s.flags.note.as_deref())))
+            .collect();
+        prop_assert_eq!(
+            &kopen, &fopen,
+            "the open block's worked stretch differs from fork `open_block_segment`'s"
+        );
+
+        // **The overtime what-if, by value.**
+        let (mut otc, mut otids, mut otextra, mut otdrops) = (0u64, 0u64, 0u64, 0u64);
+        if let Some(a) = &active {
+            let bm = w.cfg.block_min();
+            let mut rt = w.state.clone();
+            if let Some(x) = rt.active.as_mut() {
+                x.est_min = x.est_min.saturating_add(bm);
+            }
+            let ov = planner::PlanOverrides::new().extending(&a.id, bm);
+            let alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&cvec, &ps));
+            let alt_full = planner::plan(
+                &w.input(&rt, w.now).with_ranking(&cvec, &ps).with_overrides(&ov),
+            );
+            let f_est = fork_diff(&planner::diff(&base, &alt_est));
+            let f_full = fork_diff(&planner::diff(&base, &alt_full));
+            prop_assert!(!plan["overtime"].is_null(), "the kernel did not answer `overtime`");
+            let k = kernel_diff(&plan["overtime"]);
+            prop_assert_eq!(
+                &k, &f_est,
+                "the kernel's overtime `diff` differs from the fork's for the same what-if"
+            );
+            otc = 1;
+            otids = (k.0.len() + k.1.len() + k.2.len()) as u64;
+            if f_full != f_est {
+                otextra = 1;
+                otdrops = f_full.0.len() as u64;
+            }
+        } else {
+            prop_assert!(
+                plan["overtime"].is_null(),
+                "the kernel answered `overtime` to a request that asked none"
+            );
+        }
+
+        let [cases, orows, odays, ocmp, oids, oextra, odrops, noprio] = {
+            let mut c = W34_CENSUS.lock().expect("census");
+            c[0] += 1;
+            c[1] += kopen.len() as u64;
+            c[2] += u64::from(!kopen.is_empty());
+            c[3] += otc;
+            c[4] += otids;
+            c[5] += otextra;
+            c[6] += otdrops;
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if cases >= generated {
+            // **Floors** (AGENTS §9.2): a comparison that ran on nothing compared nothing.
+            prop_assert!(orows > 0, "no open-block row was compared in {cases} cases");
+            prop_assert!(ocmp > 0, "no overtime what-if was compared in {cases} cases");
+            prop_assert!(oids > 0, "every overtime `diff` compared was empty in {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants W-34 census: {cases} cases, open-block rows compared {orows} on \
+             {odays} days, overtime what-ifs ASSERTED against the fork's `diff` of the same \
+             what-if {ocmp} (ids compared {oids}), days where the fork's `extra_min` override \
+             moved the answer beyond the estimate's (README gap 2680, counted) {oextra}, with \
+             {odrops} fork drops on them, cases with no kernel §7 answer {noprio}"
+        );
+    }
+}
+
 // ===========================================================================
 // **THE PLAN HASH, COMPARED BY VALUE** — stage 6 W-34 track H (P8's emitter).
 //
@@ -2779,9 +2990,10 @@ fn two_routines_contend_for_one_position() {
 //   2. **THE DAY** — the kernel's `plan.hash` equals `day2.hash()`, the fork's
 //      day ranked by the kernel's own §7 answer (the shipped wiring, D53). A day
 //      whose rows do not agree is classified ROW BY ROW, by a PROPERTY of the
-//      fork's row, into the three row classes this kernel is recorded as not
-//      porting — README gap 554 (`open_block_segment`: the row `open` marks),
-//      gap 550 (the reservation's multiplier: the `current` Block whose kernel
+//      fork's row, into the row classes this kernel is recorded as not
+//      porting — README gap 554 (`open_block_segment`: the row `open` marks)
+//      UNTIL W-34's LAND STEP, which removed it when track D's port made it
+//      count zero; gap 550 (the reservation's multiplier: the `current` Block whose kernel
 //      twin differs in `multiplier` alone) and gap 551 (the cut's kept breaks: a
 //      Break row starting at or after `now`, which the log cannot have written).
 //      That is an enumeration a row must JOIN to be exempt, never a list of days
@@ -2798,11 +3010,12 @@ fn two_routines_contend_for_one_position() {
 
 /// The census: cases; days with no kernel §7 answer; days compared with the
 /// kernel-ranked fork; of those, equal hashes; equal rows; rows the emitter
-/// digested; drawn multipliers; open-block rows (554); reservation multipliers
+/// digested; drawn multipliers; fork open-block rows the kernel's day holds
+/// (gap 554's class until W-34's land step removed it); reservation multipliers
 /// (550); kept breaks (551); days a class explained; batch rows digested;
-/// days `deferred` was compared; deferred ids compared; open-block ids set aside
-/// from the kernel's `deferred`; days with a drawn break; days whose rest debt
-/// was non-zero.
+/// days `deferred` was compared; deferred ids compared; days `deferred` was
+/// compared whole on a day carrying an open-block row; days with a drawn break;
+/// days whose rest debt was non-zero.
 static HASH_CENSUS: Mutex<[u64; 17]> = Mutex::new([0; 17]);
 
 /// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
@@ -2988,11 +3201,20 @@ proptest! {
             let fonly = rows_not_in(&d2.segments, &krows);
             let konly = rows_not_in(&krows, &d2.segments);
             let mut twins: Vec<bool> = vec![false; konly.len()];
+            // **GAP 554's CLASS IS GONE** (W-34's land step). Track D composed fork
+            // `open_block_segment` into `Planner.dayRows`, and on the merged tree the
+            // class counted ZERO rows; so a fork open-block row the kernel's day lacks is
+            // no longer explained by anything and FAILS below by name, like any other
+            // row outside the two classes that remain. `c554` now counts the fork's
+            // open-block rows the kernel's day HOLDS, so the census can show the case
+            // ran (`n554 > 0` is a floor).
+            c554 = d2.segments.iter()
+                .filter(|s| s.flags.open && matches!(s.kind, SegKind::Block))
+                .count() as u64
+                - fonly.iter()
+                    .filter(|f| f.flags.open && matches!(f.kind, SegKind::Block))
+                    .count() as u64;
             for f in &fonly {
-                if f.flags.open && matches!(f.kind, SegKind::Block) {
-                    c554 += 1;
-                    continue;
-                }
                 if matches!(f.kind, SegKind::Break) && f.start >= w.now {
                     c551 += 1;
                     continue;
@@ -3017,7 +3239,7 @@ proptest! {
                 prop_assert!(
                     false,
                     "the fork's day holds a row the kernel's does not, and it is none of the \
-                     three classes the kernel is recorded as not porting: {}", placement_key(f)
+                     two classes the kernel is recorded as not porting: {}", placement_key(f)
                 );
             }
             for (i, k) in konly.iter().enumerate() {
@@ -3028,22 +3250,18 @@ proptest! {
             }
             // **§8.2 STEP 8's LAST TWO FIELDS, BY VALUE** (W-34, README gap 2511). `deferred`
             // is a set of ids (the fork pushes each once); it reads the day's `assigned`, which
-            // the fork's open-block row (gap 554, the class above) adds its item to — so that
-            // item, and only it, is set aside from the kernel's list before the comparison, on
-            // the property and not on the day. `restDebtMin` reads no row and is compared on
-            // every day.
-            let open_ids: Vec<String> = fonly.iter()
-                .filter(|f| f.flags.open && matches!(f.kind, SegKind::Block))
-                .filter_map(|f| f.item.as_ref().map(ToString::to_string))
-                .collect();
+            // the fork's open-block row adds its item to. Until W-34's land step that item was
+            // set aside from the kernel's list, because the kernel drew no open-block row; the
+            // kernel draws it now (the loop above fails if it does not), so NOTHING is set
+            // aside and the two lists are compared whole. The counter below counts the days the
+            // compared lists read an open-block row's item on both sides. `restDebtMin` reads
+            // no row and is compared on every day.
             let kd = &plan["diagnostics"];
             let mut kdef: Vec<String> = kd["deferred"].as_array().map(Vec::as_slice)
                 .unwrap_or_default().iter()
                 .map(|v| v.as_str().unwrap_or("<not a string>").to_string())
                 .collect();
-            let before = kdef.len();
-            kdef.retain(|i| !open_ids.contains(i));
-            set_aside = (before - kdef.len()) as u64;
+            set_aside = u64::from(c554 > 0);
             let mut fdef: Vec<String> =
                 d2.diagnostics.deferred.iter().map(ToString::to_string).collect();
             kdef.sort();
@@ -3109,17 +3327,18 @@ proptest! {
             prop_assert!(ndefids > 0, "no DEFERRED id was compared in {cases} cases");
             prop_assert!(nbrk > 0, "no break was drawn in {cases} cases");
             prop_assert!(nrest > 0, "no non-zero REST DEBT was compared in {cases} cases");
+            prop_assert!(n554 > 0, "no fork open-block row was matched by a kernel row in {cases} cases");
         }
         eprintln!(
             "planner_invariants hash census: {cases} cases; the EMITTER compared on all \
              {cases} ({digested} kernel rows digested, {nbatch} of them batches, {drawn} \
              days at a drawn multiplier); the DAY compared with the kernel-ranked fork on \
              {cmp} ({noprio} with no kernel §7 answer): hashes EQUAL {eq}, rows agree {agree}, \
-             days explained by a recorded class {nexpl} — open-block rows (gap 554) {n554}, \
-             reservation multipliers (gap 550) {n550}, kept breaks (gap 551) {n551}; \
-             STEP 8's `deferred` compared on {ndefdays} days ({ndefids} ids, {naside} open-block \
-             ids set aside), `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a \
-             drawn break)"
+             days explained by a recorded class {nexpl} — reservation multipliers (gap 550) \
+             {n550}, kept breaks (gap 551) {n551}; open-block rows (gap 554, NO LONGER A \
+             CLASS) the kernel's day holds {n554}; STEP 8's `deferred` compared on {ndefdays} \
+             days ({ndefids} ids, whole, on {naside} days carrying an open-block row), \
+             `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break)"
         );
     }
 }

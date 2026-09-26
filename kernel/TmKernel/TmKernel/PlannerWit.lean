@@ -3953,7 +3953,7 @@ theorem the_quiet_lift_applies_at_the_quiet_request :
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item permissive theQuietRequest
     (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
-    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain (by decide)
 
 set_option maxRecDepth 400000 in
@@ -3967,7 +3967,7 @@ theorem the_quiet_battery_passes_at_the_quiet_request :
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item permissive theQuietRequest
     (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
-    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain (by decide)
     (by decide)
 
@@ -4003,7 +4003,7 @@ theorem the_quiet_lift_applies_at_the_quiet_census_request :
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item permissive theQuietCensusRequest
     (by decide) theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
     the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
-    (by rw [the_quiet_census_request_is_quiet.1]; simp)
+    (by decide)
     the_quiet_census_request_is_quiet.2 the_census_request_is_plain (by decide)
 
 set_option maxRecDepth 400000 in
@@ -4413,7 +4413,7 @@ theorem the_whole_battery_passes_on_the_quiet_census_day :
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day onlyOnWorkRows theQuietCensusRequest
     (by decide) theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
     the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
-    (by rw [the_quiet_census_request_is_quiet.1]; simp)
+    (by decide)
     the_quiet_census_request_is_quiet.2 the_census_request_is_plain
     onlyOnWorkRows_is_work_anchored
 
@@ -4424,7 +4424,7 @@ theorem the_whole_battery_passes_on_the_quiet_day :
   PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day onlyOnWorkRows theQuietRequest
     (by decide) theQuietRequest_wallsAgree the_quiet_request_agrees.1 the_quiet_request_agrees.2.1
     the_quiet_request_agrees.2.2.1
-    (by rw [the_quiet_request_agrees.2.2.2.1]; simp)
+    (by decide)
     the_quiet_request_agrees.2.2.2.2 the_running_request_is_plain
     onlyOnWorkRows_is_work_anchored
 
@@ -6422,7 +6422,7 @@ theorem the_lift_applies_at_the_paying_request :
     PlanCheck.planOkCore thePayingRequest (dayPlan thePayingRequest) = true :=
   PlanCheck.dayPlan_ok_core_of_a_paying_decoder thePayingRequest
     the_paying_request_pays_the_decoder
-    (by rw [the_paying_request_is_quiet]; simp)
+    (by decide)
     the_paying_request_assigns_and_the_battery_passes.2.2.2.2.2.2.1
     the_paying_request_is_plain
 
@@ -6554,7 +6554,7 @@ theorem the_eleven_applies_at_the_paying_request :
     thePayingRequest
     (PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor freeSlotRows_is_unfilled _)
     the_paying_request_pays_the_decoder
-    (by rw [the_paying_request_is_quiet]; simp)
+    (by decide)
     the_paying_request_assigns_and_the_battery_passes.2.2.2.2.2.2.1
     the_paying_request_is_plain
 
@@ -8111,6 +8111,729 @@ theorem the_underused_list_holds_each_candidate_once_is_refuted :
      pCand ['m','2'] 1 false 120 .any true (by decide)], by decide⟩ }
   rw [the_underused_list_names_an_item_once_per_slot] at this
   exact absurd this (by decide)
+
+/-! ############################################################################
+## W-34: fork `open_block_segment`, computed — the worked stretch of the running block
+############################################################################
+
+README gaps **554** and **2519**.  Until W-34 no request in this tree had a block the log holds
+OPEN: `witLines` closes both of its blocks, and `theRunningRequest`'s runtime says `m1` is
+running while its log says `m1` was done at 08:05, so `Replay.Facts.openBlock` was `none` at
+every witness and `Planner.openBlockRows` would have been `[]` at every one of them —
+`no_row_of_the_days_this_tree_builds_is_open` still says so of the four it names.  These
+requests hold one: the §4.3 Wednesday's wake and arrival, and `m1` **started at 12:00 and not
+stopped**, planned at 14:00.
+
+What they buy, in order:
+
+* the open row **reaches the day**, with the fork's own marks — `[12:00, 14:00)`, `open`, the
+  note `120m so far`, and the `▶` on the reservation when there is one and on this row when
+  there is not (`the_open_day_is_the_worked_stretch_the_wall_and_the_reservation`,
+  `the_open_row_carries_the_forks_marks`);
+* an interruption **clips** it and takes the `▶` from both (`the_open_row_stops_at_the_interruption`);
+* and the laws W-34 restated are shown to be restatements and not weakenings: each old form —
+  its log hypothesis ranging over `Planner.pastRows`, the log's CLOSED half — has every
+  hypothesis true here and its conclusion false, because the open row is a Block of the log
+  that is neither the reservation nor the fold's, starts before `now`, runs two blocks, lies
+  across `^g1`'s meeting, and (with a `break` logged at 12:30) across a Break row.  Every one of
+  those is what the fork's day holds too: `open_block_segment` does not clip at a calendar wall
+  or a logged break, and a `break` line does not touch the replay's machine (`Replay.dayArm`).
+-/
+
+/-- **`m1` started at 12:00**, in the fork's bytes (`witLines`' own `start` shape, the clock
+moved). -/
+def openStartLine : Log.Line :=
+  ⟨3, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','0','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','m','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','6','.','0',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','0',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']⟩
+
+/-- **A fifteen-minute `break` at 12:30**, while `m1` runs — `censusBreakLine`'s shape. -/
+def openBreakLine : Log.Line :=
+  ⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','3','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','b','r','e','a','k','"',',','"','p','l','a','n','n','e','d','_','m','i','n','"',':','1','5','}']⟩
+
+/-- The morning's wake and arrival, **reused**, and the open start. -/
+def openLines : List Log.Line := witLines.take 2 ++ [openStartLine]
+
+def openBreakLines : List Log.Line := openLines ++ [openBreakLine]
+
+set_option maxRecDepth 400000 in
+theorem openRun_resumes_ok : runOk Cal.chicago 739867 openLines = true := by decide
+
+def openRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) openLines with
+  | .ok run => run
+  | .error _ => absurd openRun_resumes_ok (by simp [runOk, h])
+
+set_option maxRecDepth 400000 in
+theorem openBreakRun_resumes_ok : runOk Cal.chicago 739867 openBreakLines = true := by decide
+
+def openBreakRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) openBreakLines with
+  | .ok run => run
+  | .error _ => absurd openBreakRun_resumes_ok (by simp [runOk, h])
+
+/-- §9's `state.active`: `m1`, started at 12:00, three hours estimated, timer running. -/
+def theOpenBlock : ActiveBlock :=
+  ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 720).sec, 0⟩, 180, false⟩
+
+/-- **The Wednesday at 14:00 with `m1` open since 12:00** — and the runtime agreeing. -/
+def theOpenRequest : PlanReq :=
+  ⟨lookWallPlan, openRun, witInput, { RuntimeIn.empty with active := some theOpenBlock },
+   Capped.nil, witPrio, Capped.nil, none⟩
+
+/-- The same log with no runtime block: §8.2 choice 5b reserves nothing, so the `▶` is the open
+row's (fork `mark_current = active.is_none() && !interrupted`). -/
+def theUnreservedOpenRequest : PlanReq := { theOpenRequest with state := RuntimeIn.empty }
+
+/-- The same, with the 12:30 `break` in the log. -/
+def theOpenBreakRequest : PlanReq := { theOpenRequest with run := openBreakRun }
+
+/-- The same, with an interruption running since 13:30. -/
+def theInterruptedOpenRequest : PlanReq :=
+  { theOpenRequest with state :=
+      ⟨some theOpenBlock, none, some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 810).sec, 0⟩, none⟩,
+       none, Capped.nil⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The day, end to end**: the worked stretch `[12:00, 14:00)`, the meeting it ran across, the
+reservation `[14:00, 15:00)` (sixty minutes of the three-hour estimate are still owed and
+`current_block_end` is 15:00), three Rest slots, and the evening — the fork's rows. -/
+theorem the_open_day_is_the_worked_stretch_the_wall_and_the_reservation :
+    (dayPlan theOpenRequest).segments.map
+        (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 840).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.wall, some (['g','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec,
+          SegKind.block, some (['m','1'] : Id)),
+         ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 980).sec, (Cal.instantOf Cal.chicago 739867 1040).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
+          SegKind.rest, none),
+         ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
+          SegKind.windDown, none),
+         ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
+          SegKind.sleep, none)] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **The fork's marks**: the open row is `open`, carries no slot energy and says `120m so far`
+(`worked_min_at(now)`: nothing banked, two hours since the last resume); the `▶` is the
+reservation's while there is one, and the open row's when §8.2 choice 5b reserves nothing. -/
+theorem the_open_row_carries_the_forks_marks :
+    ((dayPlan theOpenRequest).segments.filter (fun s => s.val.flags.isOpen)).map
+        (fun s => (s.val.flags.current, s.val.energy, s.val.note))
+      = [(false, none, some (Note.soFar 120))] ∧
+    ((dayPlan theOpenRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.start, s.val.note))
+      = [((Cal.instantOf Cal.chicago 739867 840).sec, some (Note.runningLeft 60))] ∧
+    ((dayPlan theUnreservedOpenRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.start, s.val.flags.isOpen, s.val.note))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, true, some (Note.soFar 120))] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **An interruption clips the stretch and takes the `▶` from both rows** — fork
+`open_block_segment`'s `w.adhoc && w.blocked_start > since` clip, and `mark_current`'s
+`!interrupted`: the open row ends at the interruption's 13:30, no reservation is placed, and
+nothing is `current`.  The note still reads `worked_min_at(now)`. -/
+theorem the_open_row_stops_at_the_interruption :
+    (openBlockRows theInterruptedOpenRequest).map
+        (fun t => (t.start, t.stop, t.flags.current, t.note))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 810).sec,
+          false, some (Note.soFar 120))] ∧
+    theInterruptedOpenRequest.activeRun = none ∧ theInterruptedOpenRequest.interrupted = true ∧
+    ((dayPlan theInterruptedOpenRequest).segments.filter (fun s => s.val.flags.current)) = [] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **Every request-side hypothesis the restated laws carry holds at the open requests**, and the
+log's CLOSED half holds no Block — so what fails below fails for the open row and nothing else. -/
+theorem the_open_requests_agree :
+    theOpenRequest.wallsAgree = true ∧ theOpenRequest.activeAgrees = true ∧
+      theOpenRequest.dayAgrees = true ∧ theOpenRequest.now.sec + 1 < LogStamp.yearEnd ∧
+      theOpenRequest.assignedRows = [] ∧ pastRows theOpenRequest = [] ∧
+      PlanCheck.noOverbook theOpenRequest (dayPlan theOpenRequest) = true ∧
+      PlanCheck.candsAgree theOpenRequest = true ∧
+      theOpenRequest.windDownSec < LogStamp.yearEnd ∧
+      theUnreservedOpenRequest.activeRun = none ∧ theUnreservedOpenRequest.assignedRows = [] ∧
+      pastRows theUnreservedOpenRequest = [] ∧
+      (∀ t ∈ pastRows theOpenBreakRequest, t.kind ≠ SegKind.block) := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **The battery bites on the open row**, and on nothing else: `oneBlockAtATime` (two hours,
+one block), `noBlockOverAWall` (across `^g1`) and, with the 12:30 `break`, `noBlockOverABreak` —
+the three checks a Block the LOG holds can fail (README gap 385's finding 1) — while the
+`withoutPast` day, which is §8.3's subject, passes all seven with the reservation in it. -/
+theorem the_battery_bites_on_the_open_row :
+    PlanCheck.oneBlockAtATime theOpenRequest (dayPlan theOpenRequest) = false ∧
+      PlanCheck.noBlockOverAWall theOpenRequest (dayPlan theOpenRequest) = false ∧
+      PlanCheck.planOkCore theOpenRequest (dayPlan theOpenRequest) = false ∧
+      PlanCheck.planOkCore theUnreservedOpenRequest (dayPlan theUnreservedOpenRequest) = false ∧
+      PlanCheck.noBlockOverABreak theOpenBreakRequest (dayPlan theOpenBreakRequest) = false ∧
+      PlanCheck.planOkCore theOpenRequest
+        (PlanCheck.withoutPast theOpenRequest (dayPlan theOpenRequest)) = true := by
+  decide
+
+/-- The open row, as a row of the open day. -/
+def theOpenRow : Seg :=
+  { start := (Cal.instantOf Cal.chicago 739867 720).sec,
+    stop := (Cal.instantOf Cal.chicago 739867 840).sec, kind := .block, energy := none,
+    item := some ['m','1'], inst := none,
+    flags := { SegFlags.none with current := false, isOpen := true },
+    planned := none, mult := none, note := some (.soFar 120) }
+
+set_option maxRecDepth 400000 in
+theorem theOpenRow_is_the_open_row : openBlockRows theOpenRequest = [theOpenRow] := by decide
+
+set_option maxRecDepth 400000 in
+/-- **`Planner.a_block_row_is_replayed_reserved_or_assigned` as P3 stated it is REFUTED**
+(AGENTS §3.1 item 3): its first disjunct ranged over the log's closed half, and the open row is a
+Block row of the day that is not closed, not reserved and not the fold's. -/
+theorem a_block_row_is_replayed_reserved_or_assigned_over_the_closed_rows_is_refuted :
+    ¬ ∀ (r : PlanReq) (s : WfSeg), s ∈ dayRows r → s.val.kind = SegKind.block →
+      (∃ t ∈ pastRows r, s = Planner.segOf t) ∨ (∃ t ∈ reservationSegs r, s = Planner.segOf t) ∨
+        (∃ t ∈ r.assignedRows, s = Planner.segOf t) := by
+  intro h
+  have hmem : Planner.segOf theOpenRow ∈ dayRows theOpenRequest :=
+    the_open_row_is_a_row_of_the_day (by rw [theOpenRow_is_the_open_row]; simp)
+  have h1 : ¬ ∃ t ∈ pastRows theOpenRequest, Planner.segOf theOpenRow = Planner.segOf t := by decide
+  have h2 : ¬ ∃ t ∈ reservationSegs theOpenRequest, Planner.segOf theOpenRow = Planner.segOf t := by decide
+  have h3 : ¬ ∃ t ∈ theOpenRequest.assignedRows, Planner.segOf theOpenRow = Planner.segOf t := by decide
+  rcases h theOpenRequest (Planner.segOf theOpenRow) hmem rfl with h' | h' | h'
+  · exact h1 h'
+  · exact h2 h'
+  · exact h3 h'
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.dayPlan_ok_core_given_the_budget` with its log hypothesis over the CLOSED half
+is REFUTED** — every hypothesis holds at `theOpenRequest` and the conclusion does not.  W-34's
+form ranges `hnopast` over `Planner.replayedRows`, which is what the hypothesis's own reading
+("the log holds no Block for today") always said. -/
+theorem dayPlan_ok_core_given_the_budget_over_the_closed_rows_is_refuted :
+    ¬ ∀ (r : PlanReq), r.wallsAgree = true → r.activeAgrees = true → r.dayAgrees = true →
+      r.now.sec + 1 < LogStamp.yearEnd → (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+      PlanCheck.AssignedRowsPay r → PlanCheck.noOverbook r (dayPlan r) = true →
+      (∀ (i : Id) (e : Entity) (a b : Field.DT),
+        r.plan.val.store.get i = some e → e.val.shape = Field.Shape.interval a b →
+        e.val.buffer = none ∧
+          r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
+          (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
+          (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
+          (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) →
+      PlanCheck.planOkCore r (dayPlan r) = true := by
+  intro h
+  obtain ⟨hw, ha, hd, hn, hna, hnp, hb, -⟩ := the_open_requests_agree
+  have := h theOpenRequest hw ha hd hn (by rw [hnp]; simp)
+    (fun t ht => by rw [hna] at ht; exact absurd ht (by simp)) hb the_running_request_is_plain
+  rw [the_battery_bites_on_the_open_row.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The `PastPays` lift with `PastPays`' three row clauses over the CLOSED half is REFUTED** —
+`PlanCheck.dayPlan_ok_core_of_plain_walls_on_an_unassigned_day` as W-24 stated it, the clauses
+spelled out because W-34 redefined the structure.  At `theOpenRequest` the closed half is empty,
+so the three are vacuous, and the worked stretch's two hours fit the day's six-block budget. -/
+theorem the_paying_past_lift_over_the_closed_rows_is_refuted :
+    ¬ ∀ (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
+      r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+      PlanCheck.WallsArePlain r (dayPlan r) →
+      (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) →
+      (∀ t ∈ pastRows r, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) →
+      (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+        t.stop ≤ u.start ∨ u.stop ≤ t.start) →
+      blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+        (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 →
+      PlanCheck.planOkCore r (dayPlan r) = true := by
+  intro h
+  obtain ⟨hw, ha, hd, hn, hna, hnp, -⟩ := the_open_requests_agree
+  have hbud : blockSeconds (PlanCheck.pastHalf theOpenRequest (dayPlan theOpenRequest)) ≤
+      (dayPlan theOpenRequest).budgetBlocks * (dayPlan theOpenRequest).blockMin * 60 := by decide
+  have := h theOpenRequest hna hw ha hd hn
+    (PlanCheck.WallsArePlain_of_a_plain_store _ _ the_running_request_is_plain)
+    (by rw [hnp]; simp) (by rw [hnp]; simp) (by rw [hnp]; simp) hbud
+  rw [the_battery_bites_on_the_open_row.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.noBlockOverABreak_of_a_logless_day` over the CLOSED half is REFUTED** — a
+`break` logged while the block runs is a Break row inside the worked stretch, and neither row is
+the planner's (the fork draws both). -/
+theorem noBlockOverABreak_of_a_logless_day_over_the_closed_rows_is_refuted :
+    ¬ ∀ (r : PlanReq), r.now.sec + 1 < LogStamp.yearEnd →
+      (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+      PlanCheck.noBlockOverABreak r (dayPlan r) = true := by
+  intro h
+  obtain ⟨-, -, -, hn, -, -, -, -, -, -, -, -, hbrk⟩ := the_open_requests_agree
+  have := h theOpenBreakRequest hn hbrk
+  rw [the_battery_bites_on_the_open_row.2.2.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The quiet-day laws over the CLOSED half are REFUTED** — with nothing reserved the open row
+is still drawn, so a day "whose log holds no Block and runs nothing" assigns the running item
+and has a work row that is not the reservation.  `PlanCheck.dayPlan_assigns_nothing_on_a_quiet
+_unassigned_day` and `PlanCheck.dayPlan_work_rows_are_the_reservation_on_an_unassigned_day` as
+they stood. -/
+theorem the_quiet_day_laws_over_the_closed_rows_are_refuted :
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        r.assignedRows = [] → assignedOf (dayPlan r) = []) ∧
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.assignedRows = [] →
+        ∀ s ∈ (dayPlan r).segments, s.val.kind.isWork = true → PlanCheck.isActive r s = true) := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, hrun, hna, hnp, -⟩ := the_open_requests_agree
+  have hnp' : ∀ t ∈ pastRows theUnreservedOpenRequest, t.kind ≠ SegKind.block := by
+    rw [hnp]; simp
+  refine ⟨fun h => ?_, fun h => ?_⟩
+  · have := h theUnreservedOpenRequest hnp' hrun hna
+    have hm : assignedOf (dayPlan theUnreservedOpenRequest) = [['m','1']] := by decide
+    rw [hm] at this
+    exact absurd this (by simp)
+  · have hex : ∃ s ∈ (dayPlan theUnreservedOpenRequest).segments, s.val.kind.isWork = true ∧
+        PlanCheck.isActive theUnreservedOpenRequest s = false := by decide
+    obtain ⟨s, hs, hw, ha⟩ := hex
+    have := h theUnreservedOpenRequest hnp' hna s hs hw
+    rw [ha] at this
+    exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The whole-day lifts over the CLOSED half are REFUTED, every one** — the unassigned
+quiet-day battery (`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day`) and the paying-decoder one
+(`PlanCheck.dayPlan_ok_core_of_a_paying_decoder`) as they stood before W-34, at the open requests
+where every other hypothesis holds.  The rest of W-34's restatements are corollaries of these
+roots or share their proofs, and `Check.lean`'s W-34 banner lists them. -/
+theorem the_whole_day_lifts_over_the_closed_rows_are_refuted :
+    (¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true →
+        r.activeAgrees = true → r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        PlanCheck.PlainStore r → PlanCheck.WorkAnchored el →
+        PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (r : PlanReq), PlanCheck.DecoderPays r → (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        PlanCheck.noOverbook r (dayPlan r) = true → PlanCheck.PlainStore r →
+        PlanCheck.planOkCore r (dayPlan r) = true) := by
+  obtain ⟨hw, ha, hd, hn, hna, hnp, hb, hca, hwd, hrun, hna', hnp', -⟩ := the_open_requests_agree
+  refine ⟨fun h => ?_, fun h => ?_⟩
+  · have hua : theUnreservedOpenRequest.activeAgrees = true := by decide
+    have := h (fun _ _ _ _ => false) theUnreservedOpenRequest hna' hw hua hd hn
+      (by rw [hnp']; simp) hrun the_running_request_is_plain (fun _ _ _ _ hf => by cases hf)
+    have hcore := PlanCheck.planOk_imp_core _ _ _ this
+    rw [the_battery_bites_on_the_open_row.2.2.2.1] at hcore
+    exact absurd hcore (by simp)
+  · have := h theOpenRequest ⟨hw, ha, hd, hn, hca, hwd⟩ (by rw [hnp]; simp) hb
+      the_running_request_is_plain
+    rw [the_battery_bites_on_the_open_row.2.2.1] at this
+    exact absurd this (by simp)
+
+/-! ### W-34: `diff` on two days written down, and §9.1's what-if on a day the planner makes
+
+README gaps 2680-2682.  `Planner.diff` is a function of two `DayPlan`s, so its first witness is
+two days written down with `PlanCheck.wSeg`: every field of the answer is non-empty, one item
+keeps its opening slot while gaining a second one, and each day has a Rest row carrying an item
+— which **no day the planner makes has** (Rest rows name nothing), so it is the only way to show
+the fork's `Rest | Break` skip doing anything at all.  The second witness is the what-if the
+TUI's overtime prompt asks, at a request whose running block is sized by its estimate: one more
+block moves three candidates. -/
+
+/-- The day before: `m1` at 10:00, `m2` at 11:00, the meeting at 12:00, and a Rest row that
+names `x` (the only item `diff` must not see). -/
+def diffOldDay : DayPlan :=
+  PlanCheck.wDay
+    [ Planner.segOf (PlanCheck.wSeg 36000 39600 .block (some ['m','1']) none),
+      Planner.segOf (PlanCheck.wSeg 39600 43200 .block (some ['m','2']) none),
+      Planner.segOf (PlanCheck.wSeg 43200 46800 .wall (some ['g','1']) none),
+      Planner.segOf (PlanCheck.wSeg 46800 50400 .rest (some ['x']) none) ] 60 4 Capped.nil
+
+/-- The day after: `m1` half an hour later and again at 15:00, `m2` gone, `m3` new, the meeting
+where it was, and a Rest row naming `z`. -/
+def diffNewDay : DayPlan :=
+  PlanCheck.wDay
+    [ Planner.segOf (PlanCheck.wSeg 37800 41400 .block (some ['m','1']) none),
+      Planner.segOf (PlanCheck.wSeg 41400 45000 .block (some ['m','3']) none),
+      Planner.segOf (PlanCheck.wSeg 43200 46800 .wall (some ['g','1']) none),
+      Planner.segOf (PlanCheck.wSeg 50400 54000 .block (some ['m','1']) none),
+      Planner.segOf (PlanCheck.wSeg 46800 50400 .rest (some ['z']) none) ] 60 4 Capped.nil
+
+/-- **`diff`, every field**: `m1` moved from its first start to its new first start (its second
+block is not a move), `m3` added, `m2` removed, the meeting unmoved, thirty minutes of drift —
+and neither Rest row's item anywhere. -/
+theorem the_diff_of_two_written_days :
+    diff diffOldDay diffNewDay =
+      ⟨[(['m','1'], 36000, 37800)], [['m','3']], [['m','2']], 30⟩ := by
+  decide
+
+/-- **The request whose running block its estimate sizes**: `theRunBatchRequest`'s candidates
+with `m1` started at 13:40 on a 25-minute estimate — five minutes are left, so the reservation
+is `[14:00, 14:05)` and not the block's end. -/
+def theShortRunRequest : PlanReq :=
+  { theRunBatchRequest with state :=
+      ⟨some ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 820).sec, 0⟩, 25, false⟩, none, none,
+       none, Capped.nil⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **§9.1's "x extend +1 block", answered**: the reservation grows to the block's end at 14:40,
+and the three candidates §8.2 step 5 placed after it move thirty-five minutes each — `b1` from
+14:25 to 15:00, and
+the `b3`/`b6` batch from 15:25 to 16:00 — with nothing added or dropped.  `Planner.overtimeDiff` is `diff` of the day
+and its what-if, so this is the witness that the extension reaches the day at all. -/
+theorem the_overtime_what_if_moves_the_tail :
+    overtimeDiff theShortRunRequest ['m','1'] 1 =
+      ⟨[(['b','1'], (Cal.instantOf Cal.chicago 739867 865).sec,
+          (Cal.instantOf Cal.chicago 739867 900).sec),
+        (['b','3'], (Cal.instantOf Cal.chicago 739867 925).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec),
+        (['b','6'], (Cal.instantOf Cal.chicago 739867 925).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec)], [], [], 105⟩ := by
+  decide
+
+/-! ### W-34: the rest of the restatements, each old form refuted (D5, AGENTS §3.1 item 3)
+
+`the_whole_day_lifts_over_the_closed_rows_are_refuted` said the other restatements were
+"corollaries of these roots or share their proofs".  That was an argument, and gap 2516's lesson
+is that a restatement stands beside a COMPUTED refutation of its old form or it is a weakening
+nobody can see.  So each old form below is the pre-W-34 statement verbatim — its log hypothesis
+over `Planner.pastRows`, the log's CLOSED half — under `¬`, at an open request where every other
+hypothesis it carries holds.  With the six refutations above and the five below, every
+`PlanCheck` law whose statement W-34 changed — twenty-three in their text and five more through
+`PastPays` — has one of two things beside it: a computed refutation of its old form
+(twenty-five), or an old form it implies (`PlanCheck.a_replayed_row_is_a_row_of_the_day`,
+`PlanCheck.a_replayed_block_is_assigned` and `PlanCheck.segOf_replayed`, whose one change is a
+wider membership hypothesis).  README "Stage 6 — W-34 track D", §2, is the table. -/
+
+set_option maxRecDepth 400000 in
+/-- **The block-row laws over the closed half, each REFUTED at `theOpenRequest`**: the open row
+is a Block row of the day that is not closed, not reserved and not the fold's, and it started
+two hours before `now`.  `PlanCheck.dayPlan_block_rows_are_replayed_reserved_or_assigned`,
+`PlanCheck.dayPlan_block_rows_are_the_reservation_on_an_unassigned_day`,
+`PlanCheck.dayPlan_block_rows_are_reserved_or_assigned` and
+`PlanCheck.a_block_row_of_a_logless_day_starts_at_or_after_now` as they stood. -/
+theorem the_block_row_laws_over_the_closed_rows_are_refuted :
+    (¬ ∀ (r : PlanReq) (s : WfSeg), s ∈ (dayPlan r).segments → s.val.kind = SegKind.block →
+        (∃ t ∈ pastRows r, s = Planner.segOf t) ∨ (∃ t ∈ reservationSegs r, s = Planner.segOf t) ∨
+          (∃ t ∈ r.assignedRows, s = Planner.segOf t)) ∧
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.assignedRows = [] →
+        ∀ (s : WfSeg), s ∈ (dayPlan r).segments → s.val.kind = SegKind.block →
+          ∃ t ∈ reservationSegs r, s = Planner.segOf t) ∧
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        ∀ (s : WfSeg), s ∈ (dayPlan r).segments → s.val.kind = SegKind.block →
+          (∃ t ∈ reservationSegs r, s = Planner.segOf t) ∨
+            (∃ t ∈ r.assignedRows, s = Planner.segOf t)) ∧
+    (¬ ∀ (r : PlanReq), r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        ∀ (s : WfSeg), s ∈ (dayPlan r).segments → s.val.kind = SegKind.block →
+          r.now.sec ≤ s.val.start) := by
+  obtain ⟨-, -, -, hn, hna, hnp, -⟩ := the_open_requests_agree
+  have hnp0 : ∀ t ∈ pastRows theOpenRequest, t.kind ≠ SegKind.block := by rw [hnp]; simp
+  have hmem : Planner.segOf theOpenRow ∈ (dayPlan theOpenRequest).segments := by
+    rw [dayPlan_segments]
+    exact the_open_row_is_a_row_of_the_day (by rw [theOpenRow_is_the_open_row]; simp)
+  have hk : (Planner.segOf theOpenRow).val.kind = SegKind.block := rfl
+  have h1 : ¬ ∃ t ∈ pastRows theOpenRequest, Planner.segOf theOpenRow = Planner.segOf t := by
+    rw [hnp]; simp
+  have h2 : ¬ ∃ t ∈ reservationSegs theOpenRequest, Planner.segOf theOpenRow = Planner.segOf t := by
+    decide
+  have h3 : ¬ ∃ t ∈ theOpenRequest.assignedRows, Planner.segOf theOpenRow = Planner.segOf t := by
+    rw [hna]; simp
+  have h4 : (Planner.segOf theOpenRow).val.start < theOpenRequest.now.sec := by decide
+  refine ⟨fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_⟩
+  · rcases h theOpenRequest _ hmem hk with h' | h' | h'
+    · exact h1 h'
+    · exact h2 h'
+    · exact h3 h'
+  · exact h2 (h theOpenRequest hnp0 hna _ hmem hk)
+  · rcases h theOpenRequest hnp0 _ hmem hk with h' | h'
+    · exact h2 h'
+    · exact h3 h'
+  · exact absurd (h theOpenRequest hn hnp0 _ hmem hk) (Nat.not_le.2 h4)
+
+set_option maxRecDepth 400000 in
+/-- **The logless-day checks and the no-work-row laws over the closed half, each REFUTED**:
+`PlanCheck.oneBlockAtATime_of_a_logless_day` and `PlanCheck.noBlockOverAWall_of_a_logless_day`
+at `theOpenRequest` (two hours in one row, across `^g1`), and
+`PlanCheck.dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned` and
+`PlanCheck.dayPlan_has_no_work_row_on_an_unassigned_day` at `theUnreservedOpenRequest`, where
+nothing runs and nothing is assigned and the open row is drawn all the same — as they stood. -/
+theorem the_logless_day_checks_over_the_closed_rows_are_refuted :
+    (¬ ∀ (r : PlanReq), r.activeAgrees = true → r.dayAgrees = true →
+        r.now.sec + 1 < LogStamp.yearEnd → (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        PlanCheck.oneBlockAtATime r (dayPlan r) = true) ∧
+    (¬ ∀ (r : PlanReq), r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+        PlanCheck.noBlockOverAWall r (dayPlan r) = true) ∧
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        r.assignedRows = [] → ∀ (s : WfSeg), s ∈ (dayPlan r).segments →
+          s.val.kind ≠ SegKind.block) ∧
+    (¬ ∀ (r : PlanReq), (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        r.assignedRows = [] → ∀ s ∈ (dayPlan r).segments, s.val.kind.isWork = false) := by
+  obtain ⟨-, ha, hd, hn, -, hnp, -, -, -, hrun, hna', hnp', -⟩ := the_open_requests_agree
+  have hnp0 : ∀ t ∈ pastRows theOpenRequest, t.kind ≠ SegKind.block := by rw [hnp]; simp
+  have hnp1 : ∀ t ∈ pastRows theUnreservedOpenRequest, t.kind ≠ SegKind.block := by
+    rw [hnp']; simp
+  have hex : ∃ s ∈ (dayPlan theUnreservedOpenRequest).segments,
+      s.val.kind = SegKind.block ∧ s.val.kind.isWork = true := by decide
+  obtain ⟨s, hs, hk, hw⟩ := hex
+  refine ⟨fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_⟩
+  · have := h theOpenRequest ha hd hn hnp0
+    rw [the_battery_bites_on_the_open_row.1] at this
+    exact absurd this (by simp)
+  · have := h theOpenRequest hn hnp0
+    rw [the_battery_bites_on_the_open_row.2.1] at this
+    exact absurd this (by simp)
+  · exact h theUnreservedOpenRequest hnp1 hrun hna' s hs hk
+  · have := h theUnreservedOpenRequest hnp1 hrun hna' s hs
+    rw [hw] at this
+    exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **The remaining whole-day lifts over the closed half, each REFUTED** — at the eligibility
+that admits nothing, `fun _ _ _ _ => false`, which meets every anchoring hypothesis they carry
+vacuously, so what fails is the battery and nothing else:
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item`
+and `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item`
+at `theUnreservedOpenRequest`, and
+`PlanCheck.dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` and
+`PlanCheck.the_unassigned_eleven_is_an_instance_of_the_paying_eleven` at `theOpenRequest` — as
+they stood, the first three's spelled-out `hplain` written by its name, `PlanCheck.PlainStore`. -/
+theorem the_remaining_lifts_over_the_closed_rows_are_refuted :
+    (¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true →
+        r.activeAgrees = true → r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        PlanCheck.PlainStore r →
+        (∀ p ∈ (dayPlan r).diagnostics.impossible.val,
+          PlanCheck.eligibleSomewhere el r (dayPlan r) p.1 = false) →
+        PlanCheck.planOkCore r (dayPlan r) = true ∧
+          PlanCheck.monotoneInRank el r (dayPlan r) = true ∧
+          PlanCheck.impossibleKept el r (dayPlan r) = true ∧
+          PlanCheck.batchDoesNotReachPast el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true →
+        r.activeAgrees = true → r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → r.activeRun = none →
+        PlanCheck.PlainStore r →
+        (∀ p ∈ (dayPlan r).diagnostics.impossible.val,
+          PlanCheck.eligibleSomewhere el r (dayPlan r) p.1 = false) →
+        PlanCheck.hotBeforeQueue el r (dayPlan r) = true →
+        PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true →
+        r.activeAgrees = true → r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → PlanCheck.PlainStore r →
+        PlanCheck.SlotAnchored el → PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
+        PlanCheck.FoldRowsAdmitNothing r el → PlanCheck.DecoderPays r →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → PlanCheck.noOverbook r (dayPlan r) = true →
+        PlanCheck.PlainStore r → PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
+        r.assignedRows = [] → PlanCheck.DecoderPays r →
+        (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) → PlanCheck.noOverbook r (dayPlan r) = true →
+        PlanCheck.PlainStore r → PlanCheck.planOk el r (dayPlan r) = true) := by
+  obtain ⟨hw, ha, hd, hn, hna, hnp, hb, hca, hwd, hrun, hna', hnp', -⟩ := the_open_requests_agree
+  have hnp0 : ∀ t ∈ pastRows theOpenRequest, t.kind ≠ SegKind.block := by rw [hnp]; simp
+  have hnp1 : ∀ t ∈ pastRows theUnreservedOpenRequest, t.kind ≠ SegKind.block := by
+    rw [hnp']; simp
+  have hua : theUnreservedOpenRequest.activeAgrees = true := by decide
+  have hsa : PlanCheck.SlotAnchored (fun _ _ _ _ => false) :=
+    ⟨(fun _ _ _ _ hf => by cases hf), (fun _ _ _ _ hf => by cases hf)⟩
+  have hfa : PlanCheck.FromNowAnchored (fun _ _ _ _ => false) :=
+    ⟨hsa, (fun _ _ _ _ hf => by cases hf)⟩
+  have hnone : ∀ (r : PlanReq) (d : DayPlan) (i : Id),
+      PlanCheck.eligibleSomewhere (fun _ _ _ _ => false) r d i = false := by
+    intro r d i
+    simp [PlanCheck.eligibleSomewhere]
+  have hhot : PlanCheck.hotBeforeQueue (fun _ _ _ _ => false) theUnreservedOpenRequest
+      (dayPlan theUnreservedOpenRequest) = true := by
+    unfold PlanCheck.hotBeforeQueue
+    simp only [List.all_eq_true]
+    intro i _ j _
+    exact (PlanCheck.hotPairOk_iff _ _ _ i j).2
+      (fun _ _ _ _ _ _ hel => by rw [hnone] at hel; cases hel)
+  have hcoreU := the_battery_bites_on_the_open_row.2.2.2.1
+  have hcoreO := the_battery_bites_on_the_open_row.2.2.1
+  refine ⟨fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_⟩
+  · have := (h (fun _ _ _ _ => false) theUnreservedOpenRequest hna' hw hua hd hn hnp1 hrun
+      the_running_request_is_plain (fun p _ => hnone _ _ p.1)).1
+    rw [hcoreU] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) theUnreservedOpenRequest
+      hna' hw hua hd hn hnp1 hrun the_running_request_is_plain (fun p _ => hnone _ _ p.1) hhot)
+    rw [hcoreU] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) theOpenRequest hna hw ha
+      hd hn hnp0 the_running_request_is_plain hsa)
+    rw [hcoreO] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) hfa theOpenRequest
+      (fun _ _ _ hf => by cases hf) ⟨hw, ha, hd, hn, hca, hwd⟩ hnp0 hb
+      the_running_request_is_plain)
+    rw [hcoreO] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) hfa theOpenRequest hna
+      ⟨hw, ha, hd, hn, hca, hwd⟩ hnp0 hb the_running_request_is_plain)
+    rw [hcoreO] at this
+    exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+theorem openEarlyRun_resumes_ok : runOk Cal.chicago 739867 (witLines.take 3) = true := by decide
+
+/-- **`m1` started at 07:05 and never stopped** — `witLines`' own first three lines (the wake,
+the arrival and the `start`), so the log holds one open block since 07:05. -/
+def openEarlyRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) (witLines.take 3) with
+  | .ok run => run
+  | .error _ => absurd openEarlyRun_resumes_ok (by simp [runOk, h])
+
+/-- **The Wednesday at 14:00 with `m1` open since 07:05** and nothing reserved: a worked stretch
+of 415 minutes on a day whose budget is six sixty-minute blocks. -/
+def theEarlyOpenRequest : PlanReq := { theUnreservedOpenRequest with run := openEarlyRun }
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.PastPays_of_no_past_block_on_an_unassigned_day` over the closed half is
+REFUTED** — the one restatement the open requests above could not refute, because a two-hour
+stretch fits the budget.  Its old conclusion is the old `PastPays`, spelled out as its four
+clauses over the closed half; the first three are vacuous when the log closed no Block, and the
+fourth, *"the Blocks already worked fit the day's budget"*, is false as soon as the open stretch
+alone is longer than the budget: 24,900 seconds of `[07:05, 14:00)` against 21,600. -/
+theorem PastPays_of_no_past_block_over_the_closed_rows_is_refuted :
+    ¬ ∀ (r : PlanReq), r.assignedRows = [] → r.now.sec + 1 < LogStamp.yearEnd →
+      (∀ t ∈ pastRows r, t.kind ≠ SegKind.block) →
+      (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) ∧
+      (∀ t ∈ pastRows r, t.kind = SegKind.block →
+        ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) ∧
+      (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+        t.stop ≤ u.start ∨ u.stop ≤ t.start) ∧
+      blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+        (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 := by
+  intro h
+  have hfacts : theEarlyOpenRequest.assignedRows = [] ∧ pastRows theEarlyOpenRequest = [] ∧
+      theEarlyOpenRequest.now.sec + 1 < LogStamp.yearEnd ∧
+      (dayPlan theEarlyOpenRequest).budgetBlocks * (dayPlan theEarlyOpenRequest).blockMin * 60 <
+        blockSeconds (PlanCheck.pastHalf theEarlyOpenRequest (dayPlan theEarlyOpenRequest)) := by
+    decide
+  obtain ⟨ha, hp, hn, hlt⟩ := hfacts
+  have := (h theEarlyOpenRequest ha hn (by rw [hp]; simp)).2.2.2
+  omega
+
+set_option maxRecDepth 400000 in
+/-- **The four other `PastPays` lifts over the closed half, each REFUTED** — the statements of
+`PlanCheck.dayPlan_ok_core_of_a_paying_past_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_on_the_whole_day_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_plain_walls_on_an_unassigned_day` and
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day` did not change
+by a character at W-34, and their meaning did: each takes `PastPays r`, whose three row clauses
+range over `Planner.replayedRows` since W-34.  With the clauses spelled out over the closed half
+(`the_paying_past_lift_over_the_closed_rows_is_refuted` is the fifth, W-24's own), every
+hypothesis holds at `theOpenRequest` — the closed half is empty and the worked stretch's two
+hours fit the budget — and the battery does not. -/
+theorem the_paying_past_lifts_over_the_closed_rows_are_refuted :
+    (¬ ∀ (r : PlanReq), r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
+        r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd → PlanCheck.PlainStore r →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block →
+          ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) →
+        (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+          t.stop ≤ u.start ∨ u.stop ≤ t.start) →
+        blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+          (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 →
+        PlanCheck.planOkCore r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
+        r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
+        r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd → PlanCheck.PlainStore r →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block →
+          ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) →
+        (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+          t.stop ≤ u.start ∨ u.stop ≤ t.start) →
+        blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+          (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 →
+        PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
+        r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
+        r.dayAgrees = true → r.now.sec + 1 < LogStamp.yearEnd →
+        PlanCheck.WallsArePlain r (dayPlan r) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block →
+          ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) →
+        (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+          t.stop ≤ u.start ∨ u.stop ≤ t.start) →
+        blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+          (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 →
+        PlanCheck.planOk el r (dayPlan r) = true) ∧
+    (¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
+        r.assignedRows = [] → PlanCheck.DecoderPays r → PlanCheck.WallsArePlain r (dayPlan r) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block → t.stop - t.start ≤ r.blockMin * 60) →
+        (∀ t ∈ pastRows r, t.kind = SegKind.block →
+          ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start) →
+        (∀ t ∈ pastRows r, ∀ u ∈ pastRows r, t.kind = SegKind.block → u.kind = SegKind.brk →
+          t.stop ≤ u.start ∨ u.stop ≤ t.start) →
+        blockSeconds (PlanCheck.pastHalf r (dayPlan r)) ≤
+          (dayPlan r).budgetBlocks * (dayPlan r).blockMin * 60 →
+        PlanCheck.planOk el r (dayPlan r) = true) := by
+  obtain ⟨hw, ha, hd, hn, hna, hnp, -, hca, hwd, -⟩ := the_open_requests_agree
+  have hbud : blockSeconds (PlanCheck.pastHalf theOpenRequest (dayPlan theOpenRequest)) ≤
+      (dayPlan theOpenRequest).budgetBlocks * (dayPlan theOpenRequest).blockMin * 60 := by
+    decide
+  have hwalls : PlanCheck.WallsArePlain theOpenRequest (dayPlan theOpenRequest) :=
+    PlanCheck.WallsArePlain_of_a_plain_store _ _ the_running_request_is_plain
+  have hfa : PlanCheck.FromNowAnchored (fun _ _ _ _ => false) :=
+    ⟨⟨(fun _ _ _ _ hf => by cases hf), (fun _ _ _ _ hf => by cases hf)⟩,
+      (fun _ _ _ _ hf => by cases hf)⟩
+  have hcore := the_battery_bites_on_the_open_row.2.2.1
+  refine ⟨fun h => ?_, fun h => ?_, fun h => ?_, fun h => ?_⟩
+  · have := h theOpenRequest hna hw ha hd hn the_running_request_is_plain
+      (by rw [hnp]; simp) (by rw [hnp]; simp) (by rw [hnp]; simp) hbud
+    rw [hcore] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) hfa theOpenRequest hna hw
+      ha hd hn the_running_request_is_plain (by rw [hnp]; simp) (by rw [hnp]; simp)
+      (by rw [hnp]; simp) hbud)
+    rw [hcore] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) hfa theOpenRequest hna hw
+      ha hd hn hwalls (by rw [hnp]; simp) (by rw [hnp]; simp) (by rw [hnp]; simp) hbud)
+    rw [hcore] at this
+    exact absurd this (by simp)
+  · have := PlanCheck.planOk_imp_core _ _ _ (h (fun _ _ _ _ => false) hfa theOpenRequest hna
+      ⟨hw, ha, hd, hn, hca, hwd⟩ hwalls (by rw [hnp]; simp) (by rw [hnp]; simp)
+      (by rw [hnp]; simp) hbud)
+    rw [hcore] at this
+    exact absurd this (by simp)
+
+/-! ### §20's premise after W-34 (README gap 2687)
+
+§20 says `Planner.SegFlags.isOpen` is set at exactly one construction site,
+`Planner.interruptRows`, and `no_row_of_the_days_this_tree_builds_is_open` is titled for "any
+day this tree can build".  Both were true when written and neither is now: `Planner.openBlockRows`
+(fork `open_block_segment`, README gap 554) marks the worked stretch of the block the log holds
+open, and `theOpenRequest` is a day this tree builds that carries such a row
+(`the_open_row_carries_the_forks_marks`).  The theorem itself still holds — its four days hold no
+open block — and `Planner.PlanReq.activeRow` still leaves the reservation unmarked
+(`the_reservation_row_is_not_marked_open`).  So design §6.3 row 3's `not open` restriction now
+excludes the running block's worked stretch, which is what it was written to exclude, and both
+refutations in §20 stand: the row they turn on is a SETTLED Block
+(`the_witness_day_holds_a_settled_block_no_replan_may_drop`), not the running one.  This block is
+appended rather than §20 rewritten because this file is append-only for the step that found it. -/
+
+
+/-! ############################################################################
+## W-34's land step: fork `InstanceKey`'s serde spelling, by value (check 9's second pass)
+############################################################################
+
+Merging tracks H and D moved `Planner.serdeInstance`'s recorded pin site, and the re-run under
+track A's second pass (README gap 2578) answered **ALONE**: `the_placement_bytes_are_the_forks`
+was the one declaration that told the definition from `default`, and with its `decide +kernel`
+proof `sorry` the package built.  A kernel-checked decision failing is not the DECIDED verdict
+the pass reads, so the pin was a proof, not a statement.  The witness below is the three shapes
+by value, each decided by the elaborator, so a constant body is decided FALSE here. -/
+
+/-- **Fork `InstanceKey` in serde's external tagging**: an ordinal key is `{"Nth":n}`, a dated
+one `{"Date":"YYYY-MM-DD"}`, and a row with no instance `null` — the three arms
+`Planner.serdeInstance` has, at the key texts `Recur.parseInstKey` reads. -/
+theorem the_instance_key_is_spelled_as_serde_tags_it :
+    Planner.serdeInstance (some (['r','1'], ['#','3'])) = .obj [(['N','t','h'], .num 3)] ∧
+    Planner.serdeInstance (some (['r','1'], "2026-09-09".toList)) =
+      .obj [(['D','a','t','e'], .str "2026-09-09".toList)] ∧
+    Planner.serdeInstance none = .null := by
+  refine ⟨by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

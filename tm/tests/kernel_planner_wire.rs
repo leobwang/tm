@@ -549,3 +549,46 @@ fn the_seams_replay_is_demanded_by_the_capacity_section_first() {
         "{resp}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// W-34: §9.1's overtime what-if crosses as `planner.overtime`
+// ---------------------------------------------------------------------------
+
+/// **`planner.overtime` answers `plan.overtime`, and its absence answers
+/// nothing** (W-34, README gap 2682). The kernel's answer is
+/// `Planner.overtimeDiff` whole — `removed` is fork `overtime_drops`', and
+/// `added`, `moved` and `driftMin` ride beside it so that `diff` reaches the
+/// wire. An item the day does not hold moves nothing when it is extended:
+/// the kernel's day reads the extension through the running block's estimate
+/// only (README gap 2680), so every field is empty here.
+#[test]
+fn an_overtime_key_answers_the_what_if_and_its_absence_answers_nothing() {
+    let without = call(&request(Some(json!({}))));
+    assert!(
+        without["ok"]["plan"]["overtime"].is_null(),
+        "a planner section with no overtime key answered one: {without}"
+    );
+    let with = call(&request(Some(json!({"overtime": {"id": "x1", "blocks": 1}}))));
+    let ot = &with["ok"]["plan"]["overtime"];
+    assert!(!ot.is_null(), "no plan.overtime in {with}");
+    assert_eq!(ot["removed"], json!([]), "{with}");
+    assert_eq!(ot["added"], json!([]), "{with}");
+    assert_eq!(ot["moved"], json!([]), "{with}");
+    assert_eq!(ot["driftMin"], json!(0), "{with}");
+    // And the day beside it is the day without the key, byte for byte.
+    assert_eq!(
+        with["ok"]["plan"]["segments"], without["ok"]["plan"]["segments"],
+        "the what-if moved the day the request asked for"
+    );
+}
+
+/// **A malformed `overtime` is refused by name**, never read as "extend
+/// nothing": a count past the fork's `u32` and a missing item, through
+/// `PlanWire.readOvertime`'s `EmitWire.u32Within` and `EmitWire.strAtP`.
+#[test]
+fn a_malformed_overtime_is_refused_by_name() {
+    let past = call(&request(Some(json!({"overtime": {"id": "x1", "blocks": 4294967296u64}}))));
+    assert_eq!(planner_err(&past).as_deref(), Some("badOvertime blocks"), "{past}");
+    let no_id = call(&request(Some(json!({"overtime": {"blocks": 1}}))));
+    assert_eq!(planner_err(&no_id).as_deref(), Some("badOvertime id"), "{no_id}");
+}
