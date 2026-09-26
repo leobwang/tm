@@ -67461,3 +67461,240 @@ corpus re-blessed, no memory bound raised, no external dependency, no `sorry` ou
 no new axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.  Three
 exemption files are NEW (`kernel-decide-exempt.txt`, `inputs-exempt.txt`) or reasoned anew
 (`reach-exempt.txt`'s class line, text only): each grandfathers a measured set and may only shrink.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-35**, **TRACK R**
+     (the host-side R3 prerequisites; Rust only, no `.lean` file), on branch
+     `w35-r` in its own worktree off `fe49a8b`.
+     Gap range **2870-2909**; **2870-2877 taken**, 2878-2909 free.
+     Parity: **none issued and none pending** (PARITY-PENDING: nothing).
+     ===================================================================== -->
+
+## Stage 6 — W-35, track R: the day's types outlive `planner.rs`, the host has a planner codec, and the planner's comparand is frozen before R3
+
+W-34's land step measured R3 as not ready and named, among its seven prerequisites, three that are
+the host's: a comparand that survives `planner.rs`'s deletion (gap **2722**), a home for the day's
+types (gap **2721**), and a host encoder of the `planner` section and decoder of `plan` (gap
+**2720**).  D58 added a fourth: the TUI's what-if carries the grown candidate facts from the host.
+All four landed, in three commits; **none of them wires the kernel's planner into a verb** — R3
+does that, and what it swaps in is now built and tested first.
+
+### 1. Gap 2722 — the planner's comparand, frozen before the change it watches (D21's shape)
+
+**The machinery** is `tm/tests/support/forkday.rs` and one fixture,
+`tm/tests/fixtures/fork-4748911-planner-days.jsonl` (59,234 bytes, four lines).  Each line is one
+named input's fork day, **by value** — the whole serialised `DayPlan` and its `DayPlan::hash` —
+taken the way the shipped binary plans (D53): `planner::plan(input.with_ranking(cands, prios))`,
+with `prios` the kernel's own grants for that request read by the binary's own reader
+(`planwire::prio_of`).  It is re-blessed only by `the_frozen_fork_days_are_reblessed`, `#[ignore]`d
+and inert without `TM_PLANNER_BLESS`; after R3 it cannot run at all, and the file is the fork's last
+word on those days.  `compare_day_with_fork` compares the kernel's day with it value by value:
+the date, the window, the budget, all twelve diagnostic fields and the priorities as JSON trees,
+and the rows **in order**, with two declared classes and nothing else (§4).
+
+**The retarget is `tm/tests/planner_fixtures.rs`.**  Its surviving arm,
+`the_kernel_plans_the_fixture_days_the_fork_planned`, asks the KERNEL for the four fixture days
+through the host codec (`tm_core::planwire` plus the request builder `support/planreq.rs`), compares
+each with the frozen day, and holds the kernel's day to the same §8 properties the fork's day is
+held to — the four fixture tests' assertions, factored into `check_basic_early`,
+`check_basic_late`, `check_home_day` and `check_travel_day`, one set read by both arms.  The fork's
+arm (the four tests with their unchanged snapshots, and the re-bless) is one `BEGIN THE FORK
+PLANNER` … `END THE FORK PLANNER` region, and so is `planner_common`'s `Fixture::input`;
+`the_fork_half_of_this_suite_is_one_region` (`forkday::fork_scan`, `fork::reader_scan`'s shape)
+fails if a fork reference escapes either region, and after R3 it is the assertion that none
+remains; `the_fork_scan_sees_a_reference_outside_its_region_and_only_there` drives the scan both
+ways (AGENTS §5.8).
+
+**Measured:** 4 days, **73 fork rows**, **2,223 other values** compared; **0 other differences**;
+gap 551's class **3** rows, gap 435's class **4** marks, **1 of 4** hashes equal (the travel day,
+which plans no break).  The two class counts and the hash count are asserted exactly, so a class
+that widens and a class that closes both fail.
+
+**Driven in a clone** (`scratchpad/w35-r/plant`, a `git clone` of `274e536` plus this step's
+uncommitted comparand files; the shared tree was never planted — `git status --porcelain` in the
+worktree was the four comparand files before and after every plant):
+* **P0**, unplanted: `planner_fixtures` 11 passed, 1 ignored — the line above.
+* **P1**, the fork made unreachable: `planner::plan`, `planner::week_plan` and
+  `planner::overtime_drops` replaced by `panic!`, and both fork regions deleted with
+  `sed -i '/\/\/ BEGIN THE FORK PLANNER/,/\/\/ END THE FORK PLANNER/d'`.  **It builds, runs and compares**:
+  7 passed, the same 4 days / 73 rows / 2,223 values / 0 other differences; the only warnings are
+  `tm-core`'s dead code the plant itself strands.
+* **P2**, one kernel answer corrupted at the FFI (`kernel/tm-kernel-ffi/src/lib.rs`'s `call`
+  rewriting `"aCapacityLost":0` to `5` in planner responses — a diagnostic no digest and no
+  property check reads): **fails by name**, `plan-basic early 07:00: diagnostics.a_capacity_lost:
+  kernel 5 fork 0` and the same on the late and home days.
+* **P3**, a digested field corrupted (`"energy":4,` to `3,`): **fails by name** at the decoder,
+  `plan-basic early 07:00: plan: plan.hash: the kernel digested fbe971c542db80de and the decoded day
+  digests 5ff226dbb1037b51 — a digested field was not read back`.
+
+**Of the nineteen test files that named `planner::` at `fe49a8b`:** 7 name it no more (they only
+used the day's types: `emit_daybar`, `emit_day_section`, `emit_now`, `emit_svg`,
+`kernel_row_cells`, `support/rowwire.rs`, `tui_today_ghost`); 4 name it in prose only
+(`emit_fixture/mod.rs`, `cli_switch_acceptance`, `one_renderer`, `tui_today_prompts`); 2 keep their
+fork code in one deletable region (`planner_fixtures`, `planner_common`); **6 still plan with the
+fork outside any region** — `planner_invariants` (not this track's to touch), `planner_regressions`,
+`planner_dynamics`, `priority_plan_basic`, `emit_planner` and `tui_common` (gap **2872**).
+`planner::` code lines (non-comment): **156 → 120**, of which **113 outside a fork region**
+(`tm/src` 21 → 8: exactly R3's body swap in `cli/planning.rs` and `tui/app.rs`; one of the 113 is
+`fork_scan`'s own needle literal).
+
+### 2. Gap 2721 — the day's types live in `tm-core/src/dayplan.rs` (`90c391e`)
+
+`DayPlan` with its hash and helpers, `Segment`, `SegKind`, `SegFlags`, `Diagnostics`, `PlanDiff`,
+`kind_label` and `fmt_clock` moved byte for byte (every one of the 367 non-blank lines removed from
+`planner.rs` is in `dayplan.rs` but the two edited `use` lines and a section banner), and
+`planner.rs` re-exports all eight until R3.  Every consumer except `planner_invariants` names the new
+home — `emit.rs`, eight `tm/src` files, sixteen test files — and `one_renderer`'s `WORD_ALLOW` and
+`CLOCK_HOME` follow the same ten lines and the one clock to the new file.  **No behaviour change**:
+1,483 passed / 0 failed / 9 ignored on each of three runs, the baseline's own count, and no
+snapshot touched.  What stayed in `planner.rs` is the fork's planning: `plan`, `week_plan`,
+`overtime_drops`, `diff`, `explain`, `PlanInput`, `PlanOverrides`, `WeekPlan`.
+
+### 3. Gap 2720 — the host codec, `tm-core/src/planwire.rs` (`274e536`), not wired
+
+**Encoder.**  `state.active`, `state.break` and `state.interrupt`, each start resolved on the planned
+date exactly as fork `Planner::active_run` resolves it; `routines` (`routine_instances`: fork
+`collect_routines`' filter and span on the fork's own DST-aware day bounds, sleep and the sort left
+to the kernel, which does both); `overtime` (`overtime_json`).  It writes **none** of `lastHash`,
+`yesterday` or `overrides`: `kernel/inputs-exempt.txt` names each as decoded and read by nothing,
+with leaving the request as its exit, and an encoder that sent them would be W-34's input-side
+composition gap spelled on the host.  `add_batch_max_min` puts §16's value where
+`PlanWire.readBatchMaxMin` reads it; the shipped capacity request does not carry it (gap **2875**).
+**No bound is minted**: minutes cross as `u32`, which is `Look.maxPlanMinutes`, and a start after
+`now`, an unknown break place and an id one past `CapWire.maxCandId` are sent as held and refused by
+the kernel by name (driven: `badActive wf`, `badBreak place`, `badActive id` at 1,025 characters and
+accepted at 1,024, and `routineRefused tooManyRoutines` at 1,025 instances — `Planner.maxCands`).
+
+**Decoder.**  `read_plan` reads `Planner.dayPlan`'s seven keys and `overtime` into `dayplan`'s types,
+completing what the kernel's answer is narrower than from what the host already holds and sent,
+never by guessing (gap **2877**): priorities are the host's candidates with their grants (the
+kernel's `{id, p}` list leaves walls out and is cross-checked as a multiset), `underused` is fork
+`diagnose`'s loop over the decoded rows, `impossible`'s date is the grant's `until`, `blocked`'s
+dependencies are the candidate's.  It refuses by name a kind no planned day holds (`ghost`), a
+week's note in a day (`plannedOf`), and — the one check that makes it more than a reader — **a
+decoded day whose own `DayPlan::hash` is not the digest the kernel wrote**.
+`tm/tests/kernel_plan_codec.rs` drives it through the FFI: the four fixture days decode whole with
+the hash check passing, a running block comes back as its two rows ("30m so far" open, "running ·
+90m left" current), the what-if as a `PlanDiff`.
+
+**Moved, not copied** (AGENTS §5.3): the capacity answer's reader — `read_answer`'s body and
+`prio_of`, under the name `Planner.lean`, `Check.lean` and this ledger cite — from
+`kernel_capacity.rs` (the binary still reads every grant through it); the kernel's epoch offset
+from `kernel_log.rs` (`tests/support/rowwire.rs` re-exports it); `recur.rs`'s instance-key reader,
+now `InstanceKey::parse` beside the `Display` it inverts; and `PlanInput::date` calls
+`planwire::plan_date`.
+
+### 4. What the frozen comparison found — gap 435 is an R3 prerequisite nobody listed (gap 2870)
+
+The kernel's day differs from the shipped day on the fixture days in exactly two classes:
+**gap 551** (a planned Break row the fork draws and the kernel does not: 3 rows) and **gap 435** —
+fork `emit_segments` marks a scheduled window task's routine row `⚠` at `p = 0`, and the kernel
+writes `hot := false` on every routine row.  On all four days that is `^a3`, "Pick up package"
+(`09:00-09:20 routine 1 a3 ⚠!` in the snapshots).  `hot` is not digested, so no hash arm sees it;
+and `planner_invariants`' generator has no scheduled window task (its routines are `routines.md`
+lines, whose rows carry no `⚠` on either side), so no generated day shows it.  It IS a mark the day
+file prints, so R3 as a body swap would take the `⚠` off that row: gap 435 belongs on W-34's list of
+R3 prerequisites beside 550 and 551.
+
+### 5. D58 — the grown facts (`274e536`)
+
+`planwire::grown` is fork `PlanOverrides::apply` for one candidate, built from the two functions
+`collect_candidates` derives the originals with (`energy::planned_minutes`, and
+`priority::safety_minutes`, public since this step); `overtime_json` carries it as `overtime.grown`
+(`remaining`, `plannedMin`, `needMin`).  `the_host_grows_the_facts_apply_grows` in `planner.rs`'s
+own tests compares it with `apply` on **8,820** cases (seven safeties, nine multipliers — zero,
+negative and NaN among them — seven remainders to the `u32` edge, four `est` overrides, five
+extensions to `u32::MAX`); `the_grown_facts_are_apply_s_by_value` holds the answers by value so they
+outlive R3.  **The kernel does not read `grown` yet** (gap **2873**).
+
+### 6. Gaps (2870-2877)
+
+**Gap 2870 — gap 435 (a routine row's `⚠`) is an R3 prerequisite W-34's list omits.**
+1. *What.*  §4: on all four fixture days `^a3`'s routine row is `hot` in the shipped day and not in
+   the kernel's.
+2. *Why.*  Found only by comparing values on a tree with a scheduled window task; the generated days
+   have none and `hot` is not digested.
+3. *Cost.*  R3's swap removes the `⚠` from such a row in the day file and the TUI.
+4. *Clears it.*  The kernel sets the mark (gap 435's own P4 route) before R3; `planner_fixtures`
+   asserts 4 marks and fails when it lands, which is the signal to lower the number.
+
+**Gap 2871 — the frozen days hold no running block, break, interruption, overtime or wall-crossing
+day.**
+1. *What.*  The four fixture days have none of §9's running states, where gap 550 and D57's three
+   registered divergences (track K's, this run) live.
+2. *Why.*  Track K changes exactly those days in this run (D57); freezing one now would freeze the
+   day K is about to move.
+3. *Cost.*  R3 would change those rows against no frozen comparand.
+4. *Clears it.*  After K lands: add a running-block day (plan-basic, `^m4` at 09:30, the codec test's
+   own case) to `DAYS` and re-bless — one line of the table and one bless.
+
+**Gap 2872 — six test files still plan with the fork outside any region.**
+1. *What.*  `planner_invariants`, `planner_regressions`, `planner_dynamics`, `priority_plan_basic`,
+   `emit_planner`, `tui_common` (113 `planner::` code lines outside a region, 8 of them `tm/src`'s).
+2. *Why.*  One suite was retargeted, as the step asked; `planner_invariants` is tracks K's and E's
+   this run.
+3. *Cost.*  At R3 each must be retargeted onto `forkday`/`planwire` or deleted with the fork, and
+   `planner_invariants`' world and `kernel_planner_wire.rs` still carry their own encoders.
+4. *Clears it.*  One step per suite before R3, `planner_fixtures` the model; the world's
+   `candidate_items`/`routine_items`/`kernel_prios` can call `planreq`/`planwire` instead.
+
+**Gap 2873 — D58's kernel half: `overtime.grown` is carried and read by nothing.**
+1. *What.*  `PlanWire.readOvertime` reads `id` and `blocks`; the host's grown facts are ignored.
+2. *Why.*  A `.lean` change, not this track's.
+3. *Cost.*  The kernel's what-if stays the estimate's (parity P44) until `Planner.overtimeDiff`
+   reads them.  Measured by reading fork `planner.rs`: in the with-ranking day `need_min` reaches
+   nothing (step 5 reads `planned_min` and `remaining_min`; only §7's pass reads `need_min`, and
+   `with_ranking` bypasses it), so the kernel half needs `remaining` and `plannedMin`.
+4. *Clears it.*  A kernel step reading `grown`, then R3 sending it from `App::extend_drops`.
+
+**Gap 2874 — at R3 four inputs the fork tolerated become named refusals.**
+1. *What.*  A running block that started after `now` (fork: worked 0), an `estMin` past 1,440, an
+   unknown break place, an id past 1,024 characters: the codec sends them and the kernel refuses
+   (`badActive wf`, `badBreak place`, `badActive id`).
+2. *Why.*  R10's bounds, by design; the codec mints no bound of its own.
+3. *Cost.*  A hand-edited `.tm/state.json` of that shape stops `tm plan` rather than planning.
+4. *Clears it.*  A behaviour row each at R3, or the host clearing such a record before it sends.
+
+**Gap 2875 — the capacity section still has no host encoder a test can link.**
+1. *What.*  `kernel_capacity::request` takes a `Ctx` in a `[[bin]]`; `support/planreq.rs` is its
+   third spelling (gap 2006 counts two), and the shipped request lacks `priority.batchMaxMin`.
+2. *Why.*  Moving it is gap 2006's request half, larger than this step.
+3. *Cost.*  The tests' request can drift from the binary's; R3 must add `batchMaxMin`
+   (`planwire::add_batch_max_min`).
+4. *Clears it.*  Move `request`'s pure half into `planwire` beside the answer half this step moved.
+
+**Gap 2876 — `kernel_capacity`'s `prio_of` is cited at a module it left.**
+1. *What.*  `planner_invariants.rs:1816`, `Planner.lean` (two sites), `Check.lean` and this ledger
+   cite `kernel_capacity::prio_of` / `kernel_capacity`'s `prio_of`; it lives in `tm_core::planwire`.
+2. *Why.*  Those files are not this track's (a `.lean` file and `planner_invariants.rs`); the name
+   was kept so every citation still names the one reader.
+3. *Cost.*  Check 8 resolves a citation by its last segment and cannot see the moved module (its
+   declared blind spot); a reader following the path finds a thin wrapper.
+4. *Clears it.*  The Land step or the next step that touches those files re-points the prose.
+
+**Gap 2877 — the decoder completes three narrow fields from the host's own facts; whether R3 keeps
+that route is a call.**
+1. *What.*  `underused`'s slot energy and `ci`, `impossible`'s date and `blocked`'s dependencies are
+   filled from the decoded rows, the grants and the candidates (§3).  FFI evidence: `blocked` on the
+   fixture days; `underused` and `impossible` by unit test only — no fixture day has one.
+2. *Why.*  The kernel's fields are `IdList`s (gaps 323, 2743) and `until` is unwritten (gap 2640);
+   the host already holds every missing component.
+3. *Cost.*  None to the display while they agree; where host and kernel disagree the decode fails by
+   name, so `tm plan` would refuse rather than render (loud, never wrong).
+4. *Clears it.*  R3 keeps it and gaps 2640/2743's costs are met host-side, or the kernel widens the
+   fields and the decoder checks instead of completing.
+
+### 7. Acceptance, capped
+
+Per commit, in this worktree: `cargo test --workspace` **three runs** each — `90c391e` **1,483 /
+0 / 9 across 87 result lines** (the `fe49a8b` baseline, measured here: the same); `274e536` **1,503
+/ 0 / 9 across 88**; this commit's figures are in its message.  `check.sh` **14/14** before each
+(citations 44,194 → 44,321 → this commit's; axiom audit 5,480; stage goals 6; the parity register
+unchanged at 44 rows; 29/37 and 4/5).  `--include-ignored`: T5, the door suite, `cli_switch_acceptance`,
+`cli_latency`, `kernel_call_counts`, `one_padder`, `one_renderer`, `kernel_row_cells`,
+`kernel_item_grammar`, `kernel_planner_wire`, `planner_invariants` and `kernel_plan_codec` green;
+`cli_latency`'s three-year test failed once at load average 29–35 (another session's emulated
+llama-server and two Lean builds; gap 1333) and passed 6/6 re-run at load 10–12.
+**No `.lean` file touched, no predicate or assertion weakened, no snapshot, latency band or corpus
+re-blessed (the one new fixture was blessed by its own test, once), no memory bound raised, no
+external dependency, no `.proptest-regressions` change.**

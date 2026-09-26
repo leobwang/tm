@@ -15,7 +15,6 @@ use tm_core::energy::Model;
 use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
-use tm_core::planner::PlanInput;
 use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
 
@@ -77,9 +76,13 @@ pub fn load_with_log(name: &str, log_text: Option<&str>) -> Fixture {
     }
 }
 
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
+/// The fork's planning input for this fixture. The suites that plan with the
+/// fork read it; `planner_fixtures.rs`' surviving arm does not, and its
+/// `the_fork_half_of_this_suite_is_one_region` holds this file to one region.
 impl Fixture {
-    pub fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
-        PlanInput::new(
+    pub fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> tm_core::planner::PlanInput<'a> {
+        tm_core::planner::PlanInput::new(
             &self.tree,
             &self.replay,
             &self.cfg,
@@ -89,6 +92,7 @@ impl Fixture {
         )
     }
 }
+// END THE FORK PLANNER
 
 /// The `plan-basic` history the planner tests plan against: eight weeks of
 /// laundry, a shower two days ago, and this morning up to `tm arrive`.

@@ -3,27 +3,129 @@
 //! 12:50 wall, `plan-home-day` (the `home_max_ci` cap) and `plan-travel-day`
 //! (a `buffer:2h travel-day` flight zeroing the budget).
 //!
-//! Each snapshot is the whole timeline — every segment, in order — plus the
-//! §8.2 step 8 diagnostics, so a change to any step of §8.2 shows up here.
+//! # Two arms since stage 6 W-35 (README gap 2722)
+//!
+//! **The arm that survives R3** plans the four days with the **kernel** —
+//! through `tm_core::planwire`, the codec R3 swaps into the binary — and
+//! compares each day, by value, with the fork's day frozen into
+//! `tests/fixtures/` (`support/forkday.rs`): the fork as the shipped binary
+//! runs it, ranked by the kernel's own grants (D53). It then holds the kernel's
+//! day to the same §8 properties the fork's day is held to — the functions
+//! below are one set, read by both arms. Nothing in it reaches the fork's
+//! planner, so R3's deletion leaves it building, running and comparing.
+//!
+//! **The fork's arm** — its four tests, their timeline and diagnostics
+//! snapshots and the re-bless of the frozen days — plans with
+//! `planner::plan` and its own §7 pass. It is one region, `BEGIN THE FORK
+//! PLANNER` … `END THE FORK PLANNER`, and R3 deletes it whole;
+//! [`the_fork_half_of_this_suite_is_one_region`] holds this file and
+//! `planner_common` to that.
+//!
+//! What the kernel's day may differ from the fork's by is two classes, each
+//! counted and bounded exactly (gaps 551 and 435, `support/forkday.rs`), and
+//! nothing else.
 
 mod planner_common;
 
-use chrono::NaiveTime;
+#[allow(dead_code)]
+#[path = "support/planreq.rs"]
+mod planreq;
+
+#[allow(dead_code)]
+#[path = "support/forkday.rs"]
+mod forkday;
+
+use chrono::{DateTime, NaiveTime};
+use chrono_tz::Tz;
 use planner_common::{
-    assert_break_rule, at, basic_state, date, diagnostics, load, load_with_log, timeline,
-    BASIC_LOG,
+    assert_break_rule, at, basic_state, date, fixture_path, load, load_with_log, Fixture, BASIC_LOG,
 };
-use tm_core::dayplan::{SegKind, Segment};
-use tm_core::planner;
+use tm_core::dayplan::{DayPlan, SegKind, Segment};
+use tm_core::priority::{self, Candidate};
 use tm_core::store::RuntimeState;
 
 // ---------------------------------------------------------------------------
-// (a) plan-basic, early start
+// The four fixture days, named once
 // ---------------------------------------------------------------------------
 
-/// §4.3's day, planned at 07:00 from `.tm/state.json` (`window 07:00..16:00`,
-/// `budget 6`, lounge) with the log the fixture ships (wake 06:05, breakfast
-/// done, arrive 07:00).
+/// One fixture day: the tree, the log it is read with (the fixture's own when
+/// `None`), the runtime state (the fixture's own `.tm/state.json` when
+/// `None`) and the instant it is planned at.
+struct FixtureDay {
+    name: &'static str,
+    fixture: &'static str,
+    log: Option<&'static str>,
+    state: Option<fn() -> RuntimeState>,
+    h: u32,
+    m: u32,
+}
+
+/// `plan-basic` arriving at 10:30 with the 12:50–13:50 meeting ahead.
+fn late_state() -> RuntimeState {
+    RuntimeState {
+        date: Some(date("2026-09-07")),
+        wake: Some(NaiveTime::from_hms_opt(9, 0, 0).expect("time")),
+        arrival: Some(NaiveTime::from_hms_opt(10, 30, 0).expect("time")),
+        loc: Some("lounge".to_string()),
+        ..RuntimeState::default()
+    }
+}
+
+const DAYS: [FixtureDay; 4] = [
+    FixtureDay { name: "plan-basic early 07:00", fixture: "plan-basic", log: Some(BASIC_LOG), state: Some(basic_state), h: 7, m: 0 },
+    FixtureDay { name: "plan-basic late 10:30", fixture: "plan-basic", log: Some(BASIC_LOG), state: Some(late_state), h: 10, m: 30 },
+    FixtureDay { name: "plan-home-day 09:00", fixture: "plan-home-day", log: None, state: None, h: 9, m: 0 },
+    FixtureDay { name: "plan-travel-day 07:00", fixture: "plan-travel-day", log: None, state: None, h: 7, m: 0 },
+];
+
+/// A fixture day, loaded: the tree, its documents and log, the state, the
+/// instant and the candidates the request sends.
+struct Loaded {
+    fx: Fixture,
+    docs: Vec<(String, String)>,
+    log: String,
+    state: RuntimeState,
+    now: DateTime<Tz>,
+    cands: Vec<Candidate>,
+}
+
+impl Loaded {
+    fn of(d: &FixtureDay) -> Loaded {
+        let fx = match d.log {
+            Some(l) => load_with_log(d.fixture, Some(l)),
+            None => load(d.fixture),
+        };
+        let log = match d.log {
+            Some(l) => l.to_string(),
+            None => std::fs::read_to_string(format!("{}/.tm/log.jsonl", fixture_path(d.fixture))).unwrap_or_default(),
+        };
+        let state = d.state.map_or_else(|| fx.state.clone(), |f| f());
+        let now = at("2026-09-07", d.h, d.m);
+        let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date("2026-09-07"), now);
+        let docs = planreq::docs_of_dir(std::path::Path::new(&fixture_path(d.fixture)));
+        Loaded { fx, docs, log, state, now, cands }
+    }
+
+    fn world(&self) -> planreq::World<'_> {
+        planreq::World {
+            docs: &self.docs,
+            log: &self.log,
+            tree: &self.fx.tree,
+            cfg: &self.fx.cfg,
+            state: &self.state,
+            now: self.now,
+            cands: &self.cands,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// §8's properties of each day — one set, held by both arms
+// ---------------------------------------------------------------------------
+
+/// **(a) `plan-basic`, early start** — §4.3's day, planned at 07:00 from
+/// `.tm/state.json` (`window 07:00..16:00`, `budget 6`, lounge) with the log
+/// the fixture ships (wake 06:05, breakfast done, arrive 07:00).
 ///
 /// Every difference from the §4.3 printed timeline, and why the spec's own
 /// steps produce it:
@@ -54,7 +156,9 @@ use tm_core::store::RuntimeState;
 ///    the first break and lunch (30m, 11:30) is the second. The counter is
 ///    therefore back to zero at 12:00; the 12:50 wall is not work and does not
 ///    move it; and the two blocks that follow — 12:00 and 13:50 — earn the
-///    break at 14:50.
+///    break at 14:50. (The fork draws that break as a row; the kernel keeps the
+///    same 20 minutes free and draws no row — gap 551 — so the row is asserted
+///    in the fork's arm only.)
 /// 7. **§4.3 marks two blocks `✓` and one `▶`, and shows `(67m)` actuals.**
 ///    Those are log facts; at 07:00 the log holds only wake, breakfast and
 ///    arrive.
@@ -62,15 +166,7 @@ use tm_core::store::RuntimeState;
 ///    none, so every multiplier here is 1.
 /// 9. **§4.3's `15:10 ─── window ends 16:00` divider** is an `emit.rs` row,
 ///    not a segment.
-#[test]
-fn plan_basic_early_start() {
-    let fx = load_with_log("plan-basic", Some(BASIC_LOG));
-    let state = basic_state();
-    let now = at("2026-09-07", 7, 0);
-    let day = planner::plan(&fx.input(&state, now));
-    insta::assert_snapshot!("plan_basic_early_timeline", timeline(&day));
-    insta::assert_snapshot!("plan_basic_early_diagnostics", diagnostics(&day));
-
+fn check_basic_early(day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
     assert_eq!(day.window, (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0)));
     assert_eq!(day.budget_blocks, 6);
     // §8.3: no overbooking.
@@ -92,17 +188,9 @@ fn plan_basic_early_start() {
     assert!(lunch.start >= at("2026-09-07", 11, 30));
     assert!(lunch.end <= at("2026-09-07", 13, 30));
     // §8.2 step 3's rule: never more than `break_after_blocks` blocks in a row
-    // without a rest, and this day takes its break at 14:50.
-    assert_break_rule(&day, now, &fx.cfg);
-    let breaks: Vec<&Segment> = day
-        .segments
-        .iter()
-        .filter(|s| s.kind == SegKind::Break)
-        .collect();
-    assert_eq!(breaks.len(), 1, "{}", timeline(&day));
-    assert_eq!(breaks[0].start, at("2026-09-07", 14, 50));
-    assert_eq!(breaks[0].end, at("2026-09-07", 15, 10));
-    // §8.2 step 8: what this day could not do (the snapshot pins the rest).
+    // without a rest of `break_min`, whatever fills it.
+    assert_break_rule(day, now, &fx.cfg);
+    // §8.2 step 8: what this day could not do.
     assert_eq!(
         day.diagnostics.blocked,
         vec![(
@@ -125,30 +213,12 @@ fn plan_basic_early_start() {
         .any(|s| s.kind.is_work() && s.end > wind));
 }
 
-// ---------------------------------------------------------------------------
-// (b) plan-basic, late start with a wall
-// ---------------------------------------------------------------------------
-
-/// Arriving at 10:30 with the 12:50–13:50 meeting ahead: §8.1's window is
-/// `min(10:30 + 8h, 19:00) + 1h wall = 19:30`, the budget is unchanged (§8.1:
-/// "a late start gets a later end and the same budget formula"), and the
-/// morning simply is not there.
-#[test]
-fn plan_basic_late_start_with_a_wall() {
-    let fx = load_with_log("plan-basic", Some(BASIC_LOG));
-    let state = RuntimeState {
-        date: Some(date("2026-09-07")),
-        wake: Some(NaiveTime::from_hms_opt(9, 0, 0).expect("time")),
-        arrival: Some(NaiveTime::from_hms_opt(10, 30, 0).expect("time")),
-        loc: Some("lounge".to_string()),
-        ..RuntimeState::default()
-    };
-    let now = at("2026-09-07", 10, 30);
-    let day = planner::plan(&fx.input(&state, now));
-    insta::assert_snapshot!("plan_basic_late_timeline", timeline(&day));
-    insta::assert_snapshot!("plan_basic_late_diagnostics", diagnostics(&day));
-
-    assert_break_rule(&day, now, &fx.cfg);
+/// **(b) `plan-basic`, late start with a wall** — arriving at 10:30 with the
+/// 12:50–13:50 meeting ahead: §8.1's window is `min(10:30 + 8h, 19:00) + 1h
+/// wall = 19:30`, the budget is unchanged (§8.1: "a late start gets a later end
+/// and the same budget formula"), and the morning simply is not there.
+fn check_basic_late(day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
+    assert_break_rule(day, now, &fx.cfg);
     // §8.1: the wall inside the window pushes the end out by its duration.
     assert_eq!(day.window.0, at("2026-09-07", 10, 30));
     assert_eq!(day.window.1, at("2026-09-07", 19, 30));
@@ -174,26 +244,15 @@ fn plan_basic_late_start_with_a_wall() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// (c) plan-home-day
-// ---------------------------------------------------------------------------
-
-/// The same tree at home (§8.2 step 3's `min(energy, home_max_ci)`): no slot
-/// is worth more than `ci 3`, so the `ci 4`/`ci 5` milestones cannot be
-/// started at all and the low-`ci` work rises to the top. `state.json` stores
-/// no window here, so §8.1's formula runs: `09:00 + 8h = 17:00`, plus the
-/// 12:50 meeting, is 18:00.
-#[test]
-fn plan_home_day() {
-    let fx = load("plan-home-day");
-    let now = at("2026-09-07", 9, 0);
-    let day = planner::plan(&fx.input(&fx.state, now));
-    insta::assert_snapshot!("plan_home_day_timeline", timeline(&day));
-    insta::assert_snapshot!("plan_home_day_diagnostics", diagnostics(&day));
-
+/// **(c) `plan-home-day`** — the same tree at home (§8.2 step 3's
+/// `min(energy, home_max_ci)`): no slot is worth more than `ci 3`, so the
+/// `ci 4`/`ci 5` milestones cannot be started at all and the low-`ci` work
+/// rises to the top. `state.json` stores no window here, so §8.1's formula
+/// runs: `09:00 + 8h = 17:00`, plus the 12:50 meeting, is 18:00.
+fn check_home_day(day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
     assert_eq!(day.window, (at("2026-09-07", 9, 0), at("2026-09-07", 18, 0)));
     assert_eq!(day.budget_blocks, 6);
-    assert_break_rule(&day, now, &fx.cfg);
+    assert_break_rule(day, now, &fx.cfg);
     // §8.2 step 3: the home cap holds every slot at or below `home_max_ci`.
     for seg in day.segments.iter().filter(|s| s.energy.is_some()) {
         assert!(
@@ -211,22 +270,11 @@ fn plan_home_day() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// (d) plan-travel-day
-// ---------------------------------------------------------------------------
-
-/// A `buffer:2h travel-day` flight at 08:15: the blocked time starts at 06:15
-/// (clipped to the window at 07:00), and §8.2 step 1's "travel-day zeroing"
-/// takes the whole block budget away — routines, walls and optionals stay, no
-/// Block is planned.
-#[test]
-fn plan_travel_day() {
-    let fx = load("plan-travel-day");
-    let now = at("2026-09-07", 7, 0);
-    let day = planner::plan(&fx.input(&fx.state, now));
-    insta::assert_snapshot!("plan_travel_day_timeline", timeline(&day));
-    insta::assert_snapshot!("plan_travel_day_diagnostics", diagnostics(&day));
-
+/// **(d) `plan-travel-day`** — a `buffer:2h travel-day` flight at 08:15: the
+/// blocked time starts at 06:15 (clipped to the window at 07:00), and §8.2 step
+/// 1's "travel-day zeroing" takes the whole block budget away — routines, walls
+/// and optionals stay, no Block is planned.
+fn check_travel_day(day: &DayPlan, _fx: &Fixture, _now: DateTime<Tz>) {
     assert_eq!(day.block_minutes(), 0, "a travel day plans no blocks");
     assert!(day
         .diagnostics
@@ -244,3 +292,180 @@ fn plan_travel_day() {
     assert_eq!(walls[1].start, at("2026-09-07", 8, 15));
     assert_eq!(walls[1].end, at("2026-09-07", 10, 40));
 }
+
+/// The day's own properties, by its name.
+fn check(d: &FixtureDay, day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
+    match d.name {
+        "plan-basic early 07:00" => check_basic_early(day, fx, now),
+        "plan-basic late 10:30" => check_basic_late(day, fx, now),
+        "plan-home-day 09:00" => check_home_day(day, fx, now),
+        "plan-travel-day 07:00" => check_travel_day(day, fx, now),
+        other => panic!("no properties are written for `{other}`"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The arm that survives R3: the kernel's day, the frozen fork's day
+// ---------------------------------------------------------------------------
+
+/// **The kernel plans the four fixture days the fork planned** — by value,
+/// against the fork's days frozen before R3 (README gap 2722), and each held
+/// to §8's properties above.
+///
+/// The two classes are bounded EXACTLY, measured at W-35: three planned breaks
+/// the kernel does not draw (gap 551: every day but the travel day, whose
+/// budget is zero) and four `⚠` marks it does not set (gap 435: `^a3`'s row on
+/// every day). A class that widens fails here, and so does a class that
+/// closes — whoever closes one lowers its number here and says so.
+#[test]
+fn the_kernel_plans_the_fixture_days_the_fork_planned() {
+    let frozen = forkday::frozen_days();
+    let mut t = forkday::DayTally::default();
+    let mut findings = Vec::new();
+    for d in &DAYS {
+        let l = Loaded::of(d);
+        let (k, _) = planreq::kernel_day(&l.world(), None).unwrap_or_else(|e| panic!("{}: {e}", d.name));
+        match frozen.get(d.name) {
+            Some(fork) => findings.extend(forkday::compare_day_with_fork(d.name, &k, fork, l.now, &mut t)),
+            None => t.skipped += 1,
+        }
+        check(d, &k.day, &l.fx, l.now);
+    }
+    println!("{}", t.line("planner_fixtures", findings.len()));
+    forkday::no_disagreement(&findings);
+    assert_eq!((t.days, t.skipped), (4, 0), "every day was compared: {t:?}");
+    assert_eq!(t.rows, 73, "the fork's four days hold 73 rows: {t:?}");
+    assert_eq!(t.break_rows_551, 3, "gap 551's rows: {t:?}");
+    assert_eq!(t.hot_marks_435, 4, "gap 435's marks: {t:?}");
+    assert_eq!(t.hashes_equal, 1, "only the travel day draws no planned break: {t:?}");
+}
+
+/// **R3's deletion is mechanical here**: every line of this file and of
+/// `planner_common` that reaches the fork's planner sits inside its one
+/// `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region, so R3 deletes
+/// the two regions and the arm above still builds. With the regions gone, no
+/// reference may remain — this test is then the assertion that the comparand
+/// really moved.
+#[test]
+fn the_fork_half_of_this_suite_is_one_region() {
+    let here = env!("CARGO_MANIFEST_DIR");
+    for file in ["tests/planner_fixtures.rs", "tests/planner_common/mod.rs"] {
+        let text = std::fs::read_to_string(format!("{here}/{file}")).expect("the source reads");
+        let scan = forkday::fork_scan(&text);
+        assert!(scan.escapes.is_empty(), "{file}: the fork reached outside its region:\n  {}", scan.escapes.join("\n  "));
+        assert!(scan.deleted || scan.region_bytes > 0, "{file}: an empty region");
+    }
+}
+
+/// **The scan bites, both ways** (AGENTS §5.8): a check nothing can fail is
+/// decoration, and a check a legitimate file fails is a trapdoor. The banners
+/// and the needles are spelled into the sources below by pieces, so this file
+/// never holds one outside its own region — the scan above reads this file too.
+#[test]
+fn the_fork_scan_sees_a_reference_outside_its_region_and_only_there() {
+    let b = ["// BEGIN THE FORK", " PLANNER\n"].concat();
+    let e = ["// END THE FORK", " PLANNER\n"].concat();
+    let call = ["    let d = ", "planner", "::plan(&x);\n"].concat();
+    let quiet = ["    let d = 1;\n    // a comment may name ", "planner", "::plan freely\n"].concat();
+    let quiet = quiet.as_str();
+    // Inside the region: nothing escapes.
+    let inside = format!("{quiet}{b}{call}{e}{quiet}");
+    let scan = forkday::fork_scan(&inside);
+    assert!(scan.escapes.is_empty() && !scan.deleted && scan.region_bytes > 0, "{:?}", scan.escapes);
+    // The same line below the region: it escapes, by line.
+    let outside = format!("{quiet}{b}{e}{call}");
+    assert_eq!(forkday::fork_scan(&outside).escapes.len(), 1);
+    // After R3 (no banners): any reference at all is an escape, and none is clean.
+    let after = format!("{quiet}{call}");
+    let scan = forkday::fork_scan(&after);
+    assert!(scan.deleted && scan.escapes.len() == 1, "{:?}", scan.escapes);
+    assert!(forkday::fork_scan(quiet).escapes.is_empty());
+    // The fixture's own builder is a needle too, however it is reached.
+    let input = ["    let i = fx.", "input(&state, now);\n"].concat();
+    assert_eq!(forkday::fork_scan(&format!("{b}{e}{input}")).escapes.len(), 1);
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
+use planner_common::timeline;
+use tm_core::planner;
+
+/// (a) on the fork, with its own §7 pass — and its timeline and diagnostics
+/// pinned by snapshot.
+#[test]
+fn plan_basic_early_start() {
+    let fx = load_with_log("plan-basic", Some(BASIC_LOG));
+    let state = basic_state();
+    let now = at("2026-09-07", 7, 0);
+    let day = planner::plan(&fx.input(&state, now));
+    insta::assert_snapshot!("plan_basic_early_timeline", timeline(&day));
+    insta::assert_snapshot!("plan_basic_early_diagnostics", planner_common::diagnostics(&day));
+    check_basic_early(&day, &fx, now);
+    // The one Break row this day takes, at 14:50 — the fork's alone (gap 551).
+    let breaks: Vec<&Segment> = day
+        .segments
+        .iter()
+        .filter(|s| s.kind == SegKind::Break)
+        .collect();
+    assert_eq!(breaks.len(), 1, "{}", timeline(&day));
+    assert_eq!(breaks[0].start, at("2026-09-07", 14, 50));
+    assert_eq!(breaks[0].end, at("2026-09-07", 15, 10));
+}
+
+/// (b) on the fork.
+#[test]
+fn plan_basic_late_start_with_a_wall() {
+    let fx = load_with_log("plan-basic", Some(BASIC_LOG));
+    let state = late_state();
+    let now = at("2026-09-07", 10, 30);
+    let day = planner::plan(&fx.input(&state, now));
+    insta::assert_snapshot!("plan_basic_late_timeline", timeline(&day));
+    insta::assert_snapshot!("plan_basic_late_diagnostics", planner_common::diagnostics(&day));
+    check_basic_late(&day, &fx, now);
+}
+
+/// (c) on the fork.
+#[test]
+fn plan_home_day() {
+    let fx = load("plan-home-day");
+    let now = at("2026-09-07", 9, 0);
+    let day = planner::plan(&fx.input(&fx.state, now));
+    insta::assert_snapshot!("plan_home_day_timeline", timeline(&day));
+    insta::assert_snapshot!("plan_home_day_diagnostics", planner_common::diagnostics(&day));
+    check_home_day(&day, &fx, now);
+}
+
+/// (d) on the fork.
+#[test]
+fn plan_travel_day() {
+    let fx = load("plan-travel-day");
+    let now = at("2026-09-07", 7, 0);
+    let day = planner::plan(&fx.input(&fx.state, now));
+    insta::assert_snapshot!("plan_travel_day_timeline", timeline(&day));
+    insta::assert_snapshot!("plan_travel_day_diagnostics", planner_common::diagnostics(&day));
+    check_travel_day(&day, &fx, now);
+}
+
+/// **Re-bless the frozen fork days** — inert without `TM_PLANNER_BLESS`.
+///
+/// Each day is the fork as the shipped binary plans it (D53): the kernel's own
+/// grants for this request, read by the binary's reader, handed to
+/// `planner::plan` through `with_ranking` — `planning::build_ranked`'s call.
+/// Rewriting a committed comparand is a decision and never a repair (AGENTS
+/// §7.2); after R3 this test is gone with the region and the file is final.
+#[test]
+#[ignore]
+fn the_frozen_fork_days_are_reblessed() {
+    if std::env::var_os("TM_PLANNER_BLESS").is_none() {
+        eprintln!("inert: set TM_PLANNER_BLESS=1 to rewrite {}", forkday::FROZEN_DAYS);
+        return;
+    }
+    let mut out = String::new();
+    for d in &DAYS {
+        let l = Loaded::of(d);
+        let (_, ans) = planreq::kernel_day(&l.world(), None).unwrap_or_else(|e| panic!("{}: {e}", d.name));
+        let fork = planner::plan(&l.fx.input(&l.state, l.now).with_ranking(&l.cands, &ans.prios));
+        out.push_str(&forkday::frozen_line(d.name, &fork));
+    }
+    std::fs::write(forkday::frozen_path(), out).expect("the frozen days are written");
+}
+// END THE FORK PLANNER

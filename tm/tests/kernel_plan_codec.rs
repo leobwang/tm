@@ -15,9 +15,10 @@
 //!   it: the worked stretch (`open`, "30m so far") and the reservation (`▶`,
 //!   "running · 90m left").
 //! * §9.1's what-if crosses as `overtime` and comes back as a `PlanDiff`.
-//! * The encoder mints no bound: a start after `now`, an unknown break place and
-//!   an id one character past `CapWire.maxCandId` are sent as the host holds
-//!   them and refused BY THE KERNEL, by name.
+//! * The encoder mints no bound: a start after `now`, an unknown break place,
+//!   an id one character past `CapWire.maxCandId` and a routine list one past
+//!   `Planner.maxCands` are sent as the host holds them and refused BY THE
+//!   KERNEL, by name.
 //!
 //! What it does not do is compare the kernel's day with the fork's — that is
 //! the frozen comparand's job (`planner_fixtures.rs`, README gap 2722).
@@ -229,6 +230,21 @@ fn what_the_kernel_cannot_plan_is_refused_by_the_kernel_by_name() {
     let enc = planwire::state_json(&state, date("2026-09-07"), c.fx.cfg.tz);
     let resp = c.raw(|p| p["state"] = enc.clone());
     assert_eq!(planwire::planner_refusal(&resp), Some("badBreak place"), "{resp}");
+
+    // `Planner.maxCands` is 1,024: the encoder sends 1,025 instances as the
+    // host collected them, and `Planner.mkRoutines?` refuses the list by name
+    // before it reads one of them.
+    let lunch = planwire::RoutineInst {
+        id: Id::new("lunch"),
+        inst: None,
+        from: at("2026-09-07", 11, 30),
+        to: at("2026-09-07", 13, 30),
+        dur_min: 30,
+        mandatory: false,
+    };
+    let many = planwire::routines_json(&vec![lunch; 1025]);
+    let resp = c.raw(|p| p["routines"] = many.clone());
+    assert_eq!(planwire::planner_refusal(&resp), Some("routineRefused tooManyRoutines"), "{resp}");
 
     // `CapWire.maxCandId` is 1,024: one past it is refused, and at it is not.
     for (len, refused) in [(1025usize, true), (1024, false)] {
