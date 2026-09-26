@@ -7990,5 +7990,40 @@ theorem the_day_names_its_overlapping_walls :
     (dayPlan theOverlapRequest).diagnostics.conflicts.val = [(['g','1'], ['g','2'])] := by
   refine ⟨by decide, by decide⟩
 
+/-! ############################################################################
+## 31. The plan's identity is the fork's (W-34 track H, P8's emitter)
+############################################################################
+
+`Planner.dayPlan` carries `Planner.planDigest` since W-34.  The constant below is NOT the
+kernel's own output copied back: it was printed by the FORK — a scratch crate over this tree's
+own `tm-core` building `planner::Segment`s with the same nine rows and calling
+`DayPlan::hash` (README "Stage 6 — W-34, track H" has the probe and its output) — and the kernel
+reaches the same sixteen digits from its own rows.  The four-row pin of the bytes alone — a
+batch, both instance keys, two multipliers — is `Planner.the_placement_bytes_are_the_forks`, and
+`tm/tests/planner_invariants.rs`' W-34 block makes the comparison on every generated day, against
+the fork's function over the kernel's rows and against the kernel-ranked fork day (D53).
+
+It is `decide +kernel`, and that is a measurement, not a reflex (AGENTS §5.10a): probed at
+8G/120 s, the whole of `theRequest`'s day — the planner and the digest — checks in 1.6 s at
+1.1 GB, where the elaborator's `decide` stops at the default recursion depth after about 64
+bytes of FNV fold.  No `maxRecDepth`, `maxHeartbeats` or memory bound is set for it. -/
+
+/-- **The witness day's digest is the fork's**: `ace6c63d4bdc8084` is fork `DayPlan::hash` of the
+nine rows `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening` lists, with
+the rest rows' energies 3, 3, 2, 2 and every other digested field `None` — the fork's value,
+reached by the kernel's planner and the kernel's emitter. -/
+theorem the_witness_days_hash_is_the_forks :
+    (dayPlan theRequest).planHash.val = 0xace6c63d4bdc8084 := by decide +kernel
+
+/-- **P0's placeholder is REFUTED** (AGENTS §3.2, W-34): the tripwire said every day's hash was
+`PlanHash.zero` until the emitter landed, and here is a day whose hash is not.  The positive law
+it is renamed to is `Planner.dayPlan_planHash`. -/
+theorem the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted :
+    ¬ ∀ r : PlanReq, (dayPlan r).planHash = PlanHash.zero := by
+  intro h
+  have hv := congrArg Subtype.val (h theRequest)
+  rw [the_witness_days_hash_is_the_forks] at hv
+  exact absurd hv (by decide)
+
 end PlannerWit
 end Tm

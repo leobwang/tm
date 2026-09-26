@@ -2763,3 +2763,290 @@ fn two_routines_contend_for_one_position() {
         .collect();
     assert_eq!(krout, frout, "the two planners ordered the contending routines differently");
 }
+
+// ===========================================================================
+// **THE PLAN HASH, COMPARED BY VALUE** — stage 6 W-34 track H (P8's emitter).
+//
+// `Planner.dayPlan` carries `Planner.planDigest` since W-34: FNV-1a/64 of the
+// bytes of `serde_json::to_string(&Vec<Placement>)`, which is what fork
+// `DayPlan::hash` digests. Two claims, kept apart because they fail for
+// different reasons:
+//
+//   1. **THE EMITTER** — on EVERY generated day, the kernel's `plan.hash`
+//      equals the fork's OWN `DayPlan::hash` run over the KERNEL's rows, rebuilt
+//      as `planner::Segment`s. No exemption: this is the bytes, the zone, the
+//      instance keys and the multiplier's spelling, whatever the planner did.
+//   2. **THE DAY** — the kernel's `plan.hash` equals `day2.hash()`, the fork's
+//      day ranked by the kernel's own §7 answer (the shipped wiring, D53). A day
+//      whose rows do not agree is classified ROW BY ROW, by a PROPERTY of the
+//      fork's row, into the three row classes this kernel is recorded as not
+//      porting — README gap 554 (`open_block_segment`: the row `open` marks),
+//      gap 550 (the reservation's multiplier: the `current` Block whose kernel
+//      twin differs in `multiplier` alone) and gap 551 (the cut's kept breaks: a
+//      Break row starting at or after `now`, which the log cannot have written).
+//      That is an enumeration a row must JOIN to be exempt, never a list of days
+//      (W-27's shape): a row outside the three FAILS by name, a day whose rows
+//      agree must agree in its hash too — order included — and each class is
+//      counted so the day its gap closes is the day its count reaches zero.
+//
+// The multiplier is DRAWN as well as left at the default: `Model::default()`
+// sizes every candidate at `1.0`, which would test one of zmij's spellings
+// (`1.0`) and none of its other layouts (`1.6`, `0.3`, `1e-6`, `123.456`).
+// Setting `model.duration["_default"]` is a WIDENING of what this arm sees
+// (D46); the arms above are untouched.
+// ===========================================================================
+
+/// The census: cases; days with no kernel §7 answer; days compared with the
+/// kernel-ranked fork; of those, equal hashes; equal rows; rows the emitter
+/// digested; drawn multipliers; open-block rows (554); reservation multipliers
+/// (550); kept breaks (551); days a class explained; batch rows digested.
+static HASH_CENSUS: Mutex<[u64; 12]> = Mutex::new([0; 12]);
+
+/// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
+/// for the `inst` text a kernel row carries.
+fn instance_key_of(s: &str) -> Option<tm_core::model::InstanceKey> {
+    if let Some(n) = s.strip_prefix('#') {
+        return n.parse::<u32>().ok().map(tm_core::model::InstanceKey::Nth);
+    }
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().map(tm_core::model::InstanceKey::Date)
+}
+
+/// A kernel `{num, den}` multiplier as the double it was written from: the host
+/// sends the double's shortest `Display` digits over `10^places` (`dec` above),
+/// so the decimal is rebuilt digit for digit and parsed — correctly rounded —
+/// back to that double.
+fn f64_of_pair(v: &Value) -> Option<f64> {
+    let num = v["num"].as_u64()?;
+    let den = v["den"].as_u64()?;
+    let places = den.to_string().len() - 1;
+    if den != 10u64.pow(places as u32) {
+        return Some(num as f64 / den as f64);
+    }
+    let digits = format!("{num:0>width$}", width = places + 1);
+    let (int, frac) = digits.split_at(digits.len() - places);
+    format!("{int}.{frac}0").parse::<f64>().ok()
+}
+
+/// **The kernel's rows as the fork's own `Segment`s**, so the FORK's
+/// `DayPlan::hash` can be run over them. Every digested field is carried; the
+/// marks are left at their defaults because the fork does not digest them.
+fn fork_rows_of_kernel(plan: &Value, tz: Tz) -> Vec<Segment> {
+    use chrono::TimeZone;
+    let at = |v: &Value| {
+        tz.timestamp_opt(v.as_i64().expect("a second") - rowwire::EPOCH_FROM_CE, 0)
+            .single()
+            .expect("an instant the zone reads")
+    };
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|s| {
+            let kind = match s["kind"].as_str().expect("a kind") {
+                "block" => SegKind::Block,
+                "batch" => SegKind::Batch(
+                    s["batch"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
+                        .map(|v| Id::new(v.as_str().expect("an id"))).collect(),
+                ),
+                "break" => SegKind::Break,
+                "routine" => SegKind::Routine,
+                "wall" => SegKind::Wall,
+                "rest" => SegKind::Rest,
+                "optional" => SegKind::Optional,
+                "wind-down" => SegKind::WindDown,
+                "sleep" => SegKind::Sleep,
+                "lost" => SegKind::Lost,
+                other => panic!("the kernel placed a `{other}` row, which no fork kind is"),
+            };
+            Segment {
+                start: at(&s["start"]),
+                end: at(&s["stop"]),
+                kind,
+                energy: s["energy"].as_u64().map(|e| e as u8),
+                item: s["item"].as_str().map(Id::new),
+                instance: s["inst"]["inst"].as_str().and_then(instance_key_of),
+                flags: planner::SegFlags {
+                    planned_min: s["planned"].as_u64().map(|p| p as u32),
+                    multiplier: if s["mult"].is_null() { None } else { f64_of_pair(&s["mult"]) },
+                    ..planner::SegFlags::default()
+                },
+            }
+        })
+        .collect()
+}
+
+/// One row's digested fields, as serde spells them (`Placement`'s eight, in its
+/// order) — the key two rows are matched by.
+fn placement_key(s: &Segment) -> String {
+    serde_json::to_string(&(
+        &s.start, &s.end, &s.kind, s.energy, &s.item, &s.instance, s.flags.planned_min,
+        s.flags.multiplier,
+    ))
+    .expect("a placement serialises")
+}
+
+/// The rows of `a` that `b` does not hold, as a MULTISET difference: a row two
+/// sides both hold twice is matched twice, and a third copy is left over.
+fn rows_not_in<'a>(a: &'a [Segment], b: &[Segment]) -> Vec<&'a Segment> {
+    let mut left: BTreeMap<String, usize> = BTreeMap::new();
+    for s in b {
+        *left.entry(placement_key(s)).or_default() += 1;
+    }
+    a.iter()
+        .filter(|s| match left.get_mut(&placement_key(s)) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel's plan hash is the fork's `DayPlan::hash`**, by value.
+    #[test]
+    fn the_kernel_hashes_the_day_the_fork_hashes(
+        case in case_strategy(),
+        mult in prop::sample::select(vec![
+            None, Some(1.6), Some(0.25), Some(2.0), Some(1.125), Some(0.3), Some(0.000001),
+            Some(0.00001), Some(0.1 + 0.2), Some(123.456),
+        ]),
+    ) {
+        let mut w = build(&case);
+        if let Some(m) = mult {
+            w.model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
+        }
+        let tz = w.cfg.tz;
+        let req = w.plan_request();
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let khash = plan["hash"].as_str().expect("plan.hash").to_string();
+        let fork = planner::plan(&w.input(&w.state, w.now));
+        let krows = fork_rows_of_kernel(&plan, tz);
+        let mut kday = DayPlan::empty(fork.date, fork.window, fork.budget_blocks);
+        kday.segments = krows.clone();
+        // **1. THE EMITTER**, on every day.
+        prop_assert_eq!(
+            &khash, &kday.hash(),
+            "the kernel's digest of its own {} rows is not the fork's `DayPlan::hash` of \
+             them — the BYTES differ, not the day", krows.len()
+        );
+        // **2. THE DAY**, against the kernel-ranked fork (D53).
+        let cvec = w.candidates();
+        let day2 = kernel_prios(&plan, &cvec)
+            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps)));
+        let (mut compared, mut same, mut rows_agree, mut explained) = (0u64, 0u64, 0u64, 0u64);
+        let (mut c554, mut c550, mut c551) = (0u64, 0u64, 0u64);
+        if let Some(d2) = day2.as_ref() {
+            compared = 1;
+            let fonly = rows_not_in(&d2.segments, &krows);
+            let konly = rows_not_in(&krows, &d2.segments);
+            let mut twins: Vec<bool> = vec![false; konly.len()];
+            for f in &fonly {
+                if f.flags.open && matches!(f.kind, SegKind::Block) {
+                    c554 += 1;
+                    continue;
+                }
+                if matches!(f.kind, SegKind::Break) && f.start >= w.now {
+                    c551 += 1;
+                    continue;
+                }
+                if f.flags.current && matches!(f.kind, SegKind::Block)
+                    && f.flags.multiplier.is_some()
+                {
+                    let mut bare = (*f).clone();
+                    bare.flags = planner::SegFlags {
+                        planned_min: f.flags.planned_min,
+                        ..planner::SegFlags::default()
+                    };
+                    let key = placement_key(&bare);
+                    if let Some(i) = konly.iter().enumerate()
+                        .position(|(i, k)| !twins[i] && placement_key(k) == key)
+                    {
+                        twins[i] = true;
+                        c550 += 1;
+                        continue;
+                    }
+                }
+                prop_assert!(
+                    false,
+                    "the fork's day holds a row the kernel's does not, and it is none of the \
+                     three classes the kernel is recorded as not porting: {}", placement_key(f)
+                );
+            }
+            for (i, k) in konly.iter().enumerate() {
+                prop_assert!(
+                    twins[i],
+                    "the kernel's day holds a row the fork's does not: {}", placement_key(k)
+                );
+            }
+            if fonly.is_empty() && konly.is_empty() {
+                rows_agree = 1;
+                // **Rows that agree must hash alike — in the same ORDER.**
+                prop_assert_eq!(
+                    &khash, &d2.hash(),
+                    "the two days hold the same rows and hash differently: the order differs"
+                );
+            } else {
+                explained = 1;
+            }
+            same = u64::from(khash == d2.hash());
+        }
+        let batches = krows.iter().filter(|s| matches!(s.kind, SegKind::Batch(_))).count() as u64;
+        let [cases, noprio, cmp, eq, agree, digested, drawn, n554, n550, n551, nexpl, nbatch] = {
+            let mut c = HASH_CENSUS.lock().expect("census");
+            c[0] += 1;
+            c[1] += 1 - compared;
+            c[2] += compared;
+            c[3] += same;
+            c[4] += rows_agree;
+            c[5] += krows.len() as u64;
+            c[6] += u64::from(mult.is_some());
+            c[7] += c554;
+            c[8] += c550;
+            c[9] += c551;
+            c[10] += explained;
+            c[11] += batches;
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if cases >= generated {
+            // **THE FLOORS** — every comparison above sits behind something a run
+            // can skip, so each is shown to have run (AGENTS §9.2).
+            prop_assert!(digested > cases, "the emitter digested {digested} rows in {cases} cases");
+            prop_assert!(cmp > 0, "no day was compared with the kernel-ranked fork in {cases} cases");
+            prop_assert!(eq > 0, "no kernel hash equalled the fork's in {cases} cases");
+            prop_assert!(agree > 0, "no day's rows agreed with the fork's in {cases} cases");
+            prop_assert!(drawn > 0, "no multiplier was drawn in {cases} cases");
+            prop_assert!(nbatch > 0, "no batch row was digested in {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants hash census: {cases} cases; the EMITTER compared on all \
+             {cases} ({digested} kernel rows digested, {nbatch} of them batches, {drawn} \
+             days at a drawn multiplier); the DAY compared with the kernel-ranked fork on \
+             {cmp} ({noprio} with no kernel §7 answer): hashes EQUAL {eq}, rows agree {agree}, \
+             days explained by a recorded class {nexpl} — open-block rows (gap 554) {n554}, \
+             reservation multipliers (gap 550) {n550}, kept breaks (gap 551) {n551}"
+        );
+    }
+}

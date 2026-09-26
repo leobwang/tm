@@ -527,6 +527,12 @@ can_fail
 6 the_census_ceiling_is_seven_on_an_unassigned_day
 1 impossibleKept_is_true_because_its_subject_is_empty
 5 the_day_names_no_impossible_item
+# W-34 track H: P0's hash tripwire, refuted by
+# `PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted` and renamed
+# `Planner.dayPlan_planHash`.  Every citation left is a dated one: README's append-only blocks
+# and the W-14 banner in `Check.lean` that recorded it as standing.
+5 Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
+6 the_plan_hash_is_a_placeholder_until_the_emitter_lands
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

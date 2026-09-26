@@ -1523,7 +1523,7 @@ theorem planJson_of_a_planned_day_is_the_requests_own_views (r : Planner.PlanReq
          ("segments".toList, .arr ((Planner.dayRows r).map segJson)),
          ("diagnostics".toList, diagJson (Planner.dayDiagnostics r)),
          ("priorities".toList, priosJson (Planner.dayPriorities r)),
-         ("hash".toList, .str (hashHex Planner.PlanHash.zero))] := rfl
+         ("hash".toList, .str (hashHex (Planner.planDigest r.tz ((Planner.dayRows r).map Subtype.val))))] := rfl
 
 /-- **The day's rows and the emitted segments are the same list, of the same length.** -/
 theorem planJson_segments_length (d : Planner.DayPlan) :
@@ -1590,8 +1590,8 @@ theorem the_two_candidate_caps_are_one_number :
 theorem hashHex_length (h : Planner.PlanHash) : (hashHex h).length = Planner.hashHexLen := by
   simp [hashHex]
 
-/-- **And it reads back through the kernel's own reader** at the value every day carries today
-(`Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands`; P7 is what makes it something else). -/
+/-- **And it reads back through the kernel's own reader** at zero — the value every day carried
+until W-34's emitter; `hashHex_reads_back` is the law at every digest, this is its oldest case. -/
 theorem hashHex_of_zero_reads_back :
     Planner.mkHash? (hashHex Planner.PlanHash.zero) = some Planner.PlanHash.zero := by decide
 
@@ -1614,6 +1614,74 @@ theorem readKind_reads_back_every_kind_it_writes (i : Nat) :
 
 /-- **The export is `callPlanner`.** -/
 theorem callExport_is_callPlanner (input : String) : callExport input = callPlanner input := rfl
+
+/-! ### The digest's sixteen digits read back (W-34 track H)
+
+`Planner.dayPlan` carries `Planner.planDigest` since W-34, so the value `hashHex` writes is no
+longer the constant zero `hashHex_of_zero_reads_back` was about.  The law below is at EVERY
+digest: `Planner.mkHash?` — the one hex reader, `state.lastHash`'s decoder on this very wire —
+reads back exactly the `PlanHash` `hashHex` wrote.  So the value a host stores from `plan.hash`
+and hands back as `state.lastHash` is the value the kernel compares, and there is no second
+spelling of the digest (AGENTS §5.3). -/
+
+/-- The big-endian base-16 fold `Planner.mkHash?` runs, over the digits `hashHex` writes, is the
+number: `n` digits of `h < 16^n` fold back to `h`. -/
+theorem hexFold_digits : ∀ (n h : Nat), h < 16 ^ n →
+    ((List.range n).map (fun i => h / 16 ^ (n - 1 - i) % 16)).foldl (fun a d => a * 16 + d) 0 = h
+  | 0, h, hh => by simp at hh; simp [hh]
+  | n + 1, h, hh => by
+    rw [List.range_succ, List.map_append, List.foldl_append]
+    have hq : h / 16 < 16 ^ n := by
+      rw [Nat.pow_succ] at hh; exact Nat.div_lt_of_lt_mul (by rw [Nat.mul_comm]; exact hh)
+    have hmap : (List.range n).map (fun i => h / 16 ^ (n + 1 - 1 - i) % 16)
+        = (List.range n).map (fun i => h / 16 / 16 ^ (n - 1 - i) % 16) := by
+      apply List.map_congr_left
+      intro i hi
+      have hin : i < n := List.mem_range.1 hi
+      have he : n + 1 - 1 - i = (n - 1 - i) + 1 := by omega
+      rw [he, Nat.pow_succ, Nat.mul_comm, ← Nat.div_div_eq_div_mul]
+    rw [hmap, hexFold_digits n (h / 16) hq]
+    simp only [List.map_cons, List.map_nil, List.foldl_cons, List.foldl_nil,
+      Nat.add_sub_cancel, Nat.sub_self, Nat.pow_zero, Nat.div_one]
+    omega
+
+/-- **Every digest `hashHex` writes, `Planner.mkHash?` reads back** — the round trip at every
+`PlanHash`, not only at zero. -/
+theorem hashHex_reads_back (h : Planner.PlanHash) : Planner.mkHash? (hashHex h) = some h := by
+  obtain ⟨v, hv⟩ := h
+  have hlen : (hashHex ⟨v, hv⟩).length = Planner.hashHexLen := hashHex_length _
+  have hdig : ∀ i ∈ List.range Planner.hashHexLen,
+      hexDigit (hexChar (v / 16 ^ (Planner.hashHexLen - 1 - i) % 16))
+        = some (v / 16 ^ (Planner.hashHexLen - 1 - i) % 16) :=
+    fun i _ => hexDigit_hexChar _ (Nat.mod_lt _ (by decide))
+  have hfold : ∀ (l : List Nat) (a : Nat), (∀ d ∈ l, d < 16) →
+      (l.map hexChar).foldl
+          (fun acc c => acc.bind (fun n => (hexDigit c).map (fun d => n * 16 + d))) (some a)
+        = some (l.foldl (fun a d => a * 16 + d) a) := by
+    intro l
+    induction l with
+    | nil => intro a _; rfl
+    | cons d ds ih =>
+      intro a hl
+      simp only [List.map_cons, List.foldl_cons]
+      rw [show (some a).bind (fun n => (hexDigit (hexChar d)).map (fun x => n * 16 + x))
+          = some (a * 16 + d) by
+        rw [hexDigit_hexChar d (hl d (List.mem_cons_self))]; rfl]
+      exact ih (a * 16 + d) (fun x hx => hl x (List.mem_cons_of_mem d hx))
+  have hbound : v < 16 ^ Planner.hashHexLen := by
+    have : Planner.hashBound = 16 ^ Planner.hashHexLen := by decide
+    rw [← this]; exact hv
+  unfold Planner.mkHash?
+  rw [if_neg (by rw [hlen]; exact fun h => h rfl)]
+  have hmapc : hashHex ⟨v, hv⟩ = ((List.range Planner.hashHexLen).map
+      (fun i => v / 16 ^ (Planner.hashHexLen - 1 - i) % 16)).map hexChar := by
+    simp [hashHex, List.map_map]
+  rw [hmapc, hfold _ 0 (by
+      intro d hd
+      obtain ⟨i, -, rfl⟩ := List.mem_map.1 hd
+      exact Nat.mod_lt _ (by decide)),
+    hexFold_digits Planner.hashHexLen v hbound]
+  simp only [hv, dif_pos]
 
 end PlanWire
 end Tm

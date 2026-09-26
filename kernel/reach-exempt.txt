@@ -99,7 +99,7 @@
 CLASS unsent planner -- W-33 repair, 2026-09-25 (README gaps 2229 and 2560): §8.2's day planner, `Planner.dayPlan` and everything only it reaches -- the step-8 writers W-33 track P added among them. `tm_kernel_call` reaches these definitions through `Tm.PlanWire.runPlanner`'s `planner` arm, and no request the shipped binary builds carries that key: `grep -rn '"planner"' tm/src` is empty, the shipped binary builds its day with the fork's `planner::plan` over kernel-ranked priorities (D53), and the only senders in this repository are the harnesses `tm/tests/planner_invariants.rs` and `tm/tests/kernel_planner_wire.rs`. EXIT: R3. When the binary sends `planner`, `sections.py` reports the key SENT, this line FAILS as STALE and is deleted, and every definition it answered is REACHED or NOT EXEMPT by name.
 CLASS unsent plan -- W-33 repair, 2026-09-25 (README gaps 2229 and 2560): W-24's row renderer (`Emit.lean`, `EmitWire.lean`), reached from the export through `Tm.EmitWire.runRowsP`'s `plan` arm, which no request the shipped binary builds carries; the definitions the day planner and the renderer share are reached through `planner` and `plan` together and are answered by the two lines at once. EXIT: R3, as above -- when the binary sends `plan`, this line FAILS as STALE and is deleted.
 
-EXEMPT 1263
+EXEMPT 1262
 
 ## Arith.lean -- The exact-arithmetic layer. 18 of its 46 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Arith.Bin.ix
@@ -613,7 +613,7 @@ Tm.PlanCheck.withoutPast
 Tm.PlanWire.instantWithin
 Tm.PlanWire.kindJson
 
-## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 243 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file).
+## Planner.lean -- §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0). 0 of its 252 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410); re-derived again on 2026-09-25 at W-33 track P, when seven definitions of §8.2 step 8 joined the module (their own dated section is at the end of this file); and again on 2026-09-26 at W-34 track H, when the plan hash's nine joined it -- all nine reached only through the declared unsent `planner` section, so none is named below.
 Tm.Planner.CandKey.nums
 Tm.Planner.Capped.cons?
 Tm.Planner.Capped.nil
@@ -709,7 +709,6 @@ Tm.Recur.onEventInstances
 Tm.Recur.onMissAt
 Tm.Recur.onOrAfter
 Tm.Recur.oneOffInstances
-Tm.Recur.parseInstKey
 Tm.Recur.placeMinutes
 Tm.Recur.placeMinutesOf
 Tm.Recur.renderInstKey

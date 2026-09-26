@@ -4771,7 +4771,6 @@ open Tm
 #print axioms Tm.Planner.dayPlan_window
 #print axioms Tm.Planner.dayPlan_blockMin
 #print axioms Tm.Planner.dayPlan_budgetBlocks
-#print axioms Tm.Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands
 
 -- ===========================================================================
 -- STAGE 6, W-14 TRACK P, STEP P1 (2026-09-17): the walls
@@ -6985,3 +6984,30 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_day_names_its_waiting_and_blocked_candidates
 #print axioms Tm.PlannerWit.eraseDups_keeps_the_first_where_dedupIds_keeps_the_last
 #print axioms Tm.PlannerWit.the_energy_clause_separates_the_energy_drop_from_the_contention_drop
+
+-- ===========================================================================
+-- APPENDED 2026-09-25: stage 6 (the planner), run W-34, track H — P8's
+-- emitter, the plan hash (README "Stage 6 — W-34, track H").
+--
+-- `Planner.planDigest` is fork `DayPlan::hash` ported byte for byte, and
+-- `Planner.dayPlan` carries it.  The tripwire P0 left for this step,
+-- the_plan_hash_is_a_placeholder_until_the_emitter_lands, is DELETED from
+-- `Planner.lean` and from this file: it is refuted by
+-- `PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted`
+-- and renamed to what the day carries, `Planner.dayPlan_planHash` (AGENTS
+-- §3.2).  `PlanWire.hashHex_reads_back` is the round trip at every digest.
+-- ===========================================================================
+#print axioms Tm.Planner.fnvFold_lt
+#print axioms Tm.Planner.fnv1a_lt
+#print axioms Tm.Planner.fnv1a_test_vectors
+#print axioms Tm.Planner.dayPlan_planHash
+#print axioms Tm.Planner.dayPlan_planHash_is_a_function_of_the_rows
+#print axioms Tm.Planner.placementText_ignores_the_marks_and_the_note
+#print axioms Tm.Planner.instantText_is_renderStamp_off_utc
+#print axioms Tm.Planner.instantText_spells_chrono
+#print axioms Tm.Planner.multText_is_zmijs
+#print axioms Tm.Planner.the_placement_bytes_are_the_forks
+#print axioms Tm.PlanWire.hexFold_digits
+#print axioms Tm.PlanWire.hashHex_reads_back
+#print axioms Tm.PlannerWit.the_witness_days_hash_is_the_forks
+#print axioms Tm.PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted
