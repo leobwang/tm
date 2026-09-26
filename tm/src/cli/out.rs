@@ -696,14 +696,32 @@ pub fn emit<T: Serialize>(
     value: &T,
 ) -> Result<(), CliError> {
     if json {
-        println!("{}", serde_json::to_string_pretty(value)?);
+        stdout_line(&serde_json::to_string_pretty(value)?)
     } else {
         let text = human();
-        if !text.is_empty() {
-            println!("{text}");
+        if text.is_empty() {
+            Ok(())
+        } else {
+            stdout_line(&text)
         }
     }
-    Ok(())
+}
+
+/// **A verb's result on stdout — and a reader that stopped reading is not a
+/// crash** (README gap 2927, W-35 repair). `println!` panics when the pipe is
+/// closed, so `tm plan | head -9` printed `failed printing to stdout: Broken
+/// pipe` from a panic (exit 101) after the verb had already done its work —
+/// fork 4748911's `emit` too. A closed pipe means the reader has what it wanted:
+/// the verb's outcome stands and nothing more is printed. Any other write error
+/// is the verb's error, by name.
+fn stdout_line(text: &str) -> Result<(), CliError> {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    match writeln!(out, "{text}").and_then(|()| out.flush()) {
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        Err(e) => Err(CliError::msg(format!("cannot write to stdout: {e}"))),
+        Ok(()) => Ok(()),
+    }
 }
 
 /// Minutes as the compact human form: `20m`, `1h`, `1h20m`.

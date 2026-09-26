@@ -445,8 +445,9 @@ pub struct ActiveOut {
     pub started: String,
     /// Planned minutes.
     pub est_min: u32,
-    /// Minutes WORKED: the log's open block, pauses and interruptions
-    /// excluded (`Replay::active_worked_min`, README gap 2741).
+    /// Minutes WORKED: the wall clock since `started`, net of the pauses,
+    /// interruptions and breaks that fell inside the block — the minutes
+    /// `tm done` would log (`Replay::active_worked_min`, README gaps 2741 and 2920).
     pub elapsed_min: u32,
     /// Timer paused.
     pub paused: bool,
@@ -499,18 +500,14 @@ pub fn now(g: &Globals) -> Result<i32, CliError> {
                 .unwrap_or_default(),
             started: hhmm(started),
             est_min: a.est_min,
-            // **One reading of worked minutes** (W-35, README gap 2741): the
-            // header used the wall clock since `started`, so after a
-            // 30-minute interruption it said `55m of 60m` while the `▶` row
-            // below it said `running · 35m left` — 60 less the 25 WORKED. It
-            // reads the log's open block now, through the rule the TUI shares
-            // (`Replay::active_worked_min`): the `worked_min_at` the row's
-            // `left`, `tm plan`'s `so far` and the overtime prompt read.
-            elapsed_min: ctx.replay.active_worked_min(
-                a.id.as_str(),
-                started.fixed_offset(),
-                ctx.now_tz.fixed_offset(),
-            ),
+            // **One reading of worked minutes** (W-35, README gaps 2741 and
+            // 2920). The header used the wall clock since `started`; W-35
+            // track E made it the log's open block, which never sees a
+            // `break`, so after a five-minute break it said `30m of 30m` while
+            // `tm done` logged 25. It is `tm done`'s own reading now —
+            // `day::worked_min`, the wall clock net of the day's pauses,
+            // interruptions and breaks — and the TUI calls the same rule.
+            elapsed_min: super::day::worked_min(&ctx, started),
             paused: a.paused,
         }
     });

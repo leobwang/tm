@@ -68723,3 +68723,312 @@ routine row (2870), and swap in D57's rows with no frozen running-state day to w
 Gap 2876 is closed in `planner_invariants.rs`; its three prose sites in `Planner.lean`
 (`kernel_capacity::prio_of`, `kernel_capacity`'s `prio_of`) stand, because an edit there costs a
 kernel rebuild and a check-14 replay for three comments.
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-35**, **REPAIR STEP**,
+     on `rebuild-on-lean` in the main checkout, over the land step's `a091523`.
+     Gap range **2920-2949**; **2920-2935 taken**, 2936-2949 free.
+     Parity: **P50 issued** (below), and **P49's register row corrected**;
+     next free P51.  No `.lean` file is edited by this step.
+     ===================================================================== -->
+
+## Stage 6 — W-35, repair: one reading of worked minutes, a P46 comparand the kernel cannot write, the binary's encoder on every generated day, and a proof-only class for L26's battery
+
+Two independent auditors reported twelve findings (four major).  Each was **reproduced first**;
+every one reproduced.  Plants ran in `git clone --no-hardlinks` clones under
+`scratchpad/repair-w35/clone`, each clone's `git status --porcelain` empty before and after.
+
+### 1. Gap 2920 CLOSED on the host: `tm now`, the TUI and `tm done` read ONE number
+
+**Reproduced** (the auditor's drive4, `tm init --example`, every call `--now`): `^a1` started
+16:40, `break 5m` 16:45–16:50, pause 16:55–17:00, interrupt 17:05–17:10.  At 17:20 HEAD's
+`tm now` printed `▶ ^a1 … started 16:40 · 30m of 30m` (`--json` `elapsed_min: 30`) and `tm done`
+at 17:20 printed `✓ ^a1 … 25m/30m` and logged `actual_min: 25`.  The worked minutes are 25.
+
+**Why.**  Track E's P49 made the header read `Replay::active_worked_min`, which was the log's open
+block (`OpenBlock::worked_min_at`) — fork `Machine::step`'s, which never sees a `break`: `tm break`
+writes no entry until the break ENDS (its `t` is the start), so the open block counts the break as
+worked, and while a break is still running the log holds nothing about it at all.  `tm done`
+logged fork `day::worked_min` — the wall clock net of the day's idle marks, the running break
+(`state.json`) included.  Two definitions of one fact, one of them written into the log (§5.3),
+and P49's row said the header excluded breaks when it did not.
+
+**The fix.**  `Replay::active_worked_min(day, started, now, running_break)` IS fork
+`day::worked_min` now — `idle_min_since` moved into `tm-core/src/log.rs` unchanged, beside it — and
+every host surface calls it: `tm done` and `tm stop` (`day::worked_min`, a three-line wrapper that
+reads the running break), `tm now`'s header and `--json` `active.elapsed_min`
+(`planning::now`), and the TUI's `App::active_elapsed_min` (the timer and §9.1's overtime prompt).
+`tm done` writes the bytes it always wrote.  `tm/tests/cli_now_worked.rs` gains
+`tm_now_and_tm_done_read_one_worked_minutes_across_a_break` (the drive, pinned: header 25, JSON 25,
+logged `actual_min` 25) and `a_running_break_stops_the_headers_minutes` (at 09:45, twenty minutes
+into a break begun at 09:20: 20, not 45; `tm done` at 09:46 logs 20).  **Plant**: both tests
+against `a091523`'s `tm/src` FAIL — `left: 30, right: 25` and `left: 45, right: 20` — and pass on
+this tree; the two older tests of the file pass on both.
+
+**P49's register row is corrected** (the issuance line at README:68459 is append-only and stays
+as written): the header, the JSON and the TUI read the minutes `tm done` logs — wall clock net of
+pauses, interruptions and breaks, the running break included — where fork 4748911's `tm now`
+printed the wall clock and its TUI the log's open block.
+
+**What is NOT closed — the planner's `▶` row still reads the open block** (gap 2920's residue,
+§5).  On a day with a break inside the running block the shipped day's `running · Xm left` (fork
+`active_run` until R3) and `"…m so far"` count the break; so does the kernel's
+`PlanReq.activeWorked`/`openWorkedMin`, and so P46 calls a block overtime early after a break.  And
+the kernel's open row writes its note at `now` while P45/P47 clip its span at the pause: at
+`PlannerWit.theWallOnNowRequest` the row is 12:00–12:50 (`a_wall_on_now_pauses_the_running_block`)
+while `openBlockRows_of_an_open_block` states its note as `openWorkedMin r.now.sec b` — 90 minutes at
+13:30.  Driven on this tree (the drive above, `now` 17:15): `tm now` reads `· 20m of 30m` over the
+shipped row `running · 5m left`, and `tm done` logs 20.
+
+### 2. Gap 2921 CLOSED: the P46 comparand no longer reads the answer it checks
+
+**Reproduced by reading**: `w35_p46_state` raised the fork's estimate to `worked + ⌈(stop − now) /
+60⌉` with `stop` read out of the kernel's own answer, and `w35_is_p46` required the KERNEL to have
+reserved — so a reservation cut short was reproduced by its comparand, and a kernel that regressed
+to the fork's refusal made the day "not P46" and was compared with a `planner::plan` that agreed.
+
+**The fix.**  `w35_is_p46(w, st)` is decided off the STATE: a running block, not paused, no break
+running, its fork-read worked minutes at or past its estimate (fork `active_run`'s `left == 0`).
+`w35_p46_state` raises the estimate by a whole day's minutes, so the FORK's `active_run` reserves
+`min(free stretch end, current_block_end)` from its own walls, wind-down and block boundary — the
+P46 rule computed by the other implementation.  The `plan` parameter is gone from `w35_fork_plan`
+and all five callers.  The census counts reservations COMPARED (`n46`), not property days.
+
+**Plants** (clone, `the_kernel_keeps_the_break…`, 256 cases): the kernel's P46 reservation cut to
+`now + 60 s` in the answer (a plant keyed on an environment variable) FAILS — `P46: the kernel's overtime reservation is not the
+comparand's`, left `Some(63924390060)` right `Some(63924393600)`; the reservation removed
+(a second such plant) FAILS with the same assertion.  (The auditor's identical plant fired on none of 67.)
+
+**And a P46 day is compared on EVERY run now**: `a_p46_day_is_compared_on_every_run` fixes one —
+an item running 70 minutes against a 30-minute estimate, no wall, routine or break — and asserts
+that P46 holds by its property, that the kernel's reservation ends fifty minutes from `now` (the
+end of the second one-hour block since it started: the rule, stated), that it is the comparand's,
+and that the shipped fork reserves nothing.  Both plants above FAIL it too (`left: Some(…390060)
+right: Some(…393000)` and `left: None`).  The arm's generated `n46` compared 12 reservations on this
+step's first run and 2 on its acceptance run, which is why gap 2910 asked for a fixed day.
+
+### 3. Gap 2922 CLOSED for the planner section: the binary's encoder runs on every generated day
+
+`World::plan_request`'s `planner` section is `tm_core::planwire::planner_json(&state, now, tz,
+&routine_items(), None)`; `World::routine_items` is a call of `planwire::routine_instances`; the
+overtime what-if is `planwire::overtime_json(id, 1, None)`; the W-35 arm's and
+`the_break_checker_fails_on_a_perturbed_answer`'s hand-spelled `state.break` and `paused` are gone
+(both reach the request off `w.state`).  The file's local seconds-of-the-day helper went with them.  So the encoder R3
+ships ran over all 279 days of a run below and nothing failed — including interruptions with no
+start, which the hand spelling dropped and `state_json` sends as `null`.  Residue: the CAPACITY
+section is still spelled three times (the binary's `kernel_capacity`, this world, `support/
+planreq.rs`) — gap 2875, unchanged.
+
+### 4. Gap 2923 CLOSED: L26's battery is a proof-only CLASS, and `reach-exempt.txt` shrank 1,263 → 1,202
+
+Track K grew the file by one dated section for `PlanCheck.owedByItsGrant` (gap 2803) — lawful by
+check 12's letter, and the fifteenth list-where-the-rule-is-a-class: `PlanCheck.lean`'s 61 entries
+sat in three sections although the module is unreachable BY CONSTRUCTION (only `PlannerWit` and the
+manifest import it).  `reach.py` gains a third class, `CLASS proof <Module> -- <reason>`: a declared
+module's unreached definitions are answered while `reach.proof_violations` finds no importer other
+than a witness module or a declaration-free manifest; the line is ratcheted like `CLASS unsent`
+(dated, with an EXIT).  The three PlanCheck sections are deleted; `EXEMPT 1202`.  **Plants**
+(clone, reach.py alone, control rc=0 before and after), each rc=1: `Boundary.lean` importing
+`TmKernel.PlanCheck` (62 UNANSWERED: 61 NOT EXEMPT and the PROOF line); the class line deleted (61
+NOT EXEMPT); `owedByItsGrant` re-listed under a dated section beside it (ANSWERED BY PROPERTY); the
+class line undated (RATCHET).  `check.sh`'s check-12 comment and AGENTS §7.1 name the third class.
+
+### 5. Gap 2927 CLOSED, and **Parity P50**: a closed stdout is not a panic
+
+**Reproduced**: `tm plan | head` — `thread 'main' panicked at library/std/src/io/stdio.rs:1165:9:
+failed printing to stdout: Broken pipe`.  `cli::out::emit` wrote with `println!` (fork 4748911's
+`emit` did too).  It writes through `stdout_line` now: a broken pipe ends the output quietly and the
+verb exits by its own code; any other write error is the verb's error by name.
+`tm/tests/cli_broken_pipe.rs` closes the read end before `tm plan`, `tm --json plan` and `tm now`
+write; against `a091523`'s `tm/src` it FAILS (`tm ["plan"] panicked on a closed pipe`).
+
+**Parity P50 taken**: a verb whose stdout reader has closed the pipe ends its output quietly and exits by the verb's own code; fork 4748911's `cli::out::emit` panicked (`failed printing to stdout: Broken pipe`, exit 101) after the verb had done its work (W-35 repair, gap 2927).
+
+### 6. The findings recorded rather than fixed, and why
+
+* **D55 (gap 2924).**  Reproduced: `grep -n '(hnoimp' PlanCheck.lean` → 2147, 2190, 2306, 2345, 3123,
+  in the weaker form.  Not forced: on `theUnassignedImpossibleRequest` the budget is spent and the
+  day-0 grant ignores the budget, so the owed item is dropped with every other hypothesis true
+  (`an_unassigned_day_drops_its_eligible_impossible_item`); on a paying day step 5 orders impossible
+  items by line, not due date (gap 2801).  Removing `hnoimp` needs `dayPlan` to change (a planner
+  behaviour change, a new parity number) or the owner to say which of grant and budget binds.
+* **Every host `est` writer but `tm edit` writes a token beside a leading estimate (gap 2926).**
+* **D56's "unit kept" is "as written" (gap 2928).**
+* **`tm edit est=` has two readers of its value (gap 2929)**, and one edge of it is a kernel fault.
+* **The new `decide` witnesses, probed (gap 2930).**
+* **A key the host sends and the kernel never decodes is outside every gate (gap 2931).**
+* **The D57 days on the shipped binary (gap 2932).**
+* **The frozen comparand and step 5 on a break day (gap 2925).**
+
+### 7. Gaps (2920-2934)
+
+**Gap 2920 — the planner's worked minutes are not the host's.**
+1. *What.*  Every host surface reads `Replay::active_worked_min` (§1).  The planner's `▶` row does
+   not: fork `active_run`/`open_block_segment` (shipped until R3) and the kernel's
+   `PlanReq.activeWorked`, `openWorkedMin` and `openBlockRows`' note read the log's open block, which
+   counts a logged break and a running break as worked; the kernel's note is taken at `now` while
+   P45/P47 clip the row's span at the pause (§1's witness).  2. *Why.*  The open block is a
+   fork-parity fact of the replay (T5 compares it); correcting it there is a Replay divergence, and
+   correcting the planner's reading is a planner divergence from fork `active_run`.  Both need a
+   `.lean` step with re-proofs and a comparand model.  3. *Cost.*  On a break day the screen reads
+   `· 20m of 30m` over `running · 5m left` (driven, §1); at R3 a P45/P47 row reads more minutes "so
+   far" than it spans; P46 fires early after a break.  4. *Clears it.*  One step before R3: the
+   kernel reads the day's idle marks (`r.run.answer.days`' seam, which it already carries) by the
+   host's rule for `activeWorked` and the note, with a parity number, the `break` generator arm
+   drawn INSIDE a running block (today it draws none, `planner_invariants.rs`' W-34 break arm), and
+   `w35_fork_plan` modelling it as it models P46.
+
+**Gap 2921 — the P46 comparand read the kernel's answer.**  Closed, §2.
+
+**Gap 2922 — the planner section had a second spelling in the harness.**  Closed for `planner`,
+§3; the capacity section's three spellings are gap 2875's.
+
+**Gap 2923 — `PlanCheck`'s battery was listed by name.**  Closed, §4.
+
+**Gap 2924 — D55 is not fulfilled: `hnoimp` stands on five lifts.**
+1. *What.*  §6.  2. *Why.*  The grant and the budget disagree on a spent-budget day, and step 5
+   never reads the grant; either change moves the shipped day.  3. *Cost.*  The five lifts exclude
+   every day with an owed impossible item the plan drops — not a running-block exclusion, but a
+   precondition the owner's row said would come off.  4. *Clears it.*  The owner, again: whether a
+   spent budget excuses an owed impossible item (then `owedByItsGrant` reads the budget, a
+   restatement the owner must accept), or step 5 must place it (a planner change, a parity number).
+
+**Gap 2925 — the frozen comparand is four named days, and on a break day step 5 is compared with
+nothing.**
+1. *What.*  `planner_fixtures`' `DAYS` holds four days and no running-state day (gap 2871); every
+   generated class loses its comparand when R3 deletes `planner::plan` — 1,225 comparand days on
+   this step's first run (P46 applied on 74, P47 on 133).  On a P45 day the W-35 arm compares no
+   step-5 row (`if drew.is_none()`; 66 break days on that run).  2. *Why.*  P45 has no fork analogue:
+   the fork plans over the break, and an interruption is not a break to its cut.  3. *Cost.*  A
+   step-5 regression on a break day fails nothing today, and at R3 nothing generated is compared.
+   4. *Clears it.*  Before R3 (D21): freeze a representative day per generated class, the four D57
+   classes included, by value; and state P45's step-5 rule as a property the arm asserts (every
+   step-5 row after the break's end, the cut restarted there).
+
+**Gap 2926 — `tm extend`, `tm stop` and `tm done --partial` write an `est:` token beside a leading
+estimate.**
+1. *What.*  Driven by the auditor: `- [>] 2 30m Insurance claim … ^a1`, `tm extend 30m` →
+   `… 30m … est:1b ^a1`; `tm edit ^a1 est=20b` then rewrites the token (`est:1200m`) and the stale
+   `30m` stays.  `day.rs`' three `line.set_token("est", …)` sites and `items.rs`' `--set` path
+   (gap 2841) are one class — every host writer of the estimate but the kernel's edit.
+   2. *Why.*  Fork behaviour at 4748911, and `tm/tests/cli_day.rs` pins it
+   (`extend_adds_a_block_to_the_estimate` asserts `est:2b` on `^t4`'s leading-estimate line); D56
+   covers `tm edit est=` only.  3. *Cost.*  §5.3's founding bug on three more verbs: the row prints
+   the leading estimate, the planner reads the token.  4. *Clears it.*  A decision that D56's
+   principle reaches every estimate writer; then one host helper (or the kernel's `est` op) writes
+   the slot the view reads, with a parity number and the three tests restated.
+
+**Gap 2927 — `println!` panicked on a closed pipe.**  Closed, §5, P50.
+
+**Gap 2928 — D56's "unit kept" is implemented as "as written", and no block said so.**
+1. *What.*  `30m` + `est=20b` → `20b`; `2h` + `est=90m` → `90m` (the reuse critic, driven): the
+   value's spelling replaces the leading token.  `Cmd.lean`'s `setRemaining` doc says "as written,
+   its unit kept".  2. *Why.*  The owner's example (`30b` → `20b`) fits both readings; fork
+   `ItemLine::set_leading_est` writes the value as written, and D56 says "as the pre-switch fork
+   did" — so "as written" is the reading that agrees with the fork.  3. *Cost.*  A reader of the doc
+   comment expects the line's unit to survive.  4. *Clears it.*  The owner, if "unit kept" meant the
+   line's unit; otherwise the doc comment at the next `Cmd.lean` edit (not made here: a doc-only edit
+   rebuilds every module downstream of `Cmd`).
+
+**Gap 2929 — `tm edit est=` has two readers of its value, and the `u32` edge is a kernel fault.**
+1. *What.*  `items.rs`' `edit_route` runs `Dur::parse_no_days` (u32) before the kernel's `ndDur?`
+   (Nat) reads the same value — track E's "ONE reader" is false.  Driven on this tree:
+   `tm edit ^a1 est=4294967296m` → `tm: invalid duration`, rc 1; `est=4294967295m` → written, `tm
+   check` "no problems" — and then `tm plan` → `tm: kernel fault: capacity response: need`, rc 1.
+   2. *Why.*  The host's `u32` is the fork's width and guards the rest of the host; the kernel's
+   readers have no bound, and the capacity answer's `need` (`remaining × 1.3`) outgrows the host's
+   `u32` decode.  3. *Cost.*  One plausible keystroke bricks `tm plan` with a fault labelled a bug.
+   4. *Clears it.*  The kernel's est readers bounded by `Look.maxPlanMinutes` and refused by name
+   (`badValue est`), the host pre-parse deleted, and `need`'s width checked where it is decoded.
+
+**Gap 2930 — the new `decide` witnesses, probed.**  Every file with a `decide` added since `fe49a8b`
+elaborated alone under `MemoryMax=8G` with `-Dprofiler=true -Dprofiler.threshold=2000`: `Cmd` 1.67 s
+/ 746 MiB, `PlanCheck` 1.49 s / 802 MiB, `PlanWire` 1.21 s / 883 MiB, `Planner` 3.69 s / 1,155 MiB,
+`Boundary` 142.67 s / 8,249 MiB maxrss (mmapped `.olean` pages included; not killed), `PlannerWit`
+223.14 s / 7,662 MiB — the slowest single tactic 3.21 s in `PlannerWit` (8.69 s in `Boundary`), so
+every one of the 53 new `decide` lines ran well inside 120 s.  The 14 new `maxRecDepth 400000` uses
+stand: they are the file's existing level, not raised, and a witness written here without one was
+refused at the default depth — which is why this step added none.
+
+**Gap 2931 — a key the host sends and the kernel never decodes is outside every gate.**
+1. *What.*  `planwire::overtime_json` writes `grown{remaining, plannedMin, needMin}` and
+   `PlanWire.readOvertime` reads `id` and `blocks` (gap 2873); an optional key misspelled by an
+   encoder reads as absent with no refusal.  2. *Why.*  Check 13's input half counts fields of
+   DECODED records.  3. *Cost.*  D58's route can be "built" and read by nothing, as it is today.
+   4. *Clears it.*  A test that encodes every optional key and asserts, per key, that the kernel's
+   answer moves when the value does — or the kernel refusing an object with a key its reader never
+   asks for.
+
+**Gap 2932 — the D57 days on the shipped binary, driven.**  Overtime (`^a1` from 16:25, `now`
+17:05): `▶ ^a1 … 40m of 30m` over `— nothing running (17:05)`, and `tm plan`'s `▶` row `40m so far`
+from 16:25.  Wall on `now` (`^w9 Sync call 17:10/17:50`, `^a1` from 16:24, `now` 17:20): `56m of
+30m` over the wall as current, and `tm plan`'s `▶` row `56m so far` drawn from 16:24 across the
+meeting.  Both are the fork's day, which R3 replaces (gap 2806).  **New:** under P47 the kernel
+stops the stretch at 17:10, but the host's worked minutes (§1) know nothing of walls, so at R3 the
+header will count the meeting as worked while the row does not — whether a wall on `now` stops the
+timer (and `tm done`'s `actual_min`) is D57 (3)'s reading, and the owner's.  The auditor's `tm
+extend` screen (`running · 19m left` over `17:06–17:23 · left 17m`) is gap 2846, reproduced.
+
+**Gap 2933 — R3's list, completed.**  Gap 2911 omitted: 2920 (the planner's worked minutes and the
+note), 2805 (a replan after a wall redraws the paused stretch), 2910 (the generated `n46 > 0`
+floor is probabilistic; its P46 half is closed by §2's fixed day), 2925 (frozen classes and P45's
+step 5), 2929 (the `need` fault).  R3 is: 550, 551, 2870, 2871, 2872, 2873, 2920, 2925, 2929 before
+it; 2875 and 2877 inside it; 2874, 2806 and 2932 as its behaviour rows.
+
+**Gap 2934 — the generated P46 floor still depends on the generator.**  §2 changed what `n46`
+counts (reservations compared, not property days) and added a fixed P46 day compared on every run,
+which closes gap 2910's P46 half; the arm's own `n46 > 0` floor stays a probability (2 and 12 on
+this step's two runs), and gap 2910's generator-side fix (draw `worked ≥ est` directly) is not
+taken.
+
+**Gap 2935 — a NEW SEED (D46): the hash arm's batch floor failed once.**
+1. *What.*  Workspace run 1 of this step's acceptance failed `the_kernel_hashes_the_day_the_fork_hashes`
+   at its floor — `no batch row was digested in 307 cases` — and proptest appended a seed to
+   `tm/tests/planner_invariants.proptest-regressions` (`cc 505ada5e…`, shrunk to a one-item day).  It
+   is KEPT and committed.  2. *Why.*  The floor counts batch rows the emitter digested over
+   generated days, and the generator reaches one on 3-5 of ~280 (this step's runs: 3, 3, 5): a
+   probability, gap 2910's class.  My change did not move it — the batch rows come from the
+   candidates, which this step's encoder change does not touch, and runs 2 and 3 on the same tree
+   passed — and the shrunk seed cannot reproduce a floor, which only fires after the last case.
+   3. *Cost.*  A run can fail for want of a draw, and until this step nothing compared a batch
+   digest on every run.  4. *Repair taken.*  `a_batch_row_is_digested_on_every_run` fixes a day of
+   three twenty-minute errands of one `ci`: the kernel's day holds a batch row, its digest is the
+   fork's `DayPlan::hash` of its rows, and the batch row is the kernel-ranked fork's.  Plant (clone):
+   every batch row's stop pulled back a minute in the kernel's answer FAILS it (`the kernel's digest
+   of a day with a batch row is not the fork's`).  The generated floor stays a probability (the
+   generator is not narrowed, D46); drawing small equal-`ci` items more often is its fix.
+
+### 8. D40 for the Rust this step added or changed
+
+Each body replaced by a constant in the clone, one at a time, its suite run, the file restored
+byte for byte (`cmp` against the tree) and `git status --porcelain` empty after:
+`Replay::active_worked_min` → `0`: `cli_now_worked` 0 of 4 pass; `Replay::idle_min_since` → `0`: 1
+of 4; `day::worked_min` → `0`: 0 of 4; `out::stdout_line` → `Ok(())` without writing: 0 of 4;
+`w35_is_p46` → `false`: `a_p46_day_is_compared_on_every_run` fails; `w35_p46_state` → the state
+unchanged: it fails.  Every one FAILED.
+
+### 9. Acceptance, capped, on the tree committed below
+
+* **`check.sh` 14 of 14 ok** (figures in the commit's run; build, totality, axiom audit 5,560, the
+  FFI 95, corpus 29/37 and 4/5, stage goals 6, prose citations, check 9 381/381 and 0 owed, parity
+  **P1-P50, next free P51**, twins 0 UNANSWERED, reach **1,202 exempt, 635 answered by property
+  (61 of 1 proof-only module), 0 UNANSWERED**, fields 15 of 15, inputs 32 of 36 read and 4 exempt,
+  replay 86 modules).
+* **`cargo test --workspace`, NINE runs over this step, three on the final tree**: final tree
+  **1,516 passed / 0 failed / 10 ignored across 90 result lines, each of three** (5 m 22 s, 5 m
+  45 s, 5 m 31 s; load 2.4-3.2), `git status --porcelain` identical before and after.  Of the six
+  earlier runs, five were green (1,514 and 1,515) and one FAILED the hash arm's batch floor — gap
+  2935, its seed kept.
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16, `cli_latency`
+  6 of 6, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9, `planner_fixtures` 13,
+  `cli_now_worked` 4, `cli_broken_pipe` 1, `planner_invariants` **17 of 17** (final tree; W-35
+  census: P45 65 break days, P46 11 reservations compared, P47 32 wall-on-now days, 533 assigned
+  rows against the D57 comparand; the comparand departed from `planner::plan` on 69 + 150 of 1,258
+  days).
+* No `.lean` file edited; no predicate, assertion, floor or generator weakened (two assertions were
+  REDIRECTED from the kernel's answer to the fork's own, §2, and one floor now counts compared
+  reservations rather than property days, with a fixed P46 day beside it); no snapshot, latency
+  band or corpus re-blessed; no memory bound raised; no external dependency; every exemption file
+  the same size or smaller (reach 1,263 → 1,202; twins, fields, inputs, kernel-decide,
+  citations-allow unchanged).

@@ -168,64 +168,21 @@ fn end_break(ctx: &mut Ctx) -> Result<Option<u32>, CliError> {
     Ok(Some(actual))
 }
 
-/// The minutes of the running block that were *not* worked: §9 pauses
-/// (`pause`…`unpause`), interruptions (`interrupt`…`resume`) and breaks
-/// (`break`…) that fell inside it. log.rs's own convention for a block's
-/// worked minutes is "elapsed since `start` minus paused and interrupted
-/// time"; §8.5's duration multiplier and §11's ledgers both double-count
-/// without it (the same minutes are already `resume{lost_min}`).
-fn idle_min_since(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
-    let mut total = 0i64;
-    let mut open: Option<DateTime<chrono::FixedOffset>> = None;
-    let from = started.fixed_offset();
-    let mut add = |a: DateTime<chrono::FixedOffset>, b: DateTime<chrono::FixedOffset>| {
-        let a = a.max(from);
-        let b = b.min(ctx.now);
-        if b > a {
-            total += (b - a).num_minutes();
-        }
-    };
-    let marks = ctx.replay.seam(ctx.today).map_or(&[][..], |s| s.idle_marks.as_slice());
-    for mark in marks {
-        match *mark {
-            log::IdleMark::Pause(t) | log::IdleMark::Interrupt(t) => {
-                if open.is_none() {
-                    open = Some(t);
-                }
-            }
-            log::IdleMark::Unpause(t) | log::IdleMark::Resume(t) => {
-                if let Some(a) = open.take() {
-                    add(a, t);
-                }
-            }
-            // `break.t` is the break's start; the entry is written when it
-            // ends, so the pair is one entry.
-            log::IdleMark::Break {
-                t,
-                actual_min: Some(m),
-            } => add(t, t + chrono::Duration::minutes(i64::from(m))),
-            log::IdleMark::Break { actual_min: None, .. } => {}
-        }
-    }
-    // Anything still open at `now` (a pause or interruption that has not been
-    // lifted) counts up to now.
-    if let Some(a) = open {
-        add(a, ctx.now);
-    }
-    // …and a break the caller is about to close, which is not in the log yet.
-    if let Some(br) = &ctx.state.break_ {
-        if let Some(s) = br.started {
-            add(ctx.at(s).fixed_offset(), ctx.now);
-        }
-    }
-    total.clamp(0, 24 * 60) as u32
-}
-
-/// Minutes actually worked on the running block: wall clock since `started`,
-/// net of [`idle_min_since`].
-fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
-    let elapsed = (ctx.now_tz - started).num_minutes().max(0) as u32;
-    elapsed.saturating_sub(idle_min_since(ctx, started))
+/// **Minutes actually worked on the running block** — the one host reading,
+/// [`log::Replay::active_worked_min`] (README gap 2920, W-35 repair): the wall clock
+/// since `started` net of the day's pauses, interruptions and breaks, the
+/// break `state.json` still holds running included. `tm done`, `tm stop` and
+/// `tm now`'s header all call this, and the TUI calls the replay's rule with
+/// the same arguments, so no surface keeps a reading of its own.
+pub(crate) fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
+    let running_break = ctx
+        .state
+        .break_
+        .as_ref()
+        .and_then(|br| br.started)
+        .map(|s| ctx.at(s).fixed_offset());
+    ctx.replay
+        .active_worked_min(ctx.today, started.fixed_offset(), ctx.now, running_break)
 }
 
 /// `tm wake --json`.

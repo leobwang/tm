@@ -1572,23 +1572,93 @@ pub struct PortedItemFacts<'a> {
 }
 
 impl Replay {
-    /// Minutes the running block `id` has been **worked** as of `now` — the ONE
-    /// reading every surface prints (README gap 2741, W-35). The log's open
-    /// block when it is this item's: [`OpenBlock::worked_min_at`], which excludes
-    /// the pauses, breaks and interruptions that stop the timer — the reading the
-    /// day's open-block row (`"…m so far"`), the kernel's `openWorkedMin` and §9.1's
-    /// overtime prompt all use. The wall clock from `started` is only the fallback
-    /// for a runtime state whose block the log holds no record of.
+    /// **Minutes the running block has been WORKED as of `now`** — the ONE
+    /// reading every host surface prints and logs (README gaps 2741 and 2920,
+    /// W-35 repair): `tm now`'s header and `--json`'s `active.elapsed_min`, the
+    /// TUI's timer and §9.1's overtime prompt, and the `actual_min` `tm done`
+    /// and `tm stop` write to the log.
+    ///
+    /// The wall clock since `started`, net of [`Replay::idle_min_since`]: the
+    /// pauses, interruptions and BREAKS that fell inside the block, the running
+    /// break (`running_break`, `state.json`'s — its `break` entry is written
+    /// only when it ends) included. This is fork `day::worked_min`, the rule
+    /// fork `tm done` logged, moved here unchanged so the header can call it.
+    ///
+    /// **It is not the log's open block** ([`OpenBlock::worked_min_at`]),
+    /// which W-35 track E made the header's reading: the replay's open block is
+    /// fork `Machine::step`'s and never sees a `break`, so after a five-minute
+    /// break `tm now` said `30m of 30m` while `tm done` logged 25 (the W-35
+    /// audit's drive). The planner's `▶` row still reads the open block, the
+    /// fork's `active_run` until R3 and the kernel's `openWorkedMin` after it —
+    /// README gap 2920 is that residue, by name.
     pub fn active_worked_min(
         &self,
-        id: &str,
+        day: NaiveDate,
         started: DateTime<FixedOffset>,
         now: DateTime<FixedOffset>,
+        running_break: Option<DateTime<FixedOffset>>,
     ) -> u32 {
-        match self.open_block.as_ref().filter(|b| b.id == id) {
-            Some(open) => open.worked_min_at(now),
-            None => now.signed_duration_since(started).num_minutes().max(0) as u32,
+        let elapsed = now.signed_duration_since(started).num_minutes().max(0) as u32;
+        elapsed.saturating_sub(self.idle_min_since(day, started, now, running_break))
+    }
+
+    /// The minutes of the running block that were *not* worked: §9 pauses
+    /// (`pause`…`unpause`), interruptions (`interrupt`…`resume`) and breaks
+    /// (`break`…) that fell inside it, out of `day`'s [`DaySeam::idle_marks`],
+    /// plus the running break since `running_break`. log.rs's own convention
+    /// for a block's worked minutes is "elapsed since `start` minus paused and
+    /// interrupted time"; §8.5's duration multiplier and §11's ledgers both
+    /// double-count without it (the same minutes are already `resume{lost_min}`).
+    /// Fork `day::idle_min_since`, moved (W-35 repair).
+    pub fn idle_min_since(
+        &self,
+        day: NaiveDate,
+        started: DateTime<FixedOffset>,
+        now: DateTime<FixedOffset>,
+        running_break: Option<DateTime<FixedOffset>>,
+    ) -> u32 {
+        let mut total = 0i64;
+        let mut open: Option<DateTime<FixedOffset>> = None;
+        let from = started;
+        let mut add = |a: DateTime<FixedOffset>, b: DateTime<FixedOffset>| {
+            let a = a.max(from);
+            let b = b.min(now);
+            if b > a {
+                total += (b - a).num_minutes();
+            }
+        };
+        let marks = self.seam(day).map_or(&[][..], |s| s.idle_marks.as_slice());
+        for mark in marks {
+            match *mark {
+                IdleMark::Pause(t) | IdleMark::Interrupt(t) => {
+                    if open.is_none() {
+                        open = Some(t);
+                    }
+                }
+                IdleMark::Unpause(t) | IdleMark::Resume(t) => {
+                    if let Some(a) = open.take() {
+                        add(a, t);
+                    }
+                }
+                // `break.t` is the break's start; the entry is written when it
+                // ends, so the pair is one entry.
+                IdleMark::Break {
+                    t,
+                    actual_min: Some(m),
+                } => add(t, t + chrono::Duration::minutes(i64::from(m))),
+                IdleMark::Break { actual_min: None, .. } => {}
+            }
         }
+        // Anything still open at `now` (a pause or interruption that has not
+        // been lifted) counts up to now.
+        if let Some(a) = open {
+            add(a, now);
+        }
+        // …and a break that is still running, which is not in the log yet.
+        if let Some(s) = running_break {
+            add(s, now);
+        }
+        total.clamp(0, 24 * 60) as u32
     }
 
     /// The facts D14 keeps though nothing reads them ([`PortedFacts`]),
