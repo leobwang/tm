@@ -1010,18 +1010,24 @@ leaves the wall out of the assignment order, which is exactly what P5a's filter 
 def todaysWallFacts : Look.WfPlanFacts :=
   ⟨{ Look.PlanFacts.unconstrained with wallToday := true }, by decide⟩
 
+/-- THE candidate builder (gaps 2417, 2574): the thirteen `Look.Cand` fields over the facts `f`; the
+five flags default to off and a witness names the ones it sets, `yesterday` and the floor are off. -/
+def oneCand (id : List Char) (ci : Fin 6) (rp : Option (Fin 4)) (rem : Nat) (due : Option Day) (hot : Bool)
+    (f : Look.WfPlanFacts) (window wall optional overdue mandatory : Bool := false) : Look.Cand × Option Look.Floor :=
+  (⟨id, ci, rp, rem, due, window, wall, optional, overdue, mandatory, hot, none, f⟩, none)
+
 /-- §7.4's six: the calendar's own wall `^g1` (the one item `lookWallPlan` holds, so its line
 order is a real one), an optional, an overdue instance, a mandatory instance, and two plain
 `rank` candidates whose `k` differs — `^r1` carries a written `!1` and `^r2` takes
 `default_priority`.  The dated ones carry a placement window, which is what keeps them out of
 the pass without making their `due` a lie. -/
 def witCands : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, todaysWallFacts⟩, none),
-   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
-   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
+  [oneCand ['g','1'] 3 none   60 (some 739870) false todaysWallFacts      (wall := true),
+   oneCand ['o']     3 none   20 (some 739870) false Look.wfUnconstrained (optional := true),
+   oneCand ['o','d'] 3 none   30 (some 739870) false Look.wfUnconstrained (window := true) (overdue := true),
+   oneCand ['m']     3 none   30 (some 739870) false Look.wfUnconstrained (window := true) (mandatory := true),
+   oneCand ['r','1'] 3 (some 0) 50 none        false Look.wfUnconstrained,
+   oneCand ['r','2'] 3 none   50 none          false Look.wfUnconstrained]
 
 /-- The §4.3 Wednesday with six candidates on the wire. -/
 def theRankingRequest : PlanReq := { theRequest with cands := ⟨witCands, by decide⟩ }
@@ -1142,12 +1148,12 @@ theorem yesterdays_priority_holds_the_candidate_back :
 
 /-- `witCands` with the two `p = 0` candidates exchanged on the wire, and nothing else. -/
 def witCandsSwapped : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['g','1'], 3, none,   60, some 739870, false, true,  false, false, false, false, none, todaysWallFacts⟩, none),
-   (⟨['o'],     3, none,   20, some 739870, false, false, true,  false, false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['m'],     3, none,   30, some 739870, true,  false, false, false, true,  false, none, Look.wfUnconstrained⟩, none),
-   (⟨['o','d'], 3, none,   30, some 739870, true,  false, false, true,  false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['r','1'], 3, some 0, 50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['r','2'], 3, none,   50, none,        false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
+  [oneCand ['g','1'] 3 none   60 (some 739870) false todaysWallFacts      (wall := true),
+   oneCand ['o']     3 none   20 (some 739870) false Look.wfUnconstrained (optional := true),
+   oneCand ['m']     3 none   30 (some 739870) false Look.wfUnconstrained (window := true) (mandatory := true),
+   oneCand ['o','d'] 3 none   30 (some 739870) false Look.wfUnconstrained (window := true) (overdue := true),
+   oneCand ['r','1'] 3 (some 0) 50 none        false Look.wfUnconstrained,
+   oneCand ['r','2'] 3 none   50 none          false Look.wfUnconstrained]
 
 /-- **And the request position is a real tie-break, not decoration**: swap the two `p = 0`
 candidates on the wire and the order swaps with them.  Two candidates that agree on every key
@@ -1763,8 +1769,8 @@ def rootedPlan : WfPlan :=
 (`wall`, then `p`) tie and the order falls through to the sites — which is where the root walk
 lives. -/
 def rootedCands : List (Look.Cand × Option Look.Floor) :=
-  [(⟨['m','1'], 3, none, 50, none, false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none),
-   (⟨['m','2'], 3, none, 50, none, false, false, false, false, false, false, none, Look.wfUnconstrained⟩, none)]
+  [oneCand ['m','1'] 3 none 50 none false Look.wfUnconstrained,
+   oneCand ['m','2'] 3 none 50 none false Look.wfUnconstrained]
 
 /-- The §4.3 Wednesday with that plan behind it and those two candidates on the wire. -/
 def theRootedRequest : PlanReq :=
@@ -2305,12 +2311,6 @@ sort.
 def planFacts (pm : Nat) (l : Field.Loc) : Look.PlanFacts :=
   { Look.PlanFacts.unconstrained with plannedMin := pm, loc := l }
 
-/-- THE candidate builder (gap 2417): every field its six instantiations vary, over the facts `f`.
-The five flags and `yesterday` are off, the floor is `none`; `gCand` and `oCand` set flags. -/
-def oneCand (id : List Char) (ci : Fin 6) (rp : Option (Fin 4)) (rem : Nat) (due : Option Day)
-    (hot : Bool) (f : Look.WfPlanFacts) : Look.Cand × Option Look.Floor :=
-  (⟨id, ci, rp, rem, due, false, false, false, false, false, hot, none, f⟩, none)
-
 /-- One batching candidate: `oneCand` at `some 0` (a written `!1`, so every one of the six answers
 `p = 3` and the order is the request's), ten minutes, no due (so §7.3's pass does not enter it). -/
 def bCand (id : List Char) (ci : Fin 6) (pm : Nat) (l : Field.Loc)
@@ -2504,7 +2504,7 @@ def gatherFacts (w : Bool) : Look.PlanFacts := { planFacts 10 .any with wallToda
 every other field of `bCand`'s shape held fixed. -/
 def gCand (id : List Char) (rem : Nat) (w o win : Bool)
     (h : Look.PlanFacts.wf (gatherFacts w) = true) : Look.Cand × Option Look.Floor :=
-  (⟨id, 3, some 0, rem, none, win, w, o, false, false, false, none, ⟨gatherFacts w, h⟩⟩, none)
+  oneCand id 3 (some 0) rem none false ⟨gatherFacts w, h⟩ (window := win) (wall := w) (optional := o)
 
 def gPlain (id : List Char) : Look.Cand × Option Look.Floor :=
   gCand id 10 false false false (by decide)
@@ -4082,8 +4082,8 @@ def oFacts (cap : Option Look.MaxCap) : Look.PlanFacts :=
 minutes it has left and the `max:` that may cap them. -/
 def oCand (id : List Char) (rem : Nat) (cap : Option Look.MaxCap)
     (h : Look.PlanFacts.wf (oFacts cap) = true) : Look.Cand × Option Look.Floor :=
-  (⟨id, 3, none, rem, none, false, false, true, false, false, false, none, ⟨oFacts cap, h⟩⟩,
-   none)
+  oneCand id 3 none rem none false ⟨oFacts cap, h⟩
+    (optional := true)
 
 /-- Four optionals, in **request order**, each aimed at one clause of fork's loop: `^p1` asks
 for all 30 minutes it has left; `^p3` has nothing left to ask for; `^p4` wants ten hours and no

@@ -65935,3 +65935,276 @@ refutation — no generator narrowed (one widened), no exemption widened (one fi
 gained a ratchet), no snapshot, fixture, latency band or corpus re-blessed, no memory bound raised,
 no external dependency, no `sorry` outside `Goals.lean`, no new axiom; `dayPlan` is still total;
 `lean-toolchain` and `kernel/corpus/` untouched; no plant in the shared tree.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-34**, **track A**,
+     on `rebuild-on-lean` in the main checkout, off `9551d66`.  Gap range
+     **2600-2639**; **2601-2608 taken**.  Parity: **NONE ISSUED** -- nothing
+     this step touches diverges from the fork; next free **P43** stands.
+     ===================================================================== -->
+
+## Stage 6 — W-34 track A: check 11 sees what it declared it could not, check 9 asks what else fails, and the witness module has one candidate builder
+
+**Three residues W-33 left by name, each closed as a property and each driven on its own class in
+a clone: rc=0 under the W-33 script, rc=1 under this one, the control rc=0 before and after.**
+Check 11's four declared blind spots (gap 2577) are closed by widening the second key and making
+E5 spelling-invariant — and the widening found that one of the four was declared on a FALSE
+premise: `Key`'s constructors do collide, with `EditVal`'s and `CandKey`'s, and `Key` is two
+types (gap 2601). Check 9 gets the second pass gap 2578 named, and it is FATAL on the case the W-33
+repair fixed by hand (`ALONE`). And `PlannerWit`'s last five hand-written `Look.Cand` constructors
+go through `oneCand` — five, not the three the brief named, because the class is what was written
+by hand, not the list (gap 2574).
+
+### 0. The brief, measured (the report's brief-corrections field)
+
+| the brief said | measured |
+|---|---|
+| every `9551d66` figure in "WHERE THIS STANDS" | **Confirmed** by a capped `check.sh` at `9551d66` before any edit: 13/13, 5,363 theorems (Classical.choice 2,632, Quot.sound 4,020, propext 4,979; 381 on none), 29/37 and 4/5, goals 6, check 8 42,763, check 9 292 rostered / 0 owed, parity P1-P42 with next free P43, check 11 3,082 bodies / 14 groups / 61 generalisation groups / 0 UNANSWERED, check 12 3,171 / 2,955 (575 global) / 1,178 / 1,263 in 68 / 514 by property, check 13 12 / 10 / 2 |
+| *"`gCand`, `oCand` and `rootedCands` still write the constructor by hand"* | **Five do**: `witCands` and `witCandsSwapped` (six entries each, `PlannerWit.lean:1019-1024`, `:1145-1150`) write it too, and need `overdue` and `mandatory` besides the three flags the brief's three need. Folded with them (§3) |
+| *"beside `oneCand`"* | `rootedCands` (`:1765`) and both `witCands` lists stand ABOVE `oneCand` (`:2310`), which cannot be named before it is declared: folding them MOVES `oneCand` up — line-neutral for every pin site, measured (§3) |
+| *"the last traced figure is 1,478 / 0 / 9 and W-33 added tests since"* | **1,478 / 0 / 9 across 87 result lines, three runs** — the W-33 repair's own acceptance figure is `9551d66`'s, and nothing was added after it; this step adds no test |
+| the four blind spots as `twins.py`'s header states them | The fourth's premise — *"`Key`'s constructors collide with no other type's today"* — is **false**: seventeen of `Field.Key`'s eighteen constructors are `EditVal`'s too and six are `CandKey`'s, and the tuple `("Key",)` also named `Tm.Replay.Key`. Four of the seven E4 groups were answered on a short name two to five types declare (gap 2601) |
+
+### 1. Check 11 — gap 2577 closed: every blind spot a property, every property driven
+
+**What changed in the key** (`twins.py`'s header is the specification):
+
+* **A tactic proof is a hole** (`erase_proofs`): a `by` block, to the first `,` or unmatched closer
+  at its depth, is one hole in every normalisation — the key, ALPHA's and E4's comparands — because
+  by proof irrelevance it carries no value. `⟨0, by decide⟩` is the literal `0 : Fin 6`.
+* **A one-hole body is keyed** by the constructor it applies — the same collapse with the OUTERMOST
+  application kept (`collapse(protect=True)`): `⟨_, _⟩`, `.obj _`, `{ live := _ , .. }`; a bare
+  parameter or literal is keyed as its hole. **The one-hole test was also sloppy**: `all(t in ("_",
+  ":", "="))` held for `_ == _` and for a run of holes, and both were silently unkeyed; it is exact
+  now (`ONE_HOLE`). 222 of the 3,082 bodies are one hole.
+* **E5 is spelling-invariant**: an anonymous constructor, a tuple, a list literal, a structure
+  instance or update over holes is ONE application of ONE constructor — `⟨n, 1⟩` IS `Q.mk n 1`, and
+  the rung answered only the second spelling — and a body of holes alone has no head to be two
+  definitions of.
+* **W3 — a value that re-spells its rule FAILS** (`respells`): in a group E5 does not answer, a value
+  whose body IS a rule member's with every parameter bound to a closed term (each one balanced
+  run, consistently; a proof hole any run; a 200,000-step budget, undecided reported) could have
+  been written `rule a b ..`. E3's "one rule and N roles" answered it before.
+* **W4 — a field-key constructor is a wire name only where Lean resolves it there**
+  (`wire_positions`): `.c` as the k-th explicit argument of a library `def` whose k-th explicit
+  parameter is typed by a `WIRE_KEY_TYPES` type declaring `c`, or `T.c` with `T` resolving there;
+  anything else is not a name — the loud direction. `WIRE_KEY_TYPES` holds `Tm.Field.Key`,
+  QUALIFIED. The four `Key` groups E4 answers still answer (`lookupKey .floor r`, `setKey .dur ..`).
+
+**Two precision defects the widening exposed, closed on the way.** **Gap 2604**: members were NAMED
+by their written name, first occurrence winning, so the second of two same-named `def`s in one
+file was reported, emitted-C-looked-up and namespace-resolved as the first — SIX such pairs
+(`setEst` at `Line.lean:532`/`:3817`, `readTz`, `readStep`, `keyOf`, `get`, `alter`), and E4's
+group listed `Tm.setEst` where the member is `Tm.Field.setEst`. Names are joined POSITIONALLY with
+`leanfiles.qualified_names` now, and a disagreement between the two scanners is fatal. **Gap 2605**:
+a structure field sharing a parameter's spelling (`{ live := live }`) was holed as the parameter;
+a name followed by `:=` is structure now.
+
+**What the widening formed, adjudged.** From 61 generalisation groups at `9551d66` to **88**: 31
+new, 4 gone (two value groups gained a member, the renamed E4 group, and the value pair §3's fold
+dissolved), 0 changed verdict. The 31: **24 E3** (named constants — the 63 `Nat` bounds, char-list
+wire keys by length, `day`/`week`/`month`), **6 E5** (`.obj _` — thirteen `CapWire` JSON builders
+and two demo values; `Core.mk` — `coreOfLine`, `orientCore` and a cheat; `Entry.mk` — `bE`/`bEo`;
+`Q.mk` — `Arith.ofNat`/`Arith.util`; `Step.mk` — `Step.range`/`Step.from`; and `wDone`/`bDone`, a
+`.done` whose head the nullary-arity rule erases), **1 E4** (the renamed group). **None needed a
+sentence**; `twins-exempt.txt` is byte-identical, 16 adjudged, 0 STALE.
+
+**Driven** — a `git clone --no-hardlinks` of `9551d66` with `.lake` a symlink to the shared build
+(every plant is source-level), the W-33 `twins.py` beside this one under another name; after every
+revert both scripts rc=0 and the clone's porcelain held only the two scripts:
+
+| plant | W-33's `twins.py` | this step's `twins.py` |
+|---|---|---|
+| P1 `def ofNatOver (n d : Nat) : Q := ⟨n, d⟩` after `Arith.util` | rc=0, 61 groups | **rc=1** `ALPHA: … Tm.Arith.util / Tm.Arith.ofNatOver` |
+| P2 `def clockOfLocalBy (l : Nat) (h : l % 86400 / 60 < 1440) : Clock := ⟨l % 86400 / 60, h⟩` after `Emit.clockOfLocal` | rc=0 | **rc=1** `GENERALISATION: Clock := ⟨ _ % _ / _ , _ ⟩ … clockOfLocal, clockOfLocalBy` |
+| P2b the W-33 bullet's own `limitHistAt (i : Fin 6) (B) (h) := dayTake i h B` | rc=0, no group | rc=0, **formed** and answered `E5 WRAPPER Hist := dayTake _ _ _` — two names for `dayTake`, E5's verdict on `weekOrdinal`/`dateOfT` |
+| P3 `def noonClock : Clock := ⟨43200 % 86400 / 60, by omega⟩` after `Emit.clockOfLocal` | rc=0, group answered **E3 VALUE** | **rc=1** `FIXTURE: … Tm.Emit.noonClock IS … Tm.Emit.clockOfLocal -- write it through its rule` |
+| P4 `inductive W34Probe \| floor \| cap`, `w34Look (k : W34Probe) (n)`, `w34A n := w34Look .floor n + 3`, and the same with `.cap` | rc=0, **8 wire-named** — the plant answered E4 on `Key`'s short names | **rc=1** `GENERALISATION: Nat := w34Look _ _ + _ … w34A, w34B` |
+| P4b in `Replay.lean`: `w34KeyRank (k : Key)`, `w34E n := w34KeyRank .machine + n * 2`, and the same with `.global` | rc=0, **8 wire-named** — `Tm.Replay.Key` read as the field key | **rc=1** `GENERALISATION: Nat := w34KeyRank _ + _ * _ … w34E, w34F` |
+
+The shared tree's `git status --porcelain` was identical before and after every plant and held only
+this step's own edits (` M kernel/twins.py` at the first drive; five files, all this step's, at the
+re-drive with the final script) — nothing planted there.
+
+**What it still cannot see** (gap 2602, declared in the header): a many-field record re-spelt at
+DIFFERENT literals inside a one-hole body is keyed by its outermost constructor only and E5
+answers it (a skeleton key would decide where a "default record" begins, and nothing measured says
+where that line is — gap 2574's instances were folded in CODE); W3 asks a value against the rules
+of its own group, and only where E5 does not answer; W4 resolves `.c` through a library `def`'s
+explicit parameter only — a parameter, a local, a list, a match arm, a structure field, `==`, or an
+`open` leave it unresolved (loud); a `by` block in a newline-separated structure instance swallows
+the fields after it (coarser, loud).
+
+**The cost**, three runs each interleaved in one clone at load ~8: **2.33, 2.33, 2.34 s** against
+`9551d66`'s **2.10, 2.10, 2.08 s** — +0.24 s, about 1% of check.sh's wall (at load ~2 before any
+edit, `9551d66`'s was 1.99-2.02 s).
+
+### 2. Check 9 — gap 2578 closed: the second pass, and ALONE is fatal
+
+`mutate.py`'s `second_pass`, after a PINNED whose first error is inside a THEOREM: **DECIDED** — the
+first error is Lean's own ``Tactic `decide` proved that the proposition … is false`` and the
+theorem's whole proof is that `decide` (`by decide`, or an anonymous constructor of `by decide`s —
+738 of the library's 5,355 theorems), so the constant FALSIFIES the statement, which is exactly what
+the gap asked a build to say, no build spent; **ALSO** — the
+same build already names a second failing declaration, no build spent; **THEN** — the theorem's
+proof replaced by `sorry` line for line (`sorried`), the package rebuilt with the mutation still
+in, and a declaration it could not reach before fails; **(ITS STATEMENT)** — the rebuild fails in
+that theorem again, so its statement does not elaborate at the constant; **ALONE** — the rebuild
+SUCCEEDS: that one proof was the whole of what told the definition from the constant, and a build
+cannot say whether its statement is false there or merely unfolded the body. **ALONE fails the gate
+like SURVIVED.** A first site that is not a theorem gets no pass and says so in its row. The
+sidecar holds EVERY file a pass edits (JSON; the one-file form is still read).
+
+**Driven** in a second clone with its own `cp -a` `.lake`, W-33's `mutate.py` under another name
+beside this one, each plant a new module imported by the root, `mutate.py --gate` rc=0 with `0 owed`
+before and after each:
+
+| plant | W-33's `mutate.py --only` | this step's `mutate.py --only` |
+|---|---|---|
+| Q1 `w34Evens xs := xs.filter ..` with one law, `(w34Evens xs).length ≤ xs.length` — TRUE of `[]` and of the identity — proved by `unfold`; nothing else | `default`, `xs`, `[]` each **PINNED** `W34A.lean:6 w34Evens_length_le`, **rc=0** | each **ALONE** `… alone -- its proof sorried, the package builds`, **rc=1** |
+| Q2 the same, plus `w34Evens_demo : w34Evens [1,2,3,4] = [2,4] := by decide` in a module importing it | PINNED `W34A.lean:6 …`, rc=0 | PINNED `W34A.lean:6 w34Evens_length_le then W34B.lean:4 w34Evens_demo`, rc=0 |
+| Q3 the demo in the same module | PINNED `W34A.lean:6 …`, rc=0 | PINNED `… also W34A.lean:8 w34Evens_demo`, rc=0 |
+| Q4 `w34Width : Nat := 3`, `w34Width_fin : ((⟨2, by decide⟩ : Fin w34Width).val) = 2 := rfl` | `0`, `1` PINNED `W34A.lean:5 w34Width_fin`, rc=0 | `0`, `1` PINNED `W34A.lean:5 w34Width_fin (its statement)`, rc=0 — the `decide` in the statement proved `2 < 0` false, but the proof is `rfl`, so the decided rule does not fire and the rebuild decides it |
+| Q5 the filter with ONLY `w34Evens_demo := by decide` | PINNED `W34A.lean:5 w34Evens_demo`, rc=0 | PINNED `W34A.lean:5 w34Evens_demo (its statement, decided false)`, rc=0, no second build |
+
+**Its first real run found a case the corroboration test alone gets wrong, and the DECIDED rule
+is the repair.** §3's fold re-audits `PlannerWit.witCandsSwapped`, whose one reader is
+`the_request_order_breaks_a_tie : rankedIds {..witCandsSwapped..} = [..] := by decide`. At `default`
+and at `[]` the corroboration pass said **ALONE** — one failing declaration, and with its proof
+sorried the package builds — while the statement is FALSE at both constants and the error said so.
+A `decide` witness is one declaration by construction; reading its message is what tells it from a
+fragile proof. Re-audited with the rule: `default,[]` PINNED `PlannerWit.lean:1164
+the_request_order_breaks_a_tie (its statement, decided false)` at both, rc=0, no second build.
+`witCands` and `rootedCands`, first audited `… also …` by the pre-rule pass, were re-audited so
+their rows are what the committed tool writes: each `(its statement, decided false)`.
+
+**The kill.** A `--only` run over a plant whose law lives one module DOWNSTREAM of the definition,
+SIGKILLed the moment its sidecar held TWO files (the two plant modules): the sidecar stayed,
+check.sh's arm (`[ -e .mutate-in-flight ]`) fails on it, and the next run printed `restored
+TmKernel/TmKernel/W34A.lean from a killed run` and the same line for the second module, both files
+byte-identical to their originals. A SIGTERM mid-`--gate` restored through the signal handler the
+same way. (Driven with the pass's first cut; `build_with`, which owns the sidecar, is unchanged
+since.)
+
+**The separator is not `split_header`'s, and that was found by driving it.** A theorem's proof
+`:=` is not its first depth-zero `:=`: several `Replay.lean` witnesses state `let f := replay ..`,
+and sorrying there puts `sorry` INSIDE the statement — a parse error the pass would read as "(its
+statement)", a pin nobody earned. `proof_separator` gives a depth-zero `let`/`have` its own `:=`,
+ignores a statement's `match`/`fun` bars, replaces a `where` proof from `where`, and steps over
+character literals (`'"'` read as a string swallowed the `:=` of 20 theorems, 14 in `Json.lean`).
+**Every theorem of the library — 5,355 in 85 modules, the check-3 roster's count — was sorried by
+it at once and all 85 modules compiled: 0 errors, 0 unlocated** (4 errors in 2 modules before the
+`where`/`match` rules).
+
+**Blind spots** (gap 2606): the pass removes ONE proof — two proofs of statements both true at the
+constant corroborate each other; and the **212** rows written before it name their first error
+alone. The gate COUNTS them on every run (`212 row(s) pinned by one pass`) and does not re-run
+them — `--verify --write` upgrades a row at one build per constant, and a full upgrade is
+hundreds of kernel builds.
+
+**The cost is the step's, not check.sh's.** Settled, check 9 builds nothing either way: 0.39, 0.40,
+0.40 s at `9551d66` and 0.40, 0.39, 0.41 s now (three runs each, a clone, load ~8). A PINNED constant
+costs one more kernel build only when its first error is neither a decided-false statement nor
+beside a second failing declaration -- measured on this step's six re-audited rows: zero extra
+builds (three decided, three unfoldable).
+
+### 3. Gap 2574 closed: `PlannerWit` has one candidate builder
+
+`oneCand` takes the five flags — `(window wall optional overdue mandatory : Bool := false)`, trailing
+and defaulted, so its seven existing call sites and any a parallel track appends are unchanged — and
+`gCand`, `oCand`, `rootedCands`, `witCands` and `witCandsSwapped` go through it, so no `Look.Cand`
+is written by hand in the module any more: `grep -n '(⟨\[\|(⟨id, ' PlannerWit.lean` matches 17
+lines at `9551d66` and one now, `oneCand`'s own body.
+
+**Line-neutral where it counts**: `oneCand` moved from `:2310` to `:1015` (above `witCands`, its
+first caller) as the same six lines — two of doc, three of definition, one blank — and every body
+kept its line count, so every line from `:2314` on is where it was and no check 9 pin site moved
+(the first PlannerWit site is `:2391`; `mutate.py --gate`'s drift check is green).
+
+**The witnesses at 8G**: the whole file built at `MemoryMax=8G` in 3m53s (rc=0). Per-proof
+elaboration traced with `-Dtrace.profiler=true -Dtrace.profiler.threshold=1500`, HEAD's file against
+the folded one: the SLOWEST is `the_day_section_of_the_routine_day_is_these_cells`, 4.19 s → 4.32 s,
+unrelated to the fold; the ones over the folded builders are unchanged within noise
+(`the_break_the_day_keeps_is_not_free_for_an_optional` 3.30 → 3.37 s, `the_day_with_two_optionals_on_it`
+2.03 → 2.33, `the_optionals_fill_the_day_in_request_order` 2.01 → 1.99,
+`the_root_order_decides_before_the_items_own` 1.51 → under 1.5). The trace also charges ~190-200 s
+to the COMMAND of `the_filter_passed_a_slot_the_battery_reads_differently` in both files; that
+theorem restated in a scratch file importing the module decides in **2.33 s wall, 1.08 GB peak** at
+8G — the 200 s is blocked time the profiler attributes to the command, not a witness.
+
+**D40**: the six changed bodies are rostered by the new `mutate.py --write`, run in a clone with its
+own `.lake` (the shared tree was never mutated) and the rows copied by `write_rows`: `oneCand`,
+`gCand`, `oCand` **unfoldable** (`no Inhabited (Look.Cand × Option Look.Floor)`, witness fixtures);
+`witCands` `default,[]` PINNED at `PlannerWit.lean:1066 the_ranking_requests_answers_are_stage_fives
+(its statement, decided false)`; `witCandsSwapped` at `:1164 the_request_order_breaks_a_tie (its
+statement, decided false)`; `rootedCands` at `:1797 the_rooted_requests_answers_tie_on_p (its
+statement, decided false)`. check 9: **296 new or changed since `86c4dc6`, 296 rostered (95
+unfoldable, 57 witness fixtures, 25 pinned by nothing; 1 literal), 0 owed**.
+
+### 4. List or property
+
+* **Check 11**: the key is a PROPERTY (every parameter, literal and proof a hole; a one-hole body keyed
+  by its constructor); E5's spelling invariance, W3's instance test and W4's expected-type rule are
+  PROPERTIES; `WIRE_KEY_TYPES` stays W-27's one-member enumeration a type JOINS to have its
+  constructors read as names, now qualified; `twins-exempt.txt` did not grow (byte-identical).
+* **Check 9**: the second pass is a PROPERTY of every row it writes (what else fails); the 212 one-pass
+  rows are a COUNTED class defined by what the row says, not a list, and can only be upgraded.
+
+### 5. Gaps 2601-2608
+
+| gap | what | state |
+|---|---|---|
+| **2601** | `WIRE_KEY_TYPES` held the short name `Key`, which is `Tm.Field.Key` and `Tm.Replay.Key`; seventeen of `Field.Key`'s constructors are `EditVal`'s and six `CandKey`'s — four of the seven E4 groups were answered on an ambiguous short name, and the header declared the opposite | **closed here** (W4) |
+| **2602** | the widened second key's own blind spots (§1) | **declared**, in the header |
+| **2603** | `wDone`/`bDone` group only because the nullary-arity rule erases `.done`'s head (the header's "shared short name at different arities" bullet); E5's no-head rule answers them | **recorded**; the rule is the header's, loud |
+| **2604** | members named by their written name, first occurrence winning — six pairs misnamed | **closed here** |
+| **2605** | a structure field sharing a parameter's spelling was holed as the parameter | **closed here** |
+| **2606** | check 9's second pass removes one proof, never all; 212 rows predate it | **declared**, counted every run |
+| **2607** | gap 2480's other half: `Lookahead.witnessCands` (five hand-written `Cand`s) and four in `Boundary.lean` theorem STATEMENTS; the carrier would live beside `Look.Cand` in `Lookahead.lean`, which this track does not hold | **open**; shape: a `Look.Cand` builder in `Lookahead.lean`, `oneCand` its pair-returning wrapper |
+| **2608** | running `lean` outside `kernel/TmKernel` made elan fetch its `stable` default, v4.34.1, into `~/.elan/toolchains` (this step did it once, in a scratch directory); the repository's pin is untouched and nothing in it used 4.34.1 | **recorded**: run `lean` from `kernel/TmKernel` |
+
+### 6. Acceptance
+
+**check.sh — THIRTEEN of thirteen** over the tree committed here, capped at 40G. Five runs across the
+step's last edits took 21.05-29.85 s at load 7-14 (29.85 s the first, with the FFI relink; one of the
+five was red at check 10 on this block's own `next P43`, spelled the way check 10 reads now); the
+last, over exactly this tree, 27.19 s at load 6.8. `9551d66`'s was 21.27 s at load 2.3:
+`lake build TmKernel:static` ok · totality ok · axiom audit **5,363 theorems** (Classical.choice
+2,632, Quot.sound 4,020, propext 4,979; 381 on none) · `Negative.lean` rejected ok · FFI **93 tests**
+· corpus **29/37 files and 4/5 whole plans** · stage goals **6 outstanding, all stage 6** · prose
+citations **42,947** (40,922 resolved, 2,025 allowed: 204 vocabulary, 365 counted; 0 unused; 273
+files) · mutation **296 new or changed since `86c4dc6`, 296 rostered (95 unfoldable,
+57 witness fixtures, 25 pinned by nothing; 1 literal), 0 owed, 29 bare pin sites, 212 rows pinned by
+one pass** · parity **P1-P42, next free P43** · check 11 **3,082 def bodies (0 unsplit), 14 groups (3
+compiled, 11 value), 0 UNANSWERED; second key over 3,082 bodies (222 one hole): 88 generalisation
+groups (57 value, 8 wrapper, 7 wire-named, 0 compiled, 16 adjudged: 7 one concept owed, 2 carried,
+7 not one), 0 UNANSWERED** · check 12 **3,171 defs, 2,955 emitted (575 as a global), 1,178
+reachable over the 8 sections `tm/src` sends (2 cut), 1,263 exempt in 68 sections, 514 answered by
+property (296 + 218), 0 UNANSWERED** — unmoved · check 13 **12 fields, 10 written, 2 exempt, 0
+UNANSWERED** — unmoved.
+
+**`cargo test --workspace`, THREE runs (D46)**, capped at 40G, at loads 15.1, 14.6 and 19.1 (two
+parallel tracks building): **87 result lines, 1,478 passed, 0 failed, 9 ignored — all three**. Inside
+each: T5 `kernel_replay_parity` 29 (4 ignored) · the door suite `kernel_log_door` 23 ·
+`cli_switch_acceptance` 16 · `cli_latency` 5 (1 ignored) — in its band at load 15-19 ·
+`kernel_call_counts` 2 · `one_padder` 9 · `one_renderer` 25 · `kernel_row_cells` 26 ·
+`kernel_item_grammar` 6 · `kernel_planner_wire` 21 · `planner_invariants` 9 · `mutation_in_flight` 1.
+No `.proptest-regressions` file changed. The runs were over the final Lean and Rust; what changed
+after them — `mutate.py`, `mutations.txt`, `check.sh`'s comments, this block — is read by no cargo
+test (`grep -rln` over `tm/tests`, `tm/src`, `tm-core` and the FFI tests: comments only).
+
+**The shared tree was never planted in.** Every plant ran in one of three `git clone --no-hardlinks`
+clones under this step's scratchpad (`w34-a/`): one with `.lake` a symlink to the shared build for the
+source-level check 11 plants, two with their own `cp -a` `.lake` for everything that built. The
+shared tree's `git status --porcelain` held only this step's own edits before the first plant and
+after the last, and every mutation this step ran — the plants, the kill, the fold's rows — ran in a
+clone, never in the shared tree.
+
+**No predicate weakened, no law narrowed, no theorem statement changed (none was touched), no
+generator narrowed, no exemption widened — `twins-exempt.txt`, `reach-exempt.txt` and
+`fields-exempt.txt` byte-identical — no snapshot, fixture, latency band or corpus re-blessed, no
+memory bound raised, no external dependency, no `sorry` outside `Goals.lean` (the second pass's
+`sorry` is transient exactly as the constant is -- written with the mutation, restored in the same
+`finally`, under the sidecar check.sh fails on), no new axiom; `dayPlan` is still
+total; `lean-toolchain` and `kernel/corpus/` untouched; `hnoimp`, `impossibleKept` and `setEstE`
+untouched.**

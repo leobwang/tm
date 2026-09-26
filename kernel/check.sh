@@ -673,6 +673,33 @@ fi
 #    it, and a gate that quietly repaired the tree and then reported ok is the
 #    shape this campaign has already paid for.  `mutate.py` also handles SIGINT,
 #    SIGTERM and SIGHUP now, so only a SIGKILL or a power cut reaches this.
+#
+#    AND A PIN WAS THE FIRST ERROR, WHICH CANNOT SAY WHAT KIND OF ERROR IT IS
+#    (W-34 track A, README gap 2578).  A theorem that breaks under the constant
+#    either states something the constant FALSIFIES -- the pin -- or only had a
+#    PROOF that unfolded the body, while its statement stays true of the
+#    constant and pins nothing: `PlanReq.dayHot_capped` pinned `dayHot := []`
+#    that way until the W-33 repair reordered four laws by hand (gap 2567).
+#    `mutate.py`'s SECOND PASS first reads the one error that SAYS the
+#    statement is false -- Lean's `decide`, the theorem's whole proof, "proved
+#    that the proposition .. is false" (`its statement, decided false`) --
+#    and otherwise asks whether anything ELSE fails: another declaration in
+#    the same build (`also`), one that fails once the first theorem's proof is
+#    `sorry` and the package is rebuilt (`then`), or the theorem's own
+#    STATEMENT with its proof gone (`its statement`).  A rebuild that SUCCEEDS
+#    is ALONE and FATAL, like SURVIVED.  The decided rule was found by the
+#    pass's first real run: `PlannerWit.witCandsSwapped`, whose one reader is a
+#    `by decide` witness the constant falsifies, came back ALONE without it.  Driven in a clone
+#    with its own `.lake`, the W-33 script beside it: a filter with one law
+#    whose statement `[]` satisfies was PINNED three times, rc=0, and is ALONE
+#    three times, rc=1; with a `decide` witness a module downstream it is
+#    PINNED `then` that witness; in the same module, `also`; a width a
+#    statement's type reads is `(its statement)`.  A kill mid-pass left the
+#    two-file sidecar this check fails on, and the next run restored both.
+#    ITS COST IS THE STEP'S, NOT THIS SCRIPT'S: a PINNED constant costs one
+#    more build when the first build shows no second failing declaration.
+#    Settled, this check does no build either way -- 0.39-0.40 s before, 0.39-
+#    0.41 s after, three runs each -- and prints the rows the pass predates.
 if [ -e .mutate-in-flight ]; then
   say "new definitions mutated" "FAILED"; fail=1
   echo "  a killed mutate.py left .mutate-in-flight: the library holds a"
@@ -853,6 +880,31 @@ fi
 #     FAILS as RATCHET (driven: spanPer plus a dated NOT ONE line was green);
 #     and a ONE CONCEPT line that says CARRIED BY `X` is counted carried, after
 #     the gate checks every member is headed by `X`.
+#
+#     W-34 TRACK A CLOSES THE FOUR (README gaps 2577, 2601, 2604, 2605), each by
+#     a PROPERTY and each driven in a `git clone --no-hardlinks` with the W-33
+#     script beside this one over the same plant -- rc=0 then rc=1, the control
+#     rc=0 before and after, the shared tree's porcelain unchanged: a body that
+#     is ONE HOLE is keyed by the constructor it applies (a `⟨n, d⟩` plant beside
+#     `Arith.util` fails ALPHA); a TACTIC PROOF is a hole (`⟨l % 86400 / 60, h⟩`
+#     beside `Emit.clockOfLocal`'s `by omega` is unanswered); a VALUE that
+#     re-spells its group's rule at closed arguments FAILS as FIXTURE
+#     (a `⟨43200 % 86400 / 60, by omega⟩` fixture); and a field-key
+#     constructor is a WIRE NAME only where Lean's own expected-type rule
+#     resolves it to `Tm.Field.Key` -- the tuple read the short name `Key`,
+#     which is TWO types, and `.floor`/`.cap`/`.est` are `EditVal`'s
+#     constructors too, so a `.floor` sibling over a planted type and a
+#     `.machine` one over the replay's `Key` were each answered WIRE-NAMED
+#     before and are unanswered now.  E5 was made SPELLING-INVARIANT with it: `⟨n, 1⟩` IS
+#     `Q.mk n 1`, and the rung answered only the second.  Two precision defects
+#     the widening exposed are closed on the way: members were NAMED by their
+#     written name, first occurrence winning, so `Tm.Field.setEst` was reported
+#     as `Tm.setEst` (six such pairs; positional now, a scanner disagreement
+#     fatal); and a structure field sharing a parameter's spelling was holed.
+#     Measured at `9551d66` plus this step: 88 generalisation groups (61 before
+#     it), 0 UNANSWERED -- every group the widening formed is answered by E3
+#     or E5 -- and 2.33-2.34 s against 2.08-2.10 s, three runs each
+#     interleaved in one clone at load ~8: +0.24 s, about 1% of the wall.
 #
 #     THE COST IS DECLARED AND MEASURED, NOT QUOTED, AND IT WENT UP.  It was
 #     0.75-0.76 s; the reachability walk reads the whole of `.lake/build/ir`

@@ -95,7 +95,21 @@ THE FOUR VERDICTS, and the reason each of the last two exists:
     PINNED      the build FAILED, and no error is inside the mutated
                 declaration.  Something in the package can tell this definition
                 from that constant.  This is the verdict a definition must earn.
+                SINCE W-34 (README gap 2578) it is earned past the FIRST error:
+                `second_pass` records Lean's own `decide` proving the first
+                theorem's statement FALSE at the constant (`its statement,
+                decided false`), a second failing declaration from the same
+                build (`also`), one that fails once the first theorem's proof
+                is `sorry` and the package rebuilt (`then`), or that theorem's
+                STATEMENT failing without its proof (`its statement`).
     SURVIVED    the build SUCCEEDED.  Nothing distinguishes it.  check 9 FAILS.
+    ALONE       the first error was one THEOREM's proof -- not a `decide` that
+                proved its statement false -- and with that proof `sorry` the
+                package builds: the proof was the whole of what told the
+                definition from the constant, and a build cannot say whether
+                the theorem's statement is false at the constant or merely
+                unfolded the body.  check 9 FAILS, as for SURVIVED -- the W-33
+                repair's `dayHot_capped`, TRUE of `[]`, is the case.
     INVALID     the build failed WITH an error inside the mutated declaration
                 that is NOT the one below.  check 9 FAILS, because a build that
                 fails for the wrong reason is exactly the false PINNED this gate
@@ -245,6 +259,18 @@ WHAT THIS CANNOT SEE.  Measured or argued, never guessed:
   * IT PROVES A WITNESS EXISTS, NOT THAT IT IS THE RIGHT ONE.  A definition
     whose only distinguishing witness is a `#print axioms` line, or a
     `Negative.lean` cheat, is PINNED by this gate and may still be under-stated.
+  * THE SECOND PASS REMOVES ONE PROOF, NEVER ALL.  Two proofs of statements
+    that are both TRUE at the constant corroborate each other and the row
+    reads PINNED `also` or `then`; the pass tells "one fragile proof and
+    nothing else" from "two failing declarations", which is gap 2567's case,
+    and no more.  A first site that is not a theorem (a `def`'s proof term) or
+    that no declaration encloses gets no second pass and says so in its row.
+    A row written BEFORE the pass existed names its first error alone; the
+    gate COUNTS those ("pinned by one pass") and does not re-run them --
+    `--verify --write` upgrades a row, at one build per constant.  The
+    DECIDED reading is Lean 4.33's message text (`DECIDED_FALSE`): a
+    toolchain that rewords it makes that rule silent, and a `decide` witness
+    then falls to the rebuild and reads ALONE -- the loud direction.
 """
 
 import collections
@@ -932,11 +958,28 @@ def restore_in_flight():
     if not os.path.exists(SIDECAR):
         return
     with open(SIDECAR, encoding="utf-8") as handle:
-        rel, text = handle.read().split("\n", 1)
-    with open(os.path.join(HERE, rel), "w", encoding="utf-8") as handle:
-        handle.write(text)
+        raw = handle.read()
+    for rel, text in sidecar_files(raw):
+        with open(os.path.join(HERE, rel), "w", encoding="utf-8") as handle:
+            handle.write(text)
+        print("mutate.py: restored %s from a killed run" % rel, flush=True)
     os.remove(SIDECAR)
-    print("mutate.py: restored %s from a killed run" % rel, flush=True)
+
+
+def sidecar_files(raw):
+    """[(path, original text)] out of a sidecar.
+
+    ONE FILE until W-34, `path` then a newline then its bytes.  The second pass
+    (`second_pass`) changes TWO files at once -- the mutated definition's and
+    the pinning theorem's, whose proof it replaces by `sorry` -- so a sidecar
+    now holds each, as JSON; the one-file form is still read, because a run
+    killed by the tool that wrote it must be restorable by the tool that
+    replaced it."""
+    import json
+    if raw.startswith("{"):
+        return list(json.loads(raw)["files"].items())
+    rel, text = raw.split("\n", 1)
+    return [(rel, text)]
 
 
 def arm_signals():
@@ -1119,20 +1162,11 @@ def mutate_one(decl, const, synthesised=False):
     reported by name, counted on the "pinned by nothing" line, and the row
     records `unavailable`, so the exemption is visible exactly the way
     `unfoldable` is."""
-    full = os.path.join(HERE, decl["file"])
-    text = read(full)
+    text = read(os.path.join(HERE, decl["file"]))
     span = text[decl["at"]:decl["stop"]]
     new = " " + decl.get("lead", "") + const + "\n" * span.count("\n")
-    with open(SIDECAR, "w", encoding="utf-8") as handle:
-        handle.write(decl["file"] + "\n" + text)
-    with open(full, "w", encoding="utf-8") as handle:
-        handle.write(text[:decl["at"]] + new + text[decl["stop"]:])
-    try:
-        code, out = build()
-    finally:
-        with open(full, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        os.remove(SIDECAR)
+    mutated = text[:decl["at"]] + new + text[decl["stop"]:]
+    code, out = build_with({decl["file"]: mutated})
     if code == 0:
         return "SURVIVED", "build completed"
     first = None
@@ -1140,7 +1174,7 @@ def mutate_one(decl, const, synthesised=False):
     for idx, m in enumerate(hits):
         where, line = m.group(1), int(m.group(2))
         if first is None:
-            first = site(where, line)
+            first = (where, line)
         if os.path.basename(where) == os.path.basename(decl["file"]) \
            and decl["line"] <= line <= decl["last"]:
             stop = hits[idx + 1].start() if idx + 1 < len(hits) else len(out)
@@ -1151,7 +1185,303 @@ def mutate_one(decl, const, synthesised=False):
                 return "UNAVAILABLE", "%s -- the synthesised constant does " \
                     "not elaborate here" % site(where, line)
             return "INVALID", "%s is inside the declaration" % site(where, line)
-    return "PINNED", first or "build failed with no located error"
+    if first is None:
+        return "PINNED", "build failed with no located error (no second pass)"
+    return second_pass(decl, mutated, first, hits, out)
+
+
+def build_with(edits):
+    """Write `edits` ({library path: new text}), build, put every file back.
+
+    The originals go to the sidecar FIRST, all of them, and the sidecar is
+    removed only after every file is restored -- `restore_in_flight` and
+    check.sh's test of the sidecar cover a kill at any point between."""
+    import json
+    originals = {rel: read(os.path.join(HERE, rel)) for rel in edits}
+    with open(SIDECAR, "w", encoding="utf-8") as handle:
+        handle.write(json.dumps({"files": originals}))
+    try:
+        for rel, new in edits.items():
+            with open(os.path.join(HERE, rel), "w", encoding="utf-8") as handle:
+                handle.write(new)
+        return build()
+    finally:
+        for rel, old in originals.items():
+            with open(os.path.join(HERE, rel), "w", encoding="utf-8") as handle:
+                handle.write(old)
+        os.remove(SIDECAR)
+
+
+# A column-zero declaration head with its KEYWORD, which `DECL_START` does not
+# keep: the second pass must know a THEOREM, whose proof can be replaced by
+# `sorry` without changing what anything else in the package states, from a
+# `def`, whose body is a value other declarations compute with.
+HEAD_KIND = re.compile(
+    r"^(?:@\[[^\]]*\][ \t]*)*"
+    r"(?:private[ \t]+|protected[ \t]+|noncomputable[ \t]+|partial[ \t]+"
+    r"|unsafe[ \t]+|scoped[ \t]+)*"
+    r"(theorem|lemma|def|abbrev|structure|inductive|instance|class|example"
+    r"|opaque|axiom)\b")
+
+
+def declaration_at(text, line):
+    """(head line, keyword, first line after it) of the column-zero declaration
+    enclosing 1-based `line` of `text`, or None.  Block comments are skipped,
+    and the extent rule is `declarations()`'s."""
+    lines = text.split("\n")
+    depth, head = 0, None
+    for i, l in enumerate(lines[:line], 1):
+        if depth == 0:
+            m = HEAD_KIND.match(l)
+            if m:
+                head = (i, m.group(1))
+        depth = max(depth + l.count("/-") - l.count("-/"), 0)
+    if head is None:
+        return None
+    end = len(lines) + 1
+    for j in range(head[0], len(lines)):
+        if starts_declaration(lines[j]) and not lines[j].startswith(BODY_KW):
+            end = j + 1
+            break
+    if not head[0] <= line < end:
+        return None
+    return head[0], head[1], end
+
+
+def proof_region(text, line):
+    """(proof start, proof stop, lead) of the THEOREM enclosing `line`, or
+    None when that declaration is not a theorem or its proof is not located."""
+    got = declaration_at(text, line)
+    if got is None or got[1] not in ("theorem", "lemma"):
+        return None
+    lines = text.split("\n")
+    offsets = [0]
+    for l in lines:
+        offsets.append(offsets[-1] + len(l) + 1)
+    head_at = offsets[got[0] - 1]
+    stop = offsets[got[2] - 1] - 1 if got[2] - 1 < len(lines) else len(text)
+    body_at, lead = proof_separator(text, head_at, stop)
+    return None if body_at is None else (body_at, stop, lead)
+
+
+def sorried(text, line):
+    """`text` with the proof of the THEOREM enclosing `line` replaced by
+    `sorry`, line for line; or None when that declaration is not a theorem or
+    its proof cannot be found (no depth-zero `:=`)."""
+    got = proof_region(text, line)
+    if got is None:
+        return None
+    body_at, stop, lead = got
+    return (text[:body_at] + " " + lead + "sorry" + "\n" * text[body_at:stop].count("\n")
+            + text[stop:])
+
+
+# A proof that IS a decision procedure run on the statement: `by decide`, or an
+# anonymous constructor every one of whose components is `by decide` (a
+# conjunction or an iff -- a component that is DATA cannot be `by decide`).
+DECIDE_PROOF = re.compile(r"^(?:by decide|(?:by (?:refine|exact) )?⟨by decide(?:, by decide)*⟩)$")
+# What Lean 4.33 prints when `decide` evaluates its proposition to `false`.
+DECIDED_FALSE = "Tactic `decide` proved that the proposition"
+
+
+def decided_false(out, hits, text, line):
+    """Did the FIRST error say that `decide` proved the enclosing theorem's
+    own statement FALSE?  True only when that error's message is Lean's own
+    "proved that the proposition .. is false" and the theorem's whole proof is
+    `decide` on the statement (`DECIDE_PROOF`), so the proposition decided is
+    the statement -- or a conjunct of it -- and not a subgoal some other step
+    of a proof made.  That is the one error a build prints that SAYS the
+    constant falsifies a statement (W-34, README gap 2578)."""
+    if not hits:
+        return False
+    stop = hits[1].start() if len(hits) > 1 else len(out)
+    msg = out[hits[0].end():stop]
+    if DECIDED_FALSE not in msg or "is false" not in msg:
+        return False
+    got = proof_region(text, line)
+    if got is None or got[2]:
+        return False
+    return bool(DECIDE_PROOF.match(" ".join(text[got[0]:got[1]].split())))
+
+
+BINDS = re.compile(r"(?<![\w'.])(let|have|haveI|letI)(?![\w'!?])")
+# A statement that MATCHES has bars of its own, and a proof written as a
+# structure instance begins at `where`.
+ARMS = re.compile(r"(?<![\w'.])(match|fun)(?![\w'!?])")
+WHERE = re.compile(r"(?<![\w'.])where(?![\w'!?])")
+
+
+def proof_separator(text, start, stop):
+    """(offset just past a theorem's proof `:=`, lead) or (None, "").
+
+    `split_header` takes the FIRST depth-zero `:=`, which is right for a `def`
+    and wrong for a theorem whose STATEMENT binds: `theorem t : let f :=
+    replay .. ; P f := ..` is how several of `Replay.lean`'s witnesses are
+    stated, and splitting at `let f :=` would put `sorry` INSIDE the statement
+    -- a parse error the second pass would then read as "its statement fails",
+    a pin nobody earned.  So a depth-zero `let`/`have` claims the next
+    depth-zero `:=` for itself.  Equation-style proofs (`| p => ..` after the
+    type) are replaced from the first such bar, with `:= ` in front -- unless
+    the statement itself holds a `match` or a `fun`, whose bars are its own;
+    and a proof written as a structure instance (`theorem t : P where ..`) is
+    replaced from `where`.  DRIVEN, not argued (W-34): every theorem of the
+    library -- 5,355 in 85 modules, the check-3 roster's own count -- sorried
+    by this function at once, and all 85 modules compile with 0 errors; before
+    the `where` and `match` rules there were 4 errors in 2 modules, and before
+    the character rule below 20 proofs were not located at all."""
+    depth, i, pending, colon, arms = 0, start, 0, False, False
+    while i < stop:
+        c = text[i]
+        if c == "'" and not (i and (text[i - 1].isalnum() or text[i - 1] in "_'!?")):
+            m = leanfiles.CHAR_LIT.match(text, i)
+            if m:
+                # `'"'` is a character, not the start of a string.  Read as
+                # one it swallowed the `:=` after it: measured over the
+                # library, 20 theorems' proofs were not located without this
+                # rule -- 14 of them in `Json.lean` -- and 0 are with it.
+                i = m.end()
+                continue
+        if c == '"':
+            i += 1
+            while i < stop and text[i] != '"':
+                i += 2 if text[i] == "\\" else 1
+        elif text.startswith("--", i):
+            j = text.find("\n", i)
+            i = stop if j < 0 else j
+            continue
+        elif text.startswith("/-", i):
+            j = text.find("-/", i)
+            if j < 0:
+                return None, ""
+            i = j + 2
+            continue
+        elif c in "([{⟨⦃":
+            depth += 1
+        elif c in ")]}⟩⦄":
+            depth -= 1
+        elif depth == 0:
+            m = BINDS.match(text, i)
+            if m:
+                pending += 1
+                i = m.end()
+                continue
+            m = ARMS.match(text, i)
+            if m:
+                arms = True
+                i = m.end()
+                continue
+            m = WHERE.match(text, i)
+            if m and colon:
+                return i, ":= "
+            if text.startswith(":=", i):
+                if pending:
+                    pending -= 1
+                    i += 2
+                    continue
+                return i + 2, ""
+            if c == ":" and not text.startswith("::", i):
+                colon = True
+            elif c == "|" and colon and not arms and not text.startswith("||", i) \
+                    and text[i - 1] != "|":
+                return i, ":= "
+        i += 1
+    return None, ""
+
+
+def second_pass(decl, mutated, first, hits, out):
+    """THE SECOND PASS (W-34 track A, README gap 2578).  -> (verdict, why).
+
+    Pass one ends at the FIRST error, and an error in a theorem is two
+    different findings that read alike: the constant FALSIFIES the statement
+    -- nothing can prove it, the definition is pinned -- or the constant only
+    breaks the PROOF, which unfolded the body it was written against, while
+    the statement stays true of the constant and pins nothing.  The W-33
+    repair met the second: `PlanReq.dayHot_capped`, `(dayHot r).length <=
+    maxCands`, TRUE of `[]`, pinned `dayHot := []` because its proof unfolded
+    `dayHot` -- four step-8 writers in that state, reordered by hand (gap
+    2567).  A build cannot say which of the two a theorem's error is.  It CAN
+    say whether anything ELSE fails, and that is this pass:
+
+      DECIDED   the first error is Lean's own `decide` reporting that it
+                PROVED THE STATEMENT FALSE at the constant, and the theorem's
+                whole proof is that `decide` (`decided_false`): the one error
+                a build prints that says what the gap asked -- the constant
+                falsifies the statement.  No build spent.  THIS RULE WAS
+                FOUND BY THE PASS'S FIRST REAL RUN: without it
+                `PlannerWit.witCandsSwapped`, whose one reader is
+                `the_request_order_breaks_a_tie := by decide`, came back
+                ALONE at `default` and at `[]` -- a legitimate pin the
+                corroboration test could not see, because a `decide` witness
+                that fails at the constant is one declaration.
+      ALSO      pass one's own output already names a failing declaration
+                other than the first -- a second, independent witness, no
+                build spent.
+      THEN      the first theorem's proof is replaced by `sorry`, line for
+                line, and the package rebuilt with the mutation still in: a
+                declaration it could not reach before fails now.
+      STATEMENT the rebuild fails inside that theorem again, with its proof
+                gone: its STATEMENT does not elaborate at the constant, which
+                is the statement pinning the definition.
+      ALONE     the rebuild SUCCEEDS.  The one proof was the whole of what
+                told this definition from the constant, and whether its
+                statement is false at the constant is not something a build
+                decides.  FATAL, like SURVIVED: the step writes a witness a
+                constant falsifies -- a `decide` at a value where the
+                constant is wrong, or a membership law -- which is what the
+                W-33 repair wrote by hand for gap 2567.
+
+    A first site that is not a THEOREM -- a `def` whose proof term broke, or
+    no located error -- gets no second pass and says so in its row.
+    WHAT IT CANNOT SEE: two fragile proofs corroborate each other, so a
+    definition whose only readers are two proofs of true-at-the-constant
+    statements is PINNED here; the pass removes one proof, never all."""
+    where, line = first
+    base = os.path.basename(where)
+    sites = []
+    for m in hits:
+        w, l = os.path.basename(m.group(1)), int(m.group(2))
+        if w == os.path.basename(decl["file"]) and decl["line"] <= l <= decl["last"]:
+            continue
+        sites.append((w, l))
+    rel = next((p for p in lib_files() if os.path.basename(p) == base), None)
+    own = read(os.path.join(HERE, rel)) if rel else ""
+    here = declaration_at(own, line) if rel else None
+    if rel is not None and decided_false(out, hits, own, line):
+        return "PINNED", "%s (its statement, decided false)" % site(where, line)
+    for w, l in sites:
+        if (w, l) == (base, line):
+            continue
+        if w != base or here is None or declaration_at(own, l) is None \
+                or declaration_at(own, l)[0] != here[0]:
+            return "PINNED", "%s also %s" % (site(where, line), site(w, l))
+    if rel is None or here is None:
+        return "PINNED", "%s (no second pass: no declaration encloses it)" % site(where, line)
+    text = mutated if rel == decl["file"] else own
+    new = sorried(text, line)
+    if new is None:
+        return "PINNED", "%s (no second pass: %s)" % (
+            site(where, line), "a %s, not a theorem" % here[1]
+            if here[1] not in ("theorem", "lemma") else "its proof was not located")
+    edits = {decl["file"]: mutated}
+    edits[rel] = new
+    code, out = build_with(edits)
+    if code == 0:
+        return "ALONE", ("%s alone -- its proof sorried, the package builds: nothing "
+                         "else tells this definition from the constant" % site(where, line))
+    for m in ERR.finditer(out):
+        w, l = os.path.basename(m.group(1)), int(m.group(2))
+        if w == os.path.basename(decl["file"]) and decl["line"] <= l <= decl["last"]:
+            return "INVALID", "%s is inside the declaration (second pass)" % site(w, l)
+        got = declaration_at(own, l) if w == base else None
+        if got is not None and got[0] == here[0]:
+            return "PINNED", "%s (its statement)" % site(where, line)
+        return "PINNED", "%s then %s" % (site(where, line), site(w, l))
+    return "PINNED", "%s then build failed with no located error" % site(where, line)
+
+
+# A PINNED row's reason column, by what the second pass established: the four
+# words `second_pass` writes, or none -- a row written before W-34.
+SECOND_PASS = re.compile(r" also | then |\(its statement|\(no second pass")
 
 
 _SYNONYMS = {}
@@ -1930,14 +2260,24 @@ def main(argv):
             print("  %s" % why)
         return 1
 
+    # **ONE PASS OR TWO** (W-34 track A, README gap 2578).  A row written since
+    # the second pass existed says, in its reason column, what the pass found
+    # (`SECOND_PASS`); a row written before it names the first error alone,
+    # which cannot tell a falsified statement from a proof that stopped
+    # elaborating.  COUNTED, never silent, and not re-run: re-running is one
+    # build per constant, and `--verify --write` is what upgrades a row.
+    one_pass = sum(1 for d in rostered
+                   if (NAMED_SITE.search(rows[(d["file"], d["name"])].get("why", ""))
+                       or BARE_SITE.search(rows[(d["file"], d["name"])].get("why", "")))
+                   and not SECOND_PASS.search(rows[(d["file"], d["name"])].get("why", "")))
     if gate:
         if not owed:
             print("%d new or changed since %s, %d rostered "
                   "(%d unfoldable, %d witness fixtures, %d pinned by nothing; "
                   "%d literal)%s, 0 owed, %d pin site(s) still a bare line "
-                  "number"
+                  "number, %d row(s) pinned by one pass (before the second pass)"
                   % (len(decls), base[:7], len(rostered), unfold,
-                     fixture_rows, mute_rows, lit, shadow, unnamed))
+                     fixture_rows, mute_rows, lit, shadow, unnamed, one_pass))
             return 0
         print("%d new or changed since %s, %d rostered, %d OWED A MUTATION "
               "(%s)"

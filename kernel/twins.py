@@ -165,7 +165,18 @@ after §5.3.
   qualified, else the smallest declared, nullary winning -- so `SegKind.block`
   is a hole and `SegKind.batch _` is a hole and `SegKind.batch x` is not.  A
   constructor in a PATTERN, between `|` and `=>`, is structure and stays.  A
-  body that is one hole carries no rule and is not keyed.
+  TACTIC PROOF is a hole too -- a `by` block, to the first `,` or unmatched
+  closer at its depth -- because by proof irrelevance it carries no value, so
+  `⟨0, by decide⟩` is the literal `0 : Fin 6` (W-34, gap 2577); and a name
+  followed by `:=` -- a structure field, a named argument -- is structure,
+  never a parameter, whatever the signature binds (W-34, gap 2605).  A body
+  that collapses to ONE hole is keyed by the constructor it applies: the same
+  collapse with the outermost application kept -- `⟨_, _⟩`, `.obj _`,
+  `{ live := _ , .. }` -- and, if even that is one hole (a bare parameter or
+  literal: the identity and constant functions), by that hole.  Until W-34
+  such a body was NOT KEYED ("a hole carries no rule"), which is how
+  `ofNatOver (n d : Nat) : Q := ⟨n, d⟩` beside `Arith.util (need avail : Nat)
+  : Q := ⟨need, avail⟩` -- two names for one definition -- passed.
 
   THE KEY IS COARSER THAN THE RELATION IT GATES, on purpose.  Every pair of
   definitions one of which is the other at a closed value shares it; so do
@@ -183,7 +194,15 @@ after §5.3.
                 role (the rule above, unchanged) and drops out.  A group with
                 fewer than two RULE members left is answered -- `posOfNat`
                 beside three named `Pos` constants is one rule and three
-                roles.
+                roles.  EXCEPT A ROLE THAT RE-SPELLS ITS RULE (W-34, gap 2577):
+                in a group E5 does not answer, a value whose body IS a rule
+                member's with every parameter bound to a closed term
+                (`respells`: each parameter one balanced run, consistently; a
+                proof hole any run) could have been written `rule a b ..`, and
+                FAILS as FIXTURE unless a sentence answers it -- as does a
+                test that does not decide within its step budget.  E3's own
+                rule hid it: `noonClock : Clock := ⟨43200 % 86400 / 60, by
+                omega⟩` beside `Emit.clockOfLocal` was one rule and one role.
   ALPHA         two rule members identical once parameters are NUMBERED --
                 the same binder types, the same body, the same literals, and
                 only the names differ -- are two names for one definition and
@@ -196,11 +215,22 @@ after §5.3.
                 each member is a NAME for that head at fixed arguments, and
                 the head is one definition already.  `weekOrdinal n := n / 7`
                 and `dateOfT t := t / 86400` are two names for division.
+                IN EVERY SPELLING since W-34 (gap 2577): an anonymous
+                constructor, a tuple, a list literal, a structure instance or
+                update over holes is ONE application of ONE constructor --
+                `⟨n, 1⟩` IS `Q.mk n 1`, which this rung answered while it
+                refused the other spelling -- and a body that is holes alone
+                has no head left to be two definitions of.  So `Arith.ofNat`
+                and `Arith.util` are two names for `Q.mk` at fixed arguments;
+                ALPHA, above, is what still fails a renamed twin of either.
   E4 WIRE-NAMED the rule members are identical once parameters are numbered
                 and differ ONLY in the keys they spell: string and character
                 literals, and nullary constructors of a `WIRE_KEY_TYPES` type
-                (`Key`, the line grammar's field key -- `.floor`, `.cap`,
-                `.est`).  A string literal in this
+                (`Tm.Field.Key`, the line grammar's field key -- `.floor`,
+                `.cap`, `.est`) AT A POSITION LEAN RESOLVES TO THAT TYPE: an
+                explicit argument of a library `def` whose parameter there is
+                typed by it, or the type named qualified (`wire_positions`,
+                W-34, gap 2601).  A string literal in this
                 kernel is a wire key, a field key or a refusal tag, declared
                 by the literal that spells it (check 8's source 2), and a
                 definition that spells one is that key's single point of
@@ -232,25 +262,47 @@ after §5.3.
                 CARRIED BY `X` is counted carried, not owed, and FAILS unless
                 every member's body is one application headed by `X`.
 
-  WHAT THE SECOND KEY CANNOT SEE, declared (the first four bullets were added
-  by the W-33 repair, each driven by W-33's auditor or reuse critic in a clone,
-  README gap 2562):
-  * a body that is ONE HOLE -- a constructor over parameters, `⟨n, d⟩` -- is
-    not keyed at all (`gen_key` returns None: a hole carries no rule), so
-    `ofNatOver (n d : Nat) : Q := ⟨n, d⟩` beside `Arith.ofNat n := ⟨n, 1⟩`
-    passes.  39 function `def`s of the library are unkeyed this way; no group
-    hides among them today (re-measured in the W-33 repair).
-  * a `Fin` literal or any subtype literal, `⟨0, by decide⟩`: the proof is a
-    tactic block, not a hole, so `limitHistAt (i : Fin 6) .. := dayTake i h B`
-    beside `limitHist .. := dayTake ⟨0, by decide⟩ h B` forms no group.
-  * a FIXTURE's literal made a parameter: E3 drops a nullary member as a
-    fixture role, so `witPrioAt (n)` beside the nullary `witPrio` leaves one
-    rule and is answered.  That is E3's own rule ("one rule and N roles"),
-    and the finding it hides is a fixture that could be written through its
-    rule.
-  * a constructor whose short name a `WIRE_KEY_TYPES` type and another type
-    both declare, spelled in dot form, reads as a name in E4 -- the quiet
-    direction; `Key`'s constructors collide with no other type's today.
+  THE FOUR BLIND SPOTS THE W-33 REPAIR DECLARED HERE ARE CLOSED (W-34 track A,
+  README gap 2577), each by a property above and each DRIVEN in a clone --
+  rc=0 under the W-33 script and rc=1 under this one, the control rc=0 before
+  and after -- with the plant in README's W-34 track A block: a ONE-HOLE body
+  is keyed (`ofNatOver (n d : Nat) : Q := ⟨n, d⟩` beside `util` fails ALPHA); a
+  `by` block is a hole
+  (`⟨l % 86400 / 60, h⟩` beside `⟨l % 86400 / 60, by omega⟩` forms and is
+  unanswered); a FIXTURE that re-spells its rule fails (`noonClock : Clock :=
+  ⟨43200 % 86400 / 60, by omega⟩`); and a
+  short name shared with the field key is a name only where Lean resolves it
+  to `Tm.Field.Key` (a `.floor` sibling over a planted type, and a `.machine`
+  one over the replay's `Key`,
+  each answered WIRE-NAMED before and unanswered now).  The last bullet's
+  premise was FALSE when written: `Key` named TWO types, and `.floor`,
+  `.cap`, `.est` and fourteen more -- seventeen of its eighteen -- are
+  `EditVal`'s constructors too, and six are `CandKey`'s.  The
+  limitHistAt example the W-33 bullet gave FORMS now and is answered E5 --
+  two names for `dayTake` -- which is that rung's own verdict on
+  `weekOrdinal`/`dateOfT`.
+
+  WHAT THE SECOND KEY CANNOT SEE, declared:
+  * a MANY-FIELD RECORD re-spelt at DIFFERENT literals inside a one-hole
+    body.  Such a body is keyed by its OUTERMOST constructor only and E5
+    answers one constructor applied at fixed arguments, so two builders of
+    one thirteen-field `Look.Cand` that fix different flags are two names for
+    `Prod.mk` here unless they are ALPHA twins or one re-spells the other
+    (W3).  The key does not decide how much of a record is a "default"; a
+    skeleton key that kept the inner constructors would, and it was not
+    taken because nothing measured says where its line is.  Gap 2574's
+    instances were folded in CODE (`PlannerWit.oneCand`).
+  * W3 asks a VALUE against the RULES of its own group, and only of a group
+    E5 does not answer: a value re-spelling a wrapper rule is E5's two names
+    for its head, and a rule re-spelling another rule is ALPHA's or E4's.
+  * W4 resolves `.c` through a library `def`'s EXPLICIT parameter only: `.c`
+    passed to a parameter or a local, placed in a list, a match arm, a
+    structure field, or compared with `==`, is not a name -- the loud
+    direction, one group E4 does not answer.  `open` is not read either.
+  * a `by` block runs to the first `,` or unmatched closer, so inside a
+    structure instance written with NEWLINE-separated fields it swallows the
+    fields after it: the key is COARSER there -- one more group to answer,
+    never one fewer.
   * a generalisation across a DELTA step or a structure ETA.  `bCand` builds
     its facts as `wfPlanFacts pm l h` and `pCand` as `⟨{ planFacts pm l with
     splittable := sp }, h⟩` -- one value under two spellings -- so gap 2417's
@@ -308,7 +360,6 @@ EMITTED = re.compile(r"(?m)^LEAN_EXPORT[^\n(]*\b(?:l|lp_TmKernel)_(\w+)\([^\n]*\
 # A top-level arrow in a declared TYPE, so that E3's "takes no arguments" is a
 # property of the type and not of where the `:` stands.
 ARROW = re.compile(r"->|→")
-_QUALIFIED = {}
 # The code generator's own variable NAMING AND NUMBERING -- a C local is the
 # source parameter's name between v_ and a counter -- which says nothing about
 # what the function does.  It kept the name until W-33, when the ALPHA rung
@@ -337,8 +388,10 @@ SUBSCRIPTS = frozenset("₀₁₂₃₄₅₆₇₈₉"
 # One `def`, as both keys read it.  `sig`/`body`/`lits` are the EXACT key's
 # (whitespace stripped, string contents blanked, the literals' text beside);
 # `params` are the names the signature binds, in order; the three token lists
-# are the raw signature, body and result type for the second key.
-Def = collections.namedtuple("Def", "path name sig body lits params sigtoks bodytoks restoks lineno")
+# are the raw signature, body and result type for the second key.  `full` is
+# the name `lean` gives it -- POSITIONALLY, the k-th `def` of its file against
+# the k-th of `leanfiles.qualified_names` (W-34 track A, README gap 2604).
+Def = collections.namedtuple("Def", "path name sig body lits params sigtoks bodytoks restoks lineno full")
 
 
 def literals(src, stripped, start, stop):
@@ -510,23 +563,26 @@ def binders(sig):
     return params, result
 
 
-def bodies(path, src, code):
+def bodies(path, src, code, fulls=None):
     """A `Def` for every `def` declared in `path`, whose source is `src` and
     whose comment-stripped code is `code` -- stripped ONCE by the caller, which
-    reads the constructors off the same text.
+    reads the constructors off the same text.  `fulls` is the file's qualified
+    names in declaration order, which `main` has checked agree with this scan.
 
     A `def` this cannot split yields a body of `None`, which `main` COUNTS and
     fails on.  It used to `continue`, and 400 of the library's 3,044 `def`s --
     every one spelled with match arms rather than `:=` -- were keyed by nothing
     while the summary line said "2644 def bodies" (W-30 repair, gap 2127)."""
-    for m in DEF.finditer(code):
+    for k, m in enumerate(DEF.finditer(code)):
         stop = NEXT_COMMAND.search(code, m.end())
         end = stop.start() if stop else len(code)
         chunk = code[m.end():end]
         lineno = code.count("\n", 0, m.start()) + 1
+        full = fulls[k] if fulls is not None and k < len(fulls) else m.group(1)
         at = decl_sep(chunk)
         if at is None:
-            yield Def(path, m.group(1), "".join(chunk.split()), None, (), [], [], [], [], lineno)
+            yield Def(path, m.group(1), "".join(chunk.split()), None, (), [], [], [], [], lineno,
+                      full)
             continue
         # The separator stays with the BODY: it is what tells `:= e` from the
         # arms `| p => e`, and two definitions written the two ways are not one.
@@ -534,7 +590,7 @@ def bodies(path, src, code):
         params, result = binders(sig_raw)
         yield Def(path, m.group(1), "".join(sig_raw.split()), "".join(body_raw.split()),
                   tuple(literals(src, code, m.end() + at, end)), params,
-                  tokens(sig_raw), tokens(body_raw), tokens(result), lineno)
+                  tokens(sig_raw), tokens(body_raw), tokens(result), lineno, full)
 
 
 def emitted(path, name):
@@ -575,8 +631,8 @@ def emitted(path, name):
     return None
 
 
-def qualified(path, name):
-    """`name` under the namespace its file opens, which is what the C is keyed on.
+def qualify_all(path, code, found):
+    """The qualified name of every `def` of `path`, in declaration order.
 
     THE SCANNER IS `leanfiles.qualified_names`, check 3's (W-31 track A).  This
     was a line walk of its own that required `def` to be the FIRST WORD of its
@@ -584,15 +640,43 @@ def qualified(path, name):
     def`s beside them fell through it and came back qualified by the namespace
     stack AT END OF FILE -- a name no declaration has, whose C symbol is
     therefore absent, which E2 reads as "unemitted" and reports.  The loud
-    direction, and wrong."""
-    key = str(path)
-    if key not in _QUALIFIED:
-        pairs, _leftover = leanfiles.qualified_names(path, "def")
-        table = {}
-        for written, full in pairs:
-            table.setdefault(written, full)
-        _QUALIFIED[key] = table
-    return _QUALIFIED[key].get(name, name)
+    direction, and wrong.
+
+    **AND THE TABLE WAS KEYED ON THE WRITTEN NAME, first occurrence winning**
+    (W-34 track A, README gap 2604), which is `mutate.py`'s gap 1422 inside
+    this file: SIX `def`s of the library share a written name with an earlier
+    one in the same file -- `Line.lean`'s `setEst` is `Tm.setEst` at line 532
+    and `Tm.Field.setEst` at 3817, and `readTz`, `readStep`, `keyOf`, `get`
+    and `alter` are the same shape -- and each second one was REPORTED under
+    the first one's name, its C symbol read for E2 and its namespace used for
+    name resolution.  E4's group read `Tm.setEst` where the member was
+    `Tm.Field.setEst`.  The two scanners are now joined by POSITION, and a
+    disagreement about which `def`s a file declares is a hard error rather
+    than a guess: `found` is this file's own scan, and it must name the same
+    `def`s in the same order."""
+    pairs, _leftover = leanfiles.qualified_names(path, "def", code=code)
+    if [w for w, _ in pairs] != found:
+        raise SystemExit("twins.py: %s -- the def scanner and `leanfiles.qualified_names` "
+                         "disagree about which `def`s this file declares, so no member "
+                         "could be named positionally" % path)
+    return [f for _, f in pairs]
+
+
+def namespace_of(full):
+    """`Tm.Field` for `Tm.Field.viewMin`."""
+    return full.rsplit(".", 1)[0] if "." in full else ""
+
+
+def resolve(name, ns, table):
+    """What `name`, written inside namespace `ns`, names in `table` -- Lean's
+    innermost-first lookup, without `open` (a name only an `open` reaches is
+    unresolved, which every reader of this treats as the loud direction)."""
+    parts = ns.split(".") if ns else []
+    for k in range(len(parts), -1, -1):
+        cand = ".".join(parts[:k] + [name])
+        if cand in table:
+            return cand
+    return None
 
 
 def is_value(sig, body):
@@ -607,8 +691,8 @@ def compiled_apart(group):
     the callers run" about a pair with no caller."""
     seen, live = {}, []
     for d in group:
-        q = qualified(d.path, d.name)
-        seen["%s:%s" % (d.path, d.name)] = emitted(d.path, q)
+        q = d.full
+        seen["%s:%s" % (d.path, d.full)] = emitted(d.path, q)
         if callgraph.symbol(q) in callgraph.reachable(callgraph.ir_root(d.path))[0]:
             live.append(d.name)
     if None in seen.values():
@@ -688,13 +772,17 @@ def _is_name(t):
     return bool(t) and (t[0].isalpha() or t[0] in ".«")
 
 
-def collapse(out, ctors):
+def collapse(out, ctors, protect=False):
     """Constructor applications over holes become holes, to a fixpoint.
 
     Not inside a PATTERN (between an arm's `|` and its `=>`), where a
     constructor is structure.  `(_)`, `(_, _)`, `[_]`, `[]`, `⟨_, _⟩` and a
     structure instance or update whose parts are all holes collapse as the
-    anonymous constructors they are."""
+    anonymous constructors they are.
+
+    With `protect`, an application that would span the WHOLE expression after
+    `:=` is kept, so a body that is one constructor over holes keeps that
+    constructor -- `gen_key`'s key for a one-hole body (W-34, gap 2577)."""
     out = list(out)
     changed = True
     while changed:
@@ -712,7 +800,8 @@ def collapse(out, ctors):
                     j = i + 1
                     while j < n and out[j] in ("_", ","):
                         j += 1
-                    if j < n and out[j] == close and (t == "[" or "_" in out[i + 1:j]):
+                    if j < n and out[j] == close and (t == "[" or "_" in out[i + 1:j]) \
+                            and not (protect and i == 2 and j == n - 1):
                         res.append("_")
                         i = j + 1
                         changed = True
@@ -727,7 +816,7 @@ def collapse(out, ctors):
                             continue
                         ok = False
                         break
-                    if ok and j < n and j > i + 1:
+                    if ok and j < n and j > i + 1 and not (protect and i == 2 and j == n - 1):
                         res.append("_")
                         i = j + 1
                         changed = True
@@ -740,7 +829,7 @@ def collapse(out, ctors):
                         j = i + 1
                         while j < n and j - i - 1 < ar and out[j] == "_":
                             j += 1
-                        if j - i - 1 == ar:
+                        if j - i - 1 == ar and not (protect and i == 2 and j == n):
                             res.append("_")
                             i = j
                             changed = True
@@ -754,67 +843,239 @@ def collapse(out, ctors):
 # THE CONSTRUCTORS E4 READS AS NAMES (W-33 repair, README gap 2562).  E4's
 # rule is "differ ONLY in the keys they spell", and a key is spelled two ways
 # in this kernel: as a string or character literal on the wire, and as a
-# constructor of the line grammar's field-key type, `Key` (`Line.lean`),
-# which `lookupKey`/`setKey` take and whose constructors ARE the `est:`,
-# `min:` .. field names.  `normalise(names=True)` used to read EVERY nullary
-# constructor as a name, so restSegLike -- `windDownSeg` with `.rest` for
-# `.windDown`, a real generalisation over `SegKind` -- was answered WIRE-NAMED
-# (driven by W-33's reuse critic in a clone).  This is W-27's shape: a type
-# joins this tuple to have its constructors read as names; nothing else does.
-WIRE_KEY_TYPES = ("Key",)
+# constructor of the line grammar's field-key type, `Tm.Field.Key`
+# (`Line.lean`), which `lookupKey`/`setKey` take and whose constructors ARE
+# the `est:`, `min:` .. field names.  `normalise(names=True)` used to read
+# EVERY nullary constructor as a name, so restSegLike -- `windDownSeg` with
+# `.rest` for `.windDown`, a real generalisation over `SegKind` -- was answered
+# WIRE-NAMED (driven by W-33's reuse critic in a clone).  This is W-27's shape:
+# a type joins this tuple to have its constructors read as names; nothing else
+# does.
+#
+# **THE TUPLE HELD A SHORT NAME, AND THE SHORT NAME WAS TWO TYPES** (W-34
+# track A, README gap 2601).  It read `("Key",)`, matched against the last
+# segment of the declaring type, and `Replay.lean` declares a second `inductive
+# Key` -- the replay's record keys, `machine` and `global` among its nullary
+# constructors -- so `.machine` was a "wire name" too.  And the header's claim
+# that `Key`'s constructors "collide with no other type's today" was FALSE when
+# written: seventeen of `Field.Key`'s eighteen constructors are `EditVal`'s as
+# well, and six -- `.floor`, `.cap`, `.due`, `.window`, `.ci`, `.loc` -- are
+# `CandKey`'s: FOUR of the seven E4 groups were answered on a short name two
+# to five types declare (`.est` is `PlanKey`'s, `ReqCmd`'s and `TokKind`'s
+# too).  The answer was right and the reason was not: the
+# gate could not tell `Field.Key.floor` from `CandKey.floor`.  So the tuple
+# holds the QUALIFIED type, and a dot constructor is a name only when LEAN'S
+# OWN RULE resolves it there (`wire_positions`).
+WIRE_KEY_TYPES = ("Tm.Field.Key",)
+
+# The tables `wire_positions` resolves against, filled once by `main`: every
+# library `def` by the name `lean` gives it, and every `inductive` likewise.
+DEFS, TYPES = {}, set()
+# Words that open a term rather than apply a function: an argument run stops
+# at one of them.
+TERM_WORDS = frozenset(("fun", "λ", "if", "then", "else", "match", "with", "let", "in",
+                        "do", "return", "by", "have", "show", "from", "at"))
 
 
-def wire_name(t, ctors):
-    """True when token `t` is a nullary constructor of a `WIRE_KEY_TYPES`
-    type.  A dot or bare spelling asks by short name, so a constructor whose
-    short name a wire-key type and another type BOTH declare reads as a name
-    -- the quiet direction, declared in the header."""
-    if ctors is None or ctor_arity(t, ctors) != 0:
-        return False
+def explicit_types(sigtoks):
+    """The declared type of each EXPLICIT parameter of a signature, in order --
+    one entry per name of a `(x y : T)` group, as a token list."""
+    out, i, n = [], 0, len(sigtoks)
+    while i < n:
+        kind, t = sigtoks[i]
+        if kind == "SYM" and t in "({[⦃":
+            depth, j = 0, i
+            while j < n:
+                if sigtoks[j][0] == "SYM" and sigtoks[j][1] in OPENERS:
+                    depth += 1
+                elif sigtoks[j][0] == "SYM" and sigtoks[j][1] in CLOSERS:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                j += 1
+            group, colon, d0 = sigtoks[i + 1:j], None, 0
+            for k, (kk, tt) in enumerate(group):
+                if kk == "SYM" and tt in OPENERS:
+                    d0 += 1
+                elif kk == "SYM" and tt in CLOSERS:
+                    d0 -= 1
+                elif kk == "SYM" and tt == ":" and d0 == 0:
+                    colon = k
+                    break
+            if t == "(" and colon is not None:
+                out.extend(group[colon + 1:] for x in group[:colon] if x[0] == "ID")
+            i = j + 1
+            continue
+        if kind == "SYM" and t == ":":
+            break
+        i += 1
+    return out
+
+
+def wire_positions(toks, d, ctors):
+    """W4 (W-34 track A, README gap 2601): the indices of `toks` that NAME a
+    field key -- a nullary constructor of a `WIRE_KEY_TYPES` type, found by
+    the rule Lean itself uses for `.c`: the EXPECTED TYPE.
+
+      * `.c` passed as the k-th explicit argument of a library `def` `f` is a
+        name when `f`'s k-th explicit parameter is typed by a wire-key type
+        that declares `c` nullary -- `lookupKey .floor r`, `setKey .dur (..) r`;
+      * `T.c` written qualified is a name when `T` resolves, from the
+        definition's own namespace, to a wire-key type declaring `c`.
+
+    Anything else -- `.c` in a list, a match arm, a comparison, passed to a
+    parameter or a local, a bare `c` -- is NOT a name: unresolved is the loud
+    direction, a group E4 does not answer."""
+    if ctors is None:
+        return set()
     (_lib_s, lib_q), _core = ctors
-    segs = t.lstrip(".").split(".")
-    if len(segs) >= 2:
-        return segs[-2] in WIRE_KEY_TYPES and (segs[-2], segs[-1]) in lib_q
-    return any((ty, segs[-1]) in lib_q for ty in WIRE_KEY_TYPES)
+    ns, out = namespace_of(d.full), set()
+    for i, (kind, t) in enumerate(toks):
+        if kind != "ID":
+            continue
+        ctor, typ = None, None
+        if t.startswith(".") and "." not in t[1:]:
+            ctor, j, args = t[1:], i - 1, 0
+            while j >= 0:
+                kk, tt = toks[j]
+                if kk == "SYM" and tt in CLOSERS:
+                    depth = 0
+                    while j >= 0:
+                        if toks[j][0] == "SYM" and toks[j][1] in CLOSERS:
+                            depth += 1
+                        elif toks[j][0] == "SYM" and toks[j][1] in OPENERS:
+                            depth -= 1
+                            if depth == 0:
+                                break
+                        j -= 1
+                elif not (kk in ("NUM", "STR", "CHR", "PRF", "PROJ")
+                          or (kk == "ID" and tt not in TERM_WORDS)):
+                    break
+                args += 1
+                j -= 1
+            head = toks[j + 1] if args else None
+            if head is None or head[0] != "ID" or head[1].startswith(".") \
+                    or head[1].split(".")[0] in d.params:
+                continue
+            f = resolve(head[1], ns, DEFS)
+            types = explicit_types(DEFS[f].sigtoks) if f else []
+            if len(types) < args:
+                continue
+            th = next((tt for kk, tt in types[args - 1] if kk == "ID"), None)
+            typ = resolve(th, namespace_of(f), TYPES) if th else None
+        elif "." in t and t[:1].isupper():
+            segs = t.split(".")
+            ctor, typ = segs[-1], resolve(".".join(segs[:-1]), ns, TYPES)
+        if ctor and typ in WIRE_KEY_TYPES and \
+                0 in lib_q.get((typ.rsplit(".", 1)[-1], ctor), ()):
+            out.add(i)
+    return out
 
 
-def normalise(toks, params, keep, ctors=None, names=False):
+def erase_proofs(toks):
+    """A TACTIC PROOF IS A HOLE (W-34 track A, README gap 2577).
+
+    The second key holes every literal because a literal is a VALUE that a
+    parameter could have been; a proof is not even that -- by proof
+    irrelevance it carries no value at all, so two bodies that differ in one
+    are one body.  The W-33 repair declared the cost: `⟨0, by decide⟩`, a `Fin`
+    literal, kept its `by decide` as two NAME tokens, so the anonymous
+    constructor around it never collapsed and `limitHistAt (i : Fin 6) .. :=
+    dayTake i h B` beside `limitHist .. := dayTake ⟨0, by decide⟩ h B` formed
+    no group.  A `by` block is one PRF token now, in EVERY normalisation --
+    the key, ALPHA's and E4's comparands -- and runs to the first `,` or
+    unmatched closer at its own depth, or to the end of the body.  It may
+    run past a newline-separated structure field, which makes the key
+    COARSER: one more group to answer, never one fewer."""
+    out, i, n = [], 0, len(toks)
+    while i < n:
+        if toks[i] == ("ID", "by"):
+            depth, j = 0, i + 1
+            while j < n:
+                kk, tt = toks[j]
+                if kk == "SYM" and tt in OPENERS:
+                    depth += 1
+                elif kk == "SYM" and tt in CLOSERS:
+                    if depth == 0:
+                        break
+                    depth -= 1
+                elif kk == "SYM" and tt == "," and depth == 0:
+                    break
+                j += 1
+            out.append(("PRF", "_"))
+            i = j
+            continue
+        out.append(toks[i])
+        i += 1
+    return out
+
+
+def normalise(toks, params, keep, ctors=None, names=False, protect=False, wires=None):
     """N1 when `keep`: parameters NUMBERED and everything else kept -- the
     ALPHA comparand; with `names`, every token that NAMES rather than measures
-    (a string, a character, a nullary constructor of a `WIRE_KEY_TYPES` type)
-    is one marker too -- the E4 comparand.  N2 otherwise: every parameter and literal a hole and
-    constructors collapsed -- the second key itself."""
+    (a string, a character, a field-key constructor at a position `wires`
+    holds) is one marker too -- the E4 comparand.  N2 otherwise: every
+    parameter and literal a hole and constructors collapsed -- the second key
+    itself.  In all three a tactic proof is a hole (`erase_proofs`), and a
+    name followed by `:=` -- a structure field, a named argument -- is
+    STRUCTURE, kept as written: `{ live := live }` holed the field name because
+    the parameter shared its spelling (W-34, gap 2605)."""
     index = {}
     for k, p in enumerate(params):
         index.setdefault(p, k + 1)
+    toks = erase_proofs(toks)
     out = []
-    for kind, t in toks:
-        if kind == "STR":
+    for pos, (kind, t) in enumerate(toks):
+        if names and wires is not None and pos in wires:
+            out.append("#")
+        elif kind == "PRF":
+            out.append("_")
+        elif kind == "STR":
             out.append("#" if names else '""' if keep else "_")
         elif kind == "CHR":
             out.append("#" if names else t if keep else "_")
         elif kind == "NUM":
             out.append(t if keep else "_")
+        elif kind == "ID" and toks[pos + 1:pos + 3] == [("SYM", ":"), ("SYM", "=")]:
+            out.append(t)
         elif kind == "ID" and not t.startswith("."):
             head, dot, rest = t.partition(".")
             if head in index:
                 out.append(("_%d" % index[head] if keep else "_") + (dot + rest if dot else ""))
-            elif names and wire_name(t, ctors):
-                out.append("#")
             else:
                 out.append(t)
-        elif kind == "ID" and names and wire_name(t, ctors):
-            out.append("#")
         else:
             out.append(t)
-    return tuple(out) if keep else collapse(out, ctors)
+    return tuple(out) if keep else collapse(out, ctors, protect)
+
+
+ONE_HOLE = (":", "=", "_")
 
 
 def gen_key(d, ctors):
-    """The second key of `d`, or None when its body is one hole."""
+    """The second key of `d`: its result type and body with every parameter,
+    literal and proof a hole.
+
+    **A BODY THAT IS ONE HOLE IS KEYED** (W-34 track A, README gap 2577).  It
+    was not -- "a hole carries no rule" -- and the W-33 repair declared what
+    that hid: 39 function `def`s whose body is a constructor over their
+    parameters were in NO group, so `ofNatOver (n d : Nat) : Q := ⟨n, d⟩`
+    beside `Arith.util (need avail : Nat) : Q := ⟨need, avail⟩` -- two names
+    for one definition -- passed.  A body that collapses to one hole is keyed
+    by the constructor it applies: collapsed to its fixpoint with the OUTERMOST
+    application kept (`collapse(protect=True)`), `⟨_, _⟩`, `.obj _`,
+    `{ live := _ , .. }`; a body that is one hole even then -- a parameter or
+    a literal atom, the identity and the constant functions -- is keyed as
+    that hole.  The ladder then answers them like any group: ALPHA fails a
+    renamed twin, E5 answers one constructor applied at fixed arguments.
+
+    AND "ONE HOLE" WAS A SLOPPY TEST: `all(t in ("_", ":", "="))` also held
+    for `_ == _` (`==` is two `=` tokens) and for a run of holes whose head a
+    nullary-arity constructor reading erased, and both were silently unkeyed.
+    It is `ONE_HOLE` exactly now."""
     body = normalise(d.bodytoks, d.params, False, ctors)
-    if all(t in ("_", ":", "=") for t in body):
-        return None
+    if body == ONE_HOLE:
+        body = normalise(d.bodytoks, d.params, False, ctors, protect=True)
     return (normalise(d.restoks, d.params, False, ctors), body)
 
 
@@ -825,18 +1086,133 @@ def alpha_key(d):
 
 def named_key(d, ctors):
     """E4's comparand: the BODY once parameters are numbered and every string,
-    character and nullary constructor is one marker.  The signature is not
-    compared: a pair typed apart AND wire-named is still wire-named."""
-    return normalise(d.bodytoks, d.params, True, ctors, names=True)
+    character and field-key constructor (`wire_positions`) is one marker.  The
+    signature is not compared: a pair typed apart AND wire-named is still
+    wire-named."""
+    toks = erase_proofs(d.bodytoks)
+    return normalise(toks, d.params, True, ctors, names=True,
+                     wires=wire_positions(toks, d, ctors))
 
 
 def is_wrapper(body):
-    """E5: one head and holes, nothing else."""
+    """E5: ONE APPLICATION over holes, in any of its spellings.
+
+    `C _ ..` and `f _ ..` -- one head and holes -- were the whole of it until
+    W-34, and the same term spelled `⟨_, _⟩` was not, so E5 answered
+    `Q.mk n 1` and refused `⟨n, 1⟩`.  An anonymous constructor, a tuple, a list
+    literal and a structure instance or update over holes are ONE application
+    of ONE constructor, and a verdict about a term cannot depend on which of
+    its spellings the source chose (W-34, gap 2577).  So is a body of holes
+    alone: no head survived the erasure -- a parameter applied to parameters,
+    or an applied constructor whose short name a nullary constructor also has
+    (the arity blind spot below) -- and there is nothing there to be two
+    definitions of."""
     if body[:2] != (":", "="):
         return False
-    rest = [t for t in body[2:] if t != "_"]
-    holes = sum(1 for t in body[2:] if t == "_" or t.startswith("_."))
+    e = body[2:]
+    if e and all(t == "_" for t in e):
+        return True
+    if len(e) >= 3 and (e[0], e[-1]) in (("⟨", "⟩"), ("(", ")"), ("[", "]")) \
+            and all(t in ("_", ",") for t in e[1:-1]):
+        return True
+    if len(e) >= 3 and (e[0], e[-1]) == ("{", "}"):
+        inner, k = list(e[1:-1]), 0
+        while k < len(inner):
+            if inner[k] in ("_", ",", "with"):
+                k += 1
+            elif inner[k + 1:k + 4] == [":", "=", "_"] and _is_name(inner[k]):
+                k += 4
+            else:
+                return False
+        return True
+    rest = [t for t in e if t != "_"]
+    holes = sum(1 for t in e if t == "_" or t.startswith("_."))
     return holes >= 1 and len(rest) == 1
+
+
+def matches(pat, sub, env, budget):
+    """Does token list `sub` match `pat`, each `_k` bound to one balanced run
+    (consistently), a proof hole `_` matching any one balanced run?  `budget`
+    is a one-element list of steps left; running out raises `Undecided`."""
+    budget[0] -= 1
+    if budget[0] < 0:
+        raise Undecided()
+    if not pat:
+        return not sub
+    p0 = pat[0]
+    head, dot, rest = p0.partition(".")
+    var = head[:1] == "_" and head[1:].isdigit()
+    if var and dot:
+        if not sub or not sub[0].endswith("." + rest):
+            return False
+        val = (sub[0][:-(len(rest) + 1)],)
+        if env.get(head, val) != val:
+            return False
+        return matches(pat[1:], sub[1:], dict(env, **{head: val}), budget)
+    if var and head in env:
+        v = env[head]
+        return tuple(sub[:len(v)]) == v and matches(pat[1:], sub[len(v):], env, budget)
+    if var or p0 == "_":
+        for k in range(1, len(sub) + 1):
+            v = tuple(sub[:k])
+            if not _balanced(v):
+                continue
+            if matches(pat[1:], sub[k:], dict(env, **{head: v}) if var else env, budget):
+                return True
+        return False
+    if sub and sub[0] == "_":
+        # A proof hole in the VALUE answers any one balanced run of the rule.
+        for k in range(1, len(pat) + 1):
+            if _balanced(pat[:k]) and matches(pat[k:], sub[1:], env, budget):
+                return True
+        return False
+    return bool(sub) and sub[0] == p0 and matches(pat[1:], sub[1:], env, budget)
+
+
+class Undecided(Exception):
+    """The instance test ran out of its step budget -- reported, never passed."""
+
+
+def _balanced(seq):
+    """One term: brackets balanced, no comma at its own depth, and not
+    beginning with a separator."""
+    depth = 0
+    for t in seq:
+        if t in OPENERS:
+            depth += 1
+        elif t in CLOSERS:
+            depth -= 1
+            if depth < 0:
+                return False
+        elif t == "," and depth == 0:
+            return False
+    return depth == 0 and tuple(seq[:1]) not in ((":",), ("=",), ("|",))
+
+
+def match_toks(d):
+    """`d`'s body for the instance test: parameters numbered, proofs holed,
+    every literal AS WRITTEN (N1 blanks a string; this must not)."""
+    index = {p: k + 1 for k, p in reversed(list(enumerate(d.params)))}
+    out = []
+    for kind, t in erase_proofs(d.bodytoks):
+        if kind == "PRF":
+            out.append("_")
+        elif kind == "ID" and not t.startswith(".") and t.partition(".")[0] in index:
+            head, dot, rest = t.partition(".")
+            out.append("_%d" % index[head] + (dot + rest if dot else ""))
+        else:
+            out.append(t)
+    return out
+
+
+def respells(rule, value):
+    """W3 (W-34 track A, README gap 2577): is `value`'s body `rule`'s with
+    every parameter bound to a closed term -- a fixture that could have been
+    written `rule a b ..`?  True, False, or None when undecided."""
+    try:
+        return matches(match_toks(rule), match_toks(value), {}, [200000])
+    except (Undecided, RecursionError):
+        return None
 
 
 def read_verdicts(path, text=None):
@@ -920,22 +1296,26 @@ def main(argv):
     texts = {p: pathlib.Path(p).read_text() for p in files}
     codes = {p: leanfiles.strip_comments(texts[p]) for p in files}
     ctors = constructor_sets([codes[p] for p in files])
+    everything = []
     for p in files:
-        pairs, _leftover = leanfiles.qualified_names(p, "def", code=codes[p])
-        table = {}
-        for written, full in pairs:
-            table.setdefault(written, full)
-        _QUALIFIED[str(p)] = table
+        fulls = qualify_all(p, codes[p], [m.group(1) for m in DEF.finditer(codes[p])])
+        everything.extend(bodies(p, texts[p], codes[p], fulls))
+        TYPES.update(f for _w, f in leanfiles.qualified_names(p, "inductive", code=codes[p])[0])
+    # The library's own declaration of a name wins over a package-root file's
+    # (`Negative.lean` and `Goals.lean` are swept and never compiled): name
+    # resolution is about the code the export runs.
+    for d in sorted(everything, key=lambda d: "/TmKernel/TmKernel/" not in str(d.path)):
+        DEFS.setdefault(d.full, d)
     exact, gen, unsplit = collections.defaultdict(list), collections.defaultdict(list), []
-    for p in files:
-        for d in bodies(p, texts[p], codes[p]):
-            if d.body is None:
-                unsplit.append((p, d.name))
-            elif d.body:
-                exact[(d.sig, d.body, d.lits)].append(d)
-                k = gen_key(d, ctors)
-                if k is not None:
-                    gen[k].append(d)
+    onehole = 0
+    for d in everything:
+        if d.body is None:
+            unsplit.append((d.path, d.name))
+        elif d.body:
+            exact[(d.sig, d.body, d.lits)].append(d)
+            k = gen_key(d, ctors)
+            onehole += normalise(d.bodytoks, d.params, False, ctors) == ONE_HOLE
+            gen[k].append(d)
     twins = {k: v for k, v in exact.items() if len(v) > 1}
     answered, bad = collections.Counter(), []
     for key in sorted(twins, key=lambda k: (-len(twins[k]), str(k))):
@@ -961,10 +1341,31 @@ def main(argv):
         g = gen[key]
         if len(g) < 2 or len({(d.sig, d.body, d.lits) for d in g}) == 1:
             continue
-        names = frozenset(qualified(d.path, d.name) for d in g)
+        names = frozenset(d.full for d in g)
         rules = [d for d in g if not is_value(d.sig, d.body)]
-        verdict, alpha_group = None, False
-        if len(rules) < 2 or len({(d.sig, d.body, d.lits) for d in rules}) == 1:
+        verdict, alpha_group, why = None, False, None
+        # W3 (W-34 track A, gap 2577): E3 drops a value as a FIXTURE ROLE, and
+        # "one rule and N roles" is answered -- which is where a fixture that
+        # RE-SPELLS its rule hid: the value's body is the rule's with every
+        # parameter bound to a closed term, so it could have been written
+        # `rule a b ..`.  Asked of every value against every rule of a group
+        # E5 does not answer; a match, or a test that does not decide, goes to
+        # the sentence rung like any unanswered group.
+        respelt = []
+        if rules and not is_wrapper(key[1]):
+            for v in (d for d in g if is_value(d.sig, d.body)):
+                for r in rules:
+                    got = respells(r, v)
+                    if got is not False:
+                        respelt.append((v, r, got))
+                        break
+        if respelt:
+            why = "\n".join("    %s:%d  %s %s %s:%d  %s -- write it through its rule"
+                            % (pathlib.Path(v.path).name, v.lineno, v.full,
+                               "IS" if got else "MAY BE (undecided within the budget)",
+                               pathlib.Path(r.path).name, r.lineno, r.full)
+                            for v, r, got in respelt)
+        elif len(rules) < 2 or len({(d.sig, d.body, d.lits) for d in rules}) == 1:
             verdict = "E3 VALUE"
         else:
             buckets = collections.defaultdict(list)
@@ -975,12 +1376,12 @@ def main(argv):
                 if len({(d.sig, d.body, d.lits) for d in b}) > 1:
                     if compiled_apart(b) is None:
                         alpha_fail = True
-                        if frozenset(qualified(d.path, d.name) for d in g) not in entries:
+                        if names not in entries:
                             bad.append("ALPHA: two names for one definition once its "
                                        "parameters are renamed, and no property says why:\n%s"
                                        % "\n".join("    %s:%d  %s"
                                                     % (pathlib.Path(d.path).name, d.lineno,
-                                                       qualified(d.path, d.name)) for d in b))
+                                                       d.full) for d in b))
                     else:
                         alpha_ok = True
             if alpha_fail:
@@ -1000,7 +1401,12 @@ def main(argv):
                 verdict = "E4 WIRE-NAMED"
         if verdict is None:
             e = entries.get(names)
-            if e is None:
+            if e is None and why is not None:
+                verdict = "UNANSWERED"
+                bad.append("FIXTURE: a value that re-spells a rule of its group -- its body IS "
+                           "the rule's at closed arguments -- and no sentence answers:\n%s"
+                           % why)
+            elif e is None:
                 verdict = "UNANSWERED"
                 bad.append("GENERALISATION: one result type, one body once every literal and "
                            "parameter is a hole, and no property or sentence answers:\n"
@@ -1010,7 +1416,7 @@ def main(argv):
                            % (" ".join(key[0]) or "(no result type)", " ".join(key[1])[:100],
                               "\n".join("    %s:%d  %s  (%d params)"
                                         % (pathlib.Path(d.path).name, d.lineno,
-                                           qualified(d.path, d.name), len(d.params))
+                                           d.full, len(d.params))
                                         for d in sorted(g, key=lambda d: (d.path, d.lineno))),
                               EXEMPT_FILE.name))
             else:
@@ -1026,10 +1432,10 @@ def main(argv):
                                   if toks[i][1] == ":" and toks[i + 1][1] == "="), None)
                         head = toks[k + 2][1] if k is not None and k + 2 < len(toks) \
                             and toks[k + 2][0] == "ID" else None
-                        full = _QUALIFIED.get(str(d.path), {}).get(head, head) if head else None
+                        full = resolve(head, namespace_of(d.full), DEFS) if head else None
                         heads.append((d, head, full))
                     if all(full is not None and (full == carrier or full.endswith("." + carrier))
-                           and qualified(d.path, d.name) != full for d, _h, full in heads):
+                           and d.full != full for d, _h, full in heads):
                         verdict = "ONE CONCEPT CARRIED"
                     else:
                         bad.append("CARRIED: %s:%d says the group is CARRIED BY `%s`, and %s -- "
@@ -1055,7 +1461,7 @@ def main(argv):
                          % (verdict, " ".join(key[0]) or "(no result type)", " ".join(key[1]),
                             "\n".join("    %s:%d  %s  (%d params)"
                                       % (pathlib.Path(d.path).name, d.lineno,
-                                         qualified(d.path, d.name), len(d.params))
+                                         d.full, len(d.params))
                                       for d in sorted(g, key=lambda d: (d.path, d.lineno)))))
     for names in sorted(set(entries) - used, key=lambda k: entries[k][1]):
         bad.append("STALE: %s:%d adjudges a group the second key does not form -- delete "
@@ -1111,7 +1517,8 @@ def main(argv):
     # `abbrev`s.  11,939 functions and 1,244 globals here; 2,926 definitions
     # there.  A brief read the first as the second once.
     print("%d file(s) swept, %d def bodies (%d unsplit), %d group(s) of two or "
-          "more names (%d compiled, %d value), %d UNANSWERED; second key: %d "
+          "more names (%d compiled, %d value), %d UNANSWERED; second key over all "
+          "%d bodies (%d of them one hole, keyed by their constructor): %d "
           "generalisation group(s) (%d value, %d wrapper, %d wire-named, %d compiled, "
           "%d adjudged: %d one concept owed, %d carried, %d not one), %d UNANSWERED; "
           "%d of %d emitted "
@@ -1119,6 +1526,7 @@ def main(argv):
           % (len(files), sum(len(v) for v in exact.values()), len(unsplit),
              len(twins), answered["E2"], answered["E3"],
              sum(1 for b in bad if b.startswith(("TWIN", "UNSPLIT"))),
+             sum(len(v) for v in gen.values()), onehole,
              sum(gen_answered.values()), gen_answered["E3 VALUE"], gen_answered["E5 WRAPPER"],
              gen_answered["E4 WIRE-NAMED"], gen_answered["E2 COMPILED"],
              gen_answered["ONE CONCEPT"] + gen_answered["ONE CONCEPT CARRIED"]

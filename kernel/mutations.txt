@@ -83,6 +83,16 @@
 #
 # A <constants> field is ONE WHITESPACE-FREE FIELD: an arrow-typed constant is written
 # `fun__=>true` in this file and applied as `fun _ _ => true` in the source.
+#
+# THE REASON COLUMN OF A PINNED ROW SAYS WHAT THE SECOND PASS FOUND, since W-34 track A
+# (README gap 2578): `<site> (its statement, decided false)` -- Lean's `decide`, the whole of
+# that theorem's proof, proved its statement false at the constant; `<site> also <site>` -- a
+# second declaration failed in the same build; `<site> then <site>` -- one failed once the
+# first theorem's proof was `sorry`; `<site> (its statement)`; or `(no second pass: ...)`
+# with the reason.  A row with none of the five was
+# written before the pass existed: it names its first error alone, and `mutate.py --gate`
+# counts it on every run.  A constant whose rebuild SUCCEEDED with that proof sorried is
+# ALONE, which fails the gate and is never written here.
 
 baseline 86c4dc6
 
@@ -191,7 +201,7 @@ ebcccca33a6d TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.restHighMin 0,1 P
 433556cf4950 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.aCapacityLost 0,1 Planner.lean:5749; Planner.lean:5749
 b9a6c9bd8c10 TmKernel/TmKernel/Planner.lean Tm.Planner.PlanReq.budgetSpentNotes default Planner.lean:5771
 231bfa683480 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oFacts unfoldable no Inhabited Look.PlanFacts
-d41489d3cf84 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+e866366dcd37 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 d6f25f44caff TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witOptionalCands default,[] PlannerWit.lean:4106 an_optional_asks_for_what_its_cap_leaves; PlannerWit.lean:4106 an_optional_asks_for_what_its_cap_leaves
 451f7cccd65c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOptionalRequest unfoldable no Inhabited PlanReq
 e579eb40790c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHighRestRequest unfoldable no Inhabited PlanReq
@@ -399,7 +409,7 @@ e9e2e7e20c79 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.batchStoreWitness d
 afaae3e85ea1 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.pCandSmall unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 dc53df2c64d5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.thePayingBatchRequest unfoldable no Inhabited PlanReq
 c4ca86b72097 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theSkippedBatchRequest unfoldable no Inhabited PlanReq
-5ecc7d45ba0c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oneCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+060e9e7b1a95 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.oneCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 e6435ef522e3 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 83a86239826c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.bCandCap unfoldable no Inhabited (Look.Cand × Option Look.Floor)
 bc65c85c7a9e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witAtomicCands default,[] PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic; PlannerWit.lean:2435 the_split_cuts_a_batch_on_atomic
@@ -425,3 +435,7 @@ c63dbdf9c3d6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.impFloorCands defau
 79748173426a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.overlapWallPlan unfoldable no Inhabited WfPlan
 d34d702a517e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.overlapWallInput unfoldable no Inhabited Look.Input
 36585086192f TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOverlapRequest unfoldable no Inhabited PlanReq
+c2d78f49849a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.gCand unfoldable no Inhabited (Look.Cand × Option Look.Floor)
+619c774c8843 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.rootedCands default,[] PlannerWit.lean:1797 the_rooted_requests_answers_tie_on_p (its statement, decided false); PlannerWit.lean:1797 the_rooted_requests_answers_tie_on_p (its statement, decided false)
+cd64a2d91339 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witCandsSwapped default,[] PlannerWit.lean:1164 the_request_order_breaks_a_tie (its statement, decided false); PlannerWit.lean:1164 the_request_order_breaks_a_tie (its statement, decided false)
+33409dd8cfd7 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.witCands default,[] PlannerWit.lean:1066 the_ranking_requests_answers_are_stage_fives (its statement, decided false); PlannerWit.lean:1066 the_ranking_requests_answers_are_stage_fives (its statement, decided false)
