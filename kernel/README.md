@@ -67461,3 +67461,336 @@ corpus re-blessed, no memory bound raised, no external dependency, no `sorry` ou
 no new axiom; `dayPlan` is still total; `hnoimp`, `impossibleKept` and `setEstE` untouched.  Three
 exemption files are NEW (`kernel-decide-exempt.txt`, `inputs-exempt.txt`) or reasoned anew
 (`reach-exempt.txt`'s class line, text only): each grandfathers a measured set and may only shrink.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-35**, **TRACK K**, on
+     branch `w35-k` from `fe49a8b`.  Gap range **2800-2839**; parity `P45`, `P46`,
+     `P47` pre-allocated to this track (D57's three, in that order).  Whoever
+     merges renumbers (AGENTS §6.4).
+     ===================================================================== -->
+
+## Stage 6 — W-35, track K: D55 (an impossible item is owed what ITS OWN GRANT holds) and D57 (§9's break, overtime and wall rows)
+
+### 1. D55 — the checker reads the grant, and what that does and does not buy
+
+**The restatement, in place** (`PlanCheck.lean`, line-neutral above check 9's last pin).
+`PlanCheck.owedByItsGrant r i` is `false` exactly when the request's answers name `i` impossible and
+every such answer's grant (or floor — `Look.FloorOut.view`'s availability) holds nothing
+(`PlanCheck.owedByItsGrant_eq_false_iff`); `PlanCheck.impossibleKept` now reads *an eligible
+impossible item its grant owes is assigned*, and `PlanCheck.subjectOf`'s `.impossible` arm reads the
+same predicate, so the census and the check range over one set.  An id the answers do NOT name
+impossible stays owed: a planted `Diagnostics.impossible` row with no grant evidence is held to the
+pre-D55 rule, which is why `PlannerWit.the_battery_bites_over_a_produced_day` (W-15's planted
+`theSilentlyDroppedDay`) still bites unchanged.  `PlanCheck.impossibleKept_iff_the_owed_items_are_assigned`
+is D55's case as a law: a dropped impossible item whose grant holds nothing costs the check nothing.
+
+**The check still bites** — on a planted drop of an item its grant owes
+(`PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item`, through
+`PlanCheck.impossibleKept_can_fail`, which now carries `howed`) and on a real produced day (§3 below).
+**`theTwoImpossibleRequest` now passes it**: `^t1`'s grant is `(avail 0, reserved 0)`, so it is owed
+nothing, `^t3` (owed 240 minutes) holds all four slots, and all eleven checks are `true`
+(`PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits`, restated in place).
+
+### 2. `hnoimp` CANNOT come off the five lifts — D55's row says it would (gap 2800)
+
+Measured, not argued.  A day whose budget is SPENT assigns nothing (§8.2 step 5's `while
+blocks_assigned < remaining_budget`), and §7.3's day-0 capacity never reads the budget
+(`Look.Today.storedBudget`'s own comment: *"day 0's capacity never reads the budget, and the planner
+does"*) — so an impossible item on that day is OWED today's capacity by its grant and cannot be
+assigned.  `PlannerWit.theUnassignedImpossibleRequest` is that day (the quiet census Wednesday,
+stored budget 0, one candidate `^m2`, `ci:2`, due today, 100 000 minutes: grant `(240, 240)` minutes
+over `capDen`, shortfall 129 760), and `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
+computes the check `false` there with every hypothesis of the lifts true.  So the four
+`…_as_W_19/W_20_wrote_it_is_refuted` theorems keep refuting the hypothesis-free lifts UNDER D55'S OWN
+READING, and `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`'s
+hypothesis still names a case that happens (`PlannerWit.the_census_reaches_eight_on_an_unassigned_day`,
+re-aimed below).
+
+What the lifts carry now is the WEAKER hypothesis D55 makes possible — *no eligible impossible item
+its grant owes* (`hnoimp : ∀ p ∈ …, eligibleSomewhere … = true → owedByItsGrant r p.1 = false`;
+the census lift's `subjectOf … = false` spells the same thing through the restated arm).  The old
+hypothesis implies the new one, so each lift covers every request it covered and more:
+`PlannerWit.an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes` is W-33's own
+refuting request (`^m1`, grant `avail 0`), which the lifts now cover and the check now passes.
+
+**Gap 2800.**  1. *What.*  D55's "`hnoimp` comes OFF all five lifts" is not done; the lifts carry the
+weaker `hnoimp` above.  2. *Why.*  It is false: the spent-budget day above satisfies every other
+hypothesis and fails the conclusion.  The grant is a CAPACITY reading and the budget is not in it.
+3. *Cost.*  Five lifts keep a hypothesis naming a case that happens on an ordinary day (six blocks
+done).  4. *Clears it.*  The owner: read "availability" net of the remaining budget on day 0 (a §7.3
+change, and a parity number against the fork's `DayCapacity::from_slots`), or accept the drop on a
+spent day as correct and restate §8.3's "impossible never dropped" as "never dropped while the day
+can still spend" — either makes the lifts provable without `hnoimp`.
+
+### 3. The restated check is STILL REFUTED on a paying day — gap 2801
+
+`PlannerWit.theReversedTwoImpossibleRequest` is `theTwoImpossibleRequest` with the due dates the
+other way round: `^t3` (first in §7.4's key, by line order) due TOMORROW, `^t1` due TODAY.  §7.3
+serves by DUE DATE, so `^t1` is granted today's 240 minutes and `^t3` tomorrow's 360; §8.2 step 5
+walks today's slots in KEY order and `^t3` takes all four.  `^t1`, owed today's capacity, is
+eligible at `slotFitRows` and dropped: `impossibleKept slotFitRows … = false` on a paying,
+`candsAgree` day (`PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes`).
+`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` is MOVED to the W-35
+block and re-proved there, same name and statement (W-33 proved it at `theTwoImpossibleRequest`,
+which now passes).
+
+**Gap 2801.**  1. *What.*  D55's reading is not a law of `dayPlan`: step 5 never reads the grant.
+2. *Why.*  §7.3 orders by due date and §7.4's key by `(p, root line, own line)`; all impossible items
+are `p = 0`, so among them the key is line order.  3. *Cost.*  `impossibleKept` is still one of the
+eleven no lift can discharge at a faithful eligibility.  4. *Clears it.*  The owner: should §7.4's key
+break `p = 0` ties among impossible items by due date (a planner change and a parity number), or is
+this drop correct too?
+
+### 4. What each W-33/W-34 refutation refutes now, and what was re-aimed in place (gap 2804)
+
+Section 30 of `PlannerWit.lean` was written against the pre-D55 check, and its witnesses were
+re-aimed LINE FOR LINE (no check-9 pin moved; `mutate.stale_sites` 0 stale before and after), which
+touches existing text the brief said to leave: the alternative was a file whose theorems were false.
+
+| theorem | before (W-33) | after (W-35) |
+|---|---|---|
+| `PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted` | refuted the "always true" form at `theImpossibleRequest` | same statement, re-proved at the spent day (§2): `theImpossibleRequest` passes under D55 |
+| `PlannerWit.impossible_has_no_subject_is_refuted`, `…_from_now_is_refuted` | at `theImpossibleRequest` | same, at the spent day, through `PlanCheck.impossibleKept_of_no_subject` |
+| the two `…_as_W_20/W_19_wrote_it_is_refuted` over `theUnassignedImpossibleRequest` | an eligible impossible item dropped | proofs unchanged; the REQUEST was re-aimed (§2), so they now refute the lifts without ANY `hnoimp` under D55's reading |
+| the two `…_given_hot_…/…given_the_two_comparisons…_is_refuted` over `theQuietImpossibleRequest` | as above | proofs unchanged; request re-aimed (the quiet Wednesday, budget spent, `^m2` owed 240 minutes) |
+| `PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted` | eight at the census Wednesday with `^m1` (grant empty) | proof unchanged; `theCensusRequestWithAnImpossibleCandidate`'s `^m1` is due in two days (grant 306 minutes of later level-5 capacity), still eight |
+| `PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` | at `theTwoImpossibleRequest` | moved and re-proved at the reversed day (§3) |
+| the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved | the check fails at `theImpossibleRequest` | REFUTED by D55 and renamed `PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved` (the new statement is the old one's negation, conjunct by conjunct) |
+
+Two `PlanCheck` laws had no owed clause and are false under D55 — refuted and renamed (gap 2802):
+`PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned`
+(refutation `PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted`)
+and `PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`
+(refutation `PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`).
+Their W-33 spellings stand in W-33's append-only table, allow-listed in `citations-allow.txt`
+section 3 at count 1 each.  **Gap 2803**: `reach-exempt.txt` GREW by one dated section
+(`Tm.PlanCheck.owedByItsGrant`, EXEMPT 1262 → 1263) — a proof-only predicate of the battery, which
+the module's own section says is unreachable by construction; the section names its EXIT.  D51 asks
+the file to shrink; one definition added for one owner decision is recorded here rather than hidden.
+
+
+### 5. D55's acceptance, measured before its commit
+
+`check.sh`, capped: **14 of 14 ok** — build; totality; axiom audit **5487** theorems; `Negative.lean`
+rejected; FFI **93**; corpus **29/37** files and **4/5** plans; stage goals **6**; prose citations
+44257 (0 unused allow entries); new definitions mutated **351 rostered, 0 owed** (this step's run:
+9 definitions, 4 PINNED — `PlanCheck.owedByItsGrant`, `PlanCheck.impossibleKept`, `PlanCheck.subjectOf`,
+`PlannerWit.reversedImpossibleCands` — and 5 UNFOLDABLE witness fixtures, `mutate.py --write`,
+40 min 36 s at 16G); parity **P1-P44, next free P45**; twins 0 unanswered; reach 1263 exempt;
+fields 12 of 12; inputs 28 read, 5 exempt; replay 86.  `cargo test --workspace`, capped, **three
+runs: 1,483 passed / 0 failed / 9 ignored across 87 result lines, each** — a first third run stopped
+at `cli_latency`'s three-year test (`tm drop ^z15` still running after 1 s, every T11 row 1.4-2.7×
+its baseline, load average 14.6 from two other tracks' mutation runs: gap 1333's class) and was
+re-run `--no-fail-fast`.  The named suites: T5 33, door 23, `cli_switch_acceptance` 16,
+`kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+`kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_invariants` 12 — all green;
+`cli_latency --include-ignored` 5 of 6 under the same load (the same test, gap 1333).  D55 moves no
+emitted definition the binary reaches (`PlanCheck` is proof-only), so no shipped answer moves.
+
+### 6. D57 — §9's break, overtime and wall rows, fixed in the kernel before R3
+
+Three behaviours the fork gets wrong, each changed in `Planner.lean` and each a registered
+divergence from fork 4748911 with its canonical issuance line below.  Each reaches the day the
+kernel answers: `Planner.breakRows`, `Planner.PlanReq.pauseRows`, `Planner.blockedByWalls`,
+`Planner.PlanReq.interrupted`, `Planner.PlanReq.activeStop`, `Planner.PlanReq.activeRun`,
+`Planner.PlanReq.openStop`, `Planner.PlanReq.restsToday` and `Planner.stepOneSegs` are all in
+`Planner.dayPlan`'s emitted call graph (check 12), and check 13's input half now finds
+`RuntimeIn.brk` READ — its `inputs-exempt.txt` line is deleted, the file shrank 5 → 4 fields.
+
+**Parity P45 taken**: §9's running break — `state.break` is a Break row from where the break started to its planned end (or to `now`, open, once it has overrun), carrying its place; its span joins the blocked list so nothing §8.2 places lies over it, it is a rest to the cut (so the next block starts where it ends — at `now` once overrun), and it pauses the running block (no reservation, no `▶`, the worked stretch stops at its start); fork `planner::plan` reads no `runtime.break_` and plans over it (W-35 track K, owner D57 (1), README gap 2740)
+
+**Parity P46 taken**: §8.2 choice 5b in OVERTIME — the kernel keeps the running block reserved to the end of the block it is in (the free stretch's end or `current_block_end`), marked `▶`, its note `running · 0m left` (the fork's own saturating `left`), so the running block is the row covering `now`; fork `active_run` refuses once `est_min − worked` is zero and `now_window` names the next item current (W-35 track K, owner D57 (2), README gap 2740)
+
+**Parity P47 taken**: a wall on `now` pauses the running block — `interrupted` reads the rows of every wall whose blocked span covers `now`, so the open row carries no `▶`, and the worked stretch the log holds open is clipped at the start of such a wall's rows when they began after its last resume; fork `open_block_segment` clips only at an ad-hoc interruption and draws the stretch across the meeting, marked `▶` (W-35 track K, owner D57 (3) — the campaign's reading of §9's Interruption row, revisable, README gap 2740)
+
+| | case | this branch | fork `4748911` | why | where |
+|---|---|---|---|---|---|
+| **P45** | `state.break` running | a Break row `[max(t, day start), max(min(t + planned, day end), now))`, open once overrun, note `breakWhere <place>`; blocked; a rest to the cut; pauses the block | no row; the day is planned over the break | spec §9 treats a Break as RUNNING (§9.2's idle prompt; *"Break overran → next block starts now"*), D57 (1) | `PlannerWit.the_running_break_is_drawn_and_nothing_is_scheduled_over_it`, `PlannerWit.an_overrun_break_is_open_and_the_next_block_starts_now`; generated days in `planner_invariants`' W-35 arm |
+| **P46** | the running block with `worked ≥ est_min` | reserved `[now, min(free stretch end, block end))`, `▶`, `running · 0m left` | no reservation; step 5 places the next item at `now` | §8.2 choice 5b reserves the running block; step 5: *"no preemption mid-block"*, D57 (2) | `PlannerWit.in_overtime_the_running_block_stays_current`; the W-35 arm, and every earlier arm through its comparand |
+| **P47** | a wall whose blocked span covers `now` while the log holds a block open | the stretch stops at the wall's first row start after its last resume, no `▶`; nothing is current | the stretch runs to `now` across the wall, `▶` | §9's Interruption row, *"ad-hoc Wall … Active block paused"* — the nearest rule; a campaign call, D57 (3) | `PlannerWit.a_wall_on_now_pauses_the_running_block`; the W-35 arm |
+
+#### What moved, definition by definition (every edit above check 9's last pin is line-neutral)
+
+- `Planner.BreakPlace.word` (new): the four serde words, `PlanWire.placeOf?`'s inverse
+  (`PlanWire.placeOf_reads_the_word`).
+- `Planner.breakRows` (new): the running break's row.  Its laws close the module:
+  `Planner.breakRows_are_running_breaks`, `Planner.a_running_break_is_blocked`,
+  `Planner.a_running_break_pauses_the_block`, `Planner.breakRows_are_not_work`.
+- `Planner.blockedByWalls`: walls, the running interruption AND the running break.
+- `Planner.PlanReq.pauseRows` (new) and `Planner.PlanReq.interrupted`: what pauses the block — the
+  interruption (the fork's one), the running break, and the rows of a wall on `now`
+  (`Planner.a_wall_on_now_pauses_the_block`).  The fork already refused to reserve under a wall on
+  `now` (`free_from > now`); what moves is the open row's `▶`.
+- `Planner.PlanReq.activeStop` and `Planner.PlanReq.activeRun`: overtime is no longer a refusal;
+  the run ends at the free stretch's end or the block boundary (`Planner.PlanReq.activeStop_in_overtime`,
+  and `Planner.PlanReq.activeStop_before_overtime` for the fork's rule, unchanged).  The
+  reservation's `leftMin` stays the fork's `left`, which is 0 in overtime — the header's "20m of
+  15m" and the row's `running · 0m left` say one thing.
+- `Planner.PlanReq.openStop`: clips at whatever pauses the block
+  (`Planner.the_open_row_stops_where_the_running_break_starts`,
+  `Planner.the_open_row_stops_where_a_wall_on_now_starts`,
+  `Planner.the_open_row_is_not_current_under_a_wall_on_now`).
+- `Planner.PlanReq.restsToday`: the running break is a rest, so an overrun break resets the cut's
+  break counter and the next block starts at `now` — without it the cut placed a second break at
+  `now` after a forty-minute one, because `Planner.PlanReq.sinceBreak` counts the LOG's breaks.
+- `Planner.stepOneSegs`: the running break's row joins step 1's rows.
+- **Relocated, verbatim**: `Planner.mkActive?_accepts`, `Planner.PlanReq.activeAgrees_of_none`
+  and `Planner.PlanReq.activeAgrees_of_mkActive?` (nothing in the package cites them) moved from
+  above the first check-9 pin to the end of the module — 21 lines, which pay for `BreakPlace.word`,
+  `breakRows` and `pauseRows` above it (gap 2136's constraint).  Measured: of the 34 distinct
+  `Planner.lean` pin sites and the 28 in `PlanCheck.lean`, the seven lines around each are
+  identical before and after except at 2263, 6225 and 6281, whose rows (`activeRun`, `openStop`)
+  were re-run because their definitions changed.
+
+#### Laws restated (D5: re-proved, never downgraded)
+
+| law | old | new | new ⇒ old? |
+|---|---|---|---|
+| `Planner.a_break_row_is_replayed_or_the_running_break` | a_break_row_is_a_replayed_row: every Break row of the day is a replayed row | a Break row is a replayed row OR the running break's row | no — the old form is FALSE on a break day (`PlannerWit.a_break_row_is_a_replayed_row_is_refuted`); the new one is the old one plus the running break |
+| `PlanCheck.a_block_row_from_now_clears_a_break_row` | any WfSeg `b` with `now ≤ b.start` clears every Break row | a Block row OF THE DAY (`hb`, `hbk`) from `now` clears every Break row, given `hnowcal` | no — the old form is FALSE (`PlannerWit.a_block_row_from_now_clears_a_break_row_as_W_30_wrote_it_is_refuted`: a segment `[14:00, 14:30)` meets the walk); on a day with no running break the two agree |
+| `PlanCheck.PastPays.offWall` (a hypothesis of the paying-past lifts) | replayed Blocks clear the walls' and the interruption's spans | …and the running break's, since `blockedByWalls` holds it | the hypothesis is STRONGER, so each lift covers fewer requests — and it has to: a closed replayed Block over the running break makes `noBlockOverABreak` false with the old hypothesis true.  On every request with no running break the two hypotheses are the same |
+| `PlanCheck.plan_places_no_block_over_a_break`, `PlanCheck.noBlockOverABreak_of_a_logless_day`, the budget lift's `h5` and the paying-past lift's `h5` | proved through the old lemma | statements unchanged; re-proved through the new one (the running break is cleared by the Block row's own source) | same statements |
+
+No lift gained a hypothesis that excludes a running block or a running break: the break check
+covers the running break on every request where the lifts held before (`PastPays` aside, above),
+and the overtime reservation is covered by `Planner.plan_reserves_one_block_at_a_time` and
+`Planner.PlanReq.the_reservation_is_at_most_one_block`, whose statements did not change.
+
+#### Behaviour rows — what the user sees at R3, when `tm plan` reads the kernel's day
+
+1. **A running `tm break` is drawn**: a Break row at its place, and nothing scheduled over it;
+   the next block starts where the break is planned to end, or at `now` once it has overrun.
+   Today (fork) `tm plan` draws no break and can place work inside it.
+2. **In overtime the running block stays `▶`**, reserved to the end of the block it is in, its note
+   `running · 0m left`; today the fork names the next item current.
+3. **Under a wall on `now` the running block's stretch stops at the wall and loses its `▶`**; today
+   it is drawn across the meeting and marked current.
+4. **Nothing else moves**: on a day with no running break, no overtime and no wall on `now`, every
+   earlier arm of `planner_invariants` still compares the kernel's day with the fork's, unchanged.
+
+### 7. Composed and compared: the rows reach the emitted C, and the fork disagrees by design
+
+**Emitted.**  `Planner.breakRows`, `Planner.PlanReq.pauseRows` and `Planner.BreakPlace.word` are three
+new emitted definitions of `Planner.lean`, each reached only through the declared unsent `planner`
+section (check 12 answers them by that property, and its `## Planner.lean` census line in
+`reach-exempt.txt` is corrected 260 → 263 rather than joined); in the emitted C, `breakRows` is called
+from `stepOneSegs`, `blockedByWalls`, `pauseRows` and `restsToday` (read off `.lake/build/ir/TmKernel/Planner.c`: the C symbol of `breakRows` is called from those of `stepOneSegs`, `blockedByWalls`, `PlanReq.pauseRows` and `PlanReq.restsToday`; that of `pauseRows` from `PlanReq.interrupted` and `PlanReq.openStop`; that of `BreakPlace.word` from `breakRows`).
+
+**Compared.**  `tm/tests/planner_invariants.rs` gains one block at its end — the W-35 arm
+`the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause` and the perturbation test
+`the_break_checker_fails_on_a_perturbed_answer` — and the fork now disagrees BY DESIGN on three
+classes of day, so the arm states the kernel's rule once, as a comparand (`w35_fork_plan`): the fork
+as the shipped binary runs it (D53, kernel-ranked) with P46 applied by its property (the running
+block in overtime and reserved: the comparand's estimate is raised until the fork reserves the same
+span, and the row carries the fork's own `left`, 0) and P47 by its property (a wall whose blocked span
+covers `now`: every open row loses `▶` and is clipped at that wall's first row start after its own).
+On every other day the comparand IS `planner::plan`.  P45 has no fork analogue (the fork reads no
+`runtime.break_`), so the arm asserts P45's rule directly — one Break row, its span, `open` exactly
+when overrun, its place, and no row §8.2 places from `now` inside it — and COUNTS the shipped fork's
+disagreement.  Floors: every class drawn, and each disagreement seen at least once.
+
+Measured over two capped runs of the whole file at 256 cases (the W-35 arm replays the file's
+persisted seeds too, so 277): the arm drew **61 / 67** P45 break days (running 32 / 26, overrun
+29 / 41; the shipped fork scheduled over the break on 16 / 12), **1 / 5** P46 overtime days (the
+shipped fork reserved nothing on every one), **33 / 34** P47 wall-on-now days (the shipped fork drew
+the open row across the wall or marked it current on 21 / 27), and compared **516 / 521** assigned
+rows with the comparand; 0 cases without a kernel §7 answer.  The earlier arms reach the three
+classes far more often: over every arm that calls the comparand, the second run counted **925**
+comparand days, **P46 applied on 14** and **P47 on 108** (a snapshot taken when the W-35 arm
+finished; the arms run in parallel).  **The perturbation fails**: `the_break_checker_fails_on_a_perturbed_answer`
+feeds the P45 checker the kernel's own answer with the Break row removed, a minute longer, and a
+Rest row slid under it, and each is refused; and for P46/P47 the perturbation is the fork itself —
+the file as it stood, comparing against `planner::plan`, fails below.
+
+**Brief correction — the earlier arms had to change.**  The brief said to append one block and touch
+nothing else in the file.  Measured: run unmodified against the D57 kernel, the file fails
+(3 of its 12 tests: `the_kernel_plans_the_day_the_fork_plans`, `the_kernel_draws_the_open_block_and_answers_the_overtime_what_if_the_fork_answers` and `the_kernel_hashes_the_day_the_fork_hashes`, shrunk to two overtime days and one wall-on-now day; the three seeds are KEPT in `tm/tests/planner_invariants.proptest-regressions` under D46 and pass against the comparand, as does a fourth — the W-35 arm's own first failure, a break started a minute before a wall on `now`, where the TEST's comparand had not modelled P45's pause and the kernel was right), because arms 3, 5 and 6 compare the kernel's day with the fork's and P46/P47
+days are generated there (an active block with `ago ≥ est`, a wall at 8-17 h over a `now` at 7:00-
+16:00).  Narrowing those arms to skip the three classes would weaken the generator; so the four
+`planner::plan` calls that feed their assertions — arm 3's `day2`, arm 5's `base` and two what-ifs,
+arm 6's `day2` — now call the comparand, which is `planner::plan` itself off the three classes.  No
+assertion, floor or generator changed; the edited lines are listed in this block's commit.
+
+### 8. Gaps recorded (2805-2808), and gap 2740 closed
+
+**Gap 2805 — P47 is a state at `now`, and the log records no pause.**
+1. *What.*  A wall on `now` pauses the running block (P47), but once the wall has ended the log still
+   holds the block open since before it, and a replan draws the stretch across the meeting again
+   (`PlannerWit.the_open_day_is_the_worked_stretch_the_wall_and_the_reservation` at 14:00 is that day).
+2. *Why.*  The campaign's reading of §9's Interruption row is a STATE — what pauses the block at
+   `now` — because the log is the only record of the past and it holds no pause at the wall's start.
+3. *Cost.*  The drawn history of a block that ran into a meeting changes when the meeting ends; no
+   law of §8.3 is broken (the stretch ends at `now` either way), but the rows are not stable in the
+   sense a user reads them.
+4. *Clears it.*  The owner, D57 (3) being revisable: the host logs a pause at a wall's start (a §9
+   prompt), or the kernel clips at every wall between the last resume and `now` (a different
+   reading, which would also clip work the user chose to do through a meeting).
+
+**Gap 2806 — the three rows reach the user only at R3, and `tm now` was not driven.**
+1. *What.*  The shipped binary still plans with fork `planner::plan`, so `tm plan`, `tm now` and the
+   TUI show none of P45-P47 until R3 switches them to the kernel's day; this step drove no CLI.
+2. *Why.*  D57's own terms: the fixes land in the kernel first and ship with R3's body swap.
+3. *Cost.*  Gap 2740's user-visible symptoms stand until R3; `tm now`'s header ("nothing running"
+   under a break, "20m of 15m" in overtime) is the host's own reading and was not re-checked here.
+4. *Clears it.*  R3, with the behaviour rows of §6 as its drive list (§5.13).
+
+**Gap 2807 — gap 2738 was not taken.**
+1. *What.*  The brief's optional fourth item: 22 whole-day lifts still exclude every running-block
+   day through `hnopast` over `replayedRows` and keep their names.
+2. *Why.*  D55 and D57 took the run; a rename of 22 theorems with a citation sweep, or proving the
+   running-block day in, is its own step.
+3. *Cost.*  Unchanged from gap 2738.
+4. *Clears it.*  As gap 2738 says.
+
+**Gap 2808 — check 9 cannot record a pin site whose theorem name carries `?` or `!`.**
+1. *What.*  `mutate.py`'s `NAMED_SITE` reads a declaration name as `[A-Za-z_][A-Za-z0-9_.']*`, so
+   the pin `PlanWire.lean:1840 placeOf?_word` was recorded and then read back as a declaration named placeOf, and every
+   later `mutate.py` run — `--gate` included — refused the tree as holding a drifted row.
+2. *Why.*  Lean names may carry `?` and `!`; 206 of this package's 5,500 theorem declarations do
+   (`leanfiles.py --theorems`), none of them a pin site until this step.
+3. *Cost.*  Such a theorem cannot pin a mutation by name; this step RENAMED its own theorem to
+   `PlanWire.placeOf_reads_the_word` rather than touch the gate, which is the list-shaped answer.
+4. *Clears it.*  One character class in `NAMED_SITE`, with a plant showing the old class failing —
+   the gate owner's change, not a track's.
+
+**Gap 2740 — CLOSED by D57** (§6): the running break is a Break row nothing is scheduled over (P45),
+the running block stays the current row in overtime (P46), and a wall on `now` pauses it (P47) — in
+the kernel; the user sees them at R3 (gap 2806).  **Gap 2734's `RuntimeIn.brk` half is closed with
+it**: the field is read by the day and its `inputs-exempt.txt` line is deleted (5 → 4).
+
+
+### 9. D57's acceptance, measured before its commit
+
+**Check 9 — the new and changed definitions, each constant-folded** (`mutate.py --write --only`, three
+clones in parallel at 16G; the worktree was never mutated, `git status --porcelain` identical before
+and after): `Planner.BreakPlace.word`, `Planner.breakRows`, `Planner.blockedByWalls`,
+`Planner.PlanReq.pauseRows`, `Planner.PlanReq.interrupted`, `Planner.PlanReq.activeStop` (both constants
+and the identity on its stop argument), `Planner.PlanReq.activeRun`, `Planner.PlanReq.restsToday`,
+`Planner.PlanReq.openStop` and `Planner.stepOneSegs` — **all ten PINNED**, each by a law of its own
+module and, for the four whose first pin is a law, by a `PlannerWit` witness as well; the four
+`PlannerWit` requests are UNFOLDABLE witness fixtures.  The roster: 361 new or changed since
+86c4dc6, 361 rostered, **0 owed**; no pin site moved (the line-neutral edits above).  A first
+`mutate.py --gate` run was killed while building a mutant and left a two-file sidecar in the dev
+clone, restored with `mutate.restore_in_flight` before anything else ran (gap 2011's mechanism,
+working).
+
+**`check.sh`**, capped: the thirteen checks other than 9 were run on the final sources through a copy
+of the script with check 9 replaced (`check.sh`'s own check 9 RUNS the owed mutations in place, so it
+could not be run before the roster was complete) — all ok: build; totality; axiom audit **5508**
+theorems (21 new); `Negative.lean` rejected; FFI **93**; corpus **29/37** and **4/5**; stage goals
+**6**; citations 0 unresolved and 0 unused allow entries; parity **P1-P47**, next free P48; twins 0
+unanswered (90 generalisation groups); reach **1263 exempt, 0 unanswered**; fields 12 of 12;
+inputs **32 of 36 read, 4 exempt** (was 28 of 33, 5 exempt: `RuntimeIn.brk` and its record's three
+fields are read); replay 86.  **The real script, once the roster was complete: 14 of 14 ok**, the
+same figures, check 9 reading "361 new or changed, 361 rostered, 0 owed", 3 min 57 s.
+
+**`cargo test --workspace`**, capped, **four runs**: 1,485 passed / 0 failed / 9 ignored across 87
+result lines in runs 1, 2 and 4 (run 4 after a theorem rename that left `Planner.c` and `PlanWire.c`
+byte-identical, sha1 compared); run 3, with three mutation loops and two other tracks' runs on the
+machine (load average 15-19), failed `cli_latency`'s two three-year tests (`tm drop` still running
+after 5 s — gap 1333's class; nothing in D57 is on that path) and passed the other 1,483.  The named
+suites, after run 3: T5 33, door 23, `cli_switch_acceptance` 16, **`cli_latency --include-ignored` 6 of
+6**, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+`kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_invariants` **14** — all green.  The
+seeds the unmodified arms wrote (three) and the W-35 arm's first failure (one) are KEPT in
+`tm/tests/planner_invariants.proptest-regressions` (D46) and pass.

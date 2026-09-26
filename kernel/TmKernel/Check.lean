@@ -5234,7 +5234,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.mem_assignedFrom
 #print axioms Tm.Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose
 #print axioms Tm.Planner.a_wall_row_sits_in_a_blocked_span
-#print axioms Tm.Planner.a_break_row_is_a_replayed_row
+#print axioms Tm.Planner.a_break_row_is_replayed_or_the_running_break
 #print axioms Tm.Planner.a_wind_down_row_of_the_day
 #print axioms Tm.Planner.a_block_row_is_replayed_reserved_or_assigned
 #print axioms Tm.Planner.plan_reserves_one_block_at_a_time
@@ -6951,14 +6951,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.dayPlan_hot
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
-#print axioms Tm.PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned
+#print axioms Tm.PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned
 #print axioms Tm.PlanCheck.impossible_has_no_subject_of_nothing_eligible
 #print axioms Tm.PlanCheck.impossible_subject_iff
-#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible
+#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible
 #print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item
 #print axioms Tm.PlannerWit.the_day_names_no_impossible_item_is_refuted
-#print axioms Tm.PlannerWit.the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved
+#print axioms Tm.PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved
 #print axioms Tm.PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_from_now_is_refuted
@@ -7147,3 +7147,42 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.the_extension_agrees_when_the_estimate_fits_a_day
 #print axioms Tm.Planner.the_extension_disagrees_past_a_day
 #print axioms Tm.PlannerWit.planJson_of_a_planned_day_emits_the_zero_hash_is_refuted
+
+-- APPENDED 2026-09-26 (stage 6, run W-35, track K; README gaps 2800-2839): D55 -- an impossible
+-- item is owed what ITS OWN GRANT holds.  Three audit lines above were RENAMED in place with the
+-- theorems they audit; the renamed-from forms are refuted in `PlannerWit.lean`'s W-35 block.
+#print axioms Tm.PlanCheck.owedByItsGrant_eq_false_iff
+#print axioms Tm.PlanCheck.impossibleKept_iff_the_owed_items_are_assigned
+#print axioms Tm.PlannerWit.an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes
+#print axioms Tm.PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted
+#print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted
+#print axioms Tm.PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item
+#print axioms Tm.PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes
+
+/- ================================================================================
+   APPENDED 2026-09-26: W-35 track K, D57 -- the running break (P45), overtime (P46) and
+   a wall on `now` (P47).  Planner.a_break_row_is_a_replayed_row is refuted and renamed
+   in place above; PlanCheck.a_block_row_from_now_clears_a_break_row is restated under
+   its own name, its audit line unchanged.
+   ================================================================================ -/
+#print axioms Tm.Planner.breakRows_are_running_breaks
+#print axioms Tm.Planner.a_running_break_is_blocked
+#print axioms Tm.Planner.a_running_break_pauses_the_block
+#print axioms Tm.Planner.breakRows_are_not_work
+#print axioms Tm.Planner.PlanReq.the_reservation_clears_a_blocked_span
+#print axioms Tm.Planner.PlanReq.a_slot_clears_a_blocked_span
+#print axioms Tm.Planner.a_block_row_clears_the_running_break
+#print axioms Tm.Planner.a_block_row_from_now_clears_the_running_break
+#print axioms Tm.Planner.the_open_row_stops_where_the_running_break_starts
+#print axioms Tm.Planner.PlanReq.activeStop_in_overtime
+#print axioms Tm.Planner.PlanReq.activeStop_before_overtime
+#print axioms Tm.Planner.a_wall_on_now_pauses_the_block
+#print axioms Tm.Planner.the_open_row_stops_where_a_wall_on_now_starts
+#print axioms Tm.Planner.the_open_row_is_not_current_under_a_wall_on_now
+#print axioms Tm.PlanWire.placeOf_reads_the_word
+#print axioms Tm.PlannerWit.the_running_break_is_drawn_and_nothing_is_scheduled_over_it
+#print axioms Tm.PlannerWit.an_overrun_break_is_open_and_the_next_block_starts_now
+#print axioms Tm.PlannerWit.in_overtime_the_running_block_stays_current
+#print axioms Tm.PlannerWit.a_wall_on_now_pauses_the_running_block
+#print axioms Tm.PlannerWit.a_break_row_is_a_replayed_row_is_refuted
+#print axioms Tm.PlannerWit.a_block_row_from_now_clears_a_break_row_as_W_30_wrote_it_is_refuted
