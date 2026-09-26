@@ -548,6 +548,12 @@ can_fail
 # renamed with the clause.  The one citation of each is W-33's append-only README table.
 1 an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned
 1 impossible_has_a_subject_iff_an_impossible_answer_is_eligible
+# W-35 track K (owner D57, README gap 2740): the running break is a Break row no log replays, so
+# `Planner.a_break_row_is_replayed_or_the_running_break` REPLACES the old law, which
+# `PlannerWit.a_break_row_is_a_replayed_row_is_refuted` refutes.  The two live spellings are a
+# README "consumed by name" list (W-17) and `Goals.lean`'s stage-6 prose, both append-only history.
+3 a_break_row_is_a_replayed_row
+10 Planner.a_break_row_is_a_replayed_row
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

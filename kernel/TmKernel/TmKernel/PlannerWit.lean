@@ -9006,5 +9006,144 @@ theorem impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day :
   rw [hq.2.2.2.2.2.2.2] at this
   exact absurd this (by simp)
 
+/-! ############################################################################
+## W-35 (track K): D57 — §9's running break, the overtime block and a wall on `now`
+############################################################################
+
+The owner's D57 (README gap 2740) fixes three §9 behaviours in the kernel before R3, each a
+registered divergence from fork 4748911 — parity **P45** (a running break is a Break row nothing
+is scheduled over), **P46** (the running block keeps its block in overtime) and **P47** (a wall on
+`now` pauses the running block).  Each is computed here on a request the fork and the kernel
+planned alike until W-35, and each old law W-35 falsifies is refuted by name. -/
+
+/-- **The busy Wednesday at 14:00 with a walk started at 14:00, thirty minutes planned** (P45). -/
+def theBreakRequest : PlanReq :=
+  { theBusyRequest with state := { RuntimeIn.empty with
+      brk := some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 840).sec, 0⟩, 30, some .walk⟩ } }
+
+/-- **The same day with a twenty-minute sit started at 13:20** — overrun since 13:40 (P45). -/
+def theOverrunBreakRequest : PlanReq :=
+  { theBusyRequest with state := { RuntimeIn.empty with
+      brk := some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 800).sec, 0⟩, 20, some .seat⟩ } }
+
+/-- **`m1` in OVERTIME** (P46): started at 13:40 on a fifteen-minute estimate, twenty minutes
+worked by 14:00 — fork `active_run`'s `left == 0`. -/
+def theOvertimeRequest : PlanReq :=
+  { theRunningRequest with state := { RuntimeIn.empty with
+      active := some ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 820).sec, 0⟩, 15, false⟩ } }
+
+/-- **A wall on `now`** (P47): `theOpenRequest`'s day — `m1` open since 12:00 — planned at 13:30,
+inside `^g1`'s 12:50-13:50 meeting. -/
+def theWallOnNowRequest : PlanReq :=
+  { theOpenRequest with look := { theOpenRequest.look with today0 :=
+      { theOpenRequest.look.today0 with now := ⟨(Cal.instantOf Cal.chicago 739867 810).sec, 0⟩ } } }
+
+set_option maxRecDepth 400000 in
+/-- **P45, computed: the walk is a Break row, and nothing is scheduled over it.**  The walk is
+drawn 14:00-14:30, not open, with its place (`PlanWire.placeOf_reads_the_word`); its span is blocked, so
+`^c1` starts at 14:30, where the walk ends — and the walk is a rest to the cut, so no second break
+is cut there.  The same day with no break running — the fork's reading of this state, which reads
+no `runtime.break_` — starts `^c1` at 14:20, inside the walk. -/
+theorem the_running_break_is_drawn_and_nothing_is_scheduled_over_it :
+    (breakRows theBreakRequest).map (fun s => (s.start, s.stop, s.flags.isOpen, s.note))
+      = [((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 870).sec,
+          false, some (Note.breakWhere "walk".toList))] ∧
+    ((dayPlan theBreakRequest).segments.filter (fun s => decide (s.val.kind = SegKind.block) &&
+        decide (theBreakRequest.now.sec ≤ s.val.start))).map (fun s => (s.val.start, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 870).sec, some ['c','1']),
+         ((Cal.instantOf Cal.chicago 739867 930).sec, some ['c','4']),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec, some ['c','4']),
+         ((Cal.instantOf Cal.chicago 739867 1080).sec, some ['c','4'])] ∧
+    ((dayPlan theBusyRequest).segments.filter (fun s => decide (s.val.kind = SegKind.block) &&
+        decide (theBusyRequest.now.sec ≤ s.val.start))).map (fun s => (s.val.start, s.val.item))
+      = [((Cal.instantOf Cal.chicago 739867 860).sec, some ['c','1']),
+         ((Cal.instantOf Cal.chicago 739867 920).sec, some ['c','4']),
+         ((Cal.instantOf Cal.chicago 739867 1020).sec, some ['c','4']),
+         ((Cal.instantOf Cal.chicago 739867 1080).sec, some ['c','4'])] ∧
+    PlanCheck.noBlockOverABreak theBreakRequest (dayPlan theBreakRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **P45's other half: "Break overran → next block starts now."**  The sit started at 13:20 and
+overran at 13:40, so its row runs to `now`, open, and blocks nothing ahead; it is a rest to the
+cut, so `^c1` starts at 14:00 — the fork starts it at 14:20, after a break of its own cutting,
+because it counts the morning's two blocks as "since the last break". -/
+theorem an_overrun_break_is_open_and_the_next_block_starts_now :
+    (breakRows theOverrunBreakRequest).map (fun s => (s.start, s.stop, s.flags.isOpen, s.note))
+      = [((Cal.instantOf Cal.chicago 739867 800).sec, (Cal.instantOf Cal.chicago 739867 840).sec,
+          true, some (Note.breakWhere "seat".toList))] ∧
+    ((dayPlan theOverrunBreakRequest).segments.filter (fun s =>
+        decide (s.val.kind = SegKind.block) &&
+        decide (theOverrunBreakRequest.now.sec ≤ s.val.start))).head?.map (fun s => s.val.start)
+      = some (Cal.instantOf Cal.chicago 739867 840).sec := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **P46, computed: in overtime the running block stays the current row covering `now`.**  Fork
+`active_run`'s `left` is zero here (the first conjunct) and the fork reserves nothing, so its
+current row is the next item's while the header reads twenty minutes of fifteen; the kernel keeps
+`m1` reserved to 14:40, the end of the hour it is in, marked `▶`, its note `running · 0m left`. -/
+theorem in_overtime_the_running_block_stays_current :
+    theOvertimeRequest.state.active.map theOvertimeRequest.activeLeft = some 0 ∧
+    theOvertimeRequest.activeRun.map (fun q => (q.start, q.stop, q.leftMin))
+      = some ((Cal.instantOf Cal.chicago 739867 840).sec,
+              (Cal.instantOf Cal.chicago 739867 880).sec, 0) ∧
+    ((dayPlan theOvertimeRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.start, s.val.stop, s.val.item, s.val.note))
+      = [((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 880).sec,
+          some ['m','1'], some (Note.runningLeft 0))] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **P47, computed: a wall on `now` pauses the running block.**  At 13:30, inside `^g1`'s
+meeting, the worked stretch stops at 12:50 where the meeting starts, carries no `▶`, and nothing
+is reserved; nothing is current.  The fork's `interrupted` reads the ad-hoc interruption alone and
+is false here (the last conjunct), so it draws `[12:00, 13:30)` across the meeting, marked `▶`. -/
+theorem a_wall_on_now_pauses_the_running_block :
+    (openBlockRows theWallOnNowRequest).map (fun t => (t.start, t.stop, t.flags.current))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 770).sec,
+          false)] ∧
+    theWallOnNowRequest.activeRun = none ∧ theWallOnNowRequest.interrupted = true ∧
+    ((dayPlan theWallOnNowRequest).segments.filter (fun s => s.val.flags.current)) = [] ∧
+    (interruptRows theWallOnNowRequest).any
+      (fun s => decide (theWallOnNowRequest.now.sec ≤ s.stop)) = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **Planner.a_break_row_is_a_replayed_row is REFUTED by the running break** (AGENTS §3.1 item
+3): the walk is a Break row of the day and no replayed row is it.  The law is restated as
+`Planner.a_break_row_is_replayed_or_the_running_break`. -/
+theorem a_break_row_is_a_replayed_row_is_refuted :
+    ¬ ∀ (r : PlanReq) (s : WfSeg), s ∈ dayRows r → s.val.kind = SegKind.brk →
+        ∃ t ∈ pastRows r, s = Planner.segOf t := by
+  intro h
+  have hw : ∃ s ∈ dayRows theBreakRequest, s.val.kind = SegKind.brk ∧
+      ∀ t ∈ pastRows theBreakRequest, s ≠ Planner.segOf t := by decide
+  obtain ⟨s, hs, hk, hne⟩ := hw
+  obtain ⟨t, ht, e⟩ := h theBreakRequest s hs hk
+  exact hne t ht e
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.a_block_row_from_now_clears_a_break_row` as W-30 wrote it is REFUTED** — it held
+of ANY segment from `now` while every Break row ended at `now`; the walk runs past `now`, and a
+segment `[14:00, 14:30)` meets it.  The restatement carries `hb`, `hbk` and `hnowcal`: a Block row
+OF THE DAY from `now` clears the walk (`Planner.a_block_row_from_now_clears_the_running_break`). -/
+theorem a_block_row_from_now_clears_a_break_row_as_W_30_wrote_it_is_refuted :
+    ¬ ∀ (r : PlanReq) (b k : WfSeg), k ∈ (dayPlan r).segments → k.val.kind = SegKind.brk →
+        r.now.sec ≤ b.val.start → b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := by
+  intro h
+  have hk : ∃ k ∈ (dayPlan theBreakRequest).segments, k.val.kind = SegKind.brk ∧
+      k.val.start = (Cal.instantOf Cal.chicago 739867 840).sec ∧
+      k.val.stop = (Cal.instantOf Cal.chicago 739867 870).sec := by decide
+  obtain ⟨k, hk, hkk, h1, h2⟩ := hk
+  have hb := h theBreakRequest (Planner.segOf
+    { start := (Cal.instantOf Cal.chicago 739867 840).sec,
+      stop := (Cal.instantOf Cal.chicago 739867 870).sec, kind := .block, energy := none,
+      item := none, inst := none, flags := SegFlags.none, planned := none, mult := none,
+      note := none }) k hk hkk (by decide)
+  rw [h1, h2] at hb
+  revert hb
+  decide
+
 end PlannerWit
 end Tm

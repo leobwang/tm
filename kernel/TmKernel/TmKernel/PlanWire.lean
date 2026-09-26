@@ -1832,5 +1832,11 @@ minutes; `noteJson_names_the_eleven` and `noteJson_writes_every_field` pin the o
 theorem noteJson_writes_so_far (m : Nat) :
     noteJson (.soFar m) =
       .obj [("note".toList, .str "soFar".toList), ("workedMin".toList, .num m)] := rfl
+
+/-- **The running break's word is the one the request carried** (W-35, D57 (1), parity P45):
+`Planner.BreakPlace.word` is `placeOf?`'s inverse on all four places, so the note on the
+running break's row (`Planner.breakRows`) spells the `place` the host sent, byte for byte. -/
+theorem placeOf_reads_the_word (p : BreakPlace) : placeOf? p.word = some p := by
+  cases p <;> decide
 end PlanWire
 end Tm

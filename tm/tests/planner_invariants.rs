@@ -2133,7 +2133,7 @@ proptest! {
         let kprios = kernel_prios(&plan, &cvec);
         let day2 = kprios
             .as_ref()
-            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, ps)));
+            .map(|ps| w35_fork_plan(&w, &w.state, &cvec, ps, &plan));
         let routine_rows = |segs: &[Segment]| -> Vec<(i64, i64, String)> {
             segs.iter()
                 .filter(|s| matches!(s.kind, SegKind::Routine))
@@ -2887,7 +2887,7 @@ proptest! {
             W34_CENSUS.lock().expect("census")[7] += 1;
             return Ok(());
         };
-        let base = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+        let base = w35_fork_plan(&w, &w.state, &cvec, &ps, &plan);
 
         // **The open row, by value, both ways.**
         let kopen: Vec<(i64, i64, String, bool, Option<u64>)> = plan["segments"]
@@ -2923,10 +2923,14 @@ proptest! {
                 x.est_min = x.est_min.saturating_add(bm);
             }
             let ov = planner::PlanOverrides::new().extending(&a.id, bm);
-            let alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&cvec, &ps));
-            let alt_full = planner::plan(
+            // W-35 (D57): the what-if days read the kernel's P46/P47 rule as the base does.
+            let rt = w35_p46_state(&w, &rt, &plan);
+            let mut alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&cvec, &ps));
+            let mut alt_full = planner::plan(
                 &w.input(&rt, w.now).with_ranking(&cvec, &ps).with_overrides(&ov),
             );
+            w35_p47_day(&w, &mut alt_est);
+            w35_p47_day(&w, &mut alt_full);
             let f_est = fork_diff(&planner::diff(&base, &alt_est));
             let f_full = fork_diff(&planner::diff(&base, &alt_full));
             prop_assert!(!plan["overtime"].is_null(), "the kernel did not answer `overtime`");
@@ -3216,7 +3220,7 @@ proptest! {
         // **2. THE DAY**, against the kernel-ranked fork (D53).
         let cvec = w.candidates();
         let day2 = kernel_prios(&plan, &cvec)
-            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps)));
+            .map(|ps| w35_fork_plan(&w, &w.state, &cvec, &ps, &plan));
         let (mut compared, mut same, mut rows_agree, mut explained) = (0u64, 0u64, 0u64, 0u64);
         let (mut c554, mut c550, mut c551) = (0u64, 0u64, 0u64);
         let (mut set_aside, mut def_ids, mut rest_debt) = (0u64, 0u64, false);
@@ -3465,4 +3469,460 @@ fn a_sub_second_now_moves_the_forks_day_and_not_the_kernels() {
          kernel's one extra row {}; kernel {khash}, fork {}",
         fractional, day2.segments.len(), placement_key(konly[0]), day2.hash()
     );
+}
+
+// ===========================================================================
+// **W-35 (track K): D57 — §9's running break, the overtime block and a wall on `now`**
+//
+// The owner's D57 (README gap 2740) fixes three §9 behaviours in the KERNEL before R3, each a
+// registered divergence from fork 4748911: **P45** a running break (`state.break`) is a Break row
+// nothing is scheduled over; **P46** in overtime the running block keeps its block (the fork's
+// `active_run` refused to reserve); **P47** a wall on `now` pauses the running block (the fork drew
+// the worked stretch across it).  The fork now disagrees BY DESIGN on those days, so they are
+// asserted against the KERNEL's own rule, which this block states once as a comparand —
+// `w35_fork_plan`: the fork as the shipped binary runs it (D53, kernel-ranked) with P46 and P47
+// applied by their PROPERTIES, never by a list of cases.  The earlier arms call it in place of
+// `planner::plan` wherever they compare a day; on every day that is neither P46 nor P47 it is
+// `planner::plan` exactly.  P45 has no fork analogue at all (fork `planner::plan` reads no
+// `runtime.break_`), so the arm below asserts its rule directly and counts the fork's disagreement.
+// ===========================================================================
+
+/// **The fork's `worked` for the running block** — fork `active_run`'s own reading: the log's open
+/// block when it is this item's (`OpenBlock::worked_min_at`), the clock since `started` otherwise.
+fn w35_fork_worked(w: &World, st: &RuntimeState) -> Option<u32> {
+    let a = st.active.as_ref()?;
+    let started = local_dt(w.cfg.tz, date(), a.started);
+    Some(
+        w.replay
+            .open_block
+            .as_ref()
+            .filter(|b| b.id == a.id.as_str())
+            .map(|b| b.worked_min_at(w.now.fixed_offset()))
+            .unwrap_or_else(|| (w.now - started).num_minutes().max(0) as u32),
+    )
+}
+
+/// **The kernel's reservation**, when it placed one: the energy-less `▶` Block row starting at
+/// `now` — its `stop`.
+fn w35_reservation(plan: &Value, now_sec: i64) -> Option<i64> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .find(|s| {
+            s["kind"] == "block"
+                && s["energy"].is_null()
+                && s["flags"]["current"] == true
+                && s["start"].as_i64() == Some(now_sec)
+        })
+        .map(|s| s["stop"].as_i64().unwrap_or(-1))
+}
+
+/// **P46, by its property**: the running block is in overtime (not paused, its worked minutes at
+/// or past its estimate — fork `active_run`'s `left == 0`) and the kernel reserved it anyway.
+fn w35_is_p46(w: &World, st: &RuntimeState, plan: &Value) -> bool {
+    let (Some(a), Some(worked)) = (st.active.as_ref(), w35_fork_worked(w, st)) else {
+        return false;
+    };
+    !a.paused && worked >= a.est_min && w35_reservation(plan, rowwire::kernel_sec(w.now)).is_some()
+}
+
+/// **P46's comparand state**: `state.active`'s estimate raised so that fork `active_run`'s `left`
+/// reaches the kernel's reservation — `worked + ⌈(stop − now) / 60⌉` — and the fork reserves the
+/// same span, which the kernel runs to the free stretch's end or the block boundary
+/// (`Planner.PlanReq.activeStop_in_overtime`).  Unchanged off P46.
+fn w35_p46_state(w: &World, st: &RuntimeState, plan: &Value) -> RuntimeState {
+    let mut out = st.clone();
+    if w35_is_p46(w, st, plan) {
+        let worked = w35_fork_worked(w, st).unwrap_or(0);
+        let now_sec = rowwire::kernel_sec(w.now);
+        let stop = w35_reservation(plan, now_sec).unwrap_or(now_sec);
+        let left = u32::try_from((stop - now_sec + 59).max(0) / 60).unwrap_or(0);
+        if let Some(a) = out.active.as_mut() {
+            a.est_min = worked + left;
+        }
+    }
+    out
+}
+
+/// **P46's row, as the kernel writes it**: the reservation's `planned` and note carry the fork's
+/// own saturating `left`, which is 0 in overtime (`running · 0m left`), not the raised estimate's.
+fn w35_p46_row(w: &World, day: &mut DayPlan) {
+    for s in day.segments.iter_mut().filter(|s| {
+        matches!(s.kind, SegKind::Block) && s.flags.current && s.energy.is_none() && s.start == w.now
+    }) {
+        s.flags.planned_min = Some(0);
+        s.flags.note = Some("running · 0m left".to_string());
+    }
+}
+
+/// **P47, by its property, on the fork's own day**: when a wall's blocked span (its run-up and its
+/// event, joined by item) covers `now`, every open Block row loses its `▶` and is clipped at the
+/// earliest start, after its own, of that wall's rows — `Planner.PlanReq.pauseRows`' wall half.
+/// Returns whether the day is a P47 day: a wall on `now` and an open row.
+fn w35_p47_day(w: &World, day: &mut DayPlan) -> bool {
+    let now = w.now;
+    let mut spans: BTreeMap<String, (DateTime<Tz>, DateTime<Tz>)> = BTreeMap::new();
+    for s in day.segments.iter().filter(|s| matches!(s.kind, SegKind::Wall)) {
+        let id = s.item.as_ref().map(ToString::to_string).unwrap_or_default();
+        let e = spans.entry(id).or_insert((s.start, s.end));
+        e.0 = e.0.min(s.start);
+        e.1 = e.1.max(s.end);
+    }
+    let on_now: Vec<DateTime<Tz>> = day
+        .segments
+        .iter()
+        .filter(|s| matches!(s.kind, SegKind::Wall))
+        .filter(|s| {
+            let id = s.item.as_ref().map(ToString::to_string).unwrap_or_default();
+            spans.get(&id).is_some_and(|(a, b)| *a <= now && now < *b)
+        })
+        .map(|s| s.start)
+        .collect();
+    if on_now.is_empty() {
+        return false;
+    }
+    w35_pause_open_rows(day, &on_now)
+}
+
+/// **What pausing does to the worked stretch** — `Planner.PlanReq.openStop` over
+/// `Planner.PlanReq.pauseRows`, and `interrupted`'s `▶`: every open Block row loses its `▶` and is
+/// clipped at the earliest of `starts` after its own.  Returns whether any open row was paused.
+fn w35_pause_open_rows(day: &mut DayPlan, starts: &[DateTime<Tz>]) -> bool {
+    let mut hit = false;
+    for s in day.segments.iter_mut().filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open) {
+        hit = true;
+        s.flags.current = false;
+        if let Some(cut) = starts.iter().filter(|a| **a > s.start).min().copied() {
+            if cut < s.end {
+                s.end = cut;
+            }
+        }
+    }
+    hit
+}
+
+/// **The fork, as the kernel's D57 rule reads it**: `planner::plan` over the kernel's ranking
+/// (D53), with P46's comparand state and row and P47's pause — each applied only where its
+/// property holds, so on every other day this IS `planner::plan`.
+fn w35_fork_plan(
+    w: &World,
+    st: &RuntimeState,
+    cvec: &[Candidate],
+    ps: &[Prio],
+    plan: &Value,
+) -> DayPlan {
+    let st2 = w35_p46_state(w, st, plan);
+    let mut d = planner::plan(&w.input(&st2, w.now).with_ranking(cvec, ps));
+    let is46 = w35_is_p46(w, st, plan);
+    if is46 {
+        w35_p46_row(w, &mut d);
+    }
+    let is47 = w35_p47_day(w, &mut d);
+    let mut c = W35_COMPARAND.lock().expect("census");
+    c[0] += 1;
+    c[1] += u64::from(is46);
+    c[2] += u64::from(is47);
+    d
+}
+
+/// **How often the comparand departed from `planner::plan`**, over every arm that calls it —
+/// `[days, P46 days, P47 days]`.  Read by the W-35 census line, so the earlier arms' share of the
+/// three classes is printed rather than assumed.
+static W35_COMPARAND: Mutex<[u64; 3]> = Mutex::new([0; 3]);
+
+/// **P45's rule, as a checker over the kernel's answer**: the running break drawn at `t` for
+/// `planned` minutes is exactly one Break row `[max(t, day start), max(min(t + planned, day end),
+/// now))`, open exactly when it has overrun, carrying its place; and no row §8.2 PLACES from `now`
+/// on — a Block, Batch, Routine, Optional or Rest — overlaps it.  `Err` names what failed, so the
+/// perturbation test below can show the checker bites.
+fn w35_check_break(
+    plan: &Value,
+    t: i64,
+    planned_min: i64,
+    place: &str,
+    now_sec: i64,
+    day_start: i64,
+    day_end: i64,
+) -> Result<(i64, i64, bool), String> {
+    let segs = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let brks: Vec<&Value> = segs.iter().filter(|s| s["kind"] == "break").collect();
+    if brks.len() != 1 {
+        return Err(format!("{} Break rows, want the running break's one", brks.len()));
+    }
+    let b = brks[0];
+    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
+    let open = t + 60 * planned_min <= now_sec;
+    let got = (b["start"].as_i64().unwrap_or(-1), b["stop"].as_i64().unwrap_or(-1));
+    if got != (lo, hi) {
+        return Err(format!("the Break row is {got:?}, the rule says {:?}", (lo, hi)));
+    }
+    if b["flags"]["open"].as_bool() != Some(open) {
+        return Err(format!("the Break row's `open` is {}, the rule says {open}", b["flags"]["open"]));
+    }
+    if b["note"]["note"] != "breakWhere" || b["note"]["text"] != place {
+        return Err(format!("the Break row's note is {}, want breakWhere {place}", b["note"]));
+    }
+    for s in segs {
+        let k = s["kind"].as_str().unwrap_or_default();
+        let (a, z) = (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1));
+        let placed = matches!(k, "block" | "batch" | "routine" | "optional" | "rest");
+        if placed && a >= now_sec && a < hi && lo < z {
+            return Err(format!("a {k} row [{a}, {z}) is scheduled over the break [{lo}, {hi})"));
+        }
+    }
+    Ok((lo, hi, open))
+}
+
+/// **W-35's census**: `[cases, break days (P45), of them still running at now, of them overrun,
+/// P45 days where the SHIPPED fork scheduled over the break, overtime days (P46), P46 days whose
+/// shipped fork day differs from the kernel's rule, wall-on-now days (P47), P47 days whose shipped
+/// fork open row runs past the wall's start, assigned rows compared against the D57 comparand,
+/// cases with no kernel §7 answer]`.
+static W35_CENSUS: Mutex<[u64; 11]> = Mutex::new([0; 11]);
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **D57's three rows, on generated days, against the kernel's own rule** (W-35 track K,
+    /// parity P45-P47, README gap 2740).  Every case also asserts that the kernel's assigned rows
+    /// are the D57 comparand's, so the rest of the day is still compared against the fork.
+    #[test]
+    fn the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause(
+        case in case_strategy(),
+        brk in prop::option::of((0u32..=40, 5u32..=30, prop::sample::select(vec!["walk", "seat", "bed", "phone"]))),
+    ) {
+        let mut w = build(&case);
+        let tz = w.cfg.tz;
+        let now_sec = rowwire::kernel_sec(w.now);
+        let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
+        let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+        // **P45: a running break**, drawn `ago` minutes before `now` for `planned` minutes — the
+        // host's `tm break` pauses a running block (`tm/src/cli/day.rs`), so this does too.
+        let mut drew = None;
+        let mut drew_at: Option<DateTime<Tz>> = None;
+        if let (Some((ago, planned, place)), None) = (brk, case.interrupt) {
+            let t = w.now - Duration::minutes(i64::from(ago));
+            if t.date_naive() == date() {
+                w.state.break_ = Some(tm_core::store::BreakState {
+                    started: Some(t.time()),
+                    planned_min: planned,
+                    place: Some(place.to_string()),
+                });
+                if let Some(a) = w.state.active.as_mut() {
+                    a.paused = true;
+                }
+                drew = Some((rowwire::kernel_sec(t), i64::from(planned), place));
+                drew_at = Some(t);
+            }
+        }
+        let mut req = w.plan_request();
+        if let Some(a) = &w.state.active {
+            req["planner"]["state"]["active"]["paused"] = json!(a.paused);
+        }
+        if let Some((t, planned, place)) = drew {
+            req["planner"]["state"]["break"] =
+                json!({"started": t, "plannedMin": planned, "place": place});
+        }
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let cvec = w.candidates();
+        let Some(ps) = kernel_prios(&plan, &cvec) else {
+            W35_CENSUS.lock().expect("census")[10] += 1;
+            return Ok(());
+        };
+        let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+        let d57 = w35_fork_plan(&w, &w.state, &cvec, &ps, &plan);
+
+        // **P45** — the rule, asserted; the fork's disagreement, counted.
+        let (mut p45, mut p45run, mut p45over, mut p45fork) = (0u64, 0u64, 0u64, 0u64);
+        if let Some((t, planned, place)) = drew {
+            let got = w35_check_break(&plan, t, planned, place, now_sec, day_start, day_end);
+            prop_assert!(got.is_ok(), "P45: {}", got.clone().err().unwrap_or_default());
+            let (lo, hi, open) = got.unwrap_or((0, 0, false));
+            p45 = 1;
+            p45run = u64::from(!open);
+            p45over = u64::from(open);
+            // The shipped fork has no Break row and places from `now` into the break.
+            p45fork = u64::from(shipped.segments.iter().any(|s| {
+                let (a, z) = (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end));
+                matches!(s.kind, SegKind::Block | SegKind::Batch(_) | SegKind::Rest
+                    | SegKind::Routine | SegKind::Optional)
+                    && a >= now_sec && a < hi && lo < z
+            }));
+        }
+
+        // **P46** — the kernel's overtime reservation IS the comparand fork's reservation.
+        let is46 = w35_is_p46(&w, &w.state, &plan);
+        let mut p46diff = 0u64;
+        if is46 {
+            let k = w35_reservation(&plan, now_sec);
+            let f = d57.segments.iter()
+                .find(|s| matches!(s.kind, SegKind::Block) && s.flags.current && s.energy.is_none()
+                    && rowwire::kernel_sec(s.start) == now_sec)
+                .map(|s| rowwire::kernel_sec(s.end));
+            prop_assert_eq!(k, f, "P46: the kernel's overtime reservation is not the comparand's");
+            let kleft = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
+                .find(|s| s["kind"] == "block" && s["flags"]["current"] == true)
+                .map(|s| (s["planned"].as_u64(), s["note"]["leftMin"].as_u64()));
+            prop_assert_eq!(kleft, Some((Some(0), Some(0))), "P46: the reservation's left is not the fork's 0");
+            p46diff = u64::from(!shipped.segments.iter().any(|s| {
+                matches!(s.kind, SegKind::Block) && s.flags.current && s.energy.is_none()
+                    && rowwire::kernel_sec(s.start) == now_sec
+            }));
+        }
+
+        // **P47** — the kernel's open row stops at the wall on `now` — and, on a break day, at the
+        // running break's start too: P45 pauses the block as the wall does (`pauseRows`).
+        let mut probe = shipped.clone();
+        let is47 = w35_p47_day(&w, &mut probe);
+        let paused45 = drew_at.is_some_and(|t| w35_pause_open_rows(&mut probe, &[t]));
+        let mut p47diff = 0u64;
+        if is47 || paused45 {
+            let kopen: Vec<(i64, i64, bool)> = plan["segments"].as_array().map(Vec::as_slice)
+                .unwrap_or_default().iter()
+                .filter(|s| s["kind"] == "block" && s["flags"]["open"] == true)
+                .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                          s["flags"]["current"].as_bool().unwrap_or(true)))
+                .collect();
+            let fopen: Vec<(i64, i64, bool)> = probe.segments.iter()
+                .filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open)
+                .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end), s.flags.current))
+                .collect();
+            prop_assert_eq!(&kopen, &fopen, "P47: the kernel's open row is not the wall-paused one");
+            let shipped_open: Vec<(i64, i64, bool)> = shipped.segments.iter()
+                .filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open)
+                .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end), s.flags.current))
+                .collect();
+            // The shipped fork drew it across the wall or marked it `▶`.
+            p47diff = u64::from(is47 && shipped_open != kopen);
+        }
+
+        // **Everything else, against the D57 comparand** — §8.2 step 5's rows, both ways; a
+        // break day is not compared here (P45 has no fork analogue: the comparand plans over it).
+        let mut acmp = 0u64;
+        if drew.is_none() {
+            let ka = kernel_assigned(&plan, now_sec);
+            let fa = fork_assigned(&d57, w.now);
+            prop_assert_eq!(&ka, &fa, "§8.2 step 5 differs from the D57 comparand");
+            acmp = ka.len() as u64;
+        }
+
+        let [cases, n45, n45run, n45over, n45fork, n46, n46diff, n47, n47diff, nacmp, noprio] = {
+            let mut c = W35_CENSUS.lock().expect("census");
+            c[0] += 1;
+            c[1] += p45;
+            c[2] += p45run;
+            c[3] += p45over;
+            c[4] += p45fork;
+            c[5] += u64::from(is46);
+            c[6] += p46diff;
+            c[7] += u64::from(is47);
+            c[8] += p47diff;
+            c[9] += acmp;
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if cases >= generated {
+            // **Floors** (AGENTS §9.2): a divergence asserted on no day is asserted on nothing.
+            prop_assert!(n45run > 0, "no running break that had not overrun was drawn in {cases} cases");
+            prop_assert!(n45over > 0, "no overrun break was drawn in {cases} cases");
+            prop_assert!(n45fork > 0, "the shipped fork never scheduled over a break in {cases} cases");
+            prop_assert!(n46 > 0, "no overtime day (P46) was drawn in {cases} cases");
+            prop_assert!(n46diff > 0, "on no P46 day did the shipped fork reserve nothing in {cases} cases");
+            prop_assert!(n47 > 0, "no wall on `now` paused a running block (P47) in {cases} cases");
+            prop_assert!(n47diff > 0, "on no P47 day did the shipped fork's open row differ in {cases} cases");
+            prop_assert!(nacmp > 0, "no assigned row was compared against the D57 comparand in {cases} cases");
+        }
+        let [cdays, c46, c47] = *W35_COMPARAND.lock().expect("census");
+        eprintln!(
+            "planner_invariants W-35 comparand, over every arm that calls it: {cdays} days, P46 \
+             applied on {c46}, P47 on {c47}"
+        );
+        eprintln!(
+            "planner_invariants W-35 census: {cases} cases; P45 break days {n45} (running {n45run}, \
+             overrun {n45over}; the SHIPPED fork scheduled over the break on {n45fork}); P46 overtime \
+             days {n46} (the shipped fork reserved nothing on {n46diff}); P47 wall-on-now days \
+             {n47} (the shipped fork drew the open row across the wall or marked it current on {n47diff}); assigned rows \
+             compared against the D57 comparand {nacmp}; cases with no kernel §7 answer {noprio}"
+        );
+    }
+}
+
+/// **The P45 checker bites** — a perturbation of the kernel's own answer, three ways: the Break
+/// row removed, moved by a minute, and a Rest row slid under it.  A checker that passed any of
+/// them would be asserting nothing on the generated days above.
+#[test]
+fn the_break_checker_fails_on_a_perturbed_answer() {
+    let case = Case {
+        items: vec![],
+        walls: vec![],
+        now_idx: 2,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let mut w = build(&case);
+    let tz = w.cfg.tz;
+    let now_sec = rowwire::kernel_sec(w.now);
+    let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
+    let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+    let t = w.now - Duration::minutes(5);
+    w.state.break_ = Some(tm_core::store::BreakState {
+        started: Some(t.time()),
+        planned_min: 20,
+        place: Some("walk".to_string()),
+    });
+    let mut req = w.plan_request();
+    req["planner"]["state"]["break"] =
+        json!({"started": rowwire::kernel_sec(t), "plannedMin": 20, "place": "walk"});
+    let plan = kernel_plan(&req).expect("the kernel plans the break day");
+    let check = |p: &Value| {
+        w35_check_break(p, rowwire::kernel_sec(t), 20, "walk", now_sec, day_start, day_end)
+    };
+    let (lo, hi, open) = check(&plan).expect("the kernel's own answer passes");
+    assert_eq!((lo, hi, open), (rowwire::kernel_sec(t), rowwire::kernel_sec(t) + 20 * 60, false));
+    // 1. the row removed
+    let mut gone = plan.clone();
+    gone["segments"] = Value::Array(
+        plan["segments"].as_array().expect("segments").iter()
+            .filter(|s| s["kind"] != "break").cloned().collect(),
+    );
+    assert!(check(&gone).is_err(), "a day with no Break row passed the P45 checker");
+    // 2. the row moved by a minute
+    let mut moved = plan.clone();
+    for s in moved["segments"].as_array_mut().expect("segments") {
+        if s["kind"] == "break" {
+            s["stop"] = json!(s["stop"].as_i64().unwrap_or(0) + 60);
+        }
+    }
+    assert!(check(&moved).is_err(), "a Break row a minute long passed the P45 checker");
+    // 3. a Rest row slid under the break
+    let mut over = plan.clone();
+    over["segments"].as_array_mut().expect("segments").push(json!({
+        "start": now_sec, "stop": now_sec + 600, "kind": "rest", "batch": [], "energy": 3,
+        "item": null, "inst": null, "flags": {}, "planned": null, "mult": null, "note": null}));
+    assert!(check(&over).is_err(), "a Rest row scheduled over the break passed the P45 checker");
 }
