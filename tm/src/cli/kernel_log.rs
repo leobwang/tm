@@ -1211,9 +1211,9 @@ use tm_core::log::{
 };
 use tm_core::model::InstanceStatus;
 
-/// Seconds from `0001-01-01T00:00:00Z` to the Unix epoch: the kernel counts
-/// instants from the former and `chrono` from the latter.
-const EPOCH_FROM_CE: i64 = 62_135_596_800;
+/// Seconds from `0001-01-01T00:00:00Z` to the Unix epoch — one number, stated
+/// once, in the host's kernel codec since stage 6 W-35.
+use tm_core::planwire::EPOCH_FROM_CE;
 
 /// What a malformed answer says. Every decoder below names the field it could
 /// not read, as `read_response` and [`Refusal`] do; nothing here panics, so a

@@ -7,7 +7,7 @@ mod emit_fixture;
 use emit_fixture::{at, config, ghost_plan, plan, tree};
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::planner::{DayPlan, SegFlags, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
 
 fn svg(day: &DayPlan, ghost: Option<&DayPlan>, w: u32, h: u32) -> String {
     svg_cols(day, ghost, w, h, 96)

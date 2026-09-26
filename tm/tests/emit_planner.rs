@@ -18,7 +18,8 @@ use chrono::NaiveTime;
 use planner_common::{at, basic_state, date, load, load_with_log, BASIC_LOG};
 use tm_core::config::Config;
 use tm_core::emit;
-use tm_core::planner::{self, DayPlan};
+use tm_core::dayplan::DayPlan;
+use tm_core::planner;
 use tm_core::tree::Tree;
 
 /// `(section body, a digest of the SVG)` for one plan.
@@ -128,7 +129,7 @@ fn no_row_repeats_its_own_title_or_actual() {
                     "{name}: `{title}` twice in `{row}`"
                 );
             }
-            if matches!(seg.kind, tm_core::planner::SegKind::WindDown) {
+            if matches!(seg.kind, tm_core::dayplan::SegKind::WindDown) {
                 assert_eq!(row.matches("wind-down").count(), 1, "{name}: `{row}`");
             }
             if seg.flags.done {

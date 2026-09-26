@@ -52,11 +52,11 @@ use std::collections::BTreeMap;
 use chrono::{NaiveDate, Timelike};
 use serde_json::{json, Map, Value};
 
-use tm_core::capacity::{self, Exact, UnitCapacity, CAP_DEN};
+use tm_core::capacity::UnitCapacity;
 use tm_core::config::Config;
 use tm_core::energy::{weekday_key, Model};
 use tm_core::model::Id;
-use tm_core::priority::{self, Candidate, Prio, PrioClass};
+use tm_core::priority::{self, Candidate};
 use tm_core::store::Store;
 
 use super::ctx::Ctx;
@@ -899,138 +899,23 @@ pub fn request(ctx: &Ctx, allow_home: bool, days: u32, ranked: Option<&Ranked<'_
 
 /// What the kernel answered: the first `min(days, 7)` days in units, and one
 /// priority per candidate in the candidates' own order.
-#[derive(Clone, Debug, Default)]
-pub struct Answer {
-    /// The lookahead's first days (at most seven), exact units over [`CAP_DEN`].
-    pub days: Vec<UnitCapacity>,
-    /// One [`Prio`] per candidate, in `collect_candidates` order.
-    pub prios: Vec<Prio>,
-}
+///
+/// **`tm_core::planwire`'s type since stage 6 W-35**, and so is the reading of
+/// it: `tm` is a `[[bin]]`, so a test that ranked the fork "as the shipped
+/// binary runs it" (D53) could only copy this reader, and three copies existed
+/// (README gap 2006). The code moved unchanged; the defects it names are the
+/// same strings, under the same `capacity response:` prefix.
+pub use tm_core::planwire::CapacityAnswer as Answer;
 
 /// A response defect: loud, named, never a wrong answer.
 fn defect(what: &str) -> CliError {
     CliError::Kernel(kernel_bridge::fault_issue(&format!("capacity response: {what}"), ""))
 }
 
-/// A digit string as `u128` (D17).
-fn units_of(v: &Value, what: &str) -> Result<u128, CliError> {
-    v.as_str()
-        .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit()))
-        .and_then(|s| s.parse::<u128>().ok())
-        .ok_or_else(|| defect(&format!("{what} is not a digit string that fits u128")))
-}
-
-/// A `YYYY-MM-DD`.
-fn date_of(v: &Value, what: &str) -> Result<NaiveDate, CliError> {
-    v.as_str()
-        .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-        .ok_or_else(|| defect(&format!("{what} is not a date")))
-}
-
-/// A small natural.
-fn small(v: &Value, what: &str) -> Result<u8, CliError> {
-    v.as_u64().and_then(|n| u8::try_from(n).ok()).ok_or_else(|| defect(&format!("{what} is not a small natural")))
-}
-
-/// Fork `PrioClass`'s serde name.
-fn class_of(name: &str) -> Option<PrioClass> {
-    Some(match name {
-        "wall" => PrioClass::Wall,
-        "hot" => PrioClass::Hot,
-        "impossible" => PrioClass::Impossible,
-        "overdue" => PrioClass::Overdue,
-        "mandatory" => PrioClass::Mandatory,
-        "hotflag" => PrioClass::HotFlag,
-        "dated" => PrioClass::Dated,
-        "floor" => PrioClass::Floor,
-        "rank" => PrioClass::Rank,
-        "optional" => PrioClass::Optional,
-        _ => return None,
-    })
-}
-
-/// **One grant as a [`Prio`]**: the kernel's class, `k`, `p`, raw `p`, need,
-/// `until` and bin; availability, allocation and shortfall as floors beside their
-/// exact values (D15). `u` is display only: the exact `need / avail` as a
-/// double, held on the kernel's side of 1 (`u ≥ 1` exactly when the kernel's bin
-/// is HOT), so [`Prio::is_hot`] agrees with the kernel.
-fn prio_of(g: &Value) -> Result<Prio, CliError> {
-    let id = g["id"].as_str().ok_or_else(|| defect("a grant has no id"))?;
-    let class = g["class"].as_str().and_then(class_of).ok_or_else(|| defect("a grant's class is unknown"))?;
-    let k = small(&g["k"], "k")?;
-    let p = if g["p"].is_null() { None } else { Some(small(&g["p"], "p")?) };
-    let raw = if g["rawP"].is_null() { None } else { Some(small(&g["rawP"], "rawP")?) };
-    let need = g["need"].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| defect("need"))?;
-    let until = if g["until"].is_null() { None } else { Some(date_of(&g["until"], "until")?) };
-    let avail = units_of(&g["avail"], "avail")?;
-    let allocation = units_of(&g["allocation"], "allocation")?;
-    let shortfall = units_of(&g["shortfall"], "shortfall")?;
-    let bin = if g["bin"].is_null() { None } else { Some(small(&g["bin"], "bin")?) };
-    let passed = until.is_some() && class != PrioClass::Wall;
-    let u = passed.then(|| {
-        let exact = if avail == 0 {
-            f64::INFINITY
-        } else {
-            (u128::from(need) * CAP_DEN) as f64 / avail as f64
-        };
-        match bin {
-            None => exact.max(1.0),
-            Some(_) => exact.min(1.0 - f64::EPSILON),
-        }
-    });
-    Ok(Prio {
-        id: Id::new(id),
-        p: p.unwrap_or(0),
-        class,
-        k,
-        u,
-        bin,
-        need_min: need,
-        avail_min: capacity::floor_minutes(avail),
-        avail_min_exact: Exact::of_units(avail),
-        allocation_min: capacity::floor_minutes(allocation),
-        allocation_min_exact: Exact::of_units(allocation),
-        shortfall_min: capacity::floor_minutes(shortfall),
-        shortfall_min_exact: Exact::of_units(shortfall),
-        until,
-        hysteresis_applied: p != raw,
-        raw_p: raw.unwrap_or(0),
-    })
-}
-
-/// **Read the response** of a request built by [`request`] with `order`.
+/// **Read the response** of a request built by [`request`] with `order` —
+/// [`tm_core::planwire::read_capacity_answer`], each defect named as before.
 pub fn read_answer(resp: &Value, order: &[usize], ranked: bool) -> Result<Answer, CliError> {
-    let la = &resp["ok"]["lookahead"];
-    if la["den"].as_str() != Some(CAP_DEN.to_string().as_str()) {
-        return Err(defect("den is not capDen"));
-    }
-    let days = la["days"]
-        .as_array()
-        .ok_or_else(|| defect("no days"))?
-        .iter()
-        .map(|d| {
-            let date = date_of(&d["day"], "a day")?;
-            let at = d["numAt"].as_array().filter(|a| a.len() == 6).ok_or_else(|| defect("numAt"))?;
-            let mut units = [0u128; 6];
-            for (l, v) in at.iter().enumerate() {
-                units[l] = units_of(v, "numAt")?;
-            }
-            Ok(UnitCapacity { date, units })
-        })
-        .collect::<Result<Vec<_>, CliError>>()?;
-    let mut prios = Vec::new();
-    if ranked {
-        let grants = la["grants"].as_array().ok_or_else(|| defect("no grants"))?;
-        if grants.len() != order.len() {
-            return Err(defect("one grant per candidate"));
-        }
-        let mut slots: Vec<Option<Prio>> = vec![None; order.len()];
-        for (g, &i) in grants.iter().zip(order) {
-            slots[i] = Some(prio_of(g)?);
-        }
-        prios = slots.into_iter().map(|p| p.ok_or_else(|| defect("a candidate without a grant"))).collect::<Result<_, _>>()?;
-    }
-    Ok(Answer { days, prios })
+    tm_core::planwire::read_capacity_answer(resp, order, ranked).map_err(|e| defect(&e.0))
 }
 
 /// **Ask the kernel** for `want` days of capacity from today (clamped by

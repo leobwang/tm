@@ -1484,6 +1484,23 @@ impl fmt::Display for InstanceKey {
     }
 }
 
+impl InstanceKey {
+    /// **The inverse of `Display`**: `#<n>`, or a `YYYY-MM-DD` date through
+    /// [`parse_date`]. `None` for anything else.
+    ///
+    /// It is the reader of a §10.1 `routine` event's `inst` and, since stage 6
+    /// W-35, of the `inst` a row of the kernel's planned day carries
+    /// (`crate::planwire`). It was `recur.rs`'s private `parse_instance_key`,
+    /// moved here with its body unchanged rather than copied a third time
+    /// (AGENTS §5.3); fork `planner.rs` keeps its own until R3 deletes it.
+    pub fn parse(s: &str) -> Option<InstanceKey> {
+        if let Some(n) = s.strip_prefix('#') {
+            return n.parse().ok().map(InstanceKey::Nth);
+        }
+        parse_date(s).ok().map(InstanceKey::Date)
+    }
+}
+
 /// Status of an instance, derived from the log.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum InstanceStatus {

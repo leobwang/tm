@@ -64,7 +64,8 @@ use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::Replay;
 
 use tm_core::model::{Id, IsoWeek, Loc, Recur};
-use tm_core::planner::{self, DayPlan, PlanInput, PlanOverrides, SegFlags, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
+use tm_core::planner::{self, PlanInput, PlanOverrides};
 use tm_core::priority::{Candidate, Prio, PrioClass};
 use tm_core::recur;
 use tm_core::review::{self, PlannedBlock, StatusHead, StatusLine};

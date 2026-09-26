@@ -6,7 +6,7 @@ mod emit_fixture;
 use emit_fixture::{at, config, plan, prio, tree};
 use tm_core::emit;
 use tm_core::model::{Dep, Id};
-use tm_core::planner::{DayPlan, Diagnostics, SegKind};
+use tm_core::dayplan::{DayPlan, Diagnostics, SegKind};
 use tm_core::priority::PrioClass;
 
 #[test]

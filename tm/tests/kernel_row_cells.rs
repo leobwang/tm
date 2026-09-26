@@ -66,7 +66,7 @@ use serde_json::{json, Value};
 
 use tm_core::emit::{self, Layout};
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, SegKind};
+use tm_core::dayplan::{self, DayPlan, SegKind};
 
 /// **Every cell the kernel is allowed to disagree with the fork about on this
 /// day, with the gap that records why** — `(row title, cell, fork, kernel, gap)`.
@@ -344,7 +344,7 @@ fn the_kernel_and_the_fork_agree_on_every_kind_of_row() {
     let lean = kernel_cells(docs(), &plan, &cfg);
     assert_eq!(lean.len(), kinds.len() * 2);
     for (i, (f, k)) in fork.iter().zip(&lean).enumerate() {
-        let kind = planner::kind_label(&plan.segments[i].kind);
+        let kind = dayplan::kind_label(&plan.segments[i].kind);
         assert_eq!(
             differences(f, k),
             vec![],
@@ -437,8 +437,8 @@ fn the_kernel_writes_the_forks_note_sentences() {
     let hi = kernel_sec(base.window.1);
     let no_position = format!(
         "t9: no free 45m position in {}–{}; not planned today",
-        planner::fmt_clock(base.window.0),
-        planner::fmt_clock(base.window.1)
+        dayplan::fmt_clock(base.window.0),
+        dayplan::fmt_clock(base.window.1)
     );
     for (i, (note, _)) in cases.iter().enumerate() {
         let mut note = note.clone();
@@ -592,7 +592,7 @@ fn the_fixture_day_fills_every_column() {
     let kinds: std::collections::BTreeSet<&str> = plan
         .segments
         .iter()
-        .map(|s| planner::kind_label(&s.kind))
+        .map(|s| dayplan::kind_label(&s.kind))
         .collect();
     assert!(kinds.len() >= 5, "one kind of row is not a day: {kinds:?}");
     assert_eq!(plan.date.year(), 2026, "the fixture moved");

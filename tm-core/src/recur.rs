@@ -858,7 +858,7 @@ fn one_off_instances(
 fn next_ordinal(key: &Id, replay: &Replay) -> u32 {
     let resolved = replay
         .instances_of(key.as_str())
-        .filter_map(|(inst, rec)| match parse_instance_key(inst) {
+        .filter_map(|(inst, rec)| match InstanceKey::parse(inst) {
             Some(InstanceKey::Nth(n)) if rec.status != InstanceStatus::Pending => Some(n),
             _ => None,
         })
@@ -876,7 +876,7 @@ fn completion_count(key: &Id, replay: &Replay) -> u32 {
         .instances_of(key.as_str())
         .filter(|(inst, rec)| {
             rec.status == InstanceStatus::Done
-                && matches!(parse_instance_key(inst), Some(InstanceKey::Nth(_)))
+                && matches!(InstanceKey::parse(inst), Some(InstanceKey::Nth(_)))
         })
         .count();
     let dates = replay.done_date_count(key.as_str());
@@ -895,7 +895,7 @@ fn logged_instances(
     let mut out: Vec<Instance> = replay
         .instances_of(key.as_str())
         .filter_map(|(inst, rec)| {
-            let k = parse_instance_key(inst)?;
+            let k = InstanceKey::parse(inst)?;
             if Some(k) == skip {
                 return None;
             }
@@ -1140,13 +1140,6 @@ fn arrival_of(item: &Item, replay: &Replay, cfg: &Config) -> Option<DateTime<Fix
     replay
         .latest_named(name, key.as_str(), cfg.tz)?
         .on_or_after(since, cfg.tz)
-}
-
-fn parse_instance_key(inst: &str) -> Option<InstanceKey> {
-    if let Some(n) = inst.strip_prefix('#') {
-        return n.parse().ok().map(InstanceKey::Nth);
-    }
-    crate::model::parse_date(inst).ok().map(InstanceKey::Date)
 }
 
 /// Whole days in a duration (a sub-day duration is 0 days: valid until later

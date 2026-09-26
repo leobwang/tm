@@ -309,7 +309,7 @@ fn the_tui_timeline_is_the_day_files_lines() {
 #[test]
 fn byte_identical_rows_are_constructible_so_position_decides() {
     use tm_core::emit;
-    use tm_core::planner::{DayPlan, SegKind};
+    use tm_core::dayplan::{DayPlan, SegKind};
 
     let cfg = tui_common::config();
     let tree = tui_common::tree(&cfg);
@@ -466,27 +466,30 @@ const KIND_WORDS: &str = "SegKind::";
 /// — exact lines, each adjudicated, and every entry must still be found or this
 /// test fails (check 8's "0 allow entries unused" rule).
 const WORD_ALLOW: &[(&str, &str)] = &[
-    ("tm-core/src/planner.rs", r#"SegKind::Block => "block","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Batch(_) => "batch","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Break => "break","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Routine => "routine","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Wall => "wall","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Rest => "rest","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Optional => "optional","#),
-    ("tm-core/src/planner.rs", r#"SegKind::WindDown => "wind-down","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Sleep => "sleep","#),
-    ("tm-core/src/planner.rs", r#"SegKind::Lost => "lost","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Block => "block","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Batch(_) => "batch","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Break => "break","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Routine => "routine","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Wall => "wall","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Rest => "rest","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Optional => "optional","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::WindDown => "wind-down","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Sleep => "sleep","#),
+    ("tm-core/src/dayplan.rs", r#"SegKind::Lost => "lost","#),
 ];
 
 /// **One title renderer.** Nothing outside [`HOME`] turns a `SegKind` into
-/// words, except `planner::kind_label`'s ten — the **wire** word the `--json`
+/// words, except `dayplan::kind_label`'s ten — the **wire** word the `--json`
 /// `kind` field and `.tm/last_plan.json` use, which is not a cell and is not
 /// padded, truncated or printed in a column.
 ///
 /// `tm/src/cli/render.rs::kind_name` held a byte-for-byte copy of those ten arms
 /// until W-23 (AGENTS §5.3: two definitions of one concept is the bug); it was
-/// deleted and its two callers take `planner::kind_label`. Finding it is what
-/// this needle was measured on.
+/// deleted and its two callers take `kind_label`. Finding it is what this needle
+/// was measured on. **The ten lines moved, byte for byte, from `planner.rs` to
+/// `tm-core/src/dayplan.rs` at W-35** (README gap 2721: the day's types must
+/// outlive the fork's planner), so [`WORD_ALLOW`] names the new file and the
+/// same ten lines — nothing was added to it, and nothing left it.
 #[test]
 fn no_second_set_of_row_words() {
     let mut hits: Vec<(String, String, usize)> = Vec::new();
@@ -533,10 +536,12 @@ fn no_second_set_of_row_words() {
 }
 
 /// The file allowed to build an `HH:MM` by hand: the row's **time** cell is one
-/// of the nine, and `planner::fmt_clock`'s own doc comment calls it "one §4.3
+/// of the nine, and `dayplan::fmt_clock`'s own doc comment calls it "one §4.3
 /// timeline row's leading `HH:MM`". `Emit.lean`'s header names it as the Rust
-/// half of the kernel's one clock, beside `Field.renderClock`.
-const CLOCK_HOME: &str = "tm-core/src/planner.rs";
+/// half of the kernel's one clock, beside `Field.renderClock`. It was
+/// `planner.rs`'s until W-35 moved it, byte for byte, with the day's types
+/// (README gap 2721).
+const CLOCK_HOME: &str = "tm-core/src/dayplan.rs";
 
 /// **One clock, hand-rolled.** Nothing but [`CLOCK_HOME`] writes
 /// `format!("{:02}:{:02}", …)`.
@@ -582,11 +587,11 @@ fn exactly_one_function_renders_a_clock_by_hand() {
         hits.join("\n  ")
     );
     // And the home file still has it, so this cannot pass by deletion.
-    let (_, planner) = sources()
+    let (_, home) = sources()
         .into_iter()
         .find(|(n, _)| n == CLOCK_HOME)
-        .expect("tm-core/src/planner.rs");
-    assert!(planner.contains("pub fn fmt_clock("), "the one clock is gone");
+        .expect("tm-core/src/dayplan.rs");
+    assert!(home.contains("pub fn fmt_clock("), "the one clock is gone");
 }
 
 /// **The home file still holds the renderer**, so neither grep can pass by the

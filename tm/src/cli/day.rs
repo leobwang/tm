@@ -43,9 +43,9 @@ use super::out::{emit, fmt_time, CliError};
 use super::planning;
 use super::undo::Recorder;
 
-/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// `HH:MM` — `tm_core::dayplan::fmt_clock` under this file's own name (AGENTS
 /// §5.3, W-23: a byte-for-byte copy of it stood here).
-use tm_core::planner::fmt_clock as hhmm;
+use tm_core::dayplan::fmt_clock as hhmm;
 
 /// The unit a tool-written `est:` uses: whole blocks when the minutes divide
 /// evenly (§9's "est: += 1b"), else the compact `Nm`/`Nh`/`NhMm` form. Mirrors
@@ -466,7 +466,7 @@ pub fn arrive(g: &Globals, args: &super::ArriveArgs) -> Result<i32, CliError> {
         .filter(|s| {
             matches!(
                 s.kind,
-                tm_core::planner::SegKind::Block | tm_core::planner::SegKind::Batch(_)
+                tm_core::dayplan::SegKind::Block | tm_core::dayplan::SegKind::Batch(_)
             )
         })
         .map(|s| ArrivalBlock {

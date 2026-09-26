@@ -413,7 +413,7 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
 pub struct StoredPlan {
     /// The day it planned.
     pub date: Option<NaiveDate>,
-    /// [`tm_core::planner::DayPlan::hash`].
+    /// [`tm_core::dayplan::DayPlan::hash`].
     pub hash: String,
     /// Every candidate's `p` when it was written (§7.4).
     pub priorities: BTreeMap<Id, u8>,
@@ -428,7 +428,7 @@ pub struct StoredSegment {
     pub start: String,
     /// `HH:MM`.
     pub end: String,
-    /// [`tm_core::planner::SegKind`], lowercased.
+    /// [`tm_core::dayplan::SegKind`], lowercased.
     pub kind: String,
     /// The item, when the segment has one.
     pub item: Option<String>,

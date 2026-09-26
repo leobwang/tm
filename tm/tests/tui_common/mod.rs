@@ -74,7 +74,7 @@ use ratatui::Terminal;
 use tm_core::config::Config;
 use tm_core::log::{Event, LogEntry, Replay};
 use tm_core::model::{Dep, Id, InstanceKey};
-use tm_core::planner::{DayPlan, Diagnostics, SegFlags, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, Diagnostics, SegFlags, SegKind, Segment};
 use tm_core::priority::{Prio, PrioClass};
 use tm_core::store::{ActiveBlock, MemStore, PlanFiles, RuntimeState, Store};
 use tm_core::tree::Tree;

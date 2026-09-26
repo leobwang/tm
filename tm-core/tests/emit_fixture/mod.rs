@@ -26,7 +26,7 @@ use chrono_tz::Tz;
 use tm_core::capacity::local_dt;
 use tm_core::config::Config;
 use tm_core::model::Id;
-use tm_core::planner::{DayPlan, SegFlags, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
 use tm_core::priority::{Prio, PrioClass};
 use tm_core::tree::Tree;
 

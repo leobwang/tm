@@ -23,7 +23,8 @@ use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::Replay;
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
+use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
+use tm_core::planner::{self, PlanInput};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
 use tm_core::tree::Tree;
 
@@ -880,7 +881,7 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
         .segments
         .iter()
         .filter(|s| s.item.as_ref() == Some(&Id::new("laundry")))
-        .map(|s| planner::fmt_clock(s.start))
+        .map(|s| fmt_clock(s.start))
         .collect();
     assert_eq!(laundry.len(), 1, "one laundry: {laundry:?}\n{}", timeline(&day));
 

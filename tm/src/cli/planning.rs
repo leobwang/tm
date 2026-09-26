@@ -25,7 +25,8 @@ use serde::Serialize;
 use tm_core::capacity::{self, Exact, UnitCapacity};
 use tm_core::log::Event;
 use tm_core::model::{Id, IsoWeek};
-use tm_core::planner::{self, DayPlan, Diagnostics, PlanInput};
+use tm_core::dayplan::{DayPlan, Diagnostics};
+use tm_core::planner::{self, PlanInput};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::Store;
 
@@ -140,9 +141,9 @@ impl DayOut {
 }
 
 /// `HH:MM`.
-/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// `HH:MM` — `tm_core::dayplan::fmt_clock` under this file's own name (AGENTS
 /// §5.3, W-23: a byte-for-byte copy of it stood here).
-use tm_core::planner::fmt_clock as hhmm;
+use tm_core::dayplan::fmt_clock as hhmm;
 
 /// Build the plan for `ctx` (§8), with the priorities it was ordered by.
 pub fn build(ctx: &Ctx, allow_home: bool) -> Result<(DayPlan, Vec<Prio>), CliError> {
@@ -210,7 +211,7 @@ fn stored(plan: &DayPlan, priorities: &[Prio]) -> StoredPlan {
             .map(|s| StoredSegment {
                 start: hhmm(s.start),
                 end: hhmm(s.end),
-                kind: tm_core::planner::kind_label(&s.kind).to_string(),
+                kind: tm_core::dayplan::kind_label(&s.kind).to_string(),
                 item: s.item.as_ref().map(|i| i.to_string()),
             })
             .collect(),
