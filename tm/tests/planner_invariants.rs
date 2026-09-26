@@ -1813,7 +1813,8 @@ fn kernel_prios(plan: &Value, cands: &[Candidate]) -> Option<Vec<Prio>> {
         let p = u8::try_from(g["p"].as_u64()?).ok()?;
         let raw_p = u8::try_from(g["rawP"].as_u64()?).ok()?;
         // `u` is the ONE field the grant does not carry, and the shipped reader rebuilds it:
-        // `kernel_capacity::prio_of` sets it only where the grant has an `until` and is not a
+        // `planwire::prio_of` (moved from `kernel_capacity` at W-35 track R, gap 2876) sets it
+        // only where the grant has an `until` and is not a
         // wall, as the exact `need / avail` held on the kernel's side of 1 — at or above 1
         // exactly when the grant's `bin` is `null` (HOT), below it otherwise. **W-33, README
         // gap 2518: this spelling used to fill `need / avail` for EVERY grant, a zero capacity
@@ -3699,8 +3700,19 @@ proptest! {
     fn the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause(
         case in case_strategy(),
         brk in prop::option::of((0u32..=40, 5u32..=30, prop::sample::select(vec!["walk", "seat", "bed", "phone"]))),
+        over in prop_oneof![1 => Just(false), 1 => Just(true)],
     ) {
         let mut w = build(&case);
+        // **P46, drawn and not only met** (W-35 land step, README gap 2910): the shared generator
+        // reaches an overtime day on 1-5 of ~280 cases, so the `n46 > 0` floor below failed at the
+        // merge on a run that drew none.  Half of the no-break days lower the running block's
+        // estimate to the minutes it has run — a day the generator can already draw, drawn more
+        // often; nothing else about the case changes, and the floor is kept.
+        if let (true, None, Some((_, ran, _))) = (over, brk, case.active) {
+            if let Some(a) = w.state.active.as_mut() {
+                a.est_min = a.est_min.min(ran.max(1));
+            }
+        }
         let tz = w.cfg.tz;
         let now_sec = rowwire::kernel_sec(w.now);
         let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
@@ -4085,8 +4097,14 @@ proptest! {
         prop_assert_eq!(&blk_proj, &kblk_ids, "`blocked` is not `blockedDeps`' projection");
 
         let cvec = w.candidates();
+        // **The D57 comparand, not `planner::plan`** (W-35 land step, README gap 2910): on an
+        // overtime day (P46) or a wall on `now` (P47) the kernel's day differs from the fork's BY
+        // DESIGN, so step 8's rest is compared with `w35_fork_plan` — which IS `planner::plan`,
+        // kernel-ranked (D53), on every other day — as track K's merge made every earlier arm do.
+        // Found by the merge: an overtime day (`active: (0, 59 min, est 30)`) failed `underused`
+        // against the raw fork, which placed a second item at `now`.
         let day2 = kernel_prios(&plan, &cvec)
-            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps)));
+            .map(|ps| w35_fork_plan(&w, &w.state, &cvec, &ps, &plan));
         let mut row = [0u64; 15];
         row[0] = 1;
         match day2.as_ref() {

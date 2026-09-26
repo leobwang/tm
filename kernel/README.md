@@ -68441,3 +68441,20 @@ llama-server and two Lean builds; gap 1333) and passed 6/6 re-run at load 10–1
 **No `.lean` file touched, no predicate or assertion weakened, no snapshot, latency band or corpus
 re-blessed (the one new fixture was blessed by its own test, once), no memory bound raised, no
 external dependency, no `.proptest-regressions` change.**
+
+<!-- =====================================================================
+     APPENDED 2026-09-26: stage 6 (the planner), run **W-35**, **LAND STEP**,
+     on `rebuild-on-lean`: tracks K (`w35-k`), E (`w35-e`) and R (`w35-r`)
+     merged in that order.  Gap range **2910-2919**.  Parity **P48** and **P49**
+     issued here, for track E's two PARITY-PENDING lines, in the order its block
+     wrote them.
+     ===================================================================== -->
+
+## Stage 6 — W-35, land step: the owner's four calls are built, and R3's host half stands
+
+### 1. The two parity numbers track E left pending
+
+**Parity P48 taken**: `tm edit est=` on a boxed line with NO estimate inserts an `est:` token in canonical minutes before the `^id` (`est:1200m`), where fork 4748911's `ItemLine::set_leading_est` inserts a LEADING estimate as written after the ci (`20b`); and on a line carrying `est:` the kernel rewrites the token in canonical minutes where the fork writes it as written (`est:20b`) — D49's settled rendering (W-27), recorded by no number until now (track E's first PARITY-PENDING, README "Stage 6 — W-35, track E" §1).  D56 closed the third case, the leading estimate, by agreeing with the fork.
+
+**Parity P49 taken**: after an interruption or a pause, `tm now`'s header and `--json`'s `active.elapsed_min` are the WORKED minutes (`Replay::active_worked_min`, the log's open block), where fork 4748911 prints the wall clock since `started` (track E's second PARITY-PENDING, §4 of its block, gap 2741).
+
