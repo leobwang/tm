@@ -1,5 +1,6 @@
 import TmKernel.Lookahead
 import TmKernel.SealResume
+import TmKernel.Recur
 /-!
 # The planner's vocabulary — §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0)
 
@@ -31,16 +32,15 @@ per bucket", `:4576` is "§8.2 step 5's assignment", and `:6138`'s `dayRows` com
 `assignedRows`, `optionalRows` and `restRows`.  (Gap 2223 quoted `:2802`, `:4209`, `:4553`
 and `:6115`, all four true of `471a7ff`; this header is twenty-three lines longer, so
 every anchor below it moved by that, and re-deriving them rather than copying them is AGENTS §5.11.)
-Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8 fills ten of twelve fields since
-W-33 (`dayDiagnostics` names the two it does not, gap 2511); P8's emitter is still owed.)*
+Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8 fills all twelve fields since W-34
+(ten since W-33; gap 2511 closed), and P8's emitter, the plan hash, landed at W-34.)*
 
-*A tripwire, and the one that already fired.*  P0 left two theorems whose job was to stop
-compiling on the day they became false.  **P1 took the first**:
-`the_day_has_no_segments_until_the_first_step_lands` is **deleted** — with
-`dayPlan_diagnostics` and `dayPlan_assigns_nothing_yet`, which P1's body also made false —
-and `Check.lean`'s block records the deletion.  Do not cite it as a live description of this
-module; it is history.  `the_plan_hash_is_a_placeholder_until_the_emitter_lands` **still
-stands** and is P8's to delete.  Nothing in `Goals.lean` is discharged here.
+*Two tripwires, and both have fired.*  P0 left two theorems whose job was to stop compiling on
+the day they became false.  **P1 took the first**: `the_day_has_no_segments_until_the_first_step_lands`
+is **deleted** — with `dayPlan_diagnostics` and `dayPlan_assigns_nothing_yet`, which P1's body
+also made false.  **W-34 took the second**: the_plan_hash_is_a_placeholder_until_the_emitter_lands
+is refuted in `PlannerWit` and renamed `dayPlan_planHash`.  `Check.lean`'s blocks record both;
+neither is a live description of this module.  Nothing in `Goals.lean` is discharged here.
 
 *(W-15 repair: every clause of this paragraph but the last was false of the code it heads —
 the rot class W-14 opened as gap 393, in the stage's central module.  It is re-stated here
@@ -6525,17 +6525,17 @@ theorem PlanReq.dayWaiting_capped (r : PlanReq) : r.dayWaiting.length ≤ maxCan
     (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
 
 /-- **`Diagnostics.blocked`** — fork `diagnose`'s `if let Some(Ineligible::Blocked(deps)) =
-c.ineligible_reason()`, walls skipped.  `ineligible_reason` answers `Blocked` exactly when the
-line is not waiting, its state is open and its unsatisfied `after:` list is non-empty
-(`priority.rs:303-312`, in that order), and all three are the wire's facts
-(`Look.PlanFacts.isOpen`, `Look.PlanFacts.blockedBy`).  The not-waiting clause is not spelled:
-an open state is already a non-waiting one
-(`Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states`, README gap 775), so no
-witness could pin it.  The fork pushes `(id, deps)` with no guard; `IdList` carries the id. -/
+c.ineligible_reason()`, walls skipped: the `blocked` arm of `Look.PlanFacts.ineligibleReason`,
+the kernel's ONE reading of fork `ineligible_reason` (`priority.rs:303-322`), whose `none` case
+is `Look.PlanFacts.eligible`.  Until W-34 this re-spelled the rule — `isOpen && !blockedBy.isEmpty`
+beside `eligible`'s own conjuncts — and README gap 2573 named the two definitions of one concept
+(AGENTS §5.3); the rule has one body now, `mem_dayBlocked` below is re-proved over it and its
+statement did not move (D5).  The fork pushes `(id, deps)` with no guard; `IdList` carries the
+id. -/
 def PlanReq.dayBlocked (r : PlanReq) : List Id :=
   r.cands.val.filterMap (fun cf =>
-    if !cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty
-    then some cf.1.id else none)
+    match cf.1.wall, cf.1.plan.val.ineligibleReason with
+    | false, some (.blocked _) => some cf.1.id | _, _ => none)
 
 /-- **An id is blocked exactly when a non-wall candidate carries it with an open line and a
 non-empty `after:` residue** (W-33 repair, README gap 2567) — before the cap, for check 9's
@@ -6546,42 +6546,114 @@ theorem PlanReq.mem_dayBlocked (r : PlanReq) (i : Id) :
         cf.1.plan.val.blockedBy.isEmpty = false := by
   unfold PlanReq.dayBlocked
   rw [List.mem_filterMap]
+  -- RE-PROVED at W-34 (D5, README gap 2573): the statement is W-33's, word for word; the
+  -- body it is about reads the rule through `Look.PlanFacts.ineligibleReason`, and
+  -- `ineligibleReason_blocked_iff` is the bridge from that one reading back to the two facts
+  -- this statement names.
   constructor
   · rintro ⟨cf, hcf, h⟩
-    by_cases hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true
-    · rw [if_pos hc] at h
-      simp only [Option.some.injEq] at h
-      simp only [Bool.and_eq_true, Bool.not_eq_true'] at hc
-      exact ⟨cf, hcf, h, hc.1.1, hc.1.2, hc.2⟩
-    · rw [if_neg hc] at h
-      exact absurd h (by simp)
+    split at h
+    · rename_i d hw hr
+      obtain ⟨ho, hb, -⟩ := (Look.PlanFacts.ineligibleReason_blocked_iff _ d).1 hr
+      exact ⟨cf, hcf, Option.some.inj h, hw, ho, hb⟩
+    · exact absurd h (by simp)
   · rintro ⟨cf, hcf, hid, hw, ho, hb⟩
     refine ⟨cf, hcf, ?_⟩
-    have hc : (!cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty) = true := by
-      simp only [Bool.and_eq_true, Bool.not_eq_true']
-      exact ⟨⟨hw, ho⟩, hb⟩
-    rw [if_pos hc, hid]
+    have hr := (Look.PlanFacts.ineligibleReason_blocked_iff _ _).2 ⟨ho, hb, rfl⟩
+    simp only [hw, hr, hid]
 
 theorem PlanReq.dayBlocked_capped (r : PlanReq) : r.dayBlocked.length ≤ maxCands :=
   Nat.le_trans (List.length_filterMap_le _ _) r.cands.property
 
-/-- §8.2 step 8's diagnostics, as far as steps 1, 2, 4, 5, 6 and 7 fill them — **TEN of the
-twelve** since W-33 (three until then, README gap **2403**).  `conflicts` (step 1), `notes`
-(steps 1, 6 and 7) and `aCapacityLost` (step 7's Rest against the ci-5 candidates) were here;
-W-33 adds `impossible` (P8's first half, README gaps **2321** and **2419**), `hot`, `waiting`,
-`blocked`, `droppedTail`, `underused` and `planHonesty`, each read off a value the request
-carried or the day already computed.
+/-- **Fork `run()`'s `raw_slots`** (`planner.rs:954-955`): §8.2 step 3's cut energised through
+`Posterior::none(cfg)` — today's `EnergyCtx` with no reports, which here is `Look.energizeToday` at a
+`today0` whose `reports` are empty, and nothing else (the wake, the sleep debt, the location and
+the home cap are the same `today0`'s).  One field of §8.2 step 8 reads it, `deferred`, and README
+gap **555** — *"`raw_slots` are not computed"* — closes with it (W-34). -/
+def PlanReq.rawSlots (r : PlanReq) : List (Fin 6 × Look.Slot) :=
+  Look.energizeToday { r.look with today0 := { r.look.today0 with reports := [] } } r.todaySlots
 
-**The two still at `Diagnostics.empty`, each with its reason** (README gap **2511**):
-* `deferred` — fork: an unassigned eligible candidate for which some slot's RAW energy (the
-  energising at a flat posterior, fork `raw_slots`) reached its `ci` while the energised
-  slot's did not.  `PlanReq.energisedSlots` is the posterior-corrected energising only; the
-  raw one is a second call of `Look.energizeToday` at a flat posterior, which this step did
-  not write.
-* `restDebtMin` — fork: Σ `planned_min − actual_or_planned()` over today's breaks, off the day
-  record `PlanReq.todayRecord` already reads.  Composable in one line; no witness log in this
-  tree carries a break with an `actual_min`, so D40's constant fold `0` survives every witness
-  and the field waits for that witness, not for a definition. -/
+/-- **`Diagnostics.deferred`** — fork `diagnose`'s "a posterior downgrade cost this item its slot"
+(`planner.rs:2172-2183`): walls skipped, a candidate the day's `assigned` does not hold, eligible
+(`Look.PlanFacts.eligible`), not an optional, with no placement window, for which SOME slot's raw
+energy reached its `ci` while the same slot's energised one did not — once each, the first
+(`List.eraseDups`, the fork's `!d.deferred.contains`).  The slot pairs are zipped ONCE, outside the
+per-candidate test (README gap 2521's lesson: a recomputation per member is quadratic). -/
+def PlanReq.dayDeferred (r : PlanReq) (assigned : List Id) : List Id :=
+  let both := r.energisedSlots.zip r.rawSlots
+  (r.cands.val.filterMap (fun cf =>
+    if !cf.1.wall && !assigned.contains cf.1.id && cf.1.plan.val.eligible && !cf.1.optional &&
+        !cf.1.window &&
+        both.any (fun p => decide (cf.1.ci ≤ p.2.1) && decide (p.1.1 < cf.1.ci))
+    then some cf.1.id else none)).eraseDups
+
+theorem PlanReq.dayDeferred_capped (r : PlanReq) (assigned : List Id) :
+    (r.dayDeferred assigned).length ≤ maxCands :=
+  Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
+    (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
+
+/-- **`Diagnostics.restDebtMin`** — fork `diagnose`'s §11 rest debt (`planner.rs:2206-2212`): Σ
+over today's logged breaks of `planned_min.saturating_sub(actual_or_planned())`, where
+`BreakRecord::actual_or_planned` is `actual_min.unwrap_or(planned_min)` and `Nat` subtraction is
+`saturating_sub`; off the day record `PlanReq.todayRecord` already reads (fork
+`self.input.replay.day(self.date)`), `0` with none. -/
+def PlanReq.dayRestDebtMin (r : PlanReq) : Nat :=
+  ((r.todayRecord.map (·.breaks)).getD []).foldl
+    (fun a b => a + (b.plannedMin - b.actualMin.getD b.plannedMin)) 0
+
+/-- **The zip pairs each slot with itself**: the raw and the energised slots are the same slots
+of the same cut, in the same order — only their levels differ — so fork `slots.iter().zip(
+raw_slots)` compares one slot's two readings and never two slots. -/
+theorem PlanReq.the_raw_and_energised_slots_are_the_same_slots (r : PlanReq) :
+    r.rawSlots.map Prod.snd = r.todaySlots ∧ r.energisedSlots.map Prod.snd = r.todaySlots := by
+  unfold PlanReq.rawSlots PlanReq.energisedSlots Look.energizeToday
+  simp [List.map_map, Function.comp_def]
+
+/-- **An id is deferred exactly when** a non-wall candidate carries it, the day does not assign
+it, it is eligible, not optional, has no window, and some slot's raw level reaches its `ci` while
+the same slot's energised level does not — before the cap, for check 9's pin. -/
+theorem PlanReq.mem_dayDeferred (r : PlanReq) (assigned : List Id) (i : Id) :
+    i ∈ r.dayDeferred assigned ↔
+      ∃ cf ∈ r.cands.val, cf.1.id = i ∧ cf.1.wall = false ∧ assigned.contains cf.1.id = false ∧
+        cf.1.plan.val.eligible = true ∧ cf.1.optional = false ∧ cf.1.window = false ∧
+        ∃ p ∈ r.energisedSlots.zip r.rawSlots, cf.1.ci ≤ p.2.1 ∧ p.1.1 < cf.1.ci := by
+  unfold PlanReq.dayDeferred
+  simp only [List.mem_eraseDups, List.mem_filterMap]
+  constructor
+  · rintro ⟨cf, hcf, h⟩
+    split at h
+    · rename_i hc
+      simp only [Option.some.injEq] at h
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, decide_eq_true_eq] at hc
+      obtain ⟨⟨⟨⟨⟨hw, ha⟩, he⟩, ho⟩, hn⟩, p, hp, hle, hlt⟩ := hc
+      exact ⟨cf, hcf, h, hw, ha, he, ho, hn, p, hp, hle, hlt⟩
+    · exact absurd h (by simp)
+  · rintro ⟨cf, hcf, hid, hw, ha, he, ho, hn, p, hp, hle, hlt⟩
+    refine ⟨cf, hcf, ?_⟩
+    rw [if_pos (by
+      simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, decide_eq_true_eq]
+      exact ⟨⟨⟨⟨⟨hw, ha⟩, he⟩, ho⟩, hn⟩, p, hp, hle, hlt⟩), hid]
+
+/-- **The rest debt is the sum of the day's shortfalls** — each break's `planned − actual`,
+saturating, the fork's `.map(…).sum()` — stated as the sum it is. -/
+theorem PlanReq.dayRestDebtMin_is_the_sum_of_the_shortfalls (r : PlanReq) :
+    r.dayRestDebtMin = (((r.todayRecord.map (·.breaks)).getD []).map
+      (fun b => b.plannedMin - b.actualMin.getD b.plannedMin)).sum := by
+  unfold PlanReq.dayRestDebtMin
+  generalize ((r.todayRecord.map (·.breaks)).getD []) = l
+  suffices h : ∀ a, l.foldl (fun a b => a + (b.plannedMin - b.actualMin.getD b.plannedMin)) a =
+      a + (l.map (fun b => b.plannedMin - b.actualMin.getD b.plannedMin)).sum by
+    simpa using h 0
+  induction l with
+  | nil => intro a; simp
+  | cons b bs ih => intro a; simp only [List.foldl_cons, List.map_cons, List.sum_cons, ih]; omega
+
+/-- §8.2 step 8's diagnostics — **TWELVE of the twelve** since W-34 (three until W-33, ten until
+W-34; README gaps **2403** and **2511**).  Each field is read off a value the request carried or
+the day already computed: `conflicts` (step 1), `notes` (steps 1, 6 and 7), `aCapacityLost` (step
+7's Rest against the ci-5 candidates), W-33's `impossible`, `hot`, `waiting`, `blocked`,
+`droppedTail`, `underused` and `planHonesty`, and W-34's `deferred` (over `PlanReq.rawSlots`,
+README gap 555) and `restDebtMin` (the day record's breaks). -/
 def dayDiagnostics (r : PlanReq) : Diagnostics :=
   let assigned := dayAssigned r
   { Diagnostics.empty with
@@ -6590,13 +6662,15 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
     impossible := Capped.ofListTake r.dayImpossible
     conflicts := Capped.ofListTake (wallConflicts (wallsToday r))
     blocked := Capped.ofListTake r.dayBlocked
+    deferred := Capped.ofListTake (r.dayDeferred assigned)
     waiting := Capped.ofListTake r.dayWaiting
     aCapacityLost := r.aCapacityLost assigned
     notes := Capped.ofListTake
       ((if travelDay r then [Note.travelDay] else []) ++ r.noPositionNotes ++
         r.budgetSpentNotes)
     droppedTail := Capped.ofListTake (r.dayDroppedTail assigned)
-    planHonesty := r.dayPlanHonesty assigned }
+    planHonesty := r.dayPlanHonesty assigned
+    restDebtMin := r.dayRestDebtMin }
 
 /-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
 it, so `Capped.ofListTake` truncates nothing. -/
@@ -6622,19 +6696,262 @@ theorem dayDiagnostics_underused (r : PlanReq) :
 theorem dayDiagnostics_planHonesty (r : PlanReq) :
     (dayDiagnostics r).planHonesty = r.dayPlanHonesty (dayAssigned r) := rfl
 
-/-- **The two fields nobody writes yet are `Diagnostics.empty`'s**, said in the compiler so
-that the day the last of them is written this stops compiling and README gap 2511 closes with
-it — the tripwire shape `the_plan_hash_is_a_placeholder_until_the_emitter_lands` has. -/
-theorem the_day_leaves_two_diagnostic_fields_empty (r : PlanReq) :
-    (dayDiagnostics r).deferred = Diagnostics.empty.deferred ∧
-      (dayDiagnostics r).restDebtMin = Diagnostics.empty.restDebtMin :=
-  ⟨rfl, rfl⟩
+/-- **The day carries the whole `deferred` list** — the cap is the candidates' and the list is
+under it.  W-33's tripwire the_day_leaves_two_diagnostic_fields_empty said these two fields were
+`Diagnostics.empty`'s for every request; it FIRED at W-34, is refuted in `PlannerWit`
+(`the_day_leaves_two_diagnostic_fields_empty_is_refuted`) and is renamed to these two laws. -/
+theorem dayDiagnostics_deferred (r : PlanReq) :
+    (dayDiagnostics r).deferred.val = r.dayDeferred (dayAssigned r) :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayDeferred_capped _)
+
+theorem dayDiagnostics_restDebtMin (r : PlanReq) :
+    (dayDiagnostics r).restDebtMin = r.dayRestDebtMin := rfl
+
+/-! ### The two caps W-33 left unproved (README gap 2576)
+
+`dayDroppedTail` and `dayUnderused` reach the day through `Capped.ofListTake`, and W-33 wrote no
+law saying the take keeps them whole — gap 322's shape, a silent `take`.  **`droppedTail` truncates
+nothing**, proved below by the pigeonhole the gap named.  **`underused` is a different list**: the
+fork pushes one `(id, energy, ci)` per item per underused work row, so an item holding two
+underused slots is named twice (`PlannerWit.the_underused_list_names_an_item_once_per_slot`), and
+the per-candidate cap `IdList` carries is not a bound on it.  What does bound it is the rows and
+the batch width, `dayUnderused_length_le`; the cap can bite only past 1,024 (row, item) pairs in
+one day, and README gap 2641 records that residue with its cost. -/
+
+/-- **`eraseDups` leaves no duplicate** — the half `eraseDups_length_le` does not state, and the
+one the pigeonhole below needs. -/
+theorem nodup_eraseDups {α : Type} [BEq α] [LawfulBEq α] :
+    ∀ (n : Nat) (l : List α), l.length ≤ n → l.eraseDups.Nodup
+  | _, [], _ => by simp
+  | 0, _ :: _, h => by simp at h
+  | n + 1, a :: as, h => by
+    rw [List.eraseDups_cons]
+    refine List.nodup_cons.2 ⟨?_, ?_⟩
+    · intro ha
+      rw [List.mem_eraseDups] at ha
+      simp at ha
+    · exact nodup_eraseDups n _ (Nat.le_trans (List.length_filter_le _ _)
+        (by simp only [List.length_cons] at h; omega))
+
+/-- **`droppedTail` truncates nothing** (README gap 2576, first half): every id it names is an
+answer's — a member of a group `buildGroups` built is ranked (`PlanReq.a_group_member_is_ranked`)
+and a ranked entry is an answer (`PlanReq.a_ranked_entry_is_an_answer`) — and it names each once
+(`nodup_eraseDups`), so core's pigeonhole `List.Nodup.length_le_of_subset` bounds it by the
+answers, whose count is the candidates' and is capped. -/
+theorem PlanReq.dayDroppedTail_capped (r : PlanReq) (assigned : List Id) :
+    (r.dayDroppedTail assigned).length ≤ maxCands := by
+  have hsub : r.dayDroppedTail assigned ⊆ r.candAnswers.map (fun o => o.out.cand.id) := by
+    intro i hi
+    unfold PlanReq.dayDroppedTail at hi
+    rw [List.mem_eraseDups] at hi
+    obtain ⟨g, hg, hgi⟩ := List.mem_flatMap.1 (List.mem_filter.1 hi).1
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hgi
+    exact List.mem_map.2 ⟨y.out, List.mem_of_getElem? (PlanReq.a_ranked_entry_is_an_answer
+      (PlanReq.a_group_member_is_ranked hg hy)), rfl⟩
+  have hnd : (r.dayDroppedTail assigned).Nodup := nodup_eraseDups _ _ (Nat.le_refl _)
+  calc (r.dayDroppedTail assigned).length
+      ≤ (r.candAnswers.map (fun o => o.out.cand.id)).length := hnd.length_le_of_subset hsub
+    _ = r.candAnswers.length := List.length_map _
+    _ ≤ maxCands := r.candAnswers_capped
+
+/-- **So the day carries the whole dropped tail.** -/
+theorem dayDiagnostics_droppedTail_whole (r : PlanReq) :
+    (dayDiagnostics r).droppedTail.val = r.dayDroppedTail (dayAssigned r) :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayDroppedTail_capped _)
+
+/-- A list of lists no longer than `k` each flattens to at most `k` per list. -/
+theorem length_flatMap_le_mul {α β : Type} (f : α → List β) (k : Nat)
+    (h : ∀ x, (f x).length ≤ k) : ∀ l : List α, (l.flatMap f).length ≤ l.length * k
+  | [] => by simp
+  | x :: xs => by
+    rw [List.flatMap_cons, List.length_append, List.length_cons, Nat.succ_mul]
+    have := length_flatMap_le_mul f k h xs
+    have := h x
+    omega
+
+/-- **A row names at most `maxBatch` items** — a batch its bounded members, any other row its one
+item or none. -/
+theorem segItems_length_le (s : WfSeg) : (segItems s).length ≤ maxBatch := by
+  unfold segItems Seg.items
+  split
+  · rename_i ids _; exact ids.property
+  · cases s.val.item <;> simp [maxBatch]
+
+/-- **What does bound `underused`** (README gap 2576, second half): its underused work rows times
+the batch width — the per-(row, item) list the fork pushes, bounded by what it is made of and not
+by the candidates. -/
+theorem PlanReq.dayUnderused_length_le (r : PlanReq) :
+    r.dayUnderused.length ≤
+      ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).length *
+        maxBatch :=
+  length_flatMap_le_mul segItems maxBatch segItems_length_le _
+
+/-- **And below the cap the take keeps it whole** — the subdomain named in the theorem (AGENTS
+§3.1 item 4): at most 64 underused work rows, which a day whose remaining budget is 64 blocks or
+fewer cannot exceed with step 5's rows alone. -/
+theorem dayDiagnostics_underused_whole_below_the_cap (r : PlanReq)
+    (h : ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).length *
+        maxBatch ≤ maxCands) :
+    (dayDiagnostics r).underused.val = r.dayUnderused :=
+  Capped.ofListTake_keeps_everything_below_the_cap _
+    (Nat.le_trans r.dayUnderused_length_le h)
+
+/-! ### The plan's identity: fork `DayPlan::hash`, byte for byte (W-34 track H, P8's emitter)
+
+Fork `DayPlan::hash` (`planner.rs:577-600`) is FNV-1a/64 over **the UTF-8 bytes of
+serde_json::to_string(&Vec<Placement>)**, one `Placement` per segment in the day's order, and
+`state.last_plan_hash` stores it as sixteen lowercase hex digits.  What it digests was MEASURED
+before anything here was written (README "Stage 6 — W-34, track H", with the probe that
+printed each spelling from the fork's own crates):
+
+* a `Placement` is the struct `{start, end, kind, energy, item, instance, planned_min,
+  multiplier}` in that order, compact (`serde_json::to_string`), `null` for every `None`;
+* `start`/`end` are `DateTime<Tz>`, which chrono 0.4.45 serialises through write_rfc3339(naive,
+  offset, SecondsFormat::AutoSi, true): the **local** clock in the zone at that instant, whole
+  seconds with no fraction (the kernel's rows are whole seconds), and the offset as `±HH:MM`
+  rounded to the minute — or **`Z`** when it is exactly zero (allow_zulu).  The kernel's
+  rows are on its own absolute seconds from 0001-01-01 and this converts through the request's
+  zone table (`Cal.offsetAt`), never through the Unix epoch;
+* `kind` is `SegKind` under #[serde(rename_all = "lowercase")]: `"block"`, `"break"`,
+  `"winddown"` (not the wire's `wind-down`) and `{"batch":[ids]}` for a batch;
+* `instance` is InstanceKey, externally tagged: `{"Date":"YYYY-MM-DD"}` or `{"Nth":n}`;
+* `multiplier` is an `f64`, and serde_json 1.0.151 writes it with **zmij 1.0.23**, not ryu —
+  the shortest digits, fixed notation for a first-digit exponent in `-5..=15`, else `1e-6` /
+  `1.5e+17` with the exponent's sign ALWAYS written.  The kernel's multiplier is the exact
+  decimal the host sent (D17: written_pair of the double's shortest Display), so its
+  digits are the double's and only the layout is computed here (`multText`).
+
+The digest is on `Nat` with `% hashBound` for the 64-bit wrap, not `UInt64`: probed at 8G/120 s
+the whole of `PlannerWit.theRequest`'s day — planning included — digests by `decide +kernel` in
+1.6 s at 1.1 GB, where `Nat.xor`, `Nat.mul` and `Nat.mod` are the kernel's GMP-accelerated
+primitives and a `UInt64` step would go through `BitVec` and `Fin` first. -/
+
+/-- **One byte of FNV-1a**: `h ^= byte; h = h.wrapping_mul(FNV_PRIME)`, with the fork's prime
+`0x100000001b3` written in place — a named nullary `def` is emitted as a C global the compiled
+step never reads, which check 12 would rightly call unreached.  The wrap is `% hashBound`, the
+digest's own width (R10) — no second bound is minted. -/
+def fnvStep (h : Nat) (b : UInt8) : Nat := (h ^^^ b.toNat) * 1099511628211 % hashBound
+
+/-- **FNV-1a/64** over a byte string, from the fork's offset basis `0xcbf29ce484222325`
+(`planner.rs`'s FNV_OFFSET, written in place for the same reason). -/
+def fnv1a (bs : List UInt8) : Nat := bs.foldl fnvStep 14695981039346656037
+
+/-- Every step stays under the width, so the digest is a `PlanHash`. -/
+theorem fnvFold_lt : ∀ (bs : List UInt8) (h : Nat), h < hashBound →
+    bs.foldl fnvStep h < hashBound
+  | [], _, hh => hh
+  | b :: bs, h, _ => fnvFold_lt bs (fnvStep h b) (Nat.mod_lt _ (by decide))
+
+theorem fnv1a_lt (bs : List UInt8) : fnv1a bs < hashBound := fnvFold_lt bs _ (by decide)
+
+/-- **The published FNV-1a/64 test vectors**, and the digest of the empty day `"[]"`: the empty
+string is the offset basis, `"a"` is `af63dc4c8601ec8c`, and `"[]"` is `09612b07b5ecb5a5` —
+each printed by the fork's own loop in the W-34 probe. -/
+theorem fnv1a_test_vectors :
+    fnv1a [] = 0xcbf29ce484222325 ∧
+      fnv1a (['a'].flatMap String.utf8EncodeChar) = 0xaf63dc4c8601ec8c ∧
+      fnv1a (['[', ']'].flatMap String.utf8EncodeChar) = 0x09612b07b5ecb5a5 := by decide
+
+/-- **Fork `SegKind`'s serde spelling** (#[serde(rename_all = "lowercase")], measured): a unit
+variant is its lowercased name — WindDown is `"winddown"`, which is NOT `PlanWire.kindName`'s
+wire word — and `Batch(ids)` is the externally tagged `{"batch":[…]}`.  `ghost` is the kernel's
+own row kind (the fork's is a `SegFlags` bit) and no row `dayRows` builds has it; it is spelled
+`"ghost"`, a word no fork kind serialises to. -/
+def serdeKind : SegKind → JVal
+  | .block => .str ['b','l','o','c','k']
+  | .batch ids => .obj [(['b','a','t','c','h'], .arr (ids.val.map JVal.str))]
+  | .brk => .str ['b','r','e','a','k']
+  | .routine => .str ['r','o','u','t','i','n','e']
+  | .wall => .str ['w','a','l','l']
+  | .rest => .str ['r','e','s','t']
+  | .optional => .str ['o','p','t','i','o','n','a','l']
+  | .windDown => .str ['w','i','n','d','d','o','w','n']
+  | .sleep => .str ['s','l','e','e','p']
+  | .lost => .str ['l','o','s','t']
+  | .ghost => .str ['g','h','o','s','t']
+
+/-- **Fork InstanceKey's serde spelling** — externally tagged, `{"Date":"YYYY-MM-DD"}` or
+`{"Nth":n}` (measured).  A row's `inst` carries the key as the text the host (a routine
+instance, InstanceKey::to_string) or the log (a replayed routine) wrote, and it is read by
+`Recur.parseInstKey` — the kernel's one port of fork parse_instance_key, which is exactly what
+fork `past_segments` calls on a logged `inst` — so a key it cannot read is `null` on both sides. -/
+def serdeInstance : Option (Id × Id) → JVal
+  | none => .null
+  | some (_, k) =>
+    match Recur.parseInstKey k with
+    | none => .null
+    | some (.date d) => .obj [(['D','a','t','e'], .str (Field.renderDate d))]
+    | some (.nth n) => .obj [(['N','t','h'], .num n)]
+
+/-- **serde_json 1.0.151's spelling of a multiplier** — zmij::Buffer::format_finite of the
+double whose shortest digits are this exact decimal (the host sends exactly those digits, D17).
+The value at `Look.capDen`'s eighteen places — the most a configured decimal carries (D17), so
+the bound is reused, not minted — is `m`; `digitsOf m` has `n` digits and the first digit's
+exponent is `n − 19`.  zmij writes fixed notation for an exponent in `-5..=15`
+(FIXED_DEC_EXP, `lib.rs:320`: `n ∈ 14..=34` here) — the integer digits, a point, and the
+fraction without its trailing zeros, or `0` — and otherwise the first digit, a point and the
+rest only when there is a rest, `e`, the exponent's sign ALWAYS (`e+16`, `e-6`) and its digits.
+Zero is `0.0`.  A value with more than eighteen places cannot come off the wire (the host
+refuses it, kernel_capacity::plan_json); here it is read at its first eighteen. -/
+def multText (q : Arith.Pos) : List Char :=
+  let m := q.val.num * Look.capDen / q.val.den
+  let ds := digitsOf m
+  let sig := (ds.reverse.dropWhile (· == '0')).reverse
+  if m = 0 then ['0', '.', '0']
+  else if 14 ≤ ds.length ∧ ds.length ≤ 34 then
+    digitsOf (m / Look.capDen) ++ '.' ::
+      (match ((padTo 18 (m % Look.capDen)).reverse.dropWhile (· == '0')).reverse with
+       | [] => ['0']
+       | fs => fs)
+  else
+    sig.headD '0' :: ((if 1 < sig.length then '.' :: sig.tail else []) ++
+      'e' :: (if 19 ≤ ds.length then '+' :: digitsOf (ds.length - 19)
+              else '-' :: digitsOf (19 - ds.length)))
+
+/-- **A row's instant as chrono serialises a `DateTime<Tz>`**: write_rfc3339(naive_local,
+offset, SecondsFormat::AutoSi, true).  The pieces are `LogStamp`'s — the same local date and
+clock, the same minute-rounded offset `renderStamp` writes — and the two options are the only
+difference: whole seconds need no AutoSi fraction here, and allow_zulu writes `Z` for an
+offset of exactly zero where `renderStamp` (the log's SecondsFormat::Secs, false) writes
+`+00:00`.  `instantText_is_renderStamp_off_utc` says so. -/
+def instantText (z : Cal.Tz) (sec : Nat) : List Char :=
+  let o := Cal.offsetAt z ⟨sec, 0⟩
+  let t := LogStamp.localDateTod ⟨sec, 0⟩ o
+  t.1 ++ 'T' :: (Field.renderClock (LogStamp.clockOf t.2) ++ ':' ::
+    (padTo 2 (t.2 % 60) ++ (if o.sec = 0 then ['Z'] else LogStamp.renderOffset o)))
+
+/-- **One `Placement`, serialised** — fork Placement::of under serde_json::to_string: the
+eight fields in declaration order, compact, `null` for `None`, strings through `jemit` (whose
+escaping is serde_json's, `escOf`).  The marks, the note and the diagnostics are not digested
+(the fork's docstring: they change with every `tm done`). -/
+def placementText (z : Cal.Tz) (s : Seg) : List Char :=
+  ['{','"','s','t','a','r','t','"',':'] ++ jemit (.str (instantText z s.start)) ++
+  [',','"','e','n','d','"',':'] ++ jemit (.str (instantText z s.stop)) ++
+  [',','"','k','i','n','d','"',':'] ++ jemit (serdeKind s.kind) ++
+  [',','"','e','n','e','r','g','y','"',':'] ++
+    jemit ((s.energy.map fun e => JVal.num e.val).getD .null) ++
+  [',','"','i','t','e','m','"',':'] ++ jemit ((s.item.map JVal.str).getD .null) ++
+  [',','"','i','n','s','t','a','n','c','e','"',':'] ++ jemit (serdeInstance s.inst) ++
+  [',','"','p','l','a','n','n','e','d','_','m','i','n','"',':'] ++
+    jemit ((s.planned.map JVal.num).getD .null) ++
+  [',','"','m','u','l','t','i','p','l','i','e','r','"',':'] ++
+    (s.mult.map multText).getD ['n','u','l','l'] ++ ['}']
+
+/-- **The digested text**: serde_json::to_string(&Vec<Placement>), the rows in the day's
+order. -/
+def placementsText (z : Cal.Tz) (segs : List Seg) : List Char :=
+  '[' :: (List.intercalate [','] (segs.map (placementText z)) ++ [']'])
+
+/-- **Fork `DayPlan::hash`**: FNV-1a/64 of the placement text's UTF-8 bytes (core's
+`String.utf8EncodeChar`, the one encoder). -/
+def planDigest (z : Cal.Tz) (segs : List Seg) : PlanHash :=
+  ⟨fnv1a ((placementsText z segs).flatMap String.utf8EncodeChar), fnv1a_lt _⟩
 
 /-- **D28: this signature is total and stays total.**  There is no `dayPlan?`, no
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
 (G1), not gated behind a refusal.
 
-**What it does today — §8.2 steps 1 to 7, and ten of step 8's twelve fields.**  Its segments
+**What it does today — §8.2 steps 1 to 7, all twelve of step 8's fields, and the hash.**  Its segments
 are `dayRows` (`:6138`), the sort of six row lists: step 1's walls (`stepOneSegs`, `:1543`), placed where
 the plan's own index puts them, §9's running interruption as an ad-hoc wall, the past half
 replayed from this call's own run, and a `travel-day` wall's zeroing of the remaining budget;
@@ -6646,10 +6963,11 @@ cut and energised on stage 5's own `Look.cutSlots` and `Look.energizeToday` (`to
 (`deferOne`, `:5115`; `deferWalk`, `deferFold`, with `finalRoutines` and `finalAssign` its two
 projections and `dayRoutineSegs`, `:5923`, the rows it leaves); and step 7's `optionalRows` and
 `restRows`, with the wind-down and sleep rows that close the day.  Its diagnostics are
-`dayDiagnostics` (`:6506`), which fills ten of `Diagnostics`' twelve fields and leaves
-`deferred` and `restDebtMin` at `Diagnostics.empty` (README gap 2511, since the W-33 merge of
-track P's seven writers; check 13 names the two until each is written).  Step 4 is not here by design (D34: no candidate fact is
-derived in the kernel — the request carries §7's answers).
+`dayDiagnostics`, which fills all twelve of `Diagnostics`' fields since W-34 (ten since the W-33
+merge of track P's seven writers; README gap 2511 closed, check 13 prints 12 written), and its
+`planHash` is `planDigest` of its own rows in the request's zone — fork `DayPlan::hash`, byte for
+byte (W-34).  Step 4 is not here by design (D34: no candidate fact is derived in the kernel — the
+request carries §7's answers).
 
 *(W-33 track A, README gap 2223, the THIRD time the sentence "steps 3 to 7 are not written
 here" stood in this file while false: the module header said it and W-15 repaired it; it said
@@ -6658,10 +6976,102 @@ it again and W-32's track P repaired it; and this docstring, four lines below th
 The line numbers above are of this commit and move with the file; re-derive them rather than
 copy them, AGENTS §5.11.)* -/
 def dayPlan (r : PlanReq) : DayPlan :=
+  let rows := dayRows r
   { DayPlan.empty r.today r.window r.blockMin r.budgetBlocks with
-    segments := dayRows r
+    segments := rows
     diagnostics := dayDiagnostics r
-    priorities := dayPriorities r }
+    priorities := dayPriorities r
+    planHash := planDigest r.tz (rows.map Subtype.val) }
+
+/-! ### The digest the day carries (W-34 track H, P8's emitter)
+
+P0 left the_plan_hash_is_a_placeholder_until_the_emitter_lands — `(dayPlan r).planHash =
+PlanHash.zero` for every `r` — as the tripwire that stops compiling the day the emitter lands.
+It stopped: that statement is **refuted** by
+`PlannerWit.the_plan_hash_is_a_placeholder_until_the_emitter_lands_is_refuted`, on a computed
+day whose digest is the fork's own `DayPlan::hash` of the same rows, and it is renamed to what
+the day now carries, `dayPlan_planHash` (AGENTS §3.2; `Check.lean`'s W-34 banner records the
+deletion).  The value is compared with the fork's on every generated day by
+`tm/tests/planner_invariants.rs`' W-34 block, both ways: the kernel's digest of its own rows
+against the fork's function over those rows, and against the fork's day ranked by the kernel's
+own §7 answer (D53). -/
+
+/-- **The day carries the digest of its own rows in its own zone.** -/
+theorem dayPlan_planHash (r : PlanReq) :
+    (dayPlan r).planHash = planDigest r.tz ((dayRows r).map Subtype.val) := rfl
+
+/-- **Two requests that place the same rows in the same zone carry the same hash** — the fork's
+"two plans that put the same items in the same slots hash the same, so a replan that moves
+nothing is not logged as a replan" (`DayPlan::hash`'s docstring), as a law. -/
+theorem dayPlan_planHash_is_a_function_of_the_rows (r r' : PlanReq) (hz : r.tz = r'.tz)
+    (hrows : (dayRows r).map Subtype.val = (dayRows r').map Subtype.val) :
+    (dayPlan r).planHash = (dayPlan r').planHash := by
+  rw [dayPlan_planHash, dayPlan_planHash, hz, hrows]
+
+/-- **The marks and the note are not digested** — fork `DayPlan::hash`: "Not hashed: … every
+progress or display flag — `done`, `current`, `ghost`, `note`, `underused`, `hot`, `mandatory`,
+`deferred`.  Those change with each `tm done` and at every block boundary." -/
+theorem placementText_ignores_the_marks_and_the_note (z : Cal.Tz) (s : Seg) (f : SegFlags)
+    (n : Option Note) : placementText z { s with flags := f, note := n } = placementText z s := rfl
+
+/-- **Off UTC a row's instant is the log's stamp**: `instantText` and `LogStamp.renderStamp` are
+chrono's one write_rfc3339 at two option pairs, and at a whole second and a non-zero offset
+the options agree — so the digest adds no third spelling of a local clock. -/
+theorem instantText_is_renderStamp_off_utc (z : Cal.Tz) (sec : Nat)
+    (hi : Cal.Instant.wf ⟨sec, 0⟩ = true) (ho : (Cal.offsetAt z ⟨sec, 0⟩).wf = true)
+    (h0 : (Cal.offsetAt z ⟨sec, 0⟩).sec ≠ 0) :
+    instantText z sec = LogStamp.renderStamp ⟨⟨sec, 0⟩, hi⟩ ⟨Cal.offsetAt z ⟨sec, 0⟩, ho⟩ := by
+  simp [instantText, LogStamp.renderStamp, h0]
+
+/-- **chrono's spelling, both ways**: a Chicago row at `-05:00`, and the same instant in a zone
+whose offset is exactly zero written `Z` — allow_zulu, the one option `renderStamp` does not
+take.  Both strings were printed by chrono itself in the W-34 probe. -/
+theorem instantText_spells_chrono :
+    instantText Cal.chicago (Cal.instantOf Cal.chicago 739867 425).sec
+        = "2026-09-09T07:05:00-05:00".toList ∧
+      instantText Replay.utcZone (Cal.instantOf Cal.chicago 739867 425).sec
+        = "2026-09-09T12:05:00Z".toList := by decide +kernel
+
+/-- **zmij's spellings, value by value** — each right-hand side is serde_json::to_string of the
+double, printed by the W-34 probe: the integer layout (`1.0`, `100.0`), the point inside
+(`1.6`, `123.456`), the leading zeros (`0.25`, `0.00001`), the exponent below `-5` (`1e-6`,
+`1.5e-6`, `1e-18`), the exponent above `15` with its `+` (`1e+16`, `1.5e+17`), zero, and a double
+whose shortest digits are seventeen (`0.30000000000000004`). -/
+theorem multText_is_zmijs :
+    ([(1, 1), (16, 10), (25, 100), (100, 1), (1000, 1), (1, 1000000), (1, 100000),
+      (15, 10000000), (0, 1), (10000000000000000, 1), (150000000000000000, 1),
+      (1, 1000000000000000000), (123456, 1000), (30000000000000004, 100000000000000000)].map
+        (fun p : Nat × Nat => (Arith.ofPair? p.1 p.2).map multText))
+      = ["1.0", "1.6", "0.25", "100.0", "1000.0", "1e-6", "0.00001", "1.5e-6", "0.0", "1e+16",
+         "1.5e+17", "1e-18", "123.456", "0.30000000000000004"].map (fun t => some t.toList) := by
+  decide +kernel
+
+/-- **Four rows, the fork's digest**: a furniture routine keyed by DATE, a scheduled routine
+keyed by ORDINAL whose id carries a quote, a two-member batch sized at `1.6` and a block sized at
+`0.000001`.  `33d70e1eb81d85ba` is fork `DayPlan::hash` of the same four `planner::Segment`s,
+printed by the W-34 probe — `{"Date":"2026-09-09"}`, `{"Nth":3}`, `"a\"b"`,
+`{"batch":["x1","x2"]}`, `1.6` and `1e-6` are each in the bytes both sides digest. -/
+theorem the_placement_bytes_are_the_forks :
+    (planDigest Cal.chicago
+      [{ start := (Cal.instantOf Cal.chicago 739867 680).sec,
+         stop := (Cal.instantOf Cal.chicago 739867 710).sec, kind := .routine, energy := none,
+         item := some ['l','u','n','c','h'],
+         inst := some (['l','u','n','c','h'], ['2','0','2','6','-','0','9','-','0','9']),
+         flags := SegFlags.none, planned := some 30, mult := none, note := none },
+       { start := (Cal.instantOf Cal.chicago 739867 720).sec,
+         stop := (Cal.instantOf Cal.chicago 739867 740).sec, kind := .routine,
+         energy := some 1, item := some ['a','"','b'], inst := some (['a','"','b'], ['#','3']),
+         flags := SegFlags.none, planned := some 20, mult := none, note := none },
+       { start := (Cal.instantOf Cal.chicago 739867 840).sec,
+         stop := (Cal.instantOf Cal.chicago 739867 890).sec,
+         kind := .batch ⟨[['x','1'], ['x','2']], by decide⟩, energy := some 4, item := none,
+         inst := none, flags := SegFlags.none, planned := some 35,
+         mult := some (Arith.mkPos 16 10 (by decide)), note := none },
+       { start := (Cal.instantOf Cal.chicago 739867 900).sec,
+         stop := (Cal.instantOf Cal.chicago 739867 950).sec, kind := .block, energy := some 3,
+         item := some ['m','3'], inst := none, flags := SegFlags.none, planned := some 50,
+         mult := some (Arith.mkPos 1 1000000 (by decide)), note := none }]).val
+      = 0x33d70e1eb81d85ba := by decide +kernel
 
 theorem dayPlan_day (r : PlanReq) : (dayPlan r).day = r.today := rfl
 
@@ -6751,11 +7161,6 @@ theorem dayPlan_impossible (r : PlanReq) :
 
 theorem dayPlan_hot (r : PlanReq) : (dayPlan r).diagnostics.hot.val = r.dayHot :=
   dayDiagnostics_hot r
-
-/-- **P8 must delete this.**  The FNV-1a digest is the emitter's; until it lands, the identity
-`state.last_plan_hash` would compare against is a placeholder and says so. -/
-theorem the_plan_hash_is_a_placeholder_until_the_emitter_lands (r : PlanReq) :
-    (dayPlan r).planHash = PlanHash.zero := rfl
 
 /-- **Fork `DayPlan::assigned_from`** (`planner.rs:647`): the items the day assigns at or after
 an instant.  §8.3's laws are about *this* set and not about `assigned` — the proptest's own

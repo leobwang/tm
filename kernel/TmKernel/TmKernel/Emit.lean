@@ -35,8 +35,8 @@ paid off at the far end: the kernel holds the *name*, this module holds the *wor
 
 **NOT here, each named rather than quietly missing:**
 
-* **The plan hash.**  `Planner.the_plan_hash_is_a_placeholder_until_the_emitter_lands` still
-  stands; the FNV-1a digest is not written and that theorem is not deleted (README gap 1100).
+* **The plan hash** — it is not text a row prints, and since W-34 it is `Planner.planDigest`
+  (the FNV-1a digest `Planner.dayPlan` carries; README gap 1100's P0 placeholder is refuted).
 * **`est_cell`'s first choice.**  The fork reads `est_original` before `est:`; this kernel has
   one estimate view, `Core.est` (`Field.viewRemainingDur`), which is `est:` **then** the
   leading estimate — the other order.  `estCell` here reads `Core.est`, and README gap 1101

@@ -2763,3 +2763,452 @@ fn two_routines_contend_for_one_position() {
         .collect();
     assert_eq!(krout, frout, "the two planners ordered the contending routines differently");
 }
+
+// ===========================================================================
+// **THE PLAN HASH, COMPARED BY VALUE** — stage 6 W-34 track H (P8's emitter).
+//
+// `Planner.dayPlan` carries `Planner.planDigest` since W-34: FNV-1a/64 of the
+// bytes of `serde_json::to_string(&Vec<Placement>)`, which is what fork
+// `DayPlan::hash` digests. Two claims, kept apart because they fail for
+// different reasons:
+//
+//   1. **THE EMITTER** — on EVERY generated day, the kernel's `plan.hash`
+//      equals the fork's OWN `DayPlan::hash` run over the KERNEL's rows, rebuilt
+//      as `planner::Segment`s. No exemption: this is the bytes, the zone, the
+//      instance keys and the multiplier's spelling, whatever the planner did.
+//   2. **THE DAY** — the kernel's `plan.hash` equals `day2.hash()`, the fork's
+//      day ranked by the kernel's own §7 answer (the shipped wiring, D53). A day
+//      whose rows do not agree is classified ROW BY ROW, by a PROPERTY of the
+//      fork's row, into the three row classes this kernel is recorded as not
+//      porting — README gap 554 (`open_block_segment`: the row `open` marks),
+//      gap 550 (the reservation's multiplier: the `current` Block whose kernel
+//      twin differs in `multiplier` alone) and gap 551 (the cut's kept breaks: a
+//      Break row starting at or after `now`, which the log cannot have written).
+//      That is an enumeration a row must JOIN to be exempt, never a list of days
+//      (W-27's shape): a row outside the three FAILS by name, a day whose rows
+//      agree must agree in its hash too — order included — and each class is
+//      counted so the day its gap closes is the day its count reaches zero.
+//
+// The multiplier is DRAWN as well as left at the default: `Model::default()`
+// sizes every candidate at `1.0`, which would test one of zmij's spellings
+// (`1.0`) and none of its other layouts (`1.6`, `0.3`, `1e-6`, `123.456`).
+// Setting `model.duration["_default"]` is a WIDENING of what this arm sees
+// (D46); the arms above are untouched.
+// ===========================================================================
+
+/// The census: cases; days with no kernel §7 answer; days compared with the
+/// kernel-ranked fork; of those, equal hashes; equal rows; rows the emitter
+/// digested; drawn multipliers; open-block rows (554); reservation multipliers
+/// (550); kept breaks (551); days a class explained; batch rows digested;
+/// days `deferred` was compared; deferred ids compared; open-block ids set aside
+/// from the kernel's `deferred`; days with a drawn break; days whose rest debt
+/// was non-zero.
+static HASH_CENSUS: Mutex<[u64; 17]> = Mutex::new([0; 17]);
+
+/// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
+/// for the `inst` text a kernel row carries.
+fn instance_key_of(s: &str) -> Option<tm_core::model::InstanceKey> {
+    if let Some(n) = s.strip_prefix('#') {
+        return n.parse::<u32>().ok().map(tm_core::model::InstanceKey::Nth);
+    }
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok().map(tm_core::model::InstanceKey::Date)
+}
+
+/// A kernel `{num, den}` multiplier as the double it was written from: the host
+/// sends the double's shortest `Display` digits over `10^places` (`dec` above),
+/// so the decimal is rebuilt digit for digit and parsed — correctly rounded —
+/// back to that double.
+fn f64_of_pair(v: &Value) -> Option<f64> {
+    let num = v["num"].as_u64()?;
+    let den = v["den"].as_u64()?;
+    let places = den.to_string().len() - 1;
+    if den != 10u64.pow(places as u32) {
+        return Some(num as f64 / den as f64);
+    }
+    let digits = format!("{num:0>width$}", width = places + 1);
+    let (int, frac) = digits.split_at(digits.len() - places);
+    format!("{int}.{frac}0").parse::<f64>().ok()
+}
+
+/// **The kernel's rows as the fork's own `Segment`s**, so the FORK's
+/// `DayPlan::hash` can be run over them. Every digested field is carried; the
+/// marks are left at their defaults because the fork does not digest them.
+fn fork_rows_of_kernel(plan: &Value, tz: Tz) -> Vec<Segment> {
+    use chrono::TimeZone;
+    let at = |v: &Value| {
+        tz.timestamp_opt(v.as_i64().expect("a second") - rowwire::EPOCH_FROM_CE, 0)
+            .single()
+            .expect("an instant the zone reads")
+    };
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .map(|s| {
+            let kind = match s["kind"].as_str().expect("a kind") {
+                "block" => SegKind::Block,
+                "batch" => SegKind::Batch(
+                    s["batch"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
+                        .map(|v| Id::new(v.as_str().expect("an id"))).collect(),
+                ),
+                "break" => SegKind::Break,
+                "routine" => SegKind::Routine,
+                "wall" => SegKind::Wall,
+                "rest" => SegKind::Rest,
+                "optional" => SegKind::Optional,
+                "wind-down" => SegKind::WindDown,
+                "sleep" => SegKind::Sleep,
+                "lost" => SegKind::Lost,
+                other => panic!("the kernel placed a `{other}` row, which no fork kind is"),
+            };
+            Segment {
+                start: at(&s["start"]),
+                end: at(&s["stop"]),
+                kind,
+                energy: s["energy"].as_u64().map(|e| e as u8),
+                item: s["item"].as_str().map(Id::new),
+                instance: s["inst"]["inst"].as_str().and_then(instance_key_of),
+                flags: planner::SegFlags {
+                    planned_min: s["planned"].as_u64().map(|p| p as u32),
+                    multiplier: if s["mult"].is_null() { None } else { f64_of_pair(&s["mult"]) },
+                    ..planner::SegFlags::default()
+                },
+            }
+        })
+        .collect()
+}
+
+/// One row's digested fields, as serde spells them (`Placement`'s eight, in its
+/// order) — the key two rows are matched by.
+fn placement_key(s: &Segment) -> String {
+    serde_json::to_string(&(
+        &s.start, &s.end, &s.kind, s.energy, &s.item, &s.instance, s.flags.planned_min,
+        s.flags.multiplier,
+    ))
+    .expect("a placement serialises")
+}
+
+/// The rows of `a` that `b` does not hold, as a MULTISET difference: a row two
+/// sides both hold twice is matched twice, and a third copy is left over.
+fn rows_not_in<'a>(a: &'a [Segment], b: &[Segment]) -> Vec<&'a Segment> {
+    let mut left: BTreeMap<String, usize> = BTreeMap::new();
+    for s in b {
+        *left.entry(placement_key(s)).or_default() += 1;
+    }
+    a.iter()
+        .filter(|s| match left.get_mut(&placement_key(s)) {
+            Some(n) if *n > 0 => {
+                *n -= 1;
+                false
+            }
+            _ => true,
+        })
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel's plan hash is the fork's `DayPlan::hash`**, by value.
+    #[test]
+    fn the_kernel_hashes_the_day_the_fork_hashes(
+        case in case_strategy(),
+        mult in prop::sample::select(vec![
+            None, Some(1.6), Some(0.25), Some(2.0), Some(1.125), Some(0.3), Some(0.000001),
+            Some(0.00001), Some(0.1 + 0.2), Some(123.456),
+        ]),
+        brk in prop::option::of((5u32..=30, 0u32..=40)),
+    ) {
+        let mut w = build(&case);
+        if let Some(m) = mult {
+            w.model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
+        }
+        let tz = w.cfg.tz;
+        // **A BREAK IN TODAY'S LOG** (W-34, README gap 2511): `log_text` writes none, so the
+        // fork's `rest_debt_min` was 0 on every generated day and a comparison of it would be
+        // `0` against `0`. The break is drawn — planned 5-30 minutes, taken 0-40, so it can run
+        // short, exact or long — right after the last `done` (or ten minutes after arrival), and
+        // only on a day with no running block and no interruption: a break inside either is §9's
+        // pause, a different event, and not what `rest_debt_min` is about. Both sides replay the
+        // same bytes: `w.log` is what the request carries and `w.replay` what the fork plans from.
+        let mut drew_break = false;
+        if let (Some((planned, actual)), None, None) = (brk, case.active, case.interrupt) {
+            let t = if case.done(tz) > 0 {
+                case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5)
+            } else {
+                case.arrival(tz) + Duration::minutes(10)
+            };
+            if t + Duration::minutes(i64::from(actual)) < w.now {
+                let line = format!(
+                    "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{planned},\"actual_min\":{actual}}}",
+                    t.to_rfc3339()
+                );
+                w.log = format!("{}{line}\n", w.log);
+                w.replay = chokepoint::replay_of_text(&w.log, tz);
+                drew_break = true;
+            }
+        }
+        let req = w.plan_request();
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let khash = plan["hash"].as_str().expect("plan.hash").to_string();
+        let fork = planner::plan(&w.input(&w.state, w.now));
+        let krows = fork_rows_of_kernel(&plan, tz);
+        let mut kday = DayPlan::empty(fork.date, fork.window, fork.budget_blocks);
+        kday.segments = krows.clone();
+        // **1. THE EMITTER**, on every day.
+        prop_assert_eq!(
+            &khash, &kday.hash(),
+            "the kernel's digest of its own {} rows is not the fork's `DayPlan::hash` of \
+             them — the BYTES differ, not the day", krows.len()
+        );
+        // **2. THE DAY**, against the kernel-ranked fork (D53).
+        let cvec = w.candidates();
+        let day2 = kernel_prios(&plan, &cvec)
+            .map(|ps| planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps)));
+        let (mut compared, mut same, mut rows_agree, mut explained) = (0u64, 0u64, 0u64, 0u64);
+        let (mut c554, mut c550, mut c551) = (0u64, 0u64, 0u64);
+        let (mut set_aside, mut def_ids, mut rest_debt) = (0u64, 0u64, false);
+        if let Some(d2) = day2.as_ref() {
+            compared = 1;
+            let fonly = rows_not_in(&d2.segments, &krows);
+            let konly = rows_not_in(&krows, &d2.segments);
+            let mut twins: Vec<bool> = vec![false; konly.len()];
+            for f in &fonly {
+                if f.flags.open && matches!(f.kind, SegKind::Block) {
+                    c554 += 1;
+                    continue;
+                }
+                if matches!(f.kind, SegKind::Break) && f.start >= w.now {
+                    c551 += 1;
+                    continue;
+                }
+                if f.flags.current && matches!(f.kind, SegKind::Block)
+                    && f.flags.multiplier.is_some()
+                {
+                    let mut bare = (*f).clone();
+                    bare.flags = planner::SegFlags {
+                        planned_min: f.flags.planned_min,
+                        ..planner::SegFlags::default()
+                    };
+                    let key = placement_key(&bare);
+                    if let Some(i) = konly.iter().enumerate()
+                        .position(|(i, k)| !twins[i] && placement_key(k) == key)
+                    {
+                        twins[i] = true;
+                        c550 += 1;
+                        continue;
+                    }
+                }
+                prop_assert!(
+                    false,
+                    "the fork's day holds a row the kernel's does not, and it is none of the \
+                     three classes the kernel is recorded as not porting: {}", placement_key(f)
+                );
+            }
+            for (i, k) in konly.iter().enumerate() {
+                prop_assert!(
+                    twins[i],
+                    "the kernel's day holds a row the fork's does not: {}", placement_key(k)
+                );
+            }
+            // **§8.2 STEP 8's LAST TWO FIELDS, BY VALUE** (W-34, README gap 2511). `deferred`
+            // is a set of ids (the fork pushes each once); it reads the day's `assigned`, which
+            // the fork's open-block row (gap 554, the class above) adds its item to — so that
+            // item, and only it, is set aside from the kernel's list before the comparison, on
+            // the property and not on the day. `restDebtMin` reads no row and is compared on
+            // every day.
+            let open_ids: Vec<String> = fonly.iter()
+                .filter(|f| f.flags.open && matches!(f.kind, SegKind::Block))
+                .filter_map(|f| f.item.as_ref().map(ToString::to_string))
+                .collect();
+            let kd = &plan["diagnostics"];
+            let mut kdef: Vec<String> = kd["deferred"].as_array().map(Vec::as_slice)
+                .unwrap_or_default().iter()
+                .map(|v| v.as_str().unwrap_or("<not a string>").to_string())
+                .collect();
+            let before = kdef.len();
+            kdef.retain(|i| !open_ids.contains(i));
+            set_aside = (before - kdef.len()) as u64;
+            let mut fdef: Vec<String> =
+                d2.diagnostics.deferred.iter().map(ToString::to_string).collect();
+            kdef.sort();
+            fdef.sort();
+            prop_assert_eq!(
+                &kdef, &fdef,
+                "§8.2 step 8's `deferred` differs from the kernel-ranked fork's"
+            );
+            def_ids = kdef.len() as u64;
+            prop_assert_eq!(
+                kd["restDebtMin"].as_u64(), Some(u64::from(d2.diagnostics.rest_debt_min)),
+                "§8.2 step 8's `restDebtMin` differs from the kernel-ranked fork's"
+            );
+            rest_debt = d2.diagnostics.rest_debt_min > 0;
+            if fonly.is_empty() && konly.is_empty() {
+                rows_agree = 1;
+                // **Rows that agree must hash alike — in the same ORDER.**
+                prop_assert_eq!(
+                    &khash, &d2.hash(),
+                    "the two days hold the same rows and hash differently: the order differs"
+                );
+            } else {
+                explained = 1;
+            }
+            same = u64::from(khash == d2.hash());
+        }
+        let batches = krows.iter().filter(|s| matches!(s.kind, SegKind::Batch(_))).count() as u64;
+        let [cases, noprio, cmp, eq, agree, digested, drawn, n554, n550, n551, nexpl, nbatch,
+             ndefdays, ndefids, naside, nbrk, nrest] = {
+            let mut c = HASH_CENSUS.lock().expect("census");
+            c[0] += 1;
+            c[1] += 1 - compared;
+            c[2] += compared;
+            c[3] += same;
+            c[4] += rows_agree;
+            c[5] += krows.len() as u64;
+            c[6] += u64::from(mult.is_some());
+            c[7] += c554;
+            c[8] += c550;
+            c[9] += c551;
+            c[10] += explained;
+            c[11] += batches;
+            c[12] += compared;
+            c[13] += def_ids;
+            c[14] += set_aside;
+            c[15] += u64::from(drew_break);
+            c[16] += u64::from(rest_debt);
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if cases >= generated {
+            // **THE FLOORS** — every comparison above sits behind something a run
+            // can skip, so each is shown to have run (AGENTS §9.2).
+            prop_assert!(digested > cases, "the emitter digested {digested} rows in {cases} cases");
+            prop_assert!(cmp > 0, "no day was compared with the kernel-ranked fork in {cases} cases");
+            prop_assert!(eq > 0, "no kernel hash equalled the fork's in {cases} cases");
+            prop_assert!(agree > 0, "no day's rows agreed with the fork's in {cases} cases");
+            prop_assert!(drawn > 0, "no multiplier was drawn in {cases} cases");
+            prop_assert!(nbatch > 0, "no batch row was digested in {cases} cases");
+            prop_assert!(ndefids > 0, "no DEFERRED id was compared in {cases} cases");
+            prop_assert!(nbrk > 0, "no break was drawn in {cases} cases");
+            prop_assert!(nrest > 0, "no non-zero REST DEBT was compared in {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants hash census: {cases} cases; the EMITTER compared on all \
+             {cases} ({digested} kernel rows digested, {nbatch} of them batches, {drawn} \
+             days at a drawn multiplier); the DAY compared with the kernel-ranked fork on \
+             {cmp} ({noprio} with no kernel §7 answer): hashes EQUAL {eq}, rows agree {agree}, \
+             days explained by a recorded class {nexpl} — open-block rows (gap 554) {n554}, \
+             reservation multipliers (gap 550) {n550}, kept breaks (gap 551) {n551}; \
+             STEP 8's `deferred` compared on {ndefdays} days ({ndefids} ids, {naside} open-block \
+             ids set aside), `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a \
+             drawn break)"
+        );
+    }
+}
+
+/// **A sub-second `now` moves the fork's day, and the kernel's does not move**
+/// (W-34, parity **P43**).
+///
+/// `Planner.Seg` is on whole seconds — `Look.Slot`'s representation since P0
+/// (README gap 256) — and the kernel reads the request's `at` to the nanosecond
+/// but cuts and places every row from `now`'s second. The fork carries `now` as it
+/// is: `Local::now()` in the shipped binary has a fraction, the cut starts there
+/// and carries the fraction to every slot boundary after it, and chrono
+/// serialises it (SecondsFormat::AutoSi), so `DayPlan::hash` digests bytes the
+/// kernel's digest cannot write. The generator above draws `now` on the minute
+/// and so never sees this; here `now` is half a second past one.
+///
+/// **DRIVEN, and it is more than bytes**: the first version of this test asserted
+/// that the fork's rows, truncated to the second, ARE the kernel's — and it failed.
+/// The fork's last slot runs `15:30:00.5`–`16:00`, half a second short of
+/// `min_last_block_min`, and §8.2 step 3 drops it; the kernel's runs `15:30`–`16:00`,
+/// exactly the minimum, and keeps it as Rest. So a half second of the verb's clock
+/// changes the fork's SLOT GEOMETRY. Asserted exactly as found: the fork has
+/// fractional rows; every fork row, truncated, is a kernel row; the kernel's only
+/// other row is that one last Rest slot, ending at the window's end and as long as
+/// the minimum; and the two hashes differ.
+#[test]
+fn a_sub_second_now_moves_the_forks_day_and_not_the_kernels() {
+    let case = Case {
+        items: vec![Spec {
+            ci: 2, k: 1, est_b: 1, small: None, due_in: None, dep: None, loc_home: false,
+            atomic: false, parent: None, waiting: false, hot: false, floor: None,
+        }],
+        walls: vec![],
+        now_idx: 1,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let mut w = build(&case);
+    w.now += Duration::milliseconds(500);
+    let tz = w.cfg.tz;
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the day");
+    let khash = plan["hash"].as_str().expect("plan.hash").to_string();
+    let krows = fork_rows_of_kernel(&plan, tz);
+    let cvec = w.candidates();
+    let ps = kernel_prios(&plan, &cvec).expect("the kernel answers §7 for this day");
+    let day2 = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+    let fractional = day2
+        .segments
+        .iter()
+        .filter(|s| s.start.nanosecond() != 0 || s.end.nanosecond() != 0)
+        .count();
+    assert!(fractional > 0, "the fork's day held no row at the sub-second `now`");
+    let ftrunc: Vec<Segment> = day2
+        .segments
+        .iter()
+        .map(|s| {
+            let mut t = s.clone();
+            t.start = t.start.with_nanosecond(0).expect("a whole second");
+            t.end = t.end.with_nanosecond(0).expect("a whole second");
+            t
+        })
+        .collect();
+    let fonly = rows_not_in(&ftrunc, &krows);
+    let konly = rows_not_in(&krows, &ftrunc);
+    assert!(
+        fonly.is_empty(),
+        "a fork row, truncated to its second, is not a kernel row: {:?}",
+        fonly.iter().map(|s| placement_key(s)).collect::<Vec<_>>()
+    );
+    let min_last = i64::from(w.cfg.day.min_last_block_min);
+    assert!(
+        konly.len() == 1
+            && matches!(konly[0].kind, SegKind::Rest)
+            && konly[0].end == day2.window.1
+            && (konly[0].end - konly[0].start).num_minutes() == min_last,
+        "the kernel's extra rows are not the one last slot the fork's fractional cut left \
+         short: {:?}",
+        konly.iter().map(|s| placement_key(s)).collect::<Vec<_>>()
+    );
+    assert_ne!(khash, day2.hash(), "the fork's fraction reached no digested byte");
+    eprintln!(
+        "planner_invariants sub-second now: {} of the fork's {} rows carry the fraction; the \
+         kernel's one extra row {}; kernel {khash}, fork {}",
+        fractional, day2.segments.len(), placement_key(konly[0]), day2.hash()
+    );
+}
