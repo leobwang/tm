@@ -350,18 +350,18 @@ fn day_extras(ctx: &Ctx, date: NaiveDate) -> Result<core_review::DayExtras, CliE
 /// §11's optional quota for a day: minutes the plan gives `optional.md`
 /// items, their `max:` cap, and how many of those minutes are outside a Rest
 /// slot (§8.2 step 7 puts optionals in Rest).
-fn optional_quota(plan: &tm_core::planner::DayPlan, tree: &Tree) -> core_review::OptionalQuota {
+fn optional_quota(plan: &tm_core::dayplan::DayPlan, tree: &Tree) -> core_review::OptionalQuota {
     let mut quota = core_review::OptionalQuota::default();
     let rest: Vec<(_, _)> = plan
         .segments
         .iter()
-        .filter(|s| matches!(s.kind, tm_core::planner::SegKind::Rest))
+        .filter(|s| matches!(s.kind, tm_core::dayplan::SegKind::Rest))
         .map(|s| (s.start, s.end))
         .collect();
     for seg in plan
         .segments
         .iter()
-        .filter(|s| matches!(s.kind, tm_core::planner::SegKind::Optional))
+        .filter(|s| matches!(s.kind, tm_core::dayplan::SegKind::Optional))
     {
         quota.minutes += seg.minutes();
         if !rest.iter().any(|(a, b)| *a <= seg.start && seg.end <= *b) {

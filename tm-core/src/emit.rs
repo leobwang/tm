@@ -116,7 +116,7 @@ use thiserror::Error;
 
 use crate::config::Config;
 use crate::model::{Dep, Dur, Id, Shape, WindowRange};
-use crate::planner::{DayPlan, Diagnostics, SegKind, Segment, fmt_clock};
+use crate::dayplan::{DayPlan, Diagnostics, SegKind, Segment, fmt_clock};
 use crate::priority::fmt_blocks;
 use crate::tree::Tree;
 
@@ -707,7 +707,7 @@ fn key_id(seg: &Segment) -> Option<&Id> {
 
 /// The trailing note column (§4.3's `↓ slot 4, item 3` and `due today`).
 ///
-/// An explicit [`SegFlags::note`](crate::planner::SegFlags::note) wins; without
+/// An explicit [`SegFlags::note`](crate::dayplan::SegFlags::note) wins; without
 /// one the note is derived from the mark the row already carries, so a planner
 /// that only sets `flags.underused` / `flags.hot` still gets the spec's text:
 ///

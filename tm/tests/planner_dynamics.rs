@@ -8,7 +8,8 @@ mod planner_common;
 use planner_common::{at, date, load, load_with_log, time, timeline, BASIC_LOG};
 use tm_core::energy::Model;
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, PlanOverrides, SegKind};
+use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
+use tm_core::planner::{self, PlanOverrides};
 use tm_core::priority::{self, Candidate};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
 
@@ -260,7 +261,7 @@ fn losing_a_block_drops_a_tail_and_nothing_else() {
         p.segments
             .iter()
             .filter(|s| s.kind.is_work())
-            .map(|s| (planner::fmt_clock(s.start), s.items()))
+            .map(|s| (fmt_clock(s.start), s.items()))
             .collect()
     };
     let (a, b) = (starts(&full), starts(&short));
@@ -297,7 +298,7 @@ fn extending_a_block_names_what_it_drops() {
         p.segments
             .iter()
             .filter(|s| s.kind.is_work() && s.items().iter().any(|i| i.as_str() == id))
-            .map(tm_core::planner::Segment::minutes)
+            .map(Segment::minutes)
             .sum()
     };
     assert!(minutes(&alt, "t3") > minutes(&base, "t3"), "{}", timeline(&alt));

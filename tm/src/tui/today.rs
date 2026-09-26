@@ -27,7 +27,7 @@ use ratatui::Frame;
 
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::planner::Segment;
+use tm_core::dayplan::Segment;
 use tm_core::review;
 
 use super::app::{App, Mode, Screen};

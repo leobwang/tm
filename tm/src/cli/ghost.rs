@@ -32,7 +32,7 @@ use tm_core::config::Config;
 use tm_core::energy::{self, Model};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::model::Id;
-use tm_core::planner::{DayPlan, SegFlags, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
 use tm_core::store::{RuntimeState, Store};
 use tm_core::tree::Tree;
 

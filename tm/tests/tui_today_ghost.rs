@@ -12,7 +12,7 @@ mod tui_common;
 use tui_common::{app_at, arrival};
 
 /// `HH:MM item` for every block of a plan, in order.
-fn blocks(plan: &tm_core::planner::DayPlan) -> Vec<String> {
+fn blocks(plan: &tm_core::dayplan::DayPlan) -> Vec<String> {
     plan.segments
         .iter()
         .map(|s| {

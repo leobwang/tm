@@ -13,6 +13,7 @@ pub mod horizon;
 pub mod energy;
 pub mod capacity;
 pub mod priority;
+pub mod dayplan;
 pub mod planner;
 pub mod emit;
 pub mod review;

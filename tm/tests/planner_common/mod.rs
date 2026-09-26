@@ -14,7 +14,8 @@ use tm_core::config::Config;
 use tm_core::energy::Model;
 use tm_core::log::Replay;
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
+use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
+use tm_core::planner::PlanInput;
 use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
 
@@ -180,15 +181,15 @@ pub fn timeline(day: &DayPlan) -> String {
     let mut out = format!(
         "date {} · window {}–{} · budget {}b\n",
         day.date,
-        planner::fmt_clock(day.window.0),
-        planner::fmt_clock(day.window.1),
+        fmt_clock(day.window.0),
+        fmt_clock(day.window.1),
         day.budget_blocks,
     );
     for seg in &day.segments {
         out.push_str(&format!(
             "{}-{} {:<10} {:>3} {:<10} {:<4} {}\n",
-            planner::fmt_clock(seg.start),
-            planner::fmt_clock(seg.end),
+            fmt_clock(seg.start),
+            fmt_clock(seg.end),
             kind(seg),
             seg.energy.map_or("·".to_string(), |e| e.to_string()),
             seg.item.as_ref().map_or("·", Id::as_str),

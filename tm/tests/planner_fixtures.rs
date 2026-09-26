@@ -13,7 +13,8 @@ use planner_common::{
     assert_break_rule, at, basic_state, date, diagnostics, load, load_with_log, timeline,
     BASIC_LOG,
 };
-use tm_core::planner::{self, SegKind, Segment};
+use tm_core::dayplan::{SegKind, Segment};
+use tm_core::planner;
 use tm_core::store::RuntimeState;
 
 // ---------------------------------------------------------------------------

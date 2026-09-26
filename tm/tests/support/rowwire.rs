@@ -22,7 +22,7 @@ use serde_json::{json, Value};
 use tm_core::config::Config;
 use tm_core::emit::{self, RowCells};
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan, SegKind, Segment};
+use tm_core::dayplan::{self, DayPlan, SegKind, Segment};
 use tm_core::tree::Tree;
 
 pub const EPOCH_FROM_CE: i64 = 62_135_596_800;
@@ -58,7 +58,7 @@ pub fn seg_json(seg: &Segment) -> Value {
     let mut o = json!({
         "start": kernel_sec(seg.start),
         "stop": kernel_sec(seg.end),
-        "kind": planner::kind_label(&seg.kind),
+        "kind": dayplan::kind_label(&seg.kind),
         "energy": seg.energy,
         "item": seg.item.as_ref().map(|i| i.to_string()),
         "planned": seg.flags.planned_min,

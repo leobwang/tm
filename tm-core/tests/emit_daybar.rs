@@ -12,7 +12,7 @@ use emit_fixture::{at, config, ghost_plan, plan, tree, TZ};
 use tm_core::capacity::local_dt;
 use tm_core::emit::{self, Cell, CellStyle, DayBar};
 use tm_core::model::Id;
-use tm_core::planner::DayPlan;
+use tm_core::dayplan::DayPlan;
 
 /// One character per cell: the brightness digit for work, a letter otherwise.
 fn ascii(cells: &[Cell]) -> String {

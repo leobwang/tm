@@ -208,7 +208,7 @@ fn a_log_faithful_day_keeps_the_actuals_and_the_real_starts() {
 #[test]
 fn a_batch_is_one_row_naming_its_items() {
     use tm_core::model::Id;
-    use tm_core::planner::{SegFlags, SegKind, Segment};
+    use tm_core::dayplan::{SegFlags, SegKind, Segment};
 
     let cfg = config();
     let tree = tree(&cfg);
@@ -365,7 +365,7 @@ fn a_sleep_segment_with_no_item_still_says_sleep() {
     // Regression: `SegKind::Routine | SegKind::Sleep` shared one `routine`
     // fallback, so the timeline said `routine 1h` where the day bar's tooltip
     // said `sleep · 1h`.
-    use tm_core::planner::{DayPlan, SegFlags, SegKind, Segment};
+    use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
 
     let cfg = config();
     let tree = tree(&cfg);

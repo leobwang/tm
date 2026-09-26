@@ -11,7 +11,7 @@
 //!   selects from `emit::plan_rows` directly; this sentence said it "reuses"
 //!   [`rows`] and it never did — `tm now` had its own renderer until W-23.)
 //! The `SegKind` word the JSON and `.tm/last_plan.json` use is
-//! [`tm_core::planner::kind_label`]. This module declared a second, byte-for-byte
+//! [`tm_core::dayplan::kind_label`]. This module declared a second, byte-for-byte
 //! identical kind_name until W-23 (AGENTS §5.3). A deleted name loses its
 //! backticks, here as in the README (gap 1313).
 //!
@@ -25,7 +25,7 @@ use serde::Serialize;
 use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::planner::{self, DayPlan};
+use tm_core::dayplan::{self, DayPlan};
 use tm_core::tree::Tree;
 
 /// Pixels of `day/<date>.svg` (§12.1's bar is a wide, short strip; the ghost
@@ -54,9 +54,9 @@ pub struct Row {
     pub kind: String,
 }
 
-/// `HH:MM` — `tm_core::planner::fmt_clock` under this file's own name (AGENTS
+/// `HH:MM` — `tm_core::dayplan::fmt_clock` under this file's own name (AGENTS
 /// §5.3, W-23: a byte-for-byte copy of it stood here).
-use tm_core::planner::fmt_clock as hhmm;
+use tm_core::dayplan::fmt_clock as hhmm;
 
 /// The rows of a plan, in start order — one per segment, each carrying the
 /// §4.3 row `emit` writes into the day file.
@@ -78,7 +78,7 @@ pub fn rows(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<Row> {
             mark: emit::mark_of(seg).to_string().trim().to_string(),
             text,
             item: seg.item.clone(),
-            kind: planner::kind_label(&seg.kind).to_string(),
+            kind: dayplan::kind_label(&seg.kind).to_string(),
         })
         .collect()
 }
