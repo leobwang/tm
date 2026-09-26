@@ -1040,6 +1040,18 @@ fi
 #     NOT EXEMPT -- the class answers what the cut section reaches, never what
 #     nothing reaches.
 #
+#     AND A THIRD CLASS, PROOF (W-35 repair, README gap 2923).  W-35 track K
+#     grew the file 1,262 -> 1,263 for one predicate of `PlanCheck.lean`, L26's
+#     checker battery, whose 61 definitions were listed by name in three
+#     sections although the module is unreachable BY CONSTRUCTION: only the
+#     witness module and the manifest import it.  `CLASS proof <Module>` answers
+#     a declared module's unreached definitions while `reach.proof_violations`
+#     finds no other importer, and the file shrank to 1,202.  DRIVEN in a clone,
+#     control rc=0 before and after, four plants rc=1: `Boundary.lean`
+#     importing `PlanCheck` (61 NOT EXEMPT and the PROOF line), the class line
+#     deleted (61 NOT EXEMPT), a PlanCheck name re-listed beside it (ANSWERED BY
+#     PROPERTY), and the class line undated (RATCHET).
+#
 #     AND THE REASON IS GATED ON THREE HALVES NOW (W-32 repair, gaps
 #     2410-2412), because the reason is what 1,756 grandfathered entries are
 #     auditable BY and it was pinned by nothing.  (i) A reason that states its

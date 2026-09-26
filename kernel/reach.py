@@ -124,6 +124,7 @@ is adjudicated -- it never writes the file, because a ratchet a script can
 regenerate is not a ratchet.
 """
 import collections
+import os
 import pathlib
 import re
 import sys
@@ -251,7 +252,52 @@ CENSUS_TOPIC = re.compile(r"emitted definitions are reached")
 # witness module's definitions are exempt whatever they are, which is mutate.py's
 # conjunct (c) caveat ("the rule is about a module, not about a body") restated,
 # with the leaf property as the thing that keeps it cheap.
-CLASS_LINE = re.compile(r"^CLASS[ \t]+(unsent)[ \t]+([A-Za-z0-9_]+)[ \t]+--[ \t]+(.+)$")
+#
+# A THIRD CLASS, PROOF (W-35 repair, README gap 2923).  `PlanCheck.lean` is
+# L26's checker battery (D28): its definitions are the predicates the proved
+# laws quantify over, and nothing calls them.  The file listed them name by
+# name -- 61 entries in three sections -- and every predicate a step added
+# grew it by one dated section: W-35 track K's `owedByItsGrant` did exactly
+# that (EXEMPT 1262 -> 1263, gap 2803), the list-where-the-rule-is-a-class
+# shape the WITNESS class above was built to end.  The property is the one
+# that makes the module unreachable BY CONSTRUCTION, and it is checked, not
+# assumed: no library module imports it except a WITNESS module and a
+# declaration-free manifest (`proof_violations`, the witness class's own
+# import scan).  A definition the export cannot reach unless some module that
+# can reach anything imports its module is answered by its module's `CLASS
+# proof <Module> -- <reason>` line.  Only a DECLARED module answers; the line
+# is ratcheted like an unsent one (new: a date and an EXIT; rewritten: a
+# date); and the moment another module imports it, every unreached definition
+# of it is NOT EXEMPT by name.  What it cannot see: a definition of such a
+# module that SHOULD have a caller -- the class says "unreachable by
+# construction", not "unreachable for a good reason", which is the reason
+# line's job, read by a person.
+CLASS_LINE = re.compile(r"^CLASS[ \t]+(unsent|proof)[ \t]+([A-Za-z0-9_]+)[ \t]+--[ \t]+(.+)$")
+
+
+def proof_violations(stem):
+    """Why `CLASS proof <stem>` may not be trusted, as sentences: the module is
+    not a library module, or a library module that is neither a WITNESS
+    module nor a declaration-free manifest imports it -- mutate.py's
+    `witness_violations` scan, applied to one more module."""
+    files = set(mutate.lib_files())
+    target = "TmKernel/TmKernel/%s.lean" % stem
+    if target not in files:
+        return ["%s is named by `CLASS proof %s` and is not a library module"
+                % (target, stem)]
+    name = mutate.module_name(target)
+    out = []
+    for path in sorted(files - set(mutate.WITNESS_MODULES) - {target}):
+        text = mutate.read(os.path.join(mutate.HERE, path))
+        if not mutate.decl_spans(text):
+            continue  # an import manifest declares nothing and reaches nothing
+        for line in text.split("\n"):
+            head = line.split("--", 1)[0].rstrip()
+            if head.startswith("import ") and head[len("import "):].strip() == name:
+                out.append("%s imports %s, so its definitions are reachable from "
+                           "code check 12 audits and `CLASS proof %s` answers "
+                           "nothing" % (path, name, stem))
+    return out
 
 
 def read_exemptions(path, text=None):
@@ -291,14 +337,18 @@ def read_exemptions(path, text=None):
             # A class line answers a MEASURED class, not a name (gap 2560).
             m = CLASS_LINE.match(line)
             if m is None:
-                complaints.append("%s:%d  a class line is `CLASS unsent <key> -- "
-                                  "<reason>` and this one is `%s`"
+                complaints.append("%s:%d  a class line is `CLASS unsent|proof <key> "
+                                  "-- <reason>` and this one is `%s`"
                                   % (path.name, lineno, line))
-            elif m.group(2) in classes:
-                complaints.append("%s:%d  `CLASS unsent %s` is declared twice"
-                                  % (path.name, lineno, m.group(2)))
+                continue
+            # The PROOF class is keyed `proof:<Module>` so it can share this
+            # map, and the ratchet below, with the unsent keys.
+            key = m.group(2) if m.group(1) == "unsent" else "proof:" + m.group(2)
+            if key in classes:
+                complaints.append("%s:%d  `CLASS %s %s` is declared twice"
+                                  % (path.name, lineno, m.group(1), m.group(2)))
             else:
-                classes[m.group(2)] = (m.group(3).strip(), lineno)
+                classes[key] = (m.group(3).strip(), lineno)
             continue
         if line.startswith("##"):
             head = line[2:].strip()
@@ -446,13 +496,15 @@ def main(argv):
     # THE TWO CLASSES, MEASURED (gap 2560; the declaration is above
     # `CLASS_LINE`).  UNSENT: walk again with the DECLARED unsent keys' cuts
     # lifted; what that walk reaches and the real one does not is the class.
-    declared_cuts = {q for k in classes for q in keyed.get(k, ())}
-    for k in sorted(classes):
+    proofs = {k[len("proof:"):]: v for k, v in classes.items() if k.startswith("proof:")}
+    unsents = {k: v for k, v in classes.items() if not k.startswith("proof:")}
+    declared_cuts = {q for k in unsents for q in keyed.get(k, ())}
+    for k in sorted(unsents):
         if k not in keyed:
             bad.append("STALE: %s:%d  `CLASS unsent %s` answers for a section "
                        "that is %s -- delete the line; every definition it "
                        "answered is now REACHED or NOT EXEMPT by name"
-                       % (EXEMPT_FILE.name, classes[k][1], k,
+                       % (EXEMPT_FILE.name, unsents[k][1], k,
                           "SENT by %s" % RUST_SRC if any(
                               line.split()[:2] == ["SENT", k] for line in wire)
                           else "not a section the walk cut"))
@@ -467,7 +519,17 @@ def main(argv):
                    "witness class here either" % v)
     wmods = set() if wviol else {pathlib.Path(m).name for m in mutate.WITNESS_MODULES}
     witness = {k for k in dead if k[0] in wmods}
-    answered = unsent | witness
+    # PROOF: a declared module no auditable module imports (gap 2923).
+    pmods = set()
+    for stem in sorted(proofs):
+        pviol = proof_violations(stem)
+        for v in pviol:
+            bad.append("PROOF: %s -- so no definition of it is answered by the "
+                       "proof class here either" % v)
+        if not pviol:
+            pmods.add(stem + ".lean")
+    proof = {k for k in dead if k[0] in pmods} - witness
+    answered = unsent | witness | proof
     for stem in sorted(set(library) - compiled):
         bad.append("UNCOMPILED: %s is a library module and `lake` emitted no C "
                    "for it -- nothing imports it (AGENTS 2.3), so this check and "
@@ -484,6 +546,8 @@ def main(argv):
                        "both answer, and the file only shrinks this way (gap 2560)"
                        % (key[1], key[0], "a witness fixture of a leaf module"
                           if key in witness else
+                          "a definition of a declared proof-only module"
+                          if key in proof else
                           "reached only through a declared unsent section"))
         if key not in entries and key not in answered:
             d = dead[key]
@@ -543,15 +607,17 @@ def main(argv):
         for k, (reason, lineno) in sorted(classes.items()):
             if k not in prev_classes:
                 if not SECTION_DATE.search(reason) or not SECTION_EXIT.search(reason):
-                    bad.append("RATCHET: %s:%d  the new `CLASS unsent %s` line "
+                    bad.append("RATCHET: %s:%d  the new `CLASS %s` line "
                                "must carry an ISO date and name its EXIT -- a "
                                "class answers every definition behind a section, "
                                "so it costs at least what a section costs"
-                               % (EXEMPT_FILE.name, lineno, k))
+                               % (EXEMPT_FILE.name, lineno, k.replace("proof:", "proof ")
+                                  if k.startswith("proof:") else "unsent " + k))
             elif reason != prev_classes[k][0] and not SECTION_DATE.search(reason):
-                bad.append("RATCHET: %s:%d  `CLASS unsent %s`'s reason has been "
+                bad.append("RATCHET: %s:%d  `CLASS %s`'s reason has been "
                            "REWRITTEN and carries no ISO date (gap 2411's rule)"
-                           % (EXEMPT_FILE.name, lineno, k))
+                           % (EXEMPT_FILE.name, lineno, k.replace("proof:", "proof ")
+                              if k.startswith("proof:") else "unsent " + k))
         for key in sorted(set(entries) - set(prev_entries)):
             module, reason, lineno = sections[entries[key][1]]
             if (module, reason) in prev_heads:
@@ -623,14 +689,16 @@ def main(argv):
           "%d reachable from %s over the %d section(s) tm/src sends (%d cut), "
           "%d exempt in %d section(s) (%d of them run at load), "
           "%d answered by property (%d reached only through %d declared unsent "
-          "section(s), %d witness fixture(s)), %d UNANSWERED"
+          "section(s), %d witness fixture(s), %d of %d declared proof-only "
+          "module(s)), %d UNANSWERED"
           % (len(defs), len(library), len(population),
              sum(1 for d in population if d[3] in callgraph.emitted_globals(ir)),
              len(live), callgraph.EXPORT_ROOT,
              sum(1 for line in wire if line.startswith("  SENT")), len(cuts),
              len(entries), len(sections),
              sum(1 for k, d in dead.items() if d[3] in closed and k in entries),
-             len(answered), len(unsent), len(classes), len(witness), len(bad)))
+             len(answered), len(unsent), len(unsents), len(witness), len(proof),
+             len(proofs), len(bad)))
     return 1 if bad else 0
 
 
