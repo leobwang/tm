@@ -1971,19 +1971,19 @@ theorem no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day
   simp only [LogStamp.yearEnd] at hnowcal ⊢
   omega
 
-/-- **The day names no impossible item.**  `Planner.dayDiagnostics` sets `conflicts` and
-`notes` and leaves every other field at `Diagnostics.empty`; the step that fills
-`Diagnostics.impossible` from §7.3's grants is **P8** (README gap 367's second half — its
-first landed at P4 as `Planner.edfNumbers`). -/
-theorem the_day_names_no_impossible_item (r : PlanReq) :
-    (dayPlan r).diagnostics.impossible.val = [] := rfl
+/-! **The day names every answer the shipped binary calls impossible — W-33 wrote the field.**  This
+spot held the_day_names_no_impossible_item (`(dayPlan r).diagnostics.impossible.val = []`, `rfl`):
+not a law but AGENTS §9.2's *"a check no input can fail"* in the compiler, REFUTED
+(`PlannerWit.the_day_names_no_impossible_item_is_refuted`) and gone.  Its positive form is in
+`Planner.lean` beside the definition — `Planner.dayPlan_impossible`, `Planner.PlanReq.mem_dayImpossible`
+and `Planner.the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin` (gaps 2321, 2419). -/
 
-/-! ### The same four, in the battery's own terms
+/-! ### The same three, in the battery's own terms — and the fourth, live since W-33
 
-Each returns `true` on every day the planner produces, and each does so **because its
-quantifier is empty**.  That is AGENTS §9.2's *"a check no input can fail"* said out loud with
-a proof behind it, and it is the honest reading of four of the eleven conjuncts of §6.1's
-lift. -/
+Each of the three returns `true` on every day the planner produces, **because its quantifier
+is empty**: AGENTS §9.2's *"a check no input can fail"* said out loud with a proof behind it,
+the honest reading of three of the eleven conjuncts of §6.1's lift.  The fourth, `impossibleKept`,
+has a subject since W-33 wrote the field; `impossibleKept_of_nothing_assigned_iff` (end of module) reads it. -/
 
 /-- `energyFilterOk` cannot fail today, because no Block row carries a level to compare.
 **Unconditional** — `dayPlan_ok_core_given_the_budget`'s `h3` proves the same `true` under `hnopast`. -/
@@ -2034,11 +2034,11 @@ theorem batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassig
   batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
     the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
 
-/-- `impossibleKept` cannot fail today, at **any** eligibility, because
-`Diagnostics.impossible` is the empty list on every day the planner produces. -/
-theorem impossibleKept_is_true_because_its_subject_is_empty (el : Eligible) (r : PlanReq) :
-    impossibleKept el r (dayPlan r) = true :=
-  impossibleKept_of_no_impossible el r _ (the_day_names_no_impossible_item r)
+/-- `impossibleKept` passes where no listed item is eligible anywhere: the lifts' `hnoimp` (W-33), and
+the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`). -/
+theorem impossibleKept_of_no_eligible_impossible_item (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false) :
+    impossibleKept el r d = true := (impossibleKept_iff el r d).2 (fun p hp hel => absurd (hel.symm.trans (h p hp)) (by simp))
 
 /-! ### The break law, restated over the rows §8.3 is about
 
@@ -2109,19 +2109,17 @@ in one place:
 `false` at the permissive eligibility, on a day `dayPlan` really produces and with no mutation,
 while `PlannerWit.the_other_nine_hold_where_the_two_fail` computes the other nine as `true` at
 the same request.  So **nine is a ceiling**, not a waypoint: no proof quantified over an
-arbitrary `el` can reach ten, and `dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day` below is
+arbitrary `el` can reach ten, and `dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day` below is
 where the residue is named rather than counted.
 
 So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
 and owed a subject (P5's batch, P8's impossible list), **two refuted at every eligibility and
 owed both Planner.eligibleAt and the fold** (README gap 850), and the fold induction design
 §6.2 prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
-theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
     (el : Eligible) (r : PlanReq)
-    (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
-    (hday : r.dayAgrees = true)
-    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
@@ -2129,13 +2127,15 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
         r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val,
+      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = false) :
     planOkCore r (withoutPast r (dayPlan r)) = true ∧
       impossibleKept el r (withoutPast r (dayPlan r)) = true ∧
       batchDoesNotReachPast el r (withoutPast r (dayPlan r)) = true :=
   ⟨dayPlan_ok_core_from_now_on_an_unassigned_day r hagree hactive hday hnowcal
      hnoassign hplain,
-   impossibleKept_of_no_impossible el r _ (the_day_names_no_impossible_item r),
+   impossibleKept_of_no_eligible_impossible_item el r _ hnoimp,
    batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
      the_day_has_no_batch_row_on_an_unassigned_day r s
        (mem_withoutPast r _ s hs).1 hnoassign ids)⟩
@@ -2159,12 +2159,10 @@ something honest to range over.
 
 *(Before W-19 this file asserted the second half in prose — *"the `∀ el` form is **false** of
 P1's body"*, above `dayPlan_ok_core_given_the_budget` — and nothing computed it.)* -/
-theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+theorem dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
-    (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
-    (hday : r.dayAgrees = true)
-    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
       r.plan.val.store.get i = some e → e.val.shape = Shape.interval a b →
       e.val.buffer = none ∧
@@ -2173,12 +2171,14 @@ theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
+    (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val,
+      eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1 = false)
     (hrank : monotoneInRank el r (withoutPast r (dayPlan r)) = true)
     (hhot : hotBeforeQueue el r (withoutPast r (dayPlan r)) = true) :
     planOk el r (withoutPast r (dayPlan r)) = true := by
   obtain ⟨hcore, himp, hbat⟩ :=
-    dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day el r hagree hactive
-      hday hnowcal hnoassign hplain
+    dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
+      el r hagree hactive hday hnowcal hnoassign hplain hnoimp
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2274,12 +2274,10 @@ theorem monotoneInRank_of_nothing_assigned (el : Eligible) (r : PlanReq) (d : Da
 The eleventh is `hotBeforeQueue` and it is **refuted** on this very class —
 `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` — so this conjunction is not a waypoint
 towards eleven by this route.  See the section header. -/
-theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : PlanReq)
+theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
-    (hday : r.dayAgrees = true)
-    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
@@ -2288,7 +2286,9 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : Pla
         r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val,
+      eligibleSomewhere el r (dayPlan r) p.1 = false) :
     planOkCore r (dayPlan r) = true ∧
       monotoneInRank el r (dayPlan r) = true ∧
       impossibleKept el r (dayPlan r) = true ∧
@@ -2300,25 +2300,23 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : Pla
        (dayPlan_block_rows_are_reserved_or_assigned r hnopast)).2 hplain,
    monotoneInRank_of_nothing_assigned el r _
      (dayPlan_assigns_nothing_on_a_quiet_unassigned_day r hnopast hnorun hnoassign),
-   impossibleKept_is_true_because_its_subject_is_empty el r,
+   impossibleKept_of_no_eligible_impossible_item el r _ hnoimp,
    batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
      hnoassign⟩
 
 /-- **§6.1's `planOk` itself, assembled from the ten plus the one** — so that "ten of eleven"
 is the compiler's arithmetic over `checksOf`'s list and not a reader's over a transcription of
 it.  README gap 684 is the record of doing that arithmetic by hand and getting it wrong, and
-this is the whole-day sibling of `dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day`.
+this is the whole-day sibling of `dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day`.
 
 **It assumes one of the eleven and its name says so.**  What makes it worth stating is what
 stands beside it: `PlannerWit.a_quiet_day_does_not_pass_the_whole_battery` proves the
 hypothesis cannot be dropped, and `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`
 is the instance in which it holds. -/
-theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot (el : Eligible) (r : PlanReq)
+theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
-    (hagree : r.wallsAgree = true)
-    (hactive : r.activeAgrees = true)
-    (hday : r.dayAgrees = true)
-    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
+    (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
     (hnopast : ∀ t ∈ pastRows r, t.kind ≠ SegKind.block)
     (hnorun : r.activeRun = none)
     (hplain : ∀ (i : Id) (e : Entity) (a b : Field.DT),
@@ -2328,11 +2326,13 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot (el : Eligible) (r : Plan
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
+    (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val,
+      eligibleSomewhere el r (dayPlan r) p.1 = false)
     (hhot : hotBeforeQueue el r (dayPlan r) = true) :
     planOk el r (dayPlan r) = true := by
   obtain ⟨hcore, hrank, himp, hbat⟩ :=
-    dayPlan_ok_on_a_quiet_unassigned_day_except_hot el r hnoassign hagree hactive hday hnowcal
-      hnopast hnorun hplain
+    dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item el r
+      hnoassign hagree hactive hday hnowcal hnopast hnorun hplain hnoimp
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2723,8 +2723,8 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
   have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
     eligibleSomewhere_of_no_work_row hwork r _
       (dayPlan_has_no_work_row_on_an_unassigned_day r hnopast hnorun hnoassign)
-  refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot el r hnoassign hagree hactive hday
-    hnowcal hnopast hnorun hplain ?_
+  refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item el r
+    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain (fun p _ => hnone p.1) ?_
   exact hotBeforeQueue_of_nothing_eligible el r _ hnone
 
 /-! ############################################################################
@@ -3050,7 +3050,7 @@ difference is the difference between "it passes" and "there is nothing for it to
 exactly the distinction this whole section exists to keep, and until now the "and none can"
 column of `PlannerWit`'s census table was prose beside an eleven-way `decide` at one request.
 
-`the_census_ceiling_is_seven_on_an_unassigned_day` is what they buy: **no `PlanReq` whatever can put more than
+`the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` is what they buy: **no `PlanReq` whatever can put more than
 seven of the eleven in play today**, so the seven `PlannerWit.the_census_ratio` computes at
 `theCensusRequest` is a ceiling that has been reached and not a high-water mark that a future
 witness might beat.  The four that cannot reach it are design §6.4's P5, P5/P7 and P8 rows,
@@ -3094,22 +3094,22 @@ theorem batch_has_no_subject_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     exact absurd hk (the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
   all_goals (rw [hk] at hp; simp at hp)
 
-theorem impossible_has_no_subject (el : Eligible) (r : PlanReq) :
-    subjectOf el .impossible r (dayPlan r) = false := by
-  simp only [subjectOf, the_day_names_no_impossible_item r, List.any_nil]
+theorem impossible_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleSomewhere el r d i = false) : subjectOf el .impossible r d = false := by
+  simp only [subjectOf]; exact Bool.eq_false_iff.2 (fun hx => by obtain ⟨p, -, hp⟩ := List.any_eq_true.1 hx; exact absurd (hp.symm.trans (h p.1)) (by simp))
 
-/-- **Seven is the ceiling of the census, for every request and every eligibility.**  Four of
-`checksOf`'s eleven have an empty subject on every day `Planner.dayPlan` produces, so the
-filter `subjectCount` runs can keep at most the other seven.  P5's fold ends it for
-`energyFilter` and `batch`, P5/P7 for `windDown`, P8 for `impossible` (design §6.4). -/
-theorem the_census_ceiling_is_seven_on_an_unassigned_day (el : Eligible) (r : PlanReq)
-    (hnoassign : r.assignedRows = [])
-    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+/-- **Seven, given no eligible impossible item** (W-33; it was UNCONDITIONAL until then, and
+`PlannerWit.the_census_reaches_eight_on_an_unassigned_day` refutes that — the unconditional
+ceiling is `the_census_ceiling_is_eight_on_an_unassigned_day`, end of this module).  The
+hypothesis names what it excludes (AGENTS §5.2): an IMPOSSIBLE item eligible somewhere. -/
+theorem the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
+    (hnoassign : r.assignedRows = []) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hnoimp : subjectOf el .impossible r (dayPlan r) = false) :
     subjectCount el r (dayPlan r) ≤ 7 := by
   have e1 := energyFilter_has_no_subject_on_an_unassigned_day el r hnoassign
   have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
   have e3 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
-  have e4 := impossible_has_no_subject el r
+  have e4 := hnoimp
   show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 7
   have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
       = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
@@ -3166,7 +3166,7 @@ subject than did there, and `overbook` loses one it had on the whole day, becaus
 `the_census_ceiling_from_now_is_four_on_an_unassigned_day` proves the exact ceiling: **at most four** of the eleven
 can have a subject on this day at a `SlotAnchored` eligibility, at any request whatever, and
 `PlannerWit.the_eleven_from_now_is_four_checkers_biting` reaches it.  Four is not seven: the
-whole-day ceiling `the_census_ceiling_is_seven_on_an_unassigned_day` counts `overbook` and the two comparisons,
+whole-day ceiling `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` counts `overbook` and the two comparisons,
 and every one of those three is counted there **because of the replayed past**, which is the
 half of the day §8.3 is not about.  Neither number is the other's correction; they are
 ceilings on two different days and each says which.
@@ -3180,8 +3180,8 @@ single statement of them, and every other sentence about the ratio points here.
 
 | the question | what counts it | today's answer, with its coordinates |
 |---|---|---|
-| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now_on_an_unassigned_day`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_unassigned_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`); **the seven core checks** on the whole day, every request, every `FromNowAnchored` `el` (`dayPlan_ok_is_the_core_seven_on_an_unassigned_day`, W-23) — and the eleven there is **refuted** at a merely `SlotAnchored` one (`PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted`) |
-| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven_on_an_unassigned_day`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four_on_an_unassigned_day`), reached at the same request; ceiling **five**, whole day, every request, every `FromNowAnchored` `el` (`the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day`, W-23), reached at the same request again |
+| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now_on_an_unassigned_day`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_unassigned_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`); **the seven core checks** on the whole day, every request, every `FromNowAnchored` `el` (`dayPlan_ok_is_the_core_seven_on_an_unassigned_day`, W-23) — and the eleven there is **refuted** at a merely `SlotAnchored` one (`PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted`) |
+| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four_on_an_unassigned_day`), reached at the same request; ceiling **five**, whole day, every request, every `FromNowAnchored` `el` (`the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day`, W-23), reached at the same request again |
 | how many **bite inside a proved lift** | the census evaluated at the lift's own arguments | **one** on the quiet class (`PlannerWit.the_quiet_eleven_is_one_checker_biting`); **four** at the census request on `withoutPast`'s day (`PlannerWit.the_eleven_from_now_is_four_checkers_biting`); **five** at the same request on the whole day at a `FromNowAnchored` `el` (`PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five`, W-23) |
 
 **W-23 added the fourth coordinate — the whole day at a `FromNowAnchored` eligibility — and
@@ -3315,8 +3315,8 @@ theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     eligibleSomewhere_of_only_the_reservation hslot r _
       (fun s hs hw =>
         withoutPast_work_rows_are_the_reservation_on_an_unassigned_day r hnoassign s hs hw)
-  exact dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day el r
-    hagree hactive hday hnowcal hplain hnoassign
+  exact dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
+    el r hagree hactive hday hnowcal hplain hnoassign (fun p _ => hnone p.1)
     (monotoneInRank_of_nothing_eligible el r _ hnone)
     (hotBeforeQueue_of_nothing_eligible el r _ hnone)
 
@@ -3357,7 +3357,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
     Bool.and_true, monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_is_true_because_its_subject_is_empty el r,
+    impossibleKept_of_nothing_eligible el r _ hnone,
     batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
       hnoassign]
   exact hcore
@@ -3365,7 +3365,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
 /-! ### The census on that day: the ceiling is FOUR, and it is reached
 
 Seven of the eleven have no subject on `withoutPast`'s day at a `SlotAnchored` eligibility —
-the four `the_census_ceiling_is_seven_on_an_unassigned_day` already names at every request, plus `overbook` and the
+the four `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` already names at every request, plus `overbook` and the
 two comparisons.  `overbook` is the one that *changes sign* between the two days and the
 reason is design §6.3 row 1 taken literally: its subject is a Block row that survives
 `withoutActive`, every Block row of this day is the reservation, and `withoutActive` removes
@@ -3381,7 +3381,7 @@ theorem any_filter_of_any_eq_false {α : Type} {l : List α} {p q : α → Bool}
 
 /-- **`overbook` has no subject on the rows §8.3 is about**, at every request: `withoutActive`
 removes the only Block `withoutPast` leaves.  It DOES have one on the whole day — the replayed
-past — which is why `the_census_ceiling_is_seven_on_an_unassigned_day` counts it and this section does not. -/
+past — which is why `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` counts it and this section does not. -/
 theorem overbook_has_no_subject_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = []) :
     subjectOf el .overbook r (withoutPast r (dayPlan r)) = false := by
@@ -3431,12 +3431,12 @@ theorem batch_has_no_subject_from_now_on_an_unassigned_day (el : Eligible) (r : 
       (the_day_has_no_batch_row_on_an_unassigned_day r s (mem_withoutPast r _ s hs).1 hnoassign ids)
   all_goals (rw [hk] at hp; simp at hp)
 
-theorem impossible_has_no_subject_from_now (el : Eligible) (r : PlanReq) :
-    subjectOf el .impossible r (withoutPast r (dayPlan r)) = false := by
-  simp only [subjectOf]
-  show ((dayPlan r).diagnostics.impossible.val.any
-    (fun p => eligibleSomewhere el r (withoutPast r (dayPlan r)) p.1)) = false
-  simp only [the_day_names_no_impossible_item r, List.any_nil]
+/-! impossible_has_no_subject_from_now stood here — `= false` over `withoutPast`'s day at
+every request and every eligibility, for the same reason as its whole-day sibling and refuted
+with it at W-33 (`PlannerWit.impossible_has_no_subject_from_now_is_refuted`).  The four-check
+ceiling below takes `impossible_has_no_subject_of_nothing_eligible` at its own `hnone`
+instead, which is what it always had for `rank` and `hot`.  The line count of this record
+is the deleted theorem's, so no roster pin below it moves (README gap 2136). -/
 
 /-- The two comparisons' populations are empty whenever nothing is eligible anywhere. -/
 theorem rankSubjects_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
@@ -3464,7 +3464,7 @@ theorem hot_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d 
 other seven have nothing to range over.  `PlannerWit.the_eleven_from_now_is_four_checkers_biting`
 reaches it, so four is a ceiling that has been touched and not a high-water mark.
 
-**Read it beside `the_census_ceiling_is_seven_on_an_unassigned_day`, not instead of it.**  That one is over the
+**Read it beside `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`, not instead of it.**  That one is over the
 WHOLE day at any eligibility and counts three checks this one does not — `overbook` and the
 two comparisons — and all three are counted there because of the **replayed past**, the half
 of the day §8.3's laws are not about.  Neither number corrects the other. -/
@@ -3481,7 +3481,7 @@ theorem the_census_ceiling_from_now_is_four_on_an_unassigned_day {el : Eligible}
   have e3 := windDown_has_no_subject_from_now_on_an_unassigned_day el r hnoassign hnowcal
   have e4 := rank_has_no_subject_of_nothing_eligible el r _ hnone
   have e5 := hot_has_no_subject_of_nothing_eligible el r _ hnone
-  have e6 := impossible_has_no_subject_from_now el r
+  have e6 := impossible_has_no_subject_of_nothing_eligible el r _ hnone
   have e7 := batch_has_no_subject_from_now_on_an_unassigned_day el r hnoassign
   show (List.filter (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
     (checksOf el)).length ≤ 4
@@ -3618,7 +3618,7 @@ theorem dayPlan_ok_is_the_core_seven_on_an_unassigned_day {el : Eligible} (hfn :
     List.all_nil, Bool.and_true,
     monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_is_true_because_its_subject_is_empty el r,
+    impossibleKept_of_nothing_eligible el r _ hnone,
     batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
       hnoassign]
 
@@ -3633,7 +3633,7 @@ theorem dayPlan_ok_of_the_core_seven_on_an_unassigned_day {el : Eligible} (hfn :
   (dayPlan_ok_is_the_core_seven_on_an_unassigned_day hfn r hnoassign).trans hcore
 
 /-- **FIVE is the ceiling of the census on the whole day at a `FromNowAnchored` eligibility**,
-for every request — `the_census_ceiling_is_seven_on_an_unassigned_day`'s five survivors minus the two comparisons,
+for every request — `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`'s five survivors minus the two comparisons,
 which lose their subject with their quantifier.  `PlannerWit.the_whole_day_census_at_the_from_
 now_eligibility_is_five` reaches it at the census request, so five is touched and not a
 high-water mark.
@@ -3652,7 +3652,7 @@ theorem the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day {el : E
   have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
   have e3 := rank_has_no_subject_of_nothing_eligible el r _ hnone
   have e4 := hot_has_no_subject_of_nothing_eligible el r _ hnone
-  have e5 := impossible_has_no_subject el r
+  have e5 := impossible_has_no_subject_of_nothing_eligible el r _ hnone
   have e6 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
   show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 5
   have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
@@ -5024,7 +5024,7 @@ three places:
 
 | checker | what the old proof used `hnoassign` for | what replaces it here |
 |---|---|---|
-| `impossibleKept` | nothing — `impossible_has_no_subject` is unconditional | nothing |
+| `impossibleKept` | nothing — until W-33 the list was empty at every request (impossible_has_no_subject, refuted when the field was written) | the fold's rows admit no candidate, so nothing is eligible anywhere (`impossible_has_no_subject_of_nothing_eligible`) |
 | `batchDoesNotReachPast` | *the day holds no Batch row*, because §8.2 step 5 is the only source of one | the fold's rows admit no candidate, so `batchPairOk`'s antecedent is false at them |
 | `monotoneInRank` | *every work row is choice 5b's reservation*, which a `SlotAnchored` `el` is refused at | the same, with the fold's rows as a second refused family |
 | `hotBeforeQueue` | the same | the same |
@@ -5214,7 +5214,7 @@ theorem dayPlan_ok_is_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) 
     List.all_nil, Bool.and_true,
     monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_is_true_because_its_subject_is_empty el r,
+    impossibleKept_of_nothing_eligible el r _ hnone,
     batchDoesNotReachPast_of_a_fold_that_admits_nothing el r hfold]
 
 /-- The discharge form: the whole battery on the whole day from the seven alone. -/
@@ -5314,6 +5314,130 @@ theorem plan_does_not_overbook_from_now_where_nothing_runs (r : PlanReq)
   have h := (noOverbook_iff r (withoutPast r (dayPlan r))).1 hbudget
   rw [hb] at h
   exact h
+
+/-! ############################################################################
+## W-33 (track P): the laws behind `hnoimp`, and the census ceiling of EIGHT
+############################################################################
+
+Appended here rather than beside the lemmas they refine because `mutate.py`'s named pin
+sites are line numbers (README gap 2136): every in-place edit above is line-count-neutral,
+and what could not be made neutral lives here. -/
+
+/-- **On a day that assigns nothing, `impossibleKept` passes EXACTLY when it has no subject** —
+an eligible impossible item is dropped, and there is no non-vacuous pass to be had.  This
+replaces impossibleKept_is_true_because_its_subject_is_empty, which said `= true` for every
+request and every eligibility and was REFUTED the moment W-33 wrote the field
+(`PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted`); it was not a
+law but a description of the hole, and this is the law it stood in front of. -/
+theorem impossibleKept_of_nothing_assigned_iff (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : assignedOf d = []) :
+    impossibleKept el r d = true ↔
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false := by
+  rw [impossibleKept_iff]
+  constructor
+  · intro hk p hp
+    cases he : eligibleSomewhere el r d p.1
+    · rfl
+    · have := hk p hp he
+      rw [h] at this
+      exact absurd this (by simp)
+  · intro hn p hp he
+    exact absurd (he.symm.trans (hn p hp)) (by simp)
+
+/-- **The failure, positively**: on a day that assigns nothing, an impossible item eligible
+anywhere fails the check.  `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
+is the computed instance, and `PlannerWit.the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved`
+is the same at a day that assigns. -/
+theorem an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned (el : Eligible)
+    (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
+    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleSomewhere el r d p.1 = true) :
+    impossibleKept el r d = false := by
+  cases hk : impossibleKept el r d
+  · rfl
+  · have := (impossibleKept_of_nothing_assigned_iff el r d h).1 hk p hp
+    rw [hel] at this
+    exact absurd this (by simp)
+
+/-- **`.impossible` has no subject where nothing is eligible** — stated above in three lines so
+that it could stand exactly where impossible_has_no_subject stood (that one said `= false` at
+every request and every eligibility because `Planner.dayDiagnostics` wrote nothing into the
+list; W-33 wrote it, and `PlannerWit.impossible_has_no_subject_is_refuted` is the request where
+the old statement is false).  The subject, spelled: `subjectOf`'s `.impossible` arm is the
+`any` of the list, so an empty subject is exactly the `hnoimp` the lifts above carry. -/
+theorem impossible_subject_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
+    subjectOf el .impossible r d = false ↔
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = false := by
+  simp only [subjectOf]
+  constructor
+  · intro h p hp
+    cases he : eligibleSomewhere el r d p.1
+    · rfl
+    · have hx : d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1) = true :=
+        List.any_eq_true.2 ⟨p, hp, he⟩
+      rw [h] at hx
+      exact absurd hx (by simp)
+  · intro h
+    refine Bool.eq_false_iff.2 (fun hx => ?_)
+    obtain ⟨p, hp, hpe⟩ := List.any_eq_true.1 hx
+    exact absurd (hpe.symm.trans (h p hp)) (by simp)
+
+/-- **`.impossible` has a subject on the produced day exactly when some answer reports a positive
+shortfall — the shipped binary's `is_impossible` — and that answer's item is eligible
+somewhere**: the census arm's content now that the list is written, through
+`Planner.PlanReq.mem_dayImpossible`. -/
+theorem impossible_has_a_subject_iff_an_impossible_answer_is_eligible (el : Eligible)
+    (r : PlanReq) :
+    subjectOf el .impossible r (dayPlan r) = true ↔
+      ∃ o ∈ r.candAnswers, 0 < o.shortfall ∧
+        eligibleSomewhere el r (dayPlan r) o.out.cand.id = true := by
+  simp only [subjectOf, dayPlan_impossible, List.any_eq_true]
+  constructor
+  · rintro ⟨⟨i, s⟩, hp, he⟩
+    obtain ⟨o, ho, hid, hs, -⟩ := (r.mem_dayImpossible i s).1 hp
+    exact ⟨o, ho, hs, by rw [hid]; exact he⟩
+  · rintro ⟨o, ho, hs, he⟩
+    exact ⟨(o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos)),
+      (r.mem_dayImpossible _ _).2 ⟨o, ho, rfl, hs, rfl⟩, he⟩
+
+/-- **Eight is the ceiling of the census on an unassigned day, for every request and every
+eligibility.**  Three of `checksOf`'s eleven have an empty subject on every day
+`Planner.dayPlan` produces there, so the filter `subjectCount` runs can keep at most the
+other eight.  P5's fold ends it for `energyFilter` and `batch`, P5/P7 for `windDown`.
+
+**It was SEVEN until W-33** — the_census_ceiling_is_seven_on_an_unassigned_day, refuted by
+`PlannerWit.the_census_reaches_eight_on_an_unassigned_day` at the census Wednesday with one
+impossible candidate: the fourth empty subject was `impossible`, and P8's first half wrote
+the field.  Seven survives as `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`,
+with the one hypothesis that names what it excludes. -/
+theorem the_census_ceiling_is_eight_on_an_unassigned_day (el : Eligible) (r : PlanReq)
+    (hnoassign : r.assignedRows = [])
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    subjectCount el r (dayPlan r) ≤ 8 := by
+  have e1 := energyFilter_has_no_subject_on_an_unassigned_day el r hnoassign
+  have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
+  have e3 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
+  show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 8
+  have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
+      = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+          ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+          ⟨.wallMoved, wallsUnmoved⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (dayPlan r)) := by
+    simp only [checksCore, List.filter_cons, e1, e2, Bool.false_eq_true, if_false]
+  have helig : (checksEligible el).filter (fun c => subjectOf el c.name r (dayPlan r))
+      = ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩,
+          ⟨.impossible, impossibleKept el⟩] : List Check).filter
+            (fun c => subjectOf el c.name r (dayPlan r)) := by
+    simp only [checksEligible, List.filter_cons, e3, Bool.false_eq_true, if_false]
+  rw [checksOf, List.filter_append, List.length_append, hcore, helig]
+  have b1 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
+    ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
+      ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
+      ⟨.wallMoved, wallsUnmoved⟩] : List Check)
+  have b2 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
+    ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩,
+      ⟨.impossible, impossibleKept el⟩] : List Check)
+  simp only [List.length_cons, List.length_nil] at b1 b2
+  omega
 
 end PlanCheck
 end Tm

@@ -31,8 +31,8 @@ per bucket", `:4576` is "§8.2 step 5's assignment", and `:6138`'s `dayRows` com
 `assignedRows`, `optionalRows` and `restRows`.  (Gap 2223 quoted `:2802`, `:4209`, `:4553`
 and `:6115`, all four true of `471a7ff`; this header is twenty-three lines longer, so
 every anchor below it moved by that, and re-deriving them rather than copying them is AGENTS §5.11.)
-Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8's twelve diagnostic fields and
-P8's emitter are what is still owed.)*
+Step 6 has been here since `0d52a4d`, 2026-09-19.  Step 8 fills ten of twelve fields since
+W-33 (`dayDiagnostics` names the two it does not, gap 2511); P8's emitter is still owed.)*
 
 *A tripwire, and the one that already fired.*  P0 left two theorems whose job was to stop
 compiling on the day they became false.  **P1 took the first**:
@@ -6165,14 +6165,391 @@ and `Note.noPosition` is what names it if step 6 cannot place it either (**P6**)
 def dayAssigned (r : PlanReq) : List Id :=
   ((dayRows r).filter (fun s => s.val.kind.isWork)).flatMap segItems
 
-/-- §8.2 step 8's diagnostics, as far as steps 1, 2, 6 and **7** fill them. -/
+/-! ### §8.2 step 8: the fields the day fills from what it already computed (W-33, P8's first half)
+
+Fork `Planner::diagnose` (`planner.rs:2105-2222`) fills twelve fields from the candidates, the
+answers, the groups and the segments it already holds.  `Diagnostics` has carried all twelve
+with the fork's meanings since P0, and `dayDiagnostics` filled three of them until this step
+(README gap **2403**, found by driving `--json plan`).  Each definition below is one field, read
+off a value the request carried or the day already computed — the capacity op's own answer
+(`PlanReq.candAnswers`), the nine facts on the wire (`Look.PlanFacts`), the groups step 5
+built, the rows it placed, the day's replayed record — and none derives a fact about a
+candidate (D34).
+
+**The comparand is the fork as the shipped binary runs it (D53)**: `planner::plan` fed the
+kernel's own grants by `kernel_capacity::rank` (`prio_of` reads each grant's `until`, `bin`
+and `shortfall` off the capacity op's JSON, `Boundary`'s `grantJsonF`).  So a field below that
+reads §7 reads it exactly where the shipped binary reads it: off the answer, not off a second
+test of the grant.  `tm/tests/planner_invariants.rs` compares every field written here with
+the kernel-ranked fork's on every generated day (W-33) — `droppedTail` and `planHonesty`
+counted instead of compared on a day whose fork draws README gap 554's open-block row, which
+this kernel does not port and which changes the assigned set those two read. -/
+
+/-- **`Diagnostics.impossible`** — fork `diagnose`'s `if p.is_impossible() { if let Some(until)
+= p.until { d.impossible.push((c.id, p.shortfall_min, until)) } }`, walls skipped, one row per
+ANSWER in request order and no de-duplication (the fork pairs by index).
+
+**What `is_impossible` is at the shipped binary, read off the code.**  `Prio::is_impossible` is
+`is_hot() && shortfall_min_exact.num > 0`; `kernel_capacity`'s `prio_of` sets `u` only where
+the grant has an `until` and is not a wall, and to `≥ 1` only where the grant's `bin` is `null`,
+which `Boundary`'s `binJson` writes for a HOT bin; and the `shortfall` it reads is
+`Look.FloorOut.shortfall`, which is positive only at a HOT bin.  So the shipped binary's test
+is **`0 < o.shortfall`** and nothing else: `until` is present at every such answer (a granted
+answer's due date, a floor answer's last day), and a wall carries neither a grant nor a floor.
+`shortfall_min` is `capacity::floor_minutes` of the same units — `Arith.floorQ` over
+`Look.capDen` here — and the field's "exact" is that floor of the exact value, as the wire's
+`shortMin` is (D15).
+
+**Two things this reads that a test of `Grant.impossible` would not** (and the brief this step
+was written from suggested that test): a FLOOR answer is listed when its floor is HOT and short
+— `Look.FloorOut.shortfall`'s second arm, fork `is_impossible` reading `u` off the floor — and
+a granted answer whose need exceeds its availability only through R1's CEILING (`Arith.needMin`)
+while §7.1's exact `u` stays below 1 is NOT listed, because its bin is not HOT and the shipped
+binary does not call it impossible.  `an_item_the_day_names_with_a_grant_has_impossible_numbers`
+and `the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin` are the two directions
+in `edfNumbers`'s terms, and the second carries the HOT bin because it needs it.
+
+Bounded by the answers: a `filterMap` cannot grow a list and `PlanReq.candAnswers_capped` is
+`maxCands` — the wire's bound, reused (R10) — so `Capped.ofListTake` in `dayDiagnostics` drops
+nothing (`dayDiagnostics_impossible`). -/
+def PlanReq.dayImpossible (r : PlanReq) : List (Id × Nat) :=
+  r.candAnswers.filterMap (fun o =>
+    if 0 < o.shortfall then
+      some (o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos))
+    else none)
+
+theorem PlanReq.dayImpossible_capped (r : PlanReq) : r.dayImpossible.length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped
+
+/-- **A row is an answer whose own reported shortfall is positive, with that shortfall floored
+to minutes** — both directions, by answer (the fork's pairing). -/
+theorem PlanReq.mem_dayImpossible (r : PlanReq) (i : Id) (s : Nat) :
+    (i, s) ∈ r.dayImpossible ↔
+      ∃ o ∈ r.candAnswers, o.out.cand.id = i ∧ 0 < o.shortfall ∧
+        s = Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos) := by
+  unfold PlanReq.dayImpossible
+  rw [List.mem_filterMap]
+  constructor
+  · rintro ⟨o, ho, h⟩
+    by_cases hs : 0 < o.shortfall
+    · rw [if_pos hs] at h
+      simp only [Option.some.injEq, Prod.mk.injEq] at h
+      exact ⟨o, ho, h.1, hs, h.2.symm⟩
+    · rw [if_neg hs] at h
+      exact absurd h (by simp)
+  · rintro ⟨o, ho, hid, hs, rfl⟩
+    exact ⟨o, ho, by simp [hs, hid]⟩
+
+/-- **A granted answer is `Look.priorities`' own, unfloored, and its grant is §7.3's** —
+`Look.an_answers_grant_reserves_the_min` carried through the floor pass, whose first arm
+(`Look.withFloor`) is taken only by an answer WITHOUT a grant. -/
+theorem PlanReq.a_granted_answer (r : PlanReq) {o : Look.FloorOut} {g : Grant}
+    (ho : o ∈ r.candAnswers) (hg : o.out.grant = some g) :
+    o.floor = none ∧ g.reserved = min (g.deadline.need * Look.capDen) g.avail ∧
+      o.shortfall = (if o.out.bin = some .hot then g.deadline.need * Look.capDen - g.avail
+        else 0) := by
+  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 ho
+  unfold PlanReq.candAnswers at hi
+  rw [Look.prioritiesWithFloors_getElem?] at hi
+  cases hp : (Look.priorities r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst r.edfDays
+      (r.cands.val.map Prod.fst))[i]? with
+  | none => rw [hp] at hi; simp at hi
+  | some oc =>
+    rw [hp] at hi
+    cases hc : r.cands.val[i]? with
+    | none => rw [hc] at hi; simp at hi
+    | some cf =>
+      rw [hc] at hi
+      simp only [Option.bind_some, Option.map_some, Option.some.injEq] at hi
+      subst hi
+      unfold Look.withFloor at hg ⊢
+      cases hog : oc.grant with
+      | none =>
+        rw [hog] at hg
+        cases hf : cf.2 with
+        | none => simp [hf, hog] at hg
+        | some fl =>
+          by_cases hw : oc.cand.wall = true
+          · simp [hf, hw, hog] at hg
+          · simp [hf, hw] at hg
+      | some g' =>
+        simp only [hog] at hg ⊢
+        have hgg : g' = g := by simpa using hg
+        subst hgg
+        obtain ⟨hmin, hsh⟩ := Look.an_answers_grant_reserves_the_min r.prio.bins r.prio.safety
+          r.prio.dflt r.prio.hyst r.edfDays (r.cands.val.map Prod.fst) hp hog
+        refine ⟨by simp, hmin, ?_⟩
+        simp only [Look.FloorOut.shortfall]
+        exact hsh
+
+/-- **A named answer that carries a grant is IMPOSSIBLE by that grant, at a HOT bin.** -/
+theorem PlanReq.a_named_grant_is_impossible_at_a_hot_bin (r : PlanReq) {o : Look.FloorOut}
+    {g : Grant} (ho : o ∈ r.candAnswers) (hg : o.out.grant = some g) (hs : 0 < o.shortfall) :
+    g.impossible Look.capDenD = true ∧ o.out.bin = some .hot := by
+  obtain ⟨-, -, hsh⟩ := r.a_granted_answer ho hg
+  by_cases hb : o.out.bin = some .hot
+  · rw [if_pos hb] at hsh
+    refine ⟨?_, hb⟩
+    unfold Grant.impossible
+    exact decide_eq_true (show g.avail < g.deadline.need * Look.capDen by omega)
+  · rw [if_neg hb] at hsh
+    omega
+
+/-- **An IMPOSSIBLE grant at a HOT bin reports a shortfall** — so its answer is named. -/
+theorem PlanReq.an_impossible_grant_at_a_hot_bin_is_short (r : PlanReq) {o : Look.FloorOut}
+    {g : Grant} (ho : o ∈ r.candAnswers) (hg : o.out.grant = some g)
+    (hi : g.impossible Look.capDenD = true) (hb : o.out.bin = some .hot) :
+    0 < o.shortfall := by
+  obtain ⟨-, -, hsh⟩ := r.a_granted_answer ho hg
+  rw [if_pos hb] at hsh
+  have hlt : g.avail < g.deadline.need * Look.capDen := of_decide_eq_true hi
+  omega
+
+/-- **A named answer without a grant is a HOT floor that falls short** — the floor pass's own
+answer (`Look.FloorOut.shortfall`'s second arm), which a test of `Grant.impossible` could not
+see because a floor answer carries no `Grant`. -/
+theorem PlanReq.a_named_answer_without_a_grant_is_a_short_floor (o : Look.FloorOut)
+    (hg : o.out.grant = none) (hs : 0 < o.shortfall) :
+    ∃ fg, o.floor = some fg ∧ o.out.bin = some .hot ∧ fg.avail < fg.need * Look.capDen := by
+  unfold Look.FloorOut.shortfall at hs
+  cases hf : o.floor with
+  | none =>
+    rw [hf] at hs
+    simp only [Look.CandOut.shortfall, hg] at hs
+    exact absurd hs (by simp)
+  | some fg =>
+    rw [hf] at hs
+    cases hb : o.out.bin with
+    | none => rw [hb] at hs; exact absurd hs (by simp)
+    | some b =>
+      cases b with
+      | hot =>
+        rw [hb] at hs
+        exact ⟨fg, rfl, rfl, by simp only at hs; omega⟩
+      | plus n => rw [hb] at hs; exact absurd hs (by simp)
+
+/-- **The answer an id is answered by, when the answers' ids are distinct, is every answer that
+carries the id.** -/
+theorem PlanReq.answerFor_of_mem (r : PlanReq)
+    (hnodup : (r.candAnswers.map (fun o => o.out.cand.id)).Nodup) {o : Look.FloorOut}
+    (ho : o ∈ r.candAnswers) : r.answerFor o.out.cand.id = some o := by
+  unfold PlanReq.answerFor
+  obtain ⟨as, bs, hl⟩ := List.append_of_mem ho
+  refine (List.find?_eq_some_iff_append).2 ⟨by simp, as, bs, hl, fun a hamem => ?_⟩
+  rw [hl, List.map_append, List.map_cons, List.nodup_append] at hnodup
+  obtain ⟨-, -, hdisj⟩ := hnodup
+  have hne : a.out.cand.id ≠ o.out.cand.id := fun heq =>
+    hdisj a.out.cand.id (List.mem_map.2 ⟨a, hamem, rfl⟩) o.out.cand.id (by simp) heq
+  simp [hne]
+
+/-- **Every item whose EDF numbers say impossible, answered at a HOT bin, is named with its
+grant's shortfall** — the direction that makes W-18's `rfl` (the day named no impossible item)
+false.  The HOT bin is a real hypothesis and not a convenience: `edfNumbers` is R1's CEILING of
+the need against the availability (`Grant.impossible`), §7.1's bin is the EXACT `u`, and an
+availability strictly between the exact need and its ceiling makes the first say impossible
+and the second say `+n` — the shipped binary then calls the item neither HOT nor impossible,
+and so does this field. -/
+theorem the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin (r : PlanReq)
+    (i : Id) {o : Look.FloorOut} (ha : r.answerFor i = some o) (hb : o.out.bin = some .hot)
+    (h : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
+    ∃ g, r.grantFor i = some g ∧
+      (i, Arith.floorQ (g.shortfallQ Look.capDenD)) ∈ r.dayImpossible := by
+  have hmem : o ∈ r.candAnswers := by
+    unfold PlanReq.answerFor at ha; exact List.mem_of_find?_eq_some ha
+  have hid : o.out.cand.id = i := by
+    unfold PlanReq.answerFor at ha; simpa using List.find?_some ha
+  cases hg : r.grantFor i with
+  | none =>
+    rw [edfNumbers_without_a_grant r i hg] at h
+    exact absurd h (by simp)
+  | some g =>
+    refine ⟨g, rfl, ?_⟩
+    have hog : o.out.grant = some g := by
+      unfold PlanReq.grantFor at hg; rw [ha] at hg; simpa using hg
+    rw [edfNumbers_is_the_grants_own_impossibility r i g hg] at h
+    have hs := r.an_impossible_grant_at_a_hot_bin_is_short hmem hog h hb
+    obtain ⟨-, hmin, hsh⟩ := r.a_granted_answer hmem hog
+    rw [if_pos hb] at hsh
+    have hlt : g.avail < g.deadline.need * Look.capDen := of_decide_eq_true h
+    have heq : o.shortfall = g.shortfall Look.capDen := by
+      unfold Grant.shortfall; rw [hsh, hmin, Nat.min_eq_right (Nat.le_of_lt hlt)]
+    refine (r.mem_dayImpossible i _).2 ⟨o, hmem, hid, hs, ?_⟩
+    simp only [Grant.shortfallQ, heq]
+    rfl
+
+/-- **An item the day names that entered the pass has impossible EDF numbers** — the converse
+by ID, under the one hypothesis it needs: `edfNumbers` answers an id by its FIRST answer
+(`PlanReq.answerFor`), so with two candidates of one id (§5.3's carried instance beside today's
+fresh one) the named item's numbers could be the other's. -/
+theorem an_item_the_day_names_with_a_grant_has_impossible_numbers (r : PlanReq)
+    (hnodup : (r.candAnswers.map (fun o => o.out.cand.id)).Nodup) (i : Id) (s : Nat)
+    (h : (i, s) ∈ r.dayImpossible) (hg : (r.grantFor i).isSome = true) :
+    Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true := by
+  obtain ⟨o, ho, hid, hs, -⟩ := (r.mem_dayImpossible i s).1 h
+  have ha : r.answerFor i = some o := hid ▸ r.answerFor_of_mem hnodup ho
+  cases hgi : r.grantFor i with
+  | none => rw [hgi] at hg; exact absurd hg (by simp)
+  | some g =>
+    have hog : o.out.grant = some g := by
+      unfold PlanReq.grantFor at hgi; rw [ha] at hgi; simpa using hgi
+    rw [edfNumbers_is_the_grants_own_impossibility r i g hgi]
+    exact (r.a_named_grant_is_impossible_at_a_hot_bin ho hog hs).1
+
+/-- `List.eraseDups` (core's, the fork's `!d.xs.contains(&id)` push guard — FIRST occurrence
+kept, in push order) never lengthens a list.  Core proves membership (List.mem_eraseDups) and
+not this. -/
+theorem eraseDups_length_le {α : Type} [BEq α] :
+    ∀ (n : Nat) (l : List α), l.length ≤ n → l.eraseDups.length ≤ l.length
+  | _, [], _ => by simp
+  | 0, _ :: _, h => by simp at h
+  | n + 1, a :: as, h => by
+    rw [List.eraseDups_cons]
+    have hf := List.length_filter_le (fun b => !b == a) as
+    have ih := eraseDups_length_le n (as.filter fun b => !b == a)
+      (by simp only [List.length_cons] at h; omega)
+    simp only [List.length_cons]
+    omega
+
+/-- **`Diagnostics.hot`** — fork `diagnose`: `(p.is_hot() || p.class == HotFlag) &&
+!d.hot.contains(&c.id)`, walls skipped.  `is_hot` at the shipped binary is `u ≥ 1`, which
+`prio_of` sets exactly where the grant's `bin` is `null` and the grant has an `until`: an answer
+whose bin is HOT (a granted answer's `Look.binAt`, a floor answer's `Look.floorBin`).  The
+hot-flag class is the one the wire names `hotflag`, `Look.FloorOut.cls`.  One row per id, the
+first (`List.eraseDups`). -/
+def PlanReq.dayHot (r : PlanReq) : List Id :=
+  (r.candAnswers.filterMap (fun o =>
+    if !o.out.cand.wall &&
+        (decide (o.out.bin = some Arith.Bin.hot) || decide (o.cls = Look.PClass.hotFlag))
+    then some o.out.cand.id else none)).eraseDups
+
+theorem PlanReq.dayHot_capped (r : PlanReq) : r.dayHot.length ≤ maxCands :=
+  Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
+    (Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped)
+
+/-- **`Diagnostics.droppedTail`** — fork `diagnose`'s "§9: what the tail dropped": every member
+of every group `build_groups` built that the day's own assigned set does not hold, once each
+(`!d.dropped_tail.contains`).  `PlanReq.buildGroups` is the one `build_groups` (the running
+item split out as the fork splits it).  `assigned` is a parameter for `PlanReq.aCapacityLost`'s
+reason, and `dayDiagnostics` hands it `dayAssigned` — fork `assigned`, the items of every work
+row — computed ONCE: read inside the filter it would be the whole day recomputed per member. -/
+def PlanReq.dayDroppedTail (r : PlanReq) (assigned : List Id) : List Id :=
+  ((r.buildGroups.flatMap (fun g => g.members.map (fun x => x.cand.id))).filter
+    (fun i => !assigned.contains i)).eraseDups
+
+/-- **`Diagnostics.underused`** — fork `diagnose`'s first loop: the items of every work row
+whose `flags.underused` §8.2 step 5 set (the slot's energy two or more above the group's `ci`),
+one entry per item per row as the fork pushes them.  The fork records `(id, energy, ci)`;
+`IdList` carries the id, and the row carries the other two. -/
+def PlanReq.dayUnderused (r : PlanReq) : List Id :=
+  ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).flatMap segItems
+
+/-- **`Diagnostics.planHonesty`** — fork `diagnose`'s §11 ratio, as the pair design §11 asks for
+(nothing here divides): Σ `commit_min` over the groups with an assigned member, over
+`remaining_budget × block_min`.  The fork's `remaining_budget` is the local `plan()` computes
+before the assign loop — travel-day zeroing included, never decremented — which is
+`remainingBudget`.  The fork's `Option<f64>` is `None` at a zero budget; the pair is
+`Diagnostics.empty`'s `(0, 0)` there.  `assigned` is `PlanReq.dayDroppedTail`'s parameter, for
+its reason. -/
+def PlanReq.dayPlanHonesty (r : PlanReq) (assigned : List Id) : Nat × Nat :=
+  let budgetMin := remainingBudget r * r.blockMin
+  if budgetMin = 0 then (0, 0)
+  else
+    ((r.buildGroups.filter (fun g =>
+        g.members.any (fun x => assigned.contains x.cand.id))).foldl
+          (fun acc g => acc + g.commitMin) 0,
+     budgetMin)
+
+/-- **`Diagnostics.waiting`** — fork `diagnose`'s `if c.waiting && !d.waiting.contains(&c.id)`,
+walls skipped: the candidates whose line is `[?]`, read off the wire's own fact
+(`Look.PlanFacts.waiting`, fork `priority.rs:718`), once each. -/
+def PlanReq.dayWaiting (r : PlanReq) : List Id :=
+  (r.cands.val.filterMap (fun cf =>
+    if !cf.1.wall && cf.1.plan.val.waiting then some cf.1.id else none)).eraseDups
+
+theorem PlanReq.dayWaiting_capped (r : PlanReq) : r.dayWaiting.length ≤ maxCands :=
+  Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
+    (Nat.le_trans (List.length_filterMap_le _ _) r.cands.property)
+
+/-- **`Diagnostics.blocked`** — fork `diagnose`'s `if let Some(Ineligible::Blocked(deps)) =
+c.ineligible_reason()`, walls skipped.  `ineligible_reason` answers `Blocked` exactly when the
+line is not waiting, its state is open and its unsatisfied `after:` list is non-empty
+(`priority.rs:303-312`, in that order), and all three are the wire's facts
+(`Look.PlanFacts.isOpen`, `Look.PlanFacts.blockedBy`).  The not-waiting clause is not spelled:
+an open state is already a non-waiting one
+(`Look.PlanFacts.the_waiting_conjunct_is_implied_by_the_open_states`, README gap 775), so no
+witness could pin it.  The fork pushes `(id, deps)` with no guard; `IdList` carries the id. -/
+def PlanReq.dayBlocked (r : PlanReq) : List Id :=
+  r.cands.val.filterMap (fun cf =>
+    if !cf.1.wall && cf.1.plan.val.isOpen && !cf.1.plan.val.blockedBy.isEmpty
+    then some cf.1.id else none)
+
+theorem PlanReq.dayBlocked_capped (r : PlanReq) : r.dayBlocked.length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _) r.cands.property
+
+/-- §8.2 step 8's diagnostics, as far as steps 1, 2, 4, 5, 6 and 7 fill them — **TEN of the
+twelve** since W-33 (three until then, README gap **2403**).  `conflicts` (step 1), `notes`
+(steps 1, 6 and 7) and `aCapacityLost` (step 7's Rest against the ci-5 candidates) were here;
+W-33 adds `impossible` (P8's first half, README gaps **2321** and **2419**), `hot`, `waiting`,
+`blocked`, `droppedTail`, `underused` and `planHonesty`, each read off a value the request
+carried or the day already computed.
+
+**The two still at `Diagnostics.empty`, each with its reason** (README gap **2511**):
+* `deferred` — fork: an unassigned eligible candidate for which some slot's RAW energy (the
+  energising at a flat posterior, fork `raw_slots`) reached its `ci` while the energised
+  slot's did not.  `PlanReq.energisedSlots` is the posterior-corrected energising only; the
+  raw one is a second call of `Look.energizeToday` at a flat posterior, which this step did
+  not write.
+* `restDebtMin` — fork: Σ `planned_min − actual_or_planned()` over today's breaks, off the day
+  record `PlanReq.todayRecord` already reads.  Composable in one line; no witness log in this
+  tree carries a break with an `actual_min`, so D40's constant fold `0` survives every witness
+  and the field waits for that witness, not for a definition. -/
 def dayDiagnostics (r : PlanReq) : Diagnostics :=
+  let assigned := dayAssigned r
   { Diagnostics.empty with
+    underused := Capped.ofListTake r.dayUnderused
+    hot := Capped.ofListTake r.dayHot
+    impossible := Capped.ofListTake r.dayImpossible
     conflicts := Capped.ofListTake (wallConflicts (wallsToday r))
-    aCapacityLost := r.aCapacityLost (dayAssigned r)
+    blocked := Capped.ofListTake r.dayBlocked
+    waiting := Capped.ofListTake r.dayWaiting
+    aCapacityLost := r.aCapacityLost assigned
     notes := Capped.ofListTake
       ((if travelDay r then [Note.travelDay] else []) ++ r.noPositionNotes ++
-        r.budgetSpentNotes) }
+        r.budgetSpentNotes)
+    droppedTail := Capped.ofListTake (r.dayDroppedTail assigned)
+    planHonesty := r.dayPlanHonesty assigned }
+
+/-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
+it, so `Capped.ofListTake` truncates nothing. -/
+theorem dayDiagnostics_impossible (r : PlanReq) :
+    (dayDiagnostics r).impossible.val = r.dayImpossible :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayImpossible_capped
+
+theorem dayDiagnostics_hot (r : PlanReq) : (dayDiagnostics r).hot.val = r.dayHot :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayHot_capped
+
+theorem dayDiagnostics_waiting (r : PlanReq) : (dayDiagnostics r).waiting.val = r.dayWaiting :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayWaiting_capped
+
+theorem dayDiagnostics_blocked (r : PlanReq) : (dayDiagnostics r).blocked.val = r.dayBlocked :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayBlocked_capped
+
+theorem dayDiagnostics_droppedTail (r : PlanReq) :
+    (dayDiagnostics r).droppedTail = Capped.ofListTake (r.dayDroppedTail (dayAssigned r)) := rfl
+
+theorem dayDiagnostics_underused (r : PlanReq) :
+    (dayDiagnostics r).underused = Capped.ofListTake r.dayUnderused := rfl
+
+theorem dayDiagnostics_planHonesty (r : PlanReq) :
+    (dayDiagnostics r).planHonesty = r.dayPlanHonesty (dayAssigned r) := rfl
+
+/-- **The two fields nobody writes yet are `Diagnostics.empty`'s**, said in the compiler so
+that the day the last of them is written this stops compiling and README gap 2511 closes with
+it — the tripwire shape `the_plan_hash_is_a_placeholder_until_the_emitter_lands` has. -/
+theorem the_day_leaves_two_diagnostic_fields_empty (r : PlanReq) :
+    (dayDiagnostics r).deferred = Diagnostics.empty.deferred ∧
+      (dayDiagnostics r).restDebtMin = Diagnostics.empty.restDebtMin :=
+  ⟨rfl, rfl⟩
 
 /-- **D28: this signature is total and stays total.**  There is no `dayPlan?`, no
 `PlanRefusal` and no `Except` — the eleven single-run laws of §8.3 are proved over this shape
@@ -6271,6 +6648,15 @@ theorem assignedOf_dayPlan_is_step_one_the_reservation_and_step_five (r : PlanRe
 now. -/
 theorem dayPlan_priorities (r : PlanReq) : (dayPlan r).priorities = dayPriorities r := rfl
 
+/-- **The day carries §8.2 step 8's IMPOSSIBLE list**, and it is `PlanReq.dayImpossible` whole
+(W-33, P8's first half). -/
+theorem dayPlan_impossible (r : PlanReq) :
+    (dayPlan r).diagnostics.impossible.val = r.dayImpossible :=
+  dayDiagnostics_impossible r
+
+theorem dayPlan_hot (r : PlanReq) : (dayPlan r).diagnostics.hot.val = r.dayHot :=
+  dayDiagnostics_hot r
+
 /-- **P8 must delete this.**  The FNV-1a digest is the emitter's; until it lands, the identity
 `state.last_plan_hash` would compare against is a placeholder and says so. -/
 theorem the_plan_hash_is_a_placeholder_until_the_emitter_lands (r : PlanReq) :
@@ -6363,8 +6749,9 @@ two questions the repo keeps apart are *at one request* — `PlannerWit`'s secti
 `PlanReq`*, which is gap 650's four and is what this sentence is about.  The four are
 `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`,
 `no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`, `the_day_has_no_batch_row_on_an_unassigned_day` and
-`the_day_names_no_impossible_item`.)  (Banner owed by README gap 653, paid at the
-W-17 land step.)
+— until W-33 wrote the field and refuted it — the_day_names_no_impossible_item, whose
+positive form is `the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin`.)  (Banner owed by
+README gap 653, paid at the W-17 land step.)
 
 `plan_never_moves_a_wall` **is** non-vacuous here, and is **false as stage 6 wrote it**. -/
 

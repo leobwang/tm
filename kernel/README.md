@@ -64681,3 +64681,321 @@ clean afterwards, plus one good line still written at rc=0. The citation figures
 `9d7fad2` were re-measured on their own checkouts inside the clone. `git status --porcelain` on
 `/home/leobwang/code/projects/tm` was **empty** before the first plant and **empty** after the
 last; every clone plant was reverted with `git checkout --` and the control re-run to rc=0.
+
+<!-- =====================================================================
+     APPENDED 2026-09-25: stage 6 (the planner), run **W-33**, track P, on
+     branch `w33-p` from `8702132` — the RESUMED track.  Gap range
+     **2510-2549**; 2510-2522 taken (2514 and 2515 unused), 2523-2549
+     free.
+     ================================================================== -->
+
+## Stage 6 — W-33, track P: `Diagnostics.impossible` is written, ten of the twelve fields are filled, and the check it feeds FAILS at step 5's own energy clause on a day that pays
+
+**What this step is.**  P8's first half (gaps 2321, 2419; gap 2403's nine unwritten fields).
+`Planner.PlanReq.dayImpossible` fills the list `PlanCheck.impossibleKept` reads — with exactly the
+answers the shipped binary calls impossible — six more fields are filled beside it, the four
+theorems that said the list was empty are refuted and gone, five lifts that stood on them are
+restated with one named hypothesis, and the check is asked, for the first time, what it says at a
+day the planner really produces.  **The answer is the headline: at an eligibility that reads §8.2
+step 5's own energy clause, on a day whose decoder pays, `impossibleKept` is the ONE check of the
+eleven that fails** — two impossible items contend for one day and the second, which fits every
+slot, gets none.  That is an owner question (gap **2510**); no planner behaviour was changed and
+no vacuity restored.  The burn-down is **6**, unchanged: no goal was discharged.
+
+**A resumed track.**  The first agent on this track died on a usage limit and left +1,284/−152
+uncommitted lines in ten files that nobody had checked.  §2 is the adjudication, line by line.
+
+### 1. What the brief asserted that is not true of this tree, measured (AGENTS §5.11)
+
+* *"`Planner.lean:27` still says 'Steps 3 to 7 are not written here'"* — at `8702132` line 27 is
+  inside the W-32 repair note and QUOTES that sentence as the history it repaired; it is not a
+  live claim.  The live false sentence was `dayPlan`'s docstring (`:6185-6186`), which track A
+  rewrote in `1b0569e`; this branch leaves it at `8702132`'s text so the Land step takes track
+  A's (brief: *"do not rewrite that docstring yourself"*).
+* *"Fill `impossible` from the candidates whose EDF numbers say impossible … `Grant.impossible`"*
+  — that test is NOT what the shipped binary prints, in two classes, measured by reading the
+  code the binary runs: (a) `Prio::is_impossible` is `is_hot() && shortfall_min_exact.num > 0`,
+  and `kernel_capacity`'s `prio_of` makes `is_hot` true exactly where the grant's `bin` is
+  `null` (a HOT bin) — so an answer whose need exceeds its availability only through R1's
+  CEILING (`Arith.needMin`), while §7.1's exact `u` is below 1, is impossible to `Grant.impossible`
+  and NOT to the binary; (b) a FLOOR answer carries no `Grant`, and the wire's `grantJsonF` gives
+  it an `until`, a `null` bin when HOT and a positive `shortfall` — the binary calls it
+  impossible (`the_day_names_an_impossible_floor` computes one).  The field follows the binary:
+  `0 < Look.FloorOut.shortfall`, the capacity op's own number.  The ceiling sliver (a) is
+  recorded, not witnessed (gap **2513**).
+* *"search by BODY SHAPE for the shortfall first"* — `Look.FloorOut.shortfall` (units, both the
+  grant and the floor arm) is the wire's own number and is what the field reads;
+  `Arith.floorQ` is the floor, `capacity::floor_minutes` on the other side.  No arithmetic minted.
+* *"the_day_names_no_impossible_item … `:= rfl`"* — TRUE, and it is refuted here.
+* *"gap 2401: 48"* — confirmed at `8702132` (`grep -cE '^def the[A-Za-z0-9_]* : PlanReq'`);
+  **53** now: five `PlanReq` fixtures are added here.
+* *"`bCandCap` at `:2347` may be a fifth"* — not measured here; track G's definitions.
+* *"it renamed at least four lifts"* — FIVE statements were renamed with a hypothesis: four lifts
+  and the census ceiling of seven (§4).
+
+### 2. The predecessor's diff, adjudicated
+
+| part | verdict | why |
+|---|---|---|
+| `dayImpossible` over `Grant.impossible`, floors skipped | **REWRITTEN** | §1: two classes where it disagreed with the shipped binary; now `0 < o.shortfall` |
+| dedupKeepFirst (a minted fold) | **DISCARDED** | core's `List.eraseDups` is that function (first occurrence kept, in order); no definition minted |
+| `dayHot`, `dayUnderused` | kept | checked against fork `diagnose` line by line and against the fork by the new differential arm (§6) |
+| `dayDroppedTail`, `dayPlanHonesty` | **CHANGED** | they read `dayAssigned r` INSIDE a per-member lambda, so the whole day was recomputed per member: `planner_invariants`' kernel test ran **318 s** with that body and **79 s** with `assigned` hoisted into a parameter — `aCapacityLost`'s own pattern — against the ~72 s its own comment prices 256 cases at (gap **2521**) |
+| `waiting`, `blocked`, `restDebtMin` left empty "for want of a fixture" | two **COMPOSED**, one kept empty | the fixture cost one request (`theWaitingAndBlockedRequest`); `restDebtMin`'s fixture is a log line whose `decide` OOMs (§7) |
+| the `dayPlan` docstring rewrite | **DISCARDED** | track A owns it (§1) |
+| the four refutations, the census-eight request, the paying-set table, the lifts' `hnoimp` | kept, re-verified | every one rebuilt against the rewritten field; see §4 for the `hnoimp` decision |
+| its README block, gaps 2510-2517 | **REPLACED** by this block | several of its claims were about the discarded definitions |
+| mid-file edits in `PlanCheck.lean`, `PlannerWit.lean` | kept | line-count-neutral, so no check 9 pin site drifts (gap 2136's price, avoided rather than paid): measured, `mutate.stale_sites` = 0 at the base roster. Its "gap 2515" was gap 2136 again and is not re-issued |
+
+### 3. The field, written
+
+`PlanReq.dayImpossible` walks `PlanReq.candAnswers` — §8.2 step 4's pass, one answer per
+candidate in request order, the same expression the capacity op answers `grants` with — and
+keeps `(id, ⌊shortfall / capDen⌋)` for every answer whose own `Look.FloorOut.shortfall` is
+positive.  That is fork `diagnose`'s `if p.is_impossible() { if let Some(until) = p.until {
+push((id, shortfall_min, until)) } }` with `p` the kernel's own answer, which is what the
+shipped binary hands `planner::plan` (D53).  D34: the day reports the answer it was given; it
+derives nothing.  The bound is the wire's (`candAnswers_capped`), so nothing is truncated.
+
+**The positive statement that replaces the refuted `rfl`**: `PlanReq.mem_dayImpossible` (a row
+⟺ an answer with that id whose reported shortfall is positive, with that shortfall floored —
+both directions); `PlanReq.a_granted_answer` (a granted answer is `Look.priorities`' own,
+unfloored, reserving the min); `PlanReq.a_named_grant_is_impossible_at_a_hot_bin` and
+`PlanReq.an_impossible_grant_at_a_hot_bin_is_short` (by answer, in `Grant.impossible`'s terms);
+`PlanReq.a_named_answer_without_a_grant_is_a_short_floor`;
+`the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin` (by id, in `edfNumbers`'
+terms — the HOT bin is a real hypothesis, §1(a)); and
+`an_item_the_day_names_with_a_grant_has_impossible_numbers` (the converse by id, under distinct
+answer ids — gap **2517**).
+
+### 4. The theorems that described the hole, and the lifts that stood on them
+
+D5's rule for this shape: a theorem that describes a hole is not a law and is refuted-and-renamed
+when the hole closes.  Each carries a computed refutation in `PlannerWit.lean` §30.
+
+| stood at `8702132` | now | does the new imply the old? |
+|---|---|---|
+| PlanCheck.the_day_names_no_impossible_item — `impossible.val = []`, `rfl` | DELETED; refuted by `the_day_names_no_impossible_item_is_refuted`; positive form §3 | no — the old is false |
+| PlanCheck.impossibleKept_is_true_because_its_subject_is_empty — `= true`, every `el`, `r` | DELETED; refuted by `impossibleKept_is_true_because_its_subject_is_empty_is_refuted`; laws `impossibleKept_of_nothing_assigned_iff`, `an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned` | no |
+| PlanCheck.impossible_has_no_subject — census arm `false`, every `el`, `r` | DELETED; refuted; `impossible_subject_iff`, `impossible_has_a_subject_iff_an_impossible_answer_is_eligible`, `impossible_has_no_subject_of_nothing_eligible` | no |
+| PlanCheck.impossible_has_no_subject_from_now | DELETED; refuted; the four-check ceiling spends `impossible_has_no_subject_of_nothing_eligible` at its own `hnone` | no |
+| `…ceiling_is_seven_on_an_unassigned_day` — `subjectCount ≤ 7`, every `el`, `r` | `the_census_ceiling_is_eight_on_an_unassigned_day` (unconditional, REACHED) + `…_seven_…_given_no_eligible_impossible_item` (`hnoimp`); refuted by `…_as_W_21_wrote_it_is_refuted` | eight: no (weaker bound, and the old is false); seven-given: the old on the named subdomain |
+| `…except_the_two_comparisons_on_an_unassigned_day` — nine of eleven, every `el` | `…_given_no_eligible_impossible_item`, `hnoimp` added; refuted by `…_as_W_19_wrote_it_is_refuted` | no — the old is false at `theUnassignedImpossibleRequest` |
+| `…given_the_two_comparisons_on_an_unassigned_day` — eleven given `hrank`, `hhot` | `…given_the_two_comparisons_and_no_eligible_impossible_item…`, `hnoimp` added | not directly refuted — gap **2516** |
+| `…quiet_unassigned_day_except_hot` — ten of eleven, every `el` | `…_given_no_eligible_impossible_item`; refuted by `…_as_W_20_wrote_it_is_refuted` | no — the old is false |
+| `…quiet_unassigned_day_given_hot` — eleven given `hhot` | `…_given_hot_and_no_eligible_impossible_item` | not directly refuted — gap 2516 |
+
+Every lift that already carried `hnone` keeps its statement (the anchored `SlotAnchored`,
+`WorkAnchored` and `FromNowAnchored` ones, and the paying-day eleven): each spends
+`impossibleKept_of_nothing_eligible` where it spent the `rfl`.
+
+**The `hnoimp` decision, as the brief required it made.**  The hypothesis — *no impossible item
+the day lists is eligible anywhere on it* — excludes exactly the case the check is about, so it
+is kept ONLY because that case was MEASURED to happen at a real witness: at `permissive` on the
+quiet census Wednesday (`an_unassigned_day_drops_its_eligible_impossible_item`, which refutes the
+old forms), and — the finding of §5 — at `slotFitRows`, step 5's own energy clause, on a day that
+pays (`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`).  So the old statements
+are false at their own quantifier, and a hypothesis that names the class they are false on is the
+honest restatement until the owner answers gap 2510.  If the owner takes reading (a) there, the
+check changes and `hnoimp` comes off with it.
+
+### 5. THE FINDING (brief step 3)
+
+| request | `permissive` | `onlyOnFreeWorkRows`, `fromNowWorkRows` | `freeSlotRows` | `slotFitRows` |
+|---|---|---|---|---|
+| `theImpossibleRequest` (§28) | **FALSE**, subject | **FALSE** | true, no subject | — |
+| the other five paying days | true, no subject | — | true, no subject | — |
+| `theUnassignedImpossibleRequest` | **FALSE** on both days | — | — | — |
+| `theCensusRequestWithAnImpossibleCandidate` | **true with a subject** (worked this morning) | — | — | — |
+| `theTwoImpossibleRequest` (new, **pays**) | false | — | true, no subject | **FALSE, the other ten true** |
+
+The first four rows are the predecessor's and survive the rewrite.  They cannot answer the
+question by themselves: every eligibility in that table before this step is blind to the
+CANDIDATE, so a failure there says only that an impossible item was dropped — §28's refutation
+again, and at `theImpossibleRequest` the drop is on energy (`^m1` is `ci:5`, no slot is that good),
+which design §6.3 row 6 says §7.3 is not about.  `slotFitRows` admits a candidate at a row step 5
+filled exactly when its `ci` is within that slot's energy — `PlanReq.groupFitsSlot`'s energy
+clause.  `theTwoImpossibleRequest` is the batch store with `^t3` and `^t1`, both `ci:2`, both due
+today with 100 000 minutes to go: §7.3 serves `^t3` first and gives it the day's 240 minutes
+(shortfall 129 760), `^t1` gets nothing (`avail 0`, shortfall 130 000); step 5 gives all four slots
+(energies 4, 3, 2, 2) to `^t3`, first in §7.4's key and owing 6 000 minutes; `^t1` fits every one
+and gets none.  `PlanCheck.candsAgree` holds, and the other ten checks of `checksOf` are true.
+
+**Gap 2510 — OWNER QUESTION: is `impossibleKept` §8.3's law, or is §7.3's "still scheduled with
+everything available"?**
+1. *What is not done.*  `impossibleKept` — *an impossible item eligible somewhere is assigned* —
+   is FALSE at `theTwoImpossibleRequest` at `slotFitRows`, the one check of the eleven that is, on
+   a day that pays.  The five lifts at every eligibility carry `hnoimp` (§4) instead of the check.
+2. *Why.*  Two impossible items contend for one day.  Read against `^t1`'s OWN grant, §7.3 is
+   honoured — its availability is zero, so "everything available" is nothing; read as the check
+   is written, it is not.  Three readings, and this step decides none: **(a)** the check's
+   semantics are wrong — it should be *"an eligible impossible item with availability is given
+   it"*, i.e. it reads the grant's `avail`/`reserved` and not only the day's rows, and then
+   `hnoimp` comes off; **(b)** the planner must change — step 5 should share the day among
+   impossible items (a planner behaviour change: the owner's, D28/§4); **(c)** the lifts keep
+   `hnoimp` as their named hypothesis (what this step did, as the provisional form).
+3. *What it costs.*  Until answered, the burn-down's 7 → 6 (gap 2419) rests on a check that is
+   live — it has a subject and fails — at every eligibility that reads the candidate, and is
+   vacuous at `freeSlotRows`, the eligibility the eleven are proved at on paying days (the free
+   slots are not ROWS, so no eligibility over `d.segments` can see an unfilled one).
+4. *Which step clears it.*  The owner's answer, then either a PlanCheck restatement (a) or a
+   planner step (b); Planner.eligibleAt (gap 365) is owed in every reading.
+
+### 6. The witness, and the VALUE compared (brief step 4)
+
+`the_day_names_its_first_impossible_item`: `(dayPlan theImpossibleRequest)` names
+`[(m1, 130000)]` — need 130 000 (100 000 minutes × 1.3, ceilinged), avail 0, shortfall
+130 000 × 10¹⁸ units, floored to 130 000.  Every new `decide` of §30 was probed at 8G / 120 s
+(the five value theorems restated in a scratch file: **2.9 s**, rc=0), after `#eval` at 8G read the
+values they state.
+
+**Driven** on the shipped binary (a scratch tree, `tm init`, one line `- [ ] 5 1667b Finish the
+report due:2026-09-25T23:59 hot ^x1`, 18:26 on the day, `tm plan --json`): `"impossible":
+[["x1", 130026, "2026-09-25"]]` — 1 667 blocks × 60 = 100 020 minutes, × 1.3 = 130 026, nothing
+available — with `"class": "hotflag"` on the same prio row, the class/is_impossible split §1(b)
+names.  The kernel's field for the same numbers is 130 026 by the same arithmetic, and the
+general case is compared, not argued:
+
+**`planner_invariants`' kernel arm now compares §8.2 step 8 against the kernel-ranked fork**
+(`day2`, the shipped wiring), as multisets, on every generated day: `impossible` (id AND
+shortfall), `hot`, `waiting`, `blocked`, `droppedTail`, `underused`, `planHonesty` (the ratio,
+`None` at a zero budget).  Measured: over three full runs of the arm (256 generated cases and 17 kept seeds, 273 days a run), the comparison ran on **273 of 273 days** each time; **3,058-3,254 IMPOSSIBLE rows a run, every one equal in id AND shortfall**; 3,060-3,257 HOT ids; 4,577-5,182 `waiting`/`blocked`/`droppedTail`/`underused` ids and `planHonesty` ratios.  Three floors (compared on some day; an
+IMPOSSIBLE row compared; a HOT id compared).  Its first run found two things, both kept:
+
+* **gap 554's open-block row changes the assigned set.**  The minimal seed (one running item
+  whose `now` is a wall's start, so no reservation) had `droppedTail` kernel `["zaa"]`, fork `[]`:
+  fork `open_block_segment` draws `[since, now)` for the block the log holds open and the kernel
+  does not port it (gap 554).  `droppedTail` and `planHonesty` — the two fields that read the
+  assigned set — are COUNTED, not compared, on a day carrying that row for an item no kernel
+  work row names (gap **2519**); the seed is in `planner_invariants.proptest-regressions` (D46).
+* **the arm's own §7 reader filled `u` for every grant** (gap **2518**, CLOSED): `kernel_prios`
+  wrote `need / avail` — infinite at no availability — where `prio_of` leaves `u` unset without an
+  `until` and clamps it by the `bin`, so every undated candidate read HOT on the test's fork and
+  not in the binary.  Driven: the binary's own `--json` prints `"u": null` for the undated `x2`.
+  Only step 8 reads `u`, so no earlier assertion could see it.
+
+### 7. The other eight fields (brief step 5): TEN of twelve filled
+
+| field | filled? | from | pinned by |
+|---|---|---|---|
+| `impossible` | **yes** | `PlanReq.dayImpossible` (§3) | `the_day_names_its_first_impossible_item`, `the_day_names_an_impossible_floor` |
+| `hot` | **yes** | `PlanReq.dayHot`: a HOT bin (the binary's `is_hot`) or the `hotFlag` class, walls skipped, first occurrence (`List.eraseDups`) | `the_impossible_request_fills_five_diagnostic_fields` |
+| `waiting` | **yes** | `PlanReq.dayWaiting`: `Look.PlanFacts.waiting`, walls skipped | `the_day_names_its_waiting_and_blocked_candidates` |
+| `blocked` | **yes** | `PlanReq.dayBlocked`: open with an unsatisfied `after:` — fork `ineligible_reason` = `Blocked` | the same |
+| `droppedTail` | **yes** | `PlanReq.dayDroppedTail`: `buildGroups` members not assigned | `the_impossible_request_fills_five_diagnostic_fields` |
+| `underused` | **yes** | `PlanReq.dayUnderused`: work rows step 5 flagged | the same |
+| `planHonesty` | **yes** | `PlanReq.dayPlanHonesty`: committed minutes of groups with an assigned member, over `remainingBudget × blockMin` | the same, `(60, 360)` |
+| `conflicts`, `notes`, `aCapacityLost` | already (P1, P6, P7) | — | — |
+| `deferred` | no | needs the flat-posterior energies (fork `raw_slots`) — gap 555; a second `Look.energizeToday` at a flat posterior this step did not write | — |
+| `restDebtMin` | no | one line over `PlanReq.todayRecord`'s breaks; its only witness is a log line whose `decide` OOMs — DRIVEN: `runOk` over `witLines ++ [a break with "actual_min":5]` at 8G/120 s was killed, rc=137 in 13 s | — |
+
+`Planner.the_day_leaves_two_diagnostic_fields_empty` is the tripwire for the two (gap **2511**).
+
+### 8. The gates
+
+* **check 9 (D40)**: 17 definitions owed at the start — seven new in `Planner.lean`,
+  `dayDiagnostics` changed, nine `PlannerWit` fixtures — folded in three clones, each with its
+  own build tree (gap **2520**).  **The first pass found one SURVIVOR**: `slotFitRows := fun _ _ _ _
+  => true` passed every theorem, because the constant-true eligibility AGREES with the energy
+  clause on all eleven checks at the contention day.  `the_energy_clause_separates_the_energy_drop_from_the_contention_drop`
+  was written for it and pins it — and it is the finding's cleanest form: the energy clause PASSES
+  the check at `theImpossibleRequest` (an energy drop) and FAILS it at `theTwoImpossibleRequest` (a
+  contention drop), where `permissive` fails both.  Final verdicts: `dayImpossible`, `dayHot`,
+  `dayWaiting`, `dayBlocked` PINNED at their own `_capped` bounds in `Planner.lean` (structural
+  pins: the build stops there, before the value witnesses of §6/§7); `dayDroppedTail` by `default`,
+  by the IDENTITY on its `assigned` argument and by `[]`, `dayUnderused` and `dayPlanHonesty`, at
+  `the_impossible_request_fills_five_diagnostic_fields`; `dayDiagnostics` UNFOLDABLE by `default`
+  and PINNED by `Diagnostics.empty` at `dayDiagnostics_impossible`; the three candidate lists at
+  their value witnesses; `slotFitRows` both ways; the five `PlanReq` fixtures UNFOLDABLE, declared
+  witness fixtures.  **0 SURVIVED, 0 INVALID.**  `mutate.py --gate`: 282 new or changed since
+  `86c4dc6`, 282 rostered (86 unfoldable, 48 witness fixtures, 25 pinned by nothing; 1 literal),
+  **0 owed**, 29 bare pin sites (30 at the base: `dayDiagnostics`' is named now).
+  `--verify --only PlanCheck.lean --write`: 23 rows in about two minutes, 0 failed, 2 unfoldable,
+  1 pin rewritten (`FoldRowsAdmitNothing`'s first error inside its own declaration, 5131 → 5137 —
+  so at the base already; `stale_sites` could not see it because the name still encloses the
+  line).  `--verify --only Planner.lean --write` (48 rows, 77 constants, 21 of them pinned in `PlannerWit.lean`) was STARTED in a clone and had not finished when this block was committed.  `--verify --only PlannerWit.lean --write` was NOT run — gap **2522**.
+* **check 12**: sixteen new emitted definitions under two NEW dated sections with EXITs (R3 for
+  the seven in `Planner.lean`; the leaf class for the nine fixtures); the `## Planner.lean` census
+  re-derived 236 → 243 with its date.  EXEMPT 1756 → **1772** — growth by D51's mechanism, stated.
+* **check 8**: no dead name is backticked in a live sentence; the counted allow entries the
+  predecessor added for W-18..W-32's append-only citations of the renamed names are kept at the
+  measured counts.
+* **check 3**: 51 new `#print axioms` lines, 4 deleted, 5 renamed in place — **5,307 → 5,354
+  theorems** (Classical.choice 2,623, Quot.sound 4,011, propext 4,970; 381 depend on none), 0
+  `sorryAx`, no axiom outside Lean's three.
+
+### 9. Acceptance, capped at 40G with no swap (16G for `mutate.py`)
+
+**check.sh — TWELVE of twelve**, run twice on the tree this block is committed with (25 s and
+18 s, every build already current): `lake build TmKernel:static` ok · totality ok · axiom audit **5,354 theorems**
+(Classical.choice 2,623, Quot.sound 4,011, propext 4,970; 381 depend on none) · `Negative.lean`
+rejected ok · FFI **93 tests** · corpus **29/37 files and 4/5 whole plans** · stage goals **6
+outstanding, all stage 6** · prose citations **42,197** (40,156 resolved, 2,041 allowed: 205
+vocabulary, 367 counted; 0 unused; 270 files) · mutation **282 new or changed since `86c4dc6`, 282
+rostered, 0 owed** · parity **P1-P42, next free P43** · check 11 **3,077 def bodies, 14 groups, 0
+UNANSWERED** · check 12 **3,166 defs, 2,950 emitted (570 as a global), 1,178 reachable, 1,772
+exempt in 89 sections, 0 UNANSWERED**.
+
+**`cargo test --workspace`, TWO full runs (D46)**: **87 binaries, 1,478 passed, 0 failed, 9
+ignored — both runs**, and no new seed line in any `.proptest-regressions` file beyond the one
+§6 keeps.  The named suites, inside both runs, 0 failed in each: `cli_switch_acceptance` 16 ·
+`cli_latency` 5 (1 ignored; 15.7 s and 16.4 s) · `kernel_call_counts` 2 · `one_padder` 9 ·
+`one_renderer` 25 · `kernel_row_cells` 26 · `kernel_item_grammar` 6 · `kernel_planner_wire` 21 ·
+`planner_invariants` 9 (94 s and 77 s) · T5 (`kernel_replay_parity`) 29 (4 ignored) · the door
+suite (`kernel_log_door`) 23 · FFI 93 (check.sh).  `planner_invariants`' kernel arm was run three
+more times on its own for the census in §6: once with the quadratic body (318 s) and twice after
+the fix (79 s, 80 s) — the definitions' values are the same in all three.  Load was 5-11 on 32 cores
+throughout (mutation clones building beside it; gap 1333's `cli_latency` held).
+
+**Memory**: every `lake`, `lean`, `cargo`, `check.sh`, `python` and `tm` invocation ran under
+`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16G for `mutate.py` and the
+Python gates, 8G / 120 s for every probe); one probe was KILLED by its cap (§7's `restDebtMin`
+log line, rc=137 in 13 s) and nothing else came near one.
+
+### 10. For the Land step (this branch does not hold these files)
+
+* **check 13** (`fields.py`, `1b0569e`): `impossible`, `hot`, `waiting`, `blocked`, `droppedTail`,
+  `underused` and `planHonesty` are WRITTEN here, so their seven dated exemptions in
+  `fields-exempt.txt` go STALE on the merge and must be deleted in it; `deferred` and
+  `restDebtMin` stay exempt (gap 2511).
+* **`dayPlan`'s docstring** (track A's rewrite) says `dayDiagnostics` "fills `conflicts`,
+  `aCapacityLost` and `notes` and leaves the other nine" — false on the merge; it is ten of twelve.
+* **`reach-exempt.txt`**: this branch's EXEMPT is 1772 and track G's wfPlanFacts/oneCand swap
+  keeps its own count level; the merged count is the sum of both edits, and `reach.py` says which.
+
+### 11. Gaps this step takes (2510-2522)
+
+Gap **2510** is in §5 and gap **2522** below the table, both in the four-part form.
+
+| gap | what | where | why it is not closed here |
+|---|---|---|---|
+| **2511** | two of twelve diagnostic fields are still `Diagnostics.empty`'s — `deferred`, `restDebtMin` — each with its reason (§7) | `Planner.dayDiagnostics` | `deferred` needs gap 555's flat-posterior energies; `restDebtMin`'s witness OOMs as a `decide` |
+| **2512** | the kernel's `Diagnostics.impossible` carries no `until`; the fork's tuple does (`(id, shortfall_min, until)`) | `Planner.Diagnostics`, `PlanWire.diagJson` | a field change to P0's vocabulary and its wire; nothing reads it yet |
+| **2513** | two definitions of IMPOSSIBLE: `Grant.impossible` (R1's ceiling of the need) and the class/`is_impossible` (§7.1's exact `u`, the bin). They disagree where `rem × safety ≤ avail/capDen < ⌈rem × safety⌉`; the field follows the binary, `edfNumbers` follows the ceiling | `Capacity.lean`, `Lookahead.lean`, `Planner.edfNumbers` | recorded from the definitions: a witness needs a fractional availability inside a one-minute window |
+| **2516** | the two `given` lifts' old forms are not directly refuted: their `hhot` is false at the only unassigned day with an impossible candidate | `PlannerWit.lean` §30 | corollaries of refuted forms; a quiet day where the hot check holds and an impossible item is eligible needs one more fixture |
+| **2517** | the by-id converse needs distinct answer ids (`an_item_the_day_names_with_a_grant_has_impossible_numbers`' `hnodup`) | `Planner.lean` | §5.3's carried instance shares an id by design; the by-answer statement is unconditional |
+| **2518** | CLOSED — `planner_invariants`' `kernel_prios` filled `u` for every grant | `tm/tests/planner_invariants.rs` | closed here (§6) |
+| **2519** | the step-8 comparison COUNTS `droppedTail`/`planHonesty` on a day carrying gap 554's open-block row: **42-55 of 273 days a run**, three runs | `tm/tests/planner_invariants.rs` | gap 554 (port `open_block_segment`) closes it; the day is defined by that row, not listed |
+| **2520** | `mutate.py --gate` RUNS the owed mutations — it is not a dry run whenever anything is owed — and a run beside a `lake build` in the SAME tree left that build compiling a folded definition; restored by the tool's SIGTERM handler and rebuilt clean here | `kernel/mutate.py`, `check.sh` check 9's comment ("~0 at a settled tree") | the mutations of this step ran in a separate clone with its own build tree; the gate's docs should say it |
+| **2521** | nothing measures the kernel's `planner` section's latency: a quadratic recomputation (§2) quadrupled `planner_invariants`' kernel test and every check passed | `Planner.dayDiagnostics` (fixed), no gate | T12's latency rows time the capacity path the binary sends; the `planner` section is sent by no shipped code until R3 |
+
+**Gap 2522 — `mutate.py --verify --only PlannerWit.lean --write` was not run.**
+1. *What is not done.*  The brief asks for `--verify --only <file> --write` on every file this step
+   touches.  `PlanCheck.lean`'s ran (23 rows, §8); `Planner.lean`'s (48 rows) was started in a clone and had not finished at the commit; `PlannerWit.lean`'s 70 rows were
+   not re-run.
+2. *Why.*  Every constant is a kernel build that elaborates the whole of `PlannerWit.lean`
+   (196-232 s alone here, 4-8 minutes each beside another build); W-32 measured the pass at ≈ 2.1
+   hours and abandoned it twice (gap 1853's price).  What stands in its place: every mid-file edit
+   to `PlannerWit.lean` is line-count-neutral, `mutate.stale_sites` is **0** over every NAMED pin
+   site, and the 29 bare sites are all `Planner.lean` rows.
+3. *What it costs.*  A `PlannerWit`-defined row whose verdict changed with an EARLIER witness
+   (none of this step's witnesses is earlier: §30 is appended) would go unseen until re-run.
+4. *Which step clears it.*  Gap 2136's (a pin site relative to its declaration, not its line), or
+   an auditor with the two hours.
+
+Gaps **2321**, **2419** and **554's step-8 consequence** are addressed as above; **2403** moves
+from three of twelve to ten of twelve and stays open as 2511.  **No predicate was weakened, no law
+narrowed without its refutation beside it, no generator narrowed, no snapshot, fixture, latency
+band or corpus re-blessed, no memory bound raised, no external dependency added, no `sorry`
+outside `Goals.lean`, no new axiom; `lean-toolchain`, `Cargo.toml`, `Cargo.lock` and
+`kernel/corpus/` untouched; `dayPlan` is still total; no plant was made in the shared tree.**
