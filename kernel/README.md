@@ -67510,19 +67510,21 @@ gap 551's class **3** rows, gap 435's class **4** marks, **1 of 4** hashes equal
 which plans no break).  The two class counts and the hash count are asserted exactly, so a class
 that widens and a class that closes both fail.
 
-**Driven in a clone** (`scratchpad/w35-r/plant`, a `git clone` of `274e536` plus this step's
-uncommitted comparand files; the shared tree was never planted — `git status --porcelain` in the
-worktree was the four comparand files before and after every plant):
-* **P0**, unplanted: `planner_fixtures` 11 passed, 1 ignored — the line above.
+**Driven in a clone** (`scratchpad/w35-r/plant`, a `git clone` of this branch — first at `274e536`
+with the comparand files copied in, then re-run on the committed `f167be0`, whose figures these
+are; the shared tree was never planted, and the clone's `git status --porcelain` was clean before
+each plant and again after each revert):
+* **P0**, unplanted: `planner_fixtures` 12 passed, 1 ignored — the line above.
 * **P1**, the fork made unreachable: `planner::plan`, `planner::week_plan` and
   `planner::overtime_drops` replaced by `panic!`, and both fork regions deleted with
   `sed -i '/\/\/ BEGIN THE FORK PLANNER/,/\/\/ END THE FORK PLANNER/d'`.  **It builds, runs and compares**:
-  7 passed, the same 4 days / 73 rows / 2,223 values / 0 other differences; the only warnings are
+  8 passed, the same 4 days / 73 rows / 2,223 values / 0 other differences; the only warnings are
   `tm-core`'s dead code the plant itself strands.
 * **P2**, one kernel answer corrupted at the FFI (`kernel/tm-kernel-ffi/src/lib.rs`'s `call`
   rewriting `"aCapacityLost":0` to `5` in planner responses — a diagnostic no digest and no
   property check reads): **fails by name**, `plan-basic early 07:00: diagnostics.a_capacity_lost:
-  kernel 5 fork 0` and the same on the late and home days.
+  kernel 5 fork 0` and the same on the late and home days, the tally reading "3 other
+  difference(s)".
 * **P3**, a digested field corrupted (`"energy":4,` to `3,`): **fails by name** at the decoder,
   `plan-basic early 07:00: plan: plan.hash: the kernel digested fbe971c542db80de and the decoded day
   digests 5ff226dbb1037b51 — a digested field was not read back`.
@@ -67684,11 +67686,25 @@ that route is a call.**
 4. *Clears it.*  R3 keeps it and gaps 2640/2743's costs are met host-side, or the kernel widens the
    fields and the decoder checks instead of completing.
 
-### 7. Acceptance, capped
+### 7. Mutations — D40 for the Rust this step added
+
+`scratchpad/w35-r/mutate_rust.py`, in the clone at `f167be0`: each mutant constant-folds one
+function (an early `return <constant>`), then `cargo test -p tm-core --lib` and
+`cargo test -p tm --test kernel_plan_codec --test planner_fixtures` run, and the file is restored.
+**20 of 20 killed**: `kernel_sec`, `instant_of`, `prio_of`, `read_capacity_answer`, `plan_date`,
+`state_json`, `routine_instances`, `routines_json`, `grown`, `overtime_json`, `add_batch_max_min`,
+`planner_refusal`, `multiplier_of`, `kind_of`, `note_text`, `diagnostics_of`, `diff_of`,
+`InstanceKey::parse`, `forkday::compare_day_with_fork` and `forkday::fork_scan`.  **The last one is
+killed only by `the_fork_scan_sees_a_reference_outside_its_region_and_only_there`**, which this
+step added after writing the scan: without it the scan's own test could not fail on a scan that
+saw nothing, which is AGENTS §5.8's decoration.
+
+### 8. Acceptance, capped
 
 Per commit, in this worktree: `cargo test --workspace` **three runs** each — `90c391e` **1,483 /
 0 / 9 across 87 result lines** (the `fe49a8b` baseline, measured here: the same); `274e536` **1,503
-/ 0 / 9 across 88**; this commit's figures are in its message.  `check.sh` **14/14** before each
+/ 0 / 9 across 88**; `f167be0` **1,506 / 0 / 10 across 88** (the tenth ignored test is the
+re-bless).  This docs commit: one run, said out loud (D46).  `check.sh` **14/14** before each
 (citations 44,194 → 44,321 → this commit's; axiom audit 5,480; stage goals 6; the parity register
 unchanged at 44 rows; 29/37 and 4/5).  `--include-ignored`: T5, the door suite, `cli_switch_acceptance`,
 `cli_latency`, `kernel_call_counts`, `one_padder`, `one_renderer`, `kernel_row_cells`,
