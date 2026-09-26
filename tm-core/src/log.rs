@@ -1572,6 +1572,25 @@ pub struct PortedItemFacts<'a> {
 }
 
 impl Replay {
+    /// Minutes the running block `id` has been **worked** as of `now` — the ONE
+    /// reading every surface prints (README gap 2741, W-35). The log's open
+    /// block when it is this item's: [`OpenBlock::worked_min_at`], which excludes
+    /// the pauses, breaks and interruptions that stop the timer — the reading the
+    /// day's open-block row (`"…m so far"`), the kernel's `openWorkedMin` and §9.1's
+    /// overtime prompt all use. The wall clock from `started` is only the fallback
+    /// for a runtime state whose block the log holds no record of.
+    pub fn active_worked_min(
+        &self,
+        id: &str,
+        started: DateTime<FixedOffset>,
+        now: DateTime<FixedOffset>,
+    ) -> u32 {
+        match self.open_block.as_ref().filter(|b| b.id == id) {
+            Some(open) => open.worked_min_at(now),
+            None => now.signed_duration_since(started).num_minutes().max(0) as u32,
+        }
+    }
+
     /// The facts D14 keeps though nothing reads them ([`PortedFacts`]),
     /// borrowed whole: every day and every item of this replay.
     pub fn ported_facts(&self) -> PortedFacts<'_> {

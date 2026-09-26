@@ -443,11 +443,25 @@ structure Diagnostics where
   droppedTail   : IdList
   planHonesty   : Nat × Nat
   restDebtMin   : Nat
+  /-- **The fork's whole `impossible` tuple** (W-35, README gaps 2640 and 2743): `(id,
+  shortfall_min, until)`, `until` the day the answer carries — a granted answer's due date, a
+  floor answer's last day — which `tm-core/src/emit.rs` prints as `short by DATE`.  `impossible`
+  above is its first two components (`dayDiagnostics_impossible_is_the_projection`); both stay,
+  because the checks and witnesses that read the pair were written before the date was. -/
+  impossibleUntil : Capped (Id × Nat × Nat)
+  /-- **The fork's whole `underused` tuple**: `(id, slot energy, item ci)`, one per item per
+  underused work row — `emit.rs`'s `↓ slot 4, item 3`.  `underused` is its first component
+  (`dayDiagnostics_underused_is_the_projection`). -/
+  underusedLevels : Capped (Id × Fin 6 × Fin 6)
+  /-- **The fork's whole `blocked` tuple**: `(id, deps)`, the unsatisfied `after:` list —
+  `emit.rs`'s `t5 blocked by t4`.  `blocked` is its first component
+  (`dayDiagnostics_blocked_is_the_projection`). -/
+  blockedDeps : Capped (Id × List Field.Dep)
 
 /-- Nothing wrong with the day yet. -/
 def Diagnostics.empty : Diagnostics :=
   ⟨Capped.nil, 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil,
-   Capped.nil, Capped.nil, (0, 0), 0⟩
+   Capped.nil, Capped.nil, (0, 0), 0, Capped.nil, Capped.nil, Capped.nil⟩
 
 /-- The accumulation §8.2 step 8 does, one note at a time.  `Option`, because the list is
 bounded (R10) and a setter that silently dropped its argument is the defect this kernel exists
@@ -6527,6 +6541,61 @@ membership law first, the pin check 9 records is a statement the constant falsif
 theorem PlanReq.dayImpossible_capped (r : PlanReq) : r.dayImpossible.length ≤ maxCands :=
   Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped
 
+/-- **The whole IMPOSSIBLE tuple, `until` included** (W-35, README gap 2640): fork `diagnose`'s
+`if let Some(until) = p.until { d.impossible.push((c.id, p.shortfall_min, until)) }`.  The
+`until` is the one the shipped binary reads off the capacity op's answer (`Boundary.grantJsonF`'s
+`until`, `kernel_capacity::prio_of`): a floor answer's last day, else the grant's due date, and an
+answer with neither is skipped as the fork skips it.  The walk is `dayImpossible`'s, and
+`PlanReq.dayImpossible_is_the_projection` says the pairs are this list's first two components —
+the date is never absent where the shortfall is positive. -/
+def PlanReq.dayImpossibleUntil (r : PlanReq) : List (Id × Nat × Nat) :=
+  r.candAnswers.filterMap (fun o =>
+    if 0 < o.shortfall then
+      (match o.floor, o.out.grant with
+       | some g, _ => some g.floor.last
+       | none, some g => some g.deadline.due
+       | none, none => none).map (fun u =>
+        (o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos), u))
+    else none)
+
+/-- A positive shortfall is a floor's or a grant's: `CandOut.shortfall` is `0` without a grant. -/
+theorem PlanReq.a_short_answer_has_an_until (o : Look.FloorOut) (h : 0 < o.shortfall) :
+    (match o.floor, o.out.grant with
+     | some g, _ => some g.floor.last
+     | none, some g => some g.deadline.due
+     | none, none => none).isSome = true := by
+  cases hf : o.floor with
+  | some g => rfl
+  | none =>
+    cases hg : o.out.grant with
+    | some g => rfl
+    | none =>
+      exfalso
+      have : o.shortfall = 0 := by
+        unfold Look.FloorOut.shortfall Look.CandOut.shortfall
+        rw [hf, hg]
+      omega
+
+/-- **The pairs are the tuple's first two components**: one walk, and no answer the fork lists
+loses its date. -/
+theorem PlanReq.dayImpossible_is_the_projection (r : PlanReq) :
+    r.dayImpossibleUntil.map (fun t => (t.1, t.2.1)) = r.dayImpossible := by
+  unfold PlanReq.dayImpossibleUntil PlanReq.dayImpossible
+  rw [List.map_filterMap]
+  congr 1
+  funext o
+  by_cases hs : 0 < o.shortfall
+  · rw [if_pos hs, if_pos hs]
+    obtain ⟨u, hu⟩ := Option.isSome_iff_exists.1 (PlanReq.a_short_answer_has_an_until o hs)
+    rw [hu]
+    rfl
+  · rw [if_neg hs, if_neg hs]
+    rfl
+
+theorem PlanReq.dayImpossibleUntil_capped (r : PlanReq) :
+    r.dayImpossibleUntil.length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _) r.candAnswers_capped
+
 /-- **A granted answer is `Look.priorities`' own, unfloored, and its grant is §7.3's** —
 `Look.an_answers_grant_reserves_the_min` carried through the floor pass, whose first arm
 (`Look.withFloor`) is taken only by an answer WITHOUT a grant. -/
@@ -6757,6 +6826,27 @@ one entry per item per row as the fork pushes them.  The fork records `(id, ener
 def PlanReq.dayUnderused (r : PlanReq) : List Id :=
   ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).flatMap segItems
 
+/-- **An item's `ci` as fork `diagnose` reads it for `underused`**: `cands.iter().find(|c| c.id ==
+id).map_or(0, |c| c.ci)` — the first candidate carrying the id, `0` when none does. -/
+def PlanReq.candCi (r : PlanReq) (i : Id) : Fin 6 :=
+  ((r.cands.val.find? (fun cf => cf.1.id == i)).map (fun cf => cf.1.ci)).getD 0
+
+/-- **The whole UNDERUSED tuple** (W-35, README gap 2743): fork `diagnose`'s first loop,
+`d.underused.push((id, seg.energy.unwrap_or(0), ci))`, over the same rows and items as
+`PlanReq.dayUnderused` (`PlanReq.dayUnderused_is_the_projection`). -/
+def PlanReq.dayUnderusedLevels (r : PlanReq) : List (Id × Fin 6 × Fin 6) :=
+  ((dayRows r).filter (fun s => s.val.flags.underused && s.val.kind.isWork)).flatMap
+    (fun s => (segItems s).map (fun i => (i, s.val.energy.getD 0, r.candCi i)))
+
+theorem PlanReq.dayUnderused_is_the_projection (r : PlanReq) :
+    r.dayUnderusedLevels.map Prod.fst = r.dayUnderused := by
+  unfold PlanReq.dayUnderusedLevels PlanReq.dayUnderused
+  rw [List.map_flatMap]
+  congr 1
+  funext s
+  rw [List.map_map]
+  exact List.map_id' _
+
 /-- **`Diagnostics.planHonesty`** — fork `diagnose`'s §11 ratio, as the pair design §11 asks for
 (nothing here divides): Σ `commit_min` over the groups with an assigned member, over
 `remaining_budget × block_min`.  The fork's `remaining_budget` is the local `plan()` computes
@@ -6846,6 +6936,26 @@ theorem PlanReq.mem_dayBlocked (r : PlanReq) (i : Id) :
     simp only [hw, hr, hid]
 
 theorem PlanReq.dayBlocked_capped (r : PlanReq) : r.dayBlocked.length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _) r.cands.property
+
+/-- **The whole BLOCKED tuple** (W-35, README gap 2743): fork `diagnose`'s `d.blocked.push((c.id,
+deps))`, the deps the `blocked` arm of `Look.PlanFacts.ineligibleReason` carries — the one reading
+of fork `ineligible_reason`, as `PlanReq.dayBlocked` reads it
+(`PlanReq.dayBlocked_is_the_projection`). -/
+def PlanReq.dayBlockedDeps (r : PlanReq) : List (Id × List Field.Dep) :=
+  r.cands.val.filterMap (fun cf =>
+    match cf.1.wall, cf.1.plan.val.ineligibleReason with
+    | false, some (.blocked d) => some (cf.1.id, d) | _, _ => none)
+
+theorem PlanReq.dayBlocked_is_the_projection (r : PlanReq) :
+    r.dayBlockedDeps.map Prod.fst = r.dayBlocked := by
+  unfold PlanReq.dayBlockedDeps PlanReq.dayBlocked
+  rw [List.map_filterMap]
+  congr 1
+  funext cf
+  split <;> rfl
+
+theorem PlanReq.dayBlockedDeps_capped (r : PlanReq) : r.dayBlockedDeps.length ≤ maxCands :=
   Nat.le_trans (List.length_filterMap_le _ _) r.cands.property
 
 /-- **Fork `run()`'s `raw_slots`** (`planner.rs:954-955`): §8.2 step 3's cut energised through
@@ -6953,7 +7063,10 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
         r.budgetSpentNotes)
     droppedTail := Capped.ofListTake (r.dayDroppedTail assigned)
     planHonesty := r.dayPlanHonesty assigned
-    restDebtMin := r.dayRestDebtMin }
+    restDebtMin := r.dayRestDebtMin
+    impossibleUntil := Capped.ofListTake r.dayImpossibleUntil
+    underusedLevels := Capped.ofListTake r.dayUnderusedLevels
+    blockedDeps := Capped.ofListTake r.dayBlockedDeps }
 
 /-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
 it, so `Capped.ofListTake` truncates nothing. -/
@@ -6989,6 +7102,37 @@ theorem dayDiagnostics_deferred (r : PlanReq) :
 
 theorem dayDiagnostics_restDebtMin (r : PlanReq) :
     (dayDiagnostics r).restDebtMin = r.dayRestDebtMin := rfl
+
+/-- **The day carries the whole IMPOSSIBLE tuple**, and the pair list is its projection (W-35,
+README gap 2640): the date the fork prints is on every entry the day names. -/
+theorem dayDiagnostics_impossibleUntil (r : PlanReq) :
+    (dayDiagnostics r).impossibleUntil.val = r.dayImpossibleUntil :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayImpossibleUntil_capped
+
+theorem dayDiagnostics_impossible_is_the_projection (r : PlanReq) :
+    (dayDiagnostics r).impossibleUntil.val.map (fun t => (t.1, t.2.1))
+      = (dayDiagnostics r).impossible.val := by
+  rw [dayDiagnostics_impossibleUntil, dayDiagnostics_impossible]
+  exact r.dayImpossible_is_the_projection
+
+theorem dayDiagnostics_blockedDeps (r : PlanReq) :
+    (dayDiagnostics r).blockedDeps.val = r.dayBlockedDeps :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayBlockedDeps_capped
+
+theorem dayDiagnostics_blocked_is_the_projection (r : PlanReq) :
+    (dayDiagnostics r).blockedDeps.val.map Prod.fst = (dayDiagnostics r).blocked.val := by
+  rw [dayDiagnostics_blockedDeps, dayDiagnostics_blocked]
+  exact r.dayBlocked_is_the_projection
+
+/-- **The underused tuple and the underused ids are taken alike** — the same cap on the same
+rows, so the ids are the tuple's first components whether or not gap 2641's cap bites. -/
+theorem dayDiagnostics_underused_is_the_projection (r : PlanReq) :
+    (dayDiagnostics r).underusedLevels.val.map Prod.fst = (dayDiagnostics r).underused.val := by
+  show (Capped.ofListTake r.dayUnderusedLevels).val.map Prod.fst
+    = (Capped.ofListTake r.dayUnderused).val
+  unfold Capped.ofListTake
+  simp only
+  rw [List.map_take, r.dayUnderused_is_the_projection]
 
 /-! ### The two caps W-33 left unproved (README gap 2576)
 

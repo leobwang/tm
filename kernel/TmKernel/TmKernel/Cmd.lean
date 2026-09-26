@@ -126,23 +126,470 @@ def moveTo (t : Site) (e : Entity) : Except KErr Entity := lift { e.val with liv
 def drop (e : Entity) : Entity :=
   ⟨{ e.val with status := .settled .dropped }, e.property⟩
 
-/-- `tm edit ^id est=v`.  This is now the **field** setter (`Field.setEst`
-over `setKey`), the same reader pair `Core.est` consumes — gap 4's two
-readers are collapsed on the command path, and the stage-one `Nat` setter
-below survives only as the fold arithmetic `demoteEst` still shares.  The
-written token is byte-identical to the stage one's
-(`the_two_est_setters_write_the_same_token`), so no wire behaviour moves. -/
+/-! ## D56: `tm edit est=` writes the slot the view reads — the leading one included
+
+`est:` overrides the leading estimate (§4.1), so the key setter `Field.setEst` writes the key,
+and `Field.view_set_remaining` holds whatever else the line carried.  On a line with a
+**leading** estimate and no `est:` token that leaves **two** estimates on one line: the
+leading one, which the day row's estimate cell prints (fork `est_original`), and the key, which
+`Core.est` and so the planner read — and `tm check` sees nothing wrong.  W-33's auditor drove it
+on the shipped binary (`tm edit ^x3 est=20b` on `- [ ] 2 30b Big migration … ^x3` appended
+`est:1200m`), which is AGENTS §5.3's founding bug — *two syntactic slots for one field* — in a
+new form (README gap 2572).  The owner's **D56** settles it as the pre-switch fork did (fork
+`ItemLine::set_leading_est`): the leading estimate is rewritten **in place, as written**.
+
+So the edit path's one est setter, `Field.setRemaining`, reads the slot first: the `est:` token
+if the line carries one, else the leading estimate if the line carries one
+(`Field.leadIsTheSlot`), else a new `est:` token.  It carries two renderings of one value — the
+leading slot's, as written, and the key's — because the two slots are written differently on
+purpose: §3.1's leading estimate is "as written", and the key is the canonical minutes D49
+settled (`EditVal.estAt`, which states the one value both denote). -/
+
+namespace Field
+
+/-- The leading estimate's token, rewritten **in place**: phase 1's token — the first, or the
+second when the first is a positional ci (`classifyPhase0`) — and only when phase 1 reads it
+as an estimate (`classifyPhase1`).  Every other token, and every separator, is kept. -/
+def setLeadToks (w : List Char) : List Tok → List Tok
+  | []      => []
+  | t :: ts =>
+    match ciSlot t.word with
+    | some _ =>
+      (match ts with
+       | []      => [t]
+       | u :: us => if (estSlot u.word).isSome then t :: ⟨u.sep, w⟩ :: us else t :: u :: us)
+    | none => if (estSlot t.word).isSome then ⟨t.sep, w⟩ :: ts else t :: ts
+
+/-- The rewrite on a line.  Only a boxed line has positional slots (`kinds`), so a bare line
+is returned as it is. -/
+def setLead (w : List Char) (r : RawItem) : RawItem :=
+  if r.boxed then ⟨r.indent, r.boxed, setLeadToks w r.toks⟩ else r
+
+/-- **The leading estimate is the slot the view reads**: the line carries no `est:` token, and
+phase 1 read a leading estimate.  (`viewRemainingDur` reads `est:` first, else this.) -/
+def leadIsTheSlot (r : RawItem) : Bool := !hasKeyTok .est r && (estLeadOf r).isSome
+
+/-- **`tm edit ^id est=`, D56.**  `lead` is written where the leading estimate is the slot —
+as written, its unit kept — and `key` everywhere else: into the `est:` token the line carries,
+or into a new one before the `^id` (`setEst`, the key setter, unchanged). -/
+def setRemaining (lead key : Dur) (r : RawItem) : RawItem :=
+  if leadIsTheSlot r then setLead (renderDur lead) r else setEst key r
+
+theorem kEst_classifyWord (w : List Char) : kEst (classifyWord w) = none := by
+  unfold classifyWord
+  split
+  · unfold classifySigil
+    split
+    · rfl
+    · split
+      · rfl
+      · split
+        · rfl
+        · split
+          · unfold classifyBang; split <;> rfl
+          · split <;> rfl
+  · split
+    · unfold classifyKeyed; split <;> rfl
+    · unfold classifyPlain; split <;> rfl
+
+theorem findSome_kEst_phase3 : ∀ ts : List Tok, (classifyPhase3 ts).findSome? kEst = none
+  | [] => rfl
+  | t :: ts => by
+    show (classifyWord t.word :: classifyPhase3 ts).findSome? kEst = none
+    rw [findSome_cons_none kEst _ _ (kEst_classifyWord t.word)]
+    exact findSome_kEst_phase3 ts
+
+/-- **Past the two positional slots, no word is an estimate.** -/
+theorem findSome_kEst_phase2 : ∀ ts : List Tok, (classifyPhase2 ts).findSome? kEst = none
+  | [] => rfl
+  | t :: ts => by
+    unfold classifyPhase2
+    split
+    · exact findSome_kEst_phase3 _
+    · rw [findSome_cons_none kEst _ _ rfl]
+      exact findSome_kEst_phase2 ts
+
+/-- A line with no state box has no leading estimate: phase 1 is read only after a box. -/
+theorem estLeadOf_bare (r : RawItem) (h : r.boxed = false) : estLeadOf r = none := by
+  unfold estLeadOf
+  rw [kinds_bare r h]
+  exact findSome_kEst_phase2 r.toks
+
+theorem boxed_of_estLeadOf (r : RawItem) (h : (estLeadOf r).isSome = true) : r.boxed = true := by
+  cases hb : r.boxed with
+  | true => rfl
+  | false => rw [estLeadOf_bare r hb] at h; exact absurd h (by simp)
+
+/-- **The leading estimate is rewritten, and read back as the value written.** -/
+theorem estLeadOf_setLead (w : List Char) (d : Dur) (r : RawItem)
+    (hw : estSlot w = some d) (hc : ciSlot w = none) (h : (estLeadOf r).isSome = true) :
+    estLeadOf (setLead w r) = some d := by
+  have hb := boxed_of_estLeadOf r h
+  unfold estLeadOf at h ⊢
+  rw [kinds_boxed r hb] at h
+  unfold setLead
+  rw [if_pos hb, kinds_boxed { indent := r.indent, boxed := r.boxed, toks := setLeadToks w r.toks } hb]
+  show (classifyPhase0 (setLeadToks w r.toks)).findSome? kEst = some d
+  generalize r.toks = ts at h ⊢
+  cases ts with
+  | nil => exact absurd h (by simp [classifyPhase0])
+  | cons t rest =>
+    cases hct : ciSlot t.word with
+    | some c =>
+      cases rest with
+      | nil =>
+        simp only [classifyPhase0, hct] at h
+        exact absurd h (by simp [classifyPhase1, kEst])
+      | cons u us =>
+        cases hu : estSlot u.word with
+        | none =>
+          simp only [classifyPhase0, hct, classifyPhase1, hu] at h
+          rw [findSome_cons_none kEst _ _ rfl, findSome_kEst_phase2] at h
+          exact absurd h (by simp)
+        | some du =>
+          simp only [setLeadToks, hct, hu, Option.isSome_some, if_true, classifyPhase0,
+            classifyPhase1, hw]
+          rfl
+    | none =>
+      cases ht : estSlot t.word with
+      | none =>
+        simp only [classifyPhase0, hct, classifyPhase1, ht] at h
+        rw [findSome_kEst_phase2] at h
+        exact absurd h (by simp)
+      | some dt =>
+        simp only [setLeadToks, hct, ht, Option.isSome_some, if_true, classifyPhase0, hc,
+          classifyPhase1, hw]
+        rfl
+
+/-- **In place**: the rewrite keeps every separator, so the line's spacing does not move. -/
+theorem setLeadToks_seps (w : List Char) : ∀ ts : List Tok,
+    (setLeadToks w ts).map Tok.sep = ts.map Tok.sep
+  | [] => rfl
+  | t :: ts => by
+    cases hc : ciSlot t.word with
+    | some c =>
+      cases ts with
+      | nil => simp only [setLeadToks, hc]
+      | cons u us =>
+        cases hu : estSlot u.word with
+        | none => simp only [setLeadToks, hc, hu, Option.isSome_none, Bool.false_eq_true, if_false]
+        | some du => simp only [setLeadToks, hc, hu, Option.isSome_some, if_true, List.map_cons]
+    | none =>
+      cases ht : estSlot t.word with
+      | none => simp only [setLeadToks, hc, ht, Option.isSome_none, Bool.false_eq_true, if_false]
+      | some dt => simp only [setLeadToks, hc, ht, Option.isSome_some, if_true, List.map_cons]
+
+/-- Every token of the rewrite is a token of the line, or carries the written word. -/
+theorem mem_setLeadToks (w : List Char) (x : Tok) : ∀ ts : List Tok,
+    x ∈ setLeadToks w ts → x ∈ ts ∨ x.word = w
+  | [] => fun h => by simp [setLeadToks] at h
+  | t :: ts => fun h => by
+    cases hc : ciSlot t.word with
+    | some c =>
+      cases ts with
+      | nil => simp only [setLeadToks, hc] at h; exact Or.inl h
+      | cons u us =>
+        cases hu : estSlot u.word with
+        | none =>
+          simp only [setLeadToks, hc, hu, Option.isSome_none, Bool.false_eq_true, if_false] at h
+          exact Or.inl h
+        | some du =>
+          simp only [setLeadToks, hc, hu, Option.isSome_some, if_true, List.mem_cons] at h
+          rcases h with rfl | rfl | h
+          · exact Or.inl (by simp)
+          · exact Or.inr rfl
+          · exact Or.inl (by simp [h])
+    | none =>
+      cases ht : estSlot t.word with
+      | none =>
+        simp only [setLeadToks, hc, ht, Option.isSome_none, Bool.false_eq_true, if_false] at h
+        exact Or.inl h
+      | some dt =>
+        simp only [setLeadToks, hc, ht, Option.isSome_some, if_true, List.mem_cons] at h
+        rcases h with rfl | h
+        · exact Or.inr rfl
+        · exact Or.inl (by simp [h])
+
+/-- A duration is written with a digit first… -/
+theorem renderDur_head (d : Dur) : headSat isDigitC (renderDur d) = true := by
+  cases d with
+  | simple n u =>
+    show headSat isDigitC (digitsOf n ++ [DurUnit.char u]) = true
+    cases hn : digitsOf n with
+    | nil => exact absurd hn (digitsOf_ne_nil n)
+    | cons a t => exact digitsOf_isDigitC n a (by rw [hn]; simp)
+  | hm h m =>
+    show headSat isDigitC (digitsOf h ++ 'h' :: (digitsOf m ++ ['m'])) = true
+    cases hn : digitsOf h with
+    | nil => exact absurd hn (digitsOf_ne_nil h)
+    | cons a t => exact digitsOf_isDigitC h a (by rw [hn]; simp)
+
+/-- …so it is never a `key:` word… -/
+theorem keyOf_renderDur (d : Dur) : keyOf (renderDur d) = none := by
+  unfold keyOf
+  rw [keyPrefix_none_of (headSat_false_of digit_not_key _ (renderDur_head d))]
+  rfl
+
+/-- …and never an `^id` word; nor is any word a leading estimate is read from. -/
+theorem isIdWord_of_digit_head {w : List Char} (h : headSat isDigitC w = true) :
+    isIdWord w = false := by
+  cases w with
+  | nil => exact absurd h (by simp [headSat])
+  | cons a t =>
+    have ha : isDigitC a = true := h
+    have hne : a ≠ '^' := by
+      intro hc; rw [hc] at ha; exact absurd ha (by decide)
+    simp [isIdWord, hne]
+
+theorem isIdWord_renderDur (d : Dur) : isIdWord (renderDur d) = false :=
+  isIdWord_of_digit_head (renderDur_head d)
+
+theorem isIdWord_of_estSlot {w : List Char} {d : Dur} (h : estSlot w = some d) :
+    isIdWord w = false :=
+  isIdWord_of_digit_head (estSlot_head h)
+
+/-- A line none of whose tokens is a `k:` token has no `k:` value. -/
+theorem lookupKey_none_of_no_keyTok (k : Key) (r : RawItem) (h : hasKeyTok k r = false) :
+    lookupKey k r = none := by
+  unfold lookupKey
+  rw [keyPairs_raw]
+  unfold hasKeyTok at h
+  generalize r.toks = ts at h ⊢
+  induction ts with
+  | nil => rfl
+  | cons t ts ih =>
+    simp only [List.any_cons, Bool.or_eq_false_iff] at h
+    rw [lookup_cons_skip k t ts h.1]
+    exact ih h.2
+
+/-- The rewrite adds no `k:` token when the written word is not one. -/
+theorem hasKeyTok_setLead (k : Key) (w : List Char) (r : RawItem) (hw : keyOf w = none)
+    (h : hasKeyTok k r = false) : hasKeyTok k (setLead w r) = false := by
+  unfold setLead
+  split
+  · unfold hasKeyTok at h ⊢
+    show (setLeadToks w r.toks).any (isKeyTok k) = false
+    cases hany : (setLeadToks w r.toks).any (isKeyTok k) with
+    | false => rfl
+    | true =>
+      obtain ⟨x, hx, hk⟩ := List.any_eq_true.1 hany
+      rcases mem_setLeadToks w x r.toks hx with hm | hm
+      · have := List.any_eq_true.2 ⟨x, hm, hk⟩
+        rw [h] at this
+        exact absurd this (by simp)
+      · unfold isKeyTok at hk
+        rw [hm, hw] at hk
+        exact absurd hk (by simp)
+  · exact h
+
+/-- **D56's law: the edit path writes the slot the view reads, the leading one included.**  On
+a line whose leading estimate is the slot, `Core.est`'s view reads the value written there; on
+every other line, the value the `est:` token carries — which is `view_set_remaining`,
+unchanged. -/
+theorem view_set_remaining_slot (lead key : Dur) (r : RawItem) (hl : lead.noDays = true)
+    (hk : key.noDays = true) :
+    viewRemainingDur (setRemaining lead key r) = some (if leadIsTheSlot r then lead else key) := by
+  unfold setRemaining
+  by_cases hs : leadIsTheSlot r = true
+  · rw [if_pos hs, if_pos hs]
+    have hs' := hs
+    unfold leadIsTheSlot at hs'
+    simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs'
+    unfold viewRemainingDur viewEstKey
+    rw [lookupKey_none_of_no_keyTok .est _
+      (hasKeyTok_setLead .est _ r (keyOf_renderDur lead) hs'.1)]
+    exact estLeadOf_setLead _ lead r (estSlot_renderDur lead hl) (ciSlot_renderDur lead) hs'.2
+  · rw [if_neg hs, if_neg hs]
+    exact view_set_remaining key r hk
+
+/-- **One estimate per line**: where the leading estimate is the slot, no `est:` token is
+written — the defect D56 closes was exactly that token, beside the leading one. -/
+theorem setRemaining_writes_no_key_over_a_leading_estimate (lead key : Dur) (r : RawItem)
+    (hs : leadIsTheSlot r = true) : hasKeyTok .est (setRemaining lead key r) = false := by
+  unfold setRemaining
+  rw [if_pos hs]
+  unfold leadIsTheSlot at hs
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at hs
+  exact hasKeyTok_setLead .est _ r (keyOf_renderDur lead) hs.1
+
+@[simp] theorem setRemaining_boxed (lead key : Dur) (r : RawItem) :
+    (setRemaining lead key r).boxed = r.boxed := by
+  unfold setRemaining setLead
+  split
+  · split <;> rfl
+  · exact setKey_boxed _ _ _
+
+/-- `toksWf` does not care which word a token carries, only that it is one word. -/
+theorem toksWf_head_word (t : Tok) (w : List Char) (hw : wordWf w = true) (ts : List Tok)
+    (h : toksWf (t :: ts) = true) : toksWf (⟨t.sep, w⟩ :: ts) = true := by
+  have ht : t.wf = true := by
+    cases ts with
+    | nil => simpa [toksWf] using h
+    | cons u r => simp only [toksWf, Bool.and_eq_true] at h; exact h.1.1
+  obtain ⟨hne, hns⟩ := (wordWf_iff w).1 hw
+  have ht' : (⟨t.sep, w⟩ : Tok).wf = true := (tok_wf_iff _).2 ⟨((tok_wf_iff t).1 ht).1, hne, hns⟩
+  cases ts with
+  | nil => simpa [toksWf] using ht'
+  | cons u r =>
+    simp only [toksWf, Bool.and_eq_true] at h ⊢
+    exact ⟨⟨ht', h.1.2⟩, h.2⟩
+
+theorem toksWf_setLeadToks (w : List Char) (hw : wordWf w = true) : ∀ ts : List Tok,
+    toksWf ts = true → toksWf (setLeadToks w ts) = true
+  | [] => fun h => h
+  | t :: ts => fun h => by
+    cases hc : ciSlot t.word with
+    | some c =>
+      cases ts with
+      | nil => simp only [setLeadToks, hc]; exact h
+      | cons u us =>
+        cases hu : estSlot u.word with
+        | none =>
+          simp only [setLeadToks, hc, hu, Option.isSome_none, Bool.false_eq_true, if_false]
+          exact h
+        | some du =>
+          simp only [setLeadToks, hc, hu, Option.isSome_some, if_true]
+          simp only [toksWf, Bool.and_eq_true] at h ⊢
+          exact ⟨⟨h.1.1, h.1.2⟩, toksWf_head_word u w hw us h.2⟩
+    | none =>
+      cases ht : estSlot t.word with
+      | none =>
+        simp only [setLeadToks, hc, ht, Option.isSome_none, Bool.false_eq_true, if_false]
+        exact h
+      | some dt =>
+        simp only [setLeadToks, hc, ht, Option.isSome_some, if_true]
+        exact toksWf_head_word t w hw ts h
+
+theorem idWords_setLeadToks (w : List Char) (hw : isIdWord w = false) : ∀ ts : List Tok,
+    ((setLeadToks w ts).filter (fun t => isIdWord t.word)).map Tok.word
+      = (ts.filter (fun t => isIdWord t.word)).map Tok.word
+  | [] => rfl
+  | t :: ts => by
+    cases hc : ciSlot t.word with
+    | some c =>
+      cases ts with
+      | nil => simp only [setLeadToks, hc]
+      | cons u us =>
+        cases hu : estSlot u.word with
+        | none => simp only [setLeadToks, hc, hu, Option.isSome_none, Bool.false_eq_true, if_false]
+        | some du =>
+          simp only [setLeadToks, hc, hu, Option.isSome_some, if_true]
+          simp [List.filter_cons, hw, isIdWord_of_estSlot hu]
+    | none =>
+      cases ht : estSlot t.word with
+      | none => simp only [setLeadToks, hc, ht, Option.isSome_none, Bool.false_eq_true, if_false]
+      | some dt =>
+        simp only [setLeadToks, hc, ht, Option.isSome_some, if_true]
+        simp [hw, isIdWord_of_estSlot ht]
+
+/-- **Whatever the leading-slot rewrite writes, the kernel reads back.** -/
+theorem setLead_canonical (i : Id) (w : List Char) (r : RawItem) (hw : wordWf w = true)
+    (hid : isIdWord w = false) (h : CanonicalItem i r = true) :
+    CanonicalItem i (setLead w r) = true := by
+  obtain ⟨hb, hind, htw, hids⟩ := (canonical_iff i r).1 h
+  unfold setLead
+  rw [if_pos hb]
+  refine (canonical_iff i _).2 ⟨hb, hind, toksWf_setLeadToks w hw r.toks htw, ?_⟩
+  unfold idToks at hids ⊢
+  rw [idWords_setLeadToks w hid r.toks]
+  exact hids
+
+theorem setRemaining_canonical (i : Id) (lead key : Dur) (r : RawItem)
+    (h : CanonicalItem i r = true) : CanonicalItem i (setRemaining lead key r) = true := by
+  unfold setRemaining
+  split
+  · exact setLead_canonical i _ r (wordWf_renderDur lead) (isIdWord_renderDur lead) h
+  · exact setKey_canonical i .est _ r (wordWf_renderDur key) h
+
+/-- **The payoff**, as `setKey_line_reparses` is for the key setters: whatever `tm edit ^id
+est=` writes, on either slot, the kernel parses back to the same item. -/
+theorem setRemaining_line_reparses (i : Id) (g : Glyph) (lead key : Dur) (r : RawItem)
+    (h : CanonicalItem i r = true) :
+    parseItem (serializeItem i g (setRemaining lead key r))
+      = .ok (some i, g, setRemaining lead key r) :=
+  parse_serialize i g _ (setRemaining_canonical i lead key r h)
+
+/-! ### The three lines D56 is about, computed
+
+`- [ ] 2 30b Big migration ^x3` is W-33's auditor's line (its `due:` dropped); the other two are
+the lines D56 leaves as they were — one with no estimate, one carrying `est:`.  The value is
+`20b` as written and 1,200 canonical minutes at a 60-minute block.  The lines are written out in
+each statement rather than named by a `def`: a fixture here would be code the export never runs
+(check 12). -/
+
+/-- **The auditor's line carries ONE estimate, `20b`, rewritten in place**, and the view reads
+twenty blocks — 1,200 minutes at a 60-minute block, the number the planner uses. -/
+theorem the_leading_estimate_is_rewritten_in_place :
+    let r : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+    leadIsTheSlot r = true ∧
+    (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) r).toks.map Tok.word
+      = [['2'], ['2','0','b'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
+         ['^','x','3']] ∧
+    (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) r).toks.map Tok.sep
+      = r.toks.map Tok.sep ∧
+    hasKeyTok .est (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) r) = false ∧
+    (viewRemainingDur (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) r)).map
+      (Dur.minutes 60) = some 1200 := by
+  decide
+
+/-- **…and the two lines D56 leaves as they were**: no estimate gains an `est:` token in
+canonical minutes before the `^id`; an `est:` token is rewritten, and the leading `30b` — §3.1's
+estimate as written — is not touched. -/
+theorem a_line_without_a_leading_estimate_gets_the_key :
+    let none_ : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['B','i','g']⟩,
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+    let key_ : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩,
+      ⟨[' '], ['B','i','g']⟩, ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩,
+      ⟨[' '], ['e','s','t',':','5','b']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+    leadIsTheSlot none_ = false ∧ leadIsTheSlot key_ = false ∧
+    (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) none_).toks.map Tok.word
+      = [['2'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
+         ['e','s','t',':','1','2','0','0','m'], ['^','x','3']] ∧
+    (setRemaining (.simple 20 .blocks) (.simple 1200 .minutes) key_).toks.map Tok.word
+      = [['2'], ['3','0','b'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
+         ['e','s','t',':','1','2','0','0','m'], ['^','x','3']] := by
+  decide
+
+end Field
+
+/-- `tm edit ^id est=v` at the entity, `v` in minutes.  This is the **field** setter the edit
+path writes through — `Field.setRemaining`, D56's slot-reading setter, since W-35; the key
+setter `Field.setEst` over `setKey` until then — the same reader pair `Core.est` consumes, so
+gap 4's two readers stay collapsed.  With one value in minutes the two renderings are the same
+`Nm`: on a line whose leading estimate is the slot it is rewritten in place, elsewhere the
+`est:` token is written, byte-identical to the stage one's token
+(`the_two_est_setters_write_the_same_token`).  The request path reaches the same setter through
+`cmdSetEst` → `setVal`; this entity form is what the normalisation lemmas are stated over. -/
 def setEstE (v : Nat) (e : Entity) : Entity :=
-  ⟨{ e.val with line := Field.setEst (Dur.simple v DurUnit.minutes) e.val.line },
-    e.property⟩
+  ⟨{ e.val with
+      line := Field.setRemaining (Dur.simple v DurUnit.minutes) (Dur.simple v DurUnit.minutes)
+        e.val.line }, e.property⟩
 
 /-- **Gap 4, closed: the command path writes what the field path reads.**
 The `est` request lands on `setEstE`; `Core.est` is
-`Field.viewRemainingDur`; `view_set_remaining` says the second reads the
-first verbatim, with no hypothesis on the entity's other bytes. -/
+`Field.viewRemainingDur`; `Field.view_set_remaining_slot` says the second reads the
+first verbatim, with no hypothesis on the entity's other bytes — on either slot, because
+the one value is both renderings.  **Re-proved at W-35 (D5, D56), its statement unchanged.** -/
 theorem the_command_path_writes_what_the_field_path_reads (v : Nat) (e : Entity) :
-    (setEstE v e).val.est = some (Dur.simple v DurUnit.minutes) :=
-  Field.view_set_remaining (Dur.simple v DurUnit.minutes) e.val.line (by rfl)
+    (setEstE v e).val.est = some (Dur.simple v DurUnit.minutes) := by
+  have h := Field.view_set_remaining_slot (Dur.simple v DurUnit.minutes)
+    (Dur.simple v DurUnit.minutes) e.val.line rfl rfl
+  rw [ite_self] at h
+  exact h
+
+/-- **The entity setter rewrites the leading estimate in place** — `1200m`, the one value in
+minutes, where the `30b` stood, and no `est:` token beside it (D56's line, open in document 0,
+no tombstone). -/
+theorem setEstE_rewrites_the_leading_estimate :
+    let r : RawItem := ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩
+    let e : Entity :=
+      ⟨{ live := ⟨0, 0⟩, archive := none, status := .live .free, line := r }, by decide⟩
+    (setEstE 1200 e).val.line.toks.map Tok.word
+      = [['2'], ['1','2','0','0','m'], ['B','i','g'], ['m','i','g','r','a','t','i','o','n'],
+         ['^','x','3']] := by
+  decide
 
 /-- The stage-one `Nat` entity setter, in its own name now: the body `setEstE`
 carried until gap 4 closed.  It survives as **fold arithmetic** — `demoteEst`
@@ -654,7 +1101,9 @@ abbrev WfDeps     := { ds : List Field.Dep // Field.depsWf ds = true }
 /-- One wire value, already parsed and bounded.  One constructor per wired
 key, carrying the same type the loader's view for that key produces. -/
 inductive EditVal
-  | est       (d : NdDur)
+  /-- `est=`: the value as the leading slot writes it (as written, D56) and as an `est:` token
+      writes it — two renderings of one value (`EditVal.estAt` says which). -/
+  | est       (lead key : NdDur)
   | dur       (d : NdDur)
   | buffer    (d : Dur)
   | pref      (p : Field.Pref)
@@ -675,7 +1124,7 @@ deriving DecidableEq
 
 /-- The key each value writes. -/
 def EditVal.key : EditVal → Field.Key
-  | .est _ => .est | .dur _ => .dur | .buffer _ => .buffer
+  | .est _ _ => .est | .dur _ => .dur | .buffer _ => .buffer
   | .pref _ => .pref | .onMiss _ => .onMiss | .afterDone _ => .afterDone
   | .floor _ => .floor | .cap _ => .cap | .ci _ => .ci
   | .due _ => .due | .interval _ => .interval | .window _ => .window
@@ -684,7 +1133,7 @@ def EditVal.key : EditVal → Field.Key
 
 /-- The token body the setter writes: the field's own renderer, per key. -/
 def EditVal.rendered : EditVal → List Char
-  | .est d => Field.renderDur d.val
+  | .est _ key => Field.renderDur key.val
   | .dur d => Field.renderDur d.val
   | .buffer d => Field.renderDur d
   | .pref p => Field.renderPref p
@@ -702,10 +1151,11 @@ def EditVal.rendered : EditVal → List Char
   | .waiting n => Field.renderDate n.val
   | .after ds => Field.renderDeps ds.val
 
-/-- One write path: every branch is the Line.lean setter that carries its
-`view ∘ set = id` proof, and nothing else is exported as a setter (R11). -/
+/-- One write path: every branch is a field setter that carries its `view ∘ set = id` proof,
+and nothing else is exported as a setter (R11).  Sixteen are Line.lean's key setters; the est
+branch is `Field.setRemaining` (above, D56), whose law is `Field.view_set_remaining_slot`. -/
 def setVal : EditVal → RawItem → RawItem
-  | .est d, r => Field.setEst d.val r
+  | .est lead key, r => Field.setRemaining lead.val key.val r
   | .dur d, r => Field.setDur d.val r
   | .buffer d, r => Field.setBuffer d r
   | .pref p, r => Field.setPref p r
@@ -726,14 +1176,58 @@ def setVal : EditVal → RawItem → RawItem
 /-- **An edit never adds or removes a state box** — every arm is `setKey`.
 `Plan.boxesWf` therefore costs the edit path nothing. -/
 @[simp] theorem setVal_boxed (v : EditVal) (r : RawItem) : (setVal v r).boxed = r.boxed := by
-  cases v <;> exact Field.setKey_boxed _ _ _
+  cases v <;> first | exact Field.setRemaining_boxed _ _ _ | exact Field.setKey_boxed _ _ _
 
-/-- Whatever key the command writes, the token that lands is read back as that
-key with the rendered value — `lookupKey_setKey`, once, for all nine, which is
-what makes a tenth key unable to be the odd one out. -/
-theorem setVal_writes_the_token_the_loader_reads (v : EditVal) (r : RawItem) :
+/-- **setVal_writes_the_token_the_loader_reads is REFUTED** (W-35, the owner's D56; AGENTS §3.1
+item 3).  It said that whatever the edit writes, the key's own token lands and reads back — for
+every line.  On a line whose leading estimate is the slot that WAS the hole: the est edit
+appended an `est:` token beside the leading estimate, two estimates on one line (README gap
+2572).  At D56's own line the edit now writes no `est:` token at all. -/
+theorem setVal_writes_the_token_the_loader_reads_is_refuted :
+    ¬ ∀ (v : EditVal) (r : RawItem), Field.lookupKey v.key (setVal v r) = some v.rendered := by
+  intro h
+  exact absurd (h (.est ⟨.simple 20 .blocks, rfl⟩ ⟨.simple 1200 .minutes, rfl⟩)
+    ⟨[], true, [⟨[' '], ['2']⟩, ⟨[' '], ['3','0','b']⟩, ⟨[' '], ['B','i','g']⟩,
+      ⟨[' '], ['m','i','g','r','a','t','i','o','n']⟩, ⟨[' '], ['^','x','3']⟩]⟩) (by decide)
+
+/-- **The law, on its subdomain, named** (§3.1 item 4): every edit but the est edit of a line
+whose leading estimate is the slot lands its own key's token, read back as the rendered value —
+`lookupKey_setKey`, once, for all seventeen.  The excluded case is the one D56 decided, and
+`setVal_est_rewrites_the_leading_estimate` is what happens there. -/
+theorem setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate
+    (v : EditVal) (r : RawItem) (h : (v.key == .est && Field.leadIsTheSlot r) = false) :
     Field.lookupKey v.key (setVal v r) = some v.rendered := by
-  cases v <;> exact Field.lookupKey_setKey _ _ _
+  cases v with
+  | est lead key =>
+    have hs : Field.leadIsTheSlot r = false := by simpa [EditVal.key] using h
+    show Field.lookupKey .est (Field.setRemaining lead.val key.val r) = _
+    unfold Field.setRemaining
+    rw [if_neg (by simp [hs])]
+    exact Field.lookupKey_setKey _ _ _
+  | _ => exact Field.lookupKey_setKey _ _ _
+
+/-- **…and the excluded case**: where the leading estimate is the slot, the est edit rewrites
+it — read back as the value as written — and writes no `est:` token. -/
+theorem setVal_est_rewrites_the_leading_estimate (lead key : NdDur) (r : RawItem)
+    (h : Field.leadIsTheSlot r = true) :
+    Field.estLeadOf (setVal (.est lead key) r) = some lead.val ∧
+      Field.hasKeyTok .est (setVal (.est lead key) r) = false := by
+  refine ⟨?_, Field.setRemaining_writes_no_key_over_a_leading_estimate _ _ r h⟩
+  show Field.estLeadOf (Field.setRemaining lead.val key.val r) = _
+  unfold Field.setRemaining
+  rw [if_pos h]
+  have h' := h
+  unfold Field.leadIsTheSlot at h'
+  simp only [Bool.and_eq_true, Bool.not_eq_true'] at h'
+  exact Field.estLeadOf_setLead _ lead.val r (Field.estSlot_renderDur lead.val lead.property)
+    (Field.ciSlot_renderDur lead.val) h'.2
+
+/-- **D56's est edit of a value as written, at a block length** — the one the host sends
+(`{"op":"est","value":…,"blockMin":…}`, `Boundary.parseCmd`): the leading slot writes the
+value as written (`20b`), and an `est:` token its canonical minutes at that block length
+(`est:1200m`), the bytes the `min` form always wrote — D49's settled rendering, unchanged. -/
+def EditVal.estAt (d : NdDur) (bm : Nat) : EditVal :=
+  .est d ⟨.simple (d.val.minutes bm) .minutes, rfl⟩
 
 /-- Which keys the wire can edit today.  `editValOf` is defined on exactly
 these (`editValOf_refuses_unwired_keys`); the one key left out, `demoted`, is
@@ -753,7 +1247,7 @@ loader's view for that key binds — `viewDur` is `parseDurND`, `viewPref` is
 `parsePref`, and so on — so a value accepted here is a value the loader reads,
 and a value the loader would refuse never reaches a setter. -/
 def editValOf : Field.Key → List Char → Option EditVal
-  | .est, w => (ndDur? w).map .est
+  | .est, w => (ndDur? w).map (fun d => .est d d)
   | .dur, w => (ndDur? w).map .dur
   | .buffer, w => (Field.parseDur w).map .buffer
   | .pref, w => (Field.parsePref w).map .pref
@@ -1004,11 +1498,20 @@ theorem editE_ok_of_tabless (v : EditVal) (e : Entity)
 value the command path accepts, the field path — the very view the loader and
 `Core`'s readers consume — reads back exactly that value.  The `est` case is
 `Core.est` itself (C1's slot pair), the `ci` case is `Core.ci` (C2's), and no
-hypothesis is asked about the entity's other bytes. -/
+hypothesis is asked about the entity's other bytes.
+
+**Re-proved over the leading slot at W-35 (the owner's D56, README gap 2572).**  The est arm
+names which of its two renderings the view reads: the value as written where the line's
+leading estimate is the slot (`Field.leadIsTheSlot` of the line the edit was given), the
+`est:` token's everywhere else — `Field.view_set_remaining_slot`.  Its old arm, `a.val.est =
+some d.val` over one value, is the case `lead = key`, which `cmdSetEst` and the keyed edit
+still are; the minutes the host's value denotes are read back on either slot
+(`the_edit_path_writes_the_minutes_it_was_given`). -/
 theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Entity)
     (h : editE v e = .ok a) :
     match v with
-    | .est d => a.val.est = some d.val
+    | .est lead key =>
+        a.val.est = some (if Field.leadIsTheSlot e.val.line then lead.val else key.val)
     | .dur d => Field.viewDur a.val.line = some d.val
     | .buffer d => a.val.buffer = some d
     | .pref p => Field.viewPref a.val.line = some p
@@ -1031,7 +1534,8 @@ theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Enti
   · injection h with h
     subst h
     cases v with
-    | est d => exact Field.view_set_remaining d.val e.val.line d.property
+    | est lead key =>
+        exact Field.view_set_remaining_slot lead.val key.val e.val.line lead.property key.property
     | dur d => exact Field.view_set_dur d.val e.val.line d.property
     | buffer d => exact Field.view_set_buffer d e.val.line
     | pref p => exact Field.view_set_pref p e.val.line
@@ -1053,6 +1557,17 @@ theorem the_edit_path_writes_what_the_field_path_reads (v : EditVal) (e a : Enti
     | after ds =>
         show (Field.viewAfter (Field.setAfter ds.val e.val.line)).getD [] = ds.val
         rw [Field.view_set_after ds.val e.val.line ds.property]; rfl
+
+/-- **What the planner reads is the minutes the host's value denotes, whichever slot took it**
+(D56): the leading slot keeps `20b`, an `est:` token carries `1200m`, and at the block length
+the value was written at both are the same number of minutes. -/
+theorem the_edit_path_writes_the_minutes_it_was_given (d : NdDur) (bm : Nat) (e a : Entity)
+    (h : editE (EditVal.estAt d bm) e = .ok a) :
+    a.val.est.map (Field.Dur.minutes bm) = some (d.val.minutes bm) := by
+  have hl := the_edit_path_writes_what_the_field_path_reads _ e a h
+  simp only [EditVal.estAt] at hl
+  rw [hl]
+  split <;> rfl
 
 /-- The unset guard bites like the edit guard. -/
 theorem unsetE_refuses_a_tabbed_line (k : EditKey) (e : Entity)
@@ -1139,9 +1654,12 @@ def cmdUnset (k : EditKey) (i : Id) : Transform := (·.mapAt i (unsetE k))
 standing `est` op moves in exactly one respect: a tabbed line is now refused
 as `tabbedLine` where it was silently edited against the wrong token reading
 (gap 32).  The written token is unchanged: `renderDur (Dur.simple v minutes)`,
-the same bytes `setEstE` wrote. -/
+the same bytes `setEstE` wrote — and since W-35 (D56) it is written where the view reads:
+into the leading slot, in place, on a line whose leading estimate is the slot.  This `min`
+form's one value is in minutes, so its leading slot reads `Nm`; the host sends the value as
+written instead (`EditVal.estAt`), so the leading slot keeps the unit the user typed. -/
 def cmdSetEst (v : Nat) (i : Id) : Transform :=
-  cmdEdit (.est ⟨Dur.simple v DurUnit.minutes, rfl⟩) i
+  cmdEdit (.est ⟨Dur.simple v DurUnit.minutes, rfl⟩ ⟨Dur.simple v DurUnit.minutes, rfl⟩) i
 /-- `tm demote`. -/
 def cmdDemote (i : Id) (rank : Nat) (s : Stamp) : Relocation :=
   fun p d => p.mapAt i (demote (d.site rank) s)
@@ -2200,5 +2718,19 @@ theorem transform_state_none (f : Transform) (p : WfPlan) (h : f.state p = none)
   split at h
   · simp at h
   · rename_i k _; exact ⟨k, by assumption⟩
+
+/-- **The token an est edit writes, at the value the host sends** (W-35 track E, D56; README gap
+2851).  `tm edit est=20b` at a 60-minute block is `EditVal.estAt 20b 60` — the value as written for
+the leading slot, its canonical minutes for an `est:` token (D49) — and the token's bytes,
+`EditVal.rendered`, are `1200m`, never the `20b` the leading slot keeps; a `ci=3` edit renders `3`.
+Written because re-rostering `EditVal.rendered` after D56 changed its est arm found
+`setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate` ALONE: with that
+law's proof sorried, nothing told the table from `fun _ => []`.  Appended at the end of the module
+so that no other roster row's pin site moves. -/
+theorem EditVal.rendered_is_the_tokens_bytes :
+    (EditVal.estAt ⟨.simple 20 .blocks, rfl⟩ 60).rendered = ['1', '2', '0', '0', 'm'] ∧
+    EditVal.estAt ⟨.simple 20 .blocks, rfl⟩ 60
+      = .est ⟨.simple 20 .blocks, rfl⟩ ⟨.simple 1200 .minutes, rfl⟩ ∧
+    (EditVal.ci 3).rendered = ['3'] := by decide
 
 end Tm

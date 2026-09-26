@@ -1034,8 +1034,13 @@ fn an_item_line_inside_a_comment_is_prose() {
     ))
     .unwrap();
     assert!(out.contains(r#""    - [ ] 3 1b Example ^m1""#), "{out}");
-    assert!(out.contains("est:90m"), "{out}");
-    assert_eq!(out.matches("est:90m").count(), 1, "{out}");
+    // The live line's leading `6b` is the slot the view reads, so since W-35 (the
+    // owner's D56) the edit rewrites it IN PLACE — one estimate on the line — where
+    // it used to append `est:90m` beside it. The example inside the comment is
+    // untouched either way, which is what this test is about.
+    assert!(out.contains(r#""- [ ] 5 90m Finish the report ^m1""#), "{out}");
+    assert_eq!(out.matches("90m").count(), 1, "{out}");
+    assert!(!out.contains("est:"), "no `est:` token beside a leading estimate: {out}");
     // The over-bite guard: with the markers gone the example is an item
     // again, and the repeated id is refused.
     let out = call(
@@ -2055,4 +2060,72 @@ fn a_floor_is_answered_over_what_the_pass_left() {
         call(&capacity_req("", &spec_with_candidates(true, &null))).unwrap(),
         call(&capacity_req("", &spec_with_candidates(true, &witness_items()))).unwrap()
     );
+}
+
+/// **D56 through the FFI** (W-35, README gap 2572): `tm edit est=` writes the slot
+/// the view reads. The host sends the value AS WRITTEN beside the block length its
+/// `b` means; a leading estimate with no `est:` token is rewritten in place, as
+/// written, and the two lines D56 leaves as they were — no estimate, and an `est:`
+/// token — get the `est:` token in canonical minutes, byte for byte what the
+/// `min` form writes there.
+#[test]
+fn edit_est_rewrites_the_leading_estimate_in_place() {
+    let one = |line: &str, op: &str| -> String {
+        call(&format!(
+            r#"{{"docs":[{{"path":"w.md","lines":["{line}"]}}],"cmds":[{op}]}}"#
+        ))
+        .unwrap()
+    };
+    let value = r#"{"op":"est","id":"x3","value":"20b","blockMin":60}"#;
+    // The auditor's line: ONE estimate, `20b`, where `30b` stood.
+    let out = one("- [ ] 2 30b Big migration ^x3", value);
+    assert_eq!(
+        out,
+        r#"{"ok":{"docs":[{"path":"w.md","lines":["- [ ] 2 20b Big migration ^x3"]}],"report":{"closes":[]}}}"#
+    );
+    // No estimate at all: an `est:` token in canonical minutes, before the id.
+    let out = one("- [ ] 2 Big migration ^x3", value);
+    assert!(out.contains(r#""- [ ] 2 Big migration est:1200m ^x3""#), "{out}");
+    assert_eq!(
+        out,
+        one("- [ ] 2 Big migration ^x3", r#"{"op":"est","id":"x3","min":1200}"#),
+        "the value form and the minutes form write one token"
+    );
+    // An `est:` token: rewritten in canonical minutes; the leading `30b` is history.
+    let out = one("- [ ] 2 30b Big migration est:5b ^x3", value);
+    assert!(out.contains(r#""- [ ] 2 30b Big migration est:1200m ^x3""#), "{out}");
+    assert_eq!(
+        out,
+        one("- [ ] 2 30b Big migration est:5b ^x3", r#"{"op":"est","id":"x3","min":1200}"#)
+    );
+    // A value in minutes or hours reads no block length.
+    let out = one("- [ ] 2 30b Big migration ^x3", r#"{"op":"est","id":"x3","value":"2h"}"#);
+    assert!(out.contains(r#""- [ ] 2 2h Big migration ^x3""#), "{out}");
+    // The minutes form still writes minutes, in place, on a leading estimate.
+    let out = one("- [ ] 2 30b Big migration ^x3", r#"{"op":"est","id":"x3","min":1200}"#);
+    assert!(out.contains(r#""- [ ] 2 1200m Big migration ^x3""#), "{out}");
+    // A positional ci is not an estimate: the SECOND token is the leading slot.
+    let out = one("- [ ] 5 1b Five ^x3", value);
+    assert!(out.contains(r#""- [ ] 5 20b Five ^x3""#), "{out}");
+}
+
+/// …and the value form's refusals, each by name (§5.7).
+#[test]
+fn edit_est_value_refusals_are_named() {
+    let one = |op: &str| -> String {
+        call(&format!(
+            r#"{{"docs":[{{"path":"w.md","lines":["- [ ] 2 30b Big migration ^x3"]}}],"cmds":[{op}]}}"#
+        ))
+        .unwrap()
+    };
+    for (op, why) in [
+        (r#"{"op":"est","id":"x3","value":"20b"}"#, "estBlockMinAbsent"),
+        (r#"{"op":"est","id":"x3","value":"20b","blockMin":0}"#, "badBlockMin"),
+        (r#"{"op":"est","id":"x3","value":"3d","blockMin":60}"#, "badValue est"),
+        (r#"{"op":"est","id":"x3","value":"zzz","blockMin":60}"#, "badValue est"),
+        (r#"{"op":"est","id":"x3","value":"20b","min":1200,"blockMin":60}"#, "estValueAndMin"),
+        (r#"{"op":"est","id":"x3","value":20,"blockMin":60}"#, "String expected"),
+    ] {
+        assert_eq!(one(op), format!(r#"{{"err":"{why}"}}"#), "{op}");
+    }
 }

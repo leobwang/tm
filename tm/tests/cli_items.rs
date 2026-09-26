@@ -177,11 +177,13 @@ fn edit_changes_fields_byte_faithfully_and_logs_each_one() {
 
     let after = tm.line("backlog.md", "a1");
     assert_ne!(before, after);
-    // §4.1 through the one proven setter: the `est:` key is the remaining
-    // estimate and the leading `30m` is §3.1's `est_original`, which the §11
-    // history calibrates actual/est against and which an edit never rewrites.
-    assert!(after.starts_with("- [ ] 2 30m Insurance claim"), "{after}");
-    assert!(after.contains("est:45m"), "{after}");
+    // §4.1 through the one proven setter. `^a1` carries a LEADING estimate and
+    // no `est:` token, so since W-35 (the owner's D56, README gap 2572) the
+    // edit rewrites the leading `30m` IN PLACE, as written — one estimate on
+    // the line — where it used to append `est:45m` beside it (two estimates:
+    // the row printed 30m while the planner read 45m).
+    assert!(after.starts_with("- [ ] 2 45m Insurance claim"), "{after}");
+    assert!(!after.contains("est:"), "no `est:` token beside the leading one: {after}");
     assert!(after.contains("loc:out"), "{after}");
     assert!(after.contains("due:2026-10-01"), "{after}");
 
@@ -412,13 +414,15 @@ fn edit_unset_removes_a_key() {
 
     // Dropping the remainder hands `remaining` back to the leading estimate
     // (§3.1's `est_original`, gap 41's fallback). A later `est=` writes the
-    // `est:` token again — kernel-backed, the est op always writes the one
-    // slot `remaining` reads first, never the leading history
-    // (kernel/README.md, 2026-09-12 "the five lifecycle verbs" block).
+    // one slot `remaining` reads — which is now that leading estimate, so since
+    // W-35 (the owner's D56, README gap 2572) it is rewritten IN PLACE, as
+    // written, and no `est:` token reappears beside it. (Before D56 this line
+    // gained `est:240m` beside the leading `2b`: two estimates, the row
+    // printing one and the planner reading the other.)
     tm.ok(&["edit", "^t3", "est=4b"]);
     let after = tm.line("week/2026-W37.md", "t3");
-    assert!(after.starts_with("- [>] 4 2b Exercises"), "{after}");
-    assert!(after.contains("est:240m"), "{after}");
+    assert!(after.starts_with("- [>] 4 4b Exercises"), "{after}");
+    assert!(!after.contains("est:"), "{after}");
 }
 
 #[test]
@@ -1853,18 +1857,33 @@ fn edit_routes_a_ci_key_line() {
     assert!(line.contains("max:3h/d"), "the kernel's alias, beside a wired ci: {line}");
 }
 
-/// The slot, named on its own: the leading estimate is §3.1's `est_original`
-/// and an `est=` edit must never rewrite it (§4.1).
+/// The slot, named on its own — and REFUTED-AND-RENAMED at W-35 by the owner's
+/// D56 (README gap 2572). This test was edit_never_rewrites_the_leading_estimate
+/// and pinned `est:120m` appended beside the leading `30m`: two estimates on one
+/// line, the row's cell printing one and the planner reading the other, which is
+/// §5.3's founding bug. D56 decided it the way the pre-switch fork did: where the
+/// leading estimate is the slot the view reads (no `est:` token), `est=` rewrites
+/// it in place, AS WRITTEN — `2b`, not `120m`. The two other lines keep their
+/// behaviour, and `edit_est_moves_the_remaining_estimate_not_the_one_as_written`
+/// (an `est:` token) and `edit_est_reaches_a_line_with_no_positional_slot` (no
+/// estimate) still pin them.
 #[test]
-fn edit_never_rewrites_the_leading_estimate() {
+fn edit_rewrites_the_leading_estimate_in_place_as_written() {
     let tm = Tm::new();
+    let before = tm.line("backlog.md", "a1");
+    assert!(before.starts_with("- [ ] 2 30m Insurance claim"), "{before}");
     tm.ok(&["edit", "^a1", "est=2b", "due=2026-10-01"]);
     let after = tm.line("backlog.md", "a1");
-    assert!(after.contains("est:120m"), "{after}");
-    assert!(
-        after.contains("] 2 30m Insurance"),
-        "the leading estimate moved: {after}"
+    assert!(after.starts_with("- [ ] 2 2b Insurance claim"), "{after}");
+    assert!(!after.contains("est:"), "one estimate on the line: {after}");
+    assert!(after.contains("due:2026-10-01"), "{after}");
+    // Only the one word moved: everything but `30m` is the line it was.
+    assert_eq!(
+        after.replacen(" 2b ", " 30m ", 1).replace(" due:2026-10-01", ""),
+        before,
+        "the rewrite is in place"
     );
+    assert_eq!(tm.run(&["check"]).code, 0);
 }
 
 /// **The spellings routing moved**, each one a byte a hand-edited file now

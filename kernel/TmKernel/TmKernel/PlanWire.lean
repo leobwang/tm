@@ -1051,7 +1051,11 @@ def segJson (s : Planner.WfSeg) : JVal :=
 /-- An `IdList`, whole. -/
 def idsJson (c : Planner.IdList) : JVal := .arr (c.val.map JVal.str)
 
-/-- §8.2 step 8's twelve fields, each under its own name. -/
+/-- §8.2 step 8's twelve fields, each under its own name — then, since W-35 (README gaps 2640 and
+2743), the fork's three whole tuples whose other components `tm-core/src/emit.rs` prints:
+`impossibleUntil` (`{id, shortMin, until}`, the date as `YYYY-MM-DD`), `underusedLevels`
+(`{id, energy, ci}`) and `blockedDeps` (`{id, deps}`, each dep as its `after:` spelling).  The
+twelve keys and their bytes are unchanged, so a reader of the twelve reads what it always read. -/
 def diagJson (d : Planner.Diagnostics) : JVal :=
   .obj [("underused".toList, idsJson d.underused),
     ("aCapacityLost".toList, .num d.aCapacityLost),
@@ -1069,7 +1073,19 @@ def diagJson (d : Planner.Diagnostics) : JVal :=
     ("droppedTail".toList, idsJson d.droppedTail),
     ("planHonesty".toList,
       .obj [("planned".toList, .num d.planHonesty.1), ("total".toList, .num d.planHonesty.2)]),
-    ("restDebtMin".toList, .num d.restDebtMin)]
+    ("restDebtMin".toList, .num d.restDebtMin),
+    ("impossibleUntil".toList,
+      .arr (d.impossibleUntil.val.map (fun t =>
+        .obj [("id".toList, .str t.1), ("shortMin".toList, .num t.2.1),
+          ("until".toList, .str (Field.renderDate t.2.2))]))),
+    ("underusedLevels".toList,
+      .arr (d.underusedLevels.val.map (fun t =>
+        .obj [("id".toList, .str t.1), ("energy".toList, .num t.2.1.val),
+          ("ci".toList, .num t.2.2.val)]))),
+    ("blockedDeps".toList,
+      .arr (d.blockedDeps.val.map (fun t =>
+        .obj [("id".toList, .str t.1),
+          ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))])))]
 
 /-- §7's answers, in `EmitWire.readPrio`'s own `{id, p}` shape. -/
 def priosJson (c : Planner.Capped (Id × Fin 8)) : JVal :=
@@ -1423,17 +1439,22 @@ theorem diagJson_of_an_untroubled_day :
           ("deferred".toList, .arr []), ("waiting".toList, .arr []), ("notes".toList, .arr []),
           ("droppedTail".toList, .arr []),
           ("planHonesty".toList, .obj [("planned".toList, .num 0), ("total".toList, .num 0)]),
-          ("restDebtMin".toList, .num 0)] := rfl
+          ("restDebtMin".toList, .num 0), ("impossibleUntil".toList, .arr []),
+          ("underusedLevels".toList, .arr []), ("blockedDeps".toList, .arr [])] := rfl
 
-/-- **And with something wrong with it**, so the three list shapes and `idsJson` are pinned at a
-value and not only at the empty list. -/
+/-- **And with something wrong with it**, so the list shapes and `idsJson` are pinned at a
+value and not only at the empty list — the three whole tuples too since W-35: a date, two
+levels and two deps, one of each spelling. -/
 theorem diagJson_carries_its_lists :
     diagJson { Planner.Diagnostics.empty with
         hot := ⟨[['a']], by decide⟩,
         impossible := ⟨[(['b'], 30)], by decide⟩,
         conflicts := ⟨[(['c'], ['d'])], by decide⟩,
         notes := ⟨[.paused], by decide⟩,
-        aCapacityLost := 7, restDebtMin := 12, planHonesty := (2, 5) }
+        aCapacityLost := 7, restDebtMin := 12, planHonesty := (2, 5),
+        impossibleUntil := ⟨[(['b'], 30, 739884)], by decide⟩,
+        underusedLevels := ⟨[(['e'], 4, 2)], by decide⟩,
+        blockedDeps := ⟨[(['f'], [.item ['g'], .event ['v']])], by decide⟩ }
       = .obj [("underused".toList, .arr []), ("aCapacityLost".toList, .num 7),
           ("hot".toList, .arr [.str ['a']]),
           ("impossible".toList,
@@ -1444,7 +1465,16 @@ theorem diagJson_carries_its_lists :
           ("notes".toList, .arr [.obj [("note".toList, .str "paused".toList)]]),
           ("droppedTail".toList, .arr []),
           ("planHonesty".toList, .obj [("planned".toList, .num 2), ("total".toList, .num 5)]),
-          ("restDebtMin".toList, .num 12)] := rfl
+          ("restDebtMin".toList, .num 12),
+          ("impossibleUntil".toList,
+            .arr [.obj [("id".toList, .str ['b']), ("shortMin".toList, .num 30),
+              ("until".toList, .str (Field.renderDate 739884))]]),
+          ("underusedLevels".toList,
+            .arr [.obj [("id".toList, .str ['e']), ("energy".toList, .num 4),
+              ("ci".toList, .num 2)]]),
+          ("blockedDeps".toList,
+            .arr [.obj [("id".toList, .str ['f']),
+              ("deps".toList, .arr [.str ['^', 'g'], .str "event:v".toList])]])] := rfl
 
 /-- **§7's answers go out in `EmitWire.readPrio`'s own `{id, p}` shape**, which is what lets a
 host send back the day it was given. -/
@@ -1522,7 +1552,10 @@ theorem priosJson_is_the_id_and_the_priority_of_every_pair (c : Planner.Capped (
       = .arr (c.val.map (fun p => .obj [("id".toList, .str p.1), ("p".toList, .num p.2.val)])) :=
   rfl
 
-/-- **`diagJson` is these twelve fields, for every `Diagnostics`.** -/
+/-- **`diagJson` is these twelve fields, for every `Diagnostics`** — the fork's twelve, first and
+unchanged — **then the three whole tuples W-35 added** (README gaps 2640 and 2743).  Re-proved
+with its statement WIDENED by the three keys (D5): the twelve entries are the ones this law
+always stated, byte for byte. -/
 theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
     diagJson d
       = .obj [("underused".toList, idsJson d.underused),
@@ -1542,7 +1575,19 @@ theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
           ("planHonesty".toList,
             .obj [("planned".toList, .num d.planHonesty.1),
               ("total".toList, .num d.planHonesty.2)]),
-          ("restDebtMin".toList, .num d.restDebtMin)] := rfl
+          ("restDebtMin".toList, .num d.restDebtMin),
+          ("impossibleUntil".toList,
+            .arr (d.impossibleUntil.val.map (fun t =>
+              .obj [("id".toList, .str t.1), ("shortMin".toList, .num t.2.1),
+                ("until".toList, .str (Field.renderDate t.2.2))]))),
+          ("underusedLevels".toList,
+            .arr (d.underusedLevels.val.map (fun t =>
+              .obj [("id".toList, .str t.1), ("energy".toList, .num t.2.1.val),
+                ("ci".toList, .num t.2.2.val)]))),
+          ("blockedDeps".toList,
+            .arr (d.blockedDeps.val.map (fun t =>
+              .obj [("id".toList, .str t.1),
+                ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))])))] := rfl
 
 /-- **`noteJson` writes every FIELD of every constructor, and not only the name.**
 `noteJson_names_the_eleven` pins the eleven names at eleven points; this pins the numbers and
@@ -1652,6 +1697,15 @@ theorem the_seam_carries_its_run_exactly_when_it_carries_its_facts (q : LogReq) 
     (q.seamFacts run).isSome = (q.seamRun run).isSome := by
   unfold LogReq.seamFacts LogReq.seamRun
   cases q.facts <;> rfl
+
+/-- **…and the run it carries is the one it was given, exactly when facts were asked for** (W-35
+track E, README gap 2849).  Written because re-verifying `LogReq.seamRun`'s check 9 row under the
+second pass (README gap 2578) found the law above ALONE: with its proof sorried nothing told the
+definition from `none`.  This is the definition's whole content, both directions. -/
+theorem the_seam_carries_the_run_it_was_given_exactly_when_asked (q : LogReq) (run : Seal.Run) :
+    q.seamRun run = some run ↔ q.facts = true := by
+  unfold LogReq.seamRun
+  cases q.facts <;> simp
 
 /-- **`CapWire.maxCandidates` and `Planner.maxCands` are one number** — README gap **1330**'s
 warning, stated for the first time.  It is `rfl`, so a diff that moves either has to move both or
@@ -1838,5 +1892,35 @@ theorem noteJson_writes_so_far (m : Nat) :
 running break's row (`Planner.breakRows`) spells the `place` the host sent, byte for byte. -/
 theorem placeOf_reads_the_word (p : BreakPlace) : placeOf? p.word = some p := by
   cases p <;> decide
+
+/-- **A batch row's members are its ids, in order, and every other kind has none** (W-35 track E,
+README gap 2849).  Re-verifying `batchOf`'s check 9 row under the second pass found
+`readKind_reads_back_every_kind_it_writes` ALONE: a law at every row index, whose proof, sorried,
+left nothing that told the definition from `[]`.  This is the definition at two kinds, computed. -/
+theorem batchOf_is_the_batchs_ids :
+    batchOf (.batch ⟨[['a'], ['b']], by decide⟩) = [.str ['a'], .str ['b']] ∧
+    batchOf .block = [] := by
+  decide
+
+/-- **`respondPlanner` answers a request's bytes** (W-35 track E, README gap 2849).  Re-verifying
+`respondPlanner`'s check 9 row under the second pass found
+`callPlanner_without_a_planner_section_is_callRows` ALONE: a law under two hypotheses, whose proof,
+sorried, left nothing that told the definition from a constant.  This is the definition at one
+request, `{"docs":[]}`, computed: an `ok` answer. -/
+theorem respondPlanner_answers_an_empty_request :
+    (match respondPlanner ['{', '"', 'd', 'o', 'c', 's', '"', ':', '[', ']', '}'] with
+     | .obj ((k, _) :: _) => k == ['o', 'k']
+     | _ => false) = true := by
+  decide
+
+/-- **What the FFI runs is `respondPlanner`'s answer, emitted** (W-35 track E, README gap 2849).
+Re-verifying `callPlanner`'s check 9 row under the second pass found
+`callPlanner_without_a_planner_section_is_callRows` ALONE, at both of its constants.  This is the
+definition's body restated, and it is the WEAKEST pin there is, chosen on a measurement: a value-level
+witness — the bytes `callPlanner` answers for the 11-byte request `{"docs":[]}` — was killed at the
+8 GB cap in 7 s (a `String` round trip through the kernel; AGENTS §5.10a's class), so the value is
+pinned one level down, at `respondPlanner_answers_an_empty_request`, and this joins the two. -/
+theorem callPlanner_is_the_emitted_answer (input : String) :
+    callPlanner input = String.ofList (jemit (respondPlanner input.toList)) := rfl
 end PlanWire
 end Tm

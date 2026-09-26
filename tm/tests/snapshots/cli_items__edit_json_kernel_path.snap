@@ -21,5 +21,5 @@ expression: json
     }
   ],
   "id": "a1",
-  "line": "- [ ] 2 30m Insurance claim for the bike est:45m loc:out due:2026-10-01  ^a1"
+  "line": "- [ ] 2 45m Insurance claim for the bike loc:out due:2026-10-01  ^a1"
 }

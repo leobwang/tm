@@ -9145,5 +9145,49 @@ theorem a_block_row_from_now_clears_a_break_row_as_W_30_wrote_it_is_refuted :
   revert hb
   decide
 
+/-! ############################################################################
+## W-35 (track E): the fork's three whole tuples, computed — README gaps 2640 and 2743
+############################################################################
+
+`Planner.Diagnostics` carried the fork's `impossible`, `underused` and `blocked` as a pair list
+and two id lists; fork `diagnose` pushes `(id, shortfall_min, until)`, `(id, energy, ci)` and
+`(id, deps)`, and `tm-core/src/emit.rs` prints the other components (`short by DATE`, `↓ slot 4,
+item 3`, `t5 blocked by t4`).  Since W-35 the day carries the three whole tuples beside them
+(`impossibleUntil`, `underusedLevels`, `blockedDeps`), and `Planner.dayDiagnostics_impossible_is_the_projection`
+and its two siblings say the old lists are their projections.  Computed here at the witnesses
+that already name each list, so each new writer is pinned at a value and not only at `[]`. -/
+
+set_option maxRecDepth 400000 in
+/-- **`^m1`'s IMPOSSIBLE tuple carries its date**: the census Wednesday, day 739,867 — the due date
+its grant reads (`pCandDue`'s), which `emit.rs` prints as `short by`.  The pair `impossible`
+already named is this tuple's projection, at the witness `the_day_names_its_first_impossible_item`
+pins it. -/
+theorem the_day_names_its_first_impossible_item_with_its_date :
+    (dayPlan theImpossibleRequest).diagnostics.impossibleUntil.val = [(['m','1'], 130000, 739867)] ∧
+    theImpossibleRequest.dayImpossibleUntil = [(['m','1'], 130000, 739867)] ∧
+    (dayPlan theImpossibleRequest).diagnostics.impossibleUntil.val.map (fun t => (t.1, t.2.1))
+      = (dayPlan theImpossibleRequest).diagnostics.impossible.val := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **`^m2`'s UNDERUSED tuple carries its two levels**: a level-4 slot, a `ci:2` item — the gap of
+two that set the row's flag, which `emit.rs` prints as `↓ slot 4, item 2`. -/
+theorem the_day_names_its_underused_slot_with_its_levels :
+    ((dayPlan theImpossibleRequest).diagnostics.underusedLevels.val.map
+        (fun t => (t.1, t.2.1.val, t.2.2.val))) = [(['m','2'], 4, 2)] ∧
+    (dayPlan theImpossibleRequest).diagnostics.underusedLevels.val.map Prod.fst
+      = (dayPlan theImpossibleRequest).diagnostics.underused.val := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **`^b1`'s BLOCKED tuple carries its dependency**: `after:^m2`, the one unsatisfied `after:` its
+facts carry, which `emit.rs` prints as `b1 blocked by m2`. -/
+theorem the_day_names_its_blocked_candidate_with_its_deps :
+    (dayPlan theWaitingAndBlockedRequest).diagnostics.blockedDeps.val
+      = [(['b','1'], [Field.Dep.item ['m','2']])] ∧
+    (dayPlan theWaitingAndBlockedRequest).diagnostics.blockedDeps.val.map Prod.fst
+      = (dayPlan theWaitingAndBlockedRequest).diagnostics.blocked.val := by
+  refine ⟨by decide, by decide⟩
+
 end PlannerWit
 end Tm
