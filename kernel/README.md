@@ -67529,7 +67529,7 @@ other way round: `^t3` (first in §7.4's key, by line order) due TOMORROW, `^t1`
 serves by DUE DATE, so `^t1` is granted today's 240 minutes and `^t3` tomorrow's 360; §8.2 step 5
 walks today's slots in KEY order and `^t3` takes all four.  `^t1`, owed today's capacity, is
 eligible at `slotFitRows` and dropped: `impossibleKept slotFitRows … = false` on a paying,
-`candsAgree` day (`PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes`).
+`candsAgree` day (PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes — refuted and renamed at W-36 under D60, which serves `^t1` first; see the W-36 track-K block).
 `PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day` is MOVED to the W-35
 block and re-proved there, same name and statement (W-33 proved it at `theTwoImpossibleRequest`,
 which now passes).
@@ -67558,10 +67558,10 @@ touches existing text the brief said to leave: the alternative was a file whose 
 | the_impossible_check_is_false_where_the_item_is_eligible_and_empty_where_it_is_proved | the check fails at `theImpossibleRequest` | REFUTED by D55 and renamed `PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved` (the new statement is the old one's negation, conjunct by conjunct) |
 
 Two `PlanCheck` laws had no owed clause and are false under D55 — refuted and renamed (gap 2802):
-`PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned`
+PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned
 (refutation `PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted`)
-and `PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`
-(refutation `PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`).
+and PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible (both renamed again
+at W-36 with D59's budget clause; see the W-36 track-K block) (refutation `PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted`).
 Their W-33 spellings stand in W-33's append-only table, allow-listed in `citations-allow.txt`
 section 3 at count 1 each.  **Gap 2803**: `reach-exempt.txt` GREW by one dated section
 (`Tm.PlanCheck.owedByItsGrant`, EXEMPT 1262 → 1263) — a proof-only predicate of the battery, which
@@ -69031,4 +69031,361 @@ unchanged: it fails.  Every one FAILED.
   reservations rather than property days, with a fixed P46 day beside it); no snapshot, latency
   band or corpus re-blessed; no memory bound raised; no external dependency; every exemption file
   the same size or smaller (reach 1,263 → 1,202; twins, fields, inputs, kernel-decide,
+  citations-allow unchanged).
+
+<!-- =====================================================================
+     Stage 6, run W-36, TRACK K — the owner's D60 (priority-0 ties among
+     IMPOSSIBLE items by due date, parity P51) and D59 (never dropped while
+     the day's budget can still be spent), then D58's kernel half (gap 2873,
+     parity P52).  Worktree `w36-k`, branch `w36-k` from `dd8b95b`.  Gap range
+     3000-3039 (this block uses 3000-3008); parity P51 and P52, both this
+     track's by allocation.
+     ===================================================================== -->
+
+## Stage 6 — W-36, track K: D60 (impossible ties by due date), D59 (a spent day may drop), and the what-if reads the host's grown facts
+
+**Parity P51 taken**: §8.2 step 5 orders two `p = 0` IMPOSSIBLE answers by their `until` (the grant's due date, or a floor's last day) and then their request position — §7.3's served order — and every `p = 0` impossible answer before every other `p = 0` answer; fork 4748911's `sorted_candidates` and `build_groups` order them by their place in the file, `(root_order, own_order)` (owner D60, README gap 2801; the mixed case is the campaign's reading, gap 3003)
+
+**Parity P52 taken**: §9.1's overtime what-if ranks the GROWN request — with the host's grown facts the extended item's `remaining` reaches §7.3's pass, so an item the extension makes HOT or IMPOSSIBLE, or one whose grant the grown need takes, is ranked as the day after `tm extend` ranks it; fork 4748911's `App::extend_drops` plans the extension `with_ranking` the reload's priorities (README gap 114; the campaign's call, gap 3005)
+
+### 0. What landed, in one paragraph each
+
+**D60 (step 1, P51).**  `Planner.rankedLe` — the key §8.2 step 5 sorts by — and `Planner.GroupKey.nums`
+— the key `build_groups` sorts its groups by — carry `Planner.Ranked.imp` after `p`.  At
+`PlannerWit.theReversedTwoImpossibleRequest` step 5 now serves `^t1` (due today) and not `^t3`
+(due tomorrow), which is the day the owner's row names.
+
+**D59 (step 2).**  `PlanCheck.impossibleKept` reads two things it did not: what the item's grant
+holds TODAY (`PlanCheck.todayAnswers`, `PlanCheck.owedByItsGrant`), and whether the day's budget can
+still be spent (`PlanCheck.budgetLeft`, over `Planner.remainingBudget`).  The spent day of gap 2800
+passes, a planted drop on it passes, and the check still bites on a planted drop where the budget is
+left.  **`hnoimp` does NOT come off the five lifts** — §2 says why, with the witness; the lifts carry
+D59's form of it (owed TODAY, and met with the budget left).
+
+**D58's kernel half (step 3, gap 2873, P52).**  `PlanWire.readOvertime` reads the host's
+`overtime.grown` (`PlanWire.readGrown`: `remaining` and `plannedMin`, each through
+`EmitWire.u32Within`, together through `Planner.mkGrown?`), and `Planner.overtimeDiff` plans the
+extended request with them (`Planner.PlanReq.growing`).  Over six 256-case runs of the new arm, the
+kernel answers 51 of 54 parity-P44 days as the shipped TUI answers them, and every day on which it
+differs from the shipped TUI (14 of 872) is one the grown facts re-ranked — P52's class, asserted by
+property.
+
+### 1. D60 — how the key changed, exactly
+
+Until W-36 `rankedLe a b` was `candKeyLe a.key b.key`: `natsLe` over
+`[notWall digit, p] ++ siteNums root ++ siteNums own ++ [ix]`.  It is now `natsLe` over
+
+    [notWall digit, p] ++ impNums x.imp ++ siteNums root ++ siteNums own ++ [ix]
+
+where `Planner.Ranked.imp x` is `some (until, ix)` exactly when `x.key.p = 0` and its answer's
+shortfall is positive (`Planner.Ranked.imp_eq_some_iff`), `until` being `Planner.answerUntil` — a
+floor's last day, else the grant's due date — and `Planner.impNums` writes `some (u, ix)` as
+`[0, u, ix]` and `none` as `[1, 0, 0]`.  So among `p = 0` answers: the impossible ones first, by
+date, then by request position (the order `Look.sortDueIx` served them in); every other answer one
+value, so the fork's order among them is untouched (`Planner.rankedLe_is_the_forks_off_the_impossible`).
+`Planner.GroupKey` gains the same component (`imp`, filled by `Planner.groupKeyOf`), so a group holding
+an impossible member is walked by that member's date.  `Planner.answerUntil` is the date's one reader:
+`Planner.PlanReq.dayImpossibleUntil` held the same `match` inline and now calls it.
+
+**The laws, over the new order** (D5): `Planner.rankedLe_impossible_by_until` (between two entries of
+one kind and one `p`, an entry at or before an impossible one is impossible too, dated no later, and at
+one date no later in the request), `Planner.PlanReq.an_earlier_due_impossible_item_ranks_first` (the
+same over `rankedCands`), `Planner.PlanReq.a_group_key_is_a_members` and
+`Planner.PlanReq.an_earlier_due_impossible_group_is_walked_first` (over the groups the cursor walks).
+`Planner.PlanReq.a_wall_ranks_before_a_task` and `Planner.PlanReq.a_lower_p_ranks_first` are re-proved
+with their statements unchanged, through `Planner.rankedLe_notWall` and `Planner.rankedLe_p`; they
+moved to the W-36 section, which paid line for line for D60's three definitions above check 9's pins.
+
+**The day.**  `PlannerWit.the_reversed_day_serves_the_earlier_due_impossible_item_first`: step 5 gives
+`^t1` today's four slots; `^t3`, owed nothing TODAY, gets none; `impossibleKept slotFitRows` is `true`
+on that paying `candsAgree` day.  The W-35 statement of the day is refuted by name
+(`PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes_is_refuted`), and
+`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`, which stood on it, is
+re-proved at the ATOMIC day (`PlannerWit.the_atomic_day_drops_the_impossible_item_its_grant_owes_today`:
+`^t1` atomic, ranked first, owed today, and dropped by step 5's contiguity clause, which
+`slotFitRows` does not read — gap 3000's second half).
+
+**The comparand.**  `tm/tests/planner_invariants.rs`'s W-36 block runs D60's key IN THE FORK, by
+property: both fork sorts read `root_order`/`own_order` and nothing else of a `with_ranking` day does,
+so `w36_d60_cands` rewrites those two fields (an impossible `p = 0` candidate gets `(0, until)` and
+`(0, request position)`, every other candidate's root moves one file down) and `w35_fork_plan` and the
+what-if days call it.  `send_order` is `kernel_capacity::send_order`'s sort, the kernel's request
+position, and `candidate_items` now reads it too.  The arm `the_kernel_serves_impossible_ties_by_due_date`
+asserts the kernel's work rows equal the D60 comparand's on every day and counts P51 days; the fixed
+`the_reversed_day_is_served_by_due_date_on_every_run` drives the reversed day on every run.
+
+### 2. D59 — the check restated, and why `hnoimp` stays
+
+`PlanCheck.impossibleKept el r d` is now: every listed impossible item that is eligible somewhere, is
+owed by its grant TODAY, and meets a day whose budget can still be spent, is assigned
+(`PlanCheck.impossibleKept_iff`).  Three definitions carry it:
+
+* `PlanCheck.todayAnswers r` — §7.3's pass over day 0 alone (`r.edfDays.take 1`), the same call
+  `Planner.PlanReq.candAnswers` makes over the whole lookahead;
+* `PlanCheck.owedByItsGrant r i` — the answers name `i` impossible and some such answer's day-0 twin
+  holds minutes (`PlanCheck.owedByItsGrant_eq_false_iff`).  Until W-36 it read the whole grant, so an
+  item whose grant held only later days was owed today (gap 3002 is the reading);
+* `PlanCheck.budgetLeft r d` — the day's Block and Batch rows from `now` are fewer than
+  `Planner.remainingBudget r`, the fold's own budget reader (§8.2 step 5's guard is `budget ≤ used`),
+  called and not re-derived.
+
+**What it answers.**  `PlannerWit.a_spent_day_passes_the_impossible_check`: the quiet census
+Wednesday with its budget spent and `^m2` owed today's 240 minutes passes, on the whole day, on
+`PlanCheck.withoutPast`'s and on a planted day that drops `^m2` (gap 2800's day, `false` until W-36).
+`PlannerWit.the_reversed_day_serves_the_earlier_due_impossible_item_first` passes (gap 2801's).  And
+the check bites: `PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item` (a planted
+drop of `^m2` where it is owed today and the budget is left FAILS, through
+`PlanCheck.impossibleKept_can_fail`, which now carries `hb`), and
+`PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item` on a produced day.
+
+**`hnoimp` does not come off, and cannot under any faithful reading of D59.**  The owner's row says
+the five lifts are proved without it.  `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`
+is a day every other hypothesis of the lifts without the two comparisons holds on — nothing assigned,
+nothing past, nothing running, the walls and the running record agree, the calendar plain — with the
+budget LEFT and a WAITING `^m2` owed today's 240 minutes: step 5 places no `[?]` item, the day assigns
+nothing, and the check is `false` on the whole day and from `now`; `PlannerWit.theQuietImpossibleRequest`
+is the same day for the two lifts that take `hotBeforeQueue` and `monotoneInRank` as hypotheses.  A `[?]` item is exactly what §8.3's "impossible never
+dropped" has to exempt and D59 does not, so the lifts carry D59's form of the hypothesis — "no listed
+item is eligible, owed today, AND met with budget left".  The five:
+`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`,
+`PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item`,
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item` and
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` (whose
+`hnoimp` is the census arm, which reads the budget since W-36).  Their five hypothesis-free forms stay
+refuted, re-aimed: two at `PlannerWit.theWaitingImpossibleRequest`, the two that take the comparisons at
+`PlannerWit.theQuietImpossibleRequest` (the quiet Wednesday with the same waiting `^m2`), and the census
+ceiling of seven at `PlannerWit.theCensusRequestWithAnImpossibleCandidate`, whose census is still
+eight.  Gap 3000.
+
+### 3. D58's kernel half — the what-if reads the host's grown facts (gap 2873)
+
+**What the kernel reads.**  `overtime` may carry `grown: {remaining, plannedMin, needMin}` — fork
+`PlanOverrides::apply`'s three facts, which `planwire::grown` computes with the functions
+`collect_candidates` derives the originals with.  `PlanWire.readGrown` reads `remaining` and
+`plannedMin` (absent `grown` is none; a width past the fork's `u32` is refused by name, `badOvertime
+remaining` / `badOvertime plannedMin`; a `grown` carried twice is `badOvertime grown`, the one input
+that reaches that name, because `Planner.mkGrown?`'s own refusal cannot fire behind the two width
+reads — `PlanWire.mkGrown?_accepts_what_the_width_reads_pass`).  `needMin` is NOT read (gap 3004).
+Nothing is derived (D34): `Planner.growCand` replaces a record's `remaining` and planned minutes and
+keeps every other fact (`Planner.growCand_keeps`), and `Planner.PlanReq.growing` rewrites every record
+the extension names and nothing else of the request (`Planner.PlanReq.growing_touches_only_the_candidates`,
+`Planner.PlanReq.mem_growing`); with none it is the request itself (`Planner.PlanReq.growing_none`).
+`Planner.overtimeDiff` gains the argument, and its three laws (`Planner.mem_overtime_drops`,
+`Planner.overtime_drops_ascend_in_id_order`, `Planner.overtimeDiff_of_an_unchanged_day`) are re-proved
+at every `g`.  `PlannerWit.the_hosts_grown_facts_reach_the_what_if` is the witness that the facts reach
+the day: the short run with a HOT `^m1` (remaining 50, planned 40) and two 60-minute items behind it —
+on the estimate alone the what-if moves `^b1` to 15:00 and ADDS `^b2`; with the host's `110`/`88` it
+gives `^m1` its 88 planned minutes at 15:00 and moves `^b1` to 16:00, adding nothing.
+
+**What it measures.**  The arm `the_kernel_answers_the_what_if_with_the_hosts_grown_facts` sends the
+facts exactly as the binary's encoder writes them and ASSERTS, on every day with a running block, that
+the kernel's `diff` equals the fork's full what-if (`PlanOverrides::extending` applied, the estimate
+grown, P46/P47 and D60 read as the base reads them) ranked by the kernel's OWN answer for the grown
+request (that request's `lookahead.grants`, which is the day's `candAnswers`), and that a day where it
+differs from the shipped TUI's what-if is a day the grown facts moved the rank view (`p`, class,
+`until`, shortfall).  Six runs of the arm at 256 cases — five before the fixed days below were added,
+the sixth the acceptance run on the committed tree:
+
+| run | what-ifs compared | re-ranked | P44 days | of them now the shipped TUI's | differ from the shipped TUI |
+|---|---:|---:|---:|---:|---:|
+| 1 | 145 | 32 | 4 | 4 | 2 |
+| 2 | 160 | 33 | 7 | 7 | 4 |
+| 3 | 159 | 28 | 10 | 10 | 0 |
+| 4 | 139 | 27 | 13 | 12 | 1 |
+| 5 | 128 | 27 | 11 | 11 | 4 |
+| 6 (committed tree) | 141 | 38 | 9 | 7 | 3 |
+
+**P44's own class is empty by assertion**: every day the kernel differs from the shipped TUI is a
+re-ranked day, and the three P44 days it differs on (one in run 4, two in run 6) are among them.  What remains is P52 —
+§7.3's pass over the grown request names the extended item (or an item due the same day, whose grant
+its grown need takes) HOT or IMPOSSIBLE, and step 5 serves it first; the shipped TUI's `with_ranking`
+keeps the reload's `p`.  That is gap 114's cost, from the kernel's side: `tm extend` writes
+`est:` = remaining + the extension, so the next load ranks the grown need exactly as the kernel's
+what-if does, and the fork's preview is the one that disagrees with the day that follows.  Two fixed
+days are driven on every run: `a_p44_day_is_answered_as_the_shipped_tui_answers_it_on_every_run` (a
+P44 day, not re-ranked: without `grown` the kernel answers the estimate's, with it the shipped TUI's)
+and `a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run` (a P52 day), both drawn by the
+generator and spelled in the test.  `parity.txt`'s P44 row is CORRECTED to this measurement (D54: the
+number stays, the row states what it now is).
+
+### 4. Laws restated (D5) — old, new, and whether the new implies the old
+
+| law | old | new | new ⇒ old? |
+|---|---|---|---|
+| `PlanCheck.impossibleKept` (the check) | eligible ∧ owed(whole grant) ⇒ assigned | eligible ∧ owed TODAY ∧ budget left ⇒ assigned | a definition, restated by the owner (D59); its W-35 laws are refuted at the spent day and at the reversed day, below |
+| `PlanCheck.impossibleKept_iff`, `…_iff_the_owed_items_are_assigned`, `…_of_no_eligible_impossible_item`, `…_of_nothing_assigned_iff`, `PlanCheck.impossible_subject_iff`, `PlanCheck.impossible_kept_from_the_battery`, `PlanCheck.owedByItsGrant_eq_false_iff` | spelled over the W-35 check | spelled over D59's (each gains the budget clause or the day-0 answers) | characterisations of the new definition; they restate, not strengthen |
+| `PlanCheck.impossibleKept_can_fail` | owed ⇒ the planted drop fails | owed ∧ budget left at the planted day ⇒ it fails | no; the old form is REFUTED (`PlannerWit.impossibleKept_can_fail_as_W_35_wrote_it_is_refuted`) |
+| the five lifts (§2) | `hnoimp`: eligible ⇒ ¬owed | `hnoimp`: eligible ∧ owed today ⇒ budget spent | no: the hypothesis reads the day-0 grant and the budget, the conclusion is D59's check; neither whole statement is claimed to imply the other, and the hypothesis-free forms stay refuted |
+| an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned | renamed `PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned` (gains `budgetLeft`) | — | no; old REFUTED (`PlannerWit.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned_is_refuted`) |
+| impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible | renamed `PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left` | — | no; old REFUTED (`PlannerWit.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_is_refuted`) |
+| `Planner.PlanReq.a_short_answer_has_an_until` | over the inline `match` | over `Planner.answerUntil` | yes — the same term, now named |
+| `Planner.mem_overtime_drops`, `Planner.overtime_drops_ascend_in_id_order`, `Planner.overtimeDiff_of_an_unchanged_day` | over `overtimeDiff r i b` | at every `g` | yes — `g = none` is the old statement (`Planner.PlanReq.growing_none`) |
+| `PlanWire.readOvertime_accepts_an_extension`, `PlanWire.overtimeJson_answers_the_what_if`, `PlanWire.the_overtime_keys_removed_is_overtime_drops`, `PlanWire.runPlanner_answers_the_day` | a pair `(id, blocks)` | a triple with the grown facts | yes at `none` (the old request reads as `(id, blocks, none)`) |
+| PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes | step 5 drops `^t1` | `PlannerWit.the_reversed_day_serves_the_earlier_due_impossible_item_first` | no; old REFUTED by D60 (`PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes_is_refuted`) |
+| `PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`, `PlannerWit.the_census_reaches_eight_on_an_unassigned_day`, `PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item` | at the spent day / a `ci:5` `^m1` | at the WAITING `^m2` / a waiting `ci:2` `^m1` | re-aimed, same claims; the spent day's own now PASSES (`PlannerWit.a_spent_day_passes_the_impossible_check`) |
+| `PlannerWit.the_overtime_what_if_moves_the_tail` | `overtimeDiff … 1` | `overtimeDiff … 1 none` | yes — the same value |
+
+### 5. Gaps
+
+**Gap 3000 — `hnoimp` does not come off the five lifts under D59.**  1. *What.*  The owner's D59
+row says the five lifts are proved without `hnoimp`; they carry D59's form of it.  2. *Why.*
+`PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`: with every other hypothesis true and
+the budget left, a WAITING item owed today is never in step 5's order, so the day drops it and the
+check fails at `permissive`.  At a faithful eligibility the atomic day fails too
+(`PlannerWit.the_atomic_day_drops_the_impossible_item_its_grant_owes_today`): `slotFitRows` reads the
+energy clause and not step 5's contiguity clause.  3. *Cost.*  The lifts discharge `impossibleKept`
+only where no listed item is eligible, owed today and met with budget left; `grep -n hnoimp
+PlanCheck.lean` still names the five.  4. *Clears it.*  The owner: exempt a `[?]` item from §8.3's
+"impossible never dropped" (it is waiting on someone else by definition), or say eligibility reads
+§8.2 step 5's whole filter; either is a restatement, not a proof.
+
+**Gap 3001 — D60 costs §8.3's monotone rank on the days it acts.**  1. *What.*
+`PlanCheck.monotoneInRank` — two siblings of equal `rootPrio` and `ci`, the earlier line assigned
+whenever the later is — is `false` at `slotFitRows` on the reversed day
+(`PlannerWit.the_monotone_rank_check_fails_where_D60_orders_by_date`: `^t3` written first, `^t1` served
+first), the one of the eleven that fails there.  2. *Why.*  D60 orders two `p = 0` impossible siblings
+by date, and the check orders them by line.  3. *Cost.*  `planOk` is `false` on a P51 day whose two
+items share a document and a `ci`; no proved law changed (the lifts that conclude `monotoneInRank` are
+on days that assign nothing).  4. *Clears it.*  A restatement of the rank check to exempt a pair D60
+orders by date — the owner's, since §8.3 is the spec's; the goal `plan_is_monotone_in_rank` already
+stands refuted in `Goals.lean` for other causes.
+
+**Gap 3002 — "owed TODAY" is the campaign's reading.**  1. *What.*  `PlanCheck.owedByItsGrant` reads
+§7.3's pass over day 0 alone.  2. *Why.*  D59's text ("the budget is the user's own limit on the day")
+and D60's row ("its grant holds the day's minutes") are both about today; a whole-horizon reading
+leaves `^t3` owed today at the reversed day, where its grant is tomorrow's, and the check then fails the
+very day D60 asks for.  3. *Cost.*  An item whose grant holds only later days may be dropped today and
+the check passes; `the_census_reaches_eight_on_an_unassigned_day` and the waiting request were re-aimed
+at `ci:2` items owed today for this reason.  4. *Clears it.*  The owner confirms or restates.
+
+**Gap 3003 — D60's mixed case is the campaign's call.**  1. *What.*  Every `p = 0` impossible answer
+sorts before every other `p = 0` answer.  2. *Why.*  Ordering the impossible ones by date while leaving
+the rest in line order is not transitive (two impossible answers and one other form a cycle), and of
+the two total orders this is the one under which a `p = 0` item served later by §7.3 never takes a slot
+an impossible item's grant was given today.  3. *Cost.*  A HOT, not-impossible item written above an
+impossible one is served after it; the P51 census counts every day the order moved.  4. *Clears it.*
+The owner, if the other total order is wanted.
+
+**Gap 3004 — the host's `needMin` is sent and not read.**  1. *What.*  `planwire::grown` sends three
+facts and the kernel reads two.  2. *Why.*  No reader of the day reads a need but §7.3's pass, which
+derives its own from `remaining` by R1's ceiling (parity P7); reading the host's `round(minutes × 1.3)`
+too would be a second definition of one number (§5.3), and W-35 measured that `need_min` reaches
+nothing in a `with_ranking` day.  3. *Cost.*  One key on the wire nothing reads — the input-side shape
+`planwire.rs`'s header warns about.  4. *Clears it.*  The host stops sending it (a `planwire` edit and
+its test), or a reader appears.
+
+**Gap 3005 — P52 is the campaign's call.**  1. *What.*  The grown what-if re-ranks (§3).  2. *Why.*
+Gap 114 names the shipped preview's stale ranking as the defect, and `tm extend` writes the grown `est:`
+so the next load ranks the grown need; planning the grown day with the reload's answers would need a
+second entry to `dayPlan` taking answers it did not compute.  3. *Cost.*  14 of 872 generated what-ifs
+answer differently from the shipped TUI's preview (§3).  4. *Clears it.*  The owner, if the preview
+should keep the reload's ranking; at R3 the TUI's `→ drops:` line reads the kernel's.
+
+**Gap 3006 — the stretch goals were not reached.**  1. *What.*  Gaps **551** (the cut's kept breaks),
+**550** (the reservation row's `×` multiplier) and **2870** (a routine row's `⚠`) are untouched.
+2. *Why.*  Time: check 9's mutations of this step's definitions found two ALONE verdicts (gap 3008)
+and a reader defect (gap 3007), and those came first.  3. *Cost.*  R3 still owes all three, as their
+own paragraphs price them.  4. *Clears it.*  The next track-K step, before R3.
+
+**Gap 3007 — check 9's pin-site reader stopped a name at its first `?`.**  1. *What.*
+`mutate.py`'s `NAMED_SITE` read `Planner.lean:8639 mkGrown?_refuses_a_remaining_past_the_width` as
+`… mkGrown` and reported the row DRIFTED on the tree that wrote it, so the gate refused every other
+mutation run in the clone (driven: §7).  2. *Why.*  No row had been pinned by one of the library's
+209 `mkX?_…` theorems before `mkGrown?`'s.  3. *Cost.*  A false DRIFTED fails check 9 with no defect
+behind it.  4. *Repair taken.*  `?` and `!` join the name class, with a comment saying why; the
+roster re-reads 0 drifted rows after it.
+
+**Gap 3008 — the group walk's sort was pinned by nothing.**  1. *What.*  `Planner.PlanReq.buildGroups`
+sorts `build_groups`' groups by `Planner.GroupKey` (pre-baseline, never mutated); W-36's mutations of
+`Planner.GroupKey.nums` to `[]` and of `Planner.groupKeyOf` to a constant came back ALONE — only the
+new `Planner.PlanReq.an_earlier_due_impossible_group_is_walked_first`'s proof told them apart.
+2. *Why.*  A batch's buckets keep §7.4's order, so the sort moves a group only when a bucket split off
+one batch ranks after a later batch's leader, and no witness drew that day.  3. *Cost.*  A wrong group
+key — the half of D60 that walks groups — could have shipped with every check green.  4. *Repair
+taken.*  `PlannerWit.the_group_walk_is_sorted_where_a_split_bucket_ranks_late` (a split batch whose raw
+walk is `^t3`, `^t2`, `^t1` and whose sorted walk and day are `^t3`, `^t1`, `^t2`); the re-run pins both.
+
+**Closed:** **2873** (the what-if reads the host's grown facts), **2680** (it read the running estimate
+and never `extra_min` — D58 answered it with the host's facts), **2801** (D60), and **2800** as far as
+D59 reaches (the spent day passes; what it does not reach is gap 3000).
+
+### 6. Behaviour rows — what the user sees at R3
+
+1. **Two impossible items**: the one due sooner is scheduled first, whatever their order in the file;
+   today the fork schedules the one written first (P51).
+2. **"x extend" on a running item whose extra minutes make it (or a same-day item) impossible**: the
+   preview drops what the extended day will drop; today the fork's preview keeps the reload's ranking
+   (P52).  On every other day the preview is the fork's, now including the extended item's grown
+   commitment (P44's class closed).
+3. **Nothing else moves**: the planner's day is the fork's on every day with no `p = 0` impossible
+   answer, and the what-if is unchanged for a running item that is not a candidate.
+
+### 7. D40 — the definitions this step added or changed
+
+**Check 9 owed 31 definitions** at this step's first gate run (18 new; 13 whose bodies changed —
+ten whose rows went STALE, and `Planner.rankedLe`, `Planner.GroupKey.nums` and `Planner.groupKeyOf`,
+pre-baseline and never mutated before), two more when the group-sort witness added its fixtures, and
+one drifted row, `PlannerWit.reversedImpossibleCands`, whose pin site's
+theorem D60 renamed (re-verified and rewritten by `mutate.py --verify --write --only`).  Each was
+mutated in one of ten clones of this tree (`git clone --shared` at `dd8b95b`, the working files and
+the built `.lake` copied over), capped at 16 GB, and the rows merged back by key; the shared tree was
+never mutated and no `.mutate-in-flight` was left in any clone.  Two runs, because the first found
+three things:
+
+* **Two ALONE verdicts** (fatal): `Planner.GroupKey.nums` at `default` and `[]`, and
+  `Planner.groupKeyOf` at `⟨0, none, none, none⟩` — only the new
+  `Planner.PlanReq.an_earlier_due_impossible_group_is_walked_first`'s proof told them from the
+  constant (gap 3008).  Re-run after `PlannerWit.the_group_walk_is_sorted_where_a_split_bucket_ranks_late`:
+  both PINNED, `… then PlannerWit.lean:9407 the_group_walk_is_sorted_where_a_split_bucket_ranks_late`.
+* **One INVALID**: `Planner.WfGrown := default`, an error inside the declaration — a type abbrev with no
+  declared type has no constant.  Its header now says `: Type` (the constant is then `PUnit`); re-run:
+  PINNED at `mkGrown?`.
+* **A false DRIFTED** that refused every other run in its clone: gap 3007, repaired in `mutate.py`.
+
+**Final: 404 new or changed since `86c4dc6`, 404 rostered, 0 owed** (135 unfoldable, 82 witness
+fixtures, 29 pinned by nothing — unchanged from `dd8b95b`'s 29 — 1 literal).  Every non-fixture row
+this step wrote is PINNED; of its twelve `PlannerWit` fixture rows, the eight whose type has no
+constant are UNFOLDABLE (the declared witness-fixture exemption), and the four that have one
+(`PlannerWit.reversedImpossibleCands`, `PlannerWit.atomicReversedCands`, `PlannerWit.grownRunCands`,
+`PlannerWit.splitBatchCands`) are each pinned by a `decide` its constant falsifies.
+
+**The Rust this step added — seven plants in a clone** (`rclone`), each a body replaced by a constant,
+its test run, the file restored byte for byte (`cmp`), and the clone's `git status --porcelain`
+identical before and after (the 14 working files): `w36_grown_request` → the request unchanged:
+FAILS `a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run`; `w36_rank_view` → empty:
+FAILS it; `w36_fork_whatif` → estimate-only: FAILS `a_p44_day_is_answered_as_the_shipped_tui_answers_it_on_every_run`;
+`w36_is_impossible_tie` → `false`, `w36_d60_cands` → the identity, `w36_is_p51` → `false`: each FAILS
+`the_reversed_day_is_served_by_due_date_on_every_run`.  **`send_order` → the identity SURVIVED** the
+whole suite at 64 cases and the P51 arm at 256: the request and the D60 comparand both read it, so
+every comparison stayed consistent.  `send_order_is_the_forks_compute_order` pins it on a day whose
+file order is not the served order, and the plant FAILS it.
+
+### 8. Acceptance, capped, on the tree committed below
+
+* **`check.sh` 14 of 14 ok** (3 m 36 s): build; totality; axiom audit **5,601** theorems (5,560 at
+  `dd8b95b`); `Negative.lean` rejected; the FFI 95; corpus 29/37 and 4/5; stage goals **6** (no goal
+  added or discharged); prose citations 0 unresolved, 0 allow entries unused, the allow-list
+  unchanged (45,299 at `dd8b95b`; this block adds its own); check 9 **404 rostered, 0 owed** (381 at `dd8b95b`; 29 pinned by nothing, unchanged);
+  parity **P1-P52, next free P53**; twins 3,168 bodies, 0 UNANSWERED; reach 1,185 reachable,
+  **1,201 exempt** (1,202 at `dd8b95b` — `Look.Cand.withPlan` left by property), 0 UNANSWERED;
+  fields 15 of 15; inputs 32 of 36 read, 4 exempt (none went stale: the grown facts are the
+  `overtime` object's, not a decoded record field, and `PlanOverrides.extraMin` is still read by
+  nothing); 86 modules replayed.  Every `dd8b95b` figure above was re-measured on a clean clone of
+  `dd8b95b` before this step used it, and each reproduced.
+* **`cargo test --workspace`, THREE runs on the committed tree**: **1,522 passed / 0 failed /
+  10 ignored across 90 result lines, each** (7 m 27 s, 7 m 19 s, 7 m 33 s; load 1.0-1.6), `git status
+  --porcelain` identical before and after every run — no proptest seed was written.
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16, `cli_latency`
+  6 of 6, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9, `planner_invariants`
+  **23 of 23** (the W-36 census: 280 cases, P51 days 210, on 88 of them the SHIPPED fork's work rows
+  differ from the D60 comparand's and on all 210 the kernel's equal the comparand's; the grown
+  census is §3's row 6; W-34's 146 what-ifs and W-35's 478 assigned rows, unchanged in kind).
+* No predicate, assertion, floor or generator weakened; no snapshot, fixture, latency band or corpus
+  re-blessed; no memory bound, `maxHeartbeats` or `maxRecDepth` raised — the new and changed
+  witnesses use the file's own `maxRecDepth 400000`, and each of the twelve `PlannerWit` witnesses
+  this step added or changed, and `PlanWire`'s nine new laws, was re-checked in a scratch file under
+  an 8 GB cap with `timeout 120` (0.16-1.91 s, at most 1.06 GB); no new dependency; every exemption
+  file the same size or smaller (reach 1,202 → 1,201; twins, fields, inputs, kernel-decide and
   citations-allow unchanged).

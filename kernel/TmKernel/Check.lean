@@ -6954,10 +6954,10 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.dayPlan_hot
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
-#print axioms Tm.PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned
+#print axioms Tm.PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
 #print axioms Tm.PlanCheck.impossible_has_no_subject_of_nothing_eligible
 #print axioms Tm.PlanCheck.impossible_subject_iff
-#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible
+#print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left
 #print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item
 #print axioms Tm.PlannerWit.the_day_names_no_impossible_item_is_refuted
@@ -7160,7 +7160,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted
 #print axioms Tm.PlannerWit.the_restated_check_bites_on_a_planted_drop_of_an_owed_item
-#print axioms Tm.PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes
+#print axioms Tm.PlannerWit.the_reversed_day_serves_the_earlier_due_impossible_item_first
 
 /- ================================================================================
    APPENDED 2026-09-26: W-35 track K, D57 -- the running break (P45), overtime (P46) and
@@ -7246,3 +7246,51 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.respondPlanner_answers_an_empty_request
 #print axioms Tm.PlanWire.callPlanner_is_the_emitted_answer
 #print axioms Tm.EditVal.rendered_is_the_tokens_bytes
+-- APPENDED 2026-09-27 (stage 6, run W-36, track K; README gaps 3000-3039): D60 -- IMPOSSIBLE
+-- ties at p = 0 by due date (parity P51) -- and D59 -- never dropped while the day's budget can
+-- still be spent.  Three lines above were RENAMED in place with the theorems they audit (W-36):
+-- PlanCheck's failure law and subject law gained the budget clause (their W-35 forms are refuted
+-- in PlannerWit's W-36 block), and PlannerWit's reversed-day witness states the D60 day.
+#print axioms Tm.Planner.rankedLe_notWall
+#print axioms Tm.Planner.rankedLe_p
+#print axioms Tm.Planner.natsLe_append_same
+#print axioms Tm.Planner.natsLe_of_append
+#print axioms Tm.Planner.Ranked.imp_eq_some_iff
+#print axioms Tm.Planner.Ranked.imp_isSome
+#print axioms Tm.Planner.impNums_le_some
+#print axioms Tm.Planner.rankedLe_impossible_by_until
+#print axioms Tm.Planner.rankedLe_is_the_forks_off_the_impossible
+#print axioms Tm.Planner.PlanReq.an_earlier_due_impossible_item_ranks_first
+#print axioms Tm.Planner.minGroupKey_mem
+#print axioms Tm.Planner.PlanReq.a_group_key_is_a_members
+#print axioms Tm.Planner.PlanReq.an_earlier_due_impossible_group_is_walked_first
+#print axioms Tm.PlannerWit.the_reversed_day_drops_the_impossible_item_its_grant_owes_is_refuted
+#print axioms Tm.PlannerWit.a_spent_day_passes_the_impossible_check
+#print axioms Tm.PlannerWit.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned_is_refuted
+#print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_is_refuted
+#print axioms Tm.PlannerWit.impossibleKept_can_fail_as_W_35_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_atomic_day_drops_the_impossible_item_its_grant_owes_today
+#print axioms Tm.PlannerWit.the_monotone_rank_check_fails_where_D60_orders_by_date
+-- W-36 track K, gap 2873 (D58's kernel half): the what-if reads the host's grown facts.
+#print axioms Tm.Planner.mkGrown?_refuses_a_remaining_past_the_width
+#print axioms Tm.Planner.mkGrown?_refuses_planned_minutes_past_the_width
+#print axioms Tm.Planner.mkGrown?_accepts
+#print axioms Tm.Planner.planFacts_wf_with_plannedMin
+#print axioms Tm.Planner.growCand_remaining
+#print axioms Tm.Planner.growCand_plannedMin
+#print axioms Tm.Planner.growCand_keeps
+#print axioms Tm.Planner.PlanReq.growing_none
+#print axioms Tm.Planner.PlanReq.growing_touches_only_the_candidates
+#print axioms Tm.Planner.PlanReq.mem_growing
+#print axioms Tm.PlanWire.readGrown_of_an_absent_key
+#print axioms Tm.PlanWire.readGrown_accepts_the_hosts_facts
+#print axioms Tm.PlanWire.readGrown_refuses_a_remaining_past_the_width
+#print axioms Tm.PlanWire.readGrown_refuses_planned_minutes_past_the_width
+#print axioms Tm.PlanWire.readGrown_refuses_a_grown_that_is_not_an_object
+#print axioms Tm.PlanWire.readOvertime_carries_the_grown_facts
+#print axioms Tm.PlanWire.the_grown_refusals_spell_themselves
+#print axioms Tm.PlanWire.readGrown_refuses_a_grown_carried_twice
+#print axioms Tm.PlanWire.mkGrown?_accepts_what_the_width_reads_pass
+#print axioms Tm.PlannerWit.the_hosts_grown_facts_reach_the_what_if
+-- W-36 track K, D40 (README gap 3008): the group walk's sort, which nothing pinned until this step.
+#print axioms Tm.PlannerWit.the_group_walk_is_sorted_where_a_split_bucket_ranks_late

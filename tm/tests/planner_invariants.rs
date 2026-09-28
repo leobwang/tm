@@ -1336,13 +1336,9 @@ impl World {
         let cands = self.candidates();
         // `kernel_capacity::send_order`: the fork's `priority::compute` sort, so
         // the kernel's stable sort by due date serves a date's deadlines in the
-        // fork's order.
-        let mut order: Vec<usize> = (0..cands.len()).collect();
-        order.sort_by(|&a, &b| {
-            let (ca, cb) = (&cands[a], &cands[b]);
-            (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
-                .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
-        });
+        // fork's order.  One spelling of it here since W-36: `send_order`, which
+        // D60's comparand reads too (the kernel's request position).
+        let order = send_order(&cands);
         order
             .iter()
             .map(|&i| {
@@ -2844,9 +2840,11 @@ proptest! {
             let ov = planner::PlanOverrides::new().extending(&a.id, bm);
             // W-35 (D57): the what-if days read the kernel's P46/P47 rule as the base does.
             let rt = w35_p46_state(&w, &rt);
-            let mut alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&cvec, &ps));
+            // W-36 (D60, parity P51): the what-if days run D60's key as the base does.
+            let dvec = w36_d60_cands(&cvec, &ps);
+            let mut alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&dvec, &ps));
             let mut alt_full = planner::plan(
-                &w.input(&rt, w.now).with_ranking(&cvec, &ps).with_overrides(&ov),
+                &w.input(&rt, w.now).with_ranking(&dvec, &ps).with_overrides(&ov),
             );
             w35_p47_day(&w, &mut alt_est);
             w35_p47_day(&w, &mut alt_full);
@@ -3545,7 +3543,9 @@ fn w35_fork_plan(
     ps: &[Prio],
 ) -> DayPlan {
     let st2 = w35_p46_state(w, st);
-    let mut d = planner::plan(&w.input(&st2, w.now).with_ranking(cvec, ps));
+    // W-36 (D60, parity P51): the fork runs D60's key through its own two order fields.
+    let dvec = w36_d60_cands(cvec, ps);
+    let mut d = planner::plan(&w.input(&st2, w.now).with_ranking(&dvec, ps));
     let is46 = w35_is_p46(w, st);
     if is46 {
         w35_p46_row(w, &mut d);
@@ -4230,4 +4230,580 @@ proptest! {
             c[10]
         );
     }
+}
+
+// ===========================================================================
+// **W-36 (track K): D60 — IMPOSSIBLE ties at `p = 0` go by DUE DATE (parity P51)**
+//
+// The owner's D60 (README gap 2801): every impossible item is HOT (`p = 0`), fork
+// `sorted_candidates`/`build_groups` break ties by `(root_order, own_order)` — its place in the
+// file — while §7.3's pass served them by due date, so the item whose grant held the day's
+// minutes could be dropped for one whose grant is tomorrow's. The kernel's step-5 key carries
+// D60's component since W-36 (`Planner.Ranked.imp`): a `p = 0` answer with a positive shortfall
+// sorts by its `until` and then its request position, before every other `p = 0` answer.
+//
+// **The comparand runs D60's key in the FORK, by its property and never by a list.** Both fork
+// sorts read the candidate's own `root_order`/`own_order`, and nothing else of the fork's
+// `with_ranking` day reads them (its §7 pass, which uses `own_order` as an EDF tie-break, is
+// bypassed), so `w36_d60_cands` rewrites those two fields and changes nothing else: an impossible
+// `p = 0` candidate gets `root_order = (0, until)` and `own_order = (0, index)`, every other
+// candidate's `root_order` moves one file down — a uniform shift, which keeps the fork's order
+// among them. `w35_fork_plan` and the what-if days call it, so every earlier arm compares the
+// kernel with the fork as D60 reads it; on a day with no `p = 0` impossible candidate the shift
+// is uniform and the day is `planner::plan`'s exactly.
+// ===========================================================================
+
+/// **A `p = 0` answer with a positive shortfall** — the kernel's D60 condition
+/// (`Planner.Ranked.imp`: `key.p = 0 ∧ 0 < shortfall`), read off the kernel's own §7 answer.
+fn w36_is_impossible_tie(p: &Prio) -> bool {
+    p.p == 0 && p.shortfall_min_exact.num > 0
+}
+
+/// **The order the request carries the candidates in** — `kernel_capacity::send_order`, the
+/// fork's `priority::compute` sort `(no due last, due, own_order, index)`.  It is the kernel's
+/// REQUEST POSITION, which D60's key breaks an `until` tie by (`Look.sortDueIx`'s order), so
+/// the comparand reads it rather than the collection index — a floor answer (no due) is sent
+/// after every dated one, and so ranks after a dated impossible item of the same date.
+fn send_order(cands: &[Candidate]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..cands.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (ca, cb) = (&cands[a], &cands[b]);
+        (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
+            .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
+    });
+    order
+}
+
+/// **P51's comparand candidates** — see the block comment. The `until` of an impossible answer
+/// is the date its capacity was summed to (the grant's due date, or a floor's last day), which
+/// is `Planner.answerUntil`'s; an answer with none keeps the date's floor, `0`.  The tie-break
+/// is the candidate's REQUEST position (`send_order`), as the kernel's.
+fn w36_d60_cands(cvec: &[Candidate], ps: &[Prio]) -> Vec<Candidate> {
+    let mut pos = vec![0usize; cvec.len()];
+    for (k, &i) in send_order(cvec).iter().enumerate() {
+        pos[i] = k;
+    }
+    cvec.iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let mut d = c.clone();
+            let tie = ps.get(i).filter(|p| p.id == c.id).is_some_and(w36_is_impossible_tie);
+            if tie && !c.is_wall {
+                let until = ps[i].until.map_or(0, |u| {
+                    usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0)
+                });
+                d.root_order = (0, until);
+                d.own_order = (0, pos[i]);
+            } else {
+                d.root_order = (c.root_order.0.saturating_add(1), c.root_order.1);
+            }
+            d
+        })
+        .collect()
+}
+
+/// **P51, by its property**: the fork's §7.4 order (`sorted_candidates` over the candidates as
+/// collected) and D60's (the same function over `w36_d60_cands`) differ. Counted, not asserted:
+/// the comparand runs D60's key on every day, so this only says which days it changed.
+fn w36_is_p51(cvec: &[Candidate], ps: &[Prio]) -> bool {
+    let dvec = w36_d60_cands(cvec, ps);
+    let a: Vec<&str> = priority::sorted_candidates(ps, cvec).iter().map(|c| c.id.as_str()).collect();
+    let b: Vec<&str> = priority::sorted_candidates(ps, &dvec).iter().map(|c| c.id.as_str()).collect();
+    a != b
+}
+
+/// `[cases, days with a kernel §7 answer, P51 days, P51 days whose SHIPPED fork's assigned
+/// rows differ from the D60 comparand's, P51 days whose kernel rows equal the comparand's]`.
+static W36_CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+
+/// The Block/Batch rows of a day from `now` on, as `(start, stop, sorted items)`.
+fn w36_work_rows(d: &DayPlan, now: DateTime<Tz>) -> Vec<(i64, i64, Vec<String>)> {
+    d.segments
+        .iter()
+        .filter(|s| s.kind.is_work() && s.start >= now && !s.flags.current)
+        .map(|s| {
+            let mut it: Vec<String> = s.items().iter().map(ToString::to_string).collect();
+            it.sort();
+            (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end), it)
+        })
+        .collect()
+}
+
+/// The kernel's Block/Batch rows from `now` on, in the same shape.
+fn w36_kernel_work_rows(plan: &Value, now_sec: i64) -> Vec<(i64, i64, Vec<String>)> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| (s["kind"] == "block" || s["kind"] == "batch")
+            && s["start"].as_i64().unwrap_or(-1) >= now_sec
+            && s["flags"]["current"] != true)
+        .map(|s| {
+            let mut it: Vec<String> = match s["kind"].as_str() {
+                Some("batch") => s["batch"].as_array().map(Vec::as_slice).unwrap_or_default()
+                    .iter().filter_map(|v| v.as_str().map(ToString::to_string)).collect(),
+                _ => s["item"].as_str().map(|x| vec![x.to_string()]).unwrap_or_default(),
+            };
+            it.sort();
+            (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1), it)
+        })
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **D60 on every generated day, by value.** The kernel's work rows from `now` equal the
+    /// D60 comparand's (the fork running D60's key), and on a P51 day — where D60 moved the
+    /// order — the SHIPPED fork's rows are counted where they differ: that difference is the
+    /// registered divergence, and the kernel is on the comparand's side of it.
+    #[test]
+    fn the_kernel_serves_impossible_ties_by_due_date(case in case_strategy()) {
+        let w = build(&case);
+        let plan = match kernel_plan(&w.plan_request()) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let cvec = w.candidates();
+        let Some(ps) = kernel_prios(&plan, &cvec) else {
+            W36_CENSUS.lock().expect("census")[0] += 1;
+            return Ok(());
+        };
+        let now_sec = rowwire::kernel_sec(w.now);
+        let d60 = w35_fork_plan(&w, &w.state, &cvec, &ps);
+        let k = w36_kernel_work_rows(&plan, now_sec);
+        let c = w36_work_rows(&d60, w.now);
+        prop_assert_eq!(&k, &c, "§8.2 step 5 differs from the D60 comparand");
+        let p51 = w36_is_p51(&cvec, &ps);
+        let mut shipped_differs = false;
+        if p51 {
+            let shipped = planner::plan(&w.input(&w35_p46_state(&w, &w.state), w.now)
+                .with_ranking(&cvec, &ps));
+            shipped_differs = w36_work_rows(&shipped, w.now) != c;
+        }
+        let row = {
+            let mut t = W36_CENSUS.lock().expect("census");
+            t[0] += 1;
+            t[1] += 1;
+            t[2] += u64::from(p51);
+            t[3] += u64::from(shipped_differs);
+            t[4] += u64::from(p51 && k == c);
+            *t
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if row[0] >= generated {
+            // **Floors** (AGENTS §9.2): the D60 order was exercised, and it was VISIBLE — a day
+            // where the shipped fork's rows differ from the comparand's is a day this arm could
+            // have failed on.
+            prop_assert!(row[2] > 0, "no P51 day in {} cases: D60's order was never exercised", row[0]);
+            prop_assert!(row[3] > 0, "no P51 day moved a work row in {} cases", row[0]);
+        }
+        eprintln!(
+            "planner_invariants W-36 census: {} cases, {} with a kernel §7 answer; P51 days (D60 \
+             moved the fork's order) {}, of them the SHIPPED fork's work rows differ from the D60 \
+             comparand's {}, and the kernel's equal the comparand's {}",
+            row[0], row[1], row[2], row[3], row[4]
+        );
+    }
+}
+
+/// **The reversed day, driven** (README gap 2801): two impossible items of one `ci`, the first
+/// line due TOMORROW and the second due TODAY. D60 serves the second first; the SHIPPED fork
+/// serves the first, by line; the D60 comparand agrees with the kernel. Compared on every run,
+/// so the P51 arm above never rests on the generator drawing such a day.
+#[test]
+fn the_reversed_day_is_served_by_due_date_on_every_run() {
+    let item = |due: u8| Spec {
+        ci: 2, k: 3, est_b: 60, small: None, due_in: Some(due), dep: None, loc_home: false,
+        atomic: false, parent: None, waiting: false, hot: false, floor: None,
+    };
+    let case = Case {
+        items: vec![item(1), item(0)],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let w = build(&case);
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the reversed day");
+    let cvec = w.candidates();
+    let ps = kernel_prios(&plan, &cvec).expect("the kernel ranks the reversed day");
+    let ids: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
+    assert_eq!(ids.len(), 2, "two candidates: {ids:?}");
+    assert!(ps.iter().all(w36_is_impossible_tie), "both are p = 0 and impossible: {ps:?}");
+    assert!(w36_is_p51(&cvec, &ps), "D60 moves the order on the reversed day");
+    let now_sec = rowwire::kernel_sec(w.now);
+    let k = w36_kernel_work_rows(&plan, now_sec);
+    assert!(!k.is_empty(), "the kernel assigns work on the reversed day");
+    assert_eq!(k[0].2, vec![ids[1].clone()], "the kernel serves the item due today first: {k:?}");
+    let d60 = w35_fork_plan(&w, &w.state, &cvec, &ps);
+    assert_eq!(k, w36_work_rows(&d60, w.now), "the kernel's rows are the D60 comparand's");
+    let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
+    let f = w36_work_rows(&shipped, w.now);
+    assert_eq!(f[0].2, vec![ids[0].clone()], "the SHIPPED fork serves the first line: {f:?}");
+    assert_ne!(k, f, "parity P51: the kernel and the shipped fork differ on the reversed day");
+}
+
+// ---------------------------------------------------------------------------
+// **W-36 (track K): D58's kernel half — the what-if reads the HOST's grown facts (gap 2873)**
+//
+// Since W-36 `PlanWire.readOvertime` reads `overtime.grown` — fork `PlanOverrides::apply`'s
+// `remaining_min` and `planned_min`, which `planwire::grown` computes with the two functions
+// `collect_candidates` derives the originals with — and `Planner.overtimeDiff` plans the grown
+// request (`Planner.PlanReq.growing`). The arm below sends them exactly as the binary's encoder
+// writes them and compares the kernel's `diff` BY VALUE with the shipped TUI's what-if.
+//
+// **What is left of parity P44 is defined by its property, never by a list.** The kernel's
+// what-if day ranks the GROWN request — its §7 pass reads the extended record's `remaining` —
+// while the shipped TUI's `with_ranking` keeps the reload's ranking (README gap 114). So the
+// comparand is the fork's full what-if run with the kernel's OWN ranking of the grown request
+// (that request's `lookahead.grants`, which is the day's `candAnswers` —
+// `Planner.PlanReq.candAnswers_is_the_lookaheads`), ASSERTED on every day; a day where that
+// ranking differs from the reload's is where the kernel may differ from the shipped TUI, and
+// the census counts it. The host's `need_min` is sent and not read: no reader of a
+// `with_ranking` day reads it (README gap 3004).
+// ---------------------------------------------------------------------------
+
+/// `[cases, what-ifs compared (a running block and a kernel §7 answer), of them the running item
+/// is a candidate the extension grows, of them the grown facts moved the kernel's §7 answer,
+/// parity-P44 days (the shipped fork's full what-if differs from its estimate-only one), of them
+/// the kernel's `diff` now equals the shipped TUI's, days where the kernel's `diff` differs from
+/// the shipped TUI's, ids compared]`.
+static W36_GROWN: Mutex<[u64; 8]> = Mutex::new([0; 8]);
+
+/// **The request the kernel ranks the what-if day with**: `req` with every candidate record
+/// named `id` carrying the grown `remaining` and `plannedMin` — `Planner.PlanReq.growing`'s
+/// rewrite, read back through `lookahead.grants`.
+fn w36_grown_request(req: &Value, id: &Id, g: &planwire::Grown) -> Value {
+    let mut out = req.clone();
+    if let Some(items) = out["capacity"]["candidates"]["items"].as_array_mut() {
+        for it in items.iter_mut().filter(|it| it["id"] == id.as_str()) {
+            it["remaining"] = json!(g.remaining_min);
+            it["plan"]["plannedMin"] = json!(g.planned_min);
+        }
+    }
+    out
+}
+
+/// **What of a §7 answer a `with_ranking` day reads**: the sort's `p` (`sorted_candidates`), and
+/// the class, `until` and shortfall step 8's diagnostics and D60's key read. `need_min` is not
+/// in it — it moves on every grown day and no reader of the day reads it (README gap 3004).
+fn w36_rank_view(ps: &[Prio]) -> Vec<(String, u8, String, Option<NaiveDate>, bool)> {
+    ps.iter()
+        .map(|p| (p.id.to_string(), p.p, format!("{:?}", p.class), p.until,
+                  p.shortfall_min_exact.num > 0))
+        .collect()
+}
+
+/// **The fork's what-if day as the shipped TUI builds it** (estimate grown, P46/P47 read as the
+/// base reads them, D60's key), ranked by `ps`, with `PlanOverrides::extending` applied when
+/// `full` — and its `diff` against `base`.
+fn w36_fork_whatif(
+    w: &World,
+    base: &DayPlan,
+    cvec: &[Candidate],
+    ps: &[Prio],
+    id: &Id,
+    full: bool,
+) -> DiffRow {
+    let bm = w.cfg.block_min();
+    let mut rt = w.state.clone();
+    if let Some(x) = rt.active.as_mut() {
+        x.est_min = x.est_min.saturating_add(bm);
+    }
+    let rt = w35_p46_state(w, &rt);
+    let dvec = w36_d60_cands(cvec, ps);
+    let ov = planner::PlanOverrides::new().extending(id, bm);
+    let mut day = if full {
+        planner::plan(&w.input(&rt, w.now).with_ranking(&dvec, ps).with_overrides(&ov))
+    } else {
+        planner::plan(&w.input(&rt, w.now).with_ranking(&dvec, ps))
+    };
+    w35_p47_day(w, &mut day);
+    fork_diff(&planner::diff(base, &day))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **§9.1's what-if WITH the host's grown facts, by value** (D58, README gap 2873). On a
+    /// case with a running block the request carries `overtime` = one block on the running item
+    /// and, when the extension grows a candidate, `grown`; the kernel's `diff` is ASSERTED equal
+    /// to the fork's full what-if ranked by the kernel's answer for the grown request, and a day
+    /// where it differs from the shipped TUI's is ASSERTED to be one the grown facts re-ranked.
+    #[test]
+    fn the_kernel_answers_the_what_if_with_the_hosts_grown_facts(case in case_strategy()) {
+        let w = build(&case);
+        let cvec = w.candidates();
+        let bm = w.cfg.block_min();
+        let active = w.state.active.clone();
+        let grown = active.as_ref().and_then(|a| {
+            cvec.iter().find(|c| c.id == a.id).and_then(|c| planwire::grown(c, None, bm, &w.cfg))
+        });
+        let mut req = w.plan_request();
+        if let Some(a) = &active {
+            req["planner"]["overtime"] = planwire::overtime_json(&a.id, 1, grown.as_ref());
+        }
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let mut add = [1u64, 0, 0, 0, 0, 0, 0, 0];
+        if let (Some(a), Some(ps)) = (&active, kernel_prios(&plan, &cvec)) {
+            let ps_g = match &grown {
+                None => Some(ps.clone()),
+                Some(g) => match kernel_plan(&w36_grown_request(&req, &a.id, g)) {
+                    Ok(pg) => kernel_prios(&pg, &cvec),
+                    Err(raw) => {
+                        let head: String = raw.chars().take(400).collect();
+                        prop_assert!(false, "the kernel refused the grown request: {head}");
+                        unreachable!()
+                    }
+                },
+            };
+            if let Some(ps_g) = ps_g {
+                let base = w35_fork_plan(&w, &w.state, &cvec, &ps);
+                let f_est = w36_fork_whatif(&w, &base, &cvec, &ps, &a.id, false);
+                let f_full = w36_fork_whatif(&w, &base, &cvec, &ps, &a.id, true);
+                let f_grown = w36_fork_whatif(&w, &base, &cvec, &ps_g, &a.id, true);
+                prop_assert!(!plan["overtime"].is_null(), "the kernel did not answer `overtime`");
+                let k = kernel_diff(&plan["overtime"]);
+                prop_assert_eq!(
+                    &k, &f_grown,
+                    "the kernel's what-if differs from the fork's, ranked as the kernel ranks the \
+                     grown request"
+                );
+                let reranked = w36_rank_view(&ps_g) != w36_rank_view(&ps);
+                let p44 = f_full != f_est;
+                let differs = k != f_full;
+                prop_assert!(
+                    !differs || reranked,
+                    "the kernel's what-if differs from the shipped TUI's on a day the grown facts \
+                     did not re-rank"
+                );
+                add[1] = 1;
+                add[2] = u64::from(grown.is_some());
+                add[3] = u64::from(reranked);
+                add[4] = u64::from(p44);
+                add[5] = u64::from(p44 && !differs);
+                add[6] = u64::from(differs);
+                add[7] = (k.0.len() + k.1.len() + k.2.len()) as u64;
+            }
+        } else if active.is_none() {
+            prop_assert!(
+                plan["overtime"].is_null(),
+                "the kernel answered `overtime` to a request that asked none"
+            );
+        }
+        let row = {
+            let mut t = W36_GROWN.lock().expect("census");
+            for (x, d) in t.iter_mut().zip(add) {
+                *x += d;
+            }
+            *t
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if row[0] >= generated {
+            // **Floors** (AGENTS §9.2): the grown facts were sent, and the what-ifs compared
+            // said something.
+            prop_assert!(row[1] > 0, "no what-if was compared in {} cases", row[0]);
+            prop_assert!(row[2] > 0, "no what-if carried grown facts in {} cases", row[0]);
+            prop_assert!(row[7] > 0, "every what-if compared was empty in {} cases", row[0]);
+        }
+        eprintln!(
+            "planner_invariants W-36 grown census: {} cases, what-ifs compared {}, carrying grown \
+             facts {}, re-ranked by them {}; parity-P44 days (the shipped fork's full what-if \
+             differs from its estimate-only one) {}, of them the kernel's `diff` now equals the \
+             shipped TUI's {}; days the kernel's `diff` differs from the shipped TUI's {}; ids \
+             compared {}",
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7]
+        );
+    }
+}
+
+/// **One what-if, driven**: the kernel's `diff` for `overtime` with and without the host's grown
+/// facts, the shipped TUI's what-if (`PlanOverrides::extending` applied) and its estimate-only
+/// one, the fork's full what-if ranked as the kernel ranks the grown request, and the two rank
+/// views — for the fixed days below.
+struct W36Whatif {
+    kernel_grown: DiffRow,
+    kernel_est: DiffRow,
+    shipped: DiffRow,
+    estimate: DiffRow,
+    grown_ranked: DiffRow,
+    reranked: bool,
+}
+
+fn w36_whatif(case: &Case) -> W36Whatif {
+    let w = build(case);
+    let cvec = w.candidates();
+    let a = w.state.active.clone().expect("the day has a running block");
+    let c = cvec.iter().find(|c| c.id == a.id).expect("the running item is a candidate");
+    let g = planwire::grown(c, None, w.cfg.block_min(), &w.cfg).expect("the extension grows it");
+    let ask = |grown: Option<&planwire::Grown>| -> (Value, DiffRow) {
+        let mut req = w.plan_request();
+        req["planner"]["overtime"] = planwire::overtime_json(&a.id, 1, grown);
+        let plan = kernel_plan(&req).expect("the kernel plans the day");
+        let d = kernel_diff(&plan["overtime"]);
+        (plan, d)
+    };
+    let (plan, kernel_grown) = ask(Some(&g));
+    let (_, kernel_est) = ask(None);
+    let ps = kernel_prios(&plan, &cvec).expect("the kernel ranks the day");
+    let req = w.plan_request();
+    let pg = kernel_plan(&w36_grown_request(&req, &a.id, &g)).expect("the kernel plans the grown request");
+    let ps_g = kernel_prios(&pg, &cvec).expect("the kernel ranks the grown request");
+    let base = w35_fork_plan(&w, &w.state, &cvec, &ps);
+    W36Whatif {
+        kernel_grown,
+        kernel_est,
+        shipped: w36_fork_whatif(&w, &base, &cvec, &ps, &a.id, true),
+        estimate: w36_fork_whatif(&w, &base, &cvec, &ps, &a.id, false),
+        grown_ranked: w36_fork_whatif(&w, &base, &cvec, &ps_g, &a.id, true),
+        reranked: w36_rank_view(&ps_g) != w36_rank_view(&ps),
+    }
+}
+
+/// A generated item, spelled.
+#[allow(clippy::too_many_arguments)]
+fn w36_spec(ci: u8, k: u8, est_b: u32, small: Option<u32>, due_in: Option<u8>, dep: Option<usize>,
+            loc_home: bool, atomic: bool, waiting: bool, floor: Option<u32>, parent: Option<usize>) -> Spec {
+    Spec { ci, k, est_b, small, due_in, dep, loc_home, atomic, waiting, hot: false, floor, parent }
+}
+
+/// **A parity-P44 day, driven on every run** (README gap 2873): three items of `ci:0` due today,
+/// the second running. The shipped TUI's what-if differs from its estimate-only one — fork
+/// `PlanOverrides::apply` grew the running candidate — so until W-36 the kernel answered the
+/// estimate's and the day was P44's. With the host's grown facts the kernel answers the shipped
+/// TUI's what-if, on a day the grown facts do not re-rank. Drawn by the generator (W-36's third
+/// census run) and fixed here, so the closure never rests on the generator drawing one.
+#[test]
+fn a_p44_day_is_answered_as_the_shipped_tui_answers_it_on_every_run() {
+    let case = Case {
+        items: vec![
+            w36_spec(0, 3, 4, None, Some(0), None, false, true, false, None, None),
+            w36_spec(0, 2, 2, None, Some(0), None, true, false, false, None, None),
+            w36_spec(0, 2, 2, None, Some(0), Some(34), false, true, false, None, None),
+        ],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 2,
+        report: Some(1),
+        routines: 28,
+        optionals: false,
+        home: true,
+        active: Some((1, 31, 106)),
+        interrupt: Some(19),
+        late: true,
+    };
+    let x = w36_whatif(&case);
+    assert_ne!(x.shipped, x.estimate, "a P44 day: the fork's `apply` moved its own what-if");
+    assert_eq!(x.kernel_est, x.estimate, "without `grown` the kernel answers the estimate's (P44)");
+    assert!(!x.reranked, "the grown facts do not re-rank this day");
+    assert_eq!(x.kernel_grown, x.shipped, "with `grown` the kernel answers the shipped TUI's what-if");
+}
+
+/// **A parity-P52 day, driven on every run**: the running `^zaa`'s grown need takes today's
+/// capacity from two items due today, which §7.3's pass over the GROWN request names IMPOSSIBLE
+/// (`p = 0`). The kernel's what-if ranks them so and keeps `^zad`, moving it; the shipped TUI's
+/// `with_ranking` keeps the reload's ranking and drops it (README gap 114). The kernel's answer is
+/// the fork's full what-if ranked by the kernel's own answer for the grown request. Drawn by the
+/// generator and fixed here.
+#[test]
+fn a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run() {
+    let case = Case {
+        items: vec![
+            w36_spec(1, 3, 1, None, Some(0), None, false, true, false, Some(8), None),
+            w36_spec(1, 4, 3, None, None, None, false, false, false, None, None),
+            w36_spec(2, 4, 4, Some(15), Some(0), None, false, true, true, None, None),
+            w36_spec(3, 3, 3, Some(20), Some(0), None, false, false, false, None, Some(19)),
+            w36_spec(4, 3, 3, None, Some(0), Some(23), true, false, false, None, None),
+            w36_spec(5, 3, 3, None, Some(0), Some(10), true, false, false, None, None),
+        ],
+        walls: vec![WallSpec { hour: 15, hours: 1 }],
+        now_idx: 3,
+        done_blocks: 3,
+        report: None,
+        routines: 6,
+        optionals: true,
+        home: false,
+        active: Some((0, 78, 138)),
+        interrupt: Some(46),
+        late: false,
+    };
+    let x = w36_whatif(&case);
+    assert!(x.reranked, "the grown facts re-rank this day");
+    assert_eq!(x.kernel_grown, x.grown_ranked,
+        "the kernel's what-if is the fork's, ranked as the kernel ranks the grown request");
+    assert_ne!(x.kernel_grown, x.shipped,
+        "parity P52: the kernel's what-if differs from the shipped TUI's on a re-ranked day");
+}
+
+/// **`send_order` is the fork's `priority::compute` sort** — `(no due last, due, own_order,
+/// index)`, the kernel's REQUEST POSITION, which `Look.sortDueIx` breaks a date's ties by and
+/// D60's key reads. Nothing else in this file can tell it from the collection order: the kernel
+/// and the D60 comparand both read it, so W-36's plant that made it the identity SURVIVED every
+/// arm. It is pinned here on a day whose collection order is not the served order: an undated
+/// line, one due tomorrow, one due today, in that order in the file.
+#[test]
+fn send_order_is_the_forks_compute_order() {
+    let item = |due_in: Option<u8>| Spec {
+        ci: 2, k: 3, est_b: 1, small: None, due_in, dep: None, loc_home: false,
+        atomic: false, parent: None, waiting: false, hot: false, floor: None,
+    };
+    let case = Case {
+        items: vec![item(None), item(Some(1)), item(Some(0))],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let w = build(&case);
+    let cvec = w.candidates();
+    let file: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
+    let sent: Vec<String> = send_order(&cvec).iter().map(|&i| cvec[i].id.to_string()).collect();
+    assert_eq!(file.len(), 3, "three candidates: {file:?}");
+    assert_eq!(sent, vec![file[2].clone(), file[1].clone(), file[0].clone()],
+        "due today, then due tomorrow, then the undated line: {file:?}");
 }
