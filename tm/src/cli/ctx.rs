@@ -751,6 +751,15 @@ impl Ctx {
             if !cx.timed_out.is_empty() {
                 cx.reload()?;
             }
+            // **The owner's D61 (W-36 track T)**: a calendar wall that began while a
+            // block runs has stopped the block's timer. Its pause — and, once the wall
+            // has ended, its unpause — is logged here, the way §6.3's automatic close
+            // catches up: by the first verb that runs after the wall began
+            // ([`super::day::stop_the_timer_at_walls`]). It writes the log and
+            // `state.json` only, never a plan file, so it does not wait on the gate.
+            if super::day::stop_the_timer_at_walls(&mut cx)? {
+                cx.reload()?;
+            }
         }
         Ok(cx)
     }

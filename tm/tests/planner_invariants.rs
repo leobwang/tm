@@ -4807,3 +4807,202 @@ fn send_order_is_the_forks_compute_order() {
     assert_eq!(sent, vec![file[2].clone(), file[1].clone(), file[0].clone()],
         "due today, then due tomorrow, then the undated line: {file:?}");
 }
+
+// ===========================================================================
+// **W-36 (track T): ONE reading of worked minutes — README gap 2920**
+//
+// Since W-36 the kernel's planner reads the running block's worked minutes off the request
+// (`Planner.PlanReq.workedOf`): `state.active.workedMin`, the host's `Replay::active_worked_min`,
+// which `tm now` prints and `tm done` logs.  A request that carries none gets the log's own reading
+// (fork `active_run`'s), which is why every arm above — none of them sends it — still compares
+// against the fork exactly as it did.  THIS arm sends it (`planwire::add_worked_min`, the one host
+// encoder of the key) and draws what makes the two readings differ: a BREAK LOGGED INSIDE the
+// running block, which the replay's open block never sees (`Replay.dayArm`) and the host's rule
+// nets out — the class README gap 2920 said the generator never drew.  Its comparand is
+// `w35_fork_plan` with the new rule applied by its PROPERTY, as P46 is: fork `active_run`'s estimate
+// moved by the difference of the two readings, so the FORK computes a `left` of `est − host` and
+// its own reservation from it, and the running block's open row reads the host's `so far`.  On a
+// day where the two readings agree the comparand is `w35_fork_plan` exactly.
+// ===========================================================================
+
+/// **The host's worked minutes of the running block** — `Replay::active_worked_min`, the very call
+/// `tm done` makes (`tm/src/cli/day.rs`' `worked_min`), the running break included.
+fn w36_host_worked(w: &World, st: &RuntimeState) -> Option<u32> {
+    let a = st.active.as_ref()?;
+    let tz = w.cfg.tz;
+    let started = local_dt(tz, date(), a.started);
+    let running_break = st
+        .break_
+        .as_ref()
+        .and_then(|b| b.started)
+        .map(|t| local_dt(tz, date(), t).fixed_offset());
+    Some(w.replay.active_worked_min(date(), started.fixed_offset(), w.now.fixed_offset(), running_break))
+}
+
+/// **The comparand, with the host's reading**: `w35_fork_plan` over a state whose running estimate
+/// is moved by the difference of the two readings (`fork + (est − host)`, saturating, so the fork's
+/// overtime property is the kernel's `host ≥ est`), and the running block's open row carrying the
+/// host's minutes.  Nothing is copied out of the kernel's answer.
+fn w36_fork_plan(w: &World, st: &RuntimeState, cvec: &[Candidate], ps: &[Prio], host: u32) -> DayPlan {
+    let fork = w35_fork_worked(w, st).unwrap_or(0);
+    let mut st2 = st.clone();
+    if let Some(a) = st2.active.as_mut() {
+        a.est_min = fork.saturating_add(a.est_min.saturating_sub(host));
+    }
+    let mut d = w35_fork_plan(w, &st2, cvec, ps);
+    let running = st.active.as_ref().map(|a| a.id.clone());
+    for s in d.segments.iter_mut().filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open) {
+        if s.item == running {
+            s.flags.note = Some(format!("{host}m so far"));
+        }
+    }
+    d
+}
+
+/// **W-36's census**: `[cases, days with a running block, days where the host's reading and the
+/// fork's differ, open rows compared, open rows compared on a differing day, reservations compared,
+/// reservations compared on a differing day, assigned rows compared, cases with no kernel §7
+/// answer, logged breaks drawn inside a running block]`.
+static W36_WORKED: Mutex<[u64; 10]> = Mutex::new([0; 10]);
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel reads the host's worked minutes, and the day agrees with the fork that reads
+    /// them too** (W-36 track T, README gap 2920).  Every case with a running block sends the
+    /// host's reading; the open row (start, stop, item, `▶`, `so far`), the reservation (its stop
+    /// and its `left`) and §8.2 step 5's rows are compared with the comparand both ways.
+    #[test]
+    fn the_kernel_reads_the_hosts_worked_minutes(
+        case in case_strategy(),
+        logged in prop::option::of((0u32..=60, 5u32..=30)),
+    ) {
+        let mut w = build(&case);
+        let tz = w.cfg.tz;
+        // A break LOGGED inside the running block, begun `into` minutes after it started and
+        // ended at or before `now` — written as `tm break` writes it, at its end and stamped at
+        // its start, so the kernel and the fork replay the same bytes.
+        let mut drew = 0u64;
+        if let (Some((into, len)), Some(a)) = (logged, w.state.active.clone()) {
+            let started = local_dt(tz, date(), a.started);
+            let t = started + Duration::minutes(i64::from(into));
+            if t + Duration::minutes(i64::from(len)) <= w.now {
+                w.log.push_str(&format!(
+                    "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n",
+                    t.format("%Y-%m-%dT%H:%M:%S%:z")
+                ));
+                w.replay = chokepoint::replay_of_text(&w.log, tz);
+                drew = 1;
+            }
+        }
+        let host = w36_host_worked(&w, &w.state);
+        let fork = w35_fork_worked(&w, &w.state);
+        let mut req = w.plan_request();
+        if let Some(h) = host {
+            planwire::add_worked_min(&mut req["planner"], h);
+        }
+        let plan = match kernel_plan(&req) {
+            Ok(p) => p,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let cvec = w.candidates();
+        let Some(ps) = kernel_prios(&plan, &cvec) else {
+            W36_WORKED.lock().expect("census")[8] += 1;
+            return Ok(());
+        };
+        let d = match host {
+            Some(h) => w36_fork_plan(&w, &w.state, &cvec, &ps, h),
+            None => w35_fork_plan(&w, &w.state, &cvec, &ps),
+        };
+        let now_sec = rowwire::kernel_sec(w.now);
+        let differs = host.is_some() && host != fork;
+
+        // **The open row, by value, both ways** — its `so far` is the host's minutes.
+        let kopen: Vec<(i64, i64, String, bool, Option<u64>)> = plan["segments"]
+            .as_array()
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+            .iter()
+            .filter(|s| s["kind"] == "block" && s["flags"]["open"] == true)
+            .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                      s["item"].as_str().unwrap_or_default().to_string(),
+                      s["flags"]["current"].as_bool().unwrap_or(false),
+                      s["note"]["workedMin"].as_u64()))
+            .collect();
+        let fopen: Vec<(i64, i64, String, bool, Option<u64>)> = d
+            .segments
+            .iter()
+            .filter(|s| matches!(s.kind, SegKind::Block) && s.flags.open)
+            .map(|s| (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end),
+                      s.item.as_ref().map(ToString::to_string).unwrap_or_default(),
+                      s.flags.current, so_far(s.flags.note.as_deref())))
+            .collect();
+        prop_assert_eq!(&kopen, &fopen, "the open row does not read the host's worked minutes");
+
+        // **The reservation** — its stop, and its `left`, which is the estimate less the host's.
+        let k = w35_reservation(&plan, now_sec);
+        let fres = d.segments.iter().find(|s| {
+            matches!(s.kind, SegKind::Block) && s.flags.current && s.energy.is_none()
+                && rowwire::kernel_sec(s.start) == now_sec
+        });
+        prop_assert_eq!(k, fres.map(|s| rowwire::kernel_sec(s.end)),
+            "the reservation is not the comparand's");
+        if let Some(f) = fres {
+            let kleft = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default().iter()
+                .find(|s| s["kind"] == "block" && s["flags"]["current"] == true
+                    && s["start"].as_i64() == Some(now_sec))
+                .and_then(|s| s["planned"].as_u64());
+            prop_assert_eq!(kleft, f.flags.planned_min.map(u64::from),
+                "the reservation's `left` is not the estimate less the host's worked minutes");
+        }
+
+        // **Everything else** — §8.2 step 5's rows, against the same comparand.
+        let ka = kernel_assigned(&plan, now_sec);
+        let fa = fork_assigned(&d, w.now);
+        prop_assert_eq!(&ka, &fa, "§8.2 step 5 differs from the comparand");
+
+        let c = {
+            let mut c = W36_WORKED.lock().expect("census");
+            c[0] += 1;
+            c[1] += u64::from(host.is_some());
+            c[2] += u64::from(differs);
+            c[3] += kopen.len() as u64;
+            c[4] += if differs { kopen.len() as u64 } else { 0 };
+            c[5] += u64::from(fres.is_some());
+            c[6] += u64::from(differs && fres.is_some());
+            c[7] += ka.len() as u64;
+            c[9] += drew;
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if c[0] >= generated {
+            // **Floors** (AGENTS §9.2): a reading compared only where the two agree compares nothing.
+            prop_assert!(c[9] > 0, "no break was logged inside a running block in {} cases", c[0]);
+            prop_assert!(c[2] > 0, "on no day did the host's reading differ from the log's in {} cases", c[0]);
+            prop_assert!(c[4] > 0, "no open row was compared on a day the two readings differ");
+            prop_assert!(c[6] > 0, "no reservation was compared on a day the two readings differ");
+            prop_assert!(c[7] > 0, "no assigned row was compared");
+        }
+        eprintln!(
+            "planner_invariants W-36 worked census: {} cases, {} with a running block, {} with a break \
+             logged inside it; the host's reading differed from the log's on {} days; open rows \
+             compared {} ({} on a differing day); reservations compared {} ({} on a differing day); \
+             assigned rows compared {}; cases with no kernel §7 answer {}",
+            c[0], c[1], c[9], c[2], c[3], c[4], c[5], c[6], c[7], c[8]
+        );
+    }
+}

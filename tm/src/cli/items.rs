@@ -1041,12 +1041,16 @@ fn edit_route(ctx: &Ctx, id: &Id, args: &super::EditArgs) -> Result<EditRoute, C
     for pair in &args.pairs {
         let (k, v) = split_pair(pair)?;
         cmds.push(if k == "est" && !v.is_empty() {
-            // The CLI's own `Dur` grammar still reads the value first, so
-            // `est=zzz` keeps its `invalid duration` document; the value then
-            // rides AS WRITTEN beside the block length its `b` means, and the
-            // kernel — the one writer (D49) — reads it with its own grammar and
-            // writes the slot the view reads (D56, README gap 2572).
-            Dur::parse_no_days(v, ctx.block_min())?;
+            // The value rides AS WRITTEN beside the block length its `b`
+            // means, and the kernel — the one writer (D49) and, since W-36,
+            // the ONE READER (README gap 2929) — reads it with its own grammar,
+            // bounded by the host's `u32` (`Look.maxPlanMinutes`), and writes
+            // the slot the view reads (D56, README gap 2572). The host used to
+            // run its own `Dur::parse_no_days` first: a second reader of one
+            // value, and the one whose `u32` width was the only thing standing
+            // between `est=4294967296m` and a line the host cannot read back.
+            // A value the kernel refuses is `badValue est`, and
+            // [`edit_kernel`] puts the value typed into the document beside it.
             KCmd::Est {
                 id: id.to_string(),
                 value: v.to_string(),
@@ -1068,6 +1072,40 @@ fn edit_route(ctx: &Ctx, id: &Id, args: &super::EditArgs) -> Result<EditRoute, C
         });
     }
     Ok(EditRoute::Kernel(cmds))
+}
+
+/// **The value a `badValue <k>` refusal refused, put back beside it** (W-36
+/// track T, README gap 2929). The kernel's refusal names the key it read
+/// (`detail.key`, the spelling the host sent); the host knows the text it sent
+/// for that key, so the `--json` document keeps carrying both things a caller
+/// wants to fix — which field and which text — as the host's own `invalid`
+/// document did while the host still pre-parsed `est=`. Nothing is re-read:
+/// the value is the pair exactly as typed.
+fn with_the_value_typed(e: CliError, pairs: &[String]) -> CliError {
+    let CliError::Kernel(mut issue) = e else {
+        return e;
+    };
+    if issue.name == "badValue" {
+        let key = issue
+            .detail
+            .get("key")
+            .and_then(serde_json::Value::as_str)
+            .map(str::to_string);
+        let typed = key.and_then(|k| {
+            pairs
+                .iter()
+                .filter_map(|p| split_pair(p).ok())
+                .find(|(pk, _)| *pk == k)
+                .map(|(_, v)| v.to_string())
+        });
+        if let Some(v) = typed {
+            issue.message = format!("{} (the value was {v:?})", issue.message);
+            issue
+                .detail
+                .insert("value".to_string(), serde_json::Value::String(v));
+        }
+    }
+    CliError::Kernel(issue)
 }
 
 /// The kernel-backed keyed edit: every wired `k=v` and `--unset k` of one
@@ -1126,7 +1164,8 @@ fn edit_kernel(
         });
     }
     let rec = Recorder::start(ctx, "edit")?;
-    let applied = kernel_bridge::apply(ctx, "edit", &cmds)?;
+    let applied = kernel_bridge::apply(ctx, "edit", &cmds)
+        .map_err(|e| with_the_value_typed(e, &args.pairs))?;
     for c in &changes {
         ctx.append_event(Event::Edit {
             id: id.to_string(),

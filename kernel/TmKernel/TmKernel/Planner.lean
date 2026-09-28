@@ -709,9 +709,9 @@ structure RuntimeIn where
   interrupt : Option InterruptState
   lastHash  : Option PlanHash
   yesterday : Capped (Id × Fin 8)
-
+  worked    : Option (Fin (Look.maxDayMin + 1))  -- the host's worked minutes (W-36, gap 2920; `workedOf`)
 /-- Nothing running, nothing planned yet. -/
-def RuntimeIn.empty : RuntimeIn := ⟨none, none, none, none, Capped.nil⟩
+def RuntimeIn.empty : RuntimeIn := ⟨none, none, none, none, Capped.nil, none⟩
 
 /-- The item the running block holds, if any — the exception five of §8.3's laws are restated
 around (design §6.3, D29). -/
@@ -2174,13 +2174,13 @@ README gap 390).  One reading for `active_run`'s `worked` and `open_block_segmen
 def openWorkedMin (nowSec : Nat) (b : Replay.OpenBlock) : Nat :=
   b.workedMin + (b.since.map (fun s => Look.spanMinutes s.1.sec nowSec)).getD 0
 
-/-- **Fork `active_run`'s `worked`** (`planner.rs:1516-1524`): `openWorkedMin` when the log holds
-this item's open block, and the clock when the replay holds none for it. -/
-def PlanReq.activeWorked (r : PlanReq) (a : ActiveBlock) : Nat :=
-  match r.run.answer.openBlock with
-  | some b => if b.id = a.id then openWorkedMin r.now.sec b
-    else Look.spanMinutes a.started.sec r.now.sec
-  | none => Look.spanMinutes a.started.sec r.now.sec
+/-- **ONE reading of worked minutes** (W-36, gap 2920, P55): the HOST's (`RuntimeIn.worked`) for the item the runtime says runs, else `logs`. -/
+def PlanReq.workedOf (r : PlanReq) (id : Id) (logs : Nat) : Nat :=
+  match r.state.active, r.state.worked with | some a, some w => if a.id = id then w.val else logs | _, _ => logs
+/-- **Fork `active_run`'s `worked`**, through `workedOf`: the log's open block for this item, else the clock (the W-36 note at the end). -/
+def PlanReq.activeWorked (r : PlanReq) (a : ActiveBlock) : Nat := r.workedOf a.id (match r.run.answer.openBlock with
+  | some b => if b.id = a.id then openWorkedMin r.now.sec b else Look.spanMinutes a.started.sec r.now.sec
+  | none => Look.spanMinutes a.started.sec r.now.sec)
 
 /-- Fork `active_run`'s `left`: `est_min.saturating_sub(worked)` — `Nat` subtraction *is* the
 fork's saturating one. -/
@@ -6193,7 +6193,7 @@ def openBlockRows (r : PlanReq) : List Seg :=
            item := some b.id, inst := none,
            flags := { SegFlags.none with
              current := r.activeRun.isNone && !r.interrupted, isOpen := true },
-           planned := none, mult := none, note := some (.soFar (openWorkedMin r.now.sec b)) }]
+           planned := none, mult := none, note := some (.soFar (r.workedOf b.id (openWorkedMin r.now.sec b))) }]
 
 /-- **The log's rows of the day** — fork `past_segments` and `open_block_segment`, the two
 halves §12.1 renders left of the cursor.  Every row here ends at `now`
@@ -6245,7 +6245,7 @@ theorem mem_openBlockRows {r : PlanReq} {t : Seg} (h : t ∈ openBlockRows r) :
       t.kind = SegKind.block ∧ t.energy = none ∧ t.item = some b.id ∧ t.inst = none ∧
       t.flags = { SegFlags.none with
         current := r.activeRun.isNone && !r.interrupted, isOpen := true } ∧
-      t.planned = none ∧ t.mult = none ∧ t.note = some (.soFar (openWorkedMin r.now.sec b)) := by
+      t.planned = none ∧ t.mult = none ∧ t.note = some (.soFar (r.workedOf b.id (openWorkedMin r.now.sec b))) := by
   unfold openBlockRows at h
   split at h
   · exact absurd h (by simp)
@@ -6297,7 +6297,7 @@ theorem the_open_row_stops_where_a_later_interruption_starts (r : PlanReq) (t : 
 /-- **The open row is the item the log holds open**, and it carries its worked minutes. -/
 theorem the_open_row_is_the_logs_open_block (r : PlanReq) (t : Seg) (h : t ∈ openBlockRows r) :
     ∃ b, r.run.answer.openBlock = some b ∧ t.item = some b.id ∧
-      t.note = some (.soFar (openWorkedMin r.now.sec b)) ∧ t.flags.isOpen = true := by
+      t.note = some (.soFar (r.workedOf b.id (openWorkedMin r.now.sec b))) ∧ t.flags.isOpen = true := by
   obtain ⟨b, -, hb, -, -, -, -, -, -, -, hi, -, hf, -, -, hn⟩ := mem_openBlockRows h
   exact ⟨b, hb, hi, hn, by rw [hf]⟩
 
@@ -6320,7 +6320,7 @@ theorem openBlockRows_of_an_open_block (r : PlanReq) (b : Replay.OpenBlock) (s :
          item := some b.id, inst := none,
          flags := { SegFlags.none with
            current := r.activeRun.isNone && !r.interrupted, isOpen := true },
-         planned := none, mult := none, note := some (.soFar (openWorkedMin r.now.sec b)) }] := by
+         planned := none, mult := none, note := some (.soFar (r.workedOf b.id (openWorkedMin r.now.sec b))) }] := by
   unfold openBlockRows
   rw [hb]
   simp only [hs]
@@ -8711,5 +8711,129 @@ theorem PlanReq.mem_growing (r : PlanReq) (i : Id) (g : WfGrown) (c : Look.Cand)
   show _ ∈ r.cands.val.map _
   exact List.mem_map.2 ⟨(c, f), h, rfl⟩
 
+/-! ############################################################################
+## W-36 track T — ONE reading of worked minutes (parity P55, README gap 2920) and a logged wall
+## pause (the owner's D61, parity P53)
+
+**Why the running block's worked minutes are the HOST's.**  Until W-36 there were two readings of
+one number.  The host's, `Replay::active_worked_min` (fork `day::worked_min`): the wall clock since
+`started` net of the day's pauses, interruptions and breaks, the running break included — what `tm
+now`'s header prints and `tm done` LOGS.  And this module's, `openWorkedMin`: the log's open block
+(fork `OpenBlock::worked_min_at`), which the reservation's `left` and the open row's `so far` read,
+and which never sees a `break` — the replay's machine does not touch a block for one
+(`Replay.dayArm`).  On a day with a break inside the running block the two disagreed on one
+screen: `tm now` read `· 20m of 30m` over the row's `running · 5m left` (W-35 repair, driven).
+
+**One definition, and the other reads it** (AGENTS §5.3).  The rule has to be evaluable wherever
+the host needs it — every tick of the TUI's timer, `tm done`'s `actual_min` — so it is the host's,
+and this module READS it: `RuntimeIn.worked`, `state.active.workedMin` on the wire, bounded by a
+day (`workedOf?`).  `PlanReq.workedOf` is the one place the planner takes worked minutes from; the
+reservation (`activeWorked`) and the open row (`openBlockRows`) both call it, so they print one
+number (`the_open_row_reads_the_running_blocks_worked_minutes`).  The log's reading is what a
+request that carries no host reading gets — fork `active_run`'s, parity-exact — and every arm of
+the proptest that sends none compares against the fork exactly as before.  **R3's planner section
+must carry it**: `tm_core::planwire::add_worked_min`, README gap 2920's residue, by name.
+
+**The replay excludes a meeting once D61 has logged it** (`a_logged_wall_pause_is_no_worked_time`):
+the pause and unpause the host writes at a wall's start and end are the log's own events, and the
+machine banks the stretch before the pause and restarts the block at the unpause, so the fallback
+reading, the past half (`pastRows`: a Block row to the pause, a paused Lost row across the meeting)
+and the open row (from the unpause, `mem_openBlockRows`) all exclude the meeting.
+############################################################################ -/
+
+/-- **R10's smart constructor for `RuntimeIn.worked`**: at most a day's minutes.  `Look.maxDayMin`
+is REUSED — `ActiveBlock.estMin` carries the same bound — and it is exact for the host's reading:
+`active.started` is a clock time of the plan's date, so no block has run longer. -/
+def workedOf? (n : Nat) : Option (Fin (Look.maxDayMin + 1)) :=
+  if h : n ≤ Look.maxDayMin then some ⟨n, by omega⟩ else none
+
+/-- **A reading past a day is refused** — nothing is clamped. -/
+theorem a_worked_reading_past_a_day_is_refused (n : Nat) (h : Look.maxDayMin < n) :
+    workedOf? n = none := by
+  unfold workedOf?
+  rw [dif_neg (by omega)]
+
+/-- …and every reading within a day is read as itself. -/
+theorem a_worked_reading_within_a_day_is_read (n : Nat) (h : n ≤ Look.maxDayMin) :
+    (workedOf? n).map Fin.val = some n := by
+  unfold workedOf?
+  rw [dif_pos h]
+  rfl
+
+/-- The bound, run (AGENTS §5.2): ninety minutes are read, a day's 1,440 are, 1,441 are not. -/
+theorem the_worked_minutes_bound_is_run :
+    (workedOf? 90).map Fin.val = some 90 ∧ (workedOf? 1440).map Fin.val = some 1440 ∧
+      workedOf? 1441 = none := by
+  decide
+
+/-- **The reservation reads the host's worked minutes** whenever the request carries them for the
+running block — its `left` is the estimate less the minutes `tm done` would log. -/
+theorem PlanReq.activeWorked_is_the_hosts (r : PlanReq) (a : ActiveBlock)
+    (w : Fin (Look.maxDayMin + 1)) (ha : r.state.active = some a) (hw : r.state.worked = some w) :
+    r.activeWorked a = w.val := by
+  unfold PlanReq.activeWorked PlanReq.workedOf
+  rw [ha, hw]
+  simp
+
+/-- **…and with none, the log's own reading, exactly as before W-36** (fork `active_run`): the
+arms of the proptest that send no host reading compare against the fork unchanged. -/
+theorem PlanReq.activeWorked_without_the_hosts (r : PlanReq) (a : ActiveBlock)
+    (hw : r.state.worked = none) :
+    r.activeWorked a = (match r.run.answer.openBlock with
+      | some b => if b.id = a.id then openWorkedMin r.now.sec b
+        else Look.spanMinutes a.started.sec r.now.sec
+      | none => Look.spanMinutes a.started.sec r.now.sec) := by
+  unfold PlanReq.activeWorked PlanReq.workedOf
+  rw [hw]
+  cases r.state.active <;> rfl
+
+/-- **ONE reading: the open row's `so far` IS the reservation's worked minutes** — whenever the
+row is the running block's, whichever reading the request carries.  So the `▶` row, the
+reservation and (through the host's reading) `tm now`'s header cannot print two numbers for one
+block.  W-34's `the_open_row_is_the_logs_open_block` said the note was the LOG's reading; with the
+host's carried that is false (`PlannerWit.the_open_row_carries_the_logs_worked_minutes_is_refuted`)
+and its statement now reads `workedOf`. -/
+theorem the_open_row_reads_the_running_blocks_worked_minutes (r : PlanReq) (t : Seg)
+    (h : t ∈ openBlockRows r) (a : ActiveBlock) (ha : r.state.active = some a)
+    (hid : t.item = some a.id) : t.note = some (.soFar (r.activeWorked a)) := by
+  obtain ⟨b, s, hb, -, -, -, -, -, -, -, hi, -, -, -, -, hn⟩ := mem_openBlockRows h
+  have hba : b.id = a.id := by rw [hi] at hid; exact Option.some.inj hid
+  rw [hn]
+  simp [PlanReq.activeWorked, hb, hba]
+
+/-- **The open row's `so far` is the host's worked minutes** when the request carries them. -/
+theorem the_open_row_reads_the_hosts_worked_minutes (r : PlanReq) (t : Seg)
+    (h : t ∈ openBlockRows r) (a : ActiveBlock) (w : Fin (Look.maxDayMin + 1))
+    (ha : r.state.active = some a) (hw : r.state.worked = some w) (hid : t.item = some a.id) :
+    t.note = some (.soFar w.val) := by
+  rw [the_open_row_reads_the_running_blocks_worked_minutes r t h a ha hid,
+    PlanReq.activeWorked_is_the_hosts r a w ha hw]
+
+/-- **D61 (parity P53): a logged wall pause is no worked time.**  The two lines D61's housekeeping
+writes (`tm/src/cli/day.rs`, `stop_the_timer_at_walls`), replayed: `start a` 09:00, `pause a` at a
+wall's 09:10 start, `unpause a` at its 09:50 end.  The open block banks the ten minutes before the
+meeting and runs again from its end — at 10:00 it has worked twenty minutes of the sixty on the
+clock (`openWorkedMin`) — and the day's segments are the stretch `[09:00, 09:10)` and a Pause
+`[09:10, 09:50)`: no Block segment lies across the meeting, which is what `pastRows` and
+`openBlockRows` draw from. -/
+theorem a_logged_wall_pause_is_no_worked_time :
+    let f := Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a']),
+      Replay.bE 2 63924369000 (Log.Event.pause ['a']),
+      Replay.bE 3 63924371400 (Log.Event.unpause ['a'])]
+    f.openBlock.map (fun b => (b.workedMin, b.since.map (·.1.sec), b.paused,
+        openWorkedMin 63924372000 b)) = some (10, some 63924371400, false, 20) ∧
+    (f.days.get 739865).map (fun a => a.segments.map (fun s => (s.kind, s.start.1.sec, s.stop.1.sec)))
+      = some [(Replay.SegKind.block ['a'], 63924368400, 63924369000),
+              (Replay.SegKind.pause ['a'], 63924369000, 63924371400)] := by
+  decide
+
+/-- **…and without the pair, the stretch runs across the meeting** — the same hour with nothing
+logged at the wall: sixty minutes worked at 10:00 and one open stretch from 09:00, which is what
+the log held before D61 and what `tm done` then logged as `actual_min`. -/
+theorem an_unlogged_wall_is_worked_time :
+    let f := Replay.replay Replay.utcZone [Replay.bE 1 63924368400 (Replay.bStart ['a'])]
+    f.openBlock.map (fun b => (b.workedMin, b.since.map (·.1.sec), openWorkedMin 63924372000 b))
+      = some (0, some 63924368400, 60) := by
+  decide
 end Planner
 end Tm

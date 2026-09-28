@@ -204,10 +204,18 @@ pub fn prio_of(g: &Value) -> W<Prio> {
     let k = small(&g["k"], "k")?;
     let p = if g["p"].is_null() { None } else { Some(small(&g["p"], "p")?) };
     let raw = if g["rawP"].is_null() { None } else { Some(small(&g["rawP"], "rawP")?) };
-    let need = g["need"]
-        .as_u64()
-        .and_then(|n| u32::try_from(n).ok())
-        .ok_or_else(|| WireDefect::at("need"))?;
+    // **`need` is read at the width that holds it** (W-36 track T, README gap
+    // 2929). It is `⌈remaining × safety⌉` (§7.1): `remaining` crosses the wire
+    // under `CapWire.maxRemaining` (fork `u32`) and the safety under
+    // `safetyOfWire`'s thousand, so a legal need can pass `u32` — and did, on a
+    // tree whose one estimate was `4294967295m`: `tm plan` answered `kernel
+    // fault: capacity response: need`, a fault labelled a bug, from a value the
+    // edit had accepted. Every need the kernel can write fits `u64` (under
+    // 2^52, so `u` below is exact too); a need past it is still a named defect.
+    // The DISPLAY floor saturates at `u32`, as `avail_min`, `allocation_min`
+    // and `shortfall_min` do through `capacity::floor_minutes`, and as fork
+    // `safety_minutes`' own `as u32` does; `u` reads the need exactly.
+    let need = g["need"].as_u64().ok_or_else(|| WireDefect::at("need"))?;
     let until = if g["until"].is_null() { None } else { Some(date_of(&g["until"], "until")?) };
     let avail = units_of(&g["avail"], "avail")?;
     let allocation = units_of(&g["allocation"], "allocation")?;
@@ -232,7 +240,7 @@ pub fn prio_of(g: &Value) -> W<Prio> {
         k,
         u,
         bin,
-        need_min: need,
+        need_min: u32::try_from(need).unwrap_or(u32::MAX),
         avail_min: capacity::floor_minutes(avail),
         avail_min_exact: Exact::of_units(avail),
         allocation_min: capacity::floor_minutes(allocation),
@@ -497,6 +505,27 @@ pub fn planner_json(
         o["overtime"] = ot;
     }
     o
+}
+
+/// **The running block's WORKED minutes into a `planner` section** (W-36
+/// track T, README gap 2920): `state.active.workedMin`, the host's ONE reading
+/// — [`crate::log::Replay::active_worked_min`], fork `day::worked_min`, the
+/// wall clock since `started` net of the day's pauses, interruptions and
+/// breaks — which is what `tm now` prints and `tm done` logs. The kernel's
+/// planner reads it for the reservation's `left` and the open row's `so far`
+/// (`Planner.PlanReq.workedOf`), so the day and the header cannot print two
+/// numbers for one block. A section without it gets the log's own open-block
+/// reading (fork `active_run`'s), which counts a break inside the block as
+/// worked: **R3's `planner` section must carry it**. A section whose `state`
+/// has no `active` is left as it is (nothing is running, nothing was worked).
+pub fn add_worked_min(planner: &mut Value, worked_min: u32) {
+    if let Some(a) = planner
+        .get_mut("state")
+        .and_then(|s| s.get_mut("active"))
+        .and_then(Value::as_object_mut)
+    {
+        a.insert("workedMin".to_string(), json!(worked_min));
+    }
 }
 
 /// §16's `[priority] batch_max_min` into a capacity section's `priority`

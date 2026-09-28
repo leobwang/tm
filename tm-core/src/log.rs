@@ -1630,6 +1630,17 @@ impl Replay {
         let marks = self.seam(day).map_or(&[][..], |s| s.idle_marks.as_slice());
         for mark in marks {
             match *mark {
+                // **A pause stamped before `started` was ANOTHER block's** (W-36 track T,
+                // README gap 2920).  `tm done` and `tm stop` on a paused block log no
+                // `unpause`, and D61's wall pause is left open by a block that ends inside the
+                // meeting, so such a pause stayed "open" and swallowed the NEXT block whole:
+                // DRIVEN on `dd8b95b` — `pause` 09:10, `done` 09:20, `start ^t1` 09:30, and at
+                // 10:00 `tm now` read `elapsed_min: 0` and `tm done` logged `actual_min: 0`
+                // (fork `day::worked_min` did the same).  The replay's machine never had it:
+                // a `start` opens a fresh, running block.  An INTERRUPTION is not a block's
+                // — one still running when a block starts holds it until the resume, as the
+                // machine does (`since` stays `none`) — so it still opens.
+                IdleMark::Pause(t) if t < started => {}
                 IdleMark::Pause(t) | IdleMark::Interrupt(t) => {
                     if open.is_none() {
                         open = Some(t);

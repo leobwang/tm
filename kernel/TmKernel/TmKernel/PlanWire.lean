@@ -118,7 +118,7 @@ inductive PlanKey
   | id | inst | started | estMin | paused | plannedMin | place
   | winLo | winHi | durMin | mandatory
   | est | extra | drop | min
-  | overtime | blocks | grown | remaining
+  | overtime | blocks | grown | remaining | workedMin
   /-- **The record's own well-formedness**, when `Planner.mkActive?`, `mkBreak?` or
   `mkInterrupt?` answers `none`.  Those three answer `Option` and not a named error, so the wire
   can say *which record* the planner could not hold and not *which clause* of its `wf` failed —
@@ -136,6 +136,7 @@ def PlanKey.name : PlanKey → String
   | .mandatory => "mandatory" | .est => "est" | .extra => "extra"
   | .drop => "drop" | .min => "min" | .wf => "wf"
   | .overtime => "overtime" | .blocks => "blocks" | .grown => "grown" | .remaining => "remaining"
+  | .workedMin => "workedMin"
 
 /-- **The planner section's refusals** (design §10.3's `planRefusal.*`).  Each names the record
 it is about by position where there is a position, and the key by name, exactly as
@@ -336,14 +337,11 @@ def readInterrupt (now : Cal.Instant) (v : JVal) : Except PlannerRefusal Interru
   match Planner.mkInterrupt? now ⟨started, id⟩ with
   | some x => pure x.val
   | none => throw (PlannerRefusal.badInterrupt PlanKey.wf)
-
-def readOptInterrupt (now : Cal.Instant) (v : JVal) :
-    Except PlannerRefusal (Option InterruptState) :=
+def readOptInterrupt (now : Cal.Instant) (v : JVal) : Except PlannerRefusal (Option InterruptState) :=
   match EmitWire.optAtP v "interrupt" (PlannerRefusal.badState PlanKey.interrupt) with
   | .error e => .error e
   | .ok none => .ok none
   | .ok (some w) => (readInterrupt now w).map some
-
 /-- `state.lastHash`, through `Planner.mkHash?` — the one hex reader (R10). -/
 def readHash (v : JVal) : Except PlannerRefusal (Option PlanHash) :=
   match EmitWire.optStrAtP v "lastHash" (PlannerRefusal.badState PlanKey.lastHash) with
@@ -352,7 +350,6 @@ def readHash (v : JVal) : Except PlannerRefusal (Option PlanHash) :=
   | .ok (some s) => match Planner.mkHash? s with
     | some h => .ok (some h)
     | none => .error PlannerRefusal.badHash
-
 /-- One `{"id": …, "p": …}` pair of `state.yesterday`, the id bounded and the `p` left to
 `mkYesterday?` — the one reader of a stored priority. -/
 def readYesterdayPair (i : Nat) (v : JVal) : Except PlannerRefusal (Id × Nat) := do
@@ -360,7 +357,6 @@ def readYesterdayPair (i : Nat) (v : JVal) : Except PlannerRefusal (Id × Nat) :
   let id ← EmitWire.idWithin (PlannerRefusal.badYesterday i) idS
   let p ← EmitWire.natAtP v "p" (PlannerRefusal.badYesterday i)
   pure (id, p)
-
 /-- `state.priorities_yesterday` (§7.4), the cap and the `Fin 8` both through
 `Planner.mkYesterday?`.  Nothing here restates either. -/
 def readYesterday (xs : List JVal) : Except PlannerRefusal (Capped (Id × Fin 8)) :=
@@ -369,7 +365,13 @@ def readYesterday (xs : List JVal) : Except PlannerRefusal (Capped (Id × Fin 8)
   | .ok ps => match Planner.mkYesterday? ps with
     | some c => .ok c
     | none => .error PlannerRefusal.badYesterdayList
-
+/-- `state.active.workedMin`, the host's worked minutes (W-36, gap 2920), through `Planner.workedOf?`; absent is `none`. -/
+def readOptWorked (sec : JVal) : Except PlannerRefusal (Option (Fin (Look.maxDayMin + 1))) :=
+  match EmitWire.optAtP sec "active" (PlannerRefusal.badState PlanKey.active) with
+  | .ok (some a) => match EmitWire.optNatAtP a "workedMin" (PlannerRefusal.badActive PlanKey.workedMin) with
+    | .ok (some n) => match Planner.workedOf? n with | some w => .ok (some w) | none => .error (PlannerRefusal.badActive PlanKey.workedMin)
+    | .ok none => .ok none | .error e => .error e
+  | .ok none => .ok none | .error e => .error e
 /-- **§9's five rows.**  Every one is optional and every absence is the field's own empty. -/
 def readState (now : Cal.Instant) (sec : JVal) : Except PlannerRefusal RuntimeIn := do
   let active ← readOptActive now sec
@@ -381,8 +383,7 @@ def readState (now : Cal.Instant) (sec : JVal) : Except PlannerRefusal RuntimeIn
     | some (.arr xs) => pure xs
     | some _ => throw (PlannerRefusal.badState PlanKey.yesterday)
   let yesterday ← readYesterday ys
-  pure ⟨active, brk, interrupt, lastHash, yesterday⟩
-
+  pure ⟨active, brk, interrupt, lastHash, yesterday, ← readOptWorked sec⟩
 /-! ## `routines` — §8.2 step 2's window instances, host-collected until F2 (K3) -/
 
 /-- One `RoutineIn`.  The cap and the per-instance rule are `Planner.mkRoutines?`' and are not
@@ -1988,5 +1989,48 @@ theorem mkGrown?_accepts_what_the_width_reads_pass (r m : Nat) (hr : r ≤ CapWi
   rw [dif_pos hw]
   rfl
 
+
+/-! ## W-36 track T: `state.active.workedMin`, the host's worked minutes (README gap 2920, P55)
+
+The planner's ONE reading of the running block's worked minutes is the host's —
+`Replay::active_worked_min`, what `tm now` prints and `tm done` logs — and it crosses here, in the
+active record where the host holds it, into `RuntimeIn.worked` through `Planner.workedOf?` (a day
+at most, `Look.maxDayMin` reused).  **Optional on the wire**: a record without it reads `none`,
+and the planner then falls back to the log's own reading (fork `active_run`'s), so every request
+the proptest arms built before W-36 means what it meant.  `tm_core::planwire::add_worked_min` is
+the one host encoder of the key.  `readOptWorked` reads it last, so an active record the other
+readers refuse is refused by their names first. -/
+
+/-- **The key is read as itself; absent it reads `none`; past a day it is refused** by the active
+record's name, never clamped (R10). -/
+theorem readState_reads_the_hosts_worked_minutes :
+    (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
+        ("started".toList, .num 900), ("estMin".toList, .num 60),
+        ("workedMin".toList, .num 25)])])).map (fun st => st.worked.map Fin.val) = .ok (some 25) ∧
+    (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
+        ("started".toList, .num 900), ("estMin".toList, .num 60)])])).map
+        (fun st => st.worked.map Fin.val) = .ok none ∧
+    (readState ⟨1000, 0⟩ (.obj [("active".toList, .obj [("id".toList, .str "m2".toList),
+        ("started".toList, .num 900), ("estMin".toList, .num 60),
+        ("workedMin".toList, .num 1441)])])).map (fun st => st.worked.map Fin.val)
+      = .error (PlannerRefusal.badActive PlanKey.workedMin) :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **R10's rejection theorem, general**: whatever the record, a `workedMin` past a day is the
+active record's refusal. -/
+theorem readOptWorked_refuses_a_reading_past_the_day (sec a : JVal) (n : Nat)
+    (ha : EmitWire.optAtP sec "active" (PlannerRefusal.badState PlanKey.active) = .ok (some a))
+    (hn : EmitWire.optNatAtP a "workedMin" (PlannerRefusal.badActive PlanKey.workedMin)
+      = .ok (some n))
+    (h : Look.maxDayMin < n) :
+    readOptWorked sec = .error (PlannerRefusal.badActive PlanKey.workedMin) := by
+  unfold readOptWorked
+  rw [ha]
+  simp only
+  rw [hn]
+  simp only [Planner.a_worked_reading_past_a_day_is_refused n h]
+
+/-- **The key's name spells itself** — a refusal a host reads by text. -/
+theorem planKey_workedMin_is_the_wire_key : PlanKey.workedMin.name = "workedMin" := rfl
 end PlanWire
 end Tm

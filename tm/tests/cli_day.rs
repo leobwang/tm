@@ -133,6 +133,13 @@ fn done_with_an_id_and_no_block_is_retro() {
     assert_eq!(tm.last()["actual_min"], 0);
 }
 
+/// **The owner's D62 (W-36 track T, a registered divergence) — a behaviour row.** `^t4` is
+/// `- [ ] 3 1b Claude Code drafts tests @m2 ^t4`: its one estimate is the
+/// LEADING one. Fork 4748911's `tm extend` appended `est:2b` beside it, so the
+/// line carried `1b` and `est:2b` — two estimates, the row printing one and the
+/// planner reading the other (README gap 2926), and this test pinned exactly
+/// that. D56's one-estimate rule reaches `tm extend` now: the kernel's `est` op
+/// rewrites the leading estimate in place, as typed, and writes no token.
 #[test]
 fn extend_adds_a_block_to_the_estimate() {
     let tm = Tm::new();
@@ -141,13 +148,21 @@ fn extend_adds_a_block_to_the_estimate() {
     let json = tm.json(&["extend", "1b"]);
     assert_eq!(json["by_min"], 60);
     assert_eq!(json["est_min"], 120);
-    assert!(tm.line("week/2026-W37.md", "t4").contains("est:2b"));
+    let line = tm.line("week/2026-W37.md", "t4");
+    assert_eq!(
+        line, "- [>] 3 2b Claude Code drafts tests     @m2 ^t4",
+        "one estimate, the leading one, rewritten in place as typed (D62)"
+    );
+    assert!(!line.contains("est:"), "no second estimate beside the leading one: {line}");
     assert_eq!(tm.last()["ev"], "extend");
     assert_eq!(tm.last()["by_min"], 60);
     assert_eq!(tm.state()["active"]["est_min"], 120);
     insta::assert_json_snapshot!("extend_json", json);
 }
 
+/// **D62's second behaviour row** (W-36 track T): fork `tm stop` wrote
+/// `est:40m` beside `^t4`'s leading `1b`; the remainder now replaces the
+/// leading estimate, as typed (`40m`), and the line carries one estimate.
 #[test]
 fn stop_writes_the_remaining_estimate_back() {
     let tm = Tm::new();
@@ -158,8 +173,11 @@ fn stop_writes_the_remaining_estimate_back() {
     assert_eq!(json["remaining_min"], 40);
 
     let line = tm.line("week/2026-W37.md", "t4");
-    assert!(line.starts_with("- [ ]"), "{line}");
-    assert!(line.contains("est:40m"), "{line}");
+    assert_eq!(
+        line, "- [ ] 3 40m Claude Code drafts tests     @m2 ^t4",
+        "the box moved and the leading estimate is the remainder, one estimate (D62)"
+    );
+    assert!(!line.contains("est:"), "{line}");
     assert_eq!(tm.last()["ev"], "stop");
     assert_eq!(tm.last()["remaining_min"], 40);
     assert_eq!(tm.state()["active"], serde_json::Value::Null);
