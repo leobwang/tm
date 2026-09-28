@@ -7,24 +7,26 @@
 //! interruption, a batch of mixed `loc:`, an `atomic` item longer than the
 //! stretch between two breaks, an evening that reaches the wind-down, and the
 //! diagnostics nothing else asserts.
-
-#[path = "support/replay.rs"]
-#[allow(dead_code)]
-mod chokepoint;
+//!
+//! # Two arms since W-36 track H (README gap 2872)
+//!
+//! Every property is written ONCE, over a `planner_common::DayPlanner`, and
+//! asked of the KERNEL (the test under the property's own name — the arm that
+//! survives R3: the whole request through `planreq`, the day read back by the
+//! host's codec `tm_core::planwire`) and of the fork (`<name>_on_the_fork`, in
+//! the one `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region R3
+//! deletes). Where the kernel's day differs from the fork's BY DECISION the
+//! property says so by name and asks each planner its own half.
 
 mod planner_common;
 
-use chrono::{DateTime, Duration};
-use chrono_tz::Tz;
+use chrono::Duration;
 use planner_common::{
-    assert_break_rule, at, basic_state, date, load, load_with_log, time, timeline, BASIC_LOG, TZ,
+    assert_break_rule, at, basic_state, date, load, load_with_log, of_texts, time, timeline, DayPlanner,
+    Fixture, Kernel, BASIC_LOG, TZ,
 };
-use tm_core::config::Config;
-use tm_core::energy::Model;
-use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
-use tm_core::planner::{self, PlanInput};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
 use tm_core::tree::Tree;
 
@@ -33,46 +35,10 @@ use tm_core::tree::Tree;
 // ---------------------------------------------------------------------------
 
 /// A hand-written week (and optional calendar) with its own log — the smallest
-/// world a planner test can run in.
-struct World {
-    tree: Tree,
-    cfg: Config,
-    replay: Replay,
-    model: Model,
-}
-
-impl World {
-    fn new(week: &str, calendar: &str, log_text: &str) -> World {
-        let cfg = Config::default();
-        let tree = Tree::from_texts(
-            &[
-                ("week/2026-W37.md", week),
-                ("calendar/2026-W37.md", calendar),
-            ],
-            &cfg,
-        );
-        assert!(tree.problems().is_empty(), "{:?}", tree.problems());
-        let warnings = chokepoint::warning_lines_of_text(log_text);
-        assert!(warnings.is_empty(), "{:?}", warnings);
-        let replay = chokepoint::replay_of_text(log_text, cfg.tz);
-        World {
-            tree,
-            cfg,
-            replay,
-            model: Model::default(),
-        }
-    }
-
-    fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
-        PlanInput::new(
-            &self.tree,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            state,
-            now,
-        )
-    }
+/// world a planner test can run in. Since W-36 track H it is a
+/// `planner_common::Fixture`, so the same world is handed to both planners.
+fn world(week: &str, calendar: &str, log_text: &str) -> Fixture {
+    of_texts(&[("week/2026-W37.md", week), ("calendar/2026-W37.md", calendar)], log_text)
 }
 
 /// `wake` + `arrive`, the two events every day starts with.
@@ -135,8 +101,7 @@ fn ci_of(tree: &Tree, id: &Id) -> u8 {
 /// anywhere" clause either: the block that is running keeps *its own* time —
 /// `[now, now + est − worked]` — and takes no cut slot at all, so it can never
 /// be the ci-5 item sitting in a slot of energy 3.
-#[test]
-fn the_running_block_takes_no_slot_below_its_ci() {
+fn the_running_block_takes_no_slot_below_its_ci_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     for (h, m) in [(14, 30), (15, 0), (9, 30)] {
         let state = RuntimeState {
@@ -149,7 +114,7 @@ fn the_running_block_takes_no_slot_below_its_ci() {
             ..basic_state()
         };
         let now = at("2026-09-07", h, m) + Duration::minutes(30);
-        let day = planner::plan(&fx.input(&state, now));
+        let day = p.day(&fx, &state, now);
         for seg in day.segments.iter().filter(|s| s.kind.is_work()) {
             let Some(energy) = seg.energy else { continue };
             for id in seg.items() {
@@ -172,12 +137,17 @@ fn the_running_block_takes_no_slot_below_its_ci() {
     }
 }
 
+/// [`the_running_block_takes_no_slot_below_its_ci_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_running_block_takes_no_slot_below_its_ci() {
+    the_running_block_takes_no_slot_below_its_ci_on(&Kernel);
+}
+
 /// §9: "the Active item keeps its current slot regardless of key" — including
 /// when §8.2 step 5 would refuse the item. A `max:`-exhausted (or dep-blocked)
 /// item forms no assignable group, and the block running right now must not
 /// vanish from the timeline because of it.
-#[test]
-fn the_running_block_survives_an_exhausted_cap() {
+fn the_running_block_survives_an_exhausted_cap_on(p: &dyn DayPlanner) {
     // ^d1 carries `max:2b/d`; two blocks are already done today.
     let log = format!(
         "{ARRIVED}{}",
@@ -205,7 +175,7 @@ fn the_running_block_survives_an_exhausted_cap() {
         ..basic_state()
     };
     let now = at("2026-09-07", 9, 40);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let current = day
         .current_segment()
         .unwrap_or_else(|| panic!("^d1 is running:\n{}", timeline(&day)));
@@ -221,11 +191,16 @@ fn the_running_block_survives_an_exhausted_cap() {
     );
 }
 
+/// [`the_running_block_survives_an_exhausted_cap_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_running_block_survives_an_exhausted_cap() {
+    the_running_block_survives_an_exhausted_cap_on(&Kernel);
+}
+
 /// §9: "Active block paused" — an interruption, not a routine, is what stops
 /// it. Step 2 must not place a mandatory instance on top of a block that is
 /// running right now.
-#[test]
-fn a_mandatory_routine_never_lands_on_the_running_block() {
+fn a_mandatory_routine_never_lands_on_the_running_block_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     for (h, m) in [(15, 0), (9, 40), (11, 45)] {
         let state = RuntimeState {
@@ -238,7 +213,7 @@ fn a_mandatory_routine_never_lands_on_the_running_block() {
             ..basic_state()
         };
         let now = at("2026-09-07", h, m);
-        let day = planner::plan(&fx.input(&state, now));
+        let day = p.day(&fx, &state, now);
         let current = day
             .current_segment()
             .unwrap_or_else(|| panic!("^m1 is running at {h}:{m:02}\n{}", timeline(&day)));
@@ -253,11 +228,16 @@ fn a_mandatory_routine_never_lands_on_the_running_block() {
     }
 }
 
+/// [`a_mandatory_routine_never_lands_on_the_running_block_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_mandatory_routine_never_lands_on_the_running_block() {
+    a_mandatory_routine_never_lands_on_the_running_block_on(&Kernel);
+}
+
 /// §12.1: left of the cursor the timeline is the log. A block that is still
 /// running has no closed sub-segment, so the minutes it has been running for
 /// were covered by nothing at all — a hole in the day bar.
-#[test]
-fn the_elapsed_part_of_the_running_block_is_on_the_timeline() {
+fn the_elapsed_part_of_the_running_block_is_on_the_timeline_on(p: &dyn DayPlanner) {
     let log = format!(
         "{ARRIVED}{}",
         concat!(
@@ -276,7 +256,7 @@ fn the_elapsed_part_of_the_running_block_is_on_the_timeline() {
         ..basic_state()
     };
     let now = at("2026-09-07", 10, 0);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let elapsed: Vec<&Segment> = day
         .segments
         .iter()
@@ -294,12 +274,17 @@ fn the_elapsed_part_of_the_running_block_is_on_the_timeline() {
     assert!(overlapping(&day).is_empty(), "{}", timeline(&day));
 }
 
+/// [`the_elapsed_part_of_the_running_block_is_on_the_timeline_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_elapsed_part_of_the_running_block_is_on_the_timeline() {
+    the_elapsed_part_of_the_running_block_is_on_the_timeline_on(&Kernel);
+}
+
 /// §9 / §9.1: the overtime prompt runs in exactly the state where the budget is
 /// spent. A plan that drops the running block there tells the user to stop
 /// working on something they are working on, and `overtime_drops` would diff
 /// two plans neither of which holds the item.
-#[test]
-fn the_running_block_shows_when_the_budget_is_spent() {
+fn the_running_block_shows_when_the_budget_is_spent_on(p: &dyn DayPlanner) {
     // A travel day zeroes the budget outright (§8.2 step 1).
     let fx = load("plan-travel-day");
     let state = RuntimeState {
@@ -312,7 +297,7 @@ fn the_running_block_shows_when_the_budget_is_spent() {
         ..fx.state.clone()
     };
     let now = at("2026-09-07", 11, 30);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let current = day
         .current_segment()
         .unwrap_or_else(|| panic!("^m1 is running:\n{}", timeline(&day)));
@@ -328,12 +313,17 @@ fn the_running_block_shows_when_the_budget_is_spent() {
     assert!(overlapping(&day).is_empty(), "{}", timeline(&day));
 }
 
+/// [`the_running_block_shows_when_the_budget_is_spent_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_running_block_shows_when_the_budget_is_spent() {
+    the_running_block_shows_when_the_budget_is_spent_on(&Kernel);
+}
+
 /// §9: an open interruption is an ad-hoc wall "from t_i to now" — it has no end
 /// yet, so a later replan necessarily shows it longer. §8.3's stability
-/// invariant is about settled segments; [`tm_core::planner::SegFlags::open`]
+/// invariant is about settled segments; [`tm_core::dayplan::SegFlags::open`]
 /// says which segment is not one, and the growth is all it may do.
-#[test]
-fn an_open_interruption_grows_and_never_moves() {
+fn an_open_interruption_grows_and_never_moves_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     let state = RuntimeState {
         interrupt: Some(InterruptState {
@@ -343,8 +333,8 @@ fn an_open_interruption_grows_and_never_moves() {
         ..basic_state()
     };
     let (t1, t2) = (at("2026-09-07", 13, 5), at("2026-09-07", 13, 35));
-    let early = planner::plan(&fx.input(&state, t1));
-    let later = planner::plan(&fx.input(&state, t2));
+    let early = p.day(&fx, &state, t1);
+    let later = p.day(&fx, &state, t2);
     for seg in early.segments.iter().filter(|s| s.end <= t1) {
         if seg.flags.open {
             let grown = later
@@ -371,23 +361,28 @@ fn an_open_interruption_grows_and_never_moves() {
     assert_eq!(lost[0].end, t1);
 }
 
+/// [`an_open_interruption_grows_and_never_moves_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn an_open_interruption_grows_and_never_moves() {
+    an_open_interruption_grows_and_never_moves_on(&Kernel);
+}
+
 // ---------------------------------------------------------------------------
 // §7.5 batching and §8.2 step 5's filters
 // ---------------------------------------------------------------------------
 
 /// §7.5: several small items share one block — the whole reason the `+3` bin
 /// ever gets a slot.
-#[test]
-fn small_items_share_one_block() {
+fn small_items_share_one_block_on(p: &dyn DayPlanner) {
     let week = week_header(
         "- [ ] 3 15m Errand one !1 ^zaa\n\
          - [ ] 3 15m Errand two !1 ^zab\n\
          - [ ] 3 10m Errand three !1 ^zac\n\
          - [ ] 3 20m Errand four !1 ^zad\n",
     );
-    let w = World::new(&week, "", ARRIVED);
+    let w = world(&week, "", ARRIVED);
     let state = synthetic_state();
-    let day = planner::plan(&w.input(&state, at("2026-09-07", 7, 0)));
+    let day = p.day(&w, &state, at("2026-09-07", 7, 0));
     let batch = day
         .segments
         .iter()
@@ -405,23 +400,28 @@ fn small_items_share_one_block() {
     assert!(batch.minutes() <= w.cfg.block_min());
 }
 
+/// [`small_items_share_one_block_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn small_items_share_one_block() {
+    small_items_share_one_block_on(&Kernel);
+}
+
 /// §8.2 step 5's `loc` filter is written about the item. §7.5 batches by `ci`
 /// and size alone, so a batch may mix a `loc:out` errand with a desk task:
 /// neither may ride the other into a slot, or out of the day.
-#[test]
-fn a_batch_never_carries_one_members_location_onto_another() {
+fn a_batch_never_carries_one_members_location_onto_another_on(p: &dyn DayPlanner) {
     for week in [
         "- [ ] 3 15m Desk thing !1 ^zaa\n- [ ] 3 15m Post the parcel !1 loc:out ^zab\n",
         // …and the other way round: the errand first must not take the desk
         // task out of the day with it.
         "- [ ] 3 15m Post the parcel !1 loc:out ^zab\n- [ ] 3 15m Desk thing !1 ^zaa\n",
     ] {
-        let w = World::new(&week_header(week), "", ARRIVED);
+        let w = world(&week_header(week), "", ARRIVED);
         let state = RuntimeState {
             loc: Some("lounge".to_string()),
             ..synthetic_state()
         };
-        let day = planner::plan(&w.input(&state, at("2026-09-07", 7, 0)));
+        let day = p.day(&w, &state, at("2026-09-07", 7, 0));
         let assigned = day.assigned();
         assert!(
             assigned.contains(&Id::new("zaa")),
@@ -437,20 +437,25 @@ fn a_batch_never_carries_one_members_location_onto_another() {
     }
 }
 
+/// [`a_batch_never_carries_one_members_location_onto_another_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_batch_never_carries_one_members_location_onto_another() {
+    a_batch_never_carries_one_members_location_onto_another_on(&Kernel);
+}
+
 /// §8.2 step 5: "if !splittable: contiguous free slots ≥ remaining exist
 /// **before the next wall**". The 20-minute break the planner itself inserts is
 /// not a wall — reading it as one makes every `atomic` item longer than
 /// `break_after_blocks × block_min` unplaceable on any day at all.
-#[test]
-fn an_atomic_item_may_run_through_a_planned_break() {
-    let w = World::new(
+fn an_atomic_item_may_run_through_a_planned_break_on(p: &dyn DayPlanner) {
+    let w = world(
         &week_header("- [ ] 3 3b Long atomic thing !1 atomic ^zaa\n"),
         "",
         ARRIVED,
     );
     let state = synthetic_state();
     let now = at("2026-09-07", 7, 0);
-    let day = planner::plan(&w.input(&state, now));
+    let day = p.day(&w, &state, now);
     let mine: Vec<&Segment> = day
         .segments
         .iter()
@@ -469,17 +474,23 @@ fn an_atomic_item_may_run_through_a_planned_break() {
     // A wall, on the other hand, does end the run: with the afternoon walled
     // off there is no contiguous stretch left and the item waits for a day
     // that has one.
-    let walled = World::new(
+    let walled = world(
         &week_header("- [ ] 3 3b Long atomic thing !1 atomic ^zaa\n"),
         "- [ ] 3 Wall at:2026-09-07T09:00/16:00 ^waa\n",
         ARRIVED,
     );
-    let day = planner::plan(&walled.input(&state, now));
+    let day = p.day(&walled, &state, now);
     assert!(
         !day.assigned().contains(&Id::new("zaa")),
         "two hours is not three blocks:\n{}",
         timeline(&day)
     );
+}
+
+/// [`an_atomic_item_may_run_through_a_planned_break_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn an_atomic_item_may_run_through_a_planned_break() {
+    an_atomic_item_may_run_through_a_planned_break_on(&Kernel);
 }
 
 // ---------------------------------------------------------------------------
@@ -489,8 +500,7 @@ fn an_atomic_item_may_run_through_a_planned_break() {
 /// §8.2 step 6 places a deferred routine into a *free* position: the breaks
 /// step 3 cut are not free, and a routine laid over one used to be emitted
 /// twice — the break and the routine, at the same minute.
-#[test]
-fn a_deferred_routine_never_lands_on_a_break() {
+fn a_deferred_routine_never_lands_on_a_break_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     for (h, m) in [(7, 0), (8, 30), (9, 45), (11, 0), (13, 0)] {
         for loc in ["lounge", "home"] {
@@ -498,7 +508,7 @@ fn a_deferred_routine_never_lands_on_a_break() {
                 loc: Some(loc.to_string()),
                 ..basic_state()
             };
-            let day = planner::plan(&fx.input(&state, at("2026-09-07", h, m)));
+            let day = p.day(&fx, &state, at("2026-09-07", h, m));
             assert!(
                 overlapping(&day).is_empty(),
                 "{loc} at {h}:{m:02}: {:?}\n{}",
@@ -512,41 +522,60 @@ fn a_deferred_routine_never_lands_on_a_break() {
     }
 }
 
+/// [`a_deferred_routine_never_lands_on_a_break_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_deferred_routine_never_lands_on_a_break() {
+    a_deferred_routine_never_lands_on_a_break_on(&Kernel);
+}
+
 /// §8.2 step 3: "a break of `break_min` after every `break_after_blocks`
 /// blocks" — the rule, not just the presence of one break somewhere.
-#[test]
-fn a_break_comes_after_every_two_blocks() {
+fn a_break_comes_after_every_two_blocks_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     for (h, m) in [(7, 0), (9, 45), (11, 0)] {
         let now = at("2026-09-07", h, m);
-        let day = planner::plan(&fx.input(&basic_state(), now));
+        let day = p.day(&fx, &basic_state(), now);
         assert_break_rule(&day, now, &fx.cfg);
     }
-    let w = World::new(
+    let w = world(
         &week_header("- [ ] 3 8b Long thing !1 ^zaa\n"),
         "",
         ARRIVED,
     );
     let now = at("2026-09-07", 7, 0);
-    let day = planner::plan(&w.input(&synthetic_state(), now));
+    let day = p.day(&w, &synthetic_state(), now);
     assert_break_rule(&day, now, &w.cfg);
-    assert!(
-        day.segments
-            .iter()
-            .filter(|s| s.kind == SegKind::Break && s.start >= now)
-            .count()
-            >= 2,
-        "six blocks need two breaks:\n{}",
-        timeline(&day)
-    );
+    // Six blocks need two breaks: two stretches of at least `break_min`
+    // between consecutive work rows, whatever fills them.
+    let work: Vec<&Segment> = day.segments.iter().filter(|s| s.kind.is_work() && s.start >= now).collect();
+    let rests = work
+        .windows(2)
+        .filter(|pair| (pair[1].start - pair[0].end).num_minutes() >= i64::from(w.cfg.day.break_min))
+        .count();
+    assert!(rests >= 2, "six blocks need two breaks:\n{}", timeline(&day));
+    // …and README gap 551's class, bounded exactly: the fork DRAWS each of them
+    // as a Break row, the kernel keeps the same minutes free and draws none
+    // (`PlanReq.todayCut.breaks` places no row). Whoever closes gap 551 changes
+    // the kernel's half here, and says so.
+    let drawn = day.segments.iter().filter(|s| s.kind == SegKind::Break && s.start >= now).count();
+    if p.name() == "the kernel" {
+        assert_eq!(drawn, 0, "gap 551 has closed — the kernel drew planned breaks:\n{}", timeline(&day));
+    } else {
+        assert!(drawn >= 2, "six blocks need two Break rows on the fork:\n{}", timeline(&day));
+    }
+}
+
+/// [`a_break_comes_after_every_two_blocks_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_break_comes_after_every_two_blocks() {
+    a_break_comes_after_every_two_blocks_on(&Kernel);
 }
 
 /// §8.3: "no ci ≥ 4 Block after wind-down". The fixture days end long before
 /// 21:30; §8.1's window can reach past it — a late arrival and an evening wall
 /// push the end into the night — and the rule has to hold there.
-#[test]
-fn no_demanding_block_after_wind_down() {
-    let w = World::new(
+fn no_demanding_block_after_wind_down_on(p: &dyn DayPlanner) {
+    let w = world(
         &week_header(
             "- [ ] 5 6b Big thing !1 ^zaa\n\
              - [ ] 3 6b Small thing !1 ^zab\n\
@@ -568,7 +597,7 @@ fn no_demanding_block_after_wind_down() {
         ..RuntimeState::default()
     };
     let now = at("2026-09-07", 11, 0);
-    let day = planner::plan(&w.input(&state, now));
+    let day = p.day(&w, &state, now);
     // §8.1: 11:00 + 8h = 19:00, plus the six-hour wall inside it.
     assert!(
         day.window.1 > at("2026-09-07", 21, 30),
@@ -590,17 +619,22 @@ fn no_demanding_block_after_wind_down() {
     }
 }
 
+/// [`no_demanding_block_after_wind_down_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn no_demanding_block_after_wind_down() {
+    no_demanding_block_after_wind_down_on(&Kernel);
+}
+
 // ---------------------------------------------------------------------------
 // §8.2 step 8 and §11
 // ---------------------------------------------------------------------------
 
 /// The five diagnostics no snapshot shows (they are all `·` on the fixture
 /// days) and the two §11 monitors: each one on a day that produces it.
-#[test]
-fn the_diagnostics_are_produced_where_the_spec_says() {
+fn the_diagnostics_are_produced_where_the_spec_says_on(p: &dyn DayPlanner) {
     // `underused` and the `↓` flag: a ci-1 item in a slot of energy 5.
-    let w = World::new(&week_header("- [ ] 1 2b Filing !1 ^zaa\n"), "", ARRIVED);
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 0)));
+    let w = world(&week_header("- [ ] 1 2b Filing !1 ^zaa\n"), "", ARRIVED);
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 0));
     assert!(
         day.diagnostics
             .underused
@@ -616,12 +650,12 @@ fn the_diagnostics_are_produced_where_the_spec_says() {
         .any(|s| s.kind.is_work() && s.flags.underused));
 
     // `hot` and `impossible`: 20 blocks of ci-3 work due tonight.
-    let w = World::new(
+    let w = world(
         &week_header("- [ ] 3 20b Impossible thing due:2026-09-07T23:59 ^zaa\n"),
         "",
         ARRIVED,
     );
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 0)));
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 0));
     assert!(day.diagnostics.hot.contains(&Id::new("zaa")), "{:?}", day.diagnostics);
     assert!(
         day.diagnostics
@@ -635,13 +669,13 @@ fn the_diagnostics_are_produced_where_the_spec_says() {
 
     // `conflicts`: two calendar walls over the same hour, and nothing placed
     // in the overlap.
-    let w = World::new(
+    let w = world(
         &week_header("- [ ] 3 2b Work !1 ^zaa\n"),
         "- [ ] 3 Meeting at:2026-09-07T10:00/12:00 ^waa\n\
          - [ ] 3 Other meeting at:2026-09-07T11:00/13:00 ^wab\n",
         ARRIVED,
     );
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 0)));
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 0));
     assert_eq!(
         day.diagnostics.conflicts,
         vec![(Id::new("waa"), Id::new("wab"))],
@@ -670,14 +704,19 @@ fn the_diagnostics_are_produced_where_the_spec_says() {
         "\n",
     );
     let fx = load_with_log("plan-basic", Some(morning));
-    let day = planner::plan(&fx.input(&basic_state(), at("2026-09-07", 9, 30)));
+    let day = p.day(&fx, &basic_state(), at("2026-09-07", 9, 30));
     assert_eq!(day.diagnostics.rest_debt_min, 10, "20m planned, 10m taken");
+}
+
+/// [`the_diagnostics_are_produced_where_the_spec_says_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_diagnostics_are_produced_where_the_spec_says() {
+    the_diagnostics_are_produced_where_the_spec_says_on(&Kernel);
 }
 
 /// §8.2 step 8's `deferred`: an energy report that lowers today's curve costs a
 /// ci-5 item the slot the raw prediction had for it.
-#[test]
-fn a_posterior_downgrade_defers_the_high_ci_item() {
+fn a_posterior_downgrade_defers_the_high_ci_item_on(p: &dyn DayPlanner) {
     let week = week_header("- [ ] 5 2b Deep work !1 ^zaa\n- [ ] 2 2b Light work !2 ^zab\n");
     let downgraded = format!(
         "{ARRIVED}{}",
@@ -689,8 +728,8 @@ fn a_posterior_downgrade_defers_the_high_ci_item() {
     // Planned after the report, so every remaining slot carries the
     // correction (§8.5: the posterior only reaches slots later than the
     // report).
-    let w = World::new(&week, "", &downgraded);
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 30)));
+    let w = world(&week, "", &downgraded);
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 30));
     assert!(
         day.diagnostics.deferred.contains(&Id::new("zaa")),
         "{:?}\n{}",
@@ -699,10 +738,16 @@ fn a_posterior_downgrade_defers_the_high_ci_item() {
     );
     assert!(!day.assigned().contains(&Id::new("zaa")));
     // Without the report the same day works it.
-    let w = World::new(&week, "", ARRIVED);
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 30)));
+    let w = world(&week, "", ARRIVED);
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 30));
     assert!(day.assigned().contains(&Id::new("zaa")), "{}", timeline(&day));
     assert!(day.diagnostics.deferred.is_empty());
+}
+
+/// [`a_posterior_downgrade_defers_the_high_ci_item_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_posterior_downgrade_defers_the_high_ci_item() {
+    a_posterior_downgrade_defers_the_high_ci_item_on(&Kernel);
 }
 
 /// §11's plan honesty, pinned: `Σ` the minutes every group the day *starts*
@@ -710,45 +755,49 @@ fn a_posterior_downgrade_defers_the_high_ci_item() {
 /// the day opens more work than it can finish — which is what the monitor's
 /// "warning when > 1.1" is for, and the only reading under which the ratio can
 /// exceed 1 at all (assignment itself never exceeds the budget).
-#[test]
-fn plan_honesty_measures_what_the_day_starts() {
+fn plan_honesty_measures_what_the_day_starts_on(p: &dyn DayPlanner) {
     // One block of work in a six-block day: 60 / 360.
-    let w = World::new(&week_header("- [ ] 3 1b One block !1 ^zaa\n"), "", ARRIVED);
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 0)));
+    let w = world(&week_header("- [ ] 3 1b One block !1 ^zaa\n"), "", ARRIVED);
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 0));
     let honesty = day.diagnostics.plan_honesty.expect("a budget of six blocks");
     assert!((honesty - 60.0 / 360.0).abs() < 0.01, "{honesty}");
 
     // A single milestone twice the size of the day: 12b of 6b = 2.0, and the
     // monitor warns.
-    let w = World::new(&week_header("- [ ] 3 12b One big thing !1 ^zaa\n"), "", ARRIVED);
-    let day = planner::plan(&w.input(&synthetic_state(), at("2026-09-07", 7, 0)));
+    let w = world(&week_header("- [ ] 3 12b One big thing !1 ^zaa\n"), "", ARRIVED);
+    let day = p.day(&w, &synthetic_state(), at("2026-09-07", 7, 0));
     let honesty = day.diagnostics.plan_honesty.expect("a budget of six blocks");
     assert!((honesty - 2.0).abs() < 0.01, "{honesty}");
     assert!(honesty > 1.1, "the day is over-committed");
 
     // A travel day spends nothing, so there is no ratio to report.
     let fx = load("plan-travel-day");
-    let day = planner::plan(&fx.input(&fx.state, at("2026-09-07", 7, 0)));
+    let day = p.day(&fx, &fx.state, at("2026-09-07", 7, 0));
     assert_eq!(day.diagnostics.plan_honesty, None);
+}
+
+/// [`plan_honesty_measures_what_the_day_starts_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn plan_honesty_measures_what_the_day_starts() {
+    plan_honesty_measures_what_the_day_starts_on(&Kernel);
 }
 
 /// §7.2/§8.3: HOT before queue. Four `p = 0` items and three slots — the day
 /// works the hot ones, in key order, and no `p > 0` item takes their place.
-#[test]
-fn hot_items_take_the_slots_before_the_queue() {
+fn hot_items_take_the_slots_before_the_queue_on(p: &dyn DayPlanner) {
     let week = week_header(
         "- [ ] 3 2b Hot one due:2026-09-07T23:59 !2 ^zaa\n\
          - [ ] 3 2b Hot two due:2026-09-07T23:59 !2 ^zab\n\
          - [ ] 3 2b Hot three due:2026-09-07T23:59 !2 ^zac\n\
          - [ ] 3 6b Ordinary work !1 ^zad\n",
     );
-    let w = World::new(&week, "", ARRIVED);
+    let w = world(&week, "", ARRIVED);
     let state = RuntimeState {
         budget: Some(3),
         ..synthetic_state()
     };
     let now = at("2026-09-07", 7, 0);
-    let day = planner::plan(&w.input(&state, now));
+    let day = p.day(&w, &state, now);
     let prios: Vec<(Id, u8)> = day
         .priorities
         .iter()
@@ -776,20 +825,31 @@ fn hot_items_take_the_slots_before_the_queue() {
     assert!(assigned.contains(&Id::new("zaa")));
 }
 
+/// [`hot_items_take_the_slots_before_the_queue_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn hot_items_take_the_slots_before_the_queue() {
+    hot_items_take_the_slots_before_the_queue_on(&Kernel);
+}
+
 /// §10.2: `state.json` is a hand-editable file. A nonsense budget must give a
 /// day, not a panic in the middle of the TUI's event loop.
-#[test]
-fn a_nonsense_budget_does_not_panic() {
+fn a_nonsense_budget_does_not_panic_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     for budget in [0, 1, 100_000_000, u32::MAX] {
         let state = RuntimeState {
             budget: Some(budget),
             ..basic_state()
         };
-        let day = planner::plan(&fx.input(&state, at("2026-09-07", 7, 0)));
+        let day = p.day(&fx, &state, at("2026-09-07", 7, 0));
         assert_eq!(day.budget_blocks, budget);
         assert!(!day.segments.is_empty());
     }
+}
+
+/// [`a_nonsense_budget_does_not_panic_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_nonsense_budget_does_not_panic() {
+    a_nonsense_budget_does_not_panic_on(&Kernel);
 }
 
 // ---------------------------------------------------------------------------
@@ -804,8 +864,7 @@ fn a_nonsense_budget_does_not_panic() {
 /// actually name is the weekday's expected arrival, and
 /// `Model::wake_or_expected` is the one place both this and the CLI's
 /// `Ctx::wake_time` read it from.
-#[test]
-fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
+fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival_on(p: &dyn DayPlanner) {
     let fx = load("plan-basic");
     let now = at("2026-09-07", 9, 21);
     let arrived = |wake: Option<chrono::NaiveTime>| RuntimeState {
@@ -820,8 +879,8 @@ fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
 
     // Nothing logged the wake, and §16's `[expected] arrival` for a Monday is
     // 07:00: the two days are the same day.
-    let unknown = planner::plan(&fx.input(&arrived(None), now));
-    let expected = planner::plan(&fx.input(&arrived(Some(time(7, 0))), now));
+    let unknown = p.day(&fx, &arrived(None), now);
+    let expected = p.day(&fx, &arrived(Some(time(7, 0))), now);
     assert_eq!(
         timeline(&unknown),
         timeline(&expected),
@@ -846,7 +905,7 @@ fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
 
     // The day the old fallback produced, for contrast: midnight puts every
     // slot in the tail of the curve and no ci-5 item can be placed at all.
-    let midnight = planner::plan(&fx.input(&arrived(Some(time(0, 0))), now));
+    let midnight = p.day(&fx, &arrived(Some(time(0, 0))), now);
     let ci5: Vec<Id> = midnight
         .assigned_from(now)
         .into_iter()
@@ -859,12 +918,17 @@ fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
     );
 }
 
+/// [`a_day_with_no_wake_starts_at_the_weekday_expected_arrival_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival() {
+    a_day_with_no_wake_starts_at_the_weekday_expected_arrival_on(&Kernel);
+}
+
 /// §5.3: a routine reaches the day once. The laundry's carried `persist`
 /// instance *is* its pending instance, so the occurrence that came round this
 /// week is not a second load — the planner used to place both, mandatory in
 /// the morning and deferred to the evening.
-#[test]
-fn a_persisted_routine_is_not_planned_twice_in_one_day() {
+fn a_persisted_routine_is_not_planned_twice_in_one_day_on(p: &dyn DayPlanner) {
     let fx = load("plan-basic");
     let now = at("2026-09-07", 9, 21);
     let state = RuntimeState {
@@ -875,7 +939,7 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
         budget: Some(6),
         ..RuntimeState::default()
     };
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
 
     let laundry: Vec<String> = day
         .segments
@@ -908,6 +972,12 @@ fn a_persisted_routine_is_not_planned_twice_in_one_day() {
     assert_eq!(ps, vec![0], "one row in §10.2's per-id map");
 }
 
+/// [`a_persisted_routine_is_not_planned_twice_in_one_day_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_persisted_routine_is_not_planned_twice_in_one_day() {
+    a_persisted_routine_is_not_planned_twice_in_one_day_on(&Kernel);
+}
+
 /// The timezone every fixture uses, kept honest.
 #[test]
 fn the_fixtures_plan_in_the_configured_zone() {
@@ -924,14 +994,13 @@ fn the_fixtures_plan_in_the_configured_zone() {
 /// span covering all of them (`2026-09-07T10:00 .. 2026-09-13T20:00` for the
 /// weekly groceries), and the planner used to clip that to today alone, which
 /// leaves 00:00–24:00: the routine was then placed anywhere left in the day.
-#[test]
-fn a_multi_day_occurrence_keeps_its_daily_hours() {
+fn a_multi_day_occurrence_keeps_its_daily_hours_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     let state = basic_state();
 
     // 20:00, after `groceries win:10:00-20:00 every:week` has closed for the
     // day: it must not be placed at all, never at 20:20.
-    let evening = planner::plan(&fx.input(&state, at("2026-09-07", 20, 0)));
+    let evening = p.day(&fx, &state, at("2026-09-07", 20, 0));
     for seg in &evening.segments {
         if seg.item.as_ref() == Some(&Id::new("groceries")) {
             panic!(
@@ -943,7 +1012,7 @@ fn a_multi_day_occurrence_keeps_its_daily_hours() {
 
     // Earlier the same evening, `laundry win:09:00-21:00` may still be placed
     // — but only before 21:00.
-    let late = planner::plan(&fx.input(&state, at("2026-09-07", 17, 50)));
+    let late = p.day(&fx, &state, at("2026-09-07", 17, 50));
     for seg in &late.segments {
         if seg.item.as_ref() == Some(&Id::new("laundry")) {
             assert!(
@@ -966,7 +1035,7 @@ fn a_multi_day_occurrence_keeps_its_daily_hours() {
         budget: Some(6),
         ..RuntimeState::default()
     };
-    let dawn = planner::plan(&recur.input(&early_state, at("2026-09-07", 5, 0)));
+    let dawn = p.day(&recur, &early_state, at("2026-09-07", 5, 0));
     for seg in &dawn.segments {
         if seg.item.as_ref() == Some(&Id::new("vitamins")) {
             assert!(
@@ -977,3 +1046,118 @@ fn a_multi_day_occurrence_keeps_its_daily_hours() {
         }
     }
 }
+
+/// [`a_multi_day_occurrence_keeps_its_daily_hours_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_multi_day_occurrence_keeps_its_daily_hours() {
+    a_multi_day_occurrence_keeps_its_daily_hours_on(&Kernel);
+}
+
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)
+//
+// Each property above, asked of the fork's planner with its own §7 pass — what
+// this suite pinned until W-36 track H. R3 deletes this region whole and the
+// kernel arm above is what remains.
+use planner_common::Fork;
+
+#[test]
+fn the_running_block_takes_no_slot_below_its_ci_on_the_fork() {
+    the_running_block_takes_no_slot_below_its_ci_on(&Fork);
+}
+
+#[test]
+fn the_running_block_survives_an_exhausted_cap_on_the_fork() {
+    the_running_block_survives_an_exhausted_cap_on(&Fork);
+}
+
+#[test]
+fn a_mandatory_routine_never_lands_on_the_running_block_on_the_fork() {
+    a_mandatory_routine_never_lands_on_the_running_block_on(&Fork);
+}
+
+#[test]
+fn the_elapsed_part_of_the_running_block_is_on_the_timeline_on_the_fork() {
+    the_elapsed_part_of_the_running_block_is_on_the_timeline_on(&Fork);
+}
+
+#[test]
+fn the_running_block_shows_when_the_budget_is_spent_on_the_fork() {
+    the_running_block_shows_when_the_budget_is_spent_on(&Fork);
+}
+
+#[test]
+fn an_open_interruption_grows_and_never_moves_on_the_fork() {
+    an_open_interruption_grows_and_never_moves_on(&Fork);
+}
+
+#[test]
+fn small_items_share_one_block_on_the_fork() {
+    small_items_share_one_block_on(&Fork);
+}
+
+#[test]
+fn a_batch_never_carries_one_members_location_onto_another_on_the_fork() {
+    a_batch_never_carries_one_members_location_onto_another_on(&Fork);
+}
+
+#[test]
+fn an_atomic_item_may_run_through_a_planned_break_on_the_fork() {
+    an_atomic_item_may_run_through_a_planned_break_on(&Fork);
+}
+
+#[test]
+fn a_deferred_routine_never_lands_on_a_break_on_the_fork() {
+    a_deferred_routine_never_lands_on_a_break_on(&Fork);
+}
+
+#[test]
+fn a_break_comes_after_every_two_blocks_on_the_fork() {
+    a_break_comes_after_every_two_blocks_on(&Fork);
+}
+
+#[test]
+fn no_demanding_block_after_wind_down_on_the_fork() {
+    no_demanding_block_after_wind_down_on(&Fork);
+}
+
+#[test]
+fn the_diagnostics_are_produced_where_the_spec_says_on_the_fork() {
+    the_diagnostics_are_produced_where_the_spec_says_on(&Fork);
+}
+
+#[test]
+fn a_posterior_downgrade_defers_the_high_ci_item_on_the_fork() {
+    a_posterior_downgrade_defers_the_high_ci_item_on(&Fork);
+}
+
+#[test]
+fn plan_honesty_measures_what_the_day_starts_on_the_fork() {
+    plan_honesty_measures_what_the_day_starts_on(&Fork);
+}
+
+#[test]
+fn hot_items_take_the_slots_before_the_queue_on_the_fork() {
+    hot_items_take_the_slots_before_the_queue_on(&Fork);
+}
+
+#[test]
+fn a_nonsense_budget_does_not_panic_on_the_fork() {
+    a_nonsense_budget_does_not_panic_on(&Fork);
+}
+
+#[test]
+fn a_day_with_no_wake_starts_at_the_weekday_expected_arrival_on_the_fork() {
+    a_day_with_no_wake_starts_at_the_weekday_expected_arrival_on(&Fork);
+}
+
+#[test]
+fn a_persisted_routine_is_not_planned_twice_in_one_day_on_the_fork() {
+    a_persisted_routine_is_not_planned_twice_in_one_day_on(&Fork);
+}
+
+#[test]
+fn a_multi_day_occurrence_keeps_its_daily_hours_on_the_fork() {
+    a_multi_day_occurrence_keeps_its_daily_hours_on(&Fork);
+}
+// END THE FORK PLANNER

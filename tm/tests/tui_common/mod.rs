@@ -31,6 +31,11 @@
 #[path = "../support/replay.rs"]
 pub mod chokepoint;
 
+/// The capacity request the binary sends, and the kernel's answer read back by
+/// the host's codec — where the app's ranking comes from since W-36 track H.
+#[path = "../support/planreq.rs"]
+pub mod planreq;
+
 #[path = "../../src/tui/theme.rs"]
 pub mod theme;
 
@@ -124,8 +129,9 @@ fn time(h: u32, m: u32) -> NaiveTime {
     NaiveTime::from_hms_opt(h, m, 0).expect("time")
 }
 
-/// The §4.3 fixture tree.
-pub fn tree(cfg: &Config) -> Tree {
+/// The §4.3 fixture tree's files, as `(path, text)` — what [`tree`] parses and
+/// what the kernel is handed.
+pub fn tree_texts() -> Vec<(String, String)> {
     let dir = fixture_dir();
     let files = [
         "month/2026-09.md",
@@ -137,14 +143,19 @@ pub fn tree(cfg: &Config) -> Tree {
         "day/2026-09-07.md",
         "inbox.md",
     ];
-    let texts: Vec<(String, String)> = files
+    files
         .iter()
         .filter_map(|rel| {
             fs::read_to_string(dir.join(rel))
                 .ok()
                 .map(|t| ((*rel).to_string(), t))
         })
-        .collect();
+        .collect()
+}
+
+/// The §4.3 fixture tree.
+pub fn tree(cfg: &Config) -> Tree {
+    let texts = tree_texts();
     let refs: Vec<(&str, &str)> = texts
         .iter()
         .map(|(p, t)| (p.as_str(), t.as_str()))
@@ -545,17 +556,35 @@ pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> A
     let plan = day_plan(&cfg);
     let ghost = ghost_plan(&cfg);
     let tree = tree(&cfg);
-    // The ranking `tui::data_of` loads from the kernel (stage 5 D10 L8), stood in
-    // for by the fork point's own pass: the planner's candidates and priorities at
-    // `now`, and its first days in units. The TUI's replans and §9.1's what-ifs
-    // rank by it (`App::input`).
+    // The ranking `tui::data_of` loads from the kernel (stage 5 D10 L8):
+    // `Ctx::priorities` sends the capacity section and reads its grants and its
+    // first days in units. Until W-36 track H this stood in the FORK's own §7
+    // pass (`planner::plan(..).priorities`) and `planner::week_plan`'s grid — a
+    // configuration no shipped path builds (D53) — so the TUI's replans and
+    // §9.1's what-ifs (`App::input`) ranked by it. Now it is the kernel's answer
+    // to the request the binary sends, with no `planner` section, as
+    // `kernel_capacity::rank` asks it (README gap 2872).
     let model = tm_core::energy::Model::default();
-    let input = tm_core::planner::PlanInput::new(&tree, &replay, &cfg, &model, &state, now);
-    let prios: Vec<Prio> = tm_core::planner::plan(&input).priorities.into_iter().map(|(_, p)| p).collect();
-    let candidates =
-        tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, input.date(), now);
+    let date = tm_core::planwire::plan_date(&state, now);
+    let candidates = tm_core::priority::collect_candidates(&tree, &replay, &cfg, &model, date, now);
+    let texts = tree_texts();
+    let world = planreq::World {
+        docs: &texts,
+        log,
+        tree: &tree,
+        cfg: &cfg,
+        state: &state,
+        now,
+        cands: &candidates,
+    };
+    let (mut req, order) = planreq::request(&world, None);
+    req.as_object_mut().expect("a request is an object").remove("planner");
+    let resp = planreq::call(&req);
+    let answer = tm_core::planwire::read_capacity_answer(&resp, &order, true)
+        .unwrap_or_else(|e| panic!("the kernel's capacity answer reads: {e}: {}", resp["err"]));
+    let prios: Vec<Prio> = answer.prios;
     assert_eq!(candidates.len(), prios.len(), "the ranking is 1:1 with the candidates");
-    let caps = tm_core::planner::week_plan(&input).capacity;
+    let caps = answer.days;
     let data = AppData {
         model,
         state,

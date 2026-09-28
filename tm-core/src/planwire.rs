@@ -842,17 +842,44 @@ fn diagnostics_of(v: &Value, segments: &[Segment], ctx: &DayCtx<'_>) -> W<Diagno
 
     let honesty = &v["planHonesty"];
     let planned = nat32(&honesty["planned"], &at("planHonesty.planned"))?;
-    let total = nat32(&honesty["total"], &at("planHonesty.total"))?;
+    // The kernel's `total` is `remaining_budget × block_min` EXACTLY, and fork
+    // `diagnose` divides by `remaining_budget.saturating_mul(block_min)` -- a
+    // `state.json` budget is hand-editable, and the fork saturates rather than
+    // refuse a nonsense one (§10.2). So the host reads the natural and takes the
+    // fork's own `u32` saturation, the width the fork's division already has --
+    // never a refusal (W-36 track H, README gap 3082: `budget: 100000000` made
+    // this decoder refuse a day the fork plans).
+    let total = u32::try_from(nat(&honesty["total"], &at("planHonesty.total"))?).unwrap_or(u32::MAX);
+
+    // **The order the fork prints them in** (W-36 track H, README gap 3086). Fork
+    // `diagnose` walks `cands` -- the host's own `collect_candidates` order, this
+    // context's -- and pushes `hot`, `impossible`, `waiting`, `blocked` and
+    // `deferred` as it meets them; the kernel names the same ids in the order it
+    // was SENT them (`send_order`, by due date). The sets agree and the order is
+    // the host's to restore, from the list it already holds: on 23 of the 30
+    // generated class days `planner_classes.rs` compares them on, the kernel's
+    // order was not the fork's, and `tm plan` prints these lists in order.
+    let rank = |id: &Id| ctx.cands.iter().position(|c| c.id == *id).unwrap_or(usize::MAX);
+    let mut hot = ids(&v["hot"], &at("hot"))?;
+    hot.sort_by_key(|id| rank(id));
+    let mut impossible = impossible;
+    impossible.sort_by_key(|(id, _, _)| rank(id));
+    let mut blocked = blocked;
+    blocked.sort_by_key(|(id, _)| rank(id));
+    let mut deferred = ids(&v["deferred"], &at("deferred"))?;
+    deferred.sort_by_key(|id| rank(id));
+    let mut waiting = ids(&v["waiting"], &at("waiting"))?;
+    waiting.sort_by_key(|id| rank(id));
 
     Ok(Diagnostics {
         underused,
         a_capacity_lost: nat32(&v["aCapacityLost"], &at("aCapacityLost"))?,
-        hot: ids(&v["hot"], &at("hot"))?,
+        hot,
         impossible,
         conflicts,
         blocked,
-        deferred: ids(&v["deferred"], &at("deferred"))?,
-        waiting: ids(&v["waiting"], &at("waiting"))?,
+        deferred,
+        waiting,
         dropped_tail: ids(&v["droppedTail"], &at("droppedTail"))?,
         // Fork `diagnose`: `(budget_min > 0).then(|| committed / budget_min)`,
         // the same two integers divided once.
@@ -1227,6 +1254,18 @@ mod tests {
         let mut zero = v.clone();
         zero["diagnostics"]["planHonesty"] = json!({"planned": 0, "total": 0});
         assert_eq!(read_plan(&zero, &ctx).expect("reads").day.diagnostics.plan_honesty, None);
+        // A budget past `u32` minutes saturates as the fork's does (W-36 track H,
+        // README gap 3082): fork `diagnose` divides by
+        // `remaining_budget.saturating_mul(block_min)`, the kernel's `total` is
+        // the exact product, and a hand-edited `budget: 100000000` takes it past
+        // `u32`. The decoder refused that day; it reads the natural and saturates.
+        let mut big = v.clone();
+        big["diagnostics"]["planHonesty"] = json!({"planned": 780, "total": 6_000_000_000u64});
+        let sat = read_plan(&big, &ctx).expect("a total past u32 reads").day.diagnostics.plan_honesty;
+        assert_eq!(sat, Some(780.0 / f64::from(u32::MAX)));
+        let mut edge = v.clone();
+        edge["diagnostics"]["planHonesty"] = json!({"planned": 780, "total": u32::MAX});
+        assert_eq!(read_plan(&edge, &ctx).expect("reads").day.diagnostics.plan_honesty, sat, "past the edge is the edge");
     }
 
     #[test]

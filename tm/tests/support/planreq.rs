@@ -36,7 +36,7 @@ use chrono_tz::Tz;
 use serde_json::{json, Map, Value};
 
 use tm_core::config::Config;
-use tm_core::model::{fmt_time as hhmm, Id};
+use tm_core::model::{fmt_time as hhmm, Id, Loc};
 use tm_core::planwire::{self, CapacityAnswer, DayCtx, KernelDay, RoutineInst};
 use tm_core::priority::{self, Candidate};
 use tm_core::store::{MemStore, RuntimeState, Store};
@@ -169,7 +169,12 @@ fn capacity(w: &World<'_>, order: &[usize]) -> Value {
             "window": w.state.window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
             "budget": w.state.budget,
             "arrival": w.state.arrival.map(hhmm),
-            "loc": w.state.loc,
+            // `Ctx::loc`'s reading, as the shipped encoder sends it: the stored
+            // location, else the lounge. This sent `state.loc` raw until W-36
+            // track H, so a day before `tm arrive` (`loc: null`) was refused
+            // `badState state.loc` here and planned by the binary (README gap
+            // 3083, gap 2875's drift).
+            "loc": w.state.loc.as_deref().and_then(|s| Loc::parse(s).ok()).unwrap_or(Loc::Lounge).as_str(),
             "allowHome": false},
         "posterior": {"fullHours": decn(cfg.energy.posterior_full_hours),
                       "zeroHours": decn(cfg.energy.posterior_zero_hours)},
@@ -195,7 +200,12 @@ pub fn request(w: &World<'_>, overtime: Option<Value>) -> (Value, Vec<usize>) {
         "docs": w.docs.iter()
             .map(|(p, t)| json!({"path": p, "lines": t.lines().collect::<Vec<_>>()}))
             .collect::<Vec<_>>(),
-        "now": date.to_string(),
+        // `ctx.today` — `now`'s own local date — as the shipped encoder sends
+        // it. This sent the PLANNED date (`state.date` first) until W-36 track
+        // H, so a stale `state.date` made the kernel refuse `nowDisagrees at`
+        // for a request the binary builds with the two in step (README gap
+        // 3083, gap 2875's drift).
+        "now": w.now.date_naive().to_string(),
         "blockMin": w.cfg.block_min(),
         "tz": tz_table::wire_for(None, tz),
         "log": {"ckpt": null, "from": 1,

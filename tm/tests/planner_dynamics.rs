@@ -5,12 +5,9 @@
 
 mod planner_common;
 
-use planner_common::{at, date, load, load_with_log, time, timeline, BASIC_LOG};
-use tm_core::energy::Model;
+use planner_common::{at, load, load_with_log, time, timeline, DayPlanner, Kernel, BASIC_LOG};
 use tm_core::model::Id;
 use tm_core::dayplan::{fmt_clock, DayPlan, SegKind, Segment};
-use tm_core::planner::{self, PlanOverrides};
-use tm_core::priority::{self, Candidate};
 use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
 
 /// The morning of §4.3: wake, breakfast, arrive, two blocks worked, a break.
@@ -35,43 +32,36 @@ const MORNING: &str = concat!(
 
 use planner_common::basic_state as arrived;
 
-fn candidates(fx: &planner_common::Fixture, now: chrono::DateTime<chrono_tz::Tz>) -> Vec<Candidate> {
-    priority::collect_candidates(
-        &fx.tree,
-        &fx.replay,
-        &fx.cfg,
-        &Model::default(),
-        date("2026-09-07"),
-        now,
-    )
-}
 
 // ---------------------------------------------------------------------------
 // Purity and stability (§8.3, §17.2)
 // ---------------------------------------------------------------------------
 
 /// The same input twice gives the same plan, and the same hash.
-#[test]
-fn plan_is_pure() {
+fn plan_is_pure_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     let state = arrived();
-    let input = fx.input(&state, at("2026-09-07", 7, 0));
-    let a = planner::plan(&input);
-    let b = planner::plan(&input);
+    let a = p.day(&fx, &state, at("2026-09-07", 7, 0));
+    let b = p.day(&fx, &state, at("2026-09-07", 7, 0));
     assert_eq!(a, b);
     assert_eq!(a.hash(), b.hash());
     assert_eq!(a.hash().len(), 16);
 }
 
+/// [`plan_is_pure_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn plan_is_pure() {
+    plan_is_pure_on(&Kernel);
+}
+
 /// A replan later in the day never rewrites what already happened: every
 /// segment of the 07:00 plan that had ended by 09:30 is still in the 09:30
 /// plan, byte for byte.
-#[test]
-fn a_replan_never_moves_the_past() {
+fn a_replan_never_moves_the_past_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(MORNING));
     let state = arrived();
-    let early = planner::plan(&fx.input(&state, at("2026-09-07", 7, 0)));
-    let later = planner::plan(&fx.input(&state, at("2026-09-07", 9, 30)));
+    let early = p.day(&fx, &state, at("2026-09-07", 7, 0));
+    let later = p.day(&fx, &state, at("2026-09-07", 9, 30));
     let cutoff = at("2026-09-07", 7, 0);
     for seg in early.segments.iter().filter(|s| s.end <= cutoff) {
         assert!(
@@ -97,6 +87,12 @@ fn a_replan_never_moves_the_past() {
     );
 }
 
+/// [`a_replan_never_moves_the_past_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_replan_never_moves_the_past() {
+    a_replan_never_moves_the_past_on(&Kernel);
+}
+
 // ---------------------------------------------------------------------------
 // §9: the Active block, interruptions, the dropped tail
 // ---------------------------------------------------------------------------
@@ -112,8 +108,7 @@ fn a_replan_never_moves_the_past() {
 /// exempts the current block from preemption, not the whole estimate, and
 /// reserving the estimate deleted every routine window it covered from the
 /// day (see `a_long_run_still_leaves_room_for_lunch_and_a_break`).
-#[test]
-fn the_active_block_keeps_the_slot_containing_now() {
+fn the_active_block_keeps_the_slot_containing_now_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(MORNING));
     let state = RuntimeState {
         active: Some(ActiveBlock {
@@ -125,7 +120,7 @@ fn the_active_block_keeps_the_slot_containing_now() {
         ..arrived()
     };
     let now = at("2026-09-07", 10, 0);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let current = day
         .current_segment()
         .unwrap_or_else(|| panic!("a block is running:\n{}", timeline(&day)));
@@ -153,6 +148,12 @@ fn the_active_block_keeps_the_slot_containing_now() {
     }
 }
 
+/// [`the_active_block_keeps_the_slot_containing_now_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn the_active_block_keeps_the_slot_containing_now() {
+    the_active_block_keeps_the_slot_containing_now_on(&Kernel);
+}
+
 /// §8.2 steps 3 and 6 against §8.2 step 5: a six-block item that is running
 /// does not swallow the afternoon. It holds the block it is in, and lunch
 /// (`win:11:30-13:30 every:day`) and the `break_after_blocks` break are
@@ -163,8 +164,7 @@ fn the_active_block_keeps_the_slot_containing_now() {
 /// so no break ever fell due, and `place_deferred` found no free position for
 /// lunch inside 11:30–13:30 and dropped it — off the timeline and out of the
 /// diagnostics both.
-#[test]
-fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
+fn a_long_run_still_leaves_room_for_lunch_and_a_break_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(MORNING));
     let state = RuntimeState {
         active: Some(ActiveBlock {
@@ -176,7 +176,7 @@ fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
         ..arrived()
     };
     let now = at("2026-09-07", 9, 35);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let tl = timeline(&day);
 
     let current = day.current_segment().expect("a block is running");
@@ -197,13 +197,17 @@ fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
     );
 
     // §8.2 step 3's break: the running block counts as a block worked, so the
-    // day breaks after `break_after_blocks` of them, not never.
+    // day breaks after `break_after_blocks` of them, not never — a stretch of
+    // at least `break_min` after the run with no work in it, whatever fills it.
+    let work: Vec<&Segment> = day.segments.iter().filter(|s| s.kind.is_work() && s.start >= now).collect();
     assert!(
-        day.segments
-            .iter()
-            .any(|s| s.kind == SegKind::Break && s.start > now),
+        work.windows(2).any(|w| (w[1].start - w[0].end).num_minutes() >= i64::from(fx.cfg.day.break_min)),
         "a break follows the run:\n{tl}"
     );
+    // …and README gap 551's class, bounded exactly: the fork DRAWS it as a
+    // Break row, the kernel keeps the minutes free and draws none.
+    let drawn = day.segments.iter().any(|s| s.kind == SegKind::Break && s.start > now);
+    assert_eq!(drawn, p.name() == "the fork", "gap 551's class moved on {}:\n{tl}", p.name());
 
     // Still no preemption mid-block (§8.2 step 5).
     for seg in day.segments.iter().filter(|s| !s.flags.current) {
@@ -214,10 +218,15 @@ fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
     }
 }
 
+/// [`a_long_run_still_leaves_room_for_lunch_and_a_break_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn a_long_run_still_leaves_room_for_lunch_and_a_break() {
+    a_long_run_still_leaves_room_for_lunch_and_a_break_on(&Kernel);
+}
+
 /// §9: an interruption that has not been resumed is an ad-hoc wall from its
 /// start to `now`, and the day flows around it.
-#[test]
-fn an_open_interruption_is_a_wall_up_to_now() {
+fn an_open_interruption_is_a_wall_up_to_now_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(MORNING));
     let state = RuntimeState {
         interrupt: Some(InterruptState {
@@ -227,7 +236,7 @@ fn an_open_interruption_is_a_wall_up_to_now() {
         ..arrived()
     };
     let now = at("2026-09-07", 13, 5);
-    let day = planner::plan(&fx.input(&state, now));
+    let day = p.day(&fx, &state, now);
     let lost = day
         .segments
         .iter()
@@ -243,19 +252,24 @@ fn an_open_interruption_is_a_wall_up_to_now() {
     }
 }
 
+/// [`an_open_interruption_is_a_wall_up_to_now_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn an_open_interruption_is_a_wall_up_to_now() {
+    an_open_interruption_is_a_wall_up_to_now_on(&Kernel);
+}
+
 /// §8.3's tail-drop, in its operational form: taking a block away from the day
 /// never re-shuffles the plan — every slot both days keep holds the same item,
 /// and the smaller day's assigned set is a subset of the larger one's.
-#[test]
-fn losing_a_block_drops_a_tail_and_nothing_else() {
+fn losing_a_block_drops_a_tail_and_nothing_else_on(p: &dyn DayPlanner) {
     let fx = load_with_log("plan-basic", Some(BASIC_LOG));
     let now = at("2026-09-07", 7, 0);
-    let full = planner::plan(&fx.input(&arrived(), now));
+    let full = p.day(&fx, &arrived(), now);
     let short_state = RuntimeState {
         budget: Some(5),
         ..arrived()
     };
-    let short = planner::plan(&fx.input(&short_state, now));
+    let short = p.day(&fx, &short_state, now);
 
     let starts = |p: &DayPlan| -> Vec<(String, Vec<Id>)> {
         p.segments
@@ -272,10 +286,143 @@ fn losing_a_block_drops_a_tail_and_nothing_else() {
     }
 }
 
+/// [`losing_a_block_drops_a_tail_and_nothing_else_on`], asked of the kernel — the arm that survives R3.
+#[test]
+fn losing_a_block_drops_a_tail_and_nothing_else() {
+    losing_a_block_drops_a_tail_and_nothing_else_on(&Kernel);
+}
+
 // ---------------------------------------------------------------------------
 // §9.1 the overtime prompt
 // ---------------------------------------------------------------------------
 
+
+
+// ---------------------------------------------------------------------------
+// §13 tm plan --diff
+// ---------------------------------------------------------------------------
+
+
+
+// ---------------------------------------------------------------------------
+// §13 tm plan --explain ^id
+// ---------------------------------------------------------------------------
+
+
+
+// ---------------------------------------------------------------------------
+// §13 tm plan --allow-home
+// ---------------------------------------------------------------------------
+
+/// `--allow-home` lifts §8.2 step 3's `home_max_ci` cap: the same home day
+/// gets its high-`ci` slots back and the milestones become workable.
+fn allow_home_lifts_the_home_cap_on(p: &dyn DayPlanner) {
+    let fx = load("plan-home-day");
+    let now = at("2026-09-07", 9, 0);
+    let capped = p.day(&fx, &fx.state, now);
+    let lifted = p.day_allowing_home(&fx, &fx.state, now);
+
+    let top = |p: &DayPlan| -> u8 {
+        p.segments
+            .iter()
+            .filter_map(|s| s.energy)
+            .max()
+            .unwrap_or(0)
+    };
+    assert_eq!(top(&capped), fx.cfg.location.home_max_ci);
+    assert!(top(&lifted) > fx.cfg.location.home_max_ci, "{}", timeline(&lifted));
+    // The `ci 4` milestone becomes workable; `ci 5` still is not, because the
+    // *home energy curve* itself tops out at 4 (§16's `energy.prior.home`).
+    assert!(
+        lifted.assigned().contains(&Id::new("m2")),
+        "the ci-4 milestone is workable again: {}",
+        timeline(&lifted)
+    );
+    assert!(!capped.assigned().contains(&Id::new("m2")));
+}
+
+/// [`allow_home_lifts_the_home_cap_on`], asked of the kernel — the arm that
+/// survives R3 (`--allow-home` crosses as the capacity section's
+/// `state.allowHome`, `kernel_capacity::request`'s key).
+#[test]
+fn allow_home_lifts_the_home_cap() {
+    allow_home_lifts_the_home_cap_on(&Kernel);
+}
+
+// ---------------------------------------------------------------------------
+// §13 tm plan --week
+// ---------------------------------------------------------------------------
+
+
+
+/// A small convenience the assertions above want.
+trait AsDeref {
+    fn as_deref_id(&self) -> Option<&str>;
+}
+
+impl AsDeref for Option<Id> {
+    fn as_deref_id(&self) -> Option<&str> {
+        self.as_ref().map(Id::as_str)
+    }
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)
+//
+// Each property above asked of the fork (`<name>_on_the_fork`), and the four
+// tests that exercise a function of the fork's with no kernel counterpart, each
+// with the reason it has none. R3 deletes this region whole.
+use planner_common::{date, Fork};
+use tm_core::planner::{self, PlanOverrides};
+use tm_core::priority::{self, Candidate};
+use tm_core::energy::Model;
+
+#[test]
+fn plan_is_pure_on_the_fork() {
+    plan_is_pure_on(&Fork);
+}
+
+#[test]
+fn a_replan_never_moves_the_past_on_the_fork() {
+    a_replan_never_moves_the_past_on(&Fork);
+}
+
+#[test]
+fn the_active_block_keeps_the_slot_containing_now_on_the_fork() {
+    the_active_block_keeps_the_slot_containing_now_on(&Fork);
+}
+
+#[test]
+fn a_long_run_still_leaves_room_for_lunch_and_a_break_on_the_fork() {
+    a_long_run_still_leaves_room_for_lunch_and_a_break_on(&Fork);
+}
+
+#[test]
+fn an_open_interruption_is_a_wall_up_to_now_on_the_fork() {
+    an_open_interruption_is_a_wall_up_to_now_on(&Fork);
+}
+
+#[test]
+fn losing_a_block_drops_a_tail_and_nothing_else_on_the_fork() {
+    losing_a_block_drops_a_tail_and_nothing_else_on(&Fork);
+}
+
+#[test]
+fn allow_home_lifts_the_home_cap_on_the_fork() {
+    allow_home_lifts_the_home_cap_on(&Fork);
+}
+
+fn candidates(fx: &planner_common::Fixture, now: chrono::DateTime<chrono_tz::Tz>) -> Vec<Candidate> {
+    priority::collect_candidates(
+        &fx.tree,
+        &fx.replay,
+        &fx.cfg,
+        &Model::default(),
+        date("2026-09-07"),
+        now,
+    )
+}
+
+// FORK-ONLY: extends a candidate that is NOT running, through `PlanOverrides` — the fork's generic what-if; the kernel answers §9.1's what-if for the running block only and derives no candidate fact (D34, parity P44), and `kernel_plan_codec`'s `the_what_if_crosses_and_comes_back_as_a_diff` and `planner_classes.rs`' frozen what-ifs are its kernel half.
 /// §9.1: `x extend +1 block → drops: …`. The prompt runs `plan()` with the
 /// option applied and diffs; [`planner::overtime_drops`] is that call.
 #[test]
@@ -310,10 +457,7 @@ fn extending_a_block_names_what_it_drops() {
     assert!(!after.assigned().contains(&Id::new("t3")));
 }
 
-// ---------------------------------------------------------------------------
-// §13 tm plan --diff
-// ---------------------------------------------------------------------------
-
+// FORK-ONLY: `planner::diff` is the fork's function over two fork days, and the generic `PlanOverrides` it diffs against have no kernel encoder; the kernel's diff is §9.1's what-if (`Planner.overtimeDiff`), compared by value in `planner_classes.rs` and `planner_invariants.rs`.
 /// `tm plan --diff` (§13) and the `plan` event's `drift_min` (§10.1, §11).
 #[test]
 fn diff_reports_what_moved_and_the_drift() {
@@ -353,10 +497,7 @@ fn diff_reports_what_moved_and_the_drift() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// §13 tm plan --explain ^id
-// ---------------------------------------------------------------------------
-
+// FORK-ONLY: `planner::explain` has no caller in `tm/src` (`tm plan --explain` calls `priority::explain`), so R3 deletes it with nothing to retarget.
 /// §13: `p = k(3) + bin(u=0.31 → +1) = 4; slot 11:50 energy 4, ci 3, gap 1;
 /// deps ok; cap 2b/d: 1b used` — §7's half from `priority`, §8's from the plan.
 #[test]
@@ -386,42 +527,7 @@ fn explain_completes_the_priority_line_with_the_slot() {
     );
 }
 
-// ---------------------------------------------------------------------------
-// §13 tm plan --allow-home
-// ---------------------------------------------------------------------------
-
-/// `--allow-home` lifts §8.2 step 3's `home_max_ci` cap: the same home day
-/// gets its high-`ci` slots back and the milestones become workable.
-#[test]
-fn allow_home_lifts_the_home_cap() {
-    let fx = load("plan-home-day");
-    let now = at("2026-09-07", 9, 0);
-    let capped = planner::plan(&fx.input(&fx.state, now));
-    let lifted = planner::plan(&fx.input(&fx.state, now).with_allow_home(true));
-
-    let top = |p: &DayPlan| -> u8 {
-        p.segments
-            .iter()
-            .filter_map(|s| s.energy)
-            .max()
-            .unwrap_or(0)
-    };
-    assert_eq!(top(&capped), fx.cfg.location.home_max_ci);
-    assert!(top(&lifted) > fx.cfg.location.home_max_ci, "{}", timeline(&lifted));
-    // The `ci 4` milestone becomes workable; `ci 5` still is not, because the
-    // *home energy curve* itself tops out at 4 (§16's `energy.prior.home`).
-    assert!(
-        lifted.assigned().contains(&Id::new("m2")),
-        "the ci-4 milestone is workable again: {}",
-        timeline(&lifted)
-    );
-    assert!(!capped.assigned().contains(&Id::new("m2")));
-}
-
-// ---------------------------------------------------------------------------
-// §13 tm plan --week
-// ---------------------------------------------------------------------------
-
+// FORK-ONLY: `planner::week_plan` has no caller in `tm/src` (`tm plan --week` reads the kernel's lookahead), so R3 deletes it with nothing to retarget.
 /// `tm plan --week` (§8.4): today is the real plan, the rest of the week is
 /// the capacity grid with a light EDF-ish allocation on top.
 #[test]
@@ -472,14 +578,4 @@ fn week_plan_fills_the_grid() {
             .join("\n")
     );
 }
-
-/// A small convenience the assertions above want.
-trait AsDeref {
-    fn as_deref_id(&self) -> Option<&str>;
-}
-
-impl AsDeref for Option<Id> {
-    fn as_deref_id(&self) -> Option<&str> {
-        self.as_ref().map(Id::as_str)
-    }
-}
+// END THE FORK PLANNER

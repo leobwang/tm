@@ -13,7 +13,7 @@
 //! `planner::plan(input.with_ranking(cands, prios))` with the kernel's own
 //! grants for `prios`, read by the binary's own reader (`planwire::prio_of`) —
 //! and written **by value**, the whole serialised `DayPlan` and its hash, never
-//! a digest of it: a digest would have to normalise the two classes below out,
+//! a digest of it: a digest would have to normalise the classes below out,
 //! and normalising a class out hides the one thing its gap exists to watch.
 //!
 //! **The frozen priorities are the kernel's own grants as read at the bless**
@@ -40,7 +40,7 @@
 //! failure go away (AGENTS §7.2) — and after R3 it cannot be run at all: this
 //! file is the fork's last word on these days.
 //!
-//! # The two classes the kernel's day may differ by, and nothing else
+//! # The classes the kernel's day may differ by, and nothing else
 //!
 //! Measured on the four fixture days at W-35 (README gaps 551 and 435), each
 //! counted by [`DayTally`] and bounded by its caller, so a class that widens
@@ -58,6 +58,25 @@
 //!   in every other field. `hot` is not digested, so it never moves the hash —
 //!   and it IS a mark the day file prints, so it is a display difference, which
 //!   is why it is an R3 prerequisite and not a parity row.
+//! * **gap 550** — the reservation row's multiplier (W-36 track H, README gaps
+//!   2925/2871: the classes of generated days include a running block, and the
+//!   four fixture days held none, so this class had no row to count until the
+//!   comparand was keyed by class). Fork `emit_segments` writes the running
+//!   candidate's `multiplier` on §8.2 choice 5b's reservation row;
+//!   `PlanReq.activeRow` writes `mult := none`. Matched as a fork row of kind
+//!   `block`, marked `current`, carrying a multiplier, whose kernel twin is equal
+//!   in every other field with the multiplier absent. It is DIGESTED
+//!   (`Placement.multiplier`), so a day holding one hashes differently, and
+//!   that is checked like gap 551's rows.
+//! * **an under-used row's note** — BY DESIGN, not a gap: fork `emit_segments`
+//!   writes `↓ slot E, item C` into `flags.note`, and the kernel's
+//!   `Planner.assignedSeg` writes no note (its `assignedSeg_note` is a law
+//!   about NOT writing one) because the renderer derives that sentence from
+//!   the row's own energy and the item's `ci` (`emit::note_cell`, and
+//!   `Emit.underusedCell` on the kernel's side). Matched as a fork row marked
+//!   `underused` whose note is `↓ slot <its energy>, item <n>` and whose kernel
+//!   twin is equal with no note; not digested. `support/forkclass.rs` checks
+//!   that the renderer derives the fork's exact sentence for each.
 //!
 //! Everything else — the date, the window, the budget, all twelve diagnostic
 //! fields, the priorities, every other row **in order** — must be equal.
@@ -75,6 +94,10 @@ use tm_core::planwire::KernelDay;
 #[allow(dead_code)]
 #[path = "fork.rs"]
 mod fork;
+
+#[allow(dead_code)]
+#[path = "srcwalk.rs"]
+mod srcwalk;
 
 /// The frozen days: one JSON line per named input, `{name, hash, day}`.
 pub const FROZEN_DAYS: &str = "fork-4748911-planner-days.jsonl";
@@ -125,6 +148,12 @@ pub struct DayTally {
     pub break_rows_551: usize,
     /// Gap 435's marks: a routine row's `⚠` the kernel does not set.
     pub hot_marks_435: usize,
+    /// Gap 550's rows: a reservation row whose multiplier the kernel does not
+    /// write (W-36 track H; a running block, which no fixture day holds).
+    pub mult_rows_550: usize,
+    /// Under-used rows whose `↓` note the kernel leaves to the renderer (by
+    /// design, `Planner.assignedSeg_note`; W-36 track H).
+    pub underused_notes: usize,
     /// Days whose kernel hash is the fork's.
     pub hashes_equal: usize,
     /// Inputs with no frozen day, so the fork did not answer them at all — the
@@ -134,18 +163,22 @@ pub struct DayTally {
 
 impl DayTally {
     /// One line saying what was compared and what was not, and how many
-    /// differences fell outside the two classes — the number `findings` holds,
+    /// differences fell outside the three classes — the number `findings` holds,
     /// never a constant a failing run would print too.
     pub fn line(&self, what: &str, findings: usize) -> String {
         format!(
             "frozen fork days — {what}: {} days, {} fork rows, {} other values compared; gap 551 {} \
              planned break row(s) the kernel does not draw, gap 435 {} routine `⚠` mark(s) it does not \
-             set; {} of {} hashes equal; {} inputs had no frozen day; {findings} other difference(s)",
+             set, gap 550 {} reservation multiplier(s) it does not write, {} under-used note(s) left \
+             to the renderer; {} of {} hashes equal; {} inputs had no frozen day; {findings} other \
+             difference(s)",
             self.days,
             self.rows,
             self.values,
             self.break_rows_551,
             self.hot_marks_435,
+            self.mult_rows_550,
+            self.underused_notes,
             self.hashes_equal,
             self.days,
             self.skipped
@@ -155,7 +188,7 @@ impl DayTally {
 
 /// **Compare a day the kernel planned with the frozen fork's**, by value.
 /// `now` is the instant both were planned at (gap 551's rows start at or after
-/// it). Returns every difference that is not one of the two classes, by name.
+/// it). Returns every difference that is not one of the three classes, by name.
 pub fn compare_day_with_fork(
     name: &str,
     k: &KernelDay,
@@ -180,8 +213,8 @@ pub fn compare_day_with_fork(
         }
     }
 
-    // The rows: the fork's, less gap 551's rows and with gap 435's mark taken
-    // off, must be the kernel's exactly and in order.
+    // The rows: the fork's, less gap 551's rows and with gap 435's mark and gap
+    // 550's multiplier taken off, must be the kernel's exactly and in order.
     let fork_rows = fv["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
     let kernel_rows = kv["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
     t.rows += fork_rows.len();
@@ -189,6 +222,7 @@ pub fn compare_day_with_fork(
     let now_fixed = now.fixed_offset();
     let mut expected: Vec<Value> = Vec::new();
     let mut breaks = 0usize;
+    let mut mults = 0usize;
     for (i, row) in fork_rows.iter().enumerate() {
         let planned_break = row["kind"] == "break"
             && row["flags"]["done"] == false
@@ -198,6 +232,29 @@ pub fn compare_day_with_fork(
             continue;
         }
         let mut row = row.clone();
+        if row["kind"] == "block" && row["flags"]["current"] == true && !row["flags"]["multiplier"].is_null() {
+            // Gap 550 only when the kernel holds this row without its multiplier
+            // and does not hold it with one.
+            let mut bare = row.clone();
+            bare["flags"]["multiplier"] = Value::Null;
+            if kernel_rows.contains(&bare) && !kernel_rows.contains(&row) {
+                mults += 1;
+                row = bare;
+            }
+        }
+        if row["flags"]["underused"] == true
+            && row["flags"]["note"]
+                .as_str()
+                .and_then(|n| n.strip_prefix(&format!("↓ slot {}, item ", row["energy"])))
+                .is_some_and(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
+        {
+            let mut bare = row.clone();
+            bare["flags"]["note"] = Value::Null;
+            if kernel_rows.contains(&bare) {
+                t.underused_notes += 1;
+                row = bare;
+            }
+        }
         if row["kind"] == "routine" && row["flags"]["hot"] == true {
             // Gap 435 only when the kernel's row at the same place is this row
             // without its mark; anything else about it is a real difference.
@@ -213,6 +270,7 @@ pub fn compare_day_with_fork(
         expected.push(row);
     }
     t.break_rows_551 += breaks;
+    t.mult_rows_550 += mults;
     if expected.as_slice() != kernel_rows {
         let first = expected.iter().zip(kernel_rows).position(|(a, b)| a != b).unwrap_or(expected.len().min(kernel_rows.len()));
         findings.push(format!(
@@ -224,14 +282,18 @@ pub fn compare_day_with_fork(
         ));
     }
 
-    // The hash: gap 551's rows are digested, gap 435's mark is not.
+    // The hash: gap 551's rows and gap 550's multiplier are digested, gap
+    // 435's mark is not.
     let fork_hash = fork["hash"].as_str().unwrap_or_default();
     if k.hash == fork_hash {
         t.hashes_equal += 1;
-        if breaks > 0 {
-            findings.push(format!("{name}: the hashes agree over a day the kernel drew without {breaks} break(s)"));
+        if breaks + mults > 0 {
+            findings.push(format!(
+                "{name}: the hashes agree over a day the kernel drew without {breaks} break(s) and \
+                 {mults} reservation multiplier(s)"
+            ));
         }
-    } else if breaks == 0 {
+    } else if breaks + mults == 0 {
         findings.push(format!("{name}: hash kernel {} fork {fork_hash} over rows that agree", k.hash));
     }
     findings
@@ -241,7 +303,7 @@ pub fn compare_day_with_fork(
 pub fn no_disagreement(findings: &[String]) {
     assert!(
         findings.is_empty(),
-        "{} disagreement(s) with the frozen fork days (each must be gap 551's or gap 435's class):\n  {}",
+        "{} disagreement(s) with the frozen fork days (each must be gap 551's, 435's or 550's class):\n  {}",
         findings.len(),
         findings.join("\n  ")
     );
@@ -270,7 +332,12 @@ pub fn fork_scan(source: &str) -> ForkScan {
     const BEGIN: &str = "// BEGIN THE FORK PLANNER";
     const END: &str = "// END THE FORK PLANNER";
     const NEEDLES: [&str; 6] = ["planner::", "tm_core::planner", "PlanInput", "with_ranking", ".input(&", "fn input"];
-    let (outside, region_bytes, deleted) = match (source.find(BEGIN), source.find(END)) {
+    // A banner is a banner only at the start of a line: the constants above
+    // spell both inside a string, and that is not a region.
+    let at_line_start = |needle: &str| {
+        source.match_indices(needle).map(|(i, _)| i).find(|&i| i == 0 || source.as_bytes()[i - 1] == b'\n')
+    };
+    let (outside, region_bytes, deleted) = match (at_line_start(BEGIN), at_line_start(END)) {
         (Some(i), Some(j)) => {
             assert!(i < j, "the END banner precedes the BEGIN banner");
             let mut outside = source[..i].to_string();
@@ -280,16 +347,46 @@ pub fn fork_scan(source: &str) -> ForkScan {
         (None, None) => (source.to_string(), 0, true),
         _ => panic!("one fork-planner banner without the other"),
     };
-    let escapes = outside
-        .lines()
-        .enumerate()
-        .filter(|(_, l)| !l.trim_start().starts_with("//"))
+    // CODE only (W-36 track H): `srcwalk::code_lines` drops comments -- a
+    // trailing one too, which the old `starts_with("//")` filter read as code --
+    // and `blank_strings` empties every string literal, so this file's own
+    // NEEDLES line is not a reference to the fork and needs no exemption.
+    let escapes = srcwalk::code_lines(&outside)
+        .into_iter()
+        .map(|(i, code)| (i - 1, blank_strings(&code)))
         .flat_map(|(i, l)| {
             NEEDLES
                 .iter()
-                .filter(move |n| l.contains(**n))
-                .map(move |n| format!("line {i}: `{n}` in {}", l.trim()))
+                .filter(|n| l.contains(**n))
+                .map(|n| format!("line {i}: `{n}` in {}", l.trim()))
+                .collect::<Vec<_>>()
         })
         .collect();
     ForkScan { region_bytes, escapes, deleted }
+}
+
+/// A code line with every string literal's CONTENT removed (its quotes kept),
+/// so a needle spelled in a string is not a reference to the fork.
+pub fn blank_strings(code: &str) -> String {
+    let mut out = String::new();
+    let mut in_str = false;
+    let mut escaped = false;
+    for c in code.chars() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_str = false;
+                out.push(c);
+            }
+            continue;
+        }
+        if c == '"' {
+            in_str = true;
+        }
+        out.push(c);
+    }
+    out
 }

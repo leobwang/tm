@@ -69836,3 +69836,277 @@ plan` reads the log's open block.**
    kernel's many `…?` smart constructors cannot be a recorded pin site.  4. *Clears it.*
    `NAMED_SITE`'s name class widened to `DECL_START`'s, with a row pinned by a `?` name re-read
    whole.
+     APPENDED 2026-09-27: stage 6 (the planner), run **W-36**, **TRACK H**
+     (the host side of R3: Rust and gates only, no `.lean` file), on branch
+     `w36-h` in its own worktree off `dd8b95b`.
+     Gap range **3080-3119**; **3080-3088 taken**, 3089-3119 free.
+     Parity: **none issued and none pending** (PARITY-PENDING: nothing).
+     ===================================================================== -->
+
+## Stage 6 — W-36, track H: the planner's comparand is keyed by CLASS, five suites plan with the kernel, and a key the host sends must have a reader
+
+W-35 froze the fork's answer for four NAMED fixture days, with no running block, break,
+interruption, overtime or wall on `now` among them — and every generated day
+`planner_invariants.rs`' differential arms draw compared the kernel with `planner::plan`, which R3
+deletes. W-35's critic called it a LIST where the rule is a CLASS (gaps 2925, 2871). Six test files
+planned with the fork outside any region (gap 2872). And the host's planner encoder wrote a key
+(`overtime.grown`) no kernel reader decodes, outside every gate (gap 2931). All three are answered
+here; what they found on the way is §2.
+
+### 1. Gaps 2925 + 2871 — the frozen comparand is a CLASS, not four days
+
+**A class is a function of the world, never a label.** `tm/tests/support/forkclass.rs`'s
+`class_of` reads a stored world — its documents, its log, `.tm/state.json`, `now` — and returns
+`(Run, DayShape)`: §9's running state (`idle`, `running`, `overtime` = P46, `wall-on-now` = P47,
+`break` / `break-block` = P45, `interrupted` / `interrupted-block`) and the day's shape (`lounge`,
+`home`, `late`, `travel`, `spent`), each the dimension on which the planner's code path changes and
+on which one of `planner_invariants`' arms widens the shared generator. Both enumerations are
+DERIVED from an exhaustive `match` (`Run::next`, `DayShape::next`: a variant added without a
+successor does not compile), and the class SPACE is their product less the pairs no arm draws,
+stated as the arms' own rule (`drawn_by_an_arm`: a running break is drawn only by the W-35 arm, a
+travel or spent day only by the step-8 arm, and neither applies the other's widening) — **36
+classes**. `the_frozen_file_holds_every_class_the_arms_draw` asserts the frozen file holds exactly
+one PRIMARY day of every class and nothing outside the space, and that every stored world
+classifies as its own key: a line cannot choose its class.
+
+**Every world was DRAWN from `planner_invariants.rs`' own generator**, never written: a harness
+(scratchpad/w36-h/tools/w36_draw_append.rs, installed into a clone by its install_harness.sh,
+because the generator is private to a file this track may not touch — gap 3080) drew 3,000 cases
+from `case_strategy` with ChaCha seed `"W-36 track H classes 2026-09-27!"`, applied ONE arm's
+widenings per case exactly as that arm applies them (base; the hash arm's multiplier and logged
+break; the W-35 arm's running break and forced overtime; the step-8 arm's travel and spent), and
+kept per class the richest day (distinct row kinds, then non-empty diagnostics). **35 of 36
+classes** were drawn (per-class counts in the harness log: `overtime/travel` and `overtime/spent`
+twice each, every other class 6 to 415 times); `wall-on-now/spent` was drawn by a targeted run of the step-8 arm
+(seed `"W-36 track H wall-on-now/spent"`, hit at draw 53). Two SECONDARY days were drawn for the
+two floors no representative reached: a logged break cut short, so `rest_debt_min > 0` (hash arm,
+seed `"W-36 track H rest debt"`, draw 77, an `idle/late` day), and a running block whose what-if
+drops two ids on both of its sides (seed `"W-36 track H what-if"`, draw 2,201 of the running
+classes, a `running/late` day — gap 3087); a secondary day must name the floor it is for
+(`SECONDARY_FLOORS`). Every line records its arm, its seed, its draw index and the generator's
+`Case`. **The harness was then re-run from its saved source into a second clone: all 35 primary
+worlds came back byte for byte, with the same draw indices, cases and arms, and the per-class
+counts identical** — that is what `every_frozen_day_says_which_draw_it_came_from` now demands the
+file record.
+
+**What is frozen per class** (`tests/fixtures/fork-4748911-planner-classes.jsonl`, 38 lines,
+605,423 bytes): the world; `day`, **the comparand** — the fork as the shipped binary runs it (D53,
+kernel-ranked) with D57's rule applied by its PROPERTY as `w35_fork_plan` applies it (P46: the
+estimate raised past the day and the fork's own `running · 0m left`; P47: the open row paused at
+the wall's rows); `shipped`, the raw shipped fork day, kept only where the comparand departs from
+it; and on a day with a running block (not on a break), §9.1's what-if as the TUI builds it
+(`full`) and the estimate's alone (`est`), P44 by its property. A **P45** day has no fork analogue
+(the fork reads no `runtime.break_`), so the kernel is checked against P45's RULE (`p45_rule`:
+one Break row where the break is, open once overrun, its place; nothing §8.2 places over it; and
+— gap 2925's second half — every §8.2 step-5 row from `now` on starts at or after its end), and
+what the fork's day still says there — the date, the window, the budget, the walls — by value.
+
+**The comparison** (`planner_classes.rs`, the arm that survives R3: the kernel through `planreq`,
+read back by `tm_core::planwire`, against bytes on disk) passes with **0 differences**: 32 non-P45
+days, 380 fork rows and 11,319 other values in order; gap 551's 22 planned break rows, gap 550's
+11 reservation multipliers and 20 under-used notes (§2) counted and bounded; 11 of 32 hashes equal
+(the rest are 551's and 550's digested rows, checked); P45 on 6 days (1 running, 5 overrun; the
+shipped fork scheduled over the break on 1), P46's comparand on 6, P47's on 5; 21 what-ifs (1
+parity-P44 day; 4 ids in the kernel's diffs). The re-bless is `the_frozen_fork_classes_are_reblessed`, inert without
+`TM_PLANNER_BLESS`; it recomputes the fork's answers over the stored worlds and never re-draws one.
+`the_frozen_classes_are_the_forks_answer_today` holds the file to the fork's answer on this tree
+while the fork exists.
+
+### 2. What the first comparison found
+
+Run first, the class comparison failed with **136 disagreements**, in two classes and nothing
+else:
+
+* **The order of five diagnostic lists** — `hot`, `impossible`, `waiting`, `blocked`, `deferred` —
+  on **23 of the 30** non-break days. Fork `diagnose` walks `cands` in the host's own
+  `collect_candidates` order and pushes as it goes; the kernel names the same ids in the order it
+  was SENT them (`send_order`, by due date), and `planwire::diagnostics_of` passed that order
+  through. `tm plan` prints these lists in order, so R3 would have reordered them. **Fixed in the
+  decoder** (gap 3086, closed): the five lists are put back in `ctx.cands` order, the host's own
+  list — the sets were already equal. The arms never saw it: they sort these fields before
+  comparing them (`planner_invariants.rs`' `ids_of` and `sorted`, and the step-8 arm's `.sort()`s).
+* **An under-used row's note**, 11 first-differing rows: the fork writes `↓ slot E, item C` into
+  `flags.note` and the kernel writes none — **by design** (`Planner.assignedSeg_note` is a law about
+  NOT writing it, because the renderer derives the sentence from the row). Declared in
+  `forkday.rs` as a fourth row class, and `compare_line` asserts, for every such row, that
+  `emit::note_cell` on the kernel's own row derives the fork's exact sentence: 20 of 20. Not a gap.
+
+### 3. Proved the way T5's retarget was (clone `scratchpad/w36-h/clone`, `git status --porcelain` empty before and after each plant)
+
+* **Plant A — the fork made unreachable**: `planner::plan`, `week_plan`, `overtime_drops`, `diff`
+  and `explain` each `panic!` first, and every `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`
+  region deleted (seven files, 657 lines). `planner_classes` (13 of 14 — see below),
+  `planner_fixtures` 8, `planner_regressions` 26, `planner_dynamics` 12, `priority_plan_basic` 15,
+  `emit_planner` 10 and `kernel_plan_codec` 9 all BUILD, RUN and COMPARE; the class comparison
+  prints the same line as unplanted did at the time — 36 classes, 371 rows, 10,791 values, 0
+  differences (the plant ran before the what-if day was added). The one
+  failure is `every_test_that_reaches_the_fork_keeps_it_in_one_region` naming the half-done R3
+  itself: regions deleted while `planner.rs` is still there (its designed behaviour; after R3 it
+  demands zero regions).
+* **Plant B — one kernel answer corrupted on GENERATED days only** (`tm-kernel-ffi`'s `call`,
+  requests naming `zaa`): `"aCapacityLost":0` → `5` fails 21 classes by name
+  (`idle/home: diagnostics.a_capacity_lost: kernel 5 fork 0`); the what-if's `"driftMin":0` → `1`
+  fails 19 (`running/home: the overtime what-if differs from the shipped TUI's …`); a Break row's
+  kind bent to `rest` fails the 6 break days at the decoder's hash check, by name.
+
+### 4. Gap 2872 — the five suites plan with the kernel
+
+Each property of each suite is written ONCE over `planner_common::DayPlanner` and asked of
+`Kernel` (the test under the property's own name — the arm that survives R3) and of `Fork`
+(`<name>_on_the_fork`, in the file's one region). `planner_common::Fixture` now carries its
+documents and log text, and `of_texts` builds a synthetic world the same way.
+
+| suite | kernel arm | fork-only, fenced (why) | found |
+|---|---|---|---|
+| `planner_regressions` | 20 properties | — | gap 551 (the Break rows: the rule asked of both, the rows bounded exactly); gap 3082 |
+| `planner_dynamics` | 7 (incl. `--allow-home` as the capacity section's `state.allowHome`) | `extending_a_block_names_what_it_drops`, `diff_reports_what_moved_and_the_drift` (the fork's generic `PlanOverrides`/`planner::diff`; the kernel's diff is §9.1's what-if, D34/P44), `explain_…`, `week_plan_fills_the_grid` (no caller in `tm/src`) | gap 551 again, bounded |
+| `priority_plan_basic` | 2 | — | gap 3083 (`loc`) |
+| `emit_planner` | 1 property + the three renders held to the fork's committed snapshot text less exactly gap 551's row and SVG title and gap 435's `⚠`/`due today` — `(1, 1)` on each day | the three snapshots (they WRITE the files the kernel arm reads) | — |
+| `tui_common` | the app ranks by the kernel's capacity answer, no `planner` section, as `Ctx::priorities` does (it stood in the fork's own §7 pass and `week_plan`'s grid, which no shipped path builds — D53) | — | gap 3083 (`now`) |
+
+**`planner::` code lines outside a fork region: 114 → 36** (comments and strings excluded, at
+`dd8b95b` and on this tree): `tm/src` 8 (R3's body swap: `cli/planning.rs` 2, `tui/app.rs` 6) and
+`planner_invariants.rs` 28 (not this track's to touch — gap 3084); inside regions 7 → 37. **What
+remains for R3 itself**: those 8 `tm/src` lines, `planner_invariants.rs`' arms (retarget onto
+`forkclass` or delete), and the seven regions, deleted mechanically. **The guard is a property
+now**: `every_test_that_reaches_the_fork_keeps_it_in_one_region` walks EVERY `.rs` file under a
+`tests/` directory (`srcwalk`'s walk) and fails on a fork reference outside one region, with
+`planner_invariants.rs` a dated, EXIT-carrying exemption that fails as STALE once it is clean.
+`fork_scan` reads CODE only now (`srcwalk::code_lines` and `blank_strings`: a needle in a string or
+a trailing comment is not a reference, and a banner counts only at the start of a line), so
+`forkday.rs`' own NEEDLES line needs no exemption.
+
+### 5. Gap 2931 — check 13's SENT half
+
+`kernel/fields.py`'s `sent_main`, over `kernel/sentkeys.py`: every JSON key path the host codec's
+`planner_json` (`tm-core/src/planwire.rs`) writes — read off the Rust: `json!` literals, inserts,
+index assignments, arrays, its helpers composed by call, a caller's value placed by the module's
+`<key>_json` — must be DECODED by the kernel's reader of `planner` — read off the Lean: the
+section's value followed from the definition that `jget`s `planner` off the request through every
+arm, `let` and call it is handed to, names resolved in the caller's file first — or be a dated,
+EXIT-carrying line of the new `kernel/sent-exempt.txt`, which may only shrink (a line may narrow to
+a key under it; any other new line FAILS as RATCHET). An unread key is reported once, at its
+shallowest path. **28 key paths, 24 decoded, one unread and exempt: `planner.overtime.grown`.**
+check.sh prints it as a third line of check 13 (`every sent key has a reader`).
+
+DRIVEN in the clone, control rc=0 before each plant and after each revert: the exemption deleted
+→ `UNREAD planner.overtime.grown`; `paused` → `pause` in the encoder → `UNREAD
+planner.state.active.pause`; an `id` key added to the break object — a key read ELSEWHERE, the
+case a flat name check passes — → `UNREAD planner.state.break.id`; the kernel's `estMin` read
+renamed → `UNREAD planner.state.active.estMin`; `readOvertime` decoding `grown` → the exemption
+`STALE` and its three keys each `UNREAD`; a new unrelated line → `RATCHET`; the dispatcher's key
+misspelled → `NO KERNEL READS`; and `readOvertime` reading `grown.remaining` and `plannedMin` with
+the line narrowed to `planner.overtime.grown.needMin` → rc=0, the narrowing the ratchet allows.
+
+### 6. Gaps (3080-3088)
+
+**Gap 3080 — the class representatives cannot be re-drawn from the tree.**
+1. *What.*  The worlds were drawn by a harness that must include `planner_invariants.rs`' private
+   generator; it lives in `scratchpad/w36-h/tools/` and is installed into a clone.
+2. *Why.*  This track may not touch `planner_invariants.rs` this run (tracks K and T append to
+   it), and a second copy of the generator is AGENTS §5.3's defect.
+3. *Cost.*  A class added to `Run` or `DayShape` cannot be frozen from the tree; the re-bless
+   recomputes the fork's answers but never the worlds.
+4. *Clears it.*  The step that may touch the file moves `Case`/`build`/`case_strategy` into
+   `tests/support/` and commits the draw as an inert test — before R3 deletes the fork.
+
+**Gap 3081 — the sent half asks one section of one encoder.**
+1. *What.*  Only `planwire::planner_json`'s keys are asked. The capacity section's encoder
+   (`tm/src/cli/kernel_capacity.rs::request`, and `planwire::add_batch_max_min`), and the log, tz,
+   emit, docs and plan-row sections' encoders are not.
+2. *Why.*  Each section has its own reader tree in `Boundary.lean`/`EmitWire.lean`; `sentkeys.py`
+   roots at one dispatcher, and the capacity section reaches the planner through a structure field
+   (`parts.sec`), which the reader cannot follow (it says so).
+3. *Cost.*  A capacity key the host sends and the kernel ignores is invisible, as `overtime.grown`
+   was.
+4. *Clears it.*  Root the same walk at each section's dispatcher (`sections.py` already finds them).
+
+**Gap 3082 — CLOSED: a plan-honesty total past `u32` was refused by the host decoder.**
+`budget: 100000000` (a hand-edited `state.json`, which `a_nonsense_budget_does_not_panic` pins)
+makes the kernel's exact `remaining × block_min` pass `u32`; `planwire` refused the day
+(`plan.diagnostics.planHonesty.total is past u32`) where the fork saturates. The decoder now reads
+the natural and saturates as fork `diagnose` does; `planwire`'s own test pins it.
+
+**Gap 3083 — CLOSED for two keys: the tests' capacity encoder had drifted from the shipped one.**
+`planreq` (gap 2875's third spelling) sent `state.loc` raw — `null` before `tm arrive`, refused
+`badState state.loc` — where `kernel_capacity::request` sends `Ctx::loc` (else lounge); and sent
+the PLANNED date as `now` — a stale `state.date` refused `nowDisagrees at` — where the binary sends
+`ctx.today`. Both now spell the shipped encoder. The residue is gap 2875 itself.
+
+**Gap 3084 — `planner_invariants.rs` plans with the fork outside a region (28 code lines).**
+1. *What.*  Its differential arms plan both planners per generated case.  2. *Why.*  Not this
+track's file this run.  3. *Cost.*  R3 cannot delete it mechanically; the guard exempts it by a
+dated line.  4. *Clears it.*  R3 retargets its arms onto `forkclass` or deletes them.
+
+**Gap 3085 — D60 will move the kernel's step 5 on class days with tied impossible items.**
+1. *What.*  Track K orders `p = 0` impossible ties by due date this run; the frozen comparand is
+   the fork's line order.  2. *Why.*  K's code did not exist when this was frozen.  3. *Cost.*  At
+   the merge `planner_classes` may fail on such a day, by name.  4. *Clears it.*  The Land step
+   models D60's parity row by its property in the comparand (as P46/P47 are), or re-blesses as a recorded
+   decision — never by widening a class to swallow it.
+
+**Gap 3086 — CLOSED: the decoder passed the kernel's diagnostic order through.**  §2.
+
+**Gap 3087 — CLOSED: the frozen what-ifs were thin.**  The 36 representatives compared 20
+what-ifs and one moved an id; a secondary `running/late` day whose what-if drops two ids on both
+sides was drawn for it, and `the_frozen_days_cover_what_the_arms_floors_demand` floors the
+compared drops at two.
+
+**Gap 3088 — the region guard's floor reads `planner.rs`'s presence.**  While the file exists the
+guard demands ≥ 7 regions; after R3, none. A half-done R3 (regions gone, file kept) fails it by
+name — plant A shows it.
+
+### 7. D40 for the Rust and the Python this step added or changed
+
+Each definition this step added or changed, its body replaced by a constant (an early `return`)
+or its one changed line bent, in the clone, the targeted suites run, the file restored and
+`git status --porcelain` empty after (scratchpad/w36-h/tools/mutate_rust.py and mutate_py.py):
+
+* **Rust, 46 mutants, 46 killed.**  `forkclass.rs` 25 (every function, the multiplier's insertion
+  among them), `forkday.rs` 3 (`blank_strings`, gap 550's normalisation, the line-start banner
+  rule), `planner_common` 5, `emit_planner.rs` 4, `planner_classes.rs`' fork region 5, `planreq.rs`
+  2 (`loc`, `now`), `planwire.rs` 2 (the plan-honesty saturation; the order restoration — 137
+  disagreements with it removed).  **The first sweep had one survivor**:
+  `kernel_render_is_the_forks` returning a constant `(1, 1)` tally passed, because the three day
+  tests checked only the two counts — `every_frozen_line_was_walked` now pins that the comparison
+  walked every line of the fork's rendering, and the mutant is killed.
+* **Python, 24 mutants, 24 killed** (`sentkeys.py`'s 23 functions and `sent_main`), judged by the
+  sent half's own line.  The first sweep had two survivors, the keyed-getter pass and its
+  result-type helper: they resolved only keys under `overrides`, which no host encoder writes, so they were
+  DELETED rather than pinned — the reader now leaves such a key unread, the loud direction.
+
+### 8. For the Land step
+
+* After merging track K, run `planner_classes` (gap 3085) and check 13: if K's `readOvertime`
+  reads `grown`, `sent-exempt.txt`'s one line goes STALE — delete it; if it reads `remaining` and
+  `plannedMin` but not `needMin` (gap 2873 measured that the day needs only those two), narrow the
+  line to `planner.overtime.grown.needMin` or stop sending it.
+* `planreq`'s `loc` and `now` changed (gap 3083): a track appending to `planner_invariants.rs`
+  does not use `planreq`, so nothing there moves.
+
+### 9. Acceptance, capped
+
+* **`check.sh` 14 of 14 ok, 16 lines** (check 13 prints three now: fields 15 of 15 written;
+  inputs 32 of 36 read, 4 exempt; **sent 28 key paths, 24 decoded, 1 unread and exempt**), 23.9 s
+  wall capped; axiom audit 5,560; FFI 95; corpus 29/37 and 4/5; stage goals 6; citations 45,586
+  (0 allow entries unused; re-run after this block's last edit); check 9 381 rostered, 0 owed; parity **P1-P50, next free P51**; twins 0
+  UNANSWERED; reach 1,185 reachable, **1,202 exempt**, 0 UNANSWERED; replay 86 modules.
+  `git status --porcelain` identical before and after.
+* **`cargo test --workspace`, THREE runs on the final tree** (`--no-fail-fast`, capped): **1,565
+  passed / 0 failed / 11 ignored across 91 result lines, each of three** (395.6 s, 403.6 s, 399.0 s
+  wall; load 4-6), `git status --porcelain` identical before and after each — no proptest seed was
+  added. (W-35's figure was 1,516 / 10 across 90: the new `planner_classes` binary and 49 new tests.)
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16,
+  `cli_latency` 6 of 6 (load 11 at the start), `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `kernel_plan_codec` 9, `planner_fixtures` 13, **`planner_classes` 16**, `planner_regressions` 46,
+  `planner_dynamics` 23, `priority_plan_basic` 17, `emit_planner` 14, `tui_today_prompts` 35,
+  `cli_now_worked` 4, `cli_broken_pipe` 1, `planner_invariants` 17 of 17 — 278.2 s, `git status`
+  unchanged (the two re-bless tests are inert without `TM_PLANNER_BLESS`).
+* No `.lean` file edited; no predicate, assertion, floor or generator weakened (the five suites'
+  assertions are asked of the kernel as written, and where the kernel's day differs BY DECISION the
+  property asks each planner its own half and bounds the class exactly); no snapshot, fixture,
+  latency band or corpus re-blessed (`planner_fixtures`' four frozen days and the three
+  `emit_planner` snapshots are byte-identical; the class file is NEW); no memory bound raised; no
+  external dependency; no parity number issued; every exemption file the same size or smaller but
+  the NEW `sent-exempt.txt` (one line, born with the gate that reads it).
