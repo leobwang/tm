@@ -505,6 +505,27 @@ pub fn planner_json(
     o
 }
 
+/// **The running block's WORKED minutes into a `planner` section** (W-36
+/// track T, README gap 2920): `state.active.workedMin`, the host's ONE reading
+/// — [`crate::log::Replay::active_worked_min`], fork `day::worked_min`, the
+/// wall clock since `started` net of the day's pauses, interruptions and
+/// breaks — which is what `tm now` prints and `tm done` logs. The kernel's
+/// planner reads it for the reservation's `left` and the open row's `so far`
+/// (`Planner.PlanReq.workedOf`), so the day and the header cannot print two
+/// numbers for one block. A section without it gets the log's own open-block
+/// reading (fork `active_run`'s), which counts a break inside the block as
+/// worked: **R3's `planner` section must carry it**. A section whose `state`
+/// has no `active` is left as it is (nothing is running, nothing was worked).
+pub fn add_worked_min(planner: &mut Value, worked_min: u32) {
+    if let Some(a) = planner
+        .get_mut("state")
+        .and_then(|s| s.get_mut("active"))
+        .and_then(Value::as_object_mut)
+    {
+        a.insert("workedMin".to_string(), json!(worked_min));
+    }
+}
+
 /// §16's `[priority] batch_max_min` into a capacity section's `priority`
 /// object, the one place the kernel reads it (`PlanWire.readBatchMaxMin`: the
 /// fourth key of the object `CapWire.readPriority` reads three of). The capacity

@@ -7254,3 +7254,25 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.parseCmd_refuses_an_estimate_past_the_hosts_width
 #print axioms Tm.parseCmd_reads_an_estimate_at_the_hosts_width
 #print axioms Tm.the_keyed_est_edit_reads_as_the_est_op
+
+-- =====================================================================
+-- APPENDED 2026-09-27: stage 6 W-36 TRACK T (worktree `w36-t`) -- README gap 2920 (the planner
+-- READS the host's worked minutes, `RuntimeIn.worked`, parity P55) and the owner's D61 (a logged
+-- wall pause is no worked time, parity P53).
+-- =====================================================================
+#print axioms Tm.Planner.a_worked_reading_past_a_day_is_refused
+#print axioms Tm.Planner.a_worked_reading_within_a_day_is_read
+#print axioms Tm.Planner.the_worked_minutes_bound_is_run
+#print axioms Tm.Planner.PlanReq.activeWorked_is_the_hosts
+#print axioms Tm.Planner.PlanReq.activeWorked_without_the_hosts
+#print axioms Tm.Planner.the_open_row_reads_the_running_blocks_worked_minutes
+#print axioms Tm.Planner.the_open_row_reads_the_hosts_worked_minutes
+#print axioms Tm.Planner.a_logged_wall_pause_is_no_worked_time
+#print axioms Tm.Planner.an_unlogged_wall_is_worked_time
+#print axioms Tm.PlanWire.readState_reads_the_hosts_worked_minutes
+#print axioms Tm.PlanWire.readOptWorked_refuses_a_reading_past_the_day
+#print axioms Tm.PlanWire.planKey_workedMin_is_the_wire_key
+#print axioms Tm.PlannerWit.openWallRun_resumes_ok
+#print axioms Tm.PlannerWit.a_logged_wall_pause_keeps_the_open_row_off_the_meeting
+#print axioms Tm.PlannerWit.the_host_reading_is_the_one_reading
+#print axioms Tm.PlannerWit.the_open_row_carries_the_logs_worked_minutes_is_refuted

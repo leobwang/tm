@@ -69032,3 +69032,452 @@ unchanged: it fails.  Every one FAILED.
   band or corpus re-blessed; no memory bound raised; no external dependency; every exemption file
   the same size or smaller (reach 1,263 → 1,202; twins, fields, inputs, kernel-decide,
   citations-allow unchanged).
+
+<!-- =====================================================================
+     APPENDED 2026-09-27: stage 6 (the planner), run **W-36**, **TRACK T**,
+     on branch `w36-t` (worktree `.claude/worktrees/w36-t`) over `dd8b95b`.
+     Gap range **3040-3079**; **3040-3050 taken**, 3051-3079 free.
+     Parity: **P53, P54 and P55 issued** (below).  P51 and P52 are track K's
+     and stand as declared holes in `parity.txt` on this branch (gap 3046);
+     the land step replaces them with track K's rows.
+     ===================================================================== -->
+
+## Stage 6 — W-36, track T: one estimate reader, one estimate per line, a wall that stops the timer, and one reading of worked minutes
+
+Four items, in the brief's order, in two commits: gap 2929 and the owner's D62 in the first
+(`c10e39c`), D61, gap 2920, this block and the parity rows in the second.  Every drive below ran
+the binary the commit builds, every call `--now`, under the memory cap; every plant ran in a
+clone of the repository under `scratchpad/w36-t/`, never in the worktree, each planted file
+restored byte for byte (the second commit's clone gained one proptest seed line — section 6).
+
+### 1. Gap 2929 CLOSED: an estimate has ONE reader, bounded, and `tm plan` no longer faults over one
+
+**Reproduced first**, on the binary built from `dd8b95b`, on a `tm init --example` tree at
+`--now 2026-09-07T09:00:00-05:00`:
+
+```
+$ tm edit ^a1 est=4294967296m      -> tm: invalid duration: "4294967296m"                 rc=1
+$ tm edit ^a1 est=4294967295m      -> - [ ] 2 4294967295m Insurance claim for the bike  ^a1   rc=0
+$ tm check                         -> no problems                                          rc=0
+$ tm plan                          -> tm: kernel fault: capacity response: need — nothing was written;
+                                      this is a bug in tm, not a plan problem               rc=1
+```
+
+and with such a block RUNNING (`plan-basic`, `^t4` at the width, started 09:00): `tm now` and
+`tm plan` both `kernel fault: capacity response: need`, rc 1, and `tm extend 1b` **panicked**,
+`attempt to add with overflow` at `day.rs`' `remaining + by` (rc 101 on the debug build driven;
+the addition is `u32`, which a release build would wrap rather than check — not driven).
+
+**The fix, as the gap said.**
+* **One reader, bounded.** `Boundary.estAsWritten` refuses a value whose minutes at the op's block
+  length pass `Look.maxPlanMinutes` (fork `u32`; `CapWire.maxRemaining` is that definition), by the
+  value's own name, `badValue est`.  **No bound is minted**: the comparison reads the one that
+  exists.  The class is every est reader of the wire, not the one the host sends: the `min` form
+  is bounded by the same comparison, and the keyed edit's `est` IS `estAsWritten` now
+  (`the_keyed_est_edit_reads_as_the_est_op`) — until W-36 it read `2h` as `est:2h` and `20b` with
+  no block length at all, a second reader of one value (gap 3045 records the wire change).
+  Witnesses: `parseCmd_refuses_an_estimate_past_the_hosts_width` (`4294967296m`, `71582789h`,
+  `71582789b` at 60, `min` 2^32 and the edit op's `est`), `parseCmd_reads_an_estimate_at_the_hosts_width`
+  (`4294967295m`, `71582788h`, `min` 2^32 − 1).  They sit at the END of `Boundary.lean`, and the
+  in-place edits are line-neutral, so no check-9 pin site moved.
+* **The host's pre-parse is deleted** (`items.rs`' `edit_route`): `Dur::parse_no_days` no longer
+  reads the value before the kernel does.  A refused value's `--json` document keeps naming both
+  things a caller fixes — the key (the kernel's `detail.key`) and the text (`detail.value`, which
+  the host puts back beside it: `with_the_value_typed`).  **Behaviour row**: `tm edit ^id est=zzz`
+  was kind `invalid`, `invalid duration: "zzz"`; it is kind `kernel`, refusal `badValue`, key
+  `est`, value `zzz` (`cli_errors`' `a_rejected_value_names_what_and_the_value` changes with it).
+* **`need` is read at the width that holds it** (`planwire::prio_of`): as a `u64`, not a `u32`.
+  `need = ⌈remaining × safety⌉` with `remaining ≤ CapWire.maxRemaining` and the safety under
+  `safetyOfWire`'s thousand, so every need the kernel writes is below 2^52; the display floor
+  `need_min` saturates at `u32` as its three siblings do (`floor_minutes`).
+* **What the fault had been hiding.** Once the capacity answer decoded, a running block at that
+  estimate reached fork `Planner::diagnose`'s plan-honesty sum (`committed: u32`, `+`): DRIVEN,
+  `tm now` and `tm plan` exited **101**, `attempt to add with overflow`.  The sum saturates now
+  (`tm-core/src/planner.rs`, identical on every sum that fits; R3 deletes the function).
+  `tm extend`'s `remaining + by` is `u64` and goes to the kernel, which refuses it (section 2).
+
+**Driven after**, same trees and instants (the first commit's binary; the second's gives the same
+lines):
+
+```
+$ tm edit ^a1 est=4294967296m   -> tm: kernel refusal: badValue — "est" refuses this value (the key's own
+                                   field grammar, one reader end to end) (the value was "4294967296m")   rc=1
+$ tm --json edit ^a1 est=4294967296m -> {"ok":false,"kind":"kernel",…,"detail":{"key":"est",
+                                   "refusal":"badValue","value":"4294967296m"}}                            rc=1
+$ tm edit ^a1 est=71582789h     -> … badValue … (the value was "71582789h")                                rc=1
+$ tm edit ^a1 est=zzz           -> … badValue … (the value was "zzz")                                      rc=1
+  backlog.md unchanged: yes; log bytes 0 -> 0
+$ tm edit ^a1 est=4294967295m   -> - [ ] 2 4294967295m Insurance claim for the bike  ^a1                   rc=0
+$ tm check                      -> no problems                                                             rc=0
+$ tm plan                       -> rc=0 (… · dropped: m1 · m3 · t1 · d2 · d1 · a1 · c2 · p1 · x2)
+running (plan-basic, ^t4 at the width, started 09:00):
+$ tm now   (09:06)              -> ▶ ^t4 Claude Code drafts tests · started 09:00 · 6m of 4294967295m       rc=0
+$ tm plan  (09:07)              -> rc=0
+$ tm extend 1b (09:08)          -> tm: kernel refusal: badValue — "est" refuses this value …               rc=1
+```
+
+### 2. D62: `tm extend`, `tm stop` and `tm done --partial` leave ONE estimate, as typed
+
+The three verbs wrote `line.set_token("est", est_dur(…))` themselves — an `est:` token BESIDE a
+leading estimate (gap 2926).  They now write through the ONE path `tm edit est=` takes since
+D56: the kernel's `est` op (`Boundary.estAsWritten`, written by `Field.setRemaining`), carrying the
+value as the verb spells it (`est_dur`: whole blocks when they divide, else the compact form) and
+the block length (`day.rs`' `write_estimate`).  No third setter: the host's only est writer is
+the kernel call.  The estimate is written FIRST, so a refusal (a tabbed line, a value past the
+host's width) leaves nothing written — not the break's end, not the box, not the log.  `tm stop`
+and `tm done --partial` then move the box on the line the kernel returned (the box is §4.1
+positional surgery the wire does not carry).  `Cmd.lean`'s `setRemaining` doc now says "as typed"
+(gap 2928).
+
+**Parity P54 taken**: `tm extend`, `tm stop` and `tm done --partial` write the estimate through the kernel's `est` op — a leading estimate that is the slot is rewritten in place with the value as the verb spells it and gains no `est:` token, and an `est:` slot is written in canonical minutes; fork 4748911 wrote an `est:` token in the verb's own spelling beside a leading estimate (owner D62, W-36 track T, README gaps 2926 and 2928)
+
+**Behaviour rows**, DRIVEN before and after (`plan-basic`, block 60; `^t4` =
+`- [ ] 3 1b Claude Code drafts tests @m2 ^t4`, `^t3` = `- [>] 4 2b Exercises 5.3–5.5 @m1 est:1b ^t3`;
+`tm check` says `no problems` after every row, before and after):
+
+| verb | `dd8b95b` (fork 4748911's rule) | after |
+|---|---|---|
+| `tm extend 1b` on `^t4` | `- [>] 3 1b … @m2 est:2b ^t4` (two estimates) | `- [>] 3 2b … @m2 ^t4` |
+| `tm stop` at 09:20 on `^t4` | `- [ ] 3 1b … @m2 est:40m ^t4` | `- [ ] 3 40m … @m2 ^t4` |
+| `tm done --partial` at 09:25 on `^t4` | `- [ ] 3 1b … @m2 est:35m ^t4` | `- [ ] 3 35m … @m2 ^t4` |
+| `tm extend 1b` on `^t3` (the slot is the token) | `… @m1 est:2b ^t3` | `… @m1 est:120m ^t3` (canonical minutes, D49's rendering — what `tm edit ^t3 est=2b` writes) |
+| `tm extend 1b` past the host's width | panicked, rc 101 (the debug build driven) | `badValue est`, rc 1, nothing written |
+
+`cli_day`'s `extend_adds_a_block_to_the_estimate` and `stop_writes_the_remaining_estimate_back`
+change WITH the first two rows; `tm/tests/cli_one_estimate.rs` (6) pins every row, the width
+edge and the refusal's "nothing written".
+
+### 3. D61: a wall that starts while a block runs STOPS THE TIMER — written by the next verb
+
+**What is written.**  The log's existing events, never a new kind: `pause{id}` stamped at the
+wall's start and `unpause{id}` stamped at its end (`Log.Event.pause`/`.unpause`, `Log.lean:294-295`),
+rendered by the kernel like every appended line (D16).  **Not `interrupt`/`resume`**, the other
+pair the brief named: `resume` closes an `interrupt` and carries `lostMin` and `dropped` — §9's
+Interruption row's lost minutes and tail drop, for an AD-HOC wall the plan did not hold — and a
+calendar wall is neither lost time nor a replan; `pause`/`unpause` is the pair that stops and
+restarts the running block's timer and does nothing else.  The span is the wall's BLOCKED span —
+its run-up buffer included — `Ctx::walls_today`'s (fork `Ctx::walls_on`, the kernel's
+`Look.wallsOn`), the span P47 pauses on; overlapping walls are one span.
+
+**When** (no process runs continuously): by the housekeeping of the first verb that runs after the
+wall BEGAN — every verb that loads with housekeeping, `tm now` and `tm plan` included, beside
+§6.3's automatic close in `Ctx::load_with` (`day::stop_the_timer_at_walls`) — and the unpause by
+the first verb after it ENDED; a verb run only after the wall ended writes both, in order, once.
+While the meeting runs the block is paused in `.tm/state.json` too, as `tm pause` leaves it.
+
+**What it never overrides**: a timer the log shows STOPPED at the wall's start (a pause, an
+interruption, a break, the running break) is not the wall's to stop; the automatic unpause is
+written only while the wall's pause is still the last word on the timer, so a user who skipped the
+meeting (`tm pause` during it) keeps the timer they set; a timer mark already stamped after the
+wall's start — the log is the user's file too, hand-edited or synced — is the user's word, and the
+wall writes nothing under it; a block started inside a wall is not paused by it.
+
+**Parity P53 taken**: a calendar wall that starts while a block runs STOPS its timer — the first verb after the wall began logs `pause{id}` stamped at the wall's start and the first after it ended `unpause{id}` stamped at its end, so `tm now`'s worked minutes, `tm done`'s `actual_min` and the drawn history exclude the meeting; fork 4748911 logs nothing at a wall and counts the meeting as worked (owner D61, W-36 track T, README gaps 2805 and 2932)
+
+**The replay then excludes the meeting** — proved on the kernel's own replay:
+`Planner.a_logged_wall_pause_is_no_worked_time` (the machine banks the stretch before the pause,
+restarts the block at the unpause, and emits a Block segment up to the wall and a Pause segment
+across it, no Block segment across it) beside `Planner.an_unlogged_wall_is_worked_time`, and on the
+planner's day `PlannerWit.a_logged_wall_pause_keeps_the_open_row_off_the_meeting` (the open row
+starts at the unpause and reads the stretch before the wall plus the time since).
+
+**DRIVEN**, a `tm init --example` tree (`^g1 Meeting w/ host at:2026-09-07T12:50/13:50`), `^t4`
+started at 12:00.  Before, on `dd8b95b`:
+
+```
+$ tm now  (13:20)   -> ▶ ^t4 Claude Code drafts tests · started 12:00 · 80m of 60m      (no pause logged)
+$ tm now  (14:10)   -> ▶ ^t4 … · 130m of 60m
+$ tm plan (14:10)   -> 12:00  3 p3 ▶ Claude Code drafts tests  @m2  1b  130m so far
+                       12:50  ⏰     Meeting w/ host              1h
+$ tm --json done (14:20) -> "est_min": 60, "actual_min": 140
+```
+
+After, on the second commit's binary:
+
+```
+$ tm now  (13:20)        -> ▶ ^t4 Claude Code drafts tests · started 12:00 · 50m of 60m · paused
+                            log gains {"t":"2026-09-07T12:50:00-05:00","ev":"pause","id":"t4"}
+$ tm --json now (13:20)  -> "elapsed_min": 50, "paused": true
+$ tm plan (13:21)        -> 12:00  3 p3   Claude Code drafts tests     @m2  1b
+                            12:50  ⏰     Meeting w/ host                   1h
+$ tm now  (14:10)        -> ▶ ^t4 Claude Code drafts tests · started 12:00 · 70m of 60m
+                            log gains {"t":"2026-09-07T13:50:00-05:00","ev":"unpause","id":"t4"}
+$ tm plan (14:10)        -> 12:00  3 p3   Claude Code drafts tests     @m2  1b
+                            12:50  ·      lost 1h                      @m2         paused
+                            12:50  ⏰     Meeting w/ host                   1h
+                            13:50  3 p3 ▶ Claude Code drafts tests     @m2  1b     70m so far
+$ tm --json done (14:20) -> "est_min": 60, "actual_min": 80
+$ tm check (14:21)       -> no problems                                                        rc=0
+```
+
+Every call rc 0.  The log is `start` 12:00, `pause` 12:50, `unpause` 13:50, `done` 14:20 with
+`actual_min: 80` — two of the four entries the user did not type, the cost D61 accepted.  The
+drawn history holds no worked stretch across the meeting (the `paused` Lost row over it is gap
+3044), and `tm now`, the open row and `tm done` read one number: 50, then 70, then 80.
+
+### 4. Gap 2920 CLOSED in the kernel: the planner READS the host's worked minutes
+
+**One definition, and the other reads it** (AGENTS §5.3).  The rule has to be evaluable wherever
+the host needs it — every tick of the TUI's timer, `tm done`'s `actual_min` — so the definition
+is the host's, `Replay::active_worked_min` (fork `day::worked_min`), and the kernel READS it: the
+`planner` section's `state.active.workedMin` (`tm_core::planwire::add_worked_min`, the one host
+encoder of the key), decoded by `PlanWire.readOptWorked` through `Planner.workedOf?` (a day at
+most, `Look.maxDayMin` REUSED, refused `badActive workedMin` past it) into `RuntimeIn.worked`.
+`Planner.PlanReq.workedOf` is the one place the planner takes worked minutes from: the reservation
+(`activeWorked` → `activeLeft`) and the open row's `so far` (`openBlockRows`) both call it, so they
+cannot print two numbers (`the_open_row_reads_the_running_blocks_worked_minutes`).  The approach
+the gap proposed — the kernel re-deriving the host's rule from the idle marks it already carries —
+was NOT taken: that is a second copy of the rule kept in step by a test, which the brief rules
+out, and the host could not read it back at a TUI tick.
+
+**Parity P55 taken**: the planner's worked minutes of the running block — the reservation's `left` and the open row's `so far` — are the host's `Replay::active_worked_min` (the wall clock net of the day's pauses, interruptions and breaks, the running break included; a pause stamped before the block began no longer counts) whenever the request carries them; fork `active_run` and `open_block_segment` read the log's open block, which counts a break inside the block as worked, and fork `day::worked_min` let another block's open pause swallow the running one (W-36 track T, README gap 2920)
+
+**The log's own reading stays, for a request that carries none** (fork `active_run`'s,
+`openWorkedMin`; `PlanReq.activeWorked_without_the_hosts`): every proptest arm written before W-36
+sends none and compares against the fork exactly as before, and the key is OPTIONAL on the wire so
+no existing request changes meaning.  What that costs is named: a planner section built without
+`add_worked_min` silently gets the log's reading — **R3's section must carry it** (gap 3043).
+Three statements that said the open row carries the LOG's reading (`mem_openBlockRows`,
+`the_open_row_is_the_logs_open_block`, `openBlockRows_of_an_open_block`) now read `r.workedOf b.id
+(openWorkedMin r.now.sec b)` — the old form is false with the host's reading carried, and is
+REFUTED by name (`PlannerWit.the_open_row_carries_the_logs_worked_minutes_is_refuted`), never
+dropped; with none carried the two are equal (`PlanReq.activeWorked_without_the_hosts`).
+
+**Where it reaches.**  The kernel's day: `PlannerWit.the_host_reading_is_the_one_reading` (ninety
+carried → `90m so far` and `running · 90m left`, where the log's reading says 120 and 60).  Every
+generated day `planner_invariants`' W-36 arm draws (`the_kernel_reads_the_hosts_worked_minutes`):
+a break LOGGED inside the running block — the class gap 2920 said the generator never drew — the
+host's reading sent through `add_worked_min`, and the open row (by value), the reservation (its
+stop and its `left`) and §8.2 step 5 compared with `w35_fork_plan` given the same reading by its
+PROPERTY (the running estimate moved by the difference of the two readings, as P46's comparand is
+built; nothing copied from the kernel's answer); floors on every class.  Its census on the second commit's tree: 280 cases (the 256 drawn and
+the file's regression seeds), 153 with a running block, 22 with a break logged inside it — and on
+those 22 the host's reading differed from the log's — 153 open rows compared (22 on a differing
+day), 83 reservations (6 on a differing day), 697 assigned rows, 0 cases without a kernel §7
+answer; the dev clone's run drew 139, 22, 139 (22), 76 (8) and 667.  The binary
+the user runs: `tm now`, `tm done`, `tm stop` and the TUI already read the host's rule; the shipped
+`tm plan` is still fork `planner::plan` until R3 (gap 3043).
+
+### 5. The host's rule was wrong across blocks — fixed, because D61 would have made it common
+
+`idle_min_since` opened ANY pause, so a pause stamped before the running block began — another
+block's, left open by `tm done`/`tm stop` on a paused block, which log no `unpause` — swallowed the
+running block whole.  DRIVEN on `dd8b95b`: `pause` 09:10, `done` 09:20, `start ^t1` 09:30, and at
+10:00 `tm now --json` read `"elapsed_min": 0` and `tm done` at 10:05 logged `"actual_min": 0` (fork
+`day::worked_min` did the same).  D61 makes that state ordinary — a block that ends inside a
+meeting leaves the wall's pause unlifted — so a pause stamped before `started` no longer opens
+(`tm-core/src/log.rs`); an INTERRUPTION still does, since one running when a block starts holds it
+until the resume, as the replay's machine does.  Pinned by `cli_wall_pause`'s last two tests; the
+divergence is P55's second half.
+
+### 6. D40, both commits
+
+**Lean (check 9, `mutate.py --write`).**  First commit: `Tm.estAsWritten` and `Tm.parseCmd`
+re-mutated (bodies changed), both PINNED (`parseCmd_rejects_edit_variants`,
+`parseCmd_reads_the_est_value_as_written`, `parseCmd_rejects_add_title_variants`).  Second commit:
+`mutate.py --write` over the second commit's new or changed
+definitions: "14 definition(s) audited (7 pinned, 1 of them by an identity on an accumulator and 3
+by a synthesised constant; 7 unfoldable, 1 unavailable, 5 witness fixtures, 2 pinned by nothing)",
+8 rows appended and 6 replaced.  PINNED: `PlanReq.workedOf` at `0`, `1` and the identity `logs`
+(`PlanReq.activeWorked_is_the_hosts`, then `…_without_the_hosts`), `PlanReq.activeWorked` at `0`
+and `1`, `openBlockRows` at `default` and `[]` (`mem_openBlockRows`), `workedOf?` at `default`
+and `none`, `PlanWire.readOptWorked` and `PlanWire.PlanKey.name` at `default`, and
+`PlannerWit.openWallLines` at both (its witness decides false).  UNFOLDABLE: `PlanWire.readState`,
+as its row already was, and `Planner.RuntimeIn.empty`, whose literal gained `none` and whose
+synthesised constant is UNAVAILABLE because it IS that constant — so the gate's pinned-by-nothing
+count is **30, was 29**, the one rise being a structure literal no fold can speak about; the five
+`PlannerWit` fixtures are witness fixtures.  After gap 3050's rename, `mutate.py --verify --write
+--only 'Tm.Planner.workedOf?'` re-ran that row (both constants PINNED at the renamed theorems) and
+rewrote it.  The gate: 389 new or changed since `86c4dc6`, 389 rostered, 0 owed.
+
+**Rust (the plant scripts, each body replaced by a degenerate one in the clone, its suite run, the
+file restored byte for byte).**  First commit: `with_the_value_typed` → identity (`cli_errors`
+fails), `write_estimate` → `Err` (six `cli_day` tests fail), `prio_of`'s `need` back to `u32`
+(`cli_one_estimate` 2 fail), `committed` back to a plain sum (`cli_one_estimate` fails, the
+overflow panic).  Second commit: a CONTROL run first — `cli_wall_pause` and the W-36 arm pass on the
+unplanted clone — then eleven Rust plants, each FAILED by the suite named:
+`add_worked_min` → no-op (the W-36 arm); `stop_the_timer_at_walls` → `Ok(false)`, `merged_spans`
+→ empty, `timer_stopped_at` → `true` and `touched_after` → `true` (four `cli_wall_pause` tests
+each); `timer_stopped_at` → `false` (`a_timer_already_stopped_at_the_wall_is_left_alone`);
+`touched_after` → `false` (`a_timer_mark_already_inside_the_meeting_is_left_to_stand`);
+`last_timer_mark` → `None` (two); the stale-pause guard removed (`a_block_that_ended_inside_the_meeting_…`
+and `a_pause_left_open_by_a_paused_done_…`); `w36_host_worked` → `None` (the arm's floors);
+`w36_fork_plan` → the fork's own reading (the arm).  And one Lean plant, `PlanReq.workedOf` →
+`logs`: the kernel does not BUILD (`PlanReq.activeWorked_is_the_hosts` and the new witnesses
+fail), so the proofs see it before any arm can — check 9's row says the same.  Every file restored
+byte for byte.  **The clone's `git status --porcelain` after differs from before by one line**,
+`tm/tests/planner_invariants.proptest-regressions`: proptest appended the shrunk seed of the
+planted `add_worked_min` failure.  That is a planted counterexample, not a finding (D46's rule is
+for a failure of the real code); the clone is discarded, the seed was not carried into this tree,
+and no file of the worktree changed.
+
+### 7. Acceptance, capped, on each commit's tree
+
+* **First commit (`c10e39c`)**: `check.sh` 14 of 14 ok (axiom audit 5,563; FFI 95; corpus
+  29/37 and 4/5; stage goals 6; citations 45,330, 0 unresolved; check 9 381 of 381, 0 owed; parity
+  P1-P50; twins 3,149 bodies, 0 UNANSWERED; reach 1,185 reachable, 1,202 exempt, 0 UNANSWERED;
+  fields 15 of 15; inputs 32 of 36 read, 4 exempt; replay 86 modules).  `cargo test --workspace`
+  **THREE runs, each 1,522 passed / 0 failed / 10 ignored across 91 result lines** (382 s, 367 s,
+  400 s; load 8-10), `git status --porcelain` identical before and after each.
+* **Second commit (this block's)**: `check.sh` **14 of 14 ok** — build; totality; axiom audit
+  **5,579** theorems; `Negative.lean` rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals
+  **6**; prose citations **45,595 citations, 43,518 resolved, 2,077 allowed, 0 unresolved**; check 9 **389 new or changed, 389 rostered, 0 owed**
+  (130 unfoldable, 79 witness fixtures, **30 pinned by nothing**); parity **P1-P55, 2 declared
+  holes (P51, P52), next free P56**; twins **3,157 bodies, 0 UNANSWERED**; reach **1,185
+  reachable, 1,202 exempt, 642 answered by property, 0 UNANSWERED**; fields **15 of 15**; inputs
+  **37 fields, 33 read, 4 exempt**; replay **86 modules**.  `cargo test --workspace` **THREE runs,
+  each 1,531 passed / 0 failed / 10 ignored across 92 result lines** (357 s, 346 s, 356 s; load
+  6-10), status identical before and after each, and no `.proptest-regressions` line appeared.
+* **Named suites, `--include-ignored`, on this tree**: T5 33, door 23, `cli_switch_acceptance` 16,
+  `cli_latency` 6 of 6, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25,
+  `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9,
+  `planner_fixtures` 13, `cli_now_worked` 4, `cli_broken_pipe` 1, `planner_invariants` **18 of
+  18**, `cli_one_estimate` 6, `cli_wall_pause` 8 (the first commit's tree: the same, with
+  `planner_invariants` 17 and no `cli_wall_pause`).
+* **`cli_latency`, measured back to back with `dd8b95b` under the same load (18-26)**: T11's later
+  verb 182.5 and 177.3 ms here against 177.2 ms there, the gated write 197.5 / 177.3 against
+  197.3, the routine 187.5 / 162.0 against 192.3, `review week` 349.6 / 349.3 against 369.2, the
+  reseal 243.0 / 232.9 against 227.7 — no movement outside the noise.  It FAILED once, in a
+  preview run of this step taken beside a mutation build and another session's proptest
+  (`tm drop ^z15` still running after its 1 s bound): gap 1333's load class, recorded, and every
+  run above passed it.
+* **Every new `decide`/`rfl` probed at 8 GB with a 120 s timeout**, each copied into its own file
+  over the built module: the first commit's three together 0.53 s and 690 MB; the second's nine at
+  most 1.19 s and 879 MB each.
+* No predicate, assertion, floor or generator weakened; three Rust expectations changed WITH
+  behaviour rows (sections 1 and 2); no snapshot, latency band or corpus re-blessed; no memory
+  bound, `maxHeartbeats` or `maxRecDepth` raised (the four new `PlannerWit` witnesses carry the
+  file's own `set_option maxRecDepth 400000 in`, as its 287 others do); no external dependency;
+  `reach-exempt.txt`'s entries unchanged at 1,202, with two section censuses corrected to the
+  measurement (PlanWire 47 → 48, Planner 267 → 269, the gate's own demand); the other exemption
+  files and allow-lists unchanged.  `Negative.lean` gains CHEAT 240 (a worked reading of 1,441
+  built by hand).
+
+### Gaps (3040-3050 taken; 3051-3079 free)
+
+**Gap 3040 — every duration-valued key of the keyed edit has the `u32` edge 2929 had.**
+1. *What.*  Searched by BODY SHAPE, not by the one key gap 2929 named: the keyed edit reads `dur`,
+   `buffer`, `min`/`max` (a `Dur` amount), `after-done` and `on-event` with the kernel's `Nat`
+   field grammars, and the host's grammar reads the same bytes in `u32`.  Driven on `dd8b95b` (the
+   `tm init --example` tree, `^a1`): `tm edit ^a1 dur=4294967296m` → written, rc 0, and `tm check`
+   → `error[bad-value]: dur:4294967296m: invalid duration`, rc 2; the same for `buffer=4294967296m`,
+   `buffer=2982617d`, `max=4294967296m/d`, `max=71582789h/d`, `min=4294967296m/d` and
+   `after-done=4294967296d~1d`.  Only `est` had a host pre-parse, which is why only `est` was
+   visible.  2. *Why not closed here.*  The bound needs each value's minutes at the op's block
+   length, and the `edit` op carries no `blockMin` — the `est` op does; closing it is a wire change
+   for every key (a `blockMin` on the edit op, or a request-level one) plus one predicate over
+   every `Dur` an `EditVal` holds, with a behaviour row per key.  3. *Cost.*  One keystroke writes
+   a line the CLI's own `tm check` rejects (§1.3, §14: the sanctioned writer must never do that);
+   `tm plan` itself does not fault on these (the planner reads `est`, not them).  4. *Clears it.*
+   The next step on `Boundary.parseCmd`'s edit arm: one `Look.maxPlanMinutes` comparison per
+   duration an `EditVal` holds, at the block length, refused `badValue <key>`.
+
+**Gap 3041 — the TUI's live timer counts a meeting until a verb logs it.**
+1. *What.*  D61's pause is written by housekeeping.  The TUI's START runs it (`tui::load`) and
+   so does every verb the TUI spawns, but its reloads load WITHOUT housekeeping (`tui::reload`, by
+   design: nothing may write while ratatui owns the screen), so between a wall's start and the next
+   verb that runs housekeeping (in any terminal — the TUI reloads on the log's change) the Today
+   pane's timer and §9.1's overtime prompt read the meeting as worked.  2. *Why.*  The rule is log-based on purpose (one definition, `Replay::active_worked_min`);
+   teaching it walls would be a second source beside the log.  3. *Cost.*  A TUI left open through
+   a meeting shows the timer running and may prompt overtime until a verb runs.  4. *Clears it.*
+   The TUI's tick calling `day::stop_the_timer_at_walls` through a verb-shaped path (a writer on a
+   tick, the owner's to allow), or the §5.13 drive deciding it does not matter.  **An agent cannot
+   drive the TUI** (it refuses a non-tty, gap 182).
+
+**Gap 3042 — a wall that begins while the timer is already stopped is not the wall's.**
+1. *What.*  A pause, interruption or break covering the wall's start means D61 writes nothing;
+   if the break or interruption then ENDS inside the meeting (`tm break` again, `tm resume`), the
+   timer runs for the rest of it.  `tm resume` also un-pauses `state.json` while the replay's
+   machine keeps a paused block paused (fork `resumeBlock`, parity-exact), a pre-existing
+   disagreement a wall pause can now reach.  2. *Why.*  D61 says a wall that starts while a block
+   RUNS; the other orders were not decided.  3. *Cost.*  A meeting overlapping a break is partly
+   counted as worked.  4. *Clears it.*  The owner, if the wall should also stop a timer that
+   restarts inside it.
+
+**Gap 3043 — R3's `planner` section must carry `state.active.workedMin`; until R3 the shipped `tm
+plan` reads the log's open block.**
+1. *What.*  The kernel reads the host's worked minutes only when the request carries them
+   (optional on the wire, so every request built before W-36 keeps its meaning).  No shipped
+   request carries a `planner` section yet (`planwire::add_batch_max_min`'s own note), and the
+   shipped `tm plan` is fork `planner::plan`, whose `active_run` reads the log's open block — so
+   on a day with a break INSIDE the running block the shipped screen still reads `· 20m of 30m`
+   over `running · 5m left` (gap 2920's W-35 drive).  2. *Why.*  R3 is the switch; D48/D19 keep
+   the body swap out of this step.  3. *Cost.*  The shipped disagreement stands until R3; a
+   planner section built without `add_worked_min` silently gets the log's reading; and a reading
+   past a day (a block left running across days) is REFUSED by name, `badActive workedMin`, never
+   clamped — R3 decides what the host sends then.  4. *Clears it.*  R3 calls
+   `planwire::add_worked_min(&mut section, day::worked_min(..))` beside `planner_json`;
+   `planner_invariants`' W-36 arm is what fails if the kernel stops reading it.  Once every
+   request the binary builds carries the key, the fallback in `PlanReq.activeWorked` can become a
+   refusal (`badActive workedMin` when `active` has none), and `openWorkedMin` stops being a
+   reading of worked minutes at all — the one step that leaves exactly one on the wire.
+
+**Gap 3044 — a wall's logged pause is drawn as a `paused` Lost row across the meeting.**
+1. *What.*  D61 reuses `pause`/`unpause`, and both pasts — fork `past_segments` and the kernel's
+   `pastRows` (`pastKind`) — draw a Pause segment as a Lost row noted `paused`; after a wall the
+   day shows the meeting's Wall row and a `paused` Lost row over the same span.  2. *Why.*  The
+   owner chose the existing events (D61: never a new kind).  3. *Cost.*  The history reads the
+   meeting twice, once as lost-to-a-pause; the review's heat grid styles it `pause`, not leak.
+   4. *Clears it.*  The owner, if a wall-caused pause should be drawn as the wall alone (a
+   renderer rule over `(pause, wall)` pairs, and a parity number).
+
+**Gap 3045 — the keyed edit's `est` in blocks now needs `blockMin`.**
+1. *What.*  `{"op":"edit","key":"est","value":"20b"}` is `estAsWritten` since W-36 and is refused
+   `estBlockMinAbsent` without the op's `blockMin`; `2h` writes a token's canonical `est:120m`,
+   not `est:2h`.  2. *Why.*  One reader of an estimate's value on the wire.  3. *Cost.*  None on a
+   shipped path — the host sends `est=` as the `est` op; a hand-built request changes.
+   4. *Clears it.*  Nothing owed; recorded because it is a wire behaviour change.
+
+**Gap 3046 — this branch declares P51 and P52 as holes.**
+1. *What.*  `parity.py` requires P1..Pmax contiguous; track K owns P51-P52 and issues them on its
+   own branch, so this branch, which issues P53-P55, carries `hole P51`/`hole P52` lines.
+   2. *Why.*  To keep check 10 green on this branch alone.  3. *Cost.*  None once merged.
+   4. *Clears it.*  THE LAND STEP deletes the two `hole` lines when it merges track K's rows, and
+   issues any of P51-P52 track K left unused to the next entry that wants a number.
+
+**Gap 3047 — the three estimate writers now refuse a tabbed line, as `tm edit est=` does.**
+1. *What.*  D62 routes `tm extend`, `tm stop` and `tm done --partial` through the kernel's `est`
+   op, and every edit op refuses a line carrying a tab (`tabbedLine`, gap 32: the kernel does not
+   read a tab as a separator, so it will not write a slot it may have mis-tokenised).  Driven on a
+   `plan-basic` copy whose `^t4` title holds a tab: on `dd8b95b` `tm stop` wrote `… est:40m ^t4`,
+   rc 0; now `kernel refusal: tabbedLine`, rc 1, the line and the log untouched, and the block
+   still running.  2. *Why.*  One writer of the estimate (D56/D62); the refusal is the one that
+   writer already has.  3. *Cost.*  A block on a tabbed line cannot be stopped, extended or
+   partially done until the tab is removed (`tm done` without `--partial` still works: the box is
+   the host's).  4. *Clears it.*  Gap 32 (a tab read as a separator), or the owner if the three
+   verbs should end the block and skip the estimate on such a line.
+
+**Gap 3048 — `tm pause` during a meeting RESUMES the timer.**
+1. *What.*  `tm pause` is a toggle and runs housekeeping first: its first run inside a meeting
+   logs the wall's pause and then toggles it off, printing `resumed ^id`.  2. *Why.*  The verb's
+   own contract (a toggle) meets an automatic pause; the message says what happened.  3. *Cost.*
+   A user who types `tm pause` meaning "pause" inside a meeting gets the opposite (the timer was
+   already stopped).  4. *Clears it.*  The owner, if `tm pause` should become explicit
+   (`tm pause` / `tm unpause`) — a CLI change beyond D61.
+
+**Gap 3049 — the wall's automatic entries are no verb's to undo, and outlive an undone `start`.**
+1. *What.*  D61's pause and unpause are written by housekeeping, which no undo recorder records
+   (as §6.3's automatic close is not).  `tm undo` after them undoes the user's last verb; when that
+   verb was the `start` of the paused block the log keeps a `pause` for a block no longer started.
+   DRIVEN on the second commit's binary: `start ^t4` 12:00, `tm now` 13:20 (logs the pause at
+   12:50), `tm undo` 13:25 → `undid start (start ^t4)`; the log holds `pause t4` at 12:50 and then
+   `undo of start`; `tm check` → `no problems`; `^t1` started at 14:00 and done at 14:35 logs
+   `actual_min: 35`, and `tm plan` draws no row for the orphan.  2. *Why.*  The entries record a
+   fact of the calendar, not a keystroke.  3. *Cost.*  One dangling `pause` line; nothing reads it
+   as worked or lost time (the host's rule ignores a pause stamped before `started`, and the replay
+   has no open block for it).  4. *Clears it.*  Nothing owed unless the owner wants an undone
+   `start` to cancel its automatic pauses.
+
+**Gap 3050 — check 9 cannot read a pin theorem whose name carries `?`.**
+1. *What.*  `mutate.py`'s `NAMED_SITE` reads a pin site's declaration name with the class
+   `[A-Za-z0-9_.']`, while `DECL_START` — what `site()` records — takes any non-delimiter, `?`
+   included; so a row pinned by a theorem named `workedOf?_…` records the whole name and the gate
+   re-reads it as `workedOf`, "drifted" on the very tree that wrote it.  Measured on this step's
+   first `check.sh` run: 4 drift lines, all of `Tm.Planner.workedOf?`'s row.  2. *Why not fixed
+   here.*  The fix is one character class in a gate outside this track's files; the three theorems
+   were renamed instead (`a_worked_reading_past_a_day_is_refused`,
+   `a_worked_reading_within_a_day_is_read`, `the_worked_minutes_bound_is_run`) and the row
+   rewritten by `mutate.py --verify --write --only`.  3. *Cost.*  A theorem named after one of this
+   kernel's many `…?` smart constructors cannot be a recorded pin site.  4. *Clears it.*
+   `NAMED_SITE`'s name class widened to `DECL_START`'s, with a row pinned by a `?` name re-read
+   whole.

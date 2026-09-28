@@ -2718,4 +2718,11 @@ def midnightTwice : Field.Clock := ⟨1440, by decide⟩
 theorem theMarkColumnTakesTheWallGlyph (s : Planner.Seg) :
     Emit.markChar s = Emit.glyphOf Planner.SegKind.wall := rfl
 
+/- CHEAT 240 — W-36 track T (README gap 2920): the host's worked minutes cross the planner
+   wire as `RuntimeIn.worked : Option (Fin (Look.maxDayMin + 1))`, so a reading past a day cannot
+   be held at all — `Planner.workedOf?` refuses 1441 (`a_worked_reading_past_a_day_is_refused`) and
+   this block builds one by hand.  `decide` refuses the bound, which is what makes "a day at most"
+   a fact about every request the planner reads rather than about the decoder alone. -/
+def aWorkedReadingPastTheDay : Fin (Look.maxDayMin + 1) := ⟨1441, by decide⟩
+
 end Tm

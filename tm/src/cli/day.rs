@@ -28,9 +28,10 @@
 use std::collections::BTreeSet;
 use std::io::{self, BufRead, IsTerminal, Write};
 
-use chrono::{DateTime, NaiveTime};
+use chrono::{DateTime, FixedOffset, NaiveTime};
 use serde::Serialize;
 
+use tm_core::capacity;
 use tm_core::energy::{self, Features};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{self, Event};
@@ -60,7 +61,7 @@ fn est_dur(minutes: u32, block_min: u32) -> Dur {
 }
 
 /// **The running block's estimate, written by the kernel's `est` op** — the
-/// owner's **D62** (README gaps 2926 and 2928), a registered divergence from fork 4748911.
+/// owner's **D62** (README gaps 2926 and 2928), parity **P54**.
 ///
 /// `tm extend`, `tm stop` and `tm done --partial` used to write
 /// `line.set_token("est", …)` themselves: an `est:` token BESIDE a leading
@@ -241,6 +242,178 @@ pub(crate) fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
         .map(|s| ctx.at(s).fixed_offset());
     ctx.replay
         .active_worked_min(ctx.today, started.fixed_offset(), ctx.now, running_break)
+}
+
+/// **A calendar wall that starts while a block is running STOPS THE TIMER** —
+/// the owner's **D61** (README gaps 2805 and 2932), parity **P53**.
+///
+/// §9's Interruption row makes an ad-hoc wall pause the Active block, and D57
+/// (3) made a wall on `now` do the same in the kernel — but only as a state of
+/// the day AT `now`: the log recorded nothing, so once the meeting ended a
+/// replan drew the worked stretch across it, and the minutes `tm now` prints
+/// and `tm done` logs ([`log::Replay::active_worked_min`]) counted the meeting
+/// as work (driven by the W-35 auditor: `56m of 30m` over a 17:10–17:50 call).
+///
+/// **What is written.** The log's existing events, never a new kind: a
+/// `pause{id}` stamped at the wall's start and an `unpause{id}` stamped at its
+/// end — so the replay's open block banks the stretch before the meeting and
+/// runs again from its end (`Planner.a_logged_wall_pause_is_no_worked_time`),
+/// the host's worked minutes net the pair out like any pause, and the drawn
+/// history is a Block row up to the wall, a Pause row across it, and the open
+/// row from its end.  The span is the wall's BLOCKED span — its run-up buffer
+/// included — the one [`Ctx::walls_today`] reads (fork `Ctx::walls_on`, the
+/// kernel's `Look.wallsOn`) and the one P47 pauses on; overlapping walls are
+/// one span.
+///
+/// **When.** No process runs continuously, so the pause is written the way
+/// §6.3's automatic close catches up: by the housekeeping of the first verb
+/// that runs after the wall BEGAN (every verb that loads with housekeeping —
+/// `tm now` and `tm plan` included), and the unpause by the first one after it
+/// ENDED; a verb run after the wall ended writes both, in order.  While the
+/// meeting runs the block is paused in `.tm/state.json` too, exactly as `tm
+/// pause` would leave it, so every surface agrees that the timer is stopped.
+///
+/// **What it never overrides.** A wall stops a timer that was RUNNING at the
+/// wall's start, by the log: a pause, interruption or break (the running break
+/// included) covering that instant means the timer was already stopped and the
+/// wall writes nothing; and the automatic unpause is written only while the
+/// wall's own pause is still the last word on the timer — a user who ran `tm
+/// pause` during the meeting (skipped it, and kept working) keeps the timer
+/// they set.  A block started inside a wall is not paused by it: the wall did
+/// not start while the block ran.
+///
+/// **The costs the owner accepted** (D61): the log gains entries the user did
+/// not type, and a user who skipped the meeting without saying so is
+/// undercounted until they correct it (`tm pause` during the meeting).
+///
+/// Returns whether it wrote anything, so the caller reloads the replay.
+pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
+    let Some(active) = ctx.state.active.clone() else {
+        return Ok(false);
+    };
+    let started = ctx.at(active.started);
+    let now = ctx.now_tz;
+    let mut marks: Vec<log::IdleMark> = ctx
+        .replay
+        .seam(ctx.today)
+        .map(|s| s.idle_marks.clone())
+        .unwrap_or_default();
+    let running_break = ctx
+        .state
+        .break_
+        .as_ref()
+        .and_then(|b| b.started)
+        .map(|s| ctx.at(s).fixed_offset());
+    let id = active.id.to_string();
+    let mut paused = active.paused;
+    let mut wrote = false;
+    for (lo, hi) in merged_spans(ctx.walls_today()) {
+        if lo <= started || lo > now {
+            continue;
+        }
+        let (lo, hi) = (lo.fixed_offset(), hi.fixed_offset());
+        if !marks.contains(&log::IdleMark::Pause(lo)) {
+            if timer_stopped_at(&marks, started.fixed_offset(), lo, running_break) || touched_after(&marks, lo) {
+                continue;
+            }
+            ctx.append_entry(&log::LogEntry::new(lo, Event::Pause { id: id.clone() }))?;
+            marks.push(log::IdleMark::Pause(lo));
+            paused = true;
+            wrote = true;
+        }
+        if hi <= ctx.now
+            && !marks.contains(&log::IdleMark::Unpause(hi))
+            && last_timer_mark(&marks) == Some(log::IdleMark::Pause(lo))
+        {
+            ctx.append_entry(&log::LogEntry::new(hi, Event::Unpause { id: id.clone() }))?;
+            marks.push(log::IdleMark::Unpause(hi));
+            paused = false;
+            wrote = true;
+        }
+    }
+    if wrote {
+        if let Some(a) = ctx.state.active.as_mut() {
+            a.paused = paused;
+        }
+        ctx.save_state()?;
+    }
+    Ok(wrote)
+}
+
+/// The day's walls as blocked spans, overlapping or touching spans joined.
+fn merged_spans(mut walls: Vec<capacity::Wall>) -> Vec<capacity::Wall> {
+    walls.retain(|(a, b)| a < b);
+    walls.sort_by_key(|(a, _)| *a);
+    let mut out: Vec<capacity::Wall> = Vec::new();
+    for (a, b) in walls {
+        match out.last_mut() {
+            Some(last) if a <= last.1 => last.1 = last.1.max(b),
+            _ => out.push((a, b)),
+        }
+    }
+    out
+}
+
+/// Whether the log (and the break `state.json` still holds running) had the
+/// running block's timer stopped at `t`: an open pause or interruption, or a
+/// break, covering it — [`log::Replay::idle_min_since`]'s own pairing, asked at
+/// one instant, and like it blind to a pause stamped before the block
+/// `started` (another block's, left open by a `tm done` on a paused block).
+fn timer_stopped_at(
+    marks: &[log::IdleMark],
+    started: DateTime<FixedOffset>,
+    t: DateTime<FixedOffset>,
+    running_break: Option<DateTime<FixedOffset>>,
+) -> bool {
+    let mut open: Option<DateTime<FixedOffset>> = None;
+    let mut spans: Vec<(DateTime<FixedOffset>, Option<DateTime<FixedOffset>>)> = Vec::new();
+    for m in marks {
+        match *m {
+            log::IdleMark::Pause(a) if a < started => {}
+            log::IdleMark::Pause(a) | log::IdleMark::Interrupt(a) => {
+                if open.is_none() {
+                    open = Some(a);
+                }
+            }
+            log::IdleMark::Unpause(b) | log::IdleMark::Resume(b) => {
+                if let Some(a) = open.take() {
+                    spans.push((a, Some(b)));
+                }
+            }
+            log::IdleMark::Break { t: a, actual_min } => {
+                spans.push((a, Some(a + chrono::Duration::minutes(i64::from(actual_min.unwrap_or(0))))));
+            }
+        }
+    }
+    if let Some(a) = open {
+        spans.push((a, None));
+    }
+    if let Some(a) = running_break {
+        spans.push((a, None));
+    }
+    spans.iter().any(|(a, b)| *a <= t && b.is_none_or(|b| t < b))
+}
+
+/// Whether anything touched the timer after `t` — a mark stamped later than
+/// the wall's start means the user has been deciding what the timer did since.
+fn touched_after(marks: &[log::IdleMark], t: DateTime<FixedOffset>) -> bool {
+    marks.iter().any(|m| match *m {
+        log::IdleMark::Pause(a)
+        | log::IdleMark::Interrupt(a)
+        | log::IdleMark::Unpause(a)
+        | log::IdleMark::Resume(a) => a > t,
+        log::IdleMark::Break { t: a, .. } => a > t,
+    })
+}
+
+/// The last mark that set the timer — a pause, unpause, interruption or
+/// resume — in file order.
+fn last_timer_mark(marks: &[log::IdleMark]) -> Option<log::IdleMark> {
+    marks
+        .iter()
+        .rev()
+        .find(|m| !matches!(m, log::IdleMark::Break { .. }))
+        .copied()
 }
 
 /// `tm wake --json`.

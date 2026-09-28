@@ -8190,7 +8190,7 @@ def theOpenBreakRequest : PlanReq := { theOpenRequest with run := openBreakRun }
 def theInterruptedOpenRequest : PlanReq :=
   { theOpenRequest with state :=
       ⟨some theOpenBlock, none, some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 810).sec, 0⟩, none⟩,
-       none, Capped.nil⟩ }
+       none, Capped.nil, none⟩ }
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: the worked stretch `[12:00, 14:00)`, the meeting it ran across, the
@@ -8469,7 +8469,7 @@ is `[14:00, 14:05)` and not the block's end. -/
 def theShortRunRequest : PlanReq :=
   { theRunBatchRequest with state :=
       ⟨some ⟨['m','1'], ⟨(Cal.instantOf Cal.chicago 739867 820).sec, 0⟩, 25, false⟩, none, none,
-       none, Capped.nil⟩ }
+       none, Capped.nil, none⟩ }
 
 set_option maxRecDepth 400000 in
 /-- **§9.1's "x extend +1 block", answered**: the reservation grows to the block's end at 14:40,
@@ -9188,6 +9188,103 @@ theorem the_day_names_its_blocked_candidate_with_its_deps :
     (dayPlan theWaitingAndBlockedRequest).diagnostics.blockedDeps.val.map Prod.fst
       = (dayPlan theWaitingAndBlockedRequest).diagnostics.blocked.val := by
   refine ⟨by decide, by decide⟩
+
+
+/-! ############################################################################
+## W-36 track T — ONE reading of worked minutes (parity P55, README gap 2920) and a logged wall
+## pause (the owner's D61, parity P53)
+
+**P55.**  `theHostWorkedRequest` is the open Wednesday with the HOST saying ninety of the two hours
+since 12:00 were worked (a half-hour break inside the block, which the log's open block does not
+see: `Replay.dayArm` touches no block for one).  The reservation's `left` and the open row's `so
+far` both read ninety (`Planner.PlanReq.workedOf`), and W-34's statement that the open row
+carries the LOG's reading is refuted there.
+
+**D61.**  `theWallPausedRequest` is the open Wednesday whose log also holds the two lines D61's
+housekeeping writes (`tm/src/cli/day.rs`, `stop_the_timer_at_walls`) for `^g1`'s 12:50–13:50: a
+`pause m1` at 12:50 and an `unpause m1` at 13:50.  The worked stretch is drawn from 13:50, the
+stretch before the meeting ends at 12:50, and no Block row of the day lies across the meeting —
+where `theOpenRequest`, the same day with nothing logged at the wall, draws `[12:00, 14:00)`
+across it.
+############################################################################ -/
+
+/-- **`m1` paused at `^g1`'s 12:50 and resumed at its 13:50** — D61's two lines, in the fork's
+bytes, after the open Wednesday's own three. -/
+def openWallLines : List Log.Line := openLines ++
+  [⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','5','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩,
+   ⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','3',':','5','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','u','n','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem openWallRun_resumes_ok : runOk Cal.chicago 739867 openWallLines = true := by decide
+
+def openWallRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) openWallLines with
+  | .ok run => run
+  | .error _ => absurd openWallRun_resumes_ok (by simp [runOk, h])
+
+/-- **The open Wednesday with the meeting's pause logged** (D61). -/
+def theWallPausedRequest : PlanReq := { theOpenRequest with run := openWallRun }
+
+/-- **The host's reading carried**: ninety of the two hours since 12:00 worked (P55). -/
+def theHostWorkedRequest : PlanReq :=
+  { theOpenRequest with state := { theOpenRequest.state with worked := some ⟨90, by decide⟩ } }
+
+set_option maxRecDepth 400000 in
+/-- **D61 on the kernel's day: the worked stretch is not drawn across the meeting.**  The open
+row runs from the unpause at 13:50 and has worked sixty minutes (fifty before the meeting, ten
+since); the log's past half is the stretch `[12:00, 12:50)` and a `paused` Lost row across the
+meeting; the reservation owes 120 of the 180 minutes; and no Block row of the day lies across
+`[12:50, 13:50)` — where the same day with nothing logged draws one. -/
+theorem a_logged_wall_pause_keeps_the_open_row_off_the_meeting :
+    (openBlockRows theWallPausedRequest).map (fun t => (t.start, t.stop, t.note))
+      = [((Cal.instantOf Cal.chicago 739867 830).sec, (Cal.instantOf Cal.chicago 739867 840).sec,
+          some (Note.soFar 60))] ∧
+    (pastRows theWallPausedRequest).map (fun t => (t.start, t.stop, t.kind, t.note))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 770).sec,
+          SegKind.block, none),
+         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
+          SegKind.lost, some Note.paused)] ∧
+    theWallPausedRequest.activeRun.map (·.leftMin) = some 120 ∧
+    ((dayPlan theWallPausedRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        decide (s.val.start < (Cal.instantOf Cal.chicago 739867 830).sec) &&
+        decide ((Cal.instantOf Cal.chicago 739867 770).sec < s.val.stop))).length = 0 ∧
+    ((dayPlan theOpenRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
+        decide (s.val.start < (Cal.instantOf Cal.chicago 739867 830).sec) &&
+        decide ((Cal.instantOf Cal.chicago 739867 770).sec < s.val.stop))).length = 1 := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **P55 on the kernel's day: the host's reading is the one reading.**  With ninety minutes
+carried, the open row says `90m so far`, the reservation owes ninety of the 180 and its `▶` row
+says so — where the same request with no reading carried reads the log's 120 and owes sixty. -/
+theorem the_host_reading_is_the_one_reading :
+    (openBlockRows theHostWorkedRequest).map (·.note) = [some (Note.soFar 90)] ∧
+    theHostWorkedRequest.state.active.map theHostWorkedRequest.activeWorked = some 90 ∧
+    theHostWorkedRequest.activeRun.map (fun x => (x.stop, x.leftMin))
+      = some ((Cal.instantOf Cal.chicago 739867 900).sec, 90) ∧
+    ((dayPlan theHostWorkedRequest).segments.filter (fun s => s.val.flags.current)).map
+        (·.val.note) = [some (Note.runningLeft 90)] ∧
+    (openBlockRows theOpenRequest).map (·.note) = [some (Note.soFar 120)] ∧
+    theOpenRequest.activeRun.map (·.leftMin) = some 60 := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **W-34's reading of the open row is REFUTED** (parity P55; AGENTS §3.1 item 3, D5's
+refute-and-rename).  `Planner.the_open_row_is_the_logs_open_block` said the open row's note is
+the log's reading, `openWorkedMin`, whatever the request carried; with the host's ninety
+carried the row says ninety and the log's open block says 120.  What holds now is
+`Planner.the_open_row_reads_the_running_blocks_worked_minutes`, and the restated
+`the_open_row_is_the_logs_open_block` reads `workedOf`. -/
+theorem the_open_row_carries_the_logs_worked_minutes_is_refuted :
+    ¬ ∀ (r : PlanReq) (t : Seg), t ∈ openBlockRows r → ∀ b, r.run.answer.openBlock = some b →
+      t.note = some (.soFar (openWorkedMin r.now.sec b)) := by
+  intro h
+  have hb : theHostWorkedRequest.run.answer.openBlock =
+      some ⟨['m','1'], (⟨63924570000, 0⟩, ⟨true, 18000⟩), 0,
+        some (⟨63924570000, 0⟩, ⟨true, 18000⟩), false⟩ := by decide
+  have hrow : { theOpenRow with note := some (.soFar 90) } ∈ openBlockRows theHostWorkedRequest := by
+    decide
+  exact absurd (h _ _ hrow _ hb) (by decide)
 
 end PlannerWit
 end Tm
