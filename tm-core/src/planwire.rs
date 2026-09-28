@@ -467,10 +467,12 @@ pub fn grown(c: &Candidate, est: Option<u32>, extra_min: u32, cfg: &Config) -> O
 /// blocks (`PlanWire.readOvertime`), and — D58 — the item's grown facts under
 /// `grown` when it is a candidate the extension changes.
 ///
-/// **The kernel reads `id` and `blocks` today and not `grown`**: D58's kernel
-/// half — `Planner.overtimeDiff` consuming the facts — is not built (README
-/// gap 2873). Until it is, the key is carried and read by nothing, and the
-/// what-if the kernel answers is the estimate's (parity P44).
+/// **The kernel reads `grown` since W-36** (README gap 2873): `PlanWire.readGrown`
+/// reads `remaining` and `plannedMin`, and `Planner.overtimeDiff` plans the
+/// extended request with them (`Planner.PlanReq.growing`), so the what-if gives
+/// the extended item the commitment fork `apply` gives it. `needMin` is sent
+/// and not read: no reader of the day reads a need but §7.3's pass, which
+/// derives its own from `remaining` (README gap 3004).
 pub fn overtime_json(id: &Id, blocks: u32, grown: Option<&Grown>) -> Value {
     let mut o = json!({"id": id.as_str(), "blocks": blocks});
     if let Some(g) = grown {

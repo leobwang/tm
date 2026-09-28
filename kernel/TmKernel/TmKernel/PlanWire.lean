@@ -118,7 +118,7 @@ inductive PlanKey
   | id | inst | started | estMin | paused | plannedMin | place
   | winLo | winHi | durMin | mandatory
   | est | extra | drop | min
-  | overtime | blocks
+  | overtime | blocks | grown | remaining
   /-- **The record's own well-formedness**, when `Planner.mkActive?`, `mkBreak?` or
   `mkInterrupt?` answers `none`.  Those three answer `Option` and not a named error, so the wire
   can say *which record* the planner could not hold and not *which clause* of its `wf` failed —
@@ -135,7 +135,7 @@ def PlanKey.name : PlanKey → String
   | .winLo => "winLo" | .winHi => "winHi" | .durMin => "durMin"
   | .mandatory => "mandatory" | .est => "est" | .extra => "extra"
   | .drop => "drop" | .min => "min" | .wf => "wf"
-  | .overtime => "overtime" | .blocks => "blocks"
+  | .overtime => "overtime" | .blocks => "blocks" | .grown => "grown" | .remaining => "remaining"
 
 /-- **The planner section's refusals** (design §10.3's `planRefusal.*`).  Each names the record
 it is about by position where there is a position, and the key by name, exactly as
@@ -923,31 +923,21 @@ theorem readPlannerSection_refuses_a_routines_that_is_not_an_array (now : Cal.In
 
 /-! ## The entry — R9's one export, one section further along
 
-**A decoder with no caller is the defect this campaign is about.**  `Emit.lean` landed at W-22
-with none and its own header says what that cost; this section will not repeat it.  So the
-`planner` section is **read on every call that carries one**, and a section that does not decode
-refuses the call by name — through the FFI, today, before anything consumes the values.
-
-**And since W-28 the call ANSWERS**: `Planner.dayPlan` is built from these values and its seven
-keys go out beside `rows` (README gap **1667**, D48's response half).  The two obstacles W-27
-priced are gone rather than worked around — gap **1668** (`PlannerWit.mkPlanReq?` is a witness
-module's and cannot be imported) because nothing needs to import it: `planReqOf` hands over
-values this call's own readers already produced, where `mkPlanReq?` decodes raw parts; and gap
-**1669** (`Boundary.runLoad` drops its `List ReqDoc`) because `Boundary.CapParts` hands out the
-loaded `WfPlan` itself and no document is read twice.
--/
+**A decoder with no caller is the defect this campaign is about** (`Emit.lean` landed at W-22
+with none), so the `planner` section is **read on every call that carries one**, and a section
+that does not decode refuses the call by name, before anything consumes the values.  **Since W-28 the call ANSWERS**: `Planner.dayPlan`'s seven keys go out
+beside `rows` (README gap **1667**).  The two obstacles W-27 priced are gone rather than worked
+around: gap **1668** needs no import of `PlannerWit.mkPlanReq?`, because `planReqOf` hands over
+values this call's own readers produced; and gap **1669** is gone because `Boundary.CapParts`
+hands out the loaded `WfPlan` itself, so no document is read twice. -/
 
 /-! ## The response — design §10.2's `plan` keys (D48's RESPONSE half, README gap 1667)
 
-`EmitWire.withPlan` writes one key into the `plan` object: `rows`, the day's rendered rows for
-the segments a host sent.  The seven below are `Planner.dayPlan`'s own answer for a day the
-**kernel** planned, and they share that object: the keys are disjoint
-(`the_plan_objects_keys_are_disjoint`), so a response can carry both and a reader tells them
-apart by name.  This is what makes `tm/tests/planner_invariants.rs` able to ask the kernel for a
-day instead of asking it to render the fork's.
-
-**Every value is a field or a view of `Planner.DayPlan`** and nothing here recomputes one: the
-seven theorems named `planJson_*_is_the_days` are each `rfl`.
+`EmitWire.withPlan` writes `rows` into the `plan` object; the seven below are `Planner.dayPlan`'s
+answer for a day the **kernel** planned, in the same object under disjoint keys
+(`the_plan_objects_keys_are_disjoint`), so `tm/tests/planner_invariants.rs` can ask the kernel for
+a day instead of asking it to render the fork's.  **Every value is a field or view of
+`Planner.DayPlan`** and nothing here recomputes one: `planJson_*_is_the_days` are each `rfl`.
 -/
 
 /-- The seven keys, in design §10.2's order. -/
@@ -987,14 +977,9 @@ def optStr : Option Id → JVal
   | some s => .str s
 
 /-! **Two emitters this file used to declare are gone, and it declares none in their place**
-(AGENTS §5.3, the W-28 repair step).  optNum, of type `Option Nat → JVal`, was character for
-character `CapWire.optNatJson`, and pairJson, of type `Option Arith.Pos → JVal`, was character
-for character `minutesJson` — and pairJson's own doc comment named a THIRD spelling of the shape, the
-reader `CapWire.pairWith`.  The W-28 track-P block checked that no BOUND was minted and
-checked nothing about the ENCODERS, which is §5.3's actual subject: two definitions of one
-concept is the bug, and a wire key emitted by two functions is exactly that.  `segJson` below
-calls `CapWire.optNatJson` and `minutesJson`; both were already reachable from this namespace
-and neither moved. -/
+(AGENTS §5.3, W-28 repair): optNum was `CapWire.optNatJson` character for character, and
+pairJson `minutesJson` (its doc named a THIRD spelling, `CapWire.pairWith`).  A wire key emitted
+by two functions is §5.3's bug; `segJson` calls the two that stood, and neither moved. -/
 
 /-- The seven marks, in `EmitWire.readFlags`' order and under its keys. -/
 def flagsJson (f : Planner.SegFlags) : JVal :=
@@ -1175,19 +1160,34 @@ request names an item and a count of blocks, and the day's `plan` object gains `
 `Planner.overtimeDiff`'s four fields, `removed` being fork `overtime_drops`' answer.  The binary
 sends no `planner` section until R3 (README gap 2229), so this key is R3's to send. -/
 
-/-- **`{"id": …, "blocks": …}`**, absent being no what-if — the id through `EmitWire.idWithin`
-and the count through `EmitWire.u32Within`, the fork's `u32` (`overtime_drops(…, blocks: u32)`),
-the two readers `overrides`' records already use. -/
-def readOvertime (sec : JVal) : Except PlannerRefusal (Option (Id × Nat)) :=
+/-- **D58's `grown`** (W-36, README gap 2873): absent is none; present is the host's `remaining`
+and `plannedMin`, each through `EmitWire.u32Within` and together through `Planner.mkGrown?`.  The
+host's `needMin` is NOT read — the day reads no need but §7.3's, derived by its pass (gap 3004). -/
+def readGrown (v : JVal) : Except PlannerRefusal (Option Planner.WfGrown) :=
+  match EmitWire.optAtP v "grown" (PlannerRefusal.badOvertime PlanKey.grown) with
+  | .error e => .error e
+  | .ok none => .ok none
+  | .ok (some w) => do
+    let r ← EmitWire.u32Within (PlannerRefusal.badOvertime PlanKey.remaining)
+      (← EmitWire.natAtP w "remaining" (PlannerRefusal.badOvertime PlanKey.remaining))
+    let m ← EmitWire.u32Within (PlannerRefusal.badOvertime PlanKey.plannedMin)
+      (← EmitWire.natAtP w "plannedMin" (PlannerRefusal.badOvertime PlanKey.plannedMin))
+    match Planner.mkGrown? ⟨r, m⟩ with
+    | some g => pure (some g)
+    | none => throw (PlannerRefusal.badOvertime PlanKey.grown)
+
+/-- **`{"id": …, "blocks": …, "grown"?: …}`**, absent being no what-if — the id through
+`EmitWire.idWithin`, the count through `EmitWire.u32Within` (fork `u32`), and D58's facts. -/
+def readOvertime (sec : JVal) : Except PlannerRefusal (Option (Id × Nat × Option Planner.WfGrown)) :=
   match EmitWire.optAtP sec "overtime" (PlannerRefusal.badOvertime PlanKey.overtime) with
   | .error e => .error e
   | .ok none => .ok none
   | .ok (some v) => do
     let idS ← EmitWire.strAtP v "id" (PlannerRefusal.badOvertime PlanKey.id)
     let id ← EmitWire.idWithin (PlannerRefusal.badOvertime PlanKey.id) idS
-    let bN ← EmitWire.natAtP v "blocks" (PlannerRefusal.badOvertime PlanKey.blocks)
-    let b ← EmitWire.u32Within (PlannerRefusal.badOvertime PlanKey.blocks) bN
-    pure (some (id, b))
+    let b ← EmitWire.u32Within (PlannerRefusal.badOvertime PlanKey.blocks)
+      (← EmitWire.natAtP v "blocks" (PlannerRefusal.badOvertime PlanKey.blocks))
+    pure (some (id, b, ← readGrown v))
 
 /-- **`Planner.PlanDiff`, each field under its own name**: `removed` and `added` as id lists in
 the order `diff` holds them, `moved` as `{id, from, to}` on the kernel's absolute seconds, and
@@ -1201,9 +1201,9 @@ def diffJson (d : Planner.PlanDiff) : JVal :=
 
 /-- **The what-if's answer, into the `plan` object** — nothing without an `overtime` key, and
 with one the whole of `Planner.overtimeDiff` for that item and count, computed once. -/
-def overtimeJson (r : Planner.PlanReq) : Option (Id × Nat) → List (List Char × JVal)
+def overtimeJson (r : Planner.PlanReq) : Option (Id × Nat × Option Planner.WfGrown) → List (List Char × JVal)
   | none => []
-  | some (i, b) => [("overtime".toList, diffJson (Planner.overtimeDiff r i b))]
+  | some (i, b, g) => [("overtime".toList, diffJson (Planner.overtimeDiff r i b g))]
 
 /-- **The request, with its `planner` section.**  Without one this is `EmitWire.runRows`, byte
 for byte.  With one: `runRows` answers first, so every refusal that stood before this step still
@@ -1287,7 +1287,7 @@ weakening a law (D5): the old statement said the response *equals* `EmitWire.run
 says it is that **with the day's seven keys added**, and the old statement is false of this
 definition exactly because the kernel now answers. -/
 theorem runPlanner_answers_the_day (j sec r : JVal) (b : Nat) (parts : CapParts)
-    (q : PlannerIn) (req : Planner.PlanReq) (ot : Option (Id × Nat))
+    (q : PlannerIn) (req : Planner.PlanReq) (ot : Option (Id × Nat × Option Planner.WfGrown))
     (hp : jget j "planner" = .ok (some sec)) (hr : EmitWire.runRowsP j = .ok (r, some parts))
     (hs : readPlannerSection parts.cap.look.today0.now sec = .ok q)
     (hb : readBatchMaxMin parts.sec = .ok b) (hq : planReqOf parts b q = .ok req)
@@ -1823,7 +1823,7 @@ theorem readOvertime_of_an_absent_key : readOvertime (.obj []) = .ok none := rfl
 /-- **One item and one block, read.** -/
 theorem readOvertime_accepts_an_extension :
     readOvertime (.obj [("overtime".toList, .obj [("id".toList, .str "m1".toList),
-      ("blocks".toList, .num 1)])]) = .ok (some (['m','1'], 1)) := by rfl
+      ("blocks".toList, .num 1)])]) = .ok (some (['m','1'], 1, none)) := by rfl
 
 /-- **A count past the fork's `u32` is refused by name** (R10), through `EmitWire.u32Within`. -/
 theorem readOvertime_refuses_blocks_past_the_width :
@@ -1857,9 +1857,9 @@ theorem the_overtime_refusal_spells_itself :
 theorem overtimeJson_of_none (r : Planner.PlanReq) : overtimeJson r none = [] := rfl
 
 /-- **With one it gains exactly `overtime`, and it is `Planner.overtimeDiff`'s whole answer.** -/
-theorem overtimeJson_answers_the_what_if (r : Planner.PlanReq) (i : Id) (b : Nat) :
-    overtimeJson r (some (i, b)) =
-      [("overtime".toList, diffJson (Planner.overtimeDiff r i b))] := rfl
+theorem overtimeJson_answers_the_what_if (r : Planner.PlanReq) (i : Id) (b : Nat) (g : Option Planner.WfGrown) :
+    overtimeJson r (some (i, b, g)) =
+      [("overtime".toList, diffJson (Planner.overtimeDiff r i b g))] := rfl
 
 /-- **`diffJson` writes every field of a `PlanDiff`**, at every value, under its own key. -/
 theorem diffJson_writes_every_field (d : Planner.PlanDiff) :
@@ -1871,15 +1871,15 @@ theorem diffJson_writes_every_field (d : Planner.PlanDiff) :
 
 /-- **The `removed` key IS fork `overtime_drops`' answer** — the ids the extended day no longer
 holds, from `Planner.overtimeDiff` and nowhere else. -/
-theorem the_overtime_keys_removed_is_overtime_drops (r : Planner.PlanReq) (i : Id) (b : Nat) :
-    overtimeJson r (some (i, b)) =
+theorem the_overtime_keys_removed_is_overtime_drops (r : Planner.PlanReq) (i : Id) (b : Nat) (g : Option Planner.WfGrown) :
+    overtimeJson r (some (i, b, g)) =
       [("overtime".toList, .obj [("removed".toList,
-          .arr ((Planner.overtimeDiff r i b).removed.map JVal.str)),
-        ("added".toList, .arr ((Planner.overtimeDiff r i b).added.map JVal.str)),
-        ("moved".toList, .arr ((Planner.overtimeDiff r i b).moved.map (fun m =>
+          .arr ((Planner.overtimeDiff r i b g).removed.map JVal.str)),
+        ("added".toList, .arr ((Planner.overtimeDiff r i b g).added.map JVal.str)),
+        ("moved".toList, .arr ((Planner.overtimeDiff r i b g).moved.map (fun m =>
           .obj [("id".toList, .str m.1), ("from".toList, .num m.2.1),
             ("to".toList, .num m.2.2)]))),
-        ("driftMin".toList, .num (Planner.overtimeDiff r i b).driftMin)])] := rfl
+        ("driftMin".toList, .num (Planner.overtimeDiff r i b g).driftMin)])] := rfl
 
 /-- **The twelfth note, `soFar`** — fork `open_block_segment`'s `"<n>m so far"`, the name and the
 minutes; `noteJson_names_the_eleven` and `noteJson_writes_every_field` pin the other eleven. -/
@@ -1922,5 +1922,71 @@ witness — the bytes `callPlanner` answers for the 11-byte request `{"docs":[]}
 pinned one level down, at `respondPlanner_answers_an_empty_request`, and this joins the two. -/
 theorem callPlanner_is_the_emitted_answer (input : String) :
     callPlanner input = String.ofList (jemit (respondPlanner input.toList)) := rfl
+/-! ## W-36 (track K): D58's `grown`, read (README gap 2873)
+
+APPENDED 2026-09-27.  `readGrown` is the `overtime` object's third key: the host's grown facts, the
+kernel's what-if plans the grown request (`Planner.overtimeDiff`'s `g`), and the host's `needMin`
+is not read (README gap 3004). -/
+
+/-- **An absent `grown` is none**: the what-if is the estimate's, as before W-36. -/
+theorem readGrown_of_an_absent_key : readGrown (.obj []) = .ok none := rfl
+
+/-- **The host's two numbers, read.** -/
+theorem readGrown_accepts_the_hosts_facts :
+    (readGrown (.obj [("grown".toList, .obj [("remaining".toList, .num 150),
+      ("plannedMin".toList, .num 180), ("needMin".toList, .num 195)])])).map
+        (Option.map Subtype.val) = .ok (some ⟨150, 180⟩) := by rfl
+
+/-- **A remaining past the fork's `u32` is refused by name** (R10), through `EmitWire.u32Within`. -/
+theorem readGrown_refuses_a_remaining_past_the_width :
+    readGrown (.obj [("grown".toList, .obj [("remaining".toList, .num 4294967296),
+      ("plannedMin".toList, .num 1)])]) = .error (PlannerRefusal.badOvertime PlanKey.remaining) := by
+  rfl
+
+/-- **Planned minutes past the width are refused by name.** -/
+theorem readGrown_refuses_planned_minutes_past_the_width :
+    readGrown (.obj [("grown".toList, .obj [("remaining".toList, .num 1),
+      ("plannedMin".toList, .num 4294967296)])]) = .error (PlannerRefusal.badOvertime PlanKey.plannedMin) := by
+  rfl
+
+/-- **A `grown` that is not an object is refused by name**, never read as none — by the first key
+it cannot find, as `readOvertime` refuses an `overtime` that is not an object by its `id`. -/
+theorem readGrown_refuses_a_grown_that_is_not_an_object :
+    readGrown (.obj [("grown".toList, .num 1)]) = .error (PlannerRefusal.badOvertime PlanKey.remaining) := by
+  rfl
+
+/-- **The what-if carries the facts it was sent** — `readOvertime` hands `readGrown`'s answer to
+`Planner.overtimeDiff` whole. -/
+theorem readOvertime_carries_the_grown_facts :
+    (readOvertime (.obj [("overtime".toList, .obj [("id".toList, .str "m1".toList),
+      ("blocks".toList, .num 1), ("grown".toList, .obj [("remaining".toList, .num 150),
+      ("plannedMin".toList, .num 180)])])])).map (Option.map (fun t => (t.1, t.2.1, t.2.2.map Subtype.val)))
+      = .ok (some (['m','1'], 1, some ⟨150, 180⟩)) := by rfl
+
+/-- **The refusals spell themselves.** -/
+theorem the_grown_refusals_spell_themselves :
+    (PlannerRefusal.badOvertime PlanKey.grown).text = "badOvertime grown" ∧
+      (PlannerRefusal.badOvertime PlanKey.remaining).text = "badOvertime remaining" := ⟨rfl, rfl⟩
+
+/-- **A `grown` carried twice is refused `badOvertime grown`** — the one input that reaches that
+name, because `Planner.mkGrown?`'s own refusal cannot fire behind the two width reads
+(`mkGrown?_accepts_what_the_width_reads_pass`). -/
+theorem readGrown_refuses_a_grown_carried_twice :
+    readGrown (.obj [("grown".toList, .obj []), ("grown".toList, .obj [])])
+      = .error (PlannerRefusal.badOvertime PlanKey.grown) := by rfl
+
+/-- **The smart constructor accepts whatever the two width reads pass**: `EmitWire.u32Within`'s bound,
+`CapWire.maxRemaining`, IS `Look.maxPlanMinutes`, the width `Planner.GrownFacts.wf` checks — so the
+constructor is used (R10) and its refusal is a second statement of one bound, said here rather
+than left to look like a check an input could fail. -/
+theorem mkGrown?_accepts_what_the_width_reads_pass (r m : Nat) (hr : r ≤ CapWire.maxRemaining)
+    (hm : m ≤ CapWire.maxRemaining) : (Planner.mkGrown? ⟨r, m⟩).isSome = true := by
+  have hw : Planner.GrownFacts.wf ⟨r, m⟩ = true := by
+    simp only [Planner.GrownFacts.wf, Bool.and_eq_true, decide_eq_true_eq]
+    exact ⟨hr, hm⟩
+  unfold Planner.mkGrown?
+  rw [dif_pos hw]
+  rfl
+
 end PlanWire
 end Tm

@@ -3338,12 +3338,41 @@ structure Ranked where
   key : CandKey
   out : Look.FloorOut
 
-def rankedLe (a b : Ranked) : Bool := candKeyLe a.key b.key
+/-- **The date an answer's availability is read until**: a floor answer's last day, else its
+grant's due date, and none for an answer with neither.  The one reader of it (AGENTS §5.3):
+`PlanReq.dayImpossibleUntil`'s `until` calls it, and so does D60's key below. -/
+def answerUntil (o : Look.FloorOut) : Option Nat :=
+  match o.floor, o.out.grant with
+  | some g, _ => some g.floor.last
+  | none, some g => some g.deadline.due
+  | none, none => none
+
+/-- **D60's component of the key** (README gap 2801, parity P51): a `p = 0` answer with a positive
+shortfall — IMPOSSIBLE, as `PlanReq.dayImpossible` names it — carries its `until` and its request
+position, which is §7.3's served order among such answers (`Look.sortDueIx`: by due, ties by
+position); every other answer carries none. -/
+def Ranked.imp (x : Ranked) : Option (Nat × Nat) :=
+  if x.key.p = 0 ∧ 0 < x.out.shortfall then (answerUntil x.out).map (fun u => (u, x.key.ix))
+  else none
+
+/-- The component as numbers: an impossible answer before every other, by its date and then its
+position; every other answer one value, so the fork's order among them is untouched. -/
+def impNums : Option (Nat × Nat) → List Nat
+  | some (u, ix) => [0, u, ix]
+  | none         => [1, 0, 0]
+
+/-- **§7.4's key as step 5 sorts by it**: the fork's tuple (`CandKey.nums`) with D60's component after
+`p` (owner D60).  Local, not a definition: `sortRankedFast` hands `rankedLe` to `List.mergeSort` as a
+static closure check 12's call graph does not read, so a key function would be one more unreached. -/
+def rankedLe (a b : Ranked) : Bool :=
+  let nums := fun (x : Ranked) => (if x.key.notWall then 1 else 0) :: x.key.p ::
+    (impNums x.imp ++ siteNums x.key.root ++ siteNums x.key.own ++ [x.key.ix])
+  natsLe (nums a) (nums b)
 
 theorem rankedLe_trans (a b c : Ranked) (h₁ : rankedLe a b) (h₂ : rankedLe b c) : rankedLe a c :=
-  candKeyLe_trans _ _ _ h₁ h₂
+  natsLe_trans _ _ _ h₁ h₂
 
-theorem rankedLe_total (a b : Ranked) : rankedLe a b || rankedLe b a := candKeyLe_total _ _
+theorem rankedLe_total (a b : Ranked) : rankedLe a b || rankedLe b a := natsLe_total _ _
 
 /-- The assignment order.  `Replay.insSort` is the **specification** sort — quadratic, kept
 because it reduces under `decide` — and `sortRankedFast` its compiled twin, the shape
@@ -3478,36 +3507,6 @@ theorem PlanReq.a_ranked_entry_carries_its_answers_facts {r : PlanReq} {x : Rank
 
 theorem PlanReq.rankedCands_sorted (r : PlanReq) :
     r.rankedCands.Pairwise (fun a b => rankedLe a b = true) := sortRanked_sorted _
-
-/-- **A wall is ranked before every task** — §8.2 step 1 places them and step 5 never competes
-with one.  Stated the way sortedness gives it: a wall cannot stand after a non-wall. -/
-theorem PlanReq.a_wall_ranks_before_a_task (r : PlanReq) (i j : Nat)
-    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
-    (hw : r.rankedCands[j].out.out.cand.wall = true) :
-    r.rankedCands[i].out.out.cand.wall = true := by
-  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
-  have hki := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)).1
-  have hkj := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)).1
-  cases hc : r.rankedCands[i].out.out.cand.wall with
-  | true => rfl
-  | false =>
-    have hle := candKeyLe_notWall (a := r.rankedCands[i].key) (b := r.rankedCands[j].key) hp
-    rw [hki, hkj, hc, hw] at hle
-    exact absurd hle (by simp)
-
-/-- **A lower `p` is ranked first, among candidates of the same kind** — §7.4's first
-component, stated over the produced order.  This is the half `plan_is_monotone_in_rank` rests
-on and the half a wrong `p` breaks. -/
-theorem PlanReq.a_lower_p_ranks_first (r : PlanReq) (i j : Nat)
-    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
-    (hw : r.rankedCands[i].out.out.cand.wall = r.rankedCands[j].out.out.cand.wall) :
-    r.rankedCands[i].out.out.p.getD 7 ≤ r.rankedCands[j].out.out.p.getD 7 := by
-  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
-  obtain ⟨hwi, hpi, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)
-  obtain ⟨hwj, hpj, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)
-  rw [← hpi, ← hpj]
-  exact candKeyLe_p (a := r.rankedCands[i].key) (b := r.rankedCands[j].key) hp
-    (by rw [hwi, hwj, hw])
 
 /-! ### The day's `priorities` -/
 
@@ -3997,18 +3996,19 @@ theorem splitGroups_ne_nil (act : Option Id) (members : List Ranked) :
 /-! ### The group, and the `max:` commit -/
 
 /-- **Fork `priority::sort_key`** (`priority.rs:1103`): `(prio.p, root_order, own_order)` — the
-key `build_groups` takes the **minimum** of over a group's members and then sorts the groups by.
-It is `CandKey` without the wall digit and without the request position: `build_groups` never
-sees a wall (they are filtered out of `members`), and the fork's `out.sort_by` is **stable**, so
-two groups that agree on all three keep the order the batching gave them.  `siteNums` and
-`natsLe` are §7.4's own and are called, not copied (AGENTS §5.3). -/
+key `build_groups` takes the **minimum** of over a group's members and then sorts the groups by —
+with D60's component after `p` (`Ranked.imp`; owner D60, parity P51), so a group holding a `p = 0`
+IMPOSSIBLE member is walked by that member's date and position, §7.3's served order.  The fork's
+`out.sort_by` is **stable**, so two groups that agree on every part keep the order the batching
+gave them.  `siteNums`, `impNums` and `natsLe` are §7.4's own, called and not copied (AGENTS §5.3). -/
 structure GroupKey where
   p    : Nat
+  imp  : Option (Nat × Nat)
   root : Option Site
   own  : Option Site
 deriving DecidableEq, Repr
 
-def GroupKey.nums (k : GroupKey) : List Nat := k.p :: (siteNums k.root ++ siteNums k.own)
+def GroupKey.nums (k : GroupKey) : List Nat := k.p :: (impNums k.imp ++ siteNums k.root ++ siteNums k.own)
 
 def groupKeyLe (a b : GroupKey) : Bool := natsLe a.nums b.nums
 
@@ -4017,8 +4017,8 @@ theorem groupKeyLe_trans (a b c : GroupKey) (h₁ : groupKeyLe a b) (h₂ : grou
 
 theorem groupKeyLe_total (a b : GroupKey) : groupKeyLe a b || groupKeyLe b a := natsLe_total _ _
 
-/-- A ranked entry's three, read off the key §7.4 already gave it. -/
-def groupKeyOf (x : Ranked) : GroupKey := ⟨x.key.p, x.key.root, x.key.own⟩
+/-- A ranked entry's key parts, read off the key §7.4 already gave it, D60's component with them. -/
+def groupKeyOf (x : Ranked) : GroupKey := ⟨x.key.p, x.imp, x.key.root, x.key.own⟩
 
 /-- Fork `members.iter().map(sort_key).min()`, which answers the **first** minimum. -/
 def minGroupKey (k : GroupKey) : List Ranked → GroupKey
@@ -6551,19 +6551,19 @@ the date is never absent where the shortfall is positive. -/
 def PlanReq.dayImpossibleUntil (r : PlanReq) : List (Id × Nat × Nat) :=
   r.candAnswers.filterMap (fun o =>
     if 0 < o.shortfall then
-      (match o.floor, o.out.grant with
-       | some g, _ => some g.floor.last
-       | none, some g => some g.deadline.due
-       | none, none => none).map (fun u =>
+      -- the date is `answerUntil`'s, its one reader: D60's key reads the same one (W-36), and the
+      -- `match` that stood here inline until then became that definition rather than a second
+      -- copy of it (AGENTS §5.3)
+      (answerUntil o).map (fun u =>
         (o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos), u))
     else none)
 
-/-- A positive shortfall is a floor's or a grant's: `CandOut.shortfall` is `0` without a grant. -/
+/-- A positive shortfall is a floor's or a grant's: `CandOut.shortfall` is `0` without a grant.
+Stated over `answerUntil` since W-36, whose `match` it restated inline until then (the date's one
+reader, AGENTS §5.3). -/
 theorem PlanReq.a_short_answer_has_an_until (o : Look.FloorOut) (h : 0 < o.shortfall) :
-    (match o.floor, o.out.grant with
-     | some g, _ => some g.floor.last
-     | none, some g => some g.deadline.due
-     | none, none => none).isSome = true := by
+    (answerUntil o).isSome = true := by
+  unfold answerUntil
   cases hf : o.floor with
   | some g => rfl
   | none =>
@@ -8366,5 +8366,350 @@ theorem PlanReq.activeAgrees_of_mkActive? (r : PlanReq) (a : ActiveBlock) (w : W
   split at hw
   · assumption
   · exact absurd hw (by simp)
+
+/-! ############################################################################
+## W-36 (track K): D60 — IMPOSSIBLE ties at `p = 0` go by DUE DATE (parity P51)
+
+The owner's D60 (README gap 2801, 2026-09-27): every IMPOSSIBLE item is HOT (`p = 0`), and §7.4's
+key `(p, root line, own line)` ordered them by their place in the file while §7.3's pass computed
+their grants by due date — so at `PlannerWit.theReversedTwoImpossibleRequest` the item whose grant
+held the day's minutes (`^t1`, due today, lower in the file) was dropped for one whose grant is
+tomorrow's (`^t3`).  The key now carries `Ranked.imp` after `p` (`rankedLe`, `GroupKey.nums`):
+among `p = 0` answers with a positive shortfall, their `until` (`answerUntil`) and then their
+request position, which is `Look.sortDueIx`'s order; those answers before every other `p = 0`
+answer; and every pair with no such answer in it exactly where the fork put it
+(`rankedLe_is_the_forks_off_the_impossible`).
+
+**The mixed case is a campaign call, revisable.**  An order that sorts the impossible answers by
+date and leaves every other `p = 0` answer in line order is not transitive — two impossible
+answers and one other can form a cycle — so the impossible ones go FIRST among `p = 0`: of the two
+ways to make the order total, the only one under which a `p = 0` item §7.3 served later can never
+take a slot that an impossible item's grant was given today.
+
+`PlanReq.a_wall_ranks_before_a_task` and `PlanReq.a_lower_p_ranks_first` are relocated here from
+beside `PlanReq.rankedCands_sorted`, their statements unchanged and each proof citing the lemma
+over the new order; moving them is what paid, line for line, for D60's three definitions above the
+first check-9 pin site (README gap 2136).
+############################################################################ -/
+
+/-- **Walls first**, over the order step 5 sorts by — `candKeyLe_notWall` over `rankedLe`. -/
+theorem rankedLe_notWall {a b : Ranked} (h : rankedLe a b = true) :
+    (if a.key.notWall then 1 else 0) ≤ (if b.key.notWall then (1 : Nat) else 0) :=
+  (natsLe_cons_le h).1
+
+/-- **Then `p`**, between two entries of one kind — `candKeyLe_p` over `rankedLe`. -/
+theorem rankedLe_p {a b : Ranked} (h : rankedLe a b = true) (hw : a.key.notWall = b.key.notWall) :
+    a.key.p ≤ b.key.p :=
+  (natsLe_cons_le ((natsLe_cons_le h).2 (by rw [hw]))).1
+
+/-- **A wall is ranked before every task** — §8.2 step 1 places them and step 5 never competes
+with one.  Stated the way sortedness gives it: a wall cannot stand after a non-wall. -/
+theorem PlanReq.a_wall_ranks_before_a_task (r : PlanReq) (i j : Nat)
+    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
+    (hw : r.rankedCands[j].out.out.cand.wall = true) :
+    r.rankedCands[i].out.out.cand.wall = true := by
+  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
+  have hki := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)).1
+  have hkj := (PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)).1
+  cases hc : r.rankedCands[i].out.out.cand.wall with
+  | true => rfl
+  | false =>
+    have hle := rankedLe_notWall (a := r.rankedCands[i]) (b := r.rankedCands[j]) hp
+    rw [hki, hkj, hc, hw] at hle
+    exact absurd hle (by simp)
+
+/-- **A lower `p` is ranked first, among candidates of the same kind** — §7.4's first
+component, stated over the produced order.  This is the half `plan_is_monotone_in_rank` rests
+on and the half a wrong `p` breaks. -/
+theorem PlanReq.a_lower_p_ranks_first (r : PlanReq) (i j : Nat)
+    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
+    (hw : r.rankedCands[i].out.out.cand.wall = r.rankedCands[j].out.out.cand.wall) :
+    r.rankedCands[i].out.out.p.getD 7 ≤ r.rankedCands[j].out.out.p.getD 7 := by
+  have hp := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
+  obtain ⟨hwi, hpi, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)
+  obtain ⟨hwj, hpj, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)
+  rw [← hpi, ← hpj]
+  exact rankedLe_p (a := r.rankedCands[i]) (b := r.rankedCands[j]) hp
+    (by rw [hwi, hwj, hw])
+
+/-- A shared prefix decides nothing. -/
+theorem natsLe_append_same : ∀ (c r r' : List Nat), natsLe (c ++ r) (c ++ r') = natsLe r r'
+  | [], _, _ => rfl
+  | x :: c, r, r' => by
+    show natsLe (x :: (c ++ r)) (x :: (c ++ r')) = natsLe r r'
+    rw [natsLe_cons, if_neg (Nat.lt_irrefl x), if_neg (Nat.lt_irrefl x)]
+    exact natsLe_append_same c r r'
+
+/-- **Two blocks of one length: the first decides first** — if `xs ++ r` is at most `ys ++ r'`
+and the blocks have one length, `xs` is at most `ys`. -/
+theorem natsLe_of_append : ∀ (xs ys r r' : List Nat), xs.length = ys.length →
+    natsLe (xs ++ r) (ys ++ r') = true → natsLe xs ys = true
+  | [], [], _, _, _, _ => rfl
+  | [], _ :: _, _, _, h, _ => absurd h (by simp)
+  | _ :: _, [], _, _, h, _ => absurd h (by simp)
+  | x :: xs, y :: ys, r, r', hl, h => by
+    have h' : natsLe (x :: (xs ++ r)) (y :: (ys ++ r')) = true := h
+    rw [natsLe_cons] at h'
+    rw [natsLe_cons]
+    by_cases h1 : x < y
+    · rw [if_pos h1]
+    · rw [if_neg h1] at h' ⊢
+      by_cases h2 : y < x
+      · rw [if_pos h2] at h'; exact absurd h' (by simp)
+      · rw [if_neg h2] at h' ⊢
+        exact natsLe_of_append xs ys r r' (by simpa using hl) h'
+
+/-- **`Ranked.imp`, spelled**: an entry carries D60's component exactly when its `p` is `0` and its
+shortfall positive, and the component is its `until` and its request position. -/
+theorem Ranked.imp_eq_some_iff (x : Ranked) (u i : Nat) :
+    x.imp = some (u, i) ↔
+      x.key.p = 0 ∧ 0 < x.out.shortfall ∧ answerUntil x.out = some u ∧ i = x.key.ix := by
+  unfold Ranked.imp
+  by_cases h : x.key.p = 0 ∧ 0 < x.out.shortfall
+  · rw [if_pos h]
+    cases hu : answerUntil x.out with
+    | none => simp
+    | some v =>
+      simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq]
+      constructor
+      · rintro ⟨rfl, rfl⟩; exact ⟨h.1, h.2, rfl, rfl⟩
+      · rintro ⟨-, -, rfl, rfl⟩; exact ⟨rfl, rfl⟩
+  · rw [if_neg h]
+    constructor
+    · intro hc; cases hc
+    · rintro ⟨h1, h2, -, -⟩; exact absurd ⟨h1, h2⟩ h
+
+/-- **Every `p = 0` entry with a positive shortfall carries the component** — the date is never
+absent where the shortfall is positive (`PlanReq.a_short_answer_has_an_until`). -/
+theorem Ranked.imp_isSome (x : Ranked) (hp : x.key.p = 0) (hs : 0 < x.out.shortfall) :
+    x.imp.isSome = true := by
+  unfold Ranked.imp
+  rw [if_pos ⟨hp, hs⟩]
+  obtain ⟨u, hu⟩ := Option.isSome_iff_exists.1 (PlanReq.a_short_answer_has_an_until x.out hs)
+  rw [hu]
+  rfl
+
+/-- What `impNums` ordering an entry at or before an impossible one says: it is impossible too,
+dated no later, and at one date no later in the request. -/
+theorem impNums_le_some {x : Option (Nat × Nat)} {u i : Nat}
+    (h : natsLe (impNums x) (impNums (some (u, i))) = true) :
+    ∃ u' i', x = some (u', i') ∧ (u' < u ∨ (u' = u ∧ i' ≤ i)) := by
+  cases x with
+  | none => exact absurd h (by simp [impNums, natsLe])
+  | some v =>
+    obtain ⟨u', i'⟩ := v
+    refine ⟨u', i', rfl, ?_⟩
+    have h1 := (natsLe_cons_le h).2 rfl
+    rcases Nat.lt_or_ge u' u with hl | hl
+    · exact Or.inl hl
+    · have h2 := natsLe_cons_le h1
+      have he : u' = u := by omega
+      exact Or.inr ⟨he, (natsLe_cons_le (h2.2 he)).1⟩
+
+/-- **D60's law, over the order**: between two entries of one kind and one `p`, an entry ordered
+at or before an IMPOSSIBLE one is impossible too, dated no later, and at one date no later in the
+request. -/
+theorem rankedLe_impossible_by_until {a b : Ranked} (h : rankedLe a b = true)
+    (hw : a.key.notWall = b.key.notWall) (hp : a.key.p = b.key.p) {u i : Nat}
+    (hb : b.imp = some (u, i)) :
+    ∃ u' i', a.imp = some (u', i') ∧ (u' < u ∨ (u' = u ∧ i' ≤ i)) := by
+  have h1 := (natsLe_cons_le h).2 (by rw [hw])
+  have h2 := (natsLe_cons_le h1).2 hp
+  have h3 : natsLe (impNums a.imp) (impNums b.imp) = true :=
+    natsLe_of_append _ _ _ _ (by cases a.imp <;> cases b.imp <;> rfl)
+      (by simpa only [List.append_assoc] using h2)
+  rw [hb] at h3
+  exact impNums_le_some h3
+
+/-- **Everything else is where the fork put it**: between two entries neither of which is a
+`p = 0` impossible answer, the order is `candKeyLe` — fork `priority::sorted_candidates`' tuple,
+unchanged by D60. -/
+theorem rankedLe_is_the_forks_off_the_impossible (a b : Ranked) (ha : a.imp = none)
+    (hb : b.imp = none) : rankedLe a b = candKeyLe a.key b.key := by
+  unfold rankedLe candKeyLe CandKey.nums
+  simp only [ha, hb]
+  simp only [List.append_assoc, natsLe_cons, natsLe_append_same]
+
+/-- **D60 over the produced order**: in §7.4's ranking, an entry ranked before an IMPOSSIBLE
+entry of its own kind is impossible too, dated no later, and at one date no later in the request
+— §7.3's served order among them (`Look.sortDueIx`). -/
+theorem PlanReq.an_earlier_due_impossible_item_ranks_first (r : PlanReq) (i j : Nat)
+    (hi : i < r.rankedCands.length) (hj : j < r.rankedCands.length) (hij : i < j)
+    (hw : r.rankedCands[i].out.out.cand.wall = r.rankedCands[j].out.out.cand.wall) {u ix : Nat}
+    (hb : r.rankedCands[j].imp = some (u, ix)) :
+    ∃ u' ix', r.rankedCands[i].imp = some (u', ix') ∧ (u' < u ∨ (u' = u ∧ ix' ≤ ix)) := by
+  have hs := List.pairwise_iff_getElem.mp (PlanReq.rankedCands_sorted r) i j hi hj hij
+  obtain ⟨hwi, -, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hi)
+  obtain ⟨hwj, -, -, -⟩ := PlanReq.a_ranked_entry_carries_its_answers_facts (List.getElem_mem hj)
+  have hwk : r.rankedCands[i].key.notWall = r.rankedCands[j].key.notWall := by rw [hwi, hwj, hw]
+  have hpj0 : r.rankedCands[j].key.p = 0 := ((Ranked.imp_eq_some_iff _ u ix).1 hb).1
+  have hple := rankedLe_p hs hwk
+  exact rankedLe_impossible_by_until hs hwk (by omega) hb
+
+/-- `minGroupKey` answers its seed or one of the members' keys. -/
+theorem minGroupKey_mem : ∀ (l : List Ranked) (k : GroupKey),
+    minGroupKey k l = k ∨ ∃ y ∈ l, minGroupKey k l = groupKeyOf y
+  | [], _ => Or.inl rfl
+  | x :: xs, k => by
+    unfold minGroupKey
+    by_cases h : groupKeyLe (groupKeyOf x) k = true
+    · rw [if_pos h]
+      rcases minGroupKey_mem xs (groupKeyOf x) with h' | ⟨y, hy, h'⟩
+      · exact Or.inr ⟨x, List.mem_cons_self .., h'⟩
+      · exact Or.inr ⟨y, List.mem_cons_of_mem _ hy, h'⟩
+    · rw [if_neg h]
+      rcases minGroupKey_mem xs k with h' | ⟨y, hy, h'⟩
+      · exact Or.inl h'
+      · exact Or.inr ⟨y, List.mem_cons_of_mem _ hy, h'⟩
+
+/-- **A group's key is one of its members' keys** — the minimum is attained, so D60's component
+of a group is one member's. -/
+theorem PlanReq.a_group_key_is_a_members {r : PlanReq} {g : Group} (hg : g ∈ r.buildGroups) :
+    ∃ y ∈ g.members, g.key = groupKeyOf y := by
+  obtain ⟨b, hb, e, he, hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg)
+  have hm := (groupOf_members hgo).1
+  cases hl : e.2 with
+  | nil => rw [hl] at hgo; simp [groupOf] at hgo
+  | cons z zs =>
+    have hk : g.key = minGroupKey (groupKeyOf z) zs := by
+      rw [hl] at hgo; simp only [groupOf, Option.some.injEq] at hgo; rw [← hgo]
+    rw [hm, hl]
+    rcases minGroupKey_mem zs (groupKeyOf z) with h' | ⟨y, hy, h'⟩
+    · exact ⟨z, List.mem_cons_self .., hk.trans h'⟩
+    · exact ⟨y, List.mem_cons_of_mem _ hy, hk.trans h'⟩
+
+/-- **D60 over the groups the cursor walks**: a group sorted before a group keyed by an IMPOSSIBLE
+member is keyed by an impossible member too, dated no later, and at one date no later in the
+request — so at a slot both fit, step 5's first-fit gives it to the earlier-dated. -/
+theorem PlanReq.an_earlier_due_impossible_group_is_walked_first (r : PlanReq) (i j : Nat)
+    (hi : i < r.buildGroups.length) (hj : j < r.buildGroups.length) (hij : i < j) {u ix : Nat}
+    (hb : r.buildGroups[j].key.imp = some (u, ix)) :
+    ∃ u' ix', r.buildGroups[i].key.imp = some (u', ix') ∧ (u' < u ∨ (u' = u ∧ ix' ≤ ix)) := by
+  have hs := List.pairwise_iff_getElem.mp (PlanReq.buildGroups_sorted r) i j hi hj hij
+  obtain ⟨y, -, hy⟩ := PlanReq.a_group_key_is_a_members (List.getElem_mem hj)
+  generalize r.buildGroups[i] = gi at hs ⊢
+  generalize r.buildGroups[j] = gj at hs hb hy
+  have hyimp : y.imp = some (u, ix) := by rw [← hb, hy]; rfl
+  have hp0 : gj.key.p = 0 := by rw [hy]; exact ((Ranked.imp_eq_some_iff y u ix).1 hyimp).1
+  unfold groupLe groupKeyLe GroupKey.nums at hs
+  have hpi := (natsLe_cons_le hs).1
+  have h2 := (natsLe_cons_le hs).2 (by omega)
+  have h3 : natsLe (impNums gi.key.imp) (impNums gj.key.imp) = true :=
+    natsLe_of_append _ _ _ _ (by cases gi.key.imp <;> cases gj.key.imp <;> rfl)
+      (by simpa only [List.append_assoc] using h2)
+  rw [hb] at h3
+  exact impNums_le_some h3
+/-! ############################################################################
+## W-36 (track K): D58's kernel half — the what-if reads the HOST's grown facts (gap 2873)
+
+The owner's D58 (README gap 2680): fork `PlanOverrides::apply` grows the extended candidate's
+`remaining_min` and `planned_min` — and `need_min`, which the with-ranking day never reads (W-35's
+measurement, README gap 2873) — and the host computes them with the two functions
+`collect_candidates` derives the originals with (`planwire::grown`).  The kernel's what-if reads
+them: `PlanReq.growing` puts them on every candidate record the extension names, and
+`overtimeDiff` plans the grown request.  Nothing here derives a candidate fact (D34): the two
+numbers are the host's, as sent, bounded by the width `PlanFacts.wf` already holds them to.
+`needMin` is not decoded: no reader of the day reads a need but §7.3's pass, and the pass derives
+its own from `remaining` (R1) — README gap 3004 says what that costs and what closes it.
+############################################################################ -/
+
+/-- **The host's grown facts for one candidate** (D58): fork `PlanOverrides::apply`'s
+`remaining_min` and `planned_min`, as `planwire::grown` computed them. -/
+structure GrownFacts where
+  remaining  : Nat
+  plannedMin : Nat
+deriving DecidableEq, Repr
+
+/-- R10: both within the fork's `u32` — `Look.maxPlanMinutes`, the width `PlanFacts.wf` and the
+candidate section's `remaining` are already held to, reused and not re-minted. -/
+def GrownFacts.wf (g : GrownFacts) : Bool :=
+  decide (g.remaining ≤ Look.maxPlanMinutes) && decide (g.plannedMin ≤ Look.maxPlanMinutes)
+
+abbrev WfGrown : Type := { g : GrownFacts // g.wf = true }
+
+/-- The smart constructor the decoder uses (`PlanWire.readGrown`).  Nothing is clamped. -/
+def mkGrown? (g : GrownFacts) : Option WfGrown := if h : g.wf = true then some ⟨g, h⟩ else none
+
+theorem mkGrown?_refuses_a_remaining_past_the_width (g : GrownFacts)
+    (h : Look.maxPlanMinutes < g.remaining) : mkGrown? g = none := by
+  have hn : ¬ g.wf = true := by
+    simp only [GrownFacts.wf, Bool.and_eq_true, decide_eq_true_eq, not_and]
+    intro h1; omega
+  unfold mkGrown?
+  rw [dif_neg hn]
+
+theorem mkGrown?_refuses_planned_minutes_past_the_width (g : GrownFacts)
+    (h : Look.maxPlanMinutes < g.plannedMin) : mkGrown? g = none := by
+  have hn : ¬ g.wf = true := by
+    simp only [GrownFacts.wf, Bool.and_eq_true, decide_eq_true_eq, not_and]
+    intro _; omega
+  unfold mkGrown?
+  rw [dif_neg hn]
+
+theorem mkGrown?_accepts (g : GrownFacts) (h : g.wf = true) :
+    (mkGrown? g).map Subtype.val = some g := by
+  unfold mkGrown?
+  rw [dif_pos h]
+  rfl
+
+/-- **A candidate's nine facts with the planned minutes replaced stay well-formed** when the new
+minutes are within `PlanFacts.wf`'s bound: every other clause reads a field the change keeps. -/
+theorem planFacts_wf_with_plannedMin (f : Look.PlanFacts) (hf : f.wf = true) (m : Nat)
+    (hm : m ≤ Look.maxPlanMinutes) : Look.PlanFacts.wf { f with plannedMin := m } = true := by
+  unfold Look.PlanFacts.wf at hf ⊢
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hf ⊢
+  exact ⟨⟨⟨⟨hm, hf.1.1.1.2⟩, hf.1.1.2⟩, hf.1.2⟩, hf.2⟩
+
+/-- **One candidate, grown**: its `remaining` and its planned minutes are the host's; every other
+fact — id, `ci`, `!k`, due, the flags, and the other eight of the nine — is kept. -/
+def growCand (c : Look.Cand) (g : WfGrown) : Look.Cand :=
+  { c with remaining := g.val.remaining }.withPlan
+    ⟨{ c.plan.val with plannedMin := g.val.plannedMin },
+     planFacts_wf_with_plannedMin _ c.plan.property _ (by
+       have := g.property
+       simp only [GrownFacts.wf, Bool.and_eq_true, decide_eq_true_eq] at this
+       exact this.2)⟩
+
+theorem growCand_remaining (c : Look.Cand) (g : WfGrown) :
+    (growCand c g).remaining = g.val.remaining := rfl
+
+theorem growCand_plannedMin (c : Look.Cand) (g : WfGrown) :
+    (growCand c g).plan.val.plannedMin = g.val.plannedMin := rfl
+
+/-- **The rest of the candidate is kept** — what §7.2's rule table and §8.2 step 5's key read. -/
+theorem growCand_keeps (c : Look.Cand) (g : WfGrown) :
+    (growCand c g).id = c.id ∧ (growCand c g).ci = c.ci ∧ (growCand c g).rootPrio = c.rootPrio ∧
+      (growCand c g).due = c.due ∧ (growCand c g).wall = c.wall ∧
+      (growCand c g).optional = c.optional ∧ (growCand c g).window = c.window ∧
+      (growCand c g).hot = c.hot ∧ (growCand c g).plan.val.loc = c.plan.val.loc ∧
+      (growCand c g).plan.val.splittable = c.plan.val.splittable ∧
+      (growCand c g).plan.val.state = c.plan.val.state :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **The request with the extended candidate's facts grown** — every candidate record the
+extension names (fork `apply` rewrites each), and nothing else of the request. -/
+def PlanReq.growing (r : PlanReq) (i : Id) : Option WfGrown → PlanReq
+  | none => r
+  | some g =>
+    { r with cands := ⟨r.cands.val.map (fun p => if p.1.id = i then (growCand p.1 g, p.2) else p),
+        by rw [List.length_map]; exact r.cands.property⟩ }
+
+/-- **No grown facts, no change** — the what-if with none is the estimate's. -/
+theorem PlanReq.growing_none (r : PlanReq) (i : Id) : r.growing i none = r := rfl
+
+/-- **Growing touches the candidates alone.** -/
+theorem PlanReq.growing_touches_only_the_candidates (r : PlanReq) (i : Id) (g : Option WfGrown) :
+    (r.growing i g).plan = r.plan ∧ (r.growing i g).run = r.run ∧ (r.growing i g).look = r.look ∧
+      (r.growing i g).state = r.state ∧ (r.growing i g).prio = r.prio ∧
+      (r.growing i g).routines = r.routines ∧ (r.growing i g).overrides = r.overrides := by
+  cases g <;> exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **A named record carries the host's numbers; every other record is as sent.** -/
+theorem PlanReq.mem_growing (r : PlanReq) (i : Id) (g : WfGrown) (c : Look.Cand)
+    (f : Option Look.Floor) (h : (c, f) ∈ r.cands.val) :
+    (if c.id = i then (growCand c g, f) else (c, f)) ∈ (r.growing i (some g)).cands.val := by
+  show _ ∈ r.cands.val.map _
+  exact List.mem_map.2 ⟨(c, f), h, rfl⟩
+
 end Planner
 end Tm

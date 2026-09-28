@@ -265,13 +265,13 @@ def PlanReq.extending (r : PlanReq) (i : Id) (m : Nat) : PlanReq :=
 /-- **Fork `planner::overtime_drops`** (`planner.rs:708`) and `App::extend_drops`' own branch
 for the running block (`app.rs:1220-1240`), whole: the day as it stands against the day with
 `blocks` more blocks on `i` (fork `blocks.saturating_mul(block_min)` minutes), as `diff` answers
-it.  Its `removed` is NOT `overtime_drops` whole (this said it was until the W-34 repair, README
-gap 2731): `dayPlan` reads no `extraMin` (D34), so it is `App::extend_drops`' answer for the
-running item outside parity P44's days, and the empty diff for any other item.  There is deliberately no second definition holding
-`.removed` alone: it would be a projection the wire does not call, and check 12 would be right to
-call it dead (D51). -/
-def overtimeDiff (r : PlanReq) (i : Id) (blocks : Nat) : PlanDiff :=
-  diff (dayPlan r) (dayPlan (r.extending i (blocks * r.blockMin)))
+it.  Since W-36 (D58, README gap 2873) the extended day carries the HOST's grown facts `g` when
+the host sends them (`PlanReq.growing`: fork `PlanOverrides::apply`'s `remaining_min` and
+`planned_min`), so step 5 gives the extended group the fork's commitment; with none it is the
+estimate's what-if, parity P44's.  No second definition holds `.removed` alone: it would be a
+projection the wire does not call, and check 12 would be right to call it dead (D51). -/
+def overtimeDiff (r : PlanReq) (i : Id) (blocks : Nat) (g : Option WfGrown) : PlanDiff :=
+  diff (dayPlan r) (dayPlan ((r.extending i (blocks * r.blockMin)).growing i g))
 
 /-! ### What the what-if is -/
 
@@ -313,21 +313,21 @@ theorem the_extension_is_one_extra_override (r : PlanReq) (i : Id) (m : Nat) :
 /-- **An overtime drop is an item of the day as it stands that the extended day does not
 hold** — both directions (fork `overtime_drops`' *"what the second plan no longer has room
 for"*). -/
-theorem mem_overtime_drops (r : PlanReq) (i : Id) (blocks : Nat) (x : Id) :
-    x ∈ (overtimeDiff r i blocks).removed ↔
-      x ∈ diffIds (dayPlan r) ∧ x ∉ diffIds (dayPlan (r.extending i (blocks * r.blockMin))) :=
+theorem mem_overtime_drops (r : PlanReq) (i : Id) (blocks : Nat) (g : Option WfGrown) (x : Id) :
+    x ∈ (overtimeDiff r i blocks g).removed ↔ x ∈ diffIds (dayPlan r) ∧
+      x ∉ diffIds (dayPlan ((r.extending i (blocks * r.blockMin)).growing i g)) :=
   mem_diff_removed _ _ x
 
 /-- **The drops ascend in `Id` order, each once** — the fork's code, and not its doc comment's
 *"in the order the first plan had them"* (README gap 2681). -/
-theorem overtime_drops_ascend_in_id_order (r : PlanReq) (i : Id) (blocks : Nat) :
-    (overtimeDiff r i blocks).removed.Pairwise (fun x y => Seal.idLt x y = true) :=
+theorem overtime_drops_ascend_in_id_order (r : PlanReq) (i : Id) (blocks : Nat) (g : Option WfGrown) :
+    (overtimeDiff r i blocks g).removed.Pairwise (fun x y => Seal.idLt x y = true) :=
   diff_removed_sorted _ _
 
 /-- **An extension that leaves the day as it was changes nothing and drops nothing.** -/
-theorem overtimeDiff_of_an_unchanged_day (r : PlanReq) (i : Id) (blocks : Nat)
-    (h : dayPlan (r.extending i (blocks * r.blockMin)) = dayPlan r) :
-    overtimeDiff r i blocks = ⟨[], [], [], 0⟩ := by
+theorem overtimeDiff_of_an_unchanged_day (r : PlanReq) (i : Id) (blocks : Nat) (g : Option WfGrown)
+    (h : dayPlan ((r.extending i (blocks * r.blockMin)).growing i g) = dayPlan r) :
+    overtimeDiff r i blocks g = ⟨[], [], [], 0⟩ := by
   unfold overtimeDiff
   rw [h, diff_self]
 

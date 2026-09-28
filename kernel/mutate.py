@@ -1113,8 +1113,15 @@ def site(where, line):
 # A pin site that carries its declaration: `Emit.lean:374
 # cells_are_the_nine_in_order`.  The name is what this can check without a
 # build; the number is what a reader needs to find the line.
+#
+# `?` AND `!` ARE IN THE NAME CLASS SINCE W-36 (track K, README gap 3007).  Until
+# then the class stopped a name at its first `?`, so a row pinned by one of the
+# library's 209 `mkX?_...`-style theorems recorded `Planner.lean:8639
+# mkGrown?_refuses_a_remaining_past_the_width`, re-read it as `... mkGrown`, and
+# reported the row DRIFTED on the tree it was written from -- the gate failed on
+# a site that had not moved.  No row had been pinned by such a theorem before.
 NAMED_SITE = re.compile(
-    r"\b([A-Za-z][A-Za-z0-9_]*\.lean):(\d+)[ \t]+([A-Za-z_][A-Za-z0-9_.']*)")
+    r"\b([A-Za-z][A-Za-z0-9_]*\.lean):(\d+)[ \t]+([A-Za-z_][A-Za-z0-9_.'?!]*)")
 BARE_SITE = re.compile(r"\b[A-Za-z][A-Za-z0-9_]*\.lean:\d+")
 
 

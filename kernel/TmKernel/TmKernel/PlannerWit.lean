@@ -7445,10 +7445,10 @@ theorem the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_w
 /-! ### The unassigned day: the lifts that stood on the hole, refuted where they stood
 
 Every `_on_an_unassigned_day` lift concluded `impossibleKept … = true` for every eligibility.
-On a day that assigns nothing, an eligible impossible item its grant OWES is dropped, so the
-conjunct is false the moment such a request exists — and it does: the quiet census Wednesday
-whose BUDGET IS SPENT, with ONE candidate, an impossible `^m2` (W-35 re-aimed this request: its
-old `^m1` has an empty grant and D55 exempts it).  `PlanCheck.impossibleKept_of_nothing_assigned_iff`
+On a day that assigns nothing, an eligible impossible item its grant owes TODAY is dropped while
+the budget is left, so the conjunct is false the moment such a request exists — and it does: the
+quiet census Wednesday with ONE candidate, an impossible `^m2` that is WAITING (W-36 re-aimed it:
+the spent day below passes under D59).  `PlanCheck.impossibleKept_of_nothing_assigned_iff`
 is the law; this is its instance, and the refutations below are the old lifts, at `permissive`. -/
 
 /-- **The quiet census Wednesday with its budget spent and one candidate, an impossible `^m2`**
@@ -7470,43 +7470,43 @@ theorem the_unassigned_impossible_request_agrees :
       theUnassignedImpossibleRequest.now.sec + 1 < LogStamp.yearEnd :=
   the_quiet_census_request_agrees
 
+/-- **The quiet census Wednesday with one candidate, a WAITING impossible `^m2`** (`ci:2`, due
+today, 100 000 minutes, `[?]`): owed today's 240 minutes, never in step 5's order. -/
+def waitingImpossibleCand : Look.Cand × Option Look.Floor :=
+  ((pCandDue ['m','2'] 2 false 100000 739867 60 .any true (by decide)).1.withPlan
+    ⟨{ planFacts 60 .any with state := Status.live .world }, by decide⟩, none)
+def theWaitingImpossibleRequest : PlanReq :=
+  { theQuietCensusRequest with cands := ⟨[waitingImpossibleCand], by decide⟩ }
 set_option maxRecDepth 400000 in
-/-- **An unassigned day drops its eligible impossible item — one its grant owes.**  The fold
-places nothing (the budget is spent), the day names `^m2` with its shortfall, `^m2` is eligible
-everywhere at `permissive` and owed today's 240 minutes, and the check is `false` — on the whole
-day and on `PlanCheck.withoutPast`'s.  The seven core checks, `monotoneInRank` and the batch
-check all still hold, so this is one conjunct failing and not the battery. -/
+/-- **An unassigned day drops its eligible impossible item — owed TODAY, with the budget left.**
+Re-aimed at W-36: D59 exempts the spent day it stood on until then (the check passes there now,
+`a_spent_day_passes_the_impossible_check`).  The check is `false` on the whole day and on
+`PlanCheck.withoutPast`'s; the core, `monotoneInRank` and the batch check hold. -/
 theorem an_unassigned_day_drops_its_eligible_impossible_item :
-    theUnassignedImpossibleRequest.assignedRows = [] ∧
-    assignedOf (dayPlan theUnassignedImpossibleRequest) = [] ∧
-    (dayPlan theUnassignedImpossibleRequest).diagnostics.impossible.val = [(['m','2'], 129760)] ∧
-    pastRows theUnassignedImpossibleRequest = [] ∧
-    theUnassignedImpossibleRequest.activeRun = none ∧
-    PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
-      (dayPlan theUnassignedImpossibleRequest) = false ∧
-    PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
-      (PlanCheck.withoutPast theUnassignedImpossibleRequest
-        (dayPlan theUnassignedImpossibleRequest)) = false ∧
-    PlanCheck.planOkCore theUnassignedImpossibleRequest (dayPlan theUnassignedImpossibleRequest)
-      = true ∧
-    PlanCheck.planOkCore theUnassignedImpossibleRequest
-      (PlanCheck.withoutPast theUnassignedImpossibleRequest
-        (dayPlan theUnassignedImpossibleRequest)) = true ∧
-    PlanCheck.monotoneInRank permissive theUnassignedImpossibleRequest
-      (dayPlan theUnassignedImpossibleRequest) = true ∧
-    PlanCheck.batchDoesNotReachPast permissive theUnassignedImpossibleRequest
-      (dayPlan theUnassignedImpossibleRequest) = true ∧
-    PlanCheck.batchDoesNotReachPast permissive theUnassignedImpossibleRequest
-      (PlanCheck.withoutPast theUnassignedImpossibleRequest
-        (dayPlan theUnassignedImpossibleRequest)) = true := by
+    theWaitingImpossibleRequest.assignedRows = [] ∧
+    assignedOf (dayPlan theWaitingImpossibleRequest) = [] ∧
+    (dayPlan theWaitingImpossibleRequest).diagnostics.impossible.val = [(['m','2'], 129760)] ∧
+    pastRows theWaitingImpossibleRequest = [] ∧ theWaitingImpossibleRequest.activeRun = none ∧
+    PlanCheck.impossibleKept permissive theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = false ∧
+    PlanCheck.impossibleKept permissive theWaitingImpossibleRequest
+      (PlanCheck.withoutPast theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest)) = false ∧
+    PlanCheck.planOkCore theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = true ∧
+    PlanCheck.planOkCore theWaitingImpossibleRequest
+      (PlanCheck.withoutPast theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest)) = true ∧
+    PlanCheck.monotoneInRank permissive theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = true ∧
+    PlanCheck.batchDoesNotReachPast permissive theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = true ∧
+    PlanCheck.batchDoesNotReachPast permissive theWaitingImpossibleRequest
+      (PlanCheck.withoutPast theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest)) = true ∧
+    PlanCheck.owedByItsGrant theWaitingImpossibleRequest ['m','2'] = true ∧
+    PlanCheck.budgetLeft theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = true := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
-    by decide, by decide, by decide, by decide, by decide⟩
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 set_option maxRecDepth 400000 in
 /-- **PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot as W-20 wrote it is REFUTED**
 (AGENTS §3.1 item 3): every hypothesis holds at the request above and the third conjunct is
-false.  Its restatement carries `hnoimp` and says so in its name — and since W-35 this is ALSO
-why D55 could not take `hnoimp` off: the item here is one its grant owes (README gap 2800). -/
+false.  Its restatement carries `hnoimp` and says so in its name — and this is why neither D55
+nor D59 takes it off: the item here is owed TODAY, the budget is left (README gaps 2800, 3000). -/
 theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted :
     ¬ (∀ (el : PlanCheck.Eligible) (r : PlanReq),
         r.assignedRows = [] → r.wallsAgree = true → r.activeAgrees = true →
@@ -7525,9 +7525,9 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refu
           PlanCheck.batchDoesNotReachPast el r (dayPlan r) = true) := by
   intro h
   have hq := an_unassigned_day_drops_its_eligible_impossible_item
-  have hc := h permissive theUnassignedImpossibleRequest hq.1
-    theUnassignedImpossibleRequest_wallsAgree the_unassigned_impossible_request_agrees.1
-    the_unassigned_impossible_request_agrees.2.1 the_unassigned_impossible_request_agrees.2.2
+  have hc := h permissive theWaitingImpossibleRequest hq.1
+    theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
     (by rw [hq.2.2.2.1]; simp) hq.2.2.2.2.1 the_census_request_is_plain
   rw [hq.2.2.2.2.2.1] at hc
   exact absurd hc.2.2.1 (by simp)
@@ -7551,61 +7551,61 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W
           PlanCheck.batchDoesNotReachPast el r (PlanCheck.withoutPast r (dayPlan r)) = true) := by
   intro h
   have hq := an_unassigned_day_drops_its_eligible_impossible_item
-  have hc := h permissive theUnassignedImpossibleRequest
-    theUnassignedImpossibleRequest_wallsAgree the_unassigned_impossible_request_agrees.1
-    the_unassigned_impossible_request_agrees.2.1 the_unassigned_impossible_request_agrees.2.2
+  have hc := h permissive theWaitingImpossibleRequest
+    theQuietCensusRequest_wallsAgree the_quiet_census_request_agrees.1
+    the_quiet_census_request_agrees.2.1 the_quiet_census_request_agrees.2.2
     hq.1 the_census_request_is_plain
   rw [hq.2.2.2.2.2.2.1] at hc
   exact absurd hc.2.1 (by simp)
 
 /-- **PlanCheck.impossibleKept_is_true_because_its_subject_is_empty is REFUTED**: it said
 `impossibleKept el r (dayPlan r) = true` at every request and every eligibility.  The law it
-stood in front of is `PlanCheck.impossibleKept_of_nothing_assigned_iff`.  (Re-proved at W-35 at
-the spent day above: W-33's request, `theImpossibleRequest`, passes under D55.) -/
+stood in front of is `PlanCheck.impossibleKept_of_nothing_assigned_iff`.  (Re-proved at W-36 at
+the waiting request above: the spent day passes under D59, `theImpossibleRequest` under D55.) -/
 theorem impossibleKept_is_true_because_its_subject_is_empty_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
         PlanCheck.impossibleKept el r (dayPlan r) = true := fun h =>
-  absurd (h permissive theUnassignedImpossibleRequest)
+  absurd (h permissive theWaitingImpossibleRequest)
     (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.1]; simp)
 
 /-- **PlanCheck.impossible_has_no_subject is REFUTED**, and its from-now sibling
 PlanCheck.impossible_has_no_subject_from_now with it: both said the census arm is `false` at
 every request and every eligibility.  The positive form is
-`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`. -/
+`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left`. -/
 theorem impossible_has_no_subject_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
         PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = false := fun h =>
-  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theUnassignedImpossibleRequest))
+  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theWaitingImpossibleRequest))
     (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.1]; simp)
 
 theorem impossible_has_no_subject_from_now_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
         PlanCheck.subjectOf el PlanCheck.CheckName.impossible r
           (PlanCheck.withoutPast r (dayPlan r)) = false := fun h =>
-  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theUnassignedImpossibleRequest))
+  absurd (PlanCheck.impossibleKept_of_no_subject permissive _ _ (h permissive theWaitingImpossibleRequest))
     (by rw [an_unassigned_day_drops_its_eligible_impossible_item.2.2.2.2.2.2.1]; simp)
 
 /-! ### The census reaches EIGHT — and the check passes for a REAL reason for the first time
 
 `theCensusRequest` sends no candidate and its census is seven.  Give it an impossible `^m1` its
-grant OWES (at W-35: due in two days, so §7.3 grants it 306 minutes of later days' level-5
-capacity, while no slot today is that good): the day still assigns nothing of its own, but its
+grant owes TODAY (W-36: `ci:2`, due in two days, and WAITING — so §8.2 step 5 places nothing, while
+§7.3 grants it 240 minutes of today's capacity): the day assigns nothing of its own, but its
 LOG replays `^m1` worked this morning, so `^m1` is in `assignedOf` (fork `DayPlan::assigned`
 counts a replayed Block too), the item is impossible, eligible, owed AND assigned — `impossibleKept`
 is true with a subject — and the subject census is **eight**, which the W-21 ceiling of seven said
 no request could reach. -/
 
-/-- The §4.3 census Wednesday with an impossible `^m1` (`ci:5`, due in two days) as its one
-candidate. -/
+/-- The §4.3 census Wednesday with an impossible `^m1` (`ci:2`, due in two days, waiting) as its
+one candidate (re-aimed at W-36: its `ci:5` form is owed nothing TODAY, so it had no subject). -/
 def theCensusRequestWithAnImpossibleCandidate : PlanReq :=
-  { theCensusRequest with
-    cands := ⟨[pCandDue ['m','1'] 5 true 100000 739869 60 .any true (by decide)], by decide⟩ }
+  { theCensusRequest with cands := ⟨[((pCandDue ['m','1'] 2 true 100000 739869 60 .any true (by decide)).1.withPlan
+      ⟨{ planFacts 60 .any with state := Status.live .world }, by decide⟩, none)], by decide⟩ }
 set_option maxRecDepth 400000 in
 theorem the_census_reaches_eight_on_an_unassigned_day :
     theCensusRequestWithAnImpossibleCandidate.assignedRows = [] ∧
     theCensusRequestWithAnImpossibleCandidate.now.sec + 1 < LogStamp.yearEnd ∧
     (dayPlan theCensusRequestWithAnImpossibleCandidate).diagnostics.impossible.val
-      = [(['m','1'], 129694)] ∧
+      = [(['m','1'], 129040)] ∧
     (['m','1'] : Id) ∈ assignedOf (dayPlan theCensusRequestWithAnImpossibleCandidate) ∧
     PlanCheck.subjectOf permissive PlanCheck.CheckName.impossible
       theCensusRequestWithAnImpossibleCandidate
@@ -7846,17 +7846,17 @@ and `PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_im
 gained `hnoimp` at W-33 and nothing refuted their old forms: at the census Wednesday
 `hotBeforeQueue` is `false` at `permissive`, so the old forms' `hhot` could not be met there.
 The request below is the §4.3 Wednesday of `theQuietRequest` -- no log, nothing running, the one
-wall -- with its BUDGET SPENT and one candidate, an impossible `^m2` its grant owes today's 240
-minutes (W-35 re-aimed it: its old `^m1` had an empty grant, which D55 exempts; README gap 2800).
+wall -- with its budget left and one candidate, a WAITING impossible `^m2` owed today's 240 minutes
+(W-36 re-aimed it: D59 exempts the spent budget it stood on at W-35; README gaps 2800, 3000).
 Its wall carries no item a hot candidate could fail to precede, so `hotBeforeQueue` HOLDS, on the
 whole day and on `PlanCheck.withoutPast`'s; `monotoneInRank` holds on both; every other hypothesis
 is `theQuietRequest`'s own.  And `planOk` is `false` on both days, at `impossibleKept` alone. -/
-/-- **The quiet Wednesday, budget spent, with one candidate, an impossible `^m2` its grant owes.** -/
+/-- **The quiet Wednesday with one candidate, a WAITING impossible `^m2` owed today.**  Until W-36
+this was the same Wednesday with its budget spent and `^m2` open; D59 makes a spent day pass, so
+the request that refutes the old forms is now one whose budget can still be spent and whose item
+step 5 never orders (`waitingImpossibleCand`). -/
 def theQuietImpossibleRequest : PlanReq :=
-  { theQuietRequest with
-    cands := ⟨[pCandDue ['m','2'] 2 false 100000 739867 60 .any true (by decide)], by decide⟩,
-    look := { theQuietRequest.look with today0 := { theQuietRequest.look.today0 with
-      date := some theQuietRequest.look.today, budget := some 0 } } }
+  { theQuietRequest with cands := ⟨[waitingImpossibleCand], by decide⟩ }
 
 set_option maxRecDepth 400000 in
 /-- **Every hypothesis of both old forms holds and their conclusion is false.**  The day names
@@ -8478,7 +8478,7 @@ and the three candidates §8.2 step 5 placed after it move thirty-five minutes e
 the `b3`/`b6` batch from 15:25 to 16:00 — with nothing added or dropped.  `Planner.overtimeDiff` is `diff` of the day
 and its what-if, so this is the witness that the extension reaches the day at all. -/
 theorem the_overtime_what_if_moves_the_tail :
-    overtimeDiff theShortRunRequest ['m','1'] 1 =
+    overtimeDiff theShortRunRequest ['m','1'] 1 none =
       ⟨[(['b','1'], (Cal.instantOf Cal.chicago 739867 865).sec,
           (Cal.instantOf Cal.chicago 739867 900).sec),
         (['b','3'], (Cal.instantOf Cal.chicago 739867 925).sec,
@@ -8878,15 +8878,15 @@ to requests where an item its grant OWES is dropped.  This block holds what the 
 * **the old unassigned request passes** — `^m1`'s grant holds nothing, so the day that drops it
   is honoured, and the W-33 law that said such a day fails the check is refuted;
 * **the check still bites**, on a planted drop of an item its grant owes (`PlanCheck.impossibleKept_can_fail`
-  at a request that owes `^m2`) and on a real produced day, a paying `candsAgree` day where §7.3's
-  EDF order and §7.4's key order disagree (`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`,
-  MOVED here from section 30 and re-proved: its statement is unchanged and still true).
+  at a request that owes `^m2`) and on a real produced day — since W-36 the ATOMIC day of the W-36
+  block, where §8.2 step 5's contiguity clause drops what the energy clause admits
+  (`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`, moved there, statement kept).
 
-**What D55's row said and this block measures false**: that `hnoimp` comes OFF the five lifts.
-It cannot: `an_unassigned_day_drops_its_eligible_impossible_item` (section 30, re-aimed) is a day
-whose budget is spent, whose impossible `^m2` its grant OWES today's 240 minutes — §7.3's day-0
-capacity never reads the budget — and which assigns nothing.  The lifts carry the weaker
-hypothesis D55 makes possible instead (README gap 2800). -/
+**What D55's row said and this block measured false**: that `hnoimp` comes OFF the five lifts.  At
+W-35 the witness was a day whose budget is spent (README gap 2800); the owner's D59 answered it
+and the spent day passes now.  The lifts still carry a (weaker) `hnoimp`, and W-36's witness is
+`an_unassigned_day_drops_its_eligible_impossible_item` re-aimed at a WAITING item owed today with
+the budget left (section 30, README gap 3000). -/
 
 /-- **W-33's unassigned request, kept by value**: the quiet census Wednesday with the impossible
 `^m1` (`ci:5`, due today) as its one candidate — `theUnassignedImpossibleRequest` until W-35. -/
@@ -8915,8 +8915,8 @@ theorem an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes 
 set_option maxRecDepth 400000 in
 /-- **PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned, as W-33
 wrote it (no owed clause), is REFUTED under D55** at the request above: nothing is assigned, the
-listed item is eligible, and the check passes.  Its successor carries `howed`:
-`PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned`. -/
+listed item is eligible, and the check passes.  Its successor carries `howed` and, since W-36, `hb`:
+`PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
 theorem an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), assignedOf d = [] →
         ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleSomewhere el r d p.1 = true →
@@ -8931,8 +8931,8 @@ set_option maxRecDepth 400000 in
 /-- **PlanCheck.impossible_has_a_subject_iff_an_impossible_answer_is_eligible, as W-33 wrote it,
 is REFUTED under D55** at `theImpossibleRequest`: an answer there reports a positive shortfall and
 its item is eligible at `permissive`, and the census arm has no subject, because that answer's
-grant holds nothing.  Its successor is
-`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible`. -/
+grant holds nothing.  Its successor (with the budget clause since W-36) is
+`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left`. -/
 theorem impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
         (PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = true ↔
@@ -8947,17 +8947,17 @@ theorem impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted
   exact absurd this (by simp)
 
 set_option maxRecDepth 400000 in
-/-- **The restated check still bites, on a planted drop — and exempts on one.**  At the spent
-day `^m2`'s grant owes it today's 240 minutes, so the planted day that drops it fails the check
-(`PlanCheck.impossibleKept_can_fail`, now carrying `howed`); at `theTwoImpossibleRequest` `^t1`'s
-grant holds nothing, so the same planted drop of `^t1` passes. -/
+/-- **The restated check still bites, on a planted drop — and exempts on one.**  At the waiting
+request `^m2` is owed today's 240 minutes with the budget left (W-36; D59 exempts the spent day it
+stood on), so the planted drop fails (`PlanCheck.impossibleKept_can_fail`, carrying `howed` and
+`hb`); at `theTwoImpossibleRequest` `^t1`'s grant holds nothing, so dropping `^t1` passes. -/
 theorem the_restated_check_bites_on_a_planted_drop_of_an_owed_item :
-    PlanCheck.owedByItsGrant theUnassignedImpossibleRequest ['m','2'] = true ∧
-    PlanCheck.impossibleKept (fun _ _ _ _ => true) theUnassignedImpossibleRequest
+    PlanCheck.owedByItsGrant theWaitingImpossibleRequest ['m','2'] = true ∧
+    PlanCheck.impossibleKept (fun _ _ _ _ => true) theWaitingImpossibleRequest
       (PlanCheck.theDroppedImpossibleDay ['m','2']) = false ∧
     PlanCheck.impossibleKept (fun _ _ _ _ => true) theTwoImpossibleRequest
       (PlanCheck.theDroppedImpossibleDay ['t','1']) = true := by
-  refine ⟨by decide, PlanCheck.impossibleKept_can_fail _ _ (by decide), by decide⟩
+  refine ⟨by decide, PlanCheck.impossibleKept_can_fail _ _ (by decide) (by decide), by decide⟩
 
 /-- **The contention day with its due dates the other way round**: `^t3`, first in §7.4's key,
 due TOMORROW; `^t1`, second, due TODAY.  Both `ci:2`, both 100 000 minutes, the store's own
@@ -8971,40 +8971,40 @@ def theReversedTwoImpossibleRequest : PlanReq :=
     plan := batchStorePlan, cands := ⟨reversedImpossibleCands, by decide⟩ }
 
 set_option maxRecDepth 400000 in
-/-- **§7.3 serves by due date and §8.2 step 5 by key, and here they disagree.**  The EDF pass
-serves `^t1` (due today) first and grants it today's 240 minutes; `^t3` (due tomorrow) is granted
-tomorrow's 360.  Step 5 walks today's four slots in key order and `^t3` — first by line order at
-`p = 0` — takes all four.  So `^t1`, which its grant OWES today's capacity, is eligible at
-`slotFitRows` and dropped, and D55's reading fails the check on a paying `candsAgree` day. -/
-theorem the_reversed_day_drops_the_impossible_item_its_grant_owes :
+/-- **§7.3 serves by due date and, since D60, so does §8.2 step 5 among impossible items** (W-36,
+parity P51).  The EDF pass serves `^t1` (due today) first and grants it today's 240 minutes, `^t3`
+(due tomorrow) tomorrow's 360.  Step 5's key orders the two `p = 0` impossible items by their
+`until` (`Planner.Ranked.imp`), so `^t1` takes today's four slots and `^t3` — owed nothing TODAY
+(`PlanCheck.todayAnswers`) — none: the check passes at `slotFitRows` on a paying day. -/
+theorem the_reversed_day_serves_the_earlier_due_impossible_item_first :
     PlanCheck.candsAgree theReversedTwoImpossibleRequest = true ∧
     assignedOf (dayPlan theReversedTwoImpossibleRequest)
-      = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
+      = [['t','1'], ['t','1'], ['t','1'], ['t','1']] ∧
+    theReversedTwoImpossibleRequest.rankedCands.map (fun x => (x.out.out.cand.id, x.imp))
+      = [(['t','1'], some (739867, 1)), (['t','3'], some (739868, 0))] ∧
     (dayPlan theReversedTwoImpossibleRequest).diagnostics.impossible.val
       = [(['t','3'], 129640), (['t','1'], 129760)] ∧
-    (theReversedTwoImpossibleRequest.grantFor ['t','1']).map (fun g => (g.avail, g.reserved))
-      = some (240000000000000000000, 240000000000000000000) ∧
-    (theReversedTwoImpossibleRequest.grantFor ['t','3']).map (fun g => (g.avail, g.reserved))
-      = some (360000000000000000000, 360000000000000000000) ∧
     PlanCheck.owedByItsGrant theReversedTwoImpossibleRequest ['t','1'] = true ∧
+    PlanCheck.owedByItsGrant theReversedTwoImpossibleRequest ['t','3'] = false ∧
     PlanCheck.eligibleSomewhere slotFitRows theReversedTwoImpossibleRequest
-      (dayPlan theReversedTwoImpossibleRequest) ['t','1'] = true ∧
+      (dayPlan theReversedTwoImpossibleRequest) ['t','3'] = true ∧
     PlanCheck.impossibleKept slotFitRows theReversedTwoImpossibleRequest
-      (dayPlan theReversedTwoImpossibleRequest) = false := by
+      (dayPlan theReversedTwoImpossibleRequest) = true := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
-/-- **`PlanCheck.impossibleKept` is refuted at a faithful eligibility on a day that pays** — the
-statement the ∀-eligibility lifts' `hnoimp` exists to exclude, at an eligibility that is not
-`permissive`.  Moved here from section 30 at W-35 and re-proved at the reversed day: under D55 the
-contention day W-33 proved it at passes, and this day, where the grant OWES the dropped item,
-fails.  So `hnoimp` still hides a case that happens (README gap 2801). -/
-theorem impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day :
-    ¬ ∀ r : PlanReq, PlanCheck.candsAgree r = true →
-        PlanCheck.impossibleKept slotFitRows r (dayPlan r) = true := fun h => by
-  have hq := the_reversed_day_drops_the_impossible_item_its_grant_owes
-  have := h theReversedTwoImpossibleRequest hq.1
-  rw [hq.2.2.2.2.2.2.2] at this
-  exact absurd this (by simp)
+/-- **The W-35 statement of this day is REFUTED by D60** (AGENTS §3.1 item 3): it said step 5 gives
+`^t3` all four slots and drops `^t1` — the hole D60 closes.  Its successor is the theorem above;
+`impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`, which stood on it, is re-proved
+at W-36's atomic day at the end of this file. -/
+theorem the_reversed_day_drops_the_impossible_item_its_grant_owes_is_refuted :
+    ¬ (PlanCheck.candsAgree theReversedTwoImpossibleRequest = true ∧
+      assignedOf (dayPlan theReversedTwoImpossibleRequest)
+        = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
+      (dayPlan theReversedTwoImpossibleRequest).diagnostics.impossible.val
+        = [(['t','3'], 129640), (['t','1'], 129760)]) := fun h => by
+  have := h.2.1
+  rw [the_reversed_day_serves_the_earlier_due_impossible_item_first.2.1] at this
+  exact absurd this (by decide)
 
 /-! ############################################################################
 ## W-35 (track K): D57 — §9's running break, the overtime block and a wall on `now`
@@ -9188,6 +9188,223 @@ theorem the_day_names_its_blocked_candidate_with_its_deps :
     (dayPlan theWaitingAndBlockedRequest).diagnostics.blockedDeps.val.map Prod.fst
       = (dayPlan theWaitingAndBlockedRequest).diagnostics.blocked.val := by
   refine ⟨by decide, by decide⟩
+
+/-! ############################################################################
+## W-36 (track K): D59 and D60 — a spent day may drop, impossible ties go by date
+############################################################################
+
+The owner's D59 (README gap 2800) restated §8.3's "impossible never dropped" as *never dropped
+while the day's budget can still be spent*, and D60 (gap 2801) broke `p = 0` ties among IMPOSSIBLE
+items by due date (parity P51).  `PlanCheck.impossibleKept` reads both since W-36: an item is owed
+what its grant holds TODAY (`PlanCheck.todayAnswers`, §7.3's pass over day 0 alone — the reading
+D60's own row gives, "its grant holds the day's minutes"), and the day's budget is read against the
+work it commits from `now` (`PlanCheck.budgetLeft`, `Planner.remainingBudget`).  This block holds
+what those two answers change, measured:
+
+* **the spent day passes** (`a_spent_day_passes_the_impossible_check`), and so does a planted
+  drop on it; the three W-35 laws that said such a day fails are refuted by name;
+* **the reversed day passes** (`the_reversed_day_serves_the_earlier_due_impossible_item_first`, in
+  place above), and the refutation that stood on it moves to the ATOMIC day below, where §8.2
+  step 5's contiguity clause drops an item `slotFitRows`' energy clause admits;
+* **`hnoimp` does NOT come off the five lifts** — `an_unassigned_day_drops_its_eligible_impossible_item`
+  (section 30, re-aimed) is an unassigned day whose budget can still be spent and whose WAITING
+  item is owed today, and every other hypothesis of the lifts holds there (README gap 3000);
+* **D60 costs §8.3's monotone rank** on the reversed day: `^t3` is written first and `^t1` is
+  served first (`the_monotone_rank_check_fails_where_D60_orders_by_date`, README gap 3001). -/
+
+set_option maxRecDepth 400000 in
+/-- **D59 at the spent day (README gap 2800)**: the quiet census Wednesday with its budget spent and
+an impossible `^m2` owed today's 240 minutes assigns nothing, names `^m2`, and PASSES the check — on
+the whole day, on `PlanCheck.withoutPast`'s, and on a planted day that drops `^m2` — because the
+day's budget cannot be spent.  Until W-36 the first two were `false` here. -/
+theorem a_spent_day_passes_the_impossible_check :
+    theUnassignedImpossibleRequest.assignedRows = [] ∧
+    assignedOf (dayPlan theUnassignedImpossibleRequest) = [] ∧
+    (dayPlan theUnassignedImpossibleRequest).diagnostics.impossible.val = [(['m','2'], 129760)] ∧
+    remainingBudget theUnassignedImpossibleRequest = 0 ∧
+    PlanCheck.owedByItsGrant theUnassignedImpossibleRequest ['m','2'] = true ∧
+    PlanCheck.eligibleSomewhere permissive theUnassignedImpossibleRequest
+      (dayPlan theUnassignedImpossibleRequest) ['m','2'] = true ∧
+    PlanCheck.budgetLeft theUnassignedImpossibleRequest (dayPlan theUnassignedImpossibleRequest)
+      = false ∧
+    PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
+      (dayPlan theUnassignedImpossibleRequest) = true ∧
+    PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
+      (PlanCheck.withoutPast theUnassignedImpossibleRequest
+        (dayPlan theUnassignedImpossibleRequest)) = true ∧
+    PlanCheck.impossibleKept (fun _ _ _ _ => true) theUnassignedImpossibleRequest
+      (PlanCheck.theDroppedImpossibleDay ['m','2']) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
+    by decide, by decide, by decide⟩
+
+/-- **PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned,
+as W-35 wrote it (no budget clause), is REFUTED under D59** at the spent day.  Its successor is
+`PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
+theorem an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), assignedOf d = [] →
+        ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleSomewhere el r d p.1 = true →
+          PlanCheck.owedByItsGrant r p.1 = true → PlanCheck.impossibleKept el r d = false := fun h => by
+  have hq := a_spent_day_passes_the_impossible_check
+  have := h permissive theUnassignedImpossibleRequest _ hq.2.1 (['m','2'], 129760)
+    (by rw [hq.2.2.1]; simp) hq.2.2.2.2.2.1 hq.2.2.2.2.1
+  rw [hq.2.2.2.2.2.2.2.1] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible, as W-35 wrote
+it, is REFUTED under D59** at the spent day: an answer there is short, eligible and owed, and the
+census arm has no subject, because the day's budget is spent.  Its successor is
+`PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left`. -/
+theorem impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq),
+        (PlanCheck.subjectOf el PlanCheck.CheckName.impossible r (dayPlan r) = true ↔
+          ∃ o ∈ r.candAnswers, 0 < o.shortfall ∧
+            PlanCheck.eligibleSomewhere el r (dayPlan r) o.out.cand.id = true ∧
+            PlanCheck.owedByItsGrant r o.out.cand.id = true) := fun h => by
+  have hr : ∃ o ∈ theUnassignedImpossibleRequest.candAnswers, 0 < o.shortfall ∧
+      PlanCheck.eligibleSomewhere permissive theUnassignedImpossibleRequest
+        (dayPlan theUnassignedImpossibleRequest) o.out.cand.id = true ∧
+      PlanCheck.owedByItsGrant theUnassignedImpossibleRequest o.out.cand.id = true := by decide
+  have hs : PlanCheck.subjectOf permissive PlanCheck.CheckName.impossible
+      theUnassignedImpossibleRequest (dayPlan theUnassignedImpossibleRequest) = false := by decide
+  have := (h permissive theUnassignedImpossibleRequest).2 hr
+  rw [hs] at this
+  exact absurd this (by simp)
+
+/-- **PlanCheck.impossibleKept_can_fail as W-35 wrote it (no `hb`) is REFUTED under D59**: at the
+spent day `^m2` is owed today and the planted day that drops it passes. -/
+theorem impossibleKept_can_fail_as_W_35_wrote_it_is_refuted :
+    ¬ ∀ (r : PlanReq) (i : Id), PlanCheck.owedByItsGrant r i = true →
+        PlanCheck.impossibleKept (fun _ _ _ _ => true) r (PlanCheck.theDroppedImpossibleDay i)
+          = false := fun h => by
+  have hq := a_spent_day_passes_the_impossible_check
+  have := h theUnassignedImpossibleRequest ['m','2'] hq.2.2.2.2.1
+  rw [hq.2.2.2.2.2.2.2.2.2] at this
+  exact absurd this (by simp)
+
+/-- **The atomic day**: the reversed day with `^t1` NOT splittable (`atomic`).  `PlanCheck.candsAgree`
+still holds — it reads `ci`, `rootPrio` and `hot`, and splittability is a step 5 fact. -/
+def atomicReversedCands : List (Look.Cand × Option Look.Floor) :=
+  [pCandDue ['t','3'] 2 false 100000 739868 6000 .any true (by decide),
+   pCandDue ['t','1'] 2 false 100000 739867 6000 .any false (by decide)]
+
+def theAtomicReversedRequest : PlanReq :=
+  { theQuietCensusRequest with
+    plan := batchStorePlan, cands := ⟨atomicReversedCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **§8.2 step 5's contiguity clause drops an item its energy clause admits.**  `^t1` is ranked
+first (D60: due today) and owed today's 240 minutes, but it is atomic and needs 6 000 unbroken
+minutes, so no run of today's slots fits it (`Planner.contiguousFits`) and `^t3` takes all four.
+`slotFitRows` reads the energy clause alone, so `^t1` is eligible at `^t3`'s rows, the budget is
+left, and the check fails on a paying `candsAgree` day. -/
+theorem the_atomic_day_drops_the_impossible_item_its_grant_owes_today :
+    PlanCheck.candsAgree theAtomicReversedRequest = true ∧
+    assignedOf (dayPlan theAtomicReversedRequest) = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
+    theAtomicReversedRequest.rankedCands.map (fun x => x.out.out.cand.id) = [['t','1'], ['t','3']] ∧
+    PlanCheck.owedByItsGrant theAtomicReversedRequest ['t','1'] = true ∧
+    PlanCheck.budgetLeft theAtomicReversedRequest (dayPlan theAtomicReversedRequest) = true ∧
+    PlanCheck.eligibleSomewhere slotFitRows theAtomicReversedRequest
+      (dayPlan theAtomicReversedRequest) ['t','1'] = true ∧
+    PlanCheck.impossibleKept slotFitRows theAtomicReversedRequest
+      (dayPlan theAtomicReversedRequest) = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **`PlanCheck.impossibleKept` is refuted at a faithful eligibility on a day that pays** — the
+statement the ∀-eligibility lifts' `hnoimp` exists to exclude, at an eligibility that is not
+`permissive`.  Moved here from the W-35 block at W-36 and re-proved at the atomic day: D60 made the
+reversed day pass.  What it shows now is that `slotFitRows` is not step 5's whole filter
+(README gap 3000). -/
+theorem impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day :
+    ¬ ∀ r : PlanReq, PlanCheck.candsAgree r = true →
+        PlanCheck.impossibleKept slotFitRows r (dayPlan r) = true := fun h => by
+  have hq := the_atomic_day_drops_the_impossible_item_its_grant_owes_today
+  have := h theAtomicReversedRequest hq.1
+  rw [hq.2.2.2.2.2.2] at this
+  exact absurd this (by simp)
+
+set_option maxRecDepth 400000 in
+/-- **D60 costs §8.3's monotone rank where it orders by date** (README gap 3001).  On the reversed
+day `^t3` and `^t1` are one document's siblings at equal `rootPrio` and equal `ci`, `^t3` written
+first; D60 serves `^t1` (due today) first and the day assigns `^t1` and not `^t3`, so
+`PlanCheck.monotoneInRank` is `false` at `slotFitRows` — the one of the eleven that fails there. -/
+theorem the_monotone_rank_check_fails_where_D60_orders_by_date :
+    PlanCheck.monotoneInRank slotFitRows theReversedTwoImpossibleRequest
+      (dayPlan theReversedTwoImpossibleRequest) = false ∧
+    ((PlanCheck.checksOf slotFitRows).map (fun c =>
+        c.run theReversedTwoImpossibleRequest (dayPlan theReversedTwoImpossibleRequest)))
+      = [true, true, true, true, true, true, true, false, true, true, true] := by
+  refine ⟨by decide, by decide⟩
+
+/-! ### D58's kernel half: the host's grown facts reach the what-if (README gap 2873)
+
+`Planner.overtimeDiff` plans the extended request with the host's grown facts when the host sends
+them (`Planner.PlanReq.growing`).  The witness is the short-run request with its candidates cut to
+a HOT `^m1` (remaining 50, planned 40 — a multiplier of 0.8) and two 60-minute `^b1`, `^b2`. -/
+
+/-- `^m1` running and HOT, `^b1` and `^b2` behind it. -/
+def grownRunCands : List (Look.Cand × Option Look.Floor) :=
+  [pCand ['m','1'] 2 true 40 .any true (by decide), pCand ['b','1'] 3 false 60 .any true (by decide),
+   pCand ['b','2'] 3 false 60 .any true (by decide)]
+
+/-- **The short run with three candidates.** -/
+def theGrownRunRequest : PlanReq :=
+  { theShortRunRequest with cands := ⟨grownRunCands, by decide⟩ }
+
+/-- **What the host sends for "x extend +1 block" on `^m1`**: fork `PlanOverrides::apply` adds the
+block's 60 minutes to the remaining 50 (`planwire::grown`), and `energy::planned_minutes(110, 0.8)`
+is 88. -/
+def grownRunFacts : WfGrown := ⟨⟨110, 88⟩, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The grown facts reach the day.**  On the estimate alone the extended day's step 5 finds
+`^m1`'s 40 planned minutes covered by the grown reservation, places `^b1` at 15:00 and ADDS `^b2`;
+with the host's facts `^m1` is still owed 88 planned minutes, takes 15:00-16:00, and `^b1` moves to
+16:00 with nothing added — the commitment fork `apply` gives the extended group.  The two answers
+differ, so the key is read: before W-36 the second call did not exist. -/
+theorem the_hosts_grown_facts_reach_the_what_if :
+    overtimeDiff theGrownRunRequest ['m','1'] 1 none =
+      { moved := [(['b','1'], (Cal.instantOf Cal.chicago 739867 925).sec,
+          (Cal.instantOf Cal.chicago 739867 900).sec)], added := [['b','2']], removed := [],
+        driftMin := 25 } ∧
+    overtimeDiff theGrownRunRequest ['m','1'] 1 (some grownRunFacts) =
+      { moved := [(['b','1'], (Cal.instantOf Cal.chicago 739867 925).sec,
+          (Cal.instantOf Cal.chicago 739867 960).sec)], added := [], removed := [],
+        driftMin := 35 } := by
+  refine ⟨by decide, by decide⟩
+
+/-! ### The group walk is SORTED, and a split batch is the day that shows it (W-36, D40)
+
+`Planner.PlanReq.buildGroups` sorts `build_groups`' groups by `Planner.GroupKey` — since W-36
+with D60's component — and until this witness no day in this file told that sort from none: a
+batch's buckets keep §7.4's order, so the walk is already sorted unless a bucket split off one
+batch ranks after a later batch's leader.  Here it does: `^t3` (small, atomic) leads and gathers
+`^t2` (small) past `^t1` (another `ci`, passed over and kept); the split puts `^t3` and `^t2` in
+two buckets, so the raw walk is `^t3`, `^t2`, `^t1`, and the key — the store's line order — walks
+`^t1` second.  W-36's mutation of `Planner.GroupKey.nums` to `[]` and of `Planner.groupKeyOf` to a
+constant came back ALONE without it (README gap 3008). -/
+
+/-- `^t1` big and at `ci:3`, `^t2` small, `^t3` small and atomic — the store's three siblings. -/
+def splitBatchCands : List (Look.Cand × Option Look.Floor) :=
+  [oneCand ['t','1'] 3 none 50 none false ⟨planFacts 50 .any, by decide⟩,
+   pCandSmall ['t','2'] 10 10 .any (by decide),
+   oneCand ['t','3'] 2 none 10 none false ⟨{ planFacts 10 .any with splittable := false }, by decide⟩]
+
+/-- **The quiet census Wednesday over the three-sibling store, with a batch the split divides.** -/
+def theSplitBatchRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨splitBatchCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The sort moves a group.**  §7.5 gathers `^t3` and `^t2` into one batch past `^t1`; the split
+buckets them apart; the raw walk is `^t3`, `^t2`, `^t1`; the sorted walk, and the day, is `^t3`,
+`^t1`, `^t2`. -/
+theorem the_group_walk_is_sorted_where_a_split_bucket_ranks_late :
+    batchIds theSplitBatchRequest = [[['t','3'], ['t','2']], [['t','1']]] ∧
+    theSplitBatchRequest.rawGroups.map (fun g => g.members.map (fun x => x.cand.id))
+      = [[['t','3']], [['t','2']], [['t','1']]] ∧
+    groupIds theSplitBatchRequest = [[['t','3']], [['t','1']], [['t','2']]] ∧
+    assignedOf (dayPlan theSplitBatchRequest) = [['t','3'], ['t','1'], ['t','2']] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

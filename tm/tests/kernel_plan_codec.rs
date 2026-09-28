@@ -192,10 +192,12 @@ fn a_running_block_crosses_and_comes_back_as_its_two_rows() {
     assert_eq!(open[0].flags.note.as_deref(), Some("30m so far"));
 }
 
-/// **§9.1's what-if crosses as `overtime`** and comes back as a `PlanDiff`.
-/// With D58's `grown` key the request is still answered: the kernel's reader
-/// does not know the key yet (README gap 2873), so it is carried and read by
-/// nothing — which is why this asserts acceptance and not an answer.
+/// **§9.1's what-if crosses as `overtime`** and comes back as a `PlanDiff`,
+/// with and without D58's `grown` key. The kernel reads the key since W-36
+/// (README gap 2873); what it answers with it is compared BY VALUE against the
+/// shipped TUI's what-if on every generated day in `planner_invariants.rs`
+/// (`the_kernel_answers_the_what_if_with_the_hosts_grown_facts`), so this test
+/// asserts the codec: the key crosses and an answer comes back.
 #[test]
 fn the_what_if_crosses_and_comes_back_as_a_diff() {
     let c = running_case();
