@@ -1,0 +1,12 @@
+# kernel/written-exempt.txt -- check 13's WRITTEN half (fields.py `written_main`; W-36 repair,
+# README gap 3132).  The property: every JSON key path the kernel's reader of the planner section
+# (`PlanWire.lean`) DECODES is WRITTEN by a function of the host codec (`tm-core/src/planwire.rs`:
+# `planner_json` and every function taking the section as `&mut Value`).  These are the decoded
+# keys no host function writes, measured by the gate itself on its first run: exactly three.  The
+# file is W-27's shape -- an enumeration you join to be EXEMPT -- and it may only SHRINK: a line for
+# a key that is written now FAILS as STALE, a line the committed file does not hold FAILS as
+# RATCHET.  One line per key path, at its SHALLOWEST unwritten path:
+# `<planner.key.path> -- <dated reason naming its EXIT>`.
+planner.overrides -- 2026-09-28: READ by the day (the active run's `d done` what-if in Planner.lean reads `overrides.drop`; `estMin`/`extraMin` are inputs-exempt) and written only by tests (kernel_planner_wire.rs); the TUI's one override, `PlanOverrides::extending`, is sent as `overtime` (D58). EXIT: R3 sends the TUI's what-if overrides through a planwire writer, or the kernel stops decoding the key.
+planner.state.lastHash -- 2026-09-28: decoded and read by no definition of the day (inputs-exempt.txt's `RuntimeIn.lastHash`); `state_json` writes neither it nor `yesterday` by design (planwire's module docs). EXIT: the day reads it and the codec writes it, or PlanWire stops decoding it.
+planner.state.yesterday -- 2026-09-28: decoded and read by no definition of the day (inputs-exempt.txt's `RuntimeIn.yesterday`); ranking reads each candidate's `Look.Cand.yesterday` (inputs-exempt.txt: a second wire spelling of one fact). EXIT: the day reads it and the codec writes it, or PlanWire stops decoding it.

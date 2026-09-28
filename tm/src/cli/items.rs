@@ -985,8 +985,11 @@ fn unwired_reason(line: &ItemLine, key: &str, unset: bool) -> Option<&'static st
 /// change is one the kernel path carries -- else [`EditRoute::Mixed`] if any
 /// change is wired and any is not, and [`EditRoute::Host`] if none is. An
 /// `est=` pair is sent as the `est` op with the value AS WRITTEN and the block
-/// length (the CLI's own `Dur` grammar still reads it first, so `est=zzz` keeps
-/// its old message): since W-35 (the owner's D56) the kernel writes a leading
+/// length, and the kernel's reader is the only one on this path (W-36 track T
+/// deleted the host's `Dur` pre-parse, so `est=zzz` is `kernel refusal:
+/// badValue est`; an id-less line never reaches this route and its `est=`
+/// still runs the host's reader and writer in `apply_pair`, README gap 3135):
+/// since W-35 (the owner's D56) the kernel writes a leading
 /// estimate that is the slot in place, as written — `30b` becomes `20b`, one
 /// estimate on the line — and an `est:` token in canonical minutes, the bytes
 /// the minutes form always wrote. Every other wired pair rides raw -- the

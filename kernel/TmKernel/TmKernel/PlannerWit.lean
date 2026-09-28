@@ -7498,7 +7498,7 @@ theorem an_unassigned_day_drops_its_eligible_impossible_item :
     PlanCheck.batchDoesNotReachPast permissive theWaitingImpossibleRequest
       (PlanCheck.withoutPast theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest)) = true ∧
     PlanCheck.owedByItsGrant theWaitingImpossibleRequest ['m','2'] = true ∧
-    PlanCheck.budgetLeft theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) = true := by
+    PlanCheck.budgetLeft permissive theWaitingImpossibleRequest (dayPlan theWaitingImpossibleRequest) ['m','2'] = true := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
     by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
@@ -9225,8 +9225,8 @@ theorem a_spent_day_passes_the_impossible_check :
     PlanCheck.owedByItsGrant theUnassignedImpossibleRequest ['m','2'] = true ∧
     PlanCheck.eligibleSomewhere permissive theUnassignedImpossibleRequest
       (dayPlan theUnassignedImpossibleRequest) ['m','2'] = true ∧
-    PlanCheck.budgetLeft theUnassignedImpossibleRequest (dayPlan theUnassignedImpossibleRequest)
-      = false ∧
+    PlanCheck.budgetLeft permissive theUnassignedImpossibleRequest (dayPlan theUnassignedImpossibleRequest)
+      ['m','2'] = false ∧
     PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
       (dayPlan theUnassignedImpossibleRequest) = true ∧
     PlanCheck.impossibleKept permissive theUnassignedImpossibleRequest
@@ -9303,7 +9303,7 @@ theorem the_atomic_day_drops_the_impossible_item_its_grant_owes_today :
     assignedOf (dayPlan theAtomicReversedRequest) = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
     theAtomicReversedRequest.rankedCands.map (fun x => x.out.out.cand.id) = [['t','1'], ['t','3']] ∧
     PlanCheck.owedByItsGrant theAtomicReversedRequest ['t','1'] = true ∧
-    PlanCheck.budgetLeft theAtomicReversedRequest (dayPlan theAtomicReversedRequest) = true ∧
+    PlanCheck.budgetLeft slotFitRows theAtomicReversedRequest (dayPlan theAtomicReversedRequest) ['t','1'] = true ∧
     PlanCheck.eligibleSomewhere slotFitRows theAtomicReversedRequest
       (dayPlan theAtomicReversedRequest) ['t','1'] = true ∧
     PlanCheck.impossibleKept slotFitRows theAtomicReversedRequest
@@ -9501,6 +9501,62 @@ theorem the_open_row_carries_the_logs_worked_minutes_is_refuted :
   have hrow : { theOpenRow with note := some (.soFar 90) } ∈ openBlockRows theHostWorkedRequest := by
     decide
   exact absurd (h _ _ hrow _ hb) (by decide)
+
+/-! ## W-36 repair (README gap 3130): what the budget was spent ON
+
+Track K's `PlanCheck.budgetLeft` counted every Block and Batch row of the day from `now`, so the
+W-36 auditor's planted day — `theWaitingImpossibleRequest`'s six blocks of budget spent on an item
+the request does not know, `^m2` (owed today, listed impossible) dropped — passed
+`impossibleKept` and the whole battery.  Since the repair it counts only the rows the dropped item
+could not have displaced (`PlanCheck.budgetLeft`'s doc comment); these two days are the check
+biting and the check not over-biting (AGENTS §5.8). -/
+
+/-- The planted day's instant: 06:00 on the census Wednesday, after the request's `now`. -/
+def plantT : Nat := 63924577200
+
+/-- A planted fifty-minute Block for `it`, `k` hours after `plantT`. -/
+def plantedHour (it : Id) (k : Fin 8) : WfSeg :=
+  ⟨PlanCheck.wSeg (plantT + 3600 * k.val) (plantT + 3600 * k.val + 3000) SegKind.block (some it) none,
+   PlanCheck.wSeg_wf _ _ _ _ _ (by omega) (by have := k.isLt; simp [plantT, LogStamp.yearEnd]; omega)⟩
+
+/-- The auditor's day: the six blocks of budget on `^x9`, `^m2` listed and dropped. -/
+def theDaySpentOnWorkItOutranks : DayPlan :=
+  PlanCheck.wDay ([0, 1, 2, 3, 4, 5].map (plantedHour ['x','9'])) 60 6
+    ⟨[(['m','2'], 129760)], by simp [maxCands]⟩
+
+/-- The same six blocks and a seventh for `^y9`, the one row `onlyAtY9` lets `^m2` take. -/
+def theDaySpentWhereItCouldNotGo : DayPlan :=
+  PlanCheck.wDay ([0, 1, 2, 3, 4, 5].map (plantedHour ['x','9']) ++ [plantedHour ['y','9'] 6]) 60 6
+    ⟨[(['m','2'], 129760)], by simp [maxCands]⟩
+
+/-- An eligibility under which an item may take `^y9`'s row and no other. -/
+def onlyAtY9 : PlanCheck.Eligible := fun _ _ s _ => s.item == some ['y','9']
+
+set_option maxRecDepth 400000 in
+/-- **The check bites on a budget spent on work the dropped item outranks** (README gap 3130).
+Every one of the six planted rows is work from `now` and they are exactly the day's remaining
+budget — so the reading track K shipped (every work row counts) called the budget spent and passed
+this day — while `^m2` is owed today and eligible at every row: the budget it was denied was spent
+on an item it outranks, and the check now FAILS. -/
+theorem the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop :
+    remainingBudget theWaitingImpossibleRequest = 6 ∧
+    (theDaySpentOnWorkItOutranks.segments.filter (fun s => s.val.kind.isWork &&
+      decide (theWaitingImpossibleRequest.now.sec ≤ s.val.start))).length = 6 ∧
+    PlanCheck.owedByItsGrant theWaitingImpossibleRequest ['m','2'] = true ∧
+    PlanCheck.budgetLeft permissive theWaitingImpossibleRequest theDaySpentOnWorkItOutranks ['m','2'] = true ∧
+    PlanCheck.impossibleKept permissive theWaitingImpossibleRequest theDaySpentOnWorkItOutranks = false := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **And it does not over-bite** (AGENTS §5.8): where `^m2` may take `^y9`'s row alone, the six
+`^x9` rows are rows it could not have taken, they spend the day's six blocks, and the drop is
+excused — while the same day under `permissive` (eligible at the `^x9` rows too) still fails. -/
+theorem a_budget_spent_where_the_item_could_not_go_excuses_its_drop :
+    PlanCheck.eligibleSomewhere onlyAtY9 theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo ['m','2'] = true ∧
+    PlanCheck.budgetLeft onlyAtY9 theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo ['m','2'] = false ∧
+    PlanCheck.impossibleKept onlyAtY9 theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = true ∧
+    PlanCheck.impossibleKept permissive theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = false := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

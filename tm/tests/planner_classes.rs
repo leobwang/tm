@@ -663,8 +663,16 @@ fn a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it() {
             ));
         }
     }
+    // A COMPARISON is one world at one instant, and a world is compared at up to
+    // two (the wall's start and twenty minutes in): the land step printed the
+    // comparisons as "worlds" (W-36 repair, README gap 3136), so both are counted.
+    let worlds = compared
+        .iter()
+        .map(|c| c.split(" (pause at ").next().unwrap_or_default())
+        .collect::<std::collections::BTreeSet<_>>()
+        .len();
     println!(
-        "D61 worlds compared: {}, the logged pause moved the kernel's day on {moved}: {}",
+        "D61 comparisons: {} over {worlds} wall-on-now class(es), the logged pause moved the kernel's day on {moved} of them: {}",
         compared.len(),
         compared.join(", ")
     );

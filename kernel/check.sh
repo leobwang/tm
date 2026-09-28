@@ -1242,11 +1242,18 @@ fi
 #     helpers, and the Lean reader followed from the definition that `jget`s
 #     `planner` off the request -- and its header says what that cannot see.
 #     It asks ONE section of ONE encoder, and says so in its line (gap 3081).
+#     AND THE WRITTEN HALF (W-36 repair, README gap 3132): the converse of the
+#     sent half -- every key the kernel's planner reader DECODES must be written
+#     by the host codec (`planner_json` and every codec function taking the
+#     section as `&mut Value`), or be a dated line of `written-exempt.txt` with
+#     an EXIT, which may only shrink.  `overrides.drop` is read by the day's
+#     `d done` what-if and written by no host function.
 out=$( python3 fields.py 2>&1 )
 if [ $? -eq 0 ]; then
-  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -3 | head -1 ))"
-  say "every decoded field has a reader" "ok  ($( printf '%s\n' "$out" | tail -2 | head -1 ))"
-  say "every sent key has a reader" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -4 | head -1 ))"
+  say "every decoded field has a reader" "ok  ($( printf '%s\n' "$out" | tail -3 | head -1 ))"
+  say "every sent key has a reader" "ok  ($( printf '%s\n' "$out" | tail -2 | head -1 ))"
+  say "every decoded key has a writer" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
 else
   say "every emitted field has a writer" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20

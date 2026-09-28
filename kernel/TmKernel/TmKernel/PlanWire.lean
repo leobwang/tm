@@ -2032,5 +2032,23 @@ theorem readOptWorked_refuses_a_reading_past_the_day (sec a : JVal) (n : Nat)
 
 /-- **The key's name spells itself** — a refusal a host reads by text. -/
 theorem planKey_workedMin_is_the_wire_key : PlanKey.workedMin.name = "workedMin" := rfl
+
+/-- **The capacity answer's `until` is `Planner.answerUntil`'s** (W-36 repair, README gap 3137):
+`CapWire.grantJsonF` writes a floor answer's last day and `CapWire.grantJson` a grant's due date
+under `until`, by the same rule `Planner.answerUntil` — "the date's one reader" — states, and this
+ties the two spellings so a change to either shows up as a broken proof, not as a wire the host
+reads one way and D60's key another. -/
+theorem the_wire_until_is_answerUntil (o : Look.FloorOut) :
+    (match CapWire.grantJsonF o with | .obj kv => kv.lookup "until".toList | _ => none) =
+      some (match Planner.answerUntil o with
+        | some d => JVal.str (Field.renderDate d)
+        | none => JVal.null) := by
+  rcases o with ⟨out, floor⟩
+  cases floor with
+  | some g => simp [CapWire.grantJsonF, Planner.answerUntil, List.lookup]
+  | none =>
+    cases hg : out.grant with
+    | some g => simp [CapWire.grantJsonF, CapWire.grantJson, Planner.answerUntil, List.lookup, hg]
+    | none => simp [CapWire.grantJsonF, CapWire.grantJson, Planner.answerUntil, List.lookup, hg]
 end PlanWire
 end Tm

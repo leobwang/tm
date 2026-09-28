@@ -639,6 +639,95 @@ SENT_SECTION = "planner"
 HOST_CODEC = HERE.parent / "tm-core" / "src" / "planwire.rs"
 SENT_EXEMPT_FILE = HERE / "sent-exempt.txt"
 
+# ===========================================================================
+# THE WRITTEN HALF (W-36 repair, README gap 3132): a key the kernel DECODES
+# must have a WRITER in the host's codec -- the converse of the sent half.
+#
+# THE FINDING.  The sent half asks sent => decoded and the input half decoded
+# => read, and check 12 reaches per SECTION; nothing asked decoded => written.
+# The W-36 reuse critic measured three decoded keys no host encoder writes --
+# `planner.overrides`, `state.lastHash`, `state.yesterday` -- and one of them
+# is READ by the day: `overrides.drop` drives the active run's `d done`
+# what-if (Planner.lean), written only by tests (kernel_planner_wire.rs), while the TUI's
+# one override is `PlanOverrides::extending`.  After R3 the section is sent,
+# that code counts as reached, and no host key ever drives it.
+#
+# THE PROPERTY.  Every key path `sentkeys.kernel_paths` decodes under the
+# section is WRITTEN by the codec (`sentkeys.host_paths`, which since this
+# repair also follows every codec function taking the section as `&mut
+# Value`), or is named in `written-exempt.txt` under a dated reason with an
+# EXIT -- reported once at its shallowest path, STALE when it is written now or
+# no longer decoded, RATCHET when the committed file did not hold it: W-27's
+# shape, the file may only SHRINK.
+#
+# WHAT IT CANNOT SEE: whether the binary CALLS the writer.  `add_worked_min`
+# writes `state.active.workedMin` and has no caller in `tm/src` (README gap
+# 3043, R3's): "written by the codec" is a floor under "sent by the binary",
+# the same sentence as the input half's read-is-a-floor-under-used.
+# ===========================================================================
+WRITTEN_EXEMPT_FILE = HERE / "written-exempt.txt"
+
+
+def ratchet_file(path, shallow, under, why_stale, bad):
+    """The exemption entries of `path` against the shallow key paths they may
+    exempt: a malformed, undated or repeated line, a line whose key is not in
+    `shallow` (`why_stale(p)` says why), and a line the committed file did not
+    hold are each a complaint in `bad`.  Returns `{path: lineno}`."""
+    entries = {}
+    text = path.read_text() if path.exists() else ""
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        name, sep, reason = line.partition(" -- ")
+        if not sep or not name.startswith(SENT_SECTION + "."):
+            bad.append("%s:%d  an entry is `<%s.key.path> -- <reason>`"
+                       % (path.name, lineno, SENT_SECTION))
+            continue
+        if not ISO_DATE.search(reason) or not EXIT.search(reason):
+            bad.append("%s:%d  `%s` needs an ISO date and an EXIT" % (path.name, lineno, name))
+        if name in entries:
+            bad.append("%s:%d  `%s` is listed twice" % (path.name, lineno, name))
+        entries[name] = lineno
+    for p, lineno in sorted(entries.items(), key=lambda kv: kv[1]):
+        if p not in shallow:
+            bad.append("STALE: %s:%d  `%s` is %s -- delete this line, the file may only shrink"
+                       % (path.name, lineno, p, why_stale(p)))
+    prev = committed_exemptions(path)
+    if prev is not None:
+        held = {ln.strip().partition(" -- ")[0] for ln in prev.splitlines()
+                if ln.strip() and not ln.strip().startswith("#")}
+        for p in sorted(set(entries) - held):
+            if not any(under(p, q) for q in held):
+                bad.append("RATCHET: %s:%d  `%s` is a NEW exemption and no key it is under was "
+                           "exempt at HEAD -- this file may only SHRINK" % (path.name, entries[p], p))
+    return entries
+
+
+def written_main(host, kernel, under):
+    """The written half: every decoded key path has a writer in the codec."""
+    bad = []
+    unwritten = [p for p in kernel if p not in host]
+    shallow = [p for p in unwritten if not any(under(p, q) for q in unwritten)]
+    entries = ratchet_file(
+        WRITTEN_EXEMPT_FILE, shallow, under,
+        lambda p: ("WRITTEN now" if p in host else "not a key the kernel decodes"
+                   if p not in kernel else "under `%s`, which is unwritten itself"
+                   % next((q for q in shallow if under(p, q)), "?")), bad)
+    for p in shallow:
+        if p not in entries:
+            bad.append("UNWRITTEN: `%s` is decoded by the kernel's reader of `%s` and written by "
+                       "no function of %s -- write it, stop decoding it, or name it in %s under a "
+                       "dated reason with an EXIT"
+                       % (p, SENT_SECTION, HOST_CODEC.name, WRITTEN_EXEMPT_FILE.name))
+    for line in bad:
+        print(line)
+    print("written: %d key path(s) the kernel's reader of `%s` decodes, %d written by %s, "
+          "%d unwritten of which %d exempt, %d UNANSWERED"
+          % (len(kernel), SENT_SECTION, len(kernel) - len(unwritten), HOST_CODEC.name,
+             len(shallow), sum(1 for p in shallow if p in entries), len(bad)))
+    return 1 if bad else 0
+
 
 def sent_main(audit, files, codes=None):
     import sentkeys
@@ -712,7 +801,8 @@ def sent_main(audit, files, codes=None):
           "encoders are not asked (gap 3081)"
           % (len(host), SENT_SECTION, HOST_CODEC.name, len(host) - len(unread), SENT_SECTION,
              len(shallow), sum(1 for p in shallow if p in entries), len(bad)))
-    return 1 if bad else 0
+    written_rc = written_main(host, kernel, under) if host and kernel else 1
+    return 1 if bad or written_rc else 0
 
 
 if __name__ == "__main__":

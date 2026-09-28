@@ -7324,3 +7324,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.a_logged_wall_pause_keeps_the_open_row_off_the_meeting
 #print axioms Tm.PlannerWit.the_host_reading_is_the_one_reading
 #print axioms Tm.PlannerWit.the_open_row_carries_the_logs_worked_minutes_is_refuted
+
+-- APPENDED 2026-09-28: stage 6 W-36 REPAIR -- README gap 3130: `PlanCheck.budgetLeft` counts
+-- only the rows a dropped impossible item could not have displaced, so a budget spent on work it
+-- outranks no longer excuses its drop; gap 3137: the capacity answer's `until` is
+-- `Planner.answerUntil`'s.
+#print axioms Tm.PlanCheck.budgetLeft_mono
+#print axioms Tm.PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop
+#print axioms Tm.PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop
+#print axioms Tm.PlanWire.the_wire_until_is_answerUntil

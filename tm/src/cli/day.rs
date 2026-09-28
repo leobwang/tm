@@ -356,7 +356,7 @@ fn merged_spans(mut walls: Vec<capacity::Wall>) -> Vec<capacity::Wall> {
 
 /// Whether the log (and the break `state.json` still holds running) had the
 /// running block's timer stopped at `t`: an open pause or interruption, or a
-/// break, covering it — [`log::Replay::idle_min_since`]'s own pairing, asked at
+/// break, covering it — [`log::idle_spans`], the pairing [`log::Replay::idle_min_since`] sums, asked at
 /// one instant, and like it blind to a pause stamped before the block
 /// `started` (another block's, left open by a `tm done` on a paused block).
 fn timer_stopped_at(
@@ -365,32 +365,7 @@ fn timer_stopped_at(
     t: DateTime<FixedOffset>,
     running_break: Option<DateTime<FixedOffset>>,
 ) -> bool {
-    let mut open: Option<DateTime<FixedOffset>> = None;
-    let mut spans: Vec<(DateTime<FixedOffset>, Option<DateTime<FixedOffset>>)> = Vec::new();
-    for m in marks {
-        match *m {
-            log::IdleMark::Pause(a) if a < started => {}
-            log::IdleMark::Pause(a) | log::IdleMark::Interrupt(a) => {
-                if open.is_none() {
-                    open = Some(a);
-                }
-            }
-            log::IdleMark::Unpause(b) | log::IdleMark::Resume(b) => {
-                if let Some(a) = open.take() {
-                    spans.push((a, Some(b)));
-                }
-            }
-            log::IdleMark::Break { t: a, actual_min } => {
-                spans.push((a, Some(a + chrono::Duration::minutes(i64::from(actual_min.unwrap_or(0))))));
-            }
-        }
-    }
-    if let Some(a) = open {
-        spans.push((a, None));
-    }
-    if let Some(a) = running_break {
-        spans.push((a, None));
-    }
+    let spans = log::idle_spans(marks, started, running_break);
     spans.iter().any(|(a, b)| *a <= t && b.is_none_or(|b| t < b))
 }
 

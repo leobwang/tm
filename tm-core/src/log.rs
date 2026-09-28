@@ -1232,6 +1232,63 @@ pub enum IdleMark {
     },
 }
 
+/// **The idle spans of a block begun at `started`**, out of a day's
+/// [`DaySeam::idle_marks`] in file order: each `(from, until)`, `until` `None`
+/// while it is still open (a pause or interruption not yet lifted, the running
+/// break `running_break`). The ONE pairing of pause/unpause, interrupt/resume
+/// and break entries: [`Replay::idle_min_since`] sums it and `tm`'s D61 wall
+/// pause asks whether an instant lies in it (W-36 repair, README gap 3134 —
+/// `day.rs` carried a second copy of these arms, and the W-36 run had to add
+/// the `Pause(t) if t < started` arm to both).
+///
+/// **A pause stamped before `started` was ANOTHER block's** (W-36 track T,
+/// README gap 2920). `tm done` and `tm stop` on a paused block log no
+/// `unpause`, and D61's wall pause is left open by a block that ends inside
+/// the meeting, so such a pause stayed "open" and swallowed the NEXT block
+/// whole: DRIVEN on `dd8b95b` — `pause` 09:10, `done` 09:20, `start ^t1` 09:30,
+/// and at 10:00 `tm now` read `elapsed_min: 0` and `tm done` logged
+/// `actual_min: 0` (fork `day::worked_min` did the same). The replay's machine
+/// never had it: a `start` opens a fresh, running block. An INTERRUPTION is not
+/// a block's — one still running when a block starts holds it until the
+/// resume, as the machine does (`since` stays `none`) — so it still opens.
+/// A `break` entry is written when the break ends, stamped at its start, so
+/// the pair is one entry; one logged without `actual_min` is no span.
+pub fn idle_spans(
+    marks: &[IdleMark],
+    started: DateTime<FixedOffset>,
+    running_break: Option<DateTime<FixedOffset>>,
+) -> Vec<(DateTime<FixedOffset>, Option<DateTime<FixedOffset>>)> {
+    let mut out = Vec::new();
+    let mut open: Option<DateTime<FixedOffset>> = None;
+    for mark in marks {
+        match *mark {
+            IdleMark::Pause(t) if t < started => {}
+            IdleMark::Pause(t) | IdleMark::Interrupt(t) => {
+                if open.is_none() {
+                    open = Some(t);
+                }
+            }
+            IdleMark::Unpause(t) | IdleMark::Resume(t) => {
+                if let Some(a) = open.take() {
+                    out.push((a, Some(t)));
+                }
+            }
+            IdleMark::Break {
+                t,
+                actual_min: Some(m),
+            } => out.push((t, Some(t + chrono::Duration::minutes(i64::from(m))))),
+            IdleMark::Break { actual_min: None, .. } => {}
+        }
+    }
+    if let Some(a) = open {
+        out.push((a, None));
+    }
+    if let Some(s) = running_break {
+        out.push((s, None));
+    }
+    out
+}
+
 /// Per-item derived state.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub struct ItemReplay {
@@ -1617,57 +1674,14 @@ impl Replay {
         now: DateTime<FixedOffset>,
         running_break: Option<DateTime<FixedOffset>>,
     ) -> u32 {
+        let marks = self.seam(day).map_or(&[][..], |s| s.idle_marks.as_slice());
         let mut total = 0i64;
-        let mut open: Option<DateTime<FixedOffset>> = None;
-        let from = started;
-        let mut add = |a: DateTime<FixedOffset>, b: DateTime<FixedOffset>| {
-            let a = a.max(from);
-            let b = b.min(now);
+        for (a, b) in idle_spans(marks, started, running_break) {
+            let a = a.max(started);
+            let b = b.unwrap_or(now).min(now);
             if b > a {
                 total += (b - a).num_minutes();
             }
-        };
-        let marks = self.seam(day).map_or(&[][..], |s| s.idle_marks.as_slice());
-        for mark in marks {
-            match *mark {
-                // **A pause stamped before `started` was ANOTHER block's** (W-36 track T,
-                // README gap 2920).  `tm done` and `tm stop` on a paused block log no
-                // `unpause`, and D61's wall pause is left open by a block that ends inside the
-                // meeting, so such a pause stayed "open" and swallowed the NEXT block whole:
-                // DRIVEN on `dd8b95b` — `pause` 09:10, `done` 09:20, `start ^t1` 09:30, and at
-                // 10:00 `tm now` read `elapsed_min: 0` and `tm done` logged `actual_min: 0`
-                // (fork `day::worked_min` did the same).  The replay's machine never had it:
-                // a `start` opens a fresh, running block.  An INTERRUPTION is not a block's
-                // — one still running when a block starts holds it until the resume, as the
-                // machine does (`since` stays `none`) — so it still opens.
-                IdleMark::Pause(t) if t < started => {}
-                IdleMark::Pause(t) | IdleMark::Interrupt(t) => {
-                    if open.is_none() {
-                        open = Some(t);
-                    }
-                }
-                IdleMark::Unpause(t) | IdleMark::Resume(t) => {
-                    if let Some(a) = open.take() {
-                        add(a, t);
-                    }
-                }
-                // `break.t` is the break's start; the entry is written when it
-                // ends, so the pair is one entry.
-                IdleMark::Break {
-                    t,
-                    actual_min: Some(m),
-                } => add(t, t + chrono::Duration::minutes(i64::from(m))),
-                IdleMark::Break { actual_min: None, .. } => {}
-            }
-        }
-        // Anything still open at `now` (a pause or interruption that has not
-        // been lifted) counts up to now.
-        if let Some(a) = open {
-            add(a, now);
-        }
-        // …and a break that is still running, which is not in the log yet.
-        if let Some(s) = running_break {
-            add(s, now);
         }
         total.clamp(0, 24 * 60) as u32
     }

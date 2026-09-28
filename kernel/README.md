@@ -70358,3 +70358,248 @@ its three standalone runs (0, 5 and 3 before).  It stays a probability, less oft
   bound raised; no external dependency; every exemption file the same size or smaller
   (`reach-exempt.txt` 1,202 → 1,201, `sent-exempt.txt` 1 → 0 keys); one `.proptest-regressions`
   seed added and committed (D46).
+
+<!-- =====================================================================
+     APPENDED 2026-09-28: stage 6 (the planner), run **W-36**, **REPAIR
+     STEP**, on `rebuild-on-lean` after `7259a73`: the defects W-36's two
+     independent auditors (verify-w36, critic-w36) found.  Gap range
+     **3130-3159**; **3130-3142 taken**, 3143-3159 free.  Parity: **none
+     issued** (P1-P55 stand, next free P56).  Every finding's evidence was
+     REPRODUCED before it was acted on; the transcript is the step's report.
+     ===================================================================== -->
+
+## Stage 6 — W-36 repair: a spent budget is read against what it was spent ON, the sent gate sees every writer and a decoded key must have one, and the land's re-bless is named
+
+### 1. What was fixed
+
+**Gap 3130 — CLOSED: `PlanCheck.budgetLeft` read the budget off the OUTPUT day, so a budget spent on
+lower-ranked work excused an owed impossible item's drop.**  1. *What.*  Track K's `budgetLeft r d`
+counted every Block and Batch row of `d` from `now` against `Planner.remainingBudget r`.  REPRODUCED
+in a clone (repair-w36/clone, the auditor's plant file Q1b): on `theWaitingImpossibleRequest`
+(remaining budget 6, `^m2` owed today and listed impossible) six planted blocks of `^x9` with `^m2`
+dropped gave `budgetLeft false`, `impossibleKept permissive true`, `hotBeforeQueue true`, `planOk
+permissive true`; five blocks gave `impossibleKept false`.  2. *Why.*  D59's case is a budget spent
+BEFORE planning (six blocks done); the output-day reading could not tell it from a budget the planner
+spent on work the dropped item outranks.  3. *Repair.*  `budgetLeft el r d i` now counts, for the item
+`i` it is asked about, only the rows `i` could not have displaced — the running block's (§8.2 choice
+5b), a row at which `i` is not eligible under `el`, and a row serving a listed impossible item (D60
+serves an impossible `p = 0` answer ahead of every item not listed impossible) — so a budget spent
+BEFORE planning (`remainingBudget r = 0`) still excuses every drop and a budget spent on work `i`
+outranks at slots `i` was eligible for does not.  `PlanCheck.budgetLeft_mono` (a narrower
+eligibility counts more rows spent) re-proves `impossibleKept_antitone`; every statement that named
+`budgetLeft r d` names `budgetLeft el r d p.1` (§3 lists them).  The definition's body and the
+lemma are one line each so that no check-9 pin site in `PlanCheck.lean` moved; the explanation sits
+in a module note at the file's end.  Both directions (AGENTS §5.8):
+`PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop` (the
+auditor's day: six work rows from `now`, exactly the remaining budget — track K's reading called it
+spent — and the check now FAILS) and
+`PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop` (where `^m2` may take one
+`^y9` row alone, the six `^x9` rows spend the budget and the drop is excused; the same day under
+`permissive` fails).  Every existing witness keeps its statement and its value
+(`a_spent_day_passes_the_impossible_check`, the atomic day, the waiting day).  4. *What it does not
+do.*  `hnoimp` stays on the five lifts (gap 3000, below): the repair makes the check the lifts carry
+STRONGER, it does not prove the planner meets it.
+
+**Gap 3131 — CLOSED: check 13's sent half did not see `add_worked_min`, and did not see the kernel
+decode `workedMin` either.**  1. *What.*  REPRODUCED: `sentkeys.kernel_paths` returned 33 planner
+paths without `planner.state.active.workedMin`, and `host_paths` 27 without it.  The audit's plant
+(the helper's key renamed, a planted misspelling) and the critic's (gap 3124's own exit, `"workedMin": 0` in
+`state_json`) each showed the half wrong: the first stayed green on a key no reader decodes, the
+second FAILED on a key the kernel reads.  2. *Why.*  Two blind spots, one per side: the host walk
+rooted at `planner_json` and never followed a helper the caller applies after it; the kernel walk
+read `← readOptWorked sec⟩` — a call written as an anonymous constructor's field in
+`PlanWire.readState` — as the argument `sec⟩` and lost the value.  So gap 3124's "the key is DECODED,
+so the property holds" was false by the gate's own reading.  3. *Repair.*  `sentkeys.py`: an argument
+token stops at `⟨`, `⟩` and `,`; the host side follows every codec function that takes the section as
+a parameter named `<section>` of type `&mut Value`, through `.get_mut("k")` and `.and_then(|v|
+v.get_mut("k"))` chains (a chain link it cannot read is a complaint), and a parameter whose type does
+not mention `Value` is a scalar, not a caller's value to place.  Measured: kernel 34 paths (was 33),
+host 28 (was 27), nothing dropped from either.  Plants in the clone, `git status --porcelain` shown
+before and after in the report: the audit's rename → `rc=1`, `UNREAD: planner.state.active.workedMinX`
+(and the written half below: `UNWRITTEN: planner.state.active.workedMin`); the critic's exit → `rc=0`,
+28 of 28 decoded.  **Gap 3124 is closed** by this.  4. *What it cannot see* is in `sentkeys.py`'s
+header: a writer taking the section under another parameter name, and whether the binary CALLS a
+writer — `add_worked_min` still has no caller in `tm/src` (gap 3043, R3's).
+
+**Gap 3132 — CLOSED as a gate, three keys exempt: nothing asked decoded ⇒ written.**  1. *What.*  The
+sent half asks sent ⇒ decoded and the input half decoded ⇒ read; a key the kernel decodes and no host
+function writes was outside every gate.  REPRODUCED: the kernel decodes `planner.overrides`,
+`state.lastHash` and `state.yesterday` (with `[]`, `id`, `p`) and `planwire.rs` writes none, and
+`overrides.drop` is READ by the day (the active run's `d done` what-if, Planner.lean) and written
+only by the tests of kernel_planner_wire.rs.  2. *Why.*  The halves were built one direction at a time.
+3. *Repair.*  `fields.py`'s WRITTEN half (`written_main`, sharing one ratchet reader, `ratchet_file`,
+with nothing else changed in the sent half's verdicts): every decoded key path is written by the
+codec or is a dated line with an EXIT in `kernel/written-exempt.txt`, which may only shrink (STALE and
+RATCHET as `sent-exempt.txt`).  It holds exactly the three keys the first run found, each with its
+exit.  `check.sh` prints a fourth line under check 13, `every decoded key has a writer`.  Plant: the
+`lastHash` line deleted → `rc=1`, `UNWRITTEN: planner.state.lastHash`.  4. *Its floor.*  "Written by
+the codec" is a floor under "sent by the binary" (gap 3043).
+
+**Gap 3134 — CLOSED: `day.rs`'s `timer_stopped_at` was a second copy of `idle_min_since`'s pairing.**
+1. *What.*  REPRODUCED by reading: the two matched arm for arm, and W-36 track T added the `Pause(t)
+if t < started` arm to both.  The one body difference (a `break` logged without `actual_min`: a
+zero-length span in one, skipped in the other) was not a behaviour difference — a span `[a, a)`
+contains no instant.  2. *Why.*  D61's rule needed the pairing at one instant and copied it.
+3. *Repair.*  `tm_core::log::idle_spans` is the one pairing; `Replay::idle_min_since` sums it
+(clipped to `[started, now]`, summed in the same order) and `timer_stopped_at` asks whether an
+instant lies in it.  4. *Evidence.*  `cli_wall_pause`, `cli_now_worked` and the workspace below.
+
+**Gap 3136 — CLOSED (ledger): "7 worlds" was 7 comparisons.**  REPRODUCED: the land's
+`a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it` compares a frozen
+`wall-on-now` world at its wall's start and twenty minutes in; the land block's "7 worlds compared"
+counted (world, instant) pairs.  The test now prints both — `D61 comparisons: N over M wall-on-now
+class(es)` — and this run's is **7 comparisons over 4 classes** (§4).
+
+**Gap 3137 — CLOSED: the wire's `until` spelled `answerUntil`'s rule twice.**  `CapWire.grantJson`
+(a grant's due) and `CapWire.grantJsonF` (a floor's last day) write the capacity answer's `until` by
+the rule `Planner.answerUntil` states as "the date's one reader", with no theorem between them.
+`PlanWire.the_wire_until_is_answerUntil`: for every answer, the `until` key `grantJsonF` emits is
+`answerUntil`'s date rendered, or `null` for none.
+
+### 2. What was reproduced and is NOT fixed here, by name
+
+**Gap 3000 STANDS — D59 is not met: `hnoimp` is still on all five lifts.**  REPRODUCED: with
+comments stripped, `hnoimp` is a binder of the four lifts (`PlanCheck.lean`, the two from-now and the
+two quiet-day lifts) and the census lift's `subjectOf el .impossible … = false`.  Track K's reason
+stands and this step adds nothing to soften it: a WAITING `[?]` item owed today, on a day with budget
+left, is dropped by step 5 with every other hypothesis true.  The owner's two routes, either of which
+lets the lifts drop it: exempt a `[?]` item from §8.3's "impossible never dropped", or define
+eligibility as step 5's WHOLE filter (the waiting clause, `after:` blocking and contiguity included,
+which is what `slotFitRows` is not — gap 3000's atomic day).  Gap 3130 makes the check the lifts
+carry stronger; it does not change this.
+
+**Gap 3133 — the land commit re-blessed a committed fixture, and its acceptance line left the word
+out.**  1. *What.*  REPRODUCED by diffing `d345766` against `7259a73`:
+`tm/tests/fixtures/fork-4748911-planner-classes.jsonl` changed on 38 of 38 lines — `d60` on all 38,
+`day` on 9 (`idle/home`, `idle/late` ×2, `idle/travel`, `idle/spent`, `wall-on-now/home`,
+`break/lounge`, `interrupted/spent`, `interrupted-block/late`), `shipped` on 8; on those 8 the new
+`shipped` is the old `day` byte for byte, and `wall-on-now/home`'s `shipped` is unchanged.  The land's
+last acceptance bullet read "no snapshot, latency band or corpus re-blessed", dropping "fixture" from
+the brief's rule.  2. *Why it was done.*  D60 is a planner change (P51) and the class comparand must
+outlive the fork, so after R3 the file itself has to hold the fork's day WITH D60's key; no live
+computation can replace it once `planner::plan` is deleted.  3. *Cost.*  The brief's hard rule was
+broken, as a recorded decision (gap 3121), but not by the owner: nothing was lost (the shipped day is
+kept by value), and nothing can be un-blessed without failing `planner_classes`.  **Stated here as
+what it is: a committed differential fixture was re-blessed.**  4. *Clears it.*  The owner ratifies
+the rewrite or names another shape (e.g. `day` kept as the shipped fork and D60's order asserted as a
+permutation of it); left, not reverted.
+
+**Gap 3135 — `tm edit <title> est=` still runs the host's reader and writer.**  1. *What.*
+REPRODUCED on this tree's binary (`repair-w36/drive.sh`): `tm edit Factorio est=zzz` → `tm: invalid
+duration: "zzz"` (the host's `Dur`), `tm edit ^t4 est=zzz` → `kernel refusal: badValue … one reader
+end to end`.  An id-less line never reaches `edit_route` (`if item.has_id()`), so `apply_pair`'s `est`
+arm parses and writes it (the token as typed; the kernel writes an `est:` slot in canonical minutes).
+2. *Why.*  The keyed edit's wire addresses an item by id; D31's title keys reach the loader, not the
+edit op.  3. *Cost.*  Two readers and two writers of one value, split by line kind — §5.3's class.
+The stale doc comment on `edit_route` ("the CLI's own `Dur` grammar still reads it first") is
+corrected here.  4. *Clears it.*  The edit op addressing a title key (D31), or the host refusing
+`est=` on an id-less line; a wire change either way.
+
+**Gap 3138 — ten frozen classes are worlds the shipped binary cannot build.**  1. *What.*
+REPRODUCED: all ten `interrupted/*` and `interrupted-block/*` lines carry `state.interrupt` and no
+`interrupt` event in `world.log` (the generator sets the runtime state's `interrupt`; `log_text` never
+writes the event), while D42's reconcile rebuilds `state.interrupt` from the log, so the binary would
+plan those worlds as not interrupted.  The critic's drive at 08:30: interrupt in `state.json` only →
+the same day as no interrupt; `tm interrupt` logged → a Lost row at 08:15.  2. *Why.*  The class space
+is the generator's closure, not the binary's reachable states; `class_of` reads `state.json`.
+3. *Cost.*  The kernel is compared with the fork on ten requests R3's binary never sends, and the
+interrupted day the binary DOES send (a logged interrupt and its Lost row) is on no frozen day.
+4. *Clears it.*  Before R3: the generator writes the `interrupt` event it sets, `class_of` reads the
+running state the way D42 rebuilds it, and the ten classes are re-drawn — a rewrite of the committed
+comparand, so the owner's decision under gap 3133's rule, not a repair's.
+
+**Gap 3139 — D61's rule lives in Rust, decided by the host's second wall reader.**  1. *What.*
+`day::stop_the_timer_at_walls` reads the day's walls through `Ctx::walls_on`, the Rust reader, while
+P47's half of the same rule is the kernel's, over `Look.wallsOn`; the kernel's only D61 statement
+(Planner.lean's logged-wall-pause law, the critic's Planner.lean:8819) takes a given log and cannot
+tell an automatic pause from a typed one.  No Lean statement "a wall that starts during a block stops the
+timer" exists, so D40, checks 12/13 and the proofs cannot see the rule, and `planner_classes` re-spells
+the span merge inline.  2. *Why.*  Track T wrote the pause at the verb seam, where the log is written.
+3. *Cost.*  Two readers of the calendar's walls decide one day (§5.3).  4. *Clears it.*  The `emit`
+op (D16) answering the pauses a request's walls imply — the kernel deciding, the host appending —
+with the rule stated and proved over `Look.wallsOn`.
+
+**Gap 3140 — a leading estimate past `u32` is a title word to the host and an estimate to the
+kernel.**  1. *What.*  REPRODUCED: `- [ ] 2 9999999999999m Insurance claim for the bike  ^a1` →
+`tm check` `no problems` rc 0; `tm start ^a1` prints the word in the title; after `tm extend 1b` and
+`tm stop` the line is `- [ ] 2 10m Insurance claim for the bike  ^a1` — the host's title changed
+silently, the kernel's `est` op having rewritten the word it reads as the slot.  2. *Why.*  Gap
+2929's bound is at the edit wire (`badValue est`), not the line reader.  3. *Cost.*  A hand-written
+line loses a word.  4. *Clears it.*  One grammar for the slot: the kernel's lead reader bounded at the
+host's width (a `Line.lean` change, re-proved under D5) or `tm check` naming such a line as a fault.
+
+**Gap 3141 — D61's automatic pause is barely visible, and reaches no day-file journal line.**
+REPRODUCED: `start ^t4` 12:20, `tm done` 13:40 inside the 12:50–13:50 meeting → `✓ ^t4 … 30m/60m`
+with nothing about the fifty netted-out minutes; the log's `pause id="t4"` reads as the user's own;
+the day file's journal holds `12:20 start ^t4` and `13:40 done ^t4 30m/60m` and no pause line (a
+typed `tm pause` writes one).  A behaviour change either way (a message, a journal line); the owner's.
+
+**Gap 3142 — after a wall pause `tm plan` draws a Lost row the review counts as 0.**  REPRODUCED at
+14:05: `tm plan` draws `12:50 · ✓ lost 50m … paused` beside the meeting's wall row; `tm review day`
+says `lost 0`.  Gap 3044's drawing (a `paused` Lost row across the meeting) seen from the review's
+side: two surfaces, two readings of one span.  Clears with gap 3044's renderer rule.
+
+**Claims left, as the rule asks:** the D62 two-spellings finding was NOT re-driven here (this
+step's drive looked for `^t3` in the wrong file and printed nothing) and is P54's own row, recorded
+there; the missing D61 pause day is gap 3123 (open); D60's "impossible first among all
+`p = 0`" is the campaign's call gap 3003 and costs gap 3001 — the owner's, both.
+
+### 3. Laws restated
+
+* `PlanCheck.budgetLeft : PlanReq → DayPlan → Bool` became `Eligible → PlanReq → DayPlan → Id →
+  Bool`.  Every statement naming it moves with it: `impossibleKept`, `impossibleKept_iff`,
+  `impossible_kept_from_the_battery`, `impossibleKept_can_fail` (its `hb` at `fun _ _ _ _ => true`
+  and `i`), `impossibleKept_of_no_eligible_impossible_item`, the five lifts' `hnoimp`,
+  `subjectOf`'s `.impossible` arm, `impossibleKept_of_nothing_assigned_iff`,
+  `an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`,
+  `impossible_subject_iff`,
+  `impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left` (the item is
+  `o.out.cand.id`), `impossibleKept_iff_the_owed_items_are_assigned`, `impossibleKept_antitone`.
+  The new `budgetLeft` counts a SUBSET of the old one's rows, so old `true` ⇒ new `true`.  Hence the
+  new `impossibleKept` implies the old (it is STRONGER: it fails on the auditor's day, where the old
+  passed, and passes nowhere the old failed); `impossibleKept_iff` and every `_iff` above are
+  re-proved at the new definition with their shapes unchanged; each lift's `hnoimp` (∀ … →
+  `budgetLeft … = false`) is STRONGER as a hypothesis and its conclusion stronger with it, so neither
+  lift form implies the other — the check was the defect, and the laws follow it rather than being
+  narrowed to keep it (D5).
+* New: `PlanCheck.budgetLeft_mono`, `PlanWire.the_wire_until_is_answerUntil`, and the two
+  `PlannerWit` witnesses of §1.  No goal added to or removed from `Goals.lean`.
+
+### 4. Acceptance, capped
+
+* **D40 (check 9), run in the clone, never the shared tree**: `mutate.py --gate` then `--write`,
+  both passes printing the same verdicts — 8 owed (5 absent, 3 stale): `PlanCheck.budgetLeft`
+  PINNED at `true` and `false` (first at `budgetLeft_mono`, then
+  `a_spent_day_passes_the_impossible_check` / `the_battery_bites_over_a_produced_day`);
+  `PlanCheck.impossibleKept` and `PlanCheck.subjectOf` (bodies changed with the signature) PINNED at
+  both; `PlannerWit.plantT` a LITERAL and PINNED at `0` and `1`, `PlannerWit.onlyAtY9` PINNED at
+  both, each by its witness decided false; `plantedHour` and the two planted days UNFOLDABLE witness
+  fixtures.  Gate after: **417 new or changed, 417 rostered, 0 owed**, 30 pinned by nothing
+  (unchanged); `mutations.txt` +5 rows, 3 replaced; no `.mutate-in-flight` left; the clone's status
+  holds only the synced working changes.
+* **`check.sh`, capped: 14 checks, 17 lines** — build; totality; axiom audit **5,624** theorems
+  (5,620 at `7259a73`; +4: `budgetLeft_mono`, the two witnesses, the `until` law); Negative
+  rejected; FFI 95; corpus 29/37 and 4/5; stage goals 6; check 9 as above; parity P1-P55,
+  next free P56; twins 3,181 bodies, 90 generalisation groups, 0 UNANSWERED; reach 1,185 reachable, 1,201
+  exempt, 0 UNANSWERED; fields 15 of 15; inputs 33 of 37 read, 4 exempt; **sent 28 of 28 decoded**
+  (27 before: `workedMin` now seen on both sides); **written 34 decoded, 28 written, 3 exempt**
+  (new); replay 86 modules.  Its first run failed check 8 on this block's own backticked plant
+  name (fixed; `citations.py` then 46,470 citations, 0 unresolved) — the commit re-runs the whole
+  script and commits only if every check is ok.  `git status --porcelain` unchanged by it.
+* **`cargo test --workspace --no-fail-fast`, THREE runs, capped: 1,587 passed / 0 failed / 11
+  ignored across 93 result lines, each** (load 1.1-3.9), `git status --porcelain` identical before
+  and after each — no proptest seed written.
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9, `planner_classes` 17
+  (**D61 comparisons: 7 over 4 wall-on-now classes**, the logged pause moving the kernel's day on
+  all 7 — `wall-on-now/travel` has no wall after its block's start and is not compared),
+  `cli_wall_pause` 8, `cli_one_estimate` 6, `cli_day` 30, `cli_now_worked` 4; `planner_invariants`
+  24 of 24 (281.8 s); `cli_latency` 6 of 6 (load 1.8-3.7).
+* **The drive** (`repair-w36/drive.sh`, this tree's binary, plan-basic copies): its transcript is
+  §2's evidence for gaps 3135, 3140, 3141 and 3142.
+* No predicate or assertion weakened; no snapshot, fixture, latency band or corpus re-blessed; no
+  memory bound, `maxHeartbeats` or `maxRecDepth` raised (the two new witnesses use the file's own
+  `maxRecDepth 400000`, probed first at 8 GB with `timeout 120`: 1.6 s); no external dependency;
+  no parity number issued; every exemption file the same size or smaller but the NEW
+  `written-exempt.txt` (three lines, born with the gate that reads it).

@@ -28,12 +28,26 @@ became one.  This module produces the two sets of KEY PATHS that answer it:
     arm or `let` that binds it and into every definition that binding is
     passed to (by position, a list's elements through `.mapM`/`.zipIdx.mapM`).
 
+  * SINCE THE W-36 REPAIR (README gap 3131) the host side also follows every
+    codec function that takes the section as a parameter named `<section>` of
+    type `&mut Value` -- a helper the caller applies after `<section>_json`,
+    as `add_worked_min` writes `state.active.workedMin` -- through
+    `.get_mut("k")` and `.and_then(|v| v.get_mut("k"))` chains; and the kernel
+    side follows a value handed to a call written as an anonymous
+    constructor's field (`⟨.., ← readOptWorked sec⟩`), which it read as the
+    argument `sec⟩` and lost.  The audit renamed the helper's key and the gate
+    stayed green; it is UNREAD now.
+
 WHAT IT CANNOT SEE, declared:
   * a key assembled from a variable, or an object built by a helper outside
     the codec module, on the host side; the ROOT of the section is the module
     function `<section>_json`, so an encoder that writes the section some other
     way is not read at all (the loud direction: nothing to compare is a
-    failure in `fields.py`, never a pass).
+    failure in `fields.py`, never a pass).  A writer that takes the section
+    under any other parameter name (`req: &mut Value` writing
+    `req["planner"]`) is not found, and a found writer's chain link it cannot
+    read is a complaint.  Whether the BINARY calls a writer is not asked:
+    `add_worked_min` has no caller in `tm/src` (README gap 3043).
   * on the kernel side, a value that reaches a reader through a structure
     field (`parts.sec`) rather than a bound name: its reads are not
     attributed, and a host key under it reports UNREAD -- loud.  A binding the
@@ -216,6 +230,37 @@ def rust_fns(toks):
     return out
 
 
+def mut_value_params(toks):
+    """`{fn: [param]}`: the parameters typed `&mut Value` of every `fn` outside a
+    test item."""
+    return {f: [p for p, ty in ps if ty[:3] == ["&", "mut", "Value"]]
+            for f, ps in param_types(toks).items()}
+
+
+def param_types(toks):
+    """`{fn: [(param, [type tokens])]}` of every `fn` outside a test item."""
+    tests = test_spans(toks)
+    out = {}
+    for i in range(len(toks) - 2):
+        if toks[i].kind == "ident" and toks[i].val == "fn" and toks[i + 1].kind == "ident" \
+                and not any(a <= i <= b for a, b in tests):
+            k = i + 2
+            while k < len(toks) and not (toks[k].kind == "punct" and toks[k].val == "("):
+                k += 1
+            if k >= len(toks):
+                continue
+            pclose = close_of(toks, k)
+            ps = []
+            for part in split_top(toks[k + 1:pclose]):
+                v = [t.val for t in part]
+                if v[:1] == ["mut"]:
+                    v = v[1:]
+                if len(v) >= 3 and v[1] == ":":
+                    ps.append((v[0], v[2:]))
+            out[toks[i + 1].val] = ps
+    return out
+
+
 class Link:
     """A value that is another encoder function's output."""
     def __init__(self, fn):
@@ -238,7 +283,15 @@ class RustEncoder:
     """The encoder functions of one Rust module and what each one writes."""
 
     def __init__(self, text):
-        self.fns = rust_fns(rust_tokens(text))
+        toks = rust_tokens(text)
+        self.fns = rust_fns(toks)
+        self.mut_value = mut_value_params(toks)
+        # A parameter is a CALLER'S JSON VALUE only when its type mentions `Value`;
+        # any other is a Rust scalar or record the function reads fields of, and
+        # `json!(worked_min)` over a `u32` writes a leaf, not a value to be placed
+        # (W-36 repair, README gap 3131).
+        self.scalar_params = {f: {p for p, ty in ps if "Value" not in ty}
+                              for f, ps in param_types(toks).items()}
         self.complaints = []
         self._out = {}
 
@@ -299,7 +352,8 @@ class RustEncoder:
             return self._out[name]
         self._out[name] = None  # a cycle reads as scalar, and is not expected
         params, body = self.fns[name]
-        env = {p: Param(p) for p in params}
+        scalars = self.scalar_params.get(name, set())
+        env = {p: Param(p) for p in params if p not in scalars}
         roots = {}
         i, n = 0, len(body)
         while i < n:
@@ -329,14 +383,16 @@ class RustEncoder:
                 x = body[i + 4].val
                 src = body[i + 7] if i + 7 < n else None
                 if src is not None and src.kind == "ident" and src.val in env:
-                    tail = [b.val for b in body[i + 8:i + 12]]
-                    if tail[:3] == [".", "get_mut", "("] and i + 11 < n and body[i + 11].kind == "str":
+                    keys = self.get_mut_chain(body, i + 8, name)
+                    if keys:
                         base = env[src.val]
                         if isinstance(base, Param):
                             base = roots.setdefault(src.val, {})
                             env[src.val] = base
                         if isinstance(base, dict):
-                            env[x] = base.setdefault(body[i + 11].val, {})
+                            for k in keys:
+                                base = base.setdefault(k, {})
+                            env[x] = base
                     elif isinstance(env[src.val], Param):
                         env[x] = env[src.val]
             # `x.insert("k".to_string(), <expr>)`
@@ -364,6 +420,48 @@ class RustEncoder:
             out = {"__param__" + p: tree for p, tree in roots.items()} if out is None else out
         self._out[name] = out
         return out
+
+    def get_mut_chain(self, body, j, fn):
+        """The keys of `.get_mut("a")` followed by any number of
+        `.and_then(|v| v.get_mut("b"))` and `.and_then(Value::as_object_mut)`,
+        read from token `j`: `planwire::add_worked_min`'s path to
+        `state.active` (W-36 repair, README gap 3131).  A link of the chain this
+        reader cannot read is a complaint, never a silently shorter path."""
+        vals = [t.val for t in body]
+        keys = []
+        while j + 2 < len(body) and vals[j] == ".":
+            if vals[j + 1] == "get_mut" and vals[j + 2] == "(" and j + 4 < len(body) \
+                    and body[j + 3].kind == "str" and vals[j + 4] == ")":
+                keys.append(body[j + 3].val)
+                j += 5
+                continue
+            if vals[j + 1] == "and_then" and vals[j + 2] == "(":
+                c = close_of(body, j + 2)
+                inner = body[j + 3:c]
+                iv = [t.val for t in inner]
+                got = [inner[k + 2].val for k in range(len(inner) - 3)
+                       if iv[k] == "get_mut" and iv[k + 1] == "(" and inner[k + 2].kind == "str"
+                       and iv[k + 3] == ")"]
+                if len(got) == 1:
+                    keys.append(got[0])
+                elif iv not in (["Value", ":", ":", "as_object_mut"], ["Value", ":", ":", "as_array_mut"]):
+                    self.complaints.append("UNPLACEABLE: `%s` walks into its value through an "
+                                           "`.and_then(..)` this reader cannot read" % fn)
+                    return []
+                j = c + 1
+                continue
+            break
+        return keys
+
+    def writers(self, section):
+        """The codec's OTHER writers into the section: every function outside a
+        test with a parameter named `section` of type `&mut Value` -- a helper
+        the caller applies to the section after `<section>_json` built it, as
+        `add_worked_min` is (W-36 repair, README gap 3131; the audit renamed its
+        key and the gate stayed green).  Found by the parameter's name and type,
+        the codec's own convention (`add_batch_max_min(capacity: &mut Value ..)`
+        writes into the capacity section, which this half does not ask)."""
+        return sorted(f for f, ps in self.mut_value.items() if section in ps)
 
     def depth0(self, toks, a, b):
         depth = 0
@@ -405,6 +503,16 @@ class RustEncoder:
                                        "the module has no `%s` to read it off" % (fn, key, name))
                 v = None
         target[key] = v
+
+    def resolve(self, v, seen=()):
+        """A tree with every `Link` resolved."""
+        if isinstance(v, Link):
+            if v.fn in seen:
+                return None
+            return self.resolve(self.output(v.fn), seen + (v.fn,))
+        if isinstance(v, dict):
+            return {k: self.resolve(x, seen) for k, x in v.items()}
+        return None
 
     def tree(self, name, seen=()):
         """`name`'s output with every `Link` resolved."""
@@ -449,7 +557,26 @@ def host_paths(codec_text, section):
     tree = enc.tree(root)
     if not isinstance(tree, dict) or not tree:
         return [], enc.complaints + ["NO ENCODER: `%s` writes no object this reader can see" % root]
+    for w in enc.writers(section):
+        if w == root:
+            continue
+        out = enc.output(w)
+        sub = out.get("__param__" + section) if isinstance(out, dict) else None
+        if not isinstance(sub, dict) or not sub:
+            enc.complaints.append("UNPLACEABLE: `%s` takes the %s section as `&mut Value` and "
+                                  "writes nothing this reader can see" % (w, section))
+            continue
+        merge(tree, enc.resolve(sub, (w,)))
     return sorted(set(flatten(tree, section))), enc.complaints
+
+
+def merge(into, tree):
+    """`tree`'s keys into `into`, recursively."""
+    for k, v in tree.items():
+        if isinstance(v, dict) and isinstance(into.get(k), dict):
+            merge(into[k], v)
+        elif k not in into or into[k] is None:
+            into[k] = v
 
 
 # ---------------------------------------------------------------------------
@@ -637,7 +764,13 @@ class LeanReader:
     def calls(self, d, env):
         """Every definition a bound value is handed to, by position; a list's
         elements through `xs.mapM (F ..)` and `xs.zipIdx.mapM (fun p => F .. p.1 ..)`."""
-        call = re.compile(r"(?<![\w'.])(%s)((?:[ \t]+(?:[^\s()\[\]]+|\([^()]*\)))+)" % QIDENT)
+        # An argument token stops at `⟨`, `⟩` and `,` as well as at a bracket: a call
+        # written as an anonymous constructor's field -- `pure ⟨.., ← readOptWorked sec⟩`,
+        # `PlanWire.readState`'s sixth field -- read `sec⟩` as its argument, so the value
+        # was never followed and `state.active.workedMin` was decoded by no reader this
+        # module could see (W-36 repair, README gap 3131: the auditor's gap-3124 exit
+        # FAILED check 13 on a key the kernel reads).
+        call = re.compile(r"(?<![\w'.])(%s)((?:[ \t]+(?:[^\s()\[\]\u27e8\u27e9,]+|\([^()]*\)))+)" % QIDENT)
         for var, bs in list(env.items()):
             for path, kind, a, b in bs:
                 seg = d.body[a:b]
@@ -661,7 +794,7 @@ class LeanReader:
                     m = call.match(seg, h.start())
                     if not m:
                         continue
-                    args = re.findall(r"\([^()]*\)|[^\s()\[\]]+", m.group(2))
+                    args = re.findall(r"\([^()]*\)|[^\s()\[\]\u27e8\u27e9,]+", m.group(2))
                     if var not in args:
                         continue
                     for f in self.resolve(fname, d.file):
