@@ -59,6 +59,64 @@ fn est_dur(minutes: u32, block_min: u32) -> Dur {
     }
 }
 
+/// **The running block's estimate, written by the kernel's `est` op** — the
+/// owner's **D62** (README gaps 2926 and 2928), a registered divergence from fork 4748911.
+///
+/// `tm extend`, `tm stop` and `tm done --partial` used to write
+/// `line.set_token("est", …)` themselves: an `est:` token BESIDE a leading
+/// estimate, so `- [>] 2 30m Insurance claim … ^a1` became `… 30m … est:1b
+/// ^a1` — two estimates on one line, the row printing one and the planner
+/// reading the other, which is D56's founding bug on three more verbs. D56's
+/// one-estimate rule reaches them now through the ONE path `tm edit est=`
+/// takes: the kernel's `est` op (`Boundary.estAsWritten`, written by
+/// `Field.setRemaining`), carrying the value AS TYPED — the verb's own spelling,
+/// [`est_dur`] (whole blocks when they divide, else the compact form) — and the
+/// block length its `b` means. So a leading estimate that is the slot is
+/// rewritten in place (`30m` → `1b`) and gains no token; a line whose slot is an
+/// `est:` token, or that carries no estimate, gets the token in canonical
+/// minutes, D49's settled rendering — the bytes `tm edit est=` writes there.
+///
+/// A value past the host's `u32` is not spelled by [`est_dur`] (it cannot hold
+/// it): it is sent in minutes and the kernel refuses it by name (`badValue
+/// est`, gap 2929) — the one reader decides, and nothing has been written yet.
+///
+/// Returns the line as the kernel wrote it, parsed, so a verb that also moves
+/// the box (`stop`, `done --partial`) edits the kernel's bytes and never a
+/// stale copy — writing the pre-edit line back over them would undo the
+/// estimate, so an answer without the line is an error, not a fallback. The box
+/// is §4.1 positional surgery the wire does not carry, and it is the only part
+/// of those lines the host still writes.
+fn write_estimate(
+    ctx: &Ctx,
+    verb: &str,
+    id: &Id,
+    minutes: u64,
+) -> Result<tm_core::grammar::ItemLine, CliError> {
+    let block_min = ctx.block_min();
+    let value = match u32::try_from(minutes) {
+        Ok(m) => est_dur(m, block_min).to_string(),
+        Err(_) => format!("{minutes}m"),
+    };
+    let applied = super::kernel_bridge::apply(
+        ctx,
+        verb,
+        &[super::kernel_bridge::Cmd::Est {
+            id: id.to_string(),
+            value,
+            block_min,
+        }],
+    )?;
+    applied
+        .line_of(id.as_str())
+        .and_then(|(_, text)| tm_core::grammar::ItemLine::parse(&text).ok())
+        .ok_or_else(|| {
+            CliError::msg(format!(
+                "the kernel wrote {}'s estimate but its answer carries no such line",
+                id.token()
+            ))
+        })
+}
+
 /// Parse a duration argument (`20m`, `1b`, `1h30m`).
 fn dur(arg: &str, block_min: u32) -> Result<Dur, CliError> {
     Ok(Dur::parse(arg, block_min)?)
@@ -668,22 +726,31 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         let a = active.as_ref().expect("an active block");
         (a.est_min, worked_min(&ctx, ctx.at(a.started)))
     };
+    let stateless = item.as_ref().is_some_and(is_stateless);
+    // **D62**: a partial's remainder is written by the kernel's `est` op FIRST —
+    // before the break is ended or the box is moved — so a refusal (a tabbed
+    // line, a value past the host's width) leaves nothing written at all.
+    let mut remaining_min = None;
+    let mut written = None;
+    if args.partial && item.is_some() && !stateless {
+        let left = ctx
+            .tree
+            .remaining(&id)
+            .unwrap_or(est_min)
+            .saturating_sub(actual_min)
+            .max(MIN_REMAINING_MIN);
+        written = Some(write_estimate(&ctx, "done", &id, u64::from(left))?);
+        remaining_min = Some(left);
+    }
     end_break(&mut ctx)?;
 
-    let stateless = item.as_ref().is_some_and(is_stateless);
-    let mut remaining_min = None;
     if let Some(item) = item.as_ref().filter(|_| !stateless) {
-        let mut line = ctx.line(&id)?;
+        let mut line = match written {
+            Some(line) => line,
+            None => ctx.line(&id)?,
+        };
         if args.partial {
-            let left = ctx
-                .tree
-                .remaining(&id)
-                .unwrap_or(est_min)
-                .saturating_sub(actual_min)
-                .max(MIN_REMAINING_MIN);
             line.set_state(State::Todo)?;
-            line.set_token("est", &est_dur(left, ctx.block_min()).to_string());
-            remaining_min = Some(left);
         } else if matches!(item.recur, Recur::OnEvent { .. }) {
             // §5.1: an on-event item goes to `[?]` with `waiting:<today>`.
             recur::on_done_waiting(item, ctx.today).apply(&mut line)?;
@@ -789,16 +856,17 @@ pub fn extend(g: &Globals, args: &super::ExtendArgs) -> Result<i32, CliError> {
         None => block_min,
     };
     let id = active.id.clone();
-    // §1.3: a line the other writers removed costs the `est:` rewrite, not
-    // the block.
-    if let Some(item) = ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
+    // §1.3: a line the other writers removed costs the estimate's rewrite, not
+    // the block. **D62**: the kernel's `est` op writes it — one estimate on the
+    // line, the value as typed (`write_estimate`) — and the sum is taken wide,
+    // so a remainder near the host's `u32` is refused by name rather than
+    // wrapped.
+    if ctx.tree.get(&id).is_some_and(|i| !is_stateless(i)) {
         let remaining = ctx.tree.remaining(&id).unwrap_or(0);
-        let mut line = item.line().clone();
-        line.set_token("est", &est_dur(remaining + by, block_min).to_string());
-        ctx.write_line(&id, &line)?;
+        write_estimate(&ctx, "extend", &id, u64::from(remaining) + u64::from(by))?;
     }
 
-    let est_min = active.est_min + by;
+    let est_min = active.est_min.saturating_add(by);
     ctx.state.active = Some(ActiveBlock { est_min, ..active });
     ctx.save_state()?;
     ctx.append_event(Event::Extend {
@@ -844,9 +912,6 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
     let id = active.id.clone();
     let started = ctx.at(active.started);
     let worked = worked_min(&ctx, started);
-    // §11's break integrity: a break still running when the block stops is
-    // over too, and its `break` event has to reach the log.
-    end_break(&mut ctx)?;
     let remaining = ctx
         .tree
         .remaining(&id)
@@ -854,10 +919,18 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         .saturating_sub(worked)
         .max(MIN_REMAINING_MIN);
 
-    if let Some(item) = ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
-        let mut line = item.line().clone();
+    // **D62**: the remainder is written by the kernel's `est` op FIRST, so a
+    // refusal leaves nothing written — not the break's end, not the box. The
+    // box moves on the line the kernel returned (`write_estimate`).
+    let written = match ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
+        Some(_) => Some(write_estimate(&ctx, "stop", &id, u64::from(remaining))?),
+        None => None,
+    };
+    // §11's break integrity: a break still running when the block stops is
+    // over too, and its `break` event has to reach the log.
+    end_break(&mut ctx)?;
+    if let Some(mut line) = written {
         line.set_state(State::Todo)?;
-        line.set_token("est", &est_dur(remaining, ctx.block_min()).to_string());
         ctx.write_line(&id, &line)?;
     }
 

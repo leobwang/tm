@@ -7246,3 +7246,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanWire.respondPlanner_answers_an_empty_request
 #print axioms Tm.PlanWire.callPlanner_is_the_emitted_answer
 #print axioms Tm.EditVal.rendered_is_the_tokens_bytes
+
+-- =====================================================================
+-- APPENDED 2026-09-27: stage 6 W-36 TRACK T (worktree `w36-t`) -- README gap 2929: an
+-- estimate's value has ONE reader on the wire, bounded by `Look.maxPlanMinutes`.
+-- =====================================================================
+#print axioms Tm.parseCmd_refuses_an_estimate_past_the_hosts_width
+#print axioms Tm.parseCmd_reads_an_estimate_at_the_hosts_width
+#print axioms Tm.the_keyed_est_edit_reads_as_the_est_op

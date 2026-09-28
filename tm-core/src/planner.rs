@@ -1871,11 +1871,16 @@ impl<'a> Planner<'a> {
         }
 
         // §11 plan honesty: what the day committed to, over what it can spend.
+        // **Saturating** (W-36 track T, README gap 2929's residue): an estimate
+        // at the host's `u32` width is legal on the edit wire, and two such
+        // commitments summed with `+` panicked a debug build here (`tm plan`
+        // and `tm now` exited 101 once the kernel stopped faulting first) and
+        // wrap in a release one. Identical on every sum that fits.
         let committed: u32 = groups
             .iter()
             .filter(|g| g.members.iter().any(|m| assigned.contains(&cands[*m].id)))
             .map(|g| g.commit_min)
-            .sum();
+            .fold(0u32, u32::saturating_add);
         // `budget` comes from `state.json`, which is hand-editable: saturate
         // rather than panic on a nonsense value (§10.2).
         let budget_min = remaining_budget.saturating_mul(self.cfg.block_min());

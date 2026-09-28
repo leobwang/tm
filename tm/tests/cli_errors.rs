@@ -47,12 +47,21 @@ fn the_human_failure_is_unchanged() {
 fn a_rejected_value_names_what_and_the_value() {
     // §4.1's grammar refuses `est=zzz`; the document says which field and
     // which text, the two things a caller wants to fix.
+    //
+    // **A behaviour row since W-36 (README gap 2929).** The host used to read
+    // `est=` with its own `Dur` grammar before the kernel read it again — two
+    // readers of one value — and this document was the host's (`kind:
+    // invalid`, `what: duration`). The kernel is the one reader now, so the
+    // refusal is the kernel's `badValue est`, the same document every other
+    // key's bad value already produced (`due=notadate`, W-27's row); the host
+    // puts the text it sent beside the key, so both things are still named.
     let tm = Tm::new();
     let out = tm.run(&["--json", "edit", "^t3", "est=zzz"]);
     assert_eq!(out.code, 1, "{}{}", out.stdout, out.stderr);
     let doc = err_doc(&out.stderr);
-    assert_eq!(doc["kind"], "invalid");
-    assert_eq!(doc["detail"]["what"], "duration");
+    assert_eq!(doc["kind"], "kernel");
+    assert_eq!(doc["detail"]["refusal"], "badValue");
+    assert_eq!(doc["detail"]["key"], "est");
     assert_eq!(doc["detail"]["value"], "zzz");
 }
 

@@ -1331,12 +1331,12 @@ def readOpBlockMin (j : JVal) : Except String (Option Nat) := do
   | some _ => throw "badBlockMin"
 
 /-- **D56's `est` op: the value AS WRITTEN** — `{"op":"est","id":…,"value":"20b","blockMin":60}`,
-what the host sends since W-35.  The value is read by the kernel's own duration grammar
-(`ndDur?`, which is the loader's `parseDurND`), so `tm edit est=` has one reader of its value;
-the op's `blockMin` is what the value's `b` means (`readOpBlockMin`), required only when the
-value is in blocks (`estBlockMinAbsent`) — a value in minutes or hours reads none.  The edit is
-`EditVal.estAt`: the value as written into a leading estimate that is the slot, its canonical
-minutes into an `est:` token — the bytes the `min` form always wrote there.  `min` beside
+what the host sends since W-35.  The value is read by the kernel's own duration grammar (`ndDur?`,
+the loader's `parseDurND`) — since W-36 the ONE reader of `tm edit est=` (the host's `u32` pre-parse
+is gone), its minutes bounded by `Look.maxPlanMinutes` (`badValue est`; README gap 2929, W-36 note
+at the end of this file); the op's `blockMin` is what the value's `b` means (`readOpBlockMin`),
+required only in blocks (`estBlockMinAbsent`).  The edit is `EditVal.estAt`: the value as written
+into a leading estimate that is the slot, its canonical minutes into an `est:` token.  `min` beside
 `value` is refused (`estValueAndMin`) rather than read one way or the other (§5.6). -/
 def estAsWritten (j : JVal) (w : List Char) : Except String EditVal := do
   if (← jget j "min").isSome then throw "estValueAndMin"
@@ -1346,7 +1346,7 @@ def estAsWritten (j : JVal) (w : List Char) : Except String EditVal := do
     let bm ← readOpBlockMin j
     match d.val, bm with
     | .simple _ .blocks, none => throw "estBlockMinAbsent"
-    | _, _ => return EditVal.estAt d (bm.getD 0)
+    | _, _ => if d.val.minutes (bm.getD 0) ≤ Look.maxPlanMinutes then return EditVal.estAt d (bm.getD 0) else throw "badValue est"
 
 def parseCmd (j : JVal) : Except String ReqCmd := do
   let op ← getStr j "op"
@@ -1356,7 +1356,7 @@ def parseCmd (j : JVal) : Except String ReqCmd := do
   | "est"  =>
     let i ← getStr j "id"
     match ← jget j "value" with
-    | none          => return .est i (← getNat j "min")
+    | none          => (getNat j "min").bind fun m => if m ≤ Look.maxPlanMinutes then pure (.est i m) else throw "badValue est"
     | some (.str w) => return .edit i (← estAsWritten j w)
     | some _        => throw "String expected"
   | "demote" =>
@@ -1397,7 +1397,7 @@ def parseCmd (j : JVal) : Except String ReqCmd := do
       if h : keyEditable k = true then
         if vs.isEmpty then
           return .unset i ⟨k, h⟩
-        else
+        else if k = .est then return .edit i (← estAsWritten j vs) else  -- one est reader (W-36)
           match editValOf k vs with
           | some v => return .edit i v
           | none   => throw s!"badValue {String.ofList ks}"
@@ -12871,5 +12871,77 @@ theorem runCapP_without_a_capacity_section_hands_out_no_parts :
      | .ok (_, none) => true
      | _ => false) = true := by
   decide
+
+/-! ## W-36 track T: an estimate's value has ONE reader on the wire, bounded (README gap 2929)
+
+Until W-36 `tm edit est=` had two readers of its value.  The host ran its own `Dur` grammar in
+`u32` first and the kernel read the value again as a `Nat` (`estAsWritten`, over `ndDur?`): so
+`est=4294967296m` was refused by the HOST, `est=4294967295m` was written, and `tm plan` then
+answered `kernel fault: capacity response: need` — the capacity answer's `need`, `⌈remaining ×
+1.3⌉`, had outgrown the host's `u32` decode.  One plausible keystroke bricked `tm plan` with a
+fault labelled a bug, and the kernel would have written any wider value a host sent unguarded.
+
+The host's pre-parse is deleted (`tm/src/cli/items.rs`) and this module is the one reader: every
+est reader of the wire — the value form (`estAsWritten`), the `min` form and the keyed edit's
+`est` (which IS `estAsWritten` now, `the_keyed_est_edit_reads_as_the_est_op`) — refuses a value
+whose minutes at the op's block length pass `Look.maxPlanMinutes` (fork `u32`; `CapWire.maxRemaining`
+is that definition, the bound the capacity wire already puts on `remaining`), by the value's own
+name, `badValue est`.  **No bound is minted**: the comparison reads the one that exists.  The host
+decodes the answer's `need` at the width that holds it (`tm-core/src/planwire.rs`, `prio_of`).
+Both halves of §5.8 are below: the refusal bites past the bound, and the bound itself is read. -/
+
+/-- **An estimate past the host's width is refused by name, by every est reader of the wire**
+(W-36 track T, README gap 2929).  `4294967296m`, `71582789h` (4,294,967,340 minutes) and
+`71582789b` at a sixty-minute block each pass `Look.maxPlanMinutes`, and each is `badValue est` —
+through the value form, the `min` form and the keyed edit alike. -/
+theorem parseCmd_refuses_an_estimate_past_the_hosts_width :
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("value".toList, .str "4294967296m".toList)]) = .error "badValue est" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("value".toList, .str "71582789h".toList)]) = .error "badValue est" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("value".toList, .str "71582789b".toList), ("blockMin".toList, .num 60)])
+      = .error "badValue est" ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("min".toList, .num 4294967296)]) = .error "badValue est" ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "a1".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "4294967296m".toList)])
+      = .error "badValue est" :=
+  ⟨rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **…and the bound itself is read** (§5.8: the check does not over-bite): `4294967295m` and
+`71582788h` (4,294,967,280 minutes) are estimates the host's grammar reads, so each op reads them. -/
+theorem parseCmd_reads_an_estimate_at_the_hosts_width :
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("value".toList, .str "4294967295m".toList)])
+      = .ok (.edit "a1".toList
+          (.est ⟨.simple 4294967295 .minutes, rfl⟩ ⟨.simple 4294967295 .minutes, rfl⟩)) ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("value".toList, .str "71582788h".toList)])
+      = .ok (.edit "a1".toList
+          (.est ⟨.simple 71582788 .hours, rfl⟩ ⟨.simple 4294967280 .minutes, rfl⟩)) ∧
+    parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "a1".toList),
+        ("min".toList, .num 4294967295)]) = .ok (.est "a1".toList 4294967295) :=
+  ⟨rfl, rfl, rfl⟩
+
+/-- **The keyed edit's `est` is the `est` op's value reader** (W-36): one JSON value reads to one
+edit through either op — `2h` is the leading slot's `2h` and a token's `120m` both ways, and a
+value in blocks needs the op's `blockMin` both ways (`estBlockMinAbsent`).  Until W-36 the keyed
+edit read `2h` as `est:2h` on a token and `20b` with no block length at all: a second reader of
+one value, beside the one the host sends. -/
+theorem the_keyed_est_edit_reads_as_the_est_op :
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "x3".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "2h".toList)])
+      = parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "2h".toList)]) ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "x3".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "20b".toList),
+        ("blockMin".toList, .num 60)])
+      = parseCmd (.obj [("op".toList, .str "est".toList), ("id".toList, .str "x3".toList),
+        ("value".toList, .str "20b".toList), ("blockMin".toList, .num 60)]) ∧
+    parseCmd (.obj [("op".toList, .str "edit".toList), ("id".toList, .str "x3".toList),
+        ("key".toList, .str "est".toList), ("value".toList, .str "20b".toList)])
+      = .error "estBlockMinAbsent" :=
+  ⟨rfl, rfl, rfl⟩
 
 end Tm

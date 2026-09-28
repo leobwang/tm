@@ -505,8 +505,8 @@ ca0c53804da6 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOverrunBreakRequ
 db258ba65a19 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOvertimeRequest unfoldable no Inhabited PlanReq
 2d9b9bb21135 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theWallOnNowRequest unfoldable no Inhabited PlanReq
 c72d1649fe27 TmKernel/TmKernel/Boundary.lean Tm.applyCmd unfoldable no Inhabited (Except KErr WfPlan)
-c55421ce1166 TmKernel/TmKernel/Boundary.lean Tm.estAsWritten default Boundary.lean:5303 parseCmd_reads_the_est_value_as_written also Boundary.lean:5322 parseCmd_refuses_est_value_variants
-585032d290c4 TmKernel/TmKernel/Boundary.lean Tm.parseCmd default Boundary.lean:1678 parseCmd_rejects_add_title_variants also Boundary.lean:5277 parseCmd_rejects_edit_variants
+a552ee3b4539 TmKernel/TmKernel/Boundary.lean Tm.estAsWritten default Boundary.lean:5277 parseCmd_rejects_edit_variants also Boundary.lean:5303 parseCmd_reads_the_est_value_as_written
+947f3a5bd559 TmKernel/TmKernel/Boundary.lean Tm.parseCmd default Boundary.lean:1678 parseCmd_rejects_add_title_variants also Boundary.lean:5277 parseCmd_rejects_edit_variants
 b168a1cf4a3c TmKernel/TmKernel/Boundary.lean Tm.readOpBlockMin default Boundary.lean:5303 parseCmd_reads_the_est_value_as_written also Boundary.lean:5322 parseCmd_refuses_est_value_variants
 fe051daf13d0 TmKernel/TmKernel/Cmd.lean Tm.EditVal.estAt unfoldable no Inhabited EditVal
 ac1a8a4ad6a6 TmKernel/TmKernel/Cmd.lean Tm.EditVal.key default Cmd.lean:1202 setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate also Cmd.lean:1307 editValOf_key

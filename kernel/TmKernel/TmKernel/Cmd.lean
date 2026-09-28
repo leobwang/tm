@@ -169,9 +169,9 @@ def setLead (w : List Char) (r : RawItem) : RawItem :=
 phase 1 read a leading estimate.  (`viewRemainingDur` reads `est:` first, else this.) -/
 def leadIsTheSlot (r : RawItem) : Bool := !hasKeyTok .est r && (estLeadOf r).isSome
 
-/-- **`tm edit ^id est=`, D56.**  `lead` is written where the leading estimate is the slot —
-as written, its unit kept — and `key` everywhere else: into the `est:` token the line carries,
-or into a new one before the `^id` (`setEst`, the key setter, unchanged). -/
+/-- **`tm edit ^id est=`, D56.**  `lead` is written where the leading estimate is the slot — AS TYPED,
+the value's own spelling, never the line's old unit (`2h` edited `90m` reads `90m`: D62, gap 2928) — and
+`key` everywhere else: the `est:` token, or a new one before the `^id` (`setEst`).  D62: also `tm extend`/`stop`/`done --partial`'s. -/
 def setRemaining (lead key : Dur) (r : RawItem) : RawItem :=
   if leadIsTheSlot r then setLead (renderDur lead) r else setEst key r
 
