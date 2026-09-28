@@ -75,6 +75,7 @@ fn the_kernel_plans_every_generated_class_the_fork_planned() {
     assert!(t.p45_shipped_over > 0, "no frozen break day shows the shipped fork planning over the break: {t:?}");
     assert!(t.p46 > 0, "no P46 comparand day: {t:?}");
     assert!(t.p47 > 0, "no P47 comparand day: {t:?}");
+    assert!(t.p51 > 0, "no P51 comparand day: D60's order is asserted on no frozen day: {t:?}");
     assert!(t.whatifs > 0 && t.whatif_ids > 0, "no what-if with an id in it was compared: {t:?}");
     assert!(t.day.break_rows_551 > 0, "gap 551's class counted no row: {t:?}");
     assert!(t.day.mult_rows_550 > 0, "gap 550's class counted no row: {t:?}");
@@ -378,7 +379,7 @@ use chrono::DateTime;
 use std::collections::BTreeMap;
 use tm_core::dayplan::DayPlan;
 use tm_core::planner::{self, PlanOverrides};
-use tm_core::priority::Prio;
+use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::RuntimeState;
 
 /// The fork's input for a stored world and a state.
@@ -459,14 +460,76 @@ fn p47_pause(b: &Built, day: &mut DayPlan) -> bool {
     hit
 }
 
-/// **The fork's answers for one stored world**: the shipped day, the D57
-/// comparand with its two flags, and on a running-block day the two what-ifs —
-/// `w35_fork_plan` and the W-34 arm's what-if, over the kernel's grants.
+/// **The order the request carries the candidates in** — `kernel_capacity::
+/// send_order`, the fork's `priority::compute` sort — which is the kernel's
+/// REQUEST POSITION, D60's tie-break after `until`. The same function as
+/// `planner_invariants`' `send_order` (W-36 track K); both are fork-comparand
+/// code and leave with the fork at R3 (README gap 3122).
+fn send_order(cands: &[Candidate]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..cands.len()).collect();
+    order.sort_by(|&a, &b| {
+        let (ca, cb) = (&cands[a], &cands[b]);
+        (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
+            .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
+    });
+    order
+}
+
+/// **P51, by its PROPERTY, in the fork** (owner D60; W-36 land, README gap
+/// 3121 — track H's gap 3085): a `p = 0` answer with a positive shortfall — the
+/// kernel's `Planner.Ranked.imp` condition, read off the KERNEL's own §7 answer
+/// for that id — is ranked by its `until` and then its request position, before
+/// every other `p = 0` answer. Both fork sorts (`sorted_candidates`,
+/// `build_groups`) read only `root_order`/`own_order` of a `with_ranking` day,
+/// so the fork runs D60's key when those two fields are rewritten and nothing
+/// else is: an impossible tie gets `(0, until)` and `(0, position)`, every other
+/// candidate's root moves one file down (a uniform shift, which keeps the fork's
+/// order among them). `planner_invariants`' `w36_d60_cands` is the same rule;
+/// this one finds the answer by id rather than by index.
+fn d60_cands(cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
+    let mut pos = vec![0usize; cands.len()];
+    for (k, &i) in send_order(cands).iter().enumerate() {
+        pos[i] = k;
+    }
+    cands
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let mut d = c.clone();
+            let tie = prios.iter().find(|p| p.id == c.id).filter(|p| p.p == 0 && p.shortfall_min_exact.num > 0);
+            match tie {
+                Some(p) if !c.is_wall => {
+                    let until = p.until.map_or(0, |u| usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0));
+                    d.root_order = (0, until);
+                    d.own_order = (0, pos[i]);
+                }
+                _ => d.root_order = (c.root_order.0.saturating_add(1), c.root_order.1),
+            }
+            d
+        })
+        .collect()
+}
+
+/// **A P51 day**: D60's key moves the fork's §7.4 order.
+fn is_p51(cands: &[Candidate], prios: &[Prio]) -> bool {
+    let dvec = d60_cands(cands, prios);
+    let a: Vec<&str> = priority::sorted_candidates(prios, cands).iter().map(|c| c.id.as_str()).collect();
+    let b: Vec<&str> = priority::sorted_candidates(prios, &dvec).iter().map(|c| c.id.as_str()).collect();
+    a != b
+}
+
+/// **The fork's answers for one stored world**: the shipped day, the comparand
+/// (D57's P46/P47 and, since the W-36 land step, D60's P51 applied by their
+/// properties) with its flags, and on a running-block day the two what-ifs —
+/// `w35_fork_plan` and the W-34 arm's what-if, over the kernel's grants, with
+/// D60's key as `planner_invariants`' `w36_fork_whatif` runs it.
 fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
     let st = &b.world.state;
     let shipped = planner::plan(&fork_input(b, st).with_ranking(&b.cands, prios));
     let st2 = p46_state(b, st);
-    let mut comparand = planner::plan(&fork_input(b, &st2).with_ranking(&b.cands, prios));
+    let dvec = d60_cands(&b.cands, prios);
+    let p51 = is_p51(&b.cands, prios);
+    let mut comparand = planner::plan(&fork_input(b, &st2).with_ranking(&dvec, prios));
     let p46 = is_p46(b, st);
     if p46 {
         p46_row(b, &mut comparand);
@@ -480,8 +543,8 @@ fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
         }
         let ov = PlanOverrides::new().extending(id, bm);
         let rt = p46_state(b, &rt);
-        let mut alt_est = planner::plan(&fork_input(b, &rt).with_ranking(&b.cands, prios));
-        let mut alt_full = planner::plan(&fork_input(b, &rt).with_ranking(&b.cands, prios).with_overrides(&ov));
+        let mut alt_est = planner::plan(&fork_input(b, &rt).with_ranking(&dvec, prios));
+        let mut alt_full = planner::plan(&fork_input(b, &rt).with_ranking(&dvec, prios).with_overrides(&ov));
         p47_pause(b, &mut alt_est);
         p47_pause(b, &mut alt_full);
         serde_json::json!({
@@ -493,6 +556,7 @@ fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
         "day": forkclass::frozen_day(&comparand),
         "shipped": (shipped != comparand).then(|| forkclass::frozen_day(&shipped)),
         "d57": {"p46": p46, "p47": p47},
+        "d60": {"p51": p51},
         "whatif": whatif,
     })
 }
@@ -513,13 +577,100 @@ fn the_frozen_classes_are_the_forks_answer_today() {
     for line in frozen_lines() {
         let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
         let now = fork_answers(&b, &kernel_prios(&b));
-        for key in ["day", "shipped", "d57", "whatif"] {
+        for key in ["day", "shipped", "d57", "d60", "whatif"] {
             if now[key] != line[key] {
                 stale.push(format!("{}: `{key}`", line["class"]));
             }
         }
     }
     assert!(stale.is_empty(), "the frozen answers are not the fork's today (re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
+}
+
+/// **D61's world, planned by both** (W-36 land, README gap 3123). Since the
+/// owner's D61 the binary LOGS a `pause` at the start of a wall that begins
+/// while a block runs, and marks the block paused in `.tm/state.json` (`tm/src/
+/// cli/day.rs`' `stop_the_timer_at_walls`) — so a `wall-on-now` day the binary
+/// produces carries that line, and the frozen `wall-on-now` worlds, drawn
+/// before D61, do not. `pause` is an event the fork has always read, so this
+/// needs no parity number at the planner (P53 is the host's writing of it): for
+/// every frozen `wall-on-now` world whose wall began after the block started,
+/// the pause D61 writes is appended, and the kernel's day is compared with the
+/// fork's comparand for THAT world, by `compare_line`, exactly as a frozen line
+/// is. It runs while the fork is here and leaves with it at R3; freezing these
+/// worlds is gap 3123's exit.
+#[test]
+fn a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it() {
+    let tz = tz();
+    let mut compared = Vec::new();
+    let mut findings = Vec::new();
+    let mut moved = 0usize;
+    for line in frozen_lines().iter().filter(|l| l["class"].as_str().is_some_and(|c| c.starts_with("wall-on-now/"))) {
+        let mut w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        let b0 = Built::of(w.clone());
+        let Some(a) = w.state.active.clone().filter(|a| !a.paused) else { continue };
+        let started = tm_core::capacity::local_dt(tz, b0.date(), a.started);
+        let now = w.now;
+        // The walls' blocked spans, merged as `stop_the_timer_at_walls` merges them.
+        let mut spans: Vec<(DateTime<Tz>, DateTime<Tz>)> = b0.walls().iter().map(|(_, lo, hi, _)| (*lo, *hi)).collect();
+        spans.sort();
+        let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
+        for (lo, hi) in spans {
+            match merged.last_mut() {
+                Some(m) if lo <= m.1 => m.1 = m.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        let Some((lo, hi)) = merged.into_iter().find(|(lo, hi)| *lo <= now && now < *hi && *lo > started) else {
+            continue;
+        };
+        w.log.push_str(&format!(
+            "{{\"t\":\"{}\",\"ev\":\"pause\",\"id\":\"{}\"}}\n",
+            lo.format("%Y-%m-%dT%H:%M:%S%:z"),
+            a.id
+        ));
+        if let Some(x) = w.state.active.as_mut() {
+            x.paused = true;
+        }
+        // At the wall's start (the frozen `now`), and again twenty minutes INTO
+        // the meeting — the drive's `tm now` at 13:20 — where the paused stretch
+        // is already behind `now` and the open row must not be drawn across it.
+        let mid = (lo + Duration::minutes(20)).min(hi - Duration::minutes(1));
+        let unpaused = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        for at in [now, mid] {
+            if at < now || at >= hi {
+                continue;
+            }
+            let mut wa = w.clone();
+            wa.now = at;
+            let b = Built::of(wa.clone());
+            // Non-vacuity: the logged pause reaches the kernel's day.
+            let mut wu = unpaused.clone();
+            wu.now = at;
+            let (kp, ku) = (forkclass::kernel_answer(&b), forkclass::kernel_answer(&Built::of(wu)));
+            if let (Ok(kp), Ok(ku)) = (kp, ku) {
+                moved += usize::from(kp.day != ku.day);
+            }
+            let mut synth = fork_answers(&b, &kernel_prios(&b));
+            synth["class"] = line["class"].clone();
+            synth["world"] = wa.to_json();
+            let mut t = ClassTally::default();
+            findings.extend(compare_line(&synth, &mut t));
+            compared.push(format!(
+                "{} (pause at {}, now {})",
+                line["class"].as_str().unwrap_or_default(),
+                lo.format("%H:%M"),
+                at.format("%H:%M")
+            ));
+        }
+    }
+    println!(
+        "D61 worlds compared: {}, the logged pause moved the kernel's day on {moved}: {}",
+        compared.len(),
+        compared.join(", ")
+    );
+    assert!(!compared.is_empty(), "no frozen wall-on-now world had a wall that began after its block started");
+    assert!(moved > 0, "the logged pause changed the kernel's day on no world: the comparison is vacuous");
+    assert!(findings.is_empty(), "{} disagreement(s) on D61's worlds:\n  {}", findings.len(), findings.join("\n  "));
 }
 
 /// **Re-bless the frozen fork classes** — inert without `TM_PLANNER_BLESS`.
@@ -542,7 +693,7 @@ fn the_frozen_fork_classes_are_reblessed() {
         let mut line: Value = serde_json::from_str(l).expect("a frozen class line is JSON");
         let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
         let answers = fork_answers(&b, &kernel_prios(&b));
-        for key in ["day", "shipped", "d57", "whatif"] {
+        for key in ["day", "shipped", "d57", "d60", "whatif"] {
             line[key] = answers[key].clone();
         }
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));

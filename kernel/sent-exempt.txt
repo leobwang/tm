@@ -7,4 +7,3 @@
 # EXEMPT -- and it may only SHRINK: a line for a key that is decoded now FAILS as STALE, a line the
 # committed file does not hold FAILS as RATCHET.  One line per key path, at its SHALLOWEST unread
 # path: `<planner.key.path> -- <dated reason naming its EXIT>`.
-planner.overtime.grown -- 2026-09-27 (W-36 track H): D58's grown candidate facts (`remaining`, `plannedMin`, `needMin`), written by `planwire::overtime_json` since W-35 track R and decoded by no kernel reader -- `PlanWire.readOvertime` reads `id` and `blocks` (README gaps 2873, 2931), so the what-if the kernel answers is the estimate's (parity P44). EXIT: D58's kernel half (track K's this run, gap 2873) -- when `readOvertime` decodes `grown` this line goes STALE and is deleted in that step; or the Land step records it if it is still unread at the merge.

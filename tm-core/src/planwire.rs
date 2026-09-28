@@ -478,14 +478,16 @@ pub fn grown(c: &Candidate, est: Option<u32>, extra_min: u32, cfg: &Config) -> O
 /// **The kernel reads `grown` since W-36** (README gap 2873): `PlanWire.readGrown`
 /// reads `remaining` and `plannedMin`, and `Planner.overtimeDiff` plans the
 /// extended request with them (`Planner.PlanReq.growing`), so the what-if gives
-/// the extended item the commitment fork `apply` gives it. `needMin` is sent
-/// and not read: no reader of the day reads a need but §7.3's pass, which
-/// derives its own from `remaining` (README gap 3004).
+/// the extended item the commitment fork `apply` gives it. `need_min` is NOT
+/// sent (W-36 land, README gap 3120, closing track K's host half of gap 3004):
+/// no reader of the day reads a need but §7.3's pass, which derives its own
+/// from `remaining`, and check 13's sent half fails on a key the host writes
+/// and no kernel reader decodes. `Grown::need_min` stays, as fork `apply`'s
+/// arithmetic written down (`the_grown_facts_are_apply_s_by_value`).
 pub fn overtime_json(id: &Id, blocks: u32, grown: Option<&Grown>) -> Value {
     let mut o = json!({"id": id.as_str(), "blocks": blocks});
     if let Some(g) = grown {
-        o["grown"] = json!({"remaining": g.remaining_min, "plannedMin": g.planned_min,
-                            "needMin": g.need_min});
+        o["grown"] = json!({"remaining": g.remaining_min, "plannedMin": g.planned_min});
     }
     o
 }
@@ -1320,7 +1322,8 @@ mod tests {
         let gr = Grown { remaining_min: 120, planned_min: 192, need_min: 156 };
         assert_eq!(
             overtime_json(&id, 2, Some(&gr)),
-            json!({"id": "t3", "blocks": 2, "grown": {"remaining": 120, "plannedMin": 192, "needMin": 156}})
+            json!({"id": "t3", "blocks": 2, "grown": {"remaining": 120, "plannedMin": 192}}),
+            "the grown facts the kernel reads, and no need it does not (README gap 3120)"
         );
     }
 

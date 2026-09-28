@@ -50,10 +50,15 @@
 //!   P46 (the running block in overtime keeps its block: the fork planned with
 //!   the estimate raised past the day, its note the fork's own saturating
 //!   `left`) and P47 (a wall whose blocked span covers `now` pauses the open
-//!   row: no `▶`, clipped at the wall's rows). On every other day it IS the
+//!   row: no `▶`, clipped at the wall's rows) — and, since the W-36 land step,
+//!   P51 (the owner's D60: `p = 0` impossible ties ranked by `until` and request
+//!   position, before every other `p = 0` answer), run IN the fork by rewriting
+//!   the two order fields its sorts read, as `planner_invariants`'
+//!   `w36_d60_cands` does (README gap 3121). On every other day it IS the
 //!   shipped fork's day, byte for byte.
 //! * `shipped` — the shipped fork's day, kept only where the comparand departs
-//!   from it (a P46 or P47 day), so the divergence stays visible by value.
+//!   from it (a P46, P47 or P51 day), so the divergence stays visible by value.
+//! * `d60` — `{"p51": …}`: whether D60's key moved the fork's §7.4 order.
 //! * `whatif` — on a day with a running block: §9.1's what-if as the shipped
 //!   TUI builds it (`full`: the estimate grown AND `PlanOverrides::extending`)
 //!   and the estimate alone (`est`); where they differ the kernel is held to
@@ -591,6 +596,9 @@ pub struct ClassTally {
     /// Days whose comparand departs from the shipped fork's day: P46, P47.
     pub p46: usize,
     pub p47: usize,
+    /// Days whose comparand departs from the shipped fork's day by D60's key
+    /// (parity P51, the W-36 land step): the fork ran D60's order.
+    pub p51: usize,
     /// Under-used rows whose `↓` note the renderer derived as the fork wrote it.
     pub notes_rendered: usize,
     /// §9.1 what-ifs compared, of them parity P44 days, and ids compared.
@@ -605,7 +613,7 @@ impl ClassTally {
         format!(
             "frozen fork classes — {} class(es); {}; P45 days {} against the rule (running {}, overrun {}; \
              the shipped fork scheduled over the break on {}; {} values by value); P46 comparand days {}, \
-             P47 {}; under-used notes the renderer derived as the fork wrote them {}; what-ifs {} ({} \
+             P47 {}, P51 {}; under-used notes the renderer derived as the fork wrote them {}; what-ifs {} ({} \
              parity-P44 days, {} ids); {findings} difference(s) in all",
             self.classes.len(),
             self.day.line("the non-P45 days", findings),
@@ -616,6 +624,7 @@ impl ClassTally {
             self.p45_values,
             self.p46,
             self.p47,
+            self.p51,
             self.notes_rendered,
             self.whatifs,
             self.p44,
@@ -728,6 +737,7 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
         let d57 = &line["d57"];
         t.p46 += usize::from(d57["p46"] == true);
         t.p47 += usize::from(d57["p47"] == true);
+        t.p51 += usize::from(line["d60"]["p51"] == true);
     }
     // §9.1's what-if, on a day with a running block.
     match (&k.overtime, line.get("whatif").filter(|v| !v.is_null())) {

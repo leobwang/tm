@@ -70110,3 +70110,251 @@ or its one changed line bent, in the clone, the targeted suites run, the file re
   `emit_planner` snapshots are byte-identical; the class file is NEW); no memory bound raised; no
   external dependency; no parity number issued; every exemption file the same size or smaller but
   the NEW `sent-exempt.txt` (one line, born with the gate that reads it).
+
+<!-- =====================================================================
+     APPENDED 2026-09-27: stage 6 (the planner), run **W-36**, **LAND STEP**,
+     on `rebuild-on-lean`: tracks K (`w36-k`, `bda781b`), T (`w36-t`,
+     `c10e39c`, `d2dc730`) and H (`w36-h`, `c5a1c93`) merged in that order
+     (`1821a19`, `065cda2`, `d345766`).  Gap range **3120-3129**; **3120-3126
+     taken**, 3127-3129 free.  Parity: **none issued here** — P51/P52 (track
+     K) and P53-P55 (track T) were each issued on their own branch, P1-P55 are
+     contiguous, and no track left a PARITY-PENDING line.
+     ===================================================================== -->
+
+## Stage 6 — W-36, land step: the owner's four calls are built, and the comparand outlives the fork
+
+### 1. The merge, and what it owed
+
+**K** merged clean.  **T** conflicted in eight files, every one both tracks' appends:
+`PlanWire.lean`'s `PlanKey` takes K's `grown`/`remaining` and T's `workedMin` (one constructor
+line, one `name` arm each); `Planner.lean`, `PlannerWit.lean`, `Check.lean` and `README.md` keep
+both blocks — Planner.lean's conflict split T's section opener off (`/-! ####…`), and the first
+build said so (`unexpected token '#'` at the joint), restored by hand; `planner_invariants.rs` is
+K's file with T's appended arm, T's `static W36_CENSUS` renamed `W36_WORKED` (both tracks named
+their census `W36_CENSUS`); `parity.txt` takes K's P51/P52 rows for T's two `hole` lines (T's gap
+3046) and re-anchors P53-P55 to the merged README (`parity.py`: 55 registered,
+P1-P55, next free P56); `reach-exempt.txt`'s two census lines sum both tracks — PlanWire.lean **49** emitted (48 +
+48 from a base of 47), Planner.lean **276** (K's 274, T's `workedOf?` and `PlanReq.workedOf`) —
+and check 12 re-derived both.  **H** conflicted in `README.md` alone.  After the merge, by name
+(`grep -c` over the library): K's `answerUntil` 10, `Ranked.imp` 11, `impNums` 12, `readGrown` 16,
+`growCand` 14, `budgetLeft` 26, `todayAnswers` 7; T's `workedOf` 24, `readOptWorked` 6,
+`estAsWritten` 6, `stop_the_timer_at_walls` 3 in `tm/src`; H's `sentkeys.py` 723 lines,
+`forkclass.rs` 762, `planner_classes.rs` 704 (after this step's additions).
+
+**Check 9 refused the merged tree on drift, not on a verdict**: 43 pin sites of 24 definitions (T's
+`workedOf` family and PlanWire's emitters, moved under K's inserts, and the reverse).  Each was
+re-run with `mutate.py --verify --write --only <name>`, in the shared tree, one at a time: **24 of
+24 re-verified, 0 failed, every row PINNED**; and the union held two rows for
+`PlanWire.PlanKey.name` (each track's body) — K's, whose sha is no longer the merged body's, was
+dropped.  Gate: `412 new or changed since 86c4dc6, 412 rostered, 0 owed`.
+
+The two merge commits (`065cda2`, `d345766`) are the textual merges and are **not green alone**
+(check 9's drift, and check 13's sent half below); the land commit is the first green tree.
+
+### 2. The two composition tests
+
+**(1) D60 against the frozen comparand — it failed, as track H's gap 3085 predicted, and is now
+asserted by property.**  Workspace run 1 on the merged tree: `planner_classes`'
+`the_kernel_plans_every_generated_class_the_fork_planned` failed with **28 disagreements on seven
+classes** — `idle/home` (step 5 served `zam` at 07:00 where the frozen fork served `zaj`, and the
+diagnostics followed), and `dropped_tail`'s ORDER on `idle/late` (both of its lines),
+`idle/travel`, `idle/spent`, `wall-on-now/home`, `interrupted/spent` and `interrupted-block/late`.
+Every one is D60's key: the frozen `day` was the shipped fork ranked by the kernel's grants, and
+the kernel now serves `p = 0` impossible ties by date.  **Gap 3121** is the repair, in the shape
+P46/P47 already have: `planner_classes.rs`' fork region runs D60's key IN THE FORK by its property
+(`d60_cands`, the rule `planner_invariants`' `w36_d60_cands` runs: an impossible `p = 0` answer —
+read off the kernel's own answer for that id — gets `root_order = (0, until)` and `own_order = (0,
+request position)`, every other candidate's root moves one file down), the comparand `day` is
+planned over it (and both what-ifs), the line gains `d60: {p51}`, and `shipped` keeps the shipped
+fork's day wherever the comparand departs from it.  The frozen answers were then recomputed
+(`TM_PLANNER_BLESS=1 … the_frozen_fork_classes_are_reblessed`) — a comparand rewrite taken as a
+**recorded decision** (gap 3085's clause 4), and checked line by line before it was kept: the 38
+worlds, cases, draws and seeds byte-identical; `day` changed on exactly **nine** lines — the seven
+failing classes' eight (`idle/late` has two) and `break/lounge`, a P45 day whose `day` the rule
+compares only for its date, window, budget and walls — **every one a P51 line**; on the eight whose
+`shipped` was null the new `shipped` is the old `day` **byte for byte**, and on `wall-on-now/home`
+(already a P47 day) `shipped` is unchanged — so no fork answer moved, only which one is the
+comparand; `whatif` unchanged on all 38; `d60.p51` set on 13 lines (five whose day D60's order did not move).  The
+suite then passes 17 of 17, `P51 10` in its tally, with a new floor (`t.p51 > 0`: D60 is asserted
+on at least one frozen day) — `the_frozen_classes_are_the_forks_answer_today` holds the file to
+the fork-with-D60's answer on this tree, and the surviving arm compares the kernel with it after
+R3.
+
+**(1′) D61's logged pause on the running-state days.**  The frozen `wall-on-now` worlds were drawn
+before D61, so none carries the `pause` the binary now writes at a wall's start.  `pause` is an
+event the fork has always read, so no parity number applies at the planner (P53 is the host's
+WRITING of it); the new fork-region test
+`a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it` appends, to every
+frozen `wall-on-now` world whose wall began after its block started, the pause
+`stop_the_timer_at_walls` writes (merged blocked span, `state.active.paused`), and compares the
+kernel's day with the fork's comparand for that world by `compare_line`, at the wall's start and
+twenty minutes into the meeting: **7 worlds compared, 0 disagreements, and the logged pause moved
+the kernel's day on 7 of 7** (asserted, so the comparison is not vacuous).  It leaves with the fork;
+freezing those worlds is **gap 3123**.
+
+**(2) H's sent-unread gate on the merged tree — it failed, and the host now sends what the kernel
+reads.**  With K merged, `fields.py`'s sent half printed `STALE: sent-exempt.txt:10
+planner.overtime.grown is DECODED now` and `UNREAD: planner.overtime.grown.needMin` — K reads
+`remaining` and `plannedMin` and not `needMin` (K's gap 3004, "the host stops sending it").
+**Gap 3120**: `planwire::overtime_json` no longer writes `needMin` (`Grown::need_min` stays, fork
+`apply`'s arithmetic written down and pinned by `the_grown_facts_are_apply_s_by_value`); its unit
+test states the new shape; the stale exemption line is deleted, so `sent-exempt.txt` holds **no
+key** — `sent: 27 key path(s) … 27 decoded … 0 unread, 0 exempt`.  **`overtime.grown` is READ.**
+
+### 3. The numbers the brief asked for
+
+* **`hnoimp`: 10 code lines in `PlanCheck.lean` with comments stripped** (19 with them) — the five
+  lifts' binders and their five uses.  **Track K's answer stands and is not softened**: D59 is
+  built (a spent day passes, `PlanCheck.budgetLeft`), and the five lifts still carry `hnoimp` in
+  D59's form, because a WAITING (`[?]`) item owed today on a day with budget left is dropped by
+  step 5 with every other hypothesis true (`PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`)
+  — the owner's, gap 3000.
+* **P51-P55 issued and contiguous** (P51, P52 track K; P53, P54, P55 track T); `parity.py` 55
+  registered, next free P56; no PENDING line anywhere.
+* **The comparand: 36 classes** (the product of 7 `Run` × 5 `DayShape` less what no arm draws),
+  38 frozen lines (2 secondary: `idle/late (rest_debt)`, `running/late (whatif)`); P51 departs from
+  the shipped fork on 10 of them.
+* **`planner::` code lines outside a fork region: 42** — `tm/src` **8** (`cli/planning.rs` 2,
+  `tui/app.rs` 6: R3's body swap) and `tm/tests/planner_invariants.rs` **34** (28 at `c5a1c93`;
+  track K's D60 and grown arms added six), comments and string literals excluded, by
+  `scratchpad/land-w36/forksites.py`, the rule `forkday::fork_scan` applies.
+* **Check 13: inputs 37 fields of 8 records, 33 read, 4 exempt** (32 of 36 at `dd8b95b`: T's
+  `workedMin`); **sent 27 key paths, 27 decoded, 0 unread, 0 exempt** (H's 28 / 27 / 1 exempt, less
+  `needMin`).  Diagnostics 15 of 15 written.
+* **D61, D62, gap 2929 on the merged binary**: §5.
+
+### 4. R3 readiness, re-derived on the merged tree
+
+| item | now |
+|---|---|
+| **550** — the reservation row's `×` multiplier | **OPEN** — 11 rows on the frozen class days; K's gap 3006 did not reach it |
+| **551** — the cut's kept breaks | **OPEN** — 22 planned break rows on the frozen class days |
+| **2870** — a routine row's `⚠` (gap 435) | **OPEN** — and the frozen class days hold **0** such marks, so the class comparand compares it on nothing |
+| **2871** — running-state days | **CLOSED** (H): 36 classes, every §9 running state |
+| **2872** — suites planning with the fork outside a region | **CLOSED for five** (H); `planner_invariants.rs` remains, 34 code lines (gap 3084) |
+| **2873** — `overtime.grown` read by nothing | **CLOSED** (K), and the host stops sending the one fact the kernel does not read (gap 3120) |
+| **3043** — the binary must SEND `state.active.workedMin` | **OPEN** — `planwire::add_worked_min` has **no caller in `tm/src`** (one occurrence: its definition); without it the kernel reads the log's open block, which counts a break inside the block (P55's own class) |
+| **3080** — the class representatives cannot be re-drawn once the fork's generator goes | **OPEN** — `planner_invariants`' generator must move to `tests/support/` before R3 deletes the file it lives in |
+| **3084** — `planner_invariants.rs`' arms | **OPEN** — retarget onto `forkclass` or delete |
+| **3123** — D61's logged-pause worlds are not frozen | **OPEN** (this step) |
+
+**R3 is NOT yet only the body swap and the deletion.**  What remains before it, exactly: **550,
+551, 2870** (the three day-row gaps), **3043** (the host sends its worked minutes — one call beside
+`planner_json`, which may fairly ride inside the body swap), **3080** and **3084** (the generated
+differential's generator and arms), and **3123** (freeze D61's worlds).  The owner's open calls —
+**3000** (`hnoimp`), **3001** (monotone rank vs D60), **3002**, **3003**, **3005** — do not block
+R3.
+
+### 5. The merged binary, driven (`target/debug/tm` of the land tree, on scratch copies of
+`tm-core/tests/fixtures/plan-basic`; `scratchpad/land-w36/drive.sh`, transcript unabridged in the
+step's report)
+
+* **D61** — `^t4` started 12:00, `^g1 Meeting w/ host at:2026-09-07T12:50/13:50`:
+  `tm now` at 13:20 → `▶ ^t4 … started 12:00 · 50m of 60m · paused`; at 14:10 → `70m of 60m`; the
+  log holds `{"t":"…12:50:00-05:00","ev":"pause","id":"t4"}` and
+  `{"t":"…13:50:00-05:00","ev":"unpause","id":"t4"}`, once each; `tm done` at 14:20 →
+  `✓ ^t4 … 80m/60m`, `"actual_min":80` (the wall clock says 140).
+* **D62** — `^a1`'s `- [ ] 2 30m Insurance claim for the bike  ^a1`: `tm start` 15:00, `tm extend`
+  15:40 → `+60m on ^a1 · now 90m`, line `- [>] 2 1h30m Insurance claim for the bike  ^a1` (the
+  leading estimate rewritten in place, no `est:` token); `tm stop` 15:50 → `stopped ^a1 after 50m ·
+  40m left`, line `- [ ] 2 40m …`; `tm check` → `no problems`.
+* **Gap 2929** — `tm edit ^a1 est=4294967295m` writes `- [ ] 2 4294967295m …` rc 0; `tm check` →
+  `no problems`; **`tm plan` → rc 0**, the day printed with `a1` in `dropped:` (W-35: `tm: kernel
+  fault: capacity response: need`, rc 1); `est=4294967296m` → `tm: kernel refusal: badValue`, rc 1,
+  the line untouched.
+* **Not drivable, said out loud**: D60, D59 and D58 change the day the KERNEL answers, and the
+  shipped `tm plan` and TUI still plan with fork `planner::plan` (`cli/planning.rs`, `tui/app.rs`)
+  until R3; the TUI's reload and `→ drops:` preview need a tty (gap 182).
+
+### 6. Gaps (3120-3126)
+
+**Gap 3120 — CLOSED: the host sent a grown `needMin` the kernel does not read.**  §2 (2).  K's
+gap 3004's host half; its measurement stands (no reader of the day reads a need but §7.3's pass).
+
+**Gap 3121 — CLOSED: D60 moved the kernel's day on seven frozen classes (track H's gap 3085).**
+§2 (1).  1. *What.*  28 disagreements, all D60's order.  2. *Why.*  The class comparand was frozen
+before K's key existed.  3. *Cost.*  The frozen file was recomputed — a decision, checked line by
+line (§2).  4. *Closed* by the comparand running D60's key by its property, a `p51` flag, the
+shipped day kept by value, and a floor.
+
+**Gap 3122 — `send_order` and the D60 rewrite exist twice in the tests.**  1. *What.*
+`planner_classes.rs`' `send_order`/`d60_cands` and `planner_invariants.rs`' `send_order`/
+`w36_d60_cands` are one rule in two test binaries (and `send_order` is
+`kernel_capacity::send_order`'s sort a third time).  2. *Why.*  Neither file includes the other,
+and both copies sit in fork comparand code R3 deletes.  3. *Cost.*  A change to D60's key must be
+made in both, or one comparand drifts; the class suite's copy finds the answer by id, the
+invariants' by index and id.  4. *Clears it.*  R3 (both leave with the fork), or `tests/support/`
+if either must outlive it.
+
+**Gap 3123 — the class comparand holds no world with D61's logged pause.**  1. *What.*  After D61
+the binary writes a `pause` at a wall's start, and no frozen `wall-on-now` world carries one.
+2. *Why.*  They were drawn before D61.  3. *Cost.*  The fork-region test of §2 (1′) compares 7 such
+worlds while the fork exists, and leaves with it; after R3 no frozen day holds the shape the
+binary produces on every wall-on-now day a verb has touched.  4. *Clears it.*  Before R3: freeze
+the D61 variants (or re-draw the class with the pause, which gap 3080's generator move makes
+possible), each classified by `class_of`.
+
+**Gap 3124 — the sent half does not see `add_worked_min`.**  1. *What.*  T's `state.active.
+workedMin` is written by `planwire::add_worked_min`, a helper the caller applies AFTER
+`planner_json`; `sentkeys.py` roots at `planner_json` and does not follow it (its header's declared
+blind spot, gap 3081's family).  2. *Why.*  A second writer into one section.  3. *Cost.*  None
+today — the key is DECODED (`PlanWire.readOptWorked`), so the property holds; a misspelling in that
+helper would be invisible to check 13.  4. *Clears it.*  R3 folds the call into `planner_json`
+(gap 3043), or the gate follows every writer of the section.
+
+**Gap 3125 — two merge commits are not green alone.**  1. *What.*  `065cda2` fails check 9 (43
+drifted pin sites) and `d345766` fails check 13's sent half.  2. *Why.*  The merges were committed
+as textual merges and the merge-owed repairs landed in one commit, W-35's shape.  3. *Cost.*  A
+bisect across them lands on a red tree.  4. *Clears it.*  Nothing owed; recorded because the
+acceptance rule says "commit only green".
+
+**Gap 3126 — the hash arm's batch floor failed again (gap 2935's class), and its named fix is
+taken.**  1. *What.*  The first standalone `planner_invariants` run failed
+`the_kernel_hashes_the_day_the_fork_hashes` at `no batch row was digested in 326 cases`; proptest
+appended `cc 07972bc5…` to `planner_invariants.proptest-regressions`, **kept and committed** (D46).
+2. *Why.*  A probability: 0, 5 and 3 batch rows on this tree's first three runs (W-35's repair
+measured 3, 3, 5) — nothing of this merge touches batching, and D60's key keeps a batch's buckets
+where they were (K's gap 3008).  3. *Cost.*  A run fails for want of a draw.  4. *Repair taken.*
+Gap 2935's own fix: on half the arm's cases with two or more items, the first two become
+twenty-minute errands of one `ci` (a day the generator could already draw, drawn more often; no
+assertion, floor or shared generator changed).  Measured after it: **7, 8 and 7** batch rows on
+its three standalone runs (0, 5 and 3 before).  It stays a probability, less often lost.
+
+### 7. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`)
+
+* **`check.sh`: 14 of 14 ok, 16 lines** — build; totality; axiom audit **5,620 theorems**
+  (5,560 at `dd8b95b`); Negative rejected; FFI **95**; corpus **29/37 and 4/5**; stage goals **6**;
+  citations 46,330 (0 allow entries unused); check 9 **412 rostered, 0 owed**; parity **P1-P55,
+  next free P56**; twins 3,176 bodies, 0 UNANSWERED; reach **1,185 reachable, 1,201 exempt** (1,202
+  at `dd8b95b`: K's `Look.Cand.withPlan` is reached); fields 15 of 15 written; inputs **33 of 37
+  read, 4 exempt**; sent **27 of 27 decoded, 0 exempt**; replay 86 modules.  256.4 s wall on the
+  first run after the merge's rebuild, 23 s on the settled tree.  `git status --porcelain`
+  unchanged by it.
+* **`cargo test --workspace`, `--no-fail-fast`, SEVEN runs**: run 1 on the merged tree **1,585 /
+  1 failed / 11** (`planner_classes`, the D60 composition failure of §2); runs 2-4 after gap
+  3121's repair **1,587 / 0 / 11 across 93 result lines, each** (504.0, 482.6, 488.8 s); runs 5-7
+  on the committed tree (after gap 3126's arm change) **1,587 / 0 / 11 across 93, each** (508.5,
+  481.5, 487.7 s).  Load 1.0-5.6.  `git status --porcelain` unchanged by every run.
+* **Named suites, `--include-ignored`**: T5 (`kernel_replay_parity`) 33, door (`kernel_log_door`)
+  23, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25,
+  `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9,
+  **`planner_classes` 17**, `cli_wall_pause` 8, `cli_one_estimate` 6, `cli_day` 30,
+  `cli_now_worked` 4, `cli_broken_pipe` 1, `planner_fixtures` 13, `planner_regressions` 46,
+  `planner_dynamics` 23, `priority_plan_basic` 17, `emit_planner` 14 — all passed, 85.7 s.
+* **`cli_latency`, two runs, 6 of 6 each** (load 2.6-3.2): later verb **162.1-178.4 ms**; gated
+  host-only write 162.0-162.2; the verb after a hand undo 162.1; a 3-day-old routine
+  **157.0-177.3**; `review week` **303.9**; the reseal **228.0-228.4**; 10 stalled days, worst
+  546.7-546.9 ms.
+* **`planner_invariants`, SIX standalone runs, `--include-ignored --nocapture`** (24 tests): run 1
+  FAILED the hash arm's batch floor (gap 3126, seed kept); runs 2-6 **24 of 24**.  Per run 2-6 at
+  281 cases: P51 days **216, 206, 214, 220, 201**, the shipped fork's work rows differing from the
+  D60 comparand's on 104, 96, 86, 93, 80, and the kernel's equal to the comparand's on **every**
+  P51 day; T's worked arm: running blocks 152, 145, 156, 150, 135, the host's reading differing
+  from the log's on 26, 21, 22, 18, 30 days, open rows compared on all; K's grown arm: what-ifs
+  146, 155, 129, 139, 134 all carrying grown facts, re-ranked 27, 38, 23, 29, 31, P44 days 10, 7,
+  9, 4, 9 each now the shipped TUI's; batch rows digested 5, 3, 7, 8, 7.
+* No predicate or assertion weakened; one committed comparand recomputed as a recorded decision
+  (gap 3121, checked line by line in §2); no snapshot, latency band or corpus re-blessed; no memory
+  bound raised; no external dependency; every exemption file the same size or smaller
+  (`reach-exempt.txt` 1,202 → 1,201, `sent-exempt.txt` 1 → 0 keys); one `.proptest-regressions`
+  seed added and committed (D46).

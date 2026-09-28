@@ -3084,7 +3084,22 @@ proptest! {
             Some(0.00001), Some(0.1 + 0.2), Some(123.456),
         ]),
         brk in prop::option::of((5u32..=30, 0u32..=40)),
+        errands in any::<bool>(),
     ) {
+        // **ERRANDS, DRAWN** (W-36 land, README gap 3126; gap 2935's named fix): the batch
+        // floor below counted 0, 5 and 3 batch rows over three ~280-case runs of this arm and
+        // failed on the 0 -- the generator reaches a batch only when two small items of one
+        // `ci` land unplaced together. On half the cases with at least two items the first two
+        // are made twenty-minute errands of the first item's `ci` (a day the generator could
+        // already draw, drawn more often). No assertion, floor or shared generator changes.
+        let mut case = case;
+        if errands && case.items.len() >= 2 {
+            let ci = 2 + case.items[0].ci % 2;
+            for sp in case.items.iter_mut().take(2) {
+                sp.small = Some(20);
+                sp.ci = ci;
+            }
+        }
         let mut w = build(&case);
         if let Some(m) = mult {
             w.model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
