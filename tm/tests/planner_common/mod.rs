@@ -7,6 +7,11 @@
 #[path = "../support/replay.rs"]
 pub mod chokepoint;
 
+/// The whole planning request and the kernel's day read back through the
+/// host's codec (`tm_core::planwire`) — what [`Kernel`] plans with.
+#[path = "../support/planreq.rs"]
+pub mod planreq;
+
 use chrono::{DateTime, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use tm_core::capacity::local_dt;
@@ -36,13 +41,19 @@ pub fn at(day: &str, h: u32, m: u32) -> DateTime<Tz> {
     local_dt(TZ, date(day), time(h, m))
 }
 
-/// A fixture tree with its config, replay and `.tm/state.json`.
+/// A fixture tree with its config, replay and `.tm/state.json` — and, since
+/// W-36 track H (README gap 2872), the documents and the log text it was read
+/// from, which is what the kernel is handed.
 pub struct Fixture {
     pub tree: Tree,
     pub cfg: Config,
     pub replay: Replay,
     pub state: RuntimeState,
     pub model: Model,
+    /// The plan's documents as `(path, text)` (`planreq::docs_of_dir`).
+    pub docs: Vec<(String, String)>,
+    /// `.tm/log.jsonl`'s text.
+    pub log: String,
 }
 
 pub fn load(name: &str) -> Fixture {
@@ -67,12 +78,102 @@ pub fn load_with_log(name: &str, log_text: Option<&str>) -> Fixture {
     assert!(warnings.is_empty(), "{:?}", warnings);
     let replay = chokepoint::replay_of_text(&text, plan.config.tz);
     let state = store.load_state().expect("state.json parses");
+    let docs = planreq::docs_of_dir(std::path::Path::new(&fixture_path(name)));
     Fixture {
         tree,
         cfg: plan.config,
         replay,
         state,
         model: Model::default(),
+        docs,
+        log: text,
+    }
+}
+
+/// **A synthetic world**: the given plan files and log under
+/// `Config::default()`, and a default `.tm/state.json` — the smallest world a
+/// planner test can run in (`planner_regressions.rs`' hand-written weeks).
+pub fn of_texts(files: &[(&str, &str)], log_text: &str) -> Fixture {
+    let cfg = Config::default();
+    let tree = Tree::from_texts(files, &cfg);
+    assert!(tree.problems().is_empty(), "{:?}", tree.problems());
+    let warnings = chokepoint::warning_lines_of_text(log_text);
+    assert!(warnings.is_empty(), "{:?}", warnings);
+    let replay = chokepoint::replay_of_text(log_text, cfg.tz);
+    Fixture {
+        tree,
+        cfg,
+        replay,
+        state: RuntimeState::default(),
+        model: Model::default(),
+        docs: files.iter().map(|(p, t)| ((*p).to_string(), (*t).to_string())).collect(),
+        log: log_text.to_string(),
+    }
+}
+
+impl Fixture {
+    /// **The kernel's day** for this world at `state` and `now`: the whole
+    /// request built from the same documents and log (`planreq::request`), the
+    /// candidates `priority::collect_candidates` derives, and the `plan` answer
+    /// read back by the host's codec (`planwire::read_plan`) — the planner R3
+    /// swaps into the binary. `Err` names the refusal or the defect.
+    pub fn kernel_day(&self, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
+        self.kernel_day_with(state, now, |_| {})
+    }
+
+    /// [`Fixture::kernel_day`] of a request `edit` has changed first — how a
+    /// verb's own flag reaches the request (`--allow-home` is the capacity
+    /// section's `state.allowHome`).
+    pub fn kernel_day_with(
+        &self,
+        state: &RuntimeState,
+        now: DateTime<Tz>,
+        edit: impl FnOnce(&mut serde_json::Value),
+    ) -> Result<DayPlan, String> {
+        let date = tm_core::planwire::plan_date(state, now);
+        let cands = tm_core::priority::collect_candidates(&self.tree, &self.replay, &self.cfg, &self.model, date, now);
+        let w = planreq::World {
+            docs: &self.docs,
+            log: &self.log,
+            tree: &self.tree,
+            cfg: &self.cfg,
+            state,
+            now,
+            cands: &cands,
+        };
+        let (mut req, order) = planreq::request(&w, None);
+        edit(&mut req);
+        let resp = planreq::call(&req);
+        planreq::kernel_day_of(&resp, &w, &order).map(|(k, _)| k.day)
+    }
+}
+
+/// **Which planner a property is asked of** (W-36 track H, README gap 2872).
+/// The suites that pinned the fork's planner state each property once, over
+/// this, and ask it of [`Kernel`] — the arm that survives R3 — and, until R3
+/// deletes it with the region below, of the fork.
+pub trait DayPlanner {
+    /// The day planned for `fx` at `state` and `now`.
+    fn day(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan;
+    /// The same with `tm plan --allow-home`: §8.2 step 3's `home_max_ci` lifted.
+    fn day_allowing_home(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan;
+    /// Which one, for a failure message.
+    fn name(&self) -> &'static str;
+}
+
+/// The kernel, through the host's codec.
+pub struct Kernel;
+
+impl DayPlanner for Kernel {
+    fn day(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
+        fx.kernel_day(state, now).unwrap_or_else(|e| panic!("the kernel did not plan the day: {e}"))
+    }
+    fn day_allowing_home(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
+        fx.kernel_day_with(state, now, |req| req["capacity"]["state"]["allowHome"] = true.into())
+            .unwrap_or_else(|e| panic!("the kernel did not plan the day: {e}"))
+    }
+    fn name(&self) -> &'static str {
+        "the kernel"
     }
 }
 
@@ -90,6 +191,21 @@ impl Fixture {
             state,
             now,
         )
+    }
+}
+
+/// The fork's planner, with its own §7 pass — what the suites pinned until W-36.
+pub struct Fork;
+
+impl DayPlanner for Fork {
+    fn day(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
+        tm_core::planner::plan(&fx.input(state, now))
+    }
+    fn day_allowing_home(&self, fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
+        tm_core::planner::plan(&fx.input(state, now).with_allow_home(true))
+    }
+    fn name(&self) -> &'static str {
+        "the fork"
     }
 }
 // END THE FORK PLANNER

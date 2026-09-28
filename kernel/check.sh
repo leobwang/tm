@@ -1230,10 +1230,23 @@ fi
 #     this step's own cargo runs on the box, almost all of it the read of
 #     `.lake/build/ir` that checks 11 and 12 also pay, each in its own process
 #     (5.11: re-measure, do not quote).
+#
+#     AND THE SENT HALF (W-36 track H, README gap 2931): every JSON key path the
+#     host codec's `planner_json` (tm-core/src/planwire.rs) writes must be
+#     DECODED by the kernel's reader of the `planner` section, or be a dated
+#     line of `sent-exempt.txt` with an EXIT, which may only shrink.  W-35
+#     track R's `overtime.grown` was written and read by nothing, and the input
+#     half above could not see it: it counts the fields of DECODED records, and
+#     a key no reader decodes never becomes one.  `sentkeys.py` reads both
+#     sides from source -- the Rust codec's `json!` literals, inserts and
+#     helpers, and the Lean reader followed from the definition that `jget`s
+#     `planner` off the request -- and its header says what that cannot see.
+#     It asks ONE section of ONE encoder, and says so in its line (gap 3081).
 out=$( python3 fields.py 2>&1 )
 if [ $? -eq 0 ]; then
-  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -2 | head -1 ))"
-  say "every decoded field has a reader" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
+  say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -3 | head -1 ))"
+  say "every decoded field has a reader" "ok  ($( printf '%s\n' "$out" | tail -2 | head -1 ))"
+  say "every sent key has a reader" "ok  ($( printf '%s\n' "$out" | tail -1 ))"
 else
   say "every emitted field has a writer" "FAILED"; fail=1
   printf '%s\n' "$out" | head -20

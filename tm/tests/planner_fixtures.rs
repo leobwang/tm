@@ -337,6 +337,12 @@ fn the_kernel_plans_the_fixture_days_the_fork_planned() {
     assert_eq!(t.rows, 73, "the fork's four days hold 73 rows: {t:?}");
     assert_eq!(t.break_rows_551, 3, "gap 551's rows: {t:?}");
     assert_eq!(t.hot_marks_435, 4, "gap 435's marks: {t:?}");
+    // Gap 550's class needs a running block, and no fixture day holds one; the
+    // classes that do are `planner_classes.rs`' (W-36 track H, gap 2925).
+    assert_eq!(t.mult_rows_550, 0, "gap 550's rows on a day with nothing running: {t:?}");
+    // No fixture day holds an under-used row, so the by-design note class is
+    // bounded at zero here; the generated classes carry it (W-36 track H).
+    assert_eq!(t.underused_notes, 0, "under-used notes on the fixture days: {t:?}");
     assert_eq!(t.hashes_equal, 1, "only the travel day draws no planned break: {t:?}");
 }
 
@@ -383,6 +389,15 @@ fn the_fork_scan_sees_a_reference_outside_its_region_and_only_there() {
     // The fixture's own builder is a needle too, however it is reached.
     let input = ["    let i = fx.", "input(&state, now);\n"].concat();
     assert_eq!(forkday::fork_scan(&format!("{b}{e}{input}")).escapes.len(), 1);
+    // A needle or a banner spelled inside a STRING is not code (W-36 track H):
+    // `forkday.rs`' own NEEDLES and banner constants are the case, and a banner
+    // is one only at the start of a line.
+    let quoted = ["    const B: &str = \"", b.trim_end(), "\";\n    const N: &str = \"planner", "::\";\n"].concat();
+    let scan = forkday::fork_scan(&quoted);
+    assert!(scan.deleted && scan.escapes.is_empty(), "{:?}", scan.escapes);
+    // …and a needle after code on its line, behind `//`, is prose.
+    let trailing = ["    let d = 1; // ", "planner", "::plan here is prose\n"].concat();
+    assert!(forkday::fork_scan(&trailing).escapes.is_empty());
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)

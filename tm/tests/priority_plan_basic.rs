@@ -14,6 +14,11 @@
 #[allow(dead_code)]
 mod chokepoint;
 
+/// The shared planner fixtures: `DayPlanner`, and the kernel planning a day
+/// through the host's codec (W-36 track H, README gap 2872).
+#[allow(dead_code)]
+mod planner_common;
+
 use std::collections::BTreeMap;
 
 use chrono::{DateTime, Duration, NaiveDate, NaiveTime};
@@ -24,7 +29,7 @@ use tm_core::energy::Model;
 use tm_core::log::Replay;
 use tm_core::model::Id;
 use tm_core::dayplan::{DayPlan, SegFlags, SegKind, Segment};
-use tm_core::planner::{self, PlanInput};
+use planner_common::{DayPlanner, Kernel};
 use tm_core::priority::{self, Candidate, Ineligible, Prio};
 use tm_core::store::{MemStore, RuntimeState, Store};
 use tm_core::tree::Tree;
@@ -346,10 +351,10 @@ fn explain_names_the_shortfall_when_impossible() {
 /// no segments, no block minutes, a "planner not implemented" note — were
 /// replaced when §8.2 landed. Everything else, including the whole hash
 /// contract below, is unchanged.)
-#[test]
-fn planner_types_carry_the_window_budget_and_hash() {
-    let (tree, cfg, replay) = plan_basic();
-    let model = Model::default();
+fn planner_types_carry_the_window_budget_and_hash_on(p: &dyn DayPlanner) {
+    // The same tree and empty log `plan_basic` reads, as the shared fixture the
+    // two planners are handed.
+    let fx = planner_common::load_with_log("plan-basic", Some(""));
     let mut runtime = RuntimeState {
         date: Some(date("2026-09-07")),
         budget: Some(6),
@@ -359,15 +364,8 @@ fn planner_types_carry_the_window_budget_and_hash() {
         NaiveTime::from_hms_opt(7, 0, 0).expect("time"),
         NaiveTime::from_hms_opt(16, 0, 0).expect("time"),
     ));
-    let input = PlanInput::new(
-        &tree,
-        &replay,
-        &cfg,
-        &model,
-        &runtime,
-        at("2026-09-07", 10, 42),
-    );
-    let day = planner::plan(&input);
+    let now = at("2026-09-07", 10, 42);
+    let day = p.day(&fx, &runtime, now);
     assert_eq!(day.date, date("2026-09-07"));
     assert_eq!(
         day.window,
@@ -378,8 +376,8 @@ fn planner_types_carry_the_window_budget_and_hash() {
     assert!(day.block_minutes() <= 6 * 60, "§8.3: no overbooking");
 
     // Purity: the same input gives the same plan and the same hash.
-    assert_eq!(planner::plan(&input), day);
-    assert_eq!(day.hash(), planner::plan(&input).hash());
+    assert_eq!(p.day(&fx, &runtime, now), day);
+    assert_eq!(day.hash(), p.day(&fx, &runtime, now).hash());
 
     // The hash contract itself is checked on a plan built by hand, so the
     // segment under test is the only one in it (M4: `plan()` now returns a
@@ -461,14 +459,19 @@ fn planner_types_carry_the_window_budget_and_hash() {
     assert_eq!(bare.priorities, Vec::new());
 }
 
+/// [`planner_types_carry_the_window_budget_and_hash_on`], asked of the kernel —
+/// the arm that survives R3.
+#[test]
+fn planner_types_carry_the_window_budget_and_hash() {
+    planner_types_carry_the_window_budget_and_hash_on(&Kernel);
+}
+
 /// §8.1 with no window in `state.json` — `tm plan` before `tm arrive`, or
 /// after a rollover cleared it: `arrival = runtime.arrival, else now`,
 /// `end = min(arrival + window_hours, window_cap)`. Not a zero-length window
 /// with a full budget in it.
-#[test]
-fn plan_without_a_stored_window_uses_the_spec_formula() {
-    let (tree, cfg, replay) = plan_basic();
-    let model = Model::default();
+fn plan_without_a_stored_window_uses_the_spec_formula_on(p: &dyn DayPlanner) {
+    let fx = planner_common::load_with_log("plan-basic", Some(""));
     let runtime = RuntimeState {
         date: Some(date("2026-09-07")),
         ..RuntimeState::default()
@@ -476,8 +479,7 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
     assert!(runtime.window.is_none() && runtime.budget.is_none());
 
     let now = at("2026-09-07", 10, 42);
-    let input = PlanInput::new(&tree, &replay, &cfg, &model, &runtime, now);
-    let day = planner::plan(&input);
+    let day = p.day(&fx, &runtime, now);
     // 10:42 + 8h = 18:42, inside the 19:00 cap, plus §8.1's `Σ duration(walls
     // inside the window)` — the 12:50–13:50 meeting — is 19:42. (Before M4 the
     // planner passed no walls to `window_and_budget` and this read 18:42.)
@@ -490,8 +492,7 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
         arrival: Some(NaiveTime::from_hms_opt(7, 0, 0).expect("time")),
         ..RuntimeState::default()
     };
-    let input = PlanInput::new(&tree, &replay, &cfg, &model, &arrived, now);
-    let day = planner::plan(&input);
+    let day = p.day(&fx, &arrived, now);
     // 07:00 + 8h = 15:00, plus the 12:50–13:50 wall inside it, is 16:00 —
     // which is exactly the window `.tm/state.json` stores in §4.3.
     assert_eq!(
@@ -505,8 +506,28 @@ fn plan_without_a_stored_window_uses_the_spec_formula() {
         arrival: Some(NaiveTime::from_hms_opt(20, 0, 0).expect("time")),
         ..RuntimeState::default()
     };
-    let input = PlanInput::new(&tree, &replay, &cfg, &model, &late, now);
-    let day = planner::plan(&input);
+    let day = p.day(&fx, &late, now);
     assert_eq!(day.window.0, at("2026-09-07", 20, 0));
     assert_eq!(day.window.1, at("2026-09-07", 20, 0));
 }
+
+/// [`plan_without_a_stored_window_uses_the_spec_formula_on`], asked of the
+/// kernel — the arm that survives R3.
+#[test]
+fn plan_without_a_stored_window_uses_the_spec_formula() {
+    plan_without_a_stored_window_uses_the_spec_formula_on(&Kernel);
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2872)
+use planner_common::Fork;
+
+#[test]
+fn planner_types_carry_the_window_budget_and_hash_on_the_fork() {
+    planner_types_carry_the_window_budget_and_hash_on(&Fork);
+}
+
+#[test]
+fn plan_without_a_stored_window_uses_the_spec_formula_on_the_fork() {
+    plan_without_a_stored_window_uses_the_spec_formula_on(&Fork);
+}
+// END THE FORK PLANNER
