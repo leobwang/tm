@@ -425,10 +425,10 @@ theorem Seg.withNote_touches_only_the_note (s : Seg) (n : Note) :
 theorem Seg.wf_withNote (s : Seg) (n : Note) : (s.withNote n).wf = s.wf := rfl
 
 /-! ## `Diagnostics` — §8.2 step 8, bounded -/
-
-/-- **Fork `planner::Diagnostics`.**  Nine lists, `dropped_tail`, and §11's two ratios.
-`planHonesty` is a numerator over a denominator and **nothing here divides** (design §11): the
-fork's `None` is denominator `0`, and Rust renders the percentage. -/
+/-- **Why §8.2 step 5 left an item it admitted before the walk without a row** (D67, P58): the walk's own reasons, named (`PlanReq.dayUnplaced`). -/
+inductive NoPlace | noRunLeft | noSlotLeft | budgetSpent deriving DecidableEq, Repr
+/-- **Fork `planner::Diagnostics`.**  Nine lists, `dropped_tail`, and §11's two ratios.  `planHonesty` is a numerator over a
+denominator and **nothing here divides** (design §11): the fork's `None` is denominator `0`, and Rust renders the percentage. -/
 structure Diagnostics where
   underused     : IdList
   aCapacityLost : Nat
@@ -443,25 +443,25 @@ structure Diagnostics where
   droppedTail   : IdList
   planHonesty   : Nat × Nat
   restDebtMin   : Nat
-  /-- **The fork's whole `impossible` tuple** (W-35, README gaps 2640 and 2743): `(id,
-  shortfall_min, until)`, `until` the day the answer carries — a granted answer's due date, a
-  floor answer's last day — which `tm-core/src/emit.rs` prints as `short by DATE`.  `impossible`
-  above is its first two components (`dayDiagnostics_impossible_is_the_projection`); both stay,
-  because the checks and witnesses that read the pair were written before the date was. -/
+  /-- **The fork's whole `impossible` tuple** (W-35, README gaps 2640 and 2743): `(id, shortfall_min, until)`, `until` the day the
+  answer carries — a granted answer's due date, a floor answer's last day — which `tm-core/src/emit.rs` prints as `short by DATE`.
+  `impossible` above is its first two components (`dayDiagnostics_impossible_is_the_projection`); both stay, because the checks and
+  witnesses that read the pair were written before the date was. -/
   impossibleUntil : Capped (Id × Nat × Nat)
-  /-- **The fork's whole `underused` tuple**: `(id, slot energy, item ci)`, one per item per
-  underused work row — `emit.rs`'s `↓ slot 4, item 3`.  `underused` is its first component
-  (`dayDiagnostics_underused_is_the_projection`). -/
+  /-- **The fork's whole `underused` tuple**: `(id, slot energy, item ci)`, one per item per underused work row — `emit.rs`'s
+  `↓ slot 4, item 3`.  `underused` is its first component (`dayDiagnostics_underused_is_the_projection`). -/
   underusedLevels : Capped (Id × Fin 6 × Fin 6)
   /-- **The fork's whole `blocked` tuple**: `(id, deps)`, the unsatisfied `after:` list —
   `emit.rs`'s `t5 blocked by t4`.  `blocked` is its first component
   (`dayDiagnostics_blocked_is_the_projection`). -/
   blockedDeps : Capped (Id × List Field.Dep)
+  /-- **D67 (P58, README gap 3350)**: every listed impossible item step 5 admitted before the walk and left without a row, and why. -/
+  unplaced : Capped (Id × NoPlace)
 
 /-- Nothing wrong with the day yet. -/
 def Diagnostics.empty : Diagnostics :=
   ⟨Capped.nil, 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil,
-   Capped.nil, Capped.nil, (0, 0), 0, Capped.nil, Capped.nil, Capped.nil⟩
+   Capped.nil, Capped.nil, (0, 0), 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil⟩
 
 /-- The accumulation §8.2 step 8 does, one note at a time.  `Option`, because the list is
 bounded (R10) and a setter that silently dropped its argument is the defect this kernel exists
@@ -6826,58 +6826,58 @@ theorem PlanReq.answerFor_of_mem (r : PlanReq)
     hdisj a.out.cand.id (List.mem_map.2 ⟨a, hamem, rfl⟩) o.out.cand.id (by simp) heq
   simp [hne]
 
-/-- **Every item whose EDF numbers say impossible, answered at a HOT bin, is named with its
-grant's shortfall** — the direction that makes W-18's `rfl` (the day named no impossible item)
-false.  The HOT bin is a real hypothesis and not a convenience: `edfNumbers` is R1's CEILING of
-the need against the availability (`Grant.impossible`), §7.1's bin is the EXACT `u`, and an
-availability strictly between the exact need and its ceiling makes the first say impossible
-and the second say `+n` — the shipped binary then calls the item neither HOT nor impossible,
-and so does this field. -/
-theorem the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin (r : PlanReq)
-    (i : Id) {o : Look.FloorOut} (ha : r.answerFor i = some o) (hb : o.out.bin = some .hot)
-    (h : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
-    ∃ g, r.grantFor i = some g ∧
-      (i, Arith.floorQ (g.shortfallQ Look.capDenD)) ∈ r.dayImpossible := by
-  have hmem : o ∈ r.candAnswers := by
-    unfold PlanReq.answerFor at ha; exact List.mem_of_find?_eq_some ha
-  have hid : o.out.cand.id = i := by
-    unfold PlanReq.answerFor at ha; simpa using List.find?_some ha
-  cases hg : r.grantFor i with
-  | none =>
-    rw [edfNumbers_without_a_grant r i hg] at h
-    exact absurd h (by simp)
-  | some g =>
-    refine ⟨g, rfl, ?_⟩
-    have hog : o.out.grant = some g := by
-      unfold PlanReq.grantFor at hg; rw [ha] at hg; simpa using hg
-    rw [edfNumbers_is_the_grants_own_impossibility r i g hg] at h
-    have hs := r.an_impossible_grant_at_a_hot_bin_is_short hmem hog h hb
-    obtain ⟨-, hmin, hsh⟩ := r.a_granted_answer hmem hog
-    rw [if_pos hb] at hsh
-    have hlt : g.avail < g.deadline.need * Look.capDen := of_decide_eq_true h
-    have heq : o.shortfall = g.shortfall Look.capDen := by
-      unfold Grant.shortfall; rw [hsh, hmin, Nat.min_eq_right (Nat.le_of_lt hlt)]
-    refine (r.mem_dayImpossible i _).2 ⟨o, hmem, hid, hs, ?_⟩
-    simp only [Grant.shortfallQ, heq]
-    rfl
+/-! ### D67 (P58, README gap 3350): the day SAYS why an item it admitted has no row
 
-/-- **An item the day names that entered the pass has impossible EDF numbers** — the converse
-by ID, under the one hypothesis it needs: `edfNumbers` answers an id by its FIRST answer
-(`PlanReq.answerFor`), so with two candidates of one id (§5.3's carried instance beside today's
-fresh one) the named item's numbers could be the other's. -/
-theorem an_item_the_day_names_with_a_grant_has_impossible_numbers (r : PlanReq)
-    (hnodup : (r.candAnswers.map (fun o => o.out.cand.id)).Nodup) (i : Id) (s : Nat)
-    (h : (i, s) ∈ r.dayImpossible) (hg : (r.grantFor i).isSome = true) :
-    Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true := by
-  obtain ⟨o, ho, hid, hs, -⟩ := (r.mem_dayImpossible i s).1 h
-  have ha : r.answerFor i = some o := hid ▸ r.answerFor_of_mem hnodup ho
-  cases hgi : r.grantFor i with
-  | none => rw [hgi] at hg; exact absurd hg (by simp)
-  | some g =>
-    have hog : o.out.grant = some g := by
-      unfold PlanReq.grantFor at hgi; rw [ha] at hgi; simpa using hgi
-    rw [edfNumbers_is_the_grants_own_impossibility r i g hgi]
-    exact (r.a_named_grant_is_impossible_at_a_hot_bin ho hog hs).1
+The owner's D67 (README gap 3160): §8.2 step 5 stays GREEDY — the fork's `Planner::pick`, which never
+reads a grant — so the walk can hand the only unbroken run an atomic impossible item fits to an item
+ranked before it, and the item gets no row.  The day names why, and `PlanCheck.impossibleKept` reads
+§8.3's "impossible never dropped" as **an owed impossible item is placed or named with its reason**,
+the reason checked TRUE of the day (`PlanCheck.whyHolds`).  The fork names none: parity **P58**.
+
+**The reasons are the walk's, found from the walk and not guessed** (`PlanFold`, the W-38 section).
+A group that fits a slot before the walk fits it at the walk's own state for as long as it has been
+given nothing: `contiguousFits` reads only the slots from the cursor on, and every one of those is
+still free when the cursor reaches it; and a group's entry moves only when that group is picked.  So
+at every slot where the item's group fits before the walk, step 5 did one of exactly two things
+other than place it: gave the slot to a group AHEAD of it (`List.findIdx?`'s first fit) — then the
+item found **no run left** (its group is atomic: every unbroken run it fits was taken) or **no slot
+left** (splittable) — or passed the slot because the budget was spent (`budget ≤ used`): **budget
+spent**.  Nothing else passes a free slot a group fits
+(`PlanFold.assignStep_fills_a_free_slot_a_group_fits`), and step 6 never changes step 5's assignment
+(`PlanFold.finalAssign_is_assignFold`), so the final slot vector tells the two apart: a slot the item
+fits that step 5 left EMPTY was passed for the budget.
+
+The writer names every item §7.3 lists impossible that step 5's filter admits at some slot before
+the walk and that the day's rows do not hold, once each, in the list's order — owed today or not:
+the check asks the reason of the owed ones (`PlanCheck.owedByItsGrant`), and the reason is as true of
+the rest.  It is the WALK's reason and never a second test of the grant, and an item step 5's filter
+admits nowhere — `[?]`, a `loc:` or a `ci` no slot of the day meets — is not named at all: nothing
+dropped it, and `waiting`, `blocked` or the item's own line says why it has no place today.  `dayUnplaced`'s laws are at the end of this file, beside the two `dayImpossible`
+directions that stood here until W-38 (`the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin`,
+`an_item_the_day_names_with_a_grant_has_impossible_numbers`, moved whole so no check-9 pin site
+below this section moved). -/
+
+/-- **§8.2 step 5's WHOLE filter at one energised slot, BEFORE the walk** (D66): the fork's `pick`
+test over the planner's own start groups and its empty cursor (`PlanReq.assignStart`).  Moved from
+`PlanCheck` at W-38 so the check and the day's writer read ONE definition (AGENTS §5.3). -/
+def fitsBefore (r : PlanReq) (i : Id) (x : (Fin 6 × Look.Slot) × Nat) : Bool := r.startGroups.any (fun g =>
+  decide (i ∈ g.ids) && r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g)
+
+/-- **`Diagnostics.unplaced`** (D67, P58): each item §7.3 lists impossible (`dayImpossible`, once
+each) that step 5's filter admits at some slot before the walk (`fitsBefore`) and that `assigned` —
+the day's `dayAssigned` — does not hold, with the walk's reason: `budgetSpent` when step 5 left a
+slot it fits EMPTY, else `noRunLeft` when an atomic group holds it and `noSlotLeft` when none does.
+`slotOf` is read once, outside the per-item walk (README gap 2521's lesson).  Bounded by the listed
+items (`PlanReq.dayUnplaced_capped`), whose bound is the wire's `maxCands` (R10), so
+`dayDiagnostics` truncates nothing (`dayDiagnostics_unplaced`). -/
+def PlanReq.dayUnplaced (r : PlanReq) (assigned : List Id) : List (Id × NoPlace) :=
+  let slotOf := r.finalAssign.slotOf
+  (r.dayImpossible.map Prod.fst).eraseDups.filterMap (fun i =>
+    let xs := r.energisedSlots.zipIdx.filter (fitsBefore r i)
+    if xs.isEmpty || assigned.contains i then none
+    else if xs.any (fun x => (slotOf[x.2]?).join.isNone) then some (i, .budgetSpent)
+    else some (i, if r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) then .noRunLeft
+      else .noSlotLeft))
 
 /-- `List.eraseDups` (core's, the fork's `!d.xs.contains(&id)` push guard — FIRST occurrence
 kept, in push order) never lengthens a list.  Core proves membership (List.mem_eraseDups) and
@@ -7169,12 +7169,11 @@ theorem PlanReq.dayRestDebtMin_is_the_sum_of_the_shortfalls (r : PlanReq) :
   | nil => intro a; simp
   | cons b bs ih => intro a; simp only [List.foldl_cons, List.map_cons, List.sum_cons, ih]; omega
 
-/-- §8.2 step 8's diagnostics — **TWELVE of the twelve** since W-34 (three until W-33, ten until
-W-34; README gaps **2403** and **2511**).  Each field is read off a value the request carried or
-the day already computed: `conflicts` (step 1), `notes` (steps 1, 6 and 7), `aCapacityLost` (step
-7's Rest against the ci-5 candidates), W-33's `impossible`, `hot`, `waiting`, `blocked`,
-`droppedTail`, `underused` and `planHonesty`, and W-34's `deferred` (over `PlanReq.rawSlots`,
-README gap 555) and `restDebtMin` (the day record's breaks). -/
+/-- §8.2 step 8's diagnostics — **TWELVE of the fork's twelve** since W-34 (three until W-33, ten until W-34; README gaps
+**2403** and **2511**), and since W-38 the kernel's thirteenth, `unplaced` (D67, P58).  Each is read off a value the request
+carried or the day already computed: `conflicts` (step 1), `notes` (steps 1, 6 and 7), `aCapacityLost` (step 7's Rest against
+the ci-5 candidates), W-33's `impossible`, `hot`, `waiting`, `blocked`, `droppedTail`, `underused` and `planHonesty`, W-34's
+`deferred` (over `PlanReq.rawSlots`, README gap 555) and `restDebtMin` (the day record's breaks), W-38's `unplaced` (step 5's walk). -/
 def dayDiagnostics (r : PlanReq) : Diagnostics :=
   let assigned := dayAssigned r
   { Diagnostics.empty with
@@ -7194,7 +7193,8 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
     restDebtMin := r.dayRestDebtMin
     impossibleUntil := Capped.ofListTake r.dayImpossibleUntil
     underusedLevels := Capped.ofListTake r.dayUnderusedLevels
-    blockedDeps := Capped.ofListTake r.dayBlockedDeps }
+    blockedDeps := Capped.ofListTake r.dayBlockedDeps
+    unplaced := Capped.ofListTake (r.dayUnplaced assigned) }
 
 /-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
 it, so `Capped.ofListTake` truncates nothing. -/
@@ -9140,6 +9140,120 @@ theorem dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnig
     (h : ∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) :
     (dayPlan r).window = Look.day0Window r.look :=
   PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight r h
+
+
+/-! ### The two `dayImpossible` directions (W-33), moved here whole at W-38
+
+They stood in §8.2 step 8's section until W-38, where `fitsBefore` and `PlanReq.dayUnplaced` now
+stand; moving them rather than inserting beside them kept every check-9 pin site of this file on
+its line (README gap 2136).  Nothing between their old place and this one used them. -/
+
+/-- **Every item whose EDF numbers say impossible, answered at a HOT bin, is named with its
+grant's shortfall** — the direction that makes W-18's `rfl` (the day named no impossible item)
+false.  The HOT bin is a real hypothesis and not a convenience: `edfNumbers` is R1's CEILING of
+the need against the availability (`Grant.impossible`), §7.1's bin is the EXACT `u`, and an
+availability strictly between the exact need and its ceiling makes the first say impossible
+and the second say `+n` — the shipped binary then calls the item neither HOT nor impossible,
+and so does this field. -/
+theorem the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin (r : PlanReq)
+    (i : Id) {o : Look.FloorOut} (ha : r.answerFor i = some o) (hb : o.out.bin = some .hot)
+    (h : Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true) :
+    ∃ g, r.grantFor i = some g ∧
+      (i, Arith.floorQ (g.shortfallQ Look.capDenD)) ∈ r.dayImpossible := by
+  have hmem : o ∈ r.candAnswers := by
+    unfold PlanReq.answerFor at ha; exact List.mem_of_find?_eq_some ha
+  have hid : o.out.cand.id = i := by
+    unfold PlanReq.answerFor at ha; simpa using List.find?_some ha
+  cases hg : r.grantFor i with
+  | none =>
+    rw [edfNumbers_without_a_grant r i hg] at h
+    exact absurd h (by simp)
+  | some g =>
+    refine ⟨g, rfl, ?_⟩
+    have hog : o.out.grant = some g := by
+      unfold PlanReq.grantFor at hg; rw [ha] at hg; simpa using hg
+    rw [edfNumbers_is_the_grants_own_impossibility r i g hg] at h
+    have hs := r.an_impossible_grant_at_a_hot_bin_is_short hmem hog h hb
+    obtain ⟨-, hmin, hsh⟩ := r.a_granted_answer hmem hog
+    rw [if_pos hb] at hsh
+    have hlt : g.avail < g.deadline.need * Look.capDen := of_decide_eq_true h
+    have heq : o.shortfall = g.shortfall Look.capDen := by
+      unfold Grant.shortfall; rw [hsh, hmin, Nat.min_eq_right (Nat.le_of_lt hlt)]
+    refine (r.mem_dayImpossible i _).2 ⟨o, hmem, hid, hs, ?_⟩
+    simp only [Grant.shortfallQ, heq]
+    rfl
+
+/-- **An item the day names that entered the pass has impossible EDF numbers** — the converse
+by ID, under the one hypothesis it needs: `edfNumbers` answers an id by its FIRST answer
+(`PlanReq.answerFor`), so with two candidates of one id (§5.3's carried instance beside today's
+fresh one) the named item's numbers could be the other's. -/
+theorem an_item_the_day_names_with_a_grant_has_impossible_numbers (r : PlanReq)
+    (hnodup : (r.candAnswers.map (fun o => o.out.cand.id)).Nodup) (i : Id) (s : Nat)
+    (h : (i, s) ∈ r.dayImpossible) (hg : (r.grantFor i).isSome = true) :
+    Arith.isImpossible (edfNumbers r i).1 (edfNumbers r i).2 = true := by
+  obtain ⟨o, ho, hid, hs, -⟩ := (r.mem_dayImpossible i s).1 h
+  have ha : r.answerFor i = some o := hid ▸ r.answerFor_of_mem hnodup ho
+  cases hgi : r.grantFor i with
+  | none => rw [hgi] at hg; exact absurd hg (by simp)
+  | some g =>
+    have hog : o.out.grant = some g := by
+      unfold PlanReq.grantFor at hgi; rw [ha] at hgi; simpa using hgi
+    rw [edfNumbers_is_the_grants_own_impossibility r i g hgi]
+    exact (r.a_named_grant_is_impossible_at_a_hot_bin ho hog hs).1
+
+
+/-! ### D67 (P58): what `PlanReq.dayUnplaced` names, and that the day carries all of it
+
+The writer stands in §8.2 step 8's section above; its laws are here, at the end of the file, so no
+check-9 pin site above moved.  `PlanFold` proves each name TRUE of the day (the W-38 section), and
+`PlanCheck.impossibleKept_on_every_day` is the check those proofs buy. -/
+
+/-- **A named item is a listed impossible item that step 5's filter admits at some slot before the
+walk and that `assigned` does not hold — and its reason is the walk's**, both directions.  Stated
+before the cap on purpose (README gap 2567): the `[]` mutant falsifies a membership law, not a
+length bound. -/
+theorem PlanReq.mem_dayUnplaced (r : PlanReq) (assigned : List Id) (i : Id) (w : NoPlace) :
+    (i, w) ∈ r.dayUnplaced assigned ↔
+      i ∈ r.dayImpossible.map Prod.fst ∧ assigned.contains i = false ∧
+      (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = false ∧
+      w = (if (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+              (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone) then NoPlace.budgetSpent
+           else if r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) then .noRunLeft
+           else .noSlotLeft) := by
+  unfold PlanReq.dayUnplaced
+  simp only [List.mem_filterMap, List.mem_eraseDups]
+  constructor
+  · rintro ⟨j, hj, h⟩
+    by_cases h1 : ((r.energisedSlots.zipIdx.filter (fitsBefore r j)).isEmpty || assigned.contains j) = true
+    · rw [if_pos h1] at h; exact absurd h (by simp)
+    · rw [if_neg h1] at h
+      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at h1
+      split at h
+      · rename_i h2
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨hj, h1.2, h1.1, by rw [if_pos h2]⟩
+      · rename_i h2
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨hj, h1.2, h1.1, by rw [if_neg h2]⟩
+  · rintro ⟨hi, ha, hx, rfl⟩
+    refine ⟨i, hi, ?_⟩
+    have ha' : i ∉ assigned := by simpa using ha
+    rw [if_neg (by simp [ha', hx])]
+    split <;> rfl
+
+/-- The cap: no more names than listed items, and the list is under the wire's `maxCands`. -/
+theorem PlanReq.dayUnplaced_capped (r : PlanReq) (assigned : List Id) :
+    (r.dayUnplaced assigned).length ≤ maxCands :=
+  Nat.le_trans (List.length_filterMap_le _ _)
+    (Nat.le_trans (eraseDups_length_le _ _ (Nat.le_refl _))
+      (by rw [List.length_map]; exact r.dayImpossible_capped))
+
+/-- **The day carries every name**: the cap is the wire's and the list is under it. -/
+theorem dayDiagnostics_unplaced (r : PlanReq) :
+    (dayDiagnostics r).unplaced.val = r.dayUnplaced (dayAssigned r) :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayUnplaced_capped _)
 
 end Planner
 end Tm

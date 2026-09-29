@@ -1989,16 +1989,19 @@ pub fn render_banners(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<String> 
     let mut out = Vec::new();
     for (id, _shortfall, due) in &plan.diagnostics.impossible {
         let prio = plan.priorities.iter().find(|(k, _)| k == id).map(|(_, p)| p);
+        // The owner's D67 (parity P58): an item step 5 admitted and left without
+        // a row stays in the banner with its shortfall, and the banner SAYS why.
+        let why = unplaced_note(plan, id);
         match prio {
             Some(p) => out.push(format!(
-                "{}: needs {}, {} available by {}",
+                "{}: needs {}, {} available by {}{why}",
                 name_of(tree, id),
                 fmt_blocks(p.need_min, bm),
                 fmt_blocks(p.avail_min, bm),
                 when(*due, plan.date)
             )),
             None => out.push(format!(
-                "{}: short by {} at {}",
+                "{}: short by {} at {}{why}",
                 name_of(tree, id),
                 fmt_blocks(*_shortfall, bm),
                 when(*due, plan.date)
@@ -2006,6 +2009,19 @@ pub fn render_banners(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<String> 
         }
     }
     out
+}
+
+/// The banner's tail for an impossible item the day names in
+/// `diagnostics.unplaced` (D67, P58) — ` · not placed: no run left` — and
+/// nothing for one it does not name, which is every item the fork's own
+/// planner reports (it names none).
+pub fn unplaced_note(plan: &DayPlan, id: &Id) -> String {
+    plan.diagnostics
+        .unplaced
+        .iter()
+        .find(|(k, _)| k == id)
+        .map(|(_, w)| format!(" · not placed: {}", w.words()))
+        .unwrap_or_default()
 }
 
 /// A deadline within a week reads as a weekday (`Fri`), further out as a date.

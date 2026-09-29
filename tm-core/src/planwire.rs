@@ -82,7 +82,7 @@ use serde_json::{json, Map, Value};
 
 use crate::capacity::{self, local_dt, Exact, UnitCapacity, CAP_DEN};
 use crate::config::Config;
-use crate::dayplan::{fmt_clock, kind_label, DayPlan, Diagnostics, PlanDiff, SegFlags, SegKind, Segment};
+use crate::dayplan::{fmt_clock, kind_label, DayPlan, Diagnostics, NoPlace, PlanDiff, SegFlags, SegKind, Segment};
 use crate::energy;
 use crate::model::{Id, InstanceKey, Shape, WindowRange};
 use crate::priority::{self, Candidate, Ineligible, Prio, PrioClass};
@@ -884,6 +884,31 @@ fn diagnostics_of(v: &Value, segments: &[Segment], ctx: &DayCtx<'_>) -> W<Diagno
     let mut waiting = ids(&v["waiting"], &at("waiting"))?;
     waiting.sort_by_key(|id| rank(id));
 
+    // **Why step 5 left an impossible item without a row** (the owner's D67,
+    // parity P58): the kernel's `unplaced`, `{id, why}`, a reason by its wire
+    // name (`PlanWire.noPlaceName`). Every item it names is one the impossible
+    // list names — the kernel names only listed items — and a name this host
+    // cannot read is refused, never guessed. Ordered as `impossible` is.
+    let mut unplaced = array(&v["unplaced"], &at("unplaced"))?
+        .iter()
+        .enumerate()
+        .map(|(i, x)| {
+            let what = format!("{}[{i}]", at("unplaced"));
+            let id = Id::new(text(&x["id"], &format!("{what}.id"))?);
+            let name = text(&x["why"], &format!("{what}.why"))?;
+            let why = NoPlace::of_wire(name)
+                .ok_or_else(|| WireDefect::at(format!("{what}.why: `{name}` is no reason the kernel names")))?;
+            if !impossible.iter().any(|(k, _, _)| *k == id) {
+                return Err(WireDefect::at(format!(
+                    "{what}: `{}` is not on the impossible list",
+                    id.as_str()
+                )));
+            }
+            Ok((id, why))
+        })
+        .collect::<W<Vec<_>>>()?;
+    unplaced.sort_by_key(|(id, _)| rank(id));
+
     Ok(Diagnostics {
         underused,
         a_capacity_lost: nat32(&v["aCapacityLost"], &at("aCapacityLost"))?,
@@ -899,6 +924,7 @@ fn diagnostics_of(v: &Value, segments: &[Segment], ctx: &DayCtx<'_>) -> W<Diagno
         plan_honesty: (total > 0).then(|| f64::from(planned) / f64::from(total)),
         rest_debt_min: nat32(&v["restDebtMin"], &at("restDebtMin"))?,
         notes,
+        unplaced,
     })
 }
 
@@ -1157,7 +1183,9 @@ mod tests {
                 "notes": [{"note": "travelDay"}],
                 "droppedTail": ["m3"],
                 "planHonesty": {"planned": 780, "total": 360},
-                "restDebtMin": 10},
+                "restDebtMin": 10,
+                "unplaced": day.diagnostics.unplaced.iter()
+                    .map(|(i, w)| json!({"id": i.as_str(), "why": w.wire_name()})).collect::<Vec<_>>()},
             "priorities": day.priorities.iter().map(|(i, p)| json!({"id": i.as_str(), "p": p.p})).collect::<Vec<_>>(),
             "hash": day.hash(),
         })
@@ -1228,6 +1256,7 @@ mod tests {
             plan_honesty: Some(780.0 / 360.0),
             rest_debt_min: 10,
             notes: vec!["travel day: no blocks planned (`travel-day` wall today)".to_string()],
+            unplaced: vec![(Id::new("d1"), NoPlace::NoRunLeft)],
         };
         day.priorities = cands.iter().zip(&prios).map(|(c, p)| (c.id.clone(), p.clone())).collect();
         let notes = [None, Some(json!({"note": "soFar", "workedMin": 12})), None, None];
@@ -1255,6 +1284,20 @@ mod tests {
         let mut bent = v.clone();
         bent["diagnostics"]["impossible"] = json!([{"id": "m1", "shortMin": 5}]);
         assert!(read_plan(&bent, &ctx).unwrap_err().0.contains("has no grant with a deadline"));
+        // D67 (P58): a reason the kernel does not name, and a name for an item
+        // the impossible list does not hold, are refused by name.
+        let mut bent = v.clone();
+        bent["diagnostics"]["unplaced"] = json!([{"id": "d1", "why": "tired"}]);
+        assert!(read_plan(&bent, &ctx).unwrap_err().0.contains("`tired` is no reason the kernel names"));
+        let mut bent = v.clone();
+        bent["diagnostics"]["unplaced"] = json!([{"id": "m1", "why": "budgetSpent"}]);
+        assert!(read_plan(&bent, &ctx).unwrap_err().0.contains("`m1` is not on the impossible list"));
+        // Every reason reads back as itself.
+        for w in [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent] {
+            let mut named = v.clone();
+            named["diagnostics"]["unplaced"] = json!([{"id": "d1", "why": w.wire_name()}]);
+            assert_eq!(read_plan(&named, &ctx).expect("reads").day.diagnostics.unplaced, vec![(Id::new("d1"), w)]);
+        }
         // Two answers of one call disagreeing about a priority.
         let mut bent = v.clone();
         bent["priorities"][0]["p"] = json!(1);

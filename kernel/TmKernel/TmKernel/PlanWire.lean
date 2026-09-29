@@ -1037,11 +1037,10 @@ def segJson (s : Planner.WfSeg) : JVal :=
 /-- An `IdList`, whole. -/
 def idsJson (c : Planner.IdList) : JVal := .arr (c.val.map JVal.str)
 
-/-- §8.2 step 8's twelve fields, each under its own name — then, since W-35 (README gaps 2640 and
-2743), the fork's three whole tuples whose other components `tm-core/src/emit.rs` prints:
-`impossibleUntil` (`{id, shortMin, until}`, the date as `YYYY-MM-DD`), `underusedLevels`
-(`{id, energy, ci}`) and `blockedDeps` (`{id, deps}`, each dep as its `after:` spelling).  The
-twelve keys and their bytes are unchanged, so a reader of the twelve reads what it always read. -/
+/-- The name `Planner.NoPlace`'s reason crosses the wire under (D67, P58; AGENTS §5.7): each constructor its own. -/
+def noPlaceName : Planner.NoPlace → List Char | .noRunLeft => "noRunLeft".toList | .noSlotLeft => "noSlotLeft".toList | .budgetSpent => "budgetSpent".toList
+/-- §8.2 step 8's twelve fields under their own names, then the fork's three whole tuples `tm-core/src/emit.rs` prints (W-35, gaps 2640, 2743): `impossibleUntil` (`{id, shortMin, until}`, `YYYY-MM-DD`),
+`underusedLevels` (`{id, energy, ci}`), `blockedDeps` (`{id, deps}`, each an `after:` spelling) — and since W-38 the kernel's `unplaced` (`{id, why}`, D67, P58).  The twelve keys' bytes are unchanged. -/
 def diagJson (d : Planner.Diagnostics) : JVal :=
   .obj [("underused".toList, idsJson d.underused),
     ("aCapacityLost".toList, .num d.aCapacityLost),
@@ -1071,7 +1070,8 @@ def diagJson (d : Planner.Diagnostics) : JVal :=
     ("blockedDeps".toList,
       .arr (d.blockedDeps.val.map (fun t =>
         .obj [("id".toList, .str t.1),
-          ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))])))]
+          ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))]))),
+    ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))])))]
 
 /-- §7's answers, in `EmitWire.readPrio`'s own `{id, p}` shape. -/
 def priosJson (c : Planner.Capped (Id × Fin 8)) : JVal :=
@@ -1441,7 +1441,7 @@ theorem diagJson_of_an_untroubled_day :
           ("droppedTail".toList, .arr []),
           ("planHonesty".toList, .obj [("planned".toList, .num 0), ("total".toList, .num 0)]),
           ("restDebtMin".toList, .num 0), ("impossibleUntil".toList, .arr []),
-          ("underusedLevels".toList, .arr []), ("blockedDeps".toList, .arr [])] := rfl
+          ("underusedLevels".toList, .arr []), ("blockedDeps".toList, .arr []), ("unplaced".toList, .arr [])] := rfl
 
 /-- **And with something wrong with it**, so the list shapes and `idsJson` are pinned at a
 value and not only at the empty list — the three whole tuples too since W-35: a date, two
@@ -1455,7 +1455,7 @@ theorem diagJson_carries_its_lists :
         aCapacityLost := 7, restDebtMin := 12, planHonesty := (2, 5),
         impossibleUntil := ⟨[(['b'], 30, 739884)], by decide⟩,
         underusedLevels := ⟨[(['e'], 4, 2)], by decide⟩,
-        blockedDeps := ⟨[(['f'], [.item ['g'], .event ['v']])], by decide⟩ }
+        blockedDeps := ⟨[(['f'], [.item ['g'], .event ['v']])], by decide⟩, unplaced := ⟨[(['h'], .noRunLeft), (['i'], .noSlotLeft), (['j'], .budgetSpent)], by decide⟩ }
       = .obj [("underused".toList, .arr []), ("aCapacityLost".toList, .num 7),
           ("hot".toList, .arr [.str ['a']]),
           ("impossible".toList,
@@ -1475,7 +1475,7 @@ theorem diagJson_carries_its_lists :
               ("ci".toList, .num 2)]]),
           ("blockedDeps".toList,
             .arr [.obj [("id".toList, .str ['f']),
-              ("deps".toList, .arr [.str ['^', 'g'], .str "event:v".toList])]])] := rfl
+              ("deps".toList, .arr [.str ['^', 'g'], .str "event:v".toList])]]), ("unplaced".toList, .arr [.obj [("id".toList, .str ['h']), ("why".toList, .str "noRunLeft".toList)], .obj [("id".toList, .str ['i']), ("why".toList, .str "noSlotLeft".toList)], .obj [("id".toList, .str ['j']), ("why".toList, .str "budgetSpent".toList)]])] := rfl
 
 /-- **§7's answers go out in `EmitWire.readPrio`'s own `{id, p}` shape**, which is what lets a
 host send back the day it was given. -/
@@ -1553,10 +1553,9 @@ theorem priosJson_is_the_id_and_the_priority_of_every_pair (c : Planner.Capped (
       = .arr (c.val.map (fun p => .obj [("id".toList, .str p.1), ("p".toList, .num p.2.val)])) :=
   rfl
 
-/-- **`diagJson` is these twelve fields, for every `Diagnostics`** — the fork's twelve, first and
-unchanged — **then the three whole tuples W-35 added** (README gaps 2640 and 2743).  Re-proved
-with its statement WIDENED by the three keys (D5): the twelve entries are the ones this law
-always stated, byte for byte. -/
+/-- **`diagJson` is these twelve fields, for every `Diagnostics`** — the fork's twelve, first and unchanged — **then the
+three whole tuples W-35 added** (README gaps 2640 and 2743) and W-38's `unplaced` (D67).  Re-proved with its statement
+WIDENED by those keys (D5): the twelve entries are the ones this law always stated, byte for byte. -/
 theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
     diagJson d
       = .obj [("underused".toList, idsJson d.underused),
@@ -1588,7 +1587,8 @@ theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
           ("blockedDeps".toList,
             .arr (d.blockedDeps.val.map (fun t =>
               .obj [("id".toList, .str t.1),
-                ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))])))] := rfl
+                ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))]))),
+          ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))])))] := rfl
 
 /-- **`noteJson` writes every FIELD of every constructor, and not only the name.**
 `noteJson_names_the_eleven` pins the eleven names at eleven points; this pins the numbers and

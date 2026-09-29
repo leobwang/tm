@@ -980,9 +980,12 @@ impl App {
                 PrioClass::Overdue => "overdue".to_string(),
                 PrioClass::Mandatory => "due today".to_string(),
                 PrioClass::HotFlag => "hot".to_string(),
+                // The owner's D67 (parity P58): an item step 5 left without a
+                // row says why, as `tm plan`'s banner does (`emit::unplaced_note`).
                 PrioClass::Impossible => format!(
-                    "impossible · short {}",
-                    review::fmt_blocks_min(prio.shortfall_min, self.cfg.block_min())
+                    "impossible · short {}{}",
+                    review::fmt_blocks_min(prio.shortfall_min, self.cfg.block_min()),
+                    tm_core::emit::unplaced_note(&self.plan, id)
                 ),
                 _ => match prio.u {
                     Some(u) if u.is_finite() => format!("u={u:.2}"),
