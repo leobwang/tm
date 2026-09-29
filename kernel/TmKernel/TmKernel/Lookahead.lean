@@ -5986,5 +5986,171 @@ theorem prioritiesWithFloors_on_a_roomier_witness :
        (some (82 * capDen, 13 * capDen), 0), (some (82 * capDen, 26 * capDen), 0)] := by
   constructor <;> decide
 
+/-! ## The stored runtime facts as the fork's PLANNER reads them, and an ad-hoc wall among the calendar walls (stage 6 W-38, track R)
+
+APPENDED 2026-09-29 (stage 6, run W-38, track R; README gaps 320 and 3281).  Both halves are here and
+not in `Planner.lean` for `PastCut.lean`'s reason: `Planner.lean` carries check 9's pin sites after
+§8.1, and a definition inserted above them moves every one; `Planner.lean` imports this module, so
+its own edits stay line-neutral.
+
+**The planner's reading of `state.json` (gap 320).**  The shipped binary reads the stored window
+TWICE: fork `Ctx::window` for day 0's CAPACITY — `Today.storedWindow` above, a window counted only
+with its budget and only when `state.date` is today — and fork `Planner::window_and_budget` for the
+day it PLANS, which reads `runtime.window` and `runtime.budget` on `planwire::plan_date`'s day,
+`state.date.unwrap_or(now's date)`, whatever sits beside them.  Two of the three inputs where the
+two part (gap 320) are a state naming NO day and a window with no budget beside it; the third,
+a window crossing midnight, was the W-37 repair's (gap 3341).  `Today.forToday` is the day rule,
+and `planWindow`, `planBudget` and `planArrivalSec` are the three facts the planner reads under
+it.  Day 0's capacity keeps `Ctx::window`'s reading (`day0Window`), because that is where the
+binary keeps it; `storedWindow_is_a_planWindow` and its two neighbours say the planner's reading
+is the wider one and never contradicts the capacity's where the capacity reads a fact at all.
+
+**An ad-hoc entry among sorted ones (gap 3281).**  Fork `collect_walls` pushes §9's running
+interruption — an ad-hoc wall — after the day's calendar walls and sorts them all by
+`(blocked_start, id)`; `emit_segments` walks that one list, and the final `(start, end)` sort keeps
+the walk's order for rows that tie.  `Planner.stepOneOrder` is that walk over the rows the planner already has, and
+`adhoc_walk_perm` and `adhoc_walk_map_filter` below are what it needs of the walk's shape. -/
+
+/-- **The day the stored runtime facts belong to, as the fork's planner reads it**: fork
+`planwire::plan_date` is `state.date`, else `now`'s own date, so a state that names no day is
+today's.  A state dated another day belongs to that day. -/
+def Today.forToday (T : Today) (today : Nat) : Bool := T.date.all (· == today)
+
+/-- **Fork `Planner::window_and_budget`'s `runtime.window`**: the stored window whenever the state
+is today's, with or without a budget beside it. -/
+def Today.planWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.Clock) :=
+  if T.forToday today then T.window else none
+
+/-- **Its `runtime.budget`**: `storedBudget`'s rule, widened by `plan_date`'s — a state naming no day is today's —
+with or without a window beside it. -/
+def Today.planBudget (T : Today) (today : Nat) : Option Nat :=
+  match T.date with
+  | none => T.budget
+  | some _ => T.storedBudget today
+
+/-- **Fork `Planner::new`'s arrival, as far as the state carries it**: the stored clock on the
+planned day when the state is today's, else `now`.  The fork falls back to the day's first logged
+`arrive` before `now`; that reading is README gap 3390's and is not taken here. -/
+def Today.planArrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
+  match (if T.forToday today then T.arrival else none) with
+  | some c => (Cal.instantOf z today c).sec
+  | none => T.now.sec
+
+theorem Today.forToday_of_date (T : Today) (today : Nat) (h : T.date = some today) :
+    T.forToday today = true := by
+  simp [Today.forToday, h]
+
+theorem Today.forToday_of_no_date (T : Today) (today : Nat) (h : T.date = none) :
+    T.forToday today = true := by
+  simp [Today.forToday, h]
+
+/-- **A state dated another day is not today's**, for the planner as for the capacity. -/
+theorem Today.not_forToday_of_another_day (T : Today) (today d : Nat) (h : T.date = some d)
+    (hd : d ≠ today) : T.forToday today = false := by
+  simp [Today.forToday, h, hd]
+
+/-- **The planner's reading is the wider one**: every window day 0's capacity counts, the planner
+plans with. -/
+theorem Today.storedWindow_is_a_planWindow (T : Today) (today : Nat) (w : Field.Clock × Field.Clock)
+    (h : T.storedWindow today = some w) : T.planWindow today = some w := by
+  unfold Today.storedWindow at h
+  split at h
+  · next hd =>
+    unfold Today.planWindow
+    rw [if_pos (T.forToday_of_date today hd)]
+    cases hw : T.window <;> cases hb : T.budget <;> rw [hw, hb] at h <;> simp at h
+    exact congrArg some h
+  · exact absurd h (by simp)
+
+/-- **…and every budget.** -/
+theorem Today.storedBudget_is_a_planBudget (T : Today) (today b : Nat)
+    (h : T.storedBudget today = some b) : T.planBudget today = some b := by
+  have hd : T.date = some today := by
+    unfold Today.storedBudget at h
+    split at h
+    · assumption
+    · exact absurd h (by simp)
+  unfold Today.planBudget
+  rw [hd]
+  exact h
+
+/-- **On a state dated today the two arrivals are one** — the capacity's and the planner's read
+the same clock, or both read `now`. -/
+theorem Today.planArrivalSec_on_a_dated_state (T : Today) (today : Nat) (z : Cal.Tz)
+    (h : T.date = some today) : T.planArrivalSec today z = T.arrivalSec today z := by
+  unfold Today.planArrivalSec Today.arrivalSec
+  rw [if_pos (T.forToday_of_date today h), if_pos h]
+
+/-- **Gap 320's two inputs, read as the fork's planner reads them, and the capacity's reading
+beside each.**  `state.window = 09:00–12:00` with `state.budget = 3` and NO date is the planner's
+window and budget (the capacity falls back to the formula); the same window with no budget is still
+the planner's window, with no stored budget (the formula's); and dated yesterday it is neither. -/
+theorem the_planner_reads_a_window_with_no_date_or_no_budget :
+    (Today.planWindow { specToday with window := some (540, 720), budget := some 3 } 739865,
+     Today.planBudget { specToday with window := some (540, 720), budget := some 3 } 739865,
+     Today.storedWindow { specToday with window := some (540, 720), budget := some 3 } 739865)
+      = (some (540, 720), some 3, none) ∧
+    (Today.planWindow { specToday with date := some 739865, window := some (540, 720) } 739865,
+     Today.planBudget { specToday with date := some 739865, window := some (540, 720) } 739865,
+     Today.storedWindow { specToday with date := some 739865, window := some (540, 720) } 739865)
+      = (some (540, 720), none, none) ∧
+    (Today.planWindow { specToday with date := some 739864, window := some (540, 720), budget := some 3 } 739865,
+     Today.planBudget { specToday with date := some 739864, window := some (540, 720), budget := some 3 } 739865)
+      = (none, none) := by
+  decide
+
+/-- **A state naming no day carries its arrival to the planner** (fork `Planner::new` reads
+`runtime.arrival` on `plan_date`'s day), and the capacity reads `now` there; dated today the two
+agree (`planArrivalSec_on_a_dated_state`). -/
+theorem the_planner_reads_an_arrival_with_no_date :
+    Today.planArrivalSec { specToday with arrival := some 420, now := atSpec 600 } 739865 Cal.chicago
+      = (Cal.instantOf Cal.chicago 739865 420).sec ∧
+    Today.arrivalSec { specToday with arrival := some 420, now := atSpec 600 } 739865 Cal.chicago
+      = (atSpec 600).sec ∧
+    Today.planArrivalSec { specToday with date := some 739864, arrival := some 420, now := atSpec 600 } 739865
+        Cal.chicago = (atSpec 600).sec := by
+  decide
+
+/-- **The walk that puts an ad-hoc entry's rows among sorted entries' rows adds nothing and drops nothing** — fork
+`collect_walls`' ad-hoc wall, walked where its sort puts it: the `lead` rows, the `mid` rows, the rows of every entry of
+`xs` that `le` puts at or before the ad-hoc key `k`, the ad-hoc entry's own rows, then the rest's — a permutation of
+the plain order `lead, own, mid, xs`.  Generic and a THEOREM, not a definition: `Planner.stepOneOrder` is the one
+walk the planner runs, monomorphic, and this is what it needs of the walk's shape. -/
+theorem adhoc_walk_perm {α β : Type} (le : α → α → Bool) (rowsOf : α → List β) (k : α)
+    (lead own mid : List β) (xs : List α) :
+    (lead ++ mid ++ (xs.filter (fun y => le y k)).flatMap rowsOf ++ own ++
+      (xs.filter (fun y => !le y k)).flatMap rowsOf).Perm (lead ++ own ++ mid ++ xs.flatMap rowsOf) := by
+  have hw : ((xs.filter (fun y => le y k)).flatMap rowsOf ++
+      (xs.filter (fun y => !le y k)).flatMap rowsOf).Perm (xs.flatMap rowsOf) := by
+    rw [← List.flatMap_append]
+    exact (List.filter_append_perm _ xs).flatMap_right rowsOf
+  have hm : (mid ++ (xs.filter (fun y => le y k)).flatMap rowsOf ++ own).Perm
+      (own ++ (mid ++ (xs.filter (fun y => le y k)).flatMap rowsOf)) := List.perm_append_comm
+  have h1 := (hm.append_left lead).append_right ((xs.filter (fun y => !le y k)).flatMap rowsOf)
+  have h2 := hw.append_left (lead ++ own ++ mid)
+  simp only [List.append_assoc] at h1 h2 ⊢
+  exact h1.trans h2
+
+/-- **A filter the moved rows cannot pass sees the plain order's rows**: where `p` refuses every row of `own`, of
+`mid` and of `xs`, the walk and the plain order filter to the same rows in the same order — the `lead` rows' own. -/
+theorem adhoc_walk_map_filter {α β γ : Type} (le : α → α → Bool) (rowsOf : α → List β) (k : α)
+    (lead own mid : List β) (xs : List α) (f : β → γ) (p : γ → Bool)
+    (hown : ∀ x ∈ own, p (f x) = false) (hmid : ∀ x ∈ mid, p (f x) = false)
+    (hxs : ∀ y ∈ xs, ∀ x ∈ rowsOf y, p (f x) = false) :
+    ((lead ++ mid ++ (xs.filter (fun y => le y k)).flatMap rowsOf ++ own ++
+      (xs.filter (fun y => !le y k)).flatMap rowsOf).map f).filter p
+      = ((lead ++ own ++ mid ++ xs.flatMap rowsOf).map f).filter p := by
+  have hnil : ∀ l : List β, (∀ x ∈ l, p (f x) = false) → (l.map f).filter p = [] := by
+    intro l hl
+    refine List.filter_eq_nil_iff.2 (fun c hc => ?_)
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+    simp [hl x hx]
+  have hflat : ∀ q : List α, (∀ y ∈ q, y ∈ xs) → ((q.flatMap rowsOf).map f).filter p = [] :=
+    fun q hq => hnil _ (fun x hx => by
+      obtain ⟨y, hy, hx⟩ := List.mem_flatMap.1 hx
+      exact hxs y (hq y hy) x hx)
+  simp only [List.map_append, List.filter_append, hnil own hown, hnil mid hmid,
+    hflat xs (fun _ h => h), hflat _ (fun y h => (List.mem_filter.1 h).1), List.append_nil]
+
 end Look
 end Tm

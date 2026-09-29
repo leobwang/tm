@@ -764,7 +764,7 @@ claimed otherwise (W-14 repair, gap 393). -/
 theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ replayedRows r) :
     segOf t ∈ (dayPlan r).segments := by
   rw [dayPlan_segments]
-  refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
+  refine mem_dayRows_of_mem ?_
   exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
     (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
       (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ ht))))))))

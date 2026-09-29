@@ -72723,3 +72723,294 @@ moved twenty minutes: its finding needs the day's last slot exactly `min_last_bl
 the unbuildable `[07:00, 16:00]` window gave at 08:30 and `tm arrive`'s `[07:00, 15:00]` gives at
 08:50; the fork's fractional cut still drops that slot and the kernel keeps it
 (`14:30–15:00 rest`).  Every proptest floor held on the new generator.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-38**, **TRACK R**
+     — the kernel's day agrees with the fork on the last shapes (README gaps
+     3281 and 320), step 5's served order is on the wire (gap 3343), and the
+     step-8 projections are kernel laws (gap 3282's Lean half).  Worktree
+     `w38-r`, branch `w38-r` from `f91bb90`.  Gap range 3390-3429; this block
+     takes **3390-3398**.  The parity number pre-allocated to this track is
+     NOT used: every row, window and budget this step moved now follows the
+     fork as the shipped binary runs it, so nothing diverges on purpose.
+     ===================================================================== -->
+
+## Stage 6 — W-38, track R: an interruption among the walls, gap 320's two inputs, the served order, and the step-8 projections as laws
+
+### 0. Measured first, at `f91bb90`, by value
+
+| comparand | days | differed from the shipped fork |
+|---|---|---|
+| `planner_invariants`' hash arm (generated) | 283 (one run, in a clone at `f91bb90`): **1** — 282 hashes equal | gap 3281's declared class (`order_differs_only_at_an_interruption`) — the seed `ef4f4091…` kept in `planner_invariants.proptest-regressions` |
+| the new `planner_w38_order.rs`' interruption days (`plan-basic`, `^g1`'s 12:50–13:50 meeting, an interruption running since 12:50 naming `t4`, `a1` or no block; planned at 13:50 and at 13:30) | 6 | **1** (5 of 6 hashes equal): named `t4` at 13:50 the kernel drew `[lost t4, wall g1]` where the fork draws `[wall g1, lost t4]` |
+| the new file's gap-320 days (`plan-basic` stored with no date; a stored window 08:00–15:00 with no budget; no date, an arrival and no window; each at 08:00, 10:30, 12:00, 14:00) | 12 | **12** (2 of 12 hashes equal, 62 differences): every kernel window was §8.1's formula, from `now` when the state named no day (`08:00–17:00` at 08:00 against the stored `07:00–16:00`) and from the arrival when no budget stood beside the window (`07:00–16:00` against the stored `08:00–15:00`) |
+
+Both were the kernel's alone: the fork planned every one of these days as the shipped binary does.
+
+### 1. What landed
+
+* **Gap 3281 — CLOSED.**  Fork `collect_walls` pushes §9's running interruption — an ad-hoc wall
+  keyed by `(blocked_start, id)`, the id the block it paused or `""` — after the day's calendar walls
+  and sorts them all; `emit_segments` walks that list and the final `(start, end)` sort keeps its order
+  for rows that tie.  `Planner.stepOneOrder` is that walk: `stepOneSegs` when no interruption runs,
+  else the log's rows, the running break, the walls `Planner.wallLe` puts at or before the
+  interruption's key (read off its own Lost row), the Lost row, and the rest — `wallLe` itself, the
+  kernel's one wall order, reused.  `Planner.dayRows` sorts `stepOneOrder` in `stepOneSegs`' place;
+  `Planner.stepOneOrder_perm` says nothing is added or dropped, so `Planner.mem_dayRows` and
+  `Planner.mem_dayRows_of_mem` keep their statements and every case split over them (`PlanCheck`'s
+  included) stands.  The laws: `Planner.insSort_snoc` (a stable sort with an entry pushed last places
+  it after every entry at or before it), `Planner.sortWalls_snoc` (fork `collect_walls`' push-then-sort
+  IS the split), `Planner.PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it` (the fork's
+  sort of the day's clipped walls with the interruption pushed last, and step 1's rows walked in that
+  order) and `Planner.stepOneOrder_without_an_interruption` (a day with no interruption is drawn
+  exactly as before).  The generic halves are theorems over the walk's shape, not definitions
+  (`Look.adhoc_walk_perm`, `Look.adhoc_walk_map_filter`): a generic `def` is called by the compiled
+  planner through its reduced-argument twin (the C symbol ending in ___redArg) and never by its own symbol, so check 12 reads it as unreached
+  (gap 3393) — the first version of this step shipped one and check 12 said so.
+* **Gap 320's two remaining inputs — CLOSED.**  Fork `Planner::window_and_budget` reads
+  `runtime.window`, `runtime.budget` and (through `Planner::new`) `runtime.arrival` on
+  `planwire::plan_date`'s day, `state.date` else `now`'s own date, whatever sits beside them.
+  `Look.Today.forToday` is that day rule, and `Look.Today.planWindow` (no budget needed beside the
+  window), `Look.Today.planBudget` (`Look.Today.storedBudget`'s rule widened by a state naming no day)
+  and `Look.Today.planArrivalSec` are the three facts the planner reads under it.
+  `Planner.PlanReq.window` and `Planner.PlanReq.budgetBlocks` read them; day 0's capacity keeps fork
+  `Ctx::window`'s reading (`Look.day0Window`), which is where the binary keeps it
+  (`kernel_lookahead_parity.rs` compares it exactly, unchanged).  `Look.Today.storedWindow_is_a_planWindow`,
+  `Look.Today.storedBudget_is_a_planBudget` and `Look.Today.planArrivalSec_on_a_dated_state` say the
+  planner's reading is the wider one and never contradicts the capacity's where that reads a fact at
+  all.  The fork's last fallback — the day's first logged `arrive` when the state carries no arrival — is
+  NOT taken (gap 3390).
+* **Gap 3343's kernel half — CLOSED.**  `Planner.Diagnostics.served`, written by
+  `Planner.dayDiagnostics` from `Planner.PlanReq.dayServed` — `PlanReq.rankedCands`, step 5's walk
+  order, as `(request position, id, ci)` — and emitted by `PlanWire.diagJson` under `served` as
+  `{ix, id, ci}`.  Bounded by the candidates' own cap (`Planner.PlanReq.dayServed_capped`,
+  `Planner.dayDiagnostics_served`), and check 13 counts its writer: **16 of 16** fields written.
+  `Planner.dayPlan_serves_in_the_walks_order` (the order is `rankedLe`'s and it is the list
+  `PlanReq.dayBatches` hands §7.5), `Planner.PlanReq.mem_dayServed` (each entry is an answer of this
+  request that entered the order, at its request position) and `PlanWire.the_served_key_is_the_walks_order`
+  (on the wire).  The harness switch is not this track's (gap 3396).
+* **Gap 3282's Lean half — CLOSED.**  Read by the arms: the fork region compares exactly three pairs of
+  the kernel's OWN keys against each other, all in `the_kernel_writes_the_rest_of_step_8_as_the_fork_does`,
+  and every other comparison there is kernel against fork.  The three are now laws at the JSON the export
+  writes, each stating that one list is rendered twice — the tuple key whole, the pair or id key its
+  projection, entry for entry and in order (stronger than the arm's multisets):
+  `PlanWire.the_impossible_key_is_the_impossibleUntil_key_projected`,
+  `PlanWire.the_underused_key_is_the_underusedLevels_key_projected`,
+  `PlanWire.the_blocked_key_is_the_blockedDeps_key_projected`.
+* **Gap 3391 — CLOSED by restatement: the busy day's budget witness zeroed a number nothing read.**
+  PlannerWit's P9 witness said zeroing the stored budget at `theBusyRequest` "leaves four" assigned rows,
+  and README gap 1904 and `Goals.lean`'s `plan_tail_drop` note read it as the one answer to whether the
+  budget can move step 5's assignment.  Its state names no day, and `Look.Today.storedBudget` counts a
+  budget only on a state dated today, so the zero never reached the planner.  Read as the fork's
+  planner reads it, **zeroing the budget assigns none**:
+  `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request` (4, then 0), with the P9 form
+  refuted by `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`.  So
+  the stored budget reaches `assignedOf`, and §8.2 choice 5b's prefix question has a subject.
+
+### 2. After — values, not counts
+
+| comparand | days | differ | what was compared by value |
+|---|---|---|---|
+| `planner_w38_order`, the interruption days | 6 | **0** | 84 fork rows, 3,306 other values, **6 of 6** hashes; the two rows at 12:50 asserted in order on both sides |
+| `planner_w38_order`, gap 320's days | 12 | **0** | 187 fork rows, 6,670 other values, **12 of 12** hashes; each window asserted on both sides |
+| `planner_w38_order`, the served order (`plan-basic` every half hour from two states, and the 41 frozen class worlds) | 90 | **0** | 1,568 `{ix, id, ci}` entries against `priority::sorted_candidates` over `forkclass::d60_cands`; 90 days served out of request order, 4 serving an impossible item first (D60) |
+| `planner_invariants`' hash arm | 283 a run, three standalone runs (and green in each of the three workspace runs) | **0** | hashes EQUAL 283 and rows agree 283 on every run; the declared class `order_differs_only_at_an_interruption` counted **0** on every run, the seed `ef4f4091…` included (gap 3394) |
+| `planner_classes` | 35 (+6 P45) | **0** | unchanged: 35 of 35 hashes, 409 fork rows, 12,616 other values |
+
+The first two rows plan the fork's day LIVE (`tm_core::planner::plan`, kernel-ranked as the binary wires
+it, D53) and hand it to `forkday::compare_day_with_fork` in a frozen line's shape, so the tally line those
+tests print says "frozen fork days"; no fixture was added, frozen or re-blessed.
+
+Gap 3390, pinned both ways: `the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels` asserts the
+fork's planner starts a `tm arrive`-then-`tm wake` day at the logged 07:00 and the kernel at `now`.
+
+### 3. Laws restated (D5)
+
+* `Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window` and its
+  twin over the day, `Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window`, replace W-37's two view laws, which gap 320's first input REFUTES
+  (`PlannerWit.the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted`: an undated
+  window is none the capacity counts, so the old hypothesis holds, and the planner plans with it).  The
+  new laws hold exactly where the two readings agree: a state dated today whose window carries its
+  budget and does not cross midnight.  The old do not follow from the new; they are false.
+* `Planner.PlanReq.budget_is_the_formula_without_a_budget_on_its_day` replaces the formula law over the
+  capacity's rule, REFUTED by `PlannerWit.the_budget_is_the_formula_without_a_stored_one_is_refuted`.
+* `Planner.PlanReq.budget_is_the_stored_one_when_there_is_one` and
+  `Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it` keep their names and state
+  their hypothesis over the planner's reading; the new implies the old
+  (`Look.Today.storedBudget_is_a_planBudget`, `Look.Today.storedWindow_is_a_planWindow`).
+* `PlanWire.diagJson_is_its_twelve_fields`, `PlanWire.diagJson_of_an_untroubled_day` and
+  `PlanWire.diagJson_carries_its_lists` are WIDENED by the `served` key; every earlier entry is unchanged.
+* Statements unchanged, proofs redone: `Planner.mem_dayRows`, `Planner.mem_dayRows_of_mem`,
+  `Planner.assignedOf_dayPlan_is_step_one_the_reservation_and_step_five`, the five
+  laws over `Planner.replayedRows` (term proofs, for the line budget) and
+  `PlanCheck.a_replayed_row_is_a_row_of_the_day` (through `Planner.mem_dayRows_of_mem`).
+* No goal added to or removed from `Goals.lean`; burn-down unchanged.
+
+### 4. Edits outside this track's files, each unavoidable
+
+* **`PlanCheck.lean`** (track K's): ONE line.  `a_replayed_row_is_a_row_of_the_day` unfolded
+  `Planner.dayRows` itself; it now reaches the day through `Planner.mem_dayRows_of_mem`.  Line-neutral.
+* **`Planner.Diagnostics`, `Planner.Diagnostics.empty`, `Planner.dayDiagnostics`, `PlanWire.diagJson`**
+  (track K's region): the `served` field, its empty value, its one write (on `blockedDeps`' line) and its
+  key (the last).  The Land step merges these with K's own additions; every edit is line-neutral.
+* **`PlannerWit.lean`**, two edits above the appended block: the busy-day budget witness (restated in place,
+  line-neutral, gap 3391) and one doc line naming the restated view law.
+* **`Lookahead.lean`**, appended only: the planner's `state.json` readings beside `Today.storedWindow`'s
+  module, and the two walk theorems.
+* **`Planner.lean`** stays line-neutral above its appended sections: `PlanReq.window`/`budgetBlocks` in place;
+  `stepOneOrder` and its law in the lines the five `replayedRows` proofs and `dayRows`' doc gave up;
+  `PlanReq.dayServed` in the five the step-5 section header gave up.  Every check-9 pin site outside the
+  rows this step re-audits stays where `kernel/mutations.txt` recorded it.
+
+### 5. Witnesses and D40
+
+* **`PlannerWit`, one block appended**: `the_interruption_and_the_meeting_are_drawn_in_the_forks_order`
+  (`theMeetingInterruptedRequest`: `m1` → `[wall g1, lost m1]`; `a1` and no block → the Lost row first;
+  `stepOneSegs`' own order, the last conjunct, draws the Lost row first — what changed), `the_order_laws_have_subjects`,
+  `gap_320s_two_inputs_are_read_as_the_forks_planner_reads_them` (`theUndatedWindowRequest` 13:00–17:00
+  and budget 3; `theUnbudgetedWindowRequest` 13:00–17:00 and the formula's 6; day 0's capacity 14:00–19:00
+  at both; `theDatedWindowRequest` where the two agree), `the_dated_window_request_is_in_the_view_laws_domain`,
+  the three refutations above, and `the_day_carries_the_order_step_five_serves` (at the reversed contention
+  day the request sends `t3` then `t1` and step 5 serves `(1, t1, 2)` then `(0, t3, 2)`).  Lookahead:
+  `the_planner_reads_a_window_with_no_date_or_no_budget`, `the_planner_reads_an_arrival_with_no_date`.
+  Every `decide` probed at `MemoryMax=8G`, `timeout 120` first: the block as its own file, 2.2 s and
+  1.0 GB.  No `maxRecDepth` raised (the file's own 400000), no `decide +kernel`.
+* **D40 (check 9), run in a clone of this tree** (`scratchpad/w38-r/clone1`, never the worktree):
+  15 definitions owed, `mutate.py --write` at a 16 GB cap (26 min 53 s): "15 definition(s) audited (10
+  pinned, 1 of them by an identity on an accumulator and 6 by a synthesised constant; 6 unfoldable, 1
+  unavailable, 4 witness fixtures, 1 pinned by nothing; 0 literal)".  PINNED at every constant tried:
+  `Look.Today.forToday` (`true`, `false`), `Look.Today.planWindow` and `Look.Today.planBudget` (`default`,
+  `none`), `Look.Today.planArrivalSec` (`0`, `1`, `today`), `Planner.PlanReq.window` (`default`, `(0, 0)`),
+  `Planner.PlanReq.budgetBlocks` (`0`, `1`), `Planner.PlanReq.dayServed`, `Planner.stepOneOrder` and
+  `Planner.dayRows` (`default`, `[]`), `PlanWire.diagJson` (`default`), and `Planner.dayDiagnostics` by
+  the synthesised `Planner.Diagnostics.empty`.  `Planner.Diagnostics.empty` keeps its verdict (no inhabitant
+  of `Diagnostics`, pinned by nothing, as at `f91bb90`); the four request fixtures are WITNESS FIXTURES.
+  `PlanReq.window`'s row, whose sites the restated laws moved, was re-run by `mutate.py --verify --write
+  --only` first ("1 row(s) whose recorded verdict or pin site had drifted (rewritten)").  Gate after: **499
+  rostered, 0 owed** (488 at `f91bb90`).  And four plants beside them, each in the clone, each reverted,
+  `git status --porcelain` identical before and after: the `served` write emptied → `Planner.dayDiagnostics_served`
+  fails; step 1 walked in `stepOneSegs`' old order → `Planner.PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it`
+  fails (with `Planner.stepOneOrder_perm`'s proof); `planWindow`, and separately `planBudget`, read by the
+  capacity's rule → `Look.the_planner_reads_a_window_with_no_date_or_no_budget` decides false.
+
+### 6. Gaps (3390-3398)
+
+**Gap 3390 — the fork's planner falls back to the day's first logged `arrive`; the kernel's does not.**
+1. *What.*  With no arrival in the state, fork `Planner::new` reads the day's first `arrive` from the replay
+before `now`; `Look.Today.planArrivalSec` reads `now`.  2. *Why.*  Taking it moves every `PlannerWit`
+witness built on `witToday` — a state naming no day beside a log holding a 07:00 `arrive` — so
+`the_witness_day_is_planned_from_two_in_the_afternoon`'s 14:00–19:00 and the rows under it are a window
+the fork's planner would not plan with; and `PlanReq.todayRecord` sits below `PlanReq.window`, so reading
+it is a move above check 9's pin sites.  3. *Cost.*  Reachable by the binary with two ordinary verbs:
+`tm arrive` then `tm wake` (which clears `state.arrival`, `window` and `budget` while the log keeps the
+`arrive`) — the fork plans from the logged 07:00 (driven on the shipped binary, §7: `window 07:00–16:00` at
+10:30), the kernel after R3 from `now`; and gap 3398 makes the same world move under D42's rebuild.  Pinned by
+`the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels`.  4. *Clears it.*  Before R3: the
+planner's arrival reads the day record's first arrival after the state's, with the witnesses re-derived.
+
+**Gap 3391 — CLOSED here** (§1): the busy day's budget witness was vacuous.
+
+**Gap 3392 — live prose still cites the refuted budget witness as true.**  1. *What.*  `Goals.lean` (the
+`plan_tail_drop` notes), `PlanCheck.lean`'s module and D29 notes, `PlannerWit.lean`'s header and §3 notes
+and one `Planner.lean` note cite the P9 witness and say the budget cannot reach `assignedOf`; it can.
+2. *Why.*  Three of the four files are other tracks' this run; `kernel/citations-allow.txt` counts the
+citations (12 qualified, 9 bare) so check 8 holds them.  3. *Cost.*  A reader of those notes is told the
+opposite of what `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request` proves.  4. *Clears it.*
+The owner of each file names the successor; the counts fall with each edit.
+
+**Gap 3393 — check 12 reads a generic definition as unreached although the planner runs it.**  1. *What.*  A
+`def` with a type parameter is compiled with a reduced-argument twin (___redArg) and every caller calls the twin, so
+`callgraph.py` never reaches the definition's own symbol: `Planner.Capped.ofListTake`, `Replay.insSort` and
+`Replay.insBy` sit in `reach-exempt.txt` for that reason, and a generic walk this step first wrote was
+reported NOT EXEMPT.  2. *Why.*  The gate scripts are track H's.  3. *Cost.*  Generic helpers are steered
+out of the kernel, and the exemption file counts running code as dead.  4. *Clears it.*  `callgraph.py`
+reads an edge to a definition's ___redArg twin as an edge to the definition; the entries it frees go STALE and the file shrinks.
+
+**Gap 3394 — `planner_invariants`' declared class `order_differs_only_at_an_interruption` is now empty.**
+It counted 0 on every run (§2), so it is a check no input can fail; track H or the Land step deletes the
+class, its census field and its pin test `the_interruption_order_class_is_exactly_that`.
+
+**Gap 3395 — gap 320's worlds are not buildable by the binary's verbs.**  1. *What.*  A state naming no day
+beside a window, and a window stored with no budget, are hand edits of `.tm/state.json`: `tm wake`,
+`tm arrive`, `tm start`, `tm plan` and D42's rebuild all write `date: today`, and every writer of the
+window writes the budget beside it (`tm arrive`; the rebuild, from the arrival record or else
+`Ctx::arrival_window`) while `tm wake` and the day roll clear both.  `forkclass::binary_holds`' clause 5 refuses both (the rebuild answers the date and the
+arrive record's budget).  2. *Why.*  D64(b).  3. *Cost.*  After R3 these readings are held by the W-38
+witnesses and the Lookahead laws, not by the frozen comparand.  4. *Clears it.*  Nothing, by D64(b) — told
+to track H.  The gap-3390 world (arrive, then wake) IS built by the binary's verbs and fails clause 5 as
+well, for gap 3398's reason.
+
+**Gap 3396 — the monotone-rank check still reads the Rust copy.**  `diagnostics.served` equals the copy on
+every day compared (§2), so switching `planner_invariants`' `Kernel::rank_view` to it changes no verdict;
+the switch is track H's or the Land step's, and it closes gap 3343's harness half.
+
+**Gap 3398 — `tm wake` after `tm arrive` leaves a cache that D42's rebuild does not reproduce.**
+1. *What.*  `day::wake` clears `arrival`, `window` and `budget` ("A new day: the window, the budget and
+everything running are gone"), while the rebuild restores all three from the day's last `arrive` record
+(`ctx::derived_state`, D45).  Driven on the shipped binary (§7): `tm arrive` at 07:00, `tm wake 06:05` at
+07:30, and the cache holds none of the three; `rm .tm/state.json`, and the next verb rebuilds
+`arrival 07:00, window 07:00–16:00, budget 6`.  2. *Why.*  The host writers are track T's, and which reading
+is right — a wake re-opening the day, or a same-day arrival surviving it — is a product question D45 did not
+settle.  3. *Cost.*  D42's "deleting the runtime state changes nothing" holds on this world only through the
+fork planner's logged-arrive fallback: both cache states plan `07:00–16:00` today.  Once the kernel plans
+(R3) without gap 3390's fallback, the same deletion MOVES the day's window, from `now` to 07:00.  And
+`forkclass::binary_holds`' clause 5 refuses the world, so no frozen class carries the case.  4. *Clears it.*
+Either `tm wake` stops clearing a same-day arrival or the rebuild stops restoring one a later wake cleared (a
+host decision), and gap 3390's fallback makes the kernel's plan indifferent to which.
+
+**Gap 3397 — `served` names a request position, and the host does not decode it.**  `ix` indexes the
+capacity section's `candidates.items` as SENT (`planreq::send_order`), not the host's candidate list;
+`tm_core::planwire::read_plan` ignores the key.  Both are right for a harness that holds its own send
+order; a host reader, when one is wanted, maps `ix` through the order it sent.
+
+### 7. Acceptance
+
+Every command capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for
+`mutate.py`, 8 GB and `timeout 120` for the decide probes), in the worktree unless a clone is named, with
+`git status --porcelain` identical before and after each — except workspace run 1, during which this step
+copied `kernel/mutations.txt` in from the clone that ran `mutate.py` (a file no test reads).
+
+* **`check.sh`, 17 lines, exit 0** (the last run, on this tree, 26 s warm; 5 min 0 s for the first after the kernel build): build ok; totality ok; axiom audit **5,775**
+  theorems (Classical.choice 2,937, Quot.sound 4,379, propext 5,383; 389 on none); Negative.lean rejected;
+  FFI **95** tests; corpus 29/37 files and 4/5 whole plans; stage goals **6**, all stage 6 (unchanged);
+  prose citations **48,241** (46,063 resolved, 2,178 allowed, 412 of them counted; 0 allow entries unused); new definitions mutated **499** rostered, **0** owed (163 unfoldable, 106 witness
+  fixtures, 32 pinned by nothing, 2 literal); parity P1-P57, next free **P58** (none taken here); no two
+  names for one definition 0 UNANSWERED (3,255 bodies, 94 generalisation groups); every emitted definition
+  reached — 1,213 reachable, 1,199 exempt (1,200 at `f91bb90`: `Planner.wallLe` left), 0 UNANSWERED; every
+  emitted field has a writer **16 of 16**; inputs 33 of 37 read (4 exempt); sent 28 of 28; written 34 (28
+  written, 3 exempt); the kernel replays 89 modules.
+* **`cargo test --workspace`, THREE runs** (D46): runs 1 and 2 **1,658 passed / 0 failed / 12 ignored
+  across 99 result lines** (14 min 32 s, 13 min 39 s).  Run 3: **1,656 / 2 failed / 12** — both failures
+  `cli_latency`'s year-of-log first verbs, killed at the 5 s bound while tracks H and K ran
+  `planner_invariants`, `planner_classes` and Lean builds beside it (load 13-20 on 32 cores; gap 1333's
+  class).  Not this step's: `cli_latency` was re-run three times on its own, 6 of 6 each with the ignored
+  three-year test, interleaved with `f91bb90`'s binary in a clone (HEAD first on the third pair) — the
+  one-year first verb 1.52 / 1.36 / 1.28 s here against 1.35 / 1.29 / 1.32 s at `f91bb90`, the three-year
+  first verb 2.52 / 2.50 / 2.36 s against 2.42 / 2.37 / 2.37 s, genesis 2.45 / 2.32 / 2.36 s against
+  2.65 / 2.33 / 2.41 s, every later verb 81-197 ms against 81-192 ms (the 226-file tree's, which pays the
+  process start and every module's initialisation, 81-86 ms on both sides).  No planner code runs on
+  `tm drop`'s path.
+* **`planner_invariants`**, three standalone runs with `--include-ignored`: 31 passed each (6 min 30 s,
+  6 min 9 s, 5 min 37 s), 283 hash-arm cases each, hashes EQUAL 283, class `order_differs_only_at_an_interruption`
+  **0** (at `f91bb90`, in a clone: 283 cases, 282 EQUAL, class **1**).  **`planner_classes`**, three runs with
+  `--include-ignored`: 28 passed each, 35 of 35 hashes, 409 fork rows, 12,616 values; and 26 (+2 ignored) in
+  each workspace run.
+* **Named suites**, `--include-ignored`, one run each on the committed code: `planner_w38_order` 14 (and 14 in
+  each workspace run), T5 `kernel_replay_parity` 33, the door `kernel_log_door` 23, `cli_switch_acceptance`
+  16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `kernel_plan_codec` 9, `planner_fixtures` 13,
+  `planner_regressions` 46, `planner_dynamics` 23, `emit_planner` 14, `planner_w37_rows` 12, `cli_latency` 6.
+  All green.
+
+**Driven, on the shipped binary** (whose `tm plan` still runs the fork's planner until R3), each on a fresh
+`tm init --example` tree at `--now 2026-09-07T10:30:00-05:00`, the state written by hand:
+
+    {"date":null,"window":["08:00","10:00"],"budget":3}   ->  2026-09-07 · window 08:00–10:00 · budget 3 blocks
+    {"date":"2026-09-07","window":["08:00","15:00"]}      ->  2026-09-07 · window 08:00–15:00 · budget 6 blocks
+    {"date":null,"arrival":"07:15"}                       ->  2026-09-07 · window 07:15–16:15 · budget 6 blocks
+
+— the three readings `Look.Today.planWindow`, `Look.Today.planBudget` and `Look.Today.planArrivalSec` now
+give the kernel.  And gap 3390's world built by verbs, no hand edit: `tm arrive` at 07:00 (window
+07:00–16:00, budget 6), `tm wake 06:05` at 07:30 (the cache's `arrival`, `window` and `budget` all null),
+`tm plan` at 10:30 prints `window 07:00–16:00 · budget 6 blocks` — the fork's logged-arrive fallback — and
+`rm .tm/state.json` then rebuilds `arrival 07:00, window 07:00–16:00, budget 6` (gap 3398).

@@ -4767,9 +4767,9 @@ open Tm
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
 #print axioms Tm.Planner.assignedOf_empty
 #print axioms Tm.Planner.blockSeconds_empty
-#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
 #print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
-#print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_stored_one
+#print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_budget_on_its_day
 #print axioms Tm.Planner.dayPlan_day
 #print axioms Tm.Planner.dayPlan_window
 #print axioms Tm.Planner.dayPlan_blockMin
@@ -5083,7 +5083,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.witRun0_resumes
 #print axioms Tm.PlannerWit.witBuilds0
 #print axioms Tm.PlannerWit.the_quiet_day_assigns_nothing
-#print axioms Tm.PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
+#print axioms Tm.PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request
 
 #print axioms Tm.PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin
 #print axioms Tm.PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free
@@ -7492,4 +7492,49 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- The view law window_is_the_lookaheads was renamed in place above to the subdomain it holds on.
 -- ============================================================================
 #print axioms Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it
-#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
+
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-38 TRACK R -- the running interruption walked among the walls in
+-- fork `collect_walls`' order (README gap 3281), the stored window and budget read as the fork's
+-- planner reads them (gap 320's two remaining inputs), step 5's served order on the day (gap 3343),
+-- the step-8 pair and id keys as their tuples' projections on the wire (gap 3282), and the busy
+-- day's budget witness answered the other way (gap 3391).  Four audit lines above were renamed in
+-- place with their theorems: the two window view laws and the budget formula law (restated on the
+-- subdomain they hold on) and the busy day's budget witness (restated, its P9 form refuted below).
+-- ============================================================================
+#print axioms Tm.Look.Today.forToday_of_date
+#print axioms Tm.Look.Today.forToday_of_no_date
+#print axioms Tm.Look.Today.not_forToday_of_another_day
+#print axioms Tm.Look.Today.storedWindow_is_a_planWindow
+#print axioms Tm.Look.Today.storedBudget_is_a_planBudget
+#print axioms Tm.Look.Today.planArrivalSec_on_a_dated_state
+#print axioms Tm.Look.the_planner_reads_a_window_with_no_date_or_no_budget
+#print axioms Tm.Look.the_planner_reads_an_arrival_with_no_date
+#print axioms Tm.Look.adhoc_walk_perm
+#print axioms Tm.Look.adhoc_walk_map_filter
+#print axioms Tm.Planner.PlanReq.window_is_the_stored_one_on_its_day
+#print axioms Tm.Planner.PlanReq.window_is_the_formula_without_a_window_on_its_day
+#print axioms Tm.Planner.insBy_append_cons_of_le
+#print axioms Tm.Planner.insBy_append_of_after
+#print axioms Tm.Planner.insSort_snoc
+#print axioms Tm.Planner.sortWalls_snoc
+#print axioms Tm.Planner.stepOneOrder_without_an_interruption
+#print axioms Tm.Planner.PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it
+#print axioms Tm.Planner.stepOneOrder_perm
+#print axioms Tm.Planner.PlanReq.dayServed_capped
+#print axioms Tm.Planner.dayDiagnostics_served
+#print axioms Tm.Planner.dayPlan_serves_in_the_walks_order
+#print axioms Tm.Planner.PlanReq.mem_dayServed
+#print axioms Tm.PlanWire.the_impossible_key_is_the_impossibleUntil_key_projected
+#print axioms Tm.PlanWire.the_underused_key_is_the_underusedLevels_key_projected
+#print axioms Tm.PlanWire.the_blocked_key_is_the_blockedDeps_key_projected
+#print axioms Tm.PlanWire.the_served_key_is_the_walks_order
+#print axioms Tm.PlannerWit.the_interruption_and_the_meeting_are_drawn_in_the_forks_order
+#print axioms Tm.PlannerWit.the_order_laws_have_subjects
+#print axioms Tm.PlannerWit.gap_320s_two_inputs_are_read_as_the_forks_planner_reads_them
+#print axioms Tm.PlannerWit.the_dated_window_request_is_in_the_view_laws_domain
+#print axioms Tm.PlannerWit.the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted
+#print axioms Tm.PlannerWit.the_budget_is_the_formula_without_a_stored_one_is_refuted
+#print axioms Tm.PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted
+#print axioms Tm.PlannerWit.the_day_carries_the_order_step_five_serves
