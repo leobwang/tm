@@ -385,23 +385,27 @@ pub fn routines_text(case: &Case) -> String {
     s
 }
 
-pub fn log_text(case: &Case, tz: Tz) -> String {
+pub fn log_text(case: &Case, cfg: &Config, arrival: &Arrival, typed: bool) -> String {
+    let tz = cfg.tz;
     let arrive = case.arrival_hour();
     let done = case.done(tz);
     let wake = case.wake_time();
+    let loc = arrival.loc;
     let mut s = format!(
         "{{\"t\":\"{DAY}T{:02}:{:02}:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n\
-         {{\"t\":\"{DAY}T{arrive:02}:00:00-05:00\",\"ev\":\"arrive\",\"loc\":\"lounge\",\
-         \"window\":[\"{arrive:02}:00\",\"{:02}:00\"],\"budget\":6}}\n",
+         {{\"t\":\"{DAY}T{arrive:02}:00:00-05:00\",\"ev\":\"arrive\",\"loc\":\"{loc}\",\
+         \"window\":[\"{}\",\"{}\"],\"budget\":{}}}\n",
         wake.format("%H").to_string().parse::<u32>().unwrap_or(6),
         wake.format("%M").to_string().parse::<u32>().unwrap_or(0),
-        (arrive + 8).min(23),
+        arrival.window.0.format("%H:%M"),
+        arrival.window.1.format("%H:%M"),
+        arrival.budget,
     );
     for j in 0..done {
         let id = id_of('z', j as usize);
         let start = arrive + j;
         s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{start:02}:00:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":{}.0,\"slept_min\":480,\"loc\":\"lounge\",\"blocks_done\":{j},\"since_break_min\":0}}\n",
+            "{{\"t\":\"{DAY}T{start:02}:00:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":{}.0,\"slept_min\":480,\"loc\":\"{loc}\",\"blocks_done\":{j},\"since_break_min\":0}}\n",
             start - 6
         ));
         s.push_str(&format!(
@@ -411,7 +415,7 @@ pub fn log_text(case: &Case, tz: Tz) -> String {
     }
     if let Some(rep) = case.report {
         s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{:02}:05:00-05:00\",\"ev\":\"energy\",\"pred\":4,\"rep\":{rep},\"hsw\":1.08,\"loc\":\"lounge\"}}\n",
+            "{{\"t\":\"{DAY}T{:02}:05:00-05:00\",\"ev\":\"energy\",\"pred\":4,\"rep\":{rep},\"hsw\":1.08,\"loc\":\"{loc}\"}}\n",
             arrive
         ));
     }
@@ -434,15 +438,142 @@ pub fn log_text(case: &Case, tz: Tz) -> String {
     // The block that is running at `now`, as the log records it.
     if let Some((id, started)) = active_block(case, tz) {
         s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{:02}:{:02}:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":4.0,\"slept_min\":480,\"loc\":\"lounge\",\"blocks_done\":{done},\"since_break_min\":0}}\n",
+            "{{\"t\":\"{DAY}T{:02}:{:02}:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":4.0,\"slept_min\":480,\"loc\":\"{loc}\",\"blocks_done\":{done},\"since_break_min\":0}}\n",
             started.format("%H"),
             started.format("%M"),
         ));
+        // **The meetings the block ran into, logged as the binary's housekeeping logs
+        // them** (owner D61; W-37 repair, README gap 3340): a world whose running block
+        // passed a wall's start with no `pause` logged is one the binary does not hold —
+        // the first verb after the wall began writes it — so the generator writes it,
+        // in file order, before the interruption that named the block (whose own verb's
+        // housekeeping ran first).
+        for (t, pause) in timer_marks(case, &arrival.walls, tz, typed).marks {
+            let ev = if pause { Event::Pause { id: id.clone() } } else { Event::Unpause { id: id.clone() } };
+            s.push_str(&(LogEntry::new(t.fixed_offset(), ev).to_json().expect("a timer entry serialises") + "\n"));
+        }
     }
     if over_the_block {
         s.push_str(intr_line.as_deref().unwrap_or_default());
     }
     s
+}
+
+/// **What `tm arrive` logs and `.tm/state.json` holds of it** (owner D42/D45; W-37
+/// repair, README gap 3340): the location, and the window and budget `tm arrive`
+/// computes at the arrival over the day's walls — fork `capacity::window_and_budget`,
+/// which is the binary's `Ctx::arrival_window` — so the log's `arrive` line and the
+/// cache agree, as D42's rebuild demands. Until the repair the log said `[arrival,
+/// arrival + 8h]` and the cache `[arrival, 16:00]` (a late day none), and the home
+/// day's cache said `home` while its log said `lounge`: no generated world was one the
+/// binary can build.
+#[derive(Clone, Debug)]
+pub struct Arrival {
+    pub loc: &'static str,
+    pub window: (NaiveTime, NaiveTime),
+    pub budget: u32,
+    /// Today's walls, read off the tree ([`walls_of_tree`]), which the window was
+    /// computed over and the meetings are logged against.
+    pub walls: Vec<(DateTime<Tz>, DateTime<Tz>)>,
+}
+
+pub fn arrival_of(case: &Case, tree: &Tree, cfg: &Config) -> Arrival {
+    let walls = walls_of_tree(tree, cfg.tz);
+    let at = case.arrival(cfg.tz);
+    let (end, budget) = tm_core::capacity::window_and_budget(at, &walls, cfg);
+    Arrival {
+        loc: if case.home { "home" } else { "lounge" },
+        window: (at.time(), end.time()),
+        budget,
+        walls,
+    }
+}
+
+/// **Today's walls of a tree**, as the binary's `Ctx::walls_on` reads them: every
+/// open Interval item overlapping the day, its start moved back by `buffer:`, sorted
+/// by start.
+pub fn walls_of_tree(tree: &Tree, tz: Tz) -> Vec<(DateTime<Tz>, DateTime<Tz>)> {
+    let mut out = Vec::new();
+    for item in tree.iter() {
+        if item.state.is_closed() {
+            continue;
+        }
+        let id = Tree::key_of(item);
+        let tm_core::model::Shape::Interval { start, end } = tree.effective_shape(&id) else {
+            continue;
+        };
+        let start = match item.buffer {
+            Some(b) => start - Duration::minutes(i64::from(b.as_minutes())),
+            None => start,
+        };
+        if start.date() > date() || end.date() < date() {
+            continue;
+        }
+        out.push((local_dt(tz, start.date(), start.time()), local_dt(tz, end.date(), end.time())));
+    }
+    out.sort_by_key(|(a, _)| *a);
+    out
+}
+
+/// The running block's timer marks a day's walls write, and what they leave.
+#[derive(Clone, Debug, Default)]
+pub struct TimerMarks {
+    /// `(instant, is a pause)`, in the order the verbs wrote them.
+    pub marks: Vec<(DateTime<Tz>, bool)>,
+    /// Whether a typed pause longer than the first meeting was drawn.
+    pub typed: bool,
+    /// Whether the last mark is a pause (the block is paused at `now`).
+    pub paused: bool,
+}
+
+/// **The marks D61's housekeeping writes over the running block** (the kernel's
+/// `WallTimer.writes`, as the verbs a user runs through the day write them): for each
+/// joined wall span that began after the block started and by `now`, a `pause` at its
+/// start, and an `unpause` at its end once it has ended — unless the block's timer was
+/// already stopped when the span began (an open interruption from its start, the
+/// running block's own or one it was started inside), and with no `unpause` when an
+/// interruption began inside the span (its mark, not the wall's pause, is then the last
+/// word on the timer). With `typed`, the first such span that leaves ten minutes on
+/// either side inside `(started, now)` is covered instead by a TYPED pause from ten
+/// minutes before it to ten minutes after it (`tm pause` twice), and the walls it
+/// covers write nothing (the timer was stopped when they began).
+pub fn timer_marks(case: &Case, walls: &[(DateTime<Tz>, DateTime<Tz>)], tz: Tz, typed: bool) -> TimerMarks {
+    let mut out = TimerMarks::default();
+    let Some((_, started)) = active_block(case, tz) else { return out };
+    let now = case.now(tz);
+    let stop_from = interruption(case, tz).map(|i| i.at.max(started));
+    let mut spans = walls.to_vec();
+    spans.sort();
+    let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
+    for (lo, hi) in spans {
+        match merged.last_mut() {
+            Some(m) if lo <= m.1 => m.1 = m.1.max(hi),
+            _ => merged.push((lo, hi)),
+        }
+    }
+    let ten = Duration::minutes(10);
+    let mut typed_until: Option<DateTime<Tz>> = None;
+    for (lo, hi) in merged.into_iter().filter(|(lo, _)| *lo > started && *lo <= now) {
+        if stop_from.is_some_and(|s| lo >= s) || typed_until.is_some_and(|u| lo <= u) {
+            continue;
+        }
+        if typed && !out.typed && lo - ten > started && hi + ten < now
+            && stop_from.is_none_or(|s| hi + ten < s)
+            && out.marks.last().is_none_or(|m| lo - ten > m.0)
+        {
+            out.marks.push((lo - ten, true));
+            out.marks.push((hi + ten, false));
+            typed_until = Some(hi + ten);
+            out.typed = true;
+            continue;
+        }
+        out.marks.push((lo, true));
+        if hi <= now && stop_from.is_none_or(|s| hi <= s) {
+            out.marks.push((hi, false));
+        }
+    }
+    out.paused = out.marks.last().is_some_and(|m| m.1);
+    out
 }
 
 /// **The open interruption a case draws, as `tm interrupt` leaves it** (owner
@@ -515,7 +646,12 @@ pub struct World {
 }
 
 pub fn build(case: &Case) -> World {
-    let cfg = Config::default();
+    build_with(case, Config::default(), false)
+}
+
+/// [`build`] under a given configuration, and with the P56 arm's typed pause
+/// ([`timer_marks`]) when `typed`.
+pub fn build_with(case: &Case, cfg: Config, typed: bool) -> World {
     let tz = cfg.tz;
     let week = week_text(case);
     let cal = calendar_text(case);
@@ -529,32 +665,29 @@ pub fn build(case: &Case) -> World {
     ];
     let tree = Tree::from_texts(&files, &cfg);
     let docs = files.iter().map(|(p, t)| ((*p).to_string(), (*t).to_string())).collect();
-    let log = log_text(case, tz);
+    let arrival = arrival_of(case, &tree, &cfg);
+    let log = log_text(case, &cfg, &arrival, typed);
     let replay = chokepoint::replay_of_text(&log, tz);
     let now = case.now(tz);
     let intr = interruption(case, tz);
-    let arrival = NaiveTime::from_hms_opt(case.arrival_hour(), 0, 0).expect("time");
+    let marks = timer_marks(case, &arrival.walls, tz, typed);
     let state = RuntimeState {
         date: Some(date()),
         wake: Some(case.wake_time()),
-        arrival: Some(arrival),
-        loc: Some(if case.home { "home" } else { "lounge" }.to_string()),
-        // A late day stores no window, so §8.1's formula runs and the evening
-        // wall pushes the end past midnight.
-        window: (!case.late).then(|| {
-            (
-                arrival,
-                NaiveTime::from_hms_opt(16, 0, 0).expect("time"),
-            )
-        }),
-        budget: (!case.late).then_some(6),
+        arrival: Some(arrival.window.0),
+        loc: Some(arrival.loc.to_string()),
+        // What `tm arrive` stored — the same window and budget its `arrive` line
+        // carries (D42); on a late day the evening wall pushes the end past midnight.
+        window: Some(arrival.window),
+        budget: Some(arrival.budget),
         active: case.active.and_then(|(_, _, est)| {
             active_block(case, tz).map(|(id, started)| ActiveBlock {
                 id: Id::new(id),
                 started: started.naive_local().time(),
                 est_min: est,
-                // `tm interrupt` pauses the block it interrupts (D64(b)).
-                paused: intr.as_ref().is_some_and(|i| i.id.is_some()),
+                // `tm interrupt` pauses the block it interrupts (D64(b)); a meeting
+                // whose pause is the last word on the timer holds it paused (D61).
+                paused: intr.as_ref().is_some_and(|i| i.id.is_some()) || marks.paused,
             })
         }),
         interrupt: intr.as_ref().map(|i| InterruptState {
@@ -655,7 +788,19 @@ impl World {
         let last_done = (case.done(tz) > 0)
             .then(|| case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5));
         let started = active_block(case, tz).map(|(_, s)| s);
-        let floor = last_done.into_iter().chain(started).max().map(|t| t + Duration::minutes(1));
+        // ... and after the last timer mark the log holds (W-37 repair, README gap 3340):
+        // a meeting's `pause`/`unpause` is written by the verbs of the day, and a break
+        // taken before one would have stopped the timer, so the wall would have written
+        // nothing — the world the generator logged is the one with no break before it.
+        let last_mark = self
+            .log
+            .lines()
+            .filter(|l| l.contains("\"ev\":\"pause\"") || l.contains("\"ev\":\"unpause\""))
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .filter_map(|v| v["t"].as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()))
+            .map(|t| t.with_timezone(&tz))
+            .max();
+        let floor = last_done.into_iter().chain(started).chain(last_mark).max().map(|t| t + Duration::minutes(1));
         let t = floor.map_or(self.now - Duration::minutes(i64::from(ago)), |f| {
             (self.now - Duration::minutes(i64::from(ago))).max(f)
         });
@@ -673,98 +818,9 @@ impl World {
         Some(t)
     }
 
-    /// **Today's walls, read off the tree** as the binary's `Ctx::walls_on` reads them:
-    /// every open Interval item overlapping the day, its start moved back by `buffer:`,
-    /// sorted by start — so a widening never re-spells the calendar [`calendar_text`] wrote.
+    /// **Today's walls, read off the tree** ([`walls_of_tree`]).
     pub fn walls_today(&self) -> Vec<(DateTime<Tz>, DateTime<Tz>)> {
-        let tz = self.cfg.tz;
-        let mut out = Vec::new();
-        for item in self.tree.iter() {
-            if item.state.is_closed() {
-                continue;
-            }
-            let id = Tree::key_of(item);
-            let tm_core::model::Shape::Interval { start, end } = self.tree.effective_shape(&id) else {
-                continue;
-            };
-            let start = match item.buffer {
-                Some(b) => start - Duration::minutes(i64::from(b.as_minutes())),
-                None => start,
-            };
-            if start.date() > date() || end.date() < date() {
-                continue;
-            }
-            out.push((local_dt(tz, start.date(), start.time()), local_dt(tz, end.date(), end.time())));
-        }
-        out.sort_by_key(|(a, _)| *a);
-        out
-    }
-
-    /// **A meeting passed while the running block ran, logged as the binary logs it**
-    /// (the P56 arm's, W-37 repair, README gap 3332). D61's housekeeping writes a `pause` at
-    /// every joined wall span that began after the block started, and its `unpause` once the
-    /// span has ended (`tm/src/cli/day.rs`' `stop_the_timer_at_walls`, the kernel's
-    /// `WallTimer.writes`); with `typed`, the user paused ten minutes before the first such
-    /// span and resumed ten minutes after it (`tm pause` twice), so the housekeeping writes
-    /// nothing for it (the timer was stopped when the wall began) and the logged pause is
-    /// LONGER than the wall — the case the cut leaves pieces of. Spans the typed pause does
-    /// not cover get D61's marks as before. Only on a day with a running block and no
-    /// interruption (a break is not drawn by the arms that call this). The marks follow the
-    /// block's `start` in file order, as the verbs that write them run after it, and the
-    /// block is paused when a span covers `now`. `None` when nothing was logged; else whether
-    /// a typed pause was drawn.
-    pub fn log_a_passed_meeting(&mut self, case: &Case, typed: bool) -> Option<bool> {
-        let tz = self.cfg.tz;
-        if case.interrupt.is_some() || self.state.break_.is_some() {
-            return None;
-        }
-        let (id, started) = active_block(case, tz)?;
-        let now = self.now;
-        let mut spans = self.walls_today();
-        spans.sort();
-        let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
-        for (lo, hi) in spans {
-            match merged.last_mut() {
-                Some(m) if lo <= m.1 => m.1 = m.1.max(hi),
-                _ => merged.push((lo, hi)),
-            }
-        }
-        let line = |t: DateTime<Tz>, ev: Event| {
-            LogEntry::new(t.fixed_offset(), ev).to_json().expect("a timer entry serialises") + "\n"
-        };
-        let ten = Duration::minutes(10);
-        let mut marks = String::new();
-        let mut open = false;
-        let mut typed_until: Option<DateTime<Tz>> = None;
-        let mut drew_typed = false;
-        for (lo, hi) in merged.into_iter().filter(|(lo, _)| *lo > started && *lo <= now) {
-            if typed_until.is_some_and(|u| lo <= u) {
-                continue;
-            }
-            if typed && !drew_typed && lo - ten > started && hi + ten < now {
-                marks.push_str(&line(lo - ten, Event::Pause { id: id.clone() }));
-                marks.push_str(&line(hi + ten, Event::Unpause { id: id.clone() }));
-                typed_until = Some(hi + ten);
-                drew_typed = true;
-                continue;
-            }
-            marks.push_str(&line(lo, Event::Pause { id: id.clone() }));
-            if hi <= now {
-                marks.push_str(&line(hi, Event::Unpause { id: id.clone() }));
-                open = false;
-            } else {
-                open = true;
-            }
-        }
-        if marks.is_empty() {
-            return None;
-        }
-        self.log.push_str(&marks);
-        self.replay = chokepoint::replay_of_text(&self.log, tz);
-        if let Some(a) = self.state.active.as_mut() {
-            a.paused = open;
-        }
-        Some(drew_typed)
+        walls_of_tree(&self.tree, self.cfg.tz)
     }
 
     /// **Overtime, drawn and not only met** (the W-35 arm's, W-35 land step, README gap
@@ -778,6 +834,12 @@ impl World {
             }
         }
     }
+}
+
+/// The configured `budget_ratio` under which §8.1's `budget_blocks` is `done`
+/// (README gap 3340): `done × block_min / (window_hours × 60)`.
+pub fn spent_ratio(done: u32, cfg: &Config) -> f64 {
+    f64::from(done) * f64::from(cfg.block_min()) / (cfg.day.window_hours * 60.0)
 }
 
 /// **The two note kinds the generator never draws, drawn here** (a WIDENING of
@@ -804,11 +866,26 @@ pub fn widen_for_notes(w: &mut World, case: &Case, travel: bool, spent: bool) ->
             }
         }
     }
+    // **A spent budget, as the binary can hold one** (W-37 repair, README gap 3340): the
+    // budget is `tm arrive`'s (§8.1's `budget_blocks`, from the configuration), so a day
+    // whose budget its done blocks have spent is a day whose configured `budget_ratio`
+    // makes the budget exactly the blocks done — here `done / 8` at the default eight
+    // hours and one-hour blocks. Until the repair `.tm/state.json` alone said `budget:
+    // done` while the log's `arrive` said 6, which D42's rebuild undoes.
     if spent && !case.late {
         let done = case.done(tz);
         if done > 0 {
-            w.state.budget = Some(done);
-            did.1 = true;
+            let mut cfg = w.cfg.clone();
+            cfg.day.budget_ratio = spent_ratio(done, &cfg);
+            let widened_travel = did.0;
+            let docs = w.docs.clone();
+            *w = build_with(case, cfg, false);
+            if widened_travel {
+                w.docs = docs;
+                let files: Vec<(&str, &str)> = w.docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+                w.tree = Tree::from_texts(&files, &w.cfg);
+            }
+            did.1 = w.state.budget == Some(done);
         }
     }
     if did.0 {

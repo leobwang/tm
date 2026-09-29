@@ -72632,3 +72632,94 @@ hand-written estimate past 4,294,967,295 minutes is a `tm check` error the plann
 
 Gap **3160** is unchanged and still the owner's.  New gaps continue at **3346**; 3340 and 3341 are
 taken by the second commit.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-37**, **REPAIR
+     STEP**, second commit, over the first.  Gaps **3340-3341** taken;
+     new gaps start at **3346**.  Parity: **none issued** (the kernel is
+     brought to the shipped fork's reading, not away from it).
+     ===================================================================== -->
+
+## Stage 6 — W-37 repair (2 of 2): every frozen world is one the binary builds — and that found the kernel planning a late day into nothing
+
+### 1. Gap 3340 — CLOSED: no frozen comparand world was one the shipped binary can build
+
+**Reproduced first**, with the auditor's own driver (`scratchpad/verify-w37/q6drive.py`, run against
+this tree's binary on `faaaac6`'s fixture): 45 of 45 worlds plan differently with `.tm/state.json`
+kept and deleted, and the stored cache contradicts the world's own log on fields D42 rebuilds —
+`[07:00, 16:00]` against the log's `arrive` `[07:00, 15:00]`, `home` against `lounge`, budget 2
+against 6, and every late world with NO window although `tm arrive` always stores one.
+`forkclass::binary_holds` checked four named clauses.
+
+**The property, not a list.**  `binary_holds` gains two clauses asked of the shipped binary itself
+(`forkclass::binary_rebuilds`): **5** — with the cache deleted, `tm now` rebuilds it (D42), and
+every field outside the binary's own `HOST_ONLY_STATE` table (read out of `tm/src/cli/ctx.rs`, not
+listed) must equal the stored one; **6** — `tm now` over the stored world appends nothing to the
+log: the world is AT REST (no D61 pause, no automatic close owed), so the world the binary plans is
+the world stored.  `every_clause_of_binary_holds_bites` bends a world for each (a window an hour
+off, a flipped location, a meeting's pause taken out of the log).
+
+**The generator, as the binary builds.**  `plangen`'s worlds now carry what `tm arrive` computes and
+logs — fork `capacity::window_and_budget` over the day's walls read off the tree
+(`plangen::arrival_of`, `walls_of_tree`), the same window, budget and location in the `arrive` line
+and the cache; a late day's window crosses midnight — and log the meetings a running block passed,
+as D61's housekeeping does (`plangen::timer_marks`: a `pause` at each joined span's start after the
+block began, its `unpause` once ended, nothing where an interruption had already stopped the timer,
+no `unpause` where one began inside the span); a running break is drawn after the last timer mark.
+A spent budget is one `tm arrive` computed: the class world carries a `budget_ratio`
+(`ClassWorld::ratio`, `plangen::spent_ratio` = done ÷ 8 at the defaults) where the cache alone said
+`budget: done`.  The `Late` shape is read as a stored window ending past midnight, not as a cache
+with no window.
+
+**Re-drawn under D64(b), every changed line named** (reason recorded on each as `d64b.why`, dated,
+naming D64(b); each old world's failed clauses in `d64b.held`; each new world passes all six):
+idle/lounge; idle/home; idle/late; idle/late (rest_debt); idle/travel; idle/spent; running/lounge;
+running/home; running/late; running/late (whatif); running/travel; running/spent; overtime/lounge;
+overtime/home; overtime/late; overtime/travel; overtime/spent; wall-on-now/lounge;
+wall-on-now/home; wall-on-now/late; wall-on-now/travel; wall-on-now/spent; break/lounge;
+break/home; break/late; break-block/lounge; break-block/home; break-block/late;
+interrupted/lounge; interrupted/home; interrupted/late; interrupted/travel; interrupted/spent;
+interrupted-block/lounge; interrupted-block/home; interrupted-block/late;
+interrupted-block/travel; interrupted-block/spent; and the D61 lines wall-on-now/lounge (d61 at
+10:20), wall-on-now/home (d61 at 12:20), wall-on-now/late (d61 at 11:20) re-derived.  **Four D61
+lines are dropped**: wall-on-now/lounge at 10:00, /home at 12:00, /late at 11:00 and /spent at
+08:30 — each was the parent world at `now` with the pause the binary logs, which the parent now
+holds itself (`forkclass::d61_worlds` derives only the mid-meeting world of an at-rest parent).
+The file is **41 lines** (38 primary, 3 D61), was 45.  The answers were then filled by the re-bless
+(`41 cleared line(s) answered, 0 refused`), the shipped fork's day kept beside every departing
+comparand.  The re-draw takes, for a line naming two draws, the one that keeps its class
+(`idle/late (rest_debt)` is W-36's targeted draw).  **After**: `frozen worlds the binary can hold:
+41 of 41`; the auditor's driver shows the cache agreeing with the binary's rebuild on every
+derivable field of all 41, the 13 worlds whose `tm plan` output still differs with the cache
+deleted differing ONLY in `HOST_ONLY_STATE` fields (`active.est_min` on 10, a running break and the
+pause it set on 3) — D42's own declared residue.
+
+### 2. Gap 3341 — CLOSED (one of gap 320's three inputs): the kernel planned a late day into nothing
+
+The first run of `planner_classes` on the buildable worlds FAILED on 11 classes, every
+disagreement one fact: `window[1]: kernel "2026-09-07T02:00" fork "2026-09-08T02:00"`.
+`Planner.PlanReq.window` was `Look.day0Window` whole — fork `Ctx::window`'s reading, day 0's
+CAPACITY, with no midnight branch — so the `[11:00, 02:00]` window `tm arrive` stores on a late day
+ended BEFORE its start and the kernel planned the day's work into nothing, while the shipped fork's
+planner (`Planner::window_and_budget`: `if end < start { end += 1 day }`) planned it to 02:00.
+**Gap 320 named this input at W-14 and it was never cleared; no comparand could show it, because
+every late world stored no window.**  `PlanReq.window` now reads the stored window as the fork's
+planner does (its end on the next day when earlier than its start), day 0's capacity keeps
+`Ctx::window`'s reading (compared exactly by `kernel_lookahead_parity.rs`, unchanged), and the view
+law that equated the two is restated on the subdomain it holds on:
+`PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight`,
+`dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight`, beside
+`PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it`; `dayPlan_window` and
+`PlanWire.planJson_of_a_planned_day_is_the_requests_own_views` now state the day's window as
+`PlanReq.window`.  The edit is line-neutral in `Planner.lean` above the appended section, so no
+check-9 pin drifted; `PlanReq.window`'s own row is PINNED at both constants.  After:
+`the_kernel_plans_every_generated_class_the_fork_planned` compares 35 non-P45 days, 409 fork rows
+and 12,616 other values with no disagreement.  Agreement with the shipped fork, so no parity
+number.  **Still open under gap 320**: its other two inputs (a stored window with `date: null`, and
+one with no budget beside it), which the generator does not draw.
+
+`planner_invariants`' `a_sub_second_now_moves_the_forks_day_and_not_the_kernels` needed its instant
+moved twenty minutes: its finding needs the day's last slot exactly `min_last_block_min` long, which
+the unbuildable `[07:00, 16:00]` window gave at 08:30 and `tm arrive`'s `[07:00, 15:00]` gives at
+08:50; the fork's fractional cut still drops that slot and the kernel keeps it
+(`14:30–15:00 rest`).  Every proptest floor held on the new generator.

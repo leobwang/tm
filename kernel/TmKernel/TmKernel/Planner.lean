@@ -920,11 +920,11 @@ def PlanReq.loc (r : PlanReq) : List Char := r.look.today0.loc
 
 def PlanReq.allowHome (r : PlanReq) : Bool := r.look.today0.allowHome
 
-/-- §8.1's window, through **the kernel's one reader of it** (`Look.day0Window`, step L9).
-The fork's planner computes its own (`Planner::window_and_budget`) and the two disagree on
-three inputs — README gap 320.  This module makes the disagreement *unrepresentable in the
-request*: there is no window field for a second answer to be carried in. -/
-def PlanReq.window (r : PlanReq) : Nat × Nat := Look.day0Window r.look
+/-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`): a stored window whose end is
+earlier than its start ends on the NEXT day, else `Look.day0Window` — README gaps 320 and 3341, and
+`PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it` at the end of this file. -/
+def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.storedWindow r.look.today with
+  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.day0Window r.look
 
 /-- §8.1's budget: the one `tm arrive` stored for today, else the formula
 (`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
@@ -933,8 +933,8 @@ def PlanReq.budgetBlocks (r : PlanReq) : Nat :=
   | some b => b
   | none => Look.budgetOf r.look.day.windowHours r.look.day.cut.blockMin r.look.day.budgetRatio
 
-theorem PlanReq.window_is_the_lookaheads (r : PlanReq) :
-    r.window = Look.day0Window r.look := rfl
+-- The view law that equated this with day 0's capacity window (rfl until the W-37 repair) is false on a stored
+-- window crossing midnight; it is restated on the subdomain it holds on at the end of this file (gap 3341).
 
 theorem PlanReq.budget_is_the_stored_one_when_there_is_one (r : PlanReq) (b : Nat)
     (h : r.look.today0.storedBudget r.look.today = some b) : r.budgetBlocks = b := by
@@ -7630,7 +7630,7 @@ theorem the_placement_bytes_are_the_forks :
 
 theorem dayPlan_day (r : PlanReq) : (dayPlan r).day = r.today := rfl
 
-theorem dayPlan_window (r : PlanReq) : (dayPlan r).window = Look.day0Window r.look := rfl
+theorem dayPlan_window (r : PlanReq) : (dayPlan r).window = r.window := rfl
 
 theorem dayPlan_blockMin (r : PlanReq) : (dayPlan r).blockMin = r.look.day.cut.blockMin := rfl
 
@@ -9095,6 +9095,51 @@ theorem a_pause_no_wall_touches_is_drawn_whole (r : PlanReq) (g : Replay.Segment
   rcases hw w hw' with h | h
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
+
+/-! ## §8.1's window crossing midnight (W-37 repair, README gaps 320 and 3341)
+
+`PlanReq.window` was `Look.day0Window` whole until the W-37 repair — fork `Ctx::window`'s reading,
+day 0's CAPACITY, which has no midnight branch — so a stored `[11:00, 01:00]` became a window ending
+at 01:00 of the SAME day, before its start, and the kernel planned a late day's work into nothing
+while the shipped fork's planner (`Planner::window_and_budget`: `if end < start { end += 1 day }`)
+planned it to 01:00.  No frozen world could show it: every late comparand world stored NO window,
+which the binary never holds (`tm arrive` always stores one) — README gap 3340.  Day 0's capacity
+keeps `Ctx::window`'s reading (`Look.day0Window`, compared exactly against the fork by
+`kernel_lookahead_parity.rs`), so the two readings gap 320 named are the fork's own two, each kept
+where the fork keeps it; unifying them is gap 320's decision and is still open.  The view laws the
+two restatements below replace equated the planner's window with day 0's capacity window for every
+request; they hold exactly on the subdomain their names now carry (AGENTS §3.1 item 4). -/
+
+/-- **The planner's window is day 0's capacity window unless a stored window crosses midnight.** -/
+theorem PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight (r : PlanReq)
+    (h : ∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) :
+    r.window = Look.day0Window r.look := by
+  unfold PlanReq.window Look.day0Window
+  cases hs : r.look.today0.storedWindow r.look.today with
+  | none => rfl
+  | some w =>
+    have hle := h w hs
+    have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr hle
+    simp [hn]
+
+/-- **A stored window that crosses midnight ends on the next day** — the fork planner's reading
+(`Planner::window_and_budget`), which the shipped binary plans a late day with. -/
+theorem PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it (r : PlanReq)
+    (w : Field.Clock × Field.Clock) (hs : r.look.today0.storedWindow r.look.today = some w)
+    (hlt : w.2 < w.1) :
+    r.window = ((Cal.instantOf r.look.tz r.look.today w.1).sec,
+      (Cal.instantOf r.look.tz (r.look.today + 1) w.2).sec) := by
+  unfold PlanReq.window
+  rw [hs]
+  simp [hlt]
+
+/-- **The day's window is day 0's capacity window unless a stored window crosses midnight** — the
+old `dayPlan_window`'s statement, on its subdomain (`dayPlan_window` states the day's window as
+`PlanReq.window` since the repair). -/
+theorem dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight (r : PlanReq)
+    (h : ∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) :
+    (dayPlan r).window = Look.day0Window r.look :=
+  PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight r h
 
 end Planner
 end Tm

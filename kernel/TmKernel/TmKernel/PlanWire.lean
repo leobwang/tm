@@ -77,8 +77,8 @@ the allow entry stopped being needed.  So the wire key is `planner`, the type is
 Seven of §10.3's nine names are below.  **badWindow and badBudget are not, and their absence is
 the point**:
 `Planner.PlanReq` has no window field and no budget field — `PlanReq.window` is
-`Look.day0Window r.look` and `PlanReq.budgetBlocks` is the stored one or `Look.budgetOf`, both
-*views*, and `PlanReq.window_is_the_lookaheads` is the theorem that says so.  There is nothing
+the stored window (crossing midnight as the fork's planner reads it, gap 3341) or `Look.day0Window r.look`, and `PlanReq.budgetBlocks` is the stored one
+or `Look.budgetOf`, both *views* (`PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it`).  There is nothing
 on this wire for either name to be about, so declaring them would put two constructors in
 `PlannerRefusal` that **no input can reach** — AGENTS §9.2's disguised gap, in the one place R10
 is supposed to prevent it.  tooManyCands is likewise absent: the candidate cap is
@@ -1631,13 +1631,13 @@ theorem the_plan_objects_keys_are_disjoint : planKeys.all (fun k => k ≠ "rows"
   decide
 
 /-- **Nothing in the response is recomputed**: every key is a view `Planner.PlanReq` already
-had — the request's own day, `Look.day0Window`'s window, §8.1's budget, `dayRows`, `dayDiagnostics`,
-`dayPriorities` and the hash — and this is `rfl`. -/
+had — the request's own day, the planner's window (`Planner.PlanReq.window`; gap 3341), §8.1's budget,
+`dayRows`, `dayDiagnostics`, `dayPriorities` and the hash — and this is `rfl`. -/
 theorem planJson_of_a_planned_day_is_the_requests_own_views (r : Planner.PlanReq) :
     planJson (Planner.dayPlan r)
       = [("day".toList, .str (Field.renderDate r.today)),
-         ("window".toList, .obj [("lo".toList, .num (Look.day0Window r.look).1),
-            ("hi".toList, .num (Look.day0Window r.look).2)]),
+         ("window".toList, .obj [("lo".toList, .num r.window.1),
+            ("hi".toList, .num r.window.2)]),
          ("budgetBlocks".toList, .num r.budgetBlocks),
          ("segments".toList, .arr ((Planner.dayRows r).map segJson)),
          ("diagnostics".toList, diagJson (Planner.dayDiagnostics r)),

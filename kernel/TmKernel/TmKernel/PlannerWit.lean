@@ -485,7 +485,7 @@ theorem the_witness_carries_no_routine : theRequest.routines.val = [] := rfl
 
 set_option maxRecDepth 400000 in
 /-- The day's window, budget and block length, computed through `Look.day0Window` and
-`Look.budgetOf` — never through a second copy (`PlanReq.window_is_the_lookaheads`). -/
+`Look.budgetOf` — never through a second copy (`PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight`). -/
 theorem the_witness_day_is_planned_from_two_in_the_afternoon :
     (dayPlan theRequest).window
         = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧

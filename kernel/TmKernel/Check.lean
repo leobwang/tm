@@ -4767,7 +4767,7 @@ open Tm
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
 #print axioms Tm.Planner.assignedOf_empty
 #print axioms Tm.Planner.blockSeconds_empty
-#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads
+#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 #print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
 #print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_stored_one
 #print axioms Tm.Planner.dayPlan_day
@@ -7485,3 +7485,11 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.WallTimer.the_evening_befores_walls_are_read
 #print axioms Tm.WallTimer.touchedAfter_eq_any
 #print axioms Tm.WallTimer.pausedFor_eq_find
+
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-37 REPAIR, second commit -- §8.1's window as the fork's planner
+-- reads it (README gaps 320 and 3341): a stored window crossing midnight ends on the next day.
+-- The view law window_is_the_lookaheads was renamed in place above to the subdomain it holds on.
+-- ============================================================================
+#print axioms Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it
+#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight

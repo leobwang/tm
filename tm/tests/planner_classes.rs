@@ -519,7 +519,7 @@ fn a_worlds_run_state_is_read_off_its_log() {
 }
 
 /// **`binary_holds` bites, clause by clause, and does not over-bite** (AGENTS
-/// §5.8): each of the four clauses fails, by its number, on a frozen world
+/// §5.8): each of the six clauses fails, by its number, on a frozen world
 /// bent into a state the binary cannot hold — the pre-W-37 shape among them —
 /// and the unbent worlds pass (the test above).
 #[test]
@@ -560,6 +560,23 @@ fn every_clause_of_binary_holds_bites() {
         a.paused = true;
     }
     fails(&w, "4:");
+    // 5: a cache the log does not rebuild — the stored window moved an hour off the one
+    // `tm arrive` logged (the W-37 auditor's shape), and the location flipped.
+    let mut w = world("idle/lounge");
+    if let Some((from, to)) = w.state.window {
+        w.state.window = Some((from, to + Duration::hours(1)));
+    }
+    fails(&w, "5:");
+    let mut w = world("idle/lounge");
+    w.state.loc = Some("home".to_string());
+    fails(&w, "5:");
+    // 6: a world not at rest — a meeting's pause taken out of the log, which the
+    // binary's housekeeping then writes.
+    let mut w = world("wall-on-now/lounge");
+    let before = w.log.clone();
+    w.log = w.log.lines().filter(|l| !l.contains("\"ev\":\"pause\"")).map(|l| format!("{l}\n")).collect();
+    assert_ne!(w.log, before, "wall-on-now/lounge logs its meeting's pause");
+    fails(&w, "6:");
 }
 
 /// **Every parity flag a frozen line carries names a REGISTERED number** (the
@@ -602,7 +619,10 @@ fn every_redrawn_world_says_why() {
         assert!(!held.is_empty(), "{key}: a re-drawn world names no clause its old world failed");
         for c in held {
             let c = c.as_str().unwrap_or_default();
-            assert!(["1:", "2:", "3:", "4:"].iter().any(|p| c.starts_with(p)), "{key}: `{c}` is not a clause of binary_holds");
+            // A clause is `<n>:` — a property of the text, so a clause a later step adds is
+            // one without an edit here (it listed "1:".."4:" until the W-37 repair).
+            let n: String = c.chars().take_while(char::is_ascii_digit).collect();
+            assert!(!n.is_empty() && c[n.len()..].starts_with(':'), "{key}: `{c}` is not a clause of binary_holds");
         }
         n += 1;
     }
@@ -650,7 +670,9 @@ fn the_frozen_d61_worlds_are_every_one_d61_derives() {
 #[test]
 fn d61_logs_every_wall_the_block_ran_into() {
     let line = frozen_lines().iter().find(|l| l["class"] == "wall-on-now/lounge" && l["secondary"].is_null()).expect("the primary line");
-    let mut w = ClassWorld::of_json(&line["world"], tz()).expect("a stored world");
+    // The stored world is at rest (README gap 3340): the derivation starts from it as it
+    // stood before the housekeeping logged its meeting.
+    let mut w = forkclass::before_housekeeping(&ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
     let cal = w.docs.iter_mut().find(|(p, _)| p.starts_with("calendar/")).expect("a calendar document");
     cal.1.push_str("- [ ] 3 Coffee at:2026-09-07T09:30/09:40 ^wxa\n");
     let derived = forkclass::d61_worlds(&w);
@@ -686,8 +708,10 @@ fn the_pause_d61_logs_reaches_the_kernels_day() {
             .iter()
             .find(|l| l["class"] == line["derived"]["from"] && l["secondary"].is_null())
             .expect("the parent line");
-        let mut p = ClassWorld::of_json(&parent["world"], tz).expect("a stored world");
-        p.now = w.now;
+        // The parent is at rest (README gap 3340), so the world the pause is compared
+        // against is the D61 world as it stood before the housekeeping logged it.
+        let _ = parent;
+        let p = forkclass::before_housekeeping(&w);
         let k = forkclass::kernel_answer(&Built::of(w)).expect("the kernel plans the D61 world");
         let kp = forkclass::kernel_answer(&Built::of(p)).expect("the kernel plans the parent");
         n += 1;
@@ -742,14 +766,16 @@ fn every_d61_world_is_the_pause_the_binary_logs() {
             .iter()
             .find(|l| l["class"] == line["derived"]["from"] && l["secondary"].is_null())
             .expect("the parent line");
-        let p = ClassWorld::of_json(&parent["world"], tz).expect("a stored world");
+        // The parent is at rest (README gap 3340): drive it as it stood before the
+        // housekeeping, and the binary must log exactly the marks the stored world holds.
+        let p = forkclass::before_housekeeping(&ClassWorld::of_json(&parent["world"], tz).expect("a stored world"));
         let (got, paused) = drive(&p, d.now);
         assert_eq!(got, added_by(&p, &d), "{} at {}: the binary logged another pause than the derivation", line["class"], d.now);
         assert!(paused, "{} at {}: the binary left the block running", line["class"], d.now);
         n += 1;
     }
     let line = frozen_lines().iter().find(|l| l["class"] == "wall-on-now/lounge" && l["secondary"].is_null()).expect("the primary line");
-    let mut w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+    let mut w = forkclass::before_housekeeping(&ClassWorld::of_json(&line["world"], tz).expect("a stored world"));
     let cal = w.docs.iter_mut().find(|(p, _)| p.starts_with("calendar/")).expect("a calendar document");
     cal.1.push_str("- [ ] 3 Coffee at:2026-09-07T09:30/09:40 ^wxa\n");
     let (d, _) = forkclass::d61_worlds(&w).into_iter().next().expect("D61 derives the world");
@@ -1125,7 +1151,7 @@ fn the_frozen_class_worlds_are_redrawn() {
         } else if let Err(e) = forkclass::binary_holds(&fresh) {
             bad.push(format!("{what}: the re-drawn world is not one the binary can hold either: {}", e.join("; ")));
         } else if class_of(&fresh).key() != key {
-            bad.push(format!("{what}: the re-drawn world is not a `{key}` world"));
+            bad.push(format!("{what}: the re-drawn world is not a `{key}` world but a `{}` one", class_of(&fresh).key()));
         } else {
             line["world"] = world.to_json();
             line["d64b"] = serde_json::json!({"why": because.clone(), "held": held});
@@ -1139,7 +1165,13 @@ fn the_frozen_class_worlds_are_redrawn() {
         let stored = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
         let worlds: Vec<ClassWorld> = forkclass::draws_of_line(&line).iter().map(forkclass::world_of).collect();
         if !worlds.contains(&stored) {
-            match worlds.into_iter().next() {
+            // A line naming two draws (see `forkclass::draws_of_line`) is re-drawn from the
+            // one that keeps its class, the first else (W-37 repair: `idle/late (rest_debt)`
+            // is W-36's TARGETED draw, and its untargeted twin at the same index is another
+            // class's world).
+            let key = line["class"].as_str().unwrap_or_default().to_string();
+            let keeps = worlds.iter().position(|w| class_of(&Built::of(w.clone())).key() == key).unwrap_or(0);
+            match worlds.into_iter().nth(keeps) {
                 Some(w) => replace(&mut line, w, what, &mut bad, &mut redrawn),
                 None => bad.push(format!("{what}: no draw reproduces its recorded arm")),
             }
@@ -1172,9 +1204,23 @@ fn the_frozen_class_worlds_are_redrawn() {
             out.push(line);
         }
     }
+    // A D61 line D61 no longer derives FAILS — unless its parent was re-drawn in this
+    // run under D64(b)'s reason, when the derivation is the new world's (W-37 repair,
+    // README gap 3340: a parent at rest already holds the pause at `now`, so the world
+    // D61 derived at `now` IS the parent and only the one mid-meeting is derived).
+    let parents_redrawn: BTreeSet<String> = out
+        .iter()
+        .filter(|l| l["secondary"].is_null() && l["day"].is_null() && !l["d64b"].is_null())
+        .filter_map(|l| l["class"].as_str().map(str::to_string))
+        .collect();
     for old in lines.iter().filter(|l| !l["derived"].is_null()) {
         if !out.iter().any(|l| l["derived"] == old["derived"]) {
-            bad.push(format!("{} (d61 at {}): D61 no longer derives this world", old["class"], old["derived"]["now"]));
+            let key = old["class"].as_str().unwrap_or_default();
+            if reasoned && parents_redrawn.contains(key) {
+                redrawn.push(format!("{key} (d61 at {}): dropped -- its parent was re-drawn and D61 no longer derives it", old["derived"]["now"]));
+            } else {
+                bad.push(format!("{key} (d61 at {}): D61 no longer derives this world", old["derived"]["now"]));
+            }
         }
     }
     eprintln!("re-draw: {} line(s): {}", redrawn.len(), redrawn.join("; "));

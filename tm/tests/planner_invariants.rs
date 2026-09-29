@@ -3316,7 +3316,8 @@ proptest! {
     /// each was tested only against itself — the W-37 critic's finding, a claim of having
     /// checked (README W-37 track T §1) that was never made. Here a running block passes a
     /// meeting, logged as the binary's housekeeping logs it (`plangen`'s
-    /// `World::log_a_passed_meeting`) — on half the draws with a typed pause ten minutes
+    /// `timer_marks`, which since README gap 3340 every generated world logs) — on half the
+    /// draws with a typed pause ten minutes
     /// longer than the wall at each end, so the cut leaves two pieces — and EVERY row of
     /// either day must be a row of the other, against the kernel-ranked fork (D53).
     #[test]
@@ -3357,9 +3358,13 @@ proptest! {
                 break;
             }
         }
-        let mut w = build(&case);
+        let w = build_with(&case, tm_core::config::Config::default(), typed);
         let tz = w.cfg.tz;
-        let drew = w.log_a_passed_meeting(&case, typed);
+        // Every generated world logs the meetings its running block passed, as the
+        // binary does (`plangen::timer_marks`, README gap 3340); `typed` draws the pause
+        // longer than the first meeting.
+        let marks = timer_marks(&case, &w.walls_today(), tz, typed);
+        let drew = (!marks.marks.is_empty()).then_some(marks.typed);
         let (mut logged, mut longer, mut compared, mut pauses, mut over, mut paused_rows, mut noprio) =
             (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
         if let Some(t) = drew {
@@ -3476,7 +3481,13 @@ fn a_sub_second_now_moves_the_forks_day_and_not_the_kernels() {
         late: false,
     };
     let mut w = build(&case);
-    w.now += Duration::milliseconds(500);
+    // **Twenty minutes later than the case's `now`** (W-37 repair, README gap 3340): the
+    // finding needs the day's LAST slot to be exactly `min_last_block_min` long. Until the
+    // repair the world stored `[07:00, 16:00]` while its log's `arrive` said `[07:00, 15:00]`
+    // (a cache the binary does not hold), and 08:30's cut ended in a 15:30–16:00 slot; in the
+    // world `tm arrive` leaves, the window ends at 15:00, and it is 08:50's cut that ends in
+    // 14:30–15:00. The phenomenon asserted below is unchanged.
+    w.now += Duration::minutes(20) + Duration::milliseconds(500);
     let tz = w.cfg.tz;
     let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the day");
     let khash = plan["hash"].as_str().expect("plan.hash").to_string();

@@ -152,6 +152,10 @@ pub struct ClassWorld {
     /// (`the_kernel_hashes_the_day_the_fork_hashes`); `Model::default()` else.
     /// Kept as its shortest decimal text so the double is read back exactly.
     pub mult: Option<String>,
+    /// The configured `budget_ratio`, when the step-8 arm's spent budget set one
+    /// (`plangen::spent_ratio`, README gap 3340): a spent budget is one `tm arrive`
+    /// computed from the configuration. `Config::default()`'s else. Its decimal text.
+    pub ratio: Option<String>,
 }
 
 impl ClassWorld {
@@ -163,6 +167,7 @@ impl ClassWorld {
             "state": serde_json::to_value(&self.state).expect("a state serialises"),
             "now": self.now.to_rfc3339(),
             "mult": self.mult,
+            "ratio": self.ratio,
         })
     }
 
@@ -188,7 +193,12 @@ impl ClassWorld {
             Value::String(s) => Some(s.clone()),
             other => return Err(format!("world.mult is {other}, not a decimal's text")),
         };
-        Ok(ClassWorld { docs, log, state, now, mult })
+        let ratio = match &v["ratio"] {
+            Value::Null => None,
+            Value::String(s) => Some(s.clone()),
+            other => return Err(format!("world.ratio is {other}, not a decimal's text")),
+        };
+        Ok(ClassWorld { docs, log, state, now, mult, ratio })
     }
 }
 
@@ -207,7 +217,10 @@ impl Built {
     /// kernel derives from the same log (`support/replay.rs`), the model with the
     /// drawn multiplier, and `priority::collect_candidates` over all of it.
     pub fn of(world: ClassWorld) -> Built {
-        let cfg = Config::default();
+        let mut cfg = Config::default();
+        if let Some(r) = &world.ratio {
+            cfg.day.budget_ratio = r.parse().expect("a stored budget ratio is a decimal");
+        }
         let files: Vec<(&str, &str)> =
             world.docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
         let tree = Tree::from_texts(&files, &cfg);
@@ -375,7 +388,7 @@ pub enum DayShape {
     Lounge,
     /// A stored window, at home: §8.2 step 3's `home_max_ci`.
     Home,
-    /// No stored window: §8.1's formula, the evening wall past the wind-down.
+    /// `tm arrive`'s window ends past midnight: the evening wall past the wind-down.
     Late,
     /// A `travel-day` wall: §8.2 step 1 zeroes the budget.
     Travel,
@@ -532,7 +545,10 @@ pub fn class_of(b: &Built) -> Class {
         DayShape::Travel
     } else if done > 0 && st.budget.is_some_and(|x| capacity::remaining_budget(x, done) == 0) {
         DayShape::Spent
-    } else if st.window.is_none() {
+    } else if st.window.is_none_or(|(from, to)| to <= from) {
+        // A late arrival: the evening wall pushes `tm arrive`'s window past midnight
+        // (README gap 3340 — until the repair the class was read off a cache with NO
+        // window, which the binary never holds: `tm arrive` always stores one).
         DayShape::Late
     } else if st.loc.as_deref() == Some("home") {
         DayShape::Home
@@ -600,11 +616,131 @@ pub fn binary_holds(b: &Built) -> Result<(), Vec<String>> {
             ));
         }
     }
+    bad.extend(binary_rebuilds(&b.world));
     if bad.is_empty() {
         Ok(())
     } else {
         Err(bad)
     }
+}
+
+/// **The fields of `.tm/state.json` the log does NOT carry** — read out of the
+/// binary's own table (`tm/src/cli/ctx.rs`' `HOST_ONLY_STATE`), never listed here
+/// (AGENTS §5.3): every other field is D42's to derive, and clause 5 compares it.
+pub fn host_only_state() -> Vec<String> {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/cli/ctx.rs");
+    let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+    let start = text.find("pub const HOST_ONLY_STATE").expect("the binary's host-only table");
+    let end = start + text[start..].find("\n];").expect("its end");
+    text[start..end]
+        .lines()
+        .filter_map(|l| l.trim().strip_prefix("(\"`"))
+        .filter_map(|l| l.split('`').next())
+        .map(str::to_string)
+        .collect()
+}
+
+/// **Clauses 5 and 6, asked of the shipped binary itself** (owner D42/D45 and D61;
+/// W-37 repair, README gap 3340). Until the repair `binary_holds` was four named
+/// clauses — the block, the interruption, a break's start and `paused` — where D42's
+/// invariant covers EVERY field the log derives, and every frozen world failed it
+/// (the W-37 auditor: the cache said window `[07:00, 16:00]` where the log's own
+/// `arrive` said `[07:00, 15:00]`, `home` where it said `lounge`, budget 2 where it
+/// said 6, and no window at all on a late day). So the property is now the binary's:
+///
+/// 5. **The cache is what the binary rebuilds from the log**: with `.tm/state.json`
+///    deleted, `tm now` rebuilds it (D42), and every field outside the binary's own
+///    `HOST_ONLY_STATE` table must equal the stored one;
+/// 6. **The world is at rest**: `tm now` over the stored world appends nothing to
+///    the log — no housekeeping (D61's meeting pause, §6.3's automatic close) is
+///    owed, so the world the binary PLANS is the world stored.
+pub fn binary_rebuilds(world: &ClassWorld) -> Vec<String> {
+    let host_only = host_only_state();
+    let mut bad = Vec::new();
+    let write = |keep: bool| -> Result<tempfile::TempDir, String> {
+        let dir = tempfile::TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".tm")).map_err(|e| e.to_string())?;
+        for (p, t) in &world.docs {
+            let f = root.join(p);
+            if let Some(parent) = f.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::write(&f, t).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(root.join(".tm/log.jsonl"), &world.log).map_err(|e| e.to_string())?;
+        let cfg = world.ratio.as_ref().map(|r| format!("[day]\nbudget_ratio = {r}\n")).unwrap_or_default();
+        std::fs::write(root.join("config.toml"), cfg).map_err(|e| e.to_string())?;
+        if keep {
+            let st = serde_json::to_string(&world.state).map_err(|e| e.to_string())?;
+            std::fs::write(root.join(".tm/state.json"), st).map_err(|e| e.to_string())?;
+        }
+        Ok(dir)
+    };
+    let run = |dir: &std::path::Path| -> Result<(), String> {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_tm"))
+            .arg("--dir")
+            .arg(dir)
+            .arg("--now")
+            .arg(world.now.to_rfc3339())
+            .arg("now")
+            .output()
+            .map_err(|e| format!("tm now: {e}"))?;
+        if out.status.success() {
+            Ok(())
+        } else {
+            Err(format!("tm now exited {:?}: {}", out.status.code(), String::from_utf8_lossy(&out.stderr)))
+        }
+    };
+    // 6. at rest.
+    match write(true) {
+        Err(e) => bad.push(format!("6: the world could not be written: {e}")),
+        Ok(dir) => match run(dir.path()) {
+            Err(e) => bad.push(format!("6: {e}")),
+            Ok(()) => {
+                let after = std::fs::read_to_string(dir.path().join(".tm/log.jsonl")).unwrap_or_default();
+                if after != world.log {
+                    let added: Vec<&str> = after.strip_prefix(world.log.as_str()).unwrap_or(&after).lines().collect();
+                    bad.push(format!("6: the binary's housekeeping writes to the log on this world: {added:?}"));
+                }
+            }
+        },
+    }
+    // 5. the cache is the log's.
+    match write(false) {
+        Err(e) => bad.push(format!("5: the world could not be written: {e}")),
+        Ok(dir) => match run(dir.path()) {
+            Err(e) => bad.push(format!("5: {e}")),
+            Ok(()) => {
+                let rebuilt: Value = std::fs::read_to_string(dir.path().join(".tm/state.json"))
+                    .ok()
+                    .and_then(|t| serde_json::from_str(&t).ok())
+                    .unwrap_or(Value::Null);
+                let stored = serde_json::to_value(&world.state).unwrap_or(Value::Null);
+                let mut keys: Vec<String> = stored.as_object().into_iter().flatten().map(|(k, _)| k.clone())
+                    .chain(rebuilt.as_object().into_iter().flatten().map(|(k, _)| k.clone()))
+                    .collect();
+                keys.sort();
+                keys.dedup();
+                let blank = |v: &Value| v.is_null() || v.as_object().is_some_and(serde_json::Map::is_empty);
+                for k in keys.iter().filter(|k| !host_only.contains(k)) {
+                    let (mut a, mut z) = (stored[k.as_str()].clone(), rebuilt[k.as_str()].clone());
+                    for inner in host_only.iter().filter_map(|h| h.strip_prefix(&format!("{k}."))) {
+                        if let Some(o) = a.as_object_mut() {
+                            o.remove(inner);
+                        }
+                        if let Some(o) = z.as_object_mut() {
+                            o.remove(inner);
+                        }
+                    }
+                    if a != z && !(blank(&a) && blank(&z)) {
+                        bad.push(format!("5: .tm/state.json's `{k}` is {a} and the binary rebuilds {z} from the log"));
+                    }
+                }
+            }
+        },
+    }
+    bad
 }
 
 // ---------------------------------------------------------------------------
@@ -764,7 +900,9 @@ pub fn world_of(draw: &Draw) -> ClassWorld {
             plangen::widen_for_notes(&mut w, &draw.case, *travel, *spent);
         }
     }
-    ClassWorld { docs: w.docs, log: w.log, state: w.state, now: w.now, mult }
+    let ratio = (w.cfg.day.budget_ratio != Config::default().day.budget_ratio)
+        .then(|| format!("{}", w.cfg.day.budget_ratio));
+    ClassWorld { docs: w.docs, log: w.log, state: w.state, now: w.now, mult, ratio }
 }
 
 /// **The draws a frozen line's provenance can name** — its seed, index and
@@ -791,6 +929,26 @@ pub fn draws_of_line(line: &Value) -> Vec<Draw> {
 // D61's worlds: the pause the binary logs at a wall's start (README gap 3123)
 // ---------------------------------------------------------------------------
 
+/// **A world as it stood before the housekeeping logged its meetings** (W-37 repair, README
+/// gap 3340): the running block's `pause`/`unpause` marks taken out of the log and the block
+/// unpaused. Since the generator logs the meetings a block passed, as the binary does, a
+/// stored world is AT REST; the D61 tests that watch the binary WRITE the marks start from
+/// this one. Only for a world whose timer marks are all D61's (the class worlds draw no typed
+/// pause) and whose block nothing else paused.
+pub fn before_housekeeping(w: &ClassWorld) -> ClassWorld {
+    let mut out = w.clone();
+    out.log = w
+        .log
+        .lines()
+        .filter(|l| !l.contains("\"ev\":\"pause\"") && !l.contains("\"ev\":\"unpause\""))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    if let Some(a) = out.state.active.as_mut() {
+        a.paused = false;
+    }
+    out
+}
+
 /// **The worlds D61 derives from a stored one** (the owner's D61, W-36 track T;
 /// README gap 3123): when a block runs, unpaused, with no break and no
 /// interruption, and a wall's blocked span that began AFTER the block started
@@ -807,7 +965,7 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
     let b = Built::of(parent.clone());
     let r = running(&b);
     let Some(ob) = r.block else { return Vec::new() };
-    let Some(a) = parent.state.active.clone().filter(|a| !a.paused && a.id.as_str() == ob.id) else {
+    let Some(a) = parent.state.active.clone().filter(|a| a.id.as_str() == ob.id) else {
         return Vec::new();
     };
     if r.brk.is_some() || r.interrupt.is_some() {
@@ -835,11 +993,21 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
         LogEntry::new(t.fixed_offset(), ev).to_json().expect("a timer entry serialises") + "\n"
     };
     let id = a.id.as_str().to_string();
+    // **A parent already at rest** (W-37 repair, README gap 3340): since the generator
+    // logs the meetings a running block passed, as the binary does, a parent whose wall
+    // covers `now` already holds that wall's pause and is paused — the world at `now` IS
+    // the parent, and only the world twenty minutes into the meeting is derived.
+    let at_rest = a.paused && parent.log.contains(&line(lo, Event::Pause { id: id.clone() }));
+    if a.paused && !at_rest {
+        return Vec::new();
+    }
     let mut paused = parent.clone();
-    for (l, h) in merged.iter().copied().filter(|(l, _)| *l > started && *l <= now) {
-        paused.log.push_str(&line(l, Event::Pause { id: id.clone() }));
-        if h <= now {
-            paused.log.push_str(&line(h, Event::Unpause { id: id.clone() }));
+    if !at_rest {
+        for (l, h) in merged.iter().copied().filter(|(l, _)| *l > started && *l <= now) {
+            paused.log.push_str(&line(l, Event::Pause { id: id.clone() }));
+            if h <= now {
+                paused.log.push_str(&line(h, Event::Unpause { id: id.clone() }));
+            }
         }
     }
     if let Some(x) = paused.state.active.as_mut() {
@@ -848,6 +1016,7 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
     let mid = (lo + Duration::minutes(20)).min(hi - Duration::minutes(1));
     [now, mid]
         .into_iter()
+        .filter(|at| !(at_rest && *at == now))
         .filter(|at| *at >= now && *at < hi)
         .fold(Vec::new(), |mut out: Vec<(ClassWorld, DateTime<Tz>)>, at| {
             if out.iter().all(|(w, _)| w.now != at) {
