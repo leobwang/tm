@@ -9448,8 +9448,10 @@ def theHostWorkedRequest : PlanReq :=
 set_option maxRecDepth 400000 in
 /-- **D61 on the kernel's day: the worked stretch is not drawn across the meeting.**  The open
 row runs from the unpause at 13:50 and has worked sixty minutes (fifty before the meeting, ten
-since); the log's past half is the stretch `[12:00, 12:50)` and a `paused` Lost row across the
-meeting; the reservation owes 120 of the 180 minutes; and no Block row of the day lies across
+since); the log's past half is the stretch `[12:00, 12:50)` and, since the owner's D65 (parity
+P56), nothing under the meeting — W-36 drew a `paused` Lost row across it, which W-37 track T's
+block below refutes by name (`the_meeting_is_drawn_as_a_paused_lost_row_is_refuted`); the
+reservation owes 120 of the 180 minutes; and no Block row of the day lies across
 `[12:50, 13:50)` — where the same day with nothing logged draws one. -/
 theorem a_logged_wall_pause_keeps_the_open_row_off_the_meeting :
     (openBlockRows theWallPausedRequest).map (fun t => (t.start, t.stop, t.note))
@@ -9457,9 +9459,7 @@ theorem a_logged_wall_pause_keeps_the_open_row_off_the_meeting :
           some (Note.soFar 60))] ∧
     (pastRows theWallPausedRequest).map (fun t => (t.start, t.stop, t.kind, t.note))
       = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 770).sec,
-          SegKind.block, none),
-         ((Cal.instantOf Cal.chicago 739867 770).sec, (Cal.instantOf Cal.chicago 739867 830).sec,
-          SegKind.lost, some Note.paused)] ∧
+          SegKind.block, none)] ∧
     theWallPausedRequest.activeRun.map (·.leftMin) = some 120 ∧
     ((dayPlan theWallPausedRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (s.val.start < (Cal.instantOf Cal.chicago 739867 830).sec) &&
@@ -9557,6 +9557,76 @@ theorem a_budget_spent_where_the_item_could_not_go_excuses_its_drop :
     PlanCheck.impossibleKept onlyAtY9 theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = true ∧
     PlanCheck.impossibleKept permissive theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = false := by
   refine ⟨by decide, by decide, by decide, by decide⟩
+
+
+/-! ############################################################################
+## W-37 track T — the owner's D65: a meeting that paused the running block is drawn as the WALL
+## ALONE (parity P56, README gaps 3044, 3141 and 3142)
+
+**The drawing.**  `theWallPausedRequest` (W-36's D61 day: `m1` started 12:00, `pause m1` at
+`^g1`'s 12:50, `unpause m1` at its 13:50, `now` 14:00) drew the meeting twice until this step —
+its Wall row, and a `paused` Lost row over the same span that `tm review day` counts as no lost
+time.  The day now holds the Wall row alone there, and the W-36 drawing is refuted by name.
+
+**The cut, not a drop.**  `theStraddlingPauseRequest` pauses `m1` at 12:40 — before the meeting,
+so D61 writes nothing (the timer was already stopped) — and unpauses it at 13:55, after it.  The
+paused minutes OUTSIDE the meeting are drawn, 12:40–12:50 and 13:50–13:55, and the meeting is its
+Wall row alone: `Planner.cutAll` answers the pieces, `Planner.a_paused_row_lies_under_no_wall` is
+the law, and this is its instance with both pieces present (AGENTS §5.8: the rule does not
+over-bite).
+############################################################################ -/
+
+/-- **`m1` paused at 12:40, before `^g1`, and resumed at 13:55, after it.** -/
+def openStraddleLines : List Log.Line := openLines ++
+  [⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','4','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩,
+   ⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','3',':','5','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','u','n','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem openStraddleRun_resumes_ok : runOk Cal.chicago 739867 openStraddleLines = true := by decide
+
+def openStraddleRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) openStraddleLines with
+  | .ok run => run
+  | .error _ => absurd openStraddleRun_resumes_ok (by simp [runOk, h])
+
+/-- **The open Wednesday with a pause that straddles the meeting.** -/
+def theStraddlingPauseRequest : PlanReq := { theOpenRequest with run := openStraddleRun }
+
+set_option maxRecDepth 400000 in
+/-- **W-36's drawing of the meeting is REFUTED** (D65; AGENTS §3.1 item 3, D5's refute-and-rename):
+`a_logged_wall_pause_keeps_the_open_row_off_the_meeting` said, until this step, that the past half
+of the D61 day holds a `paused` Lost row `[12:50, 13:50)` across `^g1`.  It holds no paused row at
+all. -/
+theorem the_meeting_is_drawn_as_a_paused_lost_row_is_refuted :
+    ¬ ∃ t ∈ pastRows theWallPausedRequest, t.kind = SegKind.lost ∧ t.note = some Note.paused := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **D65 on the kernel's day: the meeting is the Wall row alone.**  Every row of the D61 day
+that meets `[12:50, 13:50)` is `^g1`'s Wall row; the stretch before the meeting ends at its start
+and the open row begins at its end. -/
+theorem the_meeting_is_drawn_as_the_wall_alone :
+    ((dayPlan theWallPausedRequest).segments.filter (fun s =>
+        decide (s.val.start < (Cal.instantOf Cal.chicago 739867 830).sec) &&
+        decide ((Cal.instantOf Cal.chicago 739867 770).sec < s.val.stop))).map
+        (fun s => (s.val.kind, s.val.item, s.val.start, s.val.stop))
+      = [(SegKind.wall, some ['g','1'], (Cal.instantOf Cal.chicago 739867 770).sec,
+          (Cal.instantOf Cal.chicago 739867 830).sec)] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **A pause that straddles a wall keeps its minutes outside it.**  The replay's one Pause
+segment `[12:40, 13:55)` is drawn as two `paused` Lost rows, `[12:40, 12:50)` and `[13:50,
+13:55)`, around `^g1`'s Wall row; the stretch before the pause ends at 12:40. -/
+theorem a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it :
+    (pastRows theStraddlingPauseRequest).map (fun t => (t.start, t.stop, t.kind, t.note))
+      = [((Cal.instantOf Cal.chicago 739867 720).sec, (Cal.instantOf Cal.chicago 739867 760).sec,
+          SegKind.block, none),
+         ((Cal.instantOf Cal.chicago 739867 760).sec, (Cal.instantOf Cal.chicago 739867 770).sec,
+          SegKind.lost, some Note.paused),
+         ((Cal.instantOf Cal.chicago 739867 830).sec, (Cal.instantOf Cal.chicago 739867 835).sec,
+          SegKind.lost, some Note.paused)] := by
+  decide
 
 end PlannerWit
 end Tm

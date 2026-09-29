@@ -70603,3 +70603,159 @@ there; the missing D61 pause day is gap 3123 (open); D60's "impossible first amo
   `maxRecDepth 400000`, probed first at 8 GB with `timeout 120`: 1.6 s); no external dependency;
   no parity number issued; every exemption file the same size or smaller but the NEW
   `written-exempt.txt` (three lines, born with the gate that reads it).
+
+<!-- =====================================================================
+     APPENDED 2026-09-28: stage 6 (the planner), run **W-37**, **TRACK T**,
+     on branch `w37-t` (worktree `.claude/worktrees/w37-t`) over `b3c29a3`.
+     Gap range **3240-3279**.  Parity: **P56 issued** (below); next free P57,
+     which is this track's by allocation and is not taken by this commit.
+     Every drive ran the binary the commit builds, every call `--now`, under
+     the memory cap; every plant ran in a clone under `scratchpad/w37-t/`.
+     ===================================================================== -->
+
+## Stage 6 — W-37, track T: a meeting that paused the block is drawn as the wall alone, and said aloud (D65, P56)
+
+### 1. D65 — the drawing: the part of a paused row a wall covers is not drawn
+
+**Reproduced first**, on the pre-change binary (`b3c29a3`'s build), a `tm init --example` tree
+(`^g1 Meeting w/ host at:2026-09-07T12:50/13:50`), `^t4` started 12:00, `tm now` at 13:20 (D61 logs
+the pause) and 14:10 (the unpause) — `scratchpad/w37-t/drive_d65.sh`, transcripts `drv65before.txt`
+and `drv65.txt`:
+
+```
+before  $ tm --now 2026-09-07T14:12:00-05:00 plan
+        12:00  3 p3   Claude Code drafts tests     @m2  1b
+        12:50  ·      lost 1h                      @m2         paused
+        12:50  ⏰     Meeting w/ host                   1h
+        13:50  3 p3 ▶ Claude Code drafts tests     @m2  1b     72m so far
+        $ tm --now 2026-09-07T14:13:00-05:00 review day
+         Day 2026-09-07 · 0/6 blocks · load 0.0 · lost 0 · leak 0m · adherence -
+```
+
+The plan draws an hour lost where the review counts none — one span, two readings (gaps 3044, 3142).
+
+**The rule** (gap 3044's own words: a renderer rule over `(pause, wall)` pairs): **the part of a
+replayed `paused` Lost row that a wall of the day covers is not drawn** — the wall's row is drawn
+there, and nothing else.  The walls are step 1's own (`Planner.wallsToday`, run-up included — the
+span D61 pauses on).  A pause no wall touches is drawn whole; a pause that straddles a wall keeps
+the minutes outside it; no other kind (a Block, a Break, a closed interruption, a routine, an idle
+mark) is cut.
+
+* **The kernel.**  `Planner.pastRows` draws each replayed segment over the spans `Planner.pastSpans`
+  answers — its clip to `[day_start, now]`, and for a Pause, with every wall of the day
+  (`Planner.wallSpans`) cut out of it — one row per span (`Planner.pastRowOf`).  The cut itself is
+  a new module, `PastCut.lean` (`cutOne`, `cutAll`, `clipCut` over plain `[lo, hi)` spans), for a
+  reason recorded in its header: `Planner.lean` carries 175 check-9 pin sites after the replayed
+  past, and inserting the cut's laws above them moved every one (measured: `mutate.py --gate` → 175
+  drifted rows over 54 roster rows, each re-run costing a kernel build per constant).  So the
+  planner's own edit is **line-neutral** — the definitions sit where `pastRows` always sat, the
+  laws sit at the module's end, `PastCut` enters on a line the module docstring gave up, and the
+  gate reports **0 drifted** after.
+* **The laws** (`Planner.lean`, end of module; `PastCut.lean`): `a_paused_row_lies_under_no_wall`
+  (every row noted `paused` lies wholly before or after every wall of the day), and the two that
+  say the rule over-bites nothing — `a_pause_no_wall_touches_is_drawn_whole` and
+  `pastSpans_of_not_a_pause`; beneath them `clipCut_within`, `clipCut_apart`, `clipCut_untouched`,
+  `clipCut_nil`, `cutAll_sub`/`_nonempty`/`_apart`/`_untouched`, and `the_cut_is_run`.  The five
+  laws about the past half that unfolded the old `filterMap` (`pastRows_end_at_now`,
+  `pastRows_are_not_walls`, `pastRows_are_not_wind_down`, `pastRows_carry_no_energy`,
+  `pastRows_are_not_batches`) are re-proved **with their statements unchanged** through the new
+  `mem_pastRows` (D5).
+* **The witnesses** (`PlannerWit.lean`, W-37 track T block): `the_meeting_is_drawn_as_the_wall_alone`
+  (every row of W-36's D61 day meeting `[12:50, 13:50)` is `^g1`'s Wall row),
+  `a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it` (a pause 12:40–13:55 is drawn as
+  `[12:40, 12:50)` and `[13:50, 13:55)`), and the refutation below.
+* **The fork, changed to agree** (`tm-core/src/planner.rs`, `past_segments` and a new free
+  `cut_out`, the kernel's `cutAll` span by span): the shipped `tm plan` is still fork
+  `planner::plan` until R3, so the drawing the user sees is this function's — and every live
+  comparison (`planner_invariants`, `planner_classes`' D61 worlds) compares the kernel against it,
+  so the two cut the same spans.  No frozen comparand line holds a logged pause (measured over
+  `fork-4748911-planner-classes.jsonl`'s 38 lines and `fork-4748911-planner-days.jsonl`'s 4: zero
+  `pause`/`unpause` events), so D64 re-blesses nothing here — **but see gap 3240**.
+
+**A theorem describing the hole is refuted and renamed** (D5): `PlannerWit.a_logged_wall_pause_keeps_the_open_row_off_the_meeting`
+said, as W-36 wrote it, that the D61 day's past half holds a `paused` Lost row `[12:50, 13:50)`
+across the meeting.  Its conjunct now states the past half is the stretch `[12:00, 12:50)` alone,
+and `PlannerWit.the_meeting_is_drawn_as_a_paused_lost_row_is_refuted` proves the W-36 drawing false.
+The theorem's other four conjuncts are unchanged.
+
+### 2. D65 — the pause is SAID
+
+The verb whose housekeeping logs D61's pause now (a) prints one line on stderr naming the block,
+the wall and the span, `tm: paused ^t4 for Meeting w/ host 12:50–13:50` (several walls a joined
+span holds are named with `, `; nothing is printed while the TUI holds the terminal,
+`kernel_bridge::capturing_kernel_stderr`, as the automatic close's refusal is not), and (b) writes
+the day file's journal line a typed `tm pause` writes — `HH:MM pause ^t4`, and `HH:MM unpause ^t4`
+for the automatic unpause — at the mark's own time, through the one spelling both writers share
+(`day.rs`' `timer_note`, which `tm pause` now calls too).  The unpause is journaled and not
+announced: the span the notice printed already said when the meeting ends.
+
+**Parity P56 taken**: a meeting that paused the running block is drawn as the WALL ALONE — the part of a replayed `paused` Lost row that a wall of the day covers (its blocked span, run-up included) is not drawn, in the kernel's `Planner.pastRows` and in fork `past_segments` changed to agree — and the verb whose housekeeping logs D61's pause prints `paused ^<id> for <wall titles> HH:MM–HH:MM` on stderr and writes the day file's journal lines a typed `tm pause` writes (`HH:MM pause ^id`, `HH:MM unpause ^id`) at the marks' own times; fork 4748911 drew every Pause segment as a `paused` Lost row, said nothing and journaled nothing (owner D65, W-37 track T, README gaps 3044, 3141 and 3142)
+
+**Behaviour rows**, DRIVEN before (`b3c29a3`) and after (this commit), same tree and instants:
+
+| surface | `b3c29a3` | after |
+|---|---|---|
+| `tm plan` at 14:12, after the meeting D61 paused `^t4` for | `12:50 · lost 1h @m2 paused` beside the `⏰` wall row | the `⏰ Meeting w/ host 1h` row alone |
+| `tm review day` at 14:13 | `lost 0` while the plan draws `lost 1h` | `lost 0`, and the plan draws no lost row: one reading |
+| `tm now` at 13:20, the first verb inside the meeting | nothing said (stdout only) | stderr `tm: paused ^t4 for Meeting w/ host 12:50–13:50`; stdout unchanged |
+| the day file's `## Log` | `12:00 start ^t4 …` and no pause line | `12:50 pause ^t4`, `13:50 unpause ^t4`, at the marks' times |
+| a typed pause 12:40–14:00 around the meeting | one `paused` row 12:40–14:00 across the wall | `paused` rows 12:40–12:50 and 13:50–14:00, the wall alone between |
+
+Pinned by `tm/tests/cli_wall_drawn.rs` (6): the drawing and the one lost figure, the notice once
+and the journal at the wall's start, the verb after the meeting (both lines, one notice), one
+spelling for both journal writers, the straddling pause cut and not dropped, and a pause no wall
+touches drawn whole.  `cli_wall_pause`'s eight D61 tests pass unchanged.
+
+### Gaps (3240 taken; 3241-3279 free for this track)
+
+**Gap 3240 — D61's frozen worlds (track H's gap 3123) must be frozen with P56's drawing.**
+1. *What.*  Track H freezes D61's logged-pause worlds this run (gap 3123).  A world frozen from the
+   fork before this commit reaches it draws a `paused` Lost row over the meeting; after it, neither
+   the kernel nor the fork does.  2. *Why.*  The two tracks run in parallel from `b3c29a3`.
+3. *Cost.*  A frozen line holding the pre-P56 day would disagree with the kernel on exactly that
+   row after the merge.  4. *Clears it.*  The land step: such a line is re-blessed under D64 (a) —
+   P56 is a registered parity number that changes the fork's day on it — the shipped day kept
+   beside it by value and the line named in the land block; or H freezes after merging this.
+
+### Acceptance of this commit (D65), capped
+
+* **`check.sh`, 14 checks, 17 lines, all ok** — build; totality; axiom audit **5,645** theorems
+  (5,624 at `b3c29a3`: +21, the cut's 13 laws in `PastCut.lean` and `Planner.lean`, `mem_pastRows`,
+  the three D65 laws and four witnesses); `Negative.lean` rejected; FFI 95; corpus 29/37 and 4/5;
+  stage goals 6; citations 46,636, 0 unresolved; check 9 **427 new or changed, 427 rostered, 0
+  owed** (10 rows appended — `mutate.py --write` in a clone, 28 min: 7 pinned, `pastRowOf`
+  unfoldable and pinned by nothing (no `Inhabited Seg`, no accumulator of its type; 31 pinned by
+  nothing, was 30), two witness fixtures), **0 drifted pin sites** (the line-neutral edit above;
+  175 before it); parity P1-P56, next free P57; twins 3,190 bodies, 0 UNANSWERED; reach 1,185
+  reachable, 1,201 exempt, 0 UNANSWERED — its first run FAILED on the `## Planner.lean` census
+  (276 → 279: `wallSpans`, `pastSpans`, `pastRowOf`, each reached only through the declared
+  unsent `planner` section), corrected in `reach-exempt.txt` with its reason; fields 15/15, inputs
+  33 of 37, sent 28/28, written 34/28/3; replay 87 modules.
+* **`cargo test --workspace --no-fail-fast`, FOUR runs** (D46), `git status --porcelain` identical
+  before and after each: runs 1 and 2 **1,593 passed / 0 failed / 11 ignored across 94 result
+  lines** (load 7.7, 10.1); runs 3 and 4 **1,592 / 1 / 11**, the one failure both times
+  `cli_latency`'s `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` — run 3 `tm
+  drop ^a1` (the first verb) still running after 5 s at load 30.7, run 4 `tm drop ^z15` after 1 s at
+  load 26-32 with the test's other rows 1.3-2.5 times the figures AGENTS §8.4 records (the later
+  verb 192.5 ms, `review week` 628.0 ms, the reseal 496.9 ms) — gap 1333's class: both ran while
+  this track's own mutation run and the other tracks' kernel builds shared the machine, and the
+  named-suite run of `cli_latency --include-ignored` at the same hour failed 3 of 6 the same way
+  (three first verbs past 5 s).  **The baseline fails the same way:** the three-year test run
+  alone, alternating this tree and a clone of `b3c29a3` at load 15-19, failed once on EACH, and
+  where it passed the first verb took 2.76-4.27 s on both against its 5 s bound.  `cli_latency
+  --include-ignored` back to back with that clone: at load 26-34 this tree 6/6 (21.9 s, 27.5 s) and
+  `b3c29a3` 6/6 (21.0 s, 20.2 s); at load 16-27 this tree 6/6 (21.7 s, 21.4 s) and `b3c29a3` 6/6
+  (23.3 s, 21.5 s).
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 17, `planner_invariants` 24
+  (460 s), `cli_wall_pause` 8, `cli_wall_drawn` 6; `cli_latency` as above.
+* **Rust plants**, in a clone of the track's tree (which carries this commit's code and the next's),
+  `git status --porcelain` identical before and after and every file restored byte for byte:
+  `cut_out` returning the span uncut → `cli_wall_drawn` 2 failed; the notice silenced → 2 failed;
+  the journal line spelled `paused` → 3 failed.
+* Every new `decide` probed at 8 GB with `timeout 120` before it was committed (the four
+  `PlannerWit` witnesses: 1.6 s, 1.1 GB; a planted wrong value decided false); no memory bound,
+  `maxHeartbeats` or `maxRecDepth` raised (the witnesses carry the file's own `maxRecDepth
+  400000`); no predicate, assertion, snapshot, fixture, latency band or corpus touched; no new
+  dependency; `reach-exempt.txt` changes a census number only.

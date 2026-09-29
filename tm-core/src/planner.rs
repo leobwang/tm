@@ -1404,7 +1404,7 @@ impl<'a> Planner<'a> {
         blocked: &[Wall],
         active: Option<&ActiveRun>,
     ) -> Vec<Segment> {
-        let mut out: Vec<Segment> = self.past_segments();
+        let mut out: Vec<Segment> = self.past_segments(walls);
         // §9: while an interruption runs, nothing is running.
         let interrupted = walls.iter().any(|w| w.adhoc && w.end >= self.now);
         out.extend(self.open_block_segment(active.is_none() && !interrupted, walls));
@@ -1708,10 +1708,26 @@ impl<'a> Planner<'a> {
 
     /// §8.3's stability half: everything that ended before `now` comes from
     /// the log, so a replan cannot move it.
-    fn past_segments(&self) -> Vec<Segment> {
+    ///
+    /// **A Pause is drawn only where no calendar wall of the day is** — the
+    /// owner's D65 (parity P56, README gaps 3044, 3141, 3142), the kernel's
+    /// `Planner.pastSpans`. D61 stops a running block's timer at a wall with
+    /// the log's own `pause`/`unpause` pair, and this function drew that Pause
+    /// as a `paused` Lost row over the meeting beside the meeting's own Wall
+    /// row — a span `tm review day` counts as no lost time. The part of a
+    /// paused row a wall's blocked span covers is cut out ([`cut_out`]); a
+    /// pause no wall touches is drawn whole, and no other kind is cut. This is
+    /// fork 4748911's function changed on purpose, so that the shipped `tm
+    /// plan` and the kernel's day draw the same rows until R3 deletes it.
+    fn past_segments(&self, walls: &[WallSeg]) -> Vec<Segment> {
         let Some(day) = self.input.replay.day(self.date) else {
             return Vec::new();
         };
+        let blocked: Vec<(DateTime<Tz>, DateTime<Tz>)> = walls
+            .iter()
+            .filter(|w| !w.adhoc)
+            .map(|w| (w.blocked_start, w.end))
+            .collect();
         let mut out = Vec::new();
         for seg in &day.segments {
             let start = seg.start.with_timezone(&self.tz).max(self.day_start);
@@ -1719,59 +1735,76 @@ impl<'a> Planner<'a> {
             if end <= start {
                 continue;
             }
-            let (kind, item, instance, note) = match &seg.kind {
-                SegmentKind::Block { id } => {
-                    (SegKind::Block, Some(Id::new(id.clone())), None, None)
-                }
-                SegmentKind::Pause { id } => (
-                    SegKind::Lost,
-                    Some(Id::new(id.clone())),
-                    None,
-                    Some("paused".to_string()),
-                ),
-                SegmentKind::Interrupt { id } => (
-                    SegKind::Lost,
-                    id.clone().map(Id::new),
-                    None,
-                    Some("interruption".to_string()),
-                ),
-                SegmentKind::Break { r#where } => {
-                    (SegKind::Break, None, None, r#where.clone())
-                }
-                SegmentKind::Routine { item, inst } => (
-                    SegKind::Routine,
-                    Some(Id::new(item.clone())),
-                    parse_instance_key(inst),
-                    None,
-                ),
-                SegmentKind::Idle { attributed } => (
-                    SegKind::Lost,
-                    None,
-                    None,
-                    Some(attributed.clone()),
-                ),
+            let spans = match &seg.kind {
+                SegmentKind::Pause { .. } => cut_out(&blocked, start, end),
+                _ => vec![(start, end)],
             };
-            // A logged routine segment *is* the completion; a block segment is
-            // done when the log closed the item today.
-            let done = kind == SegKind::Routine
-                || item
-                    .as_ref()
-                    .is_some_and(|id| day.done.iter().any(|d| d == id.as_str()));
-            out.push(Segment {
-                start,
-                end,
-                kind,
-                energy: None,
-                item,
-                instance,
-                flags: SegFlags {
-                    done,
-                    note,
-                    ..SegFlags::default()
-                },
-            });
+            for (start, end) in spans {
+                out.push(self.past_segment(day, &seg.kind, start, end));
+            }
         }
         out
+    }
+
+    /// One replayed row of [`Self::past_segments`] over one span.
+    fn past_segment(
+        &self,
+        day: &crate::log::DayReplay,
+        kind: &SegmentKind,
+        start: DateTime<Tz>,
+        end: DateTime<Tz>,
+    ) -> Segment {
+        let (kind, item, instance, note) = match kind {
+            SegmentKind::Block { id } => {
+                (SegKind::Block, Some(Id::new(id.clone())), None, None)
+            }
+            SegmentKind::Pause { id } => (
+                SegKind::Lost,
+                Some(Id::new(id.clone())),
+                None,
+                Some("paused".to_string()),
+            ),
+            SegmentKind::Interrupt { id } => (
+                SegKind::Lost,
+                id.clone().map(Id::new),
+                None,
+                Some("interruption".to_string()),
+            ),
+            SegmentKind::Break { r#where } => {
+                (SegKind::Break, None, None, r#where.clone())
+            }
+            SegmentKind::Routine { item, inst } => (
+                SegKind::Routine,
+                Some(Id::new(item.clone())),
+                parse_instance_key(inst),
+                None,
+            ),
+            SegmentKind::Idle { attributed } => (
+                SegKind::Lost,
+                None,
+                None,
+                Some(attributed.clone()),
+            ),
+        };
+        // A logged routine segment *is* the completion; a block segment is
+        // done when the log closed the item today.
+        let done = kind == SegKind::Routine
+            || item
+                .as_ref()
+                .is_some_and(|id| day.done.iter().any(|d| d == id.as_str()));
+        Segment {
+            start,
+            end,
+            kind,
+            energy: None,
+            item,
+            instance,
+            flags: SegFlags {
+                done,
+                note,
+                ..SegFlags::default()
+            },
+        }
     }
 
     // -----------------------------------------------------------------
@@ -1917,6 +1950,37 @@ fn blocks_since_last_break(day: &crate::log::DayReplay) -> u32 {
 }
 
 /// §8.2 step 1: overlapping walls, each pair once, at the later one.
+/// **`[a, b)` with every span of `spans` cut out** — the kernel's
+/// `Planner.cutAll`, span by span in the order given: each piece loses what
+/// the span covers and keeps what is left before it and after it; an empty
+/// span cuts nothing. The pieces come out in ascending order and never empty.
+fn cut_out(
+    spans: &[(DateTime<Tz>, DateTime<Tz>)],
+    a: DateTime<Tz>,
+    b: DateTime<Tz>,
+) -> Vec<(DateTime<Tz>, DateTime<Tz>)> {
+    let mut pieces = vec![(a, b)];
+    for &(lo, hi) in spans {
+        if hi <= lo {
+            continue;
+        }
+        pieces = pieces
+            .into_iter()
+            .flat_map(|(x, y)| {
+                let mut left = Vec::new();
+                if x < y.min(lo) {
+                    left.push((x, y.min(lo)));
+                }
+                if x.max(hi) < y {
+                    left.push((x.max(hi), y));
+                }
+                left
+            })
+            .collect();
+    }
+    pieces
+}
+
 fn wall_conflicts(walls: &[WallSeg]) -> Vec<(Id, Id)> {
     let mut out = Vec::new();
     for (i, a) in walls.iter().enumerate() {

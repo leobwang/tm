@@ -755,8 +755,10 @@ impl Ctx {
             // block runs has stopped the block's timer. Its pause — and, once the wall
             // has ended, its unpause — is logged here, the way §6.3's automatic close
             // catches up: by the first verb that runs after the wall began
-            // ([`super::day::stop_the_timer_at_walls`]). It writes the log and
-            // `state.json` only, never a plan file, so it does not wait on the gate.
+            // ([`super::day::stop_the_timer_at_walls`]). It writes the log,
+            // `state.json` and — since the owner's D65 (W-37 track T) — the day
+            // file's journal line for each mark it logs, and it does not wait on
+            // the gate.
             if super::day::stop_the_timer_at_walls(&mut cx)? {
                 cx.reload()?;
             }
@@ -1476,6 +1478,13 @@ impl Ctx {
 
     /// The walls of one date.
     pub fn walls_on(&self, date: NaiveDate) -> Vec<Wall> {
+        self.walls_with_items_on(date).into_iter().map(|(a, b, _)| (a, b)).collect()
+    }
+
+    /// [`Ctx::walls_on`], each wall with the item it is written on — the one
+    /// selection, widened rather than copied (AGENTS §5.3), so the notice the
+    /// owner's D65 prints names the walls D61 paused on.
+    pub fn walls_with_items_on(&self, date: NaiveDate) -> Vec<(DateTime<Tz>, DateTime<Tz>, Id)> {
         let mut out = Vec::new();
         for item in self.tree.iter() {
             if item.state.is_closed() {
@@ -1492,9 +1501,9 @@ impl Ctx {
             if start.date() > date || end.date() < date {
                 continue;
             }
-            out.push((self.instant(start), self.instant(end)));
+            out.push((self.instant(start), self.instant(end), id));
         }
-        out.sort_by_key(|(a, _)| *a);
+        out.sort_by_key(|(a, _, _)| *a);
         out
     }
 

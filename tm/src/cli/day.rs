@@ -31,7 +31,6 @@ use std::io::{self, BufRead, IsTerminal, Write};
 use chrono::{DateTime, FixedOffset, NaiveTime};
 use serde::Serialize;
 
-use tm_core::capacity;
 use tm_core::energy::{self, Features};
 use tm_core::horizon::MIN_REMAINING_MIN;
 use tm_core::log::{self, Event};
@@ -307,11 +306,12 @@ pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
     let id = active.id.to_string();
     let mut paused = active.paused;
     let mut wrote = false;
-    for (lo, hi) in merged_spans(ctx.walls_today()) {
-        if lo <= started || lo > now {
+    let today = ctx.today;
+    for (lo_tz, hi_tz, walls) in merged_spans(ctx.walls_with_items_on(today)) {
+        if lo_tz <= started || lo_tz > now {
             continue;
         }
-        let (lo, hi) = (lo.fixed_offset(), hi.fixed_offset());
+        let (lo, hi) = (lo_tz.fixed_offset(), hi_tz.fixed_offset());
         if !marks.contains(&log::IdleMark::Pause(lo)) {
             if timer_stopped_at(&marks, started.fixed_offset(), lo, running_break) || touched_after(&marks, lo) {
                 continue;
@@ -320,6 +320,11 @@ pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
             marks.push(log::IdleMark::Pause(lo));
             paused = true;
             wrote = true;
+            // **D65: the pause is SAID** — the day file's journal line a typed
+            // `tm pause` writes, at the pause's own time, and one line naming
+            // the block and the wall.
+            super::dayfile::note(ctx, today, lo_tz.time(), &timer_note(true, &active.id))?;
+            say_wall_pause(ctx, &active.id, &walls, lo_tz, hi_tz);
         }
         if hi <= ctx.now
             && !marks.contains(&log::IdleMark::Unpause(hi))
@@ -329,6 +334,7 @@ pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
             marks.push(log::IdleMark::Unpause(hi));
             paused = false;
             wrote = true;
+            super::dayfile::note(ctx, today, hi_tz.time(), &timer_note(false, &active.id))?;
         }
     }
     if wrote {
@@ -340,18 +346,71 @@ pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
     Ok(wrote)
 }
 
-/// The day's walls as blocked spans, overlapping or touching spans joined.
-fn merged_spans(mut walls: Vec<capacity::Wall>) -> Vec<capacity::Wall> {
-    walls.retain(|(a, b)| a < b);
-    walls.sort_by_key(|(a, _)| *a);
-    let mut out: Vec<capacity::Wall> = Vec::new();
-    for (a, b) in walls {
+/// The day's walls as blocked spans, overlapping or touching spans joined,
+/// each with the items of the walls it joined.
+fn merged_spans(mut walls: Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Id)>) -> Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Vec<Id>)> {
+    walls.retain(|(a, b, _)| a < b);
+    walls.sort_by_key(|(a, _, _)| *a);
+    let mut out: Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Vec<Id>)> = Vec::new();
+    for (a, b, id) in walls {
         match out.last_mut() {
-            Some(last) if a <= last.1 => last.1 = last.1.max(b),
-            _ => out.push((a, b)),
+            Some(last) if a <= last.1 => {
+                last.1 = last.1.max(b);
+                last.2.push(id);
+            }
+            _ => out.push((a, b, vec![id])),
         }
     }
     out
+}
+
+/// **The day file's journal line of a timer mark** — `pause ^id` or `unpause
+/// ^id`, what a typed [`pause`] writes and what the owner's D65 has D61's
+/// automatic pair write too. One spelling for both writers (AGENTS §5.3).
+fn timer_note(paused: bool, id: &Id) -> String {
+    format!("{} {}", if paused { "pause" } else { "unpause" }, id.token())
+}
+
+/// **The line that SAYS a wall paused the running block** — the owner's D65
+/// (parity P56, README gap 3141): `paused ^t4 for Standup 12:50–13:50`, on
+/// stderr beside the verb's own output, naming the block, the wall (every wall
+/// a joined span holds) and the span the timer was stopped over. A pause
+/// written by housekeeping and never mentioned is the silent-wrong-answer
+/// class: a user who skipped the meeting could not know the minutes had been
+/// netted out. Nothing is printed while the TUI holds the terminal.
+fn say_wall_pause(
+    ctx: &Ctx,
+    block: &Id,
+    walls: &[Id],
+    lo: DateTime<chrono_tz::Tz>,
+    hi: DateTime<chrono_tz::Tz>,
+) {
+    if super::kernel_bridge::capturing_kernel_stderr() {
+        return;
+    }
+    eprintln!("tm: {}", wall_pause_line(ctx, block, walls, lo, hi));
+}
+
+/// [`say_wall_pause`]'s text: the wall's title (its key when the tree holds no
+/// such item), several walls joined by `, `, and the span in local `HH:MM`.
+fn wall_pause_line(
+    ctx: &Ctx,
+    block: &Id,
+    walls: &[Id],
+    lo: DateTime<chrono_tz::Tz>,
+    hi: DateTime<chrono_tz::Tz>,
+) -> String {
+    let titles: Vec<String> = walls
+        .iter()
+        .map(|w| ctx.tree.get(w).map_or_else(|| w.to_string(), |i| i.title.clone()))
+        .collect();
+    format!(
+        "paused {} for {} {}–{}",
+        block.token(),
+        titles.join(", "),
+        hhmm(lo),
+        hhmm(hi)
+    )
 }
 
 /// Whether the log (and the break `state.json` still holds running) had the
@@ -1364,14 +1423,7 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
         Event::Unpause { id: id.to_string() }
     })?;
     ctx.reload()?;
-    day_note(
-        &ctx,
-        format!(
-            "{} {}",
-            if paused { "pause" } else { "unpause" },
-            id.token()
-        ),
-    )?;
+    day_note(&ctx, timer_note(paused, &id))?;
     rec.finish(&ctx, if paused { "pause" } else { "unpause" })?;
 
     let out = PauseOut {

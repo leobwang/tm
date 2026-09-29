@@ -72,6 +72,7 @@ import TmKernel.Recur
 import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Lookahead
+import TmKernel.PastCut
 import TmKernel.Planner
 import TmKernel.PlanDiff
 import TmKernel.PlanCheck

@@ -7333,3 +7333,30 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop
 #print axioms Tm.PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop
 #print axioms Tm.PlanWire.the_wire_until_is_answerUntil
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK T (worktree `w37-t`) -- the owner's D65 (parity P56,
+-- README gaps 3044, 3141, 3142): a meeting that paused the running block is drawn as the WALL
+-- ALONE -- the part of a paused row a wall of the day covers is cut out of the replayed past.
+-- =====================================================================
+#print axioms Tm.Planner.mem_pastRows
+#print axioms Tm.Planner.cutOne_sub
+#print axioms Tm.Planner.cutOne_nonempty
+#print axioms Tm.Planner.cutOne_apart
+#print axioms Tm.Planner.cutOne_untouched
+#print axioms Tm.Planner.cutAll_sub
+#print axioms Tm.Planner.cutAll_nonempty
+#print axioms Tm.Planner.cutAll_apart
+#print axioms Tm.Planner.cutAll_untouched
+#print axioms Tm.Planner.clipCut_within
+#print axioms Tm.Planner.clipCut_apart
+#print axioms Tm.Planner.clipCut_nil
+#print axioms Tm.Planner.clipCut_untouched
+#print axioms Tm.Planner.the_cut_is_run
+#print axioms Tm.Planner.pastSpans_of_not_a_pause
+#print axioms Tm.Planner.a_paused_row_lies_under_no_wall
+#print axioms Tm.Planner.a_pause_no_wall_touches_is_drawn_whole
+#print axioms Tm.PlannerWit.openStraddleRun_resumes_ok
+#print axioms Tm.PlannerWit.the_meeting_is_drawn_as_a_paused_lost_row_is_refuted
+#print axioms Tm.PlannerWit.the_meeting_is_drawn_as_the_wall_alone
+#print axioms Tm.PlannerWit.a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it

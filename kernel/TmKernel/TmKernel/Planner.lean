@@ -1,13 +1,13 @@
 import TmKernel.Lookahead
 import TmKernel.SealResume
 import TmKernel.Recur
+import TmKernel.PastCut
 /-!
 # The planner's vocabulary — §8's `Segment`, `DayPlan` and `PlanInput`, settled (stage 6, step P0)
 
 Fork-point `tm-core/src/planner.rs` is the oracle, read by type and function name:
 `planner::SegKind`, `planner::SegFlags`, `planner::Segment`, `planner::Diagnostics`,
-`planner::DayPlan`, `planner::PlanInput`, `planner::PlanOverrides`,
-`planner::Planner::window_and_budget`, and `store::RuntimeState` beside them.
+`planner::DayPlan`, `planner::PlanInput`, `planner::PlanOverrides`, `planner::Planner::window_and_budget`, and `store::RuntimeState` beside them.
 
 This module holds the planner's **types and their laws**, and — since P1, P2, P3, P5, P6 and
 P7 — §8.2's **steps one to seven**.  `dayPlan` is no longer the fork's `DayPlan::empty`: it is
@@ -1471,54 +1471,54 @@ def pastInst : Replay.SegKind → Option (Id × Id)
   | .routine item inst => some (item, inst)
   | _ => none
 
+/-- **D65** (parity P56): the day's walls as the spans they block — step 1's rows, run-up included. -/
+def wallSpans (r : PlanReq) : List (Nat × Nat) := (wallsToday r).map (fun w => (w.lo, w.hi))
+/-- A replayed segment's spans: its clip to `[day_start, now]`, a Pause's with the walls cut out. -/
+def pastSpans (r : PlanReq) (g : Replay.Segment) : List (Nat × Nat) :=
+  clipCut (max g.start.1.sec r.dayStart) (min g.stop.1.sec r.now.sec)
+    (match g.kind with | .pause _ => wallSpans r | _ => [])
+/-- One replayed row over one span: `pastKind`'s kind, item and note, done when closed today. -/
+def pastRowOf (d : Replay.DayAcc) (g : Replay.Segment) (q : Nat × Nat) : Seg :=
+  { start := q.1, stop := q.2, kind := (pastKind g.kind).1, energy := none,
+    item := (pastKind g.kind).2.1, inst := pastInst g.kind,
+    flags := { SegFlags.none with
+      done := ((pastKind g.kind).1 == SegKind.routine) ||
+        (((pastKind g.kind).2.1).map (fun i => decide (i ∈ d.done))).getD false },
+    planned := none, mult := none, note := (pastKind g.kind).2.2 }
 /-- **§8.3's stability half** (fork `past_segments`): everything that ended before `now` comes
 from the log, clipped to `[day_start, now]`, so a replan cannot move it.  The log is read
-**once**, through D24's seam (`PlanReq.run`), and never a second time (D9). -/
+**once**, through D24's seam (`PlanReq.run`), and never a second time (D9).  Since the owner's
+D65 a Pause is drawn only where no wall of the day is (`a_paused_row_lies_under_no_wall`). -/
 def pastRows (r : PlanReq) : List Seg :=
   match r.todayRecord with
   | none => []
+  | some d => d.segments.flatMap fun g => (pastSpans r g).map (pastRowOf d g)
+
+/-- **What `pastRows` holds**: one row per span `pastSpans` answers for a segment of today's record. -/
+theorem mem_pastRows {r : PlanReq} {t : Seg} : t ∈ pastRows r ↔ ∃ d, r.todayRecord = some d ∧
+    ∃ g ∈ d.segments, ∃ q ∈ pastSpans r g, t = pastRowOf d g q := by
+  unfold pastRows
+  cases r.todayRecord with
+  | none => simp
   | some d =>
-    d.segments.filterMap fun g =>
-      if min g.stop.1.sec r.now.sec ≤ max g.start.1.sec r.dayStart then none
-      else
-        some { start := max g.start.1.sec r.dayStart, stop := min g.stop.1.sec r.now.sec,
-               kind := (pastKind g.kind).1, energy := none, item := (pastKind g.kind).2.1,
-               inst := pastInst g.kind,
-               flags := { SegFlags.none with
-                 done := ((pastKind g.kind).1 == SegKind.routine) ||
-                   (((pastKind g.kind).2.1).map (fun i => decide (i ∈ d.done))).getD false },
-               planned := none, mult := none, note := (pastKind g.kind).2.2 }
+    simp only [List.mem_flatMap, List.mem_map, Option.some.injEq]
+    exact ⟨fun ⟨g, hg, q, hq, he⟩ => ⟨d, rfl, g, hg, q, hq, he.symm⟩,
+      fun ⟨_, hd, g, hg, q, hq, he⟩ => hd ▸ ⟨g, hg, q, hq, he.symm⟩⟩
 
 /-- **The past half ends at `now`** — nothing it holds is in the future, which is the half of
 L25 that makes a replan able to leave it alone (design §7.2 item 1). -/
 theorem pastRows_end_at_now (r : PlanReq) (s : Seg) (h : s ∈ pastRows r) :
     r.dayStart ≤ s.start ∧ s.start < s.stop ∧ s.stop ≤ r.now.sec := by
-  unfold pastRows at h
-  split at h
-  · cases h
-  · simp only [List.mem_filterMap] at h
-    obtain ⟨g, _, hg⟩ := h
-    by_cases hc : min g.stop.1.sec r.now.sec ≤ max g.start.1.sec r.dayStart
-    · rw [if_pos hc] at hg; exact absurd hg (by simp)
-    · rw [if_neg hc] at hg
-      have he := Option.some.inj hg
-      subst he
-      exact ⟨Nat.le_max_right _ _, Nat.lt_of_not_le hc, Nat.min_le_right _ _⟩
+  obtain ⟨d, -, g, -, q, hq, rfl⟩ := mem_pastRows.1 h
+  have := clipCut_within hq
+  exact ⟨by simp only [pastRowOf]; omega, this.2.1, by simp only [pastRowOf]; omega⟩
 
 /-- **The past half is never a wall row.**  A wall is placed from the plan; the past is
 replayed from the log, and the two never meet in one row. -/
 theorem pastRows_are_not_walls (r : PlanReq) (s : Seg) (h : s ∈ pastRows r) :
     s.kind ≠ SegKind.wall := by
-  unfold pastRows at h
-  split at h
-  · cases h
-  · simp only [List.mem_filterMap] at h
-    obtain ⟨g, _, hg⟩ := h
-    split at hg
-    · cases hg
-    · have he := Option.some.inj hg
-      subst he
-      cases g.kind <;> simp [pastKind]
+  obtain ⟨d, -, g, -, q, -, rfl⟩ := mem_pastRows.1 h
+  cases hg : g.kind <;> simp [pastRowOf, pastKind, hg]
 
 /-! ### The day, assembled -/
 
@@ -3004,16 +3004,16 @@ theorem PlanReq.a_slot_is_at_most_one_block (r : PlanReq) (s : Look.Slot)
 and never the evening's two kinds, so a WindDown row is step 2's and nobody else's. -/
 theorem pastRows_are_not_wind_down (r : PlanReq) (s : Seg) (h : s ∈ pastRows r) :
     s.kind ≠ SegKind.windDown := by
-  unfold pastRows at h
-  split at h
-  · cases h
-  · simp only [List.mem_filterMap] at h
-    obtain ⟨g, _, hg⟩ := h
-    split at hg
-    · cases hg
-    · have he := Option.some.inj hg
-      subst he
-      cases g.kind <;> simp [pastKind]
+  -- Since the owner's D65 (W-37 track T, parity P56) `pastRows` draws each replayed segment
+  -- over the spans `pastSpans` answers — a Pause's with the day's walls cut out of it — so a
+  -- row is read through `mem_pastRows` and not by unfolding a `filterMap`.  Its kind is
+  -- `pastKind`'s either way, and `pastKind` never answers the evening's two kinds.  (Shorter
+  -- than the proof it replaces; these lines keep every check-9 pin site below it where
+  -- `kernel/mutations.txt` recorded it — `PastCut.lean`'s header says why.)
+  --
+  --
+  obtain ⟨d, -, g, -, q, -, rfl⟩ := mem_pastRows.1 h
+  cases hg : g.kind <;> simp [pastRowOf, pastKind, hg]
 
 /-- **A WindDown row is `eveningRows`' own, and it exists only while the wind-down is ahead.**
 This is what makes `PlanCheck.noDemandingAfterWindDown` true of §8.2 choice 5b's reservation
@@ -6362,30 +6362,30 @@ theorem replayedRows_are_not_wind_down (r : PlanReq) (t : Seg) (h : t ∈ replay
 /-- The closed half carries no slot energy: `past_segments` writes `energy: None` on every row. -/
 theorem pastRows_carry_no_energy (r : PlanReq) (t : Seg) (h : t ∈ pastRows r) :
     t.energy = none := by
-  unfold pastRows at h
-  split at h
-  · cases h
-  · simp only [List.mem_filterMap] at h
-    obtain ⟨g, -, hg⟩ := h
-    split at hg
-    · cases hg
-    · have he := Option.some.inj hg
-      subst he
-      rfl
+  -- Read through `mem_pastRows` since D65 (a cut piece is a row `pastRowOf` builds, and
+  -- `pastRowOf` writes `energy := none` on every row, as fork `past_segments` does); the
+  -- lines below keep the check-9 pin sites after this theorem where they were recorded.
+  --
+  --
+  --
+  --
+  --
+  obtain ⟨d, -, g, -, q, -, rfl⟩ := mem_pastRows.1 h
+  rfl
 
 /-- The closed half holds no Batch: `pastKind` maps the log's six kinds to none of them. -/
 theorem pastRows_are_not_batches (r : PlanReq) (t : Seg) (ids : BatchIds) (h : t ∈ pastRows r) :
     t.kind ≠ SegKind.batch ids := by
-  unfold pastRows at h
-  split at h
-  · cases h
-  · simp only [List.mem_filterMap] at h
-    obtain ⟨g, -, hg⟩ := h
-    split at hg
-    · cases hg
-    · have he := Option.some.inj hg
-      subst he
-      cases g.kind <;> simp [pastKind]
+  -- Read through `mem_pastRows` since D65: a cut piece keeps its segment's kind, and
+  -- `pastKind` maps the log's six kinds to no Batch.  The lines below keep the check-9
+  -- pin sites after this theorem where `kernel/mutations.txt` recorded them.
+  --
+  --
+  --
+  --
+  --
+  obtain ⟨d, -, g, -, q, -, rfl⟩ := mem_pastRows.1 h
+  cases hg : g.kind <;> simp [pastRowOf, pastKind, hg]
 
 /-- **No row the log contributes carries a slot energy.** -/
 theorem replayedRows_carry_no_energy (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) :
@@ -8737,7 +8737,7 @@ must carry it**: `tm_core::planwire::add_worked_min`, README gap 2920's residue,
 **The replay excludes a meeting once D61 has logged it** (`a_logged_wall_pause_is_no_worked_time`):
 the pause and unpause the host writes at a wall's start and end are the log's own events, and the
 machine banks the stretch before the pause and restarts the block at the unpause, so the fallback
-reading, the past half (`pastRows`: a Block row to the pause, a paused Lost row across the meeting)
+reading, the past half (`pastRows`: a Block row to the pause, and since D65 nothing under the wall)
 and the open row (from the unpause, `mem_openBlockRows`) all exclude the meeting.
 ############################################################################ -/
 
@@ -8835,5 +8835,77 @@ theorem an_unlogged_wall_is_worked_time :
     f.openBlock.map (fun b => (b.workedMin, b.since.map (·.1.sec), openWorkedMin 63924372000 b))
       = some (0, some 63924368400, 60) := by
   decide
+
+/-! ############################################################################
+## W-37 track T — the owner's D65: a meeting that paused the running block is drawn as the WALL
+## ALONE (parity P56, README gaps 3044, 3141 and 3142)
+
+D61 stops a running block's timer at a calendar wall with the log's own `pause`/`unpause` pair,
+and until W-37 `pastRows` — like fork `past_segments` — drew the replayed Pause segment as a Lost
+row noted `paused`, so the day showed the meeting twice: its Wall row, and a `paused` Lost row over
+the same span that `tm review day` counts as no lost time.  One span, two readings (AGENTS §5.3).
+`pastRows` now draws each replayed segment over the spans `pastSpans` answers: its clip to
+`[day_start, now]`, and for a Pause, with every wall of the day (`wallSpans`, step 1's rows, run-up
+included — the span D61 pauses on) cut out of it (`PastCut.lean`).  The laws are below: no paused
+row lies under a wall; a pause no wall touches is drawn whole; no other kind is cut.  The shipped
+`tm plan` draws the same, because fork `past_segments` (`tm-core/src/planner.rs`) makes the same cut
+until R3 deletes it.
+
+The definitions sit where `pastRows` always sat and the laws sit here, so that every check-9 pin
+site in this module stays on the line `kernel/mutations.txt` recorded (`PastCut.lean`'s header).
+############################################################################ -/
+
+/-- **No kind but a Pause is cut** (D65's rule reaches the paused rows and nothing else): a Block,
+a Break, a closed interruption, a routine and an idle mark are drawn over their whole clip. -/
+theorem pastSpans_of_not_a_pause (r : PlanReq) (g : Replay.Segment)
+    (hk : ∀ i, g.kind ≠ Replay.SegKind.pause i) :
+    pastSpans r g = if min g.stop.1.sec r.now.sec ≤ max g.start.1.sec r.dayStart then []
+      else [(max g.start.1.sec r.dayStart, min g.stop.1.sec r.now.sec)] := by
+  unfold pastSpans
+  cases hg : g.kind with
+  | pause i => exact absurd hg (hk i)
+  | block _ => exact clipCut_nil _ _
+  | interrupt _ => exact clipCut_nil _ _
+  | brk _ => exact clipCut_nil _ _
+  | routine _ _ => exact clipCut_nil _ _
+  | idle _ => exact clipCut_nil _ _
+
+/-- **D65 (parity P56): no paused row is drawn under a wall.**  Every row of the replayed past
+that carries the `paused` note lies wholly before or wholly after each wall of the day — the
+meeting D61's pause covers is drawn as its Wall row and nothing else. -/
+theorem a_paused_row_lies_under_no_wall (r : PlanReq) (t : Seg) (h : t ∈ pastRows r)
+    (hn : t.note = some Note.paused) (w : Look.WallIx) (hw : w ∈ wallsToday r) :
+    t.stop ≤ w.lo ∨ w.hi ≤ t.start := by
+  obtain ⟨d, -, g, -, q, hq, rfl⟩ := mem_pastRows.1 h
+  obtain ⟨-, -, -, -, -, hlt⟩ := mem_wallsToday hw
+  have hwin : (w.lo, w.hi) ∈ wallSpans r := List.mem_map.2 ⟨w, hw, rfl⟩
+  unfold pastSpans at hq
+  cases hg : g.kind with
+  | pause i =>
+    rw [hg] at hq
+    exact clipCut_apart hq (w.lo, w.hi) hwin hlt
+  | block i => simp [pastRowOf, pastKind, hg] at hn
+  | interrupt i => simp [pastRowOf, pastKind, hg] at hn
+  | brk x => cases x <;> simp [pastRowOf, pastKind, hg] at hn
+  | routine a b => simp [pastRowOf, pastKind, hg] at hn
+  | idle a => simp [pastRowOf, pastKind, hg] at hn
+
+/-- **…and a pause no wall touches is drawn whole** (AGENTS §5.8: the rule does not over-bite):
+where every wall of the day ends by the pause's clipped start or begins at or after its clipped
+end, the pause is one row over its whole clip, exactly as fork 4748911 draws it. -/
+theorem a_pause_no_wall_touches_is_drawn_whole (r : PlanReq) (g : Replay.Segment) (i : Id)
+    (hk : g.kind = Replay.SegKind.pause i)
+    (hlt : max g.start.1.sec r.dayStart < min g.stop.1.sec r.now.sec)
+    (hw : ∀ w ∈ wallsToday r, w.hi ≤ max g.start.1.sec r.dayStart ∨
+      min g.stop.1.sec r.now.sec ≤ w.lo) :
+    pastSpans r g = [(max g.start.1.sec r.dayStart, min g.stop.1.sec r.now.sec)] := by
+  unfold pastSpans
+  rw [hk]
+  refine clipCut_untouched hlt (fun s hs => ?_)
+  obtain ⟨w, hw', rfl⟩ := List.mem_map.1 hs
+  rcases hw w hw' with h | h
+  · exact Or.inr (Or.inl h)
+  · exact Or.inr (Or.inr h)
+
 end Planner
 end Tm
