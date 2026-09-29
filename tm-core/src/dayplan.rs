@@ -140,10 +140,31 @@ pub struct Segment {
     pub flags: SegFlags,
 }
 
+/// **The note a replayed `Pause` segment's row carries** — the one spelling the
+/// writer (the planner's past half, and [`crate::planwire`]'s decoder of the
+/// kernel's `Note.paused`) and the reader ([`Segment::is_pause`]) share.
+pub const PAUSED_NOTE: &str = "paused";
+
 impl Segment {
     /// Length in minutes.
     pub fn minutes(&self) -> u32 {
         (self.end - self.start).num_minutes().max(0) as u32
+    }
+    /// **A replayed pause's row** (the owner's **D68**, parity **P59**): the
+    /// `Lost` row the planner's past half draws for a logged `Pause` — the
+    /// paused block's id and [`PAUSED_NOTE`]. A typed `tm pause` is NOT lost
+    /// time (`tm review day` counts only what an interruption's `resume` logs),
+    /// so every renderer draws this row as a pause — `paused 10m`, the pause
+    /// style, `--json` kind `pause` — and never as lost. The segment keeps the
+    /// planner's kind: the day and its comparand are unchanged, and the
+    /// drawing is `emit`'s. The item is part of the test because the note is
+    /// prose: an idle span's note is its attribution text and carries no
+    /// item, so a log that attributed idle time to "paused" draws no pause.
+    /// `Emit.pausedRow` is the kernel's statement of the same row.
+    pub fn is_pause(&self) -> bool {
+        self.kind == SegKind::Lost
+            && self.item.is_some()
+            && self.flags.note.as_deref() == Some(PAUSED_NOTE)
     }
     /// Every item this segment holds (one, or a batch's members).
     pub fn items(&self) -> Vec<Id> {
@@ -399,9 +420,11 @@ impl PlanDiff {
 // ---------------------------------------------------------------------------
 
 /// **A `SegKind` as one word** — `block`, `batch`, `break`, … — the *wire*
-/// word, not a display cell: it is what `tm plan --json`'s `kind` field and
-/// `.tm/last_plan.json` carry, and what `--explain` names a slot by. It is never
-/// padded, truncated or printed in a column; `emit::title_cell` is the cell.
+/// word, not a display cell: it is what `.tm/last_plan.json` carries, what
+/// `--explain` names a slot by, and what `tm plan --json`'s `kind` field says
+/// of every row but one — a replayed pause, which `emit::row_kind` calls
+/// `pause` (D68, P59). It is never padded, truncated or printed in a column;
+/// `emit::title_cell` is the cell.
 ///
 /// **Public since W-23** (AGENTS §5.3). `tm/src/cli/render.rs::kind_name` held a
 /// byte-for-byte copy of these ten arms, found by body shape rather than by

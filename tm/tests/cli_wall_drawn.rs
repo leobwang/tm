@@ -92,9 +92,12 @@ fn a_meeting_that_paused_the_block_is_drawn_as_the_wall_alone() {
         vec!["wall"],
         "the meeting is drawn as its Wall row and nothing else: {over_meeting:?}"
     );
+    // Since the owner's D68 (P59) a replayed pause is drawn as a PAUSE — kind
+    // `pause`, `paused <dur>` — so "no paused row" is asked of that kind: the
+    // meeting's pause left nothing outside the wall to draw.
     assert!(
-        !segs.iter().any(|s| s.0 == "lost" && s.4.contains("paused")),
-        "no `paused` Lost row is drawn: {segs:?}"
+        !segs.iter().any(|s| s.0 == "pause" || s.4.contains("paused")),
+        "no pause row is drawn: {segs:?}"
     );
     let review = tm.json_at("2026-09-07T14:11:00-05:00", &["review", "day"]);
     assert_eq!(review["review"]["lost_min"], 0, "{review}");
@@ -177,9 +180,10 @@ fn a_pause_that_straddles_the_meeting_is_drawn_outside_it() {
     let out = tm.ok_at("2026-09-07T14:00:00-05:00", &["pause"]);
     assert!(!out.stderr.contains("paused ^t4 for"), "the wall paused nothing: {:?}", out.stderr);
     let segs = segments(&tm, "2026-09-07T14:10:00-05:00");
+    // Drawn as a pause since the owner's D68 (P59): kind `pause`, `paused <dur>`.
     let paused: Vec<(String, String)> = segs
         .iter()
-        .filter(|s| s.0 == "lost" && s.4.contains("paused"))
+        .filter(|s| s.0 == "pause" && s.4.contains("paused"))
         .map(|s| (s.1.clone(), s.2.clone()))
         .collect();
     assert_eq!(
@@ -193,8 +197,9 @@ fn a_pause_that_straddles_the_meeting_is_drawn_outside_it() {
     );
 }
 
-/// **A pause no wall touches is drawn whole**, exactly as fork 4748911 draws
-/// it: paused 12:10–12:30, before the meeting.
+/// **A pause no wall touches is drawn whole**: paused 12:10–12:30, before the
+/// meeting. Fork 4748911 drew it whole as a `lost 20m … paused` row; since the
+/// owner's D68 (P59) it is drawn whole as a pause, `paused 20m`, kind `pause`.
 #[test]
 fn a_pause_no_wall_touches_is_drawn_whole() {
     let tm = running_before_the_meeting();
@@ -202,7 +207,7 @@ fn a_pause_no_wall_touches_is_drawn_whole() {
     tm.ok_at("2026-09-07T12:30:00-05:00", &["pause"]);
     let segs = segments(&tm, "2026-09-07T12:45:00-05:00");
     assert!(
-        segs.iter().any(|s| s.0 == "lost" && s.1 == "12:10" && s.2 == "12:30" && s.4.contains("paused")),
+        segs.iter().any(|s| s.0 == "pause" && s.1 == "12:10" && s.2 == "12:30" && s.4.contains("paused 20m")),
         "{segs:?}"
     );
 }

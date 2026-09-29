@@ -919,7 +919,13 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         id: id.clone(),
         started: ctx.now_tz.time(),
         est_min,
-        paused: false,
+        // **Paused while an interruption runs** (the campaign's D69 call on
+        // README gap 3283, parity P60): `tm start` does not end an
+        // interruption, and the rebuild of `.tm/state.json` from the log pauses
+        // the open block for the open interruption — so the cache writes what
+        // the rebuild derives, and deleting it moves nothing. `tm resume`
+        // unpauses it, as it unpauses a block `tm interrupt` paused.
+        paused: super::ctx::open_interruption(&ctx.replay).is_some(),
     });
     ctx.state.date = Some(ctx.today);
     ctx.save_state()?;

@@ -72723,3 +72723,352 @@ moved twenty minutes: its finding needs the day's last slot exactly `min_last_bl
 the unbuildable `[07:00, 16:00]` window gave at 08:30 and `tm arrive`'s `[07:00, 15:00]` gives at
 08:50; the fork's fractional cut still drops that slot and the kernel keeps it
 (`14:30–15:00 rest`).  Every proptest floor held on the new generator.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-38**, **TRACK T**,
+     on branch `w38-t` (worktree `.claude/worktrees/w38-t`) over `f91bb90`.
+     Gap range **3430-3469**: 3430-3436 taken here, 3437-3469 free.  Parity:
+     **P59, P60 and P61 issued** (below) — the track's whole allocation;
+     P58 (track K's) is a declared hole here, gap 3434.  Every drive ran the binary this commit builds, every
+     call `--now`, under the memory cap; every mutation and plant ran in a
+     clone under `scratchpad/w38-t/`, never in the worktree.
+     ===================================================================== -->
+
+## Stage 6 — W-38, track T: a typed pause is not lost time (D68), and D69's three host calls (gaps 3244, 3283, 3345)
+
+### 1. D68 — a typed `tm pause` is drawn as a PAUSE, not as lost time (P59)
+
+**Reproduced first**, on `f91bb90`'s binary, a `tm init --example` tree: `^t4` started 07:00, a
+typed `tm pause` 07:30–07:40, an interruption 09:40–09:55 (`scratchpad/w38-t/drive_d68.sh`,
+transcripts `drv68before.txt` and `drv68after.txt`):
+
+```
+before  $ tm --now 2026-09-07T10:00:00-05:00 plan
+        07:30  ·      lost 10m                     @m2         paused
+        09:40  ·      lost 15m                     @m2         interruption
+        $ tm --now 2026-09-07T10:03:00-05:00 review day
+         Day 2026-09-07 · 0/6 blocks · load 0.0 · lost 15m · leak 0m · adherence -
+after   07:30  ·      paused 10m                   @m2
+        09:40  ·      lost 15m                     @m2         interruption
+        (tm review day: lost 15m, unchanged)
+```
+
+**The rule — the drawing moves, the segment does not.**  A row the planner's past half draws for a
+replayed `Pause` (the paused block's id and the `paused` note; `Planner.pastKind`) is DRAWN as a
+pause: title cell `paused <dur>`, empty note cell (the word is in the title, where the fork wrote it
+twice), the day bar's own pause style (neither Lost's colour nor its hatching), and `--json` kind
+`pause`.  Every other Lost row — an interruption's, an idle span's — is drawn `lost` as the fork
+draws it.  A wall-covered pause stays D65's wall alone (P56): no row is left there to draw.
+
+**Why the segment keeps the fork's `Lost` kind**, decided and measured rather than assumed: the
+brief placed D68 in `Planner.pastKind`, and a new `SegKind` constructor is the natural reading — but
+`tm/tests/planner_invariants.rs` (track H's) maps every kernel kind word to a fork kind and PANICS
+on one it does not know ("the kernel placed a … row, which no fork kind is"), its P56
+census asserts `paused_rows > 0` over `SegKind::Lost` rows noted `paused`, and `PlanCheck.lean`
+(track K's) proves its checks by `cases` on `Seg.kind`.  So the kind the planner writes, the planner
+wire, `.tm/last_plan.json` and the fork comparand are unchanged, and the drawing is the renderers':
+**one predicate on each side** — `Emit.pausedRow` in the kernel, `Segment::is_pause` in the host —
+read by every cell and style that draws the row.  What that leaves is README gap 3433.
+
+* **The kernel** (`Emit.lean`): `Emit.pausedRow`; `Emit.titleCell` writes `paused <dur>` for it and
+  `Emit.noteCell` nothing.  The edit is **line-neutral** above the laws (two doc comments reflowed,
+  `pausedRow` in the lines they gave up), so no check-9 pin site in `Emit.lean` moved.  The laws, at
+  the module's end: `pausedRow_iff`; `titleCell_of_pausedRow`, `noteCell_of_pausedRow`; the two that
+  say the rule does not over-bite, `titleCell_of_a_lost_row_that_is_not_a_pause` and
+  `noteCell_of_a_row_that_is_not_a_pause`; `pausedRow_pastRowOf` (a past row is a paused row exactly
+  when its segment is a Pause); and the day-level pair, `a_replayed_pause_is_drawn_as_a_pause` and
+  `a_lost_row_that_is_not_a_pause_is_drawn_lost` (the past half draws `lost` only an interruption's
+  or an idle span's row).
+* **The witness** (`PlannerWit.lean`, W-38 track T block): `theTypedPauseRequest` — the open
+  Wednesday with a typed pause 12:10–12:20 and an interruption 12:25–12:35 (`lost_min: 10`).
+  `a_typed_pause_is_drawn_paused_and_an_interruption_lost` decides the two Lost rows' cells
+  (`paused 10m` with an empty note, `lost 10m` noted `interruption`); the fork's drawing, planted, is decided false.
+  `the_minutes_drawn_lost_are_the_minutes_the_review_counts_lost`: the rows drawn lost span ten
+  minutes, the replay's `lostMin` is ten, and the pause's ten are in neither.
+* **The host** (`tm-core`): `Segment::is_pause` over `PAUSED_NOTE` — the one spelling the fork's
+  `past_segment` and `planwire`'s decoder of the kernel's `Note.paused` now share — with the item as
+  part of the test, because the host's note is prose and an idle span's note is its attribution
+  text; `emit::title_cell`, `emit::note_cell`, `CellStyle::Pause` (the TUI's glyph `╌`, the SVG's
+  colour, not hatched) and `emit::row_kind` (`tm plan --json`'s and `tm now --json`'s `kind`).
+  `tm review day` needed nothing: its lost figure was always Σ `resume.lost_min`.
+
+**Parity P59 taken**: a replayed `tm pause` — the planner's `paused` Lost row — is DRAWN as a pause: `paused <dur>` in the title cell, no note, its own day-bar style, `--json` kind `pause`, in the kernel's `Emit.titleCell`/`Emit.noteCell` and the host's renderers; fork 4748911's `title_cell` drew it `lost <dur>` with the note `paused`, styled it as Lost and called it `lost` in `--json`, so `tm plan` counted as lost time what `tm review day` does not (owner D68, W-38 track T, README gap 3344)
+
+**Behaviour rows**, driven before (`f91bb90`) and after (this commit), same tree and instants:
+
+| surface | `f91bb90` | after |
+|---|---|---|
+| `tm plan` / the day file's `tm:plan` section, a typed pause 07:30–07:40 | `07:30  ·  lost 10m  @m2  paused` | `07:30  ·  paused 10m  @m2` |
+| `tm plan --json`, that row | `"kind": "lost"`, text `… lost 10m … paused` | `"kind": "pause"`, text `… paused 10m …` |
+| `day/2026-09-07.svg`, that rect | `fill="url(#tm-lost)"` | `fill="#b0b7c0"` (`CellStyle::Pause`) |
+| `tm tui`'s day bar, that cell | `╱` in Lost's orange | `╌` in the pause colour (asserted on `emit::daybar_cells` and `theme::cell_glyph`; an agent cannot drive the TUI, §5.13) |
+| an interruption 09:40–09:55 | `lost 15m … interruption` | unchanged |
+| `tm review day` | `lost 15m` | `lost 15m` — and now the minutes `tm plan` draws `lost` sum to it |
+
+Pinned by `tm/tests/cli_pause_drawn.rs` (6, plus the `tui_common` modules it includes), and in
+`tm/tests/cli_wall_drawn.rs` three D65 assertions that read a pause as `lost` are restated for the
+new kind — each as strong as before (the first now forbids a `pause` row AND any row saying
+`paused`), never weakened.
+
+### 2. D69, gap 3283 — `tm start` during an open interruption records the block as paused (P60)
+
+**Reproduced** (`scratchpad/w38-t/drive_3283.sh`, `drv3283before.txt`): `tm interrupt` 09:40 with nothing running,
+`tm start ^t4` 09:45: `.tm/state.json` `"paused": false`; `tm --json now`'s `active.paused` is
+`false` with the cache and `true` after it is deleted — D42's rebuild pauses the open block for the
+open interruption.  **After** (`drv3283after.txt`): the cache writes `"paused": true`, `tm now`'s
+header ends `· paused`, `tm --json now` is IDENTICAL across the delete, and `tm resume` unpauses it
+(identical across the delete too).  One reading of the rule: `ctx::open_interruption`, which the
+rebuild (`derived_state`) and `tm start` both call.
+
+**Parity P60 taken**: `tm start` during an open interruption writes the block PAUSED in `.tm/state.json` — `tm now` says `· paused` and `tm --json now`'s `active.paused` is `true` — which is what D42's rebuild from the log derives, so deleting the cache moves nothing; fork 4748911's `tm start` wrote `paused: false` whatever was open (the campaign's D69 call, W-38 track T, README gap 3283)
+
+| surface | `f91bb90` | after |
+|---|---|---|
+| `.tm/state.json` after `tm interrupt`, `tm start ^t4` | `"paused": false` | `"paused": true` |
+| `tm now` header | `… · 0m of 60m` | `… · 0m of 60m · paused` |
+| `tm --json now` with the cache / deleted | `false` / `true` | `true` / `true` |
+| `tm resume` | `paused: false` | unchanged |
+
+Pinned by `tm/tests/cli_start_paused.rs` (3; the third says a block started with no open
+interruption, or after one was resumed, is running).  **What this makes reachable is README gap
+3430**, measured below.
+
+### 3. D69, gap 3244 — `tm review week`'s grid draws a meeting's pause as the wall (P56's reach)
+
+**Reproduced** (`scratchpad/w38-t/drive_3244.sh`, `drv3244before.txt`): `^t4` from 07:00, a typed pause 07:30–07:40,
+D61's pause over `^g1` 12:50–13:50, an interruption 14:20–14:35.  Before: `heat … block 6h10m ·
+interrupt 15m · pause 1h10m`, hours 12 and 13 holding 10 and 50 `pause` minutes.  **After**
+(`drv3244after.txt`): `heat … block 6h10m · interrupt 15m · pause 10m · wall 1h` — the meeting's
+hour is the grid's new `wall` style (`review::Style::Wall`, `HEAT_STYLES` 7 → 8, so `--json`'s
+cells carry an eighth count), the typed pause stays `pause`.  The cut is `tm plan`'s: a `Pause`
+segment's stretches under a wall of its day are the wall's, the rest stays a pause
+(`review::heat_pieces`, through `capacity::free_intervals`); no other kind is cut.  **The typed
+pause needed nothing**: the grid already styled it `pause` and never `leak` — D68's half of the call
+is pinned, not changed.  The walls are the host's one reader, `Tree::walls_on`, moved out of
+`Ctx::walls_on` (which now calls it) so the TUI's week review reads it without a `Ctx` — README gap
+3432 is its exit.  **No new parity number**: D69 puts this under P56's behaviour row, extended here:
+
+| surface | `f91bb90` | after |
+|---|---|---|
+| `tm review week`'s `heat` line, a meeting's pause | `pause 1h10m` | `pause 10m · wall 1h` |
+| `--json` `heat` cells, 2026-09-07 hours 12, 13 | `pause` 10, 50 (seven counts) | `wall` 10, 50 (eight counts) |
+| a typed pause 12:40–14:00 around the meeting | 80 `pause` | 10 + 10 `pause`, 60 `wall` |
+
+Pinned by `tm/tests/cli_week_grid.rs` (3) and `cli_pause_drawn`'s week test.
+
+### 4. D69, gap 3345 — a duration past the host's width refuses the tree by name (P61)
+
+**Reproduced** (`scratchpad/w38-t/drive_3345.sh`, `drv3345before.txt`), `- [ ] 2 99999999999m Big migration ^z9`
+appended to `backlog.md`: `tm check` exits 2 naming `backlog.md:13` (`bad-value`), `tm drop ^a1`
+exits 0 and rewrites the tree — and the same with `est:99999999999m`.  **The class, not the list:**
+the host reads FOUR durations of a line with the same `Dur::parse` into `u32` minutes (the leading
+slot, `est:`, `dur:`, `buffer:`), and all four are refused, by one rule.
+
+* **The kernel** (new module `Width.lean`, imported by `Boundary` in the line that imported
+  `Lookahead`, so `runLoad`'s edit and the import are line-neutral): `Width.durs` (the four, each
+  through the kernel's one view of it), `Width.fits` (minutes at the block length within
+  `Look.maxPlanMinutes` — fork `u32`, REUSED, the bound the `est` op already reads),
+  `Width.pastWidth`, `Width.firstPastWidth` (over `splitDoc`'s items — the loader's own lines, so a
+  commented line is prose, D47), and `Width.refusalJson`: `{"err":{"pastWidth":{"path","line","slot"}}}`.
+  `runLoad` refuses a document after its scan and before `loadPlan`.  **The block length**: at the
+  request's `blockMin`; without one a block is read as a minute — the numeral itself — which refuses
+  only what NO block length could hold (`Width.fits_at_one_of_fits`), and the host sends its block
+  length on every request that loads its tree.  Laws: `pastWidth_eq_none_iff`, `pastWidth_eq_some`,
+  `firstPastWidth_eq_none_iff`, `firstPastWidth_eq_some`, `fits_of_fits_at_a_longer_block`;
+  witnesses for each slot, the width's last minute, `71582789b` at 60 and at 1, a commented line,
+  the spelling; and through the wire `runLoad_refuses_a_duration_past_the_width` (end of
+  `Boundary.lean`).
+* **The host**: `kernel_bridge::refusal` names `pastWidth` with the line and the slot (so `tm check`
+  names the line as `kernel-load`, as D32 does for a collision), and `refusal_in` and the verbs'
+  own request carry `blockMin`.
+
+**Parity P61 taken**: a line carrying a duration past the host's `u32` minutes at its block length — its leading estimate, `est:`, `dur:` or `buffer:` — refuses the whole tree BY NAME (`pastWidth`, the line, the slot): `tm check` names the line as a `kernel-load` error and every kernel-backed verb refuses it, rc 1, nothing written; fork 4748911 read such a leading word as a title word and loaded, planned and wrote the tree (the campaign's D69 call, W-38 track T, README gaps 3345 and 3140)
+
+| surface | `f91bb90` | after |
+|---|---|---|
+| `tm check`, `99999999999m` leading | `bad-value` at `backlog.md:13`, rc 2 | the same, and `kernel-load … pastWidth` at the same line, rc 2 |
+| `tm drop ^a1` on that tree | `dropped ^a1`, rc 0, tree rewritten | `kernel refusal: pastWidth — backlog.md:13: its leading estimate is more than 4294967295 minutes …`, rc 1, nothing written |
+| the same with `est:99999999999m` | rc 0, written | refused, slot `est` |
+| `71582789b` at a 60-minute block | rc 0, written | refused, slot `lead` |
+| `4294967295m` (the width's last minute) | loads | loads |
+| `tm edit ^a1 est=45m`, `tm wake`, `tm start ^a1` with `^a1` leading `4294967296m` | the kernel read the word as the slot and the verbs ran — `est=` rewrote it in place (P57) | refused by name, `pastWidth` slot `lead` at `^a1`'s line, rc 1, nothing written |
+
+Pinned by `tm/tests/cli_past_width.rs` (4), and by `tm/tests/cli_lead_width.rs`' two past-width tests,
+restated: W-37's P57 tests ran the verbs on such a tree and asserted what they wrote, and now assert
+the refusal, its slot and its line, and that nothing was written — `the_host_and_the_kernel_read_the_slot_alike_at_and_past_the_width`
+keeps its name (the refusal's slot `lead` is the kernel's reading), and the other is renamed
+`a_leading_estimate_past_the_width_refuses_the_verbs_and_loses_no_title_word` because its old name
+(`extend_and_stop_…`) described verbs that no longer run.  Found by this step's first workspace run.
+
+### 5. Gaps (3430-3436 taken; 3437-3469 free for this track)
+
+**Gap 3430 — `tm pause` while an interruption is open flips `active.paused` against the rebuild.**
+1. *What.*  With an interruption open, `tm pause` toggles `.tm/state.json`'s `active.paused` and logs
+`pause`/`unpause`; D42's rebuild pauses the open block for the open interruption whatever the marks
+say, so `tm --json now`'s `active.paused` moves across a cache delete.  DRIVEN on both binaries
+(`scratchpad/w38-t/drive_pause_interrupted.sh`): (a) `start` 09:00, `interrupt` 09:40, `pause` 09:42
+— `false` with the cache, `true` after the delete, the log's mark `unpause`, on `f91bb90` AND after
+this step; (b) `interrupt` 09:40, `start` 09:45, `pause` 09:47 — `true`/`true` on `f91bb90` (mark
+`pause`), `false`/`true` after it (mark `unpause`), because `tm start` now writes the block paused
+(P60) and `tm pause` toggles it.  2. *Why.*  What `tm pause` means while an interruption holds the
+block — refused by name, as `tm interrupt` refuses a second interruption, or a mark with the cache
+left paused — is a behaviour decision, not D69's.  3. *Cost.*  D42's "deleting the runtime state
+changes nothing" fails on one field after a `tm pause` inside an interruption, in both orders now;
+no planning effect (an open interruption is an ad-hoc wall over `now`).  4. *Clears it.*  The
+owner's reading; then `tm pause` reads `ctx::open_interruption` as `tm start` does.
+
+**Gap 3431 — a duration INSIDE a compound value still has two bounds.**  1. *What.*  `min:`/`max:`
+rates, `pref:`, `after-done:`, `on-event:` and `every:`'s counts past the host's widths are `tm
+check` `bad-value` errors, and the kernel loads them.  DRIVEN (`drv3431.txt`, this commit's binary):
+`max:99999999999m/d`, `pref:wake+99999999999m`, `after-done:99999999999d` and `every:99999999999d`
+— each `tm check` rc 2 and `tm drop ^a1` rc 0 with the tree rewritten.  2. *Why.*  Each is a
+different host reader (`Rate::parse`, `Pref::parse`, `Recur::parse_after_done`,
+`Recur::parse_on_event`, `Rule::parse`) with a width of its own, and `Width.durs` holds the four the
+host reads with `Dur::parse`; a width for each is a reading of each parser, not done here.
+3. *Cost.*  A hand-written compound value past its width is a `tm check` error the planner and the
+closes ignore.  4. *Clears it.*  `Width.durs` widened to the duration inside each compound value, and
+a count bound for the day counts, each REUSING its host width.
+
+**Gap 3432 — the week grid's walls are the host's reader.**  1. *What.*  `review::heat_of` cuts a
+`Pause` by `Tree::walls_on` — the host's calendar reader (fork `Ctx::walls_on`, moved, not copied) —
+and not by the kernel's `Look.wallIxOn`.  2. *Why.*  The week review is the host's, built by the CLI
+and by the TUI from the host's `Tree`, no kernel answer gives a past day's wall spans, and until R3
+the shipped `tm plan` cuts its paused rows with the fork's `collect_walls` over the same tree — so
+today the grid and the plan cut by the same walls.  3. *Cost.*  At R3 `tm plan`'s cut becomes the
+kernel's walls and the grid's stays the host's: two readers of the walls deciding one span's drawing
+(§5.3) wherever they disagree.  4. *Clears it.*  At R3: a kernel answer for a day's wall spans (the
+`emit` section's walls form over a list of days), or the week review onto the kernel's rows.
+
+**Gap 3433 — below the drawing, a pause's KIND is still `lost`.**  1. *What.*  The planner's segment
+for a replayed Pause keeps the fork's `Lost` kind with the `paused` note — on the planner wire
+(`PlanWire.kindJson`), in `.tm/last_plan.json`'s `kind` and in the fork comparand — while every
+surface draws it as a pause.  2. *Why.*  A `pause` kind would panic `planner_invariants.rs`' kind
+reader and move its P56 census (track H's), and change `PlanCheck`'s `cases` on `Seg.kind` (track
+K's); the drawing is where D68's reading lives, one predicate on each side.  3. *Cost.*  A reader of
+the planner wire or of `.tm/last_plan.json` that sums `lost` kinds still counts a pause as lost —
+none does today (`planning::diff` reads items and starts).  4. *Clears it.*  A `pause` kind on both
+sides, landed together with H's reader and K's `cases`.
+
+**Gap 3434 — this branch declares P58 as a hole.**  1. *What.*  `parity.py` requires P1..Pmax
+contiguous; track K owns P58 this run (D67) and issues it on its own branch, so this branch, which
+issues P59-P61, carries a `hole P58` line in `kernel/parity.txt`.  2. *Why.*  To keep check 10 green
+on this branch alone — W-36 track T's gap 3046 is the precedent.  3. *Cost.*  None once merged.
+4. *Clears it.*  THE LAND STEP deletes the `hole` line when it merges track K's row, and renumbers
+down into P58 if track K left it unused.
+
+**Gap 3435 — the width is a third parse of every item line.**  1. *What.*  `runLoad` reads each
+document through `scanLines`, then `Width.firstPastWidth` (a `splitDoc` of its own), then
+`loadPlan`'s own split: every item line is parsed three times where it was parsed twice.  MEASURED,
+this commit's binary against `f91bb90`'s, nine interleaved capped runs each of `tm check` over
+`plan-basic` with 3,000 item lines appended to `backlog.md`, at load 21-24: 0.11-0.14 s (median
+0.12) before, 0.13-0.15 s (median 0.14) after.  On `plan-basic` itself the difference is below the
+noise.  2. *Why.*  `scanLinesFrom` and its laws sit above every check-9 pin site of
+`Boundary.lean`; the separate pass kept that edit line-neutral and the rule in a module whose
+mutations cost a second each.  3. *Cost.*  ~20 ms per 3,000 item lines on every request that loads a
+tree.  4. *Clears it.*  `Width.pastWidth` folded into `scanLinesFrom`'s accepting branch — the parse
+the scan already makes — with `scanLinesFrom_cons_ok` and its consumers re-proved (D5).
+
+**Gap 3436 — the generated-day cell arm cannot see a paused row's drawing.**  1. *What.*
+`planner_invariants`' `the_kernel_reads_every_day_the_fork_planned` sends the fork's day through
+`tm/tests/support/rowwire.rs`, which sends every row's note as `null` (its header says why: the
+fork's note is prose); a paused row therefore reaches the kernel as a plain Lost row and is drawn
+`lost <dur>` there, `paused <dur>` by the host — a `title` difference, which that arm compares
+exactly.  Today the arm draws no paused row: its worlds log only the pauses D61's housekeeping logs,
+at a meeting's joined span, which P56 cuts whole on both sides.  2. *Why.*  The rows' wire and the
+arm are track H's files this run, and the note `null` decision is theirs.  3. *Cost.*  The first
+generated day with a typed pause fails that arm on the title cell; until then the paused drawing is
+compared kernel-to-host only by `cli_pause_drawn`'s two synthetic rows through the FFI
+(`the_kernel_and_the_host_draw_a_paused_row_alike`).  4. *Clears it.*  `rowwire::seg_json` sending
+the note NAME for a paused row (`{"name":"paused"}`, which `EmitWire.readNote` reads), or the arm
+declaring the title a hole on paused rows with its reason — H's call.
+
+### 6. D40 for what this step added or changed
+
+**The Lean (check 9).**  Every definition this step added or changed, rostered by `mutate.py --write`
+in a clone (`scratchpad/w38-t/clone` for D68's, `clone2` for `Width.lean`'s and `runLoad`), never in
+the worktree — each constant watched to break the build, the rows appended to `mutations.txt`:
+
+| definition | constants | first failure |
+|---|---|---|
+| `Emit.pausedRow` (new) | `true`, `false` | `pausedRow_iff`, also `pausedRow_pastRowOf` |
+| `Emit.titleCell` (changed) | `default`, `[]` | `titleCell_of_pausedRow`, also `titleCell_of_a_lost_row_that_is_not_a_pause` |
+| `Emit.noteCell` (changed) | `default`, `[]` | `noteCell_of_pausedRow`, also `noteCell_of_a_row_that_is_not_a_pause`; then the W-22 emit witness |
+| `PlannerWit.typedPauseLines` | `default`, `[]` | `a_typed_pause_is_drawn_paused_and_an_interruption_lost` (its statement, decided false) |
+| `PlannerWit.typedPauseRun`, `PlannerWit.theTypedPauseRequest` | — | UNFOLDABLE (`Seal.Run`, `PlanReq` have no `Inhabited`); WITNESS FIXTURES by `WITNESS_MODULES` |
+| `Width.Slot.name` | `default`, `fun _ => []` | `the_slots_spell_themselves` |
+| `Width.durs` | `default`, `[]` | `the_leading_estimate_past_the_width_is_refused` (its statement, decided false) |
+| `Width.fits` | `true`, `false` | `pastWidth_eq_some`, also `fits_of_fits_at_a_longer_block` |
+| `Width.pastWidth` | `default`, `none` | `pastWidth_eq_none_iff`, also `pastWidth_eq_some` |
+| `Width.firstPastWidth` | `default`, `none` | `firstPastWidth_eq_none_iff`, also `firstPastWidth_eq_some` |
+| `Width.refusalJson` | `default` | `refusalJson_is_the_err_shape`, then (the second pass, the first proof `sorry`) `Boundary.runLoad_refuses_a_duration_past_the_width` |
+| `runLoad` (changed: the width scan) | `default` | `run_refuses_cmds_that_are_not_an_array`, also its second clause |
+
+**Found by the gate before it was a row**: `Width.Slot.name` and `Width.refusalJson` were read by
+nothing but the refusal's JSON, which no theorem stated, so a first mutation run in `clone2` was
+rebuilding `Boundary.lean` under `Slot.name := default` — `Width.lean` itself had not failed, the
+shape that ends SURVIVED or ALONE.  It was stopped (by
+signal, the file restored from the sidecar), `the_slots_spell_themselves` and
+`refusalJson_is_the_err_shape` were written, and `runLoad`'s wire witness now spells the refusal out
+byte for byte instead of calling `Width.refusalJson` on both sides — which, as first written, a
+constant-folded `refusalJson` would have satisfied too.
+
+**The Rust.**  Each definition this step added or changed, its body bent, ALONE, in `clone`, the
+named suites run and the file restored byte for byte (`scratchpad/w38-t/plants.py`, transcript
+`plants.txt`; `git status --porcelain` 26 lines before and after, identical):
+
+| # | plant | fails |
+|---|---|---|
+| 1 | `Segment::is_pause` → `false` | `cli_pause_drawn` 5, `cli_wall_drawn` 2 |
+| 2 | `PAUSED_NOTE` bent (writer and reader together) | `tm-core`'s `planwire::tests::a_note_is_the_forks_own_sentence` — the drawing cannot see a spelling both sides share, and the kernel's decoder test can |
+| 3 | `title_cell`'s pause arm → `lost` | `cli_pause_drawn` 3, `cli_wall_drawn` 2 |
+| 4 | `note_cell`'s pause branch → the note | `cli_pause_drawn` 2 |
+| 5 | `CellStyle::of`'s pause arm → `Lost` | `cli_pause_drawn` 2 |
+| 6 | `CellStyle::Pause`'s colour → Lost's | `cli_pause_drawn` 1 |
+| 7 | `emit::row_kind` → `kind_label` | `cli_pause_drawn` 2, `cli_wall_drawn` 2 |
+| 8 | `PAUSE_KIND` bent | `cli_pause_drawn` 2, `cli_wall_drawn` 2 |
+| 9 | the TUI's pause glyph → Lost's | `cli_pause_drawn` 1 |
+| 10 | `render::rows`' kind → `kind_label` | `cli_pause_drawn` 2, `cli_wall_drawn` 2 |
+| 11 | `ctx::open_interruption` → `None` | `cli_start_paused` 3 |
+| 12 | `tm start`'s `paused` → `false` | `cli_start_paused` 1 |
+| 13 | `Tree::walls_on` → no wall | `cli_week_grid` 2 |
+| 14 | `review::heat_pieces` → uncut | `cli_week_grid` 2 |
+| 15 | `Style::Wall`'s cell → the pause's | `cli_week_grid` 3 |
+| 16 | `refusal_in` without the block length | `cli_past_width` 1 |
+| 17 | the verbs' own request without the block length | `cli_past_width` 2 |
+| 18 | the `pastWidth` decoder unread | `cli_past_width` 3 |
+
+### 7. Acceptance, capped
+
+* **`check.sh`, 14 checks, 17 lines, all ok**, rc 0, `git status --porcelain` identical before and
+  after (29.6 s warm at load 9-18, check 14 remembering all 90 modules; 5m41s for the first full
+  run): build; totality; axiom audit **5,764** theorems (5,740 at `f91bb90`: +24 — eight in
+  `Emit.lean`, three `PlannerWit` witnesses, twelve in `Width.lean` and `runLoad`'s witness);
+  `Negative.lean` rejected; FFI 95; corpus 29/37 and 4/5; stage goals 6; citations 48,233 (2,156
+  allowed), 0 unresolved; check 9 **499** new or changed, 499 rostered, 0 owed (was 488); parity P1-P61 with
+  one declared hole (P58, gap 3434), next free P62; twins 3,255 bodies, 0 UNANSWERED; reach
+  **1,219** reachable (1,213 before: `Width`'s six), 1,200 exempt, 0 UNANSWERED, after the `##
+  Emit.lean` census moved 32 → 33 (`Emit.pausedRow`, answered by the unsent `plan` section); fields
+  15/15, inputs 33 of 37, sent 28/28, written 34/28/3; replay **90** modules (89 + `Width`).
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46), `git status --porcelain` identical
+  before and after each: runs 1, 2 and 3 each **1,677 passed / 0 failed /
+  12 ignored across 102 result lines**, 0 warnings, 13m12s, 13m09s and 13m09s at load 10-18 (other
+  tracks' builds sharing the machine) — 1,644 / 0 / 12 across 98 at `a926e1e`: four new binaries,
+  `cli_pause_drawn` (6, and the 17 `tui_common` tests it includes, as `kernel_row_cells` does),
+  `cli_start_paused` (3), `cli_week_grid` (3) and `cli_past_width` (4).  No `.proptest-regressions`
+  line appeared.  **The first run of this step's tree before its last test edit FAILED 2**, both in
+  `cli_lead_width` — W-37's P57 tests drove verbs on a past-width tree that D69's refusal now
+  refuses — and was stopped; the two are restated above, and the three runs quoted are of the
+  committed tree.
+* **Named suites, `--include-ignored`**: T5 (`kernel_replay_parity`) 33, the door (`kernel_log_door`)
+  23, `cli_switch_acceptance` 16, **`cli_latency` 6/6 (25.5 s)**, `kernel_call_counts` 2, `one_padder`
+  9, `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `planner_classes` 28 (64 s), `planner_invariants` 31 (435 s), `cli_wall_pause` 11, `cli_wall_drawn`
+  6, `cli_wall_kernel` 8, `cli_pause_drawn` 23, `cli_start_paused` 3, `cli_week_grid` 3,
+  `cli_past_width` 4, `cli_lead_width` 5, `cli_tabbed_stop` 4, `review_week` 17 — all green,
+  `git status --porcelain` identical after.
+* Every new `decide` witness was probed at 8 GB with `timeout 120` before it was committed (the
+  `PlannerWit` pair, the `Width` witnesses and `runLoad`'s: each under 1.1 GB, a planted wrong value
+  decided false); no memory bound, `maxHeartbeats` or `maxRecDepth` raised (the witnesses carry
+  their files' own settings); no `decide +kernel`; no kernel predicate, snapshot, latency band,
+  corpus or frozen comparand touched — the five test assertions restated for the new behaviour are
+  named in §1 and §4, each as strong as before; no new dependency; `lean-toolchain` untouched.

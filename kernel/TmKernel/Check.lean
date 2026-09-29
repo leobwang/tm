@@ -7493,3 +7493,35 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- ============================================================================
 #print axioms Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it
 #print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-38 TRACK T (worktree `w38-t`) -- the owner's D68 (a typed
+-- pause is drawn as a pause, not lost time: `Emit.pausedRow` and its laws, the witness day in
+-- `PlannerWit.lean`; parity P59) and the campaign's D69 call on README gap 3345 (a duration past
+-- the host's width refuses the tree by name: the new module `Width.lean`, and `runLoad`'s witness
+-- at the end of `Boundary.lean`; parity P61).  Gaps 3244 and 3283 are host-only.
+-- ============================================================================
+#print axioms Tm.Emit.pausedRow_iff
+#print axioms Tm.Emit.titleCell_of_pausedRow
+#print axioms Tm.Emit.noteCell_of_pausedRow
+#print axioms Tm.Emit.titleCell_of_a_lost_row_that_is_not_a_pause
+#print axioms Tm.Emit.noteCell_of_a_row_that_is_not_a_pause
+#print axioms Tm.Emit.pausedRow_pastRowOf
+#print axioms Tm.Emit.a_replayed_pause_is_drawn_as_a_pause
+#print axioms Tm.Emit.a_lost_row_that_is_not_a_pause_is_drawn_lost
+#print axioms Tm.PlannerWit.typedPauseRun_resumes_ok
+#print axioms Tm.PlannerWit.a_typed_pause_is_drawn_paused_and_an_interruption_lost
+#print axioms Tm.PlannerWit.the_minutes_drawn_lost_are_the_minutes_the_review_counts_lost
+#print axioms Tm.Width.pastWidth_eq_none_iff
+#print axioms Tm.Width.pastWidth_eq_some
+#print axioms Tm.Width.firstPastWidth_eq_none_iff
+#print axioms Tm.Width.firstPastWidth_eq_some
+#print axioms Tm.Width.fits_of_fits_at_a_longer_block
+#print axioms Tm.Width.fits_at_one_of_fits
+#print axioms Tm.Width.the_leading_estimate_past_the_width_is_refused
+#print axioms Tm.Width.the_three_keys_past_the_width_are_refused
+#print axioms Tm.Width.a_block_estimate_is_read_at_the_block_length
+#print axioms Tm.Width.a_commented_line_past_the_width_is_prose
+#print axioms Tm.Width.the_slots_spell_themselves
+#print axioms Tm.Width.refusalJson_is_the_err_shape
+#print axioms Tm.runLoad_refuses_a_duration_past_the_width

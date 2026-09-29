@@ -10265,5 +10265,65 @@ theorem the_reservation_reads_the_first_candidate_of_its_id :
         by decide⟩ } : PlanReq).candMult ['m','1'] = some (Arith.mkPos 8 5 (by decide)) := by
   decide
 
+/-! ############################################################################
+## W-38 track T — the owner's D68: a typed pause is NOT lost time (parity P59, README gap 3344)
+
+`theTypedPauseRequest` is the open Wednesday (`m1` started 12:00, planned at 14:00) with a TYPED
+`tm pause` 12:10–12:20 and an interruption 12:25–12:35 whose `resume` logs `lost_min: 10`.  Until
+this step the kernel drew both Lost rows `lost 10m` — the pause with the note `paused` — while the
+day's `lostMin` (`tm review day`'s `lost 10m`, Σ `resume.lost_min`) counted only the second.  Now
+the pause is drawn `paused 10m` with an empty note (`Emit.titleCell_of_pausedRow`,
+`Emit.noteCell_of_pausedRow`), the interruption `lost 10m … interruption` as before, and the
+minutes the day draws as lost are the minutes the replay counts lost: one reading, two surfaces.
+The segments themselves are unchanged — the planner's kind and note are the fork's — which is
+what `Emit.a_replayed_pause_is_drawn_as_a_pause` states in general and these decide on one day.
+############################################################################ -/
+
+/-- **`m1` paused 12:10–12:20 by a typed `tm pause`, and interrupted 12:25–12:35.** -/
+def typedPauseLines : List Log.Line := openLines ++
+  [⟨4, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','1','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩,
+   ⟨5, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','2','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','u','n','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']⟩,
+   ⟨6, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','2','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','i','n','t','e','r','r','u','p','t','"',',','"','i','d','"',':','"','m','1','"','}']⟩,
+   ⟨7, some ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','3','5',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','r','e','s','u','m','e','"',',','"','l','o','s','t','_','m','i','n','"',':','1','0',',','"','d','r','o','p','p','e','d','"',':','[',']','}']⟩]
+
+set_option maxRecDepth 400000 in
+theorem typedPauseRun_resumes_ok : runOk Cal.chicago 739867 typedPauseLines = true := by decide
+
+def typedPauseRun : Seal.Run :=
+  match h : Seal.resumeRun Cal.chicago 739867 (Seal.Ckpt.empty Cal.chicago) typedPauseLines with
+  | .ok run => run
+  | .error _ => absurd typedPauseRun_resumes_ok (by simp [runOk, h])
+
+/-- **The open Wednesday with a typed pause and a closed interruption.** -/
+def theTypedPauseRequest : PlanReq := { theOpenRequest with run := typedPauseRun }
+
+set_option maxRecDepth 400000 in
+/-- **D68 on the kernel's day**: of the past half's two Lost rows, the typed pause is drawn
+`paused 10m` with an empty note and the interruption `lost 10m … interruption` — where fork
+`title_cell` and `note_cell` drew the first `lost 10m … paused`. -/
+theorem a_typed_pause_is_drawn_paused_and_an_interruption_lost :
+    ((pastRows theTypedPauseRequest).filter (fun t => t.kind == SegKind.lost)).map (fun t =>
+        (t.start, t.stop,
+         Emit.titleCell theTypedPauseRequest.plan.val theTypedPauseRequest.look.day.bed t,
+         Emit.noteCell theTypedPauseRequest.plan.val theTypedPauseRequest.tz
+           theTypedPauseRequest.blockMin t))
+      = [((Cal.instantOf Cal.chicago 739867 730).sec, (Cal.instantOf Cal.chicago 739867 740).sec,
+          ['p','a','u','s','e','d',' ','1','0','m'], []),
+         ((Cal.instantOf Cal.chicago 739867 745).sec, (Cal.instantOf Cal.chicago 739867 755).sec,
+          ['l','o','s','t',' ','1','0','m'],
+          ['i','n','t','e','r','r','u','p','t','i','o','n'])] := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **…and the minutes the day draws as lost are the minutes the review counts lost**: the Lost
+rows that are not pauses span ten minutes, which is the replay's `lostMin` for the day; the
+pause's ten minutes are drawn as a pause and counted in neither. -/
+theorem the_minutes_drawn_lost_are_the_minutes_the_review_counts_lost :
+    (((pastRows theTypedPauseRequest).filter (fun t => t.kind == SegKind.lost && !Emit.pausedRow t)).map
+        Seg.minutes).sum = 10 ∧
+    (((pastRows theTypedPauseRequest).filter Emit.pausedRow).map Seg.minutes).sum = 10 ∧
+    theTypedPauseRequest.todayRecord.map (·.lostMin) = some 10 := by
+  decide
+
 end PlannerWit
 end Tm
