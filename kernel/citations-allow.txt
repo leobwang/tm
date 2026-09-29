@@ -553,7 +553,13 @@ can_fail
 # `PlannerWit.a_break_row_is_a_replayed_row_is_refuted` refutes.  The two live spellings are a
 # README "consumed by name" list (W-17) and `Goals.lean`'s stage-6 prose, both append-only history.
 3 a_break_row_is_a_replayed_row
-10 Planner.a_break_row_is_a_replayed_row
+9 Planner.a_break_row_is_a_replayed_row
+# W-37 track R (README gap 551 closed): the cut's kept breaks are Break rows of the day that are
+# neither replayed nor the running break, so the W-35 law named on the next line is REFUTED by
+# `PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted` and restated as
+# `Planner.a_break_row_is_replayed_running_or_kept`.  The citations left are W-35's append-only
+# README table and its land block.
+2 Planner.a_break_row_is_replayed_or_the_running_break
 # W-35 track E: the edit-path token law described the hole the owner's D56 closed -- an est
 # edit appending an `est:` token beside a leading estimate -- and was REFUTED as
 # `setVal_writes_the_token_the_loader_reads_is_refuted`, restated on its subdomain as

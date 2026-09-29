@@ -767,7 +767,7 @@ theorem a_replayed_row_is_a_row_of_the_day (r : PlanReq) (t : Seg) (ht : t ∈ r
   refine mem_sortRows.2 (List.mem_map.2 ⟨t, ?_, rfl⟩)
   exact List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
     (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
-      (List.mem_append_left _ (List.mem_append_left _ ht)))))))
+      (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _ ht))))))))
 
 /-- **A replayed Block *is* assigned**, so `assignedOf (dayPlan r) = []` is **not** a law of
 this `dayPlan` (W-14 repair, gap 393).
@@ -959,13 +959,13 @@ theorem a_block_row_from_now_clears_a_break_row (r : PlanReq) (hnowcal : r.now.s
     (b k : WfSeg) (hb : b ∈ (dayPlan r).segments) (hbk : b.val.kind = SegKind.block)
     (hk : k ∈ (dayPlan r).segments) (hkk : k.val.kind = SegKind.brk) (hnow : r.now.sec ≤ b.val.start) :
     b.val.stop ≤ k.val.start ∨ k.val.stop ≤ b.val.start := by
-  rcases a_break_row_is_replayed_or_the_running_break r k (dayPlan_segments r ▸ hk) hkk with
-    ⟨u, hu, rfl⟩ | ⟨u, hu, rfl⟩
+  rcases a_break_row_is_replayed_running_or_kept r k (dayPlan_segments r ▸ hk) hkk with
+    ⟨u, hu, rfl⟩ | ⟨u, hu, rfl⟩ | ⟨u, hu, rfl⟩
   · obtain ⟨-, hlt2, hstop⟩ := pastRows_end_at_now r u hu
     right; show max (clampSec u.start) (clampSec u.stop) ≤ b.val.start
     simp only [clampSec, LogStamp.yearEnd]; omega
-  · exact a_block_row_from_now_clears_the_running_break r hnowcal b (dayPlan_segments r ▸ hb) hbk
-      hnow u hu
+  · exact a_block_row_from_now_clears_the_running_break r hnowcal b (dayPlan_segments r ▸ hb) hbk hnow u hu
+  · exact a_block_row_clears_a_kept_break r b (dayPlan_segments r ▸ hb) hbk u hu -- W-37: a kept break
 
 /-- **§8.2 choice 5b's reservation is beside every Wall row of the day, never over one** —
 `Planner.PlanReq.the_reservation_is_free_of_every_wall` at the one span
@@ -1926,16 +1926,16 @@ theorem the_day_has_no_batch_row_on_an_unassigned_day (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hs)
   have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact replayedRows_are_not_batches r t ids ht htk
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · rw [(breakRows_are_running_breaks r t ht).1] at htk; cases htk
-  · simp only [List.mem_flatMap] at ht
-    obtain ⟨x, -, hx⟩ := ht
+  · obtain ⟨x, -, hx⟩ := List.mem_flatMap.1 ht
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
   · rw [hnoassign] at ht; exact absurd ht (by simp)
+  · rw [r.keptBreakRows_kinds t ht] at htk; cases htk
   · rw [r.optionalRows_kinds t ht] at htk; cases htk
   · rw [r.restRows_kinds t ht] at htk; cases htk
 
@@ -3860,8 +3860,8 @@ structure PastPays (r : PlanReq) : Prop where
   offWall : ∀ t ∈ replayedRows r, t.kind = SegKind.block →
     ∀ v ∈ blockedByWalls r, t.stop ≤ v.1 ∨ v.2 ≤ t.start
   /-- `overBreak`: no Block the log replays covers a break the log replays.  Both sides are
-  the log's; the one Break row that is not (`Planner.a_break_row_is_replayed_or_the_running_break`)
-  is `overWall`'s, which is why the clause needs no third quantifier over the day. -/
+  the log's; the others (`Planner.a_break_row_is_replayed_running_or_kept`) are the running break, `overWall`'s,
+  and since W-37 a kept break of the cut, which clears every Block (`Planner.a_block_row_clears_a_kept_break`). -/
   offBreak : ∀ t ∈ replayedRows r, ∀ u ∈ replayedRows r,
     t.kind = SegKind.block → u.kind = SegKind.brk → t.stop ≤ u.start ∨ u.stop ≤ t.start
   /-- `overbook`: the Blocks already worked fit the day's budget. -/
@@ -4040,8 +4040,8 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
       · right; omega
   have h5 : noBlockOverABreak r (dayPlan r) = true := by
     refine (noBlockOverABreak_iff r _).mpr (fun b hb k hk hbk hkk => ?_)
-    rcases a_break_row_is_replayed_or_the_running_break r k (dayPlan_segments r ▸ hk) hkk with
-      ⟨u, hu0, rfl⟩ | ⟨u, hu0, rfl⟩
+    rcases a_break_row_is_replayed_running_or_kept r k (dayPlan_segments r ▸ hk) hkk with
+      ⟨u, hu0, rfl⟩ | ⟨u, hu0, rfl⟩ | ⟨u, hu0, rfl⟩
     · have hu : u ∈ replayedRows r := mem_replayedRows.2 (Or.inl hu0)
       have hsu : (segOf u).val = u := segOf_replayed r hnowcal u hu
       have hku : u.kind = SegKind.brk := by rw [← hsu]; exact hkk
@@ -4049,10 +4049,10 @@ theorem dayPlan_ok_core_of_plain_walls_on_an_unassigned_day (r : PlanReq)
       rcases hres b hb hbk with ⟨t, ht, hst⟩ | ⟨q, hq, e1, -, -, -⟩
       · have hkt : t.kind = SegKind.block := by rw [← hst]; exact hbk
         rw [hst, hsu]; exact hpast.offBreak t ht u hu hkt hku
-      · right
-        rw [hsu, e1]; exact hustop
+      · right; rw [hsu, e1]; exact hustop
     · exact a_block_row_clears_the_running_break r b (dayPlan_segments r ▸ hb) hbk u hu0 (fun t ht e =>
         hpast.offWall t ht (by rw [← segOf_kind, ← e]; exact hbk) _ (a_running_break_is_blocked r u hu0))
+    · exact a_block_row_clears_a_kept_break r b (dayPlan_segments r ▸ hb) hbk u hu0 -- W-37: a kept break
   have h6 : noDemandingAfterWindDown r (dayPlan r) = true :=
     noDemandingAfterWindDown_is_true_because_its_subject_is_empty_on_an_unassigned_day r hnowcal
       hnoassign
@@ -5095,16 +5095,16 @@ theorem a_batch_row_of_the_day_is_the_folds (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hs)
   have htk : t.kind = SegKind.batch ids := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (replayedRows_are_not_batches r t ids ht)
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · rw [(breakRows_are_running_breaks r t ht).1] at htk; cases htk
-  · simp only [List.mem_flatMap] at ht
-    obtain ⟨x, -, hx⟩ := ht
+  · obtain ⟨x, -, hx⟩ := List.mem_flatMap.1 ht
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk; cases htk
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
   · exact ⟨t, ht, rfl⟩
+  · rw [r.keptBreakRows_kinds t ht] at htk; cases htk
   · rw [r.optionalRows_kinds t ht] at htk; cases htk
   · rw [r.restRows_kinds t ht] at htk; cases htk
 

@@ -9111,8 +9111,9 @@ theorem a_wall_on_now_pauses_the_running_block :
 
 set_option maxRecDepth 400000 in
 /-- **Planner.a_break_row_is_a_replayed_row is REFUTED by the running break** (AGENTS §3.1 item
-3): the walk is a Break row of the day and no replayed row is it.  The law is restated as
-`Planner.a_break_row_is_replayed_or_the_running_break`. -/
+3): the walk is a Break row of the day and no replayed row is it.  The law was restated as
+Planner.a_break_row_is_replayed_or_the_running_break, itself refuted at W-37 by the cut's kept
+breaks and restated as `Planner.a_break_row_is_replayed_running_or_kept`. -/
 theorem a_break_row_is_a_replayed_row_is_refuted :
     ¬ ∀ (r : PlanReq) (s : WfSeg), s ∈ dayRows r → s.val.kind = SegKind.brk →
         ∃ t ∈ pastRows r, s = Planner.segOf t := by
@@ -9557,6 +9558,179 @@ theorem a_budget_spent_where_the_item_could_not_go_excuses_its_drop :
     PlanCheck.impossibleKept onlyAtY9 theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = true ∧
     PlanCheck.impossibleKept permissive theWaitingImpossibleRequest theDaySpentWhereItCouldNotGo = false := by
   refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-! ## W-37 track R: the three rows where the kernel's day was not the fork's (README gaps 551, 550
+and 2870/435)
+
+W-36's land step left R3 three rows short of the shipped day, each measured on the generated days
+and the frozen classes: the cut's **kept breaks** (gap 551 — fork `emit_segments` draws a break
+that work touches, and the kernel drew none), the **reservation row's `×` multiplier** (gap 550 —
+fork `multiplier: run.multiplier`, the kernel wrote `none`) and a **scheduled window task's
+Routine-row `⚠`** (gap 2870, which is gap 435 — the kernel wrote `hot := false` on every routine
+row).  Each is closed in `Planner.lean` by READING what the day already computed —
+`PlanReq.emitKeptBreaks`, the candidate's `Look.PlanFacts.multiplier`, the pass's `p` — and each
+is witnessed here at a computed day, the row reaching `dayPlan` and not only its own list (D50).
+
+**Why these three days.**  No witness above assigned a slot beside a break AND checked the day's
+Break rows, carried a running candidate with a multiplier other than one, or sent a window
+instance of a backlog item: `probe` evaluation at this step found kept breaks on six requests
+(`theBusyRequest` among them) that no theorem read, the reservation's multiplier `1/1` on two,
+and no scheduled Routine row on any.  So the multiplier and the `⚠` get requests of their own,
+built from the fixtures above by one field each. -/
+
+set_option maxRecDepth 400000 in
+/-- **The busy afternoon draws the break its work touches** (gap 551): the census morning worked
+two blocks, so step 3's cut opens `theBusyRequest`'s afternoon on a twenty-minute break at 14:00
+— which the fork keeps, because the slot step 5 filled with `^c1` starts where it ends
+(`kept_breaks`) — and it is a Break row of `dayPlan` with `planned_min` twenty, exactly the fork's
+`b.minutes()`.  The request's own cut holds that one break and no other. -/
+theorem the_busy_day_draws_the_break_its_work_touches :
+    theBusyRequest.todayBreaks = [(63924577200, 63924578400)] ∧
+    theBusyRequest.keptBreakRows.map (fun s => (s.start, s.stop, s.planned))
+      = [(63924577200, 63924578400, some 20)] ∧
+    ((dayPlan theBusyRequest).segments.filter (fun s => s.val.kind == SegKind.brk)).map
+        (fun s => (s.val.start, s.val.stop, s.val.planned))
+      = [(63924577200, 63924578400, some 20)] := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **…and a break no work touches is not drawn** (AGENTS §5.8, the check does not over-bite):
+`theRequest`'s cut holds two breaks and step 5 assigns nothing, so fork `kept_breaks` keeps
+neither and the day has no Break row at all. -/
+theorem a_break_no_work_touches_is_not_drawn :
+    theRequest.todayBreaks.length = 2 ∧ theRequest.keptBreakRows = [] ∧
+      (dayPlan theRequest).segments.all (fun s => s.val.kind != SegKind.brk) = true := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **Planner.a_break_row_is_replayed_or_the_running_break is REFUTED by the kept break**
+(AGENTS §3.1 item 3, D5): it said every Break row of the day is the log's or §9's running break,
+which was the description of README gap 551's hole.  `theBusyRequest`'s 14:00 break is a Break row
+of the day, no replayed row is it, and no break is running.  Restated as
+`Planner.a_break_row_is_replayed_running_or_kept`, which the old form implies. -/
+theorem a_break_row_is_replayed_or_the_running_break_is_refuted :
+    ¬ ∀ (r : PlanReq) (s : WfSeg), s ∈ dayRows r → s.val.kind = SegKind.brk →
+      (∃ t ∈ pastRows r, s = Planner.segOf t) ∨ ∃ t ∈ breakRows r, s = Planner.segOf t := by
+  intro h
+  have h1 : (dayRows theBusyRequest).any (fun s => s.val.kind == SegKind.brk &&
+      (pastRows theBusyRequest).all (fun t => s != Planner.segOf t)) = true := by decide
+  have h2 : breakRows theBusyRequest = [] := by decide
+  obtain ⟨s, hs, hb⟩ := List.any_eq_true.1 h1
+  simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true, bne_iff_ne, ne_eq] at hb
+  rcases h theBusyRequest s hs hb.1 with ⟨t, ht, e⟩ | ⟨t, ht, -⟩
+  · exact hb.2 t ht e
+  · rw [h2] at ht; exact absurd ht (by simp)
+
+/-- `theShortRunRequest`'s six candidates with the running `^m1` sized at **8/5** — fork
+`Candidate::multiplier`, a learned §8.5 factor of 1.6 — and nothing else changed. -/
+def witMultRunCands : List (Look.Cand × Option Look.Floor) :=
+  [bCand ['b','1'] 3 10 .any (by decide), bCand ['b','2'] 3 20 .out (by decide),
+   bCand ['b','3'] 2 10 .any (by decide),
+   oneCand ['m','1'] 3 (some 0) 10 none false
+     ⟨{ planFacts 40 .any with multiplier := Arith.mkPos 8 5 (by decide) }, by decide⟩,
+   bCand ['b','5'] 3 5 .any (by decide), bCand ['b','6'] 2 10 .any (by decide)]
+
+/-- The short-run afternoon with `^m1`'s multiplier learned: one field of one candidate. -/
+def theMultRunRequest : PlanReq := { theShortRunRequest with cands := ⟨witMultRunCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The reservation row carries the running candidate's multiplier** (gap 550): `^m1` is
+reserved `[14:00, 14:05)` and its row reads **8/5** — the candidate's own factor, found first by
+id among six — where the same row at the unlearned request reads 1/1, and an id no candidate
+carries reads none (fork `find(..).map(|c| c.multiplier)`).  It reaches `dayPlan`: the day's one
+`▶` row is the reservation, with the factor. -/
+theorem the_reservation_row_carries_the_running_candidates_multiplier :
+    theMultRunRequest.activeRow.map (fun s => (s.start, s.stop, s.mult))
+      = [(63924577200, 63924577500, some (Arith.mkPos 8 5 (by decide)))] ∧
+    theShortRunRequest.activeRow.map (fun s => s.mult) = [some (Arith.mkPos 1 1 (by decide))] ∧
+    theMultRunRequest.candMult ['z'] = none ∧
+    ((dayPlan theMultRunRequest).segments.filter (fun s => s.val.flags.current)).map
+        (fun s => (s.val.kind == SegKind.block, s.val.item, s.val.mult))
+      = [(true, some ['m','1'], some (Arith.mkPos 8 5 (by decide)))] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+/-- §4.3's Wednesday calendar, a `backlog.md` of two dated window tasks — §4.3's own `^a3`
+"Pick up package", and a second — and a `routines.md` of one line: the two shapes of line fork
+`emit_segments` draws a Routine row for, and marks differently. -/
+def hotRoutineWitness : List ReqDoc :=
+  [⟨"calendar/2026-W37.md", none,
+     ["- [ ] 3 Meeting w/ host      at:2026-09-09T12:50/13:50 loc:zoom ^g1".toList]⟩,
+   ⟨"backlog.md", none,
+     ["- [ ] 1 Pick up package  win:2026-09-09T15:00/21:00 dur:20m ^a3".toList,
+      "- [ ] 1 Return the drill  win:2026-09-09T16:00/21:00 dur:20m ^a4".toList]⟩,
+   ⟨"routines.md", none,
+     ["- tidy win:17:00-18:00 dur:20m every:day".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_hot_routine_witness_loads : loadsOk hotRoutineWitness = true := by decide
+
+/-- The loaded plan, total by `the_hot_routine_witness_loads` (`routinePlan`'s pattern). -/
+def hotRoutinePlan : WfPlan :=
+  match h : loadPlan hotRoutineWitness with
+  | .ok p => p
+  | .error _ => absurd the_hot_routine_witness_loads (by simp [loadsOk, h])
+
+/-- The three instances the host sends, each mandatory so step 2 places it at its window's start:
+`^a3` at 15:00, `^a4` at 16:00, `tidy` at 17:00, twenty minutes each. -/
+def hotRoutineIns : List RoutineIn :=
+  [⟨['a','3'], none, (Cal.instantOf Cal.chicago 739867 900).sec,
+      (Cal.instantOf Cal.chicago 739867 1260).sec, 20, true⟩,
+   ⟨['a','4'], none, (Cal.instantOf Cal.chicago 739867 960).sec,
+      (Cal.instantOf Cal.chicago 739867 1260).sec, 20, true⟩,
+   ⟨['t','i','d','y'], none, (Cal.instantOf Cal.chicago 739867 1020).sec,
+      (Cal.instantOf Cal.chicago 739867 1080).sec, 20, true⟩]
+
+set_option maxRecDepth 400000 in
+/-- R10 accepts all three, and the calendar still indexes the one Wednesday wall, so the request
+agrees with its walls as `theRequest` does. -/
+theorem the_hot_routine_instances_are_accepted :
+    routinesOk hotRoutinePlan.val hotRoutineIns = true ∧
+      Look.wallIndex Cal.chicago 60 hotRoutinePlan.val = Look.wednesdayWall := by
+  refine ⟨by decide, by decide⟩
+
+def hotRoutineCap : Capped RoutineIn :=
+  match h : mkRoutines? hotRoutinePlan.val hotRoutineIns with
+  | .ok c => c
+  | .error _ => absurd the_hot_routine_instances_are_accepted.1 (by simp [routinesOk, h])
+
+/-- The three as §7's candidates: `^a3` and `tidy` flagged hot (§7.2's `hot` row, `p = 0`), `^a4`
+not (the `rank` row, `p = 3`).  A furniture routine is never a candidate the host sends; `tidy` is
+one here so that its `p = 0` is the one reason left for the mark, and the furniture test the only
+thing that withholds it. -/
+def witHotCands : List (Look.Cand × Option Look.Floor) :=
+  [oneCand ['a','3'] 1 (some 0) 20 none true Look.wfUnconstrained (window := true),
+   oneCand ['a','4'] 1 (some 0) 20 none false Look.wfUnconstrained (window := true),
+   oneCand ['t','i','d','y'] 1 (some 0) 20 none true Look.wfUnconstrained (window := true)]
+
+/-- §4.3's Wednesday at 14:00, with the three window instances and their candidates. -/
+def theHotRoutineRequest : PlanReq :=
+  { theRequest with plan := hotRoutinePlan, routines := hotRoutineCap,
+                    cands := ⟨witHotCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **A scheduled window task's Routine row carries `⚠` at `p = 0`, and nothing else does** (gap
+2870): the pass answers `^a3` and `tidy` at `p = 0` and `^a4` at 3; of the three Routine rows of
+the day, `^a3`'s — scheduled, `ci 1`, `p = 0` — is marked; `^a4`'s is scheduled and not `p = 0`;
+`tidy`'s is `p = 0` and furniture (no energy, fork `scheduled` false).  Each conjunct of
+`Planner.PlanReq.routineHot` is the one reason on one row. -/
+theorem a_scheduled_window_tasks_routine_row_is_hot_at_p_zero :
+    theHotRoutineRequest.candAnswers.map (fun o => (o.out.cand.id, o.out.p))
+      = [(['a','3'], some 0), (['a','4'], some 3), (['t','i','d','y'], some 0)] ∧
+    ((dayPlan theHotRoutineRequest).segments.filter (fun s => s.val.kind == SegKind.routine)).map
+        (fun s => (s.val.item, s.val.flags.hot, s.val.energy))
+      = [(some ['a','3'], true, some 1), (some ['a','4'], false, some 1),
+         (some ['t','i','d','y'], false, none)] := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **…read FIRST by id** (gap 550): with a second `^m1` record after the first, sized 3/1, the
+reservation still reads 8/5 — fork `cands.iter().find(|c| c.id == active.id)` stops at the first,
+and so does `Planner.PlanReq.candMult`; a reading that took the last record would say 3/1. -/
+theorem the_reservation_reads_the_first_candidate_of_its_id :
+    ({ theMultRunRequest with cands := ⟨witMultRunCands ++ [oneCand ['m','1'] 3 (some 0) 10 none false
+        ⟨{ planFacts 40 .any with multiplier := Arith.mkPos 3 1 (by decide) }, by decide⟩],
+        by decide⟩ } : PlanReq).candMult ['m','1'] = some (Arith.mkPos 8 5 (by decide)) := by
+  decide
 
 end PlannerWit
 end Tm

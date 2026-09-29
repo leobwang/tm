@@ -21,9 +21,9 @@
 //! [`the_fork_half_of_this_suite_is_one_region`] holds this file and
 //! `planner_common` to that.
 //!
-//! What the kernel's day may differ from the fork's by is two classes, each
-//! counted and bounded exactly (gaps 551 and 435, `support/forkday.rs`), and
-//! nothing else.
+//! What the kernel's day may differ from the fork's by is nothing: the two
+//! classes it did differ by (gaps 551 and 435, `support/forkday.rs`) CLOSED at
+//! W-37 (track R), and their rows are compared by value and counted exactly.
 
 mod planner_common;
 
@@ -38,7 +38,8 @@ mod forkday;
 use chrono::{DateTime, NaiveTime};
 use chrono_tz::Tz;
 use planner_common::{
-    assert_break_rule, at, basic_state, date, fixture_path, load, load_with_log, Fixture, BASIC_LOG,
+    assert_break_rule, at, basic_state, date, fixture_path, load, load_with_log, timeline, Fixture,
+    BASIC_LOG,
 };
 use tm_core::dayplan::{DayPlan, SegKind, Segment};
 use tm_core::priority::{self, Candidate};
@@ -156,9 +157,9 @@ impl Loaded {
 ///    the first break and lunch (30m, 11:30) is the second. The counter is
 ///    therefore back to zero at 12:00; the 12:50 wall is not work and does not
 ///    move it; and the two blocks that follow — 12:00 and 13:50 — earn the
-///    break at 14:50. (The fork draws that break as a row; the kernel keeps the
-///    same 20 minutes free and draws no row — gap 551 — so the row is asserted
-///    in the fork's arm only.)
+///    break at 14:50, drawn as the day's one Break row, 14:50–15:10. (Until
+///    W-37 the kernel kept those 20 minutes free and drew no row — gap 551 —
+///    so the row was asserted in the fork's arm only; both arms assert it now.)
 /// 7. **§4.3 marks two blocks `✓` and one `▶`, and shows `(67m)` actuals.**
 ///    Those are log facts; at 07:00 the log holds only wake, breakfast and
 ///    arrive.
@@ -190,6 +191,11 @@ fn check_basic_early(day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
     // §8.2 step 3's rule: never more than `break_after_blocks` blocks in a row
     // without a rest of `break_min`, whatever fills it.
     assert_break_rule(day, now, &fx.cfg);
+    // …and the one Break row the cut keeps, 14:50–15:10 (item 6 above), drawn
+    // on both arms since W-37 (README gap 551 closed).
+    let breaks: Vec<&Segment> = day.segments.iter().filter(|s| s.kind == SegKind::Break).collect();
+    assert_eq!(breaks.len(), 1, "{}", timeline(day));
+    assert_eq!((breaks[0].start, breaks[0].end), (at("2026-09-07", 14, 50), at("2026-09-07", 15, 10)));
     // §8.2 step 8: what this day could not do.
     assert_eq!(
         day.diagnostics.blocked,
@@ -312,11 +318,12 @@ fn check(d: &FixtureDay, day: &DayPlan, fx: &Fixture, now: DateTime<Tz>) {
 /// against the fork's days frozen before R3 (README gap 2722), and each held
 /// to §8's properties above.
 ///
-/// The two classes are bounded EXACTLY, measured at W-35: three planned breaks
-/// the kernel does not draw (gap 551: every day but the travel day, whose
-/// budget is zero) and four `⚠` marks it does not set (gap 435: `^a3`'s row on
-/// every day). A class that widens fails here, and so does a class that
-/// closes — whoever closes one lowers its number here and says so.
+/// The two classes this arm bounded EXACTLY at W-35 — three planned breaks the
+/// kernel did not draw (gap 551: every day but the travel day, whose budget is
+/// zero) and four `⚠` marks it did not set (gap 435: `^a3`'s row on every
+/// day) — CLOSED at W-37 (track R). The same three rows and four marks are now
+/// COMPARED BY VALUE and counted exactly, and all four days hash alike (one of
+/// four did while the breaks were missing). A frozen set that moves fails here.
 #[test]
 fn the_kernel_plans_the_fixture_days_the_fork_planned() {
     let frozen = forkday::frozen_days();
@@ -335,15 +342,15 @@ fn the_kernel_plans_the_fixture_days_the_fork_planned() {
     forkday::no_disagreement(&findings);
     assert_eq!((t.days, t.skipped), (4, 0), "every day was compared: {t:?}");
     assert_eq!(t.rows, 73, "the fork's four days hold 73 rows: {t:?}");
-    assert_eq!(t.break_rows_551, 3, "gap 551's rows: {t:?}");
-    assert_eq!(t.hot_marks_435, 4, "gap 435's marks: {t:?}");
+    assert_eq!(t.break_rows_551, 3, "planned break rows compared by value (gap 551 closed): {t:?}");
+    assert_eq!(t.hot_marks_435, 4, "routine `⚠` marks compared by value (gap 435 closed): {t:?}");
     // Gap 550's class needs a running block, and no fixture day holds one; the
     // classes that do are `planner_classes.rs`' (W-36 track H, gap 2925).
     assert_eq!(t.mult_rows_550, 0, "gap 550's rows on a day with nothing running: {t:?}");
     // No fixture day holds an under-used row, so the by-design note class is
     // bounded at zero here; the generated classes carry it (W-36 track H).
     assert_eq!(t.underused_notes, 0, "under-used notes on the fixture days: {t:?}");
-    assert_eq!(t.hashes_equal, 1, "only the travel day draws no planned break: {t:?}");
+    assert_eq!(t.hashes_equal, 4, "every day hashes as the fork's, its breaks drawn (gap 551 closed): {t:?}");
 }
 
 /// **R3's deletion is mechanical here**: every line of this file and of
@@ -401,7 +408,6 @@ fn the_fork_scan_sees_a_reference_outside_its_region_and_only_there() {
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
-use planner_common::timeline;
 use tm_core::planner;
 
 /// (a) on the fork, with its own §7 pass — and its timeline and diagnostics
@@ -415,15 +421,8 @@ fn plan_basic_early_start() {
     insta::assert_snapshot!("plan_basic_early_timeline", timeline(&day));
     insta::assert_snapshot!("plan_basic_early_diagnostics", planner_common::diagnostics(&day));
     check_basic_early(&day, &fx, now);
-    // The one Break row this day takes, at 14:50 — the fork's alone (gap 551).
-    let breaks: Vec<&Segment> = day
-        .segments
-        .iter()
-        .filter(|s| s.kind == SegKind::Break)
-        .collect();
-    assert_eq!(breaks.len(), 1, "{}", timeline(&day));
-    assert_eq!(breaks[0].start, at("2026-09-07", 14, 50));
-    assert_eq!(breaks[0].end, at("2026-09-07", 15, 10));
+    // The one Break row this day takes, at 14:50, is `check_basic_early`'s
+    // since W-37 (gap 551 closed): asserted of both arms there.
 }
 
 /// (b) on the fork.

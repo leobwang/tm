@@ -3593,12 +3593,17 @@ fn w35_check_break(
     day_end: i64,
 ) -> Result<(i64, i64, bool), String> {
     let segs = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
-    let brks: Vec<&Value> = segs.iter().filter(|s| s["kind"] == "break").collect();
+    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
+    // The running break is the one Break row that starts before its end: since W-37 (README gap
+    // 551 closed, track R) the kernel also draws the cut's kept breaks, which start after it.
+    let brks: Vec<&Value> = segs
+        .iter()
+        .filter(|s| s["kind"] == "break" && s["start"].as_i64().is_some_and(|a| a < hi))
+        .collect();
     if brks.len() != 1 {
-        return Err(format!("{} Break rows, want the running break's one", brks.len()));
+        return Err(format!("{} Break rows before {hi}, want the running break's one", brks.len()));
     }
     let b = brks[0];
-    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
     let open = t + 60 * planned_min <= now_sec;
     let got = (b["start"].as_i64().unwrap_or(-1), b["stop"].as_i64().unwrap_or(-1));
     if got != (lo, hi) {

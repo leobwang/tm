@@ -526,12 +526,16 @@ pub fn frozen_day(day: &DayPlan) -> Value {
 
 /// **P45's rule, checked on a decoded day**: the running break drawn at `t`
 /// for `planned` minutes is exactly one Break row `[max(t, day start),
-/// max(min(t + planned, day end), now))`, open exactly when it has overrun,
-/// carrying its place; no row §8.2 PLACES from `now` on — a Block, Batch,
-/// Routine, Optional or Rest — overlaps it; and **every §8.2 step-5 row from
-/// `now` on starts at or after its end** (README gap 2925: the cut restarts
-/// there). Returns the row's span and whether it is open; `Err` names what
-/// failed, so the perturbation test can show the rule bites.
+/// max(min(t + planned, day end), now))` — the one Break row that starts
+/// before that end — open exactly when it has overrun, carrying its place; no
+/// row §8.2 PLACES from `now` on — a Block, Batch, Routine, Optional or Rest —
+/// overlaps it; and **every §8.2 step-5 row from `now` on starts at or after its
+/// end** (README gap 2925: the cut restarts there). Every OTHER Break row of the
+/// day starts at or after that end: since W-37 (README gap 551 closed) the
+/// kernel draws the cut's kept breaks, which the cut places after the running
+/// break, and a second Break row before its end still fails. Returns the row's
+/// span and whether it is open; `Err` names what failed, so the perturbation
+/// test can show the rule bites.
 pub fn p45_rule(
     day: &DayPlan,
     t: DateTime<Tz>,
@@ -540,13 +544,13 @@ pub fn p45_rule(
     now: DateTime<Tz>,
     day_span: (DateTime<Tz>, DateTime<Tz>),
 ) -> Result<(DateTime<Tz>, DateTime<Tz>, bool), String> {
-    let brks: Vec<_> = day.segments.iter().filter(|s| s.kind == SegKind::Break).collect();
-    if brks.len() != 1 {
-        return Err(format!("{} Break rows, want the running break's one", brks.len()));
-    }
-    let b = brks[0];
     let end = t + Duration::minutes(i64::from(planned));
     let (lo, hi) = (t.max(day_span.0), end.min(day_span.1).max(now));
+    let brks: Vec<_> = day.segments.iter().filter(|s| s.kind == SegKind::Break && s.start < hi).collect();
+    if brks.len() != 1 {
+        return Err(format!("{} Break rows before {hi}, want the running break's one", brks.len()));
+    }
+    let b = brks[0];
     let open = end <= now;
     if (b.start, b.end) != (lo, hi) {
         return Err(format!("the Break row is {}–{}, the rule says {lo}–{hi}", b.start, b.end));

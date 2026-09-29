@@ -5237,7 +5237,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.mem_assignedFrom
 #print axioms Tm.Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose
 #print axioms Tm.Planner.a_wall_row_sits_in_a_blocked_span
-#print axioms Tm.Planner.a_break_row_is_replayed_or_the_running_break
 #print axioms Tm.Planner.a_wind_down_row_of_the_day
 #print axioms Tm.Planner.a_block_row_is_replayed_reserved_or_assigned
 #print axioms Tm.Planner.plan_reserves_one_block_at_a_time
@@ -7333,3 +7332,33 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop
 #print axioms Tm.PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop
 #print axioms Tm.PlanWire.the_wire_until_is_answerUntil
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK R (worktree `w37-r`) -- README gaps 551 (the cut's
+-- kept breaks are drawn), 550 (the reservation row carries the running candidate's multiplier)
+-- and 2870/435 (a scheduled window task's Routine row carries its `⚠` at `p = 0`).
+-- DELETED above, by this banner: the audit line of Planner.a_break_row_is_replayed_or_the_running_break,
+-- which W-37 refutes (`PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted`) and
+-- restates as `Planner.a_break_row_is_replayed_running_or_kept` (audited below).
+-- =====================================================================
+#print axioms Tm.Planner.PlanReq.mem_keptBreakRows
+#print axioms Tm.Planner.PlanReq.keptBreakRows_kinds
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_work
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_blocks
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_walls
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_wind_down
+#print axioms Tm.Planner.PlanReq.a_kept_break_is_a_break_of_the_cut
+#print axioms Tm.Planner.PlanReq.a_kept_break_is_after_now
+#print axioms Tm.Planner.PlanReq.a_kept_break_touches_nothing_blocked
+#print axioms Tm.Planner.PlanReq.a_kept_break_clears_the_reservation
+#print axioms Tm.Planner.PlanReq.a_slot_clears_a_kept_break
+#print axioms Tm.Planner.a_block_row_clears_a_kept_break
+#print axioms Tm.Planner.a_break_row_is_replayed_running_or_kept
+#print axioms Tm.PlannerWit.the_busy_day_draws_the_break_its_work_touches
+#print axioms Tm.PlannerWit.a_break_no_work_touches_is_not_drawn
+#print axioms Tm.PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted
+#print axioms Tm.PlannerWit.the_reservation_row_carries_the_running_candidates_multiplier
+#print axioms Tm.PlannerWit.the_hot_routine_witness_loads
+#print axioms Tm.PlannerWit.the_hot_routine_instances_are_accepted
+#print axioms Tm.PlannerWit.a_scheduled_window_tasks_routine_row_is_hot_at_p_zero
+#print axioms Tm.PlannerWit.the_reservation_reads_the_first_candidate_of_its_id

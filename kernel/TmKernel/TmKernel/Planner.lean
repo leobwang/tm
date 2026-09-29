@@ -998,6 +998,58 @@ theorem PlanReq.caps_den (r : PlanReq) : r.caps.val.1.val = Look.capDen :=
   (lookaheadOf?_is_what_it_was_given
     (Option.some_get (Look.lookahead_is_a_lookahead r.look)).symm).2
 
+/-! ### The pass, declared ahead of §8.2 step 2 (W-37 track R, README gap 2870)
+
+**Moved here from §8.2 step 4's section, body unchanged**, because §8.2 step 2's routine rows now
+read it: fork `emit_segments` marks a scheduled window task's Routine row `⚠` at `prios[i].p == 0`
+(`planner.rs:1493`), and `PlanReq.routineHot` is that reading of this pass.  A definition cannot be
+called above the line that declares it, and a second copy of the pass nearer the routines would be
+AGENTS §5.3's defect; so the pass moved and the section below it (step 4) still calls it by name. -/
+
+/-- **§8.2 step 4.**  The answers to this request's candidates: `Look.prioritiesWithFloors`
+over this request's own lookahead, in request order, one per candidate. -/
+def PlanReq.candAnswers (r : PlanReq) : List Look.FloorOut :=
+  Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst r.edfDays
+    r.cands.val
+
+/-- **The pass is stage 5's, called and not copied.** -/
+theorem PlanReq.candAnswers_is_the_lookaheads (r : PlanReq) :
+    r.candAnswers = Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst
+      (Look.lookahead r.look) r.cands.val := rfl
+
+/-- **And it is the same expression the capacity op answers `lookahead.grants` with**
+(`Boundary.grantsOf c la q = Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis la
+q.items`, at `la = Look.lookahead c.look`).  Stated as the equation a reader can check against
+`Boundary.lean` by eye: same four configuration values, same lookahead, same items.  A day whose
+ranking disagreed with the `grants` of the very same call is the defect this kernel exists to
+remove, and there is now no way to write it — the lookahead is a view (`PlanReq.caps`), not a
+field, and the pass is one function. -/
+theorem PlanReq.candAnswers_is_the_capacity_ops_own_grants (r : PlanReq) (bins : Bins)
+    (s : Arith.Pos) (dflt : Fin 4) (hy : Bool) (la : List DayCapacity)
+    (items : List (Look.Cand × Option Look.Floor))
+    (hb : bins = r.prio.bins) (hs : s = r.prio.safety) (hd : dflt = r.prio.dflt)
+    (hh : hy = r.prio.hyst) (hl : la = Look.lookahead r.look) (hi : items = r.cands.val) :
+    Look.prioritiesWithFloors bins s dflt hy la items = r.candAnswers := by
+  subst hb; subst hs; subst hd; subst hh; subst hl; subst hi; rfl
+
+/-- One answer per candidate, in request order. -/
+theorem PlanReq.candAnswers_length (r : PlanReq) :
+    r.candAnswers.length = r.cands.val.length :=
+  Look.prioritiesWithFloors_length _ _ _ _ _ _
+
+/-- The answers are as bounded as the candidates: `maxCands` is `Capped`'s and the pass is
+length-preserving, so nothing here needs a second bound (R10). -/
+theorem PlanReq.candAnswers_capped (r : PlanReq) : r.candAnswers.length ≤ maxCands := by
+  rw [r.candAnswers_length]; exact r.cands.property
+
+/-- The answer for an id, if the request sent one.  **First by id**, which is the shape
+`PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted` states its
+hypothesis in (the goal it was written for left `Goals.lean` at W-32); §5.3's carried instance
+and today's fresh one share an id, and the fork pairs by *index* (`priority::prio_at`) for
+exactly that reason, so an id that names two is answered here by the first. -/
+def PlanReq.answerFor (r : PlanReq) (i : Id) : Option Look.FloorOut :=
+  r.candAnswers.find? (fun o => o.out.cand.id == i)
+
 /-- Why a plan request is refused, by name (AGENTS §5.7, design §10.3).  **There is no
 `planCheckFailed`**: D28 proves the eleven single-run laws rather than gating on them, and a
 gate a proved lift makes unreachable is §9.2's "check no input can fail". -/
@@ -1608,7 +1660,9 @@ which never calls `loc_ok`).  A routine is furniture: it happens where you are.
   only *finally* un-placed once step 6 has tried the lowest-energy position.  `Note.noPosition`
   exists and nothing constructs it yet.
 * **A routine row's `hot` mark** is §7.2's `p = 0`, which is **P4**'s pass; the rows carry
-  `hot := false` and the flag becomes real there (README gap 435).
+  `hot := false` and the flag becomes real there (README gap 435).  *Set since W-37: P4 landed
+  without setting it, and W-35 found it an R3 prerequisite (gap 2870); `PlanReq.routineHot` is
+  the reading.*
 * **The deferred routines themselves** are step 6 and are **P6**'s: they carry `deferred := true`
   and no position, which is exactly the state `place_deferred` receives.
 -/
@@ -2116,13 +2170,11 @@ README gaps **433** and **434** are what this section closes.
 a wall sitting on `now`; overtime is not one since W-35 (P46).  `end <= now` is arithmetic's.
 ############################################################################ -/
 
-/-- **Fork `ActiveRun`** (`planner.rs:1477`) — the reservation, in absolute seconds.  `mult` is
-the candidate's multiplier and is still **README gap 550**, but the reason has moved (W-18
-repair; this comment said *"is P4's … the fork reads it off the candidate list, which the
-kernel does not collect yet"*, and P4 landed at `5dc3167` without clearing the gap).  Since
-P5a the fact **is** available — `Look.PlanFacts.multiplier` is on the wire, decoded by
-`CapWire.multiplierOfWire` — and what is still missing is that `PlanReq.activeRow` emits no
-multiplier.  That is **P8**'s, not P4's, and D34 forbids deriving it here. -/
+/-- **Fork `ActiveRun`** (`planner.rs:1477`) — the reservation, in absolute seconds.  Fork
+`ActiveRun` also carries the candidate's `multiplier`; this record does not, because the row
+reads it off the request's own candidates where it is drawn (`PlanReq.candMult`, W-37, README gap
+550 closed).  *(This comment said until W-37 that `PlanReq.activeRow` emitted no multiplier and
+that D34 forbade deriving one here; D34 still forbids deriving it, and it is read, not derived.)* -/
 structure ActiveRes where
   id      : Id
   start   : Nat
@@ -2356,16 +2408,25 @@ is closed here, and `a_routine_is_never_placed_over_the_running_block` is the la
 def PlanReq.blockedBeforeRoutines (r : PlanReq) : List (Nat × Nat) :=
   blockedByWalls r ++ r.reservedSpan
 
+/-- **Fork `active_run`'s `multiplier`** (`planner.rs:1234-1237`): `cands.iter().find(|c| c.id ==
+active.id).map(|c| c.multiplier)` — the §8.5 multiplier of the first candidate the request carries
+under the running item's id, `none` when none does.  It is `Look.PlanFacts.multiplier` as the wire
+decoded it (`CapWire.multiplierOfWire`), the field every assigned row's `mult` already reads
+(`Planner.groupOf`): a candidate fact read, not derived (D34).  README gap **550**, closed at W-37. -/
+def PlanReq.candMult (r : PlanReq) (i : Id) : Option Arith.Pos :=
+  (r.cands.val.find? (fun cf => cf.1.id == i)).map (fun cf => cf.1.plan.val.multiplier)
+
 /-- **`emit_segments`' reservation row** (`planner.rs:1741`): a Block that carries **no slot
-energy**, marked `▶`, with the minutes it still needs.  `mult` is the candidate's multiplier and
-is P4's (README gap 550). -/
+energy**, marked `▶`, with the minutes it still needs, and the running candidate's multiplier
+(`PlanReq.candMult`, fork `multiplier: run.multiplier`).  The multiplier was `none` from P3 to
+W-36 — README gap 550, which named P4 and then P8 and was cleared by neither. -/
 def PlanReq.activeRow (r : PlanReq) : List Seg :=
   match r.activeRun with
   | none => []
   | some q =>
     [{ start := q.start, stop := q.stop, kind := .block, energy := none, item := some q.id,
        inst := none, flags := { SegFlags.none with current := true },
-       planned := some q.leftMin, mult := none, note := some (.runningLeft q.leftMin) }]
+       planned := some q.leftMin, mult := r.candMult q.id, note := some (.runningLeft q.leftMin) }]
 
 /-- A row of `activeRow` is the reservation's, with its own endpoints. -/
 theorem PlanReq.mem_activeRow (r : PlanReq) (t : Seg) (h : t ∈ r.activeRow) :
@@ -2667,18 +2728,32 @@ def PlanReq.isFurniture (r : PlanReq) (i : Id) : Bool :=
 def PlanReq.routineEnergy (r : PlanReq) (i : Id) : Option (Fin 6) :=
   if r.isFurniture i then none else some (effectiveCi r.plan.val i)
 
+/-- **Fork `emit_segments`' routine-row `⚠`** (`planner.rs:1493-1497`): `scheduled &&
+cands.iter().position(|c| c.id == r.id).is_some_and(|i| prios[i].p == 0)`.  A Routine row is
+marked hot only when it is a **scheduled** window task — not `routines.md`/`optional.md`
+furniture, `PlanReq.isFurniture`, the test the row's energy already reads — and the first
+candidate carrying its id was answered `p = 0` by §8.2 step 4's pass (`PlanReq.answerFor`, first
+by id, as the fork's `position` is).  The `p` is the pass's answer and nothing here derives a
+candidate fact (D34); it is the reading every assigned row's `⚠` already makes
+(`assignedSeg`: `m.key.p == 0`, and `key.p` is `p.getD 7`, so the two agree on every answer).
+README gaps **2870** and **435**, closed at W-37. -/
+def PlanReq.routineHot (r : PlanReq) (i : Id) : Bool :=
+  !r.isFurniture i && (r.answerFor i).any (fun o => o.out.p == some 0)
+
 /-- **Fork `emit_segments`' routine loop** (`planner.rs:1802-1836`): one Routine row per *placed*
 instance; a deferred one has no row until step 6 places it (P6).
 
-The `hot` mark is §7.2's `p = 0` and is **P4**'s (README gap 435); it is `false` here, and P4 is
-the step that must set it. -/
+The `hot` mark is §7.2's `p = 0` (`PlanReq.routineHot`).  It was `false` on every row from P2 to
+W-36 — README gap 435, which named P4 as the step to set it, and gap 2870, which found it an R3
+prerequisite on the fixture days (`^a3`'s row) — and is the pass's answer since W-37. -/
 def PlanReq.routineRow (r : PlanReq) (q : Placed) : List Seg :=
   match q.placedAt with
   | none => []
   | some (a, b) =>
     [{ start := a, stop := b, kind := .routine, energy := r.routineEnergy q.inst.id,
        item := some q.inst.id, inst := q.inst.inst.map (fun k => (q.inst.id, k)),
-       flags := { SegFlags.none with mandatory := q.inst.mandatory, deferred := q.deferred },
+       flags := { SegFlags.none with mandatory := q.inst.mandatory, deferred := q.deferred,
+                                     hot := r.routineHot q.inst.id },
        planned := some q.inst.durMin, mult := none, note := none }]
 
 /-- **Fork `emit_segments`' close of the day** (`planner.rs:1962-1988`): the wind-down runs from
@@ -2800,10 +2875,10 @@ README block.
 
 *The slots are not rows.*  A slot is where §8.2 step 5 may put a Block and step 7 may put Rest;
 neither step exists yet, so `dayPlan` gains exactly **one** row here — choice 5b's reservation
-— and the Break rows the cut produces stay out of the day, because fork `emit_segments` keeps
-a break only when work touches it (`kept_breaks(breaks, slots, assign)`) and `assign` is P5's.
-README gap **551** records that, and it is why `plan_places_no_block_over_a_break` is **not**
-discharged by this step.
+— and the Break rows the cut produces stayed out of the day, because fork `emit_segments` keeps
+a break only when work touches it (`kept_breaks(breaks, slots, assign)`) and `assign` was P5's.
+README gap **551** recorded that (closed at W-37: `PlanReq.keptBreakRows`), and it is why
+`plan_places_no_block_over_a_break` was **not** discharged by this step.
 ############################################################################ -/
 
 /-- **Fork `blocks_since_last_break`** (`planner.rs:2229`): the `start` events of today that
@@ -2839,7 +2914,7 @@ def PlanReq.todayCut (r : PlanReq) : Look.Cut :=
 /-- The slots step 5 will assign into. -/
 def PlanReq.todaySlots (r : PlanReq) : List Look.Slot := r.todayCut.slots
 
-/-- The breaks step 8 will keep the ones work touches (**P5**, gap 551). -/
+/-- The cut's breaks; the day keeps the ones work touches (`PlanReq.keptBreakRows`, W-37). -/
 def PlanReq.todayBreaks (r : PlanReq) : List (Nat × Nat) := r.todayCut.breaks
 
 /-- **Fork `run()`'s `slots`** (`planner.rs:952`): `capacity::energize(&cut.slots, &ectx)` with
@@ -2971,13 +3046,13 @@ theorem PlanReq.the_reservation_never_runs_under_a_wind_down_row (r : PlanReq) (
 
 /-- **No slot overlaps a break of the same cut** — L3's `cutSlots_no_slot_overlaps_a_break`,
 which is the half of `plan_places_no_block_over_a_break` the cut owes.  The other half is
-P5's: a Break row reaches the day only when work touches it (gap 551).
+drawn since W-37: a Break row reaches the day only when work touches it (gap 551, closed).
 
 (W-18: the goal itself no longer sits in `Goals.lean` waiting on both halves — as written it
 is **false**, because the day's Break rows and Block rows alike include `pastRows`' replayed
 ones, and it left the file as a §3.1-item-3 discharge.  What this theorem is a half of is now
 `PlanCheck.plan_places_no_block_over_a_break`, the restatement over the Block rows that start
-at or after `now`; gap 551 still stands and is still what the *cut* half waits on.) -/
+at or after `now`; gap 551 closed at W-37, `Planner.a_block_row_clears_a_kept_break`.) -/
 theorem PlanReq.no_slot_overlaps_a_break (r : PlanReq) (s : Look.Slot) (hs : s ∈ r.todaySlots)
     (b : Nat × Nat) (hb : b ∈ r.todayBreaks) : s.stop ≤ b.1 ∨ b.2 ≤ s.start := by
   unfold PlanReq.todaySlots PlanReq.todayCut at hs
@@ -3051,7 +3126,7 @@ theorem a_deferred_routine_has_no_row (r : PlanReq) (q : Placed) (h : q.placedAt
 
 /-- **§8.2 choice 5b's row** — the only row step P3 adds to the day.  The cut's slots are not
 rows: a slot becomes a Block at step 5 or Rest at step 7, and a Break reaches the day only when
-work touches it (`kept_breaks`, P5, README gap **551**). -/
+work touches it (`kept_breaks`; `PlanReq.keptBreakRows` since W-37, README gap **551**). -/
 def reservationSegs (r : PlanReq) : List Seg := r.activeRow
 
 /-- Every row §8.2 choice 5b places is a Block, so none of them is a Wall. -/
@@ -3136,53 +3211,10 @@ the `wallsOfDay` shape, and the reason gap 394 had to close first.  `natsLe` rec
 nine-element literal list, not over anything the wire sizes.
 ############################################################################ -/
 
-/-! ### The pass -/
-
-/-- **§8.2 step 4.**  The answers to this request's candidates: `Look.prioritiesWithFloors`
-over this request's own lookahead, in request order, one per candidate. -/
-def PlanReq.candAnswers (r : PlanReq) : List Look.FloorOut :=
-  Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst r.edfDays
-    r.cands.val
-
-/-- **The pass is stage 5's, called and not copied.** -/
-theorem PlanReq.candAnswers_is_the_lookaheads (r : PlanReq) :
-    r.candAnswers = Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst
-      (Look.lookahead r.look) r.cands.val := rfl
-
-/-- **And it is the same expression the capacity op answers `lookahead.grants` with**
-(`Boundary.grantsOf c la q = Look.prioritiesWithFloors c.bins c.safety c.dflt q.hysteresis la
-q.items`, at `la = Look.lookahead c.look`).  Stated as the equation a reader can check against
-`Boundary.lean` by eye: same four configuration values, same lookahead, same items.  A day whose
-ranking disagreed with the `grants` of the very same call is the defect this kernel exists to
-remove, and there is now no way to write it — the lookahead is a view (`PlanReq.caps`), not a
-field, and the pass is one function. -/
-theorem PlanReq.candAnswers_is_the_capacity_ops_own_grants (r : PlanReq) (bins : Bins)
-    (s : Arith.Pos) (dflt : Fin 4) (hy : Bool) (la : List DayCapacity)
-    (items : List (Look.Cand × Option Look.Floor))
-    (hb : bins = r.prio.bins) (hs : s = r.prio.safety) (hd : dflt = r.prio.dflt)
-    (hh : hy = r.prio.hyst) (hl : la = Look.lookahead r.look) (hi : items = r.cands.val) :
-    Look.prioritiesWithFloors bins s dflt hy la items = r.candAnswers := by
-  subst hb; subst hs; subst hd; subst hh; subst hl; subst hi; rfl
-
-/-- One answer per candidate, in request order. -/
-theorem PlanReq.candAnswers_length (r : PlanReq) :
-    r.candAnswers.length = r.cands.val.length :=
-  Look.prioritiesWithFloors_length _ _ _ _ _ _
-
-/-- The answers are as bounded as the candidates: `maxCands` is `Capped`'s and the pass is
-length-preserving, so nothing here needs a second bound (R10). -/
-theorem PlanReq.candAnswers_capped (r : PlanReq) : r.candAnswers.length ≤ maxCands := by
-  rw [r.candAnswers_length]; exact r.cands.property
+/-! ### The pass — `PlanReq.candAnswers` and `PlanReq.answerFor` are declared above §8.2 step 2
+since W-37 (README gap 2870: step 2's Routine rows read the `p` they answer), bodies unchanged. -/
 
 /-! ### §7.3's two numbers for one item — `edfNumbers`, which was a `sorry` in `Goals.lean` -/
-
-/-- The answer for an id, if the request sent one.  **First by id**, which is the shape
-`PlannerWit.plan_never_drops_an_impossible_item_as_stage_6_wrote_it_is_refuted` states its
-hypothesis in (the goal it was written for left `Goals.lean` at W-32); §5.3's carried instance
-and today's fresh one share an id, and the fork pairs by *index* (`priority::prio_at`) for
-exactly that reason, so an id that names two is answered here by the first. -/
-def PlanReq.answerFor (r : PlanReq) (i : Id) : Option Look.FloorOut :=
-  r.candAnswers.find? (fun o => o.out.cand.id == i)
 
 /-- Its grant, if it entered §7.3's pass (`Look.Cand.enters`). -/
 def PlanReq.grantFor (r : PlanReq) (i : Id) : Option Grant :=
@@ -5002,8 +5034,8 @@ def PlanReq.occupiedNow (r : PlanReq) (qs : List Placed) (a : Assign) : List (Na
 
 /-- **Fork `kept_breaks`** (`planner.rs:2333`): a break belongs to the day only when work
 touches it — the slot that ends where it starts, or the slot that starts where it ends, went to
-a group.  README gap **551** is the row half of this; what step 6 needs is that a break the day
-really keeps is not free time a routine may be dropped into. -/
+a group.  Its row half is `PlanReq.keptBreakRows` (W-37, README gap **551**); what step 6 needs
+is that a break the day really keeps is not free time a routine may be dropped into. -/
 def PlanReq.keptBreaks (r : PlanReq) (a : Assign) : List (Nat × Nat) :=
   r.todayBreaks.filter (fun b =>
     (r.todaySlots.zip a.slotOf).any
@@ -5495,10 +5527,10 @@ owed (README gap **803** item 4): they are the switch-shaped change (D19) that m
 `PlanCheck` emptiness theorems false on one commit and takes `PlanCheck.dayPlan_ok_core_given_the_budget`'s
 `hblk` — *"every Block row of this day is the reservation"* — with them, which is **G1**'s
 lift.  Rest, Optional and Break rows are none of those kinds, so they land without touching it.
-The **Break rows** themselves are gap **551**'s and stay with the Block rows they are between:
-their spans are read here (the optionals flow around them) and no `SegKind.brk` row is
-produced, because a Break row of the planner's own would falsify
-`Planner.a_break_row_is_a_replayed_row` in the same commit as the four.
+The **Break rows** themselves were gap **551**'s until W-37: their spans are read here (the
+optionals flow around them), and since W-37 they are drawn as well, `PlanReq.keptBreakRows`
+below, composed into `dayRows` between the Block rows they sit beside and the optionals —
+fork `emit_segments`' own order (README gap 551, closed at W-37 track R).
 
 ### D9-21, the recursion rule
 
@@ -5538,6 +5570,102 @@ theorem PlanReq.an_emitted_break_is_clear_of_the_routines (r : PlanReq) (b : Nat
     have := (List.any_eq_false.1 h2) (x, y) hmem
     simpa using this
   omega
+
+/-- **The Break rows the day keeps** (W-37 track R, README gap **551** closed): one per break
+`emitKeptBreaks` names — the cut's, touched by work, clear of every routine — drawn as fork
+`emit_segments` draws it (`planner.rs:1886-1898`): `SegKind::Break`, no slot energy, no item, no
+instance, no marks, and `planned_min: Some(b.minutes())`, fork `Break::minutes` = `(end −
+start).num_minutes()`, which is `Look.spanMinutes`, the kernel's one such arithmetic (AGENTS
+§5.3).  Until W-37 the optionals flowed around these breaks and no row said they were there. -/
+def PlanReq.keptBreakRows (r : PlanReq) : List Seg :=
+  r.emitKeptBreaks.map (fun b =>
+    { start := b.1, stop := b.2, kind := .brk, energy := none, item := none, inst := none,
+      flags := SegFlags.none, planned := some (Look.spanMinutes b.1 b.2), mult := none,
+      note := none })
+
+/-- **A kept Break row is exactly the fork's row for a break the day keeps** — every field
+`emit_segments` writes, read off the one map that builds it (the shape of `mem_openBlockRows`). -/
+theorem PlanReq.mem_keptBreakRows (r : PlanReq) (t : Seg) (h : t ∈ r.keptBreakRows) :
+    ∃ b ∈ r.emitKeptBreaks, t.start = b.1 ∧ t.stop = b.2 ∧ t.kind = SegKind.brk ∧
+      t.energy = none ∧ t.item = none ∧ t.inst = none ∧ t.flags = SegFlags.none ∧
+      t.planned = some (Look.spanMinutes b.1 b.2) ∧ t.mult = none ∧ t.note = none := by
+  obtain ⟨b, hb, rfl⟩ := List.mem_map.1 h
+  exact ⟨b, hb, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- **Every kept Break row is a Break** — one kind, so none of them is work, a Block, a Wall or
+the wind-down (the corollaries below, in `optionalRows_are_not_work`'s shape). -/
+theorem PlanReq.keptBreakRows_kinds (r : PlanReq) (t : Seg) (h : t ∈ r.keptBreakRows) :
+    t.kind = SegKind.brk :=
+  let ⟨_, _, _, _, hk, _⟩ := r.mem_keptBreakRows t h
+  hk
+
+theorem PlanReq.keptBreakRows_are_not_work (r : PlanReq) (t : Seg) (h : t ∈ r.keptBreakRows) :
+    t.kind.isWork = false := by rw [r.keptBreakRows_kinds t h]; rfl
+
+theorem PlanReq.keptBreakRows_are_not_blocks (r : PlanReq) (t : Seg) (h : t ∈ r.keptBreakRows) :
+    t.kind ≠ SegKind.block := by rw [r.keptBreakRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.keptBreakRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ r.keptBreakRows) :
+    t.kind ≠ SegKind.wall := by rw [r.keptBreakRows_kinds t h]; intro hc; cases hc
+
+theorem PlanReq.keptBreakRows_are_not_wind_down (r : PlanReq) (t : Seg)
+    (h : t ∈ r.keptBreakRows) : t.kind ≠ SegKind.windDown := by
+  rw [r.keptBreakRows_kinds t h]; intro hc; cases hc
+
+/-- **A break the day keeps is one of today's cut** — `emitKeptBreaks` filters `keptBreaks`, which
+filters `todayBreaks`, and neither adds a break. -/
+theorem PlanReq.a_kept_break_is_a_break_of_the_cut (r : PlanReq) (b : Nat × Nat)
+    (h : b ∈ r.emitKeptBreaks) : b ∈ r.todayBreaks :=
+  (List.mem_filter.1 (r.emitKeptBreaks_is_a_kept_break b h)).1
+
+/-- **A break the day keeps starts at or after `now`, is not empty, and ends inside the window**
+— L3's `cutSlots_breaks_inside_the_window` at step 3's `from`, which is `now` whenever the cut
+holds anything at all (`PlanReq.cutFrom`: a window already closed at `now` cuts nothing). -/
+theorem PlanReq.a_kept_break_is_after_now (r : PlanReq) (b : Nat × Nat) (h : b ∈ r.emitKeptBreaks) :
+    r.now.sec ≤ b.1 ∧ b.1 < b.2 ∧ b.2 ≤ r.window.2 := by
+  have hc := r.a_kept_break_is_a_break_of_the_cut b h
+  unfold PlanReq.todayBreaks PlanReq.todayCut at hc
+  obtain ⟨h1, h2, h3⟩ := Look.cutSlots_breaks_inside_the_window _ _ _ _ _ _ hc
+  unfold PlanReq.cutFrom at h1
+  exact ⟨by omega, h2, h3⟩
+
+/-- **No unit of a kept break is blocked** — L3's `cutSlots_breaks_avoid_the_walls` over the list
+step 3 handed the cut, which is the walls, the running interruption and break, §8.2 choice 5b's
+reservation, every routine step 2 placed, and the night. -/
+theorem PlanReq.a_kept_break_touches_nothing_blocked (r : PlanReq) (b : Nat × Nat)
+    (hb : b ∈ r.emitKeptBreaks) {w : Nat × Nat} (hw : w ∈ r.slotBlocked ++ r.restsToday) {t : Nat}
+    (h1 : b.1 ≤ t) (h2 : t < b.2) : ¬ (w.1 ≤ t ∧ t < w.2) := by
+  have hc := r.a_kept_break_is_a_break_of_the_cut b hb
+  unfold PlanReq.todayBreaks PlanReq.todayCut at hc
+  exact Look.cutSlots_breaks_avoid_the_walls _ _ _ _ _ _ hc hw h1 h2
+
+/-- **The reservation clears every break the day keeps** — its span is on the list the cut flows
+around (the argument `PlanReq.no_slot_touches_the_running_block` takes for a slot), so no unit of
+a kept break is inside it. -/
+theorem PlanReq.a_kept_break_clears_the_reservation (r : PlanReq) (q : ActiveRes)
+    (hq : r.activeRun = some q) (b : Nat × Nat) (hb : b ∈ r.emitKeptBreaks) :
+    q.stop ≤ b.1 ∨ b.2 ≤ q.start := by
+  have hmem : (q.start, q.stop) ∈ r.slotBlocked ++ r.restsToday := by
+    refine List.mem_append_left _ ?_
+    unfold PlanReq.slotBlocked
+    refine List.mem_cons_of_mem _ ?_
+    refine foldl_placeStep_grows_the_blocked r r.blockedBeforeRoutines _ _ (fun w hw => hw) _ ?_
+    unfold PlanReq.blockedBeforeRoutines PlanReq.reservedSpan
+    rw [hq]; simp
+  have hbne := (r.a_kept_break_is_after_now b hb).2.1
+  obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+  rcases Nat.lt_or_ge b.1 q.stop with h1 | h1
+  · rcases Nat.lt_or_ge q.start b.2 with h2 | h2
+    · exact absurd (⟨Nat.le_max_right _ _, by omega⟩ : q.start ≤ max b.1 q.start ∧ max b.1 q.start < q.stop)
+        (r.a_kept_break_touches_nothing_blocked b hb hmem (Nat.le_max_left _ _) (by omega))
+    · exact Or.inr h2
+  · exact Or.inl h1
+
+/-- **No slot overlaps a break the day keeps** — `PlanReq.no_slot_overlaps_a_break`, at a kept
+break: the Block and Batch rows step 5 fills sit *beside* the breaks the day draws. -/
+theorem PlanReq.a_slot_clears_a_kept_break (r : PlanReq) (s : Look.Slot) (hs : s ∈ r.todaySlots)
+    (b : Nat × Nat) (hb : b ∈ r.emitKeptBreaks) : s.stop ≤ b.1 ∨ b.2 ≤ s.start :=
+  r.no_slot_overlaps_a_break s hs b (r.a_kept_break_is_a_break_of_the_cut b hb)
 
 /-! ### The optionals -/
 
@@ -6413,11 +6541,11 @@ than deleted, and each restatement carries a computed refutation of the old form
 (AGENTS §3.1 item 3). -/
 def dayRows (r : PlanReq) : List WfSeg :=
   sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-    r.optionalRows ++ r.restRows).map segOf)
+    r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
     ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-      r.optionalRows ++ r.restRows, s = segOf t := by
+      r.keptBreakRows ++ r.optionalRows ++ r.restRows, s = segOf t := by
   have hm := mem_sortRows.1 h
   simpa [eq_comm] using List.mem_map.1 hm
 
@@ -6425,7 +6553,7 @@ theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
 show the reservation really reaches `dayPlan`. -/
 theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
     (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-      r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
+      r.keptBreakRows ++ r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
   mem_sortRows.2 (List.mem_map.2 ⟨t, h, rfl⟩)
 
 /-- **The open row reaches the day** (W-34) — `openBlockRows` is not built beside `dayRows`, it
@@ -7618,11 +7746,16 @@ theorem assignedOf_dayPlan_is_step_one_the_reservation_and_step_five (r : PlanRe
     obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
     rw [segOf_kind, r.restRows_are_not_work t ht]
     simp
+  have hnilb : ((r.keptBreakRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := by
+    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
+    rw [segOf_kind, r.keptBreakRows_are_not_work t ht]
+    simp
   have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-      r.optionalRows ++ r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
+      r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
         = ((stepOneSegs r ++ reservationSegs r ++ r.assignedRows).map segOf).filter
           (fun s => s.val.kind.isWork) := by
-    simp only [List.map_append, List.filter_append, hnil, hnilo, hnilr, List.append_nil,
+    simp only [List.map_append, List.filter_append, hnil, hnilo, hnilr, hnilb, List.append_nil,
       List.nil_append]
   rw [hsplit]
 
@@ -7678,7 +7811,7 @@ theorem the_day_assigns_after_now_the_running_block_and_what_step_five_chose (r 
   rw [dayPlan_segments] at hs
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · obtain ⟨_, h2, h3⟩ := replayedRows_end_at_now r t ht
     have : (segOf t).val.start < r.now.sec := by
       show clampSec t.start < r.now.sec
@@ -7705,6 +7838,8 @@ theorem the_day_assigns_after_now_the_running_block_and_what_step_five_chose (r 
     simp only [segOf_item, hit, Option.toList_some, List.mem_singleton] at hi
     simp [hi]
   · exact Or.inr ⟨t, ht, by unfold segItems at hi; rwa [segOf_items] at hi⟩
+  · rw [segOf_kind, r.keptBreakRows_are_not_work t ht] at hwk
+    exact absurd hwk (by simp)
   · rw [segOf_kind, r.optionalRows_are_not_work t ht] at hwk
     exact absurd hwk (by simp)
   · rw [segOf_kind, r.restRows_are_not_work t ht] at hwk
@@ -7787,7 +7922,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       w.val.stop = (Cal.instantOf r.tz b.day b.time).sec := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (replayedRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (breakRows_are_not_work r t ht).2.2.1
@@ -7838,6 +7973,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.assignedRows_are_not_walls t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.keptBreakRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
@@ -7856,7 +7992,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
           (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd (segOf_kind t ▸ hk) (replayedRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (interruptRows_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (breakRows_are_not_work r t ht).2.2.1
@@ -7876,6 +8012,7 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
   · exact absurd (segOf_kind t ▸ hk) (routineRows_are_not_walls r _ t ht)
   · exact absurd (segOf_kind t ▸ hk) (reservationSegs_are_not_walls r t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.assignedRows_are_not_walls t ht)
+  · exact absurd (segOf_kind t ▸ hk) (r.keptBreakRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.optionalRows_are_not_walls t ht)
   · exact absurd (segOf_kind t ▸ hk) (r.restRows_are_not_walls t ht)
 
@@ -7894,7 +8031,7 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.wall := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (replayedRows_are_not_walls r t ht)
   · exact absurd htk (interruptRows_are_not_walls r t ht)
   · exact absurd htk (breakRows_are_not_work r t ht).2.2.1
@@ -7926,13 +8063,23 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
   · exact absurd htk (routineRows_are_not_walls r _ t ht)
   · exact absurd htk (reservationSegs_are_not_walls r t ht)
   · exact absurd htk (r.assignedRows_are_not_walls t ht)
+  · exact absurd htk (r.keptBreakRows_are_not_walls t ht)
   · exact absurd htk (r.optionalRows_are_not_walls t ht)
   · exact absurd htk (r.restRows_are_not_walls t ht)
 
-/-- **Every Break row of the day is replayed from the log.**  Steps 1, 2 and 3 place no break
-of their own: the cut's breaks reach the day only when work touches them
-(`kept_breaks(breaks, slots, assign)`, fork `emit_segments`), and `assign` is **P5**'s (README
-gap **551**).
+/-- **Every Break row of the day is replayed from the log, §9's running break, or a break of the
+cut that work touches** — the third since W-37 (README gap **551** closed): fork
+`emit_segments` draws `kept_breaks(breaks, slots, assign)` less those a routine took over, and
+`PlanReq.keptBreakRows` is that list drawn.
+
+**RESTATED AT W-37, and the old form is FALSE** (AGENTS §3.1 item 3, D5: a theorem that
+described the hole is refuted and renamed when the hole closes).  It read
+`(∃ t ∈ pastRows r, s = segOf t) ∨ ∃ t ∈ breakRows r, s = segOf t` and was named
+a_break_row_is_replayed_or_the_running_break;
+`PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted` is the computed day holding a
+Break row that is neither.  The old form implies the new one.  Its paragraph used to open
+*"Steps 1, 2 and 3 place no break of their own … `assign` is **P5**'s"*; P5 landed the assign
+fold and left the breaks it made keepable undrawn, and W-37 draws them.
 
 **This paragraph used to end *"so `plan_places_no_block_over_a_break` stays in `Goals.lean`:
 the break side of it is still vacuous over what the planner places"*, and both halves are now
@@ -7945,19 +8092,20 @@ so a_break_row_is_a_replayed_row was precisely what made the comparison have a s
 log that records a `break` while a block runs gives the day a Break row inside a Block row, and
 **neither** row is the planner's doing, which is why the goal as written is false rather than
 empty. -/
-theorem a_break_row_is_replayed_or_the_running_break (r : PlanReq) (s : WfSeg)
+theorem a_break_row_is_replayed_running_or_kept (r : PlanReq) (s : WfSeg)
     (hs : s ∈ dayRows r) (hk : s.val.kind = SegKind.brk) :
-    (∃ t ∈ pastRows r, s = segOf t) ∨ ∃ t ∈ breakRows r, s = segOf t := by
+    (∃ t ∈ pastRows r, s = segOf t) ∨ (∃ t ∈ breakRows r, s = segOf t) ∨
+      ∃ t ∈ r.keptBreakRows, s = segOf t := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.brk := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · -- the open row is a Block, so a Break comes from the closed half (W-34)
     rcases mem_replayedRows.1 ht with ht | ht
     · exact Or.inl ⟨t, ht, rfl⟩
     · rw [(openBlockRows_are_energyless_blocks r t ht).1] at htk; cases htk
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
-  · exact Or.inr ⟨t, ht, rfl⟩
+  · exact Or.inr (Or.inl ⟨t, ht, rfl⟩)
   · simp only [List.mem_flatMap] at ht
     obtain ⟨x, _, hx⟩ := ht
     rw [(wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1] at htk
@@ -7965,6 +8113,7 @@ theorem a_break_row_is_replayed_or_the_running_break (r : PlanReq) (s : WfSeg)
   · rcases routineRows_kinds r _ t ht with h | h | h <;> rw [h] at htk <;> cases htk
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
   · exact absurd htk (r.assignedRows_are_not_breaks t ht)
+  · exact Or.inr (Or.inr ⟨t, ht, rfl⟩)
   · exact absurd htk (r.optionalRows_are_not_breaks t ht)
   · exact absurd htk (r.restRows_are_not_breaks t ht)
 
@@ -7976,7 +8125,7 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hw
   have htk : t.kind = SegKind.windDown := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact absurd htk (replayedRows_are_not_wind_down r t ht)
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · exact absurd htk (breakRows_are_not_work r t ht).2.2.2
@@ -7987,6 +8136,7 @@ theorem a_wind_down_row_of_the_day (r : PlanReq) (w : WfSeg) (hw : w ∈ dayRows
     exact ⟨h1, by show clampSec t.start = _; rw [heq]; rfl⟩
   · rw [reservationSegs_are_blocks r t ht] at htk; cases htk
   · exact absurd htk (r.assignedRows_are_not_wind_down t ht)
+  · exact absurd htk (r.keptBreakRows_are_not_wind_down t ht)
   · exact absurd htk (r.optionalRows_are_not_wind_down t ht)
   · exact absurd htk (r.restRows_are_not_wind_down t ht)
 
@@ -8013,7 +8163,7 @@ theorem a_block_row_is_replayed_reserved_or_assigned (r : PlanReq) (s : WfSeg)
   obtain ⟨t, ht, rfl⟩ := mem_dayRows hs
   have htk : t.kind = SegKind.block := (segOf_kind t).symm.trans hk
   simp only [stepOneSegs, List.mem_append] at ht
-  rcases ht with (((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
+  rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
   · exact Or.inl ⟨t, ht, rfl⟩
   · rw [(interruptRows_are_open_lost_time r t ht).1] at htk; cases htk
   · rw [(breakRows_are_running_breaks r t ht).1] at htk; cases htk
@@ -8024,6 +8174,7 @@ theorem a_block_row_is_replayed_reserved_or_assigned (r : PlanReq) (s : WfSeg)
   · exact absurd htk (routineRows_are_not_blocks r _ t ht)
   · exact Or.inr (Or.inl ⟨t, ht, rfl⟩)
   · exact Or.inr (Or.inr ⟨t, ht, rfl⟩)
+  · exact absurd htk (r.keptBreakRows_are_not_blocks t ht)
   · exact absurd htk (r.optionalRows_are_not_blocks t ht)
   · exact absurd htk (r.restRows_are_not_blocks t ht)
 
@@ -8125,8 +8276,8 @@ theorem the_wind_down_row_runs_to_bed (r : PlanReq)
   · rw [dayPlan_segments]
     exact mem_sortRows.2
       (List.mem_map.2 ⟨_, List.mem_append_left _ (List.mem_append_left _
-        (List.mem_append_left _ (List.mem_append_left _
-          (List.mem_append_right _ hseg)))), rfl⟩)
+        (List.mem_append_left _ (List.mem_append_left _ (List.mem_append_left _
+          (List.mem_append_right _ hseg))))), rfl⟩)
   · show clampSec r.windDownSec = _
     exact clampSec_id _ h3
   · show max (clampSec r.windDownSec) (clampSec (min r.bedSec r.dayEnd)) = _
@@ -8272,6 +8423,44 @@ theorem a_block_row_from_now_clears_the_running_break (r : PlanReq)
     rw [e1] at hnow
     simp only [clampSec, LogStamp.yearEnd] at hnow hnowcal
     omega)
+
+/-- **A Block row of the day clears every break the day keeps** (W-37 track R, README gap 551) —
+with no hypothesis at all.  A Block the log replays ends at or before `now` and a kept break
+starts at or after it (`PlanReq.a_kept_break_is_after_now`); §8.2 choice 5b's reservation is a
+span the cut flowed around (`PlanReq.a_kept_break_clears_the_reservation`); and a Block step 5
+filled is a slot of the same cut, which L3 never cuts across one of its own breaks
+(`PlanReq.a_slot_clears_a_kept_break`).  `PlanCheck.noBlockOverABreak` reads the day's Break rows
+through `a_break_row_is_replayed_running_or_kept`, and this is its third case. -/
+theorem a_block_row_clears_a_kept_break (r : PlanReq) (b : WfSeg) (hb : b ∈ dayRows r)
+    (hbk : b.val.kind = SegKind.block) (u : Seg) (hu : u ∈ r.keptBreakRows) :
+    b.val.stop ≤ (segOf u).val.start ∨ (segOf u).val.stop ≤ b.val.start := by
+  obtain ⟨k, hk, hus, hup, -⟩ := r.mem_keptBreakRows u hu
+  obtain ⟨hnowk, hkne, -⟩ := r.a_kept_break_is_after_now k hk
+  have eu1 : (segOf u).val.start = clampSec k.1 := by rw [← hus]; rfl
+  have eu2 : (segOf u).val.stop = max (clampSec k.1) (clampSec k.2) := by rw [← hus, ← hup]; rfl
+  rcases a_block_row_is_replayed_reserved_or_assigned r b hb hbk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · obtain ⟨-, h2, h3⟩ := replayedRows_end_at_now r t ht
+    have e1 : (segOf t).val.start = clampSec t.start := rfl
+    have e2 : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+    rw [e1, e2, eu1, eu2]
+    simp only [clampSec, LogStamp.yearEnd]
+    omega
+  · obtain ⟨q, hq, hst, hsp, -, -, -, -⟩ := r.mem_activeRow t ht
+    obtain ⟨-, -, -, -, hs0, hlt, -⟩ := r.activeRun_spec q hq
+    have e1 : (segOf t).val.start = clampSec t.start := rfl
+    have e2 : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+    rw [e1, e2, eu1, eu2, hst, hsp]
+    simp only [clampSec, LogStamp.yearEnd]
+    rcases r.a_kept_break_clears_the_reservation q hq k hk with h | h <;> omega
+  · obtain ⟨e, sl, hsl, hst, hsp, -⟩ := r.an_assigned_row_is_a_slot_of_the_day t ht
+    have hslot := r.energised_slot_is_a_slot hsl
+    have hne := r.a_slot_is_not_empty sl hslot
+    have e1 : (segOf t).val.start = clampSec t.start := rfl
+    have e2 : (segOf t).val.stop = max (clampSec t.start) (clampSec t.stop) := rfl
+    rw [e1, e2, eu1, eu2, hst, hsp]
+    simp only [clampSec, LogStamp.yearEnd]
+    rcases r.a_slot_clears_a_kept_break sl hslot k hk with h | h <;> omega
 
 /-- **The worked stretch stops where the running break starts** (P45) — a break taken while the
 log holds the block open pauses it there, as an interruption does. -/

@@ -70603,3 +70603,310 @@ there; the missing D61 pause day is gap 3123 (open); D60's "impossible first amo
   `maxRecDepth 400000`, probed first at 8 GB with `timeout 120`: 1.6 s); no external dependency;
   no parity number issued; every exemption file the same size or smaller but the NEW
   `written-exempt.txt` (three lines, born with the gate that reads it).
+
+<!-- =====================================================================
+     Stage 6, run W-37, TRACK R — the three rows where the kernel's day was
+     not the fork's: README gaps 551 (the cut's kept breaks), 550 (the
+     reservation row's `×` multiplier) and 2870 (a scheduled window task's
+     Routine-row `⚠`, which is gap 435).  Worktree `w37-r`, branch `w37-r`
+     from `b3c29a3`.  Gap range 3200-3239 (this block uses 3200-3207).
+     The two parity numbers allocated to this track are NOT used: every
+     row now follows fork 4748911, so nothing diverges on purpose.
+     ===================================================================== -->
+
+## Stage 6 — W-37, track R: the kept breaks, the reservation's multiplier and a window task's `⚠` are drawn as the fork draws them
+
+### 0. Measured first, at `b3c29a3`, by value
+
+| comparand | days | differed from the shipped fork | rows, by gap |
+|---|---|---|---|
+| `planner_invariants`' hash arm (generated; **three runs**, 281 cases each) | 281 ×3 | **164 / 172 / 146** (117 / 109 / 135 equal in every row and in the hash) | gap 550 **77 / 80 / 65** reservation rows, gap 551 **181 / 198 / 149** planned Break rows, gap 2870 **0** — the generator writes no scheduled window task, and `hot` is not digested |
+| `planner_classes` (36 frozen classes; the 6 running-break days are held to P45's rule instead) | 32 | **21** (11 of 32 hashes equal) | gap 551 **22** rows on 14 days, gap 550 **11** rows on 11 days (4 days hold both), gap 2870 **0** |
+| `planner_fixtures` (the 4 frozen fixture days) | 4 | **4** (1 of 4 hashes equal — the travel day, whose one difference is not digested) | gap 551 **3** rows on 3 days, gap 2870 **4** marks (`^a3`, every day), gap 550 **0** |
+
+Nothing else differed: each comparator fails on a row outside its declared classes, and all three
+passed at `b3c29a3`.  The class counts are the comparators' own; the per-day split of the frozen
+sets is read off the frozen fork days by value (a break row not done and starting at or after
+`now`; a current Block carrying a multiplier; a Routine row marked hot).
+
+### 1. What landed — `Planner.lean`
+
+* **Gap 551.**  `PlanReq.keptBreakRows`: one Break row per break `PlanReq.emitKeptBreaks` names —
+  fork `emit_segments`' `kept_breaks` less the breaks a routine took over, which P6 and P7 had
+  built and read (step 6 and step 7 flow around them) and which no row drew.  Every field is the
+  fork's, `planned_min` being `Look.spanMinutes` (fork `Break::minutes`).  Composed into `dayRows`
+  between the step-5 rows and the optionals, the fork's push order.
+* **Gap 550.**  `PlanReq.candMult`: the §8.5 multiplier of the FIRST candidate carrying the running
+  item's id (fork `cands.iter().find(..).map(|c| c.multiplier)`), off `Look.PlanFacts.multiplier` —
+  the field every assigned row's `mult` already reads.  `PlanReq.activeRow` writes it.
+* **Gap 2870 (435).**  `PlanReq.routineHot`: `!isFurniture i && answerFor i` answered `p = 0` (fork
+  `scheduled && prios[position].p == 0`).  `PlanReq.routineRow` writes it.  `PlanReq.candAnswers`
+  and `PlanReq.answerFor` MOVED above §8.2 step 2 with their bodies and theorems unchanged, so the
+  routine row can read the pass: a second copy of the pass nearer the routines would be §5.3's defect.
+* Nothing is derived (D34): each of the three READS what the request or the day already holds.
+
+### 2. After — values, not counts
+
+| comparand | days | differ | rows of the three old classes, compared by value | hashes equal |
+|---|---|---|---|---|
+| `planner_invariants`' hash arm (**three runs**, 281 cases each) | 281 ×3 | **0 / 0 / 0** — gap 550 **0**, gap 551 **0** | every fork row matched by an equal kernel row (a CENSUS here, not a gate: gap 3206) | **281 of 281**, three times (117 / 109 / 135 before) |
+| `planner_classes` | 32 (+6 P45) | **0** | 22 planned Break rows, 11 reservation multipliers | **32 of 32** (11 before) |
+| `planner_fixtures` | 4 | **0** | 3 planned Break rows, 4 Routine `⚠` marks | **4 of 4** (1 before) |
+| `planner_w37_rows` (NEW, generated: `plan-basic` every ten minutes from two states) | 147 | **0** | **145** Routine `⚠` marks, 35 planned Break rows | **147 of 147** |
+| `emit_planner` (the fork's committed rendering, line for line) | 3 | **0** | one break row and one `⚠` line per day, now equal | — |
+
+The six frozen running-break days pass P45's rule with **7** kept Break rows beside the running one.
+
+**Gap 2870 is shown on generated days by this step's own arm**, `tm/tests/planner_w37_rows.rs`,
+because the shared generator writes no scheduled window task: `plan-basic` — §4.3's tree, whose
+`^a3` "Pick up package" is a dated window task due today — planned every ten minutes from 07:00
+(the early state) and from 10:30 (the late state) to 20:50, each day the kernel's against the fork
+as the shipped binary runs it (D53) through `forkday::compare_day_with_fork`.  Its fork half is one
+`BEGIN THE FORK PLANNER` region.
+
+### 3. What the new arm found that was none of the three — gap 3201, closed
+
+At 13:30 on the early day the kernel REFUSED the planner section, `routineRefused emptyWindow
+lunch`.  `planwire::routine_instances` (fork `collect_routines`' span, the encoder R3 swaps in)
+sent `lunch`'s closed 11:30–13:30 window as the empty span 13:30–13:30: fork `collect_routines`
+keeps such an instance and then passes over it everywhere (steps 2 and 6 skip `span.1 <= from`,
+the notes loop skips it, no row), while the kernel refuses it by name.  The encoder now sends no
+empty span.  Measured over the 147 days: it fired **6** times — `lunch` at 13:30, `workout` at
+19:00, `dinner` at 19:30, on each state — each at the instant its window closes; ten minutes later
+the candidate is no longer collected.  So after R3 `tm plan` would have been refused at a window's
+close (`tm plan --now 13:30` on this tree), not through the afternoon.  No day the kernel answered
+before changes: the filter removes only instances the kernel refused.
+
+### 4. Laws restated (D5)
+
+* Planner.a_break_row_is_replayed_or_the_running_break (retired here, so not backticked: check 8
+  allows its two past citations and no more) described gap 551's hole and is REFUTED by
+  `PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted` (`theBusyRequest`'s 14:00
+  break: a Break row of the day, no replayed row, no break running); restated as
+  `Planner.a_break_row_is_replayed_running_or_kept`, which adds `∃ t ∈ r.keptBreakRows, s = segOf t`.
+  The old form implies the new.  Its two callers keep their statements and gain one case each,
+  discharged by the new `Planner.a_block_row_clears_a_kept_break`, which needs no hypothesis.
+* `Planner.mem_dayRows` and `Planner.mem_dayRows_of_mem`: the source list gains `r.keptBreakRows`
+  (wider; every old membership holds).
+* Statements unchanged, proofs widened to a ten-way split:
+  `the_day_assigns_after_now_the_running_block_and_what_step_five_chose`,
+  `plan_never_moves_a_wall`, `a_wall_row_comes_from_the_index`,
+  `a_wall_row_sits_in_a_blocked_span`, `a_wind_down_row_of_the_day`,
+  `a_block_row_is_replayed_reserved_or_assigned`, `the_wind_down_row_runs_to_bed`,
+  `assignedOf_dayPlan_is_step_one_the_reservation_and_step_five` (a kept break is not work), and
+  `PlanCheck.a_replayed_row_is_a_row_of_the_day`,
+  `PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day`,
+  `PlanCheck.a_batch_row_of_the_day_is_the_folds`,
+  `PlanCheck.a_block_row_from_now_clears_a_break_row`,
+  `PlanCheck.dayPlan_ok_core_of_plain_walls_on_an_unassigned_day`.
+* New, beside them: the kept-break row laws (`PlanReq.mem_keptBreakRows` — every field the fork
+  writes — its kind corollaries, `a_kept_break_is_a_break_of_the_cut`, `a_kept_break_is_after_now`,
+  `a_kept_break_touches_nothing_blocked`, `a_kept_break_clears_the_reservation`,
+  `a_slot_clears_a_kept_break`) and the witnesses of §6.  No goal added to or removed from
+  `Goals.lean`.
+
+### 5. Edits outside this track's files, and why each was unavoidable (gap 3202)
+
+This track's brief holds `Planner.lean`'s three regions and "run those suites, do not edit them"
+for `planner_invariants.rs` and `planner_classes.rs`.  Closing the three gaps made four files
+outside that list FALSE as written; each edit is the smallest that states the old rule as the
+property it was, and the land step must carry them through the other tracks' rewrites:
+
+* **`PlanCheck.lean`** (track K's).  Every source composed into `dayRows` appears in every proof
+  that case-splits `mem_dayRows`, and two of those proofs are PlanCheck's
+  (`the_day_has_no_batch_row_on_an_unassigned_day`, `a_batch_row_of_the_day_is_the_folds`: one
+  bullet each); the break law two others call is restated (§4: the rename and one bullet each, in
+  `a_block_row_from_now_clears_a_break_row` and the unassigned-day lift's `h5`); and the
+  `PastPays.offBreak` doc named the old law; plus `a_replayed_row_is_a_row_of_the_day`'s append
+  chain.  **LINE-NEUTRAL, 17 lines in and 17 out** (each walls bullet folded to two lines, two
+  bullets joined), so none of check 9's 26 PlanCheck pin sites moved.
+* **`tm/tests/support/forkday.rs`** (track H's).  `compare_day_with_fork` set the fork's rows of the
+  three classes aside and then REQUIRED the kernel's day to lack them, so the kernel's now-correct
+  rows were findings.  The three are compared by value; `DayTally`'s three counters keep their names
+  and count those rows compared (so `planner_classes`' floors `break_rows_551 > 0` and
+  `mult_rows_550 > 0` hold at 22 and 11 and mean "compared"); every day's hash must now equal the
+  frozen one.  `planner_classes.rs` is NOT edited; its two floor messages still say "counted no
+  row" and are H's to reword.
+* **`tm/tests/support/forkclass.rs`** (H's) **and `tm/tests/planner_invariants.rs`'
+  `w35_check_break`** (H's; the same rule written twice, gap 3122's family).  P45's rule said
+  "exactly one Break row": a LIST where the rule is a property.  A running-break day's cut keeps its
+  breaks too — 7 kept Break rows beside the running one on the 6 frozen break days — and the arm
+  failed `P45: 2 Break rows, want the running break's one` on the first workspace run of this change.
+  Both now count "the one Break row starting before the running break's end" and still bite.
+* **`tm-core/src/planwire.rs`** (the host codec, no track's): gap 3201's filter, §3.
+* Not a cross-track edit but worth naming: `planner_fixtures.rs`, `planner_regressions.rs`,
+  `planner_dynamics.rs` and `emit_planner.rs` bounded gap 551's or 435's class EXACTLY and said
+  "whoever closes the gap changes this and says so": each now asserts the fork's rule of BOTH arms
+  (the Break row drawn, the `⚠` printed), and `emit_planner` compares the rendering line for line.
+
+### 6. Witnesses and D40
+
+* **`PlannerWit`, one block appended after W-36's repair block**:
+  `the_busy_day_draws_the_break_its_work_touches` (the cut's one break, 14:00–14:20, kept because
+  `^c1`'s slot starts where it ends, and a Break row of `dayPlan` with `planned` 20);
+  `a_break_no_work_touches_is_not_drawn` (`theRequest`: two breaks cut, none kept, no Break row);
+  `a_break_row_is_replayed_or_the_running_break_is_refuted`;
+  `the_reservation_row_carries_the_running_candidates_multiplier` (`theMultRunRequest`, one field
+  of one candidate changed: `^m1` at 8/5, the unlearned request's row at 1/1, an unknown id `none`,
+  and the day's one `▶` row carrying it); `the_reservation_reads_the_first_candidate_of_its_id` (a
+  second `^m1` at 3/1 after the first changes nothing); `the_hot_routine_witness_loads`,
+  `the_hot_routine_instances_are_accepted` and `a_scheduled_window_tasks_routine_row_is_hot_at_p_zero`
+  (`theHotRoutineRequest`: `^a3` scheduled at `p = 0` marked, `^a4` scheduled at `p = 3` not,
+  `tidy` furniture at `p = 0` not — each conjunct of `PlanReq.routineHot` the one reason on one row).
+  Every `decide` was probed at `MemoryMax=8G` with `timeout 120` first: the block as its own file
+  11.8 s and 2.3 GB, the first-by-id witness 0.3 s.  No `maxRecDepth` raised (the file's own
+  400000), no `decide +kernel`.
+* **D40 (check 9), run in clones of this tree, never the worktree.**  The 14 owed: all six
+  `Planner.lean` definitions PINNED at both of their constants — `PlanReq.candMult`
+  (`none`/`default`) by `the_reservation_row_carries_the_running_candidates_multiplier`,
+  `PlanReq.activeRow` and `PlanReq.routineRow` (`[]`/`default`) at `PlanReq.mem_activeRow` and
+  `routineRows_kinds`, `PlanReq.routineHot` at `true` (step P8's routine-day cells witness decides
+  false) AND `false` (`a_scheduled_window_tasks_routine_row_is_hot_at_p_zero`),
+  `PlanReq.keptBreakRows` and `dayRows` at `[]`/`default` — and the eight `PlannerWit` fixtures: four PINNED by their witnesses
+  (`witMultRunCands`, `hotRoutineWitness`, `hotRoutineIns`, `witHotCands`), four UNFOLDABLE witness
+  fixtures (`theMultRunRequest`, `hotRoutinePlan`, `hotRoutineCap`, `theHotRoutineRequest`: no
+  `Inhabited` for `PlanReq`, `WfPlan`, `Capped`).  **And the drift** (gap 3203): the 54 definitions
+  whose 175 pin sites moved were each re-run with `mutate.py --verify --write --only`, in four
+  clones — every one re-derived, 104 constants PINNED and 5 UNFOLDABLE (rows so recorded before),
+  **0 failed**.  (One run, `PlanReq.growing`'s in the slowest clone, was cut short by this step while
+  its second pass was building and recorded "build failed with no located error"; that row was
+  discarded and the definition re-run whole in another clone, which recorded its `then` site.)
+  Merged: 54 rows replaced, 13 appended; the gate prints **430 new
+  or changed since `86c4dc6`, 430 rostered (146 unfoldable, 92 witness fixtures, 30 pinned by
+  nothing; 2 literal), 0 owed** (417, 142, 88, 30 at `b3c29a3`: the pinned-by-nothing count did not
+  move).
+
+### 7. Acceptance, capped
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py`, 8 GB with `timeout 120` for every new `decide` probe), from the worktree, on the final
+source (no Lean or Rust file changed after 21:37, and every run below began later; `check.sh` ran
+again after this block was appended).  Two other tracks' builds and mutation runs shared the
+machine throughout: load averages are given.
+
+* **`check.sh`: 14 checks, 17 lines, every one ok, exit 0** (4:23 wall, load 5.6-13.9; `git
+  status --porcelain` unchanged by it) — build; totality; axiom audit **5,644** theorems (5,624 at
+  `b3c29a3`: +21 audit lines for the 13 `Planner` and 8 `PlannerWit` theorems of §4 and §6, −1 for
+  the retired law); Negative rejected, and the three cheats that read a day's Break rows (CHEATs
+  190, 201 and 202) were each re-read by `#eval` on this tree to fail for their STATED reasons —
+  `theStoredRequest`'s day holds 0 Break rows, `theCensusRequest`'s exactly the one its log's
+  `break` makes (its cut keeps no break), and `noBlockOverABreak` is still `false` at
+  `theMidBreakRequest`; FFI 95; corpus 29/37 and 4/5; stage goals 6; citations 46,773 (after this
+  block), 0 unresolved; check 9 as §6; parity P1-P55, next free P56; twins 3,192 bodies (3,181:
+  +11, this step's three definitions and eight fixtures), 90 generalisation groups, 0 UNANSWERED;
+  reach 1,185 reachable, **1,200** exempt (1,201), 0 UNANSWERED; fields 15 of 15; inputs 33 of 37
+  read, 4 exempt; sent 28 of 28; written 34 decoded, 28 written, 3 exempt; replay 86 modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs: 1,599 passed / 0 failed / 11 ignored
+  across 94 result lines, each** (16:01, 12:40 and 12:59 wall; load 9.2-25.1), `git status
+  --porcelain` identical before and after each — no proptest seed written.  (1,587 across 93 at
+  `b3c29a3`: the twelve are `planner_w37_rows`' binary — the new arm, the P45 test, and the five
+  `kernel_log` unit tests twice, because the binary includes `support/replay.rs` both directly and
+  through `planner_common`, as `priority_plan_basic.rs` does.)
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `kernel_item_grammar` 6, `kernel_plan_codec` 9, `kernel_planner_wire` 23,
+  `kernel_row_cells` 26, `one_padder` 9, `one_renderer` 25.  **Without** it, because the ignored
+  test of each re-blesses a frozen comparand (D64): `planner_classes` 16, `planner_fixtures` 12.
+  `planner_w37_rows` 12, `emit_planner` 14, `planner_regressions` 46, `planner_dynamics` 23.
+  `planner_invariants` 24 of 24 on each of **six** runs (three at `b3c29a3`, three after: 439.7,
+  293.7 and 328.3 s after).  `cli_latency` 6 of 6 with `--include-ignored` (18.5 s, load 4.3-4.4).
+* No predicate or assertion weakened: `forkday`'s three set-aside classes are compared by value
+  like every other row (the old rule REQUIRED the kernel to lack the rows it now draws, and set
+  the fork's aside), every day's hash is now asserted, and P45's "exactly one Break row" (`forkclass`,
+  `w35_check_break`) is now the property it meant and still bites (§5, and
+  `the_p45_rule_counts_the_running_break_by_its_span_and_bites_a_second_one`); no snapshot,
+  fixture, frozen comparand, latency band or corpus re-blessed; no memory bound, `maxHeartbeats`
+  or `maxRecDepth` raised; no `decide +kernel`; no external dependency; no parity number issued;
+  every exemption file the same size or smaller (`reach-exempt.txt` one entry shorter:
+  `PlanReq.answerFor` is reached through the declared unsent planner section now that
+  `PlanReq.routineRow` reads it, so check 12 answers it by property); `citations-allow.txt` gains
+  one entry for the retired law's two past citations and tightens another from 10 to 9.
+
+### 8. Gaps (3200-3207)
+
+**Gap 3200 — gap 2870's mark is compared on no frozen generated class, and after R3 on the four
+fixture days only.**  1. *What.*  The 36 frozen classes hold no scheduled window task, so no Routine
+`⚠` (§0); this step's `planner_w37_rows` compares 145 marks on 147 generated days, but its fork half
+is a region R3 deletes.  2. *Why.*  The class generator is `planner_invariants.rs`' and is H's
+(gap 3080); this track may not freeze into `fixtures/*planner*`.  3. *Cost.*  After R3 a regression
+of `PlanReq.routineHot` is caught by the four fixture days' four marks and by
+`PlannerWit.a_scheduled_window_tasks_routine_row_is_hot_at_p_zero`, nothing generated.  4. *Clears
+it.*  Before R3: freeze some of `plan-basic`'s ten-minute days (the arm's own) as classes, or give
+the class generator a dated window task — H's or the land step's.
+
+**Gap 3201 — CLOSED: the host's encoder sent a closed daily window as an empty span, and the kernel
+refused the whole day.**  §3.  1. *What.*  `planwire::routine_instances` sent `from == to`, the
+kernel answered `routineRefused emptyWindow`.  2. *Why.*  The fork keeps such an instance and passes
+over it; the kernel's R10 refusal (`Planner.mkRoutine?`) was right and the encoder was not.
+3. *Cost, before.*  After R3, `tm plan` would have failed at a window's close.  4. *Closed* by the
+filter; `planner_w37_rows` asserts no empty span is sent and counts the six it left out.  A `sleep`
+instance whose window runs past midnight is never empty, so the filter cannot take the Sleep row's
+instance; were one ever empty the kernel's day would lose the Sleep row's item where it used to
+refuse — recorded; no routine the corpus holds is shaped so.
+
+**Gap 3202 — four files outside this track's list were edited (§5).**  1. *What.*  `PlanCheck.lean`
+(K), `support/forkday.rs`, `support/forkclass.rs` and `planner_invariants.rs` (H).  2. *Why.*  Each
+stated the three gaps' holes as its rule; closing the gaps made each false as written.  3. *Cost.*
+The land step merges four edits into files two other tracks are rewriting; PlanCheck's is
+line-neutral, H's are one function body each.  4. *Clears it.*  The land step: keep each edit's
+PROPERTY wherever H's or K's rewrite puts the rule (H may move `w35_check_break` or retire it onto
+`forkclass::p45_rule`, which already carries it).
+
+**Gap 3203 — check 9's pin sites make a mid-file insertion into `Planner.lean` cost a re-verification
+of every definition pinned below it.**  1. *What.*  Moving the pass above step 2 and inserting the
+kept-break laws moved **175** recorded pin sites of **54** `Planner.lean` definitions (**201 of 68**
+before `PlanCheck.lean` was made line-neutral); each was re-run with `mutate.py --verify --write
+--only` in four clones.  2. *Why.*  The roster records `file:line decl`, checked on every gate run
+(gap 1190), and `--verify` is one build per constant.  3. *Cost.*  Wall time: the four clones ran
+21:35-22:33 beside a fifth running this step's own 24 owed constants (21:35-23:21), each build a
+`PlannerWit` elaboration (gap 3204), under a machine two other tracks were loading; and the land
+step's merge of K, R and T will move the sites again.  4. *Clears it.*  A step that
+appends rather than inserts where it can (W-36's repair made its change line-neutral for exactly
+this); the land step re-verifies what the merge moves.
+
+**Gap 3204 — `PlannerWit.lean`'s whole elaboration is at 5:20 and 7.42 GB under the 8 GB probe
+cap.**  1. *What.*  Measured with `lake env lean` at `MemoryMax=8G` under load: 5:19.92 and 7.42 GB
+peak with this step's block, 4:56.55 and 7.46 GB without it (the block alone, as its own file: 11.8 s,
+2.3 GB).  2. *Why.*  Gap 750's warning, grown: every witness is a `decide` over a whole day.
+3. *Cost.*  The next block may be killed at the probe cap rather than slowed; D18 forbids raising it.
+4. *Clears it.*  Splitting the module along its sections (gap 750's own proposal).
+
+**Gap 3205 — a `null` `p` reads 0 in the shipped host and not in `PlanReq.routineHot`.**  1. *What.*
+`planwire::prio_of` reads a grant's absent `p` as 0 (`p.unwrap_or(0)`), so the shipped fork would mark
+a wall's Routine row `⚠`; `routineHot` asks `p = some 0`.  2. *Why.*  Only a wall's answer has no `p`
+(§7.2's off-scale row), and a Routine row's item declares a `win:` while a wall is an `at:` interval —
+one shape per item — so no request reaches the difference.  3. *Cost.*  None today; a future shape
+that is both would disagree silently.  4. *Clears it.*  Nothing owed; recorded so a reader of
+`routineHot` does not re-derive it.
+
+**Gap 3206 — `planner_invariants`' hash arm still EXPLAINS the two classes this step closed, so on
+the shared generator their 0 is a census and not a gate.**  1. *What.*  The day comparison of
+`planner_invariants.rs`' hash arm (the `for f in &fonly` loop) still passes over a fork-only Break
+row from `now` (`c551`, no kernel twin needed) and a fork-only current Block whose kernel twin
+differs only in its multiplier (`c550`).  Both counted **0** on each of three runs of 281 days after
+this step, with every hash equal (§2) — but a kernel that stopped drawing either row would stay
+green there.  2. *Why.*  The file is track H's, and this track's brief says to run it and not edit
+it; retiring the two branches is a tightening that no failure forced (unlike `w35_check_break`,
+§5, which this step's change made fail).  3. *Cost.*  On generated days the rows are gated only by
+`planner_w37_rows` (`plan-basic`: 35 planned Break rows and 145 `⚠` marks, and no running block, so
+no multiplier row); gap 550's row is gated by the 11 frozen running-state class rows
+(`planner_classes`, by value through `forkday`) and by
+`PlannerWit.the_reservation_row_carries_the_running_candidates_multiplier`, which pins
+`PlanReq.candMult` at both of its constants (§6).  4. *Clears it.*  The land step or H: delete the
+two branches and assert `fonly` and `konly` empty and the hash equal on every compared day, as
+W-34's land step did for gap 554's class.
+
+**Gap 3207 — on a day with a running break, the kept Break rows are compared by value with
+nothing.**  1. *What.*  P45's rule (`forkclass::p45_rule`, `w35_check_break`) now counts the one
+Break row that starts before the running break's end; the kept Break rows after it — 7 on the 6
+frozen break days, and uncounted on the generated ones — meet no fork row, because P45's days are
+held to the rule and not to the fork, and `planner_invariants`' D57 comparand compares assigned
+rows only and on no break day ("P45 has no fork analogue: the comparand plans over it").
+2. *Why.*  The shipped fork schedules over a running break (P45), so its `kept_breaks` on such a
+day is computed over a different assignment and is not a comparand.  3. *Cost.*  On those days a
+wrong kept break is caught only by the Lean laws of §4 (`PlanReq.mem_keptBreakRows`,
+`PlanReq.a_kept_break_is_a_break_of_the_cut`, `PlanReq.a_kept_break_is_after_now`,
+`PlanReq.a_kept_break_clears_the_reservation`, `Planner.a_block_row_clears_a_kept_break`), which
+tie the rows to `PlanReq.emitKeptBreaks` and the cut but compare `emitKeptBreaks` itself with
+fork `kept_breaks` on no break day.  4. *Clears it.*  Compare the kept breaks of a break day with
+the D57 comparand's own `kept_breaks` over its own assignment — H's arm, or the land step's.
+New gaps start at **3208**.

@@ -18,11 +18,12 @@
 //! through `planreq`, read back by the host's codec `tm_core::planwire`) and
 //! holds it to the FORK's rendering of the same day — the committed snapshot
 //! file, which is the fork's frozen answer (it is only ever written by the
-//! fork's arm below, and after R3 by nothing). The two may differ by exactly
-//! the classes `support/forkday.rs` declares for these days, and each is
-//! counted and bounded: gap 551 (a planned Break row the kernel does not draw,
-//! with its SVG title) and gap 435 (a routine row's `⚠` and the `due today`
-//! note the renderer prints beside it). **The fork's arm** — the snapshots
+//! fork's arm below, and after R3 by nothing). The two must be equal line for
+//! line: the two classes they differed by until W-37 — gap 551 (a planned
+//! Break row the kernel did not draw, with its SVG title) and gap 435 (a
+//! routine row's `⚠` and the `due today` note the renderer prints beside it) —
+//! closed at W-37 (track R), and their lines are counted and bounded exactly as
+//! lines the two renderings share. **The fork's arm** — the snapshots
 //! themselves — is one region R3 deletes.
 
 mod planner_common;
@@ -111,59 +112,42 @@ struct RenderTally {
     marks_435: usize,
 }
 
-/// **The kernel's rendering is the fork's, less the declared classes**: every
-/// line equal, except a planned Break row the kernel does not draw (gap 551:
-/// a section row `HH:MM  ·      break Nm` at or after `now`, and one SVG title
-/// `  break · Nm` for it) and a routine row's `⚠` with its `due today` note
-/// (gap 435). Returns what was counted and every other difference, by line.
+/// A section row `HH:MM  ·      break Nm` at or after `now`: a planned Break.
+fn is_planned_break_row(line: &str, now: &str) -> bool {
+    line.len() > 5
+        && line.is_char_boundary(5)
+        && line[..5] >= *now
+        && line[5..].trim_start().starts_with("·")
+        && line[5..].trim_start().trim_start_matches('·').trim_start().starts_with("break ")
+}
+
+/// **The kernel's rendering is the fork's, line for line.**  Until W-37 two
+/// classes were declared here — a planned Break row the kernel did not draw
+/// (gap 551: the section row and its SVG title `  break · Nm`) and a routine
+/// row's `⚠` with its `due today` note (gap 435) — and both CLOSED at W-37
+/// (track R): every line must now be equal.  The rows of the two old classes
+/// are still COUNTED, on lines the two renderings share, so a caller's exact
+/// count fails if the frozen rendering stops holding one.  Returns what was
+/// counted and every difference, by line.
 fn compare_with_the_frozen_render(fork: &str, kernel: &str, now: &str) -> (RenderTally, Vec<String>) {
     let (f, k): (Vec<&str>, Vec<&str>) = (fork.lines().collect(), kernel.lines().collect());
     let mut t = RenderTally::default();
     let mut findings = Vec::new();
-    let mut dropped: Vec<String> = Vec::new();
-    let (mut i, mut j) = (0, 0);
-    while i < f.len() {
-        let fl = f[i].trim_end();
-        let kl = k.get(j).map_or("", |l| l.trim_end());
+    for (i, fl) in f.iter().map(|l| l.trim_end()).enumerate() {
         t.rows += 1;
-        if fl == kl && j < k.len() {
-            i += 1;
-            j += 1;
+        let Some(kl) = k.get(i).map(|l| l.trim_end()) else {
+            findings.push(format!("fork line {i} `{fl}` has no kernel line"));
+            continue;
+        };
+        if fl != kl {
+            findings.push(format!("fork line {i} `{fl}` against kernel line {i} `{kl}`"));
             continue;
         }
-        let break_row = fl.len() > 5
-            && fl.is_char_boundary(5)
-            && fl[..5] >= *now
-            && fl[5..].trim_start().starts_with("·")
-            && fl[5..].trim_start().trim_start_matches('·').trim_start().starts_with("break ");
-        if break_row {
-            t.breaks_551 += 1;
-            dropped.push(fl.rsplit(' ').next().unwrap_or_default().to_string());
-            i += 1;
-            continue;
-        }
-        if let Some(pos) = dropped.iter().position(|d| fl == format!("  break · {d}")) {
-            dropped.remove(pos);
-            i += 1;
-            continue;
-        }
-        let unmarked = fl.replacen('⚠', " ", 1);
-        let unmarked = unmarked.strip_suffix("due today").map_or(unmarked.as_str(), str::trim_end);
-        if fl.contains('⚠') && unmarked == kl {
-            t.marks_435 += 1;
-            i += 1;
-            j += 1;
-            continue;
-        }
-        findings.push(format!("fork line {i} `{fl}` against kernel line {j} `{kl}`"));
-        i += 1;
-        j += 1;
+        t.breaks_551 += usize::from(is_planned_break_row(fl, now));
+        t.marks_435 += usize::from(fl.contains('⚠'));
     }
-    for l in k.iter().skip(j) {
+    for l in k.iter().skip(f.len()) {
         findings.push(format!("a kernel line the fork's rendering does not hold: `{l}`"));
-    }
-    for d in dropped {
-        findings.push(format!("a planned break of {d} left its SVG title behind"));
     }
     (t, findings)
 }
@@ -171,7 +155,7 @@ fn compare_with_the_frozen_render(fork: &str, kernel: &str, now: &str) -> (Rende
 /// The kernel arm of one day: its rendering against the fork's frozen one.
 fn kernel_render_is_the_forks(which: &str, now: &str) -> RenderTally {
     let (t, findings) = compare_with_the_frozen_render(&frozen_render(which), &render_with(&Kernel, which), now);
-    assert!(findings.is_empty(), "{which}: {} difference(s) outside gaps 551 and 435:\n  {}", findings.len(), findings.join("\n  "));
+    assert!(findings.is_empty(), "{which}: {} difference(s) (gaps 551 and 435 are closed):\n  {}", findings.len(), findings.join("\n  "));
     t
 }
 
@@ -205,9 +189,10 @@ fn plan_home_day_section_and_svg() {
     every_frozen_line_was_walked("plan_home_day_emit", &t);
 }
 
-/// **The class comparison bites, both ways** (AGENTS §5.8): a moved row, a
-/// dropped row that is not a planned break, and a mark on a row the fork does
-/// not mark each fail; the declared classes alone pass.
+/// **The comparison bites, both ways** (AGENTS §5.8): a moved row, a dropped
+/// row, a moved break, and — since gaps 551 and 435 closed at W-37 — a missing
+/// planned break or a missing routine `⚠` each fail; the kernel's own rendering
+/// passes.
 #[test]
 fn the_render_comparison_sees_what_is_not_a_declared_class() {
     let fork = frozen_render("plan_basic_early_emit");
@@ -218,7 +203,13 @@ fn the_render_comparison_sees_what_is_not_a_declared_class() {
     let lost = kernel.replacen("11:30  ·      lunch 30m\n", "", 1);
     assert!(!compare_with_the_frozen_render(&fork, &lost, "07:00").1.is_empty(), "a lost row passed");
     let early = fork.replacen("14:50  ·      break 20m", "06:50  ·      break 20m", 1);
-    assert!(!compare_with_the_frozen_render(&early, &kernel, "07:00").1.is_empty(), "a past break was taken for gap 551's");
+    assert!(!compare_with_the_frozen_render(&early, &kernel, "07:00").1.is_empty(), "a moved break passed");
+    // …and since W-37 (gaps 551 and 435 closed) a kernel rendering WITHOUT its
+    // planned break, or without the routine row's `⚠`, fails as any other line.
+    let unbroken = kernel.replacen("14:50  ·      break 20m\n", "", 1);
+    assert!(!compare_with_the_frozen_render(&fork, &unbroken, "07:00").1.is_empty(), "a missing break passed");
+    let unmarked = kernel.replacen("p0 ⚠ Pick up package", "p0   Pick up package", 1);
+    assert!(!compare_with_the_frozen_render(&fork, &unmarked, "07:00").1.is_empty(), "a missing `⚠` passed");
 }
 
 /// The renderer's contract with the planner, asserted rather than snapshotted:
