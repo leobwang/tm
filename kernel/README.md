@@ -69651,11 +69651,11 @@ fails), `write_estimate` → `Err` (six `cli_day` tests fail), `prio_of`'s `need
 (`cli_one_estimate` 2 fail), `committed` back to a plain sum (`cli_one_estimate` fails, the
 overflow panic).  Second commit: a CONTROL run first — `cli_wall_pause` and the W-36 arm pass on the
 unplanted clone — then eleven Rust plants, each FAILED by the suite named:
-`add_worked_min` → no-op (the W-36 arm); `stop_the_timer_at_walls` → `Ok(false)`, `merged_spans`
-→ empty, `timer_stopped_at` → `true` and `touched_after` → `true` (four `cli_wall_pause` tests
-each); `timer_stopped_at` → `false` (`a_timer_already_stopped_at_the_wall_is_left_alone`);
-`touched_after` → `false` (`a_timer_mark_already_inside_the_meeting_is_left_to_stand`);
-`last_timer_mark` → `None` (two); the stale-pause guard removed (`a_block_that_ended_inside_the_meeting_…`
+`add_worked_min` → no-op (the W-36 arm); `stop_the_timer_at_walls` → `Ok(false)`, merged_spans
+→ empty, timer_stopped_at → `true` and touched_after → `true` (four `cli_wall_pause` tests
+each); timer_stopped_at → `false` (`a_timer_already_stopped_at_the_wall_is_left_alone`);
+touched_after → `false` (`a_timer_mark_already_inside_the_meeting_is_left_to_stand`);
+last_timer_mark → `None` (two); the stale-pause guard removed (`a_block_that_ended_inside_the_meeting_…`
 and `a_pause_left_open_by_a_paused_done_…`); `w36_host_worked` → `None` (the arm's floors);
 `w36_fork_plan` → the fork's own reading (the arm).  And one Lean plant, `PlanReq.workedOf` →
 `logs`: the kernel does not BUILD (`PlanReq.activeWorked_is_the_hosts` and the new witnesses
@@ -70435,13 +70435,13 @@ exit.  `check.sh` prints a fourth line under check 13, `every decoded key has a 
 `lastHash` line deleted → `rc=1`, `UNWRITTEN: planner.state.lastHash`.  4. *Its floor.*  "Written by
 the codec" is a floor under "sent by the binary" (gap 3043).
 
-**Gap 3134 — CLOSED: `day.rs`'s `timer_stopped_at` was a second copy of `idle_min_since`'s pairing.**
+**Gap 3134 — CLOSED: `day.rs`'s timer_stopped_at was a second copy of `idle_min_since`'s pairing.**
 1. *What.*  REPRODUCED by reading: the two matched arm for arm, and W-36 track T added the `Pause(t)
 if t < started` arm to both.  The one body difference (a `break` logged without `actual_min`: a
 zero-length span in one, skipped in the other) was not a behaviour difference — a span `[a, a)`
 contains no instant.  2. *Why.*  D61's rule needed the pairing at one instant and copied it.
 3. *Repair.*  `tm_core::log::idle_spans` is the one pairing; `Replay::idle_min_since` sums it
-(clipped to `[started, now]`, summed in the same order) and `timer_stopped_at` asks whether an
+(clipped to `[started, now]`, summed in the same order) and timer_stopped_at asks whether an
 instant lies in it.  4. *Evidence.*  `cli_wall_pause`, `cli_now_worked` and the workspace below.
 
 **Gap 3136 — CLOSED (ledger): "7 worlds" was 7 comparisons.**  REPRODUCED: the land's
@@ -70759,3 +70759,352 @@ touches drawn whole.  `cli_wall_pause`'s eight D61 tests pass unchanged.
   `maxHeartbeats` or `maxRecDepth` raised (the witnesses carry the file's own `maxRecDepth
   400000`); no predicate, assertion, snapshot, fixture, latency band or corpus touched; no new
   dependency; `reach-exempt.txt` changes a census number only.
+
+<!-- =====================================================================
+     APPENDED 2026-09-28: stage 6 (the planner), run **W-37**, **TRACK T**,
+     second commit, on branch `w37-t` over the first (D65, P56).  Gaps
+     **3241-3248** taken here; 3249-3279 free for this track.  Parity:
+     **P57 issued** (below), the last of this track's allocation —
+     next free P58.  Every drive ran the binary this commit builds, every call
+     `--now`, under the memory cap; every plant ran in a clone under
+     `scratchpad/w37-t/`.
+     ===================================================================== -->
+
+## Stage 6 — W-37, track T (2): D61 decided by the kernel, D66's two host calls, and one grammar for the leading-estimate slot (P57)
+
+### 3. Gap 3139 CLOSED — D61 is decided by the kernel, over its own reading of the calendar
+
+**What moved.**  W-36 wrote D61's rule in Rust (`day.rs`' `stop_the_timer_at_walls`), over the
+host's own reader of the calendar (`Ctx::walls_on`, fork `Ctx::walls_on`) — a second reader of the
+walls beside the kernel's `Look.wallsOn`, deciding one day (AGENTS §5.3), and a rule no Lean
+statement named, so D40, checks 12 and 13 and the proofs could not see it.  It is now a module of
+its own, `WallTimer.lean`, and the host asks.
+
+* **The rule** — `WallTimer.writes`, the host's rule port for port: fork `tm_core::log::idle_spans`
+  is `idleSpans`, the host's timer_stopped_at is `stoppedAt`, touched_after is `touchedAfter`,
+  last_timer_mark is `lastTimerMark`, and one joined wall span is `step` (`pauseIfNew`, then
+  `unpauseIfDone`).  The walls are `Look.wallIxOn`'s selection from the plan the request loaded,
+  joined as fork `merge_walls` joins them — `Look.clipWalls 0`, `Look.sortByStart`,
+  `Look.mergeSorted`, **reused, not re-spelled** — each joined span carrying the items it joins
+  (`spansOf`).  The open block and its marks — day `d`'s record and, stamped since the block began,
+  the day before's (gap 3245) — are the replay's own (`Seal.Answer`, D24's seam); the running break is the one input the log cannot give (a break is logged when it ends), so it
+  crosses the wire.
+* **The laws** (`WallTimer.lean`): `a_wall_that_starts_while_a_block_runs_stops_its_timer` (the
+  headline — a pause at the wall's start, and an unpause at its end once it has passed), the four
+  ways it writes nothing — `a_block_started_inside_a_wall_is_not_paused_by_it`,
+  `a_wall_that_has_not_begun_writes_nothing`, `a_timer_already_stopped_at_the_wall_is_left_alone`,
+  `a_timer_mark_after_the_walls_start_stands` — the end alone
+  (`the_walls_end_restarts_the_timer_it_stopped`), the correction
+  (`a_user_who_resumed_during_the_meeting_keeps_their_timer`), soundness over any number of walls
+  (`mem_writes`: everything written is a joined span's own start or end, never ahead of `now`, and
+  only for a block begun before it), and a TWO-RUN law (D5):
+  `after_one_wall_a_second_verb_writes_nothing_more` — once the marks are in the log the next
+  verb's run writes nothing, D61's "once", its subdomain (one wall) in its name.  Run on fifteen
+  rule cases (`the_rule_is_run`), three readings of the meeting named (`pausedFor_is_run`), a
+  six-wall join (`spansOf_is_run`) and five request readings (`readReq_is_run`); and end to end on
+  W-36's open Wednesday (`PlannerWit.the_open_wednesdays_wall_is_answered_by_the_kernel`: one mark,
+  `m1`'s pause at `^g1`'s 12:50 in the log writer's bytes, naming `^g1`;
+  `PlannerWit.the_logged_wall_writes_nothing_more`), and through the section itself
+  (`the_walls_form_is_answered_through_the_emit_section`: with a replay and no wall in the plan it
+  answers `{"marks":[],"pausedFor":null}` in build order, and without a replay it refuses
+  `logAbsent`).  Two more at the module's end: `the_day_befores_marks_are_read` (gap 3245 below)
+  and `a_break_inside_the_meeting_leaves_the_pause_the_last_word` (a break is not a timer mark —
+  added when check 9 found `isBrk := fun _ => false` SURVIVED).
+* **The wire** — the `emit` section (D16: the kernel decides and renders, the host appends).  An
+  OBJECT `emit`, `{"walls": {"at": <stamp>, "break": <stamp>|null}}`, beside the request's `docs`,
+  `tz`, `log` (with facts), `now` and `blockMin`, is answered `ok.emit = {"marks": [...],
+  "pausedFor": ...}` — each mark `ev`, `id`, `at`, `from`, `to`, `walls` and `line` (the exact
+  bytes, `Log.emitLine`) — or refused `{"err":{"emit":{"walls":<name>}}}` by name
+  (`WallTimer.Refusal`: `shape`, `badAt`, `badBreak`, `tzAbsent`, `logAbsent`, `nowAbsent`,
+  `blockMinAbsent`, `withCommands`, `badInstant`, `refused`).  `at` and `break` are read by B2's one
+  stamp reader, `LogStamp.parseStamp`.  `Boundary.readEmitSection` gained the one arm
+  (`readEmitSection_of_the_walls_form`); every law of S2 about the section holds unchanged, two of
+  them moved to the module's end (statement and proof byte-identical) so that the section's edit is
+  **line-neutral** and no check-9 pin site in `Boundary.lean` moved; `Boundary.lean` imports
+  `WallTimer` on the line that imported `Replay`, which `WallTimer` reaches through `SealWire`.
+* **The host** (`day.rs`): `stop_the_timer_at_walls` asks (`ask_the_walls`: the tree through
+  `kernel_bridge::text_docs`, now shared with `refusal_in`; the log section the capacity request
+  sends, `kernel_log::capacity_log_section`), appends the kernel's bytes through the one appender
+  (`Ctx::append_line`, which `Ctx::append_entry` now calls), and reads no wall — merged_spans,
+  timer_stopped_at, touched_after and last_timer_mark are deleted.  A tree the kernel refuses writes
+  nothing and says so by name, the automatic close's rule; a fault fails the verb.  Pinned by
+  `tm/tests/cli_wall_kernel.rs` (8): the running break crossing the wire, a refused tree writing no
+  mark, `tm pause` naming the meeting in text and `--json`, a press outside a meeting unchanged, a
+  source check that the housekeeping function names no host wall reader, and a block begun the
+  evening before and a day with no wake of its own, each paused once (gaps 3241, 3245).  W-36's eight
+  `cli_wall_pause` tests pass unchanged against the kernel's decision.
+
+**Behaviour rows**, DRIVEN on `b3c29a3`'s binary and this commit's (`scratchpad/w37-t/drive_3241.sh`,
+`scratchpad/w37-t/drive_3139.sh`, `scratchpad/w37-t/drive_3245.sh`; transcripts `drv<gap>before.txt` and `drv<gap>.txt`), a `tm init
+--example` tree, `^g1 Meeting w/ host` 12:50–13:50 on 2026-09-07:
+
+| verb | `b3c29a3` | after |
+|---|---|---|
+| `tm now` at 13:20, `^t4` started the EVENING BEFORE at 23:00 and still running (gap 3241) | no mark, nothing said: the host read the block's start as today's 23:00, later than the wall | `pause{t4}` at 12:50 logged, `tm: paused ^t4 for Meeting w/ host 12:50–13:50`, the header `· paused` |
+| `tm now` at 13:20 on a tree the kernel refuses (a second `^t4` line; `notADemotion`), `^t4` running since 12:00 | `pause{t4}` at 12:50 logged by housekeeping, then the verb refused, rc 1 — a write on a tree every verb refuses | nothing logged; `tm: the meeting pause (D61) was not checked, so nothing was written; it is checked again on the next command.` and the refusal, rc 1 |
+| three `tm now`s at 13:20, 13:30 and 14:10 on a day with no wake of its own (the last `tm wake` 18:05 the day before), `^t4` running since 09:00 (gap 3245) | `pause{t4}` at 12:50 logged THREE times, one per verb, then the unpause | `pause{t4}` once and `unpause{t4}` once, the notice once |
+
+**The cost**, measured because every verb with a block running now makes this call (D35's
+precedent): on the three-year history tree `cli_latency` builds (226 files,
+2,959 lines, 66,169 log lines), `^z3` started and nine `tm now`s timed, alternating a clone of
+`b3c29a3` and this tree back to back at load 36-44: with `^z3` running, median **187 ms and 172 ms**
+on `b3c29a3` and **364 ms and 248 ms** here; with nothing running, 207/202 ms and 212/162 ms.  On
+`plan-basic` the difference is under a millisecond (51.4 → 52.1 ms).  It fits T11's 1 s later-verb
+bound, and it is paid on every verb and every TUI reload while a block runs — gap 3247 below says
+where it goes and what would take it back.  **And it is counted**: the FFI's call trace names the
+object form `walls` (`trace_kinds`), because it carries the whole tree and a `log` section but no
+`cmds`, so it traced as `log` alone and the whole-tree load was invisible to every column;
+`tm/tests/kernel_call_counts.rs` pins a new `walls` column (1 for `pause` and `done`, which run with
+`^t4` open, 0 for the other ten verbs) and the `log` column one higher for those two (4, was 3) —
+the test's own rule that a verb growing a whole-log read is a finding, and this is that finding.
+
+### 4. D66's host calls (the campaign's calls on gaps 3047 and 3048)
+
+**Gap 3047 — on a tabbed line `tm stop` and `tm done --partial` END THE BLOCK and warn; `tm extend`
+keeps refusing.**  `day.rs`' `estimate_unless_tabbed`: the kernel's `tabbedLine` refusal of the
+estimate is caught for those two verbs, the block is ended and the box moved on the line as it
+stands, and one line on stderr says the estimate was not written and how to set it; `--json`
+carries it as `estimate_not_written` (absent otherwise, so no existing document changes).  `tm
+extend`, whose whole job is the estimate, does not call it.  Pinned by `tm/tests/cli_tabbed_stop.rs`
+(4).
+
+**Gap 3048 — `tm pause` inside a meeting keeps resuming and NAMES the meeting.**  When a press
+resumes the timer, the kernel names the meeting it was stopped for (`WallTimer.pausedFor`: the
+joined span `now` is inside whose start's pause is the last timer mark;
+`pausedFor_is_a_meeting_the_timer_is_paused_for`), and the message says it; `--json` carries
+`meeting` (absent otherwise).
+
+**Behaviour rows**, DRIVEN before (`b3c29a3`'s build) and after (`scratchpad/w37-t/drive_d66.sh`; `drv66before.txt`,
+`drv66.txt`):
+
+| verb | `b3c29a3` | after |
+|---|---|---|
+| `tm pause` at 13:20 inside `^g1` (the wall paused `^t4` at 12:50) | `resumed ^t4` | `resumed ^t4 (it was paused for Meeting w/ host 12:50–13:50)`; `--json` gains `meeting` |
+| `tm stop` at 09:20 on a `^t4` whose title holds a tab | `kernel refusal: tabbedLine`, rc 1, the block still running | `stopped ^t4 after 20m · 40m left`, rc 0, the box `[ ]`, the estimate `1b` unchanged, stderr says it was not written |
+| `tm done --partial` at 09:20 on the same line | `kernel refusal: tabbedLine`, rc 1, still running | `✓ ^t4 … · 20m/60m · 40m left`, rc 0, box `[ ]`, the same warning; `--json` `estimate_not_written` |
+| `tm extend 1b` at 09:20 on the same line | `kernel refusal: tabbedLine`, rc 1 | unchanged: refused, nothing written, still running |
+
+**No new parity number, and why.**  Against fork 4748911 the tabbed-line rows are **P54's**
+divergence: D62 made the estimate the kernel's `est` op's to write, and the kernel writes nothing
+on a line carrying a tab (gap 32), where the fork wrote `est:40m` (gap 3047's own drive on
+`dd8b95b`).  `parity.txt`'s P54 row gains that clause.  The meeting rows, and both rows of §3, are
+**P53's** rule — a fork with no D61 has no meeting pause to name, and P53 already says a wall that
+starts while a block runs stops its timer, which the kernel now does for a block begun the day
+before as well.  Each is a behaviour change against W-36's binary, recorded here.
+
+### 5. Gap 3140 CLOSED — one grammar for the leading-estimate slot: the SHAPE
+
+**Reproduced first** (`scratchpad/w37-t/drive_3140.sh` on `b3c29a3`'s build, `plan-basic` with `^a1`'s estimate
+written `9999999999999m`; `drv3140before.txt`):
+
+```
+$ tm check                → no problems                                              rc=0
+$ tm start ^a1            → ▶ ^a1 9999999999999m Insurance claim for the bike · 09:00   rc=0
+$ tm extend 1b            → backlog.md: - [>] 2 1b Insurance claim for the bike  ^a1
+```
+
+The kernel reads the slot by SHAPE (`Field.estSlot`: `Nb|Nm|Nh|NhMm`, the numerals `Nat`), the host
+added a magnitude (`Dur::parse_no_days(word, 1).is_ok()`: `u32` minutes at a one-minute block) —
+so the word was an estimate to one reader and a title word to the other, and the kernel's `est`
+op rewrote it as the slot out of the title the host had just printed.
+
+**The choice, and why not the other one.**  The brief preferred one NUMBER on both sides (the
+kernel's slot bounded at `Look.maxPlanMinutes`).  Measured before choosing: `Field.estSlot` feeds
+`Fields.wf`'s `estLead` conjunct, the render/parse round trip (`estSlot_renderDur`, the
+`Fields` round trip in `Line.lean`), and D56's est edit in `Cmd.lean` (`view_set_remaining_slot`,
+`EditVal.estAt`, whose `NdDur` carries no bound) — a bounded slot is a re-proof across three
+modules, `Cmd.lean` alone carrying 38 recorded check-9 pin sites, and a full kernel rebuild, for a
+word no corpus line carries and no generated one can (the shared generator draws at most two
+digits).  The host's reader is the cheaper side to move
+and it moves to the KERNEL's definition, which is the one with laws: **the slot is the slot by its
+shape, whatever its size** — exactly how a keyed token already works (`est:4294967296m` is the
+`est` key with an unreadable value, reported `bad-value`, never a title word).
+
+* **The host** (`tm-core/src/grammar.rs`): `is_est_slot` — digits, then `b`, `m`, `h` or `h<digits>m`
+  — is the ONE slot predicate, for the tokenizer, for `title_conflict` (the guard that stops a
+  title's first word being re-read as the slot) and for the ICS writer's same guard
+  (`ics.rs`' `unsafe_title_word`), which each spelled `Dur::parse_no_days(word, 1).is_ok()`.  A slot
+  whose value the host cannot hold keeps `est_original: None` — as `100000000b` at a sixty-minute
+  block already silently did — and is now a problem, `` `9999999999999m` (the leading estimate):
+  invalid duration: … ``, which `tm check` reports as `error[bad-value]`.
+* **The kernel**: unchanged.  Its reading was the one both now share.
+
+**Parity P57 taken**: a leading word shaped like a duration — `Nb`, `Nm`, `Nh` or `NhMm`, any numeral — is the leading-estimate slot to the host whatever its size, as it is to the kernel's `Field.estSlot`, and one whose minutes the host cannot hold is `tm check`'s `bad-value` error; fork 4748911's parser read such a word past `u32` minutes (at a one-minute block) as a title word, and said nothing (W-37 track T, README gap 3140)
+
+**Behaviour rows**, DRIVEN before and after (`drv3140before.txt`, `drv3140.txt`; the keyed form
+checked on both binaries alike: `est:4294967296m` is ``error[bad-value]: `est:4294967296m`: invalid
+duration`` on each):
+
+| verb | `b3c29a3` | after |
+|---|---|---|
+| `tm check` with `^a1`'s estimate `9999999999999m` | `no problems`, rc 0 | ``backlog.md:2: error[bad-value]: `9999999999999m` (the leading estimate): invalid duration: "9999999999999m"``, rc 2 |
+| `tm start ^a1` | `▶ ^a1 9999999999999m Insurance claim for the bike` | `▶ ^a1 Insurance claim for the bike` |
+| `tm extend 1b`, then `tm stop` | the kernel rewrote the word as the slot: the title the host had shown lost it | the same bytes on disk (`1b`, then `40m`), and the host's title never held the word |
+
+**The differential** (`tm/tests/cli_lead_width.rs`, 4): at the bound (`4294967295m`), past it
+(`4294967296m`, `9999999999999m`, `71582789h`, `4294967296b`, `1h4294967296m`) the host's parser
+reads the word as the slot and the same title as the kernel, which rewrites it in place under
+`tm edit est=45m`; five words that are not the shape (`3d`, `12hm`, `5hh`, `m30`, `1h5`) stay title
+words to both; `tm check` names the slot it cannot hold and says nothing at the bound; and `tm
+extend` + `tm stop` on the line lose no title word.
+
+### Gaps (3241-3248 taken here; 3249-3279 free for this track)
+
+**Gap 3241 — a block begun the day before was never paused by today's wall (found and CLOSED
+here).**  1. *What.*  W-36's host took the running block's start as today's clock time
+(`ctx.at(active.started)`: `state.json` keeps `HH:MM`), so a block started at 23:00 the evening
+before and still running was "started" at 23:00 TODAY, later than every wall of the day, and was
+never paused.  Found by reading, then DRIVEN (`scratchpad/w37-t/drive_3241.sh`): on `b3c29a3` `tm now` at 13:20
+inside `^g1` logs nothing; here it logs `pause{t4}` at 12:50 and says so, and `tm stop` at 14:30
+logs the unpause at 13:50 and nothing else.  2. *Why.*  `state.json`'s `active.started` carries no
+date.  3. *Cost.*  None left for D61: the kernel reads the start's instant off the replay's open
+block.  The same `HH:MM` still feeds the host's worked minutes — gap 3246.  4. *Clears it.*
+Closed by §3; pinned by `a_block_begun_the_evening_before_is_paused_by_todays_wall_once`.
+
+**Gap 3242 — `tm extend` says one estimate and writes another on a line whose estimate the host
+cannot read.**  1. *What.*  DRIVEN (`scratchpad/w37-t/drive_3140.sh`, identical on both binaries): on `^a1` whose
+leading estimate is `9999999999999m`, `tm start` then `tm extend 1b` prints `+60m on ^a1 · now
+120m` while the line becomes `- [>] 2 1b …`, and `tm stop` twenty minutes later says `40m left` —
+sixty minutes, not 120.  The message adds `by` to the block's planned minutes at `start`
+(`active.est_min`, sixty by default when the estimate is unreadable); the write adds it to the
+item's remaining (0).  2. *Why.*  Two sources for one number in one verb; pre-existing, found while
+driving gap 3140.  3. *Cost.*  The message misstates what was written whenever the two differ — an
+unreadable estimate, and, by reading and not driven, any line whose planned minutes are not its
+remaining (a duration multiplier, §8.5).  4. *Clears it.*  The message reading the value the
+kernel's `est` op wrote.
+
+**Gap 3243 — the idle-span pairing has two definitions again.**  1. *What.*  W-36's repair made
+`tm_core::log::idle_spans` the one pause pairing (gap 3134).  D61's decision now lives in the
+kernel, so `WallTimer.idleSpans` ports it rule for rule: the kernel pairs the marks to decide D61,
+the host pairs them for worked minutes (`Replay::active_worked_min`, P55) and `tm now`'s header.
+2. *Why.*  Only the decision moved; the worked minutes are still the host's (P55).  3. *Cost.*  Two
+definitions of one concept (§5.3) that no gate compares — check 11 reads Lean alone.  If they
+drift, the kernel can decide a timer was running at a wall's start that the host's minutes treat as
+stopped, or the reverse.  4. *Clears it.*  The worked minutes derived by the kernel from the marks
+the seam already carries, deleting the host's pairing; meanwhile a differential over generated mark
+sequences would at least watch the two.
+
+**Gap 3244 — `tm review week`'s heat grid still counts a meeting's pause as `pause`.**  1. *What.*
+DRIVEN on the D65 tree after the meeting: `tm review week` prints `heat … block 50m · pause 1h`,
+and `--json`'s cells for 2026-09-07 hold 10 and 50 pause minutes in hours 12 and 13 — the meeting —
+while `tm plan` draws the wall alone and `tm review day` counts lost 0.  2. *Why.*  The grid styles
+the replay's segments by kind (fork `review::heat_of`), not the planner's rows; D65 names `tm
+plan` and `tm review day`.  3. *Cost.*  A third reading of one span, on the week surface.  4.
+*Clears it.*  The owner: whether D65's "the wall alone" reaches the week grid (a behaviour row and
+P56's reach), or the week review moving onto the kernel's rows.
+
+**Gap 3245 — a day with no wake of its own files its timer marks under the day before, and every
+reader of "today's record" misses them.**  1. *What.*  The replay files an entry under the day of
+the last wake within 24 hours (`Replay.dayOf`, fork `DayIndex::day_of`).  With the last `tm wake`
+at 18:05 the day before, every entry until 18:05 today is the day before's.  DRIVEN
+(`scratchpad/w37-t/drive_3245.sh`): W-36's D61 read today's record alone, found no pause and wrote `pause{t4}` at
+12:50 on EVERY verb — three times over three verbs on `b3c29a3`; this commit's rule, before this
+fix, did the same.  **Closed for D61**: the kernel reads, besides `d`'s record, the day before's
+marks stamped at or after the block's start (`WallTimer.answer`;
+`the_day_befores_marks_are_read`, `a_day_without_its_own_wake_logs_the_walls_pause_once`); marks
+before the block's start stay unread, as W-36's selection left them.  **Open for the host**: on
+the same day `tm now` at 13:30 prints `270m of 60m · paused` — the host's worked minutes read
+today's seam alone, so the meeting counts as worked (D61's own promise), on `b3c29a3` as here; and,
+by reading, the planner's past half (`PlanReq.todayRecord`) and `blocks_done` look the day up the
+same way.  2. *Why.*  "Today" is the calendar date to every reader and the wake's date to the
+replay's index.  3. *Cost.*  On such a day D61's pause nets nothing out of the minutes shown, and
+the past rows can miss the day's segments.  4. *Clears it.*  Every reader asking the replay for
+the day of `now` rather than for the calendar date — the planner's in the kernel, the host's
+through the seam.
+
+**Gap 3246 — a block begun the day before reads `0m of 60m`.**  1. *What.*  DRIVEN
+(`scratchpad/w37-t/drive_3241.sh`, both binaries): `^t4` started 23:00 and still running at 13:20 the next day, `tm
+now` prints `started 23:00 · 0m of 60m`, and `tm stop` at 14:30 says `stopped ^t4 after 0m · 60m
+left` and logs `remaining_min` 60 — fifteen and a half hours read as none.  2. *Why.*  The host's
+worked minutes read `active.started` (`HH:MM`) as today's clock time, a start in the future; gap
+3241's cause, left in the host's reader.  3. *Cost.*  A block that runs past midnight shows no
+work and records none.  4. *Clears it.*  The host reading the open block's instant from the replay,
+as D61 now does; or the owner deciding a block does not run past midnight.
+
+**Gap 3247 — every verb with a block running makes a second whole-tree kernel call.**  1. *What.*
+MEASURED in §3: on the three-year history tree, `tm now` with a block running takes 364 and 248 ms
+against `b3c29a3`'s 187 and 172 ms (medians of nine, two alternating passes).  2. *Why.*
+`ask_the_walls` sends the whole tree, the log section and the clock, and the walls form is
+answered through `runWithEmit`, which runs the log section and loads the plan once for the walls
+(`wallsEmit`) and again for the `ok` object it builds around them — every document echoed back,
+none of which the host reads.  The host cannot skip the call without reading the walls, which is
+what gap 3139 took away from it.  3. *Cost.*  +76 to +177 ms per verb and per TUI reload while a
+block runs, on a tree that size; inside T11's 1 s bound, so no gate fails and nothing is raised.
+4. *Clears it.*  The walls form answered without `run` (`ok.emit` alone), or asked inside the
+replay request every verb already makes — a kernel change either way, with the section's laws
+re-proved.
+
+**Gap 3248 — `planner_invariants`' batch floor failed once more (gaps 2935 and 3126's class).**
+1. *What.*  Workspace run 1 of this commit's three failed `the_kernel_hashes_the_day_the_fork_hashes`
+at `no batch row was digested in 311 cases`, and proptest appended `cc 618cae61…` to
+`tm/tests/planner_invariants.proptest-regressions` — **kept and committed** (D46), shrunk, like the
+three census seeds before it, to a one-item day with no wall.  2. *Why.*  A probability: the floor
+counts batch rows over a run's draws, and W-36 land's errands (gap 3126) made a batch likelier, not
+certain.  Nothing here touches batching — the kernel's side of this track is the replayed past
+(§1) and the walls section, and §7.5's batch rows are the future's — and runs 2 and 3 and the
+named-suite run on the same tree passed; the seed replays one case and cannot reproduce a floor
+that fires only after the last.  3. *Cost.*  A run of the acceptance can fail for want of a draw.
+4. *Clears it.*  The arm's owner (track H): the floor made a fixed day, as
+`a_batch_row_is_digested_on_every_run` already fixes one for the emitter, or dropped from the arm
+that draws.
+
+### Acceptance of this commit, capped
+
+* **`check.sh`, 14 checks, 17 lines, all ok** (10 min 31 s on the first run, the build resuming from
+  the tree the mutation runs left; 23.4 s on the final tree) — build; totality; axiom audit **5,680** theorems (5,645 at the first commit:
+  +35 — `WallTimer.lean`'s 28, `Boundary.lean`'s three, `PlannerWit.lean`'s four); `Negative.lean`
+  rejected; FFI 95; corpus 29/37 and 4/5; stage goals 6; citations 46,890, 0 unresolved; check 9
+  **461 new or changed, 461 rostered, 0 owed** (149 unfoldable, 90 witness fixtures, **32 pinned
+  by nothing** — was 31: `WallTimer.markOf`, whose result `Replay.IdleMark` has no constant and
+  which takes no argument of its type; 2 literal), 0 drifted pin sites (every edit above the pins
+  is line-neutral, the new witnesses sit at the modules' ends); parity P1-P57, next free P58; twins
+  3,223 bodies, 0 UNANSWERED on either key; reach 1,211 reachable, 1,206 exempt in 69 sections, 0
+  UNANSWERED — the first run's five NOT EXEMPT (`WallTimer.touchedAfter` and `pausedFor`, whose
+  callers call the compiler's specialisations of them; `secAt` and `atSec`, the witnesses'
+  spellings; `wallsWitnessRequest`) are three new dated sections with EXITs in
+  `reach-exempt.txt`, and the `## Boundary.lean` (220 of 436) and `## Lookahead.lean` (124 of 216,
+  `Look.wallIxOn` now reached) censuses are re-derived with dates; fields 15/15, inputs 33 of 37,
+  sent 28/28, written 34/28/3; replay 88 modules.
+* **Check 9's run, and what it found.**  `mutate.py --write` in a clone, 108 min over the 35
+  definitions this commit adds or changes: two FAILED — `wallsEmit := default` ALONE (only
+  `wallsEmit_refuses_without_the_replay`'s proof told it from the constant) and `WallTimer.isBrk :=
+  fun _ => false` SURVIVED (no witness had a break after the wall's pause).  Each got the witness it
+  lacked (`the_walls_form_is_answered_through_the_emit_section`,
+  `a_break_inside_the_meeting_leaves_the_pause_the_last_word`), and a second run (5 min) PINNED both,
+  with `answer` (changed for gap 3245) and `wallsWitnessRequest`.  `WallTimer.Refusal` gained
+  `Inhabited`, so `readReq`'s `default` exists and is PINNED by `readReq_is_run` instead of being
+  pinned by nothing.  The fixture the walls-form witness first used — a separate line def — would
+  have SURVIVED (a `start` nothing distinguishes from no line when the plan holds no wall), so it is
+  spelled inside the request.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): run 1 **1,608 passed / 1 failed / 11 ignored across 97 result lines** (load 1.0) —
+  `planner_invariants`' `the_kernel_hashes_the_day_the_fork_hashes` at its batch floor, `no batch row
+  was digested in 311 cases` (gap 3248 above); runs 2 and 3 **1,609 / 0 / 11 across 97** (load 2.2,
+  2.1).  `git status --porcelain` was identical before and after runs 2 and 3; run 1's one change is
+  the seed proptest appended, kept and committed (D46).  A preview run on the plant clone before the
+  call-count change: 1,608 / 1 / 11, the one failure `kernel_call_counts` (§3).
+* **Named suites, `--include-ignored`**: T5 33, door 23, `cli_switch_acceptance` 16, `cli_latency` 6
+  (18.6 s), `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 17, `planner_invariants` 24
+  (278 s), `cli_wall_pause` 8, `cli_wall_drawn` 6, `cli_wall_kernel` 8, `cli_tabbed_stop` 4,
+  `cli_lead_width` 4.
+* **Rust plants**, in a clone of the track's tree, `git status --porcelain` identical before and
+  after (19 entries) and every file restored byte for byte, each FAILED by the suite named:
+  `ask_the_walls` answering nothing to write, `kernel_bridge::text_docs` sending no document, and
+  `Ctx::append_line` dropping the timer marks (`cli_wall_pause` 4, 4 and 5 failed); `tm pause`'s
+  meeting never named (`cli_wall_kernel` 2); `estimate_unless_tabbed` propagating the refusal
+  (`cli_tabbed_stop` 2); `is_est_slot` back to the magnitude test (`cli_lead_width` 3) and the
+  unreadable slot not named (1).  The day-before fix is not planted: the binary before it is
+  driven (`drv3245mid.txt`: three pauses over three verbs), and the two tests that pin it assert
+  once.
+* **Every drive re-run on this commit's binary** (`scratchpad/w37-t/redrive.sh`): D65's, D66's and
+  gaps 3139, 3140, 3241 and 3245's transcripts are byte-identical to the ones this block quotes.
+* Every new `decide` probed at 8 GB with `timeout 120` before it was committed: the walls-form
+  witness 2.4 s at 1.1 GB (and a planted key-order swap decided false); the day-before witness
+  0.33 s at 0.6 GB (the old selection, planted, decided false); the break witness decided (a
+  planted `[]` decided false).  No memory bound or `maxHeartbeats` raised; the new `Boundary.lean`
+  and `PlannerWit.lean` witnesses carry the per-witness `set_option maxRecDepth` their files'
+  decided witnesses all carry (40000 and 400000; 90 and 299 of them at `b3c29a3`), and the
+  walls-form witness does not close without it — probed: `maximum recursion depth` at the default,
+  which is the kernel's JSON under `decide`, not a memory budget.  No predicate, assertion,
+  snapshot, fixture, latency band or corpus touched; the one pinned table this commit moves is
+  `kernel_call_counts`' (§3, with the column that sees why); no new dependency.

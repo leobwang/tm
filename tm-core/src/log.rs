@@ -1235,11 +1235,13 @@ pub enum IdleMark {
 /// **The idle spans of a block begun at `started`**, out of a day's
 /// [`DaySeam::idle_marks`] in file order: each `(from, until)`, `until` `None`
 /// while it is still open (a pause or interruption not yet lifted, the running
-/// break `running_break`). The ONE pairing of pause/unpause, interrupt/resume
-/// and break entries: [`Replay::idle_min_since`] sums it and `tm`'s D61 wall
-/// pause asks whether an instant lies in it (W-36 repair, README gap 3134 —
-/// `day.rs` carried a second copy of these arms, and the W-36 run had to add
-/// the `Pause(t) if t < started` arm to both).
+/// break `running_break`). The host's pairing of pause/unpause, interrupt/resume
+/// and break entries: [`Replay::idle_min_since`] sums it (W-36 repair, README
+/// gap 3134 — `day.rs` carried a second copy of these arms, and the W-36 run
+/// had to add the `Pause(t) if t < started` arm to both). **Since W-37 D61's
+/// wall pause is decided by the kernel** (README gap 3139), whose
+/// `WallTimer.idleSpans` is this function ported arm for arm — two definitions
+/// of one pairing again, across the wire, README gap 3243.
 ///
 /// **A pause stamped before `started` was ANOTHER block's** (W-36 track T,
 /// README gap 2920). `tm done` and `tm stop` on a paused block log no

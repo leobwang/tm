@@ -9628,5 +9628,81 @@ theorem a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it :
           SegKind.lost, some Note.paused)] := by
   decide
 
+
+/-! ### W-37 track T — D61 decided by the kernel (README gap 3139): the walls answer, end to end
+
+`WallTimer.answer` over the open Wednesday's own replay (`theOpenRequest.run`) and the one-meeting
+calendar (`Boundary.lookWallPlan`, `^g1` 12:50–13:50): the kernel reads the walls from the plan it
+loaded and the open block and the marks from its own replay, and answers the line to append.  The
+rule's cases are `WallTimer.the_rule_is_run`; these are the wire's. -/
+
+/-- The line D61 writes at `^g1`'s 12:50 on the §4.3 Monday, byte for byte (a `List Char` literal,
+AGENTS §5.10a: never a string literal decoded inside a decided run). -/
+def mondayPauseLine : List Char := ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','1','2',':','5','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','p','a','u','s','e','"',',','"','i','d','"',':','"','t','4','"','}']
+
+set_option maxRecDepth 400000 in
+/-- **One written mark, rendered**: the pause D61 writes at `^g1`'s 12:50 on the §4.3 Monday — the
+line is the log writer's bytes (`Log.emitLine`), and the entry names the event and the wall. -/
+theorem the_pause_is_rendered_as_the_log_writes_it :
+    (match WallTimer.entryJson Cal.chicago ['t','4'] [(((Cal.instantOf Cal.chicago 739865 770).sec,
+        (Cal.instantOf Cal.chicago 739865 830).sec), [['g','1']])]
+      (true, (Cal.instantOf Cal.chicago 739865 770).sec, (Cal.instantOf Cal.chicago 739865 830).sec) with
+      | .ok v =>
+        (match jget v "line" with | .ok (some (.str l)) => l == mondayPauseLine | _ => false) &&
+        (match jget v "ev" with | .ok (some (.str e)) => e == ['p','a','u','s','e'] | _ => false) &&
+        (match jget v "walls" with | .ok (some (.arr [.str w])) => w == ['g','1'] | _ => false)
+      | .error _ => false) = true := by
+  decide
+
+/-- `emit.walls` at an instant, no running break. -/
+def wallsAt (t : List Char) : JVal :=
+  .obj [(['w','a','l','l','s'], .obj [(['a','t'], .str t), (['b','r','e','a','k'], .null)])]
+
+/-- The pause the open Wednesday's wall writes, byte for byte. -/
+def wednesdayPauseLine : List Char := ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','9','T','1','2',':','5','0',':','0','0','-','0','5',':','0','0','"',',','"','e','v','"',':','"','p','a','u','s','e','"',',','"','i','d','"',':','"','m','1','"','}']
+
+set_option maxRecDepth 400000 in
+/-- **The open Wednesday at 13:20, inside `^g1`**, over the one-meeting index: the kernel answers ONE mark — `m1`'s pause at the
+wall's 12:50, in the log writer's bytes, naming `^g1` — and names `^g1` as the meeting the block is
+now paused for (what `tm pause` says when it resumes it, the D66 call on gap 3048). -/
+theorem the_open_wednesdays_wall_is_answered_on_its_index :
+    (match WallTimer.answer (wallsAt ['2','0','2','6','-','0','9','-','0','9','T','1','3',':','2','0',':','0','0','-','0','5',':','0','0']) (some Cal.chicago) (some theOpenRequest.run.answer)
+        (fun _ _ => Look.wednesdayWall) 0 (some 739867) (some 60) with
+      | .ok v =>
+        (match jget v "marks" with
+          | .ok (some (.arr [e])) =>
+            (match jget e "line" with | .ok (some (.str l)) => l == wednesdayPauseLine | _ => false) &&
+            (match jget e "walls" with | .ok (some (.arr [.str w])) => w == ['g','1'] | _ => false)
+          | _ => false) &&
+        (match jget v "pausedFor" with
+          | .ok (some p) => (match jget p "walls" with | .ok (some (.arr [.str w])) => w == ['g','1'] | _ => false)
+          | _ => false)
+      | .error _ => false) = true := by
+  decide
+
+/-- **…over the calendar the request loads** (`Boundary.lookWallPlan`): the same answer, because the
+loaded plan's wall index at Chicago and block length 60 IS `Look.wednesdayWall`
+(`the_look_wall_calendar_indexes_one_wednesday_wall`) — the load is decided once there and never
+beside the replay (the memory rule of AGENTS §5.10a). -/
+theorem the_open_wednesdays_wall_is_answered_by_the_kernel :
+    WallTimer.answer (wallsAt ['2','0','2','6','-','0','9','-','0','9','T','1','3',':','2','0',':','0','0','-','0','5',':','0','0']) (some Cal.chicago) (some theOpenRequest.run.answer)
+        (Look.wallIndex · · lookWallPlan.val) 0 (some 739867) (some 60)
+      = WallTimer.answer (wallsAt ['2','0','2','6','-','0','9','-','0','9','T','1','3',':','2','0',':','0','0','-','0','5',':','0','0']) (some Cal.chicago) (some theOpenRequest.run.answer)
+        (fun _ _ => Look.wednesdayWall) 0 (some 739867) (some 60) :=
+  WallTimer.answer_congr_ix _ _ _ _ _ _ _ _ the_look_wall_calendar_indexes_one_wednesday_wall
+
+set_option maxRecDepth 400000 in
+/-- **The D61 day at 14:00, after both marks were logged**: nothing more to write, and no meeting to
+name — the kernel's answer is empty (`WallTimer.after_one_wall_a_second_verb_writes_nothing_more`,
+run). -/
+theorem the_logged_wall_writes_nothing_more :
+    (match WallTimer.answer (wallsAt ['2','0','2','6','-','0','9','-','0','9','T','1','4',':','0','0',':','0','0','-','0','5',':','0','0']) (some Cal.chicago) (some theWallPausedRequest.run.answer)
+        (fun _ _ => Look.wednesdayWall) 0 (some 739867) (some 60) with
+      | .ok v =>
+        (match jget v "marks" with | .ok (some (.arr [])) => true | _ => false) &&
+        (match jget v "pausedFor" with | .ok (some .null) => true | _ => false)
+      | .error _ => false) = true := by
+  decide
+
 end PlannerWit
 end Tm

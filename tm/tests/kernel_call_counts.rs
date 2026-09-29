@@ -87,13 +87,21 @@ use cli_common::Tm;
 /// replay was always there and this column could not see it. When gap 275's
 /// one-call shape lands these three go back down by one, and that is the
 /// measurement that proves it landed.
+///
+/// **And, since W-37 track T (README gaps 3139 and 3247), the walls question
+/// D61's housekeeping asks while a block runs** — one call carrying the whole
+/// tree and a `log` section, so the kernel decides which timer marks the day's
+/// walls write. `pause` and `done` run with `^t4` open, so each is **one
+/// higher** than it was: 4 and 4 where the table read 3 and 3. The call is
+/// pinned in its own column too ([`expected_walls_calls`]), because it is a
+/// whole-tree load the `apply` column cannot see.
 fn expected_log_calls(verb: &str) -> u32 {
     match verb {
         "wake" => 3,
         "arrive" => 5,
         "start" => 3,
-        "pause" => 3,
-        "done" => 3,
+        "pause" => 4,
+        "done" => 4,
         "energy" => 5,
         "break" => 2,
         "drop" => 3,
@@ -206,6 +214,24 @@ fn expected_emit_calls(verb: &str) -> u32 {
     }
 }
 
+/// **The per-verb walls-call count** — the `emit` section's object form, the
+/// question D61's housekeeping asks the kernel while a block runs (W-37 track
+/// T, README gap 3139), pinned exactly from its first measurement.
+///
+/// It is a WHOLE-TREE load and a second whole-log replay (README **gap 3247**,
+/// where its cost is measured), but it sends no `cmds`, so the `apply` column
+/// cannot see it; this column is how a verb that starts or stops asking shows
+/// up by name. `pause` and `done` run with `^t4` open (after `start`); every
+/// other verb here runs with no block open, and asks nothing.
+fn expected_walls_calls(verb: &str) -> u32 {
+    match verb {
+        "pause" | "done" => 1,
+        "wake" | "arrive" | "start" | "energy" | "break" | "drop" | "undo" | "review day" | "log"
+        | "check" => 0,
+        other => panic!("`tm {other}` is not in the measured table"),
+    }
+}
+
 /// `tm/src/cli/ctx.rs`'s `TRACE_SCOPE_ENV`, spelled out rather than imported:
 /// `tm` is a **binary-only** package (its `Cargo.toml` declares `[[bin]]` and
 /// no `[lib]`), so an integration test cannot name anything inside it. The FFI
@@ -231,6 +257,9 @@ struct Counts {
     /// `emit` sections — the writer S2 added (**D16**): one per event a verb
     /// appends, because the kernel now renders every line the binary writes.
     emit: u32,
+    /// `walls` sections — the `emit` section's object form, D61's question
+    /// (W-37 track T): a whole-tree load and a log replay in one call.
+    walls: u32,
     /// Any other request shape reaching the FFI.
     other: u32,
     /// **Calls**, not sections: one per `kernel call:` line.
@@ -249,7 +278,7 @@ struct Counts {
 impl Counts {
     /// Sections of every kind — deliberately **not** the call count any more.
     fn sections(&self) -> u32 {
-        self.log + self.apply + self.capacity + self.emit + self.other
+        self.log + self.apply + self.capacity + self.emit + self.walls + self.other
     }
 }
 
@@ -283,6 +312,7 @@ fn traced(tm: &Tm, now: &str, args: &[&str]) -> (i32, Counts) {
                     "apply" => c.apply += 1,
                     "capacity" => c.capacity += 1,
                     "emit" => c.emit += 1,
+                    "walls" => c.walls += 1,
                     _ => c.other += 1,
                 }
             }
@@ -325,13 +355,13 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
     // FFI crossings; every other column is **sections** (W-14, gap 278).
     eprintln!("per-verb kernel sections (switched binary)");
     eprintln!(
-        "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>6} {:>8}  scopes",
-        "verb", "log", "emit", "apply", "capacity", "other", "calls", "replays"
+        "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>6} {:>6} {:>8}  scopes",
+        "verb", "log", "emit", "walls", "apply", "capacity", "other", "calls", "replays"
     );
     for (name, c) in &table {
         eprintln!(
-            "{:<12} {:>4} {:>5} {:>6} {:>9} {:>6} {:>6} {:>8}  {}",
-            name, c.log, c.emit, c.apply, c.capacity, c.other, c.calls, c.replays,
+            "{:<12} {:>4} {:>5} {:>6} {:>6} {:>9} {:>6} {:>6} {:>8}  {}",
+            name, c.log, c.emit, c.walls, c.apply, c.capacity, c.other, c.calls, c.replays,
             c.scopes.join(",")
         );
     }
@@ -369,6 +399,19 @@ fn every_verb_reads_the_log_through_the_kernel_after_the_switch() {
             c.emit, want,
             "`tm {name}` made {} kernel `emit` call(s), expected {want}",
             c.emit
+        );
+    }
+
+    // **The walls column, pinned exactly** (W-37 track T, README gaps 3139 and
+    // 3247): D61's question is a whole-tree load the `apply` column cannot see,
+    // so a verb that starts asking it — or stops — fails here by name.
+    for (name, c) in &table {
+        let want = expected_walls_calls(name);
+        assert_eq!(
+            c.walls, want,
+            "`tm {name}` asked the kernel about the day's walls {} time(s), expected {want} — \
+             each ask is a whole-tree load and a log replay (gap 3247)",
+            c.walls
         );
     }
 

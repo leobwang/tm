@@ -757,8 +757,10 @@ impl Ctx {
             // catches up: by the first verb that runs after the wall began
             // ([`super::day::stop_the_timer_at_walls`]). It writes the log,
             // `state.json` and — since the owner's D65 (W-37 track T) — the day
-            // file's journal line for each mark it logs, and it does not wait on
-            // the gate.
+            // file's journal line for each mark it logs. It does not wait on the
+            // gate because it needs none: the kernel decides it (README gap 3139)
+            // over the tree it loads, and a tree the kernel refuses gets no mark
+            // and no journal line.
             if super::day::stop_the_timer_at_walls(&mut cx)? {
                 cx.reload()?;
             }
@@ -1309,9 +1311,18 @@ impl Ctx {
     /// A refusal is an error and never a written line: an event whose values the reader would
     /// refuse is named rather than appended.
     pub fn append_entry(&self, entry: &LogEntry) -> Result<(), CliError> {
-        let mut line = kernel_log::render_one(entry).map_err(|why| {
+        let line = kernel_log::render_one(entry).map_err(|why| {
             CliError::msg(format!("the kernel could not write this log line: {why}"))
         })?;
+        self.append_line(&line)
+    }
+
+    /// **Append one line the kernel wrote** (D16) — the bytes as the kernel
+    /// rendered them, and a newline. The one appender of `.tm/log.jsonl`:
+    /// [`Ctx::append_entry`] renders through it, and so do the lines the
+    /// kernel decides itself (the walls' timer marks, README gap 3139).
+    pub fn append_line(&self, line: &str) -> Result<(), CliError> {
+        let mut line = line.to_string();
         line.push('\n');
         self.store.append_text(LOG_PATH, &line)?;
         Ok(())
@@ -1478,13 +1489,6 @@ impl Ctx {
 
     /// The walls of one date.
     pub fn walls_on(&self, date: NaiveDate) -> Vec<Wall> {
-        self.walls_with_items_on(date).into_iter().map(|(a, b, _)| (a, b)).collect()
-    }
-
-    /// [`Ctx::walls_on`], each wall with the item it is written on — the one
-    /// selection, widened rather than copied (AGENTS §5.3), so the notice the
-    /// owner's D65 prints names the walls D61 paused on.
-    pub fn walls_with_items_on(&self, date: NaiveDate) -> Vec<(DateTime<Tz>, DateTime<Tz>, Id)> {
         let mut out = Vec::new();
         for item in self.tree.iter() {
             if item.state.is_closed() {
@@ -1501,9 +1505,9 @@ impl Ctx {
             if start.date() > date || end.date() < date {
                 continue;
             }
-            out.push((self.instant(start), self.instant(end), id));
+            out.push((self.instant(start), self.instant(end)));
         }
-        out.sort_by_key(|(a, _, _)| *a);
+        out.sort_by_key(|(a, _)| *a);
         out
     }
 

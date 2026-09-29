@@ -951,6 +951,19 @@ pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
 /// a [`MemStore`] and asks about that ([`fix_ids_refusal`]). One definition of
 /// "does the kernel load this tree", over one trait (AGENTS §5.3).
 pub fn refusal_in(store: &dyn Store) -> Result<Option<KernelIssue>, CliError> {
+    let docs = text_docs(store)?;
+    match call(&json!({ "docs": docs, "cmds": [] })) {
+        Ok(_) => Ok(None),
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(Some(issue)),
+        Err(e) => Err(e),
+    }
+}
+
+/// **The tree as a read-only request's `docs`**: every plan file whose bytes are
+/// text, as [`refusal_in`] sends it (a file that is not UTF-8 is skipped, not
+/// fatal — `Store::read_tree` reports it). Shared by the questions that only
+/// read the tree — whether it loads, and what its walls write (README gap 3139).
+pub fn text_docs(store: &dyn Store) -> Result<Vec<Value>, CliError> {
     let mut docs = Vec::new();
     for rel in store.list_files()? {
         let text = match store.read_text(&rel) {
@@ -960,11 +973,7 @@ pub fn refusal_in(store: &dyn Store) -> Result<Option<KernelIssue>, CliError> {
         };
         docs.push(doc_json(&rel, &doc_lines(&text)));
     }
-    match call(&json!({ "docs": docs, "cmds": [] })) {
-        Ok(_) => Ok(None),
-        Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(Some(issue)),
-        Err(e) => Err(e),
-    }
+    Ok(docs)
 }
 
 /// **D35 for the one write path [`gate`] cannot gate** (README gap 675):
@@ -1527,6 +1536,16 @@ fn refusal(err: &Value) -> KernelIssue {
         ("itemCheck".into(), format!(
             "kernel refusal: itemCheck — the tree fails the kernel's item invariant ({f}){hint}; the kernel refuses a tree it cannot load whole{CHECK_HINT}"
         ))
+    } else if let Some(w) = err.get("emit").and_then(|e| e.get("walls")).and_then(Value::as_str) {
+        // W-37 (README gap 3139): the `emit` section's walls form, `WallTimer.Refusal`.
+        let why = match w {
+            "logAbsent" => "the request carried no replay (a `log` section asking for facts)",
+            "tzAbsent" => "the request carried no zone table",
+            "withCommands" => "the walls form was sent beside commands",
+            "badAt" | "badBreak" => "an instant is not a stamp the log's reader accepts",
+            _ => "see WallTimer.lean's `Refusal`",
+        };
+        (w.to_string(), format!("kernel refusal: {w} — the day's walls could not be read: {why}"))
     } else {
         put("error", err.to_string());
         ("unknown".into(), format!("kernel refusal (unrecognised shape): {err}"))

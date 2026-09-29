@@ -1262,7 +1262,7 @@ fn safe_title(summary: &str) -> String {
 fn unsafe_title_word(index: usize, word: &str, is_last: bool) -> bool {
     // The ci slot is always written, so the first title word lands in the
     // (empty) leading-estimate slot.
-    if index == 0 && crate::model::Dur::parse_no_days(word, 1).is_ok() {
+    if index == 0 && crate::grammar::is_est_slot(word) {
         return true;
     }
     if is_last && FLAGS.contains(&word) {

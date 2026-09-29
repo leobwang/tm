@@ -117,6 +117,45 @@ fn write_estimate(
         })
 }
 
+/// **`tm stop` and `tm done --partial` on a line that carries a tab** — the
+/// campaign's D66 call on README gap 3047. The estimate is written by the
+/// kernel's `est` op ([`write_estimate`]), and every edit op refuses a tabbed
+/// line by name (`tabbedLine`, gap 32: the kernel does not read a tab as a
+/// separator, so it will not write a slot it may have mis-tokenised). Until W-37
+/// that refusal failed the whole verb and left the block RUNNING — a stop that
+/// cannot stop is worse than an estimate left as it was. These two verbs now
+/// END THE BLOCK anyway and say on stderr that the estimate was not written;
+/// `tm extend`, whose whole job is the estimate, keeps refusing (it does not
+/// call this). `Ok(None)` is that case; any other refusal is the verb's.
+fn estimate_unless_tabbed(
+    ctx: &Ctx,
+    verb: &str,
+    id: &Id,
+    minutes: u64,
+) -> Result<Option<tm_core::grammar::ItemLine>, CliError> {
+    match write_estimate(ctx, verb, id, minutes) {
+        Ok(line) => Ok(Some(line)),
+        Err(CliError::Kernel(issue)) if issue.name == "tabbedLine" => {
+            if !super::kernel_bridge::capturing_kernel_stderr() {
+                eprintln!("tm: {}", estimate_not_written(id, minutes));
+            }
+            Ok(None)
+        }
+        Err(e) => Err(e),
+    }
+}
+
+/// The sentence [`estimate_unless_tabbed`] prints, and `--json` carries.
+fn estimate_not_written(id: &Id, minutes: u64) -> String {
+    format!(
+        "{}'s estimate was not written ({minutes}m left): its line carries a tab, which the \
+         kernel does not read as a separator (gap 32) — the block is ended; remove the tab and \
+         set it with `tm edit {} est=…`",
+        id.token(),
+        id.token()
+    )
+}
+
 /// Parse a duration argument (`20m`, `1b`, `1h30m`).
 fn dur(arg: &str, block_min: u32) -> Result<Dur, CliError> {
     Ok(Dur::parse(arg, block_min)?)
@@ -244,7 +283,9 @@ pub(crate) fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
 }
 
 /// **A calendar wall that starts while a block is running STOPS THE TIMER** —
-/// the owner's **D61** (README gaps 2805 and 2932), parity **P53**.
+/// the owner's **D61** (README gaps 2805 and 2932), parity **P53** — **decided
+/// by the kernel** since W-37 (README gap **3139**), and **said** since the
+/// owner's **D65** (parity **P56**).
 ///
 /// §9's Interruption row makes an ad-hoc wall pause the Active block, and D57
 /// (3) made a wall on `now` do the same in the kernel — but only as a state of
@@ -257,111 +298,198 @@ pub(crate) fn worked_min(ctx: &Ctx, started: DateTime<chrono_tz::Tz>) -> u32 {
 /// `pause{id}` stamped at the wall's start and an `unpause{id}` stamped at its
 /// end — so the replay's open block banks the stretch before the meeting and
 /// runs again from its end (`Planner.a_logged_wall_pause_is_no_worked_time`),
-/// the host's worked minutes net the pair out like any pause, and the drawn
-/// history is a Block row up to the wall, a Pause row across it, and the open
-/// row from its end.  The span is the wall's BLOCKED span — its run-up buffer
-/// included — the one [`Ctx::walls_today`] reads (fork `Ctx::walls_on`, the
-/// kernel's `Look.wallsOn`) and the one P47 pauses on; overlapping walls are
-/// one span.
+/// the host's worked minutes net the pair out like any pause, and the day
+/// draws the meeting as its Wall row alone (D65, `Planner.a_paused_row_lies_under_no_wall`).
+///
+/// **Who decides — the kernel, over its own reading of the calendar.** Until
+/// W-37 this function read the day's walls through `Ctx::walls_on` (fork
+/// `Ctx::walls_on`) and ran the rule itself: a second reader of the walls
+/// beside the kernel's `Look.wallsOn`, deciding one day (AGENTS §5.3), and a
+/// rule no Lean statement named. Now it asks: one request — the tree, the zone,
+/// the log section the capacity request sends (the process checkpoint and the
+/// tail, D24's seam), `now`, `blockMin`, and the `emit` section's walls form
+/// with the instant and the running break `.tm/state.json` holds (the one fact
+/// the log does not carry) — and the kernel answers the lines to append, in
+/// order, each with its span and walls (`WallTimer.writes`, whose laws are
+/// `WallTimer.a_wall_that_starts_while_a_block_runs_stops_its_timer` and the
+/// four ways it writes nothing), rendered by its one writer (D16). This
+/// function appends exactly those bytes; it reads no wall.
 ///
 /// **When.** No process runs continuously, so the pause is written the way
 /// §6.3's automatic close catches up: by the housekeeping of the first verb
-/// that runs after the wall BEGAN (every verb that loads with housekeeping —
-/// `tm now` and `tm plan` included), and the unpause by the first one after it
-/// ENDED; a verb run after the wall ended writes both, in order.  While the
-/// meeting runs the block is paused in `.tm/state.json` too, exactly as `tm
-/// pause` would leave it, so every surface agrees that the timer is stopped.
+/// that runs after the wall BEGAN, and the unpause by the first one after it
+/// ENDED; a verb run after the wall ended writes both, in order. The call is
+/// made only while a block is open — with none there is no timer to stop.
 ///
-/// **What it never overrides.** A wall stops a timer that was RUNNING at the
-/// wall's start, by the log: a pause, interruption or break (the running break
-/// included) covering that instant means the timer was already stopped and the
-/// wall writes nothing; and the automatic unpause is written only while the
-/// wall's own pause is still the last word on the timer — a user who ran `tm
-/// pause` during the meeting (skipped it, and kept working) keeps the timer
-/// they set.  A block started inside a wall is not paused by it: the wall did
-/// not start while the block ran.
+/// **Said (D65).** A pause the user did not type is announced: one line on
+/// stderr naming the block, the wall and the span (`paused ^t4 for Meeting w/
+/// host 12:50–13:50`), and each written mark gets the day file's journal line
+/// a typed `tm pause` writes, at the mark's own time.
 ///
-/// **The costs the owner accepted** (D61): the log gains entries the user did
-/// not type, and a user who skipped the meeting without saying so is
-/// undercounted until they correct it (`tm pause` during the meeting).
+/// **A tree the kernel will not load** cannot be asked about its walls: the
+/// refusal is printed by name and nothing is written — the automatic close's
+/// rule — and the verb goes on. A kernel fault fails the verb.
 ///
 /// Returns whether it wrote anything, so the caller reloads the replay.
 pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
     let Some(active) = ctx.state.active.clone() else {
         return Ok(false);
     };
-    let started = ctx.at(active.started);
-    let now = ctx.now_tz;
-    let mut marks: Vec<log::IdleMark> = ctx
-        .replay
-        .seam(ctx.today)
-        .map(|s| s.idle_marks.clone())
-        .unwrap_or_default();
     let running_break = ctx
         .state
         .break_
         .as_ref()
         .and_then(|b| b.started)
         .map(|s| ctx.at(s).fixed_offset());
-    let id = active.id.to_string();
-    let mut paused = active.paused;
-    let mut wrote = false;
-    let today = ctx.today;
-    for (lo_tz, hi_tz, walls) in merged_spans(ctx.walls_with_items_on(today)) {
-        if lo_tz <= started || lo_tz > now {
-            continue;
-        }
-        let (lo, hi) = (lo_tz.fixed_offset(), hi_tz.fixed_offset());
-        if !marks.contains(&log::IdleMark::Pause(lo)) {
-            if timer_stopped_at(&marks, started.fixed_offset(), lo, running_break) || touched_after(&marks, lo) {
-                continue;
+    let marks = match ask_the_walls(ctx, running_break) {
+        Ok(answer) => answer.marks,
+        Err(CliError::Kernel(issue)) if !issue.is_fault() => {
+            if !super::kernel_bridge::capturing_kernel_stderr() {
+                eprintln!(
+                    "tm: the meeting pause (D61) was not checked, so nothing was written; it is \
+                     checked again on the next command. {}",
+                    issue.message
+                );
             }
-            ctx.append_entry(&log::LogEntry::new(lo, Event::Pause { id: id.clone() }))?;
-            marks.push(log::IdleMark::Pause(lo));
-            paused = true;
-            wrote = true;
-            // **D65: the pause is SAID** — the day file's journal line a typed
-            // `tm pause` writes, at the pause's own time, and one line naming
-            // the block and the wall.
-            super::dayfile::note(ctx, today, lo_tz.time(), &timer_note(true, &active.id))?;
-            say_wall_pause(ctx, &active.id, &walls, lo_tz, hi_tz);
+            return Ok(false);
         }
-        if hi <= ctx.now
-            && !marks.contains(&log::IdleMark::Unpause(hi))
-            && last_timer_mark(&marks) == Some(log::IdleMark::Pause(lo))
-        {
-            ctx.append_entry(&log::LogEntry::new(hi, Event::Unpause { id: id.clone() }))?;
-            marks.push(log::IdleMark::Unpause(hi));
-            paused = false;
-            wrote = true;
-            super::dayfile::note(ctx, today, hi_tz.time(), &timer_note(false, &active.id))?;
+        Err(e) => return Err(e),
+    };
+    let Some(last) = marks.last() else {
+        return Ok(false);
+    };
+    let paused = last.pause;
+    let today = ctx.today;
+    for m in &marks {
+        ctx.append_line(&m.line)?;
+        super::dayfile::note(ctx, today, m.at.time(), &timer_note(m.pause, &active.id))?;
+        if m.pause {
+            say_wall_pause(ctx, &active.id, &m.walls, m.from, m.to);
         }
     }
-    if wrote {
-        if let Some(a) = ctx.state.active.as_mut() {
-            a.paused = paused;
-        }
-        ctx.save_state()?;
+    if let Some(a) = ctx.state.active.as_mut() {
+        a.paused = paused;
     }
-    Ok(wrote)
+    ctx.save_state()?;
+    Ok(true)
 }
 
-/// The day's walls as blocked spans, overlapping or touching spans joined,
-/// each with the items of the walls it joined.
-fn merged_spans(mut walls: Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Id)>) -> Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Vec<Id>)> {
-    walls.retain(|(a, b, _)| a < b);
-    walls.sort_by_key(|(a, _, _)| *a);
-    let mut out: Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>, Vec<Id>)> = Vec::new();
-    for (a, b, id) in walls {
-        match out.last_mut() {
-            Some(last) if a <= last.1 => {
-                last.1 = last.1.max(b);
-                last.2.push(id);
-            }
-            _ => out.push((a, b, vec![id])),
+/// One mark the kernel says the day's walls write (the `emit` walls form's
+/// answer): whether it is the pause or the unpause, its stamp and the span it
+/// belongs to (local), the walls the span joins, and the exact line to append.
+struct WallMark {
+    pause: bool,
+    at: DateTime<chrono_tz::Tz>,
+    from: DateTime<chrono_tz::Tz>,
+    to: DateTime<chrono_tz::Tz>,
+    walls: Vec<Id>,
+    line: String,
+}
+
+/// A joined wall span, local, and the walls it joins.
+struct WallSpan {
+    from: DateTime<chrono_tz::Tz>,
+    to: DateTime<chrono_tz::Tz>,
+    walls: Vec<Id>,
+}
+
+/// **What the kernel answers about the day's walls**: the marks to append, in
+/// order, and the meeting the running block is paused for now, if its pause is
+/// still the last word on the timer (`WallTimer.pausedFor`) — what `tm pause`
+/// names when it resumes the timer inside a meeting (D66, README gap 3048).
+struct WallsAnswer {
+    marks: Vec<WallMark>,
+    paused_for: Option<WallSpan>,
+}
+
+/// **Ask the kernel what the day's walls write** (README gap 3139): the request
+/// [`stop_the_timer_at_walls`] describes, and its answer decoded — every key
+/// named, a missing or mistyped one a named fault and never a guess.
+fn ask_the_walls(
+    ctx: &Ctx,
+    running_break: Option<DateTime<FixedOffset>>,
+) -> Result<WallsAnswer, CliError> {
+    let docs = super::kernel_bridge::text_docs(&ctx.store)?;
+    let cache = ctx.store.root().join(".tm/cache/replay");
+    let tz_wire = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
+    let log = super::kernel_log::capacity_log_section(
+        ctx.store.root(),
+        &Ctx::log_bytes(&ctx.store)?,
+        &tz_wire,
+        super::kernel_log::day_of(ctx.today),
+    )
+    .map_err(super::ctx::genesis_error)?;
+    let rest = serde_json::json!({
+        "docs": docs,
+        "now": ctx.today.to_string(),
+        "blockMin": ctx.block_min(),
+        "tz": tz_wire,
+        "emit": {"walls": {
+            "at": log::fmt_timestamp(&ctx.now_tz.fixed_offset()),
+            "break": running_break.map(|b| log::fmt_timestamp(&b)),
+        }},
+    })
+    .to_string();
+    // The `log` section is spliced as text, as the capacity request splices it: its checkpoint
+    // is read in build order (`Seal.readCkptFields`), which a `serde_json::Value` would sort.
+    let request = format!("{{\"log\":{log},{}", &rest[1..]);
+    let (resp, stderr) = super::kernel_bridge::call_text(&request)?;
+    let fault = |what: &str| {
+        CliError::Kernel(super::kernel_bridge::fault_issue(
+            &format!("walls response: {what}"),
+            &stderr,
+        ))
+    };
+    let entries = resp["ok"]["emit"]["marks"]
+        .as_array()
+        .ok_or_else(|| fault("no `ok.emit.marks` array"))?;
+    let tz = ctx.cfg.tz;
+    let stamp = |v: &serde_json::Value, key: &str| -> Result<DateTime<chrono_tz::Tz>, CliError> {
+        v[key]
+            .as_str()
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|t| t.with_timezone(&tz))
+            .ok_or_else(|| fault(&format!("an entry's `{key}` is not a stamp")))
+    };
+    let walls_of = |v: &serde_json::Value| -> Result<Vec<Id>, CliError> {
+        v["walls"]
+            .as_array()
+            .ok_or_else(|| fault("a `walls` is not an array"))?
+            .iter()
+            .map(|w| w.as_str().map(Id::new).ok_or_else(|| fault("a wall is not an id")))
+            .collect()
+    };
+    let mut out = Vec::with_capacity(entries.len());
+    for e in entries {
+        let pause = match e["ev"].as_str() {
+            Some("pause") => true,
+            Some("unpause") => false,
+            _ => return Err(fault("an entry's `ev` is neither pause nor unpause")),
+        };
+        if e["id"].as_str() != ctx.state.active.as_ref().map(|a| a.id.as_str()) {
+            return Err(fault("an entry names a block that is not the running one"));
         }
+        let walls = walls_of(e)?;
+        let line = e["line"]
+            .as_str()
+            .ok_or_else(|| fault("an entry's `line` is not a string"))?
+            .to_string();
+        out.push(WallMark {
+            pause,
+            at: stamp(e, "at")?,
+            from: stamp(e, "from")?,
+            to: stamp(e, "to")?,
+            walls,
+            line,
+        });
     }
-    out
+    let pf = &resp["ok"]["emit"]["pausedFor"];
+    let paused_for = if pf.is_null() {
+        None
+    } else {
+        Some(WallSpan { from: stamp(pf, "from")?, to: stamp(pf, "to")?, walls: walls_of(pf)? })
+    };
+    Ok(WallsAnswer { marks: out, paused_for })
 }
 
 /// **The day file's journal line of a timer mark** — `pause ^id` or `unpause
@@ -391,11 +519,23 @@ fn say_wall_pause(
     eprintln!("tm: {}", wall_pause_line(ctx, block, walls, lo, hi));
 }
 
-/// [`say_wall_pause`]'s text: the wall's title (its key when the tree holds no
-/// such item), several walls joined by `, `, and the span in local `HH:MM`.
+/// [`say_wall_pause`]'s text: `paused ^t4 for` and [`meeting_text`].
 fn wall_pause_line(
     ctx: &Ctx,
     block: &Id,
+    walls: &[Id],
+    lo: DateTime<chrono_tz::Tz>,
+    hi: DateTime<chrono_tz::Tz>,
+) -> String {
+    format!("paused {} for {}", block.token(), meeting_text(ctx, walls, lo, hi))
+}
+
+/// **A meeting, as the user reads it**: the wall's title (its key when the tree
+/// holds no such item), several walls a joined span holds joined by `, `, and
+/// the span in local `HH:MM` — `Meeting w/ host 12:50–13:50`. The one spelling
+/// of a meeting in D65's notice and D66's `tm pause` message.
+fn meeting_text(
+    ctx: &Ctx,
     walls: &[Id],
     lo: DateTime<chrono_tz::Tz>,
     hi: DateTime<chrono_tz::Tz>,
@@ -404,50 +544,7 @@ fn wall_pause_line(
         .iter()
         .map(|w| ctx.tree.get(w).map_or_else(|| w.to_string(), |i| i.title.clone()))
         .collect();
-    format!(
-        "paused {} for {} {}–{}",
-        block.token(),
-        titles.join(", "),
-        hhmm(lo),
-        hhmm(hi)
-    )
-}
-
-/// Whether the log (and the break `state.json` still holds running) had the
-/// running block's timer stopped at `t`: an open pause or interruption, or a
-/// break, covering it — [`log::idle_spans`], the pairing [`log::Replay::idle_min_since`] sums, asked at
-/// one instant, and like it blind to a pause stamped before the block
-/// `started` (another block's, left open by a `tm done` on a paused block).
-fn timer_stopped_at(
-    marks: &[log::IdleMark],
-    started: DateTime<FixedOffset>,
-    t: DateTime<FixedOffset>,
-    running_break: Option<DateTime<FixedOffset>>,
-) -> bool {
-    let spans = log::idle_spans(marks, started, running_break);
-    spans.iter().any(|(a, b)| *a <= t && b.is_none_or(|b| t < b))
-}
-
-/// Whether anything touched the timer after `t` — a mark stamped later than
-/// the wall's start means the user has been deciding what the timer did since.
-fn touched_after(marks: &[log::IdleMark], t: DateTime<FixedOffset>) -> bool {
-    marks.iter().any(|m| match *m {
-        log::IdleMark::Pause(a)
-        | log::IdleMark::Interrupt(a)
-        | log::IdleMark::Unpause(a)
-        | log::IdleMark::Resume(a) => a > t,
-        log::IdleMark::Break { t: a, .. } => a > t,
-    })
-}
-
-/// The last mark that set the timer — a pause, unpause, interruption or
-/// resume — in file order.
-fn last_timer_mark(marks: &[log::IdleMark]) -> Option<log::IdleMark> {
-    marks
-        .iter()
-        .rev()
-        .find(|m| !matches!(m, log::IdleMark::Break { .. }))
-        .copied()
+    format!("{} {}–{}", titles.join(", "), hhmm(lo), hhmm(hi))
 }
 
 /// `tm wake --json`.
@@ -887,6 +984,10 @@ pub struct DoneOut {
     pub state: String,
     /// The remaining estimate written back, when partial.
     pub remaining_min: Option<u32>,
+    /// Why a partial's remaining estimate was NOT written back, when it was not
+    /// (a tabbed line, D66's call on README gap 3047). Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate_not_written: Option<String>,
 }
 
 /// `tm done [--partial] [^id]`.
@@ -939,6 +1040,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
     // line, a value past the host's width) leaves nothing written at all.
     let mut remaining_min = None;
     let mut written = None;
+    let mut not_written = None;
     if args.partial && item.is_some() && !stateless {
         let left = ctx
             .tree
@@ -946,7 +1048,8 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
             .unwrap_or(est_min)
             .saturating_sub(actual_min)
             .max(MIN_REMAINING_MIN);
-        written = Some(write_estimate(&ctx, "done", &id, u64::from(left))?);
+        written = estimate_unless_tabbed(&ctx, "done", &id, u64::from(left))?;
+        not_written = written.is_none().then(|| estimate_not_written(&id, u64::from(left)));
         remaining_min = Some(left);
     }
     end_break(&mut ctx)?;
@@ -1018,6 +1121,7 @@ pub fn done(g: &Globals, args: &super::DoneArgs) -> Result<i32, CliError> {
         partial: args.partial,
         state,
         remaining_min,
+        estimate_not_written: not_written,
     };
     emit(
         ctx.json,
@@ -1106,6 +1210,10 @@ pub struct StopOut {
     pub worked_min: u32,
     /// The remaining estimate written back.
     pub remaining_min: u32,
+    /// Why the remaining estimate was NOT written back, when it was not (a
+    /// tabbed line, D66's call on README gap 3047). Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate_not_written: Option<String>,
 }
 
 /// `tm stop`.
@@ -1129,8 +1237,17 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
     // **D62**: the remainder is written by the kernel's `est` op FIRST, so a
     // refusal leaves nothing written — not the break's end, not the box. The
     // box moves on the line the kernel returned (`write_estimate`).
+    // A tabbed line (D66, gap 3047): the estimate is not written, the block is
+    // ended all the same, and the box moves on the line as it stands.
+    let mut not_written = None;
     let written = match ctx.tree.get(&id).filter(|i| !is_stateless(i)) {
-        Some(_) => Some(write_estimate(&ctx, "stop", &id, u64::from(remaining))?),
+        Some(_) => match estimate_unless_tabbed(&ctx, "stop", &id, u64::from(remaining))? {
+            Some(line) => Some(line),
+            None => {
+                not_written = Some(estimate_not_written(&id, u64::from(remaining)));
+                Some(ctx.line(&id)?)
+            }
+        },
         None => None,
     };
     // §11's break integrity: a break still running when the block stops is
@@ -1158,6 +1275,7 @@ pub fn stop(g: &Globals) -> Result<i32, CliError> {
         id: id.clone(),
         worked_min: worked,
         remaining_min: remaining,
+        estimate_not_written: not_written,
     };
     emit(
         ctx.json,
@@ -1402,6 +1520,22 @@ pub struct PauseOut {
     pub id: Id,
     /// Whether the timer is now paused.
     pub paused: bool,
+    /// When this resumed a timer a calendar wall had stopped (D61), the meeting
+    /// it was stopped for — the campaign's D66 call on README gap 3048. Absent
+    /// otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub meeting: Option<MeetingOut>,
+}
+
+/// The meeting a resumed timer had been stopped for.
+#[derive(Debug, Serialize)]
+pub struct MeetingOut {
+    /// The walls the meeting's span joins.
+    pub walls: Vec<Id>,
+    /// `HH:MM`.
+    pub from: String,
+    /// `HH:MM`.
+    pub to: String,
 }
 
 /// `tm pause` — toggles the running block's timer.
@@ -1411,6 +1545,16 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
         return Err(CliError::msg("nothing is running"));
     };
     super::kernel_bridge::gate(&ctx, "pause")?;
+    // **D66 (the campaign's call on README gap 3048): `tm pause` inside a meeting keeps
+    // RESUMING** — it is the correction for a skipped meeting — **and says so**: the kernel,
+    // which decided the wall's pause, names the meeting the block is paused for now
+    // (`WallTimer.pausedFor`). Asked only when this press resumes; a pause needs no name.
+    let meeting = if active.paused {
+        let running_break = ctx.state.break_.as_ref().and_then(|b| b.started).map(|s| ctx.at(s).fixed_offset());
+        ask_the_walls(&ctx, running_break)?.paused_for
+    } else {
+        None
+    };
     let rec = Recorder::start(&ctx, "pause")?;
     active.paused = !active.paused;
     let paused = active.paused;
@@ -1426,18 +1570,25 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
     day_note(&ctx, timer_note(paused, &id))?;
     rec.finish(&ctx, if paused { "pause" } else { "unpause" })?;
 
+    let said = meeting.as_ref().map(|m| meeting_text(&ctx, &m.walls, m.from, m.to));
     let out = PauseOut {
         id: id.clone(),
         paused,
+        meeting: meeting.as_ref().map(|m| MeetingOut {
+            walls: m.walls.clone(),
+            from: hhmm(m.from),
+            to: hhmm(m.to),
+        }),
     };
     emit(
         ctx.json,
-        || {
-            format!(
+        || match &said {
+            Some(m) => format!("resumed {} (it was paused for {m})", out.id.token()),
+            None => format!(
                 "{} {}",
                 if paused { "paused" } else { "resumed" },
                 out.id.token()
-            )
+            ),
         },
         &out,
     )?;

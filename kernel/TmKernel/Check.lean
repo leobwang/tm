@@ -7360,3 +7360,44 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_meeting_is_drawn_as_a_paused_lost_row_is_refuted
 #print axioms Tm.PlannerWit.the_meeting_is_drawn_as_the_wall_alone
 #print axioms Tm.PlannerWit.a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK T (worktree `w37-t`) -- README gap 3139: D61 decided
+-- by the kernel (`WallTimer.lean`, the `emit` section's walls form) and the campaign's D66 call on
+-- gap 3048 (`WallTimer.pausedFor`, the meeting `tm pause` names when it resumes).
+-- =====================================================================
+#print axioms Tm.WallTimer.inst_le
+#print axioms Tm.WallTimer.inst_lt
+#print axioms Tm.WallTimer.hasUnpause_none_of_untouched
+#print axioms Tm.WallTimer.lastIsPauseAt_append
+#print axioms Tm.WallTimer.step_of_running
+#print axioms Tm.WallTimer.a_wall_that_starts_while_a_block_runs_stops_its_timer
+#print axioms Tm.WallTimer.a_block_started_inside_a_wall_is_not_paused_by_it
+#print axioms Tm.WallTimer.a_wall_that_has_not_begun_writes_nothing
+#print axioms Tm.WallTimer.a_timer_already_stopped_at_the_wall_is_left_alone
+#print axioms Tm.WallTimer.a_timer_mark_after_the_walls_start_stands
+#print axioms Tm.WallTimer.the_walls_end_restarts_the_timer_it_stopped
+#print axioms Tm.WallTimer.a_user_who_resumed_during_the_meeting_keeps_their_timer
+#print axioms Tm.WallTimer.step_written
+#print axioms Tm.WallTimer.mem_writes
+#print axioms Tm.WallTimer.after_one_wall_a_second_verb_writes_nothing_more
+#print axioms Tm.WallTimer.pausedFor_is_a_meeting_the_timer_is_paused_for
+#print axioms Tm.WallTimer.answer_without_an_open_block
+#print axioms Tm.WallTimer.answer_refuses_commands
+#print axioms Tm.WallTimer.answer_refuses_without_the_replay
+#print axioms Tm.WallTimer.answer_congr_ix
+#print axioms Tm.WallTimer.the_walls_refusals_spell_themselves
+#print axioms Tm.WallTimer.the_rule_is_run
+#print axioms Tm.WallTimer.pausedFor_is_run
+#print axioms Tm.WallTimer.spansOf_is_run
+#print axioms Tm.WallTimer.readReq_is_run
+#print axioms Tm.WallTimer.the_walls_refusal_is_the_err_emit_shape
+#print axioms Tm.readEmitSection_of_the_walls_form
+#print axioms Tm.wallsEmit_refuses_without_the_replay
+#print axioms Tm.PlannerWit.the_pause_is_rendered_as_the_log_writes_it
+#print axioms Tm.PlannerWit.the_open_wednesdays_wall_is_answered_on_its_index
+#print axioms Tm.PlannerWit.the_open_wednesdays_wall_is_answered_by_the_kernel
+#print axioms Tm.PlannerWit.the_logged_wall_writes_nothing_more
+#print axioms Tm.the_walls_form_is_answered_through_the_emit_section
+#print axioms Tm.WallTimer.the_day_befores_marks_are_read
+#print axioms Tm.WallTimer.a_break_inside_the_meeting_leaves_the_pause_the_last_word
