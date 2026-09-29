@@ -119,6 +119,49 @@ pub fn frozen_days() -> &'static BTreeMap<String, Value> {
     })
 }
 
+/// **`plan-basic` planned every ten minutes, frozen** (W-38, README gaps 3200 and 3282):
+/// `planner_w37_rows.rs`' arm — §4.3's own tree, `^a3` "Pick up package" a dated window
+/// task due today, planned at every ten minutes from both of the fixture suite's states, each
+/// day the fork's as the shipped binary plans it (D53) — compared the kernel with the LIVE
+/// fork, in a region R3 deletes. These are those days, by value: one line per `(state,
+/// instant)`, `{name, state, now, hash, day}`, the state and the instant carried with the day
+/// so the arm that survives R3 plans exactly what was frozen and needs no definition of either.
+pub const FROZEN_BASIC: &str = "fork-4748911-planner-basic-days.jsonl";
+
+/// Where it lives.
+pub fn frozen_basic_path() -> std::path::PathBuf {
+    fork::fixtures_dir().join(FROZEN_BASIC)
+}
+
+/// The frozen `plan-basic` days, in file order; a name carried twice FAILS.
+pub fn frozen_basic_days() -> Vec<Value> {
+    let path = frozen_basic_path();
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e} — see support/forkday.rs' FROZEN_BASIC", path.display()));
+    let mut names = std::collections::BTreeSet::new();
+    text.lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).expect("a frozen plan-basic day is JSON");
+            let name = v["name"].as_str().expect("a frozen day names its input").to_string();
+            assert!(names.insert(name.clone()), "two frozen plan-basic days named `{name}`");
+            v
+        })
+        .collect()
+}
+
+/// One line of the frozen `plan-basic` file: the state and the instant planned at, and the day.
+pub fn basic_line(name: &str, state: &tm_core::store::RuntimeState, now: DateTime<Tz>, day: &DayPlan) -> String {
+    let row = serde_json::json!({
+        "name": name,
+        "state": serde_json::to_value(state).expect("a state serialises"),
+        "now": now.to_rfc3339(),
+        "hash": day.hash(),
+        "day": serde_json::to_value(day).expect("a day serialises"),
+    });
+    serde_json::to_string(&row).expect("a frozen line serialises") + "\n"
+}
+
 /// One line of the frozen file.
 pub fn frozen_line(name: &str, day: &DayPlan) -> String {
     let row = serde_json::json!({
@@ -233,20 +276,13 @@ pub fn compare_day_with_fork(
         if row["kind"] == "routine" && row["flags"]["hot"] == true {
             t.hot_marks_435 += 1;
         }
-        let mut row = row.clone();
-        if row["flags"]["underused"] == true
-            && row["flags"]["note"]
-                .as_str()
-                .and_then(|n| n.strip_prefix(&format!("↓ slot {}, item ", row["energy"])))
-                .is_some_and(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()))
-        {
-            let mut bare = row.clone();
-            bare["flags"]["note"] = Value::Null;
-            if kernel_rows.contains(&bare) {
+        let row = match underused_note_left_to_the_renderer(row, kernel_rows) {
+            Some(bare) => {
                 t.underused_notes += 1;
-                row = bare;
+                bare
             }
-        }
+            None => row.clone(),
+        };
         expected.push(row);
     }
     t.break_rows_551 += breaks;
@@ -271,6 +307,26 @@ pub fn compare_day_with_fork(
         findings.push(format!("{name}: hash kernel {} fork {fork_hash}", k.hash));
     }
     findings
+}
+
+/// **The one row class the kernel's day may differ by** (the module header): a fork
+/// row marked `underused` whose note is `↓ slot <its energy>, item <n>` and whose
+/// kernel twin — the same row with no note — is among `kernel_rows`. `Some(twin)`
+/// for such a row, which the caller compares in its place; `None` otherwise. One
+/// definition, for the day comparison here and the class comparison's rows after a
+/// running break (`forkclass::compare_line`, W-38).
+pub fn underused_note_left_to_the_renderer(row: &Value, kernel_rows: &[Value]) -> Option<Value> {
+    let noted = row["flags"]["underused"] == true
+        && row["flags"]["note"]
+            .as_str()
+            .and_then(|n| n.strip_prefix(&format!("↓ slot {}, item ", row["energy"])))
+            .is_some_and(|c| !c.is_empty() && c.bytes().all(|b| b.is_ascii_digit()));
+    if !noted {
+        return None;
+    }
+    let mut bare = row.clone();
+    bare["flags"]["note"] = Value::Null;
+    kernel_rows.contains(&bare).then_some(bare)
 }
 
 /// Panic unless `findings` is empty, quoting every one.
@@ -325,18 +381,62 @@ pub fn fork_scan(source: &str) -> ForkScan {
     // trailing one too, which the old `starts_with("//")` filter read as code --
     // and `blank_strings` empties every string literal, so this file's own
     // NEEDLES line is not a reference to the fork and needs no exemption.
+    // **And what the region DEFINES** (W-38, README gap 3472): a name the region declares at the
+    // top level — a free `fn`, a `static`, a `const`, a type — is deleted with it, so code outside
+    // that names one would not build after R3. The needles above could not see that shape: W-38's
+    // simulation of the deletion found a test outside `planner_invariants.rs`' region reading
+    // the kernel's §7 answers through the region's own `kernel_prios`. A property of the file,
+    // per file: the region's own top-level names, read off its code at column zero.
+    let region_names: Vec<String> = match (at_line_start(BEGIN), at_line_start(END)) {
+        (Some(i), Some(j)) => srcwalk::code_lines(&source[i..j])
+            .into_iter()
+            .filter_map(|(_, code)| top_level_name(&code))
+            .collect(),
+        _ => Vec::new(),
+    };
     let escapes = srcwalk::code_lines(&outside)
         .into_iter()
         .map(|(i, code)| (i - 1, blank_strings(&code)))
         .flat_map(|(i, l)| {
-            NEEDLES
+            let mut found: Vec<String> = NEEDLES
                 .iter()
                 .filter(|n| l.contains(**n))
                 .map(|n| format!("line {i}: `{n}` in {}", l.trim()))
-                .collect::<Vec<_>>()
+                .collect();
+            found.extend(
+                region_names
+                    .iter()
+                    .filter(|n| names_word(&l, n))
+                    .map(|n| format!("line {i}: `{n}`, which the region defines, in {}", l.trim())),
+            );
+            found
         })
         .collect();
     ForkScan { region_bytes, escapes, deleted }
+}
+
+/// The name a column-zero code line DECLARES — `fn`, `static`, `const`, `struct`, `enum`,
+/// `type` or `trait`, public or not — or `None`. The keyword must begin the line, so an
+/// indented line (a method, a local, a test inside `proptest!`) declares nothing R3 deletes
+/// at the file's top level.
+pub fn top_level_name(code: &str) -> Option<String> {
+    let rest = code.strip_prefix("pub ").unwrap_or(code);
+    let rest = rest.strip_prefix("pub(crate) ").unwrap_or(rest);
+    ["fn ", "static ", "const ", "struct ", "enum ", "type ", "trait "]
+        .iter()
+        .find_map(|kw| rest.strip_prefix(kw))
+        .map(|r| r.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect::<String>())
+        .filter(|n| !n.is_empty())
+}
+
+/// Whether `line` names `name` as a whole word (no identifier character on either side) and
+/// not as a field or method (`x.name`), which is never the file's free item.
+pub fn names_word(line: &str, name: &str) -> bool {
+    let ident = |c: char| c.is_alphanumeric() || c == '_';
+    line.match_indices(name).any(|(i, _)| {
+        !line[..i].chars().next_back().is_some_and(|c| ident(c) || c == '.')
+            && !line[i + name.len()..].chars().next().is_some_and(ident)
+    })
 }
 
 /// A code line with every string literal's CONTENT removed (its quotes kept),

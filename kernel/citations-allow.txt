@@ -619,6 +619,11 @@ can_fail
 1 WINDOW_END_REFUSALS
 1 a_routine_window_s_close_is_refused_by_the_kernel
 2 is_window_end_refusal
+# W-38 track H: DELETED, not refuted.  `planner_invariants`' own P45 checker over the raw
+# answer was `forkclass::p45_rule` written a second time (README gap 3471, the family W-37
+# track R named in its gap 3202); its three callers read `p45_rule` over the day the host's
+# codec decodes.  Every citation left is W-37 track R's append-only README block.
+5 w35_check_break
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
