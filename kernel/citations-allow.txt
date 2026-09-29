@@ -560,6 +560,15 @@ can_fail
 # `setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate`.  The two
 # citations left are stage 3's append-only README blocks (the edit widening and its gap-40 sequel).
 2 setVal_writes_the_token_the_loader_reads
+# W-37 track H: DELETED, not refuted.  README gap 3122 made the D60 rewrite one copy
+# (`forkclass::d60_cands`, `forkclass::is_p51`, `forkclass::is_impossible_tie`), so the
+# invariants file's own three went; README gap 3123 froze the D61 fork-region test's seven
+# comparisons into `d61` lines of the class comparand, compared by `compare_line`, so the test
+# went.  Every citation left is the W-36 track K, land and repair blocks, append-only history.
+2 a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it
+4 w36_d60_cands
+1 w36_is_impossible_tie
+1 w36_is_p51
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

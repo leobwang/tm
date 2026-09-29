@@ -70603,3 +70603,324 @@ there; the missing D61 pause day is gap 3123 (open); D60's "impossible first amo
   `maxRecDepth 400000`, probed first at 8 GB with `timeout 120`: 1.6 s); no external dependency;
   no parity number issued; every exemption file the same size or smaller but the NEW
   `written-exempt.txt` (three lines, born with the gate that reads it).
+
+<!-- =====================================================================
+     APPENDED 2026-09-28: stage 6 (the planner), run **W-37**, **TRACK H**
+     (the comparand under the owner's D64, and planner_invariants off the
+     fork: Rust and gates only, no `.lean` file), on branch `w37-h` in its
+     own worktree off `b3c29a3`.  Gap range **3280-3319**; **3280-3283
+     taken**, 3284-3319 free.  Parity: **none issued**.  PARITY-PENDING:
+     none — gaps 3280 and 3281 are divergences no decision chose, owed
+     before R3 as defects or the owner's to register.
+     ===================================================================== -->
+
+## Stage 6 — W-37, track H: the comparand holds only worlds the binary can hold, a re-bless answers to D64 by a test, D61's worlds are frozen, and planner_invariants leaves the fork in one region
+
+### 1. The generator lives in `tests/support/`, and every frozen world is its draw by a test (gap 3080)
+
+`tm/tests/support/plangen.rs` is `planner_invariants.rs`' generator, moved verbatim (`Case`,
+`case_strategy`, `build`, the texts), and each arm's widening is ONE function there, called by the
+arm and by the class draw: `set_multiplier`, `log_a_break` (the hash arm's), `run_a_break`,
+`force_overtime` (the W-35 arm's) and `widen_for_notes` (the step-8 arm's). Until W-37 the draw
+spelled them again in a scratchpad harness. `forkclass.rs` now carries the draw itself:
+`class_draws` (W-36's protocol, value for value: the case, the arm, that arm's values, ChaCha over
+the seed's text) and `world_of`, and `draws_of_line` re-runs a line's recorded seed, index and arm —
+drawn, or targeted with the arm forced, as W-36 drew `wall-on-now/spent` and the `rest_debt` day.
+**`every_frozen_world_is_the_generators_own_draw`** re-draws all 45 lines (38 drawn, 7 derived) and
+demands the stored world byte for byte. Run on the committed file with the changed generator,
+**26 of the 38 re-drew byte for byte** — every line but the twelve of §2, which are exactly the lines
+the change moves — so the in-tree protocol IS W-36's harness and the change moved nothing else. The hash arm has since drawn a third value
+(`errands`, gap 3126); the class draw does not, because a value drawn mid-sequence re-maps every
+later index, and the protocol says so where it is defined.
+
+### 2. D64(b), gap 3138 — twelve worlds the binary cannot hold, re-drawn and named
+
+`class_of` reads the running state the way D42's reconcile does (`forkclass::running`): the running
+block and the open interruption are the LOG's (`derived_state`, `reconcile_state`), a running break
+the cache's alone. `binary_holds` is the property every line is held to, one clause per way the
+binary would move `.tm/state.json` off the stored one: (1) the cache runs the block the log holds
+open; (2) the cache's interruption is the log's, by identity and start; (3) a running break began
+after the last `start`/`done`/`stop` (`end_break`: each ends one); (4) a paused block has a reason
+the binary pauses one for (the log's `pause`, the running break, an interruption that named it).
+**Twelve lines failed it — the ten the owner named, and two more by the same rule**:
+
+| class | arm, draw | the clause its old world failed | the re-drawn world |
+|---|---|---|---|
+| interrupted/lounge | hash, 346 | 2: interruption at 08:15 in `.tm/state.json` alone | + `interrupt` at 08:15 |
+| interrupted/home | w35, 2491 | 2: 08:20, cache alone | + `interrupt` at 08:20 |
+| interrupted/late | step8, 713 | 2: 11:42, cache alone | + `interrupt` at **11:56** (11:42 lay inside `zaa`'s closed 11:00–11:55 block) |
+| interrupted/travel | step8, 2200 | 2: 13:50, cache alone | + `interrupt` at 13:50 |
+| interrupted/spent | step8, 2355 | 2: 07:39, cache alone | + `interrupt` at **07:56** (inside `zaa`'s 07:00–07:55) |
+| interrupted-block/lounge | hash, 1212 | 2: 08:13, cache alone | + `interrupt zad` at 08:13, `zad` **paused** (it ran from 07:56) |
+| interrupted-block/home | w35, 788 | 2: 09:48, cache alone | + `interrupt` at 09:48, before `zad`'s 09:51 start |
+| interrupted-block/late | step8, 2522 | 2: 11:36, cache alone | + `interrupt` at **11:56** (inside `zaa`'s block), before `zab`'s 12:04 start |
+| interrupted-block/travel | step8, 978 | 2: 11:57, cache alone | + `interrupt` at 11:57, before `zae`'s 12:15 start |
+| interrupted-block/spent | step8, 196 | 2: 08:00, cache alone | + `interrupt zag` at 08:00, `zag` **paused** (it ran from 07:56) |
+| break-block/lounge | w35, 102 | 3: the break at 09:40 began before the block's 09:56 start | break at **09:57** |
+| break-block/late | w35, 205 | 3: the break at 10:53 began before the block's 10:56 start | break at **10:57** |
+
+The generator logs every interruption as `tm interrupt` does (`plangen::interruption`): at its
+start, after the last block the log closes (a `done` inside it would carry minutes `tm done` does not
+write), naming the block that ran when it began and pausing it; `run_a_break` begins a running break
+after the last `start`/`done`. Each line was re-drawn at its RECORDED seed, index and arm — the same
+`Case`, so the diff is exactly the table's last column — and carries `d64b`: the step's dated reason
+and the clauses its old world failed. The re-bless then answered the twelve (§3): `day` moved on 7,
+`shipped` on 2, `d57` on 1, `whatif` on none; the 26 untouched lines are byte-identical.
+
+**Driven** (this tree's `target/debug/tm`, scratchpad `w37-h/drive`, empty `config.toml` =
+`Config::default()`). The re-drawn `interrupted-block/lounge`, its tree and log only — `.tm/state.json`
+never written: `tm now` at 08:30 printed `tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl
+… — ^zad is running, started 07:56` and `▶ ^zad Item3 · started 07:56 · 17m of 240m · paused`; the
+file it wrote holds `"interrupt": {"started": "08:13", "id": "zad"}` and `"paused": true` — the frozen
+world's own interruption and pause — and `tm plan` draws `08:13 · lost 17m … interruption` for
+`zad`. The OLD world (interruption in `.tm/state.json`, none in the log), cache present: `tm plan`
+drew `08:30 ▶ Item3 … running · 44m left` and no interruption, and its `.tm/state.json` came back
+with `"interrupt": null` — gap 3138 as the binary shows it. `est_min` came back 240 from the item's
+line, which `HOST_ONLY_STATE` already names.
+
+Not re-drawn, and why: the four primary `wall-on-now` worlds whose wall began after the block
+started are worlds the CLI's housekeeping would pause first (D61), but the TUI's reload plans with
+housekeeping off (`tui::reload`), so the binary does plan them as stored and `binary_holds` holds
+them; their D61 variants are §4.
+
+### 3. D64 as a mechanism: the re-bless and the re-draw each answer to it by a test
+
+**The re-bless** (`the_frozen_fork_classes_are_reblessed`, inert without `TM_PLANNER_BLESS`) runs
+every line through `forkclass::d64_allows`: a line whose answers change must carry the flag of a
+parity number the run names (`TM_PLANNER_BLESS_BECAUSE=P56`) that `kernel/parity.txt` registers —
+D64(a) — or have had its answers cleared by a D64(b) re-draw; the shipped fork's day must stay
+beside a departing comparand by value; anything else is refused by name and nothing is written.
+The comparand's flags are named by their number (`d57.p46`, `d57.p47`, `d60.p51`), and
+`parity_flags` reads every key spelled `p<n>`, so a flag a later step adds (the land step's `P56`)
+answers to the same rule with no edit here. **The re-draw** (`the_frozen_class_worlds_are_redrawn`,
+inert without `TM_PLANNER_DRAW`) replaces a world only when the run lists its class and gives a
+dated reason naming D64(b), the OLD world fails `binary_holds` and the NEW one holds it and keeps
+its class — so (b) is checked, not asserted — and keeps the D61 lines exactly the worlds
+`d61_worlds` derives (§4). Standing tests hold the committed file to the same rule:
+`every_parity_flag_names_a_registered_number`, `every_redrawn_world_says_why`,
+`every_frozen_world_is_one_the_binary_holds`, and `the_d64_rule_bites_and_does_not_over_bite`
+(§5.8 on `d64_allows`: no reason, an unregistered number, a registered number the line has no
+flag of, and a dropped `shipped` refused; the flag's own number, an unchanged line and a cleared
+line allowed).
+
+**Driven in a clone** (`scratchpad/w37-h/clone`, a baseline commit of this tree; `git status
+--porcelain` empty before each plant and after each revert). Plant A: `p46_row`'s note bent to
+"running · 0 min left". The re-bless with no reason → refused, five lines from "overtime/lounge …:
+day changed and the re-bless names no reason — the owner's D64 allows (a) a registered parity
+number whose flag the line carries, or (b) a world the binary cannot build" to overtime/spent,
+nothing written (status: the plant alone); with `P99` → refused, "re-blessed for `P99`, which
+kernel/parity.txt does not register"; with P51 → refused, "the line carries no flag of P51 — the
+parity numbers set on it are {46}"; with P46 → **passed**, "5 line(s) changed", the fixture written. Plant B: the
+generator's energy report moved from `:05` to `:06`. The standing check failed by name (`38 drawn and
+7 derived, 30 differ`, `idle/lounge: the re-draw differs in the log` …); the re-draw listing nothing
+refused every one ("… TM_PLANNER_DRAW does not list idle/lounge"); listing idle/late with a D64(b)
+reason refused it — "the stored world is one the binary can hold, so D64(b) does not reach it".
+
+**Property or list.** `binary_holds`, `parity_flags`, `d64_allows` and the re-draw's D64(b) check are
+properties (of the state and the log; of any key spelled `p<n>`; of flags ∩ reasons ∩ register; of
+the property itself on the old and new world). `SECONDARY_FLOORS` is a list — three reasons a
+non-representative line may exist — because a floor is a named population by nature, as an
+exemption file's line is; so are check 8's four new counted dead names (§6).
+
+### 4. Gap 3123 — D61's worlds are frozen, derived and not drawn
+
+`forkclass::d61_worlds` is `stop_the_timer_at_walls`' rule over a stored world: a block running
+unpaused, no break, no interruption, a merged wall span covering `now` that began after the block
+started → `pause{id}` stamped at the span's start and the block paused, and for every earlier span
+that began after the block started its `pause` and, once ended, its `unpause`, in order, as the
+binary's loop logs them (no parent holds one today, so `d61_logs_every_wall_the_block_ran_into`
+asks that branch on an added ten-minute wall); at `now` and twenty minutes into the meeting. Seven lines, `secondary: "d61"`, each carrying its parent's provenance and
+`derived: {from, pause, now}`: wall-on-now/lounge (pause 10:00; now 10:00 and 10:20), /home (12:00;
+12:00 and 12:20), /late (11:00; 11:00 and 11:20), /spent (08:00; 08:30). Their `day`, `shipped` and
+`whatif` are the shipped fork's answers, the standard line (P46/P47/P51 by property, the shipped day
+kept where the comparand departs); the kernel agrees on all seven today. **Track T's D65 (`P56`)
+changes the kernel's drawing on exactly these days: the land step applies D64(a) with `P56`** — a
+`P56` rule in `fork_answers` and a flag `p56`, re-blessed with `TM_PLANNER_BLESS_BECAUSE=P56`, which §3's
+rule then checks line by line. `the_frozen_d61_worlds_are_every_one_d61_derives` holds the file to
+exactly the derived set, and `the_pause_d61_logs_reaches_the_kernels_day` keeps the land's
+non-vacuity (the pause moves the kernel's day on 7 of 7). The land's fork-region test that
+synthesised these seven comparisons (a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it)
+is **deleted as covered by value**: its seven (world, instant) pairs are the seven lines,
+`compare_line` compares them in the arm that survives R3, and
+`the_frozen_classes_are_the_forks_answer_today` holds them to the live fork until R3.
+
+### 5. Gaps 3080 + 3084 — planner_invariants off the live fork
+
+**`planner::` code lines outside a fork region: 42 → 8** (the land step's `forksites.py` rule:
+comments and string contents excluded): `tm/src` 8 (R3's body swap, unchanged), tests **34 → 0**.
+`planner_invariants.rs` is two halves. Outside its ONE region: §8.3's invariants, written once as
+`check_day_invariants` over a `Planner` and asked of **the kernel** as
+`day_plan_satisfies_every_invariant` (the planner R3 ships, through `planreq` and the host codec;
+"the higher-ranked of two" is the planner's own §7.4 order, D63, via `forkclass::d60_cands`), plus
+the kernel-only checks. **It passes over 256 cases**: purity, the running block, no overbooking, no
+overlap, wind-down, walls unmoved, the energy filter, monotone rank, HOT before queue, IMPOSSIBLE
+named, nothing wasted, the step-8 consistency, tail-drop and stability — with ONE declared class,
+gap 3280. `the_kernels_monotone_rank_is_its_own_order` shows the rank view is load-bearing: the
+reversed day passes in the kernel's order and FAILS (`(later line) is assigned`) read in file order.
+Inside the region, deleted whole at R3 and **listed as R3's**, every arm that plans with the fork.
+The `OUTSIDE_A_REGION` exemption went STALE and is deleted: every test file is held to one region.
+
+| arm (in the region) | covered by value in the frozen comparand (45 lines, `compare_line`) | lost at R3 |
+|---|---|---|
+| `day_plan_satisfies_every_invariant_on_the_fork` | — the same checks are asked of the kernel outside | the fork's own-§7 day (D53: no shipped path) |
+| `the_kernel_reads_every_day_the_fork_planned` | nothing: the frozen days are compared as rows, not cells | cells on generated days (gap 3282) |
+| `the_kernel_plans_the_day_the_fork_plans` | date, window, budget; every row in order (walls, routine and assigned rows, kinds, open rows); all twelve diagnostic fields in order; priorities; on 39 days | §7 vs the fork's OWN pass (D53 declines it) |
+| `the_kernel_draws_the_open_block_and_answers_the_overtime_what_if_the_fork_answers` | open rows; §9.1's what-if (`est`/`full`, P44) on 28 lines | — |
+| `the_kernel_hashes_the_day_the_fork_hashes`, `a_batch_row_is_digested_on_every_run` | the hash (12 of 39 equal, the 551/550 rest checked), batch and multiplier rows | gap 3281's order class |
+| `the_kernel_keeps_the_break_the_overtime_block_and_the_wall_pause`, `a_p46_day_is_compared_on_every_run` | P45's rule on 6 days, P46 on 6, P47 on 5 | — |
+| `the_kernel_writes_the_rest_of_step_8_as_the_fork_does` | all twelve fields, the three note kinds, rest debt | the wire's projection checks (gap 3282) |
+| `the_kernel_serves_impossible_ties_by_due_date`, `the_reversed_day_is_served_by_due_date_on_every_run` | P51 on 12 lines; the reversed day's kernel order pinned outside | — |
+| `the_kernel_answers_the_what_if_with_the_hosts_grown_facts`, the P44/P52 day tests | P44 only | P52's grown ranking (gap 3282) |
+| `the_kernel_reads_the_hosts_worked_minutes` | nothing (`planreq` sends no `workedMin`) | P55 (gap 3282; gap 3043) |
+| `two_routines_contend_for_one_position_on_the_fork` | the kernel half pins the two rows outside | the fork comparison |
+| `a_sub_second_now_moves_the_forks_day_and_not_the_kernels` | — | P43's fork quirk, which leaves with the fork |
+
+### 6. Gap 3122 — CLOSED: one copy
+
+`send_order` is `planreq::send_order` for every test (the invariants and the class files' copies
+deleted); the D60 rewrite is `forkclass::d60_cands`, with `is_impossible_tie` beside it and `is_p51`
+in `forkclass.rs`' own region. The class suite found the answer by id and the invariants by index
+and id; one rule where the answers are keyed 1:1, which is the only case either caller hands it.
+The deleted names (w36_d60_cands, w36_is_p51, w36_is_impossible_tie, and the D61 test of §4) are
+counted dead names in `kernel/citations-allow.txt`, cited by the W-36 blocks as they stood.
+
+### 7. Gaps (3280-3283)
+
+**Gap 3280 — at the minute a routine's window closes, the kernel refuses the day.**
+1. *What.*  `planwire::routine_instances` sends a routine whose window closes exactly at `now` the
+   window `(now, now)`, and `Planner.mkRoutine?` refuses it, so the whole planner section is refused
+   (`routineRefused emptyWindow lunch`) where the fork plans the day. Driven: a late day with
+   `lunch` (11:30–13:30) plans at 13:29 and 13:31 and is refused at 13:30; `workout` at 19:00 alike.
+2. *Why.*  Found by this step's kernel arm of §8.3 (its replan an hour on lands on 13:30 from a
+   12:30 `now`); no generated `now` sits on a window's close.
+3. *Cost.*  After R3, `tm plan` and the TUI's replan at such a minute fail with a kernel refusal.
+   The arm sets exactly this refusal aside at exactly such an instant (`is_window_end_refusal`),
+   counted in `WINDOW_END_REFUSALS` (13 on its first run), and
+   `a_routine_window_s_close_is_refused_by_the_kernel` pins both the refusal and the class's edges.
+4. *Clears it.*  Before R3: `routine_instances` sends no empty window (the fork places nothing
+   there either), or the kernel answers one as no position. The pin then fails, and the class goes.
+
+**Gap 3281 — an interruption and a wall that start at one minute are drawn in different orders.**
+1. *What.*  The kernel draws an interruption's Lost row before a Wall row starting at the same
+   instant; the fork sorts its walls, the interruption's ad-hoc one included, by `(blocked_start,
+   id)`, and an interruption naming the block it paused (`z…`) follows a calendar wall (`w…`). The
+   same rows in a different order: the hash differs, and `tm plan` would swap the two at R3.
+2. *Why.*  Unreachable until W-37: the generator's interruption named no block (`""` sorts first).
+   Logged as `tm interrupt` logs it (§2), the hash arm found it on its second run: a late day, the
+   13:00–14:00 wall, `zaa` started 12:59 and interrupted at 13:00. Seed `ef4f4091…` is kept in
+   `planner_invariants.proptest-regressions` (D46).
+3. *Cost.*  A declared class in the hash arm (`order_differs_only_at_an_interruption`: same rows,
+   and every run of one start the two order differently is the Lost row and walls), counted, pinned
+   both ways by `the_interruption_order_class_is_exactly_that`; no frozen line holds the shape.
+4. *Clears it.*  Before R3: the kernel orders equal-start rows as the fork does (`Planner.lean`), or
+   the owner registers the kernel's order as a parity number.
+
+**Gap 3282 — what the region's arms compare that the frozen comparand does not.**
+1. *What.*  §5's last column: the cells of generated days; §7 against the fork's own pass; P52's
+   grown what-if (the frozen what-ifs send no grown facts); P55's host worked minutes (`planreq`
+   sends no `workedMin`); the step-8 wire's own projections (`impossible` of `impossibleUntil`,
+   `underused` of `underusedLevels`); P43.  2. *Why.*  Each is compared on random days against the
+   live fork, and the class comparand's request does not carry the input.  3. *Cost.*  At R3 each
+   leaves with the region.  4. *Clears it.*  Before R3: the class comparand's request sends the grown
+   facts and the worked minutes as the binary will (gap 3043), with D64(a) for the lines that move;
+   a kernel-day cell arm outside the region; the projections as kernel laws. §7 and P43: D53 and the
+   fork's deletion close them.
+
+**Gap 3283 — deleting `.tm/state.json` pauses a block started during an interruption.**
+1. *What.*  `tm start` during an open interruption writes `active.paused: false`; D42's rebuild
+   (`derived_state`) sets `paused` to `interrupted.is_some()`. Driven on the re-drawn
+   `interrupted-block/home`: `tm --json now` reads `"paused": false` with the cache and `"paused":
+   true` after the cache is deleted (`est_min` 101 → 15 too, `HOST_ONLY_STATE`'s named residue); the
+   interruption comes back identical (`{"started": "09:48", "id": null}`).
+2. *Why.*  The rebuild reads a running interruption as the block's pause — `tm interrupt`'s shape,
+   not `tm start`-during-one's — while the log's machine holds the block idle either way
+   (`elapsed_min: 0` in both).  3. *Cost.*  D42's "deleting the runtime state changes nothing" fails
+   on one field in one ordering; no planning effect today (an open interruption is an ad-hoc wall
+   over `now`, so neither planner reserves the block).  4. *Clears it.*  The rebuild pauses only a
+   block the interruption began after, or `tm start` pauses a block it starts during one — host
+   behaviour either way, the owner's.
+
+### 8. D40 for the Rust this step added or changed
+
+Each definition this step added or changed, its body replaced by a constant (an early `return`) or
+its one changed line bent, in the clone (`scratchpad/w37-h/clone`, a baseline commit of this tree),
+the targeted suite run, the file restored and `git status --porcelain` empty before and after
+(`scratchpad/w37-h/tools/mutate_w37.py` and its supplement
+`scratchpad/w37-h/tools/mutate_w37b.py`): **49 mutants, 49
+killed**, none surviving on the first sweep.
+
+* **`plangen.rs`, 11 of 11**: `interruption` (the constant, the clamp after the closed block, the
+  `started < at` naming), `log_text`'s placement of the line, `build`'s pause, `set_multiplier`,
+  `log_a_break`, `run_a_break` and its floor, `force_overtime`, `widen_for_notes` — ten killed by
+  `every_frozen_world_is_the_generators_own_draw`, the multiplier by the hash arm's `nmult` floor.
+* **`forkclass.rs`, 25 of 25** (21 in the sweep and 4 in the supplement, which ran on the final tree
+  after the D61 derivation grew its loop): `running`, `class_of`'s two log readings, `binary_holds`
+  and each of its four clauses, `Widening::arm` and `number_of`, `class_draws`' seed, `world_of`'s
+  W-35 widening, `draws_of_line`, `d61_worlds` (the constant, the covering span's start, the earlier
+  walls' loop and its `unpause`, the twenty-minute instant), `parity_flags`, `registered_parity`,
+  `d64_allows`, `is_impossible_tie`, `d60_cands`, `is_p51`.
+* **`planner_invariants.rs`, 13 of 13**: the kernel `Planner`'s `day` and `rank_view`, the fork's
+  `day`, `routine_window_ends_at`, `is_window_end_refusal`, `order_differs_only_at_an_interruption`
+  (both constants) and its use in the hash arm, `contending_routines`, `kernel_routine_rows`,
+  `reversed_day` (twice).
+* Not mutated, driven instead: `bless_because` and the re-bless and re-draw tests' bodies, which are
+  inert without their environment — §3's plants A and B exercise each refusal and each pass.
+* Mutant-induced proptest seeds landed in the CLONE's `planner_invariants.proptest-regressions` (one
+  line, from a mutant that failed an arm) and were reverted there; none reached this tree. The one
+  seed this tree adds is gap 3281's, found by the real code (§7).
+
+### 9. Acceptance, capped
+
+* **`check.sh`: 14 checks, 17 lines, every one ok** on the committed tree — build; totality; axiom
+  audit **5,624** theorems (no `.lean` file changed); Negative rejected; FFI **95**; corpus
+  **29/37 and 4/5**; stage goals **6**; citations **46,739**, 0 unresolved (0 allow entries unused; four counted dead
+  names added, §6); check 9 **417 rostered, 0 owed**; parity **P1-P55, next free P56**; twins 3,181
+  bodies, 0 UNANSWERED; reach **1,185 reachable, 1,201 exempt**, 0 UNANSWERED; fields 15 of 15;
+  inputs 33 of 37 read, 4 exempt; sent 28 of 28 decoded; written 34 decoded, 28 written, 3 exempt;
+  replay 86 modules. Its first run on this block failed checks 8 and 10 on the block's own prose (a
+  backticked script name, and the pre-allocated `P56` and a plant's `P99` spelled bare), fixed
+  before the commit. `git status --porcelain` unchanged by it.
+* **`cargo test --workspace --no-fail-fast`, capped, SIX runs**, `git status --porcelain` identical
+  before and after each and no proptest seed written by any: run 1 (before the D61 loop, its test
+  and the region's imports) **1,600 / 0 / 12 across 93 result lines**; on the committed code, run 2
+  **1,601 / 0 / 12 across 93** (9m32s, load ~11); runs 3, 4, 5 and 6 **1,599 / 2 / 12**, **1,600 /
+  1 / 12**, **1,600 / 1 / 12** and **1,600 / 1 / 12**, and every failure is `cli_latency`'s
+  three-year test timing out — "`tm drop ^z2` was still running after 5s", "`tm now` … after 5s",
+  "`tm drop ^z15` … after 1s" (twice) — while the load stood at 18–43 from the other tracks' Lean
+  sweeps (README gap 1333's known sensitivity; `git diff b3c29a3 -- tm/src tm-core/src
+  kernel/TmKernel kernel/tm-kernel-ffi` is empty, so the binary those tests time is the base's byte
+  for byte). **So two runs are wholly green and four are green but for that one timing test**;
+  `cli_latency` run as the workspace runs it, three more times on its own at load 25–31, passed 5 of
+  5 each. Every other test of every run passed. (W-36's figure was 1,587 / 0 / 11 across 93: this step adds 14 tests, one
+  of them the inert re-draw.)
+* **`cli_latency --include-ignored`, standalone, 6 of 6** at load ~33: later verb 187 ms (3y) and
+  122 ms (1y); gated host-only write 192 ms; the verb after a hand undo 383 ms; a 3-day-old routine
+  360 ms; `review week` 635 ms; the reseal 372 ms; 10 stalled days, worst 632 ms.
+* **Named suites, `--include-ignored`, all passed**: T5 (`kernel_replay_parity`) 33, door
+  (`kernel_log_door`) 23, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `kernel_plan_codec` 9, **`planner_classes` 27**, `planner_fixtures` 13, `planner_regressions` 46,
+  `planner_dynamics` 23, `priority_plan_basic` 17, `emit_planner` 14, `tui_today_prompts` 35,
+  `cli_wall_pause` 8, `cli_one_estimate` 6, `cli_day` 30, `cli_now_worked` 4, `cli_broken_pipe` 1;
+  status unchanged.
+* **`planner_invariants`, standalone `--include-ignored --nocapture`, 29 of 29** (436 s at load
+  ~30): the kernel's §8.3 arm over 256 cases and the persisted seeds, 24 replans set aside as gap
+  3280's class; hash 282 cases (131 hashes equal, gap 3281's order class on 1 day, 453 rows digested
+  at a multiplier ≠ 1.0, 6 batch rows); plan 282 (448 walls, 661 assigned rows, 7,056 §7 rows);
+  W-34 130 what-ifs asserted; W-35 P45 on 74 days, P46 7, P47 18; step 8 178 notes (travel day 45,
+  no position 93, budget spent 40); W-36 P51 on 201 days; grown what-ifs 156; worked 138 running
+  blocks. Six runs of this file on the committed code (five workspace, one standalone), 0 failed.
+* **The R3 plant** (§5, clone2): with every fork region under `tm/tests` deleted and
+  `planner::plan` panicking first, `planner_invariants` builds and its surviving half passes 11 of
+  11 (the kernel's §8.3 arm among them), `planner_classes` 22 of 23 — the one failure is the region
+  guard's designed "the walk found 0 fork regions" while `planner.rs` remains (gap 3088) — and after
+  the region's imports moved inside it, the two suites build with the regions deleted and no
+  warning.
+* No `.lean` file, no product source and no gate script changed; no predicate or assertion
+  weakened — two DECLARED classes added (gaps 3280 and 3281), each by its property, counted and
+  pinned both ways; the committed comparand re-drawn and re-blessed ONLY under D64(b), every changed
+  line named in §2 and carrying its reason, the 26 others byte-identical; no snapshot, latency band
+  or corpus re-blessed; no memory bound raised; no external dependency; no parity number issued;
+  every exemption file the same size or smaller (`OUTSIDE_A_REGION` 1 → 0 lines; check 8's allow
+  list gains four counted dead names, §6); one `.proptest-regressions` seed added and committed
+  (gap 3281, D46).

@@ -15,6 +15,16 @@
 //! still the fork's on this tree — plans with `planner::plan` and is one region,
 //! `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER`, which R3 deletes whole;
 //! [`the_fork_half_of_this_suite_is_one_region`] holds this file to that.
+//!
+//! **Since W-37 track H the file answers to the owner's D64 by a test, not a
+//! sentence** (README gaps 3133, 3138, 3123): every world is the shared
+//! generator's own draw ([`every_frozen_world_is_the_generators_own_draw`]) and
+//! one the shipped binary can hold
+//! ([`every_frozen_world_is_one_the_binary_holds`]); the re-bless and the
+//! re-draw refuse, by name, a change that is neither D64(a) — a registered
+//! parity number whose flag the line carries — nor D64(b) — a world the binary
+//! cannot hold, checked; and D61's worlds, the pause the binary logs at a wall's
+//! start, are frozen as `d61` lines derived from the primary ones.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
@@ -33,12 +43,16 @@ mod forkday;
 mod forkclass;
 
 #[allow(dead_code)]
+#[path = "support/plangen.rs"]
+mod plangen;
+
+#[allow(dead_code)]
 #[path = "support/srcwalk.rs"]
 mod srcwalk;
 
 use std::collections::BTreeSet;
 
-use chrono::Duration;
+use chrono::{DateTime, Duration};
 use chrono_tz::Tz;
 use serde_json::Value;
 use tm_core::config::Config;
@@ -122,8 +136,13 @@ fn the_frozen_file_holds_every_class_the_arms_draw() {
 }
 
 /// The floors a SECONDARY frozen day may be drawn for: each is one
-/// [`the_frozen_days_cover_what_the_arms_floors_demand`] asserts.
-const SECONDARY_FLOORS: [&str; 2] = ["rest_debt", "whatif"];
+/// [`the_frozen_days_cover_what_the_arms_floors_demand`] asserts. `d61` is not
+/// drawn but DERIVED (W-37, README gap 3123): the world the binary holds once
+/// the owner's D61 has logged a wall's pause, one per instant
+/// `forkclass::d61_worlds` answers for a primary line, and
+/// [`the_frozen_d61_worlds_are_every_one_d61_derives`] holds the file to
+/// exactly that set.
+const SECONDARY_FLOORS: [&str; 3] = ["rest_debt", "whatif", "d61"];
 
 /// **What the frozen days cover beyond their class**, counted off the FORK's
 /// frozen days (never the kernel's, which is the value under test): each floor
@@ -132,7 +151,7 @@ const SECONDARY_FLOORS: [&str; 2] = ["rest_debt", "whatif"];
 #[test]
 fn the_frozen_days_cover_what_the_arms_floors_demand() {
     let mut kinds = BTreeSet::new();
-    let mut n = [0usize; 17];
+    let mut n = [0usize; 20];
     for line in frozen_lines() {
         let day = &line["day"]["day"];
         for s in day["segments"].as_array().map(Vec::as_slice).unwrap_or_default() {
@@ -171,6 +190,19 @@ fn the_frozen_days_cover_what_the_arms_floors_demand() {
             let side = if w["full"] == w["est"] { &w["full"] } else { &w["est"] };
             n[16] += side["removed"].as_array().map_or(0, Vec::len);
         }
+        // D61's world: a running block the log paused at a wall's start (W-37,
+        // README gap 3123), read off the world — the stored log's `pause` of
+        // the block `.tm/state.json` runs.
+        let world = &line["world"];
+        let run = world["state"]["active"]["id"].as_str().unwrap_or("<none>");
+        n[17] += usize::from(world["log"].as_str().unwrap_or_default().lines().any(|l| {
+            serde_json::from_str::<Value>(l).is_ok_and(|e| e["ev"] == "pause" && e["id"] == run)
+        }));
+        // An interruption the log holds open (README gap 3138), and one over a
+        // block it names — `tm interrupt`'s two shapes.
+        let log: Vec<Value> = world["log"].as_str().unwrap_or_default().lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        n[18] += usize::from(log.iter().any(|e| e["ev"] == "interrupt"));
+        n[19] += usize::from(log.iter().any(|e| e["ev"] == "interrupt" && e["id"].is_string()));
     }
     println!("frozen fork classes cover row kinds {kinds:?}; counts {n:?}");
     for k in ["block", "batch", "break", "routine", "wall", "rest", "optional", "lost"] {
@@ -181,6 +213,8 @@ fn the_frozen_days_cover_what_the_arms_floors_demand() {
         "blocked ids", "impossible tuples", "hot ids", "conflicts", "underused tuples",
         "dropped-tail ids", "notes", "days losing A-capacity", "deferred ids", "travel-day notes",
         "no-position notes", "budget-spent notes", "what-if drops",
+        "days whose running block a wall's logged pause stopped (D61)", "days with a logged open interruption",
+        "days whose logged interruption names the block it paused",
     ];
     for (i, name) in names.iter().enumerate() {
         assert!(n[i] > 0, "the frozen days hold no {name}: {n:?}");
@@ -284,14 +318,11 @@ fn the_fork_half_of_this_suite_is_one_region() {
 /// **The files a test may reach the fork's planner from OUTSIDE one region**:
 /// W-27's shape, an enumeration you join to be EXEMPT and never to be covered,
 /// each line dated with its EXIT. A file listed here that has become clean
-/// FAILS as STALE, so the list only shrinks.
-const OUTSIDE_A_REGION: [(&str, &str); 1] = [(
-    "tm/tests/planner_invariants.rs",
-    "2026-09-27 (W-36 track H): the generated differential's arms plan with the fork beside the \
-     kernel on every case, and this track may not touch the file (tracks K and T append to it this \
-     run). EXIT: R3 retargets its arms onto `support/forkclass.rs`' frozen classes or deletes them \
-     with the fork, and this line goes STALE (README gap 3084)",
-)];
+/// FAILS as STALE, so the list only shrinks. **Empty since W-37 track H**: its
+/// one line, `tm/tests/planner_invariants.rs` (README gap 3084), went STALE when
+/// that file's arms moved into one region and its §8.3 arm was asked of the
+/// kernel — so it was deleted, and every test file is held to one region.
+const OUTSIDE_A_REGION: [(&str, &str); 0] = [];
 
 /// **Every test that reaches the fork's planner keeps it in ONE region** —
 /// the property `planner_fixtures.rs` holds of two files, held of EVERY `.rs`
@@ -374,12 +405,339 @@ fn every_frozen_day_says_which_draw_it_came_from() {
     }
 }
 
+/// **Every frozen world is the shared generator's own draw** (README gap 3080):
+/// each line's world is RE-DRAWN at its recorded seed, index and arm
+/// (`forkclass::draws_of_line`, over `support/plangen.rs`), and a derived D61
+/// world is re-derived from its re-drawn parent — and must be the stored world
+/// byte for byte. Until W-37 the provenance was four fields this suite checked
+/// for presence (`every_frozen_day_says_which_draw_it_came_from`); now it is a
+/// fact, and a change to the generator that moves a frozen world fails here by
+/// name, where the next step must decide it under the owner's D64.
+#[test]
+fn every_frozen_world_is_the_generators_own_draw() {
+    let tz = tz();
+    let mut bad = Vec::new();
+    let (mut drawn, mut derived) = (0usize, 0usize);
+    for line in frozen_lines() {
+        let key = line["class"].as_str().unwrap_or("<no class>");
+        let draws = forkclass::draws_of_line(line);
+        if draws.is_empty() {
+            bad.push(format!("{key}: no draw at seed {} index {} reproduces arm {}", line["seed"], line["draw"], line["arm"]));
+            continue;
+        }
+        let at = line["derived"]["now"]
+            .as_str()
+            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+            .map(|t| t.with_timezone(&tz));
+        // The world each candidate draw builds — re-derived through D61 for a derived line.
+        let worlds: Vec<ClassWorld> = draws
+            .iter()
+            .map(forkclass::world_of)
+            .filter_map(|w| match at {
+                None => Some(w),
+                Some(at) => forkclass::d61_worlds(&w).into_iter().find(|(d, _)| d.now == at).map(|(d, _)| d),
+            })
+            .collect();
+        if at.is_some() {
+            derived += 1;
+        } else {
+            drawn += 1;
+        }
+        let stored = ClassWorld::of_json(&line["world"], tz).unwrap_or_else(|e| panic!("{key}: {e}"));
+        if !worlds.contains(&stored) {
+            let Some(world) = worlds.into_iter().next() else {
+                bad.push(format!("{key}: D61 derives no world at {:?} from its parent draw", line["derived"]["now"]));
+                continue;
+            };
+            let why = if world.log != stored.log {
+                "the log"
+            } else if world.state != stored.state {
+                "`.tm/state.json`"
+            } else if world.docs != stored.docs {
+                "the documents"
+            } else {
+                "`now` or the multiplier"
+            };
+            bad.push(format!("{key}{}: the re-draw differs in {why}", line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default()));
+        }
+    }
+    println!("frozen worlds re-drawn from the tree: {drawn} drawn and {derived} derived, {} differ", bad.len());
+    assert!(bad.is_empty(), "frozen worlds that are not the generator's draw:\n  {}", bad.join("\n  "));
+}
+
+/// **Every frozen world is one the shipped binary can hold** (owner D64(b),
+/// README gap 3138): `forkclass::binary_holds` on every line — the cache and
+/// the log agree on what is open, a running break began after the last
+/// `start`/`done`/`stop`, a paused block has a reason the binary pauses one
+/// for. Twelve lines failed it until W-37 (the ten interruptions in
+/// `.tm/state.json` alone and two breaks begun before the block under them);
+/// each was re-drawn and carries `d64b`.
+#[test]
+fn every_frozen_world_is_one_the_binary_holds() {
+    let mut bad = Vec::new();
+    for line in frozen_lines() {
+        let key = line["class"].as_str().unwrap_or("<no class>");
+        let w = ClassWorld::of_json(&line["world"], tz()).unwrap_or_else(|e| panic!("{key}: {e}"));
+        if let Err(e) = forkclass::binary_holds(&Built::of(w)) {
+            bad.push(format!("{key}{}: {}", line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default(), e.join("; ")));
+        }
+    }
+    println!("frozen worlds the binary can hold: {} of {}", frozen_lines().len() - bad.len(), frozen_lines().len());
+    assert!(bad.is_empty(), "frozen worlds the shipped binary cannot hold (owner D64(b)):\n  {}", bad.join("\n  "));
+}
+
+/// **A world's running state is read off its LOG, as the binary reads it** (owner D64(b),
+/// README gap 3138; `forkclass::running`): an interrupted world whose `interrupt` line is taken
+/// out of the log — the pre-W-37 shape, `.tm/state.json` alone saying interrupted — is NOT an
+/// interrupted world, and the same world with the line kept and the state's interruption taken
+/// out still is; a running block the log holds open runs whatever the cache says, and one only
+/// the cache names does not. Until W-37 `class_of` read the cache, and nothing here could tell.
+#[test]
+fn a_worlds_run_state_is_read_off_its_log() {
+    let tz = tz();
+    let world = |class: &str| {
+        let line = frozen_lines().iter().find(|l| l["class"] == class && l["secondary"].is_null()).expect("a primary line");
+        ClassWorld::of_json(&line["world"], tz).expect("a stored world")
+    };
+    let run = |w: &ClassWorld| class_of(&Built::of(w.clone())).run;
+    let w = world("interrupted/lounge");
+    assert_eq!(run(&w), Run::Interrupted);
+    let mut unlogged = w.clone();
+    unlogged.log = w.log.lines().filter(|l| !l.contains("\"ev\":\"interrupt\"")).map(|l| format!("{l}\n")).collect();
+    assert_ne!(unlogged.log, w.log, "the world logs its interruption");
+    assert_eq!(run(&unlogged), Run::Idle, "an interruption in .tm/state.json alone classified as interrupted");
+    let mut uncached = w.clone();
+    uncached.state.interrupt = None;
+    assert_eq!(run(&uncached), Run::Interrupted, "an interruption the log holds open was not read");
+    let r = world("running/lounge");
+    let mut cacheless = r.clone();
+    cacheless.state.active = None;
+    assert_eq!(run(&cacheless), Run::Running, "a block the log holds open was not read");
+    let mut logless = r.clone();
+    logless.log = r.log.lines().filter(|l| !l.contains(&format!("\"ev\":\"start\",\"id\":\"{}\"", r.state.active.as_ref().expect("a block").id))).map(|l| format!("{l}\n")).collect();
+    assert_eq!(run(&logless), Run::Idle, "a block only .tm/state.json names classified as running");
+}
+
+/// **`binary_holds` bites, clause by clause, and does not over-bite** (AGENTS
+/// §5.8): each of the four clauses fails, by its number, on a frozen world
+/// bent into a state the binary cannot hold — the pre-W-37 shape among them —
+/// and the unbent worlds pass (the test above).
+#[test]
+fn every_clause_of_binary_holds_bites() {
+    let tz = tz();
+    let world = |class: &str| {
+        let line = frozen_lines().iter().find(|l| l["class"] == class && l["secondary"].is_null()).expect("a primary line");
+        ClassWorld::of_json(&line["world"], tz).expect("a stored world")
+    };
+    let fails = |w: &ClassWorld, clause: &str| {
+        let e = forkclass::binary_holds(&Built::of(w.clone())).err().unwrap_or_default();
+        assert!(e.iter().any(|m| m.starts_with(clause)), "clause {clause} did not bite: {e:?}");
+    };
+    // 1: the cache runs no block while the log holds one open.
+    let mut w = world("running/lounge");
+    w.state.active = None;
+    fails(&w, "1:");
+    // 2: the interruption in `.tm/state.json` alone — the shape gap 3138 found.
+    let mut w = world("interrupted/lounge");
+    w.log = w.log.lines().filter(|l| !l.contains("\"ev\":\"interrupt\"")).map(|l| format!("{l}\n")).collect();
+    fails(&w, "2:");
+    // 3: a running break begun before the block under it.
+    let mut w = world("break-block/lounge");
+    let started = w.state.active.as_ref().expect("a block").started;
+    if let Some(b) = w.state.break_.as_mut() {
+        b.started = Some(started - Duration::minutes(5));
+    }
+    fails(&w, "3:");
+    // 4: an interrupted block left running, and a running block paused for nothing.
+    let mut w = world("interrupted-block/lounge");
+    assert!(w.state.interrupt.as_ref().is_some_and(|i| i.id.is_some()), "interrupted-block/lounge's interruption names its block");
+    if let Some(a) = w.state.active.as_mut() {
+        a.paused = false;
+    }
+    fails(&w, "4:");
+    let mut w = world("running/lounge");
+    if let Some(a) = w.state.active.as_mut() {
+        a.paused = true;
+    }
+    fails(&w, "4:");
+}
+
+/// **Every parity flag a frozen line carries names a REGISTERED number** (the
+/// owner's D64(a)): the comparand's flags are named by their number
+/// (`d57.p46`, `d57.p47`, `d60.p51`, and whatever flag a later step adds), and
+/// `forkclass::parity_flags` reads every key spelled `p<n>` on a line, so a
+/// flag for a number `kernel/parity.txt` does not register fails here by name —
+/// a property of the keys, not a list of three.
+#[test]
+fn every_parity_flag_names_a_registered_number() {
+    let registered = forkclass::registered_parity();
+    let mut seen = BTreeSet::new();
+    let mut bad = Vec::new();
+    for line in frozen_lines() {
+        for (n, _) in forkclass::parity_flags(line) {
+            seen.insert(n);
+            if !registered.contains(&n) {
+                bad.push(format!("{}: a flag for P{n}, which kernel/parity.txt does not register", line["class"]));
+            }
+        }
+    }
+    println!("parity flags on the frozen lines: {:?}", seen.iter().map(|n| format!("P{n}")).collect::<Vec<_>>());
+    assert!(seen.len() >= 3, "the frozen lines carry the flags of {seen:?}, not the comparand's three");
+    assert!(bad.is_empty(), "{}", bad.join("\n"));
+}
+
+/// **Every re-drawn world says why, and the why is a checked fact** (the
+/// owner's D64(b)): a line carrying `d64b` names the step's dated reason, which
+/// names D64(b), and the clauses of `forkclass::binary_holds` its OLD world
+/// failed — the re-draw ([`the_frozen_class_worlds_are_redrawn`]) refuses a
+/// world that failed none — and its new world holds (the test above).
+#[test]
+fn every_redrawn_world_says_why() {
+    let mut n = 0;
+    for line in frozen_lines().iter().filter(|l| !l["d64b"].is_null()) {
+        let key = line["class"].as_str().unwrap_or("<no class>");
+        let why = line["d64b"]["why"].as_str().unwrap_or_default();
+        assert!(why.starts_with("20") && why.contains("D64(b)"), "{key}: `d64b.why` is not dated or does not name D64(b): {why:?}");
+        let held = line["d64b"]["held"].as_array().map(Vec::as_slice).unwrap_or_default();
+        assert!(!held.is_empty(), "{key}: a re-drawn world names no clause its old world failed");
+        for c in held {
+            let c = c.as_str().unwrap_or_default();
+            assert!(["1:", "2:", "3:", "4:"].iter().any(|p| c.starts_with(p)), "{key}: `{c}` is not a clause of binary_holds");
+        }
+        n += 1;
+    }
+    println!("re-drawn frozen worlds: {n}");
+    assert!(n >= 12, "the twelve worlds W-37 re-drew under D64(b) carry `d64b`: {n}");
+}
+
+/// **The frozen D61 worlds are exactly the worlds D61 derives** (README gap
+/// 3123): for every PRIMARY line, `forkclass::d61_worlds` of its world — the
+/// pause the binary logs at a wall's start, at `now` and twenty minutes into
+/// the meeting — is a `d61` secondary line of the same class carrying that
+/// world, and no `d61` line is anything else. A property of the file, so a
+/// primary re-drawn later cannot leave its D61 lines stale or missing.
+#[test]
+fn the_frozen_d61_worlds_are_every_one_d61_derives() {
+    let tz = tz();
+    let mut want = BTreeSet::new();
+    for line in frozen_lines().iter().filter(|l| l["secondary"].is_null()) {
+        let w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        for (d, pause) in forkclass::d61_worlds(&w) {
+            want.insert((line["class"].as_str().unwrap_or_default().to_string(), pause.to_rfc3339(), d.to_json().to_string()));
+        }
+    }
+    let have: BTreeSet<(String, String, String)> = frozen_lines()
+        .iter()
+        .filter(|l| l["secondary"] == "d61")
+        .map(|l| {
+            assert_eq!(l["derived"]["from"], l["class"], "a d61 line is derived from a line of its own class");
+            (l["class"].as_str().unwrap_or_default().to_string(), l["derived"]["pause"].as_str().unwrap_or_default().to_string(), l["world"].to_string())
+        })
+        .collect();
+    let missing: Vec<String> = want.difference(&have).map(|w| format!("{} at pause {}", w.0, w.1)).collect();
+    let extra: Vec<String> = have.difference(&want).map(|w| format!("{} at pause {}", w.0, w.1)).collect();
+    println!("frozen D61 worlds: {} derived, {} held", want.len(), have.len());
+    assert!(missing.is_empty() && extra.is_empty(), "D61 worlds missing {missing:?}, held and not derived {extra:?}");
+    assert!(!want.is_empty(), "no primary line's world is one D61 pauses");
+}
+
+/// **D61's derivation logs every wall the running block ran into, in order** —
+/// `stop_the_timer_at_walls`' loop, not only the meeting covering `now`: on the frozen
+/// `wall-on-now/lounge` world (the block from 09:22, the meeting from 10:00) with a ten-minute
+/// wall added at 09:30, the derived log gains `pause` 09:30, `unpause` 09:40 and `pause`
+/// 10:00, in that order, and the block is paused. No primary world holds an earlier wall
+/// today, so this is the only thing that asks the loop's `unpause` branch.
+#[test]
+fn d61_logs_every_wall_the_block_ran_into() {
+    let line = frozen_lines().iter().find(|l| l["class"] == "wall-on-now/lounge" && l["secondary"].is_null()).expect("the primary line");
+    let mut w = ClassWorld::of_json(&line["world"], tz()).expect("a stored world");
+    let cal = w.docs.iter_mut().find(|(p, _)| p.starts_with("calendar/")).expect("a calendar document");
+    cal.1.push_str("- [ ] 3 Coffee at:2026-09-07T09:30/09:40 ^wxa\n");
+    let derived = forkclass::d61_worlds(&w);
+    let (d, pause) = derived.first().expect("D61 derives the world");
+    assert_eq!(pause.format("%H:%M").to_string(), "10:00");
+    let added: Vec<(String, String)> = d.log[w.log.len()..]
+        .lines()
+        .map(|l| {
+            let v: Value = serde_json::from_str(l).expect("a log line");
+            (v["ev"].as_str().unwrap_or_default().to_string(), v["t"].as_str().unwrap_or_default()[11..16].to_string())
+        })
+        .collect();
+    let want: Vec<(String, String)> = [("pause", "09:30"), ("unpause", "09:40"), ("pause", "10:00")]
+        .iter()
+        .map(|(e, t)| ((*e).to_string(), (*t).to_string()))
+        .collect();
+    assert_eq!(added, want);
+    assert!(d.state.active.as_ref().is_some_and(|a| a.paused), "the block is paused");
+}
+
+/// **D61's pause reaches the kernel's day** — the non-vacuity the W-36 land
+/// step's fork-region test asserted, kept when its worlds were frozen into
+/// `d61` lines (README gap 3123): the kernel's day for a D61 world differs
+/// from its day for the parent world at the same instant, so the comparison of
+/// the `d61` lines is not the parent's comparison again.
+#[test]
+fn the_pause_d61_logs_reaches_the_kernels_day() {
+    let tz = tz();
+    let (mut n, mut moved) = (0usize, 0usize);
+    for line in frozen_lines().iter().filter(|l| l["secondary"] == "d61") {
+        let w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        let parent = frozen_lines()
+            .iter()
+            .find(|l| l["class"] == line["derived"]["from"] && l["secondary"].is_null())
+            .expect("the parent line");
+        let mut p = ClassWorld::of_json(&parent["world"], tz).expect("a stored world");
+        p.now = w.now;
+        let k = forkclass::kernel_answer(&Built::of(w)).expect("the kernel plans the D61 world");
+        let kp = forkclass::kernel_answer(&Built::of(p)).expect("the kernel plans the parent");
+        n += 1;
+        moved += usize::from(k.day != kp.day);
+    }
+    println!("D61 worlds: the logged pause moved the kernel's day on {moved} of {n}");
+    assert!(n > 0 && moved > 0, "the logged pause changed the kernel's day on none of {n} D61 worlds");
+}
+
+/// **The owner's D64, as the re-bless applies it, bites and does not
+/// over-bite** (AGENTS §5.8) — `forkclass::d64_allows` on a frozen P46 line
+/// whose comparand is bent: no reason, an unregistered number, and a
+/// registered number whose flag the line does not carry are each refused; the
+/// number whose flag it carries is allowed; an unchanged line and a line whose
+/// answers a D64(b) re-draw cleared are allowed; and a comparand that departs
+/// from the shipped fork's day without keeping it by value is refused whatever
+/// the reason.
+#[test]
+fn the_d64_rule_bites_and_does_not_over_bite() {
+    let registered = forkclass::registered_parity();
+    let old = frozen_lines()
+        .iter()
+        .find(|l| l["d57"]["p46"] == true && l["d60"]["p51"] == false && l["d57"]["p47"] == false)
+        .expect("a frozen P46 line")
+        .clone();
+    let shipped = old["shipped"]["day"].clone();
+    assert!(!shipped.is_null(), "a P46 line keeps the shipped fork's day");
+    let mut bent = old.clone();
+    bent["day"]["hash"] = Value::String("bent".to_string());
+    assert!(forkclass::d64_allows(&old, &old, &shipped, &[], &registered).is_ok_and(|c| c.is_empty()));
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[], &registered).is_err(), "no reason passed");
+    assert!(!registered.contains(&9999));
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[9999], &registered).is_err(), "an unregistered number passed");
+    assert!(forkclass::d64_allows(&old, &bent, &shipped, &[51], &registered).is_err(), "a number the line has no flag of passed");
+    assert_eq!(forkclass::d64_allows(&old, &bent, &shipped, &[46], &registered), Ok(vec!["day".to_string()]));
+    let mut cleared = old.clone();
+    for key in forkclass::ANSWERS {
+        cleared[key] = Value::Null;
+    }
+    assert!(forkclass::d64_allows(&cleared, &bent, &shipped, &[], &registered).is_ok(), "a D64(b) re-draw's answers were refused");
+    let mut lost = bent.clone();
+    lost["shipped"] = Value::Null;
+    assert!(forkclass::d64_allows(&old, &lost, &shipped, &[46], &registered).is_err(), "a comparand that dropped the shipped day passed");
+}
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)
-use chrono::DateTime;
 use std::collections::BTreeMap;
 use tm_core::dayplan::DayPlan;
 use tm_core::planner::{self, PlanOverrides};
-use tm_core::priority::{self, Candidate, Prio};
+use tm_core::priority::Prio;
 use tm_core::store::RuntimeState;
 
 /// The fork's input for a stored world and a state.
@@ -460,64 +818,6 @@ fn p47_pause(b: &Built, day: &mut DayPlan) -> bool {
     hit
 }
 
-/// **The order the request carries the candidates in** — `kernel_capacity::
-/// send_order`, the fork's `priority::compute` sort — which is the kernel's
-/// REQUEST POSITION, D60's tie-break after `until`. The same function as
-/// `planner_invariants`' `send_order` (W-36 track K); both are fork-comparand
-/// code and leave with the fork at R3 (README gap 3122).
-fn send_order(cands: &[Candidate]) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..cands.len()).collect();
-    order.sort_by(|&a, &b| {
-        let (ca, cb) = (&cands[a], &cands[b]);
-        (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
-            .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
-    });
-    order
-}
-
-/// **P51, by its PROPERTY, in the fork** (owner D60; W-36 land, README gap
-/// 3121 — track H's gap 3085): a `p = 0` answer with a positive shortfall — the
-/// kernel's `Planner.Ranked.imp` condition, read off the KERNEL's own §7 answer
-/// for that id — is ranked by its `until` and then its request position, before
-/// every other `p = 0` answer. Both fork sorts (`sorted_candidates`,
-/// `build_groups`) read only `root_order`/`own_order` of a `with_ranking` day,
-/// so the fork runs D60's key when those two fields are rewritten and nothing
-/// else is: an impossible tie gets `(0, until)` and `(0, position)`, every other
-/// candidate's root moves one file down (a uniform shift, which keeps the fork's
-/// order among them). `planner_invariants`' `w36_d60_cands` is the same rule;
-/// this one finds the answer by id rather than by index.
-fn d60_cands(cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
-    let mut pos = vec![0usize; cands.len()];
-    for (k, &i) in send_order(cands).iter().enumerate() {
-        pos[i] = k;
-    }
-    cands
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let mut d = c.clone();
-            let tie = prios.iter().find(|p| p.id == c.id).filter(|p| p.p == 0 && p.shortfall_min_exact.num > 0);
-            match tie {
-                Some(p) if !c.is_wall => {
-                    let until = p.until.map_or(0, |u| usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0));
-                    d.root_order = (0, until);
-                    d.own_order = (0, pos[i]);
-                }
-                _ => d.root_order = (c.root_order.0.saturating_add(1), c.root_order.1),
-            }
-            d
-        })
-        .collect()
-}
-
-/// **A P51 day**: D60's key moves the fork's §7.4 order.
-fn is_p51(cands: &[Candidate], prios: &[Prio]) -> bool {
-    let dvec = d60_cands(cands, prios);
-    let a: Vec<&str> = priority::sorted_candidates(prios, cands).iter().map(|c| c.id.as_str()).collect();
-    let b: Vec<&str> = priority::sorted_candidates(prios, &dvec).iter().map(|c| c.id.as_str()).collect();
-    a != b
-}
-
 /// **The fork's answers for one stored world**: the shipped day, the comparand
 /// (D57's P46/P47 and, since the W-36 land step, D60's P51 applied by their
 /// properties) with its flags, and on a running-block day the two what-ifs —
@@ -527,8 +827,8 @@ fn fork_answers(b: &Built, prios: &[Prio]) -> Value {
     let st = &b.world.state;
     let shipped = planner::plan(&fork_input(b, st).with_ranking(&b.cands, prios));
     let st2 = p46_state(b, st);
-    let dvec = d60_cands(&b.cands, prios);
-    let p51 = is_p51(&b.cands, prios);
+    let dvec = forkclass::d60_cands(&b.cands, prios);
+    let p51 = forkclass::is_p51(&b.cands, prios);
     let mut comparand = planner::plan(&fork_input(b, &st2).with_ranking(&dvec, prios));
     let p46 = is_p46(b, st);
     if p46 {
@@ -586,107 +886,38 @@ fn the_frozen_classes_are_the_forks_answer_today() {
     assert!(stale.is_empty(), "the frozen answers are not the fork's today (re-bless is a decision, AGENTS §7.2):\n  {}", stale.join("\n  "));
 }
 
-/// **D61's world, planned by both** (W-36 land, README gap 3123). Since the
-/// owner's D61 the binary LOGS a `pause` at the start of a wall that begins
-/// while a block runs, and marks the block paused in `.tm/state.json` (`tm/src/
-/// cli/day.rs`' `stop_the_timer_at_walls`) — so a `wall-on-now` day the binary
-/// produces carries that line, and the frozen `wall-on-now` worlds, drawn
-/// before D61, do not. `pause` is an event the fork has always read, so this
-/// needs no parity number at the planner (P53 is the host's writing of it): for
-/// every frozen `wall-on-now` world whose wall began after the block started,
-/// the pause D61 writes is appended, and the kernel's day is compared with the
-/// fork's comparand for THAT world, by `compare_line`, exactly as a frozen line
-/// is. It runs while the fork is here and leaves with it at R3; freezing these
-/// worlds is gap 3123's exit.
-#[test]
-fn a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it() {
-    let tz = tz();
-    let mut compared = Vec::new();
-    let mut findings = Vec::new();
-    let mut moved = 0usize;
-    for line in frozen_lines().iter().filter(|l| l["class"].as_str().is_some_and(|c| c.starts_with("wall-on-now/"))) {
-        let mut w = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
-        let b0 = Built::of(w.clone());
-        let Some(a) = w.state.active.clone().filter(|a| !a.paused) else { continue };
-        let started = tm_core::capacity::local_dt(tz, b0.date(), a.started);
-        let now = w.now;
-        // The walls' blocked spans, merged as `stop_the_timer_at_walls` merges them.
-        let mut spans: Vec<(DateTime<Tz>, DateTime<Tz>)> = b0.walls().iter().map(|(_, lo, hi, _)| (*lo, *hi)).collect();
-        spans.sort();
-        let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
-        for (lo, hi) in spans {
-            match merged.last_mut() {
-                Some(m) if lo <= m.1 => m.1 = m.1.max(hi),
-                _ => merged.push((lo, hi)),
-            }
-        }
-        let Some((lo, hi)) = merged.into_iter().find(|(lo, hi)| *lo <= now && now < *hi && *lo > started) else {
-            continue;
-        };
-        w.log.push_str(&format!(
-            "{{\"t\":\"{}\",\"ev\":\"pause\",\"id\":\"{}\"}}\n",
-            lo.format("%Y-%m-%dT%H:%M:%S%:z"),
-            a.id
-        ));
-        if let Some(x) = w.state.active.as_mut() {
-            x.paused = true;
-        }
-        // At the wall's start (the frozen `now`), and again twenty minutes INTO
-        // the meeting — the drive's `tm now` at 13:20 — where the paused stretch
-        // is already behind `now` and the open row must not be drawn across it.
-        let mid = (lo + Duration::minutes(20)).min(hi - Duration::minutes(1));
-        let unpaused = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
-        for at in [now, mid] {
-            if at < now || at >= hi {
-                continue;
-            }
-            let mut wa = w.clone();
-            wa.now = at;
-            let b = Built::of(wa.clone());
-            // Non-vacuity: the logged pause reaches the kernel's day.
-            let mut wu = unpaused.clone();
-            wu.now = at;
-            let (kp, ku) = (forkclass::kernel_answer(&b), forkclass::kernel_answer(&Built::of(wu)));
-            if let (Ok(kp), Ok(ku)) = (kp, ku) {
-                moved += usize::from(kp.day != ku.day);
-            }
-            let mut synth = fork_answers(&b, &kernel_prios(&b));
-            synth["class"] = line["class"].clone();
-            synth["world"] = wa.to_json();
-            let mut t = ClassTally::default();
-            findings.extend(compare_line(&synth, &mut t));
-            compared.push(format!(
-                "{} (pause at {}, now {})",
-                line["class"].as_str().unwrap_or_default(),
-                lo.format("%H:%M"),
-                at.format("%H:%M")
-            ));
-        }
-    }
-    // A COMPARISON is one world at one instant, and a world is compared at up to
-    // two (the wall's start and twenty minutes in): the land step printed the
-    // comparisons as "worlds" (W-36 repair, README gap 3136), so both are counted.
-    let worlds = compared
-        .iter()
-        .map(|c| c.split(" (pause at ").next().unwrap_or_default())
-        .collect::<std::collections::BTreeSet<_>>()
-        .len();
-    println!(
-        "D61 comparisons: {} over {worlds} wall-on-now class(es), the logged pause moved the kernel's day on {moved} of them: {}",
-        compared.len(),
-        compared.join(", ")
-    );
-    assert!(!compared.is_empty(), "no frozen wall-on-now world had a wall that began after its block started");
-    assert!(moved > 0, "the logged pause changed the kernel's day on no world: the comparison is vacuous");
-    assert!(findings.is_empty(), "{} disagreement(s) on D61's worlds:\n  {}", findings.len(), findings.join("\n  "));
+/// **The re-bless's reasons** (the owner's D64): the parity numbers
+/// `TM_PLANNER_BLESS_BECAUSE` names, comma-separated as `P<n>`. A token that
+/// is not one FAILS rather than being skipped.
+fn bless_because() -> Vec<u32> {
+    std::env::var("TM_PLANNER_BLESS_BECAUSE")
+        .unwrap_or_default()
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(|t| {
+            t.strip_prefix('P')
+                .and_then(|d| d.parse().ok())
+                .unwrap_or_else(|| panic!("TM_PLANNER_BLESS_BECAUSE: `{t}` is not a parity number P<n>"))
+        })
+        .collect()
 }
 
-/// **Re-bless the frozen fork classes** — inert without `TM_PLANNER_BLESS`.
+/// **Re-bless the frozen fork classes — held to the owner's D64** (W-37 track
+/// H, README gaps 3133, 3138) — inert without `TM_PLANNER_BLESS`.
 ///
-/// It recomputes the FORK'S answers for every stored world and rewrites the
-/// file; it never re-draws a world (support/forkclass.rs says why). Rewriting a
-/// committed comparand is a decision and never a repair (AGENTS §7.2); after R3
-/// this test is gone with the region and the file is final.
+/// It recomputes the FORK'S answers for every stored world and never changes a
+/// world (a re-draw is [`the_frozen_class_worlds_are_redrawn`], which demands
+/// D64(b)'s reason). Rewriting a committed comparand is a decision and never a
+/// repair (AGENTS §7.3), and since D64 it is a decision by a STANDING RULE,
+/// which this test enforces rather than leaving to a sentence: a line whose
+/// answers change must carry the flag of a parity number the re-bless was run
+/// for (`TM_PLANNER_BLESS_BECAUSE=P56`, say) that `kernel/parity.txt`
+/// registers — D64(a) — or have had its answers cleared by a D64(b) re-draw;
+/// the shipped fork's day stays beside a departing comparand by value; and a
+/// re-bless that is neither FAILS BY NAME and writes nothing. After R3 this
+/// test is gone with the region and the file is final. `TM_PLANNER_BLESS_OUT`
+/// writes elsewhere (a scratch copy), for a dry run.
 #[test]
 #[ignore]
 fn the_frozen_fork_classes_are_reblessed() {
@@ -694,19 +925,153 @@ fn the_frozen_fork_classes_are_reblessed() {
         eprintln!("inert: set TM_PLANNER_BLESS=1 to rewrite {}", forkclass::FROZEN_CLASSES);
         return;
     }
+    let because = bless_because();
+    let registered = forkclass::registered_parity();
     let path = forkclass::frozen_path();
+    let out_path = std::env::var_os("TM_PLANNER_BLESS_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
     let text = std::fs::read_to_string(&path).expect("the frozen classes read");
     let mut out = String::new();
+    let (mut refused, mut changed, mut filled) = (Vec::new(), Vec::new(), 0usize);
     for l in text.lines().filter(|l| !l.trim().is_empty()) {
-        let mut line: Value = serde_json::from_str(l).expect("a frozen class line is JSON");
+        let old: Value = serde_json::from_str(l).expect("a frozen class line is JSON");
+        let mut line = old.clone();
         let b = Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"));
-        let answers = fork_answers(&b, &kernel_prios(&b));
-        for key in ["day", "shipped", "d57", "d60", "whatif"] {
+        let prios = kernel_prios(&b);
+        let answers = fork_answers(&b, &prios);
+        for key in forkclass::ANSWERS {
             line[key] = answers[key].clone();
         }
+        let shipped = planner::plan(&fork_input(&b, &b.world.state).with_ranking(&b.cands, &prios));
+        let shipped_day = serde_json::to_value(&shipped).expect("a day serialises");
+        match forkclass::d64_allows(&old, &line, &shipped_day, &because, &registered) {
+            Err(e) => refused.push(e),
+            Ok(keys) if !keys.is_empty() => changed.push(format!("{} `{}`", line["class"], keys.join("`, `"))),
+            Ok(_) => filled += usize::from(old["day"].is_null()),
+        }
+        assert_eq!(line["world"], old["world"], "a re-bless changed a world");
         out.push_str(&serde_json::to_string(&line).expect("a line serialises"));
         out.push('\n');
     }
-    std::fs::write(&path, out).expect("the frozen classes are written");
+    eprintln!(
+        "re-bless for {:?}: {} line(s) changed ({}), {filled} cleared line(s) answered, {} refused",
+        because,
+        changed.len(),
+        changed.join("; "),
+        refused.len()
+    );
+    assert!(refused.is_empty(), "the re-bless is refused by the owner's D64 and wrote nothing:\n  {}", refused.join("\n  "));
+    std::fs::write(&out_path, out).expect("the frozen classes are written");
+}
+
+/// **Re-draw frozen worlds under the owner's D64(b)** (W-37 track H, README
+/// gaps 3138, 3123) — inert without `TM_PLANNER_DRAW`.
+///
+/// Every drawn line is re-drawn at its recorded seed, index and arm from the
+/// shared generator (`forkclass::draws_of_line`). A world the generator no
+/// longer draws may be replaced only when `TM_PLANNER_DRAW` lists its class and
+/// `TM_PLANNER_DRAW_BECAUSE` gives D64(b)'s reason — dated, naming `D64(b)`: a
+/// world the shipped binary cannot build — which the line then carries as
+/// `d64b`, its answers cleared for the re-bless; a re-drawn world must keep its
+/// class. Anything else FAILS BY NAME and writes nothing. It also keeps the
+/// D61 lines exactly the worlds `forkclass::d61_worlds` derives from the
+/// primary lines (README gap 3123): a missing one is added with its answers
+/// cleared, a stale one is re-derived only under the same listing and reason.
+/// `TM_PLANNER_DRAW_OUT` writes elsewhere, for a dry run. After R3 this test
+/// is gone with the region: a world the fork cannot answer cannot be frozen.
+#[test]
+#[ignore]
+fn the_frozen_class_worlds_are_redrawn() {
+    let Ok(listed) = std::env::var("TM_PLANNER_DRAW") else {
+        eprintln!("inert: set TM_PLANNER_DRAW=<class,…> to re-draw {}", forkclass::FROZEN_CLASSES);
+        return;
+    };
+    let listed: BTreeSet<String> = listed.split(',').map(str::trim).filter(|c| !c.is_empty()).map(str::to_string).collect();
+    let because = std::env::var("TM_PLANNER_DRAW_BECAUSE").unwrap_or_default();
+    let reasoned = because.starts_with("20") && because.contains("D64(b)");
+    let tz = tz();
+    let path = forkclass::frozen_path();
+    let out_path = std::env::var_os("TM_PLANNER_DRAW_OUT").map(std::path::PathBuf::from).unwrap_or_else(|| path.clone());
+    let text = std::fs::read_to_string(&path).expect("the frozen classes read");
+    let lines: Vec<Value> = text.lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).expect("JSON")).collect();
+    let mut bad = Vec::new();
+    let mut redrawn = Vec::new();
+    let clear = |line: &mut Value| {
+        for key in forkclass::ANSWERS {
+            line[key] = Value::Null;
+        }
+    };
+    // D64(b) is CHECKED, not asserted: the stored world must fail `forkclass::binary_holds`
+    // (a world the shipped binary cannot build), the re-drawn one must pass it and keep its
+    // class, and the line carries the clauses the old world failed beside the step's reason.
+    let replace = |line: &mut Value, world: ClassWorld, what: String, bad: &mut Vec<String>, redrawn: &mut Vec<String>| {
+        let key = line["class"].as_str().unwrap_or_default().to_string();
+        let old = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        let held = forkclass::binary_holds(&Built::of(old)).err().unwrap_or_default();
+        let fresh = Built::of(world.clone());
+        if !listed.contains(&key) {
+            bad.push(format!("{what}: the generator no longer draws this world and TM_PLANNER_DRAW does not list `{key}`"));
+        } else if !reasoned {
+            bad.push(format!("{what}: re-drawn with no D64(b) reason (TM_PLANNER_DRAW_BECAUSE must be dated and name D64(b))"));
+        } else if held.is_empty() {
+            bad.push(format!("{what}: the stored world is one the binary can hold, so D64(b) does not reach it"));
+        } else if let Err(e) = forkclass::binary_holds(&fresh) {
+            bad.push(format!("{what}: the re-drawn world is not one the binary can hold either: {}", e.join("; ")));
+        } else if class_of(&fresh).key() != key {
+            bad.push(format!("{what}: the re-drawn world is not a `{key}` world"));
+        } else {
+            line["world"] = world.to_json();
+            line["d64b"] = serde_json::json!({"why": because.clone(), "held": held});
+            clear(line);
+            redrawn.push(what);
+        }
+    };
+    let mut out: Vec<Value> = Vec::new();
+    for mut line in lines.iter().filter(|l| l["derived"].is_null()).cloned() {
+        let what = format!("{}{}", line["class"].as_str().unwrap_or_default(), line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
+        let stored = ClassWorld::of_json(&line["world"], tz).expect("a stored world");
+        let worlds: Vec<ClassWorld> = forkclass::draws_of_line(&line).iter().map(forkclass::world_of).collect();
+        if !worlds.contains(&stored) {
+            match worlds.into_iter().next() {
+                Some(w) => replace(&mut line, w, what, &mut bad, &mut redrawn),
+                None => bad.push(format!("{what}: no draw reproduces its recorded arm")),
+            }
+        }
+        out.push(line);
+    }
+    // The D61 lines: derived from the PRIMARY lines, in their order.
+    let parents: Vec<Value> = out.iter().filter(|l| l["secondary"].is_null()).cloned().collect();
+    for parent in parents {
+        let world = ClassWorld::of_json(&parent["world"], tz).expect("a stored world");
+        for (w, pause) in forkclass::d61_worlds(&world) {
+            let key = parent["class"].as_str().unwrap_or_default();
+            let what = format!("{key} (d61 at {})", w.now.format("%H:%M"));
+            let mut line = serde_json::json!({
+                "class": key, "secondary": "d61", "arm": parent["arm"], "case": parent["case"],
+                "seed": parent["seed"], "draw": parent["draw"],
+                "derived": {"from": key, "pause": pause.to_rfc3339(), "now": w.now.to_rfc3339()},
+                "world": w.to_json(),
+            });
+            clear(&mut line);
+            match lines.iter().find(|l| l["derived"] == line["derived"]) {
+                Some(old) if old["world"] == line["world"] => line = old.clone(),
+                Some(old) => {
+                    let mut kept = old.clone();
+                    replace(&mut kept, w, what, &mut bad, &mut redrawn);
+                    line = kept;
+                }
+                None => redrawn.push(format!("{what}: added")),
+            }
+            out.push(line);
+        }
+    }
+    for old in lines.iter().filter(|l| !l["derived"].is_null()) {
+        if !out.iter().any(|l| l["derived"] == old["derived"]) {
+            bad.push(format!("{} (d61 at {}): D61 no longer derives this world", old["class"], old["derived"]["now"]));
+        }
+    }
+    eprintln!("re-draw: {} line(s): {}", redrawn.len(), redrawn.join("; "));
+    assert!(bad.is_empty(), "the re-draw is refused by the owner's D64 and wrote nothing:\n  {}", bad.join("\n  "));
+    let text: String = out.iter().map(|l| serde_json::to_string(l).expect("a line serialises") + "\n").collect();
+    std::fs::write(&out_path, text).expect("the frozen classes are written");
 }
 // END THE FORK PLANNER
