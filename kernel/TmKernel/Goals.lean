@@ -727,7 +727,7 @@ no witness can give `energyFilterOk`, `noDemandingAfterWindDown`,
 each now a build-time wall its step must delete.
 
 **W-19 (track G) proved the nine is a CEILING, and refuted two of the thirteen
-below.**  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item` records its
+below.**  `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day` records its
 two missing conjuncts — `monotoneInRank` and `hotBeforeQueue` — as *missing*.
 They are **false**: at `PlannerWit.theQueuedRequest` (the census request with
 `m1`'s two log lines removed and `m2` running) both answer `false` at the
@@ -748,7 +748,7 @@ the subject census keyed on each check's own `PlanCheck.CheckName` and filtered
 over `PlanCheck.checksOf`'s own list, so the count is the compiler's;
 `PlannerWit.the_census_ratio` computes **seven** at
 `PlannerWit.theCensusRequest`, which is exactly what W-18 settled by hand.
-`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` then proves seven is a **ceiling over
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` then proves seven is a **ceiling over
 every request**, because the four W-18 named have no subject at any of them
 (`PlanCheck.energyFilter_has_no_subject_on_an_unassigned_day` and its three siblings).
 
@@ -807,7 +807,7 @@ of the eleven can have a subject on that day at any request — and
 **Which number to quote is settled in one place and nowhere else**: `PlanCheck.lean`'s W-22
 section header carries the table of the three questions a *"N of the eleven"* can answer, and
 says which is the honest headline — the SUBJECT count, whose one figure is **seven**, the
-whole-day ceiling `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` proves and
+whole-day ceiling `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` proves and
 `PlannerWit.the_census_ratio` reaches.  Every sentence below and every sentence in
 `PlanCheck.lean`, `PlannerWit.lean`, `Check.lean` and `Negative.lean` was re-read against the
 computed census at W-22 and agrees with it; the one that named two days and gave one number
@@ -1169,13 +1169,14 @@ on a named subdomain, so they are
 `PlanCheck.no_block_row_of_the_day_carries_a_slot_energy_on_an_unassigned_day`,
 `PlanCheck.no_block_row_of_the_day_reaches_the_wind_down_on_an_unassigned_day`,
 `PlanCheck.the_day_has_no_batch_row_on_an_unassigned_day` and
-`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`, each carrying
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day`, each carrying
 `hnoassign : r.assignedRows = []`.  That is a real loss of domain and it is priced as README
 gap **1902**.
 
 **AND THE CENSUS NUMBER DID NOT MOVE, WHICH THIS ENTRY PREDICTED IT WOULD.**  Written before
 P9 landed, it called seven *"the one number in this repository that P9 must move"*.  It did
-not: on the merged tree `PlannerWit.the_census_ratio_is_still_seven` computes **seven** and is
+not: on the merged tree the census ratio computed **seven** (it reads six since D63,
+`PlannerWit.the_census_ratio_is_six_since_D63`, W-37 track K) and was
 green beside a composed `Planner.dayRows`.  The reason is the fact both tracks of W-29
 measured independently — `theCensusRequest` sends **no candidate**, so the cursor fills no slot
 and a composition whose rows are a `filterMap` over `Planner.Assign.slotOf` adds nothing to its
@@ -1383,8 +1384,11 @@ the `(0, 0)` pair whose `Arith.isImpossible` is `false`.
 `PlannerWit.the_first_impossible_candidate_this_tree_has_had` is the first `true` the test has
 ever answered about a request, and `PlannerWit.pCandDue` is the candidate that produces it.
 
-The restatement is `PlanCheck.impossibleKept`, which is **already** one of §6.1's eleven and
-already proved inside `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`: it reads the
+The restatement is `PlanCheck.impossibleKept`, which is **already** one of §6.1's eleven.  It
+was proved inside the W-31 paying lift until W-37, when D66 made it read step 5's own filter and
+that lift was refuted (`PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`;
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check` reduces the
+whole paying day to this one check, and README gap 3160 is what is owed): it reads the
 day's own `Planner.Diagnostics.impossible` — the id and its exact shortfall — rather than
 recomputing the numbers, which is what design §6.1 requires of a check over a produced `DayPlan`.
 **Its subject was empty at every request and every eligibility until W-33**, which

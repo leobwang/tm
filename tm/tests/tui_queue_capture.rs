@@ -368,3 +368,28 @@ fn enter_saves_to_the_previewed_target() {
     assert!(state.buffer.is_empty());
     assert_eq!(state.triaging, None);
 }
+
+/// **A bare duration is read by the slot's SHAPE, whatever its size** (W-37
+/// repair, README gap 3336, parity P57). The capture decided "is this word the
+/// estimate" with a MAGNITUDE test (`Dur::parse_no_days`, `u32` minutes) — a
+/// second reader of the leading-estimate slot beside `grammar::is_est_slot`,
+/// which `tm check`, the line grammar and the kernel's `Field.estSlot` all use —
+/// so `4294967296m` was quietly kept as a TITLE word while `30m` became the
+/// estimate. It is the estimate now, and one this host cannot hold is refused
+/// by name by the capture's own round trip (§5.7), never silently re-filed.
+#[test]
+fn a_bare_duration_is_the_estimate_by_its_shape_whatever_its_size() {
+    let tm = Tm::new();
+    let root = tm.plan.to_string_lossy().to_string();
+    let world = world_from(&root);
+    let small = inbox::capture("call the bank 30m ci2", &world.view(), Some(2));
+    assert_eq!(small.line, "- [ ] 2 30m call the bank", "{:?}", small.problem);
+    let huge = inbox::capture("call the bank 4294967296m ci2", &world.view(), Some(2));
+    assert!(
+        huge.problem.as_deref().is_some_and(|p| p.contains("4294967296m") && p.contains("leading estimate")),
+        "the estimate past the width is refused by name, not kept in the title: line {:?}, problem {:?}",
+        huge.line,
+        huge.problem
+    );
+    assert!(!huge.line.contains("call the bank 4294967296m"), "{:?}", huge.line);
+}

@@ -116,3 +116,32 @@ fn extend_and_stop_on_a_leading_estimate_past_the_width_lose_no_title_word() {
         assert_eq!(title, "Insurance claim for the bike", "{lead}: {line}");
     }
 }
+
+/// **`tm check`'s swallowed-ci rule reads the slot by the same shape** (W-37
+/// repair, README gap 3336). A number in the positional ci slot the tokenizer
+/// could not eat (`7`) blocks the leading estimate behind it; the rule reported
+/// that only when the word behind was an estimate by MAGNITUDE (`u32` minutes),
+/// so `7 4294967296m` went unreported while `7 30m` was an error — the second
+/// reader of "is this word the leading estimate" track T's P57 left behind.
+#[test]
+fn a_swallowed_ci_is_reported_whatever_the_estimate_behind_it_weighs() {
+    for lead in ["30m", PAST] {
+        let tm = Tm::new();
+        let path = tm.plan.join("backlog.md");
+        let text = std::fs::read_to_string(&path).expect("backlog");
+        let edited = text.replacen(
+            "- [ ] 2 30m Insurance claim for the bike  ^a1",
+            &format!("- [ ] 7 {lead} Insurance claim for the bike  ^a1"),
+            1,
+        );
+        assert_ne!(edited, text, "the fixture holds ^a1's line");
+        std::fs::write(&path, edited).expect("write");
+        let out = tm.run(&["--json", "check"]);
+        assert!(
+            out.stdout.contains("bad-ci") && out.stdout.contains(&format!("`7 {lead}`")),
+            "`7 {lead}` is named as a swallowed ci: {}{}",
+            out.stdout,
+            out.stderr
+        );
+    }
+}

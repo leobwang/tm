@@ -12987,21 +12987,20 @@ theorem wallsEmit_refuses_without_the_replay (j v : JVal) (lg : Option LogAnswer
 
 
 
-/-- **A walls request**: no documents (so no walls), a one-line log from genesis (a `start a1` at
-09:00 UTC, spelled as characters) asking for facts, the day and the block length, and `emit` in its
-walls form at `at`. -/
-def wallsWitnessRequest (withLog : Bool) : JVal :=
-  .obj ([("docs".toList, .arr []), ("now".toList, .str ['2','0','2','6','-','0','9','-','0','7']), ("blockMin".toList, .num 60),
-    ("tz".toList, utcTzJson)] ++
-    (if withLog then [("log".toList, CapWire.logFromGenesisJ [.str
-      ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','0','9',':','0','0',':','0','0','Z','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','a','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','3','.','0',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','0',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']])] else []) ++
-    [("emit".toList, .obj [("walls".toList, .obj [("at".toList, .str ['2','0','2','6','-','0','9','-','0','7','T','1','0',':','0','0',':','0','0','Z']), ("break".toList, .null)])])])
-
 set_option maxRecDepth 40000 in
 /-- **The walls form, answered through `readEmitSection`** (README gap 3139): with a replay and no
 wall in the plan the kernel answers no mark and no meeting, in build order; without a replay it
-refuses `logAbsent` by name. -/
+refuses `logAbsent` by name.  The request — no documents (so no walls), a one-line log from
+genesis (a `start a1` at 09:00 UTC) asking for facts, the day, the block length, and `emit` in
+its walls form at `at` — is a local `let`, not a definition the export cannot reach (README gap
+3333, W-37 repair; D51). -/
 theorem the_walls_form_is_answered_through_the_emit_section :
+    let wallsWitnessRequest : Bool → JVal := fun withLog =>
+      .obj ([("docs".toList, .arr []), ("now".toList, .str ['2','0','2','6','-','0','9','-','0','7']), ("blockMin".toList, .num 60),
+        ("tz".toList, utcTzJson)] ++
+        (if withLog then [("log".toList, CapWire.logFromGenesisJ [.str
+          ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','0','9',':','0','0',':','0','0','Z','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','a','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','3','.','0',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','0',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']])] else []) ++
+        [("emit".toList, .obj [("walls".toList, .obj [("at".toList, .str ['2','0','2','6','-','0','9','-','0','7','T','1','0',':','0','0',':','0','0','Z']), ("break".toList, .null)])])])
     (match readEmitSection (wallsWitnessRequest true) with
       | .ok (some v) => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null)]
       | _ => false) = true ∧

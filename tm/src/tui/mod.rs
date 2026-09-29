@@ -553,12 +553,17 @@ fn verb(g: &Globals, args: &[String]) -> Result<String, CliError> {
         now: g.now,
     };
     let name = args.first().cloned().unwrap_or_default();
-    Ok(match crate::cli::run(&globals, cli.command) {
+    // A notice the verb's housekeeping SAID (D65's meeting pause) rides the
+    // status line: stderr belongs to the screen (README gap 3339).
+    let _ = crate::cli::kernel_bridge::take_notices();
+    let status = match crate::cli::run(&globals, cli.command) {
         Ok(0) => format!("{name}: ok"),
         Ok(code) => format!("{name}: exit {code}"),
         Err(e) if e.is_kernel_fault() => return Err(e),
         Err(e) => format!("{name}: {e}"),
-    })
+    };
+    let said = crate::cli::kernel_bridge::take_notices();
+    Ok(if said.is_empty() { status } else { format!("{status} · {}", said.join(" · ")) })
 }
 
 /// Open a file at a line in `cfg.tui.editor` (§16's `code -g {file}:{line}`).
@@ -705,6 +710,32 @@ mod tests {
         )
         .expect("a refusal is a message, not an exit");
         assert!(msg.contains("occupied"), "{msg}");
+    }
+
+    /// **The meeting pause D65 says is said in the TUI too** (W-37 repair, README
+    /// gap 3339): a verb run from the TUI whose housekeeping logs the wall's
+    /// pause shows it on the status line, where stderr belongs to the screen.
+    #[test]
+    fn the_meeting_pause_is_said_on_the_status_line() {
+        let _env = kernel_env();
+        let (_tmp, g) = fixture();
+        wake(&g);
+        let at = |s: &str| Globals {
+            dir: g.dir.clone(),
+            json: false,
+            now: Some(DateTime::parse_from_rfc3339(s).expect("now")),
+        };
+        verb(&at("2026-09-07T12:00:00-05:00"), &["start".to_string(), "^t4".to_string()])
+            .expect("tm start");
+        crate::cli::kernel_bridge::capture_kernel_stderr(true);
+        let status = verb(&at("2026-09-07T13:20:00-05:00"), &["now".to_string()]);
+        crate::cli::kernel_bridge::capture_kernel_stderr(false);
+        let status = status.expect("tm now");
+        assert!(
+            status.contains("paused ^t4 for Meeting w/ host 12:50–13:50"),
+            "the status line says the pause: {status:?}"
+        );
+        assert!(crate::cli::kernel_bridge::take_notices().is_empty(), "the notice was taken once");
     }
 
     #[test]

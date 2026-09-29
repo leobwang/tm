@@ -1132,6 +1132,32 @@ fn the_kernels_monotone_rank_is_its_own_order() {
     assert!(e.to_string().contains("(later line) is assigned"), "{e}");
 }
 
+/// **An impossible answer with no `until` keys as every other answer** (W-37 repair, README gap
+/// 3337). The harness's copy of D60's key (`forkclass::d60_cands`) read `until` as `0` when it was
+/// absent, putting such an answer FIRST, while the kernel's `Planner.Ranked.imp` is
+/// `(answerUntil x.out).map …` — `none` for an answer with neither a floor nor a grant, which then
+/// keys as every other. On the reversed day the impossible tie keys `(0, until)`; the same answer
+/// with its `until` taken away keys as every other candidate does (its root one file down).
+#[test]
+fn an_impossible_answer_with_no_until_keys_as_every_other() {
+    let case = reversed_day();
+    let w = build(&case);
+    let plan = kernel_plan(&w.plan_request()).unwrap_or_else(|e| panic!("the kernel refused: {e}"));
+    let cvec = w.candidates();
+    let ps = kernel_prios(&plan, &cvec).expect("the kernel's §7 answers");
+    let i = ps.iter().position(forkclass::is_impossible_tie).expect("the reversed day has an impossible tie");
+    assert!(ps[i].until.is_some(), "the tie has an until");
+    assert_eq!(forkclass::d60_cands(&cvec, &ps)[i].root_order.0, 0, "an impossible tie keys first");
+    let mut bare = ps.clone();
+    bare[i].until = None;
+    let k = cvec.iter().position(|c| c.id == ps[i].id).expect("the answer's candidate");
+    assert_eq!(
+        forkclass::d60_cands(&cvec, &bare)[k].root_order,
+        (cvec[k].root_order.0 + 1, cvec[k].root_order.1),
+        "an impossible answer with no until keyed as an impossible tie"
+    );
+}
+
 /// **README gap 3280, CLOSED at W-37's land step, and pinned**: at the minute a routine's §8.2
 /// step-2 window closes, `planwire::routine_instances` used to send it an EMPTY window and the
 /// kernel refused the whole planner section, where the fork plans the day. Track R's filter (gap
@@ -3263,6 +3289,149 @@ proptest! {
              days ({ndefids} ids, whole, on {naside} days carrying an open-block row), \
              `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break); \
              days whose rows agree in a different ORDER at an interruption (gap 3281) {n3281}"
+        );
+    }
+}
+
+/// **The P56 arm's census** (W-37 repair, README gap 3332): `[cases, days a meeting was
+/// logged as passed (D61's marks), of them with a typed pause longer than the wall, days
+/// compared, Pause segments the replay holds on those days, of them overlapping a wall,
+/// paused rows the kernel-ranked fork drew on those days, cases with no kernel §7 answer]`.
+static P56_CENSUS: Mutex<[u64; 8]> = Mutex::new([0; 8]);
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **P56, differentially: the kernel's `Planner.pastSpans` and the fork's `cut_out` draw
+    /// the same rows on a day whose log holds a meeting's pause** (W-37 repair, README gap
+    /// 3332). Track T wrote the kernel's cut and changed the in-tree fork to agree (P56), and
+    /// until this arm the two were never run on one day: the generator logged no `pause`, so
+    /// each was tested only against itself — the W-37 critic's finding, a claim of having
+    /// checked (README W-37 track T §1) that was never made. Here a running block passes a
+    /// meeting, logged as the binary's housekeeping logs it (`plangen`'s
+    /// `World::log_a_passed_meeting`) — on half the draws with a typed pause ten minutes
+    /// longer than the wall at each end, so the cut leaves two pieces — and EVERY row of
+    /// either day must be a row of the other, against the kernel-ranked fork (D53).
+    #[test]
+    fn the_kernel_cuts_a_meeting_out_of_a_pause_as_the_fork_does(
+        case in case_strategy(),
+        typed in any::<bool>(),
+        force in any::<bool>(),
+    ) {
+        // **A PASSED MEETING, DRAWN** (the errands move, README gap 3126): the shared generator
+        // runs a block across a meeting that has ended on ~6 of 256 cases. On half the cases the
+        // running block is started half an hour before a wall that begins after the last `done`
+        // and ends at least eleven minutes before `now` (a one-hour wall on the hour, added when
+        // the calendar has none there) — a day the generator can already draw (it draws `ago`
+        // and walls freely), drawn more often. An interruption drawn on the same case is left
+        // out of THIS draw (§9's other event); the shared generator is untouched.
+        let mut case = case;
+        if force && !case.items.is_empty() {
+            let tz = tm_core::config::Config::default().tz;
+            let now = case.now(tz);
+            let floor = case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5) + Duration::minutes(1);
+            // The first whole hour at least eleven minutes after `floor` whose hour-long wall
+            // ends eleven minutes before `now`: an existing wall there is used as it is, and
+            // otherwise a one-hour wall is added to the calendar (a wall the generator draws).
+            let first = (floor + Duration::minutes(11 + 59)).format("%H").to_string().parse::<u32>().unwrap_or(24);
+            for h in first..23 {
+                let lo = local_dt(tz, date(), NaiveTime::from_hms_opt(h, 0, 0).expect("time"));
+                if lo + Duration::minutes(60 + 11) > now {
+                    break;
+                }
+                if !case.walls.iter().any(|x| x.hour == h) {
+                    case.walls.push(WallSpec { hour: h, hours: 1 });
+                }
+                let start = (lo - Duration::minutes(30)).max(floor);
+                let ago = u32::try_from((now - start).num_minutes()).unwrap_or(0);
+                let est = case.active.map_or(60, |a| a.2);
+                case.active = Some((0, ago, est));
+                case.interrupt = None;
+                break;
+            }
+        }
+        let mut w = build(&case);
+        let tz = w.cfg.tz;
+        let drew = w.log_a_passed_meeting(&case, typed);
+        let (mut logged, mut longer, mut compared, mut pauses, mut over, mut paused_rows, mut noprio) =
+            (0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64);
+        if let Some(t) = drew {
+            logged = 1;
+            longer = u64::from(t);
+            let req = w.plan_request();
+            let plan = match kernel_plan(&req) {
+                Ok(p) => p,
+                Err(raw) => {
+                    let head: String = raw.chars().take(400).collect();
+                    prop_assert!(false, "the kernel refused a day the fork planned: {head}");
+                    unreachable!()
+                }
+            };
+            let cvec = w.candidates();
+            match kernel_prios(&plan, &cvec) {
+                None => noprio = 1,
+                Some(ps) => {
+                    compared = 1;
+                    let d2 = w35_fork_plan(&w, &w.state, &cvec, &ps);
+                    let krows = fork_rows_of_kernel(&plan, tz);
+                    for f in rows_not_in(&d2.segments, &krows) {
+                        prop_assert!(false, "P56: the fork's day holds a row the kernel's does not: {}", placement_key(f));
+                    }
+                    for k in rows_not_in(&krows, &d2.segments) {
+                        prop_assert!(false, "P56: the kernel's day holds a row the fork's does not: {}", placement_key(k));
+                    }
+                    let walls = w.walls_today();
+                    let segs: Vec<(DateTime<Tz>, DateTime<Tz>)> = w
+                        .replay
+                        .day(date())
+                        .map(|d| {
+                            d.segments
+                                .iter()
+                                .filter(|g| matches!(g.kind, tm_core::log::SegmentKind::Pause { .. }))
+                                .map(|g| (g.start.with_timezone(&tz), g.end.with_timezone(&tz)))
+                                .collect()
+                        })
+                        .unwrap_or_default();
+                    pauses = segs.len() as u64;
+                    over = segs.iter().filter(|(a, b)| walls.iter().any(|(lo, hi)| a < hi && lo < b)).count() as u64;
+                    paused_rows = d2
+                        .segments
+                        .iter()
+                        .filter(|g| matches!(g.kind, SegKind::Lost) && g.flags.note.as_deref() == Some("paused"))
+                        .count() as u64;
+                }
+            }
+        }
+        let [cases, nlogged, nlonger, ncmp, npause, nover, nrows, nnoprio] = {
+            let mut c = P56_CENSUS.lock().expect("census");
+            for (i, v) in [1, logged, longer, compared, pauses, over, paused_rows, noprio].into_iter().enumerate() {
+                c[i] += v;
+            }
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(256);
+        if cases >= generated {
+            // **Floors** (AGENTS §9.2): the cut compared on no day is compared on nothing.
+            prop_assert!(ncmp > 0, "no day with a logged meeting was compared in {cases} cases");
+            prop_assert!(nover > 0, "no Pause segment over a wall reached the comparison in {cases} cases");
+            prop_assert!(nlonger > 0, "no typed pause longer than its wall was drawn in {cases} cases");
+            prop_assert!(nrows > 0, "no paused row the cut LEFT was compared in {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants P56 census: {cases} cases; a passed meeting logged on {nlogged} ({nlonger} \
+             with a typed pause longer than the wall); compared with the kernel-ranked fork on {ncmp} \
+             ({nnoprio} with no kernel §7 answer); the replay's Pause segments on them {npause}, {nover} \
+             over a wall; paused rows both days drew {nrows}"
         );
     }
 }

@@ -200,7 +200,6 @@ pub struct Normalized {
 /// §4.1 location words. A location of your own is written out — `loc:cafe` —
 /// and rule 1 passes it through.
 pub fn normalize(input: &str, cfg: &Config, today: NaiveDate) -> Normalized {
-    let block_min = cfg.block_min();
     let mut out = Normalized::default();
     let mut title: Vec<String> = Vec::new();
     let words: Vec<&str> = input.split_whitespace().collect();
@@ -275,8 +274,12 @@ pub fn normalize(input: &str, cfg: &Config, today: NaiveDate) -> Normalized {
                 _ => {}
             }
         }
-        // 4. a bare duration.
-        if out.est.is_none() && Dur::parse_no_days(w, block_min).is_ok() {
+        // 4. a bare duration — the leading-estimate slot's SHAPE (`grammar::is_est_slot`,
+        // parity P57, README gap 3336), the one test every reader of the slot uses: a
+        // duration-shaped word is the estimate whatever its size, and one this host cannot
+        // hold is then refused BY NAME by the round trip below (§5.7) instead of being
+        // quietly kept as a title word.
+        if out.est.is_none() && tm_core::grammar::is_est_slot(w) {
             out.est = Some(w.to_string());
             i += 1;
             continue;

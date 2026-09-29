@@ -359,10 +359,18 @@ pub(crate) fn stop_the_timer_at_walls(ctx: &mut Ctx) -> Result<bool, CliError> {
         return Ok(false);
     };
     let paused = last.pause;
-    let today = ctx.today;
     for m in &marks {
         ctx.append_line(&m.line)?;
-        super::dayfile::note(ctx, today, m.at.time(), &timer_note(m.pause, &active.id))?;
+        // The mark's OWN date (README gap 3334): a meeting that crosses
+        // midnight is paused on the evening it began, and its journal line
+        // belongs in that day's file, not in the file of the day the verb ran.
+        super::dayfile::note_underneath(
+            ctx,
+            m.at.date_naive(),
+            m.at.time(),
+            &timer_note(m.pause, &active.id),
+            Some((&active.id, m.pause)),
+        )?;
         if m.pause {
             say_wall_pause(ctx, &active.id, &m.walls, m.from, m.to);
         }
@@ -513,10 +521,7 @@ fn say_wall_pause(
     lo: DateTime<chrono_tz::Tz>,
     hi: DateTime<chrono_tz::Tz>,
 ) {
-    if super::kernel_bridge::capturing_kernel_stderr() {
-        return;
-    }
-    eprintln!("tm: {}", wall_pause_line(ctx, block, walls, lo, hi));
+    super::kernel_bridge::notice(wall_pause_line(ctx, block, walls, lo, hi));
 }
 
 /// [`say_wall_pause`]'s text: `paused ^t4 for` and [`meeting_text`].

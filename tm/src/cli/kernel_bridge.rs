@@ -121,6 +121,28 @@ pub fn capturing_kernel_stderr() -> bool {
     CAPTURE_STDERR.load(Ordering::SeqCst)
 }
 
+/// The notices a verb's housekeeping said while the TUI owned stderr, oldest
+/// first — see [`notice`].
+static NOTICES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+/// **Say one line to the user** — `tm: <line>` on stderr, or, while the TUI
+/// owns the screen ([`capturing_kernel_stderr`]), kept for its status line
+/// ([`take_notices`]). Until the W-37 repair a line D65 promises to SAY (the
+/// meeting pause a verb's housekeeping logs) was dropped on the floor in the
+/// TUI: the status line read `now: ok` and nothing else (README gap 3339).
+pub fn notice(line: String) {
+    if capturing_kernel_stderr() {
+        NOTICES.lock().unwrap_or_else(|p| p.into_inner()).push(line);
+    } else {
+        eprintln!("tm: {line}");
+    }
+}
+
+/// The notices kept since the last call, oldest first, and the queue emptied.
+pub fn take_notices() -> Vec<String> {
+    std::mem::take(&mut *NOTICES.lock().unwrap_or_else(|p| p.into_inner()))
+}
+
 /// One capture window: fd 2 `dup2`'d to a pipe, a thread draining the read
 /// end (so a large backtrace cannot fill the pipe and block the writer),
 /// the original fd restored on [`StderrCapture::finish`].

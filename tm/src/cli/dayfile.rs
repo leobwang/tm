@@ -48,9 +48,37 @@ pub fn ensure(ctx: &Ctx, date: NaiveDate) -> Result<String, CliError> {
 /// section — and the file — are created when they are missing.
 pub fn note(ctx: &Ctx, date: NaiveDate, at: NaiveTime, text: &str) -> Result<(), CliError> {
     let rel = ensure(ctx, date)?;
-    let line = format!("{} {}", at.format("%H:%M"), text.trim());
-    ctx.store.append_to_section(&rel, "## Log", &line)?;
+    ctx.store.append_to_section(&rel, "## Log", &journal_line(at, text))?;
     Ok(())
+}
+
+/// The `## Log` line [`note`] writes: `HH:MM <text>`.
+fn journal_line(at: NaiveTime, text: &str) -> String {
+    format!("{} {}", at.format("%H:%M"), text.trim())
+}
+
+/// [`note`], written by **housekeeping** rather than by the user's command —
+/// D61's meeting pause, which runs before any undo recorder — and therefore
+/// rebased UNDER the undo stack, so a later `tm undo` neither trips over the
+/// line nor drops it (`undo::rebase_underneath`, README gap 3330). `active` is
+/// the running block and the timer state the same write left it in.
+pub fn note_underneath(
+    ctx: &Ctx,
+    date: NaiveDate,
+    at: NaiveTime,
+    text: &str,
+    active: Option<(&tm_core::model::Id, bool)>,
+) -> Result<(), CliError> {
+    let rel = path(date);
+    let was = if ctx.store.exists(&rel) { Some(ctx.store.read_text(&rel)?) } else { None };
+    note(ctx, date, at, text)?;
+    let now = ctx.store.read_text(&rel)?;
+    let line = journal_line(at, text);
+    let cfg = ctx.store.read_config()?;
+    let edit = |t: &str| {
+        edit::append_to_section(&tm_core::grammar::parse_file(&rel, t, &cfg), "## Log", &line)
+    };
+    super::undo::rebase_underneath(ctx, &rel, was.as_deref(), &now, &edit, active)
 }
 
 /// Set runtime front-matter keys of the day file (§4.3's `wake`, `slept`,

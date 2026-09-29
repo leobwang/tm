@@ -7474,3 +7474,14 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_hot_routine_instances_are_accepted
 #print axioms Tm.PlannerWit.a_scheduled_window_tasks_routine_row_is_hot_at_p_zero
 #print axioms Tm.PlannerWit.the_reservation_reads_the_first_candidate_of_its_id
+
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-37 REPAIR -- D61's walls read the day before (README gap 3334),
+-- and `touchedAfter`/`pausedFor` written by recursion so the export reaches them (gap 3333),
+-- each with its old definition proved as an equation.  The WallTimer witnesses and the walls
+-- form's witness request moved to `PlannerWit.lean` with their names kept, so their lines above
+-- stand as they were.
+-- ============================================================================
+#print axioms Tm.WallTimer.the_evening_befores_walls_are_read
+#print axioms Tm.WallTimer.touchedAfter_eq_any
+#print axioms Tm.WallTimer.pausedFor_eq_find

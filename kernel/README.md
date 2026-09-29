@@ -72484,3 +72484,151 @@ candidates and reads one `ci`), or the plan view reading the default the host us
 box-less line — a decision, not a repair.
 
 New gaps start at **3324**.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-37**, **REPAIR
+     STEP**, first commit, on `rebuild-on-lean` over `faaaac6`.  Gap range
+     **3330-3359**; this commit takes **3330-3339** and **3342-3345**;
+     3340-3341 are the second commit's (the frozen worlds and the stored
+     window that crosses midnight).  Parity: **none issued**.
+     ===================================================================== -->
+
+## Stage 6 — W-37 repair (1 of 2): undo survives a meeting, the re-bless gate attributes, P56 is compared, and the exemption file shrinks
+
+The two auditors' findings, reproduced first and then fixed, most severe first.  Every figure below
+was measured on this commit's tree.
+
+### 1. What was fixed
+
+**Gap 3330 — CLOSED: D65's journal line broke `tm undo`.**  Reproduced on `faaaac6` exactly as the
+critic drove it (`plan-basic`, `wake` 06:05, `start ^t4` 12:00, `now` 13:20, `undo` 13:25): exit 3,
+`conflict in day/2026-09-07.md — the file changed under us … theirs: 12:50 pause ^t4`, `^t4` left
+running and paused.  The housekeeping write happens inside `Ctx::load`, before any recorder, so no
+entry owned it.  It now goes UNDER the stack (`undo::rebase_underneath`, called by
+`dayfile::note_underneath`): the same deterministic `## Log` edit is applied to every stacked copy of
+that file, `before` and `after`, when the top-most entry that touched it left exactly the text the
+housekeeping edited — otherwise another writer changed the file and the guard must still say so —
+and the timer state the write left is rebased onto every stacked state that holds that block.  The
+log's `pause` is in no entry's events and survives an undo, so its journal line does too.  After:
+`undid start (start ^t4) · 2 file(s) restored · 1 left`, exit 0, no block running, the journal
+keeping `12:50 pause ^t4` beside the log line it mirrors.  Pinned by
+`a_start_before_a_meeting_can_still_be_undone` and `an_undo_under_a_meeting_pause_keeps_the_pause`
+(an energy report undone after the wall paused the block: the block stays running AND paused, 50
+minutes worked), both FAILING on `faaaac6`'s code (plant in `repair-w37/clone`).
+
+**Gap 3331 — CLOSED: the D64(a) re-bless gate licensed a line, not a change.**  Reproduced from the
+code: the flag set was the union of the old and new lines' flags, and any change on a flagged line
+passed.  `forkclass::d64_allows` now holds three clauses, each a property of the line: (1) the flag
+is the COMMITTED line's — a flag the recomputed answer sets licenses nothing; (2) the SHIPPED fork's
+day did not move, by value (a comparand parity number is a departure FROM the shipped fork, so a
+change to the fork itself, or to the ranking both are handed, is refused whatever number is named —
+the critic's case, T's edit of `past_segments`); (3) each changed answer is one the named number
+governs: the object its flag lives in (`d57` for P46/P47, `d60` for P51, read off the line) and the
+comparand-derived `day` and `whatif`.  `the_d64_rule_bites_and_does_not_over_bite` gains one plant
+per clause; each clause, disabled alone in a clone, fails exactly its own assertion.  The residue is
+gap 3342.
+
+**Gap 3332 — CLOSED for the live differential: P56 was compared by nothing.**  Confirmed: the
+generator logged no `pause`, so the kernel's `Planner.pastSpans` and the in-tree fork's `cut_out` were
+never run on one day.  `planner_invariants` gains
+`the_kernel_cuts_a_meeting_out_of_a_pause_as_the_fork_does`: a running block passes a meeting,
+logged as the binary's housekeeping logs it — on half the draws with a TYPED pause ten minutes longer
+than the wall at each end, so the cut leaves two pieces — and every row of either day must be a row
+of the other.  Three runs of 283 cases: 43 / 41 / 41 days compared, 31 / 29 / 29 Pause segments over
+a wall, 34 / 30 / 30 paused rows both days drew; floors on all four.  With the fork's cut removed in a
+clone the arm fails by name (`P56: the fork's day holds a row the kernel's does not: … "lost" … zaa`).
+The frozen half stays gap 3320.
+
+**Gap 3333 — CLOSED: `reach-exempt.txt` grew 1,201 → 1,205.**  It is **1,200** now, below
+`b3c29a3`'s 1,201.  `WallTimer.touchedAfter` and `pausedFor` are written by recursion rather than as
+one-line wrappers the compiler specialised into their callers, so the export reaches the symbols
+themselves; each keeps its old definition as a proved equation (`touchedAfter_eq_any`,
+`pausedFor_eq_find`) and every law over them is unchanged.  The witnesses' instant helpers are gone —
+the witnesses write the instants as literals — and the walls form's witness request is a local `let`
+in its theorem.  The three dated sections are deleted, not moved: a witness module would have held
+them by property, but moving the witnesses out of `WallTimer.lean` put every WallTimer mutation's pin
+behind a `PlannerWit` rebuild (measured: ~8 minutes a constant), so they stayed where their pins are.
+Check 9's 25 drifted WallTimer rows were re-run and rewritten, **all PINNED**, in a clone.
+
+**Gap 3334 — CLOSED: D61 missed a meeting held the evening before and journaled a cross-midnight
+pause into the wrong day.**  Reproduced (critic's `midnight.sh`: `^t4` from 22:30, walls 22:40–22:50
+and 23:30–00:30, first verb 00:10): only the 23:30 pause was logged, into `day/2026-09-08.md`.
+`WallTimer.spansOf` now joins the day before's walls that the day's selection does not already hold
+(`Look.wallIxOn`, reused), as the marks already read the day before; `step` passes over a span at or
+before the block's start, so a block begun today pays nothing.  The host journals each mark on the
+mark's OWN date.  After: `pause` 22:40, `unpause` 22:50, `pause` 23:30, all three in
+`day/2026-09-07.md`.  New witness `WallTimer.the_evening_befores_walls_are_read`; CLI
+`a_meeting_the_evening_before_is_paused_and_journaled_on_its_own_day` (FAILS on `faaaac6`).  The
+same drive's `0m of 60m` is gap 3246, unchanged.
+
+**Gap 3335 — CLOSED for the live prose: gap 3165's stale citations.**  `Goals.lean`'s stage-6 notes
+name the successors (`PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`,
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day`,
+`PlannerWit.the_census_ratio_is_six_since_D63`, and the paying lift as refuted with gap 3160 owed), and
+four counted caps in `citations-allow.txt` fall by the citations removed.  The W-37 section's other
+entries are append-only README blocks and dated `Check.lean` banners naming what stood when they were
+written — the file's purpose.  `Negative.lean`'s CHEAT 209–210 comments cannot be edited (§6.2) and
+keep one counted citation.
+
+**Gap 3336 — CLOSED: two magnitude readers of "is this word the leading estimate".**  `tm check`'s
+swallowed-ci rule (`check.rs`' `swallowed_ci`) and the TUI capture (`inbox::normalize`) read the slot
+by `grammar::is_est_slot`, the shape every other reader uses.  `tm check` now names `7 4294967296m`
+as a swallowed ci as it named `7 30m`; the capture refuses `call the bank 4294967296m ci2` by name
+(`the leading estimate: invalid duration`) instead of quietly keeping the word in the title.  Both
+tests FAIL on `faaaac6`.  The value disagreement is gap 3345.
+
+**Gap 3337 — CLOSED (one edge): the harness's copy of D60's key read a missing `until` as `(0, 0)`.**
+`forkclass::d60_cands` keys an impossible answer with no `until` as every other answer, as the
+kernel's `Planner.Ranked.imp` does; pinned by `an_impossible_answer_with_no_until_keys_as_every_other`.
+The copy itself is gap 3343.
+
+**Gap 3338 — CLOSED: `the_host_asks_the_kernel_and_reads_no_wall` guarded a LIST of three names**
+(one of which no longer existed).  It finds the host's wall readers by SIGNATURE — every `fn` in
+`tm/src` and `tm-core/src` whose return type names `Wall` — and asks the housekeeping and its request
+builder to call none.
+
+**Gap 3339 — CLOSED: the pause D65 promises to say was silent in the TUI.**  `kernel_bridge::notice`
+prints `tm: <line>` on stderr, or, while the TUI owns the screen, keeps it for the status line
+(`verb` appends it: `now: ok · paused ^t4 for Meeting w/ host 12:50–13:50`).  Unit test
+`the_meeting_pause_is_said_on_the_status_line`.
+
+**Ledger slips.**  (a) Track T's gap 3247 paragraph says the walls call is paid "on every verb and
+every TUI reload"; `tui::reload` loads with housekeeping off (`tm/src/tui/mod.rs`, `reload`), so a
+reload never makes it — the cost is per VERB.  (b) `planner.rs`: the step-1 doc line sat above
+`cut_out`; it is back on `wall_conflicts`.
+
+### 2. What was NOT done here, by name
+
+**Gap 3342 — the D64(a) gate cannot see an edit to a governed transformation's OWN code.**
+1. *What.*  With the shipped day fixed by value (clause 2), what may change is the comparand's
+departure, which `fork_answers` computes as the named numbers' transformations; an edit to, say,
+`p46_row` that is not the P46 rule changes `day` on a P46 line and passes.  2. *Why.*  The gate
+compares values; attributing a value to a rule needs the rule re-run with and without the edit.
+3. *Cost.*  A re-bless can carry an unrelated edit of a transformation onto its own flagged lines.
+4. *Clears it.*  The diff review of that transformation's code; a gate would freeze each
+transformation's per-line output beside the line.
+
+**Gap 3343 — `planner_invariants`' monotone-rank check reads a Rust copy of D63's order, paired by
+the HOST `ci`.**  1. *What.*  `Kernel::rank_view` is `forkclass::d60_cands`, and pairs are formed by
+`Candidate::ci`, which differs from the kernel's `effectiveCi` on routines and optionals (gap 3323).
+2. *Why.*  The kernel's step-5 order and its per-candidate `ci` are on no wire.  3. *Cost.*  The
+check can pass or fail on pairs the kernel does not compare.  4. *Clears it.*  The plan response
+carrying the served order (a `diagnostics` key) and the harness reading it — or D27.
+
+**Gap 3344 — `tm plan` and `tm review day` read a TYPED pause's span two ways.**  1. *What.*  The
+auditor's drive: a typed pause 07:30–07:40 and an interruption 09:40–09:55 are drawn as `lost 10m
+… paused` and `lost 15m … interruption`, and a typed pause inside a meeting as `lost 15m … paused`;
+`tm review day` reports `lost 15m`.  2. *Why.*  D65 settled a WALL-covered pause only; whether a
+typed pause is lost time is a spec reading (§11's "lost" and §12.1's row) no decision names.
+3. *Cost.*  One span, two readings, on the day of any typed pause.  4. *Clears it.*  The owner's
+reading, then one definition for both surfaces.
+
+**Gap 3345 — the leading-estimate slot has two BOUNDS.**  1. *What.*  The kernel's `Field.estSlot`
+reads any `Nat`; the host now reads the same shape and errors past `u32` minutes, so `tm check`
+rejects a line the kernel loads, plans and closes.  2. *Why.*  One bound on both sides is a kernel
+refusal (a load-time behaviour change) or a host widening past `u32` — a decision.  3. *Cost.*  A
+hand-written estimate past 4,294,967,295 minutes is a `tm check` error the planner ignores.
+4. *Clears it.*  A bound the kernel's loader refuses by name (R10), reusing the host's width.
+
+Gap **3160** is unchanged and still the owner's.  New gaps continue at **3346**; 3340 and 3341 are
+taken by the second commit.

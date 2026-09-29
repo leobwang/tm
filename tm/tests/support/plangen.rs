@@ -673,6 +673,100 @@ impl World {
         Some(t)
     }
 
+    /// **Today's walls, read off the tree** as the binary's `Ctx::walls_on` reads them:
+    /// every open Interval item overlapping the day, its start moved back by `buffer:`,
+    /// sorted by start — so a widening never re-spells the calendar [`calendar_text`] wrote.
+    pub fn walls_today(&self) -> Vec<(DateTime<Tz>, DateTime<Tz>)> {
+        let tz = self.cfg.tz;
+        let mut out = Vec::new();
+        for item in self.tree.iter() {
+            if item.state.is_closed() {
+                continue;
+            }
+            let id = Tree::key_of(item);
+            let tm_core::model::Shape::Interval { start, end } = self.tree.effective_shape(&id) else {
+                continue;
+            };
+            let start = match item.buffer {
+                Some(b) => start - Duration::minutes(i64::from(b.as_minutes())),
+                None => start,
+            };
+            if start.date() > date() || end.date() < date() {
+                continue;
+            }
+            out.push((local_dt(tz, start.date(), start.time()), local_dt(tz, end.date(), end.time())));
+        }
+        out.sort_by_key(|(a, _)| *a);
+        out
+    }
+
+    /// **A meeting passed while the running block ran, logged as the binary logs it**
+    /// (the P56 arm's, W-37 repair, README gap 3332). D61's housekeeping writes a `pause` at
+    /// every joined wall span that began after the block started, and its `unpause` once the
+    /// span has ended (`tm/src/cli/day.rs`' `stop_the_timer_at_walls`, the kernel's
+    /// `WallTimer.writes`); with `typed`, the user paused ten minutes before the first such
+    /// span and resumed ten minutes after it (`tm pause` twice), so the housekeeping writes
+    /// nothing for it (the timer was stopped when the wall began) and the logged pause is
+    /// LONGER than the wall — the case the cut leaves pieces of. Spans the typed pause does
+    /// not cover get D61's marks as before. Only on a day with a running block and no
+    /// interruption (a break is not drawn by the arms that call this). The marks follow the
+    /// block's `start` in file order, as the verbs that write them run after it, and the
+    /// block is paused when a span covers `now`. `None` when nothing was logged; else whether
+    /// a typed pause was drawn.
+    pub fn log_a_passed_meeting(&mut self, case: &Case, typed: bool) -> Option<bool> {
+        let tz = self.cfg.tz;
+        if case.interrupt.is_some() || self.state.break_.is_some() {
+            return None;
+        }
+        let (id, started) = active_block(case, tz)?;
+        let now = self.now;
+        let mut spans = self.walls_today();
+        spans.sort();
+        let mut merged: Vec<(DateTime<Tz>, DateTime<Tz>)> = Vec::new();
+        for (lo, hi) in spans {
+            match merged.last_mut() {
+                Some(m) if lo <= m.1 => m.1 = m.1.max(hi),
+                _ => merged.push((lo, hi)),
+            }
+        }
+        let line = |t: DateTime<Tz>, ev: Event| {
+            LogEntry::new(t.fixed_offset(), ev).to_json().expect("a timer entry serialises") + "\n"
+        };
+        let ten = Duration::minutes(10);
+        let mut marks = String::new();
+        let mut open = false;
+        let mut typed_until: Option<DateTime<Tz>> = None;
+        let mut drew_typed = false;
+        for (lo, hi) in merged.into_iter().filter(|(lo, _)| *lo > started && *lo <= now) {
+            if typed_until.is_some_and(|u| lo <= u) {
+                continue;
+            }
+            if typed && !drew_typed && lo - ten > started && hi + ten < now {
+                marks.push_str(&line(lo - ten, Event::Pause { id: id.clone() }));
+                marks.push_str(&line(hi + ten, Event::Unpause { id: id.clone() }));
+                typed_until = Some(hi + ten);
+                drew_typed = true;
+                continue;
+            }
+            marks.push_str(&line(lo, Event::Pause { id: id.clone() }));
+            if hi <= now {
+                marks.push_str(&line(hi, Event::Unpause { id: id.clone() }));
+                open = false;
+            } else {
+                open = true;
+            }
+        }
+        if marks.is_empty() {
+            return None;
+        }
+        self.log.push_str(&marks);
+        self.replay = chokepoint::replay_of_text(&self.log, tz);
+        if let Some(a) = self.state.active.as_mut() {
+            a.paused = open;
+        }
+        Some(drew_typed)
+    }
+
     /// **Overtime, drawn and not only met** (the W-35 arm's, W-35 land step, README gap
     /// 2910): the shared generator reaches an overtime day on 1-5 of ~280 cases, so half of
     /// the no-break days (`brk_drawn` false) lower the running block's estimate to the

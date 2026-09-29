@@ -795,6 +795,50 @@ fn the_d64_rule_bites_and_does_not_over_bite() {
     let mut lost = bent.clone();
     lost["shipped"] = Value::Null;
     assert!(forkclass::d64_allows(&old, &lost, &shipped, &[46], &registered).is_err(), "a comparand that dropped the shipped day passed");
+    // **The W-37 repair's three clauses** (README gap 3331), each driven by a finding.
+    // 1. A flag the RECOMPUTED answer sets licenses nothing: an unflagged line whose new
+    //    answer sets `d60.p51` (the W-37 auditor's plant, `idle/lounge`).
+    let plain = frozen_lines()
+        .iter()
+        .find(|l| !l["day"].is_null() && l["shipped"].is_null() && forkclass::parity_flags(l).iter().all(|f| !f.1))
+        .expect("a frozen line with no parity flag set")
+        .clone();
+    let plain_day = plain["day"]["day"].clone();
+    let mut self_certified = plain.clone();
+    self_certified["day"]["hash"] = Value::String("bent".to_string());
+    self_certified["d60"]["p51"] = Value::Bool(true);
+    assert!(
+        forkclass::d64_allows(&plain, &self_certified, &plain_day, &[51], &registered).is_err(),
+        "a flag the recomputed answer set licensed its own change"
+    );
+    // 2. The shipped fork's day may not move, whatever number is named (the W-37 critic's
+    //    case: a change under both the comparand and the shipped fork, on a flagged line).
+    //    A flagged line whose comparand coincides with the shipped day (so it keeps no
+    //    `shipped`), recomputed with the shipped day moved: only `day` changes, which P46
+    //    governs — so clause 3 allows it, and the refusal is clause 2's alone.
+    let mut moved = shipped.clone();
+    moved["budget_blocks"] = serde_json::json!(99);
+    let mut coincident = old.clone();
+    coincident["day"]["day"] = shipped.clone();
+    coincident["shipped"] = Value::Null;
+    let mut both = coincident.clone();
+    both["day"]["day"] = moved.clone();
+    assert_eq!(
+        forkclass::d64_allows(&coincident, &coincident, &shipped, &[46], &registered),
+        Ok(Vec::new()),
+        "the coincident line itself is not refused"
+    );
+    assert!(
+        forkclass::d64_allows(&coincident, &both, &moved, &[46], &registered).is_err(),
+        "a moved shipped fork passed under a comparand number"
+    );
+    // 3. A number governs the object its flag lives in, `day` and `whatif` — not another's.
+    let mut other = bent.clone();
+    other["d60"]["p51"] = Value::Bool(!old["d60"]["p51"].as_bool().unwrap_or(false));
+    assert!(
+        forkclass::d64_allows(&old, &other, &shipped, &[46], &registered).is_err(),
+        "P46 licensed a change to P51's object"
+    );
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 2925)

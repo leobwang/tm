@@ -113,15 +113,53 @@ fn tm_pause_outside_a_meeting_names_nothing() {
 /// housekeeping calls asks the kernel and never names the host's wall reader —
 /// read off the source, because the two paths are equal by design and no drive
 /// can tell them apart.
+///
+/// **The readers are found by their SIGNATURE, not listed** (W-37 repair, README
+/// gap 3338): until the repair this named three functions, one of which no
+/// longer existed, so a new host wall reader under a fourth name would have
+/// passed. Every `fn` of the host (`tm/src`) or `tm-core/src` whose return type
+/// names `Wall` is a wall reader, and the body calls none of them — directly or
+/// through a helper of `day.rs` it calls.
 #[test]
 fn the_host_asks_the_kernel_and_reads_no_wall() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/cli/day.rs")).expect("day.rs");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut readers: Vec<String> = Vec::new();
+    let mut stack = vec![root.join("src"), root.join("../tm-core/src")];
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).expect("a source directory").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "rs") {
+                let text = std::fs::read_to_string(&p).expect("a source file");
+                for line in text.lines() {
+                    let Some(at) = line.find("fn ") else { continue };
+                    let sig = &line[at + 3..];
+                    let Some(ret) = sig.find("->") else { continue };
+                    let name: String = sig.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect();
+                    if !name.is_empty() && sig[ret..].contains("Wall") {
+                        readers.push(name);
+                    }
+                }
+            }
+        }
+    }
+    readers.sort();
+    readers.dedup();
+    assert!(readers.iter().any(|r| r == "walls_on"), "the scan finds the host's own reader: {readers:?}");
+    let src = std::fs::read_to_string(root.join("src/cli/day.rs")).expect("day.rs");
     let start = src.find("pub(crate) fn stop_the_timer_at_walls").expect("the housekeeping function");
     let end = src[start..].find("\n}\n").map(|e| start + e).expect("its end");
     let body = &src[start..end];
     assert!(body.contains("ask_the_walls"), "it asks the kernel");
-    for reader in ["walls_on", "walls_today", "walls_with_items_on"] {
-        assert!(!body.contains(reader), "it reads the host's walls through `{reader}`");
+    let helper = src.find("fn ask_the_walls").map(|a| &src[a..a + src[a..].find("\n}\n").unwrap_or(0)]).expect("the request builder");
+    for reader in &readers {
+        for (what, text) in [("the housekeeping", body), ("its request builder", helper)] {
+            assert!(
+                !text.contains(&format!("{reader}(")),
+                "{what} reads the host's walls through `{reader}` (a fn whose return type names Wall)"
+            );
+        }
     }
 }
 

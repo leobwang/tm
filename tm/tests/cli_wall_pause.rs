@@ -219,3 +219,103 @@ fn a_pause_left_open_by_a_paused_done_is_not_the_next_blocks() {
     tm.ok_at("2026-09-07T10:05:00-05:00", &["done"]);
     assert_eq!(tm.last_ev("done")["actual_min"], 35);
 }
+
+/// The `## Log` section of a day file, one journal line per element.
+fn journal(tm: &Tm, rel: &str) -> Vec<String> {
+    let text = tm.read(rel);
+    text.lines()
+        .skip_while(|l| *l != "## Log")
+        .skip(1)
+        .take_while(|l| !l.starts_with("## "))
+        .filter(|l| !l.trim().is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
+/// **A verb run inside a meeting does not take `tm undo` away** (W-37 repair,
+/// README gap 3330; D37). D65 gave the wall's pause the day file's journal line,
+/// written by housekeeping before any undo recorder runs — so the next `tm
+/// undo` of the `tm start` before it found a line it did not write and refused
+/// with exit 3 (driven on `faaaac6`; the same drive undid the start on
+/// `b3c29a3`). The housekeeping write now goes UNDER the stack: the start is
+/// undone, and the pause's journal line stays, as the pause's log entry does.
+#[test]
+fn a_start_before_a_meeting_can_still_be_undone() {
+    let tm = running_before_the_meeting();
+    tm.ok_at("2026-09-07T13:20:00-05:00", &["now"]);
+    assert!(journal(&tm, "day/2026-09-07.md").contains(&"12:50 pause ^t4".to_string()));
+    let out = tm.run_at("2026-09-07T13:25:00-05:00", &["undo"]);
+    assert_eq!(out.code, 0, "the start is undone: {}{}", out.stdout, out.stderr);
+    assert!(out.stdout.contains("undid start"), "{}", out.stdout);
+    assert!(tm.state()["active"].is_null(), "no block is running: {}", tm.state());
+    let j = journal(&tm, "day/2026-09-07.md");
+    assert!(!j.iter().any(|l| l.contains("start ^t4")), "the start's journal line is gone: {j:?}");
+    assert!(
+        j.contains(&"12:50 pause ^t4".to_string()),
+        "the pause's journal line stays, as its log entry does: {j:?}"
+    );
+    assert_eq!(timer_marks(&tm), vec![("pause".to_string(), WALL_START.to_string())]);
+}
+
+/// **An undo under the pause keeps the pause** (gap 3330): an unrelated command
+/// (an energy report, which writes the day file's journal) is undone after the wall paused
+/// the block; the block stays running AND paused — the state the log says —
+/// and the pause's journal line stays.
+#[test]
+fn an_undo_under_a_meeting_pause_keeps_the_pause() {
+    let tm = running_before_the_meeting();
+    tm.ok_at("2026-09-07T12:30:00-05:00", &["energy", "3"]);
+    let before = journal(&tm, "day/2026-09-07.md");
+    assert!(before.iter().any(|l| l.starts_with("12:30 energy")), "{before:?}");
+    tm.ok_at("2026-09-07T13:20:00-05:00", &["now"]);
+    let out = tm.run_at("2026-09-07T13:25:00-05:00", &["undo"]);
+    assert_eq!(out.code, 0, "{}{}", out.stdout, out.stderr);
+    let j = journal(&tm, "day/2026-09-07.md");
+    assert!(!j.iter().any(|l| l.starts_with("12:30 energy")), "the report is undone: {j:?}");
+    assert!(j.contains(&"12:50 pause ^t4".to_string()), "{j:?}");
+    let a = &tm.state()["active"];
+    assert_eq!(a["id"], "t4", "{a}");
+    assert_eq!(a["paused"], true, "the undo put back the state the log says: {a}");
+    let now = active(&tm, "2026-09-07T13:30:00-05:00");
+    assert_eq!(now["paused"], true, "{now}");
+    assert_eq!(now["elapsed_min"], 50, "{now}");
+}
+
+/// **The evening before's meeting is paused, and each mark is journaled on its
+/// own day** (README gap 3334). `^t4` began at 22:30; a meeting at 22:40–22:50
+/// and a late call at 23:30–00:30 follow; the first verb runs at 00:10. The
+/// kernel read the walls of the verb's day alone, so the 22:40 meeting wrote
+/// nothing, and the host journaled the 23:30 pause into the NEXT day's file.
+#[test]
+fn a_meeting_the_evening_before_is_paused_and_journaled_on_its_own_day() {
+    let tm = Tm::new();
+    let cal = tm.plan.join("calendar/2026-W37.md");
+    let text = std::fs::read_to_string(&cal).expect("read the calendar");
+    let text = text.replace(
+        "- [ ] 2 CS 234 lecture       at:2026-09-09T15:00/16:20 loc:JCL ^g2",
+        "- [ ] 2 Late call          at:2026-09-07T23:30/2026-09-08T00:30 loc:zoom ^g2\n\
+         - [ ] 2 Evening sync       at:2026-09-07T22:40/22:50 loc:zoom ^g5",
+    );
+    assert!(text.contains("Evening sync"), "the fixture line was found");
+    std::fs::write(&cal, text).expect("write the calendar");
+    tm.ok(&["wake", "06:05", "--slept", "8h10m"]);
+    tm.ok_at("2026-09-07T22:30:00-05:00", &["start", "^t4", "--energy", "4"]);
+    tm.ok_at("2026-09-08T00:10:00-05:00", &["now"]);
+    assert_eq!(
+        timer_marks(&tm),
+        vec![
+            ("pause".to_string(), "2026-09-07T22:40:00-05:00".to_string()),
+            ("unpause".to_string(), "2026-09-07T22:50:00-05:00".to_string()),
+            ("pause".to_string(), "2026-09-07T23:30:00-05:00".to_string()),
+        ],
+        "both meetings stop the timer"
+    );
+    let j = journal(&tm, "day/2026-09-07.md");
+    for want in ["22:40 pause ^t4", "22:50 unpause ^t4", "23:30 pause ^t4"] {
+        assert!(j.contains(&want.to_string()), "{want} is in the evening's own file: {j:?}");
+    }
+    if tm.exists("day/2026-09-08.md") {
+        let next = journal(&tm, "day/2026-09-08.md");
+        assert!(!next.iter().any(|l| l.contains("pause ^t4")), "nothing in the next day's file: {next:?}");
+    }
+}

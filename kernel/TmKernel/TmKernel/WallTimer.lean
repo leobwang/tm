@@ -83,9 +83,20 @@ def stoppedAt (marks : List Replay.IdleMark) (started t : Cal.Instant) (brk : Op
   (idleSpans marks started brk).any fun sp =>
     decide (sp.1 ≤ t) && (match sp.2 with | none => true | some b => decide (t < b))
 
-/-- **Did anything touch the timer after `t`** (the host's touched_after): a mark stamped later. -/
-def touchedAfter (marks : List Replay.IdleMark) (t : Cal.Instant) : Bool :=
-  marks.any fun m => decide (t < markAt m)
+/-- **Did anything touch the timer after `t`** (the host's touched_after): a mark stamped later.
+Written by recursion on the marks rather than as `List.any` (W-37 repair, README gap 3333): as a
+one-line wrapper the compiler specialised its `List.any` into `step` and the symbol itself was
+called by nothing but its boxed shell, which check 12 must then exempt by name (D51: that file
+only shrinks).  `touchedAfter_eq_any` is the old definition, proved. -/
+def touchedAfter : List Replay.IdleMark → Cal.Instant → Bool
+  | [], _ => false
+  | m :: ms, t => decide (t < markAt m) || touchedAfter ms t
+
+theorem touchedAfter_eq_any (marks : List Replay.IdleMark) (t : Cal.Instant) :
+    touchedAfter marks t = marks.any fun m => decide (t < markAt m) := by
+  induction marks with
+  | nil => rfl
+  | cons m ms ih => simp [touchedAfter, ih]
 
 /-- **The last mark that set the timer** (the host's last_timer_mark): the last that is not a break. -/
 def lastTimerMark (marks : List Replay.IdleMark) : Option Replay.IdleMark :=
@@ -145,7 +156,7 @@ theorem inst_lt (a b : Nat) : (⟨a, 0⟩ : Cal.Instant) < ⟨b, 0⟩ ↔ a < b 
 
 theorem hasUnpause_none_of_untouched (marks : List Replay.IdleMark) (lo hi : Cal.Instant)
     (ht : touchedAfter marks lo = false) (hlt : lo < hi) : marks.any (unpauseAt hi) = false := by
-  unfold touchedAfter at ht
+  rw [touchedAfter_eq_any] at ht
   rw [List.any_eq_false] at ht ⊢
   intro m hm hu
   have := ht m hm
@@ -368,10 +379,25 @@ theorem after_one_wall_a_second_verb_writes_nothing_more (started now : Cal.Inst
 /-- **The meeting the running block is paused for** (the campaign's D66 call on gap 3048): the
 first joined span `now` falls inside whose start's pause is the last word on the timer — what `tm
 pause` names when it resumes the timer inside a meeting (the correction for a skipped one). -/
-def pausedFor (now : Cal.Instant) (marks : List Replay.IdleMark) (spans : List ((Nat × Nat) × List Id)) :
-    Option ((Nat × Nat) × List Id) :=
-  spans.find? fun x => lastIsPauseAt marks ⟨x.1.1, 0⟩ && decide ((⟨x.1.1, 0⟩ : Cal.Instant) ≤ now) &&
-    decide (now < ⟨x.1.2, 0⟩)
+def pausedFor (now : Cal.Instant) (marks : List Replay.IdleMark) :
+    List ((Nat × Nat) × List Id) → Option ((Nat × Nat) × List Id)
+  | [] => none
+  | x :: xs =>
+    if (lastIsPauseAt marks ⟨x.1.1, 0⟩ && decide ((⟨x.1.1, 0⟩ : Cal.Instant) ≤ now) &&
+        decide (now < ⟨x.1.2, 0⟩)) = true then some x else pausedFor now marks xs
+
+/-- **`pausedFor` is the first span `List.find?` finds** — its definition before the W-37 repair
+wrote it by recursion (README gap 3333, as `touchedAfter_eq_any`). -/
+theorem pausedFor_eq_find (now : Cal.Instant) (marks : List Replay.IdleMark)
+    (spans : List ((Nat × Nat) × List Id)) :
+    pausedFor now marks spans = spans.find? fun x => lastIsPauseAt marks ⟨x.1.1, 0⟩ &&
+      decide ((⟨x.1.1, 0⟩ : Cal.Instant) ≤ now) && decide (now < ⟨x.1.2, 0⟩) := by
+  induction spans with
+  | nil => rfl
+  | cons x xs ih =>
+    rw [pausedFor, List.find?_cons, ih]
+    cases (lastIsPauseAt marks ⟨x.1.1, 0⟩ && decide ((⟨x.1.1, 0⟩ : Cal.Instant) ≤ now) &&
+      decide (now < ⟨x.1.2, 0⟩)) <;> rfl
 
 /-- **What `pausedFor` names is a meeting the timer is paused for, now**: one of the spans, its
 start's pause the last timer mark, and `now` inside it. -/
@@ -380,7 +406,7 @@ theorem pausedFor_is_a_meeting_the_timer_is_paused_for (now : Cal.Instant)
     (h : pausedFor now marks spans = some x) :
     x ∈ spans ∧ lastIsPauseAt marks ⟨x.1.1, 0⟩ = true ∧ (⟨x.1.1, 0⟩ : Cal.Instant) ≤ now ∧
       now < ⟨x.1.2, 0⟩ := by
-  unfold pausedFor at h
+  rw [pausedFor_eq_find] at h
   have hm := List.mem_of_find?_eq_some h
   have hp := List.find?_some h
   simp only [Bool.and_eq_true, decide_eq_true_eq] at hp
@@ -458,15 +484,20 @@ def readReq (v : JVal) : Except Refusal Req :=
     | _ => .error .badAt
   | _ => .error .shape
 
-/-- **Today's walls, joined as fork `merge_walls` joins them**, each with the items it joined:
-`Look.wallIxOn`'s selection (the one the window, the cut and the wall rows read), `Look.clipWalls
-0` (empty walls dropped), `Look.sortByStart`, `Look.mergeSorted` — reused, not re-spelled — and the
-walls each joined span contains. -/
+/-- **The day's walls, joined as fork `merge_walls` joins them**, each with the items it joined:
+`Look.wallIxOn`'s selection (the one the window, the cut and the wall rows read) for day `d`
+**and for the day before** — the walls of `d - 1` that `d`'s selection does not already hold, as
+the marks below read `d - 1`'s (README gap 3334: a block begun at 22:30 met a meeting at
+22:40–22:50, and the first verb after midnight asked day `d`'s walls alone, so that meeting was
+never paused and its ten minutes were counted as worked) — then `Look.clipWalls 0` (empty walls
+dropped), `Look.sortByStart`, `Look.mergeSorted`, reused, not re-spelled, and the walls each joined
+span contains.  The day before costs nothing on a block begun today: `step` passes over a span that
+begins at or before the block's start. -/
 def spansOf (ix : List Look.WallIx) (d : Nat) : List ((Nat × Nat) × List Id) :=
-  (Look.mergeSorted (Look.sortByStart (Look.clipWalls 0
-      ((Look.wallIxOn ix d).map fun w => (w.lo, w.hi))))).map fun m =>
-    (m, ((Look.wallIxOn ix d).filter fun w => decide (m.1 ≤ w.lo ∧ w.hi ≤ m.2 ∧ w.lo < w.hi)).map
-      (·.id))
+  let ws := (if 0 < d then (Look.wallIxOn ix (d - 1)).filter (fun w => decide (w.toDay < d)) else [])
+    ++ Look.wallIxOn ix d
+  (Look.mergeSorted (Look.sortByStart (Look.clipWalls 0 (ws.map fun w => (w.lo, w.hi))))).map fun m =>
+    (m, (ws.filter fun w => decide (m.1 ≤ w.lo ∧ w.hi ≤ m.2 ∧ w.lo < w.hi)).map (·.id))
 
 /-- An instant of whole seconds with the zone's offset at it, as a stamp is written. -/
 def stampAt (z : Cal.Tz) (sec : Nat) : Option (Cal.VInstant × Cal.VOffset) :=
@@ -496,7 +527,8 @@ def entryJson (z : Cal.Tz) (id : Id) (spans : List ((Nat × Nat) × List Id)) (w
   | _, _, _ => .error .badInstant
 
 /-- **What the walls write, answered** (gap 3139): nothing while no block is open in the replay;
-otherwise `writes` over the open block, its marks, the walls of the request's day, the running
+otherwise `writes` over the open block, its marks, the walls of the request's day and the day
+before (`spansOf`, gap 3334), the running
 break and `at`, each mark rendered.  The marks are day `d`'s and, stamped at or after the block's
 start, the day before's: an entry is filed under the day of the last wake within 24 hours
 (`Replay.dayOf`), so a mark stamped on `d` may sit in either (README gap 3245).  The walls are
@@ -565,13 +597,9 @@ theorem the_walls_refusals_spell_themselves :
 /-! ## The rule, run (AGENTS §5.2: non-vacuity is a separate check from correctness)
 
 A block begun at 500 s, one wall `[1000, 2000)`, and the log's marks of each case — every one of
-`cli_wall_pause.rs`'s drives, at seconds a reader can check by eye. -/
-
-/-- A whole-second instant. -/
-def secAt (s : Nat) : Cal.Instant := ⟨s, 0⟩
-
-/-- A mark's stamp at a whole second (the offset is the wire's). -/
-def atSec (s : Nat) : Replay.At := (⟨s, 0⟩, Cal.Offset.utc)
+`cli_wall_pause.rs`'s drives, at seconds a reader can check by eye.  The instants are written as
+literals (`⟨s, 0⟩`), not through a helper: a helper is a definition the export does not reach,
+which check 12 must then exempt by name (README gap 3333, W-37 repair; D51). -/
 
 /-- **The rule, run**: the pause and the unpause; the pause alone while the wall runs; nothing before
 it or for a block started inside it; nothing over a timer already stopped (a pause at 900, the
@@ -580,37 +608,37 @@ running break, a break logged over 1000) and the wall's pause over a pause anoth
 without its length); nothing under a mark stamped after the wall's start; the end alone when the
 pause is logged; nothing when the user resumed inside the meeting; and two walls in order. -/
 theorem the_rule_is_run :
-    writes (secAt 500) (secAt 2500) none [] [(1000, 2000)] = [(true, 1000, 2000), (false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 1500) none [] [(1000, 2000)] = [(true, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 900) none [] [(1000, 2000)] = [] ∧
-    writes (secAt 1500) (secAt 2500) none [] [(1000, 2000)] = [] ∧
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 900)] [(1000, 2000)] = [] ∧
-    writes (secAt 500) (secAt 2500) (some (secAt 900)) [] [(1000, 2000)] = [] ∧
-    writes (secAt 500) (secAt 2500) none [.brk (atSec 950) (some 1)] [(1000, 2000)] = [] ∧
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 400)] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [(true, 1000, 2000), (false, 1000, 2000)] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨1500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [(true, 1000, 2000)] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨900, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [] ∧
+    writes (⟨1500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) (some (⟨900, 0⟩ : Cal.Instant)) [] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) (some 1)] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨400, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
       = [(true, 1000, 2000), (false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 900), .unpause (atSec 950)] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨900, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
       = [(true, 1000, 2000), (false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 2500) none [.interrupt (atSec 990), .resume (atSec 995)] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.interrupt ((⟨990, 0⟩, Cal.Offset.utc) : Replay.At), .resume ((⟨995, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
       = [(true, 1000, 2000), (false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 2500) none [.brk (atSec 950) none] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.brk ((⟨950, 0⟩, Cal.Offset.utc) : Replay.At) none] [(1000, 2000)]
       = [(true, 1000, 2000), (false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 2500) none [.unpause (atSec 1500)] [(1000, 2000)] = [] ∧
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 1000)] [(1000, 2000)] = [(false, 1000, 2000)] ∧
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 1000), .unpause (atSec 1200)] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.unpause ((⟨1500, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)] = [] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)] = [(false, 1000, 2000)] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨1200, 0⟩, Cal.Offset.utc) : Replay.At)] [(1000, 2000)]
       = [] ∧
-    writes (secAt 500) (secAt 3500) none [] [(1000, 2000), (3000, 4000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨3500, 0⟩ : Cal.Instant) none [] [(1000, 2000), (3000, 4000)]
       = [(true, 1000, 2000), (false, 1000, 2000), (true, 3000, 4000)] := by
   decide
 
 /-- **The meeting named, run**: inside the meeting with its pause the last mark, it is named; after
 the unpause, or once the user resumed inside it, it is not. -/
 theorem pausedFor_is_run :
-    pausedFor (secAt 1500) [.pause (atSec 1000)] [((1000, 2000), [['g','1']])]
+    pausedFor (⟨1500, 0⟩ : Cal.Instant) [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At)] [((1000, 2000), [['g','1']])]
       = some ((1000, 2000), [['g','1']]) ∧
-    pausedFor (secAt 2500) [.pause (atSec 1000), .unpause (atSec 2000)] [((1000, 2000), [['g','1']])]
+    pausedFor (⟨2500, 0⟩ : Cal.Instant) [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨2000, 0⟩, Cal.Offset.utc) : Replay.At)] [((1000, 2000), [['g','1']])]
       = none ∧
-    pausedFor (secAt 1500) [.pause (atSec 1000), .unpause (atSec 1200)] [((1000, 2000), [['g','1']])]
+    pausedFor (⟨1500, 0⟩ : Cal.Instant) [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨1200, 0⟩, Cal.Offset.utc) : Replay.At)] [((1000, 2000), [['g','1']])]
       = none := by
   decide
 
@@ -621,6 +649,18 @@ theorem spansOf_is_run :
       ⟨['g','3'], 7, 7, 3000, 3000, 3000⟩, ⟨['g','4'], 7, 7, 2500, 2500, 2600⟩,
       ⟨['g','5'], 8, 8, 1000, 1000, 2000⟩, ⟨['g','6'], 7, 7, 4000, 4000, 4500⟩] 7
       = [((1000, 2600), [['g','1'], ['g','2'], ['g','4']]), ((4000, 4500), [['g','6']])] := by
+  decide
+
+/-- **The evening before's meeting is read** (README gap 3334): asked on day 8, a wall wholly on
+day 7 (`g5`, 900–950) and one crossing midnight from day 7 into day 8 (`g2`) are both spans, the
+crossing one once; a wall of day 6 is not, and day 8's own wall is. -/
+theorem the_evening_befores_walls_are_read :
+    spansOf [⟨['g','5'], 7, 7, 900, 900, 950⟩, ⟨['g','2'], 7, 8, 1000, 1000, 2000⟩,
+      ⟨['g','0'], 6, 6, 100, 100, 200⟩, ⟨['g','8'], 8, 8, 3000, 3000, 3100⟩] 8
+      = [((900, 950), [['g','5']]), ((1000, 2000), [['g','2']]), ((3000, 3100), [['g','8']])] ∧
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [] ((spansOf [⟨['g','5'], 7, 7, 900, 900, 950⟩,
+      ⟨['g','2'], 7, 8, 1000, 1000, 2000⟩] 8).map (·.1))
+      = [(true, 900, 950), (false, 900, 950), (true, 1000, 2000), (false, 1000, 2000)] := by
   decide
 
 /-- **The walls form read, run**: a stamp is read by B2's one reader; `break` may be `null`; a
@@ -656,8 +696,8 @@ host's reading of day 8 alone did on every verb of such a day. -/
 theorem the_day_befores_marks_are_read :
     (match answer (.obj [("walls".toList, .obj [("at".toList, .str "2026-09-07T13:20:00-05:00".toList),
         ("break".toList, .null)])]) (some Replay.utcZone)
-        (some ⟨0, 0, [], [], [], [], [⟨7, none, some ⟨none, [.pause (atSec 1000), .unpause (atSec 2000)], none⟩,
-          [], [], [], [], [], []⟩], some ⟨['t','4'], atSec 500, 0, none, false⟩, none, none, none, 0, 0, none,
+        (some ⟨0, 0, [], [], [], [], [⟨7, none, some ⟨none, [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .unpause ((⟨2000, 0⟩, Cal.Offset.utc) : Replay.At)], none⟩,
+          [], [], [], [], [], []⟩], some ⟨['t','4'], ((⟨500, 0⟩, Cal.Offset.utc) : Replay.At), 0, none, false⟩, none, none, none, 0, 0, none,
           [], [], 0⟩)
         (fun _ _ => [⟨['g','1'], 8, 8, 1000, 1000, 2000⟩]) 0 (some 8) (some 60) with
       | .ok v => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null)]
@@ -668,7 +708,7 @@ theorem the_day_befores_marks_are_read :
 did): a break logged inside the meeting after the wall's pause leaves that pause the last word on
 the timer, so the wall's end still writes the unpause. -/
 theorem a_break_inside_the_meeting_leaves_the_pause_the_last_word :
-    writes (secAt 500) (secAt 2500) none [.pause (atSec 1000), .brk (atSec 1200) (some 5)] [(1000, 2000)]
+    writes (⟨500, 0⟩ : Cal.Instant) (⟨2500, 0⟩ : Cal.Instant) none [.pause ((⟨1000, 0⟩, Cal.Offset.utc) : Replay.At), .brk ((⟨1200, 0⟩, Cal.Offset.utc) : Replay.At) (some 5)] [(1000, 2000)]
       = [(false, 1000, 2000)] := by
   decide
 

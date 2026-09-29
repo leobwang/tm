@@ -1949,7 +1949,6 @@ fn blocks_since_last_break(day: &crate::log::DayReplay) -> u32 {
         .count() as u32
 }
 
-/// §8.2 step 1: overlapping walls, each pair once, at the later one.
 /// **`[a, b)` with every span of `spans` cut out** — the kernel's
 /// `Planner.cutAll`, span by span in the order given: each piece loses what
 /// the span covers and keeps what is left before it and after it; an empty
@@ -1981,6 +1980,7 @@ fn cut_out(
     pieces
 }
 
+/// §8.2 step 1: overlapping walls, each pair once, at the later one.
 fn wall_conflicts(walls: &[WallSeg]) -> Vec<(Id, Id)> {
     let mut out = Vec::new();
     for (i, a) in walls.iter().enumerate() {

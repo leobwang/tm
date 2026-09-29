@@ -547,7 +547,7 @@ fn check_item(file: &ParsedFile, item: &Item, tree: &Tree, cfg: &Config, out: &m
     // A number sitting in the positional ci slot that the tokenizer could not
     // eat (§4.1: ci is one digit 0..=5). It stays in the title and blocks the
     // leading estimate behind it, so both are silently lost.
-    if let Some((ci, est)) = swallowed_ci(item, cfg) {
+    if let Some((ci, est)) = swallowed_ci(item) {
         out.push(at(
             BAD_CI,
             format!(
@@ -705,7 +705,7 @@ fn classify_item_problem(msg: &str) -> (Severity, &'static str) {
 /// "10 pages of reading") is ordinary prose, so it is reported only when the
 /// word behind it is an estimate — the case where the line silently loses
 /// two fields and no reading of it as English survives.
-fn swallowed_ci(item: &Item, cfg: &Config) -> Option<(String, String)> {
+fn swallowed_ci(item: &Item) -> Option<(String, String)> {
     let tokens = &item.src.tokens;
     // The ci slot exists only after a state, and only while it is empty.
     tokens.index_of(&TokenKind::State)?;
@@ -718,7 +718,12 @@ fn swallowed_ci(item: &Item, cfg: &Config) -> Option<(String, String)> {
         return None;
     }
     let est = words.next()?;
-    Dur::parse_no_days(est, cfg.block_min()).ok()?;
+    // The word behind it is an estimate by the slot's SHAPE (`grammar::is_est_slot`, parity
+    // P57, README gap 3336) — the one reader of "is this word the leading estimate", which the
+    // kernel's `Field.estSlot` reads the same way.
+    if !crate::grammar::is_est_slot(est) {
+        return None;
+    }
     Some((ci.to_string(), est.to_string()))
 }
 

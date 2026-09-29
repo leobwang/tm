@@ -192,6 +192,68 @@ fn later_writer(ctx: &Ctx, entry: &UndoEntry) -> LaterWriter {
     }
 }
 
+/// **A housekeeping write goes UNDERNEATH the stack** (W-37 repair, README
+/// gap 3330). D61's meeting pause is written by the housekeeping of the first
+/// verb after the meeting began (`day::stop_the_timer_at_walls`), inside
+/// `Ctx::load`, before any [`Recorder::start`] — so it is in no undo entry, and
+/// since D65 it also writes the day file's journal line. Left there, the next
+/// `tm undo` of any command that touched the day file found a line it did not
+/// write and refused with a `Conflict` (§13's exit 3): once a verb ran inside a
+/// meeting, the `tm start` before it could not be undone, against D37 (*if a
+/// verb changes your files, you can take it back*).
+///
+/// The write is not the user's command, and the log entry it mirrors is not
+/// cancelled by any undo (it is in no entry's events), so the journal line must
+/// survive an undo exactly as that log entry does. This applies the same
+/// **deterministic** edit to every stacked copy of `path` — `before` and
+/// `after` alike — so each entry reads as if the housekeeping had run before
+/// it: the guard then sees the file as the entry left it, and the restore puts
+/// the line back with the bytes it restores. It is done only when the top-most
+/// entry that touched `path` left exactly `was`, the text the housekeeping
+/// edited; otherwise some other writer changed the file first, and the guard
+/// must still say so. `paused` is the timer state the same write left for
+/// `active` (the block's id), rebased onto every stacked state that holds that
+/// block running, because the log's `pause`/`unpause` survives the undo too.
+pub(crate) fn rebase_underneath(
+    ctx: &Ctx,
+    path: &str,
+    was: Option<&str>,
+    now: &str,
+    edit: &dyn Fn(&str) -> String,
+    active: Option<(&Id, bool)>,
+) -> Result<(), CliError> {
+    let mut stack = UndoStack::load(ctx);
+    let Some(top) = stack
+        .entries
+        .iter()
+        .rposition(|e| e.files.iter().any(|f| f.path == path))
+    else {
+        return Ok(());
+    };
+    let top_after = stack.entries[top]
+        .files
+        .iter()
+        .find(|f| f.path == path)
+        .and_then(|f| f.after.as_deref());
+    if top_after != was {
+        return Ok(());
+    }
+    for (k, entry) in stack.entries.iter_mut().enumerate().take(top + 1) {
+        for f in entry.files.iter_mut().filter(|f| f.path == path) {
+            f.after = if k == top { Some(now.to_string()) } else { f.after.as_deref().map(edit) };
+            f.before = f.before.as_deref().map(edit);
+        }
+    }
+    if let Some((id, paused)) = active {
+        for entry in &mut stack.entries {
+            if let Some(a) = entry.state.active.as_mut().filter(|a| &a.id == id) {
+                a.paused = paused;
+            }
+        }
+    }
+    stack.save(ctx)
+}
+
 /// Records what one command changed.
 pub struct Recorder {
     verb: String,

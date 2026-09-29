@@ -872,19 +872,7 @@ pub const ANSWERS: [&str; 5] = ["day", "shipped", "d57", "d60", "whatif"];
 /// comparand's own flags are named by their parity number (`d57.p46`,
 /// `d57.p47`, `d60.p51`), so the flag IS the number. `(n, set)`.
 pub fn parity_flags(line: &Value) -> Vec<(u32, bool)> {
-    let mut out = Vec::new();
-    for (k, v) in line.as_object().into_iter().flatten() {
-        if matches!(k.as_str(), "world" | "day" | "shipped" | "whatif") {
-            continue;
-        }
-        for (f, set) in v.as_object().into_iter().flatten() {
-            let n = f.strip_prefix('p').and_then(|d| d.parse::<u32>().ok()).filter(|_| f[1..].bytes().all(|c| c.is_ascii_digit()));
-            if let (Some(n), Some(set)) = (n, set.as_bool()) {
-                out.push((n, set));
-            }
-        }
-    }
-    out
+    flag_homes(line).into_iter().map(|(n, set, _)| (n, set)).collect()
 }
 
 /// **The parity numbers `kernel/parity.txt` registers** — every row that is
@@ -901,16 +889,43 @@ pub fn registered_parity() -> BTreeSet<u32> {
 
 /// **What one frozen line's re-bless changed, and whether D64 allows it** —
 /// the rule the re-bless path is held to. `old` is the committed line, `new`
-/// the line with the fork's answers recomputed; `because` the parity numbers
-/// the re-bless was run for (`TM_PLANNER_BLESS_BECAUSE`); `registered` the
-/// register's numbers. `Ok` names what changed (empty when nothing did);
-/// `Err` says why a change is NOT allowed.
+/// the line with the fork's answers recomputed; `shipped_day` the shipped
+/// fork's day recomputed live; `because` the parity numbers the re-bless was
+/// run for (`TM_PLANNER_BLESS_BECAUSE`); `registered` the register's numbers.
+/// `Ok` names what changed (empty when nothing did); `Err` says why a change is
+/// NOT allowed.
 ///
 /// * A line whose answers were cleared (a world re-drawn under D64(b), or a
 ///   derived D61 world added) takes whatever the fork answers — the re-draw
 ///   is where D64(b)'s reason was demanded.
-/// * Otherwise a change is allowed exactly when (a) a number the re-bless was
-///   run for is REGISTERED and its flag is set on the line, before or after.
+/// * Otherwise D64(a): **a registered parity number changes the fork's day on
+///   that line**, and since the W-37 repair (README gap 3331) the gate checks
+///   that the NUMBER is what changed it, not only that the line carries its
+///   flag. Three clauses, each a property of the line:
+///   1. **The flag is the OLD line's.** Until the repair the flag set was the
+///      union of the old and new lines' flags, so an unflagged line whose
+///      recomputed answer SET a flag licensed its own change (driven by the
+///      W-37 auditor: `idle/lounge` with `d60.p51` set by the new answer).
+///   2. **The shipped fork's day did not move, by value.** Every comparand
+///      parity number is a departure the comparand makes FROM the shipped
+///      fork; none moves the shipped fork itself. So the live shipped day must
+///      equal the old line's (its `shipped` when the comparand departed, else
+///      its `day`). A change to the fork, to the kernel's ranking it is handed,
+///      or to anything else under both — the W-37 critic's case, T's edit of
+///      the in-tree fork's `past_segments` — moves the shipped day and is
+///      refused whatever number is named.
+///   3. **Each changed answer is one the named number governs**: the object
+///      that carries its flag (`d57` for P46/P47, `d60` for P51 — the flag
+///      lives where it governs, so this is read off the line, never listed)
+///      and the comparand-derived `day` and `whatif`. `shipped` is governed by
+///      no comparand number (clause 2).
+///
+///   With the shipped day fixed by value, what is left to change is the
+///   comparand's departure from it, which `fork_answers` computes as the named
+///   numbers' transformations of the shipped fork's inputs — so the change is
+///   the number's. The one thing this cannot see is an edit to a governed
+///   transformation's OWN code that is not that parity rule (README gap 3331,
+///   residue): that is a code change, reviewed in its diff.
 /// * In every case the shipped fork's day stays by value: where the comparand
 ///   departs from it, `shipped` holds it.
 pub fn d64_allows(
@@ -938,22 +953,69 @@ pub fn d64_allows(
             return Err(format!("{who}: re-blessed for P{n}, which kernel/parity.txt does not register"));
         }
     }
-    let set: BTreeSet<u32> = parity_flags(old).into_iter().chain(parity_flags(new)).filter(|f| f.1).map(|f| f.0).collect();
-    if because.iter().any(|n| set.contains(n)) {
-        Ok(changed)
-    } else if because.is_empty() {
-        Err(format!(
-            "{who}: `{}` changed and the re-bless names no reason — the owner's D64 allows (a) a registered parity \
-             number whose flag the line carries, or (b) a world the binary cannot build, re-drawn with its reason",
-            changed.join("`, `")
-        ))
-    } else {
-        Err(format!(
-            "{who}: `{}` changed and the line carries no flag of P{} — the parity numbers set on it are {set:?}",
-            changed.join("`, `"),
-            because.iter().map(u32::to_string).collect::<Vec<_>>().join(", P")
-        ))
+    // Clause 1: the OLD line's flags, and only the numbers the re-bless names.
+    let named: Vec<(u32, String)> = flag_homes(old)
+        .into_iter()
+        .filter(|(n, set, _)| *set && because.contains(n))
+        .map(|(n, _, home)| (n, home))
+        .collect();
+    if named.is_empty() {
+        let set: BTreeSet<u32> = parity_flags(old).into_iter().filter(|f| f.1).map(|f| f.0).collect();
+        return Err(if because.is_empty() {
+            format!(
+                "{who}: `{}` changed and the re-bless names no reason — the owner's D64 allows (a) a registered parity \
+                 number that changes the fork's day on the line, or (b) a world the binary cannot build, re-drawn with its reason",
+                changed.join("`, `")
+            )
+        } else {
+            format!(
+                "{who}: `{}` changed and the committed line carries no flag of P{} — the parity numbers set on it are {set:?} \
+                 (a flag the recomputed answer sets licenses nothing)",
+                changed.join("`, `"),
+                because.iter().map(u32::to_string).collect::<Vec<_>>().join(", P")
+            )
+        });
     }
+    // Clause 2: the shipped fork's day, by value.
+    let old_shipped = if old["shipped"].is_null() { &old["day"]["day"] } else { &old["shipped"]["day"] };
+    if old_shipped != shipped_day {
+        return Err(format!(
+            "{who}: the SHIPPED fork's day moved, and no comparand parity number moves it — a change to the fork, \
+             or to the ranking it is handed, is not D64(a)"
+        ));
+    }
+    // Clause 3: every changed answer is one a named number governs.
+    for k in &changed {
+        let governed = matches!(k.as_str(), "day" | "whatif") || named.iter().any(|(_, home)| home == k);
+        if !governed {
+            return Err(format!(
+                "{who}: `{k}` changed, which P{} does not govern (a number governs the object its flag lives in, `day` \
+                 and `whatif`)",
+                named.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>().join(", P")
+            ));
+        }
+    }
+    Ok(changed)
+}
+
+/// **Each parity flag a line carries, with the object it lives in** —
+/// [`parity_flags`]' reading, keeping where the flag was found: `(n, set,
+/// home)`, `d57.p46` read as `(46, …, "d57")`. The home is what the number
+/// governs ([`d64_allows`]' clause 3).
+pub fn flag_homes(line: &Value) -> Vec<(u32, bool, String)> {
+    let mut out = Vec::new();
+    for (k, v) in line.as_object().into_iter().flatten() {
+        if matches!(k.as_str(), "world" | "day" | "shipped" | "whatif") {
+            continue;
+        }
+        for (f, set) in v.as_object().into_iter().flatten() {
+            let n = f.strip_prefix('p').and_then(|d| d.parse::<u32>().ok()).filter(|_| f[1..].bytes().all(|c| c.is_ascii_digit()));
+            if let (Some(n), Some(set)) = (n, set.as_bool()) {
+                out.push((n, set, k.clone()));
+            }
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -994,11 +1056,13 @@ pub fn d60_cands(cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
         .enumerate()
         .map(|(i, c)| {
             let mut d = c.clone();
-            match prios.iter().find(|p| p.id == c.id).filter(|p| is_impossible_tie(p)) {
-                Some(p) if !c.is_wall => {
-                    let until = p.until.map_or(0, |u| {
-                        usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0)
-                    });
+            // An impossible answer with NO `until` is not an impossible tie: the kernel's
+            // `Planner.Ranked.imp` is `(answerUntil x.out).map …`, `none` when the answer has
+            // neither a floor nor a grant, and such an answer keys as every other (README gap
+            // 3337 — this read it as `(0, 0)`, first of all, until the W-37 repair).
+            match prios.iter().find(|p| p.id == c.id).filter(|p| is_impossible_tie(p)).and_then(|p| p.until) {
+                Some(u) if !c.is_wall => {
+                    let until = usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0);
                     d.root_order = (0, until);
                     d.own_order = (0, pos[i]);
                 }
