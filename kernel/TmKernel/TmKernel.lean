@@ -74,6 +74,7 @@ import TmKernel.Capacity
 import TmKernel.Lookahead
 import TmKernel.Planner
 import TmKernel.PlanDiff
+import TmKernel.PlanFold
 import TmKernel.PlanCheck
 import TmKernel.Emit
 import TmKernel.Fast

@@ -1,4 +1,4 @@
-import TmKernel.Planner
+import TmKernel.PlanFold
 /-!
 # L26's eleven single-run laws, as one checker battery (stage 6, track G)
 
@@ -73,7 +73,7 @@ exactly that (its own doc comment says so).  They are in the eligibility-free ha
   the *unrestricted* statement, which is the one design §6.3 refutes, and an `∃ el` form is
   satisfied by the predicate that answers `false`.  It is not stateable yet, it is recorded as
   such in `Goals.lean`'s "not stateable yet" list, and the step that writes eligibleAt
-  states it.  `planOk_of_no_segments` is the base case, and it is now the only place the `∀ el`
+  states it.  `planOk_of_no_segments_is_the_impossible_check` is the base case, the only place the `∀ el`
   form is available: P1's day has segments, and over them the `∀ el` form is false (see the
   note where its specialisation to `dayPlan` used to stand).
 
@@ -366,18 +366,18 @@ theorem wallsUnmoved_iff (r : PlanReq) (d : DayPlan) :
   exact ⟨fun h s hs => (wallUnmoved_iff r s).mp (h s hs),
          fun h s hs => (wallUnmoved_iff r s).mpr (h s hs)⟩
 
-/-! ## 8. `rank` — monotone in rank, among comparable candidates
-
-Design §6.3 row 4: false as written; the two candidates must additionally be **comparable**,
-which is `eligibleSomewhere`. -/
-
+/-! ## 8. `rank` — monotone in the PLANNER'S order, among comparable candidates (D63)
+Design §6.3 row 4: comparable is `eligibleSomewhere`.  The order is step 5's own (D63, gap 3001):
+§7.4's key with D60's component (`Planner.rankedLe`), strictly, over §8.2 step 4's answer
+(`Planner.PlanReq.rankedCands`) — so a pair D60 orders by due date is not a rank violation. -/
+def rankedBefore (r : PlanReq) (i j : Id) : Bool := r.rankedCands.any (fun x => x.cand.id == i &&
+  r.rankedCands.any (fun y => y.cand.id == j && rankedLe x y && !rankedLe y x))
 def rankPairOk (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) : Bool :=
   match r.plan.val.store.get i, r.plan.val.store.get j with
-  | some e, some f =>
+  | some _, some _ =>
       decide (rootPrio r.plan.val i = rootPrio r.plan.val j →
               effectiveCi r.plan.val i = effectiveCi r.plan.val j →
-              e.val.live.doc = f.val.live.doc →
-              e.val.live.rank < f.val.live.rank →
+              rankedBefore r i j = true →
               eligibleSomewhere el r d i = true →
               eligibleSomewhere el r d j = true →
               j ∈ assignedOf d → i ∈ assignedOf d)
@@ -387,13 +387,13 @@ def monotoneInRank (el : Eligible) (r : PlanReq) (d : DayPlan) : Bool :=
   r.plan.val.store.dom.all (fun i =>
     r.plan.val.store.dom.all (fun j => rankPairOk el r d i j))
 
+/-- The check, spelled — `rankedBefore` where line order stood until D63. -/
 theorem rankPairOk_iff (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) :
     rankPairOk el r d i j = true ↔
       ∀ e f, r.plan.val.store.get i = some e → r.plan.val.store.get j = some f →
         rootPrio r.plan.val i = rootPrio r.plan.val j →
         effectiveCi r.plan.val i = effectiveCi r.plan.val j →
-        e.val.live.doc = f.val.live.doc →
-        e.val.live.rank < f.val.live.rank →
+        rankedBefore r i j = true →
         eligibleSomewhere el r d i = true →
         eligibleSomewhere el r d j = true →
         j ∈ assignedOf d → i ∈ assignedOf d := by
@@ -452,27 +452,27 @@ theorem hotPairOk_iff (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) :
             simp only [decide_eq_true_eq]
             exact h e f hi hj
 
-/-! ## 10. `impossible` — never dropped while the day's budget can still be spent (D55, D59)
-
-§7.3's "IMPOSSIBLE items are still scheduled with everything available" and §8.3's "impossible
-never dropped", as the owner reads them (D55, D59; README gaps 2510, 2800, 2801): an item is owed
-what its OWN grant holds TODAY (`owedByItsGrant` over `todayAnswers`, §7.3's pass on day 0 alone),
-and dropping it is correct once the day's budget is spent (`budgetLeft`, `Planner.remainingBudget`). -/
+/-! ## 10. `impossible` — never dropped while step 5 admits it and the budget can be spent (D66)
+D55, D59, D66 (README gaps 2510, 2800, 3000): owed what its OWN grant holds TODAY (`owedByItsGrant`); ELIGIBLE where
+§8.2 step 5's WHOLE filter admits it at a slot of the day BEFORE step 5 assigns anything (`fitsBefore`, the battery's
+`Eligible` NOT read); a drop excused only by a budget spent on rows it could not have displaced (`budgetLeft`, gap 3130). -/
 def todayAnswers (r : PlanReq) : List Look.FloorOut :=
   Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst (r.edfDays.take 1) r.cands.val
 def owedByItsGrant (r : PlanReq) (i : Id) : Bool :=
   (r.candAnswers.filter (fun o => o.out.cand.id == i && decide (0 < o.shortfall))).isEmpty ||
     (r.candAnswers.zip (todayAnswers r)).any (fun p => p.1.out.cand.id == i &&
       decide (0 < p.1.shortfall) && decide (0 < ((p.2.view.grant.map Prod.fst).getD 0)))
-def budgetLeft (el : Eligible) (r : PlanReq) (d : DayPlan) (i : Id) : Bool :=
-  decide ((d.segments.filter (fun s => s.val.kind.isWork && decide (r.now.sec ≤ s.val.start) && (isActive r s || !(el r d s.val i) || s.val.items.any (fun j => d.diagnostics.impossible.val.any (fun q => q.1 == j))))).length < remainingBudget r)
-def impossibleKept (el : Eligible) (r : PlanReq) (d : DayPlan) : Bool :=
-  d.diagnostics.impossible.val.all (fun p => decide (eligibleSomewhere el r d p.1 = true →
-    owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = true → p.1 ∈ assignedOf d))
-theorem impossibleKept_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
-    impossibleKept el r d = true ↔ ∀ p ∈ d.diagnostics.impossible.val,
-      eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = true →
-      p.1 ∈ assignedOf d := by simp only [impossibleKept, List.all_eq_true, decide_eq_true_eq]
+def fitsBefore (r : PlanReq) (i : Id) (x : (Fin 6 × Look.Slot) × Nat) : Bool := r.startGroups.any (fun g =>
+  decide (i ∈ g.ids) && r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g)
+def eligibleBefore (r : PlanReq) (i : Id) : Bool := r.energisedSlots.zipIdx.any (fitsBefore r i)
+def budgetLeft (r : PlanReq) (d : DayPlan) (i : Id) : Bool :=
+  decide ((d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start) && (isActive r s || !(r.energisedSlots.zipIdx.any (fun x => decide (x.1.2.start = s.val.start) && fitsBefore r i x)) || s.val.items.any (fun j => d.diagnostics.impossible.val.any (fun q => q.1 == j))))).length < remainingBudget r)
+def impossibleKept (r : PlanReq) (d : DayPlan) : Bool :=
+  d.diagnostics.impossible.val.all (fun p => decide (eligibleBefore r p.1 = true →
+    owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true → p.1 ∈ assignedOf d))
+theorem impossibleKept_iff (r : PlanReq) (d : DayPlan) :
+    impossibleKept r d = true ↔ ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
+      owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true → p.1 ∈ assignedOf d := by simp only [impossibleKept, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 11. `batch` — a batch does not reach past an equal-`ci` candidate of its own group
 
@@ -541,11 +541,11 @@ def checksCore : List Check :=
   , ⟨.windDown,     noDemandingAfterWindDown⟩
   , ⟨.wallMoved,    wallsUnmoved⟩ ]
 
-/-- The four that compare two candidates and so must be restricted to comparable ones. -/
+/-- The four about candidates; three read `el`, and since D66 the impossible check reads step 5's own filter. -/
 def checksEligible (el : Eligible) : List Check :=
   [ ⟨.rank,       monotoneInRank el⟩
   , ⟨.hot,        hotBeforeQueue el⟩
-  , ⟨.impossible, impossibleKept el⟩
+  , ⟨.impossible, impossibleKept⟩
   , ⟨.batch,      batchDoesNotReachPast el⟩ ]
 
 /-- **Design §6.1's `checks`.**  The eleven of §8.3, in one place. -/
@@ -635,10 +635,10 @@ theorem hot_before_queue_from_the_battery (el : Eligible) (r : PlanReq) (d : Day
 
 theorem impossible_kept_from_the_battery (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : planOk el r d = true) : ∀ p ∈ d.diagnostics.impossible.val,
-      eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = true →
+      eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true →
         p.1 ∈ assignedOf d :=
-  (impossibleKept_iff el r d).mp
-    (checks_all el r d h ⟨.impossible, impossibleKept el⟩ (by simp [checksOf, checksEligible]))
+  (impossibleKept_iff r d).mp
+    (checks_all el r d h ⟨.impossible, impossibleKept⟩ (by simp [checksOf, checksEligible]))
 
 /-- `store.get i = some e` puts `i` in the domain — `Store.domSpec`, so the bridges above can
 be applied from the goals' own hypothesis shape. -/
@@ -651,8 +651,8 @@ theorem mem_dom_of_get (p : PlanCore) (i : Id) (e : Entity) (h : p.store.get i =
 theorem assignedOf_of_no_segments (d : DayPlan) (h : d.segments = []) : assignedOf d = [] := by
   unfold assignedOf; rw [h]; rfl
 
-/-- Nothing is eligible anywhere on a day with no segments — which is why the whole battery,
-eligibility-restricted checks included, holds of one. -/
+/-- Nothing is eligible anywhere on a day with no segments — which is why the three checks that
+read `el` hold of one (the impossible check does not read it since D66). -/
 theorem eligibleSomewhere_of_no_segments (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : d.segments = []) (i : Id) : eligibleSomewhere el r d i = false := by
   unfold eligibleSomewhere; rw [h]; rfl
@@ -668,31 +668,31 @@ theorem planOkCore_of_no_segments (r : PlanReq) (d : DayPlan) (h : d.segments = 
   simp [planOkCore, checksCore, noOverbook, oneBlockAtATime, energyFilterOk, noBlockOverAWall,
     noBlockOverABreak, noDemandingAfterWindDown, wallsUnmoved, h, hb]
 
-/-- **The base case, whole.**  A day with no segments passes the battery at **every**
-eligibility, because nothing is eligible at a slot that does not exist.  This is the only
-reason the `∀ el` form holds, and the name of the theorem below says so. -/
-theorem planOk_of_no_segments (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : d.segments = []) : planOk el r d = true := by
-  have hcore := planOkCore_of_no_segments r d h
+/-- **The base case, whole — restated at W-37 (D66)**: a day with no segments passes the battery at
+every eligibility EXACTLY when it passes the impossible check, whose eligibility D66 reads off the
+request's slots (`PlannerWit.planOk_of_no_segments_as_W_14_wrote_it_is_refuted`). -/
+theorem planOk_of_no_segments_is_the_impossible_check (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (h : d.segments = []) : planOk el r d = impossibleKept r d := by
   have hel : ∀ i, eligibleSomewhere el r d i = false :=
     eligibleSomewhere_of_no_segments el r d h
   have hrank : monotoneInRank el r d = true := by
     refine List.all_eq_true.mpr (fun i _ => List.all_eq_true.mpr (fun j _ => ?_))
     refine (rankPairOk_iff el r d i j).mpr ?_
-    intro e f _ _ _ _ _ _ hie
+    intro e f _ _ _ _ _ hie
     simp [hel i] at hie
   have hhot : hotBeforeQueue el r d = true := by
     refine List.all_eq_true.mpr (fun i _ => List.all_eq_true.mpr (fun j _ => ?_))
     refine (hotPairOk_iff el r d i j).mpr ?_
     intro e f _ _ _ _ hie
     simp [hel i] at hie
-  have himp : impossibleKept el r d = true :=
-    (impossibleKept_iff el r d).mpr (fun p _ hp => by simp [hel p.1] at hp)
+  have hcore := planOkCore_of_no_segments r d h
   have hbat : batchDoesNotReachPast el r d = true := by
     simp only [batchDoesNotReachPast, h, List.all_nil]
-  simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
-    Bool.and_true, Bool.and_eq_true]
-  exact ⟨hcore, hrank, hhot, himp, hbat⟩
+  cases himp : impossibleKept r d
+  · exact Bool.eq_false_iff.2 (fun hp => absurd (checks_all el r d hp ⟨.impossible, impossibleKept⟩
+      (by simp [checksOf, checksEligible])) (by simp [himp]))
+  · simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
+      Bool.and_true, Bool.and_eq_true]; exact ⟨hcore, hrank, hhot, himp, hbat⟩
 
 /-! ### What P1's body does to the lift, and what the merge had to do about it
 
@@ -1291,8 +1291,8 @@ theorem an_unassigned_day_pays_the_lift (r : PlanReq) (hnoassign : r.assignedRow
 
 /-! **`dayPlan_ok_at_every_eligibility_while_the_day_is_empty` is gone, and its name is why.**
 Track G stated it about a `dayPlan` with no segments; P1's `dayPlan` has segments, so that
-statement has no subject left.  It loses nothing: what it asserted is `planOk_of_no_segments`
-applied to one day, and that lemma stays above, unchanged and general.  The `∀ el` form is
+statement has no subject left.  What it asserted is `planOk_of_no_segments_is_the_impossible_check`
+applied to one day (restated at W-37: the impossible check reads the request's slots).  The `∀ el` form is
 **false** of P1's body — `hotPairOk` asks a hot item's row to start before every row carrying
 the queued one, and a permissive `el` makes that a real obligation over the replayed past —
 so it is not restated here either; §6.1's honest dayPlan_ok still waits on
@@ -1494,14 +1494,14 @@ theorem monotoneInRank_can_fail (r : PlanReq) (i j : Id) (e f : Entity)
     (hid : i ∈ r.plan.val.store.dom) (hjd : j ∈ r.plan.val.store.dom)
     (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
     (hc : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-    (hdoc : e.val.live.doc = f.val.live.doc)
-    (hlt : e.val.live.rank < f.val.live.rank) (hne : i ≠ j) :
+    (hbefore : rankedBefore r i j = true)
+    (hne : i ≠ j) :
     monotoneInRank (fun _ _ _ _ => true) r (theOnlyJIsAssignedDay j) = false := by
   have hpair : rankPairOk (fun _ _ _ _ => true) r (theOnlyJIsAssignedDay j) i j = false := by
     cases hb : rankPairOk (fun _ _ _ _ => true) r (theOnlyJIsAssignedDay j) i j with
     | false => rfl
     | true =>
-        have := (rankPairOk_iff _ r _ i j).mp hb e f hi hj hp hc hdoc hlt
+        have := (rankPairOk_iff _ r _ i j).mp hb e f hi hj hp hc hbefore
           (eligibleSomewhere_permissive r j i) (eligibleSomewhere_permissive r j j)
           (by rw [assignedOf_theOnlyJIsAssignedDay]; simp)
         rw [assignedOf_theOnlyJIsAssignedDay] at this
@@ -1561,9 +1561,9 @@ theorem batchDoesNotReachPast_can_fail (r : PlanReq) (ids : BatchIds) (i j : Id)
 def theDroppedImpossibleDay (i : Id) : DayPlan :=
   wDay [aBlockOfAnHour] 60 4 ⟨[(i, 30)], by simp [maxCands]⟩
 
-theorem impossibleKept_can_fail (r : PlanReq) (i : Id) (howed : owedByItsGrant r i = true)
-    (hb : budgetLeft (fun _ _ _ _ => true) r (theDroppedImpossibleDay i) i = true) : impossibleKept (fun _ _ _ _ => true) r (theDroppedImpossibleDay i) = false := by
-  simpa [impossibleKept, theDroppedImpossibleDay, wDay, eligibleSomewhere, assignedOf,
+theorem impossibleKept_can_fail (r : PlanReq) (i : Id) (howed : owedByItsGrant r i = true) (hel : eligibleBefore r i = true)
+    (hb : budgetLeft r (theDroppedImpossibleDay i) i = true) : impossibleKept r (theDroppedImpossibleDay i) = false := by
+  simpa [impossibleKept, theDroppedImpossibleDay, wDay, hel, assignedOf,
     segItems, aBlockOfAnHour, wSeg, Seg.items, SegKind.isWork, howed] using hb
 
 /-! ### The battery itself refuses -/
@@ -2033,10 +2033,10 @@ theorem batchDoesNotReachPast_of_no_batch_row (el : Eligible) (r : PlanReq) (d :
   cases s.val.kind <;> intro hn <;> try rfl
   exact absurd rfl (hn _)
 
-/-- A day whose `Diagnostics.impossible` is empty passes `impossibleKept` at **every**
-eligibility, for the same reason and with the same generality. -/
-theorem impossibleKept_of_no_impossible (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : d.diagnostics.impossible.val = []) : impossibleKept el r d = true := by
+/-- A day whose `Diagnostics.impossible` is empty passes `impossibleKept`, for the same reason and
+with the same generality (it reads no eligibility since D66). -/
+theorem impossibleKept_of_no_impossible (r : PlanReq) (d : DayPlan)
+    (h : d.diagnostics.impossible.val = []) : impossibleKept r d = true := by
   unfold impossibleKept
   rw [h]
   rfl
@@ -2050,11 +2050,11 @@ theorem batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassig
   batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
     the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
 
-/-- `impossibleKept` passes where no listed item eligible anywhere is owed by its grant: the lifts' `hnoimp` (W-33; D55 at W-35
-weakened it from "no listed item is eligible"), and the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`). -/
-theorem impossibleKept_of_no_eligible_impossible_item (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true → owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = false) :
-    impossibleKept el r d = true := (impossibleKept_iff el r d).2 (fun p hp hel how hb => absurd (hb.symm.trans (h p hp hel how)) (by simp))
+/-- `impossibleKept` passes where no listed item step 5 admits before the walk is owed with the budget left — and on a
+day that ASSIGNS the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_on_a_paying_day`, README gap 3160). -/
+theorem impossibleKept_of_no_eligible_impossible_item (r : PlanReq) (d : DayPlan)
+    (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false) :
+    impossibleKept r d = true := (impossibleKept_iff r d).2 (fun p hp hel how hb => absurd (hb.symm.trans (h p hp hel how)) (by simp))
 
 /-! ### The break law, restated over the rows §8.3 is about
 
@@ -2095,44 +2095,79 @@ theorem plan_places_no_block_over_a_break (r : PlanReq)
   -- `dayPlan_ok_core_given_the_budget` needs exactly them (AGENTS §5.3).
   exact a_block_row_from_now_clears_a_break_row r _hnowcal b k hb hbk hk hkk hnow
 
-/-! ### How far §6.1's dayPlan_ok has come, stated exactly
+/-! ### How far §6.1's dayPlan_ok has come — nine over `withoutPast`'s day, and `hnoimp` gone (W-37)
 
-Design §6.1's lift is `planOk r (dayPlan r) = true` over all **eleven** checkers.  It is still
-not stateable in its honest form: four of the eleven take an eligibility predicate, and
-Planner.eligibleAt — which P5 writes, because it is step 5's own filter — does not exist
-(README gap 365).  The `∀ el` form is the *unrestricted* claim design §6.3 refutes, and an
-`∃ el` form is satisfied by the predicate that answers `false`.
+Over `withoutPast`'s day at every eligibility the theorem below proves **nine** of the eleven:
+`planOkCore`'s seven, the batch check (its subject is empty on an unassigned day) and — since
+W-37, with NO hypothesis about impossible items — the impossible check.  The two comparisons are
+refuted at `PlannerWit.permissive` (`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`),
+so nine is a ceiling for a proof over an arbitrary `el`.  **Why `hnoimp` is gone** (D59, D66;
+README gaps 3000, 3160): the check's eligibility is §8.2 step 5's own filter at a slot BEFORE step 5
+assigns anything (`eligibleBefore`) and its budget clause counts §8.2 choice 5b's row
+(`budgetLeft`), so on a day step 5 filled nothing the antecedent is empty —
+`an_unassigned_day_admits_nothing_under_its_budget`, through `PlanFold.nothing_fits_before_on_an_unassigned_day`
+and README gap 903's theorem `PlanFold.finalAssign_is_assignFold`. -/
 
-What **is** provable today is the theorem below: **nine of the eleven**, at every eligibility,
-over `withoutPast`'s day.  And the honest accounting of those nine is the point of stating it
-in one place:
+/-- **The one argument, stated once**: on a day with no assigned row, an item §8.2 step 5 admits at
+a slot before the walk cannot also have the budget left — the budget clause counts the running
+block's row, so the walk's seed is under the budget, and a group that fits under it is placed. -/
+theorem an_unassigned_day_admits_nothing_under_its_budget (r : PlanReq) (d : DayPlan)
+    (hnoassign : r.assignedRows = [])
+    (hres : ∀ q, r.activeRun = some q → ∃ s ∈ d.segments,
+      s.val.kind.isWork = true ∧ clampSec r.now.sec ≤ s.val.start ∧ isActive r s = true)
+    (i : Id) (hel : eligibleBefore r i = true) (hb : budgetLeft r d i = true) : False := by
+  have hbud : r.activeSeed < remainingBudget r := by
+    unfold budgetLeft at hb
+    rw [decide_eq_true_eq] at hb
+    unfold PlanReq.activeSeed
+    cases hq : r.activeRun with
+    | none => rw [if_neg (by simp)]; omega
+    | some q =>
+      obtain ⟨s, hs, hw, hn, ha⟩ := hres q hq
+      rw [if_pos (by simp)]
+      exact Nat.lt_of_le_of_lt (List.length_pos_of_mem (List.mem_filter.2 ⟨hs, by simp [hw, hn, ha]⟩)) hb
+  obtain ⟨x, hx, hfit⟩ := List.any_eq_true.1 hel
+  obtain ⟨g, hg, hgf⟩ := List.any_eq_true.1 hfit
+  simp only [Bool.and_eq_true] at hgf
+  rw [PlanFold.nothing_fits_before_on_an_unassigned_day r hnoassign hbud x hx g hg] at hgf
+  exact absurd hgf.2 (by simp)
 
-* **seven** are `planOkCore`'s, from `dayPlan_ok_core_from_now_given_the_budget`; of those seven, three
-  (`energyFilterOk`, `noBlockOverABreak`, `noDemandingAfterWindDown`) were vacuous over the
-  restricted day at every request the kernel held before this step, and `noBlockOverABreak`
-  is vacuous no longer (`PlannerWit.theCensusRequest`);
-* **two** are `checksEligible`'s `impossibleKept` and `batchDoesNotReachPast`.  The batch check holds **because its
-  subject is empty on an unassigned day** — proved above.  `impossibleKept` did too until W-33 wrote its field; since
-  then it is FALSE there (`PlannerWit.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted`),
-  so the theorem below takes `hnoimp` and says so in its name (this bullet said "both … empty at every request"; gap 2565).
-  Both are here because §6.1's arithmetic is otherwise counted by hand, which README gap 684 records getting wrong;
-* **two** are missing, and they are the two comparisons: `monotoneInRank` and
-  `hotBeforeQueue`.  Both are real obligations over the replayed past at a permissive `el`
-  (see the note above `dayPlan_ok_core_given_the_budget`'s own deleted `∀ el` corollary), and both wait on P5.
+/-- **D66's impossible check holds on every day step 5 filled nothing** that carries the running
+block's row where the budget reads it. -/
+theorem impossibleKept_on_an_unassigned_day (r : PlanReq) (d : DayPlan)
+    (hnoassign : r.assignedRows = [])
+    (hres : ∀ q, r.activeRun = some q → ∃ s ∈ d.segments,
+      s.val.kind.isWork = true ∧ clampSec r.now.sec ≤ s.val.start ∧ isActive r s = true) :
+    impossibleKept r d = true :=
+  (impossibleKept_iff r d).2 (fun p _ hel _ hb =>
+    (an_unassigned_day_admits_nothing_under_its_budget r d hnoassign hres p.1 hel hb).elim)
 
-**W-19 turned that last bullet from "missing" into "false", which is a different inheritance.**
-`PlannerWit.the_two_comparisons_are_false_at_the_queued_request` computes both conjuncts as
-`false` at the permissive eligibility, on a day `dayPlan` really produces and with no mutation,
-while `PlannerWit.the_other_nine_hold_where_the_two_fail` computes the other nine as `true` at
-the same request.  So **nine is a ceiling**, not a waypoint: no proof quantified over an
-arbitrary `el` can reach ten, and `dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day` below is
-where the residue is named rather than counted.
+/-- **§8.2 choice 5b's row is a budget row of the day**, with no bound on `now`
+(`PlanFold.the_reservation_row_is_a_work_row_of_the_day`, read as `isActive`). -/
+theorem the_reservation_is_a_budget_row_of_the_day (r : PlanReq) :
+    ∀ q, r.activeRun = some q → ∃ s ∈ (dayPlan r).segments,
+      s.val.kind.isWork = true ∧ clampSec r.now.sec ≤ s.val.start ∧ isActive r s = true := by
+  intro q hq
+  obtain ⟨s, hs, hw, hn, hi⟩ := PlanFold.the_reservation_row_is_a_work_row_of_the_day r q hq
+  obtain ⟨a, -, ha, -⟩ := r.activeRun_spec q hq
+  have hact : r.state.activeId = some a.id := by unfold RuntimeIn.activeId; rw [ha]; rfl
+  refine ⟨s, hs, hw, Nat.le_of_eq hn.symm, ?_⟩
+  unfold isActive; rw [hact]; simp [hi, hact]
 
-So the step after this one inherits: nine of eleven conjuncts proved, two of the nine empty
-and owed a subject (P5's batch, P8's impossible list — written at W-33, hence `hnoimp`), **two refuted at every eligibility and
-owed both Planner.eligibleAt and the fold** (README gap 850), and the fold induction design
-§6.2 prices at ≈ 4,500 proof lines **not started** — no line of it is claimed here. -/
-theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
+/-- **And of `withoutPast`'s day**, which keeps every work row from `now` — inside the calendar,
+where `now` and the rows' clock agree (`Planner.clampSec_id`). -/
+theorem the_reservation_is_a_budget_row_from_now (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    ∀ q, r.activeRun = some q → ∃ s ∈ (withoutPast r (dayPlan r)).segments,
+      s.val.kind.isWork = true ∧ clampSec r.now.sec ≤ s.val.start ∧ isActive r s = true := by
+  intro q hq
+  obtain ⟨s, hs, hw, hn, ha⟩ := the_reservation_is_a_budget_row_of_the_day r q hq
+  have hn' : r.now.sec ≤ s.val.start := by rw [clampSec_id _ (by omega)] at hn; exact hn
+  refine ⟨s, by rw [withoutPast_segments]; exact List.mem_filter.2 ⟨hs, by simp [keepFromNow, hw, hn']⟩, hw, hn, ha⟩
+
+/-- **NINE of the eleven over `withoutPast`'s day, at every eligibility** — W-19's statement,
+proved without `hnoimp` at W-37 (it carried one from W-33 to W-36). -/
+theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
@@ -2143,39 +2178,21 @@ theorem dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_give
         r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
-    (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val, eligibleSomewhere el r (withoutPast r (dayPlan r))
-      p.1 = true → owedByItsGrant r p.1 = true → budgetLeft el r (withoutPast r (dayPlan r)) p.1 = false) :
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     planOkCore r (withoutPast r (dayPlan r)) = true ∧
-      impossibleKept el r (withoutPast r (dayPlan r)) = true ∧
+      impossibleKept r (withoutPast r (dayPlan r)) = true ∧
       batchDoesNotReachPast el r (withoutPast r (dayPlan r)) = true :=
   ⟨dayPlan_ok_core_from_now_on_an_unassigned_day r hagree hactive hday hnowcal
      hnoassign hplain,
-   impossibleKept_of_no_eligible_impossible_item el r _ hnoimp,
+   impossibleKept_on_an_unassigned_day r _ hnoassign (the_reservation_is_a_budget_row_from_now r hnowcal),
    batchDoesNotReachPast_of_no_batch_row el r _ (fun s hs ids =>
      the_day_has_no_batch_row_on_an_unassigned_day r s
        (mem_withoutPast r _ s hs).1 hnoassign ids)⟩
 
-/-! ### §6.1's `planOk`, assembled — and why the residue is two named conjuncts (W-19)
-
-The theorem above is a **nine-way conjunction written out by hand**, and the arithmetic that
-turns "nine of these eleven" into "the eleven `planOk` computes" is a reader's, not the
-compiler's.  README gap 684 is the record of getting exactly that arithmetic wrong.  What
-follows hands it to the compiler: given the two conjuncts that are missing, `planOk` itself
-answers `true`, over `checksOf`'s own list rather than over a transcription of it.
-
-**It assumes two of the eleven and says so in its name.**  That is not a discharge, and the
-reason it is worth stating anyway is the theorem beside it:
-`PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted` proves that the two
-hypotheses **cannot be dropped** — at the permissive eligibility both are `false` on a day
-`dayPlan` really produces, so no proof over an arbitrary `el` will ever remove them.  Together
-the two statements say precisely what §6.1's lift is waiting for: not more proof about the
-seven core checks, but Planner.eligibleAt and the assign fold that gives the two comparisons
-something honest to range over.
-
-*(Before W-19 this file asserted the second half in prose — *"the `∀ el` form is **false** of
-P1's body"* — and nothing computed it.)*  Without `hnoimp` it is refuted: `PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted` (gap 2516). -/
-theorem dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
+/-- **§6.1's `planOk`, assembled from the nine and the two comparisons** (W-19's statement, without
+`hnoimp` since W-37), so the arithmetic is the compiler's (README gap 684).  The two it assumes
+cannot be dropped: `PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted`. -/
+theorem dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
     (el : Eligible) (r : PlanReq)
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
@@ -2187,14 +2204,12 @@ theorem dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
     (hnoassign : r.assignedRows = [])
-    (hnoimp : ∀ p ∈ (withoutPast r (dayPlan r)).diagnostics.impossible.val, eligibleSomewhere el r (withoutPast r (dayPlan r))
-      p.1 = true → owedByItsGrant r p.1 = true → budgetLeft el r (withoutPast r (dayPlan r)) p.1 = false)
     (hrank : monotoneInRank el r (withoutPast r (dayPlan r)) = true)
     (hhot : hotBeforeQueue el r (withoutPast r (dayPlan r)) = true) :
     planOk el r (withoutPast r (dayPlan r)) = true := by
   obtain ⟨hcore, himp, hbat⟩ :=
-    dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
-      el r hagree hactive hday hnowcal hnoassign hplain hnoimp
+    dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+      el r hagree hactive hday hnowcal hnoassign hplain
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2226,24 +2241,19 @@ the count of the eleven with something to range over does not move, and a reader
 taking "ten of eleven" as "ten checkers biting" is over-counting by the same
 argument README gap 650 got wrong about `noBlockOverABreak`.
 
-**Ten is a ceiling on the quiet class too, and the eleventh fails for a cause
-that has nothing to do with the assign fold.**
-`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes `hotBeforeQueue` as
-`false` at a request with **no log, nothing running and no candidates** — so no
-step 5, no choice 5b reservation and no replayed past can be blamed.  The cause
-is in the checker's own quantifier: `hotPairOk` ranges `sj` over **every**
-segment of the day, and a calendar Wall carrying `^g1` is therefore a queue
-position that a hot `^m1` with no row of its own has failed to precede.
+**Ten is a ceiling on the quiet class too, and the eleventh fails for a cause that has nothing
+to do with the assign fold.**  `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes
+`hotBeforeQueue` as `false` at a request with **no log, nothing running and no candidates** — so no
+step 5, no choice 5b reservation and no replayed past can be blamed.  The cause is in the checker's
+own quantifier: `hotPairOk` ranges `sj` over **every** segment of the day, and a calendar Wall
+carrying `^g1` is therefore a queue position that a hot `^m1` with no row has failed to precede.
 
-**That refines README gap 850's inheritance for P5**, and the refinement is the
-point of stating it: gap 850 offered P5 two repairs — an eligibleAt that
-refuses a candidate at the reservation row, or the fold.  **Neither reaches
-`hotBeforeQueue`.**  The only eligibility that repairs it is one that answers
-`false` for an item the plan holds but step 5 never queues, and the only other
-repair is in the checker, restricting `sj` to `sj.val.kind.isWork` — which is a
-restatement of one of L26's eleven and so is P5's to take with its refutation
-beside it (AGENTS §3.1 item 3), not this step's to take quietly.  README gap
-960. -/
+**That refines README gap 850's inheritance for P5**: gap 850 offered P5 two repairs — an
+eligibleAt that refuses a candidate at the reservation row, or the fold — and **neither reaches
+`hotBeforeQueue`**.  The only eligibility that repairs it answers `false` for an item the plan
+holds but step 5 never queues; the only other repair restricts `sj` to `sj.val.kind.isWork`, which
+is a restatement of one of L26's eleven and so owes its refutation beside it (AGENTS §3.1 item 3),
+not this step's to take quietly.  README gap 960. -/
 
 /-- **A quiet day assigns nothing.**  `assignedOf` filters `SegKind.isWork`, which is `Block`
 and `Batch` and nothing else; `dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned` kills the first on a day with no
@@ -2279,18 +2289,16 @@ theorem monotoneInRank_of_nothing_assigned (el : Eligible) (r : PlanReq) (d : Da
     (h : assignedOf d = []) : monotoneInRank el r d = true := by
   refine List.all_eq_true.2 (fun i _ => List.all_eq_true.2 (fun j _ => ?_))
   refine (rankPairOk_iff el r d i j).2 ?_
-  intro e f _ _ _ _ _ _ _ _ hmem
+  intro e f _ _ _ _ _ _ _ hmem
   rw [h] at hmem
   exact absurd hmem (by simp)
 
-/-- **TEN of §6.1's eleven, over the whole day, at every eligibility.**  Seven are
-`planOkCore`'s, the batch check's subject is empty on an unassigned day, `impossibleKept` holds by `hnoimp` (without it:
-`PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted`; gap 2565), and the tenth is `monotoneInRank`.
-
-The eleventh is `hotBeforeQueue` and it is **refuted** on this very class —
-`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` — so this conjunction is not a waypoint
-towards eleven by this route.  See the section header. -/
-theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
+/-- **TEN of §6.1's eleven, over the whole day, at every eligibility** — W-20's statement, proved
+without `hnoimp` at W-37: seven are `planOkCore`'s, the batch check's subject is empty on an
+unassigned day, `impossibleKept_on_an_unassigned_day` (nothing runs, so no reservation row is owed),
+and the tenth is `monotoneInRank`.  The eleventh, `hotBeforeQueue`, is refuted on this very class
+(`PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day`).  See the section header. -/
+theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
@@ -2302,12 +2310,10 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_imposs
         r.dayStart ≤ (Cal.instantOf r.tz a.day a.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
-        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
-    (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val, eligibleSomewhere el r (dayPlan r) p.1 = true →
-      owedByItsGrant r p.1 = true → budgetLeft el r (dayPlan r) p.1 = false) :
+        (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd) :
     planOkCore r (dayPlan r) = true ∧
       monotoneInRank el r (dayPlan r) = true ∧
-      impossibleKept el r (dayPlan r) = true ∧
+      impossibleKept r (dayPlan r) = true ∧
       batchDoesNotReachPast el r (dayPlan r) = true :=
   ⟨dayPlan_ok_core_given_the_budget r hagree hactive hday hnowcal hnopast
      (an_unassigned_day_pays_the_lift r hnoassign _
@@ -2316,20 +2322,16 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_imposs
        (dayPlan_block_rows_are_reserved_or_assigned r hnopast)).2 hplain,
    monotoneInRank_of_nothing_assigned el r _
      (dayPlan_assigns_nothing_on_a_quiet_unassigned_day r hnopast hnorun hnoassign),
-   impossibleKept_of_no_eligible_impossible_item el r _ hnoimp,
+   impossibleKept_on_an_unassigned_day r _ hnoassign (fun q hq => absurd (hnorun ▸ hq) (by simp)),
    batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
      hnoassign⟩
 
-/-- **§6.1's `planOk` itself, assembled from the ten plus the one** — so that "ten of eleven"
-is the compiler's arithmetic over `checksOf`'s list and not a reader's over a transcription of
-it.  README gap 684 is the record of doing that arithmetic by hand and getting it wrong, and
-this is the whole-day sibling of `dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day`.
-
-**It assumes one of the eleven and its name says so.**  What makes it worth stating is what
-stands beside it: `PlannerWit.a_quiet_day_does_not_pass_the_whole_battery` proves the
-hypothesis cannot be dropped, and `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`
-is the instance in which it holds.  Without `hnoimp` it is refuted: `PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted` (gap 2516). -/
-theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
+/-- **§6.1's `planOk` itself, assembled from the ten plus the one** — the whole-day sibling of
+`dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day`, W-20's statement proved
+without `hnoimp` at W-37.  It assumes `hhot`, and cannot drop it:
+`PlannerWit.a_quiet_day_does_not_pass_the_whole_battery`; `PlannerWit.the_quiet_battery_passes_at_the_quiet_request`
+is an instance where it holds. -/
+theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hagree : r.wallsAgree = true) (hactive : r.activeAgrees = true)
     (hday : r.dayAgrees = true) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
@@ -2342,13 +2344,11 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossibl
         (Cal.instantOf r.tz b.day b.time).sec ≤ r.dayEnd ∧
         (Cal.instantOf r.tz a.day a.time).sec < (Cal.instantOf r.tz b.day b.time).sec ∧
         (Cal.instantOf r.tz b.day b.time).sec < LogStamp.yearEnd)
-    (hnoimp : ∀ p ∈ (dayPlan r).diagnostics.impossible.val, eligibleSomewhere el r (dayPlan r) p.1 = true →
-      owedByItsGrant r p.1 = true → budgetLeft el r (dayPlan r) p.1 = false)
     (hhot : hotBeforeQueue el r (dayPlan r) = true) :
     planOk el r (dayPlan r) = true := by
   obtain ⟨hcore, hrank, himp, hbat⟩ :=
-    dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item el r
-      hnoassign hagree hactive hday hnowcal hnopast hnorun hplain hnoimp
+    dayPlan_ok_on_a_quiet_unassigned_day_except_hot el r
+      hnoassign hagree hactive hday hnowcal hnopast hnorun hplain
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons,
     List.all_nil, Bool.and_true, hrank, hhot, himp, hbat]
   exact hcore
@@ -2556,8 +2556,8 @@ FEWER candidates can only make the battery easier.  `planOk_antitone` is that, a
 carrying since W-19 **collapses to one computation at the permissive eligibility**.
 
 That is what W-19's "nine is a ceiling" argument was, made into a theorem rather than a
-reading: `PlannerWit.the_two_comparisons_are_false_at_the_queued_request` computes both
-comparisons `false` at `permissive`, and because `permissive` is the top of this order a
+reading: `PlannerWit.the_hot_comparison_is_false_at_the_queued_request` computes the hot
+comparison `false` at `permissive` (and, until W-37's D63, the rank one), and because `permissive` is the top of this order a
 refutation there is a refutation of the `∀ el` form and of nothing weaker.  It is also what
 makes **(b)** worth stating, because (b) is a hypothesis ON `el` and antitonicity says which
 direction such a hypothesis may point.
@@ -2601,8 +2601,8 @@ theorem monotoneInRank_antitone {a b : Eligible}
   refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
   have hbij : rankPairOk b r d i j = true :=
     List.all_eq_true.1 (List.all_eq_true.1 hb i hi) j hj
-  refine (rankPairOk_iff a r d i j).2 (fun e f hgi hgj hp hc hdoc hr hei hej hmem => ?_)
-  exact (rankPairOk_iff b r d i j).1 hbij e f hgi hgj hp hc hdoc hr
+  refine (rankPairOk_iff a r d i j).2 (fun e f hgi hgj hp hc hbefore hei hej hmem => ?_)
+  exact (rankPairOk_iff b r d i j).1 hbij e f hgi hgj hp hc hbefore
     (eligibleSomewhere_mono h r d i hei) (eligibleSomewhere_mono h r d j hej) hmem
 
 theorem hotBeforeQueue_antitone {a b : Eligible}
@@ -2615,11 +2615,11 @@ theorem hotBeforeQueue_antitone {a b : Eligible}
   exact (hotPairOk_iff b r d i j).1 hbij e f hgi hgj hhot hnot
     (eligibleSomewhere_mono h r d i hei) sj hsj hj'
 
-theorem budgetLeft_mono {a b : Eligible} (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan) (i : Id) (ha : budgetLeft a r d i = true) : budgetLeft b r d i = true := by unfold budgetLeft at ha ⊢; rw [decide_eq_true_eq] at ha ⊢; refine Nat.lt_of_le_of_lt ?_ ha; rw [← List.countP_eq_length_filter, ← List.countP_eq_length_filter]; exact List.countP_mono_left (fun s _ hs => by have hab := h r d s.val i; cases hai : a r d s.val i <;> cases hbi : b r d s.val i <;> simp_all)
-theorem impossibleKept_antitone {a b : Eligible} (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
-    (hb : impossibleKept b r d = true) : impossibleKept a r d = true :=
-  (impossibleKept_iff a r d).2 (fun p hp hel how hbl =>
-    (impossibleKept_iff b r d).1 hb p hp (eligibleSomewhere_mono h r d p.1 hel) how (budgetLeft_mono h r d p.1 hbl))
+/-! budgetLeft_mono and impossibleKept_antitone stood here until W-37: both said what narrowing the battery's
+eligibility does to the impossible check, and D66 took the eligibility out of it (`impossibleKept` reads §8.2 step 5's
+own filter, `eligibleBefore`), so neither has a subject left — `planOk_antitone` below reads the impossible check as a
+conjunct no eligibility moves.  Removed with their audit lines (`Check.lean`'s W-37 banner), not refuted: no statement
+of either survives the change of type.  README gap 3161. -/
 
 theorem batchDoesNotReachPast_antitone {a b : Eligible}
     (h : ∀ r d s i, a r d s i = true → b r d s i = true) (r : PlanReq) (d : DayPlan)
@@ -2647,13 +2647,13 @@ theorem planOk_antitone {a b : Eligible}
     checks_all b r d hb ⟨.rank, monotoneInRank b⟩ (by simp [checksOf, checksEligible])
   have hhot : hotBeforeQueue b r d = true :=
     checks_all b r d hb ⟨.hot, hotBeforeQueue b⟩ (by simp [checksOf, checksEligible])
-  have himp : impossibleKept b r d = true :=
-    checks_all b r d hb ⟨.impossible, impossibleKept b⟩ (by simp [checksOf, checksEligible])
+  have himp : impossibleKept r d = true :=
+    checks_all b r d hb ⟨.impossible, impossibleKept⟩ (by simp [checksOf, checksEligible])
   have hbat : batchDoesNotReachPast b r d = true :=
     checks_all b r d hb ⟨.batch, batchDoesNotReachPast b⟩ (by simp [checksOf, checksEligible])
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
     Bool.and_true, monotoneInRank_antitone h r d hrank, hotBeforeQueue_antitone h r d hhot,
-    impossibleKept_antitone h r d himp, batchDoesNotReachPast_antitone h r d hbat]
+    himp, batchDoesNotReachPast_antitone h r d hbat]
   exact hcore
 
 /-- **The `∀ el` axis collapses to one computation.**  `fun _ _ _ _ => true` — the
@@ -2697,7 +2697,7 @@ theorem eligibleSomewhere_of_no_work_row {el : Eligible} (hw : WorkAnchored el) 
 theorem monotoneInRank_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : ∀ i, eligibleSomewhere el r d i = false) : monotoneInRank el r d = true := by
   refine List.all_eq_true.2 (fun i _ => List.all_eq_true.2 (fun j _ => ?_))
-  refine (rankPairOk_iff el r d i j).2 (fun e f _ _ _ _ _ _ hei _ _ => ?_)
+  refine (rankPairOk_iff el r d i j).2 (fun e f _ _ _ _ _ hei _ _ => ?_)
   exact absurd (hei.symm.trans (h i)) (by simp)
 
 theorem hotBeforeQueue_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
@@ -2706,9 +2706,9 @@ theorem hotBeforeQueue_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : Da
   refine (hotPairOk_iff el r d i j).2 (fun e f _ _ _ _ hei _ _ _ => ?_)
   exact absurd (hei.symm.trans (h i)) (by simp)
 
-theorem impossibleKept_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : ∀ i, eligibleSomewhere el r d i = false) : impossibleKept el r d = true :=
-  (impossibleKept_iff el r d).2 (fun p _ hel _ => absurd (hel.symm.trans (h p.1)) (by simp))
+theorem impossibleKept_of_nothing_eligible_before (r : PlanReq) (d : DayPlan)
+    (h : ∀ i, eligibleBefore r i = false) : impossibleKept r d = true :=
+  (impossibleKept_iff r d).2 (fun p _ hel _ => absurd (hel.symm.trans (h p.1)) (by simp))
 
 /-- **ELEVEN of §6.1's eleven, over the WHOLE day, at every `WorkAnchored` eligibility.**
 Design §6.1's dayPlan_ok, for the class W-20 left at ten.  The hypotheses are W-20's quiet
@@ -2739,8 +2739,8 @@ theorem dayPlan_ok_on_a_quiet_unassigned_day (el : Eligible) (r : PlanReq)
   have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
     eligibleSomewhere_of_no_work_row hwork r _
       (dayPlan_has_no_work_row_on_an_unassigned_day r hnopast hnorun hnoassign)
-  refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item el r
-    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain (fun p _ he _ => absurd (he.symm.trans (hnone p.1)) (by simp)) ?_
+  refine dayPlan_ok_on_a_quiet_unassigned_day_given_hot el r
+    hnoassign hagree hactive hday hnowcal hnopast hnorun hplain ?_
   exact hotBeforeQueue_of_nothing_eligible el r _ hnone
 
 /-! ############################################################################
@@ -2771,15 +2771,15 @@ antecedent and none of any conclusion, so no bug in it can make a checker pass;
 
 /-- The pairs `rankPairOk`'s implication is **about** at `el`, `r` and `d`: every antecedent
 of the checker, and none of its conclusion.  (`PlannerWit`'s until W-21 — see the note there.)
+Since D63 the order antecedent is `rankedBefore`, the planner's own, where line order stood.
 -/
 def rankSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) : List (Id × Id) :=
   r.plan.val.store.dom.flatMap (fun i => r.plan.val.store.dom.filterMap (fun j =>
     match r.plan.val.store.get i, r.plan.val.store.get j with
-    | some e, some f =>
+    | some _, some _ =>
         if decide (rootPrio r.plan.val i = rootPrio r.plan.val j)
              && decide (effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-             && decide (e.val.live.doc = f.val.live.doc)
-             && decide (e.val.live.rank < f.val.live.rank)
+             && rankedBefore r i j
              && eligibleSomewhere el r d i && eligibleSomewhere el r d j
              && decide (j ∈ assignedOf d)
         then some (i, j) else none
@@ -2829,7 +2829,7 @@ def subjectOf (el : Eligible) (n : CheckName) (r : PlanReq) (d : DayPlan) : Bool
                  | _ => false))
   | .rank => !(rankSubjects el r d).isEmpty
   | .hot => !(hotSubjects el r d).isEmpty
-  | .impossible => d.diagnostics.impossible.val.any (fun p => eligibleSomewhere el r d p.1 && owedByItsGrant r p.1 && budgetLeft el r d p.1)
+  | .impossible => d.diagnostics.impossible.val.any (fun p => eligibleBefore r p.1 && owedByItsGrant r p.1 && budgetLeft r d p.1)
   | .batch =>
       d.segments.any (fun s =>
         match s.val.kind with
@@ -2934,11 +2934,11 @@ theorem mem_rankSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) {i j : Id} 
     (hgi : r.plan.val.store.get i = some e) (hgj : r.plan.val.store.get j = some f)
     (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
     (hc : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-    (hdoc : e.val.live.doc = f.val.live.doc) (hr : e.val.live.rank < f.val.live.rank)
+    (hbefore : rankedBefore r i j = true)
     (hei : eligibleSomewhere el r d i = true) (hej : eligibleSomewhere el r d j = true)
     (hmem : j ∈ assignedOf d) : (i, j) ∈ rankSubjects el r d := by
   refine List.mem_flatMap.2 ⟨i, hi, List.mem_filterMap.2 ⟨j, hj, ?_⟩⟩
-  simp [hgi, hgj, hp, hc, hdoc, hr, hei, hej, hmem]
+  simp [hgi, hgj, hp, hc, hbefore, hei, hej, hmem]
 
 /-- `(i, j)` is in `hotSubjects` exactly when `hotPairOk`'s antecedents all hold of it. -/
 theorem mem_hotSubjects (el : Eligible) (r : PlanReq) (d : DayPlan) {i j : Id} {e f : Entity}
@@ -2959,8 +2959,8 @@ theorem monotoneInRank_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
     | nil => rfl
     | cons a t => rw [hx] at h; simp at h
   refine List.all_eq_true.2 (fun i hi => List.all_eq_true.2 (fun j hj => ?_))
-  refine (rankPairOk_iff el r d i j).2 (fun e f hgi hgj hp hc hdoc hr hei hej hmem => ?_)
-  have := mem_rankSubjects el r d hi hj hgi hgj hp hc hdoc hr hei hej hmem
+  refine (rankPairOk_iff el r d i j).2 (fun e f hgi hgj hp hc hbefore hei hej hmem => ?_)
+  have := mem_rankSubjects el r d hi hj hgi hgj hp hc hbefore hei hej hmem
   rw [hnil] at this
   exact absurd this (by simp)
 
@@ -2980,9 +2980,9 @@ theorem hotBeforeQueue_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
   exact absurd this (by simp)
 
 theorem impossibleKept_of_no_subject (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : subjectOf el .impossible r d = false) : impossibleKept el r d = true := by
+    (h : subjectOf el .impossible r d = false) : impossibleKept r d = true := by
   simp only [subjectOf] at h
-  refine (impossibleKept_iff el r d).2 (fun p hp hel how hb => ?_)
+  refine (impossibleKept_iff r d).2 (fun p hp hel how hb => ?_)
   have := false_of_any_eq_false h hp
   simp [hel, how, hb] at this
 
@@ -3066,7 +3066,7 @@ difference is the difference between "it passes" and "there is nothing for it to
 exactly the distinction this whole section exists to keep, and until now the "and none can"
 column of `PlannerWit`'s census table was prose beside an eleven-way `decide` at one request.
 
-`the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` is what they buy: **no `PlanReq` whatever can put more than
+`the_census_ceiling_is_seven_on_an_unassigned_day` is what they buy: **no `PlanReq` whatever can put more than
 seven of the eleven in play today**, so the seven `PlannerWit.the_census_ratio` computes at
 `theCensusRequest` is a ceiling that has been reached and not a high-water mark that a future
 witness might beat.  The four that cannot reach it are design §6.4's P5, P5/P7 and P8 rows,
@@ -3110,22 +3110,23 @@ theorem batch_has_no_subject_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     exact absurd hk (the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
   all_goals (rw [hk] at hp; simp at hp)
 
-theorem impossible_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d : DayPlan)
-    (h : ∀ i, eligibleSomewhere el r d i = false) : subjectOf el .impossible r d = false := by
-  simp only [subjectOf]; exact Bool.eq_false_iff.2 (fun hx => by obtain ⟨p, -, hp⟩ := List.any_eq_true.1 hx; simp only [Bool.and_eq_true] at hp; exact absurd hp.1.symm (by simp [h p.1]))
+/-- **`.impossible` has no subject on a day step 5 filled nothing** (W-37, D66) — the census arm of
+`impossibleKept_on_an_unassigned_day`.  It replaces a lemma about a day where nothing was eligible at `el`, which D66 made false. -/
+theorem impossible_has_no_subject_on_an_unassigned_day (el : Eligible) (r : PlanReq) (d : DayPlan)
+    (hnoassign : r.assignedRows = []) (hres : ∀ q, r.activeRun = some q → ∃ s ∈ d.segments,
+      s.val.kind.isWork = true ∧ clampSec r.now.sec ≤ s.val.start ∧ isActive r s = true) : subjectOf el .impossible r d = false := by
+  simp only [subjectOf]; exact Bool.eq_false_iff.2 (fun hx => by obtain ⟨p, -, hp⟩ := List.any_eq_true.1 hx; simp only [Bool.and_eq_true] at hp; exact an_unassigned_day_admits_nothing_under_its_budget r d hnoassign hres p.1 hp.1.1 hp.2)
 
-/-- **Seven, given no eligible impossible item** (W-33; it was UNCONDITIONAL until then, and
-`PlannerWit.the_census_reaches_eight_on_an_unassigned_day` refutes that — the unconditional
-ceiling is `the_census_ceiling_is_eight_on_an_unassigned_day`, end of this module).  The
-hypothesis names what it excludes (AGENTS §5.2): an IMPOSSIBLE item eligible somewhere. -/
-theorem the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item (el : Eligible) (r : PlanReq)
-    (hnoassign : r.assignedRows = []) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
-    (hnoimp : subjectOf el .impossible r (dayPlan r) = false) :
+/-- **SEVEN is the census ceiling on a day step 5 filled nothing, at every request and every
+eligibility** — W-21's statement, proved without `hnoimp` at W-37 (it carried one from W-33): the
+impossible check has no subject there (`impossible_has_no_subject_on_an_unassigned_day`). -/
+theorem the_census_ceiling_is_seven_on_an_unassigned_day (el : Eligible) (r : PlanReq)
+    (hnoassign : r.assignedRows = []) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
     subjectCount el r (dayPlan r) ≤ 7 := by
   have e1 := energyFilter_has_no_subject_on_an_unassigned_day el r hnoassign
   have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
   have e3 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
-  have e4 := hnoimp
+  have e4 := impossible_has_no_subject_on_an_unassigned_day el r _ hnoassign (the_reservation_is_a_budget_row_of_the_day r)
   show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 7
   have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
       = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
@@ -3181,11 +3182,10 @@ subject than did there, and `overbook` loses one it had on the whole day, becaus
 `withoutActive` removes the only Block `withoutPast` leaves.
 `the_census_ceiling_from_now_is_four_on_an_unassigned_day` proves the exact ceiling: **at most four** of the eleven
 can have a subject on this day at a `SlotAnchored` eligibility, at any request whatever, and
-`PlannerWit.the_eleven_from_now_is_four_checkers_biting` reaches it.  Four is not seven: the
-whole-day ceiling `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` counts `overbook` and the two comparisons,
-and every one of those three is counted there **because of the replayed past**, which is the
-half of the day §8.3 is not about.  Neither number is the other's correction; they are
-ceilings on two different days and each says which.
+`PlannerWit.the_eleven_from_now_is_four_checkers_biting` reaches it.  Four is not seven: the whole-day ceiling
+`the_census_ceiling_is_seven_on_an_unassigned_day` counts `overbook` and the two comparisons, every one of them
+**because of the replayed past**, the half of the day §8.3 is not about.  Neither number is the
+other's correction; they are ceilings on two different days and each says which.
 
 ### THE ONE NUMBER, AND WHICH QUESTION IT ANSWERS
 
@@ -3196,8 +3196,8 @@ single statement of them, and every other sentence about the ratio points here.
 
 | the question | what counts it | today's answer, with its coordinates |
 |---|---|---|
-| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now_on_an_unassigned_day`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_unassigned_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item`); **the seven core checks** on the whole day, every request, every `FromNowAnchored` `el` (`dayPlan_ok_is_the_core_seven_on_an_unassigned_day`, W-23) — and the eleven there is **refuted** at a merely `SlotAnchored` one (`PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted`) |
-| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four_on_an_unassigned_day`), reached at the same request; ceiling **five**, whole day, every request, every `FromNowAnchored` `el` (`the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day`, W-23), reached at the same request again |
+| how many of the eleven are **proved** | a lift theorem assembling `planOk` over `checksOf`'s own list | **eleven** on `withoutPast`'s day, every request, every `SlotAnchored` `el` (`dayPlan_ok_from_now_on_an_unassigned_day`); **eleven** on the whole day for the quiet class at every `WorkAnchored` `el` (`dayPlan_ok_on_a_quiet_unassigned_day`); **nine** on `withoutPast`'s day at *every* `el` (`dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`); **the seven core checks** on the whole day, every request, every `FromNowAnchored` `el` (`dayPlan_ok_is_the_core_seven_on_an_unassigned_day`, W-23) — and the eleven there is **refuted** at a merely `SlotAnchored` one (`PlannerWit.dayPlan_ok_on_the_whole_day_at_a_slot_anchored_eligibility_is_refuted`) |
+| how many have **anything to range over** | `subjectCount` over `checksOf`'s own list | ceiling **seven**, whole day, every request, every `el` (`the_census_ceiling_is_seven_on_an_unassigned_day`), reached at `PlannerWit.theCensusRequest`; ceiling **four** on `withoutPast`'s day at every `SlotAnchored` `el` (`the_census_ceiling_from_now_is_four_on_an_unassigned_day`), reached at the same request; ceiling **five**, whole day, every request, every `FromNowAnchored` `el` (`the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day`, W-23), reached at the same request again |
 | how many **bite inside a proved lift** | the census evaluated at the lift's own arguments | **one** on the quiet class (`PlannerWit.the_quiet_eleven_is_one_checker_biting`); **four** at the census request on `withoutPast`'s day (`PlannerWit.the_eleven_from_now_is_four_checkers_biting`); **five** at the same request on the whole day at a `FromNowAnchored` `el` (`PlannerWit.the_whole_day_census_at_the_from_now_eligibility_is_five`, W-23) |
 
 **W-23 added the fourth coordinate — the whole day at a `FromNowAnchored` eligibility — and
@@ -3331,8 +3331,8 @@ theorem dayPlan_ok_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     eligibleSomewhere_of_only_the_reservation hslot r _
       (fun s hs hw =>
         withoutPast_work_rows_are_the_reservation_on_an_unassigned_day r hnoassign s hs hw)
-  exact dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
-    el r hagree hactive hday hnowcal hplain hnoassign (fun p _ he _ => absurd (he.symm.trans (hnone p.1)) (by simp))
+  exact dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+    el r hagree hactive hday hnowcal hplain hnoassign
     (monotoneInRank_of_nothing_eligible el r _ hnone)
     (hotBeforeQueue_of_nothing_eligible el r _ hnone)
 
@@ -3373,7 +3373,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
   simp only [planOk, checksOf, List.all_append, checksEligible, List.all_cons, List.all_nil,
     Bool.and_true, monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_of_nothing_eligible el r _ hnone,
+    impossibleKept_on_an_unassigned_day r _ hnoassign (the_reservation_is_a_budget_row_of_the_day r),
     batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
       hnoassign]
   exact hcore
@@ -3381,7 +3381,7 @@ theorem dayPlan_ok_on_a_day_with_no_replayed_block_on_an_unassigned_day (el : El
 /-! ### The census on that day: the ceiling is FOUR, and it is reached
 
 Seven of the eleven have no subject on `withoutPast`'s day at a `SlotAnchored` eligibility —
-the four `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` already names at every request, plus `overbook` and the
+the four `the_census_ceiling_is_seven_on_an_unassigned_day` already names at every request, plus `overbook` and the
 two comparisons.  `overbook` is the one that *changes sign* between the two days and the
 reason is design §6.3 row 1 taken literally: its subject is a Block row that survives
 `withoutActive`, every Block row of this day is the reservation, and `withoutActive` removes
@@ -3397,7 +3397,7 @@ theorem any_filter_of_any_eq_false {α : Type} {l : List α} {p q : α → Bool}
 
 /-- **`overbook` has no subject on the rows §8.3 is about**, at every request: `withoutActive`
 removes the only Block `withoutPast` leaves.  It DOES have one on the whole day — the replayed
-past — which is why `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item` counts it and this section does not. -/
+past — which is why `the_census_ceiling_is_seven_on_an_unassigned_day` counts it and this section does not. -/
 theorem overbook_has_no_subject_from_now_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = []) :
     subjectOf el .overbook r (withoutPast r (dayPlan r)) = false := by
@@ -3450,8 +3450,8 @@ theorem batch_has_no_subject_from_now_on_an_unassigned_day (el : Eligible) (r : 
 /-! impossible_has_no_subject_from_now stood here — `= false` over `withoutPast`'s day at
 every request and every eligibility, for the same reason as its whole-day sibling and refuted
 with it at W-33 (`PlannerWit.impossible_has_no_subject_from_now_is_refuted`).  The four-check
-ceiling below takes `impossible_has_no_subject_of_nothing_eligible` at its own `hnone`
-instead, which is what it always had for `rank` and `hot`.  The line count of this record
+ceiling below takes `impossible_has_no_subject_on_an_unassigned_day` at the reservation row from
+now instead (W-37: its `hnone` reads an eligibility the impossible check no longer reads).  The line count of this record
 is the deleted theorem's, so no roster pin below it moves (README gap 2136). -/
 
 /-- The two comparisons' populations are empty whenever nothing is eligible anywhere. -/
@@ -3480,7 +3480,7 @@ theorem hot_has_no_subject_of_nothing_eligible (el : Eligible) (r : PlanReq) (d 
 other seven have nothing to range over.  `PlannerWit.the_eleven_from_now_is_four_checkers_biting`
 reaches it, so four is a ceiling that has been touched and not a high-water mark.
 
-**Read it beside `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`, not instead of it.**  That one is over the
+**Read it beside `the_census_ceiling_is_seven_on_an_unassigned_day`, not instead of it.**  That one is over the
 WHOLE day at any eligibility and counts three checks this one does not — `overbook` and the
 two comparisons — and all three are counted there because of the **replayed past**, the half
 of the day §8.3's laws are not about.  Neither number corrects the other. -/
@@ -3497,7 +3497,7 @@ theorem the_census_ceiling_from_now_is_four_on_an_unassigned_day {el : Eligible}
   have e3 := windDown_has_no_subject_from_now_on_an_unassigned_day el r hnoassign hnowcal
   have e4 := rank_has_no_subject_of_nothing_eligible el r _ hnone
   have e5 := hot_has_no_subject_of_nothing_eligible el r _ hnone
-  have e6 := impossible_has_no_subject_of_nothing_eligible el r _ hnone
+  have e6 := impossible_has_no_subject_on_an_unassigned_day el r _ hnoassign (the_reservation_is_a_budget_row_from_now r hnowcal)
   have e7 := batch_has_no_subject_from_now_on_an_unassigned_day el r hnoassign
   show (List.filter (fun c => subjectOf el c.name r (withoutPast r (dayPlan r)))
     (checksOf el)).length ≤ 4
@@ -3634,7 +3634,7 @@ theorem dayPlan_ok_is_the_core_seven_on_an_unassigned_day {el : Eligible} (hfn :
     List.all_nil, Bool.and_true,
     monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_of_nothing_eligible el r _ hnone,
+    impossibleKept_on_an_unassigned_day r _ hnoassign (the_reservation_is_a_budget_row_of_the_day r),
     batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassigned_day el r
       hnoassign]
 
@@ -3649,7 +3649,7 @@ theorem dayPlan_ok_of_the_core_seven_on_an_unassigned_day {el : Eligible} (hfn :
   (dayPlan_ok_is_the_core_seven_on_an_unassigned_day hfn r hnoassign).trans hcore
 
 /-- **FIVE is the ceiling of the census on the whole day at a `FromNowAnchored` eligibility**,
-for every request — `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`'s five survivors minus the two comparisons,
+for every request — `the_census_ceiling_is_seven_on_an_unassigned_day`'s five survivors minus the two comparisons,
 which lose their subject with their quantifier.  `PlannerWit.the_whole_day_census_at_the_from_
 now_eligibility_is_five` reaches it at the census request, so five is touched and not a
 high-water mark.
@@ -3668,7 +3668,7 @@ theorem the_census_ceiling_on_the_whole_day_is_five_on_an_unassigned_day {el : E
   have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
   have e3 := rank_has_no_subject_of_nothing_eligible el r _ hnone
   have e4 := hot_has_no_subject_of_nothing_eligible el r _ hnone
-  have e5 := impossible_has_no_subject_of_nothing_eligible el r _ hnone
+  have e5 := impossible_has_no_subject_on_an_unassigned_day el r _ hnoassign (the_reservation_is_a_budget_row_of_the_day r)
   have e6 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
   show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 5
   have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
@@ -5041,7 +5041,7 @@ three places:
 
 | checker | what the old proof used `hnoassign` for | what replaces it here |
 |---|---|---|
-| `impossibleKept` | nothing — until W-33 the list was empty at every request (impossible_has_no_subject, refuted when the field was written) | the fold's rows admit no candidate, so nothing is eligible anywhere (`impossible_has_no_subject_of_nothing_eligible`) |
+| `impossibleKept` | nothing — until W-33 the list was empty at every request (impossible_has_no_subject, refuted when the field was written) | until W-37, the fold's rows admitting nothing; since D66 NOTHING replaces it — it is the conjunct the lift keeps (`dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check`, README gap 3160) |
 | `batchDoesNotReachPast` | *the day holds no Batch row*, because §8.2 step 5 is the only source of one | the fold's rows admit no candidate, so `batchPairOk`'s antecedent is false at them |
 | `monotoneInRank` | *every work row is choice 5b's reservation*, which a `SlotAnchored` `el` is refused at | the same, with the fold's rows as a second refused family |
 | `hotBeforeQueue` | the same | the same |
@@ -5207,56 +5207,58 @@ theorem eligibleSomewhere_of_nothing_from_now {el : Eligible} (hfn : FromNowAnch
       (hfn.1.2 r (dayPlan r) s i hel)) (by simp)
   · exact absurd hst (hfold _ s i hel t ht)
 
-/-- **§6.1's ELEVEN on the whole day IS §6.1's SEVEN — on a day that ASSIGNS.**
-`dayPlan_ok_is_the_core_seven_on_an_unassigned_day` is this statement at
-`FoldRowsAdmitNothing_of_nothing_assigned`, so the equality has not moved; its **domain** has,
-and the day §8.2 step 5 fills is now inside it. -/
-theorem dayPlan_ok_is_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
-    (hfold : FoldRowsAdmitNothing r el) :
-    planOk el r (dayPlan r) = planOkCore r (dayPlan r) := by
+/-- **§6.1's ELEVEN on the whole day, on a day that ASSIGNS, IS §6.1's SEVEN AND THE IMPOSSIBLE
+CHECK** — restated at W-37.  The three checks that read `el` are `hfold`'s, as before; the impossible
+check reads §8.2 step 5's own filter since D66, so no eligibility empties it, and on a day that assigns
+it CAN fail (`PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted`, README gap 3160). -/
+theorem dayPlan_ok_is_the_core_seven_and_the_impossible_check {el : Eligible} (hfn : FromNowAnchored el)
+    (r : PlanReq) (hfold : FoldRowsAdmitNothing r el) :
+    planOk el r (dayPlan r) = (planOkCore r (dayPlan r) && impossibleKept r (dayPlan r)) := by
   have hnone : ∀ i, eligibleSomewhere el r (dayPlan r) i = false :=
     eligibleSomewhere_of_nothing_from_now hfn r hfold
   simp only [planOk, planOkCore, checksOf, List.all_append, checksEligible, List.all_cons,
-    List.all_nil, Bool.and_true,
+    List.all_nil, Bool.and_true, Bool.true_and,
     monotoneInRank_of_nothing_eligible el r _ hnone,
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
-    impossibleKept_of_nothing_eligible el r _ hnone,
     batchDoesNotReachPast_of_a_fold_that_admits_nothing el r hfold]
 
-/-- The discharge form: the whole battery on the whole day from the seven alone. -/
-theorem dayPlan_ok_of_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
-    (hfold : FoldRowsAdmitNothing r el) (hcore : planOkCore r (dayPlan r) = true) :
-    planOk el r (dayPlan r) = true :=
-  (dayPlan_ok_is_the_core_seven hfn r hfold).trans hcore
+/-! **No discharge form follows it.**  The old dayPlan_ok_of_the_core_seven took `planOkCore` and
+concluded the eleven; the same shape now would have to take the impossible check as a HYPOTHESIS,
+which is `hnoimp` under another name (AGENTS §5.2).  The equation above is the whole statement, and
+the old discharge form is refuted, not restated (`PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted`).
+-/
 
-/-- **§6.1's ELEVEN on the whole day, from the decoder, on a day that ASSIGNS — and this is
-the statement the merge title claimed a run early.**
+/-- **§6.1's ELEVEN on the whole day, from the decoder, on a day that ASSIGNS, IS THE IMPOSSIBLE
+CHECK** — restated at W-37 from the statement the W-31 merge title claimed, which said `= true` and
+is REFUTED under D66 at a paying `candsAgree` day (`PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`).
 
-No `r.assignedRows = []` anywhere in it.  `hpay` is the decoder's fifth clause through
-`AssignedRowsPay_of_a_paying_decoder`; the four eligibility checks are `hfold`'s;
-`hbudget` is gap **2020** and is named rather than assumed silently, exactly as
-`dayPlan_ok_core_given_the_budget` names it.
-`PlannerWit.the_eleven_applies_at_the_paying_request` fires it at a request whose cursor fills
-a slot, and `dayPlan_ok_on_the_whole_day_of_a_paying_decoder_on_an_unassigned_day` is this
-theorem at a day that assigns nothing. -/
-theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
+No `r.assignedRows = []` in it.  `hpay` is the decoder's fifth clause through
+`AssignedRowsPay_of_a_paying_decoder`; the three checks that read `el` are `hfold`'s; `hbudget`
+is gap **2020**, named exactly as `dayPlan_ok_core_given_the_budget` names it; and what is left
+is the one checker whose subject §8.2 step 5 can make real — the planner finding README gap
+3160 records for the owner, and nothing about it is assumed here.
+`PlannerWit.the_eleven_applies_at_the_paying_request` fires it at a request whose cursor fills a
+slot. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check {el : Eligible}
     (hfn : FromNowAnchored el) (r : PlanReq) (hfold : FoldRowsAdmitNothing r el)
     (hdec : DecoderPays r) (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
-    planOk el r (dayPlan r) = true :=
-  dayPlan_ok_of_the_core_seven hfn r hfold
-    (dayPlan_ok_core_of_a_paying_decoder r hdec hnopast hbudget hplain)
+    planOk el r (dayPlan r) = impossibleKept r (dayPlan r) := by
+  rw [dayPlan_ok_is_the_core_seven_and_the_impossible_check hfn r hfold,
+    dayPlan_ok_core_of_a_paying_decoder r hdec hnopast hbudget hplain, Bool.true_and]
 
-/-- **And the old whole-day lift is a COROLLARY of the new one** (D5, AGENTS §3.1 item 4).
-Stated so that the generality claim above is a theorem in the compiler and not a sentence in a
-doc comment: every request the `_on_an_unassigned_day` lift covers, this one covers. -/
+/-- **And the old whole-day lift is a COROLLARY of the new one** (D5, AGENTS §3.1 item 4), its
+statement unchanged: on a day step 5 filled nothing the impossible check holds
+(`impossibleKept_on_an_unassigned_day`), so every request the `_on_an_unassigned_day` lift covers,
+this one covers. -/
 theorem the_unassigned_eleven_is_an_instance_of_the_paying_eleven {el : Eligible}
     (hfn : FromNowAnchored el) (r : PlanReq) (hnoassign : r.assignedRows = [])
     (hdec : DecoderPays r) (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
     (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
-    planOk el r (dayPlan r) = true :=
-  dayPlan_ok_on_the_whole_day_of_a_paying_decoder hfn r
-    (FoldRowsAdmitNothing_of_nothing_assigned r el hnoassign) hdec hnopast hbudget hplain
+    planOk el r (dayPlan r) = true := by
+  rw [dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check hfn r
+    (FoldRowsAdmitNothing_of_nothing_assigned r el hnoassign) hdec hnopast hbudget hplain]
+  exact impossibleKept_on_an_unassigned_day r _ hnoassign (the_reservation_is_a_budget_row_of_the_day r)
 
 /-! ### Goals.plan_does_not_overbook is FALSE as stage 6 wrote it, and the cause is the LOG
 
@@ -5327,7 +5329,9 @@ theorem plan_does_not_overbook_from_now_where_nothing_runs (r : PlanReq)
 
 Appended here rather than beside the lemmas they refine because `mutate.py`'s named pin
 sites are line numbers (README gap 2136): every in-place edit above is line-count-neutral,
-and what could not be made neutral lives here. -/
+and what could not be made neutral lives here.  **Restated at W-37 (D66)**: each law below reads
+the impossible check's eligibility as §8.2 step 5's own filter before the walk (`eligibleBefore`)
+and its budget without the battery's `Eligible` (`budgetLeft`), and `hnoimp` is off the lifts. -/
 
 /-- **On a day that assigns nothing, `impossibleKept` passes EXACTLY when it has no subject** —
 an eligible impossible item its grant OWES is dropped, and there is no non-vacuous pass to be had.
@@ -5335,17 +5339,18 @@ This replaces impossibleKept_is_true_because_its_subject_is_empty, which said `=
 request and every eligibility and was REFUTED the moment W-33 wrote the field
 (`PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted`); it was not a
 law but a description of the hole, and this is the law it stood in front of.  **Restated at W-35
-(D55)** to "no eligible listed item is owed by its grant", and **at W-36 (D59)** to "no eligible
-listed item owed TODAY is dropped while the budget can be spent" — the checker's own, carried. -/
-theorem impossibleKept_of_nothing_assigned_iff (el : Eligible) (r : PlanReq) (d : DayPlan)
+(D55)** to "no eligible listed item is owed by its grant", **at W-36 (D59)** to "no eligible
+listed item owed TODAY is dropped while the budget can be spent", and **at W-37 (D66)** with
+the eligibility §8.2 step 5's own filter before the walk. -/
+theorem impossibleKept_of_nothing_assigned_iff (r : PlanReq) (d : DayPlan)
     (h : assignedOf d = []) :
-    impossibleKept el r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
-        owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = false := by
+    impossibleKept r d = true ↔
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
+        owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false := by
   rw [impossibleKept_iff]
   constructor
   · intro hk p hp he ho
-    cases hb : budgetLeft el r d p.1
+    cases hb : budgetLeft r d p.1
     · rfl
     · have := hk p hp he ho hb
       rw [h] at this
@@ -5353,40 +5358,36 @@ theorem impossibleKept_of_nothing_assigned_iff (el : Eligible) (r : PlanReq) (d 
   · intro hn p hp he ho hb
     exact absurd (hb.symm.trans (hn p hp he ho)) (by simp)
 
-/-- **The failure, positively**: on a day that assigns nothing, an impossible item eligible
-anywhere, OWED TODAY by its grant, while the day's budget is left, fails the check —
-`PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item` is the computed instance.  **Renamed at
-W-36 (D59)** from an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned,
-which had no budget clause and is REFUTED under D59 at a spent day
-(`PlannerWit.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned_is_refuted`). -/
+/-- **The failure, positively**: on a day that assigns nothing, an impossible item step 5 admits
+before the walk, OWED TODAY by its grant, while the day's budget is left, fails the check.  Its
+computed instances since W-37 are planted days (`impossibleKept_can_fail`,
+`PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check`); a day the PLANNER
+produced with nothing assigned is never one (`impossibleKept_on_an_unassigned_day`). -/
 theorem an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
-    (el : Eligible) (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
-    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleSomewhere el r d p.1 = true)
-    (howed : owedByItsGrant r p.1 = true) (hb : budgetLeft el r d p.1 = true) : impossibleKept el r d = false := by
-  cases hk : impossibleKept el r d
+    (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
+    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleBefore r p.1 = true)
+    (howed : owedByItsGrant r p.1 = true) (hb : budgetLeft r d p.1 = true) : impossibleKept r d = false := by
+  cases hk : impossibleKept r d
   · rfl
-  · have := (impossibleKept_of_nothing_assigned_iff el r d h).1 hk p hp hel howed
+  · have := (impossibleKept_of_nothing_assigned_iff r d h).1 hk p hp hel howed
     rw [hb] at this
     exact absurd this (by simp)
 
-/-- **`.impossible` has no subject where nothing is eligible** — stated above in three lines so
-that it could stand exactly where impossible_has_no_subject stood (that one said `= false` at
-every request and every eligibility because `Planner.dayDiagnostics` wrote nothing into the
-list; W-33 wrote it, and `PlannerWit.impossible_has_no_subject_is_refuted` is the request where
-the old statement is false).  The subject, spelled: `subjectOf`'s `.impossible` arm is the
-`any` of the list, so an empty subject is exactly the `hnoimp` the lifts above carry.  **Restated
-at W-35 (D55)** — `owedByItsGrant` beside the eligibility — and at W-36 (D59), `budgetLeft` too. -/
+/-- **The subject, spelled**: `subjectOf`'s `.impossible` arm is the `any` of the list, so an empty
+subject is exactly "no listed item step 5 admits before the walk is owed today with the budget
+left" — the hypothesis the lifts carried as `hnoimp` until W-37.  **Restated at W-35 (D55)** —
+`owedByItsGrant` beside the eligibility — at W-36 (D59), `budgetLeft` too, and at W-37 (D66). -/
 theorem impossible_subject_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
     subjectOf el .impossible r d = false ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
-        owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = false := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
+        owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false := by
   simp only [subjectOf]
   constructor
   · intro h p hp he ho
-    cases hb : budgetLeft el r d p.1
+    cases hb : budgetLeft r d p.1
     · rfl
     · have hx : d.diagnostics.impossible.val.any
-          (fun p => eligibleSomewhere el r d p.1 && owedByItsGrant r p.1 && budgetLeft el r d p.1) = true :=
+          (fun p => eligibleBefore r p.1 && owedByItsGrant r p.1 && budgetLeft r d p.1) = true :=
         List.any_eq_true.2 ⟨p, hp, by simp [he, ho, hb]⟩
       rw [h] at hx
       exact absurd hx (by simp)
@@ -5397,17 +5398,15 @@ theorem impossible_subject_iff (el : Eligible) (r : PlanReq) (d : DayPlan) :
     exact absurd (hpe.2.symm.trans (h p hp hpe.1.1 hpe.1.2)) (by simp)
 
 /-- **`.impossible` has a subject on the produced day exactly when some answer reports a positive
-shortfall — the shipped binary's `is_impossible` — and that answer's item is eligible
-somewhere AND owed by its grant TODAY while the day's budget is left** (D55, D59): the census
-arm, through `Planner.PlanReq.mem_dayImpossible`.  **Renamed at W-36** from
-impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible, which had no budget clause
-and is REFUTED under D59 (`PlannerWit.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_is_refuted`). -/
+shortfall — the shipped binary's `is_impossible` — and that answer's item is admitted by §8.2
+step 5 before the walk AND owed by its grant TODAY while the day's budget is left** (D55, D59, D66):
+the census arm, through `Planner.PlanReq.mem_dayImpossible`.  Restated at W-37 over `eligibleBefore`. -/
 theorem impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left
     (el : Eligible) (r : PlanReq) :
     subjectOf el .impossible r (dayPlan r) = true ↔
       ∃ o ∈ r.candAnswers, 0 < o.shortfall ∧
-        eligibleSomewhere el r (dayPlan r) o.out.cand.id = true ∧
-        owedByItsGrant r o.out.cand.id = true ∧ budgetLeft el r (dayPlan r) o.out.cand.id = true := by
+        eligibleBefore r o.out.cand.id = true ∧
+        owedByItsGrant r o.out.cand.id = true ∧ budgetLeft r (dayPlan r) o.out.cand.id = true := by
   simp only [subjectOf, dayPlan_impossible, List.any_eq_true, Bool.and_eq_true]
   constructor
   · rintro ⟨⟨i, s⟩, hp, ⟨he, how⟩, hb⟩
@@ -5417,45 +5416,55 @@ theorem impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_
     exact ⟨(o.out.cand.id, Arith.floorQ (Arith.mkPos o.shortfall Look.capDen Look.capDen_pos)),
       (r.mem_dayImpossible _ _).2 ⟨o, ho, rfl, hs, rfl⟩, ⟨he, how⟩, hb⟩
 
-/-- **Eight is the ceiling of the census on an unassigned day, for every request and every
-eligibility.**  Three of `checksOf`'s eleven have an empty subject on every day
-`Planner.dayPlan` produces there, so the filter `subjectCount` runs can keep at most the
-other eight.  P5's fold ends it for `energyFilter` and `batch`, P5/P7 for `windDown`.
-
-**It was SEVEN until W-33** — the_census_ceiling_is_seven_on_an_unassigned_day, refuted by
-`PlannerWit.the_census_reaches_eight_on_an_unassigned_day` at the census Wednesday with one
-impossible candidate: the fourth empty subject was `impossible`, and P8's first half wrote
-the field.  Seven survives as `the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item`,
-with the one hypothesis that names what it excludes. -/
+/-- **Eight bounds the census on an unassigned day, for every request and every eligibility** —
+true, and since W-37 weaker than it needs to be: `the_census_ceiling_is_seven_on_an_unassigned_day`
+is seven again, with no hypothesis.  From W-33 to W-36 eight was the ceiling and seven carried
+`hnoimp`, because the impossible check's subject was real on such a day at a row-blind
+eligibility; D66 reads step 5's own filter before the walk, and on a day step 5 filled nothing that
+subject is empty (`impossible_has_no_subject_on_an_unassigned_day`).  Kept, not deleted (D5). -/
 theorem the_census_ceiling_is_eight_on_an_unassigned_day (el : Eligible) (r : PlanReq)
     (hnoassign : r.assignedRows = [])
     (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
-    subjectCount el r (dayPlan r) ≤ 8 := by
-  have e1 := energyFilter_has_no_subject_on_an_unassigned_day el r hnoassign
-  have e2 := windDown_has_no_subject_on_an_unassigned_day el r hnoassign hnowcal
-  have e3 := batch_has_no_subject_on_an_unassigned_day el r hnoassign
-  show (List.filter (fun c => subjectOf el c.name r (dayPlan r)) (checksOf el)).length ≤ 8
-  have hcore : checksCore.filter (fun c => subjectOf el c.name r (dayPlan r))
-      = ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
-          ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
-          ⟨.wallMoved, wallsUnmoved⟩] : List Check).filter
-            (fun c => subjectOf el c.name r (dayPlan r)) := by
-    simp only [checksCore, List.filter_cons, e1, e2, Bool.false_eq_true, if_false]
-  have helig : (checksEligible el).filter (fun c => subjectOf el c.name r (dayPlan r))
-      = ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩,
-          ⟨.impossible, impossibleKept el⟩] : List Check).filter
-            (fun c => subjectOf el c.name r (dayPlan r)) := by
-    simp only [checksEligible, List.filter_cons, e3, Bool.false_eq_true, if_false]
-  rw [checksOf, List.filter_append, List.length_append, hcore, helig]
-  have b1 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
-    ([⟨.overbook, noOverbook⟩, ⟨.oneBlock, oneBlockAtATime⟩,
-      ⟨.overWall, noBlockOverAWall⟩, ⟨.overBreak, noBlockOverABreak⟩,
-      ⟨.wallMoved, wallsUnmoved⟩] : List Check)
-  have b2 := List.length_filter_le (fun c => subjectOf el c.name r (dayPlan r))
-    ([⟨.rank, monotoneInRank el⟩, ⟨.hot, hotBeforeQueue el⟩,
-      ⟨.impossible, impossibleKept el⟩] : List Check)
-  simp only [List.length_cons, List.length_nil] at b1 b2
-  omega
+    subjectCount el r (dayPlan r) ≤ 8 :=
+  Nat.le_succ_of_le (the_census_ceiling_is_seven_on_an_unassigned_day el r hnoassign hnowcal)
+
+/-! ############################################################################
+## W-37 (track K): D66 and D63 — the impossible check reads step 5's own filter, and the rank
+## check reads step 5's own order
+############################################################################
+
+**D66 (the campaign's call; README gaps 3000, 3160).**  `impossibleKept`'s eligibility is
+`tm-spec-v1.md` §8.2 step 5's *"pick the first eligible candidate"* — state, dependencies, not
+waiting, `max:` (the item half, `Planner.entersTheOrder`, applied before step 4's sort) and
+location, `ci ≤ slot.energy`, the wind-down rule and, for an item that is not splittable, an
+unbroken run long enough (the slot half, `Planner.PlanReq.groupFitsSlot`) — evaluated at the
+day's slots against the state step 5 STARTS from (`Planner.PlanReq.assignStart`), so a drop
+lower-ranked work causes by breaking a run still fails.  `fitsBefore` is that filter at one slot and
+`eligibleBefore` its `any` over the day; neither writes a clause of it.  The laws:
+
+* `eligibleBefore_iff` — the filter, spelled;
+* `a_waiting_item_is_never_eligible_before` — §5.1's *"a waiting item never takes slots"*, as a ∀:
+  the waiting witness passes for a reason, not for a request;
+* `an_unassigned_day_admits_nothing_under_its_budget` and `impossibleKept_on_an_unassigned_day`
+  (above the lifts) — what took `hnoimp` off all five;
+* the paying-day lifts are restated: on a day that ASSIGNS the eleven is the seven AND the
+  impossible check (`dayPlan_ok_is_the_core_seven_and_the_impossible_check`), because README gap
+  3160's day exists — a paying `candsAgree` day where step 5 drops an item its filter admitted
+  before the walk, owed today, with budget left (`PlannerWit.theContiguityFindingRequest`).  That
+  is a PLANNER finding recorded for the owner, and no hypothesis stands in for it.
+
+**D63 (the owner's, README gap 3001).**  `monotoneInRank` reads step 5's own order —
+`Planner.rankedLe`, strictly, over `Planner.PlanReq.rankedCands` (`rankedBefore`) — where line order
+stood, so a pair D60 orders by due date is not a rank violation
+(`PlannerWit.the_monotone_rank_check_passes_where_D60_orders_by_date`) and a planted violation still
+fails (`monotoneInRank_can_fail`). -/
+
+/-- **§8.2 step 5's filter before the walk, spelled**: some slot of the day and some group step 5
+starts from that holds `i` and passes the filter there. -/
+theorem eligibleBefore_iff (r : PlanReq) (i : Id) :
+    eligibleBefore r i = true ↔ ∃ x ∈ r.energisedSlots.zipIdx, ∃ g ∈ r.startGroups, i ∈ g.ids ∧
+      r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g = true := by
+  simp only [eligibleBefore, fitsBefore, List.any_eq_true, Bool.and_eq_true, decide_eq_true_eq]
 
 /-! ############################################################################
 ## W-35 (track K): D55 — an impossible item is owed what ITS OWN GRANT holds
@@ -5463,20 +5472,11 @@ theorem the_census_ceiling_is_eight_on_an_unassigned_day (el : Eligible) (r : Pl
 
 The owner's D55 (README gap 2510) restated `impossibleKept` in place, above, to read the grant, and
 D59 (W-36, gap 2800) added the budget: an item is owed what its grant holds TODAY, and only while
-the day's budget can still be spent.  What that buys is measured in `PlannerWit.lean`:
-
-* **`theTwoImpossibleRequest` passes** — `^t1`'s grant holds nothing, so dropping it is honoured
-  (`PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits`), and since W-36
-  **the spent day passes** (`PlannerWit.a_spent_day_passes_the_impossible_check`);
-* **`hnoimp` still cannot come off the five lifts**: an unassigned day whose budget can still be
-  spent and whose WAITING item is owed today drops it with every other hypothesis of the lifts
-  true (`PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item`, re-aimed at W-36; README
-  gap 3000).  The lifts carry the D59 form of the hypothesis.  And the check is still REFUTED on a
-  paying, `candsAgree` day where step 5's contiguity clause drops an atomic item its energy clause
-  admits (`PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day`, re-proved at
-  W-36 on the atomic day): D60 has step 5 serve an earlier-due impossible item first, so the
-  W-35 witness — a same-`p` item earlier in line order spending the day — passes now, and what the
-  refutation shows is that `slotFitRows` is not step 5's whole filter. -/
+the day's budget can still be spent.  D66 (W-37, gap 3000) made the eligibility §8.2 step 5's own
+filter before the walk, which took `hnoimp` off the five lifts; see the W-37 section above.  The
+three W-35/W-36 days that failed the check at a row-blind eligibility now pass for a named reason
+— the waiting item is not in step 5's order, the atomic one fits no run of today's slots — and the
+day that still fails is a planted one (`PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check`). -/
 
 /-- **`owedByItsGrant`, spelled** (D55; TODAY since W-36): an item is owed nothing today exactly
 when the answers name it impossible and no such answer's day-0 twin (`todayAnswers`) holds any. -/
@@ -5500,15 +5500,14 @@ theorem owedByItsGrant_eq_false_iff (r : PlanReq) (i : Id) :
 
 /-- **D55's case, as a law**: an eligible impossible item that the day does not assign, and whose
 grant holds nothing, costs the check nothing — `impossibleKept` is decided by the OWED items alone. -/
-theorem impossibleKept_iff_the_owed_items_are_assigned (el : Eligible) (r : PlanReq)
-    (d : DayPlan) :
-    impossibleKept el r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleSomewhere el r d p.1 = true →
-        p.1 ∉ assignedOf d → owedByItsGrant r p.1 = true → budgetLeft el r d p.1 = false := by
+theorem impossibleKept_iff_the_owed_items_are_assigned (r : PlanReq) (d : DayPlan) :
+    impossibleKept r d = true ↔
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
+        p.1 ∉ assignedOf d → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false := by
   rw [impossibleKept_iff]
   constructor
   · intro h p hp he hn ho
-    cases hb : budgetLeft el r d p.1
+    cases hb : budgetLeft r d p.1
     · rfl
     · exact absurd (h p hp he ho hb) hn
   · intro h p hp he ho hb
@@ -5519,19 +5518,62 @@ theorem impossibleKept_iff_the_owed_items_are_assigned (el : Eligible) (r : Plan
 /-! ## W-36 repair (README gap 3130): what `budgetLeft` counts as spent
 
 Until the repair `budgetLeft` counted EVERY Block and Batch row of the day from `now`, so a day
-that spent the budget on work the dropped item outranks — an owed impossible item left out while a
-lower-ranked item takes the rows it was eligible for — passed the check and the whole battery (the
-W-36 auditor's plant; D60 serves an impossible `p = 0` item ahead of every item not listed
-impossible).  It now counts, for the item `i` it is asked about, only the rows `i` could not have
-displaced: the running block's (§8.2 choice 5b reserves it before the budget is consulted), a row
-at which `i` is not eligible, and a row that serves a listed impossible item.  A row serving an
-item `i` outranks at a slot `i` was eligible for is not "spent"; a budget spent BEFORE planning
-(D59's own case, `remainingBudget r = 0`) still excuses every drop.  `budgetLeft_mono` — a
-narrower eligibility counts more rows spent — is what `impossibleKept_antitone` needs of it.  Both
-sit on lines the repair kept unmoved (check 9's pin sites below them), which is why they are one
-line each and why this paragraph is here and not in section 10; the two witnesses are
+that spent the budget on work the dropped item outranks passed the check.  It now counts, for the
+item `i` it is asked about, only the rows `i` could not have displaced: the running block's (§8.2
+choice 5b reserves it before the budget is consulted), a row at which `i` is not eligible, and a
+row that serves a listed impossible item.  **Since W-37 (D66) "a row at which `i` is not
+eligible" reads the same filter as the antecedent: a row at a slot of the day where `i`'s group
+fits before the walk (`fitsBefore`) is not spent, and every other row is** — and "from `now`"
+reads `now` on the rows' own clock (`Planner.clampSec`, the one `Planner.segOf` draws on), which is
+what lets the running block's row count at every request.  A budget spent BEFORE planning (D59's
+own case, `remainingBudget r = 0`) still excuses every drop.  The witnesses are
 `PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop` and
-`PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop`. -/
+`PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop`, both re-aimed at W-37. -/
+
+/-- **An item step 5 admits before the walk is an item step 4 put in the order** — the item half
+of the filter (`Planner.entersTheOrder`: not waiting, open, no unsatisfied `after:`, `max:` left),
+read through the groups step 5 starts from. -/
+theorem an_item_eligible_before_is_ranked (r : PlanReq) (i : Id) (h : eligibleBefore r i = true) :
+    ∃ x ∈ r.rankedCands, x.cand.id = i ∧ entersTheOrder x.out = true := by
+  obtain ⟨-, -, g, hg, hi, -⟩ := (eligibleBefore_iff r i).1 h
+  obtain ⟨g₀, hg₀, -, hm, -⟩ := PlanReq.a_started_group_is_a_built_group hg
+  simp only [Group.ids, List.mem_map] at hi
+  obtain ⟨m, hm', hmi⟩ := hi
+  rw [hm] at hm'
+  have hr := PlanReq.a_group_member_is_ranked hg₀ hm'
+  exact ⟨m, hr, hmi, PlanReq.a_ranked_entry_enters_the_order hr⟩
+
+/-- **§5.1's "a waiting item never takes slots", as a law of the check**: an item every answer of
+which is `[?]` is never eligible before the walk, so the impossible check never owes it a slot —
+which is why `PlannerWit.an_unassigned_day_drops_its_waiting_impossible_item_and_passes` passes, and
+why it is not a hypothesis anywhere. -/
+theorem a_waiting_item_is_never_eligible_before (r : PlanReq) (i : Id)
+    (h : ∀ o ∈ r.candAnswers, o.out.cand.id = i → o.out.cand.plan.val.waiting = true) :
+    eligibleBefore r i = false := by
+  cases he : eligibleBefore r i with
+  | false => rfl
+  | true =>
+    obtain ⟨x, hx, hxi, hent⟩ := an_item_eligible_before_is_ranked r i he
+    have hans := List.mem_of_getElem? (PlanReq.a_ranked_entry_is_an_answer hx)
+    have hw := h x.out hans hxi
+    have hel : x.out.out.cand.plan.val.eligible = true := PlanReq.an_ineligible_candidate_is_not_ranked hx
+    rw [Look.PlanFacts.eligible_is_the_four_conjuncts] at hel
+    simp only [Bool.and_eq_true] at hel
+    have hw' : x.out.out.cand.plan.val.waiting = true := hw
+    rw [hw'] at hel
+    exact absurd hel.1.1.1 (by simp)
+
+/-- **D63's order, spelled**: some entry step 4 ranked for `i` strictly precedes some entry for `j`
+in §7.4's key with D60's component. -/
+theorem rankedBefore_iff (r : PlanReq) (i j : Id) :
+    rankedBefore r i j = true ↔ ∃ x ∈ r.rankedCands, ∃ y ∈ r.rankedCands, x.cand.id = i ∧
+      y.cand.id = j ∧ rankedLe x y = true ∧ rankedLe y x = false := by
+  simp only [rankedBefore, List.any_eq_true, Bool.and_eq_true, beq_iff_eq, Bool.not_eq_true']
+  constructor
+  · rintro ⟨x, hx, hxi, y, hy, ⟨hyj, hxy⟩, hyx⟩
+    exact ⟨x, hx, y, hy, hxi, hyj, hxy, hyx⟩
+  · rintro ⟨x, hx, y, hy, hxi, hyj, hxy, hyx⟩
+    exact ⟨x, hx, hxi, y, hy, ⟨hyj, hxy⟩, hyx⟩
 
 end PlanCheck
 end Tm

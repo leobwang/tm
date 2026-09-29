@@ -70603,3 +70603,296 @@ there; the missing D61 pause day is gap 3123 (open); D60's "impossible first amo
   `maxRecDepth 400000`, probed first at 8 GB with `timeout 120`: 1.6 s); no external dependency;
   no parity number issued; every exemption file the same size or smaller but the NEW
   `written-exempt.txt` (three lines, born with the gate that reads it).
+
+<!-- =====================================================================
+     APPENDED 2026-09-28: stage 6 (the planner), run **W-37**, **TRACK K**,
+     worktree `w37-k` off `b3c29a3`: D66 (README gap 3000) and D63 (README
+     gap 3001).  Gap range **3160-3199**; **3160-3168 taken**, 3169-3199
+     free.  Parity: **none issued** (track K issues none; one
+     PARITY-PENDING line below, for the owner's answer to gap 3160).
+     ===================================================================== -->
+
+## Stage 6 — W-37 track K: the impossible check reads §8.2 step 5's own filter before the walk, the rank check reads step 5's own order, `hnoimp` is gone — and the planner drops an owed impossible item on a day it fills (gap 3160, for the owner)
+
+### 1. What landed
+
+**D66 (gap 3000) — `PlanCheck.impossibleKept` reads step 5's WHOLE filter, evaluated before the
+walk.**  Found by body shape, not by name: the predicate `Planner.PlanReq.assignStep` hands to
+`List.findIdx?` is `Planner.PlanReq.groupFitsSlot` — the fork's `pick` test, all five clauses (the
+group still owes minutes, `ci ≤ energy`, `loc:`, the wind-down rule, and a non-`splittable` group's
+unbroken run) — over groups that already passed `Planner.entersTheOrder` (state, dependencies,
+waiting, `max:`) on their way into `Planner.PlanReq.startGroups`.  `PlanCheck.fitsBefore` is that
+predicate at one slot, over the start groups and the empty cursor `Planner.PlanReq.assignStart`'s
+`slotOf`, and `PlanCheck.eligibleBefore` its `any` over the day's energised slots; neither writes a
+clause of it.  `PlanCheck.budgetLeft` now reads the same filter: a work row from
+`Planner.clampSec now` counts against the budget when it is the running block's (§8.2 choice 5b),
+sits at no slot where the item's group fits before the walk, or serves a listed impossible item.
+Neither `impossibleKept` nor `budgetLeft` takes an `Eligible` any more.
+
+**`hnoimp` is gone from all five lifts** — `PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day`,
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot`,
+`PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot` and
+`PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day` carry their W-19..W-21 names and
+statements again.  With comments stripped, `hnoimp` occurs NOWHERE in `PlanCheck.lean` (13
+occurrences, all prose), and no hypothesis about impossible items stands in its place: the one
+discharge form that would have needed one (the old dayPlan_ok_of_the_core_seven's shape) is not
+restated, and a note says why.  What proves them is new and is about the planner, so it lives
+below the checker in a new module, `PlanFold` (16 theorems, no definitions): a day step 5 filled
+nothing is a day on which no start group fit any energised slot under the budget
+(`PlanFold.nothing_fits_before_on_an_unassigned_day`, from `PlanFold.assignStep_fills_a_free_slot_a_group_fits`
+and `PlanFold.foldl_assignStep_idle`), so no item is admitted under its budget
+(`PlanCheck.an_unassigned_day_admits_nothing_under_its_budget`) and the check holds
+(`PlanCheck.impossibleKept_on_an_unassigned_day`), the reservation row being a budget row of the
+day (`PlanFold.the_reservation_row_is_a_work_row_of_the_day`).
+
+**D66's four directions, each a theorem.**  (1) The waiting day passes:
+`PlannerWit.an_unassigned_day_drops_its_waiting_impossible_item_and_passes`, whose ∀-form is
+`PlanCheck.a_waiting_item_is_never_eligible_before` (renamed from the brief's
+an_unassigned_day_drops_its_eligible_impossible_item: D66 does not call that item eligible, so the
+old name would be false).  (2) The atomic day passes:
+`PlannerWit.the_atomic_day_drops_the_impossible_item_its_grant_owes_today`, restated in place.
+(3) Gap 3130's day still FAILS:
+`PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop`,
+re-aimed at `PlannerWit.theOpenImpossibleRequest` (the waiting item it stood on is admitted nowhere
+now, so the planted day PASSED unchanged — measured, and the reason for the re-aim).  (4) A planted
+drop of an item admitted before the walk, owed today, with budget left, FAILS:
+`PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check`, and the ∀-form of the bite
+is `PlanCheck.impossibleKept_can_fail`.
+
+**D63 (gap 3001) — `PlanCheck.monotoneInRank` reads the planner's own order.**
+`PlanCheck.rankedBefore r i j` is strict precedence in `Planner.rankedLe` over
+`Planner.PlanReq.rankedCands`, where the document's line order stood (searched, not minted:
+`rankedLe` is the key step 4 sorts by).  The reversed day passes all eleven at `slotFitRows` and at
+`permissive` (`PlannerWit.the_monotone_rank_check_passes_where_D60_orders_by_date`, refuted-and-renamed
+from the_monotone_rank_check_fails_where_D60_orders_by_date), and a planted violation of the
+planner's own order still FAILS
+(`PlannerWit.the_rank_check_refuses_a_planted_violation_of_the_planners_order`: `^t1`'s rows handed
+to `^t3`).
+
+**Gap 903 — CLOSED, by proof.**  `PlanFold.finalAssign_is_assignFold`: §8.2 step 6 never changes
+step 5's assignment, on every request, because step 2 already placed every mandatory instance a
+free stretch could hold — the completeness half of `Planner.earliestFree`
+(`PlanFold.earliestFree_isSome_of_a_free_run`) was the law the gap said nothing stated.
+
+### 2. Gap 3160 — THE PLANNER FINDING, for the owner
+
+1. *What.*  `PlannerWit.theContiguityFindingRequest` is the quiet census Wednesday with two
+   candidates §7.3 calls impossible: `^h1` (`ci 3`, due today, 6 000 minutes planned, splittable)
+   and `^p1` (`ci 2`, due tomorrow, 180 minutes planned, ATOMIC).  The day's slots are 06:00-07:00
+   at energy 4, 07:00-08:00 at 3, a break, 08:20-09:20 and 09:20-10:20 at 2.  Before the walk, step
+   5's own filter admits `^p1` at 06:00 and at 07:00 — the only two starts of an unbroken 180-minute
+   run (`Planner.fitsRun` carries a run across a declared break).  D60 serves the earlier-due `^h1`
+   first; it fits every slot at energy 3 or more and takes 06:00 and 07:00; from 08:20 only 120
+   unbroken minutes are left, so step 5 places nothing for `^p1`.  §7.3's pass owes `^p1` minutes
+   TODAY, the budget is not spent (two blocks used), and `^p1` is not in the day:
+   `PlanCheck.impossibleKept` is `false` on the planner's own output at a request that pays
+   `PlanCheck.candsAgree`, while the seven of `PlanCheck.planOkCore` hold —
+   `PlannerWit.step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk`.
+2. *Why.*  Step 5 is greedy in slot order and never reads a grant (fork `Planner::pick` does the
+   same; `planner.rs`'s impossibility pass is diagnostics only), while "impossible never dropped"
+   (§8.3) and D55/D59/D66's readings of it are about what the grant OWES.  A greedy walk can hand the
+   only run an atomic item fits to an item ranked before it.  This is shipped behaviour — the
+   kernel's step 5 is the fork's — not a kernel defect, and D66's faithful filter is what made it
+   visible: until W-37 the checker's eligibility was an `el` the lifts could make empty.
+3. *What it costs.*  The paying-day lifts cannot prove the impossible check and do not pretend
+   to: they are restated as equations that keep it as a conjunct
+   (`PlanCheck.dayPlan_ok_is_the_core_seven_and_the_impossible_check`,
+   `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check`), and the
+   three W-31 forms are refuted at this day (`PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted`,
+   `PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted`,
+   `PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`), as is the claim that
+   the check holds on every paying day (`PlannerWit.impossibleKept_is_refuted_on_a_paying_day`).
+   The same mechanism refutes §8.3's monotone rank restated over the filter before the walk
+   (`PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted`: a third sibling
+   `^q1` at `^p1`'s `ci` is placed at 08:20, where `^p1` no longer fits), so
+   `Goals.plan_is_monotone_in_rank` cannot leave by that route either.
+4. *Which step clears it — the owner's call, not this track's.*  Three readings, each a sentence:
+   (a) §8.3 means the filter AT THE CURSOR'S STATE — "an item is never dropped while step 5 could
+   still place it" — a law about the greedy walk (`List.findIdx?_eq_some_iff_getElem` says every
+   group before the one placed failed the test; the law is NOT proved here), which accepts this day; (b) step 5 should protect the run an
+   admitted atomic impossible item needs (a look-ahead the fork does not have: a planner behaviour
+   change, a divergence from fork 4748911 and a behaviour row — gap 3168's PARITY-PENDING line);
+   (c) the drop is accepted and SAID: the item is already in
+   the `impossible` banner with its shortfall, and the day would name that it found no run.  Until
+   the owner answers, no hypothesis in `PlanCheck.lean` stands in for it (D66's instruction), and
+   this block is the whole record.
+
+### 3. Laws restated (D5) — old, new, and which implies which
+
+* `PlanCheck.impossibleKept el r d` → `impossibleKept r d`, `budgetLeft el r d i` →
+  `budgetLeft r d i`.  At `permissive` on a day with at least one row the OLD implies the NEW (the
+  new admits a subset of what `permissive` admits, and counts a superset of the rows as spent), and
+  the new passes days the old refused (the waiting and atomic days); at any other `el` the two are
+  not comparable.  That is D66's decision, taken by the campaign and recorded, not a narrowing of a
+  proved law: every law over the check is re-proved at the new definition —
+  `impossibleKept_iff`, `impossible_kept_from_the_battery`, `impossibleKept_can_fail` (now
+  hypothesising `eligibleBefore` and the new `budgetLeft`), `impossibleKept_of_no_impossible`,
+  `impossibleKept_of_no_eligible_impossible_item`, `impossibleKept_of_nothing_eligible_before`
+  (renamed from impossibleKept_of_nothing_eligible), `impossibleKept_of_nothing_assigned_iff`,
+  `an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`,
+  `impossible_subject_iff`,
+  `impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left`,
+  `impossibleKept_iff_the_owed_items_are_assigned`, `planOk_antitone` (the impossible check a
+  conjunct no eligibility moves) and `subjectOf`'s `.impossible` arm.
+* The five lifts: each W-37 form is its W-33..W-36 form minus `hnoimp`, so the new implies the old.
+* planOk_of_no_segments said the battery passes on a day with no rows; under D66 an impossible
+  item listed on a rowless day can be owed and admitted, so it is refuted
+  (`PlannerWit.planOk_of_no_segments_as_W_14_wrote_it_is_refuted`, at
+  `PlannerWit.theRowlessImpossibleDay`) and restated as
+  `PlanCheck.planOk_of_no_segments_is_the_impossible_check` (`planOk = impossibleKept` there).
+* impossible_has_no_subject_of_nothing_eligible → `PlanCheck.impossible_has_no_subject_on_an_unassigned_day`
+  (hypothesis `hnoassign` and the reservation row, where it was an eligibility that emptied).
+* The W-31 paying lifts: §2 item 3.  `PlanCheck.the_unassigned_eleven_is_an_instance_of_the_paying_eleven`
+  keeps its statement, re-proved through the new equation.
+* `monotoneInRank`, `rankPairOk`, `rankSubjects`: `rankedBefore` where `doc =`/`rank <` stood.
+  Not comparable with the old (two different orders); `rankPairOk_iff`, `monotoneInRank_can_fail`
+  (hypothesising `rankedBefore`) and `planOk_antitone` re-proved.
+* Deleted, not refuted, because no statement of either survives the change of type (gap 3161):
+  budgetLeft_mono and impossibleKept_antitone.
+* PlannerWit, in place and line-neutral (so no check-9 pin above them moved): every witness whose
+  value D63 or D66 changed was re-stated to the computed value, and renamed where its name had
+  become false — `the_hot_comparison_is_false_at_the_queued_request` and
+  `the_hot_comparison_has_subjects_where_it_bites` (the rank half passes there now),
+  `the_census_ratio_is_six_since_D63`, `the_census_is_six_where_the_impossible_item_waits`,
+  `a_quiet_hot_day_drops_its_waiting_impossible_item_and_passes`, and (1) above.  Gap 3162 lists
+  the refutations that moved or went.
+
+### 4. The census moved, and why (gap 3163)
+
+D63 orders only what step 4 RANKED, and a request that sends no candidate ranks nothing, so the
+rank check has no subject at any such request.  Every census this repository quotes at one moved
+by exactly one: `theCensusRequest` **7 → 6** (`PlannerWit.the_census_ratio`,
+`PlannerWit.the_census_ratio_is_six_since_D63`, the wall and log axes), `theStoredRequest` 5 → 4,
+`theQueuedRequest` 5 → 4, `theCensusRequestWithAnImpossibleCandidate` 8 → 6 (D66 took its
+impossible subject as well: the waiting `^m1` is admitted nowhere).  `theRunningRequest` (4) and
+`theQuietCensusRequest` (2) did not move.  `PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day`
+still holds, and is no longer reached at the census request.  The rank check keeps real subjects
+where candidates are sent (`the_rank_check_refuses_a_planted_violation_of_the_planners_order`).
+
+### 5. The burn-down: six goals, six stay
+
+* `Goals.plan_is_monotone_in_rank` (tried first): refuted as written since W-19/W-32; its
+  restatement over D66's filter before the walk is refuted here (§2 item 3); the restatement at the
+  cursor's state is gap 3160's reading (a) and waits on the owner.
+* `Goals.plan_places_no_demanding_block_after_wind_down`: no counter-example can exist (W-32's
+  structural argument, gap 2325) and the proof needs gap 2326's horizon bound; W-37 changes neither.
+* `Goals.plan_puts_hot_before_the_queue`: refuted as written (W-19, W-20, W-32); the route W-32
+  left — an eligibility refusing what step 5 never queues — is D66's filter, and whether "before
+  the queue" holds under it at the cursor's state is gap 3160's question again.  Not attempted.
+* `Goals.plan_never_batches_past_an_equal_ci_candidate`: refuted at W-32 (§29); nothing here
+  touches batching.  Not attempted.
+* `Goals.plan_tail_drop` and `Goals.plan_is_stable_across_a_replan`: the two relational laws,
+  D29/D5's; nothing here bears on them.  Not attempted.
+
+Burn-down **6 → 6**.  No goal added.
+
+### 6. Gaps
+
+**Gap 3160** — §2, the planner finding (open, the owner's).
+
+**Gap 3161 — two lemmas deleted rather than re-proved.**  1. *What.*  budgetLeft_mono (a narrower
+eligibility counts more rows spent) and impossibleKept_antitone went with their audit lines.
+2. *Why.*  Both quantified over the eligibility D66 took out of the check; neither statement can
+be written against the new types.  3. *Cost.*  None: `PlanCheck.planOk_antitone` keeps the
+battery-level law, the impossible check a conjunct no eligibility moves.  4. *Clears.*  Nothing
+to clear.
+
+**Gap 3162 — refutations moved or deleted.**  1. *What.*  Re-proved under their own names in the
+W-37 block: `PlannerWit.impossible_has_no_subject_is_refuted` and
+`PlannerWit.impossible_has_no_subject_from_now_is_refuted` (at `theTwoImpossibleRequest`, where
+`^t3` is admitted, owed and assigned), `PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted`
+(at gap 3160's day), `PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted`
+and `PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted` (at
+`theUnreservedOpenRequest`: W-20's `pastRows` hypothesis admits the open block, whose row
+`planOkCore` refuses — W-34's cause, not the impossible check).  Replaced:
+impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day by
+`PlannerWit.impossibleKept_is_refuted_on_a_paying_day`.  DELETED:
+dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted,
+dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted and
+the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted — each "refutes" a
+statement W-37 PROVES.  2. *Why.*  Their witnesses were the waiting day, which D66 makes pass.
+3. *Cost.*  None; the three deleted were false.  4. *Clears.*  Nothing.
+
+**Gap 3163 — the census cascade** (§4).  1. *What.*  Nine census theorems changed value, two of
+them by rename.  2. *Why.*  D63.  3. *Cost.*  The rank check now bites only where candidates are sent;
+at the witness module's many candidate-free requests it is vacuous, which the census now says.
+4. *Clears.*  D27 (the kernel collects candidates) makes every request send them.
+
+**Gap 3164 — the brief's file ownership could not hold.**  1. *What.*  Track K was to append one
+block to `PlannerWit.lean`.  2. *Why.*  D63 and D66 changed the value or the truth of the name of existing
+witnesses — 41 declarations' text differs from `b3c29a3` (measured between one declaration and
+the next: the census, the queued pair, the paying lift, the waiting and atomic days); a false
+theorem does not build, and D5 forbids deleting them.  3. *Cost.*  Every in-place edit is
+line-neutral, so no check-9 pin site above the appended block moved (measured: the only drifted
+rows were the two whose own pin theorem changed).  4. *Clears.*  Nothing; recorded.
+
+**Gap 3165 — stale prose outside this track's files.**  1. *What.*  `Goals.lean`'s notes cite the
+W-31 paying lift as where the impossible check is "already proved", cite
+the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item and
+the_census_ratio_is_still_seven; `Negative.lean`'s CHEAT 209-210 comments say `monotoneInRank` is
+`false` at the queued day (the cheats still fail, on `hotBeforeQueue` alone).  2. *Why.*  Goals is
+deletions-only for this track and Negative's blocks are never edited (AGENTS §6.2).  3. *Cost.*  A
+reader of those comments is told a W-36 fact; check 8 counts each dead name
+(`citations-allow.txt`'s W-37 section).  4. *Clears.*  The merge, or the next step owning those files.
+
+**Gap 3166 — `budgetLeft` matches a row to a slot by its START.**  1. *What.*  A row "sits at a
+slot where the item fits" when some energised slot has the same start second.  2. *Why.*  Every
+row step 5 emits starts at its slot's start (clamped), so on the planner's own output this is
+exact.  3. *Cost.*  A PLANTED day whose rows start one second off a slot counts every such row as
+spent, and could excuse a drop the check should refuse; no produced day can.  4. *Clears.*  A
+row-to-slot bridge lemma (`Planner.PlanReq.an_assigned_row_is_a_slot_of_the_day` is the
+assigned half).
+
+**Gap 3167 — the rank restatement's route.**  `monotone_rank_over_step_fives_filter_before_the_walk_is_refuted`
+means the only provable restatement of `Goals.plan_is_monotone_in_rank` is over the filter at the
+cursor's state, which is gap 3160's reading (a).  Cleared by the owner's answer.
+
+**Gap 3168 — a parity number is owed IF the owner takes gap 3160's reading (b).**  Track K
+issues none; the line the land step reads is:
+
+PARITY-PENDING: §8.2 step 5 reserving the unbroken run an admitted atomic impossible item needs (README gap 3160, reading (b)) — a divergence from fork 4748911, with a behaviour row, only if the owner chooses it.
+
+### 7. Acceptance, capped
+
+* **`check.sh`, capped: 14 checks, 17 lines** — build; totality; axiom audit **5,659** theorems (5,624 at
+  `51d61ad`: 24 audit lines removed with their subjects, 59 added under the W-37 banner); Negative
+  rejected; FFI 95; corpus 29/37 and 4/5; stage goals **6**; citations 46,740, 44,608 resolved,
+  2,132 allowed (397 counted), 0 allow entries unused; check 9 433 rostered, 0 owed; parity P1-P55,
+  next free P56; twins 3,195 bodies, 92 generalisation groups, 0 UNANSWERED; reach 1,185 reachable,
+  1,201 exempt, 0 UNANSWERED; fields 15 of 15; inputs 33 of 37 read, 4 exempt; sent 28 of 28
+  decoded; written 34 decoded, 28 written, 3 exempt; replay 87 modules.  The first full run (13 m
+  32 s, building) failed check 9 alone — this worktree still held the onlyAtY9 row the clone had
+  deleted — and the final run is 17 of 17 lines ok in 23.7 s on the built tree, `git status
+  --porcelain` unchanged by it.
+* **D40 (check 9), run in a CLONE of this worktree (the working changes synced into it), never the
+  shared tree**: `mutate.py --verify --write --only` for the two rows whose pin
+  theorem W-37 renamed or deleted (`PlanCheck.todayAnswers` and `PlanCheck.budgetLeft`, both
+  constants PINNED again, at `PlannerWit.an_unassigned_day_drops_its_waiting_impossible_item_and_passes`
+  and `PlanCheck.an_unassigned_day_admits_nothing_under_its_budget`), then `--write` over the 21
+  owed: 12 PINNED at both constants — `PlanCheck.rankedBefore`, `rankPairOk`, `fitsBefore`,
+  `eligibleBefore`, `impossibleKept`, `checksEligible`, `rankSubjects` and `subjectOf`, each first at
+  a law of its own (`rankedBefore_iff`, `rankPairOk_iff`, `an_unassigned_day_admits_nothing_under_its_budget`,
+  `impossibleKept_iff`, `checksOf_length`, `mem_rankSubjects`, `noOverbook_of_no_subject`), and the
+  four list fixtures at the two finding theorems, decided false — and 9 UNFOLDABLE witness fixtures
+  (no `Inhabited` for `PlanReq`, `DayPlan`, `WfPlan`, `WfSeg`); the onlyAtY9 row deleted with its
+  subject.  Gate after: **433 new or changed since the baseline, 433 rostered, 0 owed** (150
+  unfoldable, 96 witness fixtures, 30 pinned by nothing, as before); `mutations.txt` +17 rows, 6
+  replaced, 1 deleted; no `.mutate-in-flight` left; the clone's `git status --porcelain` held the
+  synced working changes and `mutations.txt`, nothing else.  About two and a half hours of builds.
+* **`cargo test --workspace --no-fail-fast`, THREE runs, capped: 1,587 passed / 0 failed / 11
+  ignored across 93 result lines, each** (loads about 40, 27.9 and 24.3 at the starts), `git status
+  --porcelain` identical before and after each — no proptest seed written.
+* **Named suites, `--include-ignored`**: T5 (`kernel_replay_parity`) 33, the door
+  (`kernel_log_door`) 23, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `planner_classes` 17, `planner_invariants` 24 of 24 (341.3 s); `cli_latency` 6 of 6 (25.6 s, load
+  27-31 — gap 1333's condition, and it passed).  FFI 95 inside check.sh.
+* Every new `decide` witness is in `PlannerWit.lean` under the file's own `maxRecDepth 400000`;
+  the file was probed whole before it was built (a scratch copy with `#eval`s, capped at 40 GB,
+  `timeout 3000`) and built in 285 s.  No memory bound, `maxHeartbeats` or `maxRecDepth` raised; no
+  `decide +kernel`; no predicate or assertion weakened; no snapshot, fixture, latency band or
+  corpus re-blessed; no external dependency; no parity number issued; `kernel-decide-exempt.txt`
+  and every other exemption file unchanged; `citations-allow.txt` lost nine entries whose names
+  resolve again and gained 33 counted dead names (§6, gap 3165).
+
