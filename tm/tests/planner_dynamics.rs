@@ -204,10 +204,11 @@ fn a_long_run_still_leaves_room_for_lunch_and_a_break_on(p: &dyn DayPlanner) {
         work.windows(2).any(|w| (w[1].start - w[0].end).num_minutes() >= i64::from(fx.cfg.day.break_min)),
         "a break follows the run:\n{tl}"
     );
-    // …and README gap 551's class, bounded exactly: the fork DRAWS it as a
-    // Break row, the kernel keeps the minutes free and draws none.
+    // …and it is DRAWN as a Break row, on both planners: README gap 551's
+    // class, bounded exactly here until W-37, when the kernel began to draw the
+    // cut's kept breaks as the fork does (`Planner.PlanReq.keptBreakRows`).
     let drawn = day.segments.iter().any(|s| s.kind == SegKind::Break && s.start > now);
-    assert_eq!(drawn, p.name() == "the fork", "gap 551's class moved on {}:\n{tl}", p.name());
+    assert!(drawn, "the break after the run is a Break row on {}:\n{tl}", p.name());
 
     // Still no preemption mid-block (§8.2 step 5).
     for seg in day.segments.iter().filter(|s| !s.flags.current) {

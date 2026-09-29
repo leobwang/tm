@@ -37,6 +37,25 @@
 //! candidates the rule is written about — a `loc:`-constrained, `atomic` or
 //! `max:`-capped item is skipped by §8.2 step 5 for reasons the invariant is
 //! not about, and the Active item is excepted by §8.3 itself.
+//!
+//! # What outlives R3, and what leaves with the fork (stage 6 W-37 track H)
+//!
+//! R3 deletes `tm-core/src/planner.rs`. Since W-37 this file is two halves, and
+//! the line between them is the one R3 draws:
+//!
+//! * **Outside the region — the kernel, on every generated case.** The
+//!   generator is `support/plangen.rs` (README gap 3080: the comparand keyed by
+//!   class re-draws its worlds from it). §8.3's invariants above are
+//!   [`check_day_invariants`], asked of the kernel as
+//!   `day_plan_satisfies_every_invariant` — the planner R3 ships, through the
+//!   host's codec — and "the higher-ranked of two" is the planner's own §7.4
+//!   order (the owner's D63). The kernel-only checks stay beside it: the
+//!   contending routines' kernel half, the P45 checker's bite and `send_order`.
+//! * **Inside the one `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region —
+//!   every arm that plans with the fork**, which R3 deletes whole (README gap
+//!   3084: until W-37 34 code lines of them sat outside any region). What each
+//!   compares that the frozen comparand (`planner_classes.rs`) covers by value,
+//!   and what it does not, is README's W-37 track H table.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
@@ -48,514 +67,45 @@ mod chokepoint;
 #[path = "support/rowwire.rs"]
 mod rowwire;
 
-use std::collections::{BTreeMap, BTreeSet};
+/// The request the host's codec builds, and the kernel's day read back through
+/// it — how the arms that survive R3 ask the kernel (W-37 track H).
+#[allow(dead_code)]
+#[path = "support/planreq.rs"]
+mod planreq;
+
+#[allow(dead_code)]
+#[path = "support/forkday.rs"]
+mod forkday;
+
+/// The comparand keyed by class: its D60 order is the kernel's own §7.4 order
+/// (one copy, README gap 3122), and it re-draws its worlds from `plangen`.
+#[allow(dead_code)]
+#[path = "support/forkclass.rs"]
+mod forkclass;
+
+use std::collections::BTreeSet;
 use std::sync::Mutex;
 
-use chrono::{DateTime, Duration, NaiveDate, NaiveTime, Timelike};
+use chrono::{DateTime, Duration, NaiveTime, Timelike};
 use chrono_tz::Tz;
 use proptest::prelude::*;
 use serde_json::{json, Value};
-use tm_core::capacity::{self, local_dt, Exact, CAP_DEN};
-use tm_core::config::Config;
-use tm_core::energy::Model;
-use tm_core::log::Replay;
+use tm_core::capacity::{self, local_dt};
 use tm_core::model::{Id, Loc, Shape};
-use tm_core::planner::{self, DayPlan, PlanInput, SegKind, Segment};
+use tm_core::dayplan::{DayPlan, SegKind, Segment};
 use tm_core::planwire;
-use tm_core::priority::{self, Candidate, Prio, PrioClass};
-use tm_core::store::{ActiveBlock, InterruptState, RuntimeState};
-use tm_core::tree::Tree;
+use tm_core::priority::{self, Candidate, Prio};
+use tm_core::store::RuntimeState;
 
-const DAY: &str = "2026-09-07";
-const MAX_ITEMS: usize = 40;
+/// **The generator, shared** (stage 6 W-37 track H, README gaps 3080 and 3084):
+/// `Case`, `case_strategy`, `build` and the widenings the arms draw live in
+/// `support/plangen.rs`, so the comparand keyed by class re-draws its worlds from
+/// them and they outlive R3 with the arms that plan with the kernel.
+#[allow(dead_code)]
+#[path = "support/plangen.rs"]
+mod plangen;
+use plangen::*;
 
-/// The five §4.3 routines a case may switch on, and the evening wall the late
-/// day carries.
-const ROUTINES: [&str; 6] = [
-    "- lunch      win:11:30-13:30 dur:30m  every:day",
-    "- workout    win:16:00-19:00 dur:1h   every:Mon,Wed,Fri",
-    "- shower     win:07:00-23:00 dur:20m  after-done:2d~1d",
-    "- breakfast  win:06:00-09:00 dur:30m  every:day pref:wake+10m",
-    "- sleep      win:22:00-08:00 dur:8h30m every:day ci:0",
-    // **THE SIXTH CONTENDS WITH `lunch` FOR ONE POSITION** (W-32, README gap
-    // 2226). The five above have pairwise-disjoint placeable windows, so §8.2
-    // step 2's ORDERING half — "mandatory first, then the moment the window
-    // closes; the tightest window claims its position first" — was asserted by
-    // nothing: an auditor reversed `collect_routines`' sort and no row of any
-    // case moved. `teatime` is mandatory, its window is 11:00-12:00 and it needs
-    // the whole hour, so it has EXACTLY ONE feasible position and it overlaps
-    // `lunch`'s 11:30-13:30. Sorted by the window's close it takes 11:00-12:00
-    // and `lunch` follows at 12:00; sorted any other way — by id, by the window's
-    // OPEN, or reversed — `lunch` takes 11:30-12:00 first and `teatime` is left
-    // with 30 free minutes for a 60-minute job and goes unplaced, which step 6
-    // cannot repair either (its window holds no free hour and no assigned slot
-    // an hour long to displace). So the placement is the ordering: the two rows
-    // below cannot both exist under any other order.
-    //
-    // **IT IS NOT IN `case_strategy`'s RANGE, ON PURPOSE.** `routines` is drawn
-    // `0u8..32` and stays there: proptest's stored regressions are SEEDS, not
-    // values, so widening the range re-maps every one of the sixteen entries in
-    // `planner_invariants.proptest-regressions` — including `af6b8c79…`, which
-    // D46 says replays on every run — onto different cases. The draw is made by
-    // `two_routines_contend_for_one_position` below instead, which costs nothing
-    // and keeps them. README gap 2226 records what that leaves open.
-    "- teatime    win:11:00-12:00 dur:1h   every:day",
-];
-const OPTIONALS: &str = "- Watch something  dur:1h\n- Play something   dur:2h max:4h/w\n";
-const EVENING_WALL: &str = "- [ ] 3 Long evening at:2026-09-07T15:00/21:00 ^wev\n";
-
-fn date() -> NaiveDate {
-    NaiveDate::parse_from_str(DAY, "%Y-%m-%d").expect("date")
-}
-
-fn at(tz: Tz, h: u32, m: u32) -> DateTime<Tz> {
-    local_dt(tz, date(), NaiveTime::from_hms_opt(h, m, 0).expect("time"))
-}
-
-/// One generated item line.
-#[derive(Debug, Clone)]
-struct Spec {
-    ci: u8,
-    k: u8,
-    est_b: u32,
-    /// A `≤ batch_max_min` estimate instead of `est_b` blocks (§7.5).
-    small: Option<u32>,
-    due_in: Option<u8>,
-    dep: Option<usize>,
-    loc_home: bool,
-    atomic: bool,
-    /// **`[?]`, `hot` and `min:` lines** (W-33 repair, README gap 2568). §8.2 step 8's
-    /// comparison below reads `waiting`, the hot-flag arm of `hot` and the FLOOR arm of
-    /// `impossible`, and this generator wrote only `- [ ]` lines with no `hot` and no
-    /// `min:` -- so `waiting` was compared as `[]` against `[]` on every day, and the two
-    /// arms were compared on none (the reuse critic's census). A field compared only at
-    /// its default value is a check no input can fail (AGENTS §9.2).
-    waiting: bool,
-    hot: bool,
-    /// `min:<n>b/d`, a per-day floor of `n` blocks.
-    floor: Option<u32>,
-    /// **The item's written `@parent`** (stage 6 W-27), an index taken modulo
-    /// the item's own position so the link always names an item **earlier** in
-    /// the one generated file: never dangling, never a cycle, never itself.
-    ///
-    /// It is here because the generated corpus carried **no `@` token at all**
-    /// and so the `parent` cell of every row was the empty string on both
-    /// sides. `the_kernel_reads_every_day_the_fork_planned` compares that cell
-    /// — and an auditor perturbed `Emit.parentCell` and watched the arm stay
-    /// **green** while `kernel_row_cells` (whose fixture day has parents)
-    /// failed. A cell compared only at its default value is a check no input
-    /// can fail (AGENTS §9.2). README gap 1437's neighbour.
-    parent: Option<usize>,
-}
-
-/// One generated wall.
-#[derive(Debug, Clone)]
-struct WallSpec {
-    hour: u32,
-    hours: u32,
-}
-
-/// Everything one case varies.
-#[derive(Debug, Clone)]
-struct Case {
-    items: Vec<Spec>,
-    walls: Vec<WallSpec>,
-    now_idx: usize,
-    done_blocks: u32,
-    report: Option<u8>,
-    /// Bit i switches [`ROUTINES`]`[i]` on.
-    routines: u8,
-    optionals: bool,
-    /// The day is spent at home: §8.2 step 3's `home_max_ci` caps every slot.
-    home: bool,
-    /// `(item index, minutes running so far, est_min)` — `state.active`.
-    active: Option<(usize, u32, u32)>,
-    /// Minutes ago the open interruption started.
-    interrupt: Option<u32>,
-    /// A late arrival plus the evening wall: §8.1 pushes the window past the
-    /// wind-down.
-    late: bool,
-}
-
-impl Case {
-    /// The hour `tm arrive` was logged at.
-    fn arrival_hour(&self) -> u32 {
-        if self.late {
-            11
-        } else {
-            7
-        }
-    }
-    fn wake_time(&self) -> NaiveTime {
-        NaiveTime::from_hms_opt(if self.late { 9 } else { 6 }, 30, 0).expect("time")
-    }
-    /// `now` — arrival, +1h30, +3h or +5h.
-    fn now(&self, tz: Tz) -> DateTime<Tz> {
-        let base = at(tz, self.arrival_hour(), 0);
-        base + Duration::minutes(match self.now_idx {
-            0 => 0,
-            1 => 90,
-            2 => 180,
-            _ => 300,
-        })
-    }
-    /// The instant `tm arrive` was logged at.
-    fn arrival(&self, tz: Tz) -> DateTime<Tz> {
-        at(tz, self.arrival_hour(), 0)
-    }
-    /// The blocks the log may hold: one an hour since arrival.
-    fn done(&self, tz: Tz) -> u32 {
-        let room = ((self.now(tz) - self.arrival(tz)).num_minutes() / 60).max(0) as u32;
-        self.done_blocks.min(room).min(self.items.len() as u32)
-    }
-}
-
-fn spec_strategy() -> impl Strategy<Value = Spec> {
-    (
-        0u8..=5,
-        1u8..=4,
-        1u32..=4,
-        // A third of the items are small enough to batch (§7.5), and they
-        // share a `ci` so that they really do group.
-        prop_oneof![2 => Just(None), 1 => prop::option::of(prop::sample::select(vec![10u32, 15, 20]))],
-        // Deadlines cluster on today and tomorrow, so `p = 0` is common and
-        // "HOT before queue" has something to say.
-        prop_oneof![
-            3 => Just(Some(0u8)),
-            2 => Just(Some(1u8)),
-            2 => prop::option::of(2u8..=9),
-        ],
-        prop::option::of(0usize..MAX_ITEMS),
-        any::<bool>(),
-        any::<bool>(),
-        // Half the items are written under a parent, so the `parent` cell is
-        // compared at a real value on most rows rather than only at `""`.
-        prop_oneof![1 => Just(None), 1 => prop::option::of(0usize..MAX_ITEMS)],
-        // A sixth of the lines wait, a sixth are flagged hot, a fifth carry a daily floor.
-        prop_oneof![5 => Just(false), 1 => Just(true)],
-        prop_oneof![5 => Just(false), 1 => Just(true)],
-        prop_oneof![4 => Just(None), 1 => prop::option::of(1u32..=12)],
-    )
-        .prop_map(|(ci, k, est_b, small, due_in, dep, loc_home, atomic, parent, waiting, hot,
-                    floor)| Spec {
-            // Small items cluster on two `ci` levels so that §7.5 really does
-            // group them (batching needs an equal `ci`).
-            ci: if small.is_some() { 2 + ci % 2 } else { ci },
-            k,
-            est_b,
-            small,
-            due_in,
-            dep,
-            loc_home,
-            atomic,
-            parent,
-            waiting,
-            hot,
-            floor,
-        })
-}
-
-fn case_strategy() -> impl Strategy<Value = Case> {
-    (
-        prop::collection::vec(spec_strategy(), 1..=MAX_ITEMS),
-        prop::collection::vec((8u32..=17, 1u32..=2), 0..=2),
-        0usize..4,
-        0u32..=3,
-        prop::option::of(0u8..=5),
-        0u8..32,
-        any::<bool>(),
-        any::<bool>(),
-        prop::option::of((0usize..MAX_ITEMS, 5u32..=90, 30u32..=180)),
-        prop::option::of(5u32..=60),
-        any::<bool>(),
-    )
-        .prop_map(
-            |(
-                items,
-                walls,
-                now_idx,
-                done_blocks,
-                report,
-                routines,
-                optionals,
-                home,
-                active,
-                interrupt,
-                late,
-            )| Case {
-                walls: walls
-                    .into_iter()
-                    .map(|(hour, hours)| WallSpec { hour, hours })
-                    .collect(),
-                active: active.map(|(i, ago, est)| (i % items.len(), ago, est)),
-                items,
-                now_idx,
-                done_blocks,
-                report,
-                routines,
-                optionals,
-                home,
-                interrupt,
-                late,
-            },
-        )
-}
-
-/// Three letters, so the id is always valid and always unique.
-fn id_of(prefix: char, i: usize) -> String {
-    let a = (b'a' + (i / 26) as u8) as char;
-    let b = (b'a' + (i % 26) as u8) as char;
-    format!("{prefix}{a}{b}")
-}
-
-fn week_text(case: &Case) -> String {
-    let mut s = String::from("---\nweek: 2026-W37\n---\n# Milestones\n");
-    for (i, sp) in case.items.iter().enumerate() {
-        let id = id_of('z', i);
-        let est = match sp.small {
-            Some(m) => format!("{m}m"),
-            None => format!("{}b", sp.est_b),
-        };
-        let mut line = format!(
-            "- [{}] {} {est} Item{i} !{}",
-            if sp.waiting { '?' } else { ' ' },
-            sp.ci,
-            sp.k
-        );
-        // **The written parent** (W-27). `% i` keeps the link pointing at an
-        // earlier line of this same file, so `Tree::dangling_parents` and
-        // `Tree::parent_cycles` are both empty by construction and the case is
-        // a tree the fork loads rather than one it rejects.
-        if let Some(par) = sp.parent {
-            if i > 0 {
-                line.push_str(&format!(" @{}", id_of('z', par % i)));
-            }
-        }
-        if let Some(d) = sp.due_in {
-            let due = date() + Duration::days(i64::from(d));
-            line.push_str(&format!(" due:{due}T23:59"));
-        }
-        if let Some(dep) = sp.dep {
-            if i > 0 {
-                line.push_str(&format!(" after:^{}", id_of('z', dep % i)));
-            }
-        }
-        if sp.loc_home {
-            line.push_str(" loc:home");
-        }
-        if sp.atomic {
-            line.push_str(" atomic");
-        }
-        if let Some(n) = sp.floor {
-            line.push_str(&format!(" min:{n}b/d"));
-        }
-        if sp.hot {
-            line.push_str(" hot");
-        }
-        line.push_str(&format!(" ^{id}\n"));
-        s.push_str(&line);
-    }
-    s
-}
-
-fn calendar_text(case: &Case) -> String {
-    let mut s = String::new();
-    for (j, w) in case.walls.iter().enumerate() {
-        let end = (w.hour + w.hours).min(23);
-        if end <= w.hour {
-            continue;
-        }
-        s.push_str(&format!(
-            "- [ ] 3 Wall{j} at:{DAY}T{:02}:00/{:02}:00 ^{}\n",
-            w.hour,
-            end,
-            id_of('w', j)
-        ));
-    }
-    if case.late {
-        s.push_str(EVENING_WALL);
-    }
-    s
-}
-
-fn routines_text(case: &Case) -> String {
-    let mut s = String::new();
-    for (i, line) in ROUTINES.iter().enumerate() {
-        if case.routines & (1 << i) != 0 {
-            s.push_str(line);
-            s.push('\n');
-        }
-    }
-    s
-}
-
-fn log_text(case: &Case, tz: Tz) -> String {
-    let arrive = case.arrival_hour();
-    let done = case.done(tz);
-    let wake = case.wake_time();
-    let mut s = format!(
-        "{{\"t\":\"{DAY}T{:02}:{:02}:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n\
-         {{\"t\":\"{DAY}T{arrive:02}:00:00-05:00\",\"ev\":\"arrive\",\"loc\":\"lounge\",\
-         \"window\":[\"{arrive:02}:00\",\"{:02}:00\"],\"budget\":6}}\n",
-        wake.format("%H").to_string().parse::<u32>().unwrap_or(6),
-        wake.format("%M").to_string().parse::<u32>().unwrap_or(0),
-        (arrive + 8).min(23),
-    );
-    for j in 0..done {
-        let id = id_of('z', j as usize);
-        let start = arrive + j;
-        s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{start:02}:00:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":{}.0,\"slept_min\":480,\"loc\":\"lounge\",\"blocks_done\":{j},\"since_break_min\":0}}\n",
-            start - 6
-        ));
-        s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{:02}:55:00-05:00\",\"ev\":\"done\",\"id\":\"{id}\",\"est_min\":60,\"actual_min\":55,\"went\":1,\"tags\":[],\"ci\":3}}\n",
-            start
-        ));
-    }
-    if let Some(rep) = case.report {
-        s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{:02}:05:00-05:00\",\"ev\":\"energy\",\"pred\":4,\"rep\":{rep},\"hsw\":1.08,\"loc\":\"lounge\"}}\n",
-            arrive
-        ));
-    }
-    // The block that is running at `now`, as the log records it.
-    if let Some((id, started)) = active_block(case, tz) {
-        s.push_str(&format!(
-            "{{\"t\":\"{DAY}T{:02}:{:02}:00-05:00\",\"ev\":\"start\",\"id\":\"{id}\",\"pred\":4,\"hsw\":4.0,\"slept_min\":480,\"loc\":\"lounge\",\"blocks_done\":{done},\"since_break_min\":0}}\n",
-            started.format("%H"),
-            started.format("%M"),
-        ));
-    }
-    s
-}
-
-/// The running block's item and start instant, when the case has one and it
-/// fits after everything the log already holds.
-fn active_block(case: &Case, tz: Tz) -> Option<(String, DateTime<Tz>)> {
-    let (idx, ago, _) = case.active?;
-    let now = case.now(tz);
-    let last_done =
-        case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5);
-    let started = (now - Duration::minutes(i64::from(ago))).max(last_done + Duration::minutes(1));
-    if started >= now {
-        return None;
-    }
-    Some((id_of('z', idx.min(case.items.len() - 1)), started))
-}
-
-struct World {
-    tree: Tree,
-    cfg: Config,
-    replay: Replay,
-    model: Model,
-    now: DateTime<Tz>,
-    state: RuntimeState,
-    /// **The generated log, kept as bytes** (stage 6 W-28, step R2's response
-    /// half): `Planner.PlanReq.run` is this call's own replay through D24's
-    /// seam, so the kernel is handed the same lines the fork's `Replay` was
-    /// built from and resumes them itself.
-    log: String,
-    /// **The four generated files, kept as bytes** (stage 6 W-25, step R2).
-    /// `Tree::from_texts` consumes them and hands back the fork's reading; the
-    /// kernel is given the same bytes and does its own, which is the whole
-    /// point of [`the_kernel_reads_every_day_the_fork_planned`].
-    docs: Vec<(String, String)>,
-}
-
-fn build(case: &Case) -> World {
-    let cfg = Config::default();
-    let tz = cfg.tz;
-    let week = week_text(case);
-    let cal = calendar_text(case);
-    let routines = routines_text(case);
-    let optionals = if case.optionals { OPTIONALS } else { "" };
-    let files = [
-        ("week/2026-W37.md", week.as_str()),
-        ("calendar/2026-W37.md", cal.as_str()),
-        ("routines.md", routines.as_str()),
-        ("optional.md", optionals),
-    ];
-    let tree = Tree::from_texts(&files, &cfg);
-    let docs = files.iter().map(|(p, t)| ((*p).to_string(), (*t).to_string())).collect();
-    let log = log_text(case, tz);
-    let replay = chokepoint::replay_of_text(&log, tz);
-    let now = case.now(tz);
-    let arrival = NaiveTime::from_hms_opt(case.arrival_hour(), 0, 0).expect("time");
-    let state = RuntimeState {
-        date: Some(date()),
-        wake: Some(case.wake_time()),
-        arrival: Some(arrival),
-        loc: Some(if case.home { "home" } else { "lounge" }.to_string()),
-        // A late day stores no window, so §8.1's formula runs and the evening
-        // wall pushes the end past midnight.
-        window: (!case.late).then(|| {
-            (
-                arrival,
-                NaiveTime::from_hms_opt(16, 0, 0).expect("time"),
-            )
-        }),
-        budget: (!case.late).then_some(6),
-        active: case.active.and_then(|(_, _, est)| {
-            active_block(case, tz).map(|(id, started)| ActiveBlock {
-                id: Id::new(id),
-                started: started.naive_local().time(),
-                est_min: est,
-                paused: false,
-            })
-        }),
-        interrupt: case.interrupt.map(|ago| InterruptState {
-            started: Some(
-                (now - Duration::minutes(i64::from(ago)))
-                    .max(case.arrival(tz))
-                    .naive_local()
-                    .time(),
-            ),
-            id: None,
-        }),
-        ..RuntimeState::default()
-    };
-    World {
-        tree,
-        cfg,
-        log,
-        replay,
-        model: Model::default(),
-        now,
-        state,
-        docs,
-    }
-}
-
-impl World {
-    fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
-        PlanInput::new(
-            &self.tree,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            state,
-            now,
-        )
-    }
-    /// The generated files as the wire carries them.
-    fn docs_json(&self) -> Vec<Value> {
-        self.docs
-            .iter()
-            .map(|(path, text)| json!({"path": path, "lines": text.lines().collect::<Vec<_>>()}))
-            .collect()
-    }
-    fn candidates(&self) -> Vec<Candidate> {
-        priority::collect_candidates(
-            &self.tree,
-            &self.replay,
-            &self.cfg,
-            &self.model,
-            date(),
-            self.now,
-        )
-    }
-}
 
 /// The candidates §8.3's comparisons are written about: plain, splittable,
 /// uncapped work with no location constraint and no placement window.
@@ -586,707 +136,503 @@ fn layout(day: &DayPlan) -> Vec<(DateTime<Tz>, Vec<Id>)> {
         .collect()
 }
 
-/// **The cells the kernel is allowed to disagree with the fork about on a
-/// GENERATED day, with the gap that records why.**
-///
-/// The same two holes `tm/tests/kernel_row_cells.rs` declares on its fixture
-/// day, and no others — a third name appearing here would be a finding, not a
-/// widening:
-///
-/// * **`note`** (gap **1102**, and the `note: null` decision in `seg_json`) —
-///   `SegFlags::note` is a `String` the fork's planner wrote as prose and
-///   `Planner.Note` is eleven names with their arguments, so a host whose
-///   planner produced text has nothing to send. The kernel **derives** the
-///   column and cannot derive the `⚠` branch, which needs the fork's
-///   `effective_due`.
-/// * **`est`** (gap **1101**) — the fork's `est_cell` reads `est_original`
-///   first and this kernel has one estimate view, `Core.est`, which is `est:`
-///   then the leading estimate. A line carrying both makes the two readers pick
-///   different numbers.
-///
-/// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
-/// and `batchNames` — is compared **exactly**, on every row of every case.
-///
-/// **And `parent` is now compared at a value** (W-27). It was in this list
-/// before, and the list was true and empty of content for that one cell: the
-/// generated corpus had no `@` token, so both readers wrote `""` on every row
-/// and the cell asserted nothing. [`CENSUS`]'s fifth counter and the
-/// `parents > 0` assertion are what make the membership load-bearing.
-const CELL_HOLES: [&str; 2] = ["note", "est"];
-
-/// `(rows compared, cases compared, note-hole firings, est-hole firings,
-/// rows whose `parent` cell was NON-EMPTY)` — what
-/// [`the_kernel_reads_every_day_the_fork_planned`] actually looked at.
-///
-/// **The fifth number is W-27's** and it is the one that makes the `parent`
-/// comparison mean something. Until this run the generated corpus carried no
-/// `@` token, so every row's `parent` cell was `""` on both sides and the
-/// comparison could not fail whatever the kernel wrote; the arm is now asserted
-/// to have seen the cell at a real value.
-///
-/// A proptest case body returns only a verdict, so the census is a side
-/// channel — but it is read **inside the arm that fills it**, on every case,
-/// and not by a separate `#[test]`. A separate test would race the arm in
-/// cargo's default parallel run and pass by seeing nothing, which is the very
-/// defect it exists to catch: "every cell of every row agreed" is a sentence a
-/// fuzz comparing **no** rows also produces — AGENTS §9.2's "a check no input
-/// can fail", which this campaign has met at five different levels.
-static CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
 
 fn overlaps(a: &Segment, b: &Segment) -> bool {
     a.start < b.end && b.start < a.end
 }
 
+/// **Which planner §8.3's invariants are asked of** (stage 6 W-37 track H,
+/// README gap 3084): the property `day_plan_satisfies_every_invariant`
+/// asserted of the FORK's own-§7 day until W-37 — a day no shipped path plans
+/// (D53) and one R3 deletes — written once, over this, and asked of the
+/// KERNEL (the planner R3 ships) on every generated case; of the fork, in the
+/// file's one region, until R3.
+trait Planner {
+    /// The day planned for `w` at `state` and `now`, or why none was.
+    fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String>;
+    /// The candidates re-keyed so `(root_order, own_order)` is the planner's
+    /// own §7.4 order (the owner's D63: §8.3's monotone-rank check reads it).
+    fn rank_view(&self, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate>;
+    /// Which one, for a failure message.
+    fn name(&self) -> &'static str;
+}
+
+/// **The kernel**, through the request the host's codec builds
+/// (`support/planreq.rs`) and read back by `tm_core::planwire` — the planner R3
+/// swaps into the binary. Its §7.4 order is D60's (`forkclass::d60_cands`):
+/// `p = 0` impossible answers by due date and request position, before every
+/// other `p = 0` answer.
+struct Kernel;
+
+impl Planner for Kernel {
+    fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
+        let date = planwire::plan_date(state, now);
+        let cands = priority::collect_candidates(&w.tree, &w.replay, &w.cfg, &w.model, date, now);
+        let pw = planreq::World {
+            docs: &w.docs,
+            log: &w.log,
+            tree: &w.tree,
+            cfg: &w.cfg,
+            state,
+            now,
+            cands: &cands,
+        };
+        planreq::kernel_day(&pw, None).map(|(k, _)| k.day)
+    }
+    fn rank_view(&self, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
+        forkclass::d60_cands(cands, prios)
+    }
+    fn name(&self) -> &'static str {
+        "the kernel"
+    }
+}
+
+/// Whether some candidate's §8.2 step-2 window closes exactly at `t` — the
+/// instant README gap 3280's refusal happened at until W-37's land step, read
+/// off the fork-point collector the host codec's `routine_instances` reads.
+fn routine_window_ends_at(w: &World, state: &RuntimeState, t: DateTime<Tz>) -> bool {
+    let date = planwire::plan_date(state, t);
+    priority::collect_candidates(&w.tree, &w.replay, &w.cfg, &w.model, date, t)
+        .iter()
+        .any(|c| c.window.is_some_and(|(_, end)| end == t))
+}
+
+/// **§8.3's invariants, of one generated day** — see [`Planner`]. The checks
+/// are the ones this file's first arm made of the fork's day since stage 3,
+/// unchanged but for two readings: the planner's day is `p.day`, and "the
+/// higher-ranked of two" is the planner's own §7.4 order (`p.rank_view`).
+fn check_day_invariants(p: &dyn Planner, case: &Case, w: &World) -> Result<(), TestCaseError> {
+    let tz = w.cfg.tz;
+    let block_min = w.cfg.block_min();
+    let day = p.day(w, &w.state, w.now).map_err(TestCaseError::fail)?;
+
+    // --- purity (§8.3, §17.2) ---------------------------------------
+    let again = p.day(w, &w.state, w.now).map_err(TestCaseError::fail)?;
+    prop_assert_eq!(&day, &again);
+    prop_assert_eq!(day.hash(), again.hash());
+
+    // --- the running block (§9) --------------------------------------
+    // It is a fact, not a placement: exactly one `▶`, it belongs to
+    // `state.active`, it starts at `now`, and it holds no slot.
+    let current = day.current_segment();
+    prop_assert!(
+        day.segments.iter().filter(|s| s.flags.current).count() <= 1,
+        "two blocks are running at once"
+    );
+    if let Some(seg) = current {
+        let active = w.state.active.as_ref().expect("a `▶` needs `state.active`");
+        prop_assert_eq!(seg.item.as_ref(), Some(&active.id));
+        prop_assert!(seg.energy.is_none(), "the running block takes no slot: {:?}", seg);
+        // Either the minutes it still needs (from `now`) or — in
+        // overtime, when there is nothing left to reserve — the stretch it
+        // has already run (up to `now`).
+        prop_assert!(seg.start <= w.now && seg.end >= w.now, "{seg:?}");
+    }
+    let running_min = current.filter(|s| s.start >= w.now).map_or(0, Segment::minutes);
+
+    // --- no overbooking ---------------------------------------------
+    // §9 gives the running block its minutes whatever the budget says
+    // (that is the state §9.1's overtime prompt runs in); everything the
+    // planner *chose* fits the remaining budget.
+    let remaining = capacity::remaining_budget(
+        w.state.budget.unwrap_or(6),
+        w.replay.blocks_done(date()),
+    );
+    prop_assert!(
+        day.planned_block_minutes(w.now) - running_min <= remaining * block_min,
+        "{} planned minutes ({running_min} of them running) for {remaining} blocks\n{day:?}",
+        day.planned_block_minutes(w.now)
+    );
+
+    // No segment overlaps a Wall, and no two placements overlap.
+    let placed: Vec<&Segment> = day
+        .segments
+        .iter()
+        .filter(|s| {
+            s.start >= w.now
+                && !matches!(s.kind, SegKind::Lost | SegKind::WindDown | SegKind::Sleep)
+        })
+        .collect();
+    for (i, a) in placed.iter().enumerate() {
+        for b in placed.iter().skip(i + 1) {
+            if a.kind == SegKind::Wall && b.kind == SegKind::Wall {
+                // §8.2 step 1: overlapping walls are reported, not
+                // resolved — and nothing else is placed in the overlap,
+                // which the other pairs of this loop check.
+                if overlaps(a, b) && a.item != b.item {
+                    let (x, y) = (
+                        a.item.clone().expect("a wall names its item"),
+                        b.item.clone().expect("a wall names its item"),
+                    );
+                    prop_assert!(
+                        day.diagnostics
+                            .conflicts
+                            .iter()
+                            .any(|(p, q)| (*p == x && *q == y) || (*p == y && *q == x)),
+                        "unreported wall conflict {x} × {y}"
+                    );
+                }
+                continue;
+            }
+            prop_assert!(!overlaps(a, b), "overlap: {a:?} / {b:?}");
+        }
+    }
+
+    // Nothing is planned after wind-down (the strong form of "no Block
+    // with ci ≥ 4 after wind-down"). A late day's window reaches past it.
+    let wind = at(tz, 21, 30);
+    for seg in day.segments.iter().filter(|s| s.kind.is_work()) {
+        prop_assert!(seg.end <= wind, "work after wind-down: {seg:?}");
+    }
+    if case.late {
+        prop_assert!(day.window.1 > wind, "the late day runs past the wind-down");
+    }
+
+    // --- walls never moved -------------------------------------------
+    // Exactly where the calendar says: a wall segment is either the event
+    // itself or the `buffer:` in front of it, both clipped to the day.
+    for seg in day.segments.iter().filter(|s| s.kind == SegKind::Wall) {
+        let id = seg.item.clone().expect("a wall names its item");
+        let Shape::Interval { start, end } = w.tree.effective_shape(&id) else {
+            prop_assert!(false, "{id} is not an interval");
+            unreachable!()
+        };
+        let buffer = w.tree.get(&id).and_then(|i| i.buffer).map_or(0, |d| d.as_minutes());
+        let midnight = at(tz, 0, 0);
+        let s = local_dt(tz, start.date(), start.time());
+        let e = local_dt(tz, end.date(), end.time());
+        let event = (s.max(midnight), e.min(midnight + Duration::days(1)));
+        let front = (s - Duration::minutes(i64::from(buffer)), s);
+        prop_assert!(
+            (seg.start, seg.end) == event
+                || (buffer > 0 && (seg.start, seg.end) == (front.0.max(midnight), front.1)),
+            "a wall moved: {seg:?} is neither {event:?} nor {front:?}"
+        );
+    }
+
+    // --- energy filter ------------------------------------------------
+    let cands = w.candidates();
+    let ci_of = |id: &Id| cands.iter().find(|c| c.id == *id).map_or(0, |c| c.ci);
+    for seg in day.segments.iter().filter(|s| s.kind.is_work() && s.start >= w.now) {
+        if seg.flags.current {
+            continue; // checked above: it is not in a slot at all
+        }
+        let energy = seg.energy.expect("a planned block has an energy");
+        for id in seg.items() {
+            prop_assert!(ci_of(&id) <= energy, "{id} ci {} in a slot of {energy}", ci_of(&id));
+        }
+    }
+
+    // --- the priority-dependent invariants ----------------------------
+    let prios: Vec<Prio> = day.priorities.iter().map(|(_, p)| p.clone()).collect();
+    prop_assert_eq!(prios.len(), cands.len());
+    prop_assert!(
+        day.priorities.iter().map(|(id, _)| id).eq(cands.iter().map(|c| &c.id)),
+        "{}'s §7 answers are not in the candidates' order", p.name()
+    );
+    // **The planner's OWN §7.4 order** (the owner's D63): the key its step 5
+    // serves by, which is the fork's `(root_order, own_order)` and, on the
+    // kernel, D60's order among `p = 0` impossible answers before them.
+    let rv = p.rank_view(&cands, &prios);
+    let done = assigned_set(&day, w.now);
+    let max_energy = day
+        .segments
+        .iter()
+        .filter(|s| s.kind.is_work())
+        .filter_map(|s| s.energy)
+        .max()
+        .unwrap_or(0);
+
+    // Monotone rank: equal p and ci → the higher-ranked of the two is never
+    // the one left out. The running item is excepted: §9 gave it its slot.
+    //
+    // **"Higher-ranked" is `(root_order, own_order)`, not `own_order`**
+    // (stage 6 W-27). §7.4's key is `priority::sort_key = (p, root_order,
+    // own_order)` — the item's ROOT first, its own line second — so a child
+    // of an early root outranks an unrelated item written on an earlier
+    // line. This loop compared `own_order` alone, which is the same
+    // relation **exactly when every item is its own root**, and until this
+    // run the generated corpus had no `@parent` token, so it always was.
+    // With parents drawn the two relations part company and the fork was
+    // failing an invariant the spec does not state: six runs of 256 cases
+    // failed here and six of the pre-parent generator passed. The fork is
+    // right; this line was wrong. Seed `80a3875…` in
+    // `planner_invariants.proptest-regressions` is the one that found it
+    // (D46: a new seed is a finding and it stays). README gap 1661.
+    let active_id = w.state.active.as_ref().map(|a| a.id.clone());
+    for (i, a) in cands.iter().enumerate() {
+        if !comparable(a) || Some(&a.id) == active_id.as_ref() {
+            continue;
+        }
+        for (j, b) in cands.iter().enumerate().skip(i + 1) {
+            if !comparable(b) || a.ci != b.ci || prios[i].p != prios[j].p {
+                continue;
+            }
+            if Some(&b.id) == active_id.as_ref() {
+                continue;
+            }
+            let rank = |k: usize| (rv[k].root_order, rv[k].own_order);
+            let (first, second) = if rank(i) <= rank(j) { (a, b) } else { (b, a) };
+            if done.contains(&second.id) {
+                prop_assert!(
+                    done.contains(&first.id),
+                    "{} (later line) is assigned while {} is not",
+                    second.id,
+                    first.id
+                );
+            }
+        }
+    }
+
+    // HOT before queue, slot by slot: wherever a `p > 0` candidate got a
+    // block, no `p = 0` candidate that the day left out could have taken
+    // that same slot. (The `max_energy` form of this — "a HOT item that
+    // fits *some* slot is never left out" — is nearly unfalsifiable,
+    // because `max_energy` is measured over the slots that were filled.)
+    // §7.5: a batch is won by its leader, and the small items sharing the
+    // block ride along whatever their own key says. Those passengers never
+    // "took" a slot from anyone.
+    let carried = |id: &Id| -> bool {
+        day.segments
+            .iter()
+            .filter(|s| s.kind.is_work() && s.items().contains(id))
+            .any(|s| {
+                s.items().iter().any(|other| {
+                    other != id
+                        && cands
+                            .iter()
+                            .position(|c| c.id == *other)
+                            .is_some_and(|j| prios[j].p == 0)
+                })
+            })
+    };
+    let hot_left_out: Vec<&Candidate> = cands
+        .iter()
+        .zip(&prios)
+        .filter(|(c, p)| comparable(c) && p.p == 0 && !done.contains(&c.id))
+        .map(|(c, _)| c)
+        .collect();
+    for seg in day
+        .segments
+        .iter()
+        .filter(|s| s.kind.is_work() && s.start >= w.now && !s.flags.current)
+    {
+        let Some(energy) = seg.energy else { continue };
+        // A §7.5 batch is won by its leader and carries the rest of the
+        // block with it, so the block counts as `p = 0` work when *any*
+        // of its items is `p = 0`.
+        let members: Vec<usize> = seg
+            .items()
+            .iter()
+            .filter_map(|id| cands.iter().position(|c| c.id == *id))
+            .collect();
+        if members.is_empty()
+            || members.iter().any(|j| prios[*j].p == 0 || !comparable(&cands[*j]))
+        {
+            continue;
+        }
+        for hot in &hot_left_out {
+            prop_assert!(
+                hot.ci > energy,
+                "{:?} (p {}) took the {} slot of energy {energy} that HOT {} (ci {}) fits",
+                seg.items(),
+                prios[members[0]].p,
+                seg.start.format("%H:%M"),
+                hot.id,
+                hot.ci
+            );
+        }
+    }
+
+    // IMPOSSIBLE never dropped (§7.3: "still scheduled with everything
+    // available"). Placement is the HOT rule above — an IMPOSSIBLE
+    // candidate is `p = 0`, so it only ever yields to other `p = 0` work.
+    // What is checked here is that it is never *silently* dropped: the
+    // banner names it and the shortfall.
+    for (i, c) in cands.iter().enumerate() {
+        if !prios[i].is_impossible() || c.is_wall {
+            continue;
+        }
+        prop_assert!(
+            day.diagnostics
+                .impossible
+                .iter()
+                .any(|(id, short, _)| *id == c.id && *short == prios[i].shortfall_min),
+            "IMPOSSIBLE {} is not in the diagnostics",
+            c.id
+        );
+        if !done.contains(&c.id) && comparable(c) && c.ci <= max_energy {
+            // Everything that took a slot instead was at least as urgent.
+            for (j, other) in cands.iter().enumerate() {
+                if comparable(other)
+                    && done.contains(&other.id)
+                    && other.ci >= c.ci
+                    && Some(&other.id) != active_id.as_ref()
+                    && !carried(&other.id)
+                {
+                    prop_assert_eq!(
+                        prios[j].p,
+                        0,
+                        "{} (p {}) took a slot the IMPOSSIBLE {} could have used",
+                        other.id,
+                        prios[j].p,
+                        c.id
+                    );
+                }
+            }
+        }
+    }
+
+    // --- nothing is wasted ---------------------------------------------
+    // A Rest slot inside the budget means no candidate could take it: §8.2
+    // step 5 turns a slot to Rest only when the first eligible candidate
+    // does not fit it.
+    // §8.2 step 5 counts *blocks*, not minutes ("while blocks_assigned <
+    // remaining_budget"): a slot cut short by a wall costs a block all the
+    // same, and so does the block that is running.
+    let used_blocks = day
+        .segments
+        .iter()
+        .filter(|s| s.kind.is_work() && s.start >= w.now)
+        .count() as u32;
+    if used_blocks < remaining {
+        for rest in day.segments.iter().filter(|s| s.kind == SegKind::Rest) {
+            let energy = rest.energy.unwrap_or(0);
+            for c in cands.iter().filter(|c| comparable(c)) {
+                prop_assert!(
+                    c.ci > energy || done.contains(&c.id),
+                    "{} (ci {}) was left out while a Rest slot of energy {energy} stood",
+                    c.id,
+                    c.ci
+                );
+            }
+        }
+    }
+    prop_assert!(!day.segments.is_empty());
+
+    // --- §8.2 step 8: the diagnostics describe this timeline ------------
+    for (id, energy, ci) in &day.diagnostics.underused {
+        prop_assert!(energy >= &(ci + 2), "{id}: gap {energy} − {ci} is not ≥ 2");
+        prop_assert!(
+            day.segments.iter().any(|s| s.kind.is_work()
+                && s.flags.underused
+                && s.energy == Some(*energy)
+                && s.items().contains(id)),
+            "underused {id} belongs to no `↓` block"
+        );
+    }
+    for seg in day.segments.iter().filter(|s| s.kind.is_work() && s.start >= w.now) {
+        let Some(energy) = seg.energy else { continue };
+        for id in seg.items() {
+            let gap = energy.saturating_sub(ci_of(&id));
+            prop_assert_eq!(
+                seg.flags.underused,
+                gap >= 2,
+                "{}: gap {} but flag {}",
+                id,
+                gap,
+                seg.flags.underused
+            );
+        }
+    }
+    for id in &day.diagnostics.hot {
+        let i = cands.iter().position(|c| c.id == *id).expect("a candidate");
+        prop_assert_eq!(prios[i].p, 0, "{} is in `hot` with p {}", id, prios[i].p);
+    }
+    for id in &day.diagnostics.dropped_tail {
+        prop_assert!(
+            !day.assigned().contains(id),
+            "{id} is both dropped and assigned"
+        );
+    }
+    for id in &day.diagnostics.deferred {
+        prop_assert!(!day.assigned().contains(id), "{id} is both deferred and assigned");
+    }
+    for (id, deps) in &day.diagnostics.blocked {
+        prop_assert!(!deps.is_empty(), "{id} is blocked by nothing");
+        // §9's one exception: a block that is *already running* keeps its
+        // minutes even when step 5 would refuse the item.
+        prop_assert!(
+            day.segments
+                .iter()
+                .filter(|s| s.kind.is_work() && s.start >= w.now && s.items().contains(id))
+                .all(|s| s.flags.current),
+            "{id} is blocked and planned"
+        );
+    }
+    for id in &day.diagnostics.waiting {
+        let c = cands.iter().find(|c| c.id == *id).expect("a candidate");
+        prop_assert!(c.waiting, "{id} is not waiting");
+    }
+    prop_assert_eq!(
+        day.diagnostics.plan_honesty.is_some(),
+        remaining > 0,
+        "plan honesty is reported exactly when the day has a budget"
+    );
+
+    // --- tail-drop -----------------------------------------------------
+    if remaining > 1 {
+        let short_state = RuntimeState {
+            budget: Some(w.state.budget.unwrap_or(6) - 1),
+            ..w.state.clone()
+        };
+        let short = p.day(w, &short_state, w.now).map_err(TestCaseError::fail)?;
+        let (long_layout, short_layout) = (layout(&day), layout(&short));
+        prop_assert!(short_layout.len() <= long_layout.len());
+        prop_assert_eq!(
+            &short_layout[..],
+            &long_layout[..short_layout.len()],
+            "losing a block re-shuffled the day"
+        );
+        for id in assigned_set(&short, w.now) {
+            prop_assert!(done.contains(&id), "{id} appeared when the day got shorter");
+        }
+    }
+
+    // --- stability -----------------------------------------------------
+    // Everything that had *finished* by `now` is untouched; what had not —
+    // an open interruption, the block that is running — is still there,
+    // from the same minute, only longer.
+    let at = w.now + Duration::hours(1);
+    let later = match p.day(w, &w.state, at) {
+        Ok(d) => d,
+        // README gap 3280's declared class (the kernel refusing the replan at the minute a
+        // routine's window closes) was set aside here until W-37's land step: track R's host
+        // filter (gap 3201) stops `planwire::routine_instances` sending the empty window, so
+        // the kernel plans that minute and any refusal fails the arm again.
+        Err(e) => return Err(TestCaseError::fail(e)),
+    };
+    for seg in day.segments.iter().filter(|s| s.end <= w.now) {
+        if seg.flags.open {
+            let grown = later.segments.iter().find(|s| {
+                s.start == seg.start && s.kind == seg.kind && s.item == seg.item
+            });
+            prop_assert!(
+                grown.is_some_and(|g| g.end >= seg.end),
+                "an open segment moved or shrank: {seg:?}"
+            );
+            continue;
+        }
+        prop_assert!(
+            later.segments.contains(seg),
+            "a replan moved a settled segment: {seg:?}"
+        );
+    }
+    Ok(())
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 256, max_shrink_iters: 2_000, ..ProptestConfig::default() })]
 
+    /// **§8.3's invariants hold of every day the KERNEL plans** (W-37 track H,
+    /// README gap 3084): the planner R3 ships, asked on every generated case.
     #[test]
     fn day_plan_satisfies_every_invariant(case in case_strategy()) {
         let w = build(&case);
-        let tz = w.cfg.tz;
-        let block_min = w.cfg.block_min();
-        let day = planner::plan(&w.input(&w.state, w.now));
-
-        // --- purity (§8.3, §17.2) ---------------------------------------
-        prop_assert_eq!(&day, &planner::plan(&w.input(&w.state, w.now)));
-        prop_assert_eq!(day.hash(), planner::plan(&w.input(&w.state, w.now)).hash());
-
-        // --- the running block (§9) --------------------------------------
-        // It is a fact, not a placement: exactly one `▶`, it belongs to
-        // `state.active`, it starts at `now`, and it holds no slot.
-        let current = day.current_segment();
-        prop_assert!(
-            day.segments.iter().filter(|s| s.flags.current).count() <= 1,
-            "two blocks are running at once"
-        );
-        if let Some(seg) = current {
-            let active = w.state.active.as_ref().expect("a `▶` needs `state.active`");
-            prop_assert_eq!(seg.item.as_ref(), Some(&active.id));
-            prop_assert!(seg.energy.is_none(), "the running block takes no slot: {:?}", seg);
-            // Either the minutes it still needs (from `now`) or — in
-            // overtime, when there is nothing left to reserve — the stretch it
-            // has already run (up to `now`).
-            prop_assert!(seg.start <= w.now && seg.end >= w.now, "{seg:?}");
-        }
-        let running_min = current.filter(|s| s.start >= w.now).map_or(0, Segment::minutes);
-
-        // --- no overbooking ---------------------------------------------
-        // §9 gives the running block its minutes whatever the budget says
-        // (that is the state §9.1's overtime prompt runs in); everything the
-        // planner *chose* fits the remaining budget.
-        let remaining = capacity::remaining_budget(
-            w.state.budget.unwrap_or(6),
-            w.replay.blocks_done(date()),
-        );
-        prop_assert!(
-            day.planned_block_minutes(w.now) - running_min <= remaining * block_min,
-            "{} planned minutes ({running_min} of them running) for {remaining} blocks\n{day:?}",
-            day.planned_block_minutes(w.now)
-        );
-
-        // No segment overlaps a Wall, and no two placements overlap.
-        let placed: Vec<&Segment> = day
-            .segments
-            .iter()
-            .filter(|s| {
-                s.start >= w.now
-                    && !matches!(s.kind, SegKind::Lost | SegKind::WindDown | SegKind::Sleep)
-            })
-            .collect();
-        for (i, a) in placed.iter().enumerate() {
-            for b in placed.iter().skip(i + 1) {
-                if a.kind == SegKind::Wall && b.kind == SegKind::Wall {
-                    // §8.2 step 1: overlapping walls are reported, not
-                    // resolved — and nothing else is placed in the overlap,
-                    // which the other pairs of this loop check.
-                    if overlaps(a, b) && a.item != b.item {
-                        let (x, y) = (
-                            a.item.clone().expect("a wall names its item"),
-                            b.item.clone().expect("a wall names its item"),
-                        );
-                        prop_assert!(
-                            day.diagnostics
-                                .conflicts
-                                .iter()
-                                .any(|(p, q)| (*p == x && *q == y) || (*p == y && *q == x)),
-                            "unreported wall conflict {x} × {y}"
-                        );
-                    }
-                    continue;
-                }
-                prop_assert!(!overlaps(a, b), "overlap: {a:?} / {b:?}");
-            }
-        }
-
-        // Nothing is planned after wind-down (the strong form of "no Block
-        // with ci ≥ 4 after wind-down"). A late day's window reaches past it.
-        let wind = at(tz, 21, 30);
-        for seg in day.segments.iter().filter(|s| s.kind.is_work()) {
-            prop_assert!(seg.end <= wind, "work after wind-down: {seg:?}");
-        }
-        if case.late {
-            prop_assert!(day.window.1 > wind, "the late day runs past the wind-down");
-        }
-
-        // --- walls never moved -------------------------------------------
-        // Exactly where the calendar says: a wall segment is either the event
-        // itself or the `buffer:` in front of it, both clipped to the day.
-        for seg in day.segments.iter().filter(|s| s.kind == SegKind::Wall) {
-            let id = seg.item.clone().expect("a wall names its item");
-            let Shape::Interval { start, end } = w.tree.effective_shape(&id) else {
-                prop_assert!(false, "{id} is not an interval");
-                unreachable!()
-            };
-            let buffer = w.tree.get(&id).and_then(|i| i.buffer).map_or(0, |d| d.as_minutes());
-            let midnight = at(tz, 0, 0);
-            let s = local_dt(tz, start.date(), start.time());
-            let e = local_dt(tz, end.date(), end.time());
-            let event = (s.max(midnight), e.min(midnight + Duration::days(1)));
-            let front = (s - Duration::minutes(i64::from(buffer)), s);
-            prop_assert!(
-                (seg.start, seg.end) == event
-                    || (buffer > 0 && (seg.start, seg.end) == (front.0.max(midnight), front.1)),
-                "a wall moved: {seg:?} is neither {event:?} nor {front:?}"
-            );
-        }
-
-        // --- energy filter ------------------------------------------------
-        let cands = w.candidates();
-        let ci_of = |id: &Id| cands.iter().find(|c| c.id == *id).map_or(0, |c| c.ci);
-        for seg in day.segments.iter().filter(|s| s.kind.is_work() && s.start >= w.now) {
-            if seg.flags.current {
-                continue; // checked above: it is not in a slot at all
-            }
-            let energy = seg.energy.expect("a planned block has an energy");
-            for id in seg.items() {
-                prop_assert!(ci_of(&id) <= energy, "{id} ci {} in a slot of {energy}", ci_of(&id));
-            }
-        }
-
-        // --- the priority-dependent invariants ----------------------------
-        let prios: Vec<Prio> = day.priorities.iter().map(|(_, p)| p.clone()).collect();
-        prop_assert_eq!(prios.len(), cands.len());
-        let done = assigned_set(&day, w.now);
-        let max_energy = day
-            .segments
-            .iter()
-            .filter(|s| s.kind.is_work())
-            .filter_map(|s| s.energy)
-            .max()
-            .unwrap_or(0);
-
-        // Monotone rank: equal p and ci → the higher-ranked of the two is never
-        // the one left out. The running item is excepted: §9 gave it its slot.
-        //
-        // **"Higher-ranked" is `(root_order, own_order)`, not `own_order`**
-        // (stage 6 W-27). §7.4's key is `priority::sort_key = (p, root_order,
-        // own_order)` — the item's ROOT first, its own line second — so a child
-        // of an early root outranks an unrelated item written on an earlier
-        // line. This loop compared `own_order` alone, which is the same
-        // relation **exactly when every item is its own root**, and until this
-        // run the generated corpus had no `@parent` token, so it always was.
-        // With parents drawn the two relations part company and the fork was
-        // failing an invariant the spec does not state: six runs of 256 cases
-        // failed here and six of the pre-parent generator passed. The fork is
-        // right; this line was wrong. Seed `80a3875…` in
-        // `planner_invariants.proptest-regressions` is the one that found it
-        // (D46: a new seed is a finding and it stays). README gap 1661.
-        let active_id = w.state.active.as_ref().map(|a| a.id.clone());
-        for (i, a) in cands.iter().enumerate() {
-            if !comparable(a) || Some(&a.id) == active_id.as_ref() {
-                continue;
-            }
-            for (j, b) in cands.iter().enumerate().skip(i + 1) {
-                if !comparable(b) || a.ci != b.ci || prios[i].p != prios[j].p {
-                    continue;
-                }
-                if Some(&b.id) == active_id.as_ref() {
-                    continue;
-                }
-                let rank = |c: &Candidate| (c.root_order, c.own_order);
-                let (first, second) = if rank(a) <= rank(b) { (a, b) } else { (b, a) };
-                if done.contains(&second.id) {
-                    prop_assert!(
-                        done.contains(&first.id),
-                        "{} (later line) is assigned while {} is not",
-                        second.id,
-                        first.id
-                    );
-                }
-            }
-        }
-
-        // HOT before queue, slot by slot: wherever a `p > 0` candidate got a
-        // block, no `p = 0` candidate that the day left out could have taken
-        // that same slot. (The `max_energy` form of this — "a HOT item that
-        // fits *some* slot is never left out" — is nearly unfalsifiable,
-        // because `max_energy` is measured over the slots that were filled.)
-        // §7.5: a batch is won by its leader, and the small items sharing the
-        // block ride along whatever their own key says. Those passengers never
-        // "took" a slot from anyone.
-        let carried = |id: &Id| -> bool {
-            day.segments
-                .iter()
-                .filter(|s| s.kind.is_work() && s.items().contains(id))
-                .any(|s| {
-                    s.items().iter().any(|other| {
-                        other != id
-                            && cands
-                                .iter()
-                                .position(|c| c.id == *other)
-                                .is_some_and(|j| prios[j].p == 0)
-                    })
-                })
-        };
-        let hot_left_out: Vec<&Candidate> = cands
-            .iter()
-            .zip(&prios)
-            .filter(|(c, p)| comparable(c) && p.p == 0 && !done.contains(&c.id))
-            .map(|(c, _)| c)
-            .collect();
-        for seg in day
-            .segments
-            .iter()
-            .filter(|s| s.kind.is_work() && s.start >= w.now && !s.flags.current)
-        {
-            let Some(energy) = seg.energy else { continue };
-            // A §7.5 batch is won by its leader and carries the rest of the
-            // block with it, so the block counts as `p = 0` work when *any*
-            // of its items is `p = 0`.
-            let members: Vec<usize> = seg
-                .items()
-                .iter()
-                .filter_map(|id| cands.iter().position(|c| c.id == *id))
-                .collect();
-            if members.is_empty()
-                || members.iter().any(|j| prios[*j].p == 0 || !comparable(&cands[*j]))
-            {
-                continue;
-            }
-            for hot in &hot_left_out {
-                prop_assert!(
-                    hot.ci > energy,
-                    "{:?} (p {}) took the {} slot of energy {energy} that HOT {} (ci {}) fits",
-                    seg.items(),
-                    prios[members[0]].p,
-                    planner::fmt_clock(seg.start),
-                    hot.id,
-                    hot.ci
-                );
-            }
-        }
-
-        // IMPOSSIBLE never dropped (§7.3: "still scheduled with everything
-        // available"). Placement is the HOT rule above — an IMPOSSIBLE
-        // candidate is `p = 0`, so it only ever yields to other `p = 0` work.
-        // What is checked here is that it is never *silently* dropped: the
-        // banner names it and the shortfall.
-        for (i, c) in cands.iter().enumerate() {
-            if !prios[i].is_impossible() || c.is_wall {
-                continue;
-            }
-            prop_assert!(
-                day.diagnostics
-                    .impossible
-                    .iter()
-                    .any(|(id, short, _)| *id == c.id && *short == prios[i].shortfall_min),
-                "IMPOSSIBLE {} is not in the diagnostics",
-                c.id
-            );
-            if !done.contains(&c.id) && comparable(c) && c.ci <= max_energy {
-                // Everything that took a slot instead was at least as urgent.
-                for (j, other) in cands.iter().enumerate() {
-                    if comparable(other)
-                        && done.contains(&other.id)
-                        && other.ci >= c.ci
-                        && Some(&other.id) != active_id.as_ref()
-                        && !carried(&other.id)
-                    {
-                        prop_assert_eq!(
-                            prios[j].p,
-                            0,
-                            "{} (p {}) took a slot the IMPOSSIBLE {} could have used",
-                            other.id,
-                            prios[j].p,
-                            c.id
-                        );
-                    }
-                }
-            }
-        }
-
-        // --- nothing is wasted ---------------------------------------------
-        // A Rest slot inside the budget means no candidate could take it: §8.2
-        // step 5 turns a slot to Rest only when the first eligible candidate
-        // does not fit it.
-        // §8.2 step 5 counts *blocks*, not minutes ("while blocks_assigned <
-        // remaining_budget"): a slot cut short by a wall costs a block all the
-        // same, and so does the block that is running.
-        let used_blocks = day
-            .segments
-            .iter()
-            .filter(|s| s.kind.is_work() && s.start >= w.now)
-            .count() as u32;
-        if used_blocks < remaining {
-            for rest in day.segments.iter().filter(|s| s.kind == SegKind::Rest) {
-                let energy = rest.energy.unwrap_or(0);
-                for c in cands.iter().filter(|c| comparable(c)) {
-                    prop_assert!(
-                        c.ci > energy || done.contains(&c.id),
-                        "{} (ci {}) was left out while a Rest slot of energy {energy} stood",
-                        c.id,
-                        c.ci
-                    );
-                }
-            }
-        }
-        prop_assert!(!day.segments.is_empty());
-
-        // --- §8.2 step 8: the diagnostics describe this timeline ------------
-        for (id, energy, ci) in &day.diagnostics.underused {
-            prop_assert!(energy >= &(ci + 2), "{id}: gap {energy} − {ci} is not ≥ 2");
-            prop_assert!(
-                day.segments.iter().any(|s| s.kind.is_work()
-                    && s.flags.underused
-                    && s.energy == Some(*energy)
-                    && s.items().contains(id)),
-                "underused {id} belongs to no `↓` block"
-            );
-        }
-        for seg in day.segments.iter().filter(|s| s.kind.is_work() && s.start >= w.now) {
-            let Some(energy) = seg.energy else { continue };
-            for id in seg.items() {
-                let gap = energy.saturating_sub(ci_of(&id));
-                prop_assert_eq!(
-                    seg.flags.underused,
-                    gap >= 2,
-                    "{}: gap {} but flag {}",
-                    id,
-                    gap,
-                    seg.flags.underused
-                );
-            }
-        }
-        for id in &day.diagnostics.hot {
-            let i = cands.iter().position(|c| c.id == *id).expect("a candidate");
-            prop_assert_eq!(prios[i].p, 0, "{} is in `hot` with p {}", id, prios[i].p);
-        }
-        for id in &day.diagnostics.dropped_tail {
-            prop_assert!(
-                !day.assigned().contains(id),
-                "{id} is both dropped and assigned"
-            );
-        }
-        for id in &day.diagnostics.deferred {
-            prop_assert!(!day.assigned().contains(id), "{id} is both deferred and assigned");
-        }
-        for (id, deps) in &day.diagnostics.blocked {
-            prop_assert!(!deps.is_empty(), "{id} is blocked by nothing");
-            // §9's one exception: a block that is *already running* keeps its
-            // minutes even when step 5 would refuse the item.
-            prop_assert!(
-                day.segments
-                    .iter()
-                    .filter(|s| s.kind.is_work() && s.start >= w.now && s.items().contains(id))
-                    .all(|s| s.flags.current),
-                "{id} is blocked and planned"
-            );
-        }
-        for id in &day.diagnostics.waiting {
-            let c = cands.iter().find(|c| c.id == *id).expect("a candidate");
-            prop_assert!(c.waiting, "{id} is not waiting");
-        }
-        prop_assert_eq!(
-            day.diagnostics.plan_honesty.is_some(),
-            remaining > 0,
-            "plan honesty is reported exactly when the day has a budget"
-        );
-
-        // --- tail-drop -----------------------------------------------------
-        if remaining > 1 {
-            let short_state = RuntimeState {
-                budget: Some(w.state.budget.unwrap_or(6) - 1),
-                ..w.state.clone()
-            };
-            let short = planner::plan(&w.input(&short_state, w.now));
-            let (long_layout, short_layout) = (layout(&day), layout(&short));
-            prop_assert!(short_layout.len() <= long_layout.len());
-            prop_assert_eq!(
-                &short_layout[..],
-                &long_layout[..short_layout.len()],
-                "losing a block re-shuffled the day"
-            );
-            for id in assigned_set(&short, w.now) {
-                prop_assert!(done.contains(&id), "{id} appeared when the day got shorter");
-            }
-        }
-
-        // --- stability -----------------------------------------------------
-        // Everything that had *finished* by `now` is untouched; what had not —
-        // an open interruption, the block that is running — is still there,
-        // from the same minute, only longer.
-        let later = planner::plan(&w.input(&w.state, w.now + Duration::hours(1)));
-        for seg in day.segments.iter().filter(|s| s.end <= w.now) {
-            if seg.flags.open {
-                let grown = later.segments.iter().find(|s| {
-                    s.start == seg.start && s.kind == seg.kind && s.item == seg.item
-                });
-                prop_assert!(
-                    grown.is_some_and(|g| g.end >= seg.end),
-                    "an open segment moved or shrank: {seg:?}"
-                );
-                continue;
-            }
-            prop_assert!(
-                later.segments.contains(seg),
-                "a replan moved a settled segment: {seg:?}"
-            );
-        }
+        check_day_invariants(&Kernel, &case, &w)?;
     }
 }
 
-
-
-
-// ===========================================================================
-// STEP R2 (stage 6 W-25): the generated days go through the KERNEL.
-//
-// §14.4's R2 says this file must exercise "the kernel's `dayPlan` through the
-// FFI".  **When this arm was written at W-25 it could not**: `dayPlan` was not
-// reachable through the FFI, because the `plan` REQUEST section carried the
-// day's rows and not the planner's inputs, and `EmitWire.lean`'s own header
-// assigned that section to step R3 (README gap **1431**, which priced what R3
-// then needed, field by field).
-//
-// **THAT IS NO LONGER TRUE, AND THIS PARAGRAPH IS THE LAND STEP'S.**  D48 moved
-// the wire into R2, W-27 landed its REQUEST half and W-28 its RESPONSE half, so
-// `Planner.dayPlan` IS reachable through the FFI now and the section at the
-// **THE KERNEL PLANS THE DAY** banner below exercises it.  This arm is kept
-// because it is a *different* claim, not a superseded one: it sends the FORK's
-// day in and checks the kernel's RENDERING of it, where the arm below asks the
-// kernel to PLAN.  Read the two banners together; neither is the whole.
-//
-// What this arm covers, said plainly so the remainder is not mistaken for the
-// whole: every day this file's generators produce — 40 random items, five routines, calendar walls, a random log, a
-// running block, an open interruption, a late day — is handed to the kernel's
-// `plan` section, and the kernel's nine cells for every row are compared
-// against `emit::row_cells`'s.  Before W-25 that comparison existed on ONE
-// hand-built fixture day (`tm/tests/kernel_row_cells.rs`); this makes it
-// thousands of generated ones, and the two files share the encoder.
-//
-// It is NOT the tail-drop or stability half of R2: those are about a plan the
-// kernel made.  The kernel DOES make one now (the banner below), but only §8.2
-// steps 1 and 2 of it, so those two halves are still unclaimed — README gap
-// **1670**, and the land step re-read this sentence rather than leaving it to
-// read as though nothing had changed.
-// ===========================================================================
-
-proptest! {
-    #![proptest_config(ProptestConfig {
-        // Each case is an FFI call over a whole generated tree, so the count is
-        // its own: `TM_PROPTEST_CASES` raises it and W-25's README block records
-        // what it was run at (D46 — one run of a randomised test is a weak
-        // claim).
-        cases: std::env::var("TM_PROPTEST_CASES")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(64),
-        max_shrink_iters: 2_000,
-        ..ProptestConfig::default()
-    })]
-
-    /// **The kernel reads every day the fork planned, and writes the fork's
-    /// cells for it.**
-    ///
-    /// Two claims, and the first is the one nothing else makes:
-    ///
-    /// 1. **No day the fork's planner produces is refused by the wire.** Every
-    ///    `R10` bound the `plan` section carries — `Planner.maxCands` on the
-    ///    segment list, `CapWire.maxCandId` on every id, `Look.maxPlanMinutes`
-    ///    on `planned`, `Fin 6` on the energy, `maxBatch` on a batch — is a
-    ///    number a real day could exceed, and a bound that is too tight refuses
-    ///    a legitimate plan. `kernel_rows` returns the refusal instead of
-    ///    panicking so this can be asserted rather than assumed.
-    /// 2. **Cell for cell, row for row**, against `emit::row_cells`, with
-    ///    [`CELL_HOLES`]'s two declared exceptions and no others. The kernel is
-    ///    told no title, no `ci`, no estimate and no parent: those four come
-    ///    from its own parse of the same generated bytes.
-    #[test]
-    fn the_kernel_reads_every_day_the_fork_planned(case in case_strategy()) {
-        let w = build(&case);
-        let day = planner::plan(&w.input(&w.state, w.now));
-        let lean = match rowwire::kernel_rows(w.docs_json(), &day, &w.cfg) {
-            Ok(rows) => rows,
-            Err(raw) => {
-                let head: String = raw.chars().take(400).collect();
-                prop_assert!(false, "the wire refused a day the fork planned: {head}");
-                unreachable!()
-            }
-        };
-        let fork = rowwire::fork_cells(&day, &w.tree, &w.cfg);
-        prop_assert_eq!(
-            lean.len(), fork.len(),
-            "the kernel answered {} rows for {} segments (`Emit.rowsOf_length`'s wire half)",
-            lean.len(), fork.len()
-        );
-        let mut seen = [0u64; 5];
-        seen[0] = fork.len() as u64;
-        seen[1] = 1;
-        for (i, (f, l)) in fork.iter().zip(&lean).enumerate() {
-            // **The `parent` cell, counted where it is not the default** (W-27).
-            // Counted off the FORK's cell: the kernel's is the value under
-            // test, and a census read off the value under test would report
-            // whatever a broken kernel wrote.
-            if !f.parent.is_empty() {
-                seen[4] += 1;
-            }
-            for (cell, forked, kernelled) in rowwire::differences(f, l) {
-                prop_assert!(
-                    CELL_HOLES.contains(&cell),
-                    "row {i}: the two readers disagree on an UNDECLARED cell {cell:?} \
-                     — fork {forked:?}, kernel {kernelled:?}"
-                );
-                if cell == "note" {
-                    seen[2] += 1;
-                } else {
-                    seen[3] += 1;
-                }
-            }
-        }
-        // **The fuzz compared something, asserted inside the fuzz.**
-        //
-        // A proptest arm runs its cases in sequence, so a cumulative claim here
-        // is deterministic — where a separate `#[test]` reading the same census
-        // would race the arm that fills it and pass by seeing nothing. "Every
-        // cell agreed" is a sentence a fuzz comparing NO rows also produces
-        // (AGENTS §9.2's "a check no input can fail"), and a declared hole that
-        // has stopped firing is a claim that has changed (gaps 1101, 1102).
-        let [rows, cases, notes, ests, parents] = {
-            let mut c = CENSUS.lock().expect("census");
-            for (a, b) in c.iter_mut().zip(seen) {
-                *a += b;
-            }
-            *c
-        };
-        prop_assert!(rows >= 4 * cases, "only {rows} rows over {cases} cases");
-        if cases >= 32 {
-            prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
-            prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
-            // **The `parent` cell was compared at a real value** (W-27). Without
-            // this the cell is in `differences`' nine and still asserts nothing:
-            // `"" == ""` on every row of every case is the shape AGENTS §9.2
-            // calls a check no input can fail, and an auditor's perturbation of
-            // `Emit.parentCell` passed through it. A generator that stops
-            // drawing parents now fails here instead of going quietly green.
-            prop_assert!(
-                parents > 0,
-                "no row's `parent` cell was non-empty in {cases} cases — the `parent` \
-                 comparison is vacuous (gap 1437's neighbour)"
-            );
-        }
-        // **THE CENSUS IS PRINTED, so the README's figure can be RE-DERIVED.**
-        //
-        // It was write-only: asserted on and never shown, while the W-25 block
-        // quoted "1,035 cases, 11,611 rows compared, note-hole 2,311, est-hole
-        // 571" as a MEASUREMENT that no command in the committed tree produced
-        // — it can only have come from a temporary print. AGENTS §5.11's own
-        // rule is one measurement per number, from the committed harness.
-        //
-        // It prints on EVERY case, to stderr, and that is deliberate: this is
-        // the one place the census can be read without racing the arm that
-        // fills it (the sibling file's
-        // `zz_the_declared_refusals_are_all_reachable` shape needs `--test-threads=1`, and this
-        // arm's own comment above says why a separate `#[test]` would pass by
-        // seeing nothing). Every line is a running prefix and the LAST is the
-        // total. libtest captures it, so a green run is silent; read it with
-        //
-        //     cargo test --test planner_invariants -- --nocapture \
-        //       the_kernel_reads_every_day_the_fork_planned
-        eprintln!(
-            "planner_invariants census: {cases} cases, {rows} rows compared, \
-             note-hole {notes}, est-hole {ests}, parent-cells {parents}"
-        );
-    }
-}
-
-// ===========================================================================
-// **THE KERNEL PLANS THE DAY** — stage 6 W-28, step R2's RESPONSE half (D48).
-//
-// The arm above sends the FORK's day through the `plan` section and compares
-// the kernel's rendering of it. This one asks the kernel to **plan**, through
-// `PlanWire.callExport`, and compares two planners.
-//
-// **What is compared, and why not everything, measured rather than assumed.**
-// `Planner.dayRows` is §8.2 steps 1 and 2 and nothing else; steps 3 to 7 are
-// P3..P7 and unwritten, and README gap **1670** records that the kernel's day
-// therefore holds no step-5 assignment at all. Asserting segment-for-segment
-// equality would be asserting something untrue of a half-built planner, and
-// narrowing the generator until it came out true is what **D46** forbids. So
-// this compares the answers the kernel is *complete* for:
-//
-//   * `plan.day`, the date it planned;
-//   * `plan.window`, §8.1's working window — `Look.day0Window` on one side and
-//     `Planner::window_and_budget` on the other, two readers README gap **320**
-//     says can disagree, so a disagreement here is a **finding owed a parity
-//     number** and not a hole to widen;
-//   * `plan.budgetBlocks`;
-//   * and **the walls**, the one row class step 1 completes, which §8.3's own
-//     "walls are never moved" invariant is about — compared to the minute, both
-//     ways, so a wall the kernel invents fails as loudly as one it drops.
-//
-// Everything else the kernel places (the routine rows, the replayed past, the
-// rest/wind-down/sleep filler) is COUNTED and reported and asserted on only
-// through the refusal claim, because the fork's day for those rows is the
-// output of steps this kernel has not written.
-//
-// **The `routines` key CARRIES THE FORK'S OWN INSTANCES SINCE W-31**, and the
-// sentence that stood here — "this arm has no honest collector" — was false.
-// `Planner::collect_routines` reads the candidate list and the item's `shape`
-// and nothing else, and both were already in this arm's hands; see
-// [`World::routine_items`] (a call of `tm_core::planwire::routine_instances` since the W-35
-// repair, README gap 2922) and README gap **2220**. F2's recurrence expansion
-// is still not built and D27 is still not done early: the expansion happened in
-// `priority::collect_candidates` before the list existed. So the kernel places
-// §8.2 step 2's rows here now, they are compared to the second, both ways, and
-// the assigned-row comparison no longer exempts a day for holding one.
-// ===========================================================================
-
-/// `(cases, walls compared, kernel rows seen, window disagreements, budget
-/// disagreements, assigned rows compared, cases EXEMPT from the assigned
-/// comparison, cases whose §7 answers differ, compared cases whose slots agree
-/// and whose items do not (gap 2007), and the two clock-based work-row
-/// counts)`, then W-30's four §7-row counters: rows compared, rows whose
-/// capacity (`avail`) differs and whose `until` is TODAY (parity **P41**), the
-/// same with `until` beyond today (parity **P1**), rows an id could not key
-/// because it named two rows on one side, and the days on which §7's whole
-/// answer agreed so that step 5's assignment could be ASSERTED.
-///
-/// **W-31 adds four**: the days on which the FORK placed a §8.2 step-2 routine
-/// row (the population the old exemption removed from the assigned-row
-/// comparison, kept as a counter so a run that stopped drawing routines is
-/// visible), the step-2 routine rows COMPARED, and the two candidate-set
-/// counters README gap **2222** is about — fork-assigned row ids the kernel was
-/// sent no candidate for, and fork-assigned row ids the kernel returned no §7
-/// grant for.
-static PLAN_CENSUS: Mutex<[u64; 44]> = Mutex::new([0; 44]);
-
-/// **The `SegKind` words this run actually compared** — README gap **2227**.
-///
-/// `planner::kind_label` and `PlanWire.kindName` are two spellings of one table
-/// (the kernel's carries an eleventh arm, `ghost`, which the fork keeps as a
-/// `SegFlags` bit). `kernel_row_cells.rs`'s
-/// `the_kernel_and_the_fork_agree_on_every_kind_of_row` sweeps all ten words
-/// through the kernel's **reader** (`EmitWire.readKind`) and compares nine
-/// rendered cells, so the reader is pinned. The **writer** was not: this arm
-/// read `s["kind"]` against one string literal, `"routine"`, and against nothing
-/// else in the file. Here the kernel's own word for a row is compared to
-/// `kind_label`'s for the fork row at the same minutes carrying the same item.
-///
-/// **The table is never spelled here.** The words come out of `kind_label` on
-/// one side and out of the kernel on the other; a third copy in this file would
-/// be the very defect the comparison is for (AGENTS §5.3). Coverage is therefore
-/// a SET that grows, not a checklist, and the floor is on its size.
-static KIND_WORDS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 /// **A configured double as the exact decimal pair the wire carries** (D17).
 ///
@@ -1338,7 +684,7 @@ impl World {
         // the kernel's stable sort by due date serves a date's deadlines in the
         // fork's order.  One spelling of it here since W-36: `send_order`, which
         // D60's comparand reads too (the kernel's request position).
-        let order = send_order(&cands);
+        let order = planreq::send_order(&cands);
         order
             .iter()
             .map(|&i| {
@@ -1511,6 +857,651 @@ fn kernel_plan(req: &Value) -> Result<Value, String> {
     p["__grants"] = resp["ok"]["lookahead"]["grants"].clone();
     Ok(p)
 }
+
+
+/// **§8.2 step 2's ORDERING half, drawn** — README gap **2226**.
+///
+/// The fuzz above cannot reach this case: `ROUTINES`' first five have
+/// pairwise-disjoint placeable windows, so the sort `collect_routines` and
+/// `Planner.sortRoutines` both perform — mandatory first, then by the moment the
+/// window closes, then by id — permutes a list whose placement does not depend
+/// on its order. An auditor reversed it at W-31 and **no row of any case moved**
+/// (W-31's plant 3).
+///
+/// Here two mandatory instances contend for one position. `teatime` is a
+/// 60-minute job in a 60-minute window, so it has exactly one feasible start;
+/// `lunch` is a 30-minute job in a two-hour window that overlaps it. Under the
+/// sort the tightest window claims first and **both** are placed, back to back.
+/// Under any other order — by id (`lunch` < `teatime`), by the window's OPEN
+/// (11:00 < 11:30 is the same order, but reversed it is not), or reversed —
+/// `lunch` takes 11:30 and `teatime` never fits: step 2 defers it, and step 6
+/// cannot repair it either, because its window holds no free hour and no
+/// assigned slot an hour long inside it to displace. So **asserting the two rows
+/// asserts the order**, without a second spelling of the comparator here.
+///
+/// The fork's half — the two rows compared to the fork ranked as the kernel
+/// ranked it, gap 2224's comparand — is
+/// `two_routines_contend_for_one_position_on_the_fork`, in the region (W-37
+/// track H): this half reads the kernel alone and outlives R3.
+#[test]
+fn two_routines_contend_for_one_position() {
+    let w = build(&contending_routines());
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the day");
+    let krout = kernel_routine_rows(&plan);
+    let day = date();
+    let tz = w.cfg.tz;
+    let sec = |h: u32, m: u32| {
+        rowwire::kernel_sec(local_dt(tz, day, NaiveTime::from_hms_opt(h, m, 0).expect("time")))
+    };
+    // **THE PLACEMENT IS THE ORDER.** `teatime` first because its window closes
+    // first, then `lunch` in the next free minute of its own window.
+    assert_eq!(
+        krout,
+        vec![
+            (sec(11, 0), sec(12, 0), "teatime".to_string()),
+            (sec(12, 0), sec(12, 30), "lunch".to_string()),
+        ],
+        "§8.2 step 2 placed the contending routines in the wrong order or dropped one"
+    );
+}
+
+/// The day of [`two_routines_contend_for_one_position`]: one item, and
+/// `lunch` (bit 0) and `teatime` (bit 5) and nothing else.
+fn contending_routines() -> Case {
+    Case {
+        items: vec![Spec {
+            ci: 0, k: 1, est_b: 2, small: None, due_in: Some(0), dep: None,
+            loc_home: false, atomic: false, parent: None, waiting: false, hot: false,
+            floor: None,
+        }],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 1 | 32,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    }
+}
+
+/// The kernel's §8.2 step-2 rows `(start, stop, item)`, in timeline order.
+fn kernel_routine_rows(plan: &Value) -> Vec<(i64, i64, String)> {
+    plan["segments"]
+        .as_array().map(Vec::as_slice).unwrap_or_default().iter()
+        .filter(|s| s["kind"] == "routine")
+        .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
+                  s["item"].as_str().unwrap_or_default().to_string()))
+        .collect()
+}
+
+
+/// **P45's rule, as a checker over the kernel's answer**: the running break drawn at `t` for
+/// `planned` minutes is exactly one Break row `[max(t, day start), max(min(t + planned, day end),
+/// now))`, open exactly when it has overrun, carrying its place; and no row §8.2 PLACES from `now`
+/// on — a Block, Batch, Routine, Optional or Rest — overlaps it.  `Err` names what failed, so the
+/// perturbation test below can show the checker bites.
+fn w35_check_break(
+    plan: &Value,
+    t: i64,
+    planned_min: i64,
+    place: &str,
+    now_sec: i64,
+    day_start: i64,
+    day_end: i64,
+) -> Result<(i64, i64, bool), String> {
+    let segs = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
+    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
+    // The running break is the one Break row that starts before its end: since W-37 (README gap
+    // 551 closed, track R) the kernel also draws the cut's kept breaks, which start after it.
+    let brks: Vec<&Value> = segs
+        .iter()
+        .filter(|s| s["kind"] == "break" && s["start"].as_i64().is_some_and(|a| a < hi))
+        .collect();
+    if brks.len() != 1 {
+        return Err(format!("{} Break rows before {hi}, want the running break's one", brks.len()));
+    }
+    let b = brks[0];
+    let open = t + 60 * planned_min <= now_sec;
+    let got = (b["start"].as_i64().unwrap_or(-1), b["stop"].as_i64().unwrap_or(-1));
+    if got != (lo, hi) {
+        return Err(format!("the Break row is {got:?}, the rule says {:?}", (lo, hi)));
+    }
+    if b["flags"]["open"].as_bool() != Some(open) {
+        return Err(format!("the Break row's `open` is {}, the rule says {open}", b["flags"]["open"]));
+    }
+    if b["note"]["note"] != "breakWhere" || b["note"]["text"] != place {
+        return Err(format!("the Break row's note is {}, want breakWhere {place}", b["note"]));
+    }
+    for s in segs {
+        let k = s["kind"].as_str().unwrap_or_default();
+        let (a, z) = (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1));
+        let placed = matches!(k, "block" | "batch" | "routine" | "optional" | "rest");
+        if placed && a >= now_sec && a < hi && lo < z {
+            return Err(format!("a {k} row [{a}, {z}) is scheduled over the break [{lo}, {hi})"));
+        }
+    }
+    Ok((lo, hi, open))
+}
+
+
+/// **The P45 checker bites** — a perturbation of the kernel's own answer, three ways: the Break
+/// row removed, moved by a minute, and a Rest row slid under it.  A checker that passed any of
+/// them would be asserting nothing on the generated days above.
+#[test]
+fn the_break_checker_fails_on_a_perturbed_answer() {
+    let case = Case {
+        items: vec![],
+        walls: vec![],
+        now_idx: 2,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let mut w = build(&case);
+    let tz = w.cfg.tz;
+    let now_sec = rowwire::kernel_sec(w.now);
+    let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
+    let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+    let t = w.now - Duration::minutes(5);
+    w.state.break_ = Some(tm_core::store::BreakState {
+        started: Some(t.time()),
+        planned_min: 20,
+        place: Some("walk".to_string()),
+    });
+    let req = w.plan_request();
+    let plan = kernel_plan(&req).expect("the kernel plans the break day");
+    let check = |p: &Value| {
+        w35_check_break(p, rowwire::kernel_sec(t), 20, "walk", now_sec, day_start, day_end)
+    };
+    let (lo, hi, open) = check(&plan).expect("the kernel's own answer passes");
+    assert_eq!((lo, hi, open), (rowwire::kernel_sec(t), rowwire::kernel_sec(t) + 20 * 60, false));
+    // 1. the row removed
+    let mut gone = plan.clone();
+    gone["segments"] = Value::Array(
+        plan["segments"].as_array().expect("segments").iter()
+            .filter(|s| s["kind"] != "break").cloned().collect(),
+    );
+    assert!(check(&gone).is_err(), "a day with no Break row passed the P45 checker");
+    // 2. the row moved by a minute
+    let mut moved = plan.clone();
+    for s in moved["segments"].as_array_mut().expect("segments") {
+        if s["kind"] == "break" {
+            s["stop"] = json!(s["stop"].as_i64().unwrap_or(0) + 60);
+        }
+    }
+    assert!(check(&moved).is_err(), "a Break row a minute long passed the P45 checker");
+    // 3. a Rest row slid under the break
+    let mut over = plan.clone();
+    over["segments"].as_array_mut().expect("segments").push(json!({
+        "start": now_sec, "stop": now_sec + 600, "kind": "rest", "batch": [], "energy": 3,
+        "item": null, "inst": null, "flags": {}, "planned": null, "mult": null, "note": null}));
+    assert!(check(&over).is_err(), "a Rest row scheduled over the break passed the P45 checker");
+}
+
+
+/// **`send_order` is the fork's `priority::compute` sort** — `(no due last, due, own_order,
+/// index)`, the kernel's REQUEST POSITION, which `Look.sortDueIx` breaks a date's ties by and
+/// D60's key reads. Nothing else in this file can tell it from the collection order: the kernel
+/// and the D60 comparand both read it, so W-36's plant that made it the identity SURVIVED every
+/// arm. It is pinned here on a day whose collection order is not the served order: an undated
+/// line, one due tomorrow, one due today, in that order in the file.
+#[test]
+fn send_order_is_the_forks_compute_order() {
+    let item = |due_in: Option<u8>| Spec {
+        ci: 2, k: 3, est_b: 1, small: None, due_in, dep: None, loc_home: false,
+        atomic: false, parent: None, waiting: false, hot: false, floor: None,
+    };
+    let case = Case {
+        items: vec![item(None), item(Some(1)), item(Some(0))],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    };
+    let w = build(&case);
+    let cvec = w.candidates();
+    let file: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
+    let sent: Vec<String> = planreq::send_order(&cvec).iter().map(|&i| cvec[i].id.to_string()).collect();
+    assert_eq!(file.len(), 3, "three candidates: {file:?}");
+    assert_eq!(sent, vec![file[2].clone(), file[1].clone(), file[0].clone()],
+        "due today, then due tomorrow, then the undated line: {file:?}");
+}
+
+/// **The reversed day** (README gap 2801): two IMPOSSIBLE items of one `ci`, the one due
+/// tomorrow on the first line and the one due today on the second — so D60's order and the
+/// file's disagree.
+fn reversed_day() -> Case {
+    let item = |due: u8| Spec {
+        ci: 2, k: 3, est_b: 60, small: None, due_in: Some(due), dep: None, loc_home: false,
+        atomic: false, parent: None, waiting: false, hot: false, floor: None,
+    };
+    Case {
+        items: vec![item(1), item(0)],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    }
+}
+
+/// **§8.3's monotone rank reads the planner's OWN order** (the owner's D63; W-37 track H): on
+/// the reversed day the kernel serves the item due today, on the second line, and leaves the
+/// first — `check_day_invariants` passes over it with the kernel's order, and the same day read
+/// with the FILE's order as "the higher-ranked of two" (the fork's reading, which D63 replaced
+/// for a planner that orders by D60) fails the monotone-rank check by name. So the rank view is
+/// load-bearing, and the kernel arm's pass is not a pass because the check was blind to it.
+#[test]
+fn the_kernels_monotone_rank_is_its_own_order() {
+    /// The kernel's day, read in the file's order.
+    struct FileOrder;
+    impl Planner for FileOrder {
+        fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
+            Kernel.day(w, state, now)
+        }
+        fn rank_view(&self, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+            cands.to_vec()
+        }
+        fn name(&self) -> &'static str {
+            "the kernel read in file order"
+        }
+    }
+    let case = reversed_day();
+    let w = build(&case);
+    check_day_invariants(&Kernel, &case, &w).unwrap_or_else(|e| panic!("the kernel's own order: {e}"));
+    let e = check_day_invariants(&FileOrder, &case, &w).expect_err("the file's order passed the reversed day");
+    assert!(e.to_string().contains("(later line) is assigned"), "{e}");
+}
+
+/// **README gap 3280, CLOSED at W-37's land step, and pinned**: at the minute a routine's §8.2
+/// step-2 window closes, `planwire::routine_instances` used to send it an EMPTY window and the
+/// kernel refused the whole planner section, where the fork plans the day. Track R's filter (gap
+/// 3201) sends no instance with nothing left of its span, so the kernel plans that minute: on a
+/// late day with `lunch` (11:30-13:30) it plans 13:29, 13:30 and 13:31, and the case is real —
+/// [`routine_window_ends_at`] names 13:30 and only 13:30.
+#[test]
+fn a_routine_window_s_close_is_planned_by_the_kernel() {
+    let mut case = contending_routines();
+    case.routines = 1;
+    case.late = true;
+    case.now_idx = 1;
+    let w = build(&case);
+    for (h, m, closes) in [(13, 29, false), (13, 30, true), (13, 31, false)] {
+        let t = at(w.cfg.tz, h, m);
+        assert_eq!(routine_window_ends_at(&w, &w.state, t), closes, "a window closes at {h}:{m:02}: {closes}");
+        if let Err(e) = Kernel.day(&w, &w.state, t) {
+            panic!("the kernel refused {h}:{m:02} (README gap 3280): {e}");
+        }
+    }
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3084, 3080, 2722)
+//
+// **Everything below reaches the fork's planner, and R3 deletes it whole** (W-37 track H,
+// README gap 3084). Until W-37 these arms sat outside any region — 34 code lines naming
+// `planner::` — so R3 could not delete them mechanically and the region guard carried a dated
+// exemption for this file. Each is kept here rather than deleted because it compares the kernel
+// with the LIVE fork on every generated case, which the frozen comparand keyed by class
+// (`planner_classes.rs`) does on its 45 lines: what each arm compares that the frozen lines
+// cover by value, and what they do not, is README's W-37 track H table — the part they do not
+// cover is lost at R3 and is named there.
+use std::collections::BTreeMap;
+
+use chrono::NaiveDate;
+use tm_core::capacity::{Exact, CAP_DEN};
+use tm_core::planner::{self, PlanInput};
+use tm_core::priority::PrioClass;
+
+/// **The fork's planner, with its OWN §7 pass** — the day
+/// `day_plan_satisfies_every_invariant` asked §8.3's invariants of until W-37. No shipped
+/// path plans it (D53: the binary hands the fork the kernel's ranking), so it stays beside the
+/// kernel's only until R3; its §7.4 order is the fork's own `(root_order, own_order)`.
+struct Fork;
+
+impl Planner for Fork {
+    fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
+        Ok(planner::plan(&w.input(state, now)))
+    }
+    fn rank_view(&self, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+        cands.to_vec()
+    }
+    fn name(&self) -> &'static str {
+        "the fork"
+    }
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig { cases: 256, max_shrink_iters: 2_000, ..ProptestConfig::default() })]
+
+    /// **§8.3's invariants of the fork's own-§7 day** — the arm as it stood until W-37,
+    /// kept while the fork is here.
+    #[test]
+    fn day_plan_satisfies_every_invariant_on_the_fork(case in case_strategy()) {
+        let w = build(&case);
+        check_day_invariants(&Fork, &case, &w)?;
+    }
+}
+
+impl World {
+    fn input<'a>(&'a self, state: &'a RuntimeState, now: DateTime<Tz>) -> PlanInput<'a> {
+        PlanInput::new(
+            &self.tree,
+            &self.replay,
+            &self.cfg,
+            &self.model,
+            state,
+            now,
+        )
+    }
+}
+
+/// **The cells the kernel is allowed to disagree with the fork about on a
+/// GENERATED day, with the gap that records why.**
+///
+/// The same two holes `tm/tests/kernel_row_cells.rs` declares on its fixture
+/// day, and no others — a third name appearing here would be a finding, not a
+/// widening:
+///
+/// * **`note`** (gap **1102**, and the `note: null` decision in `seg_json`) —
+///   `SegFlags::note` is a `String` the fork's planner wrote as prose and
+///   `Planner.Note` is eleven names with their arguments, so a host whose
+///   planner produced text has nothing to send. The kernel **derives** the
+///   column and cannot derive the `⚠` branch, which needs the fork's
+///   `effective_due`.
+/// * **`est`** (gap **1101**) — the fork's `est_cell` reads `est_original`
+///   first and this kernel has one estimate view, `Core.est`, which is `est:`
+///   then the leading estimate. A line carrying both makes the two readers pick
+///   different numbers.
+///
+/// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
+/// and `batchNames` — is compared **exactly**, on every row of every case.
+///
+/// **And `parent` is now compared at a value** (W-27). It was in this list
+/// before, and the list was true and empty of content for that one cell: the
+/// generated corpus had no `@` token, so both readers wrote `""` on every row
+/// and the cell asserted nothing. [`CENSUS`]'s fifth counter and the
+/// `parents > 0` assertion are what make the membership load-bearing.
+const CELL_HOLES: [&str; 2] = ["note", "est"];
+
+/// `(rows compared, cases compared, note-hole firings, est-hole firings,
+/// rows whose `parent` cell was NON-EMPTY)` — what
+/// [`the_kernel_reads_every_day_the_fork_planned`] actually looked at.
+///
+/// **The fifth number is W-27's** and it is the one that makes the `parent`
+/// comparison mean something. Until this run the generated corpus carried no
+/// `@` token, so every row's `parent` cell was `""` on both sides and the
+/// comparison could not fail whatever the kernel wrote; the arm is now asserted
+/// to have seen the cell at a real value.
+///
+/// A proptest case body returns only a verdict, so the census is a side
+/// channel — but it is read **inside the arm that fills it**, on every case,
+/// and not by a separate `#[test]`. A separate test would race the arm in
+/// cargo's default parallel run and pass by seeing nothing, which is the very
+/// defect it exists to catch: "every cell of every row agreed" is a sentence a
+/// fuzz comparing **no** rows also produces — AGENTS §9.2's "a check no input
+/// can fail", which this campaign has met at five different levels.
+static CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+
+// ===========================================================================
+// STEP R2 (stage 6 W-25): the generated days go through the KERNEL.
+//
+// §14.4's R2 says this file must exercise "the kernel's `dayPlan` through the
+// FFI".  **When this arm was written at W-25 it could not**: `dayPlan` was not
+// reachable through the FFI, because the `plan` REQUEST section carried the
+// day's rows and not the planner's inputs, and `EmitWire.lean`'s own header
+// assigned that section to step R3 (README gap **1431**, which priced what R3
+// then needed, field by field).
+//
+// **THAT IS NO LONGER TRUE, AND THIS PARAGRAPH IS THE LAND STEP'S.**  D48 moved
+// the wire into R2, W-27 landed its REQUEST half and W-28 its RESPONSE half, so
+// `Planner.dayPlan` IS reachable through the FFI now and the section at the
+// **THE KERNEL PLANS THE DAY** banner below exercises it.  This arm is kept
+// because it is a *different* claim, not a superseded one: it sends the FORK's
+// day in and checks the kernel's RENDERING of it, where the arm below asks the
+// kernel to PLAN.  Read the two banners together; neither is the whole.
+//
+// What this arm covers, said plainly so the remainder is not mistaken for the
+// whole: every day this file's generators produce — 40 random items, five routines, calendar walls, a random log, a
+// running block, an open interruption, a late day — is handed to the kernel's
+// `plan` section, and the kernel's nine cells for every row are compared
+// against `emit::row_cells`'s.  Before W-25 that comparison existed on ONE
+// hand-built fixture day (`tm/tests/kernel_row_cells.rs`); this makes it
+// thousands of generated ones, and the two files share the encoder.
+//
+// It is NOT the tail-drop or stability half of R2: those are about a plan the
+// kernel made.  The kernel DOES make one now (the banner below), but only §8.2
+// steps 1 and 2 of it, so those two halves are still unclaimed — README gap
+// **1670**, and the land step re-read this sentence rather than leaving it to
+// read as though nothing had changed.
+// ===========================================================================
+
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        // Each case is an FFI call over a whole generated tree, so the count is
+        // its own: `TM_PROPTEST_CASES` raises it and W-25's README block records
+        // what it was run at (D46 — one run of a randomised test is a weak
+        // claim).
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel reads every day the fork planned, and writes the fork's
+    /// cells for it.**
+    ///
+    /// Two claims, and the first is the one nothing else makes:
+    ///
+    /// 1. **No day the fork's planner produces is refused by the wire.** Every
+    ///    `R10` bound the `plan` section carries — `Planner.maxCands` on the
+    ///    segment list, `CapWire.maxCandId` on every id, `Look.maxPlanMinutes`
+    ///    on `planned`, `Fin 6` on the energy, `maxBatch` on a batch — is a
+    ///    number a real day could exceed, and a bound that is too tight refuses
+    ///    a legitimate plan. `kernel_rows` returns the refusal instead of
+    ///    panicking so this can be asserted rather than assumed.
+    /// 2. **Cell for cell, row for row**, against `emit::row_cells`, with
+    ///    [`CELL_HOLES`]'s two declared exceptions and no others. The kernel is
+    ///    told no title, no `ci`, no estimate and no parent: those four come
+    ///    from its own parse of the same generated bytes.
+    #[test]
+    fn the_kernel_reads_every_day_the_fork_planned(case in case_strategy()) {
+        let w = build(&case);
+        let day = planner::plan(&w.input(&w.state, w.now));
+        let lean = match rowwire::kernel_rows(w.docs_json(), &day, &w.cfg) {
+            Ok(rows) => rows,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the wire refused a day the fork planned: {head}");
+                unreachable!()
+            }
+        };
+        let fork = rowwire::fork_cells(&day, &w.tree, &w.cfg);
+        prop_assert_eq!(
+            lean.len(), fork.len(),
+            "the kernel answered {} rows for {} segments (`Emit.rowsOf_length`'s wire half)",
+            lean.len(), fork.len()
+        );
+        let mut seen = [0u64; 5];
+        seen[0] = fork.len() as u64;
+        seen[1] = 1;
+        for (i, (f, l)) in fork.iter().zip(&lean).enumerate() {
+            // **The `parent` cell, counted where it is not the default** (W-27).
+            // Counted off the FORK's cell: the kernel's is the value under
+            // test, and a census read off the value under test would report
+            // whatever a broken kernel wrote.
+            if !f.parent.is_empty() {
+                seen[4] += 1;
+            }
+            for (cell, forked, kernelled) in rowwire::differences(f, l) {
+                prop_assert!(
+                    CELL_HOLES.contains(&cell),
+                    "row {i}: the two readers disagree on an UNDECLARED cell {cell:?} \
+                     — fork {forked:?}, kernel {kernelled:?}"
+                );
+                if cell == "note" {
+                    seen[2] += 1;
+                } else {
+                    seen[3] += 1;
+                }
+            }
+        }
+        // **The fuzz compared something, asserted inside the fuzz.**
+        //
+        // A proptest arm runs its cases in sequence, so a cumulative claim here
+        // is deterministic — where a separate `#[test]` reading the same census
+        // would race the arm that fills it and pass by seeing nothing. "Every
+        // cell agreed" is a sentence a fuzz comparing NO rows also produces
+        // (AGENTS §9.2's "a check no input can fail"), and a declared hole that
+        // has stopped firing is a claim that has changed (gaps 1101, 1102).
+        let [rows, cases, notes, ests, parents] = {
+            let mut c = CENSUS.lock().expect("census");
+            for (a, b) in c.iter_mut().zip(seen) {
+                *a += b;
+            }
+            *c
+        };
+        prop_assert!(rows >= 4 * cases, "only {rows} rows over {cases} cases");
+        if cases >= 32 {
+            prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
+            prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
+            // **The `parent` cell was compared at a real value** (W-27). Without
+            // this the cell is in `differences`' nine and still asserts nothing:
+            // `"" == ""` on every row of every case is the shape AGENTS §9.2
+            // calls a check no input can fail, and an auditor's perturbation of
+            // `Emit.parentCell` passed through it. A generator that stops
+            // drawing parents now fails here instead of going quietly green.
+            prop_assert!(
+                parents > 0,
+                "no row's `parent` cell was non-empty in {cases} cases — the `parent` \
+                 comparison is vacuous (gap 1437's neighbour)"
+            );
+        }
+        // **THE CENSUS IS PRINTED, so the README's figure can be RE-DERIVED.**
+        //
+        // It was write-only: asserted on and never shown, while the W-25 block
+        // quoted "1,035 cases, 11,611 rows compared, note-hole 2,311, est-hole
+        // 571" as a MEASUREMENT that no command in the committed tree produced
+        // — it can only have come from a temporary print. AGENTS §5.11's own
+        // rule is one measurement per number, from the committed harness.
+        //
+        // It prints on EVERY case, to stderr, and that is deliberate: this is
+        // the one place the census can be read without racing the arm that
+        // fills it (the sibling file's
+        // `zz_the_declared_refusals_are_all_reachable` shape needs `--test-threads=1`, and this
+        // arm's own comment above says why a separate `#[test]` would pass by
+        // seeing nothing). Every line is a running prefix and the LAST is the
+        // total. libtest captures it, so a green run is silent; read it with
+        //
+        //     cargo test --test planner_invariants -- --nocapture \
+        //       the_kernel_reads_every_day_the_fork_planned
+        eprintln!(
+            "planner_invariants census: {cases} cases, {rows} rows compared, \
+             note-hole {notes}, est-hole {ests}, parent-cells {parents}"
+        );
+    }
+}
+
+// ===========================================================================
+// **THE KERNEL PLANS THE DAY** — stage 6 W-28, step R2's RESPONSE half (D48).
+//
+// The arm above sends the FORK's day through the `plan` section and compares
+// the kernel's rendering of it. This one asks the kernel to **plan**, through
+// `PlanWire.callExport`, and compares two planners.
+//
+// **What is compared, and why not everything, measured rather than assumed.**
+// `Planner.dayRows` is §8.2 steps 1 and 2 and nothing else; steps 3 to 7 are
+// P3..P7 and unwritten, and README gap **1670** records that the kernel's day
+// therefore holds no step-5 assignment at all. Asserting segment-for-segment
+// equality would be asserting something untrue of a half-built planner, and
+// narrowing the generator until it came out true is what **D46** forbids. So
+// this compares the answers the kernel is *complete* for:
+//
+//   * `plan.day`, the date it planned;
+//   * `plan.window`, §8.1's working window — `Look.day0Window` on one side and
+//     `Planner::window_and_budget` on the other, two readers README gap **320**
+//     says can disagree, so a disagreement here is a **finding owed a parity
+//     number** and not a hole to widen;
+//   * `plan.budgetBlocks`;
+//   * and **the walls**, the one row class step 1 completes, which §8.3's own
+//     "walls are never moved" invariant is about — compared to the minute, both
+//     ways, so a wall the kernel invents fails as loudly as one it drops.
+//
+// Everything else the kernel places (the routine rows, the replayed past, the
+// rest/wind-down/sleep filler) is COUNTED and reported and asserted on only
+// through the refusal claim, because the fork's day for those rows is the
+// output of steps this kernel has not written.
+//
+// **The `routines` key CARRIES THE FORK'S OWN INSTANCES SINCE W-31**, and the
+// sentence that stood here — "this arm has no honest collector" — was false.
+// `Planner::collect_routines` reads the candidate list and the item's `shape`
+// and nothing else, and both were already in this arm's hands; see
+// [`World::routine_items`] (a call of `tm_core::planwire::routine_instances` since the W-35
+// repair, README gap 2922) and README gap **2220**. F2's recurrence expansion
+// is still not built and D27 is still not done early: the expansion happened in
+// `priority::collect_candidates` before the list existed. So the kernel places
+// §8.2 step 2's rows here now, they are compared to the second, both ways, and
+// the assigned-row comparison no longer exempts a day for holding one.
+// ===========================================================================
+
+
+/// `(cases, walls compared, kernel rows seen, window disagreements, budget
+/// disagreements, assigned rows compared, cases EXEMPT from the assigned
+/// comparison, cases whose §7 answers differ, compared cases whose slots agree
+/// and whose items do not (gap 2007), and the two clock-based work-row
+/// counts)`, then W-30's four §7-row counters: rows compared, rows whose
+/// capacity (`avail`) differs and whose `until` is TODAY (parity **P41**), the
+/// same with `until` beyond today (parity **P1**), rows an id could not key
+/// because it named two rows on one side, and the days on which §7's whole
+/// answer agreed so that step 5's assignment could be ASSERTED.
+///
+/// **W-31 adds four**: the days on which the FORK placed a §8.2 step-2 routine
+/// row (the population the old exemption removed from the assigned-row
+/// comparison, kept as a counter so a run that stopped drawing routines is
+/// visible), the step-2 routine rows COMPARED, and the two candidate-set
+/// counters README gap **2222** is about — fork-assigned row ids the kernel was
+/// sent no candidate for, and fork-assigned row ids the kernel returned no §7
+/// grant for.
+static PLAN_CENSUS: Mutex<[u64; 44]> = Mutex::new([0; 44]);
+
+/// **The `SegKind` words this run actually compared** — README gap **2227**.
+///
+/// `planner::kind_label` and `PlanWire.kindName` are two spellings of one table
+/// (the kernel's carries an eleventh arm, `ghost`, which the fork keeps as a
+/// `SegFlags` bit). `kernel_row_cells.rs`'s
+/// `the_kernel_and_the_fork_agree_on_every_kind_of_row` sweeps all ten words
+/// through the kernel's **reader** (`EmitWire.readKind`) and compares nine
+/// rendered cells, so the reader is pinned. The **writer** was not: this arm
+/// read `s["kind"]` against one string literal, `"routine"`, and against nothing
+/// else in the file. Here the kernel's own word for a row is compared to
+/// `kind_label`'s for the fork row at the same minutes carrying the same item.
+///
+/// **The table is never spelled here.** The words come out of `kind_label` on
+/// one side and out of the kernel on the other; a third copy in this file would
+/// be the very defect the comparison is for (AGENTS §5.3). Coverage is therefore
+/// a SET that grows, not a checklist, and the floor is on its size.
+static KIND_WORDS: Mutex<BTreeSet<String>> = Mutex::new(BTreeSet::new());
 
 /// `(start, stop)` of every Wall row of a kernel day, in the day's order.
 fn kernel_walls(plan: &Value) -> Vec<(i64, i64)> {
@@ -2617,73 +2608,16 @@ proptest! {
     }
 }
 
-/// **§8.2 step 2's ORDERING half, drawn** — README gap **2226**.
-///
-/// The fuzz above cannot reach this case: `ROUTINES`' first five have
-/// pairwise-disjoint placeable windows, so the sort `collect_routines` and
-/// `Planner.sortRoutines` both perform — mandatory first, then by the moment the
-/// window closes, then by id — permutes a list whose placement does not depend
-/// on its order. An auditor reversed it at W-31 and **no row of any case moved**
-/// (W-31's plant 3).
-///
-/// Here two mandatory instances contend for one position. `teatime` is a
-/// 60-minute job in a 60-minute window, so it has exactly one feasible start;
-/// `lunch` is a 30-minute job in a two-hour window that overlaps it. Under the
-/// sort the tightest window claims first and **both** are placed, back to back.
-/// Under any other order — by id (`lunch` < `teatime`), by the window's OPEN
-/// (11:00 < 11:30 is the same order, but reversed it is not), or reversed —
-/// `lunch` takes 11:30 and `teatime` never fits: step 2 defers it, and step 6
-/// cannot repair it either, because its window holds no free hour and no
-/// assigned slot an hour long inside it to displace. So **asserting the two rows
-/// asserts the order**, without a second spelling of the comparator here.
-///
-/// The two rows are compared to the fork's, ranked as the kernel ranked it —
-/// the comparand W-32 gave the fuzz's routine rows (gap 2224).
+/// **The fork's half of [`two_routines_contend_for_one_position`]**: asked
+/// the question the kernel was asked — the kernel's own §7 answer handed to
+/// `with_ranking`, gap 2224's comparand — the fork places the two contending
+/// routines row for row as the kernel does. Split out at W-37 track H so the
+/// kernel's half outlives R3; this one leaves with the fork.
 #[test]
-fn two_routines_contend_for_one_position() {
-    let case = Case {
-        items: vec![Spec {
-            ci: 0, k: 1, est_b: 2, small: None, due_in: Some(0), dep: None,
-            loc_home: false, atomic: false, parent: None, waiting: false, hot: false,
-            floor: None,
-        }],
-        walls: vec![],
-        now_idx: 0,
-        done_blocks: 0,
-        report: None,
-        // `lunch` (bit 0) and `teatime` (bit 5), and nothing else.
-        routines: 1 | 32,
-        optionals: false,
-        home: false,
-        active: None,
-        interrupt: None,
-        late: false,
-    };
-    let w = build(&case);
-    let req = w.plan_request();
-    let plan = kernel_plan(&req).expect("the kernel plans the day");
-    let krout: Vec<(i64, i64, String)> = plan["segments"]
-        .as_array().map(Vec::as_slice).unwrap_or_default().iter()
-        .filter(|s| s["kind"] == "routine")
-        .map(|s| (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1),
-                  s["item"].as_str().unwrap_or_default().to_string()))
-        .collect();
-    let day = date();
-    let tz = w.cfg.tz;
-    let sec = |h: u32, m: u32| {
-        rowwire::kernel_sec(local_dt(tz, day, NaiveTime::from_hms_opt(h, m, 0).expect("time")))
-    };
-    // **THE PLACEMENT IS THE ORDER.** `teatime` first because its window closes
-    // first, then `lunch` in the next free minute of its own window.
-    assert_eq!(
-        krout,
-        vec![
-            (sec(11, 0), sec(12, 0), "teatime".to_string()),
-            (sec(12, 0), sec(12, 30), "lunch".to_string()),
-        ],
-        "§8.2 step 2 placed the contending routines in the wrong order or dropped one"
-    );
-    // And the fork, asked the question the kernel was asked, agrees row for row.
+fn two_routines_contend_for_one_position_on_the_fork() {
+    let w = build(&contending_routines());
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the day");
+    let krout = kernel_routine_rows(&plan);
     let cvec = w.candidates();
     let kprios = kernel_prios(&plan, &cvec).expect("the kernel answers §7 for this day");
     let fork = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &kprios));
@@ -2841,7 +2775,7 @@ proptest! {
             // W-35 (D57): the what-if days read the kernel's P46/P47 rule as the base does.
             let rt = w35_p46_state(&w, &rt);
             // W-36 (D60, parity P51): the what-if days run D60's key as the base does.
-            let dvec = w36_d60_cands(&cvec, &ps);
+            let dvec = forkclass::d60_cands(&cvec, &ps);
             let mut alt_est = planner::plan(&w.input(&rt, w.now).with_ranking(&dvec, &ps));
             let mut alt_full = planner::plan(
                 &w.input(&rt, w.now).with_ranking(&dvec, &ps).with_overrides(&ov),
@@ -2952,6 +2886,7 @@ proptest! {
 // (D46); the arms above are untouched.
 // ===========================================================================
 
+
 /// The census: cases; days with no kernel §7 answer; days compared with the
 /// kernel-ranked fork; of those, equal hashes; equal rows; rows the emitter
 /// digested; drawn multipliers; fork open-block rows the kernel's day holds
@@ -2961,7 +2896,48 @@ proptest! {
 /// compared whole on a day carrying an open-block row; days with a drawn break;
 /// days whose rest debt was non-zero; kernel rows digested with a multiplier other
 /// than `1.0` (W-34 repair, README gap 2742 -- a DRAW is not a DIGEST).
-static HASH_CENSUS: Mutex<[u64; 18]> = Mutex::new([0; 18]);
+/// **W-37 track H adds one**: days whose rows agree and whose ORDER differs only as README
+/// gap 3281's declared class allows ([`order_differs_only_at_an_interruption`]).
+static HASH_CENSUS: Mutex<[u64; 19]> = Mutex::new([0; 19]);
+
+/// **README gap 3281, a DECLARED class** (W-37 track H): two days holding the same rows in a
+/// different ORDER, where every run of rows starting at one instant that the two order
+/// differently is an interruption's Lost row and Wall rows, and nothing else. The kernel draws
+/// the interruption's Lost row before a wall starting at the same minute; the fork orders the
+/// two as its `walls()` sorts every wall, by `(blocked_start, id)`, and an interruption that
+/// names the block it paused — `tm interrupt`'s shape, which the generator draws since W-37
+/// (owner D64(b)) — carries that block's id (`z…`), after a calendar wall's (`w…`). Until W-37
+/// the generator's interruption named no block (`""`, which sorts first) and the two agreed.
+/// The day's hash digests the order, so the two hashes differ; everything else agrees.
+fn order_differs_only_at_an_interruption(k: &[Segment], f: &[Segment]) -> bool {
+    if k.len() != f.len() {
+        return false;
+    }
+    let mut differs = false;
+    let mut i = 0;
+    while i < k.len() {
+        let start = k[i].start;
+        let j = (i..k.len()).find(|&j| k[j].start != start).unwrap_or(k.len());
+        if f[i..j].iter().any(|s| s.start != start) || f.get(j).is_some_and(|s| s.start == start) {
+            return false;
+        }
+        let kk: Vec<String> = k[i..j].iter().map(placement_key).collect();
+        let fk: Vec<String> = f[i..j].iter().map(placement_key).collect();
+        if kk != fk {
+            let (mut a, mut b) = (kk, fk);
+            a.sort();
+            b.sort();
+            let only = k[i..j].iter().all(|s| matches!(s.kind, SegKind::Lost | SegKind::Wall))
+                && k[i..j].iter().any(|s| matches!(s.kind, SegKind::Lost));
+            if a != b || !only {
+                return false;
+            }
+            differs = true;
+        }
+        i = j;
+    }
+    differs
+}
 
 /// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
 /// for the `inst` text a kernel row carries.
@@ -3101,34 +3077,12 @@ proptest! {
             }
         }
         let mut w = build(&case);
-        if let Some(m) = mult {
-            w.model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
-        }
+        w.set_multiplier(mult);
         let tz = w.cfg.tz;
-        // **A BREAK IN TODAY'S LOG** (W-34, README gap 2511): `log_text` writes none, so the
-        // fork's `rest_debt_min` was 0 on every generated day and a comparison of it would be
-        // `0` against `0`. The break is drawn — planned 5-30 minutes, taken 0-40, so it can run
-        // short, exact or long — right after the last `done` (or ten minutes after arrival), and
-        // only on a day with no running block and no interruption: a break inside either is §9's
-        // pause, a different event, and not what `rest_debt_min` is about. Both sides replay the
-        // same bytes: `w.log` is what the request carries and `w.replay` what the fork plans from.
-        let mut drew_break = false;
-        if let (Some((planned, actual)), None, None) = (brk, case.active, case.interrupt) {
-            let t = if case.done(tz) > 0 {
-                case.arrival(tz) + Duration::minutes(i64::from(case.done(tz)) * 60 - 5)
-            } else {
-                case.arrival(tz) + Duration::minutes(10)
-            };
-            if t + Duration::minutes(i64::from(actual)) < w.now {
-                let line = format!(
-                    "{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{planned},\"actual_min\":{actual}}}",
-                    t.to_rfc3339()
-                );
-                w.log = format!("{}{line}\n", w.log);
-                w.replay = chokepoint::replay_of_text(&w.log, tz);
-                drew_break = true;
-            }
-        }
+        // **A BREAK IN TODAY'S LOG** (W-34, README gap 2511) — planned 5-30 minutes, taken 0-40,
+        // so it can run short, exact or long; `plangen`'s `World::log_a_break` says where and why
+        // (one definition since W-37, shared with the class draw).
+        let drew_break = w.log_a_break(&case, brk);
         let req = w.plan_request();
         let plan = match kernel_plan(&req) {
             Ok(p) => p,
@@ -3156,17 +3110,16 @@ proptest! {
         let (mut compared, mut same, mut rows_agree, mut explained) = (0u64, 0u64, 0u64, 0u64);
         let (mut c554, mut c550, mut c551) = (0u64, 0u64, 0u64);
         let (mut set_aside, mut def_ids, mut rest_debt) = (0u64, 0u64, false);
+        let mut c3281 = 0u64;
         if let Some(d2) = day2.as_ref() {
             compared = 1;
             let fonly = rows_not_in(&d2.segments, &krows);
             let konly = rows_not_in(&krows, &d2.segments);
-            let mut twins: Vec<bool> = vec![false; konly.len()];
             // **GAP 554's CLASS IS GONE** (W-34's land step). Track D composed fork
             // `open_block_segment` into `Planner.dayRows`, and on the merged tree the
             // class counted ZERO rows; so a fork open-block row the kernel's day lacks is
-            // no longer explained by anything and FAILS below by name, like any other
-            // row outside the two classes that remain. `c554` now counts the fork's
-            // open-block rows the kernel's day HOLDS, so the census can show the case
+            // no longer explained by anything and FAILS below by name. `c554` counts the
+            // fork's open-block rows the kernel's day HOLDS, so the census can show the case
             // ran (`n554 > 0` is a floor).
             c554 = d2.segments.iter()
                 .filter(|s| s.flags.open && matches!(s.kind, SegKind::Block))
@@ -3174,37 +3127,29 @@ proptest! {
                 - fonly.iter()
                     .filter(|f| f.flags.open && matches!(f.kind, SegKind::Block))
                     .count() as u64;
+            // **GAPS 551 AND 550 ARE NO LONGER CLASSES EITHER** (W-37's land step, README gap
+            // 3206). Until W-37 a fork Break row from `now` (the cut's kept breaks, gap 551)
+            // and a fork current Block whose kernel twin differed only in its multiplier (gap
+            // 550) were passed over here; track R drew both, three runs counted each class
+            // ZERO, and so neither is explained by anything now: every row of either day must
+            // be a row of the other. `c551` and `c550` count the rows of the two kinds the
+            // kernel's day HOLDS — compared by value, as `c554` counts its own.
+            c551 = d2.segments.iter()
+                .filter(|s| matches!(s.kind, SegKind::Break) && s.start >= w.now)
+                .count() as u64;
+            c550 = d2.segments.iter()
+                .filter(|s| s.flags.current && matches!(s.kind, SegKind::Block) && s.flags.multiplier.is_some())
+                .count() as u64;
             for f in &fonly {
-                if matches!(f.kind, SegKind::Break) && f.start >= w.now {
-                    c551 += 1;
-                    continue;
-                }
-                if f.flags.current && matches!(f.kind, SegKind::Block)
-                    && f.flags.multiplier.is_some()
-                {
-                    let mut bare = (*f).clone();
-                    bare.flags = planner::SegFlags {
-                        planned_min: f.flags.planned_min,
-                        ..planner::SegFlags::default()
-                    };
-                    let key = placement_key(&bare);
-                    if let Some(i) = konly.iter().enumerate()
-                        .position(|(i, k)| !twins[i] && placement_key(k) == key)
-                    {
-                        twins[i] = true;
-                        c550 += 1;
-                        continue;
-                    }
-                }
                 prop_assert!(
                     false,
-                    "the fork's day holds a row the kernel's does not, and it is none of the \
-                     two classes the kernel is recorded as not porting: {}", placement_key(f)
+                    "the fork's day holds a row the kernel's does not (no class explains one \
+                     since W-37): {}", placement_key(f)
                 );
             }
-            for (i, k) in konly.iter().enumerate() {
+            for k in &konly {
                 prop_assert!(
-                    twins[i],
+                    false,
                     "the kernel's day holds a row the fork's does not: {}", placement_key(k)
                 );
             }
@@ -3238,11 +3183,16 @@ proptest! {
             rest_debt = d2.diagnostics.rest_debt_min > 0;
             if fonly.is_empty() && konly.is_empty() {
                 rows_agree = 1;
-                // **Rows that agree must hash alike — in the same ORDER.**
-                prop_assert_eq!(
-                    &khash, &d2.hash(),
-                    "the two days hold the same rows and hash differently: the order differs"
-                );
+                if khash != d2.hash() && order_differs_only_at_an_interruption(&krows, &d2.segments) {
+                    // README gap 3281's declared class, counted and bounded by its property.
+                    c3281 = 1;
+                } else {
+                    // **Rows that agree must hash alike — in the same ORDER.**
+                    prop_assert_eq!(
+                        &khash, &d2.hash(),
+                        "the two days hold the same rows and hash differently: the order differs"
+                    );
+                }
             } else {
                 explained = 1;
             }
@@ -3250,7 +3200,7 @@ proptest! {
         }
         let batches = krows.iter().filter(|s| matches!(s.kind, SegKind::Batch(_))).count() as u64;
         let [cases, noprio, cmp, eq, agree, digested, drawn, n554, n550, n551, nexpl, nbatch,
-             ndefdays, ndefids, naside, nbrk, nrest, nmult] = {
+             ndefdays, ndefids, naside, nbrk, nrest, nmult, n3281] = {
             let mut c = HASH_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += 1 - compared;
@@ -3273,6 +3223,7 @@ proptest! {
                 .iter()
                 .filter(|s| s.flags.multiplier.is_some_and(|m| m != 1.0))
                 .count() as u64;
+            c[18] += c3281;
             *c
         };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
@@ -3305,11 +3256,13 @@ proptest! {
              {cases} ({digested} kernel rows digested, {nbatch} of them batches, {drawn} \
              days at a drawn multiplier, {nmult} rows DIGESTED at a multiplier other than 1.0); the DAY compared with the kernel-ranked fork on \
              {cmp} ({noprio} with no kernel §7 answer): hashes EQUAL {eq}, rows agree {agree}, \
-             days explained by a recorded class {nexpl} — reservation multipliers (gap 550) \
-             {n550}, kept breaks (gap 551) {n551}; open-block rows (gap 554, NO LONGER A \
+             days whose rows differ {nexpl} (every one fails since W-37) — reservation multipliers \
+             (gap 550, NO LONGER A CLASS) the kernel's day holds {n550}, kept breaks (gap 551, NO \
+             LONGER A CLASS) {n551}; open-block rows (gap 554, NO LONGER A \
              CLASS) the kernel's day holds {n554}; STEP 8's `deferred` compared on {ndefdays} \
              days ({ndefids} ids, whole, on {naside} days carrying an open-block row), \
-             `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break)"
+             `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break); \
+             days whose rows agree in a different ORDER at an interruption (gap 3281) {n3281}"
         );
     }
 }
@@ -3418,6 +3371,7 @@ fn a_sub_second_now_moves_the_forks_day_and_not_the_kernels() {
 // `planner::plan` exactly.  P45 has no fork analogue at all (fork `planner::plan` reads no
 // `runtime.break_`), so the arm below asserts its rule directly and counts the fork's disagreement.
 // ===========================================================================
+
 
 /// **The fork's `worked` for the running block** — fork `active_run`'s own reading: the log's open
 /// block when it is this item's (`OpenBlock::worked_min_at`), the clock since `started` otherwise.
@@ -3559,7 +3513,7 @@ fn w35_fork_plan(
 ) -> DayPlan {
     let st2 = w35_p46_state(w, st);
     // W-36 (D60, parity P51): the fork runs D60's key through its own two order fields.
-    let dvec = w36_d60_cands(cvec, ps);
+    let dvec = forkclass::d60_cands(cvec, ps);
     let mut d = planner::plan(&w.input(&st2, w.now).with_ranking(&dvec, ps));
     let is46 = w35_is_p46(w, st);
     if is46 {
@@ -3577,49 +3531,6 @@ fn w35_fork_plan(
 /// `[days, P46 days, P47 days]`.  Read by the W-35 census line, so the earlier arms' share of the
 /// three classes is printed rather than assumed.
 static W35_COMPARAND: Mutex<[u64; 3]> = Mutex::new([0; 3]);
-
-/// **P45's rule, as a checker over the kernel's answer**: the running break drawn at `t` for
-/// `planned` minutes is exactly one Break row `[max(t, day start), max(min(t + planned, day end),
-/// now))`, open exactly when it has overrun, carrying its place; and no row §8.2 PLACES from `now`
-/// on — a Block, Batch, Routine, Optional or Rest — overlaps it.  `Err` names what failed, so the
-/// perturbation test below can show the checker bites.
-fn w35_check_break(
-    plan: &Value,
-    t: i64,
-    planned_min: i64,
-    place: &str,
-    now_sec: i64,
-    day_start: i64,
-    day_end: i64,
-) -> Result<(i64, i64, bool), String> {
-    let segs = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
-    let brks: Vec<&Value> = segs.iter().filter(|s| s["kind"] == "break").collect();
-    if brks.len() != 1 {
-        return Err(format!("{} Break rows, want the running break's one", brks.len()));
-    }
-    let b = brks[0];
-    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
-    let open = t + 60 * planned_min <= now_sec;
-    let got = (b["start"].as_i64().unwrap_or(-1), b["stop"].as_i64().unwrap_or(-1));
-    if got != (lo, hi) {
-        return Err(format!("the Break row is {got:?}, the rule says {:?}", (lo, hi)));
-    }
-    if b["flags"]["open"].as_bool() != Some(open) {
-        return Err(format!("the Break row's `open` is {}, the rule says {open}", b["flags"]["open"]));
-    }
-    if b["note"]["note"] != "breakWhere" || b["note"]["text"] != place {
-        return Err(format!("the Break row's note is {}, want breakWhere {place}", b["note"]));
-    }
-    for s in segs {
-        let k = s["kind"].as_str().unwrap_or_default();
-        let (a, z) = (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1));
-        let placed = matches!(k, "block" | "batch" | "routine" | "optional" | "rest");
-        if placed && a >= now_sec && a < hi && lo < z {
-            return Err(format!("a {k} row [{a}, {z}) is scheduled over the break [{lo}, {hi})"));
-        }
-    }
-    Ok((lo, hi, open))
-}
 
 /// **W-35's census**: `[cases, break days (P45), of them still running at now, of them overrun,
 /// P45 days where the SHIPPED fork scheduled over the break, overtime days (P46), P46 days whose
@@ -3648,38 +3559,21 @@ proptest! {
         over in prop_oneof![1 => Just(false), 1 => Just(true)],
     ) {
         let mut w = build(&case);
-        // **P46, drawn and not only met** (W-35 land step, README gap 2910): the shared generator
-        // reaches an overtime day on 1-5 of ~280 cases, so the `n46 > 0` floor below failed at the
-        // merge on a run that drew none.  Half of the no-break days lower the running block's
-        // estimate to the minutes it has run — a day the generator can already draw, drawn more
-        // often; nothing else about the case changes, and the floor is kept.
-        if let (true, None, Some((_, ran, _))) = (over, brk, case.active) {
-            if let Some(a) = w.state.active.as_mut() {
-                a.est_min = a.est_min.min(ran.max(1));
-            }
-        }
+        // **P46, drawn and not only met** (W-35 land step, README gap 2910): the `n46 > 0` floor
+        // below failed at the merge on a run that drew none — `plangen`'s `World::force_overtime`.
+        w.force_overtime(&case, over, brk.is_some());
         let tz = w.cfg.tz;
         let now_sec = rowwire::kernel_sec(w.now);
         let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
         let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
         // **P45: a running break**, drawn `ago` minutes before `now` for `planned` minutes — the
-        // host's `tm break` pauses a running block (`tm/src/cli/day.rs`), so this does too.
+        // host's `tm break` pauses a running block, so this does too; since W-37 it starts after
+        // the last `start`/`done` the log holds, which is when `tm break` can have run
+        // (`plangen`'s `World::run_a_break`, owner D64(b)).
         let mut drew = None;
-        let mut drew_at: Option<DateTime<Tz>> = None;
-        if let (Some((ago, planned, place)), None) = (brk, case.interrupt) {
-            let t = w.now - Duration::minutes(i64::from(ago));
-            if t.date_naive() == date() {
-                w.state.break_ = Some(tm_core::store::BreakState {
-                    started: Some(t.time()),
-                    planned_min: planned,
-                    place: Some(place.to_string()),
-                });
-                if let Some(a) = w.state.active.as_mut() {
-                    a.paused = true;
-                }
-                drew = Some((rowwire::kernel_sec(t), i64::from(planned), place));
-                drew_at = Some(t);
-            }
+        let drew_at: Option<DateTime<Tz>> = w.run_a_break(&case, brk);
+        if let (Some(t), Some((_, planned, place))) = (drew_at, brk) {
+            drew = Some((rowwire::kernel_sec(t), i64::from(planned), place));
         }
         // `state.break` and the paused block reach the request through `planwire::state_json`,
         // off `w.state` — never spelled here (W-35 repair, README gap 2922).
@@ -3923,65 +3817,6 @@ fn a_p46_day_is_compared_on_every_run() {
     );
 }
 
-/// **The P45 checker bites** — a perturbation of the kernel's own answer, three ways: the Break
-/// row removed, moved by a minute, and a Rest row slid under it.  A checker that passed any of
-/// them would be asserting nothing on the generated days above.
-#[test]
-fn the_break_checker_fails_on_a_perturbed_answer() {
-    let case = Case {
-        items: vec![],
-        walls: vec![],
-        now_idx: 2,
-        done_blocks: 0,
-        report: None,
-        routines: 0,
-        optionals: false,
-        home: false,
-        active: None,
-        interrupt: None,
-        late: false,
-    };
-    let mut w = build(&case);
-    let tz = w.cfg.tz;
-    let now_sec = rowwire::kernel_sec(w.now);
-    let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
-    let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
-    let t = w.now - Duration::minutes(5);
-    w.state.break_ = Some(tm_core::store::BreakState {
-        started: Some(t.time()),
-        planned_min: 20,
-        place: Some("walk".to_string()),
-    });
-    let req = w.plan_request();
-    let plan = kernel_plan(&req).expect("the kernel plans the break day");
-    let check = |p: &Value| {
-        w35_check_break(p, rowwire::kernel_sec(t), 20, "walk", now_sec, day_start, day_end)
-    };
-    let (lo, hi, open) = check(&plan).expect("the kernel's own answer passes");
-    assert_eq!((lo, hi, open), (rowwire::kernel_sec(t), rowwire::kernel_sec(t) + 20 * 60, false));
-    // 1. the row removed
-    let mut gone = plan.clone();
-    gone["segments"] = Value::Array(
-        plan["segments"].as_array().expect("segments").iter()
-            .filter(|s| s["kind"] != "break").cloned().collect(),
-    );
-    assert!(check(&gone).is_err(), "a day with no Break row passed the P45 checker");
-    // 2. the row moved by a minute
-    let mut moved = plan.clone();
-    for s in moved["segments"].as_array_mut().expect("segments") {
-        if s["kind"] == "break" {
-            s["stop"] = json!(s["stop"].as_i64().unwrap_or(0) + 60);
-        }
-    }
-    assert!(check(&moved).is_err(), "a Break row a minute long passed the P45 checker");
-    // 3. a Rest row slid under the break
-    let mut over = plan.clone();
-    over["segments"].as_array_mut().expect("segments").push(json!({
-        "start": now_sec, "stop": now_sec + 600, "kind": "rest", "batch": [], "energy": 3,
-        "item": null, "inst": null, "flags": {}, "planned": null, "mult": null, "note": null}));
-    assert!(check(&over).is_err(), "a Rest row scheduled over the break passed the P45 checker");
-}
-
 // ===========================================================================
 // **§8.2 STEP 8, THE REST OF IT, BY VALUE** — stage 6 W-35 track E (README
 // gaps 2723, 2640 and 2743).
@@ -4004,6 +3839,7 @@ fn the_break_checker_fails_on_a_perturbed_answer() {
 // pair/id field is the projection of its tuple field. Every comparison has its
 // own floor below, so no field passes by being empty on every day (AGENTS §9.2).
 // ===========================================================================
+
 
 /// cases; days compared; conflicts pairs compared; days with conflicts; notes
 /// compared; days with a note; days with `aCapacityLost > 0`; impossible tuples;
@@ -4038,45 +3874,6 @@ fn note_text(n: &Value, tz: Tz) -> Option<String> {
         )),
         _ => None,
     }
-}
-
-/// **The two note kinds the generator never draws, drawn here** (a WIDENING of
-/// what this arm sees, D46; the shared generator is untouched). Measured on
-/// this block's first run: 91 notes compared on 81 of 273 days, EVERY ONE a
-/// `noPosition` — the generator writes no `travel-day` wall, and its budget of
-/// 6 is never spent by its at most 3 done blocks, so `travelDay` and
-/// `budgetSpent` were compared on no day at all. `travel` flags the first
-/// calendar wall `travel-day` (fork `Item::is_travel_day`, the kernel's
-/// `travelDay`), which zeroes the day's budget; `spent` stores a budget equal
-/// to the blocks already done on a day that has done some. Both sides read the
-/// changed world: the kernel through `docs` and `state.budget`, the fork
-/// through the tree rebuilt from the same bytes and the same `state`.
-fn widen_for_notes(w: &mut World, case: &Case, travel: bool, spent: bool) -> (bool, bool) {
-    let tz = w.cfg.tz;
-    let mut did = (false, false);
-    if travel {
-        if let Some((_, text)) = w.docs.iter_mut().find(|(p, _)| p == "calendar/2026-W37.md") {
-            if let Some(first) = text.lines().next().map(str::to_string) {
-                if !first.is_empty() {
-                    *text = text.replacen(&first, &format!("{first} travel-day"), 1);
-                    did.0 = true;
-                }
-            }
-        }
-    }
-    if spent && !case.late {
-        let done = case.done(tz);
-        if done > 0 {
-            w.state.budget = Some(done);
-            did.1 = true;
-        }
-    }
-    if did.0 {
-        let files: Vec<(&str, &str)> =
-            w.docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
-        w.tree = Tree::from_texts(&files, &w.cfg);
-    }
-    did
 }
 
 proptest! {
@@ -4260,7 +4057,7 @@ proptest! {
 // **The comparand runs D60's key in the FORK, by its property and never by a list.** Both fork
 // sorts read the candidate's own `root_order`/`own_order`, and nothing else of the fork's
 // `with_ranking` day reads them (its §7 pass, which uses `own_order` as an EDF tie-break, is
-// bypassed), so `w36_d60_cands` rewrites those two fields and changes nothing else: an impossible
+// bypassed), so `forkclass::d60_cands` rewrites those two fields and changes nothing else: an impossible
 // `p = 0` candidate gets `root_order = (0, until)` and `own_order = (0, index)`, every other
 // candidate's `root_order` moves one file down — a uniform shift, which keeps the fork's order
 // among them. `w35_fork_plan` and the what-if days call it, so every earlier arm compares the
@@ -4268,64 +4065,6 @@ proptest! {
 // is uniform and the day is `planner::plan`'s exactly.
 // ===========================================================================
 
-/// **A `p = 0` answer with a positive shortfall** — the kernel's D60 condition
-/// (`Planner.Ranked.imp`: `key.p = 0 ∧ 0 < shortfall`), read off the kernel's own §7 answer.
-fn w36_is_impossible_tie(p: &Prio) -> bool {
-    p.p == 0 && p.shortfall_min_exact.num > 0
-}
-
-/// **The order the request carries the candidates in** — `kernel_capacity::send_order`, the
-/// fork's `priority::compute` sort `(no due last, due, own_order, index)`.  It is the kernel's
-/// REQUEST POSITION, which D60's key breaks an `until` tie by (`Look.sortDueIx`'s order), so
-/// the comparand reads it rather than the collection index — a floor answer (no due) is sent
-/// after every dated one, and so ranks after a dated impossible item of the same date.
-fn send_order(cands: &[Candidate]) -> Vec<usize> {
-    let mut order: Vec<usize> = (0..cands.len()).collect();
-    order.sort_by(|&a, &b| {
-        let (ca, cb) = (&cands[a], &cands[b]);
-        (ca.effective_due.is_none(), ca.effective_due, ca.own_order, a)
-            .cmp(&(cb.effective_due.is_none(), cb.effective_due, cb.own_order, b))
-    });
-    order
-}
-
-/// **P51's comparand candidates** — see the block comment. The `until` of an impossible answer
-/// is the date its capacity was summed to (the grant's due date, or a floor's last day), which
-/// is `Planner.answerUntil`'s; an answer with none keeps the date's floor, `0`.  The tie-break
-/// is the candidate's REQUEST position (`send_order`), as the kernel's.
-fn w36_d60_cands(cvec: &[Candidate], ps: &[Prio]) -> Vec<Candidate> {
-    let mut pos = vec![0usize; cvec.len()];
-    for (k, &i) in send_order(cvec).iter().enumerate() {
-        pos[i] = k;
-    }
-    cvec.iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let mut d = c.clone();
-            let tie = ps.get(i).filter(|p| p.id == c.id).is_some_and(w36_is_impossible_tie);
-            if tie && !c.is_wall {
-                let until = ps[i].until.map_or(0, |u| {
-                    usize::try_from(chrono::Datelike::num_days_from_ce(&u)).unwrap_or(0)
-                });
-                d.root_order = (0, until);
-                d.own_order = (0, pos[i]);
-            } else {
-                d.root_order = (c.root_order.0.saturating_add(1), c.root_order.1);
-            }
-            d
-        })
-        .collect()
-}
-
-/// **P51, by its property**: the fork's §7.4 order (`sorted_candidates` over the candidates as
-/// collected) and D60's (the same function over `w36_d60_cands`) differ. Counted, not asserted:
-/// the comparand runs D60's key on every day, so this only says which days it changed.
-fn w36_is_p51(cvec: &[Candidate], ps: &[Prio]) -> bool {
-    let dvec = w36_d60_cands(cvec, ps);
-    let a: Vec<&str> = priority::sorted_candidates(ps, cvec).iter().map(|c| c.id.as_str()).collect();
-    let b: Vec<&str> = priority::sorted_candidates(ps, &dvec).iter().map(|c| c.id.as_str()).collect();
-    a != b
-}
 
 /// `[cases, days with a kernel §7 answer, P51 days, P51 days whose SHIPPED fork's assigned
 /// rows differ from the D60 comparand's, P51 days whose kernel rows equal the comparand's]`.
@@ -4401,7 +4140,7 @@ proptest! {
         let k = w36_kernel_work_rows(&plan, now_sec);
         let c = w36_work_rows(&d60, w.now);
         prop_assert_eq!(&k, &c, "§8.2 step 5 differs from the D60 comparand");
-        let p51 = w36_is_p51(&cvec, &ps);
+        let p51 = forkclass::is_p51(&cvec, &ps);
         let mut shipped_differs = false;
         if p51 {
             let shipped = planner::plan(&w.input(&w35_p46_state(&w, &w.state), w.now)
@@ -4443,31 +4182,14 @@ proptest! {
 /// so the P51 arm above never rests on the generator drawing such a day.
 #[test]
 fn the_reversed_day_is_served_by_due_date_on_every_run() {
-    let item = |due: u8| Spec {
-        ci: 2, k: 3, est_b: 60, small: None, due_in: Some(due), dep: None, loc_home: false,
-        atomic: false, parent: None, waiting: false, hot: false, floor: None,
-    };
-    let case = Case {
-        items: vec![item(1), item(0)],
-        walls: vec![],
-        now_idx: 0,
-        done_blocks: 0,
-        report: None,
-        routines: 0,
-        optionals: false,
-        home: false,
-        active: None,
-        interrupt: None,
-        late: false,
-    };
-    let w = build(&case);
+    let w = build(&reversed_day());
     let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the reversed day");
     let cvec = w.candidates();
     let ps = kernel_prios(&plan, &cvec).expect("the kernel ranks the reversed day");
     let ids: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
     assert_eq!(ids.len(), 2, "two candidates: {ids:?}");
-    assert!(ps.iter().all(w36_is_impossible_tie), "both are p = 0 and impossible: {ps:?}");
-    assert!(w36_is_p51(&cvec, &ps), "D60 moves the order on the reversed day");
+    assert!(ps.iter().all(forkclass::is_impossible_tie), "both are p = 0 and impossible: {ps:?}");
+    assert!(forkclass::is_p51(&cvec, &ps), "D60 moves the order on the reversed day");
     let now_sec = rowwire::kernel_sec(w.now);
     let k = w36_kernel_work_rows(&plan, now_sec);
     assert!(!k.is_empty(), "the kernel assigns work on the reversed day");
@@ -4499,6 +4221,7 @@ fn the_reversed_day_is_served_by_due_date_on_every_run() {
 // the census counts it. The host's `need_min` is sent and not read: no reader of a
 // `with_ranking` day reads it (README gap 3004).
 // ---------------------------------------------------------------------------
+
 
 /// `[cases, what-ifs compared (a running block and a kernel §7 answer), of them the running item
 /// is a candidate the extension grows, of them the grown facts moved the kernel's §7 answer,
@@ -4548,7 +4271,7 @@ fn w36_fork_whatif(
         x.est_min = x.est_min.saturating_add(bm);
     }
     let rt = w35_p46_state(w, &rt);
-    let dvec = w36_d60_cands(cvec, ps);
+    let dvec = forkclass::d60_cands(cvec, ps);
     let ov = planner::PlanOverrides::new().extending(id, bm);
     let mut day = if full {
         planner::plan(&w.input(&rt, w.now).with_ranking(&dvec, ps).with_overrides(&ov))
@@ -4789,40 +4512,6 @@ fn a_re_ranked_what_if_is_answered_by_the_grown_ranking_on_every_run() {
         "parity P52: the kernel's what-if differs from the shipped TUI's on a re-ranked day");
 }
 
-/// **`send_order` is the fork's `priority::compute` sort** — `(no due last, due, own_order,
-/// index)`, the kernel's REQUEST POSITION, which `Look.sortDueIx` breaks a date's ties by and
-/// D60's key reads. Nothing else in this file can tell it from the collection order: the kernel
-/// and the D60 comparand both read it, so W-36's plant that made it the identity SURVIVED every
-/// arm. It is pinned here on a day whose collection order is not the served order: an undated
-/// line, one due tomorrow, one due today, in that order in the file.
-#[test]
-fn send_order_is_the_forks_compute_order() {
-    let item = |due_in: Option<u8>| Spec {
-        ci: 2, k: 3, est_b: 1, small: None, due_in, dep: None, loc_home: false,
-        atomic: false, parent: None, waiting: false, hot: false, floor: None,
-    };
-    let case = Case {
-        items: vec![item(None), item(Some(1)), item(Some(0))],
-        walls: vec![],
-        now_idx: 0,
-        done_blocks: 0,
-        report: None,
-        routines: 0,
-        optionals: false,
-        home: false,
-        active: None,
-        interrupt: None,
-        late: false,
-    };
-    let w = build(&case);
-    let cvec = w.candidates();
-    let file: Vec<String> = cvec.iter().map(|c| c.id.to_string()).collect();
-    let sent: Vec<String> = send_order(&cvec).iter().map(|&i| cvec[i].id.to_string()).collect();
-    assert_eq!(file.len(), 3, "three candidates: {file:?}");
-    assert_eq!(sent, vec![file[2].clone(), file[1].clone(), file[0].clone()],
-        "due today, then due tomorrow, then the undated line: {file:?}");
-}
-
 // ===========================================================================
 // **W-36 (track T): ONE reading of worked minutes — README gap 2920**
 //
@@ -4839,6 +4528,7 @@ fn send_order_is_the_forks_compute_order() {
 // its own reservation from it, and the running block's open row reads the host's `so far`.  On a
 // day where the two readings agree the comparand is `w35_fork_plan` exactly.
 // ===========================================================================
+
 
 /// **The host's worked minutes of the running block** — `Replay::active_worked_min`, the very call
 /// `tm done` makes (`tm/src/cli/day.rs`' `worked_min`), the running break included.
@@ -5021,3 +4711,32 @@ proptest! {
         );
     }
 }
+/// **README gap 3281's class bites and does not over-bite** (AGENTS §5.8), on rows built by
+/// hand: an interruption's Lost row and a Wall row swapped at one start is the class; a Block
+/// swapped with a Wall, rows from two different starts, a row one side lacks, and two equal
+/// lists are not.
+#[test]
+fn the_interruption_order_class_is_exactly_that() {
+    let tz = tm_core::config::Config::default().tz;
+    let row = |kind: SegKind, item: &str, h: u32| Segment {
+        start: at(tz, h, 0),
+        end: at(tz, h + 1, 0),
+        kind,
+        energy: None,
+        item: Some(Id::new(item)),
+        instance: None,
+        flags: tm_core::dayplan::SegFlags::default(),
+    };
+    let lost = row(SegKind::Lost, "zaa", 13);
+    let wall = row(SegKind::Wall, "waa", 13);
+    let block = row(SegKind::Block, "zab", 13);
+    let later = row(SegKind::Wall, "wab", 15);
+    let k = [lost.clone(), wall.clone(), later.clone()];
+    assert!(order_differs_only_at_an_interruption(&k, &[wall.clone(), lost.clone(), later.clone()]));
+    assert!(!order_differs_only_at_an_interruption(&k, &k), "equal lists are not the class");
+    assert!(!order_differs_only_at_an_interruption(&[block.clone(), wall.clone()], &[wall.clone(), block]));
+    assert!(!order_differs_only_at_an_interruption(&[lost.clone(), later.clone()], &[later.clone(), lost.clone()]));
+    assert!(!order_differs_only_at_an_interruption(&[lost.clone(), wall.clone()], &[wall]));
+}
+// END THE FORK PLANNER
+

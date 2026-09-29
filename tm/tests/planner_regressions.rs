@@ -553,16 +553,11 @@ fn a_break_comes_after_every_two_blocks_on(p: &dyn DayPlanner) {
         .filter(|pair| (pair[1].start - pair[0].end).num_minutes() >= i64::from(w.cfg.day.break_min))
         .count();
     assert!(rests >= 2, "six blocks need two breaks:\n{}", timeline(&day));
-    // …and README gap 551's class, bounded exactly: the fork DRAWS each of them
-    // as a Break row, the kernel keeps the same minutes free and draws none
-    // (`PlanReq.todayCut.breaks` places no row). Whoever closes gap 551 changes
-    // the kernel's half here, and says so.
+    // …and each of them is DRAWN as a Break row, on both planners: README gap
+    // 551's class, bounded exactly here until W-37, when the kernel began to
+    // draw the cut's kept breaks as the fork does (`Planner.PlanReq.keptBreakRows`).
     let drawn = day.segments.iter().filter(|s| s.kind == SegKind::Break && s.start >= now).count();
-    if p.name() == "the kernel" {
-        assert_eq!(drawn, 0, "gap 551 has closed — the kernel drew planned breaks:\n{}", timeline(&day));
-    } else {
-        assert!(drawn >= 2, "six blocks need two Break rows on the fork:\n{}", timeline(&day));
-    }
+    assert!(drawn >= 2, "six blocks need two Break rows on {}:\n{}", p.name(), timeline(&day));
 }
 
 /// [`a_break_comes_after_every_two_blocks_on`], asked of the kernel — the arm that survives R3.

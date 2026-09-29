@@ -755,8 +755,12 @@ impl Ctx {
             // block runs has stopped the block's timer. Its pause — and, once the wall
             // has ended, its unpause — is logged here, the way §6.3's automatic close
             // catches up: by the first verb that runs after the wall began
-            // ([`super::day::stop_the_timer_at_walls`]). It writes the log and
-            // `state.json` only, never a plan file, so it does not wait on the gate.
+            // ([`super::day::stop_the_timer_at_walls`]). It writes the log,
+            // `state.json` and — since the owner's D65 (W-37 track T) — the day
+            // file's journal line for each mark it logs. It does not wait on the
+            // gate because it needs none: the kernel decides it (README gap 3139)
+            // over the tree it loads, and a tree the kernel refuses gets no mark
+            // and no journal line.
             if super::day::stop_the_timer_at_walls(&mut cx)? {
                 cx.reload()?;
             }
@@ -1307,9 +1311,18 @@ impl Ctx {
     /// A refusal is an error and never a written line: an event whose values the reader would
     /// refuse is named rather than appended.
     pub fn append_entry(&self, entry: &LogEntry) -> Result<(), CliError> {
-        let mut line = kernel_log::render_one(entry).map_err(|why| {
+        let line = kernel_log::render_one(entry).map_err(|why| {
             CliError::msg(format!("the kernel could not write this log line: {why}"))
         })?;
+        self.append_line(&line)
+    }
+
+    /// **Append one line the kernel wrote** (D16) — the bytes as the kernel
+    /// rendered them, and a newline. The one appender of `.tm/log.jsonl`:
+    /// [`Ctx::append_entry`] renders through it, and so do the lines the
+    /// kernel decides itself (the walls' timer marks, README gap 3139).
+    pub fn append_line(&self, line: &str) -> Result<(), CliError> {
+        let mut line = line.to_string();
         line.push('\n');
         self.store.append_text(LOG_PATH, &line)?;
         Ok(())

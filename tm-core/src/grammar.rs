@@ -302,6 +302,32 @@ fn is_ci_digit(w: &str) -> bool {
     w.len() == 1 && matches!(w.as_bytes()[0], b'0'..=b'5')
 }
 
+/// **The positional leading-estimate slot, by SHAPE** — `Nb`, `Nm`, `Nh` or
+/// `NhMm`, the numerals any run of ASCII digits (README gap 3140, W-37 track T,
+/// parity P57). The kernel's `Field.estSlot` reads the slot by this shape over
+/// `Nat` numerals, and this reader used to add a magnitude to it
+/// (`Dur::parse_no_days(word, 1).is_ok()`, `u32` minutes): so a leading
+/// `9999999999999m` was the ESTIMATE to the kernel and a TITLE WORD here, `tm
+/// check` said nothing, and the first `tm extend` rewrote the word the kernel
+/// read as the slot — taking it out of the title the host had shown. One shape
+/// for both readers now: the slot is the slot whatever its size, and a value
+/// this reader cannot hold is `est_original: None` and a `bad-value` error, the
+/// way a keyed token's unreadable value already is. The fork's own parser, and
+/// every other value grammar, are unchanged.
+pub fn is_est_slot(w: &str) -> bool {
+    let digits = w.bytes().take_while(u8::is_ascii_digit).count();
+    if digits == 0 {
+        return false;
+    }
+    match &w[digits..] {
+        "b" | "m" | "h" => true,
+        rest => rest
+            .strip_prefix('h')
+            .and_then(|r| r.strip_suffix('m'))
+            .is_some_and(|m| !m.is_empty() && m.bytes().all(|b| b.is_ascii_digit())),
+    }
+}
+
 /// `key` of a `key:value` word when the key matches `[a-z-]+`.
 fn key_prefix(w: &str) -> Option<&str> {
     let (k, _) = w.split_once(':')?;
@@ -353,7 +379,7 @@ fn title_conflict(title: &str, has_state: bool, has_ci: bool, has_est: bool) -> 
     let first = *words.first()?;
     if has_state {
         let eaten_as_ci = !has_ci && is_ci_digit(first);
-        let eaten_as_est = !has_est && Dur::parse_no_days(first, 1).is_ok();
+        let eaten_as_est = !has_est && is_est_slot(first);
         if eaten_as_ci || eaten_as_est {
             return Some(first.to_string());
         }
@@ -403,7 +429,7 @@ impl ItemLine {
                 tokens.push(Token::new(lead_of(&words[i]), word_text(&words[i]), TokenKind::Ci));
                 i += 1;
             }
-            if i < words.len() && Dur::parse_no_days(word_text(&words[i]), 1).is_ok() {
+            if i < words.len() && is_est_slot(word_text(&words[i])) {
                 tokens.push(Token::new(lead_of(&words[i]), word_text(&words[i]), TokenKind::Est));
                 i += 1;
             }
@@ -1001,7 +1027,12 @@ fn build_item(line: ItemLine, ctx: &ParseCtx) -> Item {
                 state = State::parse(&t.text).unwrap_or(State::Todo);
             }
             TokenKind::Ci => ci_pos = t.text.parse().ok(),
-            TokenKind::Est => est_original = Dur::parse_no_days(&t.text, bm).ok(),
+            TokenKind::Est => match Dur::parse_no_days(&t.text, bm) {
+                Ok(d) => est_original = Some(d),
+                // The slot by shape (`is_est_slot`), a value this reader
+                // cannot hold: named, never read as a title word (P57).
+                Err(e) => col.problems.push(format!("`{}` (the leading estimate): {e}", t.text)),
+            },
             TokenKind::Title | TokenKind::Word => title_parts.push(&t.text),
             TokenKind::Parent => {
                 if parent.is_none() {

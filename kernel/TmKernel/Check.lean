@@ -4922,7 +4922,6 @@ open Tm
 #print axioms Tm.PlanCheck.assignedOf_of_no_segments
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_no_segments
 #print axioms Tm.PlanCheck.planOkCore_of_no_segments
-#print axioms Tm.PlanCheck.planOk_of_no_segments
 #print axioms Tm.PlanCheck.a_replayed_row_is_a_row_of_the_day
 #print axioms Tm.PlanCheck.a_replayed_block_is_assigned
 #print axioms Tm.PlanCheck.dayPlan_has_no_block_row_when_nothing_runs_or_is_assigned
@@ -5237,7 +5236,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.mem_assignedFrom
 #print axioms Tm.Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose
 #print axioms Tm.Planner.a_wall_row_sits_in_a_blocked_span
-#print axioms Tm.Planner.a_break_row_is_replayed_or_the_running_break
 #print axioms Tm.Planner.a_wind_down_row_of_the_day
 #print axioms Tm.Planner.a_block_row_is_replayed_reserved_or_assigned
 #print axioms Tm.Planner.plan_reserves_one_block_at_a_time
@@ -5647,7 +5645,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- front of is PlanCheck.impossibleKept_of_nothing_assigned_iff (audited below).
 #print axioms Tm.PlanCheck.plan_places_no_block_over_a_break
 -- RENAMED WITH ITS THEOREM AT W-33 (not deleted): the lift takes `hnoimp`, and its name says so.
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
 #print axioms Tm.PlannerWit.censusRun_resumes_ok
 #print axioms Tm.PlannerWit.censusRun_resumes
 #print axioms Tm.PlannerWit.the_census_witness_loads
@@ -5881,7 +5878,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- compiler's arithmetic and not a reader's (README gap 684's class).
 -- ===========================================================================
 -- RENAMED WITH ITS THEOREM AT W-33 (not deleted): `hnoimp` added.
-#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
 #print axioms Tm.PlannerWit.queuedRun_resumes_ok
 #print axioms Tm.PlannerWit.queuedRun_resumes
 #print axioms Tm.PlannerWit.witBuildsQueued
@@ -5891,14 +5887,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_queued_request_is_plain
 #print axioms Tm.PlannerWit.the_queued_day_is_the_second_sibling_twice
 #print axioms Tm.PlannerWit.the_queued_day_assigns_the_second_sibling_only
-#print axioms Tm.PlannerWit.the_two_comparisons_are_false_at_the_queued_request
 #print axioms Tm.PlannerWit.the_other_nine_hold_where_the_two_fail
 #print axioms Tm.PlannerWit.the_lift_applies_at_the_queued_request
 #print axioms Tm.PlannerWit.dayPlan_ok_at_every_eligibility_is_refuted
 #print axioms Tm.PlannerWit.dayPlan_ok_from_now_at_every_eligibility_is_refuted
 #print axioms Tm.PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted
-#print axioms Tm.PlannerWit.the_two_comparisons_have_subjects_where_they_bite
 #print axioms Tm.PlannerWit.the_one_id_store_gives_neither_comparison_a_subject
 
 -- APPENDED 2026-09-19 (stage 6, run **W-19**, the REPAIR step -- the reuse
@@ -6061,8 +6055,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.dayPlan_assigns_nothing_on_a_quiet_unassigned_day
 #print axioms Tm.PlanCheck.monotoneInRank_of_nothing_assigned
 -- BOTH RENAMED WITH THEIR THEOREMS AT W-33 (not deleted): `hnoimp` added to each.
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
-#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.the_cursor_refuses_a_group_that_owes_nothing
 #print axioms Tm.PlanCheck.the_cursor_refuses_an_atomic_group_whose_run_is_broken
 #print axioms Tm.PlanCheck.the_cursor_skips_no_group_that_fits
@@ -6157,7 +6149,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.eligibleSomewhere_mono
 #print axioms Tm.PlanCheck.monotoneInRank_antitone
 #print axioms Tm.PlanCheck.hotBeforeQueue_antitone
-#print axioms Tm.PlanCheck.impossibleKept_antitone
 #print axioms Tm.PlanCheck.batchDoesNotReachPast_antitone
 #print axioms Tm.PlanCheck.planOk_antitone
 #print axioms Tm.PlanCheck.planOk_at_every_eligibility
@@ -6165,7 +6156,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_no_work_row
 #print axioms Tm.PlanCheck.monotoneInRank_of_nothing_eligible
 #print axioms Tm.PlanCheck.hotBeforeQueue_of_nothing_eligible
-#print axioms Tm.PlanCheck.impossibleKept_of_nothing_eligible
 #print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day
 #print axioms Tm.PlanCheck.false_of_any_eq_false
 #print axioms Tm.PlanCheck.blockSeconds_of_no_block
@@ -6193,7 +6183,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- and impossible_has_a_subject_iff_an_impossible_answer_is_eligible replace it (audited below).
 -- RENAMED WITH ITS THEOREM AT W-33 (not deleted): seven holds GIVEN no eligible impossible item;
 -- the unconditional ceiling is EIGHT now (the_census_ceiling_is_eight_on_an_unassigned_day, below).
-#print axioms Tm.PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item
 #print axioms Tm.PlannerWit.onlyOnWorkRows_is_work_anchored
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_census_day
 #print axioms Tm.PlannerWit.the_whole_battery_passes_on_the_quiet_day
@@ -6714,7 +6703,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_lifts_own_request_pays_the_fifth_clause_for_nothing
 #print axioms Tm.PlannerWit.the_filter_passed_a_slot_the_battery_reads_differently
 #print axioms Tm.PlannerWit.the_hole_survives_where_the_composition_adds_no_row
-#print axioms Tm.PlannerWit.the_census_ratio_is_still_seven
 
 -- ############################################################################
 -- W-30 (track G): THE LIFT'S DOMAIN, RESTORED.  P9 composed 8.2 step 5's rows into
@@ -6819,9 +6807,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.eligibleSomewhere_of_nothing_from_now
 -- The lifts themselves: the equality, the discharge, and §6.1's eleven on the whole
 -- day of a request whose decoder pays -- with no `r.assignedRows = []` in any of them.
-#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven
-#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven
-#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
 -- and the generality claim as a THEOREM rather than a doc comment (D5, 3.1 item 4).
 #print axioms Tm.PlanCheck.the_unassigned_eleven_is_an_instance_of_the_paying_eleven
 -- the two properties, audited the way `Tm.WfPlan` and `AssignedRowsPay` are (6.3).
@@ -6955,7 +6940,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
 #print axioms Tm.PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
-#print axioms Tm.PlanCheck.impossible_has_no_subject_of_nothing_eligible
 #print axioms Tm.PlanCheck.impossible_subject_iff
 #print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left
 #print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
@@ -6967,20 +6951,13 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.impossible_has_no_subject_from_now_is_refuted
 #print axioms Tm.PlannerWit.theUnassignedImpossibleRequest_wallsAgree
 #print axioms Tm.PlannerWit.the_unassigned_impossible_request_agrees
-#print axioms Tm.PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item
 #print axioms Tm.PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_as_W_20_wrote_it_is_refuted
-#print axioms Tm.PlannerWit.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
-#print axioms Tm.PlannerWit.a_quiet_hot_day_drops_its_eligible_impossible_item
 #print axioms Tm.PlannerWit.theQuietImpossibleRequest_wallsAgree
 #print axioms Tm.PlannerWit.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_as_W_20_wrote_it_is_refuted
-#print axioms Tm.PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_overlap_witness_loads
 #print axioms Tm.PlannerWit.the_day_names_its_overlapping_walls
-#print axioms Tm.PlannerWit.the_census_reaches_eight_on_an_unassigned_day
-#print axioms Tm.PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_impossible_check_over_the_paying_set
 #print axioms Tm.PlannerWit.the_planner_drops_an_impossible_item_its_own_energy_clause_admits
-#print axioms Tm.PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day
 #print axioms Tm.PlannerWit.the_day_names_an_impossible_floor
 #print axioms Tm.PlannerWit.the_impossible_request_fills_five_diagnostic_fields
 #print axioms Tm.PlannerWit.the_day_names_its_waiting_and_blocked_candidates
@@ -7270,7 +7247,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_is_refuted
 #print axioms Tm.PlannerWit.impossibleKept_can_fail_as_W_35_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.the_atomic_day_drops_the_impossible_item_its_grant_owes_today
-#print axioms Tm.PlannerWit.the_monotone_rank_check_fails_where_D60_orders_by_date
 -- W-36 track K, gap 2873 (D58's kernel half): the what-if reads the host's grown facts.
 #print axioms Tm.Planner.mkGrown?_refuses_a_remaining_past_the_width
 #print axioms Tm.Planner.mkGrown?_refuses_planned_minutes_past_the_width
@@ -7329,7 +7305,172 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- only the rows a dropped impossible item could not have displaced, so a budget spent on work it
 -- outranks no longer excuses its drop; gap 3137: the capacity answer's `until` is
 -- `Planner.answerUntil`'s.
-#print axioms Tm.PlanCheck.budgetLeft_mono
 #print axioms Tm.PlannerWit.the_budget_spent_on_work_an_owed_impossible_item_outranks_does_not_excuse_its_drop
 #print axioms Tm.PlannerWit.a_budget_spent_where_the_item_could_not_go_excuses_its_drop
 #print axioms Tm.PlanWire.the_wire_until_is_answerUntil
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK T (worktree `w37-t`) -- the owner's D65 (parity P56,
+-- README gaps 3044, 3141, 3142): a meeting that paused the running block is drawn as the WALL
+-- ALONE -- the part of a paused row a wall of the day covers is cut out of the replayed past.
+-- =====================================================================
+#print axioms Tm.Planner.mem_pastRows
+#print axioms Tm.Planner.cutOne_sub
+#print axioms Tm.Planner.cutOne_nonempty
+#print axioms Tm.Planner.cutOne_apart
+#print axioms Tm.Planner.cutOne_untouched
+#print axioms Tm.Planner.cutAll_sub
+#print axioms Tm.Planner.cutAll_nonempty
+#print axioms Tm.Planner.cutAll_apart
+#print axioms Tm.Planner.cutAll_untouched
+#print axioms Tm.Planner.clipCut_within
+#print axioms Tm.Planner.clipCut_apart
+#print axioms Tm.Planner.clipCut_nil
+#print axioms Tm.Planner.clipCut_untouched
+#print axioms Tm.Planner.the_cut_is_run
+#print axioms Tm.Planner.pastSpans_of_not_a_pause
+#print axioms Tm.Planner.a_paused_row_lies_under_no_wall
+#print axioms Tm.Planner.a_pause_no_wall_touches_is_drawn_whole
+#print axioms Tm.PlannerWit.openStraddleRun_resumes_ok
+#print axioms Tm.PlannerWit.the_meeting_is_drawn_as_a_paused_lost_row_is_refuted
+#print axioms Tm.PlannerWit.the_meeting_is_drawn_as_the_wall_alone
+#print axioms Tm.PlannerWit.a_pause_that_straddles_a_wall_keeps_its_minutes_outside_it
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK T (worktree `w37-t`) -- README gap 3139: D61 decided
+-- by the kernel (`WallTimer.lean`, the `emit` section's walls form) and the campaign's D66 call on
+-- gap 3048 (`WallTimer.pausedFor`, the meeting `tm pause` names when it resumes).
+-- =====================================================================
+#print axioms Tm.WallTimer.inst_le
+#print axioms Tm.WallTimer.inst_lt
+#print axioms Tm.WallTimer.hasUnpause_none_of_untouched
+#print axioms Tm.WallTimer.lastIsPauseAt_append
+#print axioms Tm.WallTimer.step_of_running
+#print axioms Tm.WallTimer.a_wall_that_starts_while_a_block_runs_stops_its_timer
+#print axioms Tm.WallTimer.a_block_started_inside_a_wall_is_not_paused_by_it
+#print axioms Tm.WallTimer.a_wall_that_has_not_begun_writes_nothing
+#print axioms Tm.WallTimer.a_timer_already_stopped_at_the_wall_is_left_alone
+#print axioms Tm.WallTimer.a_timer_mark_after_the_walls_start_stands
+#print axioms Tm.WallTimer.the_walls_end_restarts_the_timer_it_stopped
+#print axioms Tm.WallTimer.a_user_who_resumed_during_the_meeting_keeps_their_timer
+#print axioms Tm.WallTimer.step_written
+#print axioms Tm.WallTimer.mem_writes
+#print axioms Tm.WallTimer.after_one_wall_a_second_verb_writes_nothing_more
+#print axioms Tm.WallTimer.pausedFor_is_a_meeting_the_timer_is_paused_for
+#print axioms Tm.WallTimer.answer_without_an_open_block
+#print axioms Tm.WallTimer.answer_refuses_commands
+#print axioms Tm.WallTimer.answer_refuses_without_the_replay
+#print axioms Tm.WallTimer.answer_congr_ix
+#print axioms Tm.WallTimer.the_walls_refusals_spell_themselves
+#print axioms Tm.WallTimer.the_rule_is_run
+#print axioms Tm.WallTimer.pausedFor_is_run
+#print axioms Tm.WallTimer.spansOf_is_run
+#print axioms Tm.WallTimer.readReq_is_run
+#print axioms Tm.WallTimer.the_walls_refusal_is_the_err_emit_shape
+#print axioms Tm.readEmitSection_of_the_walls_form
+#print axioms Tm.wallsEmit_refuses_without_the_replay
+#print axioms Tm.PlannerWit.the_pause_is_rendered_as_the_log_writes_it
+#print axioms Tm.PlannerWit.the_open_wednesdays_wall_is_answered_on_its_index
+#print axioms Tm.PlannerWit.the_open_wednesdays_wall_is_answered_by_the_kernel
+#print axioms Tm.PlannerWit.the_logged_wall_writes_nothing_more
+#print axioms Tm.the_walls_form_is_answered_through_the_emit_section
+#print axioms Tm.WallTimer.the_day_befores_marks_are_read
+#print axioms Tm.WallTimer.a_break_inside_the_meeting_leaves_the_pause_the_last_word
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK K (worktree `w37-k`; README gaps 3160-3199): D66 --
+-- `PlanCheck.impossibleKept` reads section 8.2 step 5's own filter before the walk, and the five
+-- lifts are proved without hnoimp -- and D63 -- `PlanCheck.monotoneInRank` reads the planner's
+-- own order.  PlanFold is new (gap 903 is a theorem).  24 audit lines REMOVED above, each a name
+-- W-37 renamed, deleted or refuted-and-renamed (README gaps 3161, 3162); the four re-proved
+-- refutations kept their lines.
+-- =====================================================================
+#print axioms Tm.PlanFold.a_deferred_mandatory_instance_found_no_position
+#print axioms Tm.PlanFold.assignStep_fills_a_free_slot_a_group_fits
+#print axioms Tm.PlanFold.deferOne_keeps_the_assignment
+#print axioms Tm.PlanFold.deferWalk_keeps_the_assignment
+#print axioms Tm.PlanFold.earliestFree_isSome_of_a_free_run
+#print axioms Tm.PlanFold.finalAssign_is_assignFold
+#print axioms Tm.PlanFold.foldl_assignStep_idle
+#print axioms Tm.PlanFold.foldl_placeStep_keeps_the_record
+#print axioms Tm.PlanFold.freeIntervals_holds_a_free_run
+#print axioms Tm.PlanFold.freeIntervals_next_unit
+#print axioms Tm.PlanFold.nothing_fits_before_on_an_unassigned_day
+#print axioms Tm.PlanFold.nothing_fits_before_where_the_fold_fills_nothing
+#print axioms Tm.PlanFold.pairwise_mem_or
+#print axioms Tm.PlanFold.placeStep_keeps_the_record
+#print axioms Tm.PlanFold.the_fold_fills_nothing_on_an_unassigned_day
+#print axioms Tm.PlanFold.the_reservation_row_is_a_work_row_of_the_day
+#print axioms Tm.PlanCheck.a_waiting_item_is_never_eligible_before
+#print axioms Tm.PlanCheck.an_item_eligible_before_is_ranked
+#print axioms Tm.PlanCheck.an_unassigned_day_admits_nothing_under_its_budget
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
+#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven_and_the_impossible_check
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot
+#print axioms Tm.PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check
+#print axioms Tm.PlanCheck.eligibleBefore_iff
+#print axioms Tm.PlanCheck.impossibleKept_of_nothing_eligible_before
+#print axioms Tm.PlanCheck.impossibleKept_on_an_unassigned_day
+#print axioms Tm.PlanCheck.impossible_has_no_subject_on_an_unassigned_day
+#print axioms Tm.PlanCheck.planOk_of_no_segments_is_the_impossible_check
+#print axioms Tm.PlanCheck.rankedBefore_iff
+#print axioms Tm.PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day
+#print axioms Tm.PlanCheck.the_reservation_is_a_budget_row_from_now
+#print axioms Tm.PlanCheck.the_reservation_is_a_budget_row_of_the_day
+#print axioms Tm.PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check
+#print axioms Tm.PlannerWit.a_quiet_hot_day_drops_its_waiting_impossible_item_and_passes
+#print axioms Tm.PlannerWit.an_unassigned_day_drops_its_waiting_impossible_item_and_passes
+#print axioms Tm.PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted
+#print axioms Tm.PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted
+#print axioms Tm.PlannerWit.impossibleKept_is_refuted_on_a_paying_day
+#print axioms Tm.PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted
+#print axioms Tm.PlannerWit.planOk_of_no_segments_as_W_14_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
+#print axioms Tm.PlannerWit.the_census_is_six_where_the_impossible_item_waits
+#print axioms Tm.PlannerWit.the_census_ratio_is_six_since_D63
+#print axioms Tm.PlannerWit.the_contiguity_finding_request_is_plain
+#print axioms Tm.PlannerWit.the_contiguity_finding_request_is_quiet_and_in_budget
+#print axioms Tm.PlannerWit.the_contiguity_finding_request_pays_the_decoder
+#print axioms Tm.PlannerWit.the_contiguity_finding_witness_loads
+#print axioms Tm.PlannerWit.the_given_lifts_fire_at_the_quiet_impossible_request
+#print axioms Tm.PlannerWit.the_hot_comparison_has_subjects_where_it_bites
+#print axioms Tm.PlannerWit.the_hot_comparison_is_false_at_the_queued_request
+#print axioms Tm.PlannerWit.the_monotone_rank_check_passes_where_D60_orders_by_date
+#print axioms Tm.PlannerWit.the_open_item_is_admitted_at_the_first_slot
+#print axioms Tm.PlannerWit.the_rank_check_refuses_a_planted_violation_of_the_planners_order
+#print axioms Tm.PlannerWit.the_rank_finding_day_places_the_later_sibling
+#print axioms Tm.PlannerWit.the_rank_finding_witness_loads
+#print axioms Tm.PlannerWit.the_waiting_law_fires_at_both_waiting_requests
+
+-- =====================================================================
+-- APPENDED 2026-09-28: stage 6 W-37 TRACK R (worktree `w37-r`) -- README gaps 551 (the cut's
+-- kept breaks are drawn), 550 (the reservation row carries the running candidate's multiplier)
+-- and 2870/435 (a scheduled window task's Routine row carries its `⚠` at `p = 0`).
+-- DELETED above, by this banner: the audit line of Planner.a_break_row_is_replayed_or_the_running_break,
+-- which W-37 refutes (`PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted`) and
+-- restates as `Planner.a_break_row_is_replayed_running_or_kept` (audited below).
+-- =====================================================================
+#print axioms Tm.Planner.PlanReq.mem_keptBreakRows
+#print axioms Tm.Planner.PlanReq.keptBreakRows_kinds
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_work
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_blocks
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_walls
+#print axioms Tm.Planner.PlanReq.keptBreakRows_are_not_wind_down
+#print axioms Tm.Planner.PlanReq.a_kept_break_is_a_break_of_the_cut
+#print axioms Tm.Planner.PlanReq.a_kept_break_is_after_now
+#print axioms Tm.Planner.PlanReq.a_kept_break_touches_nothing_blocked
+#print axioms Tm.Planner.PlanReq.a_kept_break_clears_the_reservation
+#print axioms Tm.Planner.PlanReq.a_slot_clears_a_kept_break
+#print axioms Tm.Planner.a_block_row_clears_a_kept_break
+#print axioms Tm.Planner.a_break_row_is_replayed_running_or_kept
+#print axioms Tm.PlannerWit.the_busy_day_draws_the_break_its_work_touches
+#print axioms Tm.PlannerWit.a_break_no_work_touches_is_not_drawn
+#print axioms Tm.PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted
+#print axioms Tm.PlannerWit.the_reservation_row_carries_the_running_candidates_multiplier
+#print axioms Tm.PlannerWit.the_hot_routine_witness_loads
+#print axioms Tm.PlannerWit.the_hot_routine_instances_are_accepted
+#print axioms Tm.PlannerWit.a_scheduled_window_tasks_routine_row_is_hot_at_p_zero
+#print axioms Tm.PlannerWit.the_reservation_reads_the_first_candidate_of_its_id

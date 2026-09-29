@@ -5,7 +5,7 @@ import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Log
 import TmKernel.Lookahead
-import TmKernel.Replay
+import TmKernel.WallTimer
 import TmKernel.SealWire
 /-!
 # The boundary: `String → String`, and nothing else
@@ -3797,9 +3797,20 @@ def emitStep (acc : Except EmitRefusal (List (List Char) × Nat)) (v : JVal) :
       | .ok l => .ok (l :: ls, i + 1)
       | .error w => .error (.refused i w)
 
-/-- **The `emit` section**: absent or `null` asks for nothing; otherwise each item's line, in the
-order they were sent.  A request that is not an object is left to `run` to refuse, exactly as
-`readLogSection` leaves it. -/
+/-- **The walls form** (W-37 track T, README gap 3139; D61, D65): `emit` as `{"walls": …}` asks what
+the day's walls write — `WallTimer.answer` over this request's replay, plan, zone and clock. -/
+def wallsEmit (j v : JVal) : Except JVal (Option JVal) :=
+  match readLogSection j, runLoad j, jget j "tz" with
+  | .error e, _, _ | _, .error e, _ => .error e
+  | .ok lg, .ok (p, cmds, c), tz =>
+    let zo := match tz with | .ok (some t) => (match readTz t with | .ok z => some z | .error _ => none) | _ => none
+    match WallTimer.answer v zo (lg.bind LogAnswer.facts) (Look.wallIndex · · p.val) cmds.length c.now (c.blockMin.map (·.val)) with
+    | .ok a => .ok (some a)
+    | .error r => .error r.json
+
+/-- **The `emit` section**: absent or `null` asks for nothing; an array, each item's line in the order
+sent; an object, the lines the day's walls write (`wallsEmit`, W-37).  A request that is not an
+object is left to `run` to refuse, exactly as `readLogSection` leaves it. -/
 def readEmitSection (j : JVal) : Except JVal (Option JVal) :=
   match j with
   | .obj _ =>
@@ -3811,6 +3822,7 @@ def readEmitSection (j : JVal) : Except JVal (Option JVal) :=
         match xs.foldl emitStep (.ok ([], 0)) with
         | .ok (ls, _) => .ok (some (.arr (ls.reverse.map JVal.str)))
         | .error e => .error e.json
+    | .ok (some v@(.obj _)) => wallsEmit j v
     | _ => .error EmitRefusal.shape.json
   | _ => .ok none
 
@@ -3832,18 +3844,6 @@ def runWithEmit (j : JVal) : Except JVal JVal :=
 unchanged.  This is what keeps S2 from touching the switch's proved surface. -/
 theorem runWithEmit_without_an_emit_is_runWithLog (j : JVal) (h : readEmitSection j = .ok none) :
     runWithEmit j = runWithLog j := by
-  simp [runWithEmit, h]
-
-/-- The same, from the absent key rather than the read. -/
-theorem a_request_without_an_emit_is_read_as_before (j : JVal) (h : jget j "emit" = .ok none) :
-    runWithEmit j = runWithLog j := by
-  apply runWithEmit_without_an_emit_is_runWithLog
-  cases j <;> simp [readEmitSection, h]
-
-/-- **A refused `emit` section refuses the request**, before the plan is loaded and before a byte
-is handed back: the host never receives a line it should not append. -/
-theorem runWithEmit_refuses_an_emit_section_first (j e : JVal) (h : readEmitSection j = .error e) :
-    runWithEmit j = .error e := by
   simp [runWithEmit, h]
 
 
@@ -12943,5 +12943,71 @@ theorem the_keyed_est_edit_reads_as_the_est_op :
         ("key".toList, .str "est".toList), ("value".toList, .str "20b".toList)])
       = .error "estBlockMinAbsent" :=
   ⟨rfl, rfl, rfl⟩
+
+/-! ## W-37 track T: the `emit` section's walls form (README gap 3139; owner D61, D65)
+
+`readEmitSection` answers an OBJECT `emit` — `{"walls": {"at", "break"}}` — with the lines the day's
+walls write for the running block (`WallTimer.answer`, the rule `WallTimer.writes`), rendered by
+`Log.emitLine`: the kernel decides and renders, the host appends (D16), and the host no longer reads
+a wall to decide it.  The two laws of S2 that follow moved here from the emit section at W-37,
+unchanged in statement and proof, so that every check-9 pin site after that section stays on the
+line `kernel/mutations.txt` recorded (`PastCut.lean`'s header says why that matters). -/
+
+/-- The same, from the absent key rather than the read. -/
+theorem a_request_without_an_emit_is_read_as_before (j : JVal) (h : jget j "emit" = .ok none) :
+    runWithEmit j = runWithLog j := by
+  apply runWithEmit_without_an_emit_is_runWithLog
+  cases j <;> simp [readEmitSection, h]
+
+/-- **A refused `emit` section refuses the request**, before the plan is loaded and before a byte
+is handed back: the host never receives a line it should not append. -/
+theorem runWithEmit_refuses_an_emit_section_first (j e : JVal) (h : readEmitSection j = .error e) :
+    runWithEmit j = .error e := by
+  simp [runWithEmit, h]
+
+/-- **An object `emit` is the walls form**, and nothing else reads it. -/
+theorem readEmitSection_of_the_walls_form (kvs : List (List Char × JVal)) (v : JVal)
+    (h : jget (.obj kvs) "emit" = .ok (some v)) (hv : ∃ w, v = .obj w) :
+    readEmitSection (.obj kvs) = wallsEmit (.obj kvs) v := by
+  obtain ⟨w, rfl⟩ := hv
+  simp [readEmitSection, h]
+
+/-- **A walls request without a replay is refused by name** (D24's rule: a consumer handed no
+replay refuses, it never reads a blank as a fact) — its `log` section asked no facts, or it has
+none. -/
+theorem wallsEmit_refuses_without_the_replay (j v : JVal) (lg : Option LogAnswer) (p : WfPlan)
+    (cmds : List ReqCmd) (c : ReqClock) (q : WallTimer.Req) (hl : readLogSection j = .ok lg)
+    (hr : runLoad j = .ok (p, cmds, c)) (hf : lg.bind LogAnswer.facts = none)
+    (hq : WallTimer.readReq v = .ok q) :
+    wallsEmit j v = .error WallTimer.Refusal.logAbsent.json := by
+  unfold wallsEmit
+  rw [hl, hr]
+  simp only [hf]
+  rw [WallTimer.answer_refuses_without_the_replay _ _ _ _ _ _ _ hq]
+
+
+
+/-- **A walls request**: no documents (so no walls), a one-line log from genesis (a `start a1` at
+09:00 UTC, spelled as characters) asking for facts, the day and the block length, and `emit` in its
+walls form at `at`. -/
+def wallsWitnessRequest (withLog : Bool) : JVal :=
+  .obj ([("docs".toList, .arr []), ("now".toList, .str ['2','0','2','6','-','0','9','-','0','7']), ("blockMin".toList, .num 60),
+    ("tz".toList, utcTzJson)] ++
+    (if withLog then [("log".toList, CapWire.logFromGenesisJ [.str
+      ['{','"','t','"',':','"','2','0','2','6','-','0','9','-','0','7','T','0','9',':','0','0',':','0','0','Z','"',',','"','e','v','"',':','"','s','t','a','r','t','"',',','"','i','d','"',':','"','a','1','"',',','"','p','r','e','d','"',':','5',',','"','r','e','p','"',':','4',',','"','h','s','w','"',':','3','.','0',',','"','s','l','e','p','t','_','m','i','n','"',':','4','9','0',',','"','l','o','c','"',':','"','l','o','u','n','g','e','"',',','"','b','l','o','c','k','s','_','d','o','n','e','"',':','0',',','"','s','i','n','c','e','_','b','r','e','a','k','_','m','i','n','"',':','0','}']])] else []) ++
+    [("emit".toList, .obj [("walls".toList, .obj [("at".toList, .str ['2','0','2','6','-','0','9','-','0','7','T','1','0',':','0','0',':','0','0','Z']), ("break".toList, .null)])])])
+
+set_option maxRecDepth 40000 in
+/-- **The walls form, answered through `readEmitSection`** (README gap 3139): with a replay and no
+wall in the plan the kernel answers no mark and no meeting, in build order; without a replay it
+refuses `logAbsent` by name. -/
+theorem the_walls_form_is_answered_through_the_emit_section :
+    (match readEmitSection (wallsWitnessRequest true) with
+      | .ok (some v) => v == .obj [("marks".toList, .arr []), ("pausedFor".toList, .null)]
+      | _ => false) = true ∧
+    (match readEmitSection (wallsWitnessRequest false) with
+      | .error e => e == WallTimer.Refusal.logAbsent.json
+      | _ => false) = true := by
+  decide
 
 end Tm

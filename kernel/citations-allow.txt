@@ -517,17 +517,10 @@ can_fail
 # W-18..W-32 citing the old spellings as they stood; every live sentence in the Lean sources
 # and in AGENTS names the successor or writes the dead name without backticks.  A later
 # sentence reaching for one of these fails here by count, which is the point.
-3 PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
-1 dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day
-3 PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
-1 dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day
-2 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot
-1 dayPlan_ok_on_a_quiet_unassigned_day_except_hot
-2 dayPlan_ok_on_a_quiet_unassigned_day_given_hot
+# W-37 track K took `hnoimp` off the five lifts and gave them back their W-19..W-21 names, so
+# those NINE entries left this file (their names resolve again); the four refuted names stay.
 5 PlanCheck.impossible_has_no_subject
 2 impossible_has_no_subject
-8 PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day
-6 the_census_ceiling_is_seven_on_an_unassigned_day
 1 impossibleKept_is_true_because_its_subject_is_empty
 5 the_day_names_no_impossible_item
 # W-34 track H: P0's hash tripwire, refuted by
@@ -553,13 +546,79 @@ can_fail
 # `PlannerWit.a_break_row_is_a_replayed_row_is_refuted` refutes.  The two live spellings are a
 # README "consumed by name" list (W-17) and `Goals.lean`'s stage-6 prose, both append-only history.
 3 a_break_row_is_a_replayed_row
-10 Planner.a_break_row_is_a_replayed_row
+9 Planner.a_break_row_is_a_replayed_row
+# W-37 track R (README gap 551 closed): the cut's kept breaks are Break rows of the day that are
+# neither replayed nor the running break, so the W-35 law named on the next line is REFUTED by
+# `PlannerWit.a_break_row_is_replayed_or_the_running_break_is_refuted` and restated as
+# `Planner.a_break_row_is_replayed_running_or_kept`.  The citations left are W-35's append-only
+# README table and its land block.
+2 Planner.a_break_row_is_replayed_or_the_running_break
 # W-35 track E: the edit-path token law described the hole the owner's D56 closed -- an est
 # edit appending an `est:` token beside a leading estimate -- and was REFUTED as
 # `setVal_writes_the_token_the_loader_reads_is_refuted`, restated on its subdomain as
 # `setVal_writes_the_token_the_loader_reads_unless_it_rewrites_the_leading_estimate`.  The two
 # citations left are stage 3's append-only README blocks (the edit widening and its gap-40 sequel).
 2 setVal_writes_the_token_the_loader_reads
+# W-37 track K (README gaps 3161, 3162): D66 took the eligibility out of the impossible check and
+# D63 the line order out of the rank check, so every name below was RENAMED (the five `hnoimp`
+# lifts back to their own names, the queued-request pair to the hot comparison, the census
+# witnesses to six), REFUTED-AND-RENAMED (the W-31 paying lifts -- `PlannerWit.dayPlan_ok_on_the_
+# whole_day_of_a_paying_decoder_is_refuted`; the energy-clause refutation -- replaced by
+# `PlannerWit.impossibleKept_is_refuted_on_a_paying_day`), or DELETED with no statement surviving
+# the change of type (the two antitone lemmas, `onlyAtY9`, the W-19 and W-21 refutations of lifts
+# W-37 proves).  Every citation counted here is an append-only README block, `Goals.lean`'s
+# stage-6 prose (deletions only for this track) or a dated `Check.lean` banner, each naming the
+# thing as it stood when it was written; the live Lean prose names the successors.
+2 PlanCheck.budgetLeft_mono
+5 PlanCheck.dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
+2 PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
+3 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
+2 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item
+2 PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+6 PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item
+1 PlannerWit.a_quiet_hot_day_drops_its_eligible_impossible_item
+6 PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item
+1 PlannerWit.dayPlan_ok_from_now_given_the_two_comparisons_on_an_unassigned_day_as_W_19_wrote_it_is_refuted
+4 PlannerWit.impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day
+1 PlannerWit.onlyAtY9
+1 PlannerWit.the_census_ceiling_is_seven_on_an_unassigned_day_as_W_21_wrote_it_is_refuted
+5 PlannerWit.the_census_ratio_is_still_seven
+2 PlannerWit.the_census_reaches_eight_on_an_unassigned_day
+1 PlannerWit.the_monotone_rank_check_fails_where_D60_orders_by_date
+1 PlannerWit.the_two_comparisons_are_false_at_the_queued_request
+2 an_unassigned_day_drops_its_eligible_impossible_item
+2 budgetLeft_mono
+1 dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
+1 dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
+3 dayPlan_ok_of_the_core_seven
+1 dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
+4 dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+2 impossibleKept_antitone
+1 impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day
+1 impossibleKept_of_nothing_eligible
+4 planOk_of_no_segments
+1 the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item
+1 the_census_reaches_eight_on_an_unassigned_day
+3 the_two_comparisons_are_false_at_the_queued_request
+1 the_two_comparisons_have_subjects_where_they_bite
+2 impossible_has_no_subject_of_nothing_eligible
+# W-37 track H: DELETED, not refuted.  README gap 3122 made the D60 rewrite one copy
+# (`forkclass::d60_cands`, `forkclass::is_p51`, `forkclass::is_impossible_tie`), so the
+# invariants file's own three went; README gap 3123 froze the D61 fork-region test's seven
+# comparisons into `d61` lines of the class comparand, compared by `compare_line`, so the test
+# went.  Every citation left is the W-36 track K, land and repair blocks, append-only history.
+2 a_wall_on_now_day_with_the_pause_d61_logs_is_planned_as_the_fork_plans_it
+4 w36_d60_cands
+1 w36_is_impossible_tie
+1 w36_is_p51
+# W-37 LAND STEP: DELETED, not refuted.  Track H declared README gap 3280 (the kernel refusing
+# the replan at the minute a routine's window closes) as a counted class of planner_invariants'
+# stability arm and pinned it; track R's host filter (gap 3201) closed it on the same run, so the
+# merge deleted the class, its census and its predicate, and restated the pin as the case
+# planned.  The one citation of each left is track H's append-only README block.
+1 WINDOW_END_REFUSALS
+1 a_routine_window_s_close_is_refused_by_the_kernel
+2 is_window_end_refusal
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

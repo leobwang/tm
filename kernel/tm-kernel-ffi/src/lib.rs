@@ -86,9 +86,15 @@ pub const TRACE_CALLS_ENV: &str = "TM_TRACE_KERNEL_CALLS";
 /// `+` on the one line it writes per call: a capacity verb traces
 /// `kernel call: capacity+log`.
 ///
-/// The order is fixed (capacity, log, emit, apply) so the line is a stable key,
-/// and a request matching nothing is `other` — never the empty list, which
-/// would trace a blank name.
+/// The order is fixed (capacity, log, emit, walls, apply) so the line is a
+/// stable key, and a request matching nothing is `other` — never the empty
+/// list, which would trace a blank name.
+///
+/// **`walls` is the `emit` section's object form** (`"emit":{`, W-37 track T,
+/// README gap 3139): the question D61's housekeeping asks the kernel while a
+/// block runs. It carries the whole tree and a `log` section but no `cmds`, so
+/// without its own name it traced as `log` alone and the whole-tree load it is
+/// was invisible to every column (README gap 3247).
 fn trace_kinds(request: &str) -> Vec<&'static str> {
     let mut kinds = Vec::new();
     if request.contains(r#""capacity":"#) {
@@ -99,6 +105,9 @@ fn trace_kinds(request: &str) -> Vec<&'static str> {
     }
     if request.contains(r#""emit":["#) {
         kinds.push("emit");
+    }
+    if request.contains(r#""emit":{"#) {
+        kinds.push("walls");
     }
     if request.contains(r#""cmds":"#) {
         kinds.push("apply");

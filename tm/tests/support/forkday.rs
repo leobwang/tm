@@ -40,34 +40,29 @@
 //! failure go away (AGENTS §7.2) — and after R3 it cannot be run at all: this
 //! file is the fork's last word on these days.
 //!
-//! # The classes the kernel's day may differ by, and nothing else
+//! # The one class the kernel's day may differ by, and nothing else
 //!
-//! Measured on the four fixture days at W-35 (README gaps 551 and 435), each
-//! counted by [`DayTally`] and bounded by its caller, so a class that widens
-//! and a class that closes both fail loudly:
+//! **Gaps 551, 435 and 550 are CLOSED (stage 6 W-37 track R)**, and their rows
+//! are compared BY VALUE like every other row. Until W-37 each was a declared
+//! class this comparator took off the fork's row before comparing; the kernel
+//! now draws each as the fork does (`Planner.PlanReq.keptBreakRows`,
+//! `Planner.PlanReq.routineHot`, `Planner.PlanReq.candMult`). [`DayTally`]
+//! still COUNTS them — as rows of the old class compared by value — so a
+//! caller's floor (`> 0`) says the frozen days still exercise each, and a
+//! caller's exact count still fails when the frozen set moves:
 //!
-//! * **gap 551** — a planned Break row the fork's day draws and the kernel's
-//!   does not (`PlanReq.todayCut.breaks` holds the cut's breaks and no Break
-//!   row of them is placed). Matched as a fork row of kind `break`, not done,
-//!   starting at or after `now`. It is a digested row, so the day's hash
-//!   differs exactly when one is present, and that is checked.
-//! * **gap 435** — a routine row's `⚠`: fork `emit_segments` marks a scheduled
-//!   window task's routine row `hot` at `p = 0` (plan-basic's `^a3`, "Pick up
-//!   package"), and the kernel writes `hot := false` on every routine row.
-//!   Matched as a fork routine row with `hot: true` whose kernel twin is equal
-//!   in every other field. `hot` is not digested, so it never moves the hash —
-//!   and it IS a mark the day file prints, so it is a display difference, which
-//!   is why it is an R3 prerequisite and not a parity row.
-//! * **gap 550** — the reservation row's multiplier (W-36 track H, README gaps
-//!   2925/2871: the classes of generated days include a running block, and the
-//!   four fixture days held none, so this class had no row to count until the
-//!   comparand was keyed by class). Fork `emit_segments` writes the running
-//!   candidate's `multiplier` on §8.2 choice 5b's reservation row;
-//!   `PlanReq.activeRow` writes `mult := none`. Matched as a fork row of kind
-//!   `block`, marked `current`, carrying a multiplier, whose kernel twin is equal
-//!   in every other field with the multiplier absent. It is DIGESTED
-//!   (`Placement.multiplier`), so a day holding one hashes differently, and
-//!   that is checked like gap 551's rows.
+//! * **gap 551's rows** — a planned Break row (kind `break`, not done, starting
+//!   at or after `now`): fork `emit_segments`' `kept_breaks`, now the kernel's
+//!   too. Digested, so a day holding one now hashes as the fork's.
+//! * **gap 435's marks** (README gap 2870) — a routine row marked `hot`: fork
+//!   `emit_segments` marks a scheduled window task's routine row at `p = 0`
+//!   (plan-basic's `^a3`, "Pick up package"); not digested, compared by value.
+//! * **gap 550's rows** — §8.2 choice 5b's reservation row carrying the running
+//!   candidate's `multiplier`: kind `block`, marked `current`, a multiplier
+//!   present. Digested.
+//!
+//! What stays a declared difference is one class, by design and not a gap:
+//!
 //! * **an under-used row's note** — BY DESIGN, not a gap: fork `emit_segments`
 //!   writes `↓ slot E, item C` into `flags.note`, and the kernel's
 //!   `Planner.assignedSeg` writes no note (its `assignedSeg_note` is a law
@@ -144,12 +139,14 @@ pub struct DayTally {
     pub rows: usize,
     /// Scalar values compared outside the rows.
     pub values: usize,
-    /// Gap 551's rows: planned Breaks the fork draws and the kernel does not.
+    /// Gap 551's rows — planned Breaks the fork draws — COMPARED BY VALUE since
+    /// W-37 (the gap is closed; until then they were set aside, not compared).
     pub break_rows_551: usize,
-    /// Gap 435's marks: a routine row's `⚠` the kernel does not set.
+    /// Gap 435's marks — a routine row's `⚠` — compared by value since W-37.
     pub hot_marks_435: usize,
-    /// Gap 550's rows: a reservation row whose multiplier the kernel does not
-    /// write (W-36 track H; a running block, which no fixture day holds).
+    /// Gap 550's rows — a reservation row carrying a multiplier — compared by
+    /// value since W-37 (W-36 track H; a running block, which no fixture day
+    /// holds).
     pub mult_rows_550: usize,
     /// Under-used rows whose `↓` note the kernel leaves to the renderer (by
     /// design, `Planner.assignedSeg_note`; W-36 track H).
@@ -167,11 +164,10 @@ impl DayTally {
     /// never a constant a failing run would print too.
     pub fn line(&self, what: &str, findings: usize) -> String {
         format!(
-            "frozen fork days — {what}: {} days, {} fork rows, {} other values compared; gap 551 {} \
-             planned break row(s) the kernel does not draw, gap 435 {} routine `⚠` mark(s) it does not \
-             set, gap 550 {} reservation multiplier(s) it does not write, {} under-used note(s) left \
-             to the renderer; {} of {} hashes equal; {} inputs had no frozen day; {findings} other \
-             difference(s)",
+            "frozen fork days — {what}: {} days, {} fork rows, {} other values compared; compared by \
+             value since gaps 551, 435 and 550 closed (W-37): {} planned break row(s), {} routine `⚠` \
+             mark(s), {} reservation multiplier(s); {} under-used note(s) left to the renderer; {} of {} \
+             hashes equal; {} inputs had no frozen day; {findings} other difference(s)",
             self.days,
             self.rows,
             self.values,
@@ -187,8 +183,8 @@ impl DayTally {
 }
 
 /// **Compare a day the kernel planned with the frozen fork's**, by value.
-/// `now` is the instant both were planned at (gap 551's rows start at or after
-/// it). Returns every difference that is not one of the three classes, by name.
+/// `now` is the instant both were planned at (gap 551's rows, counted, start at
+/// or after it). Returns every difference but an under-used row's note, by name.
 pub fn compare_day_with_fork(
     name: &str,
     k: &KernelDay,
@@ -213,35 +209,31 @@ pub fn compare_day_with_fork(
         }
     }
 
-    // The rows: the fork's, less gap 551's rows and with gap 435's mark and gap
-    // 550's multiplier taken off, must be the kernel's exactly and in order.
+    // The rows: the fork's, with only an under-used row's note taken off (the
+    // one class left, by design), must be the kernel's exactly and in order.
+    // Gaps 551, 435 and 550 are closed (W-37 track R): their rows are counted
+    // and compared by value, never set aside.
     let fork_rows = fv["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
     let kernel_rows = kv["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
     t.rows += fork_rows.len();
     let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
     let now_fixed = now.fixed_offset();
     let mut expected: Vec<Value> = Vec::new();
-    let mut breaks = 0usize;
-    let mut mults = 0usize;
-    for (i, row) in fork_rows.iter().enumerate() {
-        let planned_break = row["kind"] == "break"
+    let (mut breaks, mut mults) = (0usize, 0usize);
+    for row in fork_rows {
+        if row["kind"] == "break"
             && row["flags"]["done"] == false
-            && at(&row["start"]).is_some_and(|s| s >= now_fixed);
-        if planned_break {
+            && at(&row["start"]).is_some_and(|s| s >= now_fixed)
+        {
             breaks += 1;
-            continue;
+        }
+        if row["kind"] == "block" && row["flags"]["current"] == true && !row["flags"]["multiplier"].is_null() {
+            mults += 1;
+        }
+        if row["kind"] == "routine" && row["flags"]["hot"] == true {
+            t.hot_marks_435 += 1;
         }
         let mut row = row.clone();
-        if row["kind"] == "block" && row["flags"]["current"] == true && !row["flags"]["multiplier"].is_null() {
-            // Gap 550 only when the kernel holds this row without its multiplier
-            // and does not hold it with one.
-            let mut bare = row.clone();
-            bare["flags"]["multiplier"] = Value::Null;
-            if kernel_rows.contains(&bare) && !kernel_rows.contains(&row) {
-                mults += 1;
-                row = bare;
-            }
-        }
         if row["flags"]["underused"] == true
             && row["flags"]["note"]
                 .as_str()
@@ -255,18 +247,6 @@ pub fn compare_day_with_fork(
                 row = bare;
             }
         }
-        if row["kind"] == "routine" && row["flags"]["hot"] == true {
-            // Gap 435 only when the kernel's row at the same place is this row
-            // without its mark; anything else about it is a real difference.
-            let mut bare = row.clone();
-            bare["flags"]["hot"] = Value::Bool(false);
-            if kernel_rows.contains(&bare) {
-                t.hot_marks_435 += 1;
-                row = bare;
-            } else {
-                findings.push(format!("{name}: fork routine row {i} ({}) has no kernel twin", row["item"]));
-            }
-        }
         expected.push(row);
     }
     t.break_rows_551 += breaks;
@@ -274,7 +254,7 @@ pub fn compare_day_with_fork(
     if expected.as_slice() != kernel_rows {
         let first = expected.iter().zip(kernel_rows).position(|(a, b)| a != b).unwrap_or(expected.len().min(kernel_rows.len()));
         findings.push(format!(
-            "{name}: the rows differ at {first} (fork {} rows less {breaks} planned break(s), kernel {}):\n      fork   {}\n      kernel {}",
+            "{name}: the rows differ at {first} (fork {} rows, kernel {}):\n      fork   {}\n      kernel {}",
             fork_rows.len(),
             kernel_rows.len(),
             expected.get(first).map_or("—".to_string(), Value::to_string),
@@ -282,19 +262,13 @@ pub fn compare_day_with_fork(
         ));
     }
 
-    // The hash: gap 551's rows and gap 550's multiplier are digested, gap
-    // 435's mark is not.
+    // The hash: every digested field of every row is compared above, and an
+    // under-used row's note is not digested, so rows that agree must hash alike.
     let fork_hash = fork["hash"].as_str().unwrap_or_default();
     if k.hash == fork_hash {
         t.hashes_equal += 1;
-        if breaks + mults > 0 {
-            findings.push(format!(
-                "{name}: the hashes agree over a day the kernel drew without {breaks} break(s) and \
-                 {mults} reservation multiplier(s)"
-            ));
-        }
-    } else if breaks + mults == 0 {
-        findings.push(format!("{name}: hash kernel {} fork {fork_hash} over rows that agree", k.hash));
+    } else {
+        findings.push(format!("{name}: hash kernel {} fork {fork_hash}", k.hash));
     }
     findings
 }
@@ -303,7 +277,7 @@ pub fn compare_day_with_fork(
 pub fn no_disagreement(findings: &[String]) {
     assert!(
         findings.is_empty(),
-        "{} disagreement(s) with the frozen fork days (each must be gap 551's, 435's or 550's class):\n  {}",
+        "{} disagreement(s) with the frozen fork days (gaps 551, 435 and 550 are closed; only an under-used row's note may differ):\n  {}",
         findings.len(),
         findings.join("\n  ")
     );

@@ -412,6 +412,17 @@ pub fn routine_instances(
             }
             (a, b)
         };
+        // **An instance with nothing left of its span is not sent** (W-37 track R,
+        // README gap 3201). A daily window that closed before `now` — `lunch`'s
+        // 11:30–13:30 on an afternoon it was not logged done — leaves `from ==
+        // to` above. Fork `collect_routines` keeps such an instance and then
+        // passes over it everywhere (steps 2 and 6 skip `span.1 <= from`, the
+        // notes loop skips it, and it draws no row), while the kernel refuses it
+        // by name (`routineRefused emptyWindow`), so sending it refused the whole
+        // day. Not sending it changes no day the kernel answered before.
+        if to <= from {
+            continue;
+        }
         out.push(RoutineInst {
             id: c.id.clone(),
             inst: c.instance,
