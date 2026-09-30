@@ -70,10 +70,16 @@ pub fn seg_json(seg: &Segment) -> Value {
             "deferred": seg.flags.deferred,
             "open": seg.flags.open,
         },
-        // **Deliberately null**: see the module header. The fork's planner wrote
-        // this column as prose and the kernel's `Note` is a name, so there is
-        // nothing to send and the kernel derives what it can.
-        "note": Value::Null,
+        // **Null but for one row** (see the module header): the fork's planner
+        // wrote this column as prose and the kernel's `Note` is a name, so there
+        // is nothing to send and the kernel derives what it can. The exception is
+        // a replayed `tm pause` ([`Segment::is_pause`]), whose note IS a name the
+        // two sides share (`PAUSED_NOTE`, `EmitWire.readNote`'s `paused`) and
+        // which D68 draws from (`paused <dur>`, parity P59): sent null, the
+        // kernel drew it `lost` and the host `paused`, an UNDECLARED `title`
+        // difference waiting for the first generated day with a typed pause
+        // (W-38 land step, README gap 3436).
+        "note": if seg.is_pause() { json!({"name": "paused"}) } else { Value::Null },
     });
     if let SegKind::Batch(ids) = &seg.kind {
         o["batch"] = json!(ids.iter().map(|i| i.to_string()).collect::<Vec<_>>());

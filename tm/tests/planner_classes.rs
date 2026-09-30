@@ -442,11 +442,21 @@ fn every_test_that_reaches_the_fork_keeps_it_in_one_region() {
     let mut bad = Vec::new();
     let mut regions = Vec::new();
     let mut exempt_seen = BTreeSet::new();
-    for (label, text) in srcwalk::every_rust_file() {
-        if !label.split('/').any(|seg| seg == "tests") {
-            continue;
-        }
-        let scan = forkday::fork_scan(&text);
+    let files: Vec<(String, String)> = srcwalk::every_rust_file()
+        .into_iter()
+        .filter(|(label, _)| label.split('/').any(|seg| seg == "tests"))
+        .collect();
+    // A region's names are the whole test tree's (W-38 land step, README gap 3510): every other
+    // file's region names, read beside this file's own.
+    let names: Vec<(String, Vec<String>)> = files.iter().map(|(l, t)| (l.clone(), forkday::region_names(t))).collect();
+    for (label, text) in &files {
+        let label = label.clone();
+        let foreign: Vec<(String, String)> = names
+            .iter()
+            .filter(|(l, _)| *l != label)
+            .flat_map(|(l, n)| n.iter().map(move |x| (forkday::module_of(l), x.clone())))
+            .collect();
+        let scan = forkday::fork_scan_with(text, &foreign);
         if !scan.deleted {
             regions.push(label.clone());
         }
@@ -501,6 +511,17 @@ fn the_region_guard_sees_code_outside_that_needs_the_region() {
     assert!(scan.escapes.iter().any(|x| x.contains("`helper`, which the region defines")), "{:?}", scan.escapes);
     assert!(scan.escapes.iter().any(|x| x.contains("`TABLE`, which the region defines")), "{:?}", scan.escapes);
     assert_eq!(forkday::top_level_name("pub fn kernel_prios(plan: &Value)"), Some("kernel_prios".to_string()));
+    // **Another file's region** (W-38 land step, README gap 3510): `kernel_unplaced_banner.rs`
+    // imported `planner_common`'s region's `Fork` outside any region, and the per-file guard was
+    // green. A foreign region's name used outside is an escape; the same name DECLARED outside
+    // this file's region is this file's own.
+    let foreign = vec![("planner_common".to_string(), "Fork".to_string())];
+    let escaped = forkday::fork_scan_with("use planner_common::{at, Fork};\nlet d = planner_common::Fork.day();\n", &foreign).escapes;
+    assert_eq!(escaped.len(), 2, "the guard saw {} of two reaches into another region: {escaped:?}", escaped.len());
+    let own = forkday::fork_scan_with("use planner_common::{at, Kernel};\nlet Fork = 1;\nlet d = other::Fork;\n", &foreign).escapes;
+    assert!(own.is_empty(), "a name not reached through the region's module was read as the region's: {own:?}");
+    assert_eq!(forkday::module_of("tm/tests/planner_common/mod.rs"), "planner_common");
+    assert_eq!(forkday::module_of("tm/tests/support/forkclass.rs"), "forkclass");
     assert_eq!(forkday::top_level_name("    fn day(&self)"), None, "a method is not a top-level name");
 }
 

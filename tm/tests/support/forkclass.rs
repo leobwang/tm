@@ -605,8 +605,9 @@ pub fn class_of(b: &Built) -> Class {
 ///    of them.
 /// 4. **A paused block was paused by something the binary pauses it for**: the
 ///    log's own `pause` (`OpenBlock::paused`), the running break (`tm break`
-///    pauses it), or an interruption that began while it ran (`tm interrupt`
-///    names and pauses it) — and a block that is not paused has none of them.
+///    pauses it), or an OPEN interruption (`tm interrupt` names and pauses the
+///    block it interrupts, and since W-38 `tm start` inside one writes the block
+///    paused, D69/P60) — and a block that is not paused has none of them.
 ///    `est_min` is the cache's alone (`HOST_ONLY_STATE`) and is not asked.
 pub fn binary_holds(b: &Built) -> Result<(), Vec<String>> {
     let st = &b.world.state;
@@ -637,11 +638,15 @@ pub fn binary_holds(b: &Built) -> Result<(), Vec<String>> {
         }
     }
     if let (Some(a), Some(ob)) = (st.active.as_ref(), r.block) {
-        let by_interrupt = r.interrupt.is_some_and(|i| i.id.as_deref() == Some(ob.id.as_str()));
+        // Any OPEN interruption: `tm interrupt` names and pauses the block it interrupts, and
+        // since W-38 `tm start` inside an open interruption writes the block paused (D69, P60,
+        // `ctx::open_interruption`; README gap 3478) -- until the land step this read only an
+        // interruption NAMING the block, the fork-point `tm start`'s rule.
+        let by_interrupt = r.interrupt.is_some();
         let reason = ob.paused || r.brk.is_some() || by_interrupt;
         if a.paused != reason {
             bad.push(format!(
-                "4: the block is {}paused and the log pauses it {ob_p}, a break runs {}, an interruption names it {by_interrupt}",
+                "4: the block is {}paused and the log pauses it {ob_p}, a break runs {}, an interruption is open {by_interrupt}",
                 if a.paused { "" } else { "not " },
                 r.brk.is_some(),
                 ob_p = ob.paused,

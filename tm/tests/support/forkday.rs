@@ -359,6 +359,45 @@ pub struct ForkScan {
 /// comparand really did move. Comment lines are skipped; the needles live here
 /// so a file that scans itself cannot match its own test.
 pub fn fork_scan(source: &str) -> ForkScan {
+    fork_scan_with(source, &[])
+}
+
+/// **The module a test-tree file is reached through** — its stem, or its directory's name for a
+/// `mod.rs` (`tm/tests/planner_common/mod.rs` is `planner_common`, `support/forkclass.rs` is
+/// `forkclass`, which every includer names it).
+pub fn module_of(label: &str) -> String {
+    let p = std::path::Path::new(label);
+    if p.file_name().is_some_and(|f| f == "mod.rs") {
+        p.parent().and_then(|d| d.file_name()).map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+    } else {
+        p.file_stem().map(|d| d.to_string_lossy().to_string()).unwrap_or_default()
+    }
+}
+
+/// **The top-level names a file's fork region declares** — what R3 deletes with it, read as
+/// [`fork_scan`] reads its own file's (W-38 land step, README gap 3510).
+pub fn region_names(source: &str) -> Vec<String> {
+    let at_line_start = |needle: &str| {
+        source.match_indices(needle).map(|(i, _)| i).find(|&i| i == 0 || source.as_bytes()[i - 1] == b'\n')
+    };
+    match (at_line_start("// BEGIN THE FORK PLANNER"), at_line_start("// END THE FORK PLANNER")) {
+        (Some(i), Some(j)) if i < j => srcwalk::code_lines(&source[i..j])
+            .into_iter()
+            .filter_map(|(_, code)| top_level_name(&code))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// [`fork_scan`], with the names OTHER files' regions declare — **a region's names are the whole
+/// test tree's, not its file's** (W-38 land step, README gap 3510): until then the guard read only
+/// the file's own region, and track K's `kernel_unplaced_banner.rs` imported `planner_common`'s
+/// region's `Fork` outside any region, with the guard green and R3's simulated deletion failing to
+/// build. Another file's item is reached only through that file's MODULE, so `foreign` is
+/// `(module, name)` and an outside code line escapes when it spells `module::` and names the word
+/// — `planner_common::Fork`, or the `use planner_common::{…, Fork}` that imports it. What this
+/// cannot see: a glob import (`use m::*`) followed by a bare use of the name.
+pub fn fork_scan_with(source: &str, foreign: &[(String, String)]) -> ForkScan {
     const BEGIN: &str = "// BEGIN THE FORK PLANNER";
     const END: &str = "// END THE FORK PLANNER";
     const NEEDLES: [&str; 6] = ["planner::", "tm_core::planner", "PlanInput", "with_ranking", ".input(&", "fn input"];
@@ -387,13 +426,7 @@ pub fn fork_scan(source: &str) -> ForkScan {
     // simulation of the deletion found a test outside `planner_invariants.rs`' region reading
     // the kernel's §7 answers through the region's own `kernel_prios`. A property of the file,
     // per file: the region's own top-level names, read off its code at column zero.
-    let region_names: Vec<String> = match (at_line_start(BEGIN), at_line_start(END)) {
-        (Some(i), Some(j)) => srcwalk::code_lines(&source[i..j])
-            .into_iter()
-            .filter_map(|(_, code)| top_level_name(&code))
-            .collect(),
-        _ => Vec::new(),
-    };
+    let region_names = region_names(source);
     let escapes = srcwalk::code_lines(&outside)
         .into_iter()
         .map(|(i, code)| (i - 1, blank_strings(&code)))
@@ -408,6 +441,12 @@ pub fn fork_scan(source: &str) -> ForkScan {
                     .iter()
                     .filter(|n| names_word(&l, n))
                     .map(|n| format!("line {i}: `{n}`, which the region defines, in {}", l.trim())),
+            );
+            found.extend(
+                foreign
+                    .iter()
+                    .filter(|(m, n)| l.contains(&format!("{m}::")) && names_word(&l, n))
+                    .map(|(m, n)| format!("line {i}: `{m}::{n}`, which {m}'s region defines, in {}", l.trim())),
             );
             found
         })

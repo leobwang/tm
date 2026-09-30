@@ -201,6 +201,10 @@ fn the_kernel_and_the_host_draw_a_paused_row_alike() {
     }
     let fork = rowwire::fork_cells(&plan, &tree, &cfg);
     let mut req = rowwire::request(docs(), &plan, &cfg);
+    // The rows wire sends a paused row's note NAME itself and no other note (W-38 land step,
+    // README gap 3436) -- what the generated cell arm in `planner_invariants.rs` relies on.
+    assert_eq!(req["plan"]["segments"][0]["note"], json!({"name": "paused"}));
+    assert_eq!(req["plan"]["segments"][1]["note"], Value::Null);
     for (i, (_, name)) in notes.iter().enumerate() {
         req["plan"]["segments"][i]["note"] = json!({"name": name});
     }

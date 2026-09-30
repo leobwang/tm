@@ -225,10 +225,10 @@ still the decoder's: a wire value that is too long is *refused*, and a group the
 is *truncated* — two different questions about the same bound, which is why there are two
 constructors and not one with two readings (AGENTS §5.6).
 
-**The truncation is not known to be unreachable on a produced day**, which is README gap
-**1900**; `batchIdsOf_of_bounded` below is the subdomain form (AGENTS §3.1 item 4) and
-`PlanReq.a_group_is_a_bounded_batch` is the fact that would discharge it for
-`buildGroups`. -/
+**The truncation never fires on a produced day** (README gap **1900**, closed at W-38 for the day's
+rows): its only caller is step 5's `assignedSeg`, and every group step 5 gives a slot is a bounded
+batch (`PlanFold.a_filled_slot_assigns_its_groups_members`); `batchIdsOf_of_bounded` below is the
+subdomain form (AGENTS §3.1 item 4). -/
 def batchIdsOf (ids : List Id) : BatchIds :=
   ⟨ids.take maxBatch, by
     rw [List.length_take]; omega⟩

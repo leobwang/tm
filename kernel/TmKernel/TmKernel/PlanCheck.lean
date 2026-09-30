@@ -5858,8 +5858,8 @@ theorem noOverbook_from_now (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.ye
       ((((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
         r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf).filter Q).map
           (fun s => s.val.stop - s.val.start)) := by
-    unfold dayRows sortRows
-    exact ((Replay.insSort_perm rowLe _).filter Q).map _
+    unfold dayRows sortRows -- W-38 land: step 1 is walked in `stepOneOrder`, a permutation of `stepOneSegs` (track R)
+    exact (((Replay.insSort_perm rowLe _).trans ((((((((stepOneOrder_perm r).append_right _).append_right _).append_right _).append_right _).append_right _).append_right _).map segOf)).filter Q).map _
   rw [hperm.sum_nat]
   -- every row that passes Q is a row of the fold
   have hno : ∀ t, (t ∈ stepOneSegs r ∨ t ∈ dayRoutineSegs r ∨ t ∈ reservationSegs r ∨

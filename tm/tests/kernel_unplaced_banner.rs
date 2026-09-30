@@ -24,7 +24,7 @@
 
 mod planner_common;
 
-use planner_common::{at, date, of_texts, DayPlanner, Fork, Kernel};
+use planner_common::{at, date, of_texts, DayPlanner, Kernel};
 use chrono::NaiveTime;
 use tm_core::dayplan::NoPlace;
 use tm_core::model::Id;
@@ -89,6 +89,43 @@ fn the_kernel_names_the_atomic_item_its_run_was_taken_from() {
     assert!(!h1.contains("not placed"), "{h1}");
 }
 
+/// **A budget the walk spends is named `budget spent`**: the same world with
+/// a budget of one block — `^h1` takes the first slot and spends it, and the
+/// walk passes the slots `^p1`'s runs start at.
+#[test]
+fn a_budget_the_walk_spends_is_named() {
+    let fx = world();
+    let state = RuntimeState { budget: Some(1), ..late_state() };
+    let now = at("2026-09-07", 14, 0);
+    let day = Kernel.day(&fx, &state, now);
+    assert_eq!(day.diagnostics.unplaced, vec![(Id::new("p1"), NoPlace::BudgetSpent)]);
+    let banners = tm_core::emit::render_banners(&day, &fx.tree, &fx.cfg);
+    assert!(
+        banners.iter().any(|b| b.contains("Plain task") && b.ends_with(" · not placed: budget spent")),
+        "{banners:?}"
+    );
+}
+
+/// **The reason is printed and not serialised** (README gap 3351): the
+/// diagnostics `tm plan --json` and `.tm/last_plan.json` write carry no
+/// `unplaced` key on a day that names an item — the name is the one thing that
+/// differs from the fork's day, and it reaches the banner. (The fork's half —
+/// the kernel's day serialises the fork's diagnostics keys, key for key — is in
+/// this file's fork region, which R3 deletes.)
+#[test]
+fn the_json_keeps_the_forks_diagnostics_shape() {
+    let fx = world();
+    let now = at("2026-09-07", 14, 0);
+    let named = Kernel.day(&fx, &late_state(), now);
+    assert!(!named.diagnostics.unplaced.is_empty());
+    let v = serde_json::to_value(&named.diagnostics).expect("serialises");
+    assert!(v.get("unplaced").is_none(), "{v}");
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (W-38 land step: track K's
+// two fork comparisons were written outside any region, and R3's simulated deletion did not build)
+use planner_common::Fork;
+
 /// **The fork drops `^p1` the same way and says nothing** — parity P58: the
 /// rows agree, and only the kernel's day names the drop.
 #[test]
@@ -113,40 +150,17 @@ fn the_fork_drops_the_same_item_and_names_nothing() {
     assert!(fb.iter().all(|b| !b.contains("not placed")), "{fb:?}");
 }
 
-/// **A budget the walk spends is named `budget spent`**: the same world with
-/// a budget of one block — `^h1` takes the first slot and spends it, and the
-/// walk passes the slots `^p1`'s runs start at.
+/// The fork's half of [`the_json_keeps_the_forks_diagnostics_shape`]: the
+/// kernel's day and the fork's serialise the same diagnostics keys.
 #[test]
-fn a_budget_the_walk_spends_is_named() {
-    let fx = world();
-    let state = RuntimeState { budget: Some(1), ..late_state() };
-    let now = at("2026-09-07", 14, 0);
-    let day = Kernel.day(&fx, &state, now);
-    assert_eq!(day.diagnostics.unplaced, vec![(Id::new("p1"), NoPlace::BudgetSpent)]);
-    let banners = tm_core::emit::render_banners(&day, &fx.tree, &fx.cfg);
-    assert!(
-        banners.iter().any(|b| b.contains("Plain task") && b.ends_with(" · not placed: budget spent")),
-        "{banners:?}"
-    );
-}
-
-/// **The reason is printed and not serialised** (README gap 3351): the
-/// diagnostics `tm plan --json` and `.tm/last_plan.json` write are the fork's
-/// shape on a day that names an item, key for key, and the kernel's day and
-/// the fork's serialise the same diagnostics here — the name is the one thing
-/// that differs, and it reaches the banner.
-#[test]
-fn the_json_keeps_the_forks_diagnostics_shape() {
+fn the_json_diagnostics_keys_are_the_forks() {
     let fx = world();
     let now = at("2026-09-07", 14, 0);
-    let named = Kernel.day(&fx, &late_state(), now);
-    assert!(!named.diagnostics.unplaced.is_empty());
-    let v = serde_json::to_value(&named.diagnostics).expect("serialises");
-    assert!(v.get("unplaced").is_none(), "{v}");
-    let fork = Fork.day(&fx, &late_state(), now);
-    let f = serde_json::to_value(&fork.diagnostics).expect("serialises");
+    let v = serde_json::to_value(&Kernel.day(&fx, &late_state(), now).diagnostics).expect("serialises");
+    let f = serde_json::to_value(&Fork.day(&fx, &late_state(), now).diagnostics).expect("serialises");
     let keys = |x: &serde_json::Value| -> Vec<String> {
         x.as_object().map(|o| o.keys().cloned().collect()).unwrap_or_default()
     };
     assert_eq!(keys(&v), keys(&f));
 }
+// END THE FORK PLANNER

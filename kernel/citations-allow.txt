@@ -643,7 +643,7 @@ can_fail
 # citations counted here are append-only README blocks, a dated `Check.lean` banner, and the
 # `Goals.lean`/`PlanCheck.lean` prose track K owns this run (README gap 3392 names each for it).
 1 PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
-1 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+2 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 12 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
 9 the_budget_does_not_move_the_assigned_set_at_the_busy_request
 # W-38 track H: DELETED, not refuted.  `planner_invariants`' own P45 checker over the raw
@@ -1107,3 +1107,13 @@ with_minute
 1 atSec
 1 secAt
 2 wallsWitnessRequest
+#
+#   * W-38 LAND (README gaps 3281 and 3394): `planner_invariants.rs`' declared class and its pin
+#     test were DELETED, because track R's `Planner.stepOneOrder` draws an interruption among the
+#     walls where fork `collect_walls` sorts it and the class counted 0 on every run.  Every
+#     citation is an append-only README block recording the class as it stood (W-37's gap 3281,
+#     W-38 track R's gap 3394, W-38 track H's table, and the W-38 land block that records the deletion).
+#     `dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight` above counts the land
+#     block's record of track R deleting it as well.
+7 order_differs_only_at_an_interruption
+4 the_interruption_order_class_is_exactly_that

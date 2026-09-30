@@ -719,9 +719,12 @@ pub fn build_with(case: &Case, cfg: Config, typed: bool) -> World {
                 id: Id::new(id),
                 started: started.naive_local().time(),
                 est_min: est,
-                // `tm interrupt` pauses the block it interrupts (D64(b)); a meeting
-                // whose pause is the last word on the timer holds it paused (D61).
-                paused: intr.as_ref().is_some_and(|i| i.id.is_some()) || marks.paused,
+                // `tm interrupt` pauses the block it interrupts (D64(b)), and since
+                // W-38 `tm start` inside an open interruption writes the block paused
+                // (D69, parity P60, README gap 3283) -- so an OPEN interruption pauses
+                // the running block whether it names it or not (README gap 3478); a
+                // meeting whose pause is the last word on the timer holds it paused (D61).
+                paused: intr.is_some() || marks.paused,
             })
         }),
         interrupt: intr.as_ref().map(|i| InterruptState {

@@ -7485,7 +7485,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- The view law window_is_the_lookaheads was renamed in place above to the subdomain it holds on.
 -- ============================================================================
 #print axioms Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it
-#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 
 -- ============================================================================
 -- APPENDED 2026-09-29: stage 6 W-38 TRACK K -- the owner's D67 (README gap 3160, parity P58): the day NAMES

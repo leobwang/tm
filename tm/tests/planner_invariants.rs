@@ -158,8 +158,9 @@ trait Planner {
     /// The day planned for `w` at `state` and `now`, or why none was.
     fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String>;
     /// The candidates re-keyed so `(root_order, own_order)` is the planner's
-    /// own §7.4 order (the owner's D63: §8.3's monotone-rank check reads it).
-    fn rank_view(&self, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate>;
+    /// own §7.4 order (the owner's D63: §8.3's monotone-rank check reads it),
+    /// for the day `day` plans for `w` at `w.state` and `w.now`.
+    fn rank_view(&self, w: &World, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate>;
     /// Which one, for a failure message.
     fn name(&self) -> &'static str;
 }
@@ -186,8 +187,53 @@ impl Planner for Kernel {
         };
         planreq::kernel_day(&pw, None).map(|(k, _)| k.day)
     }
-    fn rank_view(&self, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
-        forkclass::d60_cands(cands, prios)
+    /// **The order the kernel SAYS its step 5 served** (W-38's land step, README gaps 3343 and
+    /// 3396): `diagnostics.served`, one `{ix, id, ci}` per answer that entered the order, in the
+    /// walk's order (`Planner.PlanReq.dayServed`, `Planner.dayPlan_serves_in_the_walks_order`).
+    /// Until W-38 this was `forkclass::d60_cands`, a Rust copy of D63's key with D60's
+    /// component, so §8.3's monotone check read the harness's idea of the kernel's order and
+    /// not the kernel's; the copy stays, compared with this key by value in
+    /// `planner_w38_order.rs`. A candidate the check can compare (`comparable`) is eligible and
+    /// not a wall, so it enters the order: one missing from `served` is a finding, by name.
+    fn rank_view(&self, w: &World, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+        let pw = planreq::World {
+            docs: &w.docs,
+            log: &w.log,
+            tree: &w.tree,
+            cfg: &w.cfg,
+            state: &w.state,
+            now: w.now,
+            cands,
+        };
+        let (req, order) = planreq::request(&pw, None);
+        let resp = planreq::call(&req);
+        let served = resp["ok"]["plan"]["diagnostics"]["served"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the kernel's day carries no `served` order: {resp}"));
+        let mut rank: Vec<Option<usize>> = vec![None; cands.len()];
+        for (k, e) in served.iter().enumerate() {
+            let ix = e["ix"].as_u64().unwrap_or_else(|| panic!("a `served` entry with no `ix`: {e}")) as usize;
+            let i = *order.get(ix).unwrap_or_else(|| panic!("`served` names request position {ix}, which was not sent"));
+            assert_eq!(e["id"].as_str(), Some(cands[i].id.as_str()), "`served` entry {e} is not the candidate sent at {ix}");
+            assert!(rank[i].is_none(), "`served` names {} twice", cands[i].id);
+            rank[i] = Some(k);
+        }
+        cands
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let mut d = c.clone();
+                match rank[i] {
+                    Some(k) => d.root_order = (0, k),
+                    None => {
+                        assert!(!comparable(c), "{} is comparable and the kernel did not serve it", c.id);
+                        d.root_order = (1, i);
+                    }
+                }
+                d.own_order = (0, 0);
+                d
+            })
+            .collect()
     }
     fn name(&self) -> &'static str {
         "the kernel"
@@ -340,7 +386,7 @@ fn check_day_invariants(p: &dyn Planner, case: &Case, w: &World) -> Result<(), T
     // **The planner's OWN §7.4 order** (the owner's D63): the key its step 5
     // serves by, which is the fork's `(root_order, own_order)` and, on the
     // kernel, D60's order among `p = 0` impossible answers before them.
-    let rv = p.rank_view(&cands, &prios);
+    let rv = p.rank_view(w, &cands, &prios);
     let done = assigned_set(&day, w.now);
     let max_energy = day
         .segments
@@ -1076,7 +1122,7 @@ fn the_kernels_monotone_rank_is_its_own_order() {
         fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
             Kernel.day(w, state, now)
         }
-        fn rank_view(&self, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+        fn rank_view(&self, _w: &World, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
             cands.to_vec()
         }
         fn name(&self) -> &'static str {
@@ -1594,7 +1640,7 @@ impl Planner for Fork {
     fn day(&self, w: &World, state: &RuntimeState, now: DateTime<Tz>) -> Result<DayPlan, String> {
         Ok(planner::plan(&w.input(state, now)))
     }
-    fn rank_view(&self, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+    fn rank_view(&self, _w: &World, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
         cands.to_vec()
     }
     fn name(&self) -> &'static str {
@@ -3281,48 +3327,12 @@ proptest! {
 /// compared whole on a day carrying an open-block row; days with a drawn break;
 /// days whose rest debt was non-zero; kernel rows digested with a multiplier other
 /// than `1.0` (W-34 repair, README gap 2742 -- a DRAW is not a DIGEST).
-/// **W-37 track H adds one**: days whose rows agree and whose ORDER differs only as README
-/// gap 3281's declared class allows ([`order_differs_only_at_an_interruption`]).
-static HASH_CENSUS: Mutex<[u64; 19]> = Mutex::new([0; 19]);
-
-/// **README gap 3281, a DECLARED class** (W-37 track H): two days holding the same rows in a
-/// different ORDER, where every run of rows starting at one instant that the two order
-/// differently is an interruption's Lost row and Wall rows, and nothing else. The kernel draws
-/// the interruption's Lost row before a wall starting at the same minute; the fork orders the
-/// two as its `walls()` sorts every wall, by `(blocked_start, id)`, and an interruption that
-/// names the block it paused — `tm interrupt`'s shape, which the generator draws since W-37
-/// (owner D64(b)) — carries that block's id (`z…`), after a calendar wall's (`w…`). Until W-37
-/// the generator's interruption named no block (`""`, which sorts first) and the two agreed.
-/// The day's hash digests the order, so the two hashes differ; everything else agrees.
-fn order_differs_only_at_an_interruption(k: &[Segment], f: &[Segment]) -> bool {
-    if k.len() != f.len() {
-        return false;
-    }
-    let mut differs = false;
-    let mut i = 0;
-    while i < k.len() {
-        let start = k[i].start;
-        let j = (i..k.len()).find(|&j| k[j].start != start).unwrap_or(k.len());
-        if f[i..j].iter().any(|s| s.start != start) || f.get(j).is_some_and(|s| s.start == start) {
-            return false;
-        }
-        let kk: Vec<String> = k[i..j].iter().map(placement_key).collect();
-        let fk: Vec<String> = f[i..j].iter().map(placement_key).collect();
-        if kk != fk {
-            let (mut a, mut b) = (kk, fk);
-            a.sort();
-            b.sort();
-            let only = k[i..j].iter().all(|s| matches!(s.kind, SegKind::Lost | SegKind::Wall))
-                && k[i..j].iter().any(|s| matches!(s.kind, SegKind::Lost));
-            if a != b || !only {
-                return false;
-            }
-            differs = true;
-        }
-        i = j;
-    }
-    differs
-}
+/// (W-37 track H added a nineteenth, the days README gap 3281's declared class explained; W-38's
+/// land step deleted it with the class, because track R's `Planner.stepOneOrder` draws an
+/// interruption among the walls where fork `collect_walls` sorts it and the class counted 0 on
+/// every run -- README gap 3394. The seed that found it, `ef4f4091…`, stays in the regressions
+/// file, where it now asks for EQUAL hashes.)
+static HASH_CENSUS: Mutex<[u64; 18]> = Mutex::new([0; 18]);
 
 /// Fork `parse_instance_key` (`planner.rs:2375`, private to `tm-core::planner`),
 /// for the `inst` text a kernel row carries.
@@ -3495,7 +3505,6 @@ proptest! {
         let (mut compared, mut same, mut rows_agree, mut explained) = (0u64, 0u64, 0u64, 0u64);
         let (mut c554, mut c550, mut c551) = (0u64, 0u64, 0u64);
         let (mut set_aside, mut def_ids, mut rest_debt) = (0u64, 0u64, false);
-        let mut c3281 = 0u64;
         if let Some(d2) = day2.as_ref() {
             compared = 1;
             let fonly = rows_not_in(&d2.segments, &krows);
@@ -3568,16 +3577,13 @@ proptest! {
             rest_debt = d2.diagnostics.rest_debt_min > 0;
             if fonly.is_empty() && konly.is_empty() {
                 rows_agree = 1;
-                if khash != d2.hash() && order_differs_only_at_an_interruption(&krows, &d2.segments) {
-                    // README gap 3281's declared class, counted and bounded by its property.
-                    c3281 = 1;
-                } else {
-                    // **Rows that agree must hash alike — in the same ORDER.**
-                    prop_assert_eq!(
-                        &khash, &d2.hash(),
-                        "the two days hold the same rows and hash differently: the order differs"
-                    );
-                }
+                // **Rows that agree must hash alike — in the same ORDER** (since W-38's land
+                // step on every day: README gap 3281's interruption among the walls is drawn
+                // where the fork sorts it, and its declared class is gone, gap 3394).
+                prop_assert_eq!(
+                    &khash, &d2.hash(),
+                    "the two days hold the same rows and hash differently: the order differs"
+                );
             } else {
                 explained = 1;
             }
@@ -3585,7 +3591,7 @@ proptest! {
         }
         let batches = krows.iter().filter(|s| matches!(s.kind, SegKind::Batch(_))).count() as u64;
         let [cases, noprio, cmp, eq, agree, digested, drawn, n554, n550, n551, nexpl, nbatch,
-             ndefdays, ndefids, naside, nbrk, nrest, nmult, n3281] = {
+             ndefdays, ndefids, naside, nbrk, nrest, nmult] = {
             let mut c = HASH_CENSUS.lock().expect("census");
             c[0] += 1;
             c[1] += 1 - compared;
@@ -3608,7 +3614,6 @@ proptest! {
                 .iter()
                 .filter(|s| s.flags.multiplier.is_some_and(|m| m != 1.0))
                 .count() as u64;
-            c[18] += c3281;
             *c
         };
         let generated: u64 = std::env::var("TM_PROPTEST_CASES")
@@ -3646,8 +3651,7 @@ proptest! {
              LONGER A CLASS) {n551}; open-block rows (gap 554, NO LONGER A \
              CLASS) the kernel's day holds {n554}; STEP 8's `deferred` compared on {ndefdays} \
              days ({ndefids} ids, whole, on {naside} days carrying an open-block row), \
-             `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break); \
-             days whose rows agree in a different ORDER at an interruption (gap 3281) {n3281}"
+             `restDebtMin` on {ndefdays} ({nrest} non-zero, {nbrk} days with a drawn break)"
         );
     }
 }
@@ -5165,33 +5169,6 @@ proptest! {
             c[0], c[1], c[9], c[2], c[3], c[4], c[5], c[6], c[7], c[8]
         );
     }
-}
-/// **README gap 3281's class bites and does not over-bite** (AGENTS §5.8), on rows built by
-/// hand: an interruption's Lost row and a Wall row swapped at one start is the class; a Block
-/// swapped with a Wall, rows from two different starts, a row one side lacks, and two equal
-/// lists are not.
-#[test]
-fn the_interruption_order_class_is_exactly_that() {
-    let tz = tm_core::config::Config::default().tz;
-    let row = |kind: SegKind, item: &str, h: u32| Segment {
-        start: at(tz, h, 0),
-        end: at(tz, h + 1, 0),
-        kind,
-        energy: None,
-        item: Some(Id::new(item)),
-        instance: None,
-        flags: tm_core::dayplan::SegFlags::default(),
-    };
-    let lost = row(SegKind::Lost, "zaa", 13);
-    let wall = row(SegKind::Wall, "waa", 13);
-    let block = row(SegKind::Block, "zab", 13);
-    let later = row(SegKind::Wall, "wab", 15);
-    let k = [lost.clone(), wall.clone(), later.clone()];
-    assert!(order_differs_only_at_an_interruption(&k, &[wall.clone(), lost.clone(), later.clone()]));
-    assert!(!order_differs_only_at_an_interruption(&k, &k), "equal lists are not the class");
-    assert!(!order_differs_only_at_an_interruption(&[block.clone(), wall.clone()], &[wall.clone(), block]));
-    assert!(!order_differs_only_at_an_interruption(&[lost.clone(), later.clone()], &[later.clone(), lost.clone()]));
-    assert!(!order_differs_only_at_an_interruption(&[lost.clone(), wall.clone()], &[wall]));
 }
 // END THE FORK PLANNER
 

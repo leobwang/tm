@@ -73,36 +73,9 @@ mod plangen;
 #[path = "support/srcwalk.rs"]
 mod srcwalk;
 
-use chrono::{DateTime, Duration, NaiveTime};
-use chrono_tz::Tz;
+use chrono::Duration;
 use tm_core::config::Config;
 use tm_core::dayplan::{SegKind, Segment};
-use tm_core::store::RuntimeState;
-
-use planner_common::{at, basic_state, date};
-
-/// `plan-basic` arriving at 10:30 — `planner_fixtures.rs`' late state.
-fn late_state() -> RuntimeState {
-    RuntimeState {
-        date: Some(date("2026-09-07")),
-        wake: Some(NaiveTime::from_hms_opt(9, 0, 0).expect("time")),
-        arrival: Some(NaiveTime::from_hms_opt(10, 30, 0).expect("time")),
-        loc: Some("lounge".to_string()),
-        ..RuntimeState::default()
-    }
-}
-
-/// Every ten minutes from `from` to 20:50.
-fn instants(from: (u32, u32)) -> Vec<DateTime<Tz>> {
-    let mut out = Vec::new();
-    let mut t = at("2026-09-07", from.0, from.1);
-    let end = at("2026-09-07", 20, 50);
-    while t <= end {
-        out.push(t);
-        t += Duration::minutes(10);
-    }
-    out
-}
 
 /// **P45's rule counts the running break by a property, and still bites on a
 /// second Break row inside it** (AGENTS §5.8). Since W-37 the kernel draws the
@@ -145,6 +118,37 @@ fn the_p45_rule_counts_the_running_break_by_its_span_and_bites_a_second_one() {
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gap 2722)
+// The helpers only this region reads live in it (W-38 land step, README gap 3475: R3's simulated
+// deletion left them dead, three warnings).
+use chrono::{DateTime, NaiveTime};
+use chrono_tz::Tz;
+use tm_core::store::RuntimeState;
+
+use planner_common::{at, basic_state, date};
+
+/// `plan-basic` arriving at 10:30 — `planner_fixtures.rs`' late state.
+fn late_state() -> RuntimeState {
+    RuntimeState {
+        date: Some(date("2026-09-07")),
+        wake: Some(NaiveTime::from_hms_opt(9, 0, 0).expect("time")),
+        arrival: Some(NaiveTime::from_hms_opt(10, 30, 0).expect("time")),
+        loc: Some("lounge".to_string()),
+        ..RuntimeState::default()
+    }
+}
+
+/// Every ten minutes from `from` to 20:50.
+fn instants(from: (u32, u32)) -> Vec<DateTime<Tz>> {
+    let mut out = Vec::new();
+    let mut t = at("2026-09-07", from.0, from.1);
+    let end = at("2026-09-07", 20, 50);
+    while t <= end {
+        out.push(t);
+        t += Duration::minutes(10);
+    }
+    out
+}
+
 /// **`plan-basic` is planned as the shipped fork plans it, at every ten
 /// minutes of the day, from both of the fixture suite's states** — every row
 /// by value, the hash included. The floors say what was compared: gap 2870's
