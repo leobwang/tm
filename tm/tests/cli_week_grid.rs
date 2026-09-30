@@ -108,15 +108,17 @@ fn plan_pause_by_hour(tm: &Tm, at: &str) -> Vec<u64> {
 }
 
 /// **The grid and the plan cut ONE pause alike** (README gap 3528, the W-38
-/// repair). P56's cut is written in the week grid (`review::heat_pieces`,
+/// repair). P56's cut was written in the week grid (the host's heat_pieces,
 /// over `Tree::walls_on` and `capacity::free_intervals`) and in the day plan's
 /// past half (the fork's `past_segments` until R3, the kernel's
-/// `Planner.pastSpans` after it) — two definitions of one cut, pinned until
-/// now only by hand-written values each. For every clock hour of three days —
-/// a typed pause straddling the meeting, D61's pause through it, and a pause no
-/// wall touches — the grid's `pause` minutes are the plan's `pause`-kind
-/// minutes. After R3 this is the comparison between the host's cut and the
-/// kernel's.
+/// `Planner.pastSpans` after it) — two definitions of one cut. Since W-39
+/// track T the grid draws the kernel's cut (`GridCut.segSpans`, which
+/// `GridCut.pastSpans_is_segSpans` says is `Planner.pastSpans`), so until R3
+/// this compares the kernel's cut with the fork's, and after R3 it compares
+/// the kernel's cut with itself through two surfaces. For every clock hour of
+/// three days — a typed pause straddling the meeting, D61's pause through it,
+/// and a pause no wall touches — the grid's `pause` minutes are the plan's
+/// `pause`-kind minutes.
 #[test]
 fn the_grid_and_the_plan_cut_one_pause_alike() {
     let straddle = {

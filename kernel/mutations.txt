@@ -597,7 +597,7 @@ b74fdd8f2c11 TmKernel/TmKernel/WallTimer.lean Tm.WallTimer.stampAt default,none 
 e5716522f343 TmKernel/TmKernel/WallTimer.lean Tm.WallTimer.spanJson default PlannerWit.lean:9683 the_open_wednesdays_wall_is_answered_on_its_index (its statement, decided false)
 04b8a838bc76 TmKernel/TmKernel/WallTimer.lean Tm.WallTimer.entryJson default PlannerWit.lean:9657 the_pause_is_rendered_as_the_log_writes_it (its statement, decided false)
 cfef0c89a597 TmKernel/TmKernel/WallTimer.lean Tm.WallTimer.answer default WallTimer.lean:563 answer_without_an_open_block also WallTimer.lean:570 answer_refuses_commands
-f4056401311f TmKernel/TmKernel/Boundary.lean Tm.wallsEmit default Boundary.lean:13024 wallsEmit_refuses_without_the_replay also Boundary.lean:13051 the_walls_form_is_answered_through_the_emit_section
+08878d998e21 TmKernel/TmKernel/Boundary.lean Tm.wallsEmit default Boundary.lean:13024 wallsEmit_refuses_without_the_replay also Boundary.lean:13050 the_walls_form_is_answered_through_the_emit_section
 734e51f5e4fa TmKernel/TmKernel/WallTimer.lean Tm.WallTimer.isBrk fun_=>true,fun_=>false WallTimer.lean:174 lastIsPauseAt_append also WallTimer.lean:632 the_rule_is_run; WallTimer.lean:713 a_break_inside_the_meeting_leaves_the_pause_the_last_word (its statement, decided false)
 7136441f01a5 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theDaySpentWhereItCouldNotGo unfoldable no Inhabited DayPlan
 0a03a440eba3 TmKernel/TmKernel/PlanCheck.lean Tm.PlanCheck.rankedBefore true,false PlanCheck.lean:5574 rankedBefore_iff then PlannerWit.lean:1540 the_battery_bites_over_a_produced_day; PlanCheck.lean:5574 rankedBefore_iff then PlannerWit.lean:7059 the_three_empty_checks_are_empty_at_every_day_that_assigns_and_pays
@@ -666,3 +666,14 @@ acdcc7095f6d TmKernel/TmKernel/Boundary.lean Tm.cmdDurs default,fun_=>[] Boundar
 5ab4ce43951d TmKernel/TmKernel/Boundary.lean Tm.slotKey default,fun_=>[] Boundary.lean:13168 runLoad_refuses_a_command_writing_past_the_width (its statement, decided false); Boundary.lean:13168 runLoad_refuses_a_command_writing_past_the_width (its statement, decided false)
 acbb04093f12 TmKernel/TmKernel/Boundary.lean Tm.widthGate default Boundary.lean:6580 run_names_the_clock_refusals also Boundary.lean:12323 runCap_refuses_a_command_beside_the_corpus_request
 619850ad3c2c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theUnadmittedImpossibleRequest unfoldable no Inhabited PlanReq
+a2a43d36fc85 TmKernel/TmKernel/GridCut.lean Tm.GridCut.segSpans default,[] GridCut.lean:56 pastSpans_is_segSpans also GridCut.lean:59 pastSpans_is_segSpans; GridCut.lean:56 pastSpans_is_segSpans also GridCut.lean:59 pastSpans_is_segSpans
+bc4c5c9d4957 TmKernel/TmKernel/GridCut.lean Tm.GridCut.coveredSpans default,[] GridCut.lean:144 the_grid_draws_every_second_of_the_clip_once also GridCut.lean:165 a_second_is_covered_iff_a_wall_of_the_day_covers_it; GridCut.lean:144 the_grid_draws_every_second_of_the_clip_once also GridCut.lean:165 a_second_is_covered_iff_a_wall_of_the_day_covers_it
+d371e7919197 TmKernel/TmKernel/GridCut.lean Tm.GridCut.Refusal.json default GridCut.lean:349 the_week_refusal_is_the_err_emit_shape then Boundary.lean:13027 wallsEmit_refuses_without_the_replay
+fe8dbd626a06 TmKernel/TmKernel/GridCut.lean Tm.GridCut.readWeek default GridCut.lean:408 readWeek_is_run (its statement, decided false)
+3b315348c8b8 TmKernel/TmKernel/GridCut.lean Tm.GridCut.isPause true,false GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false); GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+e543bda35838 TmKernel/TmKernel/GridCut.lean Tm.GridCut.cutPieceJson default GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+afb71dfd746e TmKernel/TmKernel/GridCut.lean Tm.GridCut.cutPauseJson default GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+e841ec5247ae TmKernel/TmKernel/GridCut.lean Tm.GridCut.cutDayJson default GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+1e48ecb00ae3 TmKernel/TmKernel/GridCut.lean Tm.GridCut.cutJson default GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+59f714cf8506 TmKernel/TmKernel/GridCut.lean Tm.GridCut.withCut default,a GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false); GridCut.lean:451 the_weeks_cut_is_answered (its statement, decided false)
+c965fc6beefe TmKernel/TmKernel/GridCut.lean Tm.GridCut.answer default GridCut.lean:291 answer_without_a_week also GridCut.lean:327 a_week_asked_is_answered

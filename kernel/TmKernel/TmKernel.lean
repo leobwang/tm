@@ -76,6 +76,7 @@ import TmKernel.Width
 import TmKernel.PastCut
 import TmKernel.WallTimer
 import TmKernel.Planner
+import TmKernel.GridCut
 import TmKernel.PlanDiff
 import TmKernel.PlanFold
 import TmKernel.PlanCheck

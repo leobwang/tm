@@ -64,7 +64,9 @@ use ratatui::Terminal;
 use tm_core::capacity::UnitCapacity;
 use tm_core::config::Config;
 use tm_core::log::Event as LogEvent;
+use tm_core::model::IsoWeek;
 use tm_core::priority::{Candidate, Prio};
+use tm_core::review::PauseCut;
 
 use crate::cli::ctx::{resolve_dir, Ctx, Globals, ReplayScope};
 use crate::cli::ghost;
@@ -169,16 +171,23 @@ fn now_of(g: &Globals, cfg: &Config) -> DateTime<Tz> {
         .with_timezone(&cfg.tz)
 }
 
-/// Read the plan directory into the shape [`App`] wants.
-fn data_of(ctx: &Ctx) -> Result<AppData, CliError> {
+/// Read the plan directory into the shape [`App`] wants. `week_cut` is the
+/// heat grid's cut, which [`reload`] reads where the Review screen is shown.
+fn data_of(ctx: &Ctx, week_cut: PauseCut) -> Result<AppData, CliError> {
     // §12.2/§12.3 read §7's numbers; they are the same pass `tm plan` runs —
     // the kernel's since stage 5 D10 L8, and the minute replan ranks by them.
     let (cands, prios, caps) = ctx.priorities(false)?;
-    Ok(data_with(ctx, cands, prios, caps))
+    Ok(data_with(ctx, cands, prios, caps, week_cut))
 }
 
 /// [`data_of`] with the ranking given.
-fn data_with(ctx: &Ctx, candidates: Vec<Candidate>, prios: Vec<Prio>, caps: Vec<UnitCapacity>) -> AppData {
+fn data_with(
+    ctx: &Ctx,
+    candidates: Vec<Candidate>,
+    prios: Vec<Prio>,
+    caps: Vec<UnitCapacity>,
+    week_cut: PauseCut,
+) -> AppData {
     AppData {
         cfg: ctx.cfg.clone(),
         model: ctx.model.clone(),
@@ -190,6 +199,7 @@ fn data_with(ctx: &Ctx, candidates: Vec<Candidate>, prios: Vec<Prio>, caps: Vec<
         candidates,
         prios,
         caps,
+        week_cut,
         now: ctx.now_tz,
     }
 }
@@ -227,7 +237,7 @@ fn tui_scope(
 /// for every other verb).
 fn load(g: &Globals) -> Result<App, CliError> {
     let ctx = Ctx::load_scoped(g, true, |state, today| tui_scope(Screen::default(), state, today))?;
-    Ok(App::new(data_of(&ctx)?))
+    Ok(App::new(data_of(&ctx, PauseCut::default())?))
 }
 
 /// Re-read the plan directory into an existing [`App`], keeping the UI state,
@@ -241,10 +251,24 @@ fn load(g: &Globals) -> Result<App, CliError> {
 fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
     let screen = app.screen;
     let ctx = Ctx::load_scoped(g, false, |state, today| tui_scope(screen, state, today))?;
-    let (mut data, refused) = match data_of(&ctx) {
+    // **The heat grid's Pauses are cut by the kernel** (README gaps 3432 and
+    // 3528, W-39 track T), as `tm review week` cuts them — read only where the
+    // Review screen is shown, the one screen that draws the grid, because it
+    // is one more kernel call. A refusal keeps the last cut and says so, as a
+    // refused ranking does; a fault still ends the TUI.
+    let (week_cut, cut_refused) = if screen == Screen::Review {
+        match crate::cli::day::week_cut(&ctx, IsoWeek::from_date(ctx.today)) {
+            Ok(cut) => (cut, None),
+            Err(e) if !e.is_kernel_fault() => (app.week_cut.clone(), Some(e.to_string())),
+            Err(e) => return Err(e),
+        }
+    } else {
+        (app.week_cut.clone(), None)
+    };
+    let (mut data, refused) = match data_of(&ctx, week_cut.clone()) {
         Ok(data) => (data, None),
         Err(e) if !e.is_kernel_fault() => {
-            let data = data_with(&ctx, app.candidates.clone(), app.prios.clone(), app.caps.clone());
+            let data = data_with(&ctx, app.candidates.clone(), app.prios.clone(), app.caps.clone(), week_cut);
             (data, Some(e.to_string()))
         }
         Err(e) => return Err(e),
@@ -253,6 +277,8 @@ fn reload(app: &mut App, g: &Globals) -> Result<(), CliError> {
     app.adopt(data);
     if let Some(why) = refused {
         app.message = Some(format!("priorities not refreshed: {why}"));
+    } else if let Some(why) = cut_refused {
+        app.message = Some(format!("week grid not refreshed: {why}"));
     }
     Ok(())
 }
@@ -263,6 +289,9 @@ fn watch(root: &Path) -> Result<(RecommendedWatcher, Receiver<PathBuf>), CliErro
     let (tx, rx) = mpsc::channel();
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(ev) = res {
+            if !is_a_change(&ev.kind) {
+                return;
+            }
             for path in ev.paths {
                 let _ = tx.send(path);
             }
@@ -273,6 +302,26 @@ fn watch(root: &Path) -> Result<(RecommendedWatcher, Receiver<PathBuf>), CliErro
         .watch(root, RecursiveMode::Recursive)
         .map_err(|e| CliError::msg(format!("watch {}: {e}", root.display())))?;
     Ok((watcher, rx))
+}
+
+/// **Whether a watcher event says a file CHANGED** — anything but an access.
+///
+/// `notify` 7's inotify backend watches inotify's open event too, so every READ
+/// of a plan file arrives as `EventKind::Access(Open)`. Forwarded, a verb that only reads
+/// — above all one that REFUSES and writes nothing, D71's `tm pause` inside an
+/// interruption (README gap 3430, W-39 track T) — had its status line replaced
+/// by `inbox.md changed`, the last file it opened, and the TUI then re-parsed a
+/// tree nothing had touched. DRIVEN under a pty: the Space key's refusal never
+/// reached the screen. A read is not a change, so it is not reported as one;
+/// a close after WRITING (inotify's close-write event, which `notify` also
+/// files under `Access`) still is.
+fn is_a_change(kind: &notify::EventKind) -> bool {
+    use notify::event::{AccessKind, AccessMode};
+    match kind {
+        notify::EventKind::Access(AccessKind::Close(AccessMode::Write)) => true,
+        notify::EventKind::Access(_) => false,
+        _ => true,
+    }
 }
 
 /// True for a path the tree is parsed from: a `.md` file outside `.tm/`,
@@ -351,10 +400,14 @@ fn event_loop(
                 }
             }
             // Entering the Review screen widens the scope (§11.1): read the
-            // history it needs before it draws.
+            // history it needs before it draws — and the kernel's cut of the
+            // week's Pauses its heat grid draws (README gaps 3432 and 3528),
+            // which is read on entering it even when the scope is already
+            // `All` (a state with no date).
             if app.screen != screen
-                && tui_scope(app.screen, &app.state, app.today)
-                    != tui_scope(screen, &app.state, app.today)
+                && (app.screen == Screen::Review
+                    || tui_scope(app.screen, &app.state, app.today)
+                        != tui_scope(screen, &app.state, app.today))
             {
                 reload(app, g)?;
             }
@@ -676,6 +729,29 @@ mod tests {
             Path::new("/other"),
             Path::new("/p/week/.#x.md")
         ));
+    }
+
+    /// **A read is not a change** (README gap 3430's TUI half, W-39 track T):
+    /// `notify` 7 reports every open of a plan file, and a verb that only
+    /// reads — a refusal writes nothing — must not have its status line
+    /// replaced by `inbox.md changed`. Every kind that can mean the bytes moved
+    /// still counts (it does not over-bite, AGENTS §5.8).
+    #[test]
+    fn a_read_is_not_a_change_and_a_write_is() {
+        use notify::event::{
+            AccessKind, AccessMode, CreateKind, DataChange, ModifyKind, RemoveKind, RenameMode,
+        };
+        use notify::EventKind;
+        assert!(!is_a_change(&EventKind::Access(AccessKind::Open(AccessMode::Any))));
+        assert!(!is_a_change(&EventKind::Access(AccessKind::Close(AccessMode::Read))));
+        assert!(!is_a_change(&EventKind::Access(AccessKind::Read)));
+        assert!(is_a_change(&EventKind::Access(AccessKind::Close(AccessMode::Write))));
+        assert!(is_a_change(&EventKind::Modify(ModifyKind::Data(DataChange::Any))));
+        assert!(is_a_change(&EventKind::Modify(ModifyKind::Name(RenameMode::To))));
+        assert!(is_a_change(&EventKind::Create(CreateKind::File)));
+        assert!(is_a_change(&EventKind::Remove(RemoveKind::File)));
+        assert!(is_a_change(&EventKind::Any));
+        assert!(is_a_change(&EventKind::Other));
     }
 
     /// Layer 3, integrated at the TUI's one verb seam: a kernel **fault**

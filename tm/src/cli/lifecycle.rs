@@ -437,6 +437,10 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
                 },
                 ..core_review::WeekExtras::default()
             };
+            // The heat grid's Pauses are cut by the KERNEL (README gaps 3432 and
+            // 3528): the cut `tm plan`'s past half makes, over the walls §8.2
+            // step 1 places — never the host's own wall reader.
+            let cut = super::day::week_cut(&ctx, week)?;
             let r = core_review::week_review(
                 &ctx.tree,
                 &ctx.replay,
@@ -445,6 +449,7 @@ pub fn review(g: &Globals, args: &super::ReviewArgs) -> Result<i32, CliError> {
                 week,
                 ctx.cfg.tz,
                 &extras,
+                &cut,
             );
             (
                 week.to_string(),

@@ -1592,7 +1592,9 @@ fn refusal(err: &Value) -> KernelIssue {
             "tzAbsent" => "the request carried no zone table",
             "withCommands" => "the walls form was sent beside commands",
             "badAt" | "badBreak" => "an instant is not a stamp the log's reader accepts",
-            _ => "see WallTimer.lean's `Refusal`",
+            // W-39 (README gaps 3432 and 3528): the week grid's `week`, `GridCut.Refusal`.
+            "badWeek" => "the week asked for is not a `YYYY-MM-DD` date",
+            _ => "see WallTimer.lean's and GridCut.lean's `Refusal`",
         };
         (w.to_string(), format!("kernel refusal: {w} — the day's walls could not be read: {why}"))
     } else {

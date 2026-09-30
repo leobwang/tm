@@ -531,9 +531,28 @@ const CAPACITY_VERBS: &[(&str, &[&str])] = &[
 /// **One of these is the verb's own replay and one is the capacity call's** —
 /// the pairing assertion below is what says which. When gap 275's one-call
 /// shape lands, every entry here drops by one.
+///
+/// **And `tm review week` carries a third, since W-39 track T** (README gaps
+/// 3432 and 3528): its heat grid draws a Pause over the KERNEL's cut, which it
+/// asks for with the `emit` section's walls form and a `week` — one call
+/// carrying the whole tree and a `log` section, as D61's walls call does, so
+/// the kernel cuts each Pause by the walls §8.2 step 1 places. It is pinned in
+/// its own assertion below ([`expected_week_cut_calls`]), measured and
+/// reported in the README block as what it costs.
 fn expected_capacity_verb_log_sections(verb: &str) -> u32 {
     match verb {
-        "plan" | "now" | "review day" | "review week" => 2,
+        "plan" | "now" | "review day" => 2,
+        "review week" => 3,
+        other => panic!("`tm {other}` is not in the capacity-verb table"),
+    }
+}
+
+/// The week-cut calls each of the four makes — a `log` and a `walls` section
+/// on one line (W-39 track T): `tm review week` one, the others none.
+fn expected_week_cut_calls(verb: &str) -> u32 {
+    match verb {
+        "review week" => 1,
+        "plan" | "now" | "review day" => 0,
         other => panic!("`tm {other}` is not in the capacity-verb table"),
     }
 }
@@ -579,12 +598,22 @@ fn every_capacity_verb_replays_the_log_a_second_time_inside_its_capacity_call() 
         );
         // The second replay is *inside* the capacity call, not beside it: the
         // capacity section and a log section travel on the same traced line.
+        // The week's cut is one more such line, a log and a walls section.
+        let cuts = c.lines.iter().filter(|l| l.as_str() == "log+walls").count() as u32;
         assert_eq!(
-            c.multi, 1,
-            "`tm {name}` traced {} call(s) carrying more than one section, expected 1 — the \
+            cuts,
+            expected_week_cut_calls(name),
+            "`tm {name}` asked the kernel for the week's cut {cuts} time(s): {:?}",
+            c.lines
+        );
+        assert_eq!(
+            c.multi,
+            1 + cuts,
+            "`tm {name}` traced {} call(s) carrying more than one section, expected {} — the \
              capacity call's log section is what gap 275 costs, and if it is not there the \
              trace has stopped naming it (gap 278)",
-            c.multi
+            c.multi,
+            1 + cuts
         );
         assert!(
             c.lines.iter().any(|l| l == "capacity+log"),
