@@ -3384,23 +3384,21 @@ structure Today where
   post      : PostCfg
   sleep     : SleepCfg
 
-/-- **Fork `Ctx::window`'s stored branch**: `state.window` counts only with `state.budget` beside
-it and only when `state.date` is today — a window stored on an earlier day belongs to that day. -/
-def Today.storedWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.Clock) :=
-  if T.date = some today then
-    (match T.window, T.budget with
-     | some w, some _ => some w
-     | _, _ => none)
-  else none
-
-/-- **§10.2's budget, on the same rule as the window** (stage 6 step P0): `state.budget` counts
-only when `state.date` is today — "`date` says which day `window`, `budget` and `last_plan_hash`
-belong to", which is the host's own `roll_day` comment.  Widened here rather than copied into
-`Planner.lean`, because `Today` is the one place a `state.json` fact is read (AGENTS §5.3).
-Nothing in the lookahead calls it: day 0's capacity never reads the budget, and the planner
-does. -/
+/-- **§10.2's budget as fork `Ctx::window` counts it** (stage 6 step P0): `state.budget` counts only
+when `state.date` is today — "`date` says which day `window`, `budget` and `last_plan_hash` belong to",
+which is the host's own `roll_day` comment.  Day 0's capacity reads it where the fork does: a stored
+window counts only beside it (`storedWindow`, below).  The planner reads `planBudget` since W-39
+(README gap 3535), under the planner's own day rule; `storedBudget_is_a_planBudget` says it is wider. -/
 def Today.storedBudget (T : Today) (today : Nat) : Option Nat :=
   if T.date = some today then T.budget else none
+
+/-- **Fork `Ctx::window`'s stored branch**: `state.window` counts only with the day's stored budget
+beside it (`storedBudget`: only when `state.date` is today) — a window stored on an earlier day
+belongs to that day, and one stored with no budget is not the fork's `(Some(w), Some(budget)) if today`. -/
+def Today.storedWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.Clock) :=
+  match T.window, T.storedBudget today with
+  | some w, some _ => some w
+  | _, _ => none
 
 theorem Today.storedBudget_on_another_day (T : Today) (today : Nat) (h : T.date ≠ some today) :
     T.storedBudget today = none := by
@@ -3417,13 +3415,15 @@ answers, `storedBudget` answers too.  The two `Ctx::window` branches stay in ste
 theorem Today.storedWindow_brings_a_budget (T : Today) (today : Nat) (w : Field.Clock × Field.Clock)
     (h : T.storedWindow today = some w) : ∃ b, T.storedBudget today = some b := by
   unfold Today.storedWindow at h
-  unfold Today.storedBudget
-  split at h
-  · next hd =>
-    rw [if_pos hd]
-    cases hw : T.window <;> cases hb : T.budget <;> rw [hw, hb] at h <;> simp at h ⊢
-  · exact absurd h (by simp)
+  cases hb : T.storedBudget today with
+  | none => rw [hb] at h; cases T.window <;> simp at h
+  | some b => exact ⟨b, rfl⟩
 
+/-- **A window stored on a state dated today, with its budget, is the one day 0 counts.** -/
+theorem Today.storedWindow_today (T : Today) (today : Nat) (w : Field.Clock × Field.Clock) (b : Nat)
+    (hd : T.date = some today) (hw : T.window = some w) (hb : T.budget = some b) :
+    T.storedWindow today = some w := by
+  unfold Today.storedWindow; rw [T.storedBudget_today today hd, hw, hb]
 /-- **Fork `Ctx::window`'s formula branch**: `state.arrival` when it is today's, else `now`. -/
 def Today.arrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
   if T.date = some today then
@@ -6021,20 +6021,20 @@ is today's, with or without a budget beside it. -/
 def Today.planWindow (T : Today) (today : Nat) : Option (Field.Clock × Field.Clock) :=
   if T.forToday today then T.window else none
 
-/-- **Its `runtime.budget`**: `storedBudget`'s rule, widened by `plan_date`'s — a state naming no day is today's —
-with or without a window beside it. -/
+/-- **Its `runtime.budget`**: the stored budget whenever the state is today's — read under `forToday`, the one day
+rule `planWindow` and `planArrivalSec` read too (README gap 3535) — with or without a window beside it.  On a
+state dated today it is the capacity's own reading (`storedBudget_is_a_planBudget`). -/
 def Today.planBudget (T : Today) (today : Nat) : Option Nat :=
-  match T.date with
-  | none => T.budget
-  | some _ => T.storedBudget today
+  if T.forToday today then T.budget else none
 
-/-- **Fork `Planner::new`'s arrival, as far as the state carries it**: the stored clock on the
-planned day when the state is today's, else `now`.  The fork falls back to the day's first logged
-`arrive` before `now`; that reading is README gap 3390's and is not taken here. -/
-def Today.planArrivalSec (T : Today) (today : Nat) (z : Cal.Tz) : Nat :=
+
+/-- **Fork `Planner::new`'s arrival** (README gap 3390): the stored clock on the planned day when the state is
+today's; else `logged`, the day's first logged `arrive` in the replay's day record (the fork's `DayReplay`
+arrival, read before `now`); else `now` — in the fork's order.  Day 0's capacity reads no log (`arrivalSec`). -/
+def Today.planArrivalSec (T : Today) (today : Nat) (z : Cal.Tz) (logged : Option Cal.Instant) : Nat :=
   match (if T.forToday today then T.arrival else none) with
   | some c => (Cal.instantOf z today c).sec
-  | none => T.now.sec
+  | none => (logged.getD T.now).sec
 
 theorem Today.forToday_of_date (T : Today) (today : Nat) (h : T.date = some today) :
     T.forToday today = true := by
@@ -6053,14 +6053,14 @@ theorem Today.not_forToday_of_another_day (T : Today) (today d : Nat) (h : T.dat
 plans with. -/
 theorem Today.storedWindow_is_a_planWindow (T : Today) (today : Nat) (w : Field.Clock × Field.Clock)
     (h : T.storedWindow today = some w) : T.planWindow today = some w := by
+  obtain ⟨b, hb⟩ := T.storedWindow_brings_a_budget today w h
+  have hd : T.date = some today := by
+    unfold Today.storedBudget at hb; split at hb <;> simp_all
   unfold Today.storedWindow at h
-  split at h
-  · next hd =>
-    unfold Today.planWindow
-    rw [if_pos (T.forToday_of_date today hd)]
-    cases hw : T.window <;> cases hb : T.budget <;> rw [hw, hb] at h <;> simp at h
-    exact congrArg some h
-  · exact absurd h (by simp)
+  unfold Today.planWindow; rw [if_pos (T.forToday_of_date today hd)]
+  rw [hb] at h
+  cases hw : T.window <;> rw [hw] at h <;> simp at h
+  exact congrArg some h
 
 /-- **…and every budget.** -/
 theorem Today.storedBudget_is_a_planBudget (T : Today) (today b : Nat)
@@ -6071,15 +6071,15 @@ theorem Today.storedBudget_is_a_planBudget (T : Today) (today b : Nat)
     · assumption
     · exact absurd h (by simp)
   unfold Today.planBudget
-  rw [hd]
-  exact h
+  rw [if_pos (T.forToday_of_date today hd)]
+  exact (T.storedBudget_today today hd).symm.trans h
 
-/-- **On a state dated today the two arrivals are one** — the capacity's and the planner's read
-the same clock, or both read `now`. -/
+/-- **On a state dated today, with no `arrive` logged, the two arrivals are one** — the capacity's and the
+planner's read the same clock, or both read `now`; a logged one parts them (`the_two_arrivals_part_at_a_logged_arrival`). -/
 theorem Today.planArrivalSec_on_a_dated_state (T : Today) (today : Nat) (z : Cal.Tz)
-    (h : T.date = some today) : T.planArrivalSec today z = T.arrivalSec today z := by
+    (h : T.date = some today) : T.planArrivalSec today z none = T.arrivalSec today z := by
   unfold Today.planArrivalSec Today.arrivalSec
-  rw [if_pos (T.forToday_of_date today h), if_pos h]
+  rw [if_pos (T.forToday_of_date today h), if_pos h]; cases T.arrival <;> rfl
 
 /-- **Gap 320's two inputs, read as the fork's planner reads them, and the capacity's reading
 beside each.**  `state.window = 09:00–12:00` with `state.budget = 3` and NO date is the planner's
@@ -6103,12 +6103,12 @@ theorem the_planner_reads_a_window_with_no_date_or_no_budget :
 `runtime.arrival` on `plan_date`'s day), and the capacity reads `now` there; dated today the two
 agree (`planArrivalSec_on_a_dated_state`). -/
 theorem the_planner_reads_an_arrival_with_no_date :
-    Today.planArrivalSec { specToday with arrival := some 420, now := atSpec 600 } 739865 Cal.chicago
+    Today.planArrivalSec { specToday with arrival := some 420, now := atSpec 600 } 739865 Cal.chicago none
       = (Cal.instantOf Cal.chicago 739865 420).sec ∧
     Today.arrivalSec { specToday with arrival := some 420, now := atSpec 600 } 739865 Cal.chicago
       = (atSpec 600).sec ∧
     Today.planArrivalSec { specToday with date := some 739864, arrival := some 420, now := atSpec 600 } 739865
-        Cal.chicago = (atSpec 600).sec := by
+        Cal.chicago none = (atSpec 600).sec := by
   decide
 
 /-- **The walk that puts an ad-hoc entry's rows among sorted entries' rows adds nothing and drops nothing** — fork
@@ -6151,6 +6151,107 @@ theorem adhoc_walk_map_filter {α β γ : Type} (le : α → α → Bool) (rowsO
       exact hxs y (hq y hy) x hx)
   simp only [List.map_append, List.filter_append, hnil own hown, hnil mid hmid,
     hflat xs (fun _ h => h), hflat _ (fun y h => (List.mem_filter.1 h).1), List.append_nil]
+
+/-! ## The planner's arrival falls back to the day's logged `arrive`, and the stored window's two readings (stage 6 W-39, track A)
+
+APPENDED 2026-09-30 (stage 6, run W-39, track A; README gaps 3390 and 3535).  Fork `Planner::new` reads its
+arrival in three steps — `runtime.arrival` on the planned day, else the day's first logged `arrive` (the replay's
+day record), else `now` — and fork `Ctx::window`, day 0's capacity, reads the first and the last only.
+`Today.planArrivalSec` is the planner's reading and `Today.arrivalSec` the capacity's; the laws below say which
+input each answers from, and where the two part: a state that stores no arrival for the day beside a day record
+that logs one, which `tm arrive` then `tm wake` builds (README gaps 3390 and 3398).
+
+Day 0's capacity counts a stored window only on a state dated today with its budget (`storedWindow`), the planner
+whenever the state is today's (`planWindow`).  `Today.BinaryWritten` names the states the shipped binary writes —
+a window only beside its day and its budget — and on every one of them the two readings are one
+(`Today.storedWindow_is_planWindow_on_a_written_state`); they part on a hand edit alone. -/
+
+/-- **The state's own arrival comes first**, whatever the day's log holds. -/
+theorem Today.planArrivalSec_reads_the_stored_arrival_first (T : Today) (today : Nat) (z : Cal.Tz)
+    (l : Option Cal.Instant) (c : Field.Clock) (hf : T.forToday today = true) (ha : T.arrival = some c) :
+    T.planArrivalSec today z l = (Cal.instantOf z today c).sec := by
+  unfold Today.planArrivalSec
+  rw [if_pos hf, ha]
+
+/-- **With none stored for the day, the day's first logged `arrive`.** -/
+theorem Today.planArrivalSec_reads_the_logged_arrival (T : Today) (today : Nat) (z : Cal.Tz) (a : Cal.Instant)
+    (h : (if T.forToday today then T.arrival else none) = none) :
+    T.planArrivalSec today z (some a) = a.sec := by
+  unfold Today.planArrivalSec
+  rw [h]
+  rfl
+
+/-- **…and `now` only when the day logs none.** -/
+theorem Today.planArrivalSec_without_a_logged_arrival (T : Today) (today : Nat) (z : Cal.Tz)
+    (h : (if T.forToday today then T.arrival else none) = none) :
+    T.planArrivalSec today z none = T.now.sec := by
+  unfold Today.planArrivalSec
+  rw [h]
+  rfl
+
+/-- **Where day 0's capacity and the planner read one arrival**: a state dated today that stores its arrival, or
+a day that logs none — every dated input but the one the shipped binary's two readings part on. -/
+theorem Today.planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it (T : Today) (today : Nat) (z : Cal.Tz)
+    (l : Option Cal.Instant) (h : T.date = some today) (ha : T.arrival.isSome = true ∨ l = none) :
+    T.planArrivalSec today z l = T.arrivalSec today z := by
+  rcases ha with ha | ha
+  · obtain ⟨c, hc⟩ := Option.isSome_iff_exists.1 ha
+    rw [T.planArrivalSec_reads_the_stored_arrival_first today z l c (T.forToday_of_date today h) hc]
+    unfold Today.arrivalSec
+    rw [if_pos h, hc]
+  · rw [ha]
+    exact T.planArrivalSec_on_a_dated_state today z h
+
+/-- **Gap 3390's world, read both ways**: dated today, no arrival stored (`tm wake` cleared it), a 07:00 `arrive`
+logged, planned at 10:30 — the planner starts the day at 07:00, as fork `Planner::new` does, and day 0's capacity
+at `now`, as fork `Ctx::window` does. -/
+theorem the_two_arrivals_part_at_a_logged_arrival :
+    Today.planArrivalSec { specToday with date := some 739865, now := atSpec 630 } 739865 Cal.chicago
+        (some (atSpec 420)) = (atSpec 420).sec ∧
+    Today.arrivalSec { specToday with date := some 739865, now := atSpec 630 } 739865 Cal.chicago
+        = (atSpec 630).sec ∧
+    (atSpec 420).sec ≠ (atSpec 630).sec := by
+  decide
+
+/-- **`planArrivalSec_on_a_dated_state` stated for every day record is FALSE** (AGENTS §3.1 item 3): it held on
+every input while the planner read no log; the logged arrival refutes it, and its `none` instance stands. -/
+theorem Today.planArrivalSec_on_a_dated_state_whatever_the_log_holds_is_refuted :
+    ¬ ∀ (T : Today) (today : Nat) (z : Cal.Tz) (l : Option Cal.Instant), T.date = some today →
+      T.planArrivalSec today z l = T.arrivalSec today z := by
+  intro hall
+  obtain ⟨h1, h2, h3⟩ := the_two_arrivals_part_at_a_logged_arrival
+  exact h3 (h1.symm.trans ((hall { specToday with date := some 739865, now := atSpec 630 } 739865 Cal.chicago
+    (some (atSpec 420)) rfl).trans h2))
+
+/-- **The states the shipped binary writes** (README gap 3535): `tm arrive` writes a window with its day and its
+budget, `tm wake` and the day roll clear the three together, and D42's rebuild derives the window and the budget
+together (one arrival's record, else `Ctx::arrival_window`) beside `date: today` — so a stored window names today
+and carries a budget.  A `Prop`: it states what the host's writers keep, and nothing in the kernel runs it. -/
+def Today.BinaryWritten (T : Today) (today : Nat) : Prop :=
+  T.window.isSome = true → T.date = some today ∧ T.budget.isSome = true
+
+/-- **On every state the binary writes, day 0's capacity and the planner read one stored window** — fork
+`Ctx::window` and fork `Planner::window_and_budget` agree there and part on a hand edit alone
+(`the_planner_reads_a_window_with_no_date_or_no_budget`). -/
+theorem Today.storedWindow_is_planWindow_on_a_written_state (T : Today) (today : Nat)
+    (h : T.BinaryWritten today) : T.storedWindow today = T.planWindow today := by
+  unfold Today.storedWindow Today.planWindow
+  cases hw : T.window with
+  | none => simp
+  | some w =>
+    obtain ⟨hd, hb⟩ := h (by simp [hw])
+    obtain ⟨b, hb'⟩ := Option.isSome_iff_exists.1 hb
+    simp only [T.storedBudget_today today hd, hb', if_pos (T.forToday_of_date today hd)]
+
+/-- **The class has members on both sides**: a state with no window and the state `tm arrive` writes are written;
+a window with no day, or with no budget, is a hand edit — gap 320's two inputs, which the binary never writes. -/
+theorem the_binary_writes_a_window_only_with_its_day_and_budget :
+    specToday.BinaryWritten 739865 ∧
+    Today.BinaryWritten { specToday with date := some 739865, window := some (420, 960), budget := some 6 } 739865 ∧
+    ¬ Today.BinaryWritten { specToday with window := some (540, 720), budget := some 3 } 739865 ∧
+    ¬ Today.BinaryWritten { specToday with date := some 739865, window := some (540, 720) } 739865 := by
+  unfold Today.BinaryWritten
+  decide
 
 end Look
 end Tm

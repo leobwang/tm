@@ -653,6 +653,23 @@ can_fail
 # track R named in its gap 3202); its three callers read `p45_rule` over the day the host's
 # codec decodes.  Every citation left is W-37 track R's append-only README block.
 5 w35_check_break
+# W-39 track A (README gaps 3390 and 3580-3589): the planner's arrival is fork `Planner::new`'s -- the
+# state's, else the day's first logged `arrive`, else `now` -- so the W-38 view law over a dated state
+# with a budgeted window is REFUTED at the day `tm arrive` then `tm wake` leaves
+# (`PlannerWit.the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted`)
+# and restated with the subdomain in its name; the witness day is planned from the logged 07:00, so the
+# day planned from two in the afternoon and the hour-later pair that moved the window are refuted and
+# renamed (`PlannerWit.the_witness_day_is_planned_from_the_logged_arrival`,
+# `PlannerWit.an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors`); and the Rust pin
+# that asserted the divergence is refuted and renamed in `planner_w38_order.rs`.  Every citation counted
+# here is an append-only README block naming the thing as it stood, and one `Goals.lean` note track K
+# owns this run (README gap 3581 names it for K).
+1 Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
+1 Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
+1 PlannerWit.an_hour_later_changes_one_field_and_moves_the_window
+1 an_hour_later_changes_one_field_and_moves_the_window
+2 the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels
+2 the_witness_day_is_planned_from_two_in_the_afternoon
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

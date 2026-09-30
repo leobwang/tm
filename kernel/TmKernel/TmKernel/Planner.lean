@@ -902,29 +902,29 @@ structure PlanReq where
 
 /-- The day being planned. -/
 def PlanReq.today (r : PlanReq) : Day := r.look.today
-
 /-- The instant the plan is made at.  One storage site: `Look.Today.now`. -/
 def PlanReq.now (r : PlanReq) : Cal.Instant := r.look.today0.now
-
 def PlanReq.tz (r : PlanReq) : Cal.Tz := r.look.tz
-
 def PlanReq.day (r : PlanReq) : Look.DayCfg := r.look.day
-
 def PlanReq.blockMin (r : PlanReq) : Nat := r.look.day.cut.blockMin
-
 def PlanReq.curves (r : PlanReq) : Look.Curves := r.look.curves
-
 def PlanReq.homeMax (r : PlanReq) : Nat := r.look.homeMax
-
 def PlanReq.loc (r : PlanReq) : List Char := r.look.today0.loc
-
 def PlanReq.allowHome (r : PlanReq) : Bool := r.look.today0.allowHome
+
+/-- Today's record inside **this call's own replay** (D24's seam, `PlanReq.run`): the past half, `blocks_done` and
+the planner's logged arrival all come from here, never from a second read of the log (D9). -/
+def PlanReq.todayRecord (r : PlanReq) : Option Replay.DayAcc :=
+  (r.run.answer.days.find? (fun d => decide (d.day = r.today))).bind (·.record)
+/-- **The day's first logged `arrive`**, off `todayRecord` — fork `Planner::new`'s fall-back to the replay's day record
+when the state stores no arrival, read by `PlanReq.window` through `Look.Today.planArrivalSec` (README gap 3390). -/
+def PlanReq.loggedArrival (r : PlanReq) : Option Cal.Instant := (r.todayRecord.bind (·.arrival)).map (·.1)
 
 /-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`, README gaps 320 and 3341): the window stored for
 `plan_date`'s day (`Look.Today.planWindow`: a state naming no day is today's, and no budget is needed beside it), its end on the
-NEXT day when earlier than its start; else §8.1's formula from the planner's arrival (`Look.Today.planArrivalSec`, gap 3390). -/
+NEXT day when earlier than its start; else §8.1's formula from `Planner::new`'s arrival (`Look.Today.planArrivalSec` over `loggedArrival`, gap 3390). -/
 def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.planWindow r.look.today with
-  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today)
+  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today)
 
 /-- §8.1's budget as the fork's planner reads it: the one stored for `plan_date`'s day, with or without a window
 (`Look.Today.planBudget`, gap 320), else the formula (`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
@@ -1369,10 +1369,10 @@ def PlanReq.isTravelDay (r : PlanReq) (i : Id) : Bool :=
 /-- Fork `walls.iter().any(|w| w.travel_day)`. -/
 def travelDay (r : PlanReq) : Bool := (wallsToday r).any (fun x => r.isTravelDay x.id)
 
-/-- Today's record inside **this call's own replay** (D24's seam, `PlanReq.run`): the past half
-and `blocks_done` both come from here, never from a second read of the log (D9). -/
-def PlanReq.todayRecord (r : PlanReq) : Option Replay.DayAcc :=
-  (r.run.answer.days.find? (fun d => decide (d.day = r.today))).bind (·.record)
+-- `PlanReq.todayRecord` — today's record in this call's own replay — sits above `PlanReq.window` since W-39,
+-- because the window reads the day's first logged `arrive` off it (`PlanReq.loggedArrival`, README gap 3390);
+-- `blocksDone` below reads its closed blocks.  Moved, not copied: the day record has one reader (AGENTS §5.3),
+-- and the move is line-neutral so every check-9 pin site below it stays where `kernel/mutations.txt` has it.
 
 /-- **Fork `self.blocks_done`** (`planner.rs:884`): today's closed blocks, off this call's own
 replay.  It was inline inside `remainingBudget` until §8.2 step 7, which needs the same number
@@ -9108,26 +9108,27 @@ arrival are today's to the planner, and a window with NO budget beside it — th
 `planBudget` and `planArrivalSec`, so `PlanReq.window` and `PlanReq.budgetBlocks` are the fork planner's own
 reading of `state.json` and nothing else.  Day 0's capacity keeps `Ctx::window`'s reading, which is where the
 binary keeps it (`kernel_lookahead_parity.rs` compares it exactly), so the two readings are the fork's own two,
-each where the fork keeps it.  The one reading of the fork's planner not taken is its fall-back to the day's
-first logged `arrive` when the state carries no arrival (README gap 3390).
+each where the fork keeps it.  Since W-39 its arrival is `Planner::new`'s whole: the state's, else the day's first
+logged `arrive` (`PlanReq.loggedArrival`, README gap 3390), else `now` — where day 0's capacity reads no log.
 
 The view law that equated the planner's window with day 0's capacity window held on every request until the
 W-37 repair and on every window not crossing midnight until this one; it holds exactly on the subdomain the
 restated name carries (AGENTS §3.1 item 4), and `PlannerWit` refutes each wider form by a computed request. -/
 
-/-- **The planner's window is day 0's capacity window on a state dated today, whose stored window carries its
-budget and does not cross midnight** — every input on which the two readings of the shipped binary agree. -/
-theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window (r : PlanReq)
-    (hd : r.look.today0.date = some r.look.today)
+/-- **The planner's window is day 0's capacity window on a state dated today whose stored window carries its budget and
+does not cross midnight — unless no window is stored and only the log holds the arrival** (W-39, README gap 3390). -/
+theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
+    (r : PlanReq) (hd : r.look.today0.date = some r.look.today)
+    (ho : r.look.today0.window.isSome = true ∨ r.look.today0.arrival.isSome = true ∨ r.loggedArrival = none)
     (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
-    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) :
-    r.window = Look.day0Window r.look := by
+    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) : r.window = Look.day0Window r.look := by
   have hf := r.look.today0.forToday_of_date r.look.today hd
-  have ha := r.look.today0.planArrivalSec_on_a_dated_state r.look.today r.look.tz hd
-  unfold PlanReq.window Look.day0Window Look.Today.planWindow Look.Today.storedWindow
+  unfold PlanReq.window Look.day0Window Look.Today.planWindow Look.Today.storedWindow Look.Today.storedBudget
   rw [if_pos hf, if_pos hd]
   cases hw : r.look.today0.window with
-  | none => simp only [ha]
+  | none =>
+    simp only [r.look.today0.planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it r.look.today r.look.tz _ hd
+      (ho.resolve_left (by simp [hw]))]
   | some w =>
     have hbs := hb (by simp [hw])
     cases hbb : r.look.today0.budget with
@@ -9135,7 +9136,6 @@ theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
     | some b =>
       have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr (h w hw)
       simp [hn]
-
 /-- **A stored window that crosses midnight ends on the next day** — the fork planner's reading
 (`Planner::window_and_budget`), which the shipped binary plans a late day with.  Stated over the planner's own
 stored window since W-38 (`Look.Today.planWindow`), which every window the capacity counts is
@@ -9160,22 +9160,22 @@ theorem PlanReq.window_is_the_stored_one_on_its_day (r : PlanReq) (w : Field.Clo
   rw [hs]
   simp [hn]
 
-/-- **With no window stored for the planned day, the window is §8.1's formula from the planner's arrival.** -/
+/-- **With no window stored for the planned day, the window is §8.1's formula from the planner's arrival** (`loggedArrival` too). -/
 theorem PlanReq.window_is_the_formula_without_a_window_on_its_day (r : PlanReq)
     (hs : r.look.today0.planWindow r.look.today = none) :
-    r.window = Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz)
+    r.window = Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival)
       (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today) := by
   unfold PlanReq.window
   rw [hs]
 
 /-- **The day's window is day 0's capacity window on that subdomain** — `dayPlan_window` states the day's
 window as `PlanReq.window`. -/
-theorem dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window (r : PlanReq)
-    (hd : r.look.today0.date = some r.look.today)
+theorem dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
+    (r : PlanReq) (hd : r.look.today0.date = some r.look.today)
+    (ho : r.look.today0.window.isSome = true ∨ r.look.today0.arrival.isSome = true ∨ r.loggedArrival = none)
     (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
-    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) :
-    (dayPlan r).window = Look.day0Window r.look :=
-  PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window r hd hb h
+    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) : (dayPlan r).window = Look.day0Window r.look :=
+  PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival r hd ho hb h
 
 /-! ## §8.2 step 1 in `emit_segments`' own order: the running interruption among the walls (W-38, README gap 3281)
 

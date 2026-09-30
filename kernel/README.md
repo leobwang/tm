@@ -75445,3 +75445,283 @@ recorded before and after.
   Check 7's plant (§3, gap 3551): in a clone at HEAD, one goal deleted with no audit line — the old
   and the fixed line both name it; on this tree, three runs of the loop, the old line reported 3, 5
   and 4 correctly audited goals gone, the fixed line 0.
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **TRACK A**,
+     on branch `w39-a` (worktree `.claude/worktrees/w39-a`) over `9dfb610`.
+     Gap range **3580-3619**: 3580-3589 taken here, 3590-3619 free.  Parity:
+     **none issued** — this track's job was agreement with the fork, and every
+     reading it changed now agrees (its two pre-allocated numbers, `P64` and
+     `P65`, stay unused: the Land step renumbers into the hole).  Every build, test and drive ran
+     under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`
+     (16 GB for `mutate.py`, 8 GB with `timeout 120` for the decide probes);
+     every mutation ran in a clone (`scratchpad/w39-a/clone1`, `clone2`).
+     ===================================================================== -->
+
+## Stage 6 — W-39, track A: the day's arrival, window and budget have one reading each, and it is the fork's
+
+### 1. What changed
+
+* **Gap 3390 — CLOSED.**  Fork `Planner::new` reads its arrival in three steps: `runtime.arrival` on the
+  planned day, else `today.arrival` — the replay's day record's FIRST `arrive` (fork `DayReplay::arrival`,
+  set once by the replay's `Event::Arrive` arm) — else `input.now`.  `Look.Today.planArrivalSec` takes
+  the day's logged arrival as an argument since this step and reads the three in that order;
+  `Planner.PlanReq.loggedArrival` is the one reading of it, off `Planner.PlanReq.todayRecord` (moved
+  above `PlanReq.window`, line-neutral, one reader of the day record), and `PlanReq.window`'s formula
+  branch passes it.  Day 0's capacity (fork `Ctx::window`, `Look.Today.arrivalSec`) reads no log, as
+  the fork's does: the two readings are the fork's own two, each where the fork keeps it, and
+  `Look.the_two_arrivals_part_at_a_logged_arrival` is where they part.  The world is the binary's own:
+  `tm arrive` at 07:00, then `tm wake`, leaves `date: today` with no arrival, window or budget beside a
+  log that keeps the `arrive` (§5).
+* **Gap 3398 — narrowed to the capacity.**  The rebuild restores what `tm wake` cleared, and the kernel
+  now plans the same day from either cache (`PlannerWit.the_rebuilt_state_plans_the_woken_day`: the
+  same rows, window and budget; driven on the binary's own files in
+  `planner_w39_arrival.rs`).  What still differs is day 0's CAPACITY window, fork `Ctx::window`'s:
+  it counts the stored window the rebuild restores and reads `now` where `tm wake` cleared it — in the
+  fork and the kernel alike (gap 3582).
+* **Gap 3535 — both halves CLOSED.**  (1) `Look.Today.planBudget` is `if T.forToday today then
+  T.budget else none`: one day rule for the planner's window, budget and arrival, and
+  `Look.Today.storedBudget_is_a_planBudget` is re-proved with its statement unchanged.  That left
+  `Look.Today.storedBudget` with no caller (check 12 said so), and it is not exempted: day 0's capacity
+  now reads it where fork `Ctx::window` reads its budget — `Look.Today.storedWindow` is `match T.window,
+  T.storedBudget today`, the fork's `(Some(w), Some(budget)) if today`, the same function as before
+  (`storedWindow_brings_a_budget` and `storedWindow_is_a_planWindow` re-proved, statements unchanged;
+  `kernel_lookahead_parity.rs` unchanged and green).  `reach-exempt.txt` did not grow: its `##
+  Lookahead.lean` census reads 125 of 220 (one more reached) and its `## Planner.lean` census 0 of 287
+  (`PlanReq.loggedArrival`, reached only through the declared unsent `planner` section).  (2) The two
+  readings of the stored window are PROVED EQUAL on every state the binary writes, not unified:
+  `Look.Today.BinaryWritten` (a `Prop` — nothing in the kernel runs it) names the class, a stored window
+  only beside its day and its budget, and `Look.Today.storedWindow_is_planWindow_on_a_written_state` is
+  the law; `Look.the_binary_writes_a_window_only_with_its_day_and_budget` shows both sides of the class
+  are inhabited.  `tm/tests/planner_w39_arrival.rs`'
+  `every_state_the_binary_writes_stores_a_window_only_with_its_day_and_budget` drives every writer of
+  the window — `tm arrive` once and twice in a day, `tm wake` after an arrival, the day roll, D42's
+  rebuild from one arrival record and from two — and reads `.tm/state.json` after every verb: **18
+  states, 13 of them storing a window, every one beside its day and budget**.  Making day 0 read
+  `planWindow` instead was declined: on binary-written states it moves nothing (the law above), and on
+  a hand-edited state it would part from fork `Ctx::window` — a divergence nobody asked for.
+* **Gap 3531 — CLOSED.**  `PlannerWit.the_plan_and_the_wire_read_the_file_kinds_ci_alike` decides
+  `PlanCheck.candsAgree` on a day holding a box-less `routines.md` line and an `optional.md` line with no
+  `ci` (the plan's view 1 and 0), true at the values fork `Horizon::default_ci` sends and false at §3.1's
+  else-3; `planner_w39_arrival.rs`' `the_hosts_file_kind_ci_default_is_the_kernels` pins the host's table
+  row for row to `Tm.DocKind.ciDefault`'s and the candidates `priority::collect_candidates` gives those two
+  lines to the wire values the Lean witness sends.  An edit to one table and not the other fails one of
+  the two.
+* **Gap 3355 — already closed at `9dfb610`** (W-38's land step rewrote `Planner.batchIdsOf`'s docstring,
+  `68b4a41`): nothing to do, and the brief's line is a correction.
+
+### 2. The witnesses built on `witToday`, re-derived — and the families that were not
+
+The kernel change failed **55** `PlannerWit` declarations on the first build (84 errors on 58 lines),
+and a conjunct-by-conjunct probe (`#eval!` of every side, decides stubbed, 42-68 s a run) found **86**
+conjuncts whose computed value moved.  The witness day's afternoon went from 14:00–19:00 to 14:00–16:00:
+four slots at levels 3, 3, 2, 2 became two, at 3, 3.
+
+* **Re-derived in place, on the gap-3390 world** (19 declarations; each keeps its line count, so no
+  check-9 pin site moved): §3's witness day (nine rows → seven), the reserved, restricted, census,
+  mid-break, queued, idle-queued and open days' rows, the three battery censuses' Rest populations
+  (`[3, 3, 2, 2]` → `[3]`), `the_replayed_half_is_a_strict_part_of_the_day` (11 rows → 8),
+  `no_row_of_the_days_this_tree_builds_is_open` ((9, 11, 10, 7) → (7, 8, 7, 7)),
+  `the_future_half_is_not_the_whole_day` (7 of 11 → 4 of 8),
+  `the_hole_survives_where_the_composition_adds_no_row` (four empty slots → two),
+  `a_break_no_work_touches_is_not_drawn` (two breaks in the cut → one), and
+  `the_witness_days_hash_is_the_forks` — `70fa5dc0aabaae68`, printed by fork `DayPlan::hash` over the
+  seven rows (`scratchpad/w39-a/hashprobe`, a crate over this tree's `tm-core`; its control reprints
+  W-34's `ace6c63d4bdc8084` for the nine), equal to the kernel's.  **Two names became false and are
+  refuted and renamed (D5)**: the witness day planned from two in the afternoon →
+  `the_witness_day_is_planned_from_the_logged_arrival` beside
+  `the_witness_day_is_planned_from_two_in_the_afternoon_is_refuted`; the hour-later pair that moved the
+  window → `an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors` beside
+  `an_hour_later_changes_one_field_and_moves_the_window_is_refuted` — which is a finding for §8.3's
+  stability goal: on a day whose arrival is logged, `hwin` holds of a genuine replan-later pair
+  (`an_hour_later_moves_the_window_of_a_day_with_no_arrival` is the day that still moves; gap 3581).
+* **Moved onto `theAfternoonRequest`, NOT re-derived** (gap 3580): the step-5-to-7 families whose subject
+  IS the four-slot afternoon — the cursor family (`theCursorRequest` and its four siblings), the routine
+  family (`theRoutineRequest`, and through it `theCrowdedRequest`, `theLapsedRequest`, `theBusyRequest`,
+  `theBreakRequest`), `theRunBatchRequest` (and `theShortRunRequest`, `theGrownRunRequest`),
+  `theOptionalRequest`, the posterior witness's two requests, and the victim and rest-row witnesses'
+  mentions of `theRequest`.  `theAfternoonRequest` is `theRequest` with `state.arrival` stored at 14:00,
+  which fork `Planner::new` reads before the log's 07:00, so its day is the pre-W-39 afternoon and every
+  one of those witnesses holds unchanged (its digest is W-34's `ace6c63d4bdc8084`, measured by `#eval!`).
+  Re-deriving them was measured and declined: on two slots at one level the victim rule cannot isolate
+  "lowest energy, then latest", the cursor cannot fill four slots, a routine the cursor used to crowd out
+  finds room, and the overtime what-if drops `^b3`/`^b6` instead of moving them — every subject gone
+  (AGENTS §5.2).  The tail-drop and both stability refutations keep their statements over a pair that
+  still differs in ONE field, `run`: `theAfternoonRequest` and the quiet day with its look.
+
+### 3. Laws restated (D5)
+
+* `Look.Today.planArrivalSec` gained the logged arrival as an argument.  `planArrivalSec_on_a_dated_state`
+  is restated at `logged = none`, which is the old statement (the old definition is the new at `none`);
+  its all-logs generalisation is REFUTED by
+  `Look.Today.planArrivalSec_on_a_dated_state_whatever_the_log_holds_is_refuted`, and
+  `planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it` is where the two readings agree.  New:
+  `planArrivalSec_reads_the_stored_arrival_first`, `planArrivalSec_reads_the_logged_arrival`,
+  `planArrivalSec_without_a_logged_arrival` (the fork's three steps, one each).
+* W-38's view law and its twin are REFUTED at the woken day
+  (`PlannerWit.the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted`,
+  `PlannerWit.the_days_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted`:
+  dated today, no window, every hypothesis holds, 07:00 against 14:00) and restated with the subdomain in
+  the name — `Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`
+  and its twin over the day, one hypothesis more (`ho`: a window is stored, or the arrival is, or the day
+  logs none).  The new does not imply the old; the old is false.  Its subject:
+  `PlannerWit.the_rebuilt_request_is_in_the_restated_view_laws_domain` (arrival stored) and W-38's dated
+  window request (window stored, arrival only logged).
+* `Planner.PlanReq.window_is_the_formula_without_a_window_on_its_day`: the formula's arrival is
+  `planArrivalSec … r.loggedArrival`; at `loggedArrival = none` it is the old statement.
+* Statements unchanged, proofs redone: `Look.Today.storedBudget_is_a_planBudget`,
+  `storedWindow_brings_a_budget`, `storedWindow_is_a_planWindow`, and the three refutations of §2's last
+  sentence (new witnesses, same statements).
+* No goal added to or removed from `Goals.lean`; burn-down unchanged at 6.
+
+### 4. Compared by value
+
+| comparison | days | differ | what |
+|---|---|---|---|
+| `planner_w38_order`'s `the_logged_arrival_is_the_forks_planners_and_the_kernels` (the W-38 pin, refuted and renamed) | 4 | **0** | the woken `plan-basic` at 08:00, 10:30, 12:00, 14:00 against the live fork: 63 fork rows, 2,222 other values, 4 of 4 hashes; both windows 07:00–16:00 asserted |
+| `planner_w39_arrival`'s `the_woken_and_the_rebuilt_days_are_the_forks` | 2 | **0** | the binary's own files, before and after `rm .tm/state.json`: 30 fork rows, 1,122 other values, 2 of 2 hashes |
+| `planner_invariants`' hash census | 283 | **0** | hashes EQUAL 283, rows agree 283 (38 tests) |
+| `planner_classes` | 79 + 147 | **0** | 79 of 79 non-P45 frozen days, 147 of 147 `plan-basic` instants (44 tests) |
+
+### 5. Driven, on the shipped binary (the fork's planner until R3) and through the FFI
+
+On a `plan-basic` copy (`scratchpad/w39-a/drive1`):
+
+    $ tm --now 2026-09-07T07:00:00-05:00 arrive lounge
+    arrive lounge 07:00 · window 07:00–16:00 · budget 6 blocks
+    $ tm --now 2026-09-07T07:30:00-05:00 wake 06:05
+    wake 06:05 · slept 0m
+    state.json: date 2026-09-07, wake 06:05, arrival None, window None, budget None
+    log: {"t":"2026-09-07T07:00:00-05:00","ev":"arrive","loc":"lounge","window":["07:00","16:00"],"budget":6}
+    $ tm --now 2026-09-07T10:30:00-05:00 plan
+    2026-09-07 · window 07:00–16:00 · budget 6 blocks
+    $ rm .tm/state.json; tm --now 2026-09-07T10:30:00-05:00 plan
+    tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42)
+    state.json: arrival 07:00, window [07:00, 16:00], budget 6
+
+Through `tm_kernel_call`, the same files (`planner_w39_arrival.rs`'
+`the_woken_day_is_planned_from_the_logged_arrival`): the kernel's planner answers 07:00–16:00 for the
+woken state and for the rebuilt one, with the same hash and the same rows.
+
+### 6. D40 (check 9) and the pin sites
+
+Every definition this step added or changed, mutated in a clone at a 16 GB cap (`mutate.py --write`,
+112 min for 22; `--verify --write --only` for the rest), `git status --porcelain` of each clone identical
+before and after:
+
+* **Lookahead, PINNED at every constant:** `Look.Today.storedWindow` (`default`, `none`: at
+  `storedWindow_brings_a_budget`, also `storedWindow_today`), `Look.Today.planBudget` (`default`, `none`: at
+  `storedBudget_is_a_planBudget`, also `the_planner_reads_a_window_with_no_date_or_no_budget`),
+  `Look.Today.planArrivalSec` (`0`, `1`, and the identity `today`: at `planArrivalSec_on_a_dated_state`, also
+  `the_planner_reads_an_arrival_with_no_date`), `Look.Today.BinaryWritten` (`True`, `False`: at
+  `storedWindow_is_planWindow_on_a_written_state`, also `the_binary_writes_a_window_only_with_its_day_and_budget`).
+* **Planner:** `Planner.PlanReq.loggedArrival` (`default`, `none`: the witness day, its statement DECIDED
+  FALSE), `Planner.PlanReq.window` (`default`, `(0, 0)`: the restated view law, also the crosses-midnight law).
+* **PlannerWit:** `furnitureWitness`, `furnitureCands`, `furnitureCandsAtThree` PINNED at `default` and `[]`
+  (the `ci` witness, decided false); the other fourteen — `theAfternoonRequest`, the five cursor requests,
+  `theRunBatchRequest`, `theRoutineRequest`, `theOptionalRequest`, `theWokenRequest`, `theRebuiltRequest`,
+  `theQuietHourLaterRequest`, `furniturePlan`, `theFurnitureRequest` — are WITNESS FIXTURES of types with no
+  inhabitant (`PlanReq`, `WfPlan`).
+* **Re-verified, because the witness pinning them was re-derived or re-proved:** `Planner.pastRows` (its site
+  moved 480 → 468 inside the re-derived witness day), `Planner.serdeKind`, `openStartLine` and
+  `theOpenBlock` (8218 → 8215 inside the re-derived open day), `Look.Today.planWindow` and
+  `Look.Today.forToday` — all PINNED, 0 failed.  The gate after: **541 rostered, 0 owed** (523 at `9dfb610`).
+* **The Rust tests bite** (plants in `clone2`, each restored): the kernel reading no logged arrival (the
+  Lean plant, with `PlannerWit`'s import dropped so the archive builds) fails
+  `the_logged_arrival_is_the_forks_planners_and_the_kernels` (08:00–17:00 against 07:00–16:00),
+  `the_woken_day_is_planned_from_the_logged_arrival` (10:30–19:30) and
+  `the_woken_and_the_rebuilt_days_are_the_forks` (4 disagreements); `Horizon::default_ci` giving a routine 3
+  fails `the_hosts_file_kind_ci_default_is_the_kernels`; `tm arrive` storing its window with no budget fails
+  `every_state_the_binary_writes_stores_a_window_only_with_its_day_and_budget` at drive 0, step 0.  A cargo
+  target COPIED from another checkout keeps that checkout's `tm-kernel-ffi` build-script output: the first
+  run of the Lean plant linked the worktree's archive and passed, and only deleting the build-script
+  output made it link the clone's (the worktree's own target was checked to link its own).
+
+### 7. Gaps (3580-3589)
+
+**Gap 3580 — the step-5-to-7 witness families were moved onto a stored arrival, not re-derived.**
+1. *What.*  The brief asked every `PlannerWit` witness built on `witToday` to be re-derived; §2's
+mechanism families (cursor, routine, run-batch, optional, posterior, victim, rest rows) now stand on
+`theAfternoonRequest`, whose state stores the 14:00 arrival.  2. *Why.*  Re-derived, their subjects
+vanish (§2, measured).  3. *Cost.*  Those witnesses no longer run the logged-arrival fallback; it is run
+by the 19 re-derived day-level witnesses, the new block and both Rust suites.  4. *Clears it.*  The
+owner's word — keep the afternoon, or re-derive and rebuild each subject on a new day.
+
+**Gap 3581 — `Goals.lean`'s stability note cites the refuted hour-later name, and its premise moved.**
+1. *What.*  `Goals.lean` (track K's) cites PlannerWit.an_hour_later_changes_one_field_and_moves_the_window
+(counted in `citations-allow.txt`), and PlannerWit's §20 prose recorded `hwin` as false of every genuine
+replan-later pair; on a day whose arrival is logged it is true of one
+(`an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors`).  2. *Why.*  Not this track's
+file.  3. *Cost.*  A reader of the goal's notes is told the hypothesis excludes every genuine replan.
+4. *Clears it.*  Track K or the Land step names the successor and revisits what `plan_is_stable_across_a_replan`
+owes.
+
+**Gap 3582 — gap 3398's residue: day 0's capacity window still moves under D42's rebuild of the woken
+day.**  1. *What.*  `tm wake` clears the stored window and the rebuild restores it; fork `Ctx::window`
+(day 0's capacity) reads `now` on the first and the stored 07:00–16:00 on the second
+(`PlannerWit.the_rebuilt_state_plans_the_woken_day`'s last conjunct).  2. *Why.*  A host decision
+(which cache is right) that D45 did not settle, and the kernel mirrors the fork.  3. *Cost.*  "Deleting
+the runtime state changes nothing" (D42) fails for §7's grants on this world; the plan's rows do not
+move.  4. *Clears it.*  `tm wake` stops clearing a same-day arrival, or the rebuild stops restoring one a
+later wake cleared.
+
+**Gap 3583 — R3's encoder must send the day's first `arrive` in the run.**  1. *What.*  The planner reads
+the logged arrival off the request's own replay (`PlanReq.todayRecord`); the harness sends the whole
+log from line 1.  2. *Why.*  R3's body swap is not this step.  3. *Cost.*  A scoped tail that starts
+after today's first `arrive` plans from `now` where the fork, reading its whole replay, plans from the
+arrival.  4. *Clears it.*  R3 sends a log section whose run holds today's day record whole.
+
+**Gap 3584 — gap 3390's world is compared with the fork LIVE only, frozen nowhere.**  1. *What.*  The
+woken world's fork day is compared inside two `BEGIN THE FORK PLANNER` regions, which R3 deletes;
+`binary_holds`' clause 5 refuses the world, so no frozen class carries it (gap 3395).  2. *Why.*  The
+frozen comparands are track H's.  3. *Cost.*  After R3 the fallback is held by the Lean witnesses and by
+`planner_w39_arrival.rs`' window assertions, not by a fork day.  4. *Clears it.*  D21 before R3: freeze
+the woken day's fork answer by value (or D72's frozen batch draws such a world).
+
+**Gap 3585 — the writer class of gap 3535 is checked over a list of drives.**  1. *What.*
+`every_state_the_binary_writes_stores_a_window_only_with_its_day_and_budget` reads 18 states from four
+drives.  2. *Why.*  The class is a property of the host's writers; the writers of `state.window` at this
+commit are `day::arrive`, `day::wake`, `ctx::roll_day` and `Ctx::reconcile_state` (grep over `tm/src`),
+and each is driven.  3. *Cost.*  A NEW writer of the window is not seen until a drive reaches it.
+4. *Clears it.*  A tripwire over the writers, or one writer through which every window is stored.
+
+**Gap 3586 — a logged arrival's sub-second part.**  `planArrivalSec` reads the logged instant's whole
+seconds, as it reads `now.sec`; fork `Planner::new` keeps the nanoseconds.  The binary writes `t` at
+whole seconds (`fmt_timestamp`, `SecondsFormat::Secs`), so only a hand-edited `arrive` line reaches it.
+
+
+### 8. Acceptance, capped
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py` and `cli_latency`, 8 GB for the probes and the drives); the worktree's `git status
+--porcelain` identical before and after each run.
+
+* **`check.sh`, 17 lines, every one ok, exit 0** (4 min 37 s, the first after a clone had built): build
+  ok; totality ok; axiom audit **5,881** theorems (Classical.choice 3,019, Quot.sound 4,476, propext
+  5,483; 395 on none); Negative.lean rejected; FFI **95** tests; corpus 29/37 files and 4/5 whole plans;
+  stage goals **6**, all stage 6 (unchanged); prose citations 49,915 (47,707 resolved, 2,208 allowed,
+  428 counted, 0 allow entries unused); new definitions mutated **541** rostered, **0** owed; parity
+  P1-P61, next free **P62** (none taken here); no two names for one definition, 3,288 bodies, 95
+  generalisation groups, 0 UNANSWERED; every emitted definition reached, **1,224** reachable (1,223 at
+  `9dfb610`: `Look.Today.storedBudget`), **1,199** exempt (unchanged), 0 UNANSWERED; fields 17/17; inputs
+  33 of 37 (4 exempt); sent 28/28; written 34/28/3; the kernel replays 90 modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): runs 1 and 3 **105 result lines, 1,738
+  passed, 0 failed, 13 ignored** (24 min 21 s at load 20-30, while the clones mutated; 17 min 39 s).  Run
+  2: **1,737 / 1 failed / 13** — `cli_latency`'s three-year verb killed at its 1 s bound (`tm drop ^z10`,
+  beside a reseal of 613 ms against ~200 ms quiet) while `mutate.py` built in a clone beside it: gap 1333's
+  class, on a path no line of this step touches (`tm drop` plans nothing), and green in all three quiet runs
+  below.  No `.proptest-regressions` file moved.
+* **Named suites, `--include-ignored`, one run each**: `planner_invariants` 38 (551 s; hash census 283 of
+  283 EQUAL), `planner_classes` 44 (212 s; 79 of 79 non-P45 frozen days, 147 of 147 `plan-basic`
+  instants), `planner_w38_order` 14, `planner_w39_arrival` 9 (new: 4 tests and the chokepoint's 5), T5
+  `kernel_replay_parity` 33, the door `kernel_log_door` 23, `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar`
+  6, `kernel_planner_wire` 23, `planner_w37_rows` 12, `kernel_unplaced_banner` 11, `cli_pause_drawn` 24,
+  `cli_start_paused` 4, `cli_week_grid` 4, `cli_past_width` 5, `emit_planner` 14, `planner_fixtures` 13,
+  `planner_regressions` 46, `planner_dynamics` 23, `kernel_plan_codec` 9, `kernel_lookahead_parity` 4
+  (T13: day 0's capacity window, unchanged by `storedWindow`'s rewrite) — every one passed.  The FFI is
+  check.sh's checks 5-6.
+* **`cli_latency`, three runs** at load 3.0-3.6: 6 passed each (19.20 s, 19.25 s, 20.39 s).
+* **Probes** (§5.10a): the appended block, with every decide above it stubbed, elaborates in 53 s at 3.2 GB
+  peak under `MemoryMax=8G`, `timeout 120`; the first form of `the_rebuilt_state_plans_the_woken_day`
+  (whole `WfSeg` lists) hit the file's own `maxRecDepth` and was SHRUNK to two projections, never raised.
