@@ -443,10 +443,8 @@ structure Diagnostics where
   droppedTail   : IdList
   planHonesty   : Nat × Nat
   restDebtMin   : Nat
-  /-- **The fork's whole `impossible` tuple** (W-35, README gaps 2640 and 2743): `(id, shortfall_min, until)`, `until` the day the
-  answer carries — a granted answer's due date, a floor answer's last day — which `tm-core/src/emit.rs` prints as `short by DATE`.
-  `impossible` above is its first two components (`dayDiagnostics_impossible_is_the_projection`); both stay, because the checks and
-  witnesses that read the pair were written before the date was. -/
+  /-- **The fork's whole `impossible` tuple** (W-35, README gaps 2640 and 2743): `(id, shortfall_min, until)`, `until` the day the answer carries — a granted answer's due date, a floor answer's last day — which `tm-core/src/emit.rs` prints as `short by DATE`.
+  `impossible` above is its first two components (`dayDiagnostics_impossible_is_the_projection`); the pair's readers are older. -/
   impossibleUntil : Capped (Id × Nat × Nat)
   /-- **The fork's whole `underused` tuple**: `(id, slot energy, item ci)`, one per item per underused work row — `emit.rs`'s
   `↓ slot 4, item 3`.  `underused` is its first component (`dayDiagnostics_underused_is_the_projection`). -/
@@ -457,11 +455,13 @@ structure Diagnostics where
   blockedDeps : Capped (Id × List Field.Dep)
   /-- **D67 (P58, README gap 3350)**: every listed impossible item step 5 admitted before the walk and left without a row, and why. -/
   unplaced : Capped (Id × NoPlace)
+  /-- **§8.2 step 5's served order** (W-38, README gap 3343): `PlanReq.dayServed`, the walk's `(request position, id, ci)`. -/
+  served : Capped (Nat × Id × Fin 6)
 
 /-- Nothing wrong with the day yet. -/
 def Diagnostics.empty : Diagnostics :=
   ⟨Capped.nil, 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil,
-   Capped.nil, Capped.nil, (0, 0), 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil⟩
+   Capped.nil, Capped.nil, (0, 0), 0, Capped.nil, Capped.nil, Capped.nil, Capped.nil, Capped.nil⟩
 
 /-- The accumulation §8.2 step 8 does, one note at a time.  `Option`, because the list is
 bounded (R10) and a setter that silently dropped its argument is the defect this kernel exists
@@ -920,29 +920,29 @@ def PlanReq.loc (r : PlanReq) : List Char := r.look.today0.loc
 
 def PlanReq.allowHome (r : PlanReq) : Bool := r.look.today0.allowHome
 
-/-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`): a stored window whose end is
-earlier than its start ends on the NEXT day, else `Look.day0Window` — README gaps 320 and 3341, and
-`PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it` at the end of this file. -/
-def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.storedWindow r.look.today with
-  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.day0Window r.look
+/-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`, README gaps 320 and 3341): the window stored for
+`plan_date`'s day (`Look.Today.planWindow`: a state naming no day is today's, and no budget is needed beside it), its end on the
+NEXT day when earlier than its start; else §8.1's formula from the planner's arrival (`Look.Today.planArrivalSec`, gap 3390). -/
+def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.planWindow r.look.today with
+  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today)
 
-/-- §8.1's budget: the one `tm arrive` stored for today, else the formula
-(`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
+/-- §8.1's budget as the fork's planner reads it: the one stored for `plan_date`'s day, with or without a window
+(`Look.Today.planBudget`, gap 320), else the formula (`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
 def PlanReq.budgetBlocks (r : PlanReq) : Nat :=
-  match r.look.today0.storedBudget r.look.today with
+  match r.look.today0.planBudget r.look.today with
   | some b => b
   | none => Look.budgetOf r.look.day.windowHours r.look.day.cut.blockMin r.look.day.budgetRatio
 
--- The view law that equated this with day 0's capacity window (rfl until the W-37 repair) is false on a stored
--- window crossing midnight; it is restated on the subdomain it holds on at the end of this file (gap 3341).
+-- The view law that equated this with day 0's capacity window is false on a window crossing midnight (gap 3341), on a
+-- state naming no day and on a window with no budget beside it (gap 320); the end of this file states where it holds.
 
 theorem PlanReq.budget_is_the_stored_one_when_there_is_one (r : PlanReq) (b : Nat)
-    (h : r.look.today0.storedBudget r.look.today = some b) : r.budgetBlocks = b := by
+    (h : r.look.today0.planBudget r.look.today = some b) : r.budgetBlocks = b := by
   unfold PlanReq.budgetBlocks
   rw [h]
 
-theorem PlanReq.budget_is_the_formula_without_a_stored_one (r : PlanReq)
-    (h : r.look.today0.storedBudget r.look.today = none) :
+theorem PlanReq.budget_is_the_formula_without_a_budget_on_its_day (r : PlanReq)
+    (h : r.look.today0.planBudget r.look.today = none) :
     r.budgetBlocks =
       Look.budgetOf r.look.day.windowHours r.look.day.cut.blockMin r.look.day.budgetRatio := by
   unfold PlanReq.budgetBlocks
@@ -3540,6 +3540,11 @@ theorem PlanReq.a_ranked_entry_carries_its_answers_facts {r : PlanReq} {x : Rank
 theorem PlanReq.rankedCands_sorted (r : PlanReq) :
     r.rankedCands.Pairwise (fun a b => rankedLe a b = true) := sortRanked_sorted _
 
+/-- **Step 5's served order, as the plan response carries it** (W-38, README gap 3343): each ranked answer's request
+position, its id and the `ci` step 5 reads, in the order the walk serves them — `diagnostics.served`. -/
+def PlanReq.dayServed (r : PlanReq) : List (Nat × Id × Fin 6) :=
+  r.rankedCands.map (fun x => (x.key.ix, x.out.out.cand.id, x.out.out.cand.ci))
+
 /-! ### The day's `priorities` -/
 
 /-- One `(id, p)` row of `DayPlan.priorities`, when the candidate has a `p` at all.  A wall has
@@ -3604,28 +3609,23 @@ theorem a_priority_row_carries_the_answers_p (o : Look.FloorOut) (i : Id) (q : F
 /-! ############################################################################
 ## §8.2 step 5, the first half: the groups the fold walks
 
-**Fork `Planner::build_groups`** (`planner.rs:1406`), over **fork `priority::batches`**
-(`priority.rs:1214`) and **fork `split_by_filters`** (`planner.rs:2354`).  Step 5's cursor is
-the other half and is below; this half turns the ranked order into the list of *things a slot
-may be given to*.
+**Fork `Planner::build_groups`** (`planner.rs:1406`), over **fork `priority::batches`** (`priority.rs:1214`) and **fork
+`split_by_filters`** (`planner.rs:2354`).  Step 5's cursor is the other half and is below; this half turns the ranked order
+into the list of *things a slot may be given to*.
 
-**This is not an EDF pass** (README gap 701).  §7.3's deadline pass already ran — it is
-`Cap.edf`/`Cap.edfGrants`, it has six call sites, and its result reaches this step only as the
-`p` inside `CandKey`.  Fork `build_groups`/`pick` is a **greedy cursor in §7.4's key order with
-no deadline anywhere**, and a step that reused the EDF pass here would build a second scheduler.
+**This is not an EDF pass** (README gap 701).  §7.3's deadline pass already ran — it is `Cap.edf`/`Cap.edfGrants`, it has six
+call sites, and its result reaches this step only as the `p` inside `CandKey`.  Fork `build_groups`/`pick` is a **greedy
+cursor in §7.4's key order with no deadline anywhere**, and a step that reused the EDF pass here would build a second scheduler.
 
-**Nothing here derives a candidate fact** (D34): every fact read below —
-`remaining`, `wall`, `optional`, `window`, `ci`, and the nine of `PlanFacts` — arrives on the
-wire, host-collected, and `Look.PlanFacts` is P5a's single reader of the nine.
+**Nothing here derives a candidate fact** (D34): every fact read below — `remaining`, `wall`, `optional`, `window`, `ci`, and
+the nine of `PlanFacts` — arrives on the wire, host-collected, and `Look.PlanFacts` is P5a's single reader of the nine.
 
-**`left_min` is carried as `commitMin` and `spent`, and that is stronger than the fork's
-`i64`** (AGENTS §5.3, and the one place this module deviates in *representation* rather than in
-behaviour).  Fork `Group::left_min` is a signed counter the assign loop decrements by a whole
-slot's minutes and **step 6 increments back** when a mandatory routine displaces an assigned
-block, so a saturating `Nat` would not invert: `left 10 − slot 60 = −50`, restored `+60`, is
-`10` in the fork and `60` under saturation.  Both of `left_min`'s readers are order comparisons
-— `pick`'s `g.left_min <= 0` and `contiguous_fits`' `need`, which is reached only when it is
-positive — so `commitMin ≤ spent` and `commitMin − spent` say exactly what the fork says, in
+**`left_min` is carried as `commitMin` and `spent`, and that is stronger than the fork's `i64`** (AGENTS §5.3, and the one place
+this module deviates in *representation* rather than in behaviour).  Fork `Group::left_min` is a signed counter the assign
+loop decrements by a whole slot's minutes and **step 6 increments back** when a mandatory routine displaces an assigned block,
+so a saturating `Nat` would not invert: `left 10 − slot 60 = −50`, restored `+60`, is `10` in the fork and `60` under
+saturation.  Both of `left_min`'s readers are order comparisons — `pick`'s `g.left_min <= 0` and `contiguous_fits`' `need`,
+which is reached only when it is positive — so `commitMin ≤ spent` and `commitMin − spent` say exactly what the fork says, in
 `Nat`, and P6's restore is `spent − minutes`, which is exact.
 ############################################################################ -/
 
@@ -6470,22 +6470,16 @@ theorem mem_replayedRows {r : PlanReq} {t : Seg} :
 
 /-- **Every row the log contributes ends at `now`** — both halves. -/
 theorem replayedRows_end_at_now (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) :
-    r.dayStart ≤ t.start ∧ t.start < t.stop ∧ t.stop ≤ r.now.sec := by
-  rcases mem_replayedRows.1 h with h | h
-  · exact pastRows_end_at_now r t h
-  · exact openBlockRows_end_at_now r t h
+    r.dayStart ≤ t.start ∧ t.start < t.stop ∧ t.stop ≤ r.now.sec :=
+  (mem_replayedRows.1 h).elim (pastRows_end_at_now r t) (openBlockRows_end_at_now r t)
 
-theorem replayedRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) :
-    t.kind ≠ SegKind.wall := by
-  rcases mem_replayedRows.1 h with h | h
-  · exact pastRows_are_not_walls r t h
-  · rw [(openBlockRows_are_energyless_blocks r t h).1]; intro hc; cases hc
+theorem replayedRows_are_not_walls (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) : t.kind ≠ SegKind.wall :=
+  (mem_replayedRows.1 h).elim (pastRows_are_not_walls r t)
+    (fun h hc => by rw [(openBlockRows_are_energyless_blocks r t h).1] at hc; cases hc)
 
-theorem replayedRows_are_not_wind_down (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) :
-    t.kind ≠ SegKind.windDown := by
-  rcases mem_replayedRows.1 h with h | h
-  · exact pastRows_are_not_wind_down r t h
-  · rw [(openBlockRows_are_energyless_blocks r t h).1]; intro hc; cases hc
+theorem replayedRows_are_not_wind_down (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) : t.kind ≠ SegKind.windDown :=
+  (mem_replayedRows.1 h).elim (pastRows_are_not_wind_down r t)
+    (fun h hc => by rw [(openBlockRows_are_energyless_blocks r t h).1] at hc; cases hc)
 
 /-- The closed half carries no slot energy: `past_segments` writes `energy: None` on every row. -/
 theorem pastRows_carry_no_energy (r : PlanReq) (t : Seg) (h : t ∈ pastRows r) :
@@ -6516,45 +6510,51 @@ theorem pastRows_are_not_batches (r : PlanReq) (t : Seg) (ids : BatchIds) (h : t
   cases hg : g.kind <;> simp [pastRowOf, pastKind, hg]
 
 /-- **No row the log contributes carries a slot energy.** -/
-theorem replayedRows_carry_no_energy (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) :
-    t.energy = none := by
-  rcases mem_replayedRows.1 h with h | h
-  · exact pastRows_carry_no_energy r t h
-  · exact (openBlockRows_are_energyless_blocks r t h).2
+theorem replayedRows_carry_no_energy (r : PlanReq) (t : Seg) (h : t ∈ replayedRows r) : t.energy = none :=
+  (mem_replayedRows.1 h).elim (pastRows_carry_no_energy r t) (fun h => (openBlockRows_are_energyless_blocks r t h).2)
 
 /-- **No row the log contributes is a Batch** — §7.5's batches are the assign fold's alone. -/
-theorem replayedRows_are_not_batches (r : PlanReq) (t : Seg) (ids : BatchIds)
-    (h : t ∈ replayedRows r) : t.kind ≠ SegKind.batch ids := by
-  rcases mem_replayedRows.1 h with h | h
-  · exact pastRows_are_not_batches r t ids h
-  · rw [(openBlockRows_are_energyless_blocks r t h).1]; intro hc; cases hc
+theorem replayedRows_are_not_batches (r : PlanReq) (t : Seg) (ids : BatchIds) (h : t ∈ replayedRows r) :
+    t.kind ≠ SegKind.batch ids := (mem_replayedRows.1 h).elim (pastRows_are_not_batches r t ids)
+    (fun h hc => by rw [(openBlockRows_are_energyless_blocks r t h).1] at hc; cases hc)
 
-/-- **The day's rows**: steps 1, 2, 6 and **7**, and §8.2 choice 5b's reservation, in the
-fork's order — `emit_segments` renders the optionals and then the Rest slots
-(`planner.rs:1900-1957`), and the sort puts every row where its start says.
+/-- **§8.2 step 1 in fork `emit_segments`' own order** (W-38, README gap 3281): `stepOneSegs` with no running
+interruption; with one, its Lost row among the walls where fork `collect_walls`' `(blocked_start, id)` sort puts its
+ad-hoc wall, by `wallLe` itself (`sortWalls_snoc`), keyed off the row: its start, and the block it names or `""`. -/
+def stepOneOrder (r : PlanReq) : List Seg := match (interruptRows r).head? with
+  | none => stepOneSegs r
+  | some s => replayedRows r ++ breakRows r ++
+      ((wallsToday r).filter (fun y => wallLe y ⟨s.item.getD [], r.today, r.today, s.start, s.start, s.stop⟩)).flatMap (fun x => wallRows (r.isTravelDay x.id) x) ++
+      interruptRows r ++ ((wallsToday r).filter (fun y => !wallLe y ⟨s.item.getD [], r.today, r.today, s.start, s.start, s.stop⟩)).flatMap (fun x => wallRows (r.isTravelDay x.id) x)
 
-**The Block and Batch rows of §8.2 step 5 ARE here now** (D50, README gaps **803** item 4 and
-**1790**): `PlanReq.assignedRows` is the composition step, and it is the switch-shaped change
-(D19) — four `PlanCheck` emptiness theorems became false on this commit and
-`PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` went with them.  Every one of the five is restated rather
-than deleted, and each restatement carries a computed refutation of the old form beside it
-(AGENTS §3.1 item 3). -/
+/-- **Nothing is added and nothing is dropped** — step 1's rows are `stepOneSegs`', in either order. -/
+theorem stepOneOrder_perm (r : PlanReq) : (stepOneOrder r).Perm (stepOneSegs r) := by
+  unfold stepOneOrder; split
+  · exact List.Perm.refl _
+  · exact Look.adhoc_walk_perm _ _ _ _ _ _ _
+
+/-- **The day's rows**: steps 1, 2, 6 and **7**, §8.2 choice 5b's reservation and step 5's Block and Batch rows (D50, README
+gaps **803** item 4 and **1790**: `PlanReq.assignedRows` is the composition, whose switch-shaped change (D19) made four
+`PlanCheck` emptiness theorems false and took `PlanCheck.dayPlan_ok_core_given_the_budget`'s `hblk` with them, each of the
+five restated with a computed refutation of the old form, AGENTS §3.1 item 3), in the fork's order: step 1 as
+`emit_segments` walks it (`stepOneOrder`, W-38), the optionals and then the Rest slots (`planner.rs:1900-1957`), and the
+sort puts every row where its start says. -/
 def dayRows (r : PlanReq) : List WfSeg :=
-  sortRows ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
+  sortRows ((stepOneOrder r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
     r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf)
 
 theorem mem_dayRows {r : PlanReq} {s : WfSeg} (h : s ∈ dayRows r) :
     ∃ t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.keptBreakRows ++ r.optionalRows ++ r.restRows, s = segOf t := by
   have hm := mem_sortRows.1 h
-  simpa [eq_comm] using List.mem_map.1 hm
+  simpa [eq_comm, (stepOneOrder_perm r).mem_iff] using List.mem_map.1 hm
 
 /-- **A row the planner places is a row of the day** — the converse `dayRows` owes, used to
 show the reservation really reaches `dayPlan`. -/
 theorem mem_dayRows_of_mem {r : PlanReq} {t : Seg}
     (h : t ∈ stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
       r.keptBreakRows ++ r.optionalRows ++ r.restRows) : segOf t ∈ dayRows r :=
-  mem_sortRows.2 (List.mem_map.2 ⟨t, h, rfl⟩)
+  mem_sortRows.2 (List.mem_map.2 ⟨t, by simpa [(stepOneOrder_perm r).mem_iff] using h, rfl⟩)
 
 /-- **The open row reaches the day** (W-34) — `openBlockRows` is not built beside `dayRows`, it
 is composed into it, through `stepOneSegs`' replayed half (D50: a row built and not joined is
@@ -7193,7 +7193,7 @@ def dayDiagnostics (r : PlanReq) : Diagnostics :=
     restDebtMin := r.dayRestDebtMin
     impossibleUntil := Capped.ofListTake r.dayImpossibleUntil
     underusedLevels := Capped.ofListTake r.dayUnderusedLevels
-    blockedDeps := Capped.ofListTake r.dayBlockedDeps
+    blockedDeps := Capped.ofListTake r.dayBlockedDeps, served := Capped.ofListTake r.dayServed
     unplaced := Capped.ofListTake (r.dayUnplaced assigned) }
 
 /-- **The day carries the whole IMPOSSIBLE list**: the cap is the wire's and the list is under
@@ -7741,23 +7741,23 @@ theorem assignedOf_dayPlan_is_step_one_the_reservation_and_step_five (r : PlanRe
     obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
     rw [segOf_kind, r.optionalRows_are_not_work t ht]
     simp
-  have hnilr : ((r.restRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := by
-    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
-    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
-    rw [segOf_kind, r.restRows_are_not_work t ht]
-    simp
-  have hnilb : ((r.keptBreakRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := by
-    refine List.filter_eq_nil_iff.2 (fun s hs => ?_)
-    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
-    rw [segOf_kind, r.keptBreakRows_are_not_work t ht]
-    simp
-  have hsplit : ((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
-      r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf).filter (fun s => s.val.kind.isWork)
-        = ((stepOneSegs r ++ reservationSegs r ++ r.assignedRows).map segOf).filter
-          (fun s => s.val.kind.isWork) := by
-    simp only [List.map_append, List.filter_append, hnil, hnilo, hnilr, hnilb, List.append_nil,
-      List.nil_append]
-  rw [hsplit]
+  have hnilr : ((r.restRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := List.filter_eq_nil_iff.2 (fun s hs => by
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs; rw [segOf_kind, r.restRows_are_not_work t ht]; simp)
+  have hnilb : ((r.keptBreakRows).map segOf).filter (fun s => s.val.kind.isWork) = [] := List.filter_eq_nil_iff.2 (fun s hs => by
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs; rw [segOf_kind, r.keptBreakRows_are_not_work t ht]; simp)
+  -- Step 1's rows reach the day in `emit_segments`' own order since W-38 (gap 3281), and that order moves only the
+  -- running interruption, the running break and the walls — none of them work — so the filter sees `stepOneSegs`' rows.
+  have hstep : ((stepOneOrder r).map segOf).filter (fun s => s.val.kind.isWork)
+      = ((stepOneSegs r).map segOf).filter (fun s => s.val.kind.isWork) := by
+    unfold stepOneOrder; split
+    · rfl
+    · exact Look.adhoc_walk_map_filter _ _ _ _ _ _ _ segOf _
+        (fun t ht => by rw [segOf_kind, (interruptRows_are_open_lost_time r t ht).1]; rfl)
+        (fun t ht => by rw [segOf_kind, (breakRows_are_running_breaks r t ht).1]; rfl)
+        (fun x _ t ht => by rw [segOf_kind, (wallRows_are_walls_of_the_item _ x t ht).1]; rfl)
+  -- Every other source the sort reads but step 1, the reservation and step 5 is empty under the filter (`hnil`…).
+  simp only [List.map_append, List.filter_append, hstep, hnil, hnilo, hnilr, hnilb, List.append_nil,
+    List.nil_append]
 
 /-- **The day carries §8.2 step 4's answer** — fork `planner.rs:1066`, `day.priorities = cands
 .zip(&prios)`.  P0 left it `Capped.nil`, which was true of a day with no step 4; it is step 4's
@@ -9096,36 +9096,52 @@ theorem a_pause_no_wall_touches_is_drawn_whole (r : PlanReq) (g : Replay.Segment
   · exact Or.inr (Or.inl h)
   · exact Or.inr (Or.inr h)
 
-/-! ## §8.1's window crossing midnight (W-37 repair, README gaps 320 and 3341)
+/-! ## §8.1's window and budget as the fork's PLANNER reads them (W-37 repair and W-38; README gaps 320 and 3341)
 
-`PlanReq.window` was `Look.day0Window` whole until the W-37 repair — fork `Ctx::window`'s reading,
-day 0's CAPACITY, which has no midnight branch — so a stored `[11:00, 01:00]` became a window ending
-at 01:00 of the SAME day, before its start, and the kernel planned a late day's work into nothing
-while the shipped fork's planner (`Planner::window_and_budget`: `if end < start { end += 1 day }`)
-planned it to 01:00.  No frozen world could show it: every late comparand world stored NO window,
-which the binary never holds (`tm arrive` always stores one) — README gap 3340.  Day 0's capacity
-keeps `Ctx::window`'s reading (`Look.day0Window`, compared exactly against the fork by
-`kernel_lookahead_parity.rs`), so the two readings gap 320 named are the fork's own two, each kept
-where the fork keeps it; unifying them is gap 320's decision and is still open.  The view laws the
-two restatements below replace equated the planner's window with day 0's capacity window for every
-request; they hold exactly on the subdomain their names now carry (AGENTS §3.1 item 4). -/
+`PlanReq.window` was `Look.day0Window` whole until the W-37 repair — fork `Ctx::window`'s reading, day 0's
+CAPACITY — and the shipped binary reads the stored window a second way for the day it PLANS: fork
+`Planner::window_and_budget` reads `runtime.window` and `runtime.budget` on `planwire::plan_date`'s day
+(`state.date`, else `now`'s own date) whatever sits beside them, and ends a window earlier than its start on
+the next day.  Gap 320 named the three inputs where the two part.  The W-37 repair took the third (a window
+crossing midnight, gap 3341); W-38 takes the other two — a state naming NO day, whose window, budget and
+arrival are today's to the planner, and a window with NO budget beside it — through `Look.Today.planWindow`,
+`planBudget` and `planArrivalSec`, so `PlanReq.window` and `PlanReq.budgetBlocks` are the fork planner's own
+reading of `state.json` and nothing else.  Day 0's capacity keeps `Ctx::window`'s reading, which is where the
+binary keeps it (`kernel_lookahead_parity.rs` compares it exactly), so the two readings are the fork's own two,
+each where the fork keeps it.  The one reading of the fork's planner not taken is its fall-back to the day's
+first logged `arrive` when the state carries no arrival (README gap 3390).
 
-/-- **The planner's window is day 0's capacity window unless a stored window crosses midnight.** -/
-theorem PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight (r : PlanReq)
-    (h : ∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) :
+The view law that equated the planner's window with day 0's capacity window held on every request until the
+W-37 repair and on every window not crossing midnight until this one; it holds exactly on the subdomain the
+restated name carries (AGENTS §3.1 item 4), and `PlannerWit` refutes each wider form by a computed request. -/
+
+/-- **The planner's window is day 0's capacity window on a state dated today, whose stored window carries its
+budget and does not cross midnight** — every input on which the two readings of the shipped binary agree. -/
+theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window (r : PlanReq)
+    (hd : r.look.today0.date = some r.look.today)
+    (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
+    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) :
     r.window = Look.day0Window r.look := by
-  unfold PlanReq.window Look.day0Window
-  cases hs : r.look.today0.storedWindow r.look.today with
-  | none => rfl
+  have hf := r.look.today0.forToday_of_date r.look.today hd
+  have ha := r.look.today0.planArrivalSec_on_a_dated_state r.look.today r.look.tz hd
+  unfold PlanReq.window Look.day0Window Look.Today.planWindow Look.Today.storedWindow
+  rw [if_pos hf, if_pos hd]
+  cases hw : r.look.today0.window with
+  | none => simp only [ha]
   | some w =>
-    have hle := h w hs
-    have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr hle
-    simp [hn]
+    have hbs := hb (by simp [hw])
+    cases hbb : r.look.today0.budget with
+    | none => rw [hbb] at hbs; exact absurd hbs (by simp)
+    | some b =>
+      have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr (h w hw)
+      simp [hn]
 
 /-- **A stored window that crosses midnight ends on the next day** — the fork planner's reading
-(`Planner::window_and_budget`), which the shipped binary plans a late day with. -/
+(`Planner::window_and_budget`), which the shipped binary plans a late day with.  Stated over the planner's own
+stored window since W-38 (`Look.Today.planWindow`), which every window the capacity counts is
+(`Look.Today.storedWindow_is_a_planWindow`), so this implies its W-37 form. -/
 theorem PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it (r : PlanReq)
-    (w : Field.Clock × Field.Clock) (hs : r.look.today0.storedWindow r.look.today = some w)
+    (w : Field.Clock × Field.Clock) (hs : r.look.today0.planWindow r.look.today = some w)
     (hlt : w.2 < w.1) :
     r.window = ((Cal.instantOf r.look.tz r.look.today w.1).sec,
       (Cal.instantOf r.look.tz (r.look.today + 1) w.2).sec) := by
@@ -9133,13 +9149,166 @@ theorem PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it (r : PlanR
   rw [hs]
   simp [hlt]
 
-/-- **The day's window is day 0's capacity window unless a stored window crosses midnight** — the
-old `dayPlan_window`'s statement, on its subdomain (`dayPlan_window` states the day's window as
-`PlanReq.window` since the repair). -/
-theorem dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight (r : PlanReq)
-    (h : ∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) :
+/-- **The window stored for the planned day is the day's window** (gap 320): whatever the state's date says
+beside it — none, or today — and whether or not a budget is stored with it. -/
+theorem PlanReq.window_is_the_stored_one_on_its_day (r : PlanReq) (w : Field.Clock × Field.Clock)
+    (hs : r.look.today0.planWindow r.look.today = some w) (hle : w.1 ≤ w.2) :
+    r.window = ((Cal.instantOf r.look.tz r.look.today w.1).sec,
+      (Cal.instantOf r.look.tz r.look.today w.2).sec) := by
+  have hn : ¬ w.2 < w.1 := Nat.not_lt.mpr hle
+  unfold PlanReq.window
+  rw [hs]
+  simp [hn]
+
+/-- **With no window stored for the planned day, the window is §8.1's formula from the planner's arrival.** -/
+theorem PlanReq.window_is_the_formula_without_a_window_on_its_day (r : PlanReq)
+    (hs : r.look.today0.planWindow r.look.today = none) :
+    r.window = Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz)
+      (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today) := by
+  unfold PlanReq.window
+  rw [hs]
+
+/-- **The day's window is day 0's capacity window on that subdomain** — `dayPlan_window` states the day's
+window as `PlanReq.window`. -/
+theorem dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window (r : PlanReq)
+    (hd : r.look.today0.date = some r.look.today)
+    (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
+    (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) :
     (dayPlan r).window = Look.day0Window r.look :=
-  PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight r h
+  PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window r hd hb h
+
+/-! ## §8.2 step 1 in `emit_segments`' own order: the running interruption among the walls (W-38, README gap 3281)
+
+Fork `collect_walls` pushes §9's running interruption after the day's calendar walls — an ad-hoc `WallSeg`
+blocked from where it started, keyed by the block it paused or by `""` — and sorts the lot by
+`(blocked_start, id)`; `emit_segments` walks the sorted list, a Lost row for the ad-hoc entry and a wall's own
+rows for each other, and the final `(start, end)` sort keeps that order for rows that tie.  The kernel drew the
+interruption's Lost row before every wall (`stepOneSegs`' order), so a Lost row and a Wall row starting and
+ending at one instant were drawn in two orders, and the day's hash with them (README gap 3281, found by
+`planner_invariants`' hash arm on seed `ef4f4091…`).  `dayRows` now walks step 1 by `stepOneOrder` over
+`wallLe` — the kernel's own `collect_walls` order, reused — and the two laws below say the walk IS the fork's
+sort with the ad-hoc wall pushed last, and changes nothing on a day with no interruption. -/
+
+/-- A stable insertion that meets an entry it goes at or before stops there, and the rest follows. -/
+theorem insBy_append_cons_of_le {α : Type} (le : α → α → Bool) (a x : α) (hax : le a x = true) :
+    ∀ (F G : List α), Replay.insBy le a (F ++ x :: G) = Replay.insBy le a F ++ x :: G
+  | [], G => by simp [Replay.insBy, hax]
+  | b :: F, G => by
+    simp only [List.cons_append, Replay.insBy]
+    split
+    · rfl
+    · rw [insBy_append_cons_of_le le a x hax F G, List.cons_append]
+
+/-- …and passes over every entry it goes after. -/
+theorem insBy_append_of_after {α : Type} (le : α → α → Bool) (a : α) :
+    ∀ (F R : List α), (∀ b ∈ F, le a b = false) → Replay.insBy le a (F ++ R) = F ++ Replay.insBy le a R
+  | [], R, _ => rfl
+  | b :: F, R, h => by
+    simp only [List.cons_append, Replay.insBy, h b List.mem_cons_self, Bool.false_eq_true, if_false]
+    rw [insBy_append_of_after le a F R (fun c hc => h c (List.mem_cons_of_mem _ hc))]
+
+/-- **A stable sort with one entry pushed last places it after every entry at or before it and before the
+rest** — fork `collect_walls`' `out.push(..)` then `out.sort_by(..)`, as `Replay.insSort` computes it. -/
+theorem insSort_snoc {α : Type} (le : α → α → Bool)
+    (trans : ∀ a b c, le a b = true → le b c = true → le a c = true)
+    (total : ∀ a b, le a b = true ∨ le b a = true) (x : α) :
+    ∀ (l : List α), Replay.insSort le (l ++ [x])
+      = (Replay.insSort le l).filter (fun y => le y x) ++ x :: (Replay.insSort le l).filter (fun y => !le y x)
+  | [] => by simp [Replay.insSort, Replay.insBy]
+  | a :: l => by
+    have ih := insSort_snoc le trans total x l
+    have hs := Seal.insSort_sorted le trans total l
+    rw [List.cons_append, Seal.insSort_cons', ih, Seal.insSort_cons',
+      Seal.insBy_filter le trans _ a _ hs, Seal.insBy_filter le trans _ a _ hs]
+    cases hax : le a x
+    · have hF : ∀ b ∈ (Replay.insSort le l).filter (fun y => le y x), le a b = false := by
+        intro b hb
+        have hbx : le b x = true := by simpa using (List.mem_filter.1 hb).2
+        cases hab : le a b
+        · rfl
+        · exact absurd (trans a b x hab hbx) (by simp [hax])
+      simp only [Bool.false_eq_true, if_false, Bool.not_false, if_true]
+      rw [insBy_append_of_after le a _ _ hF]
+      simp [Replay.insBy, hax]
+    · simp only [if_true, Bool.not_true, Bool.false_eq_true, if_false]
+      exact insBy_append_cons_of_le le a x hax _ _
+
+/-- **Fork `collect_walls`' sort with the ad-hoc wall pushed last is the kernel's split**: the calendar walls
+`wallLe` puts at or before it, the ad-hoc wall, then the rest — `wallLe` itself, the kernel's one wall order. -/
+theorem sortWalls_snoc (C : List Look.WallIx) (i : Look.WallIx) :
+    sortWalls (C ++ [i])
+      = (sortWalls C).filter (fun y => wallLe y i) ++ i :: (sortWalls C).filter (fun y => !wallLe y i) :=
+  insSort_snoc wallLe (fun a b c h₁ h₂ => wallLe_trans a b c h₁ h₂)
+    (fun a b => Bool.or_eq_true _ _ |>.mp (wallLe_total a b)) i C
+
+/-- **With no running interruption, step 1 is `stepOneSegs` in its own order** — every day that draws no Lost row
+for an interruption is drawn exactly as before W-38. -/
+theorem stepOneOrder_without_an_interruption (r : PlanReq) (h : interruptRows r = []) :
+    stepOneOrder r = stepOneSegs r := by
+  unfold stepOneOrder
+  rw [h]
+  rfl
+
+/-- **With one, its Lost row is walked where fork `collect_walls`' sort puts its ad-hoc wall**: the key
+`(blocked_start, id)` is read off the row itself (its start, and the block it names or `""`), the fork's sort of the
+day's clipped calendar walls with that entry pushed last is `wallsToday`' walls at or before it, the entry, and the
+rest (`sortWalls_snoc`), and step 1's rows are the log's, the running break's, and then exactly those walls' rows, the
+Lost row and the rest's rows, in that order. -/
+theorem PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it (r : PlanReq) (s : Seg)
+    (hs : (interruptRows r).head? = some s) :
+    let i : Look.WallIx := ⟨s.item.getD [], r.today, r.today, s.start, s.start, s.stop⟩
+    sortWalls (((Look.wallIxOn r.look.walls r.today).filterMap fun x =>
+        if (clipWall r.dayStart r.dayEnd x).lo < (clipWall r.dayStart r.dayEnd x).hi
+        then some (clipWall r.dayStart r.dayEnd x) else none) ++ [i])
+      = (wallsToday r).filter (fun y => wallLe y i) ++ i :: (wallsToday r).filter (fun y => !wallLe y i) ∧
+    stepOneOrder r
+      = replayedRows r ++ breakRows r ++
+          ((wallsToday r).filter (fun y => wallLe y i)).flatMap (fun x => wallRows (r.isTravelDay x.id) x) ++
+          interruptRows r ++
+          ((wallsToday r).filter (fun y => !wallLe y i)).flatMap (fun x => wallRows (r.isTravelDay x.id) x) := by
+  refine ⟨sortWalls_snoc _ _, ?_⟩
+  unfold stepOneOrder
+  rw [hs]
+
+/-! ## §8.2 step 5's served order, carried by the day (W-38, README gap 3343)
+
+`planner_invariants`' monotone-rank check asks, of every pair of candidates of one `p` and one `ci`, that the one step
+5 serves first is never the one left out — and until W-38 it read "first" off a Rust copy of D63's order
+(`forkclass::d60_cands`), pairing by the host's `ci`, because the kernel's order and the `ci` its walk reads were on no
+wire (gap 3343).  `PlanReq.dayServed` is that order as the day carries it: the ranked answers in `rankedLe`'s order —
+the list `PlanReq.dayBatches` hands §7.5's batching and step 5 walks — each by its request position, its id and the
+`ci` the energy filter reads.  Bounded by the candidates' own cap, so `Capped.ofListTake` truncates nothing. -/
+
+theorem PlanReq.dayServed_capped (r : PlanReq) : r.dayServed.length ≤ maxCands := by
+  unfold PlanReq.dayServed
+  rw [List.length_map]
+  exact Nat.le_trans r.rankedCands_length r.cands.property
+
+theorem dayDiagnostics_served (r : PlanReq) : (dayDiagnostics r).served.val = r.dayServed :=
+  Capped.ofListTake_keeps_everything_below_the_cap _ r.dayServed_capped
+
+/-- **The day carries step 5's served order whole**: `rankedCands` projected, in `rankedLe`'s order, and it is the
+very list step 5's batching reads (`PlanReq.dayBatches`). -/
+theorem dayPlan_serves_in_the_walks_order (r : PlanReq) :
+    (dayPlan r).diagnostics.served.val
+        = r.rankedCands.map (fun x => (x.key.ix, x.out.out.cand.id, x.out.out.cand.ci)) ∧
+      r.rankedCands.Pairwise (fun a b => rankedLe a b = true) ∧
+      r.dayBatches = batches r.prio.batchMaxMin r.blockMin r.rankedCands :=
+  ⟨dayDiagnostics_served r, r.rankedCands_sorted, rfl⟩
+
+/-- **Each served entry names an answer of this request that entered the order, by its position**: the position is
+the answer's place in the request's candidate list, the id its candidate's and the `ci` the one the wire sent. -/
+theorem PlanReq.mem_dayServed {r : PlanReq} {e : Nat × Id × Fin 6} :
+    e ∈ r.dayServed ↔ ∃ p ∈ r.candAnswers.zipIdx, entersTheOrder p.1 = true ∧
+      e = (p.2, p.1.out.cand.id, p.1.out.cand.ci) := by
+  unfold PlanReq.dayServed
+  rw [List.mem_map]
+  constructor
+  · rintro ⟨x, hx, rfl⟩
+    obtain ⟨p, hp, he, rfl⟩ := PlanReq.mem_rankedCands.1 hx
+    exact ⟨p, hp, he, rfl⟩
+  · rintro ⟨p, hp, he, rfl⟩
+    exact ⟨⟨r.keyOf p.2 p.1, p.1⟩, PlanReq.mem_rankedCands.2 ⟨p, hp, he, rfl⟩, rfl⟩
 
 
 /-! ### The two `dayImpossible` directions (W-33), moved here whole at W-38

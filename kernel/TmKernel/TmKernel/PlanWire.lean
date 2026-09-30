@@ -1040,7 +1040,7 @@ def idsJson (c : Planner.IdList) : JVal := .arr (c.val.map JVal.str)
 /-- The name `Planner.NoPlace`'s reason crosses the wire under (D67, P58; AGENTS §5.7): each constructor its own. -/
 def noPlaceName : Planner.NoPlace → List Char | .noRunLeft => "noRunLeft".toList | .noSlotLeft => "noSlotLeft".toList | .budgetSpent => "budgetSpent".toList
 /-- §8.2 step 8's twelve fields under their own names, then the fork's three whole tuples `tm-core/src/emit.rs` prints (W-35, gaps 2640, 2743): `impossibleUntil` (`{id, shortMin, until}`, `YYYY-MM-DD`),
-`underusedLevels` (`{id, energy, ci}`), `blockedDeps` (`{id, deps}`, each an `after:` spelling) — and since W-38 the kernel's `unplaced` (`{id, why}`, D67, P58).  The twelve keys' bytes are unchanged. -/
+`underusedLevels` (`{id, energy, ci}`), `blockedDeps` (`{id, deps}`, each an `after:` spelling) — and since W-38 the kernel's `unplaced` (`{id, why}`, D67, P58), then `served`, §8.2 step 5's order (`{ix, id, ci}`, gap 3343).  The twelve keys' bytes are unchanged. -/
 def diagJson (d : Planner.Diagnostics) : JVal :=
   .obj [("underused".toList, idsJson d.underused),
     ("aCapacityLost".toList, .num d.aCapacityLost),
@@ -1063,15 +1063,15 @@ def diagJson (d : Planner.Diagnostics) : JVal :=
       .arr (d.impossibleUntil.val.map (fun t =>
         .obj [("id".toList, .str t.1), ("shortMin".toList, .num t.2.1),
           ("until".toList, .str (Field.renderDate t.2.2))]))),
-    ("underusedLevels".toList,
-      .arr (d.underusedLevels.val.map (fun t =>
-        .obj [("id".toList, .str t.1), ("energy".toList, .num t.2.1.val),
-          ("ci".toList, .num t.2.2.val)]))),
+    ("underusedLevels".toList, .arr (d.underusedLevels.val.map (fun t =>
+      .obj [("id".toList, .str t.1), ("energy".toList, .num t.2.1.val), ("ci".toList, .num t.2.2.val)]))),
     ("blockedDeps".toList,
       .arr (d.blockedDeps.val.map (fun t =>
         .obj [("id".toList, .str t.1),
           ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))]))),
-    ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))])))]
+    ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))]))),
+    ("served".toList, .arr (d.served.val.map (fun t =>
+      .obj [("ix".toList, .num t.1), ("id".toList, .str t.2.1), ("ci".toList, .num t.2.2.val)])))]
 
 /-- §7's answers, in `EmitWire.readPrio`'s own `{id, p}` shape. -/
 def priosJson (c : Planner.Capped (Id × Fin 8)) : JVal :=
@@ -1441,7 +1441,7 @@ theorem diagJson_of_an_untroubled_day :
           ("droppedTail".toList, .arr []),
           ("planHonesty".toList, .obj [("planned".toList, .num 0), ("total".toList, .num 0)]),
           ("restDebtMin".toList, .num 0), ("impossibleUntil".toList, .arr []),
-          ("underusedLevels".toList, .arr []), ("blockedDeps".toList, .arr []), ("unplaced".toList, .arr [])] := rfl
+          ("underusedLevels".toList, .arr []), ("blockedDeps".toList, .arr []), ("unplaced".toList, .arr []), ("served".toList, .arr [])] := rfl
 
 /-- **And with something wrong with it**, so the list shapes and `idsJson` are pinned at a
 value and not only at the empty list — the three whole tuples too since W-35: a date, two
@@ -1455,7 +1455,7 @@ theorem diagJson_carries_its_lists :
         aCapacityLost := 7, restDebtMin := 12, planHonesty := (2, 5),
         impossibleUntil := ⟨[(['b'], 30, 739884)], by decide⟩,
         underusedLevels := ⟨[(['e'], 4, 2)], by decide⟩,
-        blockedDeps := ⟨[(['f'], [.item ['g'], .event ['v']])], by decide⟩, unplaced := ⟨[(['h'], .noRunLeft), (['i'], .noSlotLeft), (['j'], .budgetSpent)], by decide⟩ }
+        blockedDeps := ⟨[(['f'], [.item ['g'], .event ['v']])], by decide⟩, unplaced := ⟨[(['h'], .noRunLeft), (['i'], .noSlotLeft), (['j'], .budgetSpent)], by decide⟩, served := ⟨[(3, ['h'], 2)], by decide⟩ }
       = .obj [("underused".toList, .arr []), ("aCapacityLost".toList, .num 7),
           ("hot".toList, .arr [.str ['a']]),
           ("impossible".toList,
@@ -1475,7 +1475,7 @@ theorem diagJson_carries_its_lists :
               ("ci".toList, .num 2)]]),
           ("blockedDeps".toList,
             .arr [.obj [("id".toList, .str ['f']),
-              ("deps".toList, .arr [.str ['^', 'g'], .str "event:v".toList])]]), ("unplaced".toList, .arr [.obj [("id".toList, .str ['h']), ("why".toList, .str "noRunLeft".toList)], .obj [("id".toList, .str ['i']), ("why".toList, .str "noSlotLeft".toList)], .obj [("id".toList, .str ['j']), ("why".toList, .str "budgetSpent".toList)]])] := rfl
+              ("deps".toList, .arr [.str ['^', 'g'], .str "event:v".toList])]]), ("unplaced".toList, .arr [.obj [("id".toList, .str ['h']), ("why".toList, .str "noRunLeft".toList)], .obj [("id".toList, .str ['i']), ("why".toList, .str "noSlotLeft".toList)], .obj [("id".toList, .str ['j']), ("why".toList, .str "budgetSpent".toList)]]), ("served".toList, .arr [.obj [("ix".toList, .num 3), ("id".toList, .str ['h']), ("ci".toList, .num 2)]])] := rfl
 
 /-- **§7's answers go out in `EmitWire.readPrio`'s own `{id, p}` shape**, which is what lets a
 host send back the day it was given. -/
@@ -1554,7 +1554,7 @@ theorem priosJson_is_the_id_and_the_priority_of_every_pair (c : Planner.Capped (
   rfl
 
 /-- **`diagJson` is these twelve fields, for every `Diagnostics`** — the fork's twelve, first and unchanged — **then the
-three whole tuples W-35 added** (README gaps 2640 and 2743) and W-38's `unplaced` (D67).  Re-proved with its statement
+three whole tuples W-35 added** (README gaps 2640 and 2743) and W-38's `unplaced` (D67) and `served` (gap 3343).  Re-proved with its statement
 WIDENED by those keys (D5): the twelve entries are the ones this law always stated, byte for byte. -/
 theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
     diagJson d
@@ -1588,7 +1588,7 @@ theorem diagJson_is_its_twelve_fields (d : Planner.Diagnostics) :
             .arr (d.blockedDeps.val.map (fun t =>
               .obj [("id".toList, .str t.1),
                 ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))]))),
-          ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))])))] := rfl
+          ("unplaced".toList, .arr (d.unplaced.val.map (fun t => .obj [("id".toList, .str t.1), ("why".toList, .str (noPlaceName t.2))]))), ("served".toList, .arr (d.served.val.map (fun t => .obj [("ix".toList, .num t.1), ("id".toList, .str t.2.1), ("ci".toList, .num t.2.2.val)])))] := rfl
 
 /-- **`noteJson` writes every FIELD of every constructor, and not only the name.**
 `noteJson_names_the_eleven` pins the eleven names at eleven points; this pins the numbers and
@@ -2050,5 +2050,85 @@ theorem the_wire_until_is_answerUntil (o : Look.FloorOut) :
     cases hg : out.grant with
     | some g => simp [CapWire.grantJsonF, CapWire.grantJson, Planner.answerUntil, List.lookup, hg]
     | none => simp [CapWire.grantJsonF, CapWire.grantJson, Planner.answerUntil, List.lookup, hg]
+
+/-! ## §8.2 step 8's pair and id keys are their tuples' projections, ON THE WIRE (stage 6 W-38, track R; README gap 3282)
+
+APPENDED 2026-09-29 (stage 6, run W-38, track R).  `planner_invariants`' step-8 arm
+(`the_kernel_writes_the_rest_of_step_8_as_the_fork_does`) asks, of the kernel's own `diagnostics` object on every
+generated day, that `impossible` be `impossibleUntil`'s `(id, shortMin)`, `underused` be `underusedLevels`' ids and
+`blocked` be `blockedDeps`' ids — the three comparisons that arm makes of the kernel against ITSELF — and R3 deletes
+the arm with the fork region it sits in.  Read by the arms: no other arm of the region compares two keys of the
+kernel's own answer; every other comparison there is the kernel against the fork.  So these are the three as kernel
+laws, at the JSON the export writes (`jget` over `diagJson (dayPlan r).diagnostics`, the value `planJson` puts under
+`diagnostics`), and nothing is lost with the arm: each pair of keys renders ONE list — the tuple key every entry
+whole, the pair or id key its projection — entry for entry and in order, which is stronger than the arm's multiset
+comparison and needs no generated day to hold. -/
+
+/-- **`impossible` is `impossibleUntil`'s `(id, shortMin)`, on the wire.** -/
+theorem the_impossible_key_is_the_impossibleUntil_key_projected (r : Planner.PlanReq) :
+    jget (diagJson (Planner.dayPlan r).diagnostics) "impossibleUntil"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.impossibleUntil.val.map (fun t =>
+          .obj [("id".toList, .str t.1), ("shortMin".toList, .num t.2.1),
+            ("until".toList, .str (Field.renderDate t.2.2))])))) ∧
+    jget (diagJson (Planner.dayPlan r).diagnostics) "impossible"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.impossibleUntil.val.map (fun t =>
+          .obj [("id".toList, .str t.1), ("shortMin".toList, .num t.2.1)])))) := by
+  have hp := Planner.dayDiagnostics_impossible_is_the_projection r
+  refine ⟨rfl, ?_⟩
+  show jget (diagJson (Planner.dayDiagnostics r)) "impossible" = _
+  have hj : jget (diagJson (Planner.dayDiagnostics r)) "impossible"
+      = .ok (some (.arr ((Planner.dayDiagnostics r).impossible.val.map (fun p =>
+          .obj [("id".toList, .str p.1), ("shortMin".toList, .num p.2)])))) := rfl
+  rw [hj, ← hp, List.map_map]
+  rfl
+
+/-- **`underused` is `underusedLevels`' ids, on the wire.** -/
+theorem the_underused_key_is_the_underusedLevels_key_projected (r : Planner.PlanReq) :
+    jget (diagJson (Planner.dayPlan r).diagnostics) "underusedLevels"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.underusedLevels.val.map (fun t =>
+          .obj [("id".toList, .str t.1), ("energy".toList, .num t.2.1.val),
+            ("ci".toList, .num t.2.2.val)])))) ∧
+    jget (diagJson (Planner.dayPlan r).diagnostics) "underused"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.underusedLevels.val.map (fun t =>
+          .str t.1)))) := by
+  have hp := Planner.dayDiagnostics_underused_is_the_projection r
+  refine ⟨rfl, ?_⟩
+  show jget (diagJson (Planner.dayDiagnostics r)) "underused" = _
+  have hj : jget (diagJson (Planner.dayDiagnostics r)) "underused"
+      = .ok (some (.arr ((Planner.dayDiagnostics r).underused.val.map JVal.str))) := rfl
+  rw [hj, ← hp, List.map_map]
+  rfl
+
+/-- **`blocked` is `blockedDeps`' ids, on the wire.** -/
+theorem the_blocked_key_is_the_blockedDeps_key_projected (r : Planner.PlanReq) :
+    jget (diagJson (Planner.dayPlan r).diagnostics) "blockedDeps"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.blockedDeps.val.map (fun t =>
+          .obj [("id".toList, .str t.1),
+            ("deps".toList, .arr (t.2.map (fun x => .str (Field.renderDep x))))])))) ∧
+    jget (diagJson (Planner.dayPlan r).diagnostics) "blocked"
+      = .ok (some (.arr ((Planner.dayPlan r).diagnostics.blockedDeps.val.map (fun t =>
+          .str t.1)))) := by
+  have hp := Planner.dayDiagnostics_blocked_is_the_projection r
+  refine ⟨rfl, ?_⟩
+  show jget (diagJson (Planner.dayDiagnostics r)) "blocked" = _
+  have hj : jget (diagJson (Planner.dayDiagnostics r)) "blocked"
+      = .ok (some (.arr ((Planner.dayDiagnostics r).blocked.val.map JVal.str))) := rfl
+  rw [hj, ← hp, List.map_map]
+  rfl
+
+/-- **`served` is step 5's walk order, on the wire** (W-38, README gap 3343): one `{ix, id, ci}` object per ranked
+answer, in `rankedLe`'s order — the list a harness reads instead of a Rust copy of the kernel's order. -/
+theorem the_served_key_is_the_walks_order (r : Planner.PlanReq) :
+    jget (diagJson (Planner.dayPlan r).diagnostics) "served"
+      = .ok (some (.arr (r.rankedCands.map (fun x =>
+          .obj [("ix".toList, .num x.key.ix), ("id".toList, .str x.out.out.cand.id),
+            ("ci".toList, .num x.out.out.cand.ci.val)])))) := by
+  have hj : jget (diagJson (Planner.dayDiagnostics r)) "served"
+      = .ok (some (.arr ((Planner.dayDiagnostics r).served.val.map (fun t =>
+          .obj [("ix".toList, .num t.1), ("id".toList, .str t.2.1), ("ci".toList, .num t.2.2.val)])))) := rfl
+  show jget (diagJson (Planner.dayDiagnostics r)) "served" = _
+  rw [hj, Planner.dayDiagnostics_served, Planner.PlanReq.dayServed, List.map_map]
+  rfl
+
 end PlanWire
 end Tm

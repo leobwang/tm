@@ -484,8 +484,8 @@ its own to the day above: the two evening rows are §16's, not a routine's. -/
 theorem the_witness_carries_no_routine : theRequest.routines.val = [] := rfl
 
 set_option maxRecDepth 400000 in
-/-- The day's window, budget and block length, computed through `Look.day0Window` and
-`Look.budgetOf` — never through a second copy (`PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight`). -/
+/-- The day's window, budget and block length, through the planner's own reading of `state.json` (`Planner.PlanReq.window`, README gap 320): with nothing
+stored, §8.1's formula from `now`, as `Look.day0Window` reads it too — the fork's planner falls back to the log's 07:00 `arrive` (gap 3390). -/
 theorem the_witness_day_is_planned_from_two_in_the_afternoon :
     (dayPlan theRequest).window
         = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
@@ -3684,26 +3684,26 @@ theorem the_day_with_no_room_carries_the_note_instead :
   refine ⟨by decide, by decide, by decide⟩
 
 set_option maxRecDepth 400000 in
-/-- **The budget no longer reaches the assigned set BY CONSTRUCTION, and at this request it
-does not reach it at all** — README gap 366's half, restated.
+/-- **The stored budget REACHES the assigned set: at this request, zeroing it leaves nothing assigned** — README
+gap 366's half, restated twice, and gap 1904 answered the other way (W-38, README gap 3391).
 
-**RESTATED AT P9, and the old PROOF is gone** (AGENTS §3.1 item 4, D50).  It read *"the budget
-cannot reach the assigned set, **for every request**, because there is no assign fold to spend
-it"*, was named the_budget_does_not_move_the_assigned_set_at_the_busy_request, and was
-a `rfl`: `Planner.dayRows` held no row that read `remainingBudget`.  It does now
-(`Planner.PlanReq.assignedRows`), so the ∀-form is **not definitional any more and is not
-re-claimed here**; README gap **1904** records that whether the stored budget can move the
-assignment is an open question with exactly one witness answering it.
+**RESTATED AT P9** (AGENTS §3.1 item 4, D50): the ∀-form, *"the budget cannot reach the assigned set, for every
+request, because there is no assign fold to spend it"*, was a `rfl` while `Planner.dayRows` held no row that read
+`remainingBudget`, and it is not re-claimed.  **RESTATED AGAIN AT W-38, and the P9 form is REFUTED**: it read
+"zeroing the budget leaves **four**", was named the_budget_does_not_move_the_assigned_set_at_the_busy_request, and
+it was true only because its zero never reached the planner.  `theBusyRequest`'s state names no day, and
+`Planner.PlanReq.budgetBlocks` read `Look.Today.storedBudget`, which counts a budget only on a state dated today — so
+the witness zeroed a number nothing read.  Fork `Planner::window_and_budget` reads `runtime.budget` on `plan_date`'s
+day, a state naming no day included, and the kernel does since W-38 (`Look.Today.planBudget`, README gap 320).
 
-What is computed is that witness: at `theBusyRequest` — one of NINETEEN requests here whose
-cursor fills a slot (W-30, gap 2025) — the day assigns **four**, and zeroing the budget leaves
-**four**.  So §8.2 choice 5b's counterexample still has no witness in this tree, and the reason
-is no longer "there is nothing to spend".  The name moved with the statement (AGENTS §5.2) and
-`Check.lean` records the deletion. -/
-theorem the_budget_does_not_move_the_assigned_set_at_the_busy_request :
+What is computed now: at `theBusyRequest` — one of NINETEEN requests here whose cursor fills a slot (W-30, gap
+2025) — the day assigns **four**, and zeroing the budget assigns **none**.  So the stored budget moves §8.2 step
+5's assignment and §8.2 choice 5b's prefix question has a subject; the P9 form's refutation is W-38's block at the
+end of this file.  The name moved with the statement (AGENTS §5.2) and `Check.lean` records the rename. -/
+theorem the_budget_moves_the_assigned_set_at_the_busy_request :
     (PlanReq.assignedRows theBusyRequest).length = 4 ∧
       (PlanReq.assignedRows { theBusyRequest with look := { theBusyRequest.look with
-          today0 := { theBusyRequest.look.today0 with budget := some 0 } } }).length = 4 := by
+          today0 := { theBusyRequest.look.today0 with budget := some 0 } } }).length = 0 := by
   constructor
   · decide
   · decide
@@ -10524,6 +10524,158 @@ theorem the_fold_s_blocks_fit_the_budget_from_now :
       (PlanCheck.withoutPast theContiguityFindingRequest (dayPlan theContiguityFindingRequest)) = true :=
   ⟨by decide, by decide, by decide, by decide,
    PlanCheck.noOverbook_from_now theContiguityFindingRequest (by decide)⟩
+
+/-! ############################################################################
+## W-38 (track R): the interruption among the walls, gap 320's two inputs, and step 5's served order
+
+APPENDED 2026-09-29 (stage 6, run W-38, track R; README gaps 3281, 320, 3343 and 3391).  Four
+things the kernel's day now answers as the shipped fork does, or carries so a harness need not copy
+it, each computed at a request of this file:
+
+* **Gap 3281** — a running interruption's Lost row and a meeting's Wall row that start and end at one
+  instant are drawn in fork `collect_walls`' order: the ad-hoc wall sorted among the calendar walls by
+  `(blocked_start, id)`, so an interruption naming `m1` follows `^g1` and one naming `a1`, or no block,
+  precedes it (`Planner.dayRows` over `Planner.stepOneOrder`; the laws are `Planner.sortWalls_snoc` and
+  `Planner.PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it`).
+* **Gap 320** — a stored window with no date, and one with no budget beside it, are the planner's
+  window, as fork `Planner::window_and_budget` reads them; day 0's capacity keeps `Ctx::window`'s
+  reading.  The W-37 view law and the budget law that assumed the capacity's reading are refuted.
+* **Gap 3391** — the busy day's budget witness zeroed a budget nothing read (its state names no day);
+  read as the fork reads it, zeroing the budget assigns nothing, and the P9 form is refuted.
+* **Gap 3343** — the day carries step 5's served order, `diagnostics.served`, and at the reversed
+  contention day it is D60's order and not the request's. -/
+
+/-- **`theOpenRequest`'s Wednesday at 13:50, the end of `^g1`'s 12:50–13:50 meeting, with an interruption running
+since 12:50** — naming `id` as the block it paused, `tm interrupt`'s shape — and `m1` still the running block. -/
+def theMeetingInterruptedRequest (id : Option Id) : PlanReq :=
+  { theOpenRequest with
+    look := { theOpenRequest.look with today0 :=
+      { theOpenRequest.look.today0 with now := ⟨(Cal.instantOf Cal.chicago 739867 830).sec, 0⟩ } },
+    state := ⟨some theOpenBlock, none, some ⟨some ⟨(Cal.instantOf Cal.chicago 739867 770).sec, 0⟩, id⟩,
+      none, Capped.nil, none⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **README gap 3281, computed: the Lost row and the Wall row that tie are drawn in fork `collect_walls`' order.**
+The interruption's Lost row and `^g1`'s Wall row both run 12:50–13:50.  Named `m1`, the ad-hoc wall sorts after `g1`
+and the Wall row is drawn first; named `a1`, or naming no block (`""`), it sorts first and the Lost row is.  Before
+W-38 the kernel drew the Lost row first every time — `stepOneSegs`' own order, the last conjunct. -/
+theorem the_interruption_and_the_meeting_are_drawn_in_the_forks_order :
+    ((dayPlan (theMeetingInterruptedRequest (some ['m','1']))).segments.filter
+        (fun s => decide (s.val.start = (Cal.instantOf Cal.chicago 739867 770).sec))).map
+        (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.wall, some ['g','1']), (SegKind.lost, some ['m','1'])] ∧
+    ((dayPlan (theMeetingInterruptedRequest (some ['a','1']))).segments.filter
+        (fun s => decide (s.val.start = (Cal.instantOf Cal.chicago 739867 770).sec))).map
+        (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.lost, some ['a','1']), (SegKind.wall, some ['g','1'])] ∧
+    ((dayPlan (theMeetingInterruptedRequest none)).segments.filter
+        (fun s => decide (s.val.start = (Cal.instantOf Cal.chicago 739867 770).sec))).map
+        (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.lost, none), (SegKind.wall, some ['g','1'])] ∧
+    ((sortRows ((stepOneSegs (theMeetingInterruptedRequest (some ['m','1']))).map Planner.segOf)).filter
+        (fun s => decide (s.val.start = (Cal.instantOf Cal.chicago 739867 770).sec))).map
+        (fun s => (s.val.kind, s.val.item))
+      = [(SegKind.lost, some ['m','1']), (SegKind.wall, some ['g','1'])] := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **Both order laws have subjects** (AGENTS §7.4 item 2): the interrupted request holds the interruption's row the
+walk law is stated at, and `theRequest` holds none, so the plain-order law fires there. -/
+theorem the_order_laws_have_subjects :
+    (interruptRows (theMeetingInterruptedRequest (some ['m','1']))).head?.isSome = true ∧
+    interruptRows theRequest = [] := by
+  refine ⟨by decide, by decide⟩
+
+/-- **`theRequest` with `state.window = 13:00–17:00` and `state.budget = 3` stored, and NO date** — README gap 320's
+first input: fork `planwire::plan_date` reads a state naming no day as today's. -/
+def theUndatedWindowRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 :=
+      { theRequest.look.today0 with window := some (780, 1020), budget := some 3 } } }
+
+/-- **The same window dated today, with NO budget beside it** — gap 320's second input. -/
+def theUnbudgetedWindowRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 :=
+      { theRequest.look.today0 with date := some theRequest.look.today, window := some (780, 1020) } } }
+
+/-- **The same window dated today WITH its budget** — where the capacity and the planner read one window. -/
+def theDatedWindowRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 :=
+      { theRequest.look.today0 with date := some theRequest.look.today, window := some (780, 1020), budget := some 3 } } }
+
+/-- **README gap 320's two inputs, computed: the planner plans with the stored window, as the fork's planner does.**
+Undated, the stored 13:00–17:00 and its budget of 3 are the day's; dated with no budget, the window is the day's and
+the budget §8.1's formula, 6.  Day 0's capacity reads neither (fork `Ctx::window`: a window counts only with its
+budget, on a state dated today) and answers the formula's 14:00–19:00 at both; dated and budgeted, the two agree. -/
+theorem gap_320s_two_inputs_are_read_as_the_forks_planner_reads_them :
+    ((dayPlan theUndatedWindowRequest).window, (dayPlan theUndatedWindowRequest).budgetBlocks)
+      = (((Cal.instantOf Cal.chicago 739867 780).sec, (Cal.instantOf Cal.chicago 739867 1020).sec), 3) ∧
+    ((dayPlan theUnbudgetedWindowRequest).window, (dayPlan theUnbudgetedWindowRequest).budgetBlocks)
+      = (((Cal.instantOf Cal.chicago 739867 780).sec, (Cal.instantOf Cal.chicago 739867 1020).sec), 6) ∧
+    Look.day0Window theUndatedWindowRequest.look
+      = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
+    Look.day0Window theUnbudgetedWindowRequest.look
+      = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
+    (dayPlan theDatedWindowRequest).window = Look.day0Window theDatedWindowRequest.look := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **The restated view law has a subject that stores a window** (AGENTS §7.4 item 2): every hypothesis of
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window` holds at the dated request. -/
+theorem the_dated_window_request_is_in_the_view_laws_domain :
+    theDatedWindowRequest.look.today0.date = some theDatedWindowRequest.look.today ∧
+    (theDatedWindowRequest.look.today0.window.isSome = true →
+      theDatedWindowRequest.look.today0.budget.isSome = true) ∧
+    (∀ w, theDatedWindowRequest.look.today0.window = some w → w.1 ≤ w.2) := by
+  refine ⟨by decide, fun _ => by decide, fun w hw => ?_⟩
+  have hw' : w = (780, 1020) := by
+    have : theDatedWindowRequest.look.today0.window = some (780, 1020) := by decide
+    rw [this] at hw
+    exact (Option.some.inj hw).symm
+  subst hw'
+  decide
+
+/-- **The W-37 view law is REFUTED by gap 320's first input** (AGENTS §3.1 item 3).  It said the planner's window
+is day 0's capacity window whenever no window the CAPACITY counts crosses midnight; the undated window is none the
+capacity counts, so its hypothesis holds, and the planner plans with it all the same.  Restated as
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window`. -/
+theorem the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted :
+    ¬ ∀ r : PlanReq, (∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) →
+      r.window = Look.day0Window r.look := by
+  intro h
+  have hs : theUndatedWindowRequest.look.today0.storedWindow theUndatedWindowRequest.look.today = none := by
+    decide
+  have heq := h theUndatedWindowRequest (fun w hw => by rw [hs] at hw; exact absurd hw (by simp))
+  exact absurd heq (by decide)
+
+/-- **The budget law that read the capacity's rule is REFUTED by the same input**: with no budget the capacity
+counts, the planner's budget is the stored 3 and not the formula's 6.  Restated as
+`Planner.PlanReq.budget_is_the_formula_without_a_budget_on_its_day`. -/
+theorem the_budget_is_the_formula_without_a_stored_one_is_refuted :
+    ¬ ∀ r : PlanReq, r.look.today0.storedBudget r.look.today = none →
+      r.budgetBlocks = Look.budgetOf r.look.day.windowHours r.look.day.cut.blockMin r.look.day.budgetRatio := by
+  intro h
+  exact absurd (h theUndatedWindowRequest (by decide)) (by decide)
+
+/-- **The P9 form of the busy day's budget witness is REFUTED** (README gap 3391): read as the fork's planner reads
+a state naming no day, zeroing the budget assigns nothing, not four. -/
+theorem the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted :
+    ¬ ((PlanReq.assignedRows theBusyRequest).length = 4 ∧
+      (PlanReq.assignedRows { theBusyRequest with look := { theBusyRequest.look with
+          today0 := { theBusyRequest.look.today0 with budget := some 0 } } }).length = 4) := fun h => by
+  have h2 := h.2
+  rw [the_budget_moves_the_assigned_set_at_the_busy_request.2] at h2
+  exact absurd h2 (by decide)
+
+set_option maxRecDepth 400000 in
+/-- **README gap 3343, computed: the day carries the order step 5 serves, and it is D60's, not the request's.**  The
+reversed contention day sends `^t3` (due tomorrow) before `^t1` (due today); step 5 serves `^t1` first — §7.3's order
+among impossible items (D60, parity P51) — and `served` says so, by request position, id and `ci`.  The busy day's
+served order is its request's own, every candidate entering. -/
+theorem the_day_carries_the_order_step_five_serves :
+    (dayPlan theReversedTwoImpossibleRequest).diagnostics.served.val = [(1, ['t','1'], 2), (0, ['t','3'], 2)] ∧
+    theReversedTwoImpossibleRequest.cands.val.map (fun c => c.1.id) = [['t','3'], ['t','1']] ∧
+    (dayPlan theBusyRequest).diagnostics.served.val
+      = [(0, ['c','1'], 3), (1, ['c','2'], 3), (2, ['c','3'], 5), (3, ['c','4'], 2)] := by
+  refine ⟨by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

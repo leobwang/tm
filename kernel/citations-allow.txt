@@ -634,6 +634,18 @@ can_fail
 2 an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
 2 impossibleKept_iff_the_owed_items_are_assigned
 1 impossibleKept_is_true_because_its_subject_is_empty_is_refuted
+# W-38 track R (README gaps 320 and 3391): the planner reads the stored window and budget as the
+# fork's planner does, so the two window view laws W-37's repair stated over the capacity's reading
+# are REFUTED (`PlannerWit.the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted`)
+# and restated as `Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window`
+# and its `dayPlan_` twin; and the busy day's budget witness, which zeroed a budget nothing read, is
+# refuted and renamed `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request`.  The
+# citations counted here are append-only README blocks, a dated `Check.lean` banner, and the
+# `Goals.lean`/`PlanCheck.lean` prose track K owns this run (README gap 3392 names each for it).
+1 PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+1 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+12 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
+9 the_budget_does_not_move_the_assigned_set_at_the_busy_request
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
