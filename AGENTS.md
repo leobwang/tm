@@ -995,8 +995,16 @@ the TUI, and `tm tui` exits by name when stdout is not a tty
 verb of §13 also works on its own"*). Stage 5's list asks specifically for "the
 TUI through two reloads, with the CLI running a verb in between", which is
 exactly the integration surface no proof reaches (README **gap 182**). An agent
-can run the CLI half and has; it cannot run this, and it should say so rather
-than report a partial drive as a drive. Two recorded questions wait on the
+can run the CLI half and has. *(This paragraph said an agent "cannot run" the
+TUI half, and that was FALSE — README gap **3527**, the W-38 repair: `tm tui`
+refuses a non-tty, not an agent. `script -qfc "stty cols 120 rows 40; tm --dir
+<tree> --now <t> tui" tui.raw` gives it a pty, and a small terminal emulator
+over `tui.raw` renders the frame — the W-38 auditor drew D68's `paused` row and
+D65's meeting that way, and the repair re-drew it. What stays human is the part
+the pty cannot give: with `--now` fixed the TUI's clock does not advance, so
+"two reloads with a CLI verb in between" is only partly meaningful, and taste.
+Say which part a drive covered rather than calling a partial drive a drive.)*
+Two recorded questions wait on the
 stage-5 drive: **gap 131** (a close cannot be aimed at an older period) and
 **gap 139** (`--now` at an earlier instant rolls `.tm/state.json` back).
 
@@ -2542,7 +2550,8 @@ rebuilt under §7.3's freshness rule. Every denominator is recorded; none is omi
    kernel's day 0 against the fork's `Ctx::today_slots` exactly, over 92 day-0 comparisons with
    0 disagreements. Phase F's **F2** and **F3** still want the same seam, which is now paid for.
 2. **The §5.13 human drives** of the stage-3, stage-4 **and stage-5** binaries. **No agent can
-   perform them**: `tm tui` refuses a non-tty by name (`tm/src/tui/mod.rs:92`) and design
+   perform them** *(partly false — an agent CAN drive the TUI through a pty, §5.13, README gap
+   3527)*: `tm tui` refuses a non-tty by name (`tm/src/tui/mod.rs:92`) and design
    §14.6's stage-5 list asks for the TUI through two reloads with a CLI verb in between
    (README **gap 182**). Two items on that list are owner questions the drive is meant to
    settle: **gap 131** and **gap 139**.
@@ -3404,7 +3413,7 @@ reaching a display; over the capacity surface it is **P1, P2, P3, P27** and noth
 human, unchanged in kind: **q10** (a dropped child's standing record), **q11** (whether `hfold`
 was forced), **q7** (lifecycle commutation, stage 6) and **q9** (gap 60, the `[-]` refusal) — plus
 the **§5.13 drives of three binaries**, which are now the *only* thing stage 5 owes the owner and
-which **an agent cannot perform**: `tm tui` refuses a non-tty by name, and design §14.6's drive
+which **an agent cannot perform** *(partly false: a pty drives it, §5.13, README gap 3527)*: `tm tui` refuses a non-tty by name, and design §14.6's drive
 list asks for the TUI through two reloads (README gap 182). The drive is also where two recorded
 questions get decided: **gap 131** (a close cannot be aimed at an older period — the refusal is
 right, the drive item as written is not performable) and **gap 139** (`--now` at an earlier

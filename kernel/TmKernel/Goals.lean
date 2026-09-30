@@ -952,8 +952,9 @@ item 9 is where each entry's answer now lives)*:
    _does_not_pin`, W-15) and it owes a hypothesis before D29's restatement can be written —
    `r'.run = r.run`, or the law over one run.  Its *other* half, §8.2 choice 5b's prefix
    failure, is unreachable until P5:
-   `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` proves
-   the budget cannot reach `assignedOf` at all.  **G2 is NOT in the tree** — no restatement,
+   the busy day's budget witness said the budget cannot reach `assignedOf` at all — a claim
+   REFUTED at W-38 (`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`; the budget does move it,
+   `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request`).  **G2 is NOT in the tree** — no restatement,
    no `Negative.lean` cheat — and a run that only pins the run would discharge it **vacuously**
    for the same reason, which is W-19's call and AGENTS §5.2's.
 9. `plan_is_stable_across_a_replan` — **G3**, the same chain, and **refuted at W-25** for the
@@ -1147,10 +1148,10 @@ is **not** the same for all nine.  Three kinds, and the list below says which ea
 8. `plan_tail_drop` — **P9 WAS what this entry had been waiting on, and it is the only one of
    the nine that P9 unblocks outright.**  A `∀`-theorem over **every** request said the budget
    cannot reach `assignedOf` at all; P9 (`2374820`) made it **false** and deleted it, and what
-   stands in its place is the witness form
-   `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` — at
-   `theBusyRequest`, budgets 0 through 5 all give four assigned rows, which is README gap
-   **1904** and not a law.  `Planner.remainingBudget` is what `Planner.PlanReq.assignFold` folds
+   stood in its place was a witness form — at `theBusyRequest`, budgets 0 through 5 all give
+   four assigned rows, README gap **1904** — REFUTED at W-38 (its zero never reached the
+   planner: `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`), and the busy day's budget
+   DOES move the assigned set (`PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request`).  `Planner.remainingBudget` is what `Planner.PlanReq.assignFold` folds
    against.  So §8.2 choice 5b's prefix failure becomes constructible and D29's restatement
    becomes writable.  It still owes the hypothesis W-15 found (`r'.run = r.run`, or the law
    over one run), which is not P9's.

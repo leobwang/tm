@@ -1507,6 +1507,7 @@ impl App {
             &self.caps,
             self.today,
             self.now,
+            &self.plan.diagnostics.unplaced,
         )
     }
 
@@ -1576,6 +1577,7 @@ impl App {
                     &self.caps,
                     self.today,
                     self.now,
+                    &self.plan.diagnostics.unplaced,
                 );
                 let action = queue::on_key(&mut self.queue, &view, key);
                 // §12.2's cursor is what `e` and the Today screen pick up.
@@ -1593,6 +1595,7 @@ impl App {
                     &self.caps,
                     self.today,
                     self.now,
+                    &self.plan.diagnostics.unplaced,
                 );
                 let action = necessities::on_key(&mut self.necessities, &view, key);
                 let selected = self.necessities.selected(&view).map(|r| r.id);
@@ -1609,6 +1612,7 @@ impl App {
                     &self.caps,
                     self.today,
                     self.now,
+                    &self.plan.diagnostics.unplaced,
                 );
                 (inbox::on_key(&mut self.capture, &view, key), None)
             }
@@ -1637,8 +1641,10 @@ impl App {
         caps: &'a [UnitCapacity],
         today: NaiveDate,
         now: DateTime<Tz>,
+        unplaced: &'a [(Id, tm_core::dayplan::NoPlace)],
     ) -> queue::View<'a> {
         queue::View::new(tree, files, cfg, replay, candidates, prios, caps, today, now)
+            .with_unplaced(unplaced)
     }
 
     /// Turn one screen [`queue::Action`] into the shell's effects.

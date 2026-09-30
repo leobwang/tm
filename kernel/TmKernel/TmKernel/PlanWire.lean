@@ -1038,7 +1038,7 @@ def segJson (s : Planner.WfSeg) : JVal :=
 def idsJson (c : Planner.IdList) : JVal := .arr (c.val.map JVal.str)
 
 /-- The name `Planner.NoPlace`'s reason crosses the wire under (D67, P58; AGENTS §5.7): each constructor its own. -/
-def noPlaceName : Planner.NoPlace → List Char | .noRunLeft => "noRunLeft".toList | .noSlotLeft => "noSlotLeft".toList | .budgetSpent => "budgetSpent".toList
+def noPlaceName : Planner.NoPlace → List Char | .noRunLeft => "noRunLeft".toList | .noSlotLeft => "noSlotLeft".toList | .budgetSpent => "budgetSpent".toList | .noSlotAdmits => "noSlotAdmits".toList
 /-- §8.2 step 8's twelve fields under their own names, then the fork's three whole tuples `tm-core/src/emit.rs` prints (W-35, gaps 2640, 2743): `impossibleUntil` (`{id, shortMin, until}`, `YYYY-MM-DD`),
 `underusedLevels` (`{id, energy, ci}`), `blockedDeps` (`{id, deps}`, each an `after:` spelling) — and since W-38 the kernel's `unplaced` (`{id, why}`, D67, P58), then `served`, §8.2 step 5's order (`{ix, id, ci}`, gap 3343).  The twelve keys' bytes are unchanged. -/
 def diagJson (d : Planner.Diagnostics) : JVal :=

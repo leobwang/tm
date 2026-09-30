@@ -195,7 +195,7 @@ impl Planner for Kernel {
     /// not the kernel's; the copy stays, compared with this key by value in
     /// `planner_w38_order.rs`. A candidate the check can compare (`comparable`) is eligible and
     /// not a wall, so it enters the order: one missing from `served` is a finding, by name.
-    fn rank_view(&self, w: &World, cands: &[Candidate], _prios: &[Prio]) -> Vec<Candidate> {
+    fn rank_view(&self, w: &World, cands: &[Candidate], prios: &[Prio]) -> Vec<Candidate> {
         let pw = planreq::World {
             docs: &w.docs,
             log: &w.log,
@@ -218,6 +218,22 @@ impl Planner for Kernel {
             assert!(rank[i].is_none(), "`served` names {} twice", cands[i].id);
             rank[i] = Some(k);
         }
+        // **And the served order is D60's, read INDEPENDENTLY, on every fresh draw** (README
+        // gap 3534, the W-38 repair): once the monotone check reads the kernel's own `served`,
+        // an order the kernel got wrong would be checked against itself on the generated days.
+        // The Rust copy of D63's key (`forkclass::d60_cands`), sorted by the fork's
+        // `priority::sorted_candidates`, must serve the same candidates in the same order —
+        // `planner_w38_order.rs`' comparison, on plan-basic and the frozen classes there, on
+        // this proptest's fresh draws here.
+        let d60 = forkclass::d60_cands(cands, prios);
+        let copy: Vec<usize> = priority::sorted_candidates(prios, &d60)
+            .into_iter()
+            .map(|x| d60.iter().position(|y| std::ptr::eq(x, y)).expect("a candidate of the list"))
+            .collect();
+        let mut kernel: Vec<(usize, usize)> = rank.iter().enumerate().filter_map(|(i, k)| k.map(|k| (k, i))).collect();
+        kernel.sort();
+        let kernel: Vec<usize> = kernel.into_iter().map(|(_, i)| i).collect();
+        assert_eq!(kernel, copy, "the kernel serves {kernel:?}, the Rust copy of its order says {copy:?}");
         cands
             .iter()
             .enumerate()

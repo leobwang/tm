@@ -2043,8 +2043,15 @@ pub fn render_banners(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<String> 
 /// nothing for one it does not name, which is every item the fork's own
 /// planner reports (it names none).
 pub fn unplaced_note(plan: &DayPlan, id: &Id) -> String {
-    plan.diagnostics
-        .unplaced
+    unplaced_note_in(&plan.diagnostics.unplaced, id)
+}
+
+/// [`unplaced_note`] over the day's `unplaced` list itself — for a surface that
+/// holds the list and not the day, the TUI's Necessities screen (README gap
+/// 3522): one definition of the tail, so every screen that prints the
+/// `IMPOSSIBLE` line says the same thing after it.
+pub fn unplaced_note_in(unplaced: &[(Id, crate::dayplan::NoPlace)], id: &Id) -> String {
+    unplaced
         .iter()
         .find(|(k, _)| k == id)
         .map(|(_, w)| format!(" · not placed: {}", w.words()))

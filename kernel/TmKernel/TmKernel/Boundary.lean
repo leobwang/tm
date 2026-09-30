@@ -2815,6 +2815,46 @@ def runPlanFast (plan : WfPlan) (cmds : List ReqCmd) : Except JVal JVal := do
     simp only [pure_bind]
     rw [this]
 
+/-! ### D69 on the WRITERS: a command is held to the loader's width (README gap 3520, W-38 repair)
+
+`Width.lean` taught the LOADER the class — the four places a line carries a duration the host reads
+as `u32` minutes — and the kernel's own writers were left out of it: DRIVEN on the W-38 binary,
+`tm edit ^a1 dur=4294967296m` wrote the line, exited 0, and every kernel-backed verb then refused
+the tree `pastWidth`.  Only `est` was bounded (`estAsWritten`).  So a command is read, then asked
+for every duration it would write into one of `Width.Slot`'s places (`cmdDurs`), and each is held to
+`Width.fits` at the loader's own block length — the request's, or one minute a block without one
+(`Width.firstPastWidth`'s reading).  A value past it is refused `badValue <key>`, the name the `est`
+edit already refuses the same bound by (README gap 2929), before any document is loaded. -/
+
+/-- **The durations a keyed edit writes, with the slot each lands in** — `est`'s two renderings
+(`EditVal.estAt` writes one of them), `dur:` and `buffer:`; every other key writes none. -/
+def editValDurs : EditVal → List (Width.Slot × Field.Dur)
+  | .est lead key => [(.lead, lead.val), (.est, key.val)]
+  | .dur d => [(.dur, d.val)]
+  | .buffer d => [(.buffer, d)]
+  | _ => []
+
+/-- **The durations a command writes into a `Width.Slot`**: an edit's value, the `est` op's minutes,
+and the durations of the line an `add` writes (`addTitleToks`, read by `Width.durs` — the id token
+carries none). -/
+def cmdDurs : ReqCmd → List (Width.Slot × Field.Dur)
+  | .edit _ v => editValDurs v
+  | .est _ m => [(.est, .simple m .minutes)]
+  | .add _ _ title => Width.durs { indent := [], boxed := true, toks := addTitleToks title [] }
+  | _ => []
+
+/-- The key a refusal names a slot by: the leading estimate is `est`'s, as `tm edit est=` writes it. -/
+def slotKey : Width.Slot → List Char
+  | .lead => ['e','s','t']
+  | s => s.name
+
+/-- **The writers' gate**: the command, or `badValue <key>` for the first duration it writes past the
+host's width at the loader's block length. -/
+def widthGate (c : ReqClock) (cmd : ReqCmd) : Except String ReqCmd :=
+  match (cmdDurs cmd).find? (fun p => !Width.fits ((c.blockMin.map (·.val)).getD 1) p.2) with
+  | some p => .error ("badValue " ++ String.ofList (slotKey p.1))
+  | none => .ok cmd
+
 /-- **The request up to its loaded plan**: the documents, the commands, the clock, the scan and the
 loader.  Split out of `run` at stage 5 D10 step L6 so that `runCap` (end of file) loads the plan
 once for both the commands and the capacity section; `run` is this, then `runPlan`, unchanged in
@@ -2847,7 +2887,7 @@ def runLoad (j : JVal) : Except JVal (WfPlan × List ReqCmd × ReqClock) := do
     | .error e => throw (jsonErr e)
   let mut cmdsRev : List ReqCmd := []
   for cj in cmdsJ do
-    match parseCmdAt clock cj with
+    match (parseCmdAt clock cj).bind (widthGate clock) with
     | .ok c => cmdsRev := c :: cmdsRev
     | .error e => throw (jsonErr e)
   let cmds := cmdsRev.reverse
@@ -13034,6 +13074,97 @@ theorem runLoad_refuses_a_duration_past_the_width :
     (match runLoad (req ['-',' ','[',' ',']',' ','2',' ','7','1','5','8','2','7','8','9','b',' ','B','i','g',' ','^','z','9'] none) with
       | .ok _ => true
       | .error _ => false) = true := by
+  decide
+
+/-! ## D69 on the writers (README gap 3520, W-38 repair)
+
+The laws of `widthGate`, the gate `runLoad` puts every command through after `parseCmdAt`. -/
+
+/-- **The gate passes a command exactly when every duration it writes fits** at the loader's block
+length. -/
+theorem widthGate_eq_ok_iff (c : ReqClock) (cmd : ReqCmd) :
+    widthGate c cmd = .ok cmd ↔
+      ∀ p ∈ cmdDurs cmd, Width.fits ((c.blockMin.map (·.val)).getD 1) p.2 = true := by
+  unfold widthGate
+  generalize (c.blockMin.map (·.val)).getD 1 = bm
+  cases h : (cmdDurs cmd).find? (fun p => !Width.fits bm p.2) with
+  | none =>
+    simp only [List.find?_eq_none] at h
+    simp only [true_iff]
+    intro p hp
+    simpa using h p hp
+  | some p =>
+    simp only [reduceCtorEq, false_iff]
+    intro hall
+    have hp := List.find?_some h
+    have hf := hall p (List.mem_of_find?_eq_some h)
+    simp [hf] at hp
+
+/-- **A refusal names a duration that is really past the width**: never a trapdoor on a value the
+host can hold (AGENTS §5.8, the bite's other direction is `widthGate_eq_ok_iff`). -/
+theorem widthGate_refuses_only_past_the_width (c : ReqClock) (cmd : ReqCmd) (e : String)
+    (h : widthGate c cmd = .error e) :
+    ∃ p ∈ cmdDurs cmd, Look.maxPlanMinutes < p.2.minutes ((c.blockMin.map (·.val)).getD 1) := by
+  unfold widthGate at h
+  generalize (c.blockMin.map (·.val)).getD 1 = bm at h ⊢
+  cases hf : (cmdDurs cmd).find? (fun p => !Width.fits bm p.2) with
+  | none => rw [hf] at h; exact absurd h (by simp)
+  | some p =>
+    have hp := List.find?_some hf
+    refine ⟨p, List.mem_of_find?_eq_some hf, ?_⟩
+    simp [Width.fits] at hp
+    omega
+
+/-- **The gate never rewrites a command**: what it passes is what `parseCmdAt` read. -/
+theorem widthGate_ok_is_the_command (c : ReqClock) (cmd cmd' : ReqCmd)
+    (h : widthGate c cmd = .ok cmd') : cmd' = cmd := by
+  unfold widthGate at h
+  split at h
+  · exact absurd h (by simp)
+  · exact (Except.ok.inj h).symm
+
+/-- **The class, not a list**: a keyed edit is asked for a duration exactly when its key is one the
+host reads as `u32` minutes — `est`, `dur`, `buffer`, `Width.Slot`'s keys. -/
+theorem editValDurs_reads_the_width_keys (v : EditVal) :
+    editValDurs v ≠ [] ↔ (v.key = .est ∨ v.key = .dur ∨ v.key = .buffer) := by
+  cases v <;> simp [editValDurs, EditVal.key]
+
+set_option maxRecDepth 40000 in
+/-- **D69 on the writers, through `runLoad`** (README gap 3520): on `- [ ] 2 30m Bike ^a1`, the
+keyed edits `dur=4294967296m` and `buffer=4294967296m` are refused `badValue dur` / `badValue
+buffer` before anything is loaded, `dur=4294967295m` (the width's last minute) is read, `dur=71582789b`
+is refused at a sixty-minute block and read without one (one minute a block), and an `add` whose
+title leads with `4294967296m` is refused `badValue est`.  The request is a local `let`, as
+`runLoad_refuses_a_duration_past_the_width`'s is. -/
+theorem runLoad_refuses_a_command_writing_past_the_width :
+    let req : JVal → Option Nat → JVal := fun cmd bm =>
+      .obj ([("docs".toList, .arr [.obj [("path".toList, .str ['b','a','c','k','l','o','g','.','m','d']),
+          ("lines".toList, .arr [.str ['-',' ','[',' ',']',' ','2',' ','3','0','m',' ','B','i','k','e',' ','^','a','1']])]]),
+          ("cmds".toList, .arr [cmd])] ++
+        (bm.map (fun b => [("blockMin".toList, JVal.num b)])).getD [])
+    let edit : List Char → List Char → JVal := fun k v =>
+      .obj [("op".toList, .str ['e','d','i','t']), ("id".toList, .str ['a','1']),
+        ("key".toList, .str k), ("value".toList, .str v)]
+    (match runLoad (req (edit ['d','u','r'] ['4','2','9','4','9','6','7','2','9','6','m']) (some 60)) with
+      | .error e => e == jsonErr "badValue dur"
+      | .ok _ => false) = true ∧
+    (match runLoad (req (edit ['b','u','f','f','e','r'] ['4','2','9','4','9','6','7','2','9','6','m']) (some 60)) with
+      | .error e => e == jsonErr "badValue buffer"
+      | .ok _ => false) = true ∧
+    (match runLoad (req (edit ['d','u','r'] ['4','2','9','4','9','6','7','2','9','5','m']) (some 60)) with
+      | .ok _ => true
+      | .error _ => false) = true ∧
+    (match runLoad (req (edit ['d','u','r'] ['7','1','5','8','2','7','8','9','b']) (some 60)) with
+      | .error e => e == jsonErr "badValue dur"
+      | .ok _ => false) = true ∧
+    (match runLoad (req (edit ['d','u','r'] ['7','1','5','8','2','7','8','9','b']) none) with
+      | .ok _ => true
+      | .error _ => false) = true ∧
+    (match runLoad (req (.obj [("op".toList, .str ['a','d','d']), ("seed".toList, .num 1),
+          ("doc".toList, .num 0),
+          ("title".toList, .str ['2',' ','4','2','9','4','9','6','7','2','9','6','m',' ','H','u','g','e'])]) (some 60)) with
+      | .error e => e == jsonErr "badValue est"
+      | .ok _ => false) = true := by
   decide
 
 end Tm

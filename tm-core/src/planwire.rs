@@ -1293,7 +1293,7 @@ mod tests {
         bent["diagnostics"]["unplaced"] = json!([{"id": "m1", "why": "budgetSpent"}]);
         assert!(read_plan(&bent, &ctx).unwrap_err().0.contains("`m1` is not on the impossible list"));
         // Every reason reads back as itself.
-        for w in [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent] {
+        for w in [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent, NoPlace::NoSlotAdmits] {
             let mut named = v.clone();
             named["diagnostics"]["unplaced"] = json!([{"id": "d1", "why": w.wire_name()}]);
             assert_eq!(read_plan(&named, &ctx).expect("reads").day.diagnostics.unplaced, vec![(Id::new("d1"), w)]);

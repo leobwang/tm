@@ -238,9 +238,10 @@ pub struct Diagnostics {
 }
 
 /// **Why an impossible item has no row today** — the kernel's
-/// `Planner.NoPlace`, the walk's own reasons (D67, parity P58): every run or
-/// every slot the item fits went to work ranked before it, or the budget was
-/// spent before a place it fits came free.
+/// `Planner.NoPlace` (D67, parity P58): the walk's own reasons — every run or
+/// every slot the item fits went to other work, or the budget was spent before
+/// a place it fits came free — or no slot of the day admits it at all (README
+/// gap 3523, the W-38 repair).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum NoPlace {
@@ -250,6 +251,9 @@ pub enum NoPlace {
     NoSlotLeft,
     /// The day's budget was spent before a place it fits came free.
     BudgetSpent,
+    /// §8.2 step 5's filter admits it at no slot of the day — its state, a
+    /// dependency, `loc:`, its `ci` against every slot's energy, or its cap.
+    NoSlotAdmits,
 }
 
 impl NoPlace {
@@ -259,13 +263,14 @@ impl NoPlace {
             NoPlace::NoRunLeft => "noRunLeft",
             NoPlace::NoSlotLeft => "noSlotLeft",
             NoPlace::BudgetSpent => "budgetSpent",
+            NoPlace::NoSlotAdmits => "noSlotAdmits",
         }
     }
 
     /// The reason read back from its wire name; `None` for a name the kernel
     /// does not write.
     pub fn of_wire(name: &str) -> Option<NoPlace> {
-        [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent]
+        [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent, NoPlace::NoSlotAdmits]
             .into_iter()
             .find(|w| w.wire_name() == name)
     }
@@ -276,6 +281,7 @@ impl NoPlace {
             NoPlace::NoRunLeft => "no run left",
             NoPlace::NoSlotLeft => "no slot left",
             NoPlace::BudgetSpent => "budget spent",
+            NoPlace::NoSlotAdmits => "no slot admits it",
         }
     }
 }

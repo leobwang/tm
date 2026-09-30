@@ -642,10 +642,12 @@ can_fail
 # refuted and renamed `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request`.  The
 # citations counted here are append-only README blocks, a dated `Check.lean` banner, and the
 # `Goals.lean`/`PlanCheck.lean` prose track K owns this run (README gap 3392 names each for it).
+# W-38 REPAIR (README gap 3524): the nine live Lean prose sites now name the refutation, so the
+# caps fall 12 -> 7 and 9 -> 6 -- what is left is append-only README blocks and one dated banner.
 1 PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 2 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
-12 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
-9 the_budget_does_not_move_the_assigned_set_at_the_busy_request
+7 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
+6 the_budget_does_not_move_the_assigned_set_at_the_busy_request
 # W-38 track H: DELETED, not refuted.  `planner_invariants`' own P45 checker over the raw
 # answer was `forkclass::p45_rule` written a second time (README gap 3471, the family W-37
 # track R named in its gap 3202); its three callers read `p45_rule` over the day the host's

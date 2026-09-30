@@ -84,3 +84,65 @@ fn a_pause_no_wall_touches_is_a_pause_in_the_week_grid() {
     assert_eq!(cell(&day, 9, Style::Pause), 20, "{day}");
     assert_eq!(cell(&day, 9, Style::Wall) + cell(&day, 9, Style::Leak) + cell(&day, 9, Style::Idle), 0, "{day}");
 }
+
+/// Minutes of `tm --json plan`'s `pause`-kind segments in each clock hour of
+/// the day, at `at` — the plan's cut of a typed pause.
+fn plan_pause_by_hour(tm: &Tm, at: &str) -> Vec<u64> {
+    let plan = tm.json_at(at, &["plan"]);
+    let min = |s: &str| -> u64 {
+        let (h, m) = s.split_once(':').unwrap_or(("0", "0"));
+        h.parse::<u64>().unwrap_or(0) * 60 + m.parse::<u64>().unwrap_or(0)
+    };
+    let mut hours = vec![0u64; 24];
+    for s in plan["segments"].as_array().cloned().unwrap_or_default() {
+        if s["kind"] != "pause" {
+            continue;
+        }
+        let (a, b) = (min(s["start"].as_str().unwrap_or("0:0")), min(s["end"].as_str().unwrap_or("0:0")));
+        for (h, cell) in hours.iter_mut().enumerate() {
+            let (lo, hi) = (h as u64 * 60, h as u64 * 60 + 60);
+            *cell += b.min(hi).saturating_sub(a.max(lo));
+        }
+    }
+    hours
+}
+
+/// **The grid and the plan cut ONE pause alike** (README gap 3528, the W-38
+/// repair). P56's cut is written in the week grid (`review::heat_pieces`,
+/// over `Tree::walls_on` and `capacity::free_intervals`) and in the day plan's
+/// past half (the fork's `past_segments` until R3, the kernel's
+/// `Planner.pastSpans` after it) — two definitions of one cut, pinned until
+/// now only by hand-written values each. For every clock hour of three days —
+/// a typed pause straddling the meeting, D61's pause through it, and a pause no
+/// wall touches — the grid's `pause` minutes are the plan's `pause`-kind
+/// minutes. After R3 this is the comparison between the host's cut and the
+/// kernel's.
+#[test]
+fn the_grid_and_the_plan_cut_one_pause_alike() {
+    let straddle = {
+        let tm = Tm::new();
+        tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+        tm.ok_at("2026-09-07T12:00:00-05:00", &["start", "^t4", "--energy", "4"]);
+        tm.ok_at("2026-09-07T12:40:00-05:00", &["pause"]);
+        tm.ok_at("2026-09-07T14:00:00-05:00", &["pause"]);
+        (tm, "2026-09-07T14:10:00-05:00")
+    };
+    let meeting = (through_the_meeting(), "2026-09-07T14:20:00-05:00");
+    let plain = {
+        let tm = Tm::new();
+        tm.ok_at("2026-09-07T06:05:00-05:00", &["wake", "06:05", "--slept", "8h"]);
+        tm.ok_at("2026-09-07T09:00:00-05:00", &["start", "^t4", "--energy", "4"]);
+        tm.ok_at("2026-09-07T09:10:00-05:00", &["pause"]);
+        tm.ok_at("2026-09-07T09:30:00-05:00", &["pause"]);
+        (tm, "2026-09-07T09:40:00-05:00")
+    };
+    let mut total = 0;
+    for (name, (tm, at)) in [("straddle", straddle), ("meeting", meeting), ("plain", plain)] {
+        let day = heat(&tm, at);
+        let grid: Vec<u64> = (0..24).map(|h| cell(&day, h, Style::Pause)).collect();
+        let plan = plan_pause_by_hour(&tm, at);
+        assert_eq!(grid, plan, "{name}: the grid's pause minutes by hour are the plan's");
+        total += grid.iter().sum::<u64>();
+    }
+    assert_eq!(total, 20 + 20, "the straddle's 10 + 10 and the plain pause's 20 were compared");
+}

@@ -7639,3 +7639,21 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Width.the_slots_spell_themselves
 #print axioms Tm.Width.refusalJson_is_the_err_shape
 #print axioms Tm.runLoad_refuses_a_duration_past_the_width
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-38 REPAIR -- D69 on the WRITERS (README gap 3520): a command
+-- that would write a duration past the host's width into one of `Width.Slot`'s places is
+-- refused `badValue <key>` by `runLoad`'s `widthGate`, at the end of `Boundary.lean`.
+-- ============================================================================
+#print axioms Tm.widthGate_eq_ok_iff
+#print axioms Tm.widthGate_refuses_only_past_the_width
+#print axioms Tm.widthGate_ok_is_the_command
+#print axioms Tm.editValDurs_reads_the_width_keys
+#print axioms Tm.runLoad_refuses_a_command_writing_past_the_width
+-- W-38 REPAIR, continued -- D67 as a CLASS (README gap 3523): an item the day lists impossible and
+-- does not place is NAMED, `noSlotAdmits` when step 5's filter admits it nowhere
+-- (`Planner.PlanReq.dayUnplaced`, `PlanCheck.every_listed_impossible_item_is_placed_or_named`).
+#print axioms Tm.Planner.PlanReq.an_item_the_filter_admits_nowhere_is_named
+#print axioms Tm.Planner.PlanReq.every_unassigned_listed_item_is_named
+#print axioms Tm.PlanCheck.every_listed_impossible_item_is_placed_or_named
+#print axioms Tm.PlanCheck.whyHolds_noSlotAdmits_iff
+#print axioms Tm.PlannerWit.an_impossible_item_no_slot_admits_is_named_so

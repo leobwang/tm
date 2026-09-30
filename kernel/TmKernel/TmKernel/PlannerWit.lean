@@ -96,8 +96,8 @@ each will make `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_
 fills the day re-derives the four equations and the reader sees exactly what the new step put
 in the day.  Re-deriving them is a `decide`, not a proof.
 
-`the_witness_assigns_nothing_after_now` and
-`the_budget_does_not_move_the_assigned_set_at_the_busy_request` are different: they
+`the_witness_assigns_nothing_after_now` and the busy day's budget witness (refuted at W-38,
+`the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`) are different: they
 are **tripwires P5 must delete**, beside
 `Planner.the_day_assigns_after_now_the_running_block_and_what_step_five_chose` (which step P3 restated from
 `…_until_the_assign_step_lands`, because §8.2 choice 5b's reservation made the empty-list form
@@ -619,8 +619,8 @@ builder in hand.  Here is what the derivation finds.
    consulted, so shrinking the budget drops items ranking ahead of the Active item while it
    stays"*.  There is no reservation and no budget consumption in `Planner.dayPlan` today:
    step P1 places walls, the running interruption and the replayed past, and
-   `the_budget_does_not_move_the_assigned_set_at_the_busy_request` below **proves**
-   that the budget cannot reach `assignedOf` at all.  So the counterexample D29 names needs
+   the busy day's budget witness below **said** (W-38 refuted it:
+   `the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`) that the budget cannot reach `assignedOf` at all.  So the counterexample D29 names needs
    **P5**, not a witness.  Gap 366 item 4 already said "after P5 *and* after the builder";
    what is new here is that the first conjunct is now a theorem rather than a reading.
 2. **The law as stage 6 wrote it is nevertheless FALSE, for a reason nobody had recorded**,
@@ -681,7 +681,7 @@ theorem the_quiet_day_assigns_nothing : assignedOf (dayPlan theQuietRequest) = [
 set_option maxRecDepth 400000 in
 /-- **`plan_tail_drop` as stage 6 wrote it is REFUTED** (AGENTS §3.1 item 3, D5) — and not by
 §8.2 choice 5b, which is not reachable until P5 (see this section's header and
-`the_budget_does_not_move_the_assigned_set_at_the_busy_request`).
+`the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`, W-38).
 
 The witness is two requests built by `mkPlanReq?` that differ in **one field, `run`**, and
 satisfy every hypothesis the goal states: the same plan, the same `now`, the same window, the
@@ -10735,6 +10735,35 @@ theorem the_minutes_drawn_lost_are_the_minutes_the_review_counts_lost :
         Seg.minutes).sum = 10 ∧
     (((pastRows theTypedPauseRequest).filter Emit.pausedRow).map Seg.minutes).sum = 10 ∧
     theTypedPauseRequest.todayRecord.map (·.lostMin) = some 10 := by
+  decide
+
+
+/-! ## W-38 repair: an impossible item step 5's filter admits NOWHERE is named (README gap 3523)
+
+`theTwoImpossibleRequest` with one character changed: `^t1` carries `loc:out` and the day is at the
+lounge, so §8.2 step 5's filter admits it at no slot.  Until the W-38 repair the day listed it
+IMPOSSIBLE and named nothing — no row, no reason (the reuse critic's 42 owed items on 36 frozen
+days had this shape) — because `Planner.PlanReq.dayUnplaced` named only what the walk dropped.  It
+is named `noSlotAdmits` now, and on `theTwoImpossibleRequest` itself, where the filter admits `^t1`
+at every slot, the name is still the walk's `noSlotLeft`. -/
+
+def theUnadmittedImpossibleRequest : PlanReq :=
+  { theQuietCensusRequest with plan := batchStorePlan, cands := ⟨[pCandDue ['t','3'] 2 false 100000 739867 6000 .any true (by decide),
+   pCandDue ['t','1'] 2 false 100000 739867 6000 .out true (by decide)], by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The name fires**: `^t1` is listed impossible, admitted nowhere, not placed, and named
+`noSlotAdmits` — a name `PlanCheck.whyHolds` bears out; beside it, the admitted `^t1` of
+`theTwoImpossibleRequest` keeps the walk's `noSlotLeft`. -/
+theorem an_impossible_item_no_slot_admits_is_named_so :
+    (dayPlan theUnadmittedImpossibleRequest).diagnostics.impossible.val
+      = [(['t','3'], 129760), (['t','1'], 130000)] ∧
+    PlanCheck.eligibleBefore theUnadmittedImpossibleRequest ['t','1'] = false ∧
+    assignedOf (dayPlan theUnadmittedImpossibleRequest) = [['t','3'], ['t','3'], ['t','3'], ['t','3']] ∧
+    (dayPlan theUnadmittedImpossibleRequest).diagnostics.unplaced.val = [(['t','1'], .noSlotAdmits)] ∧
+    PlanCheck.whyHolds theUnadmittedImpossibleRequest (dayPlan theUnadmittedImpossibleRequest)
+      ['t','1'] .noSlotAdmits = true ∧
+    (dayPlan theTwoImpossibleRequest).diagnostics.unplaced.val = [(['t','1'], .noSlotLeft)] := by
   decide
 
 end PlannerWit

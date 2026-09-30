@@ -211,7 +211,9 @@ fn stored(plan: &DayPlan, priorities: &[Prio]) -> StoredPlan {
             .map(|s| StoredSegment {
                 start: hhmm(s.start),
                 end: hhmm(s.end),
-                kind: tm_core::dayplan::kind_label(&s.kind).to_string(),
+                // The JSON's word, a replayed pause `pause` (D68; README gap
+                // 3433's stored half, the W-38 repair): one span, one reading.
+                kind: tm_core::emit::row_kind(s).to_string(),
                 item: s.item.as_ref().map(|i| i.to_string()),
             })
             .collect(),

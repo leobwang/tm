@@ -837,13 +837,16 @@ theorem a_budget_spent_name_is_true_of_the_day (r : PlanReq) (i : Id)
     (h : (i, NoPlace.budgetSpent) ∈ r.dayUnplaced (dayAssigned r)) :
     remainingBudget r ≤ ((dayPlan r).segments.filter
       (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length := by
-  obtain ⟨-, hna, -, hw⟩ := (r.mem_dayUnplaced (dayAssigned r) i NoPlace.budgetSpent).1 h
+  obtain ⟨-, hna, hw⟩ := (r.mem_dayUnplaced (dayAssigned r) i NoPlace.budgetSpent).1 h
   have hany : ((r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
       (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)) = true := by
-    cases ha : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
-        (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)
-    · rw [ha] at hw; simp only [Bool.false_eq_true, ↓reduceIte] at hw; split at hw <;> cases hw
-    · rfl
+    cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty
+    · rw [he] at hw; simp only [Bool.false_eq_true, ↓reduceIte] at hw
+      cases ha : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+          (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)
+      · rw [ha] at hw; simp only [Bool.false_eq_true, ↓reduceIte] at hw; split at hw <;> cases hw
+      · rfl
+    · rw [he] at hw; simp at hw
   obtain ⟨x, hx, hnone⟩ := List.any_eq_true.1 hany
   obtain ⟨hxz, hfb⟩ := List.mem_filter.1 hx
   unfold fitsBefore at hfb
@@ -863,13 +866,17 @@ theorem a_taken_name_holds_every_slot_it_fits (r : PlanReq) (i : Id) (w : NoPlac
     ∀ x ∈ r.energisedSlots.zipIdx, fitsBefore r i x = true →
       ∃ s ∈ (dayPlan r).segments, s.val.kind.isWork = true ∧ s.val.start = clampSec x.1.2.start ∧
         i ∉ s.val.items := by
-  obtain ⟨-, hna, -, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
+  obtain ⟨-, hna, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
   have hany : ((r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
       (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)) = false := by
     cases ha : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
         (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)
     · rfl
-    · rw [ha] at hwdef; exact absurd hwdef (by simpa using hw)
+    · have hne : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = false := by
+        cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty
+        · rfl
+        · rw [List.isEmpty_iff] at he; rw [he] at ha; simp at ha
+      rw [hne, ha] at hwdef; exact absurd hwdef (by simpa using hw)
   have hna' : i ∉ dayAssigned r := by simpa using hna
   intro x hx hfit
   have hsome : (r.finalAssign.slotOf[x.2]?).join.isNone = false :=

@@ -425,8 +425,8 @@ theorem Seg.withNote_touches_only_the_note (s : Seg) (n : Note) :
 theorem Seg.wf_withNote (s : Seg) (n : Note) : (s.withNote n).wf = s.wf := rfl
 
 /-! ## `Diagnostics` — §8.2 step 8, bounded -/
-/-- **Why §8.2 step 5 left an item it admitted before the walk without a row** (D67, P58): the walk's own reasons, named (`PlanReq.dayUnplaced`). -/
-inductive NoPlace | noRunLeft | noSlotLeft | budgetSpent deriving DecidableEq, Repr
+/-- **Why §8.2 step 5 left a listed impossible item without a row** (D67, P58): the walk's own reasons, and `noSlotAdmits` — its filter admits it at no slot of the day (README gap 3523) — named (`PlanReq.dayUnplaced`). -/
+inductive NoPlace | noRunLeft | noSlotLeft | budgetSpent | noSlotAdmits deriving DecidableEq, Repr
 /-- **Fork `planner::Diagnostics`.**  Nine lists, `dropped_tail`, and §11's two ratios.  `planHonesty` is a numerator over a
 denominator and **nothing here divides** (design §11): the fork's `None` is denominator `0`, and Rust renders the percentage. -/
 structure Diagnostics where
@@ -2034,8 +2034,8 @@ definition that takes the whole `PlanReq` and recurses, so it is the one place w
 requests that agree on every field a step-two row can see are still not *definitionally* equal
 — every other link in the chain (`routineInstances`, `bedSec`, `blockedByWalls`, `night`,
 `placeStep`, `routineRow`) reduces on its own.  Found at W-15's land step, which needed
-`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` re-proved
-over P2's day (D5). -/
+the busy day's budget witness re-proved over P2's day (D5; refuted at W-38 as
+`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`). -/
 theorem splitSleep_congr {r r' : PlanReq}
     (h : PlanReq.isSleepInstance r' = PlanReq.isSleepInstance r) :
     ∀ l : List Placed, splitSleep r' l = splitSleep r l
@@ -6850,9 +6850,9 @@ fits that step 5 left EMPTY was passed for the budget.
 The writer names every item §7.3 lists impossible that step 5's filter admits at some slot before
 the walk and that the day's rows do not hold, once each, in the list's order — owed today or not:
 the check asks the reason of the owed ones (`PlanCheck.owedByItsGrant`), and the reason is as true of
-the rest.  It is the WALK's reason and never a second test of the grant, and an item step 5's filter
-admits nowhere — `[?]`, a `loc:` or a `ci` no slot of the day meets — is not named at all: nothing
-dropped it, and `waiting`, `blocked` or the item's own line says why it has no place today.  `dayUnplaced`'s laws are at the end of this file, beside the two `dayImpossible`
+the rest.  It is the WALK's reason and never a second test of the grant.  An item step 5's filter
+admits NOWHERE — `[?]`, a `loc:` or a `ci` no slot of the day meets — is named `noSlotAdmits` (the
+W-38 repair, README gap 3523: until it such an item was named nothing while its banner said IMPOSSIBLE).  `dayUnplaced`'s laws are at the end of this file, beside the two `dayImpossible`
 directions that stood here until W-38 (`the_day_names_every_item_whose_numbers_say_impossible_at_a_hot_bin`,
 `an_item_the_day_names_with_a_grant_has_impossible_numbers`, moved whole so no check-9 pin site
 below this section moved). -/
@@ -6864,9 +6864,9 @@ def fitsBefore (r : PlanReq) (i : Id) (x : (Fin 6 × Look.Slot) × Nat) : Bool :
   decide (i ∈ g.ids) && r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g)
 
 /-- **`Diagnostics.unplaced`** (D67, P58): each item §7.3 lists impossible (`dayImpossible`, once
-each) that step 5's filter admits at some slot before the walk (`fitsBefore`) and that `assigned` —
-the day's `dayAssigned` — does not hold, with the walk's reason: `budgetSpent` when step 5 left a
-slot it fits EMPTY, else `noRunLeft` when an atomic group holds it and `noSlotLeft` when none does.
+each) that `assigned` — the day's `dayAssigned` — does not hold: `noSlotAdmits` when step 5's filter
+admits it at no slot before the walk (`fitsBefore`), else the walk's reason — `budgetSpent` when step
+5 left a slot it fits EMPTY, else `noRunLeft` when an atomic group holds it and `noSlotLeft` if not.
 `slotOf` is read once, outside the per-item walk (README gap 2521's lesson).  Bounded by the listed
 items (`PlanReq.dayUnplaced_capped`), whose bound is the wire's `maxCands` (R10), so
 `dayDiagnostics` truncates nothing (`dayDiagnostics_unplaced`). -/
@@ -6874,7 +6874,7 @@ def PlanReq.dayUnplaced (r : PlanReq) (assigned : List Id) : List (Id × NoPlace
   let slotOf := r.finalAssign.slotOf
   (r.dayImpossible.map Prod.fst).eraseDups.filterMap (fun i =>
     let xs := r.energisedSlots.zipIdx.filter (fitsBefore r i)
-    if xs.isEmpty || assigned.contains i then none
+    if assigned.contains i then none else if xs.isEmpty then some (i, .noSlotAdmits)
     else if xs.any (fun x => (slotOf[x.2]?).join.isNone) then some (i, .budgetSpent)
     else some (i, if r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) then .noRunLeft
       else .noSlotLeft))
@@ -9377,15 +9377,18 @@ The writer stands in §8.2 step 8's section above; its laws are here, at the end
 check-9 pin site above moved.  `PlanFold` proves each name TRUE of the day (the W-38 section), and
 `PlanCheck.impossibleKept_on_every_day` is the check those proofs buy. -/
 
-/-- **A named item is a listed impossible item that step 5's filter admits at some slot before the
-walk and that `assigned` does not hold — and its reason is the walk's**, both directions.  Stated
-before the cap on purpose (README gap 2567): the `[]` mutant falsifies a membership law, not a
-length bound. -/
+/-- **A named item is a listed impossible item that `assigned` does not hold — and its reason is
+`noSlotAdmits` when step 5's filter admits it nowhere before the walk, else the walk's**, both
+directions.  Restated at the W-38 repair (README gap 3523): it said a named item is one the filter
+admits SOMEWHERE, which was the hole — an owed impossible item admitted nowhere had no row and no
+name — and `PlanReq.an_item_the_filter_admits_nowhere_is_named` is that hole closed.  Stated before
+the cap on purpose (README gap 2567): the `[]` mutant falsifies a membership law, not a length
+bound. -/
 theorem PlanReq.mem_dayUnplaced (r : PlanReq) (assigned : List Id) (i : Id) (w : NoPlace) :
     (i, w) ∈ r.dayUnplaced assigned ↔
       i ∈ r.dayImpossible.map Prod.fst ∧ assigned.contains i = false ∧
-      (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = false ∧
-      w = (if (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+      w = (if (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty then NoPlace.noSlotAdmits
+           else if (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
               (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone) then NoPlace.budgetSpent
            else if r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) then .noRunLeft
            else .noSlotLeft) := by
@@ -9393,24 +9396,49 @@ theorem PlanReq.mem_dayUnplaced (r : PlanReq) (assigned : List Id) (i : Id) (w :
   simp only [List.mem_filterMap, List.mem_eraseDups]
   constructor
   · rintro ⟨j, hj, h⟩
-    by_cases h1 : ((r.energisedSlots.zipIdx.filter (fitsBefore r j)).isEmpty || assigned.contains j) = true
+    by_cases h1 : assigned.contains j = true
     · rw [if_pos h1] at h; exact absurd h (by simp)
     · rw [if_neg h1] at h
-      simp only [Bool.or_eq_true, not_or, Bool.not_eq_true] at h1
+      simp only [Bool.not_eq_true] at h1
       split at h
       · rename_i h2
         simp only [Option.some.injEq, Prod.mk.injEq] at h
         obtain ⟨rfl, rfl⟩ := h
-        exact ⟨hj, h1.2, h1.1, by rw [if_pos h2]⟩
+        exact ⟨hj, h1, by rw [if_pos h2]⟩
       · rename_i h2
-        simp only [Option.some.injEq, Prod.mk.injEq] at h
-        obtain ⟨rfl, rfl⟩ := h
-        exact ⟨hj, h1.2, h1.1, by rw [if_neg h2]⟩
-  · rintro ⟨hi, ha, hx, rfl⟩
+        split at h
+        · rename_i h3
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          exact ⟨hj, h1, by rw [if_neg h2, if_pos h3]⟩
+        · rename_i h3
+          simp only [Option.some.injEq, Prod.mk.injEq] at h
+          obtain ⟨rfl, rfl⟩ := h
+          exact ⟨hj, h1, by rw [if_neg h2, if_neg h3]⟩
+  · rintro ⟨hi, ha, rfl⟩
     refine ⟨i, hi, ?_⟩
     have ha' : i ∉ assigned := by simpa using ha
-    rw [if_neg (by simp [ha', hx])]
-    split <;> rfl
+    rw [if_neg (by simp [ha'])]
+    split
+    · rfl
+    · split <;> rfl
+
+/-- **The hole D67 left, closed** (README gap 3523): a listed impossible item that `assigned` does
+not hold and that step 5's filter admits at no slot before the walk IS named — `noSlotAdmits` — where
+until the W-38 repair it had no row and no name while its banner said IMPOSSIBLE (42 owed items on
+36 of the 97 frozen class days, the reuse critic's census). -/
+theorem PlanReq.an_item_the_filter_admits_nowhere_is_named (r : PlanReq) (assigned : List Id) (i : Id)
+    (hi : i ∈ r.dayImpossible.map Prod.fst) (ha : assigned.contains i = false)
+    (hx : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = true) :
+    (i, NoPlace.noSlotAdmits) ∈ r.dayUnplaced assigned :=
+  (r.mem_dayUnplaced assigned i _).2 ⟨hi, ha, by rw [if_pos hx]⟩
+
+/-- **Every listed impossible item the day does not hold is named** — the other direction of the
+class: `dayUnplaced` leaves out only what `assigned` holds. -/
+theorem PlanReq.every_unassigned_listed_item_is_named (r : PlanReq) (assigned : List Id) (i : Id)
+    (hi : i ∈ r.dayImpossible.map Prod.fst) (ha : assigned.contains i = false) :
+    ∃ w, (i, w) ∈ r.dayUnplaced assigned :=
+  ⟨_, (r.mem_dayUnplaced assigned i _).2 ⟨hi, ha, rfl⟩⟩
 
 /-- The cap: no more names than listed items, and the list is under the wire's `maxCands`. -/
 theorem PlanReq.dayUnplaced_capped (r : PlanReq) (assigned : List Id) :

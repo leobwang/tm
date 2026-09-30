@@ -94,6 +94,32 @@ fn a_typed_pause_is_drawn_as_a_pause_and_an_interruption_as_lost() {
     );
 }
 
+/// **`.tm/last_plan.json` reads the span as `tm --json plan` does** (README gap
+/// 3433's stored half, the W-38 repair): the typed pause is stored `pause`, the
+/// interruption `lost` — the stored plan recorded both as `lost` with nothing
+/// to tell them apart.
+#[test]
+fn the_stored_plan_calls_a_typed_pause_a_pause() {
+    let tm = paused_then_interrupted();
+    let segs = past(&tm, "2026-09-07T10:00:00-05:00");
+    let stored: Value = serde_json::from_str(
+        &std::fs::read_to_string(tm.plan.join(".tm/last_plan.json")).expect("the stored plan"),
+    )
+    .expect("json");
+    let kinds: Vec<(String, String)> = stored["segments"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| s["start"].as_str().is_some_and(|t| t < "10:00"))
+        .map(|s| (s["kind"].as_str().unwrap_or_default().to_string(), s["start"].as_str().unwrap_or_default().to_string()))
+        .collect();
+    let json: Vec<(String, String)> = segs.iter().map(|s| (s.0.clone(), s.1.clone())).collect();
+    assert_eq!(kinds, json, "the stored plan and --json read each span alike");
+    assert!(kinds.contains(&("pause".to_string(), "07:30".to_string())), "{kinds:?}");
+    assert!(kinds.contains(&("lost".to_string(), "09:40".to_string())), "{kinds:?}");
+}
+
 /// **One reading of the day's lost time** — D68's point. The minutes `tm plan`
 /// draws as lost are the minutes `tm review day` counts lost, and the pause's
 /// ten are in neither.

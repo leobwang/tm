@@ -397,13 +397,17 @@ pub fn rows(view: &View<'_>) -> Vec<Row> {
         // specific fact first for a `hot`-flagged or mandatory item.
         let impossible = prio.is_impossible();
         let detail = if impossible {
+            // D67 (parity P58): the day's reason, when step 5 left the item
+            // without a row — the tail `tm plan`'s banner and the Today
+            // pane print, from one definition (README gap 3522).
             format!(
-                "needs {}, {} available by {}",
+                "needs {}, {} available by {}{}",
                 priority::fmt_blocks(prio.need_min, bm),
                 priority::fmt_blocks(prio.avail_min, bm),
                 prio.until
                     .map(short_date)
-                    .unwrap_or_else(|| "the deadline".to_string())
+                    .unwrap_or_else(|| "the deadline".to_string()),
+                tm_core::emit::unplaced_note_in(view.unplaced, &cand.id)
             )
         } else {
             cand.effective_due

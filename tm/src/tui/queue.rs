@@ -109,6 +109,11 @@ pub struct View<'a> {
     pub now: DateTime<Tz>,
     /// Done minutes per item (`Replay::done_minutes_map`), for §6.4 progress.
     done: HashMap<Id, u32>,
+    /// The day's `diagnostics.unplaced` (the owner's D67, parity P58): why step
+    /// 5 left an owed impossible item without a row. The Necessities screen's
+    /// `IMPOSSIBLE` line prints it as `tm plan`'s banner does (README gap 3522).
+    /// Empty unless [`View::with_unplaced`] hands it the day's list.
+    pub unplaced: &'a [(Id, tm_core::dayplan::NoPlace)],
 }
 
 impl<'a> View<'a> {
@@ -136,7 +141,14 @@ impl<'a> View<'a> {
             today,
             now,
             done: replay.done_minutes_map(),
+            unplaced: &[],
         }
+    }
+
+    /// The same view, with the day's `diagnostics.unplaced` (README gap 3522).
+    pub fn with_unplaced(mut self, unplaced: &'a [(Id, tm_core::dayplan::NoPlace)]) -> View<'a> {
+        self.unplaced = unplaced;
+        self
     }
 
     /// The ISO week `today` falls in — the Queue's Week pane.

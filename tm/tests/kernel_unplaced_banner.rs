@@ -122,6 +122,27 @@ fn the_json_keeps_the_forks_diagnostics_shape() {
     assert!(v.get("unplaced").is_none(), "{v}");
 }
 
+/// **An impossible item no slot admits is named too** (README gap 3523, the
+/// W-38 repair): the same world with `^p1` at `loc:home` on a lounge day — §8.2
+/// step 5's filter admits it at no slot, so no walk dropped it — was listed
+/// IMPOSSIBLE and named nothing; the day now names it `no slot admits it`, and
+/// the banner says so after the shortfall.
+#[test]
+fn an_impossible_item_no_slot_admits_is_named() {
+    let week = WEEK.replace("atomic due:2026-09-08 ^p1", "atomic loc:home due:2026-09-08 ^p1");
+    assert_ne!(week, WEEK);
+    let fx = of_texts(&[("week/2026-W37.md", &week)], "");
+    let day = Kernel.day(&fx, &late_state(), at("2026-09-07", 14, 0));
+    let listed: Vec<&str> = day.diagnostics.impossible.iter().map(|(i, _, _)| i.as_str()).collect();
+    assert!(listed.contains(&"p1"), "^p1 is impossible: {listed:?}");
+    assert_eq!(day.diagnostics.unplaced, vec![(Id::new("p1"), NoPlace::NoSlotAdmits)]);
+    let banners = tm_core::emit::render_banners(&day, &fx.tree, &fx.cfg);
+    assert!(
+        banners.iter().any(|b| b.contains("Plain task") && b.ends_with(" · not placed: no slot admits it")),
+        "{banners:?}"
+    );
+}
+
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (W-38 land step: track K's
 // two fork comparisons were written outside any region, and R3's simulated deletion did not build)
 use planner_common::Fork;

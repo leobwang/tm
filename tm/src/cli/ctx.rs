@@ -339,6 +339,87 @@ pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interr
     replay.open_interrupt.as_ref().filter(|i| i.end.is_none())
 }
 
+/// **What the verbs left `active.paused` at, read back from the log** — the one
+/// rule the rebuild ([`derived_state`]) reads the open block's pause by (README
+/// gap **3521**, the W-38 repair; D42, and the campaign's D69 call on gap 3283:
+/// the cache follows the log, never the reverse).
+///
+/// The kernel's replay keeps the FORK's pause (`OpenBlock::paused`): `pause`
+/// sets it and `unpause` clears it, and nothing else touches it — so a typed
+/// `tm pause`, then `tm interrupt`, then `tm resume` left the replay paused
+/// while `tm resume` had written the block running. DRIVEN on the W-38 binary:
+/// `tm now` said `35m of 60m` running, and after `rm .tm/state.json` the same
+/// log rebuilt `· paused` and `tm plan` stopped drawing the running block.
+/// That was the third instance of one class (gaps 3283 and 3430 were the
+/// others): a verb that changes `active.paused` in a way the derivation read
+/// differently. So the derivation is now the fold of EVERY writer of that
+/// field, each through the event it logs, over the open block's rows in file
+/// order (undone rows skipped): `tm start` begins it paused exactly when an
+/// interruption is open (P60); `pause` and `unpause` of this block (a typed
+/// `tm pause`, and D61's wall marks) set and clear it; `interrupt` sets it and
+/// `resume` clears it (`day.rs`' `interrupt` and `resume`); and a `break`,
+/// logged when it ends, clears it unless an interruption is still open
+/// (`end_break`). A break still RUNNING logs nothing and is the caller's
+/// `running_break`.
+///
+/// `None` when the scope's rows do not reach the block's `start` — the rebuild
+/// then keeps the replay's own reading.
+fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool> {
+    // Each tag is asked of `Event` rather than spelled a second time (§5.3).
+    let tag = |e: Event| e.name().to_string();
+    let start = tag(Event::Start {
+        id: String::new(),
+        pred: 0,
+        rep: None,
+        hsw: 0.0,
+        slept_min: 0,
+        loc: String::new(),
+        blocks_done: 0,
+        since_break_min: 0,
+    });
+    let pause = tag(Event::Pause { id: String::new() });
+    let unpause = tag(Event::Unpause { id: String::new() });
+    let interrupt = tag(Event::Interrupt { id: None });
+    let resume = tag(Event::Resume { lost_min: 0, dropped: Vec::new() });
+    let brk = tag(Event::Break { planned_min: 0, actual_min: None, r#where: None });
+    let rows = replay.view();
+    let mine = |r: &tm_core::log::ViewRow| r.id.as_deref() == Some(open.id.as_str());
+    let at = rows
+        .iter()
+        .rposition(|r| !r.cancelled && r.tag == start && mine(r) && r.t == open.started)?;
+    let mut interrupted = rows[..at]
+        .iter()
+        .rev()
+        .filter(|r| !r.cancelled)
+        .find_map(|r| {
+            if r.tag == interrupt {
+                Some(true)
+            } else if r.tag == resume {
+                Some(false)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(false);
+    let mut paused = interrupted;
+    for r in rows[at + 1..].iter().filter(|r| !r.cancelled) {
+        if r.tag == pause && mine(r) {
+            paused = true;
+        } else if r.tag == unpause && mine(r) {
+            paused = false;
+        } else if r.tag == interrupt {
+            interrupted = true;
+            paused = true;
+        } else if r.tag == resume {
+            interrupted = false;
+            paused = false;
+        } else if r.tag == brk {
+            paused = interrupted;
+        }
+    }
+    Some(paused)
+}
+
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
     let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
     let day = replay.day(today);
@@ -400,10 +481,12 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
             // fills it from `Ctx::planned_block`, the one function
             // `tm start` writes it from.
             est_min: 0,
-            // `tm break` and `tm interrupt` pause the block in the cache; only
-            // `tm pause` logs an `Event::Pause`. So the derived pause is the
-            // log's OR whatever the cache still knows is running.
-            paused: b.paused || running_break || interrupted.is_some(),
+            // Every writer of the field, through the event it logs
+            // ([`logged_pause`]); a break still running logs nothing, so it is
+            // whatever the cache still knows is running. The replay's own
+            // reading stands only where the scope does not reach the start.
+            paused: logged_pause(replay, b).unwrap_or(b.paused || interrupted.is_some())
+                || running_break,
         }),
         break_: None,
         interrupt: interrupted.map(|i| InterruptState {

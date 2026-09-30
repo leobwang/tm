@@ -371,6 +371,35 @@ fn necessities_impossible_first() {
     insta::assert_snapshot!("necessities_120_conflicts", out);
 }
 
+/// **The owner's D67 on the Necessities screen** (README gap 3522, the W-38
+/// repair): an `IMPOSSIBLE` line whose item the day names in
+/// `diagnostics.unplaced` ends with the same ` · not placed: <reason>` tail
+/// `tm plan`'s banner and the Today pane print (`emit::unplaced_note_in`, one
+/// definition), and an item the day does not name keeps its line unchanged.
+#[test]
+fn necessities_names_why_an_impossible_item_has_no_row() {
+    use tm_core::dayplan::NoPlace;
+    let w = tui_queue_common::world_from(&tui_queue_common::fixture("plan-conflicts"));
+    let plain = necessities::rows(&w.view());
+    let unplaced = [(tm_core::model::Id::new("i1"), NoPlace::NoRunLeft)];
+    let named = necessities::rows(&w.view().with_unplaced(&unplaced));
+    let i1 = |rows: &[necessities::Row]| {
+        rows.iter()
+            .find(|r| r.section == necessities::Section::Impossible && r.id.as_str() == "i1")
+            .map(|r| r.detail.clone())
+            .expect("i1 is IMPOSSIBLE")
+    };
+    assert_eq!(
+        i1(&named),
+        format!("{}{}", i1(&plain), tm_core::emit::unplaced_note_in(&unplaced, &tm_core::model::Id::new("i1"))),
+        "the tail is the banner's"
+    );
+    assert!(i1(&named).ends_with(" · not placed: no run left"), "{}", i1(&named));
+    assert!(!i1(&plain).contains("not placed"), "{}", i1(&plain));
+    let others = |rows: &[necessities::Row]| rows.iter().filter(|r| r.id.as_str() != "i1").map(|r| r.detail.clone()).collect::<Vec<_>>();
+    assert_eq!(others(&named), others(&plain), "an item the day does not name keeps its line");
+}
+
 #[test]
 fn waiting_monitor_shows_days_and_timeout() {
     // §11's Waiting monitor: "items in `[?]` with days waiting and timeout",

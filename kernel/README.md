@@ -74767,3 +74767,308 @@ interruption-among-the-walls order are then held only by `PlannerWit`'s witnesse
 `stepOneOrder` laws.  4. *Clears it.*  Before R3 (D21): a derived typed-pause world and an
 interruption-at-a-wall world, each one the binary holds (clause 5: the interruption logged), frozen and
 compared outside the region.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-38**, **REPAIR STEP**
+     on `rebuild-on-lean`, after the land (`68b4a41`): the defects W-38's two
+     independent auditors (the verifier and the reuse critic) found.  Gap
+     range **3520-3549**; **3520-3536 taken**, 3537-3549 free.  Parity: none
+     issued — P58's and P60's register rows are corrected in place in
+     `parity.txt` (their statement column is prose, `parity.py`'s header), P1-P61
+     contiguous, next free P62.
+     ===================================================================== -->
+
+## Stage 6 — W-38 repair: the kernel's writers are held to the width, the rebuild reads every pause writer, and D67 names every item it lists
+
+Every defect was reproduced FIRST, on the land's tree, before anything changed (§1).  Most severe
+first; each is closed by a CLASS rule where the defect was a list, and the two that could not be
+closed without an owner or a new derivation are recorded by name (§3).
+
+### 1. The reproductions
+
+* **The width's writers (verifier, major).**  `scratchpad/repair-w38/drive/C.sh` on the land's binary,
+  `plan-basic` at 09:00: `tm edit ^a1 dur=4294967296m` printed `- [ ] 2 30m Insurance claim for the
+  bike dur:4294967296m  ^a1`, exit 0, and `tm check` then said `error[kernel-load]: kernel refusal:
+  pastWidth — backlog.md:2: its `dur:` is more than 4294967295 minutes`, exit 2;
+  `buffer=4294967296m` and `dur=71582789b` (block 60) the same; `est=4294967296m` refused `badValue
+  est`, nothing written.  **Reproduced.**
+* **The pause across an interruption (verifier, major).**  `drive/A2.sh`: `start ^t4` 07:00, `pause`
+  07:30, `interrupt` 07:50, `resume` 08:00.  `.tm/state.json` `paused: False`, `tm now` at 08:05
+  `35m of 60m` running; after `rm .tm/state.json`, `tm now` at 08:06 `36m of 60m · paused`,
+  breakfast current, the rebuilt cache `paused: True`, and `tm plan` no longer draws the running
+  block.  **Reproduced**, value for value.
+* **D67's unnamed owed items (critic, major).**  The critic's Unnamed.lean (scratch) over its four chunks of
+  the land's 97 class requests, on the land's planner: **42 owed impossible items unassigned and
+  unnamed on 36 days, every one `eligibleBefore` false.**  **Reproduced** (the same 42 and 36).
+* **The Necessities screen (critic, major).**  `tm/src/tui/necessities.rs` built `needs X, Y
+  available by Z` and its `View` held no `DayPlan`, so `emit::unplaced_note` was unreachable there.
+  **Reproduced by reading.**
+* **The stale prose (verifier, minor).**  Nine live Lean sites cited the busy day's budget witness
+  (refuted at W-38 as `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`) as true, held by allow-list caps 12
+  and 9.  **Reproduced** (`grep`).
+* **`tm start` inside an interruption (critic, minor).**  Its line printed `▶` and nothing about the
+  pause.  **Reproduced** (the land's own drive B shows it).
+* **`.tm/last_plan.json` (verifier, minor).**  `planning::stored` wrote `kind_label`, so a typed pause
+  was stored `lost`.  **Reproduced by reading**; gap 3433 had named it.
+* **The TUI (verifier, minor).**  `script -qfc "stty cols 120 rows 40; tm --dir … --now
+  2026-09-07T10:05:00-05:00 tui" tui.raw` and the auditor's `term.py` rendered the frame, D68's
+  `07:30 · ✓ paused 10m @m2` row among it.  **Reproduced: AGENTS §5.13's "no agent can" is false.**
+* **Gap 3474's text (verifier, minor).**  The frozen comparand holds a Lost and a Wall row at one
+  start on `interrupted-block/spent` and its `window` twin (`day`, 08:00, Lost first) — measured by
+  reading the file.  The verifier's plants in an R3-simulated clone were **not re-run** here; its
+  reading of them stands (§3, gap 3529).
+* **The rest of the critic's minors** were read against the code and stand as written: P58's row's
+  "ranked before it" (no law reads rank), `planBudget` not reading `forToday`, `binary_holds` clause
+  4 beside clause 5, the monotone check reading the kernel's own `served`, the ci default written
+  twice, track H's widening of D64, R3 turning the exploring differential into a list, and P56's cut
+  written in the grid and in the plan.
+
+### 2. What changed
+
+**(1) D69 on the WRITERS — gap 3520, closed.**  `Boundary.widthGate` puts every command `runLoad`
+reads through the loader's own width rule: `cmdDurs` names every duration a command would write
+into one of `Width.Slot`'s four places — a keyed edit's value (`editValDurs`: `est`'s two
+renderings, `dur:`, `buffer:`), the `est` op's minutes, and the durations of the line an `add`
+writes — and each is held to `Width.fits` at the loader's block length (the request's, or one
+minute a block).  A value past it is refused `badValue <key>`, the name `est` was already refused by,
+before any document loads.  The class, not the list: `editValDurs_reads_the_width_keys` says a keyed
+edit is asked for a duration exactly when its key is one the host reads as `u32` minutes.  Both
+directions: `widthGate_eq_ok_iff`, `widthGate_refuses_only_past_the_width`,
+`widthGate_ok_is_the_command`, and `runLoad_refuses_a_command_writing_past_the_width` (`dur=` and
+`buffer=4294967296m` refused, `4294967295m` read, `71582789b` refused at 60 and read without a block
+length, an `add` titled `2 4294967296m Huge` refused `badValue est`).  Host:
+`cli_past_width::a_keyed_edit_past_the_width_is_refused_and_writes_nothing` — the four drives, exit 1,
+no Markdown written, the tree still loads, and `dur=4294967295m` written.  **No parity number**: fork
+4748911's `tm edit` read the value with `Dur::parse` into `u32` and refused it too.  The gate is one
+line of `runLoad`; the definitions sit before it, so the 29 check-9 pin sites below them in
+`Boundary.lean` were re-pointed by the insertion's 40 lines.
+
+**(2) The rebuild reads every pause WRITER — gap 3521, closed; gap 3430's D42 half closed with it.**
+The verifier found the third instance of one class (gaps 3283 and 3430 were the first two): a verb
+changes `active.paused` in a way the log derivation reads differently.  The kernel's replay keeps
+the fork's `OpenBlock::paused` (`pause` sets, `unpause` clears, nothing else), so
+`pause`/`interrupt`/`resume` left it paused while `tm resume` had written the block running.
+`ctx::logged_pause` is now the rebuild's reading: the fold of EVERY writer of the field, each through
+the event it logs, over the open block's rows in file order, undone rows skipped — `tm start` begins
+paused exactly when an interruption is open (P60), `pause`/`unpause` of this block (a typed `tm
+pause`, D61's wall marks) set and clear it, `interrupt` sets and `resume` clears it, a `break`
+(logged when it ends) clears it unless an interruption is open.  The replay's own reading stands
+only where the scope does not reach the block's `start`.  **Class-shaped test**:
+`cli_start_paused::every_pause_writer_agrees_with_the_rebuild` — every sequence of up to three of
+`pause`, `interrupt`, `resume`, `break` on a running block and up to two after a start inside an
+interruption, **104 sequences, 62 compared across the delete with `tm --json now` equal value for value, 42 skipped by name because they end with a break still RUNNING** (a running break is logged only when it ends, so the rebuild cannot see it, and its notice says `GONE`).  Gap 3430's behaviour question (should `tm pause` inside an interruption be
+refused?) is untouched and still the owner's; its D42 half — the field moving across a delete, in
+both orders — is closed by the fold, and the sweep covers both of its drives.
+
+**(3) D67 names every item it lists — gap 3523, closed, a reading the repair took.**
+`Planner.NoPlace` gains `noSlotAdmits` and `PlanReq.dayUnplaced` names every listed impossible item
+the day does not hold: `noSlotAdmits` when step 5's filter admits it at no slot before the walk, else
+the walk's reason as before.  The law is the class the critic asked for, **with no hypothesis**:
+`PlanCheck.every_listed_impossible_item_is_placed_or_named` — every item the day lists impossible is
+placed or named with a reason TRUE of the day (`whyHolds`, which reads `noSlotAdmits` as
+`eligibleBefore` false: `whyHolds_noSlotAdmits_iff`).  `impossibleKept` (D66's check, which its lifts
+read) is unchanged and still proved on every day.  **`PlanReq.mem_dayUnplaced` is restated** — it said
+a named item is one the filter admits SOMEWHERE, which was the hole — with
+`PlanReq.an_item_the_filter_admits_nowhere_is_named` (the hole closed) and
+`PlanReq.every_unassigned_listed_item_is_named` beside it; `PlanFold`'s two name lemmas and
+`whyHolds_of_a_name_the_day_carries` re-proved over it (D5).  Witness:
+`PlannerWit.an_impossible_item_no_slot_admits_is_named_so` (`^t1` at `loc:out` on a lounge day is named
+`noSlotAdmits`; the admitted `^t1` of `theTwoImpossibleRequest` keeps `noSlotLeft`).  FFI:
+`kernel_unplaced_banner::an_impossible_item_no_slot_admits_is_named` (the banner ends ` · not placed:
+no slot admits it`).  Host: `NoPlace::NoSlotAdmits`, wire name `noSlotAdmits`, words `no slot admits
+it`.  **Measured**, the critic's own Unnamed.lean (scratch) over the same 97 class requests, after:
+**0 owed impossible items unnamed** (42 before, on 36 days); of the 390 listed impossible items the day does not place, all 390 are now named, 360 of them `noSlotAdmits` — the 97 class requests are rich in items a lounge day or a late window admits nowhere, which is exactly the population the IMPOSSIBLE banner showed with nothing to act on.  **Why this is the repair's reading and not the owner's word**: D67's row says the day
+names why a DROPPED owed item found no place; an item no slot admits was dropped by no walk.  The
+critic read §8.3-through-D67 as "an owed impossible item is placed or named", which is what the row's
+own §8.3 sentence says; the repair took that reading because the alternative leaves an IMPOSSIBLE
+banner with a shortfall and nothing to act on, and it is revisable by the owner (the reason is one
+constructor and one branch).  P58's register row is corrected to say so.
+
+**(4) The Necessities screen names D67's reason — gap 3522, closed.**  `emit::unplaced_note_in` is
+the one definition of the tail over the day's `unplaced` list (`emit::unplaced_note` calls it);
+`queue::View` carries the list (`View::with_unplaced`, the TUI's `view_of` hands it the day's), and
+the Necessities `IMPOSSIBLE` line ends with it.
+`tui_queue_screens::necessities_names_why_an_impossible_item_has_no_row`.  Gap 3351 (`tm plan
+--json` and `.tm/last_plan.json` carry no `unplaced`) is unchanged.
+
+**(5) The stored plan reads a pause as `--json` does — gap 3530, closed (gap 3433's stored half).**
+`planning::stored` writes `emit::row_kind`, so `.tm/last_plan.json` stores a typed pause `pause` and
+an interruption `lost`; nothing reads the stored kind (`planning::diff` reads items and starts), so
+nothing else moves.  `cli_pause_drawn::the_stored_plan_calls_a_typed_pause_a_pause`.  Gap 3433's wire
+half (the planner wire's `Lost` kind) stands.
+
+**(6) `tm start` inside an interruption says so — gap 3525, closed.**  Its line ends ` · paused: an
+interruption is open (`tm resume` starts the timer)`; `--json` is unchanged.  Pinned in
+`cli_start_paused` both ways; P60's register row names the line.
+
+**(7) The stale prose — gap 3524, closed.**  The nine live Lean sites (`Goals.lean` 2, `PlanCheck.lean`
+2, `Planner.lean` 1, `PlannerWit.lean` 3 backticked, plus one unbackticked mention left as history)
+name `…_is_refuted` and, where they said what the budget does, its successor
+`the_budget_moves_the_assigned_set_at_the_busy_request`; the allow caps fall **12 → 7** and **9 → 6**,
+what is left being append-only README blocks and one dated `Check.lean` banner.
+
+**(8) AGENTS §5.13 corrected — gap 3527, closed.**  The three sentences saying no agent can drive the
+TUI now say a pty does, what stays human, and "say which part a drive covered".
+
+**(9) The grid and the plan cut one pause alike — gap 3528 (the comparison closed; the two
+definitions open).**  `cli_week_grid::the_grid_and_the_plan_cut_one_pause_alike`: for every clock hour
+of three days (a typed pause straddling the meeting, D61's pause through it, a pause no wall
+touches), the week grid's `pause` minutes equal `tm --json plan`'s `pause`-kind minutes.  Today the
+plan's side is the fork's `past_segments`; after R3 it is `Planner.pastSpans`, and this test is the
+comparison the critic found missing.
+
+**(10) The monotone check reads an independent order again — gap 3534, closed.**
+`planner_invariants`' `Kernel::rank_view` still keys the check on the kernel's `served`, and now also
+asserts, on every fresh draw, that `served` is the Rust copy of D60's order
+(`forkclass::d60_cands` through `priority::sorted_candidates`) — `planner_w38_order`'s comparison, on
+the proptest's draws.  Measured: `planner_invariants`, one standalone `--include-ignored` run, **38 passed**, the new assertion holding on every case (hash census 283 cases, hashes EQUAL 283, rows agree 283); `planner_w38_order`'s own comparison 146 days, 2,184 entries.
+
+### 3. Gaps (3520-3549)
+
+**Gap 3520 — CLOSED: the kernel's writers wrote a duration the loader refuses.**  §2 (1).
+
+**Gap 3521 — CLOSED: the rebuild read the open block's pause differently from the verbs that wrote
+it.**  §2 (2).  Gap 3430's D42 half is closed with it; its behaviour question stays the owner's.
+
+**Gap 3522 — CLOSED: the Necessities screen's IMPOSSIBLE line never named D67's reason.**  §2 (4).
+
+**Gap 3523 — CLOSED, as the repair's reading of D67: an owed impossible item no slot admits had no
+row and no name.**  §2 (3).  Revisable by the owner.
+
+**Gap 3524 — CLOSED: nine live Lean sites cited a refuted theorem as true.**  §2 (7).
+
+**Gap 3525 — CLOSED: `tm start` inside an interruption printed `▶` and not the pause.**  §2 (6).
+
+**Gap 3526 — P58's "ranked before it" has no law.**  1. *What.*  D67's row and P58's (until this step)
+said `noRunLeft` means every run the item fits "went to work ranked before it"; `PlanCheck.takenBefore`
+asks only for a work row of ANOTHER item at each fitting slot, and nothing ties the taker's rank to
+the named item's.  2. *Why.*  The walk is slot-major and serves by rank, so it is very likely true,
+but no one has proved it; the register row now says what `whyHolds` checks.  3. *Cost.*  "Ranked
+before it" is a claim, not a theorem.  4. *Clears it.*  A `PlanFold` law: a slot the item fits that
+step 5 filled holds a group served before the item's (`dayServed`'s order).
+
+**Gap 3527 — CLOSED: AGENTS §5.13 said no agent can drive the TUI.**  §2 (8).
+
+**Gap 3528 — P56's cut is written twice, now compared.**  1. *What.*  `review::heat_pieces` cuts a
+pause by `Tree::walls_on` and `capacity::free_intervals`; the day plan cuts it by its own walls
+(fork `past_segments` until R3, `Planner.pastSpans` after).  2. *Why.*  The grid is host code over the
+log's segments, and moving it onto the kernel's cut is R3-sized (gap 3432 is its walls reader).
+3. *Cost.*  Two definitions of one cut (§5.3); since this step they are compared on three days, not
+proved one.  4. *Clears it.*  At R3, or a step after, the grid reads the kernel's cut (the plan's
+pause spans) and `heat_pieces` goes.
+
+**Gap 3529 — gap 3474 (and gap 3513) said the interruption-at-a-wall shape is on no frozen line; it
+is on two, in the order both kernels draw.**  1. *What.*  `interrupted-block/spent` and its `window`
+twin hold a Lost row and a Wall row at 08:00 in their `day` (Lost first, measured by reading the
+file); the verifier's R3-simulated plants showed that swapping the pair fails those two lines and
+that the pre-W-38 order fires on none — so the direction R fixed is frozen nowhere.  2. *Why.*  Gap
+3474 was written before the measurement.  3. *Cost.*  The claim "frozen nowhere" was imprecise; the
+debt is the same, narrower: after R3 R's direction is held only by
+`PlannerWit.the_interruption_and_the_meeting_are_drawn_in_the_forks_order`.  4. *Clears it.*  Gap
+3513's world with the interruption begun where R's order differs, frozen before R3 (D21).
+
+**Gap 3530 — CLOSED: `.tm/last_plan.json` stored a typed pause as `lost`.**  §2 (5).
+
+**Gap 3531 — the file-kind `ci` default is written twice and compared by nothing committed.**
+1. *What.*  `tm-core`'s `Horizon::default_ci` and the kernel's `DocKind.ciDefault` (D69, gap 3323)
+each hold routines 1, optional 0, else 3; `PlanCheck.candsAgree` compares the two readings, but it is
+evaluated only by scratch programs (the critic's re-run: 97 of 97, 364 furniture candidates).  2.
+*Why.*  The kernel's reading feeds only the checkers (the planner reads `effectiveCi` for non-furniture
+rows), so no wire key carries it for a Rust test to compare.  3. *Cost.*  An edit to one table and not
+the other stays green until a scratch census runs.  4. *Clears it.*  At R3, when the kernel collects
+candidates (D27), the host's table goes; before it, a `PlannerWit` witness deciding `candsAgree` on a
+day with a routine and an optional line of no `ci`.
+
+**Gap 3532 — track H widened D64's re-bless gate on its own authority.**  1. *What.*
+`forkclass::d64_allows` gained a clause (gap 3470's "introduction") admitting ADDED answers for a
+registered number whose comparand did not exist when a line was frozen; six break lines took `p45`
+objects under it.  2. *Why.*  D64 licenses (a) a registered number that changes the fork's day and (b)
+an unbuildable world, and says anything else "comes back to the owner"; the widening is plausibly
+inside (a)'s spirit and bites on eight plants, but it is a change to what the gate admits.  3.
+*Cost.*  Six committed lines rest on a rule the owner has not seen; the shipped days are unchanged.
+4. *Clears it.*  The owner's word on the clause — kept, or the six `p45` objects moved off the lines
+and compared from the rule instead.
+
+**Gap 3533 — R3 turns the only EXPLORING fork differential into a fixed list.**  1. *What.*
+`planner_invariants`' hash arm compares the kernel with the live fork on fresh proptest draws every
+run (283 per run at the land); after R3 fork agreement is asked only of the frozen class lines and
+`plan-basic`'s instants.  2. *Why.*  The fork's planner goes at R3 by D48/D50; nothing freezes
+generated days today.  3. *Cost.*  A divergence in a world no frozen line holds is found by no
+comparison after R3 (D46's reason for fresh draws).  4. *Clears it.*  Before R3 (D21): a seeded batch
+of generated days, frozen with the shipped fork's answers by value, compared outside the region.
+
+**Gap 3534 — CLOSED: on the generated days the monotone check read the kernel's order against
+itself.**  §2 (10).
+
+**Gap 3535 — `planBudget` re-derives the day rule, and the kernel keeps two readings of the stored
+window.**  1. *What.*  `Look.Today.planBudget` matches `T.date` and calls `storedBudget` where
+`planWindow` and `planArrivalSec` read `forToday` (equivalent today; a change to `forToday` does not
+reach it), and capacity day 0 reads `storedWindow` while the planner reads `planWindow` (R's witness
+plans 13:00-17:00 and 14:00-19:00 in one request).  2. *Why.*  Not taken here: each is a Lean
+definition change owing a check-9 mutation and its laws' re-proof, and the second is a behaviour
+question (which day-0 window the capacity reads).  3. *Cost.*  One rule in two spellings; two
+readings of one field on a state naming no day.  4. *Clears it.*  `planBudget := if T.forToday today
+then T.budget else none` with `storedBudget_is_a_planBudget` re-proved; the capacity's day 0 reading
+`planWindow`, or the two proved equal on the states the binary writes.
+
+**Gap 3536 — `binary_holds` clause 4 is a hand copy of `tm start`'s pause rule.**  1. *What.*
+`forkclass::binary_holds` clause 4 restates `ctx::open_interruption` (`by_interrupt =
+r.interrupt.is_some()`), beside clause 5, which asks the binary's own rebuild.  2. *Why.*  Clause 4
+predates clause 5 and answers without running the binary.  3. *Cost.*  Two statements of one rule; the
+land had to edit clause 4 by hand for P60 (gap 3478), and it will have to again at the next change.
+4. *Clears it.*  Clause 4 goes and clause 5 answers for `paused`, or clause 4 reads the rule from the
+host's own function.
+
+### 4. R3
+
+**R3 is not yet only the body swap (with gap 3043) and the deletion.**  The exact list, re-derived
+from the land's §4 and this step: gaps **3473** (a typed pause over a wall, frozen nowhere), **3474**
+(narrowed by gap 3529: the direction R fixed is frozen nowhere), **3390** (the logged-arrival
+fallback, R's "before R3"), **3432** with **3528** (the week grid's walls and its cut, T's "at R3"),
+and **3533** (a seeded batch of generated days frozen before the fork goes, D21).  Beside them and
+not blocking the swap: 3480, 3398, 3351, 3433's wire half, 3526, 3531, 3532, 3535, 3536 and the
+proof debts 3352-3354.
+
+### 5. Acceptance, capped
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py`, `cli_latency` and the census programs, 8 GB for the probes and the drives); `git status
+--porcelain` of the shared checkout unchanged across every run.
+
+* **`check.sh`, every line ok, exit 0** (24.0 s warm, after one run whose check 12 failed on the
+  `## Boundary.lean` census sentence — 224 of 439 reached, four more than it said — corrected in
+  `reach-exempt.txt`; and one whose check 8 failed on two citations of this block, fixed in it):
+  build ok; totality ok; axiom audit **5,861** theorems (Classical.choice 3,005, Quot.sound 4,459,
+  propext 5,466; 392 on none); Negative.lean rejected; FFI **95**; corpus 29/37 and 4/5; stage goals
+  **6**, all stage 6; prose citations ok (49,800; 2,199 allowed, 0 unused); new definitions mutated
+  **523** rostered, **0** owed (the nine this step added or changed PINNED or a declared witness
+  fixture, verdicts in `mutations.txt`); parity **61** (P1-P61), next free P62; no two names for one
+  definition, 3,277 bodies, 0 UNANSWERED; every emitted definition reached, **1,223** reachable,
+  **1,199** exempt (unchanged: `reach-exempt.txt` did not grow), 0 UNANSWERED; fields 17/17; inputs
+  33 of 37 (4 exempt); sent 28/28; written 34/28/3; the kernel replays **90** modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): each **104 result lines, 1,729
+  passed, 0 failed, 13 ignored, 0 warnings** (17 min 26 s, 17 min 5 s, 17 min 40 s); no
+  `.proptest-regressions` file moved.
+* **The named suites, `--include-ignored`, one run each**: T5 33, the door 23, `cli_switch_acceptance`
+  16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 44 (142 s), `planner_invariants`
+  38 (444 s; hash census 283 of 283 EQUAL), `kernel_unplaced_banner` 11, `cli_pause_drawn` 24,
+  `cli_start_paused` 4, `cli_week_grid` 4, `planner_w38_order` 14, `planner_w37_rows` 12,
+  `cli_past_width` 5, `tui_queue_screens` 28 — every one passed.  The FFI is check.sh's checks 5-6.
+* **`cli_latency`, three runs** on a quiet machine (load 1.0-1.1): 6 passed each, 19.1-19.3 s.
+* **D40 for the Rust** (`scratchpad/repair-w38/mutants.py`, a clone, each mutant restored): **9 of 9
+  KILLED** — `ctx::logged_pause` to `None` and with `resume` keeping the pause (both by
+  `every_pause_writer_agrees_with_the_rebuild`, the first at gap 3430's own sequence, "start inside an
+  interruption then ["pause"]"); `emit::unplaced_note_in` to `""`, the Necessities tail dropped,
+  `View::with_unplaced` ignoring its list (all by
+  `necessities_names_why_an_impossible_item_has_no_row`); `planning::stored` back to `kind_label`
+  (`the_stored_plan_calls_a_typed_pause_a_pause`); `tm start`'s line never saying paused
+  (`a_block_started_during_an_interruption_is_paused_as_the_rebuild_says`); `NoPlace::of_wire`
+  forgetting `noSlotAdmits` and its words saying `no slot left` (both by
+  `an_impossible_item_no_slot_admits_is_named`).  D40 for the Lean is check 9's run above.
+* **Driven on the repaired binary** (`scratchpad/repair-w38/drive/C.after.out`, `A2.after.out`):
+  `tm edit ^a1 dur=4294967296m`, `buffer=4294967296m`, `dur=71582789b` each refused `kernel refusal:
+  badValue — "dur"` (or `"buffer"`), exit 1, the line unchanged, `tm check` `no problems`; the
+  pause-interrupt-resume day's cache `paused: False`, and after `rm .tm/state.json` the rebuild
+  `paused: False`, `tm now` at 08:06 `36m of 60m` running with the ▶ row, `tm plan` drawing the
+  running block — the three readings agree.

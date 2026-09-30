@@ -96,8 +96,8 @@ content of D29 with the planner factored out.
 (README gaps 348, 366).  A `PlanReq` can be built now, so the missing witness is no longer the
 blocker; what remains blocked is the *reason* D29 names.  §8.2 choice 5b compares
 `plan(budget)` with `plan(budget − Δ)`, and
-`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` proves the
-budget cannot reach `assignedOf` at all until **P5** writes the fold.  What the builder did
+a busy-day witness said the budget cannot reach `assignedOf` at all until **P5** writes the fold
+(REFUTED at W-38: `PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`).  What the builder did
 expose is a second falsity nobody had recorded: the goal's hypotheses leave `PlanReq.run` free,
 and D24's seam put the day's past half inside it, so two requests satisfying every hypothesis
 disagree about the whole assigned set —
@@ -465,7 +465,7 @@ def budgetLeft (r : PlanReq) (d : DayPlan) (i : Id) : Bool :=
   decide ((d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start) && (isActive r s || !(r.energisedSlots.zipIdx.any (fun x => decide (x.1.2.start = s.val.start) && fitsBefore r i x)) || s.val.items.any (fun j => d.diagnostics.impossible.val.any (fun q => q.1 == j))))).length < remainingBudget r)
 def takenBefore (r : PlanReq) (d : DayPlan) (i : Id) : Bool := r.energisedSlots.zipIdx.all (fun x => !fitsBefore r i x || d.segments.any (fun s => s.val.kind.isWork && decide (s.val.start = clampSec x.1.2.start) && !s.val.items.contains i))
 def whyHolds (r : PlanReq) (d : DayPlan) (i : Id) : NoPlace → Bool
-  | .budgetSpent => decide (remainingBudget r ≤ (d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length)
+  | .budgetSpent => decide (remainingBudget r ≤ (d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length) | .noSlotAdmits => !eligibleBefore r i
   | w => takenBefore r d i && r.startGroups.any (fun g => decide (i ∈ g.ids) && g.splittable == (w == .noSlotLeft))
 def impossibleKept (r : PlanReq) (d : DayPlan) : Bool :=
   d.diagnostics.impossible.val.all (fun p => decide (eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true →
@@ -1592,9 +1592,9 @@ What was missing until W-15 was a **witness**: `PlanReq` carries a `WfPlan`, a `
 gap 348).  `TmKernel/PlannerWit.lean` is the builder; gap 348 is closed, and a concrete request
 whose `dayPlan` holds real rows exists (`PlannerWit.theRequest`).  It is still not a request
 whose `dayPlan` **places two candidates and a reservation**, because no step of `dayPlan` does
-that yet, and the theorem that says so is
-`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request` — **P5 must
-delete it**.  So a restatement shipped without choice 5b's refutation would still be a
+that yet, and the busy-day witness said so — **P5 had to delete it**, and W-38 refuted the form it
+became (`PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`; the budget
+moves it, `PlannerWit.the_budget_moves_the_assigned_set_at_the_busy_request`).  So a restatement shipped without choice 5b's refutation would still be a
 weakening (AGENTS §3.1 item 3), `plan_tail_drop` is left exactly as it stands, and the debt is
 recorded by name in the README.
 
@@ -5599,7 +5599,22 @@ a slot the item fits for the budget and the day holds every block the walk spent
 that holds it is atomic, or splittable, as the name says. -/
 theorem whyHolds_of_a_name_the_day_carries (r : PlanReq) (i : Id) (w : NoPlace)
     (h : (i, w) ∈ r.dayUnplaced (dayAssigned r)) : whyHolds r (dayPlan r) i w = true := by
-  obtain ⟨-, -, hne, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
+  obtain ⟨-, -, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
+  by_cases hadm : w = NoPlace.noSlotAdmits
+  · subst hadm
+    have he : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = true := by
+      cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty
+      · rw [he] at hwdef; simp only [Bool.false_eq_true, ↓reduceIte] at hwdef
+        split at hwdef <;> (try split at hwdef) <;> cases hwdef
+      · rfl
+    simp only [whyHolds, eligibleBefore, Bool.not_eq_true']
+    rw [List.isEmpty_iff, List.filter_eq_nil_iff] at he
+    exact List.any_eq_false.2 (fun x hx => by simpa using he x hx)
+  have hne : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty = false := by
+    cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).isEmpty
+    · rfl
+    · rw [he] at hwdef; exact absurd hwdef (by simpa using hadm)
+  rw [hne] at hwdef; simp only [Bool.false_eq_true, ↓reduceIte] at hwdef
   have htaken : w ≠ NoPlace.budgetSpent → takenBefore r (dayPlan r) i = true := by
     intro hw
     unfold takenBefore
@@ -5623,6 +5638,7 @@ theorem whyHolds_of_a_name_the_day_carries (r : PlanReq) (i : Id) (w : NoPlace)
     simp only [Bool.and_eq_true, decide_eq_true_eq] at hgf
     exact ⟨g, hg, hgf.1⟩
   cases w with
+  | noSlotAdmits => exact absurd rfl hadm
   | budgetSpent =>
     simp only [whyHolds, decide_eq_true_eq]
     exact PlanFold.a_budget_spent_name_is_true_of_the_day r i h
@@ -5656,7 +5672,7 @@ theorem whyHolds_of_a_name_the_day_carries (r : PlanReq) (i : Id) (w : NoPlace)
 an owed impossible item step 5 admits before the walk, while the budget can be spent, is placed —
 or the day names it, with a reason true of the day. -/
 theorem impossibleKept_on_every_day (r : PlanReq) : impossibleKept r (dayPlan r) = true := by
-  refine (impossibleKept_iff r (dayPlan r)).2 (fun p hp hel _ _ => ?_)
+  refine (impossibleKept_iff r (dayPlan r)).2 (fun p hp _ _ _ => ?_)
   by_cases hm : p.1 ∈ assignedOf (dayPlan r)
   · exact Or.inl hm
   · right
@@ -5664,16 +5680,7 @@ theorem impossibleKept_on_every_day (r : PlanReq) : impossibleKept r (dayPlan r)
     have hi : p.1 ∈ r.dayImpossible.map Prod.fst := List.mem_map.2 ⟨p, hp, rfl⟩
     have hna : (dayAssigned r).contains p.1 = false := by
       rw [assignedOf_dayPlan_is_dayAssigned] at hm; simpa using hm
-    have hne : (r.energisedSlots.zipIdx.filter (fitsBefore r p.1)).isEmpty = false := by
-      unfold eligibleBefore at hel
-      obtain ⟨x, hx, hf⟩ := List.any_eq_true.1 hel
-      cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r p.1)).isEmpty
-      · rfl
-      · rw [List.isEmpty_iff] at he
-        have := List.mem_filter.2 ⟨hx, hf⟩
-        rw [he] at this
-        exact absurd this (by simp)
-    have hmem := (r.mem_dayUnplaced (dayAssigned r) p.1 _).2 ⟨hi, hna, hne, rfl⟩
+    have hmem := (r.mem_dayUnplaced (dayAssigned r) p.1 _).2 ⟨hi, hna, rfl⟩
     rw [show (dayPlan r).diagnostics.unplaced.val = r.dayUnplaced (dayAssigned r) from
       dayDiagnostics_unplaced r]
     refine List.any_eq_true.2 ⟨_, hmem, ?_⟩
@@ -5949,6 +5956,43 @@ theorem a_core_failure_on_a_paying_day_is_a_logged_row (r : PlanReq) (hdec : Dec
       (segOf t).val.start < r.now.sec :=
   a_whole_day_core_failure_is_a_logged_row r hdec.nowCal (by
     rw [hfail, dayPlan_ok_core_from_now_of_a_decoder r hdec hplain]; decide)
+
+
+/-! ## W-38 repair: D67's reading as a CLASS (README gap 3523)
+
+`impossibleKept` (§10) asks its question of an owed impossible item step 5's filter admits before
+the walk, while the budget can be spent — D66's eligibility, which its lifts read.  D67 reads §8.3
+as "an owed impossible item is placed or NAMED with its reason", and until the W-38 repair the day
+named only the drops the walk made: 42 owed impossible items on 36 of the 97 frozen class days had
+no row and no name (the reuse critic's census), each one admitted by step 5's filter at no slot of
+the day.  `Planner.PlanReq.dayUnplaced` now names those `noSlotAdmits`, and the law below asks
+nothing of eligibility, of the grant or of the budget. -/
+
+/-- **Every item the day lists impossible is placed, or named with a reason TRUE of the day** — no
+hypothesis: owed or not, admitted by step 5's filter or not, budget left or not. -/
+theorem every_listed_impossible_item_is_placed_or_named (r : PlanReq) :
+    ∀ p ∈ (dayPlan r).diagnostics.impossible.val, p.1 ∈ assignedOf (dayPlan r) ∨
+      (dayPlan r).diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r (dayPlan r) p.1 q.2) = true := by
+  intro p hp
+  by_cases hm : p.1 ∈ assignedOf (dayPlan r)
+  · exact Or.inl hm
+  · right
+    rw [dayPlan_impossible] at hp
+    have hi : p.1 ∈ r.dayImpossible.map Prod.fst := List.mem_map.2 ⟨p, hp, rfl⟩
+    have hna : (dayAssigned r).contains p.1 = false := by
+      rw [assignedOf_dayPlan_is_dayAssigned] at hm; simpa using hm
+    have hmem := (r.mem_dayUnplaced (dayAssigned r) p.1 _).2 ⟨hi, hna, rfl⟩
+    rw [show (dayPlan r).diagnostics.unplaced.val = r.dayUnplaced (dayAssigned r) from
+      dayDiagnostics_unplaced r]
+    refine List.any_eq_true.2 ⟨_, hmem, ?_⟩
+    rw [Bool.and_eq_true]
+    exact ⟨beq_self_eq_true _, whyHolds_of_a_name_the_day_carries r p.1 _ hmem⟩
+
+/-- **A `noSlotAdmits` name is exactly "step 5's filter admits it nowhere"** — so the name cannot be
+handed to an item the walk passed over (the check's bite on the new reason). -/
+theorem whyHolds_noSlotAdmits_iff (r : PlanReq) (d : DayPlan) (i : Id) :
+    whyHolds r d i NoPlace.noSlotAdmits = true ↔ eligibleBefore r i = false := by
+  simp [whyHolds]
 
 end PlanCheck
 end Tm

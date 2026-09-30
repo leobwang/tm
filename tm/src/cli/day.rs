@@ -927,6 +927,9 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         // unpauses it, as it unpauses a block `tm interrupt` paused.
         paused: super::ctx::open_interruption(&ctx.replay).is_some(),
     });
+    // The verb's own line says so too (README gap 3525): `tm now` said
+    // `· paused` while the line `tm start` printed said only `▶`.
+    let paused = ctx.state.active.as_ref().is_some_and(|a| a.paused);
     ctx.state.date = Some(ctx.today);
     ctx.save_state()?;
 
@@ -965,12 +968,13 @@ pub fn start(g: &Globals, args: &super::StartArgs) -> Result<i32, CliError> {
         ctx.json,
         || {
             format!(
-                "▶ {} {} · {} · pred {}{}",
+                "▶ {} {} · {} · pred {}{}{}",
                 out.id.token(),
                 out.title,
                 out.started,
                 out.pred,
-                out.rep.map(|r| format!(" rep {r}")).unwrap_or_default()
+                out.rep.map(|r| format!(" rep {r}")).unwrap_or_default(),
+                if paused { " · paused: an interruption is open (`tm resume` starts the timer)" } else { "" }
             )
         },
         &out,
