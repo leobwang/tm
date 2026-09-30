@@ -440,23 +440,15 @@ theorem theRequest_wallsAgree : theRequest.wallsAgree = true :=
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: two Block rows replayed from the morning's log, one Wall row placed
-from the calendar's own `at:`, and §16's two evening rows, in the fork's row order.  Every
-endpoint is written here as `Cal.instantOf` of a local clock, so the equation is readable and is
-about the same instants the plan and the log are written in.
-
-This is the theorem README gap 348 says does not exist — *"there is no witness that says 'here
-is a request whose `dayPlan` contains this row'"*.
-
-**RE-PROVED AT W-15'S LAND STEP, and renamed with it.**  Track W wrote this against
-`d2c0aa6`, where the day ended at the wall; track P's P2 landed §16's `wind_down` and `bed`
-in the same run, so the day this request plans really is five rows, and the three-row form
-this theorem had is FALSE — `decide` says so, which is how the merge found it.  Nothing was
-downgraded or deleted (D5, AGENTS §3.1 item 3): the equation is re-proved over P2's day and
-the name now says what it states (§5.2).  The two new rows carry `none` for their item,
-which is what makes `assignedOf` still empty below.  The last endpoint is written as the
-NEXT day's midnight (`739868`, minute 0) and not as minute 1440 of this one, because
-`Cal.instantOf` takes a minute *of* the day and wraps 1440 back to 00:00 — writing it the
-tempting way would have made the equation say the sleep row ends before it starts. -/
+from the calendar's own `at:`, the afternoon's Rest and §16's two evening rows, in the fork's row
+order.  Every endpoint is written as `Cal.instantOf` of a local clock, so the equation is about the
+same instants the plan and the log are written in.  This is the theorem README gap 348 says does not
+exist — *"there is no witness that says 'here is a request whose `dayPlan` contains this row'"*.
+**RE-PROVED AT W-15'S LAND STEP, and renamed with it** (the day gained P2's `wind_down` and `bed`,
+and the three-row form was FALSE — D5, AGENTS §3.1 item 3).  **RE-DERIVED AT W-39** (track A, README
+gap 3390): the planner's arrival is the day's first logged `arrive`, 07:00, as fork `Planner::new`
+reads it, so §8.1's window ends at 16:00 and the afternoon is two Rest rows, not four.  The last
+endpoint is the NEXT day's midnight (`739868`, minute 0): `Cal.instantOf` wraps minute 1440 to 00:00. -/
 theorem the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening :
     (dayPlan theRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
       = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
@@ -467,11 +459,7 @@ theorem the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening 
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 860).sec, (Cal.instantOf Cal.chicago 739867 920).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1000).sec, (Cal.instantOf Cal.chicago 739867 1060).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1060).sec, (Cal.instantOf Cal.chicago 739867 1120).sec,
+         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
           SegKind.windDown, none),
@@ -484,13 +472,25 @@ its own to the day above: the two evening rows are §16's, not a routine's. -/
 theorem the_witness_carries_no_routine : theRequest.routines.val = [] := rfl
 
 set_option maxRecDepth 400000 in
-/-- The day's window, budget and block length, through the planner's own reading of `state.json` (`Planner.PlanReq.window`, README gap 320): with nothing
-stored, §8.1's formula from `now`, as `Look.day0Window` reads it too — the fork's planner falls back to the log's 07:00 `arrive` (gap 3390). -/
-theorem the_witness_day_is_planned_from_two_in_the_afternoon :
+/-- The day's window, budget and block length (`Planner.PlanReq.window`, README gaps 320 and 3390): nothing is stored, so the
+planner reads the day's first logged `arrive`, 07:00, as fork `Planner::new` does, and §8.1's formula runs to 16:00. -/
+theorem the_witness_day_is_planned_from_the_logged_arrival :
     (dayPlan theRequest).window
-        = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
+        = ((Cal.instantOf Cal.chicago 739867 420).sec, (Cal.instantOf Cal.chicago 739867 960).sec) ∧
       (dayPlan theRequest).budgetBlocks = 6 ∧ (dayPlan theRequest).blockMin = 60 := by
   decide
+/-- **The day planned from `now` is REFUTED** (D5, W-39): the witness day's window was 14:00–19:00 while the planner
+read no log, and fork `Planner::new` reads the 07:00 `arrive` the log holds. -/
+theorem the_witness_day_is_planned_from_two_in_the_afternoon_is_refuted :
+    ¬ ((dayPlan theRequest).window = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
+      (dayPlan theRequest).budgetBlocks = 6 ∧ (dayPlan theRequest).blockMin = 60) := fun h => by
+  rw [the_witness_day_is_planned_from_the_logged_arrival.1] at h; exact absurd h.1 (by decide)
+
+/-- **The same Wednesday with `state.arrival` stored at 14:00** (W-39, README gap 3390): fork `Planner::new` reads the
+state's own arrival before the log's 07:00, so this plans the 14:00–19:00 afternoon — four slots at 3, 3, 2, 2 — that
+every step-5-to-7 family below stands on, while `theRequest`'s own day starts at the logged 07:00. -/
+def theAfternoonRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 := { theRequest.look.today0 with arrival := some 840 } } }
 
 /-! ############################################################################
 ## 4. README gap 393's witness half: a replayed Block really is assigned
@@ -683,12 +683,12 @@ set_option maxRecDepth 400000 in
 §8.2 choice 5b, which is not reachable until P5 (see this section's header and
 `the_budget_does_not_move_the_assigned_set_at_the_busy_request_is_refuted`, W-38).
 
-The witness is two requests built by `mkPlanReq?` that differ in **one field, `run`**, and
-satisfy every hypothesis the goal states: the same plan, the same `now`, the same window, the
-same block length and the same budget.  One replays a morning with two finished blocks and the
-other replays an empty log, so `assignedOf` is `[m1, m2]` on one side and `[]` on the other,
-and `[m1, m2]` is no prefix of `[]`.
-
+The witness is two requests that differ in **one field, `run`**, and satisfy every hypothesis
+the goal states: the same plan, `now`, window, block length and budget.  One replays a morning
+with two finished blocks and the other an empty log, so `assignedOf` is `[m1, m2]` on one side
+and `[]` on the other.  Since W-39 the run also anchors the window (the day's first logged `arrive`,
+README gap 3390), so the pair is `theAfternoonRequest` and the quiet day with ITS look — both store
+the 14:00 arrival the fork reads first, and the log no longer reaches the window of either.
 The goal's hypotheses name five *views* of `PlanReq` and leave `run`, `caps`, `state` and
 `overrides` free; since D24's seam put the day's past half inside `PlanReq.run`, the run is the
 field the conclusion depends on most. -/
@@ -697,10 +697,10 @@ theorem plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin
         r'.blockMin = r.blockMin → r'.budgetBlocks ≤ r.budgetBlocks →
         ∃ n : Nat, assignedOf (dayPlan r') = (assignedOf (dayPlan r)).take n) := by
   intro h
-  obtain ⟨n, hn⟩ :=
-    h theQuietRequest theRequest rfl rfl rfl rfl (Nat.le_refl _)
-  rw [the_witness_assigns_the_two_replayed_blocks, the_quiet_day_assigns_nothing,
-    List.take_nil] at hn
+  obtain ⟨n, hn⟩ := h { theQuietRequest with look := theAfternoonRequest.look } theAfternoonRequest
+    rfl rfl (by decide) rfl (Nat.le_refl _)
+  rw [show assignedOf (dayPlan theAfternoonRequest) = [['m','1'], ['m','2']] by decide, show assignedOf
+    (dayPlan { theQuietRequest with look := theAfternoonRequest.look }) = [] by decide, List.take_nil] at hn
   exact absurd hn (by simp)
 
 /-- **D29's restatement does not repair it** — for **any** erased item, not merely for the
@@ -871,7 +871,10 @@ theorem the_reservation_is_clipped_to_the_block_it_is_in :
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end, with a block running**: the two replayed Blocks, the written wall,
-**the reservation**, and §16's two evening rows — six rows, in the fork's row order. -/
+**the reservation**, the afternoon's Rest and §16's two evening rows, in the fork's row order.
+**Re-derived at W-39** (track A, README gap 3390): the planner's arrival is the day's first logged
+`arrive`, 07:00, as fork `Planner::new` reads it, so §8.1's window ends at 16:00 and the Rest after
+the reservation is one row, 15:00–16:00, where the day planned from `now` held four. -/
 theorem the_reserved_day_is_the_witness_day_and_the_running_block :
     (dayPlan theRunningRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
       = [((Cal.instantOf Cal.chicago 739867 425).sec, (Cal.instantOf Cal.chicago 739867 485).sec,
@@ -884,17 +887,14 @@ theorem the_reserved_day_is_the_witness_day_and_the_running_block :
           SegKind.block, some (['m','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
-          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
           SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **The reservation carries no slot energy and is marked `▶`** — §8.2 choice 5b's two
@@ -1453,8 +1453,7 @@ theorem the_battery_census_over_a_produced_day :
         s.val.energy.isSome) = [] ∧
       ((dayPlan theStoredRequest).segments.filter (fun s => s.val.energy.isSome)).map
         (fun s => (s.val.kind, s.val.energy.map Fin.val))
-          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
-             (SegKind.rest, some 2)] ∧
+          = [(SegKind.rest, some 3)] ∧
       (dayPlan theStoredRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theStoredRequest.windDownSec ≤ s.val.start)) = [] ∧
       (dayPlan theStoredRequest).diagnostics.impossible.val = [] ∧
@@ -1466,6 +1465,7 @@ theorem the_battery_census_over_a_produced_day :
 Each is a `List.map`, a `List.filter` or one field of the day `Planner.dayPlan` built — never
 a hand-written day, which is what `PlanCheck`'s `wDay` witnesses already are and what these
 are deliberately not. -/
+
 
 /-- A budget of nothing, against a day that has already spent an hour on `m2`. -/
 def theSpentDay : DayPlan := { dayPlan theStoredRequest with budgetBlocks := 0 }
@@ -1643,17 +1643,17 @@ theorem the_restricted_day_keeps_the_reservation_and_the_wall :
           SegKind.block, some (['m','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
-          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **The lift, fired.**  Every hypothesis of `PlanCheck.dayPlan_ok_core_from_now_given_the_budget` is supplied
@@ -1885,8 +1885,7 @@ theorem the_battery_census_at_the_reserved_day :
         s.val.energy.isSome) = [] ∧
       ((dayPlan theRunningRequest).segments.filter (fun s => s.val.energy.isSome)).map
         (fun s => (s.val.kind, s.val.energy.map Fin.val))
-          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
-             (SegKind.rest, some 2)] ∧
+          = [(SegKind.rest, some 3)] ∧
       (dayPlan theRunningRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] ∧
       ((PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
@@ -1899,8 +1898,7 @@ theorem the_battery_census_at_the_reserved_day :
         (fun s => s.val.kind == SegKind.block && s.val.energy.isSome) = [] ∧
       ((PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
         (fun s => s.val.energy.isSome)).map (fun s => (s.val.kind, s.val.energy.map Fin.val))
-          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
-             (SegKind.rest, some 2)] ∧
+          = [(SegKind.rest, some 3)] ∧
       (PlanCheck.withoutPast theRunningRequest (dayPlan theRunningRequest)).segments.filter
         (fun s => s.val.kind == SegKind.block &&
           decide (theRunningRequest.windDownSec ≤ s.val.start)) = [] := by
@@ -1945,6 +1943,8 @@ already holds, the six log lines `witLines` already holds, `theRunningState`'s r
 and **one** new line of log.  It goes through `mkPlanReq?`, so its wall index really is its
 plan's (which is what `theStoredRequest` gives up by swapping the plan behind the builder's
 back) and `hagree` comes from `mkPlanReq?_ok_wallsAgree` rather than from a `decide`. -/
+
+
 
 /-- **The one new line: a fifteen-minute `break` at 08:05**, between the morning's two blocks,
 in the fork's own bytes (`tm/tests/fixtures/fork-4748911-log-lines.jsonl`'s `break` shape:
@@ -2059,9 +2059,11 @@ theorem the_census_request_is_inside_the_calendar :
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: the morning's two Blocks with the **break between them**, the
-written wall, §8.2 choice 5b's reservation and §16's two evening rows — seven rows, in the
-fork's row order.  The Break row is the only thing here that was not already computed at
-`theRunningRequest`, and it is the row gap 650 said no request could produce before P5. -/
+written wall, §8.2 choice 5b's reservation, the one Rest row after it and §16's two evening rows —
+eight rows, in the fork's row order (re-derived at W-39: the day's logged 07:00 `arrive` is the
+planner's arrival, README gap 3390, so the window ends at 16:00).  The Break row is the only thing
+here that was not already computed at `theRunningRequest`, and it is the row gap 650 said no
+request could produce before P5. -/
 theorem the_census_day_carries_the_mornings_break :
     (dayPlan theCensusRequest).segments.map
         (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
@@ -2077,17 +2079,15 @@ theorem the_census_day_carries_the_mornings_break :
           SegKind.block, some (['m','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
-          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **The battery's verdict on that day**: all eleven pass. -/
@@ -2139,12 +2139,12 @@ theorem the_battery_census_at_the_census_request :
         s.val.energy.isSome) = [] ∧
       ((dayPlan theCensusRequest).segments.filter (fun s => s.val.energy.isSome)).map
         (fun s => (s.val.kind, s.val.energy.map Fin.val))
-          = [(SegKind.rest, some 3), (SegKind.rest, some 3), (SegKind.rest, some 2),
-             (SegKind.rest, some 2)] ∧
+          = [(SegKind.rest, some 3)] ∧
       (dayPlan theCensusRequest).segments.filter (fun s => s.val.kind == SegKind.block &&
         decide (theCensusRequest.windDownSec ≤ s.val.start)) = [] ∧
       (dayPlan theCensusRequest).diagnostics.impossible.val = [] := by
   decide
+
 
 /-- **The new lift, fired at the census request.**  Every hypothesis of
 `PlanCheck.dayPlan_ok_core_from_now_given_the_budget` is supplied by a theorem above; nothing here is a
@@ -2250,12 +2250,6 @@ theorem the_mid_break_day_lays_a_block_across_a_break :
           SegKind.block),
          ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
           SegKind.rest),
-         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
-          SegKind.rest),
-         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
-          SegKind.rest),
-         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
-          SegKind.rest),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
@@ -2263,6 +2257,12 @@ theorem the_mid_break_day_lays_a_block_across_a_break :
       PlanCheck.noBlockOverABreak theMidBreakRequest (dayPlan theMidBreakRequest) = false ∧
       PlanCheck.planOkCore theMidBreakRequest (dayPlan theMidBreakRequest) = false := by
   decide
+
+
+
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **`Goals.plan_places_no_block_over_a_break` is FALSE as stage 6 wrote it** (AGENTS §3.1
@@ -2386,7 +2386,7 @@ def witRunBatchCands : List (Look.Cand × Option Look.Floor) :=
 def theIdleBatchRequest : PlanReq := { theRequest with cands := ⟨witRunBatchCands, by decide⟩ }
 
 def theRunBatchRequest : PlanReq :=
-  { theRequest with cands := ⟨witRunBatchCands, by decide⟩, state := theRunningState }
+  { theAfternoonRequest with cands := ⟨witRunBatchCands, by decide⟩, state := theRunningState }
 
 /-- Twenty candidates that plan **nothing** — `round(est × multiplier)` is `0` for a small
 enough multiplier (fork `energy::planned_minutes`), so `total_min + 0 ≤ block_min` never fires
@@ -2586,7 +2586,7 @@ theorem the_gather_reads_each_of_its_five_clauses :
 
 Four candidates, none of them gatherable (`remaining` 50 against `batch_max_min` 20), so each
 leads a group of its own and the batching below is a no-op: what these measure is the **filter
-at a slot** and nothing else.  The §4.3 Wednesday at 14:00 cuts four slots at energies
+at a slot** and nothing else.  The §4.3 Wednesday's afternoon (`theAfternoonRequest`: arrival stored at 14:00) cuts four slots at energies
 3, 3, 2, 2 and the day's remaining budget is four, so the budget never binds and every `none`
 below is a filter's doing. -/
 
@@ -2606,7 +2606,7 @@ def witCursorCands : List (Look.Cand × Option Look.Floor) :=
    cCand ['c','3'] 5 60  .any  true (by decide),
    cCand ['c','4'] 2 240 .any  true (by decide)]
 
-def theCursorRequest : PlanReq := { theRequest with cands := ⟨witCursorCands, by decide⟩ }
+def theCursorRequest : PlanReq := { theAfternoonRequest with cands := ⟨witCursorCands, by decide⟩ }
 
 /-- The same four with `^c2`'s `loc:` changed from `out` to `lounge`, and nothing else. -/
 def witCursorLocCands : List (Look.Cand × Option Look.Floor) :=
@@ -2615,7 +2615,7 @@ def witCursorLocCands : List (Look.Cand × Option Look.Floor) :=
    cCand ['c','3'] 5 60  .any    true (by decide),
    cCand ['c','4'] 2 240 .any    true (by decide)]
 
-def theCursorLocRequest : PlanReq := { theRequest with cands := ⟨witCursorLocCands, by decide⟩ }
+def theCursorLocRequest : PlanReq := { theAfternoonRequest with cands := ⟨witCursorLocCands, by decide⟩ }
 
 /-- The same four with `^c3`'s `ci` changed from 5 to 3, and nothing else. -/
 def witCursorCiCands : List (Look.Cand × Option Look.Floor) :=
@@ -2624,7 +2624,7 @@ def witCursorCiCands : List (Look.Cand × Option Look.Floor) :=
    cCand ['c','3'] 3 60  .any true (by decide),
    cCand ['c','4'] 2 240 .any true (by decide)]
 
-def theCursorCiRequest : PlanReq := { theRequest with cands := ⟨witCursorCiCands, by decide⟩ }
+def theCursorCiRequest : PlanReq := { theAfternoonRequest with cands := ⟨witCursorCiCands, by decide⟩ }
 
 /-- The same four with `^c4` made `atomic`, and nothing else. -/
 def witCursorAtomicCands : List (Look.Cand × Option Look.Floor) :=
@@ -2634,7 +2634,7 @@ def witCursorAtomicCands : List (Look.Cand × Option Look.Floor) :=
    cCand ['c','4'] 2 240 .any false (by decide)]
 
 def theCursorAtomicRequest : PlanReq :=
-  { theRequest with cands := ⟨witCursorAtomicCands, by decide⟩ }
+  { theAfternoonRequest with cands := ⟨witCursorAtomicCands, by decide⟩ }
 
 /-- The same, `atomic`, asking for **three** hours rather than four — the run the day can
 actually give it. -/
@@ -2645,7 +2645,7 @@ def witCursorAtomicFitCands : List (Look.Cand × Option Look.Floor) :=
    cCand ['c','4'] 2 180 .any false (by decide)]
 
 def theCursorAtomicFitRequest : PlanReq :=
-  { theRequest with cands := ⟨witCursorAtomicFitCands, by decide⟩ }
+  { theAfternoonRequest with cands := ⟨witCursorAtomicFitCands, by decide⟩ }
 
 /-- Which group took each slot, by its members' ids — `none` for a slot the filter left empty. -/
 def assignIds (r : PlanReq) : List (Option (List Id)) :=
@@ -2894,7 +2894,8 @@ theorem the_queued_request_is_plain :
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: `m2`'s replayed block, the written wall, §8.2 choice 5b's
-reservation of `m2`, and §16's two evening rows.  Five rows, and **`m1` is in none of them**. -/
+reservation of `m2`, the one Rest row after it (W-39: the window the log's 07:00 `arrive` anchors
+ends at 16:00, README gap 3390) and §16's two evening rows.  Six rows, and **`m1` is in none of them**. -/
 theorem the_queued_day_is_the_second_sibling_twice :
     (dayPlan theQueuedRequest).segments.map
         (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
@@ -2906,17 +2907,16 @@ theorem the_queued_day_is_the_second_sibling_twice :
           SegKind.block, some (['m','2'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 880).sec, (Cal.instantOf Cal.chicago 739867 940).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 960).sec, (Cal.instantOf Cal.chicago 739867 1020).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1020).sec, (Cal.instantOf Cal.chicago 739867 1080).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1100).sec, (Cal.instantOf Cal.chicago 739867 1140).sec,
-          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **The four populations the two refutations turn on**, computed: the day assigns `m2` and
@@ -3268,7 +3268,7 @@ def routineCap : Capped RoutineIn :=
   | .error _ => absurd the_routine_instances_are_accepted (by simp [routinesOk, h])
 
 /-- §4.3's Wednesday at 14:00 with two window instances on it. -/
-def theRoutineRequest : PlanReq := { theRequest with plan := routinePlan, routines := routineCap }
+def theRoutineRequest : PlanReq := { theAfternoonRequest with plan := routinePlan, routines := routineCap }
 
 set_option maxRecDepth 400000 in
 /-- **Step 2, computed** — the mandatory instance takes the earliest feasible position inside
@@ -3433,7 +3433,7 @@ theorem an_instance_whose_window_has_closed_is_passed_over_and_not_reported :
 from fork `place_deferred`'s last paragraph and **no request reaches them** — the argument is in
 this section's header and in README gap 903.  A definition no input reaches is a definition no
 mutation can break (README gap 875's lesson, from the other side), so each is computed here at
-its own arguments over the day `theRequest` really produces: four slots at levels **3, 3, 2,
+its own arguments over the day `theAfternoonRequest` really produces: four slots at levels **3, 3, 2,
 2**. -/
 
 /-- A day whose four slots all went to a group, in the cursor's own vector shape. -/
@@ -3449,18 +3449,18 @@ restricted to one that ends at 18:00 slot 3 drops out and the answer is **2**; a
 minutes nothing is wide enough; and with a single slot assigned the answer is that slot whatever
 its energy. -/
 theorem the_victim_is_the_lowest_energy_slot_and_the_latest_of_those :
-    theRequest.energisedSlots.map (fun p => p.1.val) = [3, 3, 2, 2] ∧
-    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+    theAfternoonRequest.energisedSlots.map (fun p => p.1.val) = [3, 3, 2, 2] ∧
+    theAfternoonRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
         (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 3 ∧
-    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+    theAfternoonRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
         (Cal.instantOf Cal.chicago 739867 980).sec 3600 = some 1 ∧
-    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 900).sec
+    theAfternoonRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 900).sec
         (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 3 ∧
-    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+    theAfternoonRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
         (Cal.instantOf Cal.chicago 739867 1080).sec 3600 = some 2 ∧
-    theRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
+    theAfternoonRequest.victimSlot theFullDay (Cal.instantOf Cal.chicago 739867 840).sec
         (Cal.instantOf Cal.chicago 739867 1140).sec 5400 = none ∧
-    theRequest.victimSlot ⟨[some 0, none, none, none], [], 1⟩
+    theAfternoonRequest.victimSlot ⟨[some 0, none, none, none], [], 1⟩
         (Cal.instantOf Cal.chicago 739867 840).sec
         (Cal.instantOf Cal.chicago 739867 1140).sec 3600 = some 0 := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
@@ -4058,7 +4058,7 @@ W-17's lesson, applied to the step that turns a slot nobody took into a row.  Ev
 below is `decide` over a day `Planner.dayPlan` really produces, and each is arranged so that
 **the component under test is the only thing that differs** from the day beside it:
 
-* the four Rest rows of `theRequest` against the **none** of `theBusyRequest`, where the cursor
+* the four Rest rows of `theAfternoonRequest` against the **none** of `theBusyRequest`, where the cursor
   took every slot;
 * the same day with two optionals on the wire, where the first Rest row starts **half an hour
   later** because an optional took the minutes;
@@ -4096,7 +4096,7 @@ def witOptionalCands : List (Look.Cand × Option Look.Floor) :=
    oCand ['p','2'] 60  (some ⟨90, 70⟩)  (by decide)]
 
 /-- The §4.3 Wednesday with four optionals on the wire and nothing else changed. -/
-def theOptionalRequest : PlanReq := { theRequest with cands := ⟨witOptionalCands, by decide⟩ }
+def theOptionalRequest : PlanReq := { theAfternoonRequest with cands := ⟨witOptionalCands, by decide⟩ }
 
 set_option maxRecDepth 400000 in
 /-- **What each optional asks the day for, and why** — fork
@@ -4133,13 +4133,13 @@ theorem the_optionals_fill_the_day_in_request_order :
   refine ⟨by decide, by decide, by decide, by decide⟩
 
 set_option maxRecDepth 400000 in
-/-- **The Rest rows are the slots the cursor did not fill, and nothing else.**  `theRequest`
+/-- **The Rest rows are the slots the cursor did not fill, and nothing else.**  `theAfternoonRequest`
 sends no candidate, so all four slots are Rest at their own levels; `theBusyRequest` is the
 same afternoon with §8.2 step 5's four candidates on it, the cursor takes every slot, and
 there is **no Rest row at all**.  One difference, two answers. -/
 theorem the_rest_rows_are_the_slots_no_group_took :
-    theRequest.finalAssign.slotOf = [Option.none, Option.none, Option.none, Option.none] ∧
-    theRequest.restRows.map (fun s => (s.start, s.stop, s.energy.map Fin.val)) =
+    theAfternoonRequest.finalAssign.slotOf = [Option.none, Option.none, Option.none, Option.none] ∧
+    theAfternoonRequest.restRows.map (fun s => (s.start, s.stop, s.energy.map Fin.val)) =
       [((Cal.instantOf Cal.chicago 739867 860).sec,
         (Cal.instantOf Cal.chicago 739867 920).sec, some 3),
        ((Cal.instantOf Cal.chicago 739867 920).sec,
@@ -4985,7 +4985,7 @@ theorem the_idle_queued_request_is_plain :
 
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: `m2`'s replayed block, the written wall, and §16's evening —
-**no reservation**, because nothing is running, and **no row carrying `m1`**.  Eight rows, and
+**no reservation**, because nothing is running, and **no row carrying `m1`**.  Six rows (W-39: the logged 07:00 `arrive` ends the window at 16:00), and
 the first of them is the one that defeats the two comparisons. -/
 theorem the_idle_queued_day_is_the_second_sibling_and_an_evening :
     (dayPlan theIdleQueuedRequest).segments.map
@@ -4996,17 +4996,17 @@ theorem the_idle_queued_day_is_the_second_sibling_and_an_evening :
           SegKind.wall, some (['g','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 900).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 980).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 980).sec, (Cal.instantOf Cal.chicago 739867 1040).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1060).sec, (Cal.instantOf Cal.chicago 739867 1120).sec,
+         ((Cal.instantOf Cal.chicago 739867 920).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec,
           (Cal.instantOf Cal.chicago 739867 1320).sec, SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **§6.1's lift over the WHOLE day is FALSE at a `PlanCheck.SlotAnchored` eligibility** — and
@@ -5279,7 +5279,7 @@ theorem the_log_axis_moves_no_census_number :
 
 set_option maxRecDepth 400000 in
 /-- **The replayed half is not the day, and the numbers say by how much.**  At
-`theCensusRequest` `PlanCheck.pastHalf` keeps **2** of the day's **11** rows and **7 200** of
+`theCensusRequest` `PlanCheck.pastHalf` keeps **2** of the day's **8** rows (11 until W-39's logged arrival, README gap 3390) and **7 200** of
 its **9 600** Block seconds — the 2 400 s difference is §8.2 choice 5b's reservation, the one
 Block row the planner itself places.  Without this the `budget` clause of
 `PlanCheck.PastPays` would be weighed on a filter nothing distinguishes from the identity
@@ -5289,7 +5289,7 @@ theorem the_replayed_half_is_a_strict_part_of_the_day :
     blockSeconds (dayPlan theCensusRequest) = 9600 ∧
     blockSeconds (PlanCheck.pastHalf theCensusRequest (dayPlan theCensusRequest)) = 7200 ∧
     (PlanCheck.pastHalf theCensusRequest (dayPlan theCensusRequest)).segments.length = 2 ∧
-    (dayPlan theCensusRequest).segments.length = 11 := by
+    (dayPlan theCensusRequest).segments.length = 8 := by
   refine ⟨by decide, by decide, by decide, by decide⟩
 
 
@@ -5607,14 +5607,12 @@ theorem the_witness_day_holds_a_settled_block_no_replan_may_drop :
 
 set_option maxRecDepth 400000 in
 /-- **`plan_is_stable_across_a_replan` as stage 6 wrote it is REFUTED** (AGENTS §3.1 item 3,
-D5), by the field its hypotheses do not pin.
-
-`theRequest` replays a morning of two Blocks and `theQuietRequest` replays an empty log; they
-agree on `plan`, `window`, `blockMin` and `budgetBlocks`, and the instant the law quantifies
-over is free, so every hypothesis holds.  A settled Block of the first day is not a row of the second — if it were,
-`^m1` would be in `assignedOf (dayPlan theQuietRequest)`, which
-`the_quiet_day_assigns_nothing` computes to be `[]`.
-
+D5), by the field its hypotheses do not pin.  `theAfternoonRequest` replays a morning of two Blocks
+and the quiet day with its look replays an empty log; they agree on `plan`, `window` (both store
+the 14:00 arrival, W-39: the log's `arrive` no longer reaches either window, README gap 3390),
+`blockMin` and `budgetBlocks`, and the instant the law quantifies over is free, so every
+hypothesis holds.  A settled Block of the first day is not a row of the second — if it were, `^m1`
+would be in the second's `assignedOf`, which is computed to be `[]` (as `the_quiet_day_assigns_nothing`).
 This is `plan_tail_drop`'s hole at a second goal, and the owner is owed the same repair:
 `r'.run = r.run`, or the law stated over one run. -/
 theorem plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin :
@@ -5624,18 +5622,19 @@ theorem plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run
         s ∈ (dayPlan r).segments → s.val.stop ≤ nowSec →
         s ∈ (dayPlan r').segments) := by
   intro h
-  obtain ⟨s, hs, hk, hi, hstop, -⟩ := the_witness_day_holds_a_settled_block_no_replan_may_drop
-  have hq := h theRequest theQuietRequest theRequest.now.sec s rfl rfl rfl rfl hs hstop
-  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan theQuietRequest) :=
+  obtain ⟨s, hs, hk, hi, hstop, -⟩ : ∃ s ∈ (dayPlan theAfternoonRequest).segments, s.val.kind = SegKind.block ∧
+      s.val.item = some (['m','1'] : Id) ∧ s.val.stop ≤ theAfternoonRequest.now.sec ∧ s.val.flags.isOpen = false := by decide
+  have hq := h theAfternoonRequest { theQuietRequest with look := theAfternoonRequest.look }
+    theAfternoonRequest.now.sec s rfl (by decide) rfl rfl hs hstop
+  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan { theQuietRequest with look := theAfternoonRequest.look }) :=
     (mem_assignedOf _ _).2 ⟨s, hq, by rw [hk]; rfl, by simp [segItems, Seg.items, hk, hi]⟩
-  rw [the_quiet_day_assigns_nothing] at hmem
+  rw [show assignedOf (dayPlan { theQuietRequest with look := theAfternoonRequest.look }) = [] by decide] at hmem
   exact absurd hmem (by simp)
 
 set_option maxRecDepth 400000 in
 /-- **And design §6.3 row 3's restatement is refuted by the same pair** — the counterpart of
 W-24's `the_designs_restatement_of_the_overbooking_law_is_refuted_too`, at a second row of
-that table.  The witness row carries `isOpen = false`, so the `not open` restriction admits
-it and the conclusion is the same one that fails. -/
+that table.  The witness row carries `isOpen = false`, so the `not open` restriction admits it. -/
 theorem the_designs_restatement_of_the_stability_law_is_refuted_too :
     ¬ (∀ (r r' : PlanReq) (nowSec : Nat) (s : WfSeg),
         r'.plan = r.plan → r'.window = r.window → r'.blockMin = r.blockMin →
@@ -5643,12 +5642,13 @@ theorem the_designs_restatement_of_the_stability_law_is_refuted_too :
         s ∈ (dayPlan r).segments → s.val.stop ≤ nowSec → s.val.flags.isOpen = false →
         s ∈ (dayPlan r').segments) := by
   intro h
-  obtain ⟨s, hs, hk, hi, hstop, hopen⟩ :=
-    the_witness_day_holds_a_settled_block_no_replan_may_drop
-  have hq := h theRequest theQuietRequest theRequest.now.sec s rfl rfl rfl rfl hs hstop hopen
-  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan theQuietRequest) :=
+  obtain ⟨s, hs, hk, hi, hstop, hopen⟩ : ∃ s ∈ (dayPlan theAfternoonRequest).segments, s.val.kind = SegKind.block ∧
+      s.val.item = some (['m','1'] : Id) ∧ s.val.stop ≤ theAfternoonRequest.now.sec ∧ s.val.flags.isOpen = false := by decide
+  have hq := h theAfternoonRequest { theQuietRequest with look := theAfternoonRequest.look }
+    theAfternoonRequest.now.sec s rfl (by decide) rfl rfl hs hstop hopen
+  have hmem : (['m','1'] : Id) ∈ assignedOf (dayPlan { theQuietRequest with look := theAfternoonRequest.look }) :=
     (mem_assignedOf _ _).2 ⟨s, hq, by rw [hk]; rfl, by simp [segItems, Seg.items, hk, hi]⟩
-  rw [the_quiet_day_assigns_nothing] at hmem
+  rw [show assignedOf (dayPlan { theQuietRequest with look := theAfternoonRequest.look }) = [] by decide] at hmem
   exact absurd hmem (by simp)
 
 /-- **§8.2 choice 5b's reservation is marked `▶`, not `open`** — at every request.
@@ -5672,7 +5672,7 @@ set_option maxRecDepth 400000 in
 /-- **No row of any day this tree can build carries `open`** — including the two whose
 `RuntimeIn` has a block running, whose reservation row is in the list.  The lengths are in the
 statement so that the four `all`s cannot be AGENTS §9.2's *"check no input can fail"* read
-over an empty day. -/
+over an empty day (7, 8 and 7 since W-39's logged arrival ended three of the days at 16:00). -/
 theorem no_row_of_the_days_this_tree_builds_is_open :
     (dayPlan theRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
       (dayPlan theCensusRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
@@ -5680,22 +5680,23 @@ theorem no_row_of_the_days_this_tree_builds_is_open :
       (dayPlan theQuietRequest).segments.all (fun s => !s.val.flags.isOpen) = true ∧
       ((dayPlan theRequest).segments.length, (dayPlan theCensusRequest).segments.length,
         (dayPlan theRunningRequest).segments.length,
-        (dayPlan theQuietRequest).segments.length) = (9, 11, 10, 7) := by
+        (dayPlan theQuietRequest).segments.length) = (7, 8, 7, 7) := by
   decide
 
 /-! ### What the law is actually about, and the hypothesis that excludes it
 
-§8.3's stability bullet is about *a replan an hour later*.  The goal cannot say that: on this
-request the day's window **starts at `now`** (`Look.day0Window` through `Look.day0Cut`'s
-`max w.1 I.today0.now.sec`), so moving `now` moves `window`, and `hwin : r'.window = r.window`
-is false of every genuine replan-later pair.
+§8.3's stability bullet is about *a replan an hour later*.  Until W-39 the goal could not say that
+here: the window **started at `now`**, so moving `now` moved `window`, and `hwin : r'.window = r.window`
+was false of every genuine replan-later pair.  **Since W-39 (README gap 3390) it holds of one**: the log's
+07:00 `arrive` anchors this request's window, as fork `Planner::new` anchors it, so the replan an hour later
+keeps it (the moves-the-window form is refuted in W-39 track A's block, beside
+`an_hour_later_moves_the_window_of_a_day_with_no_arrival`, the day that still moves).
 
 And the law's content is not what fails.  At the one pair that *is* a replan — same plan, same
 run, `now` an hour on — **every row that had settled is still there**.  So G3's restatement
-owes three things and only the first has a counterexample: pin the run, drop or restate `hwin`,
-and tie the instant it quantifies over to `r.now` instead of leaving it free — free, the
-`s.val.stop ≤ _` clause admits *every* row, which makes the law say the two days are equal up
-to inclusion. -/
+owes, of the three things it owed, the two with a counterexample here: pin the run, and tie the instant
+it quantifies over to `r.now` instead of leaving it free — free, the `s.val.stop ≤ _` clause admits
+*every* row, which makes the law say the two days are equal up to inclusion. -/
 
 /-- `theRequest` replanned one hour later: one field of `Look.Today` moves. -/
 def theHourLaterRequest : PlanReq :=
@@ -5704,12 +5705,13 @@ def theHourLaterRequest : PlanReq :=
       today0 := { theRequest.look.today0 with now := ⟨theRequest.now.sec + 3600, 0⟩ } } }
 
 set_option maxRecDepth 400000 in
-theorem an_hour_later_changes_one_field_and_moves_the_window :
+/-- **An hour later one field moves, and the window the log's 07:00 `arrive` anchors does not** (W-39). -/
+theorem an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors :
     theHourLaterRequest.plan = theRequest.plan ∧
       theHourLaterRequest.run = theRequest.run ∧
       theHourLaterRequest.blockMin = theRequest.blockMin ∧
       theHourLaterRequest.budgetBlocks = theRequest.budgetBlocks ∧
-      theHourLaterRequest.window ≠ theRequest.window := by
+      theHourLaterRequest.window = theRequest.window := by
   refine ⟨rfl, rfl, rfl, rfl, ?_⟩
   decide
 
@@ -5725,8 +5727,6 @@ set_option maxRecDepth 400000 in
 theorem three_rows_had_settled_when_the_witness_planned :
     ((dayPlan theRequest).segments.filter
       (fun s => decide (s.val.stop ≤ theRequest.now.sec))).length = 3 := by decide
-
-
 set_option maxRecDepth 400000 in
 /-- **The wall axis moves no census number** — the counterpart of
 `the_log_axis_moves_no_census_number`, and gap 1397's row for the request this run adds.
@@ -5883,12 +5883,12 @@ theorem the_tail_remainder_day_really_has_a_tail :
 
 set_option maxRecDepth 400000 in
 /-- **`PlanCheck.futureHalf` is neither the identity nor the empty filter**, at a real request:
-seven rows of the census day's eleven start at or after `now`.  Its `check.sh` check-9 pin is
+four rows of the census day's eight start at or after `now` (seven of eleven until W-39's logged arrival).  Its `check.sh` check-9 pin is
 `PlanCheck.futureHalf_segments`, a `rfl` reflection lemma that would pin any body, so this is
 the figure that makes the definition a measurement (README gap 1504's lesson). -/
 theorem the_future_half_is_not_the_whole_day :
-    theFutureHalfOfTheCensusDay.segments.length = 7 ∧
-      (dayPlan theCensusRequest).segments.length = 11 := by
+    theFutureHalfOfTheCensusDay.segments.length = 4 ∧
+      (dayPlan theCensusRequest).segments.length = 8 := by
   refine ⟨by decide, by decide⟩
 
 /-- The census day's future rows three and four — contiguous with each other, and starting two
@@ -6211,7 +6211,7 @@ the day already
 fails `PlanCheck.holeFree` and `PlanCheck.holeFreeFrom`, on the whole day and on the rows at or
 after `now` alike.  Whatever closes gap 1529, it is not this step. -/
 theorem the_hole_survives_where_the_composition_adds_no_row :
-    theRequest.finalAssign.slotOf = [Option.none, Option.none, Option.none, Option.none] ∧
+    theRequest.finalAssign.slotOf = [Option.none, Option.none] ∧
     PlanCheck.holeFree theRequest (dayPlan theRequest) = false ∧
     PlanCheck.holeFreeFrom theRequest (dayPlan theRequest) = false ∧
     PlanCheck.holeFree theRequest
@@ -8008,12 +8008,12 @@ a reflex", this said); it checks in 1.6 s at 1.1 GB where the elaborator stops a
 recursion depth.  A dated line of `kernel/kernel-decide-exempt.txt`, which may only shrink, since
 the W-34 repair (README gap 2732, where the derivation that retires it is priced). -/
 
-/-- **The witness day's digest is the fork's**: `ace6c63d4bdc8084` is fork `DayPlan::hash` of the
-nine rows `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening` lists, with
-the rest rows' energies 3, 3, 2, 2 and every other digested field `None` — the fork's value,
-reached by the kernel's planner and the kernel's emitter. -/
+/-- **The witness day's digest is the fork's**: `70fa5dc0aabaae68` is fork `DayPlan::hash` of the seven
+rows `the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening` lists, rest energies 3, 3 and
+every other digested field `None` (W-39's scratch probe over this tree's `tm-core`; W-34's `ace6c63d4bdc8084`
+was the nine-row day planned from `now`) — reached by the kernel's planner and the kernel's emitter. -/
 theorem the_witness_days_hash_is_the_forks :
-    (dayPlan theRequest).planHash.val = 0xace6c63d4bdc8084 := by decide +kernel
+    (dayPlan theRequest).planHash.val = 0x70fa5dc0aabaae68 := by decide +kernel
 
 /-- **P0's placeholder is REFUTED** (AGENTS §3.2, W-34): the tripwire said every day's hash was
 `PlanHash.zero` until the emitter landed, and here is a day whose hash is not.  The positive law
@@ -8057,7 +8057,7 @@ theorem the_day_owes_the_rest_its_log_cut_short :
 
 /-- **`deferred` names the item the posterior cost its slot, and only then** — fork `diagnose`'s
 "a posterior downgrade cost this item its slot".  One `ci:3` candidate an hour long on the
-witness Wednesday (slots at energies 3, 3, 2, 2) and an energy report at 14:00 — predicted 3,
+witness Wednesday's afternoon (`theAfternoonRequest`, slots at 3, 3, 2, 2) and an energy report at 14:00 — predicted 3,
 reported 1 — through `Look.Today.reports`, the posterior's input: no energised slot reaches `ci:3`
 while two raw ones do, so `^d1` is unassigned and named.  The control drops the report: `^d1`
 takes the first energy-3 slot and nothing is deferred.  The two levels are pinned beside it, so
@@ -8066,9 +8066,9 @@ theorem the_day_names_what_the_posterior_cost_a_slot :
     let d : List (Look.Cand × Option Look.Floor) :=
       [oneCand ['d','1'] 3 (some 0) 60 none false ⟨planFacts 60 .any, by decide⟩]
     let reported : PlanReq :=
-      { theRequest with cands := ⟨d, by decide⟩, look := { witInput with today0 :=
-        { witInput.today0 with reports := [⟨Cal.instantOf Cal.chicago 739867 840, 3, 1⟩] } } }
-    let plain : PlanReq := { theRequest with cands := ⟨d, by decide⟩ }
+      { theAfternoonRequest with cands := ⟨d, by decide⟩, look := { witInput with today0 :=
+        { witInput.today0 with arrival := some 840, reports := [⟨Cal.instantOf Cal.chicago 739867 840, 3, 1⟩] } } }
+    let plain : PlanReq := { theAfternoonRequest with cands := ⟨d, by decide⟩ }
     (dayPlan reported).diagnostics.deferred.val = [['d','1']] ∧
       reported.energisedSlots.map (·.1) = [1, 1, 0, 0] ∧
       reported.rawSlots.map (·.1) = [3, 3, 2, 2] ∧
@@ -8195,7 +8195,8 @@ def theInterruptedOpenRequest : PlanReq :=
 set_option maxRecDepth 400000 in
 /-- **The day, end to end**: the worked stretch `[12:00, 14:00)`, the meeting it ran across, the
 reservation `[14:00, 15:00)` (sixty minutes of the three-hour estimate are still owed and
-`current_block_end` is 15:00), three Rest slots, and the evening — the fork's rows. -/
+`current_block_end` is 15:00), one Rest slot — three until W-39, whose logged 07:00 `arrive` ends the
+window at 16:00 (README gap 3390) — and the evening: the fork's rows. -/
 theorem the_open_day_is_the_worked_stretch_the_wall_and_the_reservation :
     (dayPlan theOpenRequest).segments.map
         (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
@@ -8207,15 +8208,14 @@ theorem the_open_day_is_the_worked_stretch_the_wall_and_the_reservation :
           SegKind.block, some (['m','1'] : Id)),
          ((Cal.instantOf Cal.chicago 739867 900).sec, (Cal.instantOf Cal.chicago 739867 960).sec,
           SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 980).sec, (Cal.instantOf Cal.chicago 739867 1040).sec,
-          SegKind.rest, none),
-         ((Cal.instantOf Cal.chicago 739867 1040).sec, (Cal.instantOf Cal.chicago 739867 1100).sec,
-          SegKind.rest, none),
          ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739867 1320).sec,
           SegKind.windDown, none),
          ((Cal.instantOf Cal.chicago 739867 1320).sec, (Cal.instantOf Cal.chicago 739868 0).sec,
           SegKind.sleep, none)] := by
   decide
+
+
+
 
 set_option maxRecDepth 400000 in
 /-- **The fork's marks**: the open row is `open`, carries no slot energy and says `120m so far`
@@ -10128,10 +10128,10 @@ theorem the_busy_day_draws_the_break_its_work_touches :
 
 set_option maxRecDepth 400000 in
 /-- **…and a break no work touches is not drawn** (AGENTS §5.8, the check does not over-bite):
-`theRequest`'s cut holds two breaks and step 5 assigns nothing, so fork `kept_breaks` keeps
-neither and the day has no Break row at all. -/
+`theRequest`'s cut holds one break (two before W-39, on the day planned from `now`) and step 5
+assigns nothing, so fork `kept_breaks` keeps none and the day has no Break row at all. -/
 theorem a_break_no_work_touches_is_not_drawn :
-    theRequest.todayBreaks.length = 2 ∧ theRequest.keptBreakRows = [] ∧
+    theRequest.todayBreaks.length = 1 ∧ theRequest.keptBreakRows = [] ∧
       (dayPlan theRequest).segments.all (fun s => s.val.kind != SegKind.brk) = true := by
   refine ⟨by decide, by decide, by decide⟩
 
@@ -10619,7 +10619,7 @@ theorem gap_320s_two_inputs_are_read_as_the_forks_planner_reads_them :
   refine ⟨by decide, by decide, by decide, by decide, by decide⟩
 
 /-- **The restated view law has a subject that stores a window** (AGENTS §7.4 item 2): every hypothesis of
-`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window` holds at the dated request. -/
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival` holds at the dated request. -/
 theorem the_dated_window_request_is_in_the_view_laws_domain :
     theDatedWindowRequest.look.today0.date = some theDatedWindowRequest.look.today ∧
     (theDatedWindowRequest.look.today0.window.isSome = true →
@@ -10636,7 +10636,7 @@ theorem the_dated_window_request_is_in_the_view_laws_domain :
 /-- **The W-37 view law is REFUTED by gap 320's first input** (AGENTS §3.1 item 3).  It said the planner's window
 is day 0's capacity window whenever no window the CAPACITY counts crosses midnight; the undated window is none the
 capacity counts, so its hypothesis holds, and the planner plans with it all the same.  Restated as
-`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window`. -/
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`. -/
 theorem the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted :
     ¬ ∀ r : PlanReq, (∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) →
       r.window = Look.day0Window r.look := by
@@ -10765,6 +10765,184 @@ theorem an_impossible_item_no_slot_admits_is_named_so :
       ['t','1'] .noSlotAdmits = true ∧
     (dayPlan theTwoImpossibleRequest).diagnostics.unplaced.val = [(['t','1'], .noSlotLeft)] := by
   decide
+
+
+/-! ############################################################################
+## W-39 track A: the planner's arrival is fork `Planner::new`'s, and the file-kind `ci` default is read alike
+############################################################################
+
+APPENDED 2026-09-30 (stage 6, run W-39, track A; README gaps 3390, 3398 and 3531).
+
+**Gap 3390.**  Fork `Planner::new` reads its arrival in three steps — `runtime.arrival` on the planned
+day, else the day's first logged `arrive` (the replay's day record), else `now` — and
+`Planner.PlanReq.window` reads it so since this run, through `Look.Today.planArrivalSec` over
+`Planner.PlanReq.loggedArrival`.  Day 0's capacity keeps fork `Ctx::window`'s reading, which reads no
+log.  The world is the binary's own: `tm arrive` at 07:00 and then `tm wake` leave a state dated today
+with no arrival, window or budget, beside a log that keeps the `arrive` (`theWokenRequest`).  The
+witnesses built on `witToday` were re-derived to the day this plans (§3's witness day and the
+reserved, census, queued and open days, each re-derived in place); the step-5-to-7 families whose
+subject is the four-slot afternoon moved onto `theAfternoonRequest` (§3), whose state stores the 14:00
+arrival the fork reads before the log's, so each still measures what it was written to measure.
+
+**Gap 3398.**  D42's rebuild of that world restores `arrival 07:00, window 07:00–16:00, budget 6` from
+the arrive record, where `tm wake` cleared all three: the day the kernel plans is the same either way
+(`the_rebuilt_state_plans_the_woken_day`), and only day 0's capacity window still differs, as fork
+`Ctx::window` reads it.
+
+**Gap 3531.**  The file-kind `ci` default is written twice — `Tm.DocKind.ciDefault` and fork
+`Horizon::default_ci` — and `PlanCheck.candsAgree` compares the two readings; it is decided here on a
+day holding a box-less routine line and an optional line with no `ci`, at the values the host sends
+and at §3.1's else-3, so an edit to one table and not the other fails a committed check (the Rust
+half is `tm/tests/planner_w39_arrival.rs`). -/
+
+/-- **`tm arrive` at 07:00, then `tm wake`**: the witness day with its state dated today and nothing
+stored — what `day::wake` leaves — beside the log that keeps the 07:00 `arrive`. -/
+def theWokenRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 := { theRequest.look.today0 with date := some 739867 } } }
+
+set_option maxRecDepth 400000 in
+/-- **The woken day is planned from the logged arrival, and its capacity from `now`** — fork
+`Planner::new` and fork `Ctx::window`, each where the binary keeps it (`Look.Today.planArrivalSec`,
+`Look.Today.arrivalSec`). -/
+theorem the_woken_day_is_planned_from_the_logged_arrival :
+    theWokenRequest.loggedArrival = some ⟨(Cal.instantOf Cal.chicago 739867 420).sec, 0⟩ ∧
+    theWokenRequest.window = ((Cal.instantOf Cal.chicago 739867 420).sec, (Cal.instantOf Cal.chicago 739867 960).sec) ∧
+    Look.day0Window theWokenRequest.look
+      = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) := by
+  refine ⟨by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The view law as W-38 stated it is REFUTED** (D5; README gap 3390): the woken day is dated today and
+stores no window, so every hypothesis holds, and the planner starts it at 07:00 where day 0's capacity
+starts at 14:00.  The restatement is
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`. -/
+theorem the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted :
+    ¬ ∀ r : PlanReq, r.look.today0.date = some r.look.today →
+      (r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true) →
+      (∀ w, r.look.today0.window = some w → w.1 ≤ w.2) → r.window = Look.day0Window r.look := by
+  intro h
+  have hw : theWokenRequest.look.today0.window = none := by decide
+  have := h theWokenRequest (by decide) (fun hs => by rw [hw] at hs; exact absurd hs (by simp))
+    (fun w hs => by rw [hw] at hs; exact absurd hs (by simp))
+  exact absurd this (by decide)
+
+set_option maxRecDepth 400000 in
+/-- **…and its twin over the day** — `Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`
+is the restatement. -/
+theorem the_days_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted :
+    ¬ ∀ r : PlanReq, r.look.today0.date = some r.look.today →
+      (r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true) →
+      (∀ w, r.look.today0.window = some w → w.1 ≤ w.2) → (dayPlan r).window = Look.day0Window r.look := by
+  intro h
+  have hw : theWokenRequest.look.today0.window = none := by decide
+  have := h theWokenRequest (by decide) (fun hs => by rw [hw] at hs; exact absurd hs (by simp))
+    (fun w hs => by rw [hw] at hs; exact absurd hs (by simp))
+  exact absurd this (by decide)
+
+/-- **What D42's rebuild writes on that world** (README gap 3398): `ctx::derived_state` restores the day's
+one arrival record — arrival 07:00, window 07:00–16:00, budget 6 — which `tm wake` had cleared. -/
+def theRebuiltRequest : PlanReq :=
+  { theRequest with look := { theRequest.look with today0 := { theRequest.look.today0 with
+      date := some 739867, arrival := some 420, window := some (420, 960), budget := some 6 } } }
+
+set_option maxRecDepth 400000 in
+/-- **The restated view law has its subject**: the rebuilt state is dated today, stores its arrival and a
+budgeted window that does not cross midnight, and the two windows are computed equal. -/
+theorem the_rebuilt_request_is_in_the_restated_view_laws_domain :
+    theRebuiltRequest.look.today0.date = some theRebuiltRequest.look.today ∧
+    theRebuiltRequest.look.today0.arrival.isSome = true ∧
+    theRebuiltRequest.look.today0.budget.isSome = true ∧
+    theRebuiltRequest.window = Look.day0Window theRebuiltRequest.look := by
+  refine ⟨by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The rebuild moves nothing the planner plans** (README gap 3398): the cache `tm wake` left and the
+state the rebuild derives plan the same rows, window and budget — the logged arrival stands in for the
+cleared one — while day 0's CAPACITY window, fork `Ctx::window`'s, still differs: it counts the stored
+window the rebuild restores and reads `now` where `tm wake` cleared it. -/
+theorem the_rebuilt_state_plans_the_woken_day :
+    (dayPlan theRebuiltRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
+      = (dayPlan theWokenRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item)) ∧
+    (dayPlan theRebuiltRequest).segments.map (fun s => s.val.energy.map Fin.val)
+      = (dayPlan theWokenRequest).segments.map (fun s => s.val.energy.map Fin.val) ∧
+    theRebuiltRequest.window = theWokenRequest.window ∧
+    theRebuiltRequest.budgetBlocks = theWokenRequest.budgetBlocks ∧
+    Look.day0Window theRebuiltRequest.look ≠ Look.day0Window theWokenRequest.look := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The state's own arrival is read before the log's** (fork `Planner::new`'s order): `theAfternoonRequest`
+keeps the 07:00 `arrive` in its log and stores 14:00, and the planner and day 0's capacity both start at 14:00. -/
+theorem the_stored_arrival_is_read_before_the_logged_one :
+    theAfternoonRequest.loggedArrival = some ⟨(Cal.instantOf Cal.chicago 739867 420).sec, 0⟩ ∧
+    theAfternoonRequest.window
+      = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739867 1140).sec) ∧
+    Look.day0Window theAfternoonRequest.look = theAfternoonRequest.window := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-- **The moves-the-window form is REFUTED** (D5, W-39): an hour later the window the log's 07:00 `arrive`
+anchors is where it was, so the pair §8.3's stability bullet is about satisfies `hwin`. -/
+theorem an_hour_later_changes_one_field_and_moves_the_window_is_refuted :
+    ¬ (theHourLaterRequest.plan = theRequest.plan ∧ theHourLaterRequest.run = theRequest.run ∧
+      theHourLaterRequest.blockMin = theRequest.blockMin ∧
+      theHourLaterRequest.budgetBlocks = theRequest.budgetBlocks ∧
+      theHourLaterRequest.window ≠ theRequest.window) :=
+  fun h => h.2.2.2.2 an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors.2.2.2.2
+
+/-- The quiet day — an empty log, nothing stored — replanned one hour later. -/
+def theQuietHourLaterRequest : PlanReq :=
+  { theQuietRequest with look := { theQuietRequest.look with today0 :=
+      { theQuietRequest.look.today0 with now := ⟨theQuietRequest.now.sec + 3600, 0⟩ } } }
+
+set_option maxRecDepth 400000 in
+/-- **A day with no arrival anywhere still moves its window with `now`** — the last of fork `Planner::new`'s
+three readings, and the day on which §8.3's `hwin` excludes a genuine replan. -/
+theorem an_hour_later_moves_the_window_of_a_day_with_no_arrival :
+    theQuietHourLaterRequest.plan = theQuietRequest.plan ∧
+    theQuietHourLaterRequest.run = theQuietRequest.run ∧
+    theQuietHourLaterRequest.window ≠ theQuietRequest.window := by
+  refine ⟨rfl, rfl, by decide⟩
+
+/-- **A box-less `routines.md` line and an `optional.md` line, neither with a `ci`** (README gap 3531). -/
+def furnitureWitness : List ReqDoc :=
+  [⟨"routines.md", none, ["- lunch win:11:30-13:30 dur:30m every:day".toList]⟩,
+   ⟨"optional.md", none, ["- Severance S3E4  dur:1h".toList]⟩]
+
+set_option maxRecDepth 400000 in
+theorem the_furniture_witness_loads : loadsOk furnitureWitness = true := by decide
+
+/-- The two lines, loaded.  Total by `the_furniture_witness_loads`. -/
+def furniturePlan : WfPlan :=
+  match h : loadPlan furnitureWitness with
+  | .ok p => p
+  | .error _ => absurd the_furniture_witness_loads (by simp [loadsOk, h])
+
+/-- **The two as the host sends them**: fork `Horizon::default_ci` gives the routine `ci` 1 and the
+optional `ci` 0 (`tm-spec-v1.md` §4.3), which is the wire's `ci` of a candidate with no `ci:`. -/
+def furnitureCands : List (Look.Cand × Option Look.Floor) :=
+  [oneCand "lunch".toList 1 none 30 none false ⟨planFacts 30 .any, by decide⟩,
+   oneCand "Severance S3E4".toList 0 none 60 none false ⟨planFacts 60 .any, by decide⟩ (optional := true)]
+
+/-- **The same two at §3.1's else-3** — what a host reading no file-kind table would send. -/
+def furnitureCandsAtThree : List (Look.Cand × Option Look.Floor) :=
+  [oneCand "lunch".toList 3 none 30 none false ⟨planFacts 30 .any, by decide⟩,
+   oneCand "Severance S3E4".toList 3 none 60 none false ⟨planFacts 60 .any, by decide⟩ (optional := true)]
+
+/-- The afternoon with the two lines on the plan and on the wire. -/
+def theFurnitureRequest : PlanReq :=
+  { theAfternoonRequest with plan := furniturePlan, cands := ⟨furnitureCands, by decide⟩ }
+
+set_option maxRecDepth 400000 in
+/-- **The plan and the wire read one `ci` for each** (README gap 3531): the plan's view is 1 and 0
+(`Tm.DocKind.ciDefault`) and `PlanCheck.candsAgree` holds at the values fork `Horizon::default_ci`
+sends; the same request at §3.1's else-3 fails it.  An edit to the kernel's table and not the
+host's, or the reverse (`tm/tests/planner_w39_arrival.rs` pins the host's), fails a committed check. -/
+theorem the_plan_and_the_wire_read_the_file_kinds_ci_alike :
+    theFurnitureRequest.cands.val.map (fun p => PlanCheck.candPlanView theFurnitureRequest p.1.id)
+      = [some (1, none, false), some (0, none, false)] ∧
+    PlanCheck.candsAgree theFurnitureRequest = true ∧
+    PlanCheck.candsAgree { theFurnitureRequest with cands := ⟨furnitureCandsAtThree, by decide⟩ } = false := by
+  refine ⟨by decide, by decide, by decide⟩
 
 end PlannerWit
 end Tm

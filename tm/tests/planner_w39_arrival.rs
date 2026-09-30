@@ -1,0 +1,294 @@
+//! **The day's arrival, window and budget have one reading each, and it is the
+//! fork's** — stage 6 W-39, track A (README gaps 3390, 3398, 3535 and 3531).
+//!
+//! * **Gap 3390.** Fork `Planner::new` reads its arrival in three steps: the
+//!   state's own, else the day's first logged `arrive`, else `now`. The kernel's
+//!   planner reads the same three since W-39 (`Look.Today.planArrivalSec` over
+//!   `Planner.PlanReq.loggedArrival`). [`the_woken_day_is_planned_from_the_logged_arrival`]
+//!   builds the world with the binary's own verbs — `tm arrive` at 07:00, then
+//!   `tm wake` — lets the shipped `tm plan` (the fork's planner until R3) print
+//!   its window, and asks the kernel's planner, through `tm_kernel_call`, for the
+//!   day of the same files.
+//! * **Gap 3398.** D42's rebuild of that world restores the arrival, window and
+//!   budget `tm wake` cleared; the kernel plans the same day from either cache —
+//!   the same test, after `rm .tm/state.json`.
+//! * **Gap 3535.** Day 0's capacity counts a stored window only dated today with
+//!   its budget (`Look.Today.storedWindow`), the planner whenever the state is
+//!   today's (`Look.Today.planWindow`); the two are one on every state the
+//!   binary writes (`Look.Today.storedWindow_is_planWindow_on_a_written_state`,
+//!   over `Look.Today.BinaryWritten`). [`every_state_the_binary_writes_stores_a_window_only_with_its_day_and_budget`]
+//!   drives every writer of `.tm/state.json`'s window — `tm arrive`, `tm wake`,
+//!   the day roll and D42's rebuild, one arrival and two — and reads the file
+//!   after each verb.
+//! * **Gap 3531.** The file-kind `ci` default is written twice, `Horizon::default_ci`
+//!   and `Tm.DocKind.ciDefault`. [`the_hosts_file_kind_ci_default_is_the_kernels`]
+//!   pins the host's table to the kernel's rows and the candidates it collects
+//!   to the wire values `PlannerWit.the_plan_and_the_wire_read_the_file_kinds_ci_alike`
+//!   decides `PlanCheck.candsAgree` at, so an edit to one table and not the
+//!   other fails a committed check.
+//!
+//! The fork comparison is one `BEGIN THE FORK PLANNER` region, which R3 deletes.
+
+mod cli_common;
+mod planner_common;
+
+#[allow(dead_code)]
+#[path = "support/forkday.rs"]
+mod forkday;
+
+#[allow(dead_code)]
+#[path = "support/srcwalk.rs"]
+mod srcwalk;
+
+use std::path::Path;
+
+use chrono::{DateTime, NaiveDate};
+use chrono_tz::Tz;
+use cli_common::Tm;
+use planner_common::{at, of_texts, Fixture};
+use serde_json::Value;
+use tm_core::energy::Model;
+use tm_core::model::Horizon;
+use tm_core::priority;
+use tm_core::store::{MemStore, Store};
+use tm_core::tree::Tree;
+
+/// The plan directory a drive left, loaded as `planner_common::load_with_log`
+/// loads a fixture: the tree, the log's text and its replay, `.tm/state.json`
+/// and the documents the request sends.
+fn fixture_of(dir: &Path) -> Fixture {
+    let store = MemStore::from_dir(dir).expect("the tree reads");
+    let plan = store.read_tree().expect("the tree parses");
+    let tree = Tree::build(&plan.files, &plan.config);
+    let log = std::fs::read_to_string(dir.join(".tm/log.jsonl")).unwrap_or_default();
+    let replay = planner_common::chokepoint::replay_of_text(&log, plan.config.tz);
+    let state = store.load_state().expect("state.json parses");
+    let docs = planner_common::planreq::docs_of_dir(dir);
+    Fixture { tree, cfg: plan.config, replay, state, model: Model::default(), docs, log }
+}
+
+/// A day's window in the plan's zone.
+fn window_of(day: &tm_core::dayplan::DayPlan, tz: Tz) -> (DateTime<Tz>, DateTime<Tz>) {
+    (day.window.0.with_timezone(&tz), day.window.1.with_timezone(&tz))
+}
+
+/// `tm arrive` at 07:00, then `tm wake 06:05` at 07:30: gap 3390's world, built by
+/// the binary's own verbs.
+fn woken_tree() -> Tm {
+    let tm = Tm::new();
+    tm.ok_at("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]);
+    tm.ok_at("2026-09-07T07:30:00-05:00", &["wake", "06:05"]);
+    tm
+}
+
+/// **README gaps 3390 and 3398, on the binary's own files.** `tm arrive` at 07:00
+/// and `tm wake 06:05` at 07:30 leave a state dated today with no arrival, window
+/// or budget, beside a log that keeps the `arrive`. The shipped `tm plan` at
+/// 10:30 prints the fork's window, 07:00–16:00; the kernel's planner, asked
+/// through the FFI for the day of the same files, answers the same window — and
+/// after `rm .tm/state.json`, when the next verb has rebuilt the arrival, window
+/// and budget from the arrive record, it plans the same day again.
+#[test]
+fn the_woken_day_is_planned_from_the_logged_arrival() {
+    let tm = woken_tree();
+    let st = tm.state();
+    assert_eq!(st["date"], "2026-09-07", "{st}");
+    for key in ["arrival", "window", "budget"] {
+        assert!(st[key].is_null(), "`tm wake` clears `{key}`: {st}");
+    }
+    assert!(tm.log().iter().any(|e| e["ev"] == "arrive"), "the log keeps the `arrive`");
+
+    let plan = tm.ok_at("2026-09-07T10:30:00-05:00", &["plan"]);
+    assert!(
+        plan.stdout.contains("window 07:00–16:00"),
+        "the shipped `tm plan` plans from the logged arrival:\n{}",
+        plan.stdout
+    );
+
+    let now = at("2026-09-07", 10, 30);
+    let want = (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0));
+    let woken = fixture_of(&tm.plan);
+    let tz = woken.cfg.tz;
+    let k = woken.kernel_day(&woken.state, now).expect("the kernel plans the woken day");
+    assert_eq!(window_of(&k, tz), want, "the kernel's planner, through the FFI");
+
+    // D42: the next verb rebuilds the state from the log (README gap 3398).
+    std::fs::remove_file(tm.plan.join(".tm/state.json")).expect("the cache");
+    tm.ok_at("2026-09-07T10:30:00-05:00", &["plan"]);
+    let st = tm.state();
+    assert_eq!((st["arrival"].as_str(), st["budget"].as_u64()), (Some("07:00"), Some(6)), "{st}");
+    assert_eq!(st["window"], serde_json::json!(["07:00", "16:00"]), "{st}");
+    let rebuilt = fixture_of(&tm.plan);
+    let r = rebuilt.kernel_day(&rebuilt.state, now).expect("the kernel plans the rebuilt day");
+    assert_eq!(window_of(&r, tz), want, "the rebuilt state's window");
+    assert_eq!(r.budget_blocks, k.budget_blocks, "the rebuilt state's budget");
+    assert_eq!(r.hash(), k.hash(), "the rebuild moves nothing the kernel plans");
+    assert_eq!(r.segments, k.segments, "row for row");
+}
+
+/// `window` present ⇒ `date` is today and `budget` is present:
+/// `Look.Today.BinaryWritten`, read off the file the binary wrote.
+fn binary_written(st: &Value, today: &str) -> bool {
+    st["window"].is_null() || (st["date"] == today && !st["budget"].is_null())
+}
+
+/// One verb of a drive: the instant, the arguments, or a deletion of the cache.
+enum Step {
+    Run(&'static str, &'static [&'static str]),
+    DropCache,
+}
+
+/// **README gap 3535: every `.tm/state.json` the binary writes stores a window
+/// only beside its day and its budget** — the class on which
+/// `Look.Today.storedWindow_is_planWindow_on_a_written_state` makes day 0's
+/// capacity and the planner read one stored window. Each drive reaches one
+/// writer of the window: `tm arrive` (once and twice in a day), `tm wake` after
+/// an arrival, the day roll on the first verb of the next day, and D42's rebuild
+/// from one arrival record and from two (`Ctx::arrival_window`). The file is
+/// read after EVERY step, and every writer is seen to write a window at least
+/// once, so the class is not held vacuously.
+#[test]
+fn every_state_the_binary_writes_stores_a_window_only_with_its_day_and_budget() {
+    use Step::{DropCache, Run};
+    let drives: [&[Step]; 4] = [
+        // Arrive, work, wake (clears), arrive again, plan.
+        &[
+            Run("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]),
+            Run("2026-09-07T07:05:00-05:00", &["start", "^t4", "--energy", "4"]),
+            Run("2026-09-07T08:00:00-05:00", &["stop"]),
+            Run("2026-09-07T08:30:00-05:00", &["wake", "06:05"]),
+            Run("2026-09-07T09:00:00-05:00", &["plan"]),
+            Run("2026-09-07T12:00:00-05:00", &["arrive", "home"]),
+            Run("2026-09-07T12:30:00-05:00", &["plan"]),
+        ],
+        // Two arrivals, then the rebuild: the log carries no payload for the second.
+        &[
+            Run("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]),
+            Run("2026-09-07T09:00:00-05:00", &["arrive", "home"]),
+            DropCache,
+            Run("2026-09-07T10:00:00-05:00", &["plan"]),
+        ],
+        // The day roll: an arrival, then the first verb of the next day.
+        &[
+            Run("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]),
+            Run("2026-09-08T08:00:00-05:00", &["plan"]),
+            Run("2026-09-08T08:10:00-05:00", &["arrive", "lounge"]),
+            DropCache,
+            Run("2026-09-08T09:00:00-05:00", &["plan"]),
+        ],
+        // Gap 3390's world, then the rebuild restores what `tm wake` cleared (gap 3398).
+        &[
+            Run("2026-09-07T07:00:00-05:00", &["arrive", "lounge"]),
+            Run("2026-09-07T07:30:00-05:00", &["wake", "06:05"]),
+            Run("2026-09-07T10:30:00-05:00", &["plan"]),
+            DropCache,
+            Run("2026-09-07T10:30:00-05:00", &["plan"]),
+        ],
+    ];
+    let mut states = 0;
+    let mut with_window = 0;
+    for (d, drive) in drives.iter().enumerate() {
+        let tm = Tm::new();
+        for (s, step) in drive.iter().enumerate() {
+            let now = match step {
+                Run(now, args) => {
+                    tm.ok_at(now, args);
+                    *now
+                }
+                DropCache => {
+                    std::fs::remove_file(tm.plan.join(".tm/state.json")).expect("the cache");
+                    continue;
+                }
+            };
+            let st = tm.state();
+            let today = &now[..10];
+            assert!(
+                binary_written(&st, today),
+                "drive {d} step {s} (`tm {now}`): a window without its day or its budget: {st}"
+            );
+            states += 1;
+            with_window += usize::from(!st["window"].is_null());
+        }
+    }
+    println!("{states} states read, {with_window} of them storing a window, every one beside its day and budget");
+    assert!(with_window >= 5 && with_window < states, "{with_window} of {states}");
+}
+
+/// **README gap 3531's Rust half: the host's file-kind `ci` table is the
+/// kernel's.** `Horizon::default_ci` holds routines 1, optional 0 and every other
+/// file kind 3 — `Tm.DocKind.ciDefault`'s three rows — and the candidates the
+/// host collects for a box-less routine line and an optional line with no `ci`
+/// carry 1 and 0, which are the wire values `PlannerWit.furnitureCands` sends
+/// where `PlannerWit.the_plan_and_the_wire_read_the_file_kinds_ci_alike`
+/// decides `PlanCheck.candsAgree`.
+#[test]
+fn the_hosts_file_kind_ci_default_is_the_kernels() {
+    let kernel_table = [
+        ("routines.md", 1),
+        ("optional.md", 0),
+        ("backlog.md", 3),
+        ("inbox.md", 3),
+        ("month/2026-09.md", 3),
+        ("week/2026-W37.md", 3),
+        ("day/2026-09-09.md", 3),
+        ("calendar/2026-W37.md", 3),
+    ];
+    for (path, ci) in kernel_table {
+        let h = Horizon::from_path(path).unwrap_or_else(|| panic!("{path} is a file kind"));
+        assert_eq!(h.default_ci(), ci, "{path}: the host's default against `Tm.DocKind.ciDefault`'s");
+    }
+    let fx = of_texts(
+        &[
+            ("routines.md", "- lunch win:11:30-13:30 dur:30m every:day\n"),
+            ("optional.md", "- Severance S3E4  dur:1h\n"),
+        ],
+        "",
+    );
+    let now = at("2026-09-09", 10, 0);
+    let date = NaiveDate::from_ymd_opt(2026, 9, 9).expect("date");
+    let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
+    let ci = |id: &str| cands.iter().find(|c| c.id.as_str() == id).map(|c| c.ci);
+    assert_eq!(ci("lunch"), Some(1), "the routine's candidate: {:?}", cands.iter().map(|c| (&c.id, c.ci)).collect::<Vec<_>>());
+    assert_eq!(ci("Severance S3E4"), Some(0), "the optional's candidate");
+}
+
+// BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 2722, 3390)
+/// **Gap 3390, against the fork by value**: the woken day's and the rebuilt day's
+/// kernel plans are each the shipped fork's day (kernel-ranked, D53) — the date,
+/// the window, the budget, every diagnostic, every row in order and the hash.
+#[test]
+fn the_woken_and_the_rebuilt_days_are_the_forks() {
+    let tm = woken_tree();
+    let now = at("2026-09-07", 10, 30);
+    let woken = fixture_of(&tm.plan);
+    std::fs::remove_file(tm.plan.join(".tm/state.json")).expect("the cache");
+    tm.ok_at("2026-09-07T10:30:00-05:00", &["plan"]);
+    let rebuilt = fixture_of(&tm.plan);
+    let mut t = forkday::DayTally::default();
+    let mut findings = Vec::new();
+    for (label, fx) in [("woken", &woken), ("rebuilt", &rebuilt)] {
+        let date = tm_core::planwire::plan_date(&fx.state, now);
+        let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
+        let w = planner_common::planreq::World {
+            docs: &fx.docs,
+            log: &fx.log,
+            tree: &fx.tree,
+            cfg: &fx.cfg,
+            state: &fx.state,
+            now,
+            cands: &cands,
+        };
+        let (k, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
+        let fork = tm_core::planner::plan(&fx.input(&fx.state, now).with_ranking(&cands, &ans.prios));
+        let frozen = serde_json::json!({
+            "day": serde_json::to_value(&fork).expect("a day serialises"),
+            "hash": fork.hash(),
+        });
+        findings.extend(forkday::compare_day_with_fork(label, &k, &frozen, now, &mut t));
+    }
+    println!("{}", t.line("gap 3390's woken and rebuilt days", findings.len()));
+    forkday::no_disagreement(&findings);
+    assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
+    assert_eq!(t.days, 2, "{t:?}");
+}
+// END THE FORK PLANNER

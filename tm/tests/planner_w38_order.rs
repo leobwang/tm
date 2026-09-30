@@ -1,6 +1,6 @@
 //! **The rows and the window the kernel's day now reads as the shipped fork does,
 //! and the order it serves in** — stage 6 W-38 track R (README gaps 3281, 320
-//! and 3343; gap 3390 pinned).
+//! and 3343; gap 3390 pinned, and closed at W-39).
 //!
 //! # What changed in the kernel, and what each test here compares
 //!
@@ -18,10 +18,12 @@
 //!   day included, and a window with no budget beside it; the kernel read day
 //!   0's capacity rule (a window only with its budget, only on a state dated
 //!   today). [`gap_320s_inputs_are_planned_as_the_forks_planner_plans_them`].
-//! * **Gap 3390, NOT taken, pinned** — with no arrival in the state the fork's
-//!   planner falls back to the day's first logged `arrive`; the kernel still
-//!   reads `now`. [`the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels`]
-//!   says so, and fails the day someone closes the gap.
+//! * **Gap 3390, CLOSED at W-39 (track A)** — with no arrival in the state the
+//!   fork's planner falls back to the day's first logged `arrive`, and since W-39
+//!   so does the kernel's (`Look.Today.planArrivalSec` over
+//!   `Planner.PlanReq.loggedArrival`). The W-38 pin that asserted the divergence
+//!   is refuted and renamed: [`the_logged_arrival_is_the_forks_planners_and_the_kernels`]
+//!   compares the woken day with the fork by value at four instants.
 //! * **Gap 3343** — the day carries step 5's served order,
 //!   `diagnostics.served` (`{ix, id, ci}` per ranked answer, in the order the
 //!   walk serves them). [`the_day_carries_the_order_step_five_serves`] reads it
@@ -315,31 +317,34 @@ fn gap_320s_inputs_are_planned_as_the_forks_planner_plans_them() {
     assert_eq!(t.days, 12, "{t:?}");
 }
 
-/// **README gap 3390, pinned both ways**: with no arrival stored — `tm wake`
-/// logged after `tm arrive` clears it, and the log keeps the 07:00 `arrive` —
-/// the fork's planner starts the day at the logged arrival and the kernel at
-/// `now`. This asserts the divergence so that closing the gap fails here, and
-/// the test is then restated as agreement.
+/// **README gap 3390, CLOSED (W-39 track A)**: with no arrival stored — `tm wake`
+/// logged after `tm arrive` clears it, and the log keeps the 07:00 `arrive` — the
+/// fork's planner starts the day at the logged arrival and, since W-39, so does the
+/// kernel's (`Look.Today.planArrivalSec`, fork `Planner::new`'s order: the state's
+/// arrival, else the day's first logged `arrive`, else `now`). The W-38 pin
+/// the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels asserted the
+/// kernel at `now`; it is refuted by the first assertion below and renamed to what
+/// holds. Every row, every diagnostic and the hash are compared with the fork at four
+/// instants, each window asserted on both sides.
 #[test]
-fn the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels() {
+fn the_logged_arrival_is_the_forks_planners_and_the_kernels() {
     let fx = basic();
     let tz = fx.cfg.tz;
+    let mut t = forkday::DayTally::default();
+    let mut findings = Vec::new();
     let state = RuntimeState { arrival: None, window: None, budget: None, ..basic_state() };
-    let now = at("2026-09-07", 10, 30);
-    let day = tm_core::planwire::plan_date(&state, now);
-    let cands = priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-    let w = planner_common::planreq::World {
-        docs: &fx.docs,
-        log: &fx.log,
-        tree: &fx.tree,
-        cfg: &fx.cfg,
-        state: &state,
-        now,
-        cands: &cands,
-    };
-    let (k, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
-    let fork = fork_day(&fx, &state, now, &cands, &ans.prios);
-    assert_eq!(fork.window.0.with_timezone(&tz), at("2026-09-07", 7, 0), "the fork's planner reads the logged arrival");
-    assert_eq!(k.day.window.0.with_timezone(&tz), now, "the kernel starts the day at `now` (gap 3390 open)");
+    for (h, m) in [(8, 0), (10, 30), (12, 0), (14, 0)] {
+        let now = at("2026-09-07", h, m);
+        let label = format!("woken after arriving, at {h}:{m:02}");
+        let (k, f) = compare(&fx, &label, &state, now, &mut t, &mut findings);
+        let want = (at("2026-09-07", 7, 0), at("2026-09-07", 16, 0));
+        assert_eq!((f.window.0.with_timezone(&tz), f.window.1.with_timezone(&tz)), want, "{label}: the fork's window");
+        assert_eq!((k.window.0.with_timezone(&tz), k.window.1.with_timezone(&tz)), want, "{label}: the kernel's window");
+        assert_ne!(k.window.0.with_timezone(&tz), now, "{label}: the kernel no longer starts the day at `now`");
+    }
+    println!("{}", t.line("gap 3390's woken day", findings.len()));
+    forkday::no_disagreement(&findings);
+    assert_eq!(t.hashes_equal, t.days, "every day hashes as the fork's: {t:?}");
+    assert_eq!(t.days, 4, "{t:?}");
 }
 // END THE FORK PLANNER

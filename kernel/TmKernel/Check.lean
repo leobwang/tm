@@ -4767,7 +4767,7 @@ open Tm
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
 #print axioms Tm.Planner.assignedOf_empty
 #print axioms Tm.Planner.blockSeconds_empty
-#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
+#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
 #print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
 #print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_budget_on_its_day
 #print axioms Tm.Planner.dayPlan_day
@@ -5072,7 +5072,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.witBuilds
 #print axioms Tm.PlannerWit.theRequest_wallsAgree
 #print axioms Tm.PlannerWit.the_witness_day_is_two_replayed_blocks_the_written_wall_and_the_evening
-#print axioms Tm.PlannerWit.the_witness_day_is_planned_from_two_in_the_afternoon
+#print axioms Tm.PlannerWit.the_witness_day_is_planned_from_the_logged_arrival
 #print axioms Tm.PlannerWit.the_witness_assigns_the_two_replayed_blocks
 #print axioms Tm.PlannerWit.the_witness_assigns_nothing_after_now
 #print axioms Tm.PlannerWit.the_battery_passes_at_the_witness
@@ -6450,7 +6450,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.the_designs_restatement_of_the_stability_law_is_refuted_too
 #print axioms Tm.PlannerWit.the_reservation_row_is_not_marked_open
 #print axioms Tm.PlannerWit.no_row_of_the_days_this_tree_builds_is_open
-#print axioms Tm.PlannerWit.an_hour_later_changes_one_field_and_moves_the_window
+#print axioms Tm.PlannerWit.an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors
 #print axioms Tm.PlannerWit.an_hour_later_keeps_every_row_that_had_settled
 #print axioms Tm.PlannerWit.three_rows_had_settled_when_the_witness_planned
 #print axioms Tm.PlannerWit.the_wall_axis_moves_no_census_number
@@ -7560,7 +7560,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.sum_le_length_mul
 #print axioms Tm.PlannerWit.the_fold_s_blocks_fit_the_budget_from_now
 
-#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
+#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
 
 -- ============================================================================
 -- APPENDED 2026-09-29: stage 6 W-38 TRACK R -- the running interruption walked among the walls in
@@ -7657,3 +7657,30 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.every_listed_impossible_item_is_placed_or_named
 #print axioms Tm.PlanCheck.whyHolds_noSlotAdmits_iff
 #print axioms Tm.PlannerWit.an_impossible_item_no_slot_admits_is_named_so
+-- ============================================================================
+-- APPENDED 2026-09-30: stage 6 W-39 TRACK A -- the planner's arrival is fork `Planner::new`'s:
+-- the state's, else the day's first logged `arrive`, else `now` (README gap 3390); `planBudget`
+-- reads `forToday` (gap 3535) and the stored window's two readings are one on every state the
+-- binary writes; the file-kind `ci` default read alike by the plan and the wire (gap 3531).  Four
+-- renames are in place above (the two view laws, the witness day's window, the hour-later pair).
+-- ============================================================================
+#print axioms Tm.Look.Today.planArrivalSec_reads_the_stored_arrival_first
+#print axioms Tm.Look.Today.planArrivalSec_reads_the_logged_arrival
+#print axioms Tm.Look.Today.planArrivalSec_without_a_logged_arrival
+#print axioms Tm.Look.Today.planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it
+#print axioms Tm.Look.the_two_arrivals_part_at_a_logged_arrival
+#print axioms Tm.Look.Today.planArrivalSec_on_a_dated_state_whatever_the_log_holds_is_refuted
+#print axioms Tm.Look.Today.storedWindow_today
+#print axioms Tm.Look.Today.storedWindow_is_planWindow_on_a_written_state
+#print axioms Tm.Look.the_binary_writes_a_window_only_with_its_day_and_budget
+#print axioms Tm.PlannerWit.the_witness_day_is_planned_from_two_in_the_afternoon_is_refuted
+#print axioms Tm.PlannerWit.the_woken_day_is_planned_from_the_logged_arrival
+#print axioms Tm.PlannerWit.the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted
+#print axioms Tm.PlannerWit.the_days_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted
+#print axioms Tm.PlannerWit.the_rebuilt_request_is_in_the_restated_view_laws_domain
+#print axioms Tm.PlannerWit.the_rebuilt_state_plans_the_woken_day
+#print axioms Tm.PlannerWit.the_stored_arrival_is_read_before_the_logged_one
+#print axioms Tm.PlannerWit.an_hour_later_changes_one_field_and_moves_the_window_is_refuted
+#print axioms Tm.PlannerWit.an_hour_later_moves_the_window_of_a_day_with_no_arrival
+#print axioms Tm.PlannerWit.the_furniture_witness_loads
+#print axioms Tm.PlannerWit.the_plan_and_the_wire_read_the_file_kinds_ci_alike
