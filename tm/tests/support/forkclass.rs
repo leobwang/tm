@@ -61,8 +61,23 @@
 //! * `d60` — `{"p51": …}`: whether D60's key moved the fork's §7.4 order.
 //! * `whatif` — on a day with a running block: §9.1's what-if as the shipped
 //!   TUI builds it (`full`: the estimate grown AND `PlanOverrides::extending`)
-//!   and the estimate alone (`est`); where they differ the kernel is held to
-//!   `est`, which is parity P44 by its property (D34).
+//!   and the estimate alone (`est`). **Since W-38 the kernel is asked as R3's
+//!   host will ask it** ([`kernel_answer_with_grants`]: the host's GROWN
+//!   facts, D58, and the host's worked minutes) and is held to `full` on every
+//!   day — parity P44's class (`full ≠ est`) is counted, and on it too the
+//!   kernel must answer `full`; until W-38 the request sent no grown facts and
+//!   the kernel was held to `est` there. A day
+//!   the grown facts re-rank carries `grown` (the fork's full what-if ranked as
+//!   the kernel ranks the grown request) and is held to it: parity P52.
+//! * **W-38's four answers, each an object named by its parity number and
+//!   present only where its rule departs** (README gaps 3207, 3282, 3320):
+//!   `p45` — on a break day, the fork's day planned where P45 restarts the
+//!   cut, its rows from there (`from`, `rows`); `p52` — the what-if's `grown`
+//!   is the comparand; `p55` — the comparand reads the host's worked minutes
+//!   (`planner_invariants`' `w36_fork_plan`, on the grown what-if too); `p56` —
+//!   a meeting's closed pause is drawn as the wall alone and `shipped` is fork
+//!   4748911's drawing (`b3c29a3`'s `past_segments`; the in-tree fork was
+//!   changed to agree at W-37 track T).
 //!
 //! A **P45** day (a running break) has no fork analogue at all — fork
 //! `planner::plan` reads no `runtime.break_` and plans over it — so the kernel
@@ -70,7 +85,24 @@
 //! is, open once overrun, carrying its place; nothing §8.2 places over it; and
 //! (README gap 2925's second half) every §8.2 step-5 row from `now` on starts
 //! at or after the break's end. What the fork's day still says on such a day —
-//! the date, the window, the budget and the walls — is compared by value.
+//! the date, the window, the budget and the walls — is compared by value; and
+//! since W-38 (README gap 3207) the open row of the block the break paused
+//! ([`p45_paused_row`]) and every row from where the cut restarts — the
+//! step-5 assignment, the rests and the KEPT BREAKS — against `p45`, the fork's
+//! own day planned there.
+//!
+//! # The lines that are not a class's one primary day
+//!
+//! A SECONDARY line is drawn for a floor no primary reached (`rest_debt`,
+//! `whatif` at W-36; `p52` at W-38) or DERIVED from a primary line by a rule
+//! stated here: [`d61_worlds`] (the pause the binary logs at a wall's start —
+//! and since W-38 the world after the meeting, the closed pause P56 draws),
+//! [`window_worlds`] (a dated window task: the routine row's `⚠`, gap 3200),
+//! [`worked_worlds`] (a break logged inside the running block: P55) and
+//! [`overrun_worlds`] (a running break carried past `break_min`, so P45's
+//! comparand resets the counter: gaps 3207 and 3480). The file holds exactly
+//! what each rule derives, and every derived world is one the binary can hold
+//! ([`binary_holds`]).
 //!
 //! # Neither side of a comparison here is the fork's code
 //!
@@ -960,7 +992,11 @@ pub fn before_housekeeping(w: &ClassWorld) -> ClassWorld {
 /// `pause` and its `unpause`, in order, as that loop logs them.
 /// So the binary holds that world, not the stored one, from then on. Returned
 /// at `now` and again twenty minutes into the meeting (the drive's `tm now` at
-/// 13:20), each with the pause's instant; empty when the rule does not fire.
+/// 13:20), each with the pause's instant, and — since W-38 (README gap 3320) —
+/// ten minutes AFTER the meeting, with the `unpause` stamped at its end logged
+/// and the block running again (a `running` or `overtime` world, no longer a
+/// wall on `now`: the class is the world's, [`class_of`]); empty when the rule
+/// does not fire.
 pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
     let b = Built::of(parent.clone());
     let r = running(&b);
@@ -1014,7 +1050,7 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
         x.paused = true;
     }
     let mid = (lo + Duration::minutes(20)).min(hi - Duration::minutes(1));
-    [now, mid]
+    let mut out = [now, mid]
         .into_iter()
         .filter(|at| !(at_rest && *at == now))
         .filter(|at| *at >= now && *at < hi)
@@ -1025,7 +1061,122 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
                 out.push((w, lo));
             }
             out
-        })
+        });
+    // **And AFTER the meeting** (W-38, README gap 3320): ten minutes past its end, where the
+    // first verb after the wall logs the `unpause` stamped at the end and the block runs
+    // again — the world whose log holds a CLOSED pause, the one shape P56 draws differently
+    // from fork 4748911 (the pause over the wall is not drawn; the fork drew it as a `paused`
+    // Lost row beside the wall). Only where nothing else happens between the meeting and
+    // that instant: no later wall begins by then, and the day has not ended.
+    let after = hi + Duration::minutes(10);
+    let (_, day_end) = b.day_bounds();
+    let next_wall = merged.iter().any(|(l, _)| *l > hi && *l <= after);
+    if after < day_end && !next_wall {
+        let mut w = paused.clone();
+        w.log.push_str(&line(hi, Event::Unpause { id: id.clone() }));
+        if let Some(x) = w.state.active.as_mut() {
+            x.paused = false;
+        }
+        w.now = after;
+        out.push((w, lo));
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// The dated window task's worlds (README gap 3200)
+// ---------------------------------------------------------------------------
+
+/// **The world a stored one becomes with a dated window task** (W-38, README gap
+/// 3200): `plangen::with_window_task` — `plan-basic`'s `^a3` under `# Untied` in
+/// `backlog.md` — and nothing else. A window task is no wall, no block, no break
+/// and no interruption, so the world keeps its class and its `.tm/state.json`
+/// (`tm arrive`'s window is computed over the walls alone), which
+/// `planner_classes.rs`' `the_frozen_window_worlds_are_every_one_the_task_derives`
+/// asserts line by line. Derived from EVERY primary line: the mark is a function
+/// of the day's routines and §7's answer, and both move with every coordinate of
+/// the class.
+pub fn window_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
+    let mut w = parent.clone();
+    if plangen::with_window_task(&mut w.docs) {
+        vec![w]
+    } else {
+        Vec::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// The host's worked minutes: a break logged inside the running block (README gap 3282)
+// ---------------------------------------------------------------------------
+
+/// Where [`worked_worlds`] logs its break: five minutes into the running block, for ten.
+pub const INNER_BREAK: (i64, u32) = (5, 10);
+
+/// **The world a stored one becomes when a ten-minute break was taken inside its running
+/// block** (W-38, README gap 3282; parity P55): `tm break 10m` five minutes after the block
+/// began and `tm break` again ten minutes later (`plangen::inner_break_line`), so the
+/// block runs unpaused, `.tm/state.json` is as it was, and the log gains one `break` line
+/// — which the log's reading of the block's worked minutes counts as worked and the host's
+/// (`Replay::active_worked_min`, what R3's request carries) nets out. Derived where that is
+/// the whole story: a block running unpaused with no break or interruption, whose `start`
+/// is the log's last line (so the break's line, written when it ended, is appended), and
+/// whose break ends a minute or more before `now`. Its class is the parent's: the class
+/// reads the fork's reading, which the break does not move.
+pub fn worked_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
+    let b = Built::of(parent.clone());
+    let r = running(&b);
+    let (Some(ob), None, None) = (r.block, r.brk, r.interrupt) else { return Vec::new() };
+    let Some(a) = parent.state.active.as_ref().filter(|a| a.id.as_str() == ob.id && !a.paused) else {
+        return Vec::new();
+    };
+    let last = parent.log.lines().last().unwrap_or_default();
+    if !(last.contains("\"ev\":\"start\"") && last.contains(&format!("\"id\":\"{}\"", a.id.as_str()))) {
+        return Vec::new();
+    }
+    let started = local_dt(b.cfg.tz, b.date(), a.started);
+    let t = started + Duration::minutes(INNER_BREAK.0);
+    if t + Duration::minutes(i64::from(INNER_BREAK.1) + 1) > parent.now {
+        return Vec::new();
+    }
+    let mut w = parent.clone();
+    w.log.push_str(&plangen::inner_break_line(t, INNER_BREAK.1));
+    vec![w]
+}
+
+// ---------------------------------------------------------------------------
+// A running break carried past `break_min` (README gaps 3207 and 3480)
+// ---------------------------------------------------------------------------
+
+/// How far [`overrun_worlds`] carries a running break past the later of its planned end and
+/// `break_min`, in minutes. Measured (README gap 3480): at one, five and fifteen minutes past,
+/// `break/late`'s break — begun inside a wall, so it ends where no free stretch begins — is a
+/// rest the kernel's cut does not count, where the comparand's logged break resets the fork's
+/// counter; at thirty the break reaches the stretch and the two agree on every break world.
+pub const OVERRUN_PAST: i64 = 30;
+
+/// **The world a stored one becomes when its running break has run long enough to reset the
+/// cut's break counter** (W-38, README gaps 3207 and 3480; parity P45): `now` carried to
+/// [`OVERRUN_PAST`] minutes past the later of the break's planned end and `break_min`, and
+/// nothing else — the break still runs, overrun, and P45's comparand logs it, since the fork
+/// resets its counter at a logged break. No stored break day held such a break (each was
+/// shorter than `break_min`, or its counter was already zero), so until W-38's mutation run
+/// found it the comparand's reset clause changed no row. Derived from every PRIMARY world with
+/// a running break whose carried instant is after the stored `now` and inside the day. Its
+/// class is the parent's: the class reads the run state, which carrying `now` does not move.
+pub fn overrun_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
+    let b = Built::of(parent.clone());
+    let Some((started, planned)) = parent.state.break_.as_ref().and_then(|x| x.started.map(|s| (s, x.planned_min))) else {
+        return Vec::new();
+    };
+    let t = local_dt(b.cfg.tz, b.date(), started);
+    let now = t + Duration::minutes(i64::from(planned.max(b.cfg.day.break_min)) + OVERRUN_PAST);
+    let (_, day_end) = b.day_bounds();
+    if now <= parent.now || now >= day_end {
+        return Vec::new();
+    }
+    let mut w = parent.clone();
+    w.now = now;
+    vec![w]
 }
 
 // ---------------------------------------------------------------------------
@@ -1034,7 +1185,36 @@ pub fn d61_worlds(parent: &ClassWorld) -> Vec<(ClassWorld, DateTime<Tz>)> {
 
 /// The keys of a frozen line that are the fork's answers — what a re-bless
 /// recomputes. Everything else on the line is the world and its provenance.
-pub const ANSWERS: [&str; 5] = ["day", "shipped", "d57", "d60", "whatif"];
+///
+/// **W-38 adds four, each an object named by the parity number it holds**, present
+/// only on a line the number's rule departs on (as `shipped` is present only where
+/// the comparand departs): `p45` (the running break: the fork's day after the
+/// break's end, planned where P45 restarts the cut), `p52` (the grown facts
+/// re-rank the what-if; its `diff` is `whatif.grown`), `p55` (the host's worked
+/// minutes move the day) and `p56` (a meeting's pause drawn as the wall alone;
+/// `shipped` is fork 4748911's drawing). A line no such rule departs on carries
+/// none of them, so the 41 lines frozen before W-38 did not change by carrying
+/// the new list.
+pub const ANSWERS: [&str; 9] = ["day", "shipped", "d57", "d60", "whatif", "p45", "p52", "p55", "p56"];
+
+/// **The answers every line carries, `null` where there is none** — the five a
+/// line has carried since W-36. The rest of [`ANSWERS`] are present only where
+/// their rule departs.
+pub const ALWAYS: [&str; 5] = ["day", "shipped", "d57", "d60", "whatif"];
+
+/// **Write one answer onto a line**: an answer of [`ALWAYS`] is written as it is,
+/// `null` included; any other is written when it is not `null` and REMOVED when
+/// it is, so a line no W-38 rule departs on keeps its bytes (a `null` key would
+/// read as absent everywhere and still change every line of the file).
+pub fn set_answer(line: &mut Value, key: &str, v: Value) {
+    if v.is_null() && !ALWAYS.contains(&key) {
+        if let Some(o) = line.as_object_mut() {
+            o.remove(key);
+        }
+    } else {
+        line[key] = v;
+    }
+}
 
 /// **The parity flags a line carries**: every key spelled `p<n>` with a boolean
 /// value, in any object the line carries beside the world and the days — the
@@ -1121,6 +1301,34 @@ pub fn d64_allows(
         if !registered.contains(n) {
             return Err(format!("{who}: re-blessed for P{n}, which kernel/parity.txt does not register"));
         }
+    }
+    // **Introduction** (W-38, README gap 3470): D64(a) for a number whose rule the
+    // comparand did not compute when this line was frozen. Clause 1 reads the COMMITTED
+    // line's flags, so a number that line carries no flag of could never license anything
+    // on it — the owner's D64(a) ("a registered parity number that changes the fork's day on
+    // the line") could not reach a line frozen before the number's comparand existed. An
+    // introduction may only ADD: every changed answer is a key the committed line does not
+    // carry, each one the home of a SET flag of a number the re-bless names and the
+    // committed line carries NO flag of (not even `false` — flipping a flag the line holds
+    // is clause 1's case, and it stays refused); nothing the committed line carries moves,
+    // so no frozen value can be bent to meet the kernel; and clause 2 still holds the
+    // shipped fork's day by value.
+    let old_numbers: BTreeSet<u32> = parity_flags(old).into_iter().map(|f| f.0).collect();
+    let new_homes = flag_homes(new);
+    let introduced = changed.iter().all(|k| {
+        old[k.as_str()].is_null()
+            && new_homes
+                .iter()
+                .any(|(n, set, home)| home == k && *set && because.contains(n) && !old_numbers.contains(n))
+    });
+    if introduced {
+        let old_shipped = if old["shipped"].is_null() { &old["day"]["day"] } else { &old["shipped"]["day"] };
+        if old_shipped != shipped_day {
+            return Err(format!(
+                "{who}: the SHIPPED fork's day moved, and an introduced number does not move it either"
+            ));
+        }
+        return Ok(changed);
     }
     // Clause 1: the OLD line's flags, and only the numbers the re-bless names.
     let named: Vec<(u32, String)> = flag_homes(old)
@@ -1331,6 +1539,23 @@ pub struct ClassTally {
     pub whatifs: usize,
     pub p44: usize,
     pub whatif_ids: usize,
+    /// What-ifs whose comparand is the fork's what-if ranked as the kernel ranks
+    /// the GROWN request (parity P52: the grown facts re-rank the day, and the
+    /// kernel departs from the shipped TUI's `diff`), since W-38.
+    pub p52: usize,
+    /// Open rows compared on a break day (P45 pauses the block at the break's
+    /// start; P55 its `so far` is the host's minutes), since W-38 — and of those
+    /// days, the ones whose host reading differs from the log's (P55 bites).
+    pub p45_open: usize,
+    pub p45_host: usize,
+    /// Rows compared after the running break against P45's comparand (`p45`),
+    /// of them kept Break rows (README gap 3207), since W-38.
+    pub p45_after: usize,
+    pub p45_kept: usize,
+    /// Lines whose comparand reads the host's worked minutes (P55) or draws a
+    /// meeting's pause as the wall alone against fork 4748911's drawing (P56).
+    pub p55: usize,
+    pub p56: usize,
 }
 
 impl ClassTally {
@@ -1340,7 +1565,9 @@ impl ClassTally {
             "frozen fork classes — {} class(es); {}; P45 days {} against the rule (running {}, overrun {}; \
              the shipped fork scheduled over the break on {}; {} values by value); P46 comparand days {}, \
              P47 {}, P51 {}; under-used notes the renderer derived as the fork wrote them {}; what-ifs {} ({} \
-             parity-P44 days, {} ids); {findings} difference(s) in all",
+             parity-P44 days, {} ids; asked with the host's grown facts, {} parity-P52); break-day open rows \
+             {} (the host's minutes departing from the log's on {}); rows after a running break against P45's \
+             comparand {} ({} kept breaks); P55 comparand days {}, P56 {}; {findings} difference(s) in all",
             self.classes.len(),
             self.day.line("the non-P45 days", findings),
             self.p45,
@@ -1355,6 +1582,13 @@ impl ClassTally {
             self.whatifs,
             self.p44,
             self.whatif_ids,
+            self.p52,
+            self.p45_open,
+            self.p45_host,
+            self.p45_after,
+            self.p45_kept,
+            self.p55,
+            self.p56,
         )
     }
 }
@@ -1367,12 +1601,65 @@ pub fn whatif_item(st: &RuntimeState) -> Option<&Id> {
     st.active.as_ref().filter(|_| !breaking).map(|a| &a.id)
 }
 
-/// The kernel's answer for a world, and the grants it ranked by: the day, and
-/// on a day [`whatif_item`] names a block for, §9.1's what-if for one block on
-/// it.
+/// **The running block's worked minutes as the binary reads them** — the host's
+/// ONE reading, `Replay::active_worked_min` (`tm/src/cli/day.rs`' `worked_min`,
+/// which `tm now` prints, `tm done` logs and the TUI's timer shows): the wall
+/// clock since `started` net of the day's pauses, interruptions and breaks, the
+/// break `.tm/state.json` still holds running included. It is what R3's
+/// `planner` section carries as `state.active.workedMin` (README gap 3043,
+/// parity P55) and what [`kernel_answer_with_grants`] sends since W-38.
+pub fn host_worked(b: &Built) -> Option<u32> {
+    let st = &b.world.state;
+    let a = st.active.as_ref()?;
+    let tz = b.cfg.tz;
+    let started = local_dt(tz, b.date(), a.started);
+    let running_break = st
+        .break_
+        .as_ref()
+        .and_then(|x| x.started)
+        .map(|s| local_dt(tz, b.date(), s).fixed_offset());
+    Some(b.replay.active_worked_min(b.date(), started.fixed_offset(), b.world.now.fixed_offset(), running_break))
+}
+
+/// **§9.1's what-if as R3's host will ask it** (owner D58): one block on the
+/// running item, with that candidate's facts grown as fork
+/// `PlanOverrides::apply` grows them (`planwire::grown`, the host's one reading;
+/// `None` when the extension grows nothing).
+pub fn whatif_json(b: &Built) -> Option<Value> {
+    whatif_item(&b.world.state).map(|id| {
+        let grown = b
+            .cands
+            .iter()
+            .find(|c| c.id == *id)
+            .and_then(|c| planwire::grown(c, None, b.cfg.block_min(), &b.cfg));
+        planwire::overtime_json(id, 1, grown.as_ref())
+    })
+}
+
+/// **The kernel's answer for a world, asked as the binary will ask it at R3**,
+/// and the grants it ranked by: the day, and on a day [`whatif_item`] names a
+/// block for, §9.1's what-if for one block on it.
+///
+/// **Since W-38 (README gap 3282) the request carries what R3's host sends and
+/// the region's arms sent alone**: the what-if's GROWN candidate facts
+/// ([`whatif_json`], D58 — until W-38 only `planner_invariants`' grown arm sent
+/// them, so the frozen what-ifs held the kernel to the estimate's `diff` on a
+/// parity-P44 day), and `state.active.workedMin` ([`host_worked`],
+/// `planwire::add_worked_min`'s first caller outside a fork region — README gap
+/// 3043's key). Measured on the 41 lines frozen before W-38: the what-if moves
+/// on the one P44 day and on no other, to the shipped TUI's own `diff`; the
+/// worked minutes move the open row's `so far` on the three running-break days
+/// and nothing else — so no frozen answer changes, and [`compare_line`] holds
+/// the kernel to the shipped TUI's what-if (`whatif.full`) and, on a break day,
+/// the open row to the host's minutes.
 pub fn kernel_answer_with_grants(b: &Built) -> Result<(KernelDay, Vec<priority::Prio>), String> {
-    let overtime = whatif_item(&b.world.state).map(|id| planwire::overtime_json(id, 1, None));
-    planreq::kernel_day(&b.request_world(), overtime).map(|(k, ans)| (k, ans.prios))
+    let pw = b.request_world();
+    let (mut req, order) = planreq::request(&pw, whatif_json(b));
+    if let Some(worked) = host_worked(b) {
+        planwire::add_worked_min(&mut req["planner"], worked);
+    }
+    let resp = planreq::call(&req);
+    planreq::kernel_day_of(&resp, &pw, &order).map(|(k, ans)| (k, ans.prios))
 }
 
 /// [`kernel_answer_with_grants`]' day alone.
@@ -1384,7 +1671,10 @@ pub fn kernel_answer(b: &Built) -> Result<KernelDay, String> {
 /// Returns every difference outside the declared classes, by name.
 pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
     let tz = Config::default().tz;
-    let key = line["class"].as_str().unwrap_or("<no class>").to_string();
+    let class_key = line["class"].as_str().unwrap_or("<no class>").to_string();
+    // A finding names the LINE: a secondary line files under its class and carries its kind
+    // (`idle/lounge (window)`), so a failure says which of a class's lines it is (W-38).
+    let key = format!("{class_key}{}", line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
     let mut findings = Vec::new();
     let world = match ClassWorld::of_json(&line["world"], tz) {
         Ok(w) => w,
@@ -1392,10 +1682,10 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
     };
     let b = Built::of(world);
     let class = class_of(&b).key();
-    if class != key {
+    if class != class_key {
         findings.push(format!("{key}: the stored world classifies as `{class}` — a line may not choose its class"));
     }
-    t.classes.insert(key.clone());
+    t.classes.insert(class_key.clone());
     let k = match kernel_answer(&b) {
         Ok(k) => k,
         Err(e) => return vec![format!("{key}: the kernel did not plan the day: {e}")],
@@ -1440,6 +1730,63 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
         if kw != fw {
             findings.push(format!("{key}: the walls moved: kernel {} fork {}", kw.len(), fw.len()));
         }
+        // **The open row, by value** (W-38, README gap 3282): what `planner_invariants`' W-35
+        // arm compared on a break day and the frozen comparand did not — the fork's open row
+        // for the block the log holds open, PAUSED at the break's start as P45 pauses it (no
+        // `▶`, clipped at the first break start after its own), and since the request carries
+        // the host's worked minutes its `so far` is the host's reading (P55). Both rules are
+        // applied to the frozen fork row by their property, never copied from the kernel's.
+        let host = host_worked(&b);
+        let (kopen, fopen) = (p45_open_rows(&kv), p45_open_rows(&fork["day"]));
+        let want: Vec<Value> = fopen.into_iter().map(|r| p45_paused_row(r, started, host)).collect();
+        t.p45_open += want.len();
+        t.p45_host += usize::from(!want.is_empty() && host != b.worked());
+        if kopen != want {
+            findings.push(format!(
+                "{key}: the open row on a break day is not the fork's paused at the break (P45) with the host's \
+                 minutes (P55): kernel {} fork {}",
+                Value::Array(kopen),
+                Value::Array(want)
+            ));
+        }
+        // **P45's comparand after the break, by value** (W-38, README gap 3207): every row the
+        // kernel draws from where P45 restarts the cut — its step-5 assignment, its rests and
+        // its KEPT BREAKS — against the fork's own day planned there (`p45`: the fork's own
+        // `kept_breaks` over its own assignment), with the one declared row class (an
+        // under-used row's note, left to the renderer) and nothing else.
+        if let Some(p) = line.get("p45").filter(|v| !v.is_null()) {
+            let from = p["from"].as_str().and_then(|x| DateTime::parse_from_rfc3339(x).ok());
+            let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
+            let krows: Vec<Value> = kv["segments"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .filter(|s| from.is_some_and(|f| at(&s["start"]).is_some_and(|a| a >= f)))
+                .cloned()
+                .collect();
+            let want: Vec<Value> = p["rows"]
+                .as_array()
+                .map(Vec::as_slice)
+                .unwrap_or_default()
+                .iter()
+                .map(|r| forkday::underused_note_left_to_the_renderer(r, &krows).unwrap_or_else(|| r.clone()))
+                .collect();
+            t.p45_after += want.len();
+            t.p45_kept += want.iter().filter(|r| r["kind"] == "break").count();
+            if krows != want {
+                let first = krows.iter().zip(&want).position(|(a, z)| a != z).unwrap_or(krows.len().min(want.len()));
+                findings.push(format!(
+                    "{key}: after the running break (P45, from {}) the rows differ at {first} (fork {} rows, kernel {}):\n      \
+                     fork   {}\n      kernel {}",
+                    p["from"],
+                    want.len(),
+                    krows.len(),
+                    want.get(first).map_or("—".to_string(), Value::to_string),
+                    krows.get(first).map_or("—".to_string(), Value::to_string),
+                ));
+            }
+        }
     } else {
         findings.extend(forkday::compare_day_with_fork(&key, &k, fork, now, &mut t.day));
         // The under-used note the kernel leaves to the renderer (by design,
@@ -1464,19 +1811,60 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
         t.p46 += usize::from(d57["p46"] == true);
         t.p47 += usize::from(d57["p47"] == true);
         t.p51 += usize::from(line["d60"]["p51"] == true);
+        t.p55 += usize::from(line["p55"]["p55"] == true);
+        t.p56 += usize::from(line["p56"]["p56"] == true);
+    }
+    // **P56 departs where its rule says, and only there** (W-38, README gap 3320): on a P56
+    // line fork 4748911's day (`shipped`) draws a replayed pause as a `paused` Lost row a
+    // Wall row of the day overlaps — the meeting the pause is — and the kernel's day draws
+    // no such row (the part a wall covers is not drawn). Read off the two days, so the flag
+    // cannot be set on a line where nothing was cut.
+    if line["p56"]["p56"] == true {
+        let paused_under_a_wall = |day: &Value| -> usize {
+            let rows = day["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
+            let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
+            rows.iter()
+                .filter(|r| r["kind"] == "lost" && r["flags"]["note"] == "paused")
+                .filter(|r| {
+                    rows.iter().any(|w| {
+                        w["kind"] == "wall"
+                            && at(&w["start"]) < at(&r["end"])
+                            && at(&r["start"]) < at(&w["end"])
+                    })
+                })
+                .count()
+        };
+        let kv = serde_json::to_value(&k.day).expect("the kernel's day serialises");
+        let (shipped, kernel) = (paused_under_a_wall(&line["shipped"]["day"]), paused_under_a_wall(&kv));
+        if shipped == 0 || kernel != 0 {
+            findings.push(format!(
+                "{key}: a P56 line whose shipped day draws {shipped} paused row(s) under a wall and the kernel's {kernel}"
+            ));
+        }
     }
     // §9.1's what-if, on a day with a running block.
+    // **Since W-38 the request carries the host's GROWN facts** ([`whatif_json`], D58), so the
+    // kernel is held to the shipped TUI's what-if (`full`: the estimate grown AND
+    // `PlanOverrides::extending`) on every day — parity P44's class, the days the fork's
+    // `apply` moved its own what-if beyond the estimate's (`full ≠ est`), is still counted, and
+    // on it too the kernel must answer `full`: no P44 day is an exception any more. Until W-38
+    // the request sent no grown facts and the kernel was held to `est` there. A line whose
+    // grown facts re-rank the day carries `grown` — the fork's
+    // full what-if ranked as the kernel ranks the grown request — and is held to it (parity
+    // P52, `grown.p52`).
     match (&k.overtime, line.get("whatif").filter(|v| !v.is_null())) {
         (Some(kd), Some(w)) => {
             let kv = serde_json::to_value(kd).expect("a diff serialises");
-            let want = if w["full"] == w["est"] { &w["full"] } else { &w["est"] };
+            let p52 = !w["grown"].is_null();
+            let want = if p52 { &w["grown"] } else { &w["full"] };
             t.whatifs += 1;
             t.p44 += usize::from(w["full"] != w["est"]);
+            t.p52 += usize::from(p52);
             t.whatif_ids += kd.removed.len() + kd.added.len() + kd.moved.len();
             if &kv != want {
                 findings.push(format!(
                     "{key}: the overtime what-if differs from the {}: kernel {kv} fork {want}",
-                    if w["full"] == w["est"] { "shipped TUI's" } else { "estimate's (a parity-P44 day)" }
+                    if p52 { "fork's ranked as the kernel ranks the grown request (a parity-P52 day)" } else { "shipped TUI's" }
                 ));
             }
         }
@@ -1485,6 +1873,36 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
         (None, Some(_)) => findings.push(format!("{key}: a frozen what-if the kernel did not answer")),
     }
     findings
+}
+
+/// The open Block rows of a serialised day — the rows fork `open_block_segment`
+/// and the kernel's `Planner.openBlockRows` draw for the block the log holds open.
+pub fn p45_open_rows(day: &Value) -> Vec<Value> {
+    day["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| s["kind"] == "block" && s["flags"]["open"] == true)
+        .cloned()
+        .collect()
+}
+
+/// **P45 and P55 on a fork open row, by their properties**: `tm break` pauses the
+/// block, so the row loses its `▶` and ends at the break's start when that falls
+/// inside it (`planner_invariants`' `w35_pause_open_rows`); its `so far` is the
+/// host's worked minutes (`w36_fork_plan`'s note).
+pub fn p45_paused_row(mut row: Value, brk: DateTime<Tz>, host: Option<u32>) -> Value {
+    let at = |v: &Value| DateTime::parse_from_rfc3339(v.as_str().unwrap_or_default()).ok();
+    let t = brk.fixed_offset();
+    if at(&row["start"]).is_some_and(|a| t > a) && at(&row["end"]).is_some_and(|z| t < z) {
+        row["end"] = serde_json::to_value(brk).expect("an instant serialises");
+    }
+    row["flags"]["current"] = Value::Bool(false);
+    if let Some(h) = host {
+        row["flags"]["note"] = Value::String(format!("{h}m so far"));
+    }
+    row
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3121, 3122)

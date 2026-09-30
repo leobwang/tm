@@ -646,6 +646,11 @@ can_fail
 1 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 12 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
 9 the_budget_does_not_move_the_assigned_set_at_the_busy_request
+# W-38 track H: DELETED, not refuted.  `planner_invariants`' own P45 checker over the raw
+# answer was `forkclass::p45_rule` written a second time (README gap 3471, the family W-37
+# track R named in its gap 3202); its three callers read `p45_rule` over the day the host's
+# codec decodes.  Every citation left is W-37 track R's append-only README block.
+5 w35_check_break
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

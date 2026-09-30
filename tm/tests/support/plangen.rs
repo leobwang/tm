@@ -98,6 +98,40 @@ pub const ROUTINES: [&str; 6] = [
     "- teatime    win:11:00-12:00 dur:1h   every:day",
 ];
 pub const OPTIONALS: &str = "- Watch something  dur:1h\n- Play something   dur:2h max:4h/w\n";
+
+/// **A dated window task** (W-38, README gap 3200) — `plan-basic`'s `^a3`, "Pick up
+/// package", with a generated id: a task whose `win:` is a stretch of today, which §8.2
+/// step 2 places as a Routine row and §7 answers `p = 0` (a mandatory window instance) —
+/// the row fork `emit_segments` marks `⚠` and the kernel's `Planner.PlanReq.routineHot`
+/// marks. The shared generator writes none (its routines are `routines.md` lines, which
+/// carry no `⚠` on either side), so until W-38 no frozen generated day held the mark.
+pub const WINDOW_TASK: &str = "- [ ] 1 Pick up package  win:2026-09-07T09:00/21:00 dur:20m ^xaa\n";
+
+/// The document [`WINDOW_TASK`] is written into, under `plan-basic`'s own heading.
+pub const WINDOW_TASK_DOC: &str = "backlog.md";
+
+/// **A break `tm break` logged inside the running block** (W-38, README gap 3282; the
+/// W-36 worked arm's widening): `tm break <len>m` at `t` pauses the block and a second
+/// `tm break` at `t + len` ends it (`tm/src/cli/day.rs`' `take_break` and `end_break`),
+/// which un-pauses the block and appends ONE line, stamped at the break's start, planned
+/// and taken `len` minutes, with no place. The replay's open block never sees it (so the
+/// log's reading of the block's worked minutes counts it as worked) and the host's
+/// `Replay::active_worked_min` nets it out — the one class on which the two readings
+/// differ on a day with no running break, which parity P55 is about.
+pub fn inner_break_line(t: DateTime<Tz>, len: u32) -> String {
+    format!("{{\"t\":\"{}\",\"ev\":\"break\",\"planned_min\":{len},\"actual_min\":{len}}}\n", t.to_rfc3339())
+}
+
+/// **A world's documents with the dated window task added** (README gap 3200): the one
+/// widening `forkclass::window_worlds` derives from a stored world. `false`, and nothing
+/// written, when the documents already hold the task's document.
+pub fn with_window_task(docs: &mut Vec<(String, String)>) -> bool {
+    if docs.iter().any(|(p, _)| p == WINDOW_TASK_DOC) {
+        return false;
+    }
+    docs.push((WINDOW_TASK_DOC.to_string(), format!("# Untied\n{WINDOW_TASK}")));
+    true
+}
 pub const EVENING_WALL: &str = "- [ ] 3 Long evening at:2026-09-07T15:00/21:00 ^wev\n";
 
 pub fn date() -> NaiveDate {

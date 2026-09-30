@@ -54,8 +54,15 @@
 //! * **Inside the one `BEGIN THE FORK PLANNER` … `END THE FORK PLANNER` region —
 //!   every arm that plans with the fork**, which R3 deletes whole (README gap
 //!   3084: until W-37 34 code lines of them sat outside any region). What each
-//!   compares that the frozen comparand (`planner_classes.rs`) covers by value,
-//!   and what it does not, is README's W-37 track H table.
+//!   compares that the frozen comparand (`planner_classes.rs`) covers by value
+//!   is README's W-38 track H table: since W-38 that is everything but the
+//!   fork's OWN §7 day and P43's fractional rows (D53: no shipped path builds
+//!   either), a typed pause over a wall (the owner's D68 redraws it, track T's
+//!   number, the same run) and README gap 3281's order (track R's, the same run).
+//! * **What the region asked of the kernel ALONE has left it** (W-38, README gap
+//!   3282): the kernel's own day through the `plan` section's cells
+//!   ([`the_kernel_reads_every_day_it_plans`]), step 8's projections, P45's rule
+//!   on generated break days, and the kernel halves of the fixed days.
 
 #[path = "support/replay.rs"]
 #[allow(dead_code)]
@@ -938,58 +945,13 @@ fn kernel_routine_rows(plan: &Value) -> Vec<(i64, i64, String)> {
 }
 
 
-/// **P45's rule, as a checker over the kernel's answer**: the running break drawn at `t` for
-/// `planned` minutes is exactly one Break row `[max(t, day start), max(min(t + planned, day end),
-/// now))`, open exactly when it has overrun, carrying its place; and no row §8.2 PLACES from `now`
-/// on — a Block, Batch, Routine, Optional or Rest — overlaps it.  `Err` names what failed, so the
-/// perturbation test below can show the checker bites.
-fn w35_check_break(
-    plan: &Value,
-    t: i64,
-    planned_min: i64,
-    place: &str,
-    now_sec: i64,
-    day_start: i64,
-    day_end: i64,
-) -> Result<(i64, i64, bool), String> {
-    let segs = plan["segments"].as_array().map(Vec::as_slice).unwrap_or_default();
-    let (lo, hi) = (t.max(day_start), (t + 60 * planned_min).min(day_end).max(now_sec));
-    // The running break is the one Break row that starts before its end: since W-37 (README gap
-    // 551 closed, track R) the kernel also draws the cut's kept breaks, which start after it.
-    let brks: Vec<&Value> = segs
-        .iter()
-        .filter(|s| s["kind"] == "break" && s["start"].as_i64().is_some_and(|a| a < hi))
-        .collect();
-    if brks.len() != 1 {
-        return Err(format!("{} Break rows before {hi}, want the running break's one", brks.len()));
-    }
-    let b = brks[0];
-    let open = t + 60 * planned_min <= now_sec;
-    let got = (b["start"].as_i64().unwrap_or(-1), b["stop"].as_i64().unwrap_or(-1));
-    if got != (lo, hi) {
-        return Err(format!("the Break row is {got:?}, the rule says {:?}", (lo, hi)));
-    }
-    if b["flags"]["open"].as_bool() != Some(open) {
-        return Err(format!("the Break row's `open` is {}, the rule says {open}", b["flags"]["open"]));
-    }
-    if b["note"]["note"] != "breakWhere" || b["note"]["text"] != place {
-        return Err(format!("the Break row's note is {}, want breakWhere {place}", b["note"]));
-    }
-    for s in segs {
-        let k = s["kind"].as_str().unwrap_or_default();
-        let (a, z) = (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1));
-        let placed = matches!(k, "block" | "batch" | "routine" | "optional" | "rest");
-        if placed && a >= now_sec && a < hi && lo < z {
-            return Err(format!("a {k} row [{a}, {z}) is scheduled over the break [{lo}, {hi})"));
-        }
-    }
-    Ok((lo, hi, open))
-}
-
-
-/// **The P45 checker bites** — a perturbation of the kernel's own answer, three ways: the Break
-/// row removed, moved by a minute, and a Rest row slid under it.  A checker that passed any of
-/// them would be asserting nothing on the generated days above.
+/// **P45's rule bites on a generated day** — a perturbation of the kernel's own day, three ways:
+/// the Break row removed, moved by a minute, and a Rest row slid under it. A rule that passed any
+/// of them would be asserting nothing on the generated days of
+/// [`the_kernel_keeps_a_running_break_on_every_generated_day`]. **One rule since W-38** (README
+/// gap 3471): `forkclass::p45_rule` over the day the host's codec decodes; this file's own copy
+/// over the raw answer (w35_check_break, the same rule written twice — README gap 3122's family,
+/// named by W-37 track R's gap 3202) is deleted.
 #[test]
 fn the_break_checker_fails_on_a_perturbed_answer() {
     let case = Case {
@@ -1007,43 +969,39 @@ fn the_break_checker_fails_on_a_perturbed_answer() {
     };
     let mut w = build(&case);
     let tz = w.cfg.tz;
-    let now_sec = rowwire::kernel_sec(w.now);
-    let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
-    let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+    let span = (local_dt(tz, date(), NaiveTime::MIN), local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
     let t = w.now - Duration::minutes(5);
     w.state.break_ = Some(tm_core::store::BreakState {
         started: Some(t.time()),
         planned_min: 20,
         place: Some("walk".to_string()),
     });
-    let req = w.plan_request();
-    let plan = kernel_plan(&req).expect("the kernel plans the break day");
-    let check = |p: &Value| {
-        w35_check_break(p, rowwire::kernel_sec(t), 20, "walk", now_sec, day_start, day_end)
-    };
-    let (lo, hi, open) = check(&plan).expect("the kernel's own answer passes");
-    assert_eq!((lo, hi, open), (rowwire::kernel_sec(t), rowwire::kernel_sec(t) + 20 * 60, false));
+    let day = Kernel.day(&w, &w.state, w.now).expect("the kernel plans the break day");
+    let check = |d: &DayPlan| forkclass::p45_rule(d, t, 20, Some("walk"), w.now, span);
+    let (lo, hi, open) = check(&day).expect("the kernel's own day passes");
+    assert_eq!((lo, hi, open), (t, t + Duration::minutes(20), false));
     // 1. the row removed
-    let mut gone = plan.clone();
-    gone["segments"] = Value::Array(
-        plan["segments"].as_array().expect("segments").iter()
-            .filter(|s| s["kind"] != "break").cloned().collect(),
-    );
-    assert!(check(&gone).is_err(), "a day with no Break row passed the P45 checker");
+    let mut gone = day.clone();
+    gone.segments.retain(|s| s.kind != SegKind::Break);
+    assert!(check(&gone).is_err(), "a day with no Break row passed P45's rule");
     // 2. the row moved by a minute
-    let mut moved = plan.clone();
-    for s in moved["segments"].as_array_mut().expect("segments") {
-        if s["kind"] == "break" {
-            s["stop"] = json!(s["stop"].as_i64().unwrap_or(0) + 60);
-        }
+    let mut moved = day.clone();
+    for s in moved.segments.iter_mut().filter(|s| s.kind == SegKind::Break) {
+        s.end += Duration::minutes(1);
     }
-    assert!(check(&moved).is_err(), "a Break row a minute long passed the P45 checker");
+    assert!(check(&moved).is_err(), "a Break row a minute long passed P45's rule");
     // 3. a Rest row slid under the break
-    let mut over = plan.clone();
-    over["segments"].as_array_mut().expect("segments").push(json!({
-        "start": now_sec, "stop": now_sec + 600, "kind": "rest", "batch": [], "energy": 3,
-        "item": null, "inst": null, "flags": {}, "planned": null, "mult": null, "note": null}));
-    assert!(check(&over).is_err(), "a Rest row scheduled over the break passed the P45 checker");
+    let mut over = day.clone();
+    over.segments.push(Segment {
+        start: w.now,
+        end: w.now + Duration::minutes(10),
+        kind: SegKind::Rest,
+        energy: Some(3),
+        item: None,
+        instance: None,
+        flags: tm_core::dayplan::SegFlags::default(),
+    });
+    assert!(check(&over).is_err(), "a Rest row scheduled over the break passed P45's rule");
 }
 
 
@@ -1142,9 +1100,14 @@ fn the_kernels_monotone_rank_is_its_own_order() {
 fn an_impossible_answer_with_no_until_keys_as_every_other() {
     let case = reversed_day();
     let w = build(&case);
-    let plan = kernel_plan(&w.plan_request()).unwrap_or_else(|e| panic!("the kernel refused: {e}"));
     let cvec = w.candidates();
-    let ps = kernel_prios(&plan, &cvec).expect("the kernel's §7 answers");
+    // The kernel's §7 answers as the BINARY reads them (`planwire::read_capacity_answer`, through
+    // `planreq::kernel_day`) — until W-38 this read them with the fork region's own `kernel_prios`,
+    // so R3's deletion of the region would have left this test, outside it, unbuildable (README
+    // gap 3472, found by W-38's deletion simulation).
+    let pw = planreq::World { docs: &w.docs, log: &w.log, tree: &w.tree, cfg: &w.cfg, state: &w.state, now: w.now, cands: &cvec };
+    let (_, ans) = planreq::kernel_day(&pw, None).unwrap_or_else(|e| panic!("the kernel refused: {e}"));
+    let ps = ans.prios;
     let i = ps.iter().position(forkclass::is_impossible_tie).expect("the reversed day has an impossible tie");
     assert!(ps[i].until.is_some(), "the tie has an until");
     assert_eq!(forkclass::d60_cands(&cvec, &ps)[i].root_order.0, 0, "an impossible tie keys first");
@@ -1178,6 +1141,430 @@ fn a_routine_window_s_close_is_planned_by_the_kernel() {
             panic!("the kernel refused {h}:{m:02} (README gap 3280): {e}");
         }
     }
+}
+
+/// **The cells the kernel is allowed to disagree with the fork about on a
+/// GENERATED day, with the gap that records why.**
+///
+/// The same two holes `tm/tests/kernel_row_cells.rs` declares on its fixture
+/// day, and no others — a third name appearing here would be a finding, not a
+/// widening:
+///
+/// * **`note`** (gap **1102**, and the `note: null` decision in `seg_json`) —
+///   `SegFlags::note` is a `String` the fork's planner wrote as prose and
+///   `Planner.Note` is eleven names with their arguments, so a host whose
+///   planner produced text has nothing to send. The kernel **derives** the
+///   column and cannot derive the `⚠` branch, which needs the fork's
+///   `effective_due`.
+/// * **`est`** (gap **1101**) — the fork's `est_cell` reads `est_original`
+///   first and this kernel has one estimate view, `Core.est`, which is `est:`
+///   then the leading estimate. A line carrying both makes the two readers pick
+///   different numbers.
+///
+/// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
+/// and `batchNames` — is compared **exactly**, on every row of every case.
+///
+/// **And `parent` is now compared at a value** (W-27). It was in this list
+/// before, and the list was true and empty of content for that one cell: the
+/// generated corpus had no `@` token, so both readers wrote `""` on every row
+/// and the cell asserted nothing. [`CENSUS`]'s fifth counter and the
+/// `parents > 0` assertion are what make the membership load-bearing.
+const CELL_HOLES: [&str; 2] = ["note", "est"];
+
+// ===========================================================================
+// **W-38 (track H): what the fork region compared that needs no fork, moved out of it**
+// (README gap 3282).
+//
+// R3 deletes the region below whole. Several of its arms asserted things of the KERNEL alone —
+// the kernel's rendering of a day through the `plan` section, the projections of step 8's
+// tuples on the kernel's own wire, P45's rule on a generated break day, and the kernel halves
+// of the fixed days — and so would have left with the fork although no fork was needed to
+// ask them. They are asked here, of the kernel, and the region keeps only what compares
+// with the fork. What the region compares WITH the fork is frozen by value in
+// `planner_classes.rs`' comparand; README's W-38 track H table says which line holds each.
+// ===========================================================================
+
+/// **The kernel's reservation**, when it placed one: the energy-less `▶` Block row starting at
+/// `now` — its `stop`.
+fn w35_reservation(plan: &Value, now_sec: i64) -> Option<i64> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .find(|s| {
+            s["kind"] == "block"
+                && s["energy"].is_null()
+                && s["flags"]["current"] == true
+                && s["start"].as_i64() == Some(now_sec)
+        })
+        .map(|s| s["stop"].as_i64().unwrap_or(-1))
+}
+
+/// The kernel's Block/Batch rows from `now` on, in the same shape.
+fn w36_kernel_work_rows(plan: &Value, now_sec: i64) -> Vec<(i64, i64, Vec<String>)> {
+    plan["segments"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default()
+        .iter()
+        .filter(|s| (s["kind"] == "block" || s["kind"] == "batch")
+            && s["start"].as_i64().unwrap_or(-1) >= now_sec
+            && s["flags"]["current"] != true)
+        .map(|s| {
+            let mut it: Vec<String> = match s["kind"].as_str() {
+                Some("batch") => s["batch"].as_array().map(Vec::as_slice).unwrap_or_default()
+                    .iter().filter_map(|v| v.as_str().map(ToString::to_string)).collect(),
+                _ => s["item"].as_str().map(|x| vec![x.to_string()]).unwrap_or_default(),
+            };
+            it.sort();
+            (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1), it)
+        })
+        .collect()
+}
+
+
+/// `(rows compared, cases, note-hole firings, est-hole firings, non-empty parent cells, kernel rows
+/// digested at a multiplier other than 1.0)` — what [`the_kernel_reads_every_day_it_plans`] looked
+/// at, read inside the arm that fills it (as `CENSUS`, the fork arm's, is).
+static KERNEL_CELL_CENSUS: Mutex<[u64; 6]> = Mutex::new([0; 6]);
+
+/// `[cases, impossible tuples, underused tuples, blocked tuples, blocked deps]` — what
+/// [`the_kernels_step_8_ids_are_the_projections_of_its_tuples`] compared.
+static PROJECTION_CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+
+/// `[cases, break days, still running, overrun, open rows of a paused block]` — what
+/// [`the_kernel_keeps_a_running_break_on_every_generated_day`] asked.
+static BREAK_CENSUS: Mutex<[u64; 5]> = Mutex::new([0; 5]);
+
+/// **Step 8's id lists on the kernel's own wire are the projections of its tuples**: `impossible`
+/// of `impossibleUntil`, `underused` of `underusedLevels`, `blocked` of `blockedDeps`, as multisets.
+/// `Ok` carries the tuple counts `(impossible, underused, blocked, deps)`; `Err` names the list.
+fn step8_projections(kd: &Value) -> Result<(usize, usize, usize, usize), String> {
+    let arr = |v: &Value| -> Vec<Value> { v.as_array().cloned().unwrap_or_default() };
+    let s = |v: &Value| -> String { v.as_str().unwrap_or("<not a string>").to_string() };
+    let sorted = |mut x: Vec<String>| {
+        x.sort();
+        x
+    };
+    let imp: Vec<(String, u64)> = arr(&kd["impossibleUntil"]).iter()
+        .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX))).collect();
+    let mut pairs: Vec<(String, u64)> = arr(&kd["impossible"]).iter()
+        .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX))).collect();
+    let mut proj = imp.clone();
+    pairs.sort();
+    proj.sort();
+    if proj != pairs {
+        return Err(format!("`impossible` is not `impossibleUntil`'s projection: {pairs:?} against {proj:?}"));
+    }
+    let und: Vec<String> = arr(&kd["underusedLevels"]).iter().map(|o| s(&o["id"])).collect();
+    if sorted(und.clone()) != sorted(arr(&kd["underused"]).iter().map(s).collect()) {
+        return Err(format!("`underused` is not `underusedLevels`' projection: {}", kd["underused"]));
+    }
+    let blk: Vec<(String, usize)> = arr(&kd["blockedDeps"]).iter()
+        .map(|o| (s(&o["id"]), arr(&o["deps"]).len())).collect();
+    if sorted(blk.iter().map(|b| b.0.clone()).collect()) != sorted(arr(&kd["blocked"]).iter().map(s).collect()) {
+        return Err(format!("`blocked` is not `blockedDeps`' projection: {}", kd["blocked"]));
+    }
+    Ok((imp.len(), und.len(), blk.len(), blk.iter().map(|b| b.1).sum()))
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig {
+        cases: std::env::var("TM_PROPTEST_CASES")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(64),
+        max_shrink_iters: 2_000,
+        ..ProptestConfig::default()
+    })]
+
+    /// **The kernel reads every day IT plans, and writes the host's cells for it** (W-38,
+    /// README gap 3282) — `the_kernel_reads_every_day_the_fork_planned`'s two claims, asked of
+    /// the day R3 ships instead of the fork's: (1) no day the kernel plans is refused by the
+    /// `plan` section's wire (every R10 bound it carries is one a real day could exceed); (2)
+    /// cell for cell, row for row, against the host's `emit::row_cells` over the SAME decoded
+    /// day, with [`CELL_HOLES`]'s two declared exceptions and no others. The day is drawn at a
+    /// learned multiplier too (the hash arm's values), so the host codec's digest check —
+    /// `planwire::read_plan` refuses a day whose rows do not hash to the kernel's `hash` —
+    /// asks the EMITTER of zmij's spellings on generated days, which the region's hash arm
+    /// asked of the fork's rows.
+    #[test]
+    fn the_kernel_reads_every_day_it_plans(
+        case in case_strategy(),
+        mult in prop::sample::select(vec![
+            None, Some(1.6), Some(0.25), Some(2.0), Some(1.125), Some(0.3), Some(0.1 + 0.2), Some(123.456),
+        ]),
+    ) {
+        let mut w = build(&case);
+        w.set_multiplier(mult);
+        let day = Kernel.day(&w, &w.state, w.now).map_err(TestCaseError::fail)?;
+        let lean = match rowwire::kernel_rows(w.docs_json(), &day, &w.cfg) {
+            Ok(rows) => rows,
+            Err(raw) => {
+                let head: String = raw.chars().take(400).collect();
+                prop_assert!(false, "the wire refused a day the kernel planned: {head}");
+                unreachable!()
+            }
+        };
+        let host = rowwire::fork_cells(&day, &w.tree, &w.cfg);
+        prop_assert_eq!(lean.len(), host.len(), "the kernel answered {} rows for {} segments", lean.len(), host.len());
+        let mut seen = [0u64; 6];
+        seen[0] = host.len() as u64;
+        seen[1] = 1;
+        seen[5] = day.segments.iter().filter(|s| s.flags.multiplier.is_some_and(|m| m != 1.0)).count() as u64;
+        for (i, (f, l)) in host.iter().zip(&lean).enumerate() {
+            if !f.parent.is_empty() {
+                seen[4] += 1;
+            }
+            for (cell, hosted, kernelled) in rowwire::differences(f, l) {
+                prop_assert!(
+                    CELL_HOLES.contains(&cell),
+                    "row {i}: the two readers disagree on an UNDECLARED cell {cell:?} — host {hosted:?}, kernel {kernelled:?}"
+                );
+                if cell == "note" {
+                    seen[2] += 1;
+                } else {
+                    seen[3] += 1;
+                }
+            }
+        }
+        let [rows, cases, notes, ests, parents, mults] = {
+            let mut c = KERNEL_CELL_CENSUS.lock().expect("census");
+            for (a, b) in c.iter_mut().zip(seen) {
+                *a += b;
+            }
+            *c
+        };
+        prop_assert!(rows >= 4 * cases, "only {rows} rows over {cases} cases");
+        if cases >= 32 {
+            prop_assert!(notes > 0, "the `note` hole has not fired in {cases} cases (gap 1102)");
+            prop_assert!(ests > 0, "the `est` hole has not fired in {cases} cases (gap 1101)");
+            prop_assert!(parents > 0, "no row's `parent` cell was non-empty in {cases} cases");
+            prop_assert!(mults > 0, "no row was digested at a multiplier other than 1.0 in {cases} cases");
+        }
+        eprintln!(
+            "planner_invariants kernel-day census: {cases} cases, {rows} rows compared, note-hole {notes}, \
+             est-hole {ests}, parent-cells {parents}, rows digested at a multiplier other than 1.0 {mults}"
+        );
+    }
+
+    /// **Step 8's id lists are the projections of the kernel's tuples** (W-38, README gap 3282):
+    /// the check the region's step-8 arm made of the kernel's own wire before it compared with
+    /// the fork, on the same widened days (a travel day and a spent budget drawn).
+    #[test]
+    fn the_kernels_step_8_ids_are_the_projections_of_its_tuples(
+        case in case_strategy(),
+        travel in prop_oneof![3 => Just(false), 1 => Just(true)],
+        spent in prop_oneof![3 => Just(false), 1 => Just(true)],
+    ) {
+        let mut w = build(&case);
+        let _ = widen_for_notes(&mut w, &case, travel, spent);
+        let plan = kernel_plan(&w.plan_request()).map_err(TestCaseError::fail)?;
+        let (imp, und, blk, deps) = step8_projections(&plan["diagnostics"]).map_err(TestCaseError::fail)?;
+        let c = {
+            let mut c = PROJECTION_CENSUS.lock().expect("census");
+            for (a, b) in c.iter_mut().zip([1, imp, und, blk, deps]) {
+                *a += b as u64;
+            }
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(64);
+        if c[0] >= generated {
+            prop_assert!(c[1] > 0, "no IMPOSSIBLE tuple was projected in {} cases", c[0]);
+            prop_assert!(c[2] > 0, "no UNDERUSED tuple was projected in {} cases", c[0]);
+            prop_assert!(c[3] > 0 && c[4] > 0, "no BLOCKED tuple or dep was projected in {} cases", c[0]);
+        }
+        eprintln!(
+            "planner_invariants step-8 projection census: {} cases; impossible {}, underused {}, blocked {} ({} deps)",
+            c[0], c[1], c[2], c[3], c[4]
+        );
+    }
+
+    /// **P45 on every generated break day, of the kernel alone** (W-38, README gap 3282): the
+    /// W-35 arm's rule check, which needs no fork — `forkclass::p45_rule` over the kernel's day
+    /// — and the open row of a paused block: it ends where the break began (or before) and
+    /// carries no `▶` (`tm break` pauses the block).
+    #[test]
+    fn the_kernel_keeps_a_running_break_on_every_generated_day(
+        case in case_strategy(),
+        brk in prop::option::of((0u32..=40, 5u32..=30, prop::sample::select(vec!["walk", "seat", "bed", "phone"]))),
+    ) {
+        let mut w = build(&case);
+        let tz = w.cfg.tz;
+        let mut row = [1u64, 0, 0, 0, 0];
+        if let (Some(t), Some((_, planned, place))) = (w.run_a_break(&case, brk), brk) {
+            let day = Kernel.day(&w, &w.state, w.now).map_err(TestCaseError::fail)?;
+            let span = (local_dt(tz, date(), NaiveTime::MIN), local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+            let (_, _, open) = forkclass::p45_rule(&day, t, planned, Some(place), w.now, span)
+                .map_err(|e| TestCaseError::fail(format!("P45: {e}")))?;
+            row[1] = 1;
+            row[2] = u64::from(!open);
+            row[3] = u64::from(open);
+            for s in day.segments.iter().filter(|s| s.kind == SegKind::Block && s.flags.open) {
+                prop_assert!(!s.flags.current, "a block paused by a running break is drawn running: {s:?}");
+                prop_assert!(s.start >= t || s.end <= t, "the paused block's open row runs past the break's start {t}: {s:?}");
+                row[4] += 1;
+            }
+        }
+        let c = {
+            let mut c = BREAK_CENSUS.lock().expect("census");
+            for (a, b) in c.iter_mut().zip(row) {
+                *a += b;
+            }
+            *c
+        };
+        let generated: u64 = std::env::var("TM_PROPTEST_CASES").ok().and_then(|s| s.parse().ok()).unwrap_or(64);
+        if c[0] >= generated {
+            prop_assert!(c[2] > 0 && c[3] > 0, "P45 was asked of no running and no overrun break in {} cases: {c:?}", c[0]);
+            prop_assert!(c[4] > 0, "no paused block's open row was asked in {} cases", c[0]);
+        }
+        eprintln!(
+            "planner_invariants break census: {} cases, {} break days (running {}, overrun {}), open rows of a paused block {}",
+            c[0], c[1], c[2], c[3], c[4]
+        );
+    }
+}
+
+/// **`step8_projections` bites, and does not over-bite** (AGENTS §5.8): three tuples and
+/// their three projections pass; each projection with one entry dropped, or one id changed,
+/// is refused, naming its list.
+#[test]
+fn step8_projections_bites() {
+    let good = json!({
+        "impossibleUntil": [{"id": "zaa", "shortMin": 30, "until": "2026-09-07"}],
+        "impossible": [{"id": "zaa", "shortMin": 30}],
+        "underusedLevels": [{"id": "zab", "energy": 5, "ci": 2}],
+        "underused": ["zab"],
+        "blockedDeps": [{"id": "zac", "deps": ["^zaa"]}],
+        "blocked": ["zac"],
+    });
+    assert_eq!(step8_projections(&good), Ok((1, 1, 1, 1)));
+    for (list, bent) in [
+        ("`impossible`", json!([{"id": "zaa", "shortMin": 31}])),
+        ("`underused`", json!([])),
+        ("`blocked`", json!(["zzz"])),
+    ] {
+        let mut x = good.clone();
+        let key = list.trim_matches('`');
+        x[key] = bent;
+        let e = step8_projections(&x).expect_err("a bent projection passed");
+        assert!(e.starts_with(list), "{e}");
+    }
+}
+
+/// **A P46 day reserves to the end of its block** (W-38, README gap 3282) — the kernel half of
+/// the region's `a_p46_day_is_compared_on_every_run`, stated outright: one item running 70
+/// minutes against a 30-minute estimate, one-hour blocks, so the block the item is in ends two
+/// blocks after it started — fifty minutes from now.
+#[test]
+fn a_p46_day_reserves_to_the_end_of_its_block() {
+    let w = build(&p46_day());
+    assert_eq!(w.cfg.block_min(), 60, "the rule below is stated for one-hour blocks");
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the P46 day");
+    let now_sec = rowwire::kernel_sec(w.now);
+    assert_eq!(w35_reservation(&plan, now_sec), Some(now_sec + 50 * 60), "the block the item is in ends fifty minutes from now");
+}
+
+/// The fixed P46 day: one item, running 70 minutes against a 30-minute estimate, no wall, no
+/// routine, no break.
+fn p46_day() -> Case {
+    Case {
+        items: vec![Spec {
+            ci: 2, k: 3, est_b: 1, small: None, due_in: None, dep: None,
+            loc_home: false, atomic: false, parent: None, waiting: false, hot: false,
+            floor: None,
+        }],
+        walls: vec![],
+        now_idx: 2,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: Some((0, 70, 30)),
+        interrupt: None,
+        late: false,
+    }
+}
+
+/// **The reversed day is served by due date** (W-38, README gap 3282) — the kernel half of the
+/// region's `the_reversed_day_is_served_by_due_date_on_every_run`: of two impossible items of one
+/// `ci`, the kernel serves the one due TODAY, on the second line, first (the owner's D60, P51).
+#[test]
+fn the_reversed_day_is_served_by_due_date() {
+    let w = build(&reversed_day());
+    let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the reversed day");
+    let ids: Vec<String> = w.candidates().iter().map(|c| c.id.to_string()).collect();
+    assert_eq!(ids.len(), 2, "two candidates: {ids:?}");
+    let k = w36_kernel_work_rows(&plan, rowwire::kernel_sec(w.now));
+    assert!(!k.is_empty(), "the kernel assigns work on the reversed day");
+    assert_eq!(k[0].2, vec![ids[1].clone()], "the kernel serves the item due today first: {k:?}");
+}
+
+/// **A batch row, digested** (W-38, README gap 3282) — the kernel half of the region's
+/// `a_batch_row_is_digested_on_every_run`: three twenty-minute errands of one `ci`, and the
+/// kernel's day, decoded by the host's codec (which refuses a day whose rows do not hash to the
+/// kernel's `hash`), holds a batch row.
+#[test]
+fn a_batch_row_is_digested() {
+    let w = build(&errand_day());
+    let day = Kernel.day(&w, &w.state, w.now).expect("the kernel plans the errand day and its digest reads back");
+    assert!(
+        day.segments.iter().any(|s| matches!(s.kind, SegKind::Batch(_))),
+        "the kernel's day holds no batch row: {:?}", day.segments
+    );
+}
+
+/// The fixed errand day: three twenty-minute errands of one `ci`, nothing else.
+fn errand_day() -> Case {
+    let errand = Spec {
+        ci: 2, k: 3, est_b: 1, small: Some(20), due_in: None, dep: None,
+        loc_home: false, atomic: false, parent: None, waiting: false, hot: false, floor: None,
+    };
+    Case {
+        items: vec![errand.clone(), errand.clone(), errand],
+        walls: vec![],
+        now_idx: 0,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    }
+}
+
+/// **A sub-second `now` does not move the kernel's day** (W-38, README gap 3282) — the kernel
+/// half of parity P43, which the region's `a_sub_second_now_moves_the_forks_day_and_not_the_kernels`
+/// states against the fork: the kernel plans every row on `now`'s whole second, so the day planned
+/// half a second past a minute is the day planned on it, row for row and digest for digest. (The
+/// fork's half — its fractional rows — leaves with the fork: D53.)
+#[test]
+fn a_sub_second_now_does_not_move_the_kernels_day() {
+    let w = build(&Case {
+        items: vec![Spec {
+            ci: 2, k: 1, est_b: 1, small: None, due_in: None, dep: None, loc_home: false,
+            atomic: false, parent: None, waiting: false, hot: false, floor: None,
+        }],
+        walls: vec![],
+        now_idx: 1,
+        done_blocks: 0,
+        report: None,
+        routines: 0,
+        optionals: false,
+        home: false,
+        active: None,
+        interrupt: None,
+        late: false,
+    });
+    let at = w.now + Duration::minutes(20);
+    let whole = Kernel.day(&w, &w.state, at).expect("the kernel plans the minute");
+    let half = Kernel.day(&w, &w.state, at + Duration::milliseconds(500)).expect("the kernel plans half a second past it");
+    assert_eq!(whole.hash(), half.hash(), "half a second moved the kernel's digest");
+    assert_eq!(whole.segments, half.segments, "half a second moved the kernel's rows");
 }
 
 // BEGIN THE FORK PLANNER — deleted with tm-core/src/planner.rs at R3 (README gaps 3084, 3080, 2722)
@@ -1239,34 +1626,6 @@ impl World {
         )
     }
 }
-
-/// **The cells the kernel is allowed to disagree with the fork about on a
-/// GENERATED day, with the gap that records why.**
-///
-/// The same two holes `tm/tests/kernel_row_cells.rs` declares on its fixture
-/// day, and no others — a third name appearing here would be a finding, not a
-/// widening:
-///
-/// * **`note`** (gap **1102**, and the `note: null` decision in `seg_json`) —
-///   `SegFlags::note` is a `String` the fork's planner wrote as prose and
-///   `Planner.Note` is eleven names with their arguments, so a host whose
-///   planner produced text has nothing to send. The kernel **derives** the
-///   column and cannot derive the `⚠` branch, which needs the fork's
-///   `effective_due`.
-/// * **`est`** (gap **1101**) — the fork's `est_cell` reads `est_original`
-///   first and this kernel has one estimate view, `Core.est`, which is `est:`
-///   then the leading estimate. A line carrying both makes the two readers pick
-///   different numbers.
-///
-/// Every other cell — `time`, `ci`, `p`, `mark`, `title`, `parent`, `actual`
-/// and `batchNames` — is compared **exactly**, on every row of every case.
-///
-/// **And `parent` is now compared at a value** (W-27). It was in this list
-/// before, and the list was true and empty of content for that one cell: the
-/// generated corpus had no `@` token, so both readers wrote `""` on every row
-/// and the cell asserted nothing. [`CENSUS`]'s fifth counter and the
-/// `parents > 0` assertion are what make the membership load-bearing.
-const CELL_HOLES: [&str; 2] = ["note", "est"];
 
 /// `(rows compared, cases compared, note-hole firings, est-hole firings,
 /// rows whose `parent` cell was NON-EMPTY)` — what
@@ -3568,23 +3927,6 @@ fn w35_fork_worked(w: &World, st: &RuntimeState) -> Option<u32> {
     )
 }
 
-/// **The kernel's reservation**, when it placed one: the energy-less `▶` Block row starting at
-/// `now` — its `stop`.
-fn w35_reservation(plan: &Value, now_sec: i64) -> Option<i64> {
-    plan["segments"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .find(|s| {
-            s["kind"] == "block"
-                && s["energy"].is_null()
-                && s["flags"]["current"] == true
-                && s["start"].as_i64() == Some(now_sec)
-        })
-        .map(|s| s["stop"].as_i64().unwrap_or(-1))
-}
-
 /// **P46, by its property**: the running block is in overtime — not paused, no break running,
 /// its worked minutes at or past its estimate, which is fork `active_run`'s `left == 0` refusal.
 ///
@@ -3744,8 +4086,6 @@ proptest! {
         w.force_overtime(&case, over, brk.is_some());
         let tz = w.cfg.tz;
         let now_sec = rowwire::kernel_sec(w.now);
-        let day_start = rowwire::kernel_sec(local_dt(tz, date(), NaiveTime::MIN));
-        let day_end = rowwire::kernel_sec(local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
         // **P45: a running break**, drawn `ago` minutes before `now` for `planned` minutes — the
         // host's `tm break` pauses a running block, so this does too; since W-37 it starts after
         // the last `start`/`done` the log holds, which is when `tm break` can have run
@@ -3774,12 +4114,18 @@ proptest! {
         let shipped = planner::plan(&w.input(&w.state, w.now).with_ranking(&cvec, &ps));
         let d57 = w35_fork_plan(&w, &w.state, &cvec, &ps);
 
-        // **P45** — the rule, asserted; the fork's disagreement, counted.
+        // **P45** — the rule, asserted (one rule since W-38, `forkclass::p45_rule` over the day
+        // the host's codec decodes); the fork's disagreement, counted.
         let (mut p45, mut p45run, mut p45over, mut p45fork) = (0u64, 0u64, 0u64, 0u64);
-        if let Some((t, planned, place)) = drew {
-            let got = w35_check_break(&plan, t, planned, place, now_sec, day_start, day_end);
+        if let (Some(at), Some((_, planned, place))) = (drew_at, drew) {
+            let kday = planwire::read_plan(&plan, &planwire::DayCtx { tz, cands: &cvec, prios: &ps })
+                .map_err(|e| TestCaseError::fail(format!("the kernel's day does not decode: {e:?}")))?;
+            let span = (local_dt(tz, date(), NaiveTime::MIN), local_dt(tz, date() + Duration::days(1), NaiveTime::MIN));
+            let got = forkclass::p45_rule(&kday.day, at, u32::try_from(planned).unwrap_or(0), Some(place), w.now, span);
             prop_assert!(got.is_ok(), "P45: {}", got.clone().err().unwrap_or_default());
-            let (lo, hi, open) = got.unwrap_or((0, 0, false));
+            let (lo, hi, open) = got
+                .map(|(a, z, o)| (rowwire::kernel_sec(a), rowwire::kernel_sec(z), o))
+                .unwrap_or((0, 0, false));
             p45 = 1;
             p45run = u64::from(!open);
             p45over = u64::from(open);
@@ -3905,24 +4251,7 @@ proptest! {
 /// `DayPlan::hash` of its own rows, and the batch row is the kernel-ranked fork's too.
 #[test]
 fn a_batch_row_is_digested_on_every_run() {
-    let errand = Spec {
-        ci: 2, k: 3, est_b: 1, small: Some(20), due_in: None, dep: None,
-        loc_home: false, atomic: false, parent: None, waiting: false, hot: false, floor: None,
-    };
-    let case = Case {
-        items: vec![errand.clone(), errand.clone(), errand],
-        walls: vec![],
-        now_idx: 0,
-        done_blocks: 0,
-        report: None,
-        routines: 0,
-        optionals: false,
-        home: false,
-        active: None,
-        interrupt: None,
-        late: false,
-    };
-    let w = build(&case);
+    let w = build(&errand_day());
     let tz = w.cfg.tz;
     let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the errand day");
     let krows = fork_rows_of_kernel(&plan, tz);
@@ -3957,24 +4286,7 @@ fn a_batch_row_is_digested_on_every_run() {
 /// in ends two blocks after it started (70 minutes run, one-hour blocks), fifty minutes from now.
 #[test]
 fn a_p46_day_is_compared_on_every_run() {
-    let case = Case {
-        items: vec![Spec {
-            ci: 2, k: 3, est_b: 1, small: None, due_in: None, dep: None,
-            loc_home: false, atomic: false, parent: None, waiting: false, hot: false,
-            floor: None,
-        }],
-        walls: vec![],
-        now_idx: 2,
-        done_blocks: 0,
-        report: None,
-        routines: 0,
-        optionals: false,
-        home: false,
-        active: Some((0, 70, 30)),
-        interrupt: None,
-        late: false,
-    };
-    let w = build(&case);
+    let w = build(&p46_day());
     assert_eq!(w.cfg.block_min(), 60, "the rule below is stated for one-hour blocks");
     assert!(w35_is_p46(&w, &w.state), "a block run 70 minutes against 30 is P46 by its property");
     let plan = kernel_plan(&w.plan_request()).expect("the kernel plans the P46 day");
@@ -4089,32 +4401,17 @@ proptest! {
         let arr = |v: &Value| -> Vec<Value> { v.as_array().cloned().unwrap_or_default() };
         let s = |v: &Value| -> String { v.as_str().unwrap_or("<not a string>").to_string() };
 
-        // **On the kernel's own wire, each pair/id field is its tuple's projection.**
-        let mut kimp_pairs: Vec<(String, u64)> = arr(&kd["impossible"]).iter()
-            .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX))).collect();
+        // The projections of the kernel's own tuples are asked of the kernel alone, outside this
+        // region, since W-38 (`step8_projections`, README gap 3282); the tuples are compared here.
         let mut kimp: Vec<(String, u64, String)> = arr(&kd["impossibleUntil"]).iter()
             .map(|o| (s(&o["id"]), o["shortMin"].as_u64().unwrap_or(u64::MAX), s(&o["until"])))
             .collect();
-        let mut proj: Vec<(String, u64)> = kimp.iter().map(|t| (t.0.clone(), t.1)).collect();
-        kimp_pairs.sort();
-        proj.sort();
-        prop_assert_eq!(&proj, &kimp_pairs, "`impossible` is not `impossibleUntil`'s projection");
         let mut kund: Vec<(String, u64, u64)> = arr(&kd["underusedLevels"]).iter()
             .map(|o| (s(&o["id"]), o["energy"].as_u64().unwrap_or(99), o["ci"].as_u64().unwrap_or(99)))
             .collect();
-        let mut kund_ids: Vec<String> = arr(&kd["underused"]).iter().map(s).collect();
-        let mut und_proj: Vec<String> = kund.iter().map(|t| t.0.clone()).collect();
-        kund_ids.sort();
-        und_proj.sort();
-        prop_assert_eq!(&und_proj, &kund_ids, "`underused` is not `underusedLevels`' projection");
         let mut kblk: Vec<(String, Vec<String>)> = arr(&kd["blockedDeps"]).iter()
             .map(|o| (s(&o["id"]), arr(&o["deps"]).iter().map(s).collect()))
             .collect();
-        let mut kblk_ids: Vec<String> = arr(&kd["blocked"]).iter().map(s).collect();
-        let mut blk_proj: Vec<String> = kblk.iter().map(|t| t.0.clone()).collect();
-        kblk_ids.sort();
-        blk_proj.sort();
-        prop_assert_eq!(&blk_proj, &kblk_ids, "`blocked` is not `blockedDeps`' projection");
 
         let cvec = w.candidates();
         // **The D57 comparand, not `planner::plan`** (W-35 land step, README gap 2910): on an
@@ -4259,28 +4556,6 @@ fn w36_work_rows(d: &DayPlan, now: DateTime<Tz>) -> Vec<(i64, i64, Vec<String>)>
             let mut it: Vec<String> = s.items().iter().map(ToString::to_string).collect();
             it.sort();
             (rowwire::kernel_sec(s.start), rowwire::kernel_sec(s.end), it)
-        })
-        .collect()
-}
-
-/// The kernel's Block/Batch rows from `now` on, in the same shape.
-fn w36_kernel_work_rows(plan: &Value, now_sec: i64) -> Vec<(i64, i64, Vec<String>)> {
-    plan["segments"]
-        .as_array()
-        .map(Vec::as_slice)
-        .unwrap_or_default()
-        .iter()
-        .filter(|s| (s["kind"] == "block" || s["kind"] == "batch")
-            && s["start"].as_i64().unwrap_or(-1) >= now_sec
-            && s["flags"]["current"] != true)
-        .map(|s| {
-            let mut it: Vec<String> = match s["kind"].as_str() {
-                Some("batch") => s["batch"].as_array().map(Vec::as_slice).unwrap_or_default()
-                    .iter().filter_map(|v| v.as_str().map(ToString::to_string)).collect(),
-                _ => s["item"].as_str().map(|x| vec![x.to_string()]).unwrap_or_default(),
-            };
-            it.sort();
-            (s["start"].as_i64().unwrap_or(-1), s["stop"].as_i64().unwrap_or(-1), it)
         })
         .collect()
 }
