@@ -42,7 +42,7 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::env;
 use std::path::{Path, PathBuf};
 
-use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveDateTime, NaiveTime};
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, NaiveTime};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
@@ -54,7 +54,7 @@ use tm_core::energy::{self, Model};
 use tm_core::grammar::ItemLine;
 use tm_core::horizon;
 use tm_core::log::{DayReplay, Event, LogEntry, Replay};
-use tm_core::model::{Id, Item, Loc, Shape, State};
+use tm_core::model::{Id, Item, Loc, State};
 use tm_core::priority::{self, Candidate, Prio};
 use tm_core::store::{
     self, ActiveBlock, Closed, FsStore, InterruptState, PlanFiles, RuntimeState, Store, StoreExt,
@@ -330,13 +330,22 @@ fn arrivals_today(replay: &Replay, today: NaiveDate) -> usize {
     arrive_rows(replay, today).count()
 }
 
+/// **The interruption the log holds open** — `Replay::open_interrupt` not yet
+/// resumed. The one reading of it the rebuild ([`derived_state`]) and `tm start`
+/// take (the campaign's D69 call on README gap 3283): a block begun while it
+/// runs is paused, because that is what the rebuild derives from the log — the
+/// cache follows the log, never the reverse.
+pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interruption> {
+    replay.open_interrupt.as_ref().filter(|i| i.end.is_none())
+}
+
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
     let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
     let day = replay.day(today);
     // One walk of today's headers, not one per field.
     let one_arrival = arrivals_today(replay, today) == 1;
     let open = replay.open_block.as_ref();
-    let interrupted = replay.open_interrupt.as_ref().filter(|i| i.end.is_none());
+    let interrupted = open_interruption(replay);
     RuntimeState {
         date: Some(today),
         // **`wake` and `loc` are the two fields [`roll_day`] deliberately does
@@ -1487,33 +1496,10 @@ impl Ctx {
         self.walls_on(self.today)
     }
 
-    /// The walls of one date.
+    /// The walls of one date — [`Tree::walls_on`], the one definition (moved
+    /// there at W-38 so the week review reads it without a `Ctx`).
     pub fn walls_on(&self, date: NaiveDate) -> Vec<Wall> {
-        let mut out = Vec::new();
-        for item in self.tree.iter() {
-            if item.state.is_closed() {
-                continue;
-            }
-            let id = Tree::key_of(item);
-            let Shape::Interval { start, end } = self.tree.effective_shape(&id) else {
-                continue;
-            };
-            let start = match item.buffer {
-                Some(b) => start - chrono::Duration::minutes(i64::from(b.as_minutes())),
-                None => start,
-            };
-            if start.date() > date || end.date() < date {
-                continue;
-            }
-            out.push((self.instant(start), self.instant(end)));
-        }
-        out.sort_by_key(|(a, _)| *a);
-        out
-    }
-
-    /// A naive local datetime as an instant in `cfg.tz` (DST-safe, §17.2).
-    pub fn instant(&self, dt: NaiveDateTime) -> DateTime<Tz> {
-        capacity::local_dt(self.cfg.tz, dt.date(), dt.time())
+        self.tree.walls_on(self.cfg.tz, date)
     }
 
     // **`Ctx::window` and `Ctx::today_slots` were deleted at stage 6 step L9** (gap 93).

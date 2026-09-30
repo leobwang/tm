@@ -23,6 +23,7 @@ fn ascii(cells: &[Cell]) -> String {
             CellStyle::Routine => 'r',
             CellStyle::Break => 'b',
             CellStyle::Lost => 'L',
+            CellStyle::Pause => 'P',
             CellStyle::Interrupt => 'I',
             CellStyle::Optional => 'o',
             CellStyle::Wall => 'w',

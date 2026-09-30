@@ -259,8 +259,10 @@ theorem batchTitle_is_the_frame_over_batchNames (p : PlanCore) (ids : List Id) :
       "batch: ".toList ++ ((batchNames p ids).intersperse " · ".toList).flatten ++
         " (".toList ++ digitsOf (batchNames p ids).length ++ [')'] := rfl
 
-/-- Fork `title_cell`.  `planned` is the minutes the planner set aside, else the row's own
-length — the fork's `planned_min.unwrap_or_else(|| seg.minutes())`. -/
+/-- **D68** (P59): `Planner.pastKind`'s row of a replayed Pause — drawn as a pause, never lost. -/
+def pausedRow (s : Seg) : Bool := decide (s.kind = .lost) && s.item.isSome && decide (s.note = some .paused)
+/-- Fork `title_cell`, and D68's pause.  `planned` is the minutes the planner set aside, else the
+row's own length — the fork's `planned_min.unwrap_or_else(|| seg.minutes())`. -/
 def titleCell (p : PlanCore) (bed : Clock) (s : Seg) : List Char :=
   let planned := s.planned.getD s.minutes
   match s.kind with
@@ -270,7 +272,7 @@ def titleCell (p : PlanCore) (bed : Clock) (s : Seg) : List Char :=
                   else nameOr p s "routine".toList ++ ' ' :: durCell planned
   | .sleep     => nameOr p s "sleep".toList ++ ' ' :: durCell planned
   | .rest      => "rest ".toList ++ durCell planned
-  | .lost      => "lost ".toList ++ durCell planned
+  | .lost      => (if pausedRow s then "paused " else "lost ").toList ++ durCell planned
   | .windDown  => "wind-down · bed ".toList ++ renderClock bed
   | _          => nameOr p s ['—']
 
@@ -317,10 +319,9 @@ def estCell (p : PlanCore) (bm : Nat) (s : Seg) : List Char :=
 
 /-! ## `Note` — §8.2 step 8's eleven sentences -/
 
-/-- **The words `Planner.Note` deliberately does not carry.**  Each constructor is one
-`notes.push` or one `note: Some(…)` site of `tm-core/src/planner.rs`, rendered here.  `p` is
-the plan (one note names a title), `z` the zone (one names two clocks) and `bm` the block
-length (one counts blocks). -/
+/-- **The words `Planner.Note` deliberately does not carry.**  Each constructor is one `notes.push`
+or one `note: Some(…)` site of `tm-core/src/planner.rs`, rendered here.  `p` is the plan (one note
+names a title), `z` the zone (one names two clocks) and `bm` the block length (one counts blocks). -/
 def noteText (p : PlanCore) (z : Cal.Tz) (bm : Nat) : Note → List Char
   | .travelDay =>
       "travel day: no blocks planned (`travel-day` wall today)".toList
@@ -352,11 +353,11 @@ def underusedCell (p : PlanCore) (s : Seg) : List Char :=
       | none => []
   | _, _ => []
 
-/-- Fork `note_cell`: an explicit note wins, then the `↓` derivation.  The `⚠` branch needs
-`effective_due` and is gap 1102. -/
+/-- Fork `note_cell`: an explicit note wins — but D68's pause says it in its title — then the `↓`
+derivation.  The `⚠` branch needs `effective_due` and is gap 1102. -/
 def noteCell (p : PlanCore) (z : Cal.Tz) (bm : Nat) (s : Seg) : List Char :=
   match s.note with
-  | some n => noteText p z bm n
+  | some n => if pausedRow s then [] else noteText p z bm n
   | none   => if s.flags.underused then underusedCell p s else []
 
 /-! ## The row, and the day -/
@@ -364,10 +365,9 @@ def noteCell (p : PlanCore) (z : Cal.Tz) (bm : Nat) (s : Seg) : List Char :=
 /-- **One row of §4.3, as cells.**  Everything a surface prints comes from here; what any one
 surface does with the nine cells is that surface's layout and not the kernel's.
 
-It takes a `Planner.Seg` and not a `Planner.WfSeg` because **no cell reads the well-formedness
-bit**: a row is a projection of a segment's fields and `Seg.wf` bounds when the segment ends,
-which nothing here asks about.  Taking the subtype would have been a hypothesis the emitter
-does not use, and `rowsOf` supplies the `.val` at the one place a day's segments are. -/
+It takes a `Planner.Seg` and not a `Planner.WfSeg` because **no cell reads the well-formedness bit**: a row
+is a projection of a segment's fields and `Seg.wf` bounds when the segment ends, which nothing here asks
+about.  The subtype would be a hypothesis the emitter does not use; `rowsOf` supplies the `.val`. -/
 def rowOf (p : PlanCore) (z : Cal.Tz) (bm : Nat) (bed : Clock)
     (prios : List (Id × Fin 8)) (s : Seg) : Row :=
   { time   := timeCell z s.start
@@ -525,6 +525,85 @@ theorem actualCell_no_newline (s : Seg) : ∀ c ∈ actualCell s, c ≠ '\n' := 
     · simp only [List.not_mem_nil, or_false] at hc
       rcases hc with hc | hc <;> rw [hc] <;> decide
   · simp at hc
+
+/-! ## D68 — a typed pause is not lost time (stage 6 W-38 track T, parity P59, README gap 3344)
+
+`tm plan` drew a typed `tm pause` as `lost 10m … paused` while `tm review day` counted none of it
+as lost: one span, two readings (AGENTS §5.3).  The spec's "lost" is interruption time — §9's
+Interruption row is what logs `lost=`, on `resume` — so the review's reading stands and the
+DRAWING moves: the owner's **D68** draws a replayed Pause as a pause, `paused 10m`.
+
+**What moves, and what does not.**  The planner's segment is unchanged: `Planner.pastKind` still
+answers the fork's Lost kind with the `paused` note, so the §8.2 day, every law about it, the
+planner wire and the fork comparand are what they were.  The drawing is this module's:
+`pausedRow` picks the row out, `titleCell` writes `paused <dur>` and `noteCell` nothing, where fork
+`title_cell` and `note_cell` wrote `lost <dur>` and `paused`.  A wall-covered pause stays D65's wall
+alone (P56): `Planner.a_paused_row_lies_under_no_wall` leaves no row there to draw.
+
+**Both directions** (AGENTS §5.8): a replayed Pause is drawn `paused` and never `lost`
+(`a_replayed_pause_is_drawn_as_a_pause`), and every other Lost row the past half draws — an
+interruption's or an idle span's — is drawn `lost` as the fork draws it
+(`a_lost_row_that_is_not_a_pause_is_drawn_lost`). -/
+
+theorem pausedRow_iff (s : Seg) :
+    pausedRow s = true ↔ s.kind = .lost ∧ s.item.isSome = true ∧ s.note = some .paused := by
+  simp [pausedRow, and_assoc]
+
+/-- **A paused row's title is `paused <dur>`**, where the fork's was `lost <dur>`. -/
+theorem titleCell_of_pausedRow (p : PlanCore) (bed : Clock) (s : Seg) (h : pausedRow s = true) :
+    titleCell p bed s = "paused ".toList ++ durCell (s.planned.getD s.minutes) := by
+  have hk := ((pausedRow_iff s).1 h).1
+  simp [titleCell, hk, h]
+
+/-- **…and its note cell is empty**: the one word is in the title, which the fork wrote twice. -/
+theorem noteCell_of_pausedRow (p : PlanCore) (z : Cal.Tz) (bm : Nat) (s : Seg)
+    (h : pausedRow s = true) : noteCell p z bm s = [] := by
+  have hn := ((pausedRow_iff s).1 h).2.2
+  simp [noteCell, hn, h]
+
+/-- **Every other Lost row is drawn `lost`, as the fork draws it.** -/
+theorem titleCell_of_a_lost_row_that_is_not_a_pause (p : PlanCore) (bed : Clock) (s : Seg)
+    (hk : s.kind = .lost) (h : pausedRow s = false) :
+    titleCell p bed s = "lost ".toList ++ durCell (s.planned.getD s.minutes) := by
+  simp [titleCell, hk, h]
+
+/-- **A row that is not a pause keeps the fork's note**: the rule moves one row's note, no other. -/
+theorem noteCell_of_a_row_that_is_not_a_pause (p : PlanCore) (z : Cal.Tz) (bm : Nat) (s : Seg)
+    (h : pausedRow s = false) (n : Note) (hn : s.note = some n) :
+    noteCell p z bm s = noteText p z bm n := by
+  simp [noteCell, hn, h]
+
+/-- **A row of the past half is a paused row exactly when its segment is a replayed Pause.** -/
+theorem pausedRow_pastRowOf (d : Replay.DayAcc) (g : Replay.Segment) (q : Nat × Nat) :
+    pausedRow (pastRowOf d g q) = true ↔ ∃ i, g.kind = .pause i := by
+  cases hg : g.kind <;> simp [pausedRow, pastRowOf, pastKind, hg]
+
+/-- **D68 on the kernel's day.**  A row of the past half is a paused row exactly when a replayed
+Pause drew it, and then it is drawn `paused <dur>` with an empty note — never `lost`. -/
+theorem a_replayed_pause_is_drawn_as_a_pause (r : PlanReq) (p : PlanCore) (bed : Clock)
+    (z : Cal.Tz) (bm : Nat) (t : Seg) (ht : t ∈ pastRows r) :
+    (pausedRow t = true ↔ ∃ d, r.todayRecord = some d ∧ ∃ g ∈ d.segments,
+        (∃ i, g.kind = .pause i) ∧ ∃ q ∈ pastSpans r g, t = pastRowOf d g q) ∧
+    (pausedRow t = true →
+      titleCell p bed t = "paused ".toList ++ durCell (t.planned.getD t.minutes) ∧
+      noteCell p z bm t = []) := by
+  refine ⟨⟨fun h => ?_, fun ⟨d, _, g, _, hp, q, _, he⟩ => he ▸ (pausedRow_pastRowOf d g q).2 hp⟩,
+    fun h => ⟨titleCell_of_pausedRow p bed t h, noteCell_of_pausedRow p z bm t h⟩⟩
+  obtain ⟨d, hd, g, hg, q, hq, rfl⟩ := mem_pastRows.1 ht
+  exact ⟨d, hd, g, hg, (pausedRow_pastRowOf d g q).1 h, q, hq, rfl⟩
+
+/-- **The past half draws `lost` only an interruption or an idle span** (D68's other direction):
+a Lost row that is not a pause is drawn `lost <dur>`, and its segment is an Interrupt or an Idle. -/
+theorem a_lost_row_that_is_not_a_pause_is_drawn_lost (r : PlanReq) (p : PlanCore) (bed : Clock)
+    (t : Seg) (ht : t ∈ pastRows r) (hk : t.kind = .lost) (h : pausedRow t = false) :
+    titleCell p bed t = "lost ".toList ++ durCell (t.planned.getD t.minutes) ∧
+    ∃ d, r.todayRecord = some d ∧ ∃ g ∈ d.segments,
+      ((∃ i, g.kind = .interrupt i) ∨ ∃ a, g.kind = .idle a) ∧
+      ∃ q ∈ pastSpans r g, t = pastRowOf d g q := by
+  refine ⟨titleCell_of_a_lost_row_that_is_not_a_pause p bed t hk h, ?_⟩
+  obtain ⟨d, hd, g, hg, q, hq, rfl⟩ := mem_pastRows.1 ht
+  refine ⟨d, hd, g, hg, ?_, q, hq, rfl⟩
+  cases hg' : g.kind <;> simp [pastRowOf, pastKind, pausedRow, hg'] at hk h ⊢
 
 end Emit
 end Tm

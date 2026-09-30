@@ -4,7 +4,7 @@ import TmKernel.Tree
 import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Log
-import TmKernel.Lookahead
+import TmKernel.Width
 import TmKernel.WallTimer
 import TmKernel.SealWire
 /-!
@@ -2851,15 +2851,15 @@ def runLoad (j : JVal) : Except JVal (WfPlan × List ReqCmd × ReqClock) := do
     | .ok c => cmdsRev := c :: cmdsRev
     | .error e => throw (jsonErr e)
   let cmds := cmdsRev.reverse
-  -- reject before building: a line with an item's shape that does not parse is
-  -- an error, not prose
+  -- reject before building: an item-shaped line that does not parse — or, D69 (gap 3345), that
+  -- carries a duration past the host's width at the request's block length — is an error, not prose
   for d in docs do
-    match scanLines d.path.toList 0 d.lines with
-    | .ok _    => pure ()
-    | .error e => throw (jone "err" (lerrJson e))
-  -- build the plan and run the request.  `loadPlan` is the whole loader as one
-  -- function, which is what makes `the_kernel_reads_back_what_it_writes` a
-  -- theorem about the code the FFI runs rather than about a copy of it.
+    match scanLines d.path.toList 0 d.lines, Width.firstPastWidth ((clock.blockMin.map (·.val)).getD 1) d.lines with
+    | .error e, _ => throw (jone "err" (lerrJson e))
+    | .ok _, some w => throw (jone "err" (Width.refusalJson d.path.toList w.1 w.2))
+    | .ok _, none => pure ()
+  -- build the plan and run the request: `loadPlan` is the whole loader as one function, which is
+  -- what makes `the_kernel_reads_back_what_it_writes` a theorem about the code the FFI runs.
   match loadPlan docs with
   | .error e   => throw e
   | .ok plan   => return (plan, cmds, clock)
@@ -13007,6 +13007,33 @@ theorem the_walls_form_is_answered_through_the_emit_section :
     (match readEmitSection (wallsWitnessRequest false) with
       | .error e => e == WallTimer.Refusal.logAbsent.json
       | _ => false) = true := by
+  decide
+
+set_option maxRecDepth 40000 in
+/-- **D69 on the loader** (README gap 3345; `Width.lean`): a document whose line carries a leading
+estimate past the host's width is refused by `runLoad` BY NAME — `pastWidth`, its line, its slot —
+before anything is loaded, at the request's block length; the width's last minute loads; and
+`71582789b` is refused at a sixty-minute block and loaded when the request names none (one minute a
+block, which is what no block length could refuse).  The refusal is spelled out, byte for byte, so
+the name, the line and the slot are pinned on the wire.  The request is a local `let`, as
+`the_walls_form_is_answered_through_the_emit_section`'s is (D51). -/
+theorem runLoad_refuses_a_duration_past_the_width :
+    let req : List Char → Option Nat → JVal := fun line bm =>
+      .obj ([("docs".toList, .arr [.obj [("path".toList, .str ['b','a','c','k','l','o','g','.','m','d']),
+          ("lines".toList, .arr [.str line])]])] ++
+        (bm.map (fun b => [("blockMin".toList, JVal.num b)])).getD [])
+    (match runLoad (req ['-',' ','[',' ',']',' ','2',' ','9','9','9','9','9','9','9','9','9','9','9','m',' ','B','i','g',' ','^','z','9'] (some 60)) with
+      | .error e => e == .obj [(['e','r','r'], .obj [(['p','a','s','t','W','i','d','t','h'], .obj [(['p','a','t','h'], .str ['b','a','c','k','l','o','g','.','m','d']), (['l','i','n','e'], .num 0), (['s','l','o','t'], .str ['l','e','a','d'])])])]
+      | .ok _ => false) = true ∧
+    (match runLoad (req ['-',' ','[',' ',']',' ','2',' ','4','2','9','4','9','6','7','2','9','5','m',' ','B','i','g',' ','^','z','9'] (some 60)) with
+      | .ok _ => true
+      | .error _ => false) = true ∧
+    (match runLoad (req ['-',' ','[',' ',']',' ','2',' ','7','1','5','8','2','7','8','9','b',' ','B','i','g',' ','^','z','9'] (some 60)) with
+      | .error e => e == .obj [(['e','r','r'], .obj [(['p','a','s','t','W','i','d','t','h'], .obj [(['p','a','t','h'], .str ['b','a','c','k','l','o','g','.','m','d']), (['l','i','n','e'], .num 0), (['s','l','o','t'], .str ['l','e','a','d'])])])]
+      | .ok _ => false) = true ∧
+    (match runLoad (req ['-',' ','[',' ',']',' ','2',' ','7','1','5','8','2','7','8','9','b',' ','B','i','g',' ','^','z','9'] none) with
+      | .ok _ => true
+      | .error _ => false) = true := by
   decide
 
 end Tm

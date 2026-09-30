@@ -65,9 +65,10 @@ pub fn pane_focused(title: &str) -> Block<'_> {
 /// The character one day-bar cell is drawn with (§12.1).
 ///
 /// A terminal has no hatching, so the two hatched styles get diagonals
-/// (`╱` for lost/leak time, `╳` for an interruption) and optionals get the
-/// dotted `∙`; work is shaded by `ci` — the brighter the cell, the fuller the
-/// block — which is the readable half of "brightness = ci, 0 black … 5 full".
+/// (`╱` for lost/leak time, `╳` for an interruption), a replayed pause — not
+/// lost time (D68) — the light dash `╌`, and optionals get the dotted `∙`;
+/// work is shaded by `ci` — the brighter the cell, the fuller the block —
+/// which is the readable half of "brightness = ci, 0 black … 5 full".
 pub fn cell_glyph(cell: &Cell) -> char {
     match cell.style {
         CellStyle::Work => match cell.brightness {
@@ -78,6 +79,7 @@ pub fn cell_glyph(cell: &Cell) -> char {
         CellStyle::Routine => '▒',
         CellStyle::Break => '░',
         CellStyle::Lost => '╱',
+        CellStyle::Pause => '╌',
         CellStyle::Interrupt => '╳',
         CellStyle::Optional => '∙',
         CellStyle::Wall => '█',

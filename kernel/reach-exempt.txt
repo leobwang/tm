@@ -310,7 +310,7 @@ Tm.recordedEst
 Tm.setEstE
 Tm.setEstFoldE
 
-## Emit.lean -- the day section is CELLS, never padded text (stage 6, step P8). 0 of its 32 emitted definitions are reached; the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
+## Emit.lean -- the day section is CELLS, never padded text (stage 6, step P8). 0 of its 33 emitted definitions are reached (re-derived on 2026-09-29 at W-38 track T, when owner D68's `Emit.pausedRow` joined the module -- the row the renderer draws as a pause, P59 -- reached only through the declared unsent `plan` section and answered by that property, not by an entry here; 32 before); the entries below were unreachable when check 12 landed (W-31) and are grandfathered by measurement, not adjudicated one at a time. Census re-derived under W-32's measured root on 2026-09-25 and gated from here, so this number is the measurement or check 12 fails (gap 2410).
 Tm.Emit.Row.cells
 Tm.Emit.rowsOf
 

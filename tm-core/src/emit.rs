@@ -630,6 +630,9 @@ pub fn title_cell(seg: &Segment, tree: &Tree, cfg: &Config) -> String {
         SegKind::Routine => format!("{} {}", name("routine"), fmt_dur(planned)),
         SegKind::Sleep => format!("{} {}", name("sleep"), fmt_dur(planned)),
         SegKind::Rest => format!("rest {}", fmt_dur(planned)),
+        // **D68** (P59): a replayed pause is not lost time; `Emit.titleCell`
+        // says the same of `Emit.pausedRow`.
+        SegKind::Lost if seg.is_pause() => format!("paused {}", fmt_dur(planned)),
         SegKind::Lost => format!("lost {}", fmt_dur(planned)),
         // `crate::model::fmt_time`, not a `{:02}:{:02}` of its own — the kernel's
         // `Emit.titleCell` renders this cell's clock with `Field.renderClock`
@@ -719,7 +722,9 @@ fn key_id(seg: &Segment) -> Option<&Id> {
 ///   such as `win:2026-09-07T09:00/21:00`, the window's last day.
 pub fn note_cell(seg: &Segment, tree: &Tree, plan: &DayPlan) -> String {
     if let Some(note) = &seg.flags.note {
-        return note.clone();
+        // **D68** (P59): a replayed pause says `paused` in its title cell, so
+        // its note is not printed a second time (`Emit.noteCell`, the same).
+        return if seg.is_pause() { String::new() } else { note.clone() };
     }
     if seg.flags.underused {
         if let Some(note) = underused_note(seg, tree, plan) {
@@ -795,6 +800,23 @@ pub fn mark_of(seg: &Segment) -> char {
         ' '
     }
 }
+
+/// The `kind` word `tm plan --json` and `tm now --json` give a row:
+/// [`kind_label`](crate::dayplan::kind_label)'s, but `pause` for a replayed
+/// pause ([`Segment::is_pause`]) — the owner's **D68** (parity P59): a typed
+/// `tm pause` is not lost time, and a surface that said `lost` of it would sum
+/// it into the lost minutes `tm review day` does not count. `.tm/last_plan.json`
+/// keeps `kind_label`'s word: it is the planner's record, not a drawing.
+pub fn row_kind(seg: &Segment) -> &'static str {
+    if seg.is_pause() {
+        PAUSE_KIND
+    } else {
+        crate::dayplan::kind_label(&seg.kind)
+    }
+}
+
+/// [`row_kind`]'s word for a replayed pause.
+pub const PAUSE_KIND: &str = "pause";
 
 // ---------------------------------------------------------------------------
 // The generated day-file section (§4.3)
@@ -1138,6 +1160,9 @@ pub enum CellStyle {
     Break,
     /// Lost or leaked time (§11).
     Lost,
+    /// A replayed `tm pause` of the running block (the owner's **D68**, P59):
+    /// not lost time, so neither Lost's colour nor its hatching.
+    Pause,
     /// §9's ad-hoc interruption wall.
     Interrupt,
     /// An `optional.md` item.
@@ -1169,6 +1194,7 @@ impl CellStyle {
             SegKind::Rest => CellStyle::Rest,
             SegKind::Optional => CellStyle::Optional,
             SegKind::WindDown | SegKind::Sleep => CellStyle::Sleep,
+            SegKind::Lost if seg.is_pause() => CellStyle::Pause,
             SegKind::Lost => CellStyle::Lost,
         }
     }
@@ -1181,6 +1207,7 @@ impl CellStyle {
             CellStyle::Routine => (0x8a, 0x8a, 0x8a),
             CellStyle::Break => (0xd2, 0xd2, 0xd2),
             CellStyle::Lost => (0xf5, 0x82, 0x31),
+            CellStyle::Pause => (0xb0, 0xb7, 0xc0),
             CellStyle::Interrupt => (0xe6, 0x19, 0x4b),
             CellStyle::Optional => (0x7a, 0x8a, 0x99),
             CellStyle::Wall => (0x33, 0x38, 0x44),

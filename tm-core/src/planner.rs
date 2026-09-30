@@ -1762,7 +1762,7 @@ impl<'a> Planner<'a> {
                 SegKind::Lost,
                 Some(Id::new(id.clone())),
                 None,
-                Some("paused".to_string()),
+                Some(crate::dayplan::PAUSED_NOTE.to_string()),
             ),
             SegmentKind::Interrupt { id } => (
                 SegKind::Lost,

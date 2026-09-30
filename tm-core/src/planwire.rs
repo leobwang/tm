@@ -711,7 +711,7 @@ fn note_text(v: &Value, ctx: &DayCtx<'_>, what: &str) -> W<String> {
             format!("buffer before {title}")
         }
         "travelDayWall" => "travel day".to_string(),
-        "paused" => "paused".to_string(),
+        "paused" => crate::dayplan::PAUSED_NOTE.to_string(),
         "interruption" => "interruption".to_string(),
         "breakWhere" | "idleAttributed" => text(&v["text"], &field("text"))?.to_string(),
         "runningLeft" => format!("running · {}m left", nat(&v["leftMin"], &field("leftMin"))?),

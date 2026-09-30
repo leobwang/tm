@@ -171,7 +171,7 @@ pub const CUT_STAMPS: usize = 2;
 pub const HEAT_HOURS: usize = 24;
 
 /// Styles counted per heat-grid cell (see [`Style`]).
-pub const HEAT_STYLES: usize = 7;
+pub const HEAT_STYLES: usize = 8;
 
 /// The most cells §12.4's `energy pred … rep …` row can hold. A day runs
 /// wake to wake, so a long one still fits inside a day and a bit; the cap is
@@ -1355,6 +1355,11 @@ pub enum Style {
     Leak,
     /// An idle gap attributed to anything else.
     Idle,
+    /// A meeting that paused the running block: the part of a `Pause` segment
+    /// a wall of the day covers is the WALL alone — D65's drawing (parity
+    /// P56), which the campaign's D69 call on README gap 3244 carries from
+    /// `tm plan` to this grid, so one span has one reading on both.
+    Wall,
 }
 
 impl Style {
@@ -1368,6 +1373,7 @@ impl Style {
             Style::Pause => 4,
             Style::Leak => 5,
             Style::Idle => 6,
+            Style::Wall => 7,
         }
     }
 
@@ -1381,6 +1387,7 @@ impl Style {
             Style::Pause,
             Style::Leak,
             Style::Idle,
+            Style::Wall,
         ]
     }
 
@@ -1394,6 +1401,7 @@ impl Style {
             Style::Pause => "pause",
             Style::Leak => "leak",
             Style::Idle => "idle",
+            Style::Wall => "wall",
         }
     }
 
@@ -1433,7 +1441,42 @@ impl DayHeat {
     }
 }
 
-fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz) -> DayHeat {
+/// **A segment's pieces, styled** — `(start, end, style)` in order. A `Pause`
+/// is cut by the day's walls (D69 on README gap 3244, P56): the stretches no
+/// wall covers stay `pause` and the rest is the wall's — the cut `tm plan`'s
+/// past half makes (fork `past_segments`' `cut_out`, the kernel's
+/// `Planner.pastSpans`), through `capacity::free_intervals`. Every other kind
+/// is one piece, uncut.
+fn heat_pieces(
+    style: Style,
+    start: DateTime<Tz>,
+    end: DateTime<Tz>,
+    walls: &[crate::capacity::Wall],
+) -> Vec<(DateTime<Tz>, DateTime<Tz>, Style)> {
+    if style != Style::Pause {
+        return vec![(start, end, style)];
+    }
+    let mut out = Vec::new();
+    let mut cursor = start;
+    for (a, b) in crate::capacity::free_intervals(start, end, walls) {
+        if a > cursor {
+            out.push((cursor, a, Style::Wall));
+        }
+        out.push((a, b, Style::Pause));
+        cursor = b;
+    }
+    if cursor < end {
+        out.push((cursor, end, Style::Wall));
+    }
+    out
+}
+
+fn heat_of(
+    day: Option<&DayReplay>,
+    date: NaiveDate,
+    tz: Tz,
+    walls: &[crate::capacity::Wall],
+) -> DayHeat {
     let mut hours = vec![[0u32; HEAT_STYLES]; HEAT_HOURS];
     if let Some(day) = day {
         for seg in &day.segments {
@@ -1441,23 +1484,25 @@ fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz) -> DayHeat {
             if end <= start {
                 continue;
             }
-            let style = Style::of(&seg.kind).index();
-            let mut cursor = start;
-            while cursor < end {
-                let hour = cursor.hour() as usize;
-                // The top of the next wall-clock hour, in absolute time: a
-                // DST fall-back repeats an hour (so the same cell is filled
-                // twice) and a spring-forward skips one.
-                let next = hour_start(cursor) + Duration::hours(1);
-                let stop = next.max(cursor).min(end);
-                let min = stop.signed_duration_since(cursor).num_minutes().max(0) as u32;
-                if let Some(cell) = hours.get_mut(hour) {
-                    cell[style] = cell[style].saturating_add(min);
+            for (start, end, style) in heat_pieces(Style::of(&seg.kind), start, end, walls) {
+                let style = style.index();
+                let mut cursor = start;
+                while cursor < end {
+                    let hour = cursor.hour() as usize;
+                    // The top of the next wall-clock hour, in absolute time: a
+                    // DST fall-back repeats an hour (so the same cell is filled
+                    // twice) and a spring-forward skips one.
+                    let next = hour_start(cursor) + Duration::hours(1);
+                    let stop = next.max(cursor).min(end);
+                    let min = stop.signed_duration_since(cursor).num_minutes().max(0) as u32;
+                    if let Some(cell) = hours.get_mut(hour) {
+                        cell[style] = cell[style].saturating_add(min);
+                    }
+                    if stop <= cursor {
+                        break;
+                    }
+                    cursor = stop;
                 }
-                if stop <= cursor {
-                    break;
-                }
-                cursor = stop;
             }
         }
     }
@@ -1698,7 +1743,7 @@ pub fn week_review(
         heat: dates
             .iter()
             .zip(&days)
-            .map(|(d, day)| heat_of(*day, *d, tz))
+            .map(|(d, day)| heat_of(*day, *d, tz, &tree.walls_on(tz, *d)))
             .collect(),
         mix: energy_mix(mix_by_ci, budget_min, 0),
         breaks: break_integrity(&week_breaks),

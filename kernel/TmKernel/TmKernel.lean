@@ -72,6 +72,7 @@ import TmKernel.Recur
 import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Lookahead
+import TmKernel.Width
 import TmKernel.PastCut
 import TmKernel.WallTimer
 import TmKernel.Planner

@@ -830,14 +830,16 @@ pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
             Cmd::AutoClose => json!({"op":"autoClose"}),
         })
         .collect();
-    let mut request = json!({ "docs": docs_json, "cmds": cmds_json });
+    // **The block length rides every request** (the campaign's D69 call on
+    // README gap 3345): the loader reads a leading `Nb` at it when it refuses a
+    // duration past the host's width (`pastWidth`), as `tm-core`'s parser does.
+    let mut request = json!({ "docs": docs_json, "cmds": cmds_json, "blockMin": ctx.block_min() });
     if closing {
         // The request's clock (stage 4 step 5): `now` is the CLI's own
         // instant as a local date — `--now` in tests, the real clock
         // otherwise — and the kernel never invents one. Sent only with a
         // close, the one op that reads it.
         request["now"] = json!(ctx.today.format("%Y-%m-%d").to_string());
-        request["blockMin"] = json!(ctx.block_min());
     }
     // 3. One call ([`call`]: stderr captured, the fault probe, the refusal by
     // name) — and, on a refusal, D35's own sentence for the verb that was
@@ -962,7 +964,7 @@ pub fn apply(ctx: &Ctx, verb: &str, cmds: &[Cmd]) -> Result<Applied, CliError> {
 /// problem separately, naming the line, and `tm check` prints it beside
 /// whatever the kernel says.
 pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
-    refusal_in(&ctx.store)
+    refusal_in(&ctx.store, ctx.block_min())
 }
 
 /// **The same question, of any store** — the body [`tree_refusal`] is now a
@@ -972,9 +974,15 @@ pub fn tree_refusal(ctx: &Ctx) -> Result<Option<KernelIssue>, CliError> {
 /// disk can ask it too: `tm check --fix-ids` builds the tree it *would* write in
 /// a [`MemStore`] and asks about that ([`fix_ids_refusal`]). One definition of
 /// "does the kernel load this tree", over one trait (AGENTS §5.3).
-pub fn refusal_in(store: &dyn Store) -> Result<Option<KernelIssue>, CliError> {
+///
+/// **It carries the block length** (the campaign's D69 call on README gap 3345):
+/// the kernel's loader refuses a duration past the host's `u32` minutes BY
+/// NAME (`pastWidth`), and a leading `Nb` is only minutes at a block length —
+/// so the tree is asked about at this configuration's, the one `tm-core`'s own
+/// parser reads it at, and the two bounds are one.
+pub fn refusal_in(store: &dyn Store, block_min: u32) -> Result<Option<KernelIssue>, CliError> {
     let docs = text_docs(store)?;
-    match call(&json!({ "docs": docs, "cmds": [] })) {
+    match call(&json!({ "docs": docs, "cmds": [], "blockMin": block_min })) {
         Ok(_) => Ok(None),
         Err(CliError::Kernel(issue)) if !issue.is_fault() => Ok(Some(issue)),
         Err(e) => Err(e),
@@ -1054,7 +1062,7 @@ pub fn fix_ids_refusal(ctx: &Ctx, gen: &mut IdGen) -> Result<Option<KernelIssue>
         // costs the mirror and no second kernel call at all.
         return Ok(None);
     }
-    refusal_in(&mirror)
+    refusal_in(&mirror, ctx.block_min())
 }
 
 /// **The one write gate** (the owner's D35, README gap 584): a host-only write
@@ -1532,6 +1540,25 @@ fn refusal(err: &Value) -> KernelIssue {
         detail.insert("line".into(), Value::from(line));
         ("badLine".into(), format!(
             "kernel refusal: badLine — {path}:{line} looks like an item but does not parse ({why}); the kernel refuses a tree it cannot load whole"
+        ))
+    } else if let Some(b) = err.get("pastWidth") {
+        // The campaign's D69 call on README gap 3345 (`Width.lean`): a duration
+        // the line carries is past the `u32` minutes the host holds it in, at
+        // the request's block length — one bound, the host's, read by both.
+        let path = b["path"].as_str().unwrap_or_default().to_string();
+        let line = one_based(b["line"].as_u64().unwrap_or_default());
+        let slot = b["slot"].as_str().unwrap_or_default().to_string();
+        let what = match slot.as_str() {
+            "lead" => "its leading estimate".to_string(),
+            other => format!("its `{other}:`"),
+        };
+        put("path", path.clone());
+        put("slot", slot.clone());
+        detail.insert("line".into(), Value::from(line));
+        ("pastWidth".into(), format!(
+            "kernel refusal: pastWidth — {path}:{line}: {what} is more than {} minutes, which \
+             tm cannot hold; the kernel refuses a tree it cannot load whole",
+            u32::MAX
         ))
     } else if let Some(b) = err.get("unterminatedComment") {
         let path = b["path"].as_str().unwrap_or_default().to_string();

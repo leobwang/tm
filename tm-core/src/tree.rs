@@ -616,6 +616,39 @@ impl Tree {
         Shape::None
     }
 
+    /// **The walls of one date** — every open `Interval` item that overlaps it,
+    /// its start moved back by `buffer:` (§8.2 step 1), sorted by start: fork
+    /// `Ctx::walls_on`, moved here at W-38 (the campaign's D69 call on README
+    /// gap 3244) so that the week review's heat grid reads the walls the CLI
+    /// reads without a `Ctx` — the TUI builds the week review from its own
+    /// `Tree` — and `Ctx::walls_on` is now this, called. One definition, and it
+    /// is the host's: README gap 3432 is its exit, at R3.
+    pub fn walls_on(&self, tz: chrono_tz::Tz, date: NaiveDate) -> Vec<crate::capacity::Wall> {
+        let mut out = Vec::new();
+        for item in self.iter() {
+            if item.state.is_closed() {
+                continue;
+            }
+            let id = Tree::key_of(item);
+            let Shape::Interval { start, end } = self.effective_shape(&id) else {
+                continue;
+            };
+            let start = match item.buffer {
+                Some(b) => start - chrono::Duration::minutes(i64::from(b.as_minutes())),
+                None => start,
+            };
+            if start.date() > date || end.date() < date {
+                continue;
+            }
+            out.push((
+                crate::capacity::local_dt(tz, start.date(), start.time()),
+                crate::capacity::local_dt(tz, end.date(), end.time()),
+            ));
+        }
+        out.sort_by_key(|(a, _)| *a);
+        out
+    }
+
     /// True when the item's `Point` shape comes from an ancestor interval.
     pub fn is_prep(&self, id: &Id) -> bool {
         self.get(id).is_some_and(|i| i.shape == Shape::None)

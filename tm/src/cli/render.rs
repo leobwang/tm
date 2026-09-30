@@ -11,7 +11,8 @@
 //!   selects from `emit::plan_rows` directly; this sentence said it "reuses"
 //!   [`rows`] and it never did — `tm now` had its own renderer until W-23.)
 //! The `SegKind` word the JSON and `.tm/last_plan.json` use is
-//! [`tm_core::dayplan::kind_label`]. This module declared a second, byte-for-byte
+//! [`tm_core::dayplan::kind_label`] — through [`tm_core::emit::row_kind`] in the
+//! JSON, which calls a replayed pause `pause` (D68). This module declared a second, byte-for-byte
 //! identical kind_name until W-23 (AGENTS §5.3). A deleted name loses its
 //! backticks, here as in the README (gap 1313).
 //!
@@ -25,7 +26,7 @@ use serde::Serialize;
 use tm_core::config::Config;
 use tm_core::emit;
 use tm_core::model::Id;
-use tm_core::dayplan::{self, DayPlan};
+use tm_core::dayplan::DayPlan;
 use tm_core::tree::Tree;
 
 /// Pixels of `day/<date>.svg` (§12.1's bar is a wide, short strip; the ghost
@@ -50,7 +51,8 @@ pub struct Row {
     pub text: String,
     /// The item, when the segment has one.
     pub item: Option<Id>,
-    /// The segment kind, lowercased.
+    /// The segment kind, lowercased — [`emit::row_kind`]'s word, which is
+    /// `pause` for a replayed pause (D68, P59) and `kind_label`'s otherwise.
     pub kind: String,
 }
 
@@ -78,7 +80,7 @@ pub fn rows(plan: &DayPlan, tree: &Tree, cfg: &Config) -> Vec<Row> {
             mark: emit::mark_of(seg).to_string().trim().to_string(),
             text,
             item: seg.item.clone(),
-            kind: dayplan::kind_label(&seg.kind).to_string(),
+            kind: emit::row_kind(seg).to_string(),
         })
         .collect()
 }
