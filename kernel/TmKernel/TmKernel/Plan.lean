@@ -531,6 +531,16 @@ def docKindAt (p : PlanCore) (k : DocIx) : DocKind :=
   | none   => .other
   | some d => docKind d
 
+/-- **The file kind's `ci` default** — §3.1's "else 3" and `tm-spec-v1.md` §4.3's two file
+defaults: `routines.md` "`ci` defaults to 1", `optional.md` "`ci:0`" (the campaign's D69, README gap
+3323).  The kernel's ONE table of it, read by `effectiveCiAux` where an item and every ancestor
+carry no `ci` — the host's is fork `Horizon::default_ci`, the same three rows, which is what the
+candidates the host sends already read. -/
+def DocKind.ciDefault : DocKind → Fin 6
+  | .routines => 1
+  | .optional => 0
+  | _ => 3
+
 /-! #### §4.2's sections, derived from the prose and the rank
 
 An item's section is **not a field**.  It is the last heading line at or before
@@ -2295,9 +2305,10 @@ theorem effectiveShape_does_not_reach_the_grandparent (p : PlanCore) (i j : Id) 
     effectiveShape p i = Shape.none := by
   simp [effectiveShape, hget, hsh, hpar, hj]
 
-/-- §3.1's `ci` default: "the parent's, else 3".  A bounded walk up the tree;
-`parentsAcyclic` is what says the bound is enough for it to be the real
-answer. -/
+/-- §3.1's `ci` default: "the parent's, else 3" — and since W-38 (D69, README gap 3323) the "else"
+is the TOP ancestor's file default, §4.3's (`DocKind.ciDefault`): fork `tree.rs`' "the nearest
+ancestor with an explicit ci, else the top ancestor's file default".  A bounded walk up the tree;
+`parentsAcyclic` is what says the bound is enough for it to be the real answer. -/
 def effectiveCiAux (p : PlanCore) : Nat → Id → Fin 6
   | 0,     _ => 3
   | n + 1, i =>
@@ -2308,7 +2319,7 @@ def effectiveCiAux (p : PlanCore) : Nat → Id → Fin 6
       | some c => c
       | none   =>
         match e.val.parent with
-        | none   => 3
+        | none   => (docKindAt p e.val.live.doc).ciDefault
         | some j => effectiveCiAux p n j
 
 def effectiveCi (p : PlanCore) (i : Id) : Fin 6 := effectiveCiAux p (fuel p) i
@@ -2322,10 +2333,23 @@ theorem effectiveCi_inherits (p : PlanCore) (n : Nat) (i j : Id) (e : Entity)
     effectiveCiAux p (n + 1) i = effectiveCiAux p n j := by
   simp [effectiveCiAux, hget, hci, hpar]
 
+/-- **The default at the top of the walk is the item's file kind's** (restated at W-38, D69): the
+statement read `= 3` until then, which the new one implies outside `routines.md` and `optional.md`
+(`effectiveCi_default_is_three_outside_the_furniture_files`) and refutes inside them
+(`effectiveCi_default_as_W_37_wrote_it_is_refuted`, at §4.3's own `lunch` line). -/
 theorem effectiveCi_default (p : PlanCore) (i : Id) (e : Entity)
     (hget : p.store.get i = some e) (hci : e.val.ci = none) (hpar : e.val.parent = none) :
-    effectiveCi p i = 3 := by
+    effectiveCi p i = (docKindAt p e.val.live.doc).ciDefault := by
   simp [effectiveCi, fuel, effectiveCiAux, hget, hci, hpar]
+
+/-- **The old statement, on the subdomain it holds on**: outside the two furniture files the
+default is §3.1's three. -/
+theorem effectiveCi_default_is_three_outside_the_furniture_files (p : PlanCore) (i : Id)
+    (e : Entity) (hget : p.store.get i = some e) (hci : e.val.ci = none)
+    (hpar : e.val.parent = none) (hr : docKindAt p e.val.live.doc ≠ DocKind.routines)
+    (ho : docKindAt p e.val.live.doc ≠ DocKind.optional) : effectiveCi p i = 3 := by
+  rw [effectiveCi_default p i e hget hci hpar]
+  cases hk : docKindAt p e.val.live.doc <;> simp_all [DocKind.ciDefault]
 
 /-- §3.2's `root_priority`: walk `parent` to the top and read the explicit `!k`
 **there**. -/

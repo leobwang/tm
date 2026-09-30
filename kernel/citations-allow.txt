@@ -574,7 +574,6 @@ can_fail
 2 PlanCheck.dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
 3 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
 2 PlanCheck.dayPlan_ok_on_a_quiet_unassigned_day_given_hot_and_no_eligible_impossible_item
-1 PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
 3 PlanCheck.the_census_ceiling_is_seven_on_an_unassigned_day_given_no_eligible_impossible_item
 1 PlannerWit.a_quiet_hot_day_drops_its_eligible_impossible_item
 6 PlannerWit.an_unassigned_day_drops_its_eligible_impossible_item
@@ -590,9 +589,7 @@ can_fail
 2 budgetLeft_mono
 1 dayPlan_ok_from_now_except_the_two_comparisons_on_an_unassigned_day_given_no_eligible_impossible_item
 1 dayPlan_ok_from_now_given_the_two_comparisons_and_no_eligible_impossible_item_on_an_unassigned_day
-3 dayPlan_ok_of_the_core_seven
 1 dayPlan_ok_on_a_quiet_unassigned_day_except_hot_given_no_eligible_impossible_item
-4 dayPlan_ok_on_the_whole_day_of_a_paying_decoder
 2 impossibleKept_antitone
 1 impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day
 1 impossibleKept_of_nothing_eligible
@@ -619,6 +616,24 @@ can_fail
 1 WINDOW_END_REFUSALS
 1 a_routine_window_s_close_is_refused_by_the_kernel
 2 is_window_end_refusal
+# W-38 track K (the owner's D67, README gap 3160): the impossible check reads "placed, or NAMED with
+# a reason true of the day", and it holds on every produced day (`PlanCheck.impossibleKept_on_every_day`),
+# so the five W-37 refutations of it and of the W-31 paying lifts are FALSE -- each replaced in place by
+# the statement it refuted, fired at gap 3160's day (`PlannerWit.impossibleKept_holds_on_a_paying_day`,
+# `PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_fires_at_the_contiguity_finding`, ...) --
+# and the two laws whose conclusion was "assigned" were RENAMED with the naming clause, their old forms
+# refuted in PlannerWit's W-38 block.  The W-31 lifts' own names resolve again, so their W-37 entries
+# are gone.  Every citation counted here is an append-only README block naming the thing as it stood.
+1 PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
+1 PlanCheck.impossibleKept_iff_the_owed_items_are_assigned
+1 PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted
+1 PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted
+1 PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted
+2 PlannerWit.impossibleKept_is_refuted_on_a_paying_day
+2 PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted
+2 an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
+2 impossibleKept_iff_the_owed_items_are_assigned
+1 impossibleKept_is_true_because_its_subject_is_empty_is_refuted
 
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #

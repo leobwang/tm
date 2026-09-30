@@ -1386,9 +1386,9 @@ ever answered about a request, and `PlannerWit.pCandDue` is the candidate that p
 
 The restatement is `PlanCheck.impossibleKept`, which is **already** one of §6.1's eleven.  It
 was proved inside the W-31 paying lift until W-37, when D66 made it read step 5's own filter and
-that lift was refuted (`PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`;
+that lift was refuted (PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted, W-37; proved again at W-38 under D67 as `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`, the check holding on every day, `PlanCheck.impossibleKept_on_every_day`;
 `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check` reduces the
-whole paying day to this one check, and README gap 3160 is what is owed): it reads the
+whole paying day to this one check, and README gap 3160 was what was owed, closed by D67): it reads the
 day's own `Planner.Diagnostics.impossible` — the id and its exact shortfall — rather than
 recomputing the numbers, which is what design §6.1 requires of a check over a produced `DayPlan`.
 **Its subject was empty at every request and every eligibility until W-33**, which

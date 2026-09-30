@@ -72723,3 +72723,417 @@ moved twenty minutes: its finding needs the day's last slot exactly `min_last_bl
 the unbuildable `[07:00, 16:00]` window gave at 08:30 and `tm arrive`'s `[07:00, 15:00]` gives at
 08:50; the fork's fractional cut still drops that slot and the kernel keeps it
 (`14:30–15:00 rest`).  Every proptest floor held on the new generator.
+
+<!-- =====================================================================
+     APPENDED 2026-09-29: stage 6 (the planner), run **W-38**, **TRACK K**,
+     on branch `w38-k` (worktree `.claude/worktrees/w38-k`) over `f91bb90`.
+     Gap range **3350-3389**; this block takes **3350-3355**; new gaps start
+     at **3356**.  Parity: **P58 issued** (below; this track's allocation).
+     Every build and test ran under the memory cap; every plant, every
+     mutation and the before-drive ran in a clone under `scratchpad/w38-k/`.
+     ===================================================================== -->
+
+## Stage 6 — W-38, track K: the day NAMES why an owed impossible item has no row (D67, P58), the impossible check holds on every day the planner produces, the plan view reads the file's `ci` default (D69), and the seven hold from `now`
+
+### 1. D67 — the day says why step 5 left an owed impossible item without a row (gap 3160 CLOSED, gap 3350)
+
+**Reproduced first.**  At `f91bb90`, `PlannerWit.step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk`
+stated `PlanCheck.impossibleKept = false` on the planner's own output at gap 3160's day.  Through the
+FFI, at `f91bb90` in a clone (a scratch test, never committed): a late arrival (14:00), `^h1` due
+today (ci 0, splittable, a 50-block estimate) and `^p1` due tomorrow (ci 2, atomic, `max:3b/d`, a
+50-block estimate), both impossible.
+The kernel's and the fork's days are the same four `^h1` blocks, and the banner says only
+`IMPOSSIBLE p1 Plain task: needs 65b, 6b available by Tue` — `^p1` is dropped and nothing says why.
+
+**The kernel** (`Planner.lean`'s diagnostics region, line-neutral: no check-9 pin site moved).
+`Planner.NoPlace` holds the walk's three reasons: `noRunLeft` (an atomic item: every unbroken run it
+fits went to work ranked before it), `noSlotLeft` (a splittable item: every slot it fits went to
+other work) and `budgetSpent` (the walk passed a slot the item fits because the budget was spent).
+`Planner.Diagnostics` gains `unplaced : Capped (Id × NoPlace)` as its LAST field, and
+`Planner.dayDiagnostics` writes it from `Planner.PlanReq.dayUnplaced`.  That is one entry for each listed
+impossible item (`dayImpossible`) that §8.2 step 5's filter admits at an energised slot before the
+walk and that the day does not assign.  The reason is `budgetSpent` when the walk left one of those
+slots EMPTY; otherwise it is `noRunLeft` when a start group holding the item is atomic, and
+`noSlotLeft` when none is.  The filter is `Planner.fitsBefore`, MOVED out of `PlanCheck` so that the
+writer and the checker read one definition (§5.3).  `Planner.PlanReq.mem_dayUnplaced` states the
+membership exactly, `Planner.PlanReq.dayUnplaced_capped` states the cap, and
+`Planner.dayDiagnostics_unplaced` says the day carries it.
+
+**The wire.**  `PlanWire.diagJson` emits `unplaced` LAST, as `[{"id","why"}]`, with
+`PlanWire.noPlaceName`'s three names.  Check 13 now reads 16 fields of `Planner.Diagnostics`: 16
+emitted under 16 keys, and 16 written by a definition `Planner.dayPlan` reaches (it was 15).  **For the
+land step:** `Planner.Diagnostics` and `diagJson` each gained exactly one field or key, at the end.
+
+**The host.**  `tm-core/src/dayplan.rs` gains `NoPlace` and `Diagnostics::unplaced`, which is
+`#[serde(skip)]` (gap 3351).  `planwire::read_plan` decodes it and refuses, by name, both a reason the
+kernel does not write and a name for an item the impossible list does not hold.
+`emit::render_banners` appends ` · not placed: <reason>` to that item's `IMPOSSIBLE` line (through
+`emit::unplaced_note`), and the TUI's impossible row takes the same note (`tm/src/tui/app.rs`).  The
+fork's planner writes nothing there, so a fork day prints what it always printed.  **One existing Rust
+test was touched**: `planwire.rs`'s inline test module.  Its fixture carries the key the kernel now
+always writes, and three refusal cases sit beside the existing ones, because the decoder's refusals are
+reachable only with that module's fixture.  Every other new test is in the new
+`tm/tests/kernel_unplaced_banner.rs` (4 tests).
+
+**Parity P58 taken**: the kernel's day NAMES why §8.2 step 5 left an owed impossible item it admitted before the walk without a row — `diagnostics.unplaced`, `{id, why}` with `why` one of `noRunLeft` (atomic: every run it fits went to work ranked before it), `noSlotLeft` (splittable: every slot it fits went to other work) and `budgetSpent` (the walk passed a slot it fits for the budget) — and the host's `IMPOSSIBLE` banner and the TUI's impossible row print ` · not placed: <reason>` after the shortfall; fork 4748911's planner drops the same item the same way and names nothing (owner D67, W-38 track K, README gaps 3160 and 3350)
+
+**Behaviour rows, DRIVEN through the FFI and not on the shipped binary.**  Until R3 the shipped
+`tm plan` plans with fork `planner::plan`, which names nothing, so no shipped path prints the reason
+yet.  The drive runs the KERNEL's planner through `tm_kernel_call` and the codec R3 swaps in
+(`planner_common`'s `Kernel`).  It is run before (`f91bb90`, a scratch test in a clone) and after (this
+commit, the same scratch test in a clone of it, and `tm/tests/kernel_unplaced_banner.rs`), with the
+same world at 14:00:
+
+| surface | `f91bb90` | after |
+|---|---|---|
+| the kernel's rows | 14:00, 15:00, 16:20, 17:20 Block `^h1`; 16:00 Break | unchanged: the walk is the fork's |
+| `^p1`'s banner line | `IMPOSSIBLE p1 Plain task: needs 65b, 6b available by Tue` | `IMPOSSIBLE p1 Plain task: needs 65b, 6b available by Tue · not placed: no run left` |
+| `^h1`'s banner line (placed) | `IMPOSSIBLE h1 Hard task: needs 65b, 4b available by Mon` | unchanged: a placed item is never named |
+| the same world, stored budget 1 | `IMPOSSIBLE p1 …: needs 65b, 6b available by Tue` | `… · not placed: budget spent` |
+| the TUI's impossible row for a named item | `impossible · short <blocks>` | `impossible · short <blocks> · not placed: no run left` (read off the code, NOT driven: no agent has a tty, AGENTS §5.13) |
+| `diagnostics` in `tm plan --json` / `.tm/last_plan.json` | the fork's twelve keys | unchanged (gap 3351) |
+| the fork's day and banner, and the shipped `tm plan` | as `f91bb90` | unchanged (`the_fork_drops_the_same_item_and_names_nothing`) |
+
+### 2. The impossible check: placed, or named with a reason TRUE of the day — and it holds on every day the planner produces
+
+`PlanCheck.impossibleKept` is restated in place, line-neutral.  It looks at each listed item that step
+5's filter admits before the walk (`PlanCheck.eligibleBefore`), that its own grant owes today
+(`PlanCheck.owedByItsGrant`), and that still has the budget left (`PlanCheck.budgetLeft`).  Each such
+item must be PLACED, or named in `unplaced` with a reason `PlanCheck.whyHolds` finds true of the day:
+* **`budgetSpent`**: the day's work rows from `now` number at least `Planner.remainingBudget`;
+* **`noRunLeft` / `noSlotLeft`**: every slot the item fits before the walk holds a work row of
+  another item (`PlanCheck.takenBefore`), and a start group holding the item is atomic or splittable,
+  as the name says.
+
+A name is therefore never an excuse the day can give itself; it has to be borne out.
+
+**`PlanCheck.impossibleKept_on_every_day`: `impossibleKept r (dayPlan r) = true`, for every request,
+with no hypothesis.**  It is `PlanCheck.whyHolds_of_a_name_the_day_carries` over `PlanFold`'s new W-38
+section (23 theorems, no definitions), which proves each reason from the walk itself:
+* **The walk reads nothing it has already written.**  A step writes the slot vector at its own index
+  and a group's entry only when it picks that group (`PlanFold.assignStep_slotOf_ne`,
+  `PlanFold.assignStep_groups_of_not_picked`).  The walk visits each slot once, in order
+  (`PlanFold.zipIdx_split`), and the filter reads the cursor only from where it stands
+  (`PlanFold.groupFitsSlot_of_drop`).  So a slot the item's group fits before the walk is left empty
+  only for the budget (`PlanFold.the_walk_passes_a_slot_a_group_fits_before_it_only_for_the_budget`).
+* **The walk's budget is the day's rows.**  The budget counter is the running block's block plus one
+  per filled slot (`PlanFold.assignFold_used_counts`).  There is one row per filled slot
+  (`PlanFold.assignedRows_length`), and each of those rows, like the reservation, is a work row from
+  `now` (`PlanFold.the_day_holds_every_block_the_walk_spent`).
+* So `budgetSpent` is true (`PlanFold.a_budget_spent_name_is_true_of_the_day`), and any other name finds
+  a work row of another item at every slot the item fits (`PlanFold.a_taken_name_holds_every_slot_it_fits`).
+
+**Both directions (AGENTS §5.8), and non-vacuity (§5.2).**
+* **It bites.**  `PlannerWit.the_day_without_its_name_fails_the_check` is gap 3160's own day with
+  `unplaced` emptied.  `PlannerWit.a_named_reason_the_day_does_not_bear_out_fails_the_check` covers each
+  clause of `whyHolds`: `budgetSpent` with two rows against a budget of six, `noSlotLeft` on an atomic
+  group, and `noRunLeft` with `^h1`'s 07:00 row taken out.  `PlanCheck.impossibleKept_can_fail` is
+  re-proved.
+* **It discharges.**  `PlannerWit.step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk`
+  is restated in place (fourteen conjuncts, each `by decide`): the day names `^p1` `noRunLeft`,
+  `impossibleKept` is `true`, and `planOk` at `PlannerWit.freeSlotRows` is `true`.
+* **It is not vacuous.**  `PlannerWit.the_day_names_each_reason_the_walk_can_give` shows all three
+  reasons at days the planner gives them on.  `noRunLeft` is at gap 3160's day and `noSlotLeft` at
+  `PlannerWit.theTwoImpossibleRequest`.  `budgetSpent` is at the new `PlannerWit.theOneBlockFindingRequest`
+  (a stored budget of one: the walk spends it at 06:00 and passes 07:00, which `^p1` fits) and at
+  `PlannerWit.theUnassignedImpossibleRequest`.  The two name lemmas fire as
+  `PlannerWit.the_budget_spent_name_holds_at_the_one_block_day` and
+  `PlannerWit.the_no_run_left_name_holds_at_the_contiguity_finding`.
+  `PlannerWit.impossibleKept_is_true_but_not_because_its_subject_is_empty` shows that at gap 3160's
+  day the check has a subject and passes because the item is named.
+
+**The W-31 paying lifts are theorems again.**  Now that the impossible check is a theorem, W-37's
+equations collapse to the W-31 forms:
+* `PlanCheck.dayPlan_ok_is_the_core_seven`: `FromNowAnchored el → FoldRowsAdmitNothing r el → planOk el r (dayPlan r) = planOkCore r (dayPlan r)`;
+* `PlanCheck.dayPlan_ok_of_the_core_seven`: the seven, computed, discharge the eleven;
+* `PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`: `DecoderPays`, `hnopast`, `hbudget`
+  and `PlainStore`, with no `hnoimp`.
+
+W-37 refuted each of them at gap 3160's day.  Each now FIRES there
+(`PlannerWit.dayPlan_ok_is_the_core_seven_at_the_contiguity_finding`,
+`PlannerWit.dayPlan_ok_of_the_core_seven_at_the_contiguity_finding`,
+`PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_fires_at_the_contiguity_finding`).  W-37's
+refuted ∀-statement holds too: `PlannerWit.impossibleKept_holds_on_a_paying_day`.
+
+### 3. D69 on gap 3323 — the plan view reads the file kind's `ci` default (CLOSED)
+
+`Tm.DocKind.ciDefault` in `Plan.lean` is routines 1, optional 0, otherwise 3: §4.3's two file defaults
+and §3.1's "else 3".  **The kernel held no such table.**  Searched: the only one in the repository is
+the host's `Horizon::default_ci` (`tm-core/src/model.rs`), with the same three rows, and the candidates
+on the wire already read it.  So this is the kernel's one table.  `effectiveCiAux` reads it where an
+item and every ancestor carry no `ci`, at the top ancestor's file, as fork `tree.rs` does.
+`Tm.effectiveCi_default` is restated in place (`= ciDefault` of the item's file kind).  Its old form is
+refuted at §4.3's `lunch` (`PlannerWit.effectiveCi_default_as_W_37_wrote_it_is_refuted`) and kept on
+the subdomain where it holds (`Tm.effectiveCi_default_is_three_outside_the_furniture_files`).
+`PlannerWit.the_furniture_files_read_their_own_ci_default` computes 1 for `lunch` and 0 for §4.3's
+`Severance S3E4`.
+
+### 4. Gap 3322 — the seven from `now` over a produced day (CLOSED), and gap 2020's from-now half
+
+* `PlanCheck.planOkCore_from_now_of_the_whole_day`: the seven on the whole day imply the seven on
+  `PlanCheck.withoutPast`, the rows from `now`.
+* `PlanCheck.a_whole_day_core_failure_is_a_logged_row`: where the two forms differ, the difference is a
+  replayed work row of the log that starts before `now`.
+* `PlanCheck.noOverbook_from_now` (its only hypothesis is `now` inside the calendar): overbooking from
+  `now` does not happen on ANY produced day.  This is **gap 2020's from-now half**.  The count gap 2020
+  said this tree did not have is `PlanFold.assignFold_used_counts` together with
+  `PlanFold.assignedRows_length`.  Since `finalAssign` IS `assignFold` (gap 903), the
+  `rePlaceWalk`/`deferWalk` chain gap 2020 priced is not needed.
+* `PlanCheck.dayPlan_ok_core_from_now_of_a_decoder`: the seven from `now` follow from `DecoderPays` and
+  `PlainStore` alone.  It is `dayPlan_ok_core_from_now_of_a_paying_decoder` without that theorem's
+  `hbudget`.
+* `PlanCheck.a_core_failure_on_a_paying_day_is_a_logged_row`: on a paying day, every failure of the
+  seven is a row the log made.
+* The witnesses: `PlannerWit.the_log_overbooks_the_whole_day_and_not_the_day_from_now` and
+  `PlannerWit.the_over_budget_failure_is_a_logged_row` (at `theOverBudgetRequest`), and
+  `PlannerWit.the_fold_s_blocks_fit_the_budget_from_now` (7 200 s of step-5 blocks against 21 600 s,
+  at gap 3160's day).
+
+**Gap 1900 is CLOSED for the day's rows** by `PlanFold.a_filled_slot_assigns_its_groups_members`.  Every
+group step 5 gives a slot has `build_groups`' members, because the walk moves only `spent`, so it is a
+bounded batch.  Its row therefore names every member.  `Planner.batchIdsOf`'s truncation never fires on
+a produced day, because its only caller is step 5's `assignedSeg`.  The docstring above `batchIdsOf`
+still calls the gap open, and that is gap 3355.
+
+### 5. Laws restated (D5): old, new, and which implies which
+
+* `PlanCheck.impossibleKept` (the definition) and `PlanCheck.impossibleKept_iff`: "placed" becomes
+  "placed, or named with a true reason".  **The old check implies the new**: every day the old passes,
+  the new passes.  The new also passes named drops, which the old refused.  This is D67's reading of
+  §8.3, the owner's, and not a narrowing taken here.  The new check still bites on a drop the day does
+  not name and on a name the day does not bear out (§2).
+* `PlanCheck.impossible_kept_from_the_battery`: its conclusion widens the same way, so the old implies
+  the new.  The old form is refuted: `PlannerWit.impossible_kept_from_the_battery_as_W_37_wrote_it_is_refuted`.
+* impossibleKept_iff_the_owed_items_are_assigned is renamed
+  `PlanCheck.impossibleKept_iff_the_owed_items_are_assigned_or_named`.  Its right-hand side goes from
+  "an owed item left out has no budget left" to "an owed item left out, with the budget left, is
+  named".  The old is refuted: `PlannerWit.impossibleKept_iff_the_owed_items_are_assigned_as_W_37_wrote_it_is_refuted`.
+* `PlanCheck.impossibleKept_of_nothing_assigned_iff`: its right-hand side goes from "no such item has
+  the budget left" to "every such item with the budget left is named".  **The old right-hand side
+  implies the new.**  The old iff is refuted at the planted `PlannerWit.theItemlessNamedDay`, which is
+  gap 3160's day with `^h1`'s rows made itemless and both items named
+  (`PlannerWit.impossibleKept_of_nothing_assigned_iff_as_W_37_wrote_it_is_refuted`).
+* an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned is renamed
+  `PlanCheck.an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`
+  and gains one hypothesis, "not named with a true reason".  The old statement implies the new, and it
+  is FALSE at the same planted day, which the same theorem proves.
+* `Tm.effectiveCi_default`: `= 3` becomes `= DocKind.ciDefault` of the item's file kind.  The new
+  statement implies the old outside `routines.md` and `optional.md`, which is
+  `Tm.effectiveCi_default_is_three_outside_the_furniture_files`, and refutes it inside them (§3).
+* **Retired with their subjects, not restated**, because D67 makes each of them false: the W-37
+  refutations dayPlan_ok_is_the_core_seven_is_refuted, dayPlan_ok_of_the_core_seven_is_refuted,
+  dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted and impossibleKept_is_refuted_on_a_paying_day.
+  Each is replaced in place, line for line, by the statement it refuted, fired at the same day (§2).
+  impossibleKept_is_true_because_its_subject_is_empty_is_refuted refuted "true on every day", and that
+  IS true now.  It is replaced by `PlannerWit.impossibleKept_is_true_but_not_because_its_subject_is_empty`.
+  Their audit lines went with them.
+* PlanCheck.fitsBefore moved to `Planner.fitsBefore` with its body unchanged, and every reader follows it.
+
+### 6. Measured
+
+Figures are **over the 41 frozen worlds** of `tm/tests/fixtures/fork-4748911-planner-classes.jsonl`.
+For each world, the kernel request the host's codec builds was evaluated against this commit's kernel
+by a scratch Lean program (`scratchpad/w38-k/W38Classes.lean`), in one run.  This is a snapshot of the
+41-line comparand; gap 3322's "12 of 45" was taken over W-37's 45-line file.
+
+| fact | worlds |
+|---|---|
+| `PlanCheck.candsAgree` | **41 of 41** (gap 3323 counted 0 of 45 at W-37's land) |
+| `DecoderPays`, all six clauses | 41 of 41 |
+| `PlainStore`; `noOverbook` on the whole day | 41 of 41; 41 of 41 |
+| no replayed Block row (`hnopast`) | 3 (idle/lounge, idle/home, break/home) |
+| the seven, whole day | 30 of 41 |
+| the seven from `now` | **41 of 41** |
+| `impossibleKept`, whole day / from `now` | 41 of 41 / 41 of 41 |
+| `planOk` at `freeSlotRows`, whole day / from `now` | 30 of 41 / 41 of 41 |
+| worlds whose day names an item | **11**: 13 items, 8 `budgetSpent` and 5 `noRunLeft` |
+
+**Each of the 11 whole-day failures is a LOGGED fact.**  Every one has a work row of the log before
+`now`.  `oneBlock` fails on 7 and `overWall` on 5, and overtime/home fails both.  This is what
+`PlanCheck.a_core_failure_on_a_paying_day_is_a_logged_row` says of all 41, since each pays the decoder
+and is plain.
+
+**Which paying-day lifts apply.**  `PlanCheck.dayPlan_ok_core_from_now_of_a_decoder` and the
+logged-row law apply to all 41.  The whole-day eleven (`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder`)
+applies to the 3 with no replayed Block.  Every lift that hypothesises `DecoderPays` has that
+hypothesis met on 41 of 41, where W-37's land met it on none.
+
+**Over the 79 `PlanReq` witnesses in `PlannerWit`**, `impossibleKept` is `true` at all 79.  Five days name
+an item:
+* `theUnassignedImpossibleRequest`: `^m2` `budgetSpent`;
+* `theTwoImpossibleRequest`: `^t1` `noSlotLeft`;
+* `theReversedTwoImpossibleRequest`: `^t3` `noSlotLeft`;
+* `theContiguityFindingRequest` and `theRankFindingRequest`: `^p1` `noRunLeft`.
+
+`candsAgree` holds at 42 of 79, and D69 did not move that count.
+
+### 7. The burn-down: six goals, six stay
+
+* `Goals.plan_places_no_demanding_block_after_wind_down` was tried first.  Its checker form holds from
+  `now` on a day that pays: `noDemandingAfterWindDown` is one of the seven proved in §4.  The goal as
+  written is a different statement, for three reasons.  It quantifies over EVERY request.  It reads
+  the plan view's `effectiveCi` and carries no `candsAgree`.  And it covers the whole day, replayed
+  past included.  The proof route W-32 recorded needs gap 2326's bound on `Look.day0Window`'s end.
+  Neither a proof nor a counter-example was reached (gap 3353).
+* `Goals.plan_is_monotone_in_rank` and `Goals.plan_puts_hot_before_the_queue` are refuted as written.
+  D67 **declined** the walk-state reading ("never dropped while step 5 could still place it") that
+  their restatements at the cursor's state would need, so neither can leave by that route.  Not
+  attempted.
+* `Goals.plan_never_batches_past_an_equal_ci_candidate`: nothing here touches batching.  Not attempted.
+* `Goals.plan_tail_drop` and `Goals.plan_is_stable_across_a_replan` are the two relational laws (D29,
+  D5).  Not attempted.
+
+Burn-down **6 → 6**.  No goal was added.  One `Goals.lean` citation moved with the law it cites.
+
+### 7a. Check 9 — every definition this block adds or changes, mutated in clones
+
+Thirteen definitions were owed.  They ran as `mutate.py --write --only <name>`, one definition at a
+time, across six clones of this tree (`scratchpad/w38-k/clone1` to `clone6`; each is a `git clone
+--shared` of `f91bb90` with this step's changes copied in, and none left a `.mutate-in-flight`).  The
+thirteen rows were merged into `mutations.txt` by key: 9 appended and 4 replaced.  The orphan row of
+PlanCheck.fitsBefore went with its subject.  Never in the worktree while anything was owed:
+
+| definition | verdict |
+|---|---|
+| `Tm.DocKind.ciDefault` | PINNED: `Plan.lean` `effectiveCi_default_is_three_outside_the_furniture_files`, then `PlannerWit.the_furniture_files_read_their_own_ci_default` |
+| `Tm.effectiveCiAux` | PINNED: `effectiveCi_explicit`, also `effectiveCi_inherits` |
+| `Tm.PlanCheck.takenBefore` | PINNED at `true` (`whyHolds_of_a_name_the_day_carries`, then `a_named_reason_the_day_does_not_bear_out_fails_the_check`) and at `false` (the same, then `step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk`) |
+| `Tm.PlanCheck.whyHolds` | PINNED at `fun _ => true` (`whyHolds_of_a_name_the_day_carries`, then `a_named_reason_the_day_does_not_bear_out_fails_the_check`) and at `fun _ => false` (the same, then `step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk`) |
+| `Tm.PlanCheck.impossibleKept` | PINNED at `true` (`impossibleKept_iff`, also `impossibleKept_can_fail`) and at `false` (`impossibleKept_iff`, also `impossibleKept_of_no_impossible`): the old row's sites |
+| `Tm.PlanWire.noPlaceName` | PINNED at both constants (`diagJson_carries_its_lists`, twice) |
+| `Tm.PlanWire.diagJson` | PINNED (`diagJson_of_an_untroubled_day`) |
+| `Tm.Planner.Diagnostics.empty` | unfoldable and unavailable, **as its row already said before this block** (the synthesised constant is the definition itself) |
+| `Tm.Planner.fitsBefore` | PINNED at `true` and `false`: `PlanFold.a_budget_spent_name_is_true_of_the_day`, then `PlanCheck.an_unassigned_day_admits_nothing_under_its_budget` |
+| `Tm.Planner.PlanReq.dayUnplaced` | PINNED at `default` and `[]`: `PlanReq.mem_dayUnplaced`, also `PlanReq.dayUnplaced_capped` |
+| `Tm.Planner.dayDiagnostics` | PINNED at `Diagnostics.empty` (`dayDiagnostics_impossible`, also `dayDiagnostics_hot`; the same sites as before, so the edit was line-neutral) |
+| `Tm.PlannerWit.theOneBlockFindingRequest`, `Tm.PlannerWit.theItemlessNamedDay` | witness fixtures (unfoldable: no `Inhabited`), exempt by `WITNESS_MODULES` |
+
+### 8. Acceptance
+
+Every command ran under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`: 16 GB for
+`mutate.py` and the scratch Lean programs, 8 GB for the probes.  `git status --porcelain` in this
+worktree was identical before and after every run below, and the shared checkout at `f91bb90` stayed
+clean throughout.
+
+* **`check.sh`: 14 checks, 17 lines, every one ok, exit 0.**  It took 4 m 23 s on its first run over the
+  rebuilt library and 23.9 s on the final tree (these figures are from the final tree):
+  * build; totality; Negative rejected; FFI 95; corpus 29/37 and 4/5;
+  * axiom audit **5,792** theorems (5,740 at `f91bb90`: 7 audit lines left with their subjects and 59
+    were added under the W-38 banners);
+  * stage goals **6**;
+  * citations 48,337, of which 46,173 resolved and 2,164 allowed (415 counted), 0 allow entries unused;
+  * check 9: **496 new or changed, 496 rostered, 0 owed**.  161 unfoldable, 104 witness fixtures and
+    **32 pinned by nothing, as at `f91bb90`** (488 / 159 / 102 / 32 there, measured in a clone);
+  * parity P1-P58, next free P59;
+  * twins 3,252 bodies, 94 generalisation groups, 0 UNANSWERED;
+  * reach 1,213 reachable, 1,200 exempt, 0 UNANSWERED;
+  * fields **16 of 16**; inputs 33 of 37 read, 4 exempt; sent 28 of 28 decoded; written 34 decoded,
+    28 written, 3 exempt; replay 89 modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): **1,653 passed / 0 failed / 12
+  ignored across 99 result lines, each time**.  Walls were 825, 756 and 788 s, and loads at the
+  starts were 7.3, 8.5 and 4.9.  No run wrote a proptest seed.  The new result line is
+  `kernel_unplaced_banner`: its 4 tests and the 5 chokepoint unit tests `planner_common` pulls in.
+* **Named suites, `--include-ignored --nocapture`, one run each, at load 1.9-5.1, all passed**:
+  `kernel_unplaced_banner` 9; T5 (`kernel_replay_parity`) 33; the door (`kernel_log_door`) 23;
+  `cli_switch_acceptance` 16; `kernel_call_counts` 2; `one_padder` 9; `one_renderer` 25;
+  `kernel_row_cells` 26; `kernel_item_grammar` 6; `kernel_planner_wire` 23; `kernel_plan_codec` 9;
+  `planner_classes` 28; `emit_planner` 14; `planner_fixtures` 13; `planner_regressions` 46;
+  `planner_dynamics` 23; `mutation_in_flight` 1.  FFI 95 ran inside `check.sh`.
+  * `planner_classes` compared **35 non-P45 days, 409 fork rows and 12,616 other values, with 0
+    differences and 35 of 35 hashes equal**, the W-37 repair's figures exactly: D67 and D69 moved no
+    frozen row or value.
+* **`cli_latency --include-ignored`, three runs, 6 of 6 each**, at load 2.7, 2.2 and 1.9 (gap 1333's
+  condition), as RANGES:
+  * the example tree: first verb 739-760 ms, later verb 81-91 ms, gated write 81-86 ms;
+  * the 1y log: first verb 1,226-1,260 ms, later verb 117-122 ms;
+  * the 3y log: first verb 2,227-2,268 ms, later verb 167-188 ms, gated write 167-189 ms;
+  * a hand undo 30 days old 1,337-1,391 ms, and the verb after a windowable one 258-259 ms;
+  * a 3-day-old routine 244-248 ms; `review week` 380-400 ms; the reseal 301-305 ms;
+  * 10 stalled days, worst 643-663 ms; bare `tm log` at three years 258 ms;
+  * a plan with a due 3 years out 111 ms, and 10 years out 162-173 ms.
+* **`planner_invariants`, FOUR runs, every one green**: the three workspace runs, and one standalone
+  `--include-ignored --nocapture` run of 31 of 31 in 363 s.  The standalone run's censuses cover
+  **283 cases: hashes EQUAL 282, rows agree 283, days whose rows differ 0**.  The one unequal hash is
+  gap 3281's declared order class.  P51 was 226 days, with the kernel equal to the comparand on 226.
+* Every new `decide` witness is in `PlannerWit.lean` under the file's own `maxRecDepth 400000`.  The
+  new witnesses' values were probed first with `#eval` in scratch files under the cap
+  (`scratchpad/w38-k/Eval*.lean`).  The worktree's two rebuilds took 7 m 4 s (from `Planner.lean` on)
+  and 5 m 12 s (`PlannerWit.lean` alone).
+* No memory bound, `maxHeartbeats` or `maxRecDepth` was raised.  No `decide +kernel` was used.  No
+  predicate or assertion was weakened: every restatement is D67's or D69's reading, with its old form
+  refuted by a witness (§5).  No snapshot, fixture, frozen comparand, latency band or corpus was
+  re-blessed.  No external dependency was added.
+* **One parity number was issued, P58**, this track's allocation.
+* The exemption files: `reach-exempt.txt` is still 1,200 entries, with three census reasons corrected
+  to the measurement (Plan 45 of 78, PlanWire 3 of 50, Planner 0 of 284).  The new definitions are
+  answered by the existing unsent-`planner` property, not by entries.  `citations-allow.txt` lost 3
+  entries whose names resolve again and gained 10 counted dead names cited by append-only README blocks.
+  `mutations.txt` gained 9 rows, replaced 4, and deleted 1 orphan.  `kernel-decide-exempt.txt`,
+  `twins-exempt.txt`, `fields-exempt.txt` and `inputs-exempt.txt` are unchanged.
+
+### 9. Gaps
+
+**Gap 3350 — CLOSED here: the day names why an owed impossible item has no row (D67).**  §1 and §2 are
+the record.  `Planner.Diagnostics.unplaced` cites this number.
+
+**Gap 3351 — the reason is printed, not serialised.**
+1. *What.*  `tm plan --json` and `.tm/last_plan.json` keep the fork's diagnostics shape, because
+   `Diagnostics::unplaced` is `#[serde(skip)]`.  The name reaches the banner and the TUI, and it
+   reaches neither JSON surface.
+2. *Why.*  Serialising it would change the diagnostics of 11 of the 41 frozen comparand days, and the
+   comparand compares diagnostics by value.  That is a D64(a) re-bless under P58, and it is the
+   comparand owner's to take (H's, or the land step's), not this field's to force.
+3. *Cost.*  A reader of the JSON cannot see why an item was dropped.
+4. *Clears it.*  A step that owns the frozen comparand: re-bless the 11 lines under D64(a), naming
+   P58, and drop the `skip`.
+
+**Gap 3352 — the ELEVEN from `now` is measured (41 of 41), not proved.**
+1. *What.*  §4 proves the seven from `now`, but not `impossibleKept` over `withoutPast`.
+2. *Why.*  The writer's "placed" is the WHOLE day's assigned set, so an item a replayed row of the log
+   holds is never named.  From `now`, that item can be neither placed nor named while its grant still
+   owes it minutes.  The from-now check then fails on a day the whole-day check passes.
+3. *Cost.*  The battery from `now` has no lift for its impossible conjunct.
+4. *Clears it.*  A decision about what "placed" means for an item the log already worked today.  Either
+   the writer names it from `now`, or the checker reads the whole day.  It is not a proof step.
+
+**Gap 3353 — `Goals.plan_places_no_demanding_block_after_wind_down` is neither proved nor refuted.**
+1. *What.*  The goal's own statement.
+2. *Why.*  Its checker form holds from `now` on a paying day (§4), and W-32's structural argument (gap
+   2325) says step 5 places no counter-example.  But the goal quantifies over every request, reads the
+   plan view's `ci` with no `candsAgree`, and covers the replayed past.  Two routes were NOT built here:
+   a proof over step 5's rows, which needs gap 2326's bound on `Look.day0Window`'s end; and a
+   refutation at a request planned past its own wind-down whose log holds a demanding block after it
+   (gap 2199's missing request).
+3. *Cost.*  The burn-down stays at 6.
+4. *Clears it.*  Gap 2326 and a decision on the replayed past (restate over the rows from `now`, or
+   refute as written), then this goal.
+
+**Gap 3354 — an item in two start groups is named by the atomic one.**
+1. *What.*  `dayUnplaced` names `noRunLeft` when ANY start group holding the item is atomic, and
+   `whyHolds` accepts a name whose group kind some group holding the item has.
+2. *Why.*  Nothing in this tree proves that an item sits in exactly one start group.
+3. *Cost.*  Not measured.  Fork `build_groups` draws its groups from `priority::batches` of the ranked
+   candidates, and no law here says an id lands in only one of them.  If an item ever sat in two groups,
+   the reason would say "run" where "slot" also fits.
+4. *Clears it.*  A `buildGroups` partition law (each candidate in at most one group), whenever the batch
+   goal is taken up.
+
+**Gap 3355 — `Planner.batchIdsOf`'s docstring still calls gap 1900 open.**
+1. *What.*  The sentence "The truncation is not known to be unreachable on a produced day" above
+   `Planner.batchIdsOf`.
+2. *Why.*  It is outside this track's region of `Planner.lean`, and the brief kept K to the diagnostics
+   region.
+3. *Cost.*  A reader of the source believes a closed gap is open.
+4. *Clears it.*  The land step: one line, line-neutral, citing `PlanFold.a_filled_slot_assigns_its_groups_members`.
+
+**Closed by this block:**
+* **3160**: D67, §1–§2.
+* **3323**: D69, §3.
+* **3322**: §4.
+* **2020's from-now half**: §4.  The whole-day `noOverbook` stays a hypothesis because the log's rows
+  can overbook, which is `PlannerWit.the_log_overbooks_the_whole_day_and_not_the_day_from_now`.
+* **1900**, for every row the day holds: §4.
+* **3168 is moot.**  It priced a parity number for gap 3160's reading (b), and the owner took (c).  P58
+  is (c)'s number, and W-37's PARITY-PENDING line stays unissued.
+
+New gaps start at **3356**.

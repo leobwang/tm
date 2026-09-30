@@ -452,27 +452,27 @@ theorem hotPairOk_iff (el : Eligible) (r : PlanReq) (d : DayPlan) (i j : Id) :
             simp only [decide_eq_true_eq]
             exact h e f hi hj
 
-/-! ## 10. `impossible` — never dropped while step 5 admits it and the budget can be spent (D66)
-D55, D59, D66 (README gaps 2510, 2800, 3000): owed what its OWN grant holds TODAY (`owedByItsGrant`); ELIGIBLE where
-§8.2 step 5's WHOLE filter admits it at a slot of the day BEFORE step 5 assigns anything (`fitsBefore`, the battery's
-`Eligible` NOT read); a drop excused only by a budget spent on rows it could not have displaced (`budgetLeft`, gap 3130). -/
+/-! ## 10. `impossible` — placed or NAMED with its reason, while step 5 admits it and the budget can be spent (D66, D67)
+D55, D59, D66, D67 (README gaps 2510, 2800, 3000, 3160): owed what its OWN grant holds TODAY (`owedByItsGrant`); ELIGIBLE where §8.2 step 5's WHOLE filter admits it at a slot BEFORE step 5 assigns anything
+(`Planner.fitsBefore`, the battery's `Eligible` NOT read); a drop excused by a budget spent on rows it could not have displaced (`budgetLeft`, gap 3130); else PLACED, or named in `unplaced` with a reason TRUE of the day (`whyHolds`). -/
 def todayAnswers (r : PlanReq) : List Look.FloorOut :=
   Look.prioritiesWithFloors r.prio.bins r.prio.safety r.prio.dflt r.prio.hyst (r.edfDays.take 1) r.cands.val
 def owedByItsGrant (r : PlanReq) (i : Id) : Bool :=
-  (r.candAnswers.filter (fun o => o.out.cand.id == i && decide (0 < o.shortfall))).isEmpty ||
-    (r.candAnswers.zip (todayAnswers r)).any (fun p => p.1.out.cand.id == i &&
-      decide (0 < p.1.shortfall) && decide (0 < ((p.2.view.grant.map Prod.fst).getD 0)))
-def fitsBefore (r : PlanReq) (i : Id) (x : (Fin 6 × Look.Slot) × Nat) : Bool := r.startGroups.any (fun g =>
-  decide (i ∈ g.ids) && r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g)
+  (r.candAnswers.filter (fun o => o.out.cand.id == i && decide (0 < o.shortfall))).isEmpty || (r.candAnswers.zip (todayAnswers r)).any
+    (fun p => p.1.out.cand.id == i && decide (0 < p.1.shortfall) && decide (0 < ((p.2.view.grant.map Prod.fst).getD 0)))
 def eligibleBefore (r : PlanReq) (i : Id) : Bool := r.energisedSlots.zipIdx.any (fitsBefore r i)
 def budgetLeft (r : PlanReq) (d : DayPlan) (i : Id) : Bool :=
   decide ((d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start) && (isActive r s || !(r.energisedSlots.zipIdx.any (fun x => decide (x.1.2.start = s.val.start) && fitsBefore r i x)) || s.val.items.any (fun j => d.diagnostics.impossible.val.any (fun q => q.1 == j))))).length < remainingBudget r)
+def takenBefore (r : PlanReq) (d : DayPlan) (i : Id) : Bool := r.energisedSlots.zipIdx.all (fun x => !fitsBefore r i x || d.segments.any (fun s => s.val.kind.isWork && decide (s.val.start = clampSec x.1.2.start) && !s.val.items.contains i))
+def whyHolds (r : PlanReq) (d : DayPlan) (i : Id) : NoPlace → Bool
+  | .budgetSpent => decide (remainingBudget r ≤ (d.segments.filter (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length)
+  | w => takenBefore r d i && r.startGroups.any (fun g => decide (i ∈ g.ids) && g.splittable == (w == .noSlotLeft))
 def impossibleKept (r : PlanReq) (d : DayPlan) : Bool :=
-  d.diagnostics.impossible.val.all (fun p => decide (eligibleBefore r p.1 = true →
-    owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true → p.1 ∈ assignedOf d))
+  d.diagnostics.impossible.val.all (fun p => decide (eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true →
+    budgetLeft r d p.1 = true → p.1 ∈ assignedOf d ∨ d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2)))
 theorem impossibleKept_iff (r : PlanReq) (d : DayPlan) :
-    impossibleKept r d = true ↔ ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
-      owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true → p.1 ∈ assignedOf d := by simp only [impossibleKept, List.all_eq_true, decide_eq_true_eq]
+    impossibleKept r d = true ↔ ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true →
+      budgetLeft r d p.1 = true → p.1 ∈ assignedOf d ∨ d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2) = true := by simp only [impossibleKept, List.all_eq_true, decide_eq_true_eq]
 
 /-! ## 11. `batch` — a batch does not reach past an equal-`ci` candidate of its own group
 
@@ -636,7 +636,7 @@ theorem hot_before_queue_from_the_battery (el : Eligible) (r : PlanReq) (d : Day
 theorem impossible_kept_from_the_battery (el : Eligible) (r : PlanReq) (d : DayPlan)
     (h : planOk el r d = true) : ∀ p ∈ d.diagnostics.impossible.val,
       eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = true →
-        p.1 ∈ assignedOf d :=
+        p.1 ∈ assignedOf d ∨ d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2) = true :=
   (impossibleKept_iff r d).mp
     (checks_all el r d h ⟨.impossible, impossibleKept⟩ (by simp [checksOf, checksEligible]))
 
@@ -1564,7 +1564,7 @@ def theDroppedImpossibleDay (i : Id) : DayPlan :=
 theorem impossibleKept_can_fail (r : PlanReq) (i : Id) (howed : owedByItsGrant r i = true) (hel : eligibleBefore r i = true)
     (hb : budgetLeft r (theDroppedImpossibleDay i) i = true) : impossibleKept r (theDroppedImpossibleDay i) = false := by
   simpa [impossibleKept, theDroppedImpossibleDay, wDay, hel, assignedOf,
-    segItems, aBlockOfAnHour, wSeg, Seg.items, SegKind.isWork, howed] using hb
+    segItems, aBlockOfAnHour, wSeg, Seg.items, SegKind.isWork, howed, Diagnostics.empty, Capped.nil] using hb
 
 /-! ### The battery itself refuses -/
 
@@ -2051,7 +2051,7 @@ theorem batchDoesNotReachPast_is_true_because_its_subject_is_empty_on_an_unassig
     the_day_has_no_batch_row_on_an_unassigned_day r s hs hnoassign ids)
 
 /-- `impossibleKept` passes where no listed item step 5 admits before the walk is owed with the budget left — and on a
-day that ASSIGNS the case it names out HAPPENS (`PlannerWit.impossibleKept_is_refuted_on_a_paying_day`, README gap 3160). -/
+day that ASSIGNS the case it names out HAPPENS (PlannerWit.impossibleKept_is_refuted_on_a_paying_day at W-37, and named since D67 (`impossibleKept_on_every_day`), README gap 3160). -/
 theorem impossibleKept_of_no_eligible_impossible_item (r : PlanReq) (d : DayPlan)
     (h : ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false) :
     impossibleKept r d = true := (impossibleKept_iff r d).2 (fun p hp hel how hb => absurd (hb.symm.trans (h p hp hel how)) (by simp))
@@ -5209,8 +5209,8 @@ theorem eligibleSomewhere_of_nothing_from_now {el : Eligible} (hfn : FromNowAnch
 
 /-- **§6.1's ELEVEN on the whole day, on a day that ASSIGNS, IS §6.1's SEVEN AND THE IMPOSSIBLE
 CHECK** — restated at W-37.  The three checks that read `el` are `hfold`'s, as before; the impossible
-check reads §8.2 step 5's own filter since D66, so no eligibility empties it, and on a day that assigns
-it CAN fail (`PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted`, README gap 3160). -/
+check reads §8.2 step 5's own filter since D66, so no eligibility empties it — and since D67 it holds on
+every produced day (`impossibleKept_on_every_day`), so this is the first step of `dayPlan_ok_is_the_core_seven`. -/
 theorem dayPlan_ok_is_the_core_seven_and_the_impossible_check {el : Eligible} (hfn : FromNowAnchored el)
     (r : PlanReq) (hfold : FoldRowsAdmitNothing r el) :
     planOk el r (dayPlan r) = (planOkCore r (dayPlan r) && impossibleKept r (dayPlan r)) := by
@@ -5222,15 +5222,15 @@ theorem dayPlan_ok_is_the_core_seven_and_the_impossible_check {el : Eligible} (h
     hotBeforeQueue_of_nothing_eligible el r _ hnone,
     batchDoesNotReachPast_of_a_fold_that_admits_nothing el r hfold]
 
-/-! **No discharge form follows it.**  The old dayPlan_ok_of_the_core_seven took `planOkCore` and
-concluded the eleven; the same shape now would have to take the impossible check as a HYPOTHESIS,
-which is `hnoimp` under another name (AGENTS §5.2).  The equation above is the whole statement, and
-the old discharge form is refuted, not restated (`PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted`).
--/
+/-! **No discharge form followed it at W-37.**  dayPlan_ok_of_the_core_seven takes `planOkCore` and
+concludes the eleven; at W-37 that shape would have had to take the impossible check as a HYPOTHESIS,
+which is `hnoimp` under another name (AGENTS §5.2), and the form was refuted, not restated.  Since D67
+the check holds on every produced day and the W-31 form is a theorem again, at the end of this file
+(`dayPlan_ok_of_the_core_seven`). -/
 
 /-- **§6.1's ELEVEN on the whole day, from the decoder, on a day that ASSIGNS, IS THE IMPOSSIBLE
 CHECK** — restated at W-37 from the statement the W-31 merge title claimed, which said `= true` and
-is REFUTED under D66 at a paying `candsAgree` day (`PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`).
+was refuted under D66 at a paying `candsAgree` day; proved again under D67 as `dayPlan_ok_on_the_whole_day_of_a_paying_decoder`.
 
 No `r.assignedRows = []` in it.  `hpay` is the decoder's fifth clause through
 `AssignedRowsPay_of_a_paying_decoder`; the three checks that read `el` are `hfold`'s; `hbudget`
@@ -5333,44 +5333,44 @@ and what could not be made neutral lives here.  **Restated at W-37 (D66)**: each
 the impossible check's eligibility as §8.2 step 5's own filter before the walk (`eligibleBefore`)
 and its budget without the battery's `Eligible` (`budgetLeft`), and `hnoimp` is off the lifts. -/
 
-/-- **On a day that assigns nothing, `impossibleKept` passes EXACTLY when it has no subject** —
-an eligible impossible item its grant OWES is dropped, and there is no non-vacuous pass to be had.
-This replaces impossibleKept_is_true_because_its_subject_is_empty, which said `= true` for every
-request and every eligibility and was REFUTED the moment W-33 wrote the field
-(`PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted`); it was not a
-law but a description of the hole, and this is the law it stood in front of.  **Restated at W-35
-(D55)** to "no eligible listed item is owed by its grant", **at W-36 (D59)** to "no eligible
-listed item owed TODAY is dropped while the budget can be spent", and **at W-37 (D66)** with
-the eligibility §8.2 step 5's own filter before the walk. -/
+/-- **On a day that assigns nothing, `impossibleKept` passes EXACTLY when every item it asks about is
+NAMED with a reason true of the day** — nothing is placed, so an eligible impossible item its grant
+OWES, with the budget left, passes only by the day's `unplaced` (D67).  This replaces
+impossibleKept_is_true_because_its_subject_is_empty, a description of the hole W-33 closed
+(`PlannerWit.impossible_has_no_subject_is_refuted`).  **Restated at W-35 (D55)** to "no eligible
+listed item is owed by its grant", **at W-36 (D59)** to "no eligible listed item owed TODAY is
+dropped while the budget can be spent", **at W-37 (D66)** with the eligibility §8.2 step 5's own
+filter before the walk, and **at W-38 (D67)** to "every such item is named with its reason": the
+W-37 statement said "no such item has the budget left", which the new one implies only where the
+day names nothing (`PlannerWit.impossibleKept_of_nothing_assigned_iff_as_W_37_wrote_it_is_refuted`);
+every instance of the old statement at a day whose `unplaced` is empty is an instance of this one. -/
 theorem impossibleKept_of_nothing_assigned_iff (r : PlanReq) (d : DayPlan)
     (h : assignedOf d = []) :
     impossibleKept r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
-        owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true → owedByItsGrant r p.1 = true →
+        budgetLeft r d p.1 = true → d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2) = true := by
   rw [impossibleKept_iff]
   constructor
-  · intro hk p hp he ho
-    cases hb : budgetLeft r d p.1
-    · rfl
-    · have := hk p hp he ho hb
-      rw [h] at this
-      exact absurd this (by simp)
+  · intro hk p hp he ho hb
+    rcases hk p hp he ho hb with hm | hn
+    · rw [h] at hm; exact absurd hm (by simp)
+    · exact hn
   · intro hn p hp he ho hb
-    exact absurd (hb.symm.trans (hn p hp he ho)) (by simp)
+    exact Or.inr (hn p hp he ho hb)
 
 /-- **The failure, positively**: on a day that assigns nothing, an impossible item step 5 admits
-before the walk, OWED TODAY by its grant, while the day's budget is left, fails the check.  Its
-computed instances since W-37 are planted days (`impossibleKept_can_fail`,
-`PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check`); a day the PLANNER
-produced with nothing assigned is never one (`impossibleKept_on_an_unassigned_day`). -/
-theorem an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
-    (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat)
-    (hp : p ∈ d.diagnostics.impossible.val) (hel : eligibleBefore r p.1 = true)
-    (howed : owedByItsGrant r p.1 = true) (hb : budgetLeft r d p.1 = true) : impossibleKept r d = false := by
+before the walk, OWED TODAY by its grant, while the day's budget is left, fails the check — unless
+the day NAMES it with a reason true of the day (D67; renamed at W-38 from
+an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned, whose
+statement a named drop refutes).  Its computed instances are planted days (`impossibleKept_can_fail`). -/
+theorem an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
+    (r : PlanReq) (d : DayPlan) (h : assignedOf d = []) (p : Id × Nat) (hp : p ∈ d.diagnostics.impossible.val)
+    (hel : eligibleBefore r p.1 = true) (howed : owedByItsGrant r p.1 = true) (hb : budgetLeft r d p.1 = true)
+    (hn : d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2) = false) : impossibleKept r d = false := by
   cases hk : impossibleKept r d
   · rfl
-  · have := (impossibleKept_of_nothing_assigned_iff r d h).1 hk p hp hel howed
-    rw [hb] at this
+  · have := (impossibleKept_of_nothing_assigned_iff r d h).1 hk p hp hel howed hb
+    rw [hn] at this
     exact absurd this (by simp)
 
 /-- **The subject, spelled**: `subjectOf`'s `.impossible` arm is the `any` of the list, so an empty
@@ -5498,22 +5498,22 @@ theorem owedByItsGrant_eq_false_iff (r : PlanReq) (i : Id) :
     refine ⟨List.ne_nil_of_mem (List.mem_filter.2 ⟨hom, by simp [hid, hs]⟩),
       fun o' ho' h' => hall o' ho' h'.1 h'.2⟩
 
-/-- **D55's case, as a law**: an eligible impossible item that the day does not assign, and whose
-grant holds nothing, costs the check nothing — `impossibleKept` is decided by the OWED items alone. -/
-theorem impossibleKept_iff_the_owed_items_are_assigned (r : PlanReq) (d : DayPlan) :
+/-- **D55's case, as a law**: an eligible impossible item the day does not assign, whose grant holds nothing, costs the check nothing — `impossibleKept` is
+decided by the OWED items alone, each placed or NAMED (D67; renamed at W-38 from impossibleKept_iff_the_owed_items_are_assigned, refuted at README gap 3160's day). -/
+theorem impossibleKept_iff_the_owed_items_are_assigned_or_named (r : PlanReq) (d : DayPlan) :
     impossibleKept r d = true ↔
-      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true →
-        p.1 ∉ assignedOf d → owedByItsGrant r p.1 = true → budgetLeft r d p.1 = false := by
+      ∀ p ∈ d.diagnostics.impossible.val, eligibleBefore r p.1 = true → p.1 ∉ assignedOf d → owedByItsGrant r p.1 = true →
+        budgetLeft r d p.1 = true → d.diagnostics.unplaced.val.any (fun q => q.1 == p.1 && whyHolds r d p.1 q.2) = true := by
   rw [impossibleKept_iff]
   constructor
-  · intro h p hp he hn ho
-    cases hb : budgetLeft r d p.1
-    · rfl
-    · exact absurd (h p hp he ho hb) hn
+  · intro h p hp he hn ho hb
+    rcases h p hp he ho hb with hm | hw
+    · exact absurd hm hn
+    · exact hw
   · intro h p hp he ho hb
     by_cases hm : p.1 ∈ assignedOf d
-    · exact hm
-    · exact absurd (hb.symm.trans (h p hp he hm ho)) (by simp)
+    · exact Or.inl hm
+    · exact Or.inr (h p hp he hm ho hb)
 
 /-! ## W-36 repair (README gap 3130): what `budgetLeft` counts as spent
 
@@ -5574,6 +5574,381 @@ theorem rankedBefore_iff (r : PlanReq) (i j : Id) :
     exact ⟨x, hx, y, hy, hxi, hyj, hxy, hyx⟩
   · rintro ⟨x, hx, y, hy, hxi, hyj, hxy, hyx⟩
     exact ⟨x, hx, hxi, y, hy, ⟨hyj, hxy⟩, hyx⟩
+
+
+/-! ############################################################################
+## W-38 (track K): D67 — an owed impossible item is placed or NAMED with its reason
+############################################################################
+
+**The owner's D67 (README gap 3160).**  §8.2 step 5 stays greedy, and the day names why an owed
+impossible item it admitted before the walk has no row: `Planner.PlanReq.dayUnplaced`, the
+`unplaced` diagnostic, parity P58.  `impossibleKept` (§10 above, restated in place) asks of each
+listed item it owes, while the budget can be spent, that it be PLACED or named in `unplaced` with a
+reason TRUE of the day (`whyHolds`): `budgetSpent` — the day's work rows from `now` spend the
+budget; `noRunLeft`/`noSlotLeft` — every slot the item fits before the walk holds another item's
+work row (`takenBefore`), and the group holding it is atomic or splittable as the name says.
+`PlanFold`'s W-38 section proves each name the day carries true, from the walk, and so the check
+holds on EVERY day the planner produces (`impossibleKept_on_every_day`) — which gives the W-31
+paying lifts back as plain dayPlan_ok proofs (below).  The check still bites: a planted drop
+with the naming removed, and a planted day naming a reason the day does not bear out, both fail
+(`PlannerWit`'s W-38 block). -/
+
+/-- **Every name the day carries is TRUE of the day** (D67): `budgetSpent` because the walk passed
+a slot the item fits for the budget and the day holds every block the walk spent; `noRunLeft` and
+`noSlotLeft` because every slot the item fits holds a work row of another item, and the group
+that holds it is atomic, or splittable, as the name says. -/
+theorem whyHolds_of_a_name_the_day_carries (r : PlanReq) (i : Id) (w : NoPlace)
+    (h : (i, w) ∈ r.dayUnplaced (dayAssigned r)) : whyHolds r (dayPlan r) i w = true := by
+  obtain ⟨-, -, hne, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
+  have htaken : w ≠ NoPlace.budgetSpent → takenBefore r (dayPlan r) i = true := by
+    intro hw
+    unfold takenBefore
+    refine List.all_eq_true.2 (fun x hx => ?_)
+    cases hf : fitsBefore r i x
+    · rfl
+    · obtain ⟨s, hs, hsw, hst, hni⟩ :=
+        PlanFold.a_taken_name_holds_every_slot_it_fits r i w h hw x hx hf
+      simp only [Bool.not_true, Bool.false_or, List.any_eq_true, Bool.and_eq_true,
+        decide_eq_true_eq, Bool.not_eq_true']
+      exact ⟨s, hs, ⟨hsw, hst⟩, by simpa using hni⟩
+  have hsome : ∃ g ∈ r.startGroups, i ∈ g.ids := by
+    cases hl : r.energisedSlots.zipIdx.filter (fitsBefore r i) with
+    | nil => rw [hl] at hne; exact absurd hne (by simp)
+    | cons x xs =>
+    have hx : x ∈ r.energisedSlots.zipIdx.filter (fitsBefore r i) := by
+      rw [hl]; exact List.mem_cons_self
+    obtain ⟨-, hf⟩ := List.mem_filter.1 hx
+    unfold fitsBefore at hf
+    obtain ⟨g, hg, hgf⟩ := List.any_eq_true.1 hf
+    simp only [Bool.and_eq_true, decide_eq_true_eq] at hgf
+    exact ⟨g, hg, hgf.1⟩
+  cases w with
+  | budgetSpent =>
+    simp only [whyHolds, decide_eq_true_eq]
+    exact PlanFold.a_budget_spent_name_is_true_of_the_day r i h
+  | noRunLeft =>
+    simp only [whyHolds, Bool.and_eq_true]
+    refine ⟨htaken (by decide), ?_⟩
+    have hat : r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) = true := by
+      cases hc : r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable)
+      · rw [hc] at hwdef; split at hwdef <;> simp at hwdef
+      · rfl
+    obtain ⟨g, hg, hgi⟩ := List.any_eq_true.1 hat
+    simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true'] at hgi
+    exact List.any_eq_true.2 ⟨g, hg, by simp [hgi.1, hgi.2]⟩
+  | noSlotLeft =>
+    simp only [whyHolds, Bool.and_eq_true]
+    refine ⟨htaken (by decide), ?_⟩
+    have hat : r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable) = false := by
+      cases hc : r.startGroups.any (fun g => decide (i ∈ g.ids) && !g.splittable)
+      · rfl
+      · rw [hc] at hwdef; split at hwdef <;> simp at hwdef
+    obtain ⟨g, hg, hgi⟩ := hsome
+    have hsp : g.splittable = true := by
+      have := (List.any_eq_false.1 hat) g hg
+      simp only [Bool.and_eq_true, decide_eq_true_eq, Bool.not_eq_true', not_and] at this
+      cases hs : g.splittable
+      · exact absurd hs (this hgi)
+      · rfl
+    exact List.any_eq_true.2 ⟨g, hg, by simp [hgi, hsp]⟩
+
+/-- **§8.3's "impossible never dropped", read by D67, holds on EVERY day the planner produces**:
+an owed impossible item step 5 admits before the walk, while the budget can be spent, is placed —
+or the day names it, with a reason true of the day. -/
+theorem impossibleKept_on_every_day (r : PlanReq) : impossibleKept r (dayPlan r) = true := by
+  refine (impossibleKept_iff r (dayPlan r)).2 (fun p hp hel _ _ => ?_)
+  by_cases hm : p.1 ∈ assignedOf (dayPlan r)
+  · exact Or.inl hm
+  · right
+    rw [dayPlan_impossible] at hp
+    have hi : p.1 ∈ r.dayImpossible.map Prod.fst := List.mem_map.2 ⟨p, hp, rfl⟩
+    have hna : (dayAssigned r).contains p.1 = false := by
+      rw [assignedOf_dayPlan_is_dayAssigned] at hm; simpa using hm
+    have hne : (r.energisedSlots.zipIdx.filter (fitsBefore r p.1)).isEmpty = false := by
+      unfold eligibleBefore at hel
+      obtain ⟨x, hx, hf⟩ := List.any_eq_true.1 hel
+      cases he : (r.energisedSlots.zipIdx.filter (fitsBefore r p.1)).isEmpty
+      · rfl
+      · rw [List.isEmpty_iff] at he
+        have := List.mem_filter.2 ⟨hx, hf⟩
+        rw [he] at this
+        exact absurd this (by simp)
+    have hmem := (r.mem_dayUnplaced (dayAssigned r) p.1 _).2 ⟨hi, hna, hne, rfl⟩
+    rw [show (dayPlan r).diagnostics.unplaced.val = r.dayUnplaced (dayAssigned r) from
+      dayDiagnostics_unplaced r]
+    refine List.any_eq_true.2 ⟨_, hmem, ?_⟩
+    rw [Bool.and_eq_true]
+    exact ⟨beq_self_eq_true _, whyHolds_of_a_name_the_day_carries r p.1 _ hmem⟩
+
+/-! ### The W-31 paying lifts, restored (D67)
+
+W-37 restated the three as equations keeping the impossible check as a conjunct, because README gap
+3160's day failed it on the planner's own output.  Under D67 the check reads "placed or NAMED with a
+reason true of the day", and it holds on every produced day (`impossibleKept_on_every_day`), so the
+W-31 statements are theorems again, word for word, and the equation W-37 proved is their first step.
+`PlannerWit` fires each at gap 3160's own day, where W-37 refuted it. -/
+
+/-- **§6.1's ELEVEN on the whole day, on a day that ASSIGNS, IS §6.1's SEVEN** — W-31's statement,
+refuted at W-37 (README gap 3160) and proved at W-38: the impossible check W-37 kept beside the seven
+holds on every day (D67). -/
+theorem dayPlan_ok_is_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hfold : FoldRowsAdmitNothing r el) :
+    planOk el r (dayPlan r) = planOkCore r (dayPlan r) := by
+  rw [dayPlan_ok_is_the_core_seven_and_the_impossible_check hfn r hfold,
+    impossibleKept_on_every_day r, Bool.and_true]
+
+/-- **Its discharge form** — W-31's statement: the seven discharge the eleven on a day that
+assigns. -/
+theorem dayPlan_ok_of_the_core_seven {el : Eligible} (hfn : FromNowAnchored el) (r : PlanReq)
+    (hfold : FoldRowsAdmitNothing r el) (hcore : planOkCore r (dayPlan r) = true) :
+    planOk el r (dayPlan r) = true := by
+  rw [dayPlan_ok_is_the_core_seven hfn r hfold]
+  exact hcore
+
+/-- **§6.1's ELEVEN on the whole day, from the decoder, on a day that ASSIGNS** — the W-31 merge
+title's lift, restored.  No `r.assignedRows = []` and no hypothesis about impossible items:
+`hdec`, `hnopast`, `hbudget` (README gap 2020) and `hplain` are the four axes
+`dayPlan_ok_core_of_a_paying_decoder` names, and the impossible check is
+`impossibleKept_on_every_day`. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder {el : Eligible}
+    (hfn : FromNowAnchored el) (r : PlanReq) (hfold : FoldRowsAdmitNothing r el)
+    (hdec : DecoderPays r) (hnopast : ∀ t ∈ replayedRows r, t.kind ≠ SegKind.block)
+    (hbudget : noOverbook r (dayPlan r) = true) (hplain : PlainStore r) :
+    planOk el r (dayPlan r) = true := by
+  rw [dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check hfn r hfold hdec
+    hnopast hbudget hplain]
+  exact impossibleKept_on_every_day r
+
+
+/-! ### README gap 3322: the seven from `now`, and the whole-day failures that are the log's
+
+The W-37 land's census found the seven false on 12 of 45 frozen comparand days, every time on a
+row the planner did not place.  The lift from `now` (`dayPlan_ok_core_from_now_of_a_paying_decoder`)
+has stood since W-30 and applies to every frozen day since gap 3323's `ci` (all 41 pay the
+decoder at W-38, measured); what was missing is the bridge between the two forms, and it is here:
+the from-now form is implied by the whole-day form (`planOkCore_from_now_of_the_whole_day`), and
+where they differ the difference is a row the LOG made (`a_whole_day_core_failure_is_a_logged_row`,
+`a_core_failure_on_a_paying_day_is_a_logged_row`). -/
+
+/-- **The seven from `now` hold wherever the seven hold on the whole day** — every check but one
+is an `all` over the rows and `withoutPast` keeps a sublist of them, and the one that is a sum
+(`noOverbook`) only loses Block seconds.  So the from-now form never adds a failure; what it takes
+away is `a_whole_day_core_failure_is_a_logged_row`'s. -/
+theorem planOkCore_from_now_of_the_whole_day (r : PlanReq) (d : DayPlan)
+    (h : planOkCore r d = true) : planOkCore r (withoutPast r d) = true := by
+  have hmem : ∀ s ∈ (withoutPast r d).segments, s ∈ d.segments :=
+    fun s hs => (mem_withoutPast r d s hs).1
+  simp only [planOkCore, checksCore, List.all_cons, List.all_nil, Bool.and_true,
+    Bool.and_eq_true] at h ⊢
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7⟩ := h
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rw [noOverbook_iff] at h1 ⊢
+    refine Nat.le_trans ?_ h1
+    unfold blockSeconds withoutActive withoutPast
+    simp only [List.filter_filter]
+    exact foldl_add_filter_le _ _ _ _ (fun x _ hx => by
+      simp only [Bool.and_eq_true] at hx ⊢; exact ⟨hx.1, hx.2.1⟩) 0 0 (Nat.le_refl 0)
+  · exact List.all_eq_true.2 (fun s hs => List.all_eq_true.1 h2 s (hmem s hs))
+  · exact List.all_eq_true.2 (fun s hs => List.all_eq_true.1 h3 s (hmem s hs))
+  · exact List.all_eq_true.2 (fun b hb => List.all_eq_true.2 (fun w hw =>
+      List.all_eq_true.1 (List.all_eq_true.1 h4 b (hmem b hb)) w (hmem w hw)))
+  · exact List.all_eq_true.2 (fun b hb => List.all_eq_true.2 (fun w hw =>
+      List.all_eq_true.1 (List.all_eq_true.1 h5 b (hmem b hb)) w (hmem w hw)))
+  · exact List.all_eq_true.2 (fun b hb => List.all_eq_true.2 (fun w hw =>
+      List.all_eq_true.1 (List.all_eq_true.1 h6 b (hmem b hb)) w (hmem w hw)))
+  · exact List.all_eq_true.2 (fun s hs => List.all_eq_true.1 h7 s (hmem s hs))
+
+/-- **A failure of the seven the day from `now` does not have is the LOG's** (README gap 3322):
+if the seven over the whole produced day and over its rows from `now` disagree, the day holds a
+work row that started before `now`, and every such row is one the log replayed
+(`Planner.replayedRows`: a closed block, or the running block's worked stretch) — never §8.2
+choice 5b's reservation (it starts at `now`) and never a row step 5 placed (it starts at or after
+`now`).  `now` inside the calendar, the decoder's `nowCal`, is what lets the rows' clock read it. -/
+theorem a_whole_day_core_failure_is_a_logged_row (r : PlanReq)
+    (hnowcal : r.now.sec + 1 < LogStamp.yearEnd)
+    (hne : planOkCore r (dayPlan r) ≠ planOkCore r (withoutPast r (dayPlan r))) :
+    ∃ t ∈ replayedRows r, t.kind.isWork = true ∧ segOf t ∈ (dayPlan r).segments ∧
+      (segOf t).val.start < r.now.sec := by
+  have hnow : clampSec r.now.sec = r.now.sec := clampSec_id _ (by omega)
+  cases hall : (dayPlan r).segments.all (keepFromNow r) with
+  | true =>
+    exfalso; apply hne
+    have hf : (dayPlan r).segments.filter (keepFromNow r) = (dayPlan r).segments :=
+      List.filter_eq_self.2 (fun s hs => List.all_eq_true.1 hall s hs)
+    have hw : withoutPast r (dayPlan r) = dayPlan r := by
+      unfold withoutPast; rw [hf]
+    rw [hw]
+  | false =>
+    obtain ⟨s, hs, hk⟩ := List.all_eq_false.1 hall
+    unfold keepFromNow at hk
+    simp only [Bool.or_eq_true, Bool.not_eq_true', decide_eq_true_eq, not_or, Bool.not_eq_false] at hk
+    obtain ⟨hwk, hlt⟩ := hk
+    have hlt : s.val.start < r.now.sec := Nat.lt_of_not_le hlt
+    have hbb : s.val.kind = SegKind.block ∨ ∃ ids, s.val.kind = SegKind.batch ids := by
+      revert hwk; cases s.val.kind <;> simp [SegKind.isWork]
+    have hfuture : ∀ t ∈ r.assignedRows, s = segOf t → False := by
+      intro t ht hst
+      have h1 := r.an_assigned_row_starts_at_or_after_now t ht
+      have h2 : s.val.start = clampSec t.start := by rw [hst]; rfl
+      have h3 := PlanFold.clampSec_mono h1
+      rw [hnow] at h3
+      omega
+    rcases hbb with hk | ⟨ids, hk⟩
+    · rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r s hs hk with
+        ⟨t, ht, hst⟩ | ⟨t, ht, hst⟩ | ⟨t, ht, hst⟩
+      · refine ⟨t, ht, ?_, hst ▸ hs, hst ▸ hlt⟩
+        rw [← segOf_kind, ← hst]; exact hwk
+      · exfalso
+        have h1 := (r.activeRow_is_an_energyless_block t ht).2.2.2.2
+        have h2 : s.val.start = clampSec t.start := by rw [hst]; rfl
+        rw [h1, hnow] at h2
+        omega
+      · exact (hfuture t ht hst).elim
+    · obtain ⟨t, ht, hst⟩ := a_batch_row_of_the_day_is_the_folds r s hs ids hk
+      exact (hfuture t ht hst).elim
+
+/-- A left fold that adds is a sum. -/
+theorem foldl_add_is_sum {α : Type} (g : α → Nat) :
+    ∀ (l : List α) (a : Nat), l.foldl (fun n x => n + g x) a = a + (l.map g).sum
+  | [], a => by simp
+  | x :: xs, a => by
+    simp only [List.foldl_cons, List.map_cons, List.sum_cons]
+    rw [foldl_add_is_sum g xs]
+    omega
+
+/-- A sum of terms each at most `c` is at most `c` per term. -/
+theorem sum_le_length_mul {α : Type} (g : α → Nat) (c : Nat) :
+    ∀ (l : List α), (∀ x ∈ l, g x ≤ c) → (l.map g).sum ≤ l.length * c
+  | [], _ => by simp
+  | x :: xs, h => by
+    simp only [List.map_cons, List.sum_cons, List.length_cons]
+    have h1 := h x List.mem_cons_self
+    have h2 := sum_le_length_mul g c xs (fun y hy => h y (List.mem_cons_of_mem _ hy))
+    rw [Nat.succ_mul]
+    omega
+
+/-- **Overbooking from `now` cannot happen on a produced day** — README gap 2020's from-now half,
+closed at W-38.  `noOverbook` over `withoutPast`'s rows weighs the Block rows that start at or after
+`now` and are not the running block's; on the day the planner produces those are §8.2 step 5's own
+rows (`a_block_row_from_now_is_reserved_or_assigned`, the reservation being `isActive`'s), each at
+most one block (`an_assigned_block_row_is_at_most_one_block`) and no more of them than the walk
+spent past the running block's block (`PlanFold.assignedRows_length`, `PlanFold.assignFold_used_counts`,
+`Planner.PlanReq.assignFold_used`) — so at most `remainingBudget`, which is at most the budget.  The
+whole day's `noOverbook` stays a hypothesis wherever it is one: the LOG can overbook it
+(`PlannerWit.theOverBudgetRequest`), and that is not the planner's doing. -/
+theorem noOverbook_from_now (r : PlanReq) (hnowcal : r.now.sec + 1 < LogStamp.yearEnd) :
+    noOverbook r (withoutPast r (dayPlan r)) = true := by
+  have hnow : clampSec r.now.sec = r.now.sec := clampSec_id _ (by omega)
+  rw [noOverbook_iff]
+  let Q : WfSeg → Bool := fun s => keepFromNow r s && !isActive r s && decide (s.val.kind = SegKind.block)
+  have hbs : blockSeconds (withoutActive r (withoutPast r (dayPlan r)))
+      = (((dayRows r).filter Q).map (fun s => s.val.stop - s.val.start)).sum := by
+    unfold blockSeconds withoutActive withoutPast
+    simp only [dayPlan_segments, List.filter_filter]
+    rw [foldl_add_is_sum]
+    simp only [Nat.zero_add]
+    congr 2
+    apply List.filter_congr
+    intro s _
+    simp only [Q]
+    cases keepFromNow r s <;> cases isActive r s <;> simp [Bool.and_comm]
+  rw [hbs]
+  -- drop the sort
+  have hperm : ((dayRows r).filter Q).map (fun s => s.val.stop - s.val.start) |>.Perm
+      ((((stepOneSegs r ++ dayRoutineSegs r ++ reservationSegs r ++ r.assignedRows ++
+        r.keptBreakRows ++ r.optionalRows ++ r.restRows).map segOf).filter Q).map
+          (fun s => s.val.stop - s.val.start)) := by
+    unfold dayRows sortRows
+    exact ((Replay.insSort_perm rowLe _).filter Q).map _
+  rw [hperm.sum_nat]
+  -- every row that passes Q is a row of the fold
+  have hno : ∀ t, (t ∈ stepOneSegs r ∨ t ∈ dayRoutineSegs r ∨ t ∈ reservationSegs r ∨
+      t ∈ r.keptBreakRows ∨ t ∈ r.optionalRows ∨ t ∈ r.restRows) → Q (segOf t) = false := by
+    intro t ht
+    simp only [Q, Bool.and_eq_false_iff, Bool.not_eq_false', decide_eq_false_iff_not]
+    rcases ht with ht | ht | ht | ht | ht | ht
+    · simp only [stepOneSegs, List.mem_append] at ht
+      rcases ht with ((ht | ht) | ht) | ht
+      · by_cases hk : (segOf t).val.kind = SegKind.block
+        · left; left
+          unfold keepFromNow
+          obtain ⟨-, h2, h3⟩ := replayedRows_end_at_now r t ht
+          have : (segOf t).val.start < r.now.sec := by
+            show clampSec t.start < r.now.sec
+            simp only [clampSec, LogStamp.yearEnd]; omega
+          rw [segOf_kind, (by rw [← segOf_kind]; exact hk : t.kind = SegKind.block)]
+          simp [SegKind.isWork, this]
+        · right; exact hk
+      · right; rw [segOf_kind, (interruptRows_are_open_lost_time r t ht).1]; simp
+      · right; rw [segOf_kind, (breakRows_are_running_breaks r t ht).1]; simp
+      · right
+        obtain ⟨x, -, hx⟩ := List.mem_flatMap.1 ht
+        rw [segOf_kind, (wallRows_are_walls_of_the_item (r.isTravelDay x.id) x t hx).1]; simp
+    · right
+      rcases routineRows_kinds r _ t ht with h | h | h <;> rw [segOf_kind, h] <;> simp
+    · left; right
+      exact a_reserved_block_row_is_active r (segOf t) ⟨t, ht, rfl⟩
+    · right; rw [segOf_kind, r.keptBreakRows_kinds t ht]; simp
+    · right; rw [segOf_kind, r.optionalRows_kinds t ht]; simp
+    · right; rw [segOf_kind, r.restRows_kinds t ht]; simp
+  have hnil : ∀ (l : List Seg), (∀ t ∈ l, Q (segOf t) = false) → (l.map segOf).filter Q = [] := by
+    intro l h
+    rw [List.filter_eq_nil_iff]
+    intro s hs
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 hs
+    simp [h t ht]
+  simp only [List.map_append, List.filter_append]
+  rw [hnil _ (fun t ht => hno t (Or.inl ht)), hnil _ (fun t ht => hno t (Or.inr (Or.inl ht))),
+    hnil _ (fun t ht => hno t (Or.inr (Or.inr (Or.inl ht)))),
+    hnil _ (fun t ht => hno t (Or.inr (Or.inr (Or.inr (Or.inl ht))))),
+    hnil _ (fun t ht => hno t (Or.inr (Or.inr (Or.inr (Or.inr (Or.inl ht)))))),
+    hnil _ (fun t ht => hno t (Or.inr (Or.inr (Or.inr (Or.inr (Or.inr ht))))))]
+  simp only [List.map_nil, List.nil_append, List.append_nil]
+  -- the fold's rows: each at most one block, as many as the walk spent past the running block
+  have hlen : ((r.assignedRows.map segOf).filter Q).length ≤ r.assignedRows.length := by
+    exact Nat.le_trans (List.length_filter_le _ _) (by simp)
+  have heach : ∀ s ∈ (r.assignedRows.map segOf).filter Q, s.val.stop - s.val.start ≤ r.blockMin * 60 := by
+    intro s hs
+    obtain ⟨t, ht, rfl⟩ := List.mem_map.1 (List.mem_filter.1 hs).1
+    exact an_assigned_block_row_is_at_most_one_block r t ht
+  have hsum := sum_le_length_mul (fun s : WfSeg => s.val.stop - s.val.start) (r.blockMin * 60) _ heach
+  have hcount : r.assignedRows.length ≤ remainingBudget r := by
+    rw [PlanFold.assignedRows_length]
+    have hu := PlanFold.assignFold_used_counts r
+    have hmax := PlanReq.assignFold_used r
+    rw [hu] at hmax
+    rcases Nat.le_total r.activeSeed (remainingBudget r) with hle | hle
+    · rw [Nat.max_eq_right hle] at hmax; omega
+    · rw [Nat.max_eq_left hle] at hmax; omega
+  have hrb := remainingBudget_le_budget r
+  rw [show (withoutPast r (dayPlan r)).budgetBlocks = r.budgetBlocks from rfl,
+    show (withoutPast r (dayPlan r)).blockMin = r.blockMin from rfl]
+  calc (((r.assignedRows.map segOf).filter Q).map (fun s => s.val.stop - s.val.start)).sum
+      ≤ ((r.assignedRows.map segOf).filter Q).length * (r.blockMin * 60) := hsum
+    _ ≤ r.assignedRows.length * (r.blockMin * 60) := Nat.mul_le_mul_right _ hlen
+    _ ≤ remainingBudget r * (r.blockMin * 60) := Nat.mul_le_mul_right _ hcount
+    _ ≤ r.budgetBlocks * (r.blockMin * 60) := Nat.mul_le_mul_right _ hrb
+    _ = r.budgetBlocks * r.blockMin * 60 := by rw [Nat.mul_assoc]
+
+/-- **The seven from `now`, from the decoder and a plain store alone** — `dayPlan_ok_core_from_now_of_a_paying_decoder`
+with its `hbudget` discharged by `noOverbook_from_now`.  Every frozen comparand day pays both hypotheses
+at W-38 (measured, 41 of 41), so the seven are PROVED from `now` on each of them. -/
+theorem dayPlan_ok_core_from_now_of_a_decoder (r : PlanReq) (hdec : DecoderPays r) (hplain : PlainStore r) :
+    planOkCore r (withoutPast r (dayPlan r)) = true :=
+  dayPlan_ok_core_from_now_of_a_paying_decoder r hdec (noOverbook_from_now r hdec.nowCal) hplain
+
+/-- **On a day that pays the decoder, EVERY failure of the seven is a row the log made** (README gap
+3322): the seven hold from `now` there (`dayPlan_ok_core_from_now_of_a_decoder`, no `hbudget` since W-38), so a
+whole-day failure is one the day from `now` does not have — `a_whole_day_core_failure_is_a_logged_row`.
+The census of the frozen comparand can therefore tell a placement fault from a logged fact without
+reading a row: a paying day's placement faults would fail from `now`, and none can. -/
+theorem a_core_failure_on_a_paying_day_is_a_logged_row (r : PlanReq) (hdec : DecoderPays r)
+    (hplain : PlainStore r)
+    (hfail : planOkCore r (dayPlan r) = false) :
+    ∃ t ∈ replayedRows r, t.kind.isWork = true ∧ segOf t ∈ (dayPlan r).segments ∧
+      (segOf t).val.start < r.now.sec :=
+  a_whole_day_core_failure_is_a_logged_row r hdec.nowCal (by
+    rw [hfail, dayPlan_ok_core_from_now_of_a_decoder r hdec hplain]; decide)
 
 end PlanCheck
 end Tm

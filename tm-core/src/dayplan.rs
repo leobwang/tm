@@ -199,6 +199,64 @@ pub struct Diagnostics {
     pub rest_debt_min: u32,
     /// Anything else worth saying in prose (`tm plan` prints these).
     pub notes: Vec<String>,
+    /// **Why §8.2 step 5 left an impossible item it admitted without a row**
+    /// (the owner's D67, parity P58): the kernel's `Diagnostics.unplaced`,
+    /// one `(item, reason)` per listed item step 5's filter admitted before
+    /// the walk and the day does not hold. Fork 4748911 names none, so the
+    /// fork's own planner leaves it empty.
+    ///
+    /// **Printed, and not serialised** (README gap 3351): the banner
+    /// (`emit::render_banners`) and the TUI's impossible row read it, and
+    /// `tm plan --json` and `.tm/last_plan.json` keep the fork's diagnostics
+    /// shape. Serialising it would change the diagnostics of 11 of the 41
+    /// frozen comparand days (measured at W-38), which the comparand compares
+    /// by value; that is a D64(a) re-bless under P58, the comparand's owner's
+    /// to take, not this field's to force.
+    #[serde(skip)]
+    pub unplaced: Vec<(Id, NoPlace)>,
+}
+
+/// **Why an impossible item has no row today** — the kernel's
+/// `Planner.NoPlace`, the walk's own reasons (D67, parity P58): every run or
+/// every slot the item fits went to work ranked before it, or the budget was
+/// spent before a place it fits came free.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum NoPlace {
+    /// An atomic item: every unbroken run it fits went to other work.
+    NoRunLeft,
+    /// A splittable item: every slot it fits went to other work.
+    NoSlotLeft,
+    /// The day's budget was spent before a place it fits came free.
+    BudgetSpent,
+}
+
+impl NoPlace {
+    /// The kernel's name for the reason on the wire (`PlanWire.noPlaceName`).
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            NoPlace::NoRunLeft => "noRunLeft",
+            NoPlace::NoSlotLeft => "noSlotLeft",
+            NoPlace::BudgetSpent => "budgetSpent",
+        }
+    }
+
+    /// The reason read back from its wire name; `None` for a name the kernel
+    /// does not write.
+    pub fn of_wire(name: &str) -> Option<NoPlace> {
+        [NoPlace::NoRunLeft, NoPlace::NoSlotLeft, NoPlace::BudgetSpent]
+            .into_iter()
+            .find(|w| w.wire_name() == name)
+    }
+
+    /// The words the banner prints.
+    pub fn words(self) -> &'static str {
+        match self {
+            NoPlace::NoRunLeft => "no run left",
+            NoPlace::NoSlotLeft => "no slot left",
+            NoPlace::BudgetSpent => "budget spent",
+        }
+    }
 }
 
 /// What [`DayPlan::hash`] digests: where a segment sits and what is in it,

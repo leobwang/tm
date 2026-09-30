@@ -6939,14 +6939,12 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.Planner.dayPlan_hot
 #print axioms Tm.PlanCheck.impossibleKept_of_no_eligible_impossible_item
 #print axioms Tm.PlanCheck.impossibleKept_of_nothing_assigned_iff
-#print axioms Tm.PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
 #print axioms Tm.PlanCheck.impossible_subject_iff
 #print axioms Tm.PlanCheck.impossible_has_a_subject_iff_an_owed_impossible_answer_is_eligible_with_budget_left
 #print axioms Tm.PlanCheck.the_census_ceiling_is_eight_on_an_unassigned_day
 #print axioms Tm.PlannerWit.the_day_names_its_first_impossible_item
 #print axioms Tm.PlannerWit.the_day_names_no_impossible_item_is_refuted
 #print axioms Tm.PlannerWit.the_impossible_check_passes_where_the_grant_holds_nothing_and_is_empty_where_it_is_proved
-#print axioms Tm.PlannerWit.impossibleKept_is_true_because_its_subject_is_empty_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_no_subject_from_now_is_refuted
 #print axioms Tm.PlannerWit.theUnassignedImpossibleRequest_wallsAgree
@@ -7132,7 +7130,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- item is owed what ITS OWN GRANT holds.  Three audit lines above were RENAMED in place with the
 -- theorems they audit; the renamed-from forms are refuted in `PlannerWit.lean`'s W-35 block.
 #print axioms Tm.PlanCheck.owedByItsGrant_eq_false_iff
-#print axioms Tm.PlanCheck.impossibleKept_iff_the_owed_items_are_assigned
 #print axioms Tm.PlannerWit.an_unassigned_day_that_drops_an_item_its_grant_holds_nothing_for_passes
 #print axioms Tm.PlannerWit.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted
 #print axioms Tm.PlannerWit.impossible_has_a_subject_iff_an_impossible_answer_is_eligible_is_refuted
@@ -7422,10 +7419,6 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.a_planted_drop_of_an_item_step_five_admits_fails_the_check
 #print axioms Tm.PlannerWit.a_quiet_hot_day_drops_its_waiting_impossible_item_and_passes
 #print axioms Tm.PlannerWit.an_unassigned_day_drops_its_waiting_impossible_item_and_passes
-#print axioms Tm.PlannerWit.dayPlan_ok_is_the_core_seven_is_refuted
-#print axioms Tm.PlannerWit.dayPlan_ok_of_the_core_seven_is_refuted
-#print axioms Tm.PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted
-#print axioms Tm.PlannerWit.impossibleKept_is_refuted_on_a_paying_day
 #print axioms Tm.PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted
 #print axioms Tm.PlannerWit.planOk_of_no_segments_as_W_14_wrote_it_is_refuted
 #print axioms Tm.PlannerWit.step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
@@ -7493,3 +7486,77 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 -- ============================================================================
 #print axioms Tm.Planner.PlanReq.window_crosses_midnight_as_the_forks_planner_reads_it
 #print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
+
+-- ============================================================================
+-- APPENDED 2026-09-29: stage 6 W-38 TRACK K -- the owner's D67 (README gap 3160, parity P58): the day NAMES
+-- why an owed impossible item step 5 admitted has no row (`Planner.PlanReq.dayUnplaced`), the impossible check
+-- reads placed-or-named-with-a-true-reason, and it holds on every produced day (`PlanCheck.impossibleKept_on_every_day`,
+-- from `PlanFold`'s W-38 walk lemmas), so the W-31 paying lifts are theorems again.  Removed above with their
+-- subjects: the W-37 refutations D67 makes false (replaced in place by the statements they refuted, fired) and
+-- the two laws renamed to `…_or_named` / `an_unnamed_…` (their old forms refuted in PlannerWit's W-38 block).
+-- ============================================================================
+#print axioms Tm.PlanCheck.an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned
+#print axioms Tm.PlanCheck.dayPlan_ok_is_the_core_seven
+#print axioms Tm.PlanCheck.dayPlan_ok_of_the_core_seven
+#print axioms Tm.PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder
+#print axioms Tm.PlanCheck.impossibleKept_iff_the_owed_items_are_assigned_or_named
+#print axioms Tm.PlanCheck.impossibleKept_on_every_day
+#print axioms Tm.PlanCheck.whyHolds_of_a_name_the_day_carries
+#print axioms Tm.PlanFold.a_budget_spent_name_is_true_of_the_day
+#print axioms Tm.PlanFold.a_filled_slot_assigns_its_groups_members
+#print axioms Tm.PlanFold.assignedRows_length
+#print axioms Tm.PlanFold.assignFold_used_counts
+#print axioms Tm.PlanFold.assignStep_counts
+#print axioms Tm.PlanFold.assignStep_groups_of_not_picked
+#print axioms Tm.PlanFold.assignStep_slotOf_ne
+#print axioms Tm.PlanFold.assignStep_used_le
+#print axioms Tm.PlanFold.a_taken_name_holds_every_slot_it_fits
+#print axioms Tm.PlanFold.clampSec_mono
+#print axioms Tm.PlanFold.countP_snd_zip
+#print axioms Tm.PlanFold.drop_zip
+#print axioms Tm.PlanFold.foldl_assignStep_counts
+#print axioms Tm.PlanFold.foldl_assignStep_groups_of_never_picked
+#print axioms Tm.PlanFold.foldl_assignStep_keeps_the_members
+#print axioms Tm.PlanFold.foldl_assignStep_lengths
+#print axioms Tm.PlanFold.foldl_assignStep_slotOf_ne
+#print axioms Tm.PlanFold.foldl_assignStep_used_le
+#print axioms Tm.PlanFold.groupFitsSlot_of_drop
+#print axioms Tm.PlanFold.the_day_holds_every_block_the_walk_spent
+#print axioms Tm.PlanFold.the_walk_passes_a_slot_a_group_fits_before_it_only_for_the_budget
+#print axioms Tm.PlanFold.zipIdx_index
+#print axioms Tm.PlanFold.zipIdx_split
+#print axioms Tm.Planner.dayDiagnostics_unplaced
+#print axioms Tm.Planner.PlanReq.dayUnplaced_capped
+#print axioms Tm.Planner.PlanReq.mem_dayUnplaced
+#print axioms Tm.PlannerWit.a_named_reason_the_day_does_not_bear_out_fails_the_check
+#print axioms Tm.PlannerWit.dayPlan_ok_is_the_core_seven_at_the_contiguity_finding
+#print axioms Tm.PlannerWit.dayPlan_ok_of_the_core_seven_at_the_contiguity_finding
+#print axioms Tm.PlannerWit.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_fires_at_the_contiguity_finding
+#print axioms Tm.PlannerWit.impossible_kept_from_the_battery_as_W_37_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.impossibleKept_holds_on_a_paying_day
+#print axioms Tm.PlannerWit.impossibleKept_iff_the_owed_items_are_assigned_as_W_37_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.impossibleKept_is_true_but_not_because_its_subject_is_empty
+#print axioms Tm.PlannerWit.impossibleKept_of_nothing_assigned_iff_as_W_37_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_budget_spent_name_holds_at_the_one_block_day
+#print axioms Tm.PlannerWit.the_day_names_each_reason_the_walk_can_give
+#print axioms Tm.PlannerWit.the_day_without_its_name_fails_the_check
+#print axioms Tm.PlannerWit.the_no_run_left_name_holds_at_the_contiguity_finding
+-- W-38 TRACK K, continued -- the campaign's D69 on README gap 3323 (`Tm.DocKind.ciDefault`, the file kind's
+-- `ci` default at the top of `effectiveCiAux`'s walk; `Tm.effectiveCi_default` restated in place, its old form refuted in
+-- PlannerWit) and README gap 3322 (the seven from `now` are implied by the seven on the whole day, and where they differ
+-- the difference is a row the log replayed).
+#print axioms Tm.effectiveCi_default_is_three_outside_the_furniture_files
+#print axioms Tm.PlanCheck.a_core_failure_on_a_paying_day_is_a_logged_row
+#print axioms Tm.PlanCheck.a_whole_day_core_failure_is_a_logged_row
+#print axioms Tm.PlanCheck.planOkCore_from_now_of_the_whole_day
+#print axioms Tm.PlannerWit.effectiveCi_default_as_W_37_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_furniture_files_read_their_own_ci_default
+#print axioms Tm.PlannerWit.the_log_overbooks_the_whole_day_and_not_the_day_from_now
+#print axioms Tm.PlannerWit.the_over_budget_failure_is_a_logged_row
+-- W-38 TRACK K, continued -- README gap 2020's from-now half: overbooking from `now` cannot happen on a produced day,
+-- so the seven from `now` follow from the decoder and a plain store alone.
+#print axioms Tm.PlanCheck.dayPlan_ok_core_from_now_of_a_decoder
+#print axioms Tm.PlanCheck.foldl_add_is_sum
+#print axioms Tm.PlanCheck.noOverbook_from_now
+#print axioms Tm.PlanCheck.sum_le_length_mul
+#print axioms Tm.PlannerWit.the_fold_s_blocks_fit_the_budget_from_now

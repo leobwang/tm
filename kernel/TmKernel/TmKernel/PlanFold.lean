@@ -29,6 +29,10 @@ nothing in the tree stated until this module.  Neither mentions the checker, so 
 `the_reservation_row_is_a_work_row_of_the_day` reads §8.2 choice 5b's row off the day, which is
 the row `PlanCheck.budgetLeft` counts against the budget before anything else.
 
+3. **Since W-38 (D67): an item step 5 admitted and did not place was passed for the budget or
+   found every slot it fits taken** — the section at the end, which proves each reason the day names
+   true of the day (`a_budget_spent_name_is_true_of_the_day`, `a_taken_name_holds_every_slot_it_fits`).
+
 Theorems only: nothing here is compiled into the export, so check 12 has nothing to reach and
 check 9 nothing to fold.
 -/
@@ -392,6 +396,511 @@ theorem the_reservation_row_is_a_work_row_of_the_day (r : PlanReq) (q : ActiveRe
   · show clampSec t.start = clampSec r.now.sec
     rw [(r.activeRow_is_an_energyless_block t ht).2.2.2.2]
   · rw [segOf_item]; exact (r.activeRow_is_an_energyless_block t ht).2.2.2.1
+
+
+/-! ## W-38 (D67, P58): what step 5 does to an item it admitted and did not place
+
+The owner's D67 (README gap 3160) keeps §8.2 step 5 GREEDY and asks the day to SAY why an owed
+impossible item has no row; `Planner.PlanReq.dayUnplaced` writes the reason and
+`PlanCheck.impossibleKept` checks it is TRUE of the day.  This section proves the reasons are the
+walk's, from the walk:
+
+* **the walk reads nothing it has already written.**  A step writes the slot vector at its own
+  index (`assignStep_slotOf_ne`) and a group's entry only when it picks that group
+  (`assignStep_groups_of_not_picked`); the walk visits the day's slots once each, in order
+  (`zipIdx_split`); and the filter reads the cursor only from the slot it is at
+  (`groupFitsSlot_of_drop`).  So a group given nothing so far fits a slot at the walk's own state
+  exactly when it fit it before the walk, and a free slot a group fits under the budget is a slot
+  the step fills — which leaves ONE reason for a slot the group fits to end the walk EMPTY: the
+  budget (`the_walk_passes_a_slot_a_group_fits_before_it_only_for_the_budget`);
+* **the walk's budget is the day's rows.**  `used` is the running block's one block plus one per
+  slot filled (`assignFold_used_counts`), step 5 draws one row per filled slot
+  (`assignedRows_length`), and each of those rows and §8.2 choice 5b's reservation is a work row
+  of the day from `now` (`the_day_holds_every_block_the_walk_spent`) — README gap 2020's count, for
+  the budget the WALK spends;
+* so `budgetSpent` is true of the day (`a_budget_spent_name_is_true_of_the_day`), and a name that
+  is not `budgetSpent` holds every slot the item fits with another item's work row
+  (`a_taken_name_holds_every_slot_it_fits`).  `a_filled_slot_assigns_its_groups_members` is what
+  ties a slot the item's group was given to the item: the walk moves nothing but `spent`, and a
+  group has at most `maxBatch` members, so its row names all of them (README gap 1900's missing
+  half, for the fold's own groups).
+
+Theorems only, as above. -/
+
+/-- A step writes the slot vector at its own index and nowhere else. -/
+theorem assignStep_slotOf_ne (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
+    (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) (j : Nat) (hj : j ≠ x.2) :
+    (r.assignStep slots breaks budget a x).slotOf[j]? = a.slotOf[j]? := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gi, g, -, -, -, heq⟩
+  · rw [heq]
+  · rw [heq]; exact List.getElem?_set_ne (Ne.symm hj)
+
+/-- A step moves a group's entry only when it gives that group the slot it visits. -/
+theorem assignStep_groups_of_not_picked (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat)
+    (hx : x.2 < a.slotOf.length) (gi : Nat)
+    (hn : (r.assignStep slots breaks budget a x).slotOf[x.2]? ≠ some (some gi)) :
+    (r.assignStep slots breaks budget a x).groups[gi]? = a.groups[gi]? := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gj, g, -, -, -, heq⟩
+  · rw [heq]
+  · rw [heq] at hn ⊢
+    simp only at hn ⊢
+    by_cases hgj : gj = gi
+    · subst hgj; rw [List.getElem?_set_self hx] at hn; exact absurd rfl hn
+    · exact List.getElem?_set_ne hgj
+
+/-- A step never gives back a block of the budget. -/
+theorem assignStep_used_le (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
+    (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) :
+    a.used ≤ (r.assignStep slots breaks budget a x).used := by
+  rcases PlanReq.assignStep_cases r slots breaks budget a x with heq | ⟨gi, g, -, -, -, heq⟩ <;>
+    rw [heq]
+  · exact Nat.le_refl _
+  · exact Nat.le_succ _
+
+theorem foldl_assignStep_slotOf_ne (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign) (j : Nat), (∀ y ∈ l, y.2 ≠ j) →
+      (l.foldl (r.assignStep slots breaks budget) a).slotOf[j]? = a.slotOf[j]?
+  | [], _, _, _ => rfl
+  | y :: ys, a, j, h => by
+    simp only [List.foldl_cons]
+    rw [foldl_assignStep_slotOf_ne r slots breaks budget ys _ j
+      (fun z hz => h z (List.mem_cons_of_mem _ hz))]
+    exact assignStep_slotOf_ne r slots breaks budget a y j
+      (fun hc => h y List.mem_cons_self hc.symm)
+
+theorem foldl_assignStep_used_le (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign),
+      a.used ≤ (l.foldl (r.assignStep slots breaks budget) a).used
+  | [], _ => Nat.le_refl _
+  | y :: ys, a => by
+    simp only [List.foldl_cons]
+    exact Nat.le_trans (assignStep_used_le r slots breaks budget a y)
+      (foldl_assignStep_used_le r slots breaks budget ys _)
+
+theorem foldl_assignStep_lengths (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign),
+      (l.foldl (r.assignStep slots breaks budget) a).slotOf.length = a.slotOf.length ∧
+        (l.foldl (r.assignStep slots breaks budget) a).groups.length = a.groups.length
+  | [], _ => ⟨rfl, rfl⟩
+  | y :: ys, a => by
+    simp only [List.foldl_cons]
+    obtain ⟨h1, h2⟩ := foldl_assignStep_lengths r slots breaks budget ys
+      (r.assignStep slots breaks budget a y)
+    obtain ⟨h3, h4⟩ := PlanReq.assignStep_lengths r slots breaks budget a y
+    exact ⟨h1.trans h3, h2.trans h4⟩
+
+/-- **A group the walk never gives a slot keeps its entry**: over a stretch of slots with
+distinct indices, an entry moves only at a pick, and a pick survives the rest of the stretch. -/
+theorem foldl_assignStep_groups_of_never_picked (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign) (gi : Nat),
+      (l.map (·.2)).Nodup → (∀ y ∈ l, y.2 < a.slotOf.length) →
+      (∀ y ∈ l, (l.foldl (r.assignStep slots breaks budget) a).slotOf[y.2]? ≠ some (some gi)) →
+      (l.foldl (r.assignStep slots breaks budget) a).groups[gi]? = a.groups[gi]?
+  | [], _, _, _, _, _ => rfl
+  | y :: ys, a, gi, hnd, hlen, hn => by
+    simp only [List.foldl_cons] at hn ⊢
+    simp only [List.map_cons] at hnd
+    obtain ⟨hy, hnd'⟩ := List.nodup_cons.1 hnd
+    have hlen' : ∀ z ∈ ys, z.2 < (r.assignStep slots breaks budget a y).slotOf.length := by
+      intro z hz
+      rw [(PlanReq.assignStep_lengths r slots breaks budget a y).1]
+      exact hlen z (List.mem_cons_of_mem _ hz)
+    rw [foldl_assignStep_groups_of_never_picked r slots breaks budget ys _ gi hnd' hlen'
+      (fun z hz => hn z (List.mem_cons_of_mem _ hz))]
+    apply assignStep_groups_of_not_picked r slots breaks budget a y (hlen y List.mem_cons_self) gi
+    intro hc
+    apply hn y List.mem_cons_self
+    rw [foldl_assignStep_slotOf_ne r slots breaks budget ys _ y.2
+      (fun z hz hzy => hy (hzy ▸ List.mem_map.2 ⟨z, hz, rfl⟩))]
+    exact hc
+
+
+/-- The index of the `k`-th slot the walk visits is `k`. -/
+theorem zipIdx_index (l : List (Fin 6 × Look.Slot)) (k : Nat) (y : (Fin 6 × Look.Slot) × Nat)
+    (h : l.zipIdx[k]? = some y) : y.2 = k := by
+  rw [List.getElem?_zipIdx] at h
+  cases hl : l[k]? with
+  | none => rw [hl] at h; exact absurd h (by simp)
+  | some a => rw [hl] at h; simp only [Option.map_some, Option.some.injEq] at h; rw [← h]; simp
+
+/-- **The walk splits at a slot it visits**: what comes before holds the lower indices, what comes
+after the higher ones. -/
+theorem zipIdx_split (l : List (Fin 6 × Look.Slot)) (x : (Fin 6 × Look.Slot) × Nat)
+    (hx : x ∈ l.zipIdx) :
+    l.zipIdx = l.zipIdx.take x.2 ++ x :: l.zipIdx.drop (x.2 + 1) ∧
+      (∀ y ∈ l.zipIdx.take x.2, y.2 < x.2) ∧ (∀ y ∈ l.zipIdx.drop (x.2 + 1), x.2 < y.2) ∧
+      (l.zipIdx.map (·.2)).Nodup := by
+  have hget : l[x.2]? = some x.1 := List.mem_zipIdx_iff_getElem?.1 hx
+  have hk : x.2 < l.zipIdx.length := by
+    rw [List.length_zipIdx]; exact Planner.lt_of_getElem?_some hget
+  have hlk : l.zipIdx[x.2] = x := by
+    have h1 : l.zipIdx[x.2]? = some x := by
+      rw [List.getElem?_zipIdx, hget]; simp
+    rw [List.getElem?_eq_getElem hk] at h1
+    exact Option.some.inj h1
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · have h := (List.take_append_drop x.2 l.zipIdx).symm
+    rw [List.drop_eq_getElem_cons hk, hlk] at h
+    exact h
+  · intro y hy
+    obtain ⟨j, hj, hyj⟩ := List.mem_take_iff_getElem.1 hy
+    have hj' : j < l.zipIdx.length := Nat.lt_of_lt_of_le hj (Nat.min_le_right _ _)
+    have := zipIdx_index l j y (by rw [List.getElem?_eq_getElem hj', hyj])
+    omega
+  · intro y hy
+    obtain ⟨j, hj, hyj⟩ := List.mem_drop_iff_getElem.1 hy
+    have hj' : x.2 + 1 + j < l.zipIdx.length := by omega
+    have := zipIdx_index l (x.2 + 1 + j) y (by rw [List.getElem?_eq_getElem hj', hyj])
+    omega
+  · have : l.zipIdx.map (·.2) = List.range' 0 l.length := List.zipIdx_map_snd 0 l
+    rw [this]; exact List.nodup_range' 1
+
+
+theorem drop_zip {α β : Type} : ∀ (n : Nat) (l₁ : List α) (l₂ : List β),
+    (l₁.zip l₂).drop n = (l₁.drop n).zip (l₂.drop n)
+  | 0, _, _ => rfl
+  | _ + 1, [], _ => by simp
+  | _ + 1, _ :: _, [] => by simp
+  | n + 1, _ :: l₁, _ :: l₂ => by simp [drop_zip n l₁ l₂]
+
+/-- **The filter reads the cursor only from the slot it is at**: `contiguousFits` walks the slots
+from `i` on, so two cursors that agree from `i` on give every group the same answer at `i`. -/
+theorem groupFitsSlot_of_drop (r : PlanReq) (slots : List Look.Slot) (s1 s2 : List (Option Nat))
+    (breaks : List (Nat × Nat)) (i : Nat) (e : Fin 6) (s : Look.Slot) (g : Group)
+    (h : s1.drop i = s2.drop i) :
+    r.groupFitsSlot slots s1 breaks i e s g = r.groupFitsSlot slots s2 breaks i e s g := by
+  unfold PlanReq.groupFitsSlot contiguousFits
+  rw [drop_zip, drop_zip, h]
+
+/-- **A slot a group fits before the walk, that step 5 leaves EMPTY and never gives that group,
+was passed because the budget was spent** — the walk visits every slot once, in order, from the
+state it started in: a group given nothing so far has its first entry, the slots from the cursor
+on are still free, so the group fits there as it did before the walk, and a free slot a group
+fits under the budget is a slot the step fills (`assignStep_fills_a_free_slot_a_group_fits`). -/
+theorem the_walk_passes_a_slot_a_group_fits_before_it_only_for_the_budget (r : PlanReq)
+    (x : (Fin 6 × Look.Slot) × Nat) (hx : x ∈ r.energisedSlots.zipIdx)
+    (gi : Nat) (g : Group) (hg : r.startGroups[gi]? = some g)
+    (hfit : r.groupFitsSlot r.todaySlots r.assignStart.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g = true)
+    (hempty : (r.assignFold.slotOf[x.2]?).join = none)
+    (hnever : ∀ y ∈ r.energisedSlots.zipIdx, r.assignFold.slotOf[y.2]? ≠ some (some gi)) :
+    remainingBudget r ≤ r.assignFold.used := by
+  obtain ⟨hsplit, hpre, hpost, hnd⟩ := zipIdx_split r.energisedSlots x hx
+  generalize hP : r.energisedSlots.zipIdx.take x.2 = pre at hsplit hpre
+  generalize hQ : r.energisedSlots.zipIdx.drop (x.2 + 1) = post at hsplit hpost
+  have hfold : r.assignFold = post.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r))
+      (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r)
+        (pre.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r)) r.assignStart) x) := by
+    unfold PlanReq.assignFold
+    rw [hsplit, List.foldl_append, List.foldl_cons]
+  generalize ha_def : pre.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r))
+    r.assignStart = a at hfold
+  have hk : x.2 < r.energisedSlots.length :=
+    Planner.lt_of_getElem?_some (List.mem_zipIdx_iff_getElem?.1 hx)
+  have hlen_start : r.assignStart.slotOf.length = r.energisedSlots.length := by
+    unfold PlanReq.assignStart; rw [List.length_replicate, r.energisedSlots_length]
+  have ha_len : a.slotOf.length = r.energisedSlots.length := by
+    rw [← ha_def]; exact (foldl_assignStep_lengths r _ _ _ pre _).1.trans hlen_start
+  have hpre_mem : ∀ y ∈ pre, y ∈ r.energisedSlots.zipIdx := fun y hy => by
+    rw [hsplit]; exact List.mem_append_left _ hy
+  have hfin : ∀ j, j ≤ x.2 → r.assignFold.slotOf[j]? =
+      (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r) a x).slotOf[j]? := by
+    intro j hj
+    rw [hfold]
+    exact foldl_assignStep_slotOf_ne r _ _ _ post _ j (fun y hy hyj => by
+      have := hpost y hy; omega)
+  have hstart_get : ∀ j, j < r.energisedSlots.length → r.assignStart.slotOf[j]? = some none := by
+    intro j hj
+    unfold PlanReq.assignStart
+    rw [List.getElem?_replicate, if_pos (by rw [r.energisedSlots_length] at hj; exact hj)]
+  have ha_from : ∀ j, x.2 ≤ j → a.slotOf[j]? = r.assignStart.slotOf[j]? := by
+    intro j hj
+    rw [← ha_def]
+    exact foldl_assignStep_slotOf_ne r _ _ _ pre _ j (fun y hy hyj => by
+      have := hpre y hy; omega)
+  have ha_drop : a.slotOf.drop x.2 = r.assignStart.slotOf.drop x.2 := by
+    apply List.ext_getElem?
+    intro m
+    rw [List.getElem?_drop, List.getElem?_drop, ha_from _ (Nat.le_add_right _ _)]
+  have ha_free : (a.slotOf[x.2]?).join = none := by
+    rw [ha_from _ (Nat.le_refl _), hstart_get _ hk]; rfl
+  have hnd_pre : (pre.map (·.2)).Nodup := by
+    rw [hsplit] at hnd
+    exact hnd.sublist ((List.sublist_append_left pre (x :: post)).map _)
+  have hlen_pre : ∀ y ∈ pre, y.2 < r.assignStart.slotOf.length := by
+    intro y hy
+    rw [hlen_start]
+    exact Planner.lt_of_getElem?_some (List.mem_zipIdx_iff_getElem?.1 (hpre_mem y hy))
+  have hnever_pre : ∀ y ∈ pre, (pre.foldl (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r))
+      r.assignStart).slotOf[y.2]? ≠ some (some gi) := by
+    intro y hy
+    have h1 := hnever y (hpre_mem y hy)
+    rw [hfin y.2 (Nat.le_of_lt (hpre y hy)),
+      assignStep_slotOf_ne r _ _ _ _ x y.2 (Nat.ne_of_lt (hpre y hy)), ← ha_def] at h1
+    exact h1
+  have ha_group : a.groups[gi]? = some g := by
+    rw [← ha_def, foldl_assignStep_groups_of_never_picked r r.todaySlots r.todayBreaks
+      (remainingBudget r) pre r.assignStart gi hnd_pre hlen_pre hnever_pre]
+    unfold PlanReq.assignStart
+    exact hg
+  by_cases hlt : a.used < remainingBudget r
+  · exfalso
+    have hfit' : r.groupFitsSlot r.todaySlots a.slotOf r.todayBreaks x.2 x.1.1 x.1.2 g = true := by
+      rw [groupFitsSlot_of_drop r _ _ _ _ _ _ _ _ ha_drop]; exact hfit
+    obtain ⟨gj, hgj⟩ := assignStep_fills_a_free_slot_a_group_fits r r.todaySlots r.todayBreaks
+      (remainingBudget r) a x ha_free hlt g (List.mem_of_getElem? ha_group) hfit'
+      (by rw [ha_len]; exact hk)
+    have hf := hfin x.2 (Nat.le_refl _)
+    rw [hgj] at hf
+    rw [hf] at hempty
+    exact absurd hempty (by simp)
+  · have h1 := assignStep_used_le r r.todaySlots r.todayBreaks (remainingBudget r) a x
+    have h2 := foldl_assignStep_used_le r r.todaySlots r.todayBreaks (remainingBudget r) post
+      (r.assignStep r.todaySlots r.todayBreaks (remainingBudget r) a x)
+    rw [hfold]
+    omega
+
+/-- **The walk's budget counter is the running block's block plus the slots it filled** — a step
+either changes nothing or fills one EMPTY slot and spends one block. -/
+theorem assignStep_counts (r : PlanReq) (slots : List Look.Slot) (breaks : List (Nat × Nat))
+    (budget : Nat) (a : Assign) (x : (Fin 6 × Look.Slot) × Nat) (hx : x.2 < a.slotOf.length)
+    (c : Nat) (h : a.used = c + a.slotOf.countP Option.isSome) :
+    (r.assignStep slots breaks budget a x).used =
+      c + (r.assignStep slots breaks budget a x).slotOf.countP Option.isSome := by
+  unfold PlanReq.assignStep
+  split
+  · exact h
+  · rename_i hguard
+    split
+    · exact h
+    · split
+      · exact h
+      · simp only
+        have hfree : a.slotOf[x.2] = none := by
+          simp only [Bool.or_eq_true, decide_eq_true_eq, not_or, Bool.not_eq_true] at hguard
+          have h1 := hguard.1
+          rw [List.getElem?_eq_getElem hx] at h1
+          cases hs : a.slotOf[x.2] with
+          | none => rfl
+          | some v => rw [hs] at h1; exact absurd h1 (by simp)
+        rw [List.countP_set hx, hfree]
+        simp only [Option.isSome_none, Option.isSome_some, Bool.false_eq_true, ↓reduceIte]
+        omega
+
+theorem foldl_assignStep_counts (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) (c : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign), (∀ y ∈ l, y.2 < a.slotOf.length) →
+      a.used = c + a.slotOf.countP Option.isSome →
+      (l.foldl (r.assignStep slots breaks budget) a).used =
+        c + (l.foldl (r.assignStep slots breaks budget) a).slotOf.countP Option.isSome
+  | [], _, _, h => h
+  | y :: ys, a, hl, h => by
+    simp only [List.foldl_cons]
+    refine foldl_assignStep_counts r slots breaks budget c ys _ (fun z hz => ?_)
+      (assignStep_counts r slots breaks budget a y (hl y List.mem_cons_self) c h)
+    rw [(PlanReq.assignStep_lengths r slots breaks budget a y).1]
+    exact hl z (List.mem_cons_of_mem _ hz)
+
+/-- **The budget the walk has spent is the running block's block and one per filled slot.** -/
+theorem assignFold_used_counts (r : PlanReq) :
+    r.assignFold.used = r.activeSeed + r.assignFold.slotOf.countP Option.isSome := by
+  unfold PlanReq.assignFold
+  refine foldl_assignStep_counts r _ _ _ _ _ _ (fun y hy => ?_) ?_
+  · unfold PlanReq.assignStart
+    rw [List.length_replicate, ← r.energisedSlots_length]
+    exact Planner.lt_of_getElem?_some (List.mem_zipIdx_iff_getElem?.1 hy)
+  · unfold PlanReq.assignStart
+    simp [List.countP_replicate]
+
+theorem countP_snd_zip {α β : Type} (p : β → Bool) :
+    ∀ (l₁ : List α) (l₂ : List β), l₁.length = l₂.length →
+      (l₁.zip l₂).countP (fun q => p q.2) = l₂.countP p
+  | [], [], _ => rfl
+  | _ :: _, [], h => by simp at h
+  | [], _ :: _, h => by simp at h
+  | _ :: as, b :: bs, h => by
+    simp only [List.zip_cons_cons, List.countP_cons]
+    rw [countP_snd_zip p as bs (by simpa using h)]
+
+/-- **One row of §8.2 step 5 per filled slot.** -/
+theorem assignedRows_length (r : PlanReq) :
+    r.assignedRows.length = r.assignFold.slotOf.countP Option.isSome := by
+  obtain ⟨hlen, hok⟩ := PlanReq.assignFold_ok r
+  unfold PlanReq.assignedRows
+  rw [finalAssign_is_assignFold, List.length_filterMap_eq_countP]
+  rw [← countP_snd_zip Option.isSome r.energisedSlots r.assignFold.slotOf hlen.symm]
+  apply List.countP_congr
+  intro q hq
+  obtain ⟨i, hi⟩ := List.mem_iff_getElem?.1 hq
+  rw [List.getElem?_zip_eq_some] at hi
+  obtain ⟨h1, h2⟩ := hi
+  cases hq2 : q.2 with
+  | none => simp
+  | some gi =>
+    rw [hq2] at h2
+    obtain ⟨e, s, g, -, hg, -⟩ := hok i gi h2
+    simp [hg]
+
+/-- `clampSec` keeps the order. -/
+theorem clampSec_mono {a b : Nat} (h : a ≤ b) : clampSec a ≤ clampSec b := by
+  unfold clampSec; omega
+
+/-- **The day holds a row for every block the walk spent** — §8.2 choice 5b's reservation and one
+row per slot step 5 filled, each a work row from `now` on the rows' clock. -/
+theorem the_day_holds_every_block_the_walk_spent (r : PlanReq) :
+    r.assignFold.used ≤ ((dayPlan r).segments.filter
+      (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length := by
+  rw [← List.countP_eq_length_filter, dayPlan_segments]
+  unfold dayRows sortRows
+  rw [(Replay.insSort_perm rowLe _).countP_eq, List.countP_map]
+  simp only [List.countP_append]
+  have hres : (reservationSegs r).countP ((fun s : WfSeg => s.val.kind.isWork &&
+      decide (clampSec r.now.sec ≤ s.val.start)) ∘ segOf) = r.activeSeed := by
+    have hall : ∀ t ∈ reservationSegs r, ((fun s : WfSeg => s.val.kind.isWork &&
+        decide (clampSec r.now.sec ≤ s.val.start)) ∘ segOf) t = true := by
+      intro t ht
+      obtain ⟨hk, -, -, -, hst⟩ := r.activeRow_is_an_energyless_block t ht
+      simp only [Function.comp, segOf_kind, hk, SegKind.isWork, Bool.true_and, decide_eq_true_eq]
+      show clampSec r.now.sec ≤ clampSec t.start
+      rw [hst]; exact Nat.le_refl _
+    rw [List.countP_eq_length.2 hall]
+    unfold reservationSegs PlanReq.activeRow PlanReq.activeSeed
+    cases r.activeRun <;> rfl
+  have hasg : r.assignedRows.countP ((fun s : WfSeg => s.val.kind.isWork &&
+      decide (clampSec r.now.sec ≤ s.val.start)) ∘ segOf) = r.assignedRows.length := by
+    refine List.countP_eq_length.2 (fun t ht => ?_)
+    simp only [Function.comp, segOf_kind, r.assignedRows_are_work t ht, Bool.true_and,
+      decide_eq_true_eq]
+    exact clampSec_mono (r.an_assigned_row_starts_at_or_after_now t ht)
+  rw [hres, hasg, assignedRows_length, assignFold_used_counts]
+  omega
+
+theorem foldl_assignStep_keeps_the_members (r : PlanReq) (slots : List Look.Slot)
+    (breaks : List (Nat × Nat)) (budget : Nat) :
+    ∀ (l : List ((Fin 6 × Look.Slot) × Nat)) (a : Assign) (n : Nat) (g' : Group),
+      (l.foldl (r.assignStep slots breaks budget) a).groups[n]? = some g' →
+        ∃ g, a.groups[n]? = some g ∧ g.members = g'.members
+  | [], _, _, g', h => ⟨g', h, rfl⟩
+  | y :: ys, a, n, g', h => by
+    simp only [List.foldl_cons] at h
+    obtain ⟨g1, hg1, hm1⟩ := foldl_assignStep_keeps_the_members r slots breaks budget ys _ n g' h
+    obtain ⟨g0, hg0, -, hm0, -⟩ := PlanReq.assignStep_keeps_the_group r slots breaks budget a y n g1 hg1
+    exact ⟨g0, hg0, hm0.trans hm1⟩
+
+/-- **A slot step 5 filled with a group puts every member of that group into the day's assigned
+set** — the row is `assignedSeg` of the group, whose members are the ones `build_groups` gave it
+(the walk moves nothing but `spent`), at most `maxBatch` of them, so the batch row names them all
+(README gap 1900's missing half, for the fold's own groups). -/
+theorem a_filled_slot_assigns_its_groups_members (r : PlanReq) (j gi : Nat)
+    (h : r.assignFold.slotOf[j]? = some (some gi)) (g : Group) (hg : r.startGroups[gi]? = some g) :
+    ∀ i ∈ g.ids, i ∈ dayAssigned r := by
+  intro i hi
+  obtain ⟨-, hok⟩ := PlanReq.assignFold_ok r
+  obtain ⟨e, s, g', hes, hg', -⟩ := hok j gi h
+  obtain ⟨g0, hg0, hm⟩ := foldl_assignStep_keeps_the_members r _ _ _ _ _ gi g' hg'
+  have hg0g : g0 = g := by
+    unfold PlanReq.assignStart at hg0
+    rw [hg] at hg0
+    exact (Option.some.inj hg0).symm
+  subst hg0g
+  have hids : g'.ids = g0.ids := by unfold Group.ids; rw [hm]
+  obtain ⟨gb, hgb, -, hmb, -⟩ := PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? hg)
+  have hbound : g'.ids.length ≤ maxBatch := by
+    rw [hids]
+    unfold Group.ids
+    rw [List.length_map, hmb]
+    exact (PlanReq.a_group_is_a_bounded_batch hgb).2
+  have hrow : assignedSeg e s g' ∈ r.assignedRows := by
+    unfold PlanReq.assignedRows
+    refine List.mem_filterMap.2 ⟨((e, s), some gi), ?_, ?_⟩
+    · rw [finalAssign_is_assignFold]
+      exact List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨hes, h⟩)
+    · simp only [finalAssign_is_assignFold, hg']
+  have hday : segOf (assignedSeg e s g') ∈ dayRows r :=
+    mem_dayRows_of_mem (by simp [hrow])
+  unfold dayAssigned
+  refine List.mem_flatMap.2 ⟨segOf (assignedSeg e s g'), List.mem_filter.2 ⟨hday, ?_⟩, ?_⟩
+  · rw [segOf_kind]; exact assignedSeg_is_work e s g'
+  · show i ∈ (segOf (assignedSeg e s g')).val.items
+    rw [segOf_items, assignedSeg_items_when_the_group_fits_the_batch_bound e s g' hbound, hids]
+    exact hi
+
+/-- **A `budgetSpent` name is true of the day**: the item's group fits a slot before the walk,
+step 5 left that slot EMPTY and gave the group nothing (its members would be in the day), so the
+walk passed the slot for the budget — and every block the walk spent is a work row of the day from
+`now` (`the_day_holds_every_block_the_walk_spent`). -/
+theorem a_budget_spent_name_is_true_of_the_day (r : PlanReq) (i : Id)
+    (h : (i, NoPlace.budgetSpent) ∈ r.dayUnplaced (dayAssigned r)) :
+    remainingBudget r ≤ ((dayPlan r).segments.filter
+      (fun s => s.val.kind.isWork && decide (clampSec r.now.sec ≤ s.val.start))).length := by
+  obtain ⟨-, hna, -, hw⟩ := (r.mem_dayUnplaced (dayAssigned r) i NoPlace.budgetSpent).1 h
+  have hany : ((r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+      (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)) = true := by
+    cases ha : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+        (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)
+    · rw [ha] at hw; simp only [Bool.false_eq_true, ↓reduceIte] at hw; split at hw <;> cases hw
+    · rfl
+  obtain ⟨x, hx, hnone⟩ := List.any_eq_true.1 hany
+  obtain ⟨hxz, hfb⟩ := List.mem_filter.1 hx
+  unfold fitsBefore at hfb
+  obtain ⟨g, hgs, hgf⟩ := List.any_eq_true.1 hfb
+  simp only [Bool.and_eq_true, decide_eq_true_eq] at hgf
+  obtain ⟨gi, hgi⟩ := List.mem_iff_getElem?.1 hgs
+  have hna' : i ∉ dayAssigned r := by simpa using hna
+  refine Nat.le_trans ?_ (the_day_holds_every_block_the_walk_spent r)
+  refine the_walk_passes_a_slot_a_group_fits_before_it_only_for_the_budget r x hxz gi g hgi hgf.2
+    (by rw [← finalAssign_is_assignFold]; simpa using hnone) (fun y _ hy => ?_)
+  exact hna' (a_filled_slot_assigns_its_groups_members r y.2 gi hy g hgi i hgf.1)
+
+/-- **A `noRunLeft`/`noSlotLeft` name is true of the day**: every slot the item's group fits
+before the walk is one step 5 filled, with a group the item is not in. -/
+theorem a_taken_name_holds_every_slot_it_fits (r : PlanReq) (i : Id) (w : NoPlace)
+    (h : (i, w) ∈ r.dayUnplaced (dayAssigned r)) (hw : w ≠ NoPlace.budgetSpent) :
+    ∀ x ∈ r.energisedSlots.zipIdx, fitsBefore r i x = true →
+      ∃ s ∈ (dayPlan r).segments, s.val.kind.isWork = true ∧ s.val.start = clampSec x.1.2.start ∧
+        i ∉ s.val.items := by
+  obtain ⟨-, hna, -, hwdef⟩ := (r.mem_dayUnplaced (dayAssigned r) i w).1 h
+  have hany : ((r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+      (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)) = false := by
+    cases ha : (r.energisedSlots.zipIdx.filter (fitsBefore r i)).any
+        (fun x => (r.finalAssign.slotOf[x.2]?).join.isNone)
+    · rfl
+    · rw [ha] at hwdef; exact absurd hwdef (by simpa using hw)
+  have hna' : i ∉ dayAssigned r := by simpa using hna
+  intro x hx hfit
+  have hsome : (r.finalAssign.slotOf[x.2]?).join.isNone = false :=
+    Bool.eq_false_iff.2 ((List.any_eq_false.1 hany) x (List.mem_filter.2 ⟨hx, hfit⟩))
+  obtain ⟨-, hok⟩ := PlanReq.assignFold_ok r
+  rw [finalAssign_is_assignFold] at hsome
+  cases hj : r.assignFold.slotOf[x.2]? with
+  | none => rw [hj] at hsome; exact absurd hsome (by simp)
+  | some o =>
+    cases o with
+    | none => rw [hj] at hsome; exact absurd hsome (by simp)
+    | some gi =>
+      obtain ⟨e, s, g', hes, hg', -⟩ := hok x.2 gi hj
+      have hxs : x.1 = (e, s) := by
+        have := List.mem_zipIdx_iff_getElem?.1 hx
+        rw [hes] at this
+        exact (Option.some.inj this).symm
+      have hrow : assignedSeg e s g' ∈ r.assignedRows := by
+        unfold PlanReq.assignedRows
+        refine List.mem_filterMap.2 ⟨((e, s), some gi), ?_, ?_⟩
+        · rw [finalAssign_is_assignFold]
+          exact List.mem_of_getElem? (List.getElem?_zip_eq_some.2 ⟨hes, hj⟩)
+        · simp only [finalAssign_is_assignFold, hg']
+      have hday : segOf (assignedSeg e s g') ∈ dayRows r := mem_dayRows_of_mem (by simp [hrow])
+      refine ⟨segOf (assignedSeg e s g'), by rw [dayPlan_segments]; exact hday, ?_, ?_, ?_⟩
+      · rw [segOf_kind]; exact assignedSeg_is_work e s g'
+      · rw [hxs]; rfl
+      · intro hi
+        apply hna'
+        unfold dayAssigned
+        exact List.mem_flatMap.2 ⟨_, List.mem_filter.2 ⟨hday, by rw [segOf_kind]; exact assignedSeg_is_work e s g'⟩, hi⟩
 
 end PlanFold
 end Tm

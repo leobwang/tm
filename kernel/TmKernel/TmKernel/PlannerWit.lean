@@ -2958,7 +2958,7 @@ set_option maxRecDepth 400000 in
 two* at W-19, and makes it exactly ONE since W-37 (the rank check holds here too, above; the name
 is W-19's).  `planOkCore` is the seven, computed on both days; `impossibleKept` and
 `batchDoesNotReachPast` hold because their subject is empty — the batch's at every request, the
-impossible's at THIS one (no candidate here; `impossibleKept_is_true_because_its_subject_is_empty_is_refuted`).
+impossible's at THIS one (no candidate here; since W-38 it holds on every day, `PlanCheck.impossibleKept_on_every_day`).
 
 Without this conjunction the refutation above would be compatible with three of the eleven
 failing, or seven — and README gap 684 is the record of what counting that by hand costs. -/
@@ -6544,7 +6544,7 @@ set_option maxRecDepth 400000 in
 only where `r.assignedRows = []`; `thePayingRequest`'s cursor fills a slot, the row is in the
 day, and the battery answers `true` on all eleven of `PlanCheck.checksOf`.  Since W-37 it is the
 general lift plus ONE computed conjunct, the impossible check, which no lift over paying days can
-supply (`dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted`, README gap 3160).
+supply (dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted, W-37; fired at W-38 as `dayPlan_ok_on_the_whole_day_of_a_paying_decoder_fires_at_the_contiguity_finding`, README gap 3160).
 Every other hypothesis is a theorem above: `PlanCheck.FoldRowsAdmitNothing` comes from the
 eligibility's fourth clause, `PlanCheck.DecoderPays` from the five decoder theorems, and `hbudget`
 is the `noOverbook` conjunct of `the_paying_request_assigns_and_the_battery_passes`. -/
@@ -7381,7 +7381,7 @@ day W-33 found, `^t1`'s grant holds nothing and the check PASSES there too
 (`the_planner_drops_an_impossible_item_its_own_energy_clause_admits`).  And the check still FAILS
 where an item its grant OWES is dropped — on a day whose budget is spent (the three fixtures below
 were re-aimed at such days at W-35) and on a paying day where §7.3's EDF order and §7.4's key order
-disagree (`impossibleKept_is_refuted_on_a_paying_day`, the W-37 block; the energy clause's until W-37). -/
+disagree (impossibleKept_is_refuted_on_a_paying_day (W-37; `impossibleKept_holds_on_a_paying_day` since D67), the W-37 block; the energy clause's until W-37). -/
 
 set_option maxRecDepth 400000 in
 /-- **The day names its first impossible item, with the shortfall the shipped binary prints.**
@@ -7725,7 +7725,7 @@ theorem the_planner_drops_an_impossible_item_its_own_energy_clause_admits :
 
 /-! impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day stood here until W-35.  It
 was proved at the request above, where D55 makes the check pass, and was re-proved under the same
-name in the W-35 block (and replaced at W-37 by `impossibleKept_is_refuted_on_a_paying_day`), at a
+name in the W-35 block (and replaced at W-37 by impossibleKept_is_refuted_on_a_paying_day (W-37; `impossibleKept_holds_on_a_paying_day` since D67)), at a
 paying `candsAgree` day where §7.3's EDF order (due date) and §7.4's key order (line order)
 disagree — the item the pass gave today's capacity to is dropped for one that sorts first.
 That is the one case D55's reading still refutes on a paying day, and it is the planner's and
@@ -7920,11 +7920,11 @@ theorem the_waiting_law_fires_at_both_waiting_requests :
 
 set_option maxRecDepth 400000 in
 /-- **Step 5's filter admits the OPEN `^m2` at the day's first slot, before the walk** — slot 0 at
-energy 4, from 06:00 — and `PlanCheck.fitsBefore` answers that one slot, not the day. -/
+energy 4, from 06:00 — and `Planner.fitsBefore` answers that one slot, not the day. -/
 theorem the_open_item_is_admitted_at_the_first_slot :
     theOpenImpossibleRequest.energisedSlots.head?.map (fun p => (p.1.val, p.2.start))
       = some (4, 63924577200) ∧
-    PlanCheck.fitsBefore theOpenImpossibleRequest ['m','2']
+    Planner.fitsBefore theOpenImpossibleRequest ['m','2']
       ((theOpenImpossibleRequest.energisedSlots.zipIdx).head?.getD ((0, ⟨0, 0, .block⟩), 0))
       = true := by
   refine ⟨by decide, by decide⟩
@@ -8880,7 +8880,7 @@ to requests where an item its grant OWES is dropped.  This block holds what the 
 * **the check still bites**, on a planted drop of an item its grant owes (`PlanCheck.impossibleKept_can_fail`
   at a request that owes `^m2`) and on a real produced day — since W-36 the ATOMIC day of the W-36
   block (the energy-clause refutation, moved there), and since W-37 README gap 3160's day, where
-  step 5 drops an item its WHOLE filter admitted (`impossibleKept_is_refuted_on_a_paying_day`).
+  step 5 drops an item its WHOLE filter admitted (impossibleKept_is_refuted_on_a_paying_day (W-37; `impossibleKept_holds_on_a_paying_day` since D67)).
 
 **What D55's row said and this block measured false**: that `hnoimp` comes OFF the five lifts.  At
 W-35 the witness was a day whose budget is spent (README gap 2800); the owner's D59 answered it
@@ -8916,7 +8916,7 @@ set_option maxRecDepth 400000 in
 /-- **PlanCheck.an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned, as W-33
 wrote it (no owed clause), is REFUTED under D55** at the request above: nothing is assigned, the
 listed item is eligible, and the check passes.  Its successor carries `howed` and, since W-36, `hb`:
-`PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
+`PlanCheck.an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
 theorem an_eligible_impossible_item_fails_the_check_where_nothing_is_assigned_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), assignedOf d = [] →
         ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleSomewhere el r d p.1 = true →
@@ -8995,7 +8995,7 @@ theorem the_reversed_day_serves_the_earlier_due_impossible_item_first :
 /-- **The W-35 statement of this day is REFUTED by D60** (AGENTS §3.1 item 3): it said step 5 gives
 `^t3` all four slots and drops `^t1` — the hole D60 closes.  Its successor is the theorem above;
 impossibleKept_is_refuted_at_the_energy_clause_on_a_paying_day, which stood on it, was re-proved
-at W-36's atomic day and replaced at W-37 by `impossibleKept_is_refuted_on_a_paying_day`. -/
+at W-36's atomic day and replaced at W-37 by impossibleKept_is_refuted_on_a_paying_day (W-37; `impossibleKept_holds_on_a_paying_day` since D67). -/
 theorem the_reversed_day_drops_the_impossible_item_its_grant_owes_is_refuted :
     ¬ (PlanCheck.candsAgree theReversedTwoImpossibleRequest = true ∧
       assignedOf (dayPlan theReversedTwoImpossibleRequest)
@@ -9240,7 +9240,7 @@ theorem a_spent_day_passes_the_impossible_check :
 
 /-- **PlanCheck.an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned,
 as W-35 wrote it (no budget clause), is REFUTED under D59** at the spent day.  Its successor is
-`PlanCheck.an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
+`PlanCheck.an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`. -/
 theorem an_eligible_impossible_item_its_grant_owes_fails_the_check_where_nothing_is_assigned_is_refuted :
     ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), assignedOf d = [] →
         ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleSomewhere el r d p.1 = true →
@@ -9316,7 +9316,7 @@ was re-proved at the atomic day above at W-36, and D66 makes the atomic day pass
 could not be kept in any case, because it named the `slotFitRows` eligibility the check no longer
 reads.  What it said about a day that pays is still TRUE, and stronger now — the check fails on a
 paying `candsAgree` day under step 5's WHOLE filter — and it is re-proved as
-`impossibleKept_is_refuted_on_a_paying_day` in the W-37 block at the end of this file, at README
+impossibleKept_is_refuted_on_a_paying_day (W-37; `impossibleKept_holds_on_a_paying_day` since D67) in the W-37 block at the end of this file, at README
 gap 3160's day (`theContiguityFindingRequest`), where an earlier-due impossible item takes the
 only run of today's slots an atomic impossible item fits, while §7.3's pass owes the atomic one
 minutes of today its own contiguity clause cannot use.  The eligibility that separated the energy
@@ -9764,13 +9764,13 @@ def theContiguityFindingRequest : PlanReq :=
 
 set_option maxRecDepth 400000 in
 /-- **README gap 3160 — §8.2 step 5 drops an owed impossible item its own filter admitted before
-the walk, with the budget left.**  Both candidates are impossible and both are HOT (`p = 0`), so
-D60 serves the earlier-due `^h1` first.  Before the walk, step 5's filter admits the atomic `^p1`
-where an unbroken run of 180 minutes starts; `^h1` fits every slot and takes the first two, and
-after that no run `^p1` fits is left, so step 5 places nothing for it.  §7.3's pass owes `^p1`
-minutes TODAY, the budget is not spent, and `^p1` is not in the day: `PlanCheck.impossibleKept`
-fails on the planner's own output at a request that pays `PlanCheck.candsAgree`, while the seven
-of `PlanCheck.planOkCore` hold.  What the owner is asked is in README gap 3160. -/
+the walk, with the budget left — and since W-38 the day SAYS why (D67, P58).**  Both candidates are
+impossible and HOT (`p = 0`), so D60 serves the earlier-due `^h1` first.  Before the walk step 5's
+filter admits the atomic `^p1` where an unbroken run of 180 minutes starts; `^h1` fits every slot and
+takes the first two, after which no run `^p1` fits is left.  §7.3's pass owes `^p1` minutes TODAY,
+the budget is not spent, and `^p1` is not in the day — and the day names it `noRunLeft`, a reason
+true of the day, so `PlanCheck.impossibleKept` PASSES (it failed until W-38, when the day said
+nothing) and so does the whole battery at `freeSlotRows`, the seven of `planOkCore` included. -/
 theorem step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk :
     PlanCheck.candsAgree theContiguityFindingRequest = true ∧
     theContiguityFindingRequest.rankedCands.map (fun x => x.out.out.cand.id)
@@ -9779,7 +9779,7 @@ theorem step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_w
       = [(4, 63924577200, 63924580800), (3, 63924580800, 63924584400),
          (2, 63924585600, 63924589200), (2, 63924589200, 63924592800)] ∧
     theContiguityFindingRequest.energisedSlots.zipIdx.map
-        (PlanCheck.fitsBefore theContiguityFindingRequest ['p','1'])
+        (Planner.fitsBefore theContiguityFindingRequest ['p','1'])
       = [true, true, false, false] ∧
     PlanCheck.eligibleBefore theContiguityFindingRequest ['p','1'] = true ∧
     theContiguityFindingRequest.finalAssign.slotOf = [some 0, some 0, none, none] ∧
@@ -9790,12 +9790,12 @@ theorem step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_w
     PlanCheck.budgetLeft theContiguityFindingRequest
       (dayPlan theContiguityFindingRequest) ['p','1'] = true ∧
     PlanCheck.planOkCore theContiguityFindingRequest (dayPlan theContiguityFindingRequest) = true ∧
-    PlanCheck.impossibleKept theContiguityFindingRequest
-      (dayPlan theContiguityFindingRequest) = false ∧
+    (dayPlan theContiguityFindingRequest).diagnostics.unplaced.val = [(['p','1'], .noRunLeft)] ∧
+    PlanCheck.impossibleKept theContiguityFindingRequest (dayPlan theContiguityFindingRequest) = true ∧
     PlanCheck.planOk freeSlotRows theContiguityFindingRequest
-      (dayPlan theContiguityFindingRequest) = false := by
+      (dayPlan theContiguityFindingRequest) = true := by
   refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide,
-    by decide, by decide, by decide, by decide, by decide, by decide⟩
+    by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
 
 set_option maxRecDepth 400000 in
 /-- `hdec`'s five fields at the finding's request, each computed. -/
@@ -9860,71 +9860,71 @@ theorem the_contiguity_finding_request_is_plain :
     subst hb
     exact ⟨hbuf, by decide, by decide, by decide, by decide⟩
 
-/-! ### What the finding refutes, by name (AGENTS §3.1 item 3; D5's refute-and-rename) -/
+/-! ### What the finding refuted at W-37, and what D67 makes of it (AGENTS §3.1 item 3; D5)
 
-/-- **`PlanCheck.impossibleKept` is refuted on a day that pays** — W-36's statement at the energy
-clause, re-proved at step 5's whole filter.  It is the statement `hnoimp` existed to exclude. -/
-theorem impossibleKept_is_refuted_on_a_paying_day :
-    ¬ ∀ r : PlanReq, PlanCheck.candsAgree r = true →
-        PlanCheck.impossibleKept r (dayPlan r) = true := fun h => by
-  obtain ⟨hca, -, -, -, -, -, -, -, -, -, -, himp, -⟩ :=
-    step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
-  have := h theContiguityFindingRequest hca
-  rw [himp] at this
-  exact absurd this (by simp)
+W-37 refuted five statements at this day.  D67 (README gap 3160) closes the hole they described —
+the day now NAMES `^p1` with a reason true of it — so each refutation is false and is replaced, in
+place and line for line (no check-9 pin site below moved), by the statement it refuted, fired here.
 
-/-- **PlanCheck.impossibleKept_is_true_because_its_subject_is_empty is REFUTED** (W-33's name;
-re-proved at W-37): no request makes the check pass for no reason at all. -/
-theorem impossibleKept_is_true_because_its_subject_is_empty_is_refuted :
-    ¬ ∀ r : PlanReq, PlanCheck.impossibleKept r (dayPlan r) = true := fun h =>
-  impossibleKept_is_refuted_on_a_paying_day (fun r _ => h r)
+What still FAILS is in the W-38 block at the end of this file, and it is what makes the check more
+than a list of names: this very day with the name taken out
+(`the_day_without_its_name_fails_the_check`), and a planted day naming a reason the day does not
+bear out (`a_named_reason_the_day_does_not_bear_out_fails_the_check`).  The planner never produces
+either; `PlanCheck.impossibleKept_on_every_day` is that sentence as a theorem. -/
 
-/-- **The W-31 paying lift's first link, as it stood, is REFUTED**: the eleven on a day that
-assigns is NOT the seven — it is the seven AND the impossible check
-(`PlanCheck.dayPlan_ok_is_the_core_seven_and_the_impossible_check`), and at the finding's day the
-two differ. -/
-theorem dayPlan_ok_is_the_core_seven_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
-        PlanCheck.FoldRowsAdmitNothing r el →
-        PlanCheck.planOk el r (dayPlan r) = PlanCheck.planOkCore r (dayPlan r) := fun h => by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, hcore, -, hplan⟩ :=
-    step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
-  have := h freeSlotRows freeSlotRows_is_from_now_anchored theContiguityFindingRequest
+/-- **`PlanCheck.impossibleKept` holds on a day that pays** — refuted at W-37 at this very day (as
+impossibleKept_is_refuted_on_a_paying_day); `PlanCheck.impossibleKept_on_every_day` is the ∀-form,
+and it needs no `candsAgree` at all. -/
+theorem impossibleKept_holds_on_a_paying_day :
+    ∀ r : PlanReq, PlanCheck.candsAgree r = true →
+        PlanCheck.impossibleKept r (dayPlan r) = true :=
+  fun r _ => PlanCheck.impossibleKept_on_every_day r
+
+set_option maxRecDepth 400000 in
+/-- **The check holds, and NOT because its subject is empty** — W-33's worry, which W-37's
+impossibleKept_is_true_because_its_subject_is_empty_is_refuted answered by refuting "true on every
+day": under D67 it IS true on every day, so the honest statement is the one here: at gap 3160's day
+the check has a subject (`^p1`, owed and eligible with budget left) and passes because it is named. -/
+theorem impossibleKept_is_true_but_not_because_its_subject_is_empty :
+    PlanCheck.subjectOf freeSlotRows PlanCheck.CheckName.impossible theContiguityFindingRequest
+        (dayPlan theContiguityFindingRequest) = true ∧
+      PlanCheck.impossibleKept theContiguityFindingRequest (dayPlan theContiguityFindingRequest) = true := by
+  refine ⟨by decide, by decide⟩
+
+/-- **The W-31 paying lift's first link fires at the finding's day** — refuted here at W-37 (as
+dayPlan_ok_is_the_core_seven_is_refuted); under D67 it is `PlanCheck.dayPlan_ok_is_the_core_seven`,
+and at this day, whose step 5 DROPS an owed impossible item, the eleven are the seven. -/
+theorem dayPlan_ok_is_the_core_seven_at_the_contiguity_finding :
+    PlanCheck.planOk freeSlotRows theContiguityFindingRequest (dayPlan theContiguityFindingRequest)
+      = PlanCheck.planOkCore theContiguityFindingRequest (dayPlan theContiguityFindingRequest) :=
+  PlanCheck.dayPlan_ok_is_the_core_seven freeSlotRows_is_from_now_anchored theContiguityFindingRequest
     (PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor freeSlotRows_is_unfilled _)
-  rw [hplan, hcore] at this
-  exact absurd this (by simp)
 
-/-- **Its discharge form, as it stood, is REFUTED** the same way. -/
-theorem dayPlan_ok_of_the_core_seven_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
-        PlanCheck.FoldRowsAdmitNothing r el → PlanCheck.planOkCore r (dayPlan r) = true →
-        PlanCheck.planOk el r (dayPlan r) = true := fun h => by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, hcore, -, hplan⟩ :=
+/-- **Its discharge form fires there too** (refuted here at W-37 as
+dayPlan_ok_of_the_core_seven_is_refuted): the seven, computed, discharge the eleven. -/
+theorem dayPlan_ok_of_the_core_seven_at_the_contiguity_finding :
+    PlanCheck.planOk freeSlotRows theContiguityFindingRequest (dayPlan theContiguityFindingRequest)
+      = true := by
+  obtain ⟨-, -, -, -, -, -, -, -, -, -, hcore, -, -, -⟩ :=
     step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
-  have := h freeSlotRows freeSlotRows_is_from_now_anchored theContiguityFindingRequest
+  exact PlanCheck.dayPlan_ok_of_the_core_seven freeSlotRows_is_from_now_anchored
+    theContiguityFindingRequest
     (PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor freeSlotRows_is_unfilled _) hcore
-  rw [hplan] at this
-  exact absurd this (by simp)
 
-/-- **The W-31 merge title's lift, as it stood, is REFUTED** — every hypothesis holds at the
-finding's request and the eleven is `false`.  What stands is
-`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_the_impossible_check`, and
-`PlanCheck.the_unassigned_eleven_is_an_instance_of_the_paying_eleven` keeps the unassigned half. -/
-theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted :
-    ¬ ∀ (el : PlanCheck.Eligible), PlanCheck.FromNowAnchored el → ∀ (r : PlanReq),
-        PlanCheck.FoldRowsAdmitNothing r el → PlanCheck.DecoderPays r →
-        (∀ t ∈ replayedRows r, t.kind ≠ SegKind.block) →
-        PlanCheck.noOverbook r (dayPlan r) = true → PlanCheck.PlainStore r →
-        PlanCheck.planOk el r (dayPlan r) = true := fun h => by
-  obtain ⟨-, -, -, -, -, -, -, -, -, -, -, -, hplan⟩ :=
-    step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
+/-- **The W-31 merge title's lift fires at the finding's day** — refuted here at W-37 (as
+dayPlan_ok_on_the_whole_day_of_a_paying_decoder_is_refuted), with every hypothesis holding and the
+eleven `false`; under D67 the same hypotheses give `true`, through
+`PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder` — a day that ASSIGNS and drops an owed
+impossible item, covered with no hypothesis about impossible items at all. -/
+theorem dayPlan_ok_on_the_whole_day_of_a_paying_decoder_fires_at_the_contiguity_finding :
+    PlanCheck.planOk freeSlotRows theContiguityFindingRequest (dayPlan theContiguityFindingRequest)
+      = true := by
   obtain ⟨hrep, hbud, -⟩ := the_contiguity_finding_request_is_quiet_and_in_budget
-  have := h freeSlotRows freeSlotRows_is_from_now_anchored theContiguityFindingRequest
+  exact PlanCheck.dayPlan_ok_on_the_whole_day_of_a_paying_decoder freeSlotRows_is_from_now_anchored
+    theContiguityFindingRequest
     (PlanCheck.FoldRowsAdmitNothing_of_an_unfilled_anchor freeSlotRows_is_unfilled _)
     the_contiguity_finding_request_pays_the_decoder (by rw [hrep]; simp) hbud
     the_contiguity_finding_request_is_plain
-  rw [hplan] at this
-  exact absurd this (by simp)
 
 set_option maxRecDepth 400000 in
 /-- **PlanCheck.impossible_has_no_subject is REFUTED**, at `theTwoImpossibleRequest` (W-33's
@@ -10264,6 +10264,266 @@ theorem the_reservation_reads_the_first_candidate_of_its_id :
         ⟨{ planFacts 40 .any with multiplier := Arith.mkPos 3 1 (by decide) }, by decide⟩],
         by decide⟩ } : PlanReq).candMult ['m','1'] = some (Arith.mkPos 8 5 (by decide)) := by
   decide
+
+
+/-! ############################################################################
+## W-38 (track K): D67 — the day NAMES why an owed impossible item has no row (parity P58)
+############################################################################
+
+**The owner's D67 (README gap 3160).**  §8.2 step 5 stays greedy and the day SAYS why an owed
+impossible item it admitted before the walk has no row: `Planner.PlanReq.dayUnplaced`, the
+`unplaced` diagnostic (`{id, why}` on the wire), each reason the WALK's (`PlanFold`'s W-38 section).
+`PlanCheck.impossibleKept` reads §8.3's "impossible never dropped" as **placed, or named with a
+reason true of the day** (`PlanCheck.whyHolds`), and `PlanCheck.impossibleKept_on_every_day` proves
+the planner satisfies it on every request — so the W-31 paying lifts are plain dayPlan_ok proofs
+again, fired at gap 3160's own day in the W-37 block above.  This block holds: the three reasons at
+days that give them, the two ways the check still BITES (a name taken out, a name the day does not
+bear out), and the old statements D67 makes false, each refuted where it fails (D5). -/
+
+/-- **README gap 3160's day with a budget of ONE block** (`state.budget`, stored today): `^h1` takes
+06:00 and spends it, and the walk passes 07:00 — the other slot `^p1`'s run starts at — for the
+budget.  The day's `budgetSpent` with the budget spent BY THE WALK, not before it. -/
+def theOneBlockFindingRequest : PlanReq :=
+  { theContiguityFindingRequest with look := { theContiguityFindingRequest.look with
+      today0 := { theContiguityFindingRequest.look.today0 with
+        date := some theContiguityFindingRequest.look.today, budget := some 1 } } }
+
+set_option maxRecDepth 400000 in
+/-- **Each of the walk's three reasons, at a day the planner gives it on** — `noRunLeft` at README
+gap 3160's day (every run the ATOMIC `^p1` fits went to `^h1`), `noSlotLeft` at
+`theTwoImpossibleRequest` (every slot the SPLITTABLE `^t1` fits went to `^t3`), and `budgetSpent` at
+the one-block day (the walk spent the one block at 06:00 and passed 07:00, which `^p1` fits: the slot
+vector is `[some 0, none, none, none]`, and the day's one work row from `now` is the budget) — and at
+`theUnassignedImpossibleRequest`, whose budget was spent before the walk began.  So every reason is
+one a produced day gives, and `PlanFold.a_budget_spent_name_is_true_of_the_day` and
+`PlanFold.a_taken_name_holds_every_slot_it_fits` have hypotheses the planner satisfies (AGENTS §5.2). -/
+theorem the_day_names_each_reason_the_walk_can_give :
+    (dayPlan theContiguityFindingRequest).diagnostics.unplaced.val = [(['p','1'], .noRunLeft)] ∧
+    (dayPlan theTwoImpossibleRequest).diagnostics.unplaced.val = [(['t','1'], .noSlotLeft)] ∧
+    theOneBlockFindingRequest.finalAssign.slotOf = [some 0, none, none, none] ∧
+    (dayPlan theOneBlockFindingRequest).diagnostics.unplaced.val = [(['p','1'], .budgetSpent)] ∧
+    remainingBudget theOneBlockFindingRequest = 1 ∧
+    ((dayPlan theOneBlockFindingRequest).segments.filter (fun s => s.val.kind.isWork &&
+      decide (clampSec theOneBlockFindingRequest.now.sec ≤ s.val.start))).length = 1 ∧
+    (dayPlan theUnassignedImpossibleRequest).diagnostics.unplaced.val = [(['m','2'], .budgetSpent)] ∧
+    PlanCheck.impossibleKept theOneBlockFindingRequest (dayPlan theOneBlockFindingRequest) = true := by
+  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide, by decide, by decide⟩
+
+/-- **`budgetSpent` is TRUE at the day it is given on** — `PlanFold.a_budget_spent_name_is_true_of_the_day`
+fired at the one-block day, the name read off the day `dayDiagnostics` wrote. -/
+theorem the_budget_spent_name_holds_at_the_one_block_day :
+    remainingBudget theOneBlockFindingRequest ≤ ((dayPlan theOneBlockFindingRequest).segments.filter
+      (fun s => s.val.kind.isWork &&
+        decide (clampSec theOneBlockFindingRequest.now.sec ≤ s.val.start))).length := by
+  apply PlanFold.a_budget_spent_name_is_true_of_the_day theOneBlockFindingRequest ['p','1']
+  rw [← dayDiagnostics_unplaced]
+  show (['p','1'], NoPlace.budgetSpent) ∈ (dayPlan theOneBlockFindingRequest).diagnostics.unplaced.val
+  rw [the_day_names_each_reason_the_walk_can_give.2.2.2.1]
+  exact List.mem_singleton_self _
+
+/-- **`noRunLeft` holds every slot `^p1` fits, at README gap 3160's day** —
+`PlanFold.a_taken_name_holds_every_slot_it_fits` fired where the name is given. -/
+theorem the_no_run_left_name_holds_at_the_contiguity_finding :
+    ∀ x ∈ theContiguityFindingRequest.energisedSlots.zipIdx,
+      Planner.fitsBefore theContiguityFindingRequest ['p','1'] x = true →
+      ∃ s ∈ (dayPlan theContiguityFindingRequest).segments, s.val.kind.isWork = true ∧
+        s.val.start = clampSec x.1.2.start ∧ ['p','1'] ∉ s.val.items := by
+  apply PlanFold.a_taken_name_holds_every_slot_it_fits theContiguityFindingRequest ['p','1']
+    NoPlace.noRunLeft _ (by decide)
+  rw [← dayDiagnostics_unplaced]
+  show (['p','1'], NoPlace.noRunLeft) ∈ (dayPlan theContiguityFindingRequest).diagnostics.unplaced.val
+  rw [the_day_names_each_reason_the_walk_can_give.1]
+  exact List.mem_singleton_self _
+
+set_option maxRecDepth 400000 in
+/-- **The check BITES on a drop the day does not name** — README gap 3160's own day with `unplaced`
+emptied: `^p1` listed, admitted before the walk, owed today, with the budget left, neither placed
+nor named.  This is the day W-37's check failed on; the planner's passes only because it SAYS. -/
+theorem the_day_without_its_name_fails_the_check :
+    PlanCheck.impossibleKept theContiguityFindingRequest
+      { dayPlan theContiguityFindingRequest with diagnostics :=
+          { (dayPlan theContiguityFindingRequest).diagnostics with unplaced := Capped.nil } }
+      = false := by
+  decide
+
+set_option maxRecDepth 400000 in
+/-- **The check BITES on a name the day does not bear out** — each clause of `PlanCheck.whyHolds`,
+at README gap 3160's day: `^p1` named `budgetSpent` (two work rows from `now` against a budget of
+six); named `noSlotLeft` (its group is atomic); and named `noRunLeft` on the day with `^h1`'s 07:00
+row taken out (a slot `^p1`'s run starts at holds no work row, `PlanCheck.takenBefore`). -/
+theorem a_named_reason_the_day_does_not_bear_out_fails_the_check :
+    PlanCheck.impossibleKept theContiguityFindingRequest
+      { dayPlan theContiguityFindingRequest with diagnostics :=
+          { (dayPlan theContiguityFindingRequest).diagnostics with
+              unplaced := ⟨[(['p','1'], .budgetSpent)], by decide⟩ } } = false ∧
+    PlanCheck.impossibleKept theContiguityFindingRequest
+      { dayPlan theContiguityFindingRequest with diagnostics :=
+          { (dayPlan theContiguityFindingRequest).diagnostics with
+              unplaced := ⟨[(['p','1'], .noSlotLeft)], by decide⟩ } } = false ∧
+    PlanCheck.impossibleKept theContiguityFindingRequest
+      { dayPlan theContiguityFindingRequest with
+          segments := (dayPlan theContiguityFindingRequest).segments.filter
+            (fun s => s.val.start != 63924580800) } = false := by
+  refine ⟨by decide, by decide, by decide⟩
+
+/-! ### The statements D67 makes false, refuted where they fail (D5) -/
+
+set_option maxRecDepth 400000 in
+/-- **`PlanCheck.impossible_kept_from_the_battery` as W-37 wrote it is REFUTED** — it concluded the
+item is ASSIGNED.  At README gap 3160's day the battery passes at `freeSlotRows` and `^p1` is listed,
+admitted before the walk, owed, with the budget left, and NOT assigned: named (D67).  The restated
+bridge concludes "assigned or named". -/
+theorem impossible_kept_from_the_battery_as_W_37_wrote_it_is_refuted :
+    ¬ ∀ (el : PlanCheck.Eligible) (r : PlanReq) (d : DayPlan), PlanCheck.planOk el r d = true →
+        ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleBefore r p.1 = true →
+          PlanCheck.owedByItsGrant r p.1 = true → PlanCheck.budgetLeft r d p.1 = true →
+            p.1 ∈ assignedOf d := fun h => by
+  obtain ⟨-, -, -, -, he, -, ha, himp, ho, hb, -, -, -, hplan⟩ :=
+    step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
+  have hm := h freeSlotRows theContiguityFindingRequest (dayPlan theContiguityFindingRequest) hplan
+    (['p','1'], 129520) (by rw [himp]; decide) he ho hb
+  rw [ha] at hm
+  exact absurd hm (by decide)
+
+/-- **PlanCheck.impossibleKept_iff_the_owed_items_are_assigned (W-37) is REFUTED** — renamed at W-38
+`PlanCheck.impossibleKept_iff_the_owed_items_are_assigned_or_named`: at README gap 3160's day the check
+passes while `^p1` — admitted, unassigned, owed — has the budget left. -/
+theorem impossibleKept_iff_the_owed_items_are_assigned_as_W_37_wrote_it_is_refuted :
+    ¬ ∀ (r : PlanReq) (d : DayPlan), (PlanCheck.impossibleKept r d = true ↔
+        ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleBefore r p.1 = true →
+          p.1 ∉ assignedOf d → PlanCheck.owedByItsGrant r p.1 = true →
+            PlanCheck.budgetLeft r d p.1 = false) := fun h => by
+  obtain ⟨-, -, -, -, he, -, ha, himp, ho, hb, -, -, hk, -⟩ :=
+    step_five_drops_an_owed_impossible_item_its_filter_admitted_before_the_walk
+  have := (h theContiguityFindingRequest (dayPlan theContiguityFindingRequest)).1 hk
+    (['p','1'], 129520) (by rw [himp]; decide) he (by rw [ha]; decide) ho
+  rw [hb] at this
+  exact absurd this (by decide)
+
+/-- **A planted day that assigns NOTHING and names both its items with reasons true of it** —
+README gap 3160's day with `^h1`'s two rows made itemless and `unplaced` naming `^p1` `noRunLeft`
+and `^h1` `noSlotLeft`.  The planner never produces it (a row it places names its group's items,
+`PlanFold.a_filled_slot_assigns_its_groups_members`); it is where two W-37 statements about days
+that assign nothing fail. -/
+def theItemlessNamedDay : DayPlan :=
+  { dayPlan theContiguityFindingRequest with
+    segments := (dayPlan theContiguityFindingRequest).segments.map (fun s =>
+      if s.val.item = some ['h','1'] then Planner.segOf { s.val with item := none } else s)
+    diagnostics := { (dayPlan theContiguityFindingRequest).diagnostics with
+      unplaced := ⟨[(['p','1'], .noRunLeft), (['h','1'], .noSlotLeft)], by decide⟩ } }
+
+set_option maxRecDepth 400000 in
+/-- **PlanCheck.impossibleKept_of_nothing_assigned_iff as W-37 wrote it is REFUTED**, and so is the
+law it gave (an_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned,
+renamed at W-38 `PlanCheck.an_unnamed_owed_eligible_impossible_item_fails_the_check_with_budget_left_where_nothing_is_assigned`):
+at the itemless day nothing is assigned, `^p1` has the budget left, and the check PASSES — both are
+named.  The restated two hold there. -/
+theorem impossibleKept_of_nothing_assigned_iff_as_W_37_wrote_it_is_refuted :
+    assignedOf theItemlessNamedDay = [] ∧
+    PlanCheck.budgetLeft theContiguityFindingRequest theItemlessNamedDay ['p','1'] = true ∧
+    PlanCheck.impossibleKept theContiguityFindingRequest theItemlessNamedDay = true ∧
+    (¬ ∀ (r : PlanReq) (d : DayPlan), assignedOf d = [] → (PlanCheck.impossibleKept r d = true ↔
+        ∀ p ∈ d.diagnostics.impossible.val, PlanCheck.eligibleBefore r p.1 = true →
+          PlanCheck.owedByItsGrant r p.1 = true → PlanCheck.budgetLeft r d p.1 = false)) ∧
+    (¬ ∀ (r : PlanReq) (d : DayPlan), assignedOf d = [] → ∀ p ∈ d.diagnostics.impossible.val,
+        PlanCheck.eligibleBefore r p.1 = true → PlanCheck.owedByItsGrant r p.1 = true →
+          PlanCheck.budgetLeft r d p.1 = true → PlanCheck.impossibleKept r d = false) := by
+  have hd : assignedOf theItemlessNamedDay = [] := by decide
+  have hb : PlanCheck.budgetLeft theContiguityFindingRequest theItemlessNamedDay ['p','1'] = true := by
+    decide
+  have hk : PlanCheck.impossibleKept theContiguityFindingRequest theItemlessNamedDay = true := by
+    decide
+  have hp : (['p','1'], 129520) ∈ theItemlessNamedDay.diagnostics.impossible.val := by decide
+  have he : PlanCheck.eligibleBefore theContiguityFindingRequest ['p','1'] = true := by decide
+  have ho : PlanCheck.owedByItsGrant theContiguityFindingRequest ['p','1'] = true := by decide
+  refine ⟨hd, hb, hk, fun h => ?_, fun h => ?_⟩
+  · have := (h _ _ hd).1 hk _ hp he ho
+    rw [hb] at this
+    exact absurd this (by decide)
+  · have := h _ _ hd _ hp he ho hb
+    rw [hk] at this
+    exact absurd this (by decide)
+
+
+/-! ### README gap 3323 (D69): a routine's and an optional's `ci` is its file kind's
+
+`tm-spec-v1.md` §4.3: `routines.md` "`ci` defaults to 1", `optional.md` "`ci:0`".  The kernel's plan
+view read `effectiveCi`'s §3.1 "else 3" for a box-less line with no `ci`, while the host sends the
+file default (fork `Horizon::default_ci`), so `PlanCheck.candsAgree` failed on EVERY frozen comparand
+day (W-37 land: 0 of 45) on a routine or an optional.  `Tm.DocKind.ciDefault` is the kernel's one table
+of it and `effectiveCiAux` reads it at the top of the walk; the frozen days pay it now (41 of 41,
+W-38 block of README). -/
+
+set_option maxRecDepth 400000 in
+/-- **§4.3's `lunch` reads `ci` 1 and an optional reads `ci` 0**, in the plan view — the routine the
+recurrence witnesses load, and §4.3's own `Severance S3E4` in `optional.md`. -/
+theorem the_furniture_files_read_their_own_ci_default :
+    effectiveCi recurPlan.val "lunch".toList = 1 ∧
+    (match loadPlan [⟨"optional.md", none, ["- Severance S3E4  dur:1h".toList]⟩] with
+      | .ok p => some (effectiveCi p.val "Severance S3E4".toList)
+      | .error _ => none) = some 0 := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **`Tm.effectiveCi_default` as W-37 wrote it (`= 3`) is REFUTED** at §4.3's `lunch`: no `ci`, no
+parent, and the plan view reads 1.  `Tm.effectiveCi_default_is_three_outside_the_furniture_files` is
+the old statement on the subdomain it holds on. -/
+theorem effectiveCi_default_as_W_37_wrote_it_is_refuted :
+    ¬ ∀ (p : PlanCore) (i : Id) (e : Entity), p.store.get i = some e → e.val.ci = none →
+        e.val.parent = none → effectiveCi p i = 3 := fun h => by
+  have hget : (recurPlan.val.store.get "lunch".toList).map (fun e => (e.val.ci, e.val.parent))
+      = some (none, none) := by decide
+  cases hg : recurPlan.val.store.get "lunch".toList with
+  | none => rw [hg] at hget; exact absurd hget (by simp)
+  | some e =>
+    rw [hg] at hget
+    simp only [Option.map_some, Option.some.injEq, Prod.mk.injEq] at hget
+    have := h recurPlan.val _ e hg hget.1 hget.2
+    rw [the_furniture_files_read_their_own_ci_default.1] at this
+    exact absurd this (by decide)
+
+/-! ### README gap 3322: the whole day and the day from `now` -/
+
+set_option maxRecDepth 400000 in
+/-- **The two forms at a day whose LOG overbooks** — `theOverBudgetRequest`: the log closed two
+blocks against a stored budget of one, so the seven fail on the whole day and hold from `now`. -/
+theorem the_log_overbooks_the_whole_day_and_not_the_day_from_now :
+    PlanCheck.planOkCore theOverBudgetRequest (dayPlan theOverBudgetRequest) = false ∧
+    PlanCheck.planOkCore theOverBudgetRequest
+      (PlanCheck.withoutPast theOverBudgetRequest (dayPlan theOverBudgetRequest)) = true := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **…and the failure is a row the log made** — `PlanCheck.a_whole_day_core_failure_is_a_logged_row`
+fired where the two forms differ. -/
+theorem the_over_budget_failure_is_a_logged_row :
+    ∃ t ∈ replayedRows theOverBudgetRequest, t.kind.isWork = true ∧
+      Planner.segOf t ∈ (dayPlan theOverBudgetRequest).segments ∧
+      (Planner.segOf t).val.start < theOverBudgetRequest.now.sec :=
+  PlanCheck.a_whole_day_core_failure_is_a_logged_row theOverBudgetRequest (by decide) (by
+    rw [the_log_overbooks_the_whole_day_and_not_the_day_from_now.1,
+      the_log_overbooks_the_whole_day_and_not_the_day_from_now.2]
+    decide)
+
+
+set_option maxRecDepth 400000 in
+/-- **README gap 2020's from-now half, at a day step 5 filled** — README gap 3160's day: two
+blocks of `^h1` from `now`, 7 200 s against a budget of six blocks of 60 minutes, and
+`PlanCheck.noOverbook_from_now` fires there.  At `theOverBudgetRequest` the WHOLE day's
+`noOverbook` is `false` (the log closed two blocks against a budget of one) and the day from `now`
+still passes: the sum the theorem bounds is the planner's, never the log's. -/
+theorem the_fold_s_blocks_fit_the_budget_from_now :
+    blockSeconds (PlanCheck.withoutActive theContiguityFindingRequest
+        (PlanCheck.withoutPast theContiguityFindingRequest (dayPlan theContiguityFindingRequest))) = 7200 ∧
+    (dayPlan theContiguityFindingRequest).budgetBlocks * (dayPlan theContiguityFindingRequest).blockMin * 60
+      = 21600 ∧
+    PlanCheck.noOverbook theOverBudgetRequest (dayPlan theOverBudgetRequest) = false ∧
+    PlanCheck.noOverbook theOverBudgetRequest
+      (PlanCheck.withoutPast theOverBudgetRequest (dayPlan theOverBudgetRequest)) = true ∧
+    PlanCheck.noOverbook theContiguityFindingRequest
+      (PlanCheck.withoutPast theContiguityFindingRequest (dayPlan theContiguityFindingRequest)) = true :=
+  ⟨by decide, by decide, by decide, by decide,
+   PlanCheck.noOverbook_from_now theContiguityFindingRequest (by decide)⟩
 
 end PlannerWit
 end Tm
