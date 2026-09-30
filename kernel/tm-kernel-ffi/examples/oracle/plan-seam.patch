@@ -1,0 +1,166 @@
+The ranking seam `tm-oracle plan` grafts onto fork 4748911 (stage 6 W-39 track H;
+the owner's D72, README gap 3533).  `build-oracle.sh` applies it with `git apply`
+to the extracted fork and FAILS the build when it does not apply, so the oracle
+never runs a planner this file does not describe.
+
+Fork 4748911's `planner::plan` takes no priorities: its `PlanInput` has no ranking
+and its step 4 always runs the fork's own §7 pass (`priority::compute`) over its own
+lookahead.  The shipped binary has fed the fork the KERNEL's ranking since `09d38fa`
+(stage 5 D10 L8, "every priority comes from the kernel"), and that commit made
+exactly two edits to what the fork's day planning reads, both reproduced here and
+nothing else:
+
+  1. the ranking seam — `PlanInput::prios` and `PlanInput::with_ranking`, step 4
+     reading the given priorities (restricted to the candidates §9.1's overrides
+     keep) instead of running the fork's own pass;
+  2. §7.3's IMPOSSIBLE reading the EXACT shortfall — `09d38fa` made
+     `Prio::is_impossible` read the exact shortfall's numerator, so a shortfall of
+     a fraction of a minute is impossible though its floor is 0; here one bit per
+     priority, whether the exact shortfall is positive, carried with each grant
+     the kernel ranked (false on every priority the fork computes, whose shortfall
+     is whole minutes).
+
+`09d38fa`'s other planner edits (the week plan's capacity in exact units, the
+`caps` it carries) plan no day, and are left out.
+
+--- a/tm-core/src/planner.rs
++++ b/tm-core/src/planner.rs
+@@ -208,6 +208,10 @@
+     pub allow_home: bool,
+     /// §9.1's what-if overrides, when this is a consequence replan.
+     pub overrides: Option<&'a PlanOverrides>,
++    /// GRAFT (tm-oracle `plan`, stage 6 W-39): §7's priorities of `candidates`,
++    /// 1:1 — the kernel's, as the shipped binary hands them in since `09d38fa`
++    /// ([`PlanInput::with_ranking`]). `None` = the fork's own `priority::compute`.
++    pub prios: Option<&'a [Prio]>,
+ }
+ 
+ impl<'a> PlanInput<'a> {
+@@ -234,6 +238,7 @@
+             candidates: None,
+             allow_home: false,
+             overrides: None,
++            prios: None,
+         }
+     }
+     /// Reuse a lookahead the caller already computed.
+@@ -256,6 +261,14 @@
+         self.overrides = Some(overrides);
+         self
+     }
++    /// GRAFT (tm-oracle `plan`, stage 6 W-39): rank by priorities the caller
++    /// already has, 1:1 with `cands` — `09d38fa`'s seam, through which the
++    /// shipped binary hands the fork the kernel's ranking.
++    pub fn with_ranking(mut self, cands: &'a [Candidate], prios: &'a [Prio]) -> PlanInput<'a> {
++        self.candidates = Some(cands);
++        self.prios = Some(prios);
++        self
++    }
+     /// The local date being planned: `state.date`, else `now`'s date.
+     pub fn date(&self) -> NaiveDate {
+         self.runtime.date.unwrap_or_else(|| self.now.date_naive())
+@@ -937,29 +950,46 @@
+ 
+         // ---- step 4: priorities ------------------------------------------
+         let owned_caps: Vec<DayCapacity>;
+-        let caps: &[DayCapacity] = match self.input.caps {
+-            Some(c) => c,
+-            None => {
+-                let days = priority::lookahead_days(&cands, self.date);
+-                owned_caps = capacity::lookahead(
+-                    &self.walls_by_date(days),
++        // GRAFT (tm-oracle `plan`, stage 6 W-39): `09d38fa`'s step 4 — the
++        // caller's ranking when it handed one in, restricted to the candidates
++        // §9.1's overrides keep; else the fork's own lookahead and pass.
++        let (prios, caps): (Vec<Prio>, &[DayCapacity]) = match (self.input.prios, self.input.candidates) {
++            (Some(given), Some(ranked)) => {
++                let prios = ranked
++                    .iter()
++                    .zip(given)
++                    .filter(|(c, _)| self.input.overrides.is_none_or(|ov| !ov.drop.contains(&c.id)))
++                    .map(|(_, p)| p.clone())
++                    .collect();
++                (prios, self.input.caps.unwrap_or(&[]))
++            }
++            _ => {
++                let caps: &[DayCapacity] = match self.input.caps {
++                    Some(c) => c,
++                    None => {
++                        let days = priority::lookahead_days(&cands, self.date);
++                        owned_caps = capacity::lookahead(
++                            &self.walls_by_date(days),
++                            self.cfg,
++                            self.input.model,
++                            &slots,
++                            self.date,
++                            days,
++                            self.wake.time(),
++                        );
++                        &owned_caps
++                    }
++                };
++                let prios = priority::compute(
++                    &cands,
++                    caps,
++                    &self.input.runtime.priorities_yesterday,
+                     self.cfg,
+-                    self.input.model,
+-                    &slots,
+                     self.date,
+-                    days,
+-                    self.wake.time(),
+                 );
+-                &owned_caps
++                (prios, caps)
+             }
+         };
+-        let prios = priority::compute(
+-            &cands,
+-            caps,
+-            &self.input.runtime.priorities_yesterday,
+-            self.cfg,
+-            self.date,
+-        );
+ 
+         // ---- step 5: assign ----------------------------------------------
+         let ranked = priority::sorted_candidates(&prios, &cands);
+--- a/tm-core/src/priority.rs
++++ b/tm-core/src/priority.rs
+@@ -823,6 +823,12 @@
+     pub hysteresis_applied: bool,
+     /// `p` before hysteresis.
+     pub raw_p: u8,
++    /// GRAFT (tm-oracle `plan`, stage 6 W-39): the EXACT shortfall is positive.
++    /// `09d38fa` made §7.3's IMPOSSIBLE read the exact shortfall (a fraction of a
++    /// minute short is impossible though its floor is 0); a grant the kernel
++    /// ranked carries it here. `false` on every priority the fork computes, whose
++    /// shortfall is whole minutes.
++    pub shortfall_positive: bool,
+ }
+ 
+ impl Prio {
+@@ -842,6 +848,7 @@
+             until: None,
+             hysteresis_applied: false,
+             raw_p: 0,
++            shortfall_positive: false,
+         }
+     }
+     /// True when the pass found `u ≥ 1` — §7.3's "mark IMPOSSIBLE if
+@@ -857,7 +864,7 @@
+     /// §7.3's IMPOSSIBLE: `u ≥ 1` **and** `need > avail`, whatever the class.
+     /// [`Prio::shortfall_min`] is the "needs 8b, 5b available by Fri" gap.
+     pub fn is_impossible(&self) -> bool {
+-        self.is_hot() && self.shortfall_min > 0
++        self.is_hot() && (self.shortfall_min > 0 || self.shortfall_positive)
+     }
+ }
+ 
+@@ -974,6 +981,7 @@
+             until: pass.map(|e| e.until),
+             hysteresis_applied: false,
+             raw_p: 0,
++            shortfall_positive: false,
+         };
+         let over = pass.is_some_and(|e| !e.u.is_finite() || e.u >= 1.0);
+         if over {

@@ -155,7 +155,7 @@ def ignored_paths(root):
 # definitions of one concept is the bug -- and `citations.READERS` is reconciled
 # against it on every run, so a reader added there without a line here fails
 # loudly instead of quietly shrinking this walk.
-READ_SUFFIXES = frozenset({".lean", ".rs", ".c", ".md", ".txt", ".sh", ".py", ".toml"})
+READ_SUFFIXES = frozenset({".lean", ".rs", ".c", ".md", ".txt", ".sh", ".py", ".toml", ".patch"})
 
 
 def is_ignored(rel, ignored):

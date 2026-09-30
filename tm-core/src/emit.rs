@@ -740,13 +740,22 @@ pub fn note_cell(seg: &Segment, tree: &Tree, plan: &DayPlan) -> String {
 }
 
 /// `↓ slot 4, item 3` for an under-used slot (§8.2 step 5).
+///
+/// **The ROW's slot** (stage 6 W-39 track H, README gap 3660): the diagnostics
+/// entry read is the one for this item AT this row's slot energy. It read the
+/// item's FIRST entry, so an item under-used in two slots of different energy
+/// — `^zah` at a slot 5 and then a slot 4 — was noted `↓ slot 5` on every one
+/// of its rows, where fork `emit_segments` wrote each row's own slot and the
+/// kernel's `Emit.underusedCell` reads the row's own energy. No shipped path
+/// reached it before R3 (the fork writes its notes itself); the seeded batch
+/// found it on 15 rows of 13 of its 128 days, the classes on none.
 fn underused_note(seg: &Segment, tree: &Tree, plan: &DayPlan) -> Option<String> {
     let id = key_id(seg)?;
     let (slot, ci) = plan
         .diagnostics
         .underused
         .iter()
-        .find(|(k, _, _)| k == id)
+        .find(|(k, slot, _)| k == id && Some(*slot) == seg.energy)
         .map(|(_, slot, ci)| (*slot, *ci))
         .or_else(|| Some((seg.energy?, tree.get(id)?.ci)))?;
     Some(format!("{MARK_UNDERUSED} slot {slot}, item {ci}"))

@@ -35,6 +35,32 @@
 //!   from it, as JSON. This is **T5's oracle** at the switch (design §14.6
 //!   item 4): the in-tree Rust reader is deleted there, so the fork point
 //!   becomes the only other implementation to compare against.
+//! * `plan` — **the fork's PLANNER, out of the tree** (the owner's D72, stage 6
+//!   W-39; README gap 3533): one JSON request per line of stdin, one answer per
+//!   line of stdout, so a caller keeps the process and asks it many days. R3
+//!   deletes `tm-core/src/planner.rs`, and with it the one differential that
+//!   explores fresh draws (`planner_invariants`' arms); this is what those draws
+//!   meet after it — D23's shape, for the planner. Two ops:
+//!
+//!   ```text
+//!   {"op":"plan", "world":{docs,log,state,now,mult,ratio}, "state":{..}, "now":"..",
+//!    "log_line":null|"..", "order":null|{id:[[r,r],[o,o]]}, "prios":[grant..],
+//!    "extend":null|[id,minutes]}
+//!     -> {"day":<DayPlan>, "hash":<DayPlan::hash>, "ranked":[id..], "cands":[id..]}
+//!   {"op":"diff", "old":[segment..], "new":[segment..]}
+//!     -> {"diff":<planner::diff>}
+//!   ```
+//!
+//!   The world is read as the FORK reads it — its own parser, its own
+//!   `log::replay` over the same bytes (and `log_line` appended for the day
+//!   planned), its own `priority::collect_candidates` at the world's `now` —
+//!   and ranked by the grants the request carries, which is how the shipped
+//!   binary runs its fork (D53): fork 4748911's `planner::plan` takes NO ranking,
+//!   so `build-oracle.sh` grafts `09d38fa`'s two edits onto it
+//!   (`plan-seam.patch`, whose header says which). `order` is D60's key, the
+//!   two order fields rewritten by id; `extend` is §9.1's what-if
+//!   (`PlanOverrides::extending`). A request the fork cannot answer is answered
+//!   `{"error": ...}`, by name, and the process keeps reading.
 //!
 //! One JSON object per line, on stdout:
 //!
@@ -79,6 +105,7 @@ use proptest::prelude::*;
 use proptest::strategy::ValueTree;
 use proptest::test_runner::{Config, RngAlgorithm, TestRng, TestRunner};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::io::{BufRead, Write};
 
 use tm_core::grammar::{parse_line, ItemLine, ParseCtx};
@@ -215,6 +242,220 @@ fn observe_fit(text: &str, tz: chrono_tz::Tz, today: chrono::NaiveDate) -> Value
     json!({ "model": tm_core::energy::fit_replay(&cfg, &replay, today) })
 }
 
+// ---------------------------------------------------------------------------
+// `plan`: the fork's planner, ranked as the shipped binary ranks it (D72)
+// ---------------------------------------------------------------------------
+
+/// A §7 grant as the request carries it — fork 4748911's `Prio`, field by field,
+/// with the graft's `shortfall_positive` (`plan-seam.patch`). `u` is the double's
+/// shortest text (`inf` for a zero capacity: JSON has no infinity).
+fn prio_of(v: &Value) -> Result<tm_core::priority::Prio, String> {
+    use tm_core::priority::PrioClass;
+    let small = |k: &str| -> Result<u8, String> {
+        v[k].as_u64().and_then(|n| u8::try_from(n).ok()).ok_or_else(|| format!("a grant's `{k}`: {}", v[k]))
+    };
+    let minutes = |k: &str| -> Result<u32, String> {
+        v[k].as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| format!("a grant's `{k}`: {}", v[k]))
+    };
+    let class = match v["class"].as_str() {
+        Some("wall") => PrioClass::Wall,
+        Some("hot") => PrioClass::Hot,
+        Some("impossible") => PrioClass::Impossible,
+        Some("overdue") => PrioClass::Overdue,
+        Some("mandatory") => PrioClass::Mandatory,
+        Some("hotflag") => PrioClass::HotFlag,
+        Some("dated") => PrioClass::Dated,
+        Some("floor") => PrioClass::Floor,
+        Some("rank") => PrioClass::Rank,
+        Some("optional") => PrioClass::Optional,
+        other => return Err(format!("a grant's class {other:?}")),
+    };
+    Ok(tm_core::priority::Prio {
+        id: tm_core::model::Id::new(v["id"].as_str().ok_or("a grant with no id")?),
+        p: small("p")?,
+        class,
+        k: small("k")?,
+        u: match &v["u"] {
+            Value::Null => None,
+            Value::String(t) => Some(t.parse::<f64>().map_err(|e| format!("a grant's `u` {t:?}: {e}"))?),
+            other => return Err(format!("a grant's `u` is {other}, not a double's text")),
+        },
+        bin: match &v["bin"] {
+            Value::Null => None,
+            _ => Some(small("bin")?),
+        },
+        need_min: minutes("need_min")?,
+        avail_min: minutes("avail_min")?,
+        allocation_min: minutes("allocation_min")?,
+        shortfall_min: minutes("shortfall_min")?,
+        until: match v["until"].as_str() {
+            None => None,
+            Some(d) => Some(chrono::NaiveDate::parse_from_str(d, "%Y-%m-%d").map_err(|e| format!("a grant's `until`: {e}"))?),
+        },
+        hysteresis_applied: v["hysteresis_applied"].as_bool().ok_or("a grant's `hysteresis_applied`")?,
+        raw_p: small("raw_p")?,
+        shortfall_positive: v["shortfall_positive"].as_bool().ok_or("a grant's `shortfall_positive`")?,
+    })
+}
+
+/// An instant as the request spells it, in the configuration's zone.
+fn instant(v: &Value, tz: chrono_tz::Tz, what: &str) -> Result<chrono::DateTime<chrono_tz::Tz>, String> {
+    let t = v.as_str().ok_or_else(|| format!("`{what}` is {v}, not an instant"))?;
+    chrono::DateTime::parse_from_rfc3339(t).map(|d| d.with_timezone(&tz)).map_err(|e| format!("`{what}` {t:?}: {e}"))
+}
+
+/// **One `plan` op**: the world read as the fork reads it, its candidates collected at the
+/// world's `now` and ranked by the request's grants, the day planned at the request's own
+/// `now` and state (a comparand's), over the log with `log_line` appended when there is one.
+fn plan_one(req: &Value) -> Result<Value, String> {
+    use tm_core::planner::{self, PlanInput, PlanOverrides};
+    use tm_core::priority;
+    let world = &req["world"];
+    let mut cfg = tm_core::config::Config::default();
+    if let Some(r) = world["ratio"].as_str() {
+        cfg.day.budget_ratio = r.parse().map_err(|e| format!("world.ratio {r:?}: {e}"))?;
+    }
+    let tz = cfg.tz;
+    let docs: Vec<(String, String)> = world["docs"]
+        .as_array()
+        .ok_or("world.docs is not an array")?
+        .iter()
+        .map(|d| match (d[0].as_str(), d[1].as_str()) {
+            (Some(p), Some(t)) => Ok((p.to_string(), t.to_string())),
+            _ => Err(format!("world.docs holds {d}")),
+        })
+        .collect::<Result<_, _>>()?;
+    let files: Vec<(&str, &str)> = docs.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let tree = tm_core::tree::Tree::from_texts(&files, &cfg);
+    let log_text = world["log"].as_str().ok_or("world.log is not a string")?;
+    let world_log = Log::parse(log_text);
+    let world_replay = world_log.replay(None, tz);
+    let mut model = tm_core::energy::Model::default();
+    if let Some(m) = world["mult"].as_str() {
+        let m: f64 = m.parse().map_err(|e| format!("world.mult {m:?}: {e}"))?;
+        model.duration.insert(tm_core::energy::DEFAULT_TAG.to_string(), m);
+    }
+    let world_state: tm_core::store::RuntimeState =
+        serde_json::from_value(world["state"].clone()).map_err(|e| format!("world.state: {e}"))?;
+    let world_now = instant(&world["now"], tz, "world.now")?;
+    let date = world_state.date.unwrap_or_else(|| world_now.date_naive());
+    let mut cands = priority::collect_candidates(&tree, &world_replay, &cfg, &model, date, world_now);
+    if let Some(order) = req["order"].as_object() {
+        for c in cands.iter_mut() {
+            if let Some(o) = order.get(c.id.as_str()) {
+                let pair = |x: &Value| -> Result<(usize, usize), String> {
+                    match (x[0].as_u64(), x[1].as_u64()) {
+                        (Some(a), Some(b)) => Ok((a as usize, b as usize)),
+                        _ => Err(format!("an order pair {x}")),
+                    }
+                };
+                c.root_order = pair(&o[0])?;
+                c.own_order = pair(&o[1])?;
+            }
+        }
+    }
+    let mut given: BTreeMap<String, tm_core::priority::Prio> = BTreeMap::new();
+    for v in req["prios"].as_array().ok_or("`prios` is not an array")? {
+        let p = prio_of(v)?;
+        given.insert(p.id.as_str().to_string(), p);
+    }
+    let prios: Vec<tm_core::priority::Prio> = cands
+        .iter()
+        .map(|c| given.get(c.id.as_str()).cloned().ok_or_else(|| format!("no grant for the fork's candidate {}", c.id.as_str())))
+        .collect::<Result<_, _>>()?;
+    let state: tm_core::store::RuntimeState =
+        serde_json::from_value(req["state"].clone()).map_err(|e| format!("state: {e}"))?;
+    let now = instant(&req["now"], tz, "now")?;
+    let (log, replay) = match req["log_line"].as_str() {
+        Some(l) => {
+            let log = Log::parse(&format!("{log_text}{l}"));
+            let replay = log.replay(None, tz);
+            (log, replay)
+        }
+        None => (world_log, world_replay),
+    };
+    let ov = match req["extend"].as_array() {
+        Some(e) => {
+            let id = e.first().and_then(Value::as_str).ok_or("`extend`'s id")?;
+            let m = e.get(1).and_then(Value::as_u64).and_then(|m| u32::try_from(m).ok()).ok_or("`extend`'s minutes")?;
+            Some(PlanOverrides::new().extending(&tm_core::model::Id::new(id), m))
+        }
+        None => None,
+    };
+    let mut input = PlanInput::new(&tree, &log, &replay, &cfg, &model, &state, now).with_ranking(&cands, &prios);
+    if let Some(ov) = ov.as_ref() {
+        input = input.with_overrides(ov);
+    }
+    let day = planner::plan(&input);
+    let ranked: Vec<&str> = priority::sorted_candidates(&prios, &cands).iter().map(|c| c.id.as_str()).collect();
+    Ok(json!({
+        "day": day,
+        "hash": day.hash(),
+        "ranked": ranked,
+        "cands": cands.iter().map(|c| c.id.as_str()).collect::<Vec<_>>(),
+    }))
+}
+
+/// **One `diff` op**: fork `planner::diff` of two days' rows — each row's start, end,
+/// kind (a batch's members with it) and item, which is all `diff` reads.
+fn diff_one(req: &Value) -> Result<Value, String> {
+    use tm_core::planner::{self, DayPlan, SegFlags, SegKind, Segment};
+    let tz = tm_core::config::Config::default().tz;
+    let day_of = |v: &Value| -> Result<DayPlan, String> {
+        let segs = v.as_array().ok_or("a day's rows are not an array")?;
+        let epoch = instant(&json!("1970-01-01T00:00:00Z"), tz, "epoch")?;
+        let date = chrono::NaiveDate::from_ymd_opt(1970, 1, 1).ok_or("a date")?;
+        let mut day = DayPlan::empty(date, (epoch, epoch), 0);
+        for s in segs {
+            let kind = match &s["kind"] {
+                Value::String(k) => match k.as_str() {
+                    "block" => SegKind::Block,
+                    "break" => SegKind::Break,
+                    "routine" => SegKind::Routine,
+                    "wall" => SegKind::Wall,
+                    "rest" => SegKind::Rest,
+                    "optional" => SegKind::Optional,
+                    "winddown" => SegKind::WindDown,
+                    "sleep" => SegKind::Sleep,
+                    "lost" => SegKind::Lost,
+                    other => return Err(format!("a row of kind `{other}`")),
+                },
+                k => SegKind::Batch(
+                    k["batch"]
+                        .as_array()
+                        .ok_or_else(|| format!("a row of kind {k}"))?
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(tm_core::model::Id::new)
+                        .collect(),
+                ),
+            };
+            day.segments.push(Segment {
+                start: instant(&s["start"], tz, "a row's start")?,
+                end: instant(&s["end"], tz, "a row's end")?,
+                kind,
+                energy: None,
+                item: s["item"].as_str().map(tm_core::model::Id::new),
+                instance: None,
+                flags: SegFlags::default(),
+            });
+        }
+        Ok(day)
+    };
+    let (old, new) = (day_of(&req["old"])?, day_of(&req["new"])?);
+    Ok(json!({ "diff": planner::diff(&old, &new) }))
+}
+
+/// A request, answered — or refused `{"error": …}` by name, so the caller sees why.
+fn observe_plan(req: &Value) -> Value {
+    let answer = match req["op"].as_str() {
+        Some("plan") => plan_one(req),
+        Some("diff") => diff_one(req),
+        other => Err(format!("unknown op {other:?}")),
+    };
+    answer.unwrap_or_else(|e| json!({ "error": e }))
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let stdout = std::io::stdout();
@@ -290,6 +531,22 @@ fn main() {
                 writeln!(w, "{}", observe_log(&text, tz)).unwrap();
             }
         }
+        Some("plan") => {
+            // One request, one answer, FLUSHED: the caller keeps this process and
+            // waits for each answer before it asks again.
+            for l in std::io::stdin().lock().lines() {
+                let l = l.unwrap();
+                if l.trim().is_empty() {
+                    continue;
+                }
+                let answer = match serde_json::from_str::<Value>(&l) {
+                    Ok(req) => observe_plan(&req),
+                    Err(e) => json!({ "error": format!("a request is one JSON object per line: {e}") }),
+                };
+                writeln!(w, "{answer}").unwrap();
+                w.flush().unwrap();
+            }
+        }
         Some("fit") => {
             let tz: chrono_tz::Tz = args
                 .get(2)
@@ -316,7 +573,8 @@ fn main() {
                 "usage: tm-oracle gen <n> <seed>   |   tm-oracle parse  (JSON strings on stdin)\n\
                  \x20      tm-oracle parse-entry  (ONE log line per line: a JSON string, or a JSON array of bytes)\n\
                  \x20      tm-oracle replay <tz>  (whole log texts, one JSON string per line)\n\
-                 \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)"
+                 \x20      tm-oracle fit <tz> <today>  (the same, fitted: `tm model --fit`)\n\
+                 \x20      tm-oracle plan  (one planning request per line: the fork's planner, ranked as the binary ranks it)"
             );
             std::process::exit(2);
         }

@@ -19,8 +19,18 @@
 #   <binary> gen 512 1                     512 lines from the shipped generator
 #   <binary> parse < lines.jsonstrings     one JSON string per line
 #   <binary> replay <tz> < log.jsonstrings the fork's `log::replay`, as JSON
+#   <binary> plan < requests.jsonl         the fork's planner, ranked as the
+#                                          shipped binary ranks it (owner D72)
 #
 # and feed either to `cargo run --example oracle-compare` in tm-kernel-ffi.
+#
+# THE PLANNER IS GRAFTED (stage 6 W-39, README gap 3533): fork 4748911's
+# `planner::plan` takes no priorities, and the shipped binary has handed it the
+# kernel's since `09d38fa`.  `plan-seam.patch` is exactly that commit's two edits
+# to what the fork's day planning reads -- its header says which -- and it is
+# applied to the extracted fork below; a patch that does not apply FAILS the
+# build, and the stamp carries the patch's own hash, so a changed patch
+# re-extracts the tree rather than grafting twice.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -32,12 +42,20 @@ fork=${TM_FORK:-4748911}
 # tree left by the old `main`-targeted script) is re-extracted rather than
 # silently reused.
 stamp="$out/.oracle-ref"
-want=$(git -C "$repo" rev-parse "$fork")
+seam="$here/plan-seam.patch"
+want="$(git -C "$repo" rev-parse "$fork") $(git hash-object "$seam")"
 if [ ! -d "$out/tm-core" ] || [ ! -f "$stamp" ] || [ "$(cat "$stamp")" != "$want" ]; then
-  echo "extracting $fork ($want) into $out" >&2
+  echo "extracting $fork (${want%% *}) into $out" >&2
   rm -rf "$out/tm-core" "$out/tm" "$out/Cargo.toml" "$out/Cargo.lock"
   mkdir -p "$out"
-  git -C "$repo" archive --format=tar "$want" | tar -x -C "$out"
+  git -C "$repo" archive --format=tar "${want%% *}" | tar -x -C "$out"
+  # The ceiling keeps `git apply` from finding a repository above the scratch
+  # tree, where it would read the patch's paths from that repository's root.
+  ( cd "$out" && export GIT_CEILING_DIRECTORIES="$(dirname "$out")" \
+      && git apply --check "$seam" && git apply "$seam" ) || {
+    echo "build-oracle.sh: $seam does not apply to $fork -- the oracle's planner would not be the one it describes" >&2
+    exit 1
+  }
   printf '%s\n' "$want" > "$stamp"
 fi
 

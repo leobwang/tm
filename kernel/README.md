@@ -76014,3 +76014,373 @@ the plants and the named suites run in a clone under `scratchpad/w39-t/clone`, n
   section — the week cut's `log+walls` call — pinned exactly beside the capacity call's (its own
   `expected_week_cut_calls`); the other three capacity verbs are unchanged.  The first workspace
   run failed on the old pin, which is the pin doing its job.
+
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **TRACK H**
+     (the fork comparison outlives R3 -- the owner's D72 -- and the shapes no
+     frozen line held: Rust, the oracle and gates only, no `.lean` file), on
+     branch `w39-h` in its own worktree off `9dfb610`.  Gap range
+     **3660-3699**; **3660-3670 taken**, 3671-3699 free.  Parity: **none
+     issued**.  PARITY-PENDING: none -- every departure the new lines carry is
+     a number `kernel/parity.txt` already registers (P45-P47, P51, P52, P56).
+     One file outside track H's list is changed, `tm-core/src/emit.rs` (one
+     predicate, README gap 3660): the batch's first run found the defect and
+     the alternatives were a red gate or a weakened one (section 2).
+     ===================================================================== -->
+
+## Stage 6 — W-39, track H: the fork is compared after R3 both ways — a frozen batch and the fork out of the tree — and the three shapes no frozen line held
+
+### 0. Measured first
+
+**Fork 4748911's `planner::plan` takes no priorities.**  `git show 4748911:tm-core/src/planner.rs`:
+its `PlanInput` is `tree, log, replay, cfg, model, runtime, now, caps, candidates, allow_home,
+overrides` — no ranking — and its step 4 always runs `priority::compute` over its own lookahead.  The
+shipped binary has handed its fork the KERNEL's ranking since `09d38fa` (stage 5 D10 L8), and
+`git log 4748911..9dfb610 -- tm-core/src/planner.rs` lists every edit the in-tree planner has had
+since the fork, eleven commits, each read as a diff:
+
+| commit | what it changed in the fork's day planning |
+|---|---|
+| `09d38fa` | **the ranking seam** (`PlanInput::with_ranking`, step 4 reading the given priorities) and, in `priority.rs`, **§7.3's IMPOSSIBLE reading the exact shortfall** (`Prio::is_impossible`); the week plan's capacity in units, which plans no day |
+| `bb5b9dc`, `7585eb2`, `6137bbd` | **P56** (`past_segments` cuts a replayed pause by the day's walls), a doc move, a constant's spelling |
+| `c10e39c` | a saturating sum — identical on every sum that fits |
+| `114ab46`, `90c391e`, `6b05f50`, `274e536`, `23b06e2` | the log handed as its replay, the types moved to `dayplan.rs` byte for byte, `kind_label` made public, the date read through `planwire::plan_date` (the same rule), the L8 merge |
+
+So "the fork as the shipped binary runs it" (D53) is fork 4748911 plus `09d38fa`'s two day-planning
+edits, plus P56 — a registered number.  That is exactly what `tm-oracle plan` builds (section 3).
+
+### 1. The comparand has ONE definition, over any backend (`tm/tests/support/forkplan.rs`)
+
+Until W-39 every frozen line's answers were built in `planner_classes.rs`' fork region by calling
+the in-tree planner, so nothing could answer after R3.  `forkplan::comparand_answers` is now the one
+definition — the shipped day, the comparand with P46, P47, P51, P55 applied by their properties,
+the what-ifs (P44, P52), P45's comparand after a running break and P56's two drawings — over the
+trait `forkplan::ForkPlan`, which is only asked to PLAN.  Its two backends are `forkplan::InTree`
+(the file's one region, deleted at R3) and `forkplan::Oracle` (`tm-oracle plan`, out of the tree).
+The departures are applied to the day's JSON, the frozen lines' own spelling
+(`forkplan::p46_row`, `forkplan::p47_pause`, `forkplan::p55_note`), and the digest after a bend is
+`forkplan::day_hash` — `DayPlan::hash` over the JSON's own values.
+
+**Measured before anything was frozen through it**: the refactored comparand over the in-tree
+fork answers all 97 frozen class lines exactly as they are frozen, every key of
+`forkclass::ANSWERS` (`the_frozen_classes_are_the_forks_answer_today`, 118 s), and `day_hash`
+reproduces the stored digest of every frozen day (`the_hash_of_every_frozen_day_is_its_digest`:
+505 of 505 then, 511 of 511 with this step's lines).
+
+### 2. D72's frozen half: the seeded batch (`fork-4748911-planner-batch.jsonl`)
+
+**How it is chosen.**  The class draw's own protocol (`forkclass::class_draws`: the shared
+generator's case, one of the four arms, that arm's widenings) from the seed
+`forkclass::BATCH_SEED`, "W-39 track H batch, owner D72", draws `0..forkclass::BATCH_DRAWS`
+(128) — every draw whose world `forkclass::binary_holds` accepts (D64(b)), each frozen by
+`fork_answers` with the fork's answers BY VALUE and every registered departure carried by its flag
+as a class line carries it.  **Measured: the binary holds all 128; 0 refused**, so the batch is
+draws 0-127, 3,573,311 bytes.  It is a property, not a list:
+`the_frozen_batch_is_every_draw_the_binary_holds` re-draws every index below 128 and demands a held
+line's world be the draw's own, its provenance its draw's, and a missing index be refused by clause.
+
+**Compared in plain `cargo test --workspace`, outside every region**
+(`the_kernel_plans_every_frozen_batch_day_the_fork_planned`, `forkclass::compare_line`, the classes'
+own comparison): 128 lines, 28 classes; 116 non-P45 days, 1,206 fork rows, 63,926 other values, 87
+under-used notes the renderer derived as the fork wrote them, 116 of 116 hashes equal; 12 P45 days
+(5 running, 7 overrun; 109 rows after the break, 9 kept breaks); P46 2, P47 4, P51 81; 59 what-ifs
+(4 parity-P44, 1 P52); P56 2; **0 differences**.
+
+**What it holds that the 36 classes do not** (`the_batch_holds_what_the_classes_do_not`, from the
+files): 28 classes, 18 of them with two or more worlds (`interrupted/late` 21); the arms 38 base, 30
+hash, 31 step-8, 29 W-35 (the class primaries 1, 9, 17, 9); 38 distinct item counts against 15, 31
+routine sets against 19, 10 multipliers against 7, and 4 worlds with a break logged earlier in the
+day against **0** among the class primaries.
+
+**Its first run found a defect** — README gap **3660**, CLOSED here: on 13 of the 128 days (15 rows)
+the host renderer derived an under-used row's note from the item's FIRST `diagnostics.underused`
+entry, so an item under-used in a slot of energy 5 and then a slot of energy 4 was noted
+`↓ slot 5` on every row, where the fork wrote each row's own slot and the kernel's
+`Emit.underusedCell` reads the row's own energy (`^zah` on draw 1: four rows, 5, 5, 4, 4).  No
+shipped path reaches it before R3 (the fork writes its notes itself), and the 39 notes of the 97
+class lines never held such an item.  **Fixed in `tm-core/src/emit.rs`, a file outside track H's
+list**: `emit::underused_note` reads the diagnostics entry for this item AT this row's energy — one
+predicate.  Leaving it would have meant committing a red comparison or narrowing it, and the step
+may do neither; the fix restores the fork's own behaviour, so it takes no parity number.
+
+### 3. D72's oracle half: `tm-oracle plan`
+
+**The mode** (`kernel/tm-kernel-ffi/examples/oracle/src/main.rs`): one JSON request per stdin line,
+one answer per line, so a caller keeps the process.  A `plan` op carries the world as bytes (the
+documents, the log, `.tm/state.json`, the collecting instant, the multiplier and budget ratio), the
+ask (a state, an instant, D60's two order fields by id, a §9.1 extension, a line appended to the
+log), and the kernel's grants; the oracle reads the world AS THE FORK READS IT — its own parser, its
+own `log::replay` over the same bytes, its own `priority::collect_candidates` — ranks by the grants,
+and answers the fork's `DayPlan`, its digest, its §7.4 order and its candidate ids.  A `diff` op is
+fork `planner::diff` of two days' rows.  Anything it cannot answer is `{"error": …}`, by name.
+
+**The graft** (`plan-seam.patch`): exactly `09d38fa`'s two day-planning edits — the ranking seam and
+the exact shortfall's reading (one bit per grant) — applied by `build-oracle.sh` with `git apply`
+under a ceiling that keeps it out of any enclosing repository; a patch that does not apply FAILS the
+build, and the scratch tree's stamp carries the patch's own hash.  Check 8 reads the patch as text
+(`.patch` joined `citations.READERS` and `leanfiles.READ_SUFFIXES`, the first new kind of file since
+W-27).
+
+**The fresh-draw arm** (`planner_invariants.rs`, outside the region, `#[ignore]` and inert without
+`TM_ORACLE`): `the_kernel_plans_every_fresh_draw_as_the_forks_oracle_plans_it` — draw 0 of the
+class draw from a fresh seed each case (so a failure names a seed anyone can repeat), set aside and
+counted if the binary cannot hold it, answered by the oracle through `comparand_answers`, and the
+kernel held to the line by `compare_line`.  It reads the oracle's banner first and refuses a binary
+without `tm-oracle plan` by name (`forkplan::assert_oracle_mode`, README gap 196).  One run, 128
+cases: **155 draws (27 of them the persisted seeds), 155 held, 155 compared, 0 differences**, 720
+oracle requests; what-ifs 67, P45 8, P46 5, P47 8, P51 97, P52 1.
+
+**Proof it is the shipped fork, not a copy that drifted:**
+* `the_frozen_lines_are_the_forks_oracle_answer_today` (`planner_classes.rs`, outside the region,
+  inert without `TM_ORACLE`): the oracle answers every class, batch and driven line exactly as frozen
+  — **225 of 225**, 1,182 oracle requests, before this step's three class lines and the driven line
+  existed; **229 of 229** after R3's simulated deletion (section 6).  P56's lines are among them, so
+  `forkplan::p56_cut` — P56 applied by its property to fork 4748911's drawing — is the in-tree fork's
+  cut on every line that has one.
+* the region's cross-check, `the_forks_oracle_answers_as_the_in_tree_fork_on_every_fresh_draw`:
+  on 43 fresh draws (16 cases and the 27 persisted seeds) the oracle and the in-tree fork gave the same
+  raw day, fork 4748911's drawing, §7.4 order and every comparand answer — none of them a P56 day,
+  which is why the frozen-lines check above is the one that holds `forkplan::p56_cut`.
+
+**The arm's first run in R3's simulation found README gap 3480 on a fresh draw** — seed
+`96e7339b0c1745683b47728b`, `break/home`: a 25-minute walk begun at 09:46, planned at 10:00, and the
+kernel keeps a Break at 13:00 where the fork, the break logged, plans work.  Reproduced against the
+in-tree fork too.  The kernel's nine rows after the break are, row for row, the fork's planned with
+the break UNLOGGED — gap 3480's two readings of one span exactly, which no frozen line holds (the
+frozen break days end their break where the two agree).  It is the kernel's open question (P45's
+owner), so the arm DECLARES that one class, exactly (`forkplan::gap_3480_explains`, the unlogged
+reading asked of the fork itself) and counts it;
+`gap_3480s_declared_class_holds_on_the_draw_that_found_it` pins the draw, and that the reading does
+NOT explain a frozen `overrun` line where the kernel agrees with the logged comparand — so the class
+is neither vacuous nor everything (gap 3666).
+
+### 4. The shapes the fork region compared live and no frozen line held
+
+* **README gap 3473 — CLOSED: a TYPED pause over a wall.**  `forkclass::typed_worlds`, derived from
+  the world D61 derives after a meeting: the meeting's pause and unpause replaced by a pause typed
+  `forkclass::TYPED_WIDER` (ten) minutes before the wall and an unpause as long after it, planned ten
+  minutes later.  Two lines: `running/lounge (typed)` from `wall-on-now/lounge` at 12:20 and
+  `overtime/home (typed)` from `wall-on-now/home` at 14:20; `running/late`'s and `running/spent`'s
+  blocks began under ten minutes before their walls, so they derive none.  Each carries `p56`: the
+  shipped day (fork 4748911) draws the pause whole across the meeting, the comparand in the two pieces
+  the cut leaves, and the kernel draws the two pieces.  **P59 is on neither line** (gap 3665).
+* **README gaps 3474 and 3529 — CLOSED: an interruption begun at a wall's start, in the direction W-38
+  track R fixed.**  `forkclass::order_worlds`: an open interruption naming the running block stamped at
+  a calendar wall's start (`forkclass::an_interruption_begins_at_a_wall`), `now` carried to the wall's
+  END, so the interruption's Lost row — which runs to `now` — ties the Wall row on `(start, end)` and
+  only step 1's walk orders them: fork `collect_walls` draws the wall first (`waa` before the block's
+  `zag`), the kernel before `Planner.stepOneOrder` drew the Lost row first.  One line,
+  `interrupted-block/spent (order)` at 10:00 (08:00-10:00 tied, Wall first); gap 3529's two lines held
+  the pair apart, so the final sort decided there.
+* **README gap 3390 — frozen, and PENDING track A**: the driven file
+  (`fork-4748911-planner-driven.jsonl`, `forkclass::DRIVES`).  The world is the shipped binary's own
+  output of `tm wake 06:30` at 07:30 over `idle/lounge` (arrived 07:00), planned at 10:30: the state
+  holds no arrival, window or budget, the log keeps the `arrive` (so the world classifies `idle/late`:
+  no stored window).  The fork plans `07:00–16:00` (its
+  logged-arrive fallback); the kernel at `9dfb610` plans `10:30–19:30`.  **It cannot be a class line**:
+  clause 5 refuses it — `tm wake` clears the three fields and D42's rebuild restores them (README gap
+  3398, a host decision nobody has taken) — so it is admitted by the stronger property, the binary
+  WROTE it (`every_driven_world_is_the_binarys_own_output` re-drives it byte for byte), and
+  `the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says` pins clause 5's refusal to
+  exactly `arrival`, `budget` and `window`.  Its comparison is a RATCHET
+  (`the_kernel_plans_every_driven_day_the_fork_planned`): the drive's `pending` names gap 3390, and
+  the test DEMANDS the window difference and fails, by the drive's name, the moment the kernel agrees —
+  **so on this branch it passes, and after track A's fix merges it fails with "delete the drive's
+  `pending`", which is the land step's composition** (driven below, section 6).
+
+### 5. README gap 3536 — CLOSED: `binary_holds`' clause 4 goes; clause 5 answers for `paused`
+
+Clause 4 restated `tm start`'s pause rule by hand.  It is withdrawn (its number not reused, so a
+`d64b.held` record naming `4:` still names what refused its world), and `forkclass::binary_rebuilds`
+asks the binary: with `.tm/state.json` holding ONLY the table's top-level host-only fields — the
+running break the log cannot carry among them — and no block, the reconcile takes the block from the
+log and derives its pause from every writer and the break (`ctx::derived_state`'s `running_break`), and
+`tm --json now` reports it.  `every_clause_of_binary_holds_bites`' two clause-4 plants and a third (a
+block under a running break left running) are refused by clause 5, by name; all 100 class worlds and
+all 128 batch worlds still pass.  Cost: one more binary run per world.
+
+### 6. R3's deletion, simulated — twice
+
+In clones (`scratchpad/w39-h/r3sim`, `r3sim2`; each baseline commit this step's working tree, and
+`git status --porcelain` listing exactly the fourteen files the simulation touched), in the order the
+work happened:
+
+1. **Every fork region deleted by its banners** — thirteen regions now (W-38's twelve and
+   `support/forkplan.rs`'), **5,225 lines**: `planner_invariants.rs` 3,624, `planner_classes.rs` 699,
+   `planner_dynamics.rs` 213, `planner_w38_order.rs` 151, `support/forkplan.rs` 126,
+   `planner_regressions.rs` 107, `planner_w37_rows.rs` 100, `planner_fixtures.rs` 76,
+   `kernel_unplaced_banner.rs` 42, `planner_common/mod.rs` 32, `emit_planner.rs` 30,
+   `priority_plan_basic.rs` 13, `support/forkclass.rs` 12.
+2. **tm-core's five fork planner entries** panic by name (`R3-SIM: the fork planner's …`) from any
+   process but the `tm` binary.
+3. **The first simulation**, `cargo test --workspace --no-fail-fast`, one run: **104 result lines,
+   1,652 passed, 17 failed, 11 ignored**.  Fifteen failures are the guard in the `tm` crate's own TUI
+   code — the same fifteen (README gap 3476, the body swap's); one is designed
+   (`every_test_that_reaches_the_fork_keeps_it_in_one_region`: "the walk found 0 fork regions"); one is
+   `cli_latency`'s three-year first verb at 3.04 s under load 60 from the run's other tracks (README gap
+   1333).  The fresh-draw arm's first run there FOUND README gap 3480 on a fresh draw (section 3); the
+   class it declares is the only change between the two simulations besides the batch's provenance
+   check (section 7, M16).
+4. **The second simulation, over the final tree**: `planner_classes` 45 passed and the designed
+   failure (221 s), `planner_invariants` 20 passed (518 s); with the oracle, **every frozen line as
+   frozen, 229 of 229** (1,208 oracle requests, 241 s), gap 3480's witness passed, and the fresh-draw
+   arm over 32 cases — **59 draws, 59 held, 59 compared with the out-of-tree fork, 243 oracle
+   requests, 0 differences**, gap 3480's class explaining 1.
+
+**Each comparison fails BY NAME when one kernel answer is bent** (the second simulation: a hook in the
+clone's `kernel_answer_with_grants`, the environment variable TM_R3_CORRUPT; a verdict counted only from the panic message):
+
+| bent | test (outside every region) | verdict — the failure's own words |
+|---|---|---|
+| none | `the_kernel_plans_every_frozen_batch_day_the_fork_planned` | passed (91.5 s) |
+| `row`: the day's last row a minute longer | the batch | FAILED — `128 disagreement(s) with the frozen batch` |
+| `order`: the tied Wall and Lost rows swapped, as the kernel before W-38 track R drew them | `the_kernel_plans_every_generated_class_the_fork_planned` | FAILED — `1 disagreement(s) with the frozen fork classes` (`interrupted-block/spent (order)`) |
+| `typed`: P56's two pieces of a pause joined | the class arm | FAILED — `4 disagreement(s) with the frozen fork classes` (the two typed lines) |
+| none | `the_kernel_plans_every_driven_day_the_fork_planned` | passed (the pending difference demanded) |
+| `window`: the driven day's window from the logged arrival, as track A will plan it | the driven arm | FAILED — `the kernel now plans the driven day's window as the fork did — README gap 3390: … is closed on this tree: delete the drive's `pending` in `forkclass::DRIVES`` |
+| none | the fresh-draw oracle arm, 32 cases | passed — 59 draws compared |
+| `row` | the fresh-draw oracle arm | FAILED — `1 disagreement(s) with fork 4748911 on a fresh draw (repeat it: class_draws("00000bdde47b02e00cc487f3", None).next())` |
+
+### 7. D40 for the Rust this step added or changed
+
+`scratchpad/w39-h/mutants.py`, in a clone (`scratchpad/w39-h/mut`): each mutant bends ONE definition,
+runs the one test that must see it, and counts KILLED only when that test fails with the named words;
+the file is restored with `git checkout` and `git status --porcelain` is empty before and after every
+mutant.  The oracle's own mutants are built into their own scratch oracle (`build-oracle.sh`) and the
+unmutated test is run against it.
+
+| mutant | the definition, bent | test | verdict — its own words |
+|---|---|---|---|
+| M1 | `forkclass::binary_rebuilds`: the pause half compares nothing | `every_clause_of_binary_holds_bites` | KILLED — `clause 5 did not refuse the block's pause: []` |
+| M2 | `forkplan::day_hash`: the FNV offset one higher | `the_hash_of_every_frozen_day_is_its_digest` | KILLED — `a frozen day digests to da46775b…, its line says "d8a51456…"` |
+| M3 | `forkplan::p46_row`: `planned_min` 1 | `the_frozen_classes_are_the_forks_answer_today` | KILLED — `the frozen answers are not the fork's today` |
+| M4 | `forkplan::p47_pause`: the open row stays current | the same | KILLED — the same |
+| M5 | `forkplan::p55_note`: the note misspelt | the same | KILLED — the same |
+| M8 | `forkplan::comparand_answers`: P51 never set | the same | KILLED — the same |
+| M6 | `forkplan::p56_cut`: cuts nothing | `the_frozen_lines_are_the_forks_oracle_answer_today` (`TM_ORACLE`) | KILLED — `the fork oracle does not answer the frozen lines as frozen` |
+| M7 | `forkplan::cut_out`: the piece after a wall dropped | the same | KILLED — the same |
+| M10 | `forkplan::Oracle::plan`: the host's grants not written back | the same | KILLED — the same |
+| **M9** | `forkplan::prio_wire`: the exact shortfall's sign always false | the same | **SURVIVED** — no frozen grant has a sub-minute shortfall (gap 3662) |
+| M11 | `forkclass::an_interruption_begins_at_a_wall`: only on a break day | `the_frozen_typed_and_order_worlds_are_every_one_their_rules_derive` | KILLED — `frozen order worlds: 0 derived, 1 held` |
+| M12 | `forkclass::order_worlds`: planned a minute before the wall ends | the same | KILLED — `order worlds missing ["interrupted-block/spent"], held and not derived […]` |
+| M13 | `forkclass::typed_worlds`: planned ten minutes later | the same | KILLED — `typed worlds missing ["wall-on-now/home", "wall-on-now/lounge"]…` |
+| M14 | `forkclass::drive`: no verb run | `every_driven_world_is_the_binarys_own_output` | KILLED — `arrive then wake (gap 3390): the stored world is not what the binary writes` |
+| M15 | `emit::underused_note`: the item's first entry again (gap 3660 undone) | `the_kernel_plans_every_frozen_batch_day_the_fork_planned` | KILLED — `batch draw 1 (running/lounge): the renderer derives `↓ slot 5, item 0` …` |
+| M16 | `forkclass::batch_line`: another seed | `the_frozen_batch_is_every_draw_the_binary_holds` | **SURVIVED at first** — the test read the stored file's provenance, never its writer's; the test now holds every stored line to `forkclass::batch_line`'s own output for its draw, and the rerun KILLED it — `batch draw 0: its recorded `seed` is not its draw's provenance` |
+| M18 | `tm-oracle` `plan_one`: D60's order ignored | `the_frozen_lines_are_the_forks_oracle_answer_today` | KILLED — `the fork oracle does not answer the frozen lines as frozen` |
+| M19 | `tm-oracle` `diff_one`: a day diffed with itself | the same | KILLED — the same |
+| M20 | `tm-oracle` `prio_of`: `u` read as none | the same | KILLED — the same |
+| M21 | `plan-seam.patch`: the ranking seam never taken | the same | KILLED — the same |
+
+**19 of 20 KILLED; M9 SURVIVES, recorded as gap 3662.**  One slip in the method, said so: while the
+first batch ran, a baseline commit made in the mutant clone swept M6's in-flight edit into it; it was
+taken back out of the commit before M6's run ended, so every later mutant ran on the clean baseline
+(the porcelain checks above).
+
+
+### 8. Gaps (3660-3670)
+
+**Gap 3660 — CLOSED: the host renderer noted an item's under-used rows by its first slot.**  Section 2.
+
+**Gap 3661 — a second `tm wake` at another time moves `wake` across D42's rebuild.**  1. *What.*  The
+driven world was first built with `tm wake 06:05` over a world that logged a 06:30 wake: the cache
+held `wake: 06:05` and the rebuild `06:30` (`binary_holds`: "`wake` is 06:05 and the binary rebuilds
+06:30"), beside gap 3398's three fields.  2. *Why.*  The cache keeps the last `tm wake`; the rebuild
+reads the day's kept wake — a D45-shaped question (the last arrival wins) nobody has asked of wakes.
+3. *Cost.*  Deleting `.tm/state.json` moves `wake` on such a day, and with it the capacity's day-0
+energy curve.  The frozen drive uses 06:30, the logged wake, so it isolates gap 3390.  4. *Clears
+it.*  The host decision gap 3398 names, taken for `wake` as well.
+
+**Gap 3662 — the graft's second edit has no witness.**  1. *What.*  `plan-seam.patch` makes the fork's
+IMPOSSIBLE read the exact shortfall's sign, as `09d38fa` did; no frozen grant — 1,596 class, 3,046
+batch, 17 driven, 3,843 `plan-basic` — has a shortfall strictly between 0 and 1 minute, so the mutant
+dropping it (section 7, M9) SURVIVES every frozen line.  2. *Why.*  The mixture's fractions rarely put
+an availability within a minute of a need.  3. *Cost.*  That half of the graft is pinned by its text
+(`09d38fa`'s reading, quoted in the patch's header) and by nothing that runs.  4. *Clears it.*  A world
+with a sub-minute shortfall — searched for among fresh draws, or built — frozen or added to the
+cross-check.
+
+**Gap 3663 — gap 3390's world is a driven line with a pending ratchet.**  Section 4.  **The land step
+deletes `pending` in `forkclass::DRIVES`** once track A's fix is merged; the ratchet names the edit.
+If A's fix leaves another difference, the ratchet fails too, quoting it.
+
+**Gap 3664 — the oracle's banner is read by three copies.**  `oracle_banner` and `assert_oracle_mode`
+are private in `kernel_replay_parity.rs` and `kernel_log_grammar.rs` (not track H's) and now public in
+`support/forkplan.rs`; the two older retire onto it when their owners next touch them.
+
+**Gap 3665 — P59 is on no frozen line.**  1. *What.*  The brief asked for the typed lines' flags as
+P56 and P59; they carry P56.  2. *Why.*  D68 (P59) moves a CELL — the paused row is drawn `paused
+10m` — and a frozen line holds the day's segments, in which a typed pause is a Lost row noted `paused`
+on both sides (README gap 3433).  3. *Cost.*  After R3, P59 is compared where it lives:
+`cli_pause_drawn`'s kernel-and-host drawings (track T's).  4. *Clears it.*  A frozen answer holding the
+fork's DRAWN cells for a pause row — only if the owner wants the drawing frozen.
+
+**Gap 3666 — README gap 3480 is reachable on an ordinary break day.**  1. *What.*  Section 3: seed
+`96e7339b0c1745683b47728b`, `break/home`, not an overrun offset — the kernel's running-break reading
+and the comparand's logged break disagree about the cut's counter.  2. *Why.*  Gap 3480 is P45's
+owner's question; this track writes no `.lean`.  3. *Cost.*  The fresh-draw arm declares the class
+exactly; a frozen line holding the shape would pin whichever reading the owner chooses.  4. *Clears
+it.*  Gap 3480's decision, then a frozen break day of this shape and the declared class deleted.
+
+**Gap 3667 — the oracle reads the world as the FORK reads it.**  1. *What.*  The binary hands its fork
+the kernel's replay and its own candidates; the oracle computes the fork's.  2. *Why.*  After R3 the
+host's candidate collection is the kernel's to replace (D27), and a copy of the host in the oracle
+would be a third reader.  3. *Cost.*  A registered difference between the fork's reading and the
+host's (a grammar or replay parity number) on a fresh world would surface as a planner difference.
+Measured: none on 155 fresh draws or 229 frozen lines.  4. *Clears it.*  Nothing to clear while it
+stays zero; the arm names the seed if it ever does not.
+
+**Gap 3668 — what the batch costs.**  `planner_classes` 143 s → 161-182 s per workspace run (three runs), the batch file
+3,573,311 bytes (P51 departs on 81 of 128 lines, so `shipped` is kept by value beside 84 of them), and
+`binary_holds` one more binary run per world.
+
+**Gap 3669 — the exploring differential runs only under `TM_ORACLE`.**  Gap 150's shape: plain
+`cargo test --workspace` holds the batch; fresh draws meet the fork only when someone builds the oracle
+(`build-oracle.sh`) and sets `TM_ORACLE`.  That is D72's own terms (D23's shape), stated here so it is
+never read as "the fork is compared on every run".
+
+**Gap 3670 — R3's remaining list, re-derived.**  Of W-38's list this track closes 3473, 3474/3529 and
+D72 (gap 3533's frozen and oracle halves); **3390** is frozen and pending track A (gap 3663); **3432 /
+3528** (the week grid's walls and cut) are track T's this run.  Riding inside R3's body swap, unchanged:
+3043 and 3476.  Beside them, not blocking: 3480 (gap 3666), 3398 and 3661, 3662.
+
+### 9. Acceptance
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`cli_latency`, the oracle's builds and the mutants), in the worktree unless a clone is named;
+`git status --porcelain` of the worktree unchanged by every test run.
+
+* **`check.sh`, every one of its seventeen lines ok, exit 0** (25.9 s, the kernel warm): build ok;
+  totality ok; axiom audit **5,861** theorems (unchanged: no `.lean` file); Negative.lean rejected;
+  FFI **95** tests; corpus 29/37 files and 4/5 whole plans; stage goals **6**, all stage 6; prose
+  citations **50,091** (47,892 resolved, 2,199 allowed, 0 allow entries unused; 309 files swept, the
+  oracle's `.patch` among them); new definitions mutated **523** rostered, **0** owed; parity **61**
+  (P1-P61), next free P62, none issued here; no two names for one definition, 3,277 bodies, 0
+  UNANSWERED; every emitted definition reached, **1,223** reachable, **1,199** exempt, 0 UNANSWERED;
+  fields 17/17; inputs 33 of 37 (4 exempt); sent 28/28; written 34/28/3; the kernel replays **90**
+  modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): each **104 result lines, 1,739
+  passed, 0 failed, 19 ignored, 0 warnings** (21 min 24 s, 19 min 14 s, 19 min 49 s); no
+  `.proptest-regressions` file moved.  `planner_classes` 51 passed and 6 ignored in 182 s, 161 s and
+  168 s; `planner_invariants` 38 and 3 in 513 s, 466 s and 496 s.  (At `e39567b` the orchestrator's
+  one run read 1,729 passed and 13 ignored: this step adds 10 tests that run and 6 that need an
+  environment variable.)
+* **The named suites, `--include-ignored`, one run each**: T5 `kernel_replay_parity` 33, the door
+  `kernel_log_door` 23, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `planner_classes` 57 (161 s; its blesses and its oracle arm inert without their variables),
+  `planner_invariants` 41 (476 s; the two oracle arms and gap 3480's witness inert) — every one
+  passed.  The FFI is check.sh's checks 5 and 6.
+* **`cli_latency`, three runs** (load 2.7-3.0): 6 passed each, 19.5-20.5 s; first verb 739-774 ms,
+  later verb 86 ms, the three-year first verb 2.25-2.39 s.
+* **With the oracle, on this tree** (`build-oracle.sh` into `scratchpad/w39-h/oracle-final`, the
+  final patch): every frozen line as frozen, **229 of 229** (1,208 oracle requests, 223 s); the
+  fresh-draw arm over 64 cases, **91 draws, 91 held, 91 compared, 0 differences** (386 oracle
+  requests; what-ifs 33, P45 5, P46 2, P47 2, P51 60; gap 3480's class explained 1); the region's
+  cross-check over 64 cases, **91 draws, the in-tree fork and the oracle equal on every raw day,
+  drawing, order and answer**; gap 3480's witness passed, the unlogged reading explaining each frozen
+  `overrun` line exactly when logging the break moves none of its rows.  **The graft moves none of the
+  oracle's other modes**: stage 5's parity arm over the same binary — 469 logs, 8,442 `Replay` keys,
+  195,243 scalar values, P21 on 49 day records and nothing else — and the fork's round trip, 1,375
+  kernel renderings read back, the figures the ledger has carried since W-12.
