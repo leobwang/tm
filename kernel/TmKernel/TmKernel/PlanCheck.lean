@@ -5994,5 +5994,154 @@ theorem whyHolds_noSlotAdmits_iff (r : PlanReq) (d : DayPlan) (i : Id) :
     whyHolds r d i NoPlace.noSlotAdmits = true ↔ eligibleBefore r i = false := by
   simp [whyHolds]
 
+
+
+/-! ## W-39 (track K): §8.3's wind-down law over the whole day, E2 over the day's Batch rows, and
+one start group per item
+
+`plan_places_no_demanding_block_after_wind_down` and `plan_never_batches_past_an_equal_ci_candidate`
+are two goals of `Goals.lean` restated, each with its refutation as stage 6 wrote it in
+`PlannerWit`'s W-39 block (AGENTS §3.1 item 3).  The first needs the decoder's fifth clause and the
+R10 bound `AssignedRowsPay_of_a_paying_decoder` already carries, and NOTHING about the log: README
+gap 2326's bound on the window's end, which W-32 said the proof needed, is false (the conference
+Wednesday), and the proof does not use it.  `an_item_is_in_one_start_group_at_most` is README gap
+3354's per-item form, which reads the request's candidates and so lives here, beside
+`an_answer_of_the_pass_names_its_candidate`. -/
+
+/-- **The answers name the request's candidates, position for position** —
+`an_answer_of_the_pass_names_its_candidate`, as one equation over the ids. -/
+theorem candAnswers_ids (r : PlanReq) :
+    r.candAnswers.map (fun o => o.out.cand.id) = r.cands.val.map (fun p => p.1.id) := by
+  apply List.ext_getElem?
+  intro n
+  rw [List.getElem?_map, List.getElem?_map]
+  cases ho : r.candAnswers[n]? with
+  | none =>
+    have hlen := r.candAnswers_length
+    have hn : r.candAnswers.length ≤ n := by
+      cases hh : r.candAnswers.length.decLe n with
+      | isTrue h => exact h
+      | isFalse h => exact absurd (List.getElem?_eq_getElem (Nat.lt_of_not_le h)) (by rw [ho]; simp)
+    have : r.cands.val[n]? = none := List.getElem?_eq_none (by omega)
+    rw [this]; rfl
+  | some o =>
+    obtain ⟨f, hf⟩ := an_answer_of_the_pass_names_its_candidate r ho
+    rw [hf]; rfl
+
+/-- **Step 4's order holds each id once, when the request sent each id once.** -/
+theorem rankedCands_ids_nodup (r : PlanReq) (hnd : (r.cands.val.map (fun p => p.1.id)).Nodup) :
+    (r.rankedCands.map (·.cand.id)).Nodup := by
+  unfold PlanReq.rankedCands
+  have hperm := (Replay.insSort_perm rankedLe
+    ((r.candAnswers.zipIdx.filter (fun x => entersTheOrder x.1)).map
+      (fun x => (⟨r.keyOf x.2 x.1, x.1⟩ : Ranked)))).map (·.cand.id)
+  unfold sortRanked
+  refine (hperm.nodup_iff).2 ?_
+  rw [List.map_map]
+  have hmap : ((r.candAnswers.zipIdx.filter (fun x => entersTheOrder x.1)).map
+      ((fun y : Ranked => y.cand.id) ∘ (fun x => (⟨r.keyOf x.2 x.1, x.1⟩ : Ranked))))
+      = ((r.candAnswers.zipIdx.filter (fun x => entersTheOrder x.1)).map Prod.fst).map
+          (fun o => o.out.cand.id) := by
+    rw [List.map_map]
+    apply List.map_congr_left
+    intro x _
+    rfl
+  rw [hmap]
+  refine List.Nodup.sublist ((List.filter_sublist.map _).map _) ?_
+  rw [List.zipIdx_map_fst, candAnswers_ids]
+  exact hnd
+
+/-- **README gap 3354, per item: when the request sends each id once, an item sits in one start
+group at most** — so D67's `noRunLeft`/`noSlotLeft` (`Planner.PlanReq.dayUnplaced`, "a start group
+holding the item is atomic") and `PlanCheck.whyHolds` read THE group holding the item, not one of
+several.  The hypothesis is needed: the key's last component is the request position precisely
+because two instances of one id may arrive (`Planner.CandKey`), and README gap 3541 records that
+such a request can put one id into two groups. -/
+theorem an_item_is_in_one_start_group_at_most (r : PlanReq)
+    (hnd : (r.cands.val.map (fun p => p.1.id)).Nodup) {a b : Nat} {ga gb : Group}
+    (ha : r.startGroups[a]? = some ga) (hb : r.startGroups[b]? = some gb) {i : Id}
+    (hia : i ∈ ga.ids) (hib : i ∈ gb.ids) : a = b := by
+  obtain ⟨x, hx, hxi⟩ := List.mem_map.1 hia
+  obtain ⟨y, hy, hyi⟩ := List.mem_map.1 hib
+  obtain ⟨ga₀, hga₀, -, hma, -⟩ := PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? ha)
+  obtain ⟨gb₀, hgb₀, -, hmb, -⟩ := PlanReq.a_started_group_is_a_built_group (List.mem_of_getElem? hb)
+  have hxr : x ∈ r.rankedCands := PlanReq.a_group_member_is_ranked hga₀ (hma ▸ hx)
+  have hyr : y ∈ r.rankedCands := PlanReq.a_group_member_is_ranked hgb₀ (hmb ▸ hy)
+  have hxy : x = y := PlanFold.eq_of_mem_of_nodup_map (·.cand.id) (rankedCands_ids_nodup r hnd)
+    hxr hyr (by show x.cand.id = y.cand.id; rw [hxi, hyi])
+  subst hxy
+  exact PlanFold.a_ranked_entry_is_in_one_start_group_at_most r ha hb hx hy
+
+/-- **§8.3's "no `ci ≥ 4` Block after wind-down", over the WHOLE day, where the wire and the plan
+agree** (W-39, README gaps 3353 and 3544).  `Goals.plan_places_no_demanding_block_after_wind_down`
+left `Goals.lean` for this, with its refutation beside it:
+`PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted`, a day
+whose three-day wall carries the kernel's §8.1 window past the night (README gaps 3545 and 3556: the
+day's walls read whole, which the fork's planner clips to the day) so step 5 places a Block after the
+WindDown row, for a candidate the wire calls `ci 0` and the plan `ci 5`.
+
+**Two hypotheses, and no restriction to the rows from `now`.**  `hca` is the decoder's fifth clause
+(`candsAgree`, README gap 1984): E8's seam, the one the refutation walks through.  `hwdcal` is the
+R10 obligation `AssignedRowsPay_of_a_paying_decoder` already carries: the wind-down inside the
+calendar, below which the rows' clock (`Planner.clampSec`) separates it from a slot.  The replayed
+past needs NO hypothesis: a WindDown row exists only while `now` is before it
+(`Planner.a_wind_down_row_of_the_day`), every replayed row ends at `now`
+(`Planner.replayedRows_end_at_now`), and §8.2 choice 5b's reservation starts there. -/
+theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (hca : candsAgree r = true)
+    (hwdcal : r.windDownSec < LogStamp.yearEnd) (b w : WfSeg) (i : Id)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+    (effectiveCi r.plan.val i).val < 4 := by
+  obtain ⟨hnw, hws⟩ := a_wind_down_row_of_the_day r w (dayPlan_segments r ▸ hw) hwk
+  rw [hws, clampSec_id _ hwdcal] at hafter
+  rcases dayPlan_block_rows_are_replayed_reserved_or_assigned r b hb hbk with
+    ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩ | ⟨t, ht, rfl⟩
+  · exfalso
+    obtain ⟨-, h2, h3⟩ := replayedRows_end_at_now r t ht
+    have e1 : (Planner.segOf t).val.start = clampSec t.start := rfl
+    rw [e1] at hafter
+    unfold clampSec at hafter
+    omega
+  · exfalso
+    have hst : t.start = r.now.sec := (r.activeRow_is_an_energyless_block t ht).2.2.2.2
+    have e1 : (Planner.segOf t).val.start = clampSec t.start := rfl
+    rw [e1, hst] at hafter
+    unfold clampSec at hafter
+    omega
+  · exact ((AssignedRowsPay_of_a_paying_decoder r hca hwdcal) t ht i
+      (by rw [← segOf_item]; exact hi)).2 (by rw [clampSec_id _ hwdcal]; exact hafter)
+
+/-- **§7.5's "does not reach past an equal-`ci` candidate", restated over the day's Batch rows**
+(W-39, README gaps 3547 and 3548).  Every Batch row of the day holds members of ONE of §7.5's
+batches (`Planner.PlanReq.dayBatches`), and that batch is a run of consecutive equal-`ci` entries
+of step 4's order (`PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order`): the gather never
+skipped an equal-`ci` entry between two members, which is E2's bug, and it keeps the order's order.
+
+`Goals.plan_never_batches_past_an_equal_ci_candidate` left `Goals.lean` for this with its
+refutations beside it: a `loc:` the day cannot meet
+(`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day`) and §7.5's
+SPLIT (`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split`) — the
+second drops the ranked-ahead sibling on a day the decoder pays, and it is gap 3546, the owner's. -/
+theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg) (ids : BatchIds)
+    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids) :
+    ∃ B ∈ r.dayBatches, (∀ i ∈ ids.val, ∃ y ∈ B, y.cand.id = i) ∧
+      ∃ c : Fin 6, B <:+: r.rankedCands.filter (fun y => decide (y.cand.ci = c)) := by
+  obtain ⟨t, ht, rfl⟩ := a_batch_row_of_the_day_is_the_folds r s hs ids hk
+  obtain ⟨vi, gi, e, sl, g, -, -, hg, rfl⟩ := mem_assignedRows_at_a_slot ht
+  obtain ⟨g₀, hg₀, hmem, -⟩ := CarriesBuiltGroups_finalAssign r gi g hg
+  obtain ⟨B, hB, e', he', hgo⟩ := PlanReq.mem_rawGroups (PlanReq.mem_buildGroups.1 hg₀)
+  refine ⟨B, hB, fun i hi => ?_, PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order r B hB⟩
+  have hkind : (assignedSeg e sl g).kind = SegKind.batch ids := (segOf_kind _).symm.trans hk
+  have hids : ids.val <+: g.ids := by
+    unfold assignedSeg at hkind
+    simp only at hkind
+    split at hkind
+    · cases hkind; exact batchIdsOf_is_a_prefix _
+    · cases hkind
+  obtain ⟨m, hm, hmi⟩ := List.mem_map.1 (hids.subset hi)
+  have hm0 : m ∈ e'.2 := by rw [← (groupOf_members hgo).1, hmem]; exact hm
+  exact ⟨m, (mem_batchMembers (mem_of_mem_splitGroups he' hm0)).1, hmi⟩
+
 end PlanCheck
 end Tm

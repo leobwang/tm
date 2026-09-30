@@ -388,7 +388,15 @@ if git rev-parse --verify -q HEAD >/dev/null; then
       <( git show HEAD:kernel/TmKernel/Goals.lean 2>/dev/null \
            | grep -oE '^theorem [^ (){}:]+' | sed 's/^theorem //' | sort -u ) \
       <( grep -oE '^theorem [^ (){}:]+' TmKernel/Goals.lean | sed 's/^theorem //' | sort -u ) ); do
-    grep '^#print axioms' TmKernel/Check.lean | grep -q "$name" || gone="$gone $name"
+    # NOT `grep -q` (W-39 track K, README gap 3551): under `pipefail`, `-q`
+    # exits at its first match while the first grep is still writing ~6,000
+    # audit lines, which then dies of SIGPIPE, and the pipeline's 141 read as
+    # "never audited".  Measured on the W-39 tree: every goal whose name is
+    # first matched early in Check.lean reported gone with its audit line
+    # standing (`plan_is_monotone_in_rank` rc=141); the one matched in the
+    # file's last buffer passed.  A false alarm, never a false pass -- but a
+    # gate that fails correct work teaches the next step to route around it.
+    grep '^#print axioms' TmKernel/Check.lean | grep "$name" >/dev/null || gone="$gone $name"
   done
 fi
 # The stage mix is MEASURED, not spelled.  This line used to print a literal
@@ -403,7 +411,9 @@ stages=$( awk '
   END {
     m = 0; for (k in seen) out[m++] = k + 0
     for (i = 0; i < m; i++) for (j = i + 1; j < m; j++) if (out[j] < out[i]) { t = out[i]; out[i] = out[j]; out[j] = t }
-    if (m == 0) line = "no stage header"
+    # At a burn-down of 0 there is no goal to attribute, and "no stage header"
+    # was false of a file with four (W-39 track K, README gap 3551).
+    if (m == 0) line = (loose ? "no stage header" : "no goal under any stage header")
     else if (m == 1) line = "all stage " out[0]
     else { line = "stages " out[0]; for (i = 1; i < m; i++) line = line ", " out[i] }
     if (loose) line = line ", " loose " above every header"

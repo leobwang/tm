@@ -415,7 +415,7 @@ can_fail
 2 a_wall_row_is_covered_by_the_blocked_list
 2 afterDone_is_history_dependent
 5 an_extend_changes_only_the_bookkeeping
-4 an_open_segment_only_extends
+3 an_open_segment_only_extends
 3 autoClose_adds_at_most_one_stamp_to_each_line
 8 autoClose_runs_every_period_it_passes
 6 autoClose_stamps_each_line_at_most_once
@@ -469,7 +469,7 @@ can_fail
 7 move_has_an_inverse_command
 6 observations_are_in_file_order
 9 parseStamp_renderStamp
-7 plan_tail_drop_as_stage_6_wrote_it_is_refuted
+6 plan_tail_drop_as_stage_6_wrote_it_is_refuted
 4 prose_is_never_an_item
 2 refuses_a_negative_break
 4 remaining_falls_back_to_the_leading_estimate
@@ -646,7 +646,7 @@ can_fail
 # caps fall 12 -> 7 and 9 -> 6 -- what is left is append-only README blocks and one dated banner.
 1 PlanReq.window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
 2 dayPlan_window_is_the_lookaheads_unless_the_stored_window_crosses_midnight
-7 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
+6 PlannerWit.the_budget_does_not_move_the_assigned_set_at_the_busy_request
 6 the_budget_does_not_move_the_assigned_set_at_the_busy_request
 # W-38 track H: DELETED, not refuted.  `planner_invariants`' own P45 checker over the raw
 # answer was `forkclass::p45_rule` written a second time (README gap 3471, the family W-37

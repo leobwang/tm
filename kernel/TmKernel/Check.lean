@@ -7657,3 +7657,114 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.every_listed_impossible_item_is_placed_or_named
 #print axioms Tm.PlanCheck.whyHolds_noSlotAdmits_iff
 #print axioms Tm.PlannerWit.an_impossible_item_no_slot_admits_is_named_so
+-- ============================================================================
+-- APPENDED 2026-09-30: stage 6 W-39 TRACK K (worktree `w39-k`) -- the burn-down, 6 -> 0.  All six
+-- goals leave `Goals.lean`, each refuted as stage 6 wrote it and restated over what §8.2 does:
+-- `PlanCheck.plan_places_no_demanding_block_after_wind_down` (the decoder's fifth clause, the
+-- wind-down inside the calendar, the whole day), `PlanFold.plan_is_monotone_in_rank` and
+-- `PlanFold.plan_puts_hot_before_the_queue` (the order step 5 SERVES its groups, README gap 3526),
+-- `PlanCheck.plan_never_batches_past_an_equal_ci_candidate` (every batch a run of equal-`ci`
+-- entries), L24 `PlanFold.plan_tail_drop` (the budget only stops the walk early; D29's form is
+-- `PlanFold.plan_tail_drop_with_the_active_item_erased`) and L25
+-- `PlanFold.plan_is_stable_across_a_replan` (what ended before `now` and is closed stays).  The
+-- lemmas: gap 3526 (served order), gap 3354 (the partition), gap 2326 (REFUTED).
+-- ============================================================================
+#print axioms Tm.PlanFold.assignStep_fills_with_the_first_that_fits
+#print axioms Tm.PlanFold.spendActive_sorted
+#print axioms Tm.PlanFold.startGroups_sorted
+#print axioms Tm.PlanFold.a_group_served_earlier_is_no_later_in_the_key
+#print axioms Tm.PlanFold.a_slot_a_group_fits_before_the_walk_went_to_a_group_served_no_later
+#print axioms Tm.PlanFold.a_slot_a_group_fits_before_the_walk_went_to_a_group_served_before_it
+#print axioms Tm.PlanFold.a_taken_name_went_to_groups_served_before_the_items
+#print axioms Tm.PlanFold.natsLe_refl
+#print axioms Tm.PlanFold.served_earlier_of_the_key
+#print axioms Tm.PlanFold.an_earlier_group_that_fits_a_taken_slot_was_placed_before_it
+#print axioms Tm.PlanFold.a_filled_slot_draws_a_work_row_of_its_groups_members
+#print axioms Tm.PlanFold.an_earlier_slot_starts_earlier
+#print axioms Tm.PlanFold.plan_is_monotone_in_rank
+#print axioms Tm.PlanFold.plan_puts_hot_before_the_queue
+#print axioms Tm.PlanFold.eq_of_mem_of_nodup_map
+#print axioms Tm.PlanFold.nodup_of_nodup_map
+#print axioms Tm.PlanFold.flatMap_nodup_at_two_positions
+#print axioms Tm.PlanFold.flatMap_sublist
+#print axioms Tm.PlanFold.rankedCands_ix_nodup
+#print axioms Tm.PlanFold.rankedCands_nodup
+#print axioms Tm.PlanFold.filterMap_groupOf_members
+#print axioms Tm.PlanFold.rawGroups_members_perm
+#print axioms Tm.PlanFold.rawGroups_members_nodup
+#print axioms Tm.PlanFold.spendActive_members
+#print axioms Tm.PlanFold.startGroups_members_nodup
+#print axioms Tm.PlanFold.a_ranked_entry_is_in_one_start_group_at_most
+#print axioms Tm.PlanFold.gatherBatch_snd_filter_other
+#print axioms Tm.PlanFold.gatherBatch_snd_filter_own
+#print axioms Tm.PlanFold.batchLoop_is_a_run_of_its_ci
+#print axioms Tm.PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order
+#print axioms Tm.PlanFold.assignStep_of_spent
+#print axioms Tm.PlanFold.assignStep_below
+#print axioms Tm.PlanFold.foldl_assignStep_of_spent
+#print axioms Tm.PlanFold.foldl_assignStep_truncates
+#print axioms Tm.PlanFold.assignStep_group_is_the_group_with_its_spent
+#print axioms Tm.PlanFold.foldl_assignStep_group_is_the_group_with_its_spent
+#print axioms Tm.PlanFold.assignedSeg_ignores_spent
+#print axioms Tm.PlanFold.filterMap_prefix_of_agreeing_head
+#print axioms Tm.PlanFold.insBy_append_after
+#print axioms Tm.PlanFold.insSort_append_after
+#print axioms Tm.PlanFold.todaySlots_of_energisedSlots
+#print axioms Tm.PlanFold.activeSeed_is_the_reservation
+#print axioms Tm.PlanFold.energised_start_lt
+#print axioms Tm.PlanFold.rowLe_of_start_lt
+#print axioms Tm.PlanFold.filter_work_of_no_work
+#print axioms Tm.PlanFold.stepOneOrder_work
+#print axioms Tm.PlanFold.work_rows_of_the_day
+#print axioms Tm.PlanFold.assignedRows_of_assignFold
+#print axioms Tm.PlanFold.rows_ignore_spent
+#print axioms Tm.PlanFold.groupFitsSlot_congr
+#print axioms Tm.PlanFold.assignedSeg_congr
+#print axioms Tm.PlanFold.findIdx?_of_values
+#print axioms Tm.PlanFold.assignStep_on_views
+#print axioms Tm.PlanFold.foldl_assignStep_on_views
+#print axioms Tm.PlanFold.rows_of_views
+#print axioms Tm.PlanFold.views_of_three_parts
+#print axioms Tm.PlanFold.snd_mem_of_mem_zip
+#print axioms Tm.PlanFold.plan_tail_drop
+#print axioms Tm.PlanFold.take_erase_is_a_prefix_of_erase
+#print axioms Tm.PlanFold.plan_tail_drop_with_the_active_item_erased
+#print axioms Tm.PlanFold.a_longer_clip_keeps_its_pieces_through_a_cut
+#print axioms Tm.PlanFold.a_longer_clip_keeps_its_pieces_through_the_cuts
+#print axioms Tm.PlanFold.clipCut_keeps_an_early_piece
+#print axioms Tm.PlanFold.a_past_row_ended_before_now_is_a_past_row_later
+#print axioms Tm.PlanFold.a_slot_starts_at_or_after_now
+#print axioms Tm.PlanFold.a_planned_row_starts_at_or_after_now
+#print axioms Tm.PlanFold.plan_is_stable_across_a_replan
+-- W-39 TRACK K, continued -- beside the checker (`PlanCheck.lean`).
+#print axioms Tm.PlanCheck.candAnswers_ids
+#print axioms Tm.PlanCheck.rankedCands_ids_nodup
+#print axioms Tm.PlanCheck.an_item_is_in_one_start_group_at_most
+#print axioms Tm.PlanCheck.plan_places_no_demanding_block_after_wind_down
+#print axioms Tm.PlanCheck.plan_never_batches_past_an_equal_ci_candidate
+-- W-39 TRACK K, continued -- the refutations, the firings and the findings (`PlannerWit.lean`).
+#print axioms Tm.PlannerWit.the_conference_window_runs_past_the_night
+#print axioms Tm.PlannerWit.the_windows_end_is_not_bounded_by_the_night
+#print axioms Tm.PlannerWit.day_zeros_window_is_not_bounded_by_the_night
+#print axioms Tm.PlannerWit.the_conference_day_places_a_block_after_the_wind_down
+#print axioms Tm.PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted
+#print axioms Tm.PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees
+#print axioms Tm.PlannerWit.the_wind_down_law_fires_where_the_wire_agrees
+#print axioms Tm.PlannerWit.the_split_day_serves_the_later_sibling_first
+#print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split
+#print axioms Tm.PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted
+#print axioms Tm.PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split
+#print axioms Tm.PlannerWit.the_rank_and_batch_checks_fail_at_the_split_day
+#print axioms Tm.PlannerWit.the_served_order_rank_law_has_a_subject
+#print axioms Tm.PlannerWit.the_served_order_rank_law_fires_at_the_paying_batch_day
+#print axioms Tm.PlannerWit.the_served_order_hot_law_has_a_subject
+#print axioms Tm.PlannerWit.the_served_order_hot_law_fires
+#print axioms Tm.PlannerWit.the_no_run_left_slots_went_to_a_group_served_before_it
+#print axioms Tm.PlannerWit.an_id_sent_twice_sits_in_two_start_groups
+#print axioms Tm.PlannerWit.one_start_group_per_item_needs_each_id_sent_once
+#print axioms Tm.PlannerWit.the_batches_are_runs_of_their_ci_at_the_batch_request
+#print axioms Tm.PlannerWit.the_tail_drop_law_has_a_subject_with_a_block_running
+#print axioms Tm.PlannerWit.the_tail_drop_law_fires_with_a_block_running
+#print axioms Tm.PlannerWit.the_stability_law_fires_an_hour_later
+#print axioms Tm.PlannerWit.the_stability_law_needs_the_row_to_have_ended_before_now
+#print axioms Tm.PlannerWit.the_stability_law_needs_the_row_to_be_closed

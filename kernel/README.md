@@ -75072,3 +75072,376 @@ Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMa
   pause-interrupt-resume day's cache `paused: False`, and after `rm .tm/state.json` the rebuild
   `paused: False`, `tm now` at 08:06 `36m of 60m` running with the ▶ row, `tm plan` drawing the
   running block — the three readings agree.
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **TRACK K**,
+     on branch `w39-k` off `9dfb610`: the six goals left in `Goals.lean`, and
+     the three lemmas they waited on (gaps 3526, 3354, 2326).  Gap range
+     **3540-3579**; **3540-3556 taken**, 3557-3579 free.  Parity: none issued
+     (track K issues none) and no PARITY-PENDING line: every behaviour this
+     block names is the fork's own, ported, and nothing here changes one.
+     ===================================================================== -->
+
+## Stage 6 — W-39 track K: the burn-down reaches 0 — six goals refuted as written, each restated over what §8.2 step 5 does and proved
+
+`check.sh` check 7 read **6** at `9dfb610`; it reads **0**.  Every goal left the way AGENTS §3.2
+allows and no other: its statement as stage 6 wrote it is REFUTED by a witness, the law that holds
+is PROVED beside it under the goal's own short name in a new namespace, and every new theorem has
+its `#print axioms` line (**97**: 67 in `PlanFold`, 5 in `PlanCheck`, 25 in `PlannerWit`; the audit
+is **5,958**, from 5,861).  Nothing here is compiled into the export: `PlanFold` and `PlanCheck`
+gained theorems only, and `PlannerWit`'s seven new definitions are witness fixtures.
+
+### 1. What left `Goals.lean`
+
+| goal | refuted as written by | restated and proved as | fires at | gap |
+|---|---|---|---|---|
+| `plan_places_no_demanding_block_after_wind_down` | `PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted` (NEW: the conference Wednesday — a day the fork's planner would not plan so, gap 3556) | `PlanCheck.plan_places_no_demanding_block_after_wind_down`, over the WHOLE day, under `candsAgree` and the wind-down inside the calendar | `the_wind_down_law_fires_where_the_wire_agrees` | 3544, 3545, 3556 |
+| `plan_is_monotone_in_rank` | three standing refutations and two NEW: `plan_is_monotone_in_rank_is_refuted_by_the_split`, `monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted` | `PlanFold.plan_is_monotone_in_rank`, in the order step 5 serves its GROUPS | `the_served_order_rank_law_fires_at_the_paying_batch_day` | 3542 |
+| `plan_puts_hot_before_the_queue` | three standing refutations (`plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`, `hotBeforeQueue_is_false_on_a_quiet_day`, `plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`) | `PlanFold.plan_puts_hot_before_the_queue`, in the served order | `the_served_order_hot_law_fires` | 3543 |
+| `plan_never_batches_past_an_equal_ci_candidate` | `plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day` and NEW `plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split` | `PlanCheck.plan_never_batches_past_an_equal_ci_candidate`: every Batch row's batch is a run of equal-`ci` entries of step 4's order | `the_batches_are_runs_of_their_ci_at_the_batch_request` | 3547, 3548 |
+| `plan_tail_drop` (L24) | `plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin` (W-15) | `PlanFold.plan_tail_drop`, and D29's form `PlanFold.plan_tail_drop_with_the_active_item_erased` as its corollary | `the_tail_drop_law_fires_with_a_block_running` | 3549 |
+| `plan_is_stable_across_a_replan` (L25) | `plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin` (W-25), `the_designs_restatement_of_the_stability_law_is_refuted_too` | `PlanFold.plan_is_stable_across_a_replan`: a row that ended BEFORE `now` and is not open survives a later replan | `the_stability_law_fires_an_hour_later` | 3550, 3552 |
+
+Each restated law is also shown to BITE where a hypothesis is dropped: the wind-down law by its
+own refutation (the one hypothesis the conference Wednesday fails is `candsAgree`); the rank law by
+`monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted` (the candidate order in place of
+the served one); the per-item partition law by
+`one_start_group_per_item_needs_each_id_sent_once`; L25 by
+`the_stability_law_needs_the_row_to_have_ended_before_now` and
+`the_stability_law_needs_the_row_to_be_closed`.  The hypotheses of L24 are shown satisfiable with a
+block running (`the_tail_drop_law_has_a_subject_with_a_block_running`: four items against six, the
+running item's reservation kept).
+
+### 2. The three lemmas
+
+* **Gap 3526 — CLOSED.**  `PlanFold.a_taken_name_went_to_groups_served_before_the_items`: an item
+  the day names `noRunLeft` or `noSlotLeft` sits in a group that fits some slot before the walk, and
+  every such slot went to a group served STRICTLY ahead of it, whose key is no later.  It rests on
+  three facts the walk always had: a step fills a free slot with the FIRST group that fits
+  (`assignStep_fills_with_the_first_that_fits`), the walk's groups are sorted by `Planner.groupLe`
+  (`startGroups_sorted`), and a group that fits a slot before the walk and was given nothing before
+  it finds it filled by itself or a group ahead
+  (`a_slot_a_group_fits_before_the_walk_went_to_a_group_served_no_later`).  Witnessed at gap 3160's
+  own day (`the_no_run_left_slots_went_to_a_group_served_before_it`).  **The order is the GROUPS',
+  not `dayServed`'s** — gap 3540.
+* **Gap 3354 — CLOSED, per entry always and per item under distinct ids.**  A ranked entry sits in
+  one start group at most (`PlanFold.a_ranked_entry_is_in_one_start_group_at_most`: the batching
+  partitions step 4's order, the split partitions each batch, and entries are request positions);
+  an ITEM does when the request sends each id once (`PlanCheck.an_item_is_in_one_start_group_at_most`),
+  and not otherwise — gap 3541.
+* **Gap 2326 — CLOSED BY REFUTATION, for the kernel's window.**  The window's end is not bounded by
+  the night (`PlannerWit.the_windows_end_is_not_bounded_by_the_night`, and for `Look.day0Window`
+  `day_zeros_window_is_not_bounded_by_the_night`); the wind-down proof does not use the bound —
+  gap 3545.  The fork's planner clips its walls to the day and does not reach past the night: the
+  refutation is a divergence, gap 3556.  **Gap 3353 is closed with it**: the goal it named is refuted and restated (§1).
+* **E2, stated for the first time** — gap 3547.
+
+### 3. Gaps
+
+**Gap 3540 — gap 3526's law is in the order step 5 serves its GROUPS, not `dayServed`'s.**
+1. *What.*  Gap 3526 asked for "a group served before the item's (`dayServed`'s order)".  The law
+   proved is in the walk's order over `startGroups` — §7.4's key with D60's component, over each
+   group's least member — and it cannot be in the candidate order:
+   `PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`.
+2. *Why.*  §7.5 batches, then splits each batch by location, splittability and the running block,
+   and `build_groups` keys each bucket by its least member, so a later-ranked sibling rides in an
+   earlier-keyed bucket (gap 3546's day).
+3. *Cost.*  P58's register row and D67's say "ranked before it": true in group order, false in
+   candidate order.  `PlanCheck.whyHolds` still checks only that another item's work row holds each
+   fitting slot (`PlanCheck.takenBefore`), which is weaker than the law and is not its lift.
+4. *Clears it.*  P58's row says "served before it" (`parity.txt`'s statement column is prose; not
+   this track's file, and no number moves); `whyHolds` reads the group order, or says it does not.
+
+**Gap 3541 — one start group per ITEM needs each id sent once, and the wire does not refuse a
+repeated id.**
+1. *What.*  `PlanCheck.an_item_is_in_one_start_group_at_most` carries the hypothesis that the
+   request's candidate ids are distinct.  Without it the statement is false:
+   `PlannerWit.one_start_group_per_item_needs_each_id_sent_once`, at `theTwinIdRequest` — one id sent
+   twice, both instances too big to share a block, on a request that pays `candsAgree`: two start
+   groups, and the id assigned twice (`an_id_sent_twice_sits_in_two_start_groups`).
+2. *Why.*  `Planner.CandKey`'s request position exists to separate two instances of one id (fork
+   `keyed.sort()`), and `readCands` has no duplicate-id refusal (measured by reading it).
+3. *Cost.*  On such a request `dayUnplaced`'s "a start group holding the item is atomic" and
+   `whyHolds` read one of two groups — gap 3354's worry, now bounded to a repeated id.  Whether the
+   host ever sends one is not measured.
+4. *Clears it.*  Measure whether fork `collect_candidates` can emit one id twice; then either the
+   reader refuses it by name (and every decoded request pays the hypothesis) or the two D67 readers
+   are stated per entry.
+
+**Gap 3542 — the rank law is restated in the served order, at the empty cursor (a campaign call).**
+1. *What.*  `PlanFold.plan_is_monotone_in_rank`: a group whose key is strictly ahead of another's,
+   and that fits — on the EMPTY cursor, D66's filter before the walk — a slot the other took, is
+   assigned.  It says nothing in the candidate order (refuted, gap 3540) and nothing about a slot the
+   first group fits only once the walk has filled others.
+2. *Why.*  Four refutations stand beside it: line order
+   (`plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted`), a paying day
+   (`plan_is_monotone_in_rank_is_refuted_at_a_paying_day`), eligibility anywhere before the walk
+   (`monotone_rank_over_step_fives_filter_before_the_walk_is_refuted`) and the split (NEW).  This is
+   D66's filter read at the taken slot; it is NOT the reading D67 declined (over the walk's own
+   state).  The campaign's call, revisable.
+3. *Cost.*  `PlanCheck.monotoneInRank` is not this law and has no lift: it answers `false` on the
+   planner's own output at the split day (gap 3546).  The check and the law disagree on a paying day.
+4. *Clears it.*  The owner's reading of gap 3546; then the checker reads the served group order, or
+   the split changes.
+
+**Gap 3543 — the HOT law is restated in the served order, and `hotBeforeQueue` still is not it.**
+1. *What.*  `PlanFold.plan_puts_hot_before_the_queue`: a HOT group (key `p = 0`) that fits, on the
+   empty cursor, a slot a queue group (`p > 0`) took holds a work row of the day starting no later
+   than the queue group's row there.
+2. *Why.*  The goal as written is refuted three times (§1).
+3. *Cost.*  `PlanCheck.hotBeforeQueue` still answers `false` at `permissive` on the very day the law
+   fires (`the_served_order_hot_law_has_a_subject`), for gap 960's reason: its quantifier reaches
+   the calendar's Wall row.  No lift joins them.
+4. *Clears it.*  Gap 960.
+
+**Gap 3544 — the wind-down law needs E8's seam and the calendar bound, and the second is argued,
+not witnessed.**
+1. *What.*  `PlanCheck.plan_places_no_demanding_block_after_wind_down` holds over the whole day, the
+   replayed past included, under `candsAgree` (the decoder's fifth clause) and the wind-down inside
+   the calendar (`LogStamp.yearEnd`).  At the conference Wednesday the wire calls `^m2` `ci 0` and
+   the plan `ci:5`, and step 5 places it at 00:00 Friday, after the 21:30 Wednesday WindDown row
+   (`the_conference_day_places_a_block_after_the_wind_down`, where
+   `PlanCheck.noDemandingAfterWindDown` meets its first subject in this tree and FAILS).
+2. *Why.*  Step 5's wind-down rule reads the wire's `ci`; `candsAgree` makes it the plan's.  The
+   calendar bound is the one `AssignedRowsPay_of_a_paying_decoder` already carries: below it
+   `Planner.clampSec` separates the wind-down from a slot.  The replayed past needs nothing: a
+   WindDown row exists only while `now` is before it, and every replayed row ends at `now`.
+3. *Cost.*  No request here fails the law with the wind-down past the calendar, so that
+   hypothesis's necessity is argued only.
+4. *Clears it.*  A witness at a wind-down past the calendar's last second, or a proof without it.
+
+**Gap 3545 — gap 2326's bound is false for the KERNEL's window, and the witness stands on a
+divergence from the fork.**
+1. *What.*  At `theConferenceRequest` — the census Wednesday with a wall from Tuesday 09:00 to
+   Friday 09:00 — the kernel's §8.1 window (`Planner.PlanReq.window`, and `Look.day0Window` alike)
+   runs to 14:00 FRIDAY, while the night step 3 flows around ends at 00:00 Friday
+   (`the_conference_window_runs_past_the_night`); step 3 cuts Friday's morning, and the day holds a
+   Block at 00:00 Friday, while the conference still runs.
+2. *Why.*  The kernel's planner extends its window by the day's walls read WHOLE — `Look.wallsOn`,
+   fork `Ctx::walls_on`, quirk (e) (gap 85, kept by the owner's Q6 for the capacity lookahead).
+   The fork's PLANNER clips each wall to the day first (`collect_walls`: `blocked_start.max(day_start)`,
+   `end.min(day_end)`), so its window cannot reach past the night — gap 3556.
+3. *Cost.*  Gap 2326's premise was that `AssignedRowsPay`'s second clause has an unsatisfiable
+   antecedent; in the kernel as it stands it is satisfiable past the horizon, so
+   `PlanCheck.an_assigned_members_ci_after_the_wind_down` must NOT be retired as vacuous.  And the
+   refutation of `Goals.plan_places_no_demanding_block_after_wind_down` stands on this window: once
+   the kernel's window is the fork planner's, `the_conference_day_places_a_block_after_the_wind_down`
+   and the refutation stop deciding, and the statement AS WRITTEN may then be provable — step 3 would
+   cut nothing after the WindDown row, and a replayed row ends at `now`, before it.
+4. *Clears it.*  Gap 3556; then the goal as written is asked again, and gap 2326's bound of the
+   fixed window.  The restated law (`candsAgree`, the calendar bound) is true either way.
+
+**Gap 3546 — §7.5's split drops a ranked-ahead sibling on a paying day (the owner's).**
+1. *What.*  `theOneBlockSplitRequest`: the batch store's three siblings, all `ci 2`, `^t1` atomic,
+   one block of budget.  §7.4 ranks `^t3 ^t1 ^t2`; §7.5 gathers all three; the split puts `^t1`
+   alone; `{^t3, ^t2}` is keyed by `^t3` and served first; the block goes to the pair.  `^t1` —
+   ranked ahead of `^t2`, same `p`, same `ci`, fitting every slot before the walk — is not placed,
+   and `^t2` is (`the_split_day_serves_the_later_sibling_first`).  `PlanCheck.monotoneInRank` and
+   `PlanCheck.batchDoesNotReachPast` FAIL on the planner's own output at `permissive` and
+   `slotFitRows` (`the_rank_and_batch_checks_fail_at_the_split_day`); at `freeSlotRows` the rank
+   check passes for want of a subject.
+2. *Why.*  `buildGroups` is fork `build_groups` ported: split by location, splittability and the
+   running block, keyed by the least member.  Shipped behaviour, like D55's and D67's findings.
+3. *Cost.*  Two checks fail on real planner output, and no test sees it (the Rust battery lifts the
+   seven of `PlanCheck.planOkCore`).  The restated laws are true of this day because they are stated
+   in group order (gaps 3540, 3542, 3548).
+4. *Clears it.*  The owner.  Readings: (a) keep the fork's split, and the two checks read the served
+   group order; (b) split into RUNS — a bucket closes where the class changes along the batch, so
+   `^t2` follows `^t1` — a planner change and a registered divergence; (c) keep the buckets and key
+   each by the position of the member that decides its place.  This block recommends none.
+
+**Gap 3547 — CLOSED: E2 had no law.**  `PlanFold.batchLoop_is_a_run_of_its_ci` and
+`PlanFold.a_batch_is_a_run_of_equal_ci_entries_of_the_order`: every one of §7.5's batches is an
+infix of the equal-`ci` entries of step 4's order — the gather's `break` is what the infix says, and
+what a later batch walks is the rest with nothing of its `ci` taken out of order.  Computed at
+`theBatchRequest`, where the fork's shipped bug would have gathered `^b5` past `^b4`
+(`the_batches_are_runs_of_their_ci_at_the_batch_request`).
+
+**Gap 3548 — the batch law's restated conclusion is weaker than the goal's.**
+1. *What.*  `PlanCheck.plan_never_batches_past_an_equal_ci_candidate` says the gather skipped no
+   equal-`ci` entry; the goal said such an entry written first is ASSIGNED.
+2. *Why.*  Refuted as written twice: a `loc:` the day cannot meet, and the split (gap 3546).
+3. *Cost.*  E2's user-visible symptom — "the skipped item simply never appears" — is not excluded:
+   on the split day `^t1` is gathered and never appears.
+4. *Clears it.*  Gap 3546.
+
+**Gap 3549 — L24 is proved in row order; D29's premise is about key order, and the budget-only
+corollary is not proved.**
+1. *What.*  `PlanFold.plan_tail_drop`: two requests that plan the same day — equal replayed past,
+   reservation, energised cut, breaks, location, wind-down, and the three views of the groups step 5
+   reads — and differ in the budget left: the smaller budget's assigned items are a PREFIX of the
+   larger's in `assignedOf`'s own row order.  D29's form, the Active item erased, is its corollary.
+2. *Why.*  The budget reaches the day only through step 5's guard; the smaller walk is the larger
+   stopped after `k` slots (`foldl_assignStep_truncates`), and every row the larger adds starts
+   after every work row the smaller keeps.  D29 wrote that the unerased form is false against the
+   fork; that holds in KEY order, while the Lean goal was always in row order, where the reservation
+   at `now` precedes everything the budget removes — so the erasure is not needed for the row-order
+   statement.  No Lean witness ever refuted the unerased form for the Active item's sake: the W-15
+   refutation is the free run.
+3. *Cost.*  The hypotheses are views.  That a request differing ONLY in the budget meets them — the
+   slots, breaks and groups not reading the budget — is witnessed at one pair and not proved.
+4. *Clears it.*  A lemma over `PlanReq`: a change of the day's budget ratio leaves those views
+   alone.
+
+**Gap 3550 — L25 is proved with two exclusions, each witnessed on a state the binary does not
+usually build.**
+1. *What.*  `PlanFold.plan_is_stable_across_a_replan`: the same log's day record, day start, walls
+   and travel days, a later `now`, and `now` inside the calendar — then every row of the earlier day
+   that ENDED BEFORE `now` and is not open is a row of the later day.  Every row the planner places
+   starts at or after `now` (`a_planned_row_starts_at_or_after_now`), and a closed replayed row is
+   clipped by the same walls to the same end (`a_past_row_ended_before_now_is_a_past_row_later`).
+2. *Why.*  The exclusions are forced: `the_stability_law_needs_the_row_to_have_ended_before_now`
+   (at 09:30 `^m2`'s block is drawn 09:05–09:30, clipped at `now`; at 14:00 it is 09:05–10:05) and
+   `the_stability_law_needs_the_row_to_be_closed`.
+3. *Cost.*  The first witness needs a log holding the block's stop AFTER `now` — what `--now` at an
+   earlier instant builds (gap 139); the second holds an interruption the log does not (gap 3552).
+4. *Clears it.*  Gap 3552; the first needs nothing if `--now` stays as it is.
+
+**Gap 3551 — check 7 failed correct work: `grep -q` under `pipefail` (fixed).**
+1. *What.*  check 7's reconciliation piped the `#print axioms` lines into `grep -q "$name"`.  Under
+   `set -o pipefail`, `-q` exits at its first match, the first grep dies of SIGPIPE writing the rest
+   of 5,958 lines, and the pipeline's 141 read as "never audited".  Measured on this tree, three runs
+   of the loop: **3, 5 and 4** of the six discharged goals reported gone while each audit line
+   stood; the fixed line reported **0** each time.  Fixed by letting the second grep read its whole
+   input.  And at a burn-down of 0 the stage label printed "no stage header" of a file with four; it
+   prints "no goal under any stage header".
+2. *Why.*  A false alarm, never a false pass: every earlier discharge audited its goal on the
+   file's newest lines, inside the pipe's last buffer.
+3. *Cost.*  Three more `printf … | grep -q` pipelines stand in `check.sh` — check 3's `sorryAx`,
+   check 4's `maximum number of errors`, check 7's `error` — each backed by a second arm (the axiom
+   census, the per-block error scan, the exit code).  Left, not measured against the pipe buffer.
+4. *Clears it.*  The same one-word change in each, when `check.sh` is next opened for its own sake.
+
+**Gap 3552 — the open row's `so far` grows across an interruption the log does not hold.**
+1. *What.*  At `theInterruptedOpenRequest` (the open block since 12:00; an interruption since 13:30
+   in the runtime STATE, none in the log) the block is drawn 12:00–13:30 with `so far` 120 minutes
+   at 14:00, and 150 half an hour later.
+2. *Why.*  The row's end reads the state's interruption; its note reads the log, which holds no pause.
+3. *Cost.*  L25's "not open" exclusion is witnessed on a state D42's rebuild would not produce.
+   Whether a LOGGED interruption leaves the note growing — so whether the exclusion is needed on
+   states the binary builds — is not measured, and was not driven on the binary or against the fork.
+4. *Clears it.*  The witness rebuilt from a log holding the `interrupt` line.  If the row is then
+   stable, the exclusion is stronger than the binary needs; if the note still grows, §9 decides
+   whether a paused block's `so far` counts the pause.
+
+**Gap 3553 — the burn-down's prose still counts goals.**
+1. *What.*  `Goals.lean`'s `# STAGE 6` header keeps its dated present-tense counts ("It reads
+   **9**", "NO GOAL BELOW MAY BE DISCHARGED UNTIL ITS STEP HAS LANDED") over a section that holds no
+   goal, and AGENTS.md §3.2, §7.1 and §8.4 quote counts from 40 down to 13.
+2. *Why.*  This track holds `Goals.lean` for deletions; AGENTS.md is the land step's.
+3. *Cost.*  A reader of the header alone would believe goals remain.
+4. *Clears it.*  The land step: one dated sentence at the section's head, and AGENTS.md's counts.
+
+**Gap 3554 — `mutate.py --only` with an unqualified name does nothing and exits 0.**
+1. *What.*  `python3 mutate.py --write --only theConferenceRequest` printed nothing, wrote no row and
+   exited 0 — seven times at this step, one per new definition; the key is the QUALIFIED name
+   (`Tm.PlannerWit.theConferenceRequest`).
+2. *Why.*  `--verify` refuses an unmatched `--only` by name; the default path's fallback finds
+   nothing and falls through to a summary printed only when something was owed.
+3. *Cost.*  An audit that did not run looks like one that passed.  Caught here because
+   `mutations.txt` did not change.
+4. *Clears it.*  The default path refuses an unmatched `--only` as `--verify` does.
+
+**Gap 3555 — `mutate.py`'s signal restore prints before it removes the sidecar.**
+1. *What.*  `restore_in_flight` writes each file back, PRINTS "restored … from a killed run", and
+   only then removes `.mutate-in-flight`.  At this step a `SIGTERM` reached `mutate.py` after its
+   parent `bash` (the `$( … )` of check 9) had been killed, and the sidecar survived beside a file
+   already restored — consistent with the print raising on a closed pipe before the removal; the
+   mechanism is inferred from that state, not traced.
+2. *Why.*  The handler's cleanup is ordered file, message, sidecar.
+3. *Cost.*  None to soundness: the file was intact, and check 9 refused until `mutate.py --gate`
+   removed the sidecar.  It costs a red `check.sh` that looks like a constant-folded kernel.
+4. *Clears it.*  Remove the sidecar before the message, or guard the message; `mutate.py` is not
+   this track's file.
+
+**Gap 3556 — the kernel's day diverges from the fork's on a wall that spans days: it plans work
+inside the wall.**
+1. *What.*  `plan-basic` (the §4.3 example tree) with one more calendar line, a conference from
+   Tuesday 09:00 to Friday 09:00, planned on the Wednesday on a state naming the day and nothing
+   else.  The fork's day (`tm_core::planner::plan`, ranked by the kernel's §7 as the binary ranks it)
+   and the kernel's (`dayPlan`, read back through the host's codec) draw the same rows up to the
+   night — the conference clipped to Wednesday, the lecture, the wind-down, sleep — and part there.
+   At 08:00 the fork's window ends **Thursday 08:00** and it draws four rows and no work; the
+   kernel's ends **Friday 17:00**, and it draws twenty: `^m4` 00:00–01:00 and 01:00–02:00 Friday, a
+   break, `^a1` 02:20–03:20 — three work rows before 09:00, while the conference still runs — and
+   rest rows to 17:00.  At 13:00: Thursday 06:00 against Friday 15:00, eighteen rows against four,
+   the same Friday.  At 20:00 both windows have closed and the days agree.
+   `forkday::compare_day_with_fork` reports five findings at 08:00 and five at 13:00 (the window's
+   end, the dropped tail, plan honesty 0.42 against 0.0, the rows, the hash).  The shipped binary,
+   driven in scratch on `tm init --example`'s tree (the same documents) with the conference line —
+   `tm --now 2026-09-09T08:00:00-05:00 plan` — prints `window 08:00–08:00` and plans no work: the
+   fork's day; the kernel's day on that tree, through the same codec, has four work rows before
+   09:00 Friday and plan honesty 0.47.  **Pinned** by `tm/tests/planner_w39_conference.rs`: the kernel's half
+   (`the_kernel_plans_inside_a_wall_that_spans_days`) fails the day the window is fixed; the fork's
+   (`the_fork_ends_the_wednesday_inside_the_night`) sits in the one region R3 deletes.
+2. *Why.*  `Planner.PlanReq.window` reads `Look.wallsOn` (gap 3545 (2)); the fork's
+   `window_and_budget` reads `collect_walls`' clipped walls.  The generated classes draw every wall
+   inside one day (`plangen`'s `at:{DAY}T…/…`), so neither `planner_invariants`' census (283 of 283
+   EQUAL at W-38) nor the frozen class comparand has met a wall that spans days; T13's 91 such days
+   compare the capacity lookahead, where quirk (e) is the fork's too.
+3. *Cost.*  At R3 the binary would plan the small hours after a conference Wednesday's night — work
+   inside a wall the calendar holds — where today it plans none.  No law here sees it:
+   `plan_places_no_block_over_a_wall` reads today's walls, clipped to the day.  Not a registered
+   divergence: nothing in `parity.txt` covers the planner's window over a wall that spans days.
+4. *Clears it.*  Track R, before R3: the planner's window reads the day's walls clipped as
+   `collect_walls` clips them (the capacity window keeps quirk (e) under Q6), a generated class with a
+   wall that spans days, and gap 3545's re-examination.
+
+### 4. Method, and what went wrong on the way
+
+* **Views, not requests.**  `Planner.Group` has no `DecidableEq`, and deciding `startGroups`
+  equal at a witness pair ran into the heartbeat limit, which was not raised.  So L24 is stated over
+  three decidable VIEWS of the groups (ids with each member's `p`; `ci`, location, splittability;
+  multiplier, commitment, spent) and `assignStep_on_views` proves step 5 reads nothing else.
+* **Every witness is small**, and each was probed ALONE at 8 GB and `timeout 120`
+  (`scratchpad/w39-k/probe/`: one file per theorem over HEAD's built `PlannerWit`, the block's
+  seven fixtures real and its other 24 theorems stubbed, each output checked to warn on exactly
+  the 24 stubs): **25 of 25 rc 0, the slowest 4.05 s, the largest 0.94 GiB resident**.  The
+  probes were run at this step's close, after the witnesses were written; the build that first
+  decided them ran under the 40 GB cap.
+* **check.sh was edited while it ran.**  This step's first capped run of `check.sh` stood in check 9,
+  which mutates the tree it checks, while `check.sh` itself and two gate files were edited under it.
+  The run was stopped — the two `bash` processes first, then `mutate.py` (`SIGTERM`) — and every
+  library file was compared byte for byte with a copy taken before the run reached them: unchanged.
+  The stop left `kernel/.mutate-in-flight` beside a `PlannerWit.lean` already byte-identical to it,
+  and the next `check.sh` refused on it by name, as README gap 1788 designed; `mutate.py --gate`
+  cleared it (gap 3555).  That run's result is not quoted; §5's is a fresh one.
+
+### 5. Acceptance, capped
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py`, `citations.py` and the other gate scripts run alone, and `cli_latency`; 8 GB and `timeout
+120` for the witness probes and the drive); the shared checkout's `git status --porcelain` untouched;
+every plant, mutation and probe in a `git clone --shared` clone under `scratchpad/w39-k/`, its status
+recorded before and after.
+
+* **`check.sh`, every line ok, exit 0** (25 s warm; the run before it, after the Lean doc
+  corrections, 628 s with the rebuild): build ok; totality ok; axiom audit **5,958** theorems
+  (Classical.choice 3,081, Quot.sound 4,548, propext 5,563; 392 on none); Negative.lean rejected; FFI
+  **95**; corpus 29/37 and 4/5; stage goals **0** ("no goal under any stage header"); prose
+  citations ok (50,141; 2,196 allowed, 0 unused); new definitions mutated **530** rostered, **0** owed
+  (the seven fixtures UNFOLDABLE witness fixtures, each watched in a clone); parity **61** (P1-P61),
+  next free P62; no two names for one definition, 3,284 bodies, 0 UNANSWERED; every emitted
+  definition reached, **1,223** reachable, **1,199** exempt, 0 UNANSWERED; fields 17/17; inputs 33 of
+  37 (4 exempt); sent 28/28; written 34/28/3; the kernel replays **90** modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46): each **105 result lines, 1,736
+  passed, 0 failed, 13 ignored** (1,324 s, 1,205 s, 1,187 s; load 14.6, 8.3, 7.6); no
+  `.proptest-regressions` file moved.  W-38's 1,729 and 104, plus `planner_w39_conference`'s two
+  tests and the five `kernel_log` tests its `planner_common` include carries.
+* **The named suites, `--include-ignored`, one run each**: `planner_w39_conference` 7, T5 33, the
+  door 23, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25,
+  `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 44
+  (150 s, its one-region gate reading the new file), `planner_invariants` 38 (494 s) — every one
+  passed.  The FFI is check.sh's checks 5-6.
+* **`cli_latency`, three runs** after the workspace (load 4.4-5.1): 6 passed each, 20.7-21.0 s.  A
+  STOPPED earlier run, on the tree before the Lean doc corrections, failed
+  `a_verb_on_a_tree_with_three_years_of_log_takes_well_under_a_second` once ("`tm drop ^z14` was
+  still running after 1s") at a load between 25 and 41 from four tracks' builds — gap 1333's case;
+  no code that verb runs changed.
+* **R3 simulated for the new test** (clone): its fork region deleted, the file builds with no warning
+  and its kernel half passes.
+* **Driven.**  `tm init --example` in scratch, the conference line appended, `tm check` (0 errors,
+  two `wall-conflict` warnings naming `^c9`) and `tm --now 2026-09-09T08:00:00-05:00 plan` (gap 3556).
+  Check 7's plant (§3, gap 3551): in a clone at HEAD, one goal deleted with no audit line — the old
+  and the fixed line both name it; on this tree, three runs of the loop, the old line reported 3, 5
+  and 4 correctly audited goals gone, the fixed line 0.

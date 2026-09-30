@@ -666,3 +666,10 @@ acdcc7095f6d TmKernel/TmKernel/Boundary.lean Tm.cmdDurs default,fun_=>[] Boundar
 5ab4ce43951d TmKernel/TmKernel/Boundary.lean Tm.slotKey default,fun_=>[] Boundary.lean:13168 runLoad_refuses_a_command_writing_past_the_width (its statement, decided false); Boundary.lean:13168 runLoad_refuses_a_command_writing_past_the_width (its statement, decided false)
 acbb04093f12 TmKernel/TmKernel/Boundary.lean Tm.widthGate default Boundary.lean:6580 run_names_the_clock_refusals also Boundary.lean:12323 runCap_refuses_a_command_beside_the_corpus_request
 619850ad3c2c TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theUnadmittedImpossibleRequest unfoldable no Inhabited PlanReq
+72313b52d80e TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theConferenceRequest unfoldable no Inhabited PlanReq
+25e6e5bf2e0a TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theAgreeingConferenceRequest unfoldable no Inhabited PlanReq
+52a0c794c061 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theOneBlockSplitRequest unfoldable no Inhabited PlanReq
+fa76196822b4 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theTwinIdRequest unfoldable no Inhabited PlanReq
+148ad7f02786 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theHalfBudgetRunBatchRequest unfoldable no Inhabited PlanReq
+455531d44e26 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theNineThirtyRequest unfoldable no Inhabited PlanReq
+f78468d23ce1 TmKernel/TmKernel/PlannerWit.lean Tm.PlannerWit.theLaterInterruptedOpenRequest unfoldable no Inhabited PlanReq

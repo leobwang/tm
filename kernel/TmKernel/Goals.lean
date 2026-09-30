@@ -1238,108 +1238,40 @@ two slots).  README gap **2020** is the residue: `noOverbook` itself on a day th
 needs the count of occupied `Planner.Assign.slotOf` entries against
 `Planner.PlanReq.finalAssign`'s `used`, and nothing in this tree relates the two. -/
 
-/-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6.**  §8.2 step
-2: "sleep and wind-down define the hard end of the day".
+/-! **plan_places_no_demanding_block_after_wind_down has LEFT this file** (stage 6, run **W-39**,
+track K).  It read: no Block row at or after the WindDown row names an item the plan reads at
+`ci ≥ 4`.  **FALSE**: `PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted`,
+at a Wednesday whose three-day wall carries the kernel's §8.1 window to Friday past the night (day 0's
+walls, read whole; README gap 2326's bound refuted, gap 3545) and whose candidate the wire calls `ci 0`
+and the plan `ci 5`.  **The refutation stands on that window, which the fork's planner does not share**
+(it clips each wall to the day, README gap 3556): once the kernel's window is the fork planner's, the
+statement as written is to be asked again (gap 3545).
+**Restated** over the WHOLE day, the replayed past included:
+`PlanCheck.plan_places_no_demanding_block_after_wind_down`, with the decoder's fifth clause
+(`PlanCheck.candsAgree`) and the wind-down inside the calendar.  README gaps 3353 and 3544. -/
 
-**P2 landed the WindDown row and did NOT discharge this** (README gap 430): the
-statement is about a **Block** row and no step before P5 places one, so it is
-vacuous over `dayPlan` today exactly as `plan_places_no_block_over_a_wall` is.
-`Planner.the_wind_down_row_runs_to_bed` is the half P2 could prove. -/
-theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
-    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
-    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
-    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
-    (effectiveCi r.plan.val i).val < 4 := sorry
+/-! **plan_is_monotone_in_rank has LEFT this file** (stage 6, run **W-39**, track K).  It read: two
+siblings of one document at equal `rootPrio` and equal `effectiveCi`, the first written first —
+the second assigned only if the first is.  **FALSE, four ways**:
+`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` (W-19),
+`PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day` (W-32, `loc:`),
+`PlannerWit.monotone_rank_over_step_fives_filter_before_the_walk_is_refuted` (W-37, contiguity) and
+`PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split` (W-39, §7.5's split, gap 3546) — and
+the candidate order fails even at the slot the other took
+(`PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted`).  **Restated** in
+the order step 5 serves its GROUPS, at D66's filter before the walk: `PlanFold.plan_is_monotone_in_rank`
+— a group whose key is strictly ahead of another's is never left out while the other takes a slot the
+first fits.  README gaps 3526 and 3542. -/
 
-/-- **L26 / §8.3 "monotone rank" (P\*), stage 6.**  "For two candidates with
-equal `p` and equal `ci`, the one with the lower line order is never left
-unassigned while the other is assigned."
-
-Stated with `rootPrio` and `effectiveCi` standing in for §7's `p`, because
-`prio` above is stage 5's and takes a bin this statement has no way to produce.
-When stage 5 lands, the honest form replaces `rootPrio … = rootPrio …` with
-equality of the computed priority; the shape of the goal does not change.
-
-Design §6.3 records this as **false as written** — §8.2 step 5 skips a
-`loc:`-constrained, `atomic` or `max:`-capped item for reasons no §8.3
-invariant is about — and gives the restatement plus its refutation to **P5**.
-
-**REFUTED AT W-19, and it stays here** (track G).
-`PlannerWit.plan_is_monotone_in_rank_as_stage_6_wrote_it_is_refuted` is the
-computed counter-example: at `PlannerWit.theQueuedRequest` — the census
-Wednesday with `m1`'s two log lines removed and `m2` running — `m1` and `m2` are
-one document's siblings at equal `rootPrio` and equal `effectiveCi`, ranked 1
-and 2, the day assigns `m2` and the day does not assign `m1`.  The reason is not
-design §6.3's `loc:`/`atomic`/`max:` list: **there is no assign fold yet**, so
-nothing can assign `m1` at all.  The goal is **not** deleted, because the
-restatement needs Planner.eligibleAt and is P5's (README gap 365), and a
-restatement without its refutation is a weakening (AGENTS §3.1 item 3) — which
-is `plan_tail_drop`'s situation below, handled the same way.  README gap 851.
-
-**W-32 (track G) refuted it a THIRD time, at a day that ASSIGNS, and the W-19
-cause above is now FALSE.**  `PlannerWit.plan_is_monotone_in_rank_is_refuted_at_a_paying_day`
-computes the counter-example at `PlannerWit.theSkippedBatchRequest`: `^t3` and
-`^t1` are one document's siblings at equal `rootPrio` and equal `ci`, `^t3` is
-written first, the day assigns `^t1` and does not assign `^t3`.  P9 wrote the
-assign fold, so *"there is no assign fold yet, so nothing can assign m1 at all"*
-— the sentence above, which is kept because it is what W-19 measured — no longer
-holds, and the law is false anyway.  The cause this time IS design §6.3's
-`loc:`.  So the restatement `PlanCheck.monotoneInRank` owes an eligibility that
-refuses a candidate whose `loc:` the day cannot satisfy; that is the route
-forward and it is still P5's.  README gap **2322** (W-32 repair, gap 2416). -/
-theorem plan_is_monotone_in_rank (r : PlanReq) (i j : Id) (e f : Entity)
-    (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
-    (hp : rootPrio r.plan.val i = rootPrio r.plan.val j)
-    (hc : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-    (hdoc : e.val.live.doc = f.val.live.doc)
-    (hlt : e.val.live.rank < f.val.live.rank)
-    (hass : j ∈ assignedOf (dayPlan r)) :
-    i ∈ assignedOf (dayPlan r) := sorry
-
-/-- **L26 / §8.3 "HOT before queue" (P\*), stage 6.**  Stated over §7.2's `hot`
-**flag**, which is in the grammar (`Field.Flag.hot`) and so needs nothing from
-stage 5.  The `u ≥ 1` half of HOT is the next goal's business.  Design §6.3
-gives its restatement and refutation to **P5**.
-
-**REFUTED AT W-19, and it stays here** (track G).
-`PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted` is the
-computed counter-example, at the same `PlannerWit.theQueuedRequest`: `m1` carries
-`hot` and `m2` does not, the day holds two rows carrying `m2` and **none**
-carrying `m1`, so no row can be "before the queue".  As above, the goal is not
-deleted: the restatement adds that the hot item is eligible at some slot of the
-day, which needs Planner.eligibleAt and is P5's.  README gap 851.
-
-**W-20 (track G) refuted it a SECOND time, and the second cause is not the
-fold's.**  `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` computes the same
-`false` at a request with an **empty log, nothing running and no candidates** —
-a day whose only rows are the calendar's Wall and the evening, and whose
-`assignedOf` is `[]`.  The cause is this statement's own quantifier: `sj` ranges
-over **every** segment, so a Wall row carrying `^g1` is a queue position that a
-hot `^m1` with no row has failed to precede.  Neither repair README gap 850
-offered P5 reaches it — there is no reservation here to refuse a candidate at,
-and `^m1` is not a candidate — so the restatement this goal is to become owes
-either an eligibility that refuses an item step 5 never queues, or the
-restriction of `sj` to `sj.val.kind.isWork`.  It is still P5's row (§6.3) and it
-is still not deleted here.  README gap 960.
-
-**AND W-32 (track G) KILLED THE SECOND OF THOSE TWO ROUTES.**  The restriction of
-`sj` to `sj.val.kind.isWork` does not save the statement:
-`PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`
-is this goal PLUS `sj.val.kind.isWork = true` — strictly weaker, so refuting it
-refutes the goal — and it is refuted by computation at
-`PlannerWit.thePayingRequest`, a day that assigns and whose decoder pays, where
-`^m1` carries `hot`, is one of the two candidates sent, and the day holds **no**
-row carrying it while a work row carries `^m2`.  The route left is the FIRST one:
-an eligibility that refuses an item step 5 never queues.  A future track reading
-this file for what to do should not price the `isWork` restriction again — it is
-shipped, audited in `Check.lean`, and it fails.  README gap **2321** (W-32
-repair, gap 2416). -/
-theorem plan_puts_hot_before_the_queue (r : PlanReq) (i j : Id) (e f : Entity) (sj : WfSeg)
-    (hi : r.plan.val.store.get i = some e) (hj : r.plan.val.store.get j = some f)
-    (hhot : Flag.hot ∈ e.val.flags) (hnot : Flag.hot ∉ f.val.flags)
-    (hsj : sj ∈ (dayPlan r).segments) (hji : sj.val.item = some j) :
-    ∃ si ∈ (dayPlan r).segments, si.val.item = some i ∧
-      si.val.start ≤ sj.val.start := sorry
+/-! **plan_puts_hot_before_the_queue has LEFT this file** (stage 6, run **W-39**, track K).  It read:
+an item carrying `hot` has a row starting no later than every row carrying an item that does not.
+**FALSE, three times**: `PlannerWit.plan_puts_hot_before_the_queue_as_stage_6_wrote_it_is_refuted`
+(W-19), `PlannerWit.hotBeforeQueue_is_false_on_a_quiet_day` (W-20, the quantifier reaches a Wall
+row) and `PlannerWit.plan_puts_hot_before_the_queue_is_refuted_at_a_day_that_assigns_and_pays`
+(W-32).  **Restated** in the order §8.2 step 5 serves its groups:
+`PlanFold.plan_puts_hot_before_the_queue` — a HOT group (§7.4 key `p = 0`) that fits, before the
+walk, a slot a queue group (`p > 0`) took holds a work row of the day starting no later than that
+group's.  README gap 3543. -/
 
 /-! **`edfNumbers` has left this file** (stage 6 step P4).  It was the last
 provisional `def` here: §7.3's two numbers for one candidate, its `need` and
@@ -1401,20 +1333,15 @@ step 5's own energy clause, `PlannerWit.theTwoImpossibleRequest` — README gap 
 owner's question.  *(This paragraph kept the old present tense through the W-33 merge, with only
 a parenthesis added; rewritten in the W-33 repair, gap 2565.)* -/
 
-/-- **E2 (P\*), stage 6, §7.5.**  Batching gathers in key order and does not
-reach past an equal-`ci` candidate that ranks ahead of it.  The shipped bug did
-exactly that, and the effect is invisible in the output: the batch looks
-correct and the skipped item simply never appears.  Design §6.3 gives its
-restatement and refutation to **P5**. -/
-theorem plan_never_batches_past_an_equal_ci_candidate (r : PlanReq) (s : WfSeg)
-    (ids : BatchIds) (i j : Id) (e f : Entity)
-    (hs : s ∈ (dayPlan r).segments) (hk : s.val.kind = SegKind.batch ids)
-    (hi : i ∈ ids.val) (hj : j ∉ ids.val)
-    (hie : r.plan.val.store.get i = some e) (hjf : r.plan.val.store.get j = some f)
-    (hci : effectiveCi r.plan.val i = effectiveCi r.plan.val j)
-    (hdoc : e.val.live.doc = f.val.live.doc)
-    (hrank : f.val.live.rank < e.val.live.rank) :
-    j ∈ assignedOf (dayPlan r) := sorry
+/-! **plan_never_batches_past_an_equal_ci_candidate has LEFT this file** (stage 6, run **W-39**,
+track K).  E2 read: a Batch row holding `i` and not `j`, the two one document's siblings at one
+`ci` with `j` written first, puts `j` in `assignedOf (dayPlan r)`.  **FALSE, two ways**:
+`PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_at_a_paying_day` (W-32, a
+`loc:` the day cannot meet) and `PlannerWit.plan_never_batches_past_an_equal_ci_candidate_is_refuted_by_the_split`
+(W-39, §7.5's split on a paying day — README gap 3546, the owner's).  **Restated** as what E2's
+`break` buys: every Batch row holds members of one of §7.5's batches, and every batch is a run of
+consecutive equal-`ci` entries of step 4's order — `PlanCheck.plan_never_batches_past_an_equal_ci_candidate`
+over `PlanFold.batchLoop_is_a_run_of_its_ci`.  README gaps 3547 and 3548. -/
 
 /-! ## L24 and L25 — the two relational laws
 
@@ -1429,59 +1356,30 @@ re-proved in that step, never downgraded to a property test and never deleted.
 They are stated here so that the choice is visible in the burn-down rather than
 absent from it, and design §7 prices them at ≈ 3,000 proof lines together. -/
 
-/-- **L24 (?), stage 6, §8.3 tail-drop — relational; proved under D5.**
-"Removing minutes from the day (interrupt, overrun, downgrade) never changes
-the set of assigned items except by removing a suffix in key order (Active item
-excepted)."  Stated over the budget, which is the cleanest of the three ways
-minutes leave a day.
+/-! **plan_tail_drop has LEFT this file** (stage 6, run **W-39**, track K).  It read: two requests
+agreeing on `plan`, `now`, `window` and `blockMin`, the second with no more budget, assign the
+second's items as a prefix of the first's.  **FALSE** as written — it pins five views and leaves
+`run` free (`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`,
+W-15, with `PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`).
+**Restated and PROVED** (D5, D29): `PlanFold.plan_tail_drop` — two requests that plan the same day
+(the same replayed past, reservation, energised cut, breaks, location and wind-down, and the same
+groups as step 5 reads them) and differ in the budget left: the smaller budget's assigned items are
+a prefix of the larger's in the day's row order; D29's own form, the Active item erased, is
+`PlanFold.plan_tail_drop_with_the_active_item_erased`, and both fire with a block running
+(`PlannerWit.the_tail_drop_law_fires_with_a_block_running`).  README gap 3549. -/
 
-**The owner's D29 restates this, and the restatement is step G2's, not P0's.**
-As written it is FALSE against the fork: §8.2 choice 5b reserves the running
-block before the budget is consulted, so shrinking the budget can drop items
-ranking ahead of the Active item while it stays, and the result is not a
-prefix.  D29's form erases the Active item from both sides —
-`∃ n, (assignedOf (dayPlan r')).erase a = ((assignedOf (dayPlan r)).erase a).take n`
-— and ships with `plan_tail_drop_as_stage_6_wrote_it_is_refuted` and its
-witness **in the same commit**.  It is left as written here because a
-restatement without its refutation is a weakening (AGENTS §3.1 item 3).
-
-**W-15 re-derived what is blocking, with a builder in hand** (README gaps 348,
-366, 452).  A concrete `PlanReq` can be written down now
-(`PlannerWit.theRequest`), and two things came out of it.  *Choice 5b's witness
-still needs P5*: `PlannerWit.the_budget_does_not_move_the_assigned
-_set_at_the_busy_request` proves the budget cannot reach `assignedOf` at all while the
-assign fold is unwritten, so `plan(budget)` and `plan(budget − Δ)` are the same
-list and the counterexample D29 names is unreachable.  *And the statement below
-is false for a second reason nobody had recorded*: its hypotheses pin five views
-of `PlanReq` and leave `run` free, while D24's seam put the day's past half
-inside `run` —
-`PlannerWit.plan_tail_drop_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`,
-with `PlannerWit.erasing_the_active_item_does_not_repair_a_law_whose_run_is_free`
-beside it, which shows D29's erasure does **not** repair that hole for any
-choice of erased item.  So the restatement this goal is to become owes one more
-hypothesis (`r'.run = r.run`, or one run throughout) before it can be proved.
-
-The window is one pair now, not two numbers. -/
-theorem plan_tail_drop (r r' : PlanReq)
-    (hplan : r'.plan = r.plan) (hnow : r'.now = r.now)
-    (hwin : r'.window = r.window)
-    (hbm : r'.blockMin = r.blockMin) (hless : r'.budgetBlocks ≤ r.budgetBlocks) :
-    ∃ n : Nat, assignedOf (dayPlan r') = (assignedOf (dayPlan r)).take n := sorry
-
-/-- **L25 (?), stage 6, §8.3 stability — relational; proved under D5.**  "A
-replan changes no segment with `end ≤ now`."  The first half of §8.3's bullet
-("same input → identical `DayPlan`") is free and is not restated.
-
-`nowSec` is an absolute second now, not minutes since midnight.  Design §6.3
-records that this is **false as written** — the running block and the running
-interruption *grow* rather than move (`SegFlags.isOpen`), so a segment settled
-in run 1 is present but not equal in run 2 — and gives the restatement, the
-refutation and `an_open_segment_only_extends` to step **G3**. -/
-theorem plan_is_stable_across_a_replan (r r' : PlanReq) (nowSec : Nat) (s : WfSeg)
-    (hplan : r'.plan = r.plan) (hwin : r'.window = r.window)
-    (hbm : r'.blockMin = r.blockMin) (hbb : r'.budgetBlocks = r.budgetBlocks)
-    (hs : s ∈ (dayPlan r).segments) (hend : s.val.stop ≤ nowSec) :
-    s ∈ (dayPlan r').segments := sorry
+/-! **plan_is_stable_across_a_replan has LEFT this file** (stage 6, run **W-39**, track K).  It read:
+two requests agreeing on `plan`, `window`, `blockMin` and the budget, and a free instant `nowSec`:
+every row of the first day ending by that instant is a row of the second.  **FALSE** as written — the run
+is free (`PlannerWit.plan_is_stable_across_a_replan_as_stage_6_wrote_it_is_refuted_by_the_run_it_does_not_pin`,
+W-25), as is design §6.3 row 3's restatement
+(`PlannerWit.the_designs_restatement_of_the_stability_law_is_refuted_too`).  **Restated and PROVED**
+(D5): `PlanFold.plan_is_stable_across_a_replan` — a replan of the same log's day, at the same walls
+and plan, at a later `now`: every row that ended BEFORE `now` and is not open is a row of the later
+day.  Both exclusions are forced by a witness
+(`PlannerWit.the_stability_law_needs_the_row_to_have_ended_before_now`,
+`PlannerWit.the_stability_law_needs_the_row_to_be_closed`), and the law fires an hour later
+(`PlannerWit.the_stability_law_fires_an_hour_later`).  README gap 3550. -/
 
 end Goals
 end Tm
