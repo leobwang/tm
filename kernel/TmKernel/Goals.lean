@@ -534,6 +534,9 @@ the last call's answer with the records returned reads the replay by law 1.  The
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
+**W-39 repair (2026-09-30): THIS SECTION HOLDS ONE GOAL AGAIN, and check 7 reads 1** —
+`plan_places_no_demanding_block_after_wind_down`, whose refutation fell when the kernel's window stopped running
+past the night (README gaps 3556 and 3713).  What follows was written when it held none.
 **W-39 (2026-09-30): THIS SECTION HOLDS NO GOAL, and check 7 reads 0.**  Track K refuted the last
 six as stage 6 wrote them and proved each law beside it under its own short name (README "Stage 6
 — W-39 track K", gaps 3540-3556); the land step composed them with tracks A, T and H and they close
@@ -1250,17 +1253,24 @@ two slots).  README gap **2020** is the residue: `noOverbook` itself on a day th
 needs the count of occupied `Planner.Assign.slotOf` entries against
 `Planner.PlanReq.finalAssign`'s `used`, and nothing in this tree relates the two. -/
 
-/-! **plan_places_no_demanding_block_after_wind_down has LEFT this file** (stage 6, run **W-39**,
-track K).  It read: no Block row at or after the WindDown row names an item the plan reads at
-`ci ≥ 4`.  **FALSE**: `PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted`,
-at a Wednesday whose three-day wall carries the kernel's §8.1 window to Friday past the night (day 0's
-walls, read whole; README gap 2326's bound refuted, gap 3545) and whose candidate the wire calls `ci 0`
-and the plan `ci 5`.  **The refutation stands on that window, which the fork's planner does not share**
-(it clips each wall to the day, README gap 3556): once the kernel's window is the fork planner's, the
-statement as written is to be asked again (gap 3545).
-**Restated** over the WHOLE day, the replayed past included:
-`PlanCheck.plan_places_no_demanding_block_after_wind_down`, with the decoder's fifth clause
-(`PlanCheck.candsAgree`) and the wind-down inside the calendar.  README gaps 3353 and 3544. -/
+/-- **L26 / §8.3 "no ci ≥ 4 Block after wind-down" (P\*), stage 6 — BACK IN THIS FILE since the W-39 repair.**
+It LEFT at W-39 track K, refuted at a Wednesday whose three-day wall carried the kernel's §8.1 window to Friday
+past the night (the day's walls read whole) and whose candidate the wire calls `ci 0` and the plan `ci 5`.  That
+window was a divergence from the fork's planner, which clips each wall to the day (README gap 3556); the W-39
+repair made the kernel's window read the clipped walls (`Look.wallsClippedOn`), the refutation stopped deciding,
+and the conference Wednesday now places no Block at all
+(`PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`).  **A goal whose refutation fell comes back:
+deleting it with no proof would make check 7 lie** (AGENTS §3.2; README gap 3713).  Its route, gap 3545's: README
+gap 2326's bound on the planner's window (`PlannerWit.the_conference_window_ends_inside_the_night` meets it at the
+conference, and `Planner.PlanReq.the_windows_walls_end_by_the_days_end` bounds the walls it extends by), after which
+step 3 cuts no slot after the WindDown row and a replayed row ends at `now`, before it.  The restated law over the
+whole day, `PlanCheck.plan_places_no_demanding_block_after_wind_down` (the decoder's fifth clause, the wind-down
+inside the calendar), stays proved beside it. -/
+theorem plan_places_no_demanding_block_after_wind_down (r : PlanReq) (b w : WfSeg) (i : Id)
+    (hb : b ∈ (dayPlan r).segments) (hw : w ∈ (dayPlan r).segments)
+    (hbk : b.val.kind = SegKind.block) (hwk : w.val.kind = SegKind.windDown)
+    (hi : b.val.item = some i) (hafter : w.val.start ≤ b.val.start) :
+    (effectiveCi r.plan.val i).val < 4 := sorry
 
 /-! **plan_is_monotone_in_rank has LEFT this file** (stage 6, run **W-39**, track K).  It read: two
 siblings of one document at equal `rootPrio` and equal `effectiveCi`, the first written first —

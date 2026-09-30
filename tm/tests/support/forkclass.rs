@@ -918,8 +918,11 @@ pub fn batch_line(index: usize, draw: &Draw, world: &ClassWorld, class: &str) ->
 /// mean weakening clause 5. It is admitted here by the stronger property — the binary wrote it:
 /// `planner_classes.rs`' `every_driven_world_is_the_binarys_own_output` re-drives each line from
 /// its parent and demands the world byte for byte — and
-/// `the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says` pins that clause 5
-/// refuses it on exactly those three fields, so when gap 3398 is decided the line says so.
+/// a pin held that clause 5 refused it on exactly those three fields, so that when gap 3398 was
+/// decided the line would say so.  **It was decided at the W-39 repair** (README gap 3710): the
+/// rebuild derives what a wake after the day's last arrival wrote, clause 5 now HOLDS every driven
+/// world (`planner_classes.rs`' `the_driven_worlds_are_held_by_the_binarys_rebuild`), and moving the
+/// world among the class lines is README gap 3730.
 pub const FROZEN_DRIVEN: &str = "fork-4748911-planner-driven.jsonl";
 
 /// **One drive**: the world a verb sequence leaves when the shipped binary runs it over a

@@ -301,19 +301,63 @@ fn arrive_rows<'a>(
     replay: &'a Replay,
     today: NaiveDate,
 ) -> impl DoubleEndedIterator<Item = &'a tm_core::log::ViewRow> {
-    // The tag is asked of `Event` rather than spelled a second time here
-    // (AGENTS §5.3). An empty `String` allocates nothing, so the probe costs a
-    // stack value and no heap.
-    let probe = Event::Arrive {
-        loc: String::new(),
-        window: [String::new(), String::new()],
-        budget: 0,
-    };
-    let tag = probe.name().to_string();
+    let tag = arrive_tag();
     replay
         .view()
         .iter()
         .filter(move |r| r.day == today && !r.cancelled && r.tag == tag)
+}
+
+/// **Whether a `tm wake` ran after the day's last `arrive`** — in file order,
+/// undone rows skipped (README gap **3710**, the W-39 repair; D42, D45).
+///
+/// `day::wake` clears `arrival`, `window` and `budget` ("A new day: the window,
+/// the budget and everything running are gone"), and the cache keeps them
+/// cleared until the next `tm arrive`. The derivation used to restore the
+/// day's LAST `arrive` whatever followed it, so `tm arrive` at 07:00, `tm arrive`
+/// at 09:00 and `tm wake` left a cache with no arrival that the rebuild turned
+/// into 09:00–18:00 — while the planner, reading the day's FIRST logged
+/// `arrive` behind an empty state (fork `Planner::new`, gap 3390), had planned
+/// 07:00–16:00 from the cache. DRIVEN on the W-39 binary: deleting
+/// `.tm/state.json` moved the window, re-timed four rows, added a fifth and
+/// appended a `plan` line to the log. D45's rule is that the derivation follows
+/// the VERB, and the verb that ran last was `tm wake`: so a wake after the last
+/// arrival derives what the wake wrote, and the planner's logged fallback reads
+/// the same first `arrive` from either cache.
+///
+/// A `wake` is found by its tag, asked of `Event` (AGENTS §5.3). `false` when the
+/// scope's headers do not reach today, which leaves the fallback below as it was.
+fn woken_since_arrival(replay: &Replay, today: NaiveDate) -> bool {
+    let wake = Event::Wake { slept_min: 0, onset_min: None }.name().to_string();
+    let arrive = arrive_tag();
+    replay
+        .view()
+        .iter()
+        .rev()
+        .filter(|r| r.day == today && !r.cancelled)
+        .find_map(|r| {
+            if r.tag == wake {
+                Some(true)
+            } else if r.tag == arrive {
+                Some(false)
+            } else {
+                None
+            }
+        })
+        .unwrap_or(false)
+}
+
+/// `arrive`'s tag, asked of `Event` rather than spelled a second time here
+/// (AGENTS §5.3). An empty `String` allocates nothing, so the probe costs a
+/// stack value and no heap.
+fn arrive_tag() -> String {
+    Event::Arrive {
+        loc: String::new(),
+        window: [String::new(), String::new()],
+        budget: 0,
+    }
+    .name()
+    .to_string()
 }
 
 /// **How many arrivals the day has**, which is what decides whether the log can
@@ -423,8 +467,10 @@ fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool>
 fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool) -> RuntimeState {
     let hhmm = |t: DateTime<FixedOffset>| t.with_timezone(&tz).time();
     let day = replay.day(today);
-    // One walk of today's headers, not one per field.
-    let one_arrival = arrivals_today(replay, today) == 1;
+    // A wake after the day's last arrival cleared all three (gap 3710): the
+    // derivation reads what the wake wrote, as the cache holds it.
+    let woken = woken_since_arrival(replay, today);
+    let one_arrival = !woken && arrivals_today(replay, today) == 1;
     let open = replay.open_block.as_ref();
     let interrupted = open_interruption(replay);
     RuntimeState {
@@ -446,7 +492,10 @@ fn derived_state(replay: &Replay, tz: Tz, today: NaiveDate, running_break: bool)
         // proves; the CACHE
         // holds whatever the last `tm arrive` wrote. Two readings of one day,
         // and the derivation is the one that moves (AGENTS §5.3).
-        arrival: last_arrival(replay, today).or(day.and_then(|d| d.arrival)).map(hhmm),
+        arrival: (!woken)
+            .then(|| last_arrival(replay, today).or(day.and_then(|d| d.arrival)))
+            .flatten()
+            .map(hhmm),
         loc: latest(replay, today, |d| {
             d.loc_changes.last().map(|(_, l)| l.clone()).or_else(|| d.loc.clone())
         }),
@@ -1124,8 +1173,10 @@ impl Ctx {
         // TODAY's walls and config. Any calendar item added since the arrival
         // moves the answer, and the user is the only one who can tell whether
         // it should have.
+        // Only when the rebuild DID recompute them: a wake after the last
+        // arrival cleared both, and nothing was recomputed (gap 3710).
         let arrivals = arrivals_today(&self.replay, self.today);
-        if arrivals > 1 {
+        if arrivals > 1 && self.state.arrival.is_some() {
             out.push(format!(
                 "RECOMPUTED rather than restored: `window` and `budget` — the day has \
                  {arrivals} arrivals and the log's facts carry only the first one's payload, \

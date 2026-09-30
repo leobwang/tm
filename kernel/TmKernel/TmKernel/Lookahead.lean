@@ -6253,5 +6253,57 @@ theorem the_binary_writes_a_window_only_with_its_day_and_budget :
   unfold Today.BinaryWritten
   decide
 
+/-! ### The planner's walls are the day's, CLIPPED to it (W-39 repair, README gaps 3556 and 3712)
+
+Fork `Planner::collect_walls` clips every wall to the planned day before `window_and_budget` extends §8.1's
+window by it (`blocked_start.max(day_start)`, `end.min(day_end)`, never before it starts; an empty clip is
+dropped).  Fork `Ctx::walls_on` — day 0's CAPACITY window, `wallsOn` — reads them whole, which is quirk (e),
+kept by the owner's Q6 (gap 85).  The kernel's planner read `wallsOn` too until the W-39 repair, so on a
+Wednesday inside a Tuesday-to-Friday conference its window ran to 14:00 FRIDAY and step 3 cut work into the
+small hours inside the wall, where the fork — the binary — plans none (gap 3556).  `clipWall` is the one
+clip: step 1's `Planner.wallsOfDay` places the day's walls through it, and `wallsClippedOn` is the window's. -/
+
+/-- **Fork `collect_walls`' clip of one wall to `[lo, hi)`**: blocked from `max lo`, ending at `min hi`, never
+before it starts; the event's own start moves with the blocked start. -/
+def clipWall (lo hi : Nat) (x : WallIx) : WallIx :=
+  { x with lo := max x.lo lo,
+           evLo := max x.evLo (max x.lo lo),
+           hi := max (min x.hi hi) (max x.lo lo) }
+
+/-- **Day `d`'s walls clipped to `[lo, hi)`, an empty clip dropped, as `(blocked start, end)`** — what fork
+`Planner::window_and_budget` extends the planner's window by. -/
+def wallsClippedOn (lo hi : Nat) (ix : List WallIx) (d : Nat) : List (Nat × Nat) :=
+  (wallIxOn ix d).filterMap fun x =>
+    if (clipWall lo hi x).lo < (clipWall lo hi x).hi then some ((clipWall lo hi x).lo, (clipWall lo hi x).hi) else none
+
+/-- **On a day whose walls all lie inside `[lo, hi)`, and none empty, the clip reads them whole**: the
+planner's walls and day 0's capacity walls are one list there. -/
+theorem wallsClippedOn_eq_wallsOn (lo hi : Nat) (ix : List WallIx) (d : Nat)
+    (h : ∀ x ∈ wallIxOn ix d, lo ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ hi) :
+    wallsClippedOn lo hi ix d = wallsOn ix d := by
+  rw [wallsOn_eq_map_wallIxOn]
+  unfold wallsClippedOn
+  generalize wallIxOn ix d = L at h ⊢
+  induction L with
+  | nil => rfl
+  | cons a l ih =>
+    have ha := h a (List.mem_cons_self ..)
+    have hl : ∀ x ∈ l, lo ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ hi := fun x hx => h x (List.mem_cons_of_mem _ hx)
+    have e1 : (clipWall lo hi a).lo = a.lo := by simp only [clipWall]; omega
+    have e2 : (clipWall lo hi a).hi = a.hi := by simp only [clipWall]; omega
+    rw [List.filterMap_cons, e1, e2, if_pos ha.2.1, List.map_cons, ih hl]
+
+/-- **A wall past the day's end is cut at it**: the clip never ends after `hi` unless the wall starts there. -/
+theorem wallsClippedOn_ends_by (lo hi : Nat) (ix : List WallIx) (d : Nat) (w : Nat × Nat)
+    (hw : w ∈ wallsClippedOn lo hi ix d) : w.2 ≤ hi := by
+  simp only [wallsClippedOn, List.mem_filterMap] at hw
+  obtain ⟨x, _, hx⟩ := hw
+  by_cases hlt : (clipWall lo hi x).lo < (clipWall lo hi x).hi
+  · rw [if_pos hlt] at hx
+    cases hx
+    simp only [clipWall] at hlt ⊢
+    omega
+  · rw [if_neg hlt] at hx; exact absurd hx (by simp)
+
 end Look
 end Tm

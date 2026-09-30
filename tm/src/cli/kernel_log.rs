@@ -818,7 +818,7 @@ impl ReplayCache {
     }
 
     /// **Every record of a snapshot** (the `All` scope), re-reading `ckpt.json` once when a month file is missing
-    /// (§9.8's snapshot rule). `None` after the retry: the caller rebuilds in memory.
+    /// (§9.8's snapshot rule). `None` after the retry: the caller rebuilds ([`ReplayCache::rebuild_missing`]).
     pub fn all_records(&self, snap: &Snapshot) -> Option<(Snapshot, BTreeMap<u64, String>, BTreeMap<u64, String>)> {
         let months: Vec<String> = snap.manifest.keys().cloned().collect();
         if let Some((d, w)) = self.load_months(snap, &months) {
@@ -1046,9 +1046,28 @@ impl ReplayCache {
         Ok(Replayed { answer: g.answer, outcome: Outcome::Genesis, snapshot: snap, days: g.top.days, window: g.top.window, notices: notice.into_iter().collect(), rebuilt_because: why })
     }
 
+    /// **A sealed month file the snapshot names is missing: rebuild the cache from the log** (README
+    /// gap **3711**, the W-39 repair; D13 — the cache is derived and rebuildable). Genesis over the
+    /// whole log, written as a fresh generation that reads no old month (`write_generation`'s
+    /// `all_records`), or kept in memory when the cache cannot be written; the snapshot it ends on
+    /// becomes [`ReplayCache::last`], so a request section asked in the same process reads it.
+    pub fn rebuild_missing(
+        &mut self,
+        bytes: &[u8],
+        now_day: u64,
+        tz: &Value,
+        max_line: Option<u64>,
+        want: &Want,
+    ) -> Result<Replayed, GenesisError> {
+        let s = split(bytes);
+        let r = self.rebuild(&date_of(now_day), tz, &s, max_line, want, bytes, Some("a sealed month file is missing".into()), false)?;
+        self.last = Some(r.snapshot.clone());
+        Ok(r)
+    }
+
     /// **Every record a replay's answer stands on** (§11.1's `All` scope): an unpersisted genesis' own records, else the
     /// snapshot's months by its manifest (re-reading `ckpt.json` once when a file is missing). `None` when the files moved
-    /// underneath twice: the caller rebuilds in memory, with the notice `replay cache changed underneath; rebuilt in memory`.
+    /// underneath twice: the caller rebuilds the cache from the log ([`ReplayCache::rebuild_missing`], gap 3711).
     pub fn records_of(&self, r: &Replayed) -> Option<(BTreeMap<u64, String>, BTreeMap<u64, String>)> {
         if r.outcome == Outcome::GenesisUnpersisted || r.snapshot.gen.is_empty() {
             return Some((r.days.clone(), r.window.clone()));
@@ -1177,6 +1196,40 @@ mod tests {
         assert_eq!(chunk_ends(&split(b"")), vec![0]);
         assert_eq!(month_of(739865), "2026-09");
         assert_eq!(day_of(chrono::NaiveDate::from_ymd_opt(2026, 9, 7).unwrap()), 739865);
+    }
+
+    /// **A sealed month file the snapshot names and the disk lacks is REBUILT, not a fault** (README gap
+    /// 3711, the W-39 repair; D13).  A month of logged wakes is replayed and sealed; every month file is
+    /// deleted; the week's `log` section is asked for a SEALED week straight off the stale snapshot — the
+    /// path a verb whose own replay did not read the months takes, or one the files moved underneath
+    /// between two reads.  It rebuilds, and the section carries the week's seven sealed day records.
+    #[test]
+    fn a_missing_month_file_is_rebuilt_for_the_weeks_section() {
+        let dir = tempfile::tempdir().expect("a scratch directory");
+        let root = dir.path();
+        let tz: Tz = "America/Chicago".parse().expect("a zone");
+        let tz_wire = super::super::tz_table::wire_for(Some(&root.join(CACHE_DIR)), tz);
+        let mut text = String::new();
+        let first = chrono::NaiveDate::from_ymd_opt(2026, 8, 1).expect("a date");
+        for i in 0..45 {
+            let d = first + chrono::Duration::days(i);
+            text.push_str(&format!("{{\"t\":\"{d}T06:05:00-05:00\",\"ev\":\"wake\",\"slept_min\":480}}\n"));
+        }
+        let today = first + chrono::Duration::days(45);
+        replay_scoped(root, text.as_bytes(), tz, &tz_wire, today, Scope::All, None).expect("the replay");
+        let sealed: Vec<_> = std::fs::read_dir(root.join(CACHE_DIR).join(SEALED_DIR))
+            .expect("the sealed months")
+            .map(|e| e.expect("an entry").path())
+            .collect();
+        assert!(!sealed.is_empty(), "the replay sealed a month");
+        for p in &sealed {
+            std::fs::remove_file(p).expect("a month file");
+        }
+        let (from, to) = (day_of(first + chrono::Duration::days(7)), day_of(first + chrono::Duration::days(13)));
+        let section = week_log_section(root, text.as_bytes(), &tz_wire, day_of(today), from, to)
+            .expect("rebuilt, not a fault");
+        let v: Value = serde_json::from_str(&section).expect("a section");
+        assert_eq!(v["sealed"]["days"].as_array().map(Vec::len), Some(7), "the week's sealed records: {}", v["sealed"]);
     }
 
     /// **D18's named fault, raised before any call** (OWNER Q9 (iii), §17 P31, gap 120): a hand-edited first line longer
@@ -2178,39 +2231,36 @@ fn months_between(from: u64, to: u64) -> Vec<String> {
     out.into_iter().collect()
 }
 
-/// The sealed records a scope merges, and any notice loading them raised (§11.1, §9.8).
-fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> (BTreeMap<u64, String>, BTreeMap<u64, String>, Option<String>) {
-    let own = || (r.days.clone(), r.window.clone());
+/// The notice a replay raises when a sealed month file its snapshot names was missing and the
+/// cache was rebuilt from the log (README gap **3711**, the W-39 repair).
+fn missing_month_notice() -> String {
+    format!("replay cache {CACHE_DIR} changed underneath (a sealed month file is missing); rebuilt from the log")
+}
+
+/// The sealed records a scope merges (§11.1, §9.8) — `None` when a month file the snapshot names is
+/// missing after §9.8's one re-read of `ckpt.json`.
+///
+/// **`None` is answered by a REBUILD, never by the replay's own records** (README gap **3711**, the
+/// W-39 repair). Until then this fell back to `r.days`, which a hot resume leaves EMPTY, under the
+/// notice "rebuilt in memory" — and nothing was rebuilt. DRIVEN on the W-39 binary: with one month
+/// file deleted, `tm review day --date 2026-09-08` said `0/6 blocks · load 0.0 · done -`, twice, where
+/// the log holds `1/6 · done t4` — a silent wrong answer under a notice that said the opposite, while
+/// W-39's week path faulted on the same condition. D13: the cache is derived and rebuildable.
+fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> Option<(BTreeMap<u64, String>, BTreeMap<u64, String>)> {
     match scope {
-        Scope::Hot => (BTreeMap::new(), BTreeMap::new(), None),
-        Scope::All => match cache.records_of(r) {
-            Some((d, w)) => (d, w, None),
-            None => {
-                let (d, w) = own();
-                (d, w, Some(format!("replay cache {CACHE_DIR} changed underneath; rebuilt in memory")))
-            }
-        },
+        Scope::Hot => Some((BTreeMap::new(), BTreeMap::new())),
+        Scope::All => cache.records_of(r),
         Scope::Dates { from, to } => {
             let (lo, hi) = (day_of(from).saturating_sub(1), day_of(to) + 1);
-            if r.outcome == Outcome::GenesisUnpersisted || r.snapshot.gen.is_empty() {
-                let (d, w) = own();
-                return (
-                    d.into_iter().filter(|(k, _)| *k >= lo && *k <= hi).collect(),
-                    w.into_iter().filter(|(k, _)| *k >= day_of(from) && *k <= day_of(to)).collect(),
-                    None,
-                );
-            }
-            match cache.load_months(&r.snapshot, &months_between(lo, hi)) {
-                Some((d, w)) => (
-                    d.into_iter().filter(|(k, _)| *k >= lo && *k <= hi).collect(),
-                    w.into_iter().filter(|(k, _)| *k >= day_of(from) && *k <= day_of(to)).collect(),
-                    None,
-                ),
-                None => {
-                    let (d, w) = own();
-                    (d, w, Some(format!("replay cache {CACHE_DIR} changed underneath; rebuilt in memory")))
-                }
-            }
+            let (d, w) = if r.outcome == Outcome::GenesisUnpersisted || r.snapshot.gen.is_empty() {
+                (r.days.clone(), r.window.clone())
+            } else {
+                cache.load_months(&r.snapshot, &months_between(lo, hi))?
+            };
+            Some((
+                d.into_iter().filter(|(k, _)| *k >= lo && *k <= hi).collect(),
+                w.into_iter().filter(|(k, _)| *k >= day_of(from) && *k <= day_of(to)).collect(),
+            ))
         }
     }
 }
@@ -2242,8 +2292,9 @@ pub fn capacity_log_section(root: &Path, bytes: &[u8], tz: &Value, now_day: u64)
 /// or genesis in one call — and, in its `sealed` field, the snapshot's sealed records of the
 /// days `from..=to` below its ledger day, so the kernel's answer holds every day of the week
 /// the log has (`Seal.mergeSealed`; the owner's D13: the kernel may read a sealed record back
-/// for an explicitly old date). A snapshot whose month file is missing is a named fault, never
-/// a week with its older days quietly absent.
+/// for an explicitly old date). A snapshot whose month file is missing is rebuilt from the log and
+/// asked again (README gap 3711), never a week with its older days quietly absent; only a rebuild
+/// that still leaves one missing is a named fault.
 pub fn week_log_section(
     root: &Path,
     bytes: &[u8],
@@ -2269,7 +2320,11 @@ fn resume_log_section(
     let dir = root.join(CACHE_DIR);
     let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
     let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
-    if let Some(sn) = cache.last.clone().or_else(|| cache.read_snapshot()) {
+    // A month file the snapshot names and the disk lacks is REBUILT, once, and the section asked
+    // again (README gap 3711, the W-39 repair): D13's cache is derived and rebuildable, and a
+    // missing month is not a bug in tm. Only a rebuild that still leaves one missing is a fault.
+    let mut rebuilt = false;
+    while let Some(sn) = cache.last.clone().or_else(|| cache.read_snapshot()) {
         let cut = sn.meta.cut as usize;
         if !sn.ckpt.is_empty()
             && sn.valid_for(bytes, &tz_key).is_ok()
@@ -2281,23 +2336,25 @@ fn resume_log_section(
             && s.bytes_between(cut, s.lines.len()) <= RESEND_BYTES
         {
             let days: Vec<String> = match sealed {
-                Some((from, to)) if from < sn.meta.ledger_day => cache
-                    .load_months(&sn, &months_between(from, to))
-                    .ok_or_else(|| {
-                        GenesisError::Fault(format!(
-                            "the replay cache {CACHE_DIR} names no month file for the sealed days {from}..={to}"
-                        ))
-                    })?
-                    .0
-                    .into_iter()
-                    .filter(|(k, _)| *k >= from && *k <= to)
-                    .map(|(_, r)| r)
-                    .collect(),
+                Some((from, to)) if from < sn.meta.ledger_day => match cache.load_months(&sn, &months_between(from, to)) {
+                    Some((d, _)) => d.into_iter().filter(|(k, _)| *k >= from && *k <= to).map(|(_, r)| r).collect(),
+                    None if !rebuilt => {
+                        cache.rebuild_missing(bytes, now_day, tz, None, &want)?;
+                        rebuilt = true;
+                        continue;
+                    }
+                    None => {
+                        return Err(GenesisError::Fault(format!(
+                            "the replay cache {CACHE_DIR} names no month file for the sealed days {from}..={to} after a rebuild"
+                        )))
+                    }
+                },
                 _ => Vec::new(),
             };
             let sealed_in = sealed.map(|_| (days.as_slice(), &[] as &[String]));
             return Ok(log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, sealed_in));
         }
+        break;
     }
     // Genesis in one call seals nothing: every day of the log is in the answer.
     if s.lines.len() <= RESEND_LINES && s.bytes_between(0, s.lines.len()) <= RESEND_BYTES {
@@ -2333,9 +2390,18 @@ pub fn replay_scoped(
     let mut all = caches().lock().unwrap_or_else(|p| p.into_inner());
     let cache = all.entry(root.to_path_buf()).or_insert_with(|| ReplayCache::new(Some(dir)));
     let want = Want { facts: true, headers_from: None, render: vec![] };
-    let r = cache.replay(bytes, day_of(today), tz_wire, max_line, &want)?;
+    let mut r = cache.replay(bytes, day_of(today), tz_wire, max_line, &want)?;
+    let (days, window, notice) = match records_for(cache, &r, scope) {
+        Some((d, w)) => (d, w, None),
+        None => {
+            r = cache.rebuild_missing(bytes, day_of(today), tz_wire, max_line, &want)?;
+            let (d, w) = records_for(cache, &r, scope).ok_or_else(|| {
+                GenesisError::Fault(format!("the replay cache {CACHE_DIR} names a missing month file after a rebuild"))
+            })?;
+            (d, w, Some(missing_month_notice()))
+        }
+    };
     let facts = r.answer.facts.clone().ok_or_else(|| GenesisError::Fault("the answer carries no facts".into()))?;
-    let (days, window, notice) = records_for(cache, &r, scope);
     let merged = merge_records(&facts, &days, &window).map_err(GenesisError::Fault)?;
     let answer = serde_json::json!({"lines": r.answer.lines, "facts": merged, "headers": r.answer.headers});
     let replay = decode_facts(&answer, tz).map_err(GenesisError::Fault)?;

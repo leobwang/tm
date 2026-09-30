@@ -512,6 +512,9 @@ each recorded in the README), grouped by stage inside the file, with provisional
 *It is **0** since W-39 (2026-09-30): track K refuted the last six stage-6 goals as
 written and proved each law beside it, and every stage's section of the file is empty
 (README "Stage 6 — W-39 track K"; gap 3553). The figures in this section are the history.*
+*It is **1** again since the W-39 repair (2026-09-30): `plan_places_no_demanding_block_after_wind_down`'s
+refutation stood on the kernel's window running past the night over a multi-day wall, which the repair made
+the fork planner's (README gaps 3556 and 3713), so the refutation fell and the goal came back, unproved.*
 
 Three properties make it safe, and all three are checked:
 
@@ -1162,7 +1165,8 @@ one roster `check.sh` uses; re-deriving it by hand re-derives the hole.
   the reconciliation is a multiset diff and not a count comparison. *(This bullet
   read "3790 … 144" from W-10 until stage 5's close, and neither figure
   reproduces by the pipeline above — a reminder that §5.11 applies to this file
-  too.)*
+  too.)* *(W-39 repair, re-measured by that pipeline: **27** short names are declared
+  in more than one namespace, not 24 — README gap 3723.)*
 - **Plus TWO non-theorems** in the audit: `Tm.WfPlan` at `Check.lean:472` and
   `Tm.effectiveScope` at `Check.lean:5038`, both `def`s, are still audited. This
   bullet read *"Plus one non-theorem"* and named only the first from `e7b816c`
@@ -1171,11 +1175,15 @@ one roster `check.sh` uses; re-deriving it by hand re-derives the hole.
   sentence warning against it could not see it. It is why check 3's
   reconciliation is **one-directional**: auditing more than the theorems is not
   a defect, and that is exactly why nothing counts them. Leave them or delete
-  them deliberately.
-- The file carries **92** `APPENDED …` banners (66 at stage 5's close, 65 at `5ab24bf`, sixteen at `bf7cc63`).
+  them deliberately. *(W-39 repair, re-measured by `comm -13` above: **EIGHT** definitions are
+  audited, not two — the two named here and six of `PlanCheck`'s, `candPlanView`,
+  `candWireView`, `candsAgree`, `AssignedRowsPay`, `FoldRowsAdmitNothing` and
+  `UnfilledAnchored`. The count went stale here a second time by the pattern
+  this bullet records the first time of; README gap 3723.)*
+- The file carries **92** `APPENDED …` banners (66 at stage 5's close, 65 at `5ab24bf`, sixteen at `bf7cc63`). *(W-39 repair: `grep -c APPENDED Check.lean` prints **123**.)*
 
 So the honest sentence is *"every theorem in the 84 modules is audited, and the
-audit names two definitions as well"* — not *"every theorem"* with nothing after
+audit names two definitions as well"* (**eight**, and more than 84 modules, at the W-39 repair — gap 3723) — not *"every theorem"* with nothing after
 it. (It read "the ten modules" until 2026-09-16 and "the 78 modules … one
 definition" until W-24's land step; ten was stage one's count, and one was a
 count of the definitions somebody had looked for rather than of the ones there.) `check.sh` reports the audit size by grepping its own output, so its printed
@@ -2944,6 +2952,8 @@ recommendation, the two goals stay in `Goals.lean` and check 7 ends the stage at
 proptest: each was refuted as written and proved in a restated form beside it
 (`PlanFold.plan_tail_drop`, `PlanFold.plan_is_stable_across_a_replan`), as were the four
 single-run goals that remained; the proptest still runs beside them (D5).*
+*Since the W-39 repair check 7 reads **1**: the wind-down goal is back, its refutation fallen with gap 3556
+(README gap 3713).*
 
 **Depends on.** All of stage 5 and stage 4, plus runtime state that lives in
 Rust: `active`, `window`, `budget`, `break`, `interrupt`, `last_plan_hash`.

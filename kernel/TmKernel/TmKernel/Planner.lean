@@ -922,9 +922,9 @@ def PlanReq.loggedArrival (r : PlanReq) : Option Cal.Instant := (r.todayRecord.b
 
 /-- §8.1's window as the fork's PLANNER reads it (`Planner::window_and_budget`, README gaps 320 and 3341): the window stored for
 `plan_date`'s day (`Look.Today.planWindow`: a state naming no day is today's, and no budget is needed beside it), its end on the
-NEXT day when earlier than its start; else §8.1's formula from `Planner::new`'s arrival (`Look.Today.planArrivalSec` over `loggedArrival`, gap 3390). -/
+NEXT day when earlier than its start; else §8.1's formula from `Planner::new`'s arrival (`Look.Today.planArrivalSec` over `loggedArrival`, gap 3390), extended by the day's walls CLIPPED to it (`Look.wallsClippedOn`, fork `collect_walls`; gap 3556). -/
 def PlanReq.window (r : PlanReq) : Nat × Nat := match r.look.today0.planWindow r.look.today with
-  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today)
+  | some w => ((Cal.instantOf r.look.tz r.look.today w.1).sec, (Cal.instantOf r.look.tz (if w.2 < w.1 then r.look.today + 1 else r.look.today) w.2).sec) | none => Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival) (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsClippedOn (Cal.instantOf r.look.tz r.look.today 0).sec (Cal.instantOf r.look.tz (r.look.today + 1) 0).sec r.look.walls r.look.today)
 
 /-- §8.1's budget as the fork's planner reads it: the one stored for `plan_date`'s day, with or without a window
 (`Look.Today.planBudget`, gap 320), else the formula (`Look.budgetOf`, stage 5 L2).  Never recomputed here. -/
@@ -1188,12 +1188,12 @@ def PlanReq.wallsAgree (r : PlanReq) : Bool :=
 
 /-! ### `collect_walls` -/
 
-/-- Fork `collect_walls`' clip: blocked from `max lo day_start`, ending at `min hi day_end`,
-never before it starts; the event's own start moves with the blocked start. -/
-def clipWall (lo hi : Nat) (x : Look.WallIx) : Look.WallIx :=
-  { x with lo := max x.lo lo,
-           evLo := max x.evLo (max x.lo lo),
-           hi := max (min x.hi hi) (max x.lo lo) }
+-- Fork `collect_walls`' clip — `Look.clipWall` since the W-39 repair (README gap 3556): ONE clip, which
+-- step 1 places the day's walls through (`wallsOfDay`, below) and §8.1's window reads (`Look.wallsClippedOn`),
+-- so the walls the day places and the walls its window flows around cannot part.  It was defined here until
+-- then; it moved to `Lookahead.lean` because the window is defined above this section and reads it.  Every
+-- mention of `clipWall` below is `Look.clipWall`; the laws about it keep their names
+-- (`clipWall_within`, `clipWall_id`, `clipWall_id_inside`).
 
 /-- Fork `collect_walls`' sort: by blocked start, then by id. -/
 def wallLe (a b : Look.WallIx) : Bool :=
@@ -1247,8 +1247,8 @@ separate check from correctness). -/
 def wallsOfDay (dayLo dayHi d : Nat) (ix : List Look.WallIx) : List Look.WallIx :=
   sortWalls
     ((Look.wallIxOn ix d).filterMap fun x =>
-      if (clipWall dayLo dayHi x).lo < (clipWall dayLo dayHi x).hi
-      then some (clipWall dayLo dayHi x) else none)
+      if (Look.clipWall dayLo dayHi x).lo < (Look.clipWall dayLo dayHi x).hi
+      then some (Look.clipWall dayLo dayHi x) else none)
 
 /-- **§8.2 step 1: today's walls.** -/
 def wallsToday (r : PlanReq) : List Look.WallIx :=
@@ -1262,35 +1262,35 @@ sides read `Look.wallIxOn`; this says so as a membership, so a row can always be
 to the index entry it came from. -/
 theorem mem_wallsToday {r : PlanReq} {c : Look.WallIx} (h : c ∈ wallsToday r) :
     ∃ x ∈ r.look.walls, x.fromDay ≤ r.today ∧ r.today ≤ x.toDay ∧
-      c = clipWall r.dayStart r.dayEnd x ∧ c.lo < c.hi := by
+      c = Look.clipWall r.dayStart r.dayEnd x ∧ c.lo < c.hi := by
   have hm := (Replay.insSort_perm wallLe _).mem_iff.1 h
   simp only [wallsToday, wallsOfDay, List.mem_filterMap] at hm
   obtain ⟨x, hx, hc⟩ := hm
   obtain ⟨hmem, h1, h2⟩ := Look.mem_wallIxOn.1 hx
-  by_cases hlt : (clipWall r.dayStart r.dayEnd x).lo < (clipWall r.dayStart r.dayEnd x).hi
+  by_cases hlt : (Look.clipWall r.dayStart r.dayEnd x).lo < (Look.clipWall r.dayStart r.dayEnd x).hi
   · rw [if_pos hlt] at hc
-    have he : clipWall r.dayStart r.dayEnd x = c := Option.some.inj hc
+    have he : Look.clipWall r.dayStart r.dayEnd x = c := Option.some.inj hc
     exact ⟨x, hmem, h1, h2, he.symm, he ▸ hlt⟩
   · rw [if_neg hlt] at hc; exact absurd hc (by simp)
 
 /-- **A clipped wall keeps its id** — the row can name the item it is written on. -/
-theorem clipWall_id (lo hi : Nat) (x : Look.WallIx) : (clipWall lo hi x).id = x.id := rfl
+theorem clipWall_id (lo hi : Nat) (x : Look.WallIx) : (Look.clipWall lo hi x).id = x.id := rfl
 
 /-- **The clip never widens a wall.** -/
 theorem clipWall_within (lo hi : Nat) (x : Look.WallIx) :
-    x.lo ≤ (clipWall lo hi x).lo ∧ (clipWall lo hi x).hi ≤ max x.hi (max x.lo lo) := by
+    x.lo ≤ (Look.clipWall lo hi x).lo ∧ (Look.clipWall lo hi x).hi ≤ max x.hi (max x.lo lo) := by
   cases x
-  simp only [clipWall]
+  simp only [Look.clipWall]
   omega
 
 /-- **A wall wholly inside its day is not moved at all** — the hypothesis the restated
 `plan_never_moves_a_wall` runs on. -/
 theorem clipWall_id_inside (lo hi : Nat) (x : Look.WallIx) (h1 : lo ≤ x.lo) (h2 : x.hi ≤ hi)
-    (h3 : x.lo ≤ x.evLo) (h4 : x.lo ≤ x.hi) : clipWall lo hi x = x := by
+    (h3 : x.lo ≤ x.evLo) (h4 : x.lo ≤ x.hi) : Look.clipWall lo hi x = x := by
   have e1 : max x.lo lo = x.lo := by omega
   have e2 : max x.evLo (max x.lo lo) = x.evLo := by omega
   have e3 : max (min x.hi hi) (max x.lo lo) = x.hi := by omega
-  unfold clipWall
+  unfold Look.clipWall
   rw [e2, e3, e1]
 
 /-! ### The rule, run: §4.3's Monday with a `buffer:` and a clash
@@ -7949,7 +7949,7 @@ theorem plan_never_moves_a_wall (r : PlanReq) (w : WfSeg) (i : Id) (e : Entity)
       Look.wallOfEntity_evLo_is_the_written_start _ _ _ _ _ _ _ _ hes hwoe
     have hlo : y.lo = y.evLo :=
       Look.wallOfEntity_lo_is_evLo_without_a_buffer _ _ _ _ _ _ hnb hwoe
-    have hclip : clipWall r.dayStart r.dayEnd y = y :=
+    have hclip : Look.clipWall r.dayStart r.dayEnd y = y :=
       clipWall_id_inside _ _ _ (by rw [hlo, hev]; exact hin) (by rw [hhi]; exact hout)
         (by omega) (by rw [hlo, hev, hhi]; omega)
     have hxy : x = y := hyc.trans hclip
@@ -7984,12 +7984,12 @@ theorem a_wall_row_comes_from_the_index (r : PlanReq) (w : WfSeg)
     (hw : w ∈ (dayPlan r).segments) (hk : w.val.kind = SegKind.wall) :
     ∃ x ∈ r.look.walls, x.fromDay ≤ r.today ∧ r.today ≤ x.toDay ∧
       w.val.item = some x.id ∧
-      ((w.val.start = clampSec (clipWall r.dayStart r.dayEnd x).lo ∧
-        w.val.stop = max (clampSec (clipWall r.dayStart r.dayEnd x).lo)
-          (clampSec (clipWall r.dayStart r.dayEnd x).evLo)) ∨
-       (w.val.start = clampSec (clipWall r.dayStart r.dayEnd x).evLo ∧
-        w.val.stop = max (clampSec (clipWall r.dayStart r.dayEnd x).evLo)
-          (clampSec (clipWall r.dayStart r.dayEnd x).hi))) := by
+      ((w.val.start = clampSec (Look.clipWall r.dayStart r.dayEnd x).lo ∧
+        w.val.stop = max (clampSec (Look.clipWall r.dayStart r.dayEnd x).lo)
+          (clampSec (Look.clipWall r.dayStart r.dayEnd x).evLo)) ∨
+       (w.val.start = clampSec (Look.clipWall r.dayStart r.dayEnd x).evLo ∧
+        w.val.stop = max (clampSec (Look.clipWall r.dayStart r.dayEnd x).evLo)
+          (clampSec (Look.clipWall r.dayStart r.dayEnd x).hi))) := by
   obtain ⟨t, ht, rfl⟩ := mem_dayRows (dayPlan_segments r ▸ hw)
   simp only [stepOneSegs, List.mem_append] at ht
   rcases ht with ((((((((ht | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht) | ht
@@ -8040,7 +8040,7 @@ theorem a_wall_row_sits_in_a_blocked_span (r : PlanReq) (w : WfSeg)
     have hspan : (x.lo, max x.evLo x.hi) ∈ blockedByWalls r :=
       List.mem_append_left _ (List.mem_map_of_mem hx)
     obtain ⟨y, -, -, -, hyc, hylt⟩ := mem_wallsToday hx
-    have hle : x.lo ≤ x.evLo := by rw [hyc]; unfold clipWall; simp only; omega
+    have hle : x.lo ≤ x.evLo := by rw [hyc]; unfold Look.clipWall; simp only; omega
     refine ⟨(x.lo, max x.evLo x.hi), hspan, by simp only; omega, ?_, ?_⟩ <;>
       simp only [wallRows, List.mem_append] at hrow <;>
       rcases hrow with hr | hr
@@ -9116,9 +9116,9 @@ W-37 repair and on every window not crossing midnight until this one; it holds e
 restated name carries (AGENTS §3.1 item 4), and `PlannerWit` refutes each wider form by a computed request. -/
 
 /-- **The planner's window is day 0's capacity window on a state dated today whose stored window carries its budget and
-does not cross midnight — unless no window is stored and only the log holds the arrival** (W-39, README gap 3390). -/
-theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
-    (r : PlanReq) (hd : r.look.today0.date = some r.look.today)
+does not cross midnight — unless no window is stored and only the log holds the arrival, or a wall of the day passes its bounds, which the planner clips and the capacity reads whole** (W-39, README gaps 3390 and 3556). -/
+theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds
+    (r : PlanReq) (hd : r.look.today0.date = some r.look.today) (hin : ∀ x ∈ Look.wallIxOn r.look.walls r.look.today, r.dayStart ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ r.dayEnd)
     (ho : r.look.today0.window.isSome = true ∨ r.look.today0.arrival.isSome = true ∨ r.loggedArrival = none)
     (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
     (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) : r.window = Look.day0Window r.look := by
@@ -9127,7 +9127,7 @@ theorem PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
   rw [if_pos hf, if_pos hd]
   cases hw : r.look.today0.window with
   | none =>
-    simp only [r.look.today0.planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it r.look.today r.look.tz _ hd
+    rw [Look.wallsClippedOn_eq_wallsOn (Cal.instantOf r.look.tz r.look.today 0).sec (Cal.instantOf r.look.tz (r.look.today + 1) 0).sec _ _ hin]; simp only [r.look.today0.planArrivalSec_is_arrivalSec_unless_only_the_log_holds_it r.look.today r.look.tz _ hd
       (ho.resolve_left (by simp [hw]))]
   | some w =>
     have hbs := hb (by simp [hw])
@@ -9164,18 +9164,18 @@ theorem PlanReq.window_is_the_stored_one_on_its_day (r : PlanReq) (w : Field.Clo
 theorem PlanReq.window_is_the_formula_without_a_window_on_its_day (r : PlanReq)
     (hs : r.look.today0.planWindow r.look.today = none) :
     r.window = Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival)
-      (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today) := by
+      (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsClippedOn r.dayStart r.dayEnd r.look.walls r.look.today) := by
   unfold PlanReq.window
-  rw [hs]
+  rw [hs]; rfl
 
 /-- **The day's window is day 0's capacity window on that subdomain** — `dayPlan_window` states the day's
 window as `PlanReq.window`. -/
-theorem dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
-    (r : PlanReq) (hd : r.look.today0.date = some r.look.today)
+theorem dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds
+    (r : PlanReq) (hd : r.look.today0.date = some r.look.today) (hin : ∀ x ∈ Look.wallIxOn r.look.walls r.look.today, r.dayStart ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ r.dayEnd)
     (ho : r.look.today0.window.isSome = true ∨ r.look.today0.arrival.isSome = true ∨ r.loggedArrival = none)
     (hb : r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true)
     (h : ∀ w, r.look.today0.window = some w → w.1 ≤ w.2) : (dayPlan r).window = Look.day0Window r.look :=
-  PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival r hd ho hb h
+  PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds r hd hin ho hb h
 
 /-! ## §8.2 step 1 in `emit_segments`' own order: the running interruption among the walls (W-38, README gap 3281)
 
@@ -9258,8 +9258,8 @@ theorem PlanReq.the_interruption_is_walked_where_collect_walls_sorts_it (r : Pla
     (hs : (interruptRows r).head? = some s) :
     let i : Look.WallIx := ⟨s.item.getD [], r.today, r.today, s.start, s.start, s.stop⟩
     sortWalls (((Look.wallIxOn r.look.walls r.today).filterMap fun x =>
-        if (clipWall r.dayStart r.dayEnd x).lo < (clipWall r.dayStart r.dayEnd x).hi
-        then some (clipWall r.dayStart r.dayEnd x) else none) ++ [i])
+        if (Look.clipWall r.dayStart r.dayEnd x).lo < (Look.clipWall r.dayStart r.dayEnd x).hi
+        then some (Look.clipWall r.dayStart r.dayEnd x) else none) ++ [i])
       = (wallsToday r).filter (fun y => wallLe y i) ++ i :: (wallsToday r).filter (fun y => !wallLe y i) ∧
     stepOneOrder r
       = replayedRows r ++ breakRows r ++
@@ -9451,6 +9451,40 @@ theorem PlanReq.dayUnplaced_capped (r : PlanReq) (assigned : List Id) :
 theorem dayDiagnostics_unplaced (r : PlanReq) :
     (dayDiagnostics r).unplaced.val = r.dayUnplaced (dayAssigned r) :=
   Capped.ofListTake_keeps_everything_below_the_cap _ (r.dayUnplaced_capped _)
+
+/-! ### §8.1's window flows around the walls step 1 places (W-39 repair, README gap 3556)
+
+Until the W-39 repair the planner's window read the day's walls WHOLE (`Look.wallsOn`, day 0's capacity reading,
+fork `Ctx::walls_on`'s quirk (e)), while step 1 placed them clipped to the day (`wallsToday`, fork
+`collect_walls`); fork `Planner::window_and_budget` reads the clipped ones.  On a Wednesday inside a
+Tuesday-to-Friday conference the kernel's window therefore ran to 14:00 FRIDAY and step 3 cut work into the
+small hours inside the wall, where the fork — the shipped binary — plans none.  The window now reads
+`Look.wallsClippedOn`, and this is the law that says it is step 1's own clip: one clip, read twice. -/
+
+/-- **The walls §8.1's window flows around ARE the walls step 1 places**, as a multiset: the window reads them in
+index order, `wallsToday` in the fork's sorted order. -/
+theorem PlanReq.the_windows_walls_are_the_walls_step_one_places (r : PlanReq) :
+    (Look.wallsClippedOn r.dayStart r.dayEnd r.look.walls r.look.today).Perm
+      ((wallsToday r).map fun w => (w.lo, w.hi)) := by
+  unfold wallsToday wallsOfDay sortWalls
+  refine List.Perm.symm ((List.Perm.map _ (Replay.insSort_perm wallLe _)).trans ?_)
+  rw [List.map_filterMap]
+  unfold Look.wallsClippedOn
+  have e : ∀ x : Look.WallIx, Option.map (fun w : Look.WallIx => (w.lo, w.hi))
+      (if (Look.clipWall r.dayStart r.dayEnd x).lo < (Look.clipWall r.dayStart r.dayEnd x).hi
+       then some (Look.clipWall r.dayStart r.dayEnd x) else none) =
+      (if (Look.clipWall r.dayStart r.dayEnd x).lo < (Look.clipWall r.dayStart r.dayEnd x).hi
+       then some ((Look.clipWall r.dayStart r.dayEnd x).lo, (Look.clipWall r.dayStart r.dayEnd x).hi) else none) := by
+    intro x
+    by_cases hc : (Look.clipWall r.dayStart r.dayEnd x).lo < (Look.clipWall r.dayStart r.dayEnd x).hi <;> simp [hc]
+  simp only [e]
+  exact List.Perm.refl _
+
+/-- **So a wall that runs past the day ends the window's extension at the day's end**: every wall the window reads
+ends by midnight. -/
+theorem PlanReq.the_windows_walls_end_by_the_days_end (r : PlanReq) (w : Nat × Nat)
+    (hw : w ∈ Look.wallsClippedOn r.dayStart r.dayEnd r.look.walls r.look.today) : w.2 ≤ r.dayEnd :=
+  Look.wallsClippedOn_ends_by _ _ _ _ w hw
 
 end Planner
 end Tm

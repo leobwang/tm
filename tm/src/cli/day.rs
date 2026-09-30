@@ -619,7 +619,9 @@ fn read_week_cut(
             if matches!(seg.kind, log::SegmentKind::Pause { .. }) && cut.pieces_of(date, seg).is_none() {
                 return Err(CliError::msg(format!(
                     "the kernel's cut of the week names no cut for the pause {}–{} of {date} — the \
-                     log changed while it was read; run it again",
+                     kernel's replay and this verb's reading of the log disagree about that pause \
+                     (the log may have changed between the two reads; run it again, and if it \
+                     persists this is a bug in tm)",
                     log::fmt_timestamp(&seg.start),
                     log::fmt_timestamp(&seg.end)
                 )));

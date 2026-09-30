@@ -396,7 +396,14 @@ if git rev-parse --verify -q HEAD >/dev/null; then
     # standing (`plan_is_monotone_in_rank` rc=141); the one matched in the
     # file's last buffer passed.  A false alarm, never a false pass -- but a
     # gate that fails correct work teaches the next step to route around it.
-    grep '^#print axioms' TmKernel/Check.lean | grep "$name" >/dev/null || gone="$gone $name"
+    # EXACT, NOT A SUBSTRING (the W-39 repair, README gap 3716): a goal leaves this file
+    # only as a theorem OF ITS OWN NAME (discharged, or restated under its short name in
+    # its real module) or as a REFUTATION of it (AGENTS 3.1 item 3's refute-and-rename:
+    # a last segment `<name>_..._is_refuted`).  `grep "$name"` let any longer-named
+    # theorem answer for it -- `plan_tail_drop_with_the_active_item_erased` for
+    # `plan_tail_drop`, a `<name>_bound` lemma for a goal deleted with no proof.
+    grep '^#print axioms' TmKernel/Check.lean | awk '{print $3}' | sed 's/.*\.//' \
+      | grep -xE "${name}(_(.*_)?is_refuted)?" >/dev/null || gone="$gone $name"
   done
 fi
 # The stage mix is MEASURED, not spelled.  This line used to print a literal

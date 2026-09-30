@@ -6074,11 +6074,11 @@ theorem an_item_is_in_one_start_group_at_most (r : PlanReq)
 
 /-- **§8.3's "no `ci ≥ 4` Block after wind-down", over the WHOLE day, where the wire and the plan
 agree** (W-39, README gaps 3353 and 3544).  `Goals.plan_places_no_demanding_block_after_wind_down`
-left `Goals.lean` for this, with its refutation beside it:
-`PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted`, a day
-whose three-day wall carries the kernel's §8.1 window past the night (README gaps 3545 and 3556: the
-day's walls read whole, which the fork's planner clips to the day) so step 5 places a Block after the
-WindDown row, for a candidate the wire calls `ci 0` and the plan `ci 5`.
+left `Goals.lean` for this at W-39 track K, beside a refutation that stood on the kernel's window past the
+night (a three-day wall read whole, README gaps 3545 and 3556).  The W-39 repair clipped the planner's walls to the
+day as fork `collect_walls` does, that refutation fell, and the goal as written is back in `Goals.lean` (README gap
+3713); this law stays proved beside it.  The conference Wednesday, whose candidate the wire calls `ci 0` and the
+plan `ci 5`, now places no Block at all (`PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`).
 
 **Two hypotheses, and no restriction to the rows from `now`.**  `hca` is the decoder's fifth clause
 (`candsAgree`, README gap 1984): E8's seam, the one the refutation walks through.  `hwdcal` is the

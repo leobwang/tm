@@ -4767,7 +4767,7 @@ open Tm
 #print axioms Tm.Planner.mkOverrides?_refuses_too_many_drops
 #print axioms Tm.Planner.assignedOf_empty
 #print axioms Tm.Planner.blockSeconds_empty
-#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
+#print axioms Tm.Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds
 #print axioms Tm.Planner.PlanReq.budget_is_the_stored_one_when_there_is_one
 #print axioms Tm.Planner.PlanReq.budget_is_the_formula_without_a_budget_on_its_day
 #print axioms Tm.Planner.dayPlan_day
@@ -7560,7 +7560,7 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.sum_le_length_mul
 #print axioms Tm.PlannerWit.the_fold_s_blocks_fit_the_budget_from_now
 
-#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
+#print axioms Tm.Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds
 
 -- ============================================================================
 -- APPENDED 2026-09-29: stage 6 W-38 TRACK R -- the running interruption walked among the walls in
@@ -7743,13 +7743,13 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlanCheck.plan_places_no_demanding_block_after_wind_down
 #print axioms Tm.PlanCheck.plan_never_batches_past_an_equal_ci_candidate
 -- W-39 TRACK K, continued -- the refutations, the firings and the findings (`PlannerWit.lean`).
-#print axioms Tm.PlannerWit.the_conference_window_runs_past_the_night
-#print axioms Tm.PlannerWit.the_windows_end_is_not_bounded_by_the_night
+#print axioms Tm.PlannerWit.the_conference_window_runs_past_the_night_is_refuted
+#print axioms Tm.PlannerWit.the_conference_window_ends_inside_the_night
 #print axioms Tm.PlannerWit.day_zeros_window_is_not_bounded_by_the_night
-#print axioms Tm.PlannerWit.the_conference_day_places_a_block_after_the_wind_down
-#print axioms Tm.PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted
-#print axioms Tm.PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees
-#print axioms Tm.PlannerWit.the_wind_down_law_fires_where_the_wire_agrees
+#print axioms Tm.PlannerWit.the_conference_day_places_a_block_after_the_wind_down_is_refuted
+#print axioms Tm.PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday
+#print axioms Tm.PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees_is_refuted
+#print axioms Tm.PlannerWit.the_agreeing_conferences_item_is_not_demanding
 #print axioms Tm.PlannerWit.the_split_day_serves_the_later_sibling_first
 #print axioms Tm.PlannerWit.plan_is_monotone_in_rank_is_refuted_by_the_split
 #print axioms Tm.PlannerWit.monotone_rank_in_the_candidate_order_at_the_taken_slot_is_refuted
@@ -7816,3 +7816,17 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.GridCut.the_cut_is_run
 #print axioms Tm.GridCut.readWeek_is_run
 #print axioms Tm.GridCut.the_weeks_cut_is_answered
+
+/- =====================================================================
+   APPENDED 2026-09-30: stage 6, run W-39, REPAIR STEP (README gaps 3556, 3712, 3713).
+   The planner's window reads the day's walls clipped to it; the conference witnesses
+   refuted and renamed; the wind-down goal back in Goals.lean.
+   ===================================================================== -/
+#print axioms Tm.Look.wallsClippedOn_eq_wallsOn
+#print axioms Tm.Look.wallsClippedOn_ends_by
+#print axioms Tm.Planner.PlanReq.the_windows_walls_are_the_walls_step_one_places
+#print axioms Tm.Planner.PlanReq.the_windows_walls_end_by_the_days_end
+#print axioms Tm.PlannerWit.the_planners_window_formula_over_the_days_whole_walls_is_refuted
+#print axioms Tm.PlannerWit.the_view_law_without_the_days_walls_inside_it_is_refuted
+#print axioms Tm.PlannerWit.the_view_laws_subjects_have_their_walls_inside_their_day
+#print axioms Tm.PlannerWit.the_conference_is_clipped_to_the_day_for_the_window_and_the_walls

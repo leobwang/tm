@@ -677,6 +677,27 @@ can_fail
 1 heat_pieces
 3 review::heat_pieces
 
+# W-39 repair (README gaps 3556, 3712 and 3713): the planner's window reads the day's walls CLIPPED to it,
+# as fork `collect_walls` clips them, so the conference Wednesday's window no longer runs past the night.
+# Every witness track K built on that window is refuted and renamed
+# (`PlannerWit.the_conference_window_runs_past_the_night_is_refuted`,
+# `PlannerWit.the_conference_day_places_a_block_after_the_wind_down_is_refuted`,
+# `PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees_is_refuted`); the bound refutation and
+# the goal's refutation cannot be re-proved and are retired, the goal back in `Goals.lean`; the view law
+# gains the wall bound in its name; and the Rust pin of the divergence became the frozen fork comparison
+# (`planner_w39_conference.rs`).  Every citation counted here is an append-only README block (track K's,
+# track A's) naming the thing as it stood.
+1 Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival
+1 PlannerWit.plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted
+1 PlannerWit.the_windows_end_is_not_bounded_by_the_night
+2 the_conference_day_places_a_block_after_the_wind_down
+1 the_conference_window_runs_past_the_night
+1 the_kernel_plans_inside_a_wall_that_spans_days
+1 the_wind_down_law_fires_where_the_wire_agrees
+# and the W-39 repair decided gap 3398 (gap 3710): the pin that clause 5 refused the driven world is
+# replaced by `the_driven_worlds_are_held_by_the_binarys_rebuild`; the citation is track H's README block.
+1 the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says
+
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
 # 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose

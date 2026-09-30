@@ -10619,7 +10619,7 @@ theorem gap_320s_two_inputs_are_read_as_the_forks_planner_reads_them :
   refine ⟨by decide, by decide, by decide, by decide, by decide⟩
 
 /-- **The restated view law has a subject that stores a window** (AGENTS §7.4 item 2): every hypothesis of
-`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival` holds at the dated request. -/
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds` holds at the dated request. -/
 theorem the_dated_window_request_is_in_the_view_laws_domain :
     theDatedWindowRequest.look.today0.date = some theDatedWindowRequest.look.today ∧
     (theDatedWindowRequest.look.today0.window.isSome = true →
@@ -10636,7 +10636,7 @@ theorem the_dated_window_request_is_in_the_view_laws_domain :
 /-- **The W-37 view law is REFUTED by gap 320's first input** (AGENTS §3.1 item 3).  It said the planner's window
 is day 0's capacity window whenever no window the CAPACITY counts crosses midnight; the undated window is none the
 capacity counts, so its hypothesis holds, and the planner plans with it all the same.  Restated as
-`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`. -/
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`. -/
 theorem the_planners_window_is_the_lookaheads_unless_it_crosses_midnight_is_refuted :
     ¬ ∀ r : PlanReq, (∀ w, r.look.today0.storedWindow r.look.today = some w → w.1 ≤ w.2) →
       r.window = Look.day0Window r.look := by
@@ -10817,37 +10817,37 @@ def theAgreeingConferenceRequest : PlanReq :=
     cands := ⟨[pCandSmall ['t','1'] 10 10 .any (by decide)], by decide⟩ }
 
 set_option maxRecDepth 400000 in
-/-- **Wednesday's window runs to 14:00 FRIDAY** — the planner's (`Planner.PlanReq.window`) and day
-0's (`Look.day0Window`) alike — while the night step 3 flows around ends at 00:00 Friday. -/
-theorem the_conference_window_runs_past_the_night :
+/-- **REFUTED at the W-39 repair (README gap 3556): Wednesday's window no longer runs to FRIDAY.**  The planner's
+window reads the day's walls clipped to it (`Look.wallsClippedOn`), as fork `collect_walls` clips them. -/
+theorem the_conference_window_runs_past_the_night_is_refuted : ¬ (
     theConferenceRequest.window
       = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739869 840).sec) ∧
     Look.day0Window theConferenceRequest.look = theConferenceRequest.window ∧
     theConferenceRequest.night
       = ((Cal.instantOf Cal.chicago 739867 1290).sec, (Cal.instantOf Cal.chicago 739869 0).sec) ∧
-    theConferenceRequest.dayEnd + 86400 < theConferenceRequest.window.2 := by
-  refine ⟨by decide, by decide, by decide, by decide⟩
-
-/-- **README gap 2326's bound is FALSE for the planner's window** — the bound W-32's route to
-`Goals.plan_places_no_demanding_block_after_wind_down` needed (gap 3545). -/
-theorem the_windows_end_is_not_bounded_by_the_night :
-    ¬ ∀ r : PlanReq, r.window.2 ≤ r.dayEnd + 86400 := fun h =>
-  absurd (h theConferenceRequest) (Nat.not_le.2 the_conference_window_runs_past_the_night.2.2.2)
-
+    theConferenceRequest.dayEnd + 86400 < theConferenceRequest.window.2) := by
+  decide
+set_option maxRecDepth 400000 in
+/-- **The planner's Wednesday ends at 05:00 THURSDAY, inside the night; day 0's capacity window still runs to 14:00
+FRIDAY** (quirk (e), kept for the capacity by the owner's Q6).  README gap 2326's bound holds at the conference. -/
+theorem the_conference_window_ends_inside_the_night :
+    theConferenceRequest.window = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739868 300).sec) ∧
+    Look.day0Window theConferenceRequest.look = ((Cal.instantOf Cal.chicago 739867 840).sec, (Cal.instantOf Cal.chicago 739869 840).sec) ∧ theConferenceRequest.window.2 ≤ theConferenceRequest.dayEnd + 86400 := by refine ⟨by decide, by decide, by decide⟩
+set_option maxRecDepth 400000 in
 /-- **And for `Look.day0Window`, the window gap 2326 named.** -/
 theorem day_zeros_window_is_not_bounded_by_the_night :
     ¬ ∀ I : Look.Input, (Look.day0Window I).2 ≤ (Cal.instantOf I.tz (I.today + 1) 0).sec + 86400 :=
   fun h => by
     have := h theConferenceRequest.look
-    rw [the_conference_window_runs_past_the_night.2.1] at this
-    exact absurd this (Nat.not_le.2 the_conference_window_runs_past_the_night.2.2.2)
+    rw [the_conference_window_ends_inside_the_night.2.1] at this
+    exact absurd this (by decide)
 
 set_option maxRecDepth 400000 in
-/-- **The day it produces puts a Block after the WindDown row**: `^m2` at 00:00 Friday, after the
-wind-down at 21:30 Wednesday; the store reads `^m2` at `ci:5`; the decoder does not pay the fifth
-clause; the wind-down is inside the calendar; and `PlanCheck.noDemandingAfterWindDown` has its
-first subject in this tree and FAILS on the planner's own output. -/
-theorem the_conference_day_places_a_block_after_the_wind_down :
+/-- **REFUTED at the W-39 repair (README gap 3556): the conference day puts NO Block after the WindDown row** — no
+Block at all: the conference clipped to Wednesday, the meeting, the wind-down and sleep, as the fork's day draws it
+(`tm/tests/planner_w39_conference.rs`).  `PlanCheck.noDemandingAfterWindDown` loses the one subject this tree gave
+it (README gap 3713), and passes. -/
+theorem the_conference_day_places_a_block_after_the_wind_down_is_refuted : ¬ (
     ((dayPlan theConferenceRequest).segments.filter (fun s =>
         s.val.kind == SegKind.block || s.val.kind == SegKind.windDown)).map
         (fun s => (s.val.start, s.val.kind == SegKind.block, s.val.item))
@@ -10858,37 +10858,36 @@ theorem the_conference_day_places_a_block_after_the_wind_down :
     theConferenceRequest.windDownSec < LogStamp.yearEnd ∧
     PlanCheck.subjectOf permissive PlanCheck.CheckName.windDown theConferenceRequest
       (dayPlan theConferenceRequest) = true ∧
-    PlanCheck.noDemandingAfterWindDown theConferenceRequest (dayPlan theConferenceRequest) = false := by
-  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
+    PlanCheck.noDemandingAfterWindDown theConferenceRequest (dayPlan theConferenceRequest) = false) := by
+  decide
 
 set_option maxRecDepth 400000 in
-/-- **`Goals.plan_places_no_demanding_block_after_wind_down` is REFUTED as stage 6 wrote it**, at
-the conference Wednesday.  Its restatement, `PlanCheck.plan_places_no_demanding_block_after_wind_down`,
-carries `candsAgree` — the one hypothesis this request fails, `hwdcal` holding here. -/
-theorem plan_places_no_demanding_block_after_wind_down_as_stage_6_wrote_it_is_refuted :
-    ¬ (∀ (r : PlanReq) (b w : WfSeg) (i : Id),
-        b ∈ (dayPlan r).segments → w ∈ (dayPlan r).segments →
+/-- **At the conference Wednesday the stage-6 goal HOLDS**: the day places no Block at all.  Until the W-39 repair
+`Goals.plan_places_no_demanding_block_after_wind_down` was refuted here, on the kernel's window past the night; the
+refutation fell with gap 3556 and the goal is back in `Goals.lean` (README gap 3713). -/
+theorem the_wind_down_goal_holds_at_the_conference_wednesday :
+    ∀ (b w : WfSeg) (i : Id),
+        b ∈ (dayPlan theConferenceRequest).segments → w ∈ (dayPlan theConferenceRequest).segments →
         b.val.kind = SegKind.block → w.val.kind = SegKind.windDown →
         b.val.item = some i → w.val.start ≤ b.val.start →
-        (effectiveCi r.plan.val i).val < 4) := by
-  intro h
-  have hany : ((dayPlan theConferenceRequest).segments.any (fun b => b.val.kind == SegKind.block &&
-      b.val.item == some ['m','2'] && (dayPlan theConferenceRequest).segments.any (fun w =>
-        w.val.kind == SegKind.windDown && decide (w.val.start ≤ b.val.start)))) = true := by decide
-  obtain ⟨b, hb, hbp⟩ := List.any_eq_true.1 hany
-  simp only [Bool.and_eq_true, beq_iff_eq] at hbp
-  obtain ⟨⟨hbk, hbi⟩, hw⟩ := hbp
-  obtain ⟨w, hw, hwp⟩ := List.any_eq_true.1 hw
-  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hwp
-  have := h theConferenceRequest b w ['m','2'] hb hw hbk hwp.1 hbi hwp.2
-  rw [the_conference_day_places_a_block_after_the_wind_down.2.1] at this
+        (effectiveCi theConferenceRequest.plan.val i).val < 4 := by
+  intro b w i hb _ hbk _ _ _
+  -- No Block row at all: the conference is clipped to Wednesday, so §8.1's window ends inside the night
+  -- (`the_conference_window_ends_inside_the_night`) and step 3 cuts no slot after the wind-down.
+  have hno : (dayPlan theConferenceRequest).segments.all (fun s => s.val.kind != SegKind.block) = true := by
+    decide
+  have := List.all_eq_true.1 hno b hb
+  rw [hbk] at this
   exact absurd this (by decide)
+  -- The refutation that stood here (its name ended as_stage_6_wrote_it_is_refuted) read `^m2` at 00:00
+  -- Friday off this very request.  Its statement is now the open goal, and the way back is README gap
+  -- 2326's bound on the planner's window, which `the_conference_window_ends_inside_the_night` meets here.
 
 set_option maxRecDepth 400000 in
-/-- **The restated law has a subject where the wire agrees**: a Block row for `^t1` at 00:00
-Friday, after the WindDown row, on a request that pays `candsAgree`, with the wind-down inside the
-calendar — and the checker, with a subject, passes. -/
-theorem the_wind_down_law_has_a_subject_where_the_wire_agrees :
+/-- **REFUTED at the W-39 repair (README gap 3556): the restated law has NO subject where the wire agrees** — the
+agreeing conference plans no Block either, so `PlanCheck.plan_places_no_demanding_block_after_wind_down` has no
+subject in this tree (README gap 3713). -/
+theorem the_wind_down_law_has_a_subject_where_the_wire_agrees_is_refuted : ¬ (
     PlanCheck.candsAgree theAgreeingConferenceRequest = true ∧
     theAgreeingConferenceRequest.windDownSec < LogStamp.yearEnd ∧
     ((dayPlan theAgreeingConferenceRequest).segments.any (fun b => b.val.kind == SegKind.block &&
@@ -10898,21 +10897,22 @@ theorem the_wind_down_law_has_a_subject_where_the_wire_agrees :
     PlanCheck.subjectOf permissive PlanCheck.CheckName.windDown theAgreeingConferenceRequest
       (dayPlan theAgreeingConferenceRequest) = true ∧
     PlanCheck.noDemandingAfterWindDown theAgreeingConferenceRequest
-      (dayPlan theAgreeingConferenceRequest) = true := by
-  refine ⟨by decide, by decide, by decide, by decide, by decide, by decide⟩
-
-/-- **…and it FIRES there**: every hypothesis of `PlanCheck.plan_places_no_demanding_block_after_wind_down`
-is met by a row of the planner's own output. -/
-theorem the_wind_down_law_fires_where_the_wire_agrees :
+      (dayPlan theAgreeingConferenceRequest) = true) := by
+  decide
+set_option maxRecDepth 400000 in
+/-- **The agreeing conference's item is not demanding** — true of the store (`ci:2`), and no longer reached through
+the restated wind-down law, which has no subject in this tree since the W-39 repair (README gap 3713). -/
+theorem the_agreeing_conferences_item_is_not_demanding :
     (effectiveCi theAgreeingConferenceRequest.plan.val ['t','1']).val < 4 := by
-  obtain ⟨hca, hwd, hany, -, -, -⟩ := the_wind_down_law_has_a_subject_where_the_wire_agrees
-  obtain ⟨b, hb, hbp⟩ := List.any_eq_true.1 hany
-  simp only [Bool.and_eq_true, beq_iff_eq] at hbp
-  obtain ⟨⟨hbk, hbi⟩, hw⟩ := hbp
-  obtain ⟨w, hw, hwp⟩ := List.any_eq_true.1 hw
-  simp only [Bool.and_eq_true, beq_iff_eq, decide_eq_true_eq] at hwp
-  exact PlanCheck.plan_places_no_demanding_block_after_wind_down _ hca hwd b w _ hb hw hbk hwp.1
-    hbi hwp.2
+  decide
+  -- Until the W-39 repair this was derived from the restated law at a Block row for `^t1` at 00:00 Friday,
+  -- after the WindDown row: a row the kernel's window past the night cut into the conference and the fork's
+  -- planner never drew (README gap 3556).  With the planner's window read over the day's clipped walls, the
+  -- agreeing conference plans no Block, the law has no subject here, and the fact is read off the store.
+  -- `PlanCheck.an_assigned_members_ci_after_the_wind_down` is NOT retired: gap 3545's caution stands until
+  -- gap 2326's bound is proved, and the goal it waits on is in `Goals.lean` again (README gap 3713).
+  -- (One subject for the restated law is owed: a wind-down with a Block after it, which the window no longer cuts.)
+  --
 
 /-! ### §7.5's split: the rank and batch goals refuted on a paying day, and the candidate order refuted
 at the taken slot (README gaps 3542, 3546, 3547) -/
@@ -11405,7 +11405,7 @@ set_option maxRecDepth 400000 in
 /-- **The view law as W-38 stated it is REFUTED** (D5; README gap 3390): the woken day is dated today and
 stores no window, so every hypothesis holds, and the planner starts it at 07:00 where day 0's capacity
 starts at 14:00.  The restatement is
-`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`. -/
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`. -/
 theorem the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted :
     ¬ ∀ r : PlanReq, r.look.today0.date = some r.look.today →
       (r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true) →
@@ -11417,7 +11417,7 @@ theorem the_planners_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_w
   exact absurd this (by decide)
 
 set_option maxRecDepth 400000 in
-/-- **…and its twin over the day** — `Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival`
+/-- **…and its twin over the day** — `Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`
 is the restatement. -/
 theorem the_days_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_is_refuted :
     ¬ ∀ r : PlanReq, r.look.today0.date = some r.look.today →
@@ -11449,7 +11449,7 @@ set_option maxRecDepth 400000 in
 /-- **The rebuild moves nothing the planner plans** (README gap 3398): the cache `tm wake` left and the
 state the rebuild derives plan the same rows, window and budget — the logged arrival stands in for the
 cleared one — while day 0's CAPACITY window, fork `Ctx::window`'s, still differs: it counts the stored
-window the rebuild restores and reads `now` where `tm wake` cleared it. -/
+window the rebuild restores and reads `now` where `tm wake` cleared it.  *Since the W-39 repair (README gap 3710) the binary's rebuild derives the woken state itself — no arrival, window or budget after a later `tm wake` — so `theRebuiltRequest` is no longer the binary's rebuild but a state with a same-day arrival stored beside a logged wake, and gap 3582's capacity difference is not reached by deleting the cache.* -/
 theorem the_rebuilt_state_plans_the_woken_day :
     (dayPlan theRebuiltRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item))
       = (dayPlan theWokenRequest).segments.map (fun s => (s.val.start, s.val.stop, s.val.kind, s.val.item)) ∧
@@ -11533,6 +11533,65 @@ theorem the_plan_and_the_wire_read_the_file_kinds_ci_alike :
     PlanCheck.candsAgree theFurnitureRequest = true ∧
     PlanCheck.candsAgree { theFurnitureRequest with cands := ⟨furnitureCandsAtThree, by decide⟩ } = false := by
   refine ⟨by decide, by decide, by decide⟩
+
+/-! ### W-39 repair: the planner's window over the day's CLIPPED walls (README gaps 3556, 3712 and 3713)
+
+Fork `Planner::window_and_budget` extends §8.1's window by `collect_walls`' walls, clipped to the day; day 0's
+CAPACITY window (fork `Ctx::window`) by `Ctx::walls_on`'s, whole — quirk (e).  The kernel's planner read the
+capacity's until the W-39 repair.  The three laws below say what changed: the old formula is false, the old view
+law is false on a dated day with a wall past its bounds, and the view law's subjects keep their walls inside
+their day, so the restated law's new hypothesis is met where it fires. -/
+
+set_option maxRecDepth 400000 in
+/-- **§8.1's formula over the day's WHOLE walls is REFUTED** (D5): at the conference Wednesday no window is stored,
+and the planner's window is not the formula over `Look.wallsOn` — the wall runs to Friday, the window does not.
+`Planner.PlanReq.window_is_the_formula_without_a_window_on_its_day` states it over `Look.wallsClippedOn`. -/
+theorem the_planners_window_formula_over_the_days_whole_walls_is_refuted :
+    ¬ ∀ r : PlanReq, r.look.today0.planWindow r.look.today = none →
+      r.window = Look.windowFrom r.look.tz (r.look.today0.planArrivalSec r.look.today r.look.tz r.loggedArrival)
+        (Look.windowMinOf r.look.day.windowHours) r.look.day.windowCap (Look.wallsOn r.look.walls r.look.today) :=
+  fun h => absurd (h theConferenceRequest (by decide)) (by decide)
+
+set_option maxRecDepth 400000 in
+/-- **The view law WITHOUT its wall bound is REFUTED** (D5; README gap 3556): the conference Wednesday with its
+state dated today meets every other hypothesis — dated, no window, no arrival stored or logged — and the planner
+ends the day at 05:00 Thursday where day 0's capacity runs to 14:00 Friday.  The restatement is
+`Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`. -/
+theorem the_view_law_without_the_days_walls_inside_it_is_refuted :
+    ¬ ∀ r : PlanReq, r.look.today0.date = some r.look.today →
+      (r.look.today0.window.isSome = true ∨ r.look.today0.arrival.isSome = true ∨ r.loggedArrival = none) →
+      (r.look.today0.window.isSome = true → r.look.today0.budget.isSome = true) →
+      (∀ w, r.look.today0.window = some w → w.1 ≤ w.2) → r.window = Look.day0Window r.look := by
+  intro h
+  have hnone : theConferenceRequest.look.today0.window = none := by decide
+  have := h { theConferenceRequest with look := { theConferenceRequest.look with
+      today0 := { theConferenceRequest.look.today0 with date := some 739867 } } }
+    (by decide) (Or.inr (Or.inr (by decide))) (fun hs => absurd hs (by decide))
+    (fun _ hs => absurd (hs.symm.trans hnone) (by simp))
+  exact absurd this (by decide)
+
+set_option maxRecDepth 400000 in
+/-- **The restated view law's subjects keep their walls inside their day** (AGENTS §7.4 item 2): its new
+hypothesis holds at the dated window request and at the rebuilt request, where it fires. -/
+theorem the_view_laws_subjects_have_their_walls_inside_their_day :
+    (∀ x ∈ Look.wallIxOn theDatedWindowRequest.look.walls theDatedWindowRequest.look.today,
+      theDatedWindowRequest.dayStart ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ theDatedWindowRequest.dayEnd) ∧
+    (∀ x ∈ Look.wallIxOn theRebuiltRequest.look.walls theRebuiltRequest.look.today,
+      theRebuiltRequest.dayStart ≤ x.lo ∧ x.lo < x.hi ∧ x.hi ≤ theRebuiltRequest.dayEnd) := by
+  refine ⟨by decide, by decide⟩
+
+set_option maxRecDepth 400000 in
+/-- **The day's walls, and the window, where a wall passes the day** (README gap 3556): at the conference Wednesday
+step 1 places the conference clipped to the day — 00:00 Wednesday to 00:00 Thursday — and the window's walls are
+those very walls (`Planner.PlanReq.the_windows_walls_are_the_walls_step_one_places`), not the wall's own
+Tuesday-to-Friday span. -/
+theorem the_conference_is_clipped_to_the_day_for_the_window_and_the_walls :
+    Look.wallsClippedOn theConferenceRequest.dayStart theConferenceRequest.dayEnd theConferenceRequest.look.walls
+        theConferenceRequest.look.today
+      ≠ Look.wallsOn theConferenceRequest.look.walls theConferenceRequest.look.today ∧
+    ((wallsToday theConferenceRequest).map fun w => (w.lo, w.hi)).contains
+      ((Cal.instantOf Cal.chicago 739867 0).sec, (Cal.instantOf Cal.chicago 739868 0).sec) = true := by
+  refine ⟨by decide, by decide⟩
 
 end PlannerWit
 end Tm

@@ -76848,3 +76848,298 @@ across every run below, and no `.proptest-regressions` file moved.
 * **The oracle arms under `TM_ORACLE`**, a freshly built oracle, on the merged tree: §2.3 (229 of 229;
   91 fresh draws, 0 differences; 91 cross-checked; gap 3480's witness) and, after the deletion, §2.5.
 
+
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **REPAIR STEP**,
+     on `rebuild-on-lean` off `f729ecd`; the main checkout stayed on
+     `rebuild-on-lean` throughout, plants and mutations ran in clones under
+     `scratchpad/repair-w39/`.  Gap range **3710-3739**: 3710-3730 taken,
+     3731-3739 free.  Parity: **none issued** (register P1-P63, next free P64).
+     ===================================================================== -->
+
+## Stage 6 — W-39 repair: the day does not move when its cache goes, a lost month file is rebuilt, and the planner's window stops at the day's walls
+
+Two auditors reported six and ten findings.  Each was reproduced first (§0); what could be fixed without
+weakening a law or an instrument is fixed, and the rest is recorded below by name, with the shape its fix
+must take.
+
+### 0. Reproduced before anything was changed (the `f729ecd` binary, `scratchpad/repair-w39/`)
+
+* **Two `tm arrive`s, then `tm wake` (both auditors).**  `arrive lounge` 07:00, `arrive home` 09:00, `wake
+  06:05` 09:30 leave `arrival`, `window` and `budget` null; `tm plan` at 10:30 prints `window 07:00–16:00`;
+  after `rm .tm/state.json` the same `tm plan` prints `RECOMPUTED … 09:00–18:00`, `window 09:00–18:00`, the
+  rebuilt state holds `arrival 09:00`, and the log GAINS `{"ev":"plan","hash":"0820b70eafba92fc",…}` —
+  the authority written because its cache was deleted (`arrivals-before.txt`).  REPRODUCED.
+* **A deleted sealed month file (the reuse critic).**  With `cli_week_cut`'s sealed-week recipe and the one
+  month file deleted, `tm review week --date 2026-09-07` exits 1 with `tm: kernel fault: … names no month file
+  for the sealed days 739865..=739871`, and `tm review day --date 2026-09-08` prints `0/6 blocks · load 0.0 ·
+  done -` twice under "rebuilt in memory", where the log holds `1/6 · done t4`; `rm -rf .tm/cache` restores
+  it (`seal-before.txt`, `seal2-before.txt`).  REPRODUCED, both.
+* **The multi-day wall, R3 and the burn-down (auditor 1).**  `planner_w39_conference.rs`' fork half sat in the
+  region R3 deletes and no frozen line held a wall spanning days; `Goals.lean` read 0 on a refutation standing
+  on the divergence.  REPRODUCED by reading (both files at `f729ecd`).
+* **L25's pinned record, the midnight `actual_min`, check 13's `week` key, the grid self-comparison, the two
+  P56 cuts, R3's dropped gaps, the TUI tests, the midnight span, the ledger drift.**  Each read at the cited
+  site and found as reported; the two drives the critic ran on the midnight span were not re-run (their
+  finding is the registered P63 and the owner's gap 3620).
+
+### 1. What changed
+
+* **The rebuild follows the wake (gap 3710; closes gaps 3398 and 3582).**  `ctx::derived_state` now derives
+  no arrival, window or budget when a surviving `wake` of the day is logged after its last surviving
+  `arrive` (`ctx::woken_since_arrival`, file order, undone rows skipped) — what `day::wake` wrote and the cache
+  held.  D45's "the last arrival wins" is unchanged wherever an arrival was the last verb; the RECOMPUTED
+  notice fires only when the rebuild did recompute.  Deleting the cache then moves nothing: the planner reads
+  the day's first logged `arrive` behind the empty state from either cache (gap 3390's fallback), and day 0's
+  capacity window (fork `Ctx::window`) reads `now` from either — gap 3582's residue is gone with it.
+* **A missing sealed month file is REBUILT (gap 3711).**  `kernel_log::records_for` returns `None` for a
+  month the snapshot names and the disk lacks, and `replay_scoped` answers it with
+  `ReplayCache::rebuild_missing` — genesis over the log, a fresh generation that reads no old month — and one
+  notice, "changed underneath (a sealed month file is missing); rebuilt from the log".  The old fallback, the
+  run's own records (EMPTY on a hot resume) under "rebuilt in memory", is gone.  `resume_log_section`, the
+  week grid's section, rebuilds once and asks again; only a rebuild that still leaves a month missing is a
+  fault.  The next verb finds the healed cache and says nothing.
+* **The planner's window reads the day's walls CLIPPED to it (gap 3712; closes gap 3556 and gap 3700's
+  kernel half).**  `Look.clipWall` (fork `collect_walls`' clip, moved from `Planner.lean` so §8.1's window,
+  defined above step 1, can read it) and `Look.wallsClippedOn`; `Planner.PlanReq.window`'s formula reads
+  them, and `Planner.PlanReq.the_windows_walls_are_the_walls_step_one_places` says they are step 1's own
+  walls (`wallsToday`, as a multiset) — one clip, read twice.  Day 0's CAPACITY window keeps
+  `Look.wallsOn`, quirk (e), under Q6.  The conference Wednesday now ends at 05:00 Thursday, inside the
+  night, and plans no work (`PlannerWit.the_conference_window_ends_inside_the_night`).
+* **The fork's conference Wednesday is FROZEN BY VALUE** (`tm/tests/fixtures/fork-4748911-planner-conference.jsonl`,
+  3 days at 08:00, 13:00 and 20:00, each carrying its state and instant), compared outside the region by
+  `planner_w39_conference.rs`' `the_kernel_plans_the_forks_conference_wednesday` — **3 days, 12 fork rows,
+  1,619 other values, 3 of 3 hashes, 0 differences** — and inside the region checked byte for byte against
+  the live fork and blessed (`TM_PLANNER_BLESS_CONFERENCE`, refusing to change a held line, D64).  A new
+  file, no frozen line changed: no re-bless.
+* **Check 7 matches a departed goal EXACTLY (gap 3716).**  A goal leaves `Goals.lean` only as an audited
+  theorem of its own short name or a refutation of it (`<name>_…is_refuted`); the substring match let any
+  longer name answer for it.
+* **Ledger:** AGENTS §6.3's counts re-measured (eight audited definitions, 27 short names declared twice;
+  gap 3723); the week-cut refusal no longer asserts a cause it cannot know (gap 3724).
+
+### 2. Laws restated (D5)
+
+* `Planner.PlanReq.window_is_the_formula_without_a_window_on_its_day` — old: `r.window` is `windowFrom … (Look.wallsOn
+  r.look.walls r.look.today)`; new: `… (Look.wallsClippedOn r.dayStart r.dayEnd r.look.walls r.look.today)`.
+  The new does not imply the old; the old is FALSE at the conference Wednesday
+  (`PlannerWit.the_planners_window_formula_over_the_days_whole_walls_is_refuted`).
+* The view law and its twin over the day gain one hypothesis, `hin` — every wall of the day lies inside it —
+  and its name: `Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`
+  and `Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window_unless_a_windowless_day_has_only_a_logged_arrival_or_a_wall_passes_its_bounds`.
+  The new does not imply the old; the old is FALSE at the dated conference Wednesday
+  (`PlannerWit.the_view_law_without_the_days_walls_inside_it_is_refuted`); both of its firing subjects meet
+  `hin` (`PlannerWit.the_view_laws_subjects_have_their_walls_inside_their_day`).
+* Track K's witnesses on the kernel's window past the night, each REFUTED AND RENAMED at the hole's closing:
+  the conference window running past the night (now `PlannerWit.the_conference_window_runs_past_the_night_is_refuted`,
+  beside `PlannerWit.the_conference_window_ends_inside_the_night`); the conference day's Block after the
+  wind-down (`PlannerWit.the_conference_day_places_a_block_after_the_wind_down_is_refuted`); the restated
+  law's subject where the wire agrees (`PlannerWit.the_wind_down_law_has_a_subject_where_the_wire_agrees_is_refuted`).
+  The theorem that "fired" there now reads its fact off the store (`PlannerWit.the_agreeing_conferences_item_is_not_demanding`).
+  `PlannerWit.day_zeros_window_is_not_bounded_by_the_night` keeps its statement (the CAPACITY window still
+  runs to Friday) with a new proof.
+* **RETIRED, not refuted** (their statements may now be false, and their negations are unproved): PlannerWit's
+  refutation of gap 2326's bound for the planner's window (its negation IS that bound), and PlannerWit's
+  refutation of the wind-down goal as stage 6 wrote it (its negation IS the goal).  So the goal is back in
+  `Goals.lean` with `sorry` (gap 3713), and `PlannerWit.the_wind_down_goal_holds_at_the_conference_wednesday`
+  proves its instance at the old counterexample.
+
+### 3. Mutations (D40, check 9) and plants
+
+`mutate.py --verify --write --only Tm.Planner.PlanReq.window` then `--write`, in a clone at a 16 GB cap,
+`git status --porcelain` identical but for `kernel/mutations.txt`: `PlanReq.window` `default` and `(0, 0)`
+PINNED (its row's site re-anchored to the renamed view law); `Look.clipWall` `:= x` and `⟨[], 0, 0, 0, 0, 0⟩`
+PINNED at `Look.wallsClippedOn_eq_wallsOn` (then `Planner.clipWall_id`), `default` UNFOLDABLE (no `Inhabited
+WallIx`); `Look.wallsClippedOn` `default` and `[]` PINNED; `Planner.wallsOfDay` (its body names
+`Look.clipWall` now) `default`, `ix` and `[]` PINNED at `mem_wallsToday`.  Gate after: **562 rostered, 0 owed**.
+
+Plants, in `scratchpad/repair-w39/pclone` (its own cargo target), porcelain hash `2e102619…` before and after:
+the rebuild reading no wake (P1) fails `the_woken_day_is_planned_from_the_logged_arrival` and
+`two_arrivals_then_a_wake_plan_one_day_from_either_cache` ("the rebuild is the cache"); the missing month
+answered by the run's own records (P2) fails both `cli_sealed_month_missing` tests; the week section faulting
+again (P3) fails `kernel_log`'s `a_missing_month_file_is_rebuilt_for_the_weeks_section` with the old fault —
+and does NOT fail the CLI tests, because every verb's own replay reads the months first and heals the cache
+(recorded, not hidden: the week path's rebuild is reached only by a race or a scope that reads no month);
+the planner's window over whole walls again (P4, Lean, `PlannerWit`'s import dropped so the archive builds,
+the two proofs it breaks patched) fails `the_kernel_plans_the_forks_conference_wednesday` at its window
+assertion.  The check-7 rule was run over track K's five departures (all pass) and a plant (a goal whose only
+audit line is `plan_tail_drop_with_the_active_item_erased`: caught; the substring rule passed it).
+
+### 4. Gaps (3710-3730)
+
+**Gap 3710 — CLOSED here: two arrivals then a wake moved the day under D42's rebuild.**  1. *What.*  §1's
+first bullet; closes gaps 3398 and 3582 with it (the second of 3398's "Clears it": the rebuild stops restoring
+an arrival a later wake cleared).  2. *Why this reading.*  D45: the derivation follows the verb, and the last
+verb was the wake; D69's "the cache follows the log" — the wake is in the log.  3. *Cost.*  None known;
+`PlannerWit.theRebuiltRequest` is no longer the binary's rebuild but a hand-built state, and its witness says
+so.  4. *Pinned by* `planner_w39_arrival.rs`' `two_arrivals_then_a_wake_plan_one_day_from_either_cache` (the
+day fields, the printed day, the log's bytes and the kernel's rows and hash, equal across the deletion) and the
+restated assertion of `the_woken_day_is_planned_from_the_logged_arrival`.
+
+**Gap 3711 — CLOSED here: a deleted sealed month file faulted one reader and silently emptied another.**  §1.
+*Pinned by* `tm/tests/cli_sealed_month_missing.rs` (2 tests: the week and the day review equal to the review
+before the deletion, one notice, a healed cache) and the `kernel_log` unit test.
+
+**Gap 3712 — CLOSED here: the kernel's planner window over a wall that spans days.**  §1.  Its residue is gap
+3727.
+
+**Gap 3713 — the wind-down goal is back in `Goals.lean`, and the restated law has no subject in this tree.**
+1. *What.*  `Goals.plan_places_no_demanding_block_after_wind_down` is outstanding again (check 7: 1);
+`PlanCheck.plan_places_no_demanding_block_after_wind_down` stays proved but no request here gives it a Block
+after a WindDown row.  2. *Why.*  Both rested on a window the fork's planner never draws.  3. *Cost.*  The
+burn-down is 1, not 0; the restated law's non-vacuity (§7.4 item 2) is unshown.  4. *Clears it.*  Gap 2326's
+bound on `Planner.PlanReq.window` (`PlannerWit.the_conference_window_ends_inside_the_night` meets it at one
+request, `Planner.PlanReq.the_windows_walls_end_by_the_days_end` bounds the walls it extends by), then the goal
+as written; a witness at a wind-down past the calendar (gap 3544) would give the restated law a subject.
+
+**Gap 3714 — L25, the rank law and the HOT law are restated over what they should be laws about.**  1. *What.*
+`PlanFold.plan_is_stable_across_a_replan` takes `htr : r'.todayRecord = r.todayRecord`: a replan after any
+logged verb (`tm start`, `stop`, `done`, `pause`, and the `plan` line `tm plan` itself logs when its hash
+moves) is outside it, and D38 makes a reload after a write the TUI's only replan.  `plan_is_monotone_in_rank`
+and `plan_puts_hot_before_the_queue` take hypotheses over step 5's own state (`assignFold.slotOf`,
+`groupFitsSlot` at `assignStart`) — the shape D67 declined.  2. *Why.*  Track K's restatements; gap 3550 names
+two exclusions and not this one.  3. *Cost.*  L25 says nothing about the commonest replan (§5.2's shape).
+4. *Clears it.*  L25 over two records one of which extends the other by lines after `r.now`; the owner's word
+on the rank and HOT restatements.
+
+**Gap 3715 — `tm done` after local midnight logs `actual_min 0` for a block with worked minutes (fork
+behaviour, the owner's).**  1. *What.*  Driven by auditor 1: `start ^O3` 23:00, `pause` 23:30, `pause` 00:30,
+`done` 01:00 → `✓ ^O3 … · 0m/60m`, `"actual_min":0`; fork 4748911 logs the same.  `day.rs`' `worked_min(&ctx,
+ctx.at(a.started))` puts the `HH:MM` start on TODAY's date.  2. *Why not fixed.*  A wrong fact in the log is a
+behaviour change against the fork and needs the owner and a parity number (§4's last row); gap 3625 priced the
+`tm now` header only.  3. *Cost.*  The duration fit reads a zero for every block done across midnight.
+4. *Clears it.*  The owner's word; then the start's instant from the log's `start` line, with a parity number
+and a behaviour row.
+
+**Gap 3716 — CLOSED here: check 7 matched a departed goal by substring.**  §1; the paragraph above the loop in
+`check.sh` ("WHAT IT CANNOT SEE") is the record of the old rule.  List or property: a PROPERTY — own name or a
+refutation of it — and the discharging theorem is still not recorded per goal (gap 1770).
+
+**Gap 3717 — check 13's sent and written halves ask one encoder.**  1. *What.*  `day.rs`' `call_the_walls`
+writes `emit.walls.week`, read by `GridCut.readWeek`; `sentkeys.host_paths` reads only `planner_json` in
+`planwire.rs`.  2. *Why not fixed.*  The encoders of the other sections are not `<section>_json` functions of
+one codec module (gap 3081), so asking them is a new reader, not a widening.  3. *Cost.*  A key added to the
+`emit` section and read by nothing leaves check 13 green; only the unit and CLI tests tie sender to reader.
+4. *Clears it.*  A host reader keyed on the request's top-level section names, wherever the request is built.
+
+**Gap 3718 — after R3 the grid-versus-plan tests compare the kernel's cut with itself.**  1. *What.*
+`cli_week_grid.rs`' `the_grid_and_the_plan_cut_one_pause_alike` says so; `cli_week_cut.rs`' two tests too.
+2. *Why.*  Track T opened no gap.  3. *Cost.*  After R3 no frozen line holds the grid (the frozen P56 lines
+hold days, not heat cells).  4. *Clears it, BEFORE R3 (D21).*  Fork 4748911's week grid frozen by value for
+those worlds (a `tm-oracle` review mode, D23's shape), with P63's cells named.
+
+**Gap 3719 — P56 is applied by two implementations in the harness, and their cross-check met no P56 day.**
+1. *What.*  The in-tree backend takes P56 from `planner.rs`' `cut_out`, the oracle backend from
+`forkplan.rs`' `p56_cut` over `forkclass`' own wall reader; the region's cross-check (43 and 91 draws) met
+none.  2. *Why.*  The generator rarely draws a typed pause over a wall.  3. *Cost.*  After R3 `p56_cut` is the
+comparand's only P56, held by a few frozen lines whose mutants die only under `TM_ORACLE`.  4. *Clears it.*
+Cross-check a seeded set of P56 days before R3.
+
+**Gap 3720 — R3's list must carry gaps 2874, 2875 and 2877, and the harness sends what the binary's encoder
+does not.**  1. *What.*  The shipped capacity request lacks `batchMaxMin` (2875); the decoder's three host
+fields (2877); four named refusals needing behaviour rows (2874).  The harness adds `workedMin`,
+`batchMaxMin` and the whole log from line 1 (gap 3583).  2. *Why.*  W-39's land re-derived its list without
+them.  3. *Cost.*  The batch, the classes, the driven line and the oracle arm stay green whatever the binary's
+encoder sends after the swap.  4. *Clears it.*  At R3: a test that diffs the key set of the binary's own
+planner request against the harness's.
+
+**Gap 3721 — the TUI's fork-planned tests (gap 3476) assert values the kernel was never asked for, and no TUI
+test sees P63.**  1. *What.*  E.g. `tui_today_prompts.rs`' `over.drops` and its 8 snapshots; `tui_common`
+builds the `App` with `PauseCut::default()`, and `review::heat_of` draws an uncut pause whole.  2. *Why.*
+Gap 3476 priced it "None now".  3. *Cost.*  The swap re-blesses them blind.  4. *Clears it, BEFORE R3 (D21).*
+The kernel's answer computed on each of those worlds now, and a TUI test with a cut week.
+
+**Gap 3722 — `tm plan` and `tm review week` read one midnight span two ways.**  The critic's drive: a call
+23:30-00:30 with `^t4` running — `tm plan` draws `00:00 ⏰ Late call 30m`, the heat row for the Tuesday draws
+30 minutes of pause in hour 0.  That is P63 and the owner's gap 3620; recorded here so §5.3's reading of it is
+on the list.
+
+**Gap 3723 — CLOSED here: AGENTS §6.3 said two audited definitions (eight) and 24 short names (27).**
+
+**Gap 3724 — the week-cut refusal asserted a cause (CLOSED); P62's "nothing written".**  `day.rs`' refusal
+now says the two reads disagree and the log MAY have changed.  P62's issuance line says the verb writes
+nothing; the load's housekeeping (`ctx.rs`' automatic close and rebuild) runs before the refusal, as for every
+verb.  The register row is not rewritten (its issuance line is append-only).
+
+**Gap 3725 — `tm wake` over a running block is undone by the next verb.**  1. *What.*  Driven here
+(scratchpad `repair-w39/drive_wakeactive`): `start ^t4` 09:00, `interrupt` 09:40, `wake` 09:50 clears `active` and `interrupt`;
+the next `tm now` says ".tm/state.json said nothing is running and .tm/log.jsonl says ^t4 is running — the log
+decides" and ^t4 runs paused again.  2. *Why.*  The log holds no event that closes the block; the wake is not
+read as one.  3. *Cost.*  A wake does not end what it says it ends; fork 4748911, which has no reconcile,
+keeps it ended.  4. *Clears it.*  The owner's word on what a wake closes; then the replay reads it (gap 3710's
+shape, one field on).
+
+**Gap 3726 — the week section's rebuild is reached only by a race.**  §3's P3: every verb that asks for the
+week's section replays in a scope that reads the months first (`tm review week` Dates, the TUI's Review All),
+so the section's own rebuild is pinned by the unit test alone.
+
+**Gap 3727 — one world holds the multi-day wall.**  1. *What.*  `plangen` draws every wall inside one day, so
+the frozen classes, the batch and the oracle's fresh draws never meet a wall that spans days; three frozen
+days of one conference do.  2. *Why.*  A generator change moves every frozen class (D64).  3. *Cost.*  A LIST
+of three days where the rule is a class.  4. *Clears it.*  A generated class with a wall that spans days, frozen
+under D70's introduction clause.
+
+**Gap 3728 — `PlannerWit.theRebuiltRequest` names a state the binary no longer rebuilds** (gap 3710): its
+witness now says so; the capacity difference it records (the old gap 3582) is not reached by deleting a cache.
+
+**Gap 3729 — check 7's "WHAT IT CANNOT SEE" paragraph describes the substring rule** it no longer runs; it is
+kept as the record and the new rule's comment follows it.
+
+**Gap 3730 — the driven gap-3390 world can now be a class line, and is not moved.**  1. *What.*  Track H's
+pin held that `forkclass::binary_holds` refused the driven world on exactly clause 5's three fields, "so when
+gap 3398 is decided the line says so".  Workspace run 1 of this step failed it — gap 3710 decided 3398 — and
+it is replaced by `planner_classes.rs`' `the_driven_worlds_are_held_by_the_binarys_rebuild` (no clause
+refuses it).  2. *Why not moved.*  Moving a frozen line between files is a comparand change under D64/D70,
+track H's.  3. *Cost.*  None to the comparison: the driven line is compared by value either way.
+4. *Clears it.*  Track H, or the land step, moves it among the class lines.
+
+### 5. Driven, on the repaired binary (`target/debug/tm`; transcripts in `scratchpad/repair-w39/`)
+
+    $ tm --now 2026-09-07T07:00:00-05:00 arrive lounge      → window 07:00–16:00 · budget 6
+    $ tm --now 2026-09-07T09:00:00-05:00 arrive home        → window 09:00–18:00 · budget 6
+    $ tm --now 2026-09-07T09:30:00-05:00 wake 06:05
+    $ tm --now 2026-09-07T10:30:00-05:00 plan               → 2026-09-07 · window 07:00–16:00 · budget 6 blocks
+    $ rm .tm/state.json; tm --now 2026-09-07T10:30:00-05:00 plan
+    tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42)
+    2026-09-07 · window 07:00–16:00 · budget 6 blocks     (state: arrival, window, budget null; log unchanged)
+
+    (sealed week, the month file deleted)
+    $ tm --now 2026-09-17T09:00:00-05:00 review week --date 2026-09-07
+    replay cache .tm/cache/replay changed underneath (a sealed month file is missing); rebuilt from the log
+     Week 2026-W37 · 2 blocks · load 123.0 · planned 25.3b        (exit 0; before the deletion: the same)
+    $ tm --now 2026-09-17T09:00:00-05:00 review day --date 2026-09-08   (another tree, the file deleted)
+    replay cache .tm/cache/replay changed underneath (a sealed month file is missing); rebuilt from the log
+     Day 2026-09-08 · 1/6 blocks · load 60.0 · …  done t4          (twice; the second says nothing)
+
+### 6. Acceptance, capped (`systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0`; 16 GB for `mutate.py` and `cli_latency`), `git status --porcelain` identical before and after
+
+* **`check.sh`, 17 lines, every one ok, exit 0**: build ok; totality ok; axiom audit **6,002** theorems
+  (Classical.choice 3,116, Quot.sound 4,588, propext 5,604; 395 on none); Negative.lean rejected; FFI **95**;
+  corpus 29/37 and 4/5; stage goals **1**, all stage 6 (0 at `f729ecd`, gap 3713); prose citations 51,163
+  (48,943 resolved, 2,220 allowed, 437 counted, 0 unused); new definitions mutated **562** rostered, **0** owed;
+  parity P1-P63, next free **P64** (none taken); no two names 0 UNANSWERED (3,307 bodies, 95 generalisation
+  groups); every emitted definition reached — 1,241 reachable, **1,199 exempt** (unchanged; two census reasons
+  re-derived), 0 UNANSWERED; fields 17/17; inputs 33 of 37 (4 exempt); sent 28/28; written 34/28/3; 91
+  modules replayed.
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46), after the pin of gap 3730 was restated: each
+  **1,819 passed / 0 failed / 20 ignored across 109 result lines** (17 min 12 s, 17 min 40 s, 17 min 33 s; load
+  1.3-3.3).  An earlier run 1, before that restatement, failed exactly the pin gap 3730 names and nothing
+  else (1,818 / 1 / 20); the loop was stopped during its run 2 and all three runs re-made.  No
+  `.proptest-regressions` file moved.
+* **Named suites, `--include-ignored`, one run each**: T5 `kernel_replay_parity` 35, the door
+  `kernel_log_door` 26, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 26,
+  `kernel_row_cells` 27, `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 59,
+  `planner_invariants` 42, `planner_w39_arrival` 11, `planner_w39_conference` 9, `cli_sealed_month_missing` 2,
+  `planner_w38_order` 16, `cli_week_cut` 2, `cli_week_grid` 4 — every one passed, 0 failed.  The FFI is
+  check.sh's checks 5-6.  The oracle arms were NOT re-run under `TM_ORACLE` (no frozen line changed; the new
+  conference file is compared against the live in-tree fork inside its region).
+* **`cli_latency`, three runs** at load 2.0-2.6: 6 passed each (18.9 s, 19.0 s, 19.0 s).
+
+### 7. R3
+
+**R3 is not yet only the body swap and the deletion.**  Gap 3556's kernel half is closed (gap 3712).  What
+remains before the swap is two instruments D21 puts ahead of the change they watch — the fork's week grid
+frozen by value (gap 3718) and the kernel's answers on the TUI's fork-planned worlds (gap 3721) — with gap
+3719's seeded P56 cross-check recommended beside them; the swap itself carries gaps 3043, 3476, 3583, 2874,
+2875 and 2877 (gap 3720), and then the deletion.

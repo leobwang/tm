@@ -299,20 +299,20 @@ fn every_driven_world_is_the_binarys_own_output() {
     }
 }
 
-/// **The binary's own rebuild refuses a driven world only where README gap 3398 says** (W-39):
-/// `forkclass::binary_holds` fails each driven world by clause 5 alone, on exactly `arrival`,
-/// `window` and `budget` — `tm wake` clears the three and D42's rebuild restores them from the
-/// day's `arrive`. Pinned rather than exempted: when gap 3398 is decided either way this fails, and
-/// the world belongs among the class lines.
+/// **The binary's own rebuild HOLDS every driven world** (the W-39 repair, README gap 3710, which
+/// decided gap 3398). Until the repair `forkclass::binary_holds` failed each driven world by clause 5
+/// alone, on exactly `arrival`, `window` and `budget` — `tm wake` cleared the three and D42's rebuild
+/// restored them from the day's `arrive` — and this test pinned that, "when gap 3398 is decided
+/// either way this fails". It was decided: the rebuild derives what a wake after the last arrival
+/// wrote, so no clause refuses the world, and it is asserted so. (The world stays a driven line and
+/// does not move among the class lines: README gap 3730.)
 #[test]
-fn the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says() {
+fn the_driven_worlds_are_held_by_the_binarys_rebuild() {
     for line in forkclass::driven_lines() {
         let who = line["name"].as_str().unwrap_or("?");
         let e = forkclass::binary_holds(&Built::of(ClassWorld::of_json(&line["world"], tz()).expect("a stored world"))).err().unwrap_or_default();
         println!("{who}: binary_holds says {e:?}");
-        assert!(e.iter().all(|m| m.starts_with("5:")), "{who}: refused by a clause other than 5: {e:?}");
-        let fields: BTreeSet<&str> = e.iter().filter_map(|m| m.strip_prefix("5: .tm/state.json's `").and_then(|r| r.split('`').next())).collect();
-        assert_eq!(fields, BTreeSet::from(["arrival", "budget", "window"]), "{who}: clause 5 refuses other fields: {e:?}");
+        assert!(e.is_empty(), "{who}: the binary's rebuild refuses the driven world: {e:?}");
     }
 }
 
