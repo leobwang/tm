@@ -2234,6 +2234,35 @@ fn records_for(cache: &ReplayCache, r: &Replayed, scope: Scope) -> (BTreeMap<u64
 /// that genesis sealed nothing to resume from. It is named, not guessed at (D18: the cap is never
 /// raised).
 pub fn capacity_log_section(root: &Path, bytes: &[u8], tz: &Value, now_day: u64) -> Result<String, GenesisError> {
+    resume_log_section(root, bytes, tz, now_day, None)
+}
+
+/// **The `log` section the week grid's cut asks with** (README gaps 3432 and 3528, W-39
+/// track T): [`capacity_log_section`]'s — the process checkpoint and the tail since its cut,
+/// or genesis in one call — and, in its `sealed` field, the snapshot's sealed records of the
+/// days `from..=to` below its ledger day, so the kernel's answer holds every day of the week
+/// the log has (`Seal.mergeSealed`; the owner's D13: the kernel may read a sealed record back
+/// for an explicitly old date). A snapshot whose month file is missing is a named fault, never
+/// a week with its older days quietly absent.
+pub fn week_log_section(
+    root: &Path,
+    bytes: &[u8],
+    tz: &Value,
+    now_day: u64,
+    from: u64,
+    to: u64,
+) -> Result<String, GenesisError> {
+    resume_log_section(root, bytes, tz, now_day, Some((from, to)))
+}
+
+/// The two above: a resume (or genesis) section, with the sealed day records of `sealed`'s days.
+fn resume_log_section(
+    root: &Path,
+    bytes: &[u8],
+    tz: &Value,
+    now_day: u64,
+    sealed: Option<(u64, u64)>,
+) -> Result<String, GenesisError> {
     let want = Want { facts: true, headers_from: None, render: vec![] };
     let s = split(bytes);
     let tz_key = tz.get("key").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -2251,9 +2280,26 @@ pub fn capacity_log_section(root: &Path, bytes: &[u8], tz: &Value, now_day: u64)
             && s.lines.len() - cut <= RESEND_LINES
             && s.bytes_between(cut, s.lines.len()) <= RESEND_BYTES
         {
-            return Ok(log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, None));
+            let days: Vec<String> = match sealed {
+                Some((from, to)) if from < sn.meta.ledger_day => cache
+                    .load_months(&sn, &months_between(from, to))
+                    .ok_or_else(|| {
+                        GenesisError::Fault(format!(
+                            "the replay cache {CACHE_DIR} names no month file for the sealed days {from}..={to}"
+                        ))
+                    })?
+                    .0
+                    .into_iter()
+                    .filter(|(k, _)| *k >= from && *k <= to)
+                    .map(|(_, r)| r)
+                    .collect(),
+                _ => Vec::new(),
+            };
+            let sealed_in = sealed.map(|_| (days.as_slice(), &[] as &[String]));
+            return Ok(log_section(Some(&sn.ckpt), cut as u64 + 1, &s.lines[cut..], s.terminated, None, &want, sealed_in));
         }
     }
+    // Genesis in one call seals nothing: every day of the log is in the answer.
     if s.lines.len() <= RESEND_LINES && s.bytes_between(0, s.lines.len()) <= RESEND_BYTES {
         return Ok(log_section(None, 1, &s.lines, s.terminated, None, &want, None));
     }

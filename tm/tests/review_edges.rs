@@ -305,6 +305,8 @@ fn the_heat_grid_splits_a_segment_across_the_ambiguous_hour() {
         IsoWeek::parse("2026-W44").unwrap(),
         fixture::TZ,
         &WeekExtras::default(),
+        // A block, no Pause: nothing for the kernel's cut to name.
+        &tm_core::review::PauseCut::default(),
     );
     let sunday = r.heat.last().expect("seven days");
     assert_eq!(sunday.date, fixture::date(2026, 11, 1));

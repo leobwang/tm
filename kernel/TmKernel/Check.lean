@@ -7795,3 +7795,24 @@ end-to-end witness `Planner.lean` and `PlanCheck.lean` could not write.
 #print axioms Tm.PlannerWit.an_hour_later_moves_the_window_of_a_day_with_no_arrival
 #print axioms Tm.PlannerWit.the_furniture_witness_loads
 #print axioms Tm.PlannerWit.the_plan_and_the_wire_read_the_file_kinds_ci_alike
+-- ============================================================================
+-- APPENDED 2026-09-30: stage 6 W-39 TRACK T -- the week grid cuts a pause with the planner's cut
+-- (README gaps 3432 and 3528; `GridCut.lean`): `GridCut.segSpans` is `Planner.pastSpans` at the day
+-- it plans, the grid's partition of a clip, and the `emit` walls form's `week`.
+-- ============================================================================
+#print axioms Tm.GridCut.pastSpans_is_segSpans
+#print axioms Tm.GridCut.in_cutOne_iff
+#print axioms Tm.GridCut.in_cutAll_iff
+#print axioms Tm.GridCut.in_clipCut_iff
+#print axioms Tm.GridCut.the_grid_draws_every_second_of_the_clip_once
+#print axioms Tm.GridCut.a_second_is_covered_iff_a_wall_of_the_day_covers_it
+#print axioms Tm.GridCut.nothing_but_a_pause_is_covered
+#print axioms Tm.GridCut.answer_without_a_week
+#print axioms Tm.GridCut.walls_answer_had_its_inputs
+#print axioms Tm.GridCut.a_week_asked_is_answered
+#print axioms Tm.GridCut.a_bad_week_is_refused_by_name
+#print axioms Tm.GridCut.answer_refuses_without_the_replay
+#print axioms Tm.GridCut.the_week_refusal_is_the_err_emit_shape
+#print axioms Tm.GridCut.the_cut_is_run
+#print axioms Tm.GridCut.readWeek_is_run
+#print axioms Tm.GridCut.the_weeks_cut_is_answered

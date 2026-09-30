@@ -51,6 +51,8 @@ fn review() -> tm_core::review::WeekReview {
         week(),
         fixture::TZ,
         &extras(),
+        // No Pause in the fixture's log: nothing for the kernel's cut to name.
+        &tm_core::review::PauseCut::default(),
     )
 }
 
@@ -226,6 +228,7 @@ fn the_curve_overlay_carries_the_prior_and_the_learned_curve() {
         week(),
         fixture::TZ,
         &extras(),
+        &tm_core::review::PauseCut::default(),
     );
     let names: Vec<&str> = r.curves.iter().map(|c| c.curve.as_str()).collect();
     assert_eq!(names, vec!["home", "lounge"]);

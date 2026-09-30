@@ -417,31 +417,7 @@ fn ask_the_walls(
     ctx: &Ctx,
     running_break: Option<DateTime<FixedOffset>>,
 ) -> Result<WallsAnswer, CliError> {
-    let docs = super::kernel_bridge::text_docs(&ctx.store)?;
-    let cache = ctx.store.root().join(".tm/cache/replay");
-    let tz_wire = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
-    let log = super::kernel_log::capacity_log_section(
-        ctx.store.root(),
-        &Ctx::log_bytes(&ctx.store)?,
-        &tz_wire,
-        super::kernel_log::day_of(ctx.today),
-    )
-    .map_err(super::ctx::genesis_error)?;
-    let rest = serde_json::json!({
-        "docs": docs,
-        "now": ctx.today.to_string(),
-        "blockMin": ctx.block_min(),
-        "tz": tz_wire,
-        "emit": {"walls": {
-            "at": log::fmt_timestamp(&ctx.now_tz.fixed_offset()),
-            "break": running_break.map(|b| log::fmt_timestamp(&b)),
-        }},
-    })
-    .to_string();
-    // The `log` section is spliced as text, as the capacity request splices it: its checkpoint
-    // is read in build order (`Seal.readCkptFields`), which a `serde_json::Value` would sort.
-    let request = format!("{{\"log\":{log},{}", &rest[1..]);
-    let (resp, stderr) = super::kernel_bridge::call_text(&request)?;
+    let (resp, stderr) = call_the_walls(ctx, running_break, None)?;
     let fault = |what: &str| {
         CliError::Kernel(super::kernel_bridge::fault_issue(
             &format!("walls response: {what}"),
@@ -498,6 +474,159 @@ fn ask_the_walls(
         Some(WallSpan { from: stamp(pf, "from")?, to: stamp(pf, "to")?, walls: walls_of(pf)? })
     };
     Ok(WallsAnswer { marks: out, paused_for })
+}
+
+/// **The `emit` section's walls form, asked** — the one request both of its
+/// readers build (README gap 3139; W-39 track T, gaps 3432 and 3528): D61's
+/// housekeeping asks what the day's walls write ([`ask_the_walls`]), and the
+/// week grid asks the same form for a week's cut of its Pauses ([`week_cut`]).
+/// With a `week` the `log` section carries the week's sealed day records
+/// (`kernel_log::week_log_section`), so the kernel's answer holds every day of
+/// it; without one the request is byte for byte what W-37 sent.
+fn call_the_walls(
+    ctx: &Ctx,
+    running_break: Option<DateTime<FixedOffset>>,
+    week: Option<tm_core::model::IsoWeek>,
+) -> Result<(serde_json::Value, String), CliError> {
+    let docs = super::kernel_bridge::text_docs(&ctx.store)?;
+    let cache = ctx.store.root().join(".tm/cache/replay");
+    let tz_wire = super::tz_table::wire_for(Some(&cache), ctx.cfg.tz);
+    let bytes = Ctx::log_bytes(&ctx.store)?;
+    let now_day = super::kernel_log::day_of(ctx.today);
+    let dates = week.map(|w| w.dates());
+    let log = match dates.as_ref().and_then(|d| d.first().zip(d.last())) {
+        None => super::kernel_log::capacity_log_section(ctx.store.root(), &bytes, &tz_wire, now_day),
+        Some((first, last)) => super::kernel_log::week_log_section(
+            ctx.store.root(),
+            &bytes,
+            &tz_wire,
+            now_day,
+            super::kernel_log::day_of(*first),
+            super::kernel_log::day_of(*last),
+        ),
+    }
+    .map_err(super::ctx::genesis_error)?;
+    let mut walls = serde_json::json!({
+        "at": log::fmt_timestamp(&ctx.now_tz.fixed_offset()),
+        "break": running_break.map(|b| log::fmt_timestamp(&b)),
+    });
+    if let Some(first) = dates.as_ref().and_then(|d| d.first()) {
+        walls["week"] = serde_json::Value::String(first.to_string());
+    }
+    let rest = serde_json::json!({
+        "docs": docs,
+        "now": ctx.today.to_string(),
+        "blockMin": ctx.block_min(),
+        "tz": tz_wire,
+        "emit": {"walls": walls},
+    })
+    .to_string();
+    // The `log` section is spliced as text, as the capacity request splices it: its checkpoint
+    // is read in build order (`Seal.readCkptFields`), which a `serde_json::Value` would sort.
+    let request = format!("{{\"log\":{log},{}", &rest[1..]);
+    super::kernel_bridge::call_text(&request)
+}
+
+/// **The kernel's cut of `week`'s Pauses, for the heat grid** (README gaps
+/// 3432 and 3528; `GridCut.lean`): the walls form asked with a `week`, its
+/// `ok.emit.cut` decoded — every key named, a missing or mistyped one a named
+/// fault and never a guess. **Every Pause of the week the host's replay holds
+/// must have its cut**: a Pause the answer does not name is refused by name,
+/// never drawn whole, because the host keeps no cut of its own to fall back on
+/// (AGENTS §5.3). It is a refusal and not a fault: the one way it happens is
+/// the log changing between the verb's read of it and this call's (§1.3's
+/// other writers), and the TUI keeps its last cut on a refusal where a fault
+/// would end it.
+pub(crate) fn week_cut(
+    ctx: &Ctx,
+    week: tm_core::model::IsoWeek,
+) -> Result<tm_core::review::PauseCut, CliError> {
+    let running_break = ctx
+        .state
+        .break_
+        .as_ref()
+        .and_then(|b| b.started)
+        .map(|s| ctx.at(s).fixed_offset());
+    let (resp, stderr) = call_the_walls(ctx, running_break, Some(week))?;
+    let days: Vec<(chrono::NaiveDate, &[log::LogSegment])> = week
+        .dates()
+        .into_iter()
+        .filter_map(|d| ctx.replay.day(d).map(|r| (d, r.segments.as_slice())))
+        .collect();
+    read_week_cut(&resp, &stderr, ctx.cfg.tz, &days)
+}
+
+/// [`week_cut`]'s reading of the kernel's answer, apart from the call, so the
+/// two ways it refuses can be shown to (the tests below). `days` is the week's
+/// days the host's replay holds, each with its segments.
+fn read_week_cut(
+    resp: &serde_json::Value,
+    stderr: &str,
+    tz: chrono_tz::Tz,
+    days: &[(chrono::NaiveDate, &[log::LogSegment])],
+) -> Result<tm_core::review::PauseCut, CliError> {
+    use tm_core::review::{CutPause, PauseCut};
+    let fault = |what: &str| {
+        CliError::Kernel(super::kernel_bridge::fault_issue(
+            &format!("week cut response: {what}"),
+            stderr,
+        ))
+    };
+    let at = |v: &serde_json::Value, what: &str| -> Result<DateTime<chrono_tz::Tz>, CliError> {
+        v.as_i64()
+            .and_then(|sec| tm_core::planwire::instant_of(sec, tz))
+            .ok_or_else(|| fault(&format!("{what} is not an instant")))
+    };
+    let spans = |v: &serde_json::Value, what: &str| -> Result<Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>)>, CliError> {
+        v.as_array()
+            .ok_or_else(|| fault(&format!("`{what}` is not an array")))?
+            .iter()
+            .map(|p| match p.as_array().map(Vec::as_slice) {
+                Some([a, b]) => Ok((at(a, what)?, at(b, what)?)),
+                _ => Err(fault(&format!("a `{what}` span is not a pair"))),
+            })
+            .collect()
+    };
+    let answered = resp["ok"]["emit"]["cut"]
+        .as_array()
+        .ok_or_else(|| fault("no `ok.emit.cut` array"))?;
+    let mut cut = PauseCut::default();
+    for d in answered {
+        let date = d["day"]
+            .as_str()
+            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            .ok_or_else(|| fault("a day's `day` is not a date"))?;
+        let pauses = d["pauses"]
+            .as_array()
+            .ok_or_else(|| fault("a day's `pauses` is not an array"))?
+            .iter()
+            .map(|p| {
+                Ok(CutPause {
+                    start: at(&p["from"], "a pause's `from`")?,
+                    end: at(&p["to"], "a pause's `to`")?,
+                    pause: spans(&p["pause"], "pause")?,
+                    wall: spans(&p["wall"], "wall")?,
+                })
+            })
+            .collect::<Result<Vec<_>, CliError>>()?;
+        if cut.days.insert(date, pauses).is_some() {
+            return Err(fault(&format!("the day {date} is answered twice")));
+        }
+    }
+    for (date, segments) in days {
+        let date = *date;
+        for seg in segments.iter() {
+            if matches!(seg.kind, log::SegmentKind::Pause { .. }) && cut.pieces_of(date, seg).is_none() {
+                return Err(CliError::msg(format!(
+                    "the kernel's cut of the week names no cut for the pause {}–{} of {date} — the \
+                     log changed while it was read; run it again",
+                    log::fmt_timestamp(&seg.start),
+                    log::fmt_timestamp(&seg.end)
+                )));
+            }
+        }
+    }
+    Ok(cut)
 }
 
 /// **The day file's journal line of a timer mark** — `pause ^id` or `unpause
@@ -1559,6 +1688,16 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
     let Some(mut active) = ctx.state.active.clone() else {
         return Err(CliError::msg("nothing is running"));
     };
+    // **The owner's D71 (README gap 3430, parity P62): inside an interruption
+    // `tm pause` is REFUSED BY NAME**, before anything is written — the timer
+    // is already stopped by the interruption, and `tm resume` is what starts
+    // it, as `tm interrupt` already refuses a second interruption. The toggle
+    // the fork made here wrote a cached `active.paused` that D42's rebuild from
+    // the log contradicts. The interruption is read by the one rule `tm start`
+    // and the rebuild read (`ctx::open_interruption`), never a second copy.
+    if let Some(open) = super::ctx::open_interruption(&ctx.replay) {
+        return Err(CliError::msg(pause_inside_an_interruption(&ctx, open)));
+    }
     super::kernel_bridge::gate(&ctx, "pause")?;
     // **D66 (the campaign's call on README gap 3048): `tm pause` inside a meeting keeps
     // RESUMING** — it is the correction for a skipped meeting — **and says so**: the kernel,
@@ -1608,6 +1747,18 @@ pub fn pause(g: &Globals) -> Result<i32, CliError> {
         &out,
     )?;
     Ok(0)
+}
+
+/// **D71's refusal, in words** (README gap 3430): the interruption the log
+/// holds open, when it began, and the verb that ends it.
+fn pause_inside_an_interruption(ctx: &Ctx, open: &tm_core::log::Interruption) -> String {
+    let since = open
+        .start
+        .map(|t| format!(" since {}", hhmm(t.with_timezone(&ctx.cfg.tz))))
+        .unwrap_or_default();
+    format!(
+        "an interruption is open{since} — the timer is already stopped; `tm resume` first"
+    )
 }
 
 /// `tm energy --json`.
@@ -1753,4 +1904,49 @@ pub fn idle(g: &Globals, args: &super::IdleArgs) -> Result<i32, CliError> {
         &out,
     )?;
     Ok(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tm_core::log::{LogSegment, SegmentKind};
+
+    /// The kernel's absolute second of an RFC 3339 stamp.
+    fn sec(s: &str) -> i64 {
+        DateTime::parse_from_rfc3339(s).expect("a stamp").timestamp() + tm_core::planwire::EPOCH_FROM_CE
+    }
+
+    /// **A Pause the answer cuts is read with its two styles; a Pause it does
+    /// not cut is refused by name — never drawn whole, never a fault; and an
+    /// answer that is not one is a fault** (README gaps 3432 and 3528).
+    #[test]
+    fn a_pause_the_answer_does_not_cut_is_refused_and_one_it_cuts_is_read() {
+        let tz: chrono_tz::Tz = "America/Chicago".parse().expect("a zone");
+        let at = |s: &str| DateTime::parse_from_rfc3339(s).expect("a stamp");
+        let date = chrono::NaiveDate::from_ymd_opt(2026, 9, 8).expect("a date");
+        let segs = vec![LogSegment {
+            start: at("2026-09-08T09:10:00-05:00"),
+            end: at("2026-09-08T09:30:00-05:00"),
+            kind: SegmentKind::Pause { id: "t4".into() },
+        }];
+        let days = vec![(date, segs.as_slice())];
+        let (a, b) = (sec("2026-09-08T09:10:00-05:00"), sec("2026-09-08T09:30:00-05:00"));
+        let m = sec("2026-09-08T09:20:00-05:00");
+        let answered = serde_json::json!({"ok": {"emit": {"cut": [{"day": "2026-09-08",
+            "pauses": [{"from": a, "to": b, "pause": [[a, m]], "wall": [[m, b]]}]}]}}});
+        let cut = read_week_cut(&answered, "", tz, &days).expect("read");
+        let pieces = cut.pieces_of(date, &segs[0]).expect("cut");
+        let styles: Vec<_> = pieces.iter().map(|p| p.2).collect();
+        assert_eq!(styles, vec![tm_core::review::Style::Pause, tm_core::review::Style::Wall]);
+        assert_eq!((pieces[0].1 - pieces[0].0).num_minutes(), 10);
+
+        let silent = serde_json::json!({"ok": {"emit": {"cut": [{"day": "2026-09-08", "pauses": []}]}}});
+        let e = read_week_cut(&silent, "", tz, &days).expect_err("refused");
+        assert!(!e.is_kernel_fault(), "a refusal, not a fault: {e}");
+        assert!(e.to_string().contains("names no cut for the pause"), "{e}");
+
+        let malformed = serde_json::json!({"ok": {"emit": {}}});
+        let e = read_week_cut(&malformed, "", tz, &days).expect_err("refused");
+        assert!(e.is_kernel_fault(), "a response that is not one is a fault: {e}");
+    }
 }

@@ -512,6 +512,10 @@ pub struct AppData {
     /// The §8.4 lookahead the EDF pass ran on: the kernel's first days, in
     /// exact units (stage 5 D10 L8).
     pub caps: Vec<UnitCapacity>,
+    /// **The kernel's cut of this ISO week's Pauses**, which the Review
+    /// screen's heat grid draws (README gaps 3432 and 3528, W-39 track T) —
+    /// read where the Review screen is reloaded, as `tm review week` reads it.
+    pub week_cut: review::PauseCut,
     /// The instant the TUI is at, in `cfg.tz`.
     pub now: DateTime<Tz>,
 }
@@ -538,6 +542,9 @@ pub struct App {
     pub prios: Vec<Prio>,
     /// The §8.4 lookahead: the kernel's first days, in exact units.
     pub caps: Vec<UnitCapacity>,
+    /// The kernel's cut of this ISO week's Pauses, for the heat grid
+    /// ([`AppData::week_cut`]).
+    pub week_cut: review::PauseCut,
     /// Today's energy reports as §8.5's posterior correction.
     pub posterior: Posterior,
     /// `now`, in `cfg.tz` (§17.2: injected, never read from a clock here).
@@ -631,6 +638,7 @@ impl App {
             candidates: data.candidates,
             prios: data.prios,
             caps: data.caps,
+            week_cut: data.week_cut,
             posterior,
             now: data.now,
             today,
@@ -1120,6 +1128,7 @@ impl App {
         self.candidates = data.candidates;
         self.prios = data.prios;
         self.caps = data.caps;
+        self.week_cut = data.week_cut;
         self.now = data.now;
         self.today = data.now.date_naive();
         self.replan();
@@ -1549,6 +1558,7 @@ impl App {
                 IsoWeek::from_date(self.today),
                 self.cfg.tz,
                 &review::WeekExtras::default(),
+                &self.week_cut,
             ),
             month: review::month_review(
                 &self.tree,

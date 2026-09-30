@@ -1441,42 +1441,72 @@ impl DayHeat {
     }
 }
 
-/// **A segment's pieces, styled** — `(start, end, style)` in order. A `Pause`
-/// is cut by the day's walls (D69 on README gap 3244, P56): the stretches no
-/// wall covers stay `pause` and the rest is the wall's — the cut `tm plan`'s
-/// past half makes (fork `past_segments`' `cut_out`, the kernel's
-/// `Planner.pastSpans`), through `capacity::free_intervals`. Every other kind
-/// is one piece, uncut.
-fn heat_pieces(
-    style: Style,
-    start: DateTime<Tz>,
-    end: DateTime<Tz>,
-    walls: &[crate::capacity::Wall],
-) -> Vec<(DateTime<Tz>, DateTime<Tz>, Style)> {
-    if style != Style::Pause {
-        return vec![(start, end, style)];
-    }
-    let mut out = Vec::new();
-    let mut cursor = start;
-    for (a, b) in crate::capacity::free_intervals(start, end, walls) {
-        if a > cursor {
-            out.push((cursor, a, Style::Wall));
-        }
-        out.push((a, b, Style::Pause));
-        cursor = b;
-    }
-    if cursor < end {
-        out.push((cursor, end, Style::Wall));
-    }
-    out
+/// **The kernel's cut of one ISO week's `Pause` segments** (README gaps 3432
+/// and 3528; `GridCut.lean`, W-39 track T): for each day, every Pause of its
+/// record keyed by its whole-second `[start, end)`, with the stretches that
+/// stay `pause` and the stretches a wall of the day covers, which the grid
+/// draws as the wall (D69 on README gap 3244, P56).
+///
+/// It is the cut `tm plan`'s past half makes, and not a copy of it: the
+/// kernel answers it through the `emit` section's walls form from
+/// `Planner.pastSpans`' own composition (`GridCut.pastSpans_is_segSpans`), over
+/// the walls §8.2 step 1 places. Until W-39 the grid cut a pause itself, over
+/// the host's own reader of the calendar (`Tree::walls_on`) and
+/// `capacity::free_intervals` — two definitions of one cut and two readers of
+/// the walls (AGENTS §5.3). The host keeps neither for the grid.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PauseCut {
+    /// Each day's Pauses, in its record's order.
+    pub days: BTreeMap<NaiveDate, Vec<CutPause>>,
 }
 
-fn heat_of(
-    day: Option<&DayReplay>,
-    date: NaiveDate,
-    tz: Tz,
-    walls: &[crate::capacity::Wall],
-) -> DayHeat {
+/// One Pause's cut, as the kernel answers it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CutPause {
+    /// The segment's own start, to the whole second — half of its key.
+    pub start: DateTime<Tz>,
+    /// The segment's own end, to the whole second — the other half.
+    pub end: DateTime<Tz>,
+    /// What stays a pause, `[from, to)` each.
+    pub pause: Vec<(DateTime<Tz>, DateTime<Tz>)>,
+    /// What a wall of the day covers, `[from, to)` each — drawn as the wall.
+    pub wall: Vec<(DateTime<Tz>, DateTime<Tz>)>,
+}
+
+impl PauseCut {
+    /// The kernel's cut of `seg` on `date` — its pieces, styled and in order —
+    /// or `None` when the answer names no cut for it (a segment that is not a
+    /// Pause, or an answer that is not about this day).
+    pub fn pieces_of(
+        &self,
+        date: NaiveDate,
+        seg: &log::LogSegment,
+    ) -> Option<Vec<(DateTime<Tz>, DateTime<Tz>, Style)>> {
+        let key = (seg.start.timestamp(), seg.end.timestamp());
+        let cut = self
+            .days
+            .get(&date)?
+            .iter()
+            .find(|p| (p.start.timestamp(), p.end.timestamp()) == key)?;
+        let mut out: Vec<(DateTime<Tz>, DateTime<Tz>, Style)> = cut
+            .pause
+            .iter()
+            .map(|(a, b)| (*a, *b, Style::Pause))
+            .chain(cut.wall.iter().map(|(a, b)| (*a, *b, Style::Wall)))
+            .collect();
+        out.sort_by_key(|p| p.0);
+        Some(out)
+    }
+}
+
+/// **One day of the heat grid.** Every segment is one piece in its own style,
+/// except a `Pause` the kernel's cut names: that is drawn over the kernel's
+/// pieces — `pause` where no wall of the day is, the wall's under one
+/// ([`PauseCut`]). A Pause the cut does not name is drawn whole, as a pause no
+/// wall touches is; the binary's two callers (`tm review week`, the TUI's
+/// Review screen) hand over a cut the kernel answered for every Pause of the
+/// week, and refuse by name otherwise.
+fn heat_of(day: Option<&DayReplay>, date: NaiveDate, tz: Tz, cut: &PauseCut) -> DayHeat {
     let mut hours = vec![[0u32; HEAT_STYLES]; HEAT_HOURS];
     if let Some(day) = day {
         for seg in &day.segments {
@@ -1484,7 +1514,11 @@ fn heat_of(
             if end <= start {
                 continue;
             }
-            for (start, end, style) in heat_pieces(Style::of(&seg.kind), start, end, walls) {
+            let pieces = match (&seg.kind, cut.pieces_of(date, seg)) {
+                (SegmentKind::Pause { .. }, Some(pieces)) => pieces,
+                (kind, _) => vec![(start, end, Style::of(kind))],
+            };
+            for (start, end, style) in pieces {
                 let style = style.index();
                 let mut cursor = start;
                 while cursor < end {
@@ -1626,7 +1660,9 @@ pub struct WeekReview {
     pub carry_out_min: u32,
 }
 
-/// The §12.4 week review (§11's week-surfaced monitors).
+/// The §12.4 week review (§11's week-surfaced monitors). `cut` is the
+/// kernel's cut of the week's Pauses ([`PauseCut`]), which the heat grid draws.
+#[allow(clippy::too_many_arguments)]
 pub fn week_review(
     tree: &Tree,
     replay: &Replay,
@@ -1635,6 +1671,7 @@ pub fn week_review(
     week: IsoWeek,
     tz: Tz,
     extras: &WeekExtras,
+    cut: &PauseCut,
 ) -> WeekReview {
     let dates = week.dates();
     let days: Vec<Option<&DayReplay>> = dates.iter().map(|d| replay.day(*d)).collect();
@@ -1743,7 +1780,7 @@ pub fn week_review(
         heat: dates
             .iter()
             .zip(&days)
-            .map(|(d, day)| heat_of(*day, *d, tz, &tree.walls_on(tz, *d)))
+            .map(|(d, day)| heat_of(*day, *d, tz, cut))
             .collect(),
         mix: energy_mix(mix_by_ci, budget_min, 0),
         breaks: break_integrity(&week_breaks),

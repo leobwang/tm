@@ -671,6 +671,13 @@ can_fail
 2 the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels
 2 the_witness_day_is_planned_from_two_in_the_afternoon
 
+# W-39 track T (README gaps 3432 and 3528): DELETED, not refuted.  The week grid draws the kernel's
+# cut of a pause (`GridCut.segSpans`, which `GridCut.pastSpans_is_segSpans` says is the planner's), so
+# the host's own cut went with the grid's `Tree::walls_on` read.  Every citation left is W-38 track T's
+# and the W-38 repair's append-only README blocks, naming the function as it stood.
+1 heat_pieces
+3 review::heat_pieces
+
 # ====================== 4. GRANDFATHERED (README, unadjudicated) ======================
 #
 # 161 names, seeded from `README.md` at W-19 so check 8 could land as a RATCHET on new prose

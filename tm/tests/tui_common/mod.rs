@@ -595,6 +595,7 @@ pub fn app_with_log_text(now: DateTime<Tz>, state: RuntimeState, log: &str) -> A
         candidates,
         prios,
         caps,
+        week_cut: tm_core::review::PauseCut::default(),
         now,
         cfg,
     };

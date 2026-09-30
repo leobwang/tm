@@ -75725,3 +75725,292 @@ Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMa
 * **Probes** (§5.10a): the appended block, with every decide above it stubbed, elaborates in 53 s at 3.2 GB
   peak under `MemoryMax=8G`, `timeout 120`; the first form of `the_rebuilt_state_plans_the_woken_day`
   (whole `WfSeg` lists) hit the file's own `maxRecDepth` and was SHRUNK to two projections, never raised.
+
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **TRACK T**,
+     on branch `w39-t` (worktree `.claude/worktrees/w39-t`) over `9dfb610`.
+     Gap range **3620-3659**: 3620-3626 taken here, 3627-3659 free.  Parity:
+     **P62 and P63 issued** (below) — the track's whole allocation.  Every
+     drive ran the binary this commit builds (and `9dfb610`'s for the
+     "before" column), every call `--now`, under the memory cap; every plant
+     ran in a clone under `scratchpad/w39-t/`, never in the worktree.
+     ===================================================================== -->
+
+## Stage 6 — W-39, track T: `tm pause` inside an interruption is refused (D71), and the week grid cuts a pause with the kernel's cut (gaps 3432, 3528)
+
+### 1. D71 — `tm pause` while an interruption is open is REFUSED BY NAME (P62; gap 3430 closed)
+
+**Reproduced first**, on `9dfb610`'s binary (`scratchpad/w39-t/drive/d71one.sh`, `d71one.txt`): a
+`plan-basic` tree, `tm wake` 06:05, `tm start ^t4` 09:00, `tm interrupt` 09:40, `tm pause` 09:42 —
+`resumed ^t4`, exit 0, the log gains `unpause`, `.tm/state.json` holds `paused: false`, and `tm now`
+at 09:50 reads `▶ ^t4 … · 48m of 60m`: the press ran the block's clock through an interruption that
+was still open.  Fork 4748911's `pause` is the same toggle with no look at the interruption
+(`git show 4748911:tm/src/cli/day.rs`, `pub fn pause`), so the refusal is a registered divergence.
+
+**The rule.**  `tm pause` reads the open interruption through `ctx::open_interruption` — the one
+reading `tm start` (P60) and the rebuild (`derived_state`) already take, never a second copy — and
+refuses before the gate, the undo recorder and every write — "an interruption is open since 09:40 —
+the timer is already stopped; `tm resume` first", exit 1 —
+the way `tm interrupt` refuses a second interruption.  With nothing running the refusal is
+`nothing is running`, unchanged.
+
+**Parity P62 taken**: `tm pause` while an interruption is open is REFUSED BY NAME — "an interruption is open since HH:MM — the timer is already stopped; `tm resume` first", exit 1, nothing written (log, `.tm/state.json`, day file, undo stack), on the CLI and through the TUI's Space key, whose status line now says so — where fork 4748911's `pause` toggled `active.paused`, logged `unpause` and ran the block's clock through the open interruption (owner D71, W-39 track T, README gap 3430)
+
+**Behaviour rows**, driven before (`9dfb610`) and after (this commit), same tree and instants
+(`drive/d71one.txt`, `d71.before.txt`, `d71.final.txt`, `d71tui.txt`, `d71tui.final.txt`):
+
+| surface | `9dfb610` | after |
+|---|---|---|
+| `tm pause` at 09:42, an interruption open since 09:40 | `resumed ^t4`, exit 0 | "tm: an interruption is open since 09:40 — the timer is already stopped; `tm resume` first", exit 1 |
+| `tm --json pause` | `{"id":"t4","paused":…}`, exit 0 | the failure document on stderr (`kind` `error`, that `message`, `exit_code` 1), nothing on stdout |
+| `.tm/log.jsonl`, day file, `.tm/state.json`, `.tm/undo.json` | gain `unpause`, `09:42 unpause ^t4`, `paused: false`, an undo entry | byte-identical (sha256 before and after, both orders: started then interrupted, and started inside the interruption) |
+| `tm now` at 09:50 | `▶ ^t4 … · 48m of 60m` | `▶ ^t4 … · 40m of 60m · paused` |
+| `tm --json now` across `rm .tm/state.json` | identical | identical, `active.paused` `true` both times |
+| the TUI's Space key (a pty, `drive/ptytui.py`) | writes the `unpause`; the status line reads `inbox.md changed` | writes nothing; the status line reads "pause: an interruption is open since 09:40 — the timer is already stopped; `tm resume` first" |
+| `tm resume` then `tm pause`, `tm pause` | `paused ^t4`, `resumed ^t4` | unchanged |
+
+**What the TUI drive found, and fixed.**  Before and after the refusal, the Space key's own words
+never reached the TUI's status line: it read `inbox.md changed`.  `notify` 7's inotify backend
+watches the open event too, and `tui::watch` forwarded every event, so a verb that only READ the
+plan files — a refusal writes nothing — had its message replaced by the name of the last file it
+opened, and the TUI then re-parsed a tree nothing had touched (measured with a raw inotify watch on
+the refused CLI verb: open, access and close-without-writing on every plan file, no write).
+`tui::is_a_change` now drops an access event and keeps a close after writing;
+`tui::tests::a_read_is_not_a_change_and_a_write_is` pins both directions.  A verb that WRITES a
+plan file still has its message replaced by its own write — gap 3622.
+
+**Pinned** by `tm/tests/cli_pause_interrupted.rs` (4: the refusal and nothing written in both
+orders with `tm --json now` equal across the delete; the `--json` document; the interruption not
+counted as worked; no over-bite after `tm resume` and with nothing running).  `cli_start_paused`'s
+class sweep `every_pause_writer_agrees_with_the_rebuild` (104 sequences) still passes: a `pause`
+inside an interruption is now a refusal in its sequence, and it writes nothing.
+**D40 for the Rust** (a clone, each plant restored): the refusal removed — 3 of the 4 new tests
+fail (`…_refused_by_name_and_writes_nothing`, `the_json_refusal_is_the_failure_document`,
+`the_interruption_is_not_counted_as_worked`); `is_a_change` answering `true` for every event —
+`a_read_is_not_a_change_and_a_write_is` fails.
+
+### 2. Gaps 3432 and 3528 — the week grid cuts a pause with the kernel's cut (P63)
+
+**The two definitions.**  The week grid (`review::heat_of`) cut a `Pause` by its own heat_pieces,
+over the host's calendar reader `Tree::walls_on` and `capacity::free_intervals`; the day plan cuts it
+by `Planner.pastSpans` over the walls §8.2 step 1 places (`Planner.wallsOfDay`, `Look.wallIxOn`'s
+selection).  Two definitions of one cut and two readers of the walls (AGENTS §5.3), compared since
+the W-38 repair on three days and never made one.
+
+**One now.**  `kernel/TmKernel/TmKernel/GridCut.lean` (new, imported by `Boundary.lean` in place of
+`WallTimer`, which it imports, so the edit is line-neutral and no check-9 pin site moved):
+`GridCut.segSpans` is `Planner.pastSpans`' own composition — `Planner.clipCut` of the segment's clip
+to `[local midnight, now]` by `Planner.wallsOfDay`'s walls, for a Pause — for a day the planner is
+not planning, and `GridCut.pastSpans_is_segSpans` says the planner's cut IS it, by `rfl`.
+`GridCut.coveredSpans` is the clip with the kept spans cut out — what the grid draws as the wall.
+The `emit` section's walls form gains an optional `week` (a date, read by `Field.parseDate`, the
+reader of the request's `now`): `GridCut.answer` is `WallTimer.answer` unchanged without it
+(`GridCut.answer_without_a_week`), and with it adds `cut` — for every day record of the replay in
+that ISO week (`Cal.weekOrdinal`), every Pause's own whole-second `[from, to)`, its `pause` spans
+and its `wall` spans (`GridCut.cutJson`); a malformed `week` is `badWeek`
+(`GridCut.a_bad_week_is_refused_by_name`), and a week asked is a week answered
+(`GridCut.a_week_asked_is_answered`).  **The laws, in the seconds the grid counts**:
+`GridCut.in_clipCut_iff` (`Planner.clipCut` keeps exactly the seconds of the clip no span covers —
+the two directions `clipCut_within`/`clipCut_apart` state one of), from which
+`GridCut.the_grid_draws_every_second_of_the_clip_once` (kept or covered, never both),
+`GridCut.a_second_is_covered_iff_a_wall_of_the_day_covers_it` and
+`GridCut.nothing_but_a_pause_is_covered`; run by `GridCut.the_cut_is_run`, `GridCut.readWeek_is_run`
+and `GridCut.the_weeks_cut_is_answered` (probed at 8 GB and 120 s).
+
+**The host keeps no cut.**  `day::call_the_walls` is the walls form's one request (D61's
+housekeeping, `ask_the_walls`, sends it byte for byte as before); `day::week_cut` asks it with the
+week, decodes `ok.emit.cut` with every key named, and **refuses by name a Pause of the week the
+answer does not cut** — a refusal and not a fault (gap 3624), and never a Pause drawn whole: there
+is no host cut to fall back on.  The week's older days are
+sealed in the replay cache, so the request's `log` section carries them back
+(`kernel_log::week_log_section`: the snapshot's sealed records of the week below its ledger day, the
+owner's D13).  `tm_core::review::PauseCut` holds the answer; `heat_of` draws a Pause over its
+pieces; heat_pieces and the grid's `Tree::walls_on` read are deleted.  `tm review week` and the
+TUI's Review screen read it: the TUI asks on entering the Review screen and on every reload there
+(one kernel call, no other screen draws the grid), keeps the last cut on a refusal and says `week
+grid not refreshed` (gap 3623).
+
+**What it costs — one more kernel call per `tm review week`, measured.**  T11's `review week` row
+(`cli_latency`'s three-year tree, 66,169 log lines, the `All` scope), `9dfb610`'s prebuilt test and
+binary against this commit's, interleaved, three runs each, while other sessions' builds held the
+load at 9.5-14.8: **before 435.3-445.1 ms, after 526.5-536.8 ms** (a second set at load 13.3-18.4:
+425-642 ms before, 486-517 ms after) — 50-100 ms added, inside `LATER_VERB`'s second; gap 240's rule:
+one machine's ranges under that load, not the 248-303 ms band W-38 quoted quietly.  The call carries what
+D61's walls call carries — the documents, the checkpoint and the tail — plus the week's sealed day
+records (at most seven); the TUI pays it on entering the Review screen and on each reload there, and
+nowhere else (gap 3623).
+
+**What the move changes, counted — a census of VALUES, cell by cell** (`scratchpad/w39-t/census/census.py`,
+`census100.txt`): 100 generated weeks (seeds 0-99) on `plan-basic`, each with one to four calendar
+walls added at random (246 in all, 71 of them crossing midnight), three days of `tm wake`, a block
+started at a random hour (124 of the 300 at or after 22:00), two to seven random `pause`, `now`,
+`interrupt`, `resume` and `plan` presses, and `tm done`; the history built by this commit's binary,
+then `tm --json review week --date 2026-09-07` at Thursday 21:00 run by `9dfb610`'s binary and by
+this commit's, each on its own copy.  **134,400 cells compared; 22 differ, in 11 weeks — every one
+in hour 00 of a row, every one a Pause past local midnight under a wall that runs past midnight
+with it: 178 minutes move from `wall` to `pause`, and no minute of any style is gained or lost in
+total.**  Every other cell of the 100 weeks is identical.  (A first run over seeds 0-39 found 8 of
+53,760, the same class.)
+
+**Parity P63 taken**: the week grid — `tm review week`, its `--json` `heat`, the TUI's Review screen — draws a Pause over the KERNEL's cut, `GridCut.segSpans`, which is `Planner.pastSpans` at the day of the Pause's record: the Pause clipped to that day's local midnight and to `now`, the stretches under a wall of that day (clipped to the day) drawn `wall`, the rest `pause`; fork 4748911's grid drew every Pause whole as `pause`, and W-38's host cut (P56's reach, D69's call on README gap 3244) drew `wall` under every wall touching the day, unclipped — so a Pause that runs past local midnight under a wall that runs past it too is drawn `pause` after midnight, as the fork drew it, and no longer `wall` (22 of 134,400 cells over 100 generated weeks, every one in hour 00); and because the cut is the kernel's, a week review on a tree the kernel refuses is refused by name, as every kernel-backed verb is, where the host's cut reviewed a past week on it (README gaps 3432, 3528, 3620 and 3626, W-39 track T)
+
+**Behaviour row**, driven on both binaries (`drive/midnight.sh`, `midnight.txt`): `^t4` from Tuesday
+23:00 into a call `at:2026-09-08T23:30/2026-09-09T00:30` (D61 pauses it 23:30–00:30), `tm done`
+00:50, `tm review week --date 2026-09-07` at Wednesday 09:00:
+
+| surface | `9dfb610` | after |
+|---|---|---|
+| `tm review week`'s heat line | `block 50m · wall 1h` | `block 50m · pause 30m · wall 30m` |
+| `--json` `heat`, Tuesday, hour 23 `[block … pause … wall]` | `[30, 0, 0, 0, 0, 0, 0, 30]` | unchanged |
+| the same, hour 00 | `[20, 0, 0, 0, 0, 0, 0, 30]` | `[20, 0, 0, 0, 30, 0, 0, 0]` |
+| the TUI's Review screen, week (a pty, `drive/gridtui.txt`) | `block 50m · wall 1h` | `block 50m · pause 30m · wall 30m` — the CLI's line, on both binaries |
+| `tm review week --date 2026-09-07` on a tree the kernel refuses (a duplicated `^t4` line; `drive/refused-*`) | the grid by the host's cut, exit 0 (the CURRENT week was already refused, its deadline health asking the kernel) | refused by name — `notADemotion`, both lines — exit 1 (gap 3626) |
+| a week whose Pauses lie inside their days (`drive/grid2.txt`: D61's meeting, typed pauses 14:10–14:25 and 09:10–09:30, an interruption 10:00–10:15, reviewed on the Wednesday, and on the Thursday of the week after with the week SEALED — ledger day 739872, month `2026-09` sealed) | `block 3h10m · interrupt 15m · pause 35m · wall 1h`; Monday hours 12/13 `wall` 10/50 | identical, cell for cell; each day's `pause` minutes are `tm plan`'s `paused` rows that day; the TUI's Review screen, which reviews the current week only, draws the CLI's heat line on both binaries (`drive/gridtui.txt`, `gridtui-sealed.txt`) |
+
+Pinned by `tm/tests/cli_week_cut.rs` (2: every day of a week equal to that day's `tm plan`, on the
+Wednesday and with the week sealed, the seal asserted from the checkpoint; and the midnight row
+above), beside `cli_week_grid`'s four,
+which now compare the kernel's cut with the fork's plan until R3 (their doc says so).
+
+### 3. Gaps (3620-3626 taken; 3627-3659 free for this track)
+
+**Gap 3620 — the planner's cut stops at its day's walls, and the week grid draws a record past
+midnight.**  1. *What.*  A grid row draws its day record's segments by clock hour, so a Pause that
+runs past local midnight lands in that row's early hours; the planner's cut (`GridCut.segSpans`,
+`Planner.pastSpans` at the record's day) cuts it by that day's walls clipped to the day, so the
+half of a midnight-crossing meeting after midnight is drawn `pause` (P63), while the NEXT day's plan
+draws that half as a wall row.  DRIVEN (`drive/midnight.txt`, both binaries), pinned by
+`cli_week_cut::a_pause_past_midnight_is_cut_by_its_days_walls`, counted by the census above.
+2. *Why.*  The step was one definition of the cut (§5.3); the planner never meets its record past
+midnight (its `now` is on its own day), so its cut says nothing about the next day's walls, and a
+per-day composition — each calendar day's part of a segment cut by that day's `segSpans` — is a new
+composition this step did not build: its partition law needs `Cal.instantOf`'s midnights to be
+monotone, which `Cal.lean` does not prove.  3. *Cost.*  A meeting that crosses midnight while a
+block runs through it is drawn half `pause` in the week grid, against D65's "the wall alone" as
+D69's call carried it to the grid; no other cell moves.  4. *Clears it.*  The owner's reading: keep
+(P63 stands as issued), or cut each calendar day's part by that day's walls — `segSpans` per day
+with a `Cal` monotonicity lemma — which makes the midnight half the wall again and restates P63.
+
+**Gap 3621 — during an open interruption the TUI's Today head reads `elapsed 0m` over the next
+planned row.**  1. *What.*  DRIVEN on both binaries (`drive/d71tui.txt`): `^t4` from 09:00, an
+interruption from 09:40, the TUI at 09:42 draws the head `elapsed 0m ▐░…▌ · paused` while `tm now`
+reads `40m of 60m · paused` — the head is the row `emit::now_window` answers, the next planned one,
+and not the running block.  2. *Why.*  Not D71's; found by its drive.  3. *Cost.*  Two surfaces
+disagree about the running block's minutes during an interruption.  4. *Clears it.*  The head reads
+the running block's worked minutes whenever `state.active` is set, as `tm now` does (P49).
+
+**Gap 3622 — a TUI verb that WRITES a plan file still has its status line replaced by a file
+changed notice.**  1. *What.*  §1's watcher fix drops access events; a verb's own write is a change,
+so `tm done` in the TUI still shows `2026-09-07.md changed` and not `done: ok`.  2. *Why.*  Telling
+the TUI's own writes from an editor's needs the paths the verb wrote, or a quiet window after it —
+a change to the watcher's design.  3. *Cost.*  A successful verb's message is lost (the screen shows
+the new state).  4. *Clears it.*  The verb seam hands the watcher the paths it wrote (the undo
+recorder holds them) and those events are skipped once.
+
+**Gap 3623 — the week grid's cut is asked for on the Review screen only, so a refused tree draws the
+last cut.**  1. *What.*  `tui::reload` asks the kernel for the week's cut when the Review screen is
+shown; a refusal keeps the last cut and says `week grid not refreshed: …`, and on the first entry to
+the screen there is no last cut, so every Pause is drawn whole.  2. *Why.*  The ranking has the same
+shape (`priorities not refreshed`), and the host keeps no cut to fall back on by design.  3. *Cost.*
+While the kernel refuses the tree the grid's pause/wall split can be stale or uncut, said on the
+status line.  4. *Clears it.*  The cut carries the tree it was answered for, and the screen draws no
+grid for a tree it was not.
+
+**Gap 3624 — the week cut's refusal is reached by a unit test and by no binary test.**  1. *What.*
+`day::read_week_cut` refuses by name a Pause of the host's replay the answer does not cut, and
+faults on an answer that is not one; the day module's
+`a_pause_the_answer_does_not_cut_is_refused_and_one_it_cuts_is_read` drives both on crafted
+answers, and no binary test can: the one way the refusal happens is the log changing between the
+verb's read of it and the cut's.  2. *Why.*  A race between two reads is not reproducible from
+`--now`.  3. *Cost.*  The refusal's words are pinned; its trigger is argued, not driven.
+4. *Clears it.*  The cut's request reads the log bytes the verb's replay read, once.
+
+**Gap 3625 — a block running across local midnight reads `0m` worked after midnight in `tm now`.**
+1. *What.*  DRIVEN on both binaries (`drive/midnight.txt`): `^t4` from Tuesday 23:00, the late call
+23:30–00:30 pausing it; at Wednesday 00:40 `tm now` reads `started 23:00 · 0m of 60m` while `tm
+plan`'s open row reads `running · 20m left` (40 worked).  `.tm/state.json`'s `active.started` is a
+clock time, and the header reads it on TODAY's date — after midnight that is tonight's 23:00, in the
+future.  2. *Why.*  Not this step's; found by the P63 drive.  3. *Cost.*  After midnight the header,
+and whatever else reads the start the same way, see no worked minutes for a block begun the evening
+before — two readers of one start disagree.  4. *Clears it.*  The start read from the log's own
+`start` instant (the replay's open block), as the planner reads it.
+
+**Gap 3626 — a week review needs a tree the kernel loads.**  1. *What.*  The grid's cut is the
+kernel's, and the kernel reads the walls from the plan it loads, so on a tree the kernel refuses
+`tm review week` is refused by name — for a past week too, which `9dfb610`'s host cut reviewed.
+DRIVEN (`drive/refused-*`): a duplicated `^t4` line; `9dfb610` `--date 2026-09-07` exit 0 (the current
+week exit 1 already, its deadline health asking the kernel); after, both exit 1 with `notADemotion`
+by name.  2. *Why.*  No cut without the walls, and no host cut to fall back on (§5.3): a review
+drawing a meeting as a pause on a broken tree would be a silent wrong answer.  3. *Cost.*  On a
+tree the kernel refuses, no week review can be read until `tm check` names the lines and they are
+fixed.  4. *Clears it.*  The review prints every monitor but the grid, and says why the grid is
+absent — none of the others reads the plan's walls.
+
+### 4. Acceptance, and how it was measured
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py`, `cli_latency`, the census and the drives, 8 GB and `timeout 120` for the new witnesses);
+`git status --porcelain` of the worktree unchanged across every `check.sh` and workspace run, and
+the plants and the named suites run in a clone under `scratchpad/w39-t/clone`, never here.
+
+* **`check.sh`, every line ok, exit 0** (27 s warm, the kernel already built): build ok; totality ok;
+  axiom audit **5,877** theorems (Classical.choice 3,020, Quot.sound 4,474, propext 5,482; 392 on
+  none) — W-38's 5,861 and this step's sixteen; Negative.lean rejected; FFI 95; corpus 29/37 and
+  4/5; stage goals 6, all stage 6; prose citations 50,012 (2,203 allowed, 0 unused); new
+  definitions mutated 534 rostered, 0 owed; parity 63 (P1-P63), next free P64; no two names for
+  one definition, 3,288 bodies, 0 UNANSWERED; every emitted definition reached, 1,240 reachable
+  (1,223 before: all eleven of this step's definitions, PastCut's three and Planner's
+  `wallsOfDay`, `clipWall`, `sortWallsFast`), 1,199 exempt — the file did not grow — 0 UNANSWERED; fields 17/17; inputs 33 of 37
+  (4 exempt); sent 28/28; written 34/28/3; the kernel replays 91 modules.
+* **`cargo test --workspace --no-fail-fast`, THREE runs of this commit's code** (D46), then a
+  FOURTH: runs 2 and 3 — **106 result lines, 1,738 passed, 0 failed, 13 ignored** each (24 min 28 s,
+  20 min 58 s); run 4 — 1,737 passed, **1 FAILED**: `cli_latency`'s T11 test, its stall row, `tm drop
+  ^z15` still running after one second, with every row of that run inflated (the first verb 2.73 s
+  against 2.25 s, the hand undo 1.99 s against 1.36 s) while other sessions' builds held the load at
+  15-20 — gap 1333's class.  `tm drop` there reaches no code this step changed but the walls call's
+  shared builder, which sends the same bytes; re-run: `cli_latency` three times standalone at load
+  12-17, 6 passed each (stall row worst 728-778 ms), and interleaved with `9dfb610`'s binary at load
+  13-18 the stall row read 699-749 ms after against 714-748 ms before.  No `.proptest-regressions`
+  file moved.  1,738 is W-38's 1,729 plus this step's nine tests, and the two new binaries make 106.
+  A run BEFORE the last two test edits (`kernel_call_counts`' pin, the door test) failed exactly
+  those two and nothing else: 1,735 passed, 2 failed.
+* **The named suites, `--include-ignored`, one run each** (in the clone, its `tm/`, `tm-core/` and
+  kernel library byte-identical to this commit's): T5 (`kernel_replay_parity`) 33, the door
+  (`kernel_log_door`) **24** (23 + this step's door test), `cli_switch_acceptance` 16,
+  `kernel_call_counts` 2, `one_padder` 9, `one_renderer` 25, `kernel_row_cells` 26,
+  `kernel_item_grammar` 6, `kernel_planner_wire` 23, `planner_classes` 44 (169 s),
+  `planner_invariants` 38 (753 s, load 20-48), `cli_pause_interrupted` 4, `cli_week_cut` 2,
+  `cli_week_grid` 4, `cli_start_paused` 4, `cli_pause_drawn` 24, `review_week` 17, `review_edges` 16,
+  `tui_queue_screens` 28, `cli_json_matrix` 6 — every one passed.  **A first pass of these in the
+  clone failed seven grid tests, and the failure was the clone's, not the code's:** `rsync -a` had
+  restored the worktree's older mtimes over sources a plant had just rebuilt from, so `cargo` kept
+  the last plant's binary (pause and wall swapped).  After `cargo clean -p tm -p tm-core` every
+  suite passed; the plant verdicts were unaffected (each plant writes its file afresh).
+* **`cli_latency`**: the interleaved runs of §2 — two sets of three with `9dfb610`'s test binary and
+  three with this commit's, 6 passed in every one; `review week` before 435.3-445.1 ms and after
+  526.5-536.8 ms in the first set (load 9.5-14.8), before 424.7-641.9 ms and after 486.1-516.7 ms in
+  the second (load 13.3-18.4).
+* **D40 for the Lean** (check 9, `mutate.py --write`): twelve definitions, sixteen constants, every
+  one PINNED — `GridCut.segSpans` (default, `[]`) by `pastSpans_is_segSpans`, `coveredSpans`
+  (default, `[]`) by the partition law, `Refusal.json` by `the_week_refusal_is_the_err_emit_shape`,
+  `readWeek` by `readWeek_is_run`, `isPause` (both), `cutPieceJson`, `cutPauseJson`, `cutDayJson`,
+  `cutJson` and `withCut` (default and the identity on its accumulator) by
+  `the_weeks_cut_is_answered`, `answer` by `answer_without_a_week`, and `Boundary.wallsEmit`
+  (re-audited: its body now calls `GridCut.answer`) by `wallsEmit_refuses_without_the_replay`.
+* **D40 for the Rust** (`scratchpad/w39-t/plants.py`, each plant in the clone and restored): **8 of
+  8 KILLED** — the D71 refusal removed; the watcher reporting every event; `PauseCut::pieces_of`
+  answering nothing; `heat_of` drawing a cut Pause whole; the coverage refusal removed; the week not
+  sent; no sealed record sent; pause and wall swapped in the decoder.  **The first run left one
+  alive, and it was the drive's own claim:** "no sealed record sent" SURVIVED, because the grid test
+  said it reviewed a sealed week and the replay cache had sealed nothing — a test tree's undo stack
+  pins its whole history, so nothing folds.  The test now clears the undo stack, logs a day of the
+  next week, reviews on its Thursday and ASSERTS the seal from `ckpt.json` (ledger day 739872, a
+  sealed `2026-09` month) before comparing; the plant then dies.  The door suite gained
+  `the_doors_week_section_carries_the_weeks_sealed_records_back` for the same function, because
+  its own gate (`every_door_function_the_switch_calls_is_exercised_here`) failed on the first
+  workspace run until a door test named it.
+* **`kernel_call_counts`, re-measured and not loosened**: `tm review week` carries a third `log`
+  section — the week cut's `log+walls` call — pinned exactly beside the capacity call's (its own
+  `expected_week_cut_calls`); the other three capacity verbs are unchanged.  The first workspace
+  run failed on the old pin, which is the pin doing its job.

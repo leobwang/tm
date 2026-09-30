@@ -19,6 +19,7 @@
 //! | [`the_doors_tail_headers_are_the_recorders`] | §14.3 row R6: `tm undo`'s recorder reads the same headers from the same cut |
 //! | [`the_doors_hot_scope_answers_every_all_time_question`] | gap 135: every §8.4 column-**A** fact is whole at `Hot`, the two done-date questions included |
 //! | [`the_doors_total_is_the_logs_all_time_entry_count`] | gap 136: `tm log`'s `total` is `facts.entryCount`, not the row count of the scope |
+//! | [`the_doors_week_section_carries_the_weeks_sealed_records_back`] | W-39 (gaps 3432, 3528): the week grid's cut asks with the week's sealed day records, so a day below the ledger is in its answer |
 //!
 //! Nothing here is a twin of the shipped code: each test calls the function `Ctx` will call.
 
@@ -540,6 +541,65 @@ fn the_doors_capacity_section_resumes_the_processs_own_checkpoint() {
         );
     }
     eprintln!("the capacity section: cold {} bytes, hot {} bytes", cold.len(), hot.len());
+}
+
+/// **W-39 track T's door: the `log` section the week grid's cut asks with** (README gaps 3432
+/// and 3528). `week_log_section` is `capacity_log_section`'s resume — this process's own
+/// checkpoint, `facts: true`, `reseal: null` — with the snapshot's sealed day records of the
+/// asked days in its `sealed` field, so the kernel's answer holds every day of the week: a day
+/// BELOW the ledger is in the answer's facts only because the request carried its record back
+/// (`Seal.mergeSealed`, the owner's D13).  Driven over the fourteen-day corpus log, whose replay
+/// seals days; the seal is asserted, and the capacity section — the same resume with no records
+/// — is the comparison that shows the records are what put the days there.
+#[test]
+fn the_doors_week_section_carries_the_weeks_sealed_records_back() {
+    let text = std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../kernel/corpus/logs/energy-14d.jsonl"),
+    )
+    .expect("the corpus log");
+    let (dir, bytes) = tree(&text);
+    let today = day_after(&text);
+    let day = kernel_log::day_of(today);
+    let read = door(dir.path(), &bytes, today, kernel_log::Scope::Hot);
+    let ledger = read.ledger_day.expect("the replay sealed nothing, so the week's records would be vacuous");
+    let (from, to) = (ledger.saturating_sub(7), ledger.saturating_sub(1));
+
+    let week = kernel_log::week_log_section(dir.path(), &bytes, &wire(dir.path()), day, from, to)
+        .expect("a section");
+    let plain = kernel_log::capacity_log_section(dir.path(), &bytes, &wire(dir.path()), day)
+        .expect("a section");
+    assert!(week.starts_with(r#"{"ckpt":{"v":1,"#), "the week's section is not a resume: {}", &week[..60.min(week.len())]);
+    assert!(plain.contains(r#""sealed":null"#), "the capacity section carries sealed records");
+    let section: Value = serde_json::from_str(&week).expect("the section is JSON");
+    let carried: Vec<u64> = section["sealed"]["days"]
+        .as_array()
+        .expect("`sealed.days`")
+        .iter()
+        .map(|r| r[0].as_u64().expect("a record's day"))
+        .collect();
+    assert!(!carried.is_empty(), "no sealed record of days {from}..={to} was carried back");
+    assert!(carried.iter().all(|d| (from..=to).contains(d) && *d < ledger), "{carried:?} outside {from}..={to}");
+    assert!(carried.windows(2).all(|w| w[0] < w[1]), "sealed days not ascending: {carried:?}");
+
+    let answered = |section: &str| -> Vec<u64> {
+        let req = format!(r#"{{"docs":[],"now":"{today}","tz":{},"log":{section}}}"#, wire(dir.path()));
+        let resp = tm_kernel_ffi::call(&req).unwrap_or_else(|e| panic!("the section faults: {e:?}"));
+        let v: Value = serde_json::from_str(&resp).expect("a response");
+        assert!(v.get("err").is_none(), "the section was refused: {resp}");
+        v["ok"]["log"]["facts"]["days"]
+            .as_array()
+            .expect("facts.days")
+            .iter()
+            .map(|d| d[0].as_u64().expect("a day's number"))
+            .collect()
+    };
+    let with = answered(&week);
+    let without = answered(&plain);
+    for d in &carried {
+        assert!(with.contains(d), "day {d} was carried back and is not in the answer: {with:?}");
+        assert!(!without.contains(d), "day {d} is below the ledger and in the plain answer: {without:?}");
+    }
+    eprintln!("the week section: {} sealed record(s) of days {from}..={to} carried back, ledger {ledger}", carried.len());
 }
 
 /// **The instrument the module-wide `#![allow(dead_code)]` takes away** (W-7 audit, defect 2).

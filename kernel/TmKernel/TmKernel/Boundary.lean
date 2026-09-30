@@ -5,7 +5,7 @@ import TmKernel.Priority
 import TmKernel.Capacity
 import TmKernel.Log
 import TmKernel.Width
-import TmKernel.WallTimer
+import TmKernel.GridCut
 import TmKernel.SealWire
 /-!
 # The boundary: `String → String`, and nothing else
@@ -3837,14 +3837,14 @@ def emitStep (acc : Except EmitRefusal (List (List Char) × Nat)) (v : JVal) :
       | .ok l => .ok (l :: ls, i + 1)
       | .error w => .error (.refused i w)
 
-/-- **The walls form** (W-37 track T, README gap 3139; D61, D65): `emit` as `{"walls": …}` asks what
-the day's walls write — `WallTimer.answer` over this request's replay, plan, zone and clock. -/
+/-- **The walls form** (W-37 track T, README gap 3139; D61, D65): `emit` as `{"walls": …}` asks what the day's walls
+write — `GridCut.answer`, `WallTimer.answer` over this replay, plan, zone and clock, and a `week`'s cut (W-39). -/
 def wallsEmit (j v : JVal) : Except JVal (Option JVal) :=
   match readLogSection j, runLoad j, jget j "tz" with
   | .error e, _, _ | _, .error e, _ => .error e
   | .ok lg, .ok (p, cmds, c), tz =>
     let zo := match tz with | .ok (some t) => (match readTz t with | .ok z => some z | .error _ => none) | _ => none
-    match WallTimer.answer v zo (lg.bind LogAnswer.facts) (Look.wallIndex · · p.val) cmds.length c.now (c.blockMin.map (·.val)) with
+    match GridCut.answer v zo (lg.bind LogAnswer.facts) (Look.wallIndex · · p.val) cmds.length c.now (c.blockMin.map (·.val)) with
     | .ok a => .ok (some a)
     | .error r => .error r.json
 
@@ -13023,8 +13023,8 @@ theorem wallsEmit_refuses_without_the_replay (j v : JVal) (lg : Option LogAnswer
   unfold wallsEmit
   rw [hl, hr]
   simp only [hf]
-  rw [WallTimer.answer_refuses_without_the_replay _ _ _ _ _ _ _ hq]
-
+  rw [GridCut.answer_refuses_without_the_replay _ _ _ _ _ _ _ hq]
+  rfl
 
 
 set_option maxRecDepth 40000 in
