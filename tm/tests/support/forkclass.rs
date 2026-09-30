@@ -132,8 +132,11 @@
 //! break is `.tm/state.json`'s alone (`HOST_ONLY_STATE`: a break is logged when
 //! it ENDS) — [`running`]. [`binary_holds`] is the property every stored world
 //! is held to: the cache and the log agree on what is open, a running break
-//! began after the last `start`/`done`/`stop` (each ends one), and a paused
-//! block has a reason the binary would have paused it for. Until W-37 twelve
+//! began after the last `start`/`done`/`stop` (each ends one), and the cache is
+//! what the binary rebuilds from the log — the block's pause included, asked of
+//! the binary with the running break it cannot log (clause 5, since W-39: until
+//! then a hand copy of `tm start`'s pause rule, clause 4, answered for it —
+//! README gap 3536). Until W-37 twelve
 //! lines failed it — the ten interruptions set in `state.json` alone and two
 //! breaks begun before the block under them — and all twelve were re-drawn
 //! under D64(b) by the generator that now logs the one and orders the other.
@@ -603,12 +606,14 @@ pub fn class_of(b: &Built) -> Class {
 ///    log holds**: `tm start`, `tm done` and `tm stop` each end one
 ///    (`tm/src/cli/day.rs`' `end_break`), so one still running began after all
 ///    of them.
-/// 4. **A paused block was paused by something the binary pauses it for**: the
-///    log's own `pause` (`OpenBlock::paused`), the running break (`tm break`
-///    pauses it), or an OPEN interruption (`tm interrupt` names and pauses the
-///    block it interrupts, and since W-38 `tm start` inside one writes the block
-///    paused, D69/P60) — and a block that is not paused has none of them.
-///    `est_min` is the cache's alone (`HOST_ONLY_STATE`) and is not asked.
+/// 4. **Withdrawn at W-39 (README gap 3536): the block's pause is clause 5's.**
+///    Clause 4 restated `tm start`'s pause rule by hand — a paused block had to
+///    be paused by the log's `pause`, the running break or an open interruption
+///    — beside clause 5, which asks the binary; the land step had to edit it by
+///    hand when P60 changed the rule (gap 3478), and would have had to at every
+///    change after. Clause 5 now asks the binary for `active.paused` too
+///    ([`binary_rebuilds`]); the number is not reused, so a `d64b.held` record
+///    naming `4:` still names the clause that refused its old world.
 pub fn binary_holds(b: &Built) -> Result<(), Vec<String>> {
     let st = &b.world.state;
     let r = running(b);
@@ -635,22 +640,6 @@ pub fn binary_holds(b: &Built) -> Result<(), Vec<String>> {
             .max();
         if let Some(last) = last.filter(|l| *l > at) {
             bad.push(format!("3: a break running since {started} began before the log's last start/done/stop at {last}"));
-        }
-    }
-    if let (Some(a), Some(ob)) = (st.active.as_ref(), r.block) {
-        // Any OPEN interruption: `tm interrupt` names and pauses the block it interrupts, and
-        // since W-38 `tm start` inside an open interruption writes the block paused (D69, P60,
-        // `ctx::open_interruption`; README gap 3478) -- until the land step this read only an
-        // interruption NAMING the block, the fork-point `tm start`'s rule.
-        let by_interrupt = r.interrupt.is_some();
-        let reason = ob.paused || r.brk.is_some() || by_interrupt;
-        if a.paused != reason {
-            bad.push(format!(
-                "4: the block is {}paused and the log pauses it {ob_p}, a break runs {}, an interruption is open {by_interrupt}",
-                if a.paused { "" } else { "not " },
-                r.brk.is_some(),
-                ob_p = ob.paused,
-            ));
         }
     }
     bad.extend(binary_rebuilds(&b.world));
@@ -687,14 +676,24 @@ pub fn host_only_state() -> Vec<String> {
 ///
 /// 5. **The cache is what the binary rebuilds from the log**: with `.tm/state.json`
 ///    deleted, `tm now` rebuilds it (D42), and every field outside the binary's own
-///    `HOST_ONLY_STATE` table must equal the stored one;
+///    `HOST_ONLY_STATE` table must equal the stored one — **and the running block's
+///    `paused` must be the one the binary derives** (W-39, README gap 3536: until then
+///    clause 4 restated `tm start`'s pause rule by hand). `active.paused` is in the
+///    table because a RUNNING break pauses the block and logs nothing until it ends, so
+///    a rebuild from the log alone cannot see that pause; so the binary is asked with
+///    `.tm/state.json` holding the table's top-level fields ALONE — the running break
+///    among them — and no block: the reconcile then takes the block from the log and
+///    derives its pause from every writer the log records and the break the cache still
+///    holds (`ctx::derived_state`'s `running_break`, `ctx::logged_pause`), and `tm --json
+///    now` reports it;
 /// 6. **The world is at rest**: `tm now` over the stored world appends nothing to
 ///    the log — no housekeeping (D61's meeting pause, §6.3's automatic close) is
 ///    owed, so the world the binary PLANS is the world stored.
 pub fn binary_rebuilds(world: &ClassWorld) -> Vec<String> {
     let host_only = host_only_state();
     let mut bad = Vec::new();
-    let write = |keep: bool| -> Result<tempfile::TempDir, String> {
+    // The world's files, and `.tm/state.json` holding `state` when there is one.
+    let write = |state: Option<&Value>| -> Result<tempfile::TempDir, String> {
         let dir = tempfile::TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
         let root = dir.path();
         std::fs::create_dir_all(root.join(".tm")).map_err(|e| e.to_string())?;
@@ -708,33 +707,32 @@ pub fn binary_rebuilds(world: &ClassWorld) -> Vec<String> {
         std::fs::write(root.join(".tm/log.jsonl"), &world.log).map_err(|e| e.to_string())?;
         let cfg = world.ratio.as_ref().map(|r| format!("[day]\nbudget_ratio = {r}\n")).unwrap_or_default();
         std::fs::write(root.join("config.toml"), cfg).map_err(|e| e.to_string())?;
-        if keep {
-            let st = serde_json::to_string(&world.state).map_err(|e| e.to_string())?;
+        if let Some(st) = state {
+            let st = serde_json::to_string(st).map_err(|e| e.to_string())?;
             std::fs::write(root.join(".tm/state.json"), st).map_err(|e| e.to_string())?;
         }
         Ok(dir)
     };
-    let run = |dir: &std::path::Path| -> Result<(), String> {
-        let out = std::process::Command::new(env!("CARGO_BIN_EXE_tm"))
-            .arg("--dir")
-            .arg(dir)
-            .arg("--now")
-            .arg(world.now.to_rfc3339())
-            .arg("now")
-            .output()
-            .map_err(|e| format!("tm now: {e}"))?;
+    let run = |dir: &std::path::Path, json: bool| -> Result<String, String> {
+        let mut cmd = std::process::Command::new(env!("CARGO_BIN_EXE_tm"));
+        cmd.arg("--dir").arg(dir).arg("--now").arg(world.now.to_rfc3339());
+        if json {
+            cmd.arg("--json");
+        }
+        let out = cmd.arg("now").output().map_err(|e| format!("tm now: {e}"))?;
         if out.status.success() {
-            Ok(())
+            Ok(String::from_utf8_lossy(&out.stdout).to_string())
         } else {
             Err(format!("tm now exited {:?}: {}", out.status.code(), String::from_utf8_lossy(&out.stderr)))
         }
     };
+    let stored = serde_json::to_value(&world.state).unwrap_or(Value::Null);
     // 6. at rest.
-    match write(true) {
+    match write(Some(&stored)) {
         Err(e) => bad.push(format!("6: the world could not be written: {e}")),
-        Ok(dir) => match run(dir.path()) {
+        Ok(dir) => match run(dir.path(), false) {
             Err(e) => bad.push(format!("6: {e}")),
-            Ok(()) => {
+            Ok(_) => {
                 let after = std::fs::read_to_string(dir.path().join(".tm/log.jsonl")).unwrap_or_default();
                 if after != world.log {
                     let added: Vec<&str> = after.strip_prefix(world.log.as_str()).unwrap_or(&after).lines().collect();
@@ -744,16 +742,15 @@ pub fn binary_rebuilds(world: &ClassWorld) -> Vec<String> {
         },
     }
     // 5. the cache is the log's.
-    match write(false) {
+    match write(None) {
         Err(e) => bad.push(format!("5: the world could not be written: {e}")),
-        Ok(dir) => match run(dir.path()) {
+        Ok(dir) => match run(dir.path(), false) {
             Err(e) => bad.push(format!("5: {e}")),
-            Ok(()) => {
+            Ok(_) => {
                 let rebuilt: Value = std::fs::read_to_string(dir.path().join(".tm/state.json"))
                     .ok()
                     .and_then(|t| serde_json::from_str(&t).ok())
                     .unwrap_or(Value::Null);
-                let stored = serde_json::to_value(&world.state).unwrap_or(Value::Null);
                 let mut keys: Vec<String> = stored.as_object().into_iter().flatten().map(|(k, _)| k.clone())
                     .chain(rebuilt.as_object().into_iter().flatten().map(|(k, _)| k.clone()))
                     .collect();
@@ -773,6 +770,33 @@ pub fn binary_rebuilds(world: &ClassWorld) -> Vec<String> {
                     if a != z && !(blank(&a) && blank(&z)) {
                         bad.push(format!("5: .tm/state.json's `{k}` is {a} and the binary rebuilds {z} from the log"));
                     }
+                }
+            }
+        },
+    }
+    // 5, the block's pause (README gap 3536): the cache holding only what the log cannot
+    // carry — the table's top-level fields — so the binary derives the block, and its pause,
+    // from the log and the running break.
+    let kept: serde_json::Map<String, Value> = stored
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(k, _)| host_only.iter().any(|h| h == *k))
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
+    match write(Some(&Value::Object(kept))) {
+        Err(e) => bad.push(format!("5: the world could not be written: {e}")),
+        Ok(dir) => match run(dir.path(), true) {
+            Err(e) => bad.push(format!("5: {e}")),
+            Ok(out) => {
+                let told: Value = serde_json::from_str(&out).unwrap_or(Value::Null);
+                let derived = told["active"]["paused"].as_bool();
+                let cached = world.state.active.as_ref().map(|a| a.paused);
+                if derived != cached {
+                    bad.push(format!(
+                        "5: .tm/state.json's `active.paused` is {cached:?} and the binary derives {derived:?} from the log \
+                         and the fields it cannot carry"
+                    ));
                 }
             }
         },
@@ -804,6 +828,198 @@ pub fn frozen_lines() -> &'static Vec<Value> {
             .map(|l| serde_json::from_str(l).expect("a frozen class line is JSON"))
             .collect()
     })
+}
+
+// ---------------------------------------------------------------------------
+// The seeded batch (the owner's D72, README gap 3533)
+// ---------------------------------------------------------------------------
+
+/// **The seeded batch**: the class draw's first [`BATCH_DRAWS`] draws from
+/// [`BATCH_SEED`] whose world the shipped binary holds ([`binary_holds`]), each frozen
+/// with the fork's answers by value — one line per draw, the class file's own line shape
+/// (the world, its provenance, and `forkclass::ANSWERS`), named `batch draw <index>`.
+///
+/// **Why a batch beside the classes** (D72): the class file holds ONE primary world per
+/// class and the worlds derived from them, so a divergence in a world no frozen line
+/// holds is found only by a comparison that explores; `planner_invariants`' hash arm
+/// explores fresh draws on every run, and R3 deletes the planner it runs. The batch is a
+/// fixed sample of what the arms draw — many worlds per class, the generator's own mix
+/// of items, walls, routines, logs and widenings — that outlives R3 in plain `cargo test
+/// --workspace`; `tm-oracle plan` (`support/forkplan.rs`) keeps the exploring half.
+///
+/// **It is a property, not a list**: which draws it holds is `binary_holds`' answer
+/// (D64(b): a world the binary cannot build is not a comparand), so
+/// `planner_classes.rs`' `the_frozen_batch_is_every_draw_the_binary_holds` re-draws
+/// every index below [`BATCH_DRAWS`] and demands each held line's world be the draw's own
+/// and each missing index be refused, by clause.
+pub const FROZEN_BATCH: &str = "fork-4748911-planner-batch.jsonl";
+
+/// The batch's ChaCha seed text (the class draw's convention: its bytes, space-padded
+/// to 32; `class_draws`).
+pub const BATCH_SEED: &str = "W-39 track H batch, owner D72";
+
+/// How many draws of [`BATCH_SEED`] the batch considers.
+pub const BATCH_DRAWS: usize = 128;
+
+/// Where the batch lives.
+pub fn batch_path() -> std::path::PathBuf {
+    forkday::frozen_path().with_file_name(FROZEN_BATCH)
+}
+
+/// The batch's lines, read once, in file order; a draw carried twice FAILS.
+pub fn batch_lines() -> &'static Vec<Value> {
+    static BATCH: OnceLock<Vec<Value>> = OnceLock::new();
+    BATCH.get_or_init(|| {
+        let path = batch_path();
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: {e} — see support/forkclass.rs' FROZEN_BATCH", path.display()));
+        let mut seen = BTreeSet::new();
+        text.lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| {
+                let v: Value = serde_json::from_str(l).expect("a frozen batch line is JSON");
+                let d = v["draw"].as_u64().expect("a batch line names its draw");
+                assert!(seen.insert(d), "two batch lines for draw {d}");
+                v
+            })
+            .collect()
+    })
+}
+
+/// **A drawn line** — the class file's line shape (the world and its provenance; the
+/// caller writes the answers), named: a batch line `batch draw <index>`, a fresh draw of
+/// the oracle arm by its seed.
+pub fn drawn_line(name: String, seed: &str, index: usize, draw: &Draw, world: &ClassWorld, class: &str) -> Value {
+    json!({
+        "name": name, "class": class, "arm": draw.widening.arm(),
+        "case": format!("{:?}", draw.case), "seed": seed, "draw": index, "world": world.to_json(),
+    })
+}
+
+/// **A batch line** — [`drawn_line`] at [`BATCH_SEED`], named by its draw.
+pub fn batch_line(index: usize, draw: &Draw, world: &ClassWorld, class: &str) -> Value {
+    drawn_line(format!("batch draw {index}"), BATCH_SEED, index, draw, world, class)
+}
+
+// ---------------------------------------------------------------------------
+// Worlds the shipped binary WROTE (README gaps 3390 and 3398)
+// ---------------------------------------------------------------------------
+
+/// **The driven worlds**: a frozen class world, the shipped binary's own verbs run over it,
+/// and the world it leaves — frozen with the fork's answers by value, one line per [`DRIVES`]
+/// entry (W-39, README gap 3390).
+///
+/// **Why they are not class lines**: every class line is held to [`binary_holds`] — among its
+/// clauses D42's, that the cache is what the binary rebuilds from the log. The world of gap
+/// 3390 is `tm arrive` then `tm wake`, and `tm wake` clears `arrival`, `window` and `budget`
+/// while the rebuild restores all three from the day's `arrive` (README gap 3398, a host
+/// decision no one has taken): the binary WRITES that world with two ordinary verbs, and its
+/// own rebuild does not reproduce it. So it cannot be a class line, and freezing it as one would
+/// mean weakening clause 5. It is admitted here by the stronger property — the binary wrote it:
+/// `planner_classes.rs`' `every_driven_world_is_the_binarys_own_output` re-drives each line from
+/// its parent and demands the world byte for byte — and
+/// `the_driven_worlds_are_refused_by_binary_holds_only_where_gap_3398_says` pins that clause 5
+/// refuses it on exactly those three fields, so when gap 3398 is decided the line says so.
+pub const FROZEN_DRIVEN: &str = "fork-4748911-planner-driven.jsonl";
+
+/// **One drive**: the world a verb sequence leaves when the shipped binary runs it over a
+/// primary class line's world.
+pub struct Drive {
+    /// Its name, which its line carries.
+    pub name: &'static str,
+    /// The primary class line it starts from, by class.
+    pub from: &'static str,
+    /// The verbs, in order, each with the instant it runs at (`tm --now`).
+    pub verbs: &'static [(&'static str, &'static [&'static str])],
+    /// The instant the day is planned at.
+    pub now: &'static str,
+    /// **A gap whose fix another track of the same run owns**, while the kernel still plans
+    /// the day otherwise: the comparison then DEMANDS the named difference, and fails, naming
+    /// this field, the moment the kernel agrees — so the step that composes the fix deletes it
+    /// and the line compares like any other. `None` once composed.
+    pub pending: Option<&'static str>,
+}
+
+/// **The drives.** Gap 3390's world: `idle/lounge` (woke 06:30, arrived 07:00), `tm wake 06:30`
+/// at 07:30 — the day re-opened at the wake it already logged, so the second `wake` line moves
+/// no other field (a wake at another time also moves `wake`: README gap 3661) — planned at
+/// 10:30: fork `Planner::new` falls back to the day's first logged `arrive` for the
+/// arrival the state no longer holds, and plans `07:00–16:00`; the kernel's
+/// `Look.Today.planArrivalSec` read `now` at W-39's fork of `rebuild-on-lean`, which track A
+/// (the same run) is changing to agree.
+pub const DRIVES: [Drive; 1] = [Drive {
+    name: "arrive then wake (gap 3390)",
+    from: "idle/lounge",
+    verbs: &[("2026-09-07T07:30:00-05:00", &["wake", "06:30", "--slept", "8h"])],
+    now: "2026-09-07T10:30:00-05:00",
+    pending: Some(
+        "README gap 3390: the kernel plans a day whose state holds no arrival from `now`, the fork from \
+         the day's first logged `arrive` — track A (W-39) makes the kernel read the logged arrival",
+    ),
+}];
+
+/// Where the driven lines live.
+pub fn driven_path() -> std::path::PathBuf {
+    forkday::frozen_path().with_file_name(FROZEN_DRIVEN)
+}
+
+/// The driven lines, read once, in file order.
+pub fn driven_lines() -> &'static Vec<Value> {
+    static DRIVEN: OnceLock<Vec<Value>> = OnceLock::new();
+    DRIVEN.get_or_init(|| {
+        let path = driven_path();
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("{}: {e} — see support/forkclass.rs' FROZEN_DRIVEN", path.display()));
+        text.lines().filter(|l| !l.trim().is_empty()).map(|l| serde_json::from_str(l).expect("a driven line is JSON")).collect()
+    })
+}
+
+/// **Run a drive's verbs with the shipped binary over `parent`, and read back the world it
+/// leaves** — its documents (the parent's in their order, then any the verbs created, by
+/// path), its log and its `.tm/state.json`, planned at the drive's `now`.
+pub fn drive(parent: &ClassWorld, d: &Drive) -> Result<ClassWorld, String> {
+    let dir = tempfile::TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
+    let root = dir.path();
+    std::fs::create_dir_all(root.join(".tm")).map_err(|e| e.to_string())?;
+    for (p, t) in &parent.docs {
+        let f = root.join(p);
+        if let Some(up) = f.parent() {
+            std::fs::create_dir_all(up).map_err(|e| e.to_string())?;
+        }
+        std::fs::write(&f, t).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(root.join(".tm/log.jsonl"), &parent.log).map_err(|e| e.to_string())?;
+    let cfg = parent.ratio.as_ref().map(|r| format!("[day]\nbudget_ratio = {r}\n")).unwrap_or_default();
+    std::fs::write(root.join("config.toml"), cfg).map_err(|e| e.to_string())?;
+    std::fs::write(root.join(".tm/state.json"), serde_json::to_string(&parent.state).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    for (at, args) in d.verbs {
+        let out = std::process::Command::new(env!("CARGO_BIN_EXE_tm"))
+            .arg("--dir")
+            .arg(root)
+            .arg("--now")
+            .arg(at)
+            .args(*args)
+            .output()
+            .map_err(|e| format!("tm {args:?}: {e}"))?;
+        if !out.status.success() {
+            return Err(format!("tm {args:?} at {at} exited {:?}: {}", out.status.code(), String::from_utf8_lossy(&out.stderr)));
+        }
+    }
+    let now = DateTime::parse_from_rfc3339(d.now).map_err(|e| format!("{}: {e}", d.now))?.with_timezone(&parent.now.timezone());
+    let written: Vec<(String, String)> = planreq::docs_of_dir(root);
+    let mut docs: Vec<(String, String)> = parent
+        .docs
+        .iter()
+        .filter_map(|(p, _)| written.iter().find(|(q, _)| q == p).cloned())
+        .collect();
+    let mut new: Vec<(String, String)> = written.into_iter().filter(|(p, _)| !parent.docs.iter().any(|(q, _)| q == p)).collect();
+    new.sort();
+    docs.extend(new);
+    let log = std::fs::read_to_string(root.join(".tm/log.jsonl")).map_err(|e| e.to_string())?;
+    let state: RuntimeState = serde_json::from_str(&std::fs::read_to_string(root.join(".tm/state.json")).map_err(|e| e.to_string())?)
+        .map_err(|e| format!(".tm/state.json: {e}"))?;
+    Ok(ClassWorld { docs, log, state, now, mult: parent.mult.clone(), ratio: parent.ratio.clone() })
 }
 
 /// A day and its digest, as a frozen line carries it — `forkday`'s shape.
@@ -1181,6 +1397,112 @@ pub fn overrun_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
     }
     let mut w = parent.clone();
     w.now = now;
+    vec![w]
+}
+
+// ---------------------------------------------------------------------------
+// A TYPED pause over a meeting (README gap 3473)
+// ---------------------------------------------------------------------------
+
+/// How much wider than the meeting [`typed_worlds`]' pause is, at each end, in minutes — the
+/// P56 arm's typed widening (`plangen::timer_marks`' ten minutes).
+pub const TYPED_WIDER: i64 = 10;
+
+/// **The world after a meeting, with the pause TYPED ten minutes wider than the meeting at
+/// each end** (W-39, README gap 3473; parity P56) — derived from every world D61 derives
+/// AFTER a meeting ([`d61_worlds`]: the running block's pause stamped at the wall's start and
+/// its unpause at its end): the user typed `tm pause` [`TYPED_WIDER`] minutes before the
+/// meeting and `tm pause` again as long after it, so the log holds that pause and unpause in
+/// place of the wall's, and the binary's housekeeping writes nothing for the wall (the timer
+/// was already stopped when it began, `plangen::timer_marks`' rule and the kernel's
+/// `WallTimer`); planned [`TYPED_WIDER`] minutes after the typed unpause, as D61's world is
+/// after the meeting. The pause is longer than the wall on both sides, so P56's cut leaves it
+/// in two pieces — the shape the P56 arm's typed half compared live, and no frozen line held.
+/// Only where the typed pause begins after the block started and nothing else is logged
+/// after the meeting's pause. Its class is the world's own ([`class_of`]).
+pub fn typed_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
+    let wider = Duration::minutes(TYPED_WIDER);
+    let mut out = Vec::new();
+    for (w, lo) in d61_worlds(parent) {
+        let Some(a) = w.state.active.as_ref().filter(|a| !a.paused) else { continue };
+        let b = Built::of(w.clone());
+        let tz = b.cfg.tz;
+        let started = local_dt(tz, b.date(), a.started);
+        let id = a.id.as_str().to_string();
+        let line = |t: DateTime<Tz>, ev: Event| {
+            LogEntry::new(t.fixed_offset(), ev).to_json().expect("a timer entry serialises") + "\n"
+        };
+        // The meeting's pause and its unpause, the log's last two lines (D61's world after it).
+        let Some(hi) = w.log.lines().last().and_then(|l| serde_json::from_str::<Value>(l).ok()).and_then(|e| {
+            (e["ev"] == "unpause" && e["id"] == id.as_str())
+                .then(|| e["t"].as_str().and_then(|t| DateTime::parse_from_rfc3339(t).ok()))
+                .flatten()
+        }) else {
+            continue;
+        };
+        let hi = hi.with_timezone(&tz);
+        let pair = format!("{}{}", line(lo, Event::Pause { id: id.clone() }), line(hi, Event::Unpause { id: id.clone() }));
+        let Some(before) = w.log.strip_suffix(pair.as_str()) else { continue };
+        let now = hi + wider + wider;
+        let (_, day_end) = b.day_bounds();
+        let next_wall = b.walls().iter().any(|(_, l, _, _)| *l > hi && *l <= now);
+        if lo - wider <= started || now >= day_end || next_wall {
+            continue;
+        }
+        let mut t = w.clone();
+        t.log = format!("{before}{}{}", line(lo - wider, Event::Pause { id: id.clone() }), line(hi + wider, Event::Unpause { id }));
+        t.now = now;
+        out.push(t);
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// README gap 3281's order, on a frozen line (gaps 3474 and 3529)
+// ---------------------------------------------------------------------------
+
+/// **An interruption begun at a calendar wall's start, over the block it names** (W-39,
+/// README gaps 3474 and 3529) — the shape on which fork `collect_walls` and the kernel
+/// before W-38 track R drew step 1's rows in different orders. The fork pushes §9's running
+/// interruption as an ad-hoc wall keyed `(blocked start, id)` — the id the block it paused
+/// — and sorts: where a calendar wall begins at the same minute and its id sorts first (a
+/// generated wall's `w..` before a generated item's `z..`), the fork draws `[wall, lost]`,
+/// and the kernel before `Planner.stepOneOrder` drew `[lost, wall]`. The frozen lines holding
+/// a Lost and a Wall row at one start before W-39 (`interrupted-block/spent` and its `window`
+/// twin) hold them in the order both kernels draw (gap 3529). `Some(start)` when the world
+/// logs an OPEN interruption naming the running block, stamped at a calendar wall's blocked
+/// start, and that wall's id sorts before the block's.
+pub fn an_interruption_begins_at_a_wall(b: &Built) -> Option<DateTime<Tz>> {
+    let r = running(b);
+    let (Some(i), Some(ob)) = (r.interrupt, r.block) else { return None };
+    let named = i.id.as_deref().filter(|id| *id == ob.id)?;
+    let at = i.start?.with_timezone(&b.cfg.tz);
+    b.walls().iter().find(|(id, lo, _, _)| *lo == at && id.as_str() < named).map(|(_, lo, _, _)| *lo)
+}
+
+/// **The world an interruption begun at a wall's start holds at that wall's END** (W-39,
+/// README gaps 3474 and 3529) — derived from every primary world
+/// [`an_interruption_begins_at_a_wall`] answers for: `now` carried to the end of the wall
+/// the interruption began with, so the interruption's Lost row, which runs to `now`, and the
+/// Wall row tie on `(start, end)` and only step 1's walk orders them. There fork
+/// `collect_walls` sorts the wall first (its id before the block's) and the kernel before
+/// W-38 track R's `Planner.stepOneOrder` drew the Lost row first — the direction no frozen
+/// line held (gap 3529: the lines with both rows at one start end them apart, so the final
+/// `(start, end)` sort decided). Nothing else moves: the interruption still runs and the
+/// block stays paused under it, so no timer mark is owed. Its class is the parent's.
+pub fn order_worlds(parent: &ClassWorld) -> Vec<ClassWorld> {
+    let b = Built::of(parent.clone());
+    let Some(lo) = an_interruption_begins_at_a_wall(&b) else { return Vec::new() };
+    let named = running(&b).interrupt.and_then(|i| i.id.clone()).unwrap_or_default();
+    let Some(hi) = b.walls().iter().filter(|(id, l, _, _)| *l == lo && id.as_str() < named.as_str()).map(|(_, _, h, _)| *h).min() else {
+        return Vec::new();
+    };
+    let (_, day_end) = b.day_bounds();
+    if hi <= parent.now || hi >= day_end {
+        return Vec::new();
+    }
+    let mut w = parent.clone();
+    w.now = hi;
     vec![w]
 }
 
@@ -1679,7 +2001,11 @@ pub fn compare_line(line: &Value, t: &mut ClassTally) -> Vec<String> {
     let class_key = line["class"].as_str().unwrap_or("<no class>").to_string();
     // A finding names the LINE: a secondary line files under its class and carries its kind
     // (`idle/lounge (window)`), so a failure says which of a class's lines it is (W-38).
-    let key = format!("{class_key}{}", line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default());
+    // A batch line names itself by its draw (W-39, `batch draw 17 (running/lounge)`).
+    let key = match line["name"].as_str() {
+        Some(n) => format!("{n} ({class_key})"),
+        None => format!("{class_key}{}", line["secondary"].as_str().map(|s| format!(" ({s})")).unwrap_or_default()),
+    };
     let mut findings = Vec::new();
     let world = match ClassWorld::of_json(&line["world"], tz) {
         Ok(w) => w,

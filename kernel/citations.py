@@ -487,7 +487,13 @@ EXCLUDED = (
 # SUBSET of Rust's (`//` and `/* */`, and Rust's nesting rule only ever ends a
 # comment later, never earlier), so no byte of a `.c` file is read as code.
 READERS = {".lean": "lean", ".rs": "rust", ".c": "rust", ".md": "plain",
-           ".txt": "plain", ".sh": "plain", ".py": "plain", ".toml": "plain"}
+           ".txt": "plain", ".sh": "plain", ".py": "plain", ".toml": "plain",
+           # W-39 (README gap 3533): `tm-oracle plan`'s graft onto fork 4748911,
+           # `plan-seam.patch` -- a header of prose that NAMES the fork's code it
+           # changes, then a unified diff.  Read as text like a `.md`: its prose
+           # is swept, and a diff line carries no backticks unless a doc comment
+           # of the fork's does.  The first new KIND of file since W-27.
+           ".patch": "plain"}
 # **ONE ANSWER TO "WHICH EXTENSIONS DOES A GATE READ"** (W-30).  The WALK needs
 # it too -- an ignored file is pruned only when no reader claims it -- so the
 # set lives in `leanfiles` and this reconciliation is what stops the two from
