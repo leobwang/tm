@@ -76384,3 +76384,467 @@ Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMa
   oracle's other modes**: stage 5's parity arm over the same binary — 469 logs, 8,442 `Replay` keys,
   195,243 scalar values, P21 on 49 day records and nothing else — and the fork's round trip, 1,375
   kernel renderings read back, the figures the ledger has carried since W-12.
+
+
+<!-- =====================================================================
+     APPENDED 2026-09-30: stage 6 (the planner), run **W-39**, **LAND STEP**,
+     merged in its own worktree (`.claude/worktrees/land-w39`, branch
+     `land-w39`) off `9dfb610` and fast-forwarded onto `rebuild-on-lean`
+     only when green; the main checkout stayed on `rebuild-on-lean`
+     throughout.  Gap range **3700-3709**: 3700 taken, 3701-3709 free.
+     Parity: **none issued**.  No track left a PARITY-PENDING line (K and H
+     said so in their banners); T issued P62-P63, A issued none, so the
+     register runs P1-P63 with no hole and track A's two pre-allocated numbers were never issued —
+     nothing to renumber.
+     ===================================================================== -->
+
+## Stage 6 — W-39 land: the day is read one way, the grid cuts as the plan does, and the fork outlives its deletion
+
+### 1. The merge
+
+Order K, A, T, H, each a `--no-ff` merge.  Conflicts, all append-append, every side kept in merge
+order: `kernel/README.md` (four blocks), `Check.lean` (K's 97 audit lines, A's 24 new and 4 renamed away, T's
+16, each under its own banner), `PlannerWit.lean` (K's section, then A's), `mutations.txt` (K's 7 rows, A's 26 new or
+rewritten, T's 12) and `reach-exempt.txt` — the one that needed a new number: A's `PlanReq.loggedArrival` joined
+`Planner.lean` (287 emitted) and T's `wallsOfDay`, `clipWall` and `sortWallsFast` came to be reached
+through the `emit` section, so the `## Planner.lean` census reads **3 of its 287**, re-derived and
+dated there; check 12 confirms it (1,241 reachable, 1,199 exempt — the file did not grow).  Every file
+only one track touched is byte-identical to that track's; every name each track's diff declares or
+tests is present on the merged tree (K 110, A 51, T 52, H 58; 0 missing, `git grep -w`).
+
+**What the merge moved, and was re-anchored rather than re-blessed:**
+* check 9: A's three `furniture*` rows cited `PlannerWit.lean:10945`, which K's section, merged
+  above A's, moved to `the_split_day_serves_the_later_sibling_first`.  Re-run, not rewritten by
+  hand: `mutate.py --verify --write --only Tm.PlannerWit.furnitureWitness` (then `furnitureCands`,
+  `furnitureCandsAtThree`), 16 GB cap, 9 min each — each **PINNED** at its constants (`default`,
+  `[]`) by `the_plan_and_the_wire_read_the_file_kinds_ci_alike`, now at `PlannerWit.lean:11535`
+  ("0 rostered definition(s) failed re-verification ... 1 row(s) ... rewritten", each).
+* check 10: `parity.txt`'s P62 and P63 anchors pointed at `README.md:75104` and `:75202`, which the
+  merge moved to `:75758` and `:75856`; re-anchored to the lines that carry the `taken` lines.
+
+### 2. The composition tests
+
+1. **A's arrival fallback against H's frozen gap-3390 world, by value.**  On the merged tree H's
+   ratchet failed exactly as designed — `arrive then wake (gap 3390): 0 difference(s) with the frozen
+   fork day (pending)`, then "the kernel now plans the driven day's window as the fork did — ... is
+   closed on this tree: delete the drive's `pending` in `forkclass::DRIVES`".  Deleted (README gap
+   3663 closed); the line now compares like any other: **0 differences**, and bending one kernel row
+   in R3's simulation fails it by name (§3).  So gap 3584 — A's "compared LIVE only, frozen nowhere" —
+   is closed by H's driven line.
+2. **A frozen line A or T changed.**  None: on the merged tree `planner_classes` compares every frozen
+   line with **0 differences** — the 36 classes (82 non-P45 days, 1,002 fork rows, 30,313 other
+   values, 82 of 82 hashes), the seeded batch (128 lines, 116 non-P45 days, 1,206 fork rows, 63,926
+   other values, 116 of 116 hashes), the driven line, and 147 `plan-basic` instants (1,867 fork rows,
+   80,102 other values, 147 of 147 hashes).  No frozen line was rewritten, so the D64/D70 re-bless
+   gate had nothing to pass; `git diff 9dfb610 -- tm/tests/fixtures/` is H's 132 added lines (the new
+   128-line batch, three class lines, the driven line) and nothing else.
+3. **H's oracle on the merged tree, freshly built** (`build-oracle.sh` into `scratchpad/land-w39/oracle`
+   from this tree's script and patch, re-extracting fork 4748911 because the stamp was new — gap
+   196): `the_frozen_lines_are_the_forks_oracle_answer_today` **229 of 229** (1,208 oracle requests,
+   221 s); the fresh-draw arm at 64 cases **91 draws, 0 the binary cannot hold, 91 compared, 0
+   differences** (1,046 oracle requests; what-ifs 42, P45 5, P46 4, P47 3, P51 62, P52 1, P56 2; gap
+   3480's declared class explained 0); the region's cross-check, **91 draws, in-tree and oracle equal
+   on every raw day, drawing, order and answer**; gap 3480's witness passed.  The batch in plain
+   `cargo test --workspace`: see §5.
+4. **K's proofs over A's changed definitions.**  The merged library builds (184 jobs, then 186 with
+   T), check 3 audits **5,994** theorems (5,861 + K 97 + A 20 + T 16), and check 9's only drifted rows
+   were the three above, re-verified PINNED.  No K proof needed a touch.
+5. **H's deletion simulation, re-run on the MERGED tree** (a `git clone --shared` of `land-w39` with
+   the step's working diff applied, `scratchpad/land-w39/r3sim`; H's own `r3sim-apply.py` and
+   `r3sim-hook.py`; `git status --porcelain` 20 entries before and after the runs):
+   **fifteen** fork regions now — H's thirteen plus A's `planner_w39_arrival.rs` (40 lines) and K's
+   `planner_w39_conference.rs` (27) — **5,295 lines**; tm-core's five fork planner entries guarded to
+   panic outside the `tm` binary.  Then, with no fork planner reachable from any test:
+
+| run | verdict |
+|---|---|
+| `planner_classes` | 45 passed, 1 FAILED — the designed one-region gate, as H's run |
+| `planner_invariants` | 20 passed (424.6 s) |
+| `planner_w38_order`, `planner_w39_arrival`, `planner_w39_conference` | 11, 8, 6 passed |
+| baseline: the batch | passed |
+| bent `row`: the batch | FAILED — `128 disagreement(s) with the frozen batch` |
+| baseline: the classes | passed |
+| bent `order` (W-38 track R's order undone) | FAILED — `1 disagreement(s) with the frozen fork classes` |
+| bent `typed` (P56's two pieces joined) | FAILED — `4 disagreement(s)`, `running/lounge (typed)`, `overtime/home (typed)` |
+| baseline: the driven day, `pending` deleted | passed — `0 difference(s)` |
+| bent `row`: the driven day | FAILED — `1 difference(s) with the frozen fork day` |
+| baseline: every frozen line against the out-of-tree fork | passed — **229 of 229** |
+| baseline: fresh draws against the out-of-tree fork, 32 cases | passed |
+| bent `row`: fresh draws | FAILED — `1 disagreement(s) with fork 4748911 on a fresh draw (repeat it: class_draws("00000bdde47b02e00cc487f3", None).next())` |
+| gap 3480's witness | passed |
+
+H's `window` bend is retired rather than re-run: it bent the driven day's window to 07:00–16:00, which
+is what the composed kernel now answers, so it bends nothing; the `row` bend on the driven arm stands in.
+
+### 3. What the land step closed on the way
+
+* **Gap 3663 — CLOSED**: `forkclass::DRIVES`' `pending` deleted (above).
+* **Gap 3581 — CLOSED**: `Goals.lean`'s stability note cites
+  `PlannerWit.an_hour_later_changes_one_field_and_moves_the_window_is_refuted` and its two successors
+  instead of the name A refuted; its counted `citations-allow.txt` entry is gone (check 8: 0 unused).
+* **Gap 3553 — CLOSED**: `Goals.lean`'s `# STAGE 6` section opens with one dated sentence — it holds
+  no goal and check 7 reads 0 — and AGENTS.md §3.2 and §8.4 each gain one dated sentence saying so.
+* **Gap 3540's P58 half needs nothing**: `parity.txt`'s P58 row never said "ranked before it"; it says
+  every run or slot the item fits "holds another item's work row", which is true in group order.
+
+### 4. R3's list, re-derived on the merged tree
+
+W-38's list, each checked here rather than carried:
+
+| gap | status on the merged tree |
+|---|---|
+| 3473 | closed (H): two typed-pause lines frozen with P56, and the `typed` bend fails them after the deletion |
+| 3474 / 3529 | closed (H): the tied Wall/Lost order frozen, and the `order` bend fails it after the deletion |
+| 3390 | closed (A), frozen by value (H's driven line, `pending` deleted here), 0 differences |
+| 3432 + 3528 | closed (T): the grid's cut is `GridCut.segSpans`, which IS `Planner.pastSpans` (`GridCut.pastSpans_is_segSpans`); the host's heat_pieces is gone (no occurrence in `tm/src` or `tm-core/src`) and the grid reads the walls through the kernel's `Look.wallIxOn` |
+| D72 | closed (H): the batch compared in plain `cargo test --workspace`, and `tm-oracle plan` against the merged tree (§2.3) |
+
+**What remains, and it is not only the body swap:**
+
+* **Gap 3556 (track K's) — a kernel fix owed BEFORE R3.**  The kernel's planner window reads the
+  day's walls WHOLE (`Look.wallsOn`, quirk (e)) where fork `collect_walls` clips them to the day, so
+  on a Wednesday inside a Tuesday-to-Friday conference the kernel plans work in Friday's small hours
+  inside the wall, and the fork — the binary today — plans none.  K's own answer is conditional and
+  it is kept as K wrote it: "Track R, before R3".  Re-verified on the merged tree:
+  `planner_w39_conference`'s kernel half passes, i.e. the divergence stands.  No frozen line holds a
+  wall that spans days, so after the deletion nothing but that pin would see it.
+* **Riding inside R3's body swap**, as before: gap **3043** (the binary must send
+  `state.active.workedMin`) and gap **3476** (fifteen TUI tests reach `planner::plan` through the
+  TUI's own code) — plus track A's gap **3583** (the encoder must send a log section whose run holds
+  today's first `arrive` whole, or a scoped tail plans from `now` where the fork plans from the
+  arrival).  The swap itself, measured: 8 code lines naming `planner::` — `tm/src/cli/planning.rs`
+  2 (`use`, `planner::plan`), `tm/src/tui/app.rs` 6 (`use`, `plan`, `overtime_drops`, `plan` twice,
+  `diff`) — and one doc line in `tm/src/tui/prompts.rs`.
+* **Not blocking, by their tracks' own words**: 3480/3666 (P45's owner), 3546 and 3545 (the owner),
+  3620 (the owner), 3582/3398/3661 (a host decision), 3662 (the graft's second edit has no witness),
+  3541, 3549-3552, 3621-3626, 3664-3669.
+
+**Gap 3700 — R3 is not yet only the body swap and the deletion.**  1. *What.*  The list above: gap
+3556's kernel fix, then the body swap (carrying 3043, 3476 and 3583) and the deletion.  2. *Why.*
+Track K found 3556 this run, and its clearing step is a planner change in the kernel (the window
+reading clipped walls, a generated class with a wall that spans days, gap 3545's re-examination),
+which D48 keeps out of R3.  3. *Cost.*  An R3 that lands first would ship a binary that plans work
+inside a multi-day calendar wall, where today's binary plans none, and no frozen comparand would say
+so.  4. *Clears it.*  A track-R step before R3, as K wrote.
+
+### 5. The drive of the merged binary (`target/debug/tm` built from this tree; `scratchpad/land-w39/drive.sh`)
+
+Transcript unabridged in `scratchpad/land-w39/drive.txt`; the three parts, on copies of
+`tm-core/tests/fixtures/plan-basic`:
+
+What it shows.  (1) `tm arrive lounge` at 07:00 then `tm wake 06:05` at 07:30 leaves `.tm/state.json`
+dated today with no arrival, window or budget beside a log that keeps the `arrive`; `tm plan` at
+10:30 prints `window 07:00–16:00` — the binary still plans with the fork's planner until R3, and the
+kernel's answer on the same files is the same window (`planner_w39_arrival`'s
+`the_woken_day_is_planned_from_the_logged_arrival`, and the frozen driven line at 0 differences);
+after `rm .tm/state.json` the rebuild restores 07:00, `[07:00, 16:00]` and 6 and the plan does not
+move.  (2) `tm pause` at 09:42 inside the interruption opened at 09:40 is refused by name, exit 1,
+on the CLI and as `--json`'s failure document, and the log, state, day file and undo stack hash the
+same before and after both presses; after `tm resume` the toggle works both ways.  (3) The week
+holds a meeting-paused block (D61's pause 12:50–13:50, announced by `tm now` at 14:00), a typed pause
+14:10–14:25 and, on Tuesday, an interruption 10:00–10:15; `tm review week` reads `block 3h30m ·
+interrupt 15m · pause 15m · wall 1h`, and the hour cells draw the meeting as `wall` (10 + 50), the
+typed pause as `pause` (15) and the interruption as `interrupt` (15) — each day's plan draws the same
+spans (`paused 15m` at 14:10, `lost 15m ... interruption` at 10:00).
+
+```
+################ 1. tm arrive, then tm wake, then tm plan (gap 3390)
+$ tm --now 2026-09-07T07:00:00-05:00 arrive lounge
+arrive lounge 07:00 · window 07:00–16:00 · budget 6 blocks
+[exit 0]
+$ tm --now 2026-09-07T07:30:00-05:00 wake 06:05 --slept 8h
+wake 06:05 · slept 480m
+[exit 0]
+-- .tm/state.json:
+{"date": "2026-09-07", "wake": "06:05", "arrival": null, "window": null, "budget": null, "active": null, "interrupt": null}
+-- log:
+{"t":"2026-09-07T07:00:00-05:00","ev":"arrive","loc":"lounge","window":["07:00","16:00"],"budget":6}
+{"t":"2026-09-07T07:00:00-05:00","ev":"plan","hash":"cc4912770541b947","replans_today":0,"drift_min":0}
+{"t":"2026-09-07T06:05:00-05:00","ev":"wake","slept_min":480}
+$ tm --now 2026-09-07T10:30:00-05:00 plan
+2026-09-07 · window 07:00–16:00 · budget 6 blocks
+10:30  1 p0 ⚠ Pick up package                   20m     due today
+10:50  ·      laundry 30m
+11:30  ·      lunch 30m
+12:00  4 p3   Exercises 5.3–5.5            @m1  2b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  4 p3   Exercises 5.3–5.5            @m1  2b
+14:50  ·      break 20m
+15:10  3 p3   Claude Code drafts tests     @m2  1b
+16:00  ───    window ends 16:00
+16:00  ·      workout 1h
+17:00  ·      shower 20m
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · m2 · d2 · d1 · m4 · x2 · a1 · c2 · p1
+[exit 0]
+-- rm .tm/state.json
+$ tm --now 2026-09-07T10:30:00-05:00 plan
+tm: .tm/state.json was missing; rebuilt from .tm/log.jsonl (§10.2 is a cache of the log — D42)
+tm: GONE, and the log cannot answer for it: `break` — a running break is logged only when it ends, so one that was running left no line to rebuild from.
+tm: RESET, both deliberately: `priorities_yesterday` (§7.4's hysteresis map, and no event carries a `p`) and `closed` (`swept` is a fact about a sweep, not an event, and its absence makes the automatic close sweep run once more, which is the safe direction).
+2026-09-07 · window 07:00–16:00 · budget 6 blocks
+10:30  1 p0 ⚠ Pick up package                   20m     due today
+10:50  ·      laundry 30m
+11:30  ·      lunch 30m
+12:00  4 p3   Exercises 5.3–5.5            @m1  2b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  4 p3   Exercises 5.3–5.5            @m1  2b
+14:50  ·      break 20m
+15:10  3 p3   Claude Code drafts tests     @m2  1b
+16:00  ───    window ends 16:00
+16:00  ·      workout 1h
+17:00  ·      shower 20m
+17:30  ·      dinner 30m
+18:00  ·      groceries 45m
+18:45  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · m2 · d2 · d1 · m4 · x2 · a1 · c2 · p1
+[exit 0]
+-- .tm/state.json:
+{"date": "2026-09-07", "wake": "06:05", "arrival": "07:00", "window": ["07:00", "16:00"], "budget": 6, "active": null, "interrupt": null}
+################ 2. tm pause inside an interruption (D71, P62)
+$ tm --now 2026-09-07T06:05:00-05:00 wake 06:05 --slept 8h
+wake 06:05 · slept 480m
+[exit 0]
+$ tm --now 2026-09-07T09:00:00-05:00 start ^t4 --energy 4
+▶ ^t4 Claude Code drafts tests · 09:00 · pred 5 rep 4
+[exit 0]
+$ tm --now 2026-09-07T09:40:00-05:00 interrupt
+interrupted
+[exit 0]
+$ tm --now 2026-09-07T09:42:00-05:00 pause
+tm: an interruption is open since 09:40 — the timer is already stopped; `tm resume` first
+[exit 1]
+$ tm --now 2026-09-07T09:42:00-05:00 --json pause
+{
+  "ok": false,
+  "kind": "error",
+  "message": "an interruption is open since 09:40 — the timer is already stopped; `tm resume` first",
+  "exit_code": 1,
+  "detail": {}
+}
+[exit 1]
+-- log, state, day file, undo stack sha256 before the two presses: e3496ed004f00462f36ee7bec73348f2da4d6ee1a9c22854eff99707484247d3  -
+-- and after:                                                e3496ed004f00462f36ee7bec73348f2da4d6ee1a9c22854eff99707484247d3  -
+$ tm --now 2026-09-07T09:50:00-05:00 now
+▶ ^t4 Claude Code drafts tests · started 09:00 · 40m of 60m · paused
+09:50  1 p0 ⚠ Pick up package                   20m     due today
+  09:50–10:10 · elapsed 0m · left 20m
+next
+10:10  ·      laundry 30m
+10:40  2 p5   Pick winter courses          @O3  2b
+11:30  ·      lunch 30m
+0/6 blocks
+[exit 0]
+$ tm --now 2026-09-07T09:55:00-05:00 resume
+resumed · lost 15m
+[exit 0]
+$ tm --now 2026-09-07T10:00:00-05:00 pause
+paused ^t4
+[exit 0]
+$ tm --now 2026-09-07T10:05:00-05:00 pause
+resumed ^t4
+[exit 0]
+-- log:
+{"t":"2026-09-07T06:05:00-05:00","ev":"wake","slept_min":480}
+{"t":"2026-09-07T09:00:00-05:00","ev":"start","id":"t4","pred":5,"rep":4,"hsw":2.92,"slept_min":480,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-07T09:40:00-05:00","ev":"interrupt","id":"t4"}
+{"t":"2026-09-07T09:55:00-05:00","ev":"resume","lost_min":15,"dropped":[]}
+{"t":"2026-09-07T09:55:00-05:00","ev":"plan","hash":"dc728bd5dafba8c3","replans_today":0,"drift_min":0}
+{"t":"2026-09-07T10:00:00-05:00","ev":"pause","id":"t4"}
+{"t":"2026-09-07T10:05:00-05:00","ev":"unpause","id":"t4"}
+################ 3. tm review week over a typed pause, a meeting-paused block and an interruption
+-- the calendar:
+- [ ] 3 Meeting w/ host      at:2026-09-07T12:50/13:50 loc:zoom ^g1
+- [ ] 2 CS 234 lecture       at:2026-09-09T15:00/16:20 loc:JCL ^g2
+- [ ] 1 ✈ ORD→SFO UA 1234    at:2026-09-12T08:15/10:40 buffer:2h travel-day ^g3
+- [ ] 1 Dinner w/ Kun        at:2026-09-10T19:00/20:00 manual ^g4
+$ tm --now 2026-09-07T06:05:00-05:00 wake 06:05 --slept 8h
+wake 06:05 · slept 480m
+[exit 0]
+$ tm --now 2026-09-07T12:00:00-05:00 start ^t4 --energy 4
+▶ ^t4 Claude Code drafts tests · 12:00 · pred 4 rep 4
+[exit 0]
+$ tm --now 2026-09-07T14:00:00-05:00 now
+tm: paused ^t4 for Meeting w/ host 12:50–13:50
+▶ ^t4 Claude Code drafts tests · started 12:00 · 60m of 60m
+14:00  1 p0 ⚠ Pick up package                   20m     due today
+  14:00–14:20 · elapsed 0m · left 20m
+next
+14:20  ·      laundry 30m
+14:50  2 p5   Pick winter courses          @O3  2b
+16:00  ·      workout 1h
+0/6 blocks
+[exit 0]
+$ tm --now 2026-09-07T14:10:00-05:00 pause
+paused ^t4
+[exit 0]
+$ tm --now 2026-09-07T14:25:00-05:00 pause
+resumed ^t4
+[exit 0]
+$ tm --now 2026-09-07T14:40:00-05:00 plan
+2026-09-07 · window 14:40–19:00 · budget 6 blocks
+12:00  3 p3   Claude Code drafts tests     @m2  1b
+12:50  ⏰     Meeting w/ host                   1h
+13:50  3 p3   Claude Code drafts tests     @m2  1b
+14:10  ·      paused 15m                   @m2
+14:25  3 p3 ▶ Claude Code drafts tests     @m2  1b     85m so far
+14:40  1 p0 ⚠ Pick up package                   20m     due today
+15:00  ·      laundry 30m
+15:30  2 p5   Pick winter courses          @O3  2b
+16:00  ·      workout 1h
+17:00  2 p5   Pick winter courses          @O3  2b
+17:30  ·      dinner 30m
+18:00  2 p5   Pick winter courses          @O3  2b
+19:00  ───    window ends 19:00
+19:00  ·      groceries 45m
+19:45  ·      shower 20m
+20:05  ○      Severance S3E4                    1h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· t5 blocked by t4
+· waiting: a4
+· dropped: m1 · m3 · t1 · t3 · m2 · d2 · d1 · x2 · a1 · c2 · p1
+[exit 0]
+$ tm --now 2026-09-07T15:00:00-05:00 done
+✓ ^t4 Claude Code drafts tests · 105m/60m
+[exit 0]
+$ tm --now 2026-09-08T06:05:00-05:00 wake 06:05 --slept 8h
+wake 06:05 · slept 480m
+[exit 0]
+$ tm --now 2026-09-08T09:00:00-05:00 start ^t4 --energy 4
+▶ ^t4 Claude Code drafts tests · 09:00 · pred 5 rep 4
+[exit 0]
+$ tm --now 2026-09-08T10:00:00-05:00 interrupt
+interrupted
+[exit 0]
+$ tm --now 2026-09-08T10:15:00-05:00 resume
+resumed · lost 15m
+[exit 0]
+$ tm --now 2026-09-08T10:30:00-05:00 plan
+2026-09-08 · window 10:30–18:30 · budget 6 blocks
+09:00  3 p3   Claude Code drafts tests     @m2  1b
+10:00  ·      lost 15m                     @m2         interruption
+10:15  3 p3 ▶ Claude Code drafts tests     @m2  1b     75m so far
+10:30  ·      laundry 30m
+11:00  2 p5   Pick winter courses          @O3  2b
+11:30  ·      lunch 30m
+12:00  2 p5   Pick winter courses          @O3  2b
+13:00  2 p5   Pick winter courses          @O3  2b
+14:00  ·      break 20m
+14:20  2 p5   Call the bank about the ca…       20m
+15:20  2 p5   Insurance claim for the bi…       30m
+16:20  ·      break 20m
+16:40  ·      groceries 45m
+17:25  ·      rest 5m
+17:30  ·      dinner 30m
+18:00  ·      shower 20m
+18:20  ○      Severance S3E4                    1h
+18:30  ───    window ends 18:30
+19:20  ○      Factorio                          2h
+21:30  🌙     wind-down · bed 22:00
+22:00  ·      sleep 8h30m
+· 0 underused · 0 ci-5 lost
+· deferred: t5
+· waiting: a4
+· dropped: m1 · m3 · t1 · t3 · m2 · t5 · d2 · d1 · x2 · c2
+[exit 0]
+$ tm --now 2026-09-08T11:00:00-05:00 done
+✓ ^t4 Claude Code drafts tests · 105m/60m
+[exit 0]
+-- log:
+{"t":"2026-09-07T06:05:00-05:00","ev":"wake","slept_min":480}
+{"t":"2026-09-07T12:00:00-05:00","ev":"start","id":"t4","pred":4,"rep":4,"hsw":5.92,"slept_min":480,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-07T12:50:00-05:00","ev":"pause","id":"t4"}
+{"t":"2026-09-07T13:50:00-05:00","ev":"unpause","id":"t4"}
+{"t":"2026-09-07T14:10:00-05:00","ev":"pause","id":"t4"}
+{"t":"2026-09-07T14:25:00-05:00","ev":"unpause","id":"t4"}
+{"t":"2026-09-07T14:40:00-05:00","ev":"plan","hash":"c8aaf48f86a03666","replans_today":0,"drift_min":0}
+{"t":"2026-09-07T15:00:00-05:00","ev":"done","id":"t4","est_min":60,"actual_min":105,"tags":[],"ci":3}
+{"t":"2026-09-08T06:05:00-05:00","ev":"demote","id":"p1","from":"2026-09-07","to":"2026-W37","est_min":20}
+{"t":"2026-09-08T06:05:00-05:00","ev":"close","period":"day","key":"2026-09-07"}
+{"t":"2026-09-08T06:05:00-05:00","ev":"wake","slept_min":480}
+{"t":"2026-09-08T09:00:00-05:00","ev":"start","id":"t4","pred":5,"rep":4,"hsw":2.92,"slept_min":480,"loc":"lounge","blocks_done":0,"since_break_min":0}
+{"t":"2026-09-08T10:00:00-05:00","ev":"interrupt","id":"t4"}
+{"t":"2026-09-08T10:15:00-05:00","ev":"resume","lost_min":15,"dropped":["g1","a3","workout"]}
+{"t":"2026-09-08T10:15:00-05:00","ev":"plan","hash":"4c4839adff915f10","replans_today":0,"drift_min":0}
+{"t":"2026-09-08T10:30:00-05:00","ev":"plan","hash":"8b820bcc38208fe1","replans_today":1,"drift_min":30}
+{"t":"2026-09-08T11:00:00-05:00","ev":"done","id":"t4","est_min":60,"actual_min":105,"tags":[],"ci":3}
+$ tm --now 2026-09-09T09:00:00-05:00 review week --date 2026-09-07
+ Week 2026-W37 · 2 blocks · load 126.0 · planned 25.3b
+ milestone hit - · demoted -
+ blocks    Mon 1 · Tue 1 · Wed 0 · Thu 0 · Fri 0 · Sat 0 · Sun 0
+ heat      7 days × 24h · block 3h30m · interrupt 15m · pause 15m · wall 1h
+ lounge    - · streak 0
+ mix       ci3 3h30m · ≥4 0%
+ breaks    planned 0m · actual 0m · over 0 · -
+ sleep     Mon 8h (1b) · Tue 8h (1b) · Wed - · Thu - · Fri - · Sat - · Sun -
+ latency   -
+ energy    MAE Mon 0.0 · Tue 1.0
+ estimates -
+ curve     home prior 3 4 4 4 3 3 3 3 2 2 2 2 · learned -
+ curve     lounge prior 4 5 5 5 5 4 4 4 3 3 2 2 · learned -
+ deadlines min slack 1.0d · hot 0 · impossible 0 · overdue 1
+ churn     - · carry in 0b · out 0b
+[exit 0]
+-- --json heat cells (Mon 12,13,14; Tue 9,10) as [block,break,routine,interrupt,pause,leak,idle,wall]:
+  2026-09-07 12 [50, 0, 0, 0, 0, 0, 0, 10]
+  2026-09-07 13 [10, 0, 0, 0, 0, 0, 0, 50]
+  2026-09-07 14 [45, 0, 0, 0, 15, 0, 0, 0]
+  2026-09-08 09 [60, 0, 0, 0, 0, 0, 0, 0]
+  2026-09-08 10 [45, 0, 0, 15, 0, 0, 0, 0]
+```
+
+### 6. Acceptance, capped
+
+Every command under `systemd-run --user --scope -p MemoryMax=40G -p MemorySwapMax=0` (16 GB for
+`mutate.py`, the oracle's build and `cli_latency`, 8 GB for the drive), in the land worktree unless a
+clone is named; its `git status --porcelain` held the step's own edited files (six; seven once this block was written) and nothing else
+across every run below, and no `.proptest-regressions` file moved.
+
+* **`check.sh`, every one of its seventeen lines ok, exit 0** (on the tree this block is committed
+  with; figures in the commit message's run): build ok; totality ok; axiom audit **5,994** theorems
+  (Classical.choice 3,110, Quot.sound 4,580, propext 5,596; 395 on none); Negative.lean rejected; FFI
+  **95** tests; corpus 29/37 files and 4/5 whole plans; stage goals **0** ("no goal under any stage
+  header"); prose citations ok, 0 allow entries unused; new definitions mutated **559** rostered,
+  **0** owed; parity **63** (P1-P63), next free P64; no two names for one definition, 3,306 bodies, 0
+  UNANSWERED; every emitted definition reached, **1,241** reachable, **1,199** exempt, 0 UNANSWERED;
+  fields 17/17; inputs 33 of 37 read (4 exempt); sent 28/28; written 34 decoded / 28 written / 3
+  exempt; the kernel replays **91** modules.  (The first run on the merged tree, before §1's two
+  re-anchorings, failed exactly checks 9 and 10 and nothing else.)
+* **`cargo test --workspace --no-fail-fast`, THREE runs** (D46), load 2-3.5: each **108 result lines,
+  1,764 passed, 0 failed, 19 ignored** (1,129 s, 1,071 s, 1,084 s).  1,764 is W-38's 1,729 plus K's 7,
+  A's 9, T's 9 and H's 10; 19 ignored is 13 plus H's six environment-gated arms; 108 is 104 plus K's
+  one binary, A's one and T's two.
+* **The named suites, `--include-ignored`, one run each**: T5 `kernel_replay_parity` 33, the door
+  `kernel_log_door` 24, `cli_switch_acceptance` 16, `kernel_call_counts` 2, `one_padder` 9,
+  `one_renderer` 25, `kernel_row_cells` 26, `kernel_item_grammar` 6, `kernel_planner_wire` 23,
+  `planner_classes` 57 (143.8 s; its blesses and oracle arm inert without their variables),
+  `planner_w38_order` 14, `planner_w39_arrival` 9, `planner_w39_conference` 7, `cli_pause_interrupted`
+  4, `cli_week_cut` 2, `cli_week_grid` 4 — every one passed.  The FFI is check.sh's checks 5 and 6.
+* **`planner_invariants`, `--include-ignored --nocapture`, THREE runs**: 41 passed each (442.9 s,
+  443.9 s, 436.5 s; the oracle arms inert).  Its census each time — the hash census **283 cases,
+  hashes EQUAL 283, rows agree 283, days whose rows differ 0** (2,981 / 2,965 / 3,108 kernel rows
+  digested); the plan census 283 cases, window-differs 0, budget-differs 0 (419 / 401 / 429 walls
+  compared); the kernel-day census 91 cases (1,006 / 938 / 940 rows compared); the break census 91
+  cases, 31 / 19 / 19 break days; the W-36 grown census 146 / 132 / 137 what-ifs compared.
+* **`cli_latency`, `--include-ignored`, THREE runs** at load 1.1-1.4: 6 passed each (18.9 s, 18.7 s,
+  18.8 s).  Ranges: first verb 724-749 ms, later verb 76 ms; the 1-year log's first verb 1,207-1,220
+  ms; the 3-year log's first verb 2,188-2,242 ms, later verb 162-167 ms; the 30-day-old hand undo
+  1,311-1,332 ms; `review week` (All) 461-466 ms — T's measured 526-537 ms under load 9.5-14.8, here
+  quiet; the reseal 309-325 ms; the stall row's worst 649-664 ms.
+* **The oracle arms under `TM_ORACLE`**, a freshly built oracle, on the merged tree: §2.3 (229 of 229;
+  91 fresh draws, 0 differences; 91 cross-checked; gap 3480's witness) and, after the deletion, §2.5.
+

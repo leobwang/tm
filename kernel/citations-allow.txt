@@ -666,7 +666,6 @@ can_fail
 # owns this run (README gap 3581 names it for K).
 1 Planner.PlanReq.window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
 1 Planner.dayPlan_window_is_the_lookaheads_on_a_dated_state_with_a_budgeted_window
-1 PlannerWit.an_hour_later_changes_one_field_and_moves_the_window
 1 an_hour_later_changes_one_field_and_moves_the_window
 2 the_logged_arrival_is_the_forks_planners_and_not_yet_the_kernels
 2 the_witness_day_is_planned_from_two_in_the_afternoon

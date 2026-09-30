@@ -509,6 +509,9 @@ real kernel and whose proof is `sorry`. **40 at `bf7cc63`** (52 at `c8f3a38`;
 stage 3's twelve are all gone — discharged, refuted, or renamed to a narrowing,
 each recorded in the README), grouped by stage inside the file, with provisional
 `def … := sorry` signatures only where the spec settles the signature.
+*It is **0** since W-39 (2026-09-30): track K refuted the last six stage-6 goals as
+written and proved each law beside it, and every stage's section of the file is empty
+(README "Stage 6 — W-39 track K"; gap 3553). The figures in this section are the history.*
 
 Three properties make it safe, and all three are checked:
 
@@ -2937,6 +2940,10 @@ single-run checks), `the_window_end_solves_the_equation` and
 recorded recommendation says to leave to the proptest. If you take that
 recommendation, the two goals stay in `Goals.lean` and check 7 ends the stage at
 2, not 0. That is the correct outcome; say so rather than deleting them.
+*Measured at W-39 (2026-09-30): check 7 reads **0**. L24 and L25 were not left to the
+proptest: each was refuted as written and proved in a restated form beside it
+(`PlanFold.plan_tail_drop`, `PlanFold.plan_is_stable_across_a_replan`), as were the four
+single-run goals that remained; the proptest still runs beside them (D5).*
 
 **Depends on.** All of stage 5 and stage 4, plus runtime state that lives in
 Rust: `active`, `window`, `budget`, `break`, `interrupt`, `last_plan_hash`.

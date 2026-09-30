@@ -534,6 +534,13 @@ the last call's answer with the records returned reads the replay by law 1.  The
 /-! ############################################################################
 # STAGE 6 — the planner; §8.3's invariants; L24 and L25
 
+**W-39 (2026-09-30): THIS SECTION HOLDS NO GOAL, and check 7 reads 0.**  Track K refuted the last
+six as stage 6 wrote them and proved each law beside it under its own short name (README "Stage 6
+— W-39 track K", gaps 3540-3556); the land step composed them with tracks A, T and H and they close
+over A's changed definitions.  Every count and every "NO GOAL BELOW MAY BE DISCHARGED" below is the
+record of how the section stood when that paragraph was written, not a count of what remains (README
+gap 3553).
+
 Plan §5: "D1–D14 decidable-checked on every plan the corpus produces;
 `planner_invariants.rs` green at 256 cases through the FFI".  L26 is "decidable
 over the produced `DayPlan`", so the output type is what has to exist and the
@@ -966,7 +973,12 @@ item 9 is where each entry's answer now lives)*:
    the reservation is not marked `open` and no witness request has an interruption.  G3 owes
    three repairs and only the first has a counterexample: pin the run; drop or restate `hwin`,
    which is false of every genuine replan-later pair
-   (`PlannerWit.an_hour_later_changes_one_field_and_moves_the_window`); and tie the free
+   (the hour-later pair that moved the window, REFUTED at W-39 track A as
+   `PlannerWit.an_hour_later_changes_one_field_and_moves_the_window_is_refuted` once the planner read
+   the day's logged arrival; on a day whose arrival is logged `hwin` HOLDS of a genuine replan-later
+   pair, `PlannerWit.an_hour_later_changes_one_field_and_keeps_the_window_the_log_anchors`, and
+   `PlannerWit.an_hour_later_moves_the_window_of_a_day_with_no_arrival` is the day that still moves —
+   README gaps 3581 and, for the law that was proved, 3550); and tie the free
    second-argument bound of the law below to `r.now`, because free it admits *every* row and
    the law then says the two days are equal up to inclusion.  What the law is actually about is **not** refuted:
    `PlannerWit.an_hour_later_keeps_every_row_that_had_settled` is the one genuine replan pair

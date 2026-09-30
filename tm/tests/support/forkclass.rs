@@ -945,17 +945,15 @@ pub struct Drive {
 /// no other field (a wake at another time also moves `wake`: README gap 3661) — planned at
 /// 10:30: fork `Planner::new` falls back to the day's first logged `arrive` for the
 /// arrival the state no longer holds, and plans `07:00–16:00`; the kernel's
-/// `Look.Today.planArrivalSec` read `now` at W-39's fork of `rebuild-on-lean`, which track A
-/// (the same run) is changing to agree.
+/// `Look.Today.planArrivalSec` read `now` at W-39's fork of `rebuild-on-lean`, and reads the
+/// logged arrival since track A's fix composed at W-39's land step (README gap 3390 closed,
+/// gap 3663's `pending` deleted there): the line compares like any other.
 pub const DRIVES: [Drive; 1] = [Drive {
     name: "arrive then wake (gap 3390)",
     from: "idle/lounge",
     verbs: &[("2026-09-07T07:30:00-05:00", &["wake", "06:30", "--slept", "8h"])],
     now: "2026-09-07T10:30:00-05:00",
-    pending: Some(
-        "README gap 3390: the kernel plans a day whose state holds no arrival from `now`, the fork from \
-         the day's first logged `arrive` — track A (W-39) makes the kernel read the logged arrival",
-    ),
+    pending: None,
 }];
 
 /// Where the driven lines live.
