@@ -178,19 +178,6 @@ use tm_core::priority::{self, Candidate, Prio};
 /// The fork's day, ranked by the kernel's own §7 answer — the shipped
 /// `planning::build_ranked` wiring (D53).
 fn fork_day(fx: &Fixture, state: &RuntimeState) -> DayPlan {
-    let now = at("2026-09-07", 9, 0);
-    let day = tm_core::planwire::plan_date(state, now);
-    let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-    let w = planner_common::planreq::World {
-        docs: &fx.docs,
-        log: &fx.log,
-        tree: &fx.tree,
-        cfg: &fx.cfg,
-        state,
-        now,
-        cands: &cands,
-    };
-    let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel ranks the day");
     fork_day_with(fx, state, false)
 }
 
@@ -208,6 +195,7 @@ fn fork_day_with(fx: &Fixture, state: &RuntimeState, runs: bool) -> DayPlan {
         state,
         now,
         cands: &cands,
+        replay: &fx.replay,
     };
     let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel ranks the day");
     tm_core::planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios).with_runs(runs))
@@ -333,6 +321,7 @@ fn p64s_precondition_sees_a_key_again_and_only_then() {
             state: &st,
             now,
             cands: &cands,
+            replay: &fx.replay,
         };
         let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel ranks the day");
         let ranked = priority::sorted_candidates(&ans.prios, &cands);

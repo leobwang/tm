@@ -7,9 +7,9 @@
 # the section off the request).  Until W-40 it asked the planner section of `planwire.rs` alone,
 # and its first run there found exactly one key, since read.  The file is W-27's shape -- an
 # enumeration you join to be EXEMPT -- and it may only SHRINK: a line no shallow unread path is at
-# or under FAILS as STALE, a line the committed file does not hold FAILS as RATCHET unless it sits
-# under a `## <heading>` that is new in the same diff and carries an ISO date (reach.py's rule,
-# D51).  One line per key path or section, at its SHALLOWEST unread path:
+# or under FAILS as STALE, a line the committed file does not hold FAILS as RATCHET, whatever
+# heading it sits under (D51; README gap 3953, the W-40 repair, which removed a dated-heading
+# escape).  One line per key path or section, at its SHALLOWEST unread path:
 # `<section.key.path> -- <dated reason naming its EXIT>`.
 
 ## W-40 track E (2026-09-30): the sent half asks every section at every place a request is built (README gap 3717)

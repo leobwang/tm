@@ -167,6 +167,7 @@ fn the_kernel_plans_plan_basic_every_ten_minutes_as_the_fork_planned() {
             state: &state,
             now,
             cands: &cands,
+            replay: &fx.replay,
         };
         match planner_common::planreq::kernel_day(&w, None) {
             Ok((k, _)) => findings.extend(forkday::compare_day_with_fork(name, &k, line, now, &mut t)),
@@ -1784,7 +1785,7 @@ fn basic_instants() -> Vec<(String, RuntimeState, DateTime<Tz>)> {
 fn basic_fork_day(fx: &planner_common::Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
     let date = tm_core::planwire::plan_date(state, now);
     let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
-    let w = planner_common::planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands };
+    let w = planner_common::planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands, replay: &fx.replay };
     let (_, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
     planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios))
 }

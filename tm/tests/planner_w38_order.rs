@@ -88,6 +88,7 @@ fn ask(fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> (Vec<Candidate>
         state,
         now,
         cands: &cands,
+        replay: &fx.replay,
     };
     let (req, order) = planreq::request(&w, None);
     let resp = planreq::call(&req);
@@ -222,6 +223,7 @@ fn compare(
         state,
         now,
         cands: &cands,
+        replay: &fx.replay,
     };
     let (k, ans) = planner_common::planreq::kernel_day(&w, None)
         .unwrap_or_else(|e| panic!("{label}: the kernel did not plan the day: {e}"));

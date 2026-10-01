@@ -140,6 +140,7 @@ impl Fixture {
             state,
             now,
             cands: &cands,
+            replay: &self.replay,
         };
         let (mut req, order) = planreq::request(&w, None);
         edit(&mut req);

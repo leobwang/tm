@@ -33,7 +33,7 @@ use serde_json::{json, Value};
 
 use tm_core::config::Config;
 use tm_core::planwire;
-use tm_core::review::{CutPause, PauseCut};
+use tm_core::review::PauseCut;
 
 use crate::planreq::tz_table;
 
@@ -59,49 +59,14 @@ pub fn walls_week_request(docs: &[(String, String)], log: &str, cfg: &Config, no
         "now": now.date_naive().to_string(),
         "blockMin": cfg.block_min(),
         "tz": tz_table::wire_for(None, cfg.tz),
-        "emit": {"walls": {"at": tm_core::log::fmt_timestamp(&now.fixed_offset()), "break": null, "week": monday.to_string()}},
+        // The binary's own encoder of the walls object (README gap 3955).
+        "emit": {"walls": planwire::walls_json(now.fixed_offset(), None, Some(monday))},
     })
 }
 
 /// **The kernel's cut of a week's Pauses**, read off [`walls_week_request`]'s answer —
-/// `ok.emit.cut`, every key named, a day answered twice refused — as `day::read_week_cut` reads it.
+/// the binary's own decoder, `planwire::read_week_cut` (README gap 3955; until the W-40
+/// repair this file decoded `ok.emit.cut` a second time).
 pub fn read_week_cut(resp: &Value, tz: Tz) -> Result<PauseCut, String> {
-    let at = |v: &Value, what: &str| -> Result<DateTime<Tz>, String> {
-        v.as_i64().and_then(|sec| planwire::instant_of(sec, tz)).ok_or_else(|| format!("{what} is not an instant: {v}"))
-    };
-    let spans = |v: &Value, what: &str| -> Result<Vec<(DateTime<Tz>, DateTime<Tz>)>, String> {
-        v.as_array()
-            .ok_or_else(|| format!("`{what}` is not an array"))?
-            .iter()
-            .map(|p| match p.as_array().map(Vec::as_slice) {
-                Some([a, b]) => Ok((at(a, what)?, at(b, what)?)),
-                _ => Err(format!("a `{what}` span is not a pair")),
-            })
-            .collect()
-    };
-    let answered = resp["ok"]["emit"]["cut"].as_array().ok_or_else(|| format!("no `ok.emit.cut` array: {resp}"))?;
-    let mut cut = PauseCut::default();
-    for d in answered {
-        let date = d["day"]
-            .as_str()
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-            .ok_or("a day's `day` is not a date")?;
-        let pauses = d["pauses"]
-            .as_array()
-            .ok_or("a day's `pauses` is not an array")?
-            .iter()
-            .map(|p| {
-                Ok(CutPause {
-                    start: at(&p["from"], "a pause's `from`")?,
-                    end: at(&p["to"], "a pause's `to`")?,
-                    pause: spans(&p["pause"], "pause")?,
-                    wall: spans(&p["wall"], "wall")?,
-                })
-            })
-            .collect::<Result<Vec<_>, String>>()?;
-        if cut.days.insert(date, pauses).is_some() {
-            return Err(format!("the day {date} is answered twice"));
-        }
-    }
-    Ok(cut)
+    planwire::read_week_cut(resp, tz)
 }

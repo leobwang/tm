@@ -345,6 +345,7 @@ fn the_woken_and_the_rebuilt_days_are_the_forks() {
             state: &fx.state,
             now,
             cands: &cands,
+            replay: &fx.replay,
         };
         let (k, ans) = planner_common::planreq::kernel_day(&w, None).expect("the kernel plans the day");
         let fork = tm_core::planner::plan(&fx.input(&fx.state, now).with_ranking(&cands, &ans.prios));

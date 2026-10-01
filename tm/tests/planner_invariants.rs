@@ -190,6 +190,7 @@ impl Planner for Kernel {
             state,
             now,
             cands: &cands,
+            replay: &w.replay,
         };
         planreq::kernel_day(&pw, None).map(|(k, _)| k.day)
     }
@@ -210,6 +211,7 @@ impl Planner for Kernel {
             state: &w.state,
             now: w.now,
             cands,
+            replay: &w.replay,
         };
         let (req, order) = planreq::request(&pw, None);
         let resp = planreq::call(&req);
@@ -709,209 +711,35 @@ proptest! {
 }
 
 
-/// **A configured double as the exact decimal pair the wire carries** (D17).
-///
-/// The kernel holds no `Float`, so every `[energy]` and `[expected]` decimal
-/// crosses as `num/den`. This is `kernel_capacity::written_pair` restricted to
-/// the shortest round-trip text of a `f64` — the shipped reader lives in the
-/// `tm` binary and an integration test cannot link it, which is README gap
-/// 2006: one concept, two readings, and the move belongs with R3's deletion.
-fn dec(x: f64) -> Value {
-    let t = format!("{x}");
-    let (int, frac) = t.split_once('.').unwrap_or((t.as_str(), ""));
-    json!({"num": format!("{int}{frac}"), "den": format!("1{}", "0".repeat(frac.len()))})
-}
-
-/// The same pair as JSON naturals, for the sections whose reader is `natAt`
-/// rather than a digit string (the prior's step bounds).
-fn decn(x: f64) -> Value {
-    let v = dec(x);
-    json!({"num": v["num"].as_str().unwrap_or("0").parse::<u64>().unwrap_or(0),
-           "den": v["den"].as_str().unwrap_or("1").parse::<u64>().unwrap_or(1)})
-}
-
-/// A `NaiveTime` as the wire's `HH:MM`.
-fn hhmm(t: NaiveTime) -> String {
-    format!("{:02}:{:02}", t.hour(), t.minute())
-}
-
 impl World {
-    /// **`capacity.candidates.items`, the fork's own list** (W-29 repair,
-    /// README gap 2005 — it closes gap 1905's first half).
+    /// **The whole request the kernel plans from — the binary's own** (the W-40
+    /// repair, README gap 3907): `planreq::request` over this world, so the
+    /// documents, the log through D24's seam, the CAPACITY section
+    /// (`tm_core::planwire::capacity_json`, the pure half
+    /// `kernel_capacity::request` calls) and the `planner` section
+    /// (`tm_core::planwire::planner_json`, the codec R3 swaps in) are each
+    /// written by the one encoder the binary writes them with.
     ///
-    /// Gap 1905 said no honest encoder for `Look.Cand` existed on this side.
-    /// One does, and it ships: `tm/src/cli/kernel_capacity.rs`'s `send_order`,
-    /// `cand_json` and `plan_json` are what the `tm` binary sends on every
-    /// `tm plan`. **They cannot be linked from here** — `tm` is a `[[bin]]`
-    /// with no library target, so an integration test cannot `use` them — so
-    /// this is that encoder's second spelling and README gap **2006** records
-    /// the move (into `tm-core`, or out with R3) rather than pretending it is
-    /// not one. Everything it reads is the FORK's: `collect_candidates` builds
-    /// the records, `Tree::root`/`priority` the written `!k`, and the order is
-    /// the fork's own `(effective_due, own_order, index)`.
-    ///
-    /// `yesterday` is `None` on every record because `RuntimeState::default()`
-    /// leaves `priorities_yesterday` empty and the fork reads exactly that map
-    /// (`planner.rs:988`) — the two sides agree by construction, not by luck.
-    fn candidate_items(&self) -> Vec<Value> {
-        let cands = self.candidates();
-        // `kernel_capacity::send_order`: the fork's `priority::compute` sort, so
-        // the kernel's stable sort by due date serves a date's deadlines in the
-        // fork's order.  One spelling of it here since W-36: `send_order`, which
-        // D60's comparand reads too (the kernel's request position).
-        let order = planreq::send_order(&cands);
-        order
-            .iter()
-            .map(|&i| {
-                let c = &cands[i];
-                let root_prio = self.tree.get(&self.tree.root(&c.id)).and_then(|r| r.priority);
-                let floor = c.floor.as_ref().map(|r| {
-                    json!({"left": r.amount.as_minutes().saturating_sub(c.floor_done_min),
-                           "until": priority::period_range(r.per, date()).1.to_string()})
-                });
-                json!({
-                    "id": c.id.as_str(), "ci": c.ci, "rootPrio": root_prio,
-                    "remaining": c.remaining_min,
-                    "due": c.effective_due.map(|d| d.date_naive().to_string()),
-                    "window": c.window.is_some(), "wall": c.is_wall,
-                    "optional": c.is_optional, "overdue": c.overdue,
-                    "mandatory": c.mandatory, "hot": c.hot,
-                    "yesterday": Option::<u8>::None,
-                    "floor": floor,
-                    // §8.2 step 5's nine (`Look.PlanFacts`), as `plan_json` sends them.
-                    "plan": {"plannedMin": c.planned_min,
-                             "multiplier": decn(c.multiplier),
-                             "loc": c.loc.as_str(), "splittable": c.splittable,
-                             "cap": c.cap.as_ref().map(|r| json!({
-                                 "capMin": r.amount.as_minutes(), "doneMin": c.cap_done_min})),
-                             "state": c.state.glyph().to_string(),
-                             "blockedBy": c.blocked_by.iter().map(ToString::to_string)
-                                 .collect::<Vec<String>>(),
-                             "wallToday": c.wall_today}})
-            })
-            .collect()
-    }
-
-    /// **§8.2 step 2's instances** — `tm_core::planwire::routine_instances`, the collector the
-    /// binary's encoder uses, over this world's candidates and tree (W-31 put the fork's
-    /// `collect_routines` here as a SECOND spelling, README gap 2221; the W-35 repair made it a
-    /// call, README gap 2922).
-    fn routine_items(&self) -> Vec<planwire::RoutineInst> {
-        planwire::routine_instances(&self.candidates(), &self.tree, self.now, date(), self.cfg.tz)
-    }
-
-    /// **The whole request the kernel plans from**: the generated documents,
-    /// the generated log through D24's seam, the capacity section over
-    /// `Config::default()`, and the `planner` section §9's runtime rows live in.
-    ///
-    /// The lookahead's own inputs — `pLounge`, `arrival`, `prior`, `homeMaxCi`,
-    /// `posterior`, `sleep`, `priority` and `days` — are the shipped defaults
-    /// spelled here rather than read off `Config`, and **none of them reaches
-    /// what this arm compares**: §8.1's window is `[day]`, the stored window and
-    /// the walls, and the walls are the documents'. They are here because the
-    /// capacity section must decode for the planner section to be read at all.
+    /// Until the repair this arm spelled the capacity section a fourth time —
+    /// `windowHours` 8/1, `budgetRatio` 3/4, the bins, the safety, `batchMaxMin`
+    /// 20, the posterior and the sleep as literals, `state.loc` sent raw, and the
+    /// candidates' records by hand — so its 287-draw hash arm
+    /// and its `TM_ORACLE` arm planned through a request the binary does not
+    /// send. Every draw is generated on [`DAY`], so the binary's dating of the
+    /// floors and the lookahead by `now`'s date is the hand spelling's `date()`.
     fn plan_request(&self) -> Value {
-        let tz = self.cfg.tz;
-        let week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-        // **READ OFF `Config`, NEVER SPELLED** (W-29 repair, README gap 2005).
-        // These three tables were hand-written literals said to be "the shipped
-        // defaults"; they were not. `Config::default()` puts the lounge prior at
-        // `0-1:4, 1-5:5, 5-8:4, 8-10:3, 10+:2` and the home prior at
-        // `0-1:3, 1-4:4, 4-8:3, 8+:2`, `p_lounge` at 0.9/0.8/0.5/0.4 and the
-        // expected arrival at 07:00 (10:00 at the weekend) — the literals said
-        // `5/3/1`, `3/2`, 1.0 everywhere and `state.arrival` (00:00 when unset).
-        // Nothing before this step read them: §8.1's window is `[day]` and the
-        // walls, so the window and budget halves of this arm agreed anyway, and
-        // §8.2 step 5's ENERGY FILTER — the one reader of the prior — was never
-        // compared. DRIVEN: with the literals 2 of 19 routine-free cases cut the
-        // day into different assigned slots; read off `Config`, 26 of 26 agree.
-        let wds = [chrono::Weekday::Mon, chrono::Weekday::Tue, chrono::Weekday::Wed,
-                   chrono::Weekday::Thu, chrono::Weekday::Fri, chrono::Weekday::Sat,
-                   chrono::Weekday::Sun];
-        let p_config: serde_json::Map<String, Value> = week
-            .iter()
-            .zip(wds)
-            .map(|(k, wd)| ((*k).to_string(), dec(*self.cfg.expected.p_lounge.get(wd))))
-            .collect();
-        let arrival_tbl: serde_json::Map<String, Value> = week
-            .iter()
-            .zip(wds)
-            .map(|(k, wd)| ((*k).to_string(), json!(hhmm(*self.cfg.expected.arrival.get(wd)))))
-            .collect();
-        let curve = |loc: &str| -> Value {
-            Value::Array(
-                self.cfg.energy.prior[loc]
-                    .0
-                    .iter()
-                    .map(|s| json!({"from": decn(s.from), "to": s.to.map(decn), "level": s.level}))
-                    .collect(),
-            )
+        let cands = self.candidates();
+        let w = planreq::World {
+            docs: &self.docs,
+            log: &self.log,
+            tree: &self.tree,
+            cfg: &self.cfg,
+            state: &self.state,
+            now: self.now,
+            cands: &cands,
+            replay: &self.replay,
         };
-        let d = &self.cfg.day;
-        let capacity = json!({
-            // **`wake` CROSSES** (W-30). `kernel_capacity::request` sends
-            // `{"sec", "ns"}` when `state.wake` is set and `"log"` otherwise; this
-            // arm sent NEITHER, so `Boundary.readWake` answered `.absent` and the
-            // kernel measured §8.5's `hsw` from the weekday's expected arrival
-            // while the fork measured it from the day's own wake. Every slot's
-            // energy level rides on that.
-            "wake": match self.state.wake {
-                Some(t) => json!({"sec": t.num_seconds_from_midnight(), "ns": t.nanosecond()}),
-                None => json!("log"),
-            },
-            "pLounge": {"config": p_config},
-            "arrival": {"config": arrival_tbl},
-            "prior": {"lounge": curve("lounge"), "home": curve("home")},
-            "homeMaxCi": self.cfg.location.home_max_ci,
-            "day": {"breakMin": d.break_min, "breakAfterBlocks": d.break_after_blocks,
-                    "minLastBlockMin": d.min_last_block_min,
-                    "windowHours": {"num": 8, "den": 1}, "windowCap": hhmm(d.window_cap),
-                    "budgetRatio": {"num": 3, "den": 4},
-                    "windDown": hhmm(d.wind_down), "bed": hhmm(d.bed)},
-            "priority": {"bins": [{"num": 1, "den": 2}, {"num": 1, "den": 4},
-                                  {"num": 1, "den": 10}],
-                         "safety": {"num": 13, "den": 10}, "defaultPriority": 3,
-                         "batchMaxMin": 20},
-            "days": priority::lookahead_days(&self.candidates(), date()),
-            "at": self.now.to_rfc3339(),
-            "state": {
-                "date": self.state.date.map(|x| x.to_string()),
-                "window": self.state.window.map(|(f, t)| json!({"from": hhmm(f), "to": hhmm(t)})),
-                "budget": self.state.budget,
-                "arrival": self.state.arrival.map(hhmm),
-                "loc": self.state.loc,
-                "allowHome": false},
-            "posterior": {"fullHours": {"num": 3, "den": 1}, "zeroHours": {"num": 6, "den": 1}},
-            "sleep": {"shiftModel": null, "shiftConfig": {"neg": false, "num": 1, "den": 1},
-                      "underHours": {"num": 7, "den": 1}},
-            "candidates": {"hysteresis": self.cfg.priority.hysteresis,
-                           "items": self.candidate_items()},
-        });
-        // **THE `planner` SECTION IS THE BINARY'S OWN ENCODER** (W-35 repair, README gap
-        // 2922): `tm_core::planwire::planner_json` over `routine_instances`, the codec R3 swaps
-        // in.  Until the repair this arm spelled `state.active`, `state.interrupt` and the
-        // routines by hand (and the W-35 arm `state.break`), so the 279-day generated comparison
-        // never ran the encoder R3 will ship — and the two spellings differed on an interruption
-        // with no start, which the hand spelling dropped and `state_json` sends as `null`.
-        json!({
-            "docs": self.docs_json(),
-            "now": DAY,
-            "blockMin": self.cfg.block_min(),
-            "tz": rowwire::tz_table::wire_for(None, tz),
-            "log": {"ckpt": null, "from": 1,
-                    "lines": self.log.lines().collect::<Vec<_>>(),
-                    "terminated": true, "reseal": null,
-                    "want": {"facts": true, "headersFrom": null, "render": []},
-                    "sealed": null},
-            "capacity": capacity,
-            "planner": planwire::planner_json(
-                &self.state,
-                self.now,
-                tz,
-                &self.routine_items(),
-                None,
-            ),
-        })
+        planreq::request(&w, None).0
     }
 }
 
@@ -1173,7 +1001,7 @@ fn an_impossible_answer_with_no_until_keys_as_every_other() {
     // `planreq::kernel_day`) — until W-38 this read them with the fork region's own `kernel_prios`,
     // so R3's deletion of the region would have left this test, outside it, unbuildable (README
     // gap 3472, found by W-38's deletion simulation).
-    let pw = planreq::World { docs: &w.docs, log: &w.log, tree: &w.tree, cfg: &w.cfg, state: &w.state, now: w.now, cands: &cvec };
+    let pw = planreq::World { docs: &w.docs, log: &w.log, tree: &w.tree, cfg: &w.cfg, state: &w.state, now: w.now, cands: &cvec, replay: &w.replay };
     let (_, ans) = planreq::kernel_day(&pw, None).unwrap_or_else(|e| panic!("the kernel refused: {e}"));
     let ps = ans.prios;
     let i = ps.iter().position(forkclass::is_impossible_tie).expect("the reversed day has an impossible tie");
@@ -2105,8 +1933,9 @@ proptest! {
 // sentence that stood here — "this arm has no honest collector" — was false.
 // `Planner::collect_routines` reads the candidate list and the item's `shape`
 // and nothing else, and both were already in this arm's hands; see
-// [`World::routine_items`] (a call of `tm_core::planwire::routine_instances` since the W-35
-// repair, README gap 2922) and README gap **2220**. F2's recurrence expansion
+// [`World::plan_request`] (`tm_core::planwire::routine_instances` through the binary's own
+// request since the W-40 repair, README gap 3956; a call of it since the W-35 repair, README
+// gap 2922) and README gap **2220**. F2's recurrence expansion
 // is still not built and D27 is still not done early: the expansion happened in
 // `priority::collect_candidates` before the list existed. So the kernel places
 // §8.2 step 2's rows here now, they are compared to the second, both ways, and
@@ -2494,7 +2323,8 @@ proptest! {
 
         // **§8.2 step 5's rows, compared — and the exemption is a PROPERTY, not a list.**
         // P9 put `Planner.PlanReq.assignedRows` in the kernel's day, and since the W-29
-        // repair step this arm SENDS the fork's candidates (`candidate_items`), so a
+        // repair step this arm SENDS the fork's candidates (since the W-40 repair through
+        // the binary's own encoder, `planwire::capacity_json`), so a
         // kernel day carries assigned Block and Batch rows on every case whose tree
         // generated one. What is still not sent is §10.2's `routines`, and that is the
         // exemption below — stated over the fork's own day, counted, and not universal.
@@ -2925,7 +2755,8 @@ proptest! {
         //
         // **The candidate half is 0 BY CONSTRUCTION and is therefore counted,
         // not asserted**: `fork_assigned` reads ids off the fork's own day and
-        // `candidate_items` sends the fork's own candidate list, so the first is
+        // the binary's encoder (`planwire::capacity_json`) sends the fork's own
+        // candidate list, so the first is
         // a subset of the second and no draw can make it otherwise. A counter
         // that cannot move is not an instrument, and saying so is the point of
         // printing it.

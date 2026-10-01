@@ -612,6 +612,7 @@ pub fn app_of_world(
         state: &state,
         now,
         cands: &candidates,
+        replay: &replay,
     };
     let (mut req, order) = planreq::request(&world, None);
     req.as_object_mut().expect("a request is an object").remove("planner");

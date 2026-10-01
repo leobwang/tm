@@ -573,13 +573,12 @@ fn call_the_walls(
         ),
     }
     .map_err(super::ctx::genesis_error)?;
-    let mut walls = serde_json::json!({
-        "at": log::fmt_timestamp(&ctx.now_tz.fixed_offset()),
-        "break": running_break.map(|b| log::fmt_timestamp(&b)),
-    });
-    if let Some(first) = dates.as_ref().and_then(|d| d.first()) {
-        walls["week"] = serde_json::Value::String(first.to_string());
-    }
+    // The one encoder of the walls object (README gap 3955).
+    let walls = tm_core::planwire::walls_json(
+        ctx.now_tz.fixed_offset(),
+        running_break,
+        dates.as_ref().and_then(|d| d.first()).copied(),
+    );
     let rest = serde_json::json!({
         "docs": docs,
         "now": ctx.today.to_string(),
@@ -632,54 +631,14 @@ fn read_week_cut(
     tz: chrono_tz::Tz,
     days: &[(chrono::NaiveDate, &[log::LogSegment])],
 ) -> Result<tm_core::review::PauseCut, CliError> {
-    use tm_core::review::{CutPause, PauseCut};
     let fault = |what: &str| {
         CliError::Kernel(super::kernel_bridge::fault_issue(
             &format!("week cut response: {what}"),
             stderr,
         ))
     };
-    let at = |v: &serde_json::Value, what: &str| -> Result<DateTime<chrono_tz::Tz>, CliError> {
-        v.as_i64()
-            .and_then(|sec| tm_core::planwire::instant_of(sec, tz))
-            .ok_or_else(|| fault(&format!("{what} is not an instant")))
-    };
-    let spans = |v: &serde_json::Value, what: &str| -> Result<Vec<(DateTime<chrono_tz::Tz>, DateTime<chrono_tz::Tz>)>, CliError> {
-        v.as_array()
-            .ok_or_else(|| fault(&format!("`{what}` is not an array")))?
-            .iter()
-            .map(|p| match p.as_array().map(Vec::as_slice) {
-                Some([a, b]) => Ok((at(a, what)?, at(b, what)?)),
-                _ => Err(fault(&format!("a `{what}` span is not a pair"))),
-            })
-            .collect()
-    };
-    let answered = resp["ok"]["emit"]["cut"]
-        .as_array()
-        .ok_or_else(|| fault("no `ok.emit.cut` array"))?;
-    let mut cut = PauseCut::default();
-    for d in answered {
-        let date = d["day"]
-            .as_str()
-            .and_then(|s| chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
-            .ok_or_else(|| fault("a day's `day` is not a date"))?;
-        let pauses = d["pauses"]
-            .as_array()
-            .ok_or_else(|| fault("a day's `pauses` is not an array"))?
-            .iter()
-            .map(|p| {
-                Ok(CutPause {
-                    start: at(&p["from"], "a pause's `from`")?,
-                    end: at(&p["to"], "a pause's `to`")?,
-                    pause: spans(&p["pause"], "pause")?,
-                    wall: spans(&p["wall"], "wall")?,
-                })
-            })
-            .collect::<Result<Vec<_>, CliError>>()?;
-        if cut.days.insert(date, pauses).is_some() {
-            return Err(fault(&format!("the day {date} is answered twice")));
-        }
-    }
+    // The one decoder of `ok.emit.cut` (README gap 3955); a defect in it is a fault.
+    let cut = tm_core::planwire::read_week_cut(resp, tz).map_err(|e| fault(&e))?;
     for (date, segments) in days {
         let date = *date;
         for seg in segments.iter() {
@@ -1692,8 +1651,21 @@ pub fn resume(g: &Globals) -> Result<i32, CliError> {
         return Err(CliError::msg("nothing to resume"));
     };
     let rec = Recorder::start(&ctx, "resume")?;
-    let started = int.started.unwrap_or_else(|| ctx.now_tz.time());
-    let lost = (ctx.now_tz - ctx.at(started)).num_minutes().max(0) as u32;
+    // **The interruption's start is the log's** (the W-40 repair, README gaps 3821
+    // and 3951, parity P69 — D75's clock, whose reason is this verb's too: a wrong
+    // `lost_min` is a wrong fact written into the log). The instant of its own
+    // `interrupt` line, `Replay::open_interruption`; `.tm/state.json`'s
+    // `interrupt.started` is a bare `HH:MM`, its cache (D42), and fork 4748911 put it
+    // on TODAY's date — so a `tm resume` after local midnight logged `lost_min: 0`
+    // for an interruption begun before it. Only an interruption the log does not
+    // hold (a hand-edited cache) keeps the cache's clock.
+    let started = ctx
+        .replay
+        .open_interruption()
+        .and_then(|i| i.start)
+        .map(|t| t.with_timezone(&ctx.cfg.tz))
+        .unwrap_or_else(|| ctx.at(int.started.unwrap_or_else(|| ctx.now_tz.time())));
+    let lost = (ctx.now_tz - started).num_minutes().max(0) as u32;
 
     // §9: the tail the lost minutes cost — §10.1's `resume{dropped}` names
     // each item once, however many blocks it held in the plan that is being

@@ -694,10 +694,15 @@ def ratchet_file(path, shallow, under, why_stale, bad, sections):
     EXIT>`, for any section in `sections`, and answers every shallow path equal to or
     under it.  A malformed, undated or repeated line, a line no shallow path is at or
     under (STALE; `why_stale(p)` says why), and a line the committed file did not hold
-    are each a complaint in `bad` -- unless it sits under a `## <heading>` the committed
-    file did not hold either, and the heading carries an ISO date: growth is a dated
-    section in the diff, never a line (reach.py's rule, D51; W-40).  Returns
-    `{entry: lineno}`."""
+    are each a complaint in `bad` -- WHATEVER heading it sits under (README gap 3953,
+    the W-40 repair).  W-40 track E gave this ratchet reach.py's escape -- a new line
+    was let through under a `## <heading>` new in the diff and carrying an ISO date --
+    and both files it governs grew under it (sent 0 -> 1, written 3 -> 5); driven by
+    the W-40 verifier, an unread key planted with a dated heading passed at rc=0.  The
+    owner's D51 says these files only SHRINK, and `inputs-exempt.txt` and
+    `fields-exempt.txt`, this script's other two, never had the escape: growth is the
+    owner's to grant, in the commit that changes this script, and never a heading.  A
+    heading stays a way to group lines.  Returns `{entry: lineno}`."""
     entries, heading_of, headings = {}, {}, {}
     text = path.read_text() if path.exists() else ""
     current = None
@@ -729,24 +734,21 @@ def ratchet_file(path, shallow, under, why_stale, bad, sections):
             bad.append("STALE: %s:%d  `%s` is %s -- delete this line, the file may only shrink"
                        % (path.name, lineno, e, why_stale(e)))
     prev = committed_exemptions(path)
-    if prev is not None:
-        held, held_heads = set(), set()
+    if prev is None:
+        bad.append("RATCHET UNCHECKED: `git show HEAD:./%s` gave nothing, so the only comparand "
+                   "this file has is itself" % path.name)
+    else:
+        held = set()
         for ln in prev.splitlines():
             ln = ln.strip()
-            hd = HEADING.match(ln)
-            if hd:
-                held_heads.add(hd.group(1).strip())
-            elif ln and not ln.startswith("#"):
+            if ln and not ln.startswith("#") and not HEADING.match(ln):
                 held.add(ln.partition(" -- ")[0])
         for e in sorted(set(entries) - held):
             if any(under(e, q) for q in held):
                 continue
-            h = heading_of.get(e)
-            if h is not None and h not in held_heads and ISO_DATE.search(h):
-                continue
-            bad.append("RATCHET: %s:%d  `%s` is a NEW exemption, under no key exempt at HEAD and no "
-                       "dated heading new in this diff -- this file may only SHRINK"
-                       % (path.name, entries[e], e))
+            bad.append("RATCHET: %s:%d  `%s` is a NEW exemption, under no key exempt at HEAD -- "
+                       "this file may only SHRINK (D51), whatever heading it sits under "
+                       "(README gap 3953)" % (path.name, entries[e], e))
     return entries
 
 

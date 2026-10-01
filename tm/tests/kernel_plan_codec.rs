@@ -75,6 +75,7 @@ impl Case {
             state: &self.state,
             now: self.now,
             cands: &self.cands,
+            replay: &self.fx.replay,
         }
     }
 
@@ -220,19 +221,25 @@ fn the_what_if_crosses_and_comes_back_as_a_diff() {
 #[test]
 fn what_the_kernel_cannot_plan_is_refused_by_the_kernel_by_name() {
     let c = Case::new("plan-basic", Some(BASIC_LOG), Some(basic_state()), 7, 0);
-    // The codec never sends a start after `now` since W-40 (`state_json` reads it as
-    // `now`, README gap 2874), so the section is written by hand here: what is pinned
-    // is the KERNEL's refusal of the raw start.
-    let after_now = planwire::kernel_sec(at("2026-09-07", 7, 5));
-    let resp = c.raw(|p| {
-        p["state"]["active"] = json!({"id": "m4", "started": after_now, "estMin": 60, "paused": false});
+    // A start after `now` is sent as read (the W-40 repair, README gap 3952: the codec
+    // moves no start, `state_json` takes no `now`), and the KERNEL refuses it by name —
+    // README gap 2874's input 1, the fork's tolerance owed the owner's behaviour row.
+    let mut state = basic_state();
+    state.active = Some(ActiveBlock {
+        id: Id::new("m4"),
+        started: NaiveTime::from_hms_opt(7, 5, 0).expect("time"),
+        est_min: 60,
+        paused: false,
     });
+    let enc = planwire::state_json(&state, &planwire::LoggedStarts::default(), date("2026-09-07"), c.fx.cfg.tz);
+    assert_eq!(enc["active"]["started"], json!(planwire::kernel_sec(at("2026-09-07", 7, 5))), "sent as read");
+    let resp = c.raw(|p| p["state"] = enc.clone());
     assert_eq!(planwire::planner_refusal(&resp), Some("badActive wf"), "{resp}");
 
     // An unknown break place is the kernel's to refuse, and it does.
     let mut state = basic_state();
     state.break_ = Some(BreakState { started: None, planned_min: 20, place: Some("couch".to_string()) });
-    let enc = planwire::state_json(&state, date("2026-09-07"), at("2026-09-07", 7, 0), c.fx.cfg.tz);
+    let enc = planwire::state_json(&state, &planwire::LoggedStarts::default(), date("2026-09-07"), c.fx.cfg.tz);
     let resp = c.raw(|p| p["state"] = enc.clone());
     assert_eq!(planwire::planner_refusal(&resp), Some("badBreak place"), "{resp}");
 
@@ -260,7 +267,7 @@ fn what_the_kernel_cannot_plan_is_refused_by_the_kernel_by_name() {
             est_min: 60,
             paused: false,
         });
-        let enc = planwire::state_json(&state, date("2026-09-07"), at("2026-09-07", 7, 0), c.fx.cfg.tz);
+        let enc = planwire::state_json(&state, &planwire::LoggedStarts::default(), date("2026-09-07"), c.fx.cfg.tz);
         let resp = c.raw(|p| p["state"] = enc.clone());
         let got = planwire::planner_refusal(&resp);
         if refused {

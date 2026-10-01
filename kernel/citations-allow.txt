@@ -1182,3 +1182,14 @@ with_minute
 # track H's and W-40 track P's -- naming the thing as it stood.
 3 forkplan::gap_3480_explains
 4 gap_3480s_declared_class_holds_on_the_draw_that_found_it
+
+# W-40 REPAIR (README gaps 3952 and 3956): `planner_invariants.rs`' hand-written capacity section
+# and its helpers were DELETED (the arm plans through `planreq::request`, the binary's encoders), and
+# track E's start clamp with its two tests was WITHDRAWN (the codec moves no start; P68 restated).
+# Every citation counted here is an append-only README block naming the thing as it stood.
+3 World::candidate_items
+3 candidate_items
+1 routine_items
+1 a_running_block_started_after_now_is_planned_from_now_and_its_row_ends_a_block_later
+1 a_running_record_never_starts_after_now
+1 at_most_now

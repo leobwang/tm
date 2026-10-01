@@ -1284,8 +1284,10 @@ fi
 #     getters, pass-throughs, key parameters and `where` helpers are derived by
 #     PROPERTY from the source, not listed.  Both sides are compared normalized
 #     (prefix-closed, an array of scalars read as its key).  An exemption names
-#     a key path or a whole section, and growth of either file is a `## `
-#     heading new in the diff, with an ISO date -- reach.py's rule, D51.
+#     a key path or a whole section, and neither file may grow: a line HEAD
+#     does not hold fails RATCHET whatever heading it sits under (D51; README
+#     gap 3953, the W-40 repair, which removed W-40 track E's dated-heading
+#     escape).
 out=$( python3 fields.py 2>&1 )
 if [ $? -eq 0 ]; then
   say "every emitted field has a writer" "ok  ($( printf '%s\n' "$out" | tail -4 | head -1 ))"

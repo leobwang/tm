@@ -380,7 +380,7 @@ fn arrivals_today(replay: &Replay, today: NaiveDate) -> usize {
 /// runs is paused, because that is what the rebuild derives from the log — the
 /// cache follows the log, never the reverse.
 pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interruption> {
-    replay.open_interrupt.as_ref().filter(|i| i.end.is_none())
+    replay.open_interruption()
 }
 
 /// **What the verbs left `active.paused` at, read back from the log** — the one
@@ -411,16 +411,6 @@ pub(crate) fn open_interruption(replay: &Replay) -> Option<&tm_core::log::Interr
 fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool> {
     // Each tag is asked of `Event` rather than spelled a second time (§5.3).
     let tag = |e: Event| e.name().to_string();
-    let start = tag(Event::Start {
-        id: String::new(),
-        pred: 0,
-        rep: None,
-        hsw: 0.0,
-        slept_min: 0,
-        loc: String::new(),
-        blocks_done: 0,
-        since_break_min: 0,
-    });
     let pause = tag(Event::Pause { id: String::new() });
     let unpause = tag(Event::Unpause { id: String::new() });
     let interrupt = tag(Event::Interrupt { id: None });
@@ -428,9 +418,8 @@ fn logged_pause(replay: &Replay, open: &tm_core::log::OpenBlock) -> Option<bool>
     let brk = tag(Event::Break { planned_min: 0, actual_min: None, r#where: None });
     let rows = replay.view();
     let mine = |r: &tm_core::log::ViewRow| r.id.as_deref() == Some(open.id.as_str());
-    let at = rows
-        .iter()
-        .rposition(|r| !r.cancelled && r.tag == start && mine(r) && r.t == open.started)?;
+    // The block's own `start` row: the replay's one finder of it (README gap 3950).
+    let at = replay.start_row(Some(open.id.as_str()), open.started)?;
     let mut interrupted = rows[..at]
         .iter()
         .rev()

@@ -68,6 +68,7 @@ fn every_drawn_day_decodes_and_each_completion_is_counted() {
             state: &w.state,
             now: w.now,
             cands: &cands,
+            replay: &w.replay,
         };
         let (req, order) = planreq::request(&world, None);
         let resp = planreq::call(&req);

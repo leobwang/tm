@@ -116,6 +116,7 @@ impl Loaded {
             state: &self.state,
             now: self.now,
             cands: &self.cands,
+            replay: &self.fx.replay,
         }
     }
 }

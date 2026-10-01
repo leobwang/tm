@@ -280,6 +280,7 @@ impl Built {
             state: &self.world.state,
             now: self.world.now,
             cands: &self.cands,
+            replay: &self.replay,
         }
     }
 

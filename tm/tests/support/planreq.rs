@@ -45,6 +45,7 @@ use serde_json::{json, Value};
 
 use tm_core::config::Config;
 use tm_core::energy::Model;
+use tm_core::log::Replay;
 use tm_core::model::{Id, Loc};
 use tm_core::planwire::{self, CapacityAnswer, CapacityIn, DayCtx, KernelDay, Ranked, RoutineInst, Written};
 use tm_core::priority::{self, Candidate};
@@ -67,6 +68,10 @@ pub struct World<'a> {
     pub now: DateTime<Tz>,
     /// `priority::collect_candidates` over the same tree and replay.
     pub cands: &'a [Candidate],
+    /// The replay of `log` the candidates were collected over: the planner
+    /// section reads the running records' logged starts from it
+    /// (`planwire::LoggedStarts`, README gap 3943).
+    pub replay: &'a Replay,
 }
 
 /// **The order the candidates are sent in** — `planwire::send_order`, the order
@@ -127,7 +132,7 @@ pub fn request(w: &World<'_>, overtime: Option<Value>) -> (Value, Vec<usize>) {
                 "want": {"facts": true, "headersFrom": null, "render": []},
                 "sealed": null},
         "capacity": capacity(w, &order),
-        "planner": planwire::planner_json(w.state, w.now, tz, &routines, overtime),
+        "planner": planwire::planner_json(w.state, w.replay, w.now, tz, &routines, overtime),
     });
     (req, order)
 }

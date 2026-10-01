@@ -62,11 +62,13 @@
 //! `tm break --where` with a fifth word — each a named gap owed before the
 //! swap, 3902 and 3903.)
 //!
-//! **A start after `now` is a reading, not a bound** (W-40 track E, README gap
-//! 2874): [`state_json`] sends each running record's start as `min(start,
-//! now)`, because the fork reads such a block as nothing worked yet
-//! (`Planner::active_run`'s `.max(0)`) and the kernel refuses the raw start
-//! (`badActive wf`). No number of the kernel's is written to do it.
+//! **A running record's start is the log's, and is never moved** (the W-40
+//! repair, README gaps 3943 and 3952): [`state_json`] reads the running block's
+//! and the interruption's start from the log's own lines (D75's clock, parity
+//! P69), and a start still after `now` is sent as read and refused by the
+//! kernel by name (`badActive wf`) — README gap 2874's input 1, owed the owner's
+//! behaviour row. From W-40 track E until the repair it was sent as `now`, a
+//! reading no owner decision named. No number of the kernel's is written here.
 //!
 //! # What it decodes, and the one check it makes
 //!
@@ -149,6 +151,80 @@ pub fn kernel_sec(t: DateTime<Tz>) -> i64 {
 /// The kernel's absolute second as an instant in `tz`.
 pub fn instant_of(sec: i64, tz: Tz) -> Option<DateTime<Tz>> {
     tz.timestamp_opt(sec.checked_sub(EPOCH_FROM_CE)?, 0).single()
+}
+
+// ---------------------------------------------------------------------------
+// The `emit` section's walls form (moved from `tm/src/cli/day.rs`)
+// ---------------------------------------------------------------------------
+
+/// **The `emit` section's `walls` object** (`EmitWire`'s walls form; D61, and with a
+/// `week` the grid's cut, `GridCut.lean`): `at` (the request's instant), `break` (the
+/// running break's start, `null` with none) and, when asked for a week's cut, `week`
+/// (its Monday). The ONE encoder of it (the W-40 repair, README gap 3955): the
+/// binary's `day::call_the_walls` and the harness's `weekcut::walls_week_request`
+/// each wrote the object, and the harness's never sent a running break.
+pub fn walls_json(
+    at: DateTime<chrono::FixedOffset>,
+    running_break: Option<DateTime<chrono::FixedOffset>>,
+    week: Option<NaiveDate>,
+) -> Value {
+    let mut walls = json!({
+        "at": crate::log::fmt_timestamp(&at),
+        "break": running_break.map(|b| crate::log::fmt_timestamp(&b)),
+    });
+    if let Some(monday) = week {
+        walls["week"] = Value::String(monday.to_string());
+    }
+    walls
+}
+
+/// **The kernel's cut of a week's Pauses, decoded** — `ok.emit.cut`, one object per
+/// day the kernel answered (`day`, and `pauses`: each `from`/`to` with its `pause`
+/// and `wall` spans), every key named and a missing or mistyped one an `Err` naming
+/// it, never a guess; a day answered twice is refused. The ONE decoder of it (the
+/// W-40 repair, README gap 3955): the binary's `day::read_week_cut` (which then
+/// refuses a Pause of the host's replay the cut does not name) and the harness's
+/// `weekcut::read_week_cut` each decoded it.
+pub fn read_week_cut(resp: &Value, tz: Tz) -> Result<crate::review::PauseCut, String> {
+    use crate::review::{CutPause, PauseCut};
+    let at = |v: &Value, what: &str| -> Result<DateTime<Tz>, String> {
+        v.as_i64().and_then(|sec| instant_of(sec, tz)).ok_or_else(|| format!("{what} is not an instant"))
+    };
+    let spans = |v: &Value, what: &str| -> Result<Vec<(DateTime<Tz>, DateTime<Tz>)>, String> {
+        v.as_array()
+            .ok_or_else(|| format!("`{what}` is not an array"))?
+            .iter()
+            .map(|p| match p.as_array().map(Vec::as_slice) {
+                Some([a, b]) => Ok((at(a, what)?, at(b, what)?)),
+                _ => Err(format!("a `{what}` span is not a pair")),
+            })
+            .collect()
+    };
+    let answered = resp["ok"]["emit"]["cut"].as_array().ok_or("no `ok.emit.cut` array")?;
+    let mut cut = PauseCut::default();
+    for d in answered {
+        let date = d["day"]
+            .as_str()
+            .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+            .ok_or("a day's `day` is not a date")?;
+        let pauses = d["pauses"]
+            .as_array()
+            .ok_or("a day's `pauses` is not an array")?
+            .iter()
+            .map(|p| {
+                Ok(CutPause {
+                    start: at(&p["from"], "a pause's `from`")?,
+                    end: at(&p["to"], "a pause's `to`")?,
+                    pause: spans(&p["pause"], "pause")?,
+                    wall: spans(&p["wall"], "wall")?,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        if cut.days.insert(date, pauses).is_some() {
+            return Err(format!("the day {date} is answered twice"));
+        }
+    }
+    Ok(cut)
 }
 
 // ---------------------------------------------------------------------------
@@ -1082,43 +1158,82 @@ fn clock_sec(tz: Tz, date: NaiveDate, t: NaiveTime) -> i64 {
 /// when the state holds it. `lastHash` and `yesterday` are not written (module
 /// docs: the kernel reads neither).
 ///
-/// **A record's start is never sent after `now`** (W-40 track E, README gap
-/// 2874): a `tm start` stamped by a clock ahead of this one (a synced machine)
-/// or a `--now` before the stored start leaves `started` in the future, which
-/// the fork reads as nothing worked yet (`active_run`'s `.max(0)`) and the
-/// kernel refuses (`Planner.ActiveBlock.wf`, `badActive wf`; the break's and the
-/// interruption's `wf` alike). Sent as `now`, the block has worked nothing and
-/// its row starts at `now` — the fork's reading of both. This is a reading of
-/// two instants, not a bound: no number of the kernel's is written here. What
-/// it does NOT reproduce is the fork's END of that row: fork
-/// `current_block_end` ends it at `started + block_min`, the kernel at `now +
-/// block_min`, so a row whose estimate outlasts the block is shorter by the
-/// skew (README gap 3905, a divergence for the Land step to number).
-pub fn state_json(state: &RuntimeState, date: NaiveDate, now: DateTime<Tz>, tz: Tz) -> Value {
-    let at_most_now = |t: NaiveTime| clock_sec(tz, date, t).min(kernel_sec(now));
+/// **A start the log holds is read from the log** (the W-40 repair, README gaps
+/// 3943 and 3829, parity **P69**; the owner's **D75**, whose clock this is): the
+/// running block's is the instant of its own `start` line
+/// ([`crate::log::OpenBlock::started`], when the log's open block is the cache's),
+/// and the interruption's the instant of its `interrupt` line
+/// ([`crate::log::Replay::open_interruption`]). `.tm/state.json`'s `started` is a
+/// bare `HH:MM`, a cache of those instants (D42), and fork `Planner::active_run`
+/// put it on the plan's date — so after local midnight a block begun before it
+/// was sent as starting TONIGHT, after `now`. Only the BREAK keeps the cache's
+/// clock on the plan's date, because the log holds no line for a running break
+/// (README gap 3820), and so does a record the log does not hold (unreachable
+/// after D42's reconcile).
+///
+/// **No start is moved** (README gap 3952). From W-40 track E until the repair a
+/// start after `now` was sent AS `now` — a reading no owner decision names (P68
+/// as issued) — and composed with the cache's clock it planned a block begun
+/// before midnight as begun at `now`: a refusal by name had become a plausible
+/// wrong answer (gap 3943). A start still after `now` is sent as it is read and
+/// refused by the kernel by name (`badActive wf`, `badBreak wf`, `badInterrupt
+/// wf`), where the fork plans it from `now`: README gap 2874's input 1, owed the
+/// owner's behaviour row before R3, and P68 as restated.
+pub fn state_json(state: &RuntimeState, logged: &LoggedStarts, date: NaiveDate, tz: Tz) -> Value {
+    let cache = |t: NaiveTime| clock_sec(tz, date, t);
+    let instant = |t: DateTime<chrono::FixedOffset>| kernel_sec(t.with_timezone(&tz));
     let mut o = Map::new();
     if let Some(a) = &state.active {
+        let started = logged
+            .block
+            .as_ref()
+            .filter(|(id, _)| id == a.id.as_str())
+            .map_or_else(|| cache(a.started), |(_, t)| instant(*t));
         o.insert(
             "active".to_string(),
-            json!({"id": a.id.as_str(), "started": at_most_now(a.started),
+            json!({"id": a.id.as_str(), "started": started,
                    "estMin": a.est_min, "paused": a.paused}),
         );
     }
     if let Some(b) = &state.break_ {
         o.insert(
             "break".to_string(),
-            json!({"started": b.started.map(at_most_now),
+            json!({"started": b.started.map(cache),
                    "plannedMin": b.planned_min, "place": b.place}),
         );
     }
     if let Some(i) = &state.interrupt {
+        let started = logged.interrupt.map(instant).or_else(|| i.started.map(cache));
         o.insert(
             "interrupt".to_string(),
-            json!({"started": i.started.map(at_most_now),
+            json!({"started": started,
                    "id": i.id.as_ref().map(Id::as_str)}),
         );
     }
     Value::Object(o)
+}
+
+/// **The instants the log holds for §9's running records** — what
+/// [`state_json`] reads a start from before it falls back to the cache's clock:
+/// the open block's own `start` line (with its item, so a cache naming another
+/// block is not given it) and the open interruption's `interrupt` line. The log
+/// holds no line for a running break (README gap 3820), so there is no third.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LoggedStarts {
+    /// [`crate::log::OpenBlock`]'s `(id, started)`.
+    pub block: Option<(String, DateTime<chrono::FixedOffset>)>,
+    /// [`crate::log::Replay::open_interruption`]'s `start`.
+    pub interrupt: Option<DateTime<chrono::FixedOffset>>,
+}
+
+impl LoggedStarts {
+    /// The two instants, read off the replay.
+    pub fn of(replay: &crate::log::Replay) -> LoggedStarts {
+        LoggedStarts {
+            block: replay.open_block.as_ref().map(|b| (b.id.clone(), b.started)),
+            interrupt: replay.open_interruption().and_then(|i| i.start),
+        }
+    }
 }
 
 /// **One §8.2 step 2 window instance**, as the host collects it and the
@@ -1286,13 +1401,14 @@ pub fn overtime_json(id: &Id, blocks: u32, grown: Option<&Grown>) -> Value {
 /// what-if is asked for.
 pub fn planner_json(
     state: &RuntimeState,
+    replay: &crate::log::Replay,
     now: DateTime<Tz>,
     tz: Tz,
     routines: &[RoutineInst],
     overtime: Option<Value>,
 ) -> Value {
     let date = plan_date(state, now);
-    let mut o = json!({"state": state_json(state, date, now, tz), "routines": routines_json(routines)});
+    let mut o = json!({"state": state_json(state, &LoggedStarts::of(replay), date, tz), "routines": routines_json(routines)});
     if let Some(ot) = overtime {
         o["overtime"] = ot;
     }
@@ -2174,42 +2290,54 @@ mod tests {
             last_plan_hash: Some("0123456789abcdef".to_string()),
             ..RuntimeState::default()
         };
-        let v = state_json(&state, date, at(23, 0), tz());
+        let v = state_json(&state, &LoggedStarts::default(), date, tz());
         assert_eq!(v["active"], json!({"id": "m1", "started": kernel_sec(at(9, 5)), "estMin": 60, "paused": false}));
         assert_eq!(v["break"], json!({"started": kernel_sec(at(10, 0)), "plannedMin": 20, "place": "walk"}));
         assert_eq!(v["interrupt"], json!({"started": null, "id": "m1"}));
         // Read by no definition of the day (kernel/inputs-exempt.txt): not sent.
         assert!(v.get("lastHash").is_none() && v.get("yesterday").is_none(), "{v}");
-        assert_eq!(state_json(&RuntimeState::default(), date, at(23, 0), tz()), json!({}));
+        assert_eq!(state_json(&RuntimeState::default(), &LoggedStarts::default(), date, tz()), json!({}));
         // The planned date is `state.date`, else `now`'s.
         assert_eq!(plan_date(&state, at(23, 0) + Duration::days(3)), date);
         assert_eq!(plan_date(&RuntimeState::default(), at(23, 0)), date);
     }
 
-    /// **A start after `now` is sent as `now`** (W-40 track E, README gap 2874):
-    /// a `tm start` stamped by a clock ahead of this one, or a `--now` before the
-    /// stored start, is a block that has worked nothing — the fork's reading — and
-    /// not a request the kernel refuses `badActive wf`. A start at or before `now`
-    /// is sent as it is.
+    /// **A start the log holds is the log's, and no start is moved** (the W-40
+    /// repair, README gaps 3943 and 3952, parity P69): a block begun at 23:00 and
+    /// planned after midnight, with `.tm/state.json`'s date rolled, is sent at
+    /// YESTERDAY's 23:00 — the instant of its own `start` line — not tonight's,
+    /// and so is the interruption's; the break, which the log holds no line for,
+    /// keeps the cache's clock on the plan's date; and a start after `now` is
+    /// sent as it is read, for the kernel to refuse by name. Until the repair the
+    /// block's was the cache's clock on the plan's date, moved to `now`.
     #[test]
-    fn a_running_record_never_starts_after_now() {
+    fn a_running_record_starts_where_the_log_says_and_is_never_moved() {
         use crate::store::{ActiveBlock, BreakState, InterruptState};
         let date = NaiveDate::from_ymd_opt(2026, 9, 7).expect("date");
         let t = |h, m| NaiveTime::from_hms_opt(h, m, 0).expect("t");
         let state = RuntimeState {
             date: Some(date),
-            active: Some(ActiveBlock { id: Id::new("t4"), started: t(10, 0), est_min: 60, paused: false }),
-            break_: Some(BreakState { started: Some(t(10, 5)), planned_min: 20, place: None }),
-            interrupt: Some(InterruptState { started: Some(t(9, 50)), id: None }),
+            active: Some(ActiveBlock { id: Id::new("t4"), started: t(23, 0), est_min: 60, paused: false }),
+            break_: Some(BreakState { started: Some(t(23, 50)), planned_min: 20, place: None }),
+            interrupt: Some(InterruptState { started: Some(t(23, 40)), id: None }),
             ..RuntimeState::default()
         };
-        let now = at(9, 55);
-        let v = state_json(&state, date, now, tz());
-        assert_eq!(v["active"]["started"], json!(kernel_sec(now)), "after now: sent as now");
-        assert_eq!(v["break"]["started"], json!(kernel_sec(now)), "after now: sent as now");
-        assert_eq!(v["interrupt"]["started"], json!(kernel_sec(at(9, 50))), "before now: as stored");
-        let later = state_json(&state, date, at(11, 0), tz());
-        assert_eq!(later["active"]["started"], json!(kernel_sec(at(10, 0))), "before now: as stored");
+        let yesterday = |h, m| at(h, m) - Duration::days(1);
+        let logged = LoggedStarts {
+            block: Some(("t4".to_string(), yesterday(23, 0).fixed_offset())),
+            interrupt: Some(yesterday(23, 40).fixed_offset()),
+        };
+        let v = state_json(&state, &logged, date, tz());
+        assert_eq!(v["active"]["started"], json!(kernel_sec(yesterday(23, 0))), "the log's start");
+        assert_eq!(v["interrupt"]["started"], json!(kernel_sec(yesterday(23, 40))), "the log's start");
+        assert_eq!(v["break"]["started"], json!(kernel_sec(at(23, 50))), "the cache's clock: no log line");
+        // A log open block for ANOTHER item is not this one's start.
+        let other = LoggedStarts { block: Some(("m1".to_string(), yesterday(23, 0).fixed_offset())), interrupt: None };
+        let v = state_json(&state, &other, date, tz());
+        assert_eq!(v["active"]["started"], json!(kernel_sec(at(23, 0))), "the cache's clock");
+        assert_eq!(v["interrupt"]["started"], json!(kernel_sec(at(23, 40))), "the cache's clock");
+        // Nothing is moved: `state_json` takes no `now`, so a start after it is
+        // sent as read and the kernel refuses it by name (`kernel_plan_codec.rs`).
     }
 
     #[test]

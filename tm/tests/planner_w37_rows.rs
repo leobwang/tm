@@ -186,6 +186,7 @@ fn plan_basic_is_planned_as_the_shipped_fork_plans_it_every_ten_minutes() {
                 state: &state,
                 now,
                 cands: &cands,
+                replay: &fx.replay,
             };
             let label = format!("plan-basic {name} {}", now.format("%H:%M"));
             let (k, ans) = planner_common::planreq::kernel_day(&w, None)

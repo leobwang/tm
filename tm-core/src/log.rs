@@ -1728,11 +1728,14 @@ impl Replay {
             .unwrap_or_else(|| self.active_worked_min(day, clock, now, running_break))
     }
 
-    /// **The day the replay files the block begun at `started` under** — the
-    /// wake-attributed day of its own surviving `start` row ([`ViewRow::day`],
-    /// the same index the seams are keyed by). `None` when the scope's rows do
-    /// not reach it.
-    fn start_row_day(&self, started: DateTime<FixedOffset>) -> Option<NaiveDate> {
+    /// **The row of the block begun at `started`'s own surviving `start` line**
+    /// — its index in [`Replay::view`], the last such row, and of item `id`
+    /// when one is given. The ONE finder of that row (README gap 3950, the
+    /// W-40 repair): [`Replay::start_row_day`] asks it for the day the row is
+    /// filed under, and the host's rebuild (`ctx.rs`' `logged_pause`) for the
+    /// rows after it. Until the repair the two were written twice, and only the
+    /// host's matched the id (AGENTS §5.3).
+    pub fn start_row(&self, id: Option<&str>, started: DateTime<FixedOffset>) -> Option<usize> {
         // The tag is asked of `Event` rather than spelled a second time (§5.3).
         let start = Event::Start {
             id: String::new(),
@@ -1745,11 +1748,29 @@ impl Replay {
             since_break_min: 0,
         };
         let tag = start.name();
-        self.rows
-            .iter()
-            .rev()
-            .find(|r| !r.cancelled && r.tag == tag && r.t == started)
-            .map(|r| r.day)
+        self.rows.iter().rposition(|r| {
+            !r.cancelled
+                && r.tag == tag
+                && r.t == started
+                && id.is_none_or(|id| r.id.as_deref() == Some(id))
+        })
+    }
+
+    /// **The day the replay files the block begun at `started` under** — the
+    /// wake-attributed day of its own surviving `start` row ([`ViewRow::day`],
+    /// the same index the seams are keyed by), found by [`Replay::start_row`].
+    /// `None` when the scope's rows do not reach it.
+    fn start_row_day(&self, started: DateTime<FixedOffset>) -> Option<NaiveDate> {
+        self.start_row(None, started).map(|i| self.rows[i].day)
+    }
+
+    /// **The interruption the log holds open** — [`Replay::open_interrupt`] not
+    /// yet resumed: the one reading of it the host's rebuild, `tm start`, `tm
+    /// resume` and the planner request's codec take (README gap 3951, the W-40
+    /// repair, which moved it here from `ctx.rs` so `tm_core::planwire` reads the
+    /// same one).
+    pub fn open_interruption(&self) -> Option<&Interruption> {
+        self.open_interrupt.as_ref().filter(|i| i.end.is_none())
     }
 
     /// The minutes of the running block that were *not* worked: §9 pauses

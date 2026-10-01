@@ -38,13 +38,13 @@ index a81a80e..bb5b2e4 100644
 @@ -252,6 +257,12 @@ impl<'a> PlanInput<'a> {
          self
      }
-     /// `tm plan --allow-home` (§13).
 +    /// GRAFT (tm-oracle `plan`, stage 6 W-40 land): split §7.5's batches into
 +    /// their runs (D74, parity P64).
 +    pub fn with_runs(mut self, runs: bool) -> PlanInput<'a> {
 +        self.runs = runs;
 +        self
 +    }
+     /// `tm plan --allow-home` (§13).
      pub fn with_allow_home(mut self, allow_home: bool) -> PlanInput<'a> {
          self.allow_home = allow_home;
          self

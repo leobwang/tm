@@ -137,3 +137,24 @@ fn a_block_inside_its_day_is_counted_as_before() {
     assert_eq!(tm.json_at("2026-09-08T22:40:00-05:00", &["now"])["active"]["elapsed_min"], 40);
     assert_eq!(tm.json_at("2026-09-08T23:00:00-05:00", &["done"])["actual_min"], 60);
 }
+
+/// **`tm resume` after local midnight logs the minutes the interruption lost** —
+/// the W-40 repair (README gaps 3821 and 3951), parity P69: D75's clock applied to
+/// the interruption, whose own `interrupt` line holds its instant. `tm interrupt` at
+/// Tuesday 23:40 and `tm resume` at 00:20 lost forty minutes; fork 4748911 put
+/// `.tm/state.json`'s `23:40` on TODAY's date and logged `lost_min: 0`, and so did
+/// this binary until the repair. Inside one day nothing moves (twenty minutes).
+#[test]
+fn tm_resume_after_midnight_logs_the_minutes_lost() {
+    for (from, to, lost) in [
+        ("2026-09-08T23:40:00-05:00", "2026-09-09T00:20:00-05:00", 40),
+        ("2026-09-08T22:00:00-05:00", "2026-09-08T22:20:00-05:00", 20),
+    ] {
+        let tm = Tm::new();
+        tm.ok_at("2026-09-08T21:30:00-05:00", &["start", "^t4", "--energy", "4"]);
+        tm.ok_at(from, &["interrupt"]);
+        tm.ok_at(to, &["resume"]);
+        let logged = tm.last_ev("resume");
+        assert_eq!(logged["lost_min"], lost, "{from} → {to}: the log reads the minutes lost: {logged}");
+    }
+}

@@ -137,7 +137,7 @@ fn the_kernel_plans_the_forks_conference_wednesday() {
         assert_eq!(work_in(&d, at("2026-09-09", 0, 0), at("2026-09-12", 0, 0)), 0, "{name}: the kernel planned work");
         let date = tm_core::planwire::plan_date(&state, now);
         let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, date, now);
-        let w = planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state: &state, now, cands: &cands };
+        let w = planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state: &state, now, cands: &cands, replay: &fx.replay };
         let (k, _) = planreq::kernel_day(&w, None).unwrap_or_else(|e| panic!("{name}: the kernel did not plan: {e}"));
         findings.extend(forkday::compare_day_with_fork(name, &k, line, now, &mut t));
     }
@@ -151,7 +151,7 @@ fn the_kernel_plans_the_forks_conference_wednesday() {
 fn fork_conference_day(fx: &Fixture, state: &RuntimeState, now: DateTime<Tz>) -> DayPlan {
     let day = tm_core::planwire::plan_date(state, now);
     let cands = tm_core::priority::collect_candidates(&fx.tree, &fx.replay, &fx.cfg, &fx.model, day, now);
-    let w = planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands };
+    let w = planreq::World { docs: &fx.docs, log: &fx.log, tree: &fx.tree, cfg: &fx.cfg, state, now, cands: &cands, replay: &fx.replay };
     let (_, ans) = planreq::kernel_day(&w, None).expect("the kernel ranks the day");
     tm_core::planner::plan(&fx.input(state, now).with_ranking(&cands, &ans.prios))
 }

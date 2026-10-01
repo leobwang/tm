@@ -1905,6 +1905,18 @@ pub fn resolve(screen: Screen, mode: Mode, prompt: Option<PromptKind>, key: KeyE
     if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('c') {
         return Action::Quit;
     }
+    // **A character typed with Ctrl or Alt is no command and no text** (the W-40
+    // repair, README gaps 3830 and 3954, parity P70). Every row of §12.6's table is
+    // a bare key, and crossterm reports `Ctrl-D` as `Char('d')` with CONTROL, so
+    // until the repair `Ctrl-D` — the terminal's own "end of input" — marked the
+    // running block DONE, `Ctrl-S` stopped it and `Ctrl-B` began a break, each
+    // logged; fork 4748911's key map is the same. Ctrl-C keeps its quit (above);
+    // Shift is not filtered, because an upper-case row (`K`, `R`) arrives with it.
+    if let KeyCode::Char(_) = key.code {
+        if key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+            return Action::None;
+        }
+    }
     if matches!(mode, Mode::Command | Mode::Input(_)) {
         return text_key(key);
     }
@@ -2062,6 +2074,30 @@ mod tests {
 
     fn key(c: char) -> KeyEvent {
         KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE)
+    }
+
+    /// **A Ctrl or Alt character is no command** (README gap 3954, parity P70):
+    /// `Ctrl-D` does not mark the block done, `Ctrl-S` does not stop it, `Ctrl-B`
+    /// begins no break — on the Today screen, under a prompt and in the command
+    /// line alike — while the bare keys still do, `Ctrl-C` still quits and an
+    /// upper-case row (Shift) still reaches its screen.
+    #[test]
+    fn a_ctrl_or_alt_character_is_no_command() {
+        let with = |c: char, m: KeyModifiers| KeyEvent::new(KeyCode::Char(c), m);
+        for (c, bare) in [('d', Action::Done), ('s', Action::Stop), ('b', Action::Break)] {
+            assert_eq!(resolve(Screen::Today, Mode::Normal, None, key(c)), bare, "{c}");
+            for m in [KeyModifiers::CONTROL, KeyModifiers::ALT] {
+                assert_eq!(resolve(Screen::Today, Mode::Normal, None, with(c, m)), Action::None, "{m:?}-{c}");
+                assert_eq!(
+                    resolve(Screen::Today, Mode::Normal, Some(PromptKind::Overtime), with(c, m)),
+                    Action::None,
+                    "{m:?}-{c} under the overtime prompt"
+                );
+                assert_eq!(resolve(Screen::Today, Mode::Command, None, with(c, m)), Action::None, "{m:?}-{c} typed");
+            }
+        }
+        assert_eq!(resolve(Screen::Today, Mode::Normal, None, with('c', KeyModifiers::CONTROL)), Action::Quit);
+        assert_eq!(resolve(Screen::Today, Mode::Normal, None, with('K', KeyModifiers::SHIFT)), Action::SkipRoutine);
     }
 
     #[test]
